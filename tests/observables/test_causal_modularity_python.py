@@ -560,6 +560,8 @@ class BothStrategiesTest(unittest.TestCase):
         slice_ = graph.discover(1.0, obs.PersistentModularityConfig())
         self.assertAlmostEqual(slice_.qIncremental, slice_.q, delta=MACHINE)
 
+
+
     def test_the_power_iteration_path_agrees_with_the_exact_one(self):
         """The shifted power iteration finds the most POSITIVE eigenvalue
         only while its Gershgorin shift really bounds the spectral radius.
@@ -600,6 +602,37 @@ class BothStrategiesTest(unittest.TestCase):
         first = graph.discover(1.0, spectral_config(baseSeed=1))
         second = graph.discover(1.0, spectral_config(baseSeed=99999))
         self.assertEqual(partition_of(first), partition_of(second))
+
+
+class PerComponentReadTest(unittest.TestCase):
+    """What a component REPORTS has to be the score it actually contributes,
+    on the signed operator as much as on the unsigned one."""
+
+    def test_the_contributions_sum_to_the_score(self):
+        for graph in (PM.fromSpacetime(causal_k6(),
+                                       WEIGHT.CausalExpNegAbsLength),
+                      clique_chain([4, 5, 6])):
+            for cfg in (obs.PersistentModularityConfig(), spectral_config()):
+                slice_ = graph.discover(1.0, cfg)
+                total = math.fsum(c.modularityContribution
+                                  for c in slice_.components)
+                self.assertAlmostEqual(total, slice_.q, delta=MACHINE)
+
+    def test_conductance_is_unmeasured_on_a_signed_graph(self):
+        """A signed community's strength is a difference, so there is no
+        volume for the cut to be a fraction of.  Reported NaN, never zero --
+        zero would read as a perfectly isolated community."""
+        graph = PM.fromSpacetime(causal_k6(), WEIGHT.CausalExpNegAbsLength)
+        slice_ = graph.discover(1.0, obs.PersistentModularityConfig())
+        for comp in slice_.components:
+            self.assertTrue(math.isnan(comp.conductance))
+
+    def test_conductance_is_still_measured_on_an_unsigned_graph(self):
+        slice_ = clique_chain([4, 5, 6]).discover(
+            1.0, obs.PersistentModularityConfig())
+        for comp in slice_.components:
+            self.assertFalse(math.isnan(comp.conductance))
+            self.assertGreaterEqual(comp.conductance, 0.0)
 
 
 if __name__ == "__main__":

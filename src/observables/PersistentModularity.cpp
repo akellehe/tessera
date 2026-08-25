@@ -142,18 +142,12 @@ struct PersistentModularity::LevelGraph {
   std::size_t n = 0;
   std::vector<std::int64_t> indptr;
   std::vector<std::uint32_t> indices;
-  std::vector<double> weights;
-  std::vector<double> selfW;
-  std::vector<double> strength;
-  // Signed branch only.  Both are INHERITED BY SUMMATION when a level is
-  // aggregated (k_C± = sum over members of k_i±) rather than recomputed from
-  // the coarse adjacency.  That is deliberate: aggregation can cancel a
-  // positive against a negative edge, so recomputing would move 2m± between
-  // levels, changing the objective under the multilevel ledger that
-  // accumulates delta-Q against it.  The null model is a property of the
-  // level-0 degree sequence, exactly as k_C is in the unsigned case.
-  std::vector<double> strengthPos;
-  std::vector<double> strengthNeg;
+  std::vector<std::complex<double>> weights;
+  std::vector<std::complex<double>> selfW;
+  // k_C, INHERITED BY SUMMATION when a level is aggregated (k_C = sum over
+  // members of k_i) rather than recomputed from the coarse adjacency.  The
+  // null model is a property of the level-0 degree sequence.
+  std::vector<std::complex<double>> strength;
   std::vector<std::uint32_t> nodeRank;   // canonical visit rank per node
   std::vector<std::string> nodeHash;     // canonical hash per node
 };
@@ -161,8 +155,12 @@ struct PersistentModularity::LevelGraph {
 /// One deterministic restart's full multilevel outcome.
 struct PersistentModularity::RunResult {
   std::uint64_t seed = 0;
-  double qIncremental = 0.0;  // ledger: Q0 + sum of accepted exact delta-Q
-  double qCold = 0.0;         // exact recompute from the final labels
+  // ledger: Q0 + sum of accepted exact delta-Q, and the exact recompute from
+  // the final labels.  Both COMPLEX; `objective` is the real scalar the
+  // search actually maximized, derived from qCold.
+  std::complex<double> qIncremental{0.0, 0.0};
+  std::complex<double> qCold{0.0, 0.0};
+  double objective = 0.0;
   std::size_t communities = 0;
   // levelAssign[k][cell] = community index at aggregation level k+1
   // (compact, ordered by (component hash, anchor rank)).
@@ -178,6 +176,17 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
     const std::vector<std::uint64_t> &src,
     const std::vector<std::uint64_t> &tgt,
     const std::vector<double> &weight,
+    const std::vector<std::uint64_t> &isolatedCells) {
+  std::vector<std::complex<double>> lifted;
+  lifted.reserve(weight.size());
+  for (const double w : weight) lifted.emplace_back(w, 0.0);
+  return fromComplexWeightedEdges(src, tgt, lifted, isolatedCells);
+}
+
+PersistentModularity PersistentModularity::fromComplexWeightedEdges(
+    const std::vector<std::uint64_t> &src,
+    const std::vector<std::uint64_t> &tgt,
+    const std::vector<std::complex<double>> &weight,
     const std::vector<std::uint64_t> &isolatedCells) {
   if (src.size() != tgt.size() || src.size() != weight.size()) {
     throw std::invalid_argument(
@@ -198,21 +207,23 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
 
   // Consolidate parallel edges by weight summation; first-seen orientation
   // is kept.  Self-loops and zero-weight edges are ignored at level 0.
+  const std::complex<double> zero(0.0, 0.0);
   std::vector<std::uint32_t> oSrc;
   std::vector<std::uint32_t> oTgt;
-  std::vector<double> oW;
+  std::vector<std::complex<double>> oW;
   std::unordered_map<std::uint64_t, std::size_t> pairPos;
   pairPos.reserve(src.size());
   for (std::size_t e = 0; e < src.size(); ++e) {
-    const double w = weight[e];
-    if (!std::isfinite(w)) {
+    const std::complex<double> w = weight[e];
+    if (!std::isfinite(w.real()) || !std::isfinite(w.imag())) {
       throw std::invalid_argument(
-          "PersistentModularity::fromWeightedEdges: weights must be finite "
-          "(real weighted-graph domain; signed weights are permitted)");
+          "PersistentModularity::fromWeightedEdges: weights must be finite in "
+          "both components (the domain is the complex weighted graph; signed "
+          "and non-real weights are permitted)");
     }
     const std::uint32_t u = internIdx(src[e]);
     const std::uint32_t v = internIdx(tgt[e]);
-    if (u == v || w == 0.0) continue;
+    if (u == v || w == zero) continue;
     const std::uint64_t key =
         (static_cast<std::uint64_t>(std::min(u, v)) << 32) | std::max(u, v);
     auto it = pairPos.find(key);
@@ -228,19 +239,19 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
   for (std::uint64_t id : isolatedCells) internIdx(id);
 
   // Drop pairs whose consolidated weight is exactly zero.  On a nonnegative
-  // list this is unreachable (every summand was already filtered), so the
-  // unsigned path is untouched; on a signed one it removes a pair whose
-  // weights CANCELLED, which is a measured absence of net similarity and not
-  // an edge we are entitled to keep at weight zero.
+  // list this is unreachable (every summand was already filtered), so that
+  // path is untouched; otherwise it removes a pair whose weights CANCELLED,
+  // which is a measured absence of net similarity and not an edge we are
+  // entitled to keep at weight zero.
   {
     std::vector<std::uint32_t> kSrc;
     std::vector<std::uint32_t> kTgt;
-    std::vector<double> kW;
+    std::vector<std::complex<double>> kW;
     kSrc.reserve(oSrc.size());
     kTgt.reserve(oTgt.size());
     kW.reserve(oW.size());
     for (std::size_t e = 0; e < oSrc.size(); ++e) {
-      if (oW[e] == 0.0) continue;
+      if (oW[e] == zero) continue;
       kSrc.push_back(oSrc[e]);
       kTgt.push_back(oTgt[e]);
       kW.push_back(oW[e]);
@@ -256,7 +267,9 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
   g.orientedTgt_ = std::move(oTgt);
   g.orientedW_ = std::move(oW);
 
-  // CSR (both directions per undirected edge).
+  // CSR (both directions per undirected edge).  A is complex SYMMETRIC, so
+  // the same value is stored in both directions -- no conjugation, because a
+  // weight is a property of the edge rather than of a traversal of it.
   std::vector<std::uint32_t> deg(g.nNodes_, 0);
   for (std::size_t e = 0; e < g.nEdges_; ++e) {
     ++deg[g.orientedSrc_[e]];
@@ -272,65 +285,65 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
   for (std::size_t e = 0; e < g.nEdges_; ++e) {
     const std::uint32_t u = g.orientedSrc_[e];
     const std::uint32_t v = g.orientedTgt_[e];
-    const double w = g.orientedW_[e];
+    const std::complex<double> w = g.orientedW_[e];
     g.indices_[static_cast<std::size_t>(cursor[u])] = v;
     g.weights_[static_cast<std::size_t>(cursor[u]++)] = w;
     g.indices_[static_cast<std::size_t>(cursor[v])] = u;
     g.weights_[static_cast<std::size_t>(cursor[v]++)] = w;
   }
-  g.strength_.assign(g.nNodes_, 0.0);
-  for (std::size_t i = 0; i < g.nNodes_; ++i) {
-    double s = 0.0;
-    for (std::int64_t k = g.indptr_[i]; k < g.indptr_[i + 1]; ++k) {
-      s += g.weights_[static_cast<std::size_t>(k)];
-    }
-    g.strength_[i] = s;
-  }
-  double twoM = 0.0;
-  for (double s : g.strength_) twoM += s;
-  g.twoM_ = twoM;
 
-  // Branch selector: the GRAPH decides, not a caller flag.  A wholly
-  // nonnegative graph leaves `signed_` false and every scoring path below
-  // takes the arithmetic it has always taken.
-  g.signed_ = false;
+  // Branch selectors: the GRAPH decides, never a caller flag.  A wholly
+  // nonnegative real graph leaves both false and every scoring path takes the
+  // arithmetic it has always taken.
   for (std::size_t e = 0; e < g.nEdges_; ++e) {
-    if (g.orientedW_[e] < 0.0) {
+    if (g.orientedW_[e].imag() != 0.0) g.complex_ = true;
+    if (g.orientedW_[e].imag() != 0.0 || g.orientedW_[e].real() < 0.0) {
       g.signed_ = true;
-      break;
     }
   }
-  // Sized in both branches so every index is valid; the unsigned branch
-  // leaves them zero and never reads them.
-  g.strengthPos_.assign(g.nNodes_, 0.0);
-  g.strengthNeg_.assign(g.nNodes_, 0.0);
-  if (g.signed_) {
+
+  g.strength_.assign(g.nNodes_, zero);
+  if (!g.signed_) {
+    // Verbatim incumbent accumulation: plain double summation in CSR order.
     for (std::size_t i = 0; i < g.nNodes_; ++i) {
-      Kahan sp;
-      Kahan sn;
+      double s = 0.0;
       for (std::int64_t k = g.indptr_[i]; k < g.indptr_[i + 1]; ++k) {
-        const double w = g.weights_[static_cast<std::size_t>(k)];
-        if (w >= 0.0) {
-          sp.add(w);
-        } else {
-          sn.add(-w);
-        }
+        s += g.weights_[static_cast<std::size_t>(k)].real();
       }
-      g.strengthPos_[i] = sp.value();
-      g.strengthNeg_[i] = sn.value();
+      g.strength_[i] = std::complex<double>(s, 0.0);
     }
-    Kahan tp;
-    Kahan tn;
-    for (std::size_t i = 0; i < g.nNodes_; ++i) {
-      tp.add(g.strengthPos_[i]);
-      tn.add(g.strengthNeg_[i]);
+    double twoM = 0.0;
+    for (const std::complex<double> &s : g.strength_) twoM += s.real();
+    g.twoM_ = twoM;
+    g.sumA_ = std::complex<double>(twoM, 0.0);
+    return g;
+  }
+
+  for (std::size_t i = 0; i < g.nNodes_; ++i) {
+    Kahan re;
+    Kahan im;
+    for (std::int64_t k = g.indptr_[i]; k < g.indptr_[i + 1]; ++k) {
+      re.add(g.weights_[static_cast<std::size_t>(k)].real());
+      im.add(g.weights_[static_cast<std::size_t>(k)].imag());
     }
-    g.twoMPos_ = tp.value();
-    g.twoMNeg_ = tn.value();
-    // T = 2m+ + 2m-, the signed branch's normalizer.  Recomputed here rather
-    // than reused from `twoM_` above, which is the SIGNED sum and is the
-    // wrong normalizer once negatives are present (it can vanish).
-    g.twoM_ = g.twoMPos_ + g.twoMNeg_;
+    g.strength_[i] = std::complex<double>(re.value(), im.value());
+  }
+  {
+    Kahan re;
+    Kahan im;
+    for (const std::complex<double> &s : g.strength_) {
+      re.add(s.real());
+      im.add(s.imag());
+    }
+    g.sumA_ = std::complex<double>(re.value(), im.value());
+  }
+  {
+    // T = sum_ij |A_ij|, the real positive scale.  Accumulated over the CSR
+    // (both directions), so it is the full double sum rather than the
+    // upper-triangle one.
+    Kahan t;
+    for (const std::complex<double> &w : g.weights_) t.add(std::abs(w));
+    g.twoM_ = t.value();
   }
   return g;
 }
@@ -352,19 +365,19 @@ PersistentModularity::causalWeightAvailability(const Spacetime &st) {
       // Exactly one of Edge's five predicates holds, so whatever is left
       // after the four definite ones is mixed.  Written as the fallthrough
       // rather than as isMixed() so the census is total by construction: no
-      // edge can escape being counted.
+      // edge can escape being counted.  A mixed edge is an ORDINARY edge for
+      // the complex weight map -- its argument is carried as it stands.
       ++read.mixed;
     }
   }
-  if (read.mixed > 0) {
+  // Only genuine ABSENCES make the map unreadable.  An indefinite argument is
+  // not an absence: the complex weight carries it without classifying it.
+  if (read.degenerate > 0) {
     read.available = false;
-    read.reason = CausalWeightReason::kMixedCausalCharacter;
+    read.reason = CausalWeightReason::kDegenerateEdgeLength;
     return read;
   }
-  // Lightlike edges carry a zero causal sign, so a complex made only of them
-  // (plus absent edges) has nothing to score.  Reported as its own reason
-  // rather than silently yielding an empty graph.
-  if (read.spacelike + read.timelike == 0) {
+  if (edges.empty()) {
     read.available = false;
     read.reason = CausalWeightReason::kNoScorableEdges;
     return read;
@@ -375,20 +388,21 @@ PersistentModularity::causalWeightAvailability(const Spacetime &st) {
 
 PersistentModularity PersistentModularity::fromSpacetime(const Spacetime &st,
                                                          WeightMap map) {
-  if (map == WeightMap::CausalExpNegAbsLength) {
+  if (map == WeightMap::CausalPhaseExpNegAbsLength) {
     const CausalWeightRead read = causalWeightAvailability(st);
     if (!read.available) {
       throw std::invalid_argument(
-          "PersistentModularity::fromSpacetime: CausalExpNegAbsLength is "
+          "PersistentModularity::fromSpacetime: CausalPhaseExpNegAbsLength is "
           "unavailable on this complex (" + read.reason +
-          "): a causal sign cannot be assigned to an edge whose arg(l^2) is "
-          "generic without inventing a definiteness the geometry does not "
-          "have. See causalWeightAvailability for the census.");
+          "): an edge with no extent has no argument to carry, and arg(0) is "
+          "not a reading of anything. An indefinite argument is NOT a reason "
+          "-- the complex weight carries it as it stands. See "
+          "causalWeightAvailability for the census.");
     }
   }
   std::vector<std::uint64_t> src;
   std::vector<std::uint64_t> tgt;
-  std::vector<double> w;
+  std::vector<std::complex<double>> w;
   const auto &edges = st.getEdgeList()->toVector();
   src.reserve(edges.size());
   tgt.reserve(edges.size());
@@ -398,89 +412,83 @@ PersistentModularity PersistentModularity::fromSpacetime(const Spacetime &st,
     tgt.push_back(e->getTarget()->getId());
     switch (map) {
       case WeightMap::Unit:
-        w.push_back(1.0);
+        w.emplace_back(1.0, 0.0);
         break;
       case WeightMap::ExpNegAbsLength:
-        w.push_back(std::exp(-std::abs(e->getLength())));
+        w.emplace_back(std::exp(-std::abs(e->getLength())), 0.0);
         break;
-      case WeightMap::CausalExpNegAbsLength: {
-        // The causal SIGN comes from `Edge::disposition()` — the one
-        // classifier — never re-derived here from Re(l^2).  Two
-        // classifications of one physical property is how a reader ends up
-        // with a proposal that no certificate agrees with.
+      case WeightMap::CausalPhaseExpNegAbsLength: {
+        // Magnitude exp(-|l|) as before; the causal character enters as the
+        // ARGUMENT arg(l^2), the same measured quantity Edge classifies
+        // dispositions by (#870).  Nothing is bucketed, so a generic
+        // argument needs no special case: it lands where it lands.
         const double magnitude = std::exp(-std::abs(e->getLength()));
-        double sign = 0.0;  // lightlike: zero Lorentzian interval
-        if (e->isSpacelike()) {
-          sign = 1.0;
-        } else if (e->isTimelike()) {
-          sign = -1.0;
-        }
-        w.push_back(sign * magnitude);
+        const double argument = e->squaredArgument();
+        w.emplace_back(magnitude * std::cos(argument),
+                       magnitude * std::sin(argument));
         break;
       }
     }
   }
-  std::vector<std::uint64_t> cells;
-  for (const auto *v : st.getVertexList()->toVector()) {
-    cells.push_back(v->getId());
-  }
-  return fromWeightedEdges(src, tgt, w, cells);
+  return fromComplexWeightedEdges(src, tgt, w);
 }
 
-// ───────────────────────── fixed-partition exact score ──────────────────
-
-double PersistentModularity::modularityGamma(const std::vector<int> &labels,
-                                             double gamma) const {
+std::complex<double> PersistentModularity::modularityGamma(
+    const std::vector<int> &labels, double gamma) const {
   if (labels.size() != nNodes_) {
     throw std::invalid_argument(
         "PersistentModularity::modularityGamma: labels.size() != nCells()");
   }
-  if (twoM_ <= 0.0) return 0.0;
+  const std::complex<double> zero(0.0, 0.0);
+  if (twoM_ <= 0.0) return zero;
   // Ordered map: community terms combine in ascending label order, which is
   // stable under any relabeling of the underlying cells.
-  std::map<int, double> in;   // Sigma_in per label
-  std::map<int, double> tot;  // S_c per label
+  std::map<int, std::complex<double>> in;   // Sigma_in per label
+  std::map<int, std::complex<double>> tot;  // S_c per label
   for (std::size_t e = 0; e < nEdges_; ++e) {
     const int a = labels[orientedSrc_[e]];
     const int b = labels[orientedTgt_[e]];
     if (a == b) in[a] += 2.0 * orientedW_[e];
   }
+  for (std::size_t i = 0; i < nNodes_; ++i) tot[labels[i]] += strength_[i];
+
   if (!signed_) {
-    for (std::size_t i = 0; i < nNodes_; ++i) tot[labels[i]] += strength_[i];
+    // Verbatim incumbent arithmetic on a nonnegative real graph, so its score
+    // is bit-identical rather than merely close.
     Kahan q;
     for (const auto &[label, s] : tot) {
       double lin = 0.0;
       auto it = in.find(label);
-      if (it != in.end()) lin = it->second;
-      const double frac = s / twoM_;
+      if (it != in.end()) lin = it->second.real();
+      const double frac = s.real() / twoM_;
       q.add(lin / twoM_ - gamma * frac * frac);
     }
-    return q.value();
+    return std::complex<double>(q.value(), 0.0);
   }
 
-  // Signed branch: one null model per sign, normalized by T = 2m+ + 2m-.
-  // A sign contributing no weight contributes no null term — the vanishing
-  // null model is zero, not 0/0.
-  std::map<int, double> totPos;
-  std::map<int, double> totNeg;
-  for (std::size_t i = 0; i < nNodes_; ++i) {
-    totPos[labels[i]] += strengthPos_[i];
-    totNeg[labels[i]] += strengthNeg_[i];
+  // Q = sum_c (Sigma_in(c) - gamma S_c^2 / SA) / T.  SA = 0 leaves the
+  // configuration null model undefined -- there is no total weight for it to
+  // redistribute -- so it is refused by name rather than silently treated as
+  // a vanishing null term.
+  if (sumA_ == zero) {
+    throw std::invalid_argument(
+        "PersistentModularity::modularityGamma: the total adjacency weight "
+        "sum_ij A_ij vanishes, so the configuration null model has no weight "
+        "to redistribute and Q_gamma is undefined. This is a property of the "
+        "graph, not of the partition.");
   }
-  const double invPos = twoMPos_ > 0.0 ? 1.0 / twoMPos_ : 0.0;
-  const double invNeg = twoMNeg_ > 0.0 ? 1.0 / twoMNeg_ : 0.0;
-  Kahan q;
-  for (const auto &[label, sp] : totPos) {
-    double lin = 0.0;
+  const std::complex<double> invSumA = std::complex<double>(1.0, 0.0) / sumA_;
+  Kahan re;
+  Kahan im;
+  for (const auto &[label, s] : tot) {
+    std::complex<double> lin = zero;
     auto it = in.find(label);
     if (it != in.end()) lin = it->second;
-    double sn = 0.0;
-    auto itn = totNeg.find(label);
-    if (itn != totNeg.end()) sn = itn->second;
-    const double nullTerm = sp * sp * invPos - sn * sn * invNeg;
-    q.add((lin - gamma * nullTerm) / twoM_);
+    const std::complex<double> term = (lin - gamma * s * s * invSumA) / twoM_;
+    re.add(term.real());
+    im.add(term.imag());
   }
-  return q.value();
+  return std::complex<double>(re.value(), im.value());
 }
 
 // ───────────────────────── canonical structure ──────────────────────────
@@ -496,17 +504,32 @@ void PersistentModularity::ensureCanonical() const {
   }
 
   // Initial invariant color: strength summed in ascending weight order so
-  // the double bits do not depend on the input edge order.
+  // the double bits do not depend on the input edge order.  Complex weights
+  // sort lexicographically by (real, imaginary), which is a total order on
+  // the stored values and so serves the same purpose -- the ordering is only
+  // ever used to fix a summation order, never read as a magnitude.
   std::vector<std::uint64_t> color(n, 0);
   {
-    std::vector<double> row;
+    std::vector<std::complex<double>> row;
     for (std::size_t i = 0; i < n; ++i) {
       row.assign(weights_.begin() + static_cast<std::ptrdiff_t>(indptr_[i]),
                  weights_.begin() + static_cast<std::ptrdiff_t>(indptr_[i + 1]));
-      std::sort(row.begin(), row.end());
-      double s = 0.0;
-      for (double x : row) s += x;
-      color[i] = Mix::splitmix64(Mix::bits(s));
+      std::sort(row.begin(), row.end(),
+                [](const std::complex<double> &a,
+                   const std::complex<double> &b) {
+                  if (a.real() != b.real()) return a.real() < b.real();
+                  return a.imag() < b.imag();
+                });
+      double re = 0.0;
+      double im = 0.0;
+      for (const std::complex<double> &x : row) {
+        re += x.real();
+        im += x.imag();
+      }
+      Hash128 h;
+      h.mix(Mix::bits(re));
+      h.mix(Mix::bits(im));
+      color[i] = Mix::splitmix64(h.lane());
     }
   }
 
@@ -530,8 +553,11 @@ void PersistentModularity::ensureCanonical() const {
       for (std::size_t i = 0; i < n; ++i) {
         sig.clear();
         for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
+          Hash128 wh;
+          wh.mix(Mix::bits(weights_[static_cast<std::size_t>(k)].real()));
+          wh.mix(Mix::bits(weights_[static_cast<std::size_t>(k)].imag()));
           sig.emplace_back(color[indices_[static_cast<std::size_t>(k)]],
-                           Mix::bits(weights_[static_cast<std::size_t>(k)]));
+                           wh.lane());
         }
         std::sort(sig.begin(), sig.end());
         Hash128 h;
@@ -690,10 +716,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
   g.indptr = indptr_;
   g.indices = indices_;
   g.weights = weights_;
-  g.selfW.assign(n0, 0.0);
+  g.selfW.assign(n0, std::complex<double>(0.0, 0.0));
   g.strength = strength_;
-  g.strengthPos = strengthPos_;
-  g.strengthNeg = strengthNeg_;
   g.nodeRank.resize(n0);
   g.nodeHash.resize(n0);
   for (std::size_t i = 0; i < n0; ++i) {
@@ -705,24 +729,51 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
   }
 
   const double twoM = twoM_;
-  const double invPos = twoMPos_ > 0.0 ? 1.0 / twoMPos_ : 0.0;
-  const double invNeg = twoMNeg_ > 0.0 ? 1.0 / twoMNeg_ : 0.0;
-  Kahan ledger;
+  const bool real = !signed_;
+  if (!real && sumA_ == std::complex<double>(0.0, 0.0)) {
+    throw std::invalid_argument(
+        "PersistentModularity::discover: the total adjacency weight "
+        "sum_ij A_ij vanishes, so the configuration null model has no weight "
+        "to redistribute and Q_gamma is undefined on this graph.");
+  }
+  const std::complex<double> invSumA =
+      real ? std::complex<double>(0.0, 0.0)
+           : std::complex<double>(1.0, 0.0) / sumA_;
+  // The real scalar the search maximizes.  `Score` is Q itself and is
+  // available only where Q is real; on a complex graph the only ordered
+  // choice is the magnitude, and `arg(Q)` carries what kind of structure was
+  // found.  Selected here from the GRAPH, and reported on the slice.
+  const bool useMagnitude = complex_ ||
+                            cfg.objective == ModularityObjective::Magnitude;
+  const auto score = [useMagnitude](std::complex<double> q) -> double {
+    return useMagnitude ? std::abs(q) : q.real();
+  };
+
+  Kahan ledgerRe;
+  Kahan ledgerIm;
   // Q of the all-singletons base partition (selfW = 0 at level 0).
   if (twoM > 0.0) {
-    if (!signed_) {
+    if (real) {
       for (std::size_t i = 0; i < n0; ++i) {
-        const double frac = strength_[i] / twoM;
-        ledger.add(-gamma * frac * frac);
+        const double frac = strength_[i].real() / twoM;
+        ledgerRe.add(-gamma * frac * frac);
       }
     } else {
       for (std::size_t i = 0; i < n0; ++i) {
-        const double sp = strengthPos_[i];
-        const double sn = strengthNeg_[i];
-        ledger.add(-gamma * (sp * sp * invPos - sn * sn * invNeg) / twoM);
+        const std::complex<double> k = strength_[i];
+        const std::complex<double> term = -gamma * k * k * invSumA / twoM;
+        ledgerRe.add(term.real());
+        ledgerIm.add(term.imag());
       }
     }
   }
+  const auto ledgerValue = [&]() {
+    return std::complex<double>(ledgerRe.value(), ledgerIm.value());
+  };
+  const auto ledgerAdd = [&](std::complex<double> d) {
+    ledgerRe.add(d.real());
+    ledgerIm.add(d.imag());
+  };
 
   // cellAssign[cell0] = node index at the current level.
   std::vector<std::uint32_t> cellAssign(n0);
@@ -736,24 +787,14 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     const std::size_t n = g.n;
     // ── local-move sweeps with cached sufficient statistics ──────────────
     std::vector<std::uint32_t> comm(n);
-    std::vector<double> S(n);       // community total strength
-    std::vector<double> Spos;       // signed branch: community total k+
-    std::vector<double> Sneg;       // signed branch: community total k-
-    std::vector<double> in(n);      // community Sigma_in
+    std::vector<std::complex<double>> S(n);   // community total strength
+    std::vector<std::complex<double>> in(n);  // community Sigma_in
     std::vector<std::uint32_t> cnt(n, 1);
     std::vector<std::uint32_t> anchor(n);  // min member rank
     std::vector<bool> anchorDirty(n, false);
-    if (signed_) {
-      Spos.assign(n, 0.0);
-      Sneg.assign(n, 0.0);
-    }
     for (std::size_t i = 0; i < n; ++i) {
       comm[i] = static_cast<std::uint32_t>(i);
       S[i] = g.strength[i];
-      if (signed_) {
-        Spos[i] = g.strengthPos[i];
-        Sneg[i] = g.strengthNeg[i];
-      }
       in[i] = g.selfW[i];
       anchor[i] = g.nodeRank[i];
     }
@@ -783,7 +824,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     };
 
     // Scatter buffers for O(deg v) neighbor-community gathering.
-    std::vector<double> wTo(n, 0.0);
+    const std::complex<double> zero(0.0, 0.0);
+    std::vector<std::complex<double>> wTo(n, zero);
     std::vector<std::uint32_t> touched;
     bool movedAtLevel = false;
     if (twoM > 0.0) {
@@ -795,47 +837,56 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
           for (std::int64_t k = g.indptr[v]; k < g.indptr[v + 1]; ++k) {
             const std::uint32_t u = g.indices[static_cast<std::size_t>(k)];
             const std::uint32_t c = comm[u];
-            if (wTo[c] == 0.0) touched.push_back(c);
+            if (wTo[c] == zero) touched.push_back(c);
             wTo[c] += g.weights[static_cast<std::size_t>(k)];
           }
-          const double wva = wTo[a];
-          const double kv = g.strength[v];
-          const double Sa = S[a];
-          const double kvPos = signed_ ? g.strengthPos[v] : 0.0;
-          const double kvNeg = signed_ ? g.strengthNeg[v] : 0.0;
-          const double SaPos = signed_ ? Spos[a] : 0.0;
-          const double SaNeg = signed_ ? Sneg[a] : 0.0;
-          // Candidate gains: exact closed form
-          //   dQ(a->b) = 2 (w_vb - w_va)/twoM
-          //            - 2 gamma k_v (k_v + S_b - S_a) / twoM^2,
-          // and in the signed branch the same shape with the null
-          // contribution split across the two sign channels and normalized
-          // by T = 2m+ + 2m-:
-          //   dQ(a->b) = 2 (w_vb - w_va)/T
-          //            - (2 gamma / T) [ k_v+ (k_v+ + S_b+ - S_a+) / 2m+
-          //                            - k_v- (k_v- + S_b- - S_a-) / 2m- ].
-          const auto nullGain = [&](double Sb, double SbPos, double SbNeg) {
-            if (!signed_) {
-              return 2.0 * gamma * kv * (kv + Sb - Sa) / (twoM * twoM);
+          const std::complex<double> wva = wTo[a];
+          const std::complex<double> kv = g.strength[v];
+          const std::complex<double> Sa = S[a];
+          // Q as it stands, needed because the objective is a nonlinear
+          // functional of it once the magnitude is what is maximized: the
+          // gain of a move is |Q + dQ| - |Q|, not a function of dQ alone.
+          // Reading the ledger is O(1) and it changes only on an accepted
+          // move.
+          const std::complex<double> qNow = ledgerValue();
+          const double scoreNow = score(qNow);
+          // Candidate deltas: exact closed form
+          //   dQ(a->b) = [2 (w_vb - w_va) - 2 gamma k_v (k_v + S_b - S_a)/SA]
+          //              / T,
+          // which on a nonnegative real graph is the incumbent's
+          //   2 (w_vb - w_va)/2m - 2 gamma k_v (k_v + S_b - S_a)/(2m)^2
+          // evaluated in the identical order.
+          const auto delta = [&](std::complex<double> wvb,
+                                 std::complex<double> Sb) {
+            if (real) {
+              return std::complex<double>(
+                  2.0 * (wvb.real() - wva.real()) / twoM -
+                      2.0 * gamma * kv.real() *
+                          (kv.real() + Sb.real() - Sa.real()) / (twoM * twoM),
+                  0.0);
             }
-            return 2.0 * gamma *
-                   (kvPos * (kvPos + SbPos - SaPos) * invPos -
-                    kvNeg * (kvNeg + SbNeg - SaNeg) * invNeg) /
+            return (2.0 * (wvb - wva) -
+                    2.0 * gamma * kv * (kv + Sb - Sa) * invSumA) /
                    twoM;
           };
+          const auto gainOf = [&](std::complex<double> d) {
+            // On the Score objective this is exactly Re(dQ), so the
+            // incumbent's comparison is unchanged bit for bit.
+            return useMagnitude ? score(qNow + d) - scoreNow : d.real();
+          };
           double bestGain = 0.0;  // stay
+          std::complex<double> bestDelta = zero;
           std::uint32_t bestTarget = a;
           bool bestIsIsolate = false;
           for (const std::uint32_t c : touched) {
             if (c == a) continue;
-            const double gain =
-                2.0 * (wTo[c] - wva) / twoM -
-                nullGain(S[c], signed_ ? Spos[c] : 0.0,
-                         signed_ ? Sneg[c] : 0.0);
+            const std::complex<double> d = delta(wTo[c], S[c]);
+            const double gain = gainOf(d);
             if (gain > bestGain ||
                 (gain == bestGain && bestTarget != a && !bestIsIsolate &&
                  gain > 0.0 && anchorOf(c) < anchorOf(bestTarget))) {
               bestGain = gain;
+              bestDelta = d;
               bestTarget = c;
               bestIsIsolate = false;
             }
@@ -843,9 +894,11 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
           if (cnt[a] > 1) {
             // Isolation into a fresh community (S_b = 0, w_vb = 0).  Loses
             // exact ties against any real community and against staying.
-            const double gain = -2.0 * wva / twoM - nullGain(0.0, 0.0, 0.0);
+            const std::complex<double> d = delta(zero, zero);
+            const double gain = gainOf(d);
             if (gain > bestGain) {
               bestGain = gain;
+              bestDelta = d;
               bestIsIsolate = true;
             }
           }
@@ -857,36 +910,24 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
                 freeSlots.pop_back();
               } else {
                 b = static_cast<std::uint32_t>(S.size());
-                S.push_back(0.0);
-                if (signed_) {
-                  Spos.push_back(0.0);
-                  Sneg.push_back(0.0);
-                }
-                in.push_back(0.0);
+                S.push_back(zero);
+                in.push_back(zero);
                 cnt.push_back(0);
                 anchor.push_back(0xFFFFFFFFu);
                 anchorDirty.push_back(false);
-                wTo.push_back(0.0);
+                wTo.push_back(zero);
               }
-              S[b] = 0.0;
-              if (signed_) {
-                Spos[b] = 0.0;
-                Sneg[b] = 0.0;
-              }
-              in[b] = 0.0;
+              S[b] = zero;
+              in[b] = zero;
               cnt[b] = 0;
               anchor[b] = 0xFFFFFFFFu;
               anchorDirty[b] = false;
             } else {
               b = bestTarget;
             }
-            const double wvb = bestIsIsolate ? 0.0 : wTo[b];
+            const std::complex<double> wvb = bestIsIsolate ? zero : wTo[b];
             in[a] -= 2.0 * wva + g.selfW[v];
             S[a] -= kv;
-            if (signed_) {
-              Spos[a] -= kvPos;
-              Sneg[a] -= kvNeg;
-            }
             cnt[a] -= 1;
             if (anchor[a] == g.nodeRank[v]) anchorDirty[a] = true;
             if (cnt[a] == 0) {
@@ -896,20 +937,16 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
             }
             in[b] += 2.0 * wvb + g.selfW[v];
             S[b] += kv;
-            if (signed_) {
-              Spos[b] += kvPos;
-              Sneg[b] += kvNeg;
-            }
             cnt[b] += 1;
             if (g.nodeRank[v] < anchor[b] && !anchorDirty[b]) {
               anchor[b] = g.nodeRank[v];
             }
             comm[v] = b;
-            ledger.add(bestGain);
+            ledgerAdd(bestDelta);
             movedThisPass = true;
             movedAtLevel = true;
           }
-          for (const std::uint32_t c : touched) wTo[c] = 0.0;
+          for (const std::uint32_t c : touched) wTo[c] = zero;
         }
         if (!movedThisPass) break;
       }
@@ -940,7 +977,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
         Hash128 h;
         h.mixString(g.nodeHash[s]);
         h.mixString(g.nodeHash[t]);
-        h.mix(Mix::bits(orientedW_[e]));
+        h.mix(Mix::bits(orientedW_[e].real()));
+        h.mix(Mix::bits(orientedW_[e].imag()));
         tokens[comm[s]].push_back(h.lane());
       }
     } else {
@@ -983,12 +1021,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     // ── aggregate ─────────────────────────────────────────────────────────
     LevelGraph next;
     next.n = nSuper;
-    next.selfW.assign(nSuper, 0.0);
-    next.strength.assign(nSuper, 0.0);
-    if (signed_) {
-      next.strengthPos.assign(nSuper, 0.0);
-      next.strengthNeg.assign(nSuper, 0.0);
-    }
+    next.selfW.assign(nSuper, zero);
+    next.strength.assign(nSuper, zero);
     next.nodeRank.resize(nSuper);
     next.nodeHash.resize(nSuper);
     for (std::size_t c = 0; c < nSuper; ++c) {
@@ -999,13 +1033,9 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
       if (slotToCompact[slot] == 0xFFFFFFFFu) continue;
       next.selfW[slotToCompact[slot]] = in[slot];
       next.strength[slotToCompact[slot]] = S[slot];
-      if (signed_) {
-        next.strengthPos[slotToCompact[slot]] = Spos[slot];
-        next.strengthNeg[slotToCompact[slot]] = Sneg[slot];
-      }
     }
     // Inter-community weights.
-    std::unordered_map<std::uint64_t, double> inter;
+    std::unordered_map<std::uint64_t, std::complex<double>> inter;
     inter.reserve(g.indices.size() / 2 + 1);
     for (std::size_t u = 0; u < n; ++u) {
       const std::uint32_t cu = slotToCompact[comm[u]];
@@ -1034,9 +1064,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     std::vector<std::int64_t> scursor(next.indptr.begin(),
                                       next.indptr.end() - 1);
     // Deterministic fill order: sorted keys (independent of hash-map order).
-    std::vector<std::pair<std::uint64_t, double>> interSorted(inter.begin(),
-                                                              inter.end());
-    std::sort(interSorted.begin(), interSorted.end());
+    std::vector<std::pair<std::uint64_t, std::complex<double>>> interSorted(
+        inter.begin(), inter.end());
+    std::sort(interSorted.begin(), interSorted.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
     for (const auto &[key, w] : interSorted) {
       const auto cu = static_cast<std::uint32_t>(key >> 32);
       const auto cv = static_cast<std::uint32_t>(key & 0xFFFFFFFFu);
@@ -1048,7 +1079,7 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     g = std::move(next);
   }
 
-  out.qIncremental = ledger.value();
+  out.qIncremental = ledgerValue();
   // Cold exact recompute from the final level-0 labels.
   std::vector<int> labels0(n0, 0);
   if (!out.levelAssign.empty()) {
@@ -1064,6 +1095,7 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     out.communities = 0;
   }
   out.qCold = modularityGamma(labels0, gamma);
+  out.objective = score(out.qCold);
   return out;
 }
 
@@ -1076,23 +1108,29 @@ ResolutionSlice PersistentModularity::buildSlice(
   slice.gamma = gamma;
   slice.q = winner.qCold;
   slice.qIncremental = winner.qIncremental;
+  slice.objectiveValue = winner.objective;
+  slice.objective = complex_ ? ModularityObjective::Magnitude
+                             : ModularityObjective::Score;
   slice.levels = winner.levelAssign.size();
   slice.restarts = std::move(restarts);
   double qMin = std::numeric_limits<double>::infinity();
   double qMax = -std::numeric_limits<double>::infinity();
   for (const auto &r : slice.restarts) {
-    qMin = std::min(qMin, r.q);
-    qMax = std::max(qMax, r.q);
+    qMin = std::min(qMin, r.objectiveValue);
+    qMax = std::max(qMax, r.objectiveValue);
   }
   slice.restartSpread = slice.restarts.empty() ? 0.0 : qMax - qMin;
 
+  const std::complex<double> zero(0.0, 0.0);
+  const std::complex<double> invSumA =
+      sumA_ == zero ? zero : std::complex<double>(1.0, 0.0) / sumA_;
   const std::size_t n0 = nNodes_;
   for (std::size_t k = 0; k < winner.levelAssign.size(); ++k) {
     const auto &assign = winner.levelAssign[k];
     const auto &hashes = winner.levelHashes[k];
     const std::size_t nc = hashes.size();
-    std::vector<double> in(nc, 0.0);
-    std::vector<double> tot(nc, 0.0);
+    std::vector<std::complex<double>> in(nc, zero);
+    std::vector<std::complex<double>> tot(nc, zero);
     std::vector<std::vector<std::uint64_t>> support(nc);
     for (std::size_t e = 0; e < nEdges_; ++e) {
       if (assign[orientedSrc_[e]] == assign[orientedTgt_[e]]) {
@@ -1113,11 +1151,24 @@ ResolutionSlice PersistentModularity::buildSlice(
       comp.internalWeight = in[c];
       comp.strength = tot[c];
       if (twoM_ > 0.0) {
-        const double cut = tot[c] - in[c];
-        const double denom = std::min(tot[c], twoM_ - tot[c]);
-        comp.conductance = denom > 0.0 ? cut / denom : 0.0;
-        const double frac = tot[c] / twoM_;
-        comp.modularityContribution = in[c] / twoM_ - gamma * frac * frac;
+        if (!signed_) {
+          const double cut = tot[c].real() - in[c].real();
+          const double denom = std::min(tot[c].real(), twoM_ - tot[c].real());
+          comp.conductance = denom > 0.0 ? cut / denom : 0.0;
+          const double frac = tot[c].real() / twoM_;
+          comp.modularityContribution = std::complex<double>(
+              in[c].real() / twoM_ - gamma * frac * frac, 0.0);
+        } else {
+          // Conductance is a ratio of VOLUMES, and a graph whose weights
+          // leave the nonnegative regime has none: the strength of a
+          // community is then a signed or complex sum, so "half the total
+          // volume" is not a quantity the cut can be compared against.  Left
+          // unmeasured rather than computed by a formula that does not
+          // apply -- see ComponentRead::conductance.
+          comp.conductance = std::numeric_limits<double>::quiet_NaN();
+          comp.modularityContribution =
+              (in[c] - gamma * tot[c] * tot[c] * invSumA) / twoM_;
+        }
       }
       level.push_back(std::move(comp));
     }
@@ -1693,14 +1744,18 @@ ResolutionSlice PersistentModularity::discover(
         Mix::splitmix64(cfg.baseSeed + static_cast<std::uint64_t>(t));
     runs.push_back(runOnce(gamma, seed, cfg));
     reads.push_back(RestartRead{seed, runs.back().qCold,
+                                runs.back().objective,
                                 runs.back().communities});
   }
   // Winner: best exact score; equal scores broken by the lexicographically
   // smaller sorted component hash list, then by seed order.
+  // Winner by the objective actually maximized, not by the complex score --
+  // a complex Q has no ordering, which is the whole reason `objective` is a
+  // real functional of it.
   std::size_t best = 0;
   for (std::size_t t = 1; t < runs.size(); ++t) {
-    if (runs[t].qCold > runs[best].qCold ||
-        (runs[t].qCold == runs[best].qCold &&
+    if (runs[t].objective > runs[best].objective ||
+        (runs[t].objective == runs[best].objective &&
          runs[t].sortedFinalHashes < runs[best].sortedFinalHashes)) {
       best = t;
     }

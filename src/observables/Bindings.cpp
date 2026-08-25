@@ -405,11 +405,15 @@ Structurally identical (automorphic) components share a hash.)doc")
       .def_readonly("strength", &ComponentRead::strength,
                     "S_C: summed member strength.")
       .def_readonly("conductance", &ComponentRead::conductance,
-                    "cut(C)/min(vol C, vol V\\C); 0 when the denominator "
-                    "vanishes.")
+                    R"doc(cut(C)/min(vol C, vol V\C); 0 when the denominator
+vanishes.  NaN on a signed graph, where a community's strength is a
+difference and there is no volume for the cut to be a fraction of -- left
+unmeasured rather than computed by a formula that does not apply.)doc")
       .def_readonly("modularityContribution",
                     &ComponentRead::modularityContribution,
-                    "This community's exact additive Q_gamma term.");
+                    R"doc(This community's exact additive Q_gamma term, under
+whichever null model scores the graph.  These sum over a level to that
+level's exact Q_gamma either way.)doc");
 
   py::class_<RestartRead>(m, "RestartRead",
       "One deterministic restart: seed and exact best score.")
