@@ -672,12 +672,14 @@ indefinite argument is not an absence and is carried as it stands.)doc")
 Q is genuinely complex and Score is not an ordering.  A property of the
 graph, not a setting.)doc")
       .def("isSigned", &PersistentModularity::isSigned,
-           R"doc(True when some edge weight is negative, so the score uses
-the signed (rank-two) null model.  A property of the graph, not a setting.)doc")
+           R"doc(True when some edge weight is negative or non-real, i.e.
+when the graph leaves the nonnegative regime the incumbent formula was
+written for.  A property of the graph, not a setting.)doc")
       .def("totalWeight2", &PersistentModularity::totalWeight2,
-           R"doc(Total adjacency weight: sum_ij A_ij on a nonnegative graph,
-and T = 2m+ + 2m- (the total ABSOLUTE weight, which is the signed branch's
-normalizer) when isSigned().)doc")
+           R"doc(T = sum_ij |A_ij|, the real positive scale the score divides
+by.  It cannot vanish while any edge exists, which is what the signed total
+could do.  Equal to 2m = sum_ij A_ij on a nonnegative graph, which is what
+it has always returned there.)doc")
       .def("totalWeightSum", &PersistentModularity::totalWeightSum,
            R"doc(SA = sum_ij A_ij, the COMPLEX total the configuration null
 model redistributes.  Equal to totalWeight2() on a nonnegative graph.  A
