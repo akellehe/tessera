@@ -510,10 +510,13 @@ struct InvalidationRead {
 /// available conventions has the problem.  On an 8-cell complex with 19
 /// edges and every argument generic:
 ///
-/// | convention | `Q` of a fixed partition | spectrum | discovered partition |
+/// | convention | change in `Q` | change in spectrum | discovered partition |
 /// |---|---|---|---|
-/// | index order (`i < j`), re-derived from the labels | `|dQ| = 0` | `|dlambda| = 3.6e-1` | DIFFERENT |
-/// | stored source->target, intrinsic and carried through | `|dQ| = 0` | `|dlambda| = 2.2e-15` | SAME |
+/// | index order (`i < j`), re-derived from the labels | 0 | 3.6e-1 | DIFFERENT |
+/// | stored source->target, intrinsic and carried through | 0 | 2.2e-15 | SAME |
+///
+/// (worst absolute change in `Q` for a fixed partition, and worst absolute
+/// eigenvalue change, under one relabeling)
 ///
 /// So a Hermitian operator built on the STORED direction is relabeling
 /// -invariant, and the label-freedom objection does not by itself decide
@@ -527,7 +530,7 @@ struct InvalidationRead {
 /// * with `P_ij = k_i conj(k_j) / SA` the anchor holds (3.5e-16) and `Q` is
 ///   real and signed — but `Q` then depends on the STORED EDGE DIRECTION.
 ///   Flipping which end of one edge is called the source moves it by
-///   `|dQ| = 4.7e-1` on a `Q` of magnitude 0.65.  A score that is not a
+///   `4.7e-1` in absolute terms, on a `Q` of magnitude 0.65.  A score that is not a
 ///   function of the geometry is not a score.  (A GLOBAL reversal is
 ///   `A -> transpose(A)`, a symmetry; it is the single flip that is not.)
 ///
