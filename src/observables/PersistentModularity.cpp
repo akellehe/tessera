@@ -349,6 +349,10 @@ PersistentModularity::causalWeightAvailability(const Spacetime &st) {
     } else if (e->isNull()) {
       ++read.lightlike;
     } else {
+      // Exactly one of Edge's five predicates holds, so whatever is left
+      // after the four definite ones is mixed.  Written as the fallthrough
+      // rather than as isMixed() so the census is total by construction: no
+      // edge can escape being counted.
       ++read.mixed;
     }
   }

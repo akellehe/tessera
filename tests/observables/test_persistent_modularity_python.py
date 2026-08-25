@@ -507,9 +507,19 @@ class TestFixedPartitionContinuity(unittest.TestCase):
         with self.assertRaises(ValueError):
             g.modularityGamma([0] * 3, 1.0)
 
-    def test_negative_weight_rejected(self):
-        with self.assertRaises(ValueError):
-            PM.fromWeightedEdges([0], [1], [-1.0])
+    def test_negative_weight_accepted_and_switches_the_null_model(self):
+        # The domain is the REAL weighted graph (#849): a negative weight is
+        # a measured dissimilarity, and it selects the signed null model.
+        # Nonnegative graphs are untouched -- the reduction is held to
+        # bit-identity in test_causal_modularity_python.py.
+        g = PM.fromWeightedEdges([0], [1], [-1.0])
+        self.assertTrue(g.isSigned())
+        self.assertEqual(g.totalWeight2Negative(), 2.0)
+
+    def test_non_finite_weight_rejected(self):
+        for bad in (float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                PM.fromWeightedEdges([0], [1], [bad])
 
     def test_edge_list_normalization(self):
         # Parallel edges (either direction) consolidate by weight sum;
