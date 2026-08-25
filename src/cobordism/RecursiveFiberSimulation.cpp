@@ -1286,16 +1286,17 @@ void MultiCobordism::runRecursiveAnalysisOn(
           {"level", Json::integer(
                         static_cast<long long>(component.id.level()))},
           {"support", Json::idArray(component.support)},
-          {"strength", Json::number(component.strength)},
+          {"strength", Json::complexPair(component.strength)},
           {"conductance", Json::number(component.conductance)},
           {"modularity_contribution",
-           Json::number(component.modularityContribution)},
+           Json::complexPair(component.modularityContribution)},
       });
     }
     componentText += "]";
     hierarchyText += Json::object({
         {"gamma", Json::number(slice.gamma)},
-        {"q", Json::number(slice.q)},
+        {"q", Json::complexPair(slice.q)},
+        {"objective_value", Json::number(slice.objectiveValue)},
         {"levels", Json::integer(static_cast<long long>(slice.levels))},
         {"restart_spread", Json::number(slice.restartSpread)},
         {"components", componentText},

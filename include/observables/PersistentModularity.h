@@ -810,11 +810,31 @@ private:
   RunResult runOnce(double gamma, std::uint64_t seed,
                     const PersistentModularityConfig &cfg) const;
 
+  /// The leading-eigenvector search: recursive spectral bisection producing
+  /// a single level-0 partition, plus one `SplitRead` per attempted
+  /// bisection appended to `splits`.
+  RunResult runLeadingEigenvector(double gamma,
+                                  const PersistentModularityConfig &cfg,
+                                  std::vector<SplitRead> *splits) const;
+
   /// Group total of the null-model degrees: ``S_g = sum_{i in g} k_i``,
   /// complex like the degrees themselves.
   struct GroupStrength {
     std::complex<double> total{0.0, 0.0};
   };
+
+  /// Which real symmetric part of the complex modularity matrix a spectral
+  /// step operates on.
+  ///
+  /// `B` is complex SYMMETRIC, so it has no real spectrum to take a leading
+  /// eigenvalue of.  `Re(B)` and `Im(B)` are each real symmetric, each
+  /// annihilates the all-ones vector on a group for the same row-sum reason
+  /// `B` does, and each therefore admits the exact dense solver and the
+  /// shifted iteration unchanged.  Bisecting on one of them PROPOSES a
+  /// split; acceptance is by exact `Q` either way, so the proposal being
+  /// heuristic costs nothing but a candidate.  A real graph has
+  /// `Im(B) = 0` and only the real part is ever consulted.
+  enum class ModularityPart { Real, Imaginary };
 
   /// The configuration null model `P` of the generalized modularity matrix
   /// `B_gamma = A - gamma P`, with `P_ij = k_i k_j / SA`.
@@ -880,9 +900,9 @@ private:
   /// its two signed channels, all precomputed.
   void applyGroupModularity(const std::vector<std::uint32_t> &group,
                             const std::vector<std::uint32_t> &positionOf,
-                            const std::vector<double> &groupDegree,
+                            const std::vector<std::complex<double>> &groupDegree,
                             const GroupStrength &groupStrength, double gamma,
-                            const std::vector<double> &x,
+                            ModularityPart part, const std::vector<double> &x,
                             std::vector<double> *out) const;
 
   /// The two most positive eigenvalues of `B_gamma` restricted to `group`,
@@ -893,11 +913,11 @@ private:
   /// that complement.
   bool denseLeadingPair(const std::vector<std::uint32_t> &group,
                         const std::vector<std::uint32_t> &positionOf,
-                        const std::vector<double> &groupDegree,
+                        const std::vector<std::complex<double>> &groupDegree,
                         const GroupStrength &groupStrength, double gamma,
-                        double *first,
-                        double *second,
-                        std::vector<double> *firstVector) const;
+                        ModularityPart part, double *first, double *second,
+                        std::vector<double> *firstVector,
+                        double *last, std::vector<double> *lastVector) const;
 
   /// Most positive eigenpair of `B_gamma` restricted to `group`, over the
   /// complement of the all-ones vector (which `B^g` always annihilates), by
@@ -907,8 +927,9 @@ private:
   /// when the iteration did not converge within `maxPowerIterations`.
   bool leadingEigenpair(const std::vector<std::uint32_t> &group,
                         const std::vector<std::uint32_t> &positionOf,
-                        const std::vector<double> &groupDegree,
+                        const std::vector<std::complex<double>> &groupDegree,
                         const GroupStrength &groupStrength, double gamma,
+                        ModularityPart part,
                         const PersistentModularityConfig &cfg,
                         const std::vector<double> *deflate,
                         double *eigenvalue,
@@ -920,8 +941,9 @@ private:
   /// moves at most once per pass, so a pass cannot cycle.
   void refineBisection(const std::vector<std::uint32_t> &group,
                        const std::vector<std::uint32_t> &positionOf,
-                       const std::vector<double> &groupDegree,
+                       const std::vector<std::complex<double>> &groupDegree,
                        const GroupStrength &groupStrength, double gamma,
+                       ModularityPart part,
                        std::vector<double> *signs) const;
 
   /// Canonical hashes and the compact slot map for one partition of the

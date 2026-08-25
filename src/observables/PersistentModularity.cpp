@@ -1183,85 +1183,82 @@ ResolutionSlice PersistentModularity::buildSlice(
 void PersistentModularity::applyGroupModularity(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
-    double gamma, const std::vector<double> &x,
-    std::vector<double> *out) const {
+    const std::vector<std::complex<double>> &groupDegree,
+    const GroupStrength &groupStrength, double gamma, ModularityPart part,
+    const std::vector<double> &x, std::vector<double> *out) const {
   const std::size_t ng = group.size();
   out->assign(ng, 0.0);
   const NullModel nullModel(*this);
-  // The null-model term needs its contractions of x over the group once:
-  // sum_{j in g} k_j x_j for the rank-one model, and the two per-sign
-  // contractions for the rank-two one.
-  Kahan kx;
-  Kahan kxPos;
-  Kahan kxNeg;
+  // The null-model term needs its contraction of x over the group once.
+  Kahan kxRe;
+  Kahan kxIm;
   for (std::size_t p = 0; p < ng; ++p) {
-    const std::uint32_t j = group[p];
-    if (!nullModel.isSigned()) {
-      kx.add(strength_[j] * x[p]);
-    } else {
-      kxPos.add(strengthPos_[j] * x[p]);
-      kxNeg.add(strengthNeg_[j] * x[p]);
-    }
+    const std::complex<double> k = strength_[group[p]];
+    kxRe.add(k.real() * x[p]);
+    kxIm.add(k.imag() * x[p]);
   }
-  const double kDotX = kx.value();
-  const double kDotXPos = kxPos.value();
-  const double kDotXNeg = kxNeg.value();
+  const std::complex<double> kDotX(kxRe.value(), kxIm.value());
   for (std::size_t p = 0; p < ng; ++p) {
     const std::uint32_t i = group[p];
-    Kahan row;
+    Kahan rowRe;
+    Kahan rowIm;
     for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
       const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
       const std::uint32_t q = positionOf[j];
       if (q == kNotInGroup) continue;  // outside the group: excluded by B^g
-      row.add(weights_[static_cast<std::size_t>(k)] * x[q]);
+      const std::complex<double> w = weights_[static_cast<std::size_t>(k)];
+      rowRe.add(w.real() * x[q]);
+      rowIm.add(w.imag() * x[q]);
     }
+    const std::complex<double> row(rowRe.value(), rowIm.value());
     // - gamma (P x)_i   and the diagonal correction that makes B^g
-    // annihilate the all-ones vector on the group.
-    const double diag =
-        groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total,
-                                            groupStrength.pos,
-                                            groupStrength.neg);
-    (*out)[p] =
-        row.value() -
-        nullModel.coupling(gamma, i, kDotX, kDotXPos, kDotXNeg) - x[p] * diag;
+    // annihilate the all-ones vector on the group.  The correction is a row
+    // sum, so it is independent of the null model's shape.
+    const std::complex<double> diag =
+        groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total);
+    const std::complex<double> value =
+        row - nullModel.coupling(gamma, i, kDotX) - x[p] * diag;
+    (*out)[p] = part == ModularityPart::Real ? value.real() : value.imag();
   }
 }
 
 bool PersistentModularity::denseLeadingPair(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
-    double gamma, double *first, double *second,
-    std::vector<double> *firstVector) const {
+    const std::vector<std::complex<double>> &groupDegree,
+    const GroupStrength &groupStrength, double gamma, ModularityPart part,
+    double *first, double *second, std::vector<double> *firstVector,
+    double *last, std::vector<double> *lastVector) const {
   const std::size_t ng = group.size();
   if (ng < 2) return false;
   const NullModel nullModel(*this);
+  const auto pick = [part](std::complex<double> z) {
+    return part == ModularityPart::Real ? z.real() : z.imag();
+  };
 
-  // Build B^g densely.  Symmetric by construction; the diagonal correction
-  // is what makes it annihilate the all-ones vector on the group.
+  // Build the chosen real symmetric part of B^g densely.  Symmetric by
+  // construction; the diagonal correction is what makes it annihilate the
+  // all-ones vector on the group.
   Eigen::MatrixXd b = Eigen::MatrixXd::Zero(
       static_cast<Eigen::Index>(ng), static_cast<Eigen::Index>(ng));
   for (std::size_t p = 0; p < ng; ++p) {
     const std::uint32_t i = group[p];
     for (std::size_t q = 0; q < ng; ++q) {
       const std::uint32_t j = group[q];
-      // -gamma P_ij: the contraction against the indicator of column j.
+      // -gamma P_ij: the null model contracted against column j's indicator.
       b(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(q)) =
-          -nullModel.coupling(gamma, i, strength_[j], strengthPos_[j],
-                              strengthNeg_[j]);
+          -pick(nullModel.coupling(gamma, i, strength_[j]));
     }
     for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
       const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
       const std::uint32_t q = positionOf[j];
       if (q == kNotInGroup) continue;
       b(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(q)) +=
-          weights_[static_cast<std::size_t>(k)];
+          pick(weights_[static_cast<std::size_t>(k)]);
     }
     b(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(p)) -=
-        groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total,
-                                            groupStrength.pos,
-                                            groupStrength.neg);
+        pick(groupDegree[p] -
+             nullModel.coupling(gamma, i, groupStrength.total));
   }
 
   // Restrict to the complement of the all-ones vector, which B^g always
@@ -1286,14 +1283,25 @@ bool PersistentModularity::denseLeadingPair(
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(reduced);
   if (solver.info() != Eigen::Success) return false;
   const Eigen::VectorXd &values = solver.eigenvalues();  // ascending
-  const Eigen::Index last = values.size() - 1;
-  *first = values(last);
-  *second = last >= 1 ? values(last - 1)
-                      : -std::numeric_limits<double>::infinity();
-  const Eigen::VectorXd top = perp * solver.eigenvectors().col(last);
+  const Eigen::Index lastIndex = values.size() - 1;
+  *first = values(lastIndex);
+  *second = lastIndex >= 1 ? values(lastIndex - 1)
+                           : -std::numeric_limits<double>::infinity();
+  const Eigen::VectorXd top = perp * solver.eigenvectors().col(lastIndex);
   firstVector->assign(ng, 0.0);
   for (std::size_t p = 0; p < ng; ++p) {
     (*firstVector)[p] = top(static_cast<Eigen::Index>(p));
+  }
+  // The MOST NEGATIVE eigenvector too: its sign pattern is the split that
+  // most lowers the quadratic form, which is the anti-community candidate.
+  // Returned as a candidate only -- what is accepted is decided by exact Q.
+  if (last != nullptr && lastVector != nullptr) {
+    *last = values(0);
+    const Eigen::VectorXd bottom = perp * solver.eigenvectors().col(0);
+    lastVector->assign(ng, 0.0);
+    for (std::size_t p = 0; p < ng; ++p) {
+      (*lastVector)[p] = bottom(static_cast<Eigen::Index>(p));
+    }
   }
   return true;
 }
@@ -1301,27 +1309,29 @@ bool PersistentModularity::denseLeadingPair(
 bool PersistentModularity::leadingEigenpair(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
-    double gamma, const PersistentModularityConfig &cfg,
-    const std::vector<double> *deflate, double *eigenvalue,
-    std::vector<double> *eigenvector) const {
+    const std::vector<std::complex<double>> &groupDegree,
+    const GroupStrength &groupStrength, double gamma, ModularityPart part,
+    const PersistentModularityConfig &cfg, const std::vector<double> *deflate,
+    double *eigenvalue, std::vector<double> *eigenvector) const {
   const std::size_t ng = group.size();
   const NullModel nullModel(*this);
+  const auto pick = [part](std::complex<double> z) {
+    return part == ModularityPart::Real ? z.real() : z.imag();
+  };
 
   // Gershgorin-style bound on the spectral radius of B^g, so B^g + beta I is
   // positive semidefinite and its dominant eigenpair is B^g's MOST POSITIVE
   // one.  Row i's absolute sum is bounded by sum_{j in g} |A_ij| plus the
   // null-model bound plus the diagonal magnitude.  The adjacency term must be
-  // the ABSOLUTE row sum: with signed weights k^g_i is a difference and can
-  // sit anywhere below it, so using it would under-bound the radius and the
-  // shifted iteration could converge to the most NEGATIVE eigenvalue.  On a
-  // nonnegative graph the two coincide, which is why the incumbent could use
-  // k^g_i directly.
+  // the ABSOLUTE row sum: once weights carry sign or phase the group degree
+  // is a difference and can sit anywhere below it, so it bounds nothing.  On
+  // a nonnegative graph the two coincide, which is why the incumbent could
+  // use the group degree directly.
   double beta = 0.0;
   for (std::size_t p = 0; p < ng; ++p) {
     const std::uint32_t i = group[p];
-    double rowAbs = groupDegree[p];
-    if (nullModel.isSigned()) {
+    double rowAbs = groupDegree[p].real();
+    if (signed_) {
       Kahan a;
       for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
         const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
@@ -1330,11 +1340,13 @@ bool PersistentModularity::leadingEigenpair(
       }
       rowAbs = a.value();
     }
-    const double nullTerm = nullModel.coupling(
-        gamma, i, groupStrength.total, groupStrength.pos, groupStrength.neg);
-    const double nullBound = nullModel.couplingBound(
-        gamma, i, groupStrength.total, groupStrength.pos, groupStrength.neg);
-    const double diag = groupDegree[p] - nullTerm;
+    const double nullBound =
+        signed_ ? nullModel.couplingBound(gamma, i,
+                                          std::abs(groupStrength.total))
+                : nullModel.coupling(gamma, i, groupStrength.total).real();
+    const double diag =
+        pick(groupDegree[p] -
+             nullModel.coupling(gamma, i, groupStrength.total));
     beta = std::max(beta, rowAbs + nullBound + std::abs(diag));
   }
   beta = beta > 0.0 ? beta * 1.0625 : 1.0;  // margin against round-off
@@ -1391,7 +1403,7 @@ bool PersistentModularity::leadingEigenpair(
   const int maxIterations = std::max(1, cfg.maxPowerIterations);
   for (int it = 0; it < maxIterations; ++it) {
     applyGroupModularity(group, positionOf, groupDegree, groupStrength, gamma,
-                         v, &w);
+                         part, v, &w);
     Kahan rq;
     for (std::size_t p = 0; p < ng; ++p) rq.add(v[p] * w[p]);
     rayleigh = rq.value();
@@ -1407,8 +1419,8 @@ bool PersistentModularity::leadingEigenpair(
     previous = rayleigh;
   }
   // One final Rayleigh quotient on the converged vector.
-  applyGroupModularity(group, positionOf, groupDegree, groupStrength, gamma, v,
-                       &w);
+  applyGroupModularity(group, positionOf, groupDegree, groupStrength, gamma,
+                       part, v, &w);
   Kahan rq;
   for (std::size_t p = 0; p < ng; ++p) rq.add(v[p] * w[p]);
   *eigenvalue = rq.value();
@@ -1419,8 +1431,9 @@ bool PersistentModularity::leadingEigenpair(
 void PersistentModularity::refineBisection(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
-    double gamma, std::vector<double> *signs) const {
+    const std::vector<std::complex<double>> &groupDegree,
+    const GroupStrength &groupStrength, double gamma, ModularityPart part,
+    std::vector<double> *signs) const {
   const std::size_t ng = group.size();
   if (ng < 3) return;
   // delta-Q of the split by s is (1/4m) s^T B^g s.  Flipping s_i changes the
@@ -1432,33 +1445,33 @@ void PersistentModularity::refineBisection(
   double cumulative = 0.0;
   double bestGain = 0.0;
   const NullModel nullModel(*this);
+  const auto pick = [part](std::complex<double> z) {
+    return part == ModularityPart::Real ? z.real() : z.imag();
+  };
   for (std::size_t pass = 0; pass < ng; ++pass) {
     applyGroupModularity(group, positionOf, groupDegree, groupStrength, gamma,
-                         *signs, &f);
-    std::size_t pick = ng;
+                         part, *signs, &f);
+    std::size_t pick_ = ng;
     double pickGain = -std::numeric_limits<double>::infinity();
     for (std::size_t p = 0; p < ng; ++p) {
       if (moved[p]) continue;
       const std::uint32_t i = group[p];
       const double diag =
-          groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total,
-                                              groupStrength.pos,
-                                              groupStrength.neg);
+          pick(groupDegree[p] -
+               nullModel.coupling(gamma, i, groupStrength.total));
       // B_ii within B^g: the A_ii term is zero (no self-loops at level 0),
       // minus the null-model diagonal, minus the group-diagonal correction.
-      const double bii = -nullModel.coupling(gamma, i, strength_[i],
-                                             strengthPos_[i],
-                                             strengthNeg_[i]) -
-                         diag;
+      const double bii =
+          -pick(nullModel.coupling(gamma, i, strength_[i])) - diag;
       const double gain = -4.0 * (*signs)[p] * (f[p] - bii * (*signs)[p]);
       if (gain > pickGain) {
         pickGain = gain;
-        pick = p;
+        pick_ = p;
       }
     }
-    if (pick == ng) break;
-    (*signs)[pick] = -(*signs)[pick];
-    moved[pick] = true;
+    if (pick_ == ng) break;
+    (*signs)[pick_] = -(*signs)[pick_];
+    moved[pick_] = true;
     cumulative += pickGain;
     if (cumulative > bestGain) {
       bestGain = cumulative;
@@ -1483,7 +1496,7 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
   g.indptr = indptr_;
   g.indices = indices_;
   g.weights = weights_;
-  g.selfW.assign(n0, 0.0);
+  g.selfW.assign(n0, std::complex<double>(0.0, 0.0));
   g.strength = strength_;
   g.nodeRank.resize(n0);
   g.nodeHash.resize(n0);
@@ -1540,73 +1553,164 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
       for (const std::uint32_t i : group) positionOf[i] = kNotInGroup;
     };
 
-    // k^g and S_g (with its two signed channels) for the generalized
-    // modularity matrix.
-    std::vector<double> groupDegree(group.size(), 0.0);
-    Kahan strengthSum;
-    Kahan strengthSumPos;
-    Kahan strengthSumNeg;
+    // k^g and S_g for the generalized modularity matrix.
+    std::vector<std::complex<double>> groupDegree(group.size(),
+                                                  std::complex<double>(0.0, 0.0));
+    Kahan strengthSumRe;
+    Kahan strengthSumIm;
     for (std::size_t p = 0; p < group.size(); ++p) {
       const std::uint32_t i = group[p];
-      strengthSum.add(strength_[i]);
-      if (signed_) {
-        strengthSumPos.add(strengthPos_[i]);
-        strengthSumNeg.add(strengthNeg_[i]);
-      }
-      Kahan d;
+      strengthSumRe.add(strength_[i].real());
+      strengthSumIm.add(strength_[i].imag());
+      Kahan dRe;
+      Kahan dIm;
       for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
         const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
         if (positionOf[j] == kNotInGroup) continue;
-        d.add(weights_[static_cast<std::size_t>(k)]);
+        dRe.add(weights_[static_cast<std::size_t>(k)].real());
+        dIm.add(weights_[static_cast<std::size_t>(k)].imag());
       }
-      groupDegree[p] = d.value();
+      groupDegree[p] = std::complex<double>(dRe.value(), dIm.value());
     }
     GroupStrength groupStrength;
-    groupStrength.total = strengthSum.value();
-    groupStrength.pos = strengthSumPos.value();
-    groupStrength.neg = strengthSumNeg.value();
+    groupStrength.total =
+        std::complex<double>(strengthSumRe.value(), strengthSumIm.value());
+
+    // Candidate bisection directions.  On a real graph under the Score
+    // objective there is exactly ONE -- the leading eigenvector of Re(B) --
+    // and the search is the incumbent's, unchanged.  Otherwise the most
+    // NEGATIVE eigenvector is a candidate too (it is the anti-community
+    // split, which the most positive one cannot propose), and so is each
+    // extreme of Im(B), whose sign pattern separates cells by the ARGUMENT
+    // of their coupling rather than its real part.  All are PROPOSALS;
+    // acceptance below is by exact Q, so a useless candidate costs one
+    // evaluation and nothing else.
+    struct Candidate {
+      ModularityPart part;
+      bool trailing;
+    };
+    std::vector<Candidate> candidates;
+    candidates.push_back({ModularityPart::Real, false});
+    const bool wantMagnitude =
+        complex_ || cfg.objective == ModularityObjective::Magnitude;
+    if (wantMagnitude) candidates.push_back({ModularityPart::Real, true});
+    if (complex_) {
+      candidates.push_back({ModularityPart::Imaginary, false});
+      candidates.push_back({ModularityPart::Imaginary, true});
+    }
+
+    const auto objectiveOf = [&](std::complex<double> q) {
+      return wantMagnitude ? std::abs(q) : q.real();
+    };
+    std::vector<int> before(n0);
+    for (std::size_t i = 0; i < n0; ++i) before[i] = static_cast<int>(labels[i]);
+    const std::complex<double> qBefore = modularityGamma(before, gamma);
 
     double lambda1 = 0.0;
     double lambda2 = 0.0;
     std::vector<double> v1;
-    bool haveBoth = false;
-    if (group.size() <= cfg.denseEigenSolveMaxGroup) {
-      // Exact: no convergence question, which matters precisely because the
-      // near-degenerate case the gap adjudicates is where iteration is
-      // slowest.  Deciding degeneracy with a method that converges only when
-      // the pair is well separated would be circular.
-      haveBoth = denseLeadingPair(group, positionOf, groupDegree,
-                                  groupStrength, gamma, &lambda1, &lambda2,
-                                  &v1);
-    }
-    if (!haveBoth) {
-      const bool converged1 =
-          leadingEigenpair(group, positionOf, groupDegree, groupStrength, gamma,
-                           cfg, nullptr, &lambda1, &v1);
-      read.leadingEigenvalue = converged1
-                                   ? lambda1
-                                   : std::numeric_limits<double>::quiet_NaN();
-      if (!converged1) {
-        read.reason = SplitReason::kPowerIterationNotConverged;
-        read.resolved = false;
-        splits->push_back(std::move(read));
-        clearPositions();
+    bool anyPositive = false;
+    bool anyDegenerate = false;
+    bool notConverged = false;
+    bool haveBest = false;
+    double bestObjective = objectiveOf(qBefore);
+    std::complex<double> bestQ = qBefore;
+    std::vector<std::uint32_t> bestA;
+    std::vector<std::uint32_t> bestB;
+
+    for (const Candidate &candidate : candidates) {
+      double first = 0.0;
+      double second = 0.0;
+      double lastValue = 0.0;
+      std::vector<double> firstVector;
+      std::vector<double> lastVector;
+      bool haveBoth = false;
+      if (group.size() <= cfg.denseEigenSolveMaxGroup) {
+        // Exact: no convergence question, which matters precisely because
+        // the near-degenerate case the gap adjudicates is where iteration is
+        // slowest.  Deciding degeneracy with a method that converges only
+        // when the pair is well separated would be circular.
+        haveBoth = denseLeadingPair(group, positionOf, groupDegree,
+                                    groupStrength, gamma, candidate.part,
+                                    &first, &second, &firstVector, &lastValue,
+                                    &lastVector);
+      }
+      if (!haveBoth) {
+        if (candidate.trailing) continue;  // no iterative route to the tail
+        const bool converged1 = leadingEigenpair(
+            group, positionOf, groupDegree, groupStrength, gamma,
+            candidate.part, cfg, nullptr, &first, &firstVector);
+        if (!converged1) {
+          notConverged = true;
+          continue;
+        }
+        std::vector<double> v2;
+        const bool converged2 = leadingEigenpair(
+            group, positionOf, groupDegree, groupStrength, gamma,
+            candidate.part, cfg, &firstVector, &second, &v2);
+        if (!converged2) {
+          notConverged = true;
+          continue;
+        }
+      }
+      const bool isPrimary = candidate.part == ModularityPart::Real &&
+                             !candidate.trailing;
+      if (isPrimary) {
+        lambda1 = first;
+        lambda2 = second;
+        v1 = firstVector;
+      }
+      const double value = candidate.trailing ? -lastValue : first;
+      if (value <= cfg.leadingEigenvalueTolerance) continue;
+      anyPositive = true;
+      if (isPrimary && first - second < cfg.minEigenvalueGap) {
+        // The leading pair is (near-)degenerate: the eigenvector, and so the
+        // sign pattern, is not determined.  Refuse rather than bisect on it.
+        anyDegenerate = true;
         continue;
       }
-      std::vector<double> v2;
-      const bool converged2 =
-          leadingEigenpair(group, positionOf, groupDegree, groupStrength, gamma,
-                           cfg, &v1, &lambda2, &v2);
-      if (!converged2) {
-        read.reason = SplitReason::kPowerIterationNotConverged;
-        read.resolved = false;
-        splits->push_back(std::move(read));
-        clearPositions();
-        continue;
+      std::vector<double> signs(group.size());
+      const std::vector<double> &source =
+          candidate.trailing ? lastVector : firstVector;
+      for (std::size_t p = 0; p < group.size(); ++p) {
+        signs[p] = source[p] >= 0.0 ? 1.0 : -1.0;
+      }
+      if (cfg.kernighanLinRefinement) {
+        refineBisection(group, positionOf, groupDegree, groupStrength, gamma,
+                        candidate.part, &signs);
+      }
+      std::vector<std::uint32_t> sideA;
+      std::vector<std::uint32_t> sideB;
+      for (std::size_t p = 0; p < group.size(); ++p) {
+        (signs[p] >= 0.0 ? sideA : sideB).push_back(group[p]);
+      }
+      if (sideA.empty() || sideB.empty()) continue;
+      // Accept only on an exact improvement of the SAME closed form the
+      // incumbent is scored by, so the two strategies remain comparable.
+      std::vector<int> after = before;
+      for (const std::uint32_t i : sideB) after[i] = static_cast<int>(nextLabel);
+      const std::complex<double> qAfter = modularityGamma(after, gamma);
+      const double objectiveAfter = objectiveOf(qAfter);
+      if (objectiveAfter > bestObjective) {
+        bestObjective = objectiveAfter;
+        bestQ = qAfter;
+        bestA = std::move(sideA);
+        bestB = std::move(sideB);
+        haveBest = true;
       }
     }
-    read.leadingEigenvalue = lambda1;
-    if (lambda1 <= cfg.leadingEigenvalueTolerance) {
+
+    read.leadingEigenvalue =
+        notConverged && v1.empty() ? std::numeric_limits<double>::quiet_NaN()
+                                   : lambda1;
+    if (notConverged && !haveBest) {
+      read.reason = SplitReason::kPowerIterationNotConverged;
+      read.resolved = false;
+      splits->push_back(std::move(read));
+      clearPositions();
+      continue;
+    }
+    if (!anyPositive) {
       // Newman's stopping rule: no bisection of this group raises Q.
       read.reason = SplitReason::kNoPositiveEigenvalue;
       read.resolved = true;
@@ -1616,53 +1720,23 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
     }
     read.secondEigenvalue = lambda2;
     read.eigenvalueGap = lambda1 - lambda2;
-    if (read.eigenvalueGap < cfg.minEigenvalueGap) {
-      // The leading pair is (near-)degenerate: the eigenvector, and so the
-      // sign pattern, is not determined.  Refuse rather than bisect on it.
+    if (!haveBest && anyDegenerate) {
       read.reason = SplitReason::kDegenerateLeadingPair;
       read.resolved = false;
       splits->push_back(std::move(read));
       clearPositions();
       continue;
     }
-
-    std::vector<double> signs(group.size());
-    for (std::size_t p = 0; p < group.size(); ++p) {
-      signs[p] = v1[p] >= 0.0 ? 1.0 : -1.0;
-    }
-    if (cfg.kernighanLinRefinement) {
-      refineBisection(group, positionOf, groupDegree, groupStrength, gamma,
-                      &signs);
-    }
-    std::vector<std::uint32_t> sideA;
-    std::vector<std::uint32_t> sideB;
-    for (std::size_t p = 0; p < group.size(); ++p) {
-      (signs[p] >= 0.0 ? sideA : sideB).push_back(group[p]);
-    }
-    if (sideA.empty() || sideB.empty()) {
-      read.reason = SplitReason::kEmptySide;
-      read.resolved = true;
-      splits->push_back(std::move(read));
-      clearPositions();
-      continue;
-    }
-
-    // Accept only on an exact improvement of the SAME closed form the
-    // incumbent is scored by, so the two strategies remain comparable.
-    std::vector<int> before(n0);
-    for (std::size_t i = 0; i < n0; ++i) before[i] = static_cast<int>(labels[i]);
-    std::vector<int> after = before;
-    for (const std::uint32_t i : sideB) after[i] = static_cast<int>(nextLabel);
-    const double qBefore = modularityGamma(before, gamma);
-    const double qAfter = modularityGamma(after, gamma);
-    read.deltaQ = qAfter - qBefore;
-    if (read.deltaQ <= 0.0) {
+    if (!haveBest) {
       read.reason = SplitReason::kSplitLowersModularity;
       read.resolved = true;
       splits->push_back(std::move(read));
       clearPositions();
       continue;
     }
+    read.deltaQ = bestObjective - objectiveOf(qBefore);
+    std::vector<std::uint32_t> sideA = std::move(bestA);
+    std::vector<std::uint32_t> sideB = std::move(bestB);
 
     for (const std::uint32_t i : sideB) labels[i] = nextLabel;
     ++nextLabel;
@@ -1694,7 +1768,8 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
     Hash128 h;
     h.mixString(g.nodeHash[s]);
     h.mixString(g.nodeHash[t]);
-    h.mix(Mix::bits(orientedW_[e]));
+    h.mix(Mix::bits(orientedW_[e].real()));
+    h.mix(Mix::bits(orientedW_[e].imag()));
     tokens[labels[s]].push_back(h.lane());
   }
   std::vector<std::uint32_t> slotToCompact;
@@ -1715,6 +1790,9 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
   // split is scored by the exact cold form above, so the two agree by
   // construction rather than by a separate accumulation.
   out.qIncremental = out.qCold;
+  out.objective = (complex_ || cfg.objective == ModularityObjective::Magnitude)
+                      ? std::abs(out.qCold)
+                      : out.qCold.real();
   out.communities = hashes.size();
   out.sortedFinalHashes = hashes;
   return out;
