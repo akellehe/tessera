@@ -618,9 +618,15 @@ interval; `reason` then names which, and is empty when available.)doc")
                 },
                 py::arg("spacetime"),
                 R"doc(Census of the one-skeleton's causal characters and
-whether CausalExpNegAbsLength can be read from it.  Read-only; asks the
-same Edge.disposition() classifier the weight map uses, so a True here is
-exactly the condition under which fromSpacetime will not raise.)doc")
+whether CausalPhaseExpNegAbsLength can be read from it.  Read-only; asks
+the same Edge.disposition() classifier, so a True here is exactly the
+condition under which fromSpacetime will not raise.
+
+A MIXED count does NOT make the map unavailable -- the complex weight
+carries a generic argument as readily as a definite one.  Only a genuine
+absence does.  The mixed FRACTION is still worth reading: it is the #870
+diagnostic, and it should FALL if relaxation is imposing causal
+character.)doc")
       .def_static("fromWeightedEdges",
                 &PersistentModularity::fromWeightedEdges,
                 py::arg("src"), py::arg("tgt"), py::arg("weight"),
@@ -631,9 +637,8 @@ summation; self-loops are ignored, as are edges whose consolidated weight is
 zero -- a measured absence of net similarity).  Raises ValueError on
 non-finite weights or mismatched lengths.
 
-A negative weight anywhere switches the score to the signed null model; a
-wholly nonnegative edge list scores bit-identically to before that branch
-existed.)doc")
+A wholly nonnegative edge list scores bit-identically to what it always
+has.  See fromComplexWeightedEdges for the general domain.)doc")
       .def_static("fromComplexWeightedEdges",
                 &PersistentModularity::fromComplexWeightedEdges,
                 py::arg("src"), py::arg("tgt"), py::arg("weight"),
@@ -655,10 +660,11 @@ depend on which end you read it from.)doc")
                   py::arg("map") =
                       PersistentModularity::WeightMap::ExpNegAbsLength,
                   R"doc(Build the similarity graph from the spacetime
-one-skeleton (read-only).  With CausalExpNegAbsLength this raises
+one-skeleton (read-only).  With CausalPhaseExpNegAbsLength this raises
 ValueError, naming the reason, when causalWeightAvailability() reports the
-map unreadable -- an unreadable causal character is refused, never
-substituted with a magnitude.)doc")
+map unreadable.  That happens only for a genuine ABSENCE -- a degenerate
+edge has no argument to carry, and arg(0) is not a reading of anything.  An
+indefinite argument is not an absence and is carried as it stands.)doc")
       .def("nCells", &PersistentModularity::nCells)
       .def("nEdges", &PersistentModularity::nEdges)
       .def("isComplex", &PersistentModularity::isComplex,

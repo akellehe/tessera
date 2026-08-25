@@ -242,6 +242,22 @@ def _finite(value):
     return out if math.isfinite(out) else None
 
 
+def _score_scalar(value):
+    """The real ordered scalar of a (possibly complex) modularity score.
+
+    Q is complex in general (#849): its magnitude is how much structure a
+    partition has and its argument is what kind.  A comparison needs one real
+    number, and this is the same rule the library's ``objectiveValue`` uses --
+    the score itself where Q is real, its magnitude where it is not.  The
+    unreduced value is reported alongside wherever this appears, so nothing is
+    lost by taking it.
+    """
+    if value is None:
+        return None
+    z = complex(value)
+    return _finite(z.real if z.imag == 0.0 else abs(z))
+
+
 def _complex_pair(value):
     if value is None:
         return None
@@ -638,7 +654,8 @@ def run_member(size, seed, config, commit, config_hash):
     for slice_read in report.slices:
         slices.append({
             "gamma": _finite(slice_read.gamma),
-            "q": _finite(slice_read.q),
+            "q": _finite(slice_read.objectiveValue),
+            "q_complex": _complex_pair(slice_read.q),
             "levels": int(slice_read.levels),
             "restart_spread": _finite(slice_read.restartSpread),
             "components": len(slice_read.components),
@@ -669,7 +686,10 @@ def run_member(size, seed, config, commit, config_hash):
                       if analysis_report.slices else None)
     record["analysis_modularity"] = {
         "gamma": config["analysis_resolution"],
-        "q": _finite(analysis_slice.q) if analysis_slice else None,
+        "q": (_finite(analysis_slice.objectiveValue)
+              if analysis_slice else None),
+        "q_complex": (_complex_pair(analysis_slice.q)
+                      if analysis_slice else None),
         "levels": int(analysis_slice.levels) if analysis_slice else None,
         "restart_spread": (_finite(analysis_slice.restartSpread)
                            if analysis_slice else None),
@@ -680,10 +700,10 @@ def run_member(size, seed, config, commit, config_hash):
     record["components"] = [
         {
             "volume": len(component.support),
-            "strength": _finite(component.strength),
+            "strength": _complex_pair(component.strength),
             "conductance": _finite(component.conductance),
-            "internal_weight": _finite(component.internalWeight),
-            "modularity_contribution": _finite(
+            "internal_weight": _complex_pair(component.internalWeight),
+            "modularity_contribution": _complex_pair(
                 component.modularityContribution),
         }
         for component in components
@@ -1399,7 +1419,7 @@ def _certified_read_vector(spacetime, components, tracker, config):
             for cell in component.support:
                 if cell in index_of:
                     labels[index_of[cell]] = label
-        modularity_q = _finite(graph.modularityGamma(
+        modularity_q = _score_scalar(graph.modularityGamma(
             labels, config["analysis_resolution"]))
     except Exception:                                     # noqa: BLE001
         modularity_q = None
@@ -1506,8 +1526,11 @@ def negative_controls(size, config):
     controls.append(_control(
         "destroyed_modularity",
         "randomly permuting the discovered partition's labels collapses Q",
-        random_q < true_q,
-        {"discovered_q": _finite(true_q), "shuffled_q": _finite(random_q),
+        _score_scalar(random_q) < _score_scalar(true_q),
+        {"discovered_q": _score_scalar(true_q),
+         "shuffled_q": _score_scalar(random_q),
+         "discovered_q_complex": _complex_pair(true_q),
+         "shuffled_q_complex": _complex_pair(random_q),
          "cells": len(cell_ids)}))
 
     # --- 3. modularity resolution-limit graph ----------------------------

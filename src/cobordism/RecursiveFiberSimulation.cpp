@@ -1295,8 +1295,11 @@ void MultiCobordism::runRecursiveAnalysisOn(
     componentText += "]";
     hierarchyText += Json::object({
         {"gamma", Json::number(slice.gamma)},
-        {"q", Json::complexPair(slice.q)},
-        {"objective_value", Json::number(slice.objectiveValue)},
+        // `q` stays the real ordered scalar the search maximized, so a
+        // reader can compare two runs; the unreduced complex score is
+        // alongside it rather than in place of it.
+        {"q", Json::number(slice.objectiveValue)},
+        {"q_complex", Json::complexPair(slice.q)},
         {"levels", Json::integer(static_cast<long long>(slice.levels))},
         {"restart_spread", Json::number(slice.restartSpread)},
         {"components", componentText},
