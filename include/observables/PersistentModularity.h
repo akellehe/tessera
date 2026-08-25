@@ -375,10 +375,12 @@ struct InvalidationRead {
 /// Label-free discovery of connected modular components that persist across
 /// resolution and cobordism time (ticket #765).
 ///
-/// **Domain and exact identities.**  The input is a finite nonnegative
-/// weighted undirected similarity graph (the complex's one-skeleton under a
-/// documented monotone weight map; see :class:`WeightMap`).  On that domain
-/// the class evaluates generalized modularity exactly:
+/// **Domain and exact identities.**  The input is a finite REAL weighted
+/// undirected graph (the complex's one-skeleton under a documented weight
+/// map; see :class:`WeightMap`).  Weights may be signed.  Two scoring
+/// branches are selected by the graph itself, never by a flag:
+///
+/// *Unsigned branch* — every weight nonnegative.  Generalized modularity
 ///
 ///   Q_gamma(P) = (1/2m) sum_ij (A_ij - gamma k_i k_j / (2m)) [c_i = c_j],
 ///
@@ -390,18 +392,60 @@ struct InvalidationRead {
 ///   dQ(v: a -> b) = (w_vb - w_va)/m - gamma k_v (k_v + S_b - S_a) / (2 m^2),
 ///
 /// evaluated in O(deg v) from the cached community totals, so one complete
-/// local-move sweep is near O(|E|) (up to revisits).  These identities are
-/// exact in double arithmetic; incremental accumulations use compensated
-/// summation and are tested against cold recomputation at the ~1e-15..1e-14
-/// double round-off standard.
+/// local-move sweep is near O(|E|) (up to revisits).
+///
+/// *Signed branch* — at least one negative weight.  The configuration null
+/// model is undefined on a signed graph: `2m` can vanish or go negative, and
+/// the model is derived from a degree-preserving rewiring of a NONNEGATIVE
+/// graph.  This class therefore uses the standard signed generalization of
+/// Gomez, Jensen and Arenas (2009), which carries a separate null model per
+/// sign.  With `A = A+ - A-`, `2m± = sum_ij A±_ij`, `T = 2m+ + 2m-`:
+///
+///   Q_gamma(P) = (1/T) sum_ij [ A_ij
+///                  - gamma (k_i+ k_j+ / 2m+ - k_i- k_j- / 2m-) ] [c_i = c_j],
+///
+/// with the vanishing-null-model convention that a sign contributing no
+/// weight contributes no null term (`2m± = 0` makes its whole term zero
+/// rather than 0/0).  Its move gain is the same closed form with the null
+/// contribution split across the two channels:
+///
+///   dQ(v: a -> b) = 2 (w_vb - w_va) / T
+///                 - (2 gamma / T) [ k_v+ (k_v+ + S_b+ - S_a+) / 2m+
+///                                 - k_v- (k_v- + S_b- - S_a-) / 2m- ].
+///
+/// **The unsigned branch is not the signed one specialized.**  It runs the
+/// identical arithmetic it always has, so a nonnegative graph scores
+/// BIT-IDENTICALLY to every previous release — the two differ in floating
+/// point association even where they agree algebraically, and the guarantee
+/// worth having is the exact one.  The signed formula does reduce to the
+/// unsigned formula algebraically when `A- = 0`, which is what makes this a
+/// generalization rather than a second method.
+///
+/// These identities are exact in double arithmetic; incremental
+/// accumulations use compensated summation and are tested against cold
+/// recomputation at the ~1e-15..1e-14 double round-off standard.
+///
+/// **Complex weights are refused, not reduced.**  A complex `A` makes `Q`
+/// complex, and a complex `Q` has no ordering, so "maximize Q" is not a
+/// statement.  Every real-valued reduction of it either discards a component
+/// — which the geometry's imaginary part forbids, being physics rather than
+/// residue — or folds the two into a magnitude, and `|Q|` rewards
+/// anti-community structure exactly as much as community structure because
+/// `Q < 0` means "worse than the null model".  Neither is a modularity.  So
+/// the causal weight map is available only where every edge has a DEFINITE
+/// disposition, and refuses BY NAME otherwise
+/// (:func:`causalWeightAvailability`).  Note what this buys: in the definite
+/// regime `Im(l^2)` is zero to within the declared angular tolerance, so
+/// taking the causal SIGN there discards nothing measurable.  The refusal
+/// falls exactly where discarding would begin.
 ///
 /// **Heuristic status (mandatory reading).**  Global modularity maximization
 /// is NP-hard; the discovery is a deterministic multilevel aggregation from
 /// a fixed seed sequence that retains the best exact score and reports the
-/// restart spread honestly.  Nothing here claims the global optimum, and the
-/// Newman-Girvan / generalized-modularity score runs on a combinatorial /
-/// nonnegative one-skeleton: it is blind to signed and complex Hodge
-/// weights.  Modularity is a heuristic proposal generator only.  Nothing in
+/// restart spread honestly.  Nothing here claims the global optimum, and
+/// that is unchanged by which weight map feeds it: seeing the causal
+/// structure makes the PROPOSAL better informed, not certified.  Modularity
+/// is a heuristic proposal generator only.  Nothing in
 /// this class may enter the emergence objective, and a modularity read may
 /// never veto an otherwise certified fiber — fiber acceptance rests solely
 /// on the independent weight-aware gap/localization/leakage/persistence/
@@ -427,26 +471,76 @@ struct InvalidationRead {
 /// sufficient-statistics caches live inside each discovery run).
 class PersistentModularity {
 public:
-  /// The documented monotone map from complex edge magnitude to similarity
-  /// weight.  Nothing else is silently mixed into
-  /// the metric.
+  /// The documented map from edge geometry to similarity weight.  Nothing
+  /// else is silently mixed into the metric.
   enum class WeightMap {
     /// w = 1 per edge: the combinatorial one-skeleton, exactly the graph the
     /// legacy Newman-Girvan reads (SparseGraph::modularity,
-    /// Spacetime::modularityOnSkeleton) score.
+    /// Spacetime::modularityOnSkeleton) score.  Causally blind by
+    /// construction, and honestly so: it reads no geometry at all.
     Unit,
     /// w = exp(-|l|), l the complex edge length: monotone decreasing in the
     /// edge magnitude (the mutual-information convention l = -log I), values
-    /// in (0, 1].
+    /// in (0, 1].  CAUSALLY BLIND — it reads only the Euclidean modulus, so a
+    /// timelike and a spacelike edge of equal magnitude receive the identical
+    /// weight.
     ExpNegAbsLength,
+    /// w = s * exp(-|l|), s the edge's causal sign: +1 spacelike, -1 timelike,
+    /// 0 lightlike.  The same similarity magnitude as `ExpNegAbsLength`,
+    /// signed by the causal character `Edge::disposition()` reads from
+    /// arg(l^2).  Available only where every edge has a DEFINITE disposition;
+    /// see :func:`causalWeightAvailability`.
+    CausalExpNegAbsLength,
   };
 
-  /// Build from an explicit nonnegative weighted edge list.  Cells are
-  /// identified by arbitrary 64-bit ids; the node set is the union of the
+  /// Why a causal weight map is or is not available on a complex, with the
+  /// disposition census that decides it.  Counts are measured; `reason` is
+  /// empty exactly when `available` is true.
+  struct CausalWeightRead {
+    std::size_t spacelike = 0;
+    std::size_t timelike = 0;
+    std::size_t lightlike = 0;
+    /// Edges with no definite causal character (arg(l^2) generic).  Any one
+    /// of these makes the causal map unavailable.
+    std::size_t mixed = 0;
+    /// Absent edges (|l|_E below `Edge::kDegenerateEpsilon`); not a causal
+    /// type and not scored either way.
+    std::size_t degenerate = 0;
+    bool available = false;
+    /// One of :class:`CausalWeightReason` when unavailable; empty otherwise.
+    std::string reason;
+  };
+
+  /// Named reasons a causal weight map is unavailable.  Constants rather than
+  /// literals: the reason is produced here and compared elsewhere, and a typo
+  /// in either place would not fail to compile.
+  struct CausalWeightReason {
+    /// At least one edge has a generic arg(l^2).  Assigning it a causal sign
+    /// would invent a definiteness the geometry does not have, which is
+    /// exactly what the disposition classification refuses to do.
+    static constexpr const char *kMixedCausalCharacter =
+        "mixed-causal-character";
+    /// The complex carries no scorable edge at all.
+    static constexpr const char *kNoScorableEdges = "no-scorable-edges";
+  };
+
+  /// The disposition census of `st`'s one-skeleton and whether
+  /// `CausalExpNegAbsLength` can be applied to it.  Read-only; a caller may
+  /// ask before constructing, and :func:`fromSpacetime` throws with the same
+  /// named reason when it cannot.
+  static CausalWeightRead causalWeightAvailability(const Spacetime &st);
+
+  /// Build from an explicit REAL weighted edge list, signed or not.  Cells
+  /// are identified by arbitrary 64-bit ids; the node set is the union of the
   /// endpoint ids and ``isolatedCells``.  Parallel edges are consolidated by
   /// weight summation; self-loops and zero-weight edges are ignored at
-  /// level 0.  Throws std::invalid_argument on negative weights or
-  /// mismatched array lengths.
+  /// level 0 — including a pair whose weights CANCEL to zero, which is a
+  /// measured absence of net similarity rather than a dropped edge.  Throws
+  /// std::invalid_argument on non-finite weights or mismatched lengths.
+  ///
+  /// Negative weights select the signed scoring described on this class; a
+  /// wholly nonnegative list takes the unsigned path and is bit-identical to
+  /// what it has always produced.
   static PersistentModularity fromWeightedEdges(
       const std::vector<std::uint64_t> &src,
       const std::vector<std::uint64_t> &tgt,
@@ -460,8 +554,19 @@ public:
 
   std::size_t nCells() const noexcept { return nNodes_; }
   std::size_t nEdges() const noexcept { return nEdges_; }
-  /// Total adjacency weight 2m = sum_ij A_ij.
+  /// True when some edge weight is negative, so scoring uses the signed
+  /// (rank-two) null model.  A property of the graph, not a setting: no
+  /// caller selects the branch.
+  bool isSigned() const noexcept { return signed_; }
+  /// Total adjacency weight: 2m = sum_ij A_ij on a nonnegative graph, and
+  /// T = 2m+ + 2m- (the total ABSOLUTE weight) when ``isSigned()``, that
+  /// being the normalizer the signed score divides by.
   double totalWeight2() const noexcept { return twoM_; }
+  /// 2m+, the positive channel's total weight (0 unless ``isSigned()``).
+  double totalWeight2Positive() const noexcept { return twoMPos_; }
+  /// 2m-, the negative channel's total magnitude, a NONNEGATIVE number
+  /// (0 unless ``isSigned()``).
+  double totalWeight2Negative() const noexcept { return twoMNeg_; }
   /// The cell ids in internal storage order (input first-appearance order;
   /// carries no convention).
   const std::vector<std::uint64_t> &cellIds() const noexcept {
@@ -561,8 +666,18 @@ private:
   std::vector<std::int64_t> indptr_;
   std::vector<std::uint32_t> indices_;
   std::vector<double> weights_;
-  std::vector<double> strength_;          // k_i
-  double twoM_ = 0.0;                     // 2m
+  std::vector<double> strength_;          // k_i (signed sum)
+  double twoM_ = 0.0;                     // 2m (signed sum; T in the signed
+                                          // branch, where it is 2m+ + 2m-)
+  // Per-sign channels.  `signed_` is the branch selector and is decided by
+  // the graph, not by a caller flag: it is true exactly when some edge weight
+  // is negative.  The strength vectors are always sized so every index is
+  // valid; the unsigned branch leaves them zero and never reads them.
+  bool signed_ = false;
+  std::vector<double> strengthPos_;       // k_i+
+  std::vector<double> strengthNeg_;       // k_i-  (nonnegative magnitudes)
+  double twoMPos_ = 0.0;                  // 2m+
+  double twoMNeg_ = 0.0;                  // 2m-
   std::vector<std::uint64_t> cellIds_;    // internal index -> cell id
   // Consolidated edges with their stored (input) orientation: the oriented
   // incidence used for level-1 identity hashing and exact cold recomputes.
@@ -584,6 +699,77 @@ private:
   RunResult runOnce(double gamma, std::uint64_t seed,
                     const PersistentModularityConfig &cfg) const;
 
+  /// Group totals of the null-model strength channels, gathered once per
+  /// group of the leading-eigenvector recursion: `total` is S_g = sum of k_i
+  /// over the group, `pos` and `neg` the same sums over k_i+ and k_i-.
+  struct GroupStrength {
+    double total = 0.0;
+    double pos = 0.0;
+    double neg = 0.0;
+  };
+
+  /// The configuration null model `P` of the generalized modularity matrix
+  /// `B_gamma = A - gamma P`.
+  ///
+  /// On a nonnegative graph `P_ij = k_i k_j / 2m` — rank one, the degree
+  /// -preserving rewiring model.  Once weights carry sign that model is not
+  /// defined (`2m` may vanish or turn negative), and `P` becomes the
+  /// Gomez-Jensen-Arenas rank-two model
+  /// `P_ij = k_i+ k_j+ / 2m+ - k_i- k_j- / 2m-`, whose channels normalize
+  /// separately.  A channel carrying no weight has reciprocal zero, so its
+  /// whole term vanishes rather than dividing by zero — which is exactly
+  /// what makes the rank-two model collapse onto the rank-one one when the
+  /// graph happens to be nonnegative.
+  ///
+  /// The reciprocals are bound once at construction so contraction stays
+  /// division-free inside the power-iteration inner loop.
+  class NullModel {
+   public:
+    explicit NullModel(const PersistentModularity &owner)
+        : strength_(&owner.strength_),
+          strengthPos_(&owner.strengthPos_),
+          strengthNeg_(&owner.strengthNeg_),
+          inv2m_(owner.twoM_ > 0.0 ? 1.0 / owner.twoM_ : 0.0),
+          invPos_(owner.twoMPos_ > 0.0 ? 1.0 / owner.twoMPos_ : 0.0),
+          invNeg_(owner.twoMNeg_ > 0.0 ? 1.0 / owner.twoMNeg_ : 0.0),
+          signed_(owner.signed_) {}
+
+    /// `gamma * (P x)_i` for the operand contractions `dot = sum_j k_j x_j`,
+    /// `dotPos = sum_j k_j+ x_j`, `dotNeg = sum_j k_j- x_j` over whatever
+    /// index set the caller contracted.  The unsigned branch reads only
+    /// `dot`, the signed branch only the other two, and the unsigned branch
+    /// evaluates the identical product it did before the model gained a
+    /// second channel — the bit pattern of a nonnegative graph's score does
+    /// not move.
+    double coupling(double gamma, std::uint32_t i, double dot, double dotPos,
+                    double dotNeg) const {
+      if (!signed_) return gamma * (*strength_)[i] * dot * inv2m_;
+      return gamma * ((*strengthPos_)[i] * dotPos * invPos_ -
+                      (*strengthNeg_)[i] * dotNeg * invNeg_);
+    }
+
+    /// The bound `gamma * |P|_i . |x|` used for a Gershgorin radius: the
+    /// two signed channels are added rather than differenced, since a bound
+    /// on the row's absolute sum may not rely on cancellation between them.
+    double couplingBound(double gamma, std::uint32_t i, double dot,
+                         double dotPos, double dotNeg) const {
+      if (!signed_) return gamma * (*strength_)[i] * dot * inv2m_;
+      return gamma * ((*strengthPos_)[i] * dotPos * invPos_ +
+                      (*strengthNeg_)[i] * dotNeg * invNeg_);
+    }
+
+    bool isSigned() const { return signed_; }
+
+   private:
+    const std::vector<double> *strength_;
+    const std::vector<double> *strengthPos_;
+    const std::vector<double> *strengthNeg_;
+    double inv2m_ = 0.0;
+    double invPos_ = 0.0;
+    double invNeg_ = 0.0;
+    bool signed_ = false;
+  };
+
   /// The leading-eigenvector search: recursive spectral bisection producing
   /// a single level-0 partition, plus one `SplitRead` per attempted
   /// bisection appended to `splits`.
@@ -594,14 +780,19 @@ private:
   /// The action of `B_gamma` restricted to `group` on a vector indexed by
   /// position within `group`:
   ///   (B^g x)_i = sum_{j in g} A_ij x_j
-  ///               - gamma k_i (sum_{j in g} k_j x_j) / 2m
-  ///               - x_i (k^g_i - gamma k_i S_g / 2m)
-  /// the generalized modularity matrix Newman's subdivision step requires.
-  /// `groupDegree` is k^g and `groupStrength` is S_g, both precomputed.
+  ///               - gamma (P x)_i
+  ///               - x_i (k^g_i - gamma (P 1_g)_i)
+  /// the generalized modularity matrix Newman's subdivision step requires,
+  /// with `P` the null model of :class:`NullModel` — rank one on a
+  /// nonnegative graph, rank two once weights carry sign.  The trailing
+  /// diagonal term is what makes `B^g` annihilate the all-ones vector on the
+  /// group; it is a row-sum correction, so it generalizes across the rank of
+  /// `P` unchanged.  `groupDegree` is k^g and `groupStrength` carries S_g and
+  /// its two signed channels, all precomputed.
   void applyGroupModularity(const std::vector<std::uint32_t> &group,
                             const std::vector<std::uint32_t> &positionOf,
                             const std::vector<double> &groupDegree,
-                            double groupStrength, double gamma,
+                            const GroupStrength &groupStrength, double gamma,
                             const std::vector<double> &x,
                             std::vector<double> *out) const;
 
@@ -614,7 +805,8 @@ private:
   bool denseLeadingPair(const std::vector<std::uint32_t> &group,
                         const std::vector<std::uint32_t> &positionOf,
                         const std::vector<double> &groupDegree,
-                        double groupStrength, double gamma, double *first,
+                        const GroupStrength &groupStrength, double gamma,
+                        double *first,
                         double *second,
                         std::vector<double> *firstVector) const;
 
@@ -627,7 +819,7 @@ private:
   bool leadingEigenpair(const std::vector<std::uint32_t> &group,
                         const std::vector<std::uint32_t> &positionOf,
                         const std::vector<double> &groupDegree,
-                        double groupStrength, double gamma,
+                        const GroupStrength &groupStrength, double gamma,
                         const PersistentModularityConfig &cfg,
                         const std::vector<double> *deflate,
                         double *eigenvalue,
@@ -640,7 +832,7 @@ private:
   void refineBisection(const std::vector<std::uint32_t> &group,
                        const std::vector<std::uint32_t> &positionOf,
                        const std::vector<double> &groupDegree,
-                       double groupStrength, double gamma,
+                       const GroupStrength &groupStrength, double gamma,
                        std::vector<double> *signs) const;
 
   /// Canonical hashes and the compact slot map for one partition of the

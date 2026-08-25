@@ -536,15 +536,56 @@ Read-only: never calls a solver, never mutates the spacetime it reads.)doc");
       .value("ExpNegAbsLength",
              PersistentModularity::WeightMap::ExpNegAbsLength,
              "w = exp(-|l|): monotone decreasing in the complex edge "
-             "magnitude (the mutual-information convention l = -log I).");
+             "magnitude (the mutual-information convention l = -log I).  "
+             "Causally blind: a timelike and a spacelike edge of equal "
+             "magnitude give the identical weight.")
+      .value("CausalExpNegAbsLength",
+             PersistentModularity::WeightMap::CausalExpNegAbsLength,
+             "w = s exp(-|l|) with s the edge's causal sign (+1 spacelike, "
+             "-1 timelike, 0 lightlike), read from Edge.disposition().  "
+             "Available only where every edge has a DEFINITE disposition; "
+             "see causalWeightAvailability().");
 
-  pm.def_static("fromWeightedEdges", &PersistentModularity::fromWeightedEdges,
+  py::class_<PersistentModularity::CausalWeightRead>(pm, "CausalWeightRead",
+      R"doc(Whether the causal weight map can be read off a spacetime, with
+the census that decides it.  `available` is False exactly when some edge has
+no definite causal character, or when no edge carries a nonzero Lorentzian
+interval; `reason` then names which, and is empty when available.)doc")
+      .def_readonly("available",
+                    &PersistentModularity::CausalWeightRead::available)
+      .def_readonly("reason", &PersistentModularity::CausalWeightRead::reason)
+      .def_readonly("spacelike",
+                    &PersistentModularity::CausalWeightRead::spacelike)
+      .def_readonly("timelike",
+                    &PersistentModularity::CausalWeightRead::timelike)
+      .def_readonly("lightlike",
+                    &PersistentModularity::CausalWeightRead::lightlike)
+      .def_readonly("mixed", &PersistentModularity::CausalWeightRead::mixed)
+      .def_readonly("degenerate",
+                    &PersistentModularity::CausalWeightRead::degenerate);
+
+  pm.def_static("causalWeightAvailability",
+                [](const std::shared_ptr<Spacetime> &st) {
+                  return PersistentModularity::causalWeightAvailability(*st);
+                },
+                py::arg("spacetime"),
+                R"doc(Census of the one-skeleton's causal characters and
+whether CausalExpNegAbsLength can be read from it.  Read-only; asks the
+same Edge.disposition() classifier the weight map uses, so a True here is
+exactly the condition under which fromSpacetime will not raise.)doc")
+      .def_static("fromWeightedEdges",
+                &PersistentModularity::fromWeightedEdges,
                 py::arg("src"), py::arg("tgt"), py::arg("weight"),
                 py::arg("isolatedCells") = std::vector<std::uint64_t>{},
-                R"doc(Build from an explicit nonnegative weighted edge list
-(cells are arbitrary 64-bit ids; parallel edges consolidate by weight
-summation; self-loops and zero weights are ignored).  Raises ValueError on
-negative weights or mismatched lengths.)doc")
+                R"doc(Build from an explicit REAL weighted edge list, signed
+or not (cells are arbitrary 64-bit ids; parallel edges consolidate by weight
+summation; self-loops are ignored, as are edges whose consolidated weight is
+zero -- a measured absence of net similarity).  Raises ValueError on
+non-finite weights or mismatched lengths.
+
+A negative weight anywhere switches the score to the signed null model; a
+wholly nonnegative edge list scores bit-identically to before that branch
+existed.)doc")
       .def_static("fromSpacetime",
                   [](const std::shared_ptr<Spacetime> &st,
                      PersistentModularity::WeightMap map) {
@@ -553,12 +594,27 @@ negative weights or mismatched lengths.)doc")
                   py::arg("spacetime"),
                   py::arg("map") =
                       PersistentModularity::WeightMap::ExpNegAbsLength,
-                  "Build the similarity graph from the spacetime one-skeleton "
-                  "(read-only).")
+                  R"doc(Build the similarity graph from the spacetime
+one-skeleton (read-only).  With CausalExpNegAbsLength this raises
+ValueError, naming the reason, when causalWeightAvailability() reports the
+map unreadable -- an unreadable causal character is refused, never
+substituted with a magnitude.)doc")
       .def("nCells", &PersistentModularity::nCells)
       .def("nEdges", &PersistentModularity::nEdges)
+      .def("isSigned", &PersistentModularity::isSigned,
+           R"doc(True when some edge weight is negative, so the score uses
+the signed (rank-two) null model.  A property of the graph, not a setting.)doc")
       .def("totalWeight2", &PersistentModularity::totalWeight2,
-           "Total adjacency weight 2m = sum_ij A_ij.")
+           R"doc(Total adjacency weight: sum_ij A_ij on a nonnegative graph,
+and T = 2m+ + 2m- (the total ABSOLUTE weight, which is the signed branch's
+normalizer) when isSigned().)doc")
+      .def("totalWeight2Positive",
+           &PersistentModularity::totalWeight2Positive,
+           "2m+, the positive channel's total weight (0 unless isSigned()).")
+      .def("totalWeight2Negative",
+           &PersistentModularity::totalWeight2Negative,
+           "2m-, the negative channel's total magnitude (0 unless "
+           "isSigned()).")
       .def("cellIds", &PersistentModularity::cellIds,
            "Cell ids in internal storage order (no convention).")
       .def("modularityGamma", &PersistentModularity::modularityGamma,

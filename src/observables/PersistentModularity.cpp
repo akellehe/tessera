@@ -145,6 +145,15 @@ struct PersistentModularity::LevelGraph {
   std::vector<double> weights;
   std::vector<double> selfW;
   std::vector<double> strength;
+  // Signed branch only.  Both are INHERITED BY SUMMATION when a level is
+  // aggregated (k_C± = sum over members of k_i±) rather than recomputed from
+  // the coarse adjacency.  That is deliberate: aggregation can cancel a
+  // positive against a negative edge, so recomputing would move 2m± between
+  // levels, changing the objective under the multilevel ledger that
+  // accumulates delta-Q against it.  The null model is a property of the
+  // level-0 degree sequence, exactly as k_C is in the unsigned case.
+  std::vector<double> strengthPos;
+  std::vector<double> strengthNeg;
   std::vector<std::uint32_t> nodeRank;   // canonical visit rank per node
   std::vector<std::string> nodeHash;     // canonical hash per node
 };
@@ -196,10 +205,10 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
   pairPos.reserve(src.size());
   for (std::size_t e = 0; e < src.size(); ++e) {
     const double w = weight[e];
-    if (!(w >= 0.0) || !std::isfinite(w)) {
+    if (!std::isfinite(w)) {
       throw std::invalid_argument(
           "PersistentModularity::fromWeightedEdges: weights must be finite "
-          "and nonnegative (similarity-graph domain)");
+          "(real weighted-graph domain; signed weights are permitted)");
     }
     const std::uint32_t u = internIdx(src[e]);
     const std::uint32_t v = internIdx(tgt[e]);
@@ -217,6 +226,29 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
     }
   }
   for (std::uint64_t id : isolatedCells) internIdx(id);
+
+  // Drop pairs whose consolidated weight is exactly zero.  On a nonnegative
+  // list this is unreachable (every summand was already filtered), so the
+  // unsigned path is untouched; on a signed one it removes a pair whose
+  // weights CANCELLED, which is a measured absence of net similarity and not
+  // an edge we are entitled to keep at weight zero.
+  {
+    std::vector<std::uint32_t> kSrc;
+    std::vector<std::uint32_t> kTgt;
+    std::vector<double> kW;
+    kSrc.reserve(oSrc.size());
+    kTgt.reserve(oTgt.size());
+    kW.reserve(oW.size());
+    for (std::size_t e = 0; e < oSrc.size(); ++e) {
+      if (oW[e] == 0.0) continue;
+      kSrc.push_back(oSrc[e]);
+      kTgt.push_back(oTgt[e]);
+      kW.push_back(oW[e]);
+    }
+    oSrc = std::move(kSrc);
+    oTgt = std::move(kTgt);
+    oW = std::move(kW);
+  }
 
   g.nNodes_ = g.cellIds_.size();
   g.nEdges_ = oSrc.size();
@@ -257,11 +289,99 @@ PersistentModularity PersistentModularity::fromWeightedEdges(
   double twoM = 0.0;
   for (double s : g.strength_) twoM += s;
   g.twoM_ = twoM;
+
+  // Branch selector: the GRAPH decides, not a caller flag.  A wholly
+  // nonnegative graph leaves `signed_` false and every scoring path below
+  // takes the arithmetic it has always taken.
+  g.signed_ = false;
+  for (std::size_t e = 0; e < g.nEdges_; ++e) {
+    if (g.orientedW_[e] < 0.0) {
+      g.signed_ = true;
+      break;
+    }
+  }
+  // Sized in both branches so every index is valid; the unsigned branch
+  // leaves them zero and never reads them.
+  g.strengthPos_.assign(g.nNodes_, 0.0);
+  g.strengthNeg_.assign(g.nNodes_, 0.0);
+  if (g.signed_) {
+    for (std::size_t i = 0; i < g.nNodes_; ++i) {
+      Kahan sp;
+      Kahan sn;
+      for (std::int64_t k = g.indptr_[i]; k < g.indptr_[i + 1]; ++k) {
+        const double w = g.weights_[static_cast<std::size_t>(k)];
+        if (w >= 0.0) {
+          sp.add(w);
+        } else {
+          sn.add(-w);
+        }
+      }
+      g.strengthPos_[i] = sp.value();
+      g.strengthNeg_[i] = sn.value();
+    }
+    Kahan tp;
+    Kahan tn;
+    for (std::size_t i = 0; i < g.nNodes_; ++i) {
+      tp.add(g.strengthPos_[i]);
+      tn.add(g.strengthNeg_[i]);
+    }
+    g.twoMPos_ = tp.value();
+    g.twoMNeg_ = tn.value();
+    // T = 2m+ + 2m-, the signed branch's normalizer.  Recomputed here rather
+    // than reused from `twoM_` above, which is the SIGNED sum and is the
+    // wrong normalizer once negatives are present (it can vanish).
+    g.twoM_ = g.twoMPos_ + g.twoMNeg_;
+  }
   return g;
+}
+
+PersistentModularity::CausalWeightRead
+PersistentModularity::causalWeightAvailability(const Spacetime &st) {
+  CausalWeightRead read;
+  const auto &edges = st.getEdgeList()->toVector();
+  for (const auto &e : edges) {
+    if (e->isDegenerate()) {
+      ++read.degenerate;
+    } else if (e->isSpacelike()) {
+      ++read.spacelike;
+    } else if (e->isTimelike()) {
+      ++read.timelike;
+    } else if (e->isNull()) {
+      ++read.lightlike;
+    } else {
+      ++read.mixed;
+    }
+  }
+  if (read.mixed > 0) {
+    read.available = false;
+    read.reason = CausalWeightReason::kMixedCausalCharacter;
+    return read;
+  }
+  // Lightlike edges carry a zero causal sign, so a complex made only of them
+  // (plus absent edges) has nothing to score.  Reported as its own reason
+  // rather than silently yielding an empty graph.
+  if (read.spacelike + read.timelike == 0) {
+    read.available = false;
+    read.reason = CausalWeightReason::kNoScorableEdges;
+    return read;
+  }
+  read.available = true;
+  return read;
 }
 
 PersistentModularity PersistentModularity::fromSpacetime(const Spacetime &st,
                                                          WeightMap map) {
+  if (map == WeightMap::CausalExpNegAbsLength) {
+    const CausalWeightRead read = causalWeightAvailability(st);
+    if (!read.available) {
+      throw std::invalid_argument(
+          "PersistentModularity::fromSpacetime: CausalExpNegAbsLength is "
+          "unavailable on this complex (" + read.reason +
+          "): a causal sign cannot be assigned to an edge whose arg(l^2) is "
+          "generic without inventing a definiteness the geometry does not "
+          "have. See causalWeightAvailability for the census.");
+    }
+  }
   std::vector<std::uint64_t> src;
   std::vector<std::uint64_t> tgt;
   std::vector<double> w;
@@ -279,6 +399,21 @@ PersistentModularity PersistentModularity::fromSpacetime(const Spacetime &st,
       case WeightMap::ExpNegAbsLength:
         w.push_back(std::exp(-std::abs(e->getLength())));
         break;
+      case WeightMap::CausalExpNegAbsLength: {
+        // The causal SIGN comes from `Edge::disposition()` — the one
+        // classifier — never re-derived here from Re(l^2).  Two
+        // classifications of one physical property is how a reader ends up
+        // with a proposal that no certificate agrees with.
+        const double magnitude = std::exp(-std::abs(e->getLength()));
+        double sign = 0.0;  // lightlike: zero Lorentzian interval
+        if (e->isSpacelike()) {
+          sign = 1.0;
+        } else if (e->isTimelike()) {
+          sign = -1.0;
+        }
+        w.push_back(sign * magnitude);
+        break;
+      }
     }
   }
   std::vector<std::uint64_t> cells;
@@ -306,14 +441,40 @@ double PersistentModularity::modularityGamma(const std::vector<int> &labels,
     const int b = labels[orientedTgt_[e]];
     if (a == b) in[a] += 2.0 * orientedW_[e];
   }
-  for (std::size_t i = 0; i < nNodes_; ++i) tot[labels[i]] += strength_[i];
+  if (!signed_) {
+    for (std::size_t i = 0; i < nNodes_; ++i) tot[labels[i]] += strength_[i];
+    Kahan q;
+    for (const auto &[label, s] : tot) {
+      double lin = 0.0;
+      auto it = in.find(label);
+      if (it != in.end()) lin = it->second;
+      const double frac = s / twoM_;
+      q.add(lin / twoM_ - gamma * frac * frac);
+    }
+    return q.value();
+  }
+
+  // Signed branch: one null model per sign, normalized by T = 2m+ + 2m-.
+  // A sign contributing no weight contributes no null term — the vanishing
+  // null model is zero, not 0/0.
+  std::map<int, double> totPos;
+  std::map<int, double> totNeg;
+  for (std::size_t i = 0; i < nNodes_; ++i) {
+    totPos[labels[i]] += strengthPos_[i];
+    totNeg[labels[i]] += strengthNeg_[i];
+  }
+  const double invPos = twoMPos_ > 0.0 ? 1.0 / twoMPos_ : 0.0;
+  const double invNeg = twoMNeg_ > 0.0 ? 1.0 / twoMNeg_ : 0.0;
   Kahan q;
-  for (const auto &[label, s] : tot) {
+  for (const auto &[label, sp] : totPos) {
     double lin = 0.0;
     auto it = in.find(label);
     if (it != in.end()) lin = it->second;
-    const double frac = s / twoM_;
-    q.add(lin / twoM_ - gamma * frac * frac);
+    double sn = 0.0;
+    auto itn = totNeg.find(label);
+    if (itn != totNeg.end()) sn = itn->second;
+    const double nullTerm = sp * sp * invPos - sn * sn * invNeg;
+    q.add((lin - gamma * nullTerm) / twoM_);
   }
   return q.value();
 }
@@ -527,6 +688,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
   g.weights = weights_;
   g.selfW.assign(n0, 0.0);
   g.strength = strength_;
+  g.strengthPos = strengthPos_;
+  g.strengthNeg = strengthNeg_;
   g.nodeRank.resize(n0);
   g.nodeHash.resize(n0);
   for (std::size_t i = 0; i < n0; ++i) {
@@ -538,12 +701,22 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
   }
 
   const double twoM = twoM_;
+  const double invPos = twoMPos_ > 0.0 ? 1.0 / twoMPos_ : 0.0;
+  const double invNeg = twoMNeg_ > 0.0 ? 1.0 / twoMNeg_ : 0.0;
   Kahan ledger;
   // Q of the all-singletons base partition (selfW = 0 at level 0).
   if (twoM > 0.0) {
-    for (std::size_t i = 0; i < n0; ++i) {
-      const double frac = strength_[i] / twoM;
-      ledger.add(-gamma * frac * frac);
+    if (!signed_) {
+      for (std::size_t i = 0; i < n0; ++i) {
+        const double frac = strength_[i] / twoM;
+        ledger.add(-gamma * frac * frac);
+      }
+    } else {
+      for (std::size_t i = 0; i < n0; ++i) {
+        const double sp = strengthPos_[i];
+        const double sn = strengthNeg_[i];
+        ledger.add(-gamma * (sp * sp * invPos - sn * sn * invNeg) / twoM);
+      }
     }
   }
 
@@ -560,13 +733,23 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     // ── local-move sweeps with cached sufficient statistics ──────────────
     std::vector<std::uint32_t> comm(n);
     std::vector<double> S(n);       // community total strength
+    std::vector<double> Spos;       // signed branch: community total k+
+    std::vector<double> Sneg;       // signed branch: community total k-
     std::vector<double> in(n);      // community Sigma_in
     std::vector<std::uint32_t> cnt(n, 1);
     std::vector<std::uint32_t> anchor(n);  // min member rank
     std::vector<bool> anchorDirty(n, false);
+    if (signed_) {
+      Spos.assign(n, 0.0);
+      Sneg.assign(n, 0.0);
+    }
     for (std::size_t i = 0; i < n; ++i) {
       comm[i] = static_cast<std::uint32_t>(i);
       S[i] = g.strength[i];
+      if (signed_) {
+        Spos[i] = g.strengthPos[i];
+        Sneg[i] = g.strengthNeg[i];
+      }
       in[i] = g.selfW[i];
       anchor[i] = g.nodeRank[i];
     }
@@ -614,9 +797,28 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
           const double wva = wTo[a];
           const double kv = g.strength[v];
           const double Sa = S[a];
+          const double kvPos = signed_ ? g.strengthPos[v] : 0.0;
+          const double kvNeg = signed_ ? g.strengthNeg[v] : 0.0;
+          const double SaPos = signed_ ? Spos[a] : 0.0;
+          const double SaNeg = signed_ ? Sneg[a] : 0.0;
           // Candidate gains: exact closed form
           //   dQ(a->b) = 2 (w_vb - w_va)/twoM
-          //            - 2 gamma k_v (k_v + S_b - S_a) / twoM^2.
+          //            - 2 gamma k_v (k_v + S_b - S_a) / twoM^2,
+          // and in the signed branch the same shape with the null
+          // contribution split across the two sign channels and normalized
+          // by T = 2m+ + 2m-:
+          //   dQ(a->b) = 2 (w_vb - w_va)/T
+          //            - (2 gamma / T) [ k_v+ (k_v+ + S_b+ - S_a+) / 2m+
+          //                            - k_v- (k_v- + S_b- - S_a-) / 2m- ].
+          const auto nullGain = [&](double Sb, double SbPos, double SbNeg) {
+            if (!signed_) {
+              return 2.0 * gamma * kv * (kv + Sb - Sa) / (twoM * twoM);
+            }
+            return 2.0 * gamma *
+                   (kvPos * (kvPos + SbPos - SaPos) * invPos -
+                    kvNeg * (kvNeg + SbNeg - SaNeg) * invNeg) /
+                   twoM;
+          };
           double bestGain = 0.0;  // stay
           std::uint32_t bestTarget = a;
           bool bestIsIsolate = false;
@@ -624,7 +826,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
             if (c == a) continue;
             const double gain =
                 2.0 * (wTo[c] - wva) / twoM -
-                2.0 * gamma * kv * (kv + S[c] - Sa) / (twoM * twoM);
+                nullGain(S[c], signed_ ? Spos[c] : 0.0,
+                         signed_ ? Sneg[c] : 0.0);
             if (gain > bestGain ||
                 (gain == bestGain && bestTarget != a && !bestIsIsolate &&
                  gain > 0.0 && anchorOf(c) < anchorOf(bestTarget))) {
@@ -636,8 +839,7 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
           if (cnt[a] > 1) {
             // Isolation into a fresh community (S_b = 0, w_vb = 0).  Loses
             // exact ties against any real community and against staying.
-            const double gain = -2.0 * wva / twoM -
-                                2.0 * gamma * kv * (kv - Sa) / (twoM * twoM);
+            const double gain = -2.0 * wva / twoM - nullGain(0.0, 0.0, 0.0);
             if (gain > bestGain) {
               bestGain = gain;
               bestIsIsolate = true;
@@ -652,6 +854,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
               } else {
                 b = static_cast<std::uint32_t>(S.size());
                 S.push_back(0.0);
+                if (signed_) {
+                  Spos.push_back(0.0);
+                  Sneg.push_back(0.0);
+                }
                 in.push_back(0.0);
                 cnt.push_back(0);
                 anchor.push_back(0xFFFFFFFFu);
@@ -659,6 +865,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
                 wTo.push_back(0.0);
               }
               S[b] = 0.0;
+              if (signed_) {
+                Spos[b] = 0.0;
+                Sneg[b] = 0.0;
+              }
               in[b] = 0.0;
               cnt[b] = 0;
               anchor[b] = 0xFFFFFFFFu;
@@ -669,6 +879,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
             const double wvb = bestIsIsolate ? 0.0 : wTo[b];
             in[a] -= 2.0 * wva + g.selfW[v];
             S[a] -= kv;
+            if (signed_) {
+              Spos[a] -= kvPos;
+              Sneg[a] -= kvNeg;
+            }
             cnt[a] -= 1;
             if (anchor[a] == g.nodeRank[v]) anchorDirty[a] = true;
             if (cnt[a] == 0) {
@@ -678,6 +892,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
             }
             in[b] += 2.0 * wvb + g.selfW[v];
             S[b] += kv;
+            if (signed_) {
+              Spos[b] += kvPos;
+              Sneg[b] += kvNeg;
+            }
             cnt[b] += 1;
             if (g.nodeRank[v] < anchor[b] && !anchorDirty[b]) {
               anchor[b] = g.nodeRank[v];
@@ -763,6 +981,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
     next.n = nSuper;
     next.selfW.assign(nSuper, 0.0);
     next.strength.assign(nSuper, 0.0);
+    if (signed_) {
+      next.strengthPos.assign(nSuper, 0.0);
+      next.strengthNeg.assign(nSuper, 0.0);
+    }
     next.nodeRank.resize(nSuper);
     next.nodeHash.resize(nSuper);
     for (std::size_t c = 0; c < nSuper; ++c) {
@@ -773,6 +995,10 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
       if (slotToCompact[slot] == 0xFFFFFFFFu) continue;
       next.selfW[slotToCompact[slot]] = in[slot];
       next.strength[slotToCompact[slot]] = S[slot];
+      if (signed_) {
+        next.strengthPos[slotToCompact[slot]] = Spos[slot];
+        next.strengthNeg[slotToCompact[slot]] = Sneg[slot];
+      }
     }
     // Inter-community weights.
     std::unordered_map<std::uint64_t, double> inter;
@@ -902,15 +1128,30 @@ ResolutionSlice PersistentModularity::buildSlice(
 void PersistentModularity::applyGroupModularity(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, double groupStrength, double gamma,
-    const std::vector<double> &x, std::vector<double> *out) const {
+    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
+    double gamma, const std::vector<double> &x,
+    std::vector<double> *out) const {
   const std::size_t ng = group.size();
   out->assign(ng, 0.0);
-  // The rank-one term needs sum_{j in g} k_j x_j once.
+  const NullModel nullModel(*this);
+  // The null-model term needs its contractions of x over the group once:
+  // sum_{j in g} k_j x_j for the rank-one model, and the two per-sign
+  // contractions for the rank-two one.
   Kahan kx;
-  for (std::size_t p = 0; p < ng; ++p) kx.add(strength_[group[p]] * x[p]);
+  Kahan kxPos;
+  Kahan kxNeg;
+  for (std::size_t p = 0; p < ng; ++p) {
+    const std::uint32_t j = group[p];
+    if (!nullModel.isSigned()) {
+      kx.add(strength_[j] * x[p]);
+    } else {
+      kxPos.add(strengthPos_[j] * x[p]);
+      kxNeg.add(strengthNeg_[j] * x[p]);
+    }
+  }
   const double kDotX = kx.value();
-  const double inv2m = twoM_ > 0.0 ? 1.0 / twoM_ : 0.0;
+  const double kDotXPos = kxPos.value();
+  const double kDotXNeg = kxNeg.value();
   for (std::size_t p = 0; p < ng; ++p) {
     const std::uint32_t i = group[p];
     Kahan row;
@@ -920,23 +1161,27 @@ void PersistentModularity::applyGroupModularity(
       if (q == kNotInGroup) continue;  // outside the group: excluded by B^g
       row.add(weights_[static_cast<std::size_t>(k)] * x[q]);
     }
-    // - gamma k_i (k . x) / 2m   and the diagonal correction that makes
-    // B^g annihilate the all-ones vector on the group.
+    // - gamma (P x)_i   and the diagonal correction that makes B^g
+    // annihilate the all-ones vector on the group.
     const double diag =
-        groupDegree[p] - gamma * strength_[i] * groupStrength * inv2m;
-    (*out)[p] = row.value() - gamma * strength_[i] * kDotX * inv2m -
-                x[p] * diag;
+        groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total,
+                                            groupStrength.pos,
+                                            groupStrength.neg);
+    (*out)[p] =
+        row.value() -
+        nullModel.coupling(gamma, i, kDotX, kDotXPos, kDotXNeg) - x[p] * diag;
   }
 }
 
 bool PersistentModularity::denseLeadingPair(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, double groupStrength, double gamma,
-    double *first, double *second, std::vector<double> *firstVector) const {
+    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
+    double gamma, double *first, double *second,
+    std::vector<double> *firstVector) const {
   const std::size_t ng = group.size();
   if (ng < 2) return false;
-  const double inv2m = twoM_ > 0.0 ? 1.0 / twoM_ : 0.0;
+  const NullModel nullModel(*this);
 
   // Build B^g densely.  Symmetric by construction; the diagonal correction
   // is what makes it annihilate the all-ones vector on the group.
@@ -946,8 +1191,10 @@ bool PersistentModularity::denseLeadingPair(
     const std::uint32_t i = group[p];
     for (std::size_t q = 0; q < ng; ++q) {
       const std::uint32_t j = group[q];
+      // -gamma P_ij: the contraction against the indicator of column j.
       b(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(q)) =
-          -gamma * strength_[i] * strength_[j] * inv2m;
+          -nullModel.coupling(gamma, i, strength_[j], strengthPos_[j],
+                              strengthNeg_[j]);
     }
     for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
       const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
@@ -957,7 +1204,9 @@ bool PersistentModularity::denseLeadingPair(
           weights_[static_cast<std::size_t>(k)];
     }
     b(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(p)) -=
-        groupDegree[p] - gamma * strength_[i] * groupStrength * inv2m;
+        groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total,
+                                            groupStrength.pos,
+                                            groupStrength.neg);
   }
 
   // Restrict to the complement of the all-ones vector, which B^g always
@@ -997,22 +1246,41 @@ bool PersistentModularity::denseLeadingPair(
 bool PersistentModularity::leadingEigenpair(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, double groupStrength, double gamma,
-    const PersistentModularityConfig &cfg, const std::vector<double> *deflate,
-    double *eigenvalue, std::vector<double> *eigenvector) const {
+    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
+    double gamma, const PersistentModularityConfig &cfg,
+    const std::vector<double> *deflate, double *eigenvalue,
+    std::vector<double> *eigenvector) const {
   const std::size_t ng = group.size();
-  const double inv2m = twoM_ > 0.0 ? 1.0 / twoM_ : 0.0;
+  const NullModel nullModel(*this);
 
   // Gershgorin-style bound on the spectral radius of B^g, so B^g + beta I is
   // positive semidefinite and its dominant eigenpair is B^g's MOST POSITIVE
-  // one.  Row i absolute sum is bounded by k^g_i + gamma k_i S_g / 2m plus
-  // the diagonal magnitude.
+  // one.  Row i's absolute sum is bounded by sum_{j in g} |A_ij| plus the
+  // null-model bound plus the diagonal magnitude.  The adjacency term must be
+  // the ABSOLUTE row sum: with signed weights k^g_i is a difference and can
+  // sit anywhere below it, so using it would under-bound the radius and the
+  // shifted iteration could converge to the most NEGATIVE eigenvalue.  On a
+  // nonnegative graph the two coincide, which is why the incumbent could use
+  // k^g_i directly.
   double beta = 0.0;
   for (std::size_t p = 0; p < ng; ++p) {
     const std::uint32_t i = group[p];
-    const double rank1 = gamma * strength_[i] * groupStrength * inv2m;
-    const double diag = groupDegree[p] - rank1;
-    beta = std::max(beta, groupDegree[p] + rank1 + std::abs(diag));
+    double rowAbs = groupDegree[p];
+    if (nullModel.isSigned()) {
+      Kahan a;
+      for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
+        const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
+        if (positionOf[j] == kNotInGroup) continue;
+        a.add(std::abs(weights_[static_cast<std::size_t>(k)]));
+      }
+      rowAbs = a.value();
+    }
+    const double nullTerm = nullModel.coupling(
+        gamma, i, groupStrength.total, groupStrength.pos, groupStrength.neg);
+    const double nullBound = nullModel.couplingBound(
+        gamma, i, groupStrength.total, groupStrength.pos, groupStrength.neg);
+    const double diag = groupDegree[p] - nullTerm;
+    beta = std::max(beta, rowAbs + nullBound + std::abs(diag));
   }
   beta = beta > 0.0 ? beta * 1.0625 : 1.0;  // margin against round-off
 
@@ -1096,8 +1364,8 @@ bool PersistentModularity::leadingEigenpair(
 void PersistentModularity::refineBisection(
     const std::vector<std::uint32_t> &group,
     const std::vector<std::uint32_t> &positionOf,
-    const std::vector<double> &groupDegree, double groupStrength, double gamma,
-    std::vector<double> *signs) const {
+    const std::vector<double> &groupDegree, const GroupStrength &groupStrength,
+    double gamma, std::vector<double> *signs) const {
   const std::size_t ng = group.size();
   if (ng < 3) return;
   // delta-Q of the split by s is (1/4m) s^T B^g s.  Flipping s_i changes the
@@ -1108,7 +1376,7 @@ void PersistentModularity::refineBisection(
   std::vector<double> best = *signs;
   double cumulative = 0.0;
   double bestGain = 0.0;
-  const double inv2m = twoM_ > 0.0 ? 1.0 / twoM_ : 0.0;
+  const NullModel nullModel(*this);
   for (std::size_t pass = 0; pass < ng; ++pass) {
     applyGroupModularity(group, positionOf, groupDegree, groupStrength, gamma,
                          *signs, &f);
@@ -1118,10 +1386,15 @@ void PersistentModularity::refineBisection(
       if (moved[p]) continue;
       const std::uint32_t i = group[p];
       const double diag =
-          groupDegree[p] - gamma * strength_[i] * groupStrength * inv2m;
+          groupDegree[p] - nullModel.coupling(gamma, i, groupStrength.total,
+                                              groupStrength.pos,
+                                              groupStrength.neg);
       // B_ii within B^g: the A_ii term is zero (no self-loops at level 0),
-      // minus the rank-one diagonal, minus the group-diagonal correction.
-      const double bii = -gamma * strength_[i] * strength_[i] * inv2m - diag;
+      // minus the null-model diagonal, minus the group-diagonal correction.
+      const double bii = -nullModel.coupling(gamma, i, strength_[i],
+                                             strengthPos_[i],
+                                             strengthNeg_[i]) -
+                         diag;
       const double gain = -4.0 * (*signs)[p] * (f[p] - bii * (*signs)[p]);
       if (gain > pickGain) {
         pickGain = gain;
@@ -1212,12 +1485,19 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
       for (const std::uint32_t i : group) positionOf[i] = kNotInGroup;
     };
 
-    // k^g and S_g for the generalized modularity matrix.
+    // k^g and S_g (with its two signed channels) for the generalized
+    // modularity matrix.
     std::vector<double> groupDegree(group.size(), 0.0);
     Kahan strengthSum;
+    Kahan strengthSumPos;
+    Kahan strengthSumNeg;
     for (std::size_t p = 0; p < group.size(); ++p) {
       const std::uint32_t i = group[p];
       strengthSum.add(strength_[i]);
+      if (signed_) {
+        strengthSumPos.add(strengthPos_[i]);
+        strengthSumNeg.add(strengthNeg_[i]);
+      }
       Kahan d;
       for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
         const std::uint32_t j = indices_[static_cast<std::size_t>(k)];
@@ -1226,7 +1506,10 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
       }
       groupDegree[p] = d.value();
     }
-    const double groupStrength = strengthSum.value();
+    GroupStrength groupStrength;
+    groupStrength.total = strengthSum.value();
+    groupStrength.pos = strengthSumPos.value();
+    groupStrength.neg = strengthSumNeg.value();
 
     double lambda1 = 0.0;
     double lambda2 = 0.0;
