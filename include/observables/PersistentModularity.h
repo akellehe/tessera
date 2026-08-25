@@ -413,13 +413,14 @@ struct InvalidationRead {
 ///                 - (2 gamma / T) [ k_v+ (k_v+ + S_b+ - S_a+) / 2m+
 ///                                 - k_v- (k_v- + S_b- - S_a-) / 2m- ].
 ///
-/// **The unsigned branch is not the signed one specialized.**  It runs the
-/// identical arithmetic it always has, so a nonnegative graph scores
-/// BIT-IDENTICALLY to every previous release — the two differ in floating
-/// point association even where they agree algebraically, and the guarantee
-/// worth having is the exact one.  The signed formula does reduce to the
-/// unsigned formula algebraically when `A- = 0`, which is what makes this a
-/// generalization rather than a second method.
+/// **The unsigned branch is not the signed one specialized.**  It evaluates
+/// the identical expressions it always has, verbatim, so a nonnegative graph
+/// scores BIT-IDENTICALLY rather than merely agreeing to round-off: the two
+/// formulas differ in floating-point association even where they agree in
+/// the reals (`frac*frac` with `frac = s/2m` is not `s*s/(2m*2m)`), and the
+/// guarantee worth having is the exact one.  The signed formula does reduce
+/// to the unsigned one algebraically when `A- = 0`, which is what makes this
+/// a generalization rather than a second method.
 ///
 /// These identities are exact in double arithmetic; incremental
 /// accumulations use compensated summation and are tested against cold
@@ -438,6 +439,14 @@ struct InvalidationRead {
 /// regime `Im(l^2)` is zero to within the declared angular tolerance, so
 /// taking the causal SIGN there discards nothing measurable.  The refusal
 /// falls exactly where discarding would begin.
+///
+/// The Hermitian ("magnetic") alternative — `A_ij = |w| exp(i theta s_ij)`
+/// with an antisymmetric orientation `s_ij` — does keep the spectrum real
+/// and would survive the eigenvector method.  It is rejected on this class's
+/// own contract rather than on taste: `s_ij` requires an index-order
+/// convention (in practice `+1` when `i < j`), and this class is LABEL-FREE
+/// by construction, so an operator that reads the labels would make the
+/// answer depend on them.  See **Label-freedom** below.
 ///
 /// **Heuristic status (mandatory reading).**  Global modularity maximization
 /// is NP-hard; the discovery is a deterministic multilevel aggregation from
