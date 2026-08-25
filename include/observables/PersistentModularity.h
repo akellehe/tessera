@@ -936,14 +936,20 @@ private:
                         std::vector<double> *eigenvector) const;
 
   /// Kernighan-Lin style local refinement of a sign bisection: repeatedly
-  /// flip the single unflipped cell whose flip most raises the split's
+  /// flip the single unflipped cell whose flip most improves the split's
   /// exact delta-Q, then rewind to the best cumulative point.  Each cell
   /// moves at most once per pass, so a pass cannot cycle.
+  ///
+  /// `maximize` says which way "improves" runs, and it must match the
+  /// direction the candidate was selected for.  A split proposed by the most
+  /// NEGATIVE eigenvector is the anti-community one; refining it upward
+  /// would walk it back toward the community split it was chosen not to be,
+  /// which is a silent way of never finding an anti-community at all.
   void refineBisection(const std::vector<std::uint32_t> &group,
                        const std::vector<std::uint32_t> &positionOf,
                        const std::vector<std::complex<double>> &groupDegree,
                        const GroupStrength &groupStrength, double gamma,
-                       ModularityPart part,
+                       ModularityPart part, bool maximize,
                        std::vector<double> *signs) const;
 
   /// Canonical hashes and the compact slot map for one partition of the

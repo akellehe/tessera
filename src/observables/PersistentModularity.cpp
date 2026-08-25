@@ -161,6 +161,7 @@ struct PersistentModularity::RunResult {
   std::complex<double> qIncremental{0.0, 0.0};
   std::complex<double> qCold{0.0, 0.0};
   double objective = 0.0;
+  ModularityObjective objectiveUsed = ModularityObjective::Score;
   std::size_t communities = 0;
   // levelAssign[k][cell] = community index at aggregation level k+1
   // (compact, ordered by (component hash, anchor rank)).
@@ -423,9 +424,28 @@ PersistentModularity PersistentModularity::fromSpacetime(const Spacetime &st,
         // dispositions by (#870).  Nothing is bucketed, so a generic
         // argument needs no special case: it lands where it lands.
         const double magnitude = std::exp(-std::abs(e->getLength()));
-        const double argument = e->squaredArgument();
-        w.emplace_back(magnitude * std::cos(argument),
-                       magnitude * std::sin(argument));
+        // A DEFINITE disposition is placed on its axis exactly, from the same
+        // predicate that decided it, rather than through cos/sin of an
+        // argument that only rounds to the axis.  sin(pi) is 1.2e-16 in
+        // double, not zero, so a timelike edge routed through the general
+        // formula would carry a spurious imaginary part -- enough to make a
+        // wholly real graph read as complex and take the wrong branch.  The
+        // general formula is what MIXED edges need, and they are the ones
+        // that get it.
+        if (e->isSpacelike()) {
+          w.emplace_back(magnitude, 0.0);
+        } else if (e->isTimelike()) {
+          w.emplace_back(-magnitude, 0.0);
+        } else if (e->isNull()) {
+          // arg(l^2) = +-pi/2: the sign of the measured argument says which,
+          // and the two are conjugates rather than one convention.
+          w.emplace_back(0.0, e->squaredArgument() >= 0.0 ? magnitude
+                                                          : -magnitude);
+        } else {
+          const double argument = e->squaredArgument();
+          w.emplace_back(magnitude * std::cos(argument),
+                         magnitude * std::sin(argument));
+        }
         break;
       }
     }
@@ -1096,6 +1116,8 @@ PersistentModularity::RunResult PersistentModularity::runOnce(
   }
   out.qCold = modularityGamma(labels0, gamma);
   out.objective = score(out.qCold);
+  out.objectiveUsed = useMagnitude ? ModularityObjective::Magnitude
+                                   : ModularityObjective::Score;
   return out;
 }
 
@@ -1109,8 +1131,7 @@ ResolutionSlice PersistentModularity::buildSlice(
   slice.q = winner.qCold;
   slice.qIncremental = winner.qIncremental;
   slice.objectiveValue = winner.objective;
-  slice.objective = complex_ ? ModularityObjective::Magnitude
-                             : ModularityObjective::Score;
+  slice.objective = winner.objectiveUsed;
   slice.levels = winner.levelAssign.size();
   slice.restarts = std::move(restarts);
   double qMin = std::numeric_limits<double>::infinity();
@@ -1433,7 +1454,7 @@ void PersistentModularity::refineBisection(
     const std::vector<std::uint32_t> &positionOf,
     const std::vector<std::complex<double>> &groupDegree,
     const GroupStrength &groupStrength, double gamma, ModularityPart part,
-    std::vector<double> *signs) const {
+    bool maximize, std::vector<double> *signs) const {
   const std::size_t ng = group.size();
   if (ng < 3) return;
   // delta-Q of the split by s is (1/4m) s^T B^g s.  Flipping s_i changes the
@@ -1463,7 +1484,10 @@ void PersistentModularity::refineBisection(
       // minus the null-model diagonal, minus the group-diagonal correction.
       const double bii =
           -pick(nullModel.coupling(gamma, i, strength_[i])) - diag;
-      const double gain = -4.0 * (*signs)[p] * (f[p] - bii * (*signs)[p]);
+      const double raw = -4.0 * (*signs)[p] * (f[p] - bii * (*signs)[p]);
+      // Refine in the direction the candidate was selected for: a trailing
+      // (anti-community) split improves by LOWERING the quadratic form.
+      const double gain = maximize ? raw : -raw;
       if (gain > pickGain) {
         pickGain = gain;
         pick_ = p;
@@ -1677,7 +1701,7 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
       }
       if (cfg.kernighanLinRefinement) {
         refineBisection(group, positionOf, groupDegree, groupStrength, gamma,
-                        candidate.part, &signs);
+                        candidate.part, !candidate.trailing, &signs);
       }
       std::vector<std::uint32_t> sideA;
       std::vector<std::uint32_t> sideB;
@@ -1790,9 +1814,11 @@ PersistentModularity::RunResult PersistentModularity::runLeadingEigenvector(
   // split is scored by the exact cold form above, so the two agree by
   // construction rather than by a separate accumulation.
   out.qIncremental = out.qCold;
-  out.objective = (complex_ || cfg.objective == ModularityObjective::Magnitude)
-                      ? std::abs(out.qCold)
-                      : out.qCold.real();
+  const bool usedMagnitude =
+      complex_ || cfg.objective == ModularityObjective::Magnitude;
+  out.objective = usedMagnitude ? std::abs(out.qCold) : out.qCold.real();
+  out.objectiveUsed = usedMagnitude ? ModularityObjective::Magnitude
+                                    : ModularityObjective::Score;
   out.communities = hashes.size();
   out.sortedFinalHashes = hashes;
   return out;

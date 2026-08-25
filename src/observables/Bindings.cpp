@@ -634,6 +634,18 @@ non-finite weights or mismatched lengths.
 A negative weight anywhere switches the score to the signed null model; a
 wholly nonnegative edge list scores bit-identically to before that branch
 existed.)doc")
+      .def_static("fromComplexWeightedEdges",
+                &PersistentModularity::fromComplexWeightedEdges,
+                py::arg("src"), py::arg("tgt"), py::arg("weight"),
+                py::arg("isolatedCells") = std::vector<std::uint64_t>{},
+                R"doc(Build from an explicit COMPLEX weighted edge list.
+Consolidation, self-loops and the cancel-to-zero convention are as for
+fromWeightedEdges; both components must be finite.  A list that happens to
+be real takes the real path and scores exactly as fromWeightedEdges would.
+
+The adjacency is complex SYMMETRIC -- A_ij = A_ji, no conjugation -- because
+a weight is a property of the EDGE, and its magnitude and argument do not
+depend on which end you read it from.)doc")
       .def_static("fromSpacetime",
                   [](const std::shared_ptr<Spacetime> &st,
                      PersistentModularity::WeightMap map) {
