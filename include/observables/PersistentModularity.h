@@ -500,25 +500,39 @@ struct InvalidationRead {
 /// degenerate edge with `l = 0`, which has no weight to carry rather than an
 /// awkward one (see :func:`causalWeightAvailability`).
 ///
-/// **Why complex symmetric and not Hermitian.**  A Hermitian `A` (an
-/// antisymmetric phase on some chosen edge direction) yields a REAL `Q`,
-/// which is ordered without a magnitude/argument split and is therefore the
-/// tempting choice.  It was measured and rejected on two independent grounds:
+/// **Why complex symmetric and not Hermitian.**  A Hermitian `A` — an
+/// antisymmetric phase on some chosen edge direction — yields a REAL `Q`,
+/// ordered without any magnitude/argument split, and is therefore the more
+/// attractive shape.  It was built and MEASURED rather than argued about,
+/// and it fails on the score itself.
 ///
-/// * `Q_Hermitian = Re(Q_symmetric)` EXACTLY — the pairing of `(i,j)` with
-///   `(j,i) = conj` in every community term makes it so.  The Hermitian
-///   operator is thus the symmetric one with its imaginary part discarded,
-///   and a component may not be discarded by construction; if it does not
-///   matter it must cancel emergently.  On a lightlike-cohesion fixture the
-///   symmetric reading gives `Q = 0.3 + 0.2i` where the Hermitian one gives
-///   `0.3`, losing precisely the statement that the cohesion is lightlike.
-/// * an antisymmetric phase needs a direction convention, and an index-order
-///   convention is not label-free.  MEASURED: relabeling the cells and
-///   re-deriving the convention moves the Hermitian modularity spectrum by
-///   `|dlambda| = 2.0e-1`, and flipping a single edge's stored direction —
-///   a representation choice with no physical content — moves it by
-///   `3.0e-1`.  The symmetric operator needs no convention and so has
-///   nothing to be sensitive to.
+/// The direction convention is the first question, and only one of the two
+/// available conventions has the problem.  On an 8-cell complex with 19
+/// edges and every argument generic:
+///
+/// | convention | `Q` of a fixed partition | spectrum | discovered partition |
+/// |---|---|---|---|
+/// | index order (`i < j`), re-derived from the labels | `|dQ| = 0` | `|dlambda| = 3.6e-1` | DIFFERENT |
+/// | stored source->target, intrinsic and carried through | `|dQ| = 0` | `|dlambda| = 2.2e-15` | SAME |
+///
+/// So a Hermitian operator built on the STORED direction is relabeling
+/// -invariant, and the label-freedom objection does not by itself decide
+/// this.  What decides it is the null model.  A Hermitian `B` needs a
+/// Hermitian null term, and the two candidates each fail:
+///
+/// * with `|A|` degrees, `Q` is direction-invariant but `Q_1(one community)`
+///   is `-1.2` on the matter fixture rather than `0`.  The anchor is gone,
+///   so the SIGN of `Q` no longer means "better or worse than no structure"
+///   — which is exactly the reading a negative `Q` was wanted for;
+/// * with `P_ij = k_i conj(k_j) / SA` the anchor holds (3.5e-16) and `Q` is
+///   real and signed — but `Q` then depends on the STORED EDGE DIRECTION.
+///   Flipping which end of one edge is called the source moves it by
+///   `|dQ| = 4.7e-1` on a `Q` of magnitude 0.65.  A score that is not a
+///   function of the geometry is not a score.  (A GLOBAL reversal is
+///   `A -> transpose(A)`, a symmetry; it is the single flip that is not.)
+///
+/// The symmetric operator has neither problem: there is no direction for it
+/// to depend on, and its anchor holds at 2.5e-16.
 ///
 /// The signed-real reduction (Gomez-Jensen-Arenas, one null model per sign)
 /// was likewise measured and dropped: it agrees with the complex operator
