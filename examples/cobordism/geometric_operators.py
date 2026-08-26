@@ -396,7 +396,7 @@ def historical_spectral_experiment(
 class BoundaryPairCobordism:
     """Two prepared boundary circles joined by a relaxed annular bulk."""
 
-    def __init__(self):
+    def __init__(self, include_charge_mode=False):
         base_circle = [[0, 1], [1, 2], [0, 2]]
         cells = tessera.Spacetime.prismCells(base_circle, 1, {})
         self.spacetime = tessera.Spacetime.fromCells(
@@ -413,11 +413,16 @@ class BoundaryPairCobordism:
         self.output_cells = [[vertex] for vertex in sorted(
             self.output_vertices)]
         omega = cmath.exp(2j * math.pi / 3.0)
-        self.boundary_basis = np.asarray(
+        neutral_basis = np.asarray(
             [[1.0, omega, omega * omega],
              [1.0, omega * omega, omega]],
             dtype=complex,
         ) / math.sqrt(3.0)
+        self.include_charge_mode = bool(include_charge_mode)
+        self.boundary_basis = (
+            np.vstack((_CHARGE, neutral_basis))
+            if self.include_charge_mode else neutral_basis
+        )
 
         self.node = cob.MultiCobordism(
             host=self.spacetime,
@@ -456,20 +461,48 @@ class BoundaryPairCobordism:
     def relax_operator(
             self, operator, epsilon=1e-16, boundary_epsilon=1e-12,
             restarts=4, max_growth=8, seed=0, max_iterations=400,
-            held_out_count=16):
+            held_out_count=16, input_basis=None,
+            common_eigenvalue=True):
         operator = np.asarray(operator, dtype=complex)
-        if operator.shape != (2, 2):
-            raise ValueError("boundary-pair fixture requires a 2x2 operator")
-        output_states = operator.T @ self.boundary_basis
+        dimension = self.boundary_basis.shape[0]
+        if operator.shape != (dimension, dimension):
+            raise ValueError(
+                "boundary-pair fixture requires a square operator matching "
+                "the prepared boundary basis")
+        if not np.all(np.isfinite(operator)):
+            raise ValueError("operator must contain only finite amplitudes")
+        if input_basis is None:
+            input_basis = np.eye(dimension, dtype=complex)
+        input_basis = np.asarray(input_basis, dtype=complex)
+        if input_basis.shape != (dimension, dimension):
+            raise ValueError(
+                "input basis must be square and match the operator")
+        if not np.all(np.isfinite(input_basis)):
+            raise ValueError(
+                "input basis must contain only finite amplitudes")
+        prepared_basis = input_basis.copy()
+        for column in range(dimension):
+            column_norm = float(np.linalg.norm(
+                prepared_basis[:, column]))
+            if not column_norm > 0.0:
+                raise ValueError(
+                    "input basis vectors must be nonzero")
+            prepared_basis[:, column] /= column_norm
+        if np.linalg.matrix_rank(prepared_basis) != dimension:
+            raise ValueError("input basis must be linearly independent")
+
+        input_states = input_basis.T @ self.boundary_basis
+        output_states = (
+            operator @ input_basis).T @ self.boundary_basis
         witness = self.node.relax_boundary_state_pairs(
             degree=0,
             input_region="input",
             input_cells=self.input_cells,
-            input_states=self.boundary_basis.tolist(),
+            input_states=input_states.tolist(),
             output_region="output",
             output_cells=self.output_cells,
             output_states=output_states.tolist(),
-            common_eigenvalue=True,
+            common_eigenvalue=bool(common_eigenvalue),
             epsilon=float(epsilon),
             boundary_epsilon=float(boundary_epsilon),
             restarts=int(restarts),
@@ -514,9 +547,11 @@ class BoundaryPairCobordism:
         held_out_residuals = []
         held_out_input_errors = []
         held_out_output_errors = []
+        held_out_operator_errors = []
         for _ in range(int(held_out_count)):
             coefficients = _unit(
-                rng.normal(size=2) + 1j * rng.normal(size=2))
+                rng.normal(size=dimension)
+                + 1j * rng.normal(size=dimension))
             combined = coefficients @ states
             expected_input = coefficients @ fixed_inputs
             expected_output = coefficients @ fixed_outputs
@@ -524,6 +559,14 @@ class BoundaryPairCobordism:
                 combined[input_indices] - expected_input)))
             held_out_output_errors.append(float(np.linalg.norm(
                 combined[output_indices] - expected_output)))
+            logical_input = (
+                self.boundary_basis.conj()
+                @ combined[input_indices])
+            logical_output = (
+                self.boundary_basis.conj()
+                @ combined[output_indices])
+            held_out_operator_errors.append(float(np.linalg.norm(
+                logical_output - operator @ logical_input)))
             held_out_residuals.append(float(synthesis.residual(
                 [complex(value) for value in combined])))
 
@@ -565,16 +608,29 @@ class BoundaryPairCobordism:
                 boundary_final == self.boundary_initial),
             "boundary_drift": float(boundary_drift),
             "restriction_error": restriction_error,
+            "dimension": int(dimension),
+            "common_eigenvalue_mode": bool(common_eigenvalue),
+            "input_basis": _matrix_payload(input_basis),
+            "input_basis_condition": float(np.linalg.cond(input_basis)),
+            "prepared_input_condition": float(np.linalg.cond(
+                input_coefficients)),
+            "minimum_output_norm": float(min(
+                np.linalg.norm(state) for state in output_states)),
             "target_operator": _matrix_payload(operator),
             "recovered_operator": _matrix_payload(recovered),
             "operator_error": float(np.linalg.norm(
                 recovered - operator)),
+            "operator_relative_error": float(
+                np.linalg.norm(recovered - operator)
+                / max(np.linalg.norm(operator), np.finfo(float).tiny)),
             "held_out_full_residual_max": max(
                 held_out_residuals, default=0.0),
             "held_out_input_error_max": max(
                 held_out_input_errors, default=0.0),
             "held_out_output_error_max": max(
                 held_out_output_errors, default=0.0),
+            "held_out_operator_error_max": max(
+                held_out_operator_errors, default=0.0),
         }
 
 
