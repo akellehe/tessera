@@ -15,13 +15,14 @@ The experiment separates three outcomes:
 Run from the repository root:
 
     python examples/cobordism/geometric_operator_sweep.py --jobs 4
-    python examples/cobordism/geometric_operator_sweep.py --profile exhaustive --jobs 4
+    python examples/cobordism/geometric_operator_sweep.py --profile exhaustive --all-attachments --jobs 4 --resume
 """
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import itertools
 import json
 import math
 import os
@@ -55,6 +56,7 @@ _PROFILE_RANDOM_COUNTS = {
 _DEFAULT_OUTPUT = Path(
     "/tmp/cobordism/geometric_operator_sweep.json")
 _TINY = np.finfo(float).tiny
+_ATTACHMENT_PERMUTATIONS = tuple(itertools.permutations(range(3)))
 
 
 def _unit(vector):
@@ -86,11 +88,17 @@ def _normalized_matrix(matrix):
 
 def _case(
         name, family, operator, *, input_basis=None, solver_seed=0,
-        common_eigenvalue=True, notes=""):
+        common_eigenvalue=True, notes="",
+        attachment_permutation=(0, 1, 2)):
     operator = np.asarray(operator, dtype=complex)
     dimension = int(operator.shape[0])
     if input_basis is None:
         input_basis = np.eye(dimension, dtype=complex)
+    attachment_permutation = tuple(
+        int(value) for value in attachment_permutation)
+    if attachment_permutation not in _ATTACHMENT_PERMUTATIONS:
+        raise ValueError(
+            "attachment permutation must contain 0, 1, and 2 once")
     return {
         "name": str(name),
         "family": str(family),
@@ -98,6 +106,7 @@ def _case(
         "input_basis": np.asarray(input_basis, dtype=complex),
         "solver_seed": int(solver_seed),
         "common_eigenvalue": bool(common_eigenvalue),
+        "attachment_permutation": attachment_permutation,
         "notes": str(notes),
     }
 
@@ -394,6 +403,21 @@ def build_cases(profile="standard", generation_seed=20260826):
     return cases
 
 
+def expand_attachment_permutations(cases):
+    """Clone every operator case onto all relative boundary attachments."""
+    expanded = []
+    for case in cases:
+        for permutation in _ATTACHMENT_PERMUTATIONS:
+            attached = dict(case)
+            attached["name"] = (
+                f"{case['name']}__attachment_"
+                + "".join(str(value) for value in permutation)
+            )
+            attached["attachment_permutation"] = permutation
+            expanded.append(attached)
+    return expanded
+
+
 def _finite(value):
     value = float(value)
     return value if math.isfinite(value) else None
@@ -506,7 +530,9 @@ def _fit_attempt(case, config, diagnostics, budget, solver_seed):
     }
     try:
         fixture = BoundaryPairCobordism(
-            include_charge_mode=(diagnostics["dimension"] == 3))
+            include_charge_mode=(diagnostics["dimension"] == 3),
+            attachment_permutation=case["attachment_permutation"],
+        )
         with squared_content_weights():
             result = fixture.relax_operator(
                 case["operator"],
@@ -601,6 +627,10 @@ def evaluate_case(case, config):
         "family": case["family"],
         "solver_seed": case["solver_seed"],
         "common_eigenvalue": case["common_eigenvalue"],
+        "attachment_permutation": list(
+            case["attachment_permutation"]),
+        "attachment_parity": BoundaryPairCobordism._permutation_parity(
+            case["attachment_permutation"]),
         "notes": case["notes"],
         "operator": matrix_payload(case["operator"]),
         "input_basis": matrix_payload(case["input_basis"]),
@@ -626,8 +656,12 @@ def _evaluate_payload(payload):
 def summarize(records):
     statuses = Counter(record["status"] for record in records)
     by_family = defaultdict(Counter)
+    by_attachment = defaultdict(Counter)
     for record in records:
         by_family[record["family"]][record["status"]] += 1
+        attachment = "".join(
+            str(value) for value in record["attachment_permutation"])
+        by_attachment[attachment][record["status"]] += 1
     verified = [
         record for record in records if record["status"] == "verified"]
     attempted = [
@@ -658,6 +692,10 @@ def summarize(records):
             family: dict(sorted(counts.items()))
             for family, counts in sorted(by_family.items())
         },
+        "attachment_status_counts": {
+            attachment: dict(sorted(counts.items()))
+            for attachment, counts in sorted(by_attachment.items())
+        },
         "verified_operator_norm_range": (
             [min(norms), max(norms)] if norms else None),
         "verified_condition_number_range": (
@@ -676,6 +714,37 @@ def summarize(records):
     }
 
 
+def _result_payload(config, jobs, records, started, expected_count):
+    completed = [record for record in records if record is not None]
+    return {
+        "schema_version": 1,
+        "method": (
+            "fixed-boundary full-W common-eigenvalue relaxation"),
+        "complete": len(completed) == expected_count,
+        "expected_case_count": int(expected_count),
+        "config": {
+            **config,
+            "jobs": int(jobs),
+        },
+        "wall_duration_seconds": float(
+            time.perf_counter() - started),
+        "summary": summarize(completed),
+        "cases": completed,
+    }
+
+
+def _write_record(path, result):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(
+            result, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def run_sweep(
         profile="standard", generation_seed=20260826, jobs=1,
         epsilon=1e-16, boundary_epsilon=1e-12, restarts=4,
@@ -687,7 +756,8 @@ def run_sweep(
         qutrit_confirmation_max_growth=16,
         qutrit_confirmation_max_iterations=600,
         held_out_count=16, families=None, name_contains=None,
-        progress=False):
+        all_attachments=False, progress=False, checkpoint_path=None,
+        checkpoint_every=1, resume=False):
     cases = build_cases(profile, generation_seed)
     if families:
         selected = set(families)
@@ -695,6 +765,8 @@ def run_sweep(
     if name_contains:
         cases = [
             case for case in cases if name_contains in case["name"]]
+    if all_attachments:
+        cases = expand_attachment_permutations(cases)
     if not cases:
         raise ValueError("sweep selection is empty")
     config = {
@@ -724,24 +796,63 @@ def run_sweep(
         },
         "confirmation_attempts": int(confirmation_attempts),
         "held_out_count": int(held_out_count),
+        "families": sorted(families) if families else None,
+        "name_contains": name_contains,
+        "all_attachments": bool(all_attachments),
     }
     if jobs < 1:
         raise ValueError("jobs must be positive")
+    if checkpoint_every < 1:
+        raise ValueError("checkpoint_every must be positive")
 
     started = time.perf_counter()
     records = [None] * len(cases)
+    if resume and checkpoint_path and Path(checkpoint_path).exists():
+        previous = json.loads(
+            Path(checkpoint_path).read_text(encoding="utf-8"))
+        previous_config = dict(previous.get("config", {}))
+        previous_config.pop("jobs", None)
+        if previous_config != config:
+            raise ValueError(
+                "checkpoint configuration does not match this sweep")
+        previous_by_name = {
+            record["name"]: record
+            for record in previous.get("cases", [])
+        }
+        for index, case in enumerate(cases):
+            records[index] = previous_by_name.get(case["name"])
+
     payloads = [
-        (index, case, config) for index, case in enumerate(cases)]
+        (index, case, config)
+        for index, case in enumerate(cases)
+        if records[index] is None
+    ]
+    completed_count = sum(
+        record is not None for record in records)
+
+    def store_result(index, record):
+        nonlocal completed_count
+        records[index] = record
+        completed_count += 1
+        if progress:
+            print(
+                f"[{completed_count}/{len(cases)}] "
+                f"{record['name']}: {record['status']}",
+                flush=True,
+            )
+        if (
+                checkpoint_path
+                and (completed_count % checkpoint_every == 0
+                     or completed_count == len(cases))):
+            _write_record(
+                checkpoint_path,
+                _result_payload(
+                    config, jobs, records, started, len(cases)),
+            )
+
     if jobs == 1:
-        completed = map(_evaluate_payload, payloads)
-        for count, (index, record) in enumerate(completed, start=1):
-            records[index] = record
-            if progress:
-                print(
-                    f"[{count}/{len(cases)}] "
-                    f"{record['name']}: {record['status']}",
-                    flush=True,
-                )
+        for index, record in map(_evaluate_payload, payloads):
+            store_result(index, record)
     else:
         with concurrent.futures.ProcessPoolExecutor(
                 max_workers=jobs) as executor:
@@ -749,31 +860,15 @@ def run_sweep(
                 executor.submit(_evaluate_payload, payload)
                 for payload in payloads
             ]
-            for count, future in enumerate(
-                    concurrent.futures.as_completed(futures), start=1):
+            for future in concurrent.futures.as_completed(futures):
                 index, record = future.result()
-                records[index] = record
-                if progress:
-                    print(
-                        f"[{count}/{len(cases)}] "
-                        f"{record['name']}: {record['status']}",
-                        flush=True,
-                    )
+                store_result(index, record)
 
-    result = {
-        "schema_version": 1,
-        "method": (
-            "fixed-boundary full-W common-eigenvalue relaxation"),
-        "config": {
-            **config,
-            "jobs": int(jobs),
-        },
-        "wall_duration_seconds": float(
-            time.perf_counter() - started),
-        "summary": summarize(records),
-        "cases": records,
-    }
+    result = _result_payload(
+        config, jobs, records, started, len(cases))
     json.dumps(result, allow_nan=False)
+    if checkpoint_path:
+        _write_record(checkpoint_path, result)
     return result
 
 
@@ -812,17 +907,32 @@ def build_parser():
     parser.add_argument(
         "--name-contains",
         help="run only cases whose name contains this text")
+    parser.add_argument(
+        "--all-attachments", action="store_true",
+        help=(
+            "solve every selected operator for all six relative input "
+            "boundary-to-bulk vertex attachments"),
+    )
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--progress", action="store_true")
     parser.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--checkpoint-every", type=int, default=1,
+        help="write an atomic checkpoint after this many completed cases")
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="resume compatible completed cases from --output")
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.list:
-        for case in build_cases(args.profile, args.generation_seed):
+        cases = build_cases(args.profile, args.generation_seed)
+        if args.all_attachments:
+            cases = expand_attachment_permutations(cases)
+        for case in cases:
             if args.families and case["family"] not in args.families:
                 continue
             if args.name_contains and args.name_contains not in case["name"]:
@@ -855,14 +965,12 @@ def main(argv=None):
         held_out_count=args.held_out_count,
         families=args.families,
         name_contains=args.name_contains,
+        all_attachments=args.all_attachments,
         progress=args.progress,
+        checkpoint_path=(None if args.no_write else args.output),
+        checkpoint_every=args.checkpoint_every,
+        resume=args.resume,
     )
-    if not args.no_write:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            json.dumps(result, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
     summary = result["summary"]
     print("cases:", summary["case_count"])
     print(

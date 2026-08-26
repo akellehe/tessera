@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -87,6 +88,29 @@ class CaseGenerationTest(unittest.TestCase):
             "charge_permuting", "charge_mixing",
         }.issubset(families))
 
+    def test_all_relative_attachments_are_distinct_and_exhaustive(self):
+        base = SWEEP.build_cases("smoke")
+        expanded = SWEEP.expand_attachment_permutations(base)
+        self.assertEqual(len(expanded), 6 * len(base))
+        expected = {
+            (0, 1, 2), (0, 2, 1), (1, 0, 2),
+            (1, 2, 0), (2, 0, 1), (2, 1, 0),
+        }
+        self.assertEqual({
+            case["attachment_permutation"] for case in expanded[:6]
+        }, expected)
+
+        signatures = set()
+        for permutation in expected:
+            fixture = SWEEP.BoundaryPairCobordism(
+                attachment_permutation=permutation)
+            signatures.add(tuple(sorted(
+                tuple(sorted(int(vertex.getId())
+                             for vertex in simplex.getVertices()))
+                for simplex in fixture.spacetime.getTopSimplices()
+            )))
+        self.assertEqual(len(signatures), 6)
+
     def test_diagnostics_distinguish_charge_from_boundary_compatibility(self):
         preserving = SWEEP.operator_diagnostics(_named_case(
             "qutrit_charge_preserving_identity"))
@@ -128,6 +152,31 @@ class SweepClassificationTest(unittest.TestCase):
             self.assertLess(
                 record["fit"]["held_out_full_residual_max"], 1e-12)
 
+    def test_all_reattachments_have_explicit_chart_action(self):
+        diagnostics = (
+            self.identity["fit"]["input_gluing_permutations"])
+        self.assertEqual(len(diagnostics), 6)
+        self.assertEqual(
+            sum(item["parity"] == "even" for item in diagnostics),
+            3,
+        )
+        nonidentity = [
+            item for item in diagnostics
+            if item["permutation"] != [0, 1, 2]
+        ]
+        self.assertEqual(len(nonidentity), 5)
+        self.assertGreater(
+            max(item["naive_operator_error"] for item in nonidentity),
+            1.0,
+        )
+        for diagnostic in diagnostics:
+            self.assertLess(diagnostic["composed_operator_error"], 1e-12)
+            self.assertLess(diagnostic["chart_corrected_error"], 1e-12)
+        self.assertTrue(all(
+            not diagnostic["input_only_combinatorial_automorphism"]
+            for diagnostic in nonidentity
+        ))
+
     def test_input_column_scaling_is_normalized_before_rank_check(self):
         self.assertEqual(self.column_rescaling["status"], "verified")
         self.assertLess(
@@ -159,6 +208,26 @@ class SweepClassificationTest(unittest.TestCase):
         json.dumps(summary, allow_nan=False)
 
 
+class CheckpointTest(unittest.TestCase):
+    def test_all_attachment_results_resume_from_atomic_checkpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = os.path.join(directory, "sweep.json")
+            options = {
+                "profile": "smoke",
+                "name_contains": "zero_operator",
+                "all_attachments": True,
+                "held_out_count": 0,
+                "checkpoint_path": checkpoint,
+            }
+            first = SWEEP.run_sweep(**options)
+            resumed = SWEEP.run_sweep(**options, resume=True)
+        self.assertTrue(first["complete"])
+        self.assertEqual(first["expected_case_count"], 6)
+        self.assertEqual(first["summary"]["case_count"], 6)
+        self.assertEqual(first["summary"]["status_counts"], {"rejected": 6})
+        self.assertEqual(first["cases"], resumed["cases"])
+
+
 class CommandLineTest(unittest.TestCase):
     def test_profiles_filters_and_qutrit_budget_are_exposed(self):
         args = SWEEP.build_parser().parse_args([
@@ -167,6 +236,9 @@ class CommandLineTest(unittest.TestCase):
             "--name-contains", "identity",
             "--jobs", "3",
             "--qutrit-restarts", "9",
+            "--checkpoint-every", "7",
+            "--all-attachments",
+            "--resume",
             "--no-write",
         ])
         self.assertEqual(args.profile, "exhaustive")
@@ -174,6 +246,9 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(args.name_contains, "identity")
         self.assertEqual(args.jobs, 3)
         self.assertEqual(args.qutrit_restarts, 9)
+        self.assertEqual(args.checkpoint_every, 7)
+        self.assertTrue(args.all_attachments)
+        self.assertTrue(args.resume)
         self.assertTrue(args.no_write)
 
 
