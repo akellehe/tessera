@@ -15,13 +15,16 @@ The experiment separates three outcomes:
 Run from the repository root:
 
     python examples/cobordism/geometric_operator_sweep.py --jobs 4
-    python examples/cobordism/geometric_operator_sweep.py --profile exhaustive --all-attachments --jobs 4 --resume
+    python examples/cobordism/geometric_operator_sweep.py \
+        --profile exhaustive --all-attachments --random-inputs \
+        --shuffle-seed 20260826 --jobs 4 --resume
 """
 
 from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import itertools
 import json
 import math
@@ -92,6 +95,7 @@ def _case(
         attachment_permutation=(0, 1, 2)):
     operator = np.asarray(operator, dtype=complex)
     dimension = int(operator.shape[0])
+    input_basis_explicit = input_basis is not None
     if input_basis is None:
         input_basis = np.eye(dimension, dtype=complex)
     attachment_permutation = tuple(
@@ -104,6 +108,11 @@ def _case(
         "family": str(family),
         "operator": operator,
         "input_basis": np.asarray(input_basis, dtype=complex),
+        "input_basis_explicit": bool(input_basis_explicit),
+        "input_basis_randomized": False,
+        "input_randomization": (
+            "specified" if input_basis_explicit else "canonical"),
+        "input_seed": None,
         "solver_seed": int(solver_seed),
         "common_eigenvalue": bool(common_eigenvalue),
         "attachment_permutation": attachment_permutation,
@@ -403,6 +412,72 @@ def build_cases(profile="standard", generation_seed=20260826):
     return cases
 
 
+def _stable_case_seed(seed, name):
+    payload = f"{int(seed)}:{name}".encode("utf-8")
+    digest = hashlib.blake2b(payload, digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=False)
+
+
+def _random_monomial(dimension, rng):
+    matrix = np.zeros((dimension, dimension), dtype=complex)
+    rows = rng.permutation(dimension)
+    phases = np.exp(1j * rng.uniform(-math.pi, math.pi, dimension))
+    matrix[rows, np.arange(dimension)] = phases
+    return matrix
+
+
+def _random_input_basis(case, rng):
+    operator = np.asarray(case["operator"], dtype=complex)
+    basis = np.asarray(case["input_basis"], dtype=complex)
+    dimension = int(operator.shape[0])
+
+    if case.get("input_basis_explicit", False):
+        return basis @ _random_monomial(
+            dimension, rng), "specified_rays"
+    if dimension == 2:
+        return _haar(dimension, rng), "haar"
+    if dimension != 3:
+        raise ValueError(
+            "random input frames support only the two- and three-state "
+            "boundary fixtures")
+
+    sector_basis = np.zeros((dimension, dimension), dtype=complex)
+    sector_basis[0, 0] = np.exp(
+        1j * rng.uniform(-math.pi, math.pi))
+    sector_basis[1:, 1:] = _haar(2, rng)
+    input_vectors = [
+        sector_basis[:, index] for index in range(dimension)]
+    output_vectors = [
+        operator @ vector for vector in input_vectors]
+    if all(
+            _sector_pure(vector)
+            for vector in input_vectors + output_vectors):
+        return sector_basis, "sector_haar"
+    return _random_monomial(dimension, rng), "monomial"
+
+
+def randomize_input_bases(cases, seed):
+    """Give each operator a stable random training frame.
+
+    This runs before attachment expansion so all six attachment incidences for
+    one operator use the same input states. Explicit conditioning and
+    obstruction cases retain their column rays while randomizing phase and
+    order.
+    """
+    randomized = []
+    for case in cases:
+        case_seed = _stable_case_seed(seed, case["name"])
+        basis, mode = _random_input_basis(
+            case, np.random.default_rng(case_seed))
+        varied = dict(case)
+        varied["input_basis"] = basis
+        varied["input_basis_randomized"] = True
+        varied["input_randomization"] = mode
+        varied["input_seed"] = int(case_seed)
+        randomized.append(varied)
+    return randomized
+
+
 def expand_attachment_permutations(cases):
     """Clone every operator case onto all relative boundary attachments."""
     expanded = []
@@ -416,6 +491,12 @@ def expand_attachment_permutations(cases):
             attached["attachment_permutation"] = permutation
             expanded.append(attached)
     return expanded
+
+
+def shuffle_cases(cases, seed):
+    """Return every case exactly once in a stable pseudorandom order."""
+    order = np.random.default_rng(int(seed)).permutation(len(cases))
+    return [cases[int(index)] for index in order]
 
 
 def _finite(value):
@@ -634,6 +715,11 @@ def evaluate_case(case, config):
         "notes": case["notes"],
         "operator": matrix_payload(case["operator"]),
         "input_basis": matrix_payload(case["input_basis"]),
+        "input_basis_randomized": bool(
+            case.get("input_basis_randomized", False)),
+        "input_randomization": case.get(
+            "input_randomization", "unspecified"),
+        "input_seed": case.get("input_seed"),
         "diagnostics": diagnostics,
         "status": chosen["status"],
         "selected_solver_seed": chosen["solver_seed"],
@@ -757,7 +843,8 @@ def run_sweep(
         qutrit_confirmation_max_iterations=600,
         held_out_count=16, families=None, name_contains=None,
         all_attachments=False, progress=False, checkpoint_path=None,
-        checkpoint_every=1, resume=False):
+        checkpoint_every=1, resume=False, randomize_inputs=False,
+        input_seed=None, shuffle_seed=None):
     cases = build_cases(profile, generation_seed)
     if families:
         selected = set(families)
@@ -765,8 +852,18 @@ def run_sweep(
     if name_contains:
         cases = [
             case for case in cases if name_contains in case["name"]]
+    resolved_input_seed = None
+    if randomize_inputs:
+        resolved_input_seed = (
+            int(generation_seed)
+            if input_seed is None else int(input_seed))
+        cases = randomize_input_bases(cases, resolved_input_seed)
+    elif input_seed is not None:
+        raise ValueError("input_seed requires randomize_inputs")
     if all_attachments:
         cases = expand_attachment_permutations(cases)
+    if shuffle_seed is not None:
+        cases = shuffle_cases(cases, shuffle_seed)
     if not cases:
         raise ValueError("sweep selection is empty")
     config = {
@@ -799,6 +896,10 @@ def run_sweep(
         "families": sorted(families) if families else None,
         "name_contains": name_contains,
         "all_attachments": bool(all_attachments),
+        "randomize_inputs": bool(randomize_inputs),
+        "input_seed": resolved_input_seed,
+        "shuffle_seed": (
+            None if shuffle_seed is None else int(shuffle_seed)),
     }
     if jobs < 1:
         raise ValueError("jobs must be positive")
@@ -812,7 +913,13 @@ def run_sweep(
             Path(checkpoint_path).read_text(encoding="utf-8"))
         previous_config = dict(previous.get("config", {}))
         previous_config.pop("jobs", None)
-        if previous_config != config:
+        previous_config.setdefault("randomize_inputs", False)
+        previous_config.setdefault("input_seed", None)
+        previous_config.setdefault("shuffle_seed", None)
+        comparable_config = dict(config)
+        comparable_config.pop("shuffle_seed", None)
+        previous_config.pop("shuffle_seed", None)
+        if previous_config != comparable_config:
             raise ValueError(
                 "checkpoint configuration does not match this sweep")
         previous_by_name = {
@@ -832,8 +939,11 @@ def run_sweep(
 
     def store_result(index, record):
         nonlocal completed_count
+        record = dict(record)
+        record["schedule_index"] = int(index)
         records[index] = record
         completed_count += 1
+        record["completion_index"] = int(completed_count)
         if progress:
             print(
                 f"[{completed_count}/{len(cases)}] "
@@ -913,6 +1023,21 @@ def build_parser():
             "solve every selected operator for all six relative input "
             "boundary-to-bulk vertex attachments"),
     )
+    parser.add_argument(
+        "--random-inputs", action="store_true",
+        help=(
+            "use one deterministic random training frame per operator; "
+            "all attachments share that frame"),
+    )
+    parser.add_argument(
+        "--input-seed", type=int,
+        help="seed random training frames (defaults to --generation-seed)")
+    parser.add_argument(
+        "--shuffle-seed", type=int,
+        help=(
+            "execute the complete selected case set in a deterministic "
+            "pseudorandom order"),
+    )
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--progress", action="store_true")
     parser.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
@@ -927,16 +1052,34 @@ def build_parser():
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.input_seed is not None and not args.random_inputs:
+        parser.error("--input-seed requires --random-inputs")
     if args.list:
         cases = build_cases(args.profile, args.generation_seed)
+        if args.families:
+            selected = set(args.families)
+            cases = [
+                case for case in cases
+                if case["family"] in selected
+            ]
+        if args.name_contains:
+            cases = [
+                case for case in cases
+                if args.name_contains in case["name"]
+            ]
+        if args.random_inputs:
+            cases = randomize_input_bases(
+                cases,
+                args.generation_seed
+                if args.input_seed is None else args.input_seed,
+            )
         if args.all_attachments:
             cases = expand_attachment_permutations(cases)
+        if args.shuffle_seed is not None:
+            cases = shuffle_cases(cases, args.shuffle_seed)
         for case in cases:
-            if args.families and case["family"] not in args.families:
-                continue
-            if args.name_contains and args.name_contains not in case["name"]:
-                continue
             print(f"{case['name']}\t{case['family']}")
         return 0
 
@@ -970,6 +1113,9 @@ def main(argv=None):
         checkpoint_path=(None if args.no_write else args.output),
         checkpoint_every=args.checkpoint_every,
         resume=args.resume,
+        randomize_inputs=args.random_inputs,
+        input_seed=args.input_seed,
+        shuffle_seed=args.shuffle_seed,
     )
     summary = result["summary"]
     print("cases:", summary["case_count"])

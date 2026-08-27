@@ -111,6 +111,120 @@ class CaseGenerationTest(unittest.TestCase):
             )))
         self.assertEqual(len(signatures), 6)
 
+    def test_random_input_frames_are_reproducible_and_controlled(self):
+        names = [
+            "unitary_identity",
+            "qutrit_charge_preserving_unitary",
+            "qutrit_charge_swap",
+            "rank_one_kernel_training_vector",
+        ]
+        cases = [_named_case(name) for name in names]
+        first = SWEEP.randomize_input_bases(cases, 41)
+        repeated = SWEEP.randomize_input_bases(cases, 41)
+        distinct = SWEEP.randomize_input_bases(cases, 43)
+
+        for left, right in zip(first, repeated):
+            np.testing.assert_array_equal(
+                left["input_basis"], right["input_basis"])
+            self.assertEqual(left["input_seed"], right["input_seed"])
+            self.assertTrue(left["input_basis_randomized"])
+            self.assertEqual(
+                np.linalg.matrix_rank(left["input_basis"]),
+                left["operator"].shape[0],
+            )
+        self.assertTrue(any(
+            not np.allclose(left["input_basis"], right["input_basis"])
+            for left, right in zip(first, distinct)
+        ))
+
+        modes = {
+            case["name"]: case["input_randomization"] for case in first}
+        self.assertEqual(modes["unitary_identity"], "haar")
+        self.assertEqual(
+            modes["qutrit_charge_preserving_unitary"], "sector_haar")
+        self.assertEqual(modes["qutrit_charge_swap"], "monomial")
+        self.assertEqual(
+            modes["rank_one_kernel_training_vector"], "specified_rays")
+
+        for name in (
+                "qutrit_charge_preserving_unitary",
+                "qutrit_charge_swap"):
+            case = next(case for case in first if case["name"] == name)
+            self.assertTrue(
+                SWEEP.operator_diagnostics(case)[
+                    "boundary_compatible_prediction"])
+
+        kernel_case = next(
+            case for case in first
+            if case["name"] == "rank_one_kernel_training_vector")
+        output_norms = [
+            np.linalg.norm(
+                kernel_case["operator"] @
+                kernel_case["input_basis"][:, column])
+            for column in range(2)
+        ]
+        self.assertLess(min(output_norms), 1e-14)
+
+        expanded = SWEEP.expand_attachment_permutations(first)
+        for start in range(0, len(expanded), 6):
+            for attached in expanded[start + 1:start + 6]:
+                np.testing.assert_array_equal(
+                    expanded[start]["input_basis"],
+                    attached["input_basis"],
+                )
+                self.assertEqual(
+                    expanded[start]["input_seed"],
+                    attached["input_seed"],
+                )
+
+    def test_random_frames_preserve_boundary_classification(self):
+        original = SWEEP.build_cases("exhaustive", 20260826)
+        randomized = SWEEP.randomize_input_bases(original, 20260826)
+
+        expected = {
+            case["name"]: SWEEP.operator_diagnostics(case)[
+                "boundary_compatible_prediction"]
+            for case in original
+        }
+        actual = {
+            case["name"]: SWEEP.operator_diagnostics(case)[
+                "boundary_compatible_prediction"]
+            for case in randomized
+        }
+        self.assertEqual(actual, expected)
+        for case in randomized:
+            prepared = SWEEP._effective_input_basis(
+                case["input_basis"])
+            self.assertEqual(
+                np.linalg.matrix_rank(prepared),
+                case["operator"].shape[0],
+            )
+
+    def test_shuffle_is_deterministic_diverse_and_exhaustive(self):
+        expanded = SWEEP.expand_attachment_permutations(
+            SWEEP.build_cases("smoke"))
+        first = SWEEP.shuffle_cases(expanded, 47)
+        repeated = SWEEP.shuffle_cases(expanded, 47)
+        distinct = SWEEP.shuffle_cases(expanded, 53)
+
+        def names(cases):
+            return [case["name"] for case in cases]
+
+        self.assertEqual(names(first), names(repeated))
+        self.assertNotEqual(names(first), names(distinct))
+        self.assertNotEqual(names(first), names(expanded))
+        self.assertEqual(set(names(first)), set(names(expanded)))
+        self.assertEqual(len(names(first)), len(set(names(first))))
+
+        prefix = first[:12]
+        self.assertGreater(len({
+            case["name"].rsplit("__attachment_", 1)[0]
+            for case in prefix
+        }), 1)
+        self.assertGreater(len({
+            case["attachment_permutation"] for case in prefix
+        }), 1)
+
     def test_diagnostics_distinguish_charge_from_boundary_compatibility(self):
         preserving = SWEEP.operator_diagnostics(_named_case(
             "qutrit_charge_preserving_identity"))
@@ -132,6 +246,10 @@ class SweepClassificationTest(unittest.TestCase):
     def setUpClass(cls):
         cls.identity = SWEEP.evaluate_case(
             _named_case("unitary_identity"), _CONFIG)
+        randomized_identity = SWEEP.randomize_input_bases(
+            [_named_case("unitary_identity")], 41)[0]
+        cls.randomized_identity = SWEEP.evaluate_case(
+            randomized_identity, _CONFIG)
         cls.rank_one = SWEEP.evaluate_case(
             _named_case("rank_one_dense"), _CONFIG)
         cls.column_rescaling = SWEEP.evaluate_case(
@@ -142,7 +260,8 @@ class SweepClassificationTest(unittest.TestCase):
             _named_case("qutrit_charge_mixing_rotation"), _CONFIG)
 
     def test_unitary_and_dense_singular_maps_are_verified(self):
-        for record in (self.identity, self.rank_one):
+        for record in (
+                self.identity, self.randomized_identity, self.rank_one):
             self.assertEqual(record["status"], "verified")
             self.assertLess(record["fit"]["residual"], 1e-16)
             self.assertEqual(record["fit"]["boundary_drift"], 0.0)
@@ -151,6 +270,14 @@ class SweepClassificationTest(unittest.TestCase):
                 record["fit"]["operator_relative_error"], 1e-12)
             self.assertLess(
                 record["fit"]["held_out_full_residual_max"], 1e-12)
+
+    def test_random_training_frame_is_recorded(self):
+        record = self.randomized_identity
+        self.assertTrue(record["input_basis_randomized"])
+        self.assertEqual(record["input_randomization"], "haar")
+        self.assertIsInstance(record["input_seed"], int)
+        self.assertEqual(
+            record["input_basis"], record["fit"]["input_basis"])
 
     def test_all_reattachments_have_explicit_chart_action(self):
         diagnostics = (
@@ -216,6 +343,9 @@ class CheckpointTest(unittest.TestCase):
                 "profile": "smoke",
                 "name_contains": "zero_operator",
                 "all_attachments": True,
+                "randomize_inputs": True,
+                "input_seed": 41,
+                "shuffle_seed": 47,
                 "held_out_count": 0,
                 "checkpoint_path": checkpoint,
             }
@@ -226,6 +356,16 @@ class CheckpointTest(unittest.TestCase):
         self.assertEqual(first["summary"]["case_count"], 6)
         self.assertEqual(first["summary"]["status_counts"], {"rejected": 6})
         self.assertEqual(first["cases"], resumed["cases"])
+        self.assertTrue(all(
+            case["input_basis_randomized"] for case in first["cases"]))
+        self.assertEqual(
+            {case["schedule_index"] for case in first["cases"]},
+            set(range(6)),
+        )
+        self.assertEqual(
+            {case["completion_index"] for case in first["cases"]},
+            set(range(1, 7)),
+        )
 
 
 class CommandLineTest(unittest.TestCase):
@@ -238,6 +378,9 @@ class CommandLineTest(unittest.TestCase):
             "--qutrit-restarts", "9",
             "--checkpoint-every", "7",
             "--all-attachments",
+            "--random-inputs",
+            "--input-seed", "41",
+            "--shuffle-seed", "47",
             "--resume",
             "--no-write",
         ])
@@ -248,6 +391,9 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(args.qutrit_restarts, 9)
         self.assertEqual(args.checkpoint_every, 7)
         self.assertTrue(args.all_attachments)
+        self.assertTrue(args.random_inputs)
+        self.assertEqual(args.input_seed, 41)
+        self.assertEqual(args.shuffle_seed, 47)
         self.assertTrue(args.resume)
         self.assertTrue(args.no_write)
 
