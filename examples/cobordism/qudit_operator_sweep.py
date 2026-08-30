@@ -207,7 +207,24 @@ def summarize(counters, totals):
     return summary
 
 
-def run_sweep(configurations, options, output, jobs):
+def completed_names(output):
+    """Case names already recorded, so a resumed run does not repeat them."""
+    if not output.exists():
+        return set()
+    names = set()
+    with output.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                names.add(json.loads(line)["name"])
+            except (json.JSONDecodeError, KeyError):
+                continue                    # a torn final line; rerun it
+    return names
+
+
+def run_sweep(configurations, options, output, jobs, resume=False):
     counters = {
         "status": Counter(),
         "by_dimension": {},
@@ -219,7 +236,13 @@ def run_sweep(configurations, options, output, jobs):
     started = time.time()
     output.parent.mkdir(parents=True, exist_ok=True)
     completed = 0
-    with output.open("w", encoding="utf-8") as handle:
+    already = completed_names(output) if resume else set()
+    if already:
+        configurations = [configuration for configuration in configurations
+                          if configuration["name"] not in already]
+        print(f"resuming: {len(already)} recorded, "
+              f"{len(configurations)} remaining", flush=True)
+    with output.open("a" if resume else "w", encoding="utf-8") as handle:
         with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as pool:
             futures = {pool.submit(evaluate, configuration, options):
                        configuration for configuration in configurations}
@@ -268,7 +291,10 @@ def build_parser():
     parser.add_argument("--max-configurations", type=int, default=512,
                         help="cases kept after the product is shuffled")
     parser.add_argument("--shuffle-seed", type=int, default=20260829)
-    parser.add_argument("--epsilon", type=float, default=1e-16)
+    parser.add_argument("--epsilon", type=float, default=1e-30,
+                        help="the residual is a SQUARED norm, so this is the "
+                             "square of the norm being certified; the "
+                             "double-precision floor is near 1e-32")
     parser.add_argument("--max-growth", type=int, default=8,
                         help="interior growth ceiling; this bounds memory, "
                              "not time")
@@ -279,6 +305,9 @@ def build_parser():
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
     parser.add_argument("--summary", type=Path, default=None)
+    parser.add_argument("--resume", action="store_true",
+                        help="append to --output and skip cases already "
+                             "recorded there")
     return parser
 
 
@@ -301,7 +330,8 @@ def main(argv=None):
     }
     print(f"configurations: {len(configurations)}  output: {args.output}",
           flush=True)
-    summary = run_sweep(configurations, options, args.output, args.jobs)
+    summary = run_sweep(configurations, options, args.output, args.jobs,
+                        resume=args.resume)
     summary_path = args.summary or args.output.with_suffix(".summary.json")
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True),
                             encoding="utf-8")
