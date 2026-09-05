@@ -1538,6 +1538,8 @@ assertion. Every pairing is the transpose.)doc")
              const auto g = self.fiberModeAscent();
              return std::make_pair(g.lengths, g.phases);
            }, "The analytic ascent of every fiber-mode term of r_U on the live complex (#947).")
+      .def("set_input_block_region", &MultiCobordism::setInputBlockRegion, py::arg("index"), py::arg("vertices"),
+           "Set an input block's region explicitly (the attached fiber's cells must lie inside).")
       .def("attach_input_fiber", &MultiCobordism::attachInputFiber, py::arg("index"), py::arg("fiber"),
            py::arg("cells"),
            "Attach a piped input fiber to THIS complex's cells (one per fiber row, in the attachment "

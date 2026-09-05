@@ -3632,6 +3632,18 @@ void MultiCobordism::attachInputFiber(std::size_t index, BoundaryFiber fiber,
   inputBlocks_[index].fiber = std::move(fiber);
 }
 
+void MultiCobordism::setInputBlockRegion(std::size_t index, std::set<std::uint64_t> vertices) {
+  if (index >= inputBlocks_.size())
+    throw std::out_of_range("MultiCobordism::setInputBlockRegion: input block index out of range");
+  if (inputBlocks_[index].fiber)
+    for (const auto &c : inputBlocks_[index].fiber->cells)
+      for (const std::uint64_t v : c)
+        if (!vertices.count(v))
+          throw std::invalid_argument("MultiCobordism::setInputBlockRegion: an attached fiber cell lies outside "
+                                      "the region");
+  inputBlocks_[index].vertices = std::move(vertices);
+}
+
 void MultiCobordism::setTwoBodyTarget(Eigen::MatrixXcd chi, bool choiDecomposed) {
   if (chi.rows() == 0 || chi.cols() == 0 || !(chi.squaredNorm() > 0.0))
     throw std::invalid_argument("MultiCobordism::setTwoBodyTarget: the target must be a nonzero matrix");

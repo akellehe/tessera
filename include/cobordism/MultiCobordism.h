@@ -921,6 +921,13 @@ class MultiCobordism {
     std::vector<std::vector<std::uint64_t>> cellsA{};
     std::vector<std::vector<std::uint64_t>> cellsB{};
   };
+  /// Set an input block's region explicitly (#953): the vertex set whose
+  /// sub-complex reads the block's fiber and whose internal edges a caller may
+  /// pin. Emergent growth (`growBlockRegions`) can otherwise swallow the bulk,
+  /// after which pinning the blocks pins everything. The attached fiber's cells
+  /// must lie inside it. @throws std::out_of_range on the index;
+  /// std::invalid_argument when an attached cell falls outside.
+  void setInputBlockRegion(std::size_t index, std::set<std::uint64_t> vertices);
   /// Attach a piped input fiber to THIS complex's cells: `cells` (degree-k
   /// cells of the live complex, one per fiber row, in the attachment order — the
   /// attachment permutation is this order). The fiber's own cell ids are
