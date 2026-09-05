@@ -140,13 +140,36 @@ def projective_leak(T, chi):
     return float(1.0 - abs(np.vdot(T, chi)) ** 2 / (tt * np.linalg.norm(chi) ** 2))
 
 
+def block_region(st, tet, shells):
+    """The attached tetrahedron plus `shells` shells of top cells around it."""
+    K = cob.ChainComplex.fromSpacetime(st)
+    tets = [set(int(v) for v in t) for t in K.kSimplexVertices(3)]
+    region = set(tet)
+    for _ in range(shells):
+        region |= set().union(*[t for t in tets if t & region]) if any(t & region for t in tets) else set()
+    return region
+
+
+def free_edge_count(node):
+    return sum(1 for e in node.spacetime().getEdgeList().toVector()
+               if not node.edge_is_pinned(int(e.getSource().getId()), int(e.getTarget().getId())))
+
+
 def run_configuration(psi, phi, chi, seed, precone, pair, args):
+    if args.carrier == "whole":
+        return run_whole_carrier(psi, phi, chi, seed, precone, pair, args)
     node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
               seed=seed, precone=precone, einstein_hilbert=False)
     node.seed_inputs([0, 1])
     a, b = pair
     node.attach_input_fiber(0, fiber(psi), [[v] for v in a])
     node.attach_input_fiber(1, fiber(phi), [[v] for v in b])
+    # Bounded block regions: the attached tetrahedron plus `--shells` shells of
+    # cells, FIXED (emergent region growth would swallow the bulk and pinning
+    # the blocks would then pin everything, which is what the first records did).
+    regions = [block_region(node.spacetime(), a, args.shells), block_region(node.spacetime(), b, args.shells)]
+    for i, region in enumerate(regions):
+        node.set_input_block_region(i, region)
     node.use_fiber_residuals(True)
     record = {"seed": seed, "precone": precone, "pair": [list(a), list(b)],
               "start": {**connectivity(node.spacetime(), a, b),
@@ -157,7 +180,7 @@ def run_configuration(psi, phi, chi, seed, precone, pair, args):
     for _ in range(args.phase1_rounds):
         if max(trace1[-1]) < args.block_tolerance:
             break
-        node.run_stage1(max_steps=args.stage1_steps, n_candidate_moves=args.candidates, grow_boundaries=True)
+        node.run_stage1(max_steps=args.stage1_steps, n_candidate_moves=args.candidates)
         node.run_stage2(beta=1.0, max_iters=args.stage2_iters, tolerance=1e-15)
         trace1.append([node.fiber_residual_for_input_block(i) for i in range(2)])
     record["phase1"] = {"block_residual_trace": [[float(x) for x in r] for r in trace1],
@@ -166,6 +189,8 @@ def run_configuration(psi, phi, chi, seed, precone, pair, args):
     # Phase 2: pin the blocks, synthesize the bulk alone against chi.
     for i, blk in enumerate(node.inputs):
         node.declare_pinned_region(f"block_{i}", set(int(v) for v in blk.vertices))
+    record["phase2_free_edges"] = free_edge_count(node)
+    record["phase2_total_edges"] = int(node.spacetime().getEdgeList().size())
     node.set_two_body_target(chi, args.choi)
     t0 = time.time()
     trace2 = [node.two_body_residual()]
@@ -187,12 +212,78 @@ def run_configuration(psi, phi, chi, seed, precone, pair, args):
     return record
 
 
+def run_whole_carrier(psi, phi, chi, seed, precone, pair, args):
+    """The whole complex carries the pair's one-particle content as ONE band
+    restricting to ψ on frame A and φ on frame B (the emergent analog of the
+    coupled boundary-state transfer that carried a one-particle operator at
+    level 0), and the bulk — every edge outside the two frames — is
+    synthesized against χ at the same time. The block residuals are the
+    constant a single tetrahedron gives and do not compete."""
+    node = MC(MC.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]], [], degrees=[0],
+              seed=seed, precone=precone, einstein_hilbert=False)
+    node.seed_inputs([0, 1])
+    a, b = pair
+    node.attach_input_fiber(0, fiber(psi), [[v] for v in a])
+    node.attach_input_fiber(1, fiber(phi), [[v] for v in b])
+    node.set_input_block_region(0, set(a))
+    node.set_input_block_region(1, set(b))
+    joint = cob.BoundaryFiber()
+    joint.degree = 0
+    joint.cells = [[v] for v in a] + [[v] for v in b]
+    joint.images = np.concatenate([np.asarray(psi, dtype=complex), np.asarray(phi, dtype=complex)]).reshape(8, 1)
+    node.set_whole_complex_fiber_target(joint)
+    node.use_fiber_residuals(True)
+    record = {"seed": seed, "precone": precone, "pair": [list(a), list(b)], "carrier": "whole",
+              "start": {**connectivity(node.spacetime(), a, b),
+                        "transfer_singular_values": [float(s) for s in np.linalg.svd(frame_transfer_block(node.spacetime(), a, b), compute_uv=False)],
+                        "whole_fiber_residual": float(node.whole_complex_fiber_residual())}}
+    # Phase 1: the whole complex carries the pair's one-particle content.
+    t0 = time.time()
+    trace1 = [node.whole_complex_fiber_residual()]
+    for _ in range(args.phase1_rounds):
+        if trace1[-1] < args.block_tolerance:
+            break
+        node.run_stage1(max_steps=args.stage1_steps, n_candidate_moves=args.candidates)
+        node.run_stage2(beta=1.0, max_iters=args.stage2_iters, tolerance=1e-15)
+        trace1.append(node.whole_complex_fiber_residual())
+    record["phase1"] = {"whole_fiber_trace": [float(x) for x in trace1], "seconds": round(time.time() - t0, 1)}
+    # Phase 2: the frames' own edges pinned; the bulk synthesized against chi
+    # while the whole keeps carrying the pair (both terms in r_U).
+    node.declare_pinned_region("frame_a", set(a))
+    node.declare_pinned_region("frame_b", set(b))
+    record["phase2_free_edges"] = free_edge_count(node)
+    record["phase2_total_edges"] = int(node.spacetime().getEdgeList().size())
+    node.set_two_body_target(chi, args.choi)
+    t0 = time.time()
+    trace2 = [node.two_body_residual()]
+    carried = [node.whole_complex_fiber_residual()]
+    for _ in range(args.phase2_rounds):
+        if trace2[-1] < args.tolerance:
+            break
+        node.run_stage1(max_steps=args.stage1_steps, n_candidate_moves=args.candidates)
+        node.run_stage2(beta=1.0, max_iters=args.stage2_iters, tolerance=1e-15)
+        trace2.append(node.two_body_residual())
+        carried.append(node.whole_complex_fiber_residual())
+    read = node.read_two_body()
+    T = np.asarray(read.transfer)
+    record["phase2"] = {"leak_trace": [float(x) for x in trace2], "whole_fiber_trace": [float(x) for x in carried],
+                        "seconds": round(time.time() - t0, 1),
+                        "leak": float(read.residual), "leak_recomputed": projective_leak(T, chi),
+                        "schmidt": [float(s) for s in read.singular_values],
+                        "block_residuals_after": [float(x) for x in read.input_fiber_residuals],
+                        "whole_fiber_residual_after": float(node.whole_complex_fiber_residual()),
+                        "reversal_residual": float(read.reversal_residual),
+                        **connectivity(node.spacetime(), a, b), **metric_conditioning(node.spacetime()),
+                        "transfer": _payload(T)}
+    return record
+
+
 def run(args):
     rng = np.random.default_rng(args.seed)
     psi = _unit(rng.normal(size=4) + 1j * rng.normal(size=4))
     phi = _unit(rng.normal(size=4) + 1j * rng.normal(size=4))
     chi = flip_flop(psi, phi)
-    record = {"method": {"protocol": "phase 1 blocks carry (regions may grow); phase 2 block regions pinned, bulk alone against chi",
+    record = {"method": {"protocol": "phase 1 carrier fit; phase 2 frames pinned, bulk against chi", "carrier": args.carrier,
                          "reading": "choi_decomposed" if args.choi else "operator", "seed": args.seed,
                          "precones": args.precones, "pairs_per_bulk": args.pairs, "phase1_rounds": args.phase1_rounds,
                          "phase2_rounds": args.phase2_rounds, "stage2_iters": args.stage2_iters},
@@ -207,7 +298,8 @@ def run(args):
             cfg = run_configuration(psi, phi, chi, args.seed, precone, (a, b), args)
             cfg["start"]["sigma2_over_sigma1"] = score
             record["configurations"].append(cfg)
-            print(f"precone {precone} pair {a}{b} s2/s1 {score:.3f}: phase1 {['%.1e' % x for x in cfg['phase1']['block_residual_trace'][-1]]} "
+            phase1_last = cfg['phase1'].get('block_residual_trace', [[cfg['phase1'].get('whole_fiber_trace', [float('nan')])[-1]]])[-1]
+            print(f"precone {precone} pair {a}{b} s2/s1 {score:.3f}: free edges {cfg['phase2_free_edges']}/{cfg['phase2_total_edges']} phase1 {['%.1e' % x for x in phase1_last]} "
                   f"-> phase2 leak {cfg['phase2']['leak']:.3f} schmidt {['%.3f' % s for s in cfg['phase2']['schmidt']]} "
                   f"adjacent-both {cfg['phase2']['cells_adjacent_to_both']} dist {cfg['phase2']['frame_distance']} "
                   f"cond M0 {cfg['phase2']['M0_condition']:.1e} M1 {cfg['phase2']['M1_condition']:.1e} ({cfg['phase2']['seconds']} s)", flush=True)
@@ -223,6 +315,9 @@ def build_parser():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--precones", type=int, nargs="+", default=[8, 14, 20, 30])
     p.add_argument("--pairs", type=int, default=2, help="attachment pairs tried per bulk, ranked by sigma2/sigma1")
+    p.add_argument("--shells", type=int, default=1, help="shells of cells around each attached tetrahedron in its block region (blocks carrier)")
+    p.add_argument("--carrier", choices=("whole", "blocks"), default="whole",
+                   help="whole: one band of the whole complex carries psi on A and phi on B; blocks: each block's own sub-complex carries its fiber, then the blocks are pinned")
     p.add_argument("--phase1-rounds", type=int, default=6)
     p.add_argument("--phase2-rounds", type=int, default=8)
     p.add_argument("--stage1-steps", type=int, default=4)

@@ -37,7 +37,7 @@ def l0():
 def test_two_phase_protocol_pins_the_blocks_and_records_certificates(l0, whitney_default):
     args = l0.build_parser().parse_args(["--precones", "8", "--pairs", "1", "--phase1-rounds", "1",
                                          "--phase2-rounds", "1", "--stage1-steps", "1", "--candidates", "2",
-                                         "--stage2-iters", "5"])
+                                         "--stage2-iters", "5", "--carrier", "blocks", "--shells", "0"])
     rng = np.random.default_rng(0)
     psi = l0._unit(rng.normal(size=4) + 1j * rng.normal(size=4))
     phi = l0._unit(rng.normal(size=4) + 1j * rng.normal(size=4))
@@ -55,6 +55,26 @@ def test_two_phase_protocol_pins_the_blocks_and_records_certificates(l0, whitney
     assert p2["cells_adjacent_to_both"] >= 0 and p2["frame_distance"] >= 1
     # phase 2 pinned the block regions: their fiber residuals are unchanged from the end of phase 1
     np.testing.assert_allclose(p2["block_residuals_after"], cfg["phase1"]["block_residual_trace"][-1], rtol=1e-9, atol=1e-12)
+    # with the regions bounded to the tetrahedra, the bulk stays free
+    assert cfg["phase2_free_edges"] > 0.5 * cfg["phase2_total_edges"]
+
+
+def test_whole_carrier_keeps_the_bulk_free_and_records_the_pair_fiber(l0, whitney_default):
+    args = l0.build_parser().parse_args(["--precones", "8", "--pairs", "1", "--phase1-rounds", "1",
+                                         "--phase2-rounds", "1", "--stage1-steps", "1", "--candidates", "2",
+                                         "--stage2-iters", "5", "--carrier", "whole"])
+    rng = np.random.default_rng(3)
+    psi = l0._unit(rng.normal(size=4) + 1j * rng.normal(size=4))
+    phi = l0._unit(rng.normal(size=4) + 1j * rng.normal(size=4))
+    chi = l0.flip_flop(psi, phi)
+    probe = cob.MultiCobordism(cob.MultiCobordism.seed_simplex(3), [[1.0 + 0j, 0j, 0j, 0j], [1.0 + 0j, 0j, 0j, 0j]],
+                               [], degrees=[0], seed=0, precone=8, einstein_hilbert=False)
+    ranked = l0.ranked_pairs(probe.spacetime())
+    cfg = l0.run_configuration(psi, phi, chi, 0, 8, (ranked[0][1], ranked[0][2]), args)
+    assert cfg["carrier"] == "whole"
+    assert cfg["phase2_free_edges"] > 0.5 * cfg["phase2_total_edges"]  # only the two frames' own edges are pinned
+    assert 0.0 <= cfg["phase2"]["whole_fiber_residual_after"] <= 1.0 and 0.0 <= cfg["phase2"]["leak"] <= 1.0
+    assert len(cfg["phase1"]["whole_fiber_trace"]) >= 1
 
 
 def test_flip_flop_and_ranking_are_deterministic(l0):
