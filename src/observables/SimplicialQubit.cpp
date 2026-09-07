@@ -7,6 +7,7 @@
 #include <cmath>
 #include <deque>
 #include <limits>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -35,6 +36,11 @@ constexpr double kEps = std::numeric_limits<double>::epsilon();
 /// gauge phi_e = g(target) - g(source) evaluated in doubles closes every loop
 /// to a few ulps; flux or holonomy of physical size sits far above this.
 constexpr double kGaugeTolerance = 1e-10;
+/// The sign relating the ordered simplicial cup product (f_A ∪ f_B)[K] of the
+/// period frame to the intersection number A · B of the marked cycles, fixed
+/// so that the flat torus of spec §12 (counterclockwise faces, A along 1 and
+/// B along tau: A · B = +1 by construction) reads +1 (`intersectionNumber`).
+constexpr double kCupSign = 1.0;
 
 /// rot90(x, y) = (-y, x): the +90 degree rotation of spec §7 / §8.
 Eigen::Vector2d rot90(const Eigen::Vector2d &v) { return Eigen::Vector2d(-v(1), v(0)); }
@@ -1427,6 +1433,356 @@ void SimplicialQubit::diagnoseDegeneration() {
     w << "; the state remains valid)";
     warnings_.push_back(w.str());
   }
+}
+
+// ============================================================================
+// Qubit cobordism spec D2: the derivative of tau and the intersection number
+// ============================================================================
+
+Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
+  using Matrix = Eigen::MatrixXcd;
+  using Vector = Eigen::VectorXcd;
+  const std::size_t nE = edges_.size(), nF = faces_.size(), nV = vertices_.size();
+  const Eigen::Index NE = static_cast<Eigen::Index>(nE);
+  const Eigen::Index NV = static_cast<Eigen::Index>(nV);
+  const Complex one(1.0, 0.0), zero(0.0, 0.0);
+  auto row = [](std::size_t n) { return static_cast<Eigen::Index>(n); };
+
+  // ---- the links the twisted operators carry (§16): U for the primal
+  // operators, U^{-1} for the dual ones; 1 on the trivial connection.
+  auto carry = [&](std::uint64_t from, std::uint64_t to, bool dual) -> Complex {
+    if (trivialConnection_) return one;
+    return dual ? connection_->link(to, from) : connection_->link(from, to);
+  };
+  std::optional<Connection> inverseConnection;
+  if (!trivialConnection_) inverseConnection = connection_->inverse();
+  // The period of a cochain over a marked cycle: the plain signed sum on the
+  // trivial connection; transported from the base point under U (primal) or
+  // U^{-1} (dual) otherwise.
+  auto period = [&](const Vector &omega, const Cycle &cycle, const Walk &walk, bool dual) -> Complex {
+    if (trivialConnection_ || !dual) return periodOf(omega, cycle, walk);
+    Vector canonical(omega.size());
+    for (std::size_t e = 0; e < nE; ++e) canonical(row(canonicalOf_[e])) = omega(row(e));
+    return inverseConnection->transportedPeriod(canonical, walk);
+  };
+
+  // ---- the period frames over the GIVEN marking (A, B): F = H Pi^{-1} on the
+  // kernel, Fd = H^vee Pi_d^{-1} on the dual kernel. Both are canonical
+  // functions of the lengths, which the null-space bases are not; J_F is
+  // independent of the dual basis altogether, and so is its derivative once
+  // the dual frame's derivative solves the same differentiated kernel
+  // equation (a basis change K(z) of the dual frame drops out of dJ_F).
+  auto frameOf = [&](const Matrix &basis, bool dual, const char *name) {
+    Eigen::Matrix2cd Pi;
+    for (Eigen::Index a = 0; a < 2; ++a) {
+      const Vector h = basis.col(a);
+      Pi(0, a) = period(h, cycleA_, walkA_, dual);
+      Pi(1, a) = period(h, cycleB_, walkB_, dual);
+    }
+    const Complex det = Pi.determinant();
+    if (!std::isfinite(det.real()) || !std::isfinite(det.imag()) || det == zero)
+      throw std::runtime_error(std::string("SimplicialQubit::tauDerivative: the period matrix of the ") + name +
+                               " over the marking is singular");
+    return Matrix(basis * Pi.inverse());
+  };
+  const Matrix F = frameOf(H_, false, "kernel");
+  const Matrix Fd = trivialConnection_ ? F : frameOf(Hdual_, true, "dual kernel");
+
+  // ---- the twisted incidences of §3/§16 as dense matrices: B = ∂_1^U
+  // (n_V x n_E, (∂_1^U)_{ve} = (∂_1)_{ve} U_{v b(e)}) and D = d_0^U
+  // (n_E x n_V, (d_0^U φ)_e = U_{b(e) y} φ_y - φ_x for the edge x < y, whose
+  // base is x), so that L_0^U = B M_1 D is the twisted weighted graph
+  // Laplacian and d_1^U d_0^U = 0 under a pure gauge.
+  auto incidences = [&](bool dual) {
+    Matrix B = Matrix::Zero(NV, NE), D = Matrix::Zero(NE, NV);
+    for (std::size_t e = 0; e < nE; ++e) {
+      const auto [x, y] = edges_[e];
+      B(row(x), row(e)) = -one;
+      B(row(y), row(e)) = carry(y, x, dual);
+      D(row(e), row(x)) = -one;
+      D(row(e), row(y)) = carry(x, y, dual);
+    }
+    return std::make_pair(B, D);
+  };
+  const auto [Bp, Dp] = incidences(false);
+  const auto [Bd, Dd] = trivialConnection_ ? std::make_pair(Bp, Dp) : incidences(true);
+  const Vector weights = weights_;
+  // The gauge kernel of L_0^U is one-dimensional (the twisted constants), so
+  // pinning vertex 0 leaves a nonsingular system; the pinned solution differs
+  // from any other by a twisted constant, which d_0^U annihilates.
+  struct PinnedLaplacian {
+    Matrix full;
+    Eigen::FullPivLU<Matrix> lu;
+  };
+  auto pinned = [&](const Matrix &B, const Matrix &D, const char *name) {
+    PinnedLaplacian L;
+    L.full = B * weights.asDiagonal() * D;
+    L.lu.compute(L.full.block(1, 1, NV - 1, NV - 1));
+    if (!L.lu.isInvertible())
+      throw std::runtime_error(std::string("SimplicialQubit::tauDerivative: the twisted Laplacian of the ") + name +
+                               " is singular beyond its gauge kernel; the frame has no derivative");
+    return L;
+  };
+  const PinnedLaplacian Lp = pinned(Bp, Dp, "kernel");
+  const PinnedLaplacian Ld = trivialConnection_ ? pinned(Bp, Dp, "kernel") : pinned(Bd, Dd, "dual kernel");
+  // dF_a = D φ with L_0^U φ = -B dM_1 F_a: the closed, zero-period motion of a
+  // period-normalized frame is exact.
+  auto frameDerivative = [&](const PinnedLaplacian &L, const Matrix &B, const Matrix &D, const Matrix &frame,
+                             const std::vector<std::pair<std::size_t, Complex>> &dWeights) {
+    Matrix out(NE, 2);
+    for (Eigen::Index a = 0; a < 2; ++a) {
+      Vector scaled = Vector::Zero(NE);
+      for (const auto &[e, dw] : dWeights) scaled(row(e)) += dw * frame(row(e), a);
+      const Vector rhs = -(B * scaled);
+      Vector phi = Vector::Zero(NV);
+      phi.tail(NV - 1) = L.lu.solve(rhs.tail(NV - 1));
+      const double defect = (L.full * phi - rhs).norm();
+      if (defect > 1e-8 * std::max(rhs.norm(), 1e-300) && rhs.norm() > 0.0)
+        throw std::runtime_error("SimplicialQubit::tauDerivative: the differentiated harmonic condition is "
+                                 "inconsistent (defect " + std::to_string(defect) + "): the connection is not "
+                                 "a pure gauge on the pinned vertex");
+      out.col(a) = D * phi;
+    }
+    return out;
+  };
+
+  // ---- §4, §5, §7 in closed form per face: the derivatives of the Heron
+  // area, the layout, the barycentric gradients and the three cotangents
+  // with respect to each of the face's three squared lengths, on the same
+  // branch as the stored values (A_t is the continued root; c = l(ij) the
+  // resident length, dc = dz_c / (2c)). Local index m: 0 = a = l(jk),
+  // 1 = b = l(ki), 2 = c = l(ij); edge slot s of §3 (0 = (i,j), 1 = (j,k),
+  // 2 = (k,i)) has length index m = (s + 2) % 3, the vertex slot opposite it.
+  struct FaceDerivative {
+    std::array<std::size_t, 3> edge{};
+    std::array<Complex, 3> dA{};
+    std::array<std::array<Eigen::Vector2cd, 3>, 3> dg{};    // dg[m][vertex slot]
+    std::array<std::array<Complex, 3>, 3> dcot{};           // dcot[m][vertex slot]
+  };
+  std::vector<FaceDerivative> faceDerivatives(nF);
+  for (std::size_t t = 0; t < nF; ++t) {
+    const Face &f = faces_[t];
+    FaceDerivative &d = faceDerivatives[t];
+    d.edge = {edgeIndexOf(f[1], f[2]), edgeIndexOf(f[2], f[0]), edgeIndexOf(f[0], f[1])};
+    const Complex a = lengths_[d.edge[0]], b = lengths_[d.edge[1]], c = lengths_[d.edge[2]];
+    const Complex sa = a * a, sb = b * b, sc = c * c;
+    const Complex A = areas_(row(t));
+    const Complex xk = (sb + sc - sa) / (2.0 * c), yk = 2.0 * A / c;
+    const Eigen::Vector2cd pj(c, zero), pk(xk, yk);
+    const Eigen::Vector2cd gi = rot90c(Eigen::Vector2cd(pk - pj)) / (2.0 * A);
+    const Eigen::Vector2cd gj = rot90c(Eigen::Vector2cd(-pk)) / (2.0 * A);
+    const Eigen::Vector2cd gk = rot90c(pj) / (2.0 * A);
+    const std::array<Complex, 3> cot = {(sb + sc - sa) / (4.0 * A), (sc + sa - sb) / (4.0 * A),
+                                        (sa + sb - sc) / (4.0 * A)};
+    // 16 A^2 = 2(s_a s_b + s_b s_c + s_c s_a) - (s_a^2 + s_b^2 + s_c^2).
+    const std::array<Complex, 3> dA = {(sb + sc - sa) / (16.0 * A), (sa + sc - sb) / (16.0 * A),
+                                       (sa + sb - sc) / (16.0 * A)};
+    // The sign of each squared length in (adjacent + adjacent - opposite)
+    // for the vertex slots i, j, k: opposite is a for i, b for j, c for k.
+    const std::array<std::array<double, 3>, 3> sign = {{{-1.0, 1.0, 1.0}, {1.0, -1.0, 1.0}, {1.0, 1.0, -1.0}}};
+    for (int m = 0; m < 3; ++m) {
+      const Complex dc = (m == 2) ? one / (2.0 * c) : zero;
+      const Complex dN = sign[0][static_cast<std::size_t>(m)];  // d(s_b + s_c - s_a)
+      const Complex dxk = dN / (2.0 * c) - xk / c * dc;
+      const Complex dyk = 2.0 * dA[static_cast<std::size_t>(m)] / c - yk / c * dc;
+      const Eigen::Vector2cd dpj(dc, zero), dpk(dxk, dyk);
+      const Complex ratio = dA[static_cast<std::size_t>(m)] / A;
+      d.dA[static_cast<std::size_t>(m)] = dA[static_cast<std::size_t>(m)];
+      d.dg[static_cast<std::size_t>(m)][0] = rot90c(Eigen::Vector2cd(dpk - dpj)) / (2.0 * A) - gi * ratio;
+      d.dg[static_cast<std::size_t>(m)][1] = rot90c(Eigen::Vector2cd(-dpk)) / (2.0 * A) - gj * ratio;
+      d.dg[static_cast<std::size_t>(m)][2] = rot90c(dpj) / (2.0 * A) - gk * ratio;
+      for (int v = 0; v < 3; ++v)
+        d.dcot[static_cast<std::size_t>(m)][static_cast<std::size_t>(v)] =
+            sign[static_cast<std::size_t>(v)][static_cast<std::size_t>(m)] / (4.0 * A) -
+            cot[static_cast<std::size_t>(v)] * ratio;
+    }
+  }
+
+  // ---- the Whitney interpolant of §7 at a face's barycenter for a given
+  // gradient row (the stored one or its derivative), with the carries of §16.
+  auto whitney = [&](std::size_t t, const std::array<Eigen::Vector2cd, 3> &g, const Vector &omega, bool dual) {
+    const Face &f = faces_[t];
+    const std::uint64_t base = std::min({f[0], f[1], f[2]});
+    Eigen::Vector2cd w = Eigen::Vector2cd::Zero();
+    for (int slot = 0; slot < 3; ++slot) {
+      const int from = slot, to = (slot + 1) % 3;
+      const auto [u, v] = traversal(f, slot);
+      const std::uint64_t edgeBase = std::min(u, v);
+      const Complex value = (u < v ? one : -one) * carry(base, edgeBase, dual) * omega(row(edgeIndexOf(u, v)));
+      w += value * (g[static_cast<std::size_t>(to)] - g[static_cast<std::size_t>(from)]);
+    }
+    return Eigen::Vector2cd(w / Complex(3.0, 0.0));
+  };
+  auto storedGradients = [&](std::size_t t) {
+    std::array<Eigen::Vector2cd, 3> g;
+    for (int v = 0; v < 3; ++v)
+      g[static_cast<std::size_t>(v)] = Eigen::Vector2cd(gradients_(row(t), 2 * v), gradients_(row(t), 2 * v + 1));
+    return g;
+  };
+
+  // ---- §8 in the frames: G_F, R_F, J_F, and the quadratic tau solves.
+  std::vector<std::array<Eigen::Vector2cd, 2>> Wp(nF), Wd(nF);
+  Eigen::Matrix2cd G = Eigen::Matrix2cd::Zero(), R = Eigen::Matrix2cd::Zero();
+  for (std::size_t t = 0; t < nF; ++t) {
+    const auto g = storedGradients(t);
+    for (int a = 0; a < 2; ++a) {
+      Wp[t][static_cast<std::size_t>(a)] = whitney(t, g, F.col(a), false);
+      Wd[t][static_cast<std::size_t>(a)] = whitney(t, g, Fd.col(a), true);
+    }
+    const Complex A = areas_(row(t));
+    for (int a = 0; a < 2; ++a)
+      for (int b = 0; b < 2; ++b) {
+        G(a, b) += A * pairT(Wd[t][static_cast<std::size_t>(a)], Wp[t][static_cast<std::size_t>(b)]);
+        R(a, b) += A * pairT(rot90c(Wp[t][static_cast<std::size_t>(a)]), Wd[t][static_cast<std::size_t>(b)]);
+      }
+  }
+  const Eigen::Matrix2cd Ginv = G.inverse();
+  const Eigen::Matrix2cd J = Ginv * R.transpose();
+  // tau over the given marking: tau() is -1/tau_raw when §9 swapped it.
+  const Complex tauRaw = swapped_ ? -one / tau_ : tau_;
+  const bool sigmaChart = std::abs(tauRaw) > 1.0;
+  const Complex sigma = one / tauRaw;
+  {
+    // (1, tau) is an eigenvector of J_F: the quadratic must vanish.
+    const Complex residual = sigmaChart ? J(1, 0) * sigma * sigma + (J(1, 1) - J(0, 0)) * sigma - J(0, 1)
+                                        : J(0, 1) * tauRaw * tauRaw + (J(0, 0) - J(1, 1)) * tauRaw - J(1, 0);
+    const double scale = J.norm() * (sigmaChart ? (1.0 + std::norm(sigma)) : (1.0 + std::norm(tauRaw)));
+    if (!(std::abs(residual) <= 1e-8 * std::max(scale, 1e-300)))
+      throw std::logic_error("SimplicialQubit::tauDerivative: the period ratio is not a root of the frame's "
+                             "complex structure (residual " + std::to_string(std::abs(residual)) + ")");
+  }
+  const Complex denominator = sigmaChart ? 2.0 * J(1, 0) * sigma + J(1, 1) - J(0, 0)
+                                         : 2.0 * J(0, 1) * tauRaw + J(0, 0) - J(1, 1);
+  if (!(std::abs(denominator) > 1e-12 * std::max(J.norm(), 1e-300)))
+    throw std::runtime_error("SimplicialQubit::tauDerivative: the two eigenlines of J coincide; tau has no "
+                             "derivative there");
+
+  // ---- per edge: dM_1, the frames' motion, dG_F, dR_F, dJ_F, d tau.
+  Vector derivative(NE);
+  for (std::size_t e = 0; e < nE; ++e) {
+    // The cotangent weights that move with z_e: those of the edges of the
+    // faces containing e (§5), through dcot of the opposite vertex.
+    std::vector<std::pair<std::size_t, Complex>> dWeights;
+    struct Adjacent {
+      std::size_t face;
+      int m;
+    };
+    std::vector<Adjacent> adjacent;
+    for (const auto &[t, slot] : edgeFaces_[e]) {
+      const int m = oppositeVertexSlot(slot);  // the slot's length index: a for (j,k), b for (k,i), c for (i,j)
+      adjacent.push_back({t, m});
+      const FaceDerivative &d = faceDerivatives[t];
+      for (int s = 0; s < 3; ++s) {
+        const auto [u, v] = traversal(faces_[t], s);
+        dWeights.emplace_back(edgeIndexOf(u, v),
+                              0.5 * d.dcot[static_cast<std::size_t>(m)][static_cast<std::size_t>(oppositeVertexSlot(s))]);
+      }
+    }
+    const Matrix dF = frameDerivative(Lp, Bp, Dp, F, dWeights);
+    const Matrix dFd = trivialConnection_ ? dF : frameDerivative(Ld, Bd, Dd, Fd, dWeights);
+
+    Eigen::Matrix2cd dG = Eigen::Matrix2cd::Zero(), dR = Eigen::Matrix2cd::Zero();
+    for (std::size_t t = 0; t < nF; ++t) {
+      const auto g = storedGradients(t);
+      const Complex A = areas_(row(t));
+      std::array<Eigen::Vector2cd, 2> WpdF, WddFd;
+      for (int a = 0; a < 2; ++a) {
+        WpdF[static_cast<std::size_t>(a)] = whitney(t, g, dF.col(a), false);
+        WddFd[static_cast<std::size_t>(a)] = whitney(t, g, dFd.col(a), true);
+      }
+      for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 2; ++b) {
+          const auto ia = static_cast<std::size_t>(a), ib = static_cast<std::size_t>(b);
+          dG(a, b) += A * (pairT(WddFd[ia], Wp[t][ib]) + pairT(Wd[t][ia], WpdF[ib]));
+          dR(a, b) += A * (pairT(rot90c(WpdF[ia]), Wd[t][ib]) + pairT(rot90c(Wp[t][ia]), WddFd[ib]));
+        }
+    }
+    for (const Adjacent &adj : adjacent) {
+      const std::size_t t = adj.face;
+      const FaceDerivative &d = faceDerivatives[t];
+      const std::size_t m = static_cast<std::size_t>(adj.m);
+      const Complex A = areas_(row(t));
+      const Complex dA = d.dA[m];
+      std::array<Eigen::Vector2cd, 2> Wp1, Wd1;  // the interpolants through the moving gradients
+      for (int a = 0; a < 2; ++a) {
+        Wp1[static_cast<std::size_t>(a)] = whitney(t, d.dg[m], F.col(a), false);
+        Wd1[static_cast<std::size_t>(a)] = whitney(t, d.dg[m], Fd.col(a), true);
+      }
+      for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 2; ++b) {
+          const auto ia = static_cast<std::size_t>(a), ib = static_cast<std::size_t>(b);
+          dG(a, b) += dA * pairT(Wd[t][ia], Wp[t][ib]) + A * (pairT(Wd1[ia], Wp[t][ib]) + pairT(Wd[t][ia], Wp1[ib]));
+          dR(a, b) += dA * pairT(rot90c(Wp[t][ia]), Wd[t][ib]) +
+                      A * (pairT(rot90c(Wp1[ia]), Wd[t][ib]) + pairT(rot90c(Wp[t][ia]), Wd1[ib]));
+        }
+    }
+    const Eigen::Matrix2cd dJ = Ginv * (dR.transpose() - dG * J);
+    Complex dTauRaw;
+    if (sigmaChart) {
+      const Complex dSigma = -(sigma * sigma * dJ(1, 0) + sigma * (dJ(1, 1) - dJ(0, 0)) - dJ(0, 1)) / denominator;
+      dTauRaw = -dSigma / (sigma * sigma);
+    } else {
+      dTauRaw = -(tauRaw * tauRaw * dJ(0, 1) + tauRaw * (dJ(0, 0) - dJ(1, 1)) - dJ(1, 0)) / denominator;
+    }
+    // tau() = -1/tau_raw when the marking was swapped: d tau = d tau_raw / tau_raw^2.
+    derivative(row(e)) = swapped_ ? dTauRaw / (tauRaw * tauRaw) : dTauRaw;
+  }
+  return derivative;
+}
+
+double SimplicialQubit::intersectionNumber() const {
+  // The untwisted reference of §16 (unit lengths, no links): the cotangent
+  // weights of the unit equilateral triangle are all equal, so the harmonic
+  // space is the null space of [d_1; d_0^T]; its period frame f_A, f_B has
+  // periods (1, 0) and (0, 1), and the ordered cup product
+  // (f_A ∪ f_B)(v_0 v_1 v_2) = f_A(v_0 v_1) f_B(v_1 v_2) on the sorted
+  // vertices of every face, summed with the face's orientation sign, is the
+  // cohomology pairing <[f_A] ∪ [f_B], [K]> = A · B: an integer, independent
+  // of the metric and of the vertex order's cochain-level choices.
+  const std::size_t nE = edges_.size(), nF = faces_.size();
+  const Eigen::Index NE = static_cast<Eigen::Index>(nE);
+  Eigen::MatrixXd S(d1_.rows() + d0_.cols(), NE);
+  S.topRows(d1_.rows()) = d1_;
+  S.bottomRows(d0_.cols()) = d0_.transpose();
+  Eigen::BDCSVD<Eigen::MatrixXd> svd(S, Eigen::ComputeFullV);
+  const Eigen::VectorXd sigma = svd.singularValues();
+  const double tolerance = kEps * static_cast<double>(std::max(S.rows(), S.cols())) *
+                           (sigma.size() > 0 ? sigma(0) : 0.0);
+  Eigen::Index rank = 0;
+  for (Eigen::Index n = 0; n < sigma.size(); ++n)
+    if (sigma(n) > tolerance) ++rank;
+  const Eigen::MatrixXd H = svd.matrixV().rightCols(NE - rank);
+  if (H.cols() != 2)
+    throw std::runtime_error("SimplicialQubit::intersectionNumber: the reference harmonic space has dimension " +
+                             std::to_string(H.cols()) + " != 2");
+  auto plainPeriod = [&](const Eigen::VectorXd &h, const Cycle &cycle) {
+    double total = 0.0;
+    for (const auto &[e, sign] : cycle) total += static_cast<double>(sign) * h(static_cast<Eigen::Index>(e));
+    return total;
+  };
+  Eigen::Matrix2d Pi;
+  for (Eigen::Index a = 0; a < 2; ++a) {
+    Pi(0, a) = plainPeriod(H.col(a), cycleA_);
+    Pi(1, a) = plainPeriod(H.col(a), cycleB_);
+  }
+  if (Pi.determinant() == 0.0)
+    throw std::runtime_error("SimplicialQubit::intersectionNumber: the reference period matrix is singular");
+  const Eigen::MatrixXd F = H * Pi.inverse();
+  double total = 0.0;
+  for (std::size_t t = 0; t < nF; ++t) {
+    const Face &f = faces_[t];
+    std::array<std::uint64_t, 3> sorted = f;
+    std::sort(sorted.begin(), sorted.end());
+    // The face's stored cyclic order against the sorted one: a rotation of
+    // (v0, v1, v2) is positively oriented, a rotation of (v0, v2, v1) is not.
+    const bool positive = (f[0] == sorted[0] && f[1] == sorted[1]) || (f[0] == sorted[1] && f[1] == sorted[2]) ||
+                          (f[0] == sorted[2] && f[1] == sorted[0]);
+    const double epsilon = positive ? 1.0 : -1.0;
+    const Eigen::Index e01 = static_cast<Eigen::Index>(edgeIndexOf(sorted[0], sorted[1]));
+    const Eigen::Index e12 = static_cast<Eigen::Index>(edgeIndexOf(sorted[1], sorted[2]));
+    total += epsilon * F(e01, 0) * F(e12, 1);
+  }
+  return kCupSign * total;
 }
 
 }  // namespace tessera::observables

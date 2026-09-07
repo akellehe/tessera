@@ -1,7 +1,11 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The block residual on the whole's zero mode in the block's live frame
-(#975, T2-bis of ``docs/design/qubit_cobordism_spec.md``, D2 and D3 as revised).
+"""The whole's zero mode in the block's live frame: the OUTPUT-state read
+(#975, T2-bis of ``docs/design/qubit_cobordism_spec.md``; since the D2 wording
+of 2026-09-07 (#988) this leak is REPORTED, not scored -- ``r_U`` scores
+``own_state_residual``, the block's own-Laplacian residual of D2, tested in
+``test_own_state_residual_python.py``; ``input_state_residual`` and its gradient
+remain the output-state read and its derivative, exactly as measured below).
 
 A surface block holds its MARKING with its input coefficients
 (``set_input_marking(index, cycles, (a, b))``: the cycles A, B as closed walks
@@ -414,11 +418,15 @@ def test_block_residual_on_the_seed_is_the_restricted_leak(n, whitney_default):
         coefficients = np.asarray(read.coefficients)
         assert np.abs(coefficients - np.asarray(read.input)).max() < 0.03, coefficients
         assert np.abs(coefficients - np.asarray(read.input)).max() > 1e-4, "the whole's coefficients are not the inputs on the seed"
-    # r_U scores the weighted block residuals (plus the two-body term once set)
-    assert node.r_u(st) == pytest.approx(1e6 * sum(residuals), rel=1e-12)
+    # r_U scores the weighted OWN-state residuals of D2 (zero on the seed: each
+    # torus is its own flat torus there), plus the two-body term once set; the
+    # whole-frame leak above is the output-state read, not a term
+    own = [node.own_state_residual(i) for i in range(2)]
+    assert all(r < 1e-12 for r in own), own
+    assert node.r_u(st) == pytest.approx(1e6 * sum(own), abs=1e-12)
     chi = spin_half_chi(np.asarray(qa.state()), np.asarray(qb.state()))
     node.set_two_body_target(chi, True)
-    assert node.r_u(st) == pytest.approx(1e6 * sum(residuals) + node.two_body_residual(), rel=1e-12)
+    assert node.r_u(st) == pytest.approx(1e6 * sum(own) + node.two_body_residual(), rel=1e-12)
     # the transfer in the derived frames equals T3's in the supplied period frames
     read = node.read_two_body()
     assert read.in_frames and read.derived_frames and np.asarray(read.transfer).shape == (2, 2)
@@ -577,10 +585,12 @@ def test_gradient_euler_identity_support_and_sign(whitney_default):
             assert abs(fd - analytic) < 1e-5 * abs(analytic), (label, fd, analytic)
             print(f"\n[T2-bis] block {index} {label} edge {edge_keys(st)[i]}: analytic {analytic:.6e} central difference {fd:.6e}; "
                   f"Euler defect {defect:.2e}; |g| bulk {np.abs(g[bulk]).max():.3e} A {np.abs(g[on_a]).max():.3e} B {np.abs(g[on_b]).max():.3e}")
-    # the ascent of r_U is the weighted sum of the two block gradients, plus the two-body gradient
+    # the ascent of r_U is the weighted sum of the two OWN-state gradients (D2),
+    # plus the two-body gradient; the output read's gradients above are not in it
+    own = [np.asarray(node.own_state_residual_gradient(i)[0]) for i in range(2)]
     total, _ = node.fiber_mode_ascent()
-    expected = 1e6 * (gradients[0] + gradients[1])
-    assert np.abs(np.asarray(total) - expected).max() < 1e-12 * np.abs(expected).max()
+    expected = 1e6 * (own[0] + own[1])
+    assert np.abs(np.asarray(total) - expected).max() <= 1e-12 * max(np.abs(expected).max(), 1.0)
     node.set_two_body_target(spin_half_chi(np.asarray(qa.state()), np.asarray(qb.state())), True)
     total, _ = node.fiber_mode_ascent()
     expected = expected + np.asarray(node.two_body_residual_gradient()[0])
