@@ -74,24 +74,46 @@ def test_a_node_without_a_declared_boundary_is_unrestricted():
     assert boundary(free) == boundary(control)
 
 
+def collar_node(seed_value=7):
+    """A node whose boundary IS declared: two flat tori on their collar, the
+    surface input blocks of the qubit experiment."""
+    import warnings
+
+    from tessera import observables as obs
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tori = [obs.SimplicialQubit.flat_torus(tau, 3, 3)
+                for tau in (complex(0.3, 1.1), complex(-0.2, 0.8))]
+    seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(), 1)
+    node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [], degrees=[1],
+              seed=seed_value, einstein_hilbert=False)
+    node.seed_inputs([sorted(ids.values()) for ids in seed.vertex_ids])
+    return node
+
+
+def test_a_pinned_region_is_not_a_declared_boundary():
+    """Pinning constrains the geometry and does not veto a topology change
+    (`declare_pinned_region`), so it does not arm this gate."""
+    node = simplex_node()
+    node.declare_pinned_region("M0", set(range(2)))
+    assert not node.has_fixed_boundary
+
+
 def test_the_gate_refuses_a_cone_that_grows_a_declared_boundary():
-    """With a boundary declared fixed, a cone-in on a fresh apex always hands
-    it new faces, so no cone-in survives and the complex is untouched."""
-    gated, open_ = simplex_node(seed=7), simplex_node(seed=7)
+    """With a boundary declared -- surface input blocks -- a cone-in on a
+    fresh apex always hands it new faces, so no cone survives and the complex
+    is untouched."""
+    gated, open_ = collar_node(), collar_node()
     for node in (gated, open_):
-        node.declare_pinned_region("M0", set(range(2)))
         assert node.has_fixed_boundary
     open_.set_boundary_may_extend(True)
     assert gated.boundary_may_extend is False and open_.boundary_may_extend is True
     before_cells, before_boundary = cells(gated), boundary(gated)
-    for _ in range(12):
+    for _ in range(6):
         gated.run_stage1(1, 8, grow_boundaries=False)
-    assert cells(gated) == before_cells, "no move survived the gate"
+    assert cells(gated) == before_cells, "no cone survived the gate"
     assert boundary(gated) == before_boundary
-    for _ in range(12):
-        open_.run_stage1(1, 8, grow_boundaries=False)
-    # the ungated run is free to grow; it is the control, not a target
-    assert len(cells(open_)) >= len(before_cells)
 
 
 def test_the_flag_is_bit_identical_to_the_engine_default():

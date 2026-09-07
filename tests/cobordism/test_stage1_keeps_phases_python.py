@@ -337,6 +337,10 @@ def test_committed_cone_in_keeps_every_surviving_edge_bit_exactly(whitney_defaul
     dropped = [leak_without_phases(node, index, st0) for index in range(2)]
     assert all(leak > 1e-3 for leak in dropped), dropped
     # the committed cone-in: a fresh apex on a boundary (torus) face, through the rebuild
+    # This case is about what a COMMITTED cone preserves, not about whether
+    # one is allowed: a node with a declared boundary refuses cone-ins by
+    # default (#997), so the old behaviour is asked for by name here.
+    node.set_boundary_may_extend(True)
     thresholds = MC.RefinementIndicators()
     thresholds.mesh_quality = 2.0  # a lower bound every mesh crosses: refine now
     node.set_refinement_thresholds(thresholds)
@@ -397,6 +401,10 @@ def test_committed_cone_out_dent_keeps_the_phases(whitney_default):
     objective = UncoveredTorusFacesObjective(mapped_faces(qa, ids_a) + mapped_faces(qb, ids_b))
     node.set_objective(objective)
     passes = 0
+    # A dent is a cone-out, which exposes the removed cell's facets, so a node
+    # with a declared boundary refuses it by default (#997). This case is
+    # about what a committed dent preserves, so it asks for the old behaviour.
+    node.set_boundary_may_extend(True)
     while len(tops(node.spacetime())) == 108 and passes < 6:
         node.run_stage1(max_steps=1, n_candidate_moves=48)
         passes += 1
@@ -468,6 +476,10 @@ def ordinary_node_dump():
     node.set_two_body_target(flip_flop(psi, phi))
     node.use_fiber_residuals(True)
     cells_before = len(tops(node.spacetime()))
+    # This case is about what a COMMITTED cone preserves, not about whether
+    # one is allowed: a node with a declared boundary refuses cone-ins by
+    # default (#997), so the old behaviour is asked for by name here.
+    node.set_boundary_may_extend(True)
     thresholds = MC.RefinementIndicators()
     thresholds.mesh_quality = 2.0
     node.set_refinement_thresholds(thresholds)

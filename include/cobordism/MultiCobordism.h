@@ -378,16 +378,20 @@ class MultiCobordism {
   /// clamped and nothing is rolled back specially.
   ///
   /// WHEN it applies: only where a boundary is DECLARED fixed
-  /// (`hasFixedBoundary`) — a surface input block, or a pinned region. A node
-  /// that declares neither has no fixed boundary to protect, so its cones are
-  /// unrestricted whatever this is set to, and every free emergent build (the
-  /// proton hosts grown from a \f$ \Delta^4 \f$ seed, the CDT work) behaves
-  /// exactly as it did. Only the cone kinds are gated; the Pachner moves and
-  /// `bridge` keep their own gates.
+  /// (`hasFixedBoundary`) — a SURFACE input or output block, whose own
+  /// triangles are a component of \f$ \partial W \f$. A node that declares
+  /// none has no fixed boundary to protect, so its cones are unrestricted
+  /// whatever this is set to, and every free emergent build (the proton hosts
+  /// grown from a \f$ \Delta^4 \f$ seed, the CDT work) behaves exactly as it
+  /// did. A pinned region is NOT such a declaration: pinning constrains the
+  /// geometry and does not veto a topology change (`declarePinnedRegion`),
+  /// and making it imply this gate would reverse that. Only the cone kinds
+  /// are gated; the Pachner moves and `bridge` keep their own gates.
   void setBoundaryMayExtend(bool allowed) noexcept { boundaryMayExtend_ = allowed; }
   [[nodiscard]] bool boundaryMayExtend() const noexcept { return boundaryMayExtend_; }
-  /// Whether this node declares a boundary it holds fixed: any surface input
-  /// block (its own triangles ARE a boundary component) or any pinned region.
+  /// Whether this node declares a boundary it holds fixed: any SURFACE input
+  /// or output block, whose own triangles are a component of the boundary. A
+  /// pinned region is not one (see `setBoundaryMayExtend`).
   [[nodiscard]] bool hasFixedBoundary() const noexcept;
   /// The boundary of \p spacetime as a set of facets: every codimension-one
   /// face carried by exactly one top cell, as sorted vertex-id tuples. This

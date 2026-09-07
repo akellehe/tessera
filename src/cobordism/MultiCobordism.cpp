@@ -5024,11 +5024,18 @@ MultiCobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &b
 }
 
 bool MultiCobordism::hasFixedBoundary() const noexcept {
+  // A SURFACE block only. Its own triangles ARE a component of the boundary,
+  // declared by the caller, which is what makes dW a stated fact rather than
+  // whatever the search exposed. A PINNED REGION is deliberately not one:
+  // "pinning constrains the geometry, it does not veto a topology change" is
+  // the settled reading of `declarePinnedRegion` (the acceptance in
+  // applyMoveSpecification and the ManifoldValidityIsTheOnlyGate tests), and
+  // making it imply a topological gate would quietly reverse it.
   for (const auto &block : inputBlocks_)
     if (block.surface) return true;
   for (const auto &block : outputBlocks_)
     if (block.surface) return true;
-  return !pinnedRegions_.empty();
+  return false;
 }
 
 std::set<std::vector<std::uint64_t>> MultiCobordism::boundaryFacetsOf(const Spacetime &spacetime) {
