@@ -2584,9 +2584,9 @@ def _panel_residuals(axis, frames):
     for index, (label, colour) in enumerate(zip(labels, DECLARED_TORUS_COLOURS)):
         series.append(("block %s (weight %g)" % (label, last.inputs.weight),
                        colour, "-", lambda f, i=index: _block_value(f, i, "residual")))
-        series.append(("leak %s in the whole" % label, colour, ":",
+        series.append((r"leak %s in the whole's $\ker L_1$" % label, colour, ":",
                        lambda f, i=index: _leak_value(f, i)))
-    series.append(("two-body vs chi", "#1f4e79", "--",
+    series.append((r"two-body vs $\chi$", "#1f4e79", "--",
                    lambda f: None if isinstance(f.two_body, Absent)
                    else f.two_body["residual"]))
     drawn = 0
@@ -2617,7 +2617,7 @@ def _panel_moduli(axis, frames):
     tau-hat is the torus's own conformal structure, which the block residual
     of D2 holds at tau_in: the panel shows how far it is allowed to drift
     under synthesis, next to the Weil-Petersson distance that measures it."""
-    title = "tau-hat on the upper half plane (star: tau_in)"
+    title = r"$\hat\tau$ on the upper half plane (ring: $\tau_{\mathrm{in}}$)"
     last = frames[-1]
     if last.inputs is None or isinstance(last.blocks, Absent):
         return _absent_panel(axis, title, _qubit_reason(last))
@@ -2634,7 +2634,7 @@ def _panel_moduli(axis, frames):
         drawn += 1
         axis.plot([t.real for t in path], [t.imag for t in path], marker="o",
                   markersize=2.2, linewidth=0.8, color=colour, zorder=2,
-                  label="tau-hat %s = %s" % (label, _tau_text(path[-1])))
+                  label=r"$\hat\tau_{%s}$ = %s" % (label, _tau_text(path[-1])))
         axis.plot([path[-1].real], [path[-1].imag], marker="o", markersize=5,
                   color=colour, linestyle="none", zorder=4)
     if not drawn:
@@ -2643,8 +2643,8 @@ def _panel_moduli(axis, frames):
     axis.axhline(0.0, linewidth=0.5, color="#333333")
     low, high = axis.get_ylim()
     axis.set_ylim(min(0.0, low), max(high, 0.1))
-    axis.set_xlabel("Re tau", fontsize=6)
-    axis.set_ylabel("Im tau", fontsize=6)
+    axis.set_xlabel(r"$\mathrm{Re}\,\tau$", fontsize=6)
+    axis.set_ylabel(r"$\mathrm{Im}\,\tau$", fontsize=6)
     axis.tick_params(labelsize=6)
     axis.grid(alpha=0.25, linewidth=0.4)
     axis.legend(fontsize=5, loc="best", frameon=True, framealpha=0.85)
@@ -2654,7 +2654,9 @@ def _panel_bloch(axis, frame):
     """The Bloch hemisphere the tori can represent (Im tau > 0, i.e.
     r_y > 0), seen from +y: the (r_x, r_z) disk, the read vectors as arrows
     and the input vectors as hollow markers, r_y written beside each."""
-    title = "Bloch hemisphere r_y > 0 (from +y; ring: input)"
+    title = (r"Bloch hemisphere $r_y > 0$, seen from $+y$"
+             "\n"
+             r"(arrow: $\hat r$ of the live read; ring: $r$ of the input)")
     if frame.inputs is None or isinstance(frame.blocks, Absent):
         return _absent_panel(axis, title, _qubit_reason(frame))
     import numpy as np
@@ -2678,7 +2680,7 @@ def _panel_bloch(axis, frame):
         axis.annotate("", xy=(r[0], r[2]), xytext=(0.0, 0.0),
                       arrowprops=dict(arrowstyle="->", color=colour,
                                       linewidth=1.3), zorder=3)
-        axis.text(r[0], r[2], " %s  r_y=%.3f" % (label, r[1]), fontsize=5.5,
+        axis.text(r[0], r[2], r" %s  $r_y$=%.3f" % (label, r[1]), fontsize=5.5,
                   color=colour, va="center")
     if not drawn:
         return _absent_panel(axis, title, _qubit_reason(frame))
@@ -2686,8 +2688,8 @@ def _panel_bloch(axis, frame):
     axis.set_xlim(-1.2, 1.2)
     axis.set_ylim(-1.2, 1.2)
     axis.set_aspect("equal")
-    axis.set_xlabel("r_x", fontsize=6)
-    axis.set_ylabel("r_z", fontsize=6)
+    axis.set_xlabel(r"$r_x$", fontsize=6)
+    axis.set_ylabel(r"$r_z$", fontsize=6)
     axis.tick_params(labelsize=6)
 
 
@@ -2697,7 +2699,7 @@ def _panel_transfer(axis, frame):
     quantity, one inverse power of the length scale), chi the algebra's
     target; the projective leak the engine scores, the Schmidt spectrum and
     the reversal residual are in the title."""
-    title = "|T| (period frames) vs |chi| (spec S5)"
+    title = r"$|T_{AB}|$ (period frames) vs $|\chi|$ (spec S5)"
     if frame.inputs is None:
         return _absent_panel(axis, title, _qubit_reason(frame))
     if isinstance(frame.two_body, Absent):
@@ -2727,20 +2729,21 @@ def _panel_transfer(axis, frame):
             axis.text(columns + 1 + j, i, "%.3g" % chi[i, j], ha="center",
                       va="center", fontsize=5.5, color=ink(grid[i, columns + 1 + j]))
     axis.set_xticks(list(range(columns)) + list(range(columns + 1, 2 * columns + 1)))
-    axis.set_xticklabels(["|%d>" % j for j in range(columns)] * 2, fontsize=6)
+    axis.set_xticklabels([r"$|%d\rangle$" % j for j in range(columns)] * 2, fontsize=6)
     axis.set_yticks(range(rows))
-    axis.set_yticklabels(["|%d>" % i for i in range(rows)], fontsize=6)
+    axis.set_yticklabels([r"$|%d\rangle$" % i for i in range(rows)], fontsize=6)
     # A blank band above the matrices carries their labels inside the axes,
     # clear of the title.
     axis.set_ylim(rows - 0.5, -1.3)
-    axis.text((columns - 1) / 2.0, -0.85, "|T| / max", ha="center",
-              fontsize=6, color="#333333")
-    axis.text(columns + 1 + (columns - 1) / 2.0, -0.85, "|chi| / max",
+    axis.text((columns - 1) / 2.0, -0.85, r"$|T_{AB}| / \max|T_{AB}|$",
+              ha="center", fontsize=6, color="#333333")
+    axis.text(columns + 1 + (columns - 1) / 2.0, -0.85,
+              r"$|\chi| / \max|\chi|$",
               ha="center", fontsize=6, color="#333333")
     read = frame.two_body
     spectrum = ", ".join("%.3g" % s for s in read["singular_values"]
                          if s is not None)
-    axis.set_title("%s\nleak %.4g, Schmidt (%s) rank %d, reversal %.1e%s"
+    axis.set_title("%s\n" + r"leak %.4g, Schmidt $\sigma$ (%s) rank %d, reversal %.1e%s"
                    % (title, read["residual"] if read["residual"] is not None
                       else float("nan"), spectrum, read["schmidt_rank"],
                       read["reversal_residual"]
