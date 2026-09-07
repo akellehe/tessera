@@ -1869,11 +1869,15 @@ class EmergenceFrame:
 # the drive -- unforced emergence, one frame per engine unit
 # =====================================================================
 
-def drive(config, progress=False, on_frame=None):
+def drive(config, progress=False, on_frame=None, on_node=None):
     """Drive unforced emergence, reading a frame after every engine unit.
 
     `on_frame(frames, index)` is called as each unit completes, so a caller
-    can display a run while it is still running. It is the ONLY difference
+    can display a run while it is still running. `on_node(node)` is called
+    once, as soon as the node exists, so a caller holds the object the loop
+    drives and can write its geometry even if the loop is interrupted. Both
+    are observers: neither is consulted, so a drive with them and a drive
+    without them take the same steps. It is the ONLY difference
     between a live drive and a headless one: the loop, the engine calls and
     the frames are the same either way, so a live view cannot diverge from
     the run it claims to be showing.
@@ -1912,6 +1916,8 @@ def drive(config, progress=False, on_frame=None):
     factory = NODE_FACTORIES.get(config.get("inputs", DECLARED_INPUTS),
                                  neutral_node)
     node, inputs = factory(config)
+    if on_node is not None:
+        on_node(node)
 
     # EVERY frame reads `node.spacetime()`, never the host handed to the
     # constructor. Stage 1 REPLACES the node's complex when it commits a move,
@@ -2933,7 +2939,7 @@ def _interactive_backends():
             return set()
 
 
-def drive_live(config, progress=False):
+def drive_live(config, progress=False, on_node=None):
     """Drive while drawing each unit as it completes, then return the result.
 
     The compute runs on a worker thread and the figure is drawn on the main
@@ -2982,7 +2988,7 @@ def drive_live(config, progress=False):
     def worker():
         try:
             outcome["result"] = drive(config, progress=progress,
-                                      on_frame=publish)
+                                      on_frame=publish, on_node=on_node)
         except BaseException as exc:            # re-raised on the main thread
             outcome["error"] = exc
         finally:
@@ -3014,6 +3020,115 @@ def drive_live(config, progress=False):
     if "error" in outcome:
         raise outcome["error"]
     return outcome["result"]
+
+
+def geometry_document(node, inputs=None):
+    """The node's live complex, in the schema a rebuild already reads.
+
+    The campaign worker's geometry dump (schema 1, rebuilt verbatim by
+    `tests/cobordism/_causal_specimen.rebuild_spacetime`): the dimension, the
+    top cells in their intrinsic vertex order, every edge as
+    `[source, target, Re l^2, Im l^2]`, and the per-vertex times. That is
+    what `Spacetime.fromCells` plus `setLength` and `setTime` need to bring
+    the complex back exactly, which the run document cannot do: it records
+    measurements of a geometry, never the geometry.
+
+    WHY the squared length rather than the length: `l^2` is the coordinate
+    the relaxation moves and the quantity every formula takes, and the
+    complex square root has two branches, so writing `l` and reading it back
+    would be a branch choice made twice. WHY the times: they are state a
+    `Spacetime` carries and `fromCells` does not derive.
+
+    With `inputs` (the qubit mode) each block is recorded too, in the same
+    shape as the whole: its own surface as `cells` and `edges`, so a torus
+    loads and can be fiddled with on its own -- straight into
+    `SimplicialQubit`, without carrying the bulk -- next to its vertex set,
+    its marking as directed host steps, and its input coefficients, which a
+    rebuilt Spacetime alone cannot supply. The block's edges are the host's
+    on those vertices, so a torus and the whole agree edge for edge; the
+    surface is written anyway because reconstructing which of the whole's
+    edges belong to a torus needs the block, which is the thing being
+    recorded.
+
+    Phases are a separate field, written per edge alongside the squared
+    length and only where some phase is nonzero.
+    """
+    spacetime = node.spacetime()
+    cells = [[int(v.getId()) for v in cell.getVertices()]
+             for cell in spacetime.getTopSimplices()]
+    if not cells:
+        raise ValueError("the node's complex has no top cell: nothing to write")
+    # The container exposes no dimension of its own, so it is read off the
+    # top cells: a d-simplex has d + 1 vertices. A complex whose top cells
+    # disagree is not one `fromCells` could rebuild, and says so here rather
+    # than on the read.
+    sizes = sorted({len(cell) for cell in cells})
+    if len(sizes) != 1:
+        raise ValueError("the top cells have %s vertices: not a pure complex"
+                         % ", ".join(str(n) for n in sizes))
+    edges = []
+    phases = []
+    for edge in spacetime.getEdgeList().toVector():
+        source = int(edge.getSource().getId())
+        target = int(edge.getTarget().getId())
+        squared = complex(edge.getLength()) ** 2
+        edges.append([source, target, squared.real, squared.imag])
+        phase = complex(edge.getPhase())
+        if phase != 0:
+            phases.append([source, target, phase.real, phase.imag])
+    document = {
+        "schema": 1,
+        "dimensions": sizes[0] - 1,
+        "cells": cells,
+        "edges": edges,
+        "vertex_times": [[int(v.getId()), float(v.getTime())]
+                         for v in spacetime.getVertexList().toVector()],
+    }
+    if phases:
+        document["edge_phases"] = phases
+    if inputs is not None:
+        document["blocks"] = [
+            _block_geometry(node, inputs, index)
+            for index in range(len(inputs.tori))]
+    return _json_safe(document)
+
+
+def _block_geometry(node, inputs, index):
+    """One input block's own surface, in the same shape as the whole."""
+    block = {
+        "label": inputs.labels[index],
+        "vertices": sorted(int(v) for v in inputs.vertex_ids[index].values()),
+        "marking": [[list(step) for step in cycle]
+                    for cycle in inputs.markings[index]],
+        "coefficients": [complex(z) for z in inputs.coefficients_in[index]],
+        "tau_in": inputs.tau_in[index],
+    }
+    surface = MC.block_surface_subcomplex(node.inputs[index], node.spacetime())
+    if surface is None:
+        # A torn surface carries no state and no geometry; say so rather
+        # than write a complex that is not the torus.
+        block["surface"] = None
+        return block
+    cells = [[int(v.getId()) for v in cell.getVertices()]
+             for cell in surface.getTopSimplices()]
+    edges = []
+    phases = []
+    for edge in surface.getEdgeList().toVector():
+        source = int(edge.getSource().getId())
+        target = int(edge.getTarget().getId())
+        squared = complex(edge.getLength()) ** 2
+        edges.append([source, target, squared.real, squared.imag])
+        phase = complex(edge.getPhase())
+        if phase != 0:
+            phases.append([source, target, phase.real, phase.imag])
+    # The same shape as the whole, times included, so one loader reads either.
+    block["surface"] = {"dimensions": len(cells[0]) - 1 if cells else 0,
+                        "cells": cells, "edges": edges,
+                        "vertex_times": [[int(v.getId()), float(v.getTime())]
+                                         for v in surface.getVertexList().toVector()]}
+    if phases:
+        block["surface"]["edge_phases"] = phases
+    return block
 
 
 def render(frames, path):
@@ -3247,6 +3362,12 @@ def build_parser():
                      help="GIF, MP4, or PNG of the final frame")
     run.add_argument("--json", default=None,
                      help="also write the per-frame measurements here")
+    run.add_argument("--geometry", default=None,
+                     help="also write the FINAL complex here (schema 1: "
+                          "cells, edges as [src, tgt, Re l^2, Im l^2], vertex "
+                          "times, and the qubit blocks with their markings), "
+                          "the one output a run can be rebuilt from. Written "
+                          "however the drive ends, an interrupt included")
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -3262,8 +3383,21 @@ def main(argv=None):
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
                           input_weight=args.input_weight, regge=args.regge)
-    result = (drive_live(config, progress=not args.quiet) if args.live
-              else drive(config, progress=not args.quiet))
+    # Held from the moment the node exists, so the geometry is written even
+    # when the drive is interrupted: an interrupted run's complex is exactly
+    # the one worth keeping, and it is the only output that cannot be
+    # recomputed from the others.
+    driven = {}
+    try:
+        result = (drive_live(config, progress=not args.quiet,
+                             on_node=lambda node: driven.update(node=node))
+                  if args.live
+                  else drive(config, progress=not args.quiet,
+                             on_node=lambda node: driven.update(node=node)))
+    except KeyboardInterrupt:
+        if args.geometry and "node" in driven:
+            _write_geometry(args.geometry, driven["node"], None, args.quiet)
+        raise
     frames = result.frames
     if not args.quiet and result.terminator == Terminator.TOLERANCE:
         sys.stdout.write(
@@ -3283,11 +3417,21 @@ def main(argv=None):
             json.dump(document, handle, indent=2, sort_keys=True)
         if not args.quiet:
             sys.stdout.write("wrote %s\n" % args.json)
+    if args.geometry and "node" in driven:
+        _write_geometry(args.geometry, driven["node"], result.inputs, args.quiet)
     if args.out:
         path = render(frames, args.out)
         if not args.quiet:
             sys.stdout.write("wrote %s\n" % path)
     return 0
+
+
+def _write_geometry(path, node, inputs, quiet):
+    with open(path, "w") as handle:
+        json.dump(geometry_document(node, inputs), handle, indent=2,
+                  sort_keys=True)
+    if not quiet:
+        sys.stdout.write("wrote %s\n" % path)
 
 
 if __name__ == "__main__":
