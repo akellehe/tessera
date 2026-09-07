@@ -458,7 +458,17 @@ weight 1e4 — the chosen weight of this note, now the driver's default — the
 Regge direction dominates the step and the drive descends normally
 (123.65 → 119.60 → 78.57 over two units, both residuals below 1e-3). The
 discontinuity is engine behaviour independent of this change and is filed
-separately.
+separately as #991.
+
+**The real locus avoids it.** A node built with `realSquaredLengthsOnly`
+projects the imaginary part of every trial away, so the step never leaves the
+real locus and never meets the jump. There the drive runs at weight 1e6 with
+the Regge term on: twenty stage-2 steps take the objective from 123.6497 to
+122.4027 (the Regge term 123.1236 to 121.6539), the own-state residuals stay
+at 2.0e-7 and 6.2e-10, τ̂ stays within 1.0e-3 of τ_in, and the output-state
+read moves only from 3.100e-3 / 9.345e-3 to 3.094e-3 / 9.302e-3. That is the
+D2 reading in one run: the tori keep their own states while the bulk relaxes,
+and the whole's zero mode is reported rather than held.
 
 ## Where this leaves the experiment
 
