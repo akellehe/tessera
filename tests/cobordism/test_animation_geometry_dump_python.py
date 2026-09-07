@@ -106,6 +106,19 @@ def test_the_dump_is_schema_1_and_describes_the_driven_complex(driven):
         assert len(block["vertices"]) == 9
         assert len(block["marking"]) == 2 and all(len(c) > 0 for c in block["marking"])
         assert [complex(*z) for z in block["coefficients"]] == [1.0 + 0j, tau_in]
+        assert complex(*block["tau_in"]) == tau_in
+        # each torus's own surface, in the same shape as the whole
+        surface = block["surface"]
+        assert surface["dimensions"] == 2
+        assert len(surface["cells"]) == 18 and len(surface["edges"]) == 27
+        assert all(len(cell) == 3 for cell in surface["cells"])
+        inside = set(block["vertices"])
+        assert all(set(cell) <= inside for cell in surface["cells"])
+        # the torus's edges ARE the whole's on those vertices, value for value
+        whole = {(min(u, v), max(u, v)): (re, im)
+                 for u, v, re, im in document["edges"]}
+        for u, v, re, im in surface["edges"]:
+            assert whole[(min(u, v), max(u, v))] == (re, im)
     # the tori are relaxed off the real locus, which the dump carries
     assert any(abs(edge[3]) > 0 for edge in document["edges"])
 
@@ -119,6 +132,42 @@ def test_the_dump_rebuilds_the_complex_to_rounding(driven):
         # The schema records l^2 and the rebuild takes its square root, so
         # the squared length comes back one rounding away, not bit-identical.
         assert after[key] == pytest.approx(value, rel=1e-15, abs=0.0), (key, value, after[key])
+
+
+def test_each_torus_loads_on_its_own_as_the_qubit_it_was(driven):
+    """A block's surface plus its marking is a SimplicialQubit: the point of
+    writing it separately is that a torus can be picked up and fiddled with
+    without carrying the bulk."""
+    node, _result, document = driven
+    from tessera import observables as obs
+
+    for index, block in enumerate(document["blocks"]):
+        surface = rebuild(block["surface"])
+        ids = sorted(int(v.getId()) for v in surface.getVertexList().toVector())
+        position = {vid: n for n, vid in enumerate(ids)}
+        pairs = sorted((min(position[int(e.getSource().getId())],
+                            position[int(e.getTarget().getId())]),
+                        max(position[int(e.getSource().getId())],
+                            position[int(e.getTarget().getId())]))
+                       for e in surface.getEdgeList().toVector())
+        index_of = {pair: n for n, pair in enumerate(pairs)}
+        cycles = []
+        for cycle in block["marking"]:
+            steps = []
+            for u, v in cycle:
+                a, b = position[int(u)], position[int(v)]
+                steps.append((index_of[(min(a, b), max(a, b))], 1 if a < b else -1))
+            cycles.append(steps)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            loaded = obs.SimplicialQubit(surface, cycles[0], cycles[1],
+                                         reversed=False)
+            if loaded.intersection_number() < 0:
+                loaded = obs.SimplicialQubit(surface, cycles[0], cycles[1],
+                                             reversed=True)
+        assert abs(loaded.intersection_number() - 1.0) < 1e-12
+        assert loaded.tau() == pytest.approx(complex(node.block_qubit(index).tau()),
+                                             rel=1e-12)
 
 
 def test_a_node_rebuilt_on_the_dump_reads_what_the_driven_node_read(driven):

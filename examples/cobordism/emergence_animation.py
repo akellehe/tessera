@@ -3039,12 +3039,19 @@ def geometry_document(node, inputs=None):
     would be a branch choice made twice. WHY the times: they are state a
     `Spacetime` carries and `fromCells` does not derive.
 
-    With `inputs` (the qubit mode) the blocks are recorded too -- each
-    block's vertex set, its marking as directed host steps, and its input
-    coefficients -- since a rebuilt Spacetime alone cannot say which
-    vertices carried a qubit or in which basis it was read. The phases ride
-    on the edges as the imaginary part of nothing: they are a separate
-    field, written per edge alongside the squared length.
+    With `inputs` (the qubit mode) each block is recorded too, in the same
+    shape as the whole: its own surface as `cells` and `edges`, so a torus
+    loads and can be fiddled with on its own -- straight into
+    `SimplicialQubit`, without carrying the bulk -- next to its vertex set,
+    its marking as directed host steps, and its input coefficients, which a
+    rebuilt Spacetime alone cannot supply. The block's edges are the host's
+    on those vertices, so a torus and the whole agree edge for edge; the
+    surface is written anyway because reconstructing which of the whole's
+    edges belong to a torus needs the block, which is the thing being
+    recorded.
+
+    Phases are a separate field, written per edge alongside the squared
+    length and only where some phase is nonzero.
     """
     spacetime = node.spacetime()
     cells = [[int(v.getId()) for v in cell.getVertices()]
@@ -3081,13 +3088,47 @@ def geometry_document(node, inputs=None):
         document["edge_phases"] = phases
     if inputs is not None:
         document["blocks"] = [
-            {"label": inputs.labels[index],
-             "vertices": sorted(int(v) for v in inputs.vertex_ids[index].values()),
-             "marking": [[list(step) for step in cycle]
-                         for cycle in inputs.markings[index]],
-             "coefficients": [complex(z) for z in inputs.coefficients_in[index]]}
+            _block_geometry(node, inputs, index)
             for index in range(len(inputs.tori))]
     return _json_safe(document)
+
+
+def _block_geometry(node, inputs, index):
+    """One input block's own surface, in the same shape as the whole."""
+    block = {
+        "label": inputs.labels[index],
+        "vertices": sorted(int(v) for v in inputs.vertex_ids[index].values()),
+        "marking": [[list(step) for step in cycle]
+                    for cycle in inputs.markings[index]],
+        "coefficients": [complex(z) for z in inputs.coefficients_in[index]],
+        "tau_in": inputs.tau_in[index],
+    }
+    surface = MC.block_surface_subcomplex(node.inputs[index], node.spacetime())
+    if surface is None:
+        # A torn surface carries no state and no geometry; say so rather
+        # than write a complex that is not the torus.
+        block["surface"] = None
+        return block
+    cells = [[int(v.getId()) for v in cell.getVertices()]
+             for cell in surface.getTopSimplices()]
+    edges = []
+    phases = []
+    for edge in surface.getEdgeList().toVector():
+        source = int(edge.getSource().getId())
+        target = int(edge.getTarget().getId())
+        squared = complex(edge.getLength()) ** 2
+        edges.append([source, target, squared.real, squared.imag])
+        phase = complex(edge.getPhase())
+        if phase != 0:
+            phases.append([source, target, phase.real, phase.imag])
+    # The same shape as the whole, times included, so one loader reads either.
+    block["surface"] = {"dimensions": len(cells[0]) - 1 if cells else 0,
+                        "cells": cells, "edges": edges,
+                        "vertex_times": [[int(v.getId()), float(v.getTime())]
+                                         for v in surface.getVertexList().toVector()]}
+    if phases:
+        block["surface"]["edge_phases"] = phases
+    return block
 
 
 def render(frames, path):
