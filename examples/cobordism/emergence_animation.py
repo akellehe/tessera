@@ -252,6 +252,15 @@ DECLARED_TIME = 0.05
 #: imaginary displacement of 1e-12 in one squared length moves it by 1.5),
 #: and the residual's descent direction, holomorphic in z, always has one.
 DECLARED_INPUT_WEIGHT = 1e4
+#: Whether a CONE move may extend the boundary of W (`--extend-boundary`).
+#: False, which is also the engine's default: this driver states its
+#: boundary up front -- the two input tori of the qubit mode, the held M0 of
+#: the neutral one -- and a cone that hands dW a face it did not have
+#: changes what the cobordism IS rather than how it is shaped. A cone-in
+#: buries the facet it stands on and exposes the new cell's others; a
+#: cone-out exposes every facet of the cell it removes. Declared here
+#: anyway, so the run document records which it was.
+DECLARED_EXTEND_BOUNDARY = False
 #: Whether the Regge stationarity term is in the objective (the engine's
 #: `einstein_hilbert`); off, r_U is the whole objective.
 DECLARED_REGGE = True
@@ -1918,6 +1927,10 @@ def drive(config, progress=False, on_frame=None, on_node=None):
     node, inputs = factory(config)
     if on_node is not None:
         on_node(node)
+    # One place, both modes: the boundary gate is a property of the drive, not
+    # of what is being driven, so neither factory decides it (spec R8: the
+    # host is emergent, and this says which growth counts as emergence).
+    node.set_boundary_may_extend(bool(config["extend_boundary"]))
 
     # EVERY frame reads `node.spacetime()`, never the host handed to the
     # constructor. Stage 1 REPLACES the node's complex when it commits a move,
@@ -3193,7 +3206,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
-                 input_weight=DECLARED_INPUT_WEIGHT, regge=DECLARED_REGGE):
+                 input_weight=DECLARED_INPUT_WEIGHT, regge=DECLARED_REGGE,
+                 extend_boundary=DECLARED_EXTEND_BOUNDARY):
     if edge_disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
@@ -3261,6 +3275,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "time": float(time),
         "input_weight": float(input_weight),
         "regge": bool(regge),
+        "extend_boundary": bool(extend_boundary),
     }
 
 
@@ -3356,6 +3371,13 @@ def build_parser():
                      help="qubit mode: keep the Regge stationarity term in "
                           "the objective (--no-regge leaves r_U alone; "
                           "default %s)" % ("on" if DECLARED_REGGE else "off"))
+    run.add_argument("--extend-boundary", action="store_true",
+                     dest="extend_boundary",
+                     default=DECLARED_EXTEND_BOUNDARY,
+                     help="let a cone move extend the boundary of W. Off by "
+                          "default: a cone that hands dW a face it did not "
+                          "have changes what the cobordism is, and this "
+                          "driver states its boundary up front")
     run.add_argument("--live", action="store_true",
                      help="draw each frame as it is computed instead of only "
                           "at the end; still writes --out and --json. Needs "
@@ -3385,7 +3407,8 @@ def main(argv=None):
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
-                          input_weight=args.input_weight, regge=args.regge)
+                          input_weight=args.input_weight, regge=args.regge,
+                          extend_boundary=args.extend_boundary)
     # Held from the moment the node exists, so the geometry is written even
     # when the drive is interrupted: an interrupted run's complex is exactly
     # the one worth keeping, and it is the only output that cannot be

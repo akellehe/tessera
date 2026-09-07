@@ -1632,6 +1632,29 @@ assertion. Every pairing is the transpose.)doc")
            "every other amplitude, varies only interior geometry, and "
            "minimizes the Rayleigh "
            "residual. It does not run the node's period or Regge objective.")
+      .def("set_boundary_may_extend", &MultiCobordism::setBoundaryMayExtend, py::arg("allowed"),
+           "Whether a CONE move may extend a FIXED boundary (default False: it may not). False "
+           "refuses a cone_out, cone_in or cone_in_timelike candidate whose complex has a boundary "
+           "facet the complex before the move lacked, beside the manifold gate and on the same "
+           "footing. It applies only where a boundary is DECLARED fixed (has_fixed_boundary: a "
+           "surface input block, or a pinned region); a node with neither is unrestricted either "
+           "way. The Pachner moves and bridge keep their own gates.")
+      .def_property_readonly("boundary_may_extend", &MultiCobordism::boundaryMayExtend)
+      .def_property_readonly("has_fixed_boundary", &MultiCobordism::hasFixedBoundary,
+                             "Whether this node declares a boundary it holds fixed: any surface "
+                             "input or output block, or any pinned region.")
+      .def_static("boundary_facets",
+                  [](const Spacetime &spacetime) {
+                    // A list, not a set: the C++ side keeps a std::set for the
+                    // lookups the gate makes, but a Python set cannot hold an
+                    // unhashable list, so the order the set already carries
+                    // (ascending vertex tuples) is handed over as a sequence.
+                    const auto facets = MultiCobordism::boundaryFacetsOf(spacetime);
+                    return std::vector<std::vector<std::uint64_t>>(facets.begin(), facets.end());
+                  },
+                  py::arg("spacetime"), py::call_guard<py::gil_scoped_release>(),
+                  "The boundary of `spacetime` as sorted vertex tuples in ascending order: every "
+                  "codimension-one face carried by exactly one top cell.")
       .def("use_fiber_residuals", &MultiCobordism::useFiberResiduals, py::arg("enabled"),
            "Score blocks carrying a fiber-form target by the fiber residual (least-squares leak of the "
            "target images in the band read on the block's own pencil, restricted to the fiber's cells) "
