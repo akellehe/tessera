@@ -407,6 +407,69 @@ prints "monodromy [[0, 0], [0, 0]]" — the integer read is defined for two
 markings whose base points share a gauge, and needs the factor divided out
 otherwise. The fit residual stays at 3e-16.
 
+## The block residual of D2 as reworded (#988, #989)
+
+Everything above C4 was measured under the previous D2, where the block
+residual held the zero mode of the *entire* cobordism at each torus's input
+coefficients and the torus's own conformal structure was free (the d_WP
+column of C2, up to 0.44). On 2026-09-07 the owner restored the original
+reading: **each torus keeps representing its input state through the zero
+mode of its own Laplacian; the whole's zero mode is the output state, read
+and never held.** The engine now scores
+
+    r = 1 − |⟨ψ(τ_in)|ψ(τ̂)⟩|² = sin²(d_FS)
+
+with τ̂ the ratio of the transported periods of the holomorphic 1-form of the
+block's own Laplacian on its live surface (`MultiCobordism::blockQubit`,
+`ownStateResidual`), ψ(τ) = (1, τ)/√(1+|τ|²). The previous quantity survives
+unchanged as the output-state read (`inputStateResidual`, `readInputState`,
+the `output_leak` channel of the animation).
+
+Measured on this branch (3×3 collar, `OMP_NUM_THREADS=8`):
+
+| quantity | value |
+|---|---|
+| block residual on the collar seed | 2.2e-16 and 0.0 |
+| τ̂ on the seed against τ_in | agrees to 1e-14 |
+| output-state read's leak on the seed | 3.100e-3 and 9.345e-3 (unchanged) |
+| residuals after a 5% jitter of the tori's edges | 4.856e-4 and 1.855e-4 |
+| the same after three stage-2 steps (weight 1e4, no Regge term) | 8.7e-9 and 4.7e-7 |
+| τ̂ after those steps | 0.29979 + 1.10001i and −0.19891 + 0.79964i |
+| gradient support | exactly the 27 edges of each torus, zero on the 36 bulk edges |
+| Euler identity Σ Re(z_e) g_e | below 1e-19 (τ is scale-free) |
+| gradient against central differences | agrees to 3e-8, the difference's own accuracy |
+| gradient under a pure gauge on every host edge | unchanged to 1e-12 |
+
+The seed is the residual's global minimum, so C2 cannot ask it to descend
+from the seed any more; what it asks is that the torus still represents its
+input after synthesis, which the residual measures directly and which the
+identity r = sin²(d_FS) ties to the reported qubit read.
+
+**A pre-existing discontinuity this exposes.** The residual is a real
+function of τ̂, which is holomorphic in the squared lengths, so its descent
+direction always has an imaginary component. The engine's Regge stationarity
+term is *discontinuous* across the real locus: measured on origin/main
+(85b4a94), an imaginary displacement of 1e-12 in the squared lengths moves it
+from 123.1236 to 121.6405, and the limit depends on the signs of Im z_e, not
+their size. Along the new descent direction the jump is upward (+15.6), so
+with the Regge term on and the input weight at 1e6 every one of the line
+search's 24 halvings is rejected and the drive is stationary at the seed. At
+weight 1e4 — the chosen weight of this note, now the driver's default — the
+Regge direction dominates the step and the drive descends normally
+(123.65 → 119.60 → 78.57 over two units, both residuals below 1e-3). The
+discontinuity is engine behaviour independent of this change and is filed
+separately as #991.
+
+**The real locus avoids it.** A node built with `realSquaredLengthsOnly`
+projects the imaginary part of every trial away, so the step never leaves the
+real locus and never meets the jump. There the drive runs at weight 1e6 with
+the Regge term on: twenty stage-2 steps take the objective from 123.6497 to
+122.4027 (the Regge term 123.1236 to 121.6539), the own-state residuals stay
+at 2.0e-7 and 6.2e-10, τ̂ stays within 1.0e-3 of τ_in, and the output-state
+read moves only from 3.100e-3 / 9.345e-3 to 3.094e-3 / 9.302e-3. That is the
+D2 reading in one run: the tori keep their own states while the bulk relaxes,
+and the whole's zero mode is reported rather than held.
+
 ## Where this leaves the experiment
 
 Answered by the records:
@@ -414,13 +477,14 @@ Answered by the records:
 - C1 holds: the collar seed is a manifold with ∂W = T_A ⊔ T_B, Betti
   numbers [1, 2, 1, 0], the identity monodromy to 1e-15 at 3×3 and 4×4,
   and the bridge round trip is bit-exact (T1's test re-run here).
-- C2 holds at the chosen weights and at the default ones: the block
-  residuals fall from 3.1e-3 / 9.3e-3 to 2.6e-5 / 2.6e-5 (weight 1e4) or
-  3.7e-7 / 2.0e-7 (weight 1e6) and the whole's coefficients in the live
-  frames sit at (1, τ_in) to 1e-4–1e-5, reported every frame. The tori's
-  own τ̂ moves away from τ_in while that holds (d_WP up to 0.44 at 3×3,
-  0.55 at 4×4), which is what D2 as revised implies and C2 as revised no
-  longer asks to be small.
+- C2 held under the D2 of the time: the block residuals fell from
+  3.1e-3 / 9.3e-3 to 2.6e-5 / 2.6e-5 (weight 1e4) or 3.7e-7 / 2.0e-7
+  (weight 1e6) and the whole's coefficients in the live frames sat at
+  (1, τ_in) to 1e-4–1e-5, reported every frame, while the tori's own τ̂
+  moved away from τ_in (d_WP up to 0.44 at 3×3, 0.55 at 4×4). Under the
+  D2 of #988 that drift is what the residual forbids: see the section
+  above, where the seed reads its residual at 2e-16 and a jittered torus
+  is driven back to τ_in.
 - C3 holds for the trivial monodromy: the identity at every frame. No
   drawing with monodromy M ≠ 1 arose, so the transformation of the periods
   by M was not measured beyond T1's remarking check on the seed. The

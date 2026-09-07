@@ -28,6 +28,7 @@
 
 namespace tessera::spacetime { class Spacetime; }
 namespace tessera::mesh { class Edge; }
+namespace tessera::observables { class SimplicialQubit; }
 
 namespace tessera::cobordism {
 using ::tessera::spacetime::Spacetime;
@@ -117,19 +118,26 @@ class MultiCobordism {
   /// at the common base point, `Connection::commonBasePoint`), and the
   /// coefficients \f$ (a, b) \f$ of the state the block represents, one per
   /// cycle — \f$ (1, \tau_{in}) \f$ for an input torus. WHAT the engine does
-  /// with it: at every read it DERIVES the block's frame from the marking and
-  /// the block's live own kernel (`deriveFrame`: the zero mode of the block's
-  /// own covariant pencil normalized to transported periods \f$ (1, 0) \f$ and
-  /// \f$ (0, 1) \f$ over the cycles), writes the coefficients on the block's
-  /// edges through that frame, and scores the leak of those edge values in
-  /// the zero mode of the ENTIRE cobordism restricted to the block's edges
-  /// (`inputStateResidualOn`, the block residual of D2); the two-body
-  /// transfer is read in the derived frames (D3). WHY the marking and not a
-  /// frame: a frame stated at attachment (`setInputFrame`) is the seed's
-  /// kernel, which stops being the block's kernel as its lengths move; the
-  /// marking is combinatorial data every engine move keeps (spec §6), so the
-  /// frame it normalizes is always the live one. Nothing about the marking
-  /// is scored: it only normalizes the frame the coefficients are written in.
+  /// with it: it SCORES the block's own state against the coefficients —
+  /// the block's live surface read as the simplicial qubit over the marking
+  /// (`blockQubit`), whose holomorphic form's transported periods over
+  /// \f$ (A, B) \f$ must be the coefficients as a point of
+  /// \f$ \mathbb{CP}^1 \f$ (`ownStateResidualOn`, the block residual of D2:
+  /// the torus keeps representing its input state through the zero mode of
+  /// its OWN Laplacian, spec R3) — and, at every read, DERIVES the block's
+  /// frame from the marking and the block's live own kernel (`deriveFrame`:
+  /// the zero mode of the block's own covariant pencil normalized to
+  /// transported periods \f$ (1, 0) \f$ and \f$ (0, 1) \f$ over the cycles),
+  /// in which the zero mode of the ENTIRE cobordism — the OUTPUT state, spec
+  /// R1, read and never held — is reported as coefficients
+  /// (`readInputState`) and the two-body transfer is read (D3). WHY the
+  /// marking and not a frame: a frame stated at attachment (`setInputFrame`)
+  /// is the seed's kernel, which stops being the block's kernel as its
+  /// lengths move; the marking is combinatorial data every engine move keeps
+  /// (spec §6), so the frame it normalizes and the periods it reads are
+  /// always the live ones. The marking itself is never scored: it fixes the
+  /// coordinates (and, by \f$ A \cdot B = +1 \f$, the orientation) the
+  /// state is read in.
   struct BlockMarking {
     /// The cycles, each one closed walk starting at `baseVertex`.
     Marking cycles;
@@ -1222,7 +1230,9 @@ class MultiCobordism {
   /// block's target edge values (the input coefficients written through the
   /// live frame) on the block's edges — a kernel vector of the whole, so its
   /// periods ARE its coordinates in the frame (spec §2); `residual` is that
-  /// fit's leak, the block residual of D2 scored at `weight` in `rU`. Under a
+  /// fit's leak — the OUTPUT state read at the block (spec R1, S6), which
+  /// `rU` does not hold: what it scores for a marked block at `weight` is
+  /// `ownStateResidualOn` (spec D2). Under a
   /// pure gauge the target's base-point factor cancels the transport's, so
   /// the pair is gauge invariant. `harmonicRank` is the whole's zero-mode
   /// rank and `frameRank` the own kernel's; an obstructed read (no frame, no
@@ -1330,13 +1340,15 @@ class MultiCobordism {
   /// rotated to start at the common base point; the block must carry an
   /// attached degree-1 fiber (the state fiber of spec S2, `attachInputFiber`).
   /// From then on the block's residual in `rU` (under `useFiberResiduals`)
-  /// is `inputStateResidualOn` — the leak of the coefficients written
-  /// through the LIVE frame in the whole's zero mode on the block's edges —
+  /// is `ownStateResidualOn` — the leak of the block's input state in the
+  /// holomorphic form of its OWN Laplacian on its live surface, spec D2 —
   /// in place of the own-kernel leak of `fiberResidualForBoundaryBlock`
   /// (which a frame always contains, so it is zero for every state), its
-  /// stage-2 direction is `inputStateResidualGradientOn`, and the two-body
-  /// transfer is read in the derived frame (a supplied `frame` on the block
-  /// is then never read). Blocks without a marking are unchanged.
+  /// stage-2 direction is `ownStateResidualGradientOn`, the whole's zero
+  /// mode is reported in the derived frame as the output state
+  /// (`readInputState`), and the two-body transfer is read in the derived
+  /// frame (a supplied `frame` on the block is then never read). Blocks
+  /// without a marking are unchanged.
   /// @throws std::out_of_range on the index; std::logic_error without an
   ///   attached fiber; std::invalid_argument, by name, when the fiber is not
   ///   at degree 1, when there is no cycle, when the coefficient count is not
@@ -1377,6 +1389,55 @@ class MultiCobordism {
   /// coefficients, and its residual. @throws std::out_of_range;
   ///   std::logic_error without a marking or off the Whitney pencil.
   [[nodiscard]] InputStateRead readInputState(std::size_t index) const;
+  /// The block's live surface read as the simplicial qubit of the qubit
+  /// spec over the block's marking (qubit cobordism spec D2, S6): the
+  /// surface of `blockSurfaceWithGeometry` (its own triangles with the
+  /// host's live lengths and phases), the marking's cycles as (edge index,
+  /// sign) steps in the surface's edge order, and the orientation fixed by
+  /// the marking — a `Spacetime` stores none, so the read is taken in the
+  /// orientation with \f$ A \cdot B = +1 \f$
+  /// (`observables::SimplicialQubit::intersectionNumber`), the qubit spec's
+  /// §2 convention under which the flat torus that seeded the block reads
+  /// \f$ \tau_{in} \f$. WHY a whole read rather than a kernel: the state a
+  /// torus represents on its own is its holomorphic form (the qubit spec §9),
+  /// which its kernel alone does not determine (every coefficient pair lies
+  /// in the kernel); the residual of D2 and the qubit read of S6 are both
+  /// this object, so they cannot disagree.
+  /// @throws std::logic_error without a marking; std::invalid_argument when
+  ///   the marking does not have two cycles or the surface refuses the
+  ///   qubit's validation; std::runtime_error when the block has no surface,
+  ///   a marking edge is not an edge of the live surface, or the qubit's
+  ///   construction is refused (a branch that cannot be continued, a
+  ///   degenerate complex structure).
+  [[nodiscard]] static observables::SimplicialQubit blockQubit(const BoundaryBlock &block,
+                                                                const std::shared_ptr<Spacetime> &spacetime);
+  /// `blockQubit` of input block \p index on the live complex. @throws std::out_of_range.
+  [[nodiscard]] observables::SimplicialQubit blockQubit(std::size_t index) const;
+  /// The block residual of the qubit cobordism spec D2 on \p spacetime: with
+  /// \f$ (P_A, P_B) \f$ the transported periods of the holomorphic form of
+  /// the block's own Laplacian on its live surface (`blockQubit`) over the
+  /// marking's cycles and \f$ (a, b) \f$ the block's input coefficients,
+  /// \f$ r = 1 - |\langle (a,b) | (P_A, P_B)\rangle|^2 / (\|(a,b)\|^2
+  /// \|(P_A,P_B)\|^2) = 1 - |\langle\psi(\tau_{in})|\psi(\hat\tau)\rangle|^2 \f$
+  /// for \f$ \psi(\tau) = (1,\tau)/\sqrt{1+|\tau|^2} \f$ — zero exactly when
+  /// the block's own Laplacian represents the input state, invariant under a
+  /// pure gauge (both periods carry the base point's factor). Full leak 1.0
+  /// when the block has no surface or the read is refused (a torn surface, a
+  /// degenerate geometry). This is what `rU` scores at `inputResidualWeight`
+  /// for a marked block: the torus keeps representing its input state on its
+  /// own (spec R3), while the whole's zero mode is the output state (R1).
+  /// @throws std::logic_error without a marking.
+  [[nodiscard]] double ownStateResidualOn(const BoundaryBlock &block,
+                                          const std::shared_ptr<Spacetime> &spacetime) const;
+  /// `ownStateResidualOn` of input block \p index on the live complex.
+  [[nodiscard]] double ownStateResidual(std::size_t index) const;
+  /// The leak of D2 from the periods and the coefficients alone:
+  /// \f$ 1 - |\langle c | p\rangle|^2/(\|c\|^2\|p\|^2) \f$ with
+  /// \f$ p = (P_A, P_B) \f$ over the GIVEN marking (the raw periods, not the
+  /// swapped ones of the qubit spec §9) and \f$ c = (a, b) \f$; 1.0 when
+  /// \f$ p \f$ vanishes.
+  [[nodiscard]] static double ownStateLeakOf(std::complex<double> periodA, std::complex<double> periodB,
+                                             const Eigen::VectorXcd &coefficients);
   /// The DUAL of a frame under the transpose pairing of \p complex's own
   /// chain-level Whitney pencil at degree \p degree: with \f$ M_k \f$ the
   /// pencil's chain-metric inverse (`CovariantChainHodge::Minv`, the Whitney
@@ -1444,7 +1505,10 @@ class MultiCobordism {
                                                          const BoundaryFiber &fiber,
                                                          FiberBand band = FiberBand::AsStored) const;
   /// The analytic gradient of `inputStateResidualOn(block, spacetime)` over
-  /// \p spacetime's edges (`ResidualGradient`, the `runStage2` convention):
+  /// \p spacetime's edges (`ResidualGradient`, the `runStage2` convention) —
+  /// the derivative of the output-state read's leak, available to a caller
+  /// and no longer the stage-2 direction of a marked block (that is
+  /// `ownStateResidualGradientOn`, spec D2):
   /// the leak \f$ r = \|u\|^2/\|t\|^2 \f$, \f$ u = t - Z_T c \f$ with
   /// \f$ c \f$ the least-squares fit, differentiated with a MOVING target —
   /// \f$ dr = 2\,\mathrm{Re}\,dF \f$ with
@@ -1471,6 +1535,29 @@ class MultiCobordism {
   ///   marking or the metric source is not the Whitney pencil.
   [[nodiscard]] std::vector<ResidualGradient> inputStateResidualGradientsOn(
       const std::shared_ptr<Spacetime> &spacetime, const std::vector<const BoundaryBlock *> &blocks) const;
+  /// The analytic gradient of `ownStateResidualOn(block, spacetime)` over
+  /// \p spacetime's edges (`ResidualGradient`, the `runStage2` convention):
+  /// \f$ r \f$ is a real function of \f$ \hat\tau \f$ alone, so
+  /// \f$ dr = 2\,\mathrm{Re}\big(\partial_\tau r\, d\hat\tau\big) \f$ with
+  /// the Wirtinger derivative \f$ \partial_\tau r = -[\bar b\,\bar u\,D -
+  /// |u|^2\bar\tau]/(N D^2) \f$, \f$ u = \bar a + \bar b\tau \f$,
+  /// \f$ N = |a|^2 + |b|^2 \f$, \f$ D = 1 + |\tau|^2 \f$ (the chart
+  /// \f$ \sigma = 1/\tau \f$ when the qubit spec §9 swapped the marking),
+  /// and \f$ d\hat\tau/dz_e \f$ the qubit's own analytic derivative
+  /// (`observables::SimplicialQubit::tauDerivative`, holomorphic in the
+  /// squared lengths through the frames, the areas, the layouts and the
+  /// cotangent weights of its live surface). Supported on the block's own
+  /// edges, mapped to \p spacetime's by vertex pair; zero on bulk edges,
+  /// which the block's own Laplacian does not see. `phases` is empty:
+  /// \f$ \hat\tau \f$ is invariant under the pure gauge the surface
+  /// carries, and any other connection is refused by the read. The zero
+  /// gradient when the read is refused (the full leak has no direction).
+  /// No finite difference anywhere. @throws std::logic_error without a
+  ///   marking; std::invalid_argument on a null spacetime.
+  [[nodiscard]] ResidualGradient ownStateResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
+                                                            const BoundaryBlock &block) const;
+  /// `ownStateResidualGradientOn` of input block \p index on the live complex.
+  [[nodiscard]] ResidualGradient ownStateResidualGradient(std::size_t index) const;
   /// The analytic gradient of `twoBodyResidualOn` through the frame transfer
   /// (\f$ d\tilde A^U = dM^U h + M^U dh \f$ on the attached blocks).
   [[nodiscard]] ResidualGradient twoBodyResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,

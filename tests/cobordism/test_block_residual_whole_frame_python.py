@@ -1,7 +1,11 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The block residual on the whole's zero mode in the block's live frame
-(#975, T2-bis of ``docs/design/qubit_cobordism_spec.md``, D2 and D3 as revised).
+"""The whole's zero mode in the block's live frame: the OUTPUT-state read
+(#975, T2-bis of ``docs/design/qubit_cobordism_spec.md``; since the D2 wording
+of 2026-09-07 (#988) this leak is REPORTED, not scored -- ``r_U`` scores
+``own_state_residual``, the block's own-Laplacian residual of D2, tested in
+``test_own_state_residual_python.py``; ``input_state_residual`` and its gradient
+remain the output-state read and its derivative, exactly as measured below).
 
 A surface block holds its MARKING with its input coefficients
 (``set_input_marking(index, cycles, (a, b))``: the cycles A, B as closed walks
@@ -103,8 +107,9 @@ TAU_B = complex(-0.2, 0.8)
 FLOOR = 1e-24
 DUMP = pathlib.Path(__file__).with_name("data") / "block_residual_whole_frame_dump.json"
 # T4's restricted leaks of the holomorphic forms in the whole's zero mode on
-# the collar seed (3x3 and 4x4), which the block residual reproduces.
-SEED_RESIDUALS = {3: (3.099981154846e-3, 9.344558825278e-3), 4: (4.006415020773e-3, 1.171688659780e-2)}
+# the collar seed (3x3 and 4x4): the OUTPUT-state read, reported and not
+# scored since the D2 wording of 2026-09-07.
+SEED_OUTPUT_LEAKS = {3: (3.099981154846e-3, 9.344558825278e-3), 4: (4.006415020773e-3, 1.171688659780e-2)}
 
 
 @pytest.fixture
@@ -403,7 +408,7 @@ def test_block_residual_on_the_seed_is_the_restricted_leak(n, whitney_default):
         leak, rank = restricted_leak(st, node.inputs[index].fiber.cells, np.asarray(q.holomorphic_form()).reshape(-1))
         assert rank == 2
         assert residuals[index] == pytest.approx(leak, rel=1e-9, abs=1e-15)
-        assert residuals[index] == pytest.approx(SEED_RESIDUALS[n][index], rel=1e-6)
+        assert residuals[index] == pytest.approx(SEED_OUTPUT_LEAKS[n][index], rel=1e-6)
         assert residuals[index] > 1e-3, "not identically zero: the whole's zero mode is not the torus's"
         # the own-kernel leak of T2 is a diagnostic at its floor, not the scored residual
         assert node.fiber_residual_for_input_block(index) == own_before[index] < FLOOR
@@ -414,11 +419,15 @@ def test_block_residual_on_the_seed_is_the_restricted_leak(n, whitney_default):
         coefficients = np.asarray(read.coefficients)
         assert np.abs(coefficients - np.asarray(read.input)).max() < 0.03, coefficients
         assert np.abs(coefficients - np.asarray(read.input)).max() > 1e-4, "the whole's coefficients are not the inputs on the seed"
-    # r_U scores the weighted block residuals (plus the two-body term once set)
-    assert node.r_u(st) == pytest.approx(1e6 * sum(residuals), rel=1e-12)
+    # r_U scores the weighted OWN-state residuals of D2 (zero on the seed: each
+    # torus is its own flat torus there), plus the two-body term once set; the
+    # whole-frame leak above is the output-state read, not a term
+    own = [node.own_state_residual(i) for i in range(2)]
+    assert all(r < 1e-12 for r in own), own
+    assert node.r_u(st) == pytest.approx(1e6 * sum(own), abs=1e-12)
     chi = spin_half_chi(np.asarray(qa.state()), np.asarray(qb.state()))
     node.set_two_body_target(chi, True)
-    assert node.r_u(st) == pytest.approx(1e6 * sum(residuals) + node.two_body_residual(), rel=1e-12)
+    assert node.r_u(st) == pytest.approx(1e6 * sum(own) + node.two_body_residual(), rel=1e-12)
     # the transfer in the derived frames equals T3's in the supplied period frames
     read = node.read_two_body()
     assert read.in_frames and read.derived_frames and np.asarray(read.transfer).shape == (2, 2)
@@ -577,10 +586,12 @@ def test_gradient_euler_identity_support_and_sign(whitney_default):
             assert abs(fd - analytic) < 1e-5 * abs(analytic), (label, fd, analytic)
             print(f"\n[T2-bis] block {index} {label} edge {edge_keys(st)[i]}: analytic {analytic:.6e} central difference {fd:.6e}; "
                   f"Euler defect {defect:.2e}; |g| bulk {np.abs(g[bulk]).max():.3e} A {np.abs(g[on_a]).max():.3e} B {np.abs(g[on_b]).max():.3e}")
-    # the ascent of r_U is the weighted sum of the two block gradients, plus the two-body gradient
+    # the ascent of r_U is the weighted sum of the two OWN-state gradients (D2),
+    # plus the two-body gradient; the output read's gradients above are not in it
+    own = [np.asarray(node.own_state_residual_gradient(i)[0]) for i in range(2)]
     total, _ = node.fiber_mode_ascent()
-    expected = 1e6 * (gradients[0] + gradients[1])
-    assert np.abs(np.asarray(total) - expected).max() < 1e-12 * np.abs(expected).max()
+    expected = 1e6 * (own[0] + own[1])
+    assert np.abs(np.asarray(total) - expected).max() <= 1e-12 * max(np.abs(expected).max(), 1.0)
     node.set_two_body_target(spin_half_chi(np.asarray(qa.state()), np.asarray(qb.state())), True)
     total, _ = node.fiber_mode_ascent()
     expected = expected + np.asarray(node.two_body_residual_gradient()[0])
@@ -588,10 +599,20 @@ def test_gradient_euler_identity_support_and_sign(whitney_default):
 
 
 # --------------------------------------------------------------------------- #
-# (e) stage 2 descends the block residuals
+# (e) stage 2 lowers the objective while the tori keep their own states
 # --------------------------------------------------------------------------- #
 @pytest.mark.slow
-def test_stage2_descends_the_block_residuals(whitney_default):
+def test_stage2_lowers_the_objective_and_holds_the_tori(whitney_default):
+    """On the real locus the drive runs at weight 1e6 with the Regge term.
+
+    `realSquaredLengthsOnly` projects the imaginary part of every step away,
+    so the trial never leaves the real locus and never meets the Regge term's
+    discontinuity across it (#991) -- the reason the complex-locus drive is
+    stationary at that weight. What the run then shows is the D2 reading: the
+    objective descends, the tori keep representing their inputs (own-state
+    residuals below 1e-6, tau_hat within 5e-3 of tau_in), and the OUTPUT-state
+    read, no longer held by anything, is simply reported.
+    """
     qa, qb, seed, node = collar(3, weight=1e6, einstein_hilbert=True, real_squared_lengths_only=True)
     ids = seed.vertex_ids
     mark(node, (qa, qb), ids)
@@ -599,27 +620,36 @@ def test_stage2_descends_the_block_residuals(whitney_default):
 
     def state():
         reads = [node.read_input_state(i) for i in range(2)]
-        return dict(residuals=[r.residual for r in reads], coefficients=[np.asarray(r.coefficients) for r in reads],
+        return dict(output=[r.residual for r in reads], own=[node.own_state_residual(i) for i in range(2)],
+                    coefficients=[np.asarray(r.coefficients) for r in reads],
+                    tau=[complex(node.block_qubit(i).tau()) for i in range(2)],
                     two_body=node.two_body_residual(), objective=node.objective(), terms=node.objective_terms())
 
     before = state()
-    assert [round(r, 6) for r in before["residuals"]] == [round(r, 6) for r in SEED_RESIDUALS[3]]
+    assert [round(r, 6) for r in before["output"]] == [round(r, 6) for r in SEED_OUTPUT_LEAKS[3]]
+    # the seed IS each input torus, so its own-state residual is at double
+    # precision (1 - |<psi|psi>|^2 loses about a digit near 1), not at the
+    # own-kernel leak's 1e-24 floor
+    assert all(r < 1e-14 for r in before["own"]), before["own"]
     trace = node.run_stage2(beta=1.0, max_iters=20, tolerance=1e-15)
     after = state()
     st = node.spacetime()
     s = squared_lengths(st)
     assert bool(np.all(s.real > 0) and np.all(np.abs(s.imag) < 1e-15)), "the real locus"
     assert len(trace) > 1 and trace[-1] < before["objective"]
-    inputs = [np.array([1.0, TAU_A]), np.array([1.0, TAU_B])]
-    for index in range(2):
-        assert after["residuals"][index] < before["residuals"][index], (index, before["residuals"], after["residuals"])
-        assert np.abs(after["coefficients"][index] - inputs[index]).max() < np.abs(before["coefficients"][index] - inputs[index]).max()
+    for index, tau_in in enumerate((TAU_A, TAU_B)):
+        # the scored claim: r = sin^2(d_FS), so r < 1e-6 is d_FS < 1e-3 --
+        # the torus still represents its input. That its SHAPE barely moved
+        # is |tau_hat - tau_in|, a coarser statement in a different metric.
+        assert after["own"][index] < 1e-6, (index, after["own"])
+        assert abs(after["tau"][index] - tau_in) < 5e-3, (index, after["tau"])
+        assert 0.0 < after["output"][index] < 1.0
     print(f"\n[T2-bis] stage 2 (Regge on, real locus, weight 1e6, {len(trace) - 1} steps): objective "
           f"{before['objective']:.4f} -> {after['objective']:.4f}, Regge {before['terms'].regge_stationarity:.4f} -> "
-          f"{after['terms'].regge_stationarity:.4f}, blocks {before['residuals'][0]:.3e}/{before['residuals'][1]:.3e} -> "
-          f"{after['residuals'][0]:.3e}/{after['residuals'][1]:.3e}, two-body {before['two_body']:.6f} -> "
-          f"{after['two_body']:.6f}, coefficients {[np.round(c, 5).tolist() for c in after['coefficients']]} "
-          f"against {[np.round(c, 5).tolist() for c in inputs]}")
+          f"{after['terms'].regge_stationarity:.4f}, own residuals {before['own'][0]:.3e}/{before['own'][1]:.3e} -> "
+          f"{after['own'][0]:.3e}/{after['own'][1]:.3e}, output leaks {before['output'][0]:.3e}/{before['output'][1]:.3e} -> "
+          f"{after['output'][0]:.3e}/{after['output'][1]:.3e}, two-body {before['two_body']:.6f} -> "
+          f"{after['two_body']:.6f}, tau_hat {after['tau']}")
 
 
 # --------------------------------------------------------------------------- #

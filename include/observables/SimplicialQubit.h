@@ -332,6 +332,54 @@ class SimplicialQubit {
     [[nodiscard]] static double weilPeterssonDistance(const SimplicialQubit &q1,
                                                       const SimplicialQubit &q2);
 
+    // ----- the derivative of tau (qubit cobordism spec D2) ---------------------
+
+    /// \f$ \partial\tau/\partial z_e \f$ for every edge, \f$ z_e = \ell_e^2 \f$,
+    /// one entry per edge in edge order — the derivative of `tau()` (the
+    /// ratio over the marking in force) with respect to each squared edge
+    /// length, holomorphic in \f$ z \f$ on and off the real locus (§16: every
+    /// root sits on its continuation branch, so the derivative is the
+    /// derivative of that branch). WHAT is differentiated: in the period
+    /// frame \f$ F = H\Pi^{-1} \f$ the holomorphic form has coefficients
+    /// \f$ (1, \tau) \f$ and is an eigenvector of \f$ J_F = G_F^{-1}R_F^T \f$,
+    /// so \f$ \tau \f$ is a root of \f$ J_{12}\tau^2 + (J_{11} - J_{22})\tau -
+    /// J_{21} = 0 \f$ (the chart \f$ \sigma = 1/\tau \f$ when \f$ |\tau| > 1 \f$)
+    /// and \f$ d\tau \f$ follows from \f$ dJ_F \f$ without differentiating an
+    /// eigen-decomposition or the null-space basis §6 happens to return.
+    /// \f$ dJ_F \f$ comes from the pairings of §7–§8 in the period frame and
+    /// its dual (the dual kernel of §16 normalized by the periods transported
+    /// under \f$ U^{-1} \f$): the per-face Heron areas, layouts and
+    /// barycentric gradients of §4/§7 and the cotangent weights of §5 in
+    /// closed form, and the frames through the harmonic condition — a
+    /// period-normalized frame moves by an exact twisted 1-cochain
+    /// \f$ dF = d_0^U\varphi \f$ with \f$ \partial_1^U M_1 d_0^U\varphi =
+    /// -\partial_1^U\,dM_1\,F \f$ (one weighted graph-Laplacian solve per
+    /// edge and column). WHY: the qubit cobordism spec D2 holds a torus's own
+    /// state at its input by a residual in \f$ \tau \f$ and descends it
+    /// analytically; a finite difference is not a derivative of this
+    /// construction. Invariant under a pure gauge (\f$ \tau \f$ is) and
+    /// homogeneous of degree zero (\f$ \sum_e z_e\,\partial\tau/\partial z_e
+    /// = 0 \f$: \f$ \tau \f$ is scale-free), which the tests assert.
+    /// @throws std::runtime_error when the two eigenlines of \f$ J \f$
+    ///   coincide (the quadratic's roots are equal: no derivative), or when
+    ///   the twisted Laplacian of a frame cannot be solved beyond its gauge
+    ///   kernel.
+    [[nodiscard]] Eigen::VectorXcd tauDerivative() const;
+
+    /// The intersection number \f$ A \cdot B \f$ of the marked cycles on the
+    /// surface as oriented by the faces: \f$ \langle f_A \cup f_B, [K]\rangle
+    /// \f$, the ordered simplicial cup product of the period frame of the
+    /// unit-length, untwisted reference (a topological invariant, so the
+    /// reference suffices) evaluated on the fundamental cycle, which is
+    /// \f$ \pm 1 \f$ to rounding. Spec §2 requires \f$ A \cdot B = +1 \f$:
+    /// the marking fixes the orientation, and a `Spacetime` (which stores
+    /// none) is read in the orientation that gives \f$ +1 \f$ — the flat torus
+    /// of §12 with its counterclockwise faces returns \f$ +1 \f$, the
+    /// `reversed` read \f$ -1 \f$. WHY it is exposed: a torus that lives as
+    /// the boundary of a cobordism has no faces of its own to orient it, and
+    /// \f$ \tau \f$ of the other orientation is the other hemisphere.
+    [[nodiscard]] double intersectionNumber() const;
+
     // ----- spec §5: the optional intrinsic Delaunay preprocessing pass --------
 
     /// Flip every edge violating the intrinsic Delaunay condition

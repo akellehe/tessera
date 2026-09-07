@@ -21,7 +21,8 @@ Coverage:
   each to the live callback as it completes, and every channel of spec S6
   is a measurement or an ``Absent`` with a named reason;
 * frame 0 is the collar seed: each block's tau-hat equals tau_in to 1e-9
-  with both distances at zero, the block residuals (the whole's zero mode
+  with both distances at zero, the block residuals of D2 at zero and the
+  output-state leaks (the whole's zero mode
   against (1, tau_in) in the live frame) at T4's restricted leaks -- 3.1e-3
   and 9.3e-3 on 3x3 tori, NOT at rounding, because the whole's harmonic
   representative restricted to a torus differs from the torus's own -- with
@@ -31,7 +32,8 @@ Coverage:
   characteristic 0 each), the two-body read in the derived period frames
   (2 x 2, Schmidt rank 2), r_U the weighted block residuals plus the
   two-body leak;
-* after synthesis every channel is still read, the block residuals descend
+* after synthesis every channel is still read, the block residuals stay at
+  their floor
   from their seed values (spec C2) and the surfaces are still the tori;
 * the algebra: chi of spec S5 against an explicit computation, the exact
   block evolution against first order at small J t, the selection rule;
@@ -67,9 +69,11 @@ TAU_B = complex(-0.2, 0.8)
 GRID = 3
 STEPS = 2
 FLOOR = 1e-24
-#: The block residuals on the 3x3 collar seed (T2-bis): the restricted leaks
-#: of the input lines in the whole's zero mode, which T4 measured.
-SEED_RESIDUALS = (3.099981154846e-3, 9.344558825278e-3)
+#: The output-state read's leaks on the 3x3 collar seed (T2-bis): the
+#: restricted leaks of the input lines in the whole's zero mode, which T4
+#: measured. Since the D2 wording of 2026-09-07 they are reported, not
+#: scored: the block residual is the torus's own (zero on the seed).
+SEED_OUTPUT_LEAKS = (3.099981154846e-3, 9.344558825278e-3)
 
 _CACHE = {}
 
@@ -123,8 +127,7 @@ def test_every_channel_is_a_measurement_or_a_named_absence():
         assert isinstance(frame.blocks, list) and len(frame.blocks) == 2
         for row in frame.blocks:
             assert row["label"] in ea.DECLARED_TORUS_LABELS
-            assert isinstance(row["reversed"], bool)
-            for key in ("residual", "coefficients", "own_kernel_leak", "read"):
+            for key in ("residual", "output_leak", "coefficients", "own_kernel_leak", "read"):
                 value = row[key]
                 assert _present(value) or value.reason.strip(), key
         # the neutral mode's certificates are absent by name here
@@ -150,9 +153,12 @@ def test_frame_zero_is_the_collar_seed():
         row = frame.blocks[index]
         assert row["tau_in"] == tau_in and row["weight"] == ea.DECLARED_INPUT_WEIGHT
         assert row["input"] == [1.0 + 0j, tau_in] == inputs.coefficients_in[index]
-        # the block residual (spec D2 as revised): the whole's zero mode against
-        # (1, tau_in) in the live frame -- T4's restricted leak on the seed, not zero
-        assert row["residual"] == pytest.approx(SEED_RESIDUALS[index], rel=1e-6), row["residual"]
+        # the block residual (spec D2): the torus's own holomorphic form against
+        # its input -- zero on the seed, where the surface is the flat torus
+        assert 0.0 <= row["residual"] < 1e-12, row["residual"]
+        # the output-state read (spec R1): the whole's zero mode against (1, tau_in)
+        # in the live frame -- T4's restricted leak on the seed, not zero
+        assert row["output_leak"] == pytest.approx(SEED_OUTPUT_LEAKS[index], rel=1e-6), row["output_leak"]
         assert row["harmonic_rank"] == 2 and row["frame_rank"] == 2
         coefficients = np.asarray(row["coefficients"])
         assert np.abs(coefficients - np.array([1.0, tau_in])).max() < 0.03
@@ -180,8 +186,8 @@ def test_frame_zero_is_the_collar_seed():
     assert _present(frame.leaks) and frame.leaks["harmonic_rank"] == 2
     for index, row in enumerate(frame.leaks["per_block"]):
         assert _present(row) and 0.0 <= row["leak"] <= 1.0 and row["rank"] == 2
-        # the leak of the input line is the block residual on the seed (the same target up to scale)
-        assert row["leak"] == pytest.approx(frame.blocks[index]["residual"], rel=1e-9)
+        # the leak of the input line is the output-state read's leak on the seed (the same target up to scale)
+        assert row["leak"] == pytest.approx(frame.blocks[index]["output_leak"], rel=1e-9)
     # the two-body read in the period frames against chi of spec S5
     two_body = frame.two_body
     assert _present(two_body), two_body
@@ -199,8 +205,9 @@ def test_frame_zero_is_the_collar_seed():
     # r_U: the two block residuals at their weight plus the two-body residual
     expected = two_body["residual"] + ea.DECLARED_INPUT_WEIGHT * sum(frame.blocks[i]["residual"] for i in range(2))
     assert frame.objective["register_residual"] == pytest.approx(expected, rel=1e-9)
-    print("\n[T4] seed: blocks %s (weight %g), coefficients %s, leaks %s, two-body %.6f, T %s" % (
-        ["%.3e" % frame.blocks[i]["residual"] for i in range(2)], ea.DECLARED_INPUT_WEIGHT,
+    print("\n[T4] seed: blocks %s, output leaks %s (weight %g), coefficients %s, leaks %s, two-body %.6f, T %s" % (
+        ["%.3e" % frame.blocks[i]["residual"] for i in range(2)],
+        ["%.3e" % frame.blocks[i]["output_leak"] for i in range(2)], ea.DECLARED_INPUT_WEIGHT,
         [np.round(np.asarray(frame.blocks[i]["coefficients"]), 4).tolist() for i in range(2)],
         ["%.3e" % r["leak"] for r in frame.leaks["per_block"]], two_body["residual"],
         np.round(transfer.real, 6).tolist()))
@@ -212,23 +219,28 @@ def test_synthesis_reads_every_channel_and_holds_the_tori():
     last = frames[-1]
     for index, tau_in in enumerate((TAU_A, TAU_B)):
         row = last.blocks[index]
-        # the block residual descends from its seed value under synthesis (spec C2)
-        assert isinstance(row["residual"], float) and row["residual"] < frames[0].blocks[index]["residual"], \
-            (row["residual"], frames[0].blocks[index]["residual"])
+        # The seed sits at the residual's minimum (the surface IS the input
+        # torus there), so synthesis cannot lower it; spec C2 as the D2
+        # wording reads it is that the torus keeps representing its input,
+        # which the residual measures directly.
+        assert isinstance(row["residual"], float) and 0.0 <= row["residual"] < 1e-2, row["residual"]
         assert _present(row["coefficients"]) and len(row["coefficients"]) == 2
         assert isinstance(row["own_kernel_leak"], float)
         read = _read(last, index)
         assert (read["vertices"], read["edges"], read["faces"]) >= (9, 27, 18), "the surface keeps the torus"
-        assert read["weil_petersson_distance"] >= 0.0 and read["fubini_study_distance"] >= 0.0
+        # the residual IS the read: r = 1 - |<psi_in|psi_hat>|^2 = sin^2(d_FS)
+        assert row["residual"] == pytest.approx(np.sin(read["fubini_study_distance"]) ** 2, rel=1e-9, abs=1e-18)
+        assert read["weil_petersson_distance"] >= 0.0
         assert abs(np.linalg.norm(read["bloch"]) - 1.0) < 1e-12
     assert _present(last.monodromy) and _present(last.two_body) and _present(last.leaks)
     assert _present(last.boundary) and _present(last.completion) and _present(last.betti)
     assert last.two_body["in_frames"] and last.two_body["derived_frames"] and last.two_body["shape"] == [2, 2]
     totals = [f.objective["total"] for f in frames]
     assert all(t is not None for t in totals) and totals[-1] < totals[0]
-    print("\n[T4] after %d units: objective %s, blocks %s, two-body %s, tau-hat %s, monodromy %s" % (
+    print("\n[T4] after %d units: objective %s, blocks %s, output leaks %s, two-body %s, tau-hat %s, monodromy %s" % (
         STEPS, ["%.4f" % t for t in totals],
         ["%.2e" % f.blocks[0]["residual"] + "/%.2e" % f.blocks[1]["residual"] for f in frames],
+        ["%.2e" % f.blocks[0]["output_leak"] + "/%.2e" % f.blocks[1]["output_leak"] for f in frames],
         ["%.4f" % f.two_body["residual"] for f in frames],
         [str(_read(last, i)["tau"]) for i in range(2)], last.monodromy["rounded"]))
 
@@ -281,7 +293,7 @@ def test_to_json_round_trips_with_complex_numbers_as_pairs():
     inputs = json.loads(json.dumps(run["result"].inputs.to_json()))
     assert inputs["tau_in"] == [[TAU_A.real, TAU_A.imag], [TAU_B.real, TAU_B.imag]]
     assert inputs["objective"] == "legacy" and "register_residual" in inputs["objective_terms"]
-    assert inputs["reversed"] == run["result"].inputs.reversed
+    assert "reversed" not in inputs, "the engine's read fixes the orientation by A.B = +1"
     assert len(inputs["algebra"]["chi"]) == 2 and inputs["algebra"]["Jt"] == ea.DECLARED_COUPLING * ea.DECLARED_TIME
     assert inputs["markings"][0][0][0] == [0, 1] or len(inputs["markings"][0][0]) == GRID
     whole = json.dumps({"config": run["config"], "inputs": inputs,

@@ -85,24 +85,29 @@ two flat qubit tori (``SimplicialQubit.flat_torus``) are the boundary of a
 3-complex whose bulk starts as the collar between them
 (``MultiCobordism.seed_collar``) and is then synthesized by stage 1 and stage 2
 against the two-body target chi of spec S5 -- the XY flip-flop of two
-spin-1/2 at ``--J`` and ``--time`` -- while the whole's zero mode is held at
-each torus's input coefficients (1, tau_in) in that torus's OWN frame by a
-residual in the objective at ``--input-weight``; nothing is pinned. Each
-block holds its marking (``set_input_marking``) and the engine derives its
-frame live from the zero mode of its own Laplacian (spec D2/D3 as revised);
-the block residual is the leak of the coefficients, written on the block's
-edges through that frame, in the zero mode of the ENTIRE cobordism on those
-edges. The objective in force is the node's default (``legacy``): the Regge
-stationarity term when ``--regge`` is on, plus Gamma times r_U, where r_U is
-the weighted sum of the two block residuals and the two-body residual. The
-tori carry complex lengths, so the node runs the complex locus. Every
-read-out of spec S6 is a frame channel, present or ``Absent``: per block the
-block residual with its weight, the coefficients of the whole's zero mode in
-the block's live frame next to the input (1, tau_in), the former own-kernel
+spin-1/2 at ``--J`` and ``--time`` -- while each torus keeps representing
+its input state through the zero mode of its OWN Laplacian: the block
+residual of spec D2, ``1 - |<psi(tau_in)|psi(tau_hat)>|^2`` with tau_hat the
+ratio of the transported periods of the holomorphic form of the block's own
+Laplacian on its live surface (``MultiCobordism.block_qubit``), is in the
+objective at ``--input-weight``; nothing is pinned. Each block holds its
+marking (``set_input_marking``), which fixes the cycles the periods are taken
+over and, by A.B = +1, the orientation the surface is read in. The zero mode
+of the ENTIRE cobordism is the OUTPUT state (spec R1): it is read at each
+torus as its coefficients in that torus's live frame (the zero mode of its
+own Laplacian normalized by its marking, derived by the engine at every
+read) and never held. The objective in force is the node's default
+(``legacy``): the Regge stationarity term when ``--regge`` is on, plus Gamma
+times r_U, where r_U is the weighted sum of the two block residuals and the
+two-body residual. The tori carry complex lengths, so the node runs the
+complex locus. Every read-out of spec S6 is a frame channel, present or
+``Absent``: per block the block residual with its weight, the output state --
+the coefficients of the whole's zero mode in the block's live frame next to
+the input (1, tau_in), with the leak of that fit -- the former own-kernel
 leak as a labelled diagnostic, and the qubit read on the block's live
-surface (tau, the Bloch vector, the J residual, the Delaunay and condition
-diagnostics, the Fubini-Study and Weil-Petersson distances to the input) --
-a geometric diagnostic of the block's own metric; for the whole the Betti
+surface (tau-hat, the Bloch vector, the J residual, the Delaunay and
+condition diagnostics, the Fubini-Study and Weil-Petersson distances to the
+input), the object the block residual scores; for the whole the Betti
 numbers, the boundary components with their Euler characteristics, the
 completion status, the monodromy between the two markings (periods with
 parallel transport), the restricted leak of each input line in the whole's
@@ -236,11 +241,17 @@ DECLARED_GRID = 3
 #: amplitudes, but both are the experiment's declared parameters.
 DECLARED_COUPLING = 1.0
 DECLARED_TIME = 0.05
-#: Weight of each block's own-Laplacian residual inside r_U. The level a
-#: residual settles at is the balance of this weight against the Regge pull
-#: on the torus's own edges, roughly 1/weight^2 (spec section 6: 2e-9 at 1e6
-#: on the 3x3 collar, 1e-2 at weight 1, where the Regge term wins).
-DECLARED_INPUT_WEIGHT = 1e6
+#: Weight of each block's own-Laplacian residual of spec D2 inside r_U --
+#: the T5 findings note's chosen weight. The seed sits at the residual's
+#: minimum (each torus IS its input torus there, residual zero), so the
+#: weight sets how far the bulk's relaxation is allowed to pull the tori's
+#: own conformal structures away from their inputs; at 1e4 two units leave
+#: both residuals below 1e-3. Above about 1e5 the drive is stationary at the
+#: seed for a reason outside this term: the engine's Regge stationarity is
+#: discontinuous across the real locus (measured on origin/main: an
+#: imaginary displacement of 1e-12 in one squared length moves it by 1.5),
+#: and the residual's descent direction, holomorphic in z, always has one.
+DECLARED_INPUT_WEIGHT = 1e4
 #: Whether the Regge stationarity term is in the objective (the engine's
 #: `einstein_hilbert`); off, r_U is the whole objective.
 DECLARED_REGGE = True
@@ -697,94 +708,40 @@ def _host_marking(torus, ids):
     return [cycle(torus.cycle_A()), cycle(torus.cycle_B())]
 
 
-def _surface_cycles(marking, surface):
-    """A host marking as (edge index, sign) steps into `surface`'s edge order.
+def _quiet(build):
+    """Run a construction with its Python warnings silenced.
 
-    `SimplicialQubit`'s `Spacetime` constructor indexes edges in ascending
-    `(i, j)` order of its vertices, themselves in ascending id order, so
-    sorting the surface's edges by their id pair gives the order the cycles
-    must index. The live surface may hold more edges than the torus had
-    (spec section 6: the engine's moves never remove a torus edge, but a
-    cone-in adds some), so the index is looked up on the LIVE surface at
-    every frame rather than fixed at the seed.
-
-    Raises `KeyError` naming a marking edge the surface no longer holds.
-    """
-    edges = sorted(tuple(sorted(_edge_endpoints(edge)))
-                   for edge in surface.getEdgeList().toVector())
-    index = {edge: n for n, edge in enumerate(edges)}
-    cycles = []
-    for steps in marking:
-        cycle = []
-        for u, v in steps:
-            key = (min(u, v), max(u, v))
-            if key not in index:
-                raise KeyError("marking edge (%d, %d) is not an edge of the "
-                               "block's live surface" % (u, v))
-            cycle.append((index[key], 1 if u < v else -1))
-        cycles.append(cycle)
-    return cycles
-
-
-def _read_surface_qubit(surface, cycles, reversed_flag):
-    """The qubit read of a live surface, its construction notes captured.
-
-    The constructor reports the spec's diagnostics -- Delaunay violations,
-    the section-13 condition numbers, the section-9 branch note -- as Python
-    warnings. A frame records them as channel values
-    (`SimplicialQubit.warnings`) instead, so they are silenced here rather
-    than printed once per frame.
+    `SimplicialQubit`'s constructor reports the spec's diagnostics --
+    Delaunay violations, the section-13 condition numbers, the section-9
+    branch note -- as Python warnings. A frame records them as channel
+    values (`SimplicialQubit.warnings`) instead, so they are silenced here
+    rather than printed once per frame.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return obs.SimplicialQubit(surface, cycles[0], cycles[1], reversed_flag)
+        return build()
 
 
-def _same_cyclic_order(face, other):
-    """Whether two vertex triples are one face with one orientation."""
-    a, b, c = face
-    return tuple(other) in ((a, b, c), (b, c, a), (c, a, b))
+def _assert_seed_reads_the_torus(node, index, torus):
+    """The engine's read of the seed surface must be the input torus.
 
-
-def _orientation_flag(surface, cycles, torus, ids):
-    """The `reversed` flag under which the seed's surface reads as the torus.
-
-    `Spacetime` stores no face orientation, so `SimplicialQubit`'s
-    constructor orients the faces by the fundamental class and `reversed`
-    selects the other hemisphere. The flat torus's own faces are
-    counterclockwise by construction (spec section 12), so the flag is the
-    one under which every face of the read carries the torus's cyclic order
-    through the id map. That read reproduces tau_in to rounding, which is
-    asserted by name: the other orientation reads tau_in too, but only by
-    taking the conjugate eigenvector (the branch note of section 9). Decided
-    once, on the seed, and held for the run -- the surface's orientation is a
-    topological fact the engine's moves preserve.
+    `block_qubit` reads the block's own triangles with the host's lengths
+    over the block's marking, in the orientation with A.B = +1 -- the
+    orientation the flat torus was built in (spec section 12), so on the
+    collar seed it must return tau_in to rounding: that is what the block
+    residual of D2 is zero for. Asserted by name once, on the seed, so a
+    marking carried wrongly through the id map fails here rather than as a
+    residual that never closes.
     """
-    surface_ids = sorted(int(v.getId())
-                         for v in surface.getVertexList().toVector())
-    own_faces = {}
-    for face in torus.faces():
-        mapped = tuple(ids[int(v)] for v in face)
-        own_faces[frozenset(mapped)] = mapped
-    for flag in (False, True):
-        read = _read_surface_qubit(surface, cycles, flag)
-        oriented = True
-        for face in read.faces():
-            mapped = tuple(surface_ids[int(n)] for n in face)
-            own = own_faces.get(frozenset(mapped))
-            if own is None or not _same_cyclic_order(own, mapped):
-                oriented = False
-                break
-        if not oriented:
-            continue
-        if abs(complex(read.tau()) - complex(torus.tau())) > DECLARED_TAU_TOLERANCE:
-            raise RuntimeError(
-                "the seed surface read with reversed=%s carries the torus's "
-                "face orientation but reads tau = %s against tau_in = %s"
-                % (flag, read.tau(), torus.tau()))
-        return flag
-    raise RuntimeError("neither orientation of the seed surface reproduces "
-                       "the torus's counterclockwise faces through the id map")
+    read = _quiet(lambda: node.block_qubit(index))
+    if read.intersection_number() < 0:
+        raise RuntimeError("the seed surface of block %d reads with A.B = %g; "
+                           "the marking does not fix the orientation"
+                           % (index, read.intersection_number()))
+    if abs(complex(read.tau()) - complex(torus.tau())) > DECLARED_TAU_TOLERANCE:
+        raise RuntimeError(
+            "the seed surface of block %d reads tau = %s against tau_in = %s"
+            % (index, read.tau(), torus.tau()))
 
 
 class QubitInputs:
@@ -801,23 +758,23 @@ class QubitInputs:
     """
 
     __slots__ = ("tori", "tau_in", "coefficients_in", "vertex_ids", "cells",
-                 "markings", "reversed", "algebra", "weight", "regge", "layers",
+                 "markings", "algebra", "weight", "regge", "layers",
                  "objective_name", "objective_terms", "torus_warnings", "seed")
 
-    def __init__(self, tori, tau_in, vertex_ids, cells, markings, reversed_,
+    def __init__(self, tori, tau_in, vertex_ids, cells, markings,
                  algebra, weight, regge, layers, objective_name,
                  objective_terms, torus_warnings, seed):
         self.tori = list(tori)
         self.tau_in = [complex(tau) for tau in tau_in]
         #: The input coefficients (1, tau_in) of each torus in its own frame
         #: (spec section 2, "State at a block"): what the block's marking
-        #: carries and the block residual holds the whole's zero mode at.
+        #: carries and the block residual of D2 holds the torus's own
+        #: holomorphic form at.
         self.coefficients_in = [[1.0 + 0j, complex(tau)] for tau in tau_in]
         self.vertex_ids = [dict(mapping) for mapping in vertex_ids]
         self.cells = [[list(cell) for cell in block] for block in cells]
         self.markings = [[list(cycle) for cycle in marking]
                          for marking in markings]
-        self.reversed = [bool(flag) for flag in reversed_]
         self.algebra = algebra
         self.weight = float(weight)
         self.regge = bool(regge)
@@ -861,7 +818,6 @@ class QubitInputs:
             "cells": self.cells,
             "markings": [[[list(step) for step in cycle] for cycle in marking]
                          for marking in self.markings],
-            "reversed": self.reversed,
             "input_weight": self.weight,
             "regge": self.regge,
             "objective": self.objective_name,
@@ -932,16 +888,11 @@ def build_qubit_node(config):
                                   np.asarray(tori[1].state()),
                                   config["coupling"], config["time"])
     node.set_two_body_target(algebra["chi"], True)
-    flags = []
     for index, torus in enumerate(tori):
-        surface = MC.block_surface_subcomplex(node.inputs[index],
-                                              node.spacetime())
-        flags.append(_orientation_flag(
-            surface, _surface_cycles(markings[index], surface), torus,
-            ids[index]))
+        _assert_seed_reads_the_torus(node, index, torus)
     host = node.spacetime()
     inputs = QubitInputs(
-        tori, tau_in, ids, cells, markings, flags, algebra,
+        tori, tau_in, ids, cells, markings, algebra,
         config["input_weight"], config["regge"], config["layers"],
         node.objective_name, MC.objective_term_names(),
         [torus.warnings() for torus in tori],
@@ -1134,7 +1085,7 @@ class EmergenceFrame:
 
     def _read_qubit_channels(self, node, spacetime, inputs):
         """The read-outs of spec S6 over the live complex, all read-only."""
-        self.blocks = [self._read_block(node, spacetime, inputs, index)
+        self.blocks = [self._read_block(node, inputs, index)
                        for index in range(len(inputs.tori))]
         self.leaks = self._read_restricted_leaks(spacetime, inputs)
         self.monodromy = self._read_monodromy(spacetime, inputs)
@@ -1670,42 +1621,47 @@ class EmergenceFrame:
     # ---- 12. the qubit blocks (spec S6, per block) ------------------
 
     @staticmethod
-    def _read_block(node, spacetime, inputs, index):
-        """One input block: its residual, the state at the block, and its
-        qubit read.
+    def _read_block(node, inputs, index):
+        """One input block: its residual, the output state read at the block,
+        and its qubit read.
 
-        The residual is `input_state_residual` (spec D2 as revised) -- the
-        leak of the block's input coefficients (1, tau_in), written on its
-        edges through its LIVE frame (the zero mode of its own Laplacian
-        normalized by its marking), in the zero mode of the ENTIRE cobordism
-        restricted to those edges -- reported with the weight it is scored
-        at. The state at the block (`read_input_state`) is the coefficients
-        of the whole's zero mode in that frame, next to the input. The
-        former own-kernel leak (`fiber_residual_for_input_block`) rides
-        along as a labelled diagnostic: a frame always contains its own
-        coefficients, so it is zero for every state and is not scored. The
-        qubit read is `SimplicialQubit` on `block_surface_subcomplex`, the
-        block's own triangles with the host's live lengths, over the torus's
-        marking carried through the id map (tau-hat, the Bloch vector, the
-        spec's J residual, the Delaunay and condition diagnostics) and the
-        two distances of spec section 11 to the input torus -- a geometric
-        diagnostic of the block's own metric. All are read-outs; none is a
-        target (spec section 7).
+        The residual is `own_state_residual` (spec D2) -- the leak of the
+        block's input state in the holomorphic form of its OWN Laplacian on
+        its live surface, `1 - |<psi(tau_in)|psi(tau_hat)>|^2` -- reported
+        with the weight it is scored at. The output state at the block
+        (`read_input_state`, spec R1) is the coefficients of the whole's zero
+        mode in the block's live frame (the zero mode of its own Laplacian
+        normalized by its marking), next to the input, with the leak of that
+        fit (`output_leak`): read, never held. The former own-kernel leak
+        (`fiber_residual_for_input_block`) rides along as a labelled
+        diagnostic: a frame always contains its own coefficients, so it is
+        zero for every state and is not scored. The qubit read is the
+        engine's `block_qubit` -- `SimplicialQubit` on the block's own
+        triangles with the host's live lengths, over the block's marking, in
+        the orientation with A.B = +1 -- the very object the residual is
+        computed from (tau-hat, the Bloch vector, the spec's J residual, the
+        Delaunay and condition diagnostics) and the two distances of spec
+        section 11 to the input torus. All but the residual are read-outs
+        (spec section 7).
         """
         torus = inputs.tori[index]
         row = {"label": inputs.labels[index],
                "tau_in": inputs.tau_in[index],
                "input": [complex(z) for z in inputs.coefficients_in[index]],
-               "weight": inputs.weight,
-               "reversed": inputs.reversed[index]}
+               "weight": inputs.weight}
+        try:
+            row["residual"] = _finite(node.own_state_residual(index))
+        except Exception as error:                        # noqa: BLE001
+            row["residual"] = Absent("block residual refused: %s" % error)
         try:
             state = node.read_input_state(index)
         except Exception as error:                        # noqa: BLE001
-            row["residual"] = Absent("block residual refused: %s" % error)
-            row["coefficients"] = Absent("state at the block refused: %s"
-                                         % error)
+            row["output_leak"] = Absent("output state read refused: %s"
+                                        % error)
+            row["coefficients"] = Absent("output state at the block refused: "
+                                         "%s" % error)
         else:
-            row["residual"] = _finite(state.residual)
+            row["output_leak"] = _finite(state.residual)
             if state.obstruction:
                 row["coefficients"] = Absent(
                     "state at the block obstructed: %s" % state.obstruction)
@@ -1719,15 +1675,11 @@ class EmergenceFrame:
         except Exception as error:                        # noqa: BLE001
             row["own_kernel_leak"] = Absent("own-kernel leak refused: %s"
                                             % error)
-        surface = MC.block_surface_subcomplex(node.inputs[index], spacetime)
-        if surface is None:
-            row["read"] = Absent("the block has no surface: a face of the "
-                                 "torus lost an edge, so it carries no state")
-            return row
         try:
-            cycles = _surface_cycles(inputs.markings[index], surface)
-            read = _read_surface_qubit(surface, cycles, inputs.reversed[index])
+            read = _quiet(lambda: node.block_qubit(index))
         except (KeyError, ValueError, RuntimeError) as error:
+            # `block_qubit` names every refusal itself, a torn surface among
+            # them, so there is nothing to check for it here.
             row["read"] = Absent("qubit read refused: %s" % error)
             return row
         row["read"] = {
@@ -2617,9 +2569,10 @@ def _qubit_reason(frame):
 
 def _panel_residuals(axis, frames):
     """Every residual of spec S6 that has a trace, on a log scale: the two
-    block residuals (the whole's zero mode against the input coefficients in
-    the block's live frame), the two-body leak against chi, and the two
-    restricted leaks of the input lines in the whole's zero mode. Non-positive values have
+    block residuals (the leak of each input state in the holomorphic form of
+    the block's own Laplacian, spec D2), the two-body leak against chi, and
+    the two restricted leaks of the input lines in the whole's zero mode --
+    the output state's distance from the inputs. Non-positive values have
     no place on a log axis and are left out rather than clipped to a floor
     that would read as a measurement."""
     title = "residuals (log scale)"
@@ -2661,10 +2614,9 @@ def _panel_residuals(axis, frames):
 def _panel_moduli(axis, frames):
     """The two tau-hat trajectories on the upper half plane, tau_in marked.
 
-    tau is read-out only (spec section 7): the panel shows how far each
-    torus's own conformal structure drifted from its input while the
-    residual held its state, next to the Weil-Petersson distance that
-    measures it."""
+    tau-hat is the torus's own conformal structure, which the block residual
+    of D2 holds at tau_in: the panel shows how far it is allowed to drift
+    under synthesis, next to the Weil-Petersson distance that measures it."""
     title = "tau-hat on the upper half plane (star: tau_in)"
     last = frames[-1]
     if last.inputs is None or isinstance(last.blocks, Absent):

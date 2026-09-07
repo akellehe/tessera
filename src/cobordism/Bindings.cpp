@@ -28,6 +28,7 @@
 #include "cobordism/CobordismDAG.h"
 #include "cobordism/EigenstateSynthesis.h"
 #include "cobordism/MultiCobordism.h"
+#include "observables/SimplicialQubit.h"
 #include "cobordism/PencilLayer.h"
 #include "cobordism/Proton.h"
 #include "cobordism/ProtonIngredients.h"
@@ -1712,10 +1713,35 @@ assertion. Every pairing is the transpose.)doc")
            "derive_frame of input block `index` on the live complex.")
       .def("input_state_residual", &MultiCobordism::inputStateResidual, py::arg("index"),
            py::call_guard<py::gil_scoped_release>(),
-           "The block residual of input block `index` (spec D2 as revised): the leak of its input "
-           "coefficients, written on its edges through its live frame, in the zero mode of the ENTIRE "
-           "cobordism at the whole's harmonic contour restricted to those edges; 1.0 when the frame "
-           "cannot be derived. What r_U scores for the block at the input residual weight.")
+           "The leak of the OUTPUT-state read at input block `index` (spec R1, S6): the leak of its "
+           "input coefficients, written on its edges through its live frame, in the zero mode of the "
+           "ENTIRE cobordism at the whole's harmonic contour restricted to those edges; 1.0 when the "
+           "frame cannot be derived. Reported, not scored: r_U scores own_state_residual (spec D2).")
+      .def("own_state_residual", &MultiCobordism::ownStateResidual, py::arg("index"),
+           py::call_guard<py::gil_scoped_release>(),
+           "The block residual of input block `index` (qubit cobordism spec D2): 1 - |<psi(tau_in)|psi(tau_hat)>|^2 "
+           "with tau_hat the ratio of the transported periods of the holomorphic form of the block's OWN "
+           "Laplacian on its live surface (block_qubit) over the marking, and (1, tau_in) the block's input "
+           "coefficients; zero exactly when the torus represents its input state on its own; 1.0 when the "
+           "block has no surface or the read is refused. What r_U scores for the block at the input residual "
+           "weight.")
+      .def("own_state_residual_gradient",
+           [](const MultiCobordism &self, std::size_t index) {
+             if (index >= self.inputs().size()) throw std::out_of_range("input block index out of range");
+             py::gil_scoped_release release;
+             const auto g = self.ownStateResidualGradientOn(self.spacetime(), self.inputs()[index]);
+             return std::make_pair(g.lengths, g.phases);
+           }, py::arg("index"),
+           "Analytic gradient of own_state_residual(index) on the live complex: (lengths, phases) in "
+           "EdgeList order, each entry (d/dRe, d/dIm) packed as a complex number, through the qubit's own "
+           "analytic tau derivative (SimplicialQubit.tau_derivative) on the block's edges; zero on bulk "
+           "edges; phases empty (tau is gauge invariant). The stage-2 direction of a marked block.")
+      .def("block_qubit", static_cast<observables::SimplicialQubit (MultiCobordism::*)(std::size_t) const>(
+                              &MultiCobordism::blockQubit),
+           py::arg("index"), py::call_guard<py::gil_scoped_release>(),
+           "The live surface of input block `index` read as the SimplicialQubit over its marking, in the "
+           "orientation with A . B = +1 (spec D2, S6): the object own_state_residual scores and the qubit "
+           "read reports, so the two cannot disagree.")
       .def("read_input_state", &MultiCobordism::readInputState, py::arg("index"),
            py::call_guard<py::gil_scoped_release>(),
            "The state at input block `index` (InputStateRead): the coefficients of the whole's zero mode "

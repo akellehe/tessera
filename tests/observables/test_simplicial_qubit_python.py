@@ -308,3 +308,127 @@ def test_reading_the_spacetime_directly_gives_the_same_state():
     with pytest.raises(ValueError, match="real and positive"):
         SimplicialQubit(st, list(q.cycle_A()), list(q.cycle_B()))
     edges[0].setLength(original)
+
+
+# ---------------------------------------------------------------------------
+# Qubit cobordism spec D2: the analytic derivative of tau and the
+# intersection number
+# ---------------------------------------------------------------------------
+
+def _squared_lengths(q):
+    return np.asarray(q.lengths(), dtype=complex) ** 2
+
+
+def _euler_defect(q):
+    """|sum_e z_e dtau/dz_e| against the scale of the terms: tau is invariant
+    under a common scale of the lengths, so the sum is an identity in the
+    derivative (zero to rounding), not a tolerance."""
+    z = _squared_lengths(q)
+    d = np.asarray(q.tau_derivative())
+    return abs(np.sum(z * d)) / (np.abs(z).max() * np.abs(d).max())
+
+
+@pytest.mark.parametrize("tau", [1j, 0.3 + 1.1j, -0.2 + 0.8j, 2j])
+def test_tau_derivative_is_scale_free_on_flat_tori(tau):
+    # Both charts of the derivative: |tau| > 1 (sigma = 1/tau) and |tau| < 1.
+    assert _euler_defect(flat(tau, 3, 3)) < 1e-13
+    assert _euler_defect(flat(tau, 4, 4)) < 1e-13
+
+
+def test_tau_derivative_is_exact_on_the_flat_family():
+    """tau(flat_torus(tau0)) == tau0, so the chain rule through the lattice's
+    squared lengths must give dtau/dRe(tau0) = 1 and dtau/dIm(tau0) = i. The
+    squared lengths are quadratic in (Re tau0, Im tau0), so their central
+    differences are exact to rounding; only the analytic derivative of tau
+    is under test."""
+    tau0, h = 0.3 + 1.1j, 1e-4
+    for n in (3, 4):
+        d = np.asarray(flat(tau0, n, n).tau_derivative())
+        dz_dx = (_squared_lengths(flat(tau0 + h, n, n)) - _squared_lengths(flat(tau0 - h, n, n))) / (2 * h)
+        dz_dy = (_squared_lengths(flat(tau0 + 1j * h, n, n)) - _squared_lengths(flat(tau0 - 1j * h, n, n))) / (2 * h)
+        assert abs(np.sum(d * dz_dx) - 1.0) < 1e-9
+        assert abs(np.sum(d * dz_dy) - 1j) < 1e-9
+
+
+def _finite_difference(q, e, h=1e-6):
+    """The central difference of tau in the squared length of edge e (an
+    approximation of order h^2, about 1e-9 here), the section-2 constructor
+    rebuilt at each point."""
+    values = []
+    for sign in (+1, -1):
+        lengths = list(q.lengths())
+        lengths[e] = complex(np.sqrt(lengths[e] ** 2 + sign * h))
+        values.append(rebuilt(q, lengths=lengths).tau())
+    return (values[0] - values[1]) / (2 * h)
+
+
+def test_tau_derivative_matches_finite_differences_off_the_flat_locus():
+    """On a conformally deformed (non-flat) torus every stage of the
+    construction moves with the lengths -- the harmonic frames, the areas,
+    the layouts, the cotangent weights -- and the analytic derivative agrees
+    with the finite difference to the difference's own accuracy (~1e-8)."""
+    q = _conformal(4, amplitude=0.2)
+    assert _euler_defect(q) < 1e-13
+    d = np.asarray(q.tau_derivative())
+    rng = np.random.default_rng(0)
+    for e in rng.choice(len(q.edges()), 5, replace=False):
+        fd = _finite_difference(q, int(e))
+        assert abs(fd - d[e]) <= 1e-7 * max(abs(d[e]), 1.0)
+
+
+def test_tau_derivative_is_holomorphic_off_the_real_locus():
+    """Section 16: with complex lengths the derivative is the derivative of
+    the continued branch, holomorphic in z, so a step i*h moves tau by i
+    times the step h does; and it stays scale-free."""
+    q = flat(0.3 + 1.1j, 3, 3)
+    rng = np.random.default_rng(2)
+    lengths = [complex(l) * (1.0 + 0.06 * rng.uniform(-1, 1) + 0.08j * rng.uniform(-1, 1)) for l in q.lengths()]
+    qz = rebuilt(q, lengths=lengths)
+    assert not qz.on_real_locus()
+    assert _euler_defect(qz) < 1e-13
+    d = np.asarray(qz.tau_derivative())
+    for e in (1, 7, 20):
+        real_step = _finite_difference(qz, e)
+        values = []
+        for sign in (+1, -1):
+            perturbed = list(qz.lengths())
+            perturbed[e] = complex(np.sqrt(perturbed[e] ** 2 + sign * 1e-6j))
+            values.append(rebuilt(qz, lengths=perturbed).tau())
+        imaginary_step = (values[0] - values[1]) / (2e-6)
+        assert abs(real_step - d[e]) <= 1e-7 * max(abs(d[e]), 1.0)
+        assert abs(imaginary_step - 1j * d[e]) <= 1e-7 * max(abs(d[e]), 1.0)
+
+
+def test_tau_derivative_is_gauge_invariant():
+    """A pure gauge on the links (section 16) leaves tau invariant, and so
+    its derivative: the twisted frames, their duals and the transported
+    periods all carry the same base-point factor, which cancels."""
+    q = _conformal(3, amplitude=0.2)
+    plain = np.asarray(q.tau_derivative())
+    spacetime = q.spacetime()
+    rng = np.random.default_rng(5)
+    gauge = {int(v.getId()): rng.uniform(-np.pi, np.pi) for v in spacetime.getVertexList().toVector()}
+    for edge in spacetime.getEdgeList().toVector():
+        edge.setPhase(gauge[int(edge.getTarget().getId())] - gauge[int(edge.getSource().getId())])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gauged = SimplicialQubit(spacetime, list(q.cycle_A()), list(q.cycle_B()), q.intersection_number() < 0)
+    assert not gauged.trivial_connection()
+    assert abs(gauged.tau() - q.tau()) < 1e-12
+    assert np.abs(np.asarray(gauged.tau_derivative()) - plain).max() < 1e-11 * np.abs(plain).max()
+
+
+def test_intersection_number_fixes_the_orientation():
+    """A . B = +1 on the flat torus (spec section 12 builds it so); the
+    Spacetime, which stores no orientation, reads +1 in exactly one of its
+    two orientations, and swapping the marking flips the sign."""
+    q = flat(0.3 + 1.1j, 3, 3)
+    assert abs(q.intersection_number() - 1.0) < 1e-12
+    spacetime = q.spacetime()
+    A, B = list(q.cycle_A()), list(q.cycle_B())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        signs = [SimplicialQubit(spacetime, A, B, reversed).intersection_number() for reversed in (False, True)]
+        swapped = SimplicialQubit(spacetime, B, A, False).intersection_number()
+    assert sorted(round(s) for s in signs) == [-1, 1]
+    assert abs(abs(swapped) - 1.0) < 1e-12 and round(swapped) == -round(signs[0])

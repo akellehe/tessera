@@ -24,6 +24,7 @@
 #include "cobordism/PencilLayer.h"
 #include "cobordism/SurgicalCone.h"
 #include "matter/MatterConfiguration.h"
+#include "observables/SimplicialQubit.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeKey.h"
 #include "mesh/EdgeList.h"
@@ -923,11 +924,12 @@ double MultiCobordism::residualForBoundaryBlockWithDistinctMatchings(
     const BoundaryBlock &boundaryBlock,
     const std::shared_ptr<Spacetime> &spacetime,
     std::set<std::vector<int>> &claimedMatchings) const {
-  // A marked block (setInputMarking, qubit cobordism spec D2 as revised) is
-  // scored by the leak of its input coefficients, written through its LIVE
-  // frame, in the zero mode of the ENTIRE cobordism on its edges — in place
-  // of the leak in its own kernel, which a frame always contains.
-  if (useFiberResiduals_ && boundaryBlock.marking) return inputStateResidualOn(boundaryBlock, spacetime);
+  // A marked block (setInputMarking, qubit cobordism spec D2) is scored by
+  // the residual of its OWN state: the leak of its input state in the
+  // holomorphic form of its own Laplacian on its live surface. The zero mode
+  // of the ENTIRE cobordism is the OUTPUT state (R1): reported by
+  // readInputState in the block's live frame, never held.
+  if (useFiberResiduals_ && boundaryBlock.marking) return ownStateResidualOn(boundaryBlock, spacetime);
   if (useFiberResiduals_ && boundaryBlock.fiber && boundaryBlock.fiber->images.cols() > 0)
     return fiberResidualForBoundaryBlock(boundaryBlock, spacetime);  // #940
   auto blockSubcomplex = spacetime->subcomplexWithinVertexSet(
@@ -4235,6 +4237,179 @@ double MultiCobordism::inputStateResidual(std::size_t index) const {
   return inputStateResidualOn(inputBlocks_[index], spacetime_);
 }
 
+observables::SimplicialQubit MultiCobordism::blockQubit(const BoundaryBlock &block,
+                                                        const std::shared_ptr<Spacetime> &spacetime) {
+  if (!block.marking) throw std::logic_error("MultiCobordism::blockQubit: the block carries no marking (setInputMarking)");
+  if (block.marking->rank() != 2)
+    throw std::invalid_argument("MultiCobordism::blockQubit: a qubit torus is marked by two cycles; this marking has " +
+                                std::to_string(block.marking->rank()));
+  if (!spacetime) throw std::invalid_argument("MultiCobordism::blockQubit: null spacetime");
+  const std::shared_ptr<Spacetime> surface = blockSurfaceWithGeometry(block, spacetime);
+  if (!surface)
+    throw std::runtime_error("MultiCobordism::blockQubit: the block has no surface (a face of the torus lost an "
+                             "edge, so it carries no state)");
+  // The surface as SimplicialQubit's Spacetime constructor indexes it:
+  // vertices by ascending id, edges by ascending index pair. The marking's
+  // steps (host ids, u -> v) become (edge index, sign) with the sign of the
+  // step against the edge's stored orientation (min -> max).
+  std::vector<std::uint64_t> ids;
+  for (const auto *vertex : surface->getVertexList()->liveVector()) ids.push_back(vertex->getId());
+  std::sort(ids.begin(), ids.end());
+  std::map<std::uint64_t, std::uint64_t> indexOfId;
+  for (std::size_t n = 0; n < ids.size(); ++n) indexOfId[ids[n]] = n;
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> pairs;
+  for (const mesh::Edge *edge : surface->getEdgeList()->toVector()) {
+    const std::uint64_t a = indexOfId.at(edge->getSource()->getId());
+    const std::uint64_t b = indexOfId.at(edge->getTarget()->getId());
+    pairs.emplace_back(std::min(a, b), std::max(a, b));
+  }
+  std::sort(pairs.begin(), pairs.end());
+  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfPair;
+  for (std::size_t n = 0; n < pairs.size(); ++n) indexOfPair[pairs[n]] = n;
+  auto cycleOf = [&](const std::vector<std::pair<std::uint64_t, std::uint64_t>> &steps, const char *name) {
+    observables::SimplicialQubit::Cycle cycle;
+    for (const auto &[u, v] : steps) {
+      const auto iu = indexOfId.find(u), iv = indexOfId.find(v);
+      if (iu == indexOfId.end() || iv == indexOfId.end())
+        throw std::runtime_error(std::string("MultiCobordism::blockQubit: a step of cycle ") + name + " (" +
+                                 std::to_string(u) + " -> " + std::to_string(v) +
+                                 ") leaves the block's live surface");
+      const auto found = indexOfPair.find({std::min(iu->second, iv->second), std::max(iu->second, iv->second)});
+      if (found == indexOfPair.end())
+        throw std::runtime_error(std::string("MultiCobordism::blockQubit: the marking edge (") + std::to_string(u) +
+                                 ", " + std::to_string(v) + ") of cycle " + name +
+                                 " is not an edge of the block's live surface");
+      cycle.emplace_back(found->second, iu->second < iv->second ? 1 : -1);
+    }
+    return cycle;
+  };
+  const observables::SimplicialQubit::Cycle cycleA = cycleOf(block.marking->cycles[0], "A");
+  const observables::SimplicialQubit::Cycle cycleB = cycleOf(block.marking->cycles[1], "B");
+  // The orientation the marking fixes (the qubit spec §2: A . B = +1). The
+  // container stores none; the fundamental class picks one of the two, and
+  // the intersection number says whether it is the marking's.
+  observables::SimplicialQubit read(surface, cycleA, cycleB, /*reversed=*/false);
+  if (read.intersectionNumber() < 0.0) return observables::SimplicialQubit(surface, cycleA, cycleB, /*reversed=*/true);
+  return read;
+}
+
+observables::SimplicialQubit MultiCobordism::blockQubit(std::size_t index) const {
+  if (index >= inputBlocks_.size()) throw std::out_of_range("MultiCobordism::blockQubit: input block index out of range");
+  return blockQubit(inputBlocks_[index], spacetime_);
+}
+
+double MultiCobordism::ownStateLeakOf(std::complex<double> periodA, std::complex<double> periodB,
+                                      const Eigen::VectorXcd &coefficients) {
+  if (coefficients.size() != 2)
+    throw std::invalid_argument("MultiCobordism::ownStateLeakOf: a qubit state has two coefficients");
+  const Eigen::Vector2cd p(periodA, periodB);
+  const Eigen::Vector2cd c(coefficients(0), coefficients(1));
+  const double pp = p.squaredNorm(), cc = c.squaredNorm();
+  if (!(pp > 0.0) || !(cc > 0.0)) return 1.0;
+  const std::complex<double> overlap = c.dot(p);  // c^H p: Eigen's dot conjugates its first argument
+  return std::max(0.0, 1.0 - std::norm(overlap) / (cc * pp));
+}
+
+double MultiCobordism::ownStateResidualOn(const BoundaryBlock &block,
+                                          const std::shared_ptr<Spacetime> &spacetime) const {
+  if (!block.marking)
+    throw std::logic_error("MultiCobordism::ownStateResidualOn: the block carries no marking (setInputMarking)");
+  if (!spacetime) return 1.0;
+  std::optional<observables::SimplicialQubit> read;
+  try {
+    read.emplace(blockQubit(block, spacetime));
+  } catch (const std::runtime_error &) {
+    return 1.0;  // no surface, or a refused read: the state leaks in full
+  } catch (const std::invalid_argument &) {
+    return 1.0;  // the surface refuses the qubit's validation (a degenerate triangle)
+  }
+  // The periods over the GIVEN marking: the qubit spec §9 reports (B, -A)
+  // when |P_A| vanishes, and the leak is written on the raw pair.
+  auto [pA, pB] = read->periods();
+  if (read->markingSwapped()) {
+    const std::complex<double> rawA = -pB, rawB = pA;
+    pA = rawA;
+    pB = rawB;
+  }
+  return ownStateLeakOf(pA, pB, block.marking->coefficients);
+}
+
+double MultiCobordism::ownStateResidual(std::size_t index) const {
+  if (index >= inputBlocks_.size())
+    throw std::out_of_range("MultiCobordism::ownStateResidual: input block index out of range");
+  if (!inputBlocks_[index].marking)
+    throw std::logic_error("MultiCobordism::ownStateResidual: input block " + std::to_string(index) +
+                           " carries no marking (setInputMarking)");
+  return ownStateResidualOn(inputBlocks_[index], spacetime_);
+}
+
+MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
+    const std::shared_ptr<Spacetime> &spacetime, const BoundaryBlock &block) const {
+  if (!spacetime) throw std::invalid_argument("MultiCobordism::ownStateResidualGradientOn: null spacetime");
+  if (!block.marking)
+    throw std::logic_error("MultiCobordism::ownStateResidualGradientOn: the block carries no marking (setInputMarking)");
+  const auto parentEdges = spacetime->getEdgeList()->toVector();
+  ResidualGradient gradient;
+  gradient.lengths = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(parentEdges.size()));
+  gradient.phases = Eigen::VectorXcd();  // tau is invariant under the pure gauge the surface carries
+  std::optional<observables::SimplicialQubit> read;
+  try {
+    read.emplace(blockQubit(block, spacetime));
+  } catch (const std::runtime_error &) {
+    return gradient;  // the full leak has no direction
+  } catch (const std::invalid_argument &) {
+    return gradient;
+  }
+  using Complex = std::complex<double>;
+  const Eigen::VectorXcd &c = block.marking->coefficients;
+  if (c.size() != 2) throw std::logic_error("MultiCobordism::ownStateResidualGradientOn: a qubit state has two coefficients");
+  const Complex a = c(0), b = c(1);
+  const double N = std::norm(a) + std::norm(b);
+  // dr = 2 Re(d_tau r . d tau): the Wirtinger derivative of the real leak
+  // with respect to the reported tau(), in the chart tau = P_B/P_A, or
+  // sigma = P_A/P_B = -tau() when the qubit spec §9 swapped the marking.
+  const Complex tau = read->tau();
+  Complex dr;
+  if (!read->markingSwapped()) {
+    const Complex u = std::conj(a) + std::conj(b) * tau;
+    const double D = 1.0 + std::norm(tau);
+    dr = -(std::conj(b) * std::conj(u) * D - std::norm(u) * std::conj(tau)) / (N * D * D);
+  } else {
+    const Complex sigma = -tau;
+    const Complex u = std::conj(a) * sigma + std::conj(b);
+    const double D = 1.0 + std::norm(sigma);
+    const Complex drdsigma = -(std::conj(a) * std::conj(u) * D - std::norm(u) * std::conj(sigma)) / (N * D * D);
+    dr = -drdsigma;  // tau() = -sigma
+  }
+  const Eigen::VectorXcd dtau = read->tauDerivative();
+  // The torus's edges (index pairs in the surface's ascending-id order) onto
+  // the parent's edges by vertex pair.
+  std::vector<std::uint64_t> ids;
+  for (const auto *vertex : read->spacetime()->getVertexList()->liveVector()) ids.push_back(vertex->getId());
+  std::sort(ids.begin(), ids.end());
+  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
+  for (std::size_t e = 0; e < parentEdges.size(); ++e) parentIndex[edgeKey(parentEdges[e])] = e;
+  const auto &edges = read->edges();
+  for (std::size_t e = 0; e < edges.size(); ++e) {
+    const std::uint64_t u = ids.at(edges[e].first), v = ids.at(edges[e].second);
+    const auto found = parentIndex.find({std::min(u, v), std::max(u, v)});
+    if (found == parentIndex.end())
+      throw std::logic_error("MultiCobordism::ownStateResidualGradientOn: an edge of the block's own surface is not "
+                             "an edge of the parent complex");
+    // (d/dRe z, d/dIm z) of the real residual packed as a complex number:
+    // dz real moves tau by tau_z dz, dz imaginary by i tau_z dz.
+    const Complex w = dr * dtau(static_cast<Eigen::Index>(e));
+    gradient.lengths[static_cast<Eigen::Index>(found->second)] += Complex(2.0 * w.real(), -2.0 * w.imag());
+  }
+  return gradient;
+}
+
+MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradient(std::size_t index) const {
+  if (index >= inputBlocks_.size())
+    throw std::out_of_range("MultiCobordism::ownStateResidualGradient: input block index out of range");
+  return ownStateResidualGradientOn(spacetime_, inputBlocks_[index]);
+}
+
 MultiCobordism::InputStateRead MultiCobordism::readInputState(std::size_t index) const {
   if (index >= inputBlocks_.size())
     throw std::out_of_range("MultiCobordism::readInputState: input block index out of range");
@@ -4554,21 +4729,13 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
     }
   };
   if (wholeFiberTarget_) accumulate(fiberResidualGradientOn(spacetime_, *wholeFiberTarget_), *spacetime_, 1.0);
-  // A marked block's term is the whole-complex leak of its input coefficients
-  // through its live frame (spec D2): its gradient lives on the WHOLE's edges,
-  // the frame's motion included, and the whole's band derivative is shared by
-  // every marked block.
-  std::vector<const BoundaryBlock *> marked;
-  for (const auto &block : inputBlocks_)
-    if (block.marking) marked.push_back(&block);
-  if (!marked.empty()) {
-    try {
-      for (const ResidualGradient &g : inputStateResidualGradientsOn(spacetime_, marked))
-        accumulate(g, *spacetime_, inputResidualWeight_);
-    } catch (const std::runtime_error &) {
-      // a refused geometry has no descent direction (its residual is the full leak)
-    } catch (const std::invalid_argument &) {
-    }
+  // A marked block's term is its own-state residual (spec D2): the analytic
+  // tau derivative of the holomorphic form of its own Laplacian, supported
+  // on the block's own edges (already in the host's edge order; a refused
+  // read has no direction and comes back as the zero gradient).
+  for (const auto &block : inputBlocks_) {
+    if (!block.marking) continue;
+    accumulate(ownStateResidualGradientOn(spacetime_, block), *spacetime_, inputResidualWeight_);
   }
   for (const auto &block : inputBlocks_) {
     if (block.marking) continue;

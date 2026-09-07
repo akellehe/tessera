@@ -1190,6 +1190,16 @@ Args:
         .def("periods", &SimplicialQubit::periods,
              "(P_A, P_B) (section 9); transported from base_vertex() under a nontrivial connection.")
         .def("tau", &SimplicialQubit::tau, "P_B / P_A (section 9).")
+        .def("tau_derivative", &SimplicialQubit::tauDerivative,
+             "d tau / d z_e for every edge in edge order, z_e = l_e^2 (qubit cobordism spec D2): the "
+             "holomorphic derivative of tau() with respect to each squared edge length, from the "
+             "complex structure in the period frame and its dual (no eigen-decomposition and no "
+             "null-space basis is differentiated); scale-free (sum_e z_e d tau/d z_e = 0) and gauge "
+             "invariant. Raises RuntimeError when the two eigenlines of J coincide.")
+        .def("intersection_number", &SimplicialQubit::intersectionNumber,
+             "A . B of the marked cycles on the surface as oriented by the faces: the ordered cup "
+             "product of the reference period frame on the fundamental cycle, +1 or -1 to rounding "
+             "(+1 on flat_torus, -1 under reversed=True).")
         .def("period_frame", [realOr](const SimplicialQubit &q) { return realOr(q, q.periodFrame()); },
              "F: nE x 2 (real on the real locus), the period frame (qubit cobordism spec D3) - the basis "
              "(f_A, f_B) of the harmonic space with periods (1, 0) and (0, 1) over the marking in force, "

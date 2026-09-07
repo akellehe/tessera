@@ -13,13 +13,17 @@ the SAME driver (``examples/cobordism/emergence_animation.py``, qubit mode):
   tori (two components of Euler characteristic 0, 18 faces each, complete
   with no uncovered face), Betti numbers [1, 2, 1, 0], the monodromy the
   identity to rounding, 54 cells / 18 vertices / 90 edges;
-* the seed residuals of the record ``seed-3x3.json`` to 1e-6: the two block
-  residuals (the whole's zero mode against (1, tau_in) in each live frame),
-  the coefficients of the whole's zero mode in the frames, the own-kernel
-  leaks at their floor, the two-body leak against chi(S5) at J t = 0.05
-  with its transfer and Schmidt spectrum, the objective and its terms;
-* two units of synthesis at the chosen weights lower both block residuals
-  and the objective (C2), while the surfaces stay the tori.
+* the seed numbers of the record ``seed-3x3.json`` to 1e-6: the two block
+  residuals of D2 (the torus's own holomorphic form against its input: zero
+  on the seed), the output-state read (the whole's zero mode against
+  (1, tau_in) in each live frame: T5's leaks and coefficients), the
+  own-kernel leaks at their floor, the two-body leak against chi(S5) at
+  J t = 0.05 with its transfer and Schmidt spectrum, the objective and its
+  terms (r_U is the two-body leak alone on the seed);
+* two units of synthesis at the chosen weights lower the objective while the
+  block residuals stay at their floor and the surfaces stay the tori (C2 as
+  the D2 wording of 2026-09-07 reads it: the tori keep representing their
+  inputs on their own).
 
 Where ``tests/cobordism/test_emergence_animation_qubit_python.py`` (T4) checks
 that every channel is read, this file checks the numbers. Two units with two
@@ -44,8 +48,8 @@ TAU_A = complex(0.3, 1.1)
 TAU_B = complex(-0.2, 0.8)
 GRID = 3
 UNITS = 2
-#: The chosen weights of the T5 findings note: input weight 1e4 (the
-#: driver's default is 1e6), Gamma = 1, the Regge term on.
+#: The chosen weights of the T5 findings note, which are now the driver's
+#: defaults: input weight 1e4, Gamma = 1, the Regge term on.
 WEIGHT = 1e4
 REGGE = True
 
@@ -53,7 +57,7 @@ REGGE = True
 #: terms are frame 0 of ``scan-w1e4-regge-on.json`` (the weight enters r_U only).
 SEED = {
     "counts": {"cells": 54, "vertices": 18, "edges": 90},
-    "residuals": (3.0999811548462074e-3, 9.344558825277608e-3),
+    "output_leaks": (3.0999811548462074e-3, 9.344558825277608e-3),
     "coefficients": ((0.9982485452788615 + 0.0011426511214279456j,
                       0.2984679431474786 + 1.0950467357199427j),
                      (0.9978162036715472 + 0.003176008132991126j,
@@ -63,8 +67,10 @@ SEED = {
     "transfer": ((-0.015919575774081807, -0.019358393245779218),
                  (-0.004326900396088621, -0.005689118777237639)),
     "regge_stationarity": 123.12355190179969,
-    "register_residual": 124.97157450706214,
-    "total": 248.09512640886183,
+    # r_U on the seed is the two-body leak alone: both block residuals of D2
+    # are zero there (each torus IS its input torus on the collar seed).
+    "register_residual": 0.5261747060460291,
+    "total": 123.64972660784572,
 }
 FLOOR = 1e-24
 _CACHE = {}
@@ -110,7 +116,8 @@ def test_the_seed_residuals_are_the_records():
     assert result.inputs.algebra["Jt"] == 0.05
     for index, tau_in in enumerate((TAU_A, TAU_B)):
         row = frame.blocks[index]
-        assert row["residual"] == pytest.approx(SEED["residuals"][index], rel=1e-6)
+        assert 0.0 <= row["residual"] < 1e-12
+        assert row["output_leak"] == pytest.approx(SEED["output_leaks"][index], rel=1e-6)
         assert row["harmonic_rank"] == 2 and row["frame_rank"] == 2
         coefficients = np.asarray(row["coefficients"])
         assert np.abs(coefficients - np.asarray(SEED["coefficients"][index])).max() < 1e-6
@@ -122,7 +129,7 @@ def test_the_seed_residuals_are_the_records():
     leaks = frame.leaks
     assert _present(leaks) and leaks["harmonic_rank"] == 2
     for index, row in enumerate(leaks["per_block"]):
-        assert row["leak"] == pytest.approx(SEED["residuals"][index], rel=1e-6)
+        assert row["leak"] == pytest.approx(SEED["output_leaks"][index], rel=1e-6)
     two_body = frame.two_body
     assert _present(two_body), two_body
     assert two_body["in_frames"] and two_body["derived_frames"]
@@ -139,19 +146,24 @@ def test_the_seed_residuals_are_the_records():
     assert objective["total"] == pytest.approx(SEED["total"], rel=1e-6)
     assert objective["register_residual"] == pytest.approx(
         two_body["residual"] + WEIGHT * sum(frame.blocks[i]["residual"] for i in range(2)), rel=1e-9)
+    assert objective["register_residual"] == pytest.approx(two_body["residual"], rel=1e-9), \
+        "on the seed the block residuals are zero: r_U is the two-body leak alone"
 
 
-def test_two_units_lower_both_block_residuals():
+def test_two_units_lower_the_objective_and_hold_the_tori():
     result = _run()
     first, last = result.frames[0], result.frames[-1]
     assert last.step == UNITS
     for index in range(2):
-        before = first.blocks[index]["residual"]
+        assert first.blocks[index]["residual"] < 1e-12, "the seed is the input torus"
         after = last.blocks[index]["residual"]
-        assert isinstance(after, float) and after < before, (index, before, after)
+        # the seed is the residual's minimum, so C2 under the D2 wording is
+        # that the torus still represents its input after synthesis
+        assert isinstance(after, float) and 0.0 <= after < 1e-3, (index, after)
         read = last.blocks[index]["read"]
         assert _present(read), read.reason
         assert (read["vertices"], read["edges"], read["faces"]) >= (9, 27, 18)
+        assert after == pytest.approx(np.sin(read["fubini_study_distance"]) ** 2, rel=1e-9, abs=1e-18)
     assert last.objective["total"] < first.objective["total"]
     assert _present(last.monodromy) and last.monodromy["rounded"] == [[1, 0], [0, 1]]
     assert _present(last.two_body) and last.two_body["shape"] == [2, 2]
