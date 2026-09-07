@@ -318,7 +318,10 @@ def test_render_png_and_gif_under_agg():
         assert "qubit cobordism" in figure._suptitle.get_text()
         assert "legacy" in figure._suptitle.get_text()
         titles = [axis.get_title() for axis in figure.axes]
-        for token in ("residuals", "tau-hat", "Bloch", "|T|", "the whole"):
+        # The qubit panels name their quantities in mathtext (#993), so the
+        # tokens are the symbols as they are written in the source, not the
+        # glyphs they render as.
+        for token in ("residuals", r"$\hat\tau$", "Bloch", r"$|T_{AB}|$", "the whole"):
             assert any(token in title for title in titles), token
     finally:
         plt.close(figure)
