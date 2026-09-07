@@ -156,17 +156,49 @@ def torus_vertex_order(block):
     return sorted(int(v) for v in block["vertices"])
 
 
-def flat_lengths(tau, grid):
-    """A fresh flat torus at `tau`: its edges as (i, j) index pairs with
-    their lengths, in the torus's own vertex indexing."""
+def flat_lengths(tau, grid, texture=0.0):
+    """A torus of modulus `tau`: its edges as (i, j) index pairs with their
+    lengths, in the torus's own vertex indexing.
+
+    `texture` breaks the lattice symmetry WITHOUT moving the state. A flat
+    torus gives every edge of a lattice direction the same length, so a
+    lattice translation maps its length assignment to itself: nine gluings
+    of it are nine relabelings of an object that cannot tell them apart, and
+    measuring the attachment against it measures nothing. Scaling the
+    lengths by `exp(texture * f(midpoint))` for a mean-zero f is a discrete
+    conformal factor: it varies edge to edge, so the translations become
+    genuinely different gluings, while tau is a conformal invariant and the
+    state is unchanged to the construction's mesh order. The residual it
+    leaves is reported, so the reader can see how far "unchanged" holds.
+    """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         torus = obs.SimplicialQubit.flat_torus(complex(tau), grid, grid)
-    return {(int(i), int(j)): complex(length)
-            for (i, j), length in zip(torus.edges(), torus.lengths())}, torus
+    lengths = {(int(i), int(j)): complex(length)
+               for (i, j), length in zip(torus.edges(), torus.lengths())}
+    if texture == 0.0:
+        return lengths, torus
+    def wrapped(delta):
+        return -1 if delta == grid - 1 else (1 if delta == -(grid - 1) else delta)
+    scaled = {}
+    for (i, j), length in lengths.items():
+        ri, ci = divmod(i, grid)
+        rj, cj = divmod(j, grid)
+        x = (ri + 0.5 * wrapped(rj - ri)) / grid
+        y = (ci + 0.5 * wrapped(cj - ci)) / grid
+        factor = np.exp(texture * np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y))
+        scaled[(i, j)] = length * factor
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        textured = obs.SimplicialQubit(
+            list(torus.vertices()), [tuple(e) for e in torus.edges()],
+            [tuple(f) for f in torus.faces()],
+            [scaled[(int(i), int(j))] for i, j in torus.edges()],
+            list(torus.cycle_A()), list(torus.cycle_B()))
+    return scaled, textured
 
 
-def install(spacetime, block, tau, grid, permutation=None):
+def install(spacetime, block, tau, grid, permutation=None, texture=0.0):
     """Put a fresh flat torus of modulus `tau` onto this block's edges.
 
     `permutation` maps a torus vertex index to a torus vertex index; it is the
@@ -177,7 +209,7 @@ def install(spacetime, block, tau, grid, permutation=None):
     hosts = torus_vertex_order(block)
     permutation = list(range(len(hosts))) if permutation is None else list(permutation)
     host_of = {index: hosts[permutation[index]] for index in range(len(hosts))}
-    lengths, torus = flat_lengths(tau, grid)
+    lengths, torus = flat_lengths(tau, grid, texture)
     by_pair = edges_by_pair(spacetime)
     written = 0
     for (i, j), length in lengths.items():
@@ -239,7 +271,7 @@ def mark(node, document, taus):
 
 
 def read(document, taus, operator, grid, permutations=(None, None),
-         mode="flat", weight=1e4):
+         mode="flat", weight=1e4, texture=0.0):
     """One reading: install the boundary, take the transfer, score it.
 
     `mode` is `flat` (fresh tori at `taus`) or `replay` (the solved lengths
@@ -254,12 +286,13 @@ def read(document, taus, operator, grid, permutations=(None, None),
             tori.append(None)
         else:
             tori.append(install(spacetime, block, taus[index], grid,
-                                permutations[index]))
+                                permutations[index], texture))
     spacetime.materializeFacets()
     node = node_on(spacetime, document, weight)
     mark(node, document, taus)
-    out = {"mode": mode, "taus": [complex(t) for t in taus],
+    out = {"mode": mode, "taus": [complex(t) for t in taus], "texture": float(texture),
            "permutations": [None if p is None else list(p) for p in permutations]}
+    out["installed_tau"] = [None if t is None else complex(t.tau()) for t in tori]
     try:
         transfer = np.asarray(node.read_two_body().transfer, dtype=complex)
     except Exception as error:                            # noqa: BLE001
@@ -300,6 +333,11 @@ def main(argv=None):
     parser.add_argument("--tau-b", type=complex, default=None)
     parser.add_argument("--permutations", action="store_true",
                         help="repeat over every lattice translation of torus A")
+    parser.add_argument("--texture", type=float, default=0.0,
+                        help="a discrete conformal factor on the installed "
+                             "tori, breaking the lattice symmetry so the "
+                             "translations become different gluings; tau is "
+                             "unchanged, and the installed tau is reported")
     parser.add_argument("--json", default=None)
     args = parser.parse_args(argv)
 
@@ -312,19 +350,19 @@ def main(argv=None):
     results = [read(document, original, args.operator, args.grid, mode="replay",
                     weight=args.weight),
                read(document, original, args.operator, args.grid, mode="flat",
-                    weight=args.weight)]
+                    weight=args.weight, texture=args.texture)]
     results[0]["label"] = "replay: the solved boundary, back"
     results[1]["label"] = "reflat: a fresh flat torus at the original tau"
     if new != original:
         swapped = read(document, new, args.operator, args.grid, mode="flat",
-                       weight=args.weight)
+                       weight=args.weight, texture=args.texture)
         swapped["label"] = "swap: fresh tori at the new tau"
         results.append(swapped)
     if args.permutations:
         for n, permutation in enumerate(translations(args.grid)):
             entry = read(document, new, args.operator, args.grid,
                          permutations=(permutation, None), mode="flat",
-                         weight=args.weight)
+                         weight=args.weight, texture=args.texture)
             entry["label"] = "swap under translation %d of torus A" % n
             results.append(entry)
 
@@ -332,7 +370,7 @@ def main(argv=None):
         if "refused" in entry:
             print("%-46s REFUSED %s" % (entry["label"], entry["refused"]))
             continue
-        print("%-46s residual %.6e  own %.2e %.2e  tau_hat %s"
+        print("%-46s residual %.9e  own %.2e %.2e  tau_hat %s"
               % (entry["label"], entry["residual"],
                  entry["own_state_residuals"][0], entry["own_state_residuals"][1],
                  ", ".join("%.6f" % t.real + ("%+.6fi" % t.imag) for t in entry["tau_hat"])))
