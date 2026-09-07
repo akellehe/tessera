@@ -1085,7 +1085,7 @@ class EmergenceFrame:
 
     def _read_qubit_channels(self, node, spacetime, inputs):
         """The read-outs of spec S6 over the live complex, all read-only."""
-        self.blocks = [self._read_block(node, spacetime, inputs, index)
+        self.blocks = [self._read_block(node, inputs, index)
                        for index in range(len(inputs.tori))]
         self.leaks = self._read_restricted_leaks(spacetime, inputs)
         self.monodromy = self._read_monodromy(spacetime, inputs)
@@ -1621,7 +1621,7 @@ class EmergenceFrame:
     # ---- 12. the qubit blocks (spec S6, per block) ------------------
 
     @staticmethod
-    def _read_block(node, spacetime, inputs, index):
+    def _read_block(node, inputs, index):
         """One input block: its residual, the output state read at the block,
         and its qubit read.
 
@@ -1675,14 +1675,11 @@ class EmergenceFrame:
         except Exception as error:                        # noqa: BLE001
             row["own_kernel_leak"] = Absent("own-kernel leak refused: %s"
                                             % error)
-        surface = MC.block_surface_subcomplex(node.inputs[index], spacetime)
-        if surface is None:
-            row["read"] = Absent("the block has no surface: a face of the "
-                                 "torus lost an edge, so it carries no state")
-            return row
         try:
             read = _quiet(lambda: node.block_qubit(index))
         except (KeyError, ValueError, RuntimeError) as error:
+            # `block_qubit` names every refusal itself, a torn surface among
+            # them, so there is nothing to check for it here.
             row["read"] = Absent("qubit read refused: %s" % error)
             return row
         row["read"] = {
