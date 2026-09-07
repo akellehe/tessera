@@ -476,6 +476,10 @@ def test_ordinary_nodes_are_untouched_and_rebuilds_keep_the_tori(whitney_default
     assert faces == [mapped_faces(qa, ids_a), mapped_faces(qb, ids_b)]
     uncovered = sorted(tuple(f) for f in node.uncovered_input_faces())
     assert len(uncovered) == 50 - 1
+    # This case is about what a COMMITTED cone preserves, not about whether
+    # one is allowed: a node with a declared boundary refuses cone-ins by
+    # default (#997), so the old behaviour is asked for by name here.
+    node.set_boundary_may_extend(True)
     thresholds = MC.RefinementIndicators()
     thresholds.mesh_quality = 2.0  # a lower bound every mesh crosses: refine now
     node.set_refinement_thresholds(thresholds)

@@ -366,6 +366,40 @@ class MultiCobordism {
   /// experiments; the default retains the complexified relaxation used by the
   /// general simulator.
   ///
+  /// Whether a CONE move may extend a FIXED boundary. Default FALSE: it may
+  /// not. A cone-in over a boundary facet buries that facet and exposes the
+  /// new cell's remaining facets; a cone-out removes a cell and exposes all
+  /// of its facets. Either hands \f$ \partial W \f$ faces it did not have,
+  /// which silently changes what the cobordism IS when its boundary is
+  /// stated up front — the two input tori of the qubit experiment, where
+  /// \f$ \partial W \f$ is meant to be \f$ M_0 \sqcup M_1 \f$ and not
+  /// whatever the search exposed. A refused candidate is not a member of the
+  /// configuration space, exactly as for `dualComplexValid`: nothing is
+  /// clamped and nothing is rolled back specially.
+  ///
+  /// WHEN it applies: only where a boundary is DECLARED fixed
+  /// (`hasFixedBoundary`) — a SURFACE input or output block, whose own
+  /// triangles are a component of \f$ \partial W \f$. A node that declares
+  /// none has no fixed boundary to protect, so its cones are unrestricted
+  /// whatever this is set to, and every free emergent build (the proton hosts
+  /// grown from a \f$ \Delta^4 \f$ seed, the CDT work) behaves exactly as it
+  /// did. A pinned region is NOT such a declaration: pinning constrains the
+  /// geometry and does not veto a topology change (`declarePinnedRegion`),
+  /// and making it imply this gate would reverse that. Only the cone kinds
+  /// are gated; the Pachner moves and `bridge` keep their own gates.
+  void setBoundaryMayExtend(bool allowed) noexcept { boundaryMayExtend_ = allowed; }
+  [[nodiscard]] bool boundaryMayExtend() const noexcept { return boundaryMayExtend_; }
+  /// Whether this node declares a boundary it holds fixed: any SURFACE input
+  /// or output block, whose own triangles are a component of the boundary. A
+  /// pinned region is not one (see `setBoundaryMayExtend`).
+  [[nodiscard]] bool hasFixedBoundary() const noexcept;
+  /// The boundary of \p spacetime as a set of facets: every codimension-one
+  /// face carried by exactly one top cell, as sorted vertex-id tuples. This
+  /// is \f$ \partial W \f$ read from the cells alone, the same incidence
+  /// count `surfaceInventoryOf` takes, with no geometry and no orientation.
+  [[nodiscard]] static std::set<std::vector<std::uint64_t>> boundaryFacetsOf(
+      const Spacetime &spacetime);
+
   /// `singularValueRatio` swaps the WHOLE-COMPLEX term of `rU` — both regimes:
   /// the single-output period residual and its `nearKernelResidual`
   /// continuation — for the scale-invariant singular-value half-sum ratio
@@ -2534,6 +2568,9 @@ class MultiCobordism {
   bool fiberPhaseDescent_{false};
   std::optional<BoundaryFiber> wholeFiberTarget_;
   std::optional<TwoBodyTarget> twoBodyTarget_;
+  /// `setBoundaryMayExtend`; false refuses a cone that grows a declared
+  /// boundary. Nodes without one (`hasFixedBoundary`) are unaffected either way.
+  bool boundaryMayExtend_{false};
   /// The transfer between the two attached input blocks on \p spacetime: in
   /// the blocks' frames when both carry one (`transferOperand`: derived live
   /// from a marking, or the supplied `BlockFrame`), in the full (identity)

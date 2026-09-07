@@ -2534,6 +2534,16 @@ bool MultiCobordism::applyMoveSpecification(
   const auto &moveKind = moveSpecification.first;
   CLOG(INFO_LEVEL, "Applying a ", moveKind, " move.");
   if (moveKind == kNoop) return false;
+  // The boundary BEFORE a gated cone (setBoundaryMayExtend): a cone-in buries
+  // the facet it stands on and exposes the new cell's others, a cone-out
+  // exposes every facet of the cell it removes, so either can hand the
+  // boundary faces it did not have. Read only when the gate is armed and only
+  // for the cone kinds, so no other move pays for it.
+  const bool gateBoundary =
+      !boundaryMayExtend_ && hasFixedBoundary() &&
+      (moveKind == kConeOut || moveKind == kConeIn || moveKind == kConeInTimelike);
+  const std::set<std::vector<std::uint64_t>> boundaryBefore =
+      gateBoundary ? boundaryFacetsOf(*spacetime) : std::set<std::vector<std::uint64_t>>{};
   bool moveWasApplied = false;
   if (moveKind == kAddMove || moveKind == kRemoveMove ||
       moveKind == kFlipMove || moveKind == kIFlipMove) {
@@ -2589,6 +2599,14 @@ bool MultiCobordism::applyMoveSpecification(
                          .first;
   }
   if (!moveWasApplied) return false;
+  if (gateBoundary) {
+    // REFUSED, not repaired: a complex whose boundary gained a face is not
+    // the cobordism the caller declared, so it is not a member of the
+    // configuration space and the candidate is dropped like any other
+    // gate failure.
+    for (const auto &facet : boundaryFacetsOf(*spacetime))
+      if (!boundaryBefore.count(facet)) return false;
+  }
   // Manifold validity is the whole gate. A move that removes a pinned vertex is
   // accepted when what it leaves is a valid manifold in its own right: pinning
   // constrains the geometry, it does not veto a topology change.
@@ -5003,6 +5021,40 @@ MultiCobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &b
   }
   return {std::vector<std::vector<std::uint64_t>>(faces.begin(), faces.end()),
           std::vector<std::vector<std::uint64_t>>(edges.begin(), edges.end())};
+}
+
+bool MultiCobordism::hasFixedBoundary() const noexcept {
+  // A SURFACE block only. Its own triangles ARE a component of the boundary,
+  // declared by the caller, which is what makes dW a stated fact rather than
+  // whatever the search exposed. A PINNED REGION is deliberately not one:
+  // "pinning constrains the geometry, it does not veto a topology change" is
+  // the settled reading of `declarePinnedRegion` (the acceptance in
+  // applyMoveSpecification and the ManifoldValidityIsTheOnlyGate tests), and
+  // making it imply a topological gate would quietly reverse it.
+  for (const auto &block : inputBlocks_)
+    if (block.surface) return true;
+  for (const auto &block : outputBlocks_)
+    if (block.surface) return true;
+  return false;
+}
+
+std::set<std::vector<std::uint64_t>> MultiCobordism::boundaryFacetsOf(const Spacetime &spacetime) {
+  std::map<std::vector<std::uint64_t>, int> incidence;
+  for (const auto &topSimplex : spacetime.getTopSimplices()) {
+    if (topSimplex == nullptr) continue;
+    const auto cell = topSimplex->topTuple();
+    for (std::size_t omit = 0; omit < cell.size(); ++omit) {
+      std::vector<std::uint64_t> facet;
+      facet.reserve(cell.size() - 1);
+      for (std::size_t i = 0; i < cell.size(); ++i)
+        if (i != omit) facet.push_back(cell[i]);
+      ++incidence[facet];
+    }
+  }
+  std::set<std::vector<std::uint64_t>> boundary;
+  for (auto &[facet, count] : incidence)
+    if (count == 1) boundary.insert(facet);
+  return boundary;
 }
 
 MultiCobordism::SurfaceInventory MultiCobordism::surfaceInventoryOf(
