@@ -2617,7 +2617,7 @@ def _panel_moduli(axis, frames):
     tau-hat is the torus's own conformal structure, which the block residual
     of D2 holds at tau_in: the panel shows how far it is allowed to drift
     under synthesis, next to the Weil-Petersson distance that measures it."""
-    title = r"$\hat\tau$ on the upper half plane (ring: $\tau_{\mathrm{in}}$)"
+    title = r"$\hat\tau$ on the upper half plane (star: $\tau_{\mathrm{in}}$)"
     last = frames[-1]
     if last.inputs is None or isinstance(last.blocks, Absent):
         return _absent_panel(axis, title, _qubit_reason(last))
@@ -2743,7 +2743,7 @@ def _panel_transfer(axis, frame):
     read = frame.two_body
     spectrum = ", ".join("%.3g" % s for s in read["singular_values"]
                          if s is not None)
-    axis.set_title("%s\n" + r"leak %.4g, Schmidt $\sigma$ (%s) rank %d, reversal %.1e%s"
+    axis.set_title("%s\nleak %.4g, Schmidt $\\sigma$ (%s) rank %d, reversal %.1e%s"
                    % (title, read["residual"] if read["residual"] is not None
                       else float("nan"), spectrum, read["schmidt_rank"],
                       read["reversal_residual"]
