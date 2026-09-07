@@ -22,10 +22,9 @@ whole (S3) — and is then synthesized by the engine's stage 1 (combinatorial
 moves, the gated `bridge` move among them) and stage 2 (length relaxation)
 against the algebraic two-body target.
 The output state is the degree-1 zero mode of the Laplacian of the **entire**
-W, bulk and boundary edges together, read at each torus as its coefficients
-in that torus's live frame. Throughout, the whole's zero mode is held at each
-torus's input coefficients in that torus's own frame by a residual in the
-objective, and nothing is pinned. The run is driven and
+W, bulk and boundary edges together. Throughout, each torus keeps
+representing its input state through the zero mode of its **own** Laplacian
+(a residual in the objective), and nothing is pinned. The run is driven and
 displayed by `examples/cobordism/emergence_animation.py`, one implementation.
 
 ## 2. Vocabulary (use these words, no others)
@@ -81,9 +80,8 @@ R2. Fixed does not mean excluded: "the boundary … is what stays fixed. but
 R3. Boundary cells may change: "pinned cells should change, but we must
     continue to minimize their residuals (for their representation of their
     initial/input states via their own laplacian's harmonic) alongside the
-    bulk." Hence: no pinned regions; the residual of the whole's zero mode
-    against the block's input coefficients in the block's own frame is in the
-    objective next to the bulk terms.
+    bulk." Hence: no pinned regions; the block's own-Laplacian residual is in
+    the objective next to the bulk terms.
 
 R4. The bulk is drawn, not templated: "choose a vertex on one of the boundary
     blocks. cone it into 4 vertices on the other. or choose 2 and 3 or 3 and 2.
@@ -156,8 +154,9 @@ S3. **The collar.** The bulk between the two surfaces starts as the minimal
 S4. **Synthesis.** Per frame: ordinary stage 1 (adds, flips, cone-outs,
     cone-ins with fresh vertices, and `bridge` while a surface face is
     uncovered), then stage 2 on all edges. The objective is the engine's: Regge stationarity plus Γ·r_U,
-    where r_U under fiber residuals is the sum over blocks of that block's
-    residual of D2 (weight `inputResidualWeight`) and the two-body residual.
+    where r_U under fiber residuals is the sum of each block's own-Laplacian
+    fiber residual (weight `inputResidualWeight`), the whole-complex fiber
+    residual if a whole-complex target is set, and the two-body residual.
     Stage 1 runs before stage 2 within a frame (a committed stage-1 move
     rebuilds the complex from a snapshot of its cells and every edge's
     length and phase).
@@ -171,17 +170,16 @@ S5. **Target.** The two-qubit XY flip-flop, mirroring the spin-3/2 experiment:
     read in the tori's period frames (S6) by the engine's projective leak.
 
 S6. **Read-outs, every frame.**
-    - Per block: its residual (D2); the coefficients (a, b) of the whole's
-      zero mode in the block's live frame, next to the input (1, τ_in) — the
-      state at the block; and, as a geometric diagnostic of the block's own
-      metric only, the qubit read (`SimplicialQubit(surface, cycle_A,
-      cycle_B)`) on the block's surface with the live lengths: τ̂ of its own
-      holomorphic line, d_FS and d_WP to τ_in, Delaunay flags, the spec's J
-      residual. The marking is the flat torus's cycle pair; its edges persist
-      under every engine move (see §6), so the frame and the read are always
-      defined.
+    - Per block: its own-Laplacian fiber residual; the qubit read
+      (`SimplicialQubit(surface, cycle_A, cycle_B)`) on the block's surface
+      with the live lengths: τ̂, d_FS and d_WP to τ_in, Delaunay flags, the
+      spec's J residual. The marking is the flat torus's cycle pair; its edges
+      persist under every engine move (see §6), so the read is always defined.
     - The whole: Betti numbers, boundary components, completion status, the
-      rank of the degree-1 harmonic band, the transfer T in the period frames
+      rank of the degree-1 harmonic band, the coefficients (a, b) of the
+      whole's zero mode in each block's live frame, next to the input
+      (1, τ_in) — the output state read at that torus, the transfer T in the
+      period frames
       (2×2), its projective leak against
       χ, the Schmidt spectrum and rank (Choi flag), the monodromy: the
       integer matrix relating the two markings through the whole's zero mode,
@@ -215,18 +213,18 @@ D2. **Block surface complex.** `blockSubcomplexWithGeometry` extracts the top
     3-complex. For a block whose fiber degree is below the host dimension, the
     block's own complex is the 2-complex of its own triangles inside its
     vertex set, with the host's lengths and phases. The block's own
-    Laplacian supplies its frame (§2). The block's residual is the leak of
-    its input coefficients, written on its edges through its live frame, in
-    the zero mode of the ENTIRE cobordism restricted to those edges (the
-    engine's whole-complex fiber residual at the harmonic contour, one
-    target per block), with the analytic gradient carrying the frame's
-    dependence on the block's lengths; the periods that normalize the frame
-    and read the coefficients are taken with parallel transport along A and
-    B, and the ratio τ and the coefficient pair are gauge-invariant. The leak
-    of the input form in the
-    block's own kernel is not this residual: a frame always contains its own
-    coefficients, so that leak is zero for every state (measured on T4: 1e-9
-    while the whole's coefficients moved).
+    Laplacian supplies its frame (§2). The per-block fiber residual and its
+    gradient then read the torus's own Laplacian, which is R3: the residual
+    is 1 − |⟨ψ(τ_in)|ψ(τ̂)⟩|², where τ̂ is the ratio of the periods, taken
+    with parallel transport, of the holomorphic 1-form of the block's own
+    Laplacian on its live surface over the marking cycles B and A, and
+    ψ(τ) = (1, τ)/√(1+|τ|²); it is zero exactly when the block's own
+    Laplacian represents the input state, and its gradient is analytic
+    through the dependence of that 1-form on the block's lengths and phases.
+    The least-squares residual of the input 1-form's edge values in the
+    block's own kernel is not this residual: that kernel contains them at
+    every step, so it is near zero for every state (measured on T4: 1e-9
+    while τ̂ moved).
 
 D3. **Transfer in period frames.** `frameTransferOn` uses identity frames on
     the fibers' cells (an edge-by-edge block at degree 1). Each block supplies
@@ -363,9 +361,8 @@ D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
 - No template beyond the collar between the given surfaces: the collar is
   the minimal manifold connecting the boundaries, and nothing more is
   templated; do not add a tube/genus move; do not glue external complexes.
-- Do not add a modulus (τ) residual or any distance-in-moduli objective; τ is
-  read-out only. The marking enters the relaxation only through the frame it
-  normalizes.
+- Do not add any distance-in-moduli objective other than the block residual
+  of D2. The marking enters the relaxation only through the periods D2 reads.
 - Do not define the output state by restriction; do not read states as
   period vectors in the relaxation.
 - Do not leave a fiber on the default band-1 contour.
