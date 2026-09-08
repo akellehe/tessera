@@ -261,6 +261,19 @@ DECLARED_INPUT_WEIGHT = 1e4
 #: cone-out exposes every facet of the cell it removes. Declared here
 #: anyway, so the run document records which it was.
 DECLARED_EXTEND_BOUNDARY = False
+#: Whether the WHOLE cobordism's leak of each input state is scored in the
+#: objective beside the block's own residual (`--score-leak`).
+#:
+#: Two different numbers measure whether an input torus still carries its
+#: state. The block's own residual builds the Laplacian of that one torus in
+#: isolation and asks whether the torus, judged alone, still represents what it
+#: was handed. The leak builds the Laplacian of the entire cobordism, takes its
+#: zero mode, and asks how much of the input coefficients fails to lie in it --
+#: the torus's relationship to everything else. Scoring only the first leaves
+#: the second unconstrained and it drifts upward as the two-body term falls.
+#:
+#: Off, which is the engine's default, so a run is unchanged unless asked.
+DECLARED_SCORE_LEAK = False
 #: Whether the Regge stationarity term is in the objective (the engine's
 #: `einstein_hilbert`); off, r_U is the whole objective.
 DECLARED_REGGE = True
@@ -883,6 +896,8 @@ def build_qubit_node(config):
     node.seed_inputs([sorted(mapping.values()) for mapping in ids])
     node.use_fiber_residuals(True)
     node.set_input_residual_weight(config["input_weight"])
+    node.score_whole_complex_leak(bool(config.get("score_leak",
+                                                  DECLARED_SCORE_LEAK)))
     cells = []
     for index, torus in enumerate(tori):
         fiber = _torus_fiber(torus, ids[index])
@@ -3207,7 +3222,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
                  input_weight=DECLARED_INPUT_WEIGHT, regge=DECLARED_REGGE,
-                 extend_boundary=DECLARED_EXTEND_BOUNDARY):
+                 extend_boundary=DECLARED_EXTEND_BOUNDARY,
+                 score_leak=DECLARED_SCORE_LEAK):
     if edge_disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
@@ -3276,6 +3292,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "input_weight": float(input_weight),
         "regge": bool(regge),
         "extend_boundary": bool(extend_boundary),
+        "score_leak": bool(score_leak),
     }
 
 
@@ -3371,6 +3388,16 @@ def build_parser():
                      help="qubit mode: keep the Regge stationarity term in "
                           "the objective (--no-regge leaves r_U alone; "
                           "default %s)" % ("on" if DECLARED_REGGE else "off"))
+    run.add_argument("--score-leak", action="store_true",
+                     dest="score_leak", default=DECLARED_SCORE_LEAK,
+                     help="also score the WHOLE cobordism's leak of each "
+                          "input state, beside the block's own residual and "
+                          "at the same --input-weight. Off by default. The "
+                          "block's own residual reads one torus in isolation "
+                          "and cannot see the bulk at all; the leak reads the "
+                          "whole complex's zero mode. With a held boundary "
+                          "the own residual is identically zero, so without "
+                          "this the objective is the bulk term alone")
     run.add_argument("--extend-boundary", action="store_true",
                      dest="extend_boundary",
                      default=DECLARED_EXTEND_BOUNDARY,
@@ -3408,7 +3435,8 @@ def main(argv=None):
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
                           input_weight=args.input_weight, regge=args.regge,
-                          extend_boundary=args.extend_boundary)
+                          extend_boundary=args.extend_boundary,
+                          score_leak=args.score_leak)
     # Held from the moment the node exists, so the geometry is written even
     # when the drive is interrupted: an interrupted run's complex is exactly
     # the one worth keeping, and it is the only output that cannot be
