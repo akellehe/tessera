@@ -180,6 +180,20 @@ DECLARED_SURGICAL_DEPTH = 1
 #: unit fails to improve the objective by it. A run that stops that way says
 #: so -- the terminator is recorded, never inferred from a short trace.
 DECLARED_TOLERANCE = 1e-12
+#: CONSECUTIVE units that must fail to improve the objective before the drive
+#: stops.
+#:
+#: A unit that does not improve the objective has not established that the run
+#: is finished. Stage 1 draws `DECLARED_CANDIDATE_MOVES` candidate moves at
+#: random each unit, so a unit that commits nothing is one unlucky draw and
+#: the next unit draws again; ending on the first of them spends a single draw
+#: and calls the result convergence.
+#:
+#: One -- stop on the first stalled unit -- is the drive's long-standing
+#: behaviour and stays the default, so raising it is a deliberate act by a
+#: caller who wants the extra draws rather than a silent change of meaning for
+#: every run already recorded.
+DECLARED_PATIENCE = 1
 #: Objective register degrees.
 DECLARED_REGISTER_DEGREES = (1,)
 #: Laplacian degrees the Hodge entropy term is scored at.
@@ -346,8 +360,14 @@ class Terminator:
 
     #: The unit budget ran out. The run has not converged; it stopped.
     STEPS = "steps-exhausted"
-    #: A whole engine unit failed to improve the objective by the declared
-    #: absolute tolerance. The run stopped early and says so.
+    #: `patience` consecutive engine units failed to improve the objective by
+    #: the declared absolute tolerance. The run stopped early and says so.
+    #:
+    #: This is a STALL, not an achievement: it says the drive stopped moving,
+    #: never that the objective reached any particular value. A run that
+    #: stops here at a large residual has stopped just as surely as one that
+    #: stops at machine zero, and `DriveResult.stalls` records how many units
+    #: it took so the two are told apart in the document.
     TOLERANCE = "tolerance-reached"
 
     #: Every value a drive may report.
@@ -365,11 +385,17 @@ class DriveResult:
     `inputs` is what the node factory handed the reads -- the `QubitInputs`
     of the qubit mode, or None in the neutral mode -- a fact about the run
     as well, recorded once in the run document rather than on every frame.
+
+    `stalls` is how many CONSECUTIVE units failed to improve the objective
+    when the drive stopped. It is recorded rather than inferred because the
+    terminator alone cannot distinguish a run that stopped on its first
+    stalled unit from one that stopped after twenty of them, and those are
+    different claims about the geometry.
     """
 
-    __slots__ = ("frames", "terminator", "inputs")
+    __slots__ = ("frames", "terminator", "inputs", "stalls")
 
-    def __init__(self, frames, terminator, inputs=None):
+    def __init__(self, frames, terminator, inputs=None, stalls=0):
         if terminator not in Terminator.ALL:
             raise ValueError(
                 "unknown terminator %r: expected one of %s"
@@ -377,6 +403,7 @@ class DriveResult:
         self.frames = frames
         self.terminator = terminator
         self.inputs = inputs
+        self.stalls = int(stalls)
 
     def __len__(self):
         return len(self.frames)
@@ -662,6 +689,75 @@ def two_qubit_flip_flop(psi, phi):
             + np.outer(raising @ psi, lowering @ phi))
 
 
+#: The two-qubit gates a run may fit, as 4 x 4 matrices on the pair space
+#: (`--operator`). Each is UNITARY, unlike `H_int`, which is Hermitian and
+#: has two zero singular values. What a run fits is still the gate's OUTPUT
+#: on one input pair: the transfer is 2 x 2, so its flattening is a two-qubit
+#: STATE, and a gate's Choi state needs four-dimensional frames on each
+#: boundary, which one torus (b_1 = 2, one qubit) cannot supply.
+DECLARED_GATES = {
+    "swap": [[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]],
+    "sqrt_swap": [[1, 0, 0, 0], [0, 0.5 + 0.5j, 0.5 - 0.5j, 0],
+                  [0, 0.5 - 0.5j, 0.5 + 0.5j, 0], [0, 0, 0, 1]],
+    "iswap": [[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]],
+    "cnot": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]],
+    # Charge conserving: each commutes with the total magnetisation
+    # N = (sz (x) 1 + 1 (x) sz)/2, so it is block diagonal on |00>, the
+    # one-excitation pair {|01>, |10>}, and |11>.
+    "cz": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]],
+    "sqrt_iswap": [[1, 0, 0, 0],
+                   [0, 0.7071067811865476, 0.7071067811865476j, 0],
+                   [0, 0.7071067811865476j, 0.7071067811865476, 0],
+                   [0, 0, 0, 1]],
+    "cphase_third": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0],
+                     [0, 0, 0, 0.5 + 0.8660254037844386j]],
+    # NOT charge conserving: each moves weight between the sectors of N.
+    "cnot_reversed": [[1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0]],
+    "ch": [[1, 0, 0, 0], [0, 1, 0, 0],
+           [0, 0, 0.7071067811865476, 0.7071067811865476],
+           [0, 0, 0.7071067811865476, -0.7071067811865476]],
+    "xx": [[0.7071067811865476, 0, 0, -0.7071067811865476j],
+           [0, 0.7071067811865476, -0.7071067811865476j, 0],
+           [0, -0.7071067811865476j, 0.7071067811865476, 0],
+           [-0.7071067811865476j, 0, 0, 0.7071067811865476]],
+}
+#: The operator a run fits, by name. `flip_flop` is the interaction
+#: Hamiltonian of spec S5; the rest are the gates above.
+DECLARED_OPERATOR = "flip_flop"
+#: Whether the input tori are HELD while the bulk relaxes (`--pin-boundary`).
+#: The block residual of spec D2 is a function of tau_hat alone, and tau_hat
+#: is a conformal invariant, so reshaping a boundary within its conformal
+#: class costs the objective nothing and the relaxation does it: measured,
+#: individual boundary edges move 10-28% while tau_hat holds to thirteen
+#: digits. A bulk fitted to that reshaped boundary does not work with the
+#: input it was given. Pinning removes the freedom rather than pricing it.
+#: Off by default because the spec's Do-not list still says pinned regions
+#: are not used in this experiment.
+DECLARED_PIN_BOUNDARY = False
+
+
+def gate_image(name, psi, phi):
+    """A gate's image of the product state, as the 2 x 2 the transfer meets.
+
+    `G (psi (x) phi)` is a vector of C^4 and reshapes to 2 x 2. It is
+    bilinear in the two states because the product is and G is linear, which
+    is what lets it stand where `chi` of spec S5 stands: same shape, same
+    projective scoring, same frames.
+    """
+    import numpy as np
+
+    gate = np.asarray(DECLARED_GATES[name], dtype=complex)
+    product = np.kron(np.asarray(psi, dtype=complex).reshape(2),
+                      np.asarray(phi, dtype=complex).reshape(2))
+    return {"coupling": float("nan"), "time": float("nan"), "Jt": float("nan"),
+            "psi": np.asarray(psi, dtype=complex).reshape(2),
+            "phi": np.asarray(phi, dtype=complex).reshape(2),
+            "chi": (gate @ product).reshape(2, 2),
+            "product_state": product.reshape(2, 2),
+            "first_order_amplitudes": (gate @ product).reshape(2, 2),
+            "exact_amplitudes": (gate @ product).reshape(2, 2)}
+
+
 def flip_flop_evolution(psi, phi, coupling, time):
     """The exact two-qubit evolution at `J t`, recorded next to first order.
 
@@ -823,7 +919,8 @@ class QubitInputs:
         def matrix(value):
             return [[complex(z) for z in row] for row in np.asarray(value)]
 
-        algebra = {key: (float(value) if key in ("coupling", "time", "Jt")
+        algebra = {key: (str(value) if isinstance(value, str)
+                         else float(value) if key in ("coupling", "time", "Jt")
                          else matrix(value) if key in ("chi", "product_state",
                                                        "first_order_amplitudes",
                                                        "exact_amplitudes")
@@ -908,9 +1005,15 @@ def build_qubit_node(config):
     for index, torus in enumerate(tori):
         node.set_input_marking(index, markings[index],
                                [1.0 + 0j, complex(tau_in[index])])
-    algebra = flip_flop_evolution(np.asarray(tori[0].state()),
-                                  np.asarray(tori[1].state()),
-                                  config["coupling"], config["time"])
+    operator = config.get("operator", DECLARED_OPERATOR)
+    if operator == "flip_flop":
+        algebra = flip_flop_evolution(np.asarray(tori[0].state()),
+                                      np.asarray(tori[1].state()),
+                                      config["coupling"], config["time"])
+    else:
+        algebra = gate_image(operator, np.asarray(tori[0].state()),
+                             np.asarray(tori[1].state()))
+    algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
     for index, torus in enumerate(tori):
         _assert_seed_reads_the_torus(node, index, torus)
@@ -1946,6 +2049,14 @@ def drive(config, progress=False, on_frame=None, on_node=None):
     # of what is being driven, so neither factory decides it (spec R8: the
     # host is emergent, and this says which growth counts as emergence).
     node.set_boundary_may_extend(bool(config["extend_boundary"]))
+    if config.get("pin_boundary", DECLARED_PIN_BOUNDARY) and inputs is not None:
+        # The input states are inputs: the attachment already put the correct
+        # boundary in place, so stage 2 has nothing to improve there. A pinned
+        # region zeroes the descent on the edges inside it, which is exactly
+        # the block's own surface.
+        for index in range(len(node.inputs)):
+            node.declare_pinned_region(
+                "input%d" % index, set(int(v) for v in node.inputs[index].vertices))
 
     # EVERY frame reads `node.spacetime()`, never the host handed to the
     # constructor. Stage 1 REPLACES the node's complex when it commits a move,
@@ -1959,6 +2070,13 @@ def drive(config, progress=False, on_frame=None, on_node=None):
     if on_frame is not None:
         on_frame(frames, 0)
     terminator = Terminator.STEPS
+    patience = max(1, int(config.get("patience", DECLARED_PATIENCE)))
+    # CONSECUTIVE stalled units, reset by any unit that improves. Counting
+    # consecutively rather than cumulatively is the point of the knob: a run
+    # that stalls, recovers and stalls again is still making progress, and
+    # a cumulative count would end it for the arithmetic of its history
+    # rather than for anything true of its current geometry.
+    stalls = 0
     for step in range(1, config["steps"] + 1):
         before = _objective_total(frames[-1])
         # Stage 1 before stage 2 within a unit (spec S4): a committed
@@ -1980,16 +2098,30 @@ def drive(config, progress=False, on_frame=None, on_node=None):
         # considered, so a run that stops here has still reported the unit
         # that stopped it.
         #
-        # Convergence on the FINAL unit reports `tolerance-reached` even
-        # though the budget also ran out. Both are true, and this is the more
-        # informative of the two: a reader learns the run had converged, and
-        # can still see it used its whole budget from the unit count, which
-        # the document and the stdout line both carry.
+        # A stall on the FINAL unit reports `tolerance-reached` even though
+        # the budget also ran out. Both are true, and this is the more
+        # informative of the two: a reader learns the run had stopped moving,
+        # and can still see it used its whole budget from the unit count,
+        # which the document and the stdout line both carry.
         if _converged(before, _objective_total(frames[-1]),
                       config["tolerance"]):
-            terminator = Terminator.TOLERANCE
-            break
-    return DriveResult(frames, terminator, inputs)
+            stalls += 1
+            if stalls >= patience:
+                terminator = Terminator.TOLERANCE
+                break
+        else:
+            stalls = 0
+    return DriveResult(frames, terminator, inputs, stalls)
+
+
+def _format_objective_total(frame):
+    """A frame's objective for a human, or a named absence.
+
+    The stall line quotes the value the run stopped at so a reader is not
+    left to infer from the word `tolerance` that it must have been small.
+    """
+    total = _objective_total(frame)
+    return "unmeasured" if total is None else "%.6e" % total
 
 
 def _objective_total(frame):
@@ -3217,13 +3349,16 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  stage1_iters=DECLARED_STAGE1_ITERS,
                  stage2_iters=DECLARED_STAGE2_ITERS,
                  tolerance=DECLARED_TOLERANCE,
+                 patience=DECLARED_PATIENCE,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
                  input_weight=DECLARED_INPUT_WEIGHT, regge=DECLARED_REGGE,
                  extend_boundary=DECLARED_EXTEND_BOUNDARY,
-                 score_leak=DECLARED_SCORE_LEAK):
+                 score_leak=DECLARED_SCORE_LEAK,
+                 operator=DECLARED_OPERATOR,
+                 pin_boundary=DECLARED_PIN_BOUNDARY):
     if edge_disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
@@ -3231,6 +3366,12 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if inputs not in InputMode.ALL:
         raise ValueError("unknown input mode %r: expected one of %s"
                          % (inputs, ", ".join(InputMode.ALL)))
+    # Refused rather than clamped: a caller who writes 0 means something the
+    # drive cannot do (never stop on a stall), and silently reading it as 1
+    # would run the opposite of what was asked.
+    if int(patience) < 1:
+        raise ValueError("patience is a count of consecutive stalled units "
+                         "and must be at least 1, got %r" % (patience,))
     moduli = {}
     for label, value in (("tau_a", tau_a), ("tau_b", tau_b)):
         tau = _as_complex(value)
@@ -3272,6 +3413,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "candidate_moves": DECLARED_CANDIDATE_MOVES,
         "stage1_iters": stage1_iters,
         "tolerance": tolerance,
+        "patience": patience,
         "surgical_depth": surgical_depth,
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
@@ -3293,6 +3435,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "regge": bool(regge),
         "extend_boundary": bool(extend_boundary),
         "score_leak": bool(score_leak),
+        "operator": str(operator),
+        "pin_boundary": bool(pin_boundary),
     }
 
 
@@ -3349,6 +3493,16 @@ def build_parser():
                           "EXITS once a whole engine unit fails to improve "
                           "it by this much. Never relative"
                           % DECLARED_TOLERANCE)
+    run.add_argument("--patience", type=int, default=DECLARED_PATIENCE,
+                     help="how many CONSECUTIVE units may fail to improve "
+                          "the objective by --tolerance before the run stops "
+                          "(default %d). Stage 1 draws its candidate moves "
+                          "at random, so a unit that commits nothing is one "
+                          "unlucky draw; raising this gives the run that "
+                          "many more draws at the same geometry before it "
+                          "calls the stall an ending. Any unit that does "
+                          "improve resets the count"
+                          % DECLARED_PATIENCE)
     run.add_argument("--inputs", choices=list(InputMode.ALL),
                      default=DECLARED_INPUTS,
                      help="what the node is built from: neutral (default, "
@@ -3396,8 +3550,24 @@ def build_parser():
                           "block's own residual reads one torus in isolation "
                           "and cannot see the bulk at all; the leak reads the "
                           "whole complex's zero mode. With a held boundary "
-                          "the own residual is identically zero, so without "
-                          "this the objective is the bulk term alone")
+                          "the own residual sits at rounding and what it "
+                          "contributes is negligible, so without this the "
+                          "objective is effectively the bulk term alone")
+    run.add_argument("--operator", default=DECLARED_OPERATOR,
+                     choices=["flip_flop"] + sorted(DECLARED_GATES),
+                     help="qubit mode: the operator whose output the transfer "
+                          "is fitted to. flip_flop is the interaction "
+                          "Hamiltonian of spec S5 at --J and --time; the rest "
+                          "are unitary two-qubit gates, fitted through their "
+                          "image of the product state (default %s)"
+                          % DECLARED_OPERATOR)
+    run.add_argument("--pin-boundary", action="store_true",
+                     dest="pin_boundary", default=DECLARED_PIN_BOUNDARY,
+                     help="qubit mode: hold the input tori fixed while the "
+                          "bulk relaxes. The block residual sees only tau_hat, "
+                          "so without this the boundary is reshaped freely "
+                          "within its conformal class and the bulk is fitted "
+                          "to a boundary that is not the input it was given")
     run.add_argument("--extend-boundary", action="store_true",
                      dest="extend_boundary",
                      default=DECLARED_EXTEND_BOUNDARY,
@@ -3430,13 +3600,17 @@ def main(argv=None):
                           args.resolution, args.edge_disposition,
                           args.stage_one_iterations,
                           args.stage_two_iterations,
-                          args.tolerance, args.surgical_depth,
+                          tolerance=args.tolerance,
+                          patience=args.patience,
+                          surgical_depth=args.surgical_depth,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
                           input_weight=args.input_weight, regge=args.regge,
                           extend_boundary=args.extend_boundary,
-                          score_leak=args.score_leak)
+                          score_leak=args.score_leak,
+                          operator=args.operator,
+                          pin_boundary=args.pin_boundary)
     # Held from the moment the node exists, so the geometry is written even
     # when the drive is interrupted: an interrupted run's complex is exactly
     # the one worth keeping, and it is the only output that cannot be
@@ -3455,12 +3629,17 @@ def main(argv=None):
     frames = result.frames
     if not args.quiet and result.terminator == Terminator.TOLERANCE:
         sys.stdout.write(
-            "exited on tolerance: one engine unit improved the objective by "
-            "less than %g, after %d of %d units\n"
-            % (config["tolerance"], frames[-1].step, config["steps"]))
+            "exited on a STALL, not on a target: %d consecutive engine unit%s "
+            "improved the objective by less than %g, after %d of %d units. "
+            "The objective stopped moving at %s; it did not reach any "
+            "particular value\n"
+            % (result.stalls, "" if result.stalls == 1 else "s",
+               config["tolerance"], frames[-1].step, config["steps"],
+               _format_objective_total(frames[-1])))
     if args.json:
         document = {"config": config,
                     "terminator": result.terminator,
+                    "stalls": result.stalls,
                     "frames": [f.to_json() for f in frames]}
         if result.inputs is not None:
             # The inputs once, next to the config: what the tori are, how
