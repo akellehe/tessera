@@ -288,6 +288,15 @@ DECLARED_EXTEND_BOUNDARY = False
 #:
 #: Off, which is the engine's default, so a run is unchanged unless asked.
 DECLARED_SCORE_LEAK = False
+#: How often the `--live` main thread services the GUI event loop while the
+#: worker computes, in seconds -- about twenty times a second.
+#:
+#: The main thread has nothing to do between finished units except keep the
+#: window alive, and an engine unit can take minutes. Waiting in the event loop
+#: at this interval rather than in a blocking queue read is what keeps the
+#: window responsive; the cost is one wakeup per interval, which is nothing
+#: beside a unit.
+LIVE_POLL_INTERVAL = 0.05
 #: Whether the Regge stationarity term is in the objective (the engine's
 #: `einstein_hilbert`); off, r_U is the whole objective.
 DECLARED_REGGE = True
@@ -3168,7 +3177,21 @@ def drive_live(config, progress=False, on_node=None):
     state = StableLayout()
     placed = []
     while True:
-        index = ready.get()
+        try:
+            index = ready.get_nowait()
+        except queue.Empty:
+            # POLLED, never blocked. A blocking `get` parks the main thread for
+            # the whole of an engine unit, and for that entire interval the GUI
+            # event loop is never serviced -- no redraw, no input -- which the
+            # desktop reports as a hung application. The worker is computing
+            # with the GIL released, so there is nothing to gain by sleeping in
+            # the queue rather than in the event loop.
+            #
+            # `plt.pause` both pumps the event loop and sleeps for the
+            # interval, so this waits at LIVE_POLL_INTERVAL without spinning,
+            # whether or not the backend has an event loop of its own.
+            plt.pause(LIVE_POLL_INTERVAL)
+            continue
         if index is None:
             break
         frames = published["frames"]
@@ -3177,7 +3200,7 @@ def drive_live(config, progress=False, on_node=None):
         draw_frame(figure, frames, index, placed)
         figure.canvas.draw_idle()
         # Yields to the GUI event loop; a backend without one still returns.
-        plt.pause(0.001)
+        plt.pause(LIVE_POLL_INTERVAL)
     thread.join()
     plt.close(figure)
     if "error" in outcome:
