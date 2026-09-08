@@ -180,6 +180,20 @@ DECLARED_SURGICAL_DEPTH = 1
 #: unit fails to improve the objective by it. A run that stops that way says
 #: so -- the terminator is recorded, never inferred from a short trace.
 DECLARED_TOLERANCE = 1e-12
+#: CONSECUTIVE units that must fail to improve the objective before the drive
+#: stops.
+#:
+#: A unit that does not improve the objective has not established that the run
+#: is finished. Stage 1 draws `DECLARED_CANDIDATE_MOVES` candidate moves at
+#: random each unit, so a unit that commits nothing is one unlucky draw and
+#: the next unit draws again; ending on the first of them spends a single draw
+#: and calls the result convergence.
+#:
+#: One -- stop on the first stalled unit -- is the drive's long-standing
+#: behaviour and stays the default, so raising it is a deliberate act by a
+#: caller who wants the extra draws rather than a silent change of meaning for
+#: every run already recorded.
+DECLARED_PATIENCE = 1
 #: Objective register degrees.
 DECLARED_REGISTER_DEGREES = (1,)
 #: Laplacian degrees the Hodge entropy term is scored at.
@@ -333,8 +347,14 @@ class Terminator:
 
     #: The unit budget ran out. The run has not converged; it stopped.
     STEPS = "steps-exhausted"
-    #: A whole engine unit failed to improve the objective by the declared
-    #: absolute tolerance. The run stopped early and says so.
+    #: `patience` consecutive engine units failed to improve the objective by
+    #: the declared absolute tolerance. The run stopped early and says so.
+    #:
+    #: This is a STALL, not an achievement: it says the drive stopped moving,
+    #: never that the objective reached any particular value. A run that
+    #: stops here at a large residual has stopped just as surely as one that
+    #: stops at machine zero, and `DriveResult.stalls` records how many units
+    #: it took so the two are told apart in the document.
     TOLERANCE = "tolerance-reached"
 
     #: Every value a drive may report.
@@ -352,11 +372,17 @@ class DriveResult:
     `inputs` is what the node factory handed the reads -- the `QubitInputs`
     of the qubit mode, or None in the neutral mode -- a fact about the run
     as well, recorded once in the run document rather than on every frame.
+
+    `stalls` is how many CONSECUTIVE units failed to improve the objective
+    when the drive stopped. It is recorded rather than inferred because the
+    terminator alone cannot distinguish a run that stopped on its first
+    stalled unit from one that stopped after twenty of them, and those are
+    different claims about the geometry.
     """
 
-    __slots__ = ("frames", "terminator", "inputs")
+    __slots__ = ("frames", "terminator", "inputs", "stalls")
 
-    def __init__(self, frames, terminator, inputs=None):
+    def __init__(self, frames, terminator, inputs=None, stalls=0):
         if terminator not in Terminator.ALL:
             raise ValueError(
                 "unknown terminator %r: expected one of %s"
@@ -364,6 +390,7 @@ class DriveResult:
         self.frames = frames
         self.terminator = terminator
         self.inputs = inputs
+        self.stalls = int(stalls)
 
     def __len__(self):
         return len(self.frames)
@@ -1944,6 +1971,13 @@ def drive(config, progress=False, on_frame=None, on_node=None):
     if on_frame is not None:
         on_frame(frames, 0)
     terminator = Terminator.STEPS
+    patience = max(1, int(config.get("patience", DECLARED_PATIENCE)))
+    # CONSECUTIVE stalled units, reset by any unit that improves. Counting
+    # consecutively rather than cumulatively is the point of the knob: a run
+    # that stalls, recovers and stalls again is still making progress, and
+    # a cumulative count would end it for the arithmetic of its history
+    # rather than for anything true of its current geometry.
+    stalls = 0
     for step in range(1, config["steps"] + 1):
         before = _objective_total(frames[-1])
         # Stage 1 before stage 2 within a unit (spec S4): a committed
@@ -1965,16 +1999,30 @@ def drive(config, progress=False, on_frame=None, on_node=None):
         # considered, so a run that stops here has still reported the unit
         # that stopped it.
         #
-        # Convergence on the FINAL unit reports `tolerance-reached` even
-        # though the budget also ran out. Both are true, and this is the more
-        # informative of the two: a reader learns the run had converged, and
-        # can still see it used its whole budget from the unit count, which
-        # the document and the stdout line both carry.
+        # A stall on the FINAL unit reports `tolerance-reached` even though
+        # the budget also ran out. Both are true, and this is the more
+        # informative of the two: a reader learns the run had stopped moving,
+        # and can still see it used its whole budget from the unit count,
+        # which the document and the stdout line both carry.
         if _converged(before, _objective_total(frames[-1]),
                       config["tolerance"]):
-            terminator = Terminator.TOLERANCE
-            break
-    return DriveResult(frames, terminator, inputs)
+            stalls += 1
+            if stalls >= patience:
+                terminator = Terminator.TOLERANCE
+                break
+        else:
+            stalls = 0
+    return DriveResult(frames, terminator, inputs, stalls)
+
+
+def _format_objective_total(frame):
+    """A frame's objective for a human, or a named absence.
+
+    The stall line quotes the value the run stopped at so a reader is not
+    left to infer from the word `tolerance` that it must have been small.
+    """
+    total = _objective_total(frame)
+    return "unmeasured" if total is None else "%.6e" % total
 
 
 def _objective_total(frame):
@@ -3202,6 +3250,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  stage1_iters=DECLARED_STAGE1_ITERS,
                  stage2_iters=DECLARED_STAGE2_ITERS,
                  tolerance=DECLARED_TOLERANCE,
+                 patience=DECLARED_PATIENCE,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
@@ -3215,6 +3264,12 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if inputs not in InputMode.ALL:
         raise ValueError("unknown input mode %r: expected one of %s"
                          % (inputs, ", ".join(InputMode.ALL)))
+    # Refused rather than clamped: a caller who writes 0 means something the
+    # drive cannot do (never stop on a stall), and silently reading it as 1
+    # would run the opposite of what was asked.
+    if int(patience) < 1:
+        raise ValueError("patience is a count of consecutive stalled units "
+                         "and must be at least 1, got %r" % (patience,))
     moduli = {}
     for label, value in (("tau_a", tau_a), ("tau_b", tau_b)):
         tau = _as_complex(value)
@@ -3256,6 +3311,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "candidate_moves": DECLARED_CANDIDATE_MOVES,
         "stage1_iters": stage1_iters,
         "tolerance": tolerance,
+        "patience": patience,
         "surgical_depth": surgical_depth,
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
@@ -3332,6 +3388,16 @@ def build_parser():
                           "EXITS once a whole engine unit fails to improve "
                           "it by this much. Never relative"
                           % DECLARED_TOLERANCE)
+    run.add_argument("--patience", type=int, default=DECLARED_PATIENCE,
+                     help="how many CONSECUTIVE units may fail to improve "
+                          "the objective by --tolerance before the run stops "
+                          "(default %d). Stage 1 draws its candidate moves "
+                          "at random, so a unit that commits nothing is one "
+                          "unlucky draw; raising this gives the run that "
+                          "many more draws at the same geometry before it "
+                          "calls the stall an ending. Any unit that does "
+                          "improve resets the count"
+                          % DECLARED_PATIENCE)
     run.add_argument("--inputs", choices=list(InputMode.ALL),
                      default=DECLARED_INPUTS,
                      help="what the node is built from: neutral (default, "
@@ -3403,7 +3469,9 @@ def main(argv=None):
                           args.resolution, args.edge_disposition,
                           args.stage_one_iterations,
                           args.stage_two_iterations,
-                          args.tolerance, args.surgical_depth,
+                          tolerance=args.tolerance,
+                          patience=args.patience,
+                          surgical_depth=args.surgical_depth,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
@@ -3427,12 +3495,17 @@ def main(argv=None):
     frames = result.frames
     if not args.quiet and result.terminator == Terminator.TOLERANCE:
         sys.stdout.write(
-            "exited on tolerance: one engine unit improved the objective by "
-            "less than %g, after %d of %d units\n"
-            % (config["tolerance"], frames[-1].step, config["steps"]))
+            "exited on a STALL, not on a target: %d consecutive engine unit%s "
+            "improved the objective by less than %g, after %d of %d units. "
+            "The objective stopped moving at %s; it did not reach any "
+            "particular value\n"
+            % (result.stalls, "" if result.stalls == 1 else "s",
+               config["tolerance"], frames[-1].step, config["steps"],
+               _format_objective_total(frames[-1])))
     if args.json:
         document = {"config": config,
                     "terminator": result.terminator,
+                    "stalls": result.stalls,
                     "frames": [f.to_json() for f in frames]}
         if result.inputs is not None:
             # The inputs once, next to the config: what the tori are, how
