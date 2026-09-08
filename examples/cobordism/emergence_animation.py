@@ -850,7 +850,8 @@ class QubitInputs:
         def matrix(value):
             return [[complex(z) for z in row] for row in np.asarray(value)]
 
-        algebra = {key: (float(value) if key in ("coupling", "time", "Jt")
+        algebra = {key: (str(value) if isinstance(value, str)
+                         else float(value) if key in ("coupling", "time", "Jt")
                          else matrix(value) if key in ("chi", "product_state",
                                                        "first_order_amplitudes",
                                                        "exact_amplitudes")
