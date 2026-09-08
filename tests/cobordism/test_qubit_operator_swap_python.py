@@ -123,3 +123,44 @@ def test_the_residual_is_the_engine_s_own_scoring():
     orthogonal = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=complex)
     assert swap.projective_residual(orthogonal, np.array([[1.0, 0.0], [0.0, 0.0]],
                                                          dtype=complex)) == pytest.approx(1.0)
+
+
+def test_a_permuted_replay_lays_the_solved_lengths_down_differently(solved):
+    """`replay` under a permutation installs the SAME torus, glued another
+    way: the intrinsic geometry is untouched, so the state it presents is
+    unchanged, and only which host edge carries which length differs."""
+    document, _frame = solved
+    permutation = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    permutation = tuple(permutation[3:] + permutation[:3])   # a lattice shift
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        plain = swap.read(document, [TAU_A, TAU_B], "flip_flop", 3, mode="replay")
+        moved = swap.read(document, [TAU_A, TAU_B], "flip_flop", 3, mode="replay",
+                          permutations=(permutation, None))
+    assert "refused" not in moved, moved.get("refused")
+    # the same multiset of lengths, so the same torus
+    assert moved["residual"] != plain["residual"], "a re-gluing is not a no-op"
+
+
+def test_the_frameless_read_is_the_raw_coupling_block(solved):
+    """With no marking and no frame the engine takes unit images on the
+    attached cells, so the transfer is the raw block of the whole's degree-1
+    Laplacian between the two tori's edge sets: 27 x 27 on a 3x3 pair, with
+    no readout convention on it."""
+    document, _frame = solved
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        raw = swap.read(document, [TAU_A, TAU_B], "flip_flop", 3, mode="replay",
+                        frames=False)
+    assert "refused" not in raw, raw.get("refused")
+    assert raw["in_frames"] is False
+    transfer = np.asarray(raw["transfer"])
+    assert transfer.shape == (27, 27)
+    assert len(raw["cells_a"]) == 27 and len(raw["cells_b"]) == 27
+    assert np.linalg.norm(transfer) > 0
+    # it has no target: the point is comparing one reading with another
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        again = swap.read(document, [TAU_A, TAU_B], "flip_flop", 3, mode="replay",
+                          frames=False)
+    assert np.abs(np.asarray(again["transfer"]) - transfer).max() == 0.0

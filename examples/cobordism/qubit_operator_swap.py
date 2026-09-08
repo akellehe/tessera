@@ -225,13 +225,36 @@ def install(spacetime, block, tau, grid, permutation=None, texture=0.0):
     return torus
 
 
-def replay(spacetime, block):
-    """Put the SOLVED boundary lengths back, edge for edge, out of the dump."""
+def replay(spacetime, block, permutation=None):
+    """Put the SOLVED boundary lengths back, out of the dump.
+
+    With `permutation` the same lengths are laid down under a different
+    gluing: each recorded host edge is read back as a pair of TORUS vertex
+    indices (position in the block's sorted host ids, which is how the torus
+    was attached), permuted, and written to the host edge that pair now names.
+    The torus is intrinsically identical either way -- same lengths, same
+    tau -- so this isolates the attachment from everything else.
+    """
     by_pair = edges_by_pair(spacetime)
+    if permutation is None:
+        for u, v, re_l2, im_l2 in block["surface"]["edges"]:
+            by_pair[key_of(u, v)].setLength(cmath.sqrt(complex(re_l2, im_l2)))
+        for u, v, re_p, im_p in block["surface"].get("edge_phases", []):
+            by_pair[key_of(u, v)].setPhase(complex(re_p, im_p))
+        return
+    hosts = torus_vertex_order(block)
+    torus_of = {host: n for n, host in enumerate(hosts)}
+    host_of = {n: hosts[permutation[n]] for n in range(len(hosts))}
     for u, v, re_l2, im_l2 in block["surface"]["edges"]:
-        by_pair[key_of(u, v)].setLength(cmath.sqrt(complex(re_l2, im_l2)))
+        pair = key_of(host_of[torus_of[int(u)]], host_of[torus_of[int(v)]])
+        edge = by_pair.get(pair)
+        if edge is None:
+            raise KeyError("the permuted replay needs a host edge %s the solved "
+                           "complex does not have" % (pair,))
+        edge.setLength(cmath.sqrt(complex(re_l2, im_l2)))
     for u, v, re_p, im_p in block["surface"].get("edge_phases", []):
-        by_pair[key_of(u, v)].setPhase(complex(re_p, im_p))
+        pair = key_of(host_of[torus_of[int(u)]], host_of[torus_of[int(v)]])
+        by_pair[pair].setPhase(complex(re_p, im_p))
 
 
 def node_on(spacetime, document, weight=1e4):
@@ -271,7 +294,8 @@ def mark(node, document, taus):
 
 
 def read(document, taus, operator, grid, permutations=(None, None),
-         mode="flat", weight=1e4, texture=0.0):
+         mode="flat", weight=1e4, texture=0.0, derive_states=False,
+         frames=True):
     """One reading: install the boundary, take the transfer, score it.
 
     `mode` is `flat` (fresh tori at `taus`) or `replay` (the solved lengths
@@ -282,15 +306,45 @@ def read(document, taus, operator, grid, permutations=(None, None),
     tori = []
     for index, block in enumerate(document["blocks"]):
         if mode == "replay":
-            replay(spacetime, block)
+            replay(spacetime, block, permutations[index])
             tori.append(None)
         else:
             tori.append(install(spacetime, block, taus[index], grid,
                                 permutations[index], texture))
     spacetime.materializeFacets()
     node = node_on(spacetime, document, weight)
+    if not frames:
+        # No marking and no frame on either block: `read_two_body` then takes
+        # unit images on the attached cells, so the transfer IS the raw
+        # coupling block of the whole's degree-1 Laplacian between the two
+        # tori's edge sets -- the geometry's coupling with no readout
+        # convention on it. It has no 2x2 target; it is for comparing a
+        # geometry with itself across a change.
+        out = {"mode": mode, "frames": False,
+               "permutations": [None if p is None else list(p) for p in permutations]}
+        try:
+            read = node.read_two_body()
+            out["transfer"] = np.asarray(read.transfer, dtype=complex)
+            out["in_frames"] = bool(read.in_frames)
+            out["cells_a"] = [list(c) for c in read.cells_a]
+            out["cells_b"] = [list(c) for c in read.cells_b]
+        except Exception as error:                        # noqa: BLE001
+            out["refused"] = str(error)
+        return out
     mark(node, document, taus)
+    if derive_states:
+        # The state the ATTACHMENT presents, not the one we asked for. A
+        # gluing that carries the marked homology classes to a different pair
+        # makes the host's marking read a modular image of tau, so asserting
+        # the original would compare a transfer taken in one marking against
+        # a target written in another. Reading tau back and rebuilding both
+        # the coefficients and the target from it keeps the two in the same
+        # marking, and leaves the own-state residuals at zero, which is the
+        # check that it worked.
+        taus = [complex(node.block_qubit(i).tau()) for i in range(2)]
+        mark(node, document, taus)
     out = {"mode": mode, "taus": [complex(t) for t in taus], "texture": float(texture),
+           "derive_states": bool(derive_states),
            "permutations": [None if p is None else list(p) for p in permutations]}
     out["installed_tau"] = [None if t is None else complex(t.tau()) for t in tori]
     try:
