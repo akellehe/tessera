@@ -665,6 +665,16 @@ DECLARED_GATES = {
 #: The operator a run fits, by name. `flip_flop` is the interaction
 #: Hamiltonian of spec S5; the rest are the gates above.
 DECLARED_OPERATOR = "flip_flop"
+#: Whether the input tori are HELD while the bulk relaxes (`--pin-boundary`).
+#: The block residual of spec D2 is a function of tau_hat alone, and tau_hat
+#: is a conformal invariant, so reshaping a boundary within its conformal
+#: class costs the objective nothing and the relaxation does it: measured,
+#: individual boundary edges move 10-28% while tau_hat holds to thirteen
+#: digits. A bulk fitted to that reshaped boundary does not work with the
+#: input it was given. Pinning removes the freedom rather than pricing it.
+#: Off by default because the spec's Do-not list still says pinned regions
+#: are not used in this experiment.
+DECLARED_PIN_BOUNDARY = False
 
 
 def gate_image(name, psi, phi):
@@ -1978,6 +1988,14 @@ def drive(config, progress=False, on_frame=None, on_node=None):
     # of what is being driven, so neither factory decides it (spec R8: the
     # host is emergent, and this says which growth counts as emergence).
     node.set_boundary_may_extend(bool(config["extend_boundary"]))
+    if config.get("pin_boundary", DECLARED_PIN_BOUNDARY) and inputs is not None:
+        # The input states are inputs: the attachment already put the correct
+        # boundary in place, so stage 2 has nothing to improve there. A pinned
+        # region zeroes the descent on the edges inside it, which is exactly
+        # the block's own surface.
+        for index in range(len(node.inputs)):
+            node.declare_pinned_region(
+                "input%d" % index, set(int(v) for v in node.inputs[index].vertices))
 
     # EVERY frame reads `node.spacetime()`, never the host handed to the
     # constructor. Stage 1 REPLACES the node's complex when it commits a move,
@@ -3255,7 +3273,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
                  input_weight=DECLARED_INPUT_WEIGHT, regge=DECLARED_REGGE,
                  extend_boundary=DECLARED_EXTEND_BOUNDARY,
-                 operator=DECLARED_OPERATOR):
+                 operator=DECLARED_OPERATOR,
+                 pin_boundary=DECLARED_PIN_BOUNDARY):
     if edge_disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
@@ -3325,6 +3344,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "regge": bool(regge),
         "extend_boundary": bool(extend_boundary),
         "operator": str(operator),
+        "pin_boundary": bool(pin_boundary),
     }
 
 
@@ -3428,6 +3448,13 @@ def build_parser():
                           "are unitary two-qubit gates, fitted through their "
                           "image of the product state (default %s)"
                           % DECLARED_OPERATOR)
+    run.add_argument("--pin-boundary", action="store_true",
+                     dest="pin_boundary", default=DECLARED_PIN_BOUNDARY,
+                     help="qubit mode: hold the input tori fixed while the "
+                          "bulk relaxes. The block residual sees only tau_hat, "
+                          "so without this the boundary is reshaped freely "
+                          "within its conformal class and the bulk is fitted "
+                          "to a boundary that is not the input it was given")
     run.add_argument("--extend-boundary", action="store_true",
                      dest="extend_boundary",
                      default=DECLARED_EXTEND_BOUNDARY,
@@ -3466,7 +3493,8 @@ def main(argv=None):
                           coupling=args.coupling, time=args.time,
                           input_weight=args.input_weight, regge=args.regge,
                           extend_boundary=args.extend_boundary,
-                          operator=args.operator)
+                          operator=args.operator,
+                          pin_boundary=args.pin_boundary)
     # Held from the moment the node exists, so the geometry is written even
     # when the drive is interrupted: an interrupted run's complex is exactly
     # the one worth keeping, and it is the only output that cannot be
