@@ -927,9 +927,21 @@ double MultiCobordism::residualForBoundaryBlockWithDistinctMatchings(
   // A marked block (setInputMarking, qubit cobordism spec D2) is scored by
   // the residual of its OWN state: the leak of its input state in the
   // holomorphic form of its own Laplacian on its live surface. The zero mode
-  // of the ENTIRE cobordism is the OUTPUT state (R1): reported by
-  // readInputState in the block's live frame, never held.
-  if (useFiberResiduals_ && boundaryBlock.marking) return ownStateResidualOn(boundaryBlock, spacetime);
+  // of the ENTIRE cobordism is the OUTPUT state (R1), reported by
+  // readInputState in the block's live frame.
+  //
+  // Under scoreWholeComplexLeak the whole's leak is ADDED to that own residual
+  // rather than replacing it, so the spec's R3 — the block's own-Laplacian
+  // residual is in the objective next to the bulk terms — still holds
+  // literally. The two are different questions (see `scoreWholeComplexLeak`),
+  // and the own term is identically zero on a block whose edges cannot move,
+  // which is exactly when the whole's leak is the only thing left to say how
+  // the block sits in the cobordism.
+  if (useFiberResiduals_ && boundaryBlock.marking) {
+    const double own = ownStateResidualOn(boundaryBlock, spacetime);
+    if (!scoreWholeComplexLeak_) return own;
+    return own + inputStateResidualOn(boundaryBlock, spacetime);
+  }
   if (useFiberResiduals_ && boundaryBlock.fiber && boundaryBlock.fiber->images.cols() > 0)
     return fiberResidualForBoundaryBlock(boundaryBlock, spacetime);  // #940
   auto blockSubcomplex = spacetime->subcomplexWithinVertexSet(
@@ -4754,6 +4766,25 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
   for (const auto &block : inputBlocks_) {
     if (!block.marking) continue;
     accumulate(ownStateResidualGradientOn(spacetime_, block), *spacetime_, inputResidualWeight_);
+  }
+  // The whole's leak for every marked block at once: `inputStateResidualGradientsOn`
+  // computes the whole's band derivative — the per-edge cost, and the reason
+  // this is not a loop over the single-block call — once and shares it.
+  if (scoreWholeComplexLeak_) {
+    std::vector<const BoundaryBlock *> marked;
+    for (const auto &block : inputBlocks_)
+      if (block.marking) marked.push_back(&block);
+    if (!marked.empty()) {
+      try {
+        auto leaks = inputStateResidualGradientsOn(spacetime_, marked);
+        for (auto &leak : leaks)
+          accumulate(leak, *spacetime_, inputResidualWeight_);
+      } catch (const std::runtime_error &) {
+        // a refused geometry has no descent direction (its leak is the full 1.0)
+      } catch (const std::invalid_argument &) {
+      } catch (const std::logic_error &) {
+      }
+    }
   }
   for (const auto &block : inputBlocks_) {
     if (block.marking) continue;

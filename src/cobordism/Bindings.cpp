@@ -1663,6 +1663,19 @@ assertion. Every pairing is the transpose.)doc")
            "of that pencil, whatever contour its fiber stores; an ordinary block on its sub-complex at the "
            "fiber's contour (default: the lowest band above the zero mode). Off by default.")
       .def("uses_fiber_residuals", &MultiCobordism::usesFiberResiduals)
+      .def("score_whole_complex_leak", &MultiCobordism::scoreWholeComplexLeak, py::arg("enabled"),
+           "Also score a MARKED block by the leak of its input state in the zero mode of the WHOLE "
+           "cobordism (input_state_residual), ADDED to the block's own-Laplacian residual under "
+           "use_fiber_residuals and carried at the same input residual weight. The two answer different "
+           "questions: own_state_residual builds the Laplacian of ONE torus in isolation and asks whether "
+           "that torus, judged alone, still represents the state it was handed, while input_state_residual "
+           "builds the Laplacian of the entire cobordism and asks how much of the input coefficients fails "
+           "to lie in its zero mode. Scoring only the first leaves the second unconstrained and it drifts "
+           "upward. Decisive when the boundary is HELD: a block whose edges cannot move cannot change "
+           "shape, so its own residual is identically zero and the weight multiplies nothing. Enabling "
+           "this holds nothing fixed -- the leak is a term the relaxation trades against, not a "
+           "constraint. Off by default.")
+      .def("scores_whole_complex_leak", &MultiCobordism::scoresWholeComplexLeak)
       .def("set_fiber_phase_descent", &MultiCobordism::setFiberPhaseDescent, py::arg("enabled"),
            "Also descend the degree-0 link phases through the analytic fiber gradient (off by default).")
       .def("fiber_phase_descent", &MultiCobordism::fiberPhaseDescent)

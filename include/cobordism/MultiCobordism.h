@@ -1050,6 +1050,30 @@ class MultiCobordism {
   /// existing path is unchanged.
   void useFiberResiduals(bool enabled) { useFiberResiduals_ = enabled; }
   [[nodiscard]] bool usesFiberResiduals() const noexcept { return useFiberResiduals_; }
+  /// Also score a MARKED block by the leak of its input state in the zero mode
+  /// of the WHOLE cobordism (`inputStateResidualOn`), added to the block's own
+  /// residual under `useFiberResiduals` and carried at the same
+  /// `inputResidualWeight`.
+  ///
+  /// The two answer different questions and can move in opposite directions.
+  /// `ownStateResidualOn` builds the Laplacian of ONE torus in isolation and
+  /// asks whether that torus, judged alone, still represents the state it was
+  /// handed. `inputStateResidualOn` builds the Laplacian of the ENTIRE
+  /// cobordism, takes its zero mode, and asks how much of the input
+  /// coefficients fails to lie in it — the torus's relationship to everything
+  /// else. Scoring only the first leaves that relationship unconstrained, and
+  /// it drifts: the leak RISES as the two-body residual falls.
+  ///
+  /// The case that forces it is a HELD boundary. A block whose edges cannot
+  /// move cannot change shape, so its own residual is identically zero and the
+  /// input weight multiplies nothing; without this the objective is the bulk
+  /// term alone. Nothing is held by turning this on — the leak is a term the
+  /// relaxation trades against, not a constraint, and every coordinate still
+  /// varies.
+  ///
+  /// Off by default: every existing path is unchanged.
+  void scoreWholeComplexLeak(bool enabled) { scoreWholeComplexLeak_ = enabled; }
+  [[nodiscard]] bool scoresWholeComplexLeak() const noexcept { return scoreWholeComplexLeak_; }
   /// Whether stage 2 also descends the degree-0 link phases through the
   /// analytic fiber gradient (#947). Off by default: flux lifts the flat zero
   /// mode and moves the band a default contour selects, so a caller enables
@@ -2565,6 +2589,7 @@ class MultiCobordism {
   /// Weight on the input-block residual terms in `rU` (see setInputResidualWeight).
   double inputResidualWeight_ = 1.0;
   bool useFiberResiduals_{false};
+  bool scoreWholeComplexLeak_{false};
   bool fiberPhaseDescent_{false};
   std::optional<BoundaryFiber> wholeFiberTarget_;
   std::optional<TwoBodyTarget> twoBodyTarget_;
