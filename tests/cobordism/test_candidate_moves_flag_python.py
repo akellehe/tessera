@@ -46,13 +46,18 @@ def test_the_value_is_carried_into_the_config():
     assert ea.build_config(candidate_moves=1)["candidate_moves"] == 1
 
 
-def test_a_draw_count_below_one_is_refused_by_name():
-    """Zero draws is not "sample nothing", it is a run that cannot move."""
+def test_zero_draws_means_every_candidate():
+    """Zero is the exhaustive sentinel, not a refusal (#1019).
+
+    It used to be refused, on the reading that "sample nothing" is a run that
+    cannot move. Walking the move space gave the number a second, better
+    meaning -- "do not sample, take every candidate there is" -- and that is
+    what the drive now does with it. A negative count still means nothing.
+    """
+    assert ea.build_config(candidate_moves=0)["candidate_moves"] == 0
     with pytest.raises(ValueError) as caught:
-        ea.build_config(candidate_moves=0)
-    assert "at least 1" in str(caught.value)
-    with pytest.raises(ValueError):
         ea.build_config(candidate_moves=-5)
+    assert "negative" in str(caught.value)
 
 
 def test_the_drive_asks_stage_one_for_that_many(monkeypatch):
