@@ -2429,6 +2429,30 @@ complexd MultiCobordism::inverseLinkPhase(complexd phase) noexcept {
   return complexd(0.0, 0.0) - phase;
 }
 
+MultiCobordism::BoundaryRecord MultiCobordism::boundaryRecordOf(
+    const Spacetime &spacetime) {
+  BoundaryRecord record;
+  record.facets = boundaryFacetsOf(spacetime);
+  if (record.facets.empty() || spacetime.getEdgeList() == nullptr) return record;
+  // Every vertex pair of every boundary facet: an edge is ON the boundary when
+  // some boundary facet contains both its endpoints, which is the same
+  // incidence the facet set is read from, so the two halves cannot disagree
+  // about what the boundary is.
+  std::set<std::pair<std::uint64_t, std::uint64_t>> boundaryEdges;
+  for (const auto &facet : record.facets)
+    for (std::size_t first = 0; first + 1 < facet.size(); ++first)
+      for (std::size_t second = first + 1; second < facet.size(); ++second)
+        boundaryEdges.emplace(std::min(facet[first], facet[second]),
+                              std::max(facet[first], facet[second]));
+  for (const auto &endpoints : boundaryEdges) {
+    const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
+    if (const auto *edge =
+            spacetime.getEdgeList()->get(key.fingerprint.fingerprint()))
+      record.edges.emplace(endpoints, edgeGeometryOf(*edge));
+  }
+  return record;
+}
+
 MultiCobordism::EdgeGeometry MultiCobordism::edgeGeometryOf(
     const ::tessera::mesh::Edge &edge) {
   const auto sourceVertexId = edge.getSource()->getId();
@@ -2585,16 +2609,19 @@ bool MultiCobordism::applyMoveSpecification(
   const auto &moveKind = moveSpecification.first;
   CLOG(INFO_LEVEL, "Applying a ", moveKind, " move.");
   if (moveKind == kNoop) return false;
-  // The boundary BEFORE a gated cone (setBoundaryMayExtend): a cone-in buries
-  // the facet it stands on and exposes the new cell's others, a cone-out
-  // exposes every facet of the cell it removes, so either can hand the
-  // boundary faces it did not have. Read only when the gate is armed and only
-  // for the cone kinds, so no other move pays for it.
-  const bool gateBoundary =
-      !boundaryMayExtend_ && hasFixedBoundary() &&
-      (moveKind == kConeOut || moveKind == kConeIn || moveKind == kConeInTimelike);
-  const std::set<std::vector<std::uint64_t>> boundaryBefore =
-      gateBoundary ? boundaryFacetsOf(*spacetime) : std::set<std::vector<std::uint64_t>>{};
+  // The boundary BEFORE the move (setBoundaryMayExtend). Two things can happen
+  // to it. A cone-in buries the facet it stands on and exposes the new cell's
+  // others, a cone-out exposes every facet of the cell it removes, so either
+  // can hand the boundary faces it did not have. And a disposition flip on an
+  // edge of a boundary facet leaves the facet set alone while changing the
+  // metric of ∂W underneath it -- measured on the 3x3 collar (#1022), edge
+  // (6,7) of an input torus carried across the light cone and the state that
+  // torus carries went from a residual of 2.2e-30 to 6.7e-2. So the record is
+  // taken for EVERY kind, not the cone kinds alone, and it carries the
+  // boundary's geometry as well as its facets.
+  const bool gateBoundary = !boundaryMayExtend_ && hasFixedBoundary();
+  const BoundaryRecord boundaryBefore =
+      gateBoundary ? boundaryRecordOf(*spacetime) : BoundaryRecord{};
   bool moveWasApplied = false;
   // The site-addressed Pachner kinds (#1012): the SAME four moves, proposed at
   // the site the payload names instead of one drawn from a seed. Everything
@@ -2658,9 +2685,11 @@ bool MultiCobordism::applyMoveSpecification(
   } else if (moveKind == kFlipDisposition) {
     // #613: negate one edge's squared length, carrying it across the light cone.
     // Spacelike <-> timelike is a DISCRETE step stage 2 cannot take (it would have
-    // to pass through the singular l^2 = 0), which is why it is a move. Not gated
-    // here -- deltaF and step()'s acceptance test gate it, exactly as for every
-    // other move.
+    // to pass through the singular l^2 = 0), which is why it is a move. Whether it
+    // LOWERS F is left to deltaF and step()'s acceptance test, exactly as for
+    // every other move; whether it is a member of the configuration space at all
+    // is settled by the boundary record taken above, which refuses it on an edge
+    // of a fixed boundary (#1022).
     if (payloadNamesAnEdge(moveSpecification.second) &&
         spacetime->getEdgeList()) {
       // O(1) via the EdgeList's fingerprint -> slot map, not an O(|E|) scan:
@@ -2681,12 +2710,22 @@ bool MultiCobordism::applyMoveSpecification(
   }
   if (!moveWasApplied) return false;
   if (gateBoundary) {
-    // REFUSED, not repaired: a complex whose boundary gained a face is not
-    // the cobordism the caller declared, so it is not a member of the
-    // configuration space and the candidate is dropped like any other
-    // gate failure.
-    for (const auto &facet : boundaryFacetsOf(*spacetime))
-      if (!boundaryBefore.count(facet)) return false;
+    // REFUSED, not repaired: a complex whose boundary gained a face, or whose
+    // boundary is the same faces carrying different lengths or phases, is not
+    // the cobordism of the declared states. It is not a member of the
+    // configuration space and the candidate is dropped like any other gate
+    // failure. The boundary IS the input state: a trial that rewrites it is
+    // answering a different question, however much it lowers F.
+    const BoundaryRecord boundaryAfter = boundaryRecordOf(*spacetime);
+    for (const auto &facet : boundaryAfter.facets)
+      if (!boundaryBefore.facets.count(facet)) return false;
+    for (const auto &[endpoints, geometry] : boundaryBefore.edges) {
+      const auto found = boundaryAfter.edges.find(endpoints);
+      if (found == boundaryAfter.edges.end() ||
+          found->second.length != geometry.length ||
+          found->second.phase != geometry.phase)
+        return false;
+    }
   }
   // Manifold validity is the whole gate. A move that removes a pinned vertex is
   // accepted when what it leaves is a valid manifold in its own right: pinning
