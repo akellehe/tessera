@@ -1683,6 +1683,12 @@ assertion. Every pairing is the transpose.)doc")
            "pinned boundary. Empty restores the single-target behaviour.")
       .def("two_body_case_count",
            [](const MultiCobordism &self) { return self.twoBodyCases().size(); })
+      .def("two_body_residuals_per_case", &MultiCobordism::twoBodyResidualsPerCase,
+           py::call_guard<py::gil_scoped_release>(),
+           "One residual PER CASE on the live complex, in the order the cases "
+           "were set; empty when none are. The sum is what the drive minimises, "
+           "but a sum cannot show a step that improves one state at another's "
+           "expense -- the interesting failure mode when fitting a map.")
       .def("two_body_residual_over_cases", &MultiCobordism::twoBodyResidualOverCases,
            py::call_guard<py::gil_scoped_release>(),
            "The two-body residual summed over the cases, or the single target's "

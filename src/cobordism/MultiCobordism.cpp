@@ -4227,21 +4227,32 @@ double MultiCobordism::twoBodyResidualOverCasesOn(
     const std::shared_ptr<Spacetime> &spacetime) const {
   if (twoBodyCases_.empty())
     return twoBodyTarget_ ? twoBodyResidualOn(spacetime, *twoBodyTarget_) : 0.0;
+  // The sum OF the per-case reads, so the number the drive minimises and the
+  // numbers a reader inspects cannot disagree.
   double total = 0.0;
+  for (const double residual : twoBodyResidualsPerCaseOn(spacetime))
+    total += residual;
+  return total;
+}
+
+std::vector<double> MultiCobordism::twoBodyResidualsPerCaseOn(
+    const std::shared_ptr<Spacetime> &spacetime) const {
+  std::vector<double> residuals;
+  residuals.reserve(twoBodyCases_.size());
   for (const auto &boundaryCase : twoBodyCases_) {
     const auto previous = writeCaseBoundary(boundaryCase, spacetime);
     // Restored even when a read throws: a half-written boundary would be
     // scored by every later case and by whatever the caller does next.
     try {
-      total += twoBodyResidualOn(spacetime,
-                                 TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed});
+      residuals.push_back(twoBodyResidualOn(
+          spacetime, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed}));
     } catch (...) {
       writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
       throw;
     }
     writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
   }
-  return total;
+  return residuals;
 }
 
 std::pair<const MultiCobordism::BoundaryBlock *, const MultiCobordism::BoundaryBlock *>

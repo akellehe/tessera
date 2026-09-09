@@ -2043,6 +2043,14 @@ class EmergenceFrame:
                 "singular_values": [_finite(s) for s in read.singular_values],
                 "schmidt_rank": int(read.schmidt_rank),
                 "reversal_residual": _finite(read.reversal_residual),
+                # One residual PER STATE when several are fitted at once
+                # (#1029). `residual` above is the FIRST case: the transfer is
+                # read on the live complex, whose boundary every case
+                # evaluation restores, so it always reports state 0. The sum is
+                # what the drive minimises, and neither number can show a step
+                # that improves one state at another's expense.
+                "per_state": [_finite(r) for r in
+                              node.two_body_residuals_per_case()],
                 "input_fiber_residuals": [_finite(r) for r in
                                           read.input_fiber_residuals]}
 
@@ -2864,9 +2872,22 @@ def _panel_residuals(axis, frames):
                        colour, "-", lambda f, i=index: _block_value(f, i, "residual")))
         series.append((r"leak %s in the whole's $\ker L_1$" % label, colour, ":",
                        lambda f, i=index: _leak_value(f, i)))
-    series.append((r"two-body vs $\chi$", "#1f4e79", "--",
-                   lambda f: None if isinstance(f.two_body, Absent)
-                   else f.two_body["residual"]))
+    # One trace per fitted state, so a step that trades one against another is
+    # visible. With a single state this is exactly the one two-body trace the
+    # panel always drew.
+    per_state = (last.two_body.get("per_state", [])
+                 if not isinstance(last.two_body, Absent) else [])
+    if len(per_state) > 1:
+        for index in range(len(per_state)):
+            shade = _state_colour(index, len(per_state))
+            series.append((r"state %d vs $\chi$" % index, shade, "--",
+                           lambda f, i=index: _per_state_value(f, i)))
+        series.append(("sum over %d states" % len(per_state), "#1f4e79", "-",
+                       lambda f: _per_state_sum(f)))
+    else:
+        series.append((r"two-body vs $\chi$", "#1f4e79", "--",
+                       lambda f: None if isinstance(f.two_body, Absent)
+                       else f.two_body["residual"]))
     drawn = 0
     for label, colour, style, value_of in series:
         points = [(f.step, value_of(f)) for f in frames]
@@ -3166,6 +3187,36 @@ def _suptitle(frame, last_step):
     return ("unforced Regge-Hodge emergence -- engine unit %d of %d -- %s "
             "(certificates read post-hoc, firewalled from the objective)"
             % (frame.step, last_step, seed_note))
+
+
+def _per_state_value(frame, index):
+    """State `index`'s own residual on that frame, or None if unmeasured."""
+    if isinstance(frame.two_body, Absent):
+        return None
+    values = frame.two_body.get("per_state", [])
+    return values[index] if index < len(values) else None
+
+
+def _per_state_sum(frame):
+    """What the drive actually minimises: the sum over the fitted states."""
+    if isinstance(frame.two_body, Absent):
+        return None
+    values = [v for v in frame.two_body.get("per_state", [])
+              if isinstance(v, float) and math.isfinite(v)]
+    return sum(values) if values else None
+
+
+def _state_colour(index, count):
+    """A distinct shade per state, dark to light, so many states stay legible.
+
+    Deliberately not the torus colours: those name the two BOUNDARY blocks, and
+    reusing them here would suggest a correspondence that does not exist -- a
+    state is a pair over both tori, not one of them.
+    """
+    import matplotlib
+
+    return matplotlib.colormaps["viridis"](
+        0.12 + 0.76 * (index / max(1, count - 1)))
 
 
 def draw_frame(figure, frames, index, placed=None):
