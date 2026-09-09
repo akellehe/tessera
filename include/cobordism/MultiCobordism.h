@@ -655,6 +655,13 @@ class MultiCobordism {
   /// disposition kinds already name their sites and come back unchanged. Every
   /// returned spec is a candidate to SCORE, not a promise that it applies: the
   /// gates still refuse what they always refused.
+  /// The depth ladder one stage-1 update walks, in the order it walks it:
+  /// ascending 1..`maxLookahead` by default, or descending
+  /// `combinatorialBreadth`..1 when a breadth is named. One list rather than
+  /// two loops, so the schedule can be read — by a caller or a test — without
+  /// driving a complex.
+  [[nodiscard]] static std::vector<int> depthSchedule(int maxLookahead,
+                                                      int combinatorialBreadth);
   [[nodiscard]] static std::vector<MoveSpec> enumerateMoveSpecifications(
       const std::shared_ptr<Spacetime> &spacetime, bool withDispositions = false);
 
@@ -1711,9 +1718,17 @@ class MultiCobordism {
   /// iteration, so deepening is a caller's choice rather than a default — the
   /// proton animation passes its `--max-lookahead-depth`. Every depth scores
   /// the same way, unrelaxed (#714).
+  /// `combinatorialBreadth`: when non-zero, the depth ladder is run the other
+  /// way round — sequences of exactly that many moves are searched FIRST and
+  /// the search backs off, one move at a time, only when nothing at the
+  /// current breadth lowers F. It answers a question the ascending schedule
+  /// cannot ask: whether a pair (or a longer composition) improves the
+  /// residual on a complex where every single move makes it worse. Zero (the
+  /// default) leaves the ascending `maxLookahead` schedule in place.
   std::vector<double> runStage1(int maxSteps = 200, int nCandidateMoves = 12,
                                 bool growBoundaries = false,
-                                int maxLookahead = 1);
+                                int maxLookahead = 1,
+                                int combinatorialBreadth = 0);
   /// Stage 2 (geometric): relax every full complex squared edge coordinate
   /// \f$z_e=\ell_e^2\f$ toward a stationary point/minimum of the selected scalar
   /// objective. Derivatives are taken with respect to \f$z\f$ and subtracted from
@@ -1762,7 +1777,8 @@ class MultiCobordism {
                           bool growBoundaries = false,
                           double beta = 1.0, double alpha0 = 0.05,
                           double tolerance = 10e-9, int maxLookahead = 1,
-                          int relaxBudgetPerMove = 10);
+                          int relaxBudgetPerMove = 10,
+                          int combinatorialBreadth = 0);
 
   /// One canonical solve action on THIS node, the unit a search policy (Proton's build
   /// restart loop, a greedy driver, or the RL agent) composes — so the solve is driven
@@ -2486,6 +2502,18 @@ class MultiCobordism {
   /// parallel; deeper searches stay serial, since each draw is made against the
   /// evolving candidate. Returns the committed ΔF, or 0.
   double step(int nCandidateMoves, int lookaheadDepth, double baseObjective);
+  /// Every gated composition of `remainingMoves` combinatorial moves out of
+  /// the complex `fromSnapshot` records, scored — as a whole, at the leaf
+  /// only — by the same localized `deltaF` a single move is scored by.
+  /// Returns the best (ΔF, snapshot) reached, with ΔF = +infinity when no
+  /// composition of that length applies. This is the exhaustive counterpart
+  /// of the sampled deep path in `step`: each level enumerates against the
+  /// complex the previous level left, so the search walks a tree of the
+  /// actual move space rather than a product of the base one.
+  [[nodiscard]] std::pair<double, Snapshot> bestComposition(
+      const Snapshot &fromSnapshot, int remainingMoves, double baseObjective,
+      double baseResidualU,
+      const std::set<std::vector<std::uint64_t>> &baseCellSet);
   /// One iteration of `runStage1`'s loop: optional boundary growth plus one
   /// best-ΔF candidate-move step, booked into `objectiveTrace`. A batch with no
   /// improving move is NOT a stall — the batch is a random sample, so the next
@@ -2493,7 +2521,8 @@ class MultiCobordism {
   /// target-conditioned modes continue until the register is carried, while
   /// target-free `JointStationarity` stops after the stalled batch.
   bool stage1Update(int nCandidateMoves, bool growBoundaries,
-                    std::vector<double> &objectiveTrace, int maxLookahead = 1);
+                    std::vector<double> &objectiveTrace, int maxLookahead = 1,
+                    int combinatorialBreadth = 0);
   /// One iteration of `runStage2`: assemble the selected objective's complex-z
   /// ascent direction, subtract it from z, and run the backtracking line search.
   /// Appends an accepted objective and adapts `stepScale`; otherwise restores the

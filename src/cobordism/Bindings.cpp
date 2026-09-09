@@ -2074,14 +2074,31 @@ assertion. Every pairing is the transpose.)doc")
       // Long pure-C++ compute: release the GIL for the duration so a background thread can
       // drive a pass (a single call, per the register-growth constraint) without blocking the
       // main thread -- e.g. multicobordism_animation.py --live keeps its GUI responsive.
+      .def_static("depth_schedule", &MultiCobordism::depthSchedule,
+                  py::arg("max_lookahead"), py::arg("combinatorial_breadth"),
+                  "The depth ladder one stage-1 update walks, in the order it "
+                  "walks it: ascending 1..max_lookahead by default, or "
+                  "descending combinatorial_breadth..1 when a breadth is "
+                  "named.")
       .def("run_stage1", &MultiCobordism::runStage1, py::arg("max_steps") = 200,
            py::arg("n_candidate_moves") = 12, py::arg("grow_boundaries") = false,
            py::arg("max_lookahead") = 1,
+           py::arg("combinatorial_breadth") = 0,
            py::call_guard<py::gil_scoped_release>(),
            "max_lookahead: when a batch of single moves finds no improvement, "
            "the search deepens iteratively -- 2-move sequences, then 3, up to "
            "this many moves -- committing an F-lowering sequence as a whole "
-           "(1 = single moves only).")
+           "(1 = single moves only). "
+           "combinatorial_breadth: non-zero runs the depth ladder the other "
+           "way round -- sequences of exactly that many moves are searched "
+           "FIRST, and the search backs off one move at a time only when "
+           "nothing at the current breadth lowers F, down to single moves. "
+           "It asks whether a composition of that length improves a complex "
+           "no shorter one improves. 0 (the default) leaves the ascending "
+           "max_lookahead schedule in place. With n_candidate_moves <= 0 the "
+           "search at every breadth is exhaustive, which costs the move "
+           "space raised to the breadth."
+           )
       .def("run_stage2", &MultiCobordism::runStage2, py::arg("beta") = 1.0,
            py::arg("max_iters") = 200, py::arg("alpha0") = 0.05,
            py::arg("tolerance") = 1e-12,
@@ -2099,6 +2116,7 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("alpha0") = 0.05, py::arg("tolerance") = 10e-9,
            py::arg("max_lookahead") = 1,
            py::arg("relax_budget_per_move") = 10,
+           py::arg("combinatorial_breadth") = 0,
            py::call_guard<py::gil_scoped_release>(),
            "The combined drive: each iteration takes ONE combinatorial stage-1 "
            "update (a best-dF move, deepening to max_lookahead-move sequences "
@@ -2120,7 +2138,17 @@ assertion. Every pairing is the transpose.)doc")
            "test is the real terminator, the cap only bounds slow descent "
            "tails of threshold-sized line-search micro-steps. "
            "last_stage2_stationary reports the LAST geometric update's outcome. "
-           "Returns the combined F trace.")
+           "Returns the combined F trace. "
+           "combinatorial_breadth: non-zero runs the depth ladder the other "
+           "way round -- sequences of exactly that many moves are searched "
+           "FIRST, and the search backs off one move at a time only when "
+           "nothing at the current breadth lowers F, down to single moves. "
+           "It asks whether a composition of that length improves a complex "
+           "no shorter one improves. 0 (the default) leaves the ascending "
+           "max_lookahead schedule in place. With n_candidate_moves <= 0 the "
+           "search at every breadth is exhaustive, which costs the move "
+           "space raised to the breadth."
+           )
       .def_property_readonly("should_propose_dispositions",
                              &MultiCobordism::shouldProposeDispositions,
            "Whether the stage-1 move draw also proposes CAUSAL DISPOSITIONS "

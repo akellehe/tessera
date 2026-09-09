@@ -2842,6 +2842,43 @@ double MultiCobordism::deltaF(
   return reggeWeight_ * gradientDelta + gamma_ * residualUDelta;
 }
 
+std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
+    const Snapshot &fromSnapshot, int remainingMoves, double baseObjective,
+    double baseResidualU,
+    const std::set<std::vector<std::uint64_t>> &baseCellSet) {
+  auto fromSpacetime = build(fromSnapshot);
+  // Nothing left to apply: the caller asked what the complex it holds is
+  // worth, which is the composition's score.
+  if (remainingMoves <= 0)
+    return {deltaF(fromSpacetime, baseObjective, baseResidualU, baseCellSet),
+            fromSnapshot};
+  std::pair<double, Snapshot> best{std::numeric_limits<double>::infinity(),
+                                   Snapshot{}};
+  // Enumerated HERE, against this level's complex, not against the base one: a
+  // move the first move created a site for is a legitimate second move, and a
+  // site the first move destroyed is not one.
+  for (const auto &specification :
+       enumerateMoveSpecifications(fromSpacetime, shouldProposeDispositions_)) {
+    auto candidateSpacetime = build(fromSnapshot);
+    if (!applyMoveSpecification(candidateSpacetime, specification)) continue;
+    if (remainingMoves == 1) {
+      // The leaf, scored in place: the finished composition diffed against the
+      // base complex, exactly as a single move is. Snapshotting only on an
+      // improvement keeps the walk's memory at one recorded complex per level.
+      const double objectiveDelta = deltaF(candidateSpacetime, baseObjective,
+                                           baseResidualU, baseCellSet);
+      if (objectiveDelta < best.first)
+        best = {objectiveDelta, snapshotOf(*candidateSpacetime)};
+      continue;
+    }
+    auto reached =
+        bestComposition(snapshotOf(*candidateSpacetime), remainingMoves - 1,
+                        baseObjective, baseResidualU, baseCellSet);
+    if (reached.first < best.first) best = std::move(reached);
+  }
+  return best;
+}
+
 double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
                             double baseObjective) {
   // The candidate loop below constructs one `ReggeSolver` on the LIVE
@@ -2933,6 +2970,52 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
             snapshotOf(*candidateSpacetime);
     }
     for (int candidateIndex = 0; candidateIndex < distinctCount;
+         ++candidateIndex) {
+      const double objectiveDelta =
+          deltas[static_cast<std::size_t>(candidateIndex)];
+      if (objectiveDelta < bestObjectiveDelta) {
+        bestObjectiveDelta = objectiveDelta;
+        bestSnapshot =
+            std::move(snapshots[static_cast<std::size_t>(candidateIndex)]);
+        foundImprovingMove = true;
+      }
+    }
+  } else if (nCandidateMoves <= 0) {
+    // EXHAUSTIVE at depth > 1: every gated composition of `lookaheadDepth`
+    // moves, each level enumerated against the complex the previous level
+    // left. The first move is the parallel level — one independent subtree per
+    // candidate, so the work divides evenly and nothing below it is shared —
+    // and each subtree is walked serially by `bestComposition`. The reduction
+    // is the same lexicographic (delta, index) min the depth-1 batch uses, so
+    // the earliest first move among equals wins here too.
+    //
+    // The cost is the move space raised to the depth. That is the honest price
+    // of the claim this search makes — that NO composition of that length
+    // lowers F — and it is only ever paid because a caller asked for it by
+    // passing the exhaustive sentinel.
+    const auto firstMoves =
+        enumerateMoveSpecifications(spacetime_, shouldProposeDispositions_);
+    const int firstMoveCount = static_cast<int>(firstMoves.size());
+    std::vector<double> deltas(static_cast<std::size_t>(firstMoveCount),
+                               std::numeric_limits<double>::infinity());
+    std::vector<Snapshot> snapshots(static_cast<std::size_t>(firstMoveCount));
+#pragma omp parallel for schedule(dynamic)
+    for (int candidateIndex = 0; candidateIndex < firstMoveCount;
+         ++candidateIndex) {
+      auto candidateSpacetime = build(currentSnapshot);
+      if (!applyMoveSpecification(
+              candidateSpacetime,
+              firstMoves[static_cast<std::size_t>(candidateIndex)]))
+        continue;  // failed the gate: the whole subtree stays at +inf
+      auto reached =
+          bestComposition(snapshotOf(*candidateSpacetime), lookaheadDepth - 1,
+                          baseObjective, baseResidualU, baseCellSet);
+      deltas[static_cast<std::size_t>(candidateIndex)] = reached.first;
+      if (reached.first < -convergenceTolerance_)
+        snapshots[static_cast<std::size_t>(candidateIndex)] =
+            std::move(reached.second);
+    }
+    for (int candidateIndex = 0; candidateIndex < firstMoveCount;
          ++candidateIndex) {
       const double objectiveDelta =
           deltas[static_cast<std::size_t>(candidateIndex)];
@@ -3091,20 +3174,46 @@ void MultiCobordism::growBlockRegions() {
   for (auto &outputBlock : outputBlocks_) growOneShell(outputBlock);
 }
 
+std::vector<int> MultiCobordism::depthSchedule(int maxLookahead,
+                                               int combinatorialBreadth) {
+  std::vector<int> schedule;
+  if (combinatorialBreadth > 0) {
+    // BACKING OFF: sequences of exactly `combinatorialBreadth` moves are
+    // searched first, and the search shortens by one move each time nothing at
+    // the current breadth lowers F, down to single moves. The breadth is
+    // searched ON ITS OWN, not on top of the shorter ones: the question the
+    // schedule asks is whether a composition of that length improves a complex
+    // no shorter composition improves, and answering it means looking there
+    // first rather than only on a plateau.
+    schedule.reserve(static_cast<std::size_t>(combinatorialBreadth));
+    for (int depth = combinatorialBreadth; depth >= 1; --depth)
+      schedule.push_back(depth);
+    return schedule;
+  }
+  // ITERATIVE DEEPENING (the default): single moves first — the cheap, common
+  // case — deepening only on a stall.
+  const int deepest = std::max(1, maxLookahead);
+  schedule.reserve(static_cast<std::size_t>(deepest));
+  for (int depth = 1; depth <= deepest; ++depth) schedule.push_back(depth);
+  return schedule;
+}
+
 std::vector<double> MultiCobordism::runStage1(int maxSteps, int nCandidateMoves,
                                                  bool growBoundaries,
-                                                 int maxLookahead) {
+                                                 int maxLookahead,
+                                                 int combinatorialBreadth) {
   std::vector<double> objectiveTrace = {objective()};
   for (int stepIndex = 0; stepIndex < maxSteps; ++stepIndex)
     if (!stage1Update(nCandidateMoves, growBoundaries, objectiveTrace,
-                      maxLookahead))
+                      maxLookahead, combinatorialBreadth))
       break;
   return objectiveTrace;
 }
 
 bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
                                   std::vector<double> &objectiveTrace,
-                                  int maxLookahead) {
+                                  int maxLookahead,
+                                  int combinatorialBreadth) {
   // In target-conditioned modes the register is "carried" once summed r_U is
   // essentially zero. JointStationarity never consults this target diagnostic.
   constexpr double kRegisterCarriedTolerance = 1e-3;
@@ -3130,12 +3239,14 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
     if (growthObjectiveDelta != 0.0)
       objectiveTrace.push_back(objectiveTrace.back() + growthObjectiveDelta);
   }
-  // ITERATIVE-DEEPENING LOOKAHEAD: try single moves first (depth 1 — the cheap,
-  // common case); only when that batch finds no improvement does the search
-  // deepen to 2-move sequences, then 3, up to `maxLookahead`. A sequence is
-  // scored and committed as a WHOLE, so an F-lowering pair whose first move
-  // alone raises F — the plateau that used to need the trap-door escape — is
-  // reached by honest descent rather than growth on faith.
+  // The depth ladder, in whichever order `depthSchedule` gives it: iterative
+  // deepening by default (single moves first — the cheap, common case —
+  // deepening to 2-move sequences, then 3, up to `maxLookahead`, only when the
+  // shorter search finds nothing), or descending from `combinatorialBreadth`
+  // and backing off when a breadth is named. Either way a sequence is scored
+  // and committed as a WHOLE, so an F-lowering pair whose first move alone
+  // raises F — the plateau that used to need the trap-door escape — is reached
+  // by honest descent rather than growth on faith.
   lastStage1LookaheadDepth_ = 0;  // report: nothing committed until proven otherwise
   // A stalled search is allowed to go WIDE as well as deep: depth 1 keeps the
   // caller's fast batch (the common, cheap case), while each deepened batch
@@ -3150,11 +3261,18 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
   // depth five).
   const double baseObjective =
       compositeSupportsLocalizedDelta() ? 0.0 : objectiveFor(spacetime_);
-  for (int lookaheadDepth = 1; lookaheadDepth <= std::max(1, maxLookahead);
-       ++lookaheadDepth) {
+  for (const int lookaheadDepth :
+       depthSchedule(maxLookahead, combinatorialBreadth)) {
+    // A NON-POSITIVE `nCandidateMoves` is the exhaustive sentinel, and it
+    // survives the deepening: taking `max` against the deep batch size would
+    // turn "every candidate" into "128 of them" the moment the search left
+    // depth 1, so a run asked to be exhaustive would quietly stop being so
+    // exactly where the move space is largest.
     const int batchSize =
-        lookaheadDepth == 1 ? nCandidateMoves
-                            : std::max(nCandidateMoves, kDeepLookaheadCandidates);
+        nCandidateMoves <= 0 ? nCandidateMoves
+        : lookaheadDepth == 1
+            ? nCandidateMoves
+            : std::max(nCandidateMoves, kDeepLookaheadCandidates);
     double objectiveDelta = step(batchSize, lookaheadDepth, baseObjective);
     // FINAL CHECK (#625): the draws found nothing, so the step is about to
     // report that it cannot descend. That claim is about the whole move SET,
@@ -3267,7 +3385,8 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
                                         bool growBoundaries, double beta,
                                         double alpha0, double tolerance,
                                         int maxLookahead,
-                                        int relaxBudgetPerMove) {
+                                        int relaxBudgetPerMove,
+                                        int combinatorialBreadth) {
   setReggeWeight(beta);
   std::vector<double> objectiveTrace = {objective()};
   double stepScale = alpha0;
@@ -3285,7 +3404,8 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
     // from — and leaves behind — relaxed geometry (stage2Update re-reads the
     // edge list each call, picking up whatever the move just created).
     const bool stage1WantsAnotherIteration = stage1Update(
-        nCandidateMoves, growBoundaries, objectiveTrace, maxLookahead);
+        nCandidateMoves, growBoundaries, objectiveTrace, maxLookahead,
+        combinatorialBreadth);
     const bool moveCommitted = lastStage1LookaheadDepth_ > 0;
     // "Full" relaxation still needs a safety budget (as runStage2's maxIters):
     // near a slow descent tail the line search can accept a near-unbounded
