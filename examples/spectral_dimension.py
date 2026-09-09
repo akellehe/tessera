@@ -198,8 +198,9 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker processes (default: min(cpus, 8))")
-    parser.add_argument("--save", type=str, default="./spectral_dimension.png",
-                        help="Path to save the figure (default: ./spectral_dimension.png)")
+    parser.add_argument("--save", type=str, default=None,
+                        help="Path to write the figure to; without it the "
+                             "figure is displayed interactively")
     args = parser.parse_args()
 
     n_workers = max(1, args.workers)
@@ -310,9 +311,11 @@ def main():
 
     print(f"Total elapsed: {time.time()-t_total:.1f}s")
 
-    fig.savefig(args.save, dpi=150)
-    print(f"Saved to {args.save}")
-    plt.show()
+    if args.save:
+        fig.savefig(args.save, dpi=150)
+        print(f"Saved to {args.save}")
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":

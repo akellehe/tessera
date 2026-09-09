@@ -142,7 +142,11 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker threads (default: min(cpus, 8))")
-    parser.add_argument("--save", type=str, default='./volume_profile.png')
+    parser.add_argument("--save", type=str, default=None,
+                        help="Path to write the figures to; the surface and "
+                             "profile plots get the _surface and _profile "
+                             "suffixes.  Without it they are displayed "
+                             "interactively")
     args = parser.parse_args()
 
     n_workers = max(1, args.workers)
@@ -247,10 +251,12 @@ def main():
     fig_line.tight_layout()
 
     print(f"\nTotal elapsed: {time.time()-t_total:.1f}s")
-    fig_surf.savefig(args.save.replace(".png", "_surface.png"), dpi=150)
-    fig_line.savefig(args.save.replace(".png", "_profile.png"), dpi=150)
-    print(f"Saved to {args.save}")
-    plt.show()
+    if args.save:
+        fig_surf.savefig(args.save.replace(".png", "_surface.png"), dpi=150)
+        fig_line.savefig(args.save.replace(".png", "_profile.png"), dpi=150)
+        print(f"Saved to {args.save}")
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":
