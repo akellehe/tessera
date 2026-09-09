@@ -134,15 +134,51 @@ bool FlipMove::propose() {
   return true;
 }
 
+std::vector<std::vector<std::uint64_t>> FlipMove::sitesOn(const Spacetime &spacetime) {
+  std::vector<std::vector<std::uint64_t>> sites;
+  for (const auto &topSimplex : spacetime.getTopSimplices()) {
+    if (!topSimplex || static_cast<int>(topSimplex->size()) < 3) continue;
+    const auto cell = topSimplex->topTuple();
+    for (const auto &vertex : topSimplex->getVertices()) {
+      if (!vertex) continue;
+      std::vector<std::uint64_t> site(cell);
+      site.push_back(vertex->getId());
+      sites.push_back(std::move(site));
+    }
+  }
+  return sites;
+}
+
+bool FlipMove::proposeAt(const std::vector<std::uint64_t> &site) {
+  if (mode() != PachnerMode::PreGeometric) return false;
+  if (site.size() < 4) return false;  // a cell of >=3 vertices plus the dropped one
+  SimplexPtr sigma = topSimplexWithIds(
+      *st_, std::vector<std::uint64_t>(site.begin(), site.end() - 1));
+  if (!sigma) return false;
+  // The drop is an INDEX into the cell's stored vertex order, which is what
+  // the body walks; the site names the vertex, so resolve it here.
+  const auto &vertices = sigma->getVertices();
+  for (std::size_t i = 0; i < vertices.size(); ++i)
+    if (vertices[i] && vertices[i]->getId() == site.back())
+      return proposePreGeometricOn(sigma, i);
+  return false;
+}
+
 bool FlipMove::proposePreGeometric() {
+  // The generator this move was HANDED, not the complex's own (#1013): the
+  // no-argument overload reads `Spacetime::rng`, initialized from
+  // `std::random_device`, so a target drawn through it comes from entropy.
+  SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
+  if (!sigma) return false;
+  const auto &vertsForDrop = sigma->getVertices();
+  if (vertsForDrop.empty()) return false;
+  std::uniform_int_distribution<std::size_t> dropDist(0, vertsForDrop.size() - 1);
+  return proposePreGeometricOn(sigma, dropDist(*rng_));
+}
+
+bool FlipMove::proposePreGeometricOn(SimplexPtr sigma, std::size_t drop) {
   using namespace pachner_detail;
 
-  // The generator this move was HANDED, not the complex's own. The
-  // no-argument overload reads `Spacetime::rng`, which is initialized from
-  // `std::random_device`, so a target drawn through it comes from entropy and
-  // no seed can reproduce it (#1013). Every caller already supplies a
-  // generator for exactly this purpose.
-  SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
   const int dPlus1 = static_cast<int>(sigma->size());
   const int d = dPlus1 - 1;
@@ -154,8 +190,7 @@ bool FlipMove::proposePreGeometric() {
   // the complex with orphans after the flip removes sigma.
   const auto &svRef = sigma->getVertices();
   VertexPtrs sigmaV(svRef.begin(), svRef.end());
-  std::uniform_int_distribution<std::size_t> dropDist(0, sigmaV.size() - 1);
-  const std::size_t drop = dropDist(*rng_);
+  if (drop >= sigmaV.size()) return false;
   VertexPtrs facetVerts;
   facetVerts.reserve(static_cast<std::size_t>(d));
   for (std::size_t i = 0; i < sigmaV.size(); ++i) {

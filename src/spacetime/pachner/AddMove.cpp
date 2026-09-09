@@ -134,8 +134,27 @@ bool AddMove::propose() {
   return true;
 }
 
+std::vector<std::vector<std::uint64_t>> AddMove::sitesOn(const Spacetime &spacetime) {
+  std::vector<std::vector<std::uint64_t>> sites;
+  for (const auto &topSimplex : spacetime.getTopSimplices()) {
+    // The same eligibility `proposePreGeometricOn` applies, asked here so a
+    // walk of this list never offers a site that is then refused.
+    if (!topSimplex || static_cast<int>(topSimplex->size()) < 3) continue;
+    sites.push_back(topSimplex->topTuple());
+  }
+  return sites;
+}
+
+bool AddMove::proposeAt(const std::vector<std::uint64_t> &site) {
+  if (mode() != PachnerMode::PreGeometric) return false;
+  return proposePreGeometricOn(topSimplexWithIds(*st_, site));
+}
+
 bool AddMove::proposePreGeometric() {
-  SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);  // seeded rng (#262)
+  return proposePreGeometricOn(st_->getRandomTopSimplex(*rng_));  // seeded rng (#262)
+}
+
+bool AddMove::proposePreGeometricOn(SimplexPtr sigma) {
   if (!sigma) return false;
   const int dPlus1 = static_cast<int>(sigma->size());
   if (dPlus1 < 3) return false;  // need at least a triangle to subdivide

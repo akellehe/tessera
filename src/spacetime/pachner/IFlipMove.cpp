@@ -36,17 +36,58 @@ IFlipMove::IFlipMove(Spacetime *st, std::uint64_t seed, PachnerMode mode,
       ownedRng_(std::make_unique<std::mt19937>(seed)),
       rng_(ownedRng_.get()) {}
 
+std::vector<std::vector<std::uint64_t>> IFlipMove::sitesOn(const Spacetime &spacetime) {
+  std::vector<std::vector<std::uint64_t>> sites;
+  for (const auto &topSimplex : spacetime.getTopSimplices()) {
+    if (!topSimplex || static_cast<int>(topSimplex->size()) < 3) continue;
+    const auto cell = topSimplex->topTuple();
+    for (const auto &edge : topSimplex->getEdges()) {
+      if (!edge || !edge->getSource() || !edge->getTarget()) continue;
+      std::vector<std::uint64_t> site(cell);
+      site.push_back(edge->getSource()->getId());
+      site.push_back(edge->getTarget()->getId());
+      sites.push_back(std::move(site));
+    }
+  }
+  return sites;
+}
+
+bool IFlipMove::proposeAt(const std::vector<std::uint64_t> &site) {
+  if (proposed_) return false;
+  if (site.size() < 5) return false;  // a cell of >=3 vertices plus two endpoints
+  SimplexPtr sigma = topSimplexWithIds(
+      *st_, std::vector<std::uint64_t>(site.begin(), site.end() - 2));
+  if (!sigma) return false;
+  const std::uint64_t a = site[site.size() - 2], b = site.back();
+  for (const auto &edge : sigma->getEdges()) {
+    if (!edge || !edge->getSource() || !edge->getTarget()) continue;
+    const std::uint64_t source = edge->getSource()->getId();
+    const std::uint64_t target = edge->getTarget()->getId();
+    // Matched as an unordered PAIR: an edge is named by its endpoints, never
+    // by which of them the mesh happens to store first.
+    if ((source == a && target == b) || (source == b && target == a))
+      return proposeOn(sigma, edge);
+  }
+  return false;
+}
+
 bool IFlipMove::propose() {
   if (proposed_) return false;
-  using namespace pachner_detail;
-
-  // The generator this move was HANDED, not the complex's own. The
-  // no-argument overload reads `Spacetime::rng`, which is initialized from
-  // `std::random_device`, so a target drawn through it comes from entropy and
-  // no seed can reproduce it (#1013). Every caller already supplies a
-  // generator for exactly this purpose.
+  // The generator this move was HANDED, not the complex's own (#1013): the
+  // no-argument overload reads `Spacetime::rng`, initialized from
+  // `std::random_device`, so a target drawn through it comes from entropy.
   SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
+  const auto &edgesForDraw = sigma->getEdges();
+  if (edgesForDraw.empty()) return false;
+  std::uniform_int_distribution<std::size_t> edgeDist(0, edgesForDraw.size() - 1);
+  return proposeOn(sigma, edgesForDraw[edgeDist(*rng_)]);
+}
+
+bool IFlipMove::proposeOn(SimplexPtr sigma, EdgePtr edge) {
+  using namespace pachner_detail;
+
+  if (!sigma || !edge) return false;
 
   // Pre-geometric complexes can carry a metric whose dimension differs
   // from the manifold's, so read the move dimension off the actual top
@@ -57,10 +98,6 @@ bool IFlipMove::propose() {
   const int dPlus1 = d + 1;
   if (d < 2) return false;
 
-  const auto &edges = sigma->getEdges();
-  if (edges.empty()) return false;
-  std::uniform_int_distribution<std::size_t> edgeDist(0, edges.size() - 1);
-  EdgePtr edge = edges[edgeDist(*rng_)];
 
   VertexPtr v1 = edge->getSource();
   VertexPtr v2 = edge->getTarget();
