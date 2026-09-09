@@ -3373,6 +3373,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  stage2_iters=DECLARED_STAGE2_ITERS,
                  tolerance=DECLARED_TOLERANCE,
                  patience=DECLARED_PATIENCE,
+                 candidate_moves=DECLARED_CANDIDATE_MOVES,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
@@ -3392,6 +3393,10 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     # Refused rather than clamped: a caller who writes 0 means something the
     # drive cannot do (never stop on a stall), and silently reading it as 1
     # would run the opposite of what was asked.
+    if int(candidate_moves) < 1:
+        raise ValueError("candidate_moves is how many move specifications "
+                         "stage 1 draws per unit and must be at least 1, got "
+                         "%r" % (candidate_moves,))
     if int(patience) < 1:
         raise ValueError("patience is a count of consecutive stalled units "
                          "and must be at least 1, got %r" % (patience,))
@@ -3433,7 +3438,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "host_seed": host_seed,
         "resolution": resolution,
         "edge_disposition": edge_disposition,
-        "candidate_moves": DECLARED_CANDIDATE_MOVES,
+        "candidate_moves": int(candidate_moves),
         "stage1_iters": stage1_iters,
         "tolerance": tolerance,
         "patience": patience,
@@ -3516,6 +3521,20 @@ def build_parser():
                           "EXITS once a whole engine unit fails to improve "
                           "it by this much. Never relative"
                           % DECLARED_TOLERANCE)
+    run.add_argument("--candidate-moves", type=int,
+                     dest="candidate_moves",
+                     default=DECLARED_CANDIDATE_MOVES,
+                     help="how many move specifications stage 1 draws per "
+                          "unit (default %d). The draw picks a KIND uniformly "
+                          "from six and only then a site within it, so this "
+                          "many draws is this many divided by six samples per "
+                          "kind, against site sets of order the cell count. "
+                          "Six draws is about 2%% coverage of the move space "
+                          "and the run then reports itself combinatorially "
+                          "stationary; measured, 200 draws commits moves where "
+                          "6 and 50 commit none. A candidate costs 73-106ms "
+                          "against 16-25 minutes for a relaxation unit"
+                          % DECLARED_CANDIDATE_MOVES)
     run.add_argument("--patience", type=int, default=DECLARED_PATIENCE,
                      help="how many CONSECUTIVE units may fail to improve "
                           "the objective by --tolerance before the run stops "
@@ -3625,6 +3644,7 @@ def main(argv=None):
                           args.stage_two_iterations,
                           tolerance=args.tolerance,
                           patience=args.patience,
+                          candidate_moves=args.candidate_moves,
                           surgical_depth=args.surgical_depth,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
