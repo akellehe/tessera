@@ -218,7 +218,7 @@ class CDT : public Simulation {
     /// Running below the pseudo-critical coupling leaves the (3,2) sector
     /// unbounded: the volume-fixing term constrains \f$ N_4^{(4,1)} \f$ only,
     /// so \f$ N_4^{(3,2)} \f$ grows without limit and no observable
-    /// equilibrates (#965).
+    /// equilibrates.
     ///
     /// @param progress Called as (step, totalSteps) once per drift measurement.
     void tune(std::function<void(int,int)> progress = nullptr) override;
@@ -287,8 +287,7 @@ class CDT : public Simulation {
     ///
     /// The swap is not free: its partner is drawn uniformly, so
     /// ``Spacetime::swapVertexLabels`` walks a list whose length grows with the
-    /// four-volume, and enabling it makes the cost of a sweep grow with the
-    /// volume rather than stay flat.
+    /// four-volume, and a sweep pays that on every add move it accepts.
     ///
     /// Disabled by default. Enabling it applies the swap to
     /// ``CDT::add`` and to every move drawn through ``CDT::proposeAdd``,

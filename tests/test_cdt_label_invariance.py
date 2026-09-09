@@ -3,16 +3,16 @@
 
 """Nothing the CDT sweep reads depends on a vertex's label.
 
-`AddMove` finishes by swapping the new vertex's label with a random vertex's,
-which costs a walk over that vertex's incidence list -- a list that grows with
-the four-volume, and the sweep's only remaining growth term (#978).  It is there
-because [BGL] Sec. 2.2.1 requires the labeling to be uniform.
+`AddMove` can finish by swapping the new vertex's label with a random vertex's,
+which costs a walk over that vertex's incidence list -- a list whose length grows
+with the four-volume. The swap exists because [BGL] Sec. 2.2.1 requires the
+labeling to be uniform.
 
-What the sweep actually reads is the point of these tests.  The action is a
+What the sweep actually reads is the point of these tests. The action is a
 function of N0, N41 and N32; the Metropolis prefactors are functions of the same
-counts; the guards read vertex *times* (`isValidCDTOrientation`,
-`isN41Type`); and every draw indexes a live vector by position, not by label.
-A permutation of the labels therefore cannot change what the chain samples, and
+counts; the guards read vertex *times* (`isValidCDTOrientation`, `isN41Type`,
+`isN32Type`); and every draw indexes a live vector by position, not by label. A
+permutation of the labels therefore cannot change what the chain samples, and
 these tests hold that claim to the code.
 
 References:
