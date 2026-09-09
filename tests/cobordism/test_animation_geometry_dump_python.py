@@ -45,10 +45,19 @@ TAU_B = complex(-0.2, 0.8)
 
 @pytest.fixture(scope="module")
 def driven():
-    """One short qubit drive, with the node it drove and its dump."""
+    """One short qubit drive, with the node it drove and its dump.
+
+    ``pin_boundary=False`` on purpose. The dump records a complex length per
+    edge and the last assertion below is that the imaginary field is really
+    carried, which needs an edge that has left the real locus. Holding the
+    tori -- the default since #1022 -- keeps this short drive entirely real,
+    so the schema would go untested in exactly the field most likely to be
+    dropped. What is under test here is the document, not the drive.
+    """
     config = ea.build_config(steps=2, stage1_iters=1, stage2_iters=2,
                              tolerance=1e-30, inputs=ea.InputMode.QUBIT,
-                             tau_a=TAU_A, tau_b=TAU_B, grid=3)
+                             tau_a=TAU_A, tau_b=TAU_B, grid=3,
+                             pin_boundary=False)
     held = {}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

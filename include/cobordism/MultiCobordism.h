@@ -385,8 +385,19 @@ class MultiCobordism {
   /// grown from a \f$ \Delta^4 \f$ seed, the CDT work) behaves exactly as it
   /// did. A pinned region is NOT such a declaration: pinning constrains the
   /// geometry and does not veto a topology change (`declarePinnedRegion`),
-  /// and making it imply this gate would reverse that. Only the cone kinds
-  /// are gated; the Pachner moves and `bridge` keep their own gates.
+  /// and making it imply this gate would reverse that.
+  ///
+  /// WHAT it protects: the boundary's facet set AND its geometry, and for
+  /// EVERY move kind rather than the cone kinds alone. A cone hands the
+  /// boundary faces it did not have, which the facet set catches; a
+  /// disposition flip on an edge of a boundary facet leaves the facet set
+  /// untouched and changes the metric of \f$ \partial W \f$ underneath it,
+  /// which it does not. Measured on the 3x3 collar (#1022): edge (6,7) of an
+  /// input torus flipped spacelike to timelike, and the state that torus
+  /// carries went from a residual of 2.2e-30 to 6.7e-2 while F fell, because
+  /// nothing refused the move. The boundary IS the input state, so a trial
+  /// that changes its geometry is not a cobordism of the declared states and
+  /// is not a member of the configuration space.
   void setBoundaryMayExtend(bool allowed) noexcept { boundaryMayExtend_ = allowed; }
   [[nodiscard]] bool boundaryMayExtend() const noexcept { return boundaryMayExtend_; }
   /// Whether this node declares a boundary it holds fixed: any SURFACE input
@@ -2370,6 +2381,16 @@ class MultiCobordism {
   using Snapshot =
       std::pair<std::vector<std::vector<std::uint64_t>>,
                 std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry>>;
+  /// The fixed boundary as the gate reads it: `boundaryFacetsOf` together
+  /// with the `EdgeGeometry` of every edge lying inside one of those facets.
+  /// Both halves come from one pass, because the gate takes this record twice
+  /// per candidate — once before the move and once after — and reading the
+  /// boundary is the whole cost of arming it.
+  struct BoundaryRecord {
+    std::set<std::vector<std::uint64_t>> facets;
+    std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edges;
+  };
+  [[nodiscard]] static BoundaryRecord boundaryRecordOf(const Spacetime &spacetime);
 
   // ---- the pieces of residualOfTargetStateAgainstHarmonic ----
   /// The target state as a dense complex vector — the `t` the harmonic is fitted to,

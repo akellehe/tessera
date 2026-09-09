@@ -748,16 +748,35 @@ DECLARED_GATES = {
 #: The operator a run fits, by name. `flip_flop` is the interaction
 #: Hamiltonian of spec S5; the rest are the gates above.
 DECLARED_OPERATOR = "flip_flop"
-#: Whether the input tori are HELD while the bulk relaxes (`--pin-boundary`).
-#: The block residual of spec D2 is a function of tau_hat alone, and tau_hat
-#: is a conformal invariant, so reshaping a boundary within its conformal
-#: class costs the objective nothing and the relaxation does it: measured,
-#: individual boundary edges move 10-28% while tau_hat holds to thirteen
-#: digits. A bulk fitted to that reshaped boundary does not work with the
-#: input it was given. Pinning removes the freedom rather than pricing it.
-#: Off by default because the spec's Do-not list still says pinned regions
-#: are not used in this experiment.
-DECLARED_PIN_BOUNDARY = False
+#: Whether the input tori are HELD while the bulk relaxes (`--pin-boundary`,
+#: `--no-pin-boundary`).
+#:
+#: The block residual of spec D2 is a function of tau_hat alone, and tau_hat is
+#: a conformal invariant, so reshaping a boundary within its conformal class
+#: costs the objective nothing and the relaxation does it: measured, individual
+#: boundary edges move 10-28% while tau_hat holds to thirteen digits. A bulk
+#: fitted to that reshaped boundary does not work with the input it was given.
+#: Pinning removes the freedom rather than pricing it.
+#:
+#: ON by default (#1022). It used to be off, on the reading that the spec's
+#: Do-not list rules pinned regions out of this experiment, and the reshaping
+#: was accepted as the price. Once stage 1 could walk its whole move space the
+#: price came due: the stronger search commits a different bulk, the
+#: relaxation then takes the unheld boundary somewhere else, and the modulus
+#: itself moves rather than only the individual edges. Measured on the two-unit
+#: qubit drive, the same run twice:
+#:
+#:     unheld  residuals 0 0 -> 2.787845e-03 5.718170e-06   cells 54 -> 54
+#:     held    residuals 0 0 -> 0.000000e+00 0.000000e+00   cells 54 -> 56
+#:
+#: Note which one grows the bulk. The unheld run spends its whole descent
+#: reshaping the boundary and commits no cell; the held one puts that descent
+#: into the thing the search is actually over.
+#:
+#: `--no-pin-boundary` restores the old behaviour for a run that wants the
+#: relaxation to fit its boundary rather than hold it -- which is a real use,
+#: and why the hold is a default here rather than a rule in the engine.
+DECLARED_PIN_BOUNDARY = True
 
 
 def gate_image(name, psi, phi):
@@ -3690,13 +3709,15 @@ def build_parser():
                           "are unitary two-qubit gates, fitted through their "
                           "image of the product state (default %s)"
                           % DECLARED_OPERATOR)
-    run.add_argument("--pin-boundary", action="store_true",
+    run.add_argument("--pin-boundary", action=argparse.BooleanOptionalAction,
                      dest="pin_boundary", default=DECLARED_PIN_BOUNDARY,
                      help="qubit mode: hold the input tori fixed while the "
-                          "bulk relaxes. The block residual sees only tau_hat, "
-                          "so without this the boundary is reshaped freely "
-                          "within its conformal class and the bulk is fitted "
-                          "to a boundary that is not the input it was given")
+                          "bulk relaxes (default %s). The block residual sees "
+                          "only tau_hat, so with --no-pin-boundary the "
+                          "boundary is reshaped freely within its conformal "
+                          "class and the bulk is fitted to a boundary that is "
+                          "not the input it was given"
+                          % ("on" if DECLARED_PIN_BOUNDARY else "off"))
     run.add_argument("--extend-boundary", action="store_true",
                      dest="extend_boundary",
                      default=DECLARED_EXTEND_BOUNDARY,
