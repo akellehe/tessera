@@ -29,6 +29,14 @@ The move space is still walked in full -- ``enumerate_move_specifications``
 offers every candidate it always did. The refusal is in the gate, where the
 manifold and boundary checks already live, so there is one place that decides
 what a valid trial is.
+
+Stage 2 is the other half, and it is a DRIVER default rather than an engine
+rule. It cannot flip a disposition -- it cannot cross the singular l^2 = 0 --
+but it does reshape a boundary, and far enough that the modulus moves. Holding
+it is not always what a caller wants, though: relaxing a boundary toward its
+state is exactly what the input residual weight is for. So the engine still
+allows it and ``emergence_animation.py`` pins by default, with
+``--no-pin-boundary`` to ask for the old behaviour.
 """
 import os
 import sys
@@ -43,6 +51,13 @@ sys.path.insert(0, os.path.join(
     "tests", "cobordism"))
 
 import test_block_surface_residual_python as B  # noqa: E402
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))),
+    "examples", "cobordism"))
+
+import emergence_animation as ea  # noqa: E402
 
 MC = cob.MultiCobordism
 HL = cob.HodgeLaplacian
@@ -148,3 +163,42 @@ def test_a_node_without_a_fixed_boundary_is_unaffected():
     node.run_stage1(max_steps=6, n_candidate_moves=0)
     assert node.last_stage1_lookahead >= 0
     assert boundary_geometry(node) != before or node.last_stage1_lookahead == 0
+
+
+def test_the_drive_holds_the_input_tori_by_default():
+    """The other half of the same rule, and why it is a default not a gate.
+
+    Stage 1's gate refuses a move that changes a boundary edge. Stage 2 cannot
+    flip a disposition -- it cannot cross the singular l^2 = 0 -- but it does
+    reshape a boundary, and once stage 1 could walk its whole move space it
+    reshaped it far enough that the modulus moved. Measured on the two-unit
+    qubit drive, the same run twice:
+
+        unheld  residuals 0 0 -> 2.787845e-03 5.718170e-06  cells 54 -> 54
+        held    residuals 0 0 -> 0.000000e+00 0.000000e+00  cells 54 -> 56
+
+    The unheld run spends its whole descent reshaping the boundary and commits
+    no cell; the held one puts that descent into the bulk.
+
+    A DEFAULT rather than an engine rule, because relaxing a boundary toward
+    its state is a real capability -- it is what the input residual weight is
+    for, and what `own_state_residual` measures. A run that wants it asks with
+    --no-pin-boundary.
+    """
+    assert ea.DECLARED_PIN_BOUNDARY is True
+    assert ea.build_config()["pin_boundary"] is True
+    assert ea.build_config(pin_boundary=False)["pin_boundary"] is False
+
+
+def test_the_engine_still_lets_stage_two_move_a_boundary(whitney_default):
+    """The capability the default merely declines to use.
+
+    Holding is the driver's choice. `MultiCobordism` gives a fixed boundary no
+    special treatment in stage 2, so a caller that declares no pinned region
+    can still relax a boundary toward its state.
+    """
+    _qa, _qb, _seed, node = B.collar(3, seed_value=2, einstein_hilbert=True)
+    assert node.has_fixed_boundary
+    before = boundary_geometry(node)
+    node.run_stage2(max_iters=20, tolerance=1e-15)
+    assert boundary_geometry(node) != before
