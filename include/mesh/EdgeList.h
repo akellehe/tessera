@@ -45,10 +45,18 @@ class EdgeList {
     EdgePtr get(const std::uint64_t &fingerprint);
     void remove(const EdgePtr &edge) noexcept;
 
+    /// The lookup key for an edge, derived from the ids its endpoints hold now.
+    ///
+    /// This is the key ``add``/``tryAdd`` insert under, so it is the only value
+    /// that is guaranteed to find an edge again. An ``Edge``'s own
+    /// ``fingerprint`` member is maintained incrementally and can fall out of
+    /// step with its endpoints; keying off it silently misses.
+    [[nodiscard]] static std::uint64_t keyOf(const Edge &edge) noexcept;
+
     /// Re-key an edge's fingerprint in the lookup map without moving the object.
     void rekeyEdge(std::uint64_t oldFp, std::uint64_t newFp);
 
-    /// Detach an edge from the fingerprint lookup (but keep it in the pool).
+    /// Detach an edge from the lookup (but keep it in the pool).
     /// Returns the pool slot so the caller can update the fingerprint and call
     /// reattachEdge().  Returns UINT32_MAX if not found.
     std::uint32_t detachEdge(std::uint64_t fp) {
@@ -59,10 +67,17 @@ class EdgeList {
       return slot;
     }
 
-    /// Re-attach a previously detached edge under its (possibly new) fingerprint.
-    void reattachEdge(std::uint32_t slot) {
-      auto fp = pool_[slot].fingerprint.fingerprint();
-      fpToSlot_.emplace(fp, slot);
+    /// Re-attach a previously detached edge under its current key.
+    ///
+    /// Returns false when the key is already taken by a different slot, which
+    /// means two live edges now claim the same vertex pair. The caller has to
+    /// decide what that means; silently dropping one leaves it in the live
+    /// vector with no way to find it again, and every later lookup for that
+    /// pair then creates a duplicate.
+    bool reattachEdge(std::uint32_t slot) {
+      const auto fp = keyOf(pool_[slot]);
+      const auto [it, inserted] = fpToSlot_.emplace(fp, slot);
+      return inserted || it->second == slot;
     }
 
     void reserve(std::size_t nSimplices);
