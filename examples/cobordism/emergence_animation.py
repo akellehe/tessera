@@ -3529,7 +3529,7 @@ def build_parser():
                           "from six and only then a site within it, so this "
                           "many draws is this many divided by six samples per "
                           "kind, against site sets of order the cell count. "
-                          "Six draws is about 2%% coverage of the move space "
+                          "Six draws covers about a fiftieth of the move space "
                           "and the run then reports itself combinatorially "
                           "stationary; measured, 200 draws commits moves where "
                           "6 and 50 commit none. A candidate costs 73-106ms "
