@@ -1643,6 +1643,50 @@ assertion. Every pairing is the transpose.)doc")
       .def_property_readonly("has_fixed_boundary", &MultiCobordism::hasFixedBoundary,
                              "Whether this node declares a boundary it holds fixed: any surface "
                              "input or output block, or any pinned region.")
+      .def("set_two_body_cases",
+           [](MultiCobordism &self, const py::list &cases) {
+             std::vector<MultiCobordism::TwoBodyCase> out;
+             out.reserve(cases.size());
+             for (const auto &item : cases) {
+               auto entry = item.cast<py::tuple>();
+               if (entry.size() != 2 && entry.size() != 3)
+                 throw std::invalid_argument(
+                     "each case is (boundary, chi) or (boundary, chi, choi_decomposed)");
+               MultiCobordism::TwoBodyCase one;
+               for (const auto &edge : entry[0].cast<py::list>()) {
+                 auto quad = edge.cast<py::tuple>();
+                 if (quad.size() != 3)
+                   throw std::invalid_argument(
+                       "each boundary entry is (source_id, target_id, squared_length)");
+                 one.boundary.emplace_back(
+                     std::make_pair(quad[0].cast<std::uint64_t>(), quad[1].cast<std::uint64_t>()),
+                     quad[2].cast<std::complex<double>>());
+               }
+               one.chi = entry[1].cast<Eigen::MatrixXcd>();
+               one.choiDecomposed = entry.size() == 3 ? entry[2].cast<bool>() : true;
+               out.push_back(std::move(one));
+             }
+             self.setTwoBodyCases(std::move(out));
+           }, py::arg("cases"),
+           "Fit ONE bulk to several input pairs at once (#1017). Each case is "
+           "(boundary, chi[, choi_decomposed]), where boundary is a list of "
+           "(source_id, target_id, squared_length) for the BOUNDARY edges and "
+           "chi is the gate's image of that pair. A bulk fitted to a single "
+           "pair reproduces that pair and nothing else -- one 2x2 transfer is "
+           "six real constraints against some eighty free bulk coordinates, so "
+           "nothing asked the geometry to be a map. Scored together the cases "
+           "impose six constraints EACH on one shared bulk. The sum lives in "
+           "the objective, so stage 1 prices every candidate move and stage 2 "
+           "accepts every step against ALL states, with neither stage needing "
+           "to know there is more than one. Only the boundary metric differs "
+           "between cases: one triangulation, one gluing, one bulk. Expects a "
+           "pinned boundary. Empty restores the single-target behaviour.")
+      .def("two_body_case_count",
+           [](const MultiCobordism &self) { return self.twoBodyCases().size(); })
+      .def("two_body_residual_over_cases", &MultiCobordism::twoBodyResidualOverCases,
+           py::call_guard<py::gil_scoped_release>(),
+           "The two-body residual summed over the cases, or the single target's "
+           "residual when none are set.")
       .def_static("enumerate_move_specifications",
                   [](const std::shared_ptr<Spacetime> &spacetime,
                      bool with_dispositions) {

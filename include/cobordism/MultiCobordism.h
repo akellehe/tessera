@@ -1370,6 +1370,35 @@ class MultiCobordism {
     Eigen::MatrixXcd chi{};
     bool choiDecomposed{true};
   };
+  /// One input pair and the output the gate should produce for it (#1017).
+  ///
+  /// A bulk fitted to a SINGLE pair reproduces that pair and nothing else:
+  /// measured on a converged geometry, the pair it was fitted to reads
+  /// 1.44e-11 and three other pairs read 0.26 to 0.65, under every one of the
+  /// 108 attachment automorphisms. That is the expected outcome rather than a
+  /// defect -- one 2x2 transfer against one pair is 8 real numbers less 2 for
+  /// the complex scale, six real constraints against some eighty free bulk
+  /// coordinates. Nothing asked the geometry to be a MAP.
+  ///
+  /// Cases are how it is asked. Scored together they impose six constraints
+  /// EACH on one shared bulk, and a geometry satisfying all of them is an
+  /// operator in the sense this experiment is after.
+  ///
+  /// A case carries only a boundary metric and a target, because the transfer
+  /// depends on the geometry and the marking's CYCLES alone -- `deriveFrame`
+  /// normalizes by transported periods and `readTwoBody` never reads the
+  /// marking's coefficients. The input state enters through \ref chi, which is
+  /// the gate's image of that pair. Every case shares one triangulation, one
+  /// gluing and one bulk; only the boundary metric differs, so no re-gluing is
+  /// involved in moving between them.
+  struct TwoBodyCase {
+    /// Squared lengths on the BOUNDARY edges, by endpoint pair. Only the
+    /// boundary is listed: the bulk is what is being solved for and is shared.
+    std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>,
+                          std::complex<double>>> boundary;
+    Eigen::MatrixXcd chi{};
+    bool choiDecomposed{true};
+  };
   /// The reading of the bulk between the two attached input frames.
   struct TwoBodyRead {
     bool choiDecomposed{true};
@@ -1585,6 +1614,40 @@ class MultiCobordism {
   /// r_B \f$ when both blocks carry a frame, the cell counts otherwise (with
   /// one frame set the shape is settled at read time, which refuses by name).
   void setTwoBodyTarget(Eigen::MatrixXcd chi, bool choiDecomposed = true);
+  /// Fit ONE bulk to several input pairs at once (#1017).
+  ///
+  /// The sum lives in the objective rather than in the drive, which is what
+  /// makes every move -- combinatorial or geometric -- scored against every
+  /// state before it can be accepted: stage 1 prices a candidate by `deltaF`
+  /// and stage 2 accepts a step by the same objective, so neither stage needs
+  /// to know that there is more than one state.
+  ///
+  /// Evaluating writes each case's boundary metric in turn, reads the transfer,
+  /// scores it against that case's target, and restores the geometry. The
+  /// boundary is expected to be PINNED, so writing it never disturbs the bulk;
+  /// with an unpinned boundary the cases would fight over coordinates the
+  /// relaxation is free to move, which is not the experiment.
+  ///
+  /// Empty restores the single-target behaviour exactly, and a single case is
+  /// the one-target objective, so nothing already written changes.
+  void setTwoBodyCases(std::vector<TwoBodyCase> cases);
+  [[nodiscard]] const std::vector<TwoBodyCase> &twoBodyCases() const noexcept {
+    return twoBodyCases_;
+  }
+  /// The two-body residual SUMMED over the cases on \p spacetime, or the
+  /// single target's residual when no cases are set.
+  ///
+  /// Takes the complex explicitly because stage 1 scores every candidate on a
+  /// complex REBUILT from a snapshot, never on the live one. Scoring cases only
+  /// when handed the live complex would rank combinatorial moves by the first
+  /// case alone while stage 2 optimized the sum -- two different objectives,
+  /// and the move search optimizing the wrong one.
+  [[nodiscard]] double twoBodyResidualOverCasesOn(
+      const std::shared_ptr<Spacetime> &spacetime) const;
+  /// `twoBodyResidualOverCasesOn` on the live complex.
+  [[nodiscard]] double twoBodyResidualOverCases() const {
+    return twoBodyResidualOverCasesOn(spacetime_);
+  }
   [[nodiscard]] const std::optional<TwoBodyTarget> &twoBodyTarget() const noexcept {
     return twoBodyTarget_;
   }
@@ -2674,6 +2737,15 @@ class MultiCobordism {
   bool fiberPhaseDescent_{false};
   std::optional<BoundaryFiber> wholeFiberTarget_;
   std::optional<TwoBodyTarget> twoBodyTarget_;
+  std::vector<TwoBodyCase> twoBodyCases_;
+  /// Write \p boundaryCase's boundary metric onto \p spacetime, returning what
+  /// was there so the caller can put it back. Const because the complex is
+  /// held by pointer and the cases are a way of READING it under several
+  /// boundary conditions, not a change to it: every writer restores.
+  [[nodiscard]] std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>,
+                                      std::complex<double>>>
+  writeCaseBoundary(const TwoBodyCase &boundaryCase,
+                    const std::shared_ptr<Spacetime> &spacetime) const;
   /// `setBoundaryMayExtend`; false refuses a cone that grows a declared
   /// boundary. Nodes without one (`hasFixedBoundary`) are unaffected either way.
   bool boundaryMayExtend_{false};

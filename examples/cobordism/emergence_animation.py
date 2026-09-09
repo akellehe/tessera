@@ -302,6 +302,21 @@ DECLARED_EXTEND_BOUNDARY = False
 #:
 #: Off, which is the engine's default, so a run is unchanged unless asked.
 DECLARED_SCORE_LEAK = False
+#: Extra input pairs the SAME bulk must also satisfy (`--state`), as
+#: "tau_a,tau_b" strings. Empty means the single pair of --tau-a/--tau-b.
+#:
+#: A bulk fitted to one pair reproduces that pair and nothing else: measured on
+#: a converged geometry, its own pair reads 1.44e-11 and three others read 0.26
+#: to 0.65, under every one of the 108 attachment automorphisms. That is what
+#: the arithmetic predicts rather than a defect -- one 2x2 transfer against one
+#: pair is six real constraints against some eighty free bulk coordinates, so
+#: nothing ever asked the geometry to be a MAP.
+#:
+#: Each extra pair adds six more constraints on the same bulk. Every case
+#: shares one triangulation, one gluing and one bulk; only the boundary metric
+#: differs. Use with --pin-boundary: with the boundary free the cases would
+#: fight over coordinates the relaxation may move, which is not the experiment.
+DECLARED_STATES = ()
 #: How often the `--live` main thread services the GUI event loop while the
 #: worker computes, in seconds -- about twenty times a second.
 #:
@@ -989,6 +1004,49 @@ class QubitInputs:
         })
 
 
+def _as_state_pair(text):
+    """`"0.5+0.9j,0.1+1.3j"` as a pair of complex moduli."""
+    if isinstance(text, (list, tuple)):
+        if len(text) != 2:
+            raise ValueError("a state pair is two moduli, got %r" % (text,))
+        return (_as_complex(text[0]), _as_complex(text[1]))
+    parts = str(text).split(",")
+    if len(parts) != 2:
+        raise ValueError(
+            "a state pair is two moduli separated by a comma, like "
+            "0.5+0.9j,0.1+1.3j -- got %r" % (text,))
+    return (_as_complex(parts[0].strip()), _as_complex(parts[1].strip()))
+
+
+def _two_body_case(pair, tori, ids, grid, operator, config):
+    """One input pair as (boundary lengths, chi) on the host's edges.
+
+    The boundary is the two tori at this pair's moduli, mapped onto the host by
+    the seeding's vertex correspondence. The bulk is not listed: it is what the
+    fit is solving for and is shared by every case.
+    """
+    import numpy as np
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        at_pair = [obs.SimplicialQubit.flat_torus(complex(tau), grid, grid)
+                   for tau in pair]
+    boundary = []
+    for index, torus in enumerate(at_pair):
+        mapping = ids[index]
+        for (i, j), length in zip(torus.edges(), torus.lengths()):
+            source, target = mapping[int(i)], mapping[int(j)]
+            boundary.append((source, target, complex(length) ** 2))
+    if operator == "flip_flop":
+        algebra = flip_flop_evolution(np.asarray(at_pair[0].state()),
+                                      np.asarray(at_pair[1].state()),
+                                      config["coupling"], config["time"])
+    else:
+        algebra = gate_image(operator, np.asarray(at_pair[0].state()),
+                             np.asarray(at_pair[1].state()))
+    return (boundary, algebra["chi"], True)
+
+
 def build_qubit_node(config):
     """The qubit node: two flat tori on their collar, seeded as the input
     blocks with their state fibers, markings and the two-body target.
@@ -1057,6 +1115,16 @@ def build_qubit_node(config):
                              np.asarray(tori[1].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
+    # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
+    # and is what the collar was seeded from, so it is always case zero; the
+    # extra pairs are the same tori at different moduli. Only the boundary
+    # metric distinguishes them, which is why a case carries lengths and a
+    # target and nothing else.
+    extra = [_as_state_pair(text) for text in config.get("states", ())]
+    if extra:
+        node.set_two_body_cases(
+            [_two_body_case(pair, tori, ids, grid, operator, config)
+             for pair in [tuple(tau_in)] + extra])
     for index, torus in enumerate(tori):
         _assert_seed_reads_the_torus(node, index, torus)
     host = node.spacetime()
@@ -3417,6 +3485,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  input_weight=DECLARED_INPUT_WEIGHT, regge=DECLARED_REGGE,
                  extend_boundary=DECLARED_EXTEND_BOUNDARY,
                  score_leak=DECLARED_SCORE_LEAK,
+                 states=DECLARED_STATES,
                  operator=DECLARED_OPERATOR,
                  pin_boundary=DECLARED_PIN_BOUNDARY):
     if edge_disposition not in EdgeDisposition.ALL:
@@ -3507,6 +3576,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "regge": bool(regge),
         "extend_boundary": bool(extend_boundary),
         "score_leak": bool(score_leak),
+        "states": [str(text) for text in (states or ())],
         "operator": str(operator),
         "pin_boundary": bool(pin_boundary),
     }
@@ -3649,6 +3719,18 @@ def build_parser():
                      help="qubit mode: keep the Regge stationarity term in "
                           "the objective (--no-regge leaves r_U alone; "
                           "default %s)" % ("on" if DECLARED_REGGE else "off"))
+    run.add_argument("--state", action="append", dest="states",
+                     default=None, metavar="TAU_A,TAU_B",
+                     help="an ADDITIONAL input pair the same bulk must also "
+                          "satisfy, like --state 0.5+0.9j,0.1+1.3j. Repeat for "
+                          "more. A bulk fitted to one pair reproduces that "
+                          "pair and nothing else -- one 2x2 transfer is six "
+                          "real constraints against some eighty free bulk "
+                          "coordinates, so nothing asks the geometry to be a "
+                          "map. Each extra pair adds six constraints on the "
+                          "same bulk, and every candidate move is scored "
+                          "against all of them before it can be accepted. Use "
+                          "with --pin-boundary")
     run.add_argument("--score-leak", action="store_true",
                      dest="score_leak", default=DECLARED_SCORE_LEAK,
                      help="also score the WHOLE cobordism's leak of each "
@@ -3720,6 +3802,7 @@ def main(argv=None):
                           input_weight=args.input_weight, regge=args.regge,
                           extend_boundary=args.extend_boundary,
                           score_leak=args.score_leak,
+                          states=args.states or (),
                           operator=args.operator,
                           pin_boundary=args.pin_boundary)
     # Held from the moment the node exists, so the geometry is written even
