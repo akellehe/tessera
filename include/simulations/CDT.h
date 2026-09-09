@@ -269,31 +269,30 @@ class CDT : public Simulation {
     ///
     /// [BGL] Sec. 2.2.1 requires the labeling of a triangulation to be uniform
     /// for the chain to satisfy detailed balance. In the labeled formalism that
-    /// requirement is met by counting labelings in the acceptance ratio, and
-    /// this implementation already does: ``AddMove``'s Metropolis prefactor is
+    /// requirement is carried by the acceptance ratio, and it is:
+    /// ``AddMove``'s Metropolis prefactor is
     /// \f$ \log N_4^{(4,1)} - \log (N_0 + 1) \f$ and ``RemoveMove``'s is
-    /// \f$ \log N_0 - \log N_4^{(4,1)} \f$ after the move, which are exactly
-    /// the factors for choosing the cell to split and the vertex to remove.
+    /// \f$ \log N_0 - \log N_4^{(4,1)} \f$ after the move, the factors for
+    /// choosing the cell to split and the vertex to remove.
     ///
-    /// Physically swapping two vertices' labels on top of that changes nothing
-    /// the chain reads. The action is a function of \f$ N_0 \f$,
-    /// \f$ N_4^{(4,1)} \f$ and \f$ N_4^{(3,2)} \f$; the guards read vertex
-    /// *times* (``isValidCDTOrientation``, ``isN41Type``, ``isN32Type``, all
-    /// via ``TemporalOrientation::orientationOf``); and every draw indexes a
-    /// live vector by position rather than by label
-    /// (``Spacetime::getRandomVertex``, ``getRandomSimplex``,
-    /// ``getRandomTopSimplex``). A permutation of the labels is therefore an
-    /// automorphism of the sampler, which is what
-    /// tests/test_cdt_label_invariance.py holds it to.
+    /// Swapping two vertices' labels on top of that changes nothing the chain
+    /// reads. The action is a function of \f$ N_0 \f$, \f$ N_4^{(4,1)} \f$
+    /// and \f$ N_4^{(3,2)} \f$; the guards read vertex *times*
+    /// (``isValidCDTOrientation``, ``isN41Type``, ``isN32Type``, all through
+    /// ``TemporalOrientation::orientationOf``); and every draw indexes a live
+    /// vector by position rather than by label (``getRandomVertex``,
+    /// ``getRandomSimplex``, ``getRandomTopSimplex``). A permutation of the
+    /// labels is an automorphism of the sampler, which
+    /// tests/test_cdt_label_invariance.py holds the code to.
     ///
-    /// It is not free, though: the swap partner is drawn uniformly, so
+    /// The swap is not free: its partner is drawn uniformly, so
     /// ``Spacetime::swapVertexLabels`` walks a list whose length grows with the
-    /// four-volume, and with the move costs of #970 fixed it was the whole of
-    /// the sweep's remaining growth -- 0.87 s per sweep against 0.31 s at
-    /// N4 = 50k, an exponent of 1.06 against 0.30 (#978).
+    /// four-volume, and enabling it makes the cost of a sweep grow with the
+    /// volume rather than stay flat.
     ///
-    /// Disabled by default for that reason. Enable it to reproduce the
-    /// behaviour of runs made before #978.
+    /// Disabled by default. Enabling it applies the swap to
+    /// ``CDT::add`` and to every move drawn through ``CDT::proposeAdd``,
+    /// including ``observables::ModularityOptimizer``'s.
     void setRelabelVertices(bool enabled) noexcept { relabelVertices_ = enabled; }
 
     /// Re-seed the internal RNG. The default constructor pulls a
