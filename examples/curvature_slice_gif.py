@@ -32,8 +32,8 @@ script extremizes is therefore the squared norm of the action gradient,
 
 which is non-negative and vanishes exactly when the Regge equations hold. ``F``
 is a nonlinear least-squares objective in the edge variables and is minimized as
-such, with the exact analytic gradient and Hessian of ``S`` supplying the
-residual and its Jacobian; no finite differences are taken.
+such, with the analytic gradient and Hessian of ``S`` supplying the residual and
+its Jacobian.
 
 ``ReggeSolver`` evaluates the action and its derivatives and does not relax the
 geometry itself. Its ``actionGradientExact`` is the gradient of the
@@ -598,7 +598,7 @@ def main():
     p = argparse.ArgumentParser(
         description="Solve the discrete Einstein equations for a point mass "
                     "and render each spatial slice as a curvature heat map")
-    p.add_argument("--n-simplices", type=int, default=600,
+    p.add_argument("--n-simplices", type=int, default=200,
                    help="four-simplices to build before thermalizing; the "
                         "builder caps the complex at 80 time slices")
     p.add_argument("--mass", type=float, default=1.0,

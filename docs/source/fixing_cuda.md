@@ -140,7 +140,8 @@ pip install -e .
 pytest tests/ -x -v
 
 # Run the Regge solver example
-python examples/curvature_slice_gif.py --save point_mass.gif
+python examples/curvature_slice_gif.py --n-simplices 200 --seed 7 \
+    --max-iters 10 --save point_mass.gif
 ```
 
 ## Troubleshooting
