@@ -149,3 +149,27 @@ def test_the_run_document_records_the_states():
     config = ea.build_config(inputs="qubit", states=EXTRA)
     assert config["states"] == EXTRA
     assert ea.build_config(inputs="qubit")["states"] == []
+
+
+def test_a_candidate_complex_is_scored_on_every_case():
+    """Stage 1 must rank moves by the SAME objective stage 2 minimises.
+
+    Every candidate move is priced on a complex REBUILT from a snapshot, never
+    on the live one. An implementation that scored the cases only when handed
+    the live complex falls back to the single target -- ranking combinatorial
+    moves by the FIRST input pair while stage 2 optimises the sum over all of
+    them. Two different objectives, with the move search on the wrong one.
+
+    Asserted through what stage 1 reports: its trace opens with the objective it
+    is descending, which must be the sum.
+    """
+    node = built(EXTRA)
+    summed = node.two_body_residual_over_cases()
+    case_zero = node.two_body_residual()
+    # The two must be genuinely different numbers or this proves nothing.
+    assert summed > case_zero * 1.5, (summed, case_zero)
+
+    trace = list(node.run_stage1(max_steps=1, n_candidate_moves=0,
+                                 max_lookahead=1))
+    assert trace, "stage 1 reported no objective"
+    assert trace[0] == pytest.approx(summed, rel=1e-6), (trace[0], summed, case_zero)

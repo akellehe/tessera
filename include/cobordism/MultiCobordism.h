@@ -1616,9 +1616,20 @@ class MultiCobordism {
   [[nodiscard]] const std::vector<TwoBodyCase> &twoBodyCases() const noexcept {
     return twoBodyCases_;
   }
-  /// The two-body residual SUMMED over the cases on the live complex, or the
+  /// The two-body residual SUMMED over the cases on \p spacetime, or the
   /// single target's residual when no cases are set.
-  [[nodiscard]] double twoBodyResidualOverCases() const;
+  ///
+  /// Takes the complex explicitly because stage 1 scores every candidate on a
+  /// complex REBUILT from a snapshot, never on the live one. Scoring cases only
+  /// when handed the live complex would rank combinatorial moves by the first
+  /// case alone while stage 2 optimized the sum -- two different objectives,
+  /// and the move search optimizing the wrong one.
+  [[nodiscard]] double twoBodyResidualOverCasesOn(
+      const std::shared_ptr<Spacetime> &spacetime) const;
+  /// `twoBodyResidualOverCasesOn` on the live complex.
+  [[nodiscard]] double twoBodyResidualOverCases() const {
+    return twoBodyResidualOverCasesOn(spacetime_);
+  }
   [[nodiscard]] const std::optional<TwoBodyTarget> &twoBodyTarget() const noexcept {
     return twoBodyTarget_;
   }
@@ -2683,7 +2694,8 @@ class MultiCobordism {
   /// boundary conditions, not a change to it: every writer restores.
   [[nodiscard]] std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>,
                                       std::complex<double>>>
-  writeCaseBoundary(const TwoBodyCase &boundaryCase) const;
+  writeCaseBoundary(const TwoBodyCase &boundaryCase,
+                    const std::shared_ptr<Spacetime> &spacetime) const;
   /// `setBoundaryMayExtend`; false refuses a cone that grows a declared
   /// boundary. Nodes without one (`hasFixedBoundary`) are unaffected either way.
   bool boundaryMayExtend_{false};

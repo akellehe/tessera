@@ -1055,8 +1055,12 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
     // The cases, when set, ARE the two-body term (#1017): one bulk scored
     // against several input pairs at once, so every move is priced against all
     // of them. With none set this is the single target, unchanged.
-    if (!twoBodyCases_.empty() && spacetime == spacetime_)
-      totalResidual += twoBodyResidualOverCases();
+    // On WHATEVER complex is being scored, never only the live one: stage 1
+    // prices each candidate on a complex rebuilt from a snapshot, so a
+    // live-only test would rank moves by the first case while stage 2
+    // optimized the sum.
+    if (!twoBodyCases_.empty())
+      totalResidual += twoBodyResidualOverCasesOn(spacetime);
     else if (twoBodyTarget_) totalResidual += twoBodyResidualOn(spacetime, *twoBodyTarget_);
     return totalResidual;
   }
@@ -4041,13 +4045,14 @@ void MultiCobordism::setTwoBodyCases(std::vector<TwoBodyCase> cases) {
 }
 
 std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>>
-MultiCobordism::writeCaseBoundary(const TwoBodyCase &boundaryCase) const {
+MultiCobordism::writeCaseBoundary(const TwoBodyCase &boundaryCase,
+                                  const std::shared_ptr<Spacetime> &spacetime) const {
   std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>> previous;
-  if (!spacetime_ || !spacetime_->getEdgeList()) return previous;
+  if (!spacetime || !spacetime->getEdgeList()) return previous;
   previous.reserve(boundaryCase.boundary.size());
   for (const auto &[endpoints, squaredLength] : boundaryCase.boundary) {
     const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
-    auto *edge = spacetime_->getEdgeList()->get(key.fingerprint.fingerprint());
+    auto *edge = spacetime->getEdgeList()->get(key.fingerprint.fingerprint());
     // A case naming an edge the complex does not have is SKIPPED, not an
     // error: stage 1 rebuilds the complex between evaluations, so a boundary
     // edge is always present but a stale case would otherwise abort a drive.
@@ -4059,22 +4064,23 @@ MultiCobordism::writeCaseBoundary(const TwoBodyCase &boundaryCase) const {
   return previous;
 }
 
-double MultiCobordism::twoBodyResidualOverCases() const {
+double MultiCobordism::twoBodyResidualOverCasesOn(
+    const std::shared_ptr<Spacetime> &spacetime) const {
   if (twoBodyCases_.empty())
-    return twoBodyTarget_ ? twoBodyResidualOn(spacetime_, *twoBodyTarget_) : 0.0;
+    return twoBodyTarget_ ? twoBodyResidualOn(spacetime, *twoBodyTarget_) : 0.0;
   double total = 0.0;
   for (const auto &boundaryCase : twoBodyCases_) {
-    const auto previous = writeCaseBoundary(boundaryCase);
+    const auto previous = writeCaseBoundary(boundaryCase, spacetime);
     // Restored even when a read throws: a half-written boundary would be
     // scored by every later case and by whatever the caller does next.
     try {
-      total += twoBodyResidualOn(spacetime_,
+      total += twoBodyResidualOn(spacetime,
                                  TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed});
     } catch (...) {
-      writeCaseBoundary(TwoBodyCase{previous, {}, true});
+      writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
       throw;
     }
-    writeCaseBoundary(TwoBodyCase{previous, {}, true});
+    writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
   }
   return total;
 }
@@ -5038,7 +5044,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
     // zeroed by pinning either way, and the BULK components are what differ
     // between cases -- which is the whole point.
     for (const auto &boundaryCase : twoBodyCases_) {
-      const auto previous = writeCaseBoundary(boundaryCase);
+      const auto previous = writeCaseBoundary(boundaryCase, spacetime_);
       try {
         accumulate(twoBodyResidualGradientOn(
                        spacetime_, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed}),
@@ -5046,7 +5052,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
       } catch (const std::runtime_error &) {
       } catch (const std::invalid_argument &) {
       }
-      writeCaseBoundary(TwoBodyCase{previous, {}, true});
+      writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime_);
     }
   } else if (twoBodyTarget_) {
     try {
