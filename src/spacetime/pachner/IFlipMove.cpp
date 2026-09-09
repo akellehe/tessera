@@ -40,7 +40,12 @@ bool IFlipMove::propose() {
   if (proposed_) return false;
   using namespace pachner_detail;
 
-  SimplexPtr sigma = st_->getRandomTopSimplex();
+  // The generator this move was HANDED, not the complex's own. The
+  // no-argument overload reads `Spacetime::rng`, which is initialized from
+  // `std::random_device`, so a target drawn through it comes from entropy and
+  // no seed can reproduce it (#1013). Every caller already supplies a
+  // generator for exactly this purpose.
+  SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
 
   // Pre-geometric complexes can carry a metric whose dimension differs
