@@ -57,9 +57,17 @@ bool RemoveMove::propose() {
   VertexPtr v = st_->getRandomVertex(*rng_);
   if (!v) return false;
 
+  // The move only fires on a vertex of order exactly 2d, and almost every draw
+  // is not one. Stop as soon as the count passes 2d rather than walking the
+  // whole star to find out: that star grows with the four-volume -- measured, a
+  // vertex carries 148 simplices on average at N4 = 50k against an order of 8 --
+  // so walking it in full made the rejection path O(N4) (#970).
   std::vector<SimplexPtr> incident;
+  incident.reserve(static_cast<std::size_t>(requiredOrder));
   for (const auto &s : v->getSimplices()) {
-    if (static_cast<int>(s->size()) == dPlus1) incident.push_back(s);
+    if (static_cast<int>(s->size()) != dPlus1) continue;
+    if (static_cast<int>(incident.size()) == requiredOrder) return false;
+    incident.push_back(s);
   }
   if (static_cast<int>(incident.size()) != requiredOrder) return false;
 

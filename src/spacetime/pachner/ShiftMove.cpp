@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include "mesh/Edge.h"
 #include "mesh/Simplex.h"
 #include "mesh/TemporalOrientation.h"
 #include "mesh/Vertex.h"
@@ -62,9 +63,28 @@ bool ShiftMove::propose() {
   std::shuffle(sigmaVerts.begin(), sigmaVerts.end(), *rng_);
   VertexPtrs faceVerts(sigmaVerts.begin(), sigmaVerts.begin() + hingeSize);
 
-  // All d-simplices containing all (d-1) face vertices.
+  // All d-simplices containing all (d-1) face vertices. The face vertices all
+  // belong to sigma, so the edge joining the first two is one of sigma's own,
+  // and the simplices registered on that edge are the candidates. Starting from
+  // the edge's index rather than a vertex's is what bounds the work: a vertex's
+  // incidence list grows with the four-volume -- measured, mean 80 simplices per
+  // vertex at N4 = 24k and 148 at N4 = 50k -- while an edge's does not (#970).
+  EdgePtr hingeEdge = nullptr;
+  if (hingeSize >= 2) {
+    for (const auto &e : sigma->getEdges()) {
+      if (e != nullptr && e->hasVertex(faceVerts[0]->getId()) &&
+          e->hasVertex(faceVerts[1]->getId())) {
+        hingeEdge = e;
+        break;
+      }
+    }
+    if (hingeEdge == nullptr) return false;
+  }
+
   std::vector<SimplexPtr> sharing;
-  for (const auto &s : faceVerts[0]->getSimplices()) {
+  const auto &candidates =
+      hingeEdge != nullptr ? hingeEdge->simplices() : faceVerts[0]->getSimplices();
+  for (const auto &s : candidates) {
     if (static_cast<int>(s->size()) != dPlus1) continue;
     bool containsAll = true;
     for (int i = 1; i < hingeSize; ++i) {

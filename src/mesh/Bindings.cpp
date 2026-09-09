@@ -116,6 +116,12 @@ endpoint vertex IDs, so Edge(v1, v2) == Edge(v2, v1).)doc")
         "stored exactly. The length is derived as its sqrt (real = spacelike, "
         "imaginary = timelike). A real value is a real l^2, not a length."
       )
+      .def("simplices", &Edge::simplicesCopy,
+        "The simplices registered on this edge -- every simplex that carries it, "
+        "of any dimension. Spacetime::registerSimplex mirrors each simplex into "
+        "its edges, so this is the edge's own incidence list and its length does "
+        "not grow with the four-volume, unlike a vertex's."
+      )
       .def("__str__", &Edge::toString)
       .def("__repr__", &Edge::toString)
       .def("__eq__", &Edge::operator==, py::arg("other"))
