@@ -360,7 +360,7 @@ void CDT::tune(std::function<void(int,int)> progress) {
   // (2,2d) add move has dS_Regge = -(k0+6Δ) + (2d-2)(k4+2Δ) = 0. That ignores
   // the entropy of the triangulations reachable at this volume, which is what
   // actually sets the pseudo-critical coupling, so this value only starts the
-  // search (#965).
+  // search.
   k4 = (k0 + 6.0 * delta) / (2.0 * d - 2.0) - 2.0 * delta;
 
   const int totalSteps = kTuneMaxBracketSteps + kTuneBisectionSteps;
