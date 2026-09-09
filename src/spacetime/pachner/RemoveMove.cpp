@@ -57,9 +57,17 @@ bool RemoveMove::propose() {
   VertexPtr v = st_->getRandomVertex(*rng_);
   if (!v) return false;
 
+  // The move only fires on a vertex of order exactly 2d, and almost every draw
+  // is not one. Stop as soon as the count passes 2d rather than walking the
+  // whole star to find out: that star grows with the four-volume -- measured, a
+  // vertex carries 148 simplices on average at N4 = 50k against an order of 8 --
+  // so walking it in full made the rejection path O(N4) (#970).
   std::vector<SimplexPtr> incident;
+  incident.reserve(static_cast<std::size_t>(requiredOrder));
   for (const auto &s : v->getSimplices()) {
-    if (static_cast<int>(s->size()) == dPlus1) incident.push_back(s);
+    if (static_cast<int>(s->size()) != dPlus1) continue;
+    if (static_cast<int>(incident.size()) == requiredOrder) return false;
+    incident.push_back(s);
   }
   if (static_cast<int>(incident.size()) != requiredOrder) return false;
 
@@ -133,13 +141,28 @@ bool RemoveMove::propose() {
   return true;
 }
 
+std::vector<std::vector<std::uint64_t>> RemoveMove::sitesOn(const Spacetime &spacetime) {
+  std::vector<std::vector<std::uint64_t>> sites;
+  if (!spacetime.getVertexList()) return sites;
+  for (const auto *vertex : spacetime.getVertexList()->liveVector())
+    if (vertex != nullptr) sites.push_back({vertex->getId()});
+  return sites;
+}
+
+bool RemoveMove::proposeAt(const std::vector<std::uint64_t> &site) {
+  if (mode() != PachnerMode::PreGeometric) return false;
+  if (site.size() != 1 || !st_->getVertexList()) return false;
+  return proposePreGeometricOn(st_->getVertexList()->get(site[0]));
+}
+
 bool RemoveMove::proposePreGeometric() {
-  // The generator this move was HANDED, not the complex's own. The
-  // no-argument overload reads `Spacetime::rng`, which is initialized from
-  // `std::random_device`, so a target drawn through it comes from entropy and
-  // no seed can reproduce it (#1013). Every caller already supplies a
-  // generator for exactly this purpose.
-  VertexPtr v = st_->getRandomVertex(*rng_);
+  // The generator this move was HANDED, not the complex's own (#1013): the
+  // no-argument overload reads `Spacetime::rng`, initialized from
+  // `std::random_device`, so a target drawn through it comes from entropy.
+  return proposePreGeometricOn(st_->getRandomVertex(*rng_));
+}
+
+bool RemoveMove::proposePreGeometricOn(VertexPtr v) {
   if (!v) return false;
 
   // Read the top-cell vertex count off v's incident cells.

@@ -3462,10 +3462,11 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     # Refused rather than clamped: a caller who writes 0 means something the
     # drive cannot do (never stop on a stall), and silently reading it as 1
     # would run the opposite of what was asked.
-    if int(candidate_moves) < 1:
+    if int(candidate_moves) < 0:
         raise ValueError("candidate_moves is how many move specifications "
-                         "stage 1 draws per unit and must be at least 1, got "
-                         "%r" % (candidate_moves,))
+                         "stage 1 draws per unit, or 0 for every candidate "
+                         "there is, so it may not be negative; got %r"
+                         % (candidate_moves,))
     if int(patience) < 1:
         raise ValueError("patience is a count of consecutive stalled units "
                          "and must be at least 1, got %r" % (patience,))
@@ -3603,7 +3604,11 @@ def build_parser():
                           "and the run then reports itself combinatorially "
                           "stationary; measured, 200 draws commits moves where "
                           "6 and 50 commit none. A candidate costs 73-106ms "
-                          "against 16-25 minutes for a relaxation unit"
+                          "against 16-25 minutes for a relaxation unit. "
+                          "ZERO means EVERY candidate rather than a sample of "
+                          "them: the moves are then addressed by site instead "
+                          "of drawn, which is both complete and reproducible "
+                          "(about 739 candidates on a 3x3 collar, ~55s)"
                           % DECLARED_CANDIDATE_MOVES)
     run.add_argument("--patience", type=int, default=DECLARED_PATIENCE,
                      help="how many CONSECUTIVE units may fail to improve "

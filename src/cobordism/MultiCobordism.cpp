@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <functional>
 #include <limits>
 #include <map>
@@ -12,6 +13,10 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include <Eigen/Dense>
 
@@ -2545,6 +2550,40 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
           boundaryFacets[randomNumberGenerator_() % boundaryFacets.size()]};
 }
 
+std::vector<MultiCobordism::MoveSpec> MultiCobordism::enumerateMoveSpecifications(
+    const std::shared_ptr<Spacetime> &spacetime, bool withDispositions) {
+  std::vector<MoveSpec> specifications;
+  if (!spacetime) return specifications;
+  // The four Pachner kinds, each site produced by the move class that will act
+  // on it -- asked of the move rather than re-derived here, so a site this
+  // returns is one that class recognizes.
+  for (auto &site : ::tessera::spacetime::AddMove::sitesOn(*spacetime))
+    specifications.emplace_back(kAddAt, std::move(site));
+  for (auto &site : ::tessera::spacetime::RemoveMove::sitesOn(*spacetime))
+    specifications.emplace_back(kRemoveAt, std::move(site));
+  for (auto &site : ::tessera::spacetime::FlipMove::sitesOn(*spacetime))
+    specifications.emplace_back(kFlipAt, std::move(site));
+  for (auto &site : ::tessera::spacetime::IFlipMove::sitesOn(*spacetime))
+    specifications.emplace_back(kIFlipAt, std::move(site));
+  // The surgical kinds already name their sites, so they are enumerated in the
+  // same encoding the draw uses -- no second spelling of a cone's payload.
+  for (const auto &topSimplex : spacetime->getTopSimplices())
+    if (topSimplex) specifications.emplace_back(kConeOut, topSimplex->topTuple());
+  for (const auto &facet : spacetime->getBoundary()) {
+    specifications.emplace_back(kConeIn, facet);
+    if (withDispositions) specifications.emplace_back(kConeInTimelike, facet);
+  }
+  if (withDispositions && spacetime->getEdgeList())
+    for (const auto *edge : spacetime->getEdgeList()->toVector())
+      if (edge != nullptr && edge->getSource() != nullptr &&
+          edge->getTarget() != nullptr)
+        specifications.emplace_back(
+            kFlipDisposition,
+            std::vector<std::uint64_t>{edge->getSource()->getId(),
+                                       edge->getTarget()->getId()});
+  return specifications;
+}
+
 bool MultiCobordism::applyMoveSpecification(
     const std::shared_ptr<Spacetime> &spacetime,
     const MoveSpec &moveSpecification) {
@@ -2562,7 +2601,37 @@ bool MultiCobordism::applyMoveSpecification(
   const std::set<std::vector<std::uint64_t>> boundaryBefore =
       gateBoundary ? boundaryFacetsOf(*spacetime) : std::set<std::vector<std::uint64_t>>{};
   bool moveWasApplied = false;
-  if (moveKind == kAddMove || moveKind == kRemoveMove ||
+  // The site-addressed Pachner kinds (#1012): the SAME four moves, proposed at
+  // the site the payload names instead of one drawn from a seed. Everything
+  // after the proposal -- apply, the gates below, the rollback -- is the path
+  // the drawn kinds take, because `proposeAt` leaves the move in exactly the
+  // state a successful `propose()` does.
+  if (moveKind == kAddAt || moveKind == kRemoveAt || moveKind == kFlipAt ||
+      moveKind == kIFlipAt) {
+    using ::tessera::spacetime::PachnerMode;
+    // Unused by these kinds -- the site is named, not drawn -- but the move
+    // classes take a generator, so give each its own rather than share one.
+    std::mt19937 unusedEngine(0u);
+    const auto &site = moveSpecification.second;
+    if (moveKind == kAddAt) {
+      ::tessera::spacetime::AddMove pachnerMove(
+          spacetime.get(), &unusedEngine, false, PachnerMode::PreGeometric,
+          false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    } else if (moveKind == kRemoveAt) {
+      ::tessera::spacetime::RemoveMove pachnerMove(
+          spacetime.get(), &unusedEngine, PachnerMode::PreGeometric, false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    } else if (moveKind == kFlipAt) {
+      ::tessera::spacetime::FlipMove pachnerMove(
+          spacetime.get(), &unusedEngine, PachnerMode::PreGeometric, false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    } else {
+      ::tessera::spacetime::IFlipMove pachnerMove(
+          spacetime.get(), &unusedEngine, PachnerMode::PreGeometric, false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    }
+  } else if (moveKind == kAddMove || moveKind == kRemoveMove ||
       moveKind == kFlipMove || moveKind == kIFlipMove) {
     std::mt19937 moveRandomEngine(
         static_cast<std::uint32_t>(moveSpecification.second[0]));
@@ -2779,10 +2848,19 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     // which reproduces the serial rule exactly: the EARLIEST candidate among
     // equals wins.
     std::vector<MoveSpec> specifications;
-    specifications.reserve(static_cast<std::size_t>(nCandidateMoves));
-    for (int candidateIndex = 0; candidateIndex < nCandidateMoves;
-         ++candidateIndex)
-      specifications.push_back(drawRandomMoveSpecification(*spacetime_));
+    // A NON-POSITIVE count means every candidate rather than a sample of them
+    // (#1012). Read this way round because "how many to draw" and "draw them
+    // all" are the same question, and a caller that asks for none of them means
+    // something no drive can do.
+    if (nCandidateMoves <= 0) {
+      specifications = enumerateMoveSpecifications(spacetime_,
+                                                   shouldProposeDispositions_);
+    } else {
+      specifications.reserve(static_cast<std::size_t>(nCandidateMoves));
+      for (int candidateIndex = 0; candidateIndex < nCandidateMoves;
+           ++candidateIndex)
+        specifications.push_back(drawRandomMoveSpecification(*spacetime_));
+    }
     // Deduplicate exact (kind, payload) repeats before evaluating: the batch
     // samples with replacement, and on a small complex the same spec recurs
     // (the cone-in space can be a dozen-odd facets). Duplicates carry
@@ -3043,8 +3121,19 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
     const int batchSize =
         lookaheadDepth == 1 ? nCandidateMoves
                             : std::max(nCandidateMoves, kDeepLookaheadCandidates);
-    const double objectiveDelta =
-        step(batchSize, lookaheadDepth, baseObjective);
+    double objectiveDelta = step(batchSize, lookaheadDepth, baseObjective);
+    // FINAL CHECK (#625): the draws found nothing, so the step is about to
+    // report that it cannot descend. That claim is about the whole move SET,
+    // which a sample cannot support -- so price every available move before
+    // making it, rather than calling a missed draw a local minimum.
+    //
+    // Only here, and only at depth 1: pricing one move costs a complex
+    // rebuild, a validity check and two solver constructions, so paying for
+    // the whole set on every step would make a long run intractable. This is a
+    // rescue from an apparent dead end, not a second optimization pass.
+    if (lookaheadDepth == 1 && batchSize > 0 &&
+        objectiveDelta >= -convergenceTolerance_)
+      objectiveDelta = step(0, lookaheadDepth, baseObjective);
     if (objectiveDelta < -convergenceTolerance_) {
       // An F-lowering surgery sequence: progress.
       objectiveTrace.push_back(objectiveTrace.back() + objectiveDelta);
@@ -4607,13 +4696,36 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
     }
     return -dF / norm;
   };
-  for (std::size_t e = 0; e < edges.size(); ++e) {
-    gradient.lengths[static_cast<Eigen::Index>(e)] = packHolomorphic(sensitivity(
-        chainhodge::BandDerivative::imagesLengthDerivative(*assembled.op, frames, riesz.images, canonical[e])));
-    if (target.degree == 0)
-      gradient.phases[static_cast<Eigen::Index>(e)] = packHolomorphic(sensitivity(
-          chainhodge::BandDerivative::imagesPhaseDerivative(*assembled.op, frames, riesz.images, canonical[e])));
+  // One edge's dZ is an independent dense solve against the SAME band, and each
+  // writes its own slot, so the sweep is the natural parallel level: no
+  // reduction, no shared accumulator, and the result is bit-identical to the
+  // serial sweep. The caches the derivative path fills lazily are warmed first
+  // (see `warmDerivatives`); nesting is left off so a call from inside stage
+  // 1's candidate batch stays on the outer level.
+  assembled.op->warmDerivatives(target.degree);
+  std::exception_ptr pending = nullptr;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+  for (std::int64_t e = 0; e < static_cast<std::int64_t>(edges.size()); ++e) {
+    try {
+      const std::size_t index = static_cast<std::size_t>(e);
+      gradient.lengths[static_cast<Eigen::Index>(index)] = packHolomorphic(sensitivity(
+          chainhodge::BandDerivative::imagesLengthDerivative(*assembled.op, frames, riesz.images,
+                                                             canonical[index])));
+      if (target.degree == 0)
+        gradient.phases[static_cast<Eigen::Index>(index)] = packHolomorphic(sensitivity(
+            chainhodge::BandDerivative::imagesPhaseDerivative(*assembled.op, frames, riesz.images,
+                                                              canonical[index])));
+    } catch (...) {
+      // An exception may not leave an OpenMP region: capture the first and
+      // rethrow after the join, so a singular pencil still reaches the callers
+      // that catch it rather than aborting the process.
+#pragma omp critical(tessera_fiber_gradient_eptr)
+      if (!pending) pending = std::current_exception();
+    }
   }
+  if (pending) std::rethrow_exception(pending);
   return gradient;
 }
 
@@ -4686,41 +4798,72 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
     term.targetMotion.resize(edges.size());
     const auto ownEdges = ownAssembled.complex().kSimplexVertices(1);
     const auto rank = static_cast<Eigen::Index>(marking.rank());
-    for (std::size_t j = 0; j < ownEdges.size(); ++j) {
-      const auto parent = parentIndex.find({ownEdges[j][0], ownEdges[j][1]});
-      if (parent == parentIndex.end())
-        throw std::logic_error("MultiCobordism::inputStateResidualGradientsOn: an edge of the block's own complex "
-                               "is absent from the parent");
-      const Eigen::MatrixXcd dZ =
-          chainhodge::BandDerivative::imagesLengthDerivative(*ownAssembled.op, ownFrames, ownBand.images, j);
-      Eigen::MatrixXcd dPeriods(rank, rank);
-      for (Eigen::Index cycle = 0; cycle < rank; ++cycle)
-        for (Eigen::Index a = 0; a < rank; ++a)
-          dPeriods(cycle, a) = ownAssembled.op->connection().transportedPeriod(
-              dZ.col(a), marking.cycles[static_cast<std::size_t>(cycle)]);
-      const Eigen::MatrixXcd dF = dZ * periodsInverse - F * (dPeriods * periodsInverse);
-      term.targetMotion[parent->second] = Eigen::VectorXcd(dF * marking.coefficients);
+    // The block's own sweep: one independent dZ per own edge, each landing in
+    // its own parent slot (the parent index is injective on own edges), so the
+    // loop parallelizes without touching the ordering of anything it writes.
+    ownAssembled.op->warmDerivatives(1);
+    std::exception_ptr ownPending = nullptr;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+    for (std::int64_t je = 0; je < static_cast<std::int64_t>(ownEdges.size()); ++je) {
+      try {
+        const std::size_t j = static_cast<std::size_t>(je);
+        const auto parent = parentIndex.find({ownEdges[j][0], ownEdges[j][1]});
+        if (parent == parentIndex.end())
+          throw std::logic_error("MultiCobordism::inputStateResidualGradientsOn: an edge of the block's own complex "
+                                 "is absent from the parent");
+        const Eigen::MatrixXcd dZ =
+            chainhodge::BandDerivative::imagesLengthDerivative(*ownAssembled.op, ownFrames, ownBand.images, j);
+        Eigen::MatrixXcd dPeriods(rank, rank);
+        for (Eigen::Index cycle = 0; cycle < rank; ++cycle)
+          for (Eigen::Index a = 0; a < rank; ++a)
+            dPeriods(cycle, a) = ownAssembled.op->connection().transportedPeriod(
+                dZ.col(a), marking.cycles[static_cast<std::size_t>(cycle)]);
+        const Eigen::MatrixXcd dF = dZ * periodsInverse - F * (dPeriods * periodsInverse);
+        term.targetMotion[parent->second] = Eigen::VectorXcd(dF * marking.coefficients);
+      } catch (...) {
+#pragma omp critical(tessera_input_state_gradient_eptr)
+        if (!ownPending) ownPending = std::current_exception();
+      }
     }
+    if (ownPending) std::rethrow_exception(ownPending);
     term.active = true;
   }
   if (std::none_of(terms.begin(), terms.end(), [](const BlockTerms &term) { return term.active; })) return gradients;
   // dr = 2 Re(dF . dcoord), dF = [u^H (dt - dZ_T c) - r t^H dt] / |t|^2, the
   // whole's dZ on this edge shared by every block.
-  for (std::size_t e = 0; e < edges.size(); ++e) {
-    const Eigen::MatrixXcd dZ =
-        chainhodge::BandDerivative::imagesLengthDerivative(*assembled.op, frames, riesz.images, canonical[e]);
-    for (std::size_t b = 0; b < blocks.size(); ++b) {
-      const BlockTerms &term = terms[b];
-      if (!term.active) continue;
-      Eigen::VectorXcd dZTc(static_cast<Eigen::Index>(term.idx.size()));
-      for (std::size_t i = 0; i < term.idx.size(); ++i)
-        dZTc(static_cast<Eigen::Index>(i)) = dZ.row(term.idx[i]) * term.c;
-      complexd dF = -term.u.dot(dZTc);
-      if (term.targetMotion[e])
-        dF += term.u.dot(*term.targetMotion[e]) - term.leak * term.t.dot(*term.targetMotion[e]);
-      gradients[b].lengths[static_cast<Eigen::Index>(e)] = packHolomorphic(dF / term.norm);
+  // The whole's sweep, and the expensive one: dZ on this edge is shared by
+  // every block, and each block writes only its own (b, e) slot, so edges
+  // distribute across threads with no interaction. Bit-identical to the serial
+  // sweep -- nothing here accumulates across iterations.
+  assembled.op->warmDerivatives(1);
+  std::exception_ptr pending = nullptr;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+  for (std::int64_t ee = 0; ee < static_cast<std::int64_t>(edges.size()); ++ee) {
+    try {
+      const std::size_t e = static_cast<std::size_t>(ee);
+      const Eigen::MatrixXcd dZ =
+          chainhodge::BandDerivative::imagesLengthDerivative(*assembled.op, frames, riesz.images, canonical[e]);
+      for (std::size_t b = 0; b < blocks.size(); ++b) {
+        const BlockTerms &term = terms[b];
+        if (!term.active) continue;
+        Eigen::VectorXcd dZTc(static_cast<Eigen::Index>(term.idx.size()));
+        for (std::size_t i = 0; i < term.idx.size(); ++i)
+          dZTc(static_cast<Eigen::Index>(i)) = dZ.row(term.idx[i]) * term.c;
+        complexd dF = -term.u.dot(dZTc);
+        if (term.targetMotion[e])
+          dF += term.u.dot(*term.targetMotion[e]) - term.leak * term.t.dot(*term.targetMotion[e]);
+        gradients[b].lengths[static_cast<Eigen::Index>(e)] = packHolomorphic(dF / term.norm);
+      }
+    } catch (...) {
+#pragma omp critical(tessera_input_state_gradient_eptr)
+      if (!pending) pending = std::current_exception();
     }
   }
+  if (pending) std::rethrow_exception(pending);
   return gradients;
 }
 
@@ -4782,12 +4925,52 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     const complexd s2 = (T.conjugate().cwiseProduct(dT)).sum();           // <T, dT>
     return -(overlap * s1 * tt - std::norm(overlap) * s2) / (tt * tt * cc);
   };
-  for (std::size_t e = 0; e < edges.size(); ++e) {
-    gradient.lengths[static_cast<Eigen::Index>(e)] = packHolomorphic(sensitivity(
-        chainhodge::BandDerivative::pencilOperatorLengthDerivative(*assembled.op, A->degree, canonical[e])));
-    if (A->degree == 0)
-      gradient.phases[static_cast<Eigen::Index>(e)] = packHolomorphic(sensitivity(
-          chainhodge::BandDerivative::pencilOperatorPhaseDerivative(*assembled.op, A->degree, canonical[e])));
+  // TWO PHASES, and the split is deliberate. The expensive half is the dense
+  // operator derivative per edge, which parallelizes; `sensitivity` is the
+  // cheap half, and it is the FP-sensitive one — a Release build links with
+  // LTO, so pulling it into an OpenMP-outlined body changes the inliner's
+  // choices and with them whether `a*b+c` contracts to an FMA, which moves the
+  // result by an ULP. Keeping it in a PLAIN SERIAL loop over the edges in
+  // order keeps that arithmetic bit-for-bit what the serial sweep produced.
+  //
+  // The derivatives are held for a bounded window rather than all at once:
+  // they are dense n_k x n_k, so one per edge would be O(E n^2) live at the
+  // peak. A window keeps the scratch flat while phase 2 still walks the edges
+  // in their original order.
+  assembled.op->warmDerivatives(A->degree);
+  const std::size_t window = 32;
+  std::vector<Eigen::MatrixXcd> lengthDerivatives(window);
+  std::vector<Eigen::MatrixXcd> phaseDerivatives(A->degree == 0 ? window : 0);
+  for (std::size_t base = 0; base < edges.size(); base += window) {
+    const std::size_t upper = std::min(base + window, edges.size());
+    const auto span = static_cast<std::int64_t>(upper - base);
+    std::exception_ptr pending = nullptr;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+    for (std::int64_t i = 0; i < span; ++i) {
+      try {
+        const std::size_t slot = static_cast<std::size_t>(i);
+        const std::size_t e = base + slot;
+        lengthDerivatives[slot] = chainhodge::BandDerivative::pencilOperatorLengthDerivative(
+            *assembled.op, A->degree, canonical[e]);
+        if (A->degree == 0)
+          phaseDerivatives[slot] = chainhodge::BandDerivative::pencilOperatorPhaseDerivative(
+              *assembled.op, A->degree, canonical[e]);
+      } catch (...) {
+#pragma omp critical(tessera_two_body_gradient_eptr)
+        if (!pending) pending = std::current_exception();
+      }
+    }
+    if (pending) std::rethrow_exception(pending);
+    for (std::size_t slot = 0; slot < static_cast<std::size_t>(span); ++slot) {
+      const std::size_t e = base + slot;
+      gradient.lengths[static_cast<Eigen::Index>(e)] =
+          packHolomorphic(sensitivity(lengthDerivatives[slot]));
+      if (A->degree == 0)
+        gradient.phases[static_cast<Eigen::Index>(e)] =
+            packHolomorphic(sensitivity(phaseDerivatives[slot]));
+    }
   }
   return gradient;
 }

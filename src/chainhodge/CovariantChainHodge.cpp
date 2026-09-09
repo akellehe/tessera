@@ -324,6 +324,20 @@ const CovariantChainHodge::DerivativeWorkspace &CovariantChainHodge::derivativeW
   return *slot;
 }
 
+void CovariantChainHodge::warmDerivatives(int k) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  // Only the Whitney preset below the dense crossover has the derivative
+  // workspace at all; anywhere else there is nothing to warm and asking for it
+  // would throw, so the caller can warm unconditionally.
+  if (preset() != Preset::L2) return;
+  if (base_->size(k) >= base_->crossoverDimension()) return;
+  // Fills workspace_[k], and through solveDressed the factorizations at k and
+  // (for k >= 1) at k-1 -- every mutable slot the length and phase derivative
+  // paths touch. `resolvent` factorizes its own bordered system per call and
+  // caches nothing, so it needs no warming.
+  (void)derivativeWorkspace(k);
+}
+
 Eigen::MatrixXcd CovariantChainHodge::assembleDerivative(
     int k, const SparseMatrix *dMkm1, const SparseMatrix *dMk, const SparseMatrix *dMkp1,
     const SparseMatrix *dBk, const SparseMatrix *dBkDual, const SparseMatrix *dBkp1,

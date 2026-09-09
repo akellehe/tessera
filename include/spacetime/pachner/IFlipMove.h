@@ -45,6 +45,12 @@ public:
             PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
+  /// Propose at a NAMED edge: \p site is the top cell's vertex ids followed by
+  /// the edge's two endpoint ids (see `sitesOn`).
+  bool proposeAt(const std::vector<std::uint64_t> &site) override;
+  /// Every (cell, edge-in-that-cell) pair, each as the cell's ids followed by
+  /// the edge's two endpoints.
+  static std::vector<std::vector<std::uint64_t>> sitesOn(const Spacetime &spacetime);
   int dN0() const override { return 0; }
   int dN41() const override { return dN41_; }
   int dN32() const override { return dN32_; }
@@ -60,6 +66,11 @@ public:
   std::string moveType() const override { return kMoveType; }
 
 private:
+  /// The shared body of every proposal: everything after the cell and the edge
+  /// within it are chosen. `propose` draws them, `proposeAt` is handed them.
+  bool proposeOn(SimplexPtr sigma, EdgePtr edge);
+
+
   Spacetime *st_;
   std::unique_ptr<std::mt19937> ownedRng_;
   std::mt19937 *rng_;

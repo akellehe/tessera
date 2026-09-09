@@ -290,6 +290,21 @@ class CovariantChainHodge {
   /// pair is that edge moves by \f$ \pm i \f$ times itself, in the metrics and in
   /// the twisted incidences alike. Below the crossover.
   [[nodiscard]] Eigen::MatrixXcd covariantOperatorPhaseDerivative(int k, std::size_t edgeIndex) const;
+  /// Populate the lazy derivative caches at degree \p k (the sparse metric
+  /// factorizations and the dense derivative workspace) so that later `const`
+  /// calls only READ them.
+  ///
+  /// `solveDressed` and `derivativeWorkspace` fill `mutable` slots on first
+  /// use, which makes two threads calling any of the derivative entry points
+  /// concurrently a data race on the shared instance — the same hazard
+  /// `MultiCobordism::step` fixed for the facet lattice with
+  /// `materializeFacets`. A per-edge gradient loop calls this ONCE, serially,
+  /// before going parallel; after it every slot is non-null and the shared
+  /// `Eigen::SparseLU` is only ever solved against, which is thread-safe (the
+  /// factors are read-only and the supernodal solve keeps its work buffer on
+  /// the stack). Idempotent, and a no-op for a preset or a degree that has no
+  /// dense derivative.
+  void warmDerivatives(int k) const;
   /// \f$ \partial M_k^U/\partial s_e \f$: the dressed sparse metric derivative
   /// (the dressing is independent of \f$ s \f$).
   [[nodiscard]] SparseMatrix dressedDerivative(int k, std::size_t edgeIndex) const;

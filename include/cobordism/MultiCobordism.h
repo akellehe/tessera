@@ -614,6 +614,38 @@ class MultiCobordism {
   /// The two disposition moves (#613).
   static constexpr const char *kConeInTimelike = "cone_in_timelike";
   static constexpr const char *kFlipDisposition = "flip_disposition";
+  /// One candidate move: its KIND, and the payload naming where or how to act.
+  ///
+  /// Public because `enumerateMoveSpecifications` returns these and callers
+  /// read them; the draw that also produces them stays private.
+  using MoveSpec = std::pair<std::string, std::vector<std::uint64_t>>;
+
+  /// The four Pachner kinds ADDRESSED BY SITE (#1012): same moves, but the
+  /// payload names where to act instead of seeding a draw.
+  ///
+  /// Distinct names rather than an overloaded payload, because a bare vertex id
+  /// and a bare seed are both one integer and could not be told apart by
+  /// inspection. With separate names a spec says what it means, and the drawn
+  /// kinds keep working byte-for-byte.
+  static constexpr const char *kAddAt = "add_at";
+  static constexpr const char *kRemoveAt = "remove_at";
+  static constexpr const char *kFlipAt = "flip_at";
+  static constexpr const char *kIFlipAt = "iflip_at";
+
+  /// EVERY candidate move on \p spacetime, rather than a sample of them.
+  ///
+  /// `drawRandomMoveSpecification` picks a KIND uniformly and only then a site,
+  /// so a batch of n draws is n/6 samples per kind against site sets of order
+  /// the cell count -- and three of the four Pachner kinds draw their site from
+  /// `Spacetime::rng`, which no seed controls. Enumeration removes both
+  /// problems: the walk is complete and it is reproducible.
+  ///
+  /// The Pachner kinds come back as the `*_at` kinds above; the cone and
+  /// disposition kinds already name their sites and come back unchanged. Every
+  /// returned spec is a candidate to SCORE, not a promise that it applies: the
+  /// gates still refuse what they always refused.
+  [[nodiscard]] static std::vector<MoveSpec> enumerateMoveSpecifications(
+      const std::shared_ptr<Spacetime> &spacetime, bool withDispositions = false);
 
   /// A `kFlipDisposition` payload names one edge by its two endpoint vertex ids.
   static constexpr std::size_t kEdgeEndpointCount = 2;
@@ -2327,7 +2359,6 @@ class MultiCobordism {
   using Snapshot =
       std::pair<std::vector<std::vector<std::uint64_t>>,
                 std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry>>;
-  using MoveSpec = std::pair<std::string, std::vector<std::uint64_t>>;
 
   // ---- the pieces of residualOfTargetStateAgainstHarmonic ----
   /// The target state as a dense complex vector — the `t` the harmonic is fitted to,
