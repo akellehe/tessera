@@ -173,6 +173,20 @@ DECLARED_STAGE2_ITERS = 12
 #: Pachner moves plus the cone-outs and cone-ins, not the surgical moves
 #: alone. The depth is over the whole draw, not over a subset of it.
 DECLARED_SURGICAL_DEPTH = 1
+#: Fixed breadth for the combinatorial search, or zero for the deepening
+#: schedule above.
+#:
+#: Non-zero runs the depth ladder the other way round: stage 1 searches
+#: sequences of exactly this many moves FIRST, and backs off one move at a
+#: time -- to this many minus one, then minus two, down to single moves --
+#: only when nothing at the current breadth lowers the objective.
+#:
+#: The two schedules answer different questions. The deepening schedule finds
+#: a single improving move whenever one exists and only ever looks at pairs
+#: on a plateau; the backing-off schedule asks whether a composition of this
+#: length improves a complex that no shorter composition improves, which means
+#: looking there first. Zero keeps the deepening schedule.
+DECLARED_COMBINATORIAL_BREADTH = 0
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -2111,9 +2125,11 @@ def drive(config, progress=False, on_frame=None, on_node=None):
         # combinatorial move rebuilds the complex from a snapshot of its
         # cells and every edge's length and phase, and stage 2 then relaxes
         # every edge of the rebuilt complex.
-        list(node.run_stage1(max_steps=config["stage1_iters"],
-                             n_candidate_moves=config["candidate_moves"],
-                             max_lookahead=config["surgical_depth"]))
+        list(node.run_stage1(
+            max_steps=config["stage1_iters"],
+            n_candidate_moves=config["candidate_moves"],
+            max_lookahead=config["surgical_depth"],
+            combinatorial_breadth=config["combinatorial_breadth"]))
         list(node.run_stage2(max_iters=config["stage2_iters"],
                              tolerance=config["tolerance"]))
         frames.append(EmergenceFrame(node, node.spacetime(), step, config,
@@ -3394,6 +3410,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  patience=DECLARED_PATIENCE,
                  candidate_moves=DECLARED_CANDIDATE_MOVES,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
+                 combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
@@ -3448,6 +3465,12 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if surgical_depth < 1:
         raise ValueError("surgical depth must be at least 1, got %r"
                          % (surgical_depth,))
+    if combinatorial_breadth < 0:
+        raise ValueError("combinatorial breadth is how many moves stage 1 "
+                         "composes into one candidate before it starts "
+                         "backing off, so it cannot be negative; zero keeps "
+                         "the deepening schedule. Got %r"
+                         % (combinatorial_breadth,))
     if not (tolerance > 0.0 and math.isfinite(tolerance)):
         raise ValueError("tolerance must be a positive finite absolute "
                          "threshold, got %r" % (tolerance,))
@@ -3463,6 +3486,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "tolerance": tolerance,
         "patience": patience,
         "surgical_depth": surgical_depth,
+        "combinatorial_breadth": int(combinatorial_breadth),
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -3534,6 +3558,23 @@ def build_parser():
                           "cone-outs and cone-ins alike -- not the surgical "
                           "moves alone (default %d, single moves)"
                           % DECLARED_SURGICAL_DEPTH)
+    run.add_argument("--combinatorial-breadth", type=int,
+                     dest="combinatorial_breadth",
+                     default=DECLARED_COMBINATORIAL_BREADTH,
+                     help="how many moves stage 1 composes into ONE candidate "
+                          "before it starts backing off. Non-zero runs the "
+                          "search the other way round from --surgical-depth: "
+                          "sequences of exactly this many moves are tried "
+                          "FIRST, and the search shortens by one move -- to "
+                          "this many minus one, then minus two, down to "
+                          "single moves -- only when nothing at the current "
+                          "breadth lowers the objective. It asks whether a "
+                          "composition of this length improves a complex that "
+                          "no shorter composition improves. Combined with "
+                          "--candidate-moves 0 the search at every breadth is "
+                          "exhaustive, which costs the move space raised to "
+                          "the breadth. Default %d, the deepening schedule"
+                          % DECLARED_COMBINATORIAL_BREADTH)
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
                      help="ABSOLUTE objective tolerance (default %g). Stage "
                           "2 backs its line search off until a trial lowers "
@@ -3672,6 +3713,7 @@ def main(argv=None):
                           patience=args.patience,
                           candidate_moves=args.candidate_moves,
                           surgical_depth=args.surgical_depth,
+                          combinatorial_breadth=args.combinatorial_breadth,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
