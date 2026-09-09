@@ -49,7 +49,12 @@ bool RemoveMove::propose() {
   // Use the spacetime's RNG-free getRandomVertex for parity with the
   // existing code; we don't get to influence vertex selection here.
   // (CDT::remove does the same.)
-  VertexPtr v = st_->getRandomVertex();
+  // The generator this move was HANDED, not the complex's own. The
+  // no-argument overload reads `Spacetime::rng`, which is initialized from
+  // `std::random_device`, so a target drawn through it comes from entropy and
+  // no seed can reproduce it (#1013). Every caller already supplies a
+  // generator for exactly this purpose.
+  VertexPtr v = st_->getRandomVertex(*rng_);
   if (!v) return false;
 
   std::vector<SimplexPtr> incident;
@@ -129,7 +134,12 @@ bool RemoveMove::propose() {
 }
 
 bool RemoveMove::proposePreGeometric() {
-  VertexPtr v = st_->getRandomVertex();
+  // The generator this move was HANDED, not the complex's own. The
+  // no-argument overload reads `Spacetime::rng`, which is initialized from
+  // `std::random_device`, so a target drawn through it comes from entropy and
+  // no seed can reproduce it (#1013). Every caller already supplies a
+  // generator for exactly this purpose.
+  VertexPtr v = st_->getRandomVertex(*rng_);
   if (!v) return false;
 
   // Read the top-cell vertex count off v's incident cells.
