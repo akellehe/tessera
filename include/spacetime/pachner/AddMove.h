@@ -46,6 +46,14 @@ public:
           PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
+  /// Propose at a NAMED top cell: \p site is that cell's vertex ids, in any
+  /// order (see `sitesOn`). Pre-geometric mode only -- the CDT path's target
+  /// is a causal pair, not a single cell, and is not addressable this way.
+  bool proposeAt(const std::vector<std::uint64_t> &site) override;
+  /// Every cell this move could subdivide, each as its vertex ids. The 1->(d+1)
+  /// stellar move lives inside ONE cell, so the site set is exactly the top
+  /// cells big enough to subdivide.
+  static std::vector<std::vector<std::uint64_t>> sitesOn(const Spacetime &spacetime);
   int dN0() const override { return 1; }
   int dN41() const override { return dN41_; }
   int dN32() const override { return 0; }
@@ -66,6 +74,10 @@ private:
   // 1 cell with d+1.  Always interior (it never touches ∂W), so it is
   // unconditionally boundary-fixed-safe.
   bool proposePreGeometric();
+  /// The shared body of both proposals: everything after the cell is chosen.
+  /// `propose` draws the cell, `proposeAt` is handed it, and neither has its
+  /// own copy of what follows.
+  bool proposePreGeometricOn(SimplexPtr sigma);
   bool applyPreGeometric();
   void rollbackPreGeometric();
 

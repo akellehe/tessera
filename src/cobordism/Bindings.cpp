@@ -1643,6 +1643,25 @@ assertion. Every pairing is the transpose.)doc")
       .def_property_readonly("has_fixed_boundary", &MultiCobordism::hasFixedBoundary,
                              "Whether this node declares a boundary it holds fixed: any surface "
                              "input or output block, or any pinned region.")
+      .def_static("enumerate_move_specifications",
+                  [](const std::shared_ptr<Spacetime> &spacetime,
+                     bool with_dispositions) {
+                    return MultiCobordism::enumerateMoveSpecifications(
+                        spacetime, with_dispositions);
+                  },
+                  py::arg("spacetime"), py::arg("with_dispositions") = false,
+                  "EVERY candidate move on `spacetime` as (kind, site) pairs, "
+                  "rather than a sample of them. The random draw picks a KIND "
+                  "uniformly and only then a site, so n draws is n/6 samples "
+                  "per kind against site sets of order the cell count; and "
+                  "three of the four Pachner kinds draw their site from "
+                  "Spacetime::rng, which no seed controls. Enumeration is "
+                  "complete and reproducible. The Pachner kinds come back as "
+                  "add_at / remove_at / flip_at / iflip_at, whose payload names "
+                  "the site; the cone and disposition kinds already name theirs "
+                  "and come back unchanged. Every entry is a candidate to "
+                  "SCORE, not a promise that it applies -- the gates still "
+                  "refuse what they always refused.")
       .def_static("boundary_facets",
                   [](const Spacetime &spacetime) {
                     // A list, not a set: the C++ side keeps a std::set for the

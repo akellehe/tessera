@@ -46,6 +46,13 @@ public:
              PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
+  /// Propose at a NAMED vertex: \p site is the single vertex id to remove
+  /// (see `sitesOn`). Pre-geometric mode only.
+  bool proposeAt(const std::vector<std::uint64_t> &site) override;
+  /// Every vertex this move could remove, each as a one-element id list. The
+  /// (d+1)->1 move collapses one vertex, so the site set is the vertices; the
+  /// incidence conditions are left to the proposal, which already checks them.
+  static std::vector<std::vector<std::uint64_t>> sitesOn(const Spacetime &spacetime);
   int dN0() const override { return -1; }
   int dN41() const override { return dN41_; }
   int dN32() const override { return 0; }
@@ -69,6 +76,8 @@ private:
   // interior, so the move never touches ∂W.  rollback() is shared with
   // the CDT path (it is generic over the removed-cell count).
   bool proposePreGeometric();
+  /// The shared body of both proposals: everything after the vertex is chosen.
+  bool proposePreGeometricOn(VertexPtr v);
   bool applyPreGeometric();
 
   // Unregister every sub-top-dimensional simplex (facet/hinge) still incident to

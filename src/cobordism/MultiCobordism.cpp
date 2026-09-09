@@ -2545,6 +2545,40 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
           boundaryFacets[randomNumberGenerator_() % boundaryFacets.size()]};
 }
 
+std::vector<MultiCobordism::MoveSpec> MultiCobordism::enumerateMoveSpecifications(
+    const std::shared_ptr<Spacetime> &spacetime, bool withDispositions) {
+  std::vector<MoveSpec> specifications;
+  if (!spacetime) return specifications;
+  // The four Pachner kinds, each site produced by the move class that will act
+  // on it -- asked of the move rather than re-derived here, so a site this
+  // returns is one that class recognizes.
+  for (auto &site : ::tessera::spacetime::AddMove::sitesOn(*spacetime))
+    specifications.emplace_back(kAddAt, std::move(site));
+  for (auto &site : ::tessera::spacetime::RemoveMove::sitesOn(*spacetime))
+    specifications.emplace_back(kRemoveAt, std::move(site));
+  for (auto &site : ::tessera::spacetime::FlipMove::sitesOn(*spacetime))
+    specifications.emplace_back(kFlipAt, std::move(site));
+  for (auto &site : ::tessera::spacetime::IFlipMove::sitesOn(*spacetime))
+    specifications.emplace_back(kIFlipAt, std::move(site));
+  // The surgical kinds already name their sites, so they are enumerated in the
+  // same encoding the draw uses -- no second spelling of a cone's payload.
+  for (const auto &topSimplex : spacetime->getTopSimplices())
+    if (topSimplex) specifications.emplace_back(kConeOut, topSimplex->topTuple());
+  for (const auto &facet : spacetime->getBoundary()) {
+    specifications.emplace_back(kConeIn, facet);
+    if (withDispositions) specifications.emplace_back(kConeInTimelike, facet);
+  }
+  if (withDispositions && spacetime->getEdgeList())
+    for (const auto *edge : spacetime->getEdgeList()->toVector())
+      if (edge != nullptr && edge->getSource() != nullptr &&
+          edge->getTarget() != nullptr)
+        specifications.emplace_back(
+            kFlipDisposition,
+            std::vector<std::uint64_t>{edge->getSource()->getId(),
+                                       edge->getTarget()->getId()});
+  return specifications;
+}
+
 bool MultiCobordism::applyMoveSpecification(
     const std::shared_ptr<Spacetime> &spacetime,
     const MoveSpec &moveSpecification) {
@@ -2562,7 +2596,37 @@ bool MultiCobordism::applyMoveSpecification(
   const std::set<std::vector<std::uint64_t>> boundaryBefore =
       gateBoundary ? boundaryFacetsOf(*spacetime) : std::set<std::vector<std::uint64_t>>{};
   bool moveWasApplied = false;
-  if (moveKind == kAddMove || moveKind == kRemoveMove ||
+  // The site-addressed Pachner kinds (#1012): the SAME four moves, proposed at
+  // the site the payload names instead of one drawn from a seed. Everything
+  // after the proposal -- apply, the gates below, the rollback -- is the path
+  // the drawn kinds take, because `proposeAt` leaves the move in exactly the
+  // state a successful `propose()` does.
+  if (moveKind == kAddAt || moveKind == kRemoveAt || moveKind == kFlipAt ||
+      moveKind == kIFlipAt) {
+    using ::tessera::spacetime::PachnerMode;
+    // Unused by these kinds -- the site is named, not drawn -- but the move
+    // classes take a generator, so give each its own rather than share one.
+    std::mt19937 unusedEngine(0u);
+    const auto &site = moveSpecification.second;
+    if (moveKind == kAddAt) {
+      ::tessera::spacetime::AddMove pachnerMove(
+          spacetime.get(), &unusedEngine, false, PachnerMode::PreGeometric,
+          false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    } else if (moveKind == kRemoveAt) {
+      ::tessera::spacetime::RemoveMove pachnerMove(
+          spacetime.get(), &unusedEngine, PachnerMode::PreGeometric, false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    } else if (moveKind == kFlipAt) {
+      ::tessera::spacetime::FlipMove pachnerMove(
+          spacetime.get(), &unusedEngine, PachnerMode::PreGeometric, false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    } else {
+      ::tessera::spacetime::IFlipMove pachnerMove(
+          spacetime.get(), &unusedEngine, PachnerMode::PreGeometric, false);
+      moveWasApplied = pachnerMove.proposeAt(site) && pachnerMove.apply();
+    }
+  } else if (moveKind == kAddMove || moveKind == kRemoveMove ||
       moveKind == kFlipMove || moveKind == kIFlipMove) {
     std::mt19937 moveRandomEngine(
         static_cast<std::uint32_t>(moveSpecification.second[0]));
@@ -2779,10 +2843,19 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     // which reproduces the serial rule exactly: the EARLIEST candidate among
     // equals wins.
     std::vector<MoveSpec> specifications;
-    specifications.reserve(static_cast<std::size_t>(nCandidateMoves));
-    for (int candidateIndex = 0; candidateIndex < nCandidateMoves;
-         ++candidateIndex)
-      specifications.push_back(drawRandomMoveSpecification(*spacetime_));
+    // A NON-POSITIVE count means every candidate rather than a sample of them
+    // (#1012). Read this way round because "how many to draw" and "draw them
+    // all" are the same question, and a caller that asks for none of them means
+    // something no drive can do.
+    if (nCandidateMoves <= 0) {
+      specifications = enumerateMoveSpecifications(spacetime_,
+                                                   shouldProposeDispositions_);
+    } else {
+      specifications.reserve(static_cast<std::size_t>(nCandidateMoves));
+      for (int candidateIndex = 0; candidateIndex < nCandidateMoves;
+           ++candidateIndex)
+        specifications.push_back(drawRandomMoveSpecification(*spacetime_));
+    }
     // Deduplicate exact (kind, payload) repeats before evaluating: the batch
     // samples with replacement, and on a small complex the same spec recurs
     // (the cone-in space can be a dozen-odd facets). Duplicates carry
@@ -3043,8 +3116,19 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
     const int batchSize =
         lookaheadDepth == 1 ? nCandidateMoves
                             : std::max(nCandidateMoves, kDeepLookaheadCandidates);
-    const double objectiveDelta =
-        step(batchSize, lookaheadDepth, baseObjective);
+    double objectiveDelta = step(batchSize, lookaheadDepth, baseObjective);
+    // FINAL CHECK (#625): the draws found nothing, so the step is about to
+    // report that it cannot descend. That claim is about the whole move SET,
+    // which a sample cannot support -- so price every available move before
+    // making it, rather than calling a missed draw a local minimum.
+    //
+    // Only here, and only at depth 1: pricing one move costs a complex
+    // rebuild, a validity check and two solver constructions, so paying for
+    // the whole set on every step would make a long run intractable. This is a
+    // rescue from an apparent dead end, not a second optimization pass.
+    if (lookaheadDepth == 1 && batchSize > 0 &&
+        objectiveDelta >= -convergenceTolerance_)
+      objectiveDelta = step(0, lookaheadDepth, baseObjective);
     if (objectiveDelta < -convergenceTolerance_) {
       // An F-lowering surgery sequence: progress.
       objectiveTrace.push_back(objectiveTrace.back() + objectiveDelta);

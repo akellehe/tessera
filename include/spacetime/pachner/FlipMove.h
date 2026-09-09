@@ -42,6 +42,14 @@ public:
            PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
+  /// Propose at a NAMED facet: \p site is the top cell's vertex ids followed
+  /// by the id of the ONE vertex to drop, which is what names the facet to
+  /// flip across (see `sitesOn`). Pre-geometric mode only.
+  bool proposeAt(const std::vector<std::uint64_t> &site) override;
+  /// Every (cell, dropped vertex) pair, each as the cell's ids followed by the
+  /// dropped id. Whether the resulting facet actually has two cofaces is left
+  /// to the proposal, which already refuses a boundary or non-manifold facet.
+  static std::vector<std::vector<std::uint64_t>> sitesOn(const Spacetime &spacetime);
   int dN0() const override { return 0; }
   int dN41() const override { return dN41_; }
   int dN32() const override { return dN32_; }
@@ -67,6 +75,9 @@ private:
   /// manifold-preservation check (apex edge must not pre-exist).  In
   /// boundary-fixed mode the operative facet must be interior.
   bool proposePreGeometric();
+  /// The shared body of both proposals: everything after the cell and the
+  /// dropped vertex are chosen.
+  bool proposePreGeometricOn(SimplexPtr sigma, std::size_t drop);
 
   bool proposed_ = false;
   std::vector<VertexPtrs> oldSimplexVerts_;

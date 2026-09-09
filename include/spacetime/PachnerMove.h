@@ -289,6 +289,52 @@ public:
   /// Returns ``true`` on success, ``false`` if no eligible target.
   virtual bool propose() = 0;
 
+  /// Propose at a NAMED site instead of a drawn one, so a caller can walk the
+  /// move space instead of sampling it.
+  ///
+  /// ``propose()`` draws its target, which makes the move space impossible to
+  /// enumerate and, for the subclasses whose draw reads ``Spacetime::rng``
+  /// (seeded from ``std::random_device``), impossible to reproduce from any
+  /// seed.  ``proposeAt`` takes the same decision from its argument.  On
+  /// success the object is in exactly the state a successful ``propose()``
+  /// leaves it in, so ``apply()``, ``rollback()`` and the ``dN*`` counters
+  /// behave identically; the two differ only in how the target was chosen.
+  ///
+  /// The site encoding is the subclass's own, documented on each override and
+  /// produced by its ``sitesOn``.  Returns ``false`` when the site does not
+  /// exist or is not eligible, exactly as ``propose()`` does when it finds no
+  /// eligible target.
+  ///
+  /// Defaults to ``false``: a subclass that has not opted in is simply not
+  /// enumerable, and says so rather than silently proposing something else.
+  virtual bool proposeAt(const std::vector<std::uint64_t> & /*site*/) {
+    return false;
+  }
+
+  /// The top simplex whose vertex ids are exactly \p site, or nullptr.
+  ///
+  /// A linear scan of the top cells rather than a lookup: every enumerable
+  /// site is itself a top cell, so a walk of the move space is already
+  /// O(cells) and this keeps each subclass from re-deriving the same match.
+  /// Compares as a SET, because a site is named by which vertices it has and
+  /// never by the order they happen to be stored in.
+  static SimplexPtr topSimplexWithIds(const Spacetime &spacetime,
+                                      const std::vector<std::uint64_t> &site) {
+    if (site.empty()) return nullptr;
+    std::vector<std::uint64_t> wanted(site);
+    std::sort(wanted.begin(), wanted.end());
+    for (const auto &topSimplex : spacetime.getTopSimplices()) {
+      if (!topSimplex || topSimplex->size() != site.size()) continue;
+      std::vector<std::uint64_t> have;
+      have.reserve(topSimplex->size());
+      for (const auto &vertex : topSimplex->getVertices())
+        if (vertex) have.push_back(vertex->getId());
+      std::sort(have.begin(), have.end());
+      if (have == wanted) return topSimplex;
+    }
+    return nullptr;
+  }
+
   /// Combinatorial change in vertex count if this move is applied.
   /// Valid only after a successful ``propose()``.
   virtual int dN0() const = 0;
