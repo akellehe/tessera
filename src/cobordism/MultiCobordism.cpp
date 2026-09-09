@@ -1047,7 +1047,12 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
   // whole-complex fiber residual replaces the near-kernel hole-forcing term.
   if (useFiberResiduals_) {
     if (wholeFiberTarget_) totalResidual += fiberResidualOn(spacetime, *wholeFiberTarget_);
-    if (twoBodyTarget_) totalResidual += twoBodyResidualOn(spacetime, *twoBodyTarget_);
+    // The cases, when set, ARE the two-body term (#1017): one bulk scored
+    // against several input pairs at once, so every move is priced against all
+    // of them. With none set this is the single target, unchanged.
+    if (!twoBodyCases_.empty() && spacetime == spacetime_)
+      totalResidual += twoBodyResidualOverCases();
+    else if (twoBodyTarget_) totalResidual += twoBodyResidualOn(spacetime, *twoBodyTarget_);
     return totalResidual;
   }
   const std::size_t expectedRegisters = expectedRegisterCount();
@@ -3939,6 +3944,52 @@ void MultiCobordism::setTwoBodyTarget(Eigen::MatrixXcd chi, bool choiDecomposed)
   twoBodyTarget_ = TwoBodyTarget{std::move(chi), choiDecomposed};
 }
 
+void MultiCobordism::setTwoBodyCases(std::vector<TwoBodyCase> cases) {
+  for (const auto &boundaryCase : cases)
+    if (boundaryCase.chi.size() == 0)
+      throw std::invalid_argument("MultiCobordism::setTwoBodyCases: a case has an empty target");
+  twoBodyCases_ = std::move(cases);
+}
+
+std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>>
+MultiCobordism::writeCaseBoundary(const TwoBodyCase &boundaryCase) const {
+  std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>> previous;
+  if (!spacetime_ || !spacetime_->getEdgeList()) return previous;
+  previous.reserve(boundaryCase.boundary.size());
+  for (const auto &[endpoints, squaredLength] : boundaryCase.boundary) {
+    const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
+    auto *edge = spacetime_->getEdgeList()->get(key.fingerprint.fingerprint());
+    // A case naming an edge the complex does not have is SKIPPED, not an
+    // error: stage 1 rebuilds the complex between evaluations, so a boundary
+    // edge is always present but a stale case would otherwise abort a drive.
+    if (edge == nullptr) continue;
+    const auto length = edge->getLength();
+    previous.emplace_back(endpoints, length * length);
+    edge->setLength(std::sqrt(squaredLength));
+  }
+  return previous;
+}
+
+double MultiCobordism::twoBodyResidualOverCases() const {
+  if (twoBodyCases_.empty())
+    return twoBodyTarget_ ? twoBodyResidualOn(spacetime_, *twoBodyTarget_) : 0.0;
+  double total = 0.0;
+  for (const auto &boundaryCase : twoBodyCases_) {
+    const auto previous = writeCaseBoundary(boundaryCase);
+    // Restored even when a read throws: a half-written boundary would be
+    // scored by every later case and by whatever the caller does next.
+    try {
+      total += twoBodyResidualOn(spacetime_,
+                                 TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed});
+    } catch (...) {
+      writeCaseBoundary(TwoBodyCase{previous, {}, true});
+      throw;
+    }
+    writeCaseBoundary(TwoBodyCase{previous, {}, true});
+  }
+  return total;
+}
+
 std::pair<const MultiCobordism::BoundaryBlock *, const MultiCobordism::BoundaryBlock *>
 MultiCobordism::attachedInputBlocks() const {
   std::vector<const BoundaryBlock *> attached;
@@ -4798,7 +4849,23 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
     } catch (const std::invalid_argument &) {
     }
   }
-  if (twoBodyTarget_) {
+  if (!twoBodyCases_.empty()) {
+    // One gradient per case, each taken with that case's boundary written.
+    // Summed because the objective is a sum; the boundary components are
+    // zeroed by pinning either way, and the BULK components are what differ
+    // between cases -- which is the whole point.
+    for (const auto &boundaryCase : twoBodyCases_) {
+      const auto previous = writeCaseBoundary(boundaryCase);
+      try {
+        accumulate(twoBodyResidualGradientOn(
+                       spacetime_, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed}),
+                   *spacetime_, 1.0);
+      } catch (const std::runtime_error &) {
+      } catch (const std::invalid_argument &) {
+      }
+      writeCaseBoundary(TwoBodyCase{previous, {}, true});
+    }
+  } else if (twoBodyTarget_) {
     try {
       accumulate(twoBodyResidualGradientOn(spacetime_, *twoBodyTarget_), *spacetime_, 1.0);
     } catch (const std::runtime_error &) {
