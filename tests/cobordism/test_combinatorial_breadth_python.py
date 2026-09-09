@@ -50,6 +50,12 @@ PRECONE = 10
 SMALL = 4
 
 
+def cells(node):
+    """The node's top cells as sorted vertex-id tuples, order-independent."""
+    return sorted(tuple(sorted(v.getId() for v in cell.getVertices()))
+                  for cell in node.spacetime().getTopSimplices())
+
+
 def host(precone=PRECONE):
     """A small emergent host with a non-trivial objective.
 
@@ -136,8 +142,7 @@ def test_the_exhaustive_sentinel_survives_the_deepening():
     first.run_stage1(max_steps=1, n_candidate_moves=0, combinatorial_breadth=2)
     second.run_stage1(max_steps=1, n_candidate_moves=0, combinatorial_breadth=2)
     assert first.last_stage1_lookahead == second.last_stage1_lookahead
-    assert (sorted(c.topTuple() for c in first.spacetime().getTopSimplices())
-            == sorted(c.topTuple() for c in second.spacetime().getTopSimplices()))
+    assert cells(first) == cells(second)
 
 
 # ---- the flag ----
