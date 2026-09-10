@@ -48,7 +48,7 @@ from tessera.utils.progress import ProgressDisplay, make_tune_cb
 
 
 def _phase_worker(phase_id, label, k0, delta, n_simplices, n_therm, n_meas,
-                  meas_interval, sweep_cb=None, phase_cb=None):
+                  meas_interval, sweep_cb=None, phase_cb=None, seed=None):
     """Run one phase simulation: build, tune, thermalize, measure.
 
     Each phase uses different coupling constants and is fully independent.
@@ -65,9 +65,16 @@ def _phase_worker(phase_id, label, k0, delta, n_simplices, n_therm, n_meas,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     max_build = 80 * 20  # cap at ~80 time slices (20 simplices/slab in 4D)
+    if seed is not None:
+        # Both generators decide the outcome: the spacetime's drives the build,
+        # the simulation's drives the sweeps. Offset by phase so the three
+        # phases are independent chains rather than the same one three times.
+        st.setSeed(seed + phase_id)
     st.build(min(n_simplices, max_build))
     target = st.getN41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, k0, 0.5, delta, 1.0 / target, target)
+    if seed is not None:
+        cdt.setSeed(seed + phase_id)
 
     _ph("tuning")
     cdt.tune(progress=make_tune_cb(phase_cb, phase_id))
@@ -142,6 +149,11 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker threads (default: min(cpus, 8))")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed both generators that decide the outcome, "
+                             "making the run reproducible across processes; "
+                             "each phase is offset so the three are "
+                             "independent chains")
     parser.add_argument("--save", type=str, default=None,
                         help="Path to write the figures to; the surface and "
                              "profile plots get the _surface and _profile "
@@ -191,7 +203,7 @@ def main():
             f = pool.submit(_phase_worker, pid, label, k0, delta,
                             args.n_simplices, args.n_therm,
                             args.n_meas, args.meas_interval,
-                            progress.on_sweep, progress.on_phase)
+                            progress.on_sweep, progress.on_phase, args.seed)
             futures[f] = label
 
         for f in as_completed(futures):
