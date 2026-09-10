@@ -3296,7 +3296,8 @@ def drive_live(config, progress=False, on_node=None):
             "--live needs an interactive matplotlib backend; this process "
             "has %r, which renders to files and shows no window. A run "
             "under it would compute every frame and display none of them. "
-            "Set MPLBACKEND to an interactive backend (webagg needs no "
+            "Install one with `pip install -e \".[live]\"`, or set "
+            "MPLBACKEND to a backend you already have (webagg needs no "
             "display), or drop --live and read the rendered --out: the "
             "drive is identical either way." % backend)
     if not plt.isinteractive():
@@ -3820,8 +3821,10 @@ def build_parser():
     run.add_argument("--live", action="store_true",
                      help="draw each frame as it is computed instead of only "
                           "at the end; still writes --out and --json. Needs "
-                          "an interactive matplotlib backend and fails by "
-                          "name without one")
+                          "an interactive matplotlib backend, which the "
+                          "'live' extra supplies (pip install -e \".[live]\"); "
+                          "without one it fails by name rather than running "
+                          "headless")
     run.add_argument("--out", default="emergence_animation.gif",
                      help="GIF, MP4, or PNG of the final frame")
     run.add_argument("--json", default=None,
