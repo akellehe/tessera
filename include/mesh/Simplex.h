@@ -303,7 +303,14 @@ class Simplex {
       std::vector<std::complex<double>> cmCof;      ///< cofactors of cm
       std::vector<std::complex<double>> cmCanon;    ///< canonical-frame Cayley-Menger
       std::vector<std::complex<double>> cmCanonCof; ///< cofactors of cmCanon
-      std::unordered_map<std::uint64_t, int> canonPos1;  ///< vertex id → border index
+      /// vertex id → 1-based border index in the canonical order.
+      ///
+      /// A flat vector rather than a map: a cell carries d+1 vertices, so this
+      /// holds at most six entries in four dimensions. An ``unordered_map``
+      /// costs a bucket array and a node allocation per entry to answer a
+      /// lookup that a linear scan over six contiguous pairs answers faster,
+      /// and every simplex pays that whether or not it is ever asked.
+      std::vector<std::pair<std::uint64_t, int>> canonPos1;
     };
     /// Cache with the ``gram``+``gramDet`` section current. O(#edges) key walk
     /// on a hit; fills via the direct pipeline on a miss.
@@ -710,7 +717,17 @@ class Simplex {
     /// ``cayleyMengerMatrix`` when the cell is already stored sorted.
     /// Always signature-aware: there is no Euclidean/Wick-rotated mode (#641).
     [[nodiscard]] std::vector<std::complex<double>> cayleyMengerCanonical(
-        std::unordered_map<std::uint64_t, int> &pos1) const;
+        std::vector<std::pair<std::uint64_t, int>> &pos1) const;
+
+    /// The 1-based bordered position of \a vertexId in the canonical order, or
+    /// 0 when the id is not one of this cell's vertices.
+    [[nodiscard]] static int canonicalPosition(
+        const std::vector<std::pair<std::uint64_t, int>> &pos1,
+        std::uint64_t vertexId) noexcept {
+      for (const auto &entry : pos1)
+        if (entry.first == vertexId) return entry.second;
+      return 0;
+    }
 
     /// Ambient top dimension n for the circumcentric-dual recursion. When this
     /// simplex carries an owning spacetime, n is read straight off the metric
@@ -782,8 +799,73 @@ class Simplex {
         cmKey.store(0, std::memory_order_relaxed);
         cmCanonKey.store(0, std::memory_order_relaxed);
       }
+      /// Invalidate the cache AND give its buffers back.
+      ///
+      /// ``reset`` deliberately keeps the buffers allocated: a live simplex
+      /// whose geometry moved will refill them, and reusing the allocation is
+      /// cheaper than making a new one. A simplex that has been removed never
+      /// refills, and its shell is never freed -- ``Spacetime::simplexStorage_``
+      /// holds every simplex ever created at a stable address so that cached
+      /// ``Simplex*`` stay dereferenceable -- so its buffers would otherwise be
+      /// held for the rest of the run.
+      ///
+      /// The keys go to zero before the payload is dropped, so a reader can
+      /// never see a key that publishes freed data.
+      void release() noexcept {
+        std::lock_guard<std::mutex> guard(mutex);
+        reset();
+        GeomCache empty{};
+        std::swap(cache, empty);
+      }
     };
-    mutable GeomCacheState geomCacheState_{};
+    /// Lazily allocated holder for ``GeomCacheState``.
+    ///
+    /// Held by value the cache costs every simplex about 270 bytes, roughly
+    /// half the object, whether or not its geometry is ever evaluated. A Monte
+    /// Carlo sweep evaluates none of it, and ``Spacetime::simplexStorage_``
+    /// keeps every simplex ever created at a stable address, so by-value the
+    /// cost is paid by every simplex the chain has ever touched for the rest of
+    /// the run. Behind a pointer it costs eight bytes until something asks.
+    ///
+    /// The fill paths run under OpenMP, so the allocation is published with a
+    /// compare-exchange: the loser of a race frees its own attempt and takes
+    /// the winner's. Copy and move reset to empty, matching ``GeomCacheState``
+    /// itself -- a copied simplex must refill rather than inherit a payload
+    /// that belongs to the original's geometry.
+    struct GeomCacheSlot {
+      mutable std::atomic<GeomCacheState *> ptr{nullptr};
+      GeomCacheSlot() = default;
+      GeomCacheSlot(const GeomCacheSlot &) noexcept {}
+      GeomCacheSlot(GeomCacheSlot &&) noexcept {}
+      GeomCacheSlot &operator=(const GeomCacheSlot &) noexcept {
+        release();
+        return *this;
+      }
+      GeomCacheSlot &operator=(GeomCacheSlot &&) noexcept {
+        release();
+        return *this;
+      }
+      ~GeomCacheSlot() { release(); }
+      void release() const noexcept {
+        delete ptr.exchange(nullptr, std::memory_order_acq_rel);
+      }
+      [[nodiscard]] GeomCacheState &get() const {
+        if (auto *live = ptr.load(std::memory_order_acquire)) return *live;
+        auto *fresh = new GeomCacheState();
+        GeomCacheState *expected = nullptr;
+        if (ptr.compare_exchange_strong(expected, fresh,
+                                        std::memory_order_acq_rel,
+                                        std::memory_order_acquire))
+          return *fresh;
+        delete fresh;
+        return *expected;
+      }
+    };
+    mutable GeomCacheSlot geomCacheSlot_{};
+    /// The geometry cache, allocated on first use.
+    [[nodiscard]] GeomCacheState &geomCacheState_() const {
+      return geomCacheSlot_.get();
+    }
     /// Bumped by ``addEdge``; on ``removeEdge`` it absorbs the removed edge's
     /// revision plus one, so ``geometryRevisionKey`` never repeats a value it
     /// held before the removal.
