@@ -635,6 +635,18 @@ class MultiCobordism {
   /// special name for each pairing. Empty is refused: a two-body term scored
   /// against nothing is not a term.
   void setReadoutModes(std::vector<ReadoutMode> modes);
+  /// Which two attached input blocks the TRANSFER reading is read between.
+  ///
+  /// It used to be "the attached ones", which was unambiguous only while there
+  /// were exactly two. With conjugate pairs there are four, and the transfer
+  /// is still between the two STATES -- the conjugates are extra boundary,
+  /// carried so the harmonic space has room for the target, not a third and
+  /// fourth input to couple. Unset, the behaviour is what it was: the two
+  /// attached blocks, and an error if there are not exactly two.
+  void setTransferBlocks(std::size_t first, std::size_t second) {
+    transferBlocks_ = std::pair<std::size_t, std::size_t>{first, second};
+  }
+  void clearTransferBlocks() noexcept { transferBlocks_.reset(); }
   [[nodiscard]] const std::vector<ReadoutMode> &readoutModes() const noexcept {
     return readoutModes_;
   }
@@ -1294,6 +1306,32 @@ class MultiCobordism {
   /// @throws std::invalid_argument on a null surface, `layers < 1`, surfaces of
   ///   differing dimension or combinatorics (named), a surface without top
   ///   cells, or a collar the manifold gate refuses (named).
+  /// Two collars joined along a removed tetrahedron: FOUR boundary surfaces on
+  /// one connected manifold (#1039).
+  ///
+  /// The two-torus collar's harmonic space cannot carry a 4-dimensional target
+  /// and that is forced, not incidental: for a compact oriented 3-manifold
+  /// \f$\operatorname{rank}(H^1(W)\to H^1(\partial W)) = b_1(\partial W)/2\f$,
+  /// so two tori leave 2. Four leave 4.
+  ///
+  /// Each surface is collared with its partner as `seedCollar` does, and the
+  /// two collars are joined by removing one all-interior cell from each and
+  /// identifying the two boundary spheres. Gluing along a sphere is a
+  /// connected sum, which adds no first homology, so \f$b_1 = 2+2 = 4\f$ with
+  /// nothing dying on the boundary — measured `[1, 4, 3, 0]` on the 3x3 grid
+  /// tori. Adding handles instead would raise \f$b_1(W)\f$ with the extra
+  /// classes invisible to the boundary, which is no use to a readout.
+  ///
+  /// `layers` must be at least THREE. A prism cell spans two adjacent layers,
+  /// so an all-interior cell — the one that can be removed without touching a
+  /// surface — exists only once there are two interior layers.
+  ///
+  /// `vertexIds` comes back in the order the surfaces were given.
+  /// @throws std::invalid_argument on a null surface, surfaces differing in
+  ///   dimension or combinatorics, fewer than three layers, or a join that is
+  ///   not a manifold-with-boundary.
+  [[nodiscard]] static SurfaceSeed seedJoinedCollars(
+      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers = 3);
   [[nodiscard]] static SurfaceSeed seedCollar(const std::shared_ptr<Spacetime> &surfaceA,
                                               const std::shared_ptr<Spacetime> &surfaceB,
                                               int layers = 1);
@@ -2934,6 +2972,9 @@ class MultiCobordism {
   /// What the two-body target is scored against (`setReadoutMode`). Transfer
   /// by default, so every recorded run keeps its meaning.
   std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
+  /// The two blocks the transfer is read between, when named (see
+  /// `setTransferBlocks`). Unset means the two attached ones.
+  std::optional<std::pair<std::size_t, std::size_t>> transferBlocks_;
   /// Why the last harmonic readout could not name a state (empty when it
   /// could). Mutable because the readout is a const measurement that still has
   /// to be able to say why it refused.

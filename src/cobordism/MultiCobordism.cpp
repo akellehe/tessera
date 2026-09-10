@@ -4264,6 +4264,14 @@ std::vector<double> MultiCobordism::twoBodyResidualsPerCaseOn(
 
 std::pair<const MultiCobordism::BoundaryBlock *, const MultiCobordism::BoundaryBlock *>
 MultiCobordism::attachedInputBlocks() const {
+  // Named blocks win: with conjugate pairs there are four attached fibers and
+  // the transfer is still between the two STATES.
+  if (transferBlocks_) {
+    const auto [first, second] = *transferBlocks_;
+    if (first >= inputBlocks_.size() || second >= inputBlocks_.size())
+      throw std::logic_error("MultiCobordism: the named transfer blocks are out of range");
+    return {&inputBlocks_[first], &inputBlocks_[second]};
+  }
   std::vector<const BoundaryBlock *> attached;
   for (const auto &block : inputBlocks_)
     if (block.fiber && block.fiber->images.cols() > 0) attached.push_back(&block);
@@ -4409,10 +4417,14 @@ double MultiCobordism::wholeHarmonicResidualOn(
   // no basis is named here that the geometry does not already carry.
   std::vector<const BlockMarking *> markings;
   std::vector<complexd> coefficients;
+  // The marking's OWN coefficients, which are the block's input state (1, tau)
+  // -- `readInputState` reads the same field. `block.target` is the register
+  // target and is a different quantity.
   for (const auto &block : inputBlocks_) {
     if (!block.marking) continue;
     markings.push_back(&*block.marking);
-    for (const auto &value : block.target) coefficients.push_back(value);
+    for (const auto &value : block.marking->coefficients)
+      coefficients.push_back(value);
   }
   if (markings.empty()) return refuse("no input block carries a marking");
   Eigen::Index cycleCount = 0;
@@ -5480,6 +5492,133 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
     edge->setLength(found->second);
     edge->setPhase(complexd(0.0, 0.0));
   }
+  return seed;
+}
+
+MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
+    const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers) {
+  const std::string prefix = "MultiCobordism::seedJoinedCollars: ";
+  if (surfaces.size() % 2 != 0 || surfaces.empty())
+    throw std::invalid_argument(prefix + "an even, non-zero number of surfaces is required: each is collared with its partner");
+  // THREE layers, not one. A prism cell spans two adjacent layers, so the
+  // all-interior cell the join removes exists only with two interior layers.
+  if (layers < 3)
+    throw std::invalid_argument(prefix + "layers must be at least three: with fewer, every cell touches a surface and there is none to remove");
+  for (const auto &surface : surfaces)
+    if (!surface) throw std::invalid_argument(prefix + "null surface");
+  // Every collar is the SAME prism over the shared face set, so it is built
+  // once and shifted. seedCollar has already refused surfaces that do not
+  // present one face set, and the pairs are checked through it below.
+  std::vector<SurfaceSeed> collars;
+  for (std::size_t pair = 0; pair < surfaces.size(); pair += 2)
+    collars.push_back(seedCollar(surfaces[pair], surfaces[pair + 1], layers));
+  const auto cellsOf = [](const Spacetime &spacetime) {
+    std::vector<std::vector<std::uint64_t>> cells;
+    for (const auto &topSimplex : spacetime.getTopSimplices()) {
+      auto tuple = topSimplex->topTuple();
+      std::sort(tuple.begin(), tuple.end());
+      cells.push_back(std::move(tuple));
+    }
+    return cells;
+  };
+  // A cell no facet of which is on the boundary: the one that can be removed
+  // without touching a surface.
+  const auto interiorCell = [](const std::vector<std::vector<std::uint64_t>> &cells) {
+    std::map<std::vector<std::uint64_t>, int> facetCount;
+    for (const auto &cell : cells)
+      for (std::size_t skip = 0; skip < cell.size(); ++skip) {
+        std::vector<std::uint64_t> facet;
+        for (std::size_t i = 0; i < cell.size(); ++i)
+          if (i != skip) facet.push_back(cell[i]);
+        ++facetCount[facet];
+      }
+    std::set<std::uint64_t> onBoundary;
+    for (const auto &[facet, count] : facetCount)
+      if (count == 1) onBoundary.insert(facet.begin(), facet.end());
+    for (const auto &cell : cells) {
+      bool interior = true;
+      for (const auto vertex : cell)
+        if (onBoundary.count(vertex) != 0) { interior = false; break; }
+      if (interior) return cell;
+    }
+    return std::vector<std::uint64_t>{};
+  };
+  std::vector<std::vector<std::uint64_t>> joined;
+  std::vector<std::map<std::uint64_t, std::uint64_t>> vertexIds;
+  std::vector<std::uint64_t> sphere;   // the first collar's removed cell
+  std::uint64_t offset = 0;
+  for (std::size_t index = 0; index < collars.size(); ++index) {
+    auto cells = cellsOf(*collars[index].host);
+    std::uint64_t span = 0;
+    for (const auto &cell : cells)
+      for (const auto vertex : cell) span = std::max(span, vertex + 1);
+    for (auto &cell : cells)
+      for (auto &vertex : cell) vertex += offset;
+    for (auto &ids : collars[index].vertexIds) {
+      for (auto &[surfaceId, hostId] : ids) hostId += offset;
+      vertexIds.push_back(std::move(ids));
+    }
+    auto removed = interiorCell(cells);
+    if (removed.empty())
+      throw std::invalid_argument(prefix + "a collar has no all-interior cell to remove; more layers are needed");
+    // Dropped BEFORE the relabel below, not after: the relabel rewrites this
+    // cell's own vertices, so a comparison made afterwards would not recognize
+    // it and the cell would survive -- leaving its facets with three cofaces.
+    cells.erase(std::remove_if(cells.begin(), cells.end(),
+                               [&](const std::vector<std::uint64_t> &cell) {
+                                 auto sorted = cell;
+                                 std::sort(sorted.begin(), sorted.end());
+                                 return sorted == removed;
+                               }),
+                cells.end());
+    // The FIRST collar's removed cell is the sphere every other collar is
+    // glued onto: identifying the boundaries of two removed tetrahedra is a
+    // connected sum along S^2, which adds no first homology.
+    if (index == 0) {
+      sphere = removed;
+    } else {
+      std::map<std::uint64_t, std::uint64_t> identify;
+      for (std::size_t i = 0; i < removed.size(); ++i) identify[removed[i]] = sphere[i];
+      for (auto &cell : cells)
+        for (auto &vertex : cell) {
+          const auto found = identify.find(vertex);
+          if (found != identify.end()) vertex = found->second;
+        }
+      for (auto &ids : vertexIds)
+        for (auto &[surfaceId, hostId] : ids) {
+          const auto found = identify.find(hostId);
+          if (found != identify.end()) hostId = found->second;
+        }
+    }
+    for (auto &cell : cells) joined.push_back(std::move(cell));
+    offset += span;
+  }
+  // ONE gate on the whole, as seedCollar takes on its prism.
+  const auto verdict = ChainComplex::dualComplexIsValid(joined, surfaces.front()->getDimensions() + 1);
+  if (!verdict.first)
+    throw std::invalid_argument(prefix + "the joined collars are not a manifold-with-boundary: " + verdict.second);
+  SurfaceSeed seed;
+  seed.host = Spacetime::fromCells(surfaces.front()->getDimensions() + 1, joined, 1.0, complexd(0.0, 0.0));
+  // Each surface's own lengths verbatim on its edges, the auto-wired length
+  // everywhere else, zero phases throughout -- seedCollar's convention.
+  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  for (std::size_t index = 0; index < surfaces.size(); ++index)
+    for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
+      if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+      const auto &ids = vertexIds[index];
+      const auto source = ids.find(edge->getSource()->getId());
+      const auto target = ids.find(edge->getTarget()->getId());
+      if (source == ids.end() || target == ids.end()) continue;
+      lengths[{std::min(source->second, target->second), std::max(source->second, target->second)}] =
+          edge->getLength();
+    }
+  const complexd interior = seed.host->autoWiredLength(/*crossSlice=*/false);
+  for (auto *edge : seed.host->getEdgeList()->toVector()) {
+    const auto found = lengths.find(edgeKey(edge));
+    edge->setLength(found != lengths.end() ? found->second : interior);
+    edge->setPhase(complexd(0.0, 0.0));
+  }
+  seed.vertexIds = std::move(vertexIds);
   return seed;
 }
 

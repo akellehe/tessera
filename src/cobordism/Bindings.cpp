@@ -1888,6 +1888,13 @@ assertion. Every pairing is the transpose.)doc")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
            "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
            "reversal residual, the fit residual, and both input blocks' fiber residuals.")
+      .def("set_transfer_blocks", &MultiCobordism::setTransferBlocks,
+           py::arg("first"), py::arg("second"),
+           "Which two attached input blocks the TRANSFER reading is read between. With "
+           "conjugate pairs there are four attached fibers and the transfer is still between "
+           "the two STATES; the conjugates are boundary carried so the harmonic space has room "
+           "for the target, not further inputs to couple.")
+      .def("clear_transfer_blocks", &MultiCobordism::clearTransferBlocks)
       .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
            "The readings SUMMED into the two-body residual. TRANSFER is the "
            "coupling block between the two boundary frames; BULK is "
@@ -1941,6 +1948,14 @@ assertion. Every pairing is the transpose.)doc")
            "SimplicialQubit.flat_torus(tau, n, n).spacetime()): one d-dimensional host holding "
            "every surface as its own simplices with its lengths and zero phases on disjoint "
            "vertex id ranges, and no d-cell -- the bulk is drawn afterwards by gated bridges.")
+      .def_static("seed_joined_collars", &MultiCobordism::seedJoinedCollars,
+                  py::arg("surfaces"), py::arg("layers") = 3,
+                  "Two collars joined along a removed tetrahedron: FOUR boundary surfaces on one "
+                  "connected manifold. Gluing along a sphere is a connected sum, which adds no first "
+                  "homology, so b_1 = 2 + 2 = 4 with nothing dying on the boundary -- the dimension a "
+                  "4-dimensional target needs, since rank(H^1(W) -> H^1(dW)) = b_1(dW)/2. layers must "
+                  "be at least three: a prism cell spans two adjacent layers, so an all-interior cell "
+                  "exists only with two interior layers.")
       .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
            py::arg("layers") = 1,
            "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics (spec S3): "

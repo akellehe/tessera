@@ -208,6 +208,24 @@ DECLARED_COMBINATORIAL_BREADTH = 0
 #: This is part of the OBJECTIVE. The two-body residual is a term in r_U, so
 #: the choice prices stage-1 moves and drives stage-2 descent.
 DECLARED_READOUT = "transfer"
+#: Whether each input state is carried by a PAIR of tori (`--conjugate-inputs`).
+#:
+#: On, the boundary is four tori: each state and its orientation reversal at
+#: -conj(tau). That keeps the modulus in the upper half-plane, where a torus
+#: modulus has to live, and gives the holomorphic form the conjugate periods.
+#:
+#: The point is the dimension. For a compact oriented 3-manifold
+#: rank(H^1(W) -> H^1(dW)) = b_1(dW)/2, so two boundary tori leave 2 against a
+#: 4-dimensional target and four leave 4. The host becomes two collars joined
+#: along a removed tetrahedron -- gluing along a sphere is a connected sum,
+#: which adds no first homology, so b_1 = 2 + 2 = 4 with nothing dying on the
+#: boundary. Measured on the 3x3 grid tori: 322 cells, 68 vertices, 426 edges,
+#: 72 boundary facets, betti [1, 4, 3, 0].
+#:
+#: The join needs three collar layers. A prism cell spans two adjacent layers,
+#: so the all-interior cell it removes exists only with two interior layers,
+#: and `--layers` is raised to three when this is on.
+DECLARED_CONJUGATE_INPUTS = False
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -359,10 +377,15 @@ DECLARED_QUBIT_BETTI_DEGREES = (0, 1, 2, 3)
 #: Tolerance on |tau_read - tau_in| for the SEED's surface read, which is
 #: exact on a flat torus (spec S1: the read returns tau_in to rounding).
 DECLARED_TAU_TOLERANCE = 1e-9
-#: The two tori's labels and drawing colours (the layout highlight and the
-#: traces read from the same pair, so a colour and its label cannot disagree).
-DECLARED_TORUS_LABELS = ("A", "B")
-DECLARED_TORUS_COLOURS = ("#d2691e", "#1f8a70")
+#: The tori's labels and drawing colours (the layout highlight and the traces
+#: read from the same table, so a colour and its label cannot disagree).
+#:
+#: Four entries because `--conjugate-inputs` carries each state on a PAIR of
+#: tori: A with its orientation reversal A*, B with B*. A conjugate shares its
+#: partner's hue at a lighter value, since it is the same state seen the other
+#: way round rather than a third and fourth input.
+DECLARED_TORUS_LABELS = ("A", "A*", "B", "B*")
+DECLARED_TORUS_COLOURS = ("#d2691e", "#e8a76b", "#1f8a70", "#6fbfa8")
 
 
 class EdgeDisposition:
@@ -1131,13 +1154,32 @@ def build_qubit_node(config):
         # The tori's construction notes are recorded from `warnings()` in
         # `QubitInputs`, not printed.
         warnings.simplefilter("ignore")
+        # With --conjugate-inputs each state is carried by a PAIR of tori,
+        # itself and its orientation reversal at -conj(tau). Four boundary
+        # tori give b_1(dW) = 8, so rank(H^1(W) -> H^1(dW)) = 4 -- the
+        # dimension a 4-dimensional target needs, against the 2 that two tori
+        # leave. -conj(tau) rather than conj(tau) keeps the modulus in the
+        # upper half-plane, where a torus modulus has to live, and gives the
+        # holomorphic form the conjugate periods.
+        if config.get("conjugate_inputs", DECLARED_CONJUGATE_INPUTS):
+            tau_in = [tau for tau in tau_in
+                      for tau in (tau, -tau.conjugate())]
         tori = [obs.SimplicialQubit.flat_torus(tau, grid, grid)
                 for tau in tau_in]
-    seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
-                          config["layers"])
+    if config.get("conjugate_inputs", DECLARED_CONJUGATE_INPUTS):
+        # Two collars joined along a removed tetrahedron. Gluing along a sphere
+        # is a connected sum, which adds no first homology, so b_1 = 2 + 2 = 4
+        # with nothing dying on the boundary. Needs three layers: a prism cell
+        # spans two adjacent layers, so the all-interior cell the join removes
+        # exists only with two interior layers.
+        seed = MC.seed_joined_collars([torus.spacetime() for torus in tori],
+                                      max(3, int(config["layers"])))
+    else:
+        seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
+                              config["layers"])
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
-    node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [],
+    node = MC(seed.host, [[1.0 + 0j]] * len(tori), [],
               degrees=list(config["register_degrees"]), seed=config["seed"],
               einstein_hilbert=bool(config["regge"]),
               real_squared_lengths_only=False,
@@ -1167,6 +1209,11 @@ def build_qubit_node(config):
                              np.asarray(tori[1].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
+    # With conjugate pairs the blocks are [A, A*, B, B*] and the transfer is
+    # between the two STATES, A and B. The conjugates are boundary carried so
+    # the harmonic space has room for the target, not further inputs.
+    if config.get("conjugate_inputs", DECLARED_CONJUGATE_INPUTS):
+        node.set_transfer_blocks(0, 2)
     node.set_readout_modes([_READOUT_MODES[name]
                             for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
@@ -3586,6 +3633,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
                  combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
                  readout=DECLARED_READOUT,
+                 conjugate_inputs=DECLARED_CONJUGATE_INPUTS,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
@@ -3665,6 +3713,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "surgical_depth": surgical_depth,
         "combinatorial_breadth": int(combinatorial_breadth),
         "readout": readout,
+        "conjugate_inputs": bool(conjugate_inputs),
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -3765,6 +3814,18 @@ def build_parser():
                           "through the blocks' markings. This is part of the "
                           "OBJECTIVE, not the reporting: the residual is a "
                           "term in r_U (default %s)" % DECLARED_READOUT)
+    run.add_argument("--conjugate-inputs",
+                     action=argparse.BooleanOptionalAction,
+                     dest="conjugate_inputs",
+                     default=DECLARED_CONJUGATE_INPUTS,
+                     help="carry each input state on a PAIR of tori, itself "
+                          "and its orientation reversal at -conj(tau), for a "
+                          "boundary of four. rank(H^1(W) -> H^1(dW)) = "
+                          "b_1(dW)/2, so two tori leave 2 against a "
+                          "4-dimensional target and four leave 4. The host "
+                          "becomes two collars joined along a removed "
+                          "tetrahedron, which needs three layers (default %s)"
+                          % ("on" if DECLARED_CONJUGATE_INPUTS else "off"))
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
                      help="ABSOLUTE objective tolerance (default %g). Stage "
                           "2 backs its line search off until a trial lowers "
@@ -3919,6 +3980,7 @@ def main(argv=None):
                           surgical_depth=args.surgical_depth,
                           combinatorial_breadth=args.combinatorial_breadth,
                           readout=args.readout,
+                          conjugate_inputs=args.conjugate_inputs,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
