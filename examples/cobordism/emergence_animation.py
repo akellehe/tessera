@@ -201,6 +201,12 @@ DECLARED_COMBINATORIAL_BREADTH = 0
 #: 2-dimensional space against a 4-dimensional target; a complex whose framed
 #: kernel is not rank one identifies no operator and scores the full leak.
 #:
+#: `harmonic` is the WHOLE cobordism's degree-1 harmonic form -- the form the
+#: input blocks' markings and coefficients determine out of that space, read as
+#: its coefficient vector. Its rank is b_1(W), so two boundary tori give 2
+#: against a 4-dimensional target and the term says so rather than fitting one;
+#: four tori give b_1(dW) = 8 and hence rank 4.
+#:
 #: `both` sums them, so one geometry is scored under both readings.
 #:
 #: This is part of the OBJECTIVE. The two-body residual is a term in r_U, so
@@ -817,6 +823,7 @@ DECLARED_PIN_BOUNDARY = True
 _READOUT_MODES = {
     "transfer": MC.ReadoutMode.TRANSFER,
     "whole": MC.ReadoutMode.WHOLE_COMPLEX,
+    "harmonic": MC.ReadoutMode.HARMONIC,
     "both": MC.ReadoutMode.BOTH,
 }
 

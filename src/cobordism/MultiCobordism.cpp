@@ -4366,8 +4366,84 @@ double MultiCobordism::wholeComplexOperatorResidualOn(
   return std::max(0.0, leak / chi.squaredNorm());
 }
 
+double MultiCobordism::harmonicOutputResidualOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const TwoBodyTarget &target) const {
+  harmonicOutputObstruction_.clear();
+  const auto refuse = [&](std::string reason) {
+    harmonicOutputObstruction_ = std::move(reason);
+    return 1.0;
+  };
+  if (!spacetime) return refuse("no complex to read");
+  const Eigen::Index dimension = target.chi.size();
+  chainhodge::Band band;
+  AssembledPencil assembled;
+  try {
+    assembled = PencilLayer::assemble({spacetime});
+    if (assembled.dimension() < 1) return refuse("the complex has no edges");
+    band = assembled.op->band(1, PencilLayer::harmonicContour(assembled, 1));
+  } catch (const std::runtime_error &error) {
+    return refuse(error.what());
+  } catch (const std::invalid_argument &error) {
+    return refuse(error.what());
+  }
+  const auto rank = static_cast<Eigen::Index>(band.rank());
+  // The harmonic space is a SPACE. Its rank is what can be carried, and a
+  // target of another dimension is not something this geometry has a state
+  // for -- said rather than fitted. Two boundary tori give b_1 = 2 against a
+  // 4-dimensional target; four give b_1(dW) = 8, hence rank 4.
+  if (rank != dimension)
+    return refuse("the whole complex's degree-1 harmonic space has rank " +
+                  std::to_string(rank) + " for a target of dimension " +
+                  std::to_string(dimension));
+  // Pi_{ca}: the transported period of harmonic column a over marked cycle c,
+  // every marking every input block carries. The markings are the only input:
+  // no basis is named here that the geometry does not already carry.
+  std::vector<const BlockMarking *> markings;
+  std::vector<complexd> coefficients;
+  for (const auto &block : inputBlocks_) {
+    if (!block.marking) continue;
+    markings.push_back(&*block.marking);
+    for (const auto &value : block.target) coefficients.push_back(value);
+  }
+  if (markings.empty()) return refuse("no input block carries a marking");
+  Eigen::Index cycleCount = 0;
+  for (const auto *marking : markings)
+    cycleCount += static_cast<Eigen::Index>(marking->rank());
+  if (cycleCount != static_cast<Eigen::Index>(coefficients.size()))
+    return refuse("the marked cycles and the input coefficients differ in count");
+  Eigen::MatrixXcd periods(cycleCount, rank);
+  Eigen::VectorXcd inputs(cycleCount);
+  Eigen::Index row = 0;
+  try {
+    for (std::size_t m = 0; m < markings.size(); ++m)
+      for (std::size_t c = 0; c < markings[m]->rank(); ++c, ++row) {
+        for (Eigen::Index a = 0; a < rank; ++a)
+          periods(row, a) = assembled.op->connection().transportedPeriod(
+              band.images.col(a), markings[m]->cycles[c]);
+        inputs(row) = coefficients[static_cast<std::size_t>(row)];
+      }
+  } catch (const std::runtime_error &error) {
+    return refuse(std::string("a marked cycle is not a walk on the whole complex: ") + error.what());
+  }
+  // The form the INPUTS determine: the coefficient vector minimizing
+  // ||Pi c - p||. That c is the output state.
+  const Eigen::VectorXcd state =
+      periods.completeOrthogonalDecomposition().solve(inputs);
+  const double ss = state.squaredNorm();
+  if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
+  const Eigen::Map<const Eigen::VectorXcd> chi(target.chi.data(), dimension);
+  // The same projective Frobenius leak the other readings take, so all three
+  // are on one scale and Both may sum them.
+  const complexd overlap = state.dot(chi);
+  const double leak = chi.squaredNorm() - std::norm(overlap) / ss;
+  return std::max(0.0, leak / chi.squaredNorm());
+}
+
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const {
+  if (readoutMode_ == ReadoutMode::Harmonic)
+    return harmonicOutputResidualOn(spacetime, target);
   if (readoutMode_ == ReadoutMode::WholeComplex)
     return wholeComplexOperatorResidualOn(spacetime, target);
   if (readoutMode_ == ReadoutMode::Both)

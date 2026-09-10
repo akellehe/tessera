@@ -1893,6 +1893,20 @@ assertion. Every pairing is the transpose.)doc")
            "not the reporting: this residual is a term in r_U, so it prices "
            "stage-1 moves and drives stage-2 descent.")
       .def_property_readonly("readout_mode", &MultiCobordism::readoutMode)
+      .def("harmonic_output_residual",
+           [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
+             return self.harmonicOutputResidualOn(
+                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
+           },
+           py::arg("chi"), py::arg("choi_decomposed") = true,
+           py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of chi against the WHOLE cobordism's degree-1 harmonic form, "
+           "the form the input blocks' markings and coefficients determine. 1.0 when the "
+           "harmonic space cannot carry a target of that dimension; see "
+           "harmonic_output_obstruction for the reason.")
+      .def_property_readonly("harmonic_output_obstruction",
+                             &MultiCobordism::harmonicOutputObstruction,
+                             "Why the last harmonic readout could not name a state, or empty.")
       .def("whole_complex_operator_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
              return self.wholeComplexOperatorResidualOn(
@@ -2280,6 +2294,7 @@ Right -- re-read after each drive call:
       "them. The choice is part of the OBJECTIVE: this residual is a term in r_U.")
       .value("TRANSFER", MultiCobordism::ReadoutMode::Transfer)
       .value("WHOLE_COMPLEX", MultiCobordism::ReadoutMode::WholeComplex)
+      .value("HARMONIC", MultiCobordism::ReadoutMode::Harmonic)
       .value("BOTH", MultiCobordism::ReadoutMode::Both);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
       "One canonical solve action a search policy (Proton's build restart loop, a greedy "
