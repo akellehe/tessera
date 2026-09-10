@@ -1657,6 +1657,66 @@ Simplex::volumeGradientDirectionalDerivative(
     return out;
 }
 
+namespace {
+
+/// Is this complex number exactly zero?
+[[nodiscard]] inline bool isExactlyZero(std::complex<double> z) noexcept {
+    return z.real() == 0.0 && z.imag() == 0.0;
+}
+
+/// The chain rule through a square root: d/dt sqrt(x(t)) = x'(t) / (2 sqrt(x)).
+///
+/// The circumcentric dual volume is built from roots of circumradius
+/// differences, and such a difference vanishes exactly whenever a facet's
+/// circumsphere coincides with its hinge's. sqrt has infinite slope at the
+/// origin, so the quotient genuinely diverges there -- but only when the
+/// radicand actually moves. It does not move along most directions: `x'` is the
+/// change in a circumradius difference under one edge's squared length, and an
+/// edge the facet does not carry leaves it exactly zero. Along such a direction
+/// the radicand is pinned at zero, so the root is identically zero and so is its
+/// derivative.
+///
+/// Evaluating the quotient as written turns that case into `(1/0) * 0`, which is
+/// NaN, and one NaN contaminates every edge the hinge contributes to. Taking the
+/// zero numerator first gives the value the limit actually has.
+[[nodiscard]] inline std::complex<double> rootChainRule(
+        std::complex<double> radicandDerivative,
+        std::complex<double> root) noexcept {
+    if (isExactlyZero(radicandDerivative)) return {0.0, 0.0};
+    return radicandDerivative / (2.0 * root);
+}
+
+/// A product in which an exactly-zero factor wins.
+///
+/// Used where a root that has vanished multiplies a derivative that may itself
+/// have diverged. The root being exactly zero pins the product to zero whenever
+/// the other factor is finite, which is the case here; written plainly the
+/// expression would be `0 * inf` and evaluate to NaN.
+[[nodiscard]] inline std::complex<double> productWithZeroAbsorbing(
+        std::complex<double> a, std::complex<double> b) noexcept {
+    if (isExactlyZero(a) || isExactlyZero(b)) return {0.0, 0.0};
+    return a * b;
+}
+
+} // namespace
+
+bool Simplex::dualGeometryIsDegenerate() const {
+    if (vertices.empty()) return false;
+    const int n = ambientTopDimension();
+    const int k = static_cast<int>(size()) - 1;
+    if (k != n - 2) return false;          // the (n-2) hinge the dual is built on
+
+    const std::complex<double> hingeRadius = circumradiusSquared();
+    for (const auto& facet : getCofaces()) {
+        const std::complex<double> facetRadius = facet->circumradiusSquared();
+        if (isExactlyZero(facetRadius - hingeRadius)) return true;
+        for (const auto& top : facet->getCofaces())
+            if (isExactlyZero(top->circumradiusSquared() - facetRadius))
+                return true;
+    }
+    return false;
+}
+
 std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
 Simplex::dualVolumeGradient() const {
     std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> grad;
@@ -1703,16 +1763,17 @@ Simplex::dualVolumeGradient() const {
             // d/dx sqrt(x) = 1/(2 sqrt(x)) on the principal branch. The old form
             // took 1/(2 sqrt(|x| + eps)), which is the derivative of signedSqrt
             // plus a regulator; neither is needed once the root is complex.
-            const std::complex<double> dss1 = 0.5 / ss1;
             std::complex<double> dinner{0.0, 0.0};
             for (const auto& t : f.tops) {
                 const std::complex<double> R2 = t.second.second;
                 const double sgn2 = t.second.first;
                 const std::complex<double> dR2 = dCircumR2(t.first, e.first, e.second);
                 const std::complex<double> x2 = R2 - f.R1;
-                dinner += sgn2 * (dR2 - dR1) / (2.0 * principalSqrt(x2));
+                dinner += sgn2 * rootChainRule(dR2 - dR1, principalSqrt(x2));
             }
-            dV += f.sgn * (dss1 * (dR1 - dRh) * f.inner + ss1 * dinner);
+            dV += f.sgn * (productWithZeroAbsorbing(rootChainRule(dR1 - dRh, ss1),
+                                                    f.inner)
+                           + productWithZeroAbsorbing(ss1, dinner));
         }
         grad[e] = dV * inv;
     }
@@ -1755,14 +1816,19 @@ Simplex::dualVolumeHessian() const {
     }
     const double inv = 1.0 / (static_cast<double>(n - k) * (n - k - 1));
     // g(x) = sqrt(x) on the principal branch, so g'(x) = 1/(2 sqrt(x)) and
-    // g''(x) = -1/(4 x sqrt(x)). The old real forms carried an |x| + eps
-    // regulator and a sign flip -- both artifacts of signedSqrt, not of the
-    // derivative (#641).
-    auto gp = [](std::complex<double> x) {
-        return 0.5 / principalSqrt(x);
+    // g''(x) = -1/(4 x sqrt(x)). Both blow up where the radicand vanishes, which
+    // happens exactly when a facet's circumsphere coincides with its hinge's.
+    // As in the gradient, the radicand is pinned at zero along every direction
+    // whose edge the facet does not carry, so the chain rule's numerator is zero
+    // there and the term is zero; taking the numerator first is what keeps a
+    // vanishing radicand from turning the whole row into NaN.
+    auto firstOrder = [](std::complex<double> x, std::complex<double> dx) {
+        return rootChainRule(dx, principalSqrt(x));
     };
-    auto gpp = [](std::complex<double> x) {
-        return -0.25 / (x * principalSqrt(x));
+    auto secondOrder = [](std::complex<double> x, std::complex<double> dxe,
+                          std::complex<double> dxf) {
+        if (isExactlyZero(dxe) || isExactlyZero(dxf)) return std::complex<double>{0.0, 0.0};
+        return -0.25 / (x * principalSqrt(x)) * dxe * dxf;
     };
     const std::vector<EK> ev(edges.begin(), edges.end());
     for (const auto& e : ev) {
@@ -1780,8 +1846,10 @@ Simplex::dualVolumeHessian() const {
                 const std::complex<double> x1 = fac.R1 - Rh2;
                 const std::complex<double> ss1 = principalSqrt(x1);
                 const std::complex<double> dx1_e = dR1_e - dRh_e, dx1_f = dR1_f - dRh_f;
-                const std::complex<double> dss1_e = gp(x1) * dx1_e, dss1_f = gp(x1) * dx1_f;
-                const std::complex<double> d2ss1 = gpp(x1) * dx1_e * dx1_f + gp(x1) * (d2R1 - d2Rh);
+                const std::complex<double> dss1_e = firstOrder(x1, dx1_e),
+                                           dss1_f = firstOrder(x1, dx1_f);
+                const std::complex<double> d2ss1 =
+                    secondOrder(x1, dx1_e, dx1_f) + firstOrder(x1, d2R1 - d2Rh);
                 std::complex<double> S{0.0,0.0}, dS_e{0.0,0.0}, dS_f{0.0,0.0}, d2S{0.0,0.0};
                 for (const auto& t : fac.tops) {
                     const double sgn2 = t.second.first;
@@ -1793,12 +1861,16 @@ Simplex::dualVolumeHessian() const {
                     const std::complex<double> x2 = R2 - fac.R1;
                     const std::complex<double> dx2_e = dR2_e - dR1_e, dx2_f = dR2_f - dR1_f;
                     S += sgn2 * principalSqrt(x2);
-                    dS_e += sgn2 * gp(x2) * dx2_e;
-                    dS_f += sgn2 * gp(x2) * dx2_f;
-                    d2S += sgn2 * (gpp(x2) * dx2_e * dx2_f + gp(x2) * (d2R2 - d2R1));
+                    dS_e += sgn2 * firstOrder(x2, dx2_e);
+                    dS_f += sgn2 * firstOrder(x2, dx2_f);
+                    d2S += sgn2 * (secondOrder(x2, dx2_e, dx2_f)
+                                   + firstOrder(x2, d2R2 - d2R1));
                 }
                 dV2 += fac.sgn
-                       * (d2ss1 * S + dss1_e * dS_f + dss1_f * dS_e + ss1 * d2S);
+                       * (productWithZeroAbsorbing(d2ss1, S)
+                          + productWithZeroAbsorbing(dss1_e, dS_f)
+                          + productWithZeroAbsorbing(dss1_f, dS_e)
+                          + productWithZeroAbsorbing(ss1, d2S));
             }
             hess[{e, f}] = dV2 * inv;
         }
