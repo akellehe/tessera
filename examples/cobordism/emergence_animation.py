@@ -2049,7 +2049,7 @@ class EmergenceFrame:
                 # evaluation restores, so it always reports state 0. The sum is
                 # what the drive minimises, and neither number can show a step
                 # that improves one state at another's expense.
-                "per_state": [_finite(r) for r in
+                "state_residuals": [_finite(r) for r in
                               node.two_body_residuals_per_case()],
                 "input_fiber_residuals": [_finite(r) for r in
                                           read.input_fiber_residuals]}
@@ -2875,15 +2875,15 @@ def _panel_residuals(axis, frames):
     # One trace per fitted state, so a step that trades one against another is
     # visible. With a single state this is exactly the one two-body trace the
     # panel always drew.
-    per_state = (last.two_body.get("per_state", [])
+    state_residuals = (last.two_body.get("state_residuals", [])
                  if not isinstance(last.two_body, Absent) else [])
-    if len(per_state) > 1:
-        for index in range(len(per_state)):
-            shade = _state_colour(index, len(per_state))
+    if len(state_residuals) > 1:
+        for index in range(len(state_residuals)):
+            shade = _state_colour(index, len(state_residuals))
             series.append((r"state %d vs $\chi$" % index, shade, "--",
-                           lambda f, i=index: _per_state_value(f, i)))
-        series.append(("sum over %d states" % len(per_state), "#1f4e79", "-",
-                       lambda f: _per_state_sum(f)))
+                           lambda f, i=index: _state_residual_value(f, i)))
+        series.append(("sum over %d states" % len(state_residuals), "#1f4e79", "-",
+                       lambda f: _state_residual_sum(f)))
     else:
         series.append((r"two-body vs $\chi$", "#1f4e79", "--",
                        lambda f: None if isinstance(f.two_body, Absent)
@@ -3189,19 +3189,19 @@ def _suptitle(frame, last_step):
             % (frame.step, last_step, seed_note))
 
 
-def _per_state_value(frame, index):
+def _state_residual_value(frame, index):
     """State `index`'s own residual on that frame, or None if unmeasured."""
     if isinstance(frame.two_body, Absent):
         return None
-    values = frame.two_body.get("per_state", [])
+    values = frame.two_body.get("state_residuals", [])
     return values[index] if index < len(values) else None
 
 
-def _per_state_sum(frame):
+def _state_residual_sum(frame):
     """What the drive actually minimises: the sum over the fitted states."""
     if isinstance(frame.two_body, Absent):
         return None
-    values = [v for v in frame.two_body.get("per_state", [])
+    values = [v for v in frame.two_body.get("state_residuals", [])
               if isinstance(v, float) and math.isfinite(v)]
     return sum(values) if values else None
 
