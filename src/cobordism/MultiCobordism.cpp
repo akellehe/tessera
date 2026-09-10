@@ -4398,7 +4398,12 @@ double MultiCobordism::bulkOperatorResidualOn(
   // does under the transfer reading, rather than a number standing in for one.
   GeometricOperatorReadout readout;
   try {
-    readout = geometricOperatorOn(spacetime, static_cast<int>(dimension));
+    // metric=true: the live signed Hodge weights, so the reading retains what
+    // relaxation did. The combinatorial unit-weight mode is topology-only and
+    // would score the same for every geometry with the same cells, making the
+    // term a constant under stage 2.
+    readout = geometricOperatorOn(spacetime, static_cast<int>(dimension), {},
+                                  /*tol=*/1e-9, /*metric=*/true);
   } catch (const std::runtime_error &) {
     return 1.0;
   } catch (const std::invalid_argument &) {
@@ -4436,7 +4441,21 @@ double MultiCobordism::wholeHarmonicResidualOn(
     return 1.0;
   };
   if (!spacetime) return refuse("no complex to read");
-  const Eigen::Index dimension = target.chi.size();
+  // The same guard the transfer and paired readings take: the harmonic band is
+  // the chain-level Whitney pencil's, so a node configured for diagonal
+  // weights would otherwise be read through a metric it did not ask for.
+  if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
+    return refuse("the whole-complex harmonic is read on the chain-level Whitney pencil; this node uses "
+                  "the diagonal-weight metric");
+  // The DECLARED output state when one is set, otherwise the two-body target.
+  // A rank-2 harmonic space carries a 2-dimensional state and a rank-4 one a
+  // 4-dimensional state; forcing the 4-dimensional chi on a two-torus host was
+  // asking the wrong question of it.
+  const Eigen::VectorXcd wanted =
+      outputStateTarget_
+          ? *outputStateTarget_
+          : Eigen::Map<const Eigen::VectorXcd>(target.chi.data(), target.chi.size());
+  const Eigen::Index dimension = wanted.size();
   chainhodge::Band band;
   AssembledPencil assembled;
   try {
@@ -4497,12 +4516,11 @@ double MultiCobordism::wholeHarmonicResidualOn(
       periods.completeOrthogonalDecomposition().solve(inputs);
   const double ss = state.squaredNorm();
   if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
-  const Eigen::Map<const Eigen::VectorXcd> chi(target.chi.data(), dimension);
-  // The same projective Frobenius leak the other readings take, so all three
-  // are on one scale and Both may sum them.
-  const complexd overlap = state.dot(chi);
-  const double leak = chi.squaredNorm() - std::norm(overlap) / ss;
-  return std::max(0.0, leak / chi.squaredNorm());
+  // The same projective Frobenius leak the other readings take, so all are on
+  // one scale and a set of them may be summed.
+  const complexd overlap = state.dot(wanted);
+  const double leak = wanted.squaredNorm() - std::norm(overlap) / ss;
+  return std::max(0.0, leak / wanted.squaredNorm());
 }
 
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
@@ -4522,6 +4540,14 @@ double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &space
       total += transferResidualOn(spacetime, target);
   }
   return total;
+}
+
+void MultiCobordism::setOutputStateTarget(Eigen::VectorXcd state) {
+  if (state.size() < 1)
+    throw std::invalid_argument("MultiCobordism::setOutputStateTarget: the state is empty");
+  if (!(state.squaredNorm() > 0.0))
+    throw std::invalid_argument("MultiCobordism::setOutputStateTarget: the state is zero");
+  outputStateTarget_ = std::move(state);
 }
 
 void MultiCobordism::setGateTarget(Eigen::MatrixXcd gate) {

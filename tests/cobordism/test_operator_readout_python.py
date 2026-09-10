@@ -48,7 +48,7 @@ def seeded(**overrides):
 
 def test_the_target_is_the_gate_itself():
     """4x4, not the 2x2 image of one input pair."""
-    node = seeded(readout="operator", conjugate_inputs=True)
+    node = seeded(readout="operator", tori=4)
     gate = np.asarray(node.gate_target)
     assert gate.shape == (4, 4)
     expected = np.asarray(ea.DECLARED_GATES["xx"], dtype=complex)
@@ -56,7 +56,7 @@ def test_the_target_is_the_gate_itself():
 
 
 def test_it_scores_a_number_and_that_number_is_the_objective_term():
-    node = seeded(readout="operator", conjugate_inputs=True)
+    node = seeded(readout="operator", tori=4)
     residual = node.operator_residual()
     assert 0.0 <= residual <= 1.0
     assert node.two_body_residual() == pytest.approx(residual, rel=1e-12)
@@ -64,19 +64,21 @@ def test_it_scores_a_number_and_that_number_is_the_objective_term():
 
 def test_a_summed_set_adds_the_readings():
     """Every reading is the same projective leak on one scale, so they sum."""
-    whole = seeded(readout="whole", conjugate_inputs=True).two_body_residual()
-    operator = seeded(readout="operator", conjugate_inputs=True).two_body_residual()
-    both = seeded(readout="whole,operator", conjugate_inputs=True).two_body_residual()
+    whole = seeded(readout="whole", tori=4).two_body_residual()
+    operator = seeded(readout="operator", tori=4).two_body_residual()
+    both = seeded(readout="whole,operator", tori=4).two_body_residual()
     assert both == pytest.approx(whole + operator, rel=1e-9)
 
 
 # ---- incompatible inputs are refused by name ----
 
 @pytest.mark.parametrize("overrides,expected", [
-    (dict(readout="whole"), "conjugate-inputs"),
-    (dict(readout="operator"), "conjugate-inputs"),
-    (dict(readout="transfer", conjugate_inputs=True), "cannot be used"),
-    (dict(readout="transfer,operator", conjugate_inputs=True), "cannot be used"),
+    # `whole` takes either count; at two tori the harmonic has rank 2, so it
+    # needs a 2-dimensional target named rather than the 4-dimensional chi.
+    (dict(readout="whole"), "needs --output-state"),
+    (dict(readout="operator"), "needs --tori 4"),
+    (dict(readout="transfer", tori=4), "needs --tori 2"),
+    (dict(readout="transfer,operator", tori=4), "needs --tori 2"),
     (dict(readout="bulk", layers=1), "two collar layers"),
     (dict(readout=""), "no reading"),
     (dict(readout="nope"), "unknown readout"),
@@ -89,7 +91,7 @@ def test_refused(overrides, expected):
 
 @pytest.mark.parametrize("overrides", [
     dict(readout="transfer"),
-    dict(readout="whole,operator", conjugate_inputs=True),
+    dict(readout="whole,operator", tori=4),
     dict(readout="bulk", layers=3),
 ])
 def test_accepted(overrides):

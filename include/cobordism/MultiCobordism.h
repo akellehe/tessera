@@ -1744,6 +1744,15 @@ class MultiCobordism {
   /// The two-body residual on the live complex. @throws std::logic_error
   /// without a target or without two attached input fibers.
   [[nodiscard]] double twoBodyResidual() const;
+  /// The state the WHOLE complex's harmonic form is meant to be
+  /// (`ReadoutMode::Whole`). Its dimension is the claim: a rank-2 harmonic
+  /// space carries a 2-dimensional state, a rank-4 one a 4-dimensional state,
+  /// and the reading refuses a target of any other size rather than fitting
+  /// it. Unset, the two-body target is used, which is 4-dimensional.
+  void setOutputStateTarget(Eigen::VectorXcd state);
+  [[nodiscard]] const std::optional<Eigen::VectorXcd> &outputStateTarget() const noexcept {
+    return outputStateTarget_;
+  }
   /// The projective leak of the node's GATE target against the paired-frame
   /// transfer — the reading `ReadoutMode::Operator` selects. Refused rather
   /// than scored when the boundary carries no conjugate pairs or no gate
@@ -2991,6 +3000,8 @@ class MultiCobordism {
   std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
   /// The gate `ReadoutMode::Operator` scores against (`setGateTarget`).
   std::optional<Eigen::MatrixXcd> gateTarget_;
+  /// The state `ReadoutMode::Whole` scores against (`setOutputStateTarget`).
+  std::optional<Eigen::VectorXcd> outputStateTarget_;
   /// Why the last harmonic readout could not name a state (empty when it
   /// could). Mutable because the readout is a const measurement that still has
   /// to be able to say why it refused.

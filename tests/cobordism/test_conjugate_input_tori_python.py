@@ -107,7 +107,7 @@ def drive_to_seed(**overrides):
 
 def test_two_tori_cannot_carry_a_four_dimensional_target():
     """The control, and the reason the flag exists."""
-    node = drive_to_seed(readout="whole", conjugate_inputs=False)
+    node = drive_to_seed(tori=2)
     chi = node.two_body_target().chi
     assert node.whole_harmonic_residual(chi) == 1.0
     assert "rank 2" in node.whole_harmonic_obstruction
@@ -115,7 +115,7 @@ def test_two_tori_cannot_carry_a_four_dimensional_target():
 
 def test_four_tori_can():
     """A number, not a refusal. Its VALUE is what a run is for."""
-    node = drive_to_seed(readout="whole", conjugate_inputs=True)
+    node = drive_to_seed(readout="whole", tori=4)
     chi = node.two_body_target().chi
     residual = node.whole_harmonic_residual(chi)
     assert node.whole_harmonic_obstruction == "", node.whole_harmonic_obstruction
@@ -123,17 +123,29 @@ def test_four_tori_can():
 
 
 def test_the_conjugate_partners_are_the_orientation_reversals():
-    """-conj(tau), so the modulus stays in the upper half-plane."""
-    node = drive_to_seed(conjugate_inputs=True)
+    """-conj(tau), so the modulus stays in the upper half-plane.
+
+    A readout is named because the default, `transfer`, reads between exactly
+    two frames and is refused at four tori.
+    """
+    node = drive_to_seed(readout="whole", tori=4)
     assert len(node.inputs) == 4
 
 
 # ---- the flag ----
 
 def test_the_default_is_two_tori():
-    assert ea.build_config()["conjugate_inputs"] is False
-    assert ea.DECLARED_CONJUGATE_INPUTS is False
+    assert ea.build_config()["tori"] == 2
+    assert ea.DECLARED_TORI == 2
 
 
 def test_the_value_is_carried_into_the_config():
-    assert ea.build_config(conjugate_inputs=True)["conjugate_inputs"] is True
+    assert ea.build_config(tori=4, readout="whole")["tori"] == 4
+
+
+def test_only_two_or_four():
+    """Three tori bound no collar and six is a host nobody has built."""
+    for count in (0, 1, 3, 5, 6):
+        with pytest.raises(ValueError) as caught:
+            ea.build_config(tori=count)
+        assert "two or four" in str(caught.value)

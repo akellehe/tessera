@@ -1888,6 +1888,12 @@ assertion. Every pairing is the transpose.)doc")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
            "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
            "reversal residual, the fit residual, and both input blocks' fiber residuals.")
+      .def("set_output_state_target", &MultiCobordism::setOutputStateTarget, py::arg("state"),
+           "The state the WHOLE complex's harmonic form is meant to be (ReadoutMode.WHOLE). Its "
+           "dimension is the claim: a rank-2 harmonic space carries a 2-dimensional state, a "
+           "rank-4 one a 4-dimensional state, and the reading refuses a target of any other size "
+           "rather than fitting it. Unset, the two-body target is used.")
+      .def_property_readonly("output_state_target", &MultiCobordism::outputStateTarget)
       .def("set_gate_target", &MultiCobordism::setGateTarget, py::arg("gate"),
            "The gate this cobordism is meant to represent, a square matrix on the joint space. "
            "Read by ReadoutMode.OPERATOR, where the transfer between two PAIRED frames is 4x4 -- "
