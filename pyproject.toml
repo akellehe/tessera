@@ -35,8 +35,17 @@ optional-dependencies.examples = [
 optional-dependencies.rl = [
     "torch>=2.0",
 ]
+# A GUI toolkit binding, so `emergence_animation.py run --live` has a window to
+# draw into. matplotlib alone resolves to Agg, which renders to files and shows
+# nothing, so --live refuses to start under it rather than compute every frame
+# and display none of them. Its own extra rather than part of `examples`: every
+# campaign on a headless box renders to --out and has no use for Qt.
+optional-dependencies.live = [
+    "PyQt6>=6.6",
+]
 optional-dependencies.dev = [
     "tessera[examples]",
+    "tessera[live]",
     "pytest",
     "pytest-xdist",
     "scikit-build-core>=0.9",
