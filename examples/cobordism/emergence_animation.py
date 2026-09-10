@@ -3614,6 +3614,35 @@ def drive_live(config, progress=False, on_node=None):
     return outcome["result"]
 
 
+def source_commit():
+    """The commit this run's code was at, or Absent outside a git work tree.
+
+    A geometry dump is the only output a run cannot recompute from the others,
+    and reproducing a figure means knowing which code produced it. `dirty`
+    carries as much as `head`: a sha read from a tree with uncommitted changes
+    names a commit that does not describe what ran, and a record that said
+    otherwise would be worse than one that said nothing.
+
+    Absent rather than guessed when git is unavailable or the tree is not a
+    repository -- the same convention every other unmeasurable quantity in
+    this document uses.
+    """
+    import subprocess
+
+    def git(*arguments):
+        return subprocess.run(("git",) + arguments, cwd=os.path.dirname(
+            os.path.abspath(__file__)), capture_output=True, text=True,
+            check=True, timeout=10).stdout.strip()
+
+    try:
+        head = git("rev-parse", "HEAD")
+        branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        dirty = bool(git("status", "--porcelain"))
+    except (OSError, subprocess.SubprocessError):
+        return Absent("the run is not inside a readable git work tree")
+    return {"head": head, "branch": branch, "dirty": dirty}
+
+
 def geometry_document(node, inputs=None):
     """The node's live complex, in the schema a rebuild already reads.
 
@@ -3670,6 +3699,7 @@ def geometry_document(node, inputs=None):
             phases.append([source, target, phase.real, phase.imag])
     document = {
         "schema": 1,
+        "source": source_commit(),
         "dimensions": sizes[0] - 1,
         "cells": cells,
         "edges": edges,
@@ -4217,6 +4247,7 @@ def main(argv=None):
                _format_objective_total(frames[-1])))
     if args.json:
         document = {"config": config,
+                    "source": source_commit(),
                     "terminator": result.terminator,
                     "stalls": result.stalls,
                     "frames": [f.to_json() for f in frames]}
