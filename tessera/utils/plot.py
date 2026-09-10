@@ -26,11 +26,17 @@ import tessera
 # =========================================================================
 
 def build_spacetime(n_simplices, *, k0=2.2, k4=0.5, delta=0.6,
-                    epsilon=None, nSweeps=10, topology=None):
+                    epsilon=None, nSweeps=10, topology=None, seed=None):
     """Build, tune, and thermalize a 4D Lorentzian CDT spacetime.
 
     If *epsilon* is None (the default), it is set to ``1/target_N41``
     so the volume-fixing penalty stays proportionate at any lattice size.
+
+    If *seed* is given it is applied to both random number generators that
+    decide the outcome -- the spacetime's, which drives the initial build, and
+    the simulation's, which drives the Monte Carlo sweeps -- so the returned
+    geometry is reproducible across processes. Left as None, each generator
+    seeds itself from ``std::random_device`` and the geometry differs run to run.
 
     Returns (spacetime, cdt_simulation).
     """
@@ -50,6 +56,8 @@ def build_spacetime(n_simplices, *, k0=2.2, k4=0.5, delta=0.6,
     # simplices per slab in 4D; building directly with large n_simplices
     # would create n/20 slices (e.g. 160k → 8000 razor-thin slices).
     max_build = 80 * 20  # 80 slabs × 20 simplices/slab in 4D
+    if seed is not None:
+        st.setSeed(seed)
     st.build(min(n_simplices, max_build))
     target = st.getN41() if n_simplices <= max_build else n_simplices // 2
     if epsilon is None:
@@ -58,6 +66,8 @@ def build_spacetime(n_simplices, *, k0=2.2, k4=0.5, delta=0.6,
         spacetime=st, k0=k0, k4=k4, delta=delta,
         epsilon=epsilon, targetN41=target,
     )
+    if seed is not None:
+        cdt.setSeed(seed)
     cdt.tune()
     if nSweeps > 0:
         cdt.sweep(nSweeps)

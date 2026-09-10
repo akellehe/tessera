@@ -132,18 +132,22 @@ python examples/volume_profile_phases.py # visualize blob/crumpled/polymer shape
 
 ### Regge solver
 
-Solve the discrete Einstein equations by minimizing the Regge action gradient. Add point-mass matter via the proper-time action and watch curvature concentrate around the source.
+The discrete Einstein equations say that a Regge geometry's action is *stationary* in the squared edge lengths, `dS/d(l^2_e) = 0`. `ReggeSolver` evaluates that action and its exact analytic derivatives; it does not relax the geometry itself. Point-mass matter enters through the proper-time action, and the mass sources curvature around itself.
 
 ```python
 matter = tessera.MatterConfiguration()
 matter.setWorldlineMass(center_vertex, mass=1.0, spacetime=st)
 
 solver = tessera.ReggeSolver(st, matter)
-converged, F, iters = solver.solve(tol=1e-8, max_iters=5000)
+
+S = solver.totalAction()            # S_grav + S_matter
+F = solver.actionGradientNorm()     # sum_e |dS/d(l^2_e)|^2, zero on a solution
 ```
 
+`F` is the stationarity residual, and it rather than the action is what a relaxation drives to zero: the action is unbounded below and diverges if descended. `actionGradientExact` returns the same gradient per edge, analytically and in one pass, for the gravitational term on its own; `matterAction` carries the proper-time term. `examples/curvature_slice_gif.py` assembles both into the residual and minimizes it as a least-squares problem, bounding each edge so its `l^2` keeps its sign and no relaxation step alters the causal structure.
+
 ```bash
-python examples/curvature_slice_gif.py --mass 2.0 --n-simplices 200
+python examples/curvature_slice_gif.py --n-simplices 600 --seed 20260909 --mass 1.0
 ```
 
 This produces a per-time-slice curvature heat-map GIF.
