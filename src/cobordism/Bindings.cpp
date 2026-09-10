@@ -1888,13 +1888,16 @@ assertion. Every pairing is the transpose.)doc")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
            "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
            "reversal residual, the fit residual, and both input blocks' fiber residuals.")
-      .def("set_transfer_blocks", &MultiCobordism::setTransferBlocks,
-           py::arg("first"), py::arg("second"),
-           "Which two attached input blocks the TRANSFER reading is read between. With "
-           "conjugate pairs there are four attached fibers and the transfer is still between "
-           "the two STATES; the conjugates are boundary carried so the harmonic space has room "
-           "for the target, not further inputs to couple.")
-      .def("clear_transfer_blocks", &MultiCobordism::clearTransferBlocks)
+      .def("set_gate_target", &MultiCobordism::setGateTarget, py::arg("gate"),
+           "The gate this cobordism is meant to represent, a square matrix on the joint space. "
+           "Read by ReadoutMode.OPERATOR, where the transfer between two PAIRED frames is 4x4 -- "
+           "the dimension of an operator on C^2 (x) C^2 -- so the target is the GATE rather than "
+           "the gate's image of one chosen input.")
+      .def_property_readonly("gate_target", &MultiCobordism::gateTarget)
+      .def("operator_residual",
+           [](const MultiCobordism &self) { return self.operatorResidualOn(self.spacetime()); },
+           py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of the gate target against the paired-frame transfer.")
       .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
            "The readings SUMMED into the two-body residual. TRANSFER is the "
            "coupling block between the two boundary frames; BULK is "
@@ -2313,7 +2316,8 @@ Right -- re-read after each drive call:
       "SET and summed (set_readout_modes). Part of the OBJECTIVE: this residual is a term in r_U.")
       .value("TRANSFER", MultiCobordism::ReadoutMode::Transfer)
       .value("BULK", MultiCobordism::ReadoutMode::Bulk)
-      .value("WHOLE", MultiCobordism::ReadoutMode::Whole);
+      .value("WHOLE", MultiCobordism::ReadoutMode::Whole)
+      .value("OPERATOR", MultiCobordism::ReadoutMode::Operator);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
       "One canonical solve action a search policy (Proton's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "

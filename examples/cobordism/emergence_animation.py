@@ -844,6 +844,7 @@ _READOUT_MODES = {
     "transfer": MC.ReadoutMode.TRANSFER,
     "bulk": MC.ReadoutMode.BULK,
     "whole": MC.ReadoutMode.WHOLE,
+    "operator": MC.ReadoutMode.OPERATOR,
 }
 
 
@@ -885,6 +886,11 @@ def gate_image(name, psi, phi):
             "psi": np.asarray(psi, dtype=complex).reshape(2),
             "phi": np.asarray(phi, dtype=complex).reshape(2),
             "chi": (gate @ product).reshape(2, 2),
+            # The GATE, beside its image of this one input pair. The
+            # paired-frame reading scores against the operator itself
+            # (#1048): a geometry that represents G acts correctly on every
+            # input, where one fitted to chi has been fitted to one of them.
+            "gate": gate,
             "product_state": product.reshape(2, 2),
             "first_order_amplitudes": (gate @ product).reshape(2, 2),
             "exact_amplitudes": (gate @ product).reshape(2, 2)}
@@ -912,6 +918,10 @@ def flip_flop_evolution(psi, phi, coupling, time):
     chi = two_qubit_flip_flop(psi, phi)
     return {"coupling": float(coupling), "time": float(time), "Jt": angle,
             "psi": psi, "phi": phi, "chi": chi,
+            # The propagator IS the gate here, so the paired-frame reading
+            # scores against the exact evolution at the declared J t rather
+            # than against its image of one input pair (#1048).
+            "gate": propagator,
             "product_state": product.reshape(2, 2),
             "first_order_amplitudes": -1j * angle * chi,
             "exact_amplitudes": (propagator @ product).reshape(2, 2)}
@@ -1209,11 +1219,8 @@ def build_qubit_node(config):
                              np.asarray(tori[1].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
-    # With conjugate pairs the blocks are [A, A*, B, B*] and the transfer is
-    # between the two STATES, A and B. The conjugates are boundary carried so
-    # the harmonic space has room for the target, not further inputs.
-    if config.get("conjugate_inputs", DECLARED_CONJUGATE_INPUTS):
-        node.set_transfer_blocks(0, 2)
+    if "operator" in _readout_names(config.get("readout", DECLARED_READOUT)):
+        node.set_gate_target(algebra["gate"])
     node.set_readout_modes([_READOUT_MODES[name]
                             for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
@@ -3634,6 +3641,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
                  readout=DECLARED_READOUT,
                  conjugate_inputs=DECLARED_CONJUGATE_INPUTS,
+                 layers=DECLARED_COLLAR_LAYERS,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
@@ -3689,7 +3697,34 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if surgical_depth < 1:
         raise ValueError("surgical depth must be at least 1, got %r"
                          % (surgical_depth,))
-    _readout_names(readout)
+    names = _readout_names(readout)
+    # A reading that STRUCTURALLY cannot produce a number is refused here
+    # rather than scoring a constant 1.0 forever. A constant term carries no
+    # gradient, so the flag would silently be a no-op and the run would look
+    # like it was optimizing something it was not.
+    if int(layers) < 1:
+        raise ValueError("collar layers must be at least one, got %r" % (layers,))
+    if not conjugate_inputs:
+        if "whole" in names:
+            raise ValueError(
+                "--readout whole needs --conjugate-inputs: two boundary tori "
+                "leave a harmonic space of rank 2 against a 4-dimensional "
+                "target, since rank(H^1(W) -> H^1(dW)) = b_1(dW)/2")
+        if "operator" in names:
+            raise ValueError(
+                "--readout operator needs --conjugate-inputs: the paired-frame "
+                "transfer is read between a conjugate pair a side, and two "
+                "tori give one block a side")
+    elif "transfer" in names:
+        raise ValueError(
+            "--readout transfer cannot be used with --conjugate-inputs: it "
+            "reads between exactly two frames and the boundary carries four, "
+            "so two of the four tori would be left out. Use "
+            "--readout operator, which pairs them")
+    if "bulk" in names and int(layers) < 2:
+        raise ValueError(
+            "--readout bulk needs at least two collar layers: with one, every "
+            "cell touches a surface and there are no interior cells to read")
     if combinatorial_breadth < 0:
         raise ValueError("combinatorial breadth is how many moves stage 1 "
                          "composes into one candidate before it starts "
@@ -3727,7 +3762,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "tau_a": moduli["tau_a"],
         "tau_b": moduli["tau_b"],
         "grid": int(grid),
-        "layers": DECLARED_COLLAR_LAYERS,
+        "layers": int(layers),
         "coupling": float(coupling),
         "time": float(time),
         "input_weight": float(input_weight),

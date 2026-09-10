@@ -4264,14 +4264,6 @@ std::vector<double> MultiCobordism::twoBodyResidualsPerCaseOn(
 
 std::pair<const MultiCobordism::BoundaryBlock *, const MultiCobordism::BoundaryBlock *>
 MultiCobordism::attachedInputBlocks() const {
-  // Named blocks win: with conjugate pairs there are four attached fibers and
-  // the transfer is still between the two STATES.
-  if (transferBlocks_) {
-    const auto [first, second] = *transferBlocks_;
-    if (first >= inputBlocks_.size() || second >= inputBlocks_.size())
-      throw std::logic_error("MultiCobordism: the named transfer blocks are out of range");
-    return {&inputBlocks_[first], &inputBlocks_[second]};
-  }
   std::vector<const BoundaryBlock *> attached;
   for (const auto &block : inputBlocks_)
     if (block.fiber && block.fiber->images.cols() > 0) attached.push_back(&block);
@@ -4318,6 +4310,59 @@ chainhodge::TransferResult MultiCobordism::frameTransferOn(const std::shared_ptr
     return out;
   };
   return PencilLayer::transfer(assembled, A.fiber->degree, frame(A), frame(B));
+}
+
+chainhodge::TransferResult MultiCobordism::pairedFrameTransferOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const std::vector<const BoundaryBlock *> &sideA,
+    const std::vector<const BoundaryBlock *> &sideB) const {
+  if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
+    throw std::logic_error("MultiCobordism: the paired-frame transfer is read on the chain-level Whitney "
+                           "pencil; this node uses the diagonal-weight metric");
+  if (sideA.empty() || sideB.empty())
+    throw std::logic_error("MultiCobordism: a paired frame needs at least one block a side");
+  const AssembledPencil assembled = PencilLayer::assemble({spacetime});
+  // One side's frame is its blocks' frames stacked: cells concatenated, images
+  // and dual images BLOCK-DIAGONAL. A torus and its conjugate carry disjoint
+  // cells and their own kernels, so the combined frame is their direct sum --
+  // nothing is mixed here that the geometry does not already separate.
+  auto side = [&](const std::vector<const BoundaryBlock *> &blocks) {
+    BoundaryFiber out;
+    out.degree = blocks.front()->fiber->degree;
+    Eigen::Index rows = 0, cols = 0;
+    std::vector<BlockFrame> frames;
+    for (const auto *block : blocks) {
+      if (block->fiber->degree != out.degree)
+        throw std::logic_error("MultiCobordism: a paired frame's blocks are at different degrees");
+      const TransferOperand operand = transferOperand(*block, spacetime);
+      BlockFrame frame;
+      if (operand.frame) {
+        frame = *operand.frame;
+      } else {
+        const auto r = static_cast<Eigen::Index>(operand.cells.size());
+        frame.cells = operand.cells;
+        frame.images = Eigen::MatrixXcd::Identity(r, r);
+        frame.dualImages = Eigen::MatrixXcd::Identity(r, r);
+      }
+      if (static_cast<std::size_t>(frame.images.rows()) != operand.cells.size())
+        throw std::logic_error("MultiCobordism: a block's frame has a row count other than its cells");
+      out.cells.insert(out.cells.end(), operand.cells.begin(), operand.cells.end());
+      rows += frame.images.rows();
+      cols += frame.images.cols();
+      frames.push_back(std::move(frame));
+    }
+    out.images = Eigen::MatrixXcd::Zero(rows, cols);
+    out.dualImages = Eigen::MatrixXcd::Zero(rows, cols);
+    Eigen::Index row = 0, col = 0;
+    for (const auto &frame : frames) {
+      out.images.block(row, col, frame.images.rows(), frame.images.cols()) = frame.images;
+      out.dualImages.block(row, col, frame.dualImages.rows(), frame.dualImages.cols()) = frame.dualImages;
+      row += frame.images.rows();
+      col += frame.images.cols();
+    }
+    return out;
+  };
+  return PencilLayer::transfer(assembled, sideA.front()->fiber->degree, side(sideA), side(sideB));
 }
 
 MultiCobordism::TransferOperand MultiCobordism::transferOperand(const BoundaryBlock &block,
@@ -4467,7 +4512,9 @@ double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &space
   // so summing them is well defined however many are chosen.
   double total = 0.0;
   for (const ReadoutMode mode : readoutModes_) {
-    if (mode == ReadoutMode::Whole)
+    if (mode == ReadoutMode::Operator)
+      total += operatorResidualOn(spacetime);
+    else if (mode == ReadoutMode::Whole)
       total += wholeHarmonicResidualOn(spacetime, target);
     else if (mode == ReadoutMode::Bulk)
       total += bulkOperatorResidualOn(spacetime, target);
@@ -4475,6 +4522,49 @@ double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &space
       total += transferResidualOn(spacetime, target);
   }
   return total;
+}
+
+void MultiCobordism::setGateTarget(Eigen::MatrixXcd gate) {
+  if (gate.rows() < 1 || gate.rows() != gate.cols())
+    throw std::invalid_argument("MultiCobordism::setGateTarget: the gate must be a non-empty square matrix");
+  gateTarget_ = std::move(gate);
+}
+
+double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spacetime) const {
+  if (!gateTarget_)
+    throw std::logic_error("MultiCobordism::operatorResidualOn: no gate target (setGateTarget)");
+  if (!spacetime) return 1.0;
+  // The two sides are the two PAIRS, in block order: a state and its conjugate
+  // are one side, so nothing is left out of either.
+  std::vector<const BoundaryBlock *> attached;
+  for (const auto &block : inputBlocks_)
+    if (block.fiber && block.fiber->images.cols() > 0) attached.push_back(&block);
+  if (attached.size() % 2 != 0 || attached.size() < 2)
+    throw std::logic_error("MultiCobordism::operatorResidualOn: the operator reading pairs the attached input "
+                           "blocks two to a side; " + std::to_string(attached.size()) + " are attached");
+  const std::size_t half = attached.size() / 2;
+  const std::vector<const BoundaryBlock *> sideA(attached.begin(), attached.begin() + half);
+  const std::vector<const BoundaryBlock *> sideB(attached.begin() + half, attached.end());
+  Eigen::MatrixXcd T;
+  try {
+    T = pairedFrameTransferOn(spacetime, sideA, sideB).forward;
+  } catch (const std::runtime_error &) {
+    return 1.0;  // a refused geometry carries no operator: full leak
+  } catch (const std::invalid_argument &) {
+    return 1.0;
+  }
+  const Eigen::MatrixXcd &gate = *gateTarget_;
+  if (T.rows() != gate.rows() || T.cols() != gate.cols())
+    throw std::logic_error("MultiCobordism::operatorResidualOn: the gate is " + std::to_string(gate.rows()) + "x" +
+                           std::to_string(gate.cols()) + " but the paired frames give " +
+                           std::to_string(T.rows()) + "x" + std::to_string(T.cols()));
+  const double tt = T.squaredNorm();
+  if (!(tt > 0.0)) return 1.0;
+  // The same projective Frobenius leak every other reading takes, so all are
+  // on one scale and a set of them may be summed.
+  const complexd overlap = (T.conjugate().cwiseProduct(gate)).sum();
+  const double leak = gate.squaredNorm() - std::norm(overlap) / tt;
+  return std::max(0.0, leak / gate.squaredNorm());
 }
 
 double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spacetime,

@@ -629,24 +629,17 @@ class MultiCobordism {
   ///
   /// `Whole` is \f$\ker L_1(W)\f$, the boundary INCLUDED, read through the
   /// blocks' markings. Its rank is \f$b_1(W)\f$.
-  enum class ReadoutMode { Transfer, Bulk, Whole };
+  ///
+  /// `Operator` is the transfer between two PAIRED frames, a conjugate pair a
+  /// side. Each frame has rank 4, so the transfer is 4x4 -- the dimension of
+  /// an operator on \f$\mathbb{C}^2\otimes\mathbb{C}^2\f$ -- and the target
+  /// is the GATE rather than the gate's image of one chosen input.
+  enum class ReadoutMode { Transfer, Bulk, Whole, Operator };
   /// The readings SUMMED into the two-body residual. A set rather than one
   /// choice, so a run can be scored under more than one reading without a
   /// special name for each pairing. Empty is refused: a two-body term scored
   /// against nothing is not a term.
   void setReadoutModes(std::vector<ReadoutMode> modes);
-  /// Which two attached input blocks the TRANSFER reading is read between.
-  ///
-  /// It used to be "the attached ones", which was unambiguous only while there
-  /// were exactly two. With conjugate pairs there are four, and the transfer
-  /// is still between the two STATES -- the conjugates are extra boundary,
-  /// carried so the harmonic space has room for the target, not a third and
-  /// fourth input to couple. Unset, the behaviour is what it was: the two
-  /// attached blocks, and an error if there are not exactly two.
-  void setTransferBlocks(std::size_t first, std::size_t second) {
-    transferBlocks_ = std::pair<std::size_t, std::size_t>{first, second};
-  }
-  void clearTransferBlocks() noexcept { transferBlocks_.reset(); }
   [[nodiscard]] const std::vector<ReadoutMode> &readoutModes() const noexcept {
     return readoutModes_;
   }
@@ -1751,6 +1744,18 @@ class MultiCobordism {
   /// The two-body residual on the live complex. @throws std::logic_error
   /// without a target or without two attached input fibers.
   [[nodiscard]] double twoBodyResidual() const;
+  /// The projective leak of the node's GATE target against the paired-frame
+  /// transfer — the reading `ReadoutMode::Operator` selects. Refused rather
+  /// than scored when the boundary carries no conjugate pairs or no gate
+  /// target is set: a term that cannot be computed is not a term.
+  [[nodiscard]] double operatorResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime) const;
+  /// The gate this cobordism is meant to represent, as a square matrix on the
+  /// joint space. Set to read `ReadoutMode::Operator`.
+  void setGateTarget(Eigen::MatrixXcd gate);
+  [[nodiscard]] const std::optional<Eigen::MatrixXcd> &gateTarget() const noexcept {
+    return gateTarget_;
+  }
   /// The projective leak of \p target against the operator promoted from
   /// \f$\ker L_1(W-\partial W)\f$ through a Choi frame — the reading
   /// `ReadoutMode::Bulk` selects. `1.0`, the full leak, when the
@@ -2917,6 +2922,18 @@ class MultiCobordism {
   /// the same convention a refused geometry takes in `twoBodyResidualOn`.
   /// The projective leak of \p target against the frame transfer \f$T_{AB}\f$
   /// — the reading `ReadoutMode::Transfer` selects.
+  /// The transfer between two PAIRED frames: each side's blocks stacked into
+  /// one frame, cells concatenated and images block-diagonal (#1048).
+  ///
+  /// With a conjugate pair a side, each frame has rank 4, so the transfer is
+  /// 4x4 -- sixteen numbers, the dimension of an operator on
+  /// \f$\mathbb{C}^4=\mathbb{C}^2\otimes\mathbb{C}^2\f$. `vec(T)` is that
+  /// operator's Choi state, so the target is the GATE rather than the gate's
+  /// image of one chosen input.
+  [[nodiscard]] chainhodge::TransferResult pairedFrameTransferOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const std::vector<const BoundaryBlock *> &sideA,
+      const std::vector<const BoundaryBlock *> &sideB) const;
   [[nodiscard]] double transferResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
       const TwoBodyTarget &target) const;
@@ -2972,9 +2989,8 @@ class MultiCobordism {
   /// What the two-body target is scored against (`setReadoutMode`). Transfer
   /// by default, so every recorded run keeps its meaning.
   std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
-  /// The two blocks the transfer is read between, when named (see
-  /// `setTransferBlocks`). Unset means the two attached ones.
-  std::optional<std::pair<std::size_t, std::size_t>> transferBlocks_;
+  /// The gate `ReadoutMode::Operator` scores against (`setGateTarget`).
+  std::optional<Eigen::MatrixXcd> gateTarget_;
   /// Why the last harmonic readout could not name a state (empty when it
   /// could). Mutable because the readout is a const measurement that still has
   /// to be able to say why it refused.
