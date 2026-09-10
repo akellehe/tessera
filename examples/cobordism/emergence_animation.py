@@ -365,7 +365,7 @@ DECLARED_SCORE_LEAK = False
 #: shares one triangulation, one gluing and one bulk; only the boundary metric
 #: differs. Use with --pin-boundary: with the boundary free the cases would
 #: fight over coordinates the relaxation may move, which is not the experiment.
-DECLARED_STATES = ()
+DECLARED_STATES = None
 #: How often the `--live` main thread services the GUI event loop while the
 #: worker computes, in seconds -- about twenty times a second.
 #:
@@ -923,6 +923,32 @@ qubit mode: how --tori, --readout and --output-state fit together
   be, as a modulus tau; the target is psi(tau) = (1, tau) normalized. Read
   by --readout whole and ignored by the others.
 
+  Writing a state. Every state here is a modulus tau, and the state it names
+  is psi(tau) = (1, tau) normalized -- so tau = psi_1 / psi_0. The table is
+  the usual qubit states in that coordinate:
+
+    state                       tau            as an input?   as --output-state?
+    |0>                         0              no             yes
+    |1>                         infinity       no             no
+    |+>                         1              no             yes
+    |->                         -1             no             yes
+    |+i>                        1j             YES            yes
+    |-i>                        -1j            no             yes
+    (sqrt3/2, 1/2)              0.57735        no             yes
+    (3/5, 4i/5)                 1.3333j        YES            yes
+
+  Two different constraints are at work, and they are not the same one.
+
+    An INPUT state -- --tau-a, --tau-b, --state -- is a TORUS, and a torus
+    modulus must lie in the upper half-plane. flat_torus refuses Im tau <= 0
+    by name. So an input can only be a state with Im(psi_1 / psi_0) > 0:
+    half the Bloch sphere. |0>, |1>, |+> and |-> are NOT expressible as
+    inputs, and neither is any other state whose amplitude ratio is real.
+
+    An --output-state is a state and nothing else, so any finite tau does.
+    Only |1> is out of reach there, because (1, tau) is never (0, 1) for
+    finite tau; a large |tau| approaches it.
+
   Which metric each reading uses:
 
     transfer   the chain-level WHITNEY PENCIL, at degree 1. The frames are
@@ -1227,18 +1253,33 @@ class QubitInputs:
         })
 
 
-def _as_state_pair(text):
-    """`"0.5+0.9j,0.1+1.3j"` as a pair of complex moduli."""
+def _as_state_pairs(text):
+    """A colon-delimited list of moduli, read two at a time.
+
+    `"a:b:c:d"` is the input pairs (a, b) and (c, d) -- one flag saying what
+    several repeated ones used to. An odd count is refused rather than
+    silently dropping the last modulus, since a pair with one state is not a
+    two-body input.
+    """
+    if text is None:
+        return []
     if isinstance(text, (list, tuple)):
-        if len(text) != 2:
-            raise ValueError("a state pair is two moduli, got %r" % (text,))
-        return (_as_complex(text[0]), _as_complex(text[1]))
-    parts = str(text).split(",")
-    if len(parts) != 2:
+        parts = [str(part) for part in text]
+    else:
+        parts = [part.strip() for part in str(text).split(":") if part.strip()]
+    if not parts:
+        return []
+    if len(parts) % 2 != 0:
         raise ValueError(
-            "a state pair is two moduli separated by a comma, like "
-            "0.5+0.9j,0.1+1.3j -- got %r" % (text,))
-    return (_as_complex(parts[0].strip()), _as_complex(parts[1].strip()))
+            "--state is a colon-delimited list of moduli read in PAIRS, like "
+            "0.5+0.9j:0.1+1.3j:1j:1j -- got %d of them, which leaves one "
+            "unpaired" % len(parts))
+    try:
+        moduli = [_as_complex(part) for part in parts]
+    except ValueError as error:
+        raise ValueError("--state is a colon-delimited list of moduli: %s"
+                         % error) from None
+    return [(moduli[n], moduli[n + 1]) for n in range(0, len(moduli), 2)]
 
 
 def _two_body_case(pair, tori, ids, grid, operator, config):
@@ -1250,23 +1291,32 @@ def _two_body_case(pair, tori, ids, grid, operator, config):
     """
     import numpy as np
 
+    # At four tori each state of the pair is carried with its orientation
+    # reversal at -conj(tau), in the block order the seeding used:
+    # (tau_a, -conj(tau_a), tau_b, -conj(tau_b)).
+    moduli = list(pair)
+    if len(ids) == 4:
+        moduli = [tau for tau in pair for tau in (tau, -complex(tau).conjugate())]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         at_pair = [obs.SimplicialQubit.flat_torus(complex(tau), grid, grid)
-                   for tau in pair]
+                   for tau in moduli]
     boundary = []
     for index, torus in enumerate(at_pair):
         mapping = ids[index]
         for (i, j), length in zip(torus.edges(), torus.lengths()):
             source, target = mapping[int(i)], mapping[int(j)]
             boundary.append((source, target, complex(length) ** 2))
+    # The operator's image of THIS case's two states is the case's output.
+    # Derived, never declared: a run that names one output state cannot mean it
+    # for several different inputs.
+    states = [np.asarray(at_pair[0].state()),
+              np.asarray(at_pair[2 if len(ids) == 4 else 1].state())]
     if operator == "flip_flop":
-        algebra = flip_flop_evolution(np.asarray(at_pair[0].state()),
-                                      np.asarray(at_pair[1].state()),
+        algebra = flip_flop_evolution(states[0], states[1],
                                       config["coupling"], config["time"])
     else:
-        algebra = gate_image(operator, np.asarray(at_pair[0].state()),
-                             np.asarray(at_pair[1].state()))
+        algebra = gate_image(operator, states[0], states[1])
     return (boundary, algebra["chi"], True)
 
 
@@ -1312,6 +1362,8 @@ def build_qubit_node(config):
         if int(config.get("tori", DECLARED_TORI)) == 4:
             tau_in = [tau for tau in tau_in
                       for tau in (tau, -tau.conjugate())]
+        # The BASE pair, before the conjugates: what a case is written in, so
+        # `_two_body_case` expands it once rather than twice.
         tori = [obs.SimplicialQubit.flat_torus(tau, grid, grid)
                 for tau in tau_in]
     if int(config.get("tori", DECLARED_TORI)) == 4:
@@ -1371,11 +1423,12 @@ def build_qubit_node(config):
     # extra pairs are the same tori at different moduli. Only the boundary
     # metric distinguishes them, which is why a case carries lengths and a
     # target and nothing else.
-    extra = [_as_state_pair(text) for text in config.get("states", ())]
+    extra = _as_state_pairs(config.get("states"))
+    base_pair = (complex(*config["tau_a"]), complex(*config["tau_b"]))
     if extra:
         node.set_two_body_cases(
             [_two_body_case(pair, tori, ids, grid, operator, config)
-             for pair in [tuple(tau_in)] + extra])
+             for pair in [base_pair] + extra])
     for index, torus in enumerate(tori):
         _assert_seed_reads_the_torus(node, index, torus)
     host = node.spacetime()
@@ -3893,6 +3946,21 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         except (TypeError, ValueError):
             raise ValueError("--output-state is a modulus tau, e.g. 0.3+1.1j; "
                              "got %r" % (output_state,))
+    pairs = _as_state_pairs(states)
+    # Derived wherever it CAN be. At four tori the operator's image of a
+    # pair is 4-dimensional and the harmonic space has rank 4, so the output
+    # is computed and declaring one would only override it.
+    if output_state is not None and int(tori) == 4:
+        raise ValueError(
+            "--output-state cannot be used with --tori 4: the harmonic space "
+            "has rank 4 there and the operator's image of each pair is "
+            "4-dimensional, so every output is derived")
+    if output_state is not None and len(pairs) > 1:
+        raise ValueError(
+            "--output-state cannot be used with more than one --state pair: "
+            "one declared output cannot be the answer for %d different "
+            "inputs. With an operator the outputs are derived per pair"
+            % (len(pairs) + 1))
     if "whole" in names and int(tori) == 2 and output_state is None:
         raise ValueError(
             "--readout whole at --tori 2 needs --output-state: the harmonic of "
@@ -3950,7 +4018,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "regge": bool(regge),
         "extend_boundary": bool(extend_boundary),
         "score_leak": bool(score_leak),
-        "states": [str(text) for text in (states or ())],
+        "states": None if states is None else str(states),
         "operator": str(operator),
         "pin_boundary": bool(pin_boundary),
     }
@@ -4129,18 +4197,19 @@ def build_parser():
                      help="qubit mode: keep the Regge stationarity term in "
                           "the objective (--no-regge leaves r_U alone; "
                           "default %s)" % ("on" if DECLARED_REGGE else "off"))
-    run.add_argument("--state", action="append", dest="states",
-                     default=None, metavar="TAU_A,TAU_B",
-                     help="an ADDITIONAL input pair the same bulk must also "
-                          "satisfy, like --state 0.5+0.9j,0.1+1.3j. Repeat for "
-                          "more. A bulk fitted to one pair reproduces that "
-                          "pair and nothing else -- one 2x2 transfer is six "
-                          "real constraints against some eighty free bulk "
-                          "coordinates, so nothing asks the geometry to be a "
-                          "map. Each extra pair adds six constraints on the "
-                          "same bulk, and every candidate move is scored "
-                          "against all of them before it can be accepted. Use "
-                          "with --pin-boundary")
+    run.add_argument("--state", dest="states", default=None,
+                     metavar="TAU:TAU[:TAU:TAU...]",
+                     help="ADDITIONAL input pairs the same bulk must also "
+                          "satisfy, as a colon-delimited list of moduli read "
+                          "two at a time: --state 0.5+0.9j:0.1+1.3j:1j:1j is "
+                          "the pairs (0.5+0.9j, 0.1+1.3j) and (1j, 1j). An "
+                          "odd count is refused. --tau-a/--tau-b are always "
+                          "the first pair. At --tori 4 each state is carried "
+                          "with its orientation reversal at -conj(tau). Each "
+                          "pair's OUTPUT is derived from the operator, never "
+                          "declared: a single --output-state cannot be the "
+                          "answer for several different inputs, and giving "
+                          "both is refused")
     run.add_argument("--score-leak", action="store_true",
                      dest="score_leak", default=DECLARED_SCORE_LEAK,
                      help="also score the WHOLE cobordism's leak of each "
@@ -4217,7 +4286,7 @@ def main(argv=None):
                           input_weight=args.input_weight, regge=args.regge,
                           extend_boundary=args.extend_boundary,
                           score_leak=args.score_leak,
-                          states=args.states or (),
+                          states=args.states,
                           operator=args.operator,
                           pin_boundary=args.pin_boundary)
     # Held from the moment the node exists, so the geometry is written even
