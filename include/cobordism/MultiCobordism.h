@@ -1644,6 +1644,18 @@ class MultiCobordism {
   /// and the move search optimizing the wrong one.
   [[nodiscard]] double twoBodyResidualOverCasesOn(
       const std::shared_ptr<Spacetime> &spacetime) const;
+  /// One residual PER CASE on \p spacetime, in the order the cases were set;
+  /// empty when none are set.
+  ///
+  /// The sum is what the drive minimises, but the sum alone cannot show a step
+  /// that improves one state at another's expense -- which is the interesting
+  /// failure mode when fitting a map, and is invisible in a single number.
+  [[nodiscard]] std::vector<double> twoBodyResidualsPerCaseOn(
+      const std::shared_ptr<Spacetime> &spacetime) const;
+  /// `twoBodyResidualsPerCaseOn` on the live complex.
+  [[nodiscard]] std::vector<double> twoBodyResidualsPerCase() const {
+    return twoBodyResidualsPerCaseOn(spacetime_);
+  }
   /// `twoBodyResidualOverCasesOn` on the live complex.
   [[nodiscard]] double twoBodyResidualOverCases() const {
     return twoBodyResidualOverCasesOn(spacetime_);
