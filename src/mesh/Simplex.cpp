@@ -201,6 +201,9 @@ void Simplex::releaseChildren() noexcept {
   Edges().swap(edges);
   Simplices().swap(facets);
   Simplices().swap(cofaces);
+  // The geometry cache is heap-backed too, and a removed simplex never refills
+  // it, so it is dead weight for the rest of the run if it is only invalidated.
+  geomCacheSlot_.release();
 }
 
 Simplex* Simplex::create(Spacetime *spacetime_,
@@ -750,7 +753,7 @@ std::vector<std::complex<double>> Simplex::cayleyMengerMatrix() const {
 }
 
 std::vector<std::complex<double>> Simplex::cayleyMengerCanonical(
-    std::unordered_map<std::uint64_t, int> &pos1) const {
+    std::vector<std::pair<std::uint64_t, int>> &pos1) const {
     const int dPlus1 = static_cast<int>(vertices.size());
     pos1.clear();
     if (dPlus1 < 1) return {};
@@ -761,8 +764,9 @@ std::vector<std::complex<double>> Simplex::cayleyMengerCanonical(
               [](const VertexPtr a, const VertexPtr b) {
                   return a->getId() < b->getId();
               });
-    for (int i = 0; i < dPlus1; ++i)
-        pos1[sorted[static_cast<std::size_t>(i)]->getId()] = i + 1;  // border-offset
+    pos1.reserve(static_cast<std::size_t>(dPlus1));
+    for (int i = 0; i < dPlus1; ++i)   // border-offset
+        pos1.emplace_back(sorted[static_cast<std::size_t>(i)]->getId(), i + 1);
 
     const auto sq = localSquaredLengths(sorted);
 
@@ -790,88 +794,88 @@ std::uint64_t Simplex::geometryRevisionKey() const noexcept {
 // constant and the returned reference stays valid.
 const Simplex::GeomCache &Simplex::gramCache() const {
     const std::uint64_t key = geometryRevisionKey();
-    if (geomCacheState_.gramKey.load(std::memory_order_acquire) != key) {
-        std::lock_guard<std::mutex> lock(geomCacheState_.mutex);
-        if (geomCacheState_.gramKey.load(std::memory_order_relaxed) != key)
+    if (geomCacheState_().gramKey.load(std::memory_order_acquire) != key) {
+        std::lock_guard<std::mutex> lock(geomCacheState_().mutex);
+        if (geomCacheState_().gramKey.load(std::memory_order_relaxed) != key)
             fillGramSection(key);
     }
-    return geomCacheState_.cache;
+    return geomCacheState_().cache;
 }
 
 const Simplex::GeomCache &Simplex::gramCofCache() const {
     const std::uint64_t key = geometryRevisionKey();
-    if (geomCacheState_.gramCofKey.load(std::memory_order_acquire) != key) {
-        std::lock_guard<std::mutex> lock(geomCacheState_.mutex);
-        if (geomCacheState_.gramKey.load(std::memory_order_relaxed) != key)
+    if (geomCacheState_().gramCofKey.load(std::memory_order_acquire) != key) {
+        std::lock_guard<std::mutex> lock(geomCacheState_().mutex);
+        if (geomCacheState_().gramKey.load(std::memory_order_relaxed) != key)
             fillGramSection(key);
-        if (geomCacheState_.gramCofKey.load(std::memory_order_relaxed) != key)
+        if (geomCacheState_().gramCofKey.load(std::memory_order_relaxed) != key)
             fillGramCofSection(key);
     }
-    return geomCacheState_.cache;
+    return geomCacheState_().cache;
 }
 
 const Simplex::GeomCache &Simplex::cmCache() const {
     const std::uint64_t key = geometryRevisionKey();
-    if (geomCacheState_.cmKey.load(std::memory_order_acquire) != key) {
-        std::lock_guard<std::mutex> lock(geomCacheState_.mutex);
-        if (geomCacheState_.cmKey.load(std::memory_order_relaxed) != key)
+    if (geomCacheState_().cmKey.load(std::memory_order_acquire) != key) {
+        std::lock_guard<std::mutex> lock(geomCacheState_().mutex);
+        if (geomCacheState_().cmKey.load(std::memory_order_relaxed) != key)
             fillCMSection(key);
     }
-    return geomCacheState_.cache;
+    return geomCacheState_().cache;
 }
 
 const Simplex::GeomCache &Simplex::cmCanonicalCache() const {
     const std::uint64_t key = geometryRevisionKey();
-    if (geomCacheState_.cmCanonKey.load(std::memory_order_acquire) != key) {
-        std::lock_guard<std::mutex> lock(geomCacheState_.mutex);
-        if (geomCacheState_.cmCanonKey.load(std::memory_order_relaxed) != key)
+    if (geomCacheState_().cmCanonKey.load(std::memory_order_acquire) != key) {
+        std::lock_guard<std::mutex> lock(geomCacheState_().mutex);
+        if (geomCacheState_().cmCanonKey.load(std::memory_order_relaxed) != key)
             fillCMCanonSection(key);
     }
-    return geomCacheState_.cache;
+    return geomCacheState_().cache;
 }
 
 // The fills run the direct pipeline verbatim — same functions, same inputs —
 // so cached values are bit-for-bit what an uncached call would produce.
 void Simplex::fillGramSection(std::uint64_t key) const {
     const int d = static_cast<int>(vertices.size()) - 1;
-    geomCacheState_.cache.gram = gramMatrix();
-    geomCacheState_.cache.gramDet =
-        (d >= 1 && static_cast<int>(geomCacheState_.cache.gram.size()) == d * d)
-            ? determinant(geomCacheState_.cache.gram, d)
+    geomCacheState_().cache.gram = gramMatrix();
+    geomCacheState_().cache.gramDet =
+        (d >= 1 && static_cast<int>(geomCacheState_().cache.gram.size()) == d * d)
+            ? determinant(geomCacheState_().cache.gram, d)
             : std::complex<double>{0.0, 0.0};
-    geomCacheState_.gramKey.store(key, std::memory_order_release);
+    geomCacheState_().gramKey.store(key, std::memory_order_release);
 }
 
 void Simplex::fillGramCofSection(std::uint64_t key) const {
     const int d = static_cast<int>(vertices.size()) - 1;
-    geomCacheState_.cache.gramCof =
-        (d >= 1 && static_cast<int>(geomCacheState_.cache.gram.size()) == d * d)
-            ? cofactorMatrix(geomCacheState_.cache.gram, d)
+    geomCacheState_().cache.gramCof =
+        (d >= 1 && static_cast<int>(geomCacheState_().cache.gram.size()) == d * d)
+            ? cofactorMatrix(geomCacheState_().cache.gram, d)
             : std::vector<std::complex<double>>{};
-    geomCacheState_.gramCofKey.store(key, std::memory_order_release);
+    geomCacheState_().gramCofKey.store(key, std::memory_order_release);
 }
 
 void Simplex::fillCMSection(std::uint64_t key) const {
     const int n = static_cast<int>(vertices.size()) + 1;
-    geomCacheState_.cache.cm = cayleyMengerMatrix();
-    if (static_cast<int>(geomCacheState_.cache.cm.size()) == n * n) {
-        geomCacheState_.cache.cmDet = determinant(geomCacheState_.cache.cm, n);
-        geomCacheState_.cache.cmCof = cofactorMatrix(geomCacheState_.cache.cm, n);
+    geomCacheState_().cache.cm = cayleyMengerMatrix();
+    if (static_cast<int>(geomCacheState_().cache.cm.size()) == n * n) {
+        geomCacheState_().cache.cmDet = determinant(geomCacheState_().cache.cm, n);
+        geomCacheState_().cache.cmCof = cofactorMatrix(geomCacheState_().cache.cm, n);
     } else {
-        geomCacheState_.cache.cmDet = {0.0, 0.0};
-        geomCacheState_.cache.cmCof.clear();
+        geomCacheState_().cache.cmDet = {0.0, 0.0};
+        geomCacheState_().cache.cmCof.clear();
     }
-    geomCacheState_.cmKey.store(key, std::memory_order_release);
+    geomCacheState_().cmKey.store(key, std::memory_order_release);
 }
 
 void Simplex::fillCMCanonSection(std::uint64_t key) const {
     const int n = static_cast<int>(vertices.size()) + 1;
-    geomCacheState_.cache.cmCanon = cayleyMengerCanonical(geomCacheState_.cache.canonPos1);
-    geomCacheState_.cache.cmCanonCof =
-        (static_cast<int>(geomCacheState_.cache.cmCanon.size()) == n * n)
-            ? cofactorMatrix(geomCacheState_.cache.cmCanon, n)
+    geomCacheState_().cache.cmCanon = cayleyMengerCanonical(geomCacheState_().cache.canonPos1);
+    geomCacheState_().cache.cmCanonCof =
+        (static_cast<int>(geomCacheState_().cache.cmCanon.size()) == n * n)
+            ? cofactorMatrix(geomCacheState_().cache.cmCanon, n)
             : std::vector<std::complex<double>>{};
-    geomCacheState_.cmCanonKey.store(key, std::memory_order_release);
+    geomCacheState_().cmCanonKey.store(key, std::memory_order_release);
 }
 
 std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
@@ -918,8 +922,9 @@ std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     const GeomCache &cc = cmCanonicalCache();
     const auto &cof = cc.cmCanonCof;
     if (static_cast<int>(cof.size()) != n * n) return {0.0, 0.0};
-    const int bi = cc.canonPos1.at(vertices[vi]->getId());
-    const int bj = cc.canonPos1.at(vertices[vj]->getId());
+    const int bi = canonicalPosition(cc.canonPos1, vertices[vi]->getId());
+    const int bj = canonicalPosition(cc.canonPos1, vertices[vj]->getId());
+    if (bi == 0 || bj == 0) return {0.0, 0.0};
     const std::complex<double> Cij = cof[static_cast<std::size_t>(bi) * n + bj];
     const std::complex<double> Cii = cof[static_cast<std::size_t>(bi) * n + bi];
     const std::complex<double> Cjj = cof[static_cast<std::size_t>(bj) * n + bj];
