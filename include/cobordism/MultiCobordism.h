@@ -616,9 +616,28 @@ class MultiCobordism {
   /// `Both` sums the two, so one geometry can be scored under both readings.
   /// The choice is part of the OBJECTIVE, not of the reporting: this residual
   /// is a term in r_U, so it prices stage-1 moves and drives stage-2 descent.
-  enum class ReadoutMode { Transfer, WholeComplex, Harmonic, Both };
-  void setReadoutMode(ReadoutMode mode) noexcept { readoutMode_ = mode; }
-  [[nodiscard]] ReadoutMode readoutMode() const noexcept { return readoutMode_; }
+  /// The three spaces a reading can take the state from. Named for the space,
+  /// so a name cannot suggest the wrong one.
+  ///
+  /// `Transfer` is \f$(Z_A^\vee)^T \tilde A_1 Z_B\f$: the whole complex's
+  /// degree-1 operator read as the coupling block between the two boundary
+  /// frames. 2x2 here, and factorized across the boundaries, which is what
+  /// lets it carry an entangled target.
+  ///
+  /// `Bulk` is \f$\ker L_1(W-\partial W)\f$, the Laplacian on interior cells
+  /// with the boundary REMOVED, read through a Choi frame (`geometricOperator`).
+  ///
+  /// `Whole` is \f$\ker L_1(W)\f$, the boundary INCLUDED, read through the
+  /// blocks' markings. Its rank is \f$b_1(W)\f$.
+  enum class ReadoutMode { Transfer, Bulk, Whole };
+  /// The readings SUMMED into the two-body residual. A set rather than one
+  /// choice, so a run can be scored under more than one reading without a
+  /// special name for each pairing. Empty is refused: a two-body term scored
+  /// against nothing is not a term.
+  void setReadoutModes(std::vector<ReadoutMode> modes);
+  [[nodiscard]] const std::vector<ReadoutMode> &readoutModes() const noexcept {
+    return readoutModes_;
+  }
   [[nodiscard]] GeometricOperatorReadout geometricOperator(
       int stateDimension,
       std::vector<std::vector<std::uint64_t>> frameCells = {},
@@ -1696,15 +1715,15 @@ class MultiCobordism {
   [[nodiscard]] double twoBodyResidual() const;
   /// The projective leak of \p target against the operator promoted from
   /// \f$\ker L_1(W-\partial W)\f$ through a Choi frame — the reading
-  /// `ReadoutMode::WholeComplex` selects. `1.0`, the full leak, when the
+  /// `ReadoutMode::Bulk` selects. `1.0`, the full leak, when the
   /// framed kernel is not rank one and no operator is identifiable: the same
   /// convention a refused geometry takes under the transfer reading, so the
   /// two are on one scale and `Both` may sum them.
-  [[nodiscard]] double wholeComplexOperatorResidualOn(
+  [[nodiscard]] double bulkOperatorResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
       const TwoBodyTarget &target) const;
   /// The projective leak of \p target against the WHOLE cobordism's degree-1
-  /// harmonic form — the reading `ReadoutMode::Harmonic` selects (#1046).
+  /// harmonic form — the reading `ReadoutMode::Whole` selects (#1046).
   ///
   /// The harmonic space is a space, not a state; the input blocks pick the
   /// form out of it. Its columns' transported periods over every block's
@@ -1719,16 +1738,16 @@ class MultiCobordism {
   ///
   /// A harmonic space whose rank differs from the target's dimension cannot
   /// carry it and scores the full leak, `1.0`, with the reason available from
-  /// `harmonicOutputObstruction`. For two boundary tori the rank is
+  /// `wholeHarmonicObstruction`. For two boundary tori the rank is
   /// \f$b_1 = 2\f$ against a 4-dimensional target; four tori give
   /// \f$b_1(\partial W) = 8\f$, hence rank 4.
-  [[nodiscard]] double harmonicOutputResidualOn(
+  [[nodiscard]] double wholeHarmonicResidualOn(
       const std::shared_ptr<Spacetime> &spacetime,
       const TwoBodyTarget &target) const;
-  /// Why the last `harmonicOutputResidualOn` could not read a state, or empty
+  /// Why the last `wholeHarmonicResidualOn` could not read a state, or empty
   /// when it could.
-  [[nodiscard]] const std::string &harmonicOutputObstruction() const noexcept {
-    return harmonicOutputObstruction_;
+  [[nodiscard]] const std::string &wholeHarmonicObstruction() const noexcept {
+    return wholeHarmonicObstruction_;
   }
   /// Read the bulk between the two attached frames on the live complex, with
   /// certificates. @throws std::logic_error without two attached input fibers.
@@ -2914,11 +2933,11 @@ class MultiCobordism {
   bool shouldProposeDispositions_{true};
   /// What the two-body target is scored against (`setReadoutMode`). Transfer
   /// by default, so every recorded run keeps its meaning.
-  ReadoutMode readoutMode_{ReadoutMode::Transfer};
+  std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
   /// Why the last harmonic readout could not name a state (empty when it
   /// could). Mutable because the readout is a const measurement that still has
   /// to be able to say why it refused.
-  mutable std::string harmonicOutputObstruction_;
+  mutable std::string wholeHarmonicObstruction_;
   double convergenceTolerance_ = 1e-9;
   /// Set by `runStage2`: `true` iff its last call stopped on the absolute-tolerance
   /// stationarity test, `false` iff it hit the `maxIters` budget. See lastStage2Stationary.

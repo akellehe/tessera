@@ -1888,14 +1888,17 @@ assertion. Every pairing is the transpose.)doc")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
            "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
            "reversal residual, the fit residual, and both input blocks' fiber residuals.")
-      .def("set_readout_mode", &MultiCobordism::setReadoutMode, py::arg("mode"),
-           "What the two-body target is scored against. Part of the OBJECTIVE, "
-           "not the reporting: this residual is a term in r_U, so it prices "
-           "stage-1 moves and drives stage-2 descent.")
-      .def_property_readonly("readout_mode", &MultiCobordism::readoutMode)
-      .def("harmonic_output_residual",
+      .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
+           "The readings SUMMED into the two-body residual. TRANSFER is the "
+           "coupling block between the two boundary frames; BULK is "
+           "ker L1(W - dW), the boundary REMOVED; WHOLE is ker L1(W), the "
+           "boundary INCLUDED. Part of the OBJECTIVE, not the reporting: this "
+           "residual is a term in r_U, so it prices stage-1 moves and drives "
+           "stage-2 descent. Empty is refused.")
+      .def_property_readonly("readout_modes", &MultiCobordism::readoutModes)
+      .def("whole_harmonic_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
-             return self.harmonicOutputResidualOn(
+             return self.wholeHarmonicResidualOn(
                  self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
            },
            py::arg("chi"), py::arg("choi_decomposed") = true,
@@ -1903,13 +1906,13 @@ assertion. Every pairing is the transpose.)doc")
            "The projective leak of chi against the WHOLE cobordism's degree-1 harmonic form, "
            "the form the input blocks' markings and coefficients determine. 1.0 when the "
            "harmonic space cannot carry a target of that dimension; see "
-           "harmonic_output_obstruction for the reason.")
-      .def_property_readonly("harmonic_output_obstruction",
-                             &MultiCobordism::harmonicOutputObstruction,
+           "whole_harmonic_obstruction for the reason.")
+      .def_property_readonly("whole_harmonic_obstruction",
+                             &MultiCobordism::wholeHarmonicObstruction,
                              "Why the last harmonic readout could not name a state, or empty.")
-      .def("whole_complex_operator_residual",
+      .def("bulk_operator_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
-             return self.wholeComplexOperatorResidualOn(
+             return self.bulkOperatorResidualOn(
                  self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
            },
            py::arg("chi"), py::arg("choi_decomposed") = true,
@@ -2286,16 +2289,16 @@ Right -- re-read after each drive call:
                              "selected objective by the absolute tolerance; False "
                              "if run_stage2 hit its max_iters budget.");
   py::enum_<MultiCobordism::ReadoutMode>(multiCobordismClass, "ReadoutMode",
-      "What the two-body target is scored against. TRANSFER is the frame transfer T_AB, the "
-      "coupling block of the whole complex's operator between the two boundary frames: "
-      "4-dimensional and factorized across the boundaries, so it can carry an entangled target. "
-      "WHOLE_COMPLEX is the operator promoted from ker L1(W - dW) through a Choi frame -- the "
-      "target represented by the bulk's own harmonic space rather than by a coupling. BOTH sums "
-      "them. The choice is part of the OBJECTIVE: this residual is a term in r_U.")
+      "The space a reading takes the state from, named for the space so a name cannot suggest "
+      "the wrong one. TRANSFER is (Z_A^v)^T A~_1 Z_B: the whole complex's degree-1 operator read "
+      "as the coupling block between the two boundary frames, factorized across them, which is "
+      "what lets it carry an entangled target. BULK is ker L1(W - dW), the Laplacian on interior "
+      "cells with the boundary REMOVED, read through a Choi frame. WHOLE is ker L1(W), the "
+      "boundary INCLUDED, read through the blocks' markings; its rank is b_1(W). Selected as a "
+      "SET and summed (set_readout_modes). Part of the OBJECTIVE: this residual is a term in r_U.")
       .value("TRANSFER", MultiCobordism::ReadoutMode::Transfer)
-      .value("WHOLE_COMPLEX", MultiCobordism::ReadoutMode::WholeComplex)
-      .value("HARMONIC", MultiCobordism::ReadoutMode::Harmonic)
-      .value("BOTH", MultiCobordism::ReadoutMode::Both);
+      .value("BULK", MultiCobordism::ReadoutMode::Bulk)
+      .value("WHOLE", MultiCobordism::ReadoutMode::Whole);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
       "One canonical solve action a search policy (Proton's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "

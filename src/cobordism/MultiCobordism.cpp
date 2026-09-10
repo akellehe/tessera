@@ -4330,13 +4330,13 @@ MultiCobordism::TransferOperand MultiCobordism::transferOperand(const BoundaryBl
   return operand;
 }
 
-double MultiCobordism::wholeComplexOperatorResidualOn(
+double MultiCobordism::bulkOperatorResidualOn(
     const std::shared_ptr<Spacetime> &spacetime,
     const TwoBodyTarget &target) const {
   if (!spacetime) return 1.0;
   const Eigen::Index dimension = target.chi.rows();
   if (dimension < 1 || target.chi.cols() != dimension)
-    throw std::logic_error("MultiCobordism::wholeComplexOperatorResidualOn: the target is " +
+    throw std::logic_error("MultiCobordism::bulkOperatorResidualOn: the target is " +
                            std::to_string(target.chi.rows()) + "x" + std::to_string(target.chi.cols()) +
                            ", not square");
   // The operator the BULK names, read through a Choi frame of d^2 interior
@@ -4366,12 +4366,20 @@ double MultiCobordism::wholeComplexOperatorResidualOn(
   return std::max(0.0, leak / chi.squaredNorm());
 }
 
-double MultiCobordism::harmonicOutputResidualOn(
+void MultiCobordism::setReadoutModes(std::vector<ReadoutMode> modes) {
+  if (modes.empty())
+    throw std::invalid_argument(
+        "MultiCobordism::setReadoutModes: at least one reading is required; a "
+        "two-body term scored against nothing is not a term");
+  readoutModes_ = std::move(modes);
+}
+
+double MultiCobordism::wholeHarmonicResidualOn(
     const std::shared_ptr<Spacetime> &spacetime,
     const TwoBodyTarget &target) const {
-  harmonicOutputObstruction_.clear();
+  wholeHarmonicObstruction_.clear();
   const auto refuse = [&](std::string reason) {
-    harmonicOutputObstruction_ = std::move(reason);
+    wholeHarmonicObstruction_ = std::move(reason);
     return 1.0;
   };
   if (!spacetime) return refuse("no complex to read");
@@ -4442,14 +4450,19 @@ double MultiCobordism::harmonicOutputResidualOn(
 
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const {
-  if (readoutMode_ == ReadoutMode::Harmonic)
-    return harmonicOutputResidualOn(spacetime, target);
-  if (readoutMode_ == ReadoutMode::WholeComplex)
-    return wholeComplexOperatorResidualOn(spacetime, target);
-  if (readoutMode_ == ReadoutMode::Both)
-    return transferResidualOn(spacetime, target) +
-           wholeComplexOperatorResidualOn(spacetime, target);
-  return transferResidualOn(spacetime, target);
+  // The SUM over the selected readings. Each is the same projective leak on
+  // the same scale, and each scores the full 1.0 when it cannot name a state,
+  // so summing them is well defined however many are chosen.
+  double total = 0.0;
+  for (const ReadoutMode mode : readoutModes_) {
+    if (mode == ReadoutMode::Whole)
+      total += wholeHarmonicResidualOn(spacetime, target);
+    else if (mode == ReadoutMode::Bulk)
+      total += bulkOperatorResidualOn(spacetime, target);
+    else
+      total += transferResidualOn(spacetime, target);
+  }
+  return total;
 }
 
 double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spacetime,

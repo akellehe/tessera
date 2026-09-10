@@ -187,27 +187,23 @@ DECLARED_SURGICAL_DEPTH = 1
 #: length improves a complex that no shorter composition improves, which means
 #: looking there first. Zero keeps the deepening schedule.
 DECLARED_COMBINATORIAL_BREADTH = 0
-#: What the two-body target is scored against (`--readout`).
+#: Which space the two-body target is scored against (`--readout`), as a
+#: comma-separated set that is SUMMED. Each name is the SPACE the reading takes
+#: the state from, so a name cannot suggest the wrong one.
 #:
-#: `transfer` is the frame transfer T_AB: the coupling block of the whole
-#: complex's operator between the two boundary frames. It is 4-dimensional and
-#: factorizes across the boundaries, which is what lets it carry an entangled
-#: target.
+#: `transfer` is (Z_A^v)^T A~_1 Z_B: the whole complex's degree-1 operator read
+#: as the coupling block between the two boundary frames. It is 4-dimensional
+#: and factorizes across the boundaries, which is what lets it carry an
+#: entangled target.
 #:
-#: `whole` is the operator promoted from ker L_1(W - dW) through a Choi frame:
-#: the target represented by the bulk's own harmonic space rather than by a
-#: coupling between boundaries. For a compact oriented 3-manifold,
-#: rank(H^1(W) -> H^1(dW)) = b_1(dW)/2, so two boundary tori leave a
-#: 2-dimensional space against a 4-dimensional target; a complex whose framed
-#: kernel is not rank one identifies no operator and scores the full leak.
+#: `bulk` is ker L_1(W - dW): the Laplacian on interior cells with the boundary
+#: REMOVED, read through a Choi frame. On a one-layer collar the complex has no
+#: interior edges at all, so there is nothing to read.
 #:
-#: `harmonic` is the WHOLE cobordism's degree-1 harmonic form -- the form the
-#: input blocks' markings and coefficients determine out of that space, read as
-#: its coefficient vector. Its rank is b_1(W), so two boundary tori give 2
-#: against a 4-dimensional target and the term says so rather than fitting one;
-#: four tori give b_1(dW) = 8 and hence rank 4.
-#:
-#: `both` sums them, so one geometry is scored under both readings.
+#: `whole` is ker L_1(W): the boundary INCLUDED, read through the blocks'
+#: markings. Its rank is b_1(W), so two boundary tori give 2 against a
+#: 4-dimensional target and the term says so rather than fitting one; four tori
+#: give b_1(dW) = 8 and hence rank 4.
 #:
 #: This is part of the OBJECTIVE. The two-body residual is a term in r_U, so
 #: the choice prices stage-1 moves and drives stage-2 descent.
@@ -818,14 +814,35 @@ DECLARED_OPERATOR = "flip_flop"
 DECLARED_PIN_BOUNDARY = True
 
 
-#: The engine's readout modes by their command-line names. One table, so a
-#: name that parses is a name the engine accepts.
+#: The engine's readings by their command-line names. One table, so a name
+#: that parses is a name the engine accepts. Each is named for the SPACE it
+#: takes the state from, so a name cannot suggest the wrong one.
 _READOUT_MODES = {
     "transfer": MC.ReadoutMode.TRANSFER,
-    "whole": MC.ReadoutMode.WHOLE_COMPLEX,
-    "harmonic": MC.ReadoutMode.HARMONIC,
-    "both": MC.ReadoutMode.BOTH,
+    "bulk": MC.ReadoutMode.BULK,
+    "whole": MC.ReadoutMode.WHOLE,
 }
+
+
+def _readout_names(readout):
+    """The readings a `--readout` value names, in the order written.
+
+    A comma-separated SET rather than one choice: a run can be scored under
+    more than one reading, and summing them needs no special name for each
+    pairing. Refused rather than silently dropped when a name is unknown or
+    the set is empty, since a two-body term scored against nothing is not a
+    term.
+    """
+    names = [name.strip() for name in str(readout).split(",") if name.strip()]
+    if not names:
+        raise ValueError("readout names no reading: expected a comma-separated "
+                         "set from %s" % ", ".join(sorted(_READOUT_MODES)))
+    for name in names:
+        if name not in _READOUT_MODES:
+            raise ValueError("unknown readout %r: expected a comma-separated "
+                             "set from %s"
+                             % (name, ", ".join(sorted(_READOUT_MODES))))
+    return names
 
 
 def gate_image(name, psi, phi):
@@ -1150,7 +1167,8 @@ def build_qubit_node(config):
                              np.asarray(tori[1].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
-    node.set_readout_mode(_READOUT_MODES[config.get("readout", DECLARED_READOUT)])
+    node.set_readout_modes([_READOUT_MODES[name]
+                            for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
     # and is what the collar was seeded from, so it is always case zero; the
     # extra pairs are the same tori at different moduli. Only the boundary
@@ -3623,9 +3641,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if surgical_depth < 1:
         raise ValueError("surgical depth must be at least 1, got %r"
                          % (surgical_depth,))
-    if readout not in _READOUT_MODES:
-        raise ValueError("unknown readout %r: expected one of %s"
-                         % (readout, ", ".join(sorted(_READOUT_MODES))))
+    _readout_names(readout)
     if combinatorial_breadth < 0:
         raise ValueError("combinatorial breadth is how many moves stage 1 "
                          "composes into one candidate before it starts "
@@ -3738,15 +3754,15 @@ def build_parser():
                           "exhaustive, which costs the move space raised to "
                           "the breadth. Default %d, the deepening schedule"
                           % DECLARED_COMBINATORIAL_BREADTH)
-    run.add_argument("--readout", choices=sorted(_READOUT_MODES),
-                     default=DECLARED_READOUT,
-                     help="what the two-body target is scored against. "
-                          "'transfer' is the coupling block of the whole "
-                          "complex's operator between the two boundary "
-                          "frames; 'whole' is the operator promoted from "
-                          "ker L_1(W - dW) through a Choi frame, so the "
-                          "target is carried by the bulk's own harmonic "
-                          "space; 'both' sums them. This is part of the "
+    run.add_argument("--readout", default=DECLARED_READOUT,
+                     help="which space the two-body target is scored "
+                          "against, as a comma-separated set that is SUMMED. "
+                          "'transfer' is the whole complex's degree-1 "
+                          "operator read as the coupling block between the "
+                          "two boundary frames; 'bulk' is ker L_1(W - dW), "
+                          "the boundary REMOVED, read through a Choi frame; "
+                          "'whole' is ker L_1(W), the boundary INCLUDED, read "
+                          "through the blocks' markings. This is part of the "
                           "OBJECTIVE, not the reporting: the residual is a "
                           "term in r_U (default %s)" % DECLARED_READOUT)
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
