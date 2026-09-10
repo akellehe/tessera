@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include "spacetime/Spacetime.h"
+#include <cstdio>
 #include "graph/CSRBuilder.hpp"
 #include "graph/DualGraph.hpp"
 #include "graph/IndexByKey.hpp"
@@ -904,51 +905,47 @@ void Spacetime::swapVertexLabels(VertexPtr v1, VertexPtr v2) {
       affected.push_back({s, false});
   }
 
+  // Edges incident to exactly one of v1, v2 change their vertex pair and so
+  // change their lookup key. Collect and detach them BEFORE the ids move: the
+  // key is derived from the endpoints, so it can only be computed while they
+  // still hold the ids the edge was inserted under. Edges between v1 and v2
+  // keep their pair and are left alone.
+  //
+  // Detaching every affected edge before reinserting any of them is what makes
+  // a shared neighbour safe: two edges that exchange keys are both out of the
+  // map before either goes back in.
+  struct AffectedEdge { EdgePtr ptr; std::uint32_t slot; };
+  std::vector<AffectedEdge> affectedEdges;
+  for (const auto &e : v1->getEdges())
+    if (!e->hasVertex(id2)) affectedEdges.push_back({e, UINT32_MAX});
+  for (const auto &e : v2->getEdges())
+    if (!e->hasVertex(id1)) affectedEdges.push_back({e, UINT32_MAX});
+
+  for (auto &affectedEdge : affectedEdges)
+    affectedEdge.slot = edgeList->detachEdge(EdgeList::keyOf(*affectedEdge.ptr));
+
   // Swap vertex IDs, rekey vertex list
   v1->setId(id2);
   v2->setId(id1);
   vertexList->swapKeys(id1, id2);
 
-  // Update edge fingerprints and rekey in EdgeList.
-  // Edges incident to exactly one of v1, v2 need fingerprint updates.
-  // Edges between v1 and v2 are unaffected (XOR is commutative).
-  //
-  // Must batch: extract-all, update-all, reinsert-all to avoid transient
-  // collisions when v1 and v2 share a neighbor.
-  struct AffectedEdge { EdgePtr ptr; bool fromV1; };
-  std::vector<AffectedEdge> affectedEdges;
-
-  for (const auto &e : v1->getEdges()) {
-    if (!e->hasVertex(id1))  // id1 is now v2's id; skip v1-v2 edge
-      affectedEdges.push_back({e, true});
-  }
-  for (const auto &e : v2->getEdges()) {
-    if (!e->hasVertex(id2))  // id2 is now v1's id; skip v1-v2 edge
-      affectedEdges.push_back({e, false});
-  }
-
-  std::vector<std::pair<std::uint32_t, std::size_t>> edgeSlots;
-  edgeSlots.reserve(affectedEdges.size());
-  for (std::size_t i = 0; i < affectedEdges.size(); ++i) {
-    auto slot = edgeList->detachEdge(affectedEdges[i].ptr->fingerprint.fingerprint());
-    if (slot != UINT32_MAX)
-      edgeSlots.push_back({slot, i});
-  }
-
-  for (auto &[slot, idx] : edgeSlots) {
-    auto &[e, fromV1] = affectedEdges[idx];
-    if (fromV1) {
-      e->fingerprint.removeId(id1);
-      e->fingerprint.addId(id2);
-    } else {
-      e->fingerprint.removeId(id2);
-      e->fingerprint.addId(id1);
-    }
+  // Rebuild each fingerprint from the endpoints rather than patching it by id.
+  // A patched fingerprint drifts the moment one update is missed, and a drifted
+  // fingerprint can never be found again.
+  for (auto &affectedEdge : affectedEdges) {
+    auto *e = affectedEdge.ptr;
+    e->fingerprint.setIds({e->getSource()->getId(), e->getTarget()->getId()});
     e->fingerprint.refresh();
   }
 
-  for (auto &[slot, idx] : edgeSlots) {
-    edgeList->reattachEdge(slot);
+  for (auto &affectedEdge : affectedEdges) {
+    if (affectedEdge.slot == UINT32_MAX) continue;
+    if (!edgeList->reattachEdge(affectedEdge.slot))
+      throw std::runtime_error(
+          "Spacetime::swapVertexLabels: two live edges claim the vertex pair (" +
+          std::to_string(affectedEdge.ptr->getSource()->getId()) + ", " +
+          std::to_string(affectedEdge.ptr->getTarget()->getId()) +
+          ") after the swap.");
   }
 
   // Re-key simplexIndex_: erase old fingerprints, update, re-insert.

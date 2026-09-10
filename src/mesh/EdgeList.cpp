@@ -70,8 +70,13 @@ EdgePtr EdgeList::getOrInsert(const VertexPtr &source, const VertexPtr &target, 
   return raw;
 }
 
+std::uint64_t EdgeList::keyOf(const Edge &edge) noexcept {
+  return Fingerprint::mix64(edge.getSource()->getId()) ^
+         Fingerprint::mix64(edge.getTarget()->getId());
+}
+
 void EdgeList::remove(const EdgePtr &edge) noexcept {
-  auto fp = edge->fingerprint.fingerprint();
+  auto fp = keyOf(*edge);
   auto it = fpToSlot_.find(fp);
   if (it == fpToSlot_.end()) return;
   freeSlots_.push_back(it->second);
@@ -105,7 +110,10 @@ const Edges &EdgeList::toVector() const noexcept {
 }
 
 std::size_t EdgeList::size() const {
-  return fpToSlot_.size();
+  // The live vector is what toVector() hands out, so it is what size() has to
+  // count. The lookup map can hold fewer entries than there are live edges if a
+  // key is ever contended, and reporting the map's size hides exactly that.
+  return liveVec_.size();
 }
 
 EdgePtr EdgeList::get(const std::uint64_t &fingerprint) {
