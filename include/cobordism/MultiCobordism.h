@@ -1447,6 +1447,15 @@ class MultiCobordism {
   struct TwoBodyTarget {
     Eigen::MatrixXcd chi{};
     bool choiDecomposed{true};
+    /// The gate-evolved TWO-STATE VECTOR of this case,
+    /// \f$G|\psi\rangle\langle\phi|G^\dagger\f$: \f$|\psi\rangle\f$ the
+    /// forward wavefunction the state tori carry, \f$\langle\phi|\f$ the
+    /// backward one their orientation reversals carry (#1050). Square, of the
+    /// joint dimension, so 4x4 for two qubits -- sixteen numbers, the
+    /// dimension of the paired-frame transfer. Empty where there are no
+    /// conjugate tori to carry a backward wavefunction, which is every
+    /// two-torus host.
+    Eigen::MatrixXcd twoStateVector{};
   };
   /// One input pair and the output the gate should produce for it (#1017).
   ///
@@ -1476,6 +1485,15 @@ class MultiCobordism {
                           std::complex<double>>> boundary;
     Eigen::MatrixXcd chi{};
     bool choiDecomposed{true};
+    /// The gate-evolved TWO-STATE VECTOR of this case,
+    /// \f$G|\psi\rangle\langle\phi|G^\dagger\f$: \f$|\psi\rangle\f$ the
+    /// forward wavefunction the state tori carry, \f$\langle\phi|\f$ the
+    /// backward one their orientation reversals carry (#1050). Square, of the
+    /// joint dimension, so 4x4 for two qubits -- sixteen numbers, the
+    /// dimension of the paired-frame transfer. Empty where there are no
+    /// conjugate tori to carry a backward wavefunction, which is every
+    /// two-torus host.
+    Eigen::MatrixXcd twoStateVector{};
   };
   /// The reading of the bulk between the two attached input frames.
   struct TwoBodyRead {
@@ -1753,18 +1771,14 @@ class MultiCobordism {
   [[nodiscard]] const std::optional<Eigen::VectorXcd> &outputStateTarget() const noexcept {
     return outputStateTarget_;
   }
-  /// The projective leak of the node's GATE target against the paired-frame
-  /// transfer — the reading `ReadoutMode::Operator` selects. Refused rather
-  /// than scored when the boundary carries no conjugate pairs or no gate
-  /// target is set: a term that cannot be computed is not a term.
+  /// The projective leak of a case's gate-evolved two-state vector against the
+  /// paired-frame transfer — the reading `ReadoutMode::Operator` selects.
+  /// `1.0`, the full leak, when the target carries none: a host without
+  /// conjugate tori has no backward wavefunction, so there is no two-state
+  /// vector to score and none is invented.
   [[nodiscard]] double operatorResidualOn(
-      const std::shared_ptr<Spacetime> &spacetime) const;
-  /// The gate this cobordism is meant to represent, as a square matrix on the
-  /// joint space. Set to read `ReadoutMode::Operator`.
-  void setGateTarget(Eigen::MatrixXcd gate);
-  [[nodiscard]] const std::optional<Eigen::MatrixXcd> &gateTarget() const noexcept {
-    return gateTarget_;
-  }
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
   /// The projective leak of \p target against the operator promoted from
   /// \f$\ker L_1(W-\partial W)\f$ through a Choi frame — the reading
   /// `ReadoutMode::Bulk` selects. `1.0`, the full leak, when the
@@ -2998,8 +3012,6 @@ class MultiCobordism {
   /// What the two-body target is scored against (`setReadoutMode`). Transfer
   /// by default, so every recorded run keeps its meaning.
   std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
-  /// The gate `ReadoutMode::Operator` scores against (`setGateTarget`).
-  std::optional<Eigen::MatrixXcd> gateTarget_;
   /// The state `ReadoutMode::Whole` scores against (`setOutputStateTarget`).
   std::optional<Eigen::VectorXcd> outputStateTarget_;
   /// Why the last harmonic readout could not name a state (empty when it

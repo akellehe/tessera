@@ -1310,14 +1310,31 @@ def _two_body_case(pair, tori, ids, grid, operator, config):
     # The operator's image of THIS case's two states is the case's output.
     # Derived, never declared: a run that names one output state cannot mean it
     # for several different inputs.
-    states = [np.asarray(at_pair[0].state()),
-              np.asarray(at_pair[2 if len(ids) == 4 else 1].state())]
+    forward = [np.asarray(at_pair[0].state()),
+               np.asarray(at_pair[2 if len(ids) == 4 else 1].state())]
     if operator == "flip_flop":
-        algebra = flip_flop_evolution(states[0], states[1],
+        algebra = flip_flop_evolution(forward[0], forward[1],
                                       config["coupling"], config["time"])
     else:
-        algebra = gate_image(operator, states[0], states[1])
-    return (boundary, algebra["chi"], True)
+        algebra = gate_image(operator, forward[0], forward[1])
+    # The TWO-STATE VECTOR, when the case has a backward wavefunction to carry
+    # one. In the two-state vector formalism a system has a forward |psi> and a
+    # backward <phi|, and the object is the outer product; a conjugate pair is
+    # exactly that, the torus being the past wavefunction and its orientation
+    # reversal the future one. Evolved by the gate this is G |psi><phi| G+,
+    # 4x4 for two qubits -- the paired-frame transfer's dimension.
+    #
+    # <phi| is the reversed tori's OWN state, which is Z conj(psi) rather than
+    # conj(psi): reversing the orientation flips the sign of the second
+    # amplitude. The geometry does not undo that Z and neither does the target.
+    two_state = None
+    if len(ids) == 4:
+        gate = np.asarray(algebra["gate"], dtype=complex)
+        psi = np.kron(forward[0].reshape(2), forward[1].reshape(2))
+        phi = np.kron(np.asarray(at_pair[1].state()).reshape(2),
+                      np.asarray(at_pair[3].state()).reshape(2))
+        two_state = (gate @ np.outer(psi, phi.conj())) @ gate.conj().T
+    return (boundary, algebra["chi"], True, two_state)
 
 
 def build_qubit_node(config):
@@ -1414,8 +1431,6 @@ def build_qubit_node(config):
         tau_out = complex(*config["output_state"])
         state = np.array([1.0 + 0j, tau_out], dtype=complex)
         node.set_output_state_target(state / np.linalg.norm(state))
-    if "operator" in _readout_names(config.get("readout", DECLARED_READOUT)):
-        node.set_gate_target(algebra["gate"])
     node.set_readout_modes([_READOUT_MODES[name]
                             for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
@@ -1425,7 +1440,10 @@ def build_qubit_node(config):
     # target and nothing else.
     extra = _as_state_pairs(config.get("states"))
     base_pair = (complex(*config["tau_a"]), complex(*config["tau_b"]))
-    if extra:
+    # Cases are set for EVERY four-torus run, extra pairs or not: a case is
+    # what carries the two-state vector, so `operator` would otherwise be
+    # unreadable on a run given only --tau-a and --tau-b.
+    if extra or len(ids) == 4:
         node.set_two_body_cases(
             [_two_body_case(pair, tori, ids, grid, operator, config)
              for pair in [base_pair] + extra])
