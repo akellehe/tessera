@@ -1888,6 +1888,21 @@ assertion. Every pairing is the transpose.)doc")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
            "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
            "reversal residual, the fit residual, and both input blocks' fiber residuals.")
+      .def("set_readout_mode", &MultiCobordism::setReadoutMode, py::arg("mode"),
+           "What the two-body target is scored against. Part of the OBJECTIVE, "
+           "not the reporting: this residual is a term in r_U, so it prices "
+           "stage-1 moves and drives stage-2 descent.")
+      .def_property_readonly("readout_mode", &MultiCobordism::readoutMode)
+      .def("whole_complex_operator_residual",
+           [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
+             return self.wholeComplexOperatorResidualOn(
+                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
+           },
+           py::arg("chi"), py::arg("choi_decomposed") = true,
+           py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of chi against the operator promoted from "
+           "ker L1(W - dW) through a Choi frame. 1.0 when the framed kernel is "
+           "not rank one, so no operator is identifiable.")
       .def("set_whole_complex_fiber_target", &MultiCobordism::setWholeComplexFiberTarget, py::arg("fiber"),
            "A fiber-form target carried by the WHOLE complex on the fiber's cells and contour (default: the "
            "lowest band above the flat zero mode); scored inside r_U under use_fiber_residuals.")
@@ -2256,6 +2271,16 @@ Right -- re-read after each drive call:
                              "True iff no complex-z line-search trial lowered the "
                              "selected objective by the absolute tolerance; False "
                              "if run_stage2 hit its max_iters budget.");
+  py::enum_<MultiCobordism::ReadoutMode>(multiCobordismClass, "ReadoutMode",
+      "What the two-body target is scored against. TRANSFER is the frame transfer T_AB, the "
+      "coupling block of the whole complex's operator between the two boundary frames: "
+      "4-dimensional and factorized across the boundaries, so it can carry an entangled target. "
+      "WHOLE_COMPLEX is the operator promoted from ker L1(W - dW) through a Choi frame -- the "
+      "target represented by the bulk's own harmonic space rather than by a coupling. BOTH sums "
+      "them. The choice is part of the OBJECTIVE: this residual is a term in r_U.")
+      .value("TRANSFER", MultiCobordism::ReadoutMode::Transfer)
+      .value("WHOLE_COMPLEX", MultiCobordism::ReadoutMode::WholeComplex)
+      .value("BOTH", MultiCobordism::ReadoutMode::Both);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
       "One canonical solve action a search policy (Proton's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "

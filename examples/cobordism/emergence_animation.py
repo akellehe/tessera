@@ -187,6 +187,25 @@ DECLARED_SURGICAL_DEPTH = 1
 #: length improves a complex that no shorter composition improves, which means
 #: looking there first. Zero keeps the deepening schedule.
 DECLARED_COMBINATORIAL_BREADTH = 0
+#: What the two-body target is scored against (`--readout`).
+#:
+#: `transfer` is the frame transfer T_AB: the coupling block of the whole
+#: complex's operator between the two boundary frames. It is 4-dimensional and
+#: factorizes across the boundaries, which is what lets it carry an entangled
+#: target.
+#:
+#: `whole` is the operator promoted from ker L_1(W - dW) through a Choi frame:
+#: the target represented by the bulk's own harmonic space rather than by a
+#: coupling between boundaries. For a compact oriented 3-manifold,
+#: rank(H^1(W) -> H^1(dW)) = b_1(dW)/2, so two boundary tori leave a
+#: 2-dimensional space against a 4-dimensional target; a complex whose framed
+#: kernel is not rank one identifies no operator and scores the full leak.
+#:
+#: `both` sums them, so one geometry is scored under both readings.
+#:
+#: This is part of the OBJECTIVE. The two-body residual is a term in r_U, so
+#: the choice prices stage-1 moves and drives stage-2 descent.
+DECLARED_READOUT = "transfer"
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -793,6 +812,15 @@ DECLARED_OPERATOR = "flip_flop"
 DECLARED_PIN_BOUNDARY = True
 
 
+#: The engine's readout modes by their command-line names. One table, so a
+#: name that parses is a name the engine accepts.
+_READOUT_MODES = {
+    "transfer": MC.ReadoutMode.TRANSFER,
+    "whole": MC.ReadoutMode.WHOLE_COMPLEX,
+    "both": MC.ReadoutMode.BOTH,
+}
+
+
 def gate_image(name, psi, phi):
     """A gate's image of the product state, as the 2 x 2 the transfer meets.
 
@@ -1115,6 +1143,7 @@ def build_qubit_node(config):
                              np.asarray(tori[1].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
+    node.set_readout_mode(_READOUT_MODES[config.get("readout", DECLARED_READOUT)])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
     # and is what the collar was seeded from, so it is always case zero; the
     # extra pairs are the same tori at different moduli. Only the boundary
@@ -3531,6 +3560,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  candidate_moves=DECLARED_CANDIDATE_MOVES,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
                  combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
+                 readout=DECLARED_READOUT,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
@@ -3586,6 +3616,9 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if surgical_depth < 1:
         raise ValueError("surgical depth must be at least 1, got %r"
                          % (surgical_depth,))
+    if readout not in _READOUT_MODES:
+        raise ValueError("unknown readout %r: expected one of %s"
+                         % (readout, ", ".join(sorted(_READOUT_MODES))))
     if combinatorial_breadth < 0:
         raise ValueError("combinatorial breadth is how many moves stage 1 "
                          "composes into one candidate before it starts "
@@ -3608,6 +3641,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "patience": patience,
         "surgical_depth": surgical_depth,
         "combinatorial_breadth": int(combinatorial_breadth),
+        "readout": readout,
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -3697,6 +3731,17 @@ def build_parser():
                           "exhaustive, which costs the move space raised to "
                           "the breadth. Default %d, the deepening schedule"
                           % DECLARED_COMBINATORIAL_BREADTH)
+    run.add_argument("--readout", choices=sorted(_READOUT_MODES),
+                     default=DECLARED_READOUT,
+                     help="what the two-body target is scored against. "
+                          "'transfer' is the coupling block of the whole "
+                          "complex's operator between the two boundary "
+                          "frames; 'whole' is the operator promoted from "
+                          "ker L_1(W - dW) through a Choi frame, so the "
+                          "target is carried by the bulk's own harmonic "
+                          "space; 'both' sums them. This is part of the "
+                          "OBJECTIVE, not the reporting: the residual is a "
+                          "term in r_U (default %s)" % DECLARED_READOUT)
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
                      help="ABSOLUTE objective tolerance (default %g). Stage "
                           "2 backs its line search off until a trial lowers "
@@ -3850,6 +3895,7 @@ def main(argv=None):
                           candidate_moves=args.candidate_moves,
                           surgical_depth=args.surgical_depth,
                           combinatorial_breadth=args.combinatorial_breadth,
+                          readout=args.readout,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,

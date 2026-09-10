@@ -599,8 +599,36 @@ class MultiCobordism {
   /// The returned Choi vector is unit-normalized and phase-fixed; the operator
   /// uses conventional unitary scaling \f$\sqrt d\f$ and reports its unitarity
   /// error rather than assuming it passed.
+  /// What the two-body target is scored against (#1039).
+  ///
+  /// `Transfer` is the frame transfer \f$T_{AB}\f$, the coupling block of the
+  /// whole complex's operator between the two boundary frames. It is
+  /// 4-dimensional and factorizes across the boundaries, which is what lets it
+  /// carry an entangled target.
+  ///
+  /// `WholeComplex` is the operator promoted from \f$\ker L_1(W-\partial W)\f$
+  /// through a Choi frame (`geometricOperator`) — the target represented by the
+  /// bulk's own harmonic space rather than by a coupling between boundaries.
+  /// A complex whose framed kernel is not rank one cannot name an operator at
+  /// all, and scores the full leak with the obstruction recorded, rather than
+  /// scoring a number that means nothing.
+  ///
+  /// `Both` sums the two, so one geometry can be scored under both readings.
+  /// The choice is part of the OBJECTIVE, not of the reporting: this residual
+  /// is a term in r_U, so it prices stage-1 moves and drives stage-2 descent.
+  enum class ReadoutMode { Transfer, WholeComplex, Both };
+  void setReadoutMode(ReadoutMode mode) noexcept { readoutMode_ = mode; }
+  [[nodiscard]] ReadoutMode readoutMode() const noexcept { return readoutMode_; }
   [[nodiscard]] GeometricOperatorReadout geometricOperator(
       int stateDimension,
+      std::vector<std::vector<std::uint64_t>> frameCells = {},
+      double tol = 1e-9, bool metric = true) const;
+  /// `geometricOperator` on WHATEVER complex is being read, never only the
+  /// live one: stage 1 prices each candidate on a complex rebuilt from a
+  /// snapshot, so a live-only read would rank every move by the geometry it
+  /// started from.
+  [[nodiscard]] GeometricOperatorReadout geometricOperatorOn(
+      const std::shared_ptr<Spacetime> &spacetime, int stateDimension,
       std::vector<std::vector<std::uint64_t>> frameCells = {},
       double tol = 1e-9, bool metric = true) const;
   /// Move-kind names. Named rather than spelled as string literals at each site:
@@ -1666,6 +1694,15 @@ class MultiCobordism {
   /// The two-body residual on the live complex. @throws std::logic_error
   /// without a target or without two attached input fibers.
   [[nodiscard]] double twoBodyResidual() const;
+  /// The projective leak of \p target against the operator promoted from
+  /// \f$\ker L_1(W-\partial W)\f$ through a Choi frame — the reading
+  /// `ReadoutMode::WholeComplex` selects. `1.0`, the full leak, when the
+  /// framed kernel is not rank one and no operator is identifiable: the same
+  /// convention a refused geometry takes under the transfer reading, so the
+  /// two are on one scale and `Both` may sum them.
+  [[nodiscard]] double wholeComplexOperatorResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
   /// Read the bulk between the two attached frames on the live complex, with
   /// certificates. @throws std::logic_error without two attached input fibers.
   [[nodiscard]] TwoBodyRead readTwoBody() const;
@@ -2791,6 +2828,14 @@ class MultiCobordism {
   /// The target edge values of a marked block through a frame: a degree-1
   /// fiber on the frame's cells with images \f$ F\,(a, b)^T \f$.
   [[nodiscard]] static BoundaryFiber stateTargetOf(const BlockMarking &marking, const BlockFrame &frame);
+  /// The projective leak of \p target against the operator promoted from the
+  /// bulk kernel. `1.0` — the full leak — when no operator is identifiable,
+  /// the same convention a refused geometry takes in `twoBodyResidualOn`.
+  /// The projective leak of \p target against the frame transfer \f$T_{AB}\f$
+  /// — the reading `ReadoutMode::Transfer` selects.
+  [[nodiscard]] double transferResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
   [[nodiscard]] double twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const;
   /// The two input blocks carrying an attached fiber, in block order.
@@ -2840,6 +2885,9 @@ class MultiCobordism {
   std::mt19937_64 randomNumberGenerator_;
   /// #613: whether the move draw offers the disposition moves. See the accessor.
   bool shouldProposeDispositions_{true};
+  /// What the two-body target is scored against (`setReadoutMode`). Transfer
+  /// by default, so every recorded run keeps its meaning.
+  ReadoutMode readoutMode_{ReadoutMode::Transfer};
   double convergenceTolerance_ = 1e-9;
   /// Set by `runStage2`: `true` iff its last call stopped on the absolute-tolerance
   /// stationarity test, `false` iff it hit the `maxIters` budget. See lastStage2Stationary.

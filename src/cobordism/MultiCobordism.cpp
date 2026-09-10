@@ -2269,6 +2269,13 @@ MultiCobordism::relaxWholeComplexReadoutTargets(
 MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperator(
     int stateDimension, std::vector<std::vector<std::uint64_t>> frameCells,
     double tol, bool metric) const {
+  return geometricOperatorOn(spacetime_, stateDimension, std::move(frameCells), tol, metric);
+}
+
+MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperatorOn(
+    const std::shared_ptr<Spacetime> &spacetime, int stateDimension,
+    std::vector<std::vector<std::uint64_t>> frameCells, double tol,
+    bool metric) const {
   GeometricOperatorReadout result;
   result.stateDimension = stateDimension;
   result.metric = metric;
@@ -2279,7 +2286,7 @@ MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperator(
     result.operatorMatrix.clear();
     return result;
   };
-  if (!spacetime_)
+  if (!spacetime)
     return obstruct("the cobordism has no spacetime");
   if (stateDimension <= 0)
     return obstruct("state dimension must be positive");
@@ -2290,7 +2297,7 @@ MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperator(
   if (d > std::numeric_limits<std::size_t>::max() / d)
     return obstruct("state dimension overflows the Choi width");
   const std::size_t choiWidth = d * d;
-  EigenstateSynthesis synthesis(spacetime_, 1, metricSource_);
+  EigenstateSynthesis synthesis(spacetime, 1, metricSource_);
   result.bulkCells = synthesis.bulkMinusBoundaryCells();
   result.bulkCellCount = result.bulkCells.size();
   if (result.bulkCells.empty())
@@ -4323,8 +4330,54 @@ MultiCobordism::TransferOperand MultiCobordism::transferOperand(const BoundaryBl
   return operand;
 }
 
+double MultiCobordism::wholeComplexOperatorResidualOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const TwoBodyTarget &target) const {
+  if (!spacetime) return 1.0;
+  const Eigen::Index dimension = target.chi.rows();
+  if (dimension < 1 || target.chi.cols() != dimension)
+    throw std::logic_error("MultiCobordism::wholeComplexOperatorResidualOn: the target is " +
+                           std::to_string(target.chi.rows()) + "x" + std::to_string(target.chi.cols()) +
+                           ", not square");
+  // The operator the BULK names, read through a Choi frame of d^2 interior
+  // edges in canonical order. A complex whose framed kernel is not rank one
+  // names no operator: it scores the full leak, exactly as a refused geometry
+  // does under the transfer reading, rather than a number standing in for one.
+  GeometricOperatorReadout readout;
+  try {
+    readout = geometricOperatorOn(spacetime, static_cast<int>(dimension));
+  } catch (const std::runtime_error &) {
+    return 1.0;
+  } catch (const std::invalid_argument &) {
+    return 1.0;
+  }
+  if (!readout.identifiable ||
+      readout.choiState.size() != static_cast<std::size_t>(target.chi.size()))
+    return 1.0;
+  const Eigen::Map<const Eigen::VectorXcd> choi(readout.choiState.data(),
+                                                static_cast<Eigen::Index>(readout.choiState.size()));
+  const Eigen::Map<const Eigen::VectorXcd> chi(target.chi.data(), target.chi.size());
+  const double cc = choi.squaredNorm();
+  if (!(cc > 0.0)) return 1.0;
+  // The same projective Frobenius leak the transfer reading takes, so the two
+  // readings are on one scale and `Both` may sum them.
+  const complexd overlap = choi.dot(chi);
+  const double leak = chi.squaredNorm() - std::norm(overlap) / cc;
+  return std::max(0.0, leak / chi.squaredNorm());
+}
+
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const {
+  if (readoutMode_ == ReadoutMode::WholeComplex)
+    return wholeComplexOperatorResidualOn(spacetime, target);
+  if (readoutMode_ == ReadoutMode::Both)
+    return transferResidualOn(spacetime, target) +
+           wholeComplexOperatorResidualOn(spacetime, target);
+  return transferResidualOn(spacetime, target);
+}
+
+double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spacetime,
+                                          const TwoBodyTarget &target) const {
   const auto [A, B] = attachedInputBlocks();
   if (!spacetime) return 1.0;
   Eigen::MatrixXcd T;
