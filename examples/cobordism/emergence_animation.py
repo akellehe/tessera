@@ -150,6 +150,24 @@ DECLARED_SURGICAL_DEPTH = DECLARED_COMBINATORIAL_DEPTH
 #: alias.
 DECLARED_COMBINATORIAL_LENGTH = 0
 DECLARED_COMBINATORIAL_BREADTH = DECLARED_COMBINATORIAL_LENGTH
+#: Whether stage 1 prices every breadth before committing
+#: (`--best-over-breadths`).
+#:
+#: The ladder has always been best-improver WITHIN a breadth: every candidate
+#: at one depth is scored and the lowest delta wins. ACROSS breadths it is
+#: first-improver -- the first depth that lowers the objective at all is the
+#: one taken, and the rest are never priced.
+#:
+#: That is right when the shallow depths come first, and wrong under a named
+#: breadth. With a few hundred sampled five-move compositions against a move
+#: space in the hundreds, some composition nearly always improves a little, so
+#: the search commits a mediocre five-move sequence in preference to an
+#: excellent single move it never looked at.
+#:
+#: On means price every depth against the same base complex and commit the
+#: lowest delta found at any of them. It costs about one rung per depth
+#: instead of stopping early, which is the honest price of the comparison.
+DECLARED_BEST_OVER_BREADTHS = False
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -1456,7 +1474,9 @@ def _drive(config, node_factory, frame_factory, reporter, *,
             max_steps=config["stage1_iters"],
             n_candidate_moves=config["candidate_moves"],
             max_lookahead=combinatorial_depth,
-            combinatorial_breadth=combinatorial_length))
+            combinatorial_breadth=combinatorial_length,
+            best_over_breadths=config.get("best_over_breadths",
+                                          DECLARED_BEST_OVER_BREADTHS)))
         if stop_requested is not None and stop_requested():
             terminator = Terminator.CANCELLED
             break
@@ -2576,7 +2596,8 @@ def _build_common_config(
         combinatorial_depth=_LEGACY_UNSET,
         combinatorial_length=_LEGACY_UNSET, *,
         surgical_depth=_LEGACY_UNSET,
-        combinatorial_breadth=_LEGACY_UNSET):
+        combinatorial_breadth=_LEGACY_UNSET,
+        best_over_breadths=DECLARED_BEST_OVER_BREADTHS):
     """Validate and return the engine schedule shared by both examples."""
     combinatorial_depth = _aliased_value(
         combinatorial_depth, surgical_depth, DECLARED_COMBINATORIAL_DEPTH,
@@ -2649,10 +2670,12 @@ def _build_common_config(
         "patience": patience,
         "combinatorial_depth": combinatorial_depth,
         "combinatorial_length": combinatorial_length,
+        "best_over_breadths": bool(best_over_breadths),
     }
 
 
 def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
+                 best_over_breadths=DECLARED_BEST_OVER_BREADTHS,
                  seed=DECLARED_SEED, host_seed=DECLARED_HOST_SEED,
                  resolution=DECLARED_RESOLUTION,
                  edge_disposition=DECLARED_EDGE_DISPOSITION,
@@ -2673,7 +2696,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
         combinatorial_depth=combinatorial_depth,
         combinatorial_length=combinatorial_length,
         surgical_depth=surgical_depth,
-        combinatorial_breadth=combinatorial_breadth)
+        combinatorial_breadth=combinatorial_breadth,
+        best_over_breadths=best_over_breadths)
 
     size = _integer_value("size", size)
     host_seed = _integer_value("host seed", host_seed)
@@ -2752,6 +2776,21 @@ def _add_common_run_arguments(run, out_default, geometry_help):
     run.add_argument("--patience", type=int, default=DECLARED_PATIENCE,
                      help="consecutive stalled units allowed before stopping "
                           "(default %d)" % DECLARED_PATIENCE)
+    run.add_argument("--best-over-breadths",
+                     action=argparse.BooleanOptionalAction,
+                     default=DECLARED_BEST_OVER_BREADTHS,
+                     help="price EVERY breadth against the same base complex "
+                          "and commit the lowest delta found at any of them. "
+                          "The ladder is already best-improver within a "
+                          "breadth; across breadths it is first-improver, so "
+                          "the first depth that improves at all is taken and "
+                          "the rest are never priced. Once a breadth is "
+                          "named, some long composition nearly always "
+                          "improves a little, and the search "
+                          "then commits a mediocre long sequence over an "
+                          "excellent single move it never looked at. Costs "
+                          "about one rung per depth instead of stopping "
+                          "early")
     run.add_argument("--live", action="store_true",
                      help="draw each completed frame while the drive runs; "
                           "still writes the requested outputs. Needs the "
@@ -2966,6 +3005,7 @@ def main(argv=None):
             candidate_moves=args.candidate_moves,
             combinatorial_depth=args.combinatorial_depth,
             combinatorial_length=args.combinatorial_length,
+            best_over_breadths=args.best_over_breadths,
             surgical_depth=getattr(args, "surgical_depth", _LEGACY_UNSET),
             combinatorial_breadth=getattr(
                 args, "combinatorial_breadth", _LEGACY_UNSET))
