@@ -101,18 +101,25 @@ def test_the_reversed_torus_carries_Z_conj_psi():
         assert np.allclose(partner, np.array([psi.conj()[0], -psi.conj()[1]]))
 
 
-def test_it_scores_a_number_and_that_number_is_the_objective_term():
+def test_it_scores_a_number_and_that_number_is_the_objective():
+    """The per-case residuals are what the drive minimises.
+
+    Read through the CASES, not `two_body_residual`, which is the single
+    target's read and is case-agnostic. At four tori every run carries cases,
+    since a case is what holds the two-state vector.
+    """
     node = seeded(readout="operator", tori=4)
-    residual = node.operator_residual()
-    assert 0.0 <= residual <= 1.0
-    assert node.two_body_residual() == pytest.approx(residual, rel=1e-12)
+    per_case = node.two_body_residuals_per_case()
+    assert per_case, "a four-torus run carries at least one case"
+    assert all(0.0 <= value <= 1.0 for value in per_case), per_case
+    assert node.objective() == pytest.approx(sum(per_case), rel=1e-12)
 
 
 def test_a_summed_set_adds_the_readings():
     """Every reading is the same projective leak on one scale, so they sum."""
-    whole = seeded(readout="whole", tori=4).two_body_residual()
-    operator = seeded(readout="operator", tori=4).two_body_residual()
-    both = seeded(readout="whole,operator", tori=4).two_body_residual()
+    whole = seeded(readout="whole", tori=4).objective()
+    operator = seeded(readout="operator", tori=4).objective()
+    both = seeded(readout="whole,operator", tori=4).objective()
     assert both == pytest.approx(whole + operator, rel=1e-9)
 
 
