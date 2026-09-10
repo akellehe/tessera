@@ -540,6 +540,29 @@ class Simplex {
     [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
     dualVolumeGradient() const;
 
+    /// Does this hinge's dual geometry sit on a point where its derivatives can
+    /// fail to exist?
+    ///
+    /// The circumcentric dual is built from square roots of circumradius
+    /// differences: \f$ \sqrt{R^2_{\text{facet}} - R^2_{\text{hinge}}} \f$ and
+    /// \f$ \sqrt{R^2_{\text{top}} - R^2_{\text{facet}}} \f$, the distances
+    /// between successive circumcentres. A difference vanishes when two
+    /// circumcentres coincide, which in Lorentzian signature happens for real
+    /// geometries -- two cells can share a null circumsphere.
+    ///
+    /// The dual content itself stays finite there, because it only multiplies by
+    /// those roots. Its derivatives divide by them, and \f$ \sqrt{x} \f$ has
+    /// infinite slope at the origin, so a derivative that moves the vanishing
+    /// difference genuinely does not exist. ``dualVolumeGradient`` and
+    /// ``dualVolumeHessian`` report non-finite entries in exactly that case, and
+    /// this predicate is how a caller identifies which hinges are responsible
+    /// without hunting for the NaN.
+    ///
+    /// True does not by itself mean a derivative diverged: a difference that
+    /// vanishes and stays vanishing under a given edge contributes zero, which
+    /// both derivative routines return. It means the hinge is a candidate.
+    [[nodiscard]] bool dualGeometryIsDegenerate() const;
+
     /// Exact analytic Hessian of this hinge's ``dualVolume``:
     /// \f$ \partial^2 |\!\star\!\sigma| / \partial \ell^2_e \partial \ell^2_f \f$.
     /// One derivative beyond ``dualVolumeGradient``: the DEC facet→top recursion

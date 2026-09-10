@@ -442,6 +442,20 @@ Python-driven materialization corrupted dualVolume(). Reference fixes it
            "True iff this simplex is a genuine face of a current top cell (not "
            "an orphan stranded by a Pachner move). The hinges the Regge action "
            "sums over are exactly the (d-2)-faces for which this is true.")
+      .def("dualGeometryIsDegenerate", &Simplex::dualGeometryIsDegenerate,
+           "Does this hinge's dual geometry sit where its derivatives can fail "
+           "to exist? The circumcentric dual is built from square roots of "
+           "circumradius differences -- the distances between successive "
+           "circumcentres -- and such a difference vanishes when two "
+           "circumcentres coincide, which real Lorentzian geometries do: two "
+           "cells can share a null circumsphere. The dual content stays finite "
+           "there because it only multiplies by those roots; its derivatives "
+           "divide by them, and sqrt has infinite slope at the origin, so a "
+           "derivative that moves the vanishing difference genuinely does not "
+           "exist. This is how to find the hinges responsible for a non-finite "
+           "entry in dualVolumeGradient or dualVolumeHessian. True means the "
+           "hinge is a candidate, not that a derivative diverged: a difference "
+           "that vanishes and stays vanishing contributes zero.")
       .def("dualVolumeGradient", &Simplex::dualVolumeGradient,
            "Exact analytic d(dualVolume)/d(l^2_e) for each surrounding edge, as a "
            "dict {(v0,v1): complex}. Differentiates the DEC circumradius recursion "
