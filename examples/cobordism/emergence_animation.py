@@ -187,6 +187,55 @@ DECLARED_SURGICAL_DEPTH = 1
 #: length improves a complex that no shorter composition improves, which means
 #: looking there first. Zero keeps the deepening schedule.
 DECLARED_COMBINATORIAL_BREADTH = 0
+#: Which space the two-body target is scored against (`--readout`), as a
+#: comma-separated set that is SUMMED. Each name is the SPACE the reading takes
+#: the state from, so a name cannot suggest the wrong one.
+#:
+#: `transfer` is (Z_A^v)^T A~_1 Z_B: the whole complex's degree-1 operator read
+#: as the coupling block between the two boundary frames. It is 4-dimensional
+#: and factorizes across the boundaries, which is what lets it carry an
+#: entangled target.
+#:
+#: `bulk` is ker L_1(W - dW): the Laplacian on interior cells with the boundary
+#: REMOVED, read through a Choi frame. On a one-layer collar the complex has no
+#: interior edges at all, so there is nothing to read.
+#:
+#: `whole` is ker L_1(W): the boundary INCLUDED, read through the blocks'
+#: markings. Its rank is b_1(W), so two boundary tori give 2 against a
+#: 4-dimensional target and the term says so rather than fitting one; four tori
+#: give b_1(dW) = 8 and hence rank 4.
+#:
+#: This is part of the OBJECTIVE. The two-body residual is a term in r_U, so
+#: the choice prices stage-1 moves and drives stage-2 descent.
+DECLARED_READOUT = "transfer"
+#: How many tori bound the cobordism (`--tori`): two or four.
+#:
+#: TWO is one torus per input state, the collar of spec S3.
+#:
+#: FOUR carries each state on a PAIR -- itself and its orientation reversal at
+#: -conj(tau), which keeps the modulus in the upper half-plane where a torus
+#: modulus has to live and gives the holomorphic form the conjugate periods.
+#: The host becomes two collars joined along a removed tetrahedron; gluing
+#: along a sphere is a connected sum, which adds no first homology, so
+#: b_1 = 2 + 2 = 4 with nothing dying on the boundary.
+#:
+#: The count decides which readings can run at all, because
+#: rank(H^1(W) -> H^1(dW)) = b_1(dW)/2: two tori leave a harmonic space of rank
+#: 2, four leave 4, and the two-body target is 4-dimensional. See
+#: `_READOUT_TORI` for the matrix, which `build_config` enforces.
+#:
+#: Four needs three collar layers. A prism cell spans two adjacent layers, so
+#: the all-interior cell the join removes exists only with two interior layers.
+DECLARED_TORI = 2
+#: The state the whole complex's harmonic form is meant to be (`--output-state`),
+#: as a modulus tau: the target is psi(tau) = (1, tau)/|(1, tau)|.
+#:
+#: The harmonic of the whole Laplacian IS a state, and its dimension is
+#: b_1(W) -- 2 with two boundary tori, 4 with four. A 2-dimensional harmonic
+#: space carries a 2-dimensional state, which is what this names. Unset, the
+#: reading falls back to the two-body target, which is 4-dimensional and so
+#: only fits a four-torus host.
+DECLARED_OUTPUT_STATE = None
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -338,10 +387,15 @@ DECLARED_QUBIT_BETTI_DEGREES = (0, 1, 2, 3)
 #: Tolerance on |tau_read - tau_in| for the SEED's surface read, which is
 #: exact on a flat torus (spec S1: the read returns tau_in to rounding).
 DECLARED_TAU_TOLERANCE = 1e-9
-#: The two tori's labels and drawing colours (the layout highlight and the
-#: traces read from the same pair, so a colour and its label cannot disagree).
-DECLARED_TORUS_LABELS = ("A", "B")
-DECLARED_TORUS_COLOURS = ("#d2691e", "#1f8a70")
+#: The tori's labels and drawing colours (the layout highlight and the traces
+#: read from the same table, so a colour and its label cannot disagree).
+#:
+#: Four entries because `--conjugate-inputs` carries each state on a PAIR of
+#: tori: A with its orientation reversal A*, B with B*. A conjugate shares its
+#: partner's hue at a lighter value, since it is the same state seen the other
+#: way round rather than a third and fourth input.
+DECLARED_TORUS_LABELS = ("A", "A*", "B", "B*")
+DECLARED_TORUS_COLOURS = ("#d2691e", "#e8a76b", "#1f8a70", "#6fbfa8")
 
 
 class EdgeDisposition:
@@ -793,6 +847,166 @@ DECLARED_OPERATOR = "flip_flop"
 DECLARED_PIN_BOUNDARY = True
 
 
+#: The engine's readings by their command-line names. One table, so a name
+#: that parses is a name the engine accepts. Each is named for the SPACE it
+#: takes the state from, so a name cannot suggest the wrong one.
+#: How many boundary tori each reading needs, and why. One table, enforced by
+#: `build_config`, so a combination that cannot produce a number is refused
+#: rather than scored as a constant 1.0 -- a constant term carries no gradient,
+#: so the flag would silently be a no-op while the run looked like it was
+#: optimizing something.
+_READOUT_TORI = {
+    "transfer": ((2,), "it reads between exactly two frames, so four tori "
+                       "would leave two of them out"),
+    "bulk": ((2, 4), ""),
+    "whole": ((2, 4), ""),
+    "operator": ((4,), "it pairs a state with its conjugate a side, and two "
+                       "tori give one block a side"),
+}
+#: What --tori, --readout, --output-state and --layers mean TOGETHER, printed
+#: as the run subcommand's epilog. Written here beside `_READOUT_TORI`, which
+#: enforces it, so the documentation and the refusal cannot drift apart.
+#:
+#: No per-cent signs anywhere in this string: argparse interpolates the epilog
+#: and a bare one is read as a conversion.
+QUBIT_READOUT_NOTES = """
+qubit mode: how --tori, --readout and --output-state fit together
+
+  --tori is how many tori bound the cobordism.
+
+    2   one torus per input state; the collar of spec S3, one layer.
+    4   each state on a PAIR, itself and its orientation reversal at
+        -conj(tau). The host is two collars joined along a removed
+        tetrahedron, which needs three layers, and --layers is raised to
+        three on its own.
+
+  Why the count matters: for a compact oriented 3-manifold
+  rank(H^1(W) -> H^1(dW)) = b_1(dW)/2. Two tori leave a harmonic space of
+  rank 2, four leave rank 4. A rank-k harmonic space carries a
+  k-dimensional state and nothing else.
+
+  --readout is which space the target is scored against, as a
+  comma-separated set that is SUMMED. Each is the same projective leak on
+  the same scale, and each scores a full 1.0 when it cannot name a state.
+  The choice is part of the OBJECTIVE: the residual is a term in r_U, so it
+  prices stage-1 moves and drives stage-2 descent.
+
+    transfer   (Z_A^v)^T A~_1 Z_B, the whole complex's degree-1 operator
+               read as the coupling block between the two boundary frames.
+               2x2, scored against chi. --tori 2 only: it reads between
+               exactly two frames, so four tori would leave two out.
+
+    bulk       ker L_1(W - dW), the Laplacian on interior cells with the
+               boundary REMOVED, read through a Choi frame of d^2 interior
+               edges. The only reading that takes a Choi decomposition as
+               such. --tori 2 or 4, and at least two --layers: with one
+               layer every cell touches a surface and there are no interior
+               cells at all. It refuses until the frame is named, since
+               which d^2 interior edges are the frame changes the answer.
+
+    whole      ker L_1(W), the boundary INCLUDED, read through the blocks'
+               markings. The harmonic space is a space, not a state; the
+               inputs pick the form out of it, and its coefficient vector
+               IS the output state. --tori 2 or 4.
+                 --tori 2 -> rank 2, so it needs --output-state, a
+                             2-dimensional target.
+                 --tori 4 -> rank 4; --output-state if given, otherwise the
+                             4-dimensional chi.
+
+    operator   the transfer between two PAIRED frames, a state and its
+               conjugate a side. Rank 4 a side makes it 4x4 -- the
+               dimension of an operator on C^2 (x) C^2 -- so the target is
+               the GATE itself rather than the gate's image of one chosen
+               input. --tori 4 only.
+
+  --output-state names the state the whole Laplacian's harmonic is meant to
+  be, as a modulus tau; the target is psi(tau) = (1, tau) normalized. Read
+  by --readout whole and ignored by the others.
+
+  Which metric each reading uses:
+
+    transfer   the chain-level WHITNEY PENCIL, at degree 1. The frames are
+               derived live from the blocks' own covariant pencil zero mode
+               and the dressed Whitney mass matrix M_1^U, so lengths and
+               link phases both enter. A node on the diagonal-weight metric
+               is refused by name rather than read through a metric it did
+               not ask for.
+
+    bulk       the live SIGNED HODGE WEIGHTS,
+               W_1^-1 d_1^T W_0 d_1 + d_2 W_2^-1 d_2^T W_1, whose right
+               kernel is taken by SVD because the Lorentzian operator is
+               generally non-normal. The combinatorial unit-weight operator
+               d_1^T d_1 + d_2 d_2^T is available in the engine and is NOT
+               used here: it is topology-only, so it would score the same
+               for every geometry with the same cells and the term would be
+               a constant under stage 2.
+
+    whole      the chain-level WHITNEY PENCIL, at degree 1, same guard as
+               transfer. The harmonic band moves as the lengths move, and
+               the periods are transported through the connection, so the
+               phases enter too.
+
+    operator   the chain-level WHITNEY PENCIL, same as transfer; the paired
+               frame is the direct sum of two blocks' frames, so it is the
+               same metric read on twice as many cells.
+
+  None of the four is metric-agnostic as wired. Every one of them moves
+  under stage 2, which is what makes it usable as an objective term. The
+  metric-agnostic readings that exist in the engine are the combinatorial
+  unit-weight bulk operator above, and anything read at degree 0, where the
+  representation is the U(1) connection Laplacian and the metric source does
+  not enter at all -- measured in #936, where the Whitney and diagonal-weight
+  records came out bit-identical.
+
+  What that leaves:
+
+    --readout             --tori 2                --tori 4
+    transfer              yes                     refused
+    bulk                  yes (--layers >= 2)     yes
+    whole                 needs --output-state    yes
+    operator              refused                 yes
+
+  Every combination outside that table is refused when the config is built,
+  by name and with the reason. A reading that cannot produce a number would
+  otherwise score a constant 1.0 forever, and a constant term has no
+  gradient -- the flag would be a silent no-op while the run looked like it
+  was optimizing something.
+
+  Worth knowing: only `operator` scores against the gate. The other three
+  score against the gate's image of one chosen input pair, so a bulk can be
+  fitted to that pair and to nothing else.
+"""
+
+
+_READOUT_MODES = {
+    "transfer": MC.ReadoutMode.TRANSFER,
+    "bulk": MC.ReadoutMode.BULK,
+    "whole": MC.ReadoutMode.WHOLE,
+    "operator": MC.ReadoutMode.OPERATOR,
+}
+
+
+def _readout_names(readout):
+    """The readings a `--readout` value names, in the order written.
+
+    A comma-separated SET rather than one choice: a run can be scored under
+    more than one reading, and summing them needs no special name for each
+    pairing. Refused rather than silently dropped when a name is unknown or
+    the set is empty, since a two-body term scored against nothing is not a
+    term.
+    """
+    names = [name.strip() for name in str(readout).split(",") if name.strip()]
+    if not names:
+        raise ValueError("readout names no reading: expected a comma-separated "
+                         "set from %s" % ", ".join(sorted(_READOUT_MODES)))
+    for name in names:
+        if name not in _READOUT_MODES:
+            raise ValueError("unknown readout %r: expected a comma-separated "
+                             "set from %s"
+                             % (name, ", ".join(sorted(_READOUT_MODES))))
+    return names
+
+
 def gate_image(name, psi, phi):
     """A gate's image of the product state, as the 2 x 2 the transfer meets.
 
@@ -810,6 +1024,11 @@ def gate_image(name, psi, phi):
             "psi": np.asarray(psi, dtype=complex).reshape(2),
             "phi": np.asarray(phi, dtype=complex).reshape(2),
             "chi": (gate @ product).reshape(2, 2),
+            # The GATE, beside its image of this one input pair. The
+            # paired-frame reading scores against the operator itself
+            # (#1048): a geometry that represents G acts correctly on every
+            # input, where one fitted to chi has been fitted to one of them.
+            "gate": gate,
             "product_state": product.reshape(2, 2),
             "first_order_amplitudes": (gate @ product).reshape(2, 2),
             "exact_amplitudes": (gate @ product).reshape(2, 2)}
@@ -837,6 +1056,10 @@ def flip_flop_evolution(psi, phi, coupling, time):
     chi = two_qubit_flip_flop(psi, phi)
     return {"coupling": float(coupling), "time": float(time), "Jt": angle,
             "psi": psi, "phi": phi, "chi": chi,
+            # The propagator IS the gate here, so the paired-frame reading
+            # scores against the exact evolution at the declared J t rather
+            # than against its image of one input pair (#1048).
+            "gate": propagator,
             "product_state": product.reshape(2, 2),
             "first_order_amplitudes": -1j * angle * chi,
             "exact_amplitudes": (propagator @ product).reshape(2, 2)}
@@ -1079,13 +1302,32 @@ def build_qubit_node(config):
         # The tori's construction notes are recorded from `warnings()` in
         # `QubitInputs`, not printed.
         warnings.simplefilter("ignore")
+        # With --conjugate-inputs each state is carried by a PAIR of tori,
+        # itself and its orientation reversal at -conj(tau). Four boundary
+        # tori give b_1(dW) = 8, so rank(H^1(W) -> H^1(dW)) = 4 -- the
+        # dimension a 4-dimensional target needs, against the 2 that two tori
+        # leave. -conj(tau) rather than conj(tau) keeps the modulus in the
+        # upper half-plane, where a torus modulus has to live, and gives the
+        # holomorphic form the conjugate periods.
+        if int(config.get("tori", DECLARED_TORI)) == 4:
+            tau_in = [tau for tau in tau_in
+                      for tau in (tau, -tau.conjugate())]
         tori = [obs.SimplicialQubit.flat_torus(tau, grid, grid)
                 for tau in tau_in]
-    seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
-                          config["layers"])
+    if int(config.get("tori", DECLARED_TORI)) == 4:
+        # Two collars joined along a removed tetrahedron. Gluing along a sphere
+        # is a connected sum, which adds no first homology, so b_1 = 2 + 2 = 4
+        # with nothing dying on the boundary. Needs three layers: a prism cell
+        # spans two adjacent layers, so the all-interior cell the join removes
+        # exists only with two interior layers.
+        seed = MC.seed_joined_collars([torus.spacetime() for torus in tori],
+                                      max(3, int(config["layers"])))
+    else:
+        seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
+                              config["layers"])
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
-    node = MC(seed.host, [[1.0 + 0j], [1.0 + 0j]], [],
+    node = MC(seed.host, [[1.0 + 0j]] * len(tori), [],
               degrees=list(config["register_degrees"]), seed=config["seed"],
               einstein_hilbert=bool(config["regge"]),
               real_squared_lengths_only=False,
@@ -1115,6 +1357,15 @@ def build_qubit_node(config):
                              np.asarray(tori[1].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
+    if config.get("output_state") is not None:
+        import numpy as np
+        tau_out = complex(*config["output_state"])
+        state = np.array([1.0 + 0j, tau_out], dtype=complex)
+        node.set_output_state_target(state / np.linalg.norm(state))
+    if "operator" in _readout_names(config.get("readout", DECLARED_READOUT)):
+        node.set_gate_target(algebra["gate"])
+    node.set_readout_modes([_READOUT_MODES[name]
+                            for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
     # and is what the collar was seeded from, so it is always case zero; the
     # extra pairs are the same tori at different moduli. Only the boundary
@@ -3531,6 +3782,10 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  candidate_moves=DECLARED_CANDIDATE_MOVES,
                  surgical_depth=DECLARED_SURGICAL_DEPTH,
                  combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
+                 readout=DECLARED_READOUT,
+                 tori=DECLARED_TORI,
+                 output_state=DECLARED_OUTPUT_STATE,
+                 layers=DECLARED_COLLAR_LAYERS,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
@@ -3586,6 +3841,38 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if surgical_depth < 1:
         raise ValueError("surgical depth must be at least 1, got %r"
                          % (surgical_depth,))
+    names = _readout_names(readout)
+    # A reading that STRUCTURALLY cannot produce a number is refused here
+    # rather than scoring a constant 1.0 forever. A constant term carries no
+    # gradient, so the flag would silently be a no-op and the run would look
+    # like it was optimizing something it was not.
+    if int(layers) < 1:
+        raise ValueError("collar layers must be at least one, got %r" % (layers,))
+    if int(tori) not in (2, 4):
+        raise ValueError("--tori is two or four, got %r: one torus per input "
+                         "state, or a conjugate pair each" % (tori,))
+    for name in names:
+        allowed, why = _READOUT_TORI[name]
+        if int(tori) not in allowed:
+            raise ValueError(
+                "--readout %s needs --tori %s, not %d: %s"
+                % (name, " or ".join(str(n) for n in allowed), int(tori), why))
+    if output_state is not None:
+        try:
+            complex(output_state)
+        except (TypeError, ValueError):
+            raise ValueError("--output-state is a modulus tau, e.g. 0.3+1.1j; "
+                             "got %r" % (output_state,))
+    if "whole" in names and int(tori) == 2 and output_state is None:
+        raise ValueError(
+            "--readout whole at --tori 2 needs --output-state: the harmonic of "
+            "the whole Laplacian has rank 2 there, so it carries a "
+            "2-dimensional state, and the two-body target it would otherwise "
+            "score against is 4-dimensional")
+    if "bulk" in names and int(layers) < 2:
+        raise ValueError(
+            "--readout bulk needs at least two collar layers: with one, every "
+            "cell touches a surface and there are no interior cells to read")
     if combinatorial_breadth < 0:
         raise ValueError("combinatorial breadth is how many moves stage 1 "
                          "composes into one candidate before it starts "
@@ -3608,6 +3895,11 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "patience": patience,
         "surgical_depth": surgical_depth,
         "combinatorial_breadth": int(combinatorial_breadth),
+        "readout": readout,
+        "tori": int(tori),
+        "output_state": (None if output_state is None
+                         else [float(complex(output_state).real),
+                               float(complex(output_state).imag)]),
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -3621,7 +3913,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "tau_a": moduli["tau_a"],
         "tau_b": moduli["tau_b"],
         "grid": int(grid),
-        "layers": DECLARED_COLLAR_LAYERS,
+        "layers": int(layers),
         "coupling": float(coupling),
         "time": float(time),
         "input_weight": float(input_weight),
@@ -3647,7 +3939,10 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description="Animate unforced emergence and the paper's certificates.")
     sub = parser.add_subparsers(dest="command", required=True)
-    run = sub.add_parser("run", help="drive emergence and render the overlay")
+    run = sub.add_parser(
+        "run", help="drive emergence and render the overlay",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=QUBIT_READOUT_NOTES)
     run.add_argument("--size", type=int, default=DECLARED_SIZE)
     run.add_argument("--steps", type=int, default=DECLARED_STEPS)
     run.add_argument("--seed", type=int, default=DECLARED_SEED)
@@ -3697,6 +3992,39 @@ def build_parser():
                           "exhaustive, which costs the move space raised to "
                           "the breadth. Default %d, the deepening schedule"
                           % DECLARED_COMBINATORIAL_BREADTH)
+    run.add_argument("--readout", default=DECLARED_READOUT,
+                     help="which space the two-body target is scored "
+                          "against, as a comma-separated set that is SUMMED. "
+                          "'transfer' is the whole complex's degree-1 "
+                          "operator read as the coupling block between the "
+                          "two boundary frames; 'bulk' is ker L_1(W - dW), "
+                          "the boundary REMOVED, read through a Choi frame; "
+                          "'whole' is ker L_1(W), the boundary INCLUDED, read "
+                          "through the blocks' markings. This is part of the "
+                          "OBJECTIVE, not the reporting: the residual is a "
+                          "term in r_U (default %s)" % DECLARED_READOUT)
+    run.add_argument("--tori", type=int, choices=(2, 4),
+                     default=DECLARED_TORI,
+                     help="how many tori bound the cobordism. Two is one per "
+                          "input state, the collar of spec S3. Four carries "
+                          "each state on a PAIR, itself and its orientation "
+                          "reversal at -conj(tau), on two collars joined "
+                          "along a removed tetrahedron. The count decides "
+                          "which readings can run: "
+                          "rank(H^1(W) -> H^1(dW)) = b_1(dW)/2, so two tori "
+                          "leave a harmonic space of rank 2 and four leave 4, "
+                          "against a 4-dimensional target. --readout "
+                          "transfer needs two; whole and operator need four; "
+                          "bulk takes either. Four needs three collar layers "
+                          "(default %d)" % DECLARED_TORI)
+    run.add_argument("--output-state", dest="output_state", default=None,
+                     help="the state the whole complex's harmonic form is "
+                          "meant to be, as a modulus tau (e.g. 0.3+1.1j): the "
+                          "target is psi(tau) = (1, tau) normalized. The "
+                          "harmonic IS a state and its dimension is b_1(W), "
+                          "so at --tori 2 it is 2-dimensional and this names "
+                          "it; unset, --readout whole falls back to the "
+                          "4-dimensional two-body target")
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
                      help="ABSOLUTE objective tolerance (default %g). Stage "
                           "2 backs its line search off until a trial lowers "
@@ -3850,6 +4178,9 @@ def main(argv=None):
                           candidate_moves=args.candidate_moves,
                           surgical_depth=args.surgical_depth,
                           combinatorial_breadth=args.combinatorial_breadth,
+                          readout=args.readout,
+                          tori=args.tori,
+                          output_state=args.output_state,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,

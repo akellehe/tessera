@@ -599,8 +599,60 @@ class MultiCobordism {
   /// The returned Choi vector is unit-normalized and phase-fixed; the operator
   /// uses conventional unitary scaling \f$\sqrt d\f$ and reports its unitarity
   /// error rather than assuming it passed.
+  /// What the two-body target is scored against (#1039).
+  ///
+  /// `Transfer` is the frame transfer \f$T_{AB}\f$, the coupling block of the
+  /// whole complex's operator between the two boundary frames. It is
+  /// 4-dimensional and factorizes across the boundaries, which is what lets it
+  /// carry an entangled target.
+  ///
+  /// `WholeComplex` is the operator promoted from \f$\ker L_1(W-\partial W)\f$
+  /// through a Choi frame (`geometricOperator`) — the target represented by the
+  /// bulk's own harmonic space rather than by a coupling between boundaries.
+  /// A complex whose framed kernel is not rank one cannot name an operator at
+  /// all, and scores the full leak with the obstruction recorded, rather than
+  /// scoring a number that means nothing.
+  ///
+  /// `Both` sums the two, so one geometry can be scored under both readings.
+  /// The choice is part of the OBJECTIVE, not of the reporting: this residual
+  /// is a term in r_U, so it prices stage-1 moves and drives stage-2 descent.
+  /// The three spaces a reading can take the state from. Named for the space,
+  /// so a name cannot suggest the wrong one.
+  ///
+  /// `Transfer` is \f$(Z_A^\vee)^T \tilde A_1 Z_B\f$: the whole complex's
+  /// degree-1 operator read as the coupling block between the two boundary
+  /// frames. 2x2 here, and factorized across the boundaries, which is what
+  /// lets it carry an entangled target.
+  ///
+  /// `Bulk` is \f$\ker L_1(W-\partial W)\f$, the Laplacian on interior cells
+  /// with the boundary REMOVED, read through a Choi frame (`geometricOperator`).
+  ///
+  /// `Whole` is \f$\ker L_1(W)\f$, the boundary INCLUDED, read through the
+  /// blocks' markings. Its rank is \f$b_1(W)\f$.
+  ///
+  /// `Operator` is the transfer between two PAIRED frames, a conjugate pair a
+  /// side. Each frame has rank 4, so the transfer is 4x4 -- the dimension of
+  /// an operator on \f$\mathbb{C}^2\otimes\mathbb{C}^2\f$ -- and the target
+  /// is the GATE rather than the gate's image of one chosen input.
+  enum class ReadoutMode { Transfer, Bulk, Whole, Operator };
+  /// The readings SUMMED into the two-body residual. A set rather than one
+  /// choice, so a run can be scored under more than one reading without a
+  /// special name for each pairing. Empty is refused: a two-body term scored
+  /// against nothing is not a term.
+  void setReadoutModes(std::vector<ReadoutMode> modes);
+  [[nodiscard]] const std::vector<ReadoutMode> &readoutModes() const noexcept {
+    return readoutModes_;
+  }
   [[nodiscard]] GeometricOperatorReadout geometricOperator(
       int stateDimension,
+      std::vector<std::vector<std::uint64_t>> frameCells = {},
+      double tol = 1e-9, bool metric = true) const;
+  /// `geometricOperator` on WHATEVER complex is being read, never only the
+  /// live one: stage 1 prices each candidate on a complex rebuilt from a
+  /// snapshot, so a live-only read would rank every move by the geometry it
+  /// started from.
+  [[nodiscard]] GeometricOperatorReadout geometricOperatorOn(
+      const std::shared_ptr<Spacetime> &spacetime, int stateDimension,
       std::vector<std::vector<std::uint64_t>> frameCells = {},
       double tol = 1e-9, bool metric = true) const;
   /// Move-kind names. Named rather than spelled as string literals at each site:
@@ -1247,6 +1299,32 @@ class MultiCobordism {
   /// @throws std::invalid_argument on a null surface, `layers < 1`, surfaces of
   ///   differing dimension or combinatorics (named), a surface without top
   ///   cells, or a collar the manifold gate refuses (named).
+  /// Two collars joined along a removed tetrahedron: FOUR boundary surfaces on
+  /// one connected manifold (#1039).
+  ///
+  /// The two-torus collar's harmonic space cannot carry a 4-dimensional target
+  /// and that is forced, not incidental: for a compact oriented 3-manifold
+  /// \f$\operatorname{rank}(H^1(W)\to H^1(\partial W)) = b_1(\partial W)/2\f$,
+  /// so two tori leave 2. Four leave 4.
+  ///
+  /// Each surface is collared with its partner as `seedCollar` does, and the
+  /// two collars are joined by removing one all-interior cell from each and
+  /// identifying the two boundary spheres. Gluing along a sphere is a
+  /// connected sum, which adds no first homology, so \f$b_1 = 2+2 = 4\f$ with
+  /// nothing dying on the boundary — measured `[1, 4, 3, 0]` on the 3x3 grid
+  /// tori. Adding handles instead would raise \f$b_1(W)\f$ with the extra
+  /// classes invisible to the boundary, which is no use to a readout.
+  ///
+  /// `layers` must be at least THREE. A prism cell spans two adjacent layers,
+  /// so an all-interior cell — the one that can be removed without touching a
+  /// surface — exists only once there are two interior layers.
+  ///
+  /// `vertexIds` comes back in the order the surfaces were given.
+  /// @throws std::invalid_argument on a null surface, surfaces differing in
+  ///   dimension or combinatorics, fewer than three layers, or a join that is
+  ///   not a manifold-with-boundary.
+  [[nodiscard]] static SurfaceSeed seedJoinedCollars(
+      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers = 3);
   [[nodiscard]] static SurfaceSeed seedCollar(const std::shared_ptr<Spacetime> &surfaceA,
                                               const std::shared_ptr<Spacetime> &surfaceB,
                                               int layers = 1);
@@ -1666,6 +1744,63 @@ class MultiCobordism {
   /// The two-body residual on the live complex. @throws std::logic_error
   /// without a target or without two attached input fibers.
   [[nodiscard]] double twoBodyResidual() const;
+  /// The state the WHOLE complex's harmonic form is meant to be
+  /// (`ReadoutMode::Whole`). Its dimension is the claim: a rank-2 harmonic
+  /// space carries a 2-dimensional state, a rank-4 one a 4-dimensional state,
+  /// and the reading refuses a target of any other size rather than fitting
+  /// it. Unset, the two-body target is used, which is 4-dimensional.
+  void setOutputStateTarget(Eigen::VectorXcd state);
+  [[nodiscard]] const std::optional<Eigen::VectorXcd> &outputStateTarget() const noexcept {
+    return outputStateTarget_;
+  }
+  /// The projective leak of the node's GATE target against the paired-frame
+  /// transfer — the reading `ReadoutMode::Operator` selects. Refused rather
+  /// than scored when the boundary carries no conjugate pairs or no gate
+  /// target is set: a term that cannot be computed is not a term.
+  [[nodiscard]] double operatorResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime) const;
+  /// The gate this cobordism is meant to represent, as a square matrix on the
+  /// joint space. Set to read `ReadoutMode::Operator`.
+  void setGateTarget(Eigen::MatrixXcd gate);
+  [[nodiscard]] const std::optional<Eigen::MatrixXcd> &gateTarget() const noexcept {
+    return gateTarget_;
+  }
+  /// The projective leak of \p target against the operator promoted from
+  /// \f$\ker L_1(W-\partial W)\f$ through a Choi frame — the reading
+  /// `ReadoutMode::Bulk` selects. `1.0`, the full leak, when the
+  /// framed kernel is not rank one and no operator is identifiable: the same
+  /// convention a refused geometry takes under the transfer reading, so the
+  /// two are on one scale and `Both` may sum them.
+  [[nodiscard]] double bulkOperatorResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
+  /// The projective leak of \p target against the WHOLE cobordism's degree-1
+  /// harmonic form — the reading `ReadoutMode::Whole` selects (#1046).
+  ///
+  /// The harmonic space is a space, not a state; the input blocks pick the
+  /// form out of it. Its columns' transported periods over every block's
+  /// marking give \f$\Pi\f$, the input coefficients give \f$p\f$, and the
+  /// coefficient vector \f$c\f$ minimizing \f$\|\Pi c - p\|\f$ is the form
+  /// the inputs determine. That \f$c\f$ IS the output state, and it is
+  /// compared to the target projectively.
+  ///
+  /// No basis is chosen here. The markings are the only input, exactly as in
+  /// `deriveFrame`, so nothing is named that the geometry does not already
+  /// carry.
+  ///
+  /// A harmonic space whose rank differs from the target's dimension cannot
+  /// carry it and scores the full leak, `1.0`, with the reason available from
+  /// `wholeHarmonicObstruction`. For two boundary tori the rank is
+  /// \f$b_1 = 2\f$ against a 4-dimensional target; four tori give
+  /// \f$b_1(\partial W) = 8\f$, hence rank 4.
+  [[nodiscard]] double wholeHarmonicResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
+  /// Why the last `wholeHarmonicResidualOn` could not read a state, or empty
+  /// when it could.
+  [[nodiscard]] const std::string &wholeHarmonicObstruction() const noexcept {
+    return wholeHarmonicObstruction_;
+  }
   /// Read the bulk between the two attached frames on the live complex, with
   /// certificates. @throws std::logic_error without two attached input fibers.
   [[nodiscard]] TwoBodyRead readTwoBody() const;
@@ -2791,6 +2926,26 @@ class MultiCobordism {
   /// The target edge values of a marked block through a frame: a degree-1
   /// fiber on the frame's cells with images \f$ F\,(a, b)^T \f$.
   [[nodiscard]] static BoundaryFiber stateTargetOf(const BlockMarking &marking, const BlockFrame &frame);
+  /// The projective leak of \p target against the operator promoted from the
+  /// bulk kernel. `1.0` — the full leak — when no operator is identifiable,
+  /// the same convention a refused geometry takes in `twoBodyResidualOn`.
+  /// The projective leak of \p target against the frame transfer \f$T_{AB}\f$
+  /// — the reading `ReadoutMode::Transfer` selects.
+  /// The transfer between two PAIRED frames: each side's blocks stacked into
+  /// one frame, cells concatenated and images block-diagonal (#1048).
+  ///
+  /// With a conjugate pair a side, each frame has rank 4, so the transfer is
+  /// 4x4 -- sixteen numbers, the dimension of an operator on
+  /// \f$\mathbb{C}^4=\mathbb{C}^2\otimes\mathbb{C}^2\f$. `vec(T)` is that
+  /// operator's Choi state, so the target is the GATE rather than the gate's
+  /// image of one chosen input.
+  [[nodiscard]] chainhodge::TransferResult pairedFrameTransferOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const std::vector<const BoundaryBlock *> &sideA,
+      const std::vector<const BoundaryBlock *> &sideB) const;
+  [[nodiscard]] double transferResidualOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
   [[nodiscard]] double twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const;
   /// The two input blocks carrying an attached fiber, in block order.
@@ -2840,6 +2995,17 @@ class MultiCobordism {
   std::mt19937_64 randomNumberGenerator_;
   /// #613: whether the move draw offers the disposition moves. See the accessor.
   bool shouldProposeDispositions_{true};
+  /// What the two-body target is scored against (`setReadoutMode`). Transfer
+  /// by default, so every recorded run keeps its meaning.
+  std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
+  /// The gate `ReadoutMode::Operator` scores against (`setGateTarget`).
+  std::optional<Eigen::MatrixXcd> gateTarget_;
+  /// The state `ReadoutMode::Whole` scores against (`setOutputStateTarget`).
+  std::optional<Eigen::VectorXcd> outputStateTarget_;
+  /// Why the last harmonic readout could not name a state (empty when it
+  /// could). Mutable because the readout is a const measurement that still has
+  /// to be able to say why it refused.
+  mutable std::string wholeHarmonicObstruction_;
   double convergenceTolerance_ = 1e-9;
   /// Set by `runStage2`: `true` iff its last call stopped on the absolute-tolerance
   /// stationarity test, `false` iff it hit the `maxIters` budget. See lastStage2Stationary.

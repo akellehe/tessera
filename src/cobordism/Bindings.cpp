@@ -1888,6 +1888,54 @@ assertion. Every pairing is the transpose.)doc")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
            "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
            "reversal residual, the fit residual, and both input blocks' fiber residuals.")
+      .def("set_output_state_target", &MultiCobordism::setOutputStateTarget, py::arg("state"),
+           "The state the WHOLE complex's harmonic form is meant to be (ReadoutMode.WHOLE). Its "
+           "dimension is the claim: a rank-2 harmonic space carries a 2-dimensional state, a "
+           "rank-4 one a 4-dimensional state, and the reading refuses a target of any other size "
+           "rather than fitting it. Unset, the two-body target is used.")
+      .def_property_readonly("output_state_target", &MultiCobordism::outputStateTarget)
+      .def("set_gate_target", &MultiCobordism::setGateTarget, py::arg("gate"),
+           "The gate this cobordism is meant to represent, a square matrix on the joint space. "
+           "Read by ReadoutMode.OPERATOR, where the transfer between two PAIRED frames is 4x4 -- "
+           "the dimension of an operator on C^2 (x) C^2 -- so the target is the GATE rather than "
+           "the gate's image of one chosen input.")
+      .def_property_readonly("gate_target", &MultiCobordism::gateTarget)
+      .def("operator_residual",
+           [](const MultiCobordism &self) { return self.operatorResidualOn(self.spacetime()); },
+           py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of the gate target against the paired-frame transfer.")
+      .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
+           "The readings SUMMED into the two-body residual. TRANSFER is the "
+           "coupling block between the two boundary frames; BULK is "
+           "ker L1(W - dW), the boundary REMOVED; WHOLE is ker L1(W), the "
+           "boundary INCLUDED. Part of the OBJECTIVE, not the reporting: this "
+           "residual is a term in r_U, so it prices stage-1 moves and drives "
+           "stage-2 descent. Empty is refused.")
+      .def_property_readonly("readout_modes", &MultiCobordism::readoutModes)
+      .def("whole_harmonic_residual",
+           [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
+             return self.wholeHarmonicResidualOn(
+                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
+           },
+           py::arg("chi"), py::arg("choi_decomposed") = true,
+           py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of chi against the WHOLE cobordism's degree-1 harmonic form, "
+           "the form the input blocks' markings and coefficients determine. 1.0 when the "
+           "harmonic space cannot carry a target of that dimension; see "
+           "whole_harmonic_obstruction for the reason.")
+      .def_property_readonly("whole_harmonic_obstruction",
+                             &MultiCobordism::wholeHarmonicObstruction,
+                             "Why the last harmonic readout could not name a state, or empty.")
+      .def("bulk_operator_residual",
+           [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
+             return self.bulkOperatorResidualOn(
+                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, choiDecomposed});
+           },
+           py::arg("chi"), py::arg("choi_decomposed") = true,
+           py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of chi against the operator promoted from "
+           "ker L1(W - dW) through a Choi frame. 1.0 when the framed kernel is "
+           "not rank one, so no operator is identifiable.")
       .def("set_whole_complex_fiber_target", &MultiCobordism::setWholeComplexFiberTarget, py::arg("fiber"),
            "A fiber-form target carried by the WHOLE complex on the fiber's cells and contour (default: the "
            "lowest band above the flat zero mode); scored inside r_U under use_fiber_residuals.")
@@ -1909,6 +1957,14 @@ assertion. Every pairing is the transpose.)doc")
            "SimplicialQubit.flat_torus(tau, n, n).spacetime()): one d-dimensional host holding "
            "every surface as its own simplices with its lengths and zero phases on disjoint "
            "vertex id ranges, and no d-cell -- the bulk is drawn afterwards by gated bridges.")
+      .def_static("seed_joined_collars", &MultiCobordism::seedJoinedCollars,
+                  py::arg("surfaces"), py::arg("layers") = 3,
+                  "Two collars joined along a removed tetrahedron: FOUR boundary surfaces on one "
+                  "connected manifold. Gluing along a sphere is a connected sum, which adds no first "
+                  "homology, so b_1 = 2 + 2 = 4 with nothing dying on the boundary -- the dimension a "
+                  "4-dimensional target needs, since rank(H^1(W) -> H^1(dW)) = b_1(dW)/2. layers must "
+                  "be at least three: a prism cell spans two adjacent layers, so an all-interior cell "
+                  "exists only with two interior layers.")
       .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
            py::arg("layers") = 1,
            "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics (spec S3): "
@@ -2256,6 +2312,18 @@ Right -- re-read after each drive call:
                              "True iff no complex-z line-search trial lowered the "
                              "selected objective by the absolute tolerance; False "
                              "if run_stage2 hit its max_iters budget.");
+  py::enum_<MultiCobordism::ReadoutMode>(multiCobordismClass, "ReadoutMode",
+      "The space a reading takes the state from, named for the space so a name cannot suggest "
+      "the wrong one. TRANSFER is (Z_A^v)^T A~_1 Z_B: the whole complex's degree-1 operator read "
+      "as the coupling block between the two boundary frames, factorized across them, which is "
+      "what lets it carry an entangled target. BULK is ker L1(W - dW), the Laplacian on interior "
+      "cells with the boundary REMOVED, read through a Choi frame. WHOLE is ker L1(W), the "
+      "boundary INCLUDED, read through the blocks' markings; its rank is b_1(W). Selected as a "
+      "SET and summed (set_readout_modes). Part of the OBJECTIVE: this residual is a term in r_U.")
+      .value("TRANSFER", MultiCobordism::ReadoutMode::Transfer)
+      .value("BULK", MultiCobordism::ReadoutMode::Bulk)
+      .value("WHOLE", MultiCobordism::ReadoutMode::Whole)
+      .value("OPERATOR", MultiCobordism::ReadoutMode::Operator);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
       "One canonical solve action a search policy (Proton's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "

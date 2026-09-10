@@ -2269,6 +2269,13 @@ MultiCobordism::relaxWholeComplexReadoutTargets(
 MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperator(
     int stateDimension, std::vector<std::vector<std::uint64_t>> frameCells,
     double tol, bool metric) const {
+  return geometricOperatorOn(spacetime_, stateDimension, std::move(frameCells), tol, metric);
+}
+
+MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperatorOn(
+    const std::shared_ptr<Spacetime> &spacetime, int stateDimension,
+    std::vector<std::vector<std::uint64_t>> frameCells, double tol,
+    bool metric) const {
   GeometricOperatorReadout result;
   result.stateDimension = stateDimension;
   result.metric = metric;
@@ -2279,7 +2286,7 @@ MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperator(
     result.operatorMatrix.clear();
     return result;
   };
-  if (!spacetime_)
+  if (!spacetime)
     return obstruct("the cobordism has no spacetime");
   if (stateDimension <= 0)
     return obstruct("state dimension must be positive");
@@ -2290,7 +2297,7 @@ MultiCobordism::GeometricOperatorReadout MultiCobordism::geometricOperator(
   if (d > std::numeric_limits<std::size_t>::max() / d)
     return obstruct("state dimension overflows the Choi width");
   const std::size_t choiWidth = d * d;
-  EigenstateSynthesis synthesis(spacetime_, 1, metricSource_);
+  EigenstateSynthesis synthesis(spacetime, 1, metricSource_);
   result.bulkCells = synthesis.bulkMinusBoundaryCells();
   result.bulkCellCount = result.bulkCells.size();
   if (result.bulkCells.empty())
@@ -4305,6 +4312,59 @@ chainhodge::TransferResult MultiCobordism::frameTransferOn(const std::shared_ptr
   return PencilLayer::transfer(assembled, A.fiber->degree, frame(A), frame(B));
 }
 
+chainhodge::TransferResult MultiCobordism::pairedFrameTransferOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const std::vector<const BoundaryBlock *> &sideA,
+    const std::vector<const BoundaryBlock *> &sideB) const {
+  if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
+    throw std::logic_error("MultiCobordism: the paired-frame transfer is read on the chain-level Whitney "
+                           "pencil; this node uses the diagonal-weight metric");
+  if (sideA.empty() || sideB.empty())
+    throw std::logic_error("MultiCobordism: a paired frame needs at least one block a side");
+  const AssembledPencil assembled = PencilLayer::assemble({spacetime});
+  // One side's frame is its blocks' frames stacked: cells concatenated, images
+  // and dual images BLOCK-DIAGONAL. A torus and its conjugate carry disjoint
+  // cells and their own kernels, so the combined frame is their direct sum --
+  // nothing is mixed here that the geometry does not already separate.
+  auto side = [&](const std::vector<const BoundaryBlock *> &blocks) {
+    BoundaryFiber out;
+    out.degree = blocks.front()->fiber->degree;
+    Eigen::Index rows = 0, cols = 0;
+    std::vector<BlockFrame> frames;
+    for (const auto *block : blocks) {
+      if (block->fiber->degree != out.degree)
+        throw std::logic_error("MultiCobordism: a paired frame's blocks are at different degrees");
+      const TransferOperand operand = transferOperand(*block, spacetime);
+      BlockFrame frame;
+      if (operand.frame) {
+        frame = *operand.frame;
+      } else {
+        const auto r = static_cast<Eigen::Index>(operand.cells.size());
+        frame.cells = operand.cells;
+        frame.images = Eigen::MatrixXcd::Identity(r, r);
+        frame.dualImages = Eigen::MatrixXcd::Identity(r, r);
+      }
+      if (static_cast<std::size_t>(frame.images.rows()) != operand.cells.size())
+        throw std::logic_error("MultiCobordism: a block's frame has a row count other than its cells");
+      out.cells.insert(out.cells.end(), operand.cells.begin(), operand.cells.end());
+      rows += frame.images.rows();
+      cols += frame.images.cols();
+      frames.push_back(std::move(frame));
+    }
+    out.images = Eigen::MatrixXcd::Zero(rows, cols);
+    out.dualImages = Eigen::MatrixXcd::Zero(rows, cols);
+    Eigen::Index row = 0, col = 0;
+    for (const auto &frame : frames) {
+      out.images.block(row, col, frame.images.rows(), frame.images.cols()) = frame.images;
+      out.dualImages.block(row, col, frame.dualImages.rows(), frame.dualImages.cols()) = frame.dualImages;
+      row += frame.images.rows();
+      col += frame.images.cols();
+    }
+    return out;
+  };
+  return PencilLayer::transfer(assembled, sideA.front()->fiber->degree, side(sideA), side(sideB));
+}
+
 MultiCobordism::TransferOperand MultiCobordism::transferOperand(const BoundaryBlock &block,
                                                                 const std::shared_ptr<Spacetime> &spacetime) const {
   TransferOperand operand;
@@ -4323,8 +4383,218 @@ MultiCobordism::TransferOperand MultiCobordism::transferOperand(const BoundaryBl
   return operand;
 }
 
+double MultiCobordism::bulkOperatorResidualOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const TwoBodyTarget &target) const {
+  if (!spacetime) return 1.0;
+  const Eigen::Index dimension = target.chi.rows();
+  if (dimension < 1 || target.chi.cols() != dimension)
+    throw std::logic_error("MultiCobordism::bulkOperatorResidualOn: the target is " +
+                           std::to_string(target.chi.rows()) + "x" + std::to_string(target.chi.cols()) +
+                           ", not square");
+  // The operator the BULK names, read through a Choi frame of d^2 interior
+  // edges in canonical order. A complex whose framed kernel is not rank one
+  // names no operator: it scores the full leak, exactly as a refused geometry
+  // does under the transfer reading, rather than a number standing in for one.
+  GeometricOperatorReadout readout;
+  try {
+    // metric=true: the live signed Hodge weights, so the reading retains what
+    // relaxation did. The combinatorial unit-weight mode is topology-only and
+    // would score the same for every geometry with the same cells, making the
+    // term a constant under stage 2.
+    readout = geometricOperatorOn(spacetime, static_cast<int>(dimension), {},
+                                  /*tol=*/1e-9, /*metric=*/true);
+  } catch (const std::runtime_error &) {
+    return 1.0;
+  } catch (const std::invalid_argument &) {
+    return 1.0;
+  }
+  if (!readout.identifiable ||
+      readout.choiState.size() != static_cast<std::size_t>(target.chi.size()))
+    return 1.0;
+  const Eigen::Map<const Eigen::VectorXcd> choi(readout.choiState.data(),
+                                                static_cast<Eigen::Index>(readout.choiState.size()));
+  const Eigen::Map<const Eigen::VectorXcd> chi(target.chi.data(), target.chi.size());
+  const double cc = choi.squaredNorm();
+  if (!(cc > 0.0)) return 1.0;
+  // The same projective Frobenius leak the transfer reading takes, so the two
+  // readings are on one scale and `Both` may sum them.
+  const complexd overlap = choi.dot(chi);
+  const double leak = chi.squaredNorm() - std::norm(overlap) / cc;
+  return std::max(0.0, leak / chi.squaredNorm());
+}
+
+void MultiCobordism::setReadoutModes(std::vector<ReadoutMode> modes) {
+  if (modes.empty())
+    throw std::invalid_argument(
+        "MultiCobordism::setReadoutModes: at least one reading is required; a "
+        "two-body term scored against nothing is not a term");
+  readoutModes_ = std::move(modes);
+}
+
+double MultiCobordism::wholeHarmonicResidualOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const TwoBodyTarget &target) const {
+  wholeHarmonicObstruction_.clear();
+  const auto refuse = [&](std::string reason) {
+    wholeHarmonicObstruction_ = std::move(reason);
+    return 1.0;
+  };
+  if (!spacetime) return refuse("no complex to read");
+  // The same guard the transfer and paired readings take: the harmonic band is
+  // the chain-level Whitney pencil's, so a node configured for diagonal
+  // weights would otherwise be read through a metric it did not ask for.
+  if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
+    return refuse("the whole-complex harmonic is read on the chain-level Whitney pencil; this node uses "
+                  "the diagonal-weight metric");
+  // The DECLARED output state when one is set, otherwise the two-body target.
+  // A rank-2 harmonic space carries a 2-dimensional state and a rank-4 one a
+  // 4-dimensional state; forcing the 4-dimensional chi on a two-torus host was
+  // asking the wrong question of it.
+  const Eigen::VectorXcd wanted =
+      outputStateTarget_
+          ? *outputStateTarget_
+          : Eigen::Map<const Eigen::VectorXcd>(target.chi.data(), target.chi.size());
+  const Eigen::Index dimension = wanted.size();
+  chainhodge::Band band;
+  AssembledPencil assembled;
+  try {
+    assembled = PencilLayer::assemble({spacetime});
+    if (assembled.dimension() < 1) return refuse("the complex has no edges");
+    band = assembled.op->band(1, PencilLayer::harmonicContour(assembled, 1));
+  } catch (const std::runtime_error &error) {
+    return refuse(error.what());
+  } catch (const std::invalid_argument &error) {
+    return refuse(error.what());
+  }
+  const auto rank = static_cast<Eigen::Index>(band.rank());
+  // The harmonic space is a SPACE. Its rank is what can be carried, and a
+  // target of another dimension is not something this geometry has a state
+  // for -- said rather than fitted. Two boundary tori give b_1 = 2 against a
+  // 4-dimensional target; four give b_1(dW) = 8, hence rank 4.
+  if (rank != dimension)
+    return refuse("the whole complex's degree-1 harmonic space has rank " +
+                  std::to_string(rank) + " for a target of dimension " +
+                  std::to_string(dimension));
+  // Pi_{ca}: the transported period of harmonic column a over marked cycle c,
+  // every marking every input block carries. The markings are the only input:
+  // no basis is named here that the geometry does not already carry.
+  std::vector<const BlockMarking *> markings;
+  std::vector<complexd> coefficients;
+  // The marking's OWN coefficients, which are the block's input state (1, tau)
+  // -- `readInputState` reads the same field. `block.target` is the register
+  // target and is a different quantity.
+  for (const auto &block : inputBlocks_) {
+    if (!block.marking) continue;
+    markings.push_back(&*block.marking);
+    for (const auto &value : block.marking->coefficients)
+      coefficients.push_back(value);
+  }
+  if (markings.empty()) return refuse("no input block carries a marking");
+  Eigen::Index cycleCount = 0;
+  for (const auto *marking : markings)
+    cycleCount += static_cast<Eigen::Index>(marking->rank());
+  if (cycleCount != static_cast<Eigen::Index>(coefficients.size()))
+    return refuse("the marked cycles and the input coefficients differ in count");
+  Eigen::MatrixXcd periods(cycleCount, rank);
+  Eigen::VectorXcd inputs(cycleCount);
+  Eigen::Index row = 0;
+  try {
+    for (std::size_t m = 0; m < markings.size(); ++m)
+      for (std::size_t c = 0; c < markings[m]->rank(); ++c, ++row) {
+        for (Eigen::Index a = 0; a < rank; ++a)
+          periods(row, a) = assembled.op->connection().transportedPeriod(
+              band.images.col(a), markings[m]->cycles[c]);
+        inputs(row) = coefficients[static_cast<std::size_t>(row)];
+      }
+  } catch (const std::runtime_error &error) {
+    return refuse(std::string("a marked cycle is not a walk on the whole complex: ") + error.what());
+  }
+  // The form the INPUTS determine: the coefficient vector minimizing
+  // ||Pi c - p||. That c is the output state.
+  const Eigen::VectorXcd state =
+      periods.completeOrthogonalDecomposition().solve(inputs);
+  const double ss = state.squaredNorm();
+  if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
+  // The same projective Frobenius leak the other readings take, so all are on
+  // one scale and a set of them may be summed.
+  const complexd overlap = state.dot(wanted);
+  const double leak = wanted.squaredNorm() - std::norm(overlap) / ss;
+  return std::max(0.0, leak / wanted.squaredNorm());
+}
+
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const {
+  // The SUM over the selected readings. Each is the same projective leak on
+  // the same scale, and each scores the full 1.0 when it cannot name a state,
+  // so summing them is well defined however many are chosen.
+  double total = 0.0;
+  for (const ReadoutMode mode : readoutModes_) {
+    if (mode == ReadoutMode::Operator)
+      total += operatorResidualOn(spacetime);
+    else if (mode == ReadoutMode::Whole)
+      total += wholeHarmonicResidualOn(spacetime, target);
+    else if (mode == ReadoutMode::Bulk)
+      total += bulkOperatorResidualOn(spacetime, target);
+    else
+      total += transferResidualOn(spacetime, target);
+  }
+  return total;
+}
+
+void MultiCobordism::setOutputStateTarget(Eigen::VectorXcd state) {
+  if (state.size() < 1)
+    throw std::invalid_argument("MultiCobordism::setOutputStateTarget: the state is empty");
+  if (!(state.squaredNorm() > 0.0))
+    throw std::invalid_argument("MultiCobordism::setOutputStateTarget: the state is zero");
+  outputStateTarget_ = std::move(state);
+}
+
+void MultiCobordism::setGateTarget(Eigen::MatrixXcd gate) {
+  if (gate.rows() < 1 || gate.rows() != gate.cols())
+    throw std::invalid_argument("MultiCobordism::setGateTarget: the gate must be a non-empty square matrix");
+  gateTarget_ = std::move(gate);
+}
+
+double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spacetime) const {
+  if (!gateTarget_)
+    throw std::logic_error("MultiCobordism::operatorResidualOn: no gate target (setGateTarget)");
+  if (!spacetime) return 1.0;
+  // The two sides are the two PAIRS, in block order: a state and its conjugate
+  // are one side, so nothing is left out of either.
+  std::vector<const BoundaryBlock *> attached;
+  for (const auto &block : inputBlocks_)
+    if (block.fiber && block.fiber->images.cols() > 0) attached.push_back(&block);
+  if (attached.size() % 2 != 0 || attached.size() < 2)
+    throw std::logic_error("MultiCobordism::operatorResidualOn: the operator reading pairs the attached input "
+                           "blocks two to a side; " + std::to_string(attached.size()) + " are attached");
+  const std::size_t half = attached.size() / 2;
+  const std::vector<const BoundaryBlock *> sideA(attached.begin(), attached.begin() + half);
+  const std::vector<const BoundaryBlock *> sideB(attached.begin() + half, attached.end());
+  Eigen::MatrixXcd T;
+  try {
+    T = pairedFrameTransferOn(spacetime, sideA, sideB).forward;
+  } catch (const std::runtime_error &) {
+    return 1.0;  // a refused geometry carries no operator: full leak
+  } catch (const std::invalid_argument &) {
+    return 1.0;
+  }
+  const Eigen::MatrixXcd &gate = *gateTarget_;
+  if (T.rows() != gate.rows() || T.cols() != gate.cols())
+    throw std::logic_error("MultiCobordism::operatorResidualOn: the gate is " + std::to_string(gate.rows()) + "x" +
+                           std::to_string(gate.cols()) + " but the paired frames give " +
+                           std::to_string(T.rows()) + "x" + std::to_string(T.cols()));
+  const double tt = T.squaredNorm();
+  if (!(tt > 0.0)) return 1.0;
+  // The same projective Frobenius leak every other reading takes, so all are
+  // on one scale and a set of them may be summed.
+  const complexd overlap = (T.conjugate().cwiseProduct(gate)).sum();
+  const double leak = gate.squaredNorm() - std::norm(overlap) / tt;
+  return std::max(0.0, leak / gate.squaredNorm());
+}
+
+double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spacetime,
+                                          const TwoBodyTarget &target) const {
   const auto [A, B] = attachedInputBlocks();
   if (!spacetime) return 1.0;
   Eigen::MatrixXcd T;
@@ -5338,6 +5608,133 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
     edge->setLength(found->second);
     edge->setPhase(complexd(0.0, 0.0));
   }
+  return seed;
+}
+
+MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
+    const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers) {
+  const std::string prefix = "MultiCobordism::seedJoinedCollars: ";
+  if (surfaces.size() % 2 != 0 || surfaces.empty())
+    throw std::invalid_argument(prefix + "an even, non-zero number of surfaces is required: each is collared with its partner");
+  // THREE layers, not one. A prism cell spans two adjacent layers, so the
+  // all-interior cell the join removes exists only with two interior layers.
+  if (layers < 3)
+    throw std::invalid_argument(prefix + "layers must be at least three: with fewer, every cell touches a surface and there is none to remove");
+  for (const auto &surface : surfaces)
+    if (!surface) throw std::invalid_argument(prefix + "null surface");
+  // Every collar is the SAME prism over the shared face set, so it is built
+  // once and shifted. seedCollar has already refused surfaces that do not
+  // present one face set, and the pairs are checked through it below.
+  std::vector<SurfaceSeed> collars;
+  for (std::size_t pair = 0; pair < surfaces.size(); pair += 2)
+    collars.push_back(seedCollar(surfaces[pair], surfaces[pair + 1], layers));
+  const auto cellsOf = [](const Spacetime &spacetime) {
+    std::vector<std::vector<std::uint64_t>> cells;
+    for (const auto &topSimplex : spacetime.getTopSimplices()) {
+      auto tuple = topSimplex->topTuple();
+      std::sort(tuple.begin(), tuple.end());
+      cells.push_back(std::move(tuple));
+    }
+    return cells;
+  };
+  // A cell no facet of which is on the boundary: the one that can be removed
+  // without touching a surface.
+  const auto interiorCell = [](const std::vector<std::vector<std::uint64_t>> &cells) {
+    std::map<std::vector<std::uint64_t>, int> facetCount;
+    for (const auto &cell : cells)
+      for (std::size_t skip = 0; skip < cell.size(); ++skip) {
+        std::vector<std::uint64_t> facet;
+        for (std::size_t i = 0; i < cell.size(); ++i)
+          if (i != skip) facet.push_back(cell[i]);
+        ++facetCount[facet];
+      }
+    std::set<std::uint64_t> onBoundary;
+    for (const auto &[facet, count] : facetCount)
+      if (count == 1) onBoundary.insert(facet.begin(), facet.end());
+    for (const auto &cell : cells) {
+      bool interior = true;
+      for (const auto vertex : cell)
+        if (onBoundary.count(vertex) != 0) { interior = false; break; }
+      if (interior) return cell;
+    }
+    return std::vector<std::uint64_t>{};
+  };
+  std::vector<std::vector<std::uint64_t>> joined;
+  std::vector<std::map<std::uint64_t, std::uint64_t>> vertexIds;
+  std::vector<std::uint64_t> sphere;   // the first collar's removed cell
+  std::uint64_t offset = 0;
+  for (std::size_t index = 0; index < collars.size(); ++index) {
+    auto cells = cellsOf(*collars[index].host);
+    std::uint64_t span = 0;
+    for (const auto &cell : cells)
+      for (const auto vertex : cell) span = std::max(span, vertex + 1);
+    for (auto &cell : cells)
+      for (auto &vertex : cell) vertex += offset;
+    for (auto &ids : collars[index].vertexIds) {
+      for (auto &[surfaceId, hostId] : ids) hostId += offset;
+      vertexIds.push_back(std::move(ids));
+    }
+    auto removed = interiorCell(cells);
+    if (removed.empty())
+      throw std::invalid_argument(prefix + "a collar has no all-interior cell to remove; more layers are needed");
+    // Dropped BEFORE the relabel below, not after: the relabel rewrites this
+    // cell's own vertices, so a comparison made afterwards would not recognize
+    // it and the cell would survive -- leaving its facets with three cofaces.
+    cells.erase(std::remove_if(cells.begin(), cells.end(),
+                               [&](const std::vector<std::uint64_t> &cell) {
+                                 auto sorted = cell;
+                                 std::sort(sorted.begin(), sorted.end());
+                                 return sorted == removed;
+                               }),
+                cells.end());
+    // The FIRST collar's removed cell is the sphere every other collar is
+    // glued onto: identifying the boundaries of two removed tetrahedra is a
+    // connected sum along S^2, which adds no first homology.
+    if (index == 0) {
+      sphere = removed;
+    } else {
+      std::map<std::uint64_t, std::uint64_t> identify;
+      for (std::size_t i = 0; i < removed.size(); ++i) identify[removed[i]] = sphere[i];
+      for (auto &cell : cells)
+        for (auto &vertex : cell) {
+          const auto found = identify.find(vertex);
+          if (found != identify.end()) vertex = found->second;
+        }
+      for (auto &ids : vertexIds)
+        for (auto &[surfaceId, hostId] : ids) {
+          const auto found = identify.find(hostId);
+          if (found != identify.end()) hostId = found->second;
+        }
+    }
+    for (auto &cell : cells) joined.push_back(std::move(cell));
+    offset += span;
+  }
+  // ONE gate on the whole, as seedCollar takes on its prism.
+  const auto verdict = ChainComplex::dualComplexIsValid(joined, surfaces.front()->getDimensions() + 1);
+  if (!verdict.first)
+    throw std::invalid_argument(prefix + "the joined collars are not a manifold-with-boundary: " + verdict.second);
+  SurfaceSeed seed;
+  seed.host = Spacetime::fromCells(surfaces.front()->getDimensions() + 1, joined, 1.0, complexd(0.0, 0.0));
+  // Each surface's own lengths verbatim on its edges, the auto-wired length
+  // everywhere else, zero phases throughout -- seedCollar's convention.
+  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  for (std::size_t index = 0; index < surfaces.size(); ++index)
+    for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
+      if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+      const auto &ids = vertexIds[index];
+      const auto source = ids.find(edge->getSource()->getId());
+      const auto target = ids.find(edge->getTarget()->getId());
+      if (source == ids.end() || target == ids.end()) continue;
+      lengths[{std::min(source->second, target->second), std::max(source->second, target->second)}] =
+          edge->getLength();
+    }
+  const complexd interior = seed.host->autoWiredLength(/*crossSlice=*/false);
+  for (auto *edge : seed.host->getEdgeList()->toVector()) {
+    const auto found = lengths.find(edgeKey(edge));
+    edge->setLength(found != lengths.end() ? found->second : interior);
+    edge->setPhase(complexd(0.0, 0.0));
+  }
+  seed.vertexIds = std::move(vertexIds);
   return seed;
 }
 
