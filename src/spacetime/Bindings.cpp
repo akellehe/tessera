@@ -604,6 +604,21 @@ its top cells match.)doc")
            "registered but no longer a face of any current top cell. Returns "
            "the count pruned. Restores the simplex set to the exact closure of "
            "the top cells (bit-identical across an apply/rollback round trip).")
+      .def("reclaimSimplexSlots", &Spacetime::reclaimSimplexSlots,
+           "Make the storage slots freed since the last call available for "
+           "reuse, and return how many were released. Call it where no Pachner "
+           "move is in flight: a move captures SimplexPtr in propose() and "
+           "reads them in apply(), so a slot freed during the move must not be "
+           "handed back out until it finishes. CDT::sweep calls this itself at "
+           "the end of every sweep.")
+      .def("freeSimplexSlotCount", &Spacetime::freeSimplexSlotCount,
+           "Storage slots held for reuse right now.")
+      .def("pendingSimplexSlotCount", &Spacetime::pendingSimplexSlotCount,
+           "Slots freed since the last reclaimSimplexSlots, not yet reusable.")
+      .def("simplexStorageSize", &Spacetime::simplexStorageSize,
+           "Slots ever allocated, live or free. Without slot reuse this equals "
+           "the number of simplices the spacetime has ever created; with it, it "
+           "settles at the live count plus one sweep of churn.")
       .def("swapVertexLabels", &Spacetime::swapVertexLabels, py::arg("v1"), py::arg("v2"),
            R"doc(Swap the integer IDs of two vertices ([BGL] Sec. 2.2.1).
 

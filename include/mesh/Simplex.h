@@ -592,6 +592,9 @@ class Simplex {
     bool operator==(const Simplex &other) const noexcept;
     bool operator==(const Simplex* other) const noexcept;
 
+    /// How many times this simplex's storage slot has been handed out.
+    [[nodiscard]] std::uint32_t generation() const noexcept { return generation_; }
+
     // ==================== Public Data ====================
     Fingerprint fingerprint{};
     bool initialized{false};
@@ -599,7 +602,20 @@ class Simplex {
     /// Indices maintained by Spacetime for O(1) swap-and-pop removal.
     /// UINT32_MAX means "not registered in that vector".
     std::uint32_t vecIdx_{UINT32_MAX};    // index in Spacetime::simplicesVec
-    std::uint32_t poolSlot_{UINT32_MAX};  // index in Spacetime::simplexStorage_; never reset (storage slots are never recycled)
+    std::uint32_t poolSlot_{UINT32_MAX};  // index in Spacetime::simplexStorage_
+    /// How many times this storage slot has been handed out.
+    ///
+    /// A slot is reused once the simplex that held it is removed, so a raw
+    /// ``Simplex*`` kept across a removal can end up addressing a different
+    /// simplex. A holder that also kept the generation it saw can tell the two
+    /// apart; see ``SimplexRef``.
+    std::uint32_t generation_{0};
+    /// True while this slot is queued for reuse.
+    ///
+    /// A removed simplex can be registered again before the queue is drained,
+    /// and a re-registered simplex can be removed again. Without this the slot
+    /// would be queued twice and handed to two different simplices.
+    bool pendingFree_{false};
     std::uint32_t topVecIdx_{UINT32_MAX}; // index in Spacetime::topSimplicesVec
 
 #ifdef TESSERA_ASSERTIONS
@@ -874,6 +890,37 @@ class Simplex {
     bool _isSpatial;
     double ti{std::numeric_limits<double>::max()};
     double tf{-std::numeric_limits<double>::max()};
+};
+
+/// A ``Simplex*`` together with the generation its slot was on when taken.
+///
+/// Storage slots are reused once the simplex holding one is removed, so a bare
+/// pointer kept across a removal can address a live simplex that is not the one
+/// it was taken from. Pairing the pointer with a generation makes that case
+/// answerable instead of silent: ``alive()`` is false once the slot has been
+/// handed out again.
+///
+/// Use it for a reference held across a mutation. A pointer used and dropped
+/// within one operation cannot go stale and does not need this.
+struct SimplexRef {
+    SimplexPtr simplex{nullptr};
+    std::uint32_t generation{0};
+
+    SimplexRef() = default;
+    explicit SimplexRef(SimplexPtr s) noexcept
+        : simplex(s), generation(s ? s->generation() : 0) {}
+
+    /// True when the slot still holds the simplex this was taken from.
+    [[nodiscard]] bool alive() const noexcept {
+        return simplex != nullptr && simplex->generation() == generation;
+    }
+
+    /// The simplex, or nullptr once its slot has been reused.
+    [[nodiscard]] SimplexPtr get() const noexcept {
+        return alive() ? simplex : nullptr;
+    }
+
+    explicit operator bool() const noexcept { return alive(); }
 };
 
 }
