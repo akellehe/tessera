@@ -930,6 +930,28 @@ class Spacetime {
 
     void reserve(int nSimplices);
 
+    /// Make the slots freed since the last call available for reuse.
+    ///
+    /// Call it where no Pachner move is in flight -- the end of a sweep. A move
+    /// captures ``SimplexPtr`` in ``propose()`` and reads them in ``apply()``,
+    /// so a slot freed during the move must not be handed back out until the
+    /// move is over. Returns how many slots were released.
+    std::size_t reclaimSimplexSlots() noexcept;
+
+    /// Storage slots currently held for reuse, and slots waiting for the next
+    /// ``reclaimSimplexSlots``. Reported so a caller can see reuse working
+    /// rather than infer it from resident memory.
+    [[nodiscard]] std::size_t freeSimplexSlotCount() const noexcept {
+      return freeSimplexSlots_.size();
+    }
+    [[nodiscard]] std::size_t pendingSimplexSlotCount() const noexcept {
+      return pendingSimplexSlots_.size();
+    }
+    /// Slots ever allocated, live or free -- the size of the storage deque.
+    [[nodiscard]] std::size_t simplexStorageSize() const noexcept {
+      return simplexStorage_.size();
+    }
+
     /// Alpha is the coefficient that determines the ratio of timelike edge lengths to space like edge lengths. That
     /// relationship is
     ///
@@ -1008,14 +1030,31 @@ class Spacetime {
     /// simplex lists, simplex facets/cofaces, edge simplex indices, Pachner-
     /// move snapshots, etc.) remain valid for the Spacetime's lifetime.
     ///
-    /// Slots are NEVER recycled.  unregisterSimplex marks a slot stale via
-    /// vecIdx_ == UINT32_MAX and clears the Simplex's heap-allocated children
-    /// (vertices/edges/facets/cofaces) to release most of its memory, but
-    /// leaves the shell in place at its original address.  This trades a
-    /// modest memory growth (the ~40-byte Simplex shell per ever-allocated
-    /// simplex) for elimination of the use-after-free hazard that slot
-    /// recycling otherwise creates.
+    /// Slots ARE recycled, one sweep behind. ``unregisterSimplex`` marks a slot
+    /// stale via vecIdx_ == UINT32_MAX, clears the Simplex's heap-allocated
+    /// children, and puts the slot on ``pendingSimplexSlots_``;
+    /// ``reclaimSimplexSlots`` moves that list to ``freeSimplexSlots_``, from
+    /// which ``createSimplexTracked`` allocates before growing the deque.
+    ///
+    /// Holding the slot back until the caller says it is safe is what makes the
+    /// reuse sound. ``removeSimplex`` already clears every back-reference before
+    /// unregistering -- the vertices' simplex lists, the facets' coface links
+    /// and each edge's simplex index -- so no live structure points at a removed
+    /// shell. What remains is a pointer captured across a mutation, and the
+    /// Pachner moves do capture: ``RemoveMove::incident_`` and the
+    /// ``oldSimplices_`` of the flip and shift moves are read in ``apply()``
+    /// after being taken in ``propose()``. Deferring reuse past the end of the
+    /// sweep means nothing a move is holding can be handed out underneath it.
+    ///
+    /// Reuse assigns over the slot, so a pointer kept from before still
+    /// addresses a valid Simplex -- a different one. ``Simplex::generation()``
+    /// counts how many times the slot has been handed out, and ``SimplexRef``
+    /// pairs a pointer with the generation it was taken at so a holder can tell.
     std::deque<Simplex> simplexStorage_{};
+    /// Slots freed this sweep, not yet safe to hand out.
+    std::vector<std::uint32_t> pendingSimplexSlots_{};
+    /// Slots freed in an earlier sweep and available now.
+    std::vector<std::uint32_t> freeSimplexSlots_{};
     std::vector<SimplexPtr> simplicesVec{}; // flat array of live simplex pointers (swap-and-pop)
     FlatHashMap<SimplexPtr> simplexIndex_{}; // fingerprint → simplex ptr (dedup only)
     std::vector<SimplexPtr> topSimplicesVec{}; // top-dimensional simplices only

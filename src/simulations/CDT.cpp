@@ -265,6 +265,11 @@ int CDT::sweep() {
     }
     if (result) accepted++;
   }
+  // No move is in flight here, so the slots the sweep's removals left behind
+  // can be handed out again. Holding them until this point is what keeps a
+  // SimplexPtr a move captured in propose() from addressing a different simplex
+  // by the time apply() reads it.
+  spacetime->reclaimSimplexSlots();
   return accepted;
 }
 

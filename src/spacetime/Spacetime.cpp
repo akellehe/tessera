@@ -111,9 +111,24 @@ std::pair<SimplexPtr, bool> Spacetime::createSimplex(
   // stable for the lifetime of this Spacetime.  initialize() registers the
   // simplex pointer back on its vertices, so we must do that AFTER emplace
   // (which is when &simplexStorage_.back() becomes the canonical address).
-  simplexStorage_.emplace_back(this, vertices, edges);
-  SimplexPtr simplex = &simplexStorage_.back();
-  simplex->poolSlot_ = static_cast<std::uint32_t>(simplexStorage_.size() - 1);
+  SimplexPtr simplex;
+  if (!freeSimplexSlots_.empty()) {
+    // Reuse a slot a removed simplex left behind. Its address is already
+    // stable, and assigning over it keeps that address, so the deque never has
+    // to grow. The generation carries across the assignment and is bumped, so a
+    // pointer taken before the reuse is distinguishable from one taken after.
+    const std::uint32_t slot = freeSimplexSlots_.back();
+    freeSimplexSlots_.pop_back();
+    const std::uint32_t generation = simplexStorage_[slot].generation_ + 1;
+    simplexStorage_[slot] = Simplex(this, vertices, edges);
+    simplex = &simplexStorage_[slot];
+    simplex->generation_ = generation;
+    simplex->poolSlot_ = slot;
+  } else {
+    simplexStorage_.emplace_back(this, vertices, edges);
+    simplex = &simplexStorage_.back();
+    simplex->poolSlot_ = static_cast<std::uint32_t>(simplexStorage_.size() - 1);
+  }
   if (!simplex->initialized) {
     simplex->initialize(simplex);
   }
@@ -1059,13 +1074,40 @@ void Spacetime::unregisterSimplex(const SimplexPtr &simplex) {
     simplex->topVecIdx_ = UINT32_MAX;
   }
 
-  // The Simplex shell stays in simplexStorage_ at its stable address so any
-  // raw Simplex* still cached elsewhere remains dereferenceable.  Release
-  // the heap-allocated children to reclaim most of the simplex's memory;
-  // vecIdx_ == UINT32_MAX is the stale marker callers should already be
-  // checking against.  poolSlot_ stays pointing at this simplex's slot in
-  // simplexStorage_ (informational only — no longer used for lookups).
+  // The Simplex shell stays in simplexStorage_ at its stable address; releasing
+  // the heap-allocated children reclaims the rest. vecIdx_ == UINT32_MAX is the
+  // stale marker callers should already be checking against.
   simplex->releaseChildren();
+
+  // Offer the slot back, but not yet: a Pachner move in flight captured
+  // SimplexPtr in propose() and reads them in apply(), so handing this slot out
+  // before the move finishes would let one of those pointers address a
+  // different simplex. reclaimSimplexSlots, called at a sweep boundary, is
+  // where it becomes available.
+  // Externally-owned simplices have no slot here, and a slot already queued
+  // must not be queued a second time: a removed simplex can be registered again
+  // before the queue drains, and removed again after, which would otherwise
+  // hand one slot to two simplices.
+  if (simplex->poolSlot_ != UINT32_MAX && !simplex->pendingFree_) {
+    simplex->pendingFree_ = true;
+    pendingSimplexSlots_.push_back(simplex->poolSlot_);
+  }
+}
+
+std::size_t Spacetime::reclaimSimplexSlots() noexcept {
+  std::size_t released = 0;
+  for (const std::uint32_t slot : pendingSimplexSlots_) {
+    Simplex &simplex = simplexStorage_[slot];
+    if (!simplex.pendingFree_) continue;
+    simplex.pendingFree_ = false;
+    // A simplex removed during the sweep may have been registered again since.
+    // Its slot is live and must not be handed out.
+    if (!simplex.isStale()) continue;
+    freeSimplexSlots_.push_back(slot);
+    ++released;
+  }
+  pendingSimplexSlots_.clear();
+  return released;
 }
 
 void Spacetime::reserve(int nSimplices) {
