@@ -1894,6 +1894,22 @@ class MultiCobordism {
   /// (\f$ d\tilde A^U = dM^U h + M^U dh \f$ on the attached blocks).
   [[nodiscard]] ResidualGradient twoBodyResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
                                                            const TwoBodyTarget &target) const;
+  /// The analytic gradient of `wholeHarmonicResidualOn` (#1055).
+  ///
+  /// The chain is \f$Z \to \Pi \to c \to r\f$: the whole complex's
+  /// degree-1 harmonic images, their transported periods over the blocks'
+  /// marked cycles, the coefficient vector those periods and the input
+  /// coefficients determine by least squares, and the projective leak of the
+  /// target against it. `BandDerivative::imagesLengthDerivative` supplies
+  /// \f$dZ/ds_e\f$; the rest is the chain rule, and the leak's derivative is
+  /// the same expression `twoBodyResidualGradientOn` takes with \f$T\f$
+  /// replaced by \f$c\f$.
+  ///
+  /// The zero gradient where the residual itself refuses: a reading that
+  /// cannot name a state has no direction either.
+  [[nodiscard]] ResidualGradient wholeHarmonicResidualGradientOn(
+      const std::shared_ptr<Spacetime> &spacetime,
+      const TwoBodyTarget &target) const;
   /// The ascent of every fiber-mode term of `rU` on the live complex: the
   /// whole-complex fiber target, each input block's fiber (the gradient on
   /// the block's own complex — a surface block's own surface at its zero
@@ -1901,6 +1917,19 @@ class MultiCobordism {
   /// to the parent's edges by vertex pair; a surface's edges ARE host edges),
   /// and the two-body target.
   [[nodiscard]] ResidualGradient fiberModeAscent() const;
+  /// Whether every SELECTED reading has an analytic gradient, so
+  /// `fiberModeAscent` is the direction of the objective actually being
+  /// minimised (#1055).
+  ///
+  /// `fiberModeAscent`'s two-body term is the gradient through the frame
+  /// TRANSFER. The bulk, whole-harmonic and paired-frame readings have no
+  /// analytic gradient yet, so under those the ascent belongs to a different
+  /// function than the objective. The line search still evaluates the true
+  /// objective and accepts only real decreases, so the consequence is wasted
+  /// trials rather than a wrong answer -- but a direction that is not the
+  /// objective's is worth naming, and the numerical ascent is correct for
+  /// any of them.
+  [[nodiscard]] bool readoutsHaveAnalyticGradient() const noexcept;
 
   /// Attach the fiber form of an input block's target (a prior cobordism's
   /// output fiber piped downstream). @throws std::out_of_range on the index.

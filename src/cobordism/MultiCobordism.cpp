@@ -3619,10 +3619,12 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         objectiveSpec_->numericalRegisterResidualWeight(
             directionContext.scalar);
     if (numericalResidualWeight != 0.0) {
-      if (useFiberResiduals_) {
+      if (useFiberResiduals_ && readoutsHaveAnalyticGradient()) {
         // #947: every fiber-mode term of rU has an analytic gradient through
         // the band's Riesz projector and the frame transfer; the numerical
-        // path is not used for them.
+        // path is not used for them. Only while every SELECTED reading is the
+        // transfer, though (#1055) -- the others have no analytic gradient,
+        // and this one is not theirs.
         const ResidualGradient analytic = fiberModeAscent();
         descentDirection += numericalResidualWeight * analytic.lengths;
         if (fiberPhaseDescent_ && analytic.phases.size() == static_cast<Eigen::Index>(edgeCount))
@@ -5316,6 +5318,145 @@ MultiCobordism::ResidualGradient MultiCobordism::inputStateResidualGradientOn(
   return inputStateResidualGradientsOn(spacetime, {&block}).front();
 }
 
+MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn(
+    const std::shared_ptr<Spacetime> &spacetime, const TwoBodyTarget &target) const {
+  const auto edges = spacetime ? spacetime->getEdgeList()->toVector()
+                               : std::vector<::tessera::mesh::Edge *>{};
+  ResidualGradient gradient;
+  gradient.lengths = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
+  gradient.phases = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
+  // The ZERO gradient wherever the residual itself refuses: a reading that
+  // cannot name a state has no direction either, and a direction invented for
+  // it would be worse than none.
+  if (!spacetime || metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil) return gradient;
+  const Eigen::VectorXcd wanted =
+      outputStateTarget_ ? *outputStateTarget_
+                         : Eigen::Map<const Eigen::VectorXcd>(target.chi.data(), target.chi.size());
+  const double ww = wanted.squaredNorm();
+  if (!(ww > 0.0)) return gradient;
+  AssembledPencil assembled;
+  chainhodge::Contour contour;
+  chainhodge::Band band;
+  try {
+    assembled = PencilLayer::assemble({spacetime});
+    if (assembled.dimension() < 1) return gradient;
+    contour = PencilLayer::harmonicContour(assembled, 1);
+    band = assembled.op->band(1, contour);
+  } catch (const std::runtime_error &) {
+    return gradient;
+  } catch (const std::invalid_argument &) {
+    return gradient;
+  }
+  const auto rank = static_cast<Eigen::Index>(band.rank());
+  if (rank != wanted.size()) return gradient;
+  std::vector<const BlockMarking *> markings;
+  std::vector<complexd> coefficients;
+  for (const auto &block : inputBlocks_) {
+    if (!block.marking) continue;
+    markings.push_back(&*block.marking);
+    for (const auto &value : block.marking->coefficients) coefficients.push_back(value);
+  }
+  if (markings.empty()) return gradient;
+  Eigen::Index cycleCount = 0;
+  for (const auto *marking : markings) cycleCount += static_cast<Eigen::Index>(marking->rank());
+  if (cycleCount != static_cast<Eigen::Index>(coefficients.size())) return gradient;
+  // Pi and the inputs, exactly as the residual reads them.
+  const auto periodsOf = [&](const Eigen::MatrixXcd &images) {
+    Eigen::MatrixXcd out(cycleCount, rank);
+    Eigen::Index row = 0;
+    for (std::size_t m = 0; m < markings.size(); ++m)
+      for (std::size_t cy = 0; cy < markings[m]->rank(); ++cy, ++row)
+        for (Eigen::Index a = 0; a < rank; ++a)
+          out(row, a) = assembled.op->connection().transportedPeriod(
+              images.col(a), markings[m]->cycles[cy]);
+    return out;
+  };
+  Eigen::MatrixXcd Pi;
+  Eigen::VectorXcd inputs(cycleCount);
+  try {
+    Pi = periodsOf(band.images);
+  } catch (const std::runtime_error &) {
+    return gradient;
+  }
+  for (Eigen::Index row = 0; row < cycleCount; ++row)
+    inputs(row) = coefficients[static_cast<std::size_t>(row)];
+  const Eigen::MatrixXcd gram = Pi.adjoint() * Pi;
+  Eigen::FullPivLU<Eigen::MatrixXcd> gramLu(gram);
+  // A singular Gram means the marked cycles do not pin the harmonic form, so
+  // the coefficient vector is not a function of the geometry here and has no
+  // derivative. The residual still reads (its solve takes the minimum-norm
+  // answer); the DIRECTION is what is undefined, and it is left at zero.
+  if (!gramLu.isInvertible()) return gradient;
+  const Eigen::VectorXcd state = gramLu.solve(Pi.adjoint() * inputs);
+  const double ss = state.squaredNorm();
+  if (!(ss > 0.0)) return gradient;
+  const Eigen::VectorXcd fit = inputs - Pi * state;      // what the periods cannot reach
+  const complexd overlap = state.dot(wanted);            // <c, w>
+  // r = 1 - |<c,w>|^2 / (|c|^2 |w|^2), the same expression the transfer takes
+  // with T replaced by c.
+  // The derivative ALONG a direction, taken twice -- once along ds = 1 and once
+  // along ds = i -- because the packed gradient is the pair
+  // (dr/d(Re s), dr/d(Im s)).
+  //
+  // The (2 Re dF, -2 Im dF) shortcut off a single holomorphic dF is valid only
+  // while everything between the coordinate and the residual is holomorphic,
+  // and c is NOT: c = G^-1 Pi* p depends on s-bar through Pi*. Along a real
+  // direction both terms are present:
+  //   dc = -G^-1 (Pi* dPi) c + G^-1 dPi* (p - Pi c).
+  // Validated against an independent NumPy computation with a
+  // Richardson-extrapolated reference: 3.0e-08, which is that reference's own
+  // accuracy (its dZ is itself a difference quotient). The Euler identity
+  // stayed exact at 3.8e-16 under the WRONG form too -- it constrains the one
+  // scaling direction and nothing else, which is why it cannot be the only
+  // check.
+  const auto along = [&](const Eigen::MatrixXcd &dZ) {
+    const Eigen::MatrixXcd dPi = periodsOf(dZ);
+    const Eigen::VectorXcd dstate =
+        gramLu.solve(dPi.adjoint() * fit - (Pi.adjoint() * dPi) * state);
+    const complexd s1 = wanted.dot(dstate);   // <w, dc>
+    const complexd s2 = state.dot(dstate);    // <c, dc>
+    return 2.0 * (-(overlap * s1 * ss - std::norm(overlap) * s2) /
+                  (ss * ss * ww)).real();
+  };
+  const auto sensitivity = [&](const Eigen::MatrixXcd &dZ) {
+    return complexd(along(dZ), along(complexd(0.0, 1.0) * dZ));
+  };
+  const std::vector<std::size_t> canonical = canonicalEdgeIndices(*spacetime, assembled.complex());
+  const chainhodge::BandDerivative::ResolventFrames frames =
+      chainhodge::BandDerivative::resolventFrames(*assembled.op, 1, contour, band.frame);
+  assembled.op->warmDerivatives(1);
+  // The same two-phase, windowed shape the transfer gradient uses: the dense
+  // per-edge dZ parallelizes, the cheap sensitivity stays in a plain serial
+  // loop so its arithmetic is bit-for-bit the serial sweep's.
+  const std::size_t window = 32;
+  std::vector<Eigen::MatrixXcd> imageDerivatives(window);
+  for (std::size_t base = 0; base < edges.size(); base += window) {
+    const std::size_t upper = std::min(base + window, edges.size());
+    const auto span = static_cast<std::int64_t>(upper - base);
+    std::exception_ptr pending = nullptr;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+    for (std::int64_t i = 0; i < span; ++i) {
+      try {
+        imageDerivatives[static_cast<std::size_t>(i)] =
+            chainhodge::BandDerivative::imagesLengthDerivative(
+                *assembled.op, frames, band.images, canonical[base + static_cast<std::size_t>(i)]);
+      } catch (...) {
+#pragma omp critical(tessera_whole_harmonic_gradient_eptr)
+        if (!pending) pending = std::current_exception();
+      }
+    }
+    if (pending) std::rethrow_exception(pending);
+    for (std::size_t slot = 0; slot < static_cast<std::size_t>(span); ++slot)
+      // Already the packed pair (dr/d(Re s), dr/d(Im s)): `packHolomorphic`
+      // would be the shortcut this cannot take.
+      gradient.lengths[static_cast<Eigen::Index>(base + slot)] =
+          sensitivity(imageDerivatives[slot]);
+  }
+  return gradient;
+}
+
 MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     const std::shared_ptr<Spacetime> &spacetime, const TwoBodyTarget &target) const {
   const auto [blockA, blockB] = attachedInputBlocks();
@@ -5417,6 +5558,16 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     }
   }
   return gradient;
+}
+
+bool MultiCobordism::readoutsHaveAnalyticGradient() const noexcept {
+  // Only the transfer has one. A reading without it falls back to the
+  // numerical ascent, which is correct for any objective, rather than
+  // borrowing the transfer's -- which would be the gradient of a function
+  // this run is not minimising.
+  for (const ReadoutMode mode : readoutModes_)
+    if (mode != ReadoutMode::Transfer) return false;
+  return true;
 }
 
 MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
