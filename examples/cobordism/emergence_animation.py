@@ -1452,6 +1452,9 @@ def build_qubit_node(config):
               real_squared_lengths_only=False,
               metric_source=cob.HodgeMetricSource.WhitneyPencil)
     node.seed_inputs([sorted(mapping.values()) for mapping in ids])
+    # Four tori carry each state on a PAIR -- itself and its orientation
+    # reversal -- so the whole-complex reading imposes each pair's state once.
+    node.declare_conjugate_input_pairs(len(tori) == 4)
     node.use_fiber_residuals(True)
     node.set_input_residual_weight(config["input_weight"])
     node.score_whole_complex_leak(bool(config.get("score_leak",

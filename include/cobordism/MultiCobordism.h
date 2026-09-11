@@ -1922,6 +1922,19 @@ class MultiCobordism {
   /// minimised (#1055).
   ///
   /// `fiberModeAscent`'s two-body term is the gradient through the frame
+  /// Declare that the attached input blocks come in CONJUGATE PAIRS: each
+  /// state on a torus and its orientation reversal, in block order, two to a
+  /// pair. A pair carries ONE state -- the two tori have the same period
+  /// block on the whole's zero mode -- so the whole-complex reading imposes
+  /// it once, from the first torus of each pair.
+  ///
+  /// Declared and never detected. At two tori the blocks are equally
+  /// identical in their periods and carry two DIFFERENT states, so measuring
+  /// the periods cannot tell a conjugate pair from a pair of qubits, and
+  /// collapsing the latter would throw an input away.
+  void declareConjugateInputPairs(bool declared);
+  [[nodiscard]] bool conjugateInputPairs() const noexcept { return conjugateInputPairs_; }
+
   /// TRANSFER. The bulk, whole-harmonic and paired-frame readings have no
   /// analytic gradient yet, so under those the ascent belongs to a different
   /// function than the objective. The line search still evaluates the true
@@ -3055,6 +3068,7 @@ class MultiCobordism {
   /// `lastStage1Lookahead`). 0 = the update committed nothing.
   int lastStage1LookaheadDepth_ = 0;
   std::vector<BoundaryBlock> inputBlocks_;
+  bool conjugateInputPairs_{false};
   std::vector<BoundaryBlock> outputBlocks_;
 
   // ---- #776 state ----
