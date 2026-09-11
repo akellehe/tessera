@@ -1895,6 +1895,13 @@ assertion. Every pairing is the transpose.)doc")
            "dimension is the claim: a rank-2 harmonic space carries a 2-dimensional state, a "
            "rank-4 one a 4-dimensional state, and the reading refuses a target of any other size "
            "rather than fitting it. Unset, the two-body target is used.")
+      .def("declare_conjugate_input_pairs", &MultiCobordism::declareConjugateInputPairs,
+           py::arg("declared"),
+           "Declare that the attached input blocks come in conjugate pairs -- each state on a "
+           "torus and its orientation reversal, in block order, two to a pair. A pair carries ONE "
+           "state, so the whole-complex reading imposes it once. Declared, never detected: at two "
+           "tori the blocks have equally identical periods but carry two DIFFERENT states.")
+      .def_property_readonly("conjugate_input_pairs", &MultiCobordism::conjugateInputPairs)
       .def_property_readonly("output_state_target", &MultiCobordism::outputStateTarget)
       .def("operator_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &twoStateVector) {

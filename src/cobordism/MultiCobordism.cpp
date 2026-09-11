@@ -1614,6 +1614,10 @@ double MultiCobordism::objectiveFor(
 
 double MultiCobordism::objective() const { return objectiveFor(spacetime_); }
 
+void MultiCobordism::declareConjugateInputPairs(bool declared) {
+  conjugateInputPairs_ = declared;
+}
+
 void MultiCobordism::declarePinnedRegion(PinnedRegion region) {
   for (auto &existing : pinnedRegions_)
     if (existing.name == region.name) {
@@ -4528,13 +4532,12 @@ double MultiCobordism::wholeHarmonicResidualOn(
   // (7.0e-16); the partner's modulus is determined by its own, so nothing is
   // discarded by leaving it out.
   //
-  // Which blocks are partners is DECLARED, never detected. The engine's
-  // signal for conjugate tori is the target's two-state vector, the same one
-  // `operatorResidualOn` reads, and the pairing is block order, two to a
-  // side. Detecting it by measuring equal period blocks would be wrong: at
+  // Which blocks are partners is DECLARED, never detected:
+  // `declareConjugateInputPairs`, with the pairing in block order, two to a
+  // pair. Detecting it by measuring equal period blocks would be wrong: at
   // two tori the blocks are equally identical (1.1e-15) and carry two
   // DIFFERENT states, and collapsing those would throw an input away.
-  const bool conjugateTori = target.twoStateVector.size() != 0;
+  const bool conjugateTori = conjugateInputPairs_;
   std::size_t attachedIndex = 0;
   for (const auto &block : inputBlocks_) {
     if (!block.marking) continue;
