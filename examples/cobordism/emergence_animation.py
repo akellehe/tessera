@@ -394,8 +394,13 @@ DECLARED_TAU_TOLERANCE = 1e-9
 #: tori: A with its orientation reversal A*, B with B*. A conjugate shares its
 #: partner's hue at a lighter value, since it is the same state seen the other
 #: way round rather than a third and fourth input.
-DECLARED_TORUS_LABELS = ("A", "A*", "B", "B*")
-DECLARED_TORUS_COLOURS = ("#d2691e", "#e8a76b", "#1f8a70", "#6fbfa8")
+DECLARED_TORUS_LABELS = ("A", "B")
+DECLARED_TORUS_COLOURS = ("#d2691e", "#1f8a70")
+#: The same, for a four-torus boundary: each state beside its conjugate, which
+#: shares its partner's hue at a lighter value, since it is the same state seen
+#: the other way round rather than a third and fourth input.
+DECLARED_CONJUGATE_TORUS_LABELS = ("A", "A*", "B", "B*")
+DECLARED_CONJUGATE_TORUS_COLOURS = ("#d2691e", "#e8a76b", "#1f8a70", "#6fbfa8")
 
 
 class EdgeDisposition:
@@ -1210,13 +1215,21 @@ class QubitInputs:
 
     @property
     def labels(self):
+        if len(self.tori) > len(DECLARED_TORUS_LABELS):
+            return DECLARED_CONJUGATE_TORUS_LABELS[:len(self.tori)]
         return DECLARED_TORUS_LABELS[:len(self.tori)]
+
+    @property
+    def colours(self):
+        if len(self.tori) > len(DECLARED_TORUS_COLOURS):
+            return DECLARED_CONJUGATE_TORUS_COLOURS[:len(self.tori)]
+        return DECLARED_TORUS_COLOURS[:len(self.tori)]
 
     def highlight(self):
         """The tori's edges for the layout panel: (label, colour, id pairs)."""
         return [(label, colour, {tuple(cell) for cell in cells})
                 for label, colour, cells in zip(self.labels,
-                                                DECLARED_TORUS_COLOURS,
+                                                self.colours,
                                                 self.cells)]
 
     def to_json(self):
@@ -1225,12 +1238,20 @@ class QubitInputs:
         def matrix(value):
             return [[complex(z) for z in row] for row in np.asarray(value)]
 
-        algebra = {key: (str(value) if isinstance(value, str)
-                         else float(value) if key in ("coupling", "time", "Jt")
-                         else matrix(value) if key in ("chi", "product_state",
-                                                       "first_order_amplitudes",
-                                                       "exact_amplitudes")
-                         else [complex(z) for z in np.asarray(value)])
+        # Written by SHAPE rather than by a list of names: the gate itself is
+        # recorded beside its image (#1050) and a fifth name to remember is a
+        # fifth chance to forget one.
+        def entry(key, value):
+            if isinstance(value, str):
+                return str(value)
+            if key in ("coupling", "time", "Jt"):
+                return float(value)
+            array = np.asarray(value)
+            if array.ndim >= 2:
+                return matrix(array)
+            return [complex(z) for z in array]
+
+        algebra = {key: entry(key, value)
                    for key, value in self.algebra.items()}
         return _json_safe({
             "labels": list(self.labels),
@@ -1264,11 +1285,30 @@ def _as_state_pairs(text):
     if text is None:
         return []
     if isinstance(text, (list, tuple)):
-        parts = [str(part) for part in text]
+        items = [str(part) for part in text]
     else:
-        parts = [part.strip() for part in str(text).split(":") if part.strip()]
-    if not parts:
+        items = [part.strip() for part in str(text).split(":") if part.strip()]
+    if not items:
         return []
+    # Two shapes, told apart by the comma. Each item may itself be a `a,b`
+    # pair -- the shape a repeated --state used to take, and the one every
+    # recorded run is written in -- or the items may be bare moduli read two
+    # at a time. Mixing them is refused rather than guessed at.
+    commas = [("," in item) for item in items]
+    if any(commas):
+        if not all(commas):
+            raise ValueError(
+                "--state mixes `a,b` pairs with bare moduli: write either "
+                "0.5+0.9j,0.1+1.3j:1j,1j or 0.5+0.9j:0.1+1.3j:1j:1j")
+        pairs = []
+        for item in items:
+            halves = [half.strip() for half in item.split(",")]
+            if len(halves) != 2:
+                raise ValueError("a state pair is two moduli separated by a "
+                                 "comma, like 0.5+0.9j,0.1+1.3j -- got %r" % (item,))
+            pairs.append((_as_complex(halves[0]), _as_complex(halves[1])))
+        return pairs
+    parts = items
     if len(parts) % 2 != 0:
         raise ValueError(
             "--state is a colon-delimited list of moduli read in PAIRS, like "
@@ -4036,7 +4076,11 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "regge": bool(regge),
         "extend_boundary": bool(extend_boundary),
         "score_leak": bool(score_leak),
-        "states": None if states is None else str(states),
+        # An empty LIST when none were given, as it has always been: a record
+        # written before this flag existed reads the same.
+        "states": ([] if states is None
+                   else list(states) if isinstance(states, (list, tuple))
+                   else str(states)),
         "operator": str(operator),
         "pin_boundary": bool(pin_boundary),
     }
