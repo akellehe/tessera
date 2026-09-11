@@ -160,6 +160,39 @@ def test_the_band_rank_is_the_first_betti_number(reading):
     assert reading["band"].rank() == node.betti(node.spacetime())[1]
 
 
+def test_every_reading_produces_the_same_residual(reading):
+    """The leak a band produces is a property of its SPAN, not its frame.
+
+    `MultiCobordism::wholeHarmonicResidualOn` restricts the band's images to a
+    target's cells, least-squares fits the target in them, and reports
+    `||t - Z_T c||^2 / ||t||^2`. Equal spans give `Z_1 = Z_2 T` for an
+    invertible `T`, which survives the row restriction, so the leak must agree
+    for every target and every subset of cells -- not merely for the one
+    target the experiment happens to use.
+    """
+    images = np.asarray(reading["band"].images)
+    pencil = reading["pencil_null"][0]
+    hodge = reading["hodge_null"][0]
+    rows = images.shape[0]
+    generator = np.random.default_rng(5)
+
+    def leak(frame, target):
+        coefficients, *_ = np.linalg.lstsq(frame, target, rcond=None)
+        return float(np.linalg.norm(target - frame @ coefficients) ** 2
+                     / np.linalg.norm(target) ** 2)
+
+    for size in (6, 12, 24, rows):
+        for _ in range(3):
+            index = (generator.choice(rows, size=size, replace=False)
+                     if size < rows else np.arange(rows))
+            target = (generator.standard_normal(size)
+                      + 1j * generator.standard_normal(size))
+            reference = leak(images[index], target)
+            for name, frame in (("pencil", pencil), ("hodge", hodge)):
+                relative = abs(leak(frame[index], target) - reference) / max(reference, 1e-300)
+                assert relative < 1e-12, f"{name} leak differs by {relative:.3e} on {size} cells"
+
+
 @pytest.mark.parametrize("amplitude", [0.02, 0.10, 0.30])
 def test_the_three_still_coincide_off_the_seeded_lengths(seeded, amplitude):
     """The agreement is not a property of the seeded collar.
