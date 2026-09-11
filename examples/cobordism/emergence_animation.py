@@ -932,15 +932,25 @@ qubit mode: how --tori, --readout and --output-state fit together
   is psi(tau) = (1, tau) normalized -- so tau = psi_1 / psi_0. The table is
   the usual qubit states in that coordinate:
 
-    state                       tau            as an input?   as --output-state?
-    |0>                         0              no             yes
-    |1>                         infinity       no             no
-    |+>                         1              no             yes
-    |->                         -1             no             yes
-    |+i>                        1j             YES            yes
-    |-i>                        -1j            no             yes
-    (sqrt3/2, 1/2)              0.57735        no             yes
-    (3/5, 4i/5)                 1.3333j        YES            yes
+    state              tau               input? output? on the command line
+    |0>                0                 no     yes     --output-state 0
+    |1>                infinity          no     no      (not writable at all)
+    |+>                1                 no     yes     --output-state 1
+    |->                -1                no     yes     --output-state=-1
+    |+i>               1j                YES    yes     --tau-a 1j
+    |-i>               -1j               no     yes     --output-state=-1j
+    (sqrt3/2, 1/2)     0.57735           no     yes     --output-state 0.57735
+    (3/5, 4i/5)        1.33333j          YES    yes     --tau-a 1.33333j
+    near |0>           0.1j              YES    yes     --tau-a 0.1j
+    near |1>           10j               YES    yes     --tau-a 10j
+    equal, phase pi/4  0.70711+0.70711j  YES    yes     --tau-a 0.70711+0.70711j
+    tilted right       0.5+1j            YES    yes     --tau-a 0.5+1j
+    tilted left        -0.5+1j           YES    yes     --tau-b=-0.5+1j
+    tall               2.5j              YES    yes     --tau-a 2.5j
+
+  A LEADING MINUS needs the equals form. argparse reads a bare -0.2+0.8j as an
+  option, so --tau-b=-0.2+0.8j works and --tau-b -0.2+0.8j does not. The same
+  goes for --tau-a, --state and --output-state.
 
   Two different constraints are at work, and they are not the same one.
 
@@ -952,7 +962,7 @@ qubit mode: how --tori, --readout and --output-state fit together
 
     An --output-state is a state and nothing else, so any finite tau does.
     Only |1> is out of reach there, because (1, tau) is never (0, 1) for
-    finite tau; a large |tau| approaches it.
+    finite tau; a large |tau| approaches it, which is what "near |1>" is.
 
   Which metric each reading uses:
 
