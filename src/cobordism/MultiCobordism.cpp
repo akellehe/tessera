@@ -4252,7 +4252,8 @@ std::vector<double> MultiCobordism::twoBodyResidualsPerCaseOn(
     // scored by every later case and by whatever the caller does next.
     try {
       residuals.push_back(twoBodyResidualOn(
-          spacetime, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed}));
+          spacetime, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed,
+                                   boundaryCase.twoStateVector}));
     } catch (...) {
       writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
       throw;
@@ -4531,7 +4532,7 @@ double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &space
   double total = 0.0;
   for (const ReadoutMode mode : readoutModes_) {
     if (mode == ReadoutMode::Operator)
-      total += operatorResidualOn(spacetime);
+      total += operatorResidualOn(spacetime, target);
     else if (mode == ReadoutMode::Whole)
       total += wholeHarmonicResidualOn(spacetime, target);
     else if (mode == ReadoutMode::Bulk)
@@ -4550,15 +4551,11 @@ void MultiCobordism::setOutputStateTarget(Eigen::VectorXcd state) {
   outputStateTarget_ = std::move(state);
 }
 
-void MultiCobordism::setGateTarget(Eigen::MatrixXcd gate) {
-  if (gate.rows() < 1 || gate.rows() != gate.cols())
-    throw std::invalid_argument("MultiCobordism::setGateTarget: the gate must be a non-empty square matrix");
-  gateTarget_ = std::move(gate);
-}
-
-double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spacetime) const {
-  if (!gateTarget_)
-    throw std::logic_error("MultiCobordism::operatorResidualOn: no gate target (setGateTarget)");
+double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spacetime,
+                                          const TwoBodyTarget &target) const {
+  // No backward wavefunction, no two-state vector. A host without conjugate
+  // tori carries none, and one is not invented to fill the term.
+  if (target.twoStateVector.size() == 0) return 1.0;
   if (!spacetime) return 1.0;
   // The two sides are the two PAIRS, in block order: a state and its conjugate
   // are one side, so nothing is left out of either.
@@ -4579,18 +4576,19 @@ double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spac
   } catch (const std::invalid_argument &) {
     return 1.0;
   }
-  const Eigen::MatrixXcd &gate = *gateTarget_;
-  if (T.rows() != gate.rows() || T.cols() != gate.cols())
-    throw std::logic_error("MultiCobordism::operatorResidualOn: the gate is " + std::to_string(gate.rows()) + "x" +
-                           std::to_string(gate.cols()) + " but the paired frames give " +
-                           std::to_string(T.rows()) + "x" + std::to_string(T.cols()));
+  const Eigen::MatrixXcd &wanted = target.twoStateVector;
+  if (T.rows() != wanted.rows() || T.cols() != wanted.cols())
+    throw std::logic_error("MultiCobordism::operatorResidualOn: the two-state vector is " +
+                           std::to_string(wanted.rows()) + "x" + std::to_string(wanted.cols()) +
+                           " but the paired frames give " + std::to_string(T.rows()) + "x" +
+                           std::to_string(T.cols()));
   const double tt = T.squaredNorm();
   if (!(tt > 0.0)) return 1.0;
   // The same projective Frobenius leak every other reading takes, so all are
   // on one scale and a set of them may be summed.
-  const complexd overlap = (T.conjugate().cwiseProduct(gate)).sum();
-  const double leak = gate.squaredNorm() - std::norm(overlap) / tt;
-  return std::max(0.0, leak / gate.squaredNorm());
+  const complexd overlap = (T.conjugate().cwiseProduct(wanted)).sum();
+  const double leak = wanted.squaredNorm() - std::norm(overlap) / tt;
+  return std::max(0.0, leak / wanted.squaredNorm());
 }
 
 double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spacetime,

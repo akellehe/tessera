@@ -1649,9 +1649,9 @@ assertion. Every pairing is the transpose.)doc")
              out.reserve(cases.size());
              for (const auto &item : cases) {
                auto entry = item.cast<py::tuple>();
-               if (entry.size() != 2 && entry.size() != 3)
+               if (entry.size() < 2 || entry.size() > 4)
                  throw std::invalid_argument(
-                     "each case is (boundary, chi) or (boundary, chi, choi_decomposed)");
+                     "each case is (boundary, chi[, choi_decomposed[, two_state_vector]])");
                MultiCobordism::TwoBodyCase one;
                for (const auto &edge : entry[0].cast<py::list>()) {
                  auto quad = edge.cast<py::tuple>();
@@ -1663,7 +1663,9 @@ assertion. Every pairing is the transpose.)doc")
                      quad[2].cast<std::complex<double>>());
                }
                one.chi = entry[1].cast<Eigen::MatrixXcd>();
-               one.choiDecomposed = entry.size() == 3 ? entry[2].cast<bool>() : true;
+               one.choiDecomposed = entry.size() >= 3 ? entry[2].cast<bool>() : true;
+               if (entry.size() == 4 && !entry[3].is_none())
+                 one.twoStateVector = entry[3].cast<Eigen::MatrixXcd>();
                out.push_back(std::move(one));
              }
              self.setTwoBodyCases(std::move(out));
@@ -1894,16 +1896,15 @@ assertion. Every pairing is the transpose.)doc")
            "rank-4 one a 4-dimensional state, and the reading refuses a target of any other size "
            "rather than fitting it. Unset, the two-body target is used.")
       .def_property_readonly("output_state_target", &MultiCobordism::outputStateTarget)
-      .def("set_gate_target", &MultiCobordism::setGateTarget, py::arg("gate"),
-           "The gate this cobordism is meant to represent, a square matrix on the joint space. "
-           "Read by ReadoutMode.OPERATOR, where the transfer between two PAIRED frames is 4x4 -- "
-           "the dimension of an operator on C^2 (x) C^2 -- so the target is the GATE rather than "
-           "the gate's image of one chosen input.")
-      .def_property_readonly("gate_target", &MultiCobordism::gateTarget)
       .def("operator_residual",
-           [](const MultiCobordism &self) { return self.operatorResidualOn(self.spacetime()); },
-           py::call_guard<py::gil_scoped_release>(),
-           "The projective leak of the gate target against the paired-frame transfer.")
+           [](const MultiCobordism &self, const Eigen::MatrixXcd &twoStateVector) {
+             return self.operatorResidualOn(
+                 self.spacetime(),
+                 MultiCobordism::TwoBodyTarget{Eigen::MatrixXcd(), true, twoStateVector});
+           },
+           py::arg("two_state_vector"), py::call_guard<py::gil_scoped_release>(),
+           "The projective leak of a gate-evolved two-state vector G |psi><phi| G-dagger "
+           "against the paired-frame transfer.")
       .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
            "The readings SUMMED into the two-body residual. TRANSFER is the "
            "coupling block between the two boundary frames; BULK is "
