@@ -54,6 +54,24 @@ using complexd = std::complex<double>;
 
 namespace {
 
+// How far the monodromy between two markings may sit from the identity before
+// they are held to disagree about the frame of the whole. Measured on the
+// seeded qubit collar at 1.1e-15, so this is round-off room and not a policy
+// knob: a marking pair that genuinely frames the zero mode differently does
+// so by an SL(2, Z) element, which is a whole integer away.
+constexpr double kPeriodFrameMonodromyTolerance = 1e-8;
+
+// A marking group frames the harmonic space when its period matrix is
+// invertible. Measured at four tori: a cross pair of tori has condition 1.8,
+// a conjugate pair 1e16, so the floor sits in an empty decade and separates
+// them without judgement.
+constexpr double kPeriodFrameConditionFloor = 1e-10;
+
+// Frame agreement is checked over every group, which is a subset enumeration.
+// One marking per boundary torus, so this bounds the tori, and the bound is
+// said out loud rather than silently truncating the check.
+constexpr std::size_t kPeriodFrameMaxMarkings = 16;
+
 std::pair<std::uint64_t, std::uint64_t> edgeKey(
     const ::tessera::mesh::Edge *edge) {
   const auto sourceVertexId = edge->getSource()->getId();
@@ -4464,15 +4482,18 @@ double MultiCobordism::wholeHarmonicResidualOn(
   try {
     assembled = PencilLayer::assemble({spacetime});
     if (assembled.dimension() < 1) return refuse("the complex has no edges");
-    // The band is read on a contour rather than as the null space of RSF
-    // Sec. 5 because `state` below is the coefficient vector IN THIS BAND'S
-    // BASIS, not a property of its span: a change of basis Z -> Z T sends
-    // state -> T^-1 state and moves the residual. `harmonicBand` returns the
-    // same subspace 20x faster (measured, #1058) but in its own basis, and
-    // swapping it here changed this reading from 0.9412 to 0.9272 on the same
-    // geometry. Which frame this reading is entitled to is an open question,
-    // not a performance one.
-    band = assembled.op->band(1, PencilLayer::harmonicContour(assembled, 1));
+    // The lambda = 0 band as the null space RSF Sec. 5 prescribes rather than
+    // a contour integral around it: under the rank conditions (R1)-(R4) the
+    // two are one subspace, and `harmonicBand` refuses by name when the dual
+    // connection disagrees about its dimension, which is how those conditions
+    // fail. Measured on a 90-edge collar: same span to 5.1e-15, 68.7 ms
+    // against 3797.1 ms.
+    //
+    // This substitution is only safe because the reading below is taken in
+    // the PERIOD FRAME. Read in the band's own basis the two disagreed
+    // (0.9412 against 0.9272 on one geometry), because a Riesz band and a
+    // null-space band return different bases of the same space.
+    band = assembled.op->harmonicBand(1);
   } catch (const std::runtime_error &error) {
     return refuse(error.what());
   } catch (const std::invalid_argument &error) {
@@ -4522,9 +4543,82 @@ double MultiCobordism::wholeHarmonicResidualOn(
     return refuse(std::string("a marked cycle is not a walk on the whole complex: ") + error.what());
   }
   // The form the INPUTS determine: the coefficient vector minimizing
-  // ||Pi c - p||. That c is the output state.
-  const Eigen::VectorXcd state =
-      periods.completeOrthogonalDecomposition().solve(inputs);
+  // ||Pi c - p||. The FORM is basis-free, but this c is its coordinates in
+  // whatever basis the band happened to return, and the band's basis is not a
+  // quantity the geometry carries -- a Riesz band hands back the singular
+  // vectors of its projector, a null-space band the singular vectors of S^U,
+  // and reading c in either makes the answer depend on which.
+  //
+  // The frame the spec names is the PERIOD FRAME (S6, D3, and the glossary's
+  // `SimplicialQubit::periodFrame`): the band normalized so a marking's
+  // cycles read periods (1, 0) and (0, 1), in which the coefficients are the
+  // periods of the form and `wanted`'s own (1, tau) shape is the same kind of
+  // object. Writing B for a marking's square block of Pi, that frame is
+  // Z B^-1, whose period matrix is Pi B^-1, so the coefficients there are
+  // simply B c -- the band is never rebuilt, and the reading stops depending
+  // on it.
+  //
+  // Every marking of the band's rank induces such a frame, and they are ONE
+  // frame exactly when the monodromy B_y B_x^-1 between them is the identity
+  // (spec S6: "the integer matrix relating the two markings through the
+  // whole's zero mode"). Measured, not assumed: a monodromy that is not the
+  // identity means the markings disagree about the frame of the whole, and
+  // that is said by name rather than settled by taking the first one.
+  Eigen::VectorXcd state = periods.completeOrthogonalDecomposition().solve(inputs);
+  // A GROUP of markings whose cycles number exactly the harmonic rank frames
+  // the whole: its square block of Pi is the period matrix, and the band
+  // normalized by its inverse reads periods (1,0,...), (0,1,...) there. One
+  // torus frames a rank-2 space by itself; a rank-4 space needs two.
+  //
+  // Which two is not a free choice and not an ordering. A torus and its
+  // orientation reversal carry DEPENDENT periods, so a conjugate pair frames
+  // nothing -- measured at four tori: the two conjugate pairs have condition
+  // 1.9e16 and 1.0e16, every cross pair 1.8. So the groups are enumerated and
+  // the singular ones drop out by measurement rather than by being ordered
+  // around.
+  if (markings.size() > kPeriodFrameMaxMarkings)
+    return refuse("the whole carries " + std::to_string(markings.size()) +
+                  " markings; frame agreement is only verified up to " +
+                  std::to_string(kPeriodFrameMaxMarkings));
+  std::vector<Eigen::Index> offset(markings.size()), height(markings.size());
+  {
+    Eigen::Index at = 0;
+    for (std::size_t m = 0; m < markings.size(); ++m) {
+      offset[m] = at;
+      height[m] = static_cast<Eigen::Index>(markings[m]->rank());
+      at += height[m];
+    }
+  }
+  std::vector<Eigen::MatrixXcd> frameBlocks;
+  for (std::uint32_t mask = 1; mask < (1u << markings.size()); ++mask) {
+    Eigen::Index total = 0;
+    for (std::size_t m = 0; m < markings.size(); ++m)
+      if ((mask >> m) & 1u) total += height[m];
+    if (total != rank) continue;
+    Eigen::MatrixXcd block(rank, rank);
+    Eigen::Index at = 0;
+    for (std::size_t m = 0; m < markings.size(); ++m)
+      if ((mask >> m) & 1u) {
+        block.middleRows(at, height[m]) = periods.middleRows(offset[m], height[m]);
+        at += height[m];
+      }
+    const Eigen::VectorXd sv = block.jacobiSvd().singularValues();
+    if (sv(sv.size() - 1) > kPeriodFrameConditionFloor * sv(0)) frameBlocks.push_back(block);
+  }
+  if (frameBlocks.empty())
+    return refuse("no group of markings frames the whole's degree-1 harmonic space: none has as many "
+                  "cycles as its rank (" + std::to_string(rank) +
+                  ") with an invertible period matrix");
+  const Eigen::MatrixXcd firstInverse = frameBlocks.front().inverse();
+  for (std::size_t b = 1; b < frameBlocks.size(); ++b) {
+    const double defect =
+        (frameBlocks[b] * firstInverse - Eigen::MatrixXcd::Identity(rank, rank)).norm();
+    if (defect > kPeriodFrameMonodromyTolerance)
+      return refuse("the marking groups disagree about the frame of the whole: the monodromy "
+                    "between group 0 and group " + std::to_string(b) +
+                    " differs from the identity by " + std::to_string(defect));
+  }
+  state = frameBlocks.front() * state;  // the coordinates in the period frame
   const double ss = state.squaredNorm();
   if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
   // The same projective Frobenius leak the other readings take, so all are on
