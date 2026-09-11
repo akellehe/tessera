@@ -160,37 +160,48 @@ def test_the_band_rank_is_the_first_betti_number(reading):
     assert reading["band"].rank() == node.betti(node.spacetime())[1]
 
 
-def test_every_reading_produces_the_same_residual(reading):
-    """The leak a band produces is a property of its SPAN, not its frame.
+def test_the_harmonic_form_is_the_same_but_its_COORDINATES_ARE_NOT(reading):
+    """Where the span stops being enough, stated exactly.
 
-    `MultiCobordism::wholeHarmonicResidualOn` restricts the band's images to a
-    target's cells, least-squares fits the target in them, and reports
-    `||t - Z_T c||^2 / ||t||^2`. Equal spans give `Z_1 = Z_2 T` for an
-    invertible `T`, which survives the row restriction, so the leak must agree
-    for every target and every subset of cells -- not merely for the one
-    target the experiment happens to use.
+    A least-squares fit of a target IN the band is span-invariant: equal spans
+    give `Z_1 = Z_2 T` for an invertible `T`, which survives a row restriction,
+    so the fitted FORM is the same object read two ways.
+
+    `MultiCobordism::wholeHarmonicResidualOn` does not stop there. It takes the
+    transported periods of the band's columns, solves `state = argmin ||Pi c -
+    p||`, and compares `state` -- the coefficient vector IN THAT BASIS -- to
+    the wanted state. Under `Z -> Z T` the periods go `Pi -> Pi T` and the
+    coefficients go `state -> T^-1 state`, so that reading moves with the frame
+    even though the form does not.
+
+    This test holds both halves, because the difference between them is the
+    whole reason the faster band cannot simply be swapped in: the contour band
+    and the null-space band span one subspace and hand back two bases of it.
     """
     images = np.asarray(reading["band"].images)
     pencil = reading["pencil_null"][0]
-    hodge = reading["hodge_null"][0]
     rows = images.shape[0]
     generator = np.random.default_rng(5)
 
-    def leak(frame, target):
+    def fit(frame, target):
         coefficients, *_ = np.linalg.lstsq(frame, target, rcond=None)
-        return float(np.linalg.norm(target - frame @ coefficients) ** 2
-                     / np.linalg.norm(target) ** 2)
+        return coefficients, frame @ coefficients
 
-    for size in (6, 12, 24, rows):
-        for _ in range(3):
-            index = (generator.choice(rows, size=size, replace=False)
-                     if size < rows else np.arange(rows))
-            target = (generator.standard_normal(size)
-                      + 1j * generator.standard_normal(size))
-            reference = leak(images[index], target)
-            for name, frame in (("pencil", pencil), ("hodge", hodge)):
-                relative = abs(leak(frame[index], target) - reference) / max(reference, 1e-300)
-                assert relative < 1e-12, f"{name} leak differs by {relative:.3e} on {size} cells"
+    moved = 0.0
+    for _ in range(6):
+        target = generator.standard_normal(rows) + 1j * generator.standard_normal(rows)
+        contour_coefficients, contour_form = fit(images, target)
+        pencil_coefficients, pencil_form = fit(pencil, target)
+        # The FORM is one object: the fitted element of the harmonic space.
+        assert np.linalg.norm(contour_form - pencil_form) / np.linalg.norm(contour_form) < 1e-10
+        # Its COORDINATES are not, and the gap is not round-off.
+        def direction(vector):
+            return vector / np.linalg.norm(vector)
+        moved = max(moved, float(np.linalg.norm(
+            direction(contour_coefficients) - direction(pencil_coefficients))))
+    assert moved > 1e-6, (
+        "the two bands returned the same basis, not merely the same span; if that "
+        "is now guaranteed, wholeHarmonicResidualOn may read through either")
 
 
 @pytest.mark.parametrize("amplitude", [0.02, 0.10, 0.30])

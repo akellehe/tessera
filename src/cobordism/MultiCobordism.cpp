@@ -4464,6 +4464,14 @@ double MultiCobordism::wholeHarmonicResidualOn(
   try {
     assembled = PencilLayer::assemble({spacetime});
     if (assembled.dimension() < 1) return refuse("the complex has no edges");
+    // The band is read on a contour rather than as the null space of RSF
+    // Sec. 5 because `state` below is the coefficient vector IN THIS BAND'S
+    // BASIS, not a property of its span: a change of basis Z -> Z T sends
+    // state -> T^-1 state and moves the residual. `harmonicBand` returns the
+    // same subspace 20x faster (measured, #1058) but in its own basis, and
+    // swapping it here changed this reading from 0.9412 to 0.9272 on the same
+    // geometry. Which frame this reading is entitled to is an open question,
+    // not a performance one.
     band = assembled.op->band(1, PencilLayer::harmonicContour(assembled, 1));
   } catch (const std::runtime_error &error) {
     return refuse(error.what());

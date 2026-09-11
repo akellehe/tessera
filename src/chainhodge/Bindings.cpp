@@ -380,6 +380,16 @@ images and the exact properties of Prop. 5.1 measured on every instance.)doc")
            py::arg("tolerance") = 1e-10, "The measured metric regime of the pencil at degree k.")
       .def("resolvent", &CovariantChainHodge::resolvent, py::arg("k"), py::arg("zeta"), py::arg("c"),
            "(zeta I - h_k)^{-1} c = M^U (zeta M^U - A~^U)^{-1} c by one sparse bordered factorization.")
+      .def("harmonicChains", &CovariantChainHodge::harmonicChains, py::arg("k"),
+           py::arg("kappa") = 10.0, py::arg("force_sparse") = false,
+           "H_k = M_k^U ker S^U with S^U = [(d_{k+1}^{U^-1})^T; d_k^U M_k^U] (RSF Sec. 5): the "
+           "harmonic chains read as a null space, dense SVD below the crossover and sparse "
+           "rank-revealing QR at or above it.")
+      .def("harmonicBand", &CovariantChainHodge::harmonicBand, py::arg("k"), py::arg("kappa") = 10.0,
+           py::arg("isotropy_tolerance") = 1e-10, py::arg("force_sparse") = false,
+           "The lambda = 0 band from harmonicChains, carrying everything band carries. Under the "
+           "rank conditions (R1)-(R4) this is the same subspace the contour reading returns; a "
+           "nullity that differs between U and U^-1 is refused by name.")
       .def("band", &CovariantChainHodge::band, py::arg("k"), py::arg("contour"), py::arg("kappa") = 10.0,
            py::arg("isotropy_tolerance") = 1e-10,
            "The Riesz band of the contour: P, Phi, Phi^vee, Z, B_C, Phi~, J, Gamma, certificates.")
