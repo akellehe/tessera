@@ -79,15 +79,8 @@ def coincide(A, B):
     return max(sine_angle(A, B), sine_angle(B, A))
 
 
-@pytest.fixture(scope="module")
-def reading():
-    held = {}
-    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
-                             operator="xx", tau_a=TAU_A, tau_b=TAU_B,
-                             input_weight=100.0, regge=False, pin_boundary=True,
-                             readout="whole", tori=2, output_state="0.1+1.3j")
-    ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
-    node = held["node"]
+def read_three(node):
+    """The band and the two null spaces of one geometry."""
     assembled = PencilLayer.assemble([node.spacetime()])
     op = assembled.op
     contour = PencilLayer.harmonic_contour(assembled, 1)
@@ -102,6 +95,22 @@ def reading():
     return dict(node=node, assembled=assembled, op=op, band=band, aux=aux,
                 pencil_null=null_space(aux), hodge_null=null_space(stacked),
                 eigenvalues=np.asarray(op.spectrum(1).eigenvalues))
+
+
+@pytest.fixture(scope="module")
+def seeded():
+    held = {}
+    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
+                             operator="xx", tau_a=TAU_A, tau_b=TAU_B,
+                             input_weight=100.0, regge=False, pin_boundary=True,
+                             readout="whole", tori=2, output_state="0.1+1.3j")
+    ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
+    return held["node"]
+
+
+@pytest.fixture(scope="module")
+def reading(seeded):
+    return read_three(seeded)
 
 
 def test_the_harmonic_eigenvalue_is_zero_and_not_merely_small(reading):
@@ -149,3 +158,41 @@ def test_the_band_rank_is_the_first_betti_number(reading):
     """dim ker L_1 = b_1, the Hodge count, here over a complex chain metric."""
     node = reading["node"]
     assert reading["band"].rank() == node.betti(node.spacetime())[1]
+
+
+@pytest.mark.parametrize("amplitude", [0.02, 0.10, 0.30])
+def test_the_three_still_coincide_off_the_seeded_lengths(seeded, amplitude):
+    """The agreement is not a property of the seeded collar.
+
+    Every squared length is moved by an independent complex multiplicative
+    jitter, which is where a relaxed complex lives: a metric with no symmetry
+    left and no relation to the one the identification was first measured on.
+    The ranks and the agreement are unchanged, which is what a RANK argument
+    predicts and a positivity argument would not. The two kernels being
+    intersected have codimensions `rank d_1` and `rank d_2`, so their
+    intersection has dimension at least `b_1` for any non-degenerate metric;
+    only an accidental cancellation between the two terms of `A~` could
+    enlarge `ker A~` beyond it, and that is a codimension condition a generic
+    perturbation does not meet.
+    """
+    spacetime = seeded.spacetime()
+    edges = list(spacetime.getEdgeList().toVector())
+    original = [edge.getLength() for edge in edges]
+    generator = np.random.default_rng(3)
+    try:
+        for edge, length in zip(edges, original):
+            step = generator.standard_normal() + 1j * generator.standard_normal()
+            edge.setLength(length * (1.0 + amplitude * step))
+        jittered = read_three(seeded)
+        rank = jittered["band"].rank()
+        assert jittered["pencil_null"][0].shape[1] == rank
+        assert jittered["hodge_null"][0].shape[1] == rank
+        magnitudes = np.sort(np.abs(jittered["eigenvalues"]))
+        assert magnitudes[rank - 1] < 1e-12 * magnitudes[-1]
+        assert magnitudes[rank] > 1e-3 * magnitudes[-1]
+        images = np.asarray(jittered["band"].images)
+        assert coincide(images, jittered["pencil_null"][0]) < COINCIDENT
+        assert coincide(jittered["pencil_null"][0], jittered["hodge_null"][0]) < COINCIDENT
+    finally:
+        for edge, length in zip(edges, original):
+            edge.setLength(length)
