@@ -2897,6 +2897,27 @@ std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
 
 double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
                             double baseObjective) {
+  const auto priced = priceStep(nCandidateMoves, lookaheadDepth, baseObjective);
+  return commitStep(priced);
+}
+
+double MultiCobordism::commitStep(const PricedStep &priced) {
+  if (!priced.improves()) return 0.0;
+  spacetime_ = build(priced.snapshot);
+  // The first committed move is what starts linking the bulk, so block
+  // regions are settled from here on (#737).
+  bulkConnected_ = true;
+  // #776: the move is ALREADY committed — the delta is fixed and `spacetime_`
+  // already replaced — before the analysis overlay is offered the chance to
+  // look at it. The overlay is post-hoc by construction: there is no path from
+  // here back to the acceptance test.
+  noteAcceptedMove();
+  return priced.objectiveDelta;
+}
+
+MultiCobordism::PricedStep MultiCobordism::priceStep(int nCandidateMoves,
+                                                     int lookaheadDepth,
+                                                     double baseObjective) {
   // The candidate loop below constructs one `ReggeSolver` on the LIVE
   // spacetime per candidate (`deltaF`), and that constructor materializes the
   // facet lattice lazily — a mutation of the shared object. On a live complex
@@ -3074,19 +3095,13 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
       foundImprovingMove = true;
     }
   }
-  if (foundImprovingMove) {
-    spacetime_ = build(bestSnapshot);
-    // The first committed move is what starts linking the bulk, so block
-    // regions are settled from here on (#737).
-    bulkConnected_ = true;
-    // #776: the move is ALREADY committed — `bestObjectiveDelta` is fixed and
-    // `spacetime_` already replaced — before the analysis overlay is offered
-    // the chance to look at it. The overlay is post-hoc by construction: there
-    // is no path from here back to the acceptance test above.
-    noteAcceptedMove();
-    return bestObjectiveDelta;
-  }
-  return 0.0;
+  // PRICED, not committed. The caller decides whether this depth's best is the
+  // one to take -- which is the whole point of the split: a ladder that stops
+  // at the first depth to improve cannot compare two depths, because scoring
+  // the second would mean scoring it against a complex the first already
+  // changed.
+  if (!foundImprovingMove) return PricedStep{};
+  return PricedStep{bestObjectiveDelta, std::move(bestSnapshot), lookaheadDepth};
 }
 
 void MultiCobordism::preconeCells(int count, bool timelike, bool alternate) {
@@ -3217,11 +3232,12 @@ std::vector<int> MultiCobordism::depthSchedule(int maxLookahead,
 std::vector<double> MultiCobordism::runStage1(int maxSteps, int nCandidateMoves,
                                                  bool growBoundaries,
                                                  int maxLookahead,
-                                                 int combinatorialBreadth) {
+                                                 int combinatorialBreadth,
+                                                 bool bestOverBreadths) {
   std::vector<double> objectiveTrace = {objective()};
   for (int stepIndex = 0; stepIndex < maxSteps; ++stepIndex)
     if (!stage1Update(nCandidateMoves, growBoundaries, objectiveTrace,
-                      maxLookahead, combinatorialBreadth))
+                      maxLookahead, combinatorialBreadth, bestOverBreadths))
       break;
   return objectiveTrace;
 }
@@ -3229,7 +3245,8 @@ std::vector<double> MultiCobordism::runStage1(int maxSteps, int nCandidateMoves,
 bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
                                   std::vector<double> &objectiveTrace,
                                   int maxLookahead,
-                                  int combinatorialBreadth) {
+                                  int combinatorialBreadth,
+                                  bool bestOverBreadths) {
   // In target-conditioned modes the register is "carried" once summed r_U is
   // essentially zero. JointStationarity never consults this target diagnostic.
   constexpr double kRegisterCarriedTolerance = 1e-3;
@@ -3277,6 +3294,16 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
   // depth five).
   const double baseObjective =
       compositeSupportsLocalizedDelta() ? 0.0 : objectiveFor(spacetime_);
+  // ACROSS the ladder, two policies. The default takes the first depth that
+  // improves at all, which is cheap and right when the shallow depths are
+  // tried first. It is the wrong way round under a named breadth: with 400
+  // sampled five-move compositions against a move space in the hundreds, some
+  // composition nearly always improves a little, so the search commits a
+  // mediocre five-move sequence in preference to an excellent single move it
+  // never priced. `bestOverBreadths` prices every depth against the SAME base
+  // complex and commits the lowest delta found at any of them (#1037). WITHIN
+  // a depth the rule was always best-improver; this makes the ladder agree.
+  PricedStep best;
   for (const int lookaheadDepth :
        depthSchedule(maxLookahead, combinatorialBreadth)) {
     // A NON-POSITIVE `nCandidateMoves` is the exhaustive sentinel, and it
@@ -3289,23 +3316,35 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
         : lookaheadDepth == 1
             ? nCandidateMoves
             : std::max(nCandidateMoves, kDeepLookaheadCandidates);
-    double objectiveDelta = step(batchSize, lookaheadDepth, baseObjective);
+    PricedStep priced = priceStep(batchSize, lookaheadDepth, baseObjective);
     // FINAL CHECK (#625): the draws found nothing, so the step is about to
     // report that it cannot descend. That claim is about the whole move SET,
     // which a sample cannot support -- so price every available move before
     // making it, rather than calling a missed draw a local minimum.
     //
-    // Only here, and only at depth 1: pricing one move costs a complex
-    // rebuild, a validity check and two solver constructions, so paying for
-    // the whole set on every step would make a long run intractable. This is a
-    // rescue from an apparent dead end, not a second optimization pass.
-    if (lookaheadDepth == 1 && batchSize > 0 &&
-        objectiveDelta >= -convergenceTolerance_)
-      objectiveDelta = step(0, lookaheadDepth, baseObjective);
+    // Only at depth 1: pricing one move costs a complex rebuild, a validity
+    // check and two solver constructions, so paying for the whole set on every
+    // step would make a long run intractable. This is a rescue from an
+    // apparent dead end, not a second optimization pass. Under
+    // `bestOverBreadths` the dead end is only apparent once EVERY depth has
+    // been priced, so the check waits until after the loop.
+    if (!bestOverBreadths && lookaheadDepth == 1 && batchSize > 0 &&
+        !priced.improves())
+      priced = priceStep(0, lookaheadDepth, baseObjective);
+    if (priced.improves() &&
+        (!best.improves() || priced.objectiveDelta < best.objectiveDelta))
+      best = std::move(priced);
+    // First-improver: the first depth to find anything is the one taken.
+    if (!bestOverBreadths && best.improves()) break;
+  }
+  if (bestOverBreadths && !best.improves() && nCandidateMoves > 0)
+    best = priceStep(0, 1, baseObjective);
+  {
+    const double objectiveDelta = commitStep(best);
     if (objectiveDelta < -convergenceTolerance_) {
       // An F-lowering surgery sequence: progress.
       objectiveTrace.push_back(objectiveTrace.back() + objectiveDelta);
-      lastStage1LookaheadDepth_ = lookaheadDepth;
+      lastStage1LookaheadDepth_ = best.lookaheadDepth;
       return true;
     }
   }
@@ -3402,7 +3441,8 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
                                         double alpha0, double tolerance,
                                         int maxLookahead,
                                         int relaxBudgetPerMove,
-                                        int combinatorialBreadth) {
+                                        int combinatorialBreadth,
+                                        bool bestOverBreadths) {
   setReggeWeight(beta);
   std::vector<double> objectiveTrace = {objective()};
   double stepScale = alpha0;
@@ -3421,7 +3461,7 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
     // edge list each call, picking up whatever the move just created).
     const bool stage1WantsAnotherIteration = stage1Update(
         nCandidateMoves, growBoundaries, objectiveTrace, maxLookahead,
-        combinatorialBreadth);
+        combinatorialBreadth, bestOverBreadths);
     const bool moveCommitted = lastStage1LookaheadDepth_ > 0;
     // "Full" relaxation still needs a safety budget (as runStage2's maxIters):
     // near a slow descent tail the line search can accept a near-unbounded

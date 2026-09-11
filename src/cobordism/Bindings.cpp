@@ -2207,6 +2207,7 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("n_candidate_moves") = 12, py::arg("grow_boundaries") = false,
            py::arg("max_lookahead") = 1,
            py::arg("combinatorial_breadth") = 0,
+           py::arg("best_over_breadths") = false,
            py::call_guard<py::gil_scoped_release>(),
            "max_lookahead: when a batch of single moves finds no improvement, "
            "the search deepens iteratively -- 2-move sequences, then 3, up to "
@@ -2220,7 +2221,13 @@ assertion. Every pairing is the transpose.)doc")
            "no shorter one improves. 0 (the default) leaves the ascending "
            "max_lookahead schedule in place. With n_candidate_moves <= 0 the "
            "search at every breadth is exhaustive, which costs the move "
-           "space raised to the breadth."
+           "space raised to the breadth. "
+           "best_over_breadths: price EVERY depth in the schedule against "
+           "the same base complex and commit the lowest delta found at any "
+           "of them, instead of taking the first depth that improves at "
+           "all. Within a depth the rule was always best-improver; this "
+           "makes the ladder agree. Costs about one rung per depth rather "
+           "than stopping early. Off by default."
            )
       .def("run_stage2", &MultiCobordism::runStage2, py::arg("beta") = 1.0,
            py::arg("max_iters") = 200, py::arg("alpha0") = 0.05,
@@ -2240,6 +2247,7 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("max_lookahead") = 1,
            py::arg("relax_budget_per_move") = 10,
            py::arg("combinatorial_breadth") = 0,
+           py::arg("best_over_breadths") = false,
            py::call_guard<py::gil_scoped_release>(),
            "The combined drive: each iteration takes ONE combinatorial stage-1 "
            "update (a best-dF move, deepening to max_lookahead-move sequences "
@@ -2270,7 +2278,13 @@ assertion. Every pairing is the transpose.)doc")
            "no shorter one improves. 0 (the default) leaves the ascending "
            "max_lookahead schedule in place. With n_candidate_moves <= 0 the "
            "search at every breadth is exhaustive, which costs the move "
-           "space raised to the breadth."
+           "space raised to the breadth. "
+           "best_over_breadths: price EVERY depth in the schedule against "
+           "the same base complex and commit the lowest delta found at any "
+           "of them, instead of taking the first depth that improves at "
+           "all. Within a depth the rule was always best-improver; this "
+           "makes the ladder agree. Costs about one rung per depth rather "
+           "than stopping early. Off by default."
            )
       .def_property_readonly("should_propose_dispositions",
                              &MultiCobordism::shouldProposeDispositions,

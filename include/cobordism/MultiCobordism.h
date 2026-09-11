@@ -1978,10 +1978,15 @@ class MultiCobordism {
   /// cannot ask: whether a pair (or a longer composition) improves the
   /// residual on a complex where every single move makes it worse. Zero (the
   /// default) leaves the ascending `maxLookahead` schedule in place.
+  /// `bestOverBreadths`: price EVERY depth in the schedule against the same
+  /// base complex and commit the lowest delta found at any of them, instead of
+  /// taking the first depth that improves at all. Within a depth the rule was
+  /// always best-improver; this makes the ladder agree (#1037). Off by default.
   std::vector<double> runStage1(int maxSteps = 200, int nCandidateMoves = 12,
                                 bool growBoundaries = false,
                                 int maxLookahead = 1,
-                                int combinatorialBreadth = 0);
+                                int combinatorialBreadth = 0,
+                                bool bestOverBreadths = false);
   /// Stage 2 (geometric): relax every full complex squared edge coordinate
   /// \f$z_e=\ell_e^2\f$ toward a stationary point/minimum of the selected scalar
   /// objective. Derivatives are taken with respect to \f$z\f$ and subtracted from
@@ -2031,7 +2036,8 @@ class MultiCobordism {
                           double beta = 1.0, double alpha0 = 0.05,
                           double tolerance = 10e-9, int maxLookahead = 1,
                           int relaxBudgetPerMove = 10,
-                          int combinatorialBreadth = 0);
+                          int combinatorialBreadth = 0,
+                          bool bestOverBreadths = false);
 
   /// One canonical solve action on THIS node, the unit a search policy (Proton's build
   /// restart loop, a greedy driver, or the RL agent) composes — so the solve is driven
@@ -2755,6 +2761,26 @@ class MultiCobordism {
   /// parallel; deeper searches stay serial, since each draw is made against the
   /// evolving candidate. Returns the committed ΔF, or 0.
   double step(int nCandidateMoves, int lookaheadDepth, double baseObjective);
+  /// One depth's best candidate, PRICED and not committed: its ΔF, the complex
+  /// it would leave, and the depth it came from. `improves()` is false when no
+  /// candidate at that depth lowered F.
+  ///
+  /// The split exists because a ladder that stops at the first depth to improve
+  /// cannot compare two depths — scoring the second would mean scoring it
+  /// against a complex the first had already changed. Pricing every depth
+  /// against the SAME base complex and committing once is the only way to ask
+  /// which depth carries the best move (#1037).
+  struct PricedStep {
+    double objectiveDelta{0.0};
+    Snapshot snapshot{};
+    int lookaheadDepth{0};
+    [[nodiscard]] bool improves() const noexcept { return lookaheadDepth > 0; }
+  };
+  [[nodiscard]] PricedStep priceStep(int nCandidateMoves, int lookaheadDepth,
+                                     double baseObjective);
+  /// Install a priced step as the node's complex and report its ΔF, or 0 when
+  /// it does not improve. The ONE place a stage-1 move is committed.
+  double commitStep(const PricedStep &priced);
   /// Every gated composition of `remainingMoves` combinatorial moves out of
   /// the complex `fromSnapshot` records, scored — as a whole, at the leaf
   /// only — by the same localized `deltaF` a single move is scored by.
@@ -2775,7 +2801,8 @@ class MultiCobordism {
   /// target-free `JointStationarity` stops after the stalled batch.
   bool stage1Update(int nCandidateMoves, bool growBoundaries,
                     std::vector<double> &objectiveTrace, int maxLookahead = 1,
-                    int combinatorialBreadth = 0);
+                    int combinatorialBreadth = 0,
+                    bool bestOverBreadths = false);
   /// One iteration of `runStage2`: assemble the selected objective's complex-z
   /// ascent direction, subtract it from z, and run the backtracking line search.
   /// Appends an accepted objective and adapts `stepScale`; otherwise restores the

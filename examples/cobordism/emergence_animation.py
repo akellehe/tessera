@@ -236,6 +236,23 @@ DECLARED_TORI = 2
 #: reading falls back to the two-body target, which is 4-dimensional and so
 #: only fits a four-torus host.
 DECLARED_OUTPUT_STATE = None
+#: Whether stage 1 prices every breadth before committing (`--best-over-breadths`).
+#:
+#: The ladder has always been best-improver WITHIN a breadth: every candidate at
+#: one depth is scored and the lowest delta wins. Across breadths it is
+#: first-improver -- the first depth that lowers the objective at all is the one
+#: taken, and the rest are never priced.
+#:
+#: That is right when the shallow depths come first and wrong under a named
+#: breadth. With a few hundred sampled five-move compositions against a move
+#: space in the hundreds, some composition nearly always improves a little, so
+#: the search commits a mediocre five-move sequence in preference to an
+#: excellent single move it never looked at.
+#:
+#: On means price every depth against the same base complex and commit the
+#: lowest delta found at any of them. It costs about one rung per depth instead
+#: of stopping early, which is the honest price of the comparison.
+DECLARED_BEST_OVER_BREADTHS = False
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -2582,7 +2599,8 @@ def drive(config, progress=False, on_frame=None, on_node=None):
             max_steps=config["stage1_iters"],
             n_candidate_moves=config["candidate_moves"],
             max_lookahead=config["surgical_depth"],
-            combinatorial_breadth=config["combinatorial_breadth"]))
+            combinatorial_breadth=config["combinatorial_breadth"],
+            best_over_breadths=config["best_over_breadths"]))
         list(node.run_stage2(max_iters=config["stage2_iters"],
                              tolerance=config["tolerance"]))
         frames.append(EmergenceFrame(node, node.spacetime(), step, config,
@@ -3942,6 +3960,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  tori=DECLARED_TORI,
                  output_state=DECLARED_OUTPUT_STATE,
                  layers=DECLARED_COLLAR_LAYERS,
+                 best_over_breadths=DECLARED_BEST_OVER_BREADTHS,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
                  tau_b=DECLARED_TAU_B, grid=DECLARED_GRID,
                  coupling=DECLARED_COUPLING, time=DECLARED_TIME,
@@ -4071,6 +4090,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "output_state": (None if output_state is None
                          else [float(complex(output_state).real),
                                float(complex(output_state).imag)]),
+        "best_over_breadths": bool(best_over_breadths),
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -4200,6 +4220,20 @@ def build_parser():
                           "so at --tori 2 it is 2-dimensional and this names "
                           "it; unset, --readout whole falls back to the "
                           "4-dimensional two-body target")
+    run.add_argument("--best-over-breadths",
+                     action=argparse.BooleanOptionalAction,
+                     dest="best_over_breadths",
+                     default=DECLARED_BEST_OVER_BREADTHS,
+                     help="price EVERY breadth in the schedule and commit the "
+                          "most improving move found at any of them, instead "
+                          "of taking the first breadth that improves at all. "
+                          "Stage 1 is already best-improver within a breadth; "
+                          "this makes it best-improver across them too. "
+                          "Without it a sampled deep search commits a mediocre "
+                          "long sequence in preference to an excellent single "
+                          "move it never priced. Costs about one rung per "
+                          "depth rather than stopping early (default %s)"
+                          % ("on" if DECLARED_BEST_OVER_BREADTHS else "off"))
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
                      help="ABSOLUTE objective tolerance (default %g). Stage "
                           "2 backs its line search off until a trial lowers "
@@ -4357,6 +4391,7 @@ def main(argv=None):
                           readout=args.readout,
                           tori=args.tori,
                           output_state=args.output_state,
+                          best_over_breadths=args.best_over_breadths,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,
