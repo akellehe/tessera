@@ -5863,7 +5863,8 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
 }
 
 MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
-    const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers) {
+    const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers,
+    const std::vector<std::uint64_t> &twist) {
   const std::string prefix = "MultiCobordism::seedJoinedCollars: ";
   if (surfaces.size() % 2 != 0 || surfaces.empty())
     throw std::invalid_argument(prefix + "an even, non-zero number of surfaces is required: each is collared with its partner");
@@ -5878,7 +5879,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
   // present one face set, and the pairs are checked through it below.
   std::vector<SurfaceSeed> collars;
   for (std::size_t pair = 0; pair < surfaces.size(); pair += 2)
-    collars.push_back(seedCollar(surfaces[pair], surfaces[pair + 1], layers));
+    collars.push_back(seedCollar(surfaces[pair], surfaces[pair + 1], layers, twist));
   const auto cellsOf = [](const Spacetime &spacetime) {
     std::vector<std::vector<std::uint64_t>> cells;
     for (const auto &topSimplex : spacetime.getTopSimplices()) {
@@ -5991,7 +5992,8 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
 
 MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spacetime> &surfaceA,
                                                        const std::shared_ptr<Spacetime> &surfaceB,
-                                                       int layers) {
+                                                       int layers,
+                                                       const std::vector<std::uint64_t> &twist) {
   if (!surfaceA || !surfaceB) throw std::invalid_argument("MultiCobordism::seedCollar: null surface");
   if (layers < 1) throw std::invalid_argument("MultiCobordism::seedCollar: layers must be at least one");
   if (surfaceA->getDimensions() != surfaceB->getDimensions())
@@ -6021,7 +6023,26 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
     return faces;
   };
   const auto indexA = indexOf(*surfaceA);
-  const auto indexB = indexOf(*surfaceB);
+  auto indexB = indexOf(*surfaceB);
+  // The TWIST: surface B's base indices relabelled before the identification,
+  // so that base index k of A meets base index twist[k] of B. Empty is the
+  // identity and the product collar. Whether the relabelling is a simplicial
+  // automorphism is settled by the face-set comparison below, which is the
+  // check this function already makes -- there is no separate gate.
+  if (!twist.empty()) {
+    if (twist.size() != indexB.size())
+      throw std::invalid_argument("MultiCobordism::seedCollar: the twist has " +
+                                  std::to_string(twist.size()) + " entries for " +
+                                  std::to_string(indexB.size()) + " vertices");
+    std::vector<bool> seen(twist.size(), false);
+    for (const std::uint64_t to : twist) {
+      if (to >= twist.size() || seen[to])
+        throw std::invalid_argument("MultiCobordism::seedCollar: the twist is not a permutation of the "
+                                    "surface's base indices");
+      seen[to] = true;
+    }
+    for (auto &[id, index] : indexB) index = twist[index];
+  }
   if (indexA.size() != indexB.size())
     throw std::invalid_argument("MultiCobordism::seedCollar: the surfaces differ in combinatorics: surface A has " +
                                 std::to_string(indexA.size()) + " vertices, surface B " +

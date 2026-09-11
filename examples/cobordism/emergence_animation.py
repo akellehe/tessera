@@ -227,6 +227,21 @@ DECLARED_READOUT = "transfer"
 #: Four needs three collar layers. A prism cell spans two adjacent layers, so
 #: the all-interior cell the join removes exists only with two interior layers.
 DECLARED_TORI = 2
+
+#: The mapping class that relabels the far surface before the collar
+#: identifies the two. "none" is the PRODUCT collar, whose two boundary tori
+#: are homologous, so its monodromy is the identity and it carries its input
+#: straight through -- measured immovable, ||M - I|| stays at 5e-15 under a
+#: 75% jitter of every squared length, because the monodromy is the induced
+#: map on H^1 and no metric touches it. "swap" exchanges the two cycles,
+#: giving M = [[0, 1], [1, 0]] and the propagator tau -> 1/tau.
+#:
+#: Only these two: a mapping class must be a SIMPLICIAL automorphism of the
+#: torus's triangulation to collar at all, and on this one a Dehn twist sends
+#: the diagonal to a step that is no edge (it is refused by name). The swap is
+#: orientation-reversing, so the twisted host is an I-bundle that is not a
+#: product.
+DECLARED_COLLAR_TWIST = "none"
 #: The state the whole complex's harmonic form is meant to be (`--output-state`),
 #: as a modulus tau: the target is psi(tau) = (1, tau)/|(1, tau)|.
 #:
@@ -1126,6 +1141,25 @@ def _torus_fiber(torus, ids):
     return fiber
 
 
+def _collar_twist(config, grid):
+    """The permutation of the far surface's base indices, or none.
+
+    A flat torus's base index is its vertex's rank in ascending id order,
+    which on the `grid x grid` lattice is `i * grid + j`. The swap is
+    `(i, j) -> (j, i)`, the only mapping class that is both a simplicial
+    automorphism of this triangulation and projectively non-trivial: the
+    identity and the negation act trivially on a modulus, and a Dehn twist is
+    not simplicial here.
+    """
+    name = str(config.get("collar_twist", DECLARED_COLLAR_TWIST))
+    if name == "none":
+        return []
+    if name != "swap":
+        raise ValueError("unknown --collar-twist %r; expected 'none' or 'swap'" % (name,))
+    n = int(grid)
+    return [(k % n) * n + (k // n) for k in range(n * n)]
+
+
 def _host_marking(torus, ids):
     """The torus's marking as cycles of directed host steps `(u, v)`.
 
@@ -1440,10 +1474,11 @@ def build_qubit_node(config):
         # spans two adjacent layers, so the all-interior cell the join removes
         # exists only with two interior layers.
         seed = MC.seed_joined_collars([torus.spacetime() for torus in tori],
-                                      max(3, int(config["layers"])))
+                                      max(3, int(config["layers"])),
+                                      _collar_twist(config, grid))
     else:
         seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
-                              config["layers"])
+                              config["layers"], _collar_twist(config, grid))
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
     node = MC(seed.host, [[1.0 + 0j]] * len(tori), [],
@@ -3940,6 +3975,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
                  readout=DECLARED_READOUT,
                  tori=DECLARED_TORI,
+                 collar_twist=DECLARED_COLLAR_TWIST,
                  output_state=DECLARED_OUTPUT_STATE,
                  layers=DECLARED_COLLAR_LAYERS,
                  inputs=DECLARED_INPUTS, tau_a=DECLARED_TAU_A,
@@ -4068,6 +4104,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "combinatorial_breadth": int(combinatorial_breadth),
         "readout": readout,
         "tori": int(tori),
+        "collar_twist": str(collar_twist),
         "output_state": (None if output_state is None
                          else [float(complex(output_state).real),
                                float(complex(output_state).imag)]),
@@ -4178,6 +4215,28 @@ def build_parser():
                           "through the blocks' markings. This is part of the "
                           "OBJECTIVE, not the reporting: the residual is a "
                           "term in r_U (default %s)" % DECLARED_READOUT)
+    run.add_argument("--collar-twist", dest="collar_twist",
+                     choices=("none", "swap"), default=DECLARED_COLLAR_TWIST,
+                     help="the mapping class that relabels the far surface "
+                          "before the collar identifies the two. 'none' is the "
+                          "PRODUCT collar: its two boundary tori are "
+                          "homologous, so its monodromy M = P_B P_A^-1 is the "
+                          "identity and it carries its input straight through. "
+                          "That is topological, not a matter of tuning -- M is "
+                          "the induced map on H^1, and it stays at ||M - I|| = "
+                          "5e-15 under a 75%% jitter of every squared length, "
+                          "so NO relaxation reaches a different propagator. "
+                          "'swap' exchanges the two cycles, giving "
+                          "M = [[0, 1], [1, 0]], det -1, the propagator "
+                          "tau -> 1/tau, and an I-bundle that is not a "
+                          "product. Only these two are offered because a "
+                          "mapping class must be a simplicial automorphism of "
+                          "the triangulation to collar at all, and a Dehn "
+                          "twist is not one here. Note the reach: the "
+                          "whole-complex harmonic reading realises GL(2, Z) "
+                          "and no more, since M is an integer matrix; a "
+                          "continuous gate lives in --readout transfer, which "
+                          "the same jitter moves by two orders of magnitude.")
     run.add_argument("--tori", type=int, choices=(2, 4),
                      default=DECLARED_TORI,
                      help="how many tori bound the cobordism. Two is one per "
@@ -4357,6 +4416,7 @@ def main(argv=None):
                           readout=args.readout,
                           tori=args.tori,
                           output_state=args.output_state,
+                          collar_twist=args.collar_twist,
                           inputs=args.inputs, tau_a=args.tau_a,
                           tau_b=args.tau_b, grid=args.grid,
                           coupling=args.coupling, time=args.time,

@@ -1324,10 +1324,32 @@ class MultiCobordism {
   ///   dimension or combinatorics, fewer than three layers, or a join that is
   ///   not a manifold-with-boundary.
   [[nodiscard]] static SurfaceSeed seedJoinedCollars(
-      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers = 3);
+      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers = 3,
+      const std::vector<std::uint64_t> &twist = {});
+  /// \p twist relabels surface B's base indices before the two surfaces are
+  /// identified: `twist[k]` is the base index of B that meets base index
+  /// \p k of A. Empty is the identity, which is the PRODUCT collar, whose two
+  /// boundary surfaces are homologous and whose monodromy is therefore the
+  /// identity — a cobordism that carries its input straight through, and no
+  /// metric reaches anything else (measured: \f$\|M-I\|\f$ stays at 5e-15
+  /// under a 75% jitter of every squared length).
+  ///
+  /// A twist makes it an I-bundle that is not a product, and the monodromy
+  /// becomes the twist's class. It must be a SIMPLICIAL automorphism of the
+  /// shared triangulation — the permuted face set must be the same face set —
+  /// which is refused by name otherwise. On the standard grid torus that
+  /// admits the swap \f$[[0,1],[1,0]]\f$ (orientation-reversing, propagator
+  /// \f$\tau\mapsto1/\tau\f$) but NOT a Dehn twist, which sends the
+  /// diagonal to a step that is no edge.
+  ///
+  /// The monodromy is an integer matrix either way: the whole-complex
+  /// harmonic reading realises \f$GL(2,\mathbb{Z})\f$ and no more. A
+  /// continuous gate lives in the transfer, which the same jitter moves by
+  /// two orders of magnitude.
   [[nodiscard]] static SurfaceSeed seedCollar(const std::shared_ptr<Spacetime> &surfaceA,
                                               const std::shared_ptr<Spacetime> &surfaceB,
-                                              int layers = 1);
+                                              int layers = 1,
+                                              const std::vector<std::uint64_t> &twist = {});
 
   /// A block's own surface (qubit cobordism spec D2, the enumeration half):
   /// its \f$ (d-1) \f$-faces and its edges inside its vertex set, as sorted
