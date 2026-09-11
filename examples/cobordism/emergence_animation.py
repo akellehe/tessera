@@ -1707,7 +1707,12 @@ class EmergenceFrame:
     @staticmethod
     def _read_objective(node):
         terms = node.objective_terms()
-        block = {"total": _finite(node.objective())}
+        # `objective_of` is static over the terms record, so the total is a
+        # fold of the terms the frame already holds. `node.objective()` would
+        # be the same double, reached by computing those terms a second time
+        # and discarding all but the scalar -- on a four-torus complex that is
+        # a second whole-complex band read, and the band is the whole cost.
+        block = {"total": _finite(MC.objective_of(terms))}
         for name in MC.objective_term_names():
             block[name] = _finite(getattr(terms, name, None))
         # Which DEGREE the Hodge share came from, not only the total. The
