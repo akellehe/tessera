@@ -1913,6 +1913,12 @@ assertion. Every pairing is the transpose.)doc")
            "residual is a term in r_U, so it prices stage-1 moves and drives "
            "stage-2 descent. Empty is refused.")
       .def_property_readonly("readout_modes", &MultiCobordism::readoutModes)
+      .def_property_readonly("readouts_have_analytic_gradient",
+                             &MultiCobordism::readoutsHaveAnalyticGradient,
+                             "Whether every SELECTED reading has an analytic gradient, so the stage-2 "
+                             "ascent is the direction of the objective actually being minimised. Only "
+                             "the transfer has one; the others fall back to the numerical ascent of "
+                             "r_U, which is correct for any objective.")
       .def("whole_harmonic_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
              return self.wholeHarmonicResidualOn(

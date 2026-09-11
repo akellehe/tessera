@@ -3619,10 +3619,12 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         objectiveSpec_->numericalRegisterResidualWeight(
             directionContext.scalar);
     if (numericalResidualWeight != 0.0) {
-      if (useFiberResiduals_) {
+      if (useFiberResiduals_ && readoutsHaveAnalyticGradient()) {
         // #947: every fiber-mode term of rU has an analytic gradient through
         // the band's Riesz projector and the frame transfer; the numerical
-        // path is not used for them.
+        // path is not used for them. Only while every SELECTED reading is the
+        // transfer, though (#1055) -- the others have no analytic gradient,
+        // and this one is not theirs.
         const ResidualGradient analytic = fiberModeAscent();
         descentDirection += numericalResidualWeight * analytic.lengths;
         if (fiberPhaseDescent_ && analytic.phases.size() == static_cast<Eigen::Index>(edgeCount))
@@ -5417,6 +5419,16 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     }
   }
   return gradient;
+}
+
+bool MultiCobordism::readoutsHaveAnalyticGradient() const noexcept {
+  // Only the transfer has one. A reading without it falls back to the
+  // numerical ascent, which is correct for any objective, rather than
+  // borrowing the transfer's -- which would be the gradient of a function
+  // this run is not minimising.
+  for (const ReadoutMode mode : readoutModes_)
+    if (mode != ReadoutMode::Transfer) return false;
+  return true;
 }
 
 MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {

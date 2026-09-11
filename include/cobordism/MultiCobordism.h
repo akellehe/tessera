@@ -1901,6 +1901,19 @@ class MultiCobordism {
   /// to the parent's edges by vertex pair; a surface's edges ARE host edges),
   /// and the two-body target.
   [[nodiscard]] ResidualGradient fiberModeAscent() const;
+  /// Whether every SELECTED reading has an analytic gradient, so
+  /// `fiberModeAscent` is the direction of the objective actually being
+  /// minimised (#1055).
+  ///
+  /// `fiberModeAscent`'s two-body term is the gradient through the frame
+  /// TRANSFER. The bulk, whole-harmonic and paired-frame readings have no
+  /// analytic gradient yet, so under those the ascent belongs to a different
+  /// function than the objective. The line search still evaluates the true
+  /// objective and accepts only real decreases, so the consequence is wasted
+  /// trials rather than a wrong answer -- but a direction that is not the
+  /// objective's is worth naming, and the numerical ascent is correct for
+  /// any of them.
+  [[nodiscard]] bool readoutsHaveAnalyticGradient() const noexcept;
 
   /// Attach the fiber form of an input block's target (a prior cobordism's
   /// output fiber piped downstream). @throws std::out_of_range on the index.
