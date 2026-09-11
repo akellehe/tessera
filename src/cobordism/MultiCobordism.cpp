@@ -4516,13 +4516,39 @@ double MultiCobordism::wholeHarmonicResidualOn(
   // The marking's OWN coefficients, which are the block's input state (1, tau)
   // -- `readInputState` reads the same field. `block.target` is the register
   // target and is a different quantity.
+  //
+  // A CONJUGATE PAIR carries ONE state, so it is imposed ONCE. A torus and
+  // its orientation reversal have the same period block on the whole's zero
+  // mode -- measured, `||B - T A|| / ||B||` of 1.4e-15 with T the identity --
+  // so they are one constraint. Imposing (1, tau) on one and (1, -conj tau)
+  // on the other asks that constraint to take two values, which is the
+  // equation `psi = Z conj(psi)`, solved only by `Re tau = 0`. The fit
+  // returned the nearest such state and the real part of every input was
+  // annihilated. Keeping one torus a pair carries both states exactly
+  // (7.0e-16); the partner's modulus is determined by its own, so nothing is
+  // discarded by leaving it out.
+  //
+  // Which blocks are partners is DECLARED, never detected. The engine's
+  // signal for conjugate tori is the target's two-state vector, the same one
+  // `operatorResidualOn` reads, and the pairing is block order, two to a
+  // side. Detecting it by measuring equal period blocks would be wrong: at
+  // two tori the blocks are equally identical (1.1e-15) and carry two
+  // DIFFERENT states, and collapsing those would throw an input away.
+  const bool conjugateTori = target.twoStateVector.size() != 0;
+  std::size_t attachedIndex = 0;
   for (const auto &block : inputBlocks_) {
     if (!block.marking) continue;
+    const bool isPartner = conjugateTori && (attachedIndex % 2 == 1);
+    ++attachedIndex;
+    if (isPartner) continue;
     markings.push_back(&*block.marking);
     for (const auto &value : block.marking->coefficients)
       coefficients.push_back(value);
   }
   if (markings.empty()) return refuse("no input block carries a marking");
+  if (conjugateTori && attachedIndex % 2 != 0)
+    return refuse("the host declares conjugate tori but carries " + std::to_string(attachedIndex) +
+                  " marked blocks, which do not pair");
   Eigen::Index cycleCount = 0;
   for (const auto *marking : markings)
     cycleCount += static_cast<Eigen::Index>(marking->rank());
