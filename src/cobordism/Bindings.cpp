@@ -1919,6 +1919,16 @@ assertion. Every pairing is the transpose.)doc")
                              "ascent is the direction of the objective actually being minimised. Only "
                              "the transfer has one; the others fall back to the numerical ascent of "
                              "r_U, which is correct for any objective.")
+      .def("whole_harmonic_residual_gradient",
+           [](const MultiCobordism &self, const Eigen::MatrixXcd &chi) {
+             const auto g = self.wholeHarmonicResidualGradientOn(
+                 self.spacetime(), MultiCobordism::TwoBodyTarget{chi, true, Eigen::MatrixXcd()});
+             return g.lengths;
+           },
+           py::arg("chi"), py::call_guard<py::gil_scoped_release>(),
+           "The analytic gradient of whole_harmonic_residual with respect to each edge's squared "
+           "length, in the live complex's edge order. Zero where the reading refuses, and zero "
+           "where the marked cycles do not pin the harmonic form.")
       .def("whole_harmonic_residual",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi, bool choiDecomposed) {
              return self.wholeHarmonicResidualOn(
