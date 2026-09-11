@@ -1976,6 +1976,7 @@ assertion. Every pairing is the transpose.)doc")
            "vertex id ranges, and no d-cell -- the bulk is drawn afterwards by gated bridges.")
       .def_static("seed_joined_collars", &MultiCobordism::seedJoinedCollars,
                   py::arg("surfaces"), py::arg("layers") = 3,
+                  py::arg("twist") = std::vector<std::uint64_t>{},
                   "Two collars joined along a removed tetrahedron: FOUR boundary surfaces on one "
                   "connected manifold. Gluing along a sphere is a connected sum, which adds no first "
                   "homology, so b_1 = 2 + 2 = 4 with nothing dying on the boundary -- the dimension a "
@@ -1983,7 +1984,7 @@ assertion. Every pairing is the transpose.)doc")
                   "be at least three: a prism cell spans two adjacent layers, so an all-interior cell "
                   "exists only with two interior layers.")
       .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
-           py::arg("layers") = 1,
+           py::arg("layers") = 1, py::arg("twist") = std::vector<std::uint64_t>{},
            "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics (spec S3): "
            "T^2 x I over their shared triangulation (Spacetime.prismCells, `layers` product layers), "
            "layer 0 = surface A, last layer = surface B, the surfaces' lengths verbatim, the auto-wired "
