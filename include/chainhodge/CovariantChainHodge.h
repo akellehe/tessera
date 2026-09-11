@@ -346,6 +346,54 @@ class CovariantChainHodge {
   [[nodiscard]] Band band(int k, const Contour &contour, double kappa = 10.0,
                           double isotropyTolerance = 1e-10) const;
 
+  /// # The harmonic band without a contour
+  ///
+  /// The \f$ \lambda = 0 \f$ band of the pencil, read as the null space the
+  /// specification prescribes rather than as a contour integral around it.
+  ///
+  /// The specification (RSF §5, Prop. 2) states both the identification and
+  /// the computational path: under the rank conditions (R1)–(R4)
+  /// \f$ \ker L_1 = H_1 \f$ with no Jordan block at zero and the
+  /// \f$ \lambda = 0 \f$ Riesz projector IS the projector onto \f$ H_1 \f$;
+  /// and \f$ H_k = M_k^U \ker S^U \f$ with the sparse stacked matrix
+  /// \f[
+  ///   S^U = \begin{pmatrix} (\partial_{k+1}^{U^{-1}})^T \\ \partial_k^U M_k^U \end{pmatrix},
+  /// \f]
+  /// only \f$ (M_0^U)^{-1} \f$ applied, by sparse factorization. This is the
+  /// dressed form of `ChainHodge::harmonicChains`, which reads the same null
+  /// space for the undressed operator.
+  ///
+  /// WHY it is not the same work as `band`: a contour reading factorizes the
+  /// bordered system once per node and applies it to the whole identity, for
+  /// \f$ U \f$ and again for \f$ U^{-1} \f$, then takes the SVD of an
+  /// \f$ n\times n \f$ projector. That is the general machinery for a band
+  /// of a non-normal pencil ANYWHERE in the plane. The harmonic band is not
+  /// anywhere: it is at zero, where the invariant subspace is a kernel.
+  ///
+  /// The conditions are not free. (R1)–(R4) hold automatically only for
+  /// Euclidean data; for complex data they fail on a complex-codimension-one
+  /// set, and off that set the two readings part company. The certificate
+  /// carries the numerical rank of \f$ S^U \f$, the tolerance that decided
+  /// it, and the singular gap \f$ \varsigma_r/\varsigma_{r+1} \f$, so the
+  /// margin is reported rather than assumed. A nullity that differs between
+  /// \f$ U \f$ and \f$ U^{-1} \f$ is refused by name, exactly as `band`
+  /// refuses a dual band of a different rank on the same contour.
+  ///
+  /// \p forceSparse takes the sparse rank-revealing QR below the crossover
+  /// too (the gap goes unmeasured there, as in `ChainHodge::harmonicChains`).
+  [[nodiscard]] HarmonicRead harmonicChains(int k, double kappa = 10.0,
+                                            bool forceSparse = false) const;
+  /// The \f$ \lambda = 0 \f$ band from `harmonicChains`, carrying everything
+  /// `band` carries: \f$ \Phi \f$ on chains, \f$ \Phi^\vee \f$ from the
+  /// dual connection's own null space, \f$ Z = G_k^U\Phi \f$ (the kernel
+  /// vectors themselves), \f$ B_C \f$, the left frame under the same
+  /// isotropy refusal, \f$ J \f$, \f$ \Gamma \f$, and the certificates.
+  /// The contour on the returned band is empty: the circle has degenerated to
+  /// the origin, and `nodeCount` is zero to say so.
+  [[nodiscard]] Band harmonicBand(int k, double kappa = 10.0,
+                                  double isotropyTolerance = 1e-10,
+                                  bool forceSparse = false) const;
+
   /// The canonical left frame \f$ \tilde\Phi = G_k^{U^{-1}}\Phi^\vee B_C^{-T} \f$ of
   /// a band, recomputed from its dual frame and pairing with the dual
   /// instance's metric (`dual()` of the instance that produced the band).
@@ -400,6 +448,17 @@ class CovariantChainHodge {
     BandCertificate certificate;
   };
   [[nodiscard]] ProjectorRead projectorOnContour(int k, const Contour &contour, double kappa) const;
+  /// \f$ S^U = [(\partial_{k+1}^{U^{-1}})^T;\ \partial_k^U M_k^U] \f$, the
+  /// dressed stacked matrix of RSF §5 whose kernel is \f$ G_k^U H_k \f$.
+  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
+  /// Everything a band carries beyond its two frames: \f$ B_C \f$, the
+  /// isotropy verdict, the left frame, \f$ J \f$, \f$ \Gamma \f$ and the
+  /// residual certificates. Shared by `band` and `harmonicBand` so the two
+  /// readings cannot drift apart in what they report. \p spectralScale is the
+  /// scale the residuals are taken relative to (a contour's largest node
+  /// modulus; zero for the harmonic band, whose contour is the origin).
+  void completeBand(Band &band, const CovariantChainHodge &dualInstance,
+                    double spectralScale, double isotropyTolerance) const;
   [[nodiscard]] const DerivativeWorkspace &derivativeWorkspace(int k) const;
   [[nodiscard]] Eigen::MatrixXcd assembleDerivative(
       int k, const SparseMatrix *dMkm1, const SparseMatrix *dMk, const SparseMatrix *dMkp1,

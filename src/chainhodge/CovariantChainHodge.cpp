@@ -15,6 +15,7 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/SVD>
 #include <Eigen/SparseLU>
+#include <Eigen/SparseQR>
 
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
@@ -947,6 +948,18 @@ Band CovariantChainHodge::band(int k, const Contour &contour, double kappa, doub
                              ") on the same contour");
   band.dualFrame = left.frame;
   band.images = applyG(k, band.frame);                       // Z = G^U Phi
+  // The contour's own scale: the largest node modulus, so that a zero band
+  // (J = 0) is measured against something rather than against itself.
+  double rho = 0.0;
+  for (const auto &zeta : contour.nodes) rho = std::max(rho, std::abs(zeta));
+  completeBand(band, dualInstance, rho, isotropyTolerance);
+  return band;
+}
+
+void CovariantChainHodge::completeBand(Band &band, const CovariantChainHodge &dualInstance,
+                                       double spectralScale, double isotropyTolerance) const {
+  const int k = band.degree;
+  const int r = static_cast<int>(band.frame.cols());
   band.pairing = band.dualFrame.transpose() * band.images;   // B_C = (Phi^vee)^T G^U Phi
   if (r > 0) {
     Eigen::JacobiSVD<Eigen::MatrixXcd> bsvd(band.pairing);
@@ -976,20 +989,143 @@ Band CovariantChainHodge::band(int k, const Contour &contour, double kappa, doub
       band.covariance = band.frame * band.leftFrame.transpose();  // Gamma = Phi Phi~^T
       // Residuals relative to the band's own scale, max(||h Phi||, rho ||Phi||)
       // with rho the contour's radius scale: a zero band (J = 0) is not 0/0.
-      double rho = 0.0;
-      for (const auto &zeta : contour.nodes) rho = std::max(rho, std::abs(zeta));
-      const double scaleR = std::max(hPhi.norm(), rho * band.frame.norm());
+      const double scaleR = std::max(hPhi.norm(), spectralScale * band.frame.norm());
       band.certificate.rightResidual = scaleR > 0.0 ? (hPhi - band.frame * band.reduced).norm() / scaleR
                                                     : (hPhi - band.frame * band.reduced).norm();
       // Phi~^T h = (h^T Phi~)^T with h(U)^T = G^{U^-1} h(U^{-1}) (G^{U^-1})^{-1} (Prop. 5.1 ii).
       const Eigen::MatrixXcd hT_left =
           dualInstance.applyG(k, dualInstance.applyH(k, dualInstance.applyMinv(k, band.leftFrame)));
       const Eigen::MatrixXcd leftH = hT_left.transpose();  // Phi~^T h
-      const double scaleL = std::max(leftH.norm(), rho * band.leftFrame.norm());
+      const double scaleL = std::max(leftH.norm(), spectralScale * band.leftFrame.norm());
       band.certificate.leftResidual = scaleL > 0.0 ? (leftH - band.reduced * band.leftFrame.transpose()).norm() / scaleL
                                                    : (leftH - band.reduced * band.leftFrame.transpose()).norm();
     }
   }
+}
+
+SparseMatrix CovariantChainHodge::stackedMatrix(int k) const {
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::stackedMatrix: the stacked matrix of RSF Sec. 5 is "
+                           "the Whitney preset's");
+  const int d = dimension();
+  const int n = base_->size(k);
+  // S^U = [ (d_{k+1}^{U^-1})^T ; d_k^U M_k^U ]: the dressed form of
+  // ChainHodge::stackedMatrix, whose kernel is G_k^U H_k.
+  SparseMatrix top, bottom;
+  if (k < d) top = SparseMatrix(twistedDual_[static_cast<std::size_t>(k) + 1].transpose());
+  if (k >= 1)
+    bottom = SparseMatrix(twisted_[static_cast<std::size_t>(k)] * dressed_[static_cast<std::size_t>(k)]);
+  const int rows = static_cast<int>(top.rows() + bottom.rows());
+  std::vector<Eigen::Triplet<Complex>> trip;
+  trip.reserve(static_cast<std::size_t>(top.nonZeros() + bottom.nonZeros()));
+  auto scatter = [&](const SparseMatrix &A, int r0) {
+    for (int col = 0; col < A.outerSize(); ++col)
+      for (SparseMatrix::InnerIterator it(A, col); it; ++it)
+        trip.emplace_back(r0 + static_cast<int>(it.row()), static_cast<int>(it.col()), it.value());
+  };
+  scatter(top, 0);
+  scatter(bottom, static_cast<int>(top.rows()));
+  SparseMatrix S(rows, n);
+  S.setFromTriplets(trip.begin(), trip.end());
+  S.makeCompressed();
+  return S;
+}
+
+HarmonicRead CovariantChainHodge::harmonicChains(int k, double kappa, bool forceSparse) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::harmonicChains: H_k = M_k^U ker S^U is the Whitney "
+                           "preset's");
+  const int n = base_->size(k);
+  HarmonicRead read;
+  read.degree = k;
+  const bool dense = !forceSparse && n < base_->crossoverDimension();
+  read.dense = dense;
+  const SparseMatrix S = stackedMatrix(k);
+  Eigen::MatrixXcd kernel;
+  if (S.rows() == 0) {
+    kernel = Eigen::MatrixXcd::Identity(n, n);
+    read.rank = 0;
+    read.tolerance = 0.0;
+    read.gap = std::numeric_limits<double>::infinity();
+  } else if (dense) {
+    // The same tolerance policy as ChainHodge::harmonicChains, on the dressed
+    // matrix: kappa * max(m, n) * eps * sigma_max.
+    const Eigen::MatrixXcd Sd(S);
+    Eigen::JacobiSVD<Eigen::MatrixXcd> svd(Sd, Eigen::ComputeFullV);
+    const Eigen::VectorXd sv = svd.singularValues();
+    const double tol = kappa * static_cast<double>(std::max(Sd.rows(), Sd.cols()))
+                       * std::numeric_limits<double>::epsilon() * sv(0);
+    int r = 0;
+    for (int i = 0; i < sv.size(); ++i)
+      if (sv(i) > tol) ++r;
+    read.rank = r;
+    read.tolerance = tol;
+    kernel = svd.matrixV().rightCols(n - r);
+    read.gap = (r < sv.size() && sv(r) > 0.0 && r >= 1)
+                   ? sv(r - 1) / sv(r)
+                   : std::numeric_limits<double>::infinity();
+  } else {
+    SparseMatrix ST = SparseMatrix(S.adjoint());  // ker S = range(S^H)^perp
+    ST.makeCompressed();
+    const Eigen::MatrixXcd Sd(S);
+    double colNorm = 0.0;
+    for (int c = 0; c < Sd.cols(); ++c) colNorm = std::max(colNorm, Sd.col(c).norm());
+    const double tol = kappa * static_cast<double>(std::max(S.rows(), S.cols()))
+                       * std::numeric_limits<double>::epsilon() * colNorm;
+    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
+    qr.setPivotThreshold(tol);
+    qr.compute(ST);
+    if (qr.info() != Eigen::Success)
+      throw std::runtime_error("CovariantChainHodge::harmonicChains: sparse QR of S^U failed");
+    const int r = static_cast<int>(qr.rank());
+    read.rank = r;
+    read.tolerance = tol;
+    read.gap = std::numeric_limits<double>::quiet_NaN();  // the sparse path measures none
+    const Eigen::MatrixXcd Q = Eigen::MatrixXcd(qr.matrixQ());
+    kernel = Q.rightCols(n - r);
+  }
+  read.nullity = static_cast<int>(kernel.cols());
+  // For the Whitney preset the kernel vectors ARE the geometric images: the
+  // chains are H_k = M_k^U ker S^U, and G_k^U H_k = ker S^U back again.
+  read.images = kernel;
+  read.chains = applyMinv(k, kernel);
+  return read;
+}
+
+Band CovariantChainHodge::harmonicBand(int k, double kappa, double isotropyTolerance,
+                                       bool forceSparse) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::harmonicBand: the harmonic band of the pencil is the "
+                           "Whitney preset's");
+  const HarmonicRead right = harmonicChains(k, kappa, forceSparse);
+  const CovariantChainHodge dualInstance = dual();
+  const HarmonicRead left = dualInstance.harmonicChains(k, kappa, forceSparse);
+  if (left.nullity != right.nullity)
+    throw std::runtime_error("CovariantChainHodge::harmonicBand: the dual connection's harmonic space has "
+                             "a different dimension (" + std::to_string(left.nullity) + " vs " +
+                             std::to_string(right.nullity) +
+                             "); the rank conditions (R1)-(R4) of RSF Sec. 5 do not hold here, and the "
+                             "lambda = 0 Riesz projector is not the projector onto H_k");
+  Band band;
+  band.degree = k;
+  // The contour has degenerated to the origin: there is none, and a zero node
+  // count says so rather than a plausible-looking circle.
+  band.contour.description = "harmonic null space of S^U (no contour)";
+  band.frame = right.chains;
+  band.dualFrame = left.chains;
+  band.images = right.images;
+  band.certificate.contour = band.contour.description;
+  band.certificate.nodeCount = 0;
+  band.certificate.rank = right.nullity;
+  band.certificate.rankTolerance = right.tolerance;
+  band.certificate.singularGap = right.gap;
+  // The projector is never formed: idempotency and the resolvent maximum are
+  // certificates OF a contour quadrature and have no meaning without one.
+  band.certificate.idempotency = std::numeric_limits<double>::quiet_NaN();
+  band.certificate.resolventMax = std::numeric_limits<double>::quiet_NaN();
+  completeBand(band, dualInstance, 0.0, isotropyTolerance);
   return band;
 }
 
