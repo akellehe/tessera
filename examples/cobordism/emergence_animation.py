@@ -5094,11 +5094,6 @@ def main(argv=None):
                                % (os.fspath(args.geometry), geometry_error))
         raise
     frames = result.frames
-    # Geometry is the only irreplaceable output. Write it before derivative
-    # records so a JSON serialization failure cannot suppress the snapshot.
-    if args.geometry and "node" in driven:
-        _write_geometry(args.geometry, driven["node"], result.inputs,
-                        args.quiet, source)
     if not args.quiet and result.terminator == Terminator.TOLERANCE:
         sys.stdout.write(
             "exited on a STALL, not on a target: %d consecutive engine unit%s "
@@ -5108,6 +5103,11 @@ def main(argv=None):
             % (result.stalls, "" if result.stalls == 1 else "s",
                config["tolerance"], frames[-1].step, config["steps"],
                _format_objective_total(frames[-1])))
+    # Geometry is the only irreplaceable output. Write it before derivative
+    # records so a JSON serialization failure cannot suppress the snapshot.
+    if args.geometry and "node" in driven:
+        _write_geometry(args.geometry, driven["node"], result.inputs,
+                        args.quiet, source)
     if args.json:
         document = {"config": config,
                     "source": source,

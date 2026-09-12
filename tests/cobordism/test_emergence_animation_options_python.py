@@ -175,8 +175,12 @@ def test_run_outputs_share_one_source_snapshot(monkeypatch, tmp_path):
     assert geometries[0][-1] is snapshots[0]
 
 
-def test_source_is_captured_before_drive_and_reused_on_failure(monkeypatch,
-                                                               tmp_path):
+@pytest.mark.parametrize(("driver_name", "error_type"), [
+    ("drive", RuntimeError),
+    ("drive_live", KeyboardInterrupt),
+])
+def test_source_is_captured_before_drive_and_reused_on_failure(
+        monkeypatch, tmp_path, driver_name, error_type):
     events = []
     snapshot = {"head": "start", "branch": "test", "dirty": False}
 
@@ -185,22 +189,25 @@ def test_source_is_captured_before_drive_and_reused_on_failure(monkeypatch,
         return snapshot
 
     def failed_drive(config, progress=False, on_setup=None, **_kwargs):
-        events.append("drive")
+        events.append(driver_name)
         on_setup("node", "inputs")
-        raise RuntimeError("engine failed")
+        raise error_type("engine failed")
 
     geometries = []
     monkeypatch.setattr(ea, "source_commit", fake_source)
-    monkeypatch.setattr(ea, "drive", failed_drive)
+    monkeypatch.setattr(ea, driver_name, failed_drive)
     monkeypatch.setattr(
         ea, "_write_geometry",
         lambda path, node, inputs, quiet, source=None:
         geometries.append((path, node, inputs, quiet, source)))
 
     path = tmp_path / "recovery.json"
-    with pytest.raises(RuntimeError, match="engine failed"):
-        ea.main(["run", "--out", "", "--geometry", str(path), "--quiet"])
-    assert events == ["source", "drive"]
+    argv = ["run", "--out", "", "--geometry", str(path), "--quiet"]
+    if driver_name == "drive_live":
+        argv.append("--live")
+    with pytest.raises(error_type, match="engine failed"):
+        ea.main(argv)
+    assert events == ["source", driver_name]
     assert geometries == [(str(path), "node", "inputs", True, snapshot)]
 
 
