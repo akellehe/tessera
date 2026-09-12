@@ -66,12 +66,12 @@ def test_it_is_absent_rather_than_guessed_outside_a_work_tree(monkeypatch):
     assert "git" in absent.reason
 
 
-def test_the_geometry_document_carries_it():
+def test_the_geometry_document_carries_it(source):
     config = ea.build_config(size=SMALL, steps=1, stage2_iters=1)
     result = ea.drive(config, progress=False)
     held = {}
     ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
-    document = ea.geometry_document(held["node"])
+    document = ea.geometry_document(held["node"], source=source)
     assert document["schema"] == 1, "the addition is a new key, not a new schema"
-    assert document["source"]["head"] == ea.source_commit()["head"]
+    assert document["source"] == source
     assert result.frames

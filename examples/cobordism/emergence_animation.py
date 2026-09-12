@@ -4202,13 +4202,15 @@ def geometry_document(node, inputs=None, source=None):
     edges = []
     phases = []
     for edge in spacetime.getEdgeList().toVector():
-        source = int(edge.getSource().getId())
-        target = int(edge.getTarget().getId())
+        source_vertex = int(edge.getSource().getId())
+        target_vertex = int(edge.getTarget().getId())
         squared = complex(edge.getLength()) ** 2
-        edges.append([source, target, squared.real, squared.imag])
+        edges.append([source_vertex, target_vertex,
+                      squared.real, squared.imag])
         phase = complex(edge.getPhase())
         if phase != 0:
-            phases.append([source, target, phase.real, phase.imag])
+            phases.append([source_vertex, target_vertex,
+                           phase.real, phase.imag])
     document = {
         "schema": 1,
         "source": source_commit() if source is None else source,
@@ -5070,19 +5072,28 @@ def main(argv=None):
     def remember_setup(node, inputs):
         driven.update(node=node, inputs=inputs)
 
+    # Provenance describes the code that starts the run. Sampling after a long
+    # drive can instead record a checkout or edit made while that run was in
+    # progress.
+    source = source_commit() if args.json or args.geometry else None
     try:
         result = (drive_live(config, progress=not args.quiet,
                              on_setup=remember_setup)
                   if args.live
                   else drive(config, progress=not args.quiet,
                              on_setup=remember_setup))
-    except KeyboardInterrupt:
+    except BaseException as error:
         if args.geometry and "node" in driven:
-            _write_geometry(args.geometry, driven["node"],
-                            driven.get("inputs"), args.quiet)
+            try:
+                _write_geometry(args.geometry, driven["node"],
+                                driven.get("inputs"), args.quiet, source)
+            except BaseException as geometry_error:
+                # Recovery output is secondary: retain the engine or UI error
+                # that ended the drive, but make the failed recovery visible.
+                error.add_note("could not write recovery geometry %r: %s"
+                               % (os.fspath(args.geometry), geometry_error))
         raise
     frames = result.frames
-    source = source_commit() if args.json or args.geometry else None
     if not args.quiet and result.terminator == Terminator.TOLERANCE:
         sys.stdout.write(
             "exited on a STALL, not on a target: %d consecutive engine unit%s "
@@ -5092,6 +5103,11 @@ def main(argv=None):
             % (result.stalls, "" if result.stalls == 1 else "s",
                config["tolerance"], frames[-1].step, config["steps"],
                _format_objective_total(frames[-1])))
+    # Geometry is the only irreplaceable output. Write it before derivative
+    # records so a JSON serialization failure cannot suppress the snapshot.
+    if args.geometry and "node" in driven:
+        _write_geometry(args.geometry, driven["node"], result.inputs,
+                        args.quiet, source)
     if args.json:
         document = {"config": config,
                     "source": source,
@@ -5106,9 +5122,6 @@ def main(argv=None):
         _write_json_document(args.json, document)
         if not args.quiet:
             sys.stdout.write("wrote %s\n" % args.json)
-    if args.geometry and "node" in driven:
-        _write_geometry(args.geometry, driven["node"], result.inputs,
-                        args.quiet, source)
     if args.out:
         path = render(frames, args.out)
         if not args.quiet:
