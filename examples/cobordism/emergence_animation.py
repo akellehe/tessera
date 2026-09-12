@@ -481,18 +481,26 @@ def _hop_layers(spacetime, sources):
     return layer
 
 
-def _seed_lengths(spacetime, disposition, seed):
+def _seed_lengths(spacetime, disposition, seed, edges=None):
     """Write the seed length on every edge, per the chosen disposition.
 
     Every setting carries magnitude one, so the dispositions differ ONLY in
     `arg l` -- in causal character, never in scale. Reproducible from `seed`
     through a private generator, so the global random state is untouched.
+
+    `edges` narrows the write to a SUBSET of the spacetime's edges, leaving
+    the rest as they are; `None` is every edge. The qubit collar uses it to
+    give its interior a causal character while leaving the tori's own lengths
+    alone -- those carry the declared input moduli, and writing over them
+    would change the input states rather than the bulk. `FOLIATED` still reads
+    its layering from the WHOLE spacetime, since a layering of a subset is not
+    the same foliation.
     """
     if disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
             % (disposition, ", ".join(EdgeDisposition.ALL)))
-    edges = spacetime.getEdgeList().toVector()
+    edges = spacetime.getEdgeList().toVector() if edges is None else list(edges)
     if disposition == EdgeDisposition.SPACELIKE:
         for edge in edges:
             edge.setLength(complex(1.0, 0.0))            # l^2 = +1

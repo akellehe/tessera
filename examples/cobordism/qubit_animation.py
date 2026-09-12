@@ -166,6 +166,25 @@ DECLARED_TORI = 2
 #: orientation-reversing, so the twisted host is an I-bundle that is not a
 #: product.
 DECLARED_COLLAR_TWIST = "none"
+
+#: The causal character the COLLAR'S INTERIOR edges are seeded with.
+#: Defaults to `spacelike`, which is what `seed_collar` already wires, so the
+#: flag changes no existing run until it is asked to. It is recorded under
+#: `interior_disposition` rather than `edge_disposition` because the latter
+#: is the NEUTRAL driver's key for the whole host's edges, and a qubit
+#: configuration carries none of those
+#: (`--edge-disposition`). `seed_collar` writes each torus's own lengths onto
+#: its edges and wires every other edge to 1.0, so without this a qubit host
+#: is all-spacelike in its bulk and cannot say otherwise.
+#:
+#: The tori's own edges are never written: they carry the declared input
+#: moduli, so a disposition over them would change the input states rather
+#: than the bulk they sit in. `spacelike` is therefore a no-op here rather
+#: than a rewrite, since it is already what the collar wires.
+#:
+#: The vocabulary is `emergence_animation.EdgeDisposition`, shared with the
+#: neutral driver so the two cannot drift.
+DECLARED_INTERIOR_DISPOSITION = ea.EdgeDisposition.SPACELIKE
 #: The state the whole complex's harmonic form is meant to be (`--output-state`),
 #: as a modulus tau: the target is psi(tau) = (1, tau)/|(1, tau)|.
 #:
@@ -653,6 +672,40 @@ def _torus_fiber(torus, ids):
     return fiber
 
 
+def _dispose_interior(host, tori, ids, disposition, seed):
+    """Give the collar's INTERIOR edges a causal character.
+
+    `seed_collar` writes each torus's own lengths onto its edges and wires
+    every other edge to 1.0, so a qubit host is all-spacelike in its bulk with
+    no way to say otherwise. This gives those edges the same closed vocabulary
+    the neutral driver uses (`EdgeDisposition`).
+
+    The tori's OWN edges are left exactly as the surfaces built them. They
+    carry the declared input moduli, so a disposition written over them would
+    be silently changing the input states rather than the bulk they are
+    embedded in.
+    """
+    if disposition == ea.EdgeDisposition.SPACELIKE:
+        return  # what the collar already wires, so nothing to write
+    boundary = set()
+    for index, torus in enumerate(tori):
+        mapping = ids[index]
+        for edge in torus.spacetime().getEdgeList().toVector():
+            if edge is None or edge.getSource() is None or edge.getTarget() is None:
+                continue
+            u = mapping[int(edge.getSource().getId())]
+            v = mapping[int(edge.getTarget().getId())]
+            boundary.add((min(u, v), max(u, v)))
+    interior = []
+    for edge in host.getEdgeList().toVector():
+        if edge is None or edge.getSource() is None or edge.getTarget() is None:
+            continue
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        if (min(u, v), max(u, v)) not in boundary:
+            interior.append(edge)
+    ea._seed_lengths(host, disposition, seed, edges=interior)
+
+
 def _collar_twist(config, grid):
     """The permutation of the far surface's base indices, or none.
 
@@ -993,6 +1046,9 @@ def build_qubit_node(config):
                               config["layers"], _collar_twist(config, grid))
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
+    _dispose_interior(seed.host, tori, ids,
+                      config.get("interior_disposition", DECLARED_INTERIOR_DISPOSITION),
+                      int(config["seed"]))
     node = MC(seed.host, [[1.0 + 0j]] * len(tori), [],
               degrees=list(config["register_degrees"]), seed=config["seed"],
               einstein_hilbert=bool(config["regge"]),
@@ -2023,6 +2079,22 @@ def _add_qubit_run_arguments(run):
                           "through the blocks' markings. This is part of the "
                           "OBJECTIVE, not the reporting: the residual is a "
                           "term in r_U (default %s)" % DECLARED_READOUT)
+    run.add_argument("--edge-disposition", dest="interior_disposition",
+                     choices=list(ea.EdgeDisposition.ALL),
+                     default=DECLARED_INTERIOR_DISPOSITION,
+                     help="the causal character the COLLAR'S INTERIOR edges "
+                          "are seeded with. seed_collar writes each torus's "
+                          "own lengths onto its edges and wires every other "
+                          "edge to 1.0, so without this the bulk is "
+                          "all-spacelike and cannot say otherwise. The tori's "
+                          "own edges are never written -- they carry the "
+                          "declared input moduli, so a disposition over them "
+                          "would change the input states rather than the bulk "
+                          "they sit in, which makes 'spacelike' a no-op here "
+                          "rather than a rewrite. 'foliated' reads its "
+                          "layering from the whole host, so it follows the "
+                          "collar's own layers: edges spanning a layer are "
+                          "timelike and edges within one spacelike.")
     run.add_argument("--collar-twist", dest="collar_twist",
                      choices=("none", "swap"), default=DECLARED_COLLAR_TWIST,
                      help="the mapping class that relabels the far surface "
@@ -2169,6 +2241,7 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  readout=DECLARED_READOUT,
                  tori=DECLARED_TORI,
                  collar_twist=DECLARED_COLLAR_TWIST,
+                 interior_disposition=DECLARED_INTERIOR_DISPOSITION,
                  output_state=DECLARED_OUTPUT_STATE,
                  layers=DECLARED_COLLAR_LAYERS,
                  tau_a=DECLARED_TAU_A,
@@ -2214,6 +2287,9 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if collar_twist not in ("none", "swap"):
         raise ValueError("unknown collar twist %r: expected none or swap"
                          % (collar_twist,))
+    if interior_disposition not in ea.EdgeDisposition.ALL:
+        raise ValueError("unknown edge disposition %r: expected one of %s"
+                         % (interior_disposition, ", ".join(ea.EdgeDisposition.ALL)))
     operators = ("flip_flop",) + tuple(sorted(DECLARED_GATES))
     if operator not in operators:
         raise ValueError("unknown operator %r: expected one of %s"
@@ -2302,6 +2378,7 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "readout": ",".join(names),
         "tori": tori,
         "collar_twist": collar_twist,
+        "interior_disposition": interior_disposition,
         "output_state": (None if output_tau is None
                          else [output_tau.real, output_tau.imag]),
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
@@ -2368,6 +2445,7 @@ def main(argv=None):
                 args, "combinatorial_breadth", _LEGACY_UNSET),
             readout=args.readout, tori=args.tori,
             output_state=args.output_state, collar_twist=args.collar_twist,
+            interior_disposition=args.interior_disposition,
             layers=args.layers, tau_a=args.tau_a, tau_b=args.tau_b,
             grid=args.grid, coupling=args.coupling, time=args.time,
             input_weight=args.input_weight, regge=args.regge,
