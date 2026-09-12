@@ -347,6 +347,14 @@ Structurally identical (automorphic) components share a hash.)doc")
       .def_readwrite("strategy", &PersistentModularityConfig::strategy,
                      "Which search proposes the communities.  Default keeps "
                      "the incumbent multilevel aggregation.")
+      .def_readwrite("objective", &PersistentModularityConfig::objective,
+                     R"doc(Which real functional of Q the search maximizes.
+Default Score keeps the incumbent's behaviour on a real graph; a COMPLEX
+graph selects Magnitude regardless, since Score is not an ordering there.
+
+Setting Magnitude on a real graph is how ANTI-community structure is
+pursued: it has Q < 0, so maximizing Q passes it over in favour of the
+one-community partition while maximizing |Q| finds it.)doc")
       .def_readwrite("leadingEigenvalueTolerance",
                      &PersistentModularityConfig::leadingEigenvalueTolerance,
                      "LeadingEigenvector: a group is indivisible when its "
@@ -405,16 +413,23 @@ Structurally identical (automorphic) components share a hash.)doc")
       .def_readonly("strength", &ComponentRead::strength,
                     "S_C: summed member strength.")
       .def_readonly("conductance", &ComponentRead::conductance,
-                    "cut(C)/min(vol C, vol V\\C); 0 when the denominator "
-                    "vanishes.")
+                    R"doc(cut(C)/min(vol C, vol V\C); 0 when the denominator
+vanishes.  NaN on a signed graph, where a community's strength is a
+difference and there is no volume for the cut to be a fraction of -- left
+unmeasured rather than computed by a formula that does not apply.)doc")
       .def_readonly("modularityContribution",
                     &ComponentRead::modularityContribution,
-                    "This community's exact additive Q_gamma term.");
+                    R"doc(This community's exact additive Q_gamma term, under
+whichever null model scores the graph.  These sum over a level to that
+level's exact Q_gamma either way.)doc");
 
   py::class_<RestartRead>(m, "RestartRead",
       "One deterministic restart: seed and exact best score.")
       .def_readonly("seed", &RestartRead::seed)
-      .def_readonly("q", &RestartRead::q)
+      .def_readonly("q", &RestartRead::q,
+                    "Exact Q_gamma of this restart, complex and unreduced.")
+      .def_readonly("objectiveValue", &RestartRead::objectiveValue,
+                    "The real scalar this restart was ranked on.")
       .def_readonly("communities", &RestartRead::communities);
 
   py::class_<ResolutionSlice>(m, "ResolutionSlice",
@@ -422,10 +437,25 @@ Structurally identical (automorphic) components share a hash.)doc")
 Q_gamma of the winning partition (cold recompute) — the best score across
 deterministic restarts, a heuristic proposal, never the NP-hard global
 optimum.  ``qIncremental`` is the accepted-delta-Q ledger and must agree
-with ``q`` to double round-off.)doc")
+with ``q`` to double round-off.
+
+``q`` is COMPLEX and unreduced: ``abs(q)`` is how much structure the
+partition has, ``cmath.phase(q)`` is what KIND — 0 a community, pi an
+ANTI-community, +-pi/2 lightlike cohesion, anything else mixed.  It is
+exactly real on a real graph.  ``objectiveValue`` is the real scalar the
+search actually maximized and ``objective`` says which functional that
+was.)doc")
       .def_readonly("gamma", &ResolutionSlice::gamma)
       .def_readonly("q", &ResolutionSlice::q)
       .def_readonly("qIncremental", &ResolutionSlice::qIncremental)
+      .def_readonly("objectiveValue", &ResolutionSlice::objectiveValue,
+                    "The real scalar the search maximized: q.real under "
+                    "Score, abs(q) under Magnitude.")
+      .def_readonly("objective", &ResolutionSlice::objective,
+                    "Which functional that was.  Reported rather than "
+                    "assumed: a complex graph selects Magnitude whatever "
+                    "the config asked for, since Score is not an ordering "
+                    "there.")
       .def_readonly("levels", &ResolutionSlice::levels)
       .def_readonly("components", &ResolutionSlice::components,
                     "Final-level components, ordered by canonical hash.")
@@ -536,15 +566,91 @@ Read-only: never calls a solver, never mutates the spacetime it reads.)doc");
       .value("ExpNegAbsLength",
              PersistentModularity::WeightMap::ExpNegAbsLength,
              "w = exp(-|l|): monotone decreasing in the complex edge "
-             "magnitude (the mutual-information convention l = -log I).");
+             "magnitude (the mutual-information convention l = -log I).  "
+             "Causally blind: a timelike and a spacelike edge of equal "
+             "magnitude give the identical weight.")
+      .value("CausalPhaseExpNegAbsLength",
+             PersistentModularity::WeightMap::CausalPhaseExpNegAbsLength,
+             "w = exp(-|l|) exp(i arg(l^2)): the same similarity MAGNITUDE "
+             "as ExpNegAbsLength, carrying the edge's causal character as "
+             "its ARGUMENT.  Spacelike lands on the positive real axis, "
+             "timelike on the negative, lightlike on +-i, and a generic "
+             "argument stays where it is -- nothing is bucketed, so there "
+             "is no indefinite case to refuse.");
 
-  pm.def_static("fromWeightedEdges", &PersistentModularity::fromWeightedEdges,
+  py::enum_<ModularityObjective>(m, "ModularityObjective",
+      R"doc(Which real functional of the complex Q the search maximizes.
+Both readings are always REPORTED; this chooses only what is pursued.)doc")
+      .value("Score", ModularityObjective::Score,
+             "Maximize Q itself.  Available only where Q is real; the "
+             "default, so existing behaviour does not move.  Finds "
+             "community structure and passes over anti-communities, which "
+             "score below the one-community partition.")
+      .value("Magnitude", ModularityObjective::Magnitude,
+             "Maximize |Q|.  Always available, and the only ordered choice "
+             "once A is genuinely complex.  Finds community AND "
+             "anti-community structure, with arg(Q) saying which.");
+
+  py::class_<PersistentModularity::CausalWeightRead>(pm, "CausalWeightRead",
+      R"doc(Whether the causal weight map can be read off a spacetime, with
+the census that decides it.  `available` is False exactly when some edge has
+no definite causal character, or when no edge carries a nonzero Lorentzian
+interval; `reason` then names which, and is empty when available.)doc")
+      .def_readonly("available",
+                    &PersistentModularity::CausalWeightRead::available)
+      .def_readonly("reason", &PersistentModularity::CausalWeightRead::reason)
+      .def_readonly("spacelike",
+                    &PersistentModularity::CausalWeightRead::spacelike)
+      .def_readonly("timelike",
+                    &PersistentModularity::CausalWeightRead::timelike)
+      .def_readonly("lightlike",
+                    &PersistentModularity::CausalWeightRead::lightlike)
+      .def_readonly("mixed", &PersistentModularity::CausalWeightRead::mixed,
+                    "Edges with a generic arg(l^2).  ORDINARY edges for the "
+                    "complex weight map, which carries their argument as it "
+                    "stands; a diagnostic, not a gate.")
+      .def_readonly("degenerate",
+                    &PersistentModularity::CausalWeightRead::degenerate);
+
+  pm.def_static("causalWeightAvailability",
+                [](const std::shared_ptr<Spacetime> &st) {
+                  return PersistentModularity::causalWeightAvailability(*st);
+                },
+                py::arg("spacetime"),
+                R"doc(Census of the one-skeleton's causal characters and
+whether CausalPhaseExpNegAbsLength can be read from it.  Read-only; asks
+the same Edge.disposition() classifier, so a True here is exactly the
+condition under which fromSpacetime will not raise.
+
+A MIXED count does NOT make the map unavailable -- the complex weight
+carries a generic argument as readily as a definite one.  Only a genuine
+absence does.  The mixed FRACTION is still worth reading: it is the #870
+diagnostic, and it should FALL if relaxation is imposing causal
+character.)doc")
+      .def_static("fromWeightedEdges",
+                &PersistentModularity::fromWeightedEdges,
                 py::arg("src"), py::arg("tgt"), py::arg("weight"),
                 py::arg("isolatedCells") = std::vector<std::uint64_t>{},
-                R"doc(Build from an explicit nonnegative weighted edge list
-(cells are arbitrary 64-bit ids; parallel edges consolidate by weight
-summation; self-loops and zero weights are ignored).  Raises ValueError on
-negative weights or mismatched lengths.)doc")
+                R"doc(Build from an explicit REAL weighted edge list, signed
+or not (cells are arbitrary 64-bit ids; parallel edges consolidate by weight
+summation; self-loops are ignored, as are edges whose consolidated weight is
+zero -- a measured absence of net similarity).  Raises ValueError on
+non-finite weights or mismatched lengths.
+
+A wholly nonnegative edge list scores bit-identically to what it always
+has.  See fromComplexWeightedEdges for the general domain.)doc")
+      .def_static("fromComplexWeightedEdges",
+                &PersistentModularity::fromComplexWeightedEdges,
+                py::arg("src"), py::arg("tgt"), py::arg("weight"),
+                py::arg("isolatedCells") = std::vector<std::uint64_t>{},
+                R"doc(Build from an explicit COMPLEX weighted edge list.
+Consolidation, self-loops and the cancel-to-zero convention are as for
+fromWeightedEdges; both components must be finite.  A list that happens to
+be real takes the real path and scores exactly as fromWeightedEdges would.
+
+The adjacency is complex SYMMETRIC -- A_ij = A_ji, no conjugation -- because
+a weight is a property of the EDGE, and its magnitude and argument do not
+depend on which end you read it from.)doc")
       .def_static("fromSpacetime",
                   [](const std::shared_ptr<Spacetime> &st,
                      PersistentModularity::WeightMap map) {
@@ -553,12 +659,31 @@ negative weights or mismatched lengths.)doc")
                   py::arg("spacetime"),
                   py::arg("map") =
                       PersistentModularity::WeightMap::ExpNegAbsLength,
-                  "Build the similarity graph from the spacetime one-skeleton "
-                  "(read-only).")
+                  R"doc(Build the similarity graph from the spacetime
+one-skeleton (read-only).  With CausalPhaseExpNegAbsLength this raises
+ValueError, naming the reason, when causalWeightAvailability() reports the
+map unreadable.  That happens only for a genuine ABSENCE -- a degenerate
+edge has no argument to carry, and arg(0) is not a reading of anything.  An
+indefinite argument is not an absence and is carried as it stands.)doc")
       .def("nCells", &PersistentModularity::nCells)
       .def("nEdges", &PersistentModularity::nEdges)
+      .def("isComplex", &PersistentModularity::isComplex,
+           R"doc(True when some edge weight has a nonzero imaginary part, so
+Q is genuinely complex and Score is not an ordering.  A property of the
+graph, not a setting.)doc")
+      .def("isSigned", &PersistentModularity::isSigned,
+           R"doc(True when some edge weight is negative or non-real, i.e.
+when the graph leaves the nonnegative regime the incumbent formula was
+written for.  A property of the graph, not a setting.)doc")
       .def("totalWeight2", &PersistentModularity::totalWeight2,
-           "Total adjacency weight 2m = sum_ij A_ij.")
+           R"doc(T = sum_ij |A_ij|, the real positive scale the score divides
+by.  It cannot vanish while any edge exists, which is what the signed total
+could do.  Equal to 2m = sum_ij A_ij on a nonnegative graph, which is what
+it has always returned there.)doc")
+      .def("totalWeightSum", &PersistentModularity::totalWeightSum,
+           R"doc(SA = sum_ij A_ij, the COMPLEX total the configuration null
+model redistributes.  Equal to totalWeight2() on a nonnegative graph.  A
+vanishing SA leaves the null model undefined and is refused by name.)doc")
       .def("cellIds", &PersistentModularity::cellIds,
            "Cell ids in internal storage order (no convention).")
       .def("modularityGamma", &PersistentModularity::modularityGamma,

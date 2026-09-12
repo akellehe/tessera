@@ -220,7 +220,7 @@ class TestNoManufacturedScale(unittest.TestCase):
         g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
         s = g.discover(1.0, _cfg())
         self.assertEqual(len(s.restarts), 4)
-        qs = [r.q for r in s.restarts]
+        qs = [r.objectiveValue for r in s.restarts]
         self.assertEqual(s.restartSpread, max(qs) - min(qs))
         # The ring's degenerate arc placements genuinely disagree across
         # restarts; the spread must be surfaced, not hidden.
@@ -237,10 +237,10 @@ class TestNoManufacturedScale(unittest.TestCase):
         g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
         singles = _fb_partition_labels(g, merge_pairs=False)
         pairs = _fb_partition_labels(g, merge_pairs=True)
-        self.assertGreater(g.modularityGamma(pairs, 1.0),
-                           g.modularityGamma(singles, 1.0))
-        self.assertGreater(g.modularityGamma(singles, 4.0),
-                           g.modularityGamma(pairs, 4.0))
+        self.assertGreater(g.modularityGamma(pairs, 1.0).real,
+                           g.modularityGamma(singles, 1.0).real)
+        self.assertGreater(g.modularityGamma(singles, 4.0).real,
+                           g.modularityGamma(pairs, 4.0).real)
 
     def test_fb_discovery_exhibits_not_hides_the_limit(self):
         src, tgt = _fb_ring()
@@ -251,7 +251,8 @@ class TestNoManufacturedScale(unittest.TestCase):
         # gamma = 1: the resolution limit is real - cliques merge, and the
         # discovered exact score is at least the single-clique score.
         self.assertLess(len(s1.components), 40)
-        self.assertGreaterEqual(s1.q, g.modularityGamma(singles, 1.0))
+        self.assertGreaterEqual(s1.objectiveValue,
+                                g.modularityGamma(singles, 1.0).real)
         # gamma = 4: all 40 planted cliques recovered exactly.
         self.assertEqual(len(s4.components), 40)
         self.assertEqual(sorted(tuple(c.support) for c in s4.components),
@@ -507,9 +508,23 @@ class TestFixedPartitionContinuity(unittest.TestCase):
         with self.assertRaises(ValueError):
             g.modularityGamma([0] * 3, 1.0)
 
-    def test_negative_weight_rejected(self):
-        with self.assertRaises(ValueError):
-            PM.fromWeightedEdges([0], [1], [-1.0])
+    def test_negative_weight_accepted_and_switches_the_null_model(self):
+        # The domain is the REAL weighted graph (#849): a negative weight is
+        # a measured dissimilarity, and it selects the signed null model.
+        # Nonnegative graphs are untouched -- the reduction is held to
+        # bit-identity in test_causal_modularity_python.py.
+        g = PM.fromWeightedEdges([0], [1], [-1.0])
+        self.assertTrue(g.isSigned())
+        self.assertFalse(g.isComplex())
+        # T is the ABSOLUTE total; the signed sum SA is what the null model
+        # redistributes, and here the two differ in sign.
+        self.assertEqual(g.totalWeight2(), 2.0)
+        self.assertEqual(g.totalWeightSum(), -2.0)
+
+    def test_non_finite_weight_rejected(self):
+        for bad in (float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                PM.fromWeightedEdges([0], [1], [bad])
 
     def test_edge_list_normalization(self):
         # Parallel edges (either direction) consolidate by weight sum;
@@ -696,7 +711,7 @@ class TestSpacetimeDiscovery(unittest.TestCase):
         report = opt.discoverComponents(st, _cfg((0.5, 1.0, 2.0), restarts=2))
         self.assertEqual(len(report.slices), 3)
         for s in report.slices:
-            self.assertTrue(math.isfinite(s.q))
+            self.assertTrue(math.isfinite(s.objectiveValue))
             self.assertLessEqual(abs(s.q - s.qIncremental), 1e-13)
             self.assertGreater(len(s.components), 0)
         # Observables are read-only: the spacetime is untouched.
