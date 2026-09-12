@@ -1,0 +1,1116 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage[nameinlink,capitalise,noabbrev]{cleveref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!55!black,
+  citecolor=blue!55!black,
+  urlcolor=blue!55!black,
+  pdftitle={Operators as Boundary Spectral Relations},
+  pdfauthor={Andrew Kelleher}
+}
+
+\allowdisplaybreaks
+\numberwithin{equation}{section}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{lemma}[theorem]{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\theoremstyle{remark}
+\newtheorem{openproblem}[theorem]{Open problem}
+
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\spec}{\operatorname{spec}}
+\newcommand{\ran}{\operatorname{ran}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\dist}{\operatorname{dist}}
+\newcommand{\geo}{\operatorname{geo}}
+\newcommand{\Span}{\operatorname{span}}
+\newcommand{\ket}[1]{\lvert #1\rangle}
+\newcommand{\bra}[1]{\langle #1\rvert}
+\newcommand{\braket}[2]{\langle #1\mid #2\rangle}
+\newcommand{\matrixel}[3]{\langle #1\mid #2\mid #3\rangle}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+
+\title{Operators as Boundary Spectral Relations:\\
+Exact Magnetic-Graph Synthesis and Fixed-Boundary Cobordism Relaxation}
+\author{Andrew Kelleher\\Twin Vector Labs LLC}
+\date{Draft of August 26, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We study a spectral encoding of a finite-dimensional linear operator in which the
+operator is not identified with one fitted eigenvector.  Instead, the graph of a
+map $U:\mathcal H_-\to\mathcal H_+$ is required to equal the boundary trace of a
+common eigenspace of a weighted magnetic connection Laplacian.  This formulation
+makes input substitution a consequence of linearity: fitting a basis at one
+common eigenvalue fits every superposition, provided that the boundary trace has
+no additional modes and its input projection is nonsingular.  We prove an exact
+finite-network realization theorem.  For any Hermitian boundary matrix, any
+fixed induced boundary magnetic graph, and any positive spectral parameter, a
+finite simple magnetic graph can be constructed whose Schur response is exactly
+the prescribed matrix while every intrinsic boundary edge remains unchanged.
+Applying the theorem to a canonical graph-of-map penalty realizes every complex
+linear map, including singular and non-normal maps.  Charge conservation is
+characterized separately as equivariance of the boundary relation; it is a
+symmetry condition, not an existence condition.  Boundary permutations are
+shown to be framing data and therefore part of operator identification.
+
+We then describe a fixed-boundary relaxation implemented in Tessera.  The method
+pins incoming and outgoing restrictions for a complete training basis, varies
+only bulk geometry and bulk witness amplitudes, and minimizes the full-complex
+connection-Laplacian eigenresidual at a common eigenvalue.  Deterministic tests
+recover a generic two-dimensional unitary to relative error
+$2.51\times10^{-16}$ with zero recorded boundary drift.  A completed 77-case
+stress test verifies 43 cases, exhausts the optimization budget in 22, rejects
+eight preparations under the current normalization and isolated-eigenstate
+preconditions, and exposes four identifiability or
+common-eigenvalue failures.  These are numerical solver outcomes, not a
+universality proof.  The exact theorem is presently a magnetic-graph theorem.
+Proving that the construction can always be thickened into a nondegenerate
+triangulated cobordism without changing its boundary response remains the
+central geometric problem.  Accordingly, the work establishes an exact
+operator-as-spectral-relation framework and a constructive graph realization,
+but does not claim a topological quantum field theory or a universal simplicial
+realization theorem.
+\end{abstract}
+
+\noindent\textbf{Keywords.}
+inverse spectral problem; magnetic graph Laplacian; Schur complement;
+cobordism; quantum operator; charge equivariance; fixed-boundary relaxation
+
+\section{Introduction}
+
+A cobordism $W:M_-\rightsquigarrow M_+$ is geometrically interpreted as a
+process between an incoming and an outgoing boundary.  In a topological quantum
+field theory (TQFT), a functor assigns a linear map to $W$, and gluing
+cobordisms corresponds to composition of maps~\cite{atiyah1988}.  The inverse
+question is less standard: can a prescribed linear map be represented by
+finite geometry, and can that representation be found by relaxation while the
+boundary data remain fixed?
+
+The motivating numerical experiments use weighted simplicial complexes.  A
+boundary state is represented in a selected spectral frame on a boundary
+component.  Given an algebraic operator $U$, the expected outgoing state is
+computed first.  Incoming and outgoing restrictions are then pinned, while
+bulk weights, connection phases, topology, and auxiliary interior amplitudes
+are adjusted to reduce a full-complex eigenresidual.  Once one geometry has
+been fitted using a complete basis, held-out superpositions are evaluated with
+the same geometry.
+
+There are three materially different claims that must not be conflated.
+
+\begin{enumerate}[label=(\roman*)]
+  \item A single vector proportional to $\operatorname{vec}(U)$ can be prepared
+  as an eigenstate.  This is state synthesis in a Choi-like coordinate system,
+  not by itself an operational representation of $U$.
+  \item Boundary traces of one common eigenspace can form the graph
+  $\{(x,Ux):x\in\mathcal H_-\}$.  This is an operational representation:
+  changing $x$ changes the outgoing restriction to $Ux$ by linearity.
+  \item A scalar weighted magnetic network realizing that spectral relation can
+  always be chosen to be the one-skeleton of a valid triangulated cobordism with
+  the prescribed frozen boundary.  This additional relative-realization claim
+  is open.
+\end{enumerate}
+
+This paper proves the second claim abstractly and gives an exact finite magnetic
+graph construction.  It reports numerical evidence for the corresponding
+fixed-boundary relaxation, while isolating the unproved step needed for the
+strongest simplicial-cobordism interpretation.
+
+\subsection{Contributions}
+
+The principal contributions are as follows.
+
+\begin{enumerate}[leftmargin=2.2em]
+  \item We define an operator represented by a cobordism as a \emph{boundary
+  spectral relation}, rather than as a distinguished bulk vector.
+  \item We prove that complete-basis witnesses at a common eigenvalue extend to
+  every superposition, and state the rank condition required to exclude
+  spurious boundary modes.
+  \item We give a canonical positive semidefinite matrix $K_U$ whose kernel is
+  exactly the graph of an arbitrary complex linear map $U$.
+  \item We prove constructively that every Hermitian matrix is the boundary
+  Schur response of a finite simple scalar magnetic graph at any prescribed
+  positive spectral parameter, without changing the induced boundary graph.
+  \item We prove that charge conservation is equivalent to invariance of the
+  graph relation, and to commutation of $K_U$ with total boundary charge.
+  \item We identify attachment permutations as boundary framings and give
+  residual-, gap-, and conditioning-based certification criteria.
+  \item We document the exact semantics and current numerical limits of the
+  Tessera relaxation experiments.
+\end{enumerate}
+
+\section{Relation to prior work}
+
+The functorial assignment of state spaces and linear maps to manifolds and
+cobordisms is axiomatized by Atiyah~\cite{atiyah1988}.  Our direction is inverse:
+the map is specified first, and a finite spectral network is synthesized to
+carry its graph.  We do not establish the identity, gluing, monoidal, or
+diffeomorphism-invariance axioms required of a TQFT.
+
+Encoding an operator as a vector is familiar from the
+Jamio\l kowski--Choi correspondence~\cite{jamiolkowski1972,choi1975}.  That
+correspondence is useful for preparing training targets, but a fitted vector is
+not automatically a device that accepts a new input.  The graph-of-map
+formulation used here supplies the missing input/output relation.
+
+Eliminating interior vertices by a Schur complement is Kron reduction
+\cite{dorfler2013}.  Closely related inverse response questions have been
+studied for metric quantum graphs: Friedlander showed that arbitrary real
+symmetric matrices can occur as Dirichlet-to-Neumann maps for a quantum-graph
+Schr\"odinger operator~\cite{friedlander2017}.  Inverse eigenvalue questions for
+ordinary graph Laplacians remain constrained by graph structure
+\cite{fallat2024}.  Magnetic phases enlarge the realizable class from real
+symmetric to complex Hermitian matrices; magnetic and connection Laplacians
+are standard objects in spectral graph theory and data analysis
+\cite{fabila2018,singer2012}.  Our finite construction is explicit, preserves a
+preassigned induced boundary graph, and is tailored to a graph-of-map kernel.
+
+The triangulated extension is related to, but not resolved by, bistellar
+equivalence of triangulations~\cite{pachner1991}.  Bistellar or stellar moves
+control topology; they do not automatically preserve a prescribed magnetic
+Schur response.
+
+\section{The discrete spectral object}
+\label{sec:operator}
+
+\subsection{Scalar magnetic connection Laplacian}
+
+Let $G=(V,E)$ be a finite simple graph.  Give each unoriented edge
+$\{u,v\}$ a weight $w_{uv}>0$ and an oriented phase
+$a_{uv}=e^{i\theta_{uv}}\in U(1)$, with $a_{vu}=\overline{a_{uv}}$.  The scalar
+magnetic connection Laplacian $L_G$ acts on $z\in\C^V$ by
+\begin{equation}
+  (L_Gz)_u=\sum_{v:\{u,v\}\in E}w_{uv}(z_u-a_{uv}z_v).
+  \label{eq:magnetic-laplacian}
+\end{equation}
+It is Hermitian and positive semidefinite because
+\begin{equation}
+  z^\dagger L_Gz
+  =\sum_{\{u,v\}\in E}w_{uv}\lvert z_u-a_{uv}z_v\rvert^2.
+  \label{eq:energy}
+\end{equation}
+In the Tessera implementation, $w_{uv}$ is the positive quantity derived from
+the squared edge length and $\theta_{uv}$ is the optimized real connection
+phase.
+
+This distinction is important: the experiments analyzed here use the
+degree-zero $\C^*$ connection Laplacian in~\eqref{eq:magnetic-laplacian}.  They
+do not use a degree-one Hodge Laplacian, and they do not minimize a Regge action
+or a harmonic-period residual.  The ordinary degree-zero discrete exterior
+calculus Laplacian is a separate operator in the codebase.
+
+\subsection{Boundary response}
+
+Choose a nonempty boundary vertex set $B\subseteq V$ and write
+$I=V\setminus B$.  Relative to $\C^V=\C^B\oplus\C^I$, write
+\begin{equation}
+  L_G=\begin{pmatrix}A&C\\ C^\dagger&D\end{pmatrix}.
+  \label{eq:block-laplacian}
+\end{equation}
+For a real spectral parameter $\lambda\notin\spec(D)$, define the boundary
+Schur response
+\begin{equation}
+  S_G(\lambda)
+  =A-\lambda I_B-C(D-\lambda I_I)^{-1}C^\dagger.
+  \label{eq:schur}
+\end{equation}
+
+\begin{definition}[Boundary spectral relation]
+The boundary spectral relation of $(G,B)$ at $\lambda$ is
+\begin{equation}
+  \mathcal R_G(\lambda)
+  =\{z|_B:z\in\ker(L_G-\lambda I_V)\}\subseteq\C^B.
+  \label{eq:relation}
+\end{equation}
+\end{definition}
+
+\begin{proposition}[Schur characterization]
+\label{prop:schur}
+If $\lambda\notin\spec(D)$, then
+\begin{equation}
+  \mathcal R_G(\lambda)=\ker S_G(\lambda),
+  \qquad
+  z_I=-(D-\lambda I_I)^{-1}C^\dagger z_B.
+  \label{eq:schur-kernel}
+\end{equation}
+In particular, every admissible boundary trace has a unique interior lift.
+\end{proposition}
+
+\begin{proof}
+The interior block of $(L_G-\lambda I)z=0$ gives the second identity.
+Substitution into the boundary block gives
+$S_G(\lambda)z_B=0$.  The converse follows by reversing these steps.
+\end{proof}
+
+\section{An operator is the graph of a boundary relation}
+
+Let $\mathcal H_-\cong\C^d$ and $\mathcal H_+\cong\C^m$ be incoming and
+outgoing state spaces, and let $U:\mathcal H_-\to\mathcal H_+$ be linear.  Its
+graph is
+\begin{equation}
+  \Gamma_U=\{x\oplus Ux:x\in\mathcal H_-\}
+  \subseteq\mathcal H_-\oplus\mathcal H_+.
+  \label{eq:graph-U}
+\end{equation}
+
+Physical boundary vertices need not be coordinate vectors of these spaces.
+Let $J_-:\mathcal H_-\hookrightarrow\C^{B_-}$ and
+$J_+:\mathcal H_+\hookrightarrow\C^{B_+}$ be fixed injective state charts on
+two disjoint boundary components.  For isometric charts, the embedded graph is
+the range of
+\begin{equation}
+  T_Ux=J_-x\oplus J_+Ux.
+  \label{eq:embedded-graph}
+\end{equation}
+
+\begin{definition}[Exact spectral realization]
+Let $B=B_-\sqcup B_+$.  A framed magnetic graph $(G,B,J_-,J_+)$ realizes $U$
+at $\lambda$ if
+\begin{equation}
+  \mathcal R_G(\lambda)=\ran T_U.
+  \label{eq:exact-realization}
+\end{equation}
+Equivalently, after applying the inverse charts, the relation is $\Gamma_U$.
+\end{definition}
+
+The equality in~\eqref{eq:exact-realization}, rather than mere containment, is
+the identifiability requirement.  It rules out an additional eigenvector with
+zero incoming trace or a second outgoing trace for the same input.
+
+\subsection{Why a complete basis generalizes}
+
+\begin{theorem}[Basis-span transfer]
+\label{thm:basis-span}
+Let $b_1,\ldots,b_d$ be a basis of $\mathcal H_-$.  Suppose that for one graph
+$G$ and one common eigenvalue $\lambda$, there are witnesses
+$z_1,\ldots,z_d\in\ker(L_G-\lambda I)$ satisfying
+\begin{equation}
+  z_j|_{B_-}=J_-b_j,
+  \qquad
+  z_j|_{B_+}=J_+Ub_j.
+  \label{eq:witness-restrictions}
+\end{equation}
+Then $\ran T_U\subseteq\mathcal R_G(\lambda)$.  Consequently every
+$x\in\mathcal H_-$ has a full-graph eigenvector whose incoming and outgoing
+restrictions are $J_-x$ and $J_+Ux$, respectively.  If additionally
+$\dim\mathcal R_G(\lambda)=d$, then $G$ realizes $U$ exactly.
+\end{theorem}
+
+\begin{proof}
+Write $x=\sum_j\alpha_jb_j$ and set $z=\sum_j\alpha_jz_j$.  Linearity gives
+$(L_G-\lambda I)z=0$, and restriction gives
+$z|_B=T_Ux$.  Thus $\ran T_U\subseteq\mathcal R_G(\lambda)$.  Since $T_U$ is
+injective, $\dim\ran T_U=d$; equality follows under the stated dimension
+condition.
+\end{proof}
+
+\begin{remark}[The eigenvector is global]
+The output is not, in general, an eigenvector supported only on $B_+$.  It is
+the outgoing restriction of a full-graph eigenvector.  The bulk amplitudes are
+the unique lift in~\cref{prop:schur} when the interior block is nonsingular at
+$\lambda$.
+\end{remark}
+
+\begin{remark}[A common eigenvalue is essential]
+If witness $z_j$ belongs to eigenvalue $\lambda_j$ and the $\lambda_j$ are not
+equal, a generic linear combination is not an eigenvector.  Small individual
+residuals therefore do not establish operator transfer unless the eigenvalue
+spread is also controlled.
+\end{remark}
+
+\subsection{Recovering the represented matrix}
+
+Let $N\in\C^{(|B_-|+|B_+|)\times d}$ contain a basis of the boundary relation,
+expressed in the selected charts, and split it as
+\begin{equation}
+  N=\begin{pmatrix}X\\Y\end{pmatrix}.
+\end{equation}
+The relation is the graph of a unique operator if and only if $X$ is square and
+nonsingular; in that case
+\begin{equation}
+  U=YX^{-1}.
+  \label{eq:operator-readout}
+\end{equation}
+This rank test is the correct operational test.  A vectorized bulk state is not
+itself a map.  If desired, one may vectorize the recovered matrix in
+\eqref{eq:operator-readout} to obtain its Jamio\l kowski--Choi vector or state.
+
+\section{A universal algebraic target}
+
+There is a canonical Hermitian matrix whose kernel is exactly $\Gamma_U$.  Set
+\begin{equation}
+  F_U=\begin{pmatrix}-U&I_m\end{pmatrix},
+  \qquad
+  K_U=F_U^\dagger F_U
+  =\begin{pmatrix}
+    U^\dagger U&-U^\dagger\\
+    -U&I_m
+  \end{pmatrix}.
+  \label{eq:KU}
+\end{equation}
+For $z=x\oplus y$,
+\begin{equation}
+  z^\dagger K_Uz=\norm{y-Ux}^2,
+  \qquad
+  \ker K_U=\Gamma_U.
+  \label{eq:KU-energy}
+\end{equation}
+The nonzero eigenvalues of $K_U$ are the eigenvalues of
+$F_UF_U^\dagger=I_m+UU^\dagger$, so its nonzero spectral gap is at least one.
+If $U$ is unitary, $K_U^2=2K_U$ and $K_U/2$ is the orthogonal projector onto
+$\Gamma_U^\perp$.
+
+For embedded isometric charts, a coordinate-free target on the full boundary
+space is
+\begin{equation}
+  P_U=I_B-T_U(T_U^\dagger T_U)^{-1}T_U^\dagger,
+  \qquad
+  \ker P_U=\ran T_U.
+  \label{eq:embedded-projector}
+\end{equation}
+Thus universal operator encoding reduces to realizing a prescribed Hermitian
+boundary response with a prescribed kernel.
+
+\section{Charge symmetry and boundary framing}
+
+\subsection{Charge is equivariance, not existence}
+
+Let $Q_-$ and $Q_+$ be Hermitian charge operators on $\mathcal H_-$ and
+$\mathcal H_+$, and set $Q_\partial=Q_-\oplus Q_+$.  The usual
+charge-conservation condition is
+\begin{equation}
+  Q_+U=UQ_-.
+  \label{eq:charge-intertwiner}
+\end{equation}
+
+\begin{theorem}[Equivalent charge criteria]
+\label{thm:charge}
+For any linear $U$, the following statements are equivalent:
+\begin{enumerate}[label=(\alph*)]
+  \item $Q_+U=UQ_-$;
+  \item $Q_\partial\Gamma_U\subseteq\Gamma_U$;
+  \item $[K_U,Q_\partial]=0$.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+For $x\oplus Ux\in\Gamma_U$, invariance under $Q_\partial$ is precisely the
+condition $Q_+Ux=UQ_-x$ for every $x$.  This proves (a)$\Leftrightarrow$(b).
+The lower-left block of $[K_U,Q_\partial]$ vanishes exactly when
+$Q_+U=UQ_-$.  Under this identity and its adjoint,
+$[U^\dagger U,Q_-]=0$, so all remaining blocks vanish.  Hence
+(a)$\Leftrightarrow$(c).
+\end{proof}
+
+The existence theorem below does not require~\eqref{eq:charge-intertwiner}.
+Charge conservation becomes necessary only when the realizing geometry is also
+required to respect the corresponding boundary symmetry.  In particular, a
+charge-changing Pauli $X$ map is a valid spectral relation even though it is
+not an intertwiner for the computational $Z$ charge.  Inside a degenerate
+sector on which $Q_-=Q_+=qI$, every operator is automatically equivariant; the
+charge condition then imposes no additional restriction.
+
+\subsection{Attachment permutations are framing data}
+
+The matrices assigned to a boundary depend on ordered state charts.  Under
+invertible changes of incoming and outgoing frame $P_-$ and $P_+$, the same
+abstract relation has coordinate matrix
+\begin{equation}
+  U\longmapsto P_+UP_-^{-1}.
+  \label{eq:frame-transform}
+\end{equation}
+Vertex permutations are special cases.  Therefore the way an input complex is
+attached to the bulk is not an incidental implementation detail: it specifies
+the boundary framing in which the operator is read.
+
+Trying every attachment permutation is a valid way to identify an unknown
+framing.  Once selected, however, the same permutation must be held fixed for
+the complete training basis and every held-out input.  Selecting a new
+permutation separately for each state would fit a state-dependent rule rather
+than one operator.  Moreover, a successful permutation does not by itself
+resolve rank deficiency: the input block $X$ in
+\eqref{eq:operator-readout} must remain well conditioned.
+
+\section{Exact synthesis of arbitrary boundary response}
+\label{sec:synthesis}
+
+We now show that the algebraic target in~\cref{eq:KU} can always be realized by
+a finite scalar magnetic network.  The result preserves every intrinsic edge
+of a preassigned boundary graph.  New boundary-to-interior edges contribute to
+the full diagonal block, as they must, but do not alter the induced boundary
+subgraph.
+
+\begin{theorem}[Fixed-boundary magnetic response synthesis]
+\label{thm:response-synthesis}
+Let $B$ be a finite nonempty vertex set, let $G_0$ be any weighted magnetic
+graph induced on $B$, let $R\in\C^{B\times B}$ be Hermitian, and let $c>0$.
+There exists a finite simple weighted magnetic graph $G$ with boundary $B$ such
+that:
+\begin{enumerate}[label=(\roman*)]
+  \item the subgraph induced by $B$ is exactly $G_0$, with all of its weights
+  and phases unchanged;
+  \item $c\notin\spec(L_{II})$; and
+  \item $S_G(c)=R$.
+\end{enumerate}
+If desired, $G$ may be chosen connected.
+\end{theorem}
+
+\begin{proof}
+Let $L_0$ denote the magnetic Laplacian contribution of the fixed boundary
+graph, embedded in the boundary block.  We construct mutually nonadjacent
+interior vertices, so $L_{II}$ will be diagonal.
+
+For each unordered pair $i<j$, define the required off-diagonal correction
+\begin{equation}
+  \delta_{ij}=R_{ij}-(L_0)_{ij}.
+\end{equation}
+If $\delta_{ij}\ne0$, add an interior vertex $v_{ij}$ connected only to $i$ and
+$j$.  Give both edges a common weight $t\in(0,c/2)$ and choose their relative
+phase to be $\arg\delta_{ij}$.  Since the diagonal entry of $L_{II}$ at this
+vertex is $2t$, its off-diagonal contribution to the Schur response is
+\begin{equation}
+  \frac{t^2}{c-2t}e^{i\arg\delta_{ij}}.
+  \label{eq:pair-response}
+\end{equation}
+For $a=\lvert\delta_{ij}\rvert$, the choice
+\begin{equation}
+  t=\sqrt{a^2+ca}-a
+  \label{eq:pair-weight}
+\end{equation}
+lies in $(0,c/2)$ and satisfies $t^2/(c-2t)=a$.  Hence the pair gadget produces
+exactly $\delta_{ij}$ and its conjugate in the two off-diagonal positions.  Its
+contribution to each incident diagonal is
+\begin{equation}
+  g_c(t)=t+\frac{t^2}{c-2t}>0.
+  \label{eq:pair-diagonal}
+\end{equation}
+
+After all pair gadgets have been inserted, only the diagonal entries may be
+incorrect.  A leaf joined only to boundary vertex $i$ with edge weight
+$p>0$, $p\ne c$, contributes
+\begin{equation}
+  f_c(p)=p-\frac{p^2}{p-c}=\frac{pc}{c-p}
+  \label{eq:leaf-response}
+\end{equation}
+to the $i$th response diagonal.  The range of $f_c$ on $(0,c)$ is
+$(0,\infty)$, and its range on $(c,\infty)$ is $(-\infty,-c)$.  Thus every
+real diagonal correction $\eta$ is a sum of at most two leaf responses.  If
+$\eta>0$ or $\eta<-c$, one leaf suffices, with
+\begin{equation}
+  p=\frac{c\eta}{c+\eta}>0.
+\end{equation}
+If $-c\leq\eta<0$, write $\eta=2c+(\eta-2c)$; the first term lies in
+$(0,\infty)$ and the second in $(-\infty,-c)$, so two leaves suffice.  No leaf
+is needed for $\eta=0$.
+
+The interior diagonal entries are either $2t<c$ or $p\ne c$, so
+$c\notin\spec(L_{II})$.  The construction uses distinct interior vertices and
+no parallel edges, hence $G$ is simple, and no edge of $G_0$ was changed.
+
+If the resulting graph is disconnected, choose a spanning tree on its boundary
+components.  For every tree edge, insert two pair gadgets having the same
+weight and opposite relative phases.  Their off-diagonal responses cancel,
+while they connect the components.  Compensate their diagonal contributions
+with the leaf construction above.  This preserves $S_G(c)=R$ and yields a
+connected graph.
+\end{proof}
+
+\begin{corollary}[Universal graph realization of a linear map]
+\label{cor:universal-map}
+For every complex linear map $U:\C^d\to\C^m$, every fixed induced boundary
+magnetic graph on $d+m$ coordinate vertices, and every $c>0$, there is a finite
+simple magnetic graph whose boundary spectral relation at $c$ is exactly
+$\Gamma_U$.  The same conclusion holds in fixed injective boundary charts by
+using the target $P_U$ in~\cref{eq:embedded-projector}.
+\end{corollary}
+
+\begin{proof}
+Apply~\cref{thm:response-synthesis} with $R=K_U$ in direct coordinates, or with
+$R=P_U$ in embedded charts.  By~\cref{prop:schur}, the boundary relation is the
+kernel of the response, which is the desired graph.
+\end{proof}
+
+The construction is an existence proof, not an efficient optimizer.  It uses
+at most one degree-two interior vertex for each nonzero off-diagonal correction
+and at most two leaves per boundary vertex, before optional connectivity
+gadgets.  It applies to rectangular, singular, non-normal, charge-changing, and
+poorly conditioned operators.
+
+\section{What remains to obtain a simplicial-cobordism theorem}
+
+Every finite graph is a one-dimensional simplicial complex.  That observation
+does not prove the geometric claim of primary interest.  A one-dimensional
+complex with branching interior vertices is generally not a cobordism between
+the chosen boundary components, and thickening it into a higher-dimensional
+triangulated manifold introduces additional edges and diagonal contributions
+that may change~\eqref{eq:schur}.
+
+\begin{openproblem}[Relative simplicial realization]
+\label{open:relative-simplicial}
+Given the magnetic graph produced by~\cref{thm:response-synthesis}, construct a
+nondegenerate triangulated cobordism $W$ with the prescribed frozen boundary
+such that the degree-zero connection Laplacian of $W$ has the same boundary
+Schur response at $c$, possibly after adding response-neutral interior gadgets.
+\end{openproblem}
+
+A proof would upgrade~\cref{cor:universal-map} from finite discrete geometry to
+the specific class of simplicial cobordisms used by the numerical machinery.
+It must address four constraints simultaneously:
+
+\begin{enumerate}[label=(\arabic*)]
+  \item manifold links at every interior and boundary simplex;
+  \item nondegenerate simplex geometry and compatible shared edge lengths;
+  \item a fixed induced boundary triangulation and fixed boundary phases; and
+  \item exact preservation, or controllably accurate approximation, of the
+  Schur response at the selected spectral parameter.
+\end{enumerate}
+
+Pachner connectivity alone does not solve the problem, because a sequence of
+bistellar moves need not preserve spectral response.  A possible alternative
+for unitary maps is a rank-$d$ non-Abelian connection on a cylinder whose
+holonomy is $U$.  That approach makes the operator geometrically immediate but
+changes the scalar $U(1)$ machinery used in the present experiments; arbitrary
+nonunitary maps would additionally require dilation or a nonunitary bundle
+connection.
+
+\section{Fixed-boundary relaxation}
+\label{sec:relaxation}
+
+The constructive proof above was derived to clarify what the numerical solver
+is attempting to discover.  The present Tessera experiment uses two disjoint
+triangulated boundary components and a shared bulk.  Its reference fixture
+places a three-edge cycle on each boundary.  At unit weights and zero phases,
+the cycle is $K_3$, whose connection-Laplacian spectrum is $\{0,3,3\}$.  The
+two nonconstant Fourier modes provide a two-dimensional neutral state chart;
+an optional constant mode has eigenvalue zero.
+
+For a chosen basis $b_1,\ldots,b_d$, the expected outputs $Ub_j$ are computed
+algebraically.  Their boundary representations are fixed as in
+\cref{eq:witness-restrictions}.  The solver then varies bulk edge weights,
+bulk connection phases, bulk witness amplitudes, and---when enabled---bulk
+stellar growth.  Intrinsic boundary edge weights and phases remain bitwise
+fixed, and every witness retains its exact incoming and outgoing restriction.
+
+If $\widehat z_j$ denotes a full-complex witness and $\bar\lambda$ the common
+Rayleigh target, the coupled objective is
+\begin{equation}
+  \mathcal J(W,\{\widehat z_j\})
+  =\sum_{j=1}^d
+  \norm{L_W\widehat z_j-\bar\lambda\widehat z_j}^2.
+  \label{eq:relaxation-objective}
+\end{equation}
+Optimization uses bounded positive bulk weights, bounded real phases,
+Levenberg--Marquardt restarts, and optional boundary-preserving stellar growth.
+No Regge-stationarity term, curvature action, period objective, or explicit
+charge penalty appears in~\eqref{eq:relaxation-objective}.
+
+The protocol is therefore:
+
+\begin{enumerate}[leftmargin=2.2em]
+  \item prepare each boundary chart in isolation and record the intended
+  degenerate spectral sector;
+  \item select $U$ and compute $Ub_j$ algebraically for a complete basis;
+  \item pin all incoming and outgoing restrictions and freeze intrinsic
+  boundary geometry;
+  \item relax only the shared bulk variables against the full-$W$ residual;
+  \item certify common eigenvalue, boundary invariance, graph dimension, input
+  rank, operator readout, and held-out superpositions; and
+  \item when attachment framing is unknown, enumerate its permutations, but
+  retain one selected framing for all training and test states.
+\end{enumerate}
+
+This is a supervised inverse spectral construction.  The target outputs are
+used during fitting.  After fitting, basis-span transfer is exact in principle,
+but only if the common-eigenvalue and identifiability hypotheses of
+\cref{thm:basis-span} have been established.
+
+\section{Numerical evidence}
+\label{sec:numerics}
+
+All values in this section are solver records, not mathematical assumptions.
+The boundary-drift and restriction metrics are evaluated independently of the
+optimization target.  Every eigenresidual field, including a held-out full-$W$
+residual, is a squared norm.  Boundary and operator errors are ordinary norms
+unless labeled otherwise.  Therefore a recorded objective $r$ certifies a
+residual norm no larger than $\sqrt r$ for each witness.
+
+\subsection{Historical direct-state mode}
+
+The earlier experiment pinned one vectorized operator target.  It established
+that the relaxation can synthesize both charge-preserving and charge-changing
+states, but it did not establish input substitution.  Representative outcomes
+are shown in~\cref{tab:historical}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Historical direct-state synthesis.  Residual is the recorded
+  squared objective.}
+  \label{tab:historical}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Target & $\norm{[U,Q]}_F$ & residual & growth & boundary drift\\
+    \midrule
+    phase gate & $0$ & $7.43\times10^{-28}$ & 3 & $0$\\
+    Pauli $X$ & $1.41421$ & $2.69\times10^{-27}$ & 2 & $0$\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The corresponding residual-norm upper bounds are approximately
+$2.73\times10^{-14}$ and $5.19\times10^{-14}$.  Pauli $X$ succeeds despite its
+nonzero charge commutator, directly falsifying charge conservation as a
+necessary condition for unconstrained spectral state synthesis.
+
+\subsection{Coupled graph-of-map fixture}
+
+The current coupled experiment fits a complete two-dimensional basis at a
+common eigenvalue on one shared geometry.  For a fixed generic $2\times2$
+unitary, the default run produced the metrics in~\cref{tab:coupled}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Deterministic coupled operator-transfer fixture.}
+  \label{tab:coupled}
+  \begin{tabular}{lr}
+    \toprule
+    Metric & Recorded value\\
+    \midrule
+    full-$W$ squared residual & $7.36\times10^{-17}$\\
+    stellar growth steps & $7$\\
+    intrinsic boundary drift & $0$\\
+    pinned restriction error & $0$\\
+    maximum isolated-boundary squared residual & $1.22\times10^{-30}$\\
+    recovered-operator relative error & $2.51\times10^{-16}$\\
+    maximum held-out full-$W$ squared residual & $1.36\times10^{-16}$\\
+    maximum held-out boundary error & $1.84\times10^{-16}$\\
+    common-eigenvalue spread & $2.88\times10^{-10}$\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The operator readout and held-out boundary restrictions are at floating-point
+precision.  The full-$W$ objective corresponds to a residual-norm bound of
+approximately $8.58\times10^{-9}$, so it should not be described as a
+machine-precision eigenpair.  The evidence supports accurate transfer in this
+fixture, not exact numerical stationarity.
+
+\subsection{Completed stress test}
+
+A completed, confirmed smoke campaign contains 77 cases spanning named gates,
+random unitary, normal, non-normal, scaled, singular, charge-preserving,
+charge-permuting, and charge-mixing matrices; and a sequence of increasingly
+conditioned input frames.  The status counts are in~\cref{tab:stress-status}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Outcomes of the completed 77-case stress test.  ``Budget'' means the
+  configured optimizer budget ended before certification; it is not a proof of
+  nonexistence.}
+  \label{tab:stress-status}
+  \begin{tabular}{lrr}
+    \toprule
+    Status & Count & Fraction\\
+    \midrule
+    verified & 43 & $55.8\%$\\
+    optimization budget exhausted & 22 & $28.6\%$\\
+    boundary target rejected & 8 & $10.4\%$\\
+    operator readout unstable & 3 & $3.9\%$\\
+    fitted span not at one common eigenvalue & 1 & $1.3\%$\\
+    \midrule
+    total & 77 & $100\%$\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+Five rejections were zero training outputs, which are valid for singular maps
+but incompatible with the current witness normalization.  One input and two
+outputs failed the isolated-boundary eigenstate precondition.
+No case changed a frozen boundary edge or a pinned boundary restriction.  Among
+verified cases, the largest recorded squared residual was
+$9.89\times10^{-17}$, the largest relative operator error was
+$2.64\times10^{-10}$, the largest held-out relative operator error was
+$3.89\times10^{-16}$, the largest held-out full squared residual was
+$9.83\times10^{-16}$, and the largest common-eigenvalue spread was
+$1.77\times10^{-9}$.  Verified operator condition numbers ranged from $1$ to
+$5.45\times10^{16}$ and operator norms from $0.141$ to $10^3$; these ranges do
+not imply uniform coverage within the interval.
+
+The largest verified training readout error came from a nearly collinear input
+frame.  The conditioning sequence in~\cref{tab:conditioning} shows the expected
+loss of identifiability.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Input-frame conditioning and operator readout.}
+  \label{tab:conditioning}
+  \begin{tabular}{rrl}
+    \toprule
+    input condition number & relative readout error & status\\
+    \midrule
+    $2\times10^2$ & $3.95\times10^{-15}$ & verified\\
+    $2\times10^4$ & $2.67\times10^{-12}$ & verified\\
+    $2\times10^6$ & $2.64\times10^{-10}$ & verified\\
+    $2\times10^8$ & $1.17\times10^{-8}$ & unstable\\
+    $2\times10^{10}$ & $9.63\times10^{-7}$ & unstable\\
+    $2\times10^{12}$ & $1.88\times10^{-4}$ & unstable\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+A separate deterministic set of nine named unitaries verified all nine, with
+recorded squared residuals between $6.26\times10^{-17}$ and
+$9.11\times10^{-17}$, zero boundary violations, and at most seven growth steps.
+Two larger shuffled all-attachment campaigns were still running at the freeze
+date of this draft.  No conclusion in this manuscript depends on their partial
+records.
+
+These results support three limited conclusions.  First, the coupled solver can
+recover one operator from a complete basis and transfer held-out states on the
+same frozen geometry.  Second, neither charge conservation nor unitarity is a
+necessary numerical precondition.  Third, conditioning and common-eigenvalue
+certification are genuine failure modes.  The results do not establish that the
+optimizer succeeds for every map or that every successful network is a valid
+simplicial cobordism.
+
+\section{Certification and stability}
+
+Let $L$ be Hermitian and let $E_\lambda$ be an eigenspace separated from the
+rest of the spectrum by
+\begin{equation}
+  \delta=\dist(\lambda,\spec(L)\setminus\{\lambda\})>0.
+\end{equation}
+For any unit vector $v$,
+\begin{equation}
+  \dist(v,E_\lambda)
+  \leq \frac{\norm{(L-\lambda I)v}}{\delta}.
+  \label{eq:residual-gap}
+\end{equation}
+Thus a small eigenresidual has geometric meaning only relative to a spectral
+gap.  Subspace versions are instances of Davis--Kahan perturbation bounds
+\cite{davis1970}; residual-based Hermitian bounds are discussed, for example,
+by Stewart~\cite{stewart1991}.
+
+Operator readout has a separate conditioning factor.  Suppose an exact
+boundary frame has blocks $X$ and $Y=UX$, whereas the computed frame has
+$\widehat X=X+E$ and $\widehat Y=UX+F$.  Then
+\begin{equation}
+  \widehat U-U=(F-UE)(X+E)^{-1}.
+  \label{eq:readout-error}
+\end{equation}
+If $\norm{X^{-1}E}<1$, the norm satisfies
+\begin{equation}
+  \norm{\widehat U-U}
+  \leq
+  \frac{(\norm F+\norm U\,\norm E)\norm{X^{-1}}}
+       {1-\norm{X^{-1}E}}.
+  \label{eq:readout-bound}
+\end{equation}
+This explains why small witness residuals can coexist with an unstable matrix
+readout when training inputs are nearly dependent.
+
+A defensible numerical certificate should report at least:
+
+\begin{enumerate}[label=(\arabic*)]
+  \item full-complex residual norms and whether stored metrics are squared;
+  \item the common-eigenvalue spread across basis witnesses;
+  \item the spectral gap separating the intended cluster;
+  \item dimension of the boundary trace and singular values of its input
+  projection;
+  \item boundary geometry drift and pinned restriction error;
+  \item relative operator readout error in a declared framing;
+  \item held-out linear-combination errors without re-optimizing geometry or
+  attachment; and
+  \item optimizer budget, restart count, and topology growth.
+\end{enumerate}
+
+Permutation enumeration should additionally report both the best and the
+distribution over framings.  A best-case result selected after observing the
+test input is not an operator certificate.
+
+\section{Composition and transition amplitudes}
+
+Graphs of maps compose as linear relations:
+\begin{equation}
+  \Gamma_V\circ\Gamma_U
+  =\{(x,z):\exists y,\ y=Ux,\ z=Vy\}
+  =\Gamma_{VU}.
+  \label{eq:relation-composition}
+\end{equation}
+This identity is the algebraic core of a cobordism composition law.  It does
+not yet prove that gluing two triangulated realizations and eliminating the
+interface produces the required spectral relation without spurious modes.
+That statement requires an additional gluing theorem controlling the interface
+Schur complement and eigenvalue multiplicity.
+
+When a framed spectral cobordism $W$ realizes a unique operator, define
+\begin{equation}
+  \mathfrak Z_\lambda(W)=U
+  \quad\text{when}\quad
+  \mathcal R_W(\lambda)=\Gamma_U.
+  \label{eq:operator-valued-Z}
+\end{equation}
+For an incoming state $\ket{\psi_B}$ and outgoing test state
+$\ket{\psi_A}$, the induced scalar transition amplitude is then
+\begin{equation}
+  Z(W_{AB};\psi_A,\psi_B)
+  =\bra{\psi_A}\mathfrak Z_\lambda(W_{AB})\ket{\psi_B}
+  =\matrixel{\psi_A}{U}{\psi_B}.
+  \label{eq:amplitude}
+\end{equation}
+In oriented cobordism notation one may write
+\begin{equation}
+  W_{AB}=\geo(U),
+  \qquad
+  \partial W_{AB}
+  =\overline{\geo(\psi_B)}\sqcup\geo(\psi_A),
+  \label{eq:cobordism-notation}
+\end{equation}
+where $\sqcup$ denotes disjoint union and the bar reverses the incoming
+orientation.  Equations~\eqref{eq:amplitude}--\eqref{eq:cobordism-notation} are
+valid as notation for the extracted spectral map.  They are not presently a
+derivation of a path integral or a proof that $\mathfrak Z_\lambda$ is a TQFT
+functor.  Such a claim would require, at minimum, identity, gluing, monoidality,
+and invariance under the chosen equivalence of cobordisms.
+
+\section{Discussion}
+
+The graph-of-map formulation settles the basic semantics of input substitution.
+The learned object is neither an isolated boundary eigenvector nor the bulk
+with its boundary literally subtracted.  It is the boundary relation obtained
+after the bulk has been eliminated.  The bulk acts as a realization of a Schur
+response, and the operator is recovered from the kernel of that response.
+
+This perspective also resolves the proposed Choi interpretation.  A Choi vector
+stores all matrix entries and can serve as a training target, but promotion to
+an operator requires a declared tensor factorization and reshaping convention.
+By contrast, $\Gamma_U$ already has operational input and output projections.
+The two descriptions are algebraically interconvertible after the frame has
+been fixed, but they answer different experimental questions.
+
+The exact response-synthesis theorem is nontrivial and broad: a scalar
+positive-weight magnetic network can realize the graph of every finite complex
+linear map while preserving arbitrary intrinsic boundary geometry.  It also
+shows that charge conservation cannot be the general existence criterion.
+Charge instead determines when the relation and its penalty respect a selected
+symmetry.  This distinction matters for both theorem statements and numerical
+test design.
+
+The scientific limitation is equally clear.  The current universal theorem is
+a theorem about finite magnetic graphs, which are discrete geometries but need
+not be manifold cobordisms.  The relaxation operates in a narrower class of
+triangulated complexes and has finite budgets.  Numerical success across many
+operators cannot replace the relative simplicial realization theorem, and
+budget exhaustion cannot refute it.  The most valuable next mathematical step
+is therefore a response-preserving thickening construction or a proof that
+such a construction is obstructed for some boundary data.
+
+\section{Conclusion}
+
+A finite-dimensional operator can be represented intrinsically as the graph of
+a boundary spectral relation.  Complete-basis fitting at a common eigenvalue
+then supports every new input by linearity, provided the boundary trace has the
+correct dimension and a nonsingular input projection.  Every such relation has
+a canonical Hermitian penalty, and every Hermitian boundary response admits an
+explicit realization by a finite simple scalar magnetic graph with unchanged
+intrinsic boundary geometry.  Charge conservation is exactly equivariance of
+this relation; attachment permutations select its frame.
+
+The Tessera experiments implement a fixed-boundary inverse spectral relaxation
+consistent with these semantics and demonstrate high-accuracy operator readout
+and held-out transfer in verified cases.  They also expose optimization,
+common-eigenvalue, and conditioning failures.  Establishing universal
+realization within nondegenerate triangulated cobordisms, and proving a gluing
+law sufficient for a functorial amplitude assignment, remain open.  These
+boundaries separate the proven mathematical result from the proposed geometric
+generalization.
+
+\appendix
+
+\section{Reproducibility protocol}
+
+The reference implementation is the open-source Tessera repository
+\cite{tessera}.  The principal executable examples are:
+
+\begin{itemize}[leftmargin=2.2em]
+  \item \path{examples/cobordism/geometric_operators.py}; and
+  \item \path{examples/cobordism/geometric_operator_sweep.py}.
+\end{itemize}
+
+They are backed by the coupled solver in \texttt{MultiCobordism} and
+\texttt{EigenstateSynthesis}.  After building the Python bindings according to
+the repository instructions, the deterministic fixture and the completed
+77-case record are reproduced by the following invocations:
+
+\begin{verbatim}
+python examples/cobordism/geometric_operators.py
+python examples/cobordism/geometric_operator_sweep.py \
+  --profile smoke --jobs 4 --confirmation-attempts 2 \
+  --output /tmp/cobordism/geometric_operator_sweep_smoke_confirmed.json
+\end{verbatim}
+
+The larger exhaustive campaign enumerates all six attachment permutations and
+uses independently seeded operator generation, schedule shuffling, input
+states, and optimizer generation.  It checkpoints every ten cases and retains
+every status rather than discarding failures.  Reproduction should record the
+repository revision, compiler and linear-algebra library, floating-point
+precision, all random seeds, and the complete JSON result.  Confirmatory runs
+must preserve the frozen boundary and framing while changing optimizer seeds.
+
+\section{Claim ledger}
+
+\begin{table}[H]
+  \centering
+  \caption{Epistemic status of the principal claims.}
+  \label{tab:claim-ledger}
+  \begin{tabular}{>{\raggedright\arraybackslash}p{0.53\textwidth}
+                  >{\raggedright\arraybackslash}p{0.20\textwidth}
+                  >{\raggedright\arraybackslash}p{0.17\textwidth}}
+    \toprule
+    Claim & Status & Location\\
+    \midrule
+    A complete basis at one common eigenvalue transfers every superposition.
+      & proved & \cref{thm:basis-span}\\
+    $K_U$ has kernel $\Gamma_U$ for every complex linear map.
+      & proved & \cref{eq:KU-energy}\\
+    Every Hermitian boundary response is realizable by a finite simple magnetic
+    graph with fixed induced boundary graph.
+      & proved & \cref{thm:response-synthesis}\\
+    Charge conservation is invariance of $\Gamma_U$ and commutation of $K_U$
+    with boundary charge.
+      & proved & \cref{thm:charge}\\
+    The current relaxation can recover and transfer multiple operator families.
+      & numerical evidence & \cref{sec:numerics}\\
+    Every target response admits a valid nondegenerate triangulated-cobordism
+    realization with the same frozen boundary.
+      & open & \cref{open:relative-simplicial}\\
+    Geometric gluing realizes operator composition without spurious modes.
+      & open & \cref{eq:relation-composition}\\
+    The construction defines a TQFT or path integral.
+      & not claimed & \cref{eq:amplitude}\\
+    Charge conservation is necessary for unconstrained operator realization.
+      & false & \cref{thm:charge} and Table~\ref{tab:historical}\\
+    A fitted Choi-like vector alone is an operator accepting new inputs.
+      & false without promotion & \cref{eq:operator-readout}\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{thebibliography}{99}
+
+\bibitem{atiyah1988}
+M.~F. Atiyah,
+\newblock Topological quantum field theories,
+\newblock \emph{Publications Math\'ematiques de l'IH\'ES} \textbf{68}
+  (1988), 175--186.
+\newblock \href{https://doi.org/10.1007/BF02698547}{doi:10.1007/BF02698547}.
+
+\bibitem{jamiolkowski1972}
+A.~Jamio\l kowski,
+\newblock Linear transformations which preserve trace and positive
+  semidefiniteness of operators,
+\newblock \emph{Reports on Mathematical Physics} \textbf{3} (1972), 275--278.
+\newblock \href{https://doi.org/10.1016/0034-4877(72)90011-0}
+  {doi:10.1016/0034-4877(72)90011-0}.
+
+\bibitem{choi1975}
+M.-D. Choi,
+\newblock Completely positive linear maps on complex matrices,
+\newblock \emph{Linear Algebra and its Applications} \textbf{10} (1975),
+  285--290.
+\newblock \href{https://doi.org/10.1016/0024-3795(75)90075-0}
+  {doi:10.1016/0024-3795(75)90075-0}.
+
+\bibitem{dorfler2013}
+F.~D\"orfler and F.~Bullo,
+\newblock Kron reduction of graphs with applications to electrical networks,
+\newblock \emph{IEEE Transactions on Circuits and Systems I} \textbf{60}
+  (2013), 150--163.
+\newblock \href{https://doi.org/10.1109/TCSI.2012.2215780}
+  {doi:10.1109/TCSI.2012.2215780};
+  \href{https://arxiv.org/abs/1102.2950}{arXiv:1102.2950}.
+
+\bibitem{friedlander2017}
+L.~Friedlander,
+\newblock The Dirichlet-to-Neumann operator for quantum graphs,
+\newblock preprint (2017),
+  \href{https://arxiv.org/abs/1712.08223}{arXiv:1712.08223}.
+
+\bibitem{fallat2024}
+S.~M. Fallat, H.~Gupta, and J.~C.-H. Lin,
+\newblock The inverse eigenvalue problem for Laplacian matrices of a graph,
+\newblock preprint (2024),
+  \href{https://arxiv.org/abs/2411.00292}{arXiv:2411.00292}.
+
+\bibitem{fabila2018}
+J.~S. Fabila-Carrasco, F.~Lled\'o, and O.~Post,
+\newblock Spectral gaps and discrete magnetic Laplacians,
+\newblock \emph{Linear Algebra and its Applications} \textbf{547} (2018),
+  183--216.
+\newblock \href{https://doi.org/10.1016/j.laa.2018.02.006}
+  {doi:10.1016/j.laa.2018.02.006};
+  \href{https://arxiv.org/abs/1710.01157}{arXiv:1710.01157}.
+
+\bibitem{singer2012}
+A.~Singer and H.-T. Wu,
+\newblock Vector diffusion maps and the connection Laplacian,
+\newblock \emph{Communications on Pure and Applied Mathematics} \textbf{65}
+  (2012), 1067--1144.
+\newblock \href{https://doi.org/10.1002/cpa.21395}{doi:10.1002/cpa.21395};
+  \href{https://arxiv.org/abs/1102.0075}{arXiv:1102.0075}.
+
+\bibitem{pachner1991}
+U.~Pachner,
+\newblock P.L. homeomorphic manifolds are equivalent by elementary shellings,
+\newblock \emph{European Journal of Combinatorics} \textbf{12} (1991),
+  129--145.
+\newblock \href{https://doi.org/10.1016/S0195-6698(13)80080-7}
+  {doi:10.1016/S0195-6698(13)80080-7}.
+
+\bibitem{davis1970}
+C.~Davis and W.~M. Kahan,
+\newblock The rotation of eigenvectors by a perturbation. III,
+\newblock \emph{SIAM Journal on Numerical Analysis} \textbf{7} (1970), 1--46.
+\newblock \href{https://doi.org/10.1137/0707001}{doi:10.1137/0707001}.
+
+\bibitem{stewart1991}
+G.~W. Stewart,
+\newblock Two simple residual bounds for the eigenvalues of a Hermitian matrix,
+\newblock \emph{SIAM Journal on Matrix Analysis and Applications} \textbf{12}
+  (1991), 205--208.
+\newblock \href{https://doi.org/10.1137/0612016}{doi:10.1137/0612016}.
+
+\bibitem{tessera}
+A.~Kelleher,
+\newblock Tessera: computational discrete differential geometry,
+\newblock software repository,
+  \href{https://github.com/akellehe/tessera}{github.com/akellehe/tessera}
+  (accessed August 26, 2026).
+
+\end{thebibliography}
+
+\end{document}

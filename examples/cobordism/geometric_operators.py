@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import cmath
+import itertools
 import json
 import math
 from contextlib import contextmanager
@@ -396,9 +397,21 @@ def historical_spectral_experiment(
 class BoundaryPairCobordism:
     """Two prepared boundary circles joined by a relaxed annular bulk."""
 
-    def __init__(self):
+    def __init__(
+            self, include_charge_mode=False,
+            attachment_permutation=(0, 1, 2)):
+        attachment_permutation = tuple(
+            int(value) for value in attachment_permutation)
+        if sorted(attachment_permutation) != [0, 1, 2]:
+            raise ValueError(
+                "attachment permutation must contain 0, 1, and 2 once")
+        self.attachment_permutation = attachment_permutation
         base_circle = [[0, 1], [1, 2], [0, 2]]
-        cells = tessera.Spacetime.prismCells(base_circle, 1, {})
+        twist = {
+            source: target
+            for source, target in enumerate(attachment_permutation)
+        }
+        cells = tessera.Spacetime.prismCells(base_circle, 1, twist)
         self.spacetime = tessera.Spacetime.fromCells(
             2, cells, 1.0, 0.0)
         for edge in self.spacetime.getEdgeList().toVector():
@@ -413,11 +426,16 @@ class BoundaryPairCobordism:
         self.output_cells = [[vertex] for vertex in sorted(
             self.output_vertices)]
         omega = cmath.exp(2j * math.pi / 3.0)
-        self.boundary_basis = np.asarray(
+        neutral_basis = np.asarray(
             [[1.0, omega, omega * omega],
              [1.0, omega * omega, omega]],
             dtype=complex,
         ) / math.sqrt(3.0)
+        self.include_charge_mode = bool(include_charge_mode)
+        self.boundary_basis = (
+            np.vstack((_CHARGE, neutral_basis))
+            if self.include_charge_mode else neutral_basis
+        )
 
         self.node = cob.MultiCobordism(
             host=self.spacetime,
@@ -453,23 +471,168 @@ class BoundaryPairCobordism:
             for key in self.pinned_edges
         }
 
+    @staticmethod
+    def _permutation_parity(permutation):
+        inversions = sum(
+            permutation[left] > permutation[right]
+            for left in range(len(permutation))
+            for right in range(left + 1, len(permutation))
+        )
+        return "odd" if inversions % 2 else "even"
+
+    def gluing_diagnostics(self, recovered, target):
+        """Measure the chart and automorphism content of boundary gluings."""
+        recovered = np.asarray(recovered, dtype=complex)
+        target = np.asarray(target, dtype=complex)
+        input_vertices = sorted(self.input_vertices)
+        output_vertices = sorted(self.output_vertices)
+        top_cells = {
+            tuple(sorted(
+                int(vertex.getId())
+                for vertex in simplex.getVertices()))
+            for simplex in self.spacetime.getTopSimplices()
+        }
+        live_edges = {
+            _edge_key(edge): edge
+            for edge in self.spacetime.getEdgeList().toVector()
+        }
+
+        def mapping_for(permutation, include_output):
+            mapping = {
+                input_vertices[source]: input_vertices[target_index]
+                for source, target_index in enumerate(permutation)
+            }
+            if include_output:
+                mapping.update({
+                    output_vertices[source]: output_vertices[target_index]
+                    for source, target_index in enumerate(permutation)
+                })
+            return mapping
+
+        def combinatorial_automorphism(mapping):
+            transformed = {
+                tuple(sorted(mapping.get(vertex, vertex) for vertex in cell))
+                for cell in top_cells
+            }
+            return transformed == top_cells
+
+        def metric_automorphism(mapping):
+            if not combinatorial_automorphism(mapping):
+                return False
+            for edge in live_edges.values():
+                source = int(edge.getSource().getId())
+                target_vertex = int(edge.getTarget().getId())
+                mapped_source = mapping.get(source, source)
+                mapped_target = mapping.get(
+                    target_vertex, target_vertex)
+                mapped_edge = live_edges.get(tuple(sorted(
+                    (mapped_source, mapped_target))))
+                if mapped_edge is None:
+                    return False
+                source_squared = complex(edge.getLength()) ** 2
+                target_squared = (
+                    complex(mapped_edge.getLength()) ** 2)
+                if not np.isclose(
+                        source_squared, target_squared,
+                        rtol=1e-12, atol=1e-12):
+                    return False
+                same_orientation = (
+                    int(mapped_edge.getSource().getId())
+                    == mapped_source
+                    and int(mapped_edge.getTarget().getId())
+                    == mapped_target
+                )
+                expected_phase = complex(edge.getPhase())
+                if not same_orientation:
+                    expected_phase = -expected_phase
+                source_link = cmath.exp(1j * expected_phase)
+                target_link = cmath.exp(
+                    1j * complex(mapped_edge.getPhase()))
+                if not np.isclose(
+                        source_link, target_link,
+                        rtol=1e-12, atol=1e-12):
+                    return False
+            return True
+
+        diagnostics = []
+        for permutation in itertools.permutations(range(3)):
+            physical = np.zeros((3, 3), dtype=complex)
+            for source, target_index in enumerate(permutation):
+                physical[target_index, source] = 1.0
+            induced = (
+                self.boundary_basis.conj()
+                @ physical @ self.boundary_basis.T
+            )
+            attached = recovered @ induced
+            corrected = attached @ np.linalg.inv(induced)
+            input_mapping = mapping_for(permutation, False)
+            paired_mapping = mapping_for(permutation, True)
+            diagnostics.append({
+                "permutation": list(permutation),
+                "parity": self._permutation_parity(permutation),
+                "induced_input_action": _matrix_payload(induced),
+                "naive_operator_error": float(np.linalg.norm(
+                    attached - target)),
+                "composed_operator_error": float(np.linalg.norm(
+                    attached - target @ induced)),
+                "chart_corrected_error": float(np.linalg.norm(
+                    corrected - target)),
+                "input_only_combinatorial_automorphism":
+                    combinatorial_automorphism(input_mapping),
+                "input_only_metric_automorphism":
+                    metric_automorphism(input_mapping),
+                "paired_combinatorial_automorphism":
+                    combinatorial_automorphism(paired_mapping),
+                "paired_metric_automorphism":
+                    metric_automorphism(paired_mapping),
+            })
+        return diagnostics
+
     def relax_operator(
             self, operator, epsilon=1e-16, boundary_epsilon=1e-12,
             restarts=4, max_growth=8, seed=0, max_iterations=400,
-            held_out_count=16):
+            held_out_count=16, input_basis=None,
+            common_eigenvalue=True):
         operator = np.asarray(operator, dtype=complex)
-        if operator.shape != (2, 2):
-            raise ValueError("boundary-pair fixture requires a 2x2 operator")
-        output_states = operator.T @ self.boundary_basis
+        dimension = self.boundary_basis.shape[0]
+        if operator.shape != (dimension, dimension):
+            raise ValueError(
+                "boundary-pair fixture requires a square operator matching "
+                "the prepared boundary basis")
+        if not np.all(np.isfinite(operator)):
+            raise ValueError("operator must contain only finite amplitudes")
+        if input_basis is None:
+            input_basis = np.eye(dimension, dtype=complex)
+        input_basis = np.asarray(input_basis, dtype=complex)
+        if input_basis.shape != (dimension, dimension):
+            raise ValueError(
+                "input basis must be square and match the operator")
+        if not np.all(np.isfinite(input_basis)):
+            raise ValueError(
+                "input basis must contain only finite amplitudes")
+        prepared_basis = input_basis.copy()
+        for column in range(dimension):
+            column_norm = float(np.linalg.norm(
+                prepared_basis[:, column]))
+            if not column_norm > 0.0:
+                raise ValueError(
+                    "input basis vectors must be nonzero")
+            prepared_basis[:, column] /= column_norm
+        if np.linalg.matrix_rank(prepared_basis) != dimension:
+            raise ValueError("input basis must be linearly independent")
+
+        input_states = input_basis.T @ self.boundary_basis
+        output_states = (
+            operator @ input_basis).T @ self.boundary_basis
         witness = self.node.relax_boundary_state_pairs(
             degree=0,
             input_region="input",
             input_cells=self.input_cells,
-            input_states=self.boundary_basis.tolist(),
+            input_states=input_states.tolist(),
             output_region="output",
             output_cells=self.output_cells,
             output_states=output_states.tolist(),
-            common_eigenvalue=True,
+            common_eigenvalue=bool(common_eigenvalue),
             epsilon=float(epsilon),
             boundary_epsilon=float(boundary_epsilon),
             restarts=int(restarts),
@@ -514,9 +677,11 @@ class BoundaryPairCobordism:
         held_out_residuals = []
         held_out_input_errors = []
         held_out_output_errors = []
+        held_out_operator_errors = []
         for _ in range(int(held_out_count)):
             coefficients = _unit(
-                rng.normal(size=2) + 1j * rng.normal(size=2))
+                rng.normal(size=dimension)
+                + 1j * rng.normal(size=dimension))
             combined = coefficients @ states
             expected_input = coefficients @ fixed_inputs
             expected_output = coefficients @ fixed_outputs
@@ -524,6 +689,14 @@ class BoundaryPairCobordism:
                 combined[input_indices] - expected_input)))
             held_out_output_errors.append(float(np.linalg.norm(
                 combined[output_indices] - expected_output)))
+            logical_input = (
+                self.boundary_basis.conj()
+                @ combined[input_indices])
+            logical_output = (
+                self.boundary_basis.conj()
+                @ combined[output_indices])
+            held_out_operator_errors.append(float(np.linalg.norm(
+                logical_output - operator @ logical_input)))
             held_out_residuals.append(float(synthesis.residual(
                 [complex(value) for value in combined])))
 
@@ -565,16 +738,35 @@ class BoundaryPairCobordism:
                 boundary_final == self.boundary_initial),
             "boundary_drift": float(boundary_drift),
             "restriction_error": restriction_error,
+            "dimension": int(dimension),
+            "common_eigenvalue_mode": bool(common_eigenvalue),
+            "attachment_permutation": list(
+                self.attachment_permutation),
+            "attachment_parity": self._permutation_parity(
+                self.attachment_permutation),
+            "input_basis": _matrix_payload(input_basis),
+            "input_basis_condition": float(np.linalg.cond(input_basis)),
+            "prepared_input_condition": float(np.linalg.cond(
+                input_coefficients)),
+            "minimum_output_norm": float(min(
+                np.linalg.norm(state) for state in output_states)),
             "target_operator": _matrix_payload(operator),
             "recovered_operator": _matrix_payload(recovered),
             "operator_error": float(np.linalg.norm(
                 recovered - operator)),
+            "operator_relative_error": float(
+                np.linalg.norm(recovered - operator)
+                / max(np.linalg.norm(operator), np.finfo(float).tiny)),
             "held_out_full_residual_max": max(
                 held_out_residuals, default=0.0),
             "held_out_input_error_max": max(
                 held_out_input_errors, default=0.0),
             "held_out_output_error_max": max(
                 held_out_output_errors, default=0.0),
+            "held_out_operator_error_max": max(
+                held_out_operator_errors, default=0.0),
+            "input_gluing_permutations": self.gluing_diagnostics(
+                recovered, operator),
         }
 
 
