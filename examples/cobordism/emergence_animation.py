@@ -8,13 +8,17 @@ paper's certificates actually read off the accepted geometry.
 
 What is driven, and what is only read
 -------------------------------------
-The dynamics is `MultiCobordism` in `SimulationMode.EMERGENCE` /
-`EmergenceSubmode.STRICT` with `JointStationarityObjective`.
-Nothing this file computes enters that objective: the firewall is structural
-(a static `objectiveOf` over declared scalars), and every panel below is a
-read-only measurement over the accepted geometry through the library's own
-observable classes. No target is pinned, no register is forced, no residual
-against a prescribed carrier is scored.
+In neutral mode the dynamics is `MultiCobordism` in
+`SimulationMode.EMERGENCE` / `EmergenceSubmode.STRICT` with
+`JointStationarityObjective`. Nothing the neutral certificate panels compute
+enters that objective: the firewall is structural (a static `objectiveOf` over
+declared scalars), and every panel is a read-only measurement over the accepted
+geometry through the library's own observable classes. No target is pinned, no
+register is forced, and no residual against a prescribed carrier is scored.
+The neutral seed's declared boundary region is held fixed; that removes
+coordinates from relaxation without adding a pinned objective. Qubit mode is
+the explicit exception: its selected readout and declared state are scored as
+the target that mode exists to fit.
 
 The paper's ontology, and what this driver refuses to draw
 ----------------------------------------------------------
@@ -30,7 +34,7 @@ The panels, and the class that feeds each
 -----------------------------------------
 1.  objective trace                 -- the node's own objective terms
 2.  drawing layout of the complex   -- persisted 1-skeleton, stabilized for
-                                       drawing, coloured by the interval
+                                       drawing, coloured by causal class
 3.  dual spatial curvature          -- `Re eps*|star|`, from timelike hinges
 4.  dual temporal curvature         -- `Im eps*|star|`, from spacelike hinges
 5.  persistent modular clusters     -- `PersistentModularity`
@@ -49,8 +53,8 @@ The panels, and the class that feeds each
 Two of those are DRAWING, not measurement, and are kept out of the record
 accordingly: the layout positions and the dual curvature appear in no
 `to_json` block. In the complex panel, POSITION is a drawing artefact while
-COLOUR is a measurement -- the causal class of each edge's own interval
-`Re(l^2)` -- and the panel says so on its face, because stabilizing the
+COLOUR is a measurement -- the causal class of each edge's own interval from
+`arg(l^2)` -- and the panel says so on its face, because stabilizing the
 picture and colouring it together make it look more physical than it is.
 
 Refusals are first class. On accessible hosts most channels are absent, and an
@@ -72,10 +76,11 @@ so a panel can be checked against a number.
 
 ``--edge-disposition`` chooses the seed's causal character: ``random`` (the
 default, magnitude one with the real/imaginary split drawn per edge),
-``spacelike`` (``l^2 = +1``), ``timelike`` (``l^2 = -1``), or ``foliated`` (a
-PRESCRIBED light cone -- timelike between hop layers of M0, spacelike within
-one). Only ``foliated`` prescribes a causal order; it is labelled as such
-wherever it is reported and is never presented as emergent.
+``spacelike`` (``l^2 = +1``), ``timelike`` (``l^2 = -1``), ``lightlike``
+(``l^2 = i``), or ``foliated`` (a PRESCRIBED light cone -- timelike between
+hop layers of M0, spacelike within one). Only ``foliated`` prescribes a causal
+order; it is labelled as such wherever it is reported and is never presented
+as emergent.
 
 The qubit input mode
 --------------------
@@ -90,7 +95,9 @@ its input state through the zero mode of its OWN Laplacian: the block
 residual of spec D2, ``1 - |<psi(tau_in)|psi(tau_hat)>|^2`` with tau_hat the
 ratio of the transported periods of the holomorphic form of the block's own
 Laplacian on its live surface (``MultiCobordism.block_qubit``), is in the
-objective at ``--input-weight``; nothing is pinned. Each block holds its
+objective at ``--input-weight``. The input surfaces are held by default so the
+bulk is fitted to the declared inputs; ``--no-pin-boundary`` restores the
+historical freely relaxed boundary. Each block holds its
 marking (``set_input_marking``), which fixes the cycles the periods are taken
 over and, by A.B = +1, the orientation the surface is read in. The zero mode
 of the ENTIRE cobordism is the OUTPUT state (spec R1): it is read at each
@@ -130,6 +137,7 @@ import cmath
 import itertools
 import json
 import math
+import numbers
 import os
 import random
 import sys
@@ -172,21 +180,26 @@ DECLARED_STAGE2_ITERS = 12
 #: The deepening covers EVERY move kind the stage-1 draw offers: the four
 #: Pachner moves plus the cone-outs and cone-ins, not the surgical moves
 #: alone. The depth is over the whole draw, not over a subset of it.
-DECLARED_SURGICAL_DEPTH = 1
-#: Fixed breadth for the combinatorial search, or zero for the deepening
+#: ``--surgical-depth`` remains a hidden command-line and Python API alias.
+DECLARED_COMBINATORIAL_DEPTH = 1
+DECLARED_SURGICAL_DEPTH = DECLARED_COMBINATORIAL_DEPTH
+#: Fixed composition length for the combinatorial search, or zero for the
 #: schedule above.
 #:
 #: Non-zero runs the depth ladder the other way round: stage 1 searches
 #: sequences of exactly this many moves FIRST, and backs off one move at a
 #: time -- to this many minus one, then minus two, down to single moves --
-#: only when nothing at the current breadth lowers the objective.
+#: only when nothing at the current length lowers the objective.
 #:
 #: The two schedules answer different questions. The deepening schedule finds
 #: a single improving move whenever one exists and only ever looks at pairs
 #: on a plateau; the backing-off schedule asks whether a composition of this
 #: length improves a complex that no shorter composition improves, which means
 #: looking there first. Zero keeps the deepening schedule.
-DECLARED_COMBINATORIAL_BREADTH = 0
+#: ``--combinatorial-breadth`` remains a hidden command-line and Python API
+#: alias.
+DECLARED_COMBINATORIAL_LENGTH = 0
+DECLARED_COMBINATORIAL_BREADTH = DECLARED_COMBINATORIAL_LENGTH
 #: Which space the two-body target is scored against (`--readout`), as a
 #: comma-separated set that is SUMMED. Each name is the SPACE the reading takes
 #: the state from, so a name cannot suggest the wrong one.
@@ -196,19 +209,27 @@ DECLARED_COMBINATORIAL_BREADTH = 0
 #: and factorizes across the boundaries, which is what lets it carry an
 #: entangled target.
 #:
-#: `bulk` is ker L_1(W - dW): the Laplacian on interior cells with the boundary
-#: REMOVED, read through a Choi frame. On a one-layer collar the complex has no
-#: interior edges at all, so there is nothing to read.
+#: `bulk` would be ker L_1(W - dW): the Laplacian on interior cells with the
+#: boundary REMOVED, read through a Choi frame. The engine API accepts an
+#: explicitly supplied frame, but this driver has no canonical choice of d^2
+#: interior edges. It is refused rather than scoring a constant 1.0.
 #:
 #: `whole` is ker L_1(W): the boundary INCLUDED, read through the blocks'
-#: markings. Its rank is b_1(W), so two boundary tori give 2 against a
-#: 4-dimensional target and the term says so rather than fitting one; four tori
-#: give b_1(dW) = 8 and hence rank 4.
+#: markings. Two boundary tori give rank 2 and accept an explicitly declared
+#: 2-vector output state. Four give rank 4 only as a direct sum of torus
+#: cohomologies, not in the tensor-product coordinates of the two-qubit target,
+#: so this driver refuses that dimensional coincidence.
 #:
 #: This is part of the OBJECTIVE. The two-body residual is a term in r_U, so
-#: the choice prices stage-1 moves and drives stage-2 descent.
+#: every choice prices stage-1 moves. Transfer also drives stage-2 descent;
+#: whole is invariant under length motion at fixed marked topology and has a
+#: zero analytic direction there.
 DECLARED_READOUT = "transfer"
-#: How many tori bound the cobordism (`--tori`): two or four.
+#: How many tori bound the cobordism (`--tori`): two in the runnable driver.
+#: Four remains an accepted compatibility value so legacy invocations receive
+#: the precise representation mismatch below instead of an argparse mystery;
+#: the paired four-torus construction is available only as a low-level
+#: geometric diagnostic.
 #:
 #: TWO is one torus per input state, the collar of spec S3.
 #:
@@ -219,10 +240,10 @@ DECLARED_READOUT = "transfer"
 #: along a sphere is a connected sum, which adds no first homology, so
 #: b_1 = 2 + 2 = 4 with nothing dying on the boundary.
 #:
-#: The count decides which readings can run at all, because
-#: rank(H^1(W) -> H^1(dW)) = b_1(dW)/2: two tori leave a harmonic space of rank
-#: 2, four leave 4, and the two-body target is 4-dimensional. See
-#: `_READOUT_TORI` for the matrix, which `build_config` enforces.
+#: The count decides which readings can run at all. Although
+#: rank(H^1(W) -> H^1(dW)) = b_1(dW)/2 gives rank 4 at four tori, that space is
+#: a direct sum rather than a two-qubit tensor product. `_READOUT_TORI` records
+#: and enforces the distinction.
 #:
 #: Four needs three collar layers. A prism cell spans two adjacent layers, so
 #: the all-interior cell the join removes exists only with two interior layers.
@@ -245,11 +266,10 @@ DECLARED_COLLAR_TWIST = "none"
 #: The state the whole complex's harmonic form is meant to be (`--output-state`),
 #: as a modulus tau: the target is psi(tau) = (1, tau)/|(1, tau)|.
 #:
-#: The harmonic of the whole Laplacian IS a state, and its dimension is
-#: b_1(W) -- 2 with two boundary tori, 4 with four. A 2-dimensional harmonic
-#: space carries a 2-dimensional state, which is what this names. Unset, the
-#: reading falls back to the two-body target, which is 4-dimensional and so
-#: only fits a four-torus host.
+#: The harmonic of the whole Laplacian IS a state. On the supported two-torus
+#: host its rank is 2, and this names that 2-vector. It is required because the
+#: ordinary two-body target has four tensor-product amplitudes and cannot stand
+#: in for it.
 DECLARED_OUTPUT_STATE = None
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
@@ -345,13 +365,14 @@ DECLARED_TIME = 0.05
 #: and the residual's descent direction, holomorphic in z, always has one.
 DECLARED_INPUT_WEIGHT = 1e4
 #: Whether a CONE move may extend the boundary of W (`--extend-boundary`).
-#: False, which is also the engine's default: this driver states its
-#: boundary up front -- the two input tori of the qubit mode, the held M0 of
-#: the neutral one -- and a cone that hands dW a face it did not have
-#: changes what the cobordism IS rather than how it is shaped. A cone-in
-#: buries the facet it stands on and exposes the new cell's others; a
-#: cone-out exposes every facet of the cell it removes. Declared here
-#: anyway, so the run document records which it was.
+#: False, which is also the engine's default. This is a qubit-mode choice:
+#: its two surface input blocks declare the boundary up front, and a cone that
+#: hands dW a face it did not have changes what the cobordism IS rather than
+#: how it is shaped. The neutral mode's M0 is only a pinned region; it holds
+#: coordinates without declaring a topological boundary, so that mode refuses
+#: a non-default value. A cone-in buries the facet it stands on and exposes
+#: the new cell's others; a cone-out exposes every facet of the cell it
+#: removes. The choice is recorded in the run document.
 DECLARED_EXTEND_BOUNDARY = False
 #: Whether the WHOLE cobordism's leak of each input state is scored in the
 #: objective beside the block's own residual (`--score-leak`).
@@ -377,9 +398,10 @@ DECLARED_SCORE_LEAK = False
 #: nothing ever asked the geometry to be a MAP.
 #:
 #: Each extra pair adds six more constraints on the same bulk. Every case
-#: shares one triangulation, one gluing and one bulk; only the boundary metric
-#: differs. Use with --pin-boundary: with the boundary free the cases would
-#: fight over coordinates the relaxation may move, which is not the experiment.
+#: shares one triangulation, one gluing and one bulk; its boundary metric,
+#: target and marking coefficients describe that input. Use with
+#: --pin-boundary: with the boundary free the cases would fight over
+#: coordinates the relaxation may move, which is not the experiment.
 DECLARED_STATES = None
 #: How often the `--live` main thread services the GUI event loop while the
 #: worker computes, in seconds -- about twenty times a second.
@@ -481,9 +503,14 @@ class Terminator:
     #: stops at machine zero, and `DriveResult.stalls` records how many units
     #: it took so the two are told apart in the document.
     TOLERANCE = "tolerance-reached"
+    #: A cooperative stop callback requested cancellation between engine
+    #: calls. Live-mode interrupts use this to join the worker before exposing
+    #: its geometry; a direct caller can also distinguish cancellation from an
+    #: exhausted unit budget.
+    CANCELLED = "cancelled"
 
     #: Every value a drive may report.
-    ALL = (STEPS, TOLERANCE)
+    ALL = (STEPS, TOLERANCE, CANCELLED)
 
 
 class DriveResult:
@@ -878,10 +905,15 @@ DECLARED_PIN_BOUNDARY = True
 _READOUT_TORI = {
     "transfer": ((2,), "it reads between exactly two frames, so four tori "
                        "would leave two of them out"),
-    "bulk": ((2, 4), ""),
-    "whole": ((2, 4), ""),
-    "operator": ((4,), "it pairs a state with its conjugate a side, and two "
-                       "tori give one block a side"),
+    "bulk": ((), "this driver has no declared Choi frame for the interior "
+                  "edges; use the low-level geometric-operator API with an "
+                  "explicit frame"),
+    "whole": ((2,), "four marked tori provide a rank-4 direct-sum period "
+                      "frame, not the tensor-product coordinates of the "
+                      "declared two-qubit target"),
+    "operator": ((), "its paired frame is a direct sum, while the declared "
+                       "two-qubit gate acts on a tensor product; equal 4 by 4 "
+                       "dimensions do not identify those spaces"),
 }
 #: What --tori, --readout, --output-state and --layers mean TOGETHER, printed
 #: as the run subcommand's epilog. Written here beside `_READOUT_TORI`, which
@@ -902,46 +934,49 @@ qubit mode: how --tori, --readout and --output-state fit together
 
   Why the count matters: for a compact oriented 3-manifold
   rank(H^1(W) -> H^1(dW)) = b_1(dW)/2. Two tori leave a harmonic space of
-  rank 2, four leave rank 4. A rank-k harmonic space carries a
-  k-dimensional state and nothing else.
+  rank 2, four leave rank 4. The latter is a direct sum of torus cohomologies,
+  not the tensor product of two qubits; matching dimensions do not identify
+  those representations.
 
   --readout is which space the target is scored against, as a
-  comma-separated set that is SUMMED. Each is the same projective leak on
-  the same scale, and each scores a full 1.0 when it cannot name a state.
-  The choice is part of the OBJECTIVE: the residual is a term in r_U, so it
-  prices stage-1 moves and drives stage-2 descent.
+  comma-separated set that is SUMMED. At the low-level engine API each is the
+  same projective leak on the same scale, with 1.0 the convention for a
+  geometry that cannot name a state. This driver refuses every configuration
+  known to be structurally incapable before it drives, so no runnable flag
+  silently contributes that constant. The choice is part of the OBJECTIVE:
+  the residual is a term in r_U, so it prices stage-1 moves. Transfer also
+  drives stage-2 descent; the period-normalized whole reading has zero length
+  direction while the marked topology stays fixed.
 
     transfer   (Z_A^v)^T A~_1 Z_B, the whole complex's degree-1 operator
                read as the coupling block between the two boundary frames.
                2x2, scored against chi. --tori 2 only: it reads between
                exactly two frames, so four tori would leave two out.
 
-    bulk       ker L_1(W - dW), the Laplacian on interior cells with the
-               boundary REMOVED, read through a Choi frame of d^2 interior
-               edges. The only reading that takes a Choi decomposition as
-               such. --tori 2 or 4, and at least two --layers: with one
-               layer every cell touches a surface and there are no interior
-               cells at all. It refuses until the frame is named, since
-               which d^2 interior edges are the frame changes the answer.
+    bulk       refused by this driver. The engine's low-level geometric
+               operator reads ker L_1(W - dW) through an EXPLICIT Choi frame
+               of d^2 interior edges. This driver has no geometrically
+               canonical frame to supply, and choosing one implicitly would
+               change the answer.
 
     whole      ker L_1(W), the boundary INCLUDED, read through the blocks'
-               markings. The harmonic space is a space, not a state; the
-               inputs pick the form out of it, and its coefficient vector
-               IS the output state. --tori 2 or 4.
-                 --tori 2 -> rank 2, so it needs --output-state, a
-                             2-dimensional target.
-                 --tori 4 -> rank 4; --output-state if given, otherwise the
-                             4-dimensional chi.
+               markings. At --tori 2 the harmonic rank is 2, so it needs
+               --output-state, a 2-dimensional target. At --tori 4 the
+               period coordinates form a direct sum rather than the tensor
+               coordinates of chi, so that combination is refused.
+               The product collar's two harmonic frames must agree, so this
+               reading also refuses --collar-twist swap.
 
-    operator   the transfer between two PAIRED frames, a state and its
-               conjugate a side. Rank 4 a side makes it 4x4 -- the
-               dimension of an operator on C^2 (x) C^2 -- so the target is
-               the GATE itself rather than the gate's image of one chosen
-               input. --tori 4 only.
+    operator   refused by this driver. Stacking a torus and its conjugate
+               gives a rank-4 DIRECT-SUM frame, while a two-qubit gate acts
+               on a rank-4 TENSOR PRODUCT. The matching dimensions do not
+               supply the missing tensor-product identification. A future
+               tensor/Fock readout must name that representation explicitly.
 
   --output-state names the state the whole Laplacian's harmonic is meant to
   be, as a modulus tau; the target is psi(tau) = (1, tau) normalized. Read
-  by --readout whole and ignored by the others.
+  by every --readout set containing whole, including transfer,whole, and
+  refused when whole is absent.
 
   Writing a state. Every state here is a modulus tau, and the state it names
   is psi(tau) = (1, tau) normalized -- so tau = psi_1 / psi_0. The table is
@@ -988,7 +1023,8 @@ qubit mode: how --tori, --readout and --output-state fit together
                is refused by name rather than read through a metric it did
                not ask for.
 
-    bulk       the live SIGNED HODGE WEIGHTS,
+    bulk       when called through the low-level API with an explicit frame,
+               the live SIGNED HODGE WEIGHTS,
                W_1^-1 d_1^T W_0 d_1 + d_2 W_2^-1 d_2^T W_1, whose right
                kernel is taken by SVD because the Lorentzian operator is
                generally non-normal. The combinatorial unit-weight operator
@@ -998,39 +1034,48 @@ qubit mode: how --tori, --readout and --output-state fit together
                a constant under stage 2.
 
     whole      the chain-level WHITNEY PENCIL, at degree 1, same guard as
-               transfer. The harmonic band moves as the lengths move, and
-               the periods are transported through the connection, so the
-               phases enter too.
+               transfer. Its harmonic band and period matrix move with the
+               lengths, but normalization into the live period frame cancels
+               that basis motion at fixed marked topology. It can therefore
+               price topology-changing stage-1 moves, while its correct
+               stage-2 length gradient is zero.
 
-    operator   the chain-level WHITNEY PENCIL, same as transfer; the paired
-               frame is the direct sum of two blocks' frames, so it is the
-               same metric read on twice as many cells.
+    operator   the low-level paired transfer uses the chain-level WHITNEY
+               PENCIL, but its frame is a direct sum and is not wired here as
+               a two-qubit tensor-product operator.
 
-  None of the four is metric-agnostic as wired. Every one of them moves
-  under stage 2, which is what makes it usable as an objective term. The
-  metric-agnostic readings that exist in the engine are the combinatorial
-  unit-weight bulk operator above, and anything read at degree 0, where the
-  representation is the U(1) connection Laplacian and the metric source does
-  not enter at all -- measured in #936, where the Whitney and diagonal-weight
-  records came out bit-identical.
+  Transfer is metric-sensitive. Whole is period-frame intrinsic: at fixed
+  marked topology its value is unchanged by length motion, but a
+  topology-changing stage-1 candidate may change the available harmonic space
+  or period map. Other metric-agnostic readings in the engine include the
+  combinatorial unit-weight bulk operator above, and anything read at degree
+  0, where the representation is the U(1) connection Laplacian and the metric
+  source does not enter at all -- measured in #936, where the Whitney and
+  diagonal-weight records came out bit-identical.
 
   What that leaves:
 
     --readout             --tori 2                --tori 4
     transfer              yes                     refused
-    bulk                  yes (--layers >= 2)     yes
-    whole                 needs --output-state    yes
-    operator              refused                 yes
+    bulk                  refused                refused
+    whole                 needs --output-state    refused
+    operator              refused                refused
 
-  Every combination outside that table is refused when the config is built,
-  by name and with the reason. A reading that cannot produce a number would
-  otherwise score a constant 1.0 forever, and a constant term has no
-  gradient -- the flag would be a silent no-op while the run looked like it
-  was optimizing something.
+  Accepted rows compose: transfer,whole is accepted at --tori 2 when an
+  --output-state is supplied, and its aggregate residual is the sum of the
+  transfer and whole components. A selection containing a refused row or an
+  incompatible torus count is refused when the config is built, by name and
+  with the reason. A reading that cannot produce a number would otherwise
+  score a constant 1.0 forever, and a constant term has no gradient -- the
+  flag would be a silent no-op while the run looked like it was optimizing
+  something.
 
-  Worth knowing: only `operator` scores against the gate. The other three
-  score against the gate's image of one chosen input pair, so a bulk can be
-  fitted to that pair and to nothing else.
+  The driver therefore has no four-torus objective. The value 4 is retained
+  so existing commands fail with the scientific reason; construct the paired
+  host through the low-level engine API for a geometric diagnostic.
+
+  Every accepted reading is case-specific. `transfer` uses the gate's image
+  of the declared input pair; `whole` uses the explicit --output-state.
 """
 
 
@@ -1060,7 +1105,19 @@ def _readout_names(readout):
             raise ValueError("unknown readout %r: expected a comma-separated "
                              "set from %s"
                              % (name, ", ".join(sorted(_READOUT_MODES))))
-    return names
+    return list(dict.fromkeys(names))
+
+
+def _validate_readout_host(names, tori):
+    """Refuse a reading whose declared target has no matching host space."""
+    for name in names:
+        allowed, why = _READOUT_TORI[name]
+        if not allowed:
+            raise ValueError("--readout %s is unavailable: %s" % (name, why))
+        if tori not in allowed:
+            raise ValueError(
+                "--readout %s needs --tori %s, not %d: %s"
+                % (name, " or ".join(str(n) for n in allowed), tori, why))
 
 
 def gate_image(name, psi, phi):
@@ -1080,10 +1137,8 @@ def gate_image(name, psi, phi):
             "psi": np.asarray(psi, dtype=complex).reshape(2),
             "phi": np.asarray(phi, dtype=complex).reshape(2),
             "chi": (gate @ product).reshape(2, 2),
-            # The GATE, beside its image of this one input pair. The
-            # paired-frame reading scores against the operator itself
-            # (#1048): a geometry that represents G acts correctly on every
-            # input, where one fitted to chi has been fitted to one of them.
+            # The gate beside its image of this input pair, for a complete
+            # algebra record even though the driver scores the image itself.
             "gate": gate,
             "product_state": product.reshape(2, 2),
             "first_order_amplitudes": (gate @ product).reshape(2, 2),
@@ -1112,9 +1167,7 @@ def flip_flop_evolution(psi, phi, coupling, time):
     chi = two_qubit_flip_flop(psi, phi)
     return {"coupling": float(coupling), "time": float(time), "Jt": angle,
             "psi": psi, "phi": phi, "chi": chi,
-            # The propagator IS the gate here, so the paired-frame reading
-            # scores against the exact evolution at the declared J t rather
-            # than against its image of one input pair (#1048).
+            # The propagator used for the exact ordinary state image.
             "gate": propagator,
             "product_state": product.reshape(2, 2),
             "first_order_amplitudes": -1j * angle * chi,
@@ -1231,11 +1284,11 @@ class QubitInputs:
     """
 
     __slots__ = ("tori", "tau_in", "coefficients_in", "vertex_ids", "cells",
-                 "markings", "algebra", "weight", "regge", "layers",
+                 "markings", "algebra", "weight", "regge", "grid", "layers",
                  "objective_name", "objective_terms", "torus_warnings", "seed")
 
     def __init__(self, tori, tau_in, vertex_ids, cells, markings,
-                 algebra, weight, regge, layers, objective_name,
+                 algebra, weight, regge, grid, layers, objective_name,
                  objective_terms, torus_warnings, seed):
         self.tori = list(tori)
         self.tau_in = [complex(tau) for tau in tau_in]
@@ -1251,6 +1304,7 @@ class QubitInputs:
         self.algebra = algebra
         self.weight = float(weight)
         self.regge = bool(regge)
+        self.grid = int(grid)
         self.layers = int(layers)
         self.objective_name = str(objective_name)
         self.objective_terms = [str(name) for name in objective_terms]
@@ -1302,7 +1356,11 @@ class QubitInputs:
             "tau_in": self.tau_in,
             "coefficients_in": self.coefficients_in,
             "bloch_in": [[float(x) for x in torus.bloch()] for torus in self.tori],
+            # Keep the historical (misnamed) vertex-count field for readers of
+            # existing run documents; the unambiguous fields are additive.
             "grid": [len(torus.vertices()) for torus in self.tori],
+            "grid_size": self.grid,
+            "vertices_per_torus": [len(torus.vertices()) for torus in self.tori],
             "layers": self.layers,
             "vertex_ids": self.vertex_ids,
             "cells": self.cells,
@@ -1367,11 +1425,14 @@ def _as_state_pairs(text):
 
 
 def _two_body_case(pair, tori, ids, grid, operator, config):
-    """One input pair as (boundary lengths, chi) on the host's edges.
+    """One case as boundary, chi, decomposition, paired target and inputs.
 
     The boundary is the two tori at this pair's moduli, mapped onto the host by
     the seeding's vertex correspondence. The bulk is not listed: it is what the
-    fit is solving for and is shared by every case.
+    fit is solving for and is shared by every case. The paired direct-sum
+    target is absent because the driver supplies no tensor/direct-sum
+    identification; the final vector is the case's coefficients in
+    input-block/cycle order.
     """
     import numpy as np
 
@@ -1401,24 +1462,11 @@ def _two_body_case(pair, tori, ids, grid, operator, config):
                                       config["coupling"], config["time"])
     else:
         algebra = gate_image(operator, forward[0], forward[1])
-    # The TWO-STATE VECTOR, when the case has a backward wavefunction to carry
-    # one. In the two-state vector formalism a system has a forward |psi> and a
-    # backward <phi|, and the object is the outer product; a conjugate pair is
-    # exactly that, the torus being the past wavefunction and its orientation
-    # reversal the future one. Evolved by the gate this is G |psi><phi| G+,
-    # 4x4 for two qubits -- the paired-frame transfer's dimension.
-    #
-    # <phi| is the reversed tori's OWN state, which is Z conj(psi) rather than
-    # conj(psi): reversing the orientation flips the sign of the second
-    # amplitude. The geometry does not undo that Z and neither does the target.
-    two_state = None
-    if len(ids) == 4:
-        gate = np.asarray(algebra["gate"], dtype=complex)
-        psi = np.kron(forward[0].reshape(2), forward[1].reshape(2))
-        phi = np.kron(np.asarray(at_pair[1].state()).reshape(2),
-                      np.asarray(at_pair[3].state()).reshape(2))
-        two_state = (gate @ np.outer(psi, phi.conj())) @ gate.conj().T
-    return (boundary, algebra["chi"], True, two_state)
+    coefficients = [coefficient for tau in moduli
+                    for coefficient in (1.0 + 0j, complex(tau))]
+    # The fourth slot is retained for the engine tuple API. This driver does
+    # not identify its paired direct-sum frame with a tensor two-state space.
+    return (boundary, algebra["chi"], True, None, coefficients)
 
 
 def build_qubit_node(config):
@@ -1427,7 +1475,8 @@ def build_qubit_node(config):
 
     Step by step the setup the T1-T3 tests measured under (spec S1-S3, S5),
     with D2/D3 as revised: the tori `SimplicialQubit.flat_torus(tau, n, n)`;
-    the collar `MultiCobordism.seed_collar`, one gated whole refused by name;
+    the collar `MultiCobordism.seed_collar` (or two joined collars for four
+    tori), with incompatible readout/host combinations refused by name;
     the node with the degree-1 register on the complex locus (the tori carry
     complex lengths and pure-gauge phases), the Regge term per `regge` and
     the Whitney pencil as its metric source; each torus's vertex set one
@@ -1437,16 +1486,20 @@ def build_qubit_node(config):
     (1, tau_in) on its block (`set_input_marking`), from which the engine
     derives the block's live frame at every read; chi of spec S5 as the
     Choi-decomposed two-body target (`set_two_body_target`), 2 x 2 in the
-    derived frames; the block residuals -- the leak of (1, tau_in) through
-    the live frame in the whole's zero mode on the block's edges -- in r_U at
-    the input weight. No region is pinned and no objective is injected: the
-    node's default objective is what T2 and T3 measured under, and
+    ordinary transfer frames; the block residuals --
+    the leak of (1, tau_in) in the zero mode of each block's OWN Laplacian --
+    in r_U at the input weight. The shared drive holds the input regions by
+    default, unless `--no-pin-boundary` is selected. No objective is injected:
+    the node's default objective is what T2 and T3 measured under, and
     `QubitInputs.objective_name` records it.
 
     Returns the node and its `QubitInputs`.
     """
     import numpy as np
 
+    _validate_readout_host(
+        _readout_names(config.get("readout", DECLARED_READOUT)),
+        int(config.get("tori", DECLARED_TORI)))
     tau_in = [complex(*config["tau_a"]), complex(*config["tau_b"])]
     grid = int(config["grid"])
     with warnings.catch_warnings():
@@ -1474,7 +1527,7 @@ def build_qubit_node(config):
         # spans two adjacent layers, so the all-interior cell the join removes
         # exists only with two interior layers.
         seed = MC.seed_joined_collars([torus.spacetime() for torus in tori],
-                                      max(3, int(config["layers"])),
+                                      int(config["layers"]),
                                       _collar_twist(config, grid))
     else:
         seed = MC.seed_collar(tori[0].spacetime(), tori[1].spacetime(),
@@ -1503,31 +1556,38 @@ def build_qubit_node(config):
                                [1.0 + 0j, complex(tau_in[index])])
     operator = config.get("operator", DECLARED_OPERATOR)
     if operator == "flip_flop":
+        second = 2 if len(tori) == 4 else 1
         algebra = flip_flop_evolution(np.asarray(tori[0].state()),
-                                      np.asarray(tori[1].state()),
+                                      np.asarray(tori[second].state()),
                                       config["coupling"], config["time"])
     else:
+        second = 2 if len(tori) == 4 else 1
         algebra = gate_image(operator, np.asarray(tori[0].state()),
-                             np.asarray(tori[1].state()))
+                             np.asarray(tori[second].state()))
     algebra["operator"] = operator
     node.set_two_body_target(algebra["chi"], True)
     if config.get("output_state") is not None:
         import numpy as np
         tau_out = complex(*config["output_state"])
-        state = np.array([1.0 + 0j, tau_out], dtype=complex)
+        # Scale the real and imaginary components before taking a complex
+        # magnitude: ``abs(1.7e308 + 1.7e308j)`` overflows even though both
+        # declared components are finite and the projective state is valid.
+        scale = max(1.0, abs(tau_out.real), abs(tau_out.imag))
+        state = np.array([1.0 / scale, tau_out / scale], dtype=complex)
         node.set_output_state_target(state / np.linalg.norm(state))
     node.set_readout_modes([_READOUT_MODES[name]
                             for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
     # and is what the collar was seeded from, so it is always case zero; the
-    # extra pairs are the same tori at different moduli. Only the boundary
-    # metric distinguishes them, which is why a case carries lengths and a
-    # target and nothing else.
+    # extra pairs are the same tori at different moduli. A case carries its
+    # boundary metric and target, plus the marking coefficients needed by the
+    # whole-harmonic reading; the triangulation and bulk remain shared.
     extra = _as_state_pairs(config.get("states"))
     base_pair = (complex(*config["tau_a"]), complex(*config["tau_b"]))
-    # Cases are set for EVERY four-torus run, extra pairs or not: a case is
-    # what carries the two-state vector, so `operator` would otherwise be
-    # unreadable on a run given only --tau-a and --tau-b.
+    # Cases are set for every four-torus construction as well as for additional
+    # input pairs so a whole-harmonic read can use each case's own marking
+    # coefficients. The driver currently refuses a tensor target on that
+    # direct-sum host, but the low-level case representation remains complete.
     if extra or len(ids) == 4:
         node.set_two_body_cases(
             [_two_body_case(pair, tori, ids, grid, operator, config)
@@ -1537,7 +1597,7 @@ def build_qubit_node(config):
     host = node.spacetime()
     inputs = QubitInputs(
         tori, tau_in, ids, cells, markings, algebra,
-        config["input_weight"], config["regge"], config["layers"],
+        config["input_weight"], config["regge"], grid, config["layers"],
         node.objective_name, MC.objective_term_names(),
         [torus.warnings() for torus in tori],
         {"cells": len(host.getTopSimplices()),
@@ -1653,7 +1713,7 @@ def _json_safe(value):
     if isinstance(value, (list, tuple)):
         return [_json_safe(v) for v in value]
     if isinstance(value, complex):
-        return [value.real, value.imag]
+        return [_json_safe(value.real), _json_safe(value.imag)]
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
@@ -1733,7 +1793,7 @@ class EmergenceFrame:
                        for index in range(len(inputs.tori))]
         self.leaks = self._read_restricted_leaks(spacetime, inputs)
         self.monodromy = self._read_monodromy(spacetime, inputs)
-        self.two_body = self._read_two_body(node)
+        self.two_body = self._read_two_body(node, self.config)
         self.boundary = self._read_boundary(spacetime, node)
         self.completion = self._read_completion(node)
 
@@ -1935,6 +1995,7 @@ class EmergenceFrame:
 
     def _read_bands(self, spacetime, config):
         self.candidates = []
+        self.candidate_components = []
         if not self.components:
             return Absent("no cluster to carry a band")
         settings = obs.SpectralFiberConfig()
@@ -1943,9 +2004,11 @@ class EmergenceFrame:
         rows = []
         for component in self.components:
             for degree in config["degrees"]:
+                self.candidate_components.append(component)
                 try:
                     read = tracker.enumerateBands(component.support, degree)
                 except Exception as error:                # noqa: BLE001
+                    self.candidates.append(None)
                     rows.append({"accepted": False,
                                  "reason": "band enumeration failed: %s"
                                            % error})
@@ -2012,6 +2075,7 @@ class EmergenceFrame:
         for -- together with every certificate that failed, NAMED.
         """
         self.quarks = []
+        self.candidate_quarks = [None] * len(self.candidates)
         accepted = [f for f in self.candidates if f is not None]
         if not accepted:
             return Absent("no accepted band: nothing to anchor")
@@ -2022,8 +2086,10 @@ class EmergenceFrame:
                 continue
             evidence = obs.QuarkCandidateEvidence()
             evidence.colorBand = fiber
-            if index < len(self.components):
-                evidence.component = self.components[index].id
+            components = getattr(self, "candidate_components",
+                                 self.components)
+            if index < len(components):
+                evidence.component = components[index].id
             state = self.states[index] if index < len(self.states) else None
             if state is not None:
                 evidence.parityRead = state.wickParity()
@@ -2038,6 +2104,7 @@ class EmergenceFrame:
             except Exception as error:                    # noqa: BLE001
                 rows.append({"reason": "quark read failed: %s" % error})
                 continue
+            self.candidate_quarks[index] = read
             self.quarks.append(read)
             rows.append({
                 "classification": str(read.classification),
@@ -2076,7 +2143,13 @@ class EmergenceFrame:
                 try:
                     read = connection.transportOnSpacetime(
                         spacetime, to_fiber, from_fiber)
-                except Exception:                         # noqa: BLE001
+                except Exception as error:                # noqa: BLE001
+                    rows.append({
+                        "accepted": False,
+                        "leakage": None,
+                        "regime": "",
+                        "reason": "transport failed: %s" % error,
+                    })
                     continue
                 reason = str(getattr(read, "rejectionReason", "") or "")
                 rows.append({
@@ -2107,7 +2180,7 @@ class EmergenceFrame:
 
     @staticmethod
     def _m0_vertices(spacetime):
-        """The incoming boundary's vertices, or an empty list if closed.
+        """The incoming boundary's vertices, or a named absence on failure.
 
         Delegates to the module-level rule the host is built against, so the
         host and the readout cannot disagree about what M0 is. A closed
@@ -2116,14 +2189,48 @@ class EmergenceFrame:
         """
         try:
             return boundary_vertices(spacetime)
-        except Exception:                                 # noqa: BLE001
-            return []
+        except Exception as error:                        # noqa: BLE001
+            return Absent("incoming boundary read failed: %s" % error)
+
+    @staticmethod
+    def _regular_crossing_level(temporal):
+        """A regular central level derived from the measured Re(tau).
+
+        The range midpoint is already regular unless it is itself a vertex
+        value. In that case, use the midpoint of the nearest adjacent gap;
+        crossing at a vertex is not a regular level-set read.
+        """
+        values = []
+        for value in getattr(temporal, "tau", ()):
+            try:
+                real = float(complex(value).real)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(real):
+                values.append(real)
+        levels = sorted(set(values))
+        if len(levels) < 2:
+            raise ValueError("Re tau has fewer than two distinct finite "
+                             "vertex values")
+        centre = 0.5 * (levels[0] + levels[-1])
+        if centre not in levels:
+            return centre
+        gaps = [(0.5 * (lower + upper), lower, upper)
+                for lower, upper in zip(levels, levels[1:])
+                if upper > lower]
+        return min(gaps, key=lambda gap: (abs(gap[0] - centre), gap[0]))[0]
 
     def _read_crossings(self, spacetime):
+        self.crossing_candidate_quarks = []
+        self.crossing_mass_read = None
+        self.crossing_baryon_read = None
+        self.crossing_candidate_read_failures = []
         accepted = [f for f in self.candidates if f is not None]
         if not accepted:
             return Absent("no accepted band: no world tube to cross a level")
         boundary = self._m0_vertices(spacetime)
+        if isinstance(boundary, Absent):
+            return boundary
         if not boundary:
             return Absent(
                 "closed host: no incoming boundary M0, so tau has no "
@@ -2140,16 +2247,36 @@ class EmergenceFrame:
                           % (", ".join(_reasons(temporal))
                              or "no reason named"))
         tubes = []
-        for index, fiber in enumerate(accepted):
+        quark_tubes = []
+        quark_reads = []
+        candidate_quarks = getattr(
+            self, "candidate_quarks", [None] * len(self.candidates))
+        for index, fiber in enumerate(self.candidates):
+            if fiber is None:
+                continue
             tube = obs.WorldTubeInput()
             tube.tubeId = "band-%d" % index
             tube.band = fiber
             tube.orientation = +1
-            tube.certifiedQuarkTube = False
+            quark = (candidate_quarks[index]
+                     if index < len(candidate_quarks) else None)
+            certified = (quark is not None
+                         and str(quark.classification) == "quark")
+            tube.certifiedQuarkTube = certified
+            winding = (getattr(quark, "determinantWinding", None)
+                       if quark is not None else None)
+            if winding is not None:
+                tube.determinantWinding = int(winding)
             tubes.append(tube)
-        levels = [float(x) for x in temporal.layer] if temporal.layer else []
-        level = max(levels) / 2.0 if levels else 0.0
+            if certified:
+                quark_tubes.append(tube)
+                quark_reads.append(quark)
+        try:
+            level = self._regular_crossing_level(temporal)
+        except ValueError as error:
+            return Absent("no regular Re tau crossing level: %s" % error)
         block = {"level": level, "tubes": len(tubes)}
+        mass = None
         try:
             mass = obs.CrossingReadouts.crossingMass(tubes, temporal,
                                                     level, 0.0)
@@ -2160,6 +2287,10 @@ class EmergenceFrame:
             block["units"] = str(mass.units)
         except Exception as error:                        # noqa: BLE001
             block["crossingMass"] = Absent("crossing mass failed: %s" % error)
+            if len(tubes) == 3 and len(quark_tubes) == 3:
+                self.crossing_candidate_read_failures.append(
+                    "candidate crossing mass failed: %s" % error)
+        baryon = None
         try:
             baryon = obs.CrossingReadouts.baryonNumber(tubes, temporal,
                                                       level, 0.0)
@@ -2171,9 +2302,41 @@ class EmergenceFrame:
             block["signDefects"] = [str(d) for d in baryon.signDefects]
         except Exception as error:                        # noqa: BLE001
             block["baryonNumber"] = Absent("baryon sum failed: %s" % error)
-        if not block.get("quarkTubes"):
+            if len(tubes) == 3 and len(quark_tubes) == 3:
+                self.crossing_candidate_read_failures.append(
+                    "candidate baryon sum failed: %s" % error)
+        if not quark_tubes:
             block["baryonNote"] = ("no tube carries a quark certificate, so "
                                    "the one-third sum has no term")
+        elif ("quarkTubes" in block and not block["quarkTubes"]):
+            block["baryonNote"] = (
+                "certified quark tubes exist, but none has an admissible "
+                "crossing at this level")
+
+        # A baryon candidate has exactly three constituent reads. Keep the
+        # corresponding crossing bundle together and never pad it with an
+        # uncertified tube or a default-constructed quark read.
+        if len(quark_tubes) >= 3:
+            candidate_tubes = quark_tubes[:3]
+            self.crossing_candidate_quarks = quark_reads[:3]
+            if len(tubes) == 3 and len(quark_tubes) == 3:
+                self.crossing_mass_read = mass
+                self.crossing_baryon_read = baryon
+            else:
+                try:
+                    self.crossing_mass_read = (
+                        obs.CrossingReadouts.crossingMass(
+                            candidate_tubes, temporal, level, 0.0))
+                except Exception as error:                # noqa: BLE001
+                    self.crossing_candidate_read_failures.append(
+                        "candidate crossing mass failed: %s" % error)
+                try:
+                    self.crossing_baryon_read = (
+                        obs.CrossingReadouts.baryonNumber(
+                            candidate_tubes, temporal, level, 0.0))
+                except Exception as error:                # noqa: BLE001
+                    self.crossing_candidate_read_failures.append(
+                        "candidate baryon sum failed: %s" % error)
         try:
             profile = obs.CrossingReadouts.chargePowerProfile(
                 tubes, temporal, level)
@@ -2191,7 +2354,14 @@ class EmergenceFrame:
             try:
                 crossing = obs.CrossingReadouts.crossing(tube, temporal,
                                                          level)
-            except Exception:                             # noqa: BLE001
+            except Exception as error:                    # noqa: BLE001
+                signs.append({
+                    "tubeId": str(tube.tubeId),
+                    "sign": None,
+                    "admissible": False,
+                    "perpendicular": None,
+                    "reasons": ["crossing read failed: %s" % error],
+                })
                 continue
             signs.append({
                 "tubeId": str(crossing.tubeId),
@@ -2201,6 +2371,9 @@ class EmergenceFrame:
                 "reasons": _reasons(crossing),
             })
         block["crossings"] = signs
+        if self.crossing_candidate_read_failures:
+            block["candidateReadFailures"] = list(
+                self.crossing_candidate_read_failures)
         return block
 
     # ---- 9. <J^2> and Var(J^2) --------------------------------------
@@ -2259,13 +2432,30 @@ class EmergenceFrame:
                 "certified" % (len(accepted), len(self.quarks),
                                len(certified)))
         evidence = obs.BaryonCandidateEvidence()
+        crossing_quarks = getattr(self, "crossing_candidate_quarks", [])
+        chosen = (crossing_quarks if len(crossing_quarks) == 3
+                  else certified[:3])
+        evidence.quarks = chosen
+        crossing_mass = getattr(self, "crossing_mass_read", None)
+        crossing_baryon = getattr(self, "crossing_baryon_read", None)
+        if crossing_mass is not None:
+            evidence.crossingMass = crossing_mass
+        if crossing_baryon is not None:
+            evidence.crossingBaryon = crossing_baryon
+        read_failures = list(getattr(
+            self, "crossing_candidate_read_failures", []))
         try:
             read = obs.ParticleClusters().classifyBaryon(evidence)
         except Exception as error:                        # noqa: BLE001
-            return Absent("classifier refused: %s" % error)
-        return {"classification": str(read.classification),
-                "confidence": _finite(read.confidence),
-                "reasons": _reasons(read)}
+            detail = ("; " + "; ".join(read_failures)
+                      if read_failures else "")
+            return Absent("classifier refused: %s%s" % (error, detail))
+        result = {"classification": str(read.classification),
+                  "confidence": _finite(read.confidence),
+                  "reasons": _reasons(read)}
+        if read_failures:
+            result["readFailures"] = read_failures
+        return result
 
     # ---- 12. the qubit blocks (spec S6, per block) ------------------
 
@@ -2406,39 +2596,52 @@ class EmergenceFrame:
 
     @staticmethod
     def _read_monodromy(spacetime, inputs):
-        """`MultiCobordism.monodromy` with both markings: the integer matrix
-        relating them through the whole's zero mode (spec S6), with the Betti
-        numbers, the harmonic rank and the rounding and fit residuals. An
-        obstructed read names its obstruction and is Absent."""
+        """The monodromy of each collar, without dropping conjugate pairs."""
         import numpy as np
 
-        try:
-            read = MC.monodromy(spacetime, inputs.markings[0],
-                                inputs.markings[1])
-        except Exception as error:                        # noqa: BLE001
-            return Absent("monodromy read refused: %s" % error)
-        if read.obstruction:
-            return Absent("monodromy read obstructed: %s (Betti %s, harmonic "
-                          "rank %d)" % (read.obstruction, list(read.betti),
-                                        read.harmonic_rank))
-        matrix = np.asarray(read.monodromy)
-        return {"betti": [int(b) for b in read.betti],
+        pairs = [(0, 1)] if len(inputs.markings) == 2 else [(0, 1), (2, 3)]
+        rows = []
+        for left, right in pairs:
+            label = "%s -> %s" % (inputs.labels[left], inputs.labels[right])
+            try:
+                read = MC.monodromy(spacetime, inputs.markings[left],
+                                    inputs.markings[right])
+            except Exception as error:                    # noqa: BLE001
+                rows.append(Absent("%s monodromy refused: %s" % (label, error)))
+                continue
+            if read.obstruction:
+                rows.append(Absent(
+                    "%s monodromy obstructed: %s (Betti %s, harmonic rank %d)"
+                    % (label, read.obstruction, list(read.betti),
+                       read.harmonic_rank)))
+                continue
+            matrix = np.asarray(read.monodromy)
+            rows.append({
+                "label": label,
+                "betti": [int(b) for b in read.betti],
                 "harmonic_rank": int(read.harmonic_rank),
                 "monodromy": [[complex(z) for z in row] for row in matrix],
                 "rounded": [[int(x) for x in row] for row in read.rounded],
                 "rounding_residual": _finite(read.rounding_residual),
-                "fit_residual": _finite(read.fit_residual)}
+                "fit_residual": _finite(read.fit_residual),
+            })
+        if len(rows) == 1:
+            return rows[0]
+        return {"pairs": rows}
 
     # ---- 15. the two-body read ----------------------------------------
 
     @staticmethod
-    def _read_two_body(node):
-        """`read_two_body`: the transfer in the two derived period frames
-        (2 x 2 for two qubits), its projective leak against chi, the Schmidt
-        spectrum and rank of the Choi state, the reversal residual, and the
-        blocks' own-kernel fiber leaks as the engine reports them (a
-        diagnostic; the scored block residuals are in the `blocks`
-        channel)."""
+    def _read_two_body(node, config):
+        """`read_two_body`: the transfer in two ordinary or paired frames.
+
+        The matrix is 2 x 2 for two tori and 4 x 4 for four. For two inputs the
+        residual is the aggregate selected-readout objective over all declared
+        cases. A four-input paired transfer is geometric diagnostic data only,
+        so its residual is absent (the engine reports NaN). Per-case residuals,
+        the Schmidt spectrum/rank, reversal residual, and block own-kernel
+        diagnostics are recorded alongside it.
+        """
         import numpy as np
 
         try:
@@ -2446,9 +2649,10 @@ class EmergenceFrame:
         except Exception as error:                        # noqa: BLE001
             return Absent("two-body read refused: %s" % error)
         transfer = np.asarray(read.transfer)
-        return {"in_frames": bool(read.in_frames),
+        result = {"in_frames": bool(read.in_frames),
                 "derived_frames": bool(read.derived_frames),
                 "choi_decomposed": bool(read.choi_decomposed),
+                "selected_readouts": _readout_names(config["readout"]),
                 "transfer": [[complex(z) for z in row] for row in transfer],
                 "shape": [int(n) for n in transfer.shape],
                 "residual": _finite(read.residual),
@@ -2456,15 +2660,18 @@ class EmergenceFrame:
                 "schmidt_rank": int(read.schmidt_rank),
                 "reversal_residual": _finite(read.reversal_residual),
                 # One residual PER STATE when several are fitted at once
-                # (#1029). `residual` above is the FIRST case: the transfer is
-                # read on the live complex, whose boundary every case
-                # evaluation restores, so it always reports state 0. The sum is
-                # what the drive minimises, and neither number can show a step
-                # that improves one state at another's expense.
+                # (#1029). For a two-input read, `residual` above is their sum,
+                # exactly the quantity
+                # the drive minimises.
                 "state_residuals": [_finite(r) for r in
                               node.two_body_residuals_per_case()],
                 "input_fiber_residuals": [_finite(r) for r in
                                           read.input_fiber_residuals]}
+        if "whole" in result["selected_readouts"]:
+            obstruction = str(node.whole_harmonic_obstruction)
+            if obstruction:
+                result["whole_obstruction"] = obstruction
+        return result
 
     # ---- 16. the boundary and the completion status -----------------
 
@@ -2488,8 +2695,8 @@ class EmergenceFrame:
     @staticmethod
     def _read_completion(node):
         """`bridge_phase_complete` and the uncovered torus faces: whether the
-        boundary of W is exactly the two tori (true by construction on the
-        collar; a cone-out dent reopens it)."""
+        boundary of W is exactly the declared input tori (true by construction
+        on the collar; a cone-out dent reopens it)."""
         try:
             uncovered = node.uncovered_input_faces()
             complete = bool(node.bridge_phase_complete())
@@ -2526,30 +2733,48 @@ class EmergenceFrame:
 # the drive -- unforced emergence, one frame per engine unit
 # =====================================================================
 
-def drive(config, progress=False, on_frame=None, on_node=None):
+def drive(config, progress=False, on_frame=None, on_node=None, on_setup=None,
+          stop_requested=None):
     """Drive unforced emergence, reading a frame after every engine unit.
 
     `on_frame(frames, index)` is called as each unit completes, so a caller
-    can display a run while it is still running. `on_node(node)` is called
-    once, as soon as the node exists, so a caller holds the object the loop
-    drives and can write its geometry even if the loop is interrupted. Both
-    are observers: neither is consulted, so a drive with them and a drive
-    without them take the same steps. It is the ONLY difference
+    can display a run while it is still running. `on_node(node)` is the
+    backward-compatible node-only setup observer; `on_setup(node, inputs)`
+    also carries the qubit inputs needed to serialize its boundary blocks.
+    `stop_requested()` is checked between engine calls so a live worker can
+    finish cooperatively before interrupted geometry is inspected. The
+    callbacks are otherwise observers: they do not alter an uninterrupted
+    drive. It is the ONLY difference
     between a live drive and a headless one: the loop, the engine calls and
     the frames are the same either way, so a live view cannot diverge from
     the run it claims to be showing.
 
     The node is built by a FACTORY selected by `config["inputs"]`: the
-    neutral host with its unpinned node (the default, spelled here because
+    neutral host with its held M0 region (the default, spelled here because
     it is the existing drive) or one of `NODE_FACTORIES` -- the qubit mode's
-    two tori on their collar. The factory returns the node and what the
-    frame reads need to know about its inputs (None for the neutral host);
-    the loop below is the same for every factory, so the modes cannot
-    diverge in how they are driven, only in what they drive.
+    two tori on their collar. The factory returns the node and what the frame
+    reads need to know about its inputs (None for the neutral host); the loop
+    below is the same for every factory, so the modes cannot diverge in how
+    they are driven, only in what they drive.
 
     Returns a `DriveResult` carrying the frames, the terminator and the
     inputs.
     """
+    combinatorial_depth = _cpp_int_value(
+        "combinatorial depth", _config_aliased_value(
+            config, "combinatorial_depth", "surgical_depth",
+            DECLARED_COMBINATORIAL_DEPTH))
+    combinatorial_length = _cpp_int_value(
+        "combinatorial length", _config_aliased_value(
+            config, "combinatorial_length", "combinatorial_breadth",
+            DECLARED_COMBINATORIAL_LENGTH))
+    if combinatorial_length > 0 and (
+            combinatorial_depth != DECLARED_COMBINATORIAL_DEPTH):
+        raise ValueError(
+            "combinatorial_depth and combinatorial_length select alternative "
+            "search schedules; a non-default depth would be ignored when "
+            "length is nonzero")
+
     def neutral_node(config):
         host = build_cobordism_host(config["size"], config["host_seed"],
                                     config["edge_disposition"])
@@ -2570,15 +2795,24 @@ def drive(config, progress=False, on_frame=None, on_node=None):
         node.declare_pinned_region(M0_REGION, set(boundary_vertices(host)))
         return node, None
 
-    factory = NODE_FACTORIES.get(config.get("inputs", DECLARED_INPUTS),
-                                 neutral_node)
+    input_mode = config.get("inputs", DECLARED_INPUTS)
+    if input_mode == InputMode.NEUTRAL:
+        factory = neutral_node
+    elif input_mode in NODE_FACTORIES:
+        factory = NODE_FACTORIES[input_mode]
+    else:
+        raise ValueError("unknown input mode %r: expected one of %s"
+                         % (input_mode, ", ".join(InputMode.ALL)))
     node, inputs = factory(config)
     if on_node is not None:
         on_node(node)
-    # One place, both modes: the boundary gate is a property of the drive, not
-    # of what is being driven, so neither factory decides it (spec R8: the
-    # host is emergent, and this says which growth counts as emergence).
-    node.set_boundary_may_extend(bool(config["extend_boundary"]))
+    if on_setup is not None:
+        on_setup(node, inputs)
+    # Only the qubit surface blocks declare a fixed topological boundary. M0
+    # in neutral mode is a pinned region: it holds geometry but deliberately
+    # does not arm the topology gate.
+    if input_mode == InputMode.QUBIT:
+        node.set_boundary_may_extend(bool(config["extend_boundary"]))
     if config.get("pin_boundary", DECLARED_PIN_BOUNDARY) and inputs is not None:
         # The input states are inputs: the attachment already put the correct
         # boundary in place, so stage 2 has nothing to improve there. A pinned
@@ -2608,6 +2842,9 @@ def drive(config, progress=False, on_frame=None, on_node=None):
     # rather than for anything true of its current geometry.
     stalls = 0
     for step in range(1, config["steps"] + 1):
+        if stop_requested is not None and stop_requested():
+            terminator = Terminator.CANCELLED
+            break
         before = _objective_total(frames[-1])
         # Stage 1 before stage 2 within a unit (spec S4): a committed
         # combinatorial move rebuilds the complex from a snapshot of its
@@ -2616,10 +2853,16 @@ def drive(config, progress=False, on_frame=None, on_node=None):
         list(node.run_stage1(
             max_steps=config["stage1_iters"],
             n_candidate_moves=config["candidate_moves"],
-            max_lookahead=config["surgical_depth"],
-            combinatorial_breadth=config["combinatorial_breadth"]))
+            max_lookahead=combinatorial_depth,
+            combinatorial_breadth=combinatorial_length))
+        if stop_requested is not None and stop_requested():
+            terminator = Terminator.CANCELLED
+            break
         list(node.run_stage2(max_iters=config["stage2_iters"],
                              tolerance=config["tolerance"]))
+        if stop_requested is not None and stop_requested():
+            terminator = Terminator.CANCELLED
+            break
         frames.append(EmergenceFrame(node, node.spacetime(), step, config,
                                      inputs))
         if progress:
@@ -2710,11 +2953,15 @@ def _report_qubit(frame):
     def block_residual(index):
         if isinstance(frame.blocks, Absent):
             return "absent"
+        if index >= len(frame.blocks):
+            return "absent"
         value = frame.blocks[index].get("residual")
         return "absent" if not isinstance(value, float) else "%.2e" % value
 
     def tau_hat(index):
         if isinstance(frame.blocks, Absent):
+            return "absent"
+        if index >= len(frame.blocks):
             return "absent"
         read = frame.blocks[index].get("read")
         return "absent" if isinstance(read, Absent) else _tau_text(read["tau"])
@@ -2722,23 +2969,40 @@ def _report_qubit(frame):
     def leak(index):
         if isinstance(frame.leaks, Absent):
             return "absent"
-        row = frame.leaks["per_block"][index]
-        return "absent" if isinstance(row, Absent) else "%.2e" % row["leak"]
+        rows = frame.leaks["per_block"]
+        if index >= len(rows) or isinstance(rows[index], Absent):
+            return "absent"
+        value = rows[index].get("leak")
+        return "absent" if value is None else "%.2e" % value
 
-    two_body = ("absent" if isinstance(frame.two_body, Absent)
-                else "%.4f" % frame.two_body["residual"])
+    if isinstance(frame.two_body, Absent):
+        two_body, readouts = "absent", "readout"
+    else:
+        value = frame.two_body.get("residual")
+        two_body = "absent" if value is None else "%.4f" % value
+        readouts = ",".join(frame.two_body.get("selected_readouts", [])) or "readout"
     betti = ("absent" if isinstance(frame.betti, Absent)
              else [frame.betti["numbers"][d]
                    for d in sorted(frame.betti["numbers"])])
-    monodromy = ("absent" if isinstance(frame.monodromy, Absent)
-                 else frame.monodromy["rounded"])
+    if isinstance(frame.monodromy, Absent):
+        monodromy = "absent"
+    else:
+        rows = frame.monodromy.get("pairs", [frame.monodromy])
+        monodromy = ["absent" if isinstance(row, Absent)
+                     else row["rounded"] for row in rows]
     total = frame.objective.get("total")
+    labels = frame.inputs.labels
+    blocks = " ".join("%s=%s" % (label, block_residual(index))
+                      for index, label in enumerate(labels))
+    leaks = " ".join("%s=%s" % (label, leak(index))
+                     for index, label in enumerate(labels))
+    moduli = " ".join("%s=%s" % (label, tau_hat(index))
+                      for index, label in enumerate(labels))
     sys.stdout.write(
-        "[step %2d] objective %s | blocks %s %s | two-body %s | leaks %s %s "
-        "| tau %s %s | betti %s | monodromy %s\n"
+        "[step %2d] objective %s | blocks %s | %s %s | leaks %s "
+        "| tau %s | betti %s | monodromy %s\n"
         % (frame.step, "n/a" if total is None else "%.6g" % total,
-           block_residual(0), block_residual(1), two_body, leak(0), leak(1),
-           tau_hat(0), tau_hat(1), betti, monodromy))
+           blocks, readouts, two_body, leaks, moduli, betti, monodromy))
     sys.stdout.flush()
 
 
@@ -2896,7 +3160,7 @@ def _panel_layout(axis, frame, placement=None):
     # deliberately named apart in the title, because stabilizing the layout
     # and colouring the edges together make the picture look more physical
     # than it is -- where a vertex sits still means nothing at all.
-    title = "complex -- position: drawing only | colour: interval Re(l^2)"
+    title = "complex -- position: drawing only | colour: causal arg(l^2)"
     if isinstance(frame.layout, Absent):
         return _absent_panel(axis, title, frame.layout.reason)
     from matplotlib.lines import Line2D
@@ -2950,8 +3214,7 @@ def _panel_layout(axis, frame, placement=None):
 
 
 #: What each causal class means, spelled out in the legend rather than left to
-#: the colour alone. Every label names the INTERVAL, because that is what is
-#: being drawn -- `degenerate` is the one that needs saying, since an absent
+#: the colour alone. `degenerate` is the one that needs saying, since an absent
 #: edge also has a vanishing interval but is not lightlike.
 #: Legend text, stated in the quantity the classification actually reads --
 #: `arg(l^2)` -- so the label cannot suggest a rule the classifier does not use.
@@ -3068,13 +3331,21 @@ def _panel_bands(axis, frame):
                              "no band met its certificate: %s" % reason)
     axis.set_title(title, fontsize=8)
     ranks = [r["rank"] for r in accepted]
-    gaps = [r["lowerGap"] or 0.0 for r in accepted]
     axis.bar(range(len(ranks)), ranks, color="#608c64", width=0.5,
              label="rank")
-    twin = axis.twinx()
-    twin.plot(range(len(gaps)), gaps, marker="s", markersize=3,
-              linewidth=0.8, color="#bc8836", label="lower gap")
-    twin.tick_params(labelsize=6)
+    gaps = [(index, row.get("lowerGap"))
+            for index, row in enumerate(accepted)
+            if row.get("lowerGap") is not None]
+    if gaps:
+        twin = axis.twinx()
+        twin.plot([index for index, _ in gaps],
+                  [gap for _, gap in gaps], marker="s", markersize=3,
+                  linewidth=0.8, color="#bc8836", label="lower gap")
+        twin.tick_params(labelsize=6)
+    else:
+        axis.text(0.98, 0.92, "lower gap unmeasured",
+                  transform=axis.transAxes, ha="right", va="top",
+                  fontsize=5.5, color="#666666", style="italic")
     axis.set_xlabel("accepted band", fontsize=6)
     axis.tick_params(labelsize=6)
 
@@ -3096,10 +3367,13 @@ def _panel_anchors(axis, frame):
     first = measured[0]
     values = [first.get("score"), first.get("maxTerm"),
               first.get("participationRatio"), first.get("phaseDispersion")]
-    shown = [v if v is not None else 0.0 for v in values]
+    available = [(label, value) for label, value in zip(labels, values)
+                 if value is not None]
+    shown_labels = [label for label, _ in available]
+    shown = [value for _, value in available]
     axis.barh(range(len(shown)), shown, color="#bc8836", height=0.6)
-    axis.set_yticks(range(len(labels)))
-    axis.set_yticklabels(labels, fontsize=6)
+    axis.set_yticks(range(len(shown_labels)))
+    axis.set_yticklabels(shown_labels, fontsize=6)
     axis.set_xlim(0.0, max(1.0, max(shown) * 1.15))
     axis.tick_params(labelsize=6)
     axis.text(0.98, 0.06, "%d certified" % frame.anchors["certified"],
@@ -3165,13 +3439,23 @@ def _panel_mass(axis, frame):
         return _absent_panel(axis, title, frame.crossings.reason)
     mass = frame.crossings.get("crossingMass")
     baryon = frame.crossings.get("baryonNumber")
-    if isinstance(mass, Absent):
-        return _absent_panel(axis, title, mass.reason)
+    mass_reason = mass.reason if isinstance(mass, Absent) else None
+    baryon_reason = baryon.reason if isinstance(baryon, Absent) else None
+    mass = None if mass_reason is not None else mass
+    baryon = None if baryon_reason is not None else baryon
     if mass is None and baryon is None:
+        reasons = [reason for reason in (mass_reason, baryon_reason)
+                   if reason]
         return _absent_panel(axis, title,
-                             "no admissible crossing contributes a term")
+                             "; ".join(reasons)
+                             or "no admissible crossing contributes a term")
     axis.set_title(title, fontsize=8)
-    note = frame.crossings.get("baryonNote", "")
+    notes = [frame.crossings.get("baryonNote", "")]
+    if mass_reason:
+        notes.append("crossing mass unavailable: %s" % mass_reason)
+    if baryon_reason:
+        notes.append("baryon sum unavailable: %s" % baryon_reason)
+    note = "; ".join(part for part in notes if part)
     units = frame.crossings.get("units", "")
     axis.text(0.05, 0.72, "crossing mass: %s" % ("n/a" if mass is None
                                                  else "%.6g" % mass),
@@ -3200,14 +3484,26 @@ def _panel_betti(axis, frame):
     if isinstance(frame.betti, Absent):
         return _absent_panel(axis, title, frame.betti.reason)
     numbers = frame.betti["numbers"]
-    degrees = sorted(numbers)
-    values = [numbers[d] if numbers[d] is not None else 0 for d in degrees]
+    measured = [(degree, numbers[degree]) for degree in sorted(numbers)
+                if numbers[degree] is not None]
+    if not measured:
+        return _absent_panel(axis, title,
+                             "no requested Betti degree was measured")
+    degrees = [degree for degree, _ in measured]
+    values = [value for _, value in measured]
     axis.set_title(title, fontsize=8)
     axis.bar([str(d) for d in degrees], values, color="#5a7ca0", width=0.6)
     axis.set_xlabel("degree", fontsize=6)
     axis.tick_params(labelsize=6)
     axis.text(0.5, 0.92, "not a quark count", transform=axis.transAxes,
               ha="center", fontsize=5.5, color="#666666", style="italic")
+    missing = [str(degree) for degree in sorted(numbers)
+               if numbers[degree] is None]
+    if missing:
+        axis.text(0.5, 0.82,
+                  "unmeasured degree(s): %s" % ", ".join(missing),
+                  transform=axis.transAxes, ha="center", fontsize=5.5,
+                  color="#666666", style="italic")
 
 
 def _panel_verdict(axis, frame):
@@ -3279,7 +3575,7 @@ def _panel_residuals(axis, frames):
         return _absent_panel(axis, title, _qubit_reason(last))
     labels = last.inputs.labels
     series = []
-    for index, (label, colour) in enumerate(zip(labels, DECLARED_TORUS_COLOURS)):
+    for index, (label, colour) in enumerate(zip(labels, last.inputs.colours)):
         series.append(("block %s (weight %g)" % (label, last.inputs.weight),
                        colour, "-", lambda f, i=index: _block_value(f, i, "residual")))
         series.append((r"leak %s in the whole's $\ker L_1$" % label, colour, ":",
@@ -3289,15 +3585,17 @@ def _panel_residuals(axis, frames):
     # panel always drew.
     state_residuals = (last.two_body.get("state_residuals", [])
                  if not isinstance(last.two_body, Absent) else [])
+    selected = (", ".join(last.two_body.get("selected_readouts", []))
+                if not isinstance(last.two_body, Absent) else "readout")
     if len(state_residuals) > 1:
         for index in range(len(state_residuals)):
             shade = _state_colour(index, len(state_residuals))
-            series.append((r"state %d vs $\chi$" % index, shade, "--",
+            series.append(("state %d (%s)" % (index, selected), shade, "--",
                            lambda f, i=index: _state_residual_value(f, i)))
         series.append(("sum over %d states" % len(state_residuals), "#1f4e79", "-",
                        lambda f: _state_residual_sum(f)))
     else:
-        series.append((r"two-body vs $\chi$", "#1f4e79", "--",
+        series.append(("selected readout (%s)" % selected, "#1f4e79", "--",
                        lambda f: None if isinstance(f.two_body, Absent)
                        else f.two_body["residual"]))
     drawn = 0
@@ -3334,7 +3632,7 @@ def _panel_moduli(axis, frames):
         return _absent_panel(axis, title, _qubit_reason(last))
     drawn = 0
     for index, (label, colour) in enumerate(zip(last.inputs.labels,
-                                                DECLARED_TORUS_COLOURS)):
+                                                last.inputs.colours)):
         tau_in = last.inputs.tau_in[index]
         axis.plot([tau_in.real], [tau_in.imag], marker="*", markersize=9,
                   color=colour, linestyle="none", zorder=3)
@@ -3378,7 +3676,7 @@ def _panel_bloch(axis, frame):
     axis.axvline(0.0, linewidth=0.4, color="#cccccc")
     drawn = 0
     for index, (label, colour) in enumerate(zip(frame.inputs.labels,
-                                                DECLARED_TORUS_COLOURS)):
+                                                frame.inputs.colours)):
         r_in = [float(x) for x in frame.inputs.tori[index].bloch()]
         axis.plot([r_in[0]], [r_in[2]], marker="o", markersize=7,
                   markerfacecolor="none", markeredgecolor=colour,
@@ -3405,28 +3703,55 @@ def _panel_bloch(axis, frame):
 
 
 def _panel_transfer(axis, frame):
-    """|T| and |chi| side by side, each scaled by its own maximum: T is the
-    whole's pencil-operator block between the two period frames (a metric
-    quantity, one inverse power of the length scale), chi the algebra's
-    target; the projective leak the engine scores, the Schmidt spectrum and
-    the reversal residual are in the title."""
-    title = r"$|T_{AB}|$ (period frames) vs $|\chi|$ (spec S5)"
+    """Show one matrix component and name the aggregate scored beside it."""
+    title = "selected qubit readout"
     if frame.inputs is None:
         return _absent_panel(axis, title, _qubit_reason(frame))
     if isinstance(frame.two_body, Absent):
         return _absent_panel(axis, title, frame.two_body.reason)
     import numpy as np
 
-    transfer = np.abs(np.asarray(frame.two_body["transfer"], dtype=complex))
-    chi = np.abs(np.asarray(frame.inputs.algebra["chi"], dtype=complex))
-    if transfer.shape != chi.shape:
-        return _absent_panel(axis, title, "the transfer is %s but chi is %s: "
-                                          "not read in the period frames"
-                             % (transfer.shape, chi.shape))
-    rows, columns = chi.shape
+    read = frame.two_body
+    names = read.get("selected_readouts", _readout_names(frame.config["readout"]))
+    residual = read.get("residual")
+    residual_text = "n/a" if residual is None else "%.4g" % residual
+    component_note = ""
+    aggregate_note = ""
+    if "operator" in names:
+        target = frame.inputs.algebra.get("two_state_vector")
+        target_label = r"G|\psi\rangle\langle\phi|G^\dagger"
+    elif "transfer" in names:
+        target = frame.inputs.algebra["chi"]
+        target_label = r"\chi"
+        if len(names) > 1:
+            component_note = " (transfer component)"
+            if "whole" in names:
+                aggregate_note = " (includes whole)"
+    else:
+        reason = read.get("whole_obstruction")
+        if reason:
+            return _absent_panel(axis, title, reason)
+        axis.set_title("%s\naggregate leak %s" % (", ".join(names), residual_text),
+                       fontsize=7)
+        axis.text(0.5, 0.55,
+                  _wrap("No transfer matrix represents this objective. "
+                        "The whole read scores the harmonic state itself.", 42),
+                  transform=axis.transAxes, ha="center", va="center",
+                  fontsize=6, color="#666666")
+        axis.set_xticks([])
+        axis.set_yticks([])
+        return
+    if target is None:
+        return _absent_panel(axis, title, "the selected readout has no recorded target")
+    transfer = np.abs(np.asarray(read["transfer"], dtype=complex))
+    target = np.abs(np.asarray(target, dtype=complex))
+    if transfer.shape != target.shape:
+        return _absent_panel(axis, title, "the selected transfer is %s but its target is %s"
+                             % (transfer.shape, target.shape))
+    rows, columns = target.shape
     grid = np.full((rows, 2 * columns + 1), np.nan)
     grid[:, :columns] = transfer / max(float(transfer.max()), 1e-300)
-    grid[:, columns + 1:] = chi / max(float(chi.max()), 1e-300)
+    grid[:, columns + 1:] = target / max(float(target.max()), 1e-300)
     axis.imshow(grid, cmap="Blues", vmin=0.0, vmax=1.0, aspect="equal")
 
     def ink(value):
@@ -3437,7 +3762,7 @@ def _panel_transfer(axis, frame):
         for j in range(columns):
             axis.text(j, i, "%.3g" % transfer[i, j], ha="center", va="center",
                       fontsize=5.5, color=ink(grid[i, j]))
-            axis.text(columns + 1 + j, i, "%.3g" % chi[i, j], ha="center",
+            axis.text(columns + 1 + j, i, "%.3g" % target[i, j], ha="center",
                       va="center", fontsize=5.5, color=ink(grid[i, columns + 1 + j]))
     axis.set_xticks(list(range(columns)) + list(range(columns + 1, 2 * columns + 1)))
     axis.set_xticklabels([r"$|%d\rangle$" % j for j in range(columns)] * 2, fontsize=6)
@@ -3449,17 +3774,16 @@ def _panel_transfer(axis, frame):
     axis.text((columns - 1) / 2.0, -0.85, r"$|T_{AB}| / \max|T_{AB}|$",
               ha="center", fontsize=6, color="#333333")
     axis.text(columns + 1 + (columns - 1) / 2.0, -0.85,
-              r"$|\chi| / \max|\chi|$",
+              r"$|%s| / \max|%s|$" % (target_label, target_label),
               ha="center", fontsize=6, color="#333333")
-    read = frame.two_body
     spectrum = ", ".join("%.3g" % s for s in read["singular_values"]
                          if s is not None)
-    axis.set_title("%s\nleak %.4g, Schmidt $\\sigma$ (%s) rank %d, reversal %.1e%s"
-                   % (title, read["residual"] if read["residual"] is not None
-                      else float("nan"), spectrum, read["schmidt_rank"],
-                      read["reversal_residual"]
-                      if read["reversal_residual"] is not None
-                      else float("nan"),
+    reversal = read.get("reversal_residual")
+    reversal_text = "n/a" if reversal is None else "%.1e" % reversal
+    axis.set_title("%s%s: %s\naggregate leak %s%s, $\\sigma$ (%s) rank %d, reversal %s%s"
+                   % (title, component_note, ", ".join(names), residual_text,
+                      aggregate_note, spectrum,
+                      read["schmidt_rank"], reversal_text,
                       "" if read["in_frames"] else ", identity frames"),
                    fontsize=6.5)
 
@@ -3490,9 +3814,10 @@ def _panel_topology(axis, frame):
     if isinstance(frame.completion, Absent):
         lines.append("completion: " + frame.completion.reason)
     else:
-        lines.append("boundary of W is the two tori: %s (%d uncovered face(s))"
-                     % ("yes" if frame.completion["bridge_phase_complete"]
-                        else "no", frame.completion["uncovered_faces"]))
+        lines.append("boundary of W is the %d input tori: %s (%d uncovered face(s))"
+                     % (len(frame.inputs.tori),
+                        "yes" if frame.completion["bridge_phase_complete"] else "no",
+                        frame.completion["uncovered_faces"]))
     if isinstance(frame.leaks, Absent):
         lines.append("zero mode of the whole: " + frame.leaks.reason)
     else:
@@ -3501,13 +3826,17 @@ def _panel_topology(axis, frame):
     if isinstance(frame.monodromy, Absent):
         lines.append("monodromy: " + frame.monodromy.reason)
     else:
-        m = frame.monodromy
-        lines.append("monodromy rounded %s (rounding %s, fit %s)"
-                     % (m["rounded"],
-                        "n/a" if m["rounding_residual"] is None
-                        else "%.1e" % m["rounding_residual"],
-                        "n/a" if m["fit_residual"] is None
-                        else "%.1e" % m["fit_residual"]))
+        rows = frame.monodromy.get("pairs", [frame.monodromy])
+        for m in rows:
+            if isinstance(m, Absent):
+                lines.append("monodromy: " + m.reason)
+                continue
+            lines.append("monodromy %s rounded %s (rounding %s, fit %s)"
+                         % (m.get("label", "A -> B"), m["rounded"],
+                            "n/a" if m["rounding_residual"] is None
+                            else "%.1e" % m["rounding_residual"],
+                            "n/a" if m["fit_residual"] is None
+                            else "%.1e" % m["fit_residual"]))
     axis.set_title(title, fontsize=8)
     axis.set_xticks([])
     axis.set_yticks([])
@@ -3581,13 +3910,18 @@ def _suptitle(frame, last_step):
     post-hoc."""
     if frame.inputs is not None:
         inputs = frame.inputs
+        second = 2 if len(inputs.tori) == 4 else 1
+        jt = inputs.algebra.get("Jt")
+        interaction = ("J t = %g" % jt if isinstance(jt, float) and math.isfinite(jt)
+                       else "operator %s" % inputs.algebra["operator"])
         return ("qubit cobordism -- engine unit %d of %d -- tau_A %s, tau_B "
-                "%s, %dx%d tori, J t = %g, input weight %g, Regge term %s, "
-                "objective %s (read-outs post-hoc, tau read-out only)"
+                "%s, %d tori on %dx%d grids, %d layers, %s, readout %s, "
+                "input weight %g, Regge term %s, objective %s (read-outs post-hoc)"
                 % (frame.step, last_step, _tau_text(inputs.tau_in[0]),
-                   _tau_text(inputs.tau_in[1]), frame.config["grid"],
-                   frame.config["grid"], inputs.algebra["Jt"], inputs.weight,
-                   "on" if inputs.regge else "off", inputs.objective_name))
+                   _tau_text(inputs.tau_in[second]), len(inputs.tori), inputs.grid,
+                   inputs.grid, inputs.layers, interaction, frame.config["readout"],
+                   inputs.weight, "on" if inputs.regge else "off",
+                   inputs.objective_name))
     disposition = frame.config.get("edge_disposition",
                                    DECLARED_EDGE_DISPOSITION)
     # `foliated` prescribes a causal order rather than letting one emerge, so
@@ -3677,7 +4011,7 @@ def _interactive_backends():
             return set()
 
 
-def drive_live(config, progress=False, on_node=None):
+def drive_live(config, progress=False, on_node=None, on_setup=None):
     """Drive while drawing each unit as it completes, then return the result.
 
     The compute runs on a worker thread and the figure is drawn on the main
@@ -3703,15 +4037,19 @@ def drive_live(config, progress=False, on_node=None):
     # whether the caller will ever see a frame. Without this the flag would
     # silently degrade into a slower headless run.
     backend = matplotlib.get_backend()
-    if backend.lower() not in _interactive_backends():
+    backend_name = backend.lower()
+    is_webagg = "webagg" in backend_name
+    if backend_name not in _interactive_backends() or is_webagg:
+        webagg = (" WebAgg is also refused because matplotlib implements "
+                  "pause() there as a blocking server loop, so the worker's "
+                  "later frames and outputs are never consumed."
+                  if is_webagg else "")
         raise RuntimeError(
             "--live needs an interactive matplotlib backend; this process "
-            "has %r, which renders to files and shows no window. A run "
-            "under it would compute every frame and display none of them. "
-            "Install one with `pip install -e \".[live]\"`, or set "
-            "MPLBACKEND to a backend you already have (webagg needs no "
-            "display), or drop --live and read the rendered --out: the "
-            "drive is identical either way." % backend)
+            "has %r.%s Install the Qt backend with "
+            "`pip install -e \".[live]\"`, or select another local GUI "
+            "backend; otherwise drop --live and read the rendered --out. "
+            "The drive is identical either way." % (backend, webagg))
     if not plt.isinteractive():
         plt.ion()
     figure = plt.figure(figsize=(18, 10))
@@ -3719,6 +4057,7 @@ def drive_live(config, progress=False, on_node=None):
     ready = queue.Queue()
     published = {}
     outcome = {}
+    stop = threading.Event()
 
     def publish(frames, index):
         published["frames"] = frames
@@ -3727,14 +4066,15 @@ def drive_live(config, progress=False, on_node=None):
     def worker():
         try:
             outcome["result"] = drive(config, progress=progress,
-                                      on_frame=publish, on_node=on_node)
+                                      on_frame=publish, on_node=on_node,
+                                      on_setup=on_setup,
+                                      stop_requested=stop.is_set)
         except BaseException as exc:            # re-raised on the main thread
             outcome["error"] = exc
         finally:
             ready.put(None)
 
-    thread = threading.Thread(target=worker, name="emergence-drive",
-                              daemon=True)
+    thread = threading.Thread(target=worker, name="emergence-drive")
     thread.start()
     # The live path stabilizes through the SAME chained step a headless render
     # walks, advanced once per unit as it completes. Frames are published in
@@ -3743,33 +4083,44 @@ def drive_live(config, progress=False, on_node=None):
     # rather than precomputed because there is no finished run to walk yet.
     state = StableLayout()
     placed = []
-    while True:
-        try:
-            index = ready.get_nowait()
-        except queue.Empty:
-            # POLLED, never blocked. A blocking `get` parks the main thread for
-            # the whole of an engine unit, and for that entire interval the GUI
-            # event loop is never serviced -- no redraw, no input -- which the
-            # desktop reports as a hung application. The worker is computing
-            # with the GIL released, so there is nothing to gain by sleeping in
-            # the queue rather than in the event loop.
-            #
-            # `plt.pause` both pumps the event loop and sleeps for the
-            # interval, so this waits at LIVE_POLL_INTERVAL without spinning,
-            # whether or not the backend has an event loop of its own.
+    main_error = None
+    try:
+        while True:
+            try:
+                index = ready.get_nowait()
+            except queue.Empty:
+                # POLLED, never blocked. A blocking `get` parks the main thread for
+                # the whole of an engine unit, and for that entire interval the GUI
+                # event loop is never serviced -- no redraw, no input -- which the
+                # desktop reports as a hung application. The worker is computing
+                # with the GIL released, so there is nothing to gain by sleeping in
+                # the queue rather than in the event loop.
+                #
+                # `plt.pause` both pumps the event loop and sleeps for the
+                # interval, so this waits at LIVE_POLL_INTERVAL without spinning,
+                # whether or not the backend has an event loop of its own.
+                plt.pause(LIVE_POLL_INTERVAL)
+                continue
+            if index is None:
+                break
+            frames = published["frames"]
+            while len(placed) <= index:
+                placed.append(place_frame(state, frames[len(placed)]))
+            draw_frame(figure, frames, index, placed)
+            figure.canvas.draw_idle()
+            # Yields to the GUI event loop; a backend without one still returns.
             plt.pause(LIVE_POLL_INTERVAL)
-            continue
-        if index is None:
-            break
-        frames = published["frames"]
-        while len(placed) <= index:
-            placed.append(place_frame(state, frames[len(placed)]))
-        draw_frame(figure, frames, index, placed)
-        figure.canvas.draw_idle()
-        # Yields to the GUI event loop; a backend without one still returns.
-        plt.pause(LIVE_POLL_INTERVAL)
-    thread.join()
-    plt.close(figure)
+    except BaseException as error:
+        # Never inspect or serialize the node while its worker can still mutate
+        # it. The event is observed between the two engine stages and units;
+        # joining makes interrupted geometry a stable snapshot.
+        main_error = error
+        stop.set()
+    finally:
+        thread.join()
+        plt.close(figure)
+    if main_error is not None:
+        raise main_error
     if "error" in outcome:
         raise outcome["error"]
     return outcome["result"]
@@ -3804,7 +4155,7 @@ def source_commit():
     return {"head": head, "branch": branch, "dirty": dirty}
 
 
-def geometry_document(node, inputs=None):
+def geometry_document(node, inputs=None, source=None):
     """The node's live complex, in the schema a rebuild already reads.
 
     The campaign worker's geometry dump (schema 1, rebuilt verbatim by
@@ -3860,7 +4211,7 @@ def geometry_document(node, inputs=None):
             phases.append([source, target, phase.real, phase.imag])
     document = {
         "schema": 1,
-        "source": source_commit(),
+        "source": source_commit() if source is None else source,
         "dimensions": sizes[0] - 1,
         "cells": cells,
         "edges": edges,
@@ -3916,6 +4267,12 @@ def _block_geometry(node, inputs, index):
 
 def render(frames, path):
     """Render the overlay to a GIF, MP4 or a single PNG of the last frame."""
+    if not frames:
+        raise ValueError("cannot render an empty frame sequence")
+    lowered = os.fspath(path).lower()
+    if not lowered.endswith((".gif", ".mp4", ".png")):
+        raise ValueError("--out must end in .gif, .mp4, or .png; got %r"
+                         % os.fspath(path))
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -3924,24 +4281,24 @@ def render(frames, path):
     # Computed once, in frame order: the alignment is a chain, so a renderer
     # that redraws a frame or draws only the last must still see the same
     # positions it would have seen drawing them all in sequence.
-    placed = stabilize(frames)
-    lowered = path.lower()
-    if lowered.endswith(".png") or len(frames) == 1:
-        draw_frame(figure, frames, len(frames) - 1, placed)
-        figure.savefig(path, dpi=110)
+    try:
+        placed = stabilize(frames)
+        if lowered.endswith(".png"):
+            draw_frame(figure, frames, len(frames) - 1, placed)
+            figure.savefig(path, dpi=110)
+            return path
+        import matplotlib.animation as animation
+
+        def update(index):
+            draw_frame(figure, frames, index, placed)
+            return []
+
+        movie = animation.FuncAnimation(figure, update, frames=len(frames),
+                                        interval=900, blit=False, repeat=False)
+        writer = "pillow" if lowered.endswith(".gif") else "ffmpeg"
+        movie.save(path, writer=writer, dpi=100)
+    finally:
         plt.close(figure)
-        return path
-    import matplotlib.animation as animation
-
-    def update(index):
-        draw_frame(figure, frames, index, placed)
-        return []
-
-    movie = animation.FuncAnimation(figure, update, frames=len(frames),
-                                    interval=900, blit=False, repeat=False)
-    writer = "pillow" if lowered.endswith(".gif") else "ffmpeg"
-    movie.save(path, writer=writer, dpi=100)
-    plt.close(figure)
     return path
 
 
@@ -3962,6 +4319,103 @@ def _as_complex(value):
     return complex(value)
 
 
+_LEGACY_UNSET = object()
+_UINT64_MAX = (1 << 64) - 1
+_CPP_INT_MAX = (1 << 31) - 1
+
+
+def _integer_value(name, value):
+    """Return an integer without silently truncating a numeric value."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+        raise ValueError("%s must be an integer, got %r" % (name, value))
+    return int(value)
+
+
+def _cpp_int_value(name, value):
+    """Return a value representable by the C++ ``int`` API it reaches."""
+    value = _integer_value(name, value)
+    if value > _CPP_INT_MAX:
+        raise ValueError("%s must be at most %d to fit the engine's integer "
+                         "API, got %r" % (name, _CPP_INT_MAX, value))
+    return value
+
+
+def _finite_value(name, value):
+    """Return a finite real number, with a named refusal for API callers."""
+    if isinstance(value, bool):
+        raise ValueError("%s must be a finite number, got %r" % (name, value))
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("%s must be a finite number, got %r"
+                         % (name, value)) from None
+    if not math.isfinite(number):
+        raise ValueError("%s must be finite, got %r" % (name, value))
+    return number
+
+
+def _boolean_value(name, value):
+    """Refuse truthy objects that would otherwise change a declared flag."""
+    if not isinstance(value, bool):
+        raise ValueError("%s must be true or false, got %r" % (name, value))
+    return value
+
+
+def _modulus_value(name, value):
+    """Return a finite upper-half-plane torus modulus."""
+    try:
+        tau = _as_complex(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("%s is a modulus tau, e.g. 0.3+1.1j; got %r"
+                         % (name, value)) from None
+    if not (math.isfinite(tau.real) and math.isfinite(tau.imag)
+            and tau.imag > 0.0):
+        raise ValueError(
+            "%s must lie in the upper half plane (Im > 0), got %r: the "
+            "poles |0> and |1> are limits reached by pinching, not inputs "
+            "(spec S1)" % (name, tau))
+    return tau
+
+
+def _state_value(name, value):
+    """Return a finite projective-state coordinate."""
+    try:
+        state = _as_complex(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("%s is a complex state coordinate tau, e.g. "
+                         "0.3+1.1j; got %r" % (name, value)) from None
+    if not (math.isfinite(state.real) and math.isfinite(state.imag)):
+        raise ValueError("%s must be finite, got %r" % (name, state))
+    return state
+
+
+def _aliased_value(canonical, legacy, default, canonical_name, legacy_name):
+    """Resolve one renamed API keyword, refusing contradictory spellings."""
+    if canonical is _LEGACY_UNSET:
+        return default if legacy is _LEGACY_UNSET else legacy
+    if legacy is not _LEGACY_UNSET and canonical != legacy:
+        raise ValueError("%s and its legacy alias %s disagree: %r != %r"
+                         % (canonical_name, legacy_name, canonical, legacy))
+    return canonical
+
+
+def _config_aliased_value(config, canonical_name, legacy_name, default):
+    """Read a renamed stored-config key and refuse divergent duplicates."""
+    canonical = config.get(canonical_name, _LEGACY_UNSET)
+    legacy = config.get(legacy_name, _LEGACY_UNSET)
+    return _aliased_value(canonical, legacy, default, canonical_name,
+                          legacy_name)
+
+
+def _reject_unused_options(inputs, options):
+    """Reject non-default mode-specific values before they become no-ops."""
+    changed = [name for name, differs in options if differs]
+    if changed:
+        raise ValueError(
+            "%s input mode does not use %s; non-default values would be "
+            "ignored" % (inputs, ", ".join(changed)))
+
+
 def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  host_seed=DECLARED_HOST_SEED,
                  resolution=DECLARED_RESOLUTION,
@@ -3971,8 +4425,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  tolerance=DECLARED_TOLERANCE,
                  patience=DECLARED_PATIENCE,
                  candidate_moves=DECLARED_CANDIDATE_MOVES,
-                 surgical_depth=DECLARED_SURGICAL_DEPTH,
-                 combinatorial_breadth=DECLARED_COMBINATORIAL_BREADTH,
+                 combinatorial_depth=_LEGACY_UNSET,
+                 combinatorial_length=_LEGACY_UNSET,
                  readout=DECLARED_READOUT,
                  tori=DECLARED_TORI,
                  collar_twist=DECLARED_COLLAR_TWIST,
@@ -3986,109 +4440,222 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  score_leak=DECLARED_SCORE_LEAK,
                  states=DECLARED_STATES,
                  operator=DECLARED_OPERATOR,
-                 pin_boundary=DECLARED_PIN_BOUNDARY):
+                 pin_boundary=DECLARED_PIN_BOUNDARY,
+                 *, surgical_depth=_LEGACY_UNSET,
+                 combinatorial_breadth=_LEGACY_UNSET):
+    combinatorial_depth = _aliased_value(
+        combinatorial_depth, surgical_depth, DECLARED_COMBINATORIAL_DEPTH,
+        "combinatorial_depth", "surgical_depth")
+    combinatorial_length = _aliased_value(
+        combinatorial_length, combinatorial_breadth,
+        DECLARED_COMBINATORIAL_LENGTH, "combinatorial_length",
+        "combinatorial_breadth")
+
+    if inputs not in InputMode.ALL:
+        raise ValueError("unknown input mode %r: expected one of %s"
+                         % (inputs, ", ".join(InputMode.ALL)))
+
+    size = _integer_value("size", size)
+    steps = _integer_value("steps", steps)
+    seed = _integer_value("seed", seed)
+    host_seed = _integer_value("host seed", host_seed)
+    stage1_iters = _cpp_int_value("stage-one iterations", stage1_iters)
+    stage2_iters = _cpp_int_value("stage-two iterations", stage2_iters)
+    patience = _integer_value("patience", patience)
+    candidate_moves = _cpp_int_value("candidate moves", candidate_moves)
+    combinatorial_depth = _cpp_int_value(
+        "combinatorial depth", combinatorial_depth)
+    combinatorial_length = _cpp_int_value(
+        "combinatorial length", combinatorial_length)
+    grid = _cpp_int_value("grid", grid)
+    layers = _cpp_int_value("collar layers", layers)
+    tori = _integer_value("tori", tori)
+
+    if size < 0:
+        raise ValueError("size must be non-negative, got %r" % size)
+    if steps < 0:
+        raise ValueError("steps must be non-negative, got %r" % steps)
+    for name, value in (("seed", seed), ("host seed", host_seed)):
+        if not 0 <= value <= _UINT64_MAX:
+            raise ValueError("%s must be an unsigned 64-bit integer between "
+                             "0 and %d, got %r"
+                             % (name, _UINT64_MAX, value))
+    if size and host_seed > _UINT64_MAX - (4 * size - 1):
+        raise ValueError(
+            "host seed plus the %d refinement attempts must stay within the "
+            "unsigned 64-bit range; got host seed %r and size %r"
+            % (4 * size, host_seed, size))
+    if stage1_iters < 1:
+        raise ValueError("stage-one iterations must be at least 1, got %r"
+                         % stage1_iters)
+    if stage2_iters < 1:
+        raise ValueError("stage-two iterations must be at least 1, got %r"
+                         % stage2_iters)
+    if combinatorial_depth < 1:
+        raise ValueError("combinatorial depth must be at least 1, got %r"
+                         % combinatorial_depth)
+    if combinatorial_length < 0:
+        raise ValueError(
+            "combinatorial length is how many moves stage 1 composes into "
+            "one candidate before it starts backing off, so it cannot be "
+            "negative; zero keeps the deepening schedule. Got %r"
+            % combinatorial_length)
+    if (combinatorial_length > 0 and
+            combinatorial_depth != DECLARED_COMBINATORIAL_DEPTH):
+        raise ValueError(
+            "--combinatorial-depth and --combinatorial-length select "
+            "alternative search schedules; a non-default depth would be "
+            "ignored when length is nonzero")
+    if candidate_moves < 0:
+        raise ValueError("candidate_moves is how many move specifications "
+                         "stage 1 draws per unit, or 0 for every candidate "
+                         "there is, so it may not be negative; got %r"
+                         % candidate_moves)
+    if patience < 1:
+        raise ValueError("patience is a count of consecutive stalled units "
+                         "and must be at least 1, got %r" % patience)
+
+    resolution = _finite_value("resolution", resolution)
+    tolerance = _finite_value("tolerance", tolerance)
+    coupling = _finite_value("J", coupling)
+    time = _finite_value("time", time)
+    input_weight = _finite_value("input weight", input_weight)
+    if resolution <= 0.0:
+        raise ValueError("resolution must be a positive finite number, got %r"
+                         % resolution)
+    if tolerance <= 0.0:
+        raise ValueError("tolerance must be a positive finite absolute "
+                         "threshold, got %r" % tolerance)
+    if input_weight <= 0.0:
+        raise ValueError("input weight must be a positive finite number, "
+                         "got %r" % input_weight)
+
+    regge = _boolean_value("regge", regge)
+    extend_boundary = _boolean_value("extend_boundary", extend_boundary)
+    score_leak = _boolean_value("score_leak", score_leak)
+    pin_boundary = _boolean_value("pin_boundary", pin_boundary)
+
     if edge_disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
             % (edge_disposition, ", ".join(EdgeDisposition.ALL)))
-    if inputs not in InputMode.ALL:
-        raise ValueError("unknown input mode %r: expected one of %s"
-                         % (inputs, ", ".join(InputMode.ALL)))
-    # Refused rather than clamped: a caller who writes 0 means something the
-    # drive cannot do (never stop on a stall), and silently reading it as 1
-    # would run the opposite of what was asked.
-    if int(candidate_moves) < 0:
-        raise ValueError("candidate_moves is how many move specifications "
-                         "stage 1 draws per unit, or 0 for every candidate "
-                         "there is, so it may not be negative; got %r"
-                         % (candidate_moves,))
-    if int(patience) < 1:
-        raise ValueError("patience is a count of consecutive stalled units "
-                         "and must be at least 1, got %r" % (patience,))
-    moduli = {}
-    for label, value in (("tau_a", tau_a), ("tau_b", tau_b)):
-        tau = _as_complex(value)
-        if not (math.isfinite(tau.real) and math.isfinite(tau.imag)
-                and tau.imag > 0.0):
-            raise ValueError(
-                "%s must lie in the upper half plane (Im > 0), got %r: the "
-                "poles |0> and |1> are limits reached by pinching, not "
-                "inputs (spec S1)" % (label, tau))
-        moduli[label] = [tau.real, tau.imag]
+    if collar_twist not in ("none", "swap"):
+        raise ValueError("unknown collar twist %r: expected none or swap"
+                         % (collar_twist,))
+    operators = ("flip_flop",) + tuple(sorted(DECLARED_GATES))
+    if operator not in operators:
+        raise ValueError("unknown operator %r: expected one of %s"
+                         % (operator, ", ".join(operators)))
+    if operator == "flip_flop" and not math.isfinite(coupling * time):
+        raise ValueError("J times time must be finite, got %r times %r"
+                         % (coupling, time))
+
+    tau_a = _modulus_value("tau_a", tau_a)
+    tau_b = _modulus_value("tau_b", tau_b)
+    moduli = {"tau_a": [tau_a.real, tau_a.imag],
+              "tau_b": [tau_b.real, tau_b.imag]}
     if grid < 3:
         raise ValueError("grid must be at least 3 (below 3 the torus grid is "
                          "not a simplicial complex), got %r" % (grid,))
-    if not (input_weight > 0.0 and math.isfinite(input_weight)):
-        raise ValueError("input weight must be a positive finite number, "
-                         "got %r" % (input_weight,))
-    for label, value in (("J", coupling), ("time", time)):
-        if not math.isfinite(value):
-            raise ValueError("%s must be finite, got %r" % (label, value))
-    if stage1_iters < 1:
-        raise ValueError("stage-one iterations must be at least 1, got %r"
-                         % (stage1_iters,))
-    if stage2_iters < 1:
-        raise ValueError("stage-two iterations must be at least 1, got %r"
-                         % (stage2_iters,))
-    if surgical_depth < 1:
-        raise ValueError("surgical depth must be at least 1, got %r"
-                         % (surgical_depth,))
     names = _readout_names(readout)
+    if layers < 1:
+        raise ValueError("collar layers must be at least one, got %r" % layers)
+    if tori not in (2, 4):
+        raise ValueError("--tori is two or four, got %r: one torus per input "
+                         "state, or a conjugate pair each" % (tori,))
+
+    if isinstance(states, str) and any(
+            not part.strip() for part in states.split(":")):
+        raise ValueError("--state contains an empty modulus; write every "
+                         "input pair explicitly")
+    pairs = _as_state_pairs(states)
+    for pair_index, pair in enumerate(pairs, 1):
+        for state_index, tau in enumerate(pair, 1):
+            _modulus_value("--state pair %d modulus %d"
+                           % (pair_index, state_index), tau)
+    output_tau = (None if output_state is None
+                  else _state_value("--output-state", output_state))
+
+    if inputs == InputMode.NEUTRAL:
+        _reject_unused_options(inputs, (
+            ("--readout", names != [DECLARED_READOUT]),
+            ("--tori", tori != DECLARED_TORI),
+            ("--collar-twist", collar_twist != DECLARED_COLLAR_TWIST),
+            ("--output-state", output_tau is not None),
+            ("--layers", layers != DECLARED_COLLAR_LAYERS),
+            ("--tau-a", tau_a != DECLARED_TAU_A),
+            ("--tau-b", tau_b != DECLARED_TAU_B),
+            ("--grid", grid != DECLARED_GRID),
+            ("--J", coupling != DECLARED_COUPLING),
+            ("--time", time != DECLARED_TIME),
+            ("--input-weight", input_weight != DECLARED_INPUT_WEIGHT),
+            ("--regge/--no-regge", regge != DECLARED_REGGE),
+            ("--score-leak", score_leak != DECLARED_SCORE_LEAK),
+            ("--state", bool(pairs)),
+            ("--operator", operator != DECLARED_OPERATOR),
+            ("--pin-boundary/--no-pin-boundary",
+             pin_boundary != DECLARED_PIN_BOUNDARY),
+            ("--extend-boundary",
+             extend_boundary != DECLARED_EXTEND_BOUNDARY),
+        ))
+    else:
+        _reject_unused_options(inputs, (
+            ("--size", size != DECLARED_SIZE),
+            ("--host-seed", host_seed != DECLARED_HOST_SEED),
+            ("--resolution", resolution != DECLARED_RESOLUTION),
+            ("--edge-disposition",
+             edge_disposition != DECLARED_EDGE_DISPOSITION),
+        ))
+
+    # Four tori structurally need two interior layers. Record the effective
+    # value that the builder will use rather than a lower, ignored request.
+    if tori == 4:
+        layers = max(3, layers)
+
     # A reading that STRUCTURALLY cannot produce a number is refused here
     # rather than scoring a constant 1.0 forever. A constant term carries no
     # gradient, so the flag would silently be a no-op and the run would look
     # like it was optimizing something it was not.
-    if int(layers) < 1:
-        raise ValueError("collar layers must be at least one, got %r" % (layers,))
-    if int(tori) not in (2, 4):
-        raise ValueError("--tori is two or four, got %r: one torus per input "
-                         "state, or a conjugate pair each" % (tori,))
-    for name in names:
-        allowed, why = _READOUT_TORI[name]
-        if int(tori) not in allowed:
-            raise ValueError(
-                "--readout %s needs --tori %s, not %d: %s"
-                % (name, " or ".join(str(n) for n in allowed), int(tori), why))
-    if output_state is not None:
-        try:
-            complex(output_state)
-        except (TypeError, ValueError):
-            raise ValueError("--output-state is a modulus tau, e.g. 0.3+1.1j; "
-                             "got %r" % (output_state,))
-    pairs = _as_state_pairs(states)
-    # Derived wherever it CAN be. At four tori the operator's image of a
-    # pair is 4-dimensional and the harmonic space has rank 4, so the output
-    # is computed and declaring one would only override it.
-    if output_state is not None and int(tori) == 4:
+    _validate_readout_host(names, tori)
+    if "whole" in names and collar_twist == "swap":
+        raise ValueError("--collar-twist swap cannot be used with --readout "
+                         "whole: their harmonic frames do not agree")
+    if output_tau is not None and "whole" not in names:
         raise ValueError(
-            "--output-state cannot be used with --tori 4: the harmonic space "
-            "has rank 4 there and the operator's image of each pair is "
-            "4-dimensional, so every output is derived")
-    if output_state is not None and len(pairs) > 1:
+            "--output-state can only be used when --readout includes whole")
+    if output_tau is not None and pairs:
         raise ValueError(
-            "--output-state cannot be used with more than one --state pair: "
-            "one declared output cannot be the answer for %d different "
-            "inputs. With an operator the outputs are derived per pair"
-            % (len(pairs) + 1))
-    if "whole" in names and int(tori) == 2 and output_state is None:
+            "--output-state cannot be used with --state: one declared output "
+            "cannot be the answer for several different inputs")
+    # A modulus names a 2-vector. It cannot name a vector in the four-torus
+    # direct sum, independently of that host's tensor-product obstruction.
+    if output_tau is not None and tori == 4:
+        raise ValueError(
+            "--output-state cannot be used with --tori 4: a modulus names a "
+            "2-dimensional state, while that harmonic space has rank 4")
+    if "whole" in names and tori == 2 and output_tau is None:
         raise ValueError(
             "--readout whole at --tori 2 needs --output-state: the harmonic of "
             "the whole Laplacian has rank 2 there, so it carries a "
             "2-dimensional state, and the two-body target it would otherwise "
             "score against is 4-dimensional")
-    if "bulk" in names and int(layers) < 2:
-        raise ValueError(
-            "--readout bulk needs at least two collar layers: with one, every "
-            "cell touches a surface and there are no interior cells to read")
-    if combinatorial_breadth < 0:
-        raise ValueError("combinatorial breadth is how many moves stage 1 "
-                         "composes into one candidate before it starts "
-                         "backing off, so it cannot be negative; zero keeps "
-                         "the deepening schedule. Got %r"
-                         % (combinatorial_breadth,))
-    if not (tolerance > 0.0 and math.isfinite(tolerance)):
-        raise ValueError("tolerance must be a positive finite absolute "
-                         "threshold, got %r" % (tolerance,))
+    if names == ["whole"] and tori == 2 and output_tau is not None:
+        ignored = []
+        if operator != DECLARED_OPERATOR:
+            ignored.append("--operator")
+        if coupling != DECLARED_COUPLING:
+            ignored.append("--J")
+        if time != DECLARED_TIME:
+            ignored.append("--time")
+        if ignored:
+            raise ValueError(
+                "--readout whole with a declared --output-state does not use "
+                "%s; non-default values would be ignored"
+                % ", ".join(ignored))
+    if operator != "flip_flop" and (
+            coupling != DECLARED_COUPLING or time != DECLARED_TIME):
+        raise ValueError("--J and --time apply only to --operator flip_flop; "
+                         "the named gate %s ignores them" % operator)
     return {
         "size": size,
         "steps": steps,
@@ -4096,18 +4663,17 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "host_seed": host_seed,
         "resolution": resolution,
         "edge_disposition": edge_disposition,
-        "candidate_moves": int(candidate_moves),
+        "candidate_moves": candidate_moves,
         "stage1_iters": stage1_iters,
         "tolerance": tolerance,
         "patience": patience,
-        "surgical_depth": surgical_depth,
-        "combinatorial_breadth": int(combinatorial_breadth),
-        "readout": readout,
-        "tori": int(tori),
-        "collar_twist": str(collar_twist),
-        "output_state": (None if output_state is None
-                         else [float(complex(output_state).real),
-                               float(complex(output_state).imag)]),
+        "combinatorial_depth": combinatorial_depth,
+        "combinatorial_length": combinatorial_length,
+        "readout": ",".join(names),
+        "tori": tori,
+        "collar_twist": collar_twist,
+        "output_state": (None if output_tau is None
+                         else [output_tau.real, output_tau.imag]),
         "stage2_iters": stage2_iters,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -4120,21 +4686,21 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "inputs": inputs,
         "tau_a": moduli["tau_a"],
         "tau_b": moduli["tau_b"],
-        "grid": int(grid),
-        "layers": int(layers),
-        "coupling": float(coupling),
-        "time": float(time),
-        "input_weight": float(input_weight),
-        "regge": bool(regge),
-        "extend_boundary": bool(extend_boundary),
-        "score_leak": bool(score_leak),
+        "grid": grid,
+        "layers": layers,
+        "coupling": coupling,
+        "time": time,
+        "input_weight": input_weight,
+        "regge": regge,
+        "extend_boundary": extend_boundary,
+        "score_leak": score_leak,
         # An empty LIST when none were given, as it has always been: a record
         # written before this flag existed reads the same.
         "states": ([] if states is None
                    else list(states) if isinstance(states, (list, tuple))
                    else str(states)),
-        "operator": str(operator),
-        "pin_boundary": bool(pin_boundary),
+        "operator": operator,
+        "pin_boundary": pin_boundary,
     }
 
 
@@ -4165,7 +4731,8 @@ def build_parser():
                      help="causal character of the seed's edges: random "
                           "(default, magnitude one with the real/imaginary "
                           "split drawn per edge), spacelike (l^2 = +1), "
-                          "timelike (l^2 = -1), or foliated (a PRESCRIBED "
+                          "timelike (l^2 = -1), lightlike (l^2 = i), or "
+                          "foliated (a PRESCRIBED "
                           "light cone: timelike between hop layers of M0, "
                           "spacelike within one)")
     run.add_argument("--stage-one-iterations", type=int,
@@ -4176,8 +4743,8 @@ def build_parser():
                      default=DECLARED_STAGE2_ITERS,
                      help="relaxation iterations stage 2 runs per engine "
                           "unit (default %d)" % DECLARED_STAGE2_ITERS)
-    run.add_argument("--surgical-depth", type=int,
-                     default=DECLARED_SURGICAL_DEPTH,
+    run.add_argument("--combinatorial-depth", type=int,
+                     default=_LEGACY_UNSET,
                      help="how many moves deep stage 1 searches for an "
                           "objective-lowering SEQUENCE: when single moves "
                           "find no improvement it tries 2-move sequences, "
@@ -4186,31 +4753,40 @@ def build_parser():
                           "in the draw -- the four Pachner moves and the "
                           "cone-outs and cone-ins alike -- not the surgical "
                           "moves alone (default %d, single moves)"
-                          % DECLARED_SURGICAL_DEPTH)
-    run.add_argument("--combinatorial-breadth", type=int,
-                     dest="combinatorial_breadth",
-                     default=DECLARED_COMBINATORIAL_BREADTH,
+                          % DECLARED_COMBINATORIAL_DEPTH)
+    run.add_argument("--surgical-depth", type=int,
+                     dest="surgical_depth",
+                     default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    run.add_argument("--combinatorial-length", type=int,
+                     default=_LEGACY_UNSET,
                      help="how many moves stage 1 composes into ONE candidate "
                           "before it starts backing off. Non-zero runs the "
-                          "search the other way round from --surgical-depth: "
+                          "search the other way round from "
+                          "--combinatorial-depth (the two schedules are "
+                          "mutually exclusive): "
                           "sequences of exactly this many moves are tried "
                           "FIRST, and the search shortens by one move -- to "
                           "this many minus one, then minus two, down to "
                           "single moves -- only when nothing at the current "
-                          "breadth lowers the objective. It asks whether a "
+                          "length lowers the objective. It asks whether a "
                           "composition of this length improves a complex that "
                           "no shorter composition improves. Combined with "
-                          "--candidate-moves 0 the search at every breadth is "
+                          "--candidate-moves 0 the search at every length is "
                           "exhaustive, which costs the move space raised to "
-                          "the breadth. Default %d, the deepening schedule"
-                          % DECLARED_COMBINATORIAL_BREADTH)
+                          "the length. Default %d, the deepening schedule"
+                          % DECLARED_COMBINATORIAL_LENGTH)
+    run.add_argument("--combinatorial-breadth", type=int,
+                     dest="combinatorial_breadth",
+                     default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     run.add_argument("--readout", default=DECLARED_READOUT,
                      help="which space the two-body target is scored "
                           "against, as a comma-separated set that is SUMMED. "
                           "'transfer' is the whole complex's degree-1 "
                           "operator read as the coupling block between the "
-                          "two boundary frames; 'bulk' is ker L_1(W - dW), "
-                          "the boundary REMOVED, read through a Choi frame; "
+                          "two boundary frames; 'bulk' is reserved but "
+                          "refused because this driver declares no Choi frame; "
+                          "'operator' is refused because its paired frame is "
+                          "a direct sum, not a two-qubit tensor product; "
                           "'whole' is ker L_1(W), the boundary INCLUDED, read "
                           "through the blocks' markings. This is part of the "
                           "OBJECTIVE, not the reporting: the residual is a "
@@ -4232,14 +4808,15 @@ def build_parser():
                           "product. Only these two are offered because a "
                           "mapping class must be a simplicial automorphism of "
                           "the triangulation to collar at all, and a Dehn "
-                          "twist is not one here. Note the reach: the "
-                          "whole-complex harmonic reading realises GL(2, Z) "
-                          "and no more, since M is an integer matrix; a "
+                          "twist is not one here. The whole-complex harmonic "
+                          "reading requires the product collar's frame "
+                          "agreement, so --readout whole refuses swap. A "
                           "continuous gate lives in --readout transfer, which "
                           "the same jitter moves by two orders of magnitude.")
     run.add_argument("--tori", type=int, choices=(2, 4),
                      default=DECLARED_TORI,
-                     help="how many tori bound the cobordism. Two is one per "
+                     help="how many tori bound the cobordism (default torus "
+                          "count %d). Two is one per "
                           "input state, the collar of spec S3. Four carries "
                           "each state on a PAIR, itself and its orientation "
                           "reversal at -conj(tau), on two collars joined "
@@ -4248,17 +4825,28 @@ def build_parser():
                           "rank(H^1(W) -> H^1(dW)) = b_1(dW)/2, so two tori "
                           "leave a harmonic space of rank 2 and four leave 4, "
                           "against a 4-dimensional target. --readout "
-                          "transfer needs two; whole and operator need four; "
-                          "bulk takes either. Four needs three collar layers "
-                          "(default %d)" % DECLARED_TORI)
+                          "transfer and whole need two; bulk and operator are "
+                          "refused by this driver, and the four-torus direct "
+                          "sum is not identified with a two-qubit tensor "
+                          "product. Thus 4 is a compatibility value that "
+                          "fails with the specific representation reason; "
+                          "the paired host itself remains a low-level "
+                          "diagnostic. Four needs three collar layers"
+                          % DECLARED_TORI)
+    run.add_argument("--layers", type=int, default=DECLARED_COLLAR_LAYERS,
+                     help="qubit mode: product layers in the collar seed, at "
+                          "least one. --tori 4 requires three, so smaller "
+                          "values are normalized to three (default %d)"
+                          % DECLARED_COLLAR_LAYERS)
     run.add_argument("--output-state", dest="output_state", default=None,
                      help="the state the whole complex's harmonic form is "
                           "meant to be, as a modulus tau (e.g. 0.3+1.1j): the "
                           "target is psi(tau) = (1, tau) normalized. The "
                           "harmonic IS a state and its dimension is b_1(W), "
                           "so at --tori 2 it is 2-dimensional and this names "
-                          "it; unset, --readout whole falls back to the "
-                          "4-dimensional two-body target")
+                          "it. At --tori 2 every accepted readout set "
+                          "containing whole requires this option; a set "
+                          "without whole refuses it")
     run.add_argument("--tolerance", type=float, default=DECLARED_TOLERANCE,
                      help="ABSOLUTE objective tolerance (default %g). Stage "
                           "2 backs its line search off until a trial lowers "
@@ -4324,9 +4912,9 @@ def build_parser():
                           "(default %g)" % DECLARED_TIME)
     run.add_argument("--input-weight", type=float,
                      default=DECLARED_INPUT_WEIGHT,
-                     help="qubit mode: weight of each block's residual (the "
-                          "whole's zero mode against the torus's input "
-                          "coefficients in its live frame) in r_U (default %g)"
+                     help="qubit mode: weight of each block's residual (its "
+                          "OWN Laplacian's zero mode against the torus input "
+                          "coefficients) in r_U (default %g)"
                           % DECLARED_INPUT_WEIGHT)
     run.add_argument("--regge", action=argparse.BooleanOptionalAction,
                      default=DECLARED_REGGE,
@@ -4340,12 +4928,9 @@ def build_parser():
                           "two at a time: --state 0.5+0.9j:0.1+1.3j:1j:1j is "
                           "the pairs (0.5+0.9j, 0.1+1.3j) and (1j, 1j). An "
                           "odd count is refused. --tau-a/--tau-b are always "
-                          "the first pair. At --tori 4 each state is carried "
-                          "with its orientation reversal at -conj(tau). Each "
-                          "pair's OUTPUT is derived from the operator, never "
-                          "declared: a single --output-state cannot be the "
-                          "answer for several different inputs, and giving "
-                          "both is refused")
+                          "the first pair. A single --output-state cannot be "
+                          "the answer for several different inputs, so the "
+                          "two options are refused together")
     run.add_argument("--score-leak", action="store_true",
                      dest="score_leak", default=DECLARED_SCORE_LEAK,
                      help="also score the WHOLE cobordism's leak of each "
@@ -4356,7 +4941,7 @@ def build_parser():
                           "whole complex's zero mode. With a held boundary "
                           "the own residual sits at rounding and what it "
                           "contributes is negligible, so without this the "
-                          "objective is effectively the bulk term alone")
+                          "objective is effectively the two-body term alone")
     run.add_argument("--operator", default=DECLARED_OPERATOR,
                      choices=["flip_flop"] + sorted(DECLARED_GATES),
                      help="qubit mode: the operator whose output the transfer "
@@ -4377,19 +4962,22 @@ def build_parser():
     run.add_argument("--extend-boundary", action="store_true",
                      dest="extend_boundary",
                      default=DECLARED_EXTEND_BOUNDARY,
-                     help="let a cone move extend the boundary of W. Off by "
-                          "default: a cone that hands dW a face it did not "
-                          "have changes what the cobordism is, and this "
-                          "driver states its boundary up front")
+                     help="qubit mode: let a cone move extend the declared "
+                          "surface boundary of W. Off by default: a cone that "
+                          "hands dW a face it did not have changes what the "
+                          "cobordism is. Neutral mode refuses this option; "
+                          "its pinned M0 does not declare fixed topology")
     run.add_argument("--live", action="store_true",
                      help="draw each frame as it is computed instead of only "
                           "at the end; still writes --out and --json. Needs "
-                          "an interactive matplotlib backend, which the "
+                          "a local GUI matplotlib backend (WebAgg is refused "
+                          "because its pause loop blocks), which the "
                           "'live' extra supplies (pip install -e \".[live]\"); "
                           "without one it fails by name rather than running "
                           "headless")
     run.add_argument("--out", default="emergence_animation.gif",
-                     help="GIF, MP4, or PNG of the final frame")
+                     help="GIF or MP4 animation of every frame, or PNG of "
+                          "the final frame")
     run.add_argument("--json", default=None,
                      help="also write the per-frame measurements here")
     run.add_argument("--geometry", default=None,
@@ -4402,46 +4990,99 @@ def build_parser():
     return parser
 
 
+def _validate_output_paths(out_path, json_path, geometry_path):
+    """Refuse formats and aliases before an expensive drive starts."""
+    if out_path:
+        lowered = os.fspath(out_path).lower()
+        if not lowered.endswith((".gif", ".mp4", ".png")):
+            raise ValueError("--out must end in .gif, .mp4, or .png; got %r"
+                             % os.fspath(out_path))
+    paths = [(name, os.fspath(path))
+             for name, path in (("--out", out_path), ("--json", json_path),
+                                ("--geometry", geometry_path)) if path]
+    seen = {}
+    existing = []
+    for name, path in paths:
+        if os.path.isdir(path):
+            raise ValueError("%s must name a file, not the directory %r"
+                             % (name, path))
+        canonical = os.path.normcase(os.path.realpath(
+            os.path.abspath(os.path.expanduser(path))))
+        if canonical in seen:
+            raise ValueError("%s and %s resolve to the same output path %r"
+                             % (seen[canonical], name, path))
+        for previous_name, previous_path in existing:
+            try:
+                same_file = os.path.samefile(path, previous_path)
+            except OSError:
+                same_file = False
+            if same_file:
+                raise ValueError(
+                    "%s and %s refer to the same output file %r"
+                    % (previous_name, name, path))
+        seen[canonical] = name
+        if os.path.exists(path):
+            existing.append((name, path))
+
+
+def _write_json_document(path, document):
+    """Serialize strictly before opening the destination for replacement."""
+    payload = json.dumps(_json_safe(document), indent=2, sort_keys=True,
+                         allow_nan=False)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(payload)
+        handle.write("\n")
+
+
 def main(argv=None):
-    args = build_parser().parse_args(argv)
-    config = build_config(args.size, args.steps, args.seed, args.host_seed,
-                          args.resolution, args.edge_disposition,
-                          args.stage_one_iterations,
-                          args.stage_two_iterations,
-                          tolerance=args.tolerance,
-                          patience=args.patience,
-                          candidate_moves=args.candidate_moves,
-                          surgical_depth=args.surgical_depth,
-                          combinatorial_breadth=args.combinatorial_breadth,
-                          readout=args.readout,
-                          tori=args.tori,
-                          output_state=args.output_state,
-                          collar_twist=args.collar_twist,
-                          inputs=args.inputs, tau_a=args.tau_a,
-                          tau_b=args.tau_b, grid=args.grid,
-                          coupling=args.coupling, time=args.time,
-                          input_weight=args.input_weight, regge=args.regge,
-                          extend_boundary=args.extend_boundary,
-                          score_leak=args.score_leak,
-                          states=args.states,
-                          operator=args.operator,
-                          pin_boundary=args.pin_boundary)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        config = build_config(
+            size=args.size, steps=args.steps, seed=args.seed,
+            host_seed=args.host_seed, resolution=args.resolution,
+            edge_disposition=args.edge_disposition,
+            stage1_iters=args.stage_one_iterations,
+            stage2_iters=args.stage_two_iterations,
+            tolerance=args.tolerance, patience=args.patience,
+            candidate_moves=args.candidate_moves,
+            combinatorial_depth=args.combinatorial_depth,
+            combinatorial_length=args.combinatorial_length,
+            surgical_depth=getattr(args, "surgical_depth", _LEGACY_UNSET),
+            combinatorial_breadth=getattr(
+                args, "combinatorial_breadth", _LEGACY_UNSET),
+            readout=args.readout, tori=args.tori,
+            output_state=args.output_state, collar_twist=args.collar_twist,
+            layers=args.layers, inputs=args.inputs, tau_a=args.tau_a,
+            tau_b=args.tau_b, grid=args.grid, coupling=args.coupling,
+            time=args.time, input_weight=args.input_weight, regge=args.regge,
+            extend_boundary=args.extend_boundary, score_leak=args.score_leak,
+            states=args.states, operator=args.operator,
+            pin_boundary=args.pin_boundary)
+        _validate_output_paths(args.out, args.json, args.geometry)
+    except ValueError as error:
+        parser.error(str(error))
     # Held from the moment the node exists, so the geometry is written even
     # when the drive is interrupted: an interrupted run's complex is exactly
     # the one worth keeping, and it is the only output that cannot be
     # recomputed from the others.
     driven = {}
+    def remember_setup(node, inputs):
+        driven.update(node=node, inputs=inputs)
+
     try:
         result = (drive_live(config, progress=not args.quiet,
-                             on_node=lambda node: driven.update(node=node))
+                             on_setup=remember_setup)
                   if args.live
                   else drive(config, progress=not args.quiet,
-                             on_node=lambda node: driven.update(node=node)))
+                             on_setup=remember_setup))
     except KeyboardInterrupt:
         if args.geometry and "node" in driven:
-            _write_geometry(args.geometry, driven["node"], None, args.quiet)
+            _write_geometry(args.geometry, driven["node"],
+                            driven.get("inputs"), args.quiet)
         raise
     frames = result.frames
+    source = source_commit() if args.json or args.geometry else None
     if not args.quiet and result.terminator == Terminator.TOLERANCE:
         sys.stdout.write(
             "exited on a STALL, not on a target: %d consecutive engine unit%s "
@@ -4453,7 +5094,7 @@ def main(argv=None):
                _format_objective_total(frames[-1])))
     if args.json:
         document = {"config": config,
-                    "source": source_commit(),
+                    "source": source,
                     "terminator": result.terminator,
                     "stalls": result.stalls,
                     "frames": [f.to_json() for f in frames]}
@@ -4462,12 +5103,12 @@ def main(argv=None):
             # they sit in the host, chi and the algebra it comes from, and
             # the objective the node descended.
             document["inputs"] = result.inputs.to_json()
-        with open(args.json, "w") as handle:
-            json.dump(document, handle, indent=2, sort_keys=True)
+        _write_json_document(args.json, document)
         if not args.quiet:
             sys.stdout.write("wrote %s\n" % args.json)
     if args.geometry and "node" in driven:
-        _write_geometry(args.geometry, driven["node"], result.inputs, args.quiet)
+        _write_geometry(args.geometry, driven["node"], result.inputs,
+                        args.quiet, source)
     if args.out:
         path = render(frames, args.out)
         if not args.quiet:
@@ -4475,10 +5116,8 @@ def main(argv=None):
     return 0
 
 
-def _write_geometry(path, node, inputs, quiet):
-    with open(path, "w") as handle:
-        json.dump(geometry_document(node, inputs), handle, indent=2,
-                  sort_keys=True)
+def _write_geometry(path, node, inputs, quiet, source=None):
+    _write_json_document(path, geometry_document(node, inputs, source))
     if not quiet:
         sys.stdout.write("wrote %s\n" % path)
 

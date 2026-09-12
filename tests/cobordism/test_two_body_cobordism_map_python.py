@@ -146,7 +146,8 @@ class TestAttachmentAndResidual:
                   precone=8, einstein_hilbert=False)
         node.seed_inputs([0, 1])
         a, b = disjoint_tetrahedra(node.spacetime())
-        with pytest.raises(RuntimeError, match="exactly two attached input fibers"):
+        with pytest.raises(RuntimeError,
+                           match="two attached input fibers, or four"):
             node.read_two_body()
         with pytest.raises(ValueError, match="one attachment cell per fiber row"):
             node.attach_input_fiber(0, fiber(psi), [[a[0]], [a[1]]])

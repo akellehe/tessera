@@ -1,15 +1,15 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""Searching move compositions at a fixed breadth, then backing off (#1020).
+"""Searching move compositions at a fixed length, then backing off (#1020).
 
 Stage 1's default schedule is iterative deepening: single moves first, then
-pairs, then triples, up to ``--surgical-depth``. It finds a single improving
+pairs, then triples, up to ``--combinatorial-depth``. It finds a single improving
 move whenever one exists, which means it reaches the multi-move search only on
 a plateau, and reaches it from below.
 
-``--combinatorial-breadth N`` runs the ladder the other way round. Sequences of
+``--combinatorial-length N`` runs the ladder the other way round. Sequences of
 exactly N moves are searched FIRST, and the search shortens by one move -- to
-N-1, then N-2, down to single moves -- only when nothing at the current breadth
+N-1, then N-2, down to single moves -- only when nothing at the current length
 lowers the objective. The two schedules answer different questions: the
 deepening one asks "is there an improving move, and failing that a pair?", the
 backing-off one asks "is there an improving composition of length N?" on a
@@ -18,7 +18,7 @@ complex where the answer for shorter compositions may well be no.
 The observable difference is the depth the committed sequence came from, which
 ``last_stage1_lookahead`` reports. On a complex where a single move improves F,
 the deepening schedule commits at depth 1 because it never looks further; the
-backing-off schedule at breadth 2 commits at depth 2, because a 2-composition
+backing-off schedule at length 2 commits at depth 2, because a 2-composition
 is what it priced first.
 
 Two things also have to survive the new schedule. The exhaustive sentinel --
@@ -149,21 +149,21 @@ def test_the_exhaustive_sentinel_survives_the_deepening():
 
 def test_the_default_is_the_deepening_schedule():
     """Additive: an existing run must search exactly what it searched before."""
-    assert ea.build_config()["combinatorial_breadth"] == 0
-    assert ea.DECLARED_COMBINATORIAL_BREADTH == 0
+    assert ea.build_config()["combinatorial_length"] == 0
+    assert ea.DECLARED_COMBINATORIAL_LENGTH == 0
 
 
 def test_the_value_is_carried_into_the_config():
-    assert ea.build_config(combinatorial_breadth=3)["combinatorial_breadth"] == 3
+    assert ea.build_config(combinatorial_length=3)["combinatorial_length"] == 3
 
 
-def test_a_negative_breadth_is_refused_by_name():
+def test_a_negative_length_is_refused_by_name():
     with pytest.raises(ValueError) as caught:
-        ea.build_config(combinatorial_breadth=-1)
-    assert "combinatorial breadth" in str(caught.value)
+        ea.build_config(combinatorial_length=-1)
+    assert "combinatorial length" in str(caught.value)
 
 
-def test_the_drive_asks_stage_one_for_that_breadth(monkeypatch):
+def test_the_drive_asks_stage_one_for_that_length(monkeypatch):
     """The number must reach `run_stage1`, not merely sit in the document."""
     seen = []
     original = ea.MC.run_stage1
@@ -173,7 +173,34 @@ def test_the_drive_asks_stage_one_for_that_breadth(monkeypatch):
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(ea.MC, "run_stage1", spy)
-    ea.drive(ea.build_config(size=SMALL, steps=1, combinatorial_breadth=2,
+    ea.drive(ea.build_config(size=SMALL, steps=1, combinatorial_length=2,
                              stage2_iters=1),
              progress=False)
     assert seen and all(value == 2 for value in seen), seen
+
+
+def test_legacy_stored_config_keys_are_replayed(monkeypatch):
+    """Old run documents remain executable after the schema rename."""
+    seen = []
+    original = ea.MC.run_stage1
+
+    def spy(self, *args, **kwargs):
+        seen.append((kwargs.get("max_lookahead"),
+                     kwargs.get("combinatorial_breadth")))
+        return original(self, *args, **kwargs)
+
+    config = ea.build_config(size=SMALL, steps=1, stage2_iters=1)
+    del config["combinatorial_depth"]
+    del config["combinatorial_length"]
+    config["surgical_depth"] = 1
+    config["combinatorial_breadth"] = 2
+    monkeypatch.setattr(ea.MC, "run_stage1", spy)
+    ea.drive(config, progress=False)
+    assert seen and all(values == (1, 2) for values in seen), seen
+
+
+def test_divergent_canonical_and_legacy_config_keys_are_refused():
+    config = ea.build_config(size=SMALL, steps=0)
+    config["surgical_depth"] = 2
+    with pytest.raises(ValueError, match="legacy alias"):
+        ea.drive(config, progress=False)

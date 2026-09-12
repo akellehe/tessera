@@ -22,6 +22,7 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import tessera as T
 
@@ -419,6 +420,37 @@ class DualCurvatureTest(unittest.TestCase):
             axis2 = figure.add_subplot(2, 1, 2)
             ea._panel_dual_temporal(axis2, frames[-1], placed[-1])
             self.assertIn("temporal", axis2.get_title())
+        finally:
+            plt.close(figure)
+
+
+class ReadoutPresentationTest(unittest.TestCase):
+
+    def test_a_summed_whole_transfer_panel_names_the_component_and_aggregate(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        frame = SimpleNamespace(
+            inputs=SimpleNamespace(algebra={"chi": np.eye(2)}),
+            two_body={
+                "selected_readouts": ["transfer", "whole"],
+                "residual": 0.75,
+                "transfer": np.eye(2),
+                "singular_values": [1.0, 1.0],
+                "schmidt_rank": 2,
+                "reversal_residual": 0.0,
+                "in_frames": True,
+            },
+            config={"readout": "transfer,whole"},
+        )
+        figure, axis = plt.subplots()
+        try:
+            ea._panel_transfer(axis, frame)
+            title = axis.get_title()
+            self.assertIn("transfer component", title)
+            self.assertIn("aggregate leak 0.75 (includes whole)", title)
         finally:
             plt.close(figure)
 

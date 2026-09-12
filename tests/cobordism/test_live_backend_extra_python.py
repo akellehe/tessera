@@ -70,6 +70,17 @@ def test_the_refusal_names_the_extra(monkeypatch):
     assert "agg" in message
 
 
+def test_webagg_is_refused_before_its_blocking_event_loop(monkeypatch):
+    """Under WebAgg, pyplot.pause starts a server loop and never returns."""
+    import matplotlib
+    monkeypatch.setattr(matplotlib, "get_backend", lambda: "WebAgg")
+    monkeypatch.setattr(
+        ea, "drive",
+        lambda *_args, **_kwargs: pytest.fail("worker started under WebAgg"))
+    with pytest.raises(RuntimeError, match="blocking server loop"):
+        ea.drive_live(ea.build_config(steps=1, size=4), progress=False)
+
+
 def test_the_flag_help_names_the_extra():
     parser = ea.build_parser()
     live = [action for action in parser._subparsers._group_actions[0]

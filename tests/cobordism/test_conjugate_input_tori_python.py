@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""Four boundary tori, so the harmonic space can carry the target (#1039).
+"""Four boundary tori and the low-level paired-frame diagnostic (#1039).
 
 The two-body target is 4-dimensional and the two-torus collar's harmonic space
 is 2-dimensional. That is forced, not incidental: for a compact oriented
@@ -8,10 +8,16 @@ is 2-dimensional. That is forced, not incidental: for a compact oriented
 Adding handles to the bulk raises `b_1(W)` but the extra classes die on the
 boundary, so a readout cannot use them.
 
-`--conjugate-inputs` carries each state on a PAIR of tori: itself and its
+The four-torus construction carries each state on a PAIR of tori: itself and its
 orientation reversal at `-conj(tau)`, which keeps the modulus in the upper
 half-plane where a torus modulus has to live and gives the holomorphic form the
 conjugate periods. Four boundary tori give `b_1(dW) = 8`, hence rank 4.
+
+That rank count does not make the construction a two-qubit readout. Its four
+period coordinates are a direct sum of two torus frames, while a two-qubit
+state uses a tensor product. The driver therefore refuses four-torus semantic
+readouts; the engine's paired 4x4 transfer remains available as a low-level
+geometric diagnostic without claiming tensor-product axes.
 
 The host is two collars joined along a removed tetrahedron. Gluing along a
 sphere is a connected sum, which adds no first homology, so `b_1 = 2 + 2 = 4`
@@ -22,6 +28,7 @@ only once there are two interior layers.
 import os
 import sys
 
+import numpy as np
 import pytest
 
 from tessera import cobordism as cob
@@ -105,6 +112,29 @@ def drive_to_seed(**overrides):
     return held["node"]
 
 
+def low_level_four_torus_node():
+    """Build the geometric diagnostic directly through the engine API."""
+    moduli = (TAU_A, -TAU_A.conjugate(), TAU_B, -TAU_B.conjugate())
+    tori = [obs.SimplicialQubit.flat_torus(tau, GRID, GRID)
+            for tau in moduli]
+    seed = MC.seed_joined_collars(
+        [surface.spacetime() for surface in tori], 3)
+    ids = [{int(k): int(v) for k, v in mapping.items()}
+           for mapping in seed.vertex_ids]
+    node = MC(seed.host, [[1.0 + 0j]] * 4, [], degrees=[1], seed=7,
+              einstein_hilbert=False, real_squared_lengths_only=False,
+              metric_source=cob.HodgeMetricSource.WhitneyPencil)
+    node.seed_inputs([sorted(mapping.values()) for mapping in ids])
+    node.use_fiber_residuals(True)
+    for index, surface in enumerate(tori):
+        fiber = ea._torus_fiber(surface, ids[index])
+        node.attach_input_fiber(index, fiber, fiber.cells)
+        node.set_input_marking(
+            index, ea._host_marking(surface, ids[index]),
+            [1.0 + 0j, complex(moduli[index])])
+    return node
+
+
 def test_two_tori_cannot_carry_a_four_dimensional_target():
     """The control, and the reason the flag exists."""
     node = drive_to_seed(tori=2)
@@ -113,13 +143,13 @@ def test_two_tori_cannot_carry_a_four_dimensional_target():
     assert "rank 2" in node.whole_harmonic_obstruction
 
 
-def test_four_tori_can():
-    """A number, not a refusal. Its VALUE is what a run is for."""
-    node = drive_to_seed(readout="whole", tori=4)
-    chi = node.two_body_target().chi
-    residual = node.whole_harmonic_residual(chi)
-    assert node.whole_harmonic_obstruction == "", node.whole_harmonic_obstruction
-    assert 0.0 <= residual < 1.0, residual
+def test_four_tori_supply_a_low_level_paired_transfer_only():
+    """The 4x4 matrix is diagnostic; its axes are not qubit tensor axes."""
+    node = low_level_four_torus_node()
+    read = node.read_two_body()
+    assert list(read.transfer.shape) == [4, 4]
+    assert len(read.input_fiber_residuals) == 4
+    assert np.isnan(read.residual), "a diagnostic must not infer a tensor target"
 
 
 def test_the_conjugate_partners_are_the_orientation_reversals():
@@ -128,8 +158,15 @@ def test_the_conjugate_partners_are_the_orientation_reversals():
     A readout is named because the default, `transfer`, reads between exactly
     two frames and is refused at four tori.
     """
-    node = drive_to_seed(readout="whole", tori=4)
+    node = low_level_four_torus_node()
     assert len(node.inputs) == 4
+
+
+def test_paired_target_shape_is_checked_at_the_case_setter():
+    node = low_level_four_torus_node()
+    with pytest.raises(ValueError, match=r"paired.*3x3.*4x4"):
+        node.set_two_body_cases([
+            ([], np.eye(2, dtype=complex), True, np.eye(3, dtype=complex))])
 
 
 # ---- the flag ----
@@ -139,8 +176,12 @@ def test_the_default_is_two_tori():
     assert ea.DECLARED_TORI == 2
 
 
-def test_the_value_is_carried_into_the_config():
-    assert ea.build_config(tori=4, readout="whole")["tori"] == 4
+def test_the_driver_refuses_four_torus_semantic_readouts():
+    for readout in ("whole", "operator"):
+        with pytest.raises(
+                ValueError, match=r"direct[- ]sum.*tensor[- ]product"):
+            ea.build_config(inputs=ea.InputMode.QUBIT, tori=4,
+                            readout=readout)
 
 
 def test_only_two_or_four():

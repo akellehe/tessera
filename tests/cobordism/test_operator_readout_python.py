@@ -1,18 +1,17 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The paired-frame transfer reads the OPERATOR, not its image (#1048).
+"""The driver refuses the paired-frame transfer as a qubit operator (#1048).
 
 With conjugate pairs the boundary is four tori, two per state, and the transfer
-between the two PAIRS is read between rank-4 frames. That makes it 4x4 --
-sixteen numbers, the dimension of an operator on C^2 (x) C^2 -- so `vec(T)` is
-that operator's Choi state and the target is the GATE rather than the gate's
-image of one chosen input pair.
+between the two PAIRS is read between rank-4 frames. That makes it 4x4, but its
+axes are direct sums of torus frames. A two-qubit gate's axes are tensor
+products. Equal dimensions do not provide the missing identification, so the
+driver refuses ``--readout operator`` rather than scoring an unrelated matrix.
 
-That is a different claim from every earlier reading. A geometry representing G
-acts correctly on every input by construction, where one fitted to chi has been
-fitted to one of them: the swap sweep measured a fitted bulk holding its own
-states at 1e-8 and every other at 1e-2 to 9e-1, and the state ladder measured
-five states competing for one bulk with the outlier paying.
+The same mismatch rules out the four-torus whole-harmonic reading: its rank-4
+period coordinates are also a direct sum, not the tensor coordinates of the
+flattened two-qubit target. Four-torus paired reads remain low-level geometric
+diagnostics only.
 
 A reading that STRUCTURALLY cannot produce a number is refused when the config
 is built, not scored as a constant 1.0. A constant term has no gradient, so the
@@ -34,26 +33,10 @@ import emergence_animation as ea  # noqa: E402
 TAU_A, TAU_B, GRID = 0.3 + 1.1j, -0.2 + 0.8j, 3
 
 
-def seeded(**overrides):
-    held = {}
-    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
-                             operator="xx", tau_a=TAU_A, tau_b=TAU_B,
-                             input_weight=100.0, regge=False,
-                             pin_boundary=True, **overrides)
-    ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
-    return held["node"]
-
-
 # ---- the reading ----
 
-def test_the_target_is_the_gate_evolved_two_state_vector():
-    """G |psi><phi| G+, built from ALL FOUR of a case's tori.
-
-    The forward pair comes from the state tori and the backward pair from
-    their orientation reversals, so the conjugates are inputs rather than
-    spare boundary. It is rank one, being an outer product of one forward and
-    one backward state.
-    """
+def test_a_four_torus_case_does_not_invent_a_tensor_two_state_vector():
+    """The tuple slot remains for the engine API, but has no driver value."""
     from tessera import cobordism as cob
     from tessera import observables as obs
     MC = cob.MultiCobordism
@@ -67,11 +50,12 @@ def test_the_target_is_the_gate_evolved_two_state_vector():
          surface(TAU_B), surface(-TAU_B.conjugate())], 3)
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
-    boundary, chi, choi, tsv = ea._two_body_case(
+    boundary, chi, choi, tsv, coefficients = ea._two_body_case(
         (TAU_A, TAU_B), None, ids, GRID, "xx", {"coupling": 1.0, "time": 1.0})
-    tsv = np.asarray(tsv)
-    assert tsv.shape == (4, 4)
-    assert np.linalg.matrix_rank(tsv, tol=1e-12) == 1
+    assert boundary
+    assert choi is True
+    assert tsv is None
+    assert len(coefficients) == 8
 
     def state(tau):
         return np.asarray(
@@ -79,8 +63,7 @@ def test_the_target_is_the_gate_evolved_two_state_vector():
 
     gate = np.asarray(ea.DECLARED_GATES["xx"], dtype=complex)
     psi = np.kron(state(TAU_A), state(TAU_B))
-    phi = np.kron(state(-TAU_A.conjugate()), state(-TAU_B.conjugate()))
-    assert np.allclose(tsv, gate @ np.outer(psi, phi.conj()) @ gate.conj().T, atol=1e-13)
+    assert np.allclose(chi, (gate @ psi).reshape(2, 2), atol=1e-13)
 
 
 def test_the_reversed_torus_carries_Z_conj_psi():
@@ -101,51 +84,46 @@ def test_the_reversed_torus_carries_Z_conj_psi():
         assert np.allclose(partner, np.array([psi.conj()[0], -psi.conj()[1]]))
 
 
-def test_it_scores_a_number_and_that_number_is_the_objective():
-    """The per-case residuals are what the drive minimises.
-
-    Read through the CASES, not `two_body_residual`, which is the single
-    target's read and is case-agnostic. At four tori every run carries cases,
-    since a case is what holds the two-state vector.
-    """
-    node = seeded(readout="operator", tori=4)
-    per_case = node.two_body_residuals_per_case()
-    assert per_case, "a four-torus run carries at least one case"
-    assert all(0.0 <= value <= 1.0 for value in per_case), per_case
-    assert node.objective() == pytest.approx(sum(per_case), rel=1e-12)
-
-
-def test_a_summed_set_adds_the_readings():
-    """Every reading is the same projective leak on one scale, so they sum."""
-    whole = seeded(readout="whole", tori=4).objective()
-    operator = seeded(readout="operator", tori=4).objective()
-    both = seeded(readout="whole,operator", tori=4).objective()
-    assert both == pytest.approx(whole + operator, rel=1e-9)
+def test_equal_matrix_dimensions_do_not_make_the_operator_axes_compatible():
+    """Four direct-sum axes are still not two tensor-product qubit axes."""
+    with pytest.raises(ValueError,
+                       match=r"direct[- ]sum.*tensor[- ]product"):
+        ea.build_config(inputs=ea.InputMode.QUBIT, readout="operator", tori=4)
 
 
 # ---- incompatible inputs are refused by name ----
 
 @pytest.mark.parametrize("overrides,expected", [
-    # `whole` takes either count; at two tori the harmonic has rank 2, so it
-    # needs a 2-dimensional target named rather than the 4-dimensional chi.
+    # At two tori the whole harmonic has rank 2, so it needs a 2-dimensional
+    # target named rather than the 4-dimensional chi.
     (dict(readout="whole"), "needs --output-state"),
-    (dict(readout="operator"), "needs --tori 4"),
+    (dict(readout="operator"), "unavailable"),
+    (dict(readout="whole", tori=4), "direct-sum period frame"),
     (dict(readout="transfer", tori=4), "needs --tori 2"),
     (dict(readout="transfer,operator", tori=4), "needs --tori 2"),
-    (dict(readout="bulk", layers=1), "two collar layers"),
+    (dict(readout="bulk", layers=1), "unavailable"),
+    (dict(readout="transfer", output_state="0.1+1.3j"), "includes whole"),
     (dict(readout=""), "no reading"),
     (dict(readout="nope"), "unknown readout"),
 ])
 def test_refused(overrides, expected):
     with pytest.raises(ValueError) as caught:
-        ea.build_config(**overrides)
+        ea.build_config(inputs=ea.InputMode.QUBIT, **overrides)
     assert expected in str(caught.value), str(caught.value)
 
 
 @pytest.mark.parametrize("overrides", [
     dict(readout="transfer"),
-    dict(readout="whole,operator", tori=4),
-    dict(readout="bulk", layers=3),
+    dict(readout="whole", output_state="0.1+1.3j"),
 ])
 def test_accepted(overrides):
-    assert ea.build_config(**overrides)["readout"] == overrides["readout"]
+    assert ea.build_config(inputs=ea.InputMode.QUBIT,
+                           **overrides)["readout"] == overrides["readout"]
+
+
+def test_transfer_and_whole_compose_when_the_whole_target_is_declared():
+    config = ea.build_config(inputs=ea.InputMode.QUBIT,
+                             readout="transfer,whole",
+                             output_state="0.1+1.3j")
+    assert config["readout"] == "transfer,whole"
+    assert config["output_state"] == [0.1, 1.3]
