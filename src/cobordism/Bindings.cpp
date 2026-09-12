@@ -1929,6 +1929,15 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("two_state_vector"), py::call_guard<py::gil_scoped_release>(),
            "The projective leak of a target expressed in the paired direct-sum frames. "
            "Equal dimensions do not identify this with a tensor-product two-qubit operator.")
+      .def("set_whole_pairing", &MultiCobordism::setWholePairing, py::arg("pairing"),
+           "How the whole-complex reading pairs harmonic columns against the input blocks. "
+           "PERIODS integrates each column over the marked cycles: how a state is defined on a "
+           "boundary torus, but entirely topological on the three-dimensional bulk, where a change "
+           "of metric moves the harmonic representative by exactly a coboundary whose period "
+           "around a closed cycle telescopes to zero. GRAM contracts through the chain metric "
+           "instead, f_c^T M_1 Z_a, the transpose pairing the harmonic Gram already uses. Same "
+           "shape, so the fit and the projective leak downstream are unchanged. PERIODS by default.")
+      .def_property_readonly("whole_pairing", &MultiCobordism::wholePairing)
       .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
            "The readings SUMMED into the two-body residual. TRANSFER is the "
            "coupling block between the two boundary frames; BULK is "
@@ -2367,6 +2376,13 @@ Right -- re-read after each drive call:
       .value("BULK", MultiCobordism::ReadoutMode::Bulk)
       .value("WHOLE", MultiCobordism::ReadoutMode::Whole)
       .value("OPERATOR", MultiCobordism::ReadoutMode::Operator);
+
+  py::enum_<MultiCobordism::WholePairing>(multiCobordismClass, "WholePairing",
+      "How the whole-complex reading pairs harmonic columns against input blocks. PERIODS "
+      "integrates over the marked cycles and is topological on a 3-manifold bulk; GRAM contracts "
+      "through the chain metric and responds to it.")
+      .value("PERIODS", MultiCobordism::WholePairing::Periods)
+      .value("GRAM", MultiCobordism::WholePairing::Gram);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
       "One canonical solve action a search policy (Proton's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "

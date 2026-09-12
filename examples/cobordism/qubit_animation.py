@@ -172,10 +172,12 @@ DECLARED_COLLAR_TWIST = "none"
 #: flag changes no existing run until it is asked to. It is recorded under
 #: `interior_disposition` rather than `edge_disposition` because the latter
 #: is the NEUTRAL driver's key for the whole host's edges, and a qubit
-#: configuration carries none of those
-#: (`--edge-disposition`). `seed_collar` writes each torus's own lengths onto
-#: its edges and wires every other edge to 1.0, so without this a qubit host
-#: is all-spacelike in its bulk and cannot say otherwise.
+#: configuration carries none of those. The command-line flag stays
+#: `--edge-disposition`.
+#:
+#: `seed_collar` writes each torus's own lengths onto its edges and wires
+#: every other edge to 1.0, so without this a qubit host is all-spacelike in
+#: its bulk and cannot say otherwise.
 #:
 #: The tori's own edges are never written: they carry the declared input
 #: moduli, so a disposition over them would change the input states rather
@@ -185,6 +187,32 @@ DECLARED_COLLAR_TWIST = "none"
 #: The vocabulary is `emergence_animation.EdgeDisposition`, shared with the
 #: neutral driver so the two cannot drift.
 DECLARED_INTERIOR_DISPOSITION = ea.EdgeDisposition.SPACELIKE
+
+#: How the whole-complex reading pairs its harmonic columns against the input
+#: blocks (`--whole-pairing`).
+#:
+#: "periods" integrates each column over the marked cycles. That is how a
+#: state is DEFINED on a boundary torus, where the Hodge star is an
+#: endomorphism of H^1 and a modulus is the period ratio of the holomorphic
+#: line it selects. On the three-dimensional bulk there is no such line -- the
+#: star sends 1-forms to 2-forms -- and the reading is purely topological: a
+#: change of metric moves the harmonic representative by exactly a coboundary
+#: (100% of a change of 1.9 times the cochain's own norm, measured), and a
+#: coboundary's period around a closed cycle telescopes to zero. The residual
+#: does not move, 0.02430251774083792 to 0.02430251774083781 under a 75%
+#: jitter of every squared length, so a run scored on it cannot improve.
+#:
+#: "gram" contracts through the chain metric instead. The metric content is
+#: in the harmonic space either way; the period pairing is simply the one
+#: contraction that annihilates it, and the same jitter moves the Gram by 76%.
+DECLARED_WHOLE_PAIRING = "periods"
+
+#: The engine's whole-reading pairings by their command-line names.
+_WHOLE_PAIRINGS = {
+    "periods": MC.WholePairing.PERIODS,
+    "gram": MC.WholePairing.GRAM,
+}
+
 #: The state the whole complex's harmonic form is meant to be (`--output-state`),
 #: as a modulus tau: the target is psi(tau) = (1, tau)/|(1, tau)|.
 #:
@@ -1090,6 +1118,8 @@ def build_qubit_node(config):
         scale = max(1.0, abs(tau_out.real), abs(tau_out.imag))
         state = np.array([1.0 / scale, tau_out / scale], dtype=complex)
         node.set_output_state_target(state / np.linalg.norm(state))
+    node.set_whole_pairing(
+        _WHOLE_PAIRINGS[str(config.get("whole_pairing", DECLARED_WHOLE_PAIRING))])
     node.set_readout_modes([_READOUT_MODES[name]
                             for name in _readout_names(config.get("readout", DECLARED_READOUT))])
     # Several input pairs on ONE bulk (#1017). The first pair is --tau-a/--tau-b
@@ -2095,6 +2125,25 @@ def _add_qubit_run_arguments(run):
                           "layering from the whole host, so it follows the "
                           "collar's own layers: edges spanning a layer are "
                           "timelike and edges within one spacelike.")
+    run.add_argument("--whole-pairing", dest="whole_pairing",
+                     choices=sorted(_WHOLE_PAIRINGS),
+                     default=DECLARED_WHOLE_PAIRING,
+                     help="how --readout whole pairs its harmonic columns "
+                          "against the input blocks. 'periods' integrates "
+                          "each column over the marked cycles: how a state is "
+                          "defined on a boundary torus, but TOPOLOGICAL on "
+                          "the three-dimensional bulk, where the Hodge star "
+                          "sends 1-forms to 2-forms so no holomorphic line "
+                          "exists for a metric to select. There a change of "
+                          "metric moves the harmonic representative by "
+                          "exactly a coboundary, whose period around a closed "
+                          "cycle telescopes to zero, so the residual does not "
+                          "move at all -- measured, 1e-16 under a 75 per cent "
+                          "jitter of every squared length -- and a run scored "
+                          "on it cannot improve. 'gram' contracts through the "
+                          "chain metric instead; the same jitter moves that "
+                          "by 76 per cent. Default 'periods', which is what "
+                          "every recorded run used.")
     run.add_argument("--collar-twist", dest="collar_twist",
                      choices=("none", "swap"), default=DECLARED_COLLAR_TWIST,
                      help="the mapping class that relabels the far surface "
@@ -2242,6 +2291,7 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  tori=DECLARED_TORI,
                  collar_twist=DECLARED_COLLAR_TWIST,
                  interior_disposition=DECLARED_INTERIOR_DISPOSITION,
+                 whole_pairing=DECLARED_WHOLE_PAIRING,
                  output_state=DECLARED_OUTPUT_STATE,
                  layers=DECLARED_COLLAR_LAYERS,
                  tau_a=DECLARED_TAU_A,
@@ -2290,6 +2340,9 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
     if interior_disposition not in ea.EdgeDisposition.ALL:
         raise ValueError("unknown edge disposition %r: expected one of %s"
                          % (interior_disposition, ", ".join(ea.EdgeDisposition.ALL)))
+    if whole_pairing not in _WHOLE_PAIRINGS:
+        raise ValueError("unknown whole pairing %r: expected one of %s"
+                         % (whole_pairing, ", ".join(sorted(_WHOLE_PAIRINGS))))
     operators = ("flip_flop",) + tuple(sorted(DECLARED_GATES))
     if operator not in operators:
         raise ValueError("unknown operator %r: expected one of %s"
@@ -2379,6 +2432,7 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
         "tori": tori,
         "collar_twist": collar_twist,
         "interior_disposition": interior_disposition,
+        "whole_pairing": whole_pairing,
         "output_state": (None if output_tau is None
                          else [output_tau.real, output_tau.imag]),
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
@@ -2446,6 +2500,7 @@ def main(argv=None):
             readout=args.readout, tori=args.tori,
             output_state=args.output_state, collar_twist=args.collar_twist,
             interior_disposition=args.interior_disposition,
+            whole_pairing=args.whole_pairing,
             layers=args.layers, tau_a=args.tau_a, tau_b=args.tau_b,
             grid=args.grid, coupling=args.coupling, time=args.time,
             input_weight=args.input_weight, regge=args.regge,
