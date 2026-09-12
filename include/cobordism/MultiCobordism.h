@@ -614,6 +614,37 @@ class MultiCobordism {
   /// special name for each pairing. Repeated values are normalized to their
   /// first occurrence. Empty is refused: a two-body term scored against
   /// nothing is not a term.
+  /// How the whole-complex reading pairs the harmonic columns against the
+  /// input blocks.
+  ///
+  /// `Periods` integrates each harmonic column over the marked cycles
+  /// (`Connection::transportedPeriod`). That is how a state is DEFINED on a
+  /// boundary torus, where the Hodge star is an endomorphism of \f$ H^1 \f$
+  /// and a modulus is the period ratio of the holomorphic line it selects.
+  ///
+  /// It is also, on the three-dimensional bulk, entirely topological. The
+  /// star there maps 1-forms to 2-forms, so no such line exists; changing the
+  /// metric moves the harmonic representative by exactly a COBOUNDARY (100%
+  /// of a change of up to 1.9 times the cochain's own norm, measured), and a
+  /// coboundary's period around a closed cycle telescopes to zero. The
+  /// reading does not move -- 0.02430251774083792 to 0.02430251774083781
+  /// under a 75% jitter of every squared length -- so a run scored on it
+  /// cannot improve.
+  ///
+  /// `Gram` contracts through the chain metric instead,
+  /// \f$ f_c^T M_1 Z_a \f$ with \f$ f_c \f$ the columns of the block's
+  /// live frame on the host's edges: the transpose pairing the harmonic Gram
+  /// \f$ Z^T M_1 Z \f$ already uses. The metric content is there; the period
+  /// pairing is simply the one contraction that annihilates it, and the same
+  /// jitter moves the Gram by 76% where it moves the periods by 1e-15.
+  ///
+  /// The observation matrix has the same shape either way, so the fit, the
+  /// period-frame normalization and the projective leak downstream are
+  /// unchanged. `Periods` is the default and what every recorded run used.
+  enum class WholePairing { Periods, Gram };
+  void setWholePairing(WholePairing pairing);
+  [[nodiscard]] WholePairing wholePairing() const noexcept { return wholePairing_; }
+
   void setReadoutModes(std::vector<ReadoutMode> modes);
   [[nodiscard]] const std::vector<ReadoutMode> &readoutModes() const noexcept {
     return readoutModes_;
@@ -3086,6 +3117,7 @@ class MultiCobordism {
   /// `lastStage1Lookahead`). 0 = the update committed nothing.
   int lastStage1LookaheadDepth_ = 0;
   std::vector<BoundaryBlock> inputBlocks_;
+  WholePairing wholePairing_{WholePairing::Periods};
   std::vector<BoundaryBlock> outputBlocks_;
 
   // ---- #776 state ----

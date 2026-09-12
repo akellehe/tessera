@@ -85,7 +85,8 @@ struct PeriodFrameSelection {
 // an ordering-dependent answer.
 PeriodFrameSelection selectPeriodFrame(
     const Eigen::MatrixXcd &periods,
-    const std::vector<Eigen::Index> &markingRanks) {
+    const std::vector<Eigen::Index> &markingRanks,
+    bool requireAgreement = true) {
   PeriodFrameSelection selection;
   const Eigen::Index rank = periods.cols();
   if (markingRanks.size() > kPeriodFrameMaxMarkings) {
@@ -135,8 +136,21 @@ PeriodFrameSelection selectPeriodFrame(
         std::to_string(rank) + ") with an invertible period matrix";
     return selection;
   }
+  // The agreement is a statement about PERIODS: every marking group induces
+  // the same frame on the whole's zero mode exactly when the integer matrix
+  // relating them is the identity, and that is what makes the frame the
+  // WHOLE's rather than a chosen block's.
+  //
+  // Under the GRAM pairing these rows are not periods. The groups are then
+  // not related by a topological monodromy and do not agree -- measured at
+  // 0.905 on the seeded collar, where the period groups agree at 1.1e-15.
+  // That disagreement is the metric content the pairing exists to expose, so
+  // the caller reads in the first group's frame and does not demand it. Which
+  // block frames the reading is then a choice, and it is the one spec S6
+  // already describes: the coefficients of the whole's zero mode in each
+  // block's live frame.
   const Eigen::MatrixXcd firstInverse = candidates.front().block.inverse();
-  for (std::size_t b = 1; b < candidates.size(); ++b) {
+  for (std::size_t b = 1; requireAgreement && b < candidates.size(); ++b) {
     const double defect =
         (candidates[b].block * firstInverse -
          Eigen::MatrixXcd::Identity(rank, rank))
@@ -4730,6 +4744,8 @@ double MultiCobordism::bulkOperatorResidualOn(
   return std::max(0.0, leak / chi.squaredNorm());
 }
 
+void MultiCobordism::setWholePairing(WholePairing pairing) { wholePairing_ = pairing; }
+
 void MultiCobordism::setReadoutModes(std::vector<ReadoutMode> modes) {
   if (modes.empty())
     throw std::invalid_argument(
@@ -4837,16 +4853,54 @@ double MultiCobordism::wholeHarmonicResidualOn(
   Eigen::MatrixXcd periods(cycleCount, rank);
   Eigen::VectorXcd inputs(cycleCount);
   Eigen::Index row = 0;
+  // Under GRAM the harmonic columns are contracted against the block's live
+  // frame through the chain metric rather than integrated over its cycles.
+  // M_1 Z is the same for every block, so it is applied once.
+  Eigen::MatrixXcd metricImages;
+  if (wholePairing_ == WholePairing::Gram)
+    metricImages = assembled.op->applyMinv(1, band.images);   // M_1 Z
   try {
-    for (std::size_t m = 0; m < markings.size(); ++m)
-      for (std::size_t c = 0; c < markings[m]->rank(); ++c, ++row) {
-        for (Eigen::Index a = 0; a < rank; ++a)
-          periods(row, a) = assembled.op->connection().transportedPeriod(
-              band.images.col(a), markings[m]->cycles[c]);
+    row = 0;
+    std::size_t markingIndex = 0;
+    for (const auto &block : inputBlocks_) {
+      if (!block.marking) continue;
+      const BlockMarking &marking = *markings[markingIndex++];
+      if (wholePairing_ == WholePairing::Periods) {
+        for (std::size_t c = 0; c < marking.rank(); ++c, ++row) {
+          for (Eigen::Index a = 0; a < rank; ++a)
+            periods(row, a) = assembled.op->connection().transportedPeriod(
+                band.images.col(a), marking.cycles[c]);
+          inputs(row) = hasCoefficientOverride
+                            ? target.inputCoefficients(row)
+                            : coefficients[static_cast<std::size_t>(row)];
+        }
+        continue;
+      }
+      // The block's live frame, on the host's edges. Its columns are the
+      // probes f_c; the pairing is f_c^T M_1 Z_a, the transpose pairing the
+      // harmonic Gram Z^T M_1 Z already uses.
+      const DerivedFrame derived = deriveFrame(block, spacetime);
+      if (!derived.derived())
+        return refuse("the gram pairing needs the block's live frame: " + derived.obstruction);
+      const auto width = static_cast<Eigen::Index>(derived.frame.rank());
+      if (width != static_cast<Eigen::Index>(marking.rank()))
+        return refuse("the block's live frame has rank " + std::to_string(width) +
+                      " against a marking of rank " + std::to_string(marking.rank()) +
+                      ", so the gram pairing has no square block to fit");
+      const std::vector<int> idx = PencilLayer::indicesOf(assembled, 1, derived.frame.cells);
+      Eigen::MatrixXcd probes = Eigen::MatrixXcd::Zero(band.images.rows(), width);
+      for (std::size_t i = 0; i < idx.size(); ++i) {
+        if (idx[i] < 0) return refuse("a block's frame cell is no edge of the whole complex");
+        probes.row(idx[i]) = derived.frame.images.row(static_cast<Eigen::Index>(i));
+      }
+      const Eigen::MatrixXcd paired = probes.transpose() * metricImages;   // f^T M_1 Z
+      for (Eigen::Index c = 0; c < width; ++c, ++row) {
+        periods.row(row) = paired.row(c);
         inputs(row) = hasCoefficientOverride
                           ? target.inputCoefficients(row)
                           : coefficients[static_cast<std::size_t>(row)];
       }
+    }
   } catch (const std::runtime_error &error) {
     return refuse(std::string("a marked cycle is not a walk on the whole complex: ") + error.what());
   }
@@ -4889,7 +4943,8 @@ double MultiCobordism::wholeHarmonicResidualOn(
   for (const auto *marking : markings)
     markingRanks.push_back(static_cast<Eigen::Index>(marking->rank()));
   PeriodFrameSelection periodFrame =
-      selectPeriodFrame(periods, markingRanks);
+      selectPeriodFrame(periods, markingRanks,
+                        wholePairing_ == WholePairing::Periods);
   if (!periodFrame.obstruction.empty())
     return refuse(std::move(periodFrame.obstruction));
   state = periodFrame.block * state;  // the coordinates in the period frame
