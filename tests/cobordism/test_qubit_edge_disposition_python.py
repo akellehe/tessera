@@ -36,7 +36,7 @@ def seeded(disposition):
                              tau_a=TAU_A, tau_b=TAU_B, input_weight=100.0,
                              regge=False, pin_boundary=True, readout="whole",
                              tori=2, output_state="0.1+1.3j",
-                             edge_disposition=disposition)
+                             interior_disposition=disposition)
     qa.drive(config, progress=False, on_node=lambda node: held.update(node=node))
     node = held["node"]
     boundary, interior = [], []
@@ -101,12 +101,12 @@ def test_spacelike_is_what_the_collar_already_wires(spacelike):
 
 
 def test_the_flag_reaches_the_config_and_the_record():
-    config = qa.build_config(edge_disposition="timelike")
-    assert config["edge_disposition"] == "timelike"
+    config = qa.build_config(interior_disposition="timelike")
+    assert config["interior_disposition"] == "timelike"
     args = qa.build_parser().parse_args(["run", "--edge-disposition", "foliated"])
-    assert args.edge_disposition == "foliated"
+    assert args.interior_disposition == "foliated"
 
 
 def test_an_unknown_disposition_is_refused_by_name():
     with pytest.raises(ValueError, match="unknown edge disposition"):
-        qa.build_config(edge_disposition="sideways")
+        qa.build_config(interior_disposition="sideways")
