@@ -9,8 +9,20 @@ every number below is read from one of those records.
 
 ## What was run
 
-Every run is the qubit mode of `examples/cobordism/emergence_animation.py`
-(`run --inputs qubit`): two flat tori `SimplicialQubit.flat_torus(τ, n, n)`
+> **Historical run record.** The measurements and command lines in this note
+> predate #1072, when the qubit experiment was selected through
+> `emergence_animation.py run --inputs qubit`. They are preserved as executed
+> for provenance. New runs use the canonical
+> `examples/cobordism/qubit_animation.py run` entrypoint and do not pass
+> `--inputs qubit`. The qubit entrypoint owns qubit-specific construction,
+> configuration, reads, and panels while reusing the mode-neutral drive, live
+> worker, renderer, and output handling from `emergence_animation.py`.
+> New run documents omit the old mode-inapplicable config keys; their frame
+> measurements, qubit input record, and geometry schema are unchanged.
+
+Every run recorded below used the then-combined qubit mode of
+`examples/cobordism/emergence_animation.py` (`run --inputs qubit`): two flat
+tori `SimplicialQubit.flat_torus(τ, n, n)`
 with τ_A = 0.3 + 1.1i and τ_B = −0.2 + 0.8i, their one-layer collar as the
 host, each torus one input block with its holomorphic form attached as a
 degree-1 fiber on the harmonic contour and its marking with the input
@@ -29,7 +41,7 @@ These records predate #1022's fixed-boundary driver default. They therefore
 describe what is now the explicit `--no-pin-boundary` path; current runs pin
 the input regions during stage 2 unless that option is given. In both modes the
 boundary remains part of the whole's Laplacian and read-outs. The complex locus
-described above remains the production driver path.
+described above remains the production path in `qubit_animation.py`.
 
 The current driver also refuses `--readout bulk` without an explicit interior
 Choi frame, and refuses four-torus `whole` and `operator` claims. Four period
@@ -392,10 +404,11 @@ in this session (`tests-required.log`: 58 passed, 39 subtests).
    was refused correctly without a display, while the backend the refusal
    named as needing no display did not carry it.
 
-The driver now refuses WebAgg before starting its worker and names the Qt
-backend supplied by the `live` extra. This preserves responsive local GUI
-backends without advertising a backend whose `pause()` never returns; the
-pre-worker refusal is covered by `test_live_backend_extra_python.py`.
+The shared animation runtime now refuses WebAgg before starting its worker and
+names the Qt backend supplied by the `live` extra. This preserves responsive
+local GUI backends without advertising a backend whose `pause()` never
+returns; the pre-worker refusal is covered by
+`test_live_backend_extra_python.py`.
 
 ## The phases
 
@@ -552,12 +565,20 @@ Open, from the records:
   driven through `t5_run.py` on top of the driver's own factory and loop.
 - Recursion (spec S7) was not attempted.
 
-## The commands
+## Historical commands (preserved)
 
 From the worktree root, `R=~/cobordism-runs/qubit-cobordism/t5`, the venv
 `/tmp/venv-t9` (origin/main fb58820 built with `TESSERA_CUDA=0`),
 `OMP_NUM_THREADS=8`, at most two runs at once; every command with its
-units and wall time is in `$R/runs.md`.
+units and wall time is in `$R/runs.md`. The commands below are intentionally
+unchanged because they identify how the recorded results were produced; the
+old `emergence_animation.py run --inputs qubit` interface is not current.
+
+For a new equivalent run, use the dedicated entrypoint and omit the mode flag:
+
+    python examples/cobordism/qubit_animation.py run \
+      --tau-a 0.3+1.1j --tau-b=-0.2+0.8j --grid 3 --steps 0 \
+      --out $R/seed-3x3.gif --json $R/seed-3x3.json
 
     # the collar seed alone (3x3; --grid 4 for 4x4)
     python examples/cobordism/emergence_animation.py run --inputs qubit \

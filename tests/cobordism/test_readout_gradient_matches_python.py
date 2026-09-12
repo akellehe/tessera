@@ -7,20 +7,10 @@ gradient. Transfer and whole-harmonic reads have analytic derivatives; bulk
 and paired-operator reads take the numerical ascent of `rU` instead of
 borrowing another objective's direction.
 """
-import os
-import sys
-
 import numpy as np
 import pytest
 
 from tessera import cobordism as cob
-
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))),
-    "examples", "cobordism"))
-
-import emergence_animation as ea  # noqa: E402
 
 MC = cob.MultiCobordism
 R = MC.ReadoutMode

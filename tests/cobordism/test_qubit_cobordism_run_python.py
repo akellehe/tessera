@@ -6,8 +6,8 @@
 The run itself (eight units and more, the weight scan, the 4x4 synthesis,
 the phased run) lives in the records under ``~/cobordism-runs/qubit-cobordism/t5/``
 and is reported in ``docs/design/qubit_cobordism_findings.md``. This file pins
-the headline numbers of those records that a fast drive can reproduce, through
-the SAME driver (``examples/cobordism/emergence_animation.py``, qubit mode):
+the headline numbers of those records that a fast drive can reproduce through
+``examples/cobordism/qubit_animation.py``:
 
 * C1 on the 3x3 collar seed: a manifold whose boundary is exactly the two
   tori (two components of Euler characteristic 0, 18 faces each, complete
@@ -25,7 +25,7 @@ the SAME driver (``examples/cobordism/emergence_animation.py``, qubit mode):
   the D2 wording of 2026-09-07 reads it: the tori keep representing their
   inputs on their own).
 
-Where ``tests/cobordism/test_emergence_animation_qubit_python.py`` (T4) checks
+Where ``tests/cobordism/test_qubit_animation_python.py`` (T4) checks
 that every channel is read, this file checks the numbers. Two units with two
 stage-2 iterations each: about a minute at OMP_NUM_THREADS=2.
 """
@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 TAU_A = complex(0.3, 1.1)
 TAU_B = complex(-0.2, 0.8)
@@ -78,16 +78,16 @@ _CACHE = {}
 
 def _run():
     if "result" not in _CACHE:
-        config = ea.build_config(steps=UNITS, stage1_iters=1, stage2_iters=2,
-                                 tolerance=1e-30, inputs=ea.InputMode.QUBIT,
+        config = qa.build_config(steps=UNITS, stage1_iters=1, stage2_iters=2,
+                                 tolerance=1e-30,
                                  tau_a=TAU_A, tau_b=TAU_B, grid=GRID,
                                  input_weight=WEIGHT, regge=REGGE)
-        _CACHE["result"] = ea.drive(config, progress=False)
+        _CACHE["result"] = qa.drive(config, progress=False)
     return _CACHE["result"]
 
 
 def _present(value):
-    return not isinstance(value, ea.Absent)
+    return not isinstance(value, qa.Absent)
 
 
 def test_c1_the_collar_seed():

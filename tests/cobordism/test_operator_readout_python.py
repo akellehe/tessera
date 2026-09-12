@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 TAU_A, TAU_B, GRID = 0.3 + 1.1j, -0.2 + 0.8j, 3
 
@@ -50,7 +50,7 @@ def test_a_four_torus_case_does_not_invent_a_tensor_two_state_vector():
          surface(TAU_B), surface(-TAU_B.conjugate())], 3)
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
-    boundary, chi, choi, tsv, coefficients = ea._two_body_case(
+    boundary, chi, choi, tsv, coefficients = qa._two_body_case(
         (TAU_A, TAU_B), None, ids, GRID, "xx", {"coupling": 1.0, "time": 1.0})
     assert boundary
     assert choi is True
@@ -61,7 +61,7 @@ def test_a_four_torus_case_does_not_invent_a_tensor_two_state_vector():
         return np.asarray(
             obs.SimplicialQubit.flat_torus(complex(tau), GRID, GRID).state()).reshape(2)
 
-    gate = np.asarray(ea.DECLARED_GATES["xx"], dtype=complex)
+    gate = np.asarray(qa.DECLARED_GATES["xx"], dtype=complex)
     psi = np.kron(state(TAU_A), state(TAU_B))
     assert np.allclose(chi, (gate @ psi).reshape(2, 2), atol=1e-13)
 
@@ -88,7 +88,7 @@ def test_equal_matrix_dimensions_do_not_make_the_operator_axes_compatible():
     """Four direct-sum axes are still not two tensor-product qubit axes."""
     with pytest.raises(ValueError,
                        match=r"direct[- ]sum.*tensor[- ]product"):
-        ea.build_config(inputs=ea.InputMode.QUBIT, readout="operator", tori=4)
+        qa.build_config(readout="operator", tori=4)
 
 
 # ---- incompatible inputs are refused by name ----
@@ -108,7 +108,7 @@ def test_equal_matrix_dimensions_do_not_make_the_operator_axes_compatible():
 ])
 def test_refused(overrides, expected):
     with pytest.raises(ValueError) as caught:
-        ea.build_config(inputs=ea.InputMode.QUBIT, **overrides)
+        qa.build_config(**overrides)
     assert expected in str(caught.value), str(caught.value)
 
 
@@ -117,13 +117,11 @@ def test_refused(overrides, expected):
     dict(readout="whole", output_state="0.1+1.3j"),
 ])
 def test_accepted(overrides):
-    assert ea.build_config(inputs=ea.InputMode.QUBIT,
-                           **overrides)["readout"] == overrides["readout"]
+    assert qa.build_config(**overrides)["readout"] == overrides["readout"]
 
 
 def test_transfer_and_whole_compose_when_the_whole_target_is_declared():
-    config = ea.build_config(inputs=ea.InputMode.QUBIT,
-                             readout="transfer,whole",
+    config = qa.build_config(readout="transfer,whole",
                              output_state="0.1+1.3j")
     assert config["readout"] == "transfer,whole"
     assert config["output_state"] == [0.1, 1.3]

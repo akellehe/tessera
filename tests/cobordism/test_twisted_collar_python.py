@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 from tessera import cobordism as cob  # noqa: E402
 from tessera import observables as obs  # noqa: E402
 from tessera._tessera.cobordism import MultiCobordism as MC, PencilLayer  # noqa: E402
@@ -54,7 +54,7 @@ def collar(twist):
               einstein_hilbert=False, real_squared_lengths_only=False,
               metric_source=cob.HodgeMetricSource.WhitneyPencil)
     node.seed_inputs([sorted(m.values()) for m in ids])
-    markings = [ea._host_marking(torus, ids[index])
+    markings = [qa._host_marking(torus, ids[index])
                 for index, torus in enumerate((a, b))]
     return node, markings
 
@@ -147,7 +147,7 @@ def test_a_twist_that_is_not_a_permutation_is_refused():
 
 
 def test_the_driver_flag_builds_the_permutation():
-    assert ea._collar_twist({"collar_twist": "none"}, GRID) == []
-    assert ea._collar_twist({"collar_twist": "swap"}, GRID) == SWAP
+    assert qa._collar_twist({"collar_twist": "none"}, GRID) == []
+    assert qa._collar_twist({"collar_twist": "swap"}, GRID) == SWAP
     with pytest.raises(ValueError, match="unknown --collar-twist"):
-        ea._collar_twist({"collar_twist": "dehn"}, GRID)
+        qa._collar_twist({"collar_twist": "dehn"}, GRID)
