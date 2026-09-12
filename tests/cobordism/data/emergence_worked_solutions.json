@@ -1,10 +1,128 @@
 {
-  "schema": 1,
-  "sources": [
-    "docs/design/qubit_cobordism_spec.md: two-qubit product states and gate output convention",
-    "tests/observables/test_particle_clusters_python.py: regular boundary-of-Delta5 curvature anchor",
-    "tests/cobordism/test_chaincomplex_python.py: sphere homology"
-  ],
+  "schema": 2,
+  "retrieved_on": "2026-09-11",
+  "sources": {
+    "mit_ocw_ps7": {
+      "kind": "worked_solution",
+      "title": "MIT 18.435J Quantum Computation, Problem Set 7 Solutions",
+      "locator": "Problem 4 solution, PDF page 2: CZ matrix and CNOT construction",
+      "url": "https://ocw.mit.edu/courses/18-435j-quantum-computation-fall-2003/8b4b3bfd5f3adb40eb57ab07203c35ce_ps7sol.pdf"
+    },
+    "ibm_swap": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum SWAP gate",
+      "locator": "Matrix representation and computational-basis action",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.SwapGate"
+    },
+    "google_swap_pow": {
+      "kind": "reference_matrix",
+      "title": "Google Quantum AI Cirq SwapPowGate",
+      "locator": "Unitary formula evaluated at exponent 1/2",
+      "url": "https://quantumai.google/reference/python/cirq/SwapPowGate"
+    },
+    "ibm_iswap": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum iSWAP gate",
+      "locator": "Matrix representation and computational-basis action",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.iSwapGate"
+    },
+    "google_sqrt_iswap": {
+      "kind": "reference_matrix",
+      "title": "Google Quantum AI Cirq square-root iSWAP",
+      "locator": "Exact unitary matrix",
+      "url": "https://quantumai.google/reference/python/cirq/SQRT_ISWAP"
+    },
+    "ibm_cx": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum controlled-X gate",
+      "locator": "Little-endian and textbook-order matrices",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.CXGate"
+    },
+    "ibm_cz": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum controlled-Z gate",
+      "locator": "Exact diagonal matrix",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.CZGate"
+    },
+    "ibm_cphase": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum controlled-phase gate",
+      "locator": "Matrix formula evaluated at theta=pi/3",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.CPhaseGate"
+    },
+    "ibm_ch": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum controlled-Hadamard gate",
+      "locator": "Textbook-order matrix",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.CHGate"
+    },
+    "ibm_rxx": {
+      "kind": "reference_matrix",
+      "title": "IBM Quantum RXX gate",
+      "locator": "Matrix formula and theta=pi/2 worked example",
+      "url": "https://quantum.cloud.ibm.com/docs/en/api/qiskit/2.2/qiskit.circuit.library.RXXGate"
+    },
+    "cirq_unitary_order": {
+      "kind": "basis_convention",
+      "title": "Google Quantum AI Cirq unitary convention",
+      "locator": "Qubit ordering is consistent with numpy.kron(A, B)",
+      "url": "https://quantumai.google/reference/python/cirq/SupportsUnitary"
+    },
+    "sage_sphere_examples": {
+      "kind": "worked_example",
+      "title": "SageMath minimal sphere examples",
+      "locator": "Sphere(n) homology, Euler-characteristic, and f-vector examples",
+      "url": "https://doc.sagemath.org/html/en/reference/topology/sage/topology/simplicial_complex_examples.html#sage.topology.simplicial_complex_examples.Sphere"
+    },
+    "hatcher_sphere_homology": {
+      "kind": "worked_solution",
+      "title": "Hatcher, Algebraic Topology",
+      "locator": "Chapter 2 introduction and Example 2.5: homology of S^n",
+      "url": "https://pi.math.cornell.edu/~hatcher/AT/AT-doublepage.pdf"
+    },
+    "isi_regular_simplex": {
+      "kind": "worked_solution",
+      "title": "Indian Statistical Institute, January-March 2007 problem solutions",
+      "locator": "Solution 4: regular n-simplex construction and dihedral angle",
+      "url": "https://www.isibang.ac.in/~statmath/problems/soljan07.pdf"
+    },
+    "regular_simplex_volume": {
+      "kind": "published_formula",
+      "title": "Novel Recurrence Relations for Volumes and Surfaces",
+      "locator": "Equation 7: volume of a regular n-simplex",
+      "url": "https://doi.org/10.3390/math10132212"
+    }
+  },
+  "source_map": {
+    "basis_order": ["cirq_unitary_order"],
+    "gate_actions": {
+      "swap": ["ibm_swap"],
+      "sqrt_swap": ["google_swap_pow"],
+      "iswap": ["ibm_iswap"],
+      "cnot": ["mit_ocw_ps7", "ibm_cx"],
+      "cz": ["mit_ocw_ps7", "ibm_cz"],
+      "sqrt_iswap": ["google_sqrt_iswap"],
+      "cphase_third": ["ibm_cphase"],
+      "cnot_reversed": ["ibm_cx"],
+      "ch": ["ibm_ch"],
+      "xx": ["ibm_rxx"]
+    },
+    "closed_s4": {
+      "construction": ["sage_sphere_examples"],
+      "dimension": ["sage_sphere_examples"],
+      "vertices": ["sage_sphere_examples"],
+      "f_vector": ["sage_sphere_examples"],
+      "betti": ["sage_sphere_examples", "hatcher_sphere_homology"],
+      "euler_characteristic": ["sage_sphere_examples"],
+      "hinge_dimension": ["sage_sphere_examples"],
+      "hinges": ["sage_sphere_examples"],
+      "hinge_degree": ["sage_sphere_examples"],
+      "top_cells": ["sage_sphere_examples"],
+      "hinge_deficit_formula": ["isi_regular_simplex"],
+      "simplex_four_volume_formula": ["regular_simplex_volume"],
+      "total_four_volume_formula": ["sage_sphere_examples", "regular_simplex_volume"]
+    }
+  },
   "basis_order": ["00", "01", "10", "11"],
   "gate_actions": {
     "swap": [
@@ -70,13 +188,17 @@
   },
   "closed_s4": {
     "construction": "boundary of the unit regular 5-simplex",
+    "dimension": 4,
     "vertices": 6,
     "f_vector": [6, 15, 20, 15, 6],
     "betti": [1, 0, 0, 0, 1],
     "euler_characteristic": 2,
+    "hinge_dimension": 2,
     "hinges": 20,
+    "hinge_degree": 3,
     "top_cells": 6,
     "hinge_deficit_formula": "2*pi - 3*acos(1/4)",
+    "simplex_four_volume_formula": "sqrt(5)/96",
     "total_four_volume_formula": "6*sqrt(5)/96"
   }
 }

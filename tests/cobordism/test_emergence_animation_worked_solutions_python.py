@@ -2,10 +2,10 @@
 # All rights reserved.
 """Worked-solution tests for the emergence-animation process (#1070).
 
-The fixture manifest is an independent oracle: computational-basis gate
-actions, sphere homology, and the regular-simplex Regge deficit are stated as
-solutions rather than copied from the driver's output.  These tests carry the
-solutions through the gate, readout, CLI, and neutral-geometry paths.
+The fixture manifest is an independent oracle transcribed from external worked
+solutions and authoritative reference matrices.  These tests carry those
+answers through the gate, readout, CLI, and neutral-geometry paths without
+requiring network access at test time.
 """
 
 import itertools
@@ -32,6 +32,30 @@ def worked_solutions():
     path = Path(__file__).with_name("data") / "emergence_worked_solutions.json"
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def test_every_oracle_has_external_source_provenance(worked_solutions):
+    assert worked_solutions["schema"] == 2
+    sources = worked_solutions["sources"]
+    source_map = worked_solutions["source_map"]
+    assert set(source_map["gate_actions"]) == set(
+        worked_solutions["gate_actions"])
+    assert set(source_map["closed_s4"]) == set(
+        worked_solutions["closed_s4"])
+
+    referenced = list(source_map["basis_order"])
+    for group in ("gate_actions", "closed_s4"):
+        for source_ids in source_map[group].values():
+            assert source_ids
+            referenced.extend(source_ids)
+    assert set(referenced) == set(sources)
+    assert any(source["kind"] == "worked_solution"
+               for source in sources.values())
+    for source in sources.values():
+        assert source["title"]
+        assert source["locator"]
+        assert source["url"].startswith("https://")
+        assert "github.com/akellehe/tessera" not in source["url"]
 
 
 def _solution_matrix(solutions, name):
@@ -126,26 +150,50 @@ def test_a_solved_gate_reaches_both_cli_artifacts(sqrt_swap_cli_run,
 
 
 @pytest.fixture(scope="module")
-def closed_s4():
+def closed_s4(worked_solutions):
     import tessera
 
-    cells = [list(cell) for cell in itertools.combinations(range(6), 5)]
-    spacetime = tessera.Spacetime.fromCells(4, cells, 1.0, 0.0)
+    solved = worked_solutions["closed_s4"]
+    cells = [list(cell) for cell in itertools.combinations(
+        range(solved["vertices"]), solved["dimension"] + 1)]
+    spacetime = tessera.Spacetime.fromCells(
+        solved["dimension"], cells, 1.0, 0.0)
     spacetime.materializeFacets()
     return spacetime
+
+
+def test_closed_s4_oracle_matches_the_worked_derivations(worked_solutions):
+    solved = worked_solutions["closed_s4"]
+    dimension = solved["dimension"]
+    vertices = solved["vertices"]
+    assert vertices == dimension + 2
+    assert solved["f_vector"] == [
+        math.comb(vertices, face_vertices)
+        for face_vertices in range(1, dimension + 2)
+    ]
+    assert solved["betti"] == [1] + [0] * (dimension - 1) + [1]
+    assert solved["euler_characteristic"] == sum(
+        (-1) ** degree * count
+        for degree, count in enumerate(solved["f_vector"]))
+    assert solved["hinges"] == solved["f_vector"][
+        solved["hinge_dimension"]]
+    assert solved["hinge_degree"] == (
+        vertices - solved["hinge_dimension"] - 1)
+    assert solved["top_cells"] == solved["f_vector"][-1]
 
 
 def test_closed_s4_neutral_reads_match_the_analytic_solution(
         closed_s4, worked_solutions):
     solved = worked_solutions["closed_s4"]
-    counts = [0] * 5
+    dimension = solved["dimension"]
+    counts = [0] * (dimension + 1)
     triangles = {}
     for simplex in closed_s4.getSimplices():
         vertices = tuple(sorted(int(v.getId())
                                 for v in simplex.getVertices()))
-        if 1 <= len(vertices) <= 5:
+        if 1 <= len(vertices) <= dimension + 1:
             counts[len(vertices) - 1] += 1
-        if len(vertices) == 3:
+        if len(vertices) == solved["hinge_dimension"] + 1:
             triangles[vertices] = simplex
     assert counts == solved["f_vector"]
     assert sum((-1) ** degree * count
@@ -153,14 +201,18 @@ def test_closed_s4_neutral_reads_match_the_analytic_solution(
                    "euler_characteristic"]
     total_volume = sum(complex(cell.volume()).real
                        for cell in closed_s4.getTopSimplices())
-    assert total_volume == pytest.approx(6.0 * math.sqrt(5.0) / 96.0,
-                                         rel=1e-13)
+    simplex_volume = (math.sqrt(dimension + 1)
+                      / (math.factorial(dimension)
+                         * math.sqrt(2 ** dimension)))
+    assert total_volume == pytest.approx(
+        solved["top_cells"] * simplex_volume, rel=1e-13)
 
     betti = ea.EmergenceFrame._read_betti(
-        closed_s4, {"betti_degrees": list(range(5))})
-    assert list(betti["numbers"].values()) == solved["betti"]
+        closed_s4, {"betti_degrees": list(range(dimension + 1))})
+    assert betti["numbers"] == dict(enumerate(solved["betti"]))
 
-    deficit = 2.0 * math.pi - 3.0 * math.acos(0.25)
+    dihedral = math.acos(1.0 / dimension)
+    deficit = 2.0 * math.pi - solved["hinge_degree"] * dihedral
     assert len(triangles) == solved["hinges"]
     for triangle in triangles.values():
         assert complex(triangle.deficitAngle()).real == pytest.approx(deficit)
@@ -169,7 +221,8 @@ def test_closed_s4_neutral_reads_match_the_analytic_solution(
     assert dual["hinges_with_curvature"] == solved["hinges"]
     assert len(dual["cells"]) == solved["top_cells"]
     for cell in dual["cells"]:
-        faces = itertools.combinations(cell["vertices"], 3)
+        faces = itertools.combinations(
+            cell["vertices"], solved["hinge_dimension"] + 1)
         expected = sum(deficit * abs(complex(triangles[tuple(face)].dualVolume()))
                        for face in faces)
         assert cell["spatial"] == pytest.approx(expected, rel=1e-13)
@@ -184,7 +237,7 @@ def test_closed_s4_geometry_record_keeps_the_solved_complex(
     node = SimpleNamespace(spacetime=lambda: closed_s4)
     document = ea.geometry_document(node, source=source)
     assert document["source"] == source
-    assert document["dimensions"] == 4
+    assert document["dimensions"] == solved["dimension"]
     assert len(document["cells"]) == solved["top_cells"]
     assert len(document["edges"]) == solved["f_vector"][1]
     assert len(document["vertex_times"]) == solved["vertices"]
