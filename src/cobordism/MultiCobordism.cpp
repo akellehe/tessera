@@ -72,6 +72,89 @@ constexpr double kPeriodFrameConditionFloor = 1e-10;
 // said out loud rather than silently truncating the check.
 constexpr std::size_t kPeriodFrameMaxMarkings = 16;
 
+struct PeriodFrameSelection {
+  Eigen::MatrixXcd block{};
+  std::vector<Eigen::Index> rows{};
+  std::string obstruction{};
+};
+
+// Select the period frame once for both the value and its derivative. A
+// candidate is any group of complete markings whose cycle count equals the
+// harmonic rank and whose period block is invertible. Every such group must
+// induce the same frame; otherwise the whole read refuses rather than choosing
+// an ordering-dependent answer.
+PeriodFrameSelection selectPeriodFrame(
+    const Eigen::MatrixXcd &periods,
+    const std::vector<Eigen::Index> &markingRanks) {
+  PeriodFrameSelection selection;
+  const Eigen::Index rank = periods.cols();
+  if (markingRanks.size() > kPeriodFrameMaxMarkings) {
+    selection.obstruction =
+        "the whole carries " + std::to_string(markingRanks.size()) +
+        " markings; frame agreement is only verified up to " +
+        std::to_string(kPeriodFrameMaxMarkings);
+    return selection;
+  }
+  std::vector<Eigen::Index> offsets(markingRanks.size());
+  Eigen::Index row = 0;
+  for (std::size_t m = 0; m < markingRanks.size(); ++m) {
+    offsets[m] = row;
+    row += markingRanks[m];
+  }
+  struct Candidate {
+    Eigen::MatrixXcd block;
+    std::vector<Eigen::Index> rows;
+  };
+  std::vector<Candidate> candidates;
+  for (std::uint32_t mask = 1; mask < (1u << markingRanks.size()); ++mask) {
+    Eigen::Index total = 0;
+    for (std::size_t m = 0; m < markingRanks.size(); ++m)
+      if ((mask >> m) & 1u) total += markingRanks[m];
+    if (total != rank) continue;
+    Candidate candidate{Eigen::MatrixXcd(rank, rank), {}};
+    candidate.rows.reserve(static_cast<std::size_t>(rank));
+    Eigen::Index at = 0;
+    for (std::size_t m = 0; m < markingRanks.size(); ++m) {
+      if (!((mask >> m) & 1u)) continue;
+      candidate.block.middleRows(at, markingRanks[m]) =
+          periods.middleRows(offsets[m], markingRanks[m]);
+      for (Eigen::Index c = 0; c < markingRanks[m]; ++c)
+        candidate.rows.push_back(offsets[m] + c);
+      at += markingRanks[m];
+    }
+    const Eigen::VectorXd singularValues =
+        candidate.block.jacobiSvd().singularValues();
+    if (singularValues(singularValues.size() - 1) >
+        kPeriodFrameConditionFloor * singularValues(0))
+      candidates.push_back(std::move(candidate));
+  }
+  if (candidates.empty()) {
+    selection.obstruction =
+        "no group of markings frames the whole's degree-1 harmonic space: "
+        "none has as many cycles as its rank (" +
+        std::to_string(rank) + ") with an invertible period matrix";
+    return selection;
+  }
+  const Eigen::MatrixXcd firstInverse = candidates.front().block.inverse();
+  for (std::size_t b = 1; b < candidates.size(); ++b) {
+    const double defect =
+        (candidates[b].block * firstInverse -
+         Eigen::MatrixXcd::Identity(rank, rank))
+            .norm();
+    if (defect > kPeriodFrameMonodromyTolerance) {
+      selection.obstruction =
+          "the marking groups disagree about the frame of the whole: the "
+          "monodromy between group 0 and group " +
+          std::to_string(b) + " differs from the identity by " +
+          std::to_string(defect);
+      return selection;
+    }
+  }
+  selection.block = std::move(candidates.front().block);
+  selection.rows = std::move(candidates.front().rows);
+  return selection;
+}
+
 std::pair<std::uint64_t, std::uint64_t> edgeKey(
     const ::tessera::mesh::Edge *edge) {
   const auto sourceVertexId = edge->getSource()->getId();
@@ -3640,9 +3723,9 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
       if (useFiberResiduals_ && readoutsHaveAnalyticGradient()) {
         // #947: every fiber-mode term of rU has an analytic gradient through
         // the band's Riesz projector and the frame transfer; the numerical
-        // path is not used for them. Only while every SELECTED reading is the
-        // transfer, though (#1055) -- the others have no analytic gradient,
-        // and this one is not theirs.
+        // path is not used for them. Only while every SELECTED reading has its
+        // own analytic gradient, though (#1055); otherwise this would be the
+        // direction of a different objective.
         const ResidualGradient analytic = fiberModeAscent();
         descentDirection += numericalResidualWeight * analytic.lengths;
         if (fiberPhaseDescent_ && analytic.phases.size() == static_cast<Eigen::Index>(edgeCount))
@@ -4212,21 +4295,190 @@ std::optional<MultiCobordism::TransferShape> MultiCobordism::transferShape() con
   return std::nullopt;
 }
 
+std::optional<MultiCobordism::TransferShape>
+MultiCobordism::pairedTransferShape() const {
+  std::vector<const BoundaryBlock *> attached;
+  for (const auto &block : inputBlocks_)
+    if (block.fiber && block.fiber->images.cols() > 0)
+      attached.push_back(&block);
+  if (attached.size() < 2 || attached.size() % 2 != 0)
+    return std::nullopt;
+  const auto framed = [](const BoundaryBlock *block) {
+    return block->marking.has_value() || block->frame.has_value();
+  };
+  const bool anyFramed =
+      std::any_of(attached.begin(), attached.end(), framed);
+  const bool allFramed =
+      std::all_of(attached.begin(), attached.end(), framed);
+  if (anyFramed != allFramed) return std::nullopt;
+  const auto rank = [allFramed](const BoundaryBlock *block) {
+    if (!allFramed)
+      return static_cast<Eigen::Index>(block->fiber->cells.size());
+    if (block->marking)
+      return static_cast<Eigen::Index>(block->marking->rank());
+    return block->frame->images.cols();
+  };
+  const std::size_t half = attached.size() / 2;
+  Eigen::Index rows = 0, cols = 0;
+  for (std::size_t index = 0; index < half; ++index)
+    rows += rank(attached[index]);
+  for (std::size_t index = half; index < attached.size(); ++index)
+    cols += rank(attached[index]);
+  return TransferShape{rows, cols, allFramed};
+}
+
 void MultiCobordism::setTwoBodyTarget(Eigen::MatrixXcd chi, bool choiDecomposed) {
-  if (chi.rows() == 0 || chi.cols() == 0 || !(chi.squaredNorm() > 0.0))
-    throw std::invalid_argument("MultiCobordism::setTwoBodyTarget: the target must be a nonzero matrix");
+  const double norm = chi.squaredNorm();
+  if (chi.rows() == 0 || chi.cols() == 0 || !chi.allFinite() ||
+      !std::isfinite(norm) || !(norm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::setTwoBodyTarget: the target must be a finite, "
+        "nonzero matrix");
   if (const auto shape = transferShape(); shape && (chi.rows() != shape->rows || chi.cols() != shape->cols))
     throw std::invalid_argument("MultiCobordism::setTwoBodyTarget: the target is " + std::to_string(chi.rows()) + "x" +
                                 std::to_string(chi.cols()) + " but the attached " +
                                 (shape->framed ? "frames give " : "cells give ") + std::to_string(shape->rows) +
                                 "x" + std::to_string(shape->cols));
+  for (std::size_t index = 0; index < twoBodyCases_.size(); ++index)
+    if (twoBodyCases_[index].chi.rows() != chi.rows() ||
+        twoBodyCases_[index].chi.cols() != chi.cols())
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyTarget: case " +
+          std::to_string(index) + " target is " +
+          std::to_string(twoBodyCases_[index].chi.rows()) + "x" +
+          std::to_string(twoBodyCases_[index].chi.cols()) +
+          " but the single target is " + std::to_string(chi.rows()) + "x" +
+          std::to_string(chi.cols()));
   twoBodyTarget_ = TwoBodyTarget{std::move(chi), choiDecomposed};
 }
 
 void MultiCobordism::setTwoBodyCases(std::vector<TwoBodyCase> cases) {
-  for (const auto &boundaryCase : cases)
+  Eigen::Index coefficientCount = 0;
+  for (const auto &block : inputBlocks_)
+    if (block.marking)
+      coefficientCount += static_cast<Eigen::Index>(block.marking->rank());
+  const auto pairedShape = pairedTransferShape();
+  std::optional<std::pair<Eigen::Index, Eigen::Index>> casePairedShape;
+  std::size_t firstPairedCase = 0;
+  for (std::size_t index = 0; index < cases.size(); ++index) {
+    const auto &boundaryCase = cases[index];
     if (boundaryCase.chi.size() == 0)
-      throw std::invalid_argument("MultiCobordism::setTwoBodyCases: a case has an empty target");
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " +
+          std::to_string(index) + " has an empty target");
+    const double targetNorm = boundaryCase.chi.squaredNorm();
+    if (!boundaryCase.chi.allFinite() || !std::isfinite(targetNorm) ||
+        !(targetNorm > 0.0))
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " +
+          std::to_string(index) +
+          " must have a finite, nonzero target");
+    if (twoBodyTarget_ &&
+        (boundaryCase.chi.rows() != twoBodyTarget_->chi.rows() ||
+         boundaryCase.chi.cols() != twoBodyTarget_->chi.cols()))
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " +
+          std::to_string(index) + " target is " +
+          std::to_string(boundaryCase.chi.rows()) + "x" +
+          std::to_string(boundaryCase.chi.cols()) +
+          " but the single target is " +
+          std::to_string(twoBodyTarget_->chi.rows()) + "x" +
+          std::to_string(twoBodyTarget_->chi.cols()));
+    if (index > 0 &&
+        (boundaryCase.chi.rows() != cases.front().chi.rows() ||
+         boundaryCase.chi.cols() != cases.front().chi.cols()))
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " +
+          std::to_string(index) + " target is " +
+          std::to_string(boundaryCase.chi.rows()) + "x" +
+          std::to_string(boundaryCase.chi.cols()) +
+          " but case 0 target is " +
+          std::to_string(cases.front().chi.rows()) + "x" +
+          std::to_string(cases.front().chi.cols()));
+    if (const auto shape = transferShape();
+        shape && (boundaryCase.chi.rows() != shape->rows ||
+                  boundaryCase.chi.cols() != shape->cols))
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " +
+          std::to_string(index) + " target is " +
+          std::to_string(boundaryCase.chi.rows()) + "x" +
+          std::to_string(boundaryCase.chi.cols()) +
+          " but the attached transfer frames give " +
+          std::to_string(shape->rows) + "x" +
+          std::to_string(shape->cols));
+    if (boundaryCase.twoStateVector.size() != 0) {
+      const double stateNorm = boundaryCase.twoStateVector.squaredNorm();
+      if (!boundaryCase.twoStateVector.allFinite() ||
+          !std::isfinite(stateNorm) || !(stateNorm > 0.0))
+        throw std::invalid_argument(
+            "MultiCobordism::setTwoBodyCases: case " +
+            std::to_string(index) +
+            " must have a finite, nonzero paired direct-sum target");
+      if (pairedShape &&
+          (boundaryCase.twoStateVector.rows() != pairedShape->rows ||
+           boundaryCase.twoStateVector.cols() != pairedShape->cols))
+        throw std::invalid_argument(
+            "MultiCobordism::setTwoBodyCases: case " +
+            std::to_string(index) + " paired direct-sum target is " +
+            std::to_string(boundaryCase.twoStateVector.rows()) + "x" +
+            std::to_string(boundaryCase.twoStateVector.cols()) +
+            " but the attached paired frames give " +
+            std::to_string(pairedShape->rows) + "x" +
+            std::to_string(pairedShape->cols));
+      const auto shape = std::make_pair(boundaryCase.twoStateVector.rows(),
+                                        boundaryCase.twoStateVector.cols());
+      if (casePairedShape && shape != *casePairedShape)
+        throw std::invalid_argument(
+            "MultiCobordism::setTwoBodyCases: case " +
+            std::to_string(index) + " paired direct-sum target is " +
+            std::to_string(shape.first) + "x" +
+            std::to_string(shape.second) + " but case " +
+            std::to_string(firstPairedCase) + " is " +
+            std::to_string(casePairedShape->first) + "x" +
+            std::to_string(casePairedShape->second));
+      if (!casePairedShape) {
+        casePairedShape = shape;
+        firstPairedCase = index;
+      }
+    }
+    std::set<std::pair<std::uint64_t, std::uint64_t>> boundaryEdges;
+    for (const auto &[endpoints, squaredLength] : boundaryCase.boundary) {
+      if (!std::isfinite(squaredLength.real()) ||
+          !std::isfinite(squaredLength.imag()))
+        throw std::invalid_argument(
+            "MultiCobordism::setTwoBodyCases: case " +
+            std::to_string(index) + " gives boundary edge (" +
+            std::to_string(endpoints.first) + ", " +
+            std::to_string(endpoints.second) +
+            ") a non-finite squared length");
+      const auto canonical = std::minmax(endpoints.first, endpoints.second);
+      if (!boundaryEdges.emplace(canonical.first, canonical.second).second)
+        throw std::invalid_argument(
+            "MultiCobordism::setTwoBodyCases: case " +
+            std::to_string(index) + " repeats boundary edge (" +
+            std::to_string(canonical.first) + ", " +
+            std::to_string(canonical.second) + ")");
+    }
+    if (boundaryCase.inputCoefficients.size() != 0 &&
+        boundaryCase.inputCoefficients.size() != coefficientCount)
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " + std::to_string(index) +
+          " has " + std::to_string(boundaryCase.inputCoefficients.size()) +
+          " input coefficients, but the marked input blocks have " +
+          std::to_string(coefficientCount) + " cycles");
+    if (!boundaryCase.inputCoefficients.allFinite())
+      throw std::invalid_argument(
+          "MultiCobordism::setTwoBodyCases: case " + std::to_string(index) +
+          " has a non-finite input coefficient");
+    if (boundaryCase.inputCoefficients.size() != 0) {
+      const double inputNorm = boundaryCase.inputCoefficients.squaredNorm();
+      if (!std::isfinite(inputNorm) || !(inputNorm > 0.0))
+        throw std::invalid_argument(
+            "MultiCobordism::setTwoBodyCases: case " +
+            std::to_string(index) +
+            " has all-zero input coefficients: no state");
+    }
+  }
   twoBodyCases_ = std::move(cases);
 }
 
@@ -4244,10 +4496,23 @@ MultiCobordism::writeCaseBoundary(const TwoBodyCase &boundaryCase,
     // edge is always present but a stale case would otherwise abort a drive.
     if (edge == nullptr) continue;
     const auto length = edge->getLength();
-    previous.emplace_back(endpoints, length * length);
-    edge->setLength(std::sqrt(squaredLength));
+    previous.emplace_back(endpoints, length);
+    edge->setLength(continuousSquareRoot(squaredLength, length));
   }
   return previous;
+}
+
+void MultiCobordism::restoreCaseBoundary(
+    const std::vector<std::pair<std::pair<std::uint64_t, std::uint64_t>,
+                                std::complex<double>>> &lengths,
+    const std::shared_ptr<Spacetime> &spacetime) const {
+  if (!spacetime || !spacetime->getEdgeList()) return;
+  for (const auto &[endpoints, length] : lengths) {
+    const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
+    if (auto *edge = spacetime->getEdgeList()->get(
+            key.fingerprint.fingerprint()))
+      edge->setLength(length);
+  }
 }
 
 double MultiCobordism::twoBodyResidualOverCasesOn(
@@ -4273,12 +4538,13 @@ std::vector<double> MultiCobordism::twoBodyResidualsPerCaseOn(
     try {
       residuals.push_back(twoBodyResidualOn(
           spacetime, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed,
-                                   boundaryCase.twoStateVector}));
+                                   boundaryCase.twoStateVector,
+                                   boundaryCase.inputCoefficients}));
     } catch (...) {
-      writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
+      restoreCaseBoundary(previous, spacetime);
       throw;
     }
-    writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime);
+    restoreCaseBoundary(previous, spacetime);
   }
   return residuals;
 }
@@ -4342,6 +4608,19 @@ chainhodge::TransferResult MultiCobordism::pairedFrameTransferOn(
                            "pencil; this node uses the diagonal-weight metric");
   if (sideA.empty() || sideB.empty())
     throw std::logic_error("MultiCobordism: a paired frame needs at least one block a side");
+  const auto framed = [](const BoundaryBlock *block) {
+    return block->marking.has_value() || block->frame.has_value();
+  };
+  const bool anyFramed =
+      std::any_of(sideA.begin(), sideA.end(), framed) ||
+      std::any_of(sideB.begin(), sideB.end(), framed);
+  const bool allFramed =
+      std::all_of(sideA.begin(), sideA.end(), framed) &&
+      std::all_of(sideB.begin(), sideB.end(), framed);
+  if (anyFramed != allFramed)
+    throw std::logic_error(
+        "MultiCobordism: the paired transfer is read in block frames only "
+        "when every attached block carries one; partial framing is ambiguous");
   const AssembledPencil assembled = PencilLayer::assemble({spacetime});
   // One side's frame is its blocks' frames stacked: cells concatenated, images
   // and dual images BLOCK-DIAGONAL. A torus and its conjugate carry disjoint
@@ -4408,6 +4687,12 @@ double MultiCobordism::bulkOperatorResidualOn(
     const std::shared_ptr<Spacetime> &spacetime,
     const TwoBodyTarget &target) const {
   if (!spacetime) return 1.0;
+  const double targetNorm = target.chi.squaredNorm();
+  if (!target.chi.allFinite() || !std::isfinite(targetNorm) ||
+      !(targetNorm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::bulkOperatorResidualOn: the target must be finite "
+        "and nonzero");
   const Eigen::Index dimension = target.chi.rows();
   if (dimension < 1 || target.chi.cols() != dimension)
     throw std::logic_error("MultiCobordism::bulkOperatorResidualOn: the target is " +
@@ -4439,7 +4724,7 @@ double MultiCobordism::bulkOperatorResidualOn(
   const double cc = choi.squaredNorm();
   if (!(cc > 0.0)) return 1.0;
   // The same projective Frobenius leak the transfer reading takes, so the two
-  // readings are on one scale and `Both` may sum them.
+  // readings are on one scale and a selected readout set may sum them.
   const complexd overlap = choi.dot(chi);
   const double leak = chi.squaredNorm() - std::norm(overlap) / cc;
   return std::max(0.0, leak / chi.squaredNorm());
@@ -4450,7 +4735,12 @@ void MultiCobordism::setReadoutModes(std::vector<ReadoutMode> modes) {
     throw std::invalid_argument(
         "MultiCobordism::setReadoutModes: at least one reading is required; a "
         "two-body term scored against nothing is not a term");
-  readoutModes_ = std::move(modes);
+  std::vector<ReadoutMode> unique;
+  unique.reserve(modes.size());
+  for (const ReadoutMode mode : modes)
+    if (std::find(unique.begin(), unique.end(), mode) == unique.end())
+      unique.push_back(mode);
+  readoutModes_ = std::move(unique);
 }
 
 double MultiCobordism::wholeHarmonicResidualOn(
@@ -4476,6 +4766,12 @@ double MultiCobordism::wholeHarmonicResidualOn(
       outputStateTarget_
           ? *outputStateTarget_
           : Eigen::Map<const Eigen::VectorXcd>(target.chi.data(), target.chi.size());
+  const double wantedNorm = wanted.squaredNorm();
+  if (!wanted.allFinite() || !std::isfinite(wantedNorm) ||
+      !(wantedNorm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::wholeHarmonicResidualOn: the target state must be "
+        "finite and nonzero");
   const Eigen::Index dimension = wanted.size();
   chainhodge::Band band;
   AssembledPencil assembled;
@@ -4526,8 +4822,18 @@ double MultiCobordism::wholeHarmonicResidualOn(
   Eigen::Index cycleCount = 0;
   for (const auto *marking : markings)
     cycleCount += static_cast<Eigen::Index>(marking->rank());
-  if (cycleCount != static_cast<Eigen::Index>(coefficients.size()))
+  const bool hasCoefficientOverride = target.inputCoefficients.size() != 0;
+  if (!hasCoefficientOverride &&
+      cycleCount != static_cast<Eigen::Index>(coefficients.size()))
     return refuse("the marked cycles and the input coefficients differ in count");
+  if (hasCoefficientOverride &&
+      target.inputCoefficients.size() != cycleCount)
+    return refuse("the case has " +
+                  std::to_string(target.inputCoefficients.size()) +
+                  " input coefficients for " + std::to_string(cycleCount) +
+                  " marked cycles");
+  if (hasCoefficientOverride && !target.inputCoefficients.allFinite())
+    return refuse("the case has a non-finite input coefficient");
   Eigen::MatrixXcd periods(cycleCount, rank);
   Eigen::VectorXcd inputs(cycleCount);
   Eigen::Index row = 0;
@@ -4537,7 +4843,9 @@ double MultiCobordism::wholeHarmonicResidualOn(
         for (Eigen::Index a = 0; a < rank; ++a)
           periods(row, a) = assembled.op->connection().transportedPeriod(
               band.images.col(a), markings[m]->cycles[c]);
-        inputs(row) = coefficients[static_cast<std::size_t>(row)];
+        inputs(row) = hasCoefficientOverride
+                          ? target.inputCoefficients(row)
+                          : coefficients[static_cast<std::size_t>(row)];
       }
   } catch (const std::runtime_error &error) {
     return refuse(std::string("a marked cycle is not a walk on the whole complex: ") + error.what());
@@ -4576,49 +4884,15 @@ double MultiCobordism::wholeHarmonicResidualOn(
   // 1.9e16 and 1.0e16, every cross pair 1.8. So the groups are enumerated and
   // the singular ones drop out by measurement rather than by being ordered
   // around.
-  if (markings.size() > kPeriodFrameMaxMarkings)
-    return refuse("the whole carries " + std::to_string(markings.size()) +
-                  " markings; frame agreement is only verified up to " +
-                  std::to_string(kPeriodFrameMaxMarkings));
-  std::vector<Eigen::Index> offset(markings.size()), height(markings.size());
-  {
-    Eigen::Index at = 0;
-    for (std::size_t m = 0; m < markings.size(); ++m) {
-      offset[m] = at;
-      height[m] = static_cast<Eigen::Index>(markings[m]->rank());
-      at += height[m];
-    }
-  }
-  std::vector<Eigen::MatrixXcd> frameBlocks;
-  for (std::uint32_t mask = 1; mask < (1u << markings.size()); ++mask) {
-    Eigen::Index total = 0;
-    for (std::size_t m = 0; m < markings.size(); ++m)
-      if ((mask >> m) & 1u) total += height[m];
-    if (total != rank) continue;
-    Eigen::MatrixXcd block(rank, rank);
-    Eigen::Index at = 0;
-    for (std::size_t m = 0; m < markings.size(); ++m)
-      if ((mask >> m) & 1u) {
-        block.middleRows(at, height[m]) = periods.middleRows(offset[m], height[m]);
-        at += height[m];
-      }
-    const Eigen::VectorXd sv = block.jacobiSvd().singularValues();
-    if (sv(sv.size() - 1) > kPeriodFrameConditionFloor * sv(0)) frameBlocks.push_back(block);
-  }
-  if (frameBlocks.empty())
-    return refuse("no group of markings frames the whole's degree-1 harmonic space: none has as many "
-                  "cycles as its rank (" + std::to_string(rank) +
-                  ") with an invertible period matrix");
-  const Eigen::MatrixXcd firstInverse = frameBlocks.front().inverse();
-  for (std::size_t b = 1; b < frameBlocks.size(); ++b) {
-    const double defect =
-        (frameBlocks[b] * firstInverse - Eigen::MatrixXcd::Identity(rank, rank)).norm();
-    if (defect > kPeriodFrameMonodromyTolerance)
-      return refuse("the marking groups disagree about the frame of the whole: the monodromy "
-                    "between group 0 and group " + std::to_string(b) +
-                    " differs from the identity by " + std::to_string(defect));
-  }
-  state = frameBlocks.front() * state;  // the coordinates in the period frame
+  std::vector<Eigen::Index> markingRanks;
+  markingRanks.reserve(markings.size());
+  for (const auto *marking : markings)
+    markingRanks.push_back(static_cast<Eigen::Index>(marking->rank()));
+  PeriodFrameSelection periodFrame =
+      selectPeriodFrame(periods, markingRanks);
+  if (!periodFrame.obstruction.empty())
+    return refuse(std::move(periodFrame.obstruction));
+  state = periodFrame.block * state;  // the coordinates in the period frame
   const double ss = state.squaredNorm();
   if (!(ss > 0.0)) return refuse("the inputs determine the zero harmonic form");
   // The same projective Frobenius leak the other readings take, so all are on
@@ -4650,8 +4924,11 @@ double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &space
 void MultiCobordism::setOutputStateTarget(Eigen::VectorXcd state) {
   if (state.size() < 1)
     throw std::invalid_argument("MultiCobordism::setOutputStateTarget: the state is empty");
-  if (!(state.squaredNorm() > 0.0))
-    throw std::invalid_argument("MultiCobordism::setOutputStateTarget: the state is zero");
+  const double norm = state.squaredNorm();
+  if (!state.allFinite() || !std::isfinite(norm) || !(norm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::setOutputStateTarget: the state must be finite and "
+        "nonzero");
   outputStateTarget_ = std::move(state);
 }
 
@@ -4660,6 +4937,12 @@ double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spac
   // No backward wavefunction, no two-state vector. A host without conjugate
   // tori carries none, and one is not invented to fill the term.
   if (target.twoStateVector.size() == 0) return 1.0;
+  const double targetNorm = target.twoStateVector.squaredNorm();
+  if (!target.twoStateVector.allFinite() || !std::isfinite(targetNorm) ||
+      !(targetNorm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::operatorResidualOn: the paired-frame target must "
+        "be finite and nonzero");
   if (!spacetime) return 1.0;
   // The two sides are the two PAIRS, in block order: a state and its conjugate
   // are one side, so nothing is left out of either.
@@ -4682,7 +4965,7 @@ double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spac
   }
   const Eigen::MatrixXcd &wanted = target.twoStateVector;
   if (T.rows() != wanted.rows() || T.cols() != wanted.cols())
-    throw std::logic_error("MultiCobordism::operatorResidualOn: the two-state vector is " +
+    throw std::logic_error("MultiCobordism::operatorResidualOn: the paired direct-sum target is " +
                            std::to_string(wanted.rows()) + "x" + std::to_string(wanted.cols()) +
                            " but the paired frames give " + std::to_string(T.rows()) + "x" +
                            std::to_string(T.cols()));
@@ -4699,6 +4982,12 @@ double MultiCobordism::transferResidualOn(const std::shared_ptr<Spacetime> &spac
                                           const TwoBodyTarget &target) const {
   const auto [A, B] = attachedInputBlocks();
   if (!spacetime) return 1.0;
+  const double targetNorm = target.chi.squaredNorm();
+  if (!target.chi.allFinite() || !std::isfinite(targetNorm) ||
+      !(targetNorm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::transferResidualOn: the target must be finite and "
+        "nonzero");
   Eigen::MatrixXcd T;
   try {
     T = frameTransferOn(spacetime, *A, *B).forward;
@@ -4726,13 +5015,39 @@ double MultiCobordism::twoBodyResidual() const {
 }
 
 MultiCobordism::TwoBodyRead MultiCobordism::readTwoBody() const {
-  const auto [A, B] = attachedInputBlocks();
-  const chainhodge::TransferResult transfer = frameTransferOn(spacetime_, *A, *B);
+  std::vector<const BoundaryBlock *> attached;
+  for (const auto &block : inputBlocks_)
+    if (block.fiber && block.fiber->images.cols() > 0)
+      attached.push_back(&block);
+  if (attached.size() != 2 && attached.size() != 4)
+    throw std::logic_error(
+        "MultiCobordism::readTwoBody: the read needs two attached input "
+        "fibers, or four split into two paired frames; " +
+        std::to_string(attached.size()) + " found");
+  const std::size_t half = attached.size() / 2;
+  const std::vector<const BoundaryBlock *> sideA(
+      attached.begin(), attached.begin() + half);
+  const std::vector<const BoundaryBlock *> sideB(
+      attached.begin() + half, attached.end());
+  const chainhodge::TransferResult transfer =
+      attached.size() == 2
+          ? frameTransferOn(spacetime_, *attached[0], *attached[1])
+          : pairedFrameTransferOn(spacetime_, sideA, sideB);
   TwoBodyRead read;
-  read.choiDecomposed = twoBodyTarget_ ? twoBodyTarget_->choiDecomposed : true;
+  read.choiDecomposed =
+      twoBodyTarget_ ? twoBodyTarget_->choiDecomposed
+                     : (!twoBodyCases_.empty()
+                            ? twoBodyCases_.front().choiDecomposed
+                            : true);
   read.transfer = transfer.forward;
-  read.inFrames = (A->marking || A->frame) && (B->marking || B->frame);
-  read.derivedFrames = A->marking.has_value() && B->marking.has_value();
+  read.inFrames = std::all_of(
+      attached.begin(), attached.end(), [](const BoundaryBlock *block) {
+        return block->marking.has_value() || block->frame.has_value();
+      });
+  read.derivedFrames = std::all_of(
+      attached.begin(), attached.end(), [](const BoundaryBlock *block) {
+        return block->marking.has_value();
+      });
   read.choiState = Eigen::Map<const Eigen::VectorXcd>(transfer.forward.data(), transfer.forward.size());
   Eigen::JacobiSVD<Eigen::MatrixXcd> svd(transfer.forward);
   const Eigen::VectorXd sv = svd.singularValues();
@@ -4741,16 +5056,25 @@ MultiCobordism::TwoBodyRead MultiCobordism::readTwoBody() const {
   for (Eigen::Index i = 0; i < sv.size(); ++i)
     if (sv.size() > 0 && sv(i) > 1e-10 * sv(0)) ++read.schmidtRank;
   read.reversalResidual = transfer.reversalResidual;
-  read.residual = twoBodyTarget_ ? twoBodyResidualOn(spacetime_, *twoBodyTarget_)
-                                 : std::numeric_limits<double>::quiet_NaN();
+  const bool canScore =
+      attached.size() == 2 && (twoBodyTarget_ || !twoBodyCases_.empty());
+  read.residual = canScore ? twoBodyResidualOverCasesOn(spacetime_)
+                           : std::numeric_limits<double>::quiet_NaN();
   for (std::size_t index = 0; index < inputBlocks_.size(); ++index) {
     const BoundaryBlock &block = inputBlocks_[index];
     if (block.fiber && block.fiber->images.cols() > 0)
       read.inputFiberResiduals.push_back(fiberResidualForBoundaryBlock(block, spacetime_));
     if (block.marking) read.inputStates.push_back(readInputState(index));
   }
-  read.cellsA = transferOperand(*A, spacetime_).cells;
-  read.cellsB = transferOperand(*B, spacetime_).cells;
+  const auto appendCells = [&](const std::vector<const BoundaryBlock *> &side,
+                               std::vector<std::vector<std::uint64_t>> &cells) {
+    for (const auto *block : side) {
+      const auto operand = transferOperand(*block, spacetime_);
+      cells.insert(cells.end(), operand.cells.begin(), operand.cells.end());
+    }
+  };
+  appendCells(sideA, read.cellsA);
+  appendCells(sideB, read.cellsB);
   return read;
 }
 
@@ -5426,7 +5750,6 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
                                : std::vector<::tessera::mesh::Edge *>{};
   ResidualGradient gradient;
   gradient.lengths = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
-  gradient.phases = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
   // The ZERO gradient wherever the residual itself refuses: a reading that
   // cannot name a state has no direction either, and a direction invented for
   // it would be worse than none.
@@ -5461,7 +5784,14 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
   if (markings.empty()) return gradient;
   Eigen::Index cycleCount = 0;
   for (const auto *marking : markings) cycleCount += static_cast<Eigen::Index>(marking->rank());
-  if (cycleCount != static_cast<Eigen::Index>(coefficients.size())) return gradient;
+  const bool hasCoefficientOverride = target.inputCoefficients.size() != 0;
+  if (!hasCoefficientOverride &&
+      cycleCount != static_cast<Eigen::Index>(coefficients.size()))
+    return gradient;
+  if (hasCoefficientOverride &&
+      (target.inputCoefficients.size() != cycleCount ||
+       !target.inputCoefficients.allFinite()))
+    return gradient;
   // Pi and the inputs, exactly as the residual reads them.
   const auto periodsOf = [&](const Eigen::MatrixXcd &images) {
     Eigen::MatrixXcd out(cycleCount, rank);
@@ -5481,7 +5811,16 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
     return gradient;
   }
   for (Eigen::Index row = 0; row < cycleCount; ++row)
-    inputs(row) = coefficients[static_cast<std::size_t>(row)];
+    inputs(row) = hasCoefficientOverride
+                      ? target.inputCoefficients(row)
+                      : coefficients[static_cast<std::size_t>(row)];
+  std::vector<Eigen::Index> markingRanks;
+  markingRanks.reserve(markings.size());
+  for (const auto *marking : markings)
+    markingRanks.push_back(static_cast<Eigen::Index>(marking->rank()));
+  const PeriodFrameSelection periodFrame =
+      selectPeriodFrame(Pi, markingRanks);
+  if (!periodFrame.obstruction.empty()) return gradient;
   const Eigen::MatrixXcd gram = Pi.adjoint() * Pi;
   Eigen::FullPivLU<Eigen::MatrixXcd> gramLu(gram);
   // A singular Gram means the marked cycles do not pin the harmonic form, so
@@ -5489,13 +5828,15 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
   // derivative. The residual still reads (its solve takes the minimum-norm
   // answer); the DIRECTION is what is undefined, and it is left at zero.
   if (!gramLu.isInvertible()) return gradient;
-  const Eigen::VectorXcd state = gramLu.solve(Pi.adjoint() * inputs);
+  const Eigen::VectorXcd bandState = gramLu.solve(Pi.adjoint() * inputs);
+  const Eigen::VectorXcd state = periodFrame.block * bandState;
   const double ss = state.squaredNorm();
   if (!(ss > 0.0)) return gradient;
-  const Eigen::VectorXcd fit = inputs - Pi * state;      // what the periods cannot reach
-  const complexd overlap = state.dot(wanted);            // <c, w>
-  // r = 1 - |<c,w>|^2 / (|c|^2 |w|^2), the same expression the transfer takes
-  // with T replaced by c.
+  const Eigen::VectorXcd fit =
+      inputs - Pi * bandState;  // what the periods cannot reach
+  const complexd overlap = state.dot(wanted);  // <B c, w>
+  // r = 1 - |<B c,w>|^2 / (|B c|^2 |w|^2), the same
+  // period-frame expression the residual takes.
   // The derivative ALONG a direction, taken twice -- once along ds = 1 and once
   // along ds = i -- because the packed gradient is the pair
   // (dr/d(Re s), dr/d(Im s)).
@@ -5513,8 +5854,14 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
   // check.
   const auto along = [&](const Eigen::MatrixXcd &dZ) {
     const Eigen::MatrixXcd dPi = periodsOf(dZ);
+    const Eigen::VectorXcd dBandState = gramLu.solve(
+        dPi.adjoint() * fit - (Pi.adjoint() * dPi) * bandState);
+    Eigen::MatrixXcd dFrame(rank, rank);
+    for (Eigen::Index frameRow = 0; frameRow < rank; ++frameRow)
+      dFrame.row(frameRow) =
+          dPi.row(periodFrame.rows[static_cast<std::size_t>(frameRow)]);
     const Eigen::VectorXcd dstate =
-        gramLu.solve(dPi.adjoint() * fit - (Pi.adjoint() * dPi) * state);
+        dFrame * bandState + periodFrame.block * dBandState;
     const complexd s1 = wanted.dot(dstate);   // <w, dc>
     const complexd s2 = state.dot(dstate);    // <c, dc>
     return 2.0 * (-(overlap * s1 * ss - std::norm(overlap) * s2) /
@@ -5564,6 +5911,12 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
   const auto [blockA, blockB] = attachedInputBlocks();
   const BoundaryFiber *A = &*blockA->fiber, *B = &*blockB->fiber;
   if (!spacetime) throw std::invalid_argument("MultiCobordism::twoBodyResidualGradientOn: null spacetime");
+  const double targetNorm = target.chi.squaredNorm();
+  if (!target.chi.allFinite() || !std::isfinite(targetNorm) ||
+      !(targetNorm > 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::twoBodyResidualGradientOn: the target must be "
+        "finite and nonzero");
   const bool framedA = blockA->marking || blockA->frame, framedB = blockB->marking || blockB->frame;
   if (framedA != framedB)
     throw std::logic_error("MultiCobordism: the two-body transfer is read in the blocks' frames only when both "
@@ -5597,9 +5950,16 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     return out;
   };
   const Eigen::MatrixXcd T = block(Atilde);
+  if (T.rows() != target.chi.rows() || T.cols() != target.chi.cols())
+    throw std::logic_error(
+        "MultiCobordism::twoBodyResidualGradientOn: the two-body target is " +
+        std::to_string(target.chi.rows()) + "x" +
+        std::to_string(target.chi.cols()) +
+        " but the attached frames give " + std::to_string(T.rows()) + "x" +
+        std::to_string(T.cols()));
   const double tt = T.squaredNorm();
   if (!(tt > 0.0)) return gradient;
-  const double cc = target.chi.squaredNorm();
+  const double cc = targetNorm;
   const complexd overlap = (T.conjugate().cwiseProduct(target.chi)).sum();  // <T, chi>
   const std::vector<std::size_t> canonical = canonicalEdgeIndices(*spacetime, assembled.complex());
   // r = 1 - |<T,chi>|^2 / (|T|^2 |chi|^2). For a holomorphic dT:
@@ -5662,17 +6022,86 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
   return gradient;
 }
 
+MultiCobordism::ResidualGradient
+MultiCobordism::selectedTwoBodyResidualGradientOn(
+    const std::shared_ptr<Spacetime> &spacetime,
+    const TwoBodyTarget &target) const {
+  if (!spacetime)
+    throw std::invalid_argument(
+        "MultiCobordism::selectedTwoBodyResidualGradientOn: null spacetime");
+  const auto edgeCount =
+      static_cast<Eigen::Index>(spacetime->getEdgeList()->toVector().size());
+  ResidualGradient total;
+  total.lengths = Eigen::VectorXcd::Zero(edgeCount);
+  const auto accumulate = [&](const ResidualGradient &part) {
+    if (part.lengths.size() != edgeCount)
+      throw std::logic_error(
+          "MultiCobordism::selectedTwoBodyResidualGradientOn: a selected reading "
+          "returned a gradient with the wrong edge count");
+    total.lengths += part.lengths;
+    if (part.phases.size() != 0) {
+      if (part.phases.size() != edgeCount)
+        throw std::logic_error(
+            "MultiCobordism::selectedTwoBodyResidualGradientOn: a selected reading "
+            "returned a phase gradient with the wrong edge count");
+      if (total.phases.size() == 0)
+        total.phases = Eigen::VectorXcd::Zero(edgeCount);
+      total.phases += part.phases;
+    }
+  };
+  for (const ReadoutMode mode : readoutModes_) {
+    if (mode == ReadoutMode::Transfer) {
+      try {
+        accumulate(twoBodyResidualGradientOn(spacetime, target));
+      } catch (const std::runtime_error &) {
+        // The transfer value maps a refused geometry to the constant full
+        // leak. Its zero direction must not discard another selected read's.
+      } catch (const std::invalid_argument &) {
+      }
+    } else if (mode == ReadoutMode::Whole) {
+      try {
+        accumulate(wholeHarmonicResidualGradientOn(spacetime, target));
+      } catch (const std::runtime_error &) {
+        // A read whose derivative refuses contributes no direction; other
+        // selected readings remain independently differentiable.
+      } catch (const std::invalid_argument &) {
+      }
+    } else {
+      throw std::logic_error(
+          "MultiCobordism::selectedTwoBodyResidualGradientOn: the selected bulk and "
+          "paired-operator readings have no analytic gradient; use the "
+          "numerical objective ascent");
+    }
+  }
+  return total;
+}
+
 bool MultiCobordism::readoutsHaveAnalyticGradient() const noexcept {
-  // Only the transfer has one. A reading without it falls back to the
-  // numerical ascent, which is correct for any objective, rather than
-  // borrowing the transfer's -- which would be the gradient of a function
-  // this run is not minimising.
+  // Transfer and whole-harmonic reads have their own derivatives. Anything
+  // else falls back to the numerical ascent of the selected objective rather
+  // than borrowing another reading's direction.
+  bool usesTransfer = false;
   for (const ReadoutMode mode : readoutModes_)
-    if (mode != ReadoutMode::Transfer) return false;
-  return true;
+    if (mode == ReadoutMode::Transfer)
+      usesTransfer = true;
+    else if (mode != ReadoutMode::Whole)
+      return false;
+  // The analytic transfer derivative below is defined for exactly two input
+  // blocks. Four attached blocks use the paired-frame read and must take the
+  // objective's numerical fallback rather than entering that two-block path.
+  if (!usesTransfer || (!twoBodyTarget_ && twoBodyCases_.empty())) return true;
+  std::size_t attached = 0;
+  for (const auto &block : inputBlocks_)
+    if (block.fiber && block.fiber->images.cols() > 0) ++attached;
+  return attached == 2;
 }
 
 MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
+  if ((twoBodyTarget_ || !twoBodyCases_.empty()) &&
+      !readoutsHaveAnalyticGradient())
+    throw std::logic_error(
+        "MultiCobordism::fiberModeAscent: a selected two-body reading has no "
+        "analytic gradient; use the numerical objective ascent");
   const auto edges = spacetime_->getEdgeList()->toVector();
   ResidualGradient total;
   total.lengths = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
@@ -5737,17 +6166,24 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
     for (const auto &boundaryCase : twoBodyCases_) {
       const auto previous = writeCaseBoundary(boundaryCase, spacetime_);
       try {
-        accumulate(twoBodyResidualGradientOn(
-                       spacetime_, TwoBodyTarget{boundaryCase.chi, boundaryCase.choiDecomposed}),
+        accumulate(selectedTwoBodyResidualGradientOn(
+                       spacetime_, TwoBodyTarget{boundaryCase.chi,
+                                                 boundaryCase.choiDecomposed,
+                                                 boundaryCase.twoStateVector,
+                                                 boundaryCase.inputCoefficients}),
                    *spacetime_, 1.0);
       } catch (const std::runtime_error &) {
       } catch (const std::invalid_argument &) {
+      } catch (...) {
+        restoreCaseBoundary(previous, spacetime_);
+        throw;
       }
-      writeCaseBoundary(TwoBodyCase{previous, {}, true}, spacetime_);
+      restoreCaseBoundary(previous, spacetime_);
     }
   } else if (twoBodyTarget_) {
     try {
-      accumulate(twoBodyResidualGradientOn(spacetime_, *twoBodyTarget_), *spacetime_, 1.0);
+      accumulate(selectedTwoBodyResidualGradientOn(spacetime_, *twoBodyTarget_),
+                 *spacetime_, 1.0);
     } catch (const std::runtime_error &) {
     } catch (const std::invalid_argument &) {
     }

@@ -292,6 +292,9 @@ def test_to_json_round_trips_with_complex_numbers_as_pairs():
         assert document["monodromy"]["rounded"] == frame.monodromy["rounded"]
     inputs = json.loads(json.dumps(run["result"].inputs.to_json()))
     assert inputs["tau_in"] == [[TAU_A.real, TAU_A.imag], [TAU_B.real, TAU_B.imag]]
+    assert inputs["grid"] == [GRID * GRID, GRID * GRID]
+    assert inputs["grid_size"] == GRID
+    assert inputs["vertices_per_torus"] == [GRID * GRID, GRID * GRID]
     assert inputs["objective"] == "legacy" and "register_residual" in inputs["objective_terms"]
     assert "reversed" not in inputs, "the engine's read fixes the orientation by A.B = +1"
     assert len(inputs["algebra"]["chi"]) == 2 and inputs["algebra"]["Jt"] == ea.DECLARED_COUPLING * ea.DECLARED_TIME
@@ -306,9 +309,11 @@ def test_render_png_and_gif_under_agg():
     with tempfile.TemporaryDirectory() as directory:
         png = os.path.join(directory, "qubit.png")
         gif = os.path.join(directory, "qubit.gif")
+        one = os.path.join(directory, "one-frame.gif")
         ea.render(frames, png)
         ea.render(frames[:2], gif)
-        assert os.path.getsize(png) > 1024 and os.path.getsize(gif) > 1024
+        ea.render(frames[:1], one)
+        assert all(os.path.getsize(path) > 1024 for path in (png, gif, one))
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -318,11 +323,13 @@ def test_render_png_and_gif_under_agg():
         assert "qubit cobordism" in figure._suptitle.get_text()
         assert "legacy" in figure._suptitle.get_text()
         titles = [axis.get_title() for axis in figure.axes]
+        panel_text = titles + [text.get_text() for axis in figure.axes
+                               for text in axis.texts]
         # The qubit panels name their quantities in mathtext (#993), so the
         # tokens are the symbols as they are written in the source, not the
         # glyphs they render as.
-        for token in ("residuals", r"$\hat\tau$", "Bloch", r"$|T_{AB}|$", "the whole"):
-            assert any(token in title for title in titles), token
+        for token in ("residuals", r"$\hat\tau$", "Bloch", r"|T_{AB}|", "the whole"):
+            assert any(token in label for label in panel_text), token
     finally:
         plt.close(figure)
     assert [name for name, _ in ea.panels_for(_run()["config"])][:6] == list(ea._QUBIT_PANEL_ORDER[:6])

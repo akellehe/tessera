@@ -1344,7 +1344,16 @@ assertion. Every pairing is the transpose.)doc")
       "chi on the pair of attached frames and the reading flag (#941).")
       .def(py::init<>())
       .def_readwrite("chi", &MultiCobordism::TwoBodyTarget::chi)
-      .def_readwrite("choi_decomposed", &MultiCobordism::TwoBodyTarget::choiDecomposed);
+      .def_readwrite("choi_decomposed", &MultiCobordism::TwoBodyTarget::choiDecomposed)
+      .def_readwrite("paired_direct_sum_target",
+                     &MultiCobordism::TwoBodyTarget::twoStateVector,
+                     "Target expressed in the paired direct-sum frame.")
+      .def_readwrite("two_state_vector",
+                     &MultiCobordism::TwoBodyTarget::twoStateVector,
+                     "Deprecated legacy name for paired_direct_sum_target; "
+                     "this field is not in tensor-product coordinates.")
+      .def_readwrite("input_coefficients", &MultiCobordism::TwoBodyTarget::inputCoefficients,
+                     "Optional case-specific coefficients in marked-block/cycle order.");
   py::class_<MultiCobordism::SurfaceSeed>(m, "SurfaceSeed",
       "A host seeded from boundary surfaces (qubit cobordism spec S2): `host` is ONE "
       "d-dimensional Spacetime holding every surface as its own simplices (triangles, "
@@ -1377,7 +1386,8 @@ assertion. Every pairing is the transpose.)doc")
   py::class_<MultiCobordism::TwoBodyRead>(m, "TwoBodyRead",
       "The reading of the bulk between two attached input frames (#941): the frame transfer "
       "T_AB (operator reading), vec(T_AB) (Choi-decomposed state reading), its Schmidt spectrum "
-      "and rank, the reversal residual, the fit residual, and the input blocks' fiber residuals.")
+      "and rank, the reversal residual, the fit residual for two inputs (NaN for the four-input "
+      "paired diagnostic), and the input blocks' fiber residuals.")
       .def_readonly("choi_decomposed", &MultiCobordism::TwoBodyRead::choiDecomposed)
       .def_readonly("transfer", &MultiCobordism::TwoBodyRead::transfer)
       .def_readonly("in_frames", &MultiCobordism::TwoBodyRead::inFrames,
@@ -1637,21 +1647,22 @@ assertion. Every pairing is the transpose.)doc")
            "refuses a cone_out, cone_in or cone_in_timelike candidate whose complex has a boundary "
            "facet the complex before the move lacked, beside the manifold gate and on the same "
            "footing. It applies only where a boundary is DECLARED fixed (has_fixed_boundary: a "
-           "surface input block, or a pinned region); a node with neither is unrestricted either "
+           "surface input or output block); a node with neither is unrestricted either "
            "way. The Pachner moves and bridge keep their own gates.")
       .def_property_readonly("boundary_may_extend", &MultiCobordism::boundaryMayExtend)
       .def_property_readonly("has_fixed_boundary", &MultiCobordism::hasFixedBoundary,
                              "Whether this node declares a boundary it holds fixed: any surface "
-                             "input or output block, or any pinned region.")
+                             "input or output block.")
       .def("set_two_body_cases",
            [](MultiCobordism &self, const py::list &cases) {
              std::vector<MultiCobordism::TwoBodyCase> out;
              out.reserve(cases.size());
              for (const auto &item : cases) {
                auto entry = item.cast<py::tuple>();
-               if (entry.size() < 2 || entry.size() > 4)
+               if (entry.size() < 2 || entry.size() > 5)
                  throw std::invalid_argument(
-                     "each case is (boundary, chi[, choi_decomposed[, two_state_vector]])");
+                     "each case is (boundary, chi[, choi_decomposed[, paired_direct_sum_target"
+                     "[, input_coefficients]]])");
                MultiCobordism::TwoBodyCase one;
                for (const auto &edge : entry[0].cast<py::list>()) {
                  auto quad = edge.cast<py::tuple>();
@@ -1664,24 +1675,32 @@ assertion. Every pairing is the transpose.)doc")
                }
                one.chi = entry[1].cast<Eigen::MatrixXcd>();
                one.choiDecomposed = entry.size() >= 3 ? entry[2].cast<bool>() : true;
-               if (entry.size() == 4 && !entry[3].is_none())
+               if (entry.size() >= 4 && !entry[3].is_none())
                  one.twoStateVector = entry[3].cast<Eigen::MatrixXcd>();
+               if (entry.size() == 5 && !entry[4].is_none())
+                 one.inputCoefficients = entry[4].cast<Eigen::VectorXcd>();
                out.push_back(std::move(one));
              }
              self.setTwoBodyCases(std::move(out));
            }, py::arg("cases"),
            "Fit ONE bulk to several input pairs at once (#1017). Each case is "
-           "(boundary, chi[, choi_decomposed]), where boundary is a list of "
+           "(boundary, chi[, choi_decomposed[, paired_direct_sum_target[, "
+           "input_coefficients]]]), where boundary is a list of "
            "(source_id, target_id, squared_length) for the BOUNDARY edges and "
-           "chi is the gate's image of that pair. A bulk fitted to a single "
-           "pair reproduces that pair and nothing else -- one 2x2 transfer is "
-           "six real constraints against some eighty free bulk coordinates, so "
-           "nothing asked the geometry to be a map. Scored together the cases "
-           "impose six constraints EACH on one shared bulk. The sum lives in "
+           "chi is the gate's image of that pair. The legacy fourth tuple "
+           "slot is a target explicitly expressed in the paired direct-sum "
+           "frame; it is not a tensor-product two-state vector. Input "
+           "coefficients are "
+           "flattened in marked-block/cycle order; empty uses the live markings. "
+           "Under the transfer reading, a bulk fitted to one pair reproduces "
+           "that pair and nothing else: one 2x2 transfer is six real constraints "
+           "against some eighty free bulk coordinates. Other selected readings "
+           "add their own residual for the same case. The per-case sum lives in "
            "the objective, so stage 1 prices every candidate move and stage 2 "
            "accepts every step against ALL states, with neither stage needing "
-           "to know there is more than one. Only the boundary metric differs "
-           "between cases: one triangulation, one gluing, one bulk. Expects a "
+           "to know there is more than one. Boundary metrics, targets and "
+           "input coefficients may differ between cases; all share one "
+           "triangulation, one gluing and one bulk. Expects a "
            "pinned boundary. Empty restores the single-target behaviour.")
       .def("two_body_case_count",
            [](const MultiCobordism &self) { return self.twoBodyCases().size(); })
@@ -1769,13 +1788,16 @@ assertion. Every pairing is the transpose.)doc")
              py::gil_scoped_release release;
              const auto g = self.twoBodyResidualGradientOn(self.spacetime(), *self.twoBodyTarget());
              return std::make_pair(g.lengths, g.phases);
-           }, "Analytic gradient of the two-body residual on the live complex (#947).")
+           }, "Legacy analytic gradient of the frame-transfer two-body residual on the live "
+              "complex (#947), independent of the selected readout. fiber_mode_ascent dispatches "
+              "the objective's selected readings.")
       .def("fiber_mode_ascent",
            [](const MultiCobordism &self) {
              py::gil_scoped_release release;
              const auto g = self.fiberModeAscent();
              return std::make_pair(g.lengths, g.phases);
-           }, "The analytic ascent of every fiber-mode term of r_U on the live complex (#947).")
+           }, "The analytic ascent of every fiber-mode term of r_U on the live complex (#947). "
+              "Refuses when a selected two-body reading has no analytic gradient.")
       .def("attach_input_fiber", &MultiCobordism::attachInputFiber, py::arg("index"), py::arg("fiber"),
            py::arg("cells"),
            "Attach a piped input fiber to THIS complex's cells (one per fiber row, in the attachment "
@@ -1886,10 +1908,12 @@ assertion. Every pairing is the transpose.)doc")
            "cell counts otherwise) is refused by name.")
       .def("two_body_target", &MultiCobordism::twoBodyTarget)
       .def("two_body_residual", &MultiCobordism::twoBodyResidual, py::call_guard<py::gil_scoped_release>(),
-           "The projective Frobenius leak of chi against the frame transfer T_AB on the live complex.")
+           "The sum of the selected projective two-body readout leaks on the live complex.")
       .def("read_two_body", &MultiCobordism::readTwoBody, py::call_guard<py::gil_scoped_release>(),
-           "The bulk between the two attached frames: T_AB, vec(T_AB), Schmidt spectrum and rank, the "
-           "reversal residual, the fit residual, and both input blocks' fiber residuals.")
+           "The bulk between two attached frames, or between two paired frames when four inputs are "
+           "attached: T_AB, vec(T_AB), Schmidt spectrum and rank, the reversal residual, and every "
+           "input block's fiber residual. The four-input read is a direct-sum geometric diagnostic, "
+           "so its fit residual is NaN rather than an inferred tensor-product score.")
       .def("set_output_state_target", &MultiCobordism::setOutputStateTarget, py::arg("state"),
            "The state the WHOLE complex's harmonic form is meant to be (ReadoutMode.WHOLE). Its "
            "dimension is the claim: a rank-2 harmonic space carries a 2-dimensional state, a "
@@ -1903,22 +1927,23 @@ assertion. Every pairing is the transpose.)doc")
                  MultiCobordism::TwoBodyTarget{Eigen::MatrixXcd(), true, twoStateVector});
            },
            py::arg("two_state_vector"), py::call_guard<py::gil_scoped_release>(),
-           "The projective leak of a gate-evolved two-state vector G |psi><phi| G-dagger "
-           "against the paired-frame transfer.")
+           "The projective leak of a target expressed in the paired direct-sum frames. "
+           "Equal dimensions do not identify this with a tensor-product two-qubit operator.")
       .def("set_readout_modes", &MultiCobordism::setReadoutModes, py::arg("modes"),
            "The readings SUMMED into the two-body residual. TRANSFER is the "
            "coupling block between the two boundary frames; BULK is "
            "ker L1(W - dW), the boundary REMOVED; WHOLE is ker L1(W), the "
            "boundary INCLUDED. Part of the OBJECTIVE, not the reporting: this "
            "residual is a term in r_U, so it prices stage-1 moves and drives "
-           "stage-2 descent. Empty is refused.")
+           "stage-2 descent. Repeated values are normalized to their first "
+           "occurrence; empty is refused.")
       .def_property_readonly("readout_modes", &MultiCobordism::readoutModes)
       .def_property_readonly("readouts_have_analytic_gradient",
                              &MultiCobordism::readoutsHaveAnalyticGradient,
                              "Whether every SELECTED reading has an analytic gradient, so the stage-2 "
-                             "ascent is the direction of the objective actually being minimised. Only "
-                             "the transfer has one; the others fall back to the numerical ascent of "
-                             "r_U, which is correct for any objective.")
+                             "ascent is the direction of the objective actually being minimised. "
+                             "Transfer and whole-harmonic reads have one; bulk and paired-operator "
+                             "reads fall back to the numerical ascent of r_U.")
       .def("whole_harmonic_residual_gradient",
            [](const MultiCobordism &self, const Eigen::MatrixXcd &chi) {
              const auto g = self.wholeHarmonicResidualGradientOn(

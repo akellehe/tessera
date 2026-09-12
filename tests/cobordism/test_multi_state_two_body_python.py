@@ -16,15 +16,15 @@ against one pair is 8 real numbers less 2 for the complex scale -- six real
 constraints -- against some eighty free real bulk coordinates. Nothing ever
 asked the geometry to be a MAP.
 
-Cases are how it is asked: each pair adds six constraints on ONE shared bulk.
-The sum lives in the objective, which is what makes stage 1 price every
-candidate move and stage 2 accept every step against all of them, neither stage
-needing to know there is more than one state.
+Cases are how it is asked. Under the transfer reading each pair adds six
+constraints on ONE shared bulk; another selected reading adds its own residual
+for that case. The sum lives in the objective, which is what makes stage 1
+price every candidate move and stage 2 accept every step against all of them,
+neither stage needing to know there is more than one state.
 
-A case carries only a boundary metric and a target, because the transfer depends
-on the geometry and the marking's CYCLES alone -- `deriveFrame` normalizes by
-transported periods and `readTwoBody` never reads the marking's coefficients.
-The input state enters through chi.
+A case carries a boundary metric, a target, and its marking coefficients. The
+transfer depends on the geometry and marking CYCLES alone, but the whole-harmonic
+read also needs that case's coefficients to select the input-determined form.
 """
 import os
 import sys
@@ -42,6 +42,7 @@ import emergence_animation as ea  # noqa: E402
 #: Extra pairs beyond the seed pair. Chosen apart in the upper half plane so
 #: no two cases are nearly the same constraint.
 EXTRA = ["0.5+0.9j,0.1+1.3j", "1j,1j", "-0.4+1.4j,0.6+0.7j"]
+TAU_OUT = 0.1 + 1.3j
 
 
 def built(states=()):
@@ -53,9 +54,26 @@ def built(states=()):
     return node
 
 
+def whole_built():
+    config = ea.build_config(
+        inputs="qubit", readout="whole", output_state=str(TAU_OUT),
+        pin_boundary=True, input_weight=100.0, grid=3, steps=0,
+        tau_a=0.3 + 1.1j, tau_b=-0.2 + 0.8j, regge=False)
+    node, _inputs = ea.build_qubit_node(config)
+    return node
+
+
 def lengths(node):
     return [complex(e.getLength())
             for e in node.spacetime().getEdgeList().toVector()]
+
+
+def first_input_edge(node):
+    vertices = {int(v) for v in node.inputs[0].vertices}
+    return next(
+        edge for edge in node.spacetime().getEdgeList().toVector()
+        if int(edge.getSource().getId()) in vertices
+        and int(edge.getTarget().getId()) in vertices)
 
 
 def test_no_cases_is_the_single_target_unchanged():
@@ -111,6 +129,116 @@ def test_evaluating_restores_the_geometry():
     # The same through the objective the drive actually calls.
     node.r_u(node.spacetime())
     assert lengths(node) == before
+
+
+def test_case_reads_restore_the_exact_square_root_branch():
+    """Restoring l^2 through sqrt must not replace a live length by -l."""
+    node = built(EXTRA[:1])
+    edge = first_input_edge(node)
+    edge.setLength(-complex(edge.getLength()))
+    before = lengths(node)
+    node.two_body_residual_over_cases()
+    assert lengths(node) == before
+
+
+def test_duplicate_case_edges_are_refused_before_they_can_restore_wrong():
+    node = built()
+    edge = first_input_edge(node)
+    source = int(edge.getSource().getId())
+    target = int(edge.getTarget().getId())
+    squared = complex(edge.getLength()) ** 2
+    chi = np.asarray(node.two_body_target().chi)
+    with pytest.raises(ValueError, match="repeats boundary edge"):
+        node.set_two_body_cases([(
+            [(source, target, squared), (target, source, squared)], chi)])
+
+
+def test_case_shape_validation_does_not_depend_on_readout_setter_order():
+    node = built()
+    node.set_readout_modes([ea.MC.ReadoutMode.WHOLE])
+    with pytest.raises(ValueError, match="single target"):
+        node.set_two_body_cases([([], np.ones((3, 3), dtype=complex))])
+
+
+def test_cases_set_before_targets_or_attachments_share_target_shapes():
+    node = ea.MC(ea.MC.seed_simplex(3), [], [], degrees=[1],
+                 einstein_hilbert=False)
+    with pytest.raises(ValueError, match=r"case 1 target.*case 0"):
+        node.set_two_body_cases([
+            ([], np.eye(2, dtype=complex)),
+            ([], np.eye(3, dtype=complex)),
+        ])
+    with pytest.raises(ValueError,
+                       match=r"case 1 paired direct-sum.*case 0"):
+        node.set_two_body_cases([
+            ([], np.eye(2, dtype=complex), True, np.eye(2, dtype=complex)),
+            ([], np.eye(2, dtype=complex), True, np.eye(3, dtype=complex)),
+        ])
+
+
+def test_whole_cases_read_their_own_input_coefficients():
+    node = whole_built()
+    node.set_input_residual_weight(0.0)
+    chi = np.asarray(node.two_body_target().chi)
+    hit = np.array([1.0, TAU_OUT, 1.0, TAU_OUT], dtype=complex)
+    miss = np.array([1.0, 0.0, 1.0, 0.0], dtype=complex)
+    node.set_two_body_cases([([], chi, True, None, hit)])
+    assert node.two_body_residuals_per_case() == pytest.approx(
+        [0.0], abs=1e-12)
+    assert np.max(np.abs(np.asarray(node.fiber_mode_ascent()[0]))) < 1e-10
+
+    node.set_two_body_cases([
+        ([], chi, True, None, hit),
+        ([], chi, True, None, miss),
+    ])
+    residuals = node.two_body_residuals_per_case()
+    assert residuals[0] < 1e-12
+    assert residuals[1] == pytest.approx(
+        abs(TAU_OUT) ** 2 / (1.0 + abs(TAU_OUT) ** 2), abs=1e-10)
+
+
+def test_one_refused_selected_gradient_does_not_erase_another():
+    node = whole_built()
+    node.set_input_residual_weight(0.0)
+    markings = [node.input_marking(index) for index in range(2)]
+    # One independent cycle from each torus frames the whole rank-2 space, but
+    # neither rank-1 marking can frame its own rank-2 torus. Whole can read;
+    # the transfer therefore contributes the constant full leak and refuses
+    # only its own derivative.
+    node.set_input_marking(0, [markings[0].cycles[0]], [1.0 + 0j])
+    node.set_input_marking(1, [markings[1].cycles[1]], [TAU_OUT])
+    node.set_two_body_target(np.eye(1, dtype=complex))
+
+    node.set_readout_modes([ea.MC.ReadoutMode.TRANSFER])
+    assert node.two_body_residual() == 1.0
+    with pytest.raises(RuntimeError, match=r"own kernel has rank 2"):
+        node.two_body_residual_gradient()
+
+    node.set_readout_modes([ea.MC.ReadoutMode.WHOLE])
+    assert node.whole_harmonic_residual(np.eye(1, dtype=complex)) < 1.0
+    assert node.whole_harmonic_obstruction == ""
+    whole_only = np.asarray(node.fiber_mode_ascent()[0])
+
+    node.set_readout_modes(
+        [ea.MC.ReadoutMode.TRANSFER, ea.MC.ReadoutMode.WHOLE])
+    np.testing.assert_array_equal(
+        np.asarray(node.fiber_mode_ascent()[0]), whole_only)
+
+
+@pytest.mark.parametrize("case,match", [
+    (([], np.zeros((2, 2), dtype=complex)), "finite, nonzero target"),
+    (([], np.full((2, 2), np.inf, dtype=complex)), "finite, nonzero target"),
+    (([], np.eye(2), True, np.zeros((2, 2), dtype=complex)),
+     "finite, nonzero paired direct-sum"),
+    (([], np.eye(2), True, None, np.ones(3, dtype=complex)),
+     "marked input blocks"),
+    (([], np.eye(2), True, None, np.zeros(4, dtype=complex)),
+     "all-zero input coefficients"),
+])
+def test_invalid_case_payloads_are_refused_at_the_setter(case, match):
+    node = built()
+    with pytest.raises(ValueError, match=match):
+        node.set_two_body_cases([case])
 
 
 def test_the_descent_direction_accounts_for_every_case():

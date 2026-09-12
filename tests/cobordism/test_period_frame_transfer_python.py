@@ -442,6 +442,12 @@ def test_transfer_in_the_period_frames(n, whitney_default):
     node.set_two_body_target(fixed_chi(nE), True)
     T_full = np.asarray(node.read_two_body().transfer)
     (cells_a, Za, Zda), (cells_b, Zb, Zdb) = set_frames(node, qa, qb)
+    # The target predates the frames and therefore bypassed setter-time shape
+    # validation. The gradient must still refuse it before Eigen combines
+    # matrices with incompatible dimensions.
+    with pytest.raises(RuntimeError,
+                       match=r"two-body target.*attached frames give 2x2"):
+        node.two_body_residual_gradient()
     # a target of the old shape no longer fits: the frames give 2x2
     with pytest.raises(ValueError, match="attached frames give 2x2"):
         node.set_two_body_target(fixed_chi(nE), True)

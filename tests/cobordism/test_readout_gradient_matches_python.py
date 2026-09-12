@@ -2,21 +2,15 @@
 # All rights reserved.
 """Stage 2 descends the gradient of the objective it is minimising (#1055).
 
-`fiberModeAscent`'s two-body term is the gradient through the frame TRANSFER,
-and it was taken whatever `--readout` selected. Under `whole`, `bulk` or
-`operator` the objective is one function and that ascent belongs to another.
-
-The line search evaluates the true objective and accepts only genuine
-decreases, so the consequence was wasted trials rather than a wrong answer --
-the objective never rose. It is still the wrong direction to be proposing, and
-the numerical ascent of `rU` is correct for any of them.
-
-So the analytic path is taken only while every selected reading is the
-transfer. The others fall back until they have gradients of their own.
+`fiberModeAscent` dispatches each two-body term to the selected reading's own
+gradient. Transfer and whole-harmonic reads have analytic derivatives; bulk
+and paired-operator reads take the numerical ascent of `rU` instead of
+borrowing another objective's direction.
 """
 import os
 import sys
 
+import numpy as np
 import pytest
 
 from tessera import cobordism as cob
@@ -40,13 +34,13 @@ def node():
 
 @pytest.mark.parametrize("modes,analytic", [
     ([R.TRANSFER], True),
-    ([R.WHOLE], False),
+    ([R.WHOLE], True),
     ([R.BULK], False),
     ([R.OPERATOR], False),
-    ([R.TRANSFER, R.WHOLE], False),
+    ([R.TRANSFER, R.WHOLE], True),
     ([R.WHOLE, R.OPERATOR], False),
 ])
-def test_only_the_transfer_has_one(modes, analytic):
+def test_only_implemented_readings_have_one(modes, analytic):
     """A SET is analytic only if every reading in it is."""
     live = node()
     live.set_readout_modes(modes)
@@ -58,3 +52,23 @@ def test_the_default_is_the_transfer_and_is_analytic():
     live = node()
     assert [mode for mode in live.readout_modes] == [R.TRANSFER]
     assert live.readouts_have_analytic_gradient is True
+
+
+def test_readout_modes_are_a_set_preserving_first_occurrence():
+    live = node()
+    live.set_readout_modes(
+        [R.WHOLE, R.TRANSFER, R.WHOLE, R.BULK, R.TRANSFER])
+    assert list(live.readout_modes) == [R.WHOLE, R.TRANSFER, R.BULK]
+
+    live.set_readout_modes([R.TRANSFER, R.TRANSFER])
+    assert list(live.readout_modes) == [R.TRANSFER]
+    assert live.readouts_have_analytic_gradient is True
+
+
+@pytest.mark.parametrize("mode", [R.BULK, R.OPERATOR])
+def test_public_fiber_ascent_refuses_an_unimplemented_selected_gradient(mode):
+    live = node()
+    live.set_two_body_target(np.eye(1, dtype=complex))
+    live.set_readout_modes([mode])
+    with pytest.raises(RuntimeError, match="no analytic gradient"):
+        live.fiber_mode_ascent()

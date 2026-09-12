@@ -25,6 +25,18 @@ iterations; `--seed 7` throughout. The exit rule is the driver's: a unit that
 improves the objective by less than `--tolerance` (1e-12 by default) ends
 the run.
 
+These records predate #1022's fixed-boundary driver default. They therefore
+describe what is now the explicit `--no-pin-boundary` path; current runs pin
+the input regions during stage 2 unless that option is given. In both modes the
+boundary remains part of the whole's Laplacian and read-outs. The complex locus
+described above remains the production driver path.
+
+The current driver also refuses `--readout bulk` without an explicit interior
+Choi frame, and refuses four-torus `whole` and `operator` claims. Four period
+coordinates formed by concatenating torus frames are a direct sum, not the
+tensor-product coordinates of a two-qubit target; the low-level paired 4x4
+transfer is therefore only a geometric diagnostic.
+
 Two knobs the CLI does not expose were needed: Γ (the `MultiCobordism`
 constructor's weight on r_U, which `build_qubit_node` does not pass) and the
 pure-gauge phases of run (iv) (the driver has no phase input, and
@@ -90,22 +102,25 @@ the boundary read splits `getBoundary()` into exactly the two tori, so
 (`tests/cobordism/test_bridge_move_python.py::test_bridge_rollback_is_bit_exact`),
 re-run in this session (`bridge-tests.log` in the records).
 
-The seed residuals, frame 0 (weight 1e6, Γ = 1, Regge on; the residuals
-themselves do not depend on the weights):
+The following seed residuals and weight scan are historical results from the
+pre-#988 definition of D2, which used the whole complex's zero mode restricted
+to each block. They are retained as evidence for that run and are not the
+current own-Laplacian block residual. At frame 0 (weight 1e6, Γ = 1, Regge on;
+the residuals themselves do not depend on the weights):
 
 | | 3×3 A | 3×3 B | 4×4 A | 4×4 B |
 |---|---|---|---|---|
-| block residual (the whole's zero mode against (1, τ_in) in the live frame) | 3.099981e-3 | 9.344559e-3 | 4.006415e-3 | 1.171689e-2 |
+| historical block residual (the whole's zero mode against (1, τ_in) in the live frame) | 3.099981e-3 | 9.344559e-3 | 4.006415e-3 | 1.171689e-2 |
 | coefficients of the whole's zero mode in the frame | (0.99825 + 0.00114i, 0.29847 + 1.09505i) | (0.99782 + 0.00318i, −0.20131 + 0.78407i) | (0.99822 + 0.00230i, 0.29799 + 1.09270i) | (0.99756 + 0.00556i, −0.20059 + 0.77850i) |
 | max distance of the coefficients to (1, τ_in) | 5.2e-3 | 1.6e-2 | 7.6e-3 | 2.2e-2 |
 | own-kernel leak of the holomorphic form (diagnostic) | 2.2e-30 | 1.3e-30 | 2.9e-30 | 2.2e-30 |
 | τ̂ of the block's own metric (qubit read), d_FS, d_WP to τ_in | τ_in to 1e-15, 0, 0 | τ_in to 1e-15, 0, 0 | τ_in to 1e-15, 0, 0 | τ_in to 1e-15, 0, 0 |
 | J residual, cond G, non-Delaunay edges | 2.5e-16, 5.26, 9 | 1.6e-16, 2.08, 0 | 3.2e-16, 5.26, 16 | 6.3e-16, 2.08, 0 |
 
-The block residual on the seed equals the restricted leak of the torus's
-holomorphic form in the whole's zero mode (`leaks` channel: 3.099981e-3,
-9.344559e-3, 4.006415e-3, 1.171689e-2), T2-bis's and T4's numbers. The
-two-body read on the seed, in the derived period frames:
+That historical block residual on the seed equals the restricted leak of the
+torus's holomorphic form in the whole's zero mode (`leaks` channel:
+3.099981e-3, 9.344559e-3, 4.006415e-3, 1.171689e-2), T2-bis's and T4's
+numbers. The two-body read on the seed, in the derived period frames:
 
 | | 3×3 | 4×4 |
 |---|---|---|
@@ -122,15 +137,15 @@ carries 9 (3×3) or 16 (4×4) non-Delaunay edges with negative cotangent
 weights, flagged by the qubit read; the flat-torus read is exact regardless
 (`simplicial_qubit_findings.md`).
 
-## C2. The block residuals and the weight scan
+## C2. The historical block residuals and weight scan
 
-The block residual of a torus is the leak of its input coefficients
-(1, τ_in), written on its edges through its live frame, in the zero mode of
-the entire cobordism restricted to those edges (spec D2 as revised). Its
-collar value is 3.100e-3 (A) and 9.345e-3 (B) at 3×3; synthesis drives it
-down by two to five orders of magnitude in the first unit in every run, and
-the coefficients of the whole's zero mode in the live frames reach (1, τ_in)
-to 1e-4–1e-5:
+For these recorded pre-#988 runs, the then-current block residual was the leak
+of its input coefficients (1, τ_in), written on its edges through its live
+frame, in the zero mode of the entire cobordism restricted to those edges. Its
+collar value was 3.100e-3 (A) and 9.345e-3 (B) at 3×3; synthesis drove it down
+by two to five orders of magnitude in the first unit in every run, and the
+coefficients of the whole's zero mode in the live frames reached (1, τ_in) to
+1e-4–1e-5:
 
 | run | weight, Γ, Regge | units (exit) | block residuals A, B: seed → end | coefficient distance to (1, τ_in) at the end | two-body leak: seed → peak → end | Schmidt spectrum at the end | Regge term: seed → end | τ̂_A, τ̂_B at the end (d_WP to τ_in) | wall time |
 |---|---|---|---|---|---|---|---|---|---|
@@ -374,9 +389,13 @@ in this session (`tests-required.log`: 58 passed, 39 subtests).
    `drive_live` → `pyplot.pause` → `pyplot.show` → `backend_webagg.start`
    → `run_forever`). No frame after the first is drawn, and `--json` and
    `--out` are not written; the run was aborted at 300 s. So the live path
-   is refused correctly without a display, and the backend the refusal
-   names as needing no display does not carry it: a finding on the driver,
-   not worked around here.
+   was refused correctly without a display, while the backend the refusal
+   named as needing no display did not carry it.
+
+The driver now refuses WebAgg before starting its worker and names the Qt
+backend supplied by the `live` extra. This preserves responsive local GUI
+backends without advertising a backend whose `pause()` never returns; the
+pre-worker refusal is covered by `test_live_backend_extra_python.py`.
 
 ## The phases
 
@@ -512,7 +531,7 @@ Open, from the records:
   fivefold without it. The synthesized W is therefore the collar with
   relaxed lengths, its topology unmoved, and the "drawn bulk" of spec S3–S4
   did not emerge under the driver's draw. Whether a wider draw
-  (`--stage-one-iterations`, `--surgical-depth`) or the objective's balance
+  (`--stage-one-iterations`, `--combinatorial-depth`) or the objective's balance
   changes that, and whether the stall after the timelike cone-in is the
   Lorentzian landscape or a gradient defect on ℓ² = −1 edges, are for the
   next ticket.

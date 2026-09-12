@@ -24,6 +24,8 @@ import sys
 import threading
 import time
 
+import pytest
+
 sys.path.insert(0, __file__.rsplit("/", 1)[0].rsplit("/", 2)[0] + "/examples/cobordism")
 
 import emergence_animation as ea  # noqa: E402
@@ -67,7 +69,8 @@ def install_stubs(monkeypatch, pauses):
 
 def slow_drive(units):
     """A stand-in for `drive` that takes real time per unit, as the engine does."""
-    def driver(config, progress=False, on_frame=None, on_node=None):
+    def driver(config, progress=False, on_frame=None, on_node=None,
+               on_setup=None, stop_requested=None):
         frames = []
         for step in range(units):
             time.sleep(UNIT_SECONDS)
@@ -113,7 +116,8 @@ def test_a_worker_error_still_reaches_the_main_thread(monkeypatch):
     pauses = []
     install_stubs(monkeypatch, pauses)
 
-    def exploding(config, progress=False, on_frame=None, on_node=None):
+    def exploding(config, progress=False, on_frame=None, on_node=None,
+                  on_setup=None, stop_requested=None):
         time.sleep(UNIT_SECONDS / 4)
         raise ValueError("the unit failed")
 
@@ -147,3 +151,38 @@ def test_the_loop_does_not_spin_when_the_queue_is_empty(monkeypatch):
 def test_the_declared_interval_is_a_responsive_one():
     """A window serviced less than about ten times a second reads as sluggish."""
     assert 0.0 < ea.LIVE_POLL_INTERVAL <= 0.1
+
+
+def test_interrupt_stops_and_joins_the_worker_before_returning(monkeypatch):
+    """Interrupted geometry cannot race a still-mutating daemon worker."""
+    pauses = []
+    install_stubs(monkeypatch, pauses)
+    active = threading.Event()
+    ready = threading.Event()
+    setup = {}
+
+    def interruptible(config, progress=False, on_frame=None, on_node=None,
+                      on_setup=None, stop_requested=None):
+        active.set()
+        if on_setup is not None:
+            on_setup("node", "qubit-inputs")
+        ready.set()
+        while not stop_requested():
+            time.sleep(0.005)
+        active.clear()
+        return ea.DriveResult([], ea.Terminator.STEPS, "qubit-inputs", 0)
+
+    monkeypatch.setattr(ea, "drive", interruptible)
+    import matplotlib.pyplot as plt
+
+    def interrupt_after_setup(_interval):
+        assert ready.wait(timeout=1.0), "worker never completed setup"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(plt, "pause", interrupt_after_setup)
+    with pytest.raises(KeyboardInterrupt):
+        ea.drive_live(
+            ea.build_config(size=4, steps=1), progress=False,
+            on_setup=lambda node, inputs: setup.update(node=node, inputs=inputs))
+    assert not active.is_set()
+    assert setup == {"node": "node", "inputs": "qubit-inputs"}

@@ -598,7 +598,7 @@ class DriveFlagTest(unittest.TestCase):
 
     def test_the_stage_and_depth_flags_reach_the_engine(self):
         calls = self._spy(stage1_iters=5, stage2_iters=9, tolerance=1e-30,
-                          surgical_depth=3)
+                          combinatorial_depth=3)
         self.assertEqual(calls["stage1"]["max_steps"], 5)
         self.assertEqual(calls["stage1"]["max_lookahead"], 3)
         self.assertEqual(calls["stage2"]["max_iters"], 9)
@@ -609,14 +609,14 @@ class DriveFlagTest(unittest.TestCase):
         self.assertEqual(calls["stage1"]["max_steps"],
                          ea.DECLARED_STAGE1_ITERS)
         self.assertEqual(calls["stage1"]["max_lookahead"],
-                         ea.DECLARED_SURGICAL_DEPTH)
+                         ea.DECLARED_COMBINATORIAL_DEPTH)
         self.assertEqual(calls["stage2"]["max_iters"],
                          ea.DECLARED_STAGE2_ITERS)
         self.assertEqual(calls["stage2"]["tolerance"], ea.DECLARED_TOLERANCE)
 
     def test_a_nonsense_drive_parameter_is_refused_by_name(self):
         for kwargs in ({"stage1_iters": 0}, {"stage2_iters": 0},
-                       {"surgical_depth": 0}, {"tolerance": 0.0},
+                       {"combinatorial_depth": 0}, {"tolerance": 0.0},
                        {"tolerance": -1.0},
                        {"tolerance": float("inf")}):
             with self.subTest(**kwargs):
@@ -629,7 +629,8 @@ class TerminatorTest(unittest.TestCase):
 
     def test_the_vocabulary_is_closed_and_a_result_rejects_anything_else(self):
         self.assertEqual(set(ea.Terminator.ALL),
-                         {ea.Terminator.STEPS, ea.Terminator.TOLERANCE})
+                         {ea.Terminator.STEPS, ea.Terminator.TOLERANCE,
+                          ea.Terminator.CANCELLED})
         with self.assertRaises(ValueError):
             ea.DriveResult([], "converged")
 
@@ -715,7 +716,7 @@ class DriveDocumentTest(unittest.TestCase):
             ea.main(["run", "--size", str(SMALL), "--steps", "1",
                      "--stage-one-iterations", "2",
                      "--stage-two-iterations", "3",
-                     "--surgical-depth", "2",
+                     "--combinatorial-depth", "2",
                      "--tolerance", "1e-30",
                      "--json", path, "--out", "", "--quiet"])
             with open(path) as handle:
@@ -723,7 +724,7 @@ class DriveDocumentTest(unittest.TestCase):
         config = document["config"]
         self.assertEqual(config["stage1_iters"], 2)
         self.assertEqual(config["stage2_iters"], 3)
-        self.assertEqual(config["surgical_depth"], 2)
+        self.assertEqual(config["combinatorial_depth"], 2)
         self.assertEqual(config["tolerance"], 1e-30)
         self.assertIn(document["terminator"], ea.Terminator.ALL)
 

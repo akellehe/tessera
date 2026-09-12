@@ -187,7 +187,8 @@ def test_the_drive_holds_the_input_tori_by_default():
     """
     assert ea.DECLARED_PIN_BOUNDARY is True
     assert ea.build_config()["pin_boundary"] is True
-    assert ea.build_config(pin_boundary=False)["pin_boundary"] is False
+    assert ea.build_config(inputs=ea.InputMode.QUBIT,
+                           pin_boundary=False)["pin_boundary"] is False
 
 
 def test_the_engine_still_lets_stage_two_move_a_boundary(whitney_default):

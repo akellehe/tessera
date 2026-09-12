@@ -2,13 +2,14 @@
 # All rights reserved.
 """The whole-complex reading is taken in the period frame (#1058).
 
-`wholeHarmonicResidualOn` fits the transported periods of the band's columns
-and compares the resulting coefficient vector to the wanted state. Those
-coefficients live in whatever basis the band returned, and a band's basis is
-not a quantity the geometry carries: a Riesz band hands back the singular
-vectors of its projector, a null-space band those of `S^U`. Read there, the
-two disagreed -- 0.9412 against 0.9272 on one geometry -- while spanning the
-same subspace to 5e-15.
+The prior implementation of `wholeHarmonicResidualOn` fitted the transported
+periods of the band's columns and compared the resulting band-basis coefficient
+vector directly to the wanted state. A band's basis is not a quantity the
+geometry carries: a Riesz band hands back the singular vectors of its
+projector, a null-space band those of `S^U`. Read there, the two disagreed --
+0.9412 against 0.9272 on one geometry -- while spanning the same subspace to
+5e-15. The current chain compares `B c`, the same fitted form expressed in the
+live period frame.
 
 The frame the spec names is the period frame (S6, D3, and the glossary's
 `SimplicialQubit::periodFrame`): the band normalised so a marking group's
@@ -42,7 +43,7 @@ TAU_OUT = 0.1 + 1.3j
 def seeded():
     held = {}
     config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
-                             operator="xx", tau_a=TAU_A, tau_b=TAU_B,
+                             tau_a=TAU_A, tau_b=TAU_B,
                              input_weight=100.0, regge=False, pin_boundary=True,
                              readout="whole", tori=2, output_state=str(TAU_OUT))
     ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))

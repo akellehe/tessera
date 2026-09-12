@@ -24,8 +24,12 @@ against the algebraic two-body target.
 The output state is the degree-1 zero mode of the Laplacian of the **entire**
 W, bulk and boundary edges together. Throughout, each torus keeps
 representing its input state through the zero mode of its **own** Laplacian
-(a residual in the objective), and nothing is pinned. The run is driven and
-displayed by `examples/cobordism/emergence_animation.py`, one implementation.
+(a residual in the objective). Stage 1 preserves the declared boundary
+geometry, and the driver pins its input regions during stage 2 by default so
+the fitted degrees of freedom are in the bulk; `--no-pin-boundary` requests
+free boundary relaxation. Pinned boundary edges remain in the whole's
+Laplacian and all read-outs. The run is driven and displayed by
+`examples/cobordism/emergence_animation.py`, one implementation.
 
 ## 2. Vocabulary (use these words, no others)
 
@@ -77,11 +81,12 @@ R2. Fixed does not mean excluded: "the boundary … is what stays fixed. but
     staying fixed does NOT exclude it from the output state readout of the
     laplacian harmonic over the ENTIRE cobordism (bulk + boundary)."
 
-R3. Boundary cells may change: "pinned cells should change, but we must
-    continue to minimize their residuals (for their representation of their
-    initial/input states via their own laplacian's harmonic) alongside the
-    bulk." Hence: no pinned regions; the block's own-Laplacian residual is in
-    the objective next to the bulk terms.
+R3. **Current fixed-boundary rule (revised by #1022).** The boundary is a
+    declared input: stage 1 may not alter its facet set or geometry, and the
+    driver pins its regions during stage 2 by default. `--no-pin-boundary`
+    retains the earlier free-relaxation experiment. In either mode the block's
+    own-Laplacian residual stays in the objective beside the bulk terms, and
+    the boundary stays in the whole's Laplacian and read-outs.
 
 R4. The bulk is drawn, not templated: "choose a vertex on one of the boundary
     blocks. cone it into 4 vertices on the other. or choose 2 and 3 or 3 and 2.
@@ -118,14 +123,16 @@ S1. **Inputs.** For each input state τ_in ∈ upper half plane, build the qubit
 S2. **Host initialization.** One 3-dimensional `Spacetime` containing both tori
     as 2-simplices (their triangles, edges, vertices) with their lengths and
     zero phases, disjoint vertex id ranges, and no 3-cells yet. Each torus's
-    vertex set is one input block (`seed_inputs`); its input coefficients
-    (1, τ_in), written on its edges through its frame (the holomorphic form's
-    edge values), are its state fiber, attached at degree 1
-    (`attach_input_fiber`) with the **harmonic contour**
-    (`PencilLayer.harmonic_contour` / `band_contour(…, 0)`) set on the fiber,
-    and its frame is attached with it (`set_input_frame`, D3); the metric
-    source is the Whitney pencil. The two-body target χ is set (S5).
-    `use_fiber_residuals(True)`.
+    vertex set is one input block (`seed_inputs`). Its holomorphic form's edge
+    values are the degree-1 state fiber, attached with
+    `attach_input_fiber` and the **harmonic contour**
+    (`PencilLayer.harmonic_contour` / `band_contour(…, 0)`). Its cycles and
+    input coefficients (1, τ_in) are attached as a marking with
+    `set_input_marking`; the engine derives the live period frame from that
+    marking at every read (D3), rather than holding a seed frame. The metric
+    source is the Whitney pencil. The two-body target χ is set (S5), and
+    `use_fiber_residuals(True)` puts the fiber and selected readout residuals
+    in the objective.
 
 S3. **The collar.** The bulk between the two surfaces starts as the minimal
     manifold connecting them: T²×I over the tori's shared triangulation,
@@ -139,21 +146,25 @@ S3. **The collar.** The bulk between the two surfaces starts as the minimal
     exists, so ∂W = T_A ⊔ T_B) holds by construction, and so does the no-chord
     condition: the sub-complex on each block's vertex set is exactly its
     torus. From here everything is emergent: stage 1 refines and surgers the
-    interior, stage 2 relaxes every edge, and `bridge` is one more gated
-    stage-1 move kind — a candidate top cell on existing vertices, k from one
-    block and 4 − k from the other, applied through `SurgicalCone::bridge`,
-    gated by the manifold check, scored by ΔF, offered while a face of a
-    surface block is uncovered (after a cone-out dent, for instance). The
-    per-cell drawing of the bulk from nothing is withdrawn (§6): a cell the
+    interior, stage 2 relaxes every unpinned edge, and `bridge` is one more
+    gated stage-1 move kind — a candidate top cell on existing vertices, k
+    from one block and 4 − k from the other, applied through
+    `SurgicalCone::bridge`, gated by the manifold check, scored by ΔF, offered
+    while a face of a surface block is uncovered (after a cone-out dent, for
+    instance). The per-cell drawing of the bulk from nothing is withdrawn
+    (§6): a cell the
     gate accepts meets the complex along a disk, so such a drawing stays a
     ball and never reaches ∂W = T_A ⊔ T_B. Record the Betti numbers and the
     monodromy (S6) of the seed ([1, 2, 1, 0] and the identity for matched
     markings) and again after every frame: the topology of the synthesized W
-    is emergent from there.
+    is emergent from there. Stage 2 relaxes the bulk edges by default; with
+    `--no-pin-boundary` it relaxes the boundary edges as well.
 
 S4. **Synthesis.** Per frame: ordinary stage 1 (adds, flips, cone-outs,
     cone-ins with fresh vertices, and `bridge` while a surface face is
-    uncovered), then stage 2 on all edges. The objective is the engine's: Regge stationarity plus Γ·r_U,
+    uncovered), then stage 2 on every unpinned edge. The driver pins the input
+    regions by default and `--no-pin-boundary` leaves every edge free. The
+    objective is the engine's: Regge stationarity plus Γ·r_U,
     where r_U under fiber residuals is the sum of each block's own-Laplacian
     fiber residual (weight `inputResidualWeight`), the whole-complex fiber
     residual if a whole-complex target is set, and the two-body residual.
@@ -236,13 +247,22 @@ D3. **Transfer in period frames.** `frameTransferOn` uses identity frames on
     The state fibers stay rank one; the marking is separate data.
 
 D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
-    `--inputs qubit --tau-a --tau-b --grid --J --time`, a node factory in
+    `--inputs qubit --tau-a --tau-b --grid --J --time`
+    (`--pin-boundary` by default, with `--no-pin-boundary` as the opt-out), a node factory in
     `drive` (default = the current host/node), frame channels for the S6
     read-outs, panels for the residual traces, the two τ̂ trajectories on the
     upper half plane and the Bloch hemisphere, the transfer versus χ, and the
     drawn boundary highlighted in the layout. Headless and `--live` paths are
     the same loop. Records go under `~/cobordism-runs/qubit-cobordism/`
     (never `/tmp`).
+
+    The driver accepts the two-torus `transfer` read and the two-torus `whole`
+    read with an explicit `--output-state`. It refuses `bulk` without an
+    explicit interior Choi frame. It also refuses the four-torus `whole` and
+    `operator` reads: concatenating torus period frames gives a direct sum,
+    while a two-qubit target uses tensor-product coordinates; equal rank four
+    does not identify those spaces. The engine's paired 4x4 transfer remains a
+    low-level geometric diagnostic only.
 
 ## 6. Engine facts to rely on (verified 2026-09-05)
 
@@ -268,8 +288,10 @@ D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
 - All fiber and two-body paths require the Whitney pencil metric source.
 - Under fiber residuals the engine skips the hole-forcing near-kernel term and
   demands no register count.
-- Pinned regions only zero stage-2 descent on edges inside one region; they
-  are not used in this experiment (R3).
+- Pinned regions only zero stage-2 descent on edges inside one region; they do
+  not remove those edges from the whole's Laplacian or its read-outs. The
+  driver registers each input torus as a pinned region by default; the engine
+  remains capable of the free-boundary run selected by `--no-pin-boundary`.
 - Stage 1 candidates: add, remove, flip, iflip, cone_out (random top cell),
   cone_in (fresh apex on a boundary face); the gate is the manifold check;
   Pachner moves preserve Betti numbers; a cone-out raises b₂, a cone-in
@@ -290,19 +312,23 @@ D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
 - The qubit read uses the spec's cotangent operator on the torus; the engine
   uses the Whitney pencil. On flat tori both harmonic spaces are the constant
   forms exactly; on a deformed torus they differ at mesh order. Report both.
-- Analytic gradients exist for the fiber and two-body residuals
-  (`BandDerivative`); no finite differences.
+- Analytic gradients exist for the fiber residuals and the transfer and
+  whole-harmonic two-body readings (`BandDerivative`). Bulk and paired-operator
+  readings have no analytic gradient; when either is selected, stage 2 uses
+  the numerical ascent of the complete `rU` objective.
 - Frames (D3, T3): a torus's period frame is `SimplicialQubit::periodFrame`
   (`harmonicBasis` times the inverse period matrix over the marking in
   force, real, n_E × 2, periods (1, 0) and (0, 1); the holomorphic form is
-  P_A·F·(1, τ)ᵀ). A block's frame is held on the block
-  (`BoundaryBlock::frame`, a `BlockFrame`), set by `setInputFrame` with the
-  cells of its attached fiber in the attachment order and held constant by
-  the engine (re-attaching the fiber clears it). With both input blocks
-  framed, `readTwoBody`, `twoBodyResidual` and the two-body gradient read
-  T = (Z_A^∨)ᵀ Ã_AB Z_B in the frames (`TwoBodyRead::inFrames`; the gradient
-  differentiates the pencil operator only); with neither, in identity frames
-  on the cells, bit-identical to before; one frame is a contract error.
+  P_A·F·(1, τ)ᵀ). The driver stores a `BlockMarking`; `deriveFrame` recomputes
+  its `BlockFrame` from the block's live own kernel and marking at every read.
+  `setInputFrame` remains the low-level alternative for an explicitly supplied
+  frame, which is held until re-attaching the fiber clears it. With both input
+  blocks framed by either route, `readTwoBody`, `twoBodyResidual` and the
+  transfer gradient read T = (Z_A^∨)ᵀ Ã_AB Z_B in those frames
+  (`TwoBodyRead::inFrames`); the transfer gradient selects the current frames
+  at the evaluation point and differentiates the pencil operator. With neither
+  block framed, identity frames on the cells are bit-identical to before; a
+  partially framed pair is a contract error.
   `setTwoBodyTarget` checks χ's shape against the frames' ranks when both
   are present, the cell counts otherwise, once two fibers are attached. The
   dual-frame contract found in the code: `PencilSchur::transfer` pairs dual
@@ -330,11 +356,12 @@ D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
   descended next to the bulk term (R3, S4). The level a block residual settles
   at is the balance of `inputResidualWeight` against the Regge pull on the
   tori's edges, roughly 1/weight² (measured on the 3×3 collar after 40
-  stage-2 steps on the real locus: 2e-9 at weight 1e6 with the Regge term
+  stage-2 steps in an explicit real-locus probe: 2e-9 at weight 1e6 with the Regge term
   123 → 84 and the bulk's edges moved; 1e-4–7e-4 at 1e3; 2e-2–4e-2 at
   weight 1, where the Regge term also drives torus edges timelike; T2's
-  test); report the weight with every residual. The tori are real and
-  spacelike, so the node is built with `realSquaredLengthsOnly`.
+  test); report the weight with every residual. The production driver uses the
+  complex locus (`realSquaredLengthsOnly = false`): the torus construction
+  carries complex lengths and the full complex gradient must remain available.
 - GIL: `run_stage1`, `run_stage2`, `two_body_residual`, `read_two_body`,
   `whole_complex_fiber_residual`, `read_whole_complex_fiber` release it;
   `build_step`, `attach_input_fiber`, `read_output_fiber` do not.
@@ -356,8 +383,10 @@ D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
 
 ## 7. Do not
 
-- Do not pin regions, freeze the tori, or exclude boundary edges from the
-  whole's Laplacian.
+- Do not let stage 1 rewrite the declared boundary geometry, and do not exclude
+  boundary edges from the whole's Laplacian. The driver pins the input regions
+  during stage 2 by default; `--no-pin-boundary` is the explicit free-boundary
+  experiment.
 - No template beyond the collar between the given surfaces: the collar is
   the minimal manifold connecting the boundaries, and nothing more is
   templated; do not add a tube/genus move; do not glue external complexes.
@@ -377,11 +406,13 @@ C1. The collar seed is a manifold with ∂W = T_A ⊔ T_B, Betti numbers
     [1, 2, 1, 0], and monodromy the identity for matched markings; a bridge
     rolls back bit-exactly (a round trip leaves lengths and cells identical).
 
-C2. Each block's residual (the whole's zero mode against its input
-    coefficients in the block's own frame) is driven from its collar value
-    (3.1e-3 and 9.3e-3 measured on T4) toward its floor by synthesis, and the
-    coefficients of the whole's zero mode in each frame are reported every
-    frame next to the inputs.
+C2. Each block's residual is the projective leak of its input state against
+    the holomorphic zero mode of that block's **own** surface Laplacian. It is
+    at rounding on a seeded flat torus, remains there while the input boundary
+    is pinned, rises under a controlled boundary-metric perturbation, and is
+    driven back toward its floor when that boundary is allowed to relax. The
+    whole-complex coefficients and optional leak are separate readouts,
+    reported next to the inputs rather than substituted for this residual.
 
 C3. With trivial monodromy the monodromy read is the identity; with
     monodromy M, the periods transform by M. The transfer in period

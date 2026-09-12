@@ -37,7 +37,7 @@ TAU_A, TAU_B, GRID = 0.3 + 1.1j, -0.2 + 0.8j, 3
 def node():
     held = {}
     config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
-                             operator="xx", tau_a=TAU_A, tau_b=TAU_B,
+                             tau_a=TAU_A, tau_b=TAU_B,
                              input_weight=100.0, regge=False, pin_boundary=True,
                              readout="whole", tori=2, output_state="0.1+1.3j")
     ea.drive(config, progress=False, on_node=lambda n: held.update(node=n))

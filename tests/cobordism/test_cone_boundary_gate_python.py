@@ -10,10 +10,11 @@ gates it: with False a ``cone_out``, ``cone_in`` or ``cone_in_timelike``
 candidate whose complex has a boundary facet the complex before the move
 lacked is refused, beside the manifold gate and on the same footing. The engine's
 default is False, and the gate applies only where a boundary is DECLARED
-fixed (``has_fixed_boundary``: a surface input or output block, or a pinned
-region), so a free emergent build -- a proton host grown from a simplex
-seed, a CDT sweep -- is unrestricted either way and behaves exactly as it
-did. ``emergence_animation.py`` records the choice in its run document.
+fixed (``has_fixed_boundary``: a surface input or output block). A pinned
+region holds geometry but does not declare a topological boundary, so a free
+emergent build -- a proton host grown from a simplex seed, a CDT sweep -- is
+unrestricted either way and behaves exactly as it did.
+``emergence_animation.py`` records the qubit-mode choice in its run document.
 """
 import os
 import sys
@@ -137,13 +138,15 @@ def test_the_driver_disallows_growth_unless_asked():
     assert parser.parse_args(["run", "--extend-boundary"]).extend_boundary is True
     assert ea.DECLARED_EXTEND_BOUNDARY is False
     assert ea.build_config()["extend_boundary"] is False
-    assert ea.build_config(extend_boundary=True)["extend_boundary"] is True
+    with pytest.raises(ValueError,
+                       match=r"neutral input mode does not use --extend-boundary"):
+        ea.build_config(extend_boundary=True)
+    assert ea.build_config(inputs=ea.InputMode.QUBIT,
+                           extend_boundary=True)["extend_boundary"] is True
 
 
 def test_the_drive_applies_the_config_to_its_node(monkeypatch):
-    """`drive` sets the knob on whatever its factory returned, in one place
-    for both modes. The node is not otherwise reachable from a caller, so the
-    factory is intercepted to hold it."""
+    """`drive` applies the qubit-only choice to the qubit factory's node."""
     held = []
     original = ea.MC
 
@@ -155,6 +158,11 @@ def test_the_drive_applies_the_config_to_its_node(monkeypatch):
     monkeypatch.setattr(ea, "MC", Recording)
     for requested in (False, True):
         held.clear()
-        ea.drive(ea.build_config(size=4, steps=0, stage1_iters=1, stage2_iters=1,
+        ea.drive(ea.build_config(inputs=ea.InputMode.QUBIT, steps=0,
+                                 stage1_iters=1, stage2_iters=1,
                                  extend_boundary=requested), progress=False)
         assert held == [requested], held
+    held.clear()
+    ea.drive(ea.build_config(size=4, steps=0, stage1_iters=1,
+                             stage2_iters=1), progress=False)
+    assert held == [], "neutral M0 pinning must not arm the topology gate"
