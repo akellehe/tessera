@@ -87,7 +87,7 @@ def make_sigma_grid(max_sigma, n_sigma, sigma_min=1.0):
 # ---------------------------------------------------------------------------
 
 def _worker(cfg_id, n_simplices, n_therm, sweeps_between,
-            n_walks, sigmas, sweep_cb=None, phase_cb=None):
+            n_walks, sigmas, sweep_cb=None, phase_cb=None, seed=None):
     """Run one independent configuration: build spacetime, thermalize,
     then read the dual-graph return probability P(sigma) from C++.
 
@@ -110,9 +110,17 @@ def _worker(cfg_id, n_simplices, n_therm, sweeps_between,
     # build at T=80 slabs (paper value) and let the Metropolis chain grow
     # the volume sideways to target via (2,8)/(8,2) moves.
     max_build = 80 * 20  # 80 time slabs x 20 simplices/slab in d=4
+    if seed is not None:
+        # Both generators decide the outcome: the spacetime's drives the build,
+        # the simulation's drives the sweeps. Offset by configuration so the
+        # configurations stay independent, which is what averaging over them
+        # assumes.
+        st.setSeed(seed + cfg_id)
     st.build(min(n_simplices, max_build))
     target = st.getN41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
+    if seed is not None:
+        cdt.setSeed(seed + cfg_id)
 
     _ph("tuning")
     cdt.tune(progress=make_tune_cb(phase_cb, cfg_id))
@@ -198,6 +206,11 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker processes (default: min(cpus, 8))")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed both generators that decide the outcome, "
+                             "making the run reproducible across processes; "
+                             "each configuration is offset so they stay "
+                             "independent")
     parser.add_argument("--save", type=str, default=None,
                         help="Path to write the figure to; without it the "
                              "figure is displayed interactively")
@@ -232,7 +245,7 @@ def main():
             pool.submit(
                 _worker, cfg, args.n_simplices, args.n_therm,
                 args.sweeps_between, args.n_walks, sigmas,
-                progress.on_sweep, progress.on_phase
+                progress.on_sweep, progress.on_phase, args.seed
             ): cfg
             for cfg in range(args.n_configs)
         }

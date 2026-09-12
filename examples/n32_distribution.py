@@ -49,7 +49,7 @@ from tessera.utils.progress import ProgressDisplay, make_tune_cb
 
 
 def _volume_worker(vol_id, target_n41, n_therm, n_meas, meas_interval,
-                   sweep_cb=None, phase_cb=None):
+                   sweep_cb=None, phase_cb=None, seed=None):
     """Run one target-volume simulation: build, thermalize, collect N32/N41.
 
     Each volume is a fully independent simulation.  The GIL is released
@@ -64,9 +64,16 @@ def _volume_worker(vol_id, target_n41, n_therm, n_meas, meas_interval,
     metric = tessera.Metric(True, sig)
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
+    if seed is not None:
+        # Both generators decide the outcome: the spacetime's drives the build,
+        # the simulation's drives the sweeps. Offset by target volume so the
+        # volumes are independent chains rather than the same one repeated.
+        st.setSeed(seed + vol_id)
     st.build(min(n_build, max_build))
     target = st.getN41() if n_build <= max_build else target_n41
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
+    if seed is not None:
+        cdt.setSeed(seed + vol_id)
 
     _ph("tuning")
     cdt.tune(progress=make_tune_cb(phase_cb, vol_id))
@@ -104,6 +111,11 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker threads (default: min(cpus, 8))")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed both generators that decide the outcome, "
+                             "making the run reproducible across processes; "
+                             "each target volume is offset so they are "
+                             "independent chains")
     parser.add_argument("--save", type=str, default=None)
     args = parser.parse_args()
 
@@ -138,7 +150,7 @@ def main():
         futures = {
             pool.submit(_volume_worker, vid, tv, args.n_therm,
                         args.n_meas, args.meas_interval,
-                        progress.on_sweep, progress.on_phase):
+                        progress.on_sweep, progress.on_phase, args.seed):
             (vid, tv)
             for vid, tv in enumerate(target_n41_values)
         }

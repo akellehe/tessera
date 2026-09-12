@@ -71,7 +71,7 @@ from tessera.utils.progress import ProgressDisplay, SingleTaskProgress, make_tun
 
 
 def _collect_worker(worker_id, n_simplices, n_therm, n_meas, interval,
-                    sweep_cb=None, phase_cb=None):
+                    sweep_cb=None, phase_cb=None, seed=None):
     """Run one independent Markov chain and collect volume profiles.
 
     Each worker builds, thermalizes, and measures its own spacetime.
@@ -86,9 +86,16 @@ def _collect_worker(worker_id, n_simplices, n_therm, n_meas, interval,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     max_build = 80 * 20  # cap at ~80 time slices (20 simplices/slab in 4D)
+    if seed is not None:
+        # Both generators decide the outcome: the spacetime's drives the build,
+        # the simulation's drives the sweeps. Offset by worker so the chains
+        # stay independent, which is what decorrelated samples require.
+        st.setSeed(seed + worker_id)
     st.build(min(n_simplices, max_build))
     target = st.getN41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
+    if seed is not None:
+        cdt.setSeed(seed + worker_id)
 
     _ph("tuning")
     cdt.tune(progress=make_tune_cb(phase_cb, worker_id))
@@ -121,6 +128,9 @@ def main():
                         default=min(os.cpu_count() or 1, 8),
                         help="Independent Markov chains in parallel "
                              "(default: min(cpus, 8))")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed both generators that decide the outcome, "
+                             "making the run reproducible across processes")
     parser.add_argument("--save", type=str, default=None)
     args = parser.parse_args()
 
@@ -168,7 +178,7 @@ def main():
         for w, n in enumerate(worker_meas):
             f = pool.submit(_collect_worker, w, args.n_simplices,
                             args.n_therm, n, args.meas_interval,
-                            progress.on_sweep, progress.on_phase)
+                            progress.on_sweep, progress.on_phase, args.seed)
             futures[f] = (w, n)
 
         for f in as_completed(futures):

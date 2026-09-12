@@ -44,7 +44,7 @@ from tessera.utils.progress import ProgressDisplay, make_tune_cb
 
 
 def _profiles_worker(run_id, n_simplices, n_therm, n_meas, meas_interval,
-                     sweep_cb=None, phase_cb=None):
+                     sweep_cb=None, phase_cb=None, seed=None):
     """Run one system-size simulation and collect volume profiles.
 
     Each size is independent.  The GIL is released during sweep(),
@@ -58,9 +58,16 @@ def _profiles_worker(run_id, n_simplices, n_therm, n_meas, meas_interval,
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     max_build = 80 * 20  # cap at ~80 time slices (20 simplices/slab in 4D)
+    if seed is not None:
+        # Both generators decide the outcome: the spacetime's drives the build,
+        # the simulation's drives the sweeps. Offset by system size so the
+        # sizes are independent chains rather than one chain repeated.
+        st.setSeed(seed + run_id)
     st.build(min(n_simplices, max_build))
     target = st.getN41() if n_simplices <= max_build else n_simplices // 2
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
+    if seed is not None:
+        cdt.setSeed(seed + run_id)
 
     _ph("tuning")
     cdt.tune(progress=make_tune_cb(phase_cb, run_id))
@@ -113,6 +120,9 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker threads (default: min(cpus, 8))")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed both generators that decide the outcome, "
+                             "making the run reproducible across processes")
     parser.add_argument("--save", type=str, default=None)
     args = parser.parse_args()
 
@@ -148,7 +158,7 @@ def main():
         futures = {
             pool.submit(_profiles_worker, idx, n4, args.n_therm,
                         args.n_meas, args.meas_interval,
-                        progress.on_sweep, progress.on_phase):
+                        progress.on_sweep, progress.on_phase, args.seed):
             (idx, n4)
             for idx, n4 in enumerate(all_runs)
         }
