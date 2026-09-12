@@ -29,6 +29,19 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "examples" / "cobordism"))
 
 import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
+
+DRIVERS = (
+    pytest.param(ea, id="emergence"),
+    pytest.param(qa, id="qubit"),
+)
+
+
+def _config(driver):
+    options = {"steps": 1}
+    if driver is ea:
+        options["size"] = 4
+    return driver.build_config(**options)
 
 
 @pytest.fixture(scope="module")
@@ -55,7 +68,8 @@ def test_it_is_not_a_core_dependency(project):
                    for name in project["optional-dependencies"]["examples"])
 
 
-def test_the_refusal_names_the_extra(monkeypatch):
+@pytest.mark.parametrize("driver", DRIVERS)
+def test_the_refusal_names_the_extra(monkeypatch, driver):
     """Whoever hits it is told what to install, not left to work it out.
 
     Driven through `drive_live` itself rather than a helper, so the message
@@ -64,25 +78,27 @@ def test_the_refusal_names_the_extra(monkeypatch):
     import matplotlib
     monkeypatch.setattr(matplotlib, "get_backend", lambda: "agg")
     with pytest.raises(RuntimeError) as caught:
-        ea.drive_live(ea.build_config(steps=1, size=4), progress=False)
+        driver.drive_live(_config(driver), progress=False)
     message = str(caught.value)
     assert "[live]" in message, message
     assert "agg" in message
 
 
-def test_webagg_is_refused_before_its_blocking_event_loop(monkeypatch):
+@pytest.mark.parametrize("driver", DRIVERS)
+def test_webagg_is_refused_before_its_blocking_event_loop(monkeypatch, driver):
     """Under WebAgg, pyplot.pause starts a server loop and never returns."""
     import matplotlib
     monkeypatch.setattr(matplotlib, "get_backend", lambda: "WebAgg")
     monkeypatch.setattr(
-        ea, "drive",
+        driver, "drive",
         lambda *_args, **_kwargs: pytest.fail("worker started under WebAgg"))
     with pytest.raises(RuntimeError, match="blocking server loop"):
-        ea.drive_live(ea.build_config(steps=1, size=4), progress=False)
+        driver.drive_live(_config(driver), progress=False)
 
 
-def test_the_flag_help_names_the_extra():
-    parser = ea.build_parser()
+@pytest.mark.parametrize("driver", DRIVERS)
+def test_the_flag_help_names_the_extra(driver):
+    parser = driver.build_parser()
     live = [action for action in parser._subparsers._group_actions[0]
             .choices["run"]._actions if "--live" in action.option_strings]
     assert live and "[live]" in live[0].help

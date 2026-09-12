@@ -44,12 +44,15 @@ recursive_baryon_campaign*.json
 recursive_baryon_sidecar*.npz
 recursive_baryon_overlay*.png
 
-# #831 emergence animation artifacts. `run` defaults --out to
-# emergence_animation.gif, so a bare invocation writes one into the working
-# directory; this branch committed one by accident before the entry existed.
+# #831/#1072 cobordism animation artifacts. Each entrypoint's bare `run`
+# invocation writes its default output into the working directory.
 emergence_animation*.gif
 emergence_animation*.mp4
 emergence_animation*.png
 emergence_animation*.json
+qubit_animation*.gif
+qubit_animation*.mp4
+qubit_animation*.png
+qubit_animation*.json
 
 run.sh

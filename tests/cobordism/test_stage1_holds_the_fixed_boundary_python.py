@@ -35,7 +35,7 @@ rule. It cannot flip a disposition -- it cannot cross the singular l^2 = 0 --
 but it does reshape a boundary, and far enough that the modulus moves. Holding
 it is not always what a caller wants, though: relaxing a boundary toward its
 state is exactly what the input residual weight is for. So the engine still
-allows it and ``emergence_animation.py`` pins by default, with
+allows it and ``qubit_animation.py`` pins by default, with
 ``--no-pin-boundary`` to ask for the old behaviour.
 """
 import os
@@ -57,7 +57,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 MC = cob.MultiCobordism
 HL = cob.HodgeLaplacian
@@ -185,10 +185,9 @@ def test_the_drive_holds_the_input_tori_by_default():
     for, and what `own_state_residual` measures. A run that wants it asks with
     --no-pin-boundary.
     """
-    assert ea.DECLARED_PIN_BOUNDARY is True
-    assert ea.build_config()["pin_boundary"] is True
-    assert ea.build_config(inputs=ea.InputMode.QUBIT,
-                           pin_boundary=False)["pin_boundary"] is False
+    assert qa.DECLARED_PIN_BOUNDARY is True
+    assert qa.build_config()["pin_boundary"] is True
+    assert qa.build_config(pin_boundary=False)["pin_boundary"] is False
 
 
 def test_the_engine_still_lets_stage_two_move_a_boundary(whitney_default):

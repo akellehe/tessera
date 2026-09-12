@@ -28,8 +28,12 @@ representing its input state through the zero mode of its **own** Laplacian
 geometry, and the driver pins its input regions during stage 2 by default so
 the fitted degrees of freedom are in the bulk; `--no-pin-boundary` requests
 free boundary relaxation. Pinned boundary edges remain in the whole's
-Laplacian and all read-outs. The run is driven and displayed by
-`examples/cobordism/emergence_animation.py`, one implementation.
+Laplacian and all read-outs. The canonical qubit entrypoint is
+`examples/cobordism/qubit_animation.py`. It owns the qubit construction,
+configuration, read-outs, and panels while reusing the stage loop, live and
+headless rendering, output handling, and other mode-neutral runtime from
+`examples/cobordism/emergence_animation.py`. There is one shared runtime, not
+two implementations of the drive.
 
 ## 2. Vocabulary (use these words, no others)
 
@@ -94,8 +98,11 @@ R4. The bulk is drawn, not templated: "choose a vertex on one of the boundary
     (For tetrahedra the splits are 1+3, 2+2, 3+1.)
 
 R5. Do not split implementations: reuse the fiber machinery ("why do we need
-    to replace the fiber machinery?"), reuse MultiCobordism, reuse
-    `emergence_animation.py` ("run this as an animation in the same way").
+    to replace the fiber machinery?"), reuse MultiCobordism, and run the qubit
+    example through the shared animation runtime from
+    `emergence_animation.py` ("run this as an animation in the same way"). The
+    dedicated `qubit_animation.py` entrypoint separates qubit-specific policy;
+    it does not copy the drive, live worker, or renderer.
 
 R6. States are zero modes, not cochains with hand-made coefficients ("it
     sounds like you might be slipping into using cochains (with extra
@@ -246,15 +253,24 @@ D3. **Transfer in period frames.** `frameTransferOn` uses identity frames on
     transfer is read in those frames (2×2), which is what χ is written in.
     The state fibers stay rank one; the marking is separate data.
 
-D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
-    `--inputs qubit --tau-a --tau-b --grid --J --time`
-    (`--pin-boundary` by default, with `--no-pin-boundary` as the opt-out), a node factory in
-    `drive` (default = the current host/node), frame channels for the S6
-    read-outs, panels for the residual traces, the two τ̂ trajectories on the
-    upper half plane and the Bloch hemisphere, the transfer versus χ, and the
-    drawn boundary highlighted in the layout. Headless and `--live` paths are
-    the same loop. Records go under `~/cobordism-runs/qubit-cobordism/`
-    (never `/tmp`).
+D4. **Animation.** `examples/cobordism/qubit_animation.py` is the canonical
+    qubit entrypoint:
+    `qubit_animation.py run --tau-a --tau-b --grid --J --time`. It has no
+    `--inputs qubit` mode switch. It owns the qubit node factory and config,
+    uses `--pin-boundary` by default with `--no-pin-boundary` as the opt-out,
+    and supplies frame channels for the S6 read-outs, panels for the residual
+    traces, the two τ̂ trajectories on the upper half plane and the Bloch
+    hemisphere, the transfer versus χ, and the drawn boundary highlighted in
+    the layout. It reuses the mode-neutral drive, live worker, renderer, and
+    output plumbing from `emergence_animation.py`, so headless and `--live`
+    paths remain the same loop. Records go under
+    `~/cobordism-runs/qubit-cobordism/` (never `/tmp`).
+
+    The run document's `config` object is mode-specific after #1072: qubit
+    records contain common scheduling keys and qubit keys, but not the inert
+    neutral `size`, `host_seed`, `resolution`, or `edge_disposition` keys.
+    Neutral records likewise omit inert qubit keys. Frame measurements, the
+    qubit `inputs` object, and geometry schema 1 are unchanged.
 
     The driver accepts the two-torus `transfer` read and the two-torus `whole`
     read with an explicit `--output-state`. It refuses `bulk` without an
@@ -395,7 +411,10 @@ D4. **Animation.** `emergence_animation.py` gains a qubit input mode:
 - Do not define the output state by restriction; do not read states as
   period vectors in the relaxation.
 - Do not leave a fiber on the default band-1 contour.
-- Do not fork `emergence_animation.py`; parametrize it.
+- Do not copy or fork the shared runtime in `emergence_animation.py`.
+  Keep qubit-specific construction, configuration, reads, panels, and CLI in
+  `qubit_animation.py`, and reuse the shared drive, live, rendering, and output
+  machinery.
 - Do not replace or bypass the fiber residual machinery, MultiCobordism's
   stages, or the two-body read.
 - Do not widen core classes for one consumer beyond D1–D4; extend, never wrap.
@@ -424,9 +443,10 @@ C3. With trivial monodromy the monodromy read is the identity; with
 C4. The two-body leak against χ decreases under synthesis; its floor and the
     Schmidt spectrum are recorded next to the χ of the algebra.
 
-C5. `emergence_animation.py --inputs qubit` runs headless and `--live` with
-    every channel present or `Absent(reason)`, and the existing run mode is
-    bit-identical to before.
+C5. `qubit_animation.py run` runs headless and `--live` with every channel
+    present or `Absent(reason)`. Both paths use the shared runtime from
+    `emergence_animation.py`. Its neutral drive behavior and frame/geometry
+    schemas remain unchanged; D4 records the intentional config-key split.
 
 ## 9. Existing code to start from
 
@@ -434,8 +454,11 @@ C5. `emergence_animation.py --inputs qubit` runs headless and `--live` with
   fibers on frames, `set_two_body_target`, `read_two_body`, residual traces.
 - `examples/cobordism/choi_encoding.py`: two prepared boundary components as
   inputs, the whole complex as output (its prism host is what R4 replaces).
-- `examples/cobordism/emergence_animation.py`: `drive`, `EmergenceFrame`,
-  `_PANELS`, `drive_live`, `render`.
+- `examples/cobordism/qubit_animation.py`: the qubit node/config factory,
+  qubit frame channels and panels, and the canonical qubit CLI.
+- `examples/cobordism/emergence_animation.py`: the neutral emergence example
+  and the shared drive, live, rendering, layout, output, and serialization
+  infrastructure used by the qubit entrypoint.
 - `include/cobordism/MultiCobordism.h`: `seedInputs`, `attachInputFiber`,
   `setWholeComplexFiberTarget`, `setTwoBodyTarget`, `readTwoBody`,
   `useFiberResiduals`, `runStage1`, `runStage2`, `fiberModeAscent`,
@@ -467,7 +490,14 @@ T2. (#961, merged: the block surface and its frame) and T2-bis (D2 as
     synthesis, coefficients reported.
 T3. (#962) Transfer in period frames (D3) with tests: identity on a trivially drawn
     collar, χ comparison shape 2×2.
-T4. (#963) Animation qubit mode (D4) with tests: existing mode unchanged; qubit mode
-    produces every channel headless.
+T4. (#963, historical implementation) Animation qubit mode (D4) with tests:
+    the existing mode stayed unchanged and the qubit mode produced every
+    channel headless. This originally landed as `--inputs qubit` in
+    `emergence_animation.py`.
 T5. (#964) The run: records, findings note `docs/design/qubit_cobordism_findings.md`,
     C1–C5 answered with numbers.
+T6. (#1072) Separate the canonical qubit entrypoint into
+    `examples/cobordism/qubit_animation.py` while continuing to use the shared
+    runtime from the neutral `emergence_animation.py`; keep the old
+    `--inputs qubit` spelling as a thin forwarding path without changing the
+    experiment.

@@ -3,6 +3,7 @@
 """Command-line, configuration, cancellation, and output regressions."""
 
 import os
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.join(
     "examples", "cobordism"))
 
 import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 
 def test_combinatorial_names_are_canonical_with_legacy_replay_aliases():
@@ -60,23 +62,27 @@ def test_canonical_and_hidden_legacy_cli_flags_reach_the_same_config(monkeypatch
 @pytest.mark.parametrize("overrides,match", [
     ({"host_seed": (1 << 64) - 1, "size": 2}, "refinement attempts"),
     ({"seed": 1 << 64}, "unsigned 64-bit"),
-    ({"coupling": 1e308, "time": 1e308,
-      "inputs": ea.InputMode.QUBIT}, "J times time"),
     ({"resolution": 0.0}, "positive finite"),
-    ({"output_state": "inf",
-      "inputs": ea.InputMode.QUBIT,
-      "readout": "whole"}, "must be finite"),
 ])
 def test_invalid_values_fail_before_the_engine(overrides, match):
     with pytest.raises(ValueError, match=match):
         ea.build_config(**overrides)
 
 
+@pytest.mark.parametrize("overrides,match", [
+    ({"coupling": 1e308, "time": 1e308}, "J times time"),
+    ({"output_state": "inf", "readout": "whole"}, "must be finite"),
+])
+def test_qubit_invalid_values_fail_before_the_engine(overrides, match):
+    with pytest.raises(ValueError, match=match):
+        qa.build_config(**overrides)
+
+
 def test_extreme_finite_output_state_is_normalized_without_overflow():
-    config = ea.build_config(
-        inputs=ea.InputMode.QUBIT, readout="whole",
+    config = qa.build_config(
+        readout="whole",
         output_state="1.7e308+1.7e308j", steps=0, regge=False)
-    node, _inputs = ea.build_qubit_node(config)
+    node, _inputs = qa.build_qubit_node(config)
     target = np.asarray(node.output_state_target)
     assert np.all(np.isfinite(target))
     assert np.linalg.norm(target) == pytest.approx(1.0)
@@ -85,11 +91,120 @@ def test_extreme_finite_output_state_is_normalized_without_overflow():
 
 @pytest.mark.parametrize("name", [
     "stage1_iters", "stage2_iters", "candidate_moves",
-    "combinatorial_depth", "combinatorial_length", "grid", "layers",
+    "combinatorial_depth", "combinatorial_length",
 ])
 def test_engine_integer_arguments_are_bounded_before_pybind(name):
     with pytest.raises(ValueError, match="engine's integer API"):
         ea.build_config(**{name: 1 << 31})
+
+
+@pytest.mark.parametrize("name", ["grid", "layers"])
+def test_qubit_integer_arguments_are_bounded_before_pybind(name):
+    with pytest.raises(ValueError, match="engine's integer API"):
+        qa.build_config(**{name: 1 << 31})
+
+
+def test_each_config_contains_only_its_mode_options():
+    qubit_keys = {
+        "readout", "tori", "collar_twist", "output_state", "layers",
+        "tau_a", "tau_b", "grid", "coupling", "time", "input_weight",
+        "regge", "extend_boundary", "score_leak", "states", "operator",
+        "pin_boundary",
+    }
+    assert qubit_keys.isdisjoint(ea.build_config())
+    qubit = qa.build_config()
+    assert {"size", "host_seed", "resolution", "edge_disposition"}.isdisjoint(
+        qubit)
+    assert qubit["inputs"] == "qubit"
+
+
+@pytest.mark.parametrize("selector", [
+    pytest.param(["--inputs", "qubit"], id="separate"),
+    pytest.param(["--inputs=qubit"], id="equals"),
+])
+def test_legacy_qubit_selector_delegates_without_forwarding_it(
+        monkeypatch, selector):
+    received = []
+    monkeypatch.setattr(
+        qa, "main", lambda arguments: received.append(arguments) or 23)
+    arguments = ["run", *selector, "--steps", "0", "--out", ""]
+    assert ea.main(arguments) == 23
+    assert received == [["run", "--steps", "0", "--out", ""]]
+
+
+def test_legacy_qubit_selector_preserves_its_output_default(monkeypatch):
+    received = []
+    monkeypatch.setattr(
+        qa, "main", lambda arguments: received.append(arguments) or 23)
+    assert ea.main(["run", "--inputs", "qubit", "--steps", "0"]) == 23
+    assert received == [[
+        "run", "--steps", "0", "--out", "emergence_animation.gif",
+    ]]
+
+
+def test_legacy_neutral_selector_stays_on_the_neutral_driver(monkeypatch):
+    configs = []
+    monkeypatch.setattr(
+        qa, "main", lambda _arguments: pytest.fail("delegated neutral run"))
+    monkeypatch.setattr(
+        ea, "_run_from_args",
+        lambda _args, config, *_implementations:
+        configs.append(config) or 29)
+    assert ea.main([
+        "run", "--inputs", "neutral", "--size", "4", "--steps", "0",
+        "--out", "",
+    ]) == 29
+    assert len(configs) == 1
+    assert configs[0]["inputs"] == "neutral"
+    assert configs[0]["size"] == 4
+
+
+def test_qubit_implementation_is_owned_only_by_the_qubit_module():
+    shared_constants = {
+        "DECLARED_ANALYSIS_DEGREES", "DECLARED_CANDIDATE_MOVES",
+        "DECLARED_COMBINATORIAL_BREADTH", "DECLARED_COMBINATORIAL_DEPTH",
+        "DECLARED_COMBINATORIAL_LENGTH", "DECLARED_HODGE_DEGREES",
+        "DECLARED_PANEL_GRID", "DECLARED_PATIENCE",
+        "DECLARED_REGISTER_DEGREES", "DECLARED_SEED",
+        "DECLARED_STAGE1_ITERS", "DECLARED_STAGE2_ITERS",
+        "DECLARED_STEPS", "DECLARED_SURGICAL_DEPTH", "DECLARED_TOLERANCE",
+    }
+    qubit_constants = {
+        name for name in vars(qa) if name.startswith("DECLARED_")
+    } - shared_constants
+    qubit_names = {
+        "QubitFrame", "QubitInputs", "QUBIT_READOUT_NOTES",
+        "build_qubit_node", "flip_flop_evolution", "gate_image",
+        "two_qubit_flip_flop", "_QUBIT_PANELS", "_QUBIT_PANEL_ORDER",
+        "_panel_bloch", "_panel_moduli", "_panel_residuals",
+        "_panel_topology", "_panel_transfer",
+    }
+    assert qa.build_qubit_node.__module__ == "qubit_animation"
+    assert qubit_constants and qubit_names <= vars(qa).keys()
+    assert (qubit_constants | qubit_names).isdisjoint(vars(ea))
+
+
+def test_qubit_module_can_be_imported_first_in_a_fresh_process(tmp_path):
+    environment = os.environ.copy()
+    example_path = os.path.dirname(qa.__file__)
+    existing = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = (
+        example_path if not existing else example_path + os.pathsep + existing)
+    subprocess.run(
+        [sys.executable, "-c",
+         "import qubit_animation as qa; import emergence_animation as ea; "
+         "assert qa.ea is ea; "
+         "assert qa.QubitFrame.__mro__[1] is ea.AnimationFrame"],
+        cwd=tmp_path, env=environment, check=True, capture_output=True,
+        text=True)
+
+
+def test_legacy_direct_script_path_loads_the_qubit_cli(tmp_path):
+    completed = subprocess.run(
+        [sys.executable, ea.__file__, "run", "--inputs", "qubit", "--help"],
+        cwd=tmp_path, check=True, capture_output=True, text=True)
+    assert "--tau-a" in completed.stdout
+    assert "--grid" in completed.stdout
 
 
 def test_cooperative_stop_has_an_unambiguous_terminator():

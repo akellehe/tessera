@@ -31,13 +31,16 @@ import sys
 
 import numpy as np
 import pytest
+from tessera import cobordism as cob
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
+
+MC = cob.MultiCobordism
 
 #: Extra pairs beyond the seed pair. Chosen apart in the upper half plane so
 #: no two cases are nearly the same constraint.
@@ -46,20 +49,20 @@ TAU_OUT = 0.1 + 1.3j
 
 
 def built(states=()):
-    config = ea.build_config(
-        inputs="qubit", operator="cnot", score_leak=False, pin_boundary=True,
+    config = qa.build_config(
+        operator="cnot", score_leak=False, pin_boundary=True,
         input_weight=100.0, grid=3, steps=0, tau_a=0.3 + 1.1j,
         tau_b=-0.2 + 0.8j, regge=False, seed=5, states=list(states))
-    node, _inputs = ea.build_qubit_node(config)
+    node, _inputs = qa.build_qubit_node(config)
     return node
 
 
 def whole_built():
-    config = ea.build_config(
-        inputs="qubit", readout="whole", output_state=str(TAU_OUT),
+    config = qa.build_config(
+        readout="whole", output_state=str(TAU_OUT),
         pin_boundary=True, input_weight=100.0, grid=3, steps=0,
         tau_a=0.3 + 1.1j, tau_b=-0.2 + 0.8j, regge=False)
-    node, _inputs = ea.build_qubit_node(config)
+    node, _inputs = qa.build_qubit_node(config)
     return node
 
 
@@ -155,13 +158,13 @@ def test_duplicate_case_edges_are_refused_before_they_can_restore_wrong():
 
 def test_case_shape_validation_does_not_depend_on_readout_setter_order():
     node = built()
-    node.set_readout_modes([ea.MC.ReadoutMode.WHOLE])
+    node.set_readout_modes([MC.ReadoutMode.WHOLE])
     with pytest.raises(ValueError, match="single target"):
         node.set_two_body_cases([([], np.ones((3, 3), dtype=complex))])
 
 
 def test_cases_set_before_targets_or_attachments_share_target_shapes():
-    node = ea.MC(ea.MC.seed_simplex(3), [], [], degrees=[1],
+    node = MC(MC.seed_simplex(3), [], [], degrees=[1],
                  einstein_hilbert=False)
     with pytest.raises(ValueError, match=r"case 1 target.*case 0"):
         node.set_two_body_cases([
@@ -209,18 +212,18 @@ def test_one_refused_selected_gradient_does_not_erase_another():
     node.set_input_marking(1, [markings[1].cycles[1]], [TAU_OUT])
     node.set_two_body_target(np.eye(1, dtype=complex))
 
-    node.set_readout_modes([ea.MC.ReadoutMode.TRANSFER])
+    node.set_readout_modes([MC.ReadoutMode.TRANSFER])
     assert node.two_body_residual() == 1.0
     with pytest.raises(RuntimeError, match=r"own kernel has rank 2"):
         node.two_body_residual_gradient()
 
-    node.set_readout_modes([ea.MC.ReadoutMode.WHOLE])
+    node.set_readout_modes([MC.ReadoutMode.WHOLE])
     assert node.whole_harmonic_residual(np.eye(1, dtype=complex)) < 1.0
     assert node.whole_harmonic_obstruction == ""
     whole_only = np.asarray(node.fiber_mode_ascent()[0])
 
     node.set_readout_modes(
-        [ea.MC.ReadoutMode.TRANSFER, ea.MC.ReadoutMode.WHOLE])
+        [MC.ReadoutMode.TRANSFER, MC.ReadoutMode.WHOLE])
     np.testing.assert_array_equal(
         np.asarray(node.fiber_mode_ascent()[0]), whole_only)
 
@@ -274,9 +277,9 @@ def test_a_case_without_a_target_is_refused_by_name():
 
 def test_the_run_document_records_the_states():
     """A record must say which states a geometry was fitted to."""
-    config = ea.build_config(inputs="qubit", states=EXTRA)
+    config = qa.build_config(states=EXTRA)
     assert config["states"] == EXTRA
-    assert ea.build_config(inputs="qubit")["states"] == []
+    assert qa.build_config()["states"] == []
 
 
 def test_a_candidate_complex_is_scored_on_every_case():

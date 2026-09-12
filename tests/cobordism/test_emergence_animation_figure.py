@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(
     "examples", "cobordism"))
 
 import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 cob = T.cobordism
 MC = cob.MultiCobordism
@@ -447,7 +448,7 @@ class ReadoutPresentationTest(unittest.TestCase):
         )
         figure, axis = plt.subplots()
         try:
-            ea._panel_transfer(axis, frame)
+            qa._panel_transfer(axis, frame)
             title = axis.get_title()
             self.assertIn("transfer component", title)
             self.assertIn("aggregate leak 0.75 (includes whole)", title)

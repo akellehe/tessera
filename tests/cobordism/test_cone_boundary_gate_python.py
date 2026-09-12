@@ -14,7 +14,7 @@ fixed (``has_fixed_boundary``: a surface input or output block). A pinned
 region holds geometry but does not declare a topological boundary, so a free
 emergent build -- a proton host grown from a simplex seed, a CDT sweep -- is
 unrestricted either way and behaves exactly as it did.
-``emergence_animation.py`` records the qubit-mode choice in its run document.
+``qubit_animation.py`` records the choice in its run document.
 """
 import os
 import sys
@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(
     "examples", "cobordism"))
 
 import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 MC = cob.MultiCobordism
 
@@ -133,20 +134,33 @@ def test_the_flag_is_bit_identical_to_the_engine_default():
 
 
 def test_the_driver_disallows_growth_unless_asked():
-    parser = ea.build_parser()
+    parser = qa.build_parser()
     assert parser.parse_args(["run"]).extend_boundary is False
     assert parser.parse_args(["run", "--extend-boundary"]).extend_boundary is True
-    assert ea.DECLARED_EXTEND_BOUNDARY is False
-    assert ea.build_config()["extend_boundary"] is False
-    with pytest.raises(ValueError,
-                       match=r"neutral input mode does not use --extend-boundary"):
-        ea.build_config(extend_boundary=True)
-    assert ea.build_config(inputs=ea.InputMode.QUBIT,
-                           extend_boundary=True)["extend_boundary"] is True
+    assert qa.DECLARED_EXTEND_BOUNDARY is False
+    assert qa.build_config()["extend_boundary"] is False
+    assert qa.build_config(extend_boundary=True)["extend_boundary"] is True
 
 
 def test_the_drive_applies_the_config_to_its_node(monkeypatch):
     """`drive` applies the qubit-only choice to the qubit factory's node."""
+    held = []
+    original = qa.MC
+
+    class Recording(original):
+        def set_boundary_may_extend(self, allowed):
+            held.append(bool(allowed))
+            return original.set_boundary_may_extend(self, allowed)
+
+    monkeypatch.setattr(qa, "MC", Recording)
+    for requested in (False, True):
+        held.clear()
+        qa.drive(qa.build_config(steps=0, stage1_iters=1, stage2_iters=1,
+                                 extend_boundary=requested), progress=False)
+        assert held == [requested], held
+
+
+def test_the_neutral_drive_does_not_arm_the_topology_gate(monkeypatch):
     held = []
     original = ea.MC
 
@@ -156,12 +170,6 @@ def test_the_drive_applies_the_config_to_its_node(monkeypatch):
             return original.set_boundary_may_extend(self, allowed)
 
     monkeypatch.setattr(ea, "MC", Recording)
-    for requested in (False, True):
-        held.clear()
-        ea.drive(ea.build_config(inputs=ea.InputMode.QUBIT, steps=0,
-                                 stage1_iters=1, stage2_iters=1,
-                                 extend_boundary=requested), progress=False)
-        assert held == [requested], held
     held.clear()
     ea.drive(ea.build_config(size=4, steps=0, stage1_iters=1,
                              stage2_iters=1), progress=False)

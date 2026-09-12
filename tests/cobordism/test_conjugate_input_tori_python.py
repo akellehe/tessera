@@ -39,7 +39,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 MC = cob.MultiCobordism
 CC = cob.ChainComplex
@@ -104,11 +104,11 @@ def test_an_odd_number_of_surfaces_is_refused():
 
 def drive_to_seed(**overrides):
     held = {}
-    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
+    config = qa.build_config(steps=0, grid=GRID,
                              operator="xx", tau_a=TAU_A, tau_b=TAU_B,
                              input_weight=100.0, regge=False,
                              pin_boundary=True, **overrides)
-    ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
+    qa.drive(config, progress=False, on_node=lambda node: held.update(node=node))
     return held["node"]
 
 
@@ -127,10 +127,10 @@ def low_level_four_torus_node():
     node.seed_inputs([sorted(mapping.values()) for mapping in ids])
     node.use_fiber_residuals(True)
     for index, surface in enumerate(tori):
-        fiber = ea._torus_fiber(surface, ids[index])
+        fiber = qa._torus_fiber(surface, ids[index])
         node.attach_input_fiber(index, fiber, fiber.cells)
         node.set_input_marking(
-            index, ea._host_marking(surface, ids[index]),
+            index, qa._host_marking(surface, ids[index]),
             [1.0 + 0j, complex(moduli[index])])
     return node
 
@@ -172,15 +172,15 @@ def test_paired_target_shape_is_checked_at_the_case_setter():
 # ---- the flag ----
 
 def test_the_default_is_two_tori():
-    assert ea.build_config()["tori"] == 2
-    assert ea.DECLARED_TORI == 2
+    assert qa.build_config()["tori"] == 2
+    assert qa.DECLARED_TORI == 2
 
 
 def test_the_driver_refuses_four_torus_semantic_readouts():
     for readout in ("whole", "operator"):
         with pytest.raises(
                 ValueError, match=r"direct[- ]sum.*tensor[- ]product"):
-            ea.build_config(inputs=ea.InputMode.QUBIT, tori=4,
+            qa.build_config(tori=4,
                             readout=readout)
 
 
@@ -188,5 +188,5 @@ def test_only_two_or_four():
     """Three tori bound no collar and six is a host nobody has built."""
     for count in (0, 1, 3, 5, 6):
         with pytest.raises(ValueError) as caught:
-            ea.build_config(tori=count)
+            qa.build_config(tori=count)
         assert "two or four" in str(caught.value)

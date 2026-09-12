@@ -2,11 +2,11 @@
 # All rights reserved.
 """The final geometry a run can be rebuilt from (#995).
 
-``examples/cobordism/emergence_animation.py --geometry PATH`` writes the
+``examples/cobordism/qubit_animation.py run --geometry PATH`` writes the
 complex the drive ended on, in the campaign worker's schema 1: the dimension
 read off the top cells, the cells in their intrinsic vertex order, every edge
 as ``[source, target, Re l^2, Im l^2]``, the per-vertex times, the edge
-phases when any is nonzero, and -- in the qubit mode -- each input block's
+phases when any is nonzero, and each input block's
 vertex set, marking and input coefficients. It is the only output a run can
 be rebuilt from: the run document records measurements OF a geometry, never
 the geometry.
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 MC = cob.MultiCobordism
 TAU_A = complex(0.3, 1.1)
@@ -54,16 +54,16 @@ def driven():
     so the schema would go untested in exactly the field most likely to be
     dropped. What is under test here is the document, not the drive.
     """
-    config = ea.build_config(steps=2, stage1_iters=1, stage2_iters=2,
-                             tolerance=1e-30, inputs=ea.InputMode.QUBIT,
+    config = qa.build_config(steps=2, stage1_iters=1, stage2_iters=2,
+                             tolerance=1e-30,
                              tau_a=TAU_A, tau_b=TAU_B, grid=3,
                              pin_boundary=False)
     held = {}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        result = ea.drive(config, progress=False,
+        result = qa.drive(config, progress=False,
                           on_node=lambda node: held.update(node=node))
-        document = ea.geometry_document(held["node"], result.inputs)
+        document = qa.geometry_document(held["node"], result.inputs)
     return held["node"], result, json.loads(json.dumps(document))
 
 
@@ -189,7 +189,7 @@ def test_a_node_rebuilt_on_the_dump_reads_what_the_driven_node_read(driven):
                      metric_source=cob.HodgeMetricSource.WhitneyPencil)
         rebuilt.seed_inputs([block["vertices"] for block in document["blocks"]])
         rebuilt.use_fiber_residuals(True)
-        rebuilt.set_input_residual_weight(ea.DECLARED_INPUT_WEIGHT)
+        rebuilt.set_input_residual_weight(qa.DECLARED_INPUT_WEIGHT)
         for index, block in enumerate(document["blocks"]):
             fiber = node.inputs[index].fiber
             rebuilt.attach_input_fiber(index, fiber, [list(c) for c in fiber.cells])

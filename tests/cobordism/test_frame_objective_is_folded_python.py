@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 from tessera._tessera.cobordism import MultiCobordism as MC  # noqa: E402
 
 TAU_A, TAU_B, GRID = 0.3 + 1.1j, -0.2 + 0.8j, 3
@@ -36,11 +36,11 @@ TAU_A, TAU_B, GRID = 0.3 + 1.1j, -0.2 + 0.8j, 3
 @pytest.fixture(scope="module")
 def node():
     held = {}
-    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
+    config = qa.build_config(steps=0, grid=GRID,
                              tau_a=TAU_A, tau_b=TAU_B,
                              input_weight=100.0, regge=False, pin_boundary=True,
                              readout="whole", tori=2, output_state="0.1+1.3j")
-    ea.drive(config, progress=False, on_node=lambda n: held.update(node=n))
+    qa.drive(config, progress=False, on_node=lambda n: held.update(node=n))
     return held["node"]
 
 
@@ -52,14 +52,14 @@ def test_the_fold_and_the_recomputation_are_the_same_double(node):
 
 def test_the_frame_records_the_folded_total(node):
     """What `_read_objective` writes is what the terms fold to."""
-    block = ea.EmergenceFrame._read_objective(node)
+    block = qa.QubitFrame._read_objective(node)
     assert block["total"] == MC.objective_of(node.objective_terms())
 
 
 def test_the_frame_total_still_agrees_with_the_engine(node):
     """The recorded total is unchanged by the fix: a run document written
     before it and one written after it carry the same number."""
-    block = ea.EmergenceFrame._read_objective(node)
+    block = qa.QubitFrame._read_objective(node)
     assert block["total"] == node.objective()
 
 
@@ -90,5 +90,5 @@ def test_reading_the_objective_costs_one_terms_computation(node):
             return getattr(self.inner, name)
 
     counting = Counting(node)
-    ea.EmergenceFrame._read_objective(counting)
+    qa.QubitFrame._read_objective(counting)
     assert counting.calls == {"terms": 1, "objective": 0}

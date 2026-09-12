@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+import qubit_animation as qa  # noqa: E402
 
 TAU_A, TAU_B, GRID = 0.3 + 1.1j, -0.2 + 0.8j, 3
 
@@ -57,11 +57,11 @@ def holomorphic(packed):
 @pytest.fixture(scope="module")
 def seeded():
     held = {}
-    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
+    config = qa.build_config(steps=0, grid=GRID,
                              tau_a=TAU_A, tau_b=TAU_B,
                              input_weight=100.0, regge=False, pin_boundary=True,
                              readout="whole", tori=2, output_state="0.1+1.3j")
-    ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
+    qa.drive(config, progress=False, on_node=lambda node: held.update(node=node))
     return held["node"]
 
 
@@ -95,11 +95,11 @@ def test_a_reading_that_refuses_has_no_direction():
     invented for it would be worse than none.
     """
     held = {}
-    config = ea.build_config(steps=0, inputs=ea.InputMode.QUBIT, grid=GRID,
+    config = qa.build_config(steps=0, grid=GRID,
                              operator="xx", tau_a=TAU_A, tau_b=TAU_B,
                              input_weight=100.0, regge=False, pin_boundary=True,
                              readout="transfer", tori=2)
-    ea.drive(config, progress=False, on_node=lambda node: held.update(node=node))
+    qa.drive(config, progress=False, on_node=lambda node: held.update(node=node))
     node = held["node"]
     chi = node.two_body_target().chi
     assert node.whole_harmonic_residual(chi) == 1.0

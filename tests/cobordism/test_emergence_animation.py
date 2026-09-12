@@ -132,8 +132,10 @@ class DriveTest(unittest.TestCase):
         there is nothing to score against.
         """
         import inspect
-        source = inspect.getsource(ea.drive)
-        self.assertIn("MC(host, [], []", source)
+        factory = inspect.getsource(ea.build_emergence_node)
+        driver = inspect.getsource(ea.drive)
+        self.assertIn("MC(host, [], []", factory)
+        self.assertIn("build_emergence_node", driver)
 
 
 # ======================================================================
