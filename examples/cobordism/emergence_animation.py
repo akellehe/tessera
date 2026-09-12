@@ -2227,6 +2227,16 @@ def _drive_live(config, driver, drawer, progress=False, on_node=None,
     if not plt.isinteractive():
         plt.ion()
     figure = plt.figure(figsize=(18, 10))
+    # SHOW it, rather than trusting interactive mode to. Under `ion()` most
+    # backends map a window when the figure is created, but that is a backend
+    # convenience and not a guarantee -- on a Wayland session through QtAgg the
+    # figure exists, every frame draws into it, and no window is ever mapped,
+    # so the run looks headless while doing all the work. `block=False`
+    # because the drawing loop below owns the event loop from here on.
+    #
+    # Safe unconditionally: this is past the interactive-backend check above,
+    # so there is a GUI to show into by the time we reach it.
+    plt.show(block=False)
 
     ready = queue.Queue()
     published = {}
