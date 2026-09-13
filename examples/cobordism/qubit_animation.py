@@ -100,7 +100,12 @@ DECLARED_ANALYSIS_DEGREES = ea.DECLARED_ANALYSIS_DEGREES
 DECLARED_SEED = ea.DECLARED_SEED
 DECLARED_INPUTS = "qubit"
 LIVE_POLL_INTERVAL = ea.LIVE_POLL_INTERVAL
-DECLARED_PANEL_GRID = ea.DECLARED_PANEL_GRID
+#: The qubit figure's own panel grid. NOT the emergence grid: that one is 4x5,
+#: sized for the nineteen panels this example used to inherit, and leaving it
+#: in place after the cut would draw eight panels into the top of a mostly
+#: empty figure. Exactly `len(_PANELS)` cells, so nothing is dropped and no
+#: dead space is reserved.
+DECLARED_PANEL_GRID = (2, 4)
 _LEGACY_UNSET = ea._LEGACY_UNSET
 
 #: Which space the two-body target is scored against (`--readout`), as a
@@ -1946,12 +1951,29 @@ _QUBIT_PRIMARY_PANELS = [
     ("layout", ea._panel_layout),
     ("betti", ea._panel_betti),
 ]
-_PANELS = (_QUBIT_PRIMARY_PANELS
-           + [panel for panel in ea._PANELS
-              if panel[0] not in _QUBIT_PANEL_ORDER])
+#: The qubit instrument is EXACTLY the panels above. It deliberately does not
+#: inherit the remainder of `ea._PANELS`: clusters, bands, anchors, transports,
+#: statistics, crossings, mass, spin, verdict and the two dual-graph panels
+#: measure the neutral emergence question (does matter emerge from the
+#: geometry), not this one. The qubit experiment never reads them, so drawing
+#: them here filled eleven of the figure's nineteen panels with quantities
+#: that are not about the qubit -- and shrank the eight that are.
+_PANELS = list(_QUBIT_PRIMARY_PANELS)
 _QUBIT_PANELS = _PANELS
 _TRACE_PANELS = ("objective", "residuals", "moduli")
-_PLACED_PANELS = ea._PLACED_PANELS
+#: Of the shared placed panels only `layout` survives into the qubit set; the
+#: two dual-graph panels went with the emergence instrument. Filtered rather
+#: than rewritten so that a panel added to `ea._PLACED_PANELS` and adopted into
+#: `_QUBIT_PANEL_ORDER` is still handed its placement.
+_PLACED_PANELS = tuple(name for name in ea._PLACED_PANELS
+                       if name in _QUBIT_PANEL_ORDER)
+
+#: The qubit live window and rendered canvas. Private (not `DECLARED_`) because
+#: they are a property of this figure's eight panels, not a knob of the shared
+#: experiment. Proportioned for the 2x4 grid: the emergence sizes are shaped
+#: for 4x5 and would letterbox these panels.
+_QUBIT_LIVE_FIGSIZE = (17, 8)
+_QUBIT_RENDER_FIGSIZE = (18, 8.5)
 
 
 def panels_for(_config=None):
@@ -2103,19 +2125,22 @@ def drive(config, progress=False, on_frame=None, on_node=None, on_setup=None,
 def draw_frame(figure, frames, index, placed=None):
     """Draw one qubit frame with the qubit panels and title."""
     return ea._draw_frame(figure, frames, index, _PANELS, _suptitle,
-                          _TRACE_PANELS, _PLACED_PANELS, placed)
+                          _TRACE_PANELS, _PLACED_PANELS, placed,
+                          grid=DECLARED_PANEL_GRID)
 
 
 def drive_live(config, progress=False, on_node=None, on_setup=None):
     """Drive the qubit cobordism while displaying completed frames."""
     return ea._drive_live(
         config, drive, draw_frame, progress=progress, on_node=on_node,
-        on_setup=on_setup, thread_name="qubit-animation-drive")
+        on_setup=on_setup, thread_name="qubit-animation-drive",
+        figsize=_QUBIT_LIVE_FIGSIZE)
 
 
 def render(frames, path):
     """Render qubit frames through the shared animation renderer."""
-    return ea._render(frames, path, draw_frame)
+    return ea._render(frames, path, draw_frame,
+                      figsize=_QUBIT_RENDER_FIGSIZE)
 
 def _as_complex(value):
     """A complex from a number, a string like ``0.3+1.1j`` or a ``[re, im]``

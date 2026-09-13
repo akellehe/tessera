@@ -2113,6 +2113,12 @@ def panels_for(_config=None):
 #: would read as absent measurements.
 DECLARED_PANEL_GRID = (4, 5)
 
+#: The live window and the rendered canvas, in inches, sized for the 4x5 grid
+#: above. Both are overridable per example, alongside `grid` on `_draw_frame`,
+#: so panel count and canvas stay in proportion.
+DECLARED_LIVE_FIGSIZE = (18, 10)
+DECLARED_RENDER_FIGSIZE = (20, 12)
+
 
 def _suptitle(frame, last_step):
     """The figure's title: what was driven, and that the read-outs are
@@ -2133,17 +2139,22 @@ def _suptitle(frame, last_step):
 
 
 def _draw_frame(figure, frames, index, panels, title_fn, trace_panels,
-                placed_panels, placed=None):
+                placed_panels, placed=None, grid=None):
     """Draw one frame's panels onto a figure.
 
     `placed` is `stabilize(frames)`. Passing it is optional so a caller can
     draw a single frame without it, in which case the raw layout is used and
     the picture is correct but unaligned.
+
+    `grid` is the (rows, columns) the panels are laid out on, defaulting to
+    this module's own. An example with a different number of panels passes its
+    own, so the grid tracks the panel list rather than every caller inheriting
+    a grid sized for the emergence instrument.
     """
     figure.clear()
     frame = frames[index]
     placement = placed[index] if placed else None
-    rows, columns = DECLARED_PANEL_GRID
+    rows, columns = grid or DECLARED_PANEL_GRID
     axes = figure.subplots(rows, columns)
     flat = [ax for row in axes for ax in row]
     for axis in flat[len(panels):]:
@@ -2185,7 +2196,7 @@ def _interactive_backends():
 
 
 def _drive_live(config, driver, drawer, progress=False, on_node=None,
-                on_setup=None, thread_name="animation-drive"):
+                on_setup=None, thread_name="animation-drive", figsize=None):
     """Drive with supplied experiment callbacks while drawing live frames.
 
     The compute runs on a worker thread and the figure is drawn on the main
@@ -2226,7 +2237,7 @@ def _drive_live(config, driver, drawer, progress=False, on_node=None,
             "The drive is identical either way." % (backend, webagg))
     if not plt.isinteractive():
         plt.ion()
-    figure = plt.figure(figsize=(18, 10))
+    figure = plt.figure(figsize=figsize or DECLARED_LIVE_FIGSIZE)
 
     ready = queue.Queue()
     published = {}
@@ -2396,8 +2407,13 @@ def geometry_document(node, inputs=None, source=None):
 
 
 
-def _render(frames, path, drawer):
-    """Render frames with ``drawer`` to a GIF, MP4, or final-frame PNG."""
+def _render(frames, path, drawer, figsize=None):
+    """Render frames with ``drawer`` to a GIF, MP4, or final-frame PNG.
+
+    `figsize` defaults to this module's own. An example with a smaller panel
+    grid passes its own so its panels keep a sane aspect instead of being
+    stretched across a canvas proportioned for the emergence instrument.
+    """
     if not frames:
         raise ValueError("cannot render an empty frame sequence")
     lowered = os.fspath(path).lower()
@@ -2408,7 +2424,7 @@ def _render(frames, path, drawer):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    figure = plt.figure(figsize=(20, 12))
+    figure = plt.figure(figsize=figsize or DECLARED_RENDER_FIGSIZE)
     # Computed once, in frame order: the alignment is a chain, so a renderer
     # that redraws a frame or draws only the last must still see the same
     # positions it would have seen drawing them all in sequence.
