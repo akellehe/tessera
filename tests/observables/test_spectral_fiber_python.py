@@ -1158,7 +1158,7 @@ class TestSparseVsDense(unittest.TestCase):
             np.array(sparse.coveredEigenvalues).real,
             np.array(dense.coveredEigenvalues).real[:n_cov], atol=SOLVER)
         # Cold (dense) and sparse tracking of the same bands agree:
-        # principal angles ~ 0 between corresponding projectd subspaces.
+        # principal angles ~ 0 between corresponding projected subspaces.
         matches = obs.SpectralFiberTracker.matchFibers(
             sparse.fibers, dense.fibers)
         self.assertEqual(len(matches), len(sparse.fibers))
