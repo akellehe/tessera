@@ -2336,7 +2336,9 @@ def hierarchy_block(readout, checkpoint):
     def slice_of(slice_read):
         return {
             "gamma": _finite(slice_read.gamma),
-            "q": _finite(slice_read.q),
+            "q": _finite(slice_read.objectiveValue),
+            "q_complex": [_finite(slice_read.q.real),
+                          _finite(slice_read.q.imag)],
             "levels": int(slice_read.levels),
             "restart_spread": _finite(slice_read.restartSpread),
             "component_count": len(slice_read.components),
@@ -2351,7 +2353,8 @@ def hierarchy_block(readout, checkpoint):
                     "conductance": _finite(component.conductance),
                     "internal_weight": _finite(component.internalWeight),
                     "modularity_contribution":
-                        _finite(component.modularityContribution),
+                        [_finite(component.modularityContribution.real),
+                         _finite(component.modularityContribution.imag)],
                 }
                 for component in slice_read.components],
         }

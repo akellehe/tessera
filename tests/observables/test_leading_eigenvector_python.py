@@ -437,7 +437,8 @@ class KernighanLinRefinementTest(unittest.TestCase):
                 withkl = graph.discover(1.0, spectral_config())
                 without = graph.discover(
                     1.0, spectral_config(kernighanLinRefinement=False))
-                self.assertGreaterEqual(withkl.q, without.q - 1e-12)
+                self.assertGreaterEqual(withkl.objectiveValue,
+                                        without.objectiveValue - 1e-12)
 
     def test_it_measurably_raises_the_score_on_a_noisy_partition(self):
         """On planted partitions with inter-block noise the sign bisection is
@@ -446,7 +447,7 @@ class KernighanLinRefinementTest(unittest.TestCase):
         withkl = graph.discover(1.0, spectral_config())
         without = graph.discover(
             1.0, spectral_config(kernighanLinRefinement=False))
-        self.assertGreater(withkl.q - without.q, 0.01)
+        self.assertGreater(withkl.objectiveValue - without.objectiveValue, 0.01)
 
 
 class DenseAndIterativeAgreeTest(unittest.TestCase):
@@ -492,7 +493,7 @@ class DegenerateInputTest(unittest.TestCase):
         graph = PM.fromWeightedEdges([0], [1], [1.0], [50, 51, 52])
         slice_ = graph.discover(1.0, spectral_config())
         self.assertGreaterEqual(len(slice_.components), 1)
-        self.assertFalse(math.isnan(slice_.q))
+        self.assertFalse(math.isnan(slice_.objectiveValue))
 
     def test_a_singleton_side_terminates_with_group_too_small(self):
         """A high gamma drives the recursion down to singletons, which is the
@@ -515,7 +516,7 @@ class HeuristicStatusUnchangedTest(unittest.TestCase):
         graph = planted([10] * 3, 0.6, 0.10)
         spectral = graph.discover(1.0, spectral_config())
         incumbent = graph.discover(1.0, obs.PersistentModularityConfig())
-        self.assertLess(spectral.q, incumbent.q)
+        self.assertLess(spectral.objectiveValue, incumbent.objectiveValue)
 
     def test_both_strategies_produce_the_same_shape_of_component(self):
         graph = clique_chain([4, 5, 6])
@@ -525,7 +526,7 @@ class HeuristicStatusUnchangedTest(unittest.TestCase):
             for comp in slice_.components:
                 self.assertTrue(comp.id.canonicalHash())
                 self.assertGreater(len(comp.support), 0)
-                self.assertFalse(math.isnan(comp.modularityContribution))
+                self.assertFalse(math.isnan(abs(comp.modularityContribution)))
 
     def test_components_from_either_strategy_are_matchable(self):
         """Identity is hashed by the same rule, so the cross-strategy match
