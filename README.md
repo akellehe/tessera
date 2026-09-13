@@ -39,7 +39,78 @@ dependencies. The ITensor submodule is fetched automatically on the first build
 `git clone --recurse-submodules` avoids the fetch. A cold build is noticeably
 slower because ITensor is compiled from source — `ccache` (below) helps a lot.
 
-Builds also use [`ccache`](https://ccache.dev/) automatically when it is installed (`brew install ccache` / `apt-get install ccache`) — recommended: it makes rebuilds and CI dramatically faster.
+### Build performance
+
+Three things govern how long a build takes and how much of the machine it eats.
+All three are automatic; this section is only about what to install and what to
+expect.
+
+**`ccache` — install it.** Builds use [`ccache`](https://ccache.dev/) (or
+`sccache`) automatically whenever one is on `PATH`:
+
+```bash
+sudo apt-get install ccache      # or: brew install ccache
+```
+
+The cache is content-addressed, so it survives clean builds, build-directory
+changes, and per-wheel-tag rebuilds. It matters most for ITensor's 31
+translation units, which are compiled from source and whose objects hash
+identically across Python versions: on a 16-core Linux box, `ninja itensor`
+measured **32.2 s cold vs 0.35 s warm**. CMake prints `Compiler cache enabled:
+...` at configure time. Disable with `TESSERA_CCACHE=0`.
+
+**`mold` — Debug builds only.** A fast linker
+([`mold`](https://github.com/rui314/mold), else `lld`) is picked up
+automatically when installed:
+
+```bash
+sudo apt-get install mold        # or: brew install mold
+```
+
+but it is **deliberately not used for `Release` or `RelWithDebInfo`** — and
+`RelWithDebInfo` is the shipped build type, so the default `pip install -e .`
+links with the system `ld` no matter what you have installed. The reason is
+#212: `lld` 18.1.3 silently emits an empty `_tessera.so` with no
+`PyInit__tessera` for that LTO link, so `import tessera` then fails. Both fast
+linkers are therefore restricted to `Debug`, where they link correctly and dev
+iteration wants the speed. CMake prints `Fast linker enabled: mold` only when it
+actually applies. Disable with `TESSERA_FAST_LINKER=0`.
+
+**Build parallelism is capped by memory, automatically.** This build is
+memory-bound, not CPU-bound: the template-heavy translation units
+(`MultiCobordism.cpp`, the per-subsystem `Bindings.cpp`, the Eigen-dense
+chainhodge sources) each peak near 4.7 GB in `cc1plus` at `-O3 -march=native`.
+Ninja's default parallelism is *cores + 2*, so on a 16-core machine an
+unrestricted build launches 18 of those at once — far more memory than such a
+box has. It then hits zero available memory, the OOM killer reaps unrelated
+processes, and the dead build leaves orphaned multi-GB `cc1plus` behind.
+
+So `CMakeLists.txt` derives Ninja job pools from the machine's RAM at configure
+time and bakes them into `build.ninja`. Every entry point — pip, `cmake
+--build`, an IDE — inherits the cap without having to set anything:
+
+```
+-- Build parallelism capped at 8 compile / 4 link jobs (30481 MiB RAM, 16 cores; ...)
+```
+
+A pool only ever caps parallelism *below* `-j`, so `CMAKE_BUILD_PARALLEL_LEVEL`
+is clamped rather than obeyed. Retune or disable it at configure time:
+
+```bash
+pip install -e ".[dev]" -C cmake.define.TESSERA_COMPILE_MEMORY_MB=6144
+pip install -e ".[dev]" -C cmake.define.TESSERA_BUILD_JOB_POOLS=OFF
+```
+
+| CMake option | Default | Meaning |
+| --- | --- | --- |
+| `TESSERA_BUILD_JOB_POOLS` | `ON` | Cap compile/link parallelism by memory |
+| `TESSERA_COMPILE_MEMORY_MB` | `3072` | Assumed peak resident memory of one compile job |
+| `TESSERA_LINK_MEMORY_MB` | `6144` | Assumed peak resident memory of one link job |
+| `TESSERA_BUILD_MEMORY_RESERVE_MB` | `4096` | Memory left free for the rest of the machine |
+
+Job pools are a Ninja feature. Under Makefile generators CMake warns at
+configure time and parallelism stays uncapped — pass a small
+`CMAKE_BUILD_PARALLEL_LEVEL` yourself there.
 
 ### Reinforcement-learning subsystem (optional, libtorch)
 
@@ -240,6 +311,7 @@ Build options via environment variables:
 ```bash
 TESSERA_CUDA=0       pip install -e .     # CPU-only build
 TESSERA_CCACHE=0     pip install -e .     # disable the ccache compiler cache
+TESSERA_FAST_LINKER=0 pip install -e .    # disable the mold/lld fast linker (Debug builds)
 TESSERA_ASAN=1       pytest tests/        # AddressSanitizer + UBSan
 TESSERA_VERBOSE=1    pytest tests/        # C++ logging
 TESSERA_ASSERTIONS=1 pytest tests/        # extra invariant checks
