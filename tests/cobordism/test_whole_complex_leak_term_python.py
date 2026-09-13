@@ -219,6 +219,9 @@ def test_the_gradient_agrees_with_central_differences(whitney_default):
     assert checked == 4
 
 
+# Marked slow: a full scored stage-2 relaxation of the whole complex; about two
+# minutes.
+@pytest.mark.slow
 def test_stage_two_lowers_the_leak_when_it_is_scored(whitney_default):
     """The term does what it is for: descended, the leak comes down.
 

@@ -97,6 +97,9 @@ def rebuild(document):
     return spacetime
 
 
+# Marked slow: drives the complex far enough for the dump to describe
+# something; about thirty seconds.
+@pytest.mark.slow
 def test_the_dump_is_schema_1_and_describes_the_driven_complex(driven):
     node, result, document = driven
     spacetime = node.spacetime()

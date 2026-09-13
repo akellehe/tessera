@@ -13,8 +13,14 @@ on:
 permissions:
   contents: read
 
+# ``github.ref`` alone is not enough to separate these triggers: the nightly
+# schedule and a merge into main both report ``refs/heads/main``, so a merge
+# landing near 07:00 UTC used to cancel the nightly full-suite run outright
+# (for example run 34573281330 on 2026-09-11). Keying on the event as well
+# gives the schedule its own group, so only a newer run of the *same* trigger
+# can cancel an in-flight one.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -33,6 +39,12 @@ jobs:
       # good neighbors. Tunable.
       CMAKE_BUILD_PARALLEL_LEVEL: "8"
       OMP_NUM_THREADS: "8"
+      # Total CPU threads the test lanes may occupy, and how many of them each
+      # pytest-xdist worker gets. Worker count is the quotient, computed by
+      # .github/scripts/test-workers.sh. Raising TESSERA_TEST_CPUS trades
+      # neighbourliness on the shared box for a shorter lane.
+      TESSERA_TEST_CPUS: "16"
+      TESSERA_TEST_THREADS_PER_WORKER: "4"
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       BLIS_NUM_THREADS: "1"
@@ -76,36 +88,36 @@ jobs:
       # fallback dormant (its fast path returns as soon as ``tessera._tessera``
       # imports), so the suite below can shard across workers safely.
       #
-      # Thread budget: this suite is BLAS / OpenMP bound — its long-pole tests
-      # (cobordism relaxations, the example subprocess) thread-scale, so the
-      # naive OMP=1 + -n auto actually REGRESSES (a single-threaded long pole
-      # floors the wall clock, and each worker re-pays the heavy module imports).
-      # Profiling across thread budgets (workers x OMP held ~= cores) put the
-      # optimum at OMP=4 per worker: the heavy tests keep 4 threads while 4x as
-      # many run at once. So pin every math library to 4 and run cores/4 workers.
+      # Thread budget: this suite is BLAS / OpenMP bound. Its heaviest tests
+      # (cobordism relaxations, the example subprocesses) thread-scale, so a
+      # naive OMP_NUM_THREADS=1 with a worker per core regresses: a
+      # single-threaded long pole floors the wall clock and every worker
+      # re-pays the heavy module imports. The split below spends the budget as
+      # TESSERA_TEST_THREADS_PER_WORKER threads inside each test and
+      # TESSERA_TEST_CPUS / TESSERA_TEST_THREADS_PER_WORKER tests at once.
       #
-      # PR pushes run only the fast lane (the >30s ``slow`` tests deselected);
+      # PR pushes run only the fast lane (the ``slow`` tests deselected);
       # merge-to-main, the nightly schedule, and manual dispatch run the FULL
       # suite. Coverage is split, never cut — every ``slow`` test still runs on
       # main/nightly. Both lanes run from the repo root so pytest finds tests/.
       - name: Run fast test suite (PR pushes)
         if: github.event_name == 'pull_request'
         env:
-          OMP_NUM_THREADS: "4"
-          OPENBLAS_NUM_THREADS: "4"
-          MKL_NUM_THREADS: "4"
-          BLIS_NUM_THREADS: "4"
+          OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
+          OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
+          MKL_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
+          BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
-          workers=$(( $(nproc) / 4 )); [ "$workers" -lt 1 ] && workers=1
-          python -m pytest tests/ -q -m "not slow" -n "$workers" --dist worksteal
+          python -m pytest tests/ -q -m "not slow" \
+            -n "$(.github/scripts/test-workers.sh)" --dist worksteal
 
       - name: Run full test suite (main / nightly / manual)
         if: github.event_name != 'pull_request'
         env:
-          OMP_NUM_THREADS: "4"
-          OPENBLAS_NUM_THREADS: "4"
-          MKL_NUM_THREADS: "4"
-          BLIS_NUM_THREADS: "4"
+          OMP_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
+          OPENBLAS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
+          MKL_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
+          BLIS_NUM_THREADS: ${{ env.TESSERA_TEST_THREADS_PER_WORKER }}
         run: |
-          workers=$(( $(nproc) / 4 )); [ "$workers" -lt 1 ] && workers=1
-          python -m pytest tests/ -q -n "$workers" --dist worksteal
+          python -m pytest tests/ -q \
+            -n "$(.github/scripts/test-workers.sh)" --dist worksteal

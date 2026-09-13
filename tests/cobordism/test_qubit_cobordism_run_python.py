@@ -90,6 +90,8 @@ def _present(value):
     return not isinstance(value, qa.Absent)
 
 
+# Marked slow: grows and relaxes the collar seed; about thirty seconds.
+@pytest.mark.slow
 def test_c1_the_collar_seed():
     result = _run()
     frame = result.frames[0]

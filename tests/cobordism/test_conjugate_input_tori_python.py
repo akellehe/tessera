@@ -143,6 +143,9 @@ def test_two_tori_cannot_carry_a_four_dimensional_target():
     assert "rank 2" in node.whole_harmonic_obstruction
 
 
+# Marked slow: four tori are built and transported before the read; about one
+# minute.
+@pytest.mark.slow
 def test_four_tori_supply_a_low_level_paired_transfer_only():
     """The 4x4 matrix is diagnostic; its axes are not qubit tensor axes."""
     node = low_level_four_torus_node()

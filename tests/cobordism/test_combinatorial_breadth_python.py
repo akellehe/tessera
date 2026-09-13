@@ -113,6 +113,9 @@ def test_a_breadth_of_two_commits_a_two_move_composition():
     assert node.last_stage1_lookahead == 2
 
 
+# Marked slow: exhausts the move space over forty steps, then walks the
+# breadth-3 schedule down; about seven and a half minutes.
+@pytest.mark.slow
 def test_the_breadth_backs_off_when_nothing_at_it_improves():
     """A depth the search cannot use must not end the update.
 

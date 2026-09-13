@@ -520,6 +520,9 @@ def spacelike_real(st):
     return bool(np.all(s.real > 0) and np.all(np.abs(s.imag) < 1e-15))
 
 
+# Marked slow: a stage-2 bulk relaxation with the residuals re-read afterwards;
+# about forty-five seconds.
+@pytest.mark.slow
 def test_stage2_moves_the_bulk_and_holds_the_residuals(whitney_default):
     """Stage 2 on the collar with both fibers attached and the Regge term on
     (the tori are real and spacelike, so the node runs on the real locus):
