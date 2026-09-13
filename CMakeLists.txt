@@ -22,6 +22,103 @@ else()
     project(tessera LANGUAGES CXX)
 endif()
 
+# ---- Build resource limits (memory-aware Ninja job pools) ----
+# A full tessera build is memory-bound, not CPU-bound. The template-heavy
+# translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem
+# Bindings.cpp, the Eigen-dense chainhodge sources) each peak near 4.7 GB in
+# cc1plus at -O3 -march=native. Ninja's default parallelism is (cores + 2), so
+# on a 16-core box a plain `pip install -e ".[dev]"` launches 18 of those at
+# once — tens of GB of demand against whatever the machine actually has. The
+# box then hits 0 available memory, the OOM killer reaps unrelated processes,
+# and the half-dead build leaves orphaned multi-GB cc1plus behind that have to
+# be reaped by hand.
+#
+# CMAKE_BUILD_PARALLEL_LEVEL does not fix this. It is per-invocation, so every
+# entry point (pip, cmake --build, an IDE, a script) has to remember to set it;
+# and it is a single number covering both compiles and links, which have very
+# different footprints. Ninja job pools are baked into build.ninja at configure
+# time, so every entry point inherits them, and compiles and links get separate
+# budgets. A pool only ever caps parallelism *below* -j, so an over-ambitious
+# CMAKE_BUILD_PARALLEL_LEVEL is now clamped rather than obeyed.
+#
+# The budget is real memory minus a reserve for the rest of the machine,
+# divided by a conservative per-job peak, then capped by the core count so a
+# big-memory box does not oversubscribe the CPU instead.
+#
+# Escape hatches: -DTESSERA_BUILD_JOB_POOLS=OFF restores unbounded parallelism;
+# the three _MB knobs below retune the budget without editing this file.
+option(TESSERA_BUILD_JOB_POOLS
+    "Cap compile/link parallelism by available memory (Ninja generators only)" ON)
+set(TESSERA_COMPILE_MEMORY_MB 3072 CACHE STRING
+    "Assumed peak resident memory of one C++ compile job, in MiB")
+set(TESSERA_LINK_MEMORY_MB 6144 CACHE STRING
+    "Assumed peak resident memory of one link job, in MiB")
+set(TESSERA_BUILD_MEMORY_RESERVE_MB 4096 CACHE STRING
+    "Memory left free for the rest of the machine during a build, in MiB")
+
+if (TESSERA_BUILD_JOB_POOLS AND CMAKE_GENERATOR MATCHES "Ninja")
+    # TOTAL_PHYSICAL_MEMORY is reported in MiB, matching the knobs above.
+    cmake_host_system_information(RESULT _tessera_total_mem_mb
+        QUERY TOTAL_PHYSICAL_MEMORY)
+    cmake_host_system_information(RESULT _tessera_cores
+        QUERY NUMBER_OF_LOGICAL_CORES)
+    if (NOT _tessera_cores OR _tessera_cores LESS 1)
+        set(_tessera_cores 1)
+    endif()
+
+    # Never let the reserve consume the whole budget on a small machine: a
+    # 2 GB box would otherwise compute a zero budget and get clamped to 1 job
+    # anyway, but going through 0 would make the arithmetic below meaningless.
+    if (_tessera_total_mem_mb GREATER TESSERA_BUILD_MEMORY_RESERVE_MB)
+        math(EXPR _tessera_mem_budget_mb
+            "${_tessera_total_mem_mb} - ${TESSERA_BUILD_MEMORY_RESERVE_MB}")
+    else()
+        set(_tessera_mem_budget_mb "${_tessera_total_mem_mb}")
+    endif()
+
+    math(EXPR _tessera_compile_jobs
+        "${_tessera_mem_budget_mb} / ${TESSERA_COMPILE_MEMORY_MB}")
+    math(EXPR _tessera_link_jobs
+        "${_tessera_mem_budget_mb} / ${TESSERA_LINK_MEMORY_MB}")
+
+    if (_tessera_compile_jobs LESS 1)
+        set(_tessera_compile_jobs 1)
+    endif()
+    if (_tessera_compile_jobs GREATER _tessera_cores)
+        set(_tessera_compile_jobs ${_tessera_cores})
+    endif()
+    # Links are heavier than compiles and there are 20+ of them (every
+    # tests/quantum/*.cpp is its own executable linking libtessera_quantum.a),
+    # so they get their own, smaller pool — but never more than the compile
+    # pool, which is already the machine-wide ceiling.
+    if (_tessera_link_jobs LESS 1)
+        set(_tessera_link_jobs 1)
+    endif()
+    if (_tessera_link_jobs GREATER _tessera_compile_jobs)
+        set(_tessera_link_jobs ${_tessera_compile_jobs})
+    endif()
+
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS
+        tessera_compile=${_tessera_compile_jobs}
+        tessera_link=${_tessera_link_jobs})
+    # These initialise the JOB_POOL_COMPILE / JOB_POOL_LINK target properties,
+    # so they must be set before any add_library/add_executable below — which
+    # includes tessera_build_itensor()'s ~30 translation units.
+    set(CMAKE_JOB_POOL_COMPILE tessera_compile)
+    set(CMAKE_JOB_POOL_LINK tessera_link)
+
+    message(STATUS
+        "Build parallelism capped at ${_tessera_compile_jobs} compile / "
+        "${_tessera_link_jobs} link jobs "
+        "(${_tessera_total_mem_mb} MiB RAM, ${_tessera_cores} cores; "
+        "-DTESSERA_BUILD_JOB_POOLS=OFF to disable).")
+elseif (TESSERA_BUILD_JOB_POOLS)
+    message(STATUS
+        "Generator '${CMAKE_GENERATOR}' has no job pools — build parallelism "
+        "is uncapped. Prefer Ninja, or pass a small CMAKE_BUILD_PARALLEL_LEVEL "
+        "so the template-heavy translation units do not exhaust memory.")
+endif()
+
 # ---- Compiler cache (ccache / sccache) ----
 # Content-addressed object cache: makes clean rebuilds and per-wheel-tag
 # builds near-instant — in particular ITensor's ~35 translation units,
