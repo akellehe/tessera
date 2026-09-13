@@ -399,6 +399,44 @@ DECLARED_OPERATOR = "flip_flop"
 #: and why the hold is a default here rather than a rule in the engine.
 DECLARED_PIN_BOUNDARY = True
 
+#: Whether every declared state is attached to ONE shared boundary at a time,
+#: rather than each being scored against a boundary of its own
+#: (`--pin-boundary-state`).
+#:
+#: A `TwoBodyCase` carries its own squared lengths on the boundary edges, and
+#: `twoBodyResidualsPerCaseOn` writes them into the live complex, scores that
+#: case, and restores. The boundary is therefore a parameter supplied per case,
+#: not a coordinate the optimiser owns -- which is why the engine's
+#: `set_two_body_cases` says it "Expects a pinned boundary", and why releasing
+#: the geometric pin does nothing at all for a multi-state run. Measured, the
+#: same three-unit drive at the same seed:
+#:
+#:     substituted, pinned  7.826605e-01 -> 3.358045e-01   8.625074e-01 -> 5.547834e-01
+#:     substituted, free    7.826605e-01 -> 3.358045e-01   8.625074e-01 -> 5.547834e-01
+#:
+#: Bit-identical. `writeCaseBoundary` iterates the case's boundary list, so a
+#: case whose list is EMPTY is a no-op and is scored on the live shared complex
+#: using only its own coefficients and target; the gradient path uses the same
+#: write/restore, so the two agree. Building the cases that way attaches every
+#: state to the same boundary at one time and leaves that boundary free to
+#: relax and to be changed combinatorially. Same run, boundary payload removed:
+#:
+#:     shared, free         7.826605e-01 -> 3.358045e-01   8.409688e-01 -> 4.571637e-01
+#:
+#: The first case cannot move: its declared boundary IS the live geometry, so
+#: substituting it was always a no-op. The second both starts lower -- it is
+#: read on the shared complex rather than on a private torus -- and ends lower.
+#:
+#: OFF by default: substitution answers "does the operator work for this state
+#: in its own attachment context", which is a different and equally real
+#: question. This flag answers "does ONE bulk carry the operator for all of
+#: them at once", which is the one a bulk operator has to pass. Note that with
+#: one shared boundary the block has a single tau_hat while each state declares
+#: its own coefficients, so the states genuinely compete; the per-state
+#: residuals cannot all reach zero unless the operator really is realisable on
+#: one attachment. That competition is the measurement, not a defect.
+DECLARED_PIN_BOUNDARY_STATE = False
+
 
 #: The engine's readings by their command-line names. One table, so a name
 #: that parses is a name the engine accepts. Each is named for the SPACE it
@@ -986,12 +1024,20 @@ def _two_body_case(pair, tori, ids, grid, operator, config):
         warnings.simplefilter("ignore")
         at_pair = [obs.SimplicialQubit.flat_torus(complex(tau), grid, grid)
                    for tau in moduli]
+    # An EMPTY boundary is the whole of `--pin-boundary-state`. The engine's
+    # `writeCaseBoundary` iterates this list to write the case's lengths into
+    # the live complex before scoring and restores them after, so an empty one
+    # is a no-op: the case is then read on the shared complex, against its own
+    # coefficients and target, alongside every other state rather than in place
+    # of them. The gradient path iterates the same list, so value and gradient
+    # agree without either being told which mode is in force.
     boundary = []
-    for index, torus in enumerate(at_pair):
-        mapping = ids[index]
-        for (i, j), length in zip(torus.edges(), torus.lengths()):
-            source, target = mapping[int(i)], mapping[int(j)]
-            boundary.append((source, target, complex(length) ** 2))
+    if not config.get("pin_boundary_state", DECLARED_PIN_BOUNDARY_STATE):
+        for index, torus in enumerate(at_pair):
+            mapping = ids[index]
+            for (i, j), length in zip(torus.edges(), torus.lengths()):
+                source, target = mapping[int(i)], mapping[int(j)]
+                boundary.append((source, target, complex(length) ** 2))
     # The operator's image of THIS case's two states is the case's output.
     # Derived, never declared: a run that names one output state cannot mean it
     # for several different inputs.
@@ -2330,8 +2376,27 @@ def _add_qubit_run_arguments(run):
                           "are unitary two-qubit gates, fitted through their "
                           "image of the product state (default %s)"
                           % DECLARED_OPERATOR)
+    run.add_argument("--pin-boundary-state", action="store_true",
+                     dest="pin_boundary_state",
+                     default=DECLARED_PIN_BOUNDARY_STATE,
+                     help="qubit mode: attach every declared state to ONE "
+                          "shared boundary at a time, instead of scoring each "
+                          "against a boundary of its own (default %s). Each "
+                          "case normally carries its own squared lengths, "
+                          "which are written into the complex for that case's "
+                          "read and restored after, so the boundary is a "
+                          "parameter supplied per case rather than a "
+                          "coordinate the drive owns -- and --no-pin-boundary "
+                          "is measurably inert. This drops that payload, so "
+                          "every state is read on the live shared complex and "
+                          "the boundary is free to relax and to be changed "
+                          "combinatorially. It releases the geometric pin, "
+                          "and is refused together with --pin-boundary. "
+                          "Needs --state: with a single input pair no cases "
+                          "are set and nothing is substituted"
+                          % ("on" if DECLARED_PIN_BOUNDARY_STATE else "off"))
     run.add_argument("--pin-boundary", action=argparse.BooleanOptionalAction,
-                     dest="pin_boundary", default=DECLARED_PIN_BOUNDARY,
+                     dest="pin_boundary", default=None,
                      help="qubit mode: hold the input tori fixed while the "
                           "bulk relaxes (default %s). The block residual sees "
                           "only tau_hat, so with --no-pin-boundary the "
@@ -2374,7 +2439,8 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  score_leak=DECLARED_SCORE_LEAK,
                  states=DECLARED_STATES,
                  operator=DECLARED_OPERATOR,
-                 pin_boundary=DECLARED_PIN_BOUNDARY,
+                 pin_boundary=None,
+                 pin_boundary_state=DECLARED_PIN_BOUNDARY_STATE,
                  *, surgical_depth=_LEGACY_UNSET,
                  combinatorial_breadth=_LEGACY_UNSET):
     """Validate and record one qubit-animation run."""
@@ -2401,7 +2467,25 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
     extend_boundary = ea._boolean_value(
         "extend_boundary", extend_boundary)
     score_leak = ea._boolean_value("score_leak", score_leak)
-    pin_boundary = ea._boolean_value("pin_boundary", pin_boundary)
+    pin_boundary_state = ea._boolean_value("pin_boundary_state",
+                                           pin_boundary_state)
+    # `pin_boundary` defaults to None, meaning "not asked for either way",
+    # which is what lets --pin-boundary-state release the geometric pin without
+    # silently overriding a pin the caller asked for by name. Behind a pin the
+    # new flag would be inert: the pin zeroes the descent on exactly the block
+    # edges the shared attachment exists to let move.
+    if pin_boundary is None:
+        pin_boundary = False if pin_boundary_state else DECLARED_PIN_BOUNDARY
+    else:
+        pin_boundary = ea._boolean_value("pin_boundary", pin_boundary)
+        if pin_boundary and pin_boundary_state:
+            raise ValueError(
+                "--pin-boundary and --pin-boundary-state are refused together: "
+                "the first freezes the block edges and the second exists to "
+                "let them relax to a boundary that serves every state at once, "
+                "so the pin would leave the second with nothing to move. Drop "
+                "--pin-boundary (it is released automatically) or drop "
+                "--pin-boundary-state")
 
     if collar_twist not in ("none", "swap"):
         raise ValueError("unknown collar twist %r: expected none or swap"
@@ -2443,6 +2527,26 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
         for state_index, tau in enumerate(pair, 1):
             _modulus_value("--state pair %d modulus %d"
                            % (pair_index, state_index), tau)
+    # Cases are set for extra input pairs and for the four-torus construction,
+    # and nowhere else. With a single pair on two tori nothing is substituted,
+    # so removing the substitution removes nothing and the flag would reduce to
+    # --no-pin-boundary under a name that promises more. Say so rather than
+    # accept it and quietly do something else.
+    #
+    # The `tori != 4` arm keeps the condition honest against the builder, which
+    # sets cases at four tori with no --state at all. It is not offered as a
+    # remedy below because no reading currently accepts four tori -- every
+    # entry in _READOUT_TORI is either two-only or unavailable -- so a reader
+    # sent that way would only meet a second refusal.
+    if pin_boundary_state and not pairs and tori != 4:
+        raise ValueError(
+            "--pin-boundary-state needs more than one attached state: it "
+            "removes the per-case boundary substitution, and a single input "
+            "pair sets no cases and substitutes nothing. Declare the other "
+            "states with --state -- or, if what you want is simply a boundary "
+            "free to reshape within its conformal class, that is "
+            "--no-pin-boundary, which is what this would reduce to here")
+
     output_tau = (None if output_state is None
                   else _state_value("--output-state", output_state))
 
@@ -2528,6 +2632,7 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
                    else str(states)),
         "operator": operator,
         "pin_boundary": pin_boundary,
+        "pin_boundary_state": pin_boundary_state,
     })
     return config
 
@@ -2575,7 +2680,8 @@ def main(argv=None):
             input_weight=args.input_weight, regge=args.regge,
             extend_boundary=args.extend_boundary,
             score_leak=args.score_leak, states=args.states,
-            operator=args.operator, pin_boundary=args.pin_boundary)
+            operator=args.operator, pin_boundary=args.pin_boundary,
+            pin_boundary_state=args.pin_boundary_state)
         ea._validate_output_paths(args.out, args.json, args.geometry)
     except ValueError as error:
         parser.error(str(error))

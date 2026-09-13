@@ -109,7 +109,7 @@ def test_each_config_contains_only_its_mode_options():
         "readout", "tori", "collar_twist", "output_state", "layers",
         "tau_a", "tau_b", "grid", "coupling", "time", "input_weight",
         "regge", "extend_boundary", "score_leak", "states", "operator",
-        "pin_boundary",
+        "pin_boundary", "pin_boundary_state",
     }
     assert qubit_keys.isdisjoint(ea.build_config())
     qubit = qa.build_config()
