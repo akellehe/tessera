@@ -15,6 +15,8 @@ import os
 import sys
 import unittest
 
+import pytest
+
 import tessera
 from tessera import cobordism as cob
 
@@ -65,6 +67,9 @@ class MultiCobordismCxxTest(unittest.TestCase):
                           metric_source=cob.HodgeMetricSource.WhitneyPencil).objective()
         self.assertAlmostEqual(obj_whitney, 502.9755207221824, places=6)
 
+    # Marked slow: the emergent b3 register has to grow through both stages;
+    # about three and a quarter minutes.
+    @pytest.mark.slow
     def test_two_stage_grows_emergent_register(self):
         # The two-stage emergent run grows a b₃ color register out of the closed-S⁴ host.
         # run_stage1's greedy ΔF tie-breaks read FP values from the OpenMP-reduced Regge
@@ -145,6 +150,9 @@ class MultiCobordismCxxTest(unittest.TestCase):
         opt.run_stage1(max_steps=6, n_candidate_moves=4)
         self.assertTrue(math.isfinite(opt.r_u(opt.st)))   # all 4 blocks scored, no crash
 
+    # Marked slow: the DAG drives two output branches to completion; about one
+    # minute.
+    @pytest.mark.slow
     def test_dag_recombination_routes_two_outputs(self):
         # recombination node (2 outputs) -> two independent legs via output index.
         w = self.w

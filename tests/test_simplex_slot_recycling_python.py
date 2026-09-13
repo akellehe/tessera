@@ -14,6 +14,8 @@ mid-move must not be handed out until the move is over.
 
 import unittest
 
+import pytest
+
 import tessera
 
 
@@ -35,6 +37,9 @@ def _chain(spacetime, target=None, seed=20260909):
 
 class TestSimplexSlotRecycling(unittest.TestCase):
 
+    # Marked slow: the regression needs enough sweeps for unbounded growth to
+    # show; about thirty seconds.
+    @pytest.mark.slow
     def test_storage_tracks_live_simplices_rather_than_sweep_count(self):
         """The regression: storage used to grow without bound as sweeps ran."""
         spacetime = _spacetime()
@@ -53,6 +58,9 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         # Without reuse a 2000-sweep chain allocates many times its live count.
         self.assertLess(storage, live * 2)
 
+    # Marked slow: sweeps well past the point storage should stop growing;
+    # about forty-five seconds.
+    @pytest.mark.slow
     def test_sweeping_further_does_not_grow_storage_beyond_the_volume(self):
         spacetime = _spacetime()
         cdt = _chain(spacetime)
@@ -84,6 +92,9 @@ class TestSimplexSlotRecycling(unittest.TestCase):
         self.assertEqual(spacetime.reclaimSimplexSlots(), 0)
         self.assertEqual(spacetime.reclaimSimplexSlots(), 0)
 
+    # Marked slow: builds a 1600-simplex chain and sweeps it twice; about one
+    # minute.
+    @pytest.mark.slow
     def test_the_chain_is_unchanged_by_reuse(self):
         """Reusing storage must not change which geometry the chain visits."""
         first = _spacetime()

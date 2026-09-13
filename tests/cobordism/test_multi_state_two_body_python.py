@@ -257,6 +257,8 @@ def test_the_descent_direction_accounts_for_every_case():
     assert np.abs(many - one).max() > 1e-9, "the extra cases moved nothing"
 
 
+# Marked slow: relaxes every state in the two-body set; about forty seconds.
+@pytest.mark.slow
 def test_relaxation_lowers_the_summed_objective():
     """The point of the feature: one bulk improving for several states at once.
 

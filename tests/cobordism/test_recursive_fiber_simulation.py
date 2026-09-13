@@ -40,6 +40,8 @@ import sys
 import time
 import unittest
 
+import pytest
+
 import tessera
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -817,6 +819,9 @@ class RefinementIndependenceTest(unittest.TestCase):
         self.assertGreater(indicators.mesh_quality, 0.0)
         self.assertLessEqual(indicators.mesh_quality, 1.0)
 
+    # Marked slow: the relaxation has to reach stationarity before the solver
+    # error can be read; about one minute.
+    @pytest.mark.slow
     def test_solver_error_is_zero_once_the_relaxation_is_stationary(self):
         node = _node()
         node.run_stage2(max_iters=200, tolerance=1e-12)

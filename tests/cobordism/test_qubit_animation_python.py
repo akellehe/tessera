@@ -101,6 +101,9 @@ def _read(frame, index):
 # --------------------------------------------------------------------------- #
 # the drive and the channels
 # --------------------------------------------------------------------------- #
+# Marked slow: publishes a live frame for every unit of the run; about thirty
+# seconds.
+@pytest.mark.slow
 def test_one_frame_per_unit_published_live():
     run = _run()
     frames = run["result"].frames

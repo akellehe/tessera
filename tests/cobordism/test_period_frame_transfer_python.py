@@ -694,6 +694,9 @@ def report(label, before, after):
           f"{np.round(np.asarray(read.transfer).real, 8).tolist()}, Schmidt {read.singular_values}")
 
 
+# Marked slow: a complete stage-2 pass over the two-body host; about one
+# minute.
+@pytest.mark.slow
 def test_stage2_pass_descends_the_two_body_residual(whitney_default):
     """Both fibers, both frames and chi set, input residual weight 1e6, real
     locus, the Regge term off: r_U is the only term, the blocks sit at their
@@ -707,6 +710,9 @@ def test_stage2_pass_descends_the_two_body_residual(whitney_default):
     report("Regge term off, weight 1e6", before, after)
 
 
+# Marked slow: the same stage-2 pass with the Regge term also scored; about one
+# minute.
+@pytest.mark.slow
 def test_stage2_pass_with_the_regge_term_records_the_two_body_residual(whitney_default):
     """The same pass with the Regge term on (T2's configuration: the collar
     seed is far from Regge stationarity, 123.6): the objective and the Regge
