@@ -354,6 +354,56 @@ def test_config_refusals_by_name():
     assert config["layers"] == qa.DECLARED_COLLAR_LAYERS == 1
 
 
+def test_pin_boundary_state_shares_one_boundary_across_every_state():
+    """--pin-boundary-state removes the per-case boundary substitution.
+
+    A case normally carries its own squared lengths on the boundary edges, and
+    the engine writes them into the live complex for that case's read and
+    restores them after -- so the boundary is a parameter supplied per case
+    rather than a coordinate the drive owns, and releasing the geometric pin
+    changes nothing. An EMPTY list makes that write a no-op, which is how every
+    declared state comes to be read on one shared complex at a time.
+    """
+    inputs = _run()["result"].frames[0].inputs
+    substituted = qa.build_config(grid=GRID, tori=2,
+                                  states="0.45+1.35j:-0.4+0.95j")
+    shared = qa.build_config(grid=GRID, tori=2,
+                             states="0.45+1.35j:-0.4+0.95j",
+                             pin_boundary_state=True)
+
+    assert substituted["pin_boundary_state"] is False
+    assert substituted["pin_boundary"] is True
+    assert shared["pin_boundary_state"] is True
+    # Released, not merely permitted: behind the pin the flag would be inert,
+    # since the pin zeroes the descent on exactly the block edges that the
+    # shared attachment exists to let move.
+    assert shared["pin_boundary"] is False
+
+    def payload(config):
+        boundary, _, _, _, _ = qa._two_body_case(
+            (TAU_A, TAU_B), inputs.tori, inputs.vertex_ids, config["grid"],
+            config["operator"], config)
+        return boundary
+
+    assert payload(substituted), "the default must still substitute"
+    assert payload(shared) == [], "sharing writes no boundary at all"
+
+
+def test_pin_boundary_state_refusals_by_name():
+    with pytest.raises(ValueError, match="refused together"):
+        qa.build_config(states="0.45+1.35j:-0.4+0.95j",
+                        pin_boundary=True, pin_boundary_state=True)
+    with pytest.raises(ValueError, match="needs more than one attached state"):
+        qa.build_config(pin_boundary_state=True)
+    # Asking for the release explicitly is not a conflict, only redundant.
+    config = qa.build_config(states="0.45+1.35j:-0.4+0.95j",
+                             pin_boundary=False, pin_boundary_state=True)
+    assert config["pin_boundary"] is False and config["pin_boundary_state"]
+    # The default is untouched by any of this.
+    assert qa.build_config()["pin_boundary"] is True
+    assert qa.build_config()["pin_boundary_state"] is False
+
+
 def test_the_cli_parses_the_qubit_flags():
     parser = qa.build_parser()
     args = parser.parse_args(["run", "--tau-a", "0.3+1.1j", "--tau-b=-0.2+0.8j",

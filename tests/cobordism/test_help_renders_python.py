@@ -136,7 +136,8 @@ def test_qubit_options_belong_only_to_the_qubit_entrypoint():
         "--output-state", "--tau-a", "--tau-b", "--grid", "--J",
         "--time", "--input-weight", "--regge", "--state",
         "--no-regge", "--score-leak", "--operator", "--pin-boundary",
-        "--no-pin-boundary", "--extend-boundary",
+        "--no-pin-boundary", "--pin-boundary-state",
+        "--extend-boundary",
     }
     neutral = _run_options(ea)
     qubit = _run_options(qa)
