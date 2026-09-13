@@ -2453,6 +2453,7 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
                  candidate_moves=DECLARED_CANDIDATE_MOVES,
                  combinatorial_depth=_LEGACY_UNSET,
                  combinatorial_length=_LEGACY_UNSET,
+                 best_over_breadths=ea.DECLARED_BEST_OVER_BREADTHS,
                  readout=DECLARED_READOUT,
                  tori=DECLARED_TORI,
                  collar_twist=DECLARED_COLLAR_TWIST,
@@ -2483,7 +2484,8 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
         combinatorial_depth=combinatorial_depth,
         combinatorial_length=combinatorial_length,
         surgical_depth=surgical_depth,
-        combinatorial_breadth=combinatorial_breadth)
+        combinatorial_breadth=combinatorial_breadth,
+        best_over_breadths=best_over_breadths)
 
     grid = ea._cpp_int_value("grid", grid)
     layers = ea._cpp_int_value("collar layers", layers)
@@ -2700,6 +2702,7 @@ def main(argv=None):
             candidate_moves=args.candidate_moves,
             combinatorial_depth=args.combinatorial_depth,
             combinatorial_length=args.combinatorial_length,
+            best_over_breadths=args.best_over_breadths,
             surgical_depth=getattr(args, "surgical_depth", _LEGACY_UNSET),
             combinatorial_breadth=getattr(
                 args, "combinatorial_breadth", _LEGACY_UNSET),
