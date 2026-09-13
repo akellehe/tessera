@@ -327,7 +327,7 @@ def test_render_png_and_gif_under_agg():
         # The qubit panels name their quantities in mathtext (#993), so the
         # tokens are the symbols as they are written in the source, not the
         # glyphs they render as.
-        for token in ("residuals", r"$\hat\tau$", "Bloch", r"|T_{AB}|", "the whole"):
+        for token in ("residuals", r"$\hat\tau$", "Bloch", "whole harmonic operators", "the whole"):
             assert any(token in label for label in panel_text), token
     finally:
         plt.close(figure)
