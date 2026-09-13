@@ -2113,6 +2113,61 @@ def panels_for(_config=None):
 #: would read as absent measurements.
 DECLARED_PANEL_GRID = (4, 5)
 
+#: The live window and the rendered canvas, in inches, sized for the 4x5 grid
+#: above. Both are overridable per example, alongside `grid` on `_draw_frame`,
+#: so panel count and canvas stay in proportion.
+DECLARED_LIVE_FIGSIZE = (18, 10)
+DECLARED_RENDER_FIGSIZE = (20, 12)
+
+#: Width-to-height ratio the panel cells are shaped towards. Both canvases are
+#: about twice as wide as they are tall, so a grid whose columns-to-rows ratio
+#: is near 2 gives cells that are close to square. A panel that is close to
+#: square suits every painter here: the Bloch hemisphere and the modulus plane
+#: are drawn on equal axes, and the matrix panels are square by construction.
+DECLARED_PANEL_ASPECT = 2.0
+
+
+def _grid_for(count, aspect=DECLARED_PANEL_ASPECT):
+    """The (rows, columns) grid that `count` panels are laid out on.
+
+    Derived from the panel count rather than fixed, so an example that draws
+    only the panels its mode reads gets a figure sized to them instead of
+    inheriting one shaped for a longer list.
+
+    Every panel gets `1 / (rows * columns)` of the canvas, so the grid with the
+    fewest cells gives the largest panels. That is the primary criterion here:
+    among the grids that hold `count` panels, the fewest unused cells wins, and
+    ties go to the shape closest to `aspect`.
+
+    Grids far from `aspect` are rejected outright rather than ranked, because
+    the tightest grid for an awkward count is often a single long strip -- 14
+    panels pack exactly into 2x7, whose cells are three and a half times wider
+    than they are tall and unreadable for every painter here. The accepted
+    window is half to one-and-a-half times `aspect`.
+    """
+    if count < 1:
+        raise ValueError("a figure needs at least one panel, got %r" % (count,))
+    lowest, highest = aspect / 2.0, aspect * 1.5
+    best_score = None
+    best_grid = None
+    for columns in range(1, count + 1):
+        rows = -(-count // columns)          # ceiling division
+        ratio = columns / rows
+        if not lowest <= ratio <= highest:
+            continue
+        score = (rows * columns - count, abs(ratio - aspect))
+        if best_score is None or score < best_score:
+            best_score = score
+            best_grid = (rows, columns)
+    if best_grid is None:
+        # No grid in the accepted window: fall back to the smallest square that
+        # holds them all, which is always inside it.
+        side = 1
+        while side * side < count:
+            side += 1
+        return (side, side)
+    return best_grid
+
 
 def _suptitle(frame, last_step):
     """The figure's title: what was driven, and that the read-outs are
@@ -2133,18 +2188,23 @@ def _suptitle(frame, last_step):
 
 
 def _draw_frame(figure, frames, index, panels, title_fn, trace_panels,
-                placed_panels, placed=None):
+                placed_panels, placed=None, grid=None):
     """Draw one frame's panels onto a figure.
 
     `placed` is `stabilize(frames)`. Passing it is optional so a caller can
     draw a single frame without it, in which case the raw layout is used and
     the picture is correct but unaligned.
+
+    `grid` is the (rows, columns) the panels are laid out on, defaulting to
+    this module's own. An example with a different number of panels passes its
+    own, so the grid tracks the panel list rather than every caller inheriting
+    a grid sized for the emergence instrument.
     """
     figure.clear()
     frame = frames[index]
     placement = placed[index] if placed else None
-    rows, columns = DECLARED_PANEL_GRID
-    axes = figure.subplots(rows, columns)
+    rows, columns = grid or DECLARED_PANEL_GRID
+    axes = figure.subplots(rows, columns, squeeze=False)
     flat = [ax for row in axes for ax in row]
     for axis in flat[len(panels):]:
         figure.delaxes(axis)
@@ -2185,7 +2245,7 @@ def _interactive_backends():
 
 
 def _drive_live(config, driver, drawer, progress=False, on_node=None,
-                on_setup=None, thread_name="animation-drive"):
+                on_setup=None, thread_name="animation-drive", figsize=None):
     """Drive with supplied experiment callbacks while drawing live frames.
 
     The compute runs on a worker thread and the figure is drawn on the main
@@ -2226,7 +2286,7 @@ def _drive_live(config, driver, drawer, progress=False, on_node=None,
             "The drive is identical either way." % (backend, webagg))
     if not plt.isinteractive():
         plt.ion()
-    figure = plt.figure(figsize=(18, 10))
+    figure = plt.figure(figsize=figsize or DECLARED_LIVE_FIGSIZE)
 
     ready = queue.Queue()
     published = {}
@@ -2396,8 +2456,13 @@ def geometry_document(node, inputs=None, source=None):
 
 
 
-def _render(frames, path, drawer):
-    """Render frames with ``drawer`` to a GIF, MP4, or final-frame PNG."""
+def _render(frames, path, drawer, figsize=None):
+    """Render frames with ``drawer`` to a GIF, MP4, or final-frame PNG.
+
+    `figsize` defaults to this module's own. An example with a smaller panel
+    grid passes its own so its panels keep a sane aspect instead of being
+    stretched across a canvas proportioned for the emergence instrument.
+    """
     if not frames:
         raise ValueError("cannot render an empty frame sequence")
     lowered = os.fspath(path).lower()
@@ -2408,7 +2473,7 @@ def _render(frames, path, drawer):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    figure = plt.figure(figsize=(20, 12))
+    figure = plt.figure(figsize=figsize or DECLARED_RENDER_FIGSIZE)
     # Computed once, in frame order: the alignment is a chain, so a renderer
     # that redraws a frame or draws only the last must still see the same
     # positions it would have seen drawing them all in sequence.
