@@ -9,16 +9,40 @@ All scripts accept `--save <path.png>` to write output to disk, or display
 interactively by default.  Run any script with `--help` for the full set of
 tunable parameters.
 
+## Reproducing these figures
+
+Every figure on this page names the command that produced it, the lattice size
+and statistics that command ran at, and the wall-clock time it took. Running the
+same command against the same commit reproduces the same figure: each script
+seeds both generators that decide the outcome — the spacetime's, which drives the
+initial build, and the simulation's, which drives the Monte Carlo sweeps — from
+`--seed`, so a run is reproducible across processes and machines.
+
+**Engine:** commit `2c5e031f30cdbb9a361dea5c16878aa8e446b779`, which is the
+CDT example seeding on top of `e7c24a98`.
+
+The four-volume a chain holds is set by `--n-simplices`. The builder lays down at
+most 80 time slices directly, and above that takes half the number given as the
+four-volume the Monte Carlo grows to, so `--n-simplices 80000` targets
+$N_4^{(4,1)} = 40\,000$. Because the number of time slices is fixed by the build,
+`--n-therm` is what fills each slice out: the spatial volume per slice is the
+four-volume the sweeps reach divided by the slice count.
+
 ```{note}
-The paper results were obtained on lattices of $N_4 = 10\,000$--$362\,000$
-four-simplices with $T = 80$ time slices and $10^5$--$10^8$ Monte Carlo
-sweeps.  The plots shown here use $N_4 \sim 800$--$1\,600$ to keep
-runtimes under a few minutes.  Observables that depend on large-scale
-geometry (phase boundaries, Hausdorff scaling, $\cos^3$ profile shape)
-require at least $N_4 > 5\,000$ to become visible.  Where the
-small-lattice results already confirm the paper predictions, this is
-noted explicitly; where they do not, the expected large-lattice
-behaviour is described.
+Two quantities are easy to confuse. $N_4^{(4,1)}$ counts the (4,1) and (1,4)
+four-simplices and is what the volume-fixing term constrains; $N_4$ counts all
+four-simplices, $N_4 = N_4^{(4,1)} + N_4^{(3,2)}$. Only $N_4^{(4,1)}$ is held to
+a target. $N_4^{(3,2)}$ is a free degree of freedom that relaxes to its own
+equilibrium, reaching $N_4^{(3,2)}/N_4^{(4,1)} \approx 2.5$ over $10^4$--$10^5$
+sweeps, so $N_4 \approx 3.5\,N_4^{(4,1)}$ once the chain has settled. Arguments
+that take a target volume take $N_4^{(4,1)}$.
+```
+
+```{note}
+Measurements taken before that ratio settles sample a transient rather than the
+equilibrium ensemble. The thermalization counts below are chosen so the chain
+reaches equilibrium first; the paper works at the same timescale of $10^5$
+sweeps.
 ```
 
 ---

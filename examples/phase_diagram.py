@@ -66,7 +66,7 @@ from tessera.utils.progress import ProgressDisplay, make_tune_cb
 # =====================================================================
 
 def run_point(k0, delta, n_simplices, nSweeps,
-              sweep_cb=None, phase_cb=None, point_id=None):
+              sweep_cb=None, phase_cb=None, point_id=None, seed=None):
     """Run CDT at a single (k0, Delta) point and return observables.
 
     The Toroid staircase product creates d*(d+1)=20 simplices per time
@@ -96,6 +96,11 @@ def run_point(k0, delta, n_simplices, nSweeps,
     # Build a small initial lattice: cap at ~40 time slices so spatial
     # volume per slice is large enough for phase structure to develop.
     max_build = 40 * 20  # 40 slabs x 20 simplices/slab in 4D
+    if seed is not None:
+        # Both generators decide the outcome: the spacetime's drives the build,
+        # the simulation's drives the sweeps. Offset by grid point so each
+        # point of the scan is its own chain.
+        st.setSeed(seed + (point_id or 0))
     st.build(min(n_simplices, max_build))
 
     target = n_simplices // 2
@@ -103,6 +108,8 @@ def run_point(k0, delta, n_simplices, nSweeps,
     k4 = (k0 + 6 * delta) / (2 * d - 2) - 2 * delta
     epsilon = 1. / target
     cdt = tessera.CDTSimulation(spacetime=st, k0=k0, k4=k4, delta=delta, epsilon=epsilon, targetN41=target)
+    if seed is not None:
+        cdt.setSeed(seed + (point_id or 0))
 
     # tune() adjusts k4 to the pseudo-critical value for this (k0,delta)
     # and runs 20 feedback sweeps during which the system grows to target.
@@ -193,6 +200,9 @@ def main():
     parser.add_argument("--workers", type=int,
                         default=min(os.cpu_count() or 1, 8),
                         help="Parallel worker threads (default: min(cpus, 8))")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed both generators that decide the outcome, "
+                             "making the run reproducible across processes")
     parser.add_argument("--save", type=str, default=None)
     args = parser.parse_args()
 
@@ -231,7 +241,7 @@ def main():
                 f = pool.submit(run_point, k0, delta,
                                 args.n_simplices, args.n_sweeps,
                                 progress.on_sweep, progress.on_phase,
-                                point_id)
+                                point_id, args.seed)
                 futures[f] = (i, j, k0, delta, point_id)
                 point_id += 1
 
