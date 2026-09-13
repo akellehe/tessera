@@ -2021,14 +2021,83 @@ def _configure_qubit_node(node, inputs, config):
                 set(int(v) for v in node.inputs[index].vertices))
 
 
+def stall_causes(config, frames):
+    """Why a run that never improved never improved, named.
+
+    A drive that does not move exits as `tolerance-reached`, which reads as
+    convergence. Two configurations reach it while doing nothing, and a
+    reader who is not told cannot tell them from a run that arrived
+    somewhere. Reported from a real run as "exits after one try, ignoring
+    --patience" -- patience was working and counting genuine stalls; nothing
+    said what was stalling.
+
+    Diagnostic only: nothing here changes the terminator, the objective, or
+    any recorded value.
+    """
+    causes = []
+    names = _readout_names(config.get("readout", DECLARED_READOUT))
+    if "whole" in names and config.get("whole_pairing",
+                                       DECLARED_WHOLE_PAIRING) == "periods":
+        causes.append(
+            "--readout whole under --whole-pairing periods CANNOT respond to "
+            "the geometry. The reading pairs cohomology with homology, so it "
+            "sees only a cohomology class; a change of metric moves the "
+            "harmonic representative by exactly a coboundary, and a "
+            "coboundary's period around a closed cycle telescopes to zero. "
+            "Every unit is a stall by construction. Try --whole-pairing gram, "
+            "which contracts through the chain metric instead, or "
+            "--readout transfer")
+    disposition = config.get("interior_disposition",
+                             DECLARED_INTERIOR_DISPOSITION)
+    if disposition != ea.EdgeDisposition.SPACELIKE:
+        causes.append(
+            "--edge-disposition %s seeds the collar's interior away from the "
+            "lengths seed_collar wires. `random` in particular gives every "
+            "interior edge a uniformly random phase, which has been measured "
+            "to leave no improving move on the first unit" % (disposition,))
+    return causes
+
+
+def stall_report(config, frames):
+    """The lines to print when a drive never moved, or none if it did.
+
+    "Never moved" is measured against the run's own tolerance and over the
+    whole run, not a single unit: a run that improves and then stops has
+    converged or stalled on its geometry, which is a result. A run whose last
+    unit reads the same as its first did nothing at all, and that is a
+    configuration fault worth naming.
+    """
+    if len(frames) < 2:
+        return []
+    first = ea._objective_total(frames[0])
+    last = ea._objective_total(frames[-1])
+    if first is None or last is None:
+        return []
+    if not ea._converged(first, last, config.get("tolerance", 0.0)):
+        return []
+    causes = stall_causes(config, frames)
+    if not causes:
+        return []
+    lines = ["the objective did not move over %d engine unit%s (%s throughout). "
+             "That is a configuration, not a result:"
+             % (len(frames) - 1, "" if len(frames) == 2 else "s",
+                ea._format_objective_total(frames[-1]))]
+    lines.extend("  * " + cause for cause in causes)
+    return lines
+
+
 def drive(config, progress=False, on_frame=None, on_node=None, on_setup=None,
           stop_requested=None):
     """Drive the qubit cobordism through the shared engine-unit loop."""
-    return ea._drive(
+    result = ea._drive(
         config, build_qubit_node, QubitFrame, _report_qubit,
         configure_node=_configure_qubit_node, progress=progress,
         on_frame=on_frame, on_node=on_node, on_setup=on_setup,
         stop_requested=stop_requested)
+    if progress:
+        for line in stall_report(config, result.frames):
+            sys.stdout.write(line + "\n")
+    return result
 
 
 def draw_frame(figure, frames, index, placed=None):
