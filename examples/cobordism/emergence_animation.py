@@ -150,6 +150,24 @@ DECLARED_SURGICAL_DEPTH = DECLARED_COMBINATORIAL_DEPTH
 #: alias.
 DECLARED_COMBINATORIAL_LENGTH = 0
 DECLARED_COMBINATORIAL_BREADTH = DECLARED_COMBINATORIAL_LENGTH
+#: How many top cells a stalled unit cones out at random before carrying on
+#: (`--backsteps`). Zero is off, and off is the default.
+#:
+#: Stage 1 only commits moves that LOWER the objective, so once nothing does,
+#: the run is in a local minimum and every remaining unit is a stall. A
+#: backstep is the way out: on a stall, remove this many top cells chosen
+#: uniformly at random among those valid to remove, and carry on from the
+#: perturbed complex.
+#:
+#: Uniformly at random, and not priced. The engine's directed cone-out keeps
+#: the candidate that most lowers the residual, which is the same greedy rule
+#: that produced the minimum; a move meant to LEAVE one cannot share it.
+#:
+#: The objective generally RISES after a backstep. That is what a perturbation
+#: does, and the run says so rather than hiding it. The stall counter is NOT
+#: reset, so `--patience` still bounds the run and a genuinely stuck geometry
+#: still terminates instead of perturbing forever.
+DECLARED_BACKSTEPS = 0
 #: Absolute objective tolerance. Two roles, both absolute and never relative.
 #:
 #: Stage 2 backs its line search off until a trial lowers the exact selected
@@ -1483,6 +1501,13 @@ def _drive(config, node_factory, frame_factory, reporter, *,
         if _converged(before, _objective_total(frames[-1]),
                       config["tolerance"]):
             stalls += 1
+            # The backstep, on the unit that failed to converge. Deliberately
+            # AFTER the frame is published and the stall is counted: the unit
+            # that stalled is reported as it was, and `--patience` still bounds
+            # the run, so a geometry no perturbation helps still terminates.
+            backsteps = int(config.get("backsteps", DECLARED_BACKSTEPS))
+            if backsteps > 0 and stalls < patience:
+                node.random_cone_out(backsteps)
             if stalls >= patience:
                 terminator = Terminator.TOLERANCE
                 break
@@ -2576,7 +2601,8 @@ def _build_common_config(
         combinatorial_depth=_LEGACY_UNSET,
         combinatorial_length=_LEGACY_UNSET, *,
         surgical_depth=_LEGACY_UNSET,
-        combinatorial_breadth=_LEGACY_UNSET):
+        combinatorial_breadth=_LEGACY_UNSET,
+        backsteps=DECLARED_BACKSTEPS):
     """Validate and return the engine schedule shared by both examples."""
     combinatorial_depth = _aliased_value(
         combinatorial_depth, surgical_depth, DECLARED_COMBINATORIAL_DEPTH,
@@ -2649,10 +2675,12 @@ def _build_common_config(
         "patience": patience,
         "combinatorial_depth": combinatorial_depth,
         "combinatorial_length": combinatorial_length,
+        "backsteps": _integer_value("backsteps", backsteps),
     }
 
 
 def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
+                 backsteps=DECLARED_BACKSTEPS,
                  seed=DECLARED_SEED, host_seed=DECLARED_HOST_SEED,
                  resolution=DECLARED_RESOLUTION,
                  edge_disposition=DECLARED_EDGE_DISPOSITION,
@@ -2673,7 +2701,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
         combinatorial_depth=combinatorial_depth,
         combinatorial_length=combinatorial_length,
         surgical_depth=surgical_depth,
-        combinatorial_breadth=combinatorial_breadth)
+        combinatorial_breadth=combinatorial_breadth,
+        backsteps=backsteps)
 
     size = _integer_value("size", size)
     host_seed = _integer_value("host seed", host_seed)
@@ -2752,6 +2781,23 @@ def _add_common_run_arguments(run, out_default, geometry_help):
     run.add_argument("--patience", type=int, default=DECLARED_PATIENCE,
                      help="consecutive stalled units allowed before stopping "
                           "(default %d)" % DECLARED_PATIENCE)
+    run.add_argument("--backsteps", type=int, default=DECLARED_BACKSTEPS,
+                     help="on a unit that fails to converge, cone out this "
+                          "many top cells chosen UNIFORMLY AT RANDOM among "
+                          "those valid to remove, then carry on from the "
+                          "perturbed complex. Zero is off. Stage 1 only "
+                          "commits moves that lower the objective, so once "
+                          "nothing does the run sits in a local minimum and "
+                          "every further unit is a stall; this is the way "
+                          "out. Not priced: the engine's directed cone-out "
+                          "keeps whichever candidate most lowers the "
+                          "residual, which is the same greedy rule that "
+                          "produced the minimum. A cell touching a pinned "
+                          "region is never chosen, so --pin-boundary is not "
+                          "eaten by a perturbation. The objective generally "
+                          "RISES afterwards, which is what a perturbation "
+                          "does; the stall counter is not reset, so "
+                          "--patience still ends a run no perturbation helps")
     run.add_argument("--live", action="store_true",
                      help="draw each completed frame while the drive runs; "
                           "still writes the requested outputs. Needs the "
@@ -2966,6 +3012,7 @@ def main(argv=None):
             candidate_moves=args.candidate_moves,
             combinatorial_depth=args.combinatorial_depth,
             combinatorial_length=args.combinatorial_length,
+            backsteps=args.backsteps,
             surgical_depth=getattr(args, "surgical_depth", _LEGACY_UNSET),
             combinatorial_breadth=getattr(
                 args, "combinatorial_breadth", _LEGACY_UNSET))

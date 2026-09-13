@@ -2417,6 +2417,15 @@ Right -- re-read after each drive call:
            py::arg("max_open") = 6,
            "Directed gated cone-out: deliberately remove top cells, keeping the opener "
            "that most lowers this node's rU (which absorbs r_state). Returns #holes opened.")
+      .def("random_cone_out", &MultiCobordism::randomConeOut, py::arg("count"),
+           "Cone out `count` top cells chosen UNIFORMLY AT RANDOM among those valid to remove -- "
+           "the BACKSTEP, a deliberate perturbation rather than an improvement. directed_cone_out "
+           "keeps the candidate that most lowers rU, which is the greedy rule that walks a run into "
+           "a local minimum; nothing here is priced and no candidate is preferred. Valid means the "
+           "manifold gate accepts the removal AND the cell touches no declared pinned region, so a "
+           "held boundary is not eaten by a perturbation. Draws from the node's seeded generator. "
+           "The objective will generally be HIGHER afterwards, which is the point. Returns how many "
+           "were removed, fewer than `count` when the valid candidates run out.")
       .def("directed_cone_in", &MultiCobordism::directedConeIn, py::arg("max_close") = 6,
            "Directed gated cone-in: select the register by capping the hole whose removal "
            "most lowers rU. Returns #holes capped.")
