@@ -2119,6 +2119,55 @@ DECLARED_PANEL_GRID = (4, 5)
 DECLARED_LIVE_FIGSIZE = (18, 10)
 DECLARED_RENDER_FIGSIZE = (20, 12)
 
+#: Width-to-height ratio the panel cells are shaped towards. Both canvases are
+#: about twice as wide as they are tall, so a grid whose columns-to-rows ratio
+#: is near 2 gives cells that are close to square. A panel that is close to
+#: square suits every painter here: the Bloch hemisphere and the modulus plane
+#: are drawn on equal axes, and the matrix panels are square by construction.
+DECLARED_PANEL_ASPECT = 2.0
+
+
+def _grid_for(count, aspect=DECLARED_PANEL_ASPECT):
+    """The (rows, columns) grid that `count` panels are laid out on.
+
+    Derived from the panel count rather than fixed, so an example that draws
+    only the panels its mode reads gets a figure sized to them instead of
+    inheriting one shaped for a longer list.
+
+    Every panel gets `1 / (rows * columns)` of the canvas, so the grid with the
+    fewest cells gives the largest panels. That is the primary criterion here:
+    among the grids that hold `count` panels, the fewest unused cells wins, and
+    ties go to the shape closest to `aspect`.
+
+    Grids far from `aspect` are rejected outright rather than ranked, because
+    the tightest grid for an awkward count is often a single long strip -- 14
+    panels pack exactly into 2x7, whose cells are three and a half times wider
+    than they are tall and unreadable for every painter here. The accepted
+    window is half to one-and-a-half times `aspect`.
+    """
+    if count < 1:
+        raise ValueError("a figure needs at least one panel, got %r" % (count,))
+    lowest, highest = aspect / 2.0, aspect * 1.5
+    best_score = None
+    best_grid = None
+    for columns in range(1, count + 1):
+        rows = -(-count // columns)          # ceiling division
+        ratio = columns / rows
+        if not lowest <= ratio <= highest:
+            continue
+        score = (rows * columns - count, abs(ratio - aspect))
+        if best_score is None or score < best_score:
+            best_score = score
+            best_grid = (rows, columns)
+    if best_grid is None:
+        # No grid in the accepted window: fall back to the smallest square that
+        # holds them all, which is always inside it.
+        side = 1
+        while side * side < count:
+            side += 1
+        return (side, side)
+    return best_grid
+
 
 def _suptitle(frame, last_step):
     """The figure's title: what was driven, and that the read-outs are
@@ -2155,7 +2204,7 @@ def _draw_frame(figure, frames, index, panels, title_fn, trace_panels,
     frame = frames[index]
     placement = placed[index] if placed else None
     rows, columns = grid or DECLARED_PANEL_GRID
-    axes = figure.subplots(rows, columns)
+    axes = figure.subplots(rows, columns, squeeze=False)
     flat = [ax for row in axes for ax in row]
     for axis in flat[len(panels):]:
         figure.delaxes(axis)

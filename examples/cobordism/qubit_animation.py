@@ -100,12 +100,6 @@ DECLARED_ANALYSIS_DEGREES = ea.DECLARED_ANALYSIS_DEGREES
 DECLARED_SEED = ea.DECLARED_SEED
 DECLARED_INPUTS = "qubit"
 LIVE_POLL_INTERVAL = ea.LIVE_POLL_INTERVAL
-#: The qubit figure's own panel grid. NOT the emergence grid: that one is 4x5,
-#: sized for the nineteen panels this example used to inherit, and leaving it
-#: in place after the cut would draw eight panels into the top of a mostly
-#: empty figure. Exactly `len(_PANELS)` cells, so nothing is dropped and no
-#: dead space is reserved.
-DECLARED_PANEL_GRID = (2, 4)
 _LEGACY_UNSET = ea._LEGACY_UNSET
 
 #: Which space the two-body target is scored against (`--readout`), as a
@@ -1968,12 +1962,25 @@ _TRACE_PANELS = ("objective", "residuals", "moduli")
 _PLACED_PANELS = tuple(name for name in ea._PLACED_PANELS
                        if name in _QUBIT_PANEL_ORDER)
 
+#: The grid these panels lay out on, derived from how many there are rather
+#: than fixed. Eight panels resolve to 2x4: no unused cells, and a
+#: columns-to-rows ratio of exactly 2, which is the shape of both canvases
+#: below and so gives square cells. Adding or removing a qubit panel re-derives
+#: it; nothing here has to be kept in step by hand.
+DECLARED_PANEL_GRID = ea._grid_for(len(_PANELS))
+
 #: The qubit live window and rendered canvas. Private (not `DECLARED_`) because
-#: they are a property of this figure's eight panels, not a knob of the shared
-#: experiment. Proportioned for the 2x4 grid: the emergence sizes are shaped
-#: for 4x5 and would letterbox these panels.
-_QUBIT_LIVE_FIGSIZE = (17, 8)
-_QUBIT_RENDER_FIGSIZE = (18, 8.5)
+#: they are a property of this figure's panels, not a knob of the shared
+#: experiment.
+#:
+#: Each keeps the width of the emergence canvas it replaces and takes the
+#: height its own row count needs, which is what makes the remaining panels
+#: bigger rather than merely fewer. On the live window a cell goes from
+#: 3.6 x 2.5 inches (4x5 on 18x10) to 4.5 x 4.5 (2x4 on 18x9) -- 2.25 times the
+#: area. On the rendered canvas it goes from 5.0 x 3.0 (4x5 on 20x12) to
+#: 5.0 x 5.0 (2x4 on 20x10), 1.67 times the area, on a smaller file.
+_QUBIT_LIVE_FIGSIZE = (18, 9)
+_QUBIT_RENDER_FIGSIZE = (20, 10)
 
 
 def panels_for(_config=None):
