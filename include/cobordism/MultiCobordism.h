@@ -2120,6 +2120,33 @@ class MultiCobordism {
   /// keeps the cap that most lowers `rU` — i.e. drops the hole that hurts the carry. Repeats
   /// up to `maxClose`; stops when no cap lowers `rU`. Returns #holes capped.
   [[nodiscard]] int directedConeIn(int maxClose = 6);
+  /// Cone out \p count top cells chosen UNIFORMLY AT RANDOM among those valid
+  /// to remove — the BACKSTEP, a deliberate perturbation rather than an
+  /// improvement.
+  ///
+  /// `directedConeOut` enumerates candidates and keeps the one that most
+  /// lowers `rU`. That greedy rule is exactly what walks a run into a local
+  /// minimum, so a move meant to LEAVE one cannot share it: nothing here is
+  /// priced, and no candidate is preferred over another.
+  ///
+  /// Valid means two things. The manifold gate inside `SurgicalCone::coneOut`
+  /// must accept the removal, as everywhere else. AND the cell must not touch
+  /// a declared pinned region: unlike `directedConeOut`, which accepts
+  /// removing a pinned vertex whenever the result is a manifold in its own
+  /// right, a backstep leaves the held geometry alone. A run that pins its
+  /// boundary and then has it eaten by a perturbation is not the run that was
+  /// asked for.
+  ///
+  /// Draws from this node's seeded generator, so a backstep is reproducible
+  /// from the run's seed like every other engine move.
+  ///
+  /// The objective will generally be HIGHER afterwards. That is the point,
+  /// and callers must not treat the rise as a failure.
+  ///
+  /// @returns how many cells were actually removed, which is less than
+  ///   \p count when the valid candidates run out.
+  [[nodiscard]] int randomConeOut(int count);
+
 
   // ==================================================================
   // Surface inputs and the bridge kind (qubit cobordism spec S3, D1)

@@ -3971,6 +3971,42 @@ int MultiCobordism::directedConeOut(HolePlacementStrategy strategy, int maxOpen)
   return opened;
 }
 
+int MultiCobordism::randomConeOut(int count) {
+  if (count <= 0 || !spacetime_) return 0;
+  // Every vertex any declared region holds. A cell touching one is not a
+  // candidate: `directedConeOut` may remove a pinned vertex when the result is
+  // still a manifold, but a perturbation that eats the boundary a run asked to
+  // hold is not the run that was asked for.
+  std::set<std::uint64_t> held;
+  for (const auto &region : pinnedRegions_)
+    held.insert(region.vertices.begin(), region.vertices.end());
+
+  std::vector<std::vector<std::uint64_t>> cells;
+  for (const auto *simplex : spacetime_->getTopSimplices()) {
+    auto cell = simplex->topTuple();
+    bool touchesHeld = false;
+    for (const auto vertexId : cell)
+      if (held.count(vertexId)) { touchesHeld = true; break; }
+    if (!touchesHeld) cells.push_back(std::move(cell));
+  }
+  // UNIFORM: shuffled whole and taken in that order, so no property of a cell
+  // -- its position, its adjacency, what it would do to rU -- makes it more or
+  // less likely to be chosen. Shuffling once and walking it is the same
+  // distribution as drawing without replacement, and needs one pass.
+  std::shuffle(cells.begin(), cells.end(), randomNumberGenerator_);
+
+  SurgicalCone cone(spacetime_.get());
+  int removed = 0;
+  for (const auto &cell : cells) {
+    if (removed >= count) break;
+    // Gated exactly as every other cone-out is. A rejection is not an error
+    // here: the candidate simply was not removable, and the next is tried.
+    if (!cone.coneOut(cell).first) continue;
+    ++removed;
+  }
+  return removed;
+}
+
 int MultiCobordism::directedConeIn(int maxClose) {
   if (registerDegrees_.empty()) return 0;
   constexpr int kMaxCandidates = 40;
