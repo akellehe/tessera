@@ -276,4 +276,10 @@ else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = [*_EXPORTS, "is_available"]
+# The theta quantization register is Python and NumPy only: a marking
+# lattice quantized at level k, on which a direct sum of tori is a tensor
+# product and an integer monodromy acts by its Weil matrix. It needs nothing
+# from the C++ backend, so it is bound regardless of `_AVAILABLE`.
+from .theta_register import ThetaRegister, WeilFit  # noqa: E402
+
+__all__ = [*_EXPORTS, "is_available", "ThetaRegister", "WeilFit"]
