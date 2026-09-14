@@ -75,3 +75,171 @@ def test_u1_reports_an_isometric_configuration():
     u1 = next(row for row in record["checks"] if row["id"] == "U1:A->B")
     assert u1["measured"]["isometric_before"]
     assert u1["measured"]["after"] > 1e-3
+
+
+# ---- #1103: R5 on the subspace, and the harmonic certificates -------------
+
+def test_r5_verdict_is_independent_of_basis_scale():
+    """The same subspace and identity operator at every scale: rescaling the
+    harmonic basis rescales |L^T Omega L| by |s|^2, which the old absolute
+    check read as the control vanishing at s = 1e-7."""
+    for scale in (1e-8, 1e-7, 1.0, 1e7, 1e8):
+        periods = scale * np.eye(2, dtype=complex)
+        row = qa._lagrangian_check("A->B", periods, periods, "none", TOL)
+        assert row["pass"], (scale, row)
+        assert row["measured"]["rank"] == 2
+
+
+def test_r5_verdict_survives_a_common_complex_basis_change():
+    rng = np.random.default_rng(3)
+    periods_a = np.eye(4, dtype=complex)
+    periods_b = np.block([[SWAP, np.zeros((2, 2))], [np.zeros((2, 2)), SWAP]]).astype(complex)
+    for _ in range(5):
+        change = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
+        change /= np.linalg.norm(change, 2)
+        change += 0.5 * np.eye(4)   # well conditioned
+        assert qa._lagrangian_check("whole", periods_a @ change, periods_b @ change, "swap", TOL)["pass"]
+        assert not qa._lagrangian_check("whole", periods_a @ change, periods_b @ change, "none", TOL)["pass"]
+
+
+def test_r5_rejects_a_genuinely_non_isotropic_subspace():
+    """`M = diag(2, 1)` is not (anti-)symplectic: neither sign vanishes."""
+    periods_a = np.eye(2, dtype=complex)
+    periods_b = np.diag([2.0, 1.0]).astype(complex)
+    row = qa._lagrangian_check("A->B", periods_a, periods_b, "none", TOL)
+    assert not row["pass"]
+    assert row["measured"]["declared_form_norm"] > 1e-3
+    assert row["measured"]["flipped_control_norm"] > 1e-3
+
+
+def test_r5_one_collar_of_a_four_torus_host_is_a_two_dimensional_subspace():
+    """Four cycles against four harmonic columns, rank two: the pair's own
+    restriction subspace is half its boundary b_1, not the column count."""
+    periods_a = np.hstack([np.eye(2), np.zeros((2, 2))]).astype(complex)
+    periods_b = np.hstack([np.eye(2), np.zeros((2, 2))]).astype(complex)
+    row = qa._lagrangian_check("A->A*", periods_a, periods_b, "none", TOL)
+    assert row["pass"], row
+    assert row["measured"]["rank"] == 2
+    # and a subspace too large to be Lagrangian is refused, not scored
+    too_big = np.eye(4, dtype=complex)
+    refused = qa._lagrangian_check("A->A*", too_big[:2], too_big[2:], "none", TOL)
+    assert refused["pass"] is False and "rank 4 against the Lagrangian dimension 2" in refused["measured"]["refusal"]
+
+
+def test_r5_refuses_a_rank_deficient_stack_by_name():
+    periods_a = np.diag([1.0, 0.0]).astype(complex)
+    periods_b = np.diag([1.0, 0.0]).astype(complex)
+    row = qa._lagrangian_check("A->B", periods_a, periods_b, "none", TOL)
+    assert not row["pass"]
+    assert "rank 1 against the Lagrangian dimension 2" in row["measured"]["refusal"]
+    assert "declared_form_norm" not in row["measured"]
+
+
+_HOST = {}
+
+
+def _host():
+    """The seeded collar, its markings, its restriction read and its pencil."""
+    if not _HOST:
+        args = qa.build_parser().parse_args(["verify"])
+        tori, _, seed, ids, markings = qa.seed_qubit_host(qa._verify_config(args))
+        read = qa.MC.restriction(seed.host, markings)
+        assert read.obstruction == "", read.obstruction
+        _HOST["read"] = read
+        _HOST["op"] = qa.cob.PencilLayer.assemble([seed.host]).op
+        _HOST["markings"] = markings
+        _HOST["host"] = seed.host
+    return _HOST
+
+
+class _FakeRead:
+    """A restriction read with some fields replaced, for the certificate checks."""
+
+    def __init__(self, real, **override):
+        self.betti = list(real.betti)
+        self.harmonic_rank = int(real.harmonic_rank)
+        self.images = np.asarray(real.images)
+        self.frame = np.asarray(real.frame)
+        self.certificate = real.certificate
+        for key, value in override.items():
+            setattr(self, key, value)
+
+
+def _rows(rows):
+    return {row["id"]: row for row in rows}
+
+
+def test_harmonic_certificates_pass_on_the_native_band():
+    fixture = _host()
+    rows, fields = qa._harmonic_certificates("seed", fixture["read"], fixture["op"], TOL)
+    by_id = _rows(rows)
+    assert by_id["H1:seed"]["pass"], by_id["H1:seed"]
+    assert by_id["H1:seed"]["measured"]["closed_residual"] <= TOL
+    assert by_id["H1:seed"]["measured"]["coclosed_residual"] <= TOL
+    assert by_id["H2:seed"]["pass"], by_id["H2:seed"]
+    assert by_id["H2:seed"]["measured"]["kernel_nullity"] == 2
+    assert by_id["H3:seed"]["pass"], by_id["H3:seed"]
+    assert fields["idempotency"] <= TOL
+
+
+def test_an_incorrect_representative_with_unchanged_periods_is_rejected():
+    """Perturb one column on an edge no marking walks: every transported
+    period is unchanged, and the column is no longer closed."""
+    fixture = _host()
+    real = fixture["read"]
+    marked = {(min(u, v), max(u, v)) for marking in fixture["markings"]
+              for cycle in marking for u, v in cycle}
+    interior = None
+    for edge in fixture["host"].getEdgeList().toVector():
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        if (min(u, v), max(u, v)) not in marked:
+            interior = (min(u, v), max(u, v))
+            break
+    assert interior is not None
+    assembled = qa.cob.PencilLayer.assemble([fixture["host"]])
+    row_index = assembled.cell_index(1, list(interior))
+    images = np.asarray(real.images).copy()
+    images[row_index, 0] += 1e-3
+    fake = _FakeRead(real, images=images)
+    # periods over every marking unchanged: the walks never touch that edge
+    connection = assembled.op.connection()
+    for index, marking in enumerate(fixture["markings"]):
+        for c, cycle in enumerate(marking):
+            walk = [(int(u), int(v)) for u, v in cycle]
+            rotations = [walk[k:] + walk[:k] for k in range(len(walk))]
+            reported = np.asarray(real.periods[index])[c, 0]
+            assert any(abs(connection.transportedPeriod(images[:, 0], rot) - reported) < 1e-12
+                       for rot in rotations)
+    rows = _rows(qa._harmonic_certificates("seed", fake, fixture["op"], TOL)[0])
+    assert not rows["H1:seed"]["pass"]
+    assert rows["H1:seed"]["measured"]["closed_residual"] > 1e-6
+
+
+def test_a_contaminated_band_is_rejected_by_both_equations_and_the_kernel():
+    fixture = _host()
+    real = fixture["read"]
+    rng = np.random.default_rng(5)
+    images = np.asarray(real.images).copy()
+    images[:, 1] = rng.normal(size=images.shape[0]) + 1j * rng.normal(size=images.shape[0])
+    rows = _rows(qa._harmonic_certificates("seed", _FakeRead(real, images=images), fixture["op"], TOL)[0])
+    assert not rows["H1:seed"]["pass"]
+    assert not rows["H2:seed"]["pass"]
+    assert rows["H2:seed"]["measured"]["span_residual_band_in_kernel"] > 1e-3
+
+
+def test_a_kernel_dimension_mismatch_is_named_as_the_geometry_failing_the_condition():
+    fixture = _host()
+    fake = _FakeRead(fixture["read"], harmonic_rank=3)
+    rows = _rows(qa._harmonic_certificates("seed", fake, fixture["op"], TOL)[0])
+    assert not rows["H2:seed"]["pass"]
+    assert "fails the condition dim ker L_1 = b_1" in rows["H2:seed"]["measured"]["failure"]
+
+
+def test_verify_certifies_sentence_is_in_the_record():
+    args = qa.build_parser().parse_args(["verify"])
+    record = qa.verify(qa._verify_config(args))
+    assert record["certifies"] == qa.VERIFY_CERTIFIES
+    assert "NOT certified" in record["certifies"]
+    ids = {row["id"] for row in record["checks"]}
+    assert {"H1:seed", "H2:seed", "H3:seed", "H1:jittered", "H2:jittered", "H3:jittered"} <= ids
+    assert record["all_pass"], [row for row in record["checks"] if not row["pass"]]

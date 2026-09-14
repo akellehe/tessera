@@ -6941,6 +6941,8 @@ MultiCobordism::RestrictionRead MultiCobordism::restriction(const std::shared_pt
     return read;
   }
   read.images = zeroMode.images;
+  read.frame = zeroMode.frame;
+  read.certificate = zeroMode.certificate;
   for (const Marking &walk : walks) {
     Eigen::MatrixXcd periods = Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(walk.size()),
                                                       zeroMode.images.cols());
