@@ -1054,37 +1054,16 @@ def _two_body_case(pair, tori, ids, grid, operator, config):
     return (boundary, algebra["chi"], True, None, coefficients)
 
 
-def build_qubit_node(config):
-    """The qubit node: two flat tori on their collar, seeded as the input
-    blocks with their state fibers, markings and the two-body target.
+def seed_qubit_host(config):
+    """The qubit host as seeded, and nothing wired on it: the tori, their
+    input moduli, the collar seed, the id maps from each torus to the host,
+    and each torus's marking as host steps.
 
-    Step by step the setup the T1-T3 tests measured under (spec S1-S3, S5),
-    with D2/D3 as revised: the tori `SimplicialQubit.flat_torus(tau, n, n)`;
-    the collar `MultiCobordism.seed_collar` (or two joined collars for four
-    tori), with incompatible readout/host combinations refused by name;
-    the node with the degree-1 register on the complex locus (the tori carry
-    complex lengths and pure-gauge phases), the Regge term per `regge` and
-    the Whitney pencil as its metric source; each torus's vertex set one
-    input block (`seed_inputs`); each torus's holomorphic form attached as a
-    degree-1 fiber on its edges with the harmonic contour
-    (`attach_input_fiber`); each torus's marking with its input coefficients
-    (1, tau_in) on its block (`set_input_marking`), from which the engine
-    derives the block's live frame at every read; chi of spec S5 as the
-    Choi-decomposed two-body target (`set_two_body_target`), 2 x 2 in the
-    ordinary transfer frames; the block residuals --
-    the leak of (1, tau_in) in the zero mode of each block's OWN Laplacian --
-    in r_U at the input weight. The shared drive holds the input regions by
-    default, unless `--no-pin-boundary` is selected. No objective is injected:
-    the node's default objective is what T2 and T3 measured under, and
-    `QubitInputs.objective_name` records it.
-
-    Returns the node and its `QubitInputs`.
+    This is the first half of `build_qubit_node` -- everything a node is
+    built FROM -- and all a read of the fixed complex needs. No node, no
+    objective, no readout is created, so it seeds every host `--tori` names,
+    including the four-torus direct sum that every declared readout refuses.
     """
-    import numpy as np
-
-    _validate_readout_host(
-        _readout_names(config.get("readout", DECLARED_READOUT)),
-        int(config.get("tori", DECLARED_TORI)))
     tau_in = [complex(*config["tau_a"]), complex(*config["tau_b"])]
     grid = int(config["grid"])
     with warnings.catch_warnings():
@@ -1122,6 +1101,44 @@ def build_qubit_node(config):
     _dispose_interior(seed.host, tori, ids,
                       config.get("interior_disposition", DECLARED_INTERIOR_DISPOSITION),
                       int(config["seed"]))
+    markings = [_host_marking(torus, ids[index])
+                for index, torus in enumerate(tori)]
+    return tori, tau_in, seed, ids, markings
+
+
+def build_qubit_node(config):
+    """The qubit node: two flat tori on their collar, seeded as the input
+    blocks with their state fibers, markings and the two-body target.
+
+    Step by step the setup the T1-T3 tests measured under (spec S1-S3, S5),
+    with D2/D3 as revised: the tori `SimplicialQubit.flat_torus(tau, n, n)`;
+    the collar `MultiCobordism.seed_collar` (or two joined collars for four
+    tori), with incompatible readout/host combinations refused by name;
+    the node with the degree-1 register on the complex locus (the tori carry
+    complex lengths and pure-gauge phases), the Regge term per `regge` and
+    the Whitney pencil as its metric source; each torus's vertex set one
+    input block (`seed_inputs`); each torus's holomorphic form attached as a
+    degree-1 fiber on its edges with the harmonic contour
+    (`attach_input_fiber`); each torus's marking with its input coefficients
+    (1, tau_in) on its block (`set_input_marking`), from which the engine
+    derives the block's live frame at every read; chi of spec S5 as the
+    Choi-decomposed two-body target (`set_two_body_target`), 2 x 2 in the
+    ordinary transfer frames; the block residuals --
+    the leak of (1, tau_in) in the zero mode of each block's OWN Laplacian --
+    in r_U at the input weight. The shared drive holds the input regions by
+    default, unless `--no-pin-boundary` is selected. No objective is injected:
+    the node's default objective is what T2 and T3 measured under, and
+    `QubitInputs.objective_name` records it.
+
+    Returns the node and its `QubitInputs`.
+    """
+    import numpy as np
+
+    _validate_readout_host(
+        _readout_names(config.get("readout", DECLARED_READOUT)),
+        int(config.get("tori", DECLARED_TORI)))
+    tori, tau_in, seed, ids, markings = seed_qubit_host(config)
+    grid = int(config["grid"])
     node = MC(seed.host, [[1.0 + 0j]] * len(tori), [],
               degrees=list(config["register_degrees"]), seed=config["seed"],
               einstein_hilbert=bool(config["regge"]),
@@ -1137,8 +1154,6 @@ def build_qubit_node(config):
         fiber = _torus_fiber(torus, ids[index])
         node.attach_input_fiber(index, fiber, fiber.cells)
         cells.append([list(cell) for cell in node.inputs[index].fiber.cells])
-    markings = [_host_marking(torus, ids[index])
-                for index, torus in enumerate(tori)]
     for index, torus in enumerate(tori):
         node.set_input_marking(index, markings[index],
                                [1.0 + 0j, complex(tau_in[index])])
@@ -2671,6 +2686,460 @@ def build_config(steps=DECLARED_STEPS, seed=DECLARED_SEED,
     return config
 
 
+
+# ---- verify: the cobordism functor, read on a fixed complex -------------
+
+#: The jitter the documented invariance was measured at: every squared length
+#: times `1 + F xi`, `xi` a seeded draw from the unit disc.
+DECLARED_VERIFY_JITTER = 0.75
+#: "Exact", for a read of a fixed complex.
+DECLARED_VERIFY_TOLERANCE = 1e-12
+#: Where `verify` writes its record. Never /tmp, which is wiped at boot.
+DECLARED_VERIFY_OUT = "~/cobordism-runs/functor-verify"
+
+#: The matrix each `--collar-twist` induces on `H^1` in the marked basis:
+#: the product collar is the identity, the swap `(i, j) -> (j, i)` exchanges
+#: the two marking cycles (reading P23-P24).
+_TWIST_MATRICES = {"none": [[1, 0], [0, 1]], "swap": [[0, 1], [1, 0]]}
+
+
+def _dense(matrix):
+    """A bound matrix -- scipy sparse or dense -- as a numpy array."""
+    import numpy as np
+    if hasattr(matrix, "toarray"):
+        return np.asarray(matrix.toarray())
+    return np.asarray(matrix)
+
+
+def _numeric_rank(matrix):
+    """Rank by SVD under `MultiCobordism.monodromy`'s tolerance rule."""
+    import numpy as np
+    singular = np.linalg.svd(np.asarray(matrix), compute_uv=False)
+    if singular.size == 0:
+        return 0
+    return int((singular > 1e-9 * max(1.0, float(singular[0]))).sum())
+
+
+def _fit_monodromy(periods_a, periods_b):
+    """`M` with `P_B = M P_A` (least squares, exact when `P_A` is invertible),
+    its integer rounding, the rounding residual, and the fit residual: the
+    same numbers `MultiCobordism.monodromy` reports, from given periods."""
+    import numpy as np
+    periods_a = np.asarray(periods_a)
+    periods_b = np.asarray(periods_b)
+    matrix = np.linalg.lstsq(periods_a.T, periods_b.T, rcond=None)[0].T
+    rounded = np.rint(matrix.real).astype(int)
+    rounding = float(np.abs(matrix - rounded).max())
+    fit = float(np.linalg.norm(matrix @ periods_a - periods_b)
+                / max(np.linalg.norm(periods_b), 1e-300))
+    return matrix, rounded, rounding, fit
+
+
+def _intersection_form(cycles):
+    """`J (+) ... (+) J` for `cycles` marking cycles, two per torus."""
+    import numpy as np
+    j = np.array([[0.0, 1.0], [-1.0, 0.0]])
+    return np.kron(np.eye(cycles // 2), j)
+
+
+def _isotropy(periods_a, periods_b):
+    """`|L^T Omega L|` for `L = [P_A; P_B]` and `Omega = J_A (+) eps J_B`, at
+    both signs `eps`: the two ends carry opposite induced orientations from
+    the bulk, and which sign the markings realise is read, not assumed."""
+    import numpy as np
+    stacked = np.vstack([periods_a, periods_b])
+    omega_a = _intersection_form(periods_a.shape[0])
+    omega_b = _intersection_form(periods_b.shape[0])
+    out = {}
+    for eps in (+1, -1):
+        omega = np.block([[omega_a, np.zeros((omega_a.shape[0], omega_b.shape[1]))],
+                          [np.zeros((omega_b.shape[0], omega_a.shape[1])), eps * omega_b]])
+        out[eps] = float(np.linalg.norm(stacked.T @ omega @ stacked))
+    return out
+
+
+def _read_restriction(spacetime, markings):
+    """`MultiCobordism.restriction`, refusing by name rather than guessing."""
+    import numpy as np
+    read = MC.restriction(spacetime, markings)
+    if read.obstruction:
+        raise RuntimeError("restriction refused: %s" % read.obstruction)
+    return (list(int(b) for b in read.betti), int(read.harmonic_rank),
+            np.asarray(read.images), [np.asarray(p) for p in read.periods])
+
+
+def _jitter_lengths(spacetime, fraction, seed):
+    """Every squared length times `1 + fraction * xi`, `xi` drawn from the
+    unit disc with `seed`; returns the restorer. The stored length moves on
+    its own sheet: `l -> l sqrt(1 + fraction xi)` with the principal root,
+    continuous because `1 + fraction xi` has positive real part."""
+    import cmath
+    import numpy as np
+    rng = np.random.default_rng(int(seed))
+    original = []
+    for edge in spacetime.getEdgeList().toVector():
+        length = complex(edge.getLength())
+        original.append((edge, length))
+        radius = math.sqrt(rng.random())
+        angle = 2.0 * math.pi * rng.random()
+        xi = complex(radius * math.cos(angle), radius * math.sin(angle))
+        edge.setLength(length * cmath.sqrt(1.0 + fraction * xi))
+
+    def restore():
+        for edge, length in original:
+            edge.setLength(length)
+    return restore
+
+
+def _copy_lengths_to_torus(host, torus_spacetime, ids):
+    """The host's live lengths onto the torus's own edges through its id map,
+    so the torus's own operator is assembled on the lengths the bulk carries
+    at this instant."""
+    live = {}
+    for edge in host.getEdgeList().toVector():
+        u = int(edge.getSource().getId())
+        v = int(edge.getTarget().getId())
+        live[(min(u, v), max(u, v))] = complex(edge.getLength())
+    for edge in torus_spacetime.getEdgeList().toVector():
+        a = int(edge.getSource().getId())
+        b = int(edge.getTarget().getId())
+        if a not in ids or b not in ids:
+            raise RuntimeError("torus vertex %d/%d has no host id" % (a, b))
+        key = (min(ids[a], ids[b]), max(ids[a], ids[b]))
+        if key not in live:
+            raise RuntimeError("torus edge %s is not a host edge" % (key,))
+        edge.setLength(live[key])
+
+
+def _torus_gram(torus, host, ids):
+    """The torus's own harmonic Gram in the coordinates of its marking, on
+    the host's live lengths: `G = P^-T (Z^T M_1 Z) P^-1`, with `Z` its own
+    degree-1 zero mode, `P` that mode's periods over its marking, and `M_1`
+    its own Whitney mass. Bilinear throughout, because the Whitney pairing
+    is complex bilinear (the reading, section 5.1)."""
+    import numpy as np
+    spacetime = torus.spacetime()
+    _copy_lengths_to_torus(host, spacetime, ids)
+    marking = _host_marking(torus, {int(v): int(v)
+                                    for pair in torus.edges() for v in pair})
+    _, rank, images, periods = _read_restriction(spacetime, [marking])
+    if rank != 2 or periods[0].shape != (2, 2):
+        raise RuntimeError("the torus's own zero mode has rank %d" % rank)
+    mass = _dense(cob.PencilLayer.assemble([spacetime]).op.dressed(1))
+    inverse = np.linalg.inv(periods[0])
+    return inverse.T @ (images.T @ mass @ images) @ inverse
+
+
+def _unitarity_defect(monodromy, gram_a, gram_b):
+    """`|M^T G_B M - G_A| / |G_A|`: whether the monodromy carries the bilinear
+    Whitney pairing of one end to the other. Zero is the metric condition;
+    nothing in the topology implies it."""
+    import numpy as np
+    return float(np.linalg.norm(monodromy.T @ gram_b @ monodromy - gram_a)
+                 / max(np.linalg.norm(gram_a), 1e-300))
+
+
+def _check(identifier, statement, measured, tolerance, passed):
+    return {"id": identifier, "statement": statement, "measured": measured,
+            "tolerance": tolerance, "pass": bool(passed)}
+
+
+def _pair_checks(label, periods_a, periods_b, twist, tolerance):
+    """R2-R5 for one marked pair, and the fitted monodromy for the rest."""
+    import numpy as np
+    checks = []
+    matrix, rounded, rounding, fit = _fit_monodromy(periods_a, periods_b)
+    cycles = periods_a.shape[0]
+    ranks = (_numeric_rank(periods_a), _numeric_rank(periods_b),
+             _numeric_rank(np.vstack([periods_a, periods_b])))
+    checks.append(_check(
+        "R2:" + label,
+        "rank P_A = rank P_B = rank [P_A; P_B] = %d, half of b_1 of the two ends" % cycles,
+        {"rank_a": ranks[0], "rank_b": ranks[1], "rank_stacked": ranks[2]},
+        None, ranks == (cycles, cycles, cycles)))
+    det = int(round(float(np.linalg.det(rounded)))) if rounded.size else 0
+    checks.append(_check(
+        "R3:" + label, "M is an integer matrix with det +-1",
+        {"rounding_residual": rounding, "fit_residual": fit, "det": det},
+        tolerance, rounding <= tolerance and fit <= tolerance and det in (1, -1)))
+    if twist is not None:
+        expected = np.asarray(_TWIST_MATRICES[twist])
+        checks.append(_check(
+            "R4:" + label, "M equals the twist's induced map phi* (%s)" % twist,
+            {"rounded": rounded.tolist(), "expected": expected.tolist(),
+             "difference": float(np.abs(matrix - expected).max())},
+            tolerance, rounded.shape == expected.shape
+            and (rounded == expected).all()
+            and float(np.abs(matrix - expected).max()) <= tolerance))
+    # The graph {(x, Mx)} is isotropic for J (+) eps J iff x^T (J + eps det(M) J) x
+    # vanishes, i.e. eps = -det M. The product collar passes at eps = -1: the
+    # two ends carry opposite induced orientations from the bulk (reading P31).
+    isotropy = _isotropy(periods_a, periods_b)
+    passing = [eps for eps, norm in isotropy.items() if norm <= tolerance]
+    checks.append(_check(
+        "R5:" + label,
+        "[P_A; P_B] is isotropic for J (+) eps J at exactly one sign, and that sign is -det M",
+        {"eps_plus": isotropy[+1], "eps_minus": isotropy[-1], "det": det,
+         "passing_sign": passing},
+        tolerance, len(passing) == 1 and passing[0] == -det))
+    return checks, matrix, rounded
+
+
+def _labelled(pairs, labels):
+    return ["%s->%s" % (labels[a], labels[b]) for a, b in pairs]
+
+
+def verify(config, jitter=DECLARED_VERIFY_JITTER,
+           tolerance=DECLARED_VERIFY_TOLERANCE):
+    """Read the seeded host and check the cobordism functor on it.
+
+    R1-R5 are the restriction theorem and the monodromy's integrality on the
+    fixed complex; J1-J3 the metric independence of `M` against the metric
+    dependence of the representative and its Gram under a jitter of every
+    length; C1 the composition law in the twist group across three seeded
+    hosts; U1 the metric-dependent transport, reported and shown to move.
+    Every row carries its measured value; nothing is optimised.
+    """
+    import numpy as np
+    twist = str(config.get("collar_twist", DECLARED_COLLAR_TWIST))
+    layers = int(config["layers"])
+    tori, _, seed, ids, markings = seed_qubit_host(config)
+    host = seed.host
+    labels = (DECLARED_CONJUGATE_TORUS_LABELS if len(tori) > 2
+              else DECLARED_TORUS_LABELS)[:len(tori)]
+    pairs = [(0, 1)] if len(tori) == 2 else [(0, 1), (2, 3)]
+    names = _labelled(pairs, labels)
+    checks = []
+    values = {"tori": len(tori), "layers": layers, "collar_twist": twist,
+              "grid": int(config["grid"]), "seed": int(config["seed"]),
+              "cells": len(host.getTopSimplices()),
+              "edges": len(host.getEdgeList().toVector())}
+
+    # ---- R1: the whole's zero mode is its first cohomology ------------
+    betti, rank, images, periods = _read_restriction(host, markings)
+    boundary_b1 = sum(int(p.shape[0]) for p in periods)
+    values.update({"betti": betti, "harmonic_rank": rank,
+                   "boundary_b1": boundary_b1})
+    checks.append(_check(
+        "R1", "harmonic rank = b_1(W) = b_1(dW) / 2",
+        {"harmonic_rank": rank, "b1": betti[1] if len(betti) > 1 else None,
+         "boundary_b1": boundary_b1},
+        None, len(betti) > 1 and rank == betti[1] == boundary_b1 // 2))
+
+    # ---- R2-R5 per marked pair -----------------------------------------
+    monodromies = {}
+    for (a, b), name in zip(pairs, names):
+        rows, matrix, rounded = _pair_checks(name, periods[a], periods[b],
+                                             twist, tolerance)
+        checks.extend(rows)
+        monodromies[name] = {"matrix": matrix, "rounded": rounded}
+    values["monodromy"] = {name: {"matrix": [[complex(z) for z in row]
+                                             for row in m["matrix"]],
+                                  "rounded": m["rounded"].tolist()}
+                           for name, m in monodromies.items()}
+
+    # ---- the direct sum, at four tori ---------------------------------
+    a_side = [0, 2] if len(tori) == 4 else [0]
+    b_side = [1, 3] if len(tori) == 4 else [1]
+    periods_a = np.vstack([periods[i] for i in a_side])
+    periods_b = np.vstack([periods[i] for i in b_side])
+    if len(tori) == 4:
+        rows, whole, whole_rounded = _pair_checks("whole", periods_a, periods_b,
+                                                  None, tolerance)
+        checks.extend(rows)
+        blocks = [monodromies[name]["matrix"] for name in names]
+        block_diagonal = np.block([[blocks[0], np.zeros_like(blocks[0])],
+                                   [np.zeros_like(blocks[1]), blocks[1]]])
+        off = float(np.linalg.norm(whole - block_diagonal))
+        checks.append(_check(
+            "D1", "the four-torus monodromy is the direct sum of the two collars'",
+            {"off_block_norm": off, "rounded": whole_rounded.tolist()},
+            tolerance, off <= tolerance))
+        values["monodromy"]["whole"] = {
+            "matrix": [[complex(z) for z in row] for row in whole],
+            "rounded": whole_rounded.tolist()}
+
+    # ---- J1-J3: jitter every length -----------------------------------
+    assembled = cob.PencilLayer.assemble([host])
+    coboundary = _dense(assembled.op.twistedBoundary(1))
+    if coboundary.shape[0] != images.shape[0]:
+        coboundary = coboundary.T
+    mass_before = _dense(assembled.op.dressed(1))
+    canonical_before = images @ np.linalg.inv(periods_a)
+    gram_before = canonical_before.T @ mass_before @ canonical_before
+    grams_before = {index: _torus_gram(torus, host, ids[index])
+                    for index, torus in enumerate(tori)}
+    restore = _jitter_lengths(host, float(jitter), int(config["seed"]))
+    try:
+        _, rank_after, images_after, periods_after = _read_restriction(host, markings)
+        mass_after = _dense(cob.PencilLayer.assemble([host]).op.dressed(1))
+        for (a, b), name in zip(pairs, names):
+            matrix_after, _, _, _ = _fit_monodromy(periods_after[a], periods_after[b])
+            move = float(np.abs(matrix_after - monodromies[name]["matrix"]).max())
+            checks.append(_check(
+                "J1:" + name, "the jitter leaves M fixed",
+                {"max_entry_move": move, "rank_after": rank_after},
+                tolerance, move <= tolerance and rank_after == rank))
+        periods_a_after = np.vstack([periods_after[i] for i in a_side])
+        canonical_after = images_after @ np.linalg.inv(periods_a_after)
+        delta = canonical_after - canonical_before
+        relative = float(np.linalg.norm(delta) / np.linalg.norm(canonical_before))
+        coefficients = np.linalg.lstsq(coboundary, delta, rcond=None)[0]
+        exact_fraction = float(np.linalg.norm(coboundary @ coefficients)
+                               / max(np.linalg.norm(delta), 1e-300))
+        checks.append(_check(
+            "J2", "the canonical representative moves O(1) and the move is exact (in im d_0)",
+            {"relative_move": relative, "exact_fraction": exact_fraction},
+            tolerance, relative > 1e-3 and 1.0 - exact_fraction <= 1e-9))
+        gram_after = canonical_after.T @ mass_after @ canonical_after
+        gram_move = float(np.linalg.norm(gram_after - gram_before)
+                          / np.linalg.norm(gram_before))
+        checks.append(_check(
+            "J3", "the whole Gram Z^T M_1 Z of the canonical representative moves O(1)",
+            {"relative_move": gram_move}, None, gram_move > 1e-3))
+        grams_after = {index: _torus_gram(torus, host, ids[index])
+                       for index, torus in enumerate(tori)}
+        for (a, b), name in zip(pairs, names):
+            matrix = monodromies[name]["matrix"]
+            before = _unitarity_defect(matrix, grams_before[a], grams_before[b])
+            after = _unitarity_defect(matrix, grams_after[a], grams_after[b])
+            checks.append(_check(
+                "U1:" + name,
+                "the transport defect |M^T G_B M - G_A| / |G_A| is O(1) and moves under jitter",
+                {"before": before, "after": after, "move": abs(after - before)},
+                None, before > 1e-6 and abs(after - before) > 1e-6))
+    finally:
+        restore()
+        for index, torus in enumerate(tori):
+            _copy_lengths_to_torus(host, torus.spacetime(), ids[index])
+
+    # ---- C1: composition in the twist group ---------------------------
+    def monodromy_of(layer_count, twist_name):
+        other = dict(config)
+        other["layers"] = int(layer_count)
+        other["collar_twist"] = twist_name
+        _, _, other_seed, _, other_markings = seed_qubit_host(other)
+        _, _, _, other_periods = _read_restriction(other_seed.host, other_markings)
+        return _fit_monodromy(other_periods[0], other_periods[1])[0]
+
+    single = {name: monodromy_of(layers, name) for name in ("none", "swap")}
+    double = {name: monodromy_of(2 * layers, name) for name in ("none", "swap")}
+    products = {"none": single["swap"] @ single["swap"],
+                "swap": single["swap"] @ single["none"]}
+    for name in ("none", "swap"):
+        move = float(np.abs(double[name] - products[name]).max())
+        checks.append(_check(
+            "C1:" + name,
+            "M(2L, %s) = M(L, swap) . M(L, %s): gluing composes in the twist group"
+            % (name, "swap" if name == "none" else "none"),
+            {"glued": np.rint(double[name].real).astype(int).tolist(),
+             "product": np.rint(products[name].real).astype(int).tolist(),
+             "max_entry_move": move},
+            tolerance, move <= tolerance))
+    values["composition"] = {
+        "single": {k: [[complex(z) for z in row] for row in v] for k, v in single.items()},
+        "double": {k: [[complex(z) for z in row] for row in v] for k, v in double.items()}}
+    return {"checks": checks, "values": values, "jitter": float(jitter),
+            "tolerance": float(tolerance),
+            "all_pass": all(row["pass"] for row in checks)}
+
+
+def _print_verify_table(record):
+    width = max(len(row["id"]) for row in record["checks"])
+    for row in record["checks"]:
+        measured = row["measured"]
+        if isinstance(measured, dict):
+            measured = ", ".join("%s=%s" % (k, _short(v)) for k, v in measured.items())
+        print("%-*s  %-4s  %s\n%s      %s" % (
+            width, row["id"], "pass" if row["pass"] else "FAIL", row["statement"],
+            " " * width, measured))
+    print("\n%s: %d of %d checks pass" % (
+        "PASS" if record["all_pass"] else "FAIL",
+        sum(row["pass"] for row in record["checks"]), len(record["checks"])))
+
+
+def _short(value):
+    if isinstance(value, float):
+        return "%.3e" % value
+    return str(value)
+
+
+def _add_verify_arguments(verify_parser):
+    verify_parser.add_argument("--tori", type=int, choices=(2, 4), default=DECLARED_TORI,
+                               help="two tori (one collar) or four (two collars joined "
+                                    "through a removed tetrahedron: the direct sum)")
+    verify_parser.add_argument("--layers", type=int, default=DECLARED_COLLAR_LAYERS,
+                               help="product layers of the collar seed; the composition "
+                                    "check also seeds 2x this")
+    verify_parser.add_argument("--collar-twist", dest="collar_twist",
+                               choices=("none", "swap"), default=DECLARED_COLLAR_TWIST,
+                               help="the mapping class the far surface is relabelled by")
+    verify_parser.add_argument("--grid", type=int, default=DECLARED_GRID,
+                               help="each torus is a grid x grid lattice")
+    verify_parser.add_argument("--seed", type=int, default=DECLARED_SEED,
+                               help="seed for the interior disposition and the jitter")
+    verify_parser.add_argument("--tau-a", type=_complex_argument, default=DECLARED_TAU_A)
+    verify_parser.add_argument("--tau-b", type=_complex_argument, default=DECLARED_TAU_B)
+    verify_parser.add_argument("--jitter", type=float, default=DECLARED_VERIFY_JITTER,
+                               help="every squared length times 1 + F xi, xi from the "
+                                    "unit disc (default %g)" % DECLARED_VERIFY_JITTER)
+    verify_parser.add_argument("--tol", type=float, default=DECLARED_VERIFY_TOLERANCE,
+                               help="what 'exact' means for a read of a fixed complex "
+                                    "(default %g)" % DECLARED_VERIFY_TOLERANCE)
+    verify_parser.add_argument("--out", default=DECLARED_VERIFY_OUT,
+                               help="directory the JSON record is written under "
+                                    "(default %s)" % DECLARED_VERIFY_OUT)
+    verify_parser.add_argument("--json", default=None,
+                               help="an explicit record path instead of --out/<name>.json")
+
+
+def _verify_config(args):
+    """The host seed, and only that: the keys `seed_qubit_host` reads.
+
+    Not `build_config`: that validates a readout against the torus count,
+    and every declared readout refuses four tori, while a read of the fixed
+    complex has no readout to validate. The four-torus direct sum is exactly
+    one of the hosts this subcommand exists to read.
+    """
+    layers = int(args.layers)
+    if int(args.tori) == 4:
+        # Two joined collars need two interior layers for the all-interior
+        # cell the join removes to exist (`build_config` applies the same floor).
+        layers = max(3, layers)
+    return {"seed": int(args.seed), "tori": int(args.tori),
+            "collar_twist": str(args.collar_twist), "layers": layers,
+            "tau_a": [args.tau_a.real, args.tau_a.imag],
+            "tau_b": [args.tau_b.real, args.tau_b.imag],
+            "grid": int(args.grid),
+            "interior_disposition": DECLARED_INTERIOR_DISPOSITION}
+
+
+def verify_main(args):
+    import json
+    import os
+    config = _verify_config(args)
+    record = verify(config, jitter=args.jitter, tolerance=args.tol)
+    record["config"] = dict(config)
+    path = args.json
+    if path is None:
+        directory = os.path.expanduser(args.out)
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "verify-%dt-%s-L%d-g%d-s%d.json" % (
+            args.tori, args.collar_twist, args.layers, args.grid, args.seed))
+    with open(path, "w") as handle:
+        json.dump(record, handle, indent=2, default=_json_default)
+    _print_verify_table(record)
+    print("record: %s" % path)
+    return 0 if record["all_pass"] else 1
+
+
+def _json_default(value):
+    if isinstance(value, complex):
+        return [value.real, value.imag]
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    raise TypeError("cannot serialise %r" % (type(value),))
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Animate the qubit cobordism and its declared read-outs.")
@@ -2687,12 +3156,22 @@ def build_parser():
             "with their markings), the one output a run can be rebuilt "
             "from. Written however the drive ends, an interrupt included"))
     _add_qubit_run_arguments(run)
+    verify_parser = sub.add_parser(
+        "verify", help="read the seeded host and check the cobordism functor on it",
+        description="Seed the qubit host and READ it: the restriction theorem, the "
+                    "monodromy's integrality and its metric independence, the "
+                    "composition law in the twist group, the direct sum at four "
+                    "tori, and the metric-dependent transport. No stage runs; "
+                    "every row prints its measured value beside its tolerance.")
+    _add_verify_arguments(verify_parser)
     return parser
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "verify":
+        return verify_main(args)
     try:
         config = build_config(
             steps=args.steps, seed=args.seed,

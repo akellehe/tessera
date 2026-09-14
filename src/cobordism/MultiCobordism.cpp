@@ -6867,21 +6867,20 @@ std::vector<std::vector<std::uint64_t>> MultiCobordism::bridgeCandidatesOn(
   return candidates;
 }
 
-MultiCobordism::MonodromyRead MultiCobordism::monodromy(const std::shared_ptr<Spacetime> &spacetime,
-                                                        const Marking &markingA,
-                                                        const Marking &markingB) {
-  MonodromyRead read;
+MultiCobordism::RestrictionRead MultiCobordism::restriction(const std::shared_ptr<Spacetime> &spacetime,
+                                                            const std::vector<Marking> &markings) {
+  RestrictionRead read;
   if (!spacetime) {
     read.obstruction = "no spacetime";
     return read;
   }
   read.betti = betti(*spacetime);
-  // The edges both markings walk, as sorted tuples: every one must be an
-  // edge of the whole before any operator is built.
+  // The edges every marking walks, as sorted tuples: each must be an edge of
+  // the whole before any operator is built.
   std::set<std::vector<std::uint64_t>> seen;
   std::vector<std::vector<std::uint64_t>> cells;
-  for (const Marking *marking : {&markingA, &markingB})
-    for (const auto &cycle : *marking)
+  for (const Marking &marking : markings)
+    for (const auto &cycle : marking)
       for (const auto &[u, v] : cycle) {
         if (u == v) {
           read.obstruction = "a marking step is a self-loop";
@@ -6894,9 +6893,8 @@ MultiCobordism::MonodromyRead MultiCobordism::monodromy(const std::shared_ptr<Sp
     read.obstruction = "empty markings";
     return read;
   }
-  // Every marking edge must be an edge of the whole (a marking is stated on
-  // the surfaces' edges, which every engine move keeps), named before any
-  // operator is built.
+  // A marking is stated on the surfaces' edges, which every engine move
+  // keeps; a step off the whole is named before any operator is built.
   {
     std::set<std::vector<std::uint64_t>> edges;
     for (auto edge : ChainComplex::fromSpacetime(*spacetime).kSimplexVertices(1)) edges.insert(std::move(edge));
@@ -6911,16 +6909,17 @@ MultiCobordism::MonodromyRead MultiCobordism::monodromy(const std::shared_ptr<Sp
   // point (the qubit spec §16 rule, `Connection::commonBasePoint`), so that
   // the periods are taken with parallel transport: on zero phases the
   // transported period is the plain signed sum in the walk's order.
-  Marking walksA = markingA, walksB = markingB;
-  std::uint64_t baseA = 0, baseB = 0;
-  std::string why;
-  if (!orderMarking(walksA, baseA, why)) {
-    read.obstruction = "marking A: " + why;
-    return read;
-  }
-  if (!orderMarking(walksB, baseB, why)) {
-    read.obstruction = "marking B: " + why;
-    return read;
+  std::vector<Marking> walks;
+  walks.reserve(markings.size());
+  for (std::size_t i = 0; i < markings.size(); ++i) {
+    Marking ordered = markings[i];
+    std::uint64_t base = 0;
+    std::string why;
+    if (!orderMarking(ordered, base, why)) {
+      read.obstruction = "marking " + std::to_string(i) + ": " + why;
+      return read;
+    }
+    walks.push_back(std::move(ordered));
   }
   chainhodge::Band zeroMode;
   std::shared_ptr<const chainhodge::CovariantChainHodge> op;
@@ -6941,21 +6940,36 @@ MultiCobordism::MonodromyRead MultiCobordism::monodromy(const std::shared_ptr<Sp
     read.obstruction = "the whole has no degree-1 zero mode";
     return read;
   }
-  const auto periodsOver = [&](const Marking &walks) {
-    Eigen::MatrixXcd periods = Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(walks.size()),
+  read.images = zeroMode.images;
+  for (const Marking &walk : walks) {
+    Eigen::MatrixXcd periods = Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(walk.size()),
                                                       zeroMode.images.cols());
-    for (std::size_t c = 0; c < walks.size(); ++c)
+    for (std::size_t c = 0; c < walk.size(); ++c)
       for (Eigen::Index a = 0; a < zeroMode.images.cols(); ++a)
         periods(static_cast<Eigen::Index>(c), a) =
-            op->connection().transportedPeriod(zeroMode.images.col(a), walks[c]);
-    return periods;
-  };
-  read.periodsA = periodsOver(walksA);
-  read.periodsB = periodsOver(walksB);
-  if (read.periodsA.rows() == 0 || read.periodsB.rows() == 0) {
-    read.obstruction = "a marking has no cycles";
+            op->connection().transportedPeriod(zeroMode.images.col(a), walk[c]);
+    if (periods.rows() == 0) {
+      read.obstruction = "a marking has no cycles";
+      return read;
+    }
+    read.periods.push_back(std::move(periods));
+  }
+  return read;
+}
+
+MultiCobordism::MonodromyRead MultiCobordism::monodromy(const std::shared_ptr<Spacetime> &spacetime,
+                                                        const Marking &markingA,
+                                                        const Marking &markingB) {
+  MonodromyRead read;
+  const RestrictionRead restricted = restriction(spacetime, {markingA, markingB});
+  read.betti = restricted.betti;
+  read.harmonicRank = restricted.harmonicRank;
+  if (!restricted.obstruction.empty()) {
+    read.obstruction = restricted.obstruction;
     return read;
   }
+  read.periodsA = restricted.periods[0];
+  read.periodsB = restricted.periods[1];
   // P_B = M P_A, least squares over the zero mode's columns (exact for a rank-2
   // zero mode with invertible P_A); M is |B| x |A|.
   const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(read.periodsA);
