@@ -383,3 +383,26 @@ def test_layered_flips_read_the_dehn_twists(flips, grid, expected):
     if "," in flips:
         assert by_id["F4"]["pass"], by_id["F4"]
     assert record["all_pass"], [row["id"] for row in record["checks"] if not row["pass"]]
+
+
+@pytest.mark.slow
+def test_decagon_collar_reads_an_entangling_monodromy():
+    """The collar of the symmetric genus-2 surface twisted by the order-5
+    rotation (issue #1118): E1-E6."""
+    from tessera.quantum import ThetaRegister
+    config = {"seed": 7, "layers": 1, "rotation": 2, "surface": "decagon",
+              "interior_disposition": qa.DECLARED_INTERIOR_DISPOSITION}
+    register = ThetaRegister(level=2, tolerance=TOL)
+    checks, values = qa._theta_genus_two(config, register, TOL)
+    by_id = {row["id"]: row for row in checks}
+    for key in ("E1", "E2", "E3", "E4", "E5", "E6"):
+        assert by_id[key]["pass"], by_id[key]
+    assert by_id["E2"]["measured"]["order"] == 5
+    assert by_id["E5"]["measured"]["max_entropy_bits"] >= 1.0 - 1e-9
+    assert by_id["E4"]["measured"]["operator_schmidt_rank"] > 1
+
+
+def test_verify_refuses_the_decagon_host_by_name():
+    with pytest.raises(ValueError, match="decagon"):
+        qa.verify({"surface": "decagon", "rotation": 2, "layers": 1, "seed": 7, "tori": 2,
+                   "collar_twist": "none", "tau_a": [0.3, 1.1], "tau_b": [-0.2, 0.8], "grid": 3})
