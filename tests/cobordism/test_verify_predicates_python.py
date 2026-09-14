@@ -7,6 +7,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 import tessera as T  # noqa: F401  (the driver imports the package)
 
@@ -242,4 +243,69 @@ def test_verify_certifies_sentence_is_in_the_record():
     assert "NOT certified" in record["certifies"]
     ids = {row["id"] for row in record["checks"]}
     assert {"H1:seed", "H2:seed", "H3:seed", "H1:jittered", "H2:jittered", "H3:jittered"} <= ids
+    assert record["all_pass"], [row for row in record["checks"] if not row["pass"]]
+
+
+# ---- #1109: the dual-frame pairing behind U1 and J3 ------------------------
+
+def _torus_operator():
+    """The seeded collar's torus A on the host's live lengths: its operator,
+    contour, marking walks, and the primal pieces for the comparison."""
+    fixture = _host()
+    tori, _, seed, ids, _ = qa.seed_qubit_host(qa._verify_config(qa.build_parser().parse_args(["verify"])))
+    spacetime = tori[0].spacetime()
+    qa._copy_lengths_to_torus(fixture["host"], spacetime, ids[0])
+    marking = qa._host_marking(tori[0], {int(v): int(v) for pair in tori[0].edges() for v in pair})
+    assembled = qa.cob.PencilLayer.assemble([spacetime])
+    contour = qa.cob.PencilLayer.harmonic_contour(assembled, 1)
+    walks = [[(int(u), int(v)) for u, v in cycle] for cycle in marking]
+    return spacetime, assembled.op, contour, walks
+
+
+def _primal_period_gram(op, contour, walks):
+    band = op.band(1, contour)
+    images = np.asarray(band.images)
+    mass = np.asarray(op.dressed(1).toarray())
+    periods = np.array([[op.connection().transportedPeriod(images[:, a], w)
+                         for a in range(images.shape[1])] for w in walks])
+    inverse = np.linalg.inv(periods)
+    return inverse.T @ (images.T @ mass @ images) @ inverse
+
+
+def test_covariant_gram_equals_the_primal_one_at_zero_phases():
+    """The seeded hosts carry no phases: the recorded U1/J3 numbers must be
+    reproduced exactly, and here the two formulas coincide."""
+    spacetime, op, contour, walks = _torus_operator()
+    assert sum(abs(complex(e.getPhase())) > 0 for e in spacetime.getEdgeList().toVector()) == 0
+    covariant = qa._covariant_period_gram(op, contour, walks)
+    primal = _primal_period_gram(op, contour, walks)
+    assert np.linalg.norm(covariant - primal) / np.linalg.norm(primal) <= TOL
+
+
+@pytest.mark.parametrize("modulus_one", [True, False])
+def test_covariant_gram_is_gauge_invariant_and_the_primal_one_is_not(modulus_one):
+    """A random vertex gauge, U(1) or C*: the dual-frame pairing in marking
+    coordinates is unchanged; the primal-primal one moves by O(1)."""
+    spacetime, op, contour, walks = _torus_operator()
+    rng = np.random.default_rng(3)
+    vertices = [int(v.getId()) for v in spacetime.getVertexList().toVector()]
+    gauge = {v: complex((1.0 if modulus_one else rng.uniform(0.7, 1.4)) * np.exp(1j * rng.uniform(0, 2 * np.pi)))
+             for v in vertices}
+    gauged = op.gauged(gauge)
+    covariant, covariant_g = (qa._covariant_period_gram(o, contour, walks) for o in (op, gauged))
+    primal, primal_g = (_primal_period_gram(o, contour, walks) for o in (op, gauged))
+    assert np.linalg.norm(covariant_g - covariant) / np.linalg.norm(covariant) <= TOL
+    assert np.linalg.norm(primal_g - primal) / np.linalg.norm(primal) > 0.1
+
+
+def test_recorded_u1_and_j3_values_are_reproduced():
+    """The values recorded for the default host before the move (PR #1104):
+    U1 0.5708 -> 0.7564 under the jitter, J3 relative move 0.4488."""
+    args = qa.build_parser().parse_args(["verify"])
+    record = qa.verify(qa._verify_config(args))
+    u1 = next(r for r in record["checks"] if r["id"] == "U1:A->B")["measured"]
+    j3 = next(r for r in record["checks"] if r["id"] == "J3")["measured"]
+    assert u1["pairing_convention"] == "dual_frame_whitney"
+    assert abs(u1["before"] - 0.5708) < 5e-4 and abs(u1["after"] - 0.7564) < 5e-4
+    assert abs(j3["relative_move"] - 0.4488) < 5e-4
     assert record["all_pass"], [row for row in record["checks"] if not row["pass"]]
