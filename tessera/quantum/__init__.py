@@ -282,5 +282,6 @@ else:
 # from the C++ backend, so it is bound regardless of `_AVAILABLE`.
 from .theta_register import ThetaRegister, WeilFit  # noqa: E402
 from .surface_periods import SurfacePeriods  # noqa: E402
+from .symmetric_genus_two import SymmetricGenusTwo  # noqa: E402
 
-__all__ = [*_EXPORTS, "is_available", "ThetaRegister", "WeilFit", "SurfacePeriods"]
+__all__ = [*_EXPORTS, "is_available", "ThetaRegister", "WeilFit", "SurfacePeriods", "SymmetricGenusTwo"]

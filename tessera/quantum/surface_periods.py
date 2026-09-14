@@ -335,6 +335,49 @@ class SurfacePeriods:
         self.imaginary_eigenvalues = imaginary
         self.positive = bool(imaginary.min() > 0.0)
 
+    # ------------------------------------------------------------ intersection form
+    def cup_pairing(self):
+        """``C_ab = int W(h_a) ^ W(h_b)`` over the surface, the cup-product
+        pairing of the harmonic basis: ``sum_t area_t (W_t h_a x W_t h_b)``
+        with ``x`` the planar cross product. Antisymmetric; on cohomology it
+        is the intersection pairing, whatever the metric."""
+        n = self.harmonic_rank
+        pairing = np.zeros((n, n))
+        for t in range(len(self.faces)):
+            w = [self._whitney(t, self.harmonic[:, a]) for a in range(n)]
+            for a in range(n):
+                for b in range(n):
+                    pairing[a, b] += self.areas[t] * (w[a][0] * w[b][1] - w[a][1] * w[b][0])
+        return pairing
+
+    def intersection_form(self, cycles):
+        """The algebraic intersection numbers of closed edge walks, by
+        Poincare duality: with ``P_ia = oint_{z_i} h_a`` and ``C`` the cup
+        pairing of the harmonic basis, the dual class of ``z_i`` is
+        ``sum_a (P C^-1)_ia h_a`` and ``z_i . z_j = -(P C^-1 P^T)_ij``. The sign
+        is the one that gives ``A . B = +1`` on the flat torus with its
+        counterclockwise faces (``Im tau > 0``). Rounded to integers; the
+        rounding residual must be below ``1e-6``, else a ``ValueError``."""
+        cycles = list(cycles)
+        periods = np.array([[self._period(cycle, self.harmonic[:, a]) for a in range(self.harmonic_rank)]
+                            for cycle in cycles])
+        form = -periods @ np.linalg.solve(self.cup_pairing(), periods.T)
+        rounded = np.rint(form)
+        residual = float(np.abs(form - rounded).max())
+        if residual > 1e-6:
+            raise ValueError("SurfacePeriods: the intersection numbers are not integers (residual %g)" % residual)
+        return rounded.astype(int), residual
+
+    def _period(self, cycle, omega):
+        total = 0.0
+        for u, v in cycle:
+            u, v = int(u), int(v)
+            key = (min(u, v), max(u, v))
+            if key not in self.edge_index:
+                raise ValueError("SurfacePeriods: step (%d, %d) is no edge of the surface" % (u, v))
+            total += (1.0 if u < v else -1.0) * omega[self.edge_index[key]]
+        return total
+
     # ------------------------------------------------------------ summary
     def report(self):
         """The numbers a record keeps."""
