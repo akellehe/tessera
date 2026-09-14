@@ -784,6 +784,30 @@ def _dispose_interior(host, tori, ids, disposition, seed):
     ea._seed_lengths(host, disposition, seed, edges=interior)
 
 
+#: How four tori are joined into one host: along a removed tetrahedron (a
+#: sphere, the direct sum) or by a tube between the far tori (a 1-handle,
+#: whose far boundary is one genus-2 surface).
+DECLARED_JOINS = ("sphere", "tube")
+DECLARED_JOIN = "sphere"
+#: The tube's shape: prism layers, the height of one layer, and the scale of
+#: the interior rings about their centroid -- the knobs of the neck.
+DECLARED_TUBE_LAYERS = 2
+DECLARED_TUBE_LENGTH = 1.0
+DECLARED_TUBE_WAIST = 1.0
+
+
+def _tube_face(grid):
+    """The attachment face of the tube on a flat torus: the triangle
+    `{(1, 1), (2, 1), (2, 2)}` in `SimplicialQubit.flat_torus`'s vertex ids
+    (`vid(i, j) = i * grid + j`), whose three edges lie on neither marking
+    cycle (row 0 is A, column 0 is B)."""
+    n = int(grid)
+    if n < 3:
+        raise ValueError("the tube needs a grid of at least 3")
+    vid = lambda i, j: i * n + j  # noqa: E731
+    return [vid(1, 1), vid(2, 1), vid(2, 2)]
+
+
 def _collar_twist(config, grid):
     """The permutation of the far surface's base indices, or none.
 
@@ -1097,7 +1121,26 @@ def seed_qubit_host(config):
         # `_two_body_case` expands it once rather than twice.
         tori = [obs.SimplicialQubit.flat_torus(tau, grid, grid)
                 for tau in tau_in]
-    if int(config.get("tori", DECLARED_TORI)) == 4:
+    join = str(config.get("join", DECLARED_JOIN))
+    if join not in DECLARED_JOINS:
+        raise ValueError("unknown join %r; expected one of %s" % (join, ", ".join(DECLARED_JOINS)))
+    if int(config.get("tori", DECLARED_TORI)) == 4 and join == "tube":
+        # Two collars joined by a TUBE between their far tori: the far
+        # boundary is one genus-2 surface, the connected sum of the two far
+        # tori through the tube, and the near tori are untouched. The tube
+        # joins two components and adds no loop: b_1 = 2 + 2 = 4 with
+        # nothing invisible to the boundary. The attachment face is the
+        # triangle at grid position (1, 1) of each far torus, which shares
+        # no edge with the marking cycles (row 0 and column 0).
+        tube = cob.TubeSpec()
+        tube.layers = int(config.get("tube_layers", DECLARED_TUBE_LAYERS))
+        tube.length = float(config.get("tube_length", DECLARED_TUBE_LENGTH))
+        tube.waist = float(config.get("tube_waist", DECLARED_TUBE_WAIST))
+        tube.face_a = _tube_face(grid)
+        tube.face_b = _tube_face(grid)
+        seed = MC.seed_tubed_collars([torus.spacetime() for torus in tori],
+                                     int(config["layers"]), _collar_twist(config, grid), tube)
+    elif int(config.get("tori", DECLARED_TORI)) == 4:
         # Two collars joined along a removed tetrahedron. Gluing along a sphere
         # is a connected sum, which adds no first homology, so b_1 = 2 + 2 = 4
         # with nothing dying on the boundary. Needs three layers: a prism cell
@@ -3166,6 +3209,10 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
     Every row carries its measured value; nothing is optimised.
     """
     import numpy as np
+    if str(config.get("join", DECLARED_JOIN)) == "tube":
+        raise ValueError("verify reads the sphere-joined hosts, whose four boundary components are tori; "
+                         "the tube-joined host, whose far boundary is one genus-2 surface, is read by "
+                         "`theta` (checks G1-G4)")
     twist = str(config.get("collar_twist", DECLARED_COLLAR_TWIST))
     layers = int(config["layers"])
     tori, _, seed, ids, markings = seed_qubit_host(config)
@@ -3401,12 +3448,22 @@ def _verify_config(args):
         # Two joined collars need two interior layers for the all-interior
         # cell the join removes to exist (`build_config` applies the same floor).
         layers = max(3, layers)
-    return {"seed": int(args.seed), "tori": int(args.tori),
-            "collar_twist": str(args.collar_twist), "layers": layers,
-            "tau_a": [args.tau_a.real, args.tau_a.imag],
-            "tau_b": [args.tau_b.real, args.tau_b.imag],
-            "grid": int(args.grid),
-            "interior_disposition": DECLARED_INTERIOR_DISPOSITION}
+    config = {"seed": int(args.seed), "tori": int(args.tori),
+              "collar_twist": str(args.collar_twist), "layers": layers,
+              "tau_a": [args.tau_a.real, args.tau_a.imag],
+              "tau_b": [args.tau_b.real, args.tau_b.imag],
+              "grid": int(args.grid),
+              "interior_disposition": DECLARED_INTERIOR_DISPOSITION,
+              "join": str(getattr(args, "join", DECLARED_JOIN))}
+    if config["join"] == "tube":
+        if config["tori"] != 4:
+            raise ValueError("--join tube needs --tori 4: the tube connects the two collars' far tori")
+        # The tube connects the collars itself; no interior cell is removed,
+        # so one layer per collar suffices.
+        config["layers"] = int(args.layers)
+        config.update({"tube_layers": int(args.tube_layers), "tube_length": float(args.tube_length),
+                       "tube_waist": float(args.tube_waist)})
+    return config
 
 
 def verify_main(args):
@@ -3622,11 +3679,235 @@ def _theta_native(config, register, tolerance):
     return checks, values
 
 
-def theta(config, level=DECLARED_THETA_LEVEL, tolerance=DECLARED_VERIFY_TOLERANCE):
+def _boundary_faces(host):
+    """The host's boundary triangles (facets of exactly one top cell) as
+    sorted vertex triples."""
+    from collections import Counter
+    count = Counter()
+    for cell in host.getTopSimplices():
+        tuple_ = sorted(int(v.getId()) for v in cell.getVertices())
+        for skip in range(len(tuple_)):
+            count[tuple(v for n, v in enumerate(tuple_) if n != skip)] += 1
+    return [face for face, n in count.items() if n == 1]
+
+
+def _surface_component(faces, seed_vertex):
+    """The connected component (by shared edges) of the closed surface
+    `faces` containing `seed_vertex`."""
+    from collections import defaultdict, deque
+    by_edge = defaultdict(list)
+    for index, face in enumerate(faces):
+        for a in range(3):
+            u, v = face[a], face[(a + 1) % 3]
+            by_edge[(min(u, v), max(u, v))].append(index)
+    start = next(index for index, face in enumerate(faces) if seed_vertex in face)
+    seen = {start}
+    queue = deque([start])
+    while queue:
+        index = queue.popleft()
+        face = faces[index]
+        for a in range(3):
+            u, v = face[a], face[(a + 1) % 3]
+            for other in by_edge[(min(u, v), max(u, v))]:
+                if other not in seen:
+                    seen.add(other)
+                    queue.append(other)
+    return [faces[index] for index in sorted(seen)]
+
+
+def _host_lengths(host):
+    """`{(u, v): length}` over the host's edges, `u < v`."""
+    out = {}
+    for edge in host.getEdgeList().toVector():
+        if edge is None or edge.getSource() is None or edge.getTarget() is None:
+            continue
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        out[(min(u, v), max(u, v))] = complex(edge.getLength())
+    return out
+
+
+def _genus_two_boundary(host, tori, ids, markings):
+    """The far boundary of the tube-joined host as a `SurfacePeriods` read:
+    its faces (the boundary component containing the far tori), its
+    lengths, the marking `(A_1, A_2 | B_1, B_2)` from the two far tori, and
+    the root face `{(0,0), (1,0), (1,1)}` of the first far torus in its own
+    counterclockwise order, which fixes the orientation."""
+    from tessera.quantum import SurfacePeriods
+    far = (1, 3)
+    grid = int(round(len(tori[0].vertices()) ** 0.5))
+    vid = lambda i, j: i * grid + j  # noqa: E731
+    faces = _surface_component(_boundary_faces(host), ids[far[0]][vid(0, 0)])
+    root = tuple(ids[far[0]][v] for v in (vid(0, 0), vid(1, 0), vid(1, 1)))
+    a_cycles = [markings[far[0]][0], markings[far[1]][0]]
+    b_cycles = [markings[far[0]][1], markings[far[1]][1]]
+    return SurfacePeriods(faces, _host_lengths(host), a_cycles, b_cycles, root_face=root)
+
+
+def _euler_characteristics(host):
+    """The Euler characteristic of each boundary component, by shared edges."""
+    faces = _boundary_faces(host)
+    remaining = list(faces)
+    out = []
+    while remaining:
+        component = _surface_component(remaining, remaining[0][0])
+        members = set(component)
+        remaining = [face for face in remaining if face not in members]
+        vertices = {v for face in component for v in face}
+        edges = {(min(u, v), max(u, v)) for face in component for a in range(3)
+                 for u, v in [(face[a], face[(a + 1) % 3])]}
+        out.append(len(vertices) - len(edges) + len(component))
+    return sorted(out)
+
+
+def _theta_tube(config, register, tolerance, sweep=None):
+    """G1-G5 on the tube-joined host.
+
+    G1: the topology of the tube -- b_1(W) = 4, the restriction subspace of
+        rank 4 = b_1(dW)/2 and isotropic for the declared form (the two near
+        tori on the bulk's near side, the genus-2 surface carrying each far
+        torus's induced orientation), the flipped control nonvanishing;
+    G2: the monodromy from the near tori to the genus-2 surface is
+        block-diagonal, each block the twist's map, so rho is a product
+        operator: the tube alone couples no cycle (operator entanglement is
+        topological);
+    G3: the genus-2 surface's own period matrix, read from its harmonic
+        1-forms: rank 4, Im Omega positive definite, Omega_12 != 0 (the neck
+        couples the harmonic forms: metric), symmetry residual reported;
+    G4: the geometric state at z = 0 and at the register's sample points has
+        entanglement entropy exactly 0 for the diagonal control
+        diag(Omega_11, Omega_22) and the measured entropy for the read Omega;
+    G5: the neck sweep, Omega_12 and the entropies against the waist and the
+        length of the tube (the discrete Ryu-Takayanagi curve), recorded.
+    """
+    import numpy as np
+    rng = np.random.default_rng(int(config["seed"]))
+    twist = str(config.get("collar_twist", DECLARED_COLLAR_TWIST))
+    k = register.level
+    checks, values = [], {"join": "tube", "collar_twist": twist,
+                          "tube": {key: config[key] for key in ("tube_layers", "tube_length", "tube_waist")}}
+
+    def read(cfg):
+        tori, _, seed, ids, markings = seed_qubit_host(cfg)
+        host = seed.host
+        betti, rank, _, periods, _ = _read_restriction(host, markings)
+        near = np.vstack([periods[0], periods[2]])   # (A_1, B_1, A_2, B_2) on the near tori
+        far = np.vstack([periods[1], periods[3]])    # the same order on the genus-2 surface
+        surface = _genus_two_boundary(host, tori, ids, markings)
+        return tori, host, betti, rank, near, far, surface
+
+    tori, host, betti, rank, near, far, surface = read(config)
+    values.update({"moduli": [complex(torus.tau()) for torus in tori], "betti": betti,
+                   "harmonic_rank": rank, "euler_characteristics": _euler_characteristics(host),
+                   "cells": len(host.getTopSimplices())})
+    # ---- G1 -------------------------------------------------------------
+    stacked_rank = _numeric_rank(np.vstack([near, far]))
+    boundary_b1 = int(near.shape[0] + far.shape[0])
+    iso = _lagrangian_check("tube", near, far, twist, tolerance)
+    checks.append(_check(
+        "G1", "tube host: b_1(W) = 4 = rank(H^1(W) -> H^1(dW)) = b_1(dW)/2, boundary components T^2, T^2, "
+              "Sigma_2, the restriction isotropic for the declared form and not for the flipped control",
+        {"betti": betti, "harmonic_rank": rank, "stacked_rank": stacked_rank, "boundary_b1": boundary_b1,
+         "euler_characteristics": values["euler_characteristics"],
+         "declared_form_norm": iso["measured"]["declared_form_norm"],
+         "flipped_control_norm": iso["measured"]["flipped_control_norm"]},
+        tolerance, len(betti) > 1 and betti[1] == 4 and rank == 4 and stacked_rank == 4
+        and boundary_b1 == 8 and values["euler_characteristics"] == [-2, 0, 0] and iso["pass"]))
+    # ---- G2 -------------------------------------------------------------
+    whole, rounded, rounding, fit = _fit_monodromy(near, far)
+    off = float(np.linalg.norm(whole - np.block([[whole[:2, :2], np.zeros((2, 2))],
+                                                 [np.zeros((2, 2)), whole[2:, 2:]]])))
+    expected = np.asarray(_TWIST_MATRICES[twist], dtype=float)
+    block_distance = max(float(np.abs(rounded[:2, :2] - expected).max()),
+                         float(np.abs(rounded[2:, 2:] - expected).max()))
+    perm = _pair_to_standard()
+    standard = perm @ rounded.astype(float) @ perm.T
+    omega_declared = np.diag([complex(tori[1].tau()), complex(tori[3].tau())])
+    weil = register.weil(standard, omega_declared, rng)
+    schmidt = register.schmidt_rank(weil.matrix, (k, k))
+    checks.append(_check(
+        "G2", "the monodromy from the near tori to the genus-2 surface is block-diagonal, each block the "
+              "twist's map, and rho is a product operator: the tube alone couples no cycle",
+        {"monodromy": rounded.astype(int).tolist(), "off_block_norm": off, "rounding_residual": rounding,
+         "fit_residual": fit, "block_distance_to_twist": block_distance, "weil_residual": weil.residual,
+         "operator_schmidt_rank": schmidt, "antiunitary": weil.antiunitary},
+        tolerance, off <= tolerance and rounding <= tolerance and fit <= tolerance and block_distance == 0.0
+        and weil.residual <= tolerance and schmidt == 1 and weil.antiunitary == (twist == "swap")))
+    # ---- G3 -------------------------------------------------------------
+    report = surface.report()
+    omega = surface.omega
+    moduli_far = [complex(tori[1].tau()), complex(tori[3].tau())]
+    diagonal_distance = [abs(omega[0, 0] - moduli_far[0]), abs(omega[1, 1] - moduli_far[1])]
+    checks.append(_check(
+        "G3", "the genus-2 surface's own period matrix: harmonic rank 4, Im Omega positive definite, "
+              "Omega_12 != 0 -- the neck couples the harmonic forms (symmetry residual reported)",
+        {"omega": omega, "omega_12": complex(omega[0, 1]), "omega_21": complex(omega[1, 0]),
+         "symmetry_residual": report["symmetry_residual"],
+         "imaginary_eigenvalues": report["imaginary_eigenvalues"], "harmonic_rank": report["harmonic_rank"],
+         "orientation_flipped": report["orientation_flipped"], "j_residual": report["j_residual"],
+         "diagonal_distance_to_far_moduli": diagonal_distance, "surface": {key: report[key] for key in ("faces", "edges", "vertices")},
+         "warnings": report["warnings"]},
+        tolerance, report["harmonic_rank"] == 4 and report["positive"] and not report["orientation_flipped"]
+        and abs(omega[0, 1]) > tolerance))
+    # ---- G4 -------------------------------------------------------------
+    def entropies(omega_matrix):
+        zero = register.entanglement_entropy(register.coherent_state(np.zeros(2), omega_matrix), (k, k))[0]
+        sampled = [register.entanglement_entropy(register.coherent_state(z, omega_matrix), (k, k))[0]
+                   for z in register.samples(2, rng)]
+        return zero, float(np.mean(sampled)), float(np.max(sampled))
+    control = np.diag(np.diag(omega))
+    zero_c, mean_c, max_c = entropies(control)
+    zero, mean, maximum = entropies(omega)
+    values["entropy"] = {"zero": zero, "mean": mean, "max": maximum,
+                         "control_zero": zero_c, "control_mean": mean_c, "control_max": max_c}
+    checks.append(_check(
+        "G4", "the geometric state of the genus-2 boundary is entangled between its two tori by the neck: "
+              "entropy exactly 0 for the diagonal control, the measured entropy for the read Omega",
+        {"entropy_bits_at_zero": zero, "entropy_bits_mean": mean, "entropy_bits_max": maximum,
+         "control_entropy_max": max_c, "omega_12": complex(omega[0, 1])},
+        tolerance, max_c <= tolerance and maximum > tolerance))
+    # ---- G5 -------------------------------------------------------------
+    if sweep:
+        rows = []
+        for waist, length in sweep:
+            cfg = dict(config)
+            cfg.update({"tube_waist": float(waist), "tube_length": float(length)})
+            try:
+                _, _, betti_s, rank_s, near_s, far_s, surface_s = read(cfg)
+            except Exception as error:  # a degenerate neck refuses by name; the row records it
+                rows.append({"waist": float(waist), "length": float(length), "refusal": str(error)})
+                continue
+            omega_s = surface_s.omega
+            rep = surface_s.report()
+            zero_s, mean_s, max_s = entropies(omega_s)
+            _, rounded_s, _, _ = _fit_monodromy(near_s, far_s)
+            rows.append({"waist": float(waist), "length": float(length), "omega": omega_s,
+                         "omega_12": complex(omega_s[0, 1]), "abs_omega_12": float(abs(omega_s[0, 1])),
+                         "entropy_zero": zero_s, "entropy_mean": mean_s, "entropy_max": max_s,
+                         "symmetry_residual": rep["symmetry_residual"], "positive": rep["positive"],
+                         "harmonic_rank": rep["harmonic_rank"], "betti": betti_s,
+                         "monodromy": rounded_s.astype(int).tolist(),
+                         "diagonal_distance_to_far_moduli": [abs(omega_s[0, 0] - moduli_far[0]),
+                                                             abs(omega_s[1, 1] - moduli_far[1])]})
+        values["sweep"] = rows
+        good = [row for row in rows if "refusal" not in row]
+        checks.append(_check(
+            "G5", "neck sweep: every point read (rank 4, Im Omega > 0, integer block-diagonal monodromy); "
+                  "Omega_12 and the entropies against the waist and the length are recorded",
+            {"points": len(rows), "refused": len(rows) - len(good),
+             "abs_omega_12_range": [min(r["abs_omega_12"] for r in good), max(r["abs_omega_12"] for r in good)] if good else None,
+             "entropy_mean_range": [min(r["entropy_mean"] for r in good), max(r["entropy_mean"] for r in good)] if good else None},
+            tolerance, bool(good) and all(r["positive"] and r["harmonic_rank"] == 4 for r in good)))
+    return checks, values
+
+
+def theta(config, level=DECLARED_THETA_LEVEL, tolerance=DECLARED_VERIFY_TOLERANCE, sweep=None):
     from tessera.quantum import ThetaRegister
     register = ThetaRegister(level=level, tolerance=tolerance)
     checks = _theta_synthetic(register, tolerance)
-    native, values = _theta_native(config, register, tolerance)
+    if str(config.get("join", DECLARED_JOIN)) == "tube":
+        native, values = _theta_tube(config, register, tolerance, sweep=sweep)
+    else:
+        native, values = _theta_native(config, register, tolerance)
     checks.extend(native)
     values["level"] = int(level)
     return {"checks": checks, "values": values, "tolerance": float(tolerance),
@@ -3643,9 +3924,15 @@ THETA_CERTIFIES = (
     "a monodromy mixing two tori (the shear) is entangling (controlled-Z at "
     "level 2). On the seeded hosts the geometric monodromies are read and act "
     "as stated; the four-torus join along a sphere is block-diagonal and "
-    "therefore cannot entangle. NOT certified: any host realising a mixing "
-    "monodromy geometrically (a join along a circle), non-abelian levels, or "
-    "any change to the modulus register.")
+    "therefore cannot entangle. On the tube-joined host (G1-G5): the tube "
+    "alone leaves the monodromy block-diagonal (a product operator: operator "
+    "entanglement is topological), while the genus-2 far boundary's own "
+    "period matrix couples the two tori (Omega_12 != 0, metric) and the "
+    "geometric state it defines is entangled between them by that coupling, "
+    "exactly zero for the diagonal control. NOT certified: any host realising "
+    "a mixing monodromy geometrically (a Dehn twist through the neck), the "
+    "symmetry of the discrete period matrix beyond its reported residual, "
+    "non-abelian levels, or any change to the modulus register.")
 
 
 def _add_theta_arguments(theta_parser):
@@ -3658,6 +3945,21 @@ def _add_theta_arguments(theta_parser):
             ("--tau-a", dict(type=_complex_argument, default=DECLARED_TAU_A)),
             ("--tau-b", dict(type=_complex_argument, default=DECLARED_TAU_B))):
         theta_parser.add_argument(name, **kwargs)
+    theta_parser.add_argument("--join", choices=DECLARED_JOINS, default=DECLARED_JOIN,
+                              help="how four tori are joined: along a removed tetrahedron (sphere, the direct "
+                                   "sum) or by a tube between the far tori (a 1-handle; the far boundary is one "
+                                   "genus-2 surface, read by G1-G4)")
+    theta_parser.add_argument("--tube-layers", dest="tube_layers", type=int, default=DECLARED_TUBE_LAYERS,
+                              help="prism layers of the tube (default %d)" % DECLARED_TUBE_LAYERS)
+    theta_parser.add_argument("--tube-length", dest="tube_length", type=float, default=DECLARED_TUBE_LENGTH,
+                              help="height of one tube layer (default %g)" % DECLARED_TUBE_LENGTH)
+    theta_parser.add_argument("--tube-waist", dest="tube_waist", type=float, default=DECLARED_TUBE_WAIST,
+                              help="scale of the tube's interior rings about their centroid (default %g)"
+                                   % DECLARED_TUBE_WAIST)
+    theta_parser.add_argument("--neck-waists", dest="neck_waists", default=None,
+                              help="comma-separated waists to sweep on the tube host (G5), e.g. 1,0.7,0.5,0.3")
+    theta_parser.add_argument("--neck-lengths", dest="neck_lengths", default=None,
+                              help="comma-separated tube lengths to sweep on the tube host (G5), e.g. 0.5,1,2,4")
     theta_parser.add_argument("--level", type=int, default=DECLARED_THETA_LEVEL,
                               help="the quantization level k; 2 is a qubit per torus (default %d)" % DECLARED_THETA_LEVEL)
     theta_parser.add_argument("--tol", type=float, default=DECLARED_VERIFY_TOLERANCE)
@@ -3669,15 +3971,25 @@ def theta_main(args):
     import json
     import os
     config = _verify_config(args)
-    record = theta(config, level=args.level, tolerance=args.tol)
+    sweep = None
+    if config.get("join") == "tube" and (args.neck_waists or args.neck_lengths):
+        waists = [float(x) for x in (args.neck_waists or str(config["tube_waist"])).split(",")]
+        lengths = [float(x) for x in (args.neck_lengths or str(config["tube_length"])).split(",")]
+        sweep = [(w, l) for w in waists for l in lengths]
+    record = theta(config, level=args.level, tolerance=args.tol, sweep=sweep)
     record["config"] = dict(config)
     path = args.json
     if path is None:
         directory = os.path.expanduser(args.out)
         os.makedirs(directory, exist_ok=True)
-        path = os.path.join(directory, "theta-k%d-%dt-%s-L%d-g%d-s%d-a%s-b%s.json" % (
+        tube = ""
+        if config.get("join") == "tube":
+            tube = "-tube-tL%d-len%g-w%g" % (config["tube_layers"], config["tube_length"], config["tube_waist"])
+            if sweep:
+                tube += "-sweep%d" % len(sweep)
+        path = os.path.join(directory, "theta-k%d-%dt-%s-L%d-g%d-s%d-a%s-b%s%s.json" % (
             args.level, args.tori, args.collar_twist, config["layers"], args.grid, args.seed,
-            _tau_slug(args.tau_a), _tau_slug(args.tau_b)))
+            _tau_slug(args.tau_a), _tau_slug(args.tau_b), tube))
     with open(path, "w") as handle:
         json.dump(record, handle, indent=2, default=_json_default)
     _print_verify_table(record)

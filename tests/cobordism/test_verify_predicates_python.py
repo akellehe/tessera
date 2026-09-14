@@ -309,3 +309,32 @@ def test_recorded_u1_and_j3_values_are_reproduced():
     assert abs(u1["before"] - 0.5708) < 5e-4 and abs(u1["after"] - 0.7564) < 5e-4
     assert abs(j3["relative_move"] - 0.4488) < 5e-4
     assert record["all_pass"], [row for row in record["checks"] if not row["pass"]]
+
+
+@pytest.mark.slow
+def test_tube_joined_host_reads_g1_to_g4():
+    """The tube-joined host (issue #1115): the far boundary is one genus-2
+    surface, b_1 = 4 with rank 4, the monodromy stays block-diagonal (a
+    product operator) while the surface's own period matrix couples the two
+    tori and the geometric state is entangled by it."""
+    from tessera.quantum import ThetaRegister
+    config = {"seed": 7, "tori": 4, "collar_twist": "none", "layers": 1,
+              "tau_a": [0.3, 1.1], "tau_b": [-0.2, 0.8], "grid": 3,
+              "interior_disposition": qa.DECLARED_INTERIOR_DISPOSITION,
+              "join": "tube", "tube_layers": 2, "tube_length": 1.0, "tube_waist": 1.0}
+    register = ThetaRegister(level=2, tolerance=TOL)
+    checks, values = qa._theta_tube(config, register, TOL)
+    by_id = {row["id"]: row for row in checks}
+    assert by_id["G1"]["pass"], by_id["G1"]
+    assert values["betti"][1] == 4 and values["euler_characteristics"] == [-2, 0, 0]
+    assert by_id["G2"]["pass"], by_id["G2"]
+    assert by_id["G2"]["measured"]["operator_schmidt_rank"] == 1
+    assert by_id["G3"]["pass"], by_id["G3"]
+    assert by_id["G4"]["pass"], by_id["G4"]
+    assert values["entropy"]["control_max"] <= TOL and values["entropy"]["max"] > TOL
+
+
+def test_verify_refuses_the_tube_host_by_name():
+    with pytest.raises(ValueError, match="tube-joined host"):
+        qa.verify({"join": "tube", "tori": 4, "layers": 1, "seed": 7, "collar_twist": "none",
+                   "tau_a": [0.3, 1.1], "tau_b": [-0.2, 0.8], "grid": 3})

@@ -249,6 +249,40 @@ class ThetaRegister:
         phase = overlap / abs(overlap) if abs(overlap) > 0 else 1.0
         return float(np.linalg.norm(left - phase * right) / np.linalg.norm(right))
 
+    def coherent_state(self, z, omega):
+        """The geometric state at the holonomy point ``z``: the unit vector
+        of ``Theta_k(Omega)`` with coefficients ``conj(theta_j(z; Omega))``
+        in the theta basis -- the evaluation functional at ``z`` (the
+        reproducing kernel), the state the boundary geometry defines once
+        its holonomies are ``z``. In the basis that the identity monodromy
+        identifies with the product of the torus registers, a diagonal
+        ``Omega`` gives a product vector and an off-diagonal ``Omega``
+        does not."""
+        values = self.basis(np.atleast_2d(np.asarray(z, dtype=complex)), omega)[:, 0]
+        vector = np.conj(values)
+        norm = float(np.linalg.norm(vector))
+        if not norm > 0.0:
+            raise ValueError("the coherent state vanishes at z = %r" % (z,))
+        return vector / norm
+
+    @staticmethod
+    def entanglement_entropy(vector, dims):
+        """The Schmidt spectrum (probabilities, descending) and the
+        entanglement entropy in bits of a unit vector of
+        ``C^d1 (x) C^d2``, the first factor the row index of the
+        ``d1 x d2`` coefficient matrix."""
+        d1, d2 = int(dims[0]), int(dims[1])
+        matrix = np.asarray(vector, dtype=complex).reshape(d1, d2)
+        singular = np.linalg.svd(matrix, compute_uv=False)
+        weights = singular ** 2
+        total = float(weights.sum())
+        if not total > 0.0:
+            raise ValueError("the vector vanishes")
+        probabilities = weights / total
+        nonzero = probabilities[probabilities > 0.0]
+        entropy = float(-(nonzero * np.log2(nonzero)).sum())
+        return entropy, probabilities
+
     @staticmethod
     def schmidt_rank(operator, dims, tolerance=1e-12):
         """The operator Schmidt rank of a ``d1 d2 x d1 d2`` matrix across the
