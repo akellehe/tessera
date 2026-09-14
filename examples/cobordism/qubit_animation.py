@@ -1,6 +1,16 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""Animate the qubit cobordism and its declared read-outs.
+"""Test geometric harmonic state/operator correspondence on a live cobordism.
+
+The primary operator evidence is the target-independent ``correspondence``
+readout: whole-kernel transport, basis and held-out reconstruction, declared
+coordinate norms and Choi data. It reports the missing two-qubit tensor
+register explicitly. No matrix-valued connection is prescribed.
+
+The synthesis setup described below is retained as the historical
+selected-state experiment. Its coupling-to-chi fit is not a full gate
+realization certificate; the independent whole-kernel readout decides which
+operator claims the accepted scalar geometry supports.
 
 This is the qubit experiment of ``docs/design/qubit_cobordism_spec.md``.
 Two flat qubit tori (``SimplicialQubit.flat_torus``) are the boundary of a
@@ -61,9 +71,12 @@ import math
 import sys
 import warnings
 
+from numpy.linalg import LinAlgError
+
 import tessera as T
 
 import emergence_animation as ea
+import harmonic_correspondence as hc
 
 cob = T.cobordism
 obs = T.observables
@@ -1269,7 +1282,7 @@ class QubitFrame(ea.AnimationFrame):
     """Every qubit measurement drawn on one accepted geometry."""
 
     QUBIT_CHANNELS = ("blocks", "leaks", "monodromy", "two_body", "boundary",
-                      "completion")
+                      "completion", "correspondence")
 
     def __init__(self, node, spacetime, step, config, inputs):
         self.step = step
@@ -1297,6 +1310,10 @@ class QubitFrame(ea.AnimationFrame):
         self.two_body = self._read_two_body(node, self.config)
         self.boundary = self._read_boundary(spacetime, node)
         self.completion = self._read_completion(node)
+        try:
+            self.correspondence = hc.measure_geometry(node)
+        except (ValueError, RuntimeError, KeyError, LinAlgError) as error:
+            self.correspondence = Absent("whole-kernel correspondence unavailable: %s" % error)
 
     # ---- 12. the qubit blocks (spec S6, per block) ------------------
 
@@ -1570,7 +1587,11 @@ def _tau_text(value):
 
 
 def _report_qubit(frame):
-    """The qubit mode's stdout line: the residuals, the moduli, the topology."""
+    """Report the selected-state objective and independent operator evidence."""
+    if not isinstance(frame.correspondence, Absent):
+        claim = frame.correspondence.get("requested_gate", {})
+        if claim:
+            print("  whole-kernel gate certificate: %s" % claim["obstruction"])
     def block_residual(index):
         if isinstance(frame.blocks, Absent):
             return "absent"
@@ -1993,6 +2014,45 @@ def _state_colour(index, count):
     return matplotlib.colormaps["viridis"](
         0.12 + 0.76 * (index / max(1, count - 1)))
 
+
+def _panel_correspondence(axis, frame):
+    """Show whole-kernel operators, never relabel selected-state chi as a gate."""
+    import numpy as np
+
+    read = frame.correspondence
+    title = "whole harmonic operators |T|"
+    if isinstance(read, Absent):
+        return _absent_panel(axis, title, read.reason)
+    if read.get("obstruction"):
+        return _absent_panel(axis, title, read["obstruction"])
+    matrices, labels, notes = [], [], []
+    for name, value in read["readouts"].items():
+        if not value["identifiable"]:
+            notes.append("%s: %s" % (name, value["obstruction"]))
+            continue
+        matrix = np.asarray(value["operator"], dtype=complex)
+        matrices.append(matrix)
+        labels.extend("%s %d" % (name, j) for j in range(matrix.shape[1]))
+        notes.append("%s: kernel %.1e; held-out %.1e; isometry %.1e" % (
+            name, value["kernel_residual"],
+            max(value["held_out"]["errors"].values()),
+            value["quantum"]["coordinate_isometry_error"]))
+    if not matrices:
+        return _absent_panel(axis, title, "; ".join(notes))
+    matrix = np.hstack(matrices)
+    axis.imshow(np.abs(matrix), cmap="viridis", aspect="auto")
+    axis.set_title(title, fontsize=8)
+    axis.set_xticks(range(matrix.shape[1]), labels, fontsize=6)
+    axis.set_yticks(range(matrix.shape[0]), range(matrix.shape[0]), fontsize=6)
+    axis.set_ylabel("output coordinate", fontsize=6)
+    for (i, j), value in np.ndenumerate(matrix):
+        axis.text(j, i, "%.2g%+.2gj" % (value.real, value.imag),
+                  color="white", ha="center", va="center", fontsize=6,
+                  bbox={"facecolor": "black", "alpha": 0.35, "edgecolor": "none"})
+    notes.append("Two-qubit gate: NOT CERTIFIED (missing tensor register)")
+    axis.set_xlabel("\n".join(notes), fontsize=6)
+
+
 _QUBIT_PANEL_ORDER = ("objective", "residuals", "moduli", "bloch",
                       "transfer", "topology", "layout", "betti")
 
@@ -2001,7 +2061,7 @@ _QUBIT_PRIMARY_PANELS = [
     ("residuals", _panel_residuals),
     ("moduli", _panel_moduli),
     ("bloch", _panel_bloch),
-    ("transfer", _panel_transfer),
+    ("transfer", _panel_correspondence),
     ("topology", _panel_topology),
     ("layout", ea._panel_layout),
     ("betti", ea._panel_betti),
