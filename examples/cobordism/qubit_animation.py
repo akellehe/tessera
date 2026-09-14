@@ -12,7 +12,10 @@ selected-state experiment. Its coupling-to-chi fit is not a full gate
 realization certificate; the independent whole-kernel readout decides which
 operator claims the accepted scalar geometry supports.
 
-This is the qubit experiment of ``docs/design/qubit_cobordism_spec.md``.
+The consolidated derivation is maintained outside this repository; see
+``docs/design/cobordism_derivation.md`` for its location. Specification
+labels below describe the historical selected-state implementation, not
+the consolidated reading's current requirement numbering.
 Two flat qubit tori (``SimplicialQubit.flat_torus``) are the boundary of a
 3-complex whose bulk starts as the collar between them
 (``MultiCobordism.seed_collar``) and is then synthesized by the shared stage-1

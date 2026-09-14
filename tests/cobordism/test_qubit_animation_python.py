@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 """The qubit cobordism animation in ``examples/cobordism/qubit_animation.py``
-(#963, T4 of ``docs/design/qubit_cobordism_spec.md``, delta D4).
+(#963, historical requirement T4 and delta D4).
 
 The qubit cobordism runs through the same shared drive loop as the neutral
 animation (spec R5), with its own node and frame factories. The qubit factory

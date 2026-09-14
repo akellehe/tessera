@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The two-body transfer read in the blocks' period frames (#962, T3 of
-``docs/design/qubit_cobordism_spec.md``, delta D3).
+"""The two-body transfer read in the blocks' period frames
+(#962, historical requirement T3 and delta D3).
 
 A qubit torus's PERIOD FRAME (``SimplicialQubit.period_frame``) is the basis
 (f_A, f_B) of its harmonic space with periods (1, 0) and (0, 1) over its

@@ -1,7 +1,11 @@
 # Qubit cobordism — the run and checks C1–C5 (#964, T5)
 
-The construction is `qubit_cobordism_spec.md` (this directory), implemented by
-T1–T4 (#960–#963, #975–#977). This note records the run of spec T5: what was
+The construction followed the historical specification implemented by
+T1–T4 (#960–#963, #975–#977). That specification is retired; the
+[maintained derivation location](cobordism_derivation.md) identifies the
+consolidated source outside this repository. Requirement labels and
+interpretations below are historical, not current scientific authority.
+This note records the run of historical T5: what was
 driven, the numbers behind checks C1–C5, the scan of the objective's weights,
 and what remains open. Records live under `~/cobordism-runs/qubit-cobordism/t5/`
 (one JSON and one GIF per run, `runs.md` the index with every command line);

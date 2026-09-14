@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 """The whole's zero mode in the block's live frame: the OUTPUT-state read
-(#975, T2-bis of ``docs/design/qubit_cobordism_spec.md``; since the D2 wording
+(#975, historical requirement T2-bis; since the D2 wording
 of 2026-09-07 (#988) this leak is REPORTED, not scored -- ``r_U`` scores
 ``own_state_residual``, the block's own-Laplacian residual of D2, tested in
 ``test_own_state_residual_python.py``; ``input_state_residual`` and its gradient

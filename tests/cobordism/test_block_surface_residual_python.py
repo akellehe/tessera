@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""A surface block's own Laplacian (#961, T2 of ``docs/design/qubit_cobordism_spec.md``).
+"""A surface block's own Laplacian (#961, historical requirement T2).
 
 Each input torus of the collar keeps representing its input state through the
 zero mode of its OWN Laplacian while its cells and lengths move (spec R3, R7,

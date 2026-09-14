@@ -1,7 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The qubit cobordism run, pinned at small size (#964, T5 of
-``docs/design/qubit_cobordism_spec.md``).
+"""The qubit cobordism run, pinned at small size (#964, historical T5).
 
 The run itself (eight units and more, the weight scan, the 4x4 synthesis,
 the phased run) lives in the records under ``~/cobordism-runs/qubit-cobordism/t5/``
