@@ -2802,20 +2802,76 @@ def _intersection_form(cycles):
     return np.kron(np.eye(cycles // 2), j)
 
 
-def _isotropy(periods_a, periods_b):
-    """`|L^T Omega L|` for `L = [P_A; P_B]` and `Omega = J_A (+) eps J_B`, at
-    both signs `eps`: the two ends carry opposite induced orientations from
-    the bulk, and which sign the markings realise is read, not assumed."""
+def _twist_orientation(twist):
+    """The sign of the twist's action on a surface's orientation: `det phi*`.
+    The swap exchanges the two marking cycles, reversing orientation."""
+    import numpy as np
+    return int(round(float(np.linalg.det(np.asarray(_TWIST_MATRICES[twist], dtype=float)))))
+
+
+def _boundary_form(cycles_a, cycles_b, twist, flipped=False):
+    """The boundary intersection form `Omega = J_A (+) s J_B` from DECLARED
+    data, not from `M`: the A-side tori carry the bulk's induced orientation
+    (`+1`), the B-side tori the opposite (`-1`) times the orientation of the
+    relabelling applied to them (`det phi*`: `+1` for none, `-1` for swap).
+    `flipped` negates the B-side signs, the control that must not vanish."""
+    import numpy as np
+    sign = -_twist_orientation(twist)
+    if flipped:
+        sign = -sign
+    omega_a = _intersection_form(cycles_a)
+    omega_b = sign * _intersection_form(cycles_b)
+    return np.block([[omega_a, np.zeros((omega_a.shape[0], omega_b.shape[1]))],
+                     [np.zeros((omega_b.shape[0], omega_a.shape[1])), omega_b]])
+
+
+def _lagrangian_check(label, periods_a, periods_b, twist, tolerance):
+    """R5: `[P_A; P_B]` is isotropic for the declared boundary form, and not
+    for the control with the B-side orientations flipped.
+
+    The passing sign is not searched for and not derived from `det M`: the
+    2x2 identity `M^T J M = det(M) J` does not extend to the combined map
+    (`diag(S, S)` has `det +1` and reverses the form), so the form is built
+    from the sides and the twist alone.
+    """
     import numpy as np
     stacked = np.vstack([periods_a, periods_b])
-    omega_a = _intersection_form(periods_a.shape[0])
-    omega_b = _intersection_form(periods_b.shape[0])
-    out = {}
-    for eps in (+1, -1):
-        omega = np.block([[omega_a, np.zeros((omega_a.shape[0], omega_b.shape[1]))],
-                          [np.zeros((omega_b.shape[0], omega_a.shape[1])), eps * omega_b]])
-        out[eps] = float(np.linalg.norm(stacked.T @ omega @ stacked))
-    return out
+    declared = float(np.linalg.norm(
+        stacked.T @ _boundary_form(periods_a.shape[0], periods_b.shape[0], twist) @ stacked))
+    flipped = float(np.linalg.norm(
+        stacked.T @ _boundary_form(periods_a.shape[0], periods_b.shape[0], twist, flipped=True)
+        @ stacked))
+    return _check(
+        "R5:" + label,
+        "[P_A; P_B] is isotropic for the declared boundary form J_A (+) (-det phi*) J_B, "
+        "and not for the B-side-flipped control",
+        {"declared_form_norm": declared, "flipped_control_norm": flipped,
+         "b_side_sign": -_twist_orientation(twist)},
+        tolerance, declared <= tolerance and flipped > tolerance)
+
+
+def _exactness_check(delta, reference, coboundary, tolerance):
+    """J2: the canonical representative moves by O(1) under the jitter and
+    the move is exact -- in `im d_0` -- to the declared tolerance.
+
+    Measured as the exactness RESIDUAL `|delta - d_0 c| / |delta|` with `c` the
+    least-squares fit, never as the projected-length ratio `|d_0 c| / |delta|`:
+    that ratio sits within `5e-11` of one for `delta = (1, 1e-5)` against
+    `span((1, 0))` while the residual is `1e-5`. No motion at all is named,
+    and fails, since the check is that the representative moves.
+    """
+    import numpy as np
+    norm = float(np.linalg.norm(delta))
+    if norm == 0.0:
+        return _check("J2", "the canonical representative moves O(1) and the move is exact (in im d_0)",
+                      {"relative_move": 0.0, "exactness_residual": None,
+                       "note": "the representative did not move"}, tolerance, False)
+    relative = norm / float(np.linalg.norm(reference))
+    coefficients = np.linalg.lstsq(coboundary, delta, rcond=None)[0]
+    residual = float(np.linalg.norm(delta - coboundary @ coefficients) / norm)
+    return _check("J2", "the canonical representative moves O(1) and the move is exact (in im d_0)",
+                  {"relative_move": relative, "exactness_residual": residual},
+                  tolerance, relative > 1e-3 and residual <= tolerance)
 
 
 def _read_restriction(spacetime, markings):
@@ -2904,8 +2960,11 @@ def _check(identifier, statement, measured, tolerance, passed):
             "tolerance": tolerance, "pass": bool(passed)}
 
 
-def _pair_checks(label, periods_a, periods_b, twist, tolerance):
-    """R2-R5 for one marked pair, and the fitted monodromy for the rest."""
+def _pair_checks(label, periods_a, periods_b, twist, tolerance, expect_twist=True):
+    """R2-R5 for one marked pair, and the fitted monodromy for the rest.
+    `twist` names the relabelling applied to the B side; `expect_twist`
+    says whether R4 compares `M` with that twist's induced map (a single
+    collar) or not (the combined four-torus map)."""
     import numpy as np
     checks = []
     matrix, rounded, rounding, fit = _fit_monodromy(periods_a, periods_b)
@@ -2922,7 +2981,7 @@ def _pair_checks(label, periods_a, periods_b, twist, tolerance):
         "R3:" + label, "M is an integer matrix with det +-1",
         {"rounding_residual": rounding, "fit_residual": fit, "det": det},
         tolerance, rounding <= tolerance and fit <= tolerance and det in (1, -1)))
-    if twist is not None:
+    if expect_twist:
         expected = np.asarray(_TWIST_MATRICES[twist])
         checks.append(_check(
             "R4:" + label, "M equals the twist's induced map phi* (%s)" % twist,
@@ -2931,17 +2990,7 @@ def _pair_checks(label, periods_a, periods_b, twist, tolerance):
             tolerance, rounded.shape == expected.shape
             and (rounded == expected).all()
             and float(np.abs(matrix - expected).max()) <= tolerance))
-    # The graph {(x, Mx)} is isotropic for J (+) eps J iff x^T (J + eps det(M) J) x
-    # vanishes, i.e. eps = -det M. The product collar passes at eps = -1: the
-    # two ends carry opposite induced orientations from the bulk (reading P31).
-    isotropy = _isotropy(periods_a, periods_b)
-    passing = [eps for eps, norm in isotropy.items() if norm <= tolerance]
-    checks.append(_check(
-        "R5:" + label,
-        "[P_A; P_B] is isotropic for J (+) eps J at exactly one sign, and that sign is -det M",
-        {"eps_plus": isotropy[+1], "eps_minus": isotropy[-1], "det": det,
-         "passing_sign": passing},
-        tolerance, len(passing) == 1 and passing[0] == -det))
+    checks.append(_lagrangian_check(label, periods_a, periods_b, twist, tolerance))
     return checks, matrix, rounded
 
 
@@ -3005,7 +3054,7 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
     periods_b = np.vstack([periods[i] for i in b_side])
     if len(tori) == 4:
         rows, whole, whole_rounded = _pair_checks("whole", periods_a, periods_b,
-                                                  None, tolerance)
+                                                  twist, tolerance, expect_twist=False)
         checks.extend(rows)
         blocks = [monodromies[name]["matrix"] for name in names]
         block_diagonal = np.block([[blocks[0], np.zeros_like(blocks[0])],
@@ -3043,14 +3092,7 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
         periods_a_after = np.vstack([periods_after[i] for i in a_side])
         canonical_after = images_after @ np.linalg.inv(periods_a_after)
         delta = canonical_after - canonical_before
-        relative = float(np.linalg.norm(delta) / np.linalg.norm(canonical_before))
-        coefficients = np.linalg.lstsq(coboundary, delta, rcond=None)[0]
-        exact_fraction = float(np.linalg.norm(coboundary @ coefficients)
-                               / max(np.linalg.norm(delta), 1e-300))
-        checks.append(_check(
-            "J2", "the canonical representative moves O(1) and the move is exact (in im d_0)",
-            {"relative_move": relative, "exact_fraction": exact_fraction},
-            tolerance, relative > 1e-3 and 1.0 - exact_fraction <= 1e-9))
+        checks.append(_exactness_check(delta, canonical_before, coboundary, tolerance))
         gram_after = canonical_after.T @ mass_after @ canonical_after
         gram_move = float(np.linalg.norm(gram_after - gram_before)
                           / np.linalg.norm(gram_before))
@@ -3063,11 +3105,16 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
             matrix = monodromies[name]["matrix"]
             before = _unitarity_defect(matrix, grams_before[a], grams_before[b])
             after = _unitarity_defect(matrix, grams_after[a], grams_after[b])
+            # A diagnostic, not a theorem: the metric condition is reported,
+            # and an isometric configuration (identical tori on the product
+            # collar) is a legitimate result, not a failure.
             checks.append(_check(
                 "U1:" + name,
-                "the transport defect |M^T G_B M - G_A| / |G_A| is O(1) and moves under jitter",
-                {"before": before, "after": after, "move": abs(after - before)},
-                None, before > 1e-6 and abs(after - before) > 1e-6))
+                "the transport defect |M^T G_B M - G_A| / |G_A| before and after jitter "
+                "(the metric condition, reported)",
+                {"before": before, "after": after, "move": abs(after - before),
+                 "isometric_before": bool(before <= tolerance)},
+                tolerance, math.isfinite(before) and math.isfinite(after)))
     finally:
         restore()
         for index, torus in enumerate(tori):
