@@ -202,6 +202,61 @@ def test_native_scalar_phase_transport(geometry):
     assert read["quantum"]["coordinate_unitary"]
 
 
+@pytest.mark.parametrize("fixed_bases", [True, False])
+@pytest.mark.parametrize("complex_lengths", [False, True])
+def test_native_gram_gauge_covariance(geometry, fixed_bases, complex_lengths):
+    """A pure gauge changes only declared port coordinates, not the operator's
+    singular values or Choi entropy. Fixing both basepoints fixes those
+    coordinates as well. Exercise both real and complex Whitney metrics.
+    """
+    node, _ = geometry
+    edges = node.spacetime().getEdgeList().toVector()
+    if complex_lengths:
+        random = np.random.default_rng(1105)
+        for edge in edges:
+            edge.setLength(edge.getLength() * (1 + 0.02j * random.normal()))
+    before = hc.measure_geometry(node)
+    bases = [int(node.input_marking(i).base_vertex) for i in (0, 1)]
+
+    def phase(vertex):
+        return 0.0 if fixed_bases and vertex in bases else 0.3 * np.sin(vertex)
+
+    for edge in edges:
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        edge.setPhase(phase(v) - phase(u))
+    after = hc.measure_geometry(node)
+    coordinate_change = np.exp(-1j * (phase(bases[1]) - phase(bases[0])))
+    for name in ("periods", "gram"):
+        initial, changed = before["readouts"][name], after["readouts"][name]
+        assert initial["identifiable"], initial["obstruction"]
+        assert changed["identifiable"], changed["obstruction"]
+        np.testing.assert_allclose(changed["operator"],
+                                   coordinate_change * np.asarray(initial["operator"]),
+                                   atol=1e-10, rtol=0)
+        initial_choi, changed_choi = initial["quantum"]["choi"], changed["quantum"]["choi"]
+        for field in ("schmidt_coefficients", "input_marginal", "output_marginal",
+                      "input_reference_entropy_nats"):
+            np.testing.assert_allclose(changed_choi[field], initial_choi[field],
+                                       atol=1e-10, rtol=0)
+    assert after["readouts"]["gram"]["observation_convention"] == "dual_frame_whitney"
+
+
+def test_gram_readout_reuses_native_gram_block(geometry, monkeypatch):
+    from tessera import chainhodge
+    node, _ = geometry
+    gram_block = chainhodge.PencilSchur.gramBlock
+    calls = []
+
+    def recorded_gram_block(mass, left, right):
+        calls.append((left.shape[1], right.shape[1]))
+        return gram_block(mass, left, right)
+
+    monkeypatch.setattr(chainhodge.PencilSchur, "gramBlock", staticmethod(recorded_gram_block))
+    read = hc.measure_geometry(node)["readouts"]["gram"]
+    assert read["identifiable"], read["obstruction"]
+    assert calls == [(2, read["cochain_count"])] * 2
+
+
 def test_a_gram_obstruction_does_not_hide_period_transport(geometry):
     from types import SimpleNamespace
     node, _ = geometry

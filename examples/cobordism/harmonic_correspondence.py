@@ -163,7 +163,7 @@ def measure_geometry(node):
     This entrypoint deliberately accepts neither animation inputs nor a
     target. Markings and live frames are attachment data on the node.
     """
-    from tessera import cobordism as cob
+    from tessera import chainhodge, cobordism as cob
 
     if len(node.inputs) != 2:
         return {"obstruction": "requires two declared ports; no tensor-factor map is defined for a direct sum"}
@@ -193,8 +193,11 @@ def measure_geometry(node):
             gram_obstructions.append("port %d has a cell absent from the whole complex" % index)
             continue
         embedded = np.zeros((size, frame.rank()), dtype=complex)
-        embedded[indices] = np.asarray(frame.images)
-        gram_rows.append(embedded.T @ mass)
+        # The native frame already supplies the covariant left partner,
+        # normalized by (F^vee)^T M_own F = I. Pair it with whole cochains
+        # through the WHOLE Whitney mass, using the shared Gram primitive.
+        embedded[indices] = np.asarray(frame.dual_images)
+        gram_rows.append(np.asarray(chainhodge.PencilSchur.gramBlock(mass, embedded, identity)))
     result = {"schema": 1, "degree": 1, "primitive_data": "simplex topology, scalar lengths and phases",
               "boundary_included": True, "readouts": {}}
     result["readouts"]["periods"] = recover_whole_relation(pencil, *period_rows)
@@ -202,7 +205,10 @@ def measure_geometry(node):
         {"identifiable": False, "obstruction": "; ".join(gram_obstructions)}
         if gram_obstructions else recover_whole_relation(pencil, *gram_rows))
     result["readouts"]["periods"]["interpretation"] = "transported marked periods; topological collar control"
-    result["readouts"]["gram"]["interpretation"] = "bilinear F^T M observation; not a positive Whitney inner product"
+    result["readouts"]["gram"]["observation_convention"] = "dual_frame_whitney"
+    result["readouts"]["gram"]["interpretation"] = (
+        "bilinear (F^vee)^T M_whole observation; (F^vee)^T M_own F = I; "
+        "not a positive Whitney inner product")
     result["requested_gate"] = {
         "certified": False, "required_input_dimension": 4,
         "observed_input_dimension": period_rows[0].shape[0],
