@@ -850,6 +850,34 @@ class MultiCobordism {
   /// the metric source by construction.
   [[nodiscard]] static MonodromyRead monodromy(const std::shared_ptr<Spacetime> &spacetime,
                                                const Marking &markingA, const Marking &markingB);
+
+  /// The whole's degree-1 zero mode read on every marking at once: ONE
+  /// harmonic basis \f$ Z \f$ and its periods over each marking, all from
+  /// that same basis. `monodromy` is the two-marking case with the fit
+  /// \f$ P_B = M P_A \f$ added. This is what a Lagrangian, direct-sum, or
+  /// canonical-representative check needs: those compare periods and images
+  /// ACROSS markings, and two separate reads may return the zero mode in two
+  /// different bases, which would make such a comparison meaningless.
+  struct RestrictionRead {
+    std::vector<int> betti;
+    /// \f$ r = \dim \ker L_1 \f$ of the whole, the zero mode's rank.
+    int harmonicRank{0};
+    /// \f$ Z \f$, \f$ n_1 \times r \f$, in the assembled pencil's degree-1 cell
+    /// order (`AssembledPencil::cellIndex(1, edge)` maps a sorted edge to its row).
+    Eigen::MatrixXcd images;
+    /// \f$ P_i \f$ (\f$ |\text{marking}_i| \times r \f$): the transported periods
+    /// of `images` over marking \f$ i \f$, in the order the markings were given.
+    std::vector<Eigen::MatrixXcd> periods;
+    /// Empty when the read succeeded; otherwise why it could not be made.
+    std::string obstruction;
+  };
+  /// The restriction read of \p spacetime over \p markings (see
+  /// `RestrictionRead`). Read-only on the geometry; the Whitney pencil is the
+  /// metric source by construction. Every marking edge must be an edge of the
+  /// whole, and every marking must order into closed walks from one base
+  /// point, or the read names the obstruction and returns nothing else.
+  [[nodiscard]] static RestrictionRead restriction(const std::shared_ptr<Spacetime> &spacetime,
+                                                   const std::vector<Marking> &markings);
   /// The relabeling-invariant, zero-filled residual of `targetState` against the
   /// `L_k` harmonic of `spacetime` over its emergent holes (`r_state` in the
   /// reference, the Python-binding name). For each register degree `k` it reads the
