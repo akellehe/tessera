@@ -3055,23 +3055,51 @@ def _copy_lengths_to_torus(host, torus_spacetime, ids):
         edge.setLength(live[key])
 
 
-def _torus_gram(torus, host, ids):
-    """The torus's own harmonic Gram in the coordinates of its marking, on
-    the host's live lengths: `G = P^-T (Z^T M_1 Z) P^-1`, with `Z` its own
-    degree-1 zero mode, `P` that mode's periods over its marking, and `M_1`
-    its own Whitney mass. Bilinear throughout, because the Whitney pairing
-    is complex bilinear (the reading, section 5.1)."""
+def _covariant_period_gram(op, contour, walks):
+    """The boundary pairing in the coordinates of a marking, gauge covariant:
+    `G = (P^v)^-T (Phi~^T M Z) P^-1 = (P^v)^-T P^-1`, with `Z` the band's
+    cochain images, `Phi~` its native left frame -- the covariant dual
+    partner, normalised by `Phi~^T M Z = I` (the `(F^v)^T M_own F = I` rule
+    of spec S4) -- `P` the transported periods of `Z` on the connection and
+    `P^v` those of `Phi~` on the dual connection, both over the SAME walks
+    so the base-point factors cancel.
+
+    A primal-primal `Z^T M Z` transforms by `rho^T G rho` under a vertex
+    gauge (`CovariantChainHodge`, property (vi)) and is not covariant:
+    measured 0.76 relative movement under a U(1) gauge on the seeded torus,
+    against 1e-15 for this pairing. At zero phases the two agree exactly,
+    since there `Phi~ = Z B^-T` with `B = Phi^T Z`. Bilinear throughout.
+    """
     import numpy as np
+    band = op.band(1, contour)
+    images = np.asarray(band.images)
+    left = np.asarray(band.leftFrame)
+    if left.size == 0 or left.shape != images.shape:
+        raise RuntimeError("the band has no left frame (isotropic pairing): the covariant "
+                           "Gram is not defined")
+    dual = op.dual()
+    periods = np.array([[op.connection().transportedPeriod(images[:, a], walk)
+                         for a in range(images.shape[1])] for walk in walks])
+    dual_periods = np.array([[dual.connection().transportedPeriod(left[:, a], walk)
+                              for a in range(left.shape[1])] for walk in walks])
+    if periods.shape[0] != periods.shape[1]:
+        raise RuntimeError("the marking has %d cycles against a rank-%d band"
+                           % (periods.shape[0], periods.shape[1]))
+    return np.linalg.inv(dual_periods).T @ np.linalg.inv(periods)
+
+
+def _torus_gram(torus, host, ids):
+    """The torus's own boundary pairing in the coordinates of its marking, on
+    the host's live lengths (`_covariant_period_gram` on the torus's own
+    operator)."""
     spacetime = torus.spacetime()
     _copy_lengths_to_torus(host, spacetime, ids)
     marking = _host_marking(torus, {int(v): int(v)
                                     for pair in torus.edges() for v in pair})
-    _, rank, images, periods, _ = _read_restriction(spacetime, [marking])
-    if rank != 2 or periods[0].shape != (2, 2):
-        raise RuntimeError("the torus's own zero mode has rank %d" % rank)
-    mass = _dense(cob.PencilLayer.assemble([spacetime]).op.dressed(1))
-    inverse = np.linalg.inv(periods[0])
-    return inverse.T @ (images.T @ mass @ images) @ inverse
+    assembled = cob.PencilLayer.assemble([spacetime])
+    contour = cob.PencilLayer.harmonic_contour(assembled, 1)
+    walks = [[(int(u), int(v)) for u, v in cycle] for cycle in marking]
+    return _covariant_period_gram(assembled.op, contour, walks)
 
 
 def _unitarity_defect(monodromy, gram_a, gram_b):
@@ -3205,15 +3233,18 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
     coboundary = _dense(assembled.op.twistedBoundary(1))
     if coboundary.shape[0] != images.shape[0]:
         coboundary = coboundary.T
-    mass_before = _dense(assembled.op.dressed(1))
     canonical_before = images @ np.linalg.inv(periods_a)
-    gram_before = canonical_before.T @ mass_before @ canonical_before
+    # J3's Gram is the whole band's covariant pairing in the A-side marking
+    # coordinates -- the same dual-frame rule as U1 -- not Z^T M Z.
+    a_walks = [[(int(u), int(v)) for u, v in cycle] for i in a_side for cycle in markings[i]]
+    gram_before = _covariant_period_gram(
+        assembled.op, cob.PencilLayer.harmonic_contour(assembled, 1), a_walks)
     grams_before = {index: _torus_gram(torus, host, ids[index])
                     for index, torus in enumerate(tori)}
     restore = _jitter_lengths(host, float(jitter), int(config["seed"]))
     try:
         _, rank_after, images_after, periods_after, read_after = _read_restriction(host, markings)
-        mass_after = _dense(cob.PencilLayer.assemble([host]).op.dressed(1))
+        assembled_after = cob.PencilLayer.assemble([host])
         for (a, b), name in zip(pairs, names):
             matrix_after, _, _, _ = _fit_monodromy(periods_after[a], periods_after[b])
             move = float(np.abs(matrix_after - monodromies[name]["matrix"]).max())
@@ -3222,18 +3253,20 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
                 {"max_entry_move": move, "rank_after": rank_after},
                 tolerance, move <= tolerance and rank_after == rank))
         rows, values["band_certificate_jittered"] = _harmonic_certificates(
-            "jittered", read_after, cob.PencilLayer.assemble([host]).op, tolerance)
+            "jittered", read_after, assembled_after.op, tolerance)
         checks.extend(rows)
         periods_a_after = np.vstack([periods_after[i] for i in a_side])
         canonical_after = images_after @ np.linalg.inv(periods_a_after)
         delta = canonical_after - canonical_before
         checks.append(_exactness_check(delta, canonical_before, coboundary, tolerance))
-        gram_after = canonical_after.T @ mass_after @ canonical_after
+        gram_after = _covariant_period_gram(
+            assembled_after.op, cob.PencilLayer.harmonic_contour(assembled_after, 1), a_walks)
         gram_move = float(np.linalg.norm(gram_after - gram_before)
                           / np.linalg.norm(gram_before))
         checks.append(_check(
-            "J3", "the whole Gram Z^T M_1 Z of the canonical representative moves O(1)",
-            {"relative_move": gram_move}, None, gram_move > 1e-3))
+            "J3", "the whole band's covariant pairing in the marking coordinates moves O(1)",
+            {"relative_move": gram_move, "pairing_convention": "dual_frame_whitney"},
+            None, gram_move > 1e-3))
         grams_after = {index: _torus_gram(torus, host, ids[index])
                        for index, torus in enumerate(tori)}
         for (a, b), name in zip(pairs, names):
@@ -3245,10 +3278,11 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
             # collar) is a legitimate result, not a failure.
             checks.append(_check(
                 "U1:" + name,
-                "the transport defect |M^T G_B M - G_A| / |G_A| before and after jitter "
-                "(the metric condition, reported)",
+                "the transport defect |M^T G_B M - G_A| / |G_A| before and after jitter, "
+                "G the covariant dual-frame pairing in marking coordinates (the metric condition, reported)",
                 {"before": before, "after": after, "move": abs(after - before),
-                 "isometric_before": bool(before <= tolerance)},
+                 "isometric_before": bool(before <= tolerance),
+                 "pairing_convention": "dual_frame_whitney"},
                 tolerance, math.isfinite(before) and math.isfinite(after)))
     finally:
         restore()
@@ -3300,7 +3334,8 @@ VERIFY_CERTIFIES = (
     "across separately seeded hosts; four tori give the direct sum. "
     "NOT certified: any seam gluing (the hosts are seeded separately), the "
     "order of composition (this triangulation's mapping classes commute), "
-    "quantum unitarity (the transport defect is bilinear, and reported), "
+    "quantum unitarity (the transport defect is the bilinear dual-frame pairing, "
+    "gauge covariant, and reported), "
     "or a tensor-product register (four tori are a direct sum).")
 
 
