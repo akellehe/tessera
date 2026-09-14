@@ -3409,6 +3409,246 @@ def _json_default(value):
         return value.tolist()
     raise TypeError("cannot serialise %r" % (type(value),))
 
+
+# ---- theta: the boundary lattice quantized at level k ---------------------
+
+#: Where `theta` writes its record. Never /tmp, which is wiped at boot.
+DECLARED_THETA_OUT = "~/cobordism-runs/theta-register"
+#: Level 2 is a qubit per torus.
+DECLARED_THETA_LEVEL = 2
+
+#: The four-torus restriction read orders a torus's two marking cycles
+#: together, (A_0, B_0, A_2, B_2); the register's symplectic form orders all
+#: A cycles before all B cycles, (A_0, A_2, B_0, B_2). This permutation
+#: matrix takes the first ordering to the second.
+_PAIR_TO_STANDARD = None
+
+
+def _pair_to_standard():
+    import numpy as np
+    global _PAIR_TO_STANDARD
+    if _PAIR_TO_STANDARD is None:
+        perm = np.zeros((4, 4))
+        for target, source in enumerate((0, 2, 1, 3)):
+            perm[target, source] = 1.0
+        _PAIR_TO_STANDARD = perm
+    return _PAIR_TO_STANDARD
+
+
+def _theta_synthetic(register, tolerance):
+    """T1-T7 on the generators and on synthetic period matrices: what the
+    register is, before any geometry is read."""
+    import numpy as np
+    rng = np.random.default_rng(11)
+    generators = register.generators()
+    forms = register.level_two_forms() if register.level == 2 else {}
+    checks = []
+    moduli = [0.3 + 1.1j, -0.2 + 0.8j, -0.7 + 2.3j]
+    # T1, T2: closure and unitarity, every generator at every modulus.
+    worst_residual, worst_defect = 0.0, 0.0
+    for name in ("S", "T", "swap"):
+        for tau in moduli:
+            fit = register.weil(generators[name], tau, rng)
+            worst_residual = max(worst_residual, fit.residual)
+            worst_defect = max(worst_defect, fit.unitarity_defect)
+    checks.append(_check("T1", "the theta space is closed under the modular action: fit residual",
+                         {"worst_residual": worst_residual, "matrices": ["S", "T", "swap"],
+                          "moduli": len(moduli)}, tolerance, worst_residual <= tolerance))
+    checks.append(_check("T2", "rho is unitary (antiunitary for the orientation-reversing swap)",
+                         {"worst_unitarity_defect": worst_defect,
+                          "swap_antiunitary": register.weil(generators["swap"], moduli[0], rng).antiunitary},
+                         tolerance, worst_defect <= tolerance))
+    # T3: the projective group law, S.S, S.T, (S.T)^3 against S.S, and the swap.
+    tau = moduli[0]
+    def fitted(matrix, omega):
+        return register.weil(matrix, omega, rng)
+    def composed(first, second, omega):
+        # first after second: second acts at omega, first at second's image.
+        sec = fitted(second, omega)
+        omega_mid = register.orientation_reversal(omega) if sec.antiunitary else omega
+        step = second @ np.diag([1.0, -1.0]) if sec.antiunitary else second
+        omega_mid = register.siegel(step, omega_mid)[0]
+        return fitted(first, omega_mid).compose(sec)
+    law = {}
+    for label, (first, second) in {"S.S": ("S", "S"), "S.T": ("S", "T"), "T.S": ("T", "S"),
+                                   "swap.S": ("swap", "S"), "S.swap": ("S", "swap")}.items():
+        direct = fitted(generators[first] @ generators[second], tau)
+        chained = composed(generators[first], generators[second], tau)
+        law[label] = register.projective_distance(direct.matrix, chained.matrix) if direct.antiunitary == chained.antiunitary else float("inf")
+    checks.append(_check("T3", "projective group law: rho(M1 M2) = phase . rho(M1) rho(M2)",
+                         {k: v for k, v in law.items()}, tolerance, max(law.values()) <= tolerance))
+    # T4: level-2 closed forms.
+    if forms:
+        s_dist = register.projective_distance(fitted(generators["S"], tau).matrix, forms["S"])
+        t_dist = register.projective_distance(fitted(generators["T"], tau).matrix, forms["T"])
+        checks.append(_check("T4", "level 2: rho(S) is Hadamard and rho(T) is diag(1, i), each up to a phase",
+                             {"hadamard_distance": s_dist, "phase_gate_distance": t_dist},
+                             tolerance, max(s_dist, t_dist) <= tolerance))
+    # T5: direct sum -> tensor product.
+    omega = np.diag([moduli[0], moduli[1]])
+    z = register.samples(2, rng)
+    genus2 = register.basis(z, omega)
+    product = np.einsum("is,js->ijs", register.basis(z[:, :1], moduli[0]),
+                        register.basis(z[:, 1:], moduli[1])).reshape(genus2.shape)
+    factor = float(np.linalg.norm(genus2 - product) / np.linalg.norm(genus2))
+    direct_sum = register.direct_sum(generators["S"], generators["T"])
+    joint = fitted(direct_sum, omega)
+    kron = np.kron(fitted(generators["S"], moduli[0]).matrix, fitted(generators["T"], moduli[1]).matrix)
+    kron_dist = register.projective_distance(joint.matrix, kron)
+    rank = register.schmidt_rank(joint.matrix, (register.level, register.level))
+    checks.append(_check("T5", "direct sum -> tensor product: the genus-2 basis factorises and rho(M1 (+) M2) = rho(M1) (x) rho(M2)",
+                         {"basis_factorisation": factor, "kron_distance": kron_dist, "schmidt_rank": rank},
+                         tolerance, factor <= tolerance and kron_dist <= tolerance and rank == 1))
+    # T6: a mixing symplectic matrix entangles.
+    shear = fitted(generators["shear"], omega)
+    rank = register.schmidt_rank(shear.matrix, (register.level, register.level))
+    measured = {"residual": shear.residual, "schmidt_rank": rank}
+    passed = shear.residual <= tolerance and rank > 1
+    if forms:
+        measured["controlled_z_distance"] = register.projective_distance(shear.matrix, forms["shear"])
+        passed = passed and measured["controlled_z_distance"] <= tolerance
+    checks.append(_check("T6", "the shear [[I, B], [0, I]] mixes the two tori and entangles (level 2: controlled-Z)",
+                         measured, tolerance, passed))
+    # T7: polarization independence.
+    span = max(register.projective_distance(fitted(generators[name], moduli[0]).matrix,
+                                            fitted(generators[name], moduli[2]).matrix)
+               for name in ("S", "T"))
+    omega_other = np.array([[moduli[2], 0.15 + 0.05j], [0.15 + 0.05j, moduli[1]]])
+    span = max(span, register.projective_distance(fitted(generators["shear"], omega).matrix,
+                                                  fitted(generators["shear"], omega_other).matrix))
+    checks.append(_check("T7", "polarization independence: the fitted rho is the same at every Omega",
+                         {"worst_distance": span}, tolerance, span <= tolerance))
+    return checks
+
+
+def _theta_native(config, register, tolerance):
+    """T8: the register on the seeded host -- moduli from the tori, the
+    monodromy from the geometry -- and what it says about entanglement."""
+    import numpy as np
+    rng = np.random.default_rng(int(config["seed"]))
+    twist = str(config.get("collar_twist", DECLARED_COLLAR_TWIST))
+    tori, _, seed, ids, markings = seed_qubit_host(config)
+    host = seed.host
+    labels = (DECLARED_CONJUGATE_TORUS_LABELS if len(tori) > 2 else DECLARED_TORUS_LABELS)[:len(tori)]
+    pairs = [(0, 1)] if len(tori) == 2 else [(0, 1), (2, 3)]
+    checks, values = [], {"tori": len(tori), "collar_twist": twist,
+                          "moduli": [complex(torus.tau()) for torus in tori]}
+    fits = {}
+    for a, b in pairs:
+        name = "%s->%s" % (labels[a], labels[b])
+        read = MC.monodromy(host, markings[a], markings[b])
+        if read.obstruction:
+            checks.append(_check("T8:" + name, "the monodromy is read", {"refusal": read.obstruction}, tolerance, False))
+            continue
+        matrix = np.asarray(read.rounded, dtype=float)
+        tau = complex(tori[a].tau())
+        fit = register.weil(matrix, tau, rng)
+        fits[(a, b)] = fit
+        expected = None
+        if twist == "none":
+            expected = np.eye(register.level, dtype=complex)
+        elif register.level == 2:
+            # swap = S^-1 . R: rho(swap) = rho(S^-1) K, and rho(S^-1) is Hadamard up to a phase
+            expected = register.level_two_forms()["S"]
+        distance = register.projective_distance(fit.matrix, expected) if expected is not None else float("nan")
+        image = register.siegel(matrix @ np.diag([1.0, -1.0]), register.orientation_reversal(tau))[0] if fit.antiunitary else register.siegel(matrix, tau)[0]
+        checks.append(_check(
+            "T8:" + name,
+            "the geometric monodromy acts on the level-%d register: unitary for the product collar, antiunitary for the swap" % register.level,
+            {"monodromy": matrix.astype(int).tolist(), "residual": fit.residual,
+             "unitarity_defect": fit.unitarity_defect, "antiunitary": fit.antiunitary,
+             "distance_to_expected": distance, "tau_in": tau, "monodromy_tau_in": complex(image[0, 0]),
+             "tau_out_declared": complex(tori[b].tau())},
+            tolerance, fit.residual <= tolerance and fit.unitarity_defect <= tolerance
+            and (expected is None or distance <= tolerance)
+            and fit.antiunitary == (twist == "swap")))
+        values["rho:" + name] = [[complex(x) for x in row] for row in fit.matrix]
+    if len(tori) == 4 and len(fits) == 2:
+        _, _, _, periods, _ = _read_restriction(host, markings)
+        periods_a = np.vstack([periods[0], periods[2]])
+        periods_b = np.vstack([periods[1], periods[3]])
+        whole, rounded, rounding, _ = _fit_monodromy(periods_a, periods_b)
+        perm = _pair_to_standard()
+        standard = perm @ rounded.astype(float) @ perm.T
+        omega = np.diag([complex(tori[0].tau()), complex(tori[2].tau())])
+        fit = register.weil(standard, omega, rng)
+        kron = np.kron(fits[(0, 1)].matrix, fits[(2, 3)].matrix)
+        rank = register.schmidt_rank(fit.matrix, (register.level, register.level))
+        off = float(np.linalg.norm(whole - np.block([[whole[:2, :2], np.zeros((2, 2))], [np.zeros((2, 2)), whole[2:, 2:]]])))
+        checks.append(_check(
+            "T8:whole",
+            "four tori: rho(M_whole) = rho(M_01) (x) rho(M_23), Schmidt rank 1 -- a join along a sphere cannot entangle",
+            {"residual": fit.residual, "kron_distance": register.projective_distance(fit.matrix, kron),
+             "schmidt_rank": rank, "monodromy_off_block_norm": off, "rounding_residual": rounding,
+             "antiunitary": fit.antiunitary},
+            tolerance, fit.residual <= tolerance and register.projective_distance(fit.matrix, kron) <= tolerance
+            and rank == 1 and fit.antiunitary == (twist == "swap")))
+        values["rho:whole"] = [[complex(x) for x in row] for row in fit.matrix]
+    return checks, values
+
+
+def theta(config, level=DECLARED_THETA_LEVEL, tolerance=DECLARED_VERIFY_TOLERANCE):
+    from tessera.quantum import ThetaRegister
+    register = ThetaRegister(level=level, tolerance=tolerance)
+    checks = _theta_synthetic(register, tolerance)
+    native, values = _theta_native(config, register, tolerance)
+    checks.extend(native)
+    values["level"] = int(level)
+    return {"checks": checks, "values": values, "tolerance": float(tolerance),
+            "all_pass": all(row["pass"] for row in checks), "certifies": THETA_CERTIFIES}
+
+
+THETA_CERTIFIES = (
+    "On the level-k theta quantization of the boundary marking lattices: the "
+    "theta space is closed under the integer monodromies (fit residual), each "
+    "monodromy acts unitarily (antiunitarily when orientation-reversing) with "
+    "the Weil matrix independent of the modulus, the level-2 generators are the "
+    "Hadamard and phase gates, a direct sum of tori is a tensor product of "
+    "registers on which a block-diagonal monodromy is a product operator, and "
+    "a monodromy mixing two tori (the shear) is entangling (controlled-Z at "
+    "level 2). On the seeded hosts the geometric monodromies are read and act "
+    "as stated; the four-torus join along a sphere is block-diagonal and "
+    "therefore cannot entangle. NOT certified: any host realising a mixing "
+    "monodromy geometrically (a join along a circle), non-abelian levels, or "
+    "any change to the modulus register.")
+
+
+def _add_theta_arguments(theta_parser):
+    for name, kwargs in (
+            ("--tori", dict(type=int, choices=(2, 4), default=DECLARED_TORI)),
+            ("--layers", dict(type=int, default=DECLARED_COLLAR_LAYERS)),
+            ("--collar-twist", dict(dest="collar_twist", choices=("none", "swap"), default=DECLARED_COLLAR_TWIST)),
+            ("--grid", dict(type=int, default=DECLARED_GRID)),
+            ("--seed", dict(type=int, default=DECLARED_SEED)),
+            ("--tau-a", dict(type=_complex_argument, default=DECLARED_TAU_A)),
+            ("--tau-b", dict(type=_complex_argument, default=DECLARED_TAU_B))):
+        theta_parser.add_argument(name, **kwargs)
+    theta_parser.add_argument("--level", type=int, default=DECLARED_THETA_LEVEL,
+                              help="the quantization level k; 2 is a qubit per torus (default %d)" % DECLARED_THETA_LEVEL)
+    theta_parser.add_argument("--tol", type=float, default=DECLARED_VERIFY_TOLERANCE)
+    theta_parser.add_argument("--out", default=DECLARED_THETA_OUT)
+    theta_parser.add_argument("--json", default=None)
+
+
+def theta_main(args):
+    import json
+    import os
+    config = _verify_config(args)
+    record = theta(config, level=args.level, tolerance=args.tol)
+    record["config"] = dict(config)
+    path = args.json
+    if path is None:
+        directory = os.path.expanduser(args.out)
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "theta-k%d-%dt-%s-L%d-g%d-s%d-a%s-b%s.json" % (
+            args.level, args.tori, args.collar_twist, config["layers"], args.grid, args.seed,
+            _tau_slug(args.tau_a), _tau_slug(args.tau_b)))
+    with open(path, "w") as handle:
+        json.dump(record, handle, indent=2, default=_json_default)
+    _print_verify_table(record)
+    print("record: %s" % path)
+    return 0 if record["all_pass"] else 1
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Animate the qubit cobordism and its declared read-outs.")
@@ -3433,6 +3673,13 @@ def build_parser():
                     "tori, and the metric-dependent transport. No stage runs; "
                     "every row prints its measured value beside its tolerance.")
     _add_verify_arguments(verify_parser)
+    theta_parser = sub.add_parser(
+        "theta", help="quantize the boundary lattices at level k and read the monodromies on that register",
+        description="The theta quantization register: each torus's marking lattice quantized at "
+                    "level k (2 = a qubit). A direct sum of tori is a tensor product there, and "
+                    "every integer monodromy acts by its Weil matrix, unitary or antiunitary. "
+                    "T1-T7 are the register on synthetic data; T8 reads the seeded host.")
+    _add_theta_arguments(theta_parser)
     return parser
 
 
@@ -3441,6 +3688,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == "verify":
         return verify_main(args)
+    if args.command == "theta":
+        return theta_main(args)
     try:
         config = build_config(
             steps=args.steps, seed=args.seed,
