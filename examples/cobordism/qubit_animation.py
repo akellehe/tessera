@@ -806,6 +806,116 @@ def _tube_face(grid):
         raise ValueError("the tube needs a grid of at least 3")
     vid = lambda i, j: i * n + j  # noqa: E731
     return [vid(1, 1), vid(2, 1), vid(2, 2)]
+#: The layered flip passes on the collar's far torus. Each pass flips every
+#: edge of one direction of the grid (row `(1,0)`, column `(0,1)` or
+#: diagonal `(1,1)`): the tetrahedron on the edge's two boundary triangles is
+#: attached, the edge becomes interior and the quadrilateral's other diagonal
+#: the new boundary edge. The flipped triangulation is the grid again in a
+#: sheared basis, so it is relabelled by the lattice map `L` (new grid
+#: coordinates -> old), and the monodromy the relabelled marking reads is
+#: `L^T`: the Dehn twists `T_B`, `T_A` and the quarter turn `S`. Offsets are
+#: grid steps from the flipped edge's first vertex `v`: the tetrahedron, the
+#: flipped edge `(v, v + edge)`, the new edge `(v + new[0], v + new[1])`.
+DECLARED_FLIP_PASSES = {
+    "b": {"edge": (1, 0), "tetrahedron": ((0, -1), (0, 0), (1, 0), (1, 1)), "new": ((0, -1), (1, 1)),
+          "lattice": ((1, 0), (1, 1)), "name": "T_B: flip every row edge, relabel (x, y) -> (x, y + x)"},
+    "a": {"edge": (0, 1), "tetrahedron": ((-1, 0), (0, 0), (0, 1), (1, 1)), "new": ((-1, 0), (1, 1)),
+          "lattice": ((1, 1), (0, 1)), "name": "T_A: flip every column edge, relabel (x, y) -> (x + y, y)"},
+    "s": {"edge": (1, 1), "tetrahedron": ((0, 0), (1, 0), (1, 1), (0, 1)), "new": ((1, 0), (0, 1)),
+          "lattice": ((0, 1), (-1, 0)), "name": "S: flip every diagonal, relabel (x, y) -> (y, -x)"},
+}
+#: The flipped edge, now interior, is shortened by this factor so the layered
+#: tetrahedron has volume; the far torus keeps its flat lengths on every
+#: boundary edge, the new ones included.
+DECLARED_FLIP_FACTOR = 0.7
+
+
+def _far_flip_passes(config):
+    """The pass sequence named by `far_flips` (`"b,a"` applies `b` first)."""
+    raw = config.get("far_flips")
+    if not raw:
+        return []
+    names = [name.strip() for name in str(raw).split(",") if name.strip()]
+    for name in names:
+        if name not in DECLARED_FLIP_PASSES:
+            raise ValueError("unknown flip pass %r; expected a sequence of %s" % (name, ", ".join(DECLARED_FLIP_PASSES)))
+    return names
+
+
+def _flip_lattice_map(config):
+    """`L`, the composed lattice map of the passes (new grid coordinates ->
+    old), and the monodromy it predicts on the far marking, `M = L^T` times
+    the collar twist's induced map on the right (the twist relabels first)."""
+    import numpy as np
+    lattice = np.eye(2, dtype=int)
+    for name in _far_flip_passes(config):
+        lattice = lattice @ np.array(DECLARED_FLIP_PASSES[name]["lattice"], dtype=int)
+    twist = np.array(_TWIST_MATRICES[str(config.get("collar_twist", DECLARED_COLLAR_TWIST))], dtype=int)
+    return lattice, lattice.T @ twist
+
+
+def _layer_far_flips(host, far_ids, grid, tau_far, passes, factor):
+    """Attach the passes' tetrahedra to the far torus and rebuild the host.
+
+    Returns the new host, the far torus's id map composed with the
+    relabelling (surface vertex `(x, y)` -> the host vertex at old grid
+    position `L (x, y)`), and `L`. Every boundary edge of the far torus,
+    the new ones included, carries its flat length in the torus's lattice
+    (`e_1 = 1/n`, `e_2 = tau/n`, an edge of old displacement `d` has length
+    `|d_0 e_1 + d_1 e_2|` with `d` taken unreduced, the diagonal of the
+    flipped quadrilateral); a flipped edge, now interior, is shortened by
+    `factor`. The passes of one sequence act on the current relabelled
+    grid, and the flips within a pass are on disjoint triangle pairs.
+    """
+    import numpy as np
+    n = int(grid)
+    vid = lambda x, y: (x % n) * n + (y % n)  # noqa: E731
+    cells = [tuple(sorted(int(v.getId()) for v in cell.getVertices())) for cell in host.getTopSimplices()]
+    lengths = {}
+    for edge in host.getEdgeList().toVector():
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        lengths[(min(u, v), max(u, v))] = complex(edge.getLength())
+    e1, e2 = 1.0 / n, complex(tau_far) / n
+    lattice = np.eye(2, dtype=int)
+
+    def host_of(x, y):
+        old = lattice @ np.array([x, y])
+        return int(far_ids[vid(int(old[0]), int(old[1]))])
+
+    def key(a, b):
+        return (min(a, b), max(a, b))
+
+    for name in passes:
+        spec = DECLARED_FLIP_PASSES[name]
+        new_cells, new_lengths, flipped = [], {}, []
+        for x in range(n):
+            for y in range(n):
+                tet = tuple(sorted(host_of(x + dx, y + dy) for dx, dy in spec["tetrahedron"]))
+                if len(set(tet)) != 4:
+                    raise ValueError("flip pass %r: the tetrahedron at (%d, %d) repeats a vertex; the grid is too small" % (name, x, y))
+                new_cells.append(tet)
+                (ax, ay), (bx, by) = spec["new"]
+                p, q = host_of(x + ax, y + ay), host_of(x + bx, y + by)
+                if key(p, q) in lengths:
+                    raise ValueError("flip pass %r: the new edge at (%d, %d) is already an edge" % (name, x, y))
+                displacement = lattice @ np.array([bx - ax, by - ay])
+                new_lengths[key(p, q)] = complex(abs(displacement[0] * e1 + displacement[1] * e2))
+                flipped.append(key(host_of(x, y), host_of(x + spec["edge"][0], y + spec["edge"][1])))
+        cells.extend(new_cells)
+        lengths.update(new_lengths)
+        for edge in flipped:
+            lengths[edge] = lengths[edge] * float(factor)
+        lattice = lattice @ np.array(spec["lattice"], dtype=int)
+    ok, why = cob.ChainComplex.dualComplexIsValid(cells, 3)
+    if not ok:
+        raise ValueError("the layered flips are not a manifold-with-boundary: %s" % why)
+    rebuilt = T.spacetime.Spacetime.fromCells(3, cells, 1.0, 0.0)
+    for edge in rebuilt.getEdgeList().toVector():
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        edge.setLength(lengths[key(u, v)])
+        edge.setPhase(0.0)
+    relabelled = {vid(x, y): host_of(x, y) for x in range(n) for y in range(n)}
+    return rebuilt, relabelled, lattice
 
 
 def _collar_twist(config, grid):
@@ -1154,6 +1264,14 @@ def seed_qubit_host(config):
                               config["layers"], _collar_twist(config, grid))
     ids = [{int(k): int(v) for k, v in mapping.items()}
            for mapping in seed.vertex_ids]
+    passes = _far_flip_passes(config)
+    if passes:
+        import types
+        if len(tori) != 2:
+            raise ValueError("--far-flips layers flips on the collar's far torus and needs --tori 2")
+        host, ids[1], _ = _layer_far_flips(seed.host, ids[1], grid, tau_in[1], passes,
+                                           float(config.get("flip_factor", DECLARED_FLIP_FACTOR)))
+        seed = types.SimpleNamespace(host=host, vertex_ids=ids)
     _dispose_interior(seed.host, tori, ids,
                       config.get("interior_disposition", DECLARED_INTERIOR_DISPOSITION),
                       int(config["seed"]))
@@ -3159,11 +3277,12 @@ def _check(identifier, statement, measured, tolerance, passed):
             "tolerance": tolerance, "pass": bool(passed)}
 
 
-def _pair_checks(label, periods_a, periods_b, twist, tolerance, expect_twist=True):
+def _pair_checks(label, periods_a, periods_b, twist, tolerance, expect_twist=True, expected=None):
     """R2-R5 for one marked pair, and the fitted monodromy for the rest.
     `twist` names the relabelling applied to the B side; `expect_twist`
     says whether R4 compares `M` with that twist's induced map (a single
-    collar) or not (the combined four-torus map)."""
+    collar) or not (the combined four-torus map); `expected` overrides the
+    map R4 compares with (the flip passes' prediction)."""
     import numpy as np
     checks = []
     matrix, rounded, rounding, fit = _fit_monodromy(periods_a, periods_b)
@@ -3181,7 +3300,9 @@ def _pair_checks(label, periods_a, periods_b, twist, tolerance, expect_twist=Tru
         {"rounding_residual": rounding, "fit_residual": fit, "det": det},
         tolerance, rounding <= tolerance and fit <= tolerance and det in (1, -1)))
     if expect_twist:
-        expected = np.asarray(_TWIST_MATRICES[twist])
+        if expected is None:
+            expected = np.asarray(_TWIST_MATRICES[twist])
+        expected = np.asarray(expected)
         checks.append(_check(
             "R4:" + label, "M equals the twist's induced map phi* (%s)" % twist,
             {"rounded": rounded.tolist(), "expected": expected.tolist(),
@@ -3195,6 +3316,161 @@ def _pair_checks(label, periods_a, periods_b, twist, tolerance, expect_twist=Tru
 
 def _labelled(pairs, labels):
     return ["%s->%s" % (labels[a], labels[b]) for a, b in pairs]
+
+
+def _far_torus_modulus(host, torus, far_ids):
+    """The flipped far torus's own modulus in the relabelled marking: its
+    boundary triangles on the far vertices with the host's lengths, read by
+    `SimplicialQubit` (section 6-9) with the standard walks of the
+    relabelled grid as the marking."""
+    import numpy as np
+    far = set(far_ids.values())
+    faces = []
+    from collections import Counter
+    count = Counter()
+    for cell in host.getTopSimplices():
+        ids_ = sorted(int(v.getId()) for v in cell.getVertices())
+        for skip in range(4):
+            count[tuple(v for n, v in enumerate(ids_) if n != skip)] += 1
+    faces = [face for face, c in count.items() if c == 1 and set(face) <= far]
+    # SimplicialQubit wants consistently oriented faces: propagate the
+    # counterclockwise orientation of the relabelled grid's face at (0, 0)
+    # across shared edges (each edge traversed oppositely by its two faces).
+    n = int(round(len(far_ids) ** 0.5))
+    root = tuple(far_ids[(x % n) * n + (y % n)] for x, y in ((0, 0), (1, 0), (1, 1)))
+    from collections import defaultdict, deque
+    by_edge = defaultdict(list)
+    for index, face in enumerate(faces):
+        for a in range(3):
+            u, v = face[a], face[(a + 1) % 3]
+            by_edge[(min(u, v), max(u, v))].append(index)
+    oriented = [None] * len(faces)
+    start = next(index for index, face in enumerate(faces) if set(face) == set(root))
+    oriented[start] = root
+    queue = deque([start])
+
+    def traverses(order, u, v):
+        return any(order[a] == u and order[(a + 1) % 3] == v for a in range(3))
+    while queue:
+        index = queue.popleft()
+        face = oriented[index]
+        for a in range(3):
+            u, v = face[a], face[(a + 1) % 3]
+            for other in by_edge[(min(u, v), max(u, v))]:
+                if other == index or oriented[other] is not None:
+                    continue
+                order = list(faces[other])
+                if not traverses(order, v, u):
+                    order = [order[0], order[2], order[1]]
+                oriented[other] = tuple(order)
+                queue.append(other)
+    faces = oriented
+    lengths = {}
+    for edge in host.getEdgeList().toVector():
+        u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
+        lengths[(min(u, v), max(u, v))] = complex(edge.getLength())
+    vertices = sorted(far)
+    index = {v: n for n, v in enumerate(vertices)}
+    edges = sorted({(min(index[u], index[v]), max(index[u], index[v])) for face in faces for u in face for v in face if u != v})
+    edge_index = {e: n for n, e in enumerate(edges)}
+    edge_lengths = [lengths[(vertices[e[0]], vertices[e[1]])] for e in edges]
+    local_faces = [tuple(index[v] for v in face) for face in faces]
+
+    def cycle(steps):
+        out = []
+        for u, v in steps:
+            a, b = index[int(u)], index[int(v)]
+            out.append((edge_index[(min(a, b), max(a, b))], 1 if a < b else -1))
+        return out
+    marking = _host_marking(torus, far_ids)
+    read = obs.SimplicialQubit(vertices=list(range(len(vertices))), edges=edges, faces=local_faces,
+                               lengths=edge_lengths, cycle_A=cycle(marking[0]), cycle_B=cycle(marking[1]))
+    return complex(read.tau()), len(faces)
+
+
+def _flip_checks(config, tori, host, ids, markings, monodromy, lattice, predicted, tolerance):
+    """F1-F4 on the flipped collar."""
+    import numpy as np
+    passes = _far_flip_passes(config)
+    n = int(config["grid"])
+    layers = int(config["layers"])
+    checks = []
+    rounded = np.asarray(monodromy["rounded"], dtype=int)
+    betti = MC.betti(host)
+    cells = len(host.getTopSimplices())
+    expected_cells = 6 * n * n * layers + n * n * len(passes)
+    checks.append(_check(
+        "F1", "the layered collar: %d tetrahedra per pass on the far torus, a manifold with betti [1, 2, 1, 0]" % (n * n),
+        {"cells": cells, "expected_cells": expected_cells, "betti": [int(b) for b in betti], "passes": passes},
+        None, cells == expected_cells and [int(b) for b in betti] == [1, 2, 1, 0]))
+    order = None
+    power = np.eye(2, dtype=int)
+    for k in range(1, 13):
+        power = power @ rounded
+        if (power == np.eye(2, dtype=int)).all():
+            order = k
+            break
+    det = int(round(float(np.linalg.det(rounded))))
+    twist = str(config.get("collar_twist", DECLARED_COLLAR_TWIST))
+    expected_order = None
+    if twist == "none":
+        expected_order = 4 if all(name == "s" for name in passes) and len(passes) % 2 == 1 else None
+    checks.append(_check(
+        "F2", "M is the predicted lattice map L^T (times the twist), det +1 for a twist, and of infinite order for a "
+              "Dehn twist (M^k != I, k <= 12)",
+        {"monodromy": rounded.tolist(), "predicted": predicted.tolist(), "lattice": lattice.tolist(),
+         "det": det, "order": order if order is not None else "infinite (> 12)",
+         "difference": float(np.abs(np.asarray(monodromy["matrix"]) - predicted).max())},
+        tolerance, (rounded == predicted).all() and det == (1 if twist == "none" else -1)
+        and (order is None if not all(name == "s" for name in passes) else order in (1, 2, 4))))
+    tau_far = complex(tori[1].tau())
+    if det == 1:
+        m = predicted
+        expected_tau = (m[1, 0] + m[1, 1] * tau_far) / (m[0, 0] + m[0, 1] * tau_far)
+        read_tau, faces = _far_torus_modulus(host, tori[1], ids[1])
+        checks.append(_check(
+            "F3", "the flipped far torus's own modulus in the relabelled marking is the far modulus moved by M: "
+                  "tau' = (M_21 + M_22 tau) / (M_11 + M_12 tau)",
+            {"read": read_tau, "expected": expected_tau, "far_modulus": tau_far, "faces": faces,
+             "distance": abs(read_tau - expected_tau)},
+            1e-9, abs(read_tau - expected_tau) <= 1e-9))
+    else:
+        checks.append(_check("F3", "the far modulus check is made for orientation-preserving relabellings only",
+                             {"det": det}, None, True))
+    # F4: composition order on one host -- the passes in both orders.
+    if len(passes) >= 2 or (len(passes) == 1 and twist == "swap"):
+        def read(order_names, twist_name):
+            other = dict(config)
+            other["far_flips"] = ",".join(order_names)
+            other["collar_twist"] = twist_name
+            _, _, seed_, _, markings_ = seed_qubit_host(other)
+            _, _, _, periods_, _ = _read_restriction(seed_.host, markings_)
+            return _fit_monodromy(periods_[0], periods_[1])[1]
+        forward, backward = list(passes), list(reversed(passes))
+        m_forward = read(forward, twist)
+        m_backward = read(backward, twist)
+        singles = {}
+        for name in set(passes):
+            singles[name] = read([name], "none")
+        product_forward = np.eye(2, dtype=int)
+        for name in forward:
+            product_forward = singles[name] @ product_forward
+        product_backward = np.eye(2, dtype=int)
+        for name in backward:
+            product_backward = singles[name] @ product_backward
+        twist_matrix = np.array(_TWIST_MATRICES[twist], dtype=int)
+        product_forward = product_forward @ twist_matrix
+        product_backward = product_backward @ twist_matrix
+        differ = int(np.abs(m_forward - m_backward).max()) if forward != backward else None
+        checks.append(_check(
+            "F4", "composition on one host: M(passes) = M(last) ... M(first) . M(twist), and the reversed order "
+                  "gives a different matrix when the passes do not commute",
+            {"forward": forward, "M_forward": m_forward.tolist(), "product_forward": product_forward.tolist(),
+             "backward": backward, "M_backward": m_backward.tolist(), "product_backward": product_backward.tolist(),
+             "orders_differ_by": differ, "twist": twist},
+            None, (m_forward == product_forward).all() and (m_backward == product_backward).all()
+            and (differ is None or differ >= 1 or (singles and all(name == passes[0] for name in passes)))))
+    return checks
 
 
 def verify(config, jitter=DECLARED_VERIFY_JITTER,
@@ -3245,11 +3521,18 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
 
     # ---- R2-R5 per marked pair -----------------------------------------
     monodromies = {}
+    passes = _far_flip_passes(config)
+    lattice, predicted = _flip_lattice_map(config)
     for (a, b), name in zip(pairs, names):
         rows, matrix, rounded = _pair_checks(name, periods[a], periods[b],
-                                             twist, tolerance)
+                                             twist, tolerance, expected=predicted)
         checks.extend(rows)
         monodromies[name] = {"matrix": matrix, "rounded": rounded}
+    if passes:
+        checks.extend(_flip_checks(config, tori, host, ids, markings, monodromies[names[0]],
+                                   lattice, predicted, tolerance))
+        values["far_flips"] = list(passes)
+        values["flip_lattice"] = lattice.tolist()
     values["monodromy"] = {name: {"matrix": [[complex(z) for z in row]
                                              for row in m["matrix"]],
                                   "rounded": m["rounded"].tolist()}
@@ -3338,9 +3621,11 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
 
     # ---- C1: composition in the twist group ---------------------------
     def monodromy_of(layer_count, twist_name):
+        # The twist-group control is read on plain collars: no flip passes.
         other = dict(config)
         other["layers"] = int(layer_count)
         other["collar_twist"] = twist_name
+        other["far_flips"] = ""
         _, _, other_seed, _, other_markings = seed_qubit_host(other)
         _, _, _, other_periods, _ = _read_restriction(other_seed.host, other_markings)
         return _fit_monodromy(other_periods[0], other_periods[1])[0]
@@ -3378,9 +3663,13 @@ VERIFY_CERTIFIES = (
     "declared boundary form; the monodromy is an integer matrix of det +-1 "
     "equal to the twist's induced map, unchanged by a jitter that moves the "
     "representative by O(1) exactly within im d_0; the twist group composes "
-    "across separately seeded hosts; four tori give the direct sum. "
-    "NOT certified: any seam gluing (the hosts are seeded separately), the "
-    "order of composition (this triangulation's mapping classes commute), "
+    "across separately seeded hosts; four tori give the direct sum. With "
+    "layered flip passes on the far torus (F1-F4): the Dehn twists T_B, T_A "
+    "and the quarter turn S are read as the predicted integer monodromies, of "
+    "infinite order for the twists, with the flipped far torus's own modulus "
+    "moved by M, and passes stacked on ONE host compose in order, the two "
+    "orders of a non-commuting pair giving different matrices. "
+    "NOT certified: any seam gluing between separately built cobordisms, "
     "quantum unitarity (the transport defect is the bilinear dual-frame pairing, "
     "gauge covariant, and reported), "
     "or a tensor-product register (four tori are a direct sum).")
@@ -3422,6 +3711,12 @@ def _add_verify_arguments(verify_parser):
                                help="seed for the interior disposition and the jitter")
     verify_parser.add_argument("--tau-a", type=_complex_argument, default=DECLARED_TAU_A)
     verify_parser.add_argument("--tau-b", type=_complex_argument, default=DECLARED_TAU_B)
+    verify_parser.add_argument("--far-flips", dest="far_flips", default="",
+                               help="layered flip passes on the far torus, a comma-separated sequence of "
+                                    "b (T_B: rows), a (T_A: columns), s (S: diagonals), applied in order")
+    verify_parser.add_argument("--flip-factor", dest="flip_factor", type=float, default=DECLARED_FLIP_FACTOR,
+                               help="the flipped, now interior, edge is shortened by this factor (default %g)"
+                                    % DECLARED_FLIP_FACTOR)
     verify_parser.add_argument("--jitter", type=float, default=DECLARED_VERIFY_JITTER,
                                help="every squared length times 1 + F xi, xi from the "
                                     "unit disc (default %g)" % DECLARED_VERIFY_JITTER)
@@ -3454,7 +3749,9 @@ def _verify_config(args):
               "tau_b": [args.tau_b.real, args.tau_b.imag],
               "grid": int(args.grid),
               "interior_disposition": DECLARED_INTERIOR_DISPOSITION,
-              "join": str(getattr(args, "join", DECLARED_JOIN))}
+              "join": str(getattr(args, "join", DECLARED_JOIN)),
+              "far_flips": str(getattr(args, "far_flips", "") or ""),
+              "flip_factor": float(getattr(args, "flip_factor", DECLARED_FLIP_FACTOR))}
     if config["join"] == "tube":
         if config["tori"] != 4:
             raise ValueError("--join tube needs --tori 4: the tube connects the two collars' far tori")
@@ -3478,9 +3775,10 @@ def verify_main(args):
         os.makedirs(directory, exist_ok=True)
         # The moduli are part of the host, so they are part of the name: two
         # runs at different tau must not write the same record.
-        path = os.path.join(directory, "verify-%dt-%s-L%d-g%d-s%d-a%s-b%s.json" % (
+        flips = ("-f" + config["far_flips"].replace(",", "")) if config.get("far_flips") else ""
+        path = os.path.join(directory, "verify-%dt-%s-L%d-g%d-s%d-a%s-b%s%s.json" % (
             args.tori, args.collar_twist, args.layers, args.grid, args.seed,
-            _tau_slug(args.tau_a), _tau_slug(args.tau_b)))
+            _tau_slug(args.tau_a), _tau_slug(args.tau_b), flips))
     with open(path, "w") as handle:
         json.dump(record, handle, indent=2, default=_json_default)
     _print_verify_table(record)
@@ -3637,7 +3935,19 @@ def _theta_native(config, register, tolerance):
         fit = register.weil(matrix, tau, rng)
         fits[(a, b)] = fit
         expected = None
-        if twist == "none":
+        passes = _far_flip_passes(config)
+        _, predicted = _flip_lattice_map(config)
+        if passes:
+            forms = register.level_two_forms()
+            hadamard, phase = forms["S"], forms["T"]
+            closed = {"b": phase, "a": hadamard @ np.conj(phase) @ hadamard, "s": hadamard}
+            if register.level == 2 and twist == "none" and len(passes) == 1:
+                expected = closed[passes[0]]
+            elif register.level == 2 and twist == "none" and passes == ["b", "b"]:
+                expected = np.diag([1.0, -1.0]).astype(complex)
+            values["predicted_monodromy"] = predicted.tolist()
+            values["monodromy_matches_prediction"] = bool((np.asarray(read.rounded, dtype=int) == predicted).all())
+        elif twist == "none":
             expected = np.eye(register.level, dtype=complex)
         elif register.level == 2:
             # swap = S^-1 . R: rho(swap) = rho(S^-1) K, and rho(S^-1) is Hadamard up to a phase
@@ -3653,8 +3963,25 @@ def _theta_native(config, register, tolerance):
              "tau_out_declared": complex(tori[b].tau())},
             tolerance, fit.residual <= tolerance and fit.unitarity_defect <= tolerance
             and (expected is None or distance <= tolerance)
-            and fit.antiunitary == (twist == "swap")))
+            and fit.antiunitary == (twist == "swap")
+            and (not passes or (np.asarray(read.rounded, dtype=int) == predicted).all())))
         values["rho:" + name] = [[complex(x) for x in row] for row in fit.matrix]
+        if passes and len(passes) >= 2 and twist == "none":
+            other = dict(config)
+            other["far_flips"] = ",".join(reversed(passes))
+            _, _, seed_r, _, markings_r = seed_qubit_host(other)
+            read_r = MC.monodromy(seed_r.host, markings_r[a], markings_r[b])
+            fit_r = register.weil(np.asarray(read_r.rounded, dtype=float), tau, rng)
+            apart = register.projective_distance(fit.matrix, fit_r.matrix)
+            commute = (np.asarray(read.rounded, dtype=int) == np.asarray(read_r.rounded, dtype=int)).all()
+            checks.append(_check(
+                "T9", "composition order on the register: the passes in the two orders give different Weil "
+                      "matrices exactly when their monodromies differ",
+                {"passes": passes, "reversed": list(reversed(passes)),
+                 "monodromy": np.asarray(read.rounded, dtype=int).tolist(),
+                 "monodromy_reversed": np.asarray(read_r.rounded, dtype=int).tolist(),
+                 "projective_distance": apart},
+                tolerance, (apart > 1e-3) != bool(commute)))
     if len(tori) == 4 and len(fits) == 2:
         _, _, _, periods, _ = _read_restriction(host, markings)
         periods_a = np.vstack([periods[0], periods[2]])
@@ -3924,14 +4251,17 @@ THETA_CERTIFIES = (
     "a monodromy mixing two tori (the shear) is entangling (controlled-Z at "
     "level 2). On the seeded hosts the geometric monodromies are read and act "
     "as stated; the four-torus join along a sphere is block-diagonal and "
-    "therefore cannot entangle. On the tube-joined host (G1-G5): the tube "
-    "alone leaves the monodromy block-diagonal (a product operator: operator "
-    "entanglement is topological), while the genus-2 far boundary's own "
-    "period matrix couples the two tori (Omega_12 != 0, metric) and the "
-    "geometric state it defines is entangled between them by that coupling, "
-    "exactly zero for the diagonal control. NOT certified: any host realising "
-    "a mixing monodromy geometrically (a Dehn twist through the neck), the "
-    "symmetry of the discrete period matrix beyond its reported residual, "
+    "therefore cannot entangle; with layered flip passes the geometric Dehn "
+    "twists act as the level-2 generators diag(1, i), H diag(1, -i) H and the "
+    "Hadamard matrix, and two passes in the two orders give different Weil "
+    "matrices exactly when their monodromies differ. On the tube-joined host "
+    "(G1-G5): the tube alone leaves the monodromy block-diagonal (a product "
+    "operator: operator entanglement is topological), while the genus-2 far "
+    "boundary's own period matrix couples the two tori (Omega_12 != 0, metric) "
+    "and the geometric state it defines is entangled between them by that "
+    "coupling, exactly zero for the diagonal control. NOT certified: any host "
+    "realising a mixing monodromy geometrically (a Dehn twist through the neck), "
+    "the symmetry of the discrete period matrix beyond its reported residual, "
     "non-abelian levels, or any change to the modulus register.")
 
 
@@ -3960,6 +4290,9 @@ def _add_theta_arguments(theta_parser):
                               help="comma-separated waists to sweep on the tube host (G5), e.g. 1,0.7,0.5,0.3")
     theta_parser.add_argument("--neck-lengths", dest="neck_lengths", default=None,
                               help="comma-separated tube lengths to sweep on the tube host (G5), e.g. 0.5,1,2,4")
+    theta_parser.add_argument("--far-flips", dest="far_flips", default="",
+                              help="layered flip passes on the far torus (b, a, s; see verify)")
+    theta_parser.add_argument("--flip-factor", dest="flip_factor", type=float, default=DECLARED_FLIP_FACTOR)
     theta_parser.add_argument("--level", type=int, default=DECLARED_THETA_LEVEL,
                               help="the quantization level k; 2 is a qubit per torus (default %d)" % DECLARED_THETA_LEVEL)
     theta_parser.add_argument("--tol", type=float, default=DECLARED_VERIFY_TOLERANCE)
@@ -3987,9 +4320,10 @@ def theta_main(args):
             tube = "-tube-tL%d-len%g-w%g" % (config["tube_layers"], config["tube_length"], config["tube_waist"])
             if sweep:
                 tube += "-sweep%d" % len(sweep)
-        path = os.path.join(directory, "theta-k%d-%dt-%s-L%d-g%d-s%d-a%s-b%s%s.json" % (
+        flips = ("-f" + config["far_flips"].replace(",", "")) if config.get("far_flips") else ""
+        path = os.path.join(directory, "theta-k%d-%dt-%s-L%d-g%d-s%d-a%s-b%s%s%s.json" % (
             args.level, args.tori, args.collar_twist, config["layers"], args.grid, args.seed,
-            _tau_slug(args.tau_a), _tau_slug(args.tau_b), tube))
+            _tau_slug(args.tau_a), _tau_slug(args.tau_b), tube, flips))
     with open(path, "w") as handle:
         json.dump(record, handle, indent=2, default=_json_default)
     _print_verify_table(record)

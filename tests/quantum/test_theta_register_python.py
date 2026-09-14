@@ -134,3 +134,18 @@ def test_entanglement_entropy_of_a_bell_vector_is_one_bit():
     entropy, spectrum = REGISTER.entanglement_entropy(bell, (2, 2))
     assert abs(entropy - 1.0) <= 1e-12
     assert np.allclose(spectrum, [0.5, 0.5])
+@pytest.mark.slow
+def test_t8_layered_flips_are_the_generators():
+    """On the collar with a layered flip pass the fitted Weil matrix is the
+    closed form of the generator the pass realises: T_B -> diag(1, i),
+    T_A -> H diag(1, -i) H, S -> Hadamard, each up to a phase (issue #1117)."""
+    for flips in ("b", "a", "s"):
+        config = {"seed": 7, "tori": 2, "collar_twist": "none", "layers": 1,
+                  "tau_a": [0.3, 1.1], "tau_b": [-0.2, 0.8], "grid": 3,
+                  "interior_disposition": qa.DECLARED_INTERIOR_DISPOSITION,
+                  "far_flips": flips, "flip_factor": 0.7}
+        checks, values = qa._theta_native(config, REGISTER, TOL)
+        row = next(r for r in checks if r["id"] == "T8:A->B")
+        assert row["pass"], row
+        assert row["measured"]["distance_to_expected"] <= TOL
+        assert values["monodromy_matches_prediction"]
