@@ -338,3 +338,48 @@ def test_verify_refuses_the_tube_host_by_name():
     with pytest.raises(ValueError, match="tube-joined host"):
         qa.verify({"join": "tube", "tori": 4, "layers": 1, "seed": 7, "collar_twist": "none",
                    "tau_a": [0.3, 1.1], "tau_b": [-0.2, 0.8], "grid": 3})
+def test_flip_pass_bookkeeping():
+    """The lattice maps of the passes, their predicted monodromies `L^T`,
+    and the composition rule (later passes on the left, the twist on the
+    right); the relabelled grid's edge set is the flipped triangulation's."""
+    identity = np.eye(2, dtype=int)
+    for name, expected in (("b", [[1, 1], [0, 1]]), ("a", [[1, 0], [1, 1]]), ("s", [[0, -1], [1, 0]])):
+        lattice, predicted = qa._flip_lattice_map({"far_flips": name, "collar_twist": "none"})
+        assert (predicted == np.array(expected)).all()
+        assert int(round(np.linalg.det(lattice))) == 1
+    _, ab = qa._flip_lattice_map({"far_flips": "a,b", "collar_twist": "none"})
+    _, a = qa._flip_lattice_map({"far_flips": "a", "collar_twist": "none"})
+    _, b = qa._flip_lattice_map({"far_flips": "b", "collar_twist": "none"})
+    assert (ab == b @ a).all()
+    _, swapped = qa._flip_lattice_map({"far_flips": "b", "collar_twist": "swap"})
+    assert (swapped == b @ SWAP.astype(int)).all()
+    # the relabelled grid's edges (1,0), (0,1), (1,1) in new coordinates are
+    # old (1,1), (0,1), (1,2) for a b pass: the flipped triangulation's edges
+    lattice, _ = qa._flip_lattice_map({"far_flips": "b", "collar_twist": "none"})
+    images = [tuple(lattice @ np.array(d)) for d in ((1, 0), (0, 1), (1, 1))]
+    assert images == [(1, 1), (0, 1), (1, 2)]
+    with pytest.raises(ValueError, match="unknown flip pass"):
+        qa._far_flip_passes({"far_flips": "x"})
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("flips,grid,expected", [
+    ("b", 3, [[1, 1], [0, 1]]), ("a", 3, [[1, 0], [1, 1]]), ("s", 3, [[0, -1], [1, 0]]),
+    ("b,b", 5, [[1, 2], [0, 1]]), ("a,b", 5, [[2, 1], [1, 1]]), ("b,a", 5, [[1, 1], [1, 2]])])
+def test_layered_flips_read_the_dehn_twists(flips, grid, expected):
+    """The layered flip passes on the collar's far torus read the predicted
+    integer monodromy (issue #1117): the Dehn twists T_B, T_A and S, their
+    powers and products, with the far torus's own modulus moved by M."""
+    config = {"seed": 7, "tori": 2, "collar_twist": "none", "layers": 1,
+              "tau_a": [0.3, 1.1], "tau_b": [-0.2, 0.8], "grid": grid,
+              "interior_disposition": qa.DECLARED_INTERIOR_DISPOSITION,
+              "far_flips": flips, "flip_factor": 0.7}
+    record = qa.verify(config, tolerance=TOL)
+    by_id = {row["id"]: row for row in record["checks"]}
+    assert by_id["R4:A->B"]["pass"], by_id["R4:A->B"]
+    assert by_id["R4:A->B"]["measured"]["rounded"] == expected
+    for key in ("F1", "F2", "F3", "R5:A->B", "J1:A->B"):
+        assert by_id[key]["pass"], by_id[key]
+    if "," in flips:
+        assert by_id["F4"]["pass"], by_id["F4"]
+    assert record["all_pass"], [row["id"] for row in record["checks"] if not row["pass"]]
