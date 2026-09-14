@@ -124,9 +124,10 @@ def test_verify_subcommand_passes_on_the_seeded_collar(tmp_path):
          "--json", str(record)],
         capture_output=True, text=True, timeout=600, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PASS: 11 of 11 checks pass" in result.stdout
+    assert "PASS:" in result.stdout
     document = json.loads(record.read_text())
     assert document["all_pass"]
     assert {row["id"] for row in document["checks"]} >= {
-        "R1", "R3:A->B", "R4:A->B", "R5:A->B", "J1:A->B", "J2", "J3",
+        "R1", "H1:seed", "H2:seed", "H3:seed", "R3:A->B", "R4:A->B", "R5:A->B",
+        "J1:A->B", "H1:jittered", "H2:jittered", "H3:jittered", "J2", "J3",
         "U1:A->B", "C1:none", "C1:swap"}

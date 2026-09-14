@@ -2861,15 +2861,20 @@ def _lagrangian_check(label, periods_a, periods_b, twist, tolerance):
     import numpy as np
     stacked = np.vstack([periods_a, periods_b])
     basis, rank, singular, threshold = _orthonormal_image(stacked)
-    expected = min(stacked.shape)
     cycles_a, cycles_b = periods_a.shape[0], periods_b.shape[0]
+    # The Lagrangian dimension: half the boundary's b_1 (the reading's
+    # half-lives-half-dies). For one collar of a four-torus host the stack is
+    # 4 cycles by 4 harmonic columns and the pair's restriction subspace is
+    # 2-dimensional; the whole's is 8 by 4 and 4-dimensional.
+    expected = (cycles_a + cycles_b) // 2
     conditioning = float(singular[0] / singular[rank - 1]) if rank else float("inf")
-    if rank < expected:
+    if rank != expected:
         return _check(
             "R5:" + label,
             "the restriction subspace is isotropic for the declared boundary form",
-            {"refusal": "the stacked periods have rank %d, below the %d the subspace needs; "
-                        "isotropy is not evaluated on the wrong subspace" % (rank, expected),
+            {"refusal": "the stacked periods have rank %d against the Lagrangian dimension %d "
+                        "(half the %d boundary cycles); isotropy is not evaluated on the wrong "
+                        "subspace" % (rank, expected, cycles_a + cycles_b),
              "singular_values": [float(x) for x in singular], "rank_tolerance": threshold},
             tolerance, False)
     declared = float(np.linalg.norm(

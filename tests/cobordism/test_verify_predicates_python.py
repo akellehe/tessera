@@ -112,12 +112,26 @@ def test_r5_rejects_a_genuinely_non_isotropic_subspace():
     assert row["measured"]["flipped_control_norm"] > 1e-3
 
 
+def test_r5_one_collar_of_a_four_torus_host_is_a_two_dimensional_subspace():
+    """Four cycles against four harmonic columns, rank two: the pair's own
+    restriction subspace is half its boundary b_1, not the column count."""
+    periods_a = np.hstack([np.eye(2), np.zeros((2, 2))]).astype(complex)
+    periods_b = np.hstack([np.eye(2), np.zeros((2, 2))]).astype(complex)
+    row = qa._lagrangian_check("A->A*", periods_a, periods_b, "none", TOL)
+    assert row["pass"], row
+    assert row["measured"]["rank"] == 2
+    # and a subspace too large to be Lagrangian is refused, not scored
+    too_big = np.eye(4, dtype=complex)
+    refused = qa._lagrangian_check("A->A*", too_big[:2], too_big[2:], "none", TOL)
+    assert refused["pass"] is False and "rank 4 against the Lagrangian dimension 2" in refused["measured"]["refusal"]
+
+
 def test_r5_refuses_a_rank_deficient_stack_by_name():
     periods_a = np.diag([1.0, 0.0]).astype(complex)
     periods_b = np.diag([1.0, 0.0]).astype(complex)
     row = qa._lagrangian_check("A->B", periods_a, periods_b, "none", TOL)
     assert not row["pass"]
-    assert "rank 1" in row["measured"]["refusal"]
+    assert "rank 1 against the Lagrangian dimension 2" in row["measured"]["refusal"]
     assert "declared_form_norm" not in row["measured"]
 
 
