@@ -42,7 +42,7 @@ using namespace ::tessera::spacetime;
 ///
 /// ## The bridge
 /// * **bridge** (`bridge`) — the bulk-drawer of the qubit cobordism
-///   (`docs/design/qubit_cobordism_spec.md`, D1). Create a top cell on
+///   (historical requirement D1; implementation ticket #960). Create a top cell on
 ///   \f$ d+1 \f$ **existing** vertices, no fresh apex, auto-wiring every edge
 ///   the cell lacks with the engine's auto-wired length. It exists because the
 ///   bulk between two boundary surfaces is *drawn* on their own vertices (R4:

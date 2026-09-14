@@ -5,8 +5,8 @@
 A committed stage-1 move rebuilds the complex from a snapshot
 (``MultiCobordism::snapshotOf`` / ``build``). The snapshot recorded lengths
 only, so the first committed move reset every phase to zero. The tori of the
-qubit cobordism carry pure-gauge link phases (``docs/design/qubit_cobordism_spec.md``
-S1) and under the Whitney pencil the operator depends on them at every degree,
+qubit cobordism carry pure-gauge link phases (historical requirement S1),
+and under the Whitney pencil the operator depends on them at every degree,
 so that rebuild changed the physics of the state a torus carries: its input
 fiber is a zero mode of the TWISTED Laplacian, not of the untwisted one, and
 the block's residual jumps from its floor to order one when the phases go.

@@ -1,7 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The bridge move and the collar seed (#960, T1 of
-``docs/design/qubit_cobordism_spec.md``).
+"""The bridge move and the collar seed (#960, historical requirement T1).
 
 Two qubit tori (``SimplicialQubit.flat_torus``) can be seeded into one
 3-dimensional host as their own triangles with their lengths and no 3-cell
