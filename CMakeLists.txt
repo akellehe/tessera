@@ -22,6 +22,74 @@ else()
     project(tessera LANGUAGES CXX)
 endif()
 
+# ---- Reproducible-toolchain requirement ----
+# Three test files compare against hex floats committed from one specific
+# build: tests/observables/test_simplicial_qubit_complex_python.py (4 ulps),
+# tests/chainhodge/test_face_anchor_python.py (atol 1e-15) and
+# tests/cobordism/test_block_residual_whole_frame_python.py (bit for bit).
+# Those bars are tight enough that they only hold on the toolchain that
+# generated the dumps, so the compiler is a build dependency exactly like
+# LAPACK is — not a preference.
+#
+# Measured 2026-09-13, same source and same host, only the compiler changed:
+#
+#   g++ 15.2.0  ->  4 of those tests fail
+#   g++ 13.4.0  ->  3 of the 4 pass; only the bit-for-bit cobordism dump still
+#                   differs (8 ulps), which tracks glibc's libm (2.43 here vs
+#                   2.39 on the reference runner) rather than the compiler,
+#                   and so cannot be fixed by installing anything.
+#
+# Ruled out by direct experiment on the same host, both byte-identical to the
+# failing baseline: the BLAS backend (reference netlib vs OpenBLAS 0.3.32) and
+# the target ISA (-march=native vs -march=x86-64-v3). Do not re-litigate those
+# without new evidence.
+#
+# This is a hard error rather than a warning because the failure it prevents is
+# invisible: a 15.x build produces four red tests that read exactly like a real
+# numerical regression in the code under test, and the last person to chase
+# that lost an afternoon to it.
+set(TESSERA_REFERENCE_GNU_CXX_MAJOR 13 CACHE STRING
+    "GNU C++ major version the committed golden dumps were generated with")
+option(TESSERA_REQUIRE_REFERENCE_TOOLCHAIN
+    "Fail configuration on a compiler that cannot reproduce the golden dumps" ON)
+
+if (TESSERA_REQUIRE_REFERENCE_TOOLCHAIN)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+            AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS
+                    "${TESSERA_REFERENCE_GNU_CXX_MAJOR}"
+            AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS
+                    "${TESSERA_REFERENCE_GNU_CXX_MAJOR}.99")
+        # Reference toolchain — nothing to say.
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        message(FATAL_ERROR
+            "tessera needs GNU C++ ${TESSERA_REFERENCE_GNU_CXX_MAJOR}.x to "
+            "reproduce the committed golden dumps; this is "
+            "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} "
+            "(${CMAKE_CXX_COMPILER}).\n"
+            "  Building anyway is supported, but expect the dump comparisons "
+            "in tests/observables, tests/chainhodge and tests/cobordism to "
+            "fail on last-bit differences that are NOT regressions.\n"
+            "  Install the reference compiler:\n"
+            "    sudo apt-get install g++-${TESSERA_REFERENCE_GNU_CXX_MAJOR} "
+            "gcc-${TESSERA_REFERENCE_GNU_CXX_MAJOR}\n"
+            "  then build with it:\n"
+            "    CC=gcc-${TESSERA_REFERENCE_GNU_CXX_MAJOR} "
+            "CXX=g++-${TESSERA_REFERENCE_GNU_CXX_MAJOR} "
+            "pip install -e \".[dev]\"\n"
+            "  Or accept the dump failures and proceed:\n"
+            "    pip install -e \".[dev]\" "
+            "-C cmake.define.TESSERA_REQUIRE_REFERENCE_TOOLCHAIN=OFF")
+    else()
+        message(WARNING
+            "tessera's golden dumps were generated with GNU C++ "
+            "${TESSERA_REFERENCE_GNU_CXX_MAJOR}.x; this is "
+            "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}. The build "
+            "is fine, but the dump comparisons in tests/observables, "
+            "tests/chainhodge and tests/cobordism may fail on last-bit "
+            "differences that are not regressions.")
+    endif()
+endif()
+
 # ---- Build resource limits (memory-aware Ninja job pools) ----
 # A full tessera build is memory-bound, not CPU-bound. The template-heavy
 # translation units (src/cobordism/MultiCobordism.cpp, the per-subsystem

@@ -27,6 +27,18 @@ jobs:
   pip-install:
     name: pip install (py${{ matrix.python-version }})
     runs-on: [self-hosted, tessera]
+    # Pinned to 24.04 so every runner computes the same floats regardless of the
+    # host OS. The golden dumps in tests/observables, tests/chainhodge and
+    # tests/cobordism are reproducible only on the toolchain that generated
+    # them, and "the toolchain" turned out to mean both the compiler and libm:
+    # measured 2026-09-13, a 26.04 host (g++ 15.2 / glibc 2.43) fails four of
+    # them, and pinning g++ 13 alone still leaves the cobordism dump diverging
+    # in the near-degenerate regime, where a last-bit libm difference amplifies
+    # into a macroscopic one. 24.04 gives g++ 13.3 + glibc 2.39, which is what
+    # the dumps were generated against. Without this, whether a PR is red or
+    # green depends on which runner happens to pick it up.
+    container:
+      image: ubuntu:24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -49,6 +61,24 @@ jobs:
       MKL_NUM_THREADS: "1"
       BLIS_NUM_THREADS: "1"
     steps:
+      # Runs before checkout on purpose: actions/checkout needs git, and the
+      # base image has none. No sudo here (and none in the image) because a
+      # container step is already root.
+      #
+      # Installing the distro pybind11 (currently v2) is deliberate. Its CMake
+      # config lands in /usr/lib/cmake/pybind11 — a default find_package()
+      # search path — so a green run asserts the build still selects
+      # pybind11 >= 3.0 and never falls back to the system v2.
+      # liblapack/libblas satisfy the (unconditional) quantum subsystem's
+      # BLAS/LAPACK need.
+      - name: Install the toolchain (incl. pybind11 v2 regression trap)
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git \
+            build-essential cmake ninja-build \
+            pybind11-dev libeigen3-dev liblapack-dev libblas-dev
+
       - uses: actions/checkout@v6
         with:
           submodules: recursive
@@ -57,18 +87,26 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Install the distro pybind11 (currently v2) on purpose. Its CMake
-      # config lands in /usr/lib/cmake/pybind11 — a default find_package()
-      # search path — so a green run asserts the build still selects
-      # pybind11 >= 3.0 and never falls back to the system v2.
-      # liblapack/libblas satisfy the (unconditional) quantum subsystem's
-      # BLAS/LAPACK need. Skipped on self-hosted, where these are already
-      # installed system-wide and the runner user has no sudo.
-      - name: Install system packages (incl. pybind11 v2 regression trap)
-        if: runner.environment == 'github-hosted'
+      # CMakeLists.txt hard-requires GNU C++ 13.x. The 24.04 container already
+      # ships it as plain `g++`, so this is a guard rather than a fixup: it
+      # fails loudly if the image is ever bumped to a release whose default
+      # compiler moved, instead of letting four golden tests go red and read
+      # like a numerical regression.
+      - name: Select the reference C++ compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y pybind11-dev liblapack-dev libblas-dev
+          major=$(g++ -dumpversion | cut -d. -f1)
+          if [ "$major" = "13" ]; then
+            echo "default g++ is ${major}.x - using it"
+          elif command -v g++-13 >/dev/null; then
+            echo "default g++ is ${major}.x - switching to g++-13"
+            echo "CC=gcc-13"  >> "$GITHUB_ENV"
+            echo "CXX=g++-13" >> "$GITHUB_ENV"
+          else
+            echo "::error::container g++ is ${major}.x and g++-13 is not present."
+            echo "::error::Pin the job's container back to an image whose default g++ is 13.x,"
+            echo "::error::or add g++-13 gcc-13 to the toolchain install step above."
+            exit 1
+          fi
 
       - name: Build and install (with dev extras for the test suite)
         run: python -m pip install -e ".[dev]" -v

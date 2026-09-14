@@ -17,11 +17,36 @@ tessera bundles several discrete-geometry formulations on a shared simplicial me
 
 ## Installation
 
-Requires Python 3.9+, a C++20 compiler, CMake 3.18+, and a BLAS/LAPACK backend
-(Accelerate ships with macOS; on Linux install `liblapack-dev libblas-dev`).
+Requires Python 3.9+, **GNU C++ 13.x**, CMake 3.18+, Eigen 3.3+, and a
+BLAS/LAPACK backend (Accelerate ships with macOS; on Linux install
+`libeigen3-dev liblapack-dev libblas-dev`).
 
 ```bash
+sudo apt-get install g++-13 gcc-13 libeigen3-dev liblapack-dev libblas-dev   # Debian/Ubuntu
 pip install -e ".[dev]"
+```
+
+If your distribution's default `g++` is not 13.x, point the build at it:
+
+```bash
+CC=gcc-13 CXX=g++-13 pip install -e ".[dev]"
+```
+
+**Why the compiler version is pinned.** Several tests compare against hex
+floats committed from one specific build, at tolerances tight enough (4 ulps,
+`atol=1e-15`, and one bit-for-bit) that they only hold on the toolchain that
+produced them. Measured on identical source and hardware, g++ 15.2 fails four
+of them while g++ 13.4 passes three and misses the last by 8 ulps — a
+difference that tracks glibc's `libm`, not the compiler. Those failures read
+exactly like numerical regressions in the code under test, so CMake rejects a
+non-13.x GNU compiler at configure time rather than letting you discover it
+from a red test run. Neither the BLAS backend nor `-march` affects this; both
+were tested and ruled out.
+
+To build on another compiler anyway, accepting those test failures:
+
+```bash
+pip install -e ".[dev]" -C cmake.define.TESSERA_REQUIRE_REFERENCE_TOOLCHAIN=OFF
 ```
 
 Verify:
