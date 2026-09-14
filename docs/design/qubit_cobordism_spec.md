@@ -127,12 +127,21 @@ S2. Retain scalar-geometry collar synthesis and the shared engine-unit schedule.
 S3. Record the actual objective. Historical transfer/chi fitting optimizes
     selected-state amplitudes, not the recovered whole operator.
 S4. Independently recover whole-kernel relations every frame through both
-    transported periods and bilinear Gram contractions F^T M Z using live
-    marked block frames F embedded in the whole. Periods are a topological
-    control; Gram contractions are distinct metric-dependent observations.
+    transported periods and bilinear Gram contractions (F^vee)^T M_whole Z.
+    Reuse the live marked block's native dual frame, normalized by
+    (F^vee)^T M_own F = I on the block's own Whitney metric, then embed it
+    in the whole. Use the existing PencilSchur.gramBlock primitive; do not
+    reconstruct the Gram matrix or dual normalization independently.
+    The contraction uses transpose, not adjoint, and M_whole rather than
+    M_own. A primal-primal contraction F^T M_whole Z is not gauge covariant.
+    Periods are a topological control; the dual-frame Gram contractions are
+    distinct metric-dependent observations, not an orthogonal projection.
     Identity coordinate norms for these ports are explicit external encoding
     conventions, not claims that the Whitney metric is positive or that the
-    two readouts have the same physical interpretation.
+    two readouts have the same physical interpretation. The existing `gram`
+    record key carries `observation_convention: dual_frame_whitney`; older
+    records without that field used primal frames and are not numerically
+    interchangeable, even at zero phases, because their normalization differs.
 S5. Historical chi is a 2x2 selected-pair amplitude matrix, not the full XY or
     named two-qubit gate. Keep it for reproducibility; never pass it to the
     frozen operator recovery routine.
@@ -166,6 +175,11 @@ C3. Choi contraction, marginals, norm preservation and composition identities.
     No unconditional unitary certificate for nonunitary or zero operators.
 C4. Perturb native scalar geometry. Period transport stays topological on a
     fixed marked collar; Gram observations can change. Neither proves universality.
+    A pure-gauge phase change fixed to one at both port basepoints must leave
+    both recovered operators unchanged, for real and complex lengths. With
+    g(v)=exp(i phi(v)), unfixed basepoints instead give
+    T' = exp(-i (phi_out-phi_in)) T. The normalized operator's Schmidt
+    coefficients, marginals and Choi entropy remain unchanged in either case.
 C5. Headless/live paths share records. JSON is finite-safe; rendered panels
     name the claim and obstruction; CLI/runtime regressions remain covered.
 C6. An obstructed gate realization stays obstructed when the selected-state
