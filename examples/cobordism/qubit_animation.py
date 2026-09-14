@@ -1132,7 +1132,7 @@ def seed_qubit_host(config):
         # nothing invisible to the boundary. The attachment face is the
         # triangle at grid position (1, 1) of each far torus, which shares
         # no edge with the marking cycles (row 0 and column 0).
-        tube = MC.TubeSpec()
+        tube = cob.TubeSpec()
         tube.layers = int(config.get("tube_layers", DECLARED_TUBE_LAYERS))
         tube.length = float(config.get("tube_length", DECLARED_TUBE_LENGTH))
         tube.waist = float(config.get("tube_waist", DECLARED_TUBE_WAIST))
@@ -3685,7 +3685,7 @@ def _boundary_faces(host):
     from collections import Counter
     count = Counter()
     for cell in host.getTopSimplices():
-        tuple_ = sorted(int(v) for v in cell.topTuple())
+        tuple_ = sorted(int(v.getId()) for v in cell.getVertices())
         for skip in range(len(tuple_)):
             count[tuple(v for n, v in enumerate(tuple_) if n != skip)] += 1
     return [face for face, n in count.items() if n == 1]

@@ -234,19 +234,40 @@ class SurfacePeriods:
 
     # ------------------------------------------------------------ harmonic space
     def _harmonic(self):
-        """``H = null_space([d1; d0^T diag(w)])`` with scipy's rcond rule
-        (``SimplicialQubit`` section 6); rank ``2g`` expected."""
+        """``H = null_space([d1; d0^T diag(w)])`` (``SimplicialQubit``
+        section 6), of dimension ``2g``.
+
+        The dimension is decided by the spectral gap, not by scipy's rcond
+        rule: ``rank d1 + rank(d0^T W) <= E - 2g`` for any invertible
+        diagonal ``W``, so the ``2g`` smallest singular values are zero in
+        exact arithmetic and the next one is the surface's first nonzero
+        value, of order one. The rcond threshold (``eps * max(M, N) *
+        sigma_max``, about 1.5e-14 here) sits inside the rounding noise of
+        the zero values (1.7e-14 was measured on a 3x3 flat torus), which
+        the gap is not. A zero value beyond the ``2g`` expected means the
+        weights are degenerate and is refused by name.
+        """
         system = np.vstack([self.d1, self.d0.T @ np.diag(self.weights)])
         _, sigma, vt = np.linalg.svd(system)
-        eps = np.finfo(float).eps
-        threshold = eps * max(system.shape) * (sigma[0] if sigma.size else 0.0)
-        rank = int((sigma > threshold).sum())
-        self.harmonic = vt[rank:].T.copy()
-        self.harmonic_rank = int(self.harmonic.shape[1])
-        if self.harmonic_rank != 2 * self.genus:
-            raise ValueError("SurfacePeriods: dim H = %d for a marking of genus %d (expected %d); the surface "
-                             "or the weights are not what the marking says"
-                             % (self.harmonic_rank, self.genus, 2 * self.genus))
+        # Fewer rows than columns leaves columns of V beyond the singular
+        # values: those are exact null directions, zero singular values.
+        sigma = np.concatenate([sigma, np.zeros(max(0, system.shape[1] - sigma.size))])
+        expected = 2 * self.genus
+        if sigma.size <= expected:
+            raise ValueError("SurfacePeriods: the surface has %d edges, too few for genus %d" % (sigma.size, self.genus))
+        scale = float(sigma[0])
+        zero = float(sigma[-expected:].max()) if expected else 0.0
+        first_nonzero = float(sigma[-expected - 1])
+        if zero > 1e-9 * scale:
+            raise ValueError("SurfacePeriods: dim H < %d for a marking of genus %d (smallest singular values "
+                             "%s against %g); the surface is not what the marking says"
+                             % (expected, self.genus, sigma[-expected:].tolist(), scale))
+        if first_nonzero <= 1e-9 * scale:
+            raise ValueError("SurfacePeriods: dim H > %d for a marking of genus %d (singular value %g against "
+                             "%g): the cotangent weights are degenerate" % (expected, self.genus, first_nonzero, scale))
+        self.harmonic = vt[-expected:].T.copy()
+        self.harmonic_rank = expected
+        self.harmonic_gap = (zero, first_nonzero)
 
     def _whitney(self, t, omega):
         """``W_t(omega)``, the Whitney interpolant of the 1-cochain at the
