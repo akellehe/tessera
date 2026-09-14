@@ -3231,13 +3231,22 @@ def verify_main(args):
     if path is None:
         directory = os.path.expanduser(args.out)
         os.makedirs(directory, exist_ok=True)
-        path = os.path.join(directory, "verify-%dt-%s-L%d-g%d-s%d.json" % (
-            args.tori, args.collar_twist, args.layers, args.grid, args.seed))
+        # The moduli are part of the host, so they are part of the name: two
+        # runs at different tau must not write the same record.
+        path = os.path.join(directory, "verify-%dt-%s-L%d-g%d-s%d-a%s-b%s.json" % (
+            args.tori, args.collar_twist, args.layers, args.grid, args.seed,
+            _tau_slug(args.tau_a), _tau_slug(args.tau_b)))
     with open(path, "w") as handle:
         json.dump(record, handle, indent=2, default=_json_default)
     _print_verify_table(record)
     print("record: %s" % path)
     return 0 if record["all_pass"] else 1
+
+
+def _tau_slug(tau):
+    """A modulus as a filename fragment: `0.3+1.1j` -> `0.3+1.1j`, kept
+    readable rather than hashed."""
+    return ("%g%+gj" % (tau.real, tau.imag)).replace(" ", "")
 
 
 def _json_default(value):
