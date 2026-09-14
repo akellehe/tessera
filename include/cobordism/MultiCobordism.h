@@ -1316,6 +1316,27 @@ class MultiCobordism {
   struct SurfaceSeed {
     std::shared_ptr<Spacetime> host;
     std::vector<std::map<std::uint64_t, std::uint64_t>> vertexIds;
+    /// The vertex rings of a tube (`seedTubedCollars`), ring 0 the attachment
+    /// face on the first collar's far surface, the last ring the attachment
+    /// face on the second collar's, in the order the two faces were matched;
+    /// empty on every other seed.
+    std::vector<std::vector<std::uint64_t>> tubeRings;
+  };
+  /// The tube of `seedTubedCollars`: a prism over one attachment face of each
+  /// far surface, `layers` prism layers long, its interior rings scaled about
+  /// their centroid by `waist`, consecutive rings `length` apart. `faceA` and
+  /// `faceB` are the attachment faces in the far surfaces' OWN vertex ids;
+  /// with `reflect` the last two vertices of `faceB` are matched in reversed
+  /// order, which is the orientation-consistent connected sum of the two far
+  /// surfaces (both keep the bulk's induced orientation); without it the
+  /// second is reversed.
+  struct TubeSpec {
+    int layers{2};
+    double length{1.0};
+    double waist{1.0};
+    std::vector<std::uint64_t> faceA;
+    std::vector<std::uint64_t> faceB;
+    bool reflect{true};
   };
   /// Build the `SurfaceSeed` of the BARE \p surfaces (no \f$ d \f$-cell), each
   /// a closed \f$ (d-1) \f$-dimensional `Spacetime` (e.g.
@@ -1406,6 +1427,39 @@ class MultiCobordism {
                                               const std::shared_ptr<Spacetime> &surfaceB,
                                               int layers = 1,
                                               const std::vector<std::uint64_t> &twist = {});
+  /// Two collars joined by a TUBE: the far surfaces of two `seedCollar`
+  /// collars (surfaces 1 and 3 of the four given, in pairs) are connected by
+  /// the prism \f$ t \times [0, \text{layers}] \f$ over one attachment face
+  /// \f$ t \f$ of each (`Spacetime::prismCells`), a 1-handle between the two
+  /// components. The far boundary becomes ONE surface of genus two — the
+  /// connected sum of the two far tori through the tube — while the near
+  /// tori are untouched, so \f$ \partial W = T^2 \sqcup T^2 \sqcup \Sigma_2 \f$,
+  /// \f$ b_1(W) = 2 + 2 = 4 \f$ (the tube joins two components and adds no
+  /// loop) and \f$ \operatorname{rank}(H^1(W) \to H^1(\partial W)) = 4 =
+  /// b_1(\partial W)/2 \f$ with no class invisible to the boundary. No sphere
+  /// join is made: the tube is the connection.
+  ///
+  /// The tube's geometry is Euclidean and declared: the two attachment faces
+  /// are laid out in the plane from their own lengths, ring \f$ \ell \f$ of
+  /// the tube is the affine interpolation of the two layouts at
+  /// \f$ s = \ell/\text{layers} \f$ scaled about its centroid by
+  /// `tube.waist` (the end rings by 1), at height \f$ \ell \cdot \f$
+  /// `tube.length`; every tube edge gets the Euclidean distance of its
+  /// endpoints, so the end rings carry the surfaces' own lengths verbatim.
+  /// The waist and the length are the knobs of the neck: shrinking the waist
+  /// or lengthening the tube pinches the connected sum, which is the
+  /// separating degeneration of the genus-two surface.
+  ///
+  /// Gated once as a whole by `ChainComplex::dualComplexIsValid` and refused
+  /// by name. `vertexIds` comes back in the order the surfaces were given;
+  /// `tubeRings` lists the tube's vertex rings.
+  /// @throws std::invalid_argument on other than four surfaces, a null one,
+  ///   an attachment face that is no face of its surface, a non-positive
+  ///   waist or length, fewer than one tube layer, or a join that is not a
+  ///   manifold-with-boundary.
+  [[nodiscard]] static SurfaceSeed seedTubedCollars(
+      const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers,
+      const std::vector<std::uint64_t> &twist, const TubeSpec &tube);
 
   /// A block's own surface (qubit cobordism spec D2, the enumeration half):
   /// its \f$ (d-1) \f$-faces and its edges inside its vertex set, as sorted

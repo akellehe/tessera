@@ -281,5 +281,6 @@ else:
 # product and an integer monodromy acts by its Weil matrix. It needs nothing
 # from the C++ backend, so it is bound regardless of `_AVAILABLE`.
 from .theta_register import ThetaRegister, WeilFit  # noqa: E402
+from .surface_periods import SurfacePeriods  # noqa: E402
 
-__all__ = [*_EXPORTS, "is_available", "ThetaRegister", "WeilFit"]
+__all__ = [*_EXPORTS, "is_available", "ThetaRegister", "WeilFit", "SurfacePeriods"]

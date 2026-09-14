@@ -1360,7 +1360,23 @@ assertion. Every pairing is the transpose.)doc")
       "edges, vertices with the surface's lengths and zero phases) on disjoint vertex id "
       "ranges and NO d-cell; `vertex_ids[s]` maps surface s's vertex ids to the host's.")
       .def_readonly("host", &MultiCobordism::SurfaceSeed::host)
-      .def_readonly("vertex_ids", &MultiCobordism::SurfaceSeed::vertexIds);
+      .def_readonly("vertex_ids", &MultiCobordism::SurfaceSeed::vertexIds)
+      .def_readonly("tube_rings", &MultiCobordism::SurfaceSeed::tubeRings,
+                    "The vertex rings of a tube (seed_tubed_collars), ring 0 on the first collar's far "
+                    "surface, the last on the second's; empty on every other seed.");
+  py::class_<MultiCobordism::TubeSpec>(m, "TubeSpec",
+      "The tube of seed_tubed_collars: a prism over one attachment face of each far surface "
+      "(`face_a`, `face_b` in the far surfaces' OWN vertex ids), `layers` prism layers long, "
+      "consecutive rings `length` apart, the interior rings scaled about their centroid by "
+      "`waist`; `reflect` (default) matches the last two vertices of face_b in reversed order, "
+      "the orientation-consistent connected sum of the two far surfaces.")
+      .def(py::init<>())
+      .def_readwrite("layers", &MultiCobordism::TubeSpec::layers)
+      .def_readwrite("length", &MultiCobordism::TubeSpec::length)
+      .def_readwrite("waist", &MultiCobordism::TubeSpec::waist)
+      .def_readwrite("face_a", &MultiCobordism::TubeSpec::faceA)
+      .def_readwrite("face_b", &MultiCobordism::TubeSpec::faceB)
+      .def_readwrite("reflect", &MultiCobordism::TubeSpec::reflect);
   py::class_<MultiCobordism::BlockSurface>(m, "BlockSurface",
       "A block's own surface (spec D2, the enumeration half): its (d-1)-faces and its "
       "edges inside its vertex set, as sorted vertex-id tuples.")
@@ -2032,6 +2048,17 @@ assertion. Every pairing is the transpose.)doc")
                   "4-dimensional target needs, since rank(H^1(W) -> H^1(dW)) = b_1(dW)/2. layers must "
                   "be at least three: a prism cell spans two adjacent layers, so an all-interior cell "
                   "exists only with two interior layers.")
+      .def_static("seed_tubed_collars", &MultiCobordism::seedTubedCollars,
+                  py::arg("surfaces"), py::arg("layers") = 1,
+                  py::arg("twist") = std::vector<std::uint64_t>{},
+                  py::arg("tube") = MultiCobordism::TubeSpec{},
+                  "Two collars joined by a TUBE (a 1-handle) between their far surfaces: the prism over "
+                  "one attachment face of each (TubeSpec), so the far boundary is ONE genus-two surface, "
+                  "the connected sum of the two far tori through the tube, and dW = T^2 + T^2 + Sigma_2. "
+                  "The tube joins two components and adds no loop: b_1(W) = 4 = b_1(dW)/2 with no class "
+                  "invisible to the boundary. Euclidean tube geometry declared from the attachment faces' "
+                  "own lengths, the waist and the length (the knobs of the neck); gated once as a whole "
+                  "by dualComplexIsValid and refused by name.")
       .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
            py::arg("layers") = 1, py::arg("twist") = std::vector<std::uint64_t>{},
            "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics (spec S3): "

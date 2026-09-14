@@ -105,3 +105,32 @@ def test_t8_four_tori_is_a_product_operator():
     row = next(r for r in record["checks"] if r["id"] == "T8:whole")
     assert row["measured"]["schmidt_rank"] == 1
     assert row["measured"]["kron_distance"] <= TOL
+
+
+def test_coherent_state_entanglement_is_the_neck():
+    """The geometric state at z is a product for a diagonal Omega and is
+    entangled once Omega_12 != 0; the Schmidt spectrum is a probability
+    vector and the entropy is symmetric under exchanging the tori."""
+    diagonal = np.diag([0.3 + 1.1j, -0.2 + 0.8j])
+    coupled = diagonal + np.array([[0, 0.2 + 0.1j], [0.2 + 0.1j, 0]])
+    rng = np.random.default_rng(3)
+    for z in [np.zeros(2), *REGISTER.samples(2, rng)[:3]]:
+        entropy, spectrum = REGISTER.entanglement_entropy(REGISTER.coherent_state(z, diagonal), (2, 2))
+        assert entropy <= 1e-12
+        assert abs(spectrum.sum() - 1.0) <= 1e-12
+        entropy_c, spectrum_c = REGISTER.entanglement_entropy(REGISTER.coherent_state(z, coupled), (2, 2))
+        assert entropy_c > 1e-6
+        swapped = REGISTER.entanglement_entropy(
+            REGISTER.coherent_state(z[::-1], coupled[::-1, ::-1]), (2, 2))[0]
+        assert abs(swapped - entropy_c) <= 1e-9
+    # more coupling, more entanglement at the origin
+    weak = diagonal + np.array([[0, 0.05], [0.05, 0]])
+    assert (REGISTER.entanglement_entropy(REGISTER.coherent_state(np.zeros(2), weak), (2, 2))[0]
+            < REGISTER.entanglement_entropy(REGISTER.coherent_state(np.zeros(2), coupled), (2, 2))[0])
+
+
+def test_entanglement_entropy_of_a_bell_vector_is_one_bit():
+    bell = np.array([1, 0, 0, 1]) / np.sqrt(2)
+    entropy, spectrum = REGISTER.entanglement_entropy(bell, (2, 2))
+    assert abs(entropy - 1.0) <= 1e-12
+    assert np.allclose(spectrum, [0.5, 0.5])

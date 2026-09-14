@@ -4,6 +4,7 @@
 #include "cobordism/MultiCobordism.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <exception>
 #include <functional>
@@ -6514,6 +6515,174 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
     edge->setPhase(complexd(0.0, 0.0));
   }
   seed.vertexIds = std::move(vertexIds);
+  return seed;
+}
+
+MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
+    const std::vector<std::shared_ptr<Spacetime>> &surfaces, int layers,
+    const std::vector<std::uint64_t> &twist, const TubeSpec &tube) {
+  const std::string prefix = "MultiCobordism::seedTubedCollars: ";
+  if (surfaces.size() != 4)
+    throw std::invalid_argument(prefix + "exactly four surfaces are required: two collars, each with its far surface");
+  for (const auto &surface : surfaces)
+    if (!surface) throw std::invalid_argument(prefix + "null surface");
+  if (tube.layers < 1) throw std::invalid_argument(prefix + "the tube needs at least one layer");
+  if (!(tube.length > 0.0)) throw std::invalid_argument(prefix + "the tube length must be positive");
+  if (!(tube.waist > 0.0)) throw std::invalid_argument(prefix + "the tube waist must be positive");
+  if (tube.faceA.size() != 3 || tube.faceB.size() != 3)
+    throw std::invalid_argument(prefix + "the attachment faces must be triangles given in the far surfaces' own vertex ids");
+  const auto isFaceOf = [](const Spacetime &surface, const std::vector<std::uint64_t> &face) {
+    std::vector<std::uint64_t> wanted = face;
+    std::sort(wanted.begin(), wanted.end());
+    for (const auto &topSimplex : surface.getTopSimplices()) {
+      auto tuple = topSimplex->topTuple();
+      std::sort(tuple.begin(), tuple.end());
+      if (tuple == wanted) return true;
+    }
+    return false;
+  };
+  if (!isFaceOf(*surfaces[1], tube.faceA))
+    throw std::invalid_argument(prefix + "faceA is no face of the first collar's far surface");
+  if (!isFaceOf(*surfaces[3], tube.faceB))
+    throw std::invalid_argument(prefix + "faceB is no face of the second collar's far surface");
+  // The two collars, each as seedCollar builds it (the twist on each far
+  // surface), on disjoint host id ranges.
+  std::vector<SurfaceSeed> collars = {seedCollar(surfaces[0], surfaces[1], layers, twist),
+                                      seedCollar(surfaces[2], surfaces[3], layers, twist)};
+  std::vector<std::vector<std::uint64_t>> joined;
+  std::vector<std::map<std::uint64_t, std::uint64_t>> vertexIds;
+  std::uint64_t offset = 0;
+  for (auto &collar : collars) {
+    std::uint64_t span = 0;
+    for (const auto &topSimplex : collar.host->getTopSimplices()) {
+      auto tuple = topSimplex->topTuple();
+      for (auto &vertex : tuple) {
+        span = std::max(span, vertex + 1);
+        vertex += offset;
+      }
+      std::sort(tuple.begin(), tuple.end());
+      joined.push_back(std::move(tuple));
+    }
+    for (auto &ids : collar.vertexIds) {
+      for (auto &[surfaceId, hostId] : ids) hostId += offset;
+      vertexIds.push_back(std::move(ids));
+    }
+    offset += span;
+  }
+  // The attachment faces in host ids, matched vertex by vertex in the given
+  // order, the last two of faceB reversed when reflecting.
+  std::array<std::uint64_t, 3> endA{}, endB{};
+  for (int i = 0; i < 3; ++i) {
+    endA[static_cast<std::size_t>(i)] = vertexIds[1].at(tube.faceA[static_cast<std::size_t>(i)]);
+    const int j = tube.reflect ? (i == 0 ? 0 : 3 - i) : i;
+    endB[static_cast<std::size_t>(i)] = vertexIds[3].at(tube.faceB[static_cast<std::size_t>(j)]);
+  }
+  // The prism over the abstract triangle {0, 1, 2}: layer l's vertex i is
+  // 3 l + i (prismCells' stride is 3). Layer 0 is endA, layer `tube.layers`
+  // is endB, the layers between are fresh host ids.
+  const auto prism = Spacetime::prismCells({{0, 1, 2}}, tube.layers);
+  std::vector<std::vector<std::uint64_t>> rings(static_cast<std::size_t>(tube.layers) + 1,
+                                                std::vector<std::uint64_t>(3));
+  for (int layer = 0; layer <= tube.layers; ++layer)
+    for (int i = 0; i < 3; ++i) {
+      std::uint64_t id;
+      if (layer == 0) id = endA[static_cast<std::size_t>(i)];
+      else if (layer == tube.layers) id = endB[static_cast<std::size_t>(i)];
+      else id = offset + static_cast<std::uint64_t>(3 * (layer - 1) + i);
+      rings[static_cast<std::size_t>(layer)][static_cast<std::size_t>(i)] = id;
+    }
+  const auto hostIdOf = [&](std::uint64_t prismVertex) {
+    return rings[static_cast<std::size_t>(prismVertex / 3)][static_cast<std::size_t>(prismVertex % 3)];
+  };
+  std::set<std::pair<std::uint64_t, std::uint64_t>> tubeEdges;
+  for (const auto &cell : prism) {
+    std::vector<std::uint64_t> mapped;
+    for (const auto vertex : cell) mapped.push_back(hostIdOf(vertex));
+    for (std::size_t a = 0; a < mapped.size(); ++a)
+      for (std::size_t b = a + 1; b < mapped.size(); ++b)
+        tubeEdges.insert({std::min(mapped[a], mapped[b]), std::max(mapped[a], mapped[b])});
+    std::sort(mapped.begin(), mapped.end());
+    joined.push_back(std::move(mapped));
+  }
+  // ONE gate on the whole.
+  const int dimension = surfaces.front()->getDimensions() + 1;
+  const auto verdict = ChainComplex::dualComplexIsValid(joined, dimension);
+  if (!verdict.first)
+    throw std::invalid_argument(prefix + "the tubed collars are not a manifold-with-boundary: " + verdict.second);
+  SurfaceSeed seed;
+  seed.host = Spacetime::fromCells(dimension, joined, 1.0, complexd(0.0, 0.0));
+  // Each surface's own lengths verbatim on its edges, the auto-wired length
+  // everywhere else, zero phases throughout -- seedCollar's convention.
+  std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
+  for (std::size_t index = 0; index < surfaces.size(); ++index)
+    for (const auto *edge : surfaces[index]->getEdgeList()->toVector()) {
+      if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+      const auto &ids = vertexIds[index];
+      const auto source = ids.find(edge->getSource()->getId());
+      const auto target = ids.find(edge->getTarget()->getId());
+      if (source == ids.end() || target == ids.end()) continue;
+      lengths[{std::min(source->second, target->second), std::max(source->second, target->second)}] =
+          edge->getLength();
+    }
+  // The tube's Euclidean geometry: the two attachment faces laid out in the
+  // plane from their own lengths (vertex 0 at the origin, vertex 1 on the
+  // x-axis, vertex 2 above), ring l the affine interpolation at s = l/layers
+  // scaled about its centroid by the waist (the end rings by 1), at height
+  // l * length; every edge with an interior-ring endpoint gets the distance
+  // of its endpoints. The end rings' own edges are the surfaces', already
+  // set above.
+  const auto layoutOf = [&](const std::array<std::uint64_t, 3> &end) {
+    const auto lengthOf = [&](std::uint64_t u, std::uint64_t v) {
+      const auto found = lengths.find({std::min(u, v), std::max(u, v)});
+      if (found == lengths.end())
+        throw std::logic_error("MultiCobordism::seedTubedCollars: an attachment face edge has no surface length");
+      return found->second.real();
+    };
+    const double c = lengthOf(end[0], end[1]);  // 0-1
+    const double a = lengthOf(end[1], end[2]);  // 1-2
+    const double b = lengthOf(end[2], end[0]);  // 2-0
+    const double cosine = std::clamp((b * b + c * c - a * a) / (2.0 * b * c), -1.0, 1.0);
+    const double alpha = std::acos(cosine);
+    return std::array<Eigen::Vector2d, 3>{Eigen::Vector2d(0.0, 0.0), Eigen::Vector2d(c, 0.0),
+                                          Eigen::Vector2d(b * std::cos(alpha), b * std::sin(alpha))};
+  };
+  const auto layoutA = layoutOf(endA);
+  const auto layoutB = layoutOf(endB);
+  std::vector<std::array<Eigen::Vector3d, 3>> positions(static_cast<std::size_t>(tube.layers) + 1);
+  for (int layer = 0; layer <= tube.layers; ++layer) {
+    const double s = static_cast<double>(layer) / static_cast<double>(tube.layers);
+    const double scale = (layer == 0 || layer == tube.layers) ? 1.0 : tube.waist;
+    std::array<Eigen::Vector2d, 3> ring;
+    Eigen::Vector2d centroid(0.0, 0.0);
+    for (int i = 0; i < 3; ++i) {
+      ring[static_cast<std::size_t>(i)] = (1.0 - s) * layoutA[static_cast<std::size_t>(i)] + s * layoutB[static_cast<std::size_t>(i)];
+      centroid += ring[static_cast<std::size_t>(i)] / 3.0;
+    }
+    for (int i = 0; i < 3; ++i) {
+      const Eigen::Vector2d q = centroid + scale * (ring[static_cast<std::size_t>(i)] - centroid);
+      positions[static_cast<std::size_t>(layer)][static_cast<std::size_t>(i)] =
+          Eigen::Vector3d(q(0), q(1), static_cast<double>(layer) * tube.length);
+    }
+  }
+  std::map<std::uint64_t, std::pair<int, int>> ringSlot;
+  for (int layer = 0; layer <= tube.layers; ++layer)
+    for (int i = 0; i < 3; ++i) ringSlot[rings[static_cast<std::size_t>(layer)][static_cast<std::size_t>(i)]] = {layer, i};
+  for (const auto &[u, v] : tubeEdges) {
+    const auto [lu, iu] = ringSlot.at(u);
+    const auto [lv, iv] = ringSlot.at(v);
+    if (lu == lv && (lu == 0 || lu == tube.layers)) continue;  // a surface edge, set verbatim above
+    const Eigen::Vector3d pu = positions[static_cast<std::size_t>(lu)][static_cast<std::size_t>(iu)];
+    const Eigen::Vector3d pv = positions[static_cast<std::size_t>(lv)][static_cast<std::size_t>(iv)];
+    lengths[{u, v}] = complexd((pu - pv).norm(), 0.0);
+  }
+  const complexd interior = seed.host->autoWiredLength(/*crossSlice=*/false);
+  for (auto *edge : seed.host->getEdgeList()->toVector()) {
+    const auto found = lengths.find(edgeKey(edge));
+    edge->setLength(found != lengths.end() ? found->second : interior);
+    edge->setPhase(complexd(0.0, 0.0));
+  }
+  seed.vertexIds = std::move(vertexIds);
+  seed.tubeRings = std::move(rings);
   return seed;
 }
 
