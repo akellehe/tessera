@@ -1393,6 +1393,10 @@ assertion. Every pairing is the transpose.)doc")
       .def_readonly("harmonic_rank", &MultiCobordism::RestrictionRead::harmonicRank)
       .def_readonly("images", &MultiCobordism::RestrictionRead::images)
       .def_readonly("periods", &MultiCobordism::RestrictionRead::periods)
+      .def_readonly("frame", &MultiCobordism::RestrictionRead::frame,
+                    "The band's frame on chains, n_1 x rank; `images` = G_1^U frame.")
+      .def_readonly("certificate", &MultiCobordism::RestrictionRead::certificate,
+                    "The band's BandCertificate: node count, idempotency, rank, gap, resolvent bound.")
       .def_readonly("obstruction", &MultiCobordism::RestrictionRead::obstruction);
   py::class_<MultiCobordism::TwoBodyRead>(m, "TwoBodyRead",
       "The reading of the bulk between two attached input frames (#941): the frame transfer "

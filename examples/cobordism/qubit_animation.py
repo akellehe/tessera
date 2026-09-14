@@ -2825,9 +2825,33 @@ def _boundary_form(cycles_a, cycles_b, twist, flipped=False):
                      [np.zeros((omega_b.shape[0], omega_a.shape[1])), omega_b]])
 
 
+def _orthonormal_image(matrix):
+    """An orthonormal basis `Q` of the column space of `matrix` (`Q^H Q = I`),
+    its numerical rank under `monodromy`'s tolerance rule, the singular
+    values, and the tolerance used. Normalisation only: the SUBSPACE is what
+    is returned, the pairing evaluated on it stays bilinear."""
+    import numpy as np
+    matrix = np.asarray(matrix)
+    u, singular, _ = np.linalg.svd(matrix, full_matrices=False)
+    largest = float(singular[0]) if singular.size else 0.0
+    threshold = 1e-9 * max(1.0, largest)
+    rank = int((singular > threshold).sum())
+    return u[:, :rank], rank, singular, threshold
+
+
 def _lagrangian_check(label, periods_a, periods_b, twist, tolerance):
-    """R5: `[P_A; P_B]` is isotropic for the declared boundary form, and not
-    for the control with the B-side orientations flipped.
+    """R5: the restriction SUBSPACE `im [P_A; P_B]` is isotropic for the
+    declared boundary form, and not for the control with the B-side
+    orientations flipped.
+
+    Evaluated on an orthonormal basis `Q` of the subspace, so the verdict is
+    a property of the subspace: rescaling the harmonic basis by `s` rescales
+    `|L^T Omega L|` by `|s|^2` against a fixed tolerance, and `P = 1e-7 I`
+    was failing the control for that reason alone. The pairing is the
+    bilinear `Q^T Omega Q`, not `Q^H Omega Q`; the Hermitian SVD is only how
+    `Q` is normalised. A rank-deficient stack is refused by name here rather
+    than scored, since isotropy of the wrong subspace means nothing (R2
+    carries the rank verdict).
 
     The passing sign is not searched for and not derived from `det M`: the
     2x2 identity `M^T J M = det(M) J` does not extend to the combined map
@@ -2836,18 +2860,115 @@ def _lagrangian_check(label, periods_a, periods_b, twist, tolerance):
     """
     import numpy as np
     stacked = np.vstack([periods_a, periods_b])
+    basis, rank, singular, threshold = _orthonormal_image(stacked)
+    expected = min(stacked.shape)
+    cycles_a, cycles_b = periods_a.shape[0], periods_b.shape[0]
+    conditioning = float(singular[0] / singular[rank - 1]) if rank else float("inf")
+    if rank < expected:
+        return _check(
+            "R5:" + label,
+            "the restriction subspace is isotropic for the declared boundary form",
+            {"refusal": "the stacked periods have rank %d, below the %d the subspace needs; "
+                        "isotropy is not evaluated on the wrong subspace" % (rank, expected),
+             "singular_values": [float(x) for x in singular], "rank_tolerance": threshold},
+            tolerance, False)
     declared = float(np.linalg.norm(
-        stacked.T @ _boundary_form(periods_a.shape[0], periods_b.shape[0], twist) @ stacked))
+        basis.T @ _boundary_form(cycles_a, cycles_b, twist) @ basis))
     flipped = float(np.linalg.norm(
-        stacked.T @ _boundary_form(periods_a.shape[0], periods_b.shape[0], twist, flipped=True)
-        @ stacked))
+        basis.T @ _boundary_form(cycles_a, cycles_b, twist, flipped=True) @ basis))
     return _check(
         "R5:" + label,
-        "[P_A; P_B] is isotropic for the declared boundary form J_A (+) (-det phi*) J_B, "
-        "and not for the B-side-flipped control",
+        "the restriction subspace is isotropic for the declared boundary form "
+        "J_A (+) (-det phi*) J_B, and not for the B-side-flipped control",
         {"declared_form_norm": declared, "flipped_control_norm": flipped,
-         "b_side_sign": -_twist_orientation(twist)},
+         "b_side_sign": -_twist_orientation(twist), "rank": rank,
+         "rank_tolerance": threshold, "conditioning": conditioning},
         tolerance, declared <= tolerance and flipped > tolerance)
+
+
+def _harmonic_certificates(label, read, op, tolerance):
+    """H1-H3: the band `restriction` returned IS the degree-1 harmonic space.
+
+    Rank equal to `b_1` (R1) is necessary and not sufficient: on complex
+    lengths the operator is not Hermitian, and a contour band can hold
+    generalised or near-zero modes that solve neither harmonic equation.
+    In the chain formulation (`ChainHodge`, dressed by "the transpose
+    carries U") the equations are, for the cochain image `Z = G_1^U Phi` of
+    the chain frame `Phi`:
+
+        closed      (d_2^{U^-1})^T Z = 0     -- on the images
+        co-closed   d_1^U Phi = 0            -- on the frame
+
+    each measured as a relative residual (H1). The kernel is then read
+    independently of the contour (`harmonicChains`): its nullity must equal
+    the band's rank and `b_1`, and the two spans must agree (H2). The band's
+    own certificate -- projector idempotency, rank tolerance, singular gap,
+    resolvent bound -- is surfaced and must be finite (H3). A kernel-dimension
+    mismatch is the geometry failing `dim ker L_1 = b_1`, the reading's
+    condition, and is named as that.
+    """
+    import numpy as np
+    images = np.asarray(read.images)
+    frame = np.asarray(read.frame)
+    rows = []
+    try:
+        d_dual_2 = _dense(op.twistedBoundaryDual(2))
+        d_1 = _dense(op.twistedBoundary(1))
+    except Exception as error:                            # noqa: BLE001
+        rows.append(_check("H1:" + label, "closed and co-closed residuals of the band",
+                           {"refusal": "boundary operators unavailable: %s" % error},
+                           tolerance, False))
+        return rows, {}
+    if d_dual_2.shape[0] != images.shape[0] or d_1.shape[1] != frame.shape[0]:
+        rows.append(_check("H1:" + label, "closed and co-closed residuals of the band",
+                           {"refusal": "shape mismatch: d2 %s, d1 %s, images %s, frame %s"
+                                       % (d_dual_2.shape, d_1.shape, images.shape, frame.shape)},
+                           tolerance, False))
+        return rows, {}
+    closed = float(np.linalg.norm(d_dual_2.T @ images) / max(np.linalg.norm(images), 1e-300))
+    coclosed = float(np.linalg.norm(d_1 @ frame) / max(np.linalg.norm(frame), 1e-300))
+    rows.append(_check(
+        "H1:" + label,
+        "every column is closed ((d_2^{U^-1})^T Z = 0) and co-closed (d_1^U Phi = 0)",
+        {"closed_residual": closed, "coclosed_residual": coclosed},
+        tolerance, closed <= tolerance and coclosed <= tolerance))
+    try:
+        kernel = op.harmonicChains(1)
+        kernel_images = np.asarray(kernel.images)
+        nullity = int(kernel.nullity)
+        gap = float(kernel.gap)
+    except Exception as error:                            # noqa: BLE001
+        rows.append(_check("H2:" + label, "an independent kernel read agrees with the band",
+                           {"refusal": "harmonicChains unavailable: %s" % error},
+                           tolerance, False))
+        nullity, gap, kernel_images = None, float("nan"), None
+    if kernel_images is not None:
+        forward = float(np.linalg.norm(kernel_images - images @ np.linalg.lstsq(images, kernel_images, rcond=None)[0])
+                        / max(np.linalg.norm(kernel_images), 1e-300))
+        backward = float(np.linalg.norm(images - kernel_images @ np.linalg.lstsq(kernel_images, images, rcond=None)[0])
+                         / max(np.linalg.norm(images), 1e-300))
+        b1 = int(read.betti[1]) if len(read.betti) > 1 else None
+        measured = {"kernel_nullity": nullity, "band_rank": int(read.harmonic_rank), "b1": b1,
+                    "span_residual_kernel_in_band": forward, "span_residual_band_in_kernel": backward,
+                    "kernel_gap": gap}
+        if nullity != read.harmonic_rank or nullity != b1:
+            measured["failure"] = ("dim ker L_1 = %s against b_1 = %s and band rank %d: the geometry "
+                                   "fails the condition dim ker L_1 = b_1" % (nullity, b1, read.harmonic_rank))
+        rows.append(_check(
+            "H2:" + label,
+            "an independent kernel read has nullity = band rank = b_1 and the same span",
+            measured, tolerance,
+            nullity == read.harmonic_rank == b1 and forward <= tolerance and backward <= tolerance))
+    cert = read.certificate
+    fields = {"node_count": int(cert.nodeCount), "idempotency": float(cert.idempotency),
+              "rank": int(cert.rank), "rank_tolerance": float(cert.rankTolerance),
+              "singular_gap": float(cert.singularGap), "resolvent_max": float(cert.resolventMax)}
+    finite = all(math.isfinite(v) for v in fields.values() if isinstance(v, float))
+    rows.append(_check(
+        "H3:" + label,
+        "the band's own certificate is finite and its projector is idempotent",
+        fields, tolerance, finite and fields["idempotency"] <= tolerance))
+    return rows, fields
 
 
 def _exactness_check(delta, reference, coboundary, tolerance):
@@ -2875,13 +2996,15 @@ def _exactness_check(delta, reference, coboundary, tolerance):
 
 
 def _read_restriction(spacetime, markings):
-    """`MultiCobordism.restriction`, refusing by name rather than guessing."""
+    """`MultiCobordism.restriction`, refusing by name rather than guessing.
+    Returns the unpacked read and the read itself, whose frame and
+    certificate the harmonic checks need."""
     import numpy as np
     read = MC.restriction(spacetime, markings)
     if read.obstruction:
         raise RuntimeError("restriction refused: %s" % read.obstruction)
     return (list(int(b) for b in read.betti), int(read.harmonic_rank),
-            np.asarray(read.images), [np.asarray(p) for p in read.periods])
+            np.asarray(read.images), [np.asarray(p) for p in read.periods], read)
 
 
 def _jitter_lengths(spacetime, fraction, seed):
@@ -2938,7 +3061,7 @@ def _torus_gram(torus, host, ids):
     _copy_lengths_to_torus(host, spacetime, ids)
     marking = _host_marking(torus, {int(v): int(v)
                                     for pair in torus.edges() for v in pair})
-    _, rank, images, periods = _read_restriction(spacetime, [marking])
+    _, rank, images, periods, _ = _read_restriction(spacetime, [marking])
     if rank != 2 or periods[0].shape != (2, 2):
         raise RuntimeError("the torus's own zero mode has rank %d" % rank)
     mass = _dense(cob.PencilLayer.assemble([spacetime]).op.dressed(1))
@@ -3025,7 +3148,7 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
               "edges": len(host.getEdgeList().toVector())}
 
     # ---- R1: the whole's zero mode is its first cohomology ------------
-    betti, rank, images, periods = _read_restriction(host, markings)
+    betti, rank, images, periods, read = _read_restriction(host, markings)
     boundary_b1 = sum(int(p.shape[0]) for p in periods)
     values.update({"betti": betti, "harmonic_rank": rank,
                    "boundary_b1": boundary_b1})
@@ -3034,6 +3157,11 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
         {"harmonic_rank": rank, "b1": betti[1] if len(betti) > 1 else None,
          "boundary_b1": boundary_b1},
         None, len(betti) > 1 and rank == betti[1] == boundary_b1 // 2))
+
+    # ---- H1-H3: the band is the harmonic space, certified ----------------
+    assembled = cob.PencilLayer.assemble([host])
+    rows, values["band_certificate"] = _harmonic_certificates("seed", read, assembled.op, tolerance)
+    checks.extend(rows)
 
     # ---- R2-R5 per marked pair -----------------------------------------
     monodromies = {}
@@ -3069,7 +3197,6 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
             "rounded": whole_rounded.tolist()}
 
     # ---- J1-J3: jitter every length -----------------------------------
-    assembled = cob.PencilLayer.assemble([host])
     coboundary = _dense(assembled.op.twistedBoundary(1))
     if coboundary.shape[0] != images.shape[0]:
         coboundary = coboundary.T
@@ -3080,7 +3207,7 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
                     for index, torus in enumerate(tori)}
     restore = _jitter_lengths(host, float(jitter), int(config["seed"]))
     try:
-        _, rank_after, images_after, periods_after = _read_restriction(host, markings)
+        _, rank_after, images_after, periods_after, read_after = _read_restriction(host, markings)
         mass_after = _dense(cob.PencilLayer.assemble([host]).op.dressed(1))
         for (a, b), name in zip(pairs, names):
             matrix_after, _, _, _ = _fit_monodromy(periods_after[a], periods_after[b])
@@ -3089,6 +3216,9 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
                 "J1:" + name, "the jitter leaves M fixed",
                 {"max_entry_move": move, "rank_after": rank_after},
                 tolerance, move <= tolerance and rank_after == rank))
+        rows, values["band_certificate_jittered"] = _harmonic_certificates(
+            "jittered", read_after, cob.PencilLayer.assemble([host]).op, tolerance)
+        checks.extend(rows)
         periods_a_after = np.vstack([periods_after[i] for i in a_side])
         canonical_after = images_after @ np.linalg.inv(periods_a_after)
         delta = canonical_after - canonical_before
@@ -3126,7 +3256,7 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
         other["layers"] = int(layer_count)
         other["collar_twist"] = twist_name
         _, _, other_seed, _, other_markings = seed_qubit_host(other)
-        _, _, _, other_periods = _read_restriction(other_seed.host, other_markings)
+        _, _, _, other_periods, _ = _read_restriction(other_seed.host, other_markings)
         return _fit_monodromy(other_periods[0], other_periods[1])[0]
 
     single = {name: monodromy_of(layers, name) for name in ("none", "swap")}
@@ -3148,7 +3278,25 @@ def verify(config, jitter=DECLARED_VERIFY_JITTER,
         "double": {k: [[complex(z) for z in row] for row in v] for k, v in double.items()}}
     return {"checks": checks, "values": values, "jitter": float(jitter),
             "tolerance": float(tolerance),
-            "all_pass": all(row["pass"] for row in checks)}
+            "all_pass": all(row["pass"] for row in checks),
+            "certifies": VERIFY_CERTIFIES}
+
+
+#: What a passing `verify` certifies, and what it does not. The exact column
+#: of the derivation's ledger, on this host; none of the conditional column.
+VERIFY_CERTIFIES = (
+    "On this seeded host: the contour band is the degree-1 harmonic space "
+    "(closed and co-closed to tolerance, independent kernel of the same "
+    "dimension and span, finite band certificate; the reading's condition "
+    "dim ker L_1 = b_1 holds); the restriction subspace is Lagrangian for the "
+    "declared boundary form; the monodromy is an integer matrix of det +-1 "
+    "equal to the twist's induced map, unchanged by a jitter that moves the "
+    "representative by O(1) exactly within im d_0; the twist group composes "
+    "across separately seeded hosts; four tori give the direct sum. "
+    "NOT certified: any seam gluing (the hosts are seeded separately), the "
+    "order of composition (this triangulation's mapping classes commute), "
+    "quantum unitarity (the transport defect is bilinear, and reported), "
+    "or a tensor-product register (four tori are a direct sum).")
 
 
 def _print_verify_table(record):

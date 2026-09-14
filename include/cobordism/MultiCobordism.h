@@ -8,6 +8,7 @@
 
 #include <Eigen/Core>
 
+#include "chainhodge/RieszBand.h"
 #include "cobordism/CobordismObjective.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "cobordism/PencilLayer.h"
@@ -868,6 +869,17 @@ class MultiCobordism {
     /// \f$ P_i \f$ (\f$ |\text{marking}_i| \times r \f$): the transported periods
     /// of `images` over marking \f$ i \f$, in the order the markings were given.
     std::vector<Eigen::MatrixXcd> periods;
+    /// \f$ \Phi \f$, the band's frame on CHAINS, \f$ n_1 \times r \f$, with
+    /// `images` \f$ = G_1^U \Phi \f$. Co-closedness is a statement about
+    /// \f$ \Phi \f$ (\f$ \partial_1^U \Phi = 0 \f$), closedness one about
+    /// `images` (\f$ (\partial_2^{U^{-1}})^T Z = 0 \f$); a consumer certifying
+    /// the band as harmonic needs both representations.
+    Eigen::MatrixXcd frame;
+    /// The band's own certificate: contour node count, projector idempotency,
+    /// rank and its tolerance, singular gap, resolvent bound. Rank alone does
+    /// not make a spectral band the harmonic kernel; this is what a consumer
+    /// has to look at before calling the columns harmonic.
+    chainhodge::BandCertificate certificate;
     /// Empty when the read succeeded; otherwise why it could not be made.
     std::string obstruction;
   };
