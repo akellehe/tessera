@@ -1,0 +1,719 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{enumitem,booktabs,microtype}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\setlength{\emergencystretch}{2em}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newcommand{\C}{\mathbb C}
+\newcommand{\R}{\mathbb R}
+\newcommand{\Z}{\mathbb Z}
+\newcommand{\HH}{\mathcal H}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\im}{\operatorname{im}}
+\newcommand{\Tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\title{Inverse Simplicial Operator Realization\\[4pt]
+\large A companion analytical derivation}
+\author{}
+\date{}
+\hypersetup{pdftitle={Inverse Simplicial Operator Realization}}
+\begin{document}
+\maketitle
+\begin{abstract}
+Given a linear operator and declared boundary state spaces, can scalar
+simplicial geometry realize that operator for every input? We formulate
+the inverse problem in terms of whole harmonic kernels and constrained
+boundary energies. We prove an exact boundary normal form, including
+singular internal elimination, and derive a composition law. Symbolic
+two-channel examples separate exact decorated-geometry representations,
+scalar graph phase transport, and attenuated Dirichlet mixing. A
+parameterized triangulation program and explicit obstructions identify
+the remaining realization problem. No universal scalar triangulation
+theorem, matrix-valued edge connection, or physical dynamics is assumed.
+\end{abstract}
+
+\section*{Status and relationship to the reading}
+This is a companion to
+\href{cobordism_functor_reading.pdf}{\emph{The Cobordism Functor, the Theta
+Register, and Root Systems}}, whose source is
+\path{docs/design/cobordism_functor_reading.tex} \cite{reading}.
+That reading remains authoritative for the representation experiment.
+This document develops the optional inverse-realization question without
+changing its acceptance criteria.
+
+The older \path{bulk_synthesis_theory.tex} discusses entanglement-sourced
+sampling. Here we neither reproduce that sampling program nor infer an
+operator from the successful extension of one prescribed state.
+Whole-operator identities, not sampling convergence, are our criterion.
+No engine code or existing document is changed by this companion.
+
+Results marked as theorems or propositions are proved under their stated
+hypotheses. Scalar graph examples are exact but are not three-dimensional
+manifold fixtures. The final construction program is conditional:
+the required simplicial mixing family has not been constructed here.
+\clearpage
+\tableofcontents
+\clearpage
+
+\section{Types, data, and the inverse question}\label{sec:types}
+Write $D$ for geometric dimension, $p$ for cochain degree, $g$ for Jacobian
+dimension, and $k$ for quantization level. The input and output dimensions
+are $n$ and $m$; neither denotes simplex dimension.
+
+\begin{definition}[Admissible geometric data]
+A candidate consists of a finite oriented simplicial complex $\Gamma$,
+marked input and output subcomplexes, scalar edge lengths $\ell$, and,
+where the chosen model permits them, scalar phases $U_e\in U(1)$.
+Reversing an edge replaces $U_e$ by $U_e^{-1}=\overline{U_e}$.
+It also includes a specified assembly rule, fixed port conventions, and
+the allowed boundary conditions. Denote the continuous parameters by
+$\lambda$. No freely specified matrix connection or freely specified
+cochain mass matrix is an admissible replacement for these data.
+\end{definition}
+
+We distinguish three different constructions.
+\begin{enumerate}[nosep]
+\item \emph{Whole harmonic realization.} States are readouts of the
+complete kernel of an assembled harmonic stiffness matrix.
+\item \emph{Dirichlet response.} Inputs are externally fixed; remaining
+variables minimize energy. Outputs need not extend to a global zero mode.
+\item \emph{Theta representation.} States are sections of a quantization
+line bundle; operators act through the geometric translation algebra.
+Here $\dim\mathcal Q_k=k^g$, not the dimension of $H^1$.
+\end{enumerate}
+These are not interchangeable. In particular, a result for scalar vertex
+potentials ($p=0$) is not a result for harmonic one-cochains or theta
+sections. Scalar phases representing a neutral cochain configuration
+also do not automatically become a twist of its coboundary operator.
+
+Let $T:\C^n\to\C^m$ be the target and fix positive Hermitian port metrics
+$G_{\rm in}$ and $G_{\rm out}$ when making quantum claims. A requested
+state pair must satisfy $y=Tx$, or $[y]=[Tx]$ if only rays are prescribed
+and $Tx\ne0$. State, operator, and output cannot be prescribed
+independently when they violate this equation. The zero operator is
+allowed but has no normalized operator-vector state.
+
+\begin{proposition}[Symbolic input determines the operator]\label{prop:coeff}
+For linear $F,T:\C^n\to\C^m$, equality
+$F(\sum_j x_j e_j)=T(\sum_j x_j e_j)$ for independent complex coefficients
+$x_j$ holds if and only if $F=T$.
+\end{proposition}
+\begin{proof}
+Set $x_j=1$ and all other coefficients to zero to obtain equality of
+every column. Conversely, equality of columns implies the identity by
+linearity.
+\end{proof}
+Fitting a single nonzero input only constrains one column in an adapted
+basis: every $T+N$ with $Nx=0$ gives the same output. Fitting a normalized
+ray additionally loses amplitude. No target-dependent rebasing or output
+renormalization is permitted to turn such a fit into an operator proof.
+
+\section{What is already invertible analytically}\label{sec:symbol}
+The reading's reduced geometric translation algebra has basis
+$e_{a,b}$ for $a,b\in(\Z/k)^g$, with
+\[
+ e_{a,b}e_{a',b'}=\omega^{b\cdot a'}e_{a+a',b+b'},\qquad
+ \omega=e^{2\pi i/k}.
+\]
+Its quantization sends $e_{a,b}$ to $D_{a,b}=X^aZ^b$ on a
+$d=k^g$ dimensional theta register. Orthogonality gives the exact inverse
+\begin{equation}\label{eq:symbol}
+ s_T=\frac1d\sum_{a,b}\Tr(D_{a,b}^\dagger T)e_{a,b},
+ \qquad \mathfrak Q(s_T)=T.
+\end{equation}
+This is an inverse into \emph{complex linear combinations of decorated
+geometric operations}, not into one undecorated triangulation.
+Its curve interpretation is developed by Gelca--Uribe \cite{gelca}.
+Coefficients in \eqref{eq:symbol} retain the information in $T$; they
+are not proved to arise from edge lengths.
+
+At $k=2,g=1$, put
+\[
+ X=\begin{pmatrix}0&1\\1&0\end{pmatrix},\qquad
+ Z=\begin{pmatrix}1&0\\0&-1\end{pmatrix}.
+\]
+For $T=\begin{psmallmatrix}a&b\\c&d\end{psmallmatrix}$ the inverse is
+\begin{equation}\label{eq:qubit-symbol}
+ s_T=\tfrac{a+d}{2}e_{0,0}
+     +\tfrac{b+c}{2}e_{1,0}
+     +\tfrac{a-d}{2}e_{0,1}
+     +\tfrac{c-b}{2}e_{1,1}.
+\end{equation}
+Indeed $XZ=\begin{psmallmatrix}0&-1\\1&0\end{psmallmatrix}$, so all four
+entries are recovered. For example
+\[
+ U(\theta)=
+ \begin{pmatrix}\cos\theta&-\sin\theta\\
+                 \sin\theta&\cos\theta\end{pmatrix}
+ \quad\longleftrightarrow\quad
+ \cos\theta\,e_{0,0}+\sin\theta\,e_{1,1}.
+\]
+This is an exact continuous mixing family in the \emph{linearized
+geometric algebra}. It is not an assertion that a cylinder's native
+period transport varies continuously with its lengths.
+For rectangular operators use matrix units between distinct registers;
+do not use a square Weyl basis of the wrong dimension.
+
+\section{Assembly from scalar simplices}\label{sec:assembly}
+For the positive-real metric model, let $M_p(\ell)>0$ be the assembled
+Whitney cochain mass and let $d_p$ be the coboundary. Define
+\[
+ \delta_p=M_{p-1}^{-1}d_{p-1}^\dagger M_p,\qquad
+ L_p=d_{p-1}\delta_p+\delta_{p+1}d_p.
+\]
+The Hermitian stiffness is
+\begin{equation}\label{eq:stiffness}
+ K_p=M_pL_p
+ =M_pd_{p-1}M_{p-1}^{-1}d_{p-1}^\dagger M_p
+   +d_p^\dagger M_{p+1}d_p.
+\end{equation}
+At an endpoint degree the absent term is zero. Its energy is
+\[
+ h^\dagger K_ph
+ =\|\delta_ph\|_{M_{p-1}}^2+\|d_ph\|_{M_{p+1}}^2,
+\]
+so $K_p\ge0$ and $\ker K_p=\ker L_p$. A flat unitary local system
+admits the analogous construction only with consistently assembled
+twisted maps and a verified $d_{p+1}^Ud_p^U=0$.
+Arbitrary phases on filled triangles need not satisfy this condition.
+
+For a simplex with vertices $v_0,\ldots,v_D$, its local Euclidean Gram is
+\begin{equation}\label{eq:localgram}
+ Q_{ab}=\frac{\ell_{0a}^2+\ell_{0b}^2-\ell_{ab}^2}{2},
+ \qquad 1\le a,b\le D.
+\end{equation}
+The condition $Q>0$ gives a nondegenerate Euclidean simplex.
+Lengths on shared faces must agree. This is an intrinsic piecewise-flat
+metric; it does not assert a global isometric embedding in $\R^D$.
+The masses in \eqref{eq:stiffness} must be assembled from these local
+metrics, not chosen afterward to force $T$.
+
+Incidence matrices satisfy $\partial_p\partial_{p+1}=0$.
+That identity alone does not characterize a simplicial manifold:
+simplex membership, face closure, orientation, boundary identifications,
+and the required sphere or ball links must also hold.
+A tetrahedron requires all four compatible triangular faces and its
+three-dimensional interior. Filling every possible clique can destroy
+the intended cohomology.
+
+\paragraph{Signature boundary.}
+Complex-bilinear or Lorentzian pencils need separate kernel and rank
+certificates. Neither the positive energy arguments below nor a
+positive quantum norm follows from those pencils automatically.
+The algebraic whole-kernel criterion in the next section still applies
+to a computed geometric kernel, without assuming positivity.
+
+\section{The exact whole-kernel inverse equations}\label{sec:kernel}
+Let $Z\in\C^{N\times r}$ be a full basis of $\ker K_\Gamma(\lambda)$.
+The declared linear readouts are $R_{\rm in}$ and $R_{\rm out}$:
+\[
+ A=R_{\rm in}Z\in\C^{n\times r},\qquad
+ B=R_{\rm out}Z\in\C^{m\times r}.
+\]
+Readout rules may depend on geometry in a prescribed way but not on the
+target chosen during recovery. Period readouts and whole-metric Gram
+readouts are distinct. Use the reading's native dual/primal conventions
+and existing \texttt{PencilSchur.gramBlock}, not a new mass or an
+unjustified Hermitian replacement for a bilinear pairing.
+
+\begin{theorem}[Realization on all inputs]\label{thm:kernel}
+The complete boundary relation is the graph of a specified operator $T$
+if and only if
+\begin{equation}\label{eq:kernel}
+ \rank A=n,\qquad B=TA.
+\end{equation}
+Equivalently, the graph exists for some unique $T$ precisely when
+$A$ is onto and $\ker A\subseteq\ker B$.
+\end{theorem}
+\begin{proof}
+Every bulk zero mode has the form $Zc$. If \eqref{eq:kernel} holds,
+every $x$ equals $Ac$ for some $c$, and its output is $Bc=Tx$.
+If two extensions differ, their difference lies in $\ker A$ and is
+annihilated by $B$. Conversely, existence of every input implies that
+$A$ is onto, and the specified graph forces $Bc=TAc$ for all $c$.
+For the equivalent criterion choose a right inverse $C$ of $A$.
+Since $c-CAc\in\ker A$, one has $B=BCA$ and $T=BC$.
+Any other right inverse differs by a map into $\ker A$, so gives
+the same $T$.
+\end{proof}
+
+\begin{corollary}[A symbolic formulation without a chosen kernel basis]
+It suffices to find $V\in\C^{N\times n}$ satisfying
+\[
+ K_\Gamma V=0,\qquad R_{\rm in}V=I,\qquad R_{\rm out}V=T,
+\]
+\emph{and} certify
+$\ker K_\Gamma\cap\ker R_{\rm in}\subseteq\ker R_{\rm out}$.
+\end{corollary}
+The last condition cannot be omitted: $V$ alone supplies witnesses but
+does not rule out additional visible output modes. Invisible bulk modes
+are allowed. Full-rank minors and a complete null-space argument are
+analytical certificates; numerical ranks require explicit tolerances,
+gaps, and conditioning.
+
+If a native engine frame is a chain frame $\Phi$ while periods act on
+cochain images $Z=G^U\Phi$, perform that conversion before applying
+\eqref{eq:kernel}. Equal dimensions do not certify equal spaces.
+
+\section{Constrained boundary energy, including null modes}\label{sec:schur}
+To use an effective boundary energy, collect the declared port
+coordinates in a map
+\[
+ P=\begin{pmatrix}R_{\rm in}\\R_{\rm out}\end{pmatrix}:
+ \C^N\longrightarrow\C^{n+m}.
+\]
+Assume $P$ is onto on the ambient cochain space, not necessarily on the
+harmonic space. Choose a right inverse $E$ of $P$ and a full column basis
+$F$ of $\ker P$. Every field with port values $b=(x,y)$ has the unique form
+$h=Eb+Fz$. Thus
+\[
+ h^\dagger Kh=
+ \begin{pmatrix}b\\z\end{pmatrix}^{\!\dagger}
+ \begin{pmatrix}K_{bb}&K_{bz}\\K_{zb}&K_{zz}\end{pmatrix}
+ \begin{pmatrix}b\\z\end{pmatrix},
+\]
+where the blocks are obtained by congruence with $[E,F]$.
+This accounts for all unobserved directions, including unretained
+boundary modes. A principal submatrix in arbitrarily chosen boundary
+coordinates need not be the effective matrix for the declared ports.
+If $P$ is not onto, retain its feasibility constraints explicitly.
+
+\begin{theorem}[Positive singular elimination]\label{thm:schur}
+For a positive semidefinite block matrix as above,
+$\im K_{zb}\subseteq\im K_{zz}$. The constrained minimum exists for all $b$
+and equals
+\begin{equation}\label{eq:schur}
+ \mathcal E(b)=\min_{Ph=b}h^\dagger Kh=b^\dagger S_\Gamma b,
+ \qquad
+ S_\Gamma=K_{bb}-K_{bz}K_{zz}^{+}K_{zb}\ge0.
+\end{equation}
+Here $+$ is the Moore--Penrose inverse in these declared coordinates.
+Moreover $\ker S_\Gamma=P(\ker K)$.
+\end{theorem}
+\begin{proof}
+If $v\in\ker K_{zz}$, positivity implies that the block quadratic
+form at $(b,tv)$ cannot have a nonzero term linear in arbitrary complex
+$t$; therefore $K_{bz}v=0$. This gives the range inclusion.
+The minimizing internal variables are
+$z=-K_{zz}^{+}K_{zb}b+v$ with $v\in\ker K_{zz}$.
+Substitution gives \eqref{eq:schur}, which is nonnegative.
+If $b\in\ker S_\Gamma$, the reconstructed minimizing field has zero
+energy and hence lies in $\ker K$, since $K\ge0$.
+The converse follows by inserting any zero-energy field with ports $b$.
+\end{proof}
+This use of a pseudoinverse is justified by positivity and the range
+proof; it is not an unchecked replacement for a singular inverse.
+The minimized quadratic form is independent of the choice of $E,F$.
+For a general complex non-Hermitian pencil, compatibility must instead
+be established directly. Schur reduction is elimination, not a partial
+trace. Graph-Laplacian and simplex versions of this relationship have
+independent precedents \cite{devriendt}.
+
+\section{A complete boundary normal form}\label{sec:normal}
+\begin{theorem}[Graph-kernel normal form]\label{thm:normal}
+A Hermitian positive semidefinite matrix $S$ on $\C^n\oplus\C^m$
+has kernel exactly $\{(x,Tx):x\in\C^n\}$ if and only if
+\begin{equation}\label{eq:normal}
+ S=[-T,I]^\dagger W[-T,I]
+ =\begin{pmatrix}T^\dagger WT&-T^\dagger W\\-WT&W\end{pmatrix}
+ \quad\text{for some }W>0.
+\end{equation}
+\end{theorem}
+\begin{proof}
+For the forward direction write $W=S_{yy}$. For nonzero $y$, $(0,y)$
+does not lie in the stated kernel, so $y^\dagger Wy>0$.
+The identity $S\binom{I}{T}=0$ gives
+$S_{yx}=-WT$ and $S_{xx}=T^\dagger WT$; Hermitian symmetry gives
+$S_{xy}=-T^\dagger W$. Conversely, \eqref{eq:normal} has energy
+$(y-Tx)^\dagger W(y-Tx)$, which vanishes exactly on that graph.
+\end{proof}
+
+For the positive whole-kernel model with onto ambient port map, the
+inverse problem is therefore exactly
+\begin{equation}\label{eq:inverse}
+ S_\Gamma(\lambda)=[-T,I]^\dagger W[-T,I],
+ \qquad W>0,\quad(\Gamma,\lambda)\text{ admissible}.
+\end{equation}
+Leaving $W$ unknown does not weaken the operator condition: it permits
+different costs for deviations from the same graph.
+For $n=m=2$ and $W=I$, a symbolic
+$T=\begin{psmallmatrix}a&b\\c&d\end{psmallmatrix}$ requires
+\[
+ S_{xx}=
+ \begin{pmatrix}|a|^2+|c|^2&\bar a b+\bar c d\\
+                \bar b a+\bar d c&|b|^2+|d|^2\end{pmatrix},
+ \quad S_{yx}=-T,\quad S_{yy}=I.
+\]
+Thus the backward calculation specifies blocks of an effective
+quadratic form; scalar simplex assembly must realize those blocks
+simultaneously. Choosing $S$ directly from $T$ verifies the algebra
+but does not solve \eqref{eq:inverse}.
+
+\section{Two exact scalar graph controls}\label{sec:controls}
+These examples state precisely what elementary connectivity can do.
+They are one-dimensional simplicial complexes with scalar phases and
+fixed vertex ports, not claims about a three-dimensional Hodge register.
+
+\subsection{One-to-one phase transport}
+Take $n$ disjoint edges joining $x_j$ to $y_j$, with $w_j>0$ and
+scalar phase $u_j=e^{i\phi_j}$. Their connection energy is
+\[
+ \mathcal E(x,y)=\sum_{j=1}^n w_j|y_j-u_jx_j|^2.
+\]
+It has the normal form \eqref{eq:normal} with
+$T=\diag(u_1,\ldots,u_n)$ and $W=\diag(w_1,\ldots,w_n)$.
+For $\phi_1=-\theta/2,\phi_2=\theta/2$ it realizes the two-channel
+phase operator $\diag(e^{-i\theta/2},e^{i\theta/2})$ exactly.
+Each component has one independent zero mode.
+
+For the ordinary scalar energy on a Euclidean interval,
+$w_j=1/\ell_j$ with unit material coefficient, so its positive weight
+comes from a length. The prescribed $u_j$ is still separate scalar
+phase data. On a tree that phase is pure gauge; the displayed operator
+has meaning only relative to fixed input/output trivializations.
+This is not a gauge-independent phase generated by the length.
+Connecting all channels into a single positive degree-zero graph
+changes the zero-mode count, as shown below.
+
+\subsection{Mixing by Dirichlet response, with its exact attenuation}
+Connect each of two input vertices to each of two output vertices,
+with unit weights and three phases $+1$ and one phase $-1$:
+\begin{equation}\label{eq:mixenergy}
+ \mathcal E=
+ |y_1-x_1|^2+|y_1-x_2|^2+
+ |y_2-x_1|^2+|y_2+x_2|^2.
+\end{equation}
+Hold $x$ fixed and vary $y$. Stationarity gives
+\[
+ 2y_1=x_1+x_2,\qquad 2y_2=x_1-x_2,\qquad
+ y=\frac{H}{\sqrt2}x,\quad
+ H=\frac1{\sqrt2}\begin{pmatrix}1&1\\1&-1\end{pmatrix}.
+\]
+This is an exact scalar construction of the response $H/\sqrt2$,
+not of $H$ with its amplitude preserved. Indeed
+$\|y\|^2=\|x\|^2/2$, and the minimized total energy is $\|x\|^2$.
+The whole graph has no nonzero zero mode: zero energy would require
+simultaneously $y_1=x_1=x_2$ and $y_2=x_1=-x_2$.
+
+Its phase holonomy around the four-cycle is $-1$. Filling that cycle
+with a flat triangular disk is impossible without changing phase data
+or introducing curvature. Merely adding tetrahedra is not a
+phase-preserving upgrade of this example.
+As a quantum Kraus operator, $H/\sqrt2$ has success probability $1/2$
+on a normalized input; a completion is needed for a channel.
+Renormalizing its output reproduces the Hadamard ray but loses that
+probability. A classical Dirichlet graph alone is not a quantum
+implementation of that measurement.
+
+\begin{proposition}[General attenuated scalar response]\label{prop:attenuation}
+Let $T\in\C^{m\times n}$ and choose
+$c>0$ with $c\ge\max_j\sum_i|T_{ji}|$.
+There is a positive scalar phase graph, with fixed input and grounded
+vertices, whose output Dirichlet response is $y=Tx/c$.
+\end{proposition}
+\begin{proof}
+For nonzero $T_{ji}$ join $x_i$ to $y_j$ with weight $|T_{ji}|$
+and phase $T_{ji}/|T_{ji}|$. Omit zero entries. Connect $y_j$ to a fixed
+zero vertex with weight $c-\sum_i|T_{ji}|$ when this is positive.
+Each output stationarity equation is $cy_j=\sum_iT_{ji}x_i$.
+Positive weights can be encoded by interval lengths $1/w$.
+\end{proof}
+This proves a scalar graph response statement, not a whole-kernel,
+manifold, or theta synthesis theorem. Downstream loading can change
+a Dirichlet response, so this control must not be composed by assuming
+that each output is an independently buffered input.
+Multiplication by $c$ at readout is an explicit gain, not a geometric
+unitarity proof with fixed metrics.
+
+\section{Obstructions and what increasing dimension does not prove}
+\label{sec:obstructions}
+\begin{proposition}[Positive scalar zero-mode bound]\label{prop:zerobound}
+For a connected graph with energy
+$\sum_{(i,j)}w_{ij}|f_j-u_{ij}f_i|^2$, $w_{ij}>0$ and $|u_{ij}|=1$,
+the zero-mode dimension is at most one. It is one precisely when all
+cycle holonomies are trivial.
+\end{proposition}
+\begin{proof}
+Zero energy forces $f_j=u_{ij}f_i$ on every edge. A spanning tree
+determines every value from one root value. Each remaining edge either
+agrees or forces the root value to zero. Agreement is exactly trivial
+cycle holonomy.
+\end{proof}
+More vertices in a connected degree-zero graph do not create an
+arbitrary-dimensional zero-energy input register. Higher cochain degree
+can avoid this particular bound, but requires a separate construction.
+
+\begin{proposition}[Dirichlet maximum bound]\label{prop:maxbound}
+In a positive scalar phase graph with a nonempty fixed boundary meeting
+every connected component, the free-vertex Dirichlet solution satisfies
+$|f_v|\le\max_{\partial}|f|$.
+Consequently its boundary-to-output matrix $F$ obeys
+$\sum_i|F_{ji}|\le1$ for each output row.
+\end{proposition}
+\begin{proof}
+Stationarity expresses each free value as a convex weighted average of
+phase-rotated neighboring values. An interior modulus maximum larger
+than all boundary moduli would propagate along positive edges to the
+boundary, a contradiction. For a fixed output row choose independent
+boundary phases so that all nonzero terms $F_{ji}x_i$ align, with
+$|x_i|=1$. The modulus bound then gives the row inequality.
+\end{proof}
+This bound excludes the unattenuated Hadamard operator at raw vertex
+ports, whose row absolute sums are $\sqrt2$. It does not exclude
+Hadamard in a theta register, a modal readout, or a different dynamical
+model.
+
+\paragraph{Topological period obstruction.}
+For ordinary untwisted cohomology with fixed markings, the boundary
+relation is independent of lengths. Over rational period coordinates
+it is defined over $\mathbb Q$; where it is a graph its matrix is rational.
+Integral lattice isomorphisms give unimodular integral maps. For an
+oriented manifold, the applicable boundary intersection pairing further
+constrains the relation. Hence varying lengths alone cannot generate a
+continuous family of arbitrary complex period operators.
+Changing the local system is not a metric deformation with that local
+system held fixed.
+
+\paragraph{Quantum versus topological dimension.}
+A product-polarized theta register has dimension $k^g$ on a rank-$2g$
+period lattice. Replacing this with a $k^g$ dimensional harmonic kernel
+is a new model, not a change of notation. Similarly, a simplicial join
+shifts homology degree; it does not automatically implement the reading's
+theta tensor product or its dual-input pairing.
+
+\paragraph{Parameter count and nonuniqueness.}
+On a smooth constant-rank parameter region, a family with $r$ effective
+real parameters cannot cover an open subset of a $q$ dimensional target
+manifold if $r<q$. General complex $m$ by $n$ matrices have $q=2mn$;
+unitary $n$ by $n$ matrices have $q=n^2$ (one fewer projectively).
+This is a necessary dimension bound, not a sufficient realization test.
+A deficient derivative at one point alone is not a proof of failure:
+$x\mapsto x^3$ is locally onto at zero despite zero derivative.
+Different interiors can have identical responses. Even scalar
+conductances $w_1,w_2$ in series reduce to $w_1w_2/(w_1+w_2)$, so an
+inverse should return a family or a stated normal form, not claim
+unique connectivity.
+
+\section{Gluing: the compositional theorem and its hypotheses}\label{sec:gluing}
+\begin{theorem}[Composition of positive graph constraints]\label{thm:gluing}
+Let two effective boundary energies be
+\[
+ E_1=(y-T_1x)^\dagger W_1(y-T_1x),\qquad
+ E_2=(z-T_2y)^\dagger W_2(z-T_2y),\quad W_1,W_2>0.
+\]
+Their sum, minimized over the shared $y$, has the form
+\[
+ \min_y(E_1+E_2)
+ =(z-T_2T_1x)^\dagger W_{\rm eff}(z-T_2T_1x),
+\]
+where
+\begin{equation}\label{eq:weff}
+\begin{split}
+ W_{\rm eff}
+ &=W_2-W_2T_2(W_1+T_2^\dagger W_2T_2)^{-1}T_2^\dagger W_2\\
+ &=(W_2^{-1}+T_2W_1^{-1}T_2^\dagger)^{-1}>0.
+\end{split}
+\end{equation}
+\end{theorem}
+\begin{proof}
+Set $u=y-T_1x$ and $r=z-T_2T_1x$. The energy becomes
+$u^\dagger W_1u+(r-T_2u)^\dagger W_2(r-T_2u)$.
+Its unique minimizer solves
+$(W_1+T_2^\dagger W_2T_2)u=T_2^\dagger W_2r$.
+Substitution proves the first expression; multiplication, or the
+Woodbury identity, gives the second. Its inverse is positive definite.
+\end{proof}
+
+This is an algebraic composition theorem. For actual simplicial gluing
+one must prove that the assembled glued problem has this summed energy
+or the same boundary relation. Match interface cells, orientations,
+phase trivializations and port metrics; retain all interface variables.
+Eliminating a variable separately on both sides and identifying only a
+few summaries need not give the same result.
+In particular the inverse mass in \eqref{eq:stiffness} makes naive
+additivity of separately assembled Hodge stiffness matrices unjustified.
+The reading's cohomological gluing theorem has its own topological
+hypotheses and does not remove this metric-assembly obligation.
+
+A collar between matched surfaces can be triangulated using ordered
+prism subdivisions: an edge prism needs a diagonal and a triangle prism
+three tetrahedra. Globally consistent orderings ensure matching faces
+\cite{hatcher}. This constructs a cylinder topology, not an arbitrary
+operator action. Whole three-dimensional complexes crossed with an
+interval instead require four-dimensional simplices.
+
+\section{A constructive analytical program}\label{sec:program}
+The proposed general form is a finite layered collar with fixed marked
+boundary ports. Layers contain a controlled list of internal simplices
+and possible couplings; lengths and permitted phases are symbolic.
+The list is not assumed universal.
+
+\begin{enumerate}[leftmargin=*,label=\textbf{Step \arabic*.}]
+\item \textbf{Fix the semantics.}
+Choose harmonic degree, positive or complex formulation, state space,
+readouts, gauge conventions and boundary metrics. Freeze the original
+input/output basis. State whether the target is an exact linear map,
+a projective unitary, a contraction, or a channel branch.
+
+\item \textbf{Choose an admissible connectivity family.}
+Build oriented incidence from actual simplices with compatible
+interfaces. One-to-one edges alone do not close mixed triangles;
+introduce and record the needed diagonals and higher faces.
+If manifolds are required, impose the local link conditions.
+Keep a finite size bound when claiming exhaustive failure.
+
+\item \textbf{Derive the action on a symbolic input.}
+Use the full-kernel equations \eqref{eq:kernel}, or, under the positive
+and ambient-port hypotheses, the exact inverse system \eqref{eq:inverse}.
+For fixed connectivity solve continuous parameters before increasing
+combinatorial complexity. Preserve singular compatibility conditions
+when clearing denominators.
+
+\item \textbf{Enforce geometric feasibility.}
+Require \eqref{eq:localgram}, shared-face agreement, boundary pinning,
+and local-system constraints. A solution for an arbitrary SPD matrix is
+not a solution for a Whitney mass. Parameter zeros that remove edges or
+collapse simplices lie on different combinatorial or inadmissible strata.
+
+\item \textbf{Solve elementary families and glue.}
+The phase and attenuated response examples above are analytical
+controls. The missing native ingredient is an exact, continuously
+parameterized two-channel mixing family in the \emph{same} state space
+and admissible simplicial model, together with an actual assembly/gluing
+proof. A scalar vertex response control is not such an ingredient.
+
+\item \textbf{Recover independently and classify the result.}
+From the resulting geometry alone, recover the full operator.
+Check the entire kernel, all input columns and declared norms.
+Report exact representation, exact graph response, exact native
+realization, approximation, or an obstruction within the stated family.
+A failed numerical search is not an impossibility proof.
+\end{enumerate}
+
+For an assembly and readout that are algebraic in squared lengths,
+positive volume variables and phase components, the fixed-connectivity
+equations can be expressed using real polynomial equalities and
+inequalities, auxiliary inverse variables, and rank minors.
+Phase components obey $(\Re U_e)^2+(\Im U_e)^2=1$.
+This gives an exact feasibility formulation; it does not assert
+a closed-form solution or computational tractability.
+Theta series or other nonalgebraic readouts require a different
+analytic treatment.
+
+\begin{proposition}[Conditional finite-unitary construction]\label{prop:conditional}
+Suppose a single declared geometric model realizes every two-channel
+unitary on any chosen pair of channels and identity on the spectators,
+realizes single-channel phases, and its actual gluing implements
+operator composition without leakage or unrecorded scaling.
+Then every finite-dimensional unitary on those channels has a finite
+geometric realization.
+\end{proposition}
+\begin{proof}
+Successive two-coordinate unitary row operations annihilate entries
+below the diagonal of a target unitary. The resulting upper triangular
+unitary is diagonal with unit-modulus entries: orthonormality of its
+columns proves this inductively. Reversing the row operations and
+including the diagonal phases expresses the target as a finite product
+of the assumed realizable factors. The gluing hypothesis realizes that
+product.
+\end{proof}
+This is a reduction of the missing theorem, not its proof.
+The unitary premise does not cover arbitrary nonunitary matrices.
+A contraction can instead be considered with an explicitly specified
+ancilla and projection; their geometry, readouts and success
+probabilities become additional obligations.
+
+\section{States, norms, and the acceptance certificate}\label{sec:accept}
+Once $T$ is realized, all compatible state pairs follow by linearity.
+For fixed positive metrics, isometry means
+\begin{equation}\label{eq:norm}
+ T^\dagger G_{\rm out}T=G_{\rm in}.
+\end{equation}
+Do not change $G_{\rm out}$ after seeing $T$ to manufacture this identity.
+A valid nonunitary linear realization need not satisfy it.
+For a physical channel branch require
+$T^\dagger G_{\rm out}T\le G_{\rm in}$ after the appropriate
+Hilbert-space identification, and specify the other branches for a
+trace-preserving channel.
+
+Output-major vectorization belongs to
+$\HH_{\rm out}\otimes\overline{\HH_{\rm in}}$.
+In orthonormal coordinates its squared norm is $\Tr(T^\dagger T)$.
+Keeping only its normalized ray loses scale. With nonorthonormal
+coordinates, first use the declared Gram metrics to identify
+orthonormal Hilbert coordinates. An operator vector is not an
+unexplained cochain on a boundary mesh.
+
+A completed native construction should supply:
+\begin{enumerate}[nosep]
+\item The complete simplex list or a parameterized construction rule;
+lengths, phases, markings, and boundary conditions.
+\item A derivation that its assembled matrices are exactly the matrices
+used in the proof, with no target-dependent readout.
+\item Complete harmonic-kernel and port-rank certificates, including
+invisible modes and singular compatibility.
+\item A symbolic identity on every input, with exact parameter domain,
+not only a state residual or a favorable numerical sample.
+\item A separate norm or channel certificate when such behavior is claimed.
+\item An actual interface assembly proof before claiming composability.
+\end{enumerate}
+Numerical substitution checks are useful audits of these identities,
+not substitutes for their analytical proofs.
+
+\section{What is established and what remains}\label{sec:verdict}
+The exact inverse to a reduced decorated-geometry symbol is already
+available. Theorems \ref{thm:kernel}--\ref{thm:normal} identify the precise
+scalar-geometric inverse problem, and Theorem~\ref{thm:gluing} states
+the energy-level composition law. The scalar phase and attenuated mixing
+examples are actual analytical constructions in their stated graph
+models. The bounds in Section~\ref{sec:obstructions} explain why they
+cannot simply be relabelled as arbitrary harmonic quantum gates.
+
+The outstanding task is an admissible simplicial family solving
+\eqref{eq:inverse}, or \eqref{eq:kernel} in the nonpositive setting,
+for the desired mixing operators in the chosen register, with
+compatible physical norms and actual gluing when claimed.
+Higher dimension, richer connectivity, and scalar phases are available
+design variables; none alone proves that this family exists.
+
+Thus the answer to the inverse question is constructive but conditional:
+we can solve backward to exact boundary constraints and several scalar
+controls now. A general triangulation formula requires the missing
+geometric realization theorem, not another identification of matrices
+with geometric symbols.
+
+\clearpage
+\begin{thebibliography}{9}
+\bibitem{reading}
+\emph{The Cobordism Functor, the Theta Register, and Root Systems}.
+Tessera, \path{docs/design/cobordism_functor_reading.tex}.
+In particular: \emph{The full geometric operator algebra},
+\emph{Frozen whole-kernel recovery}, \emph{Pairing and Gram conventions},
+and \emph{Internal elimination and actual gluing}.
+
+\bibitem{gelca}
+R. Gelca and A. Uribe,
+\emph{From classical theta functions to topological quantum field theory}.
+\href{https://arxiv.org/abs/1006.3252}{arXiv:1006.3252}.
+Supports the curve-algebra representation, not unrestricted native
+simplicial synthesis.
+
+\bibitem{devriendt}
+K. Devriendt,
+\emph{Effective resistance is more than distance: Laplacians, Simplices
+and the Schur complement}.
+\href{https://arxiv.org/abs/2010.04521}{arXiv:2010.04521}.
+Provides graph/simplex and Schur-reduction context, not the manifold
+realization assertion left open here.
+
+\bibitem{hatcher}
+A. Hatcher, \emph{Algebraic Topology}, proof of Theorem 2.10.
+\href{https://pi.math.cornell.edu/~hatcher/AT/AT.pdf}{Author's edition}.
+The ordered triangulation of a simplex times an interval.
+\end{thebibliography}
+\end{document}
