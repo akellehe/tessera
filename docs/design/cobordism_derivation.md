@@ -1,22 +1,23 @@
-# Cobordism derivation: maintained source location
+# Cobordism derivation: authoritative consolidated specification
 
-The consolidated derivation and experiment specification are maintained
-outside this repository, at the author's request:
+The maintained derivation and experiment specification are now included in
+this repository at the author's request:
 
-- Source: ~/tessera-notes/cobordism-functor/cobordism_functor_reading.tex
-- Generated PDF: ~/tessera-notes/cobordism-functor/cobordism_functor_reading.pdf
+- [LaTeX source](cobordism_functor_reading.tex)
+- [Generated reading PDF](cobordism_functor_reading.pdf)
 
-These are local files, not files supplied by a repository checkout. This
-page records their location; it is not another scientific specification.
+Edit the repository source, regenerate the PDF, and synchronize the reading
+copies under `~/tessera-notes/cobordism-functor/`. Those local copies are not
+a second authority. Companion maps, problems, and solutions are study aids;
+conflicting claims defer to the consolidated reading.
 
-The previous qubit-cobordism specification has been retired after its
-mathematical claims were reconciled in the consolidated reading. Git
-history preserves the removed repository source. Pre-consolidation local
-sources are retained for recovery under
-~/tessera-notes/cobordism-functor/archive/pre-consolidation-2026-09-14/.
+The current goal is an exact geometric representation of operator and fusion
+algebras. Synthesis of every operator as one native simplicial cobordism is
+not required. Implementation tickets #1121–#1124 specify the corresponding
+validation work; the documentation revision is tracked by #1131.
 
-Requirement identifiers in retained historical run records and test
-descriptions refer to the specifications in force when those records were
-written. They are not requirements defined by this location notice.
-Historical measurements remain evidence for their recorded experiments,
-not independent authority for superseded mathematical claims.
+The former `qubit_cobordism_spec.md` remains retired. Git history preserves
+it, and pre-consolidation local sources remain in
+`~/tessera-notes/cobordism-functor/archive/pre-consolidation-2026-09-14/`.
+Historical measurements retain their recorded conventions and are not
+independent authority for superseded claims.
