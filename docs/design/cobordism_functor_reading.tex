@@ -36,73 +36,50 @@ pdftitle={The Cobordism Functor, the Theta Register, and Root Systems}}
 \DeclareMathOperator{\Hom}{Hom}
 
 \title{The Cobordism Functor, the Theta Register, and Root Systems\\[4pt]
-\large Consolidated derivation and experiment specification}
+\large Derivation and experiment specification}
 \author{}
-\date{Consolidated and revised 14 September 2026}
+\date{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This is the single authoritative account of the harmonic-operator
-experiment: its analytical derivation, geometric operator algebra, theta
-tensor register, and root-system extension. The current objective is an
-exact representation of finite-dimensional algebra by quantized geometry,
-not synthesis of every operator as one engine-generated spacetime.
-Harmonic forms parameterize a classical phase space; quantization supplies
-the quantum Hilbert space. Geometric translations and their complex linear
-combinations form its full matrix algebra, preserving tensor products,
-adjoints, states and operator vectors. Root-lattice geometry represents
-characters and fusion with explicitly declared quantization data.
-Single-cobordism synthesis and physical dynamics remain separate questions.
-The text distinguishes theorems, source-reported measurements and open
-constructions. Companion problems P1--P46 and their solutions remain study
-aids, not competing specifications.
+This document specifies the harmonic-operator experiment: its analytical
+derivation, geometric operator algebra, theta tensor register, and
+root-system extension. The objective is an exact representation of
+finite-dimensional algebra by quantized geometry, not synthesis of every
+operator as one engine-generated spacetime. Harmonic forms parameterize a
+classical phase space; quantization supplies the quantum Hilbert space.
+Geometric translations and their complex linear combinations form its full
+matrix algebra, preserving tensor products, adjoints, states and operator
+vectors. Root-lattice geometry represents characters and fusion with
+explicitly declared quantization data. Single-cobordism synthesis and
+physical dynamics are separate questions. Theorems, measurements and open
+constructions are distinguished throughout.
 \end{abstract}
 
 \begingroup\small
-\section*{Authority and provenance}
-\addcontentsline{toc}{section}{Authority and provenance}
-Edit \texttt{docs/design/cobordism\_functor\_reading.tex} in the Tessera
-repository; the adjacent PDF is generated from that source. This is the
-authoritative copy, included in Git at the owner's request. The files in
-\texttt{\string~/tessera-notes/cobordism-functor/} are synchronized reading
-copies, not a second editing authority. Regenerate the PDF and synchronize
-those copies after an accepted source revision. This consolidation incorporates the original chat derivation
-of 13 September 2026, the previous reading (including its root-system
-development), and \texttt{docs/design/qubit\_cobordism\_spec.md} at Tessera
-revision
-\href{https://github.com/akellehe/tessera/blob/3d54e5990240bc68b0c4774b7a9386dd2c6c6d37/docs/design/qubit_cobordism_spec.md}{\texttt{3d54e5990240}} (full revision encoded in this link).
-It supersedes their conflicting claims. The former
-\texttt{qubit\_cobordism\_spec.md} was retired; its replacement location
-notice now points to this maintained repository source. This revision changes the research contract and
-tickets, not the implementation. Earlier notes are preserved in
-\texttt{archive/pre-consolidation-2026-09-14/};
-\texttt{original\_derivation.md} is historical, not normative.
-Reported numerical results below are inherited from the pinned sources,
-not measurements rerun during consolidation, except
-Section~\ref{sec:evidence-merged}, which records measurements made on 14
-September 2026 after consolidation (Tessera pull requests \#1116, \#1119
-and \#1120, merged) and the owner's decisions on what is measured next
-(Section~\ref{sec:next}). The subsequent owner-approved revision makes
-representation, rather than native synthesis, the acceptance goal.
-Historical numbers retain their original conventions; they are not
-certificates for corrected claims. Companion maps, problems and solutions
-are non-normative study aids and may use older conventions.
+\section*{Scope and notation}
+\addcontentsline{toc}{section}{Scope and notation}
+The source is \texttt{docs/design/cobordism\_functor\_reading.tex} in the
+Tessera repository; the adjacent PDF is generated from it, and the copies
+in \texttt{\string~/tessera-notes/cobordism-functor/} are reading copies.
+Open work is tracked on GitHub, not here. The companion map, problems
+(P1--P46) and solutions are study aids; where they conflict with this
+document, this document governs.
 
 \paragraph{Notation.}
 $D$ is geometric dimension, $p$ cochain degree, $r_H$ harmonic dimension,
 $g$ the dimension of a polarized Jacobian, and $r$ the rank of a Lie algebra.
-The primer retains $k$ for cochain degree in its Hodge discussion and for
-positive integer quantization level in its theta/affine discussion; those
-are independent quantities. In $\mathfrak{su}(N)$, $N$ is the defining
+The primer uses $k$ for cochain degree in its Hodge discussion and for
+the positive integer quantization level in its theta/affine discussion;
+those are independent quantities. In $\mathfrak{su}(N)$, $N$ is the defining
 representation dimension, not simplex dimension. $M$ denotes period
 transport; $\mathsf M$ denotes its standard Siegel-coordinate counterpart
-where that bridge applies; $M_p$ denotes a mass matrix. $\Omega$ is an intersection matrix
-in the restriction discussion and a complex period matrix in the theta
-discussion, as explicitly indicated. Transpose and Hermitian adjoint are
-never interchangeable without the stated real or duality hypotheses.
-
+where that bridge applies; $M_p$ denotes a mass matrix. $\Omega_\partial$
+is the boundary intersection form; $\Omega$ is a complex period matrix.
+Transpose and Hermitian adjoint are never interchangeable without the
+stated real or duality hypotheses.
 \endgroup
 \clearpage
 \tableofcontents
@@ -116,7 +93,7 @@ Let $W$ be a compact oriented triangulated $3$-manifold whose boundary is two to
 $\partial W = M_0 \sqcup M_1$. Each torus carries a \emph{marking}: two
 cycles $A, B$ that form a basis of $H_1(M_i;\Z) \cong \Z^2$; their periods
 give the dual cohomology coordinates. The claim has
-three levels. The primary goal is an equivalent geometric representation
+three levels. The goal is an equivalent geometric representation
 of algebra, including complex linear combinations of geometric operations.
 Bare geometry is not claimed to choose a state, level or physical dynamics.
 
@@ -145,8 +122,7 @@ Bare geometry is not claimed to choose a state, level or physical dynamics.
     --- braid representations with proven density in specified sectors.
     An internal scalar Euclidean lattice realizes $A_2$ explicitly
     (Proposition~\ref{prop:scalar-a2}). Level and affine reduction are
-    declared structure. Native bulk synthesis, physical sewing and braid
-    synthesis are later programs, not prerequisites for this representation.
+    declared structure.
 \end{enumerate}
 
 For fixed topology, markings and flat local system, the metric controls
@@ -161,7 +137,7 @@ here addition, complex scalar multiplication, composition, adjoint and
 tensor product. Symbols may be complex linear combinations of decorated
 cycles; their coefficients carry information and need not emerge from a
 metric. Synthesis asks additionally for one allowed scalar simplex complex
-whose native readout realizes a specified operator. The current experiment
+whose native readout realizes a specified operator. The experiment
 requires the first statement, not the second.
 \end{definition}
 
@@ -264,7 +240,7 @@ $L_W$. It is a linear \emph{relation} between $H^1(M_0)$ and $H^1(M_1)$.
 \begin{remark}[The orientation sign]\label{rem:sign}
 Write the intersection form on one torus in its marking as $J =
 \begin{psmallmatrix} 0 & 1\\ -1 & 0\end{psmallmatrix}$. The boundary form is
-$\Omega = J_A \oplus \varepsilon J_B$ where $\varepsilon = \pm 1$ records that
+$\Omega_\partial = J_A \oplus \varepsilon J_B$ where $\varepsilon = \pm 1$ records that
 the two ends inherit \emph{opposite} orientations from the bulk, corrected
 by the orientation of any relabelling $\varphi$ applied to the far surface:
 $\varepsilon = -\det\varphi^*$. This sign is declared data, never searched
@@ -272,8 +248,7 @@ for. Problem~P4 shows why it cannot be read off $\det M$ once
 there are four tori. The displayed rule applies to the declared collar
 markings. With more components, assemble one signed block per boundary
 component from its actual induced orientation; a total determinant is
-insufficient. Orientation is needed for this pairing even when it is not
-used to define charge.
+insufficient.
 \end{remark}
 
 \section{The monodromy}\label{sec:monodromy}
@@ -321,9 +296,9 @@ reversing such $\varphi$ is the swap $(i,j)\mapsto(j,i)$, with $\varphi^* =
 \section{From a graph relation to an operator vector}\label{sec:choi}
 
 For finite-dimensional $A, B$, the Choi--Jamio\l{}kowski identification is
-$\Hom(A,B) \cong A^*\otimes B$: a map $T$ corresponds to the vector
+$\Hom(A,B) \cong B\otimes A^*$: a map $T$ corresponds to the vector
 \[
-  |T\rangle\!\rangle \;=\; \sum_i e_i^* \otimes T e_i ,
+  |T\rangle\!\rangle \;=\; \sum_i T e_i \otimes e_i^* ,
 \]
 and its graph $\{(x, Tx)\} \subset A \oplus B$ is a subspace of dimension
 $\dim A$. Conversely a subspace of $A\oplus B$ that meets $0 \oplus B$
@@ -333,11 +308,11 @@ Thus $L_W\leftrightarrow M\leftrightarrow |M\rangle\!\rangle$ is an exact
 correspondence \emph{when the graph conditions hold}; it is not literal
 equality of a harmonic space, a graph subspace and a vector. The dual input
 factor must not be dropped. In Hilbert notation it becomes a conjugate
-input factor, with ordering fixed in Section~\ref{sec:quantum-contract}.
+input factor, in the same output-major order as
+Section~\ref{sec:quantum-contract}.
 A nonzero output with zero input violates uniqueness; an input which cannot
 extend violates coverage. A map taking a nonzero input to zero is still a
-valid graph and need not be invertible. No physical creation or annihilation
-interpretation follows from these linear-algebra facts alone.
+valid graph and need not be invertible.
 
 \section{Composition: gluing is matrix multiplication}\label{sec:composition}
 
@@ -407,8 +382,7 @@ is independent of interior metric changes, including relaxation.
 \begin{proof}
 Every argument of the displayed function is fixed. Own-boundary Grams
 depend on boundary data, not the bulk metric. At zero connection primal
-and dual transports coincide; otherwise this requires proof. This tests
-invariance, not restoration of positive quantum unitarity.
+and dual transports coincide; otherwise this requires proof.
 \end{proof}
 
 \section{Weights add, characters multiply}\label{sec:weights}
@@ -449,7 +423,7 @@ The Wilson loops are $e^{2\pi i a_i},e^{2\pi i b_i}$; a real lift is
 coordinate data, not another observable. Positive Hodge masses select a
 unique harmonic representative of each real cohomology class. The
 integral lattice and intersection pairing give the principal polarization,
-represented by $2\pi\sum_i da_i\wedge db_i$.
+represented by $\sum_i da_i\wedge db_i$.
 \end{definition}
 For symmetric $\Omega$ with $\operatorname{Im}\Omega>0$, use
 \[
@@ -482,7 +456,7 @@ register is $\mathcal Q_k(\Sigma)=H^0(J(\Sigma),L^k)$ with its positive
 section norm, where $L^k$ is the level-$k$ line bundle. It is a quantization
 of harmonic phase space, not equality with $\ker\Delta_1$. Its line
 connection is scalar and lives over the Jacobian, with curvature encoding
-the polarization; it is not a flat matrix-valued connection on spacetime.
+the polarization.
 \end{definition}
 
 \section{Theta functions: the register on one torus}\label{sec:theta}
@@ -629,9 +603,7 @@ Geometric multiplication can be evaluated without matrix multiplication:
                  \omega^{q\cdot(r-p)}.
 \]
 This finite twisted convolution is the computational operation to
-validate; matrices are independent oracles. The coefficient count remains
-$d^2$: no compression or speedup is asserted. Linear combinations of
-geometric symbols need not be single curves or single engine spacetimes.
+validate; matrices are independent oracles.
 
 \begin{theorem}[Tensor and operator-vector compatibility]\label{thm:geometric-tensor}
 For declared factor markings and theta structures,
@@ -659,12 +631,9 @@ are normalized as states, retain their norm factors; separately
 renormalizing each intermediate contraction would discard amplitude and
 success-probability information.
 For a connected surface the tensor labels are a declared register
-identification, not a claim of disjoint union. A coupled period matrix
+identification, not a claim of disjoint union; a coupled period matrix
 need not factor its theta functions. The decorated-cylinder interpretation
 uses linear combinations of curves modulo crossing/lift relations.
-This establishes composition for this geometric algebra; quantizing
-every bare three-cobordism additionally requires TQFT gluing data.
-Cohomological restriction alone is not that construction.
 
 \section{The modular action and the Weil representation}\label{sec:weil}
 
@@ -719,8 +688,7 @@ implementation uses the theta subgroup: in genus one test $S$ and $T^2$,
 and in higher genus only generators preserving the characteristic (a shear
 with even diagonal is allowed). Reject $T$ at odd level in that mode.
 Alternatively implement and track the transformed characteristics and
-line bundles explicitly. An incompatible fit is a failed hypothesis,
-not numerical noise.
+line bundles explicitly.
 
 Two generators suffice for $g = 1$. For $T = \begin{psmallmatrix}1&1\\0&1\end{psmallmatrix}$
 ($\tau\mapsto\tau+1$) the sum changes by $e^{\pi i k(n+j/k)^2}$, and for $k$
@@ -755,8 +723,6 @@ Because $\rho_k(\mathsf M)$ does not depend on $\Omega$, the metric cannot defor
 it: on this register ``the metric changes the representative, not the
 operator'' holds verbatim (different $\tau$ are projectively equivalent
 polarizations under the declared projectively flat identification).
-This identifies coefficient spaces; it does not assert that evaluation
-coherent states at arbitrary corresponding real holonomies are parallel.
 
 \begin{proposition}[Why compatible geometric transport is unitary]\label{prop:geometric-unitarity}
 A compatible scalar lift of a symplectic cycle relabelling acts on the
@@ -791,8 +757,7 @@ Then apply the orientation-preserving bridge of
 Proposition~\ref{prop:coordinate-bridge} to $N$. With
 $\mathsf N$ its Siegel matrix the value-column action is
 $\rho_k(\mathsf N)K$, where $K$ is complex conjugation.
-The antiunitary lift is part of the data; the orientation-preserving
-bridge is not blindly applied to an anti-symplectic matrix.
+The antiunitary lift is part of the data.
 For the torus period swap, $N=S$ and $\mathsf N=S^{-1}$, giving Hadamard
 followed by conjugation at level two. An antiunitary is not a CP channel;
 orientation reversal alone does not derive physical time reversal.
@@ -828,14 +793,13 @@ the matrix from the norm; only $|f|$ remains.
 One can instead define the state representation to be the conjugate
 representation from the outset. Either convention works; fitting the
 value representation and applying it unaltered to conjugated evaluations
-does not. The two representations have identical algebraic completeness.
+does not.
 
 For a general flat cobordism, the period relation gives
 $(a_{\rm out},b_{\rm out})=M_{\rm per}(a_{\rm in},b_{\rm in})$ modulo
 integers. This alone gives no relation between $\Omega_{\rm out}$ and
-$\Omega_{\rm in}$. Measure the holonomy relation separately. Assert the
-displayed coherent covariance only when the polarization and coordinate
-hypotheses hold. Different-modulus identity collars are negative controls:
+$\Omega_{\rm in}$. Measure the holonomy relation separately.
+Different-modulus identity collars are negative controls:
 projectively flat identification of coefficient spaces is not a theorem
 that their evaluation states coincide.
 
@@ -889,29 +853,21 @@ entangle, sending $|+\rangle|+\rangle$ to
 $(|00\rangle+|01\rangle+|10\rangle-|11\rangle)/2$, with reduced state $I/2$.
 This witness distinguishes entangling capacity from operator-vector correlations.
 
-\begin{remark}[Measured after consolidation]\label{rem:seam-measured}
-Three constructions have since been read (Section~\ref{sec:evidence-merged}).
-A $1$-handle between the far tori of two collars (a tube over one triangle
+\begin{remark}[Measured seams]\label{rem:seam-measured}
+Section~\ref{sec:evidence-merged} records three constructions. A
+$1$-handle between the far tori of two collars (a tube over one triangle
 of each) makes the far boundary one genus-two surface; its monodromy stays
-block-diagonal (the tube alone couples no cycle) while the surface's own
-period matrix acquires an off-diagonal entry $\Omega_{12}$ set by the
-neck's waist and length --- the metric coupling of Section~\ref{sec:tensor},
-and sampled coherent states have nonzero entropy in the declared
-two-factor register. Nonzero $\Omega_{12}$ alone is not a theorem that
-every evaluation point is entangled, or that the identity monodromy is
-an entangling operator. Layered flip passes on a collar's far torus glue one
-cobordism on another along the far surface and read the Dehn twists
-$T_A$, $T_B$ and the quarter turn $S$, with passes stacked in order
-composing and the two orders of a non-commuting pair giving different
-matrices. The collar of the $\Z/10$-symmetric genus-two surface relabelled
-by its order-five rotation reads an integer symplectic monodromy of order
-five that mixes the two factors and acts on the level-two register as a
-two-qubit Clifford gate sending product stabilizer states to Bell pairs:
-an entangling monodromy realized geometrically, by the product-input
-witness above, not merely a mixing matrix. A Dehn twist along a curve
-through the tube's neck --- the controlled-$Z$ of the shear read on a
-torus-pair register --- has no fixed flip pass landing on an isomorphic
-far triangulation and remains open.
+block-diagonal, while the surface's own period matrix acquires an
+off-diagonal entry $\Omega_{12}$ set by the neck's waist and length, and
+sampled coherent states have nonzero entropy in the declared two-factor
+register. Layered flip passes on a collar's far torus read the Dehn twists
+$T_A$, $T_B$ and the quarter turn $S$, and stacked passes compose in order.
+The collar of the $\Z/10$-symmetric genus-two surface relabelled by its
+order-five rotation reads an integer symplectic monodromy of order five
+that acts on the level-two register as an entangling two-qubit Clifford
+gate, by the product-input witness above. A Dehn twist along a curve
+through the tube's neck --- the controlled-$Z$ shear on a torus-pair
+register --- remains open.
 \end{remark}
 
 \section{Clifford, and its limit}\label{sec:clifford}
@@ -924,14 +880,12 @@ congruence conventions can involve $2k$,
 so naive identification with $\Sp(2g,\Z/k)$ loses phase data. At $k=2$,
 these operators with stabilizer preparations and measurements are efficiently
 simulable and not quantum-universal. Metric-dependent transfer is not
-automatically a non-Clifford unitary. Non-abelian quantization is one
-proposed resource, not an exhaustive list of routes to universality.
+automatically a non-Clifford unitary.
 
 The finite gate-group restriction does not contradict
 Theorem~\ref{thm:full-algebra}: the complex linear span of geometric
 translations is the entire matrix algebra, while products of a restricted
-set of unitary gates need not be dense. The experiment targets the algebra
-representation, not computational universality or efficient synthesis.
+set of unitary gates need not be dense.
 
 \section{From a Lie algebra to its root system}\label{sec:lie}
 
@@ -1026,10 +980,9 @@ $\alpha_i$ is $v\mapsto v-(v\cdot\alpha_i)\alpha_i$; the integral
 Gram entries prove lattice preservation, and the two reflections have
 product of order three. Duality gives $P$ and $\det A=3$.
 \end{proof}
-This internal lattice is chosen independently of the spacetime boundary.
-It proves a scalar-geometric representation of the root datum, not that
-a generic boundary triangulation spontaneously has this symmetry, nor
-that its harmonic mass Gram automatically equals $A$.
+This internal lattice is chosen independently of the spacetime boundary
+(Section~\ref{sec:root-program}); a generic boundary triangulation need
+not have this symmetry, nor its harmonic mass Gram equal $A$.
 
 \begin{theorem}[Highest-weight classification]\label{thm:highest}
 The finite-dimensional irreducible representations of $\mathfrak g$ are
@@ -1157,11 +1110,15 @@ exponential at level $K$ is a theta function,
   \sum_{\gamma\in Q^\vee}e^{t_\gamma(\hat\mu)} = q^{-|\mu|^2/2K}\,\Theta^{(K)}_\mu(\tau,z),\qquad
   \Theta^{(K)}_\mu(\tau,z) = \sum_{\gamma\in Q^\vee}q^{\frac K2|\frac\mu K+\gamma|^2}\,e^{2\pi iK\langle\frac\mu K+\gamma,\,z\rangle},
 \]
-so the numerator at $K = k+h^\vee$ is
-$\sum_{w\in W}\varepsilon(w)\Theta^{(K)}_{w(\lambda+\rho)}$ up to a power of
-$q$; the denominator is the same expression at $K = h^\vee$, $\mu = \rho$
-(the affine denominator identity); and the normalized character is the
-ratio of Theorem~\ref{thm:kac}.
+so, with $A^{(K)}_\mu = \sum_{w\in W}\varepsilon(w)\,\Theta^{(K)}_{w\mu}$,
+the numerator at $K = k+h^\vee$ is $A^{(K)}_{\lambda+\rho}$ up to a power of
+$q$, the denominator is $A^{(h^\vee)}_{\rho}$ (the affine denominator
+identity), and the normalized level-$k$ character with highest weight
+$\lambda\in P_k^+$ is
+\[
+  \chi_\lambda(\tau,z) \;=\; \frac{A^{(k+h^\vee)}_{\lambda+\rho}(\tau,z)}
+                                  {A^{(h^\vee)}_{\rho}(\tau,z)} .
+\]
 \end{theorem}
 
 This is the structural content of ``geometry is algebra'' in the
@@ -1213,7 +1170,7 @@ P/Q & \Z/2\times\Z/2 & \Z/3 & \Z/2 & 1\\
 h^\vee & (2,2) & 3 & 3 & 4
 \end{array}
 \]
-$W(A_1\times A_1)\subset W(B_2)$ and $W(A_2)\subset W(G_2)$ have index two;
+$W(A_1\times A_1)\subset W(B_2)$ and $W(A_2)\subset W(G_2)$ have index two.
 For $A_1\times A_1$, levels and dual Coxeter numbers are specified per
 simple factor. The abelian case
 $\mathfrak g = \mathfrak u(1)$ has no roots, trivial $W$, $P = \Z$: the
@@ -1231,8 +1188,11 @@ group need not embed in $\GL(2,\Z)$.
 \end{proposition}
 
 The square grid with one diagonal realizes only $\{\pm I,\pm\sigma\}\cong D_2$
---- the diagonal breaks the fourfold symmetry --- which is abelian, so
-composition order is invisible there. The triangular (hexagonal) lattice
+by simplicial automorphisms --- the diagonal breaks the fourfold symmetry
+--- which is abelian, so composition order is invisible among
+automorphisms; the layered flip passes of Section~\ref{sec:evidence-merged}
+are not automorphisms and read the infinite-order twists $T_A$, $T_B$ and
+the quarter turn $S$ on the same grid. The triangular (hexagonal) lattice
 realizes $D_6 = W(G_2)$, non-abelian, containing $D_3 = W(A_2)$.
 
 \section{The alcove and the Verlinde space}\label{sec:alcove}
@@ -1248,26 +1208,10 @@ The torus Hilbert space is spanned by one function per alcove weight: the
 \emph{Weyl--Kac character} of the level-$k$ integrable representation of the
 affine algebra $\hat{\mathfrak g}$.
 
-\begin{theorem}[Weyl--Kac; characters are antisymmetrized theta functions]
-\label{thm:kac}
-For $\mu\in P$ and a level $K$, set
-\[
-  \Theta^{(K)}_\mu(\tau,z) = \sum_{\gamma\in Q^\vee}
-  \exp\!\Big(\pi i K\big|\tfrac{\mu}{K}+\gamma\big|^2\tau
-  + 2\pi i K\big\langle\tfrac{\mu}{K}+\gamma, z\big\rangle\Big),
-  \qquad
-  A^{(K)}_\mu = \sum_{w\in W}\varepsilon(w)\,\Theta^{(K)}_{w\mu}.
-\]
-Then the level-$k$ character with highest weight $\lambda\in P_k^+$ is
-\[
-  \chi_\lambda(\tau,z) \;=\; \frac{A^{(k+h^\vee)}_{\lambda+\rho}(\tau,z)}
-                                  {A^{(h^\vee)}_{\rho}(\tau,z)} .
-\]
-\end{theorem}
-
-This is Theorem~\ref{thm:weylkac} written out: the sum over $Q^\vee$ is the
-translation part of $\hat W$, the sum over $W$ its finite part (Problems
-P41, P42). For $\mathfrak{su}(2)$ ($r=1$, $W=\{\pm1\}$, $h^\vee = 2$) this is fully
+By Theorem~\ref{thm:weylkac} the character is the ratio
+$\chi_\lambda = A^{(k+h^\vee)}_{\lambda+\rho}/A^{(h^\vee)}_{\rho}$: the sum
+over $Q^\vee$ is the translation part of $\hat W$, the sum over $W$ its
+finite part (Problems P41, P42). For $\mathfrak{su}(2)$ ($r=1$, $W=\{\pm1\}$, $h^\vee = 2$) this is fully
 explicit in the theta functions of Definition~\ref{def:theta} (with the
 variable $z$ rescaled by the root normalization):
 \[
@@ -1345,8 +1289,7 @@ $T_\lambda = \exp\!\big(2\pi i\big[\tfrac{(\lambda+1)^2}{4(k+2)} - \tfrac18\big]
 These replace the abelian Weil matrices. A numerical character experiment
 can fit their transformation laws with held-out residuals, controlling
 lattice truncation and removable denominator zeros. Fitting geometric lattice sums against independent character formulas
-validates the representation objective. It is not evidence that a native
-simplex engine generated the root data or a single fusion cobordism.
+validates the representation objective.
 
 \begin{theorem}[Verlinde]\label{thm:verlinde}
 The fusion coefficients $N_{\lambda\mu}^{\ \nu}$ --- the multiplicities in the
@@ -1403,9 +1346,7 @@ $\sum_\nu N_{\lambda\mu}^{\ \nu}v_\nu(\sigma)
 =v_\lambda(\sigma)v_\mu(\sigma)$. The unit is $v_0=1$.
 \end{proof}
 The representation is exact; independent Kac--Walton folding checks the
-integral nonnegative structure constants. This does not identify ordinary
-representation multiplicities with affine fusion, nor prove that a
-physical joining operation performs fusion.
+integral nonnegative structure constants.
 
 \section{Simply-laced level one and the abelian lattice register}\label{sec:frenkelkac}
 
@@ -1465,24 +1406,20 @@ irreducible sector must satisfy the density theorem's hypotheses.
 This is not a statement for every sector of every punctured sphere.
 \end{theorem}
 
-Punctures and braids are the proposed route here, not a necessary condition
-for every form of universality. Removing a bulk top cell does not by itself
-construct a labeled surface puncture or conformal-block Hilbert space.
-Weyl symmetry gives invariant isotypic sectors only when the operator
-commutes with the action; these are not automatically level-dependent
-alcove labels. The missing scalar-geometric realization and its acceptance
-criteria appear in Section~\ref{sec:root-program}.
+Punctures and braids are the proposed route. Removing a bulk top cell does
+not by itself construct a labeled surface puncture or conformal-block
+Hilbert space, and the Weyl isotypic sectors of an operator are not alcove
+labels. Section~\ref{sec:root-program} states what a realization must supply.
 
 \clearpage
 \part{Experiment specification}
 
 \section{Whole harmonic states and identifiable operators}\label{sec:kernel-contract}
 
-This section retains the native harmonic-recovery contract for existing
-code and future synthesis. Its three verdicts are identifiable operator,
-positive norm preservation, and requested native gate realization.
-They are not prerequisites for the current theta-algebra representation
-verdict in Section~\ref{sec:validation}.
+This section states the native harmonic-recovery contract. Its three
+verdicts are identifiable operator, positive norm preservation, and
+requested native gate realization; they are separate from the
+representation verdict of Section~\ref{sec:validation}.
 A harmonic space is a candidate state space; a nonzero vector or ray needs
 input data or a geometric selection rule. For positive Hermitian masses,
 \[
@@ -1569,15 +1506,14 @@ Square invertible period matrices give
 \]
 The abbreviated $(P^\vee)^{-\mathsf T}P^{-1}$ requires $B_0=I$.
 Zero-connection primal and dual/primal constructions agree only when they
-describe the same period-normalized pairing; this does not equate historical
-primal-frame and newer biorthogonal observation coordinates.
+describe the same period-normalized pairing; primal-frame and biorthogonal
+observation coordinates are distinct.
 With primal/dual transports $M,M^\vee$, pairing preservation tests
 $(M^\vee)^{\mathsf T}G_BM=G_A$. Using $M$ on both sides assumes coincident
 transports in the declared trivialization.
 This is distinct from positive quantum isometry. A complex bilinear form
 is not a Krein inner product, which must be nondegenerate indefinite
-Hermitian. Neither supplies an invariant positive sector, a
-particle/antiparticle split or complete positivity automatically.
+Hermitian.
 
 \section{Internal elimination and actual gluing}\label{sec:elimination}
 
@@ -1597,13 +1533,12 @@ $u=(I+T_2^\dagger T_2)^{-1}T_2^\dagger r$ and energy
  r^\dagger(I+T_2T_2^\dagger)^{-1}r .
 \]
 The zero relation composes to $z=T_2T_1x$. A target-built fixture is an
-algebraic control, not scalar-geometric synthesis. Failure to synthesize
-it does not invalidate the independent representation theorem. Actual composition must
+algebraic control, not scalar-geometric synthesis. Actual composition must
 identify interface cells/frames and compare the assembled glued relation.
-Extra dimension does not prove arbitrary matrix realizability. A connected
-positive scalar degree-zero connection graph has at most one zero mode:
-$f_j=e^{i\theta_{ij}}f_i$ fixes all values from one vertex; inconsistent
-holonomy forces zero. Higher-degree topology is a candidate, not a theorem.
+Extra dimension does not by itself give matrix realizability: a connected
+positive scalar degree-zero connection graph has at most one zero mode,
+since $f_j=e^{i\theta_{ij}}f_i$ fixes all values from one vertex and
+inconsistent holonomy forces zero.
 
 \section{Quantum norms, tensor products and channels}\label{sec:quantum-contract}
 
@@ -1652,41 +1587,54 @@ state spaces; sewing/punctures require sums over labels and fusion spaces.
 \end{enumerate}
 Two level-two theta factors give four amplitudes, a $4\times4$ gate and
 sixteen operator-vector amplitudes. A direct sum of two harmonic port
-frames, or historical $2\times2$ selected-pair $\chi$, is not that operator.
+frames, or the $2\times2$ selected-pair $\chi$, is not that operator.
 Dimension matching alone does not define subsystems.
 
-\section{Current representation acceptance contract}\label{sec:validation}
+\section{Representation acceptance contract}\label{sec:validation}
 
-The present deliverable is a representation theorem with computational
-checks of its hypotheses and operations, not a dynamics or synthesis
-claim. Theorems hold exactly under their assumptions; numerical residuals
-measure implementation accuracy. Tickets \#1121--\#1124 divide the work
-as in Section~\ref{sec:next}. All four must identify which operations are
+The deliverable is a representation theorem with computational checks of
+its hypotheses and operations, not a dynamics or synthesis claim. Theorems
+hold exactly under their assumptions; numerical residuals measure
+implementation accuracy. Each objective identifies which operations are
 geometric computations and which are independent matrix oracles.
 \begin{enumerate}[label=V\arabic*.,leftmargin=*]
 \item State the classical/quantum type bridge, integral markings, positive
 polarization, level, theta structure and coefficient/evaluation convention.
 Use positive Hodge masses for the classical proof, or report a certified
 alternative; do not import positivity from a complex bilinear pencil.
-\item \#1121: represent $e_{p,q}$ by scalar translations; verify the crossing
-law, involution, $d^2$ independent symbols, trace pairing, forward/inverse
-maps and twisted convolution against independent matrices, including
-non-Clifford and nonunitary operators. Preserve the pinned-boundary defect
-as a distinct invariant control, not an optimization target.
-\item \#1122: verify ordinary closed phase configurations, Wilson loops,
-gauge/large-gauge invariance and neutral-pencil independence. Apply the
-coordinate bridge and correct conjugate coherent action. Demonstrate
-qubit coverage with several target rays including zeros/poles; keep
-level-three coverage limitations and characteristic restrictions explicit.
-\item \#1123: verify tensor-factor ordering, matrix units and Choi contraction
-against composition, including rectangular maps, product controls, SWAP
-and an entangling witness. Keep the wider-neck geometry study as a
-separate representation/entropy experiment, not a requirement for the
-algebra theorem or a claim about Ryu--Takayanagi.
-\item \#1124: recover $A_2$ from scalar lattice lengths, its roots and dual
-lattice; verify character dimensions, Weyl alternation, modular data and
-fusion by both geometric alcove evaluation and independent folding.
-The native fiber need not be synthesized.
+\item Geometric operator algebra: represent $e_{p,q}$ by scalar
+translations; implement reduced cycle/translation symbols, scalar crossing
+phases, involution, trace and twisted convolution. Verify the crossing law,
+involution, the $d^2$ independent symbols, the trace pairing, forward and
+inverse maps for arbitrary operators, adjoints and multiplication against
+independent matrices, including non-Clifford and nonunitary operators.
+Keep the pinned-boundary defect as a distinct invariant control, not an
+optimization target; add no relaxation to the fixed-complex verifier.
+\item Holonomy-defined states: keep the neutral harmonic pencil, construct
+ordinary closed phase configurations and read Wilson loops independently;
+verify gauge and large-gauge invariance and neutral-pencil independence.
+Fix $z=b-\Omega a$, the coordinate bridge, the conjugate coherent action
+and the antiunitary factorization. Demonstrate qubit coverage with several
+target rays including zeros and poles, and its non-unique inverse. At level
+three use a named characteristic-preserving subgroup or track
+characteristics explicitly; do not claim coherent coverage of every qutrit
+ray.
+\item Tensor and Choi algebra: verify tensor-factor ordering, matrix units,
+symbol tensor products and dual-factor contraction against composition,
+including rectangular maps, product, SWAP and controlled-$Z$ controls, an
+entangling witness and the state/channel distinction. Keep the wider-neck
+geometry study (Section~\ref{sec:neck-entropy}) a separate representation
+and entropy experiment with paired samples, period accuracy and
+refinement, and logarithmic entropy asymptotics; it is neither a
+requirement for the algebra theorem nor a claim about Ryu--Takayanagi.
+\item Root-lattice representation: recover $A_2$, its roots, reflections
+and the weight lattice from scalar lattice lengths; use the nonprincipal
+bundle and the $P/KQ^\vee$ characteristic set of
+Section~\ref{sec:root-coordinates}. Fit normalized Weyl--Kac characters
+against Kac--Peterson on held-out points; compare fusion by geometric
+alcove evaluation, Verlinde and independent Kac--Walton folding, with $A_1$
+and the even-lattice Frenkel--Kac controls. Host-derived $\tau$ is an input
+source; the native fiber need not be synthesized.
 \item Use fixed-seed held-out inputs distinct from fit samples, independent
 formulas, conditioning/rank reports and truncation/precision convergence.
 Report residuals before normalization/rounding and reject failed
@@ -1705,16 +1653,16 @@ representation failure. No matrix connection, engine relaxation,
 universality, speedup or entropy--area law is required or inferred.
 \end{enumerate}
 
-\section{Retained native implementation and acceptance contract}\label{sec:implementation}
+\section{Native implementation and acceptance contract}\label{sec:implementation}
 
-These requirements preserve the earlier native-engine contract where that
-path is exercised; they do not replace V1--V8 or require new synthesis.
-Original IDs are retained; short verifier names are a separate namespace.
-Existing incorrect scientific claims must be corrected with documented
-regressions rather than preserved as acceptance criteria.
+These requirements govern the native-engine path where it is exercised;
+they do not replace V1--V8. The verifier's check names (R1--R5, H1--H3,
+J1--J3, C1, D1, U1, F1--F4, G1--G5, E1--E6, T1--T9) are a separate
+namespace from the contract items below. Incorrect scientific claims are
+corrected with regressions, not preserved as acceptance criteria.
 
-\subsection{Construction R1--R7}
-\begin{enumerate}[label=R\arabic*.,leftmargin=*]
+\subsection{Construction NC1--NC7}
+\begin{enumerate}[label=NC\arabic*.,leftmargin=*]
 \item A native harmonic state is a whole cochain including boundary;
 restrictions are readouts. A theta-register state is instead a section,
 or its density symbol; these are different types.
@@ -1730,19 +1678,19 @@ measured frames or assembled Laplacians.
 apply Section~\ref{sec:kernel-contract}.
 \end{enumerate}
 
-\subsection{Scientific readout S1--S7}
-\begin{enumerate}[label=S\arabic*.,leftmargin=*]
+\subsection{Scientific readout NR1--NR7}
+\begin{enumerate}[label=NR\arabic*.,leftmargin=*]
 \item Retain flat-torus inputs, markings, holomorphic fibers and own-state residuals.
 \item Retain scalar collar synthesis and shared engine-unit schedule.
-\item Record the actual objective: historical transfer/$\chi$ fitting
+\item Record the actual objective: transfer/$\chi$ fitting
 optimizes selected-state amplitudes, not the whole operator.
 \item Recover whole-kernel relations each frame through periods and native
 dual-frame whole-metric contractions using \texttt{PencilSchur.gramBlock}
 and Section~\ref{sec:gram-contract}. The \texttt{gram} record specifies
-\texttt{observation\_convention: dual\_frame\_whitney}. Older records lack
-this field and used primal frames; normalizations need not agree even
+\texttt{observation\_convention: dual\_frame\_whitney}. Records without
+this field used primal frames; normalizations need not agree even
 at zero phase. Identity coordinate norms are explicit external encodings.
-\item Preserve historical $\chi$, not as a full XY/two-qubit gate and
+\item Preserve $\chi$, not as a full XY/two-qubit gate and
 never as input to frozen recovery.
 \item Publish \texttt{correspondence}: identifiability, ranks, conditioning,
 basis/held-out errors, norm preservation, Choi data and a separate gate verdict.
@@ -1752,14 +1700,14 @@ product operators; entanglement needs a validated operator and product-input
 witness, not merely a proposed circle seam.
 \end{enumerate}
 
-\subsection{Compatibility D1--D5}
-\begin{enumerate}[label=D\arabic*.,leftmargin=*]
+\subsection{Compatibility NK1--NK5}
+\begin{enumerate}[label=NK\arabic*.,leftmargin=*]
 \item Preserve native collar/bridge gates and rollback.
 \item Preserve own-surface frames and block-state residuals.
 \item Keep bilinear pencil transfer distinct from whole transport and certified channels.
 \item Keep readout in \texttt{qubit\_animation.py} with reusable helpers;
 preserve CLI, geometry records, output handling, neutral runtime and
-historical measurements while displaying actual whole-operator evidence.
+the $\chi$ measurements while displaying whole-operator evidence.
 \item \texttt{verify}/\texttt{theta} read fixed complexes seeded through
 \texttt{seed\_qubit\_host}, without node, objective, readout optimization or
 engine stages. \texttt{MultiCobordism.restriction} supplies one basis,
@@ -1770,8 +1718,8 @@ its fit. Preserve parameter/modulus-named records under
 \texttt{certifies} sentence. \texttt{run.sh} runs both.
 \end{enumerate}
 
-\subsection{Acceptance C1--C9}
-\begin{enumerate}[label=C\arabic*.,leftmargin=*]
+\subsection{Acceptance NA1--NA9}
+\begin{enumerate}[label=NA\arabic*.,leftmargin=*]
 \item Live collar: kernel residual, input coverage, unique output and
 basis/held-out whole-cochain witnesses; no target in recovery.
 \item Independent complex, rectangular, hidden-mode, ambiguous-output,
@@ -1799,7 +1747,7 @@ $U(1)$/$\C^*$ gauge regressions; report counts and failures.
 law, generators, factorization, antiunitarity and controlled-$Z$.
 Record level, truncation, fit/held-out samples, phases and factor ordering.
 Algebraic generator controls do not prove native host synthesis.
-\item Preserve the post-consolidation reads (Section~\ref{sec:evidence-merged}):
+\item Preserve the tube, flip and decagon reads (Section~\ref{sec:evidence-merged}):
 \texttt{verify --far-flips} F1--F4 and \texttt{theta --far-flips} T8/T9
 (the Dehn twists and composition order on one host, grid $3$ for one pass,
 grid $5$ for two); \texttt{theta --tori 4 --join tube} G1--G5 (the
@@ -1812,9 +1760,8 @@ counts and failures; records under \texttt{\string~/cobordism-runs/}.
 
 \section{Root representation and optional native synthesis}\label{sec:root-program}
 
-The root-lattice and fusion representations are current objectives;
-native fiber synthesis is optional. No arbitrary matrix connection is
-introduced. The internal coroot lattice is independent of boundary
+Native fiber synthesis is optional. The internal coroot lattice is
+independent of boundary
 cohomology: boundary mapping classes act on $H^1(\Sigma;\Z)$, whereas
 the Weyl group acts on $Q^\vee$. Even when the abstract groups coincide,
 these are not the same action.
@@ -1829,13 +1776,10 @@ polarization and characteristic set of Section~\ref{sec:root-coordinates}.
 A genus-$r$ boundary whose principal period matrix happens to equal
 $\tau A$ is not, by that equality alone, the root register.
 
-The present acceptance claim is that the lattice/alcove construction
-reproduces character and fusion algebra. Later native synthesis would
-add a sector map, certified whole-kernel readouts and actual sewing;
-braiding would add labeled punctures and compatible associativity/braiding
-maps. These are distinct extensions, not missing prerequisites for the
-current representation result. Extra dimensions permit candidate encodings
-but do not themselves prove native realizability.
+The acceptance claim (V5) is that the lattice/alcove construction
+reproduces the character and fusion algebra. Native synthesis would add a
+sector map, certified whole-kernel readouts and actual sewing; braiding
+would add labeled punctures and compatible associativity and braiding maps.
 
 \section{Neck geometry and encoded-state entropy}\label{sec:neck-entropy}
 
@@ -1874,9 +1818,9 @@ first derivatives vanish at zero. The leading entangling amplitude can
 then be second order; special parameters may cancel it as well.
 \end{proof}
 
-The star-tube experiment retains wider disk attachment, waist/length
-sweeps and larger grids. Treat $|\Omega_{12}|\sim0.3$--$0.5$ as an
-exploration target, not a promised output. Record full $\Omega$, markings,
+The star-tube experiment uses wider disk attachment, waist/length sweeps
+and larger grids, with $|\Omega_{12}|\sim0.3$--$0.5$ as an exploration
+target. Record full $\Omega$, markings,
 diagonal drift, period-reader errors, mesh resolution and the same fixed
 real holonomy samples $(a,b)$ at each point; convert to $z=b-\Omega a$.
 Synthetic asymptotic controls at fixed $z,\tau_1,\tau_2$ are different
@@ -1889,15 +1833,14 @@ zeroing $\Omega_{12}$ is only a factorization control.
 
 This is encoded-state entanglement, not a Ryu--Takayanagi validation.
 No independent extremal-area observable, area normalization or holographic
-dictionary is supplied. Stronger neck coupling is not required to prove
-the full operator algebra, and does not by itself realize a root fiber.
+dictionary is supplied.
 
 \section{Information and geometric diagnostics: unresolved definitions}
 
-The earlier follow-up (\#1095 in the pinned spec) asks for total-system
-entropy against engine units and changing curvature/charge heatmaps.
-These are not operator-vector entropy. First declare a positive normalized
-joint $\rho$, subsystem factors and evolution/coarse-graining rule. Record
+Total-system entropy against engine units and curvature/charge heatmaps
+are not operator-vector entropy. Before reporting them, declare a positive
+normalized joint $\rho$, subsystem factors and an evolution or
+coarse-graining rule. Record
 $S(\rho)=-\Tr(\rho\log\rho)$, reduced entropies and
 $I(A:B)=S(\rho_A)+S(\rho_B)-S(\rho_{AB})$, with log base and engine schedule.
 A globally pure closed state has zero total entropy while local entropies
@@ -1916,14 +1859,13 @@ that operation. Curvature heatmaps need an estimator, dual-cell support,
 Lorentzian/complex convention, units and normalization; separate
 \emph{mass curvature} needs a defined mass observable and geometric relation.
 Charge maps need an observable, sign, support and conservation test.
-No identity equating curvature, charge, entropy or remainder is proved.
 
 \part{Evidence, reconciliation and references}
 
 \section{What the code measures}
 
-The pinned specification reports that \texttt{qubit\_animation.py verify}
-reads a seeded collar at tolerance $10^{-12}$: rank and integrality of $M$ (R1--R4);
+\texttt{qubit\_animation.py verify} reads a seeded collar at tolerance
+$10^{-12}$: rank and integrality of $M$ (R1--R4);
 isotropy for the declared form on the orthonormalized restriction subspace
 with the flipped control nonvanishing (R5, Remark~\ref{rem:sign} and P4);
 the harmonic certificates (H1--H3, the caveat after Theorem~\ref{thm:hodge});
@@ -1933,10 +1875,10 @@ twist-group composition (C1, P11); the four-torus direct sum (D1,
 Proposition~\ref{prop:sphere}); and the covariant transport defect (U1,
 Section~\ref{sec:metric} and Remark~\ref{rem:gauge}). The subcommand
 \texttt{theta} fits $\rho_2$ for the generators and the seeded monodromies
-(T1--T8, Sections~\ref{sec:weil}--\ref{sec:seam}). These are source-reported
-fixture results, not new runs or proofs by numerical precision.
-The reported small residuals lie at $10^{-16}$--$10^{-14}$; metric-dependent
-defects can be order one or small for matching boundaries.
+(T1--T8, Sections~\ref{sec:weil}--\ref{sec:seam}). These are fixture
+results, not proofs by numerical precision. Residuals lie at
+$10^{-16}$--$10^{-14}$; metric-dependent defects can be order one or small
+for matching boundaries.
 
 \begin{center}
 \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.14\textwidth}>{\raggedright\arraybackslash}p{0.79\textwidth}@{}}
@@ -1952,26 +1894,26 @@ direct sum. Symbol contraction is a separate exact composition theorem;
 native seam gluing requires independently assembled complexes.\\
 theorem & Theta section spaces factor; even-level Weil operators are
 Clifford. This is a new register, not equality with harmonic $H^1$.\\
-reported & Bilinear transport defect $0.46$--$0.58$ generically, about
+measured & Bilinear transport defect $0.46$--$0.58$ generically, about
 $10^{-14}$ for identical tori; conventions are in Section~\ref{sec:gram-contract}.\\
 measured (Section~\ref{sec:evidence-merged}) & Gluing along the far surface
 of one host by layered flip passes, with the Dehn twists $T_A$, $T_B$, $S$
 and their non-commuting composition; a genus-two far boundary whose period
 matrix couples the tori while the monodromy stays a product; an entangling
 monodromy from the order-five rotation of a symmetric genus-two surface.\\
-current & Geometric operator algebra (\#1121), holonomy/coherent encoding
-(\#1122), tensor/Choi composition and neck entropy (\#1123), root-lattice
-characters and fusion (\#1124); see V1--V8.\\
+open & Geometric operator algebra, holonomy/coherent encoding, tensor/Choi
+composition and neck entropy, root-lattice characters and fusion
+(V2--V5).\\
 optional & Native seam and through-neck gate synthesis, positive physical
-dynamics and non-abelian fiber/sewing implementation. These do not gate
-the representation result. Complex bilinear pairings remain distinct
-from positive quantum norms.\\
+dynamics and non-abelian fiber/sewing implementation; these do not gate
+the representation result.\\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{Numerical evidence retained from the specification}
-For grid $3$, seed $7$ and tolerance $10^{-12}$, the source reports:
+\subsection{Numerical evidence on the collar fixtures}
+For grid $3$, seed $7$ and tolerance $10^{-12}$, \texttt{verify} and
+\texttt{theta} report:
 \begin{itemize}
 \item Period integrality residual at most $10^{-14}$; product/swap maps
 equal identity/swap; declared isotropy at most $1.1\,10^{-14}$, versus
@@ -1981,8 +1923,9 @@ but moves the canonical representative by $0.49$--$0.77$, with exact
 difference residual at most $4\,10^{-14}$. Reported Gram motion is
 $0.18$--$0.45$.
 \item Twist-group composition residual at most $1.5\,10^{-14}$; sphere-join
-off-block norm at most $5\,10^{-15}$. The marking maps on the current
-square triangulation commute, so this does not test composition order.
+off-block norm at most $5\,10^{-15}$. The automorphism twists of the
+square triangulation commute; composition order is tested by the flip
+passes (F4, T9).
 \item Closed/coclosed residuals at most $2.5\,10^{-14}$, nullity/rank
 $2$ or $4$, independent span residual at most $1.2\,10^{-14}$ and
 projector idempotency at most $7\,10^{-16}$.
@@ -1997,19 +1940,16 @@ and identical-square two-torus fixtures; $27/27$ for each four-torus
 product/swap fixture. Reported \texttt{theta} counts:
 $8/8,8/8,10/10,10/10$ on two-/four-torus product/swap fixtures.
 \end{itemize}
-No engine dynamics, actual interior-seam composition or scalar-geometric
-non-abelian register was established by these fixed-complex reads.
-A topology search move need not change the marked relation: a
-triangulation-preserving equivalence can leave it unchanged.
+These fixed-complex reads establish no engine dynamics, interior-seam
+composition or non-abelian register; a triangulation-preserving search
+move can leave the marked relation unchanged.
 
-\subsection{Measurements after consolidation}\label{sec:evidence-merged}
-Made on 14 September 2026 on the fixed complexes named, tolerance
-$10^{-12}$, grid $3$ and seed $7$ unless stated; records under
-\path{~/cobordism-runs/functor-verify/} and
-\path{~/cobordism-runs/theta-register/}; merged as Tessera
-\#1116, \#1119 and \#1120.
+\subsection{Measurements on the tube, flip and decagon hosts}\label{sec:evidence-merged}
+On the fixed complexes named, tolerance $10^{-12}$, grid $3$ and seed $7$
+unless stated; records under \path{~/cobordism-runs/functor-verify/} and
+\path{~/cobordism-runs/theta-register/}.
 \begin{itemize}
-\item \textbf{Tube-joined collars} (\#1116; \texttt{theta --tori 4 --join tube}).
+\item \textbf{Tube-joined collars} (\texttt{theta --tori 4 --join tube}).
 Two collars joined by a prism tube between one far triangle of each: the far
 boundary is one genus-two surface, $\partial W = T^2\sqcup T^2\sqcup\Sigma_2$,
 Betti numbers $[1,4,2,0]$, restriction rank $4 = b_1(\partial W)/2$, boundary
@@ -2028,19 +1968,18 @@ $0$ for the diagonal control ($5\,10^{-30}$) and $4\,10^{-7}$ bits mean on
 the default neck (G4). Over $25$ necks (waist $0.25$--$4$, length
 $0.25$--$4$) $|\Omega_{12}|$ runs $5\,10^{-8}$ to $2.4\,10^{-2}$, falling
 approximately exponentially with tube length in the reported sweep.
-The reported entropy range is $5\,10^{-14}$ to $2.4\,10^{-3}$ bits mean;
-its historical description as proportional to $|\Omega_{12}|^2$ was
-a finite-range observation, not the asymptotic theorem.
+The entropy range is $5\,10^{-14}$ to $2.4\,10^{-3}$ bits mean; its
+proportionality to $|\Omega_{12}|^2$ over this range is a finite-range
+observation, not the asymptotic law.
 The diagonal of $\Omega$
 approaches the far tori's moduli as the neck pinches ($0.099\to0.037$): the
 separating degeneration (G5). Counts $11/11$, $11/11$ (swap), $12/12$
 (sweep). This is a weak-coupling encoded-state observation, not an
-entropy--area law. Historical averaged values used the then-current
-sampling procedure and are not paired-sample convergence evidence.
-The corrected asymptotics and controls are in
+entropy--area law; the averaged values are not paired-sample convergence
+evidence. The asymptotics and controls are in
 Section~\ref{sec:neck-entropy}.
-\item \textbf{Dehn twists by layered flips} (\#1119;
-\texttt{verify --far-flips}, \texttt{theta --far-flips}). One tetrahedron per
+\item \textbf{Dehn twists by layered flips}
+(\texttt{verify --far-flips}, \texttt{theta --far-flips}). One tetrahedron per
 flipped boundary edge of the far torus (nine per pass on grid $3$): rows
 for $T_B$, columns for $T_A$, diagonals then the quarter turn for $S$; the
 flipped grid is the grid in a sheared basis, relabelled by the lattice map
@@ -2053,12 +1992,13 @@ torus's own modulus in the relabelled marking equals
 $(M_{21}+M_{22}\tau)/(M_{11}+M_{12}\tau)$ to $8\,10^{-16}$ (F3);
 $\rho_2 = \operatorname{diag}(1,i)$, $H\operatorname{diag}(1,-i)H$, $H$ at
 $\le 5\,10^{-16}$ (T8). On grid $5$: $T_B^2$, $T_AT_B$ and $T_BT_A$ read as
-the products of their passes, the two orders differing by one (F4) and
-their Weil matrices at projective distance $1.0$ (T9); with the swap,
+the products of their passes, $T_AT_B=\begin{psmallmatrix}1&1\\1&2\end{psmallmatrix}$
+and $T_BT_A=\begin{psmallmatrix}2&1\\1&1\end{psmallmatrix}$ (F4), with
+Weil matrices at projective distance $1.0$ (T9); with the swap,
 $M = M(\text{flips})\cdot\text{swap}$. Counts $20/20$ (one pass),
 $21/21$ (two passes), $8/8$, $9/9$. On grid $3$ a second pass collides with
 an existing edge and is refused by name.
-\item \textbf{The entangling collar} (\#1120; \texttt{theta --surface decagon}).
+\item \textbf{The entangling collar} (\texttt{theta --surface decagon}).
 The decagon with opposite sides identified, coned and barycentrically
 subdivided ($28$ vertices, $90$ edges, $60$ faces, $\chi = -2$), the flat
 decagon metric, its rotations as vertex permutations (simplicial isometries
@@ -2082,116 +2022,14 @@ lies in no conjugate of $S_3\wr\Z/2$, so no such gate is a local Clifford
 or a swap times one: the entangling capacity is forced by the order.
 \end{itemize}
 
-\paragraph{Historical modular conventions.}
-The reported theta matrices above used the historical direct-monodromy
-input convention. They certify those recorded fits and witnesses, not
-automatically covariance with the simultaneously reported boundary modulus.
-Current tests must apply Proposition~\ref{prop:coordinate-bridge} and
-Proposition~\ref{prop:coherent-covariance}, explicitly distinguishing raw
-period matrices, standard Siegel matrices, and value/state actions.
-Likewise a finite-dimensional discrete period read is not promoted to an
-exact Riemann-surface theorem by symmetry and positivity alone.
-
-\subsection{What is measured next}\label{sec:next}
-Owner-approved representation objective, revised 14 September 2026.
-Implementation tickets remain open; this document and their specifications
-are revised in the documentation PR for \#1131.
-\begin{enumerate}
-\item \#1121: complete geometric operator algebra. Implement reduced
-cycle/translation symbols, scalar crossing phases, involution, trace and
-twisted convolution. Test the $d^2$ basis, round trips for arbitrary
-operators, adjoints and multiplication against independent matrices.
-Retain fixed-boundary pairing invariance as a distinct control; do not
-add relaxation to the fixed-complex verifier or expect its defect to fall.
-\item \#1122: holonomy-defined states. Keep the neutral harmonic pencil,
-construct ordinary closed phase configurations and read Wilson loops
-independently. Fix $z=b-\Omega a$, the period/modular bridge, conjugate
-coherent action and antiunitary factorization. Check complete qubit
-encoding and its non-unique inverse. At level three use a named
-characteristic-preserving subgroup or explicitly track characteristics;
-do not claim coherent coverage of every qutrit ray.
-\item \#1123: tensor and Choi algebra plus the retained neck study.
-Verify symbol tensor products, dual-factor contractions, product/SWAP/CZ
-controls, and state/channel distinctions. Retain the star disk and larger
-grid sweeps; fix sample pairing, period accuracy/refinement and logarithmic
-entropy asymptotics. A strong neck is an exploration result, neither an
-RT law nor a prerequisite for representing entangling operators.
-\item \#1124: root-lattice representation. Derive $A_2$ roots/reflections
-and the weight lattice from scalar internal lattice geometry, then use
-the correct nonprincipal bundle and $P/KQ^\vee$ characteristic set.
-Fit normalized Weyl--Kac characters against Kac--Peterson on held-out
-points. Compare fusion by geometric alcove evaluation, Verlinde and
-independent Kac--Walton folding; include $A_1$ and the correct even-lattice
-Frenkel--Kac controls. Host-derived $\tau$ is an input source, not a demand
-to synthesize the root fiber.
-\end{enumerate}
-Common requirements are V1--V8. A native seam between separately seeded
-cobordisms, a through-neck Dehn twist, splitting back to separate boundary
-tori, physical dynamics and braid synthesis are optional future work.
-Their absence does not weaken the stated algebra-isomorphism theorem.
-
-\section{Source coverage and resolved conflicts}\label{sec:reconciliation}
-
-\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.29\textwidth}>{\raggedright\arraybackslash}p{0.64\textwidth}@{}}
-\toprule
-source material & maintained location or correction\\
-\midrule
-\endhead
-Original derivation 0--5 &
-Sections~\ref{sec:cochains}--\ref{sec:composition}: harmonic/cohomology bridge,
-mutual annihilators, graph condition, dual-input vectorization and
-class-level gluing. Literal space/vector equality and the unqualified
-Atiyah TQFT claim are withdrawn.\\
-Original derivation 6--9 &
-Sections~\ref{sec:metric}, \ref{sec:kernel-contract}--\ref{sec:quantum-contract}:
-metric effects, quantum norms, channels and twisted cohomology.
-Stationary action does not prove isometry; a generic complex bilinear
-form is not Krein. The earlier blanket exclusion of nondegenerate
-length-cochain states is not proved here. Determinant weighting alone
-does not establish the operator correspondence.\\
-Spec scientific question and R1--R7 &
-Sections~\ref{sec:kernel-contract}, \ref{sec:implementation};
-whole scalar geometry, target-free recovery and separate scientific verdicts.\\
-Spec mathematical contracts &
-Sections~\ref{sec:kernel-contract}--\ref{sec:quantum-contract} plus
-Sections~\ref{sec:restriction}--\ref{sec:seam}; positive Hodge identity,
-torus encoding, identifiability, Schur elimination, Choi/channel conventions,
-harmonic certificates and theta construction.\\
-Spec S1--S7, D1--D5, C1--C9 &
-Section~\ref{sec:implementation} retains the native identifiers and
-compatibility requirements; V1--V8 govern the current representation
-objective. Historical residuals and counts retain their original meaning.\\
-Prior reading, theta and seams &
-Sections~\ref{sec:weights}--\ref{sec:clifford}: polarization/line-bundle data,
-missing modular determinant factor, even-level/lift caveats, antiunitarity
-and product-input entanglement witness. A circle overlap or mixing matrix
-alone is not an entangling-realization theorem.\\
-Prior reading, roots and fusion &
-Sections~\ref{sec:lie}--\ref{sec:density}, \ref{sec:root-program}:
-roots, coroots, weights, characters, Brauer--Klimyk, affine level/alcove,
-Weyl--Kac, Sugawara, Kac--Peterson, Verlinde, Kac--Walton,
-Frenkel--Kac--Segal and qualified density. Root rank is not forced by
-the boundary's $H^1$ rank; Weyl isotypic sectors are not alcove labels.\\
-Tensor and level terminology &
-Section~\ref{sec:quantum-contract}: K\"unneth, theta factorization,
-ordinary representation tensor products and fusion are distinct.
-The level-one equivalence is the simply-laced lattice construction,
-with $\mathfrak{su}(2)_1$ corresponding to abelian theta level $2$.\\
-Representation refinement &
-Sections~\ref{sec:phase-space}, \ref{sec:operator-algebra},
-\ref{sec:coherent}, \ref{sec:root-coordinates}, \ref{sec:validation}:
-classical/quantum types, complete geometric algebra, covariance and qubit
-coverage, root polarization, and current ticket acceptance. Native synthesis
-is explicitly not required.\\
-Information follow-up &
-The preceding diagnostics section retains entropy/engine-unit,
-curvature and charge objectives, with unresolved state/observable
-definitions explicit rather than claimed measurements.\\
-\bottomrule
-\end{longtable}
-This consolidation changes documentation only. Companion maps, problems
-and solutions are retained as historical study aids; their numbering is
-referenced where useful, but conflicting claims defer to this source.
+\paragraph{Modular conventions of the theta records.}
+The theta records fit $\rho$ from the period matrix directly (the
+direct-monodromy input convention). They certify the recorded fits and
+witnesses, not covariance with the simultaneously reported boundary
+modulus; covariance tests apply Propositions~\ref{prop:coordinate-bridge}
+and~\ref{prop:coherent-covariance}, distinguishing raw period matrices,
+standard Siegel matrices, and value/state actions. A discrete period read
+is not an exact Riemann-surface theorem by symmetry and positivity alone.
 
 \section{Where this sits}
 \begingroup\small
@@ -2248,11 +2086,11 @@ referenced where useful, but conflicting claims defer to this source.
   \item Watrous,
     \href{https://cs.uwaterloo.ca/~watrous/TQI-notes/TQI-notes.05.pdf}{Channel representations}:
     Choi, Kraus and vectorization conventions.
-  \item Pinned implementation context:
-    \path{simplicial_qubit_spec.md};
-    \path{include/chainhodge/ChainHodge.h};
-    \path{include/cobordism/PencilLayer.h};
-    \path{include/cobordism/MultiCobordism.h};
+  \item Implementation context:\\
+    \path{simplicial_qubit_spec.md};\\
+    \path{include/chainhodge/ChainHodge.h};\\
+    \path{include/cobordism/PencilLayer.h};\\
+    \path{include/cobordism/MultiCobordism.h};\\
     \path{tessera/quantum/theta_register.py}.
 \end{itemize}
 \endgroup
