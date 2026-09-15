@@ -6,11 +6,6 @@ this repository at the author's request:
 - [LaTeX source](cobordism_functor_reading.tex)
 - [Generated reading PDF](cobordism_functor_reading.pdf)
 
-Edit the repository source, regenerate the PDF, and synchronize the reading
-copies under `~/tessera-notes/cobordism-functor/`. Those local copies are not
-a second authority. Companion maps, problems, and solutions are study aids;
-conflicting claims defer to the consolidated reading.
-
 The current goal is an exact geometric representation of operator and fusion
 algebras. Synthesis of every operator as one native simplicial cobordism is
 not required. Implementation tickets #1121–#1124 specify the corresponding
