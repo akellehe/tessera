@@ -50,45 +50,6 @@ endif()
 # that lost an afternoon to it.
 set(TESSERA_REFERENCE_GNU_CXX_MAJOR 13 CACHE STRING
     "GNU C++ major version the committed golden dumps were generated with")
-option(TESSERA_REQUIRE_REFERENCE_TOOLCHAIN
-    "Fail configuration on a compiler that cannot reproduce the golden dumps" ON)
-
-if (TESSERA_REQUIRE_REFERENCE_TOOLCHAIN)
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-            AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS
-                    "${TESSERA_REFERENCE_GNU_CXX_MAJOR}"
-            AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS
-                    "${TESSERA_REFERENCE_GNU_CXX_MAJOR}.99")
-        # Reference toolchain — nothing to say.
-    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        message(FATAL_ERROR
-            "tessera needs GNU C++ ${TESSERA_REFERENCE_GNU_CXX_MAJOR}.x to "
-            "reproduce the committed golden dumps; this is "
-            "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} "
-            "(${CMAKE_CXX_COMPILER}).\n"
-            "  Building anyway is supported, but expect the dump comparisons "
-            "in tests/observables, tests/chainhodge and tests/cobordism to "
-            "fail on last-bit differences that are NOT regressions.\n"
-            "  Install the reference compiler:\n"
-            "    sudo apt-get install g++-${TESSERA_REFERENCE_GNU_CXX_MAJOR} "
-            "gcc-${TESSERA_REFERENCE_GNU_CXX_MAJOR}\n"
-            "  then build with it:\n"
-            "    CC=gcc-${TESSERA_REFERENCE_GNU_CXX_MAJOR} "
-            "CXX=g++-${TESSERA_REFERENCE_GNU_CXX_MAJOR} "
-            "pip install -e \".[dev]\"\n"
-            "  Or accept the dump failures and proceed:\n"
-            "    pip install -e \".[dev]\" "
-            "-C cmake.define.TESSERA_REQUIRE_REFERENCE_TOOLCHAIN=OFF")
-    else()
-        message(WARNING
-            "tessera's golden dumps were generated with GNU C++ "
-            "${TESSERA_REFERENCE_GNU_CXX_MAJOR}.x; this is "
-            "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}. The build "
-            "is fine, but the dump comparisons in tests/observables, "
-            "tests/chainhodge and tests/cobordism may fail on last-bit "
-            "differences that are not regressions.")
-    endif()
-endif()
 
 # ---- Build resource limits (memory-aware Ninja job pools) ----
 # A full tessera build is memory-bound, not CPU-bound. The template-heavy

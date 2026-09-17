@@ -376,9 +376,9 @@ class ExchangeHolonomy {
     /// (cells x rank) frame at loop position t (t = 0..T-1, cyclically
     /// closed back to t = 0), `weights` the constant diagonal metric W.
     /// All frames must share the row count and column count
-    /// (@throws std::invalid_argument otherwise — an explicit path with a
+    /// @throws std::invalid_argument otherwise — an explicit path with a
     /// shape mismatch is a structural error, unlike the fiber path where a
-    /// rank change is a physical invalidation).
+    /// rank change is a physical invalidation.
     [[nodiscard]] static LoopHolonomyRead loopHolonomy(
         const std::vector<Eigen::MatrixXcd> &frames,
         const Eigen::VectorXcd &weights,
@@ -459,7 +459,7 @@ class ExchangeHolonomy {
     /// The spinor representation dimension carried at spatial dimension d:
     /// 2 at d = 3 (Pauli), 4 at d = 4 (the documented Euclidean Dirac
     /// layer).  Other d are not implemented and throw
-    /// (@throws std::invalid_argument).
+    /// @throws std::invalid_argument
     [[nodiscard]] static int spinorDimension(int d);
 
     /// Euclidean gamma matrix gamma_a (0-based axis a < d) with

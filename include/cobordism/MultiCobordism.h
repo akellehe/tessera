@@ -1187,8 +1187,7 @@ class MultiCobordism {
   /// supplies it. Marks each block `BoundaryBlock::surface`. The block's
   /// target is the constructor's `inputTargets[i]` exactly as for the
   /// seed-vertex form; the state itself arrives as a fiber later.
-  /// @throws std::invalid_argument on an empty region or a vertex absent from
-  ///   the host.
+  /// @throws std::invalid_argument on an empty region or a vertex absent from the host.
   void seedInputs(const std::vector<std::vector<std::uint64_t>> &regions);
   /// Seed one OUTPUT block per seed vertex (see seedInputs).
   void seedOutputs(const std::vector<std::uint64_t> &seeds);
@@ -1292,7 +1291,8 @@ class MultiCobordism {
   [[nodiscard]] double wholeComplexFiberResidual() const;
   /// Read the fiber the whole complex carries on the target's cells and
   /// contour (the band of \p contour when given): what a downstream node is
-  /// piped. @throws std::logic_error without a whole-complex fiber target.
+  /// piped.
+  /// @throws std::logic_error without a whole-complex fiber target.
   [[nodiscard]] BoundaryFiber readWholeComplexFiber(const chainhodge::Contour *contour = nullptr,
                                                     double kappa = 10.0) const;
 
@@ -1300,7 +1300,8 @@ class MultiCobordism {
   /// (\f$ |\ell^2| = 1 \f$; balanced wiring gives \f$ \ell=\sqrt{1/2}(1+i) \f$),
   /// Lorentzian signature, the CDT type and preferred foliation: the canonical
   /// seed from which every host grows (`Proton::buildMinimalSeed` is this at
-  /// dimension 4). @throws std::invalid_argument for dimension below 1.
+  /// dimension 4).
+  /// @throws std::invalid_argument for dimension below 1.
   [[nodiscard]] static std::shared_ptr<Spacetime> seedSimplex(int dimension,
                                                               bool balancedEdges = false);
 
@@ -1670,9 +1671,10 @@ class MultiCobordism {
   /// cells of the live complex, one per fiber row, in the attachment order — the
   /// attachment permutation is this order). The fiber's own cell ids are
   /// upstream ids and are replaced, and the block's region grows to contain
-  /// the attached cells. @throws std::invalid_argument on a count mismatch, a
-  /// cell absent from the live complex, or an overlap with another attached
-  /// input fiber's cells.
+  /// the attached cells.
+  /// @throws std::invalid_argument on a count mismatch, a
+  ///   cell absent from the live complex, or an overlap with another attached
+  ///   input fiber's cells.
   void attachInputFiber(std::size_t index, BoundaryFiber fiber,
                         std::vector<std::vector<std::uint64_t>> cells);
   /// Set the FRAME the two-body transfer is read in on input block \p index
@@ -1687,17 +1689,20 @@ class MultiCobordism {
   /// (\f$ r_A \times r_B \f$; the gradient differentiates the pencil operator
   /// only, the frames being constants); re-attaching the block's fiber clears
   /// its frame, since the rows referred to the previous attachment.
-  /// @throws std::out_of_range on the index; std::logic_error when the block
+  /// @throws std::out_of_range on the index
+  /// @throws std::logic_error when the block
   ///   carries no attached fiber; std::invalid_argument, by name, when the
   ///   cells are not the fiber's attached cells in their order, when the
   ///   images or the dual images have another row count, when the two have
   ///   different column counts or none, or when an entry is not finite.
   void setInputFrame(std::size_t index, std::vector<std::vector<std::uint64_t>> cells,
                      Eigen::MatrixXcd images, Eigen::MatrixXcd dualImages);
-  /// The frame of input block \p index, or none. @throws std::out_of_range.
+  /// The frame of input block \p index, or none.
+  /// @throws std::out_of_range
   [[nodiscard]] const std::optional<BlockFrame> &inputFrame(std::size_t index) const;
   /// Drop the frame of input block \p index: the transfer returns to identity
-  /// frames on the cells. @throws std::out_of_range.
+  /// frames on the cells.
+  /// @throws std::out_of_range
   void clearInputFrame(std::size_t index);
   /// Set the MARKING of input block \p index with the block's input
   /// coefficients (`BlockMarking`; spec D2, D3 as revised): \p cycles in host
@@ -1715,26 +1720,29 @@ class MultiCobordism {
   /// (`readInputState`), and the two-body transfer is read in the derived
   /// frame (a supplied `frame` on the block is then never read). Blocks
   /// without a marking are unchanged.
-  /// @throws std::out_of_range on the index; std::logic_error without an
-  ///   attached fiber; std::invalid_argument, by name, when the fiber is not
+  /// @throws std::out_of_range on the index;
+  /// @throws std::logic_error without an
+  ///   attached fiber; std::invalid_argument by name, when the fiber is not
   ///   at degree 1, when there is no cycle, when the coefficient count is not
   ///   the cycle count, when a coefficient is not finite or all are zero,
   ///   when a step is a self-loop or not an edge of the live complex inside
   ///   the block's vertex set, when a cycle's steps do not form one closed
   ///   walk, or when the cycles share no vertex.
   void setInputMarking(std::size_t index, Marking cycles, std::vector<std::complex<double>> coefficients);
-  /// The marking of input block \p index, or none. @throws std::out_of_range.
+  /// The marking of input block \p index, or none.
+  /// @throws std::out_of_range
   [[nodiscard]] const std::optional<BlockMarking> &inputMarking(std::size_t index) const;
   /// Drop the marking of input block \p index: its scoring and transfer
-  /// return to what they were before `setInputMarking`. @throws std::out_of_range.
+  /// return to what they were before `setInputMarking`.
+  /// @throws std::out_of_range
   void clearInputMarking(std::size_t index);
   /// The live frame of a marked \p block on \p spacetime (`DerivedFrame`):
-  /// read-only on the geometry. @throws std::logic_error when the block
-  /// carries no marking.
+  /// read-only on the geometry.
+  /// @throws std::logic_error when the block carries no marking.
   [[nodiscard]] static DerivedFrame deriveFrame(const BoundaryBlock &block,
                                                const std::shared_ptr<Spacetime> &spacetime);
-  /// `deriveFrame` of input block \p index on the live complex. @throws
-  /// std::out_of_range on the index; std::logic_error without a marking.
+  /// `deriveFrame` of input block \p index on the live complex.
+  /// @throws std::out_of_range on the index; std::logic_error without a marking.
   [[nodiscard]] DerivedFrame deriveInputFrame(std::size_t index) const;
   /// The BLOCK RESIDUAL of a marked block (spec D2 as revised): the target
   /// edge values \f$ t = F\,(a, b)^T \f$ of the block's input coefficients
@@ -1744,16 +1752,17 @@ class MultiCobordism {
   /// whole, R7) — restricted to the block's edges (`fiberResidualOn`, the
   /// whole-complex leak, one target per block). Full leak 1.0 when the frame
   /// cannot be derived or the whole refuses the read. This is what `rU`
-  /// scores at `inputResidualWeight` for a marked block. @throws
-  /// std::logic_error without a marking or off the Whitney pencil.
+  /// scores at `inputResidualWeight` for a marked block.
+  /// @throws std::logic_error without a marking or off the Whitney pencil.
   [[nodiscard]] double inputStateResidualOn(const BoundaryBlock &block,
                                             const std::shared_ptr<Spacetime> &spacetime) const;
   /// `inputStateResidualOn` of input block \p index on the live complex.
   [[nodiscard]] double inputStateResidual(std::size_t index) const;
   /// The state at input block \p index (`InputStateRead`): the coefficients
   /// of the whole's zero mode in the block's live frame, its input
-  /// coefficients, and its residual. @throws std::out_of_range;
-  ///   std::logic_error without a marking or off the Whitney pencil.
+  /// coefficients, and its residual.
+  /// @throws std::out_of_range
+  /// @throws std::logic_error without a marking or off the Whitney pencil.
   [[nodiscard]] InputStateRead readInputState(std::size_t index) const;
   /// The block's live surface read as the simplicial qubit of the qubit
   /// spec over the block's marking (qubit cobordism spec D2, S6): the
@@ -1777,7 +1786,8 @@ class MultiCobordism {
   ///   degenerate complex structure).
   [[nodiscard]] static observables::SimplicialQubit blockQubit(const BoundaryBlock &block,
                                                                 const std::shared_ptr<Spacetime> &spacetime);
-  /// `blockQubit` of input block \p index on the live complex. @throws std::out_of_range.
+  /// `blockQubit` of input block \p index on the live complex.
+  /// @throws std::out_of_range
   [[nodiscard]] observables::SimplicialQubit blockQubit(std::size_t index) const;
   /// The block residual of the qubit cobordism spec D2 on \p spacetime: with
   /// \f$ (P_A, P_B) \f$ the transported periods of the holomorphic form of
@@ -1832,13 +1842,14 @@ class MultiCobordism {
   /// complex with the live lengths (`blockComplexWithGeometry`: a surface
   /// block's surface, an ordinary block's sub-complex) on its attached fiber
   /// cells at the fiber's degree. Call it at attachment, when the block's
-  /// lengths are the surface's own. @throws std::out_of_range on the index;
-  ///   std::logic_error without an attached fiber or an own complex; and
+  /// lengths are the surface's own.
+  /// @throws std::out_of_range on the index;
+  /// @throws std::logic_error without an attached fiber or an own complex; and
   ///   what `dualFrame` throws.
   [[nodiscard]] Eigen::MatrixXcd inputFrameDual(std::size_t index, const Eigen::MatrixXcd &images) const;
   /// Set the two-body target; scored inside `rU` under `useFiberResiduals`
-  /// once two input fibers are attached. @throws std::invalid_argument on an
-  /// empty target, and, by name, on a shape that disagrees with the transfer's
+  /// once two input fibers are attached.
+  /// @throws std::invalid_argument on an empty target, and, by name, on a shape that disagrees with the transfer's
   /// when two input fibers are attached: the frames' ranks \f$ r_A \times
   /// r_B \f$ when both blocks carry a frame, the cell counts otherwise (with
   /// one frame set the shape is settled at read time, which refuses by name).
@@ -1894,8 +1905,8 @@ class MultiCobordism {
   [[nodiscard]] const std::optional<TwoBodyTarget> &twoBodyTarget() const noexcept {
     return twoBodyTarget_;
   }
-  /// The two-body residual on the live complex. @throws std::logic_error
-  /// without a target or without two attached input fibers.
+  /// The two-body residual on the live complex.
+  /// @throws std::logic_error without a target or without two attached input fibers.
   [[nodiscard]] double twoBodyResidual() const;
   /// The state the WHOLE complex's harmonic form is meant to be
   /// (`ReadoutMode::Whole`). Its dimension is the claim: a rank-2 harmonic
@@ -1956,7 +1967,8 @@ class MultiCobordism {
   /// use the paired transfer with the first two blocks on side A and the last
   /// two on side B. A four-input read is a geometric diagnostic, so its
   /// `residual` is NaN; no tensor-product target is inferred from the paired
-  /// direct-sum matrix. @throws std::logic_error for any other input count.
+  /// direct-sum matrix.
+  /// @throws std::logic_error for any other input count.
   [[nodiscard]] TwoBodyRead readTwoBody() const;
 
   // ---- analytic gradients of the fiber-mode residuals (#947) ----
@@ -2003,7 +2015,8 @@ class MultiCobordism {
   /// whole's band derivative (the per-edge cost) computed once and shared:
   /// what `fiberModeAscent` uses for every marked block. One gradient per
   /// block, in the given order; a block whose frame cannot be derived gets
-  /// the zero gradient. @throws std::logic_error when a block carries no
+  /// the zero gradient.
+  /// @throws std::logic_error when a block carries no
   ///   marking or the metric source is not the Whitney pencil.
   [[nodiscard]] std::vector<ResidualGradient> inputStateResidualGradientsOn(
       const std::shared_ptr<Spacetime> &spacetime, const std::vector<const BoundaryBlock *> &blocks) const;
@@ -2024,8 +2037,9 @@ class MultiCobordism {
   /// \f$ \hat\tau \f$ is invariant under the pure gauge the surface
   /// carries, and any other connection is refused by the read. The zero
   /// gradient when the read is refused (the full leak has no direction).
-  /// No finite difference anywhere. @throws std::logic_error without a
-  ///   marking; std::invalid_argument on a null spacetime.
+  /// No finite difference anywhere.
+  /// @throws std::logic_error without a marking;
+  /// @throws std::invalid_argument on a null spacetime.
   [[nodiscard]] ResidualGradient ownStateResidualGradientOn(const std::shared_ptr<Spacetime> &spacetime,
                                                             const BoundaryBlock &block) const;
   /// `ownStateResidualGradientOn` of input block \p index on the live complex.
@@ -2060,8 +2074,8 @@ class MultiCobordism {
   /// the block's own complex — a surface block's own surface at its zero
   /// mode, an ordinary block's sub-complex at the fiber's contour — mapped
   /// to the parent's edges by vertex pair; a surface's edges ARE host edges),
-  /// and the two-body target. @throws std::logic_error when a selected
-  /// two-body reading has no analytic gradient.
+  /// and the two-body target.
+  /// @throws std::logic_error when a selected two-body reading has no analytic gradient.
   [[nodiscard]] ResidualGradient fiberModeAscent() const;
   /// Whether every SELECTED reading has an analytic gradient, so
   /// `fiberModeAscent` is the direction of the objective actually being
@@ -2073,7 +2087,8 @@ class MultiCobordism {
   [[nodiscard]] bool readoutsHaveAnalyticGradient() const noexcept;
 
   /// Attach the fiber form of an input block's target (a prior cobordism's
-  /// output fiber piped downstream). @throws std::out_of_range on the index.
+  /// output fiber piped downstream).
+  /// @throws std::out_of_range on the index.
   void setInputFiber(std::size_t index, BoundaryFiber fiber);
   /// Attach the fiber form of an output block's target.
   void setOutputFiber(std::size_t index, BoundaryFiber fiber);
@@ -3118,8 +3133,8 @@ class MultiCobordism {
   /// the blocks' frames when both carry one (`transferOperand`: derived live
   /// from a marking, or the supplied `BlockFrame`), in the full (identity)
   /// frames on the fibers' cells when neither does; refused geometries throw
-  /// std::runtime_error. @throws std::logic_error when only one block
-  /// carries a frame.
+  /// std::runtime_error.
+  /// @throws std::logic_error when only one block carries a frame.
   [[nodiscard]] chainhodge::TransferResult frameTransferOn(
       const std::shared_ptr<Spacetime> &spacetime, const BoundaryBlock &A,
       const BoundaryBlock &B) const;

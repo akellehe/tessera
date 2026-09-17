@@ -404,9 +404,7 @@ struct ElectromagneticFormFactorRead {
   std::vector<std::string> failedCertificates{};
   /// Restates, on every read, that the unconditional spectral power is a
   /// structure factor and is not this observable.
-  std::string note{
-      "spectral charge-power profile is an incoherent structure factor and "
-      "is never substituted for G_E"};
+  std::string note{"spectral charge-power profile is an incoherent structure factor and is never substituted for G_E"};
 
   [[nodiscard]] Record toRecord() const;
 };
