@@ -29,9 +29,28 @@ from tessera._tessera import (                              # noqa: F401
     chainhodge,
 )
 
-# The ``quantum`` submodule (Schwinger model / DMRG, ITensor-backed) is
-# always built — ITensor/Eigen/BLAS are unconditional dependencies.
-from tessera._tessera import quantum                        # noqa: F401
+# Register them under their `tessera.*` names as well.
+#
+# pybind11 binds a submodule as an ATTRIBUTE of its parent. Python's import
+# machinery does not look at attributes: `from tessera.cobordism import X`
+# resolves through `sys.modules['tessera.cobordism']`, so without this the
+# attribute works and the import raises ModuleNotFoundError. Registering the
+# same object under both makes the two forms agree, rather than one of them
+# being a second, subtly different module.
+#
+# `quantum` is deliberately absent: there is a real `tessera/quantum/` package
+# on disk, and it re-exports the C++ submodule's names alongside its own pure
+# Python ones. Registering the C++ submodule here would shadow it, which is the
+# bug this replaced — `tessera.quantum` then meant the C++ module while
+# `from tessera.quantum import ...` meant the package, so
+# `tessera.quantum.surface_periods` raised while the import of the same name
+# succeeded. Let the package own the name.
+import sys as _sys                                          # noqa: E402
+
+for _submodule in (mesh, spacetime, observables, simulations, cobordism,
+                   chainhodge):
+    _sys.modules[f"tessera.{_submodule.__name__.rsplit('.', 1)[-1]}"] = _submodule
+del _submodule
 
 # Backward-compat re-exports at top level. Star-import each submodule so
 # existing scripts that do `from tessera import Spacetime`, `tessera.CDT`,
@@ -44,5 +63,8 @@ from tessera._tessera.simulations import *                  # noqa: F401,F403
 # specialized subsystem (no backward-compat scripts) and some of its names
 # would shadow core ones — e.g. cobordism.Signature vs the metric
 # spacetime.Signature. Access it as ``tessera.cobordism.*``.
-# Quantum is also subsystem-namespaced; expose at top level for symmetry
-# with the others (existing scripts already use `tessera.quantum.*`).
+# Quantum is subsystem-namespaced too, and is the one namespace with a Python
+# package of its own: `tessera/quantum/__init__.py` re-exports the C++ names and
+# adds the pure Python modules (surface_periods, symmetric_genus_two, ...), so
+# importing it is what gives the full surface. Scripts already use
+# `tessera.quantum.*`, which resolves to that package.
