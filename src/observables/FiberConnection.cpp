@@ -41,6 +41,11 @@ using cd = std::complex<double>;
 using cobordism::Certificate;
 using cobordism::CertificateDomain;
 using cobordism::CertificateRegime;
+using cobordism::gradeName;
+using cobordism::domainName;
+using cobordism::regimeName;
+using cobordism::domainFromName;
+using cobordism::regimeFromName;
 
 namespace {
 
@@ -175,54 +180,10 @@ double fmaxAccumulate(double acc, double value) { return std::fmax(acc, value); 
 constexpr int kRecordSchemaVersion = 2;
 constexpr int kOldestReadableRecordSchema = 1;
 
-std::string regimeName(CertificateRegime regime) {
-  switch (regime) {
-    case CertificateRegime::PositiveSemidefinite:
-      return "positive-semidefinite";
-    case CertificateRegime::HermitianIndefinite:
-      return "hermitian-indefinite";
-    case CertificateRegime::NonNormal:
-      return "non-normal";
-    case CertificateRegime::ComplexSymmetricPencil:
-      return "complex-symmetric-pencil";
-  }
-  return "non-normal";
-}
 
-CertificateRegime regimeFromName(const std::string &name) {
-  if (name == "positive-semidefinite")
-    return CertificateRegime::PositiveSemidefinite;
-  if (name == "hermitian-indefinite")
-    return CertificateRegime::HermitianIndefinite;
-  if (name == "non-normal") return CertificateRegime::NonNormal;
-  if (name == "complex-symmetric-pencil")
-    return CertificateRegime::ComplexSymmetricPencil;
-  throw std::invalid_argument("FiberConnection: unknown regime '" + name + "'");
-}
 
-std::string gradeName(cobordism::CertificateGrade grade) {
-  switch (grade) {
-    case cobordism::CertificateGrade::AlgebraicallyExact:
-      return "algebraically-exact";
-    case cobordism::CertificateGrade::StructureExact:
-      return "structure-exact";
-    case cobordism::CertificateGrade::CertifiedNumerical:
-      return "certified-numerical";
-    case cobordism::CertificateGrade::HeuristicDiscovery:
-      return "heuristic-discovery";
-  }
-  return "heuristic-discovery";
-}
 
-std::string domainName(CertificateDomain domain) {
-  return domain == CertificateDomain::Static ? "static" : "band-window";
-}
 
-CertificateDomain domainFromName(const std::string &name) {
-  if (name == "static") return CertificateDomain::Static;
-  if (name == "band-window") return CertificateDomain::BandWindow;
-  throw std::invalid_argument("FiberConnection: unknown domain '" + name + "'");
-}
 
 Record certificateToRecord(const Certificate &cert) {
   Record::Map m;

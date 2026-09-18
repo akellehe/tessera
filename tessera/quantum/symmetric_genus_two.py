@@ -25,7 +25,7 @@ import math
 
 import numpy as np
 
-from .surface_periods import SurfacePeriods
+from .surface_periods import SurfacePeriods, _steps
 
 __all__ = ["SymmetricGenusTwo"]
 
@@ -239,10 +239,6 @@ class SymmetricGenusTwo:
                     "intersection_residual": self.intersection_residual,
                     "symplectic_basis_z": self.symplectic_basis.tolist()})
         return rep
-
-
-def _steps(face):
-    return [(face[a], face[(a + 1) % 3]) for a in range(3)]
 
 
 def _symplectic_reduction(form):

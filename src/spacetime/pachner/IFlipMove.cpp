@@ -183,24 +183,15 @@ bool IFlipMove::proposeOn(SimplexPtr sigma, EdgePtr edge) {
 
   // The CDT orientation/time-slice guard is dropped in pre-geometric
   // mode; the manifold check above stands in for it.
-  if (mode_ == PachnerMode::CDT) {
-    for (const auto &nv : proposedNew) {
-      if (!isValidCDTOrientation(nv, d)) return false;
-    }
+  if (mode_ == PachnerMode::CDT &&
+      !allValidCDTOrientation(proposedNew, d)) {
+    return false;
   }
 
-  int newN41 = 0, newN32 = 0;
-  for (const auto &nv : proposedNew) {
-    if (isN41TypeVerts(nv, d)) ++newN41;
-    else if (isN32TypeVerts(nv, d)) ++newN32;
-  }
+  const auto [newN41, newN32] = countOrientationTypes(proposedNew, d);
 
   oldSimplices_ = std::move(sharing);
-  oldSimplexVerts_.reserve(oldSimplices_.size());
-  for (const auto &s : oldSimplices_) {
-    const auto &verts = s->getVertices();
-    oldSimplexVerts_.emplace_back(verts.begin(), verts.end());
-  }
+  oldSimplexVerts_ = vertexTuplesOf(oldSimplices_);
   newSimplexVerts_ = std::move(proposedNew);
   dN41_ = newN41 - oldN41;
   dN32_ = newN32 - oldN32;

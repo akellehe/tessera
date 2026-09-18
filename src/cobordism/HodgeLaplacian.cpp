@@ -1582,16 +1582,33 @@ std::vector<Cochain> HodgeLaplacian::connectionHarmonics(double tol) const {
   return connectionSpectrum().harmonics(tol);
 }
 
-std::vector<cd> HodgeLaplacian::connectionHarmonicMatrix(double tol) const {
-  ensureDecomposition();
-  const int dim = static_cast<int>(order_);
+namespace {
+
+/// The near-null columns of an eigenvector matrix, row-major, one column per
+/// eigenvalue under `tol`. Column j of a dim x dim matrix stored row-major sits
+/// at stride dim, so the j-th eigenvector is evecs[i*dim + j] over i.
+///
+/// Templated on the eigenvalue type: the connection Laplacian is Hermitian and
+/// carries real eigenvalues, while L_k is generally not self-adjoint and
+/// carries complex ones. std::abs covers both.
+template <typename Eigenvalue>
+std::vector<cd> nullColumns(const std::vector<Eigenvalue> &evals,
+                            const std::vector<cd> &evecs, int dim,
+                            double tol) {
   std::vector<cd> rows;
   for (int j = 0; j < dim; ++j) {
-    if (std::abs(evals_[static_cast<std::size_t>(j)]) >= tol) continue;
+    if (std::abs(evals[static_cast<std::size_t>(j)]) >= tol) continue;
     for (int i = 0; i < dim; ++i)
-      rows.push_back(evecs_[static_cast<std::size_t>(i) * dim + j]);
+      rows.push_back(evecs[static_cast<std::size_t>(i) * dim + j]);
   }
   return rows;
+}
+
+} // namespace
+
+std::vector<cd> HodgeLaplacian::connectionHarmonicMatrix(double tol) const {
+  ensureDecomposition();
+  return nullColumns(evals_, evecs_, static_cast<int>(order_), tol);
 }
 
 std::vector<Cochain> HodgeLaplacian::harmonics(int k, double tol,
@@ -1607,16 +1624,7 @@ std::vector<cd> HodgeLaplacian::harmonicMatrix(int k, double tol,
   // The cached eigendecompositions harmonics() reads, emitted column by
   // selected column so no Cochain objects are materialized.
   const SpectrumCache &sp = ensureSpectrum(k, metric);
-  const std::vector<cd> *evals = &sp.evals;
-  const std::vector<cd> *evecs = &sp.evecs;
-  const int dim = sp.dim;
-  std::vector<cd> rows;
-  for (int j = 0; j < dim; ++j) {
-    if (std::abs((*evals)[static_cast<std::size_t>(j)]) >= tol) continue;
-    for (int i = 0; i < dim; ++i)
-      rows.push_back((*evecs)[static_cast<std::size_t>(i) * dim + j]);
-  }
-  return rows;
+  return nullColumns(sp.evals, sp.evecs, sp.dim, tol);
 }
 
 std::vector<std::complex<double>> HodgeLaplacian::nullNorms(int k, double tol,

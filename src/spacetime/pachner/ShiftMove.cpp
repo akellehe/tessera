@@ -156,26 +156,16 @@ bool ShiftMove::propose() {
 
   // Reject if any new simplex would have a non-CDT orientation.  Dropped
   // in pre-geometric mode (no foliation to respect).
-  if (mode_ == PachnerMode::CDT) {
-    for (const auto &nv : proposedNew) {
-      if (!isValidCDTOrientation(nv, d)) return false;
-    }
+  if (mode_ == PachnerMode::CDT &&
+      !allValidCDTOrientation(proposedNew, d)) {
+    return false;
   }
 
-  // New orientation counts.
-  int newN41 = 0, newN32 = 0;
-  for (const auto &nv : proposedNew) {
-    if (isN41TypeVerts(nv, d)) ++newN41;
-    else if (isN32TypeVerts(nv, d)) ++newN32;
-  }
+  const auto [newN41, newN32] = countOrientationTypes(proposedNew, d);
 
   // Capture state for apply / rollback.
   oldSimplices_ = std::move(sharing);
-  oldSimplexVerts_.reserve(oldSimplices_.size());
-  for (const auto &s : oldSimplices_) {
-    const auto &verts = s->getVertices();
-    oldSimplexVerts_.emplace_back(verts.begin(), verts.end());
-  }
+  oldSimplexVerts_ = vertexTuplesOf(oldSimplices_);
   newSimplexVerts_ = std::move(proposedNew);
   dN41_ = newN41 - oldN41;
   dN32_ = newN32 - oldN32;

@@ -52,6 +52,21 @@ enum class CertificateRegime {
   ComplexSymmetricPencil,
 };
 
+/// The serialized spelling of a grade, domain or regime, and its inverse.
+///
+/// These are the tokens `toRecord`/`fromRecord` write and read across the
+/// cobordism and observables subsystems. They live here because the readers
+/// throw on an unrecognised token, so a second spelling anywhere produces
+/// records nothing can parse.
+[[nodiscard]] const char *gradeName(CertificateGrade grade) noexcept;
+[[nodiscard]] const char *domainName(CertificateDomain domain) noexcept;
+[[nodiscard]] const char *regimeName(CertificateRegime regime) noexcept;
+
+/// Throws std::invalid_argument on a token none of the above produces.
+[[nodiscard]] CertificateGrade gradeFromName(const std::string &name);
+[[nodiscard]] CertificateDomain domainFromName(const std::string &name);
+[[nodiscard]] CertificateRegime regimeFromName(const std::string &name);
+
 /// # Certificate
 ///
 /// The certification record attached to a kernel result: the claim grade, its

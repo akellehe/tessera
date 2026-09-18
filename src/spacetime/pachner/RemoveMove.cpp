@@ -225,31 +225,7 @@ bool RemoveMove::proposePreGeometricOn(VertexPtr v) {
   return true;
 }
 
-void RemoveMove::removeIncidentSubSimplices() {
-  // After the incident top cells are gone, every remaining simplex on v_ is a
-  // sub-top facet/hinge orphaned by the removal. Snapshot first: removeSimplex
-  // mutates v_'s simplex list.
-  std::vector<SimplexPtr> sub(v_->getSimplices().begin(),
-                              v_->getSimplices().end());
-  for (const auto &s : sub) {
-    if (!s->isStale()) st_->removeSimplex(s);
-  }
-}
-
-bool RemoveMove::applyPreGeometric() {
-  // Capture the vertex and its incident edges for rollback.  Pre-geometric
-  // vertices are coordinate-free, so getCoordinates() would throw; an empty
-  // coordinate vector recreates an identical coordinate-independent vertex
-  // (rollback's createVertex(id, {}) is the same call buildExplicit makes).
-  vertexId_ = v_->getId();
-  vertexCoords_.clear();
-  for (const auto &e : v_->getInEdges())
-    deletedEdges_.push_back({e->getSource(), e->getTarget(),
-                             e->getLength(), e->getPhase()});
-  for (const auto &e : v_->getOutEdges())
-    deletedEdges_.push_back({e->getSource(), e->getTarget(),
-                             e->getLength(), e->getPhase()});
-
+void RemoveMove::tearDownVertexStar() {
   // Remove the d+1 incident cells.
   for (const auto &s : incident_) st_->removeSimplex(s);
 
@@ -277,6 +253,34 @@ bool RemoveMove::applyPreGeometric() {
     st_->getEdgeList()->remove(e);
   }
   (void)st_->removeIfIsolated(v_);
+}
+
+void RemoveMove::removeIncidentSubSimplices() {
+  // After the incident top cells are gone, every remaining simplex on v_ is a
+  // sub-top facet/hinge orphaned by the removal. Snapshot first: removeSimplex
+  // mutates v_'s simplex list.
+  std::vector<SimplexPtr> sub(v_->getSimplices().begin(),
+                              v_->getSimplices().end());
+  for (const auto &s : sub) {
+    if (!s->isStale()) st_->removeSimplex(s);
+  }
+}
+
+bool RemoveMove::applyPreGeometric() {
+  // Capture the vertex and its incident edges for rollback.  Pre-geometric
+  // vertices are coordinate-free, so getCoordinates() would throw; an empty
+  // coordinate vector recreates an identical coordinate-independent vertex
+  // (rollback's createVertex(id, {}) is the same call buildExplicit makes).
+  vertexId_ = v_->getId();
+  vertexCoords_.clear();
+  for (const auto &e : v_->getInEdges())
+    deletedEdges_.push_back({e->getSource(), e->getTarget(),
+                             e->getLength(), e->getPhase()});
+  for (const auto &e : v_->getOutEdges())
+    deletedEdges_.push_back({e->getSource(), e->getTarget(),
+                             e->getLength(), e->getPhase()});
+
+  tearDownVertexStar();
 
   // Weld in the single replacement cell on the link vertices.
   auto r = st_->createSimplexTracked(spatialVerts_);
@@ -308,32 +312,8 @@ bool RemoveMove::apply() {
                              e->getLength(), e->getPhase()});
   }
 
-  // 2. Remove the 2d incident simplices.
-  for (const auto &s : incident_) st_->removeSimplex(s);
-
-  // 2b. Drop the now-orphaned sub-simplices the removed cells materialised on
-  // v (see applyPreGeometric for the stale-pointer rationale): rollback
-  // recreates v as a fresh object, so a lingering facet/hinge still pointing at
-  // the old v would corrupt the restored star's dual/coface walk.
-  removeIncidentSubSimplices();
-
-  // 3. Remove edges incident to v from both endpoints + the global list.
-  // Mirrors CDT::remove's cleanup.
-  Edges inCopy(v_->getInEdges().begin(), v_->getInEdges().end());
-  for (const auto &e : inCopy) {
-    e->getSource()->removeOutEdge(e);
-    v_->removeInEdge(e);
-    st_->absorbRemovedEdgeRevisions(e);
-    st_->getEdgeList()->remove(e);
-  }
-  Edges outCopy(v_->getOutEdges().begin(), v_->getOutEdges().end());
-  for (const auto &e : outCopy) {
-    e->getTarget()->removeInEdge(e);
-    v_->removeOutEdge(e);
-    st_->absorbRemovedEdgeRevisions(e);
-    st_->getEdgeList()->remove(e);
-  }
-  (void)st_->removeIfIsolated(v_);
+  // 2. Tear down v's star: cells, orphaned sub-simplices, edges, then v.
+  tearDownVertexStar();
 
   // 4. Create 2 replacement simplices.
   VertexPtrs verts1(spatialVerts_.begin(), spatialVerts_.end());

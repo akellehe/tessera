@@ -33,7 +33,7 @@
 #pragma once
 
 #include "quantum/TDVPRunner.hpp"  // TDVPConfig, TDVPSnapshot, QuenchResult
-#include "graph/SpectralGraph.hpp"
+#include "graph/WeightedCsrGraph.hpp"
 #include "graph/COO.hpp"
 
 #include <Eigen/Dense>
@@ -181,7 +181,7 @@ private:
 // the shared Lanczos + Padé-13 backbone in
 // ``src/graph/SpectralGraph.cpp``. This class supplies only
 // ``applyLaplacian`` (the weighted L = D − W matvec) and ``nVertices``.
-class EmergentGraph : public ::tessera::SpectralGraph {
+class EmergentGraph : public ::tessera::graph::WeightedCsrGraph {
 public:
     explicit EmergentGraph(MutualInformationProfile const& profile);
 
@@ -194,13 +194,7 @@ public:
     fromWeightedEdges(int n,
                        std::vector<std::tuple<int, int, double>> const& edges);
 
-    [[nodiscard]] int nVertices() const noexcept override { return n_; }
-    [[nodiscard]] int nEdges()    const noexcept { return nEdges_; }
-
-    // y ← L x with L = D − W. Implements the SpectralGraph contract;
-    // ``y`` is sized to ``nVertices()`` on entry.
-    void applyLaplacian(std::vector<double> const& x,
-                          std::vector<double>& y) const override;
+    [[nodiscard]] int nEdges() const noexcept { return nEdges_; }
 
     // Sparse weighted Laplacian L = D - W. Symmetric, in CSR format.
     [[nodiscard]] Eigen::SparseMatrix<double> laplacian() const;
@@ -221,14 +215,9 @@ private:
                         std::vector<int> const& cols,
                         std::vector<double> const& weights);
 
-    int n_{0};
+    // The CSR adjacency, the degrees and L = D - W come from
+    // graph::WeightedCsrGraph; the edge count is this class's own.
     int nEdges_{0};
-    // CSR weighted adjacency: indptr[v]..indptr[v+1] points into
-    // (indices, weights). Symmetric (each undirected edge listed twice).
-    std::vector<int>    indptr_;
-    std::vector<int>    indices_;
-    std::vector<double> weights_;
-    std::vector<double> degrees_;  // Σ_w I(v, w)
 };
 
 // ─── AmbjornLollFit ──────────────────────────────────────────────────

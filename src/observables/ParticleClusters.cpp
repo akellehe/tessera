@@ -38,6 +38,11 @@ using cobordism::Certificate;
 using cobordism::CertificateDomain;
 using cobordism::CertificateGrade;
 using cobordism::CertificateRegime;
+using cobordism::gradeName;
+using cobordism::domainName;
+using cobordism::regimeName;
+using cobordism::domainFromName;
+using cobordism::regimeFromName;
 using cd = std::complex<double>;
 
 namespace {
@@ -54,56 +59,10 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 // certificate <-> record helpers
 // ---------------------------------------------------------------------------
 
-std::string regimeName(CertificateRegime regime) {
-  switch (regime) {
-    case CertificateRegime::PositiveSemidefinite:
-      return "positive-semidefinite";
-    case CertificateRegime::HermitianIndefinite:
-      return "hermitian-indefinite";
-    case CertificateRegime::NonNormal:
-      return "non-normal";
-    case CertificateRegime::ComplexSymmetricPencil:
-      return "complex-symmetric-pencil";
-  }
-  return "non-normal";
-}
 
-CertificateRegime regimeFromName(const std::string &name) {
-  if (name == "positive-semidefinite")
-    return CertificateRegime::PositiveSemidefinite;
-  if (name == "hermitian-indefinite")
-    return CertificateRegime::HermitianIndefinite;
-  if (name == "non-normal") return CertificateRegime::NonNormal;
-  if (name == "complex-symmetric-pencil")
-    return CertificateRegime::ComplexSymmetricPencil;
-  throw std::invalid_argument("ParticleClusters: unknown regime '" + name +
-                              "'");
-}
 
-std::string gradeName(CertificateGrade grade) {
-  switch (grade) {
-    case CertificateGrade::AlgebraicallyExact:
-      return "algebraically-exact";
-    case CertificateGrade::StructureExact:
-      return "structure-exact";
-    case CertificateGrade::CertifiedNumerical:
-      return "certified-numerical";
-    case CertificateGrade::HeuristicDiscovery:
-      return "heuristic-discovery";
-  }
-  return "heuristic-discovery";
-}
 
-std::string domainName(CertificateDomain domain) {
-  return domain == CertificateDomain::Static ? "static" : "band-window";
-}
 
-CertificateDomain domainFromName(const std::string &name) {
-  if (name == "static") return CertificateDomain::Static;
-  if (name == "band-window") return CertificateDomain::BandWindow;
-  throw std::invalid_argument("ParticleClusters: unknown domain '" + name +
-                              "'");
-}
 
 Record certificateToRecord(const Certificate &cert) {
   Record::Map m;

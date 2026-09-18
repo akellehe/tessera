@@ -297,6 +297,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} SpectralGraph.hpp
 ```
+```{doxygenfile} WeightedCsrGraph.hpp
+```
 ```{doxygenfile} CSRBuilder.hpp
 ```
 ```{doxygenfile} COO.hpp

@@ -76,6 +76,44 @@ inline int spacetimeDim(const Spacetime &st) {
 /// the spacetime's EdgeList, then clear the container. Used by all
 /// five Pachner moves at the end of ``rollback()`` to undo edges that
 /// ``apply()`` freshly inserted.
+/// Whether every proposed cell has a valid CDT orientation.
+///
+/// The three moves that replace a set of cells with another set all run this
+/// guard over their proposal before accepting it. Pre-geometric mode skips it,
+/// since there is no foliation to respect.
+inline bool allValidCDTOrientation(const std::vector<VertexPtrs> &proposed,
+                                   int d) {
+  for (const auto &nv : proposed)
+    if (!isValidCDTOrientation(nv, d)) return false;
+  return true;
+}
+
+/// The (4,1) and (3,2) counts of a proposed cell set, as {N41, N32}.
+inline std::pair<int, int> countOrientationTypes(
+    const std::vector<VertexPtrs> &proposed, int d) {
+  int n41 = 0, n32 = 0;
+  for (const auto &nv : proposed) {
+    if (isN41TypeVerts(nv, d)) ++n41;
+    else if (isN32TypeVerts(nv, d)) ++n32;
+  }
+  return {n41, n32};
+}
+
+/// The vertex tuples of a set of simplices, in the order given.
+///
+/// Rollback needs the vertex ids rather than the pointers, because applying
+/// the move destroys the simplices these came from.
+inline std::vector<VertexPtrs> vertexTuplesOf(
+    const std::vector<SimplexPtr> &simplices) {
+  std::vector<VertexPtrs> out;
+  out.reserve(simplices.size());
+  for (const auto &s : simplices) {
+    const auto &verts = s->getVertices();
+    out.emplace_back(verts.begin(), verts.end());
+  }
+  return out;
+}
+
 inline void removeAndClearEdges(Edges &edges, Spacetime *st) {
   for (const auto &e : edges) {
     e->getSource()->removeOutEdge(e);
