@@ -152,10 +152,6 @@ struct InteractionConfig {
     bool          quiet{true};
 };
 
-// Transactional interaction move — mirrors tessera::spacetime::PachnerMove. Defined
-// in the .cpp; forward-declared so propose* can hand one back.
-class InteractionMove;
-
 // Metropolis Monte Carlo over interaction histories.
 class InteractionSimulation : public tessera::simulations::Simulation {
   public:
@@ -193,10 +189,6 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     // Regge change. Returns true if accepted. No-op if useCharges is
     // false.
     bool pairCreate();
-
-    // ─── Transactional proposers (caller drives propose/apply/rollback) ──
-    [[nodiscard]] std::unique_ptr<InteractionMove> proposeInteract();
-    [[nodiscard]] std::unique_ptr<InteractionMove> proposeUnInteract();
 
     // ─── Driving loop (Simulation overrides + sweep) ────────────────────
 

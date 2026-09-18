@@ -9,17 +9,17 @@
 //   - run the symmetric Koashi-Imoto decomposition;
 //   - allocate the Σ, A', B' QuantumVertex objects in the
 //     spacetime's vertex list, carrying ρ_Σ, ρ_{A'}, ρ_{B'};
-//   - write d_VR² = (−log(I / iMax))² as the squaredLength of each
-//     of the ten edges;
+//   - store d_VR = −log(I / iMax) as the length of each of the ten
+//     edges, so the squared length is d_VR²;
 //   - build a regular ``mesh::Simplex`` via ``spacetime.createSimplex``;
 //   - return that ``mesh::Simplex*``.
 //
 // State distribution:
 //   - per-vertex density matrices ρ live on the QuantumVertex objects
 //     (which are owned by ``VertexList`` via ``unique_ptr<Vertex>``);
-//   - per-edge Van Raamsdonk distance lives on ``Edge::squaredLength_``
-//     (d_VR² so callers recover d_VR via sqrt and MI via
-//     ``iMax · exp(−sqrt(squaredLength))``);
+//   - per-edge Van Raamsdonk distance lives on the edge length
+//     (``Edge::getLength`` returns d_VR; mutual information follows as
+//     ``iMax · exp(−d_VR)``);
 //   - ``iMax`` is global to the simulation and is not stored on the
 //     simplex; callers track it externally;
 //   - the KoashiImotoResult is computed inside the factory and

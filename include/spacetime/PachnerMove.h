@@ -271,8 +271,8 @@ enum class PachnerMode : std::uint8_t { CDT = 0, PreGeometric = 1 };
 ///   created simplices; that happens lazily on the next ``getFacets``
 ///   walk.
 /// * ``rollback()`` for a move that deletes edges (``RemoveMove``)
-///   captures the deleted edges' ``(sourceId, targetId,
-///   squaredLength)`` so it can reinsert them.
+///   captures the deleted edges' ``(sourceId, targetId, length)`` so it
+///   can reinsert them.
 class PachnerMove {
 public:
   virtual ~PachnerMove() = default;

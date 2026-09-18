@@ -1517,18 +1517,7 @@ allocates one inside the spacetime's vertex list) or directly via
         .def("stateDim",
              &::tessera::quantum::QuantumVertex::stateDim,
              R"doc(Return the Hilbert-space dimension of ρ.)doc")
-        .def("vanRaamsdonkDistanceTo",
-             &::tessera::quantum::QuantumVertex::vanRaamsdonkDistanceTo,
-             py::arg("other"), py::arg("iMax"),
-             R"doc(Van Raamsdonk distance d_VR = -log(I / iMax)
-between this vertex and ``other`` (which must also be a
-QuantumVertex). I is the mutual information of the product joint
-ρ_self ⊗ ρ_other — i.e. assumes the two vertices carry no
-inherited correlation. Returns +∞ when I = 0.
-
-The KI cell factory uses this for the nine non-(A, B) edges and
-computes d_VR for the (A, B) edge directly from the input joint
-ρ_AB.)doc");
+        ;
 
     py::class_<::tessera::quantum::QuantumSimplex>(m, "QuantumSimplex",
             R"doc(Static-only utility: KI factories for a 5-vertex
@@ -1539,8 +1528,8 @@ for the four KI factory entry points that build a regular
 mesh.Simplex (five vertices, ten edges) inside a Spacetime from
 two pre-existing QuantumVertex inputs. The returned mesh.Simplex
 is owned by the Spacetime; the per-vertex ρ lives on the
-QuantumVertex objects in the vertex list; the per-edge d_VR² is
-stored in the standard Edge squaredLength field.
+QuantumVertex objects in the vertex list; the per-edge d_VR is
+stored as the edge length.
 
 iMax is global to the simulation and is passed to each factory
 call — it is not stored on the simplex.)doc")

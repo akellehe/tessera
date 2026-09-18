@@ -1622,23 +1622,6 @@ bool InteractionSimulation::accept(double deltaS, double logPrefactor) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Transactional proposers — the InteractionMove class is defined here (not
-// just forward-declared) so unique_ptr can instantiate its deleter.
-// ─────────────────────────────────────────────────────────────────────────
-
-class InteractionMove {
-  public:
-    virtual ~InteractionMove() = default;
-};
-
-std::unique_ptr<InteractionMove> InteractionSimulation::proposeInteract() {
-    return nullptr;  // no transactional move object
-}
-
-std::unique_ptr<InteractionMove> InteractionSimulation::proposeUnInteract() {
-    return nullptr;  // no transactional move object
-}
-
 std::vector<double> InteractionSimulation::getSpectralDimension(
     const std::vector<double>& sigmas, int krylovDim) const {
     // The dimension we want is that of the simplicial complex of

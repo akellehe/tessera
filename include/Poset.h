@@ -45,7 +45,7 @@ using namespace ::tessera::spacetime;
 ///
 /// Internally stores a VertexList (one Vertex per node, no coordinates) and an
 /// EdgeList of cover edges. Cover edges are tessera::mesh::Edge objects; their
-/// `squaredLength` and `disposition` fields are unused by the partial-order
+/// length and `disposition` fields are unused by the partial-order
 /// semantics and stay at their default values.
 class Poset {
 public:
