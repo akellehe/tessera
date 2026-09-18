@@ -18,7 +18,7 @@ using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
 double SpacetimeVolume::compute(const std::shared_ptr<Spacetime> &spacetime) {
-  return static_cast<double>(spacetime->getSimplexCount());
+  return static_cast<double>(spacetime->getTopSimplexCount());
 }
 
 double SpacetimeVolume::update(const std::shared_ptr<Spacetime> &spacetime) {

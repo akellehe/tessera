@@ -27,6 +27,7 @@
 #include "observables/SparseGraph.h"
 #include "mesh/TemporalOrientation.h"
 #include "mesh/ForwardDeclarations.h"
+#include "mesh/EdgeKey.h"
 #include "mesh/EdgeList.h"
 #include "mesh/Edge.h"
 
@@ -318,12 +319,93 @@ void Spacetime::build(int numSimplices) {
   return topology->build(this, numSimplices);
 }
 
-std::shared_ptr<Spacetime> Spacetime::fromCells(
+std::shared_ptr<Spacetime> Spacetime::fromSimplices(
+  int dimensions,
+  const std::vector<SimplexPtr> &cells,
+  const std::optional<std::vector<std::complex<double>>> &edgeWeights,
+  const std::optional<std::vector<std::complex<double>>> &edgePhases
+) {
+  // Read the geometry off the incoming cells, keyed by endpoint pair so a
+  // shared edge is recognised as one edge. Two cells sharing an edge must agree
+  // on it; a disagreement means the caller handed us two different geometries
+  // for the same edge, which no choice of winner would make correct.
+  struct EdgeGeometry {
+    std::complex<double> length;
+    std::complex<double> phase;
+  };
+  std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> geometry;
+  std::vector<std::vector<std::uint64_t>> tuples;
+  tuples.reserve(cells.size());
+
+  for (const auto &cell : cells) {
+    if (cell == nullptr)
+      throw std::invalid_argument("Spacetime::fromSimplices: null cell");
+    tuples.push_back(cell->topTuple());
+    for (const auto &edge : cell->getEdges()) {
+      const auto a = edge->getSource()->getId();
+      const auto b = edge->getTarget()->getId();
+      const auto key = std::make_pair(std::min(a, b), std::max(a, b));
+      // The U(1) phase is orientation-dependent: an edge stored target-to-source
+      // carries the inverse of the phase on the source-to-target orientation.
+      // Normalize to the ascending orientation here, and hand it back on the new
+      // edge's own orientation below, so a cell that happens to store an edge
+      // the other way round does not flip its link. 0 - phi rather than -phi:
+      // IEEE negation turns +0 into -0, and a signed zero would make an
+      // otherwise untouched all-zero connection differ bit for bit.
+      const std::complex<double> ascendingPhase =
+          a < b ? edge->getPhase()
+                : std::complex<double>{0.0, 0.0} - edge->getPhase();
+      const EdgeGeometry here{edge->getLength(), ascendingPhase};
+      const auto [it, inserted] = geometry.emplace(key, here);
+      if (!inserted &&
+          (it->second.length != here.length || it->second.phase != here.phase))
+        throw std::invalid_argument(
+            "Spacetime::fromSimplices: cells disagree on the geometry of the edge (" +
+            std::to_string(key.first) + ", " + std::to_string(key.second) + ")");
+    }
+  }
+
+  auto st = fromVertexTuples(dimensions, tuples);
+  if (st == nullptr) return nullptr;
+
+  // Transfer what the cells carried, then apply any override.
+  for (const auto &edge : st->getEdgeList()->toVector()) {
+    const auto a = edge->getSource()->getId();
+    const auto b = edge->getTarget()->getId();
+    const auto it = geometry.find({std::min(a, b), std::max(a, b)});
+    // An edge the cells did not carry cannot happen for a well-formed cell set,
+    // since every edge of the new complex is an edge of some cell.
+    if (it == geometry.end()) continue;
+    edge->setLength(it->second.length);
+    edge->setPhase(a < b ? it->second.phase
+                         : std::complex<double>{0.0, 0.0} - it->second.phase);
+  }
+
+  const auto &liveEdges = st->getEdgeList()->toVector();
+  const auto requireLength = [&](const char *name, std::size_t given) {
+    if (given != liveEdges.size())
+      throw std::invalid_argument(
+          std::string("Spacetime::fromSimplices: ") + name + " has " +
+          std::to_string(given) + " entries for " +
+          std::to_string(liveEdges.size()) + " edges");
+  };
+  if (edgeWeights) requireLength("edgeWeights", edgeWeights->size());
+  if (edgePhases) requireLength("edgePhases", edgePhases->size());
+  for (std::size_t i = 0; i < liveEdges.size(); ++i) {
+    if (edgeWeights) liveEdges[i]->setLength(std::sqrt((*edgeWeights)[i]));
+    if (edgePhases) liveEdges[i]->setPhase((*edgePhases)[i]);
+  }
+  return st;
+}
+
+std::shared_ptr<Spacetime> Spacetime::fromVertexTuples(
   int dimensions,
   const std::vector<std::vector<std::uint64_t>> &cells,
   double weight,
   std::complex<double> phase,
-  const std::optional<std::vector<double>> &vertexTimes
+  const std::optional<std::vector<double>> &vertexTimes,
+  const std::optional<std::vector<std::complex<double>>> &edgeWeights,
+  const std::optional<std::vector<std::complex<double>>> &edgePhases
 ) {
   auto metric = std::make_shared<Metric>(
     true, Signature(dimensions, SignatureType::Lorentzian));
@@ -342,7 +424,7 @@ std::shared_ptr<Spacetime> Spacetime::fromCells(
     if (vertexTimes) {
       if (id >= vertexTimes->size())
         throw std::out_of_range(
-          "Spacetime::fromCells: vertexTimes too short to index vertex id "
+          "Spacetime::fromVertexTuples: vertexTimes too short to index vertex id "
           + std::to_string(id));
       vmap[id] = st->createVertex(id, {(*vertexTimes)[id]});
     } else {
@@ -362,12 +444,39 @@ std::shared_ptr<Spacetime> Spacetime::fromCells(
     st->createSimplex(verts);
   }
 
+  // Per-edge geometry, when the caller supplied it: one entry per edge, in the
+  // order this builder wired them (documented on the declaration). A length
+  // mismatch throws rather than leaving part of the complex at the uniform
+  // value, which would be a silent half-application.
+  const auto &liveEdges = st->getEdgeList()->toVector();
+  const auto requireLength = [&](const char *name, std::size_t given) {
+    if (given != liveEdges.size())
+      throw std::invalid_argument(
+          std::string("Spacetime::fromVertexTuples: ") + name + " has " +
+          std::to_string(given) + " entries for " +
+          std::to_string(liveEdges.size()) + " edges");
+  };
+  if (edgeWeights) requireLength("edgeWeights", edgeWeights->size());
+  if (edgePhases) requireLength("edgePhases", edgePhases->size());
+
+  if (edgeWeights || edgePhases) {
+    // Per-edge values are the geometry, so they apply under the tracked-metric
+    // rule too: a caller passing them has said what the lengths are, and the
+    // auto-wired causal defaults are what they are replacing.
+    for (std::size_t i = 0; i < liveEdges.size(); ++i) {
+      if (edgeWeights)
+        liveEdges[i]->setLength(std::sqrt((*edgeWeights)[i]));
+      if (edgePhases) liveEdges[i]->setPhase((*edgePhases)[i]);
+    }
+    return st;
+  }
+
   // Uniform Hermitian pin: overwrite every edge's geometry. Skipped under the
   // tracked-metric rule, where the auto-wired causal lengths are the geometry:
   // pinning there would overwrite every timelike edge with a spacelike unit
   // length and hand back a Euclidean complex in disguise.
   if (!vertexTimes) {
-    for (const auto &edge : st->getEdgeList()->toVector()) {
+    for (const auto &edge : liveEdges) {
       edge->setLength(std::sqrt(std::complex<double>{weight, 0.0}));
       edge->setPhase(phase);
     }
@@ -377,20 +486,23 @@ std::shared_ptr<Spacetime> Spacetime::fromCells(
 
 std::shared_ptr<Spacetime> Spacetime::subcomplexWithinVertexSet(
     const std::set<std::uint64_t> &vertexSet) const {
-  std::vector<std::vector<std::uint64_t>> cellsInsideVertexSet;
+  std::vector<SimplexPtr> cellsInsideVertexSet;
   for (const auto &topSimplex : getTopSimplices()) {
-    auto cellVertexIds = topSimplex->topTuple();
     bool cellIsInsideVertexSet = true;
-    for (auto vertexId : cellVertexIds)
-      if (!vertexSet.count(vertexId)) {
+    for (const auto *vertex : topSimplex->getVertices())
+      if (!vertexSet.count(vertex->getId())) {
         cellIsInsideVertexSet = false;
         break;
       }
-    if (cellIsInsideVertexSet)
-      cellsInsideVertexSet.push_back(std::move(cellVertexIds));
+    if (cellIsInsideVertexSet) cellsInsideVertexSet.push_back(topSimplex);
   }
   if (cellsInsideVertexSet.empty()) return nullptr;
-  return Spacetime::fromCells(getDimensions(), cellsInsideVertexSet, 1.0, 0.0);
+  // fromSimplices carries each cell's edge lengths and phases across: the
+  // sub-complex is a region of this one, so its edges are these edges and keep
+  // their geometry. Building it from bare vertex tuples would have re-pinned
+  // every edge to unit length, handing back a different geometry wearing the
+  // same connectivity.
+  return Spacetime::fromSimplices(getDimensions(), cellsInsideVertexSet);
 }
 
 int Spacetime::getDimensions() const noexcept {
@@ -1119,8 +1231,8 @@ void Spacetime::reserve(int nSimplices) {
 // Counting & Access
 // ========================================
 
-std::size_t Spacetime::getSimplexCount() const noexcept {
-  return n41Count + n32Count;
+std::size_t Spacetime::getTopSimplexCount() const noexcept {
+  return topSimplicesVec.size();
 }
 
 std::size_t Spacetime::getVertexCount() const noexcept {

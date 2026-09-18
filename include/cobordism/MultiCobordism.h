@@ -1390,7 +1390,7 @@ class MultiCobordism {
                                                 const Spacetime &spacetime);
   /// A surface block's own complex with the host's geometry: `blockSurface`'s
   /// faces as the top cells of a fresh \f$ (d-1) \f$-dimensional `Spacetime`
-  /// (`Spacetime::fromCells`, keeping the host's vertex ids), every edge
+  /// (`Spacetime::fromVertexTuples`, keeping the host's vertex ids), every edge
   /// carrying the host's current length and phase, matched by vertex pair.
   ///
   /// Its Laplacian is the block's own Laplacian: the torus's own triangles with
@@ -2757,7 +2757,7 @@ class MultiCobordism {
   /// The complex \p complexSnapshot records, rebuilt at \p dimensions from its
   /// cells with every recorded edge's length and phase restored by
   /// `restoreEdgeGeometry`. An edge the record does not hold, one a move
-  /// created, keeps `Spacetime::fromCells`'s auto-wired length and zero phase.
+  /// created, keeps `Spacetime::fromVertexTuples`'s auto-wired length and zero phase.
   /// This is the rebuild behind stage-1 candidates, the committed step, the
   /// precone and refinement cone-ins, and checkpoint replay.
   [[nodiscard]] static std::shared_ptr<Spacetime> rebuild(

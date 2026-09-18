@@ -75,7 +75,7 @@ def run(label, max_build, target, n_therm, max_sigma, n_walks, seed):
         return
     widths = slice_widths(st)
     n_layers = len(widths)
-    n4 = st.getSimplexCount()
+    n4 = st.getTopSimplexCount()
     n41 = st.getN41()
 
     print(f"\n=== {label} ===")

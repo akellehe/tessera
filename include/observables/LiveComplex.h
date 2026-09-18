@@ -25,9 +25,9 @@ using namespace ::tessera::spacetime;
 /// skeleton-complete `Spacetime`, and produces a relabeled copy for the RELABEL
 /// gate. It never builds a spacetime of its own and never re-runs the emergent
 /// dynamics; those live in Proton, ProtonIngredients and MultiCobordism. A
-/// recorded geometry is read back only through `Spacetime::fromCells`:
+/// recorded geometry is read back only through `Spacetime::fromVertexTuples`:
 ///
-///   * `Spacetime::fromCells` materializes only the top cells (\f$ \partial
+///   * `Spacetime::fromVertexTuples` materializes only the top cells (\f$ \partial
 ///     \Delta^5 \f$ comes back as its 6 pentatopes and nothing else). The
 ///     facet/coface skeleton that `dualVolume()` and `deficitAngle()` walk is
 ///     then completed by `Spacetime::materializeFacets()`, which reproduces the
@@ -53,14 +53,14 @@ class LiveComplex {
     /// Load a live, skeleton-complete complex from explicit top cells and
     /// per-edge complex squared lengths. Shared by geometry-dump rehydration and
     /// the RELABEL rebuild. The geometry is supplied wholesale and read back
-    /// through `Spacetime::fromCells`; nothing is constructed.
+    /// through `Spacetime::fromVertexTuples`; nothing is constructed.
     ///
     /// `cells` keep their intrinsic vertex order — the stored order carries the
     /// orientation, so it is never sorted. `squaredLengths` maps each
     /// `(min id, max id)` vertex pair to its complex squared length.
     /// `vertexTimes` (may be empty) maps vertex id to recorded time and is
     /// applied before the lengths. `dimensions` is the recorded complex
-    /// dimension, passed straight through to `fromCells` and never inferred from
+    /// dimension, passed straight through to `fromVertexTuples` and never inferred from
     /// a cell. The facet skeleton is completed with `materializeFacets()` so the
     /// result is immediately readable.
     /// @throws std::invalid_argument if `cells` is empty.
@@ -75,7 +75,7 @@ class LiveComplex {
     /// Load the block-residual sub-complex. `cells` are ambient top cells
     /// already selected by the caller — the strict subset whose vertices all lie
     /// in a provenance region, with no new topology, surgery or dynamics —
-    /// re-instantiated through `Spacetime::fromCells` with a uniform metric
+    /// re-instantiated through `Spacetime::fromVertexTuples` with a uniform metric
     /// (weight 1.0). The uniform metric is part of the definition of the carry
     /// diagnostic: it matches how the drive's `r_U` scored the block, which is
     /// metric-independent by design. The result is identical to
@@ -83,7 +83,7 @@ class LiveComplex {
     /// can score a block without constructing the build driver. The skeleton is
     /// not materialized; the `r_state` read this feeds builds only what it needs.
     /// `dimensions` is the ambient complex's canonical dimension (from
-    /// `RegisterContext::dimensions()`), passed straight through to `fromCells`
+    /// `RegisterContext::dimensions()`), passed straight through to `fromVertexTuples`
     /// and never inferred from a cell.
     /// @throws std::invalid_argument if `cells` is empty.
     [[nodiscard]] static std::shared_ptr<Spacetime> subcomplex(

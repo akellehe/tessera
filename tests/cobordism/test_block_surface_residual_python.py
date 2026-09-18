@@ -454,7 +454,7 @@ def ordinary_read(st, block):
     region = set(int(v) for v in block.vertices)
     cells = [[int(v) for v in t] for t in cob.ChainComplex.fromSpacetime(st).kSimplexVertices(3)
              if set(int(v) for v in t) <= region]
-    sub = T.Spacetime.fromCells(3, cells, 1.0, 0j)
+    sub = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0j)
     host = edge_geometry(st)
     for e in sub.getEdgeList().toVector():
         length, phase = host[tuple(sorted((e.getSource().getId(), e.getTarget().getId())))]

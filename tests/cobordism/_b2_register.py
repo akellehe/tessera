@@ -73,6 +73,6 @@ class B2Register:
                 f"{rounds} subdivision rounds; removing two that meet leaves a "
                 "ball, whose b_2 is 0")
         kept = [cell for index, cell in enumerate(cells) if index not in pair]
-        spacetime = tessera.Spacetime.fromCells(3, kept, 1.0, 0.0)
+        spacetime = tessera.Spacetime.fromVertexTuples(3, kept, 1.0, 0.0)
         holes = cobordism.MultiCobordism.emergent_holes(spacetime, 2)
         return spacetime, holes

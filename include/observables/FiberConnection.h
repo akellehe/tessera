@@ -516,7 +516,7 @@ class FiberConnection {
     [[nodiscard]] static Eigen::MatrixXcd chainTransfer(
         const std::shared_ptr<Spacetime> &st, int degree,
         const std::vector<std::vector<std::uint64_t>> &toCells,
-        const std::vector<std::vector<std::uint64_t>> &fromCells,
+        const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
         cobordism::HodgeLaplacian::WeightConvention weights =
             cobordism::HodgeLaplacian::defaultWeightConvention());
 

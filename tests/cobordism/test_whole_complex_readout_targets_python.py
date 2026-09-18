@@ -30,7 +30,7 @@ _BASE = [[0, 1], [1, 2], [0, 2]]
 
 def annulus(layers):
     cells = tessera.Spacetime.prismCells(_BASE, layers, {})
-    st = tessera.Spacetime.fromCells(2, cells, 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
     for e in st.getEdgeList().toVector():
         e.setLength(1.0)
         e.setPhase(0.0)

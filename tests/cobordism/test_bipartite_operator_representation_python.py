@@ -55,7 +55,7 @@ def tube(layers, jitter=0.0, seed=0):
     """S¹ × [0, layers] over the triangle: ∂W = A (vertices 0,1,2) ⊔ B (the top
     circle). Interior edges may be jittered (real, Euclidean-like)."""
     cells = tessera.Spacetime.prismCells(BASE, layers, {})
-    st = tessera.Spacetime.fromCells(2, cells, 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
     rng = np.random.default_rng(seed)
     top = 3 * layers
     for e in st.getEdgeList().toVector():
@@ -71,7 +71,7 @@ def tube(layers, jitter=0.0, seed=0):
 def boundary_eigenframe(source):
     """Eigenvalues and eigenvectors of the isolated boundary circle's L_1 in
     its canonical edge order (the frame relaxBoundaryStatePairs pins against)."""
-    b = tessera.Spacetime.fromCells(1, BASE, 1.0, 0.0)
+    b = tessera.Spacetime.fromVertexTuples(1, BASE, 1.0, 0.0)
     for e in b.getEdgeList().toVector():
         e.setLength(1.0)
         e.setPhase(0.0)

@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "cobordism/HodgeLaplacian.h"
+#include "cobordism/SpacetimeComposition.h"
 #include "spacetime/Spacetime.h"
 
 namespace tessera::cobordism {
@@ -40,41 +41,6 @@ void requireSquare(const std::vector<cd> &matrix, int dim, const char *name) {
 }
 
 } // namespace
-
-std::vector<cd> KuennethProduct::kroneckerSum(const std::vector<cd> &laplacianA,
-                                              int dimA,
-                                              const std::vector<cd> &laplacianB,
-                                              int dimB) {
-  requireSquare(laplacianA, dimA, "kroneckerSum: laplacianA");
-  requireSquare(laplacianB, dimB, "kroneckerSum: laplacianB");
-  const std::size_t dim =
-      static_cast<std::size_t>(dimA) * static_cast<std::size_t>(dimB);
-  std::vector<cd> result(dim * dim, cd{0.0, 0.0});
-  // L_A ⊗ I: block (iA, jA) is laplacianA[iA,jA] * I_{dimB}.
-  for (int iA = 0; iA < dimA; ++iA)
-    for (int jA = 0; jA < dimA; ++jA) {
-      const cd value = laplacianA[static_cast<std::size_t>(iA) * dimA + jA];
-      if (value == cd{0.0, 0.0})
-        continue;
-      for (int iB = 0; iB < dimB; ++iB) {
-        const std::size_t row = static_cast<std::size_t>(iA) * dimB + iB;
-        const std::size_t col = static_cast<std::size_t>(jA) * dimB + iB;
-        result[row * dim + col] += value;
-      }
-    }
-  // I ⊗ L_B: block (iA, iA) receives laplacianB.
-  for (int iA = 0; iA < dimA; ++iA)
-    for (int iB = 0; iB < dimB; ++iB)
-      for (int jB = 0; jB < dimB; ++jB) {
-        const cd value = laplacianB[static_cast<std::size_t>(iB) * dimB + jB];
-        if (value == cd{0.0, 0.0})
-          continue;
-        const std::size_t row = static_cast<std::size_t>(iA) * dimB + iB;
-        const std::size_t col = static_cast<std::size_t>(iA) * dimB + jB;
-        result[row * dim + col] += value;
-      }
-  return result;
-}
 
 std::vector<cd> KuennethProduct::pairwiseSpectrum(
     const std::vector<cd> &spectrumA, const std::vector<cd> &spectrumB) {
@@ -140,7 +106,7 @@ Certificate KuennethProduct::productCertificate(
   const HodgeLaplacian hodgeA(factorA);
   const HodgeLaplacian hodgeB(factorB);
   const std::vector<cd> laplacianProduct = hodgeProduct.connectionLaplacian();
-  const std::vector<cd> sum = kroneckerSum(
+  const std::vector<cd> sum = SpacetimeComposition::kroneckerSum(
       hodgeA.connectionLaplacian(), dimA, hodgeB.connectionLaplacian(), dimB);
 
   double scale = 0.0;

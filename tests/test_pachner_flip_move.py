@@ -38,7 +38,7 @@ def _full_snapshot(st):
         "n0": st.getVertexCount(),
         "n41": st.getN41(),
         "n32": st.getN32(),
-        "n4": st.getSimplexCount(),
+        "n4": st.getTopSimplexCount(),
         "top_fps": frozenset(
             hash(s) for s in st.getSimplices()
             if len(s.getVertices()) == dPlus1
@@ -105,7 +105,7 @@ class TestFlipPropose(unittest.TestCase):
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
         # log(N4 / (N4 + d - 2)).
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
         d = 4
         self.assertAlmostEqual(
             m.metropolisLogPrefactor(),
@@ -153,9 +153,9 @@ class TestFlipApply(unittest.TestCase):
         st = _make_st(d=4)
         m = _try_propose(st, range(200), tessera.FlipMove)
         self.assertIsNotNone(m)
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
         m.apply()
-        actual = st.getSimplexCount() - n4
+        actual = st.getTopSimplexCount() - n4
         # Worst case: all d new simplices already exist → 0 created;
         # 2 removed → ΔN4 = -2.  Best case: clean (2,d) → ΔN4 = d-2.
         d = 4

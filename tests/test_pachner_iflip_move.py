@@ -38,7 +38,7 @@ def _full_snapshot(st):
         "n0": st.getVertexCount(),
         "n41": st.getN41(),
         "n32": st.getN32(),
-        "n4": st.getSimplexCount(),
+        "n4": st.getTopSimplexCount(),
         "top_fps": frozenset(
             hash(s) for s in st.getSimplices()
             if len(s.getVertices()) == dPlus1
@@ -161,9 +161,9 @@ class TestIFlipApplyRollback(unittest.TestCase):
         m = _try_propose(st, range(3000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
-        n4_b = st.getSimplexCount()
+        n4_b = st.getTopSimplexCount()
         m.apply()
-        actual_dN4 = st.getSimplexCount() - n4_b
+        actual_dN4 = st.getTopSimplexCount() - n4_b
         advertised = m.dN41() + m.dN32()
         self.assertEqual(actual_dN4, advertised,
                          f"actual ΔN4 ({actual_dN4}) != advertised "
@@ -184,7 +184,7 @@ class TestIFlipApplyRollback(unittest.TestCase):
         m = _try_propose(st, range(3000), tessera.IFlipMove)
         if m is None:
             self.skipTest("No iflip proposed")
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
         d = 4
         self.assertAlmostEqual(
             m.metropolisLogPrefactor(),

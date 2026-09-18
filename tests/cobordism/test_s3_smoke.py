@@ -9,7 +9,7 @@ the 2+1 D ``S^2 x I`` proton sector cannot carry (see
 ``docs/design/s3_dimensional_spike.md``).
 
 It is deliberately **isolated**: it builds the ``S^3`` complex purely from the
-already-bound, dimension-generic ``Spacetime.fromCells`` / ``Spacetime.prismCells``
+already-bound, dimension-generic ``Spacetime.fromVertexTuples`` / ``Spacetime.prismCells``
 and reads the spectrum off ``HodgeLaplacian`` -- it adds **no** production C++ and
 shares **no** state with the 2+1 D proton pipeline, so it cannot perturb the
 golden proton results (``tests/cobordism/test_epic410_invariants.py`` is the
@@ -82,13 +82,13 @@ def _boundary_4simplex_cells():
 
 def _closed_s3():
     """The closed ``S^3`` = ``dDelta^4`` on the uniform ``l^2 = 1`` metric."""
-    return tessera.Spacetime.fromCells(3, _boundary_4simplex_cells(), 1.0, 0.0)
+    return tessera.Spacetime.fromVertexTuples(3, _boundary_4simplex_cells(), 1.0, 0.0)
 
 
 def _s3_cross_interval():
     """``S^3 x I`` = one Freudenthal-extruded layer of ``dDelta^4`` (4D top cells)."""
     stacked = tessera.Spacetime.prismCells(_boundary_4simplex_cells(), 1)
-    return tessera.Spacetime.fromCells(4, stacked, 1.0, 0.0)
+    return tessera.Spacetime.fromVertexTuples(4, stacked, 1.0, 0.0)
 
 
 def _kernel_dims(hl, top_k, metric=True, tol=ZERO_TOL):

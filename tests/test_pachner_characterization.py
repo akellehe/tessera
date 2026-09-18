@@ -108,7 +108,7 @@ def _state_snapshot(st):
         "n0": st.getVertexCount(),
         "n41": st.getN41(),
         "n32": st.getN32(),
-        "n4": st.getSimplexCount(),
+        "n4": st.getTopSimplexCount(),
         "top_fps": top_fps,
         "edge_fps": edge_fps,
         "vertex_ids": vertex_ids,
@@ -492,7 +492,7 @@ def _bookkeeping(st):
     Deliberately excludes the raw getSimplices() membership, which can grow
     with benign lazily-materialized facets."""
     return (st.getVertexCount(), st.getN41(), st.getN32(),
-            st.getSimplexCount(), _top_fingerprints(st))
+            st.getTopSimplexCount(), _top_fingerprints(st))
 
 
 class TestLazyFacetMaterializationIsBenign(unittest.TestCase):

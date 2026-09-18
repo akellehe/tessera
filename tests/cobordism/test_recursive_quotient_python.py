@@ -284,7 +284,7 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
     SUPPORT_B = [4, 5, 6, 7]
 
     def _strip(self):
-        st = tessera.Spacetime.fromCells(2, self.STRIP, 1.0, 0.0)
+        st = tessera.Spacetime.fromVertexTuples(2, self.STRIP, 1.0, 0.0)
         for e in st.getEdgeList().toVector():
             e.setLength(cmath.sqrt(complex(1.0)))
         st.materializeFacets()
@@ -1074,7 +1074,7 @@ class TestRelabeling(unittest.TestCase):
     def test_within_cell_vertex_order_is_never_a_convention(self):
         # Cells are matched by vertex SET: reversing every tuple (and
         # shuffling the support lists) yields the identical reduction.
-        st = tessera.Spacetime.fromCells(2, [[0, 1, 2], [1, 2, 3]], 1.0, 0.0)
+        st = tessera.Spacetime.fromVertexTuples(2, [[0, 1, 2], [1, 2, 3]], 1.0, 0.0)
         st.materializeFacets()
         forward = cob.RecursiveQuotient.overCells(
             st, 1, [[[0, 1], [0, 2], [1, 2]], [[1, 3], [2, 3]]])

@@ -1106,7 +1106,7 @@ class ReplayTest(unittest.TestCase):
 
     def test_replay_from_a_host_never_rebuilt_agrees_within_round_off(self):
         """A hand-built host's edge list is in construction order, not the
-        `fromCells` order every optimizer-produced complex has, so the
+        `fromVertexTuples` order every optimizer-produced complex has, so the
         modularity sums accumulate in a different order. The VERDICTS are
         identical; the continuous aggregates agree to double round-off."""
         node = _node()
@@ -1157,7 +1157,7 @@ class ReplayTest(unittest.TestCase):
 
     def test_replay_restores_every_connection_phase_exactly(self):
         """The defect this ticket exists for: replay used to rebuild through
-        fromCells with phase 0 and silently drop a live field."""
+        fromVertexTuples with phase 0 and silently drop a live field."""
         node = _node()
         node.set_analysis_config(_overlay_config())
         _twist(node, seed=17)
@@ -1496,7 +1496,7 @@ class RelabelingInvarianceTest(unittest.TestCase):
         if shuffle_cells:
             cells = list(reversed(cells))
         dimension = len(cells[0]) - 1
-        rebuilt = T.spacetime.Spacetime.fromCells(dimension, cells, 1.0, 0.0)
+        rebuilt = T.spacetime.Spacetime.fromVertexTuples(dimension, cells, 1.0, 0.0)
         for edge in rebuilt.getEdgeList().toVector():
             a, b = edge.getSource().getId(), edge.getTarget().getId()
             edge.setLength(lengths[(min(a, b), max(a, b))])

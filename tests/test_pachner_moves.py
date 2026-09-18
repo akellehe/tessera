@@ -65,14 +65,14 @@ class TestCountingInvariants(unittest.TestCase):
     """[RU] eq. 2: Verify that N4, N41, N32, profile sum are always consistent."""
 
     def test_n4_equals_n41_plus_n32_after_build(self):
-        """After build(), getSimplexCount() == getN41() + getN32()."""
+        """After build(), getTopSimplexCount() == getN41() + getN32()."""
         _, st = _make_cdt()
-        self.assertEqual(st.getSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
 
     def test_n4_matches_manual_count_after_build(self):
-        """getSimplexCount() matches manual iteration over simplices."""
+        """getTopSimplexCount() matches manual iteration over simplices."""
         _, st = _make_cdt()
-        self.assertEqual(st.getSimplexCount(), _count_top_simplices(st))
+        self.assertEqual(st.getTopSimplexCount(), _count_top_simplices(st))
 
     def test_n41_n32_match_orientation_count(self):
         """N41/N32 from getN41()/getN32() match manual orientation count."""
@@ -86,7 +86,7 @@ class TestCountingInvariants(unittest.TestCase):
         """Volume profile entries should sum to N4."""
         cdt, st = _make_cdt()
         profile = cdt.getVolumeProfile()
-        self.assertEqual(sum(profile), st.getSimplexCount())
+        self.assertEqual(sum(profile), st.getTopSimplexCount())
 
     def test_no_uncounted_orientations(self):
         """Every top simplex should have a valid CDT orientation."""
@@ -105,10 +105,10 @@ class TestCountingInvariants(unittest.TestCase):
         cdt.sweep(100)
 
         # N4 = N41 + N32
-        self.assertEqual(st.getSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
 
         # Manual count matches
-        self.assertEqual(st.getSimplexCount(), _count_top_simplices(st))
+        self.assertEqual(st.getTopSimplexCount(), _count_top_simplices(st))
 
         # Orientation counts match
         counts = _count_orientations(st)
@@ -122,7 +122,7 @@ class TestCountingInvariants(unittest.TestCase):
 
         # Profile sums
         profile = cdt.getVolumeProfile()
-        self.assertEqual(sum(profile), st.getSimplexCount())
+        self.assertEqual(sum(profile), st.getTopSimplexCount())
 
 
 # =====================================================================
@@ -192,7 +192,7 @@ class TestAddMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=200)
         for _ in range(2000):
             if cdt.add():
-                self.assertEqual(st.getSimplexCount(),
+                self.assertEqual(st.getTopSimplexCount(),
                                  st.getN41() + st.getN32())
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
@@ -230,7 +230,7 @@ class TestRemoveMove(unittest.TestCase):
             cdt.add()
         for _ in range(2000):
             if cdt.remove():
-                self.assertEqual(st.getSimplexCount(),
+                self.assertEqual(st.getTopSimplexCount(),
                                  st.getN41() + st.getN32())
                 return
         self.skipTest("No remove accepted")
@@ -257,9 +257,9 @@ class TestFlipMove(unittest.TestCase):
         """(2,d) flip: 2→d means +2 top simplices in 4D (2→4)."""
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
-            n4_before = st.getSimplexCount()
+            n4_before = st.getTopSimplexCount()
             if cdt.flip():
-                delta_n4 = st.getSimplexCount() - n4_before
+                delta_n4 = st.getTopSimplexCount() - n4_before
                 self.assertGreaterEqual(delta_n4, 0,
                                         f"(2,4) flip should not decrease N4, got {delta_n4}")
                 self.assertLessEqual(delta_n4, 2,
@@ -271,7 +271,7 @@ class TestFlipMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
             if cdt.flip():
-                self.assertEqual(st.getSimplexCount(),
+                self.assertEqual(st.getTopSimplexCount(),
                                  st.getN41() + st.getN32())
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
@@ -316,9 +316,9 @@ class TestShiftMove(unittest.TestCase):
         """(3,3) shift: 3→3 means N4 unchanged."""
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
-            n4_before = st.getSimplexCount()
+            n4_before = st.getTopSimplexCount()
             if cdt.shift():
-                self.assertLessEqual(st.getSimplexCount(), n4_before,
+                self.assertLessEqual(st.getTopSimplexCount(), n4_before,
                                      "shift() should not increase N4")
                 return
         self.skipTest("No shift accepted")
@@ -327,7 +327,7 @@ class TestShiftMove(unittest.TestCase):
         cdt, st = _make_cdt(n_simplices=100)
         for _ in range(1000):
             if cdt.shift():
-                self.assertEqual(st.getSimplexCount(),
+                self.assertEqual(st.getTopSimplexCount(),
                                  st.getN41() + st.getN32())
                 counts = _count_orientations(st)
                 n41, n32 = _orientation_n41_n32(counts)
@@ -502,7 +502,7 @@ class TestVolumeProfile(unittest.TestCase):
         for _ in range(10):
             cdt.sweep(10)
             profile = cdt.getVolumeProfile()
-            self.assertEqual(sum(profile), st.getSimplexCount(),
+            self.assertEqual(sum(profile), st.getTopSimplexCount(),
                              "Profile sum != N4")
 
     def test_profile_consistent_with_manual_count(self):
@@ -546,7 +546,7 @@ class TestSweepInvariants(unittest.TestCase):
             cdt.sweep(10)
             with self.subTest(sweep=(step + 1) * 10):
                 # N4 = N41 + N32
-                self.assertEqual(st.getSimplexCount(),
+                self.assertEqual(st.getTopSimplexCount(),
                                  st.getN41() + st.getN32())
 
                 # Manual orientation count matches
@@ -563,7 +563,7 @@ class TestSweepInvariants(unittest.TestCase):
 
                 # Profile consistency
                 profile = cdt.getVolumeProfile()
-                self.assertEqual(sum(profile), st.getSimplexCount())
+                self.assertEqual(sum(profile), st.getTopSimplexCount())
 
                 # Causality: every top simplex spans 2 times
                 for s in st.getSimplices():

@@ -194,7 +194,7 @@ class TestAcceptanceCriterion(unittest.TestCase):
 
         for _ in range(20):
             cdt.sweep(10)
-            self.assertEqual(st.getSimplexCount(),
+            self.assertEqual(st.getTopSimplexCount(),
                              st.getN41() + st.getN32(),
                              "N4 = N41 + N32 violated — acceptance "
                              "prefactors may be inconsistent")
@@ -282,7 +282,7 @@ class TestAddMovePrefactor(unittest.TestCase):
         # The add will abort only if no spatial face partner is found, not
         # due to type filtering.
         n41 = st.getN41()
-        total = st.getSimplexCount()
+        total = st.getTopSimplexCount()
         self.assertEqual(n41, total,
                          "Test lattice should have all N41-type simplices")
 
@@ -391,13 +391,13 @@ class TestFlipMoves(unittest.TestCase):
         st = _make_spacetime()
         st.build(100)
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.0, st.getN41())
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
 
         for _ in range(2000):
             if cdt.flip():
-                self.assertGreaterEqual(st.getSimplexCount(), n4,
+                self.assertGreaterEqual(st.getTopSimplexCount(), n4,
                                        "(2,4) flip should not decrease N4")
-                self.assertLessEqual(st.getSimplexCount(), n4 + 2,
+                self.assertLessEqual(st.getTopSimplexCount(), n4 + 2,
                                      "(2,4) flip dN4 should be at most +2")
                 return
         self.skipTest("No flip accepted")
@@ -419,10 +419,10 @@ class TestFlipMoves(unittest.TestCase):
         for _ in range(20000):
             cdt.flip()
 
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
         for _ in range(50000):
             if cdt.iflip():
-                self.assertLess(st.getSimplexCount(), n4,
+                self.assertLess(st.getTopSimplexCount(), n4,
                                 "(4,2) iflip should decrease N4")
                 return
         self.skipTest("No iflip accepted")
@@ -432,7 +432,7 @@ class TestFlipMoves(unittest.TestCase):
         st = _make_spacetime()
         st.build(100)
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 0.0, st.getN41())
-        n4_start = st.getSimplexCount()
+        n4_start = st.getTopSimplexCount()
 
         flipped = False
         for _ in range(5000):
@@ -442,13 +442,13 @@ class TestFlipMoves(unittest.TestCase):
         if not flipped:
             self.skipTest("No flip accepted")
 
-        self.assertGreaterEqual(st.getSimplexCount(), n4_start)
-        self.assertLessEqual(st.getSimplexCount(), n4_start + 2)
-        n4_after_flip = st.getSimplexCount()
+        self.assertGreaterEqual(st.getTopSimplexCount(), n4_start)
+        self.assertLessEqual(st.getTopSimplexCount(), n4_start + 2)
+        n4_after_flip = st.getTopSimplexCount()
 
         for _ in range(5000):
             if cdt.iflip():
-                self.assertLessEqual(st.getSimplexCount(), n4_after_flip,
+                self.assertLessEqual(st.getTopSimplexCount(), n4_after_flip,
                                      "iflip should not increase N4")
                 return
         self.skipTest("No iflip accepted after flip")
@@ -492,14 +492,14 @@ class TestShiftMove(unittest.TestCase):
         cdt.sweep(50)  # diversify topology
 
         n0 = st.getVertexCount()
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
 
         for _ in range(20000):
             if cdt.shift():
                 self.assertEqual(st.getVertexCount(), n0,
                                  "Shift should not change N0")
                 # N4 can decrease on small lattices due to simplex dedup
-                self.assertLessEqual(st.getSimplexCount(), n4,
+                self.assertLessEqual(st.getTopSimplexCount(), n4,
                                      "Shift should not increase N4")
                 return
         self.skipTest("No shift accepted")
@@ -565,7 +565,7 @@ class TestSweepStructure(unittest.TestCase):
         for step in range(20):
             cdt.sweep(10)
             with self.subTest(sweep=(step + 1) * 10):
-                self.assertEqual(st.getSimplexCount(),
+                self.assertEqual(st.getTopSimplexCount(),
                                  st.getN41() + st.getN32())
 
                 counts = _count_orientations(st)

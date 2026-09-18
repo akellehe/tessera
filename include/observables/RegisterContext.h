@@ -48,7 +48,7 @@ class InteriorHinges;  // the shared 4D hinge-selection core (InteriorHinges.h)
 ///     emergent build lives in Proton, ProtonIngredients and MultiCobordism. The
 ///     facet/coface skeleton that the `dualVolume()` and `deficitAngle()` reads
 ///     walk must already be present on the live complex, as it is on every built
-///     state. Completing a bare `Spacetime::fromCells` skeleton — for dump
+///     state. Completing a bare `Spacetime::fromVertexTuples` skeleton — for dump
 ///     rehydration and the RELABEL-gate rebuild — is the job of `LiveComplex`.
 ///   * Hole selection is validated at one entry point. The selected holes are the
 ///     emergent `(degree+2)`-vertex removed top cells

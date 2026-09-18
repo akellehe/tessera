@@ -1111,7 +1111,7 @@ bool InteractionSimulation::unInteract() {
     // unordered-pair count over the (predicted) post-frontier. Each
     // descendant cell removes 3 product vertices from the frontier and
     // restores 2 parent vertices (its inputs).
-    const std::size_t nMinusBefore   = spacetime_->getSimplexCount();
+    const std::size_t nMinusBefore   = spacetime_->getTopSimplexCount();
     const std::size_t nFrontierNow   = frontier_.size();
     const std::size_t nProductsLost  = 3 * descendants.size();
     const std::size_t nParentsBack   = 2 * descendants.size();

@@ -2427,7 +2427,7 @@ def geometry_document(node, inputs=None, source=None):
     `tests/cobordism/_causal_specimen.rebuild_spacetime`): the dimension, the
     top cells in their intrinsic vertex order, every edge as
     `[source, target, Re l^2, Im l^2]`, and the per-vertex times. That is
-    what `Spacetime.fromCells` plus `setLength` and `setTime` need to bring
+    what `Spacetime.fromVertexTuples` plus `setLength` and `setTime` need to bring
     the complex back exactly, which the run document cannot do: it records
     measurements of a geometry, never the geometry.
 
@@ -2435,7 +2435,7 @@ def geometry_document(node, inputs=None, source=None):
     the relaxation moves and the quantity every formula takes, and the
     complex square root has two branches, so writing `l` and reading it back
     would be a branch choice made twice. WHY the times: they are state a
-    `Spacetime` carries and `fromCells` does not derive.
+    `Spacetime` carries and `fromVertexTuples` does not derive.
 
     Phases are a separate field, written per edge alongside the squared
     length and only where some phase is nonzero.
@@ -2447,7 +2447,7 @@ def geometry_document(node, inputs=None, source=None):
         raise ValueError("the node's complex has no top cell: nothing to write")
     # The container exposes no dimension of its own, so it is read off the
     # top cells: a d-simplex has d + 1 vertices. A complex whose top cells
-    # disagree is not one `fromCells` could rebuild, and says so here rather
+    # disagree is not one `fromVertexTuples` could rebuild, and says so here rather
     # than on the read.
     sizes = sorted({len(cell) for cell in cells})
     if len(sizes) != 1:

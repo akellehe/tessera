@@ -327,7 +327,7 @@ def main():
     for _ in range(n_track):
         cdt.sweep(1)
         actions.append(cdt.computeAction())
-        volumes.append(st.getSimplexCount())
+        volumes.append(st.getTopSimplexCount())
         prog2.on_tick()
     prog2.finish()
 

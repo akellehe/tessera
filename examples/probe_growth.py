@@ -48,7 +48,7 @@ def measure(st, n_walks, max_sigma, sigma_targets, seed=0):
     if sg is None:
         return None
     return {
-        "N4": st.getSimplexCount(),
+        "N4": st.getTopSimplexCount(),
         "N41": st.getN41(),
         "ds_at": ds_at,
         "widths": slice_widths(st),
@@ -76,11 +76,11 @@ def main():
     st.build(initial_size)
     target = (st.getN41() if args.n_simplices <= args.max_build
               else args.n_simplices // 2)
-    print(f"build: N4={st.getSimplexCount()} target={target}", flush=True)
+    print(f"build: N4={st.getTopSimplexCount()} target={target}", flush=True)
 
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / target, target)
     cdt.tune()
-    print(f"tune:  N4={st.getSimplexCount()} N41={st.getN41()}", flush=True)
+    print(f"tune:  N4={st.getTopSimplexCount()} N41={st.getN41()}", flush=True)
 
     header = (f"{'sweeps':>7} {'N4':>5} {'N41':>5} {'ws_min':>6} "
               f"{'ws_mean':>7} {'ws_max':>6} "

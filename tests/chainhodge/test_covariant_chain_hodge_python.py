@@ -64,7 +64,7 @@ class TestConnection:
     def test_spacetime_phase_adapter(self):
         """The stored phase is the C* connection on the edge's source->target
         orientation: U_xy = e^{i phi} when the source is x < y, else e^{-i phi}."""
-        st = tessera.Spacetime.fromCells(2, TWO_COMPLEX, 1.0, 0.0)
+        st = tessera.Spacetime.fromVertexTuples(2, TWO_COMPLEX, 1.0, 0.0)
         K = ch.WhitneyMass.complexOf(st)
         phases = {}
         for i, e in enumerate(st.getEdgeList().toVector()):

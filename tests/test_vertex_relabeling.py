@@ -95,13 +95,13 @@ class TestSwapBasic(unittest.TestCase):
         st.createSimplex((1, 4))
         v0 = st.getVertexList().get(0)
         n0 = st.getVertexCount()
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
 
         st.swapVertexLabels(v0, v0)
 
         self.assertEqual(v0.getId(), 0)
         self.assertEqual(st.getVertexCount(), n0)
-        self.assertEqual(st.getSimplexCount(), n4)
+        self.assertEqual(st.getTopSimplexCount(), n4)
 
     def test_swap_preserves_vertex_count(self):
         """Swap does not change the total number of vertices."""
@@ -119,13 +119,13 @@ class TestSwapBasic(unittest.TestCase):
         """Swap does not change the total number of simplices."""
         st = _make_spacetime()
         st.build(20)
-        n4 = st.getSimplexCount()
+        n4 = st.getTopSimplexCount()
         v0 = st.getVertexList().get(0)
         v1 = st.getVertexList().get(1)
 
         st.swapVertexLabels(v0, v1)
 
-        self.assertEqual(st.getSimplexCount(), n4)
+        self.assertEqual(st.getTopSimplexCount(), n4)
 
 
 # =====================================================================
@@ -239,7 +239,7 @@ class TestSwapSimplices(unittest.TestCase):
 
         self.assertEqual(st.getN41(), n41)
         self.assertEqual(st.getN32(), n32)
-        self.assertEqual(st.getSimplexCount(), n41 + n32)
+        self.assertEqual(st.getTopSimplexCount(), n41 + n32)
 
     def test_orientation_counts_preserved(self):
         """Orientation distribution is unchanged by swap."""
@@ -339,7 +339,7 @@ class TestSwapInvariants(unittest.TestCase):
         cdt.sweep(10)
 
         # Invariants hold
-        self.assertEqual(st.getSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
         for s in _top_simplices(st):
             times = {v.getTime() for v in s.getVertices()}
             self.assertEqual(len(times), 2)
@@ -385,7 +385,7 @@ class TestSwapStress(unittest.TestCase):
             st.swapVertexLabels(v1, v2)
 
         # Invariants
-        self.assertEqual(st.getSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
         self.assertEqual(st.getVertexCount(), len(_all_vertex_ids(st)))
 
         # Causality
@@ -414,7 +414,7 @@ class TestSwapStress(unittest.TestCase):
                 st.swapVertexLabels(v1, v2)
 
             # Verify invariants
-            self.assertEqual(st.getSimplexCount(),
+            self.assertEqual(st.getTopSimplexCount(),
                              st.getN41() + st.getN32(),
                              f"Step {step}: N4 != N41 + N32")
 
@@ -466,7 +466,7 @@ class TestSwapNeighbors(unittest.TestCase):
         st.swapVertexLabels(v0, neighbor)
 
         self.assertEqual(st.getEdgeList().size(), n_edges)
-        self.assertEqual(st.getSimplexCount(), st.getN41() + st.getN32())
+        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32())
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ class TestVolumeStability(unittest.TestCase):
         complex is small.
         """
         st = make_spacetime(n_simplices=50)
-        target = st.getSimplexCount()
+        target = st.getTopSimplexCount()
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 0.05, target)
 
         # Run tuning sweeps
@@ -57,7 +57,7 @@ class TestVolumeStability(unittest.TestCase):
         volumes = []
         for _ in range(20):
             cdt.sweep()
-            volumes.append(st.getSimplexCount())
+            volumes.append(st.getTopSimplexCount())
 
         avg_volume = np.mean(volumes)
         # Volume should stay in the same order of magnitude as target
@@ -90,7 +90,7 @@ class TestVolumeProfileShape(unittest.TestCase):
         a quantitative cos^4 fit, but the qualitative features should be present.
         """
         st = make_spacetime(n_simplices=500)
-        target = st.getSimplexCount()
+        target = st.getTopSimplexCount()
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(target, 1), target)
 
         # Thermalize
@@ -212,7 +212,7 @@ class TestEachTopologySimulates(unittest.TestCase):
         st = make_spacetime(topology=topology, n_simplices=20)
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(50, 1), 50)
 
-        initial_count = st.getSimplexCount()
+        initial_count = st.getTopSimplexCount()
         total_accepted = 0
         for _ in range(3):
             total_accepted += cdt.sweep()

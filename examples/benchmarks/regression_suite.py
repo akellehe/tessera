@@ -176,7 +176,7 @@ def _make_build_cdt(dim: int, target: int):
             metric, tessera.CDT, 1.0, 1.0,
             tessera.PREFERRED, tessera.Toroid())
         st.build(target)
-        return {"simplices": st.getSimplexCount(),
+        return {"simplices": st.getTopSimplexCount(),
                 "vertices":  st.getVertexCount()}
 
     return run
@@ -322,7 +322,7 @@ def _make_pachner_sweep(dim: int, target: int, sweeps: int):
 
     def run():
         sim.sweep(sweeps)
-        return {"simplices": st.getSimplexCount(),
+        return {"simplices": st.getTopSimplexCount(),
                 "sweeps":    sweeps}
 
     return run

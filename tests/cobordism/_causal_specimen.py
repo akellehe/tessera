@@ -6,7 +6,7 @@
 The #562 campaign worker dumps every attempt's final complex
 (``worker.dump_geometry``, schema 1): top cells in intrinsic vertex order,
 edges as ``[src, tgt, Re l^2, Im l^2]`` (Im is 0 in every specimen), and
-per-vertex times — enough for ``Spacetime.fromCells`` to rebuild the state
+per-vertex times — enough for ``Spacetime.fromVertexTuples`` to rebuild the state
 without re-running anything. ``tests/fixtures/causal_specimens/`` carries the
 campaign's first causal specimens (seeds 14001000, 11001000, 13001000 reached
 ``re_min < 0``) plus two all-spacelike ones, copied out of the campaign run.
@@ -52,10 +52,10 @@ def load_dump(base_seed):
 
 
 def rebuild_spacetime(dump):
-    """A Spacetime carrying the dumped final state: fromCells on the top
+    """A Spacetime carrying the dumped final state: fromVertexTuples on the top
     cells, then the recorded per-vertex times and per-edge complex squared
     lengths (the analyze_attempt.py rebuild path, verbatim)."""
-    st = tessera.spacetime.Spacetime.fromCells(dump["dimensions"],
+    st = tessera.spacetime.Spacetime.fromVertexTuples(dump["dimensions"],
                                                dump["cells"])
     vertices = st.getVertexList()
     for vid, t in dump["vertex_times"]:

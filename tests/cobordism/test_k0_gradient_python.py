@@ -42,7 +42,7 @@ def _two_component_host(phases=True, signed=True):
     gauge-flat phases (zero triangle holonomy — the kernel survives, twisted);
     component B optionally carries two timelike edges (balanced signed
     triangle — the kernel survives, alternating sign)."""
-    st = tessera.Spacetime.fromCells(2, [[0, 1, 2], [3, 4, 5]], 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(2, [[0, 1, 2], [3, 4, 5]], 1.0, 0.0)
     st.materializeFacets()
     edges = st.getEdgeList().toVector()
     by_pair = {}

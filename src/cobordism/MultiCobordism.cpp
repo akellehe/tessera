@@ -223,7 +223,7 @@ std::vector<BoundaryComponentData> boundaryComponents(
       throw std::invalid_argument(
           "MultiCobordism::relaxBoundaryStatePairs: non-pure boundary");
 
-  auto boundary = Spacetime::fromCells(
+  auto boundary = Spacetime::fromVertexTuples(
       spacetime.getDimensions() - 1, facets, 1.0, 0.0);
   std::vector<BoundaryComponentData> components;
   std::map<std::uint64_t, std::size_t> componentByVertex;
@@ -317,7 +317,7 @@ BoundaryStateEvaluation evaluateBoundaryStates(
     const std::vector<Cell> &orderedCells,
     const std::vector<std::vector<complexd>> &states,
     HodgeLaplacian::MetricSource metricSource) {
-  auto boundary = Spacetime::fromCells(spacetime->getDimensions() - 1,
+  auto boundary = Spacetime::fromVertexTuples(spacetime->getDimensions() - 1,
                                        component.facets, 1.0, 0.0);
   std::map<std::pair<std::uint64_t, std::uint64_t>,
            ::tessera::mesh::Edge *>
@@ -2520,7 +2520,7 @@ MultiCobordism::Snapshot MultiCobordism::snapshotOf(
   // in their own right (the bulk is still being drawn onto them), and a
   // rebuild from top cells alone would erase them. They follow the top cells,
   // so the top-cell order — the dual node indexing — is unchanged, and
-  // `Spacetime::fromCells` registers a (d-1)-vertex cell as the non-top
+  // `Spacetime::fromVertexTuples` registers a (d-1)-vertex cell as the non-top
   // simplex it is. Absent on every node without surface inputs.
   for (const auto &face : uncoveredInputFacesOn(spacetime))
     cellVertexTuples.push_back(face);
@@ -2591,7 +2591,7 @@ void MultiCobordism::restoreEdgeGeometry(::tessera::mesh::Edge &edge,
 std::shared_ptr<Spacetime> MultiCobordism::rebuild(
     int dimensions, const Snapshot &complexSnapshot) {
   auto rebuiltSpacetime =
-      Spacetime::fromCells(dimensions, complexSnapshot.first, 1.0,
+      Spacetime::fromVertexTuples(dimensions, complexSnapshot.first, 1.0,
                            complexd(0.0, 0.0));
   for (auto *edge : rebuiltSpacetime->getEdgeList()->toVector()) {
     const auto savedEntry = complexSnapshot.second.find(edgeKey(edge));
@@ -4120,11 +4120,11 @@ std::shared_ptr<Spacetime> MultiCobordism::blockSurfaceWithGeometry(
   const BlockSurface surface = blockSurface(block, *spacetime);
   if (surface.faces.empty()) return nullptr;
   // The surface's own (d-1)-simplices as the top cells of a (d-1)-dimensional
-  // complex on the host's vertex ids; fromCells auto-wires their edges, which
+  // complex on the host's vertex ids; fromVertexTuples auto-wires their edges, which
   // then take the host's live lengths and phases by vertex pair. The bulk's
   // cells never enter: this is the block's own Laplacian, not a restriction
   // of the whole's.
-  auto own = Spacetime::fromCells(spacetime->getDimensions() - 1, surface.faces, 1.0, complexd(0.0, 0.0));
+  auto own = Spacetime::fromVertexTuples(spacetime->getDimensions() - 1, surface.faces, 1.0, complexd(0.0, 0.0));
   if (!adoptParentEdgeGeometry(*own, *spacetime)) return nullptr;  // a torn surface carries nothing
   own->materializeFacets();
   return own;
@@ -6289,7 +6289,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
   }
   // Disjoint id ranges: surface s's vertices, in ascending id order, take the
   // next block of host ids. The host is one d-dimensional complex whose only
-  // cells are the surfaces' own (d-1)-simplices; fromCells registers each as
+  // cells are the surfaces' own (d-1)-simplices; fromVertexTuples registers each as
   // the non-top simplex it is and auto-wires its edges, which are then set to
   // the surface's lengths (verbatim) with zero phases.
   SurfaceSeed seed;
@@ -6316,7 +6316,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedFromSurfaces(
     }
     seed.vertexIds.push_back(std::move(hostId));
   }
-  seed.host = Spacetime::fromCells(surfaceDimension + 1, cells, 1.0, complexd(0.0, 0.0));
+  seed.host = Spacetime::fromVertexTuples(surfaceDimension + 1, cells, 1.0, complexd(0.0, 0.0));
   for (auto *edge : seed.host->getEdgeList()->toVector()) {
     const auto found = lengths.find(edgeKey(edge));
     if (found == lengths.end())
@@ -6431,7 +6431,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
   if (!verdict.first)
     throw std::invalid_argument(prefix + "the joined collars are not a manifold-with-boundary: " + verdict.second);
   SurfaceSeed seed;
-  seed.host = Spacetime::fromCells(surfaces.front()->getDimensions() + 1, joined, 1.0, complexd(0.0, 0.0));
+  seed.host = Spacetime::fromVertexTuples(surfaces.front()->getDimensions() + 1, joined, 1.0, complexd(0.0, 0.0));
   // Each surface's own lengths verbatim on its edges, the auto-wired length
   // everywhere else, zero phases throughout -- seedCollar's convention.
   std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
@@ -6547,7 +6547,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
   if (!verdict.first)
     throw std::invalid_argument(prefix + "the tubed collars are not a manifold-with-boundary: " + verdict.second);
   SurfaceSeed seed;
-  seed.host = Spacetime::fromCells(dimension, joined, 1.0, complexd(0.0, 0.0));
+  seed.host = Spacetime::fromVertexTuples(dimension, joined, 1.0, complexd(0.0, 0.0));
   // Each surface's own lengths verbatim on its edges, the auto-wired length
   // everywhere else, zero phases throughout -- seedCollar's convention.
   std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> lengths;
@@ -6709,7 +6709,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
     throw std::invalid_argument("MultiCobordism::seedCollar: the collar is not a manifold-with-boundary: " +
                                 verdict.second);
   SurfaceSeed seed;
-  seed.host = Spacetime::fromCells(dimension, cells, 1.0, complexd(0.0, 0.0));
+  seed.host = Spacetime::fromVertexTuples(dimension, cells, 1.0, complexd(0.0, 0.0));
   std::map<std::uint64_t, std::uint64_t> hostIdA;
   std::map<std::uint64_t, std::uint64_t> hostIdB;
   const std::uint64_t offsetB = n * static_cast<std::uint64_t>(layers);

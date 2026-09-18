@@ -36,19 +36,12 @@ using namespace ::tessera::spacetime;
 /// that domain, and `productCertificate` reports `holds() == false` for it.
 /// Weights may be complex or signed; positive definiteness is not assumed.
 ///
-/// This class works at the spectrum/matrix level; the derived many-body spectra
-/// are `OccupationSpectra`'s job.
+/// This class states the theorem. Assembling the operators -- the Kronecker
+/// sum itself, and the Kronecker product and direct sum -- is
+/// `SpacetimeComposition`, which is linear algebra and claims nothing about
+/// homology. The derived many-body spectra are `OccupationSpectra`'s job.
 class KuennethProduct {
   public:
-    /// The Kronecker sum \f$ L_A\otimes I_{n_B} + I_{n_A}\otimes L_B \f$ as a
-    /// flat row-major \f$ (n_An_B)\times(n_An_B) \f$ matrix. Product index
-    /// \f$ (i_A, i_B) \mapsto i_A\,n_B + i_B \f$. The assembly is exact
-    /// (additions only).
-    /// @throws std::invalid_argument on dimension mismatch.
-    [[nodiscard]] static std::vector<std::complex<double>> kroneckerSum(
-        const std::vector<std::complex<double>> &laplacianA, int dimA,
-        const std::vector<std::complex<double>> &laplacianB, int dimB);
-
     /// The exact spectrum of the Kronecker sum from the factor spectra: all
     /// pairwise sums \f$ \lambda_i + \mu_j \f$, sorted ascending by
     /// \f$ (\mathrm{Re}, \mathrm{Im}) \f$ (the `Spectrum` convention).

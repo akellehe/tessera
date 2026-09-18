@@ -53,14 +53,43 @@ enum class SpacetimeType : uint8_t {
 ///
 /// # Spacetime
 ///
-/// Owns the simplicial complex \f$ \mathcal{K} \f$ of a causal dynamical triangulation (CDT): its vertices
-/// \f$ V \f$, edges \f$ E \f$ and simplices \f$ \{\sigma^k_i\} \f$ of every dimension, together with the
-/// metric and the topology, and maintains the incidence relations between them.
+/// Owns a simplicial complex \f$ \mathcal{K} \f$: its vertices \f$ V \f$, edges
+/// \f$ E \f$ and simplices \f$ \{\sigma^k_i\} \f$ of every dimension, together
+/// with the metric and the topology, and maintains the incidence relations
+/// between them.
 ///
-/// Spacetime constructs the simplices; the Topology subclass decides which ones to build so that the complex
-/// matches the chosen topology. State a Topology needs while building belongs on the Simplex.
+/// Spacetime constructs the simplices; the Topology subclass decides which ones
+/// to build so that the complex matches the chosen topology. State a Topology
+/// needs while building belongs on the Simplex.
 ///
-/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267
+/// ## Not only for causal dynamical triangulations
+///
+/// `SpacetimeType` is a constructor parameter, not a property of the class:
+/// `REGGE`, `COSET`, `HERMITIAN_WEIGHTED` and the rest are equally supported,
+/// and the causal structure is optional throughout. `fromVertexTuples` and
+/// `fromCOO` build a complex with no foliation and no causal typing at all, and
+/// the emergent-geometry work runs on all-spacelike complexes where no edge
+/// carries a time direction.
+///
+/// The CDT-specific surface is a subset, not the whole: `getFoliation`,
+/// `getTimeSlices`, `getVerticesAtTime`, `getN41` and `getN32` mean something
+/// only under a foliation, and `getN41`/`getN32` count only the cells carrying
+/// a CDT causal type. `getTopSimplexCount` counts cells whatever their type.
+///
+/// ## What this class is, and what reads it
+///
+/// It is the substrate. The algebraic and spectral views are separate types
+/// built from it, and they are where that machinery lives:
+///
+/// * `cobordism::ChainComplex::fromSpacetime` -- boundary operators, Betti
+///   numbers, the oriented cell ordering.
+/// * `cobordism::HodgeLaplacian` -- \f$ L_k \f$ at any degree, the
+///   \f$ \mathbb{C}^{*} \f$ connection operator, spectra and harmonics.
+/// * `getDualGraph`, `getSpatialSubgraph` -- the `observables::SparseGraph`
+///   views, for spectral dimension and modularity.
+///
+/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267 (the CDT
+/// formulation, one of several this class supports).
 ///
 class Spacetime {
   public:
@@ -250,13 +279,65 @@ class Spacetime {
     /// @param vertexTimes Optional per-vertex time, indexed by vertex id; its
     ///   presence selects the tracked-metric rule. Must be long enough to index
     ///   every vertex id appearing in \p cells.
+    /// @param edgeWeights Optional per-edge squared length, replacing the
+    ///   uniform \p weight. One entry per edge, in the order below.
+    /// @param edgePhases Optional per-edge Hermitian phase, replacing the
+    ///   uniform \p phase. One entry per edge, in the order below.
     /// @return The freshly built Spacetime.
-    [[nodiscard]] static std::shared_ptr<Spacetime> fromCells(
+    ///
+    /// ## The per-edge order
+    ///
+    /// \p edgeWeights and \p edgePhases are indexed by position in
+    /// ``getEdgeList()->toVector()``, which this builder fills deterministically:
+    /// cell by cell in the order \p cells is given, and within a cell in
+    /// ascending (source, target) over its sorted vertex tuple, each shared edge
+    /// appearing once at its first occurrence. So for cells
+    /// ``{{0,1,2,3}, {1,2,3,4}}`` the order is
+    /// ``(0,1) (0,2) (0,3) (1,2) (1,3) (2,3) (1,4) (2,4) (3,4)``.
+    ///
+    /// A vector whose length is not the final edge count throws, rather than
+    /// silently leaving part of the geometry at the uniform value.
+    /// Build a Spacetime from existing cells, carrying their geometry across.
+    ///
+    /// Each cell's edges are read for their squared length and Hermitian phase,
+    /// and the corresponding edge of the new complex is given the same values.
+    /// This is the overload to reach for when the cells already have geometry:
+    /// the id-tuple overload below has none to read, which is why it takes a
+    /// uniform \p weight and \p phase instead.
+    ///
+    /// Where two cells share an edge they must agree on its geometry, since the
+    /// shared edge is one edge. A disagreement is a malformed input rather than
+    /// a tie to break, so it throws.
+    ///
+    /// \p edgeWeights and \p edgePhases override what the cells carry. They
+    /// follow the same per-edge order documented on the id-tuple overload.
+    ///
+    /// @param dimensions The metric/signature dimension \f$ d \f$.
+    /// @param cells Top cells. Their vertex ids become the new complex's.
+    /// @param edgeWeights Optional per-edge squared length, overriding the
+    ///   cells' own.
+    /// @param edgePhases Optional per-edge phase, overriding the cells' own.
+    /// @return The freshly built Spacetime.
+    /// @throws std::invalid_argument if two cells disagree on a shared edge, or
+    ///   an override vector's length is not the edge count.
+    [[nodiscard]] static std::shared_ptr<Spacetime> fromSimplices(
+        int dimensions,
+        const std::vector<SimplexPtr> &cells,
+        const std::optional<std::vector<std::complex<double>>> &edgeWeights
+            = std::nullopt,
+        const std::optional<std::vector<std::complex<double>>> &edgePhases
+            = std::nullopt);
+
+    [[nodiscard]] static std::shared_ptr<Spacetime> fromVertexTuples(
         int dimensions,
         const std::vector<std::vector<std::uint64_t>> &cells,
         double weight = 1.0,
         std::complex<double> phase = 0.0,
-        const std::optional<std::vector<double>> &vertexTimes = std::nullopt);
+        const std::optional<std::vector<double>> &vertexTimes = std::nullopt,
+        const std::optional<std::vector<std::complex<double>>> &edgeWeights
+            = std::nullopt,
+        const std::optional<std::vector<std::complex<double>>> &edgePhases
+            = std::nullopt);
 
     /// The dimension-generic staircase ("prism") triangulation of
     /// \f$ K \times [0, \text{layers}] \f$ from the top cells of a base
@@ -330,9 +411,15 @@ class Spacetime {
     // Query Methods
     // ========================================
 
-    /// @return Total number of top-dimensional (\f$ d \f$-) simplices, i.e.,
-    ///   the four-volume \f$ N_4 = N_{41} + N_{32} \f$ in 4D CDT.
-    [[nodiscard]] std::size_t getSimplexCount() const noexcept;
+    /// The number of top-dimensional (\f$ d \f$-) simplices, which is the
+    /// four-volume \f$ N_4 \f$ in 4D CDT.
+    ///
+    /// Counted from the live top-cell list, so it holds for any complex. It is
+    /// not \f$ N_{41} + N_{32} \f$: those count only the cells carrying a CDT
+    /// causal type, and a cell outside that classification -- every cell of an
+    /// all-spacelike complex, for instance -- appears in neither. Under a CDT
+    /// foliation the two agree.
+    [[nodiscard]] std::size_t getTopSimplexCount() const noexcept;
 
     /// @return Number of vertices \f$ N_0 \f$ in the triangulation.
     /// In the Regge action this appears as \f$ -(k_0 + 6\Delta)\, N_0 \f$.

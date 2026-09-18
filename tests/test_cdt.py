@@ -71,7 +71,7 @@ class TestCDTMoves(unittest.TestCase):
     def test_add_move_changes_counts(self):
         """The add move should increase simplex and vertex counts."""
         cdt, st = self._make_cdt(n_simplices=30)
-        initial_n4 = st.getSimplexCount()
+        initial_n4 = st.getTopSimplexCount()
         initial_n0 = st.getVertexCount()
 
         # Try add moves until one succeeds (may take several attempts)
@@ -82,7 +82,7 @@ class TestCDTMoves(unittest.TestCase):
                 break
 
         if accepted:
-            self.assertGreater(st.getSimplexCount(), initial_n4,
+            self.assertGreater(st.getTopSimplexCount(), initial_n4,
                                "Add move should increase simplex count")
             self.assertGreater(st.getVertexCount(), initial_n0,
                                "Add move should increase vertex count")
@@ -123,7 +123,7 @@ class TestCDTTopologies(unittest.TestCase):
         metric = tessera.Metric(True, sig)
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED, topology)
         st.build(10)
-        self.assertGreater(st.getSimplexCount(), 0, "Topology should produce simplices")
+        self.assertGreater(st.getTopSimplexCount(), 0, "Topology should produce simplices")
         self.assertGreater(st.getVertexCount(), 0, "Topology should produce vertices")
 
         # Run a sweep
@@ -165,7 +165,7 @@ class TestCDTVolumeProfile(unittest.TestCase):
 
         cdt = tessera.CDTSimulation(st, 2.0, 0.5, 0.6, 1.0 / max(100, 1), 100)
         profile = cdt.getVolumeProfile()
-        self.assertEqual(sum(profile), st.getSimplexCount(),
+        self.assertEqual(sum(profile), st.getTopSimplexCount(),
                          "Volume profile should sum to total simplex count")
 
 
@@ -200,10 +200,10 @@ class TestSpacetimeCounting(unittest.TestCase):
         st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED, tessera.Toroid())
         st.build(10)
 
-        self.assertGreater(st.getSimplexCount(), 0)
+        self.assertGreater(st.getTopSimplexCount(), 0)
         self.assertGreater(st.getVertexCount(), 0)
         # N41 and N32 are subsets of the total simplex count
-        self.assertEqual(st.getSimplexCount(), st.getN41() + st.getN32(),
+        self.assertEqual(st.getTopSimplexCount(), st.getN41() + st.getN32(),
                          "N4 should equal N41 + N32")
 
     def test_random_simplex(self):

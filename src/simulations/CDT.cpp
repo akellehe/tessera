@@ -231,7 +231,7 @@ std::unique_ptr<PachnerMove> CDT::proposeShift() {
 // ========================================
 
 int CDT::sweep() {
-  int n4 = static_cast<int>(spacetime->getSimplexCount());
+  int n4 = static_cast<int>(spacetime->getTopSimplexCount());
   if (n4 <= 0) n4 = 1;
   int accepted = 0;
 

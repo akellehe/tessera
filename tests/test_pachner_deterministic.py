@@ -59,7 +59,7 @@ def _snapshot(st):
             top_fps.add(fp)
             orientations[fp] = s.getOrientation().numeric()
     return {
-        "n4": st.getSimplexCount(),
+        "n4": st.getTopSimplexCount(),
         "n41": st.getN41(),
         "n32": st.getN32(),
         "n0": st.getVertexCount(),
@@ -95,8 +95,8 @@ def _verify_counts_consistent(st):
             n32_manual += 1
         else:
             raise AssertionError(f"Invalid orientation {o}")
-    assert st.getSimplexCount() == st.getN41() + st.getN32(), (
-        f"N4 mismatch: {st.getSimplexCount()} != {st.getN41()} + {st.getN32()}")
+    assert st.getTopSimplexCount() == st.getN41() + st.getN32(), (
+        f"N4 mismatch: {st.getTopSimplexCount()} != {st.getN41()} + {st.getN32()}")
     assert st.getN41() == n41_manual, (
         f"N41 mismatch: {st.getN41()} != {n41_manual}")
     assert st.getN32() == n32_manual, (
@@ -276,7 +276,7 @@ class TestFlipRoundTrip(unittest.TestCase):
     def test_flip_twice_deltas_accumulate(self):
         """Two flips: each adds exactly +2 to N4."""
         cdt, st = _build_small(n_simplices=30)
-        n4_start = st.getSimplexCount()
+        n4_start = st.getTopSimplexCount()
 
         flips_done = 0
         for _ in range(5000):
@@ -466,7 +466,7 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
         reuse on small complexes).  We check the invariants regardless.
         """
         cdt, st = _build_small(n_simplices=50)
-        prev_n4 = st.getSimplexCount()
+        prev_n4 = st.getTopSimplexCount()
 
         flips = 0
         for _ in range(10000):
@@ -476,7 +476,7 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
                 # On small lattices with rich topology, net change can be negative.
                 _verify_counts_consistent(st)
                 _verify_all_top_causal(st)
-                prev_n4 = st.getSimplexCount()
+                prev_n4 = st.getTopSimplexCount()
                 if flips >= 3:
                     return
 
@@ -497,10 +497,10 @@ class TestMultiIterationRoundTrips(unittest.TestCase):
 
         for iteration in range(20):
             for move, name in zip(moves, move_names):
-                before_n4 = st.getSimplexCount()
+                before_n4 = st.getTopSimplexCount()
                 before_n0 = st.getVertexCount()
                 if move():
-                    after_n4 = st.getSimplexCount()
+                    after_n4 = st.getTopSimplexCount()
                     after_n0 = st.getVertexCount()
 
                     if name == "add":

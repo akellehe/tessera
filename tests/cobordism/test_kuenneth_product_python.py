@@ -83,7 +83,7 @@ class TestKroneckerSumMatrix(unittest.TestCase):
         rng = np.random.default_rng(79)
         a = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
         b = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
-        got = np.array(cob.KuennethProduct.kroneckerSum(
+        got = np.array(cob.SpacetimeComposition.kroneckerSum(
             [complex(z) for z in a.reshape(-1)], 3,
             [complex(z) for z in b.reshape(-1)], 4)).reshape(12, 12)
         expected = np.kron(a, np.eye(4)) + np.kron(np.eye(3), b)

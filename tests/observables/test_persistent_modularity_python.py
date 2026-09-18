@@ -705,7 +705,7 @@ class TestSpacetimeDiscovery(unittest.TestCase):
         st = _make_spacetime()
         n_v = st.getVertexCount()
         n_e = st.getEdgeList().size()
-        n_s = st.getSimplexCount()
+        n_s = st.getTopSimplexCount()
         opt = tessera.ModularityOptimizer(tessera.ModularityOptimizerConfig(),
                                           seed=0)
         report = opt.discoverComponents(st, _cfg((0.5, 1.0, 2.0), restarts=2))
@@ -717,7 +717,7 @@ class TestSpacetimeDiscovery(unittest.TestCase):
         # Observables are read-only: the spacetime is untouched.
         self.assertEqual(st.getVertexCount(), n_v)
         self.assertEqual(st.getEdgeList().size(), n_e)
-        self.assertEqual(st.getSimplexCount(), n_s)
+        self.assertEqual(st.getTopSimplexCount(), n_s)
 
     def test_weight_maps_documented_monotone_similarity(self):
         st = _make_spacetime()
@@ -739,7 +739,7 @@ class TestSpacetimeDiscovery(unittest.TestCase):
         # guaranteed up to automorphism; pointwise support mapping is
         # covered by the planted (forced-partition) fixtures.  Hash
         # equality is not asserted either: canonical hashes read the
-        # ORIENTED incidence and the fromCells rebuild inside
+        # ORIENTED incidence and the fromVertexTuples rebuild inside
         # LiveComplex.relabel does not preserve stored source/target roles
         # (the pure-graph relabeling tests cover hashes with orientation
         # preserved).

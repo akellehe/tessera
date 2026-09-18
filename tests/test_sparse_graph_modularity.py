@@ -333,7 +333,7 @@ class TestGetDualGraph(unittest.TestCase):
     def test_node_count_matches_top_simplex_count(self):
         st = _make_st()
         g = st.getDualGraph()
-        self.assertEqual(g.nNodes(), st.getSimplexCount())
+        self.assertEqual(g.nNodes(), st.getTopSimplexCount())
 
     def test_edges_match_dual_adjacency(self):
         st = _make_st()

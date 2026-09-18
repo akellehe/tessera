@@ -875,7 +875,7 @@ class TestRegistryFromSpacetime(unittest.TestCase):
         # `import tessera` then attribute access: the submodule is not
         # importable directly.
         import tessera
-        return tessera.spacetime.Spacetime.fromCells(2, cells)
+        return tessera.spacetime.Spacetime.fromVertexTuples(2, cells)
 
     def test_one_mode_per_edge(self):
         st = self._spacetime([[0, 1, 2], [1, 2, 3]])

@@ -24,7 +24,7 @@ Whitney = cob.HodgeMetricSource.WhitneyPencil
 
 def _spacetime_from(K, s):
     cells = [list(int(v) for v in t) for t in K.orientedTopSimplices()]
-    st = tessera.Spacetime.fromCells(2, cells, 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
     table = dict(zip(edges(K), s))
     for e in st.getEdgeList().toVector():
         a, b = e.getSource().getId(), e.getTarget().getId()

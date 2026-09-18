@@ -53,7 +53,7 @@ def _jittered_pentatope_sphere(scale=1.0):
 
 
 def _jittered_cells(dimension, cells):
-    spacetime = T.Spacetime.fromCells(dimension, cells, 1.0, 0.0)
+    spacetime = T.Spacetime.fromVertexTuples(dimension, cells, 1.0, 0.0)
     for index, edge in enumerate(spacetime.getEdgeList().toVector()):
         edge.setLength(cmath.sqrt(complex(1.0 + 0.037 * (index % 6),
                                           0.013 * (index % 4))))
