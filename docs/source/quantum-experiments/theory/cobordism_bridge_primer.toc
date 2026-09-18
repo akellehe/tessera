@@ -1,0 +1,12 @@
+\contentsline {section}{\numberline {1}The realization map $\operatorname {geo}(\cdot )$}{1}{section.1}%
+\contentsline {section}{\numberline {2}Overview: two roads to $Z(W_{\!AB})$}{2}{section.2}%
+\contentsline {section}{\numberline {3}The combinatorial Hodge Laplacian}{3}{section.3}%
+\contentsline {section}{\numberline {4}Harmonic forms and the Hodge qubit}{4}{section.4}%
+\contentsline {section}{\numberline {5}Holonomy, flat connections, and Dijkgraaf--Witten}{4}{section.5}%
+\contentsline {section}{\numberline {6}Two countings, one preparation map}{5}{section.6}%
+\contentsline {section}{\numberline {7}Choi--Jamio\l kowski: operations as states (the bend)}{5}{section.7}%
+\contentsline {section}{\numberline {8}Finding topology by minimizing eigenvector residuals}{6}{section.8}%
+\contentsline {paragraph}{Fixed-boundary fill.}{6}{section*.2}%
+\contentsline {paragraph}{Verdict and certificate.}{6}{section*.3}%
+\contentsline {section}{\numberline {9}The bridge}{6}{section.9}%
+\contentsline {paragraph}{Where this lives.}{7}{section*.4}%
