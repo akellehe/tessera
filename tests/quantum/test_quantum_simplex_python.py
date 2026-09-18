@@ -12,6 +12,7 @@ import pytest
 try:
     from tessera import (
         Foliation,
+        Edge,
         Metric,
         Signature,
         SignatureType,
@@ -79,7 +80,7 @@ def vertex_at_position(s, p):
 
 
 def edge_squared_length(s, p, q):
-    """Edge squaredLength_ for the (p, q) edge of the cell."""
+    """Squared edge length for the (p, q) edge of the cell."""
     verts = s.getVertices()
     u, v = verts[int(p)], verts[int(q)]
     for e in s.getEdges():
@@ -169,7 +170,7 @@ class TestQuantumVertex(unittest.TestCase):
         # diverges. The KI factory asks Edge for this with the floor opted
         # out (epsilon = 0), which is what makes +∞ reachable.
         self.assertEqual(
-            tessera.Edge.vanRaamsdonkLength(0.0, 2.0 * math.log(2.0), 0.0),
+            Edge.vanRaamsdonkLength(0.0, 2.0 * math.log(2.0), 0.0),
             math.inf)
 
 
