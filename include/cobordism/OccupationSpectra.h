@@ -67,6 +67,10 @@ class OccupationSpectra {
 
     /// The one-particle direct sum \f$ h_A \oplus h_B \f$ as a flat
     /// row-major \f$ (n_A+n_B)^2 \f$ matrix (zero coupling blocks).
+    ///
+    /// The assembly is `SpacetimeComposition::directSum`; this is the same
+    /// matrix under the name the Fock-level callers reach for. Use
+    /// `hoppingBlock` when the blocks are coupled.
     /// @throws std::invalid_argument on dimension mismatch.
     [[nodiscard]] static std::vector<std::complex<double>> directSum(
         const std::vector<std::complex<double>> &blockA, int dimA,

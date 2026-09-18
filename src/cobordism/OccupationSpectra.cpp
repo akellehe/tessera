@@ -3,6 +3,8 @@
 
 #include "cobordism/OccupationSpectra.h"
 
+#include "cobordism/SpacetimeComposition.h"
+
 #include <algorithm>
 #include <stdexcept>
 
@@ -151,13 +153,10 @@ std::vector<cd> OccupationSpectra::directSum(const std::vector<cd> &blockA,
                                              int dimA,
                                              const std::vector<cd> &blockB,
                                              int dimB) {
-  return hoppingBlock(blockA, dimA, blockB, dimB,
-                      std::vector<cd>(static_cast<std::size_t>(dimA) *
-                                          static_cast<std::size_t>(dimB),
-                                      cd{0.0, 0.0}),
-                      std::vector<cd>(static_cast<std::size_t>(dimB) *
-                                          static_cast<std::size_t>(dimA),
-                                      cd{0.0, 0.0}));
+  // One block-diagonal assembly in the subsystem. hoppingBlock remains for the
+  // coupled case; this was only its zero-coupling specialization, and that is
+  // the same matrix SpacetimeComposition builds.
+  return SpacetimeComposition::directSum(blockA, dimA, blockB, dimB);
 }
 
 std::vector<cd> OccupationSpectra::hoppingBlock(
