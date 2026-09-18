@@ -53,13 +53,13 @@ WINDOWS = [[0, 11, 5], [3, 2, 6], [9, 8, 1]]
 def _holed_icosa():
     rm = {tuple(sorted(t)) for t in WINDOWS}
     faces = [f for f in ICOSA_FACES if tuple(sorted(f)) not in rm]
-    st = T.Spacetime.fromCells(2, faces, 1.0, 0.0)
+    st = T.Spacetime.fromVertexTuples(2, faces, 1.0, 0.0)
     st.materializeFacets()
     return st
 
 
 def _full_icosa():
-    st = T.Spacetime.fromCells(2, ICOSA_FACES, 1.0, 0.0)
+    st = T.Spacetime.fromVertexTuples(2, ICOSA_FACES, 1.0, 0.0)
     st.materializeFacets()
     return st
 

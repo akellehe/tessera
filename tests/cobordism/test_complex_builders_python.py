@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 
-"""The C++ complex builders: Spacetime.fromCells + Spacetime.prismCells (#288).
+"""The C++ complex builders: Spacetime.fromVertexTuples + Spacetime.prismCells (#288).
 
 The register/fill examples hand-rolled a "Signature(n) -> createVertex ->
 createSimplex(sorted) -> uniform pin" builder in a dozen files, plus a 3d copy
@@ -197,13 +197,13 @@ class TestPrismCells(unittest.TestCase):
 
 
 class TestFromCellsUniformPin(unittest.TestCase):
-    """Spacetime.fromCells with no vertexTimes reproduces the uniform Hermitian
+    """Spacetime.fromVertexTuples with no vertexTimes reproduces the uniform Hermitian
     pin of _surface / _bulk / _bulk4 exactly."""
 
     def test_surface_pin_matches(self):
         for weight, phase in ((1.0, 0.0), (2.5, 0.3), (0.7, -1.2)):
             with self.subTest(weight=weight, phase=phase):
-                got = _snapshot(tessera.Spacetime.fromCells(
+                got = _snapshot(tessera.Spacetime.fromVertexTuples(
                     2, [list(f) for f in _OCTA], weight, phase))
                 want = _snapshot(_old_surface(_OCTA, weight, phase))
                 self.assertEqual(got, want)
@@ -211,13 +211,13 @@ class TestFromCellsUniformPin(unittest.TestCase):
     def test_bulk_pin_matches(self):
         for weight, phase in ((1.0, 0.0), (3.0, 0.5)):
             with self.subTest(weight=weight, phase=phase):
-                got = _snapshot(tessera.Spacetime.fromCells(
+                got = _snapshot(tessera.Spacetime.fromVertexTuples(
                     3, [list(c) for c in _TETS6], weight, phase))
                 want = _snapshot(_old_bulk(_TETS6, weight, phase))
                 self.assertEqual(got, want)
 
     def test_every_edge_carries_the_pin(self):
-        st = tessera.Spacetime.fromCells(2, [list(f) for f in _OCTA], 1.7, -0.4)
+        st = tessera.Spacetime.fromVertexTuples(2, [list(f) for f in _OCTA], 1.7, -0.4)
         edges, _ = _snapshot(st)
         self.assertTrue(edges)
         for sq, (phRe, phIm) in edges.values():
@@ -228,7 +228,7 @@ class TestFromCellsUniformPin(unittest.TestCase):
     def test_the_pin_carries_a_complex_phase(self):
         # The pin argument is the C* connection phase, so its non-compact part
         # must reach the edges too.
-        st = tessera.Spacetime.fromCells(2, [list(f) for f in _OCTA], 1.7,
+        st = tessera.Spacetime.fromVertexTuples(2, [list(f) for f in _OCTA], 1.7,
                                          complex(-0.4, 0.9))
         edges, _ = _snapshot(st)
         self.assertTrue(edges)
@@ -240,14 +240,14 @@ class TestFromCellsUniformPin(unittest.TestCase):
         # The uniform-pin vertices carry no coordinates (getTime() == 0; the
         # coordinate vector is absent), so the length-2/3 getTime() trap never
         # arises.
-        st = tessera.Spacetime.fromCells(2, [list(f) for f in _OCTA])
+        st = tessera.Spacetime.fromVertexTuples(2, [list(f) for f in _OCTA])
         for v in _vertices_by_id(st).values():
             self.assertEqual(v.getTime(), 0.0)
             with self.assertRaises(Exception):
                 v.getCoordinates()
 
     def test_one_simplex_per_cell_distinct_vertices(self):
-        st = tessera.Spacetime.fromCells(3, [list(c) for c in _TETS6])
+        st = tessera.Spacetime.fromVertexTuples(3, [list(c) for c in _TETS6])
         _, simplices = _snapshot(st)
         self.assertEqual(simplices, sorted(tuple(c) for c in _TETS6))
         ids = {v for c in _TETS6 for v in c}
@@ -255,7 +255,7 @@ class TestFromCellsUniformPin(unittest.TestCase):
 
 
 class TestFromCellsTrackedMetric(unittest.TestCase):
-    """Spacetime.fromCells with a per-vertex time vector reproduces the tracked
+    """Spacetime.fromVertexTuples with a per-vertex time vector reproduces the tracked
     metric rule of _layered_time_bulk: spacelike intra-layer, timelike
     inter-layer edges, no uniform re-pin."""
 
@@ -270,7 +270,7 @@ class TestFromCellsTrackedMetric(unittest.TestCase):
         for layers in (1, 2, 3):
             with self.subTest(layers=layers):
                 prism, times = self._prism_and_times(layers)
-                got = _snapshot(tessera.Spacetime.fromCells(
+                got = _snapshot(tessera.Spacetime.fromVertexTuples(
                     3, prism, vertexTimes=times))
                 want = _snapshot(_old_layered_bulk([tuple(c) for c in prism]))
                 self.assertEqual(got, want)
@@ -279,7 +279,7 @@ class TestFromCellsTrackedMetric(unittest.TestCase):
         # Intra-layer (equal time) edges are spacelike (+a = +1); inter-layer
         # (time difference one) edges are timelike (-alpha*a = -1).
         prism, times = self._prism_and_times(2)
-        edges, _ = _snapshot(tessera.Spacetime.fromCells(
+        edges, _ = _snapshot(tessera.Spacetime.fromVertexTuples(
             3, prism, vertexTimes=times))
         intra = [(i, j) for (i, j) in edges if i // 12 == j // 12]
         inter = [(i, j) for (i, j) in edges if i // 12 != j // 12]
@@ -293,7 +293,7 @@ class TestFromCellsTrackedMetric(unittest.TestCase):
         # The time coordinate is arity one -- {t} -- never the length-2/3 vector
         # that makes Vertex.getTime() throw.
         prism, times = self._prism_and_times(2)
-        st = tessera.Spacetime.fromCells(3, prism, vertexTimes=times)
+        st = tessera.Spacetime.fromVertexTuples(3, prism, vertexTimes=times)
         for vid, v in _vertices_by_id(st).items():
             self.assertEqual(list(v.getCoordinates()), [float(vid // 12)])
             self.assertEqual(v.getTime(), float(vid // 12))
@@ -302,15 +302,15 @@ class TestFromCellsTrackedMetric(unittest.TestCase):
         # Under the tracked rule the auto-wired causal lengths are the geometry;
         # weight/phase do not overwrite them.
         prism, times = self._prism_and_times(2)
-        pinned = tessera.Spacetime.fromCells(
+        pinned = tessera.Spacetime.fromVertexTuples(
             3, prism, weight=99.0, phase=7.0, vertexTimes=times)
-        plain = tessera.Spacetime.fromCells(3, prism, vertexTimes=times)
+        plain = tessera.Spacetime.fromVertexTuples(3, prism, vertexTimes=times)
         self.assertEqual(_snapshot(pinned), _snapshot(plain))
 
     def test_short_vertex_times_raises(self):
         cells = [list(c) for c in _TETS6]  # ids up to 5
         with self.assertRaises(Exception):
-            tessera.Spacetime.fromCells(3, cells, vertexTimes=[0.0, 0.0])
+            tessera.Spacetime.fromVertexTuples(3, cells, vertexTimes=[0.0, 0.0])
 
 
 if __name__ == "__main__":

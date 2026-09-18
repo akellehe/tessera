@@ -169,7 +169,7 @@ SimplicialQubit::SimplicialQubit(std::vector<std::uint64_t> vertices, std::vecto
   std::vector<std::vector<std::uint64_t>> cells;
   cells.reserve(faces_.size());
   for (const Face &f : faces_) cells.push_back({f[0], f[1], f[2]});
-  spacetime_ = Spacetime::fromCells(2, cells, 1.0, Complex(0.0, 0.0));
+  spacetime_ = Spacetime::fromVertexTuples(2, cells, 1.0, Complex(0.0, 0.0));
   for (mesh::Edge *edge : spacetime_->getEdgeList()->toVector()) {
     const std::uint64_t u = edge->getSource()->getId();
     const std::uint64_t v = edge->getTarget()->getId();

@@ -20,6 +20,7 @@
 #include "cobordism/Characteristic.h"
 #include "cobordism/DenseReference.h"
 #include "cobordism/KuennethProduct.h"
+#include "cobordism/SpacetimeComposition.h"
 #include "cobordism/LowRankUpdate.h"
 #include "cobordism/OccupationSpectra.h"
 #include "cobordism/Cochain.h"
@@ -1187,7 +1188,7 @@ assertion. Every pairing is the transpose.)doc")
   py::class_<MultiCobordism::BoundaryBlock>(m, "MultiCobordismBlock",
       "An emergent boundary block of a MultiCobordism (an input or output): the "
       "vertex set whose own sub-complex carries the block, and its target period "
-      "vector. Read the block's sub-complex with Spacetime.fromCells over the "
+      "vector. Read the block's sub-complex with Spacetime.fromVertexTuples over the "
       "cells inside `vertices`, then its holes with MultiCobordism.emergent_holes.")
       .def_property_readonly(
           "vertices",
@@ -3378,6 +3379,62 @@ the incremental path.)doc")
       .def_property_readonly("misses", &AnalyticCache::misses)
       .def_property_readonly("invalidations", &AnalyticCache::invalidations);
 
+  py::class_<SpacetimeComposition>(m, "SpacetimeComposition",
+      R"doc(Combining two complexes' operators.
+
+Each operation appears twice. The space-level entry points take two complexes
+and a degree, assemble both Hodge Laplacians, and combine them. The matrix-level
+ones take flat matrices, for a caller that already has the operators.
+
+    product of complexes          operator
+    Cartesian   A [] B            Kronecker sum      L_A (x) I + I (x) L_B
+    tensor      A  x B            Kronecker product  L_A (x) L_B
+    disjoint    A  u B            direct sum         L_A (+) L_B
+
+A product index (iA, iB) maps to iA*dimB + iB, so factor A is most significant.
+The direct sum is block diagonal with A first, so it is (dimA + dimB) square
+where the products are (dimA*dimB) square. Every assembly is exact.
+
+The Cartesian case has a spectral shortcut, since its two terms commute: see
+KuennethProduct.pairwiseSpectrum, which gives the product spectrum without
+diagonalizing anything, and KuennethProduct.productCertificate, which certifies
+that a complex really is the Cartesian product of two factors.)doc")
+      .def_static("cartesianProduct", &SpacetimeComposition::cartesianProduct,
+                  py::arg("factor_a"), py::arg("factor_b"),
+                  py::arg("degree") = 0, py::arg("metric") = true,
+                  "L_k of the Cartesian product A [] B: the Kronecker sum of "
+                  "the factors' L_k, flat row-major (dimA*dimB)^2.")
+      .def_static("tensorProduct", &SpacetimeComposition::tensorProduct,
+                  py::arg("factor_a"), py::arg("factor_b"),
+                  py::arg("degree") = 0, py::arg("metric") = true,
+                  "L_k of the tensor product A x B: the Kronecker product of "
+                  "the factors' L_k, flat row-major (dimA*dimB)^2.")
+      .def_static("directSum",
+                  py::overload_cast<const std::shared_ptr<Spacetime> &,
+                                    const std::shared_ptr<Spacetime> &, int,
+                                    bool>(&SpacetimeComposition::directSum),
+                  py::arg("factor_a"), py::arg("factor_b"),
+                  py::arg("degree") = 0, py::arg("metric") = true,
+                  "L_k of the disjoint union A u B: the block-diagonal direct "
+                  "sum of the factors' L_k, flat row-major (dimA+dimB)^2.")
+      .def_static("kroneckerSum", &SpacetimeComposition::kroneckerSum,
+                  py::arg("operator_a"), py::arg("dim_a"),
+                  py::arg("operator_b"), py::arg("dim_b"),
+                  "A (x) I + I (x) B, flat row-major (dimA*dimB)^2.")
+      .def_static("kroneckerProduct", &SpacetimeComposition::kroneckerProduct,
+                  py::arg("operator_a"), py::arg("dim_a"),
+                  py::arg("operator_b"), py::arg("dim_b"),
+                  "A (x) B, flat row-major (dimA*dimB)^2.")
+      .def_static("directSum",
+                  py::overload_cast<const std::vector<std::complex<double>> &,
+                                    int,
+                                    const std::vector<std::complex<double>> &,
+                                    int>(&SpacetimeComposition::directSum),
+                  py::arg("operator_a"), py::arg("dim_a"),
+                  py::arg("operator_b"), py::arg("dim_b"),
+                  "A (+) B: block diagonal, A first, flat row-major "
+                  "(dimA+dimB)^2.");
+
   py::class_<KuennethProduct>(m, "KuennethProduct",
       R"doc(The exact Kronecker-sum/Kuenneth rule L_{AxB} = L_A (x) I + I (x) L_B.
 
@@ -3388,11 +3445,6 @@ refused: holds() == False). The degree-zero operator there is the U(1)
 CONNECTION graph Laplacian connectionLaplacian, not the Hodge L_0. The
 spectrum of the Kronecker sum is exactly the pairwise sums of the factor spectra
 -- no product eigensolve.)doc")
-      .def_static("kroneckerSum", &KuennethProduct::kroneckerSum,
-                  py::arg("laplacian_a"), py::arg("dim_a"),
-                  py::arg("laplacian_b"), py::arg("dim_b"),
-                  "L_A (x) I + I (x) L_B, flat row-major (dimA*dimB)^2; "
-                  "product index (iA, iB) -> iA*dimB + iB.")
       .def_static("pairwiseSpectrum", &KuennethProduct::pairwiseSpectrum,
                   py::arg("spectrum_a"), py::arg("spectrum_b"),
                   "All pairwise sums, ascending by (Re, Im): the exact "

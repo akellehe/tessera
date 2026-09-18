@@ -112,7 +112,7 @@ bool FlipMove::propose() {
   dN32_ = newN32 - oldN32;
 
   // Combinatorial prefactor (matches CDT::flip): log(N4 / (N4 + d - 2)).
-  double N4 = static_cast<double>(st_->getSimplexCount());
+  double N4 = static_cast<double>(st_->getTopSimplexCount());
   logPrefactor_ = std::log(N4) - std::log(N4 + d - 2);
 
   touchedIds_.reserve(d + 2);

@@ -75,7 +75,7 @@ def _assert_counts(test, st):
             test.fail(f"Invalid orientation {o}")
     test.assertEqual(st.getN41(), n41)
     test.assertEqual(st.getN32(), n32)
-    test.assertEqual(st.getSimplexCount(), n41 + n32)
+    test.assertEqual(st.getTopSimplexCount(), n41 + n32)
 
 
 # =====================================================================
@@ -128,7 +128,7 @@ class TestConeForward(unittest.TestCase):
         """Coning a non-timelike facet creates exactly 1 new top simplex."""
         st = _make_spacetime()
         st.build(5)
-        before_n4 = st.getSimplexCount()
+        before_n4 = st.getTopSimplexCount()
         before_n0 = st.getVertexCount()
         before_fps = _top_fps(st)
 
@@ -139,7 +139,7 @@ class TestConeForward(unittest.TestCase):
         after_fps = _top_fps(st)
         gained = after_fps - before_fps
         self.assertEqual(len(gained), 1)
-        self.assertEqual(st.getSimplexCount(), before_n4 + 1)
+        self.assertEqual(st.getTopSimplexCount(), before_n4 + 1)
         self.assertEqual(st.getVertexCount(), before_n0 + 1)
         self.assertEqual(len(new_simplex.getVertices()), 5)
         self.assertTrue(new_simplex.hasVertex(new_vertex))
@@ -153,16 +153,16 @@ class TestConeForward(unittest.TestCase):
         """Cone a facet, then removeSimplex the result: N4 returns."""
         st = _make_spacetime()
         st.build(5)
-        before_n4 = st.getSimplexCount()
+        before_n4 = st.getTopSimplexCount()
         before_fps = _top_fps(st)
 
         top = _top_simplices(st)[0]
         new_simplex, _ = self._cone_facet(st, top)
         self.assertIsNotNone(new_simplex)
-        self.assertEqual(st.getSimplexCount(), before_n4 + 1)
+        self.assertEqual(st.getTopSimplexCount(), before_n4 + 1)
 
         st.removeSimplex(new_simplex)
-        self.assertEqual(st.getSimplexCount(), before_n4)
+        self.assertEqual(st.getTopSimplexCount(), before_n4)
         self.assertTrue(before_fps.issubset(_top_fps(st)))
         _assert_counts(self, st)
 
@@ -170,7 +170,7 @@ class TestConeForward(unittest.TestCase):
         """5 cones then 5 removes: N4 returns to start each time."""
         st = _make_spacetime()
         st.build(10)
-        start_n4 = st.getSimplexCount()
+        start_n4 = st.getTopSimplexCount()
 
         added_simplices = []
         for i in range(5):
@@ -178,18 +178,18 @@ class TestConeForward(unittest.TestCase):
             new_simplex, _ = self._cone_facet(st, top)
             self.assertIsNotNone(new_simplex, f"Iteration {i}: need facet")
             added_simplices.append(new_simplex)
-            self.assertEqual(st.getSimplexCount(), start_n4 + i + 1)
+            self.assertEqual(st.getTopSimplexCount(), start_n4 + i + 1)
             _assert_counts(self, st)
             _assert_all_causal(self, st)
 
         for i, s in enumerate(reversed(added_simplices)):
             st.removeSimplex(s)
             expected = start_n4 + (4 - i)
-            self.assertEqual(st.getSimplexCount(), expected,
+            self.assertEqual(st.getTopSimplexCount(), expected,
                              f"Remove {i}: expected N4={expected}")
             _assert_counts(self, st)
 
-        self.assertEqual(st.getSimplexCount(), start_n4)
+        self.assertEqual(st.getTopSimplexCount(), start_n4)
 
 
 # =====================================================================
@@ -239,7 +239,7 @@ class TestFlipForward(unittest.TestCase):
         """Remove 2, create d=4 new simplices with correct vertex sets."""
         st = _make_spacetime()
         st.build(20)
-        before_n4 = st.getSimplexCount()
+        before_n4 = st.getTopSimplexCount()
         before_n0 = st.getVertexCount()
 
         result = self._find_flippable(st)
@@ -249,7 +249,7 @@ class TestFlipForward(unittest.TestCase):
 
         st.removeSimplex(s1)
         st.removeSimplex(s2)
-        self.assertEqual(st.getSimplexCount(), before_n4 - 2)
+        self.assertEqual(st.getTopSimplexCount(), before_n4 - 2)
 
         new_simplices = []
         for skip in range(4):
@@ -261,7 +261,7 @@ class TestFlipForward(unittest.TestCase):
                 new_simplices.append(new_s)
 
         self.assertGreaterEqual(len(new_simplices), 1)
-        self.assertGreater(st.getSimplexCount(), before_n4 - 2)
+        self.assertGreater(st.getTopSimplexCount(), before_n4 - 2)
         self.assertEqual(st.getVertexCount(), before_n0)
 
         for s in new_simplices:
@@ -276,7 +276,7 @@ class TestFlipForward(unittest.TestCase):
         """Flip forward, then flip back: N4 returns."""
         st = _make_spacetime()
         st.build(20)
-        before_n4 = st.getSimplexCount()
+        before_n4 = st.getTopSimplexCount()
 
         result = self._find_flippable(st)
         if result is None:
@@ -302,7 +302,7 @@ class TestFlipForward(unittest.TestCase):
         st.createSimplex(s1_verts)
         st.createSimplex(s2_verts)
 
-        self.assertEqual(st.getSimplexCount(), before_n4)
+        self.assertEqual(st.getTopSimplexCount(), before_n4)
         _assert_counts(self, st)
         _assert_all_causal(self, st)
 
@@ -373,7 +373,7 @@ class TestShiftForward(unittest.TestCase):
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
         cdt.sweep(200)
 
-        before_n4 = st.getSimplexCount()
+        before_n4 = st.getTopSimplexCount()
         before_n0 = st.getVertexCount()
 
         result = self._find_shiftable(st)
@@ -383,7 +383,7 @@ class TestShiftForward(unittest.TestCase):
 
         for s in sharing:
             st.removeSimplex(s)
-        self.assertEqual(st.getSimplexCount(), before_n4 - 3)
+        self.assertEqual(st.getTopSimplexCount(), before_n4 - 3)
 
         new_simplices = []
         for skip in range(3):
@@ -411,7 +411,7 @@ class TestShiftForward(unittest.TestCase):
         cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
         cdt.sweep(200)
 
-        before_n4 = st.getSimplexCount()
+        before_n4 = st.getTopSimplexCount()
 
         result = self._find_shiftable(st)
         if result is None:
@@ -436,7 +436,7 @@ class TestShiftForward(unittest.TestCase):
         for old_verts in old_vert_sets:
             st.createSimplex(old_verts)
 
-        self.assertEqual(st.getSimplexCount(), before_n4)
+        self.assertEqual(st.getTopSimplexCount(), before_n4)
         _assert_counts(self, st)
         _assert_all_causal(self, st)
 
@@ -451,7 +451,7 @@ class TestIteratedConeRemove(unittest.TestCase):
     def test_ten_iterations(self):
         st = _make_spacetime()
         st.build(10)
-        start_n4 = st.getSimplexCount()
+        start_n4 = st.getTopSimplexCount()
 
         for iteration in range(10):
             top = _top_simplices(st)[0]
@@ -473,14 +473,14 @@ class TestIteratedConeRemove(unittest.TestCase):
             new_verts = list(facet.getVertices()) + [vertex]
             new_s, created = st.createSimplex(new_verts)
             self.assertTrue(created, f"Iter {iteration}: simplex already existed")
-            self.assertEqual(st.getSimplexCount(), start_n4 + 1,
+            self.assertEqual(st.getTopSimplexCount(), start_n4 + 1,
                              f"Iter {iteration}: after cone")
             _assert_counts(self, st)
             _assert_all_causal(self, st)
 
             # Backward: remove
             st.removeSimplex(new_s)
-            self.assertEqual(st.getSimplexCount(), start_n4,
+            self.assertEqual(st.getTopSimplexCount(), start_n4,
                              f"Iter {iteration}: after remove")
             _assert_counts(self, st)
 
@@ -521,7 +521,7 @@ class TestIteratedFlip(unittest.TestCase):
     def test_five_iterations(self):
         st = _make_spacetime()
         st.build(20)
-        start_n4 = st.getSimplexCount()
+        start_n4 = st.getTopSimplexCount()
 
         for iteration in range(5):
             result = self._find_flippable(st)
@@ -548,7 +548,7 @@ class TestIteratedFlip(unittest.TestCase):
             st.createSimplex(s1_verts)
             st.createSimplex(s2_verts)
 
-            self.assertEqual(st.getSimplexCount(), start_n4,
+            self.assertEqual(st.getTopSimplexCount(), start_n4,
                              f"Iter {iteration}: N4 should return")
             _assert_counts(self, st)
             _assert_all_causal(self, st)

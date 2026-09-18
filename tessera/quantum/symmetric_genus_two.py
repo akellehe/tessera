@@ -124,7 +124,7 @@ class SymmetricGenusTwo:
         zero phases (the ``seedCollar`` input)."""
         import tessera as T
         cells = [list(face) for face in self.faces]
-        surface = T.spacetime.Spacetime.fromCells(2, cells, 1.0, 0.0)
+        surface = T.spacetime.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
         for edge in surface.getEdgeList().toVector():
             u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
             edge.setLength(self.lengths[(min(u, v), max(u, v))])

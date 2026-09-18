@@ -503,7 +503,7 @@ std::vector<std::uint64_t> FiberConnection::unionVertexIds(
 Eigen::MatrixXcd FiberConnection::chainTransfer(
     const std::shared_ptr<Spacetime> &st, int degree,
     const std::vector<std::vector<std::uint64_t>> &toCells,
-    const std::vector<std::vector<std::uint64_t>> &fromCells,
+    const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
     cobordism::HodgeLaplacian::WeightConvention weights) {
   if (st == nullptr)
     throw std::invalid_argument("FiberConnection::chainTransfer: null spacetime");
@@ -568,13 +568,13 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
         "FiberConnection::chainTransfer: operator/cell count mismatch");
 
   Eigen::MatrixXcd block(static_cast<Eigen::Index>(toCells.size()),
-                         static_cast<Eigen::Index>(fromCells.size()));
+                         static_cast<Eigen::Index>(fromVertexTuples.size()));
   std::vector<std::size_t> rows;
   rows.reserve(toCells.size());
   for (const auto &cell : toCells) rows.push_back(lookup(cell));
   std::vector<std::size_t> cols;
-  cols.reserve(fromCells.size());
-  for (const auto &cell : fromCells) cols.push_back(lookup(cell));
+  cols.reserve(fromVertexTuples.size());
+  for (const auto &cell : fromVertexTuples) cols.push_back(lookup(cell));
   for (std::size_t r = 0; r < rows.size(); ++r)
     for (std::size_t c = 0; c < cols.size(); ++c)
       block(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) =

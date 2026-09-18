@@ -3231,7 +3231,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
 
     @staticmethod
     def _boundary_delta5():
-        st = tessera.Spacetime.fromCells(
+        st = tessera.Spacetime.fromVertexTuples(
             4, [list(c) for c in itertools.combinations(range(6), 5)],
             1.0, 0.0)
         st.materializeFacets()
@@ -3239,7 +3239,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
 
     @staticmethod
     def _star_of_apex():
-        st = tessera.Spacetime.fromCells(
+        st = tessera.Spacetime.fromVertexTuples(
             4, [list(c) for c in itertools.combinations(range(6), 5)
                 if 5 in c], 1.0, 0.0)
         st.materializeFacets()

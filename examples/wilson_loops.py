@@ -221,7 +221,7 @@ def main():
     prog.phase("thermalizing", total=10)
     cdt.sweep(10, progress=prog.on_tick)
     print(f"  Vertices: {st.getVertexCount()}, "
-          f"Top simplices: {st.getSimplexCount()}")
+          f"Top simplices: {st.getTopSimplexCount()}")
 
     # Create WilsonLoop
     wl = tessera.WilsonLoop(st)

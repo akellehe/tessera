@@ -12,7 +12,7 @@ be rebuilt from: the run document records measurements OF a geometry, never
 the geometry.
 
 Measured here: a two-unit qubit drive's dump rebuilds through
-``Spacetime.fromCells`` to a complex with the same cells and the same edge
+``Spacetime.fromVertexTuples`` to a complex with the same cells and the same edge
 squared lengths to a few units in the last place, and a node rebuilt on
 it reports the same objective and the same block residuals as the node that
 was driven. The last place is where the schema puts the limit: an ``Edge``
@@ -77,7 +77,7 @@ def squared_lengths(spacetime):
 
 def rebuild(document):
     """The dump's own rebuild path (`tests/cobordism/_causal_specimen`)."""
-    spacetime = tessera.spacetime.Spacetime.fromCells(document["dimensions"],
+    spacetime = tessera.spacetime.Spacetime.fromVertexTuples(document["dimensions"],
                                                       document["cells"])
     vertices = spacetime.getVertexList()
     for vid, t in document["vertex_times"]:

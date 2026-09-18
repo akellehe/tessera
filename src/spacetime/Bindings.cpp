@@ -237,11 +237,18 @@ Args:
   // Spacetime
   // ========================================
   py::class_<Spacetime, std::shared_ptr<Spacetime> >(m, "Spacetime",
-      R"doc(The simplicial spacetime manifold.
+      R"doc(A simplicial complex with a metric and a topology.
 
-Holds the full simplicial complex: vertices, edges, and simplices of all
-dimensions, along with the metric and topology.  Provides methods for
-building the initial triangulation and manipulating the complex.
+Holds vertices, edges, and simplices of all dimensions, along with the metric
+and topology, and provides methods for building the initial triangulation and
+manipulating the complex.
+
+Not only for causal dynamical triangulations. SpacetimeType is a constructor
+parameter -- REGGE, COSET, HERMITIAN_WEIGHTED and the rest are equally
+supported -- and the causal structure is optional throughout: fromVertexTuples
+and fromCOO build a complex with no foliation and no causal typing at all. The
+CDT-specific reads are a subset: getFoliation, getTimeSlices, getVerticesAtTime,
+getN41 and getN32 mean something only under a foliation.
 
 Typical construction::
 
@@ -354,11 +361,39 @@ may differ slightly due to slab quantization.)doc")
            "mutation (creation, setLength, setPhase, simplex register/"
            "unregister, edge removal), so it can key caches and assert "
            "invariants.")
-      .def_static("fromCells", &Spacetime::fromCells,
+      .def_static("fromSimplices",
+           py::overload_cast<int, const std::vector<SimplexPtr> &,
+                             const std::optional<std::vector<std::complex<double>>> &,
+                             const std::optional<std::vector<std::complex<double>>> &>(
+               &Spacetime::fromSimplices),
+           py::arg("dimensions"), py::arg("cells"),
+           py::arg("edgeWeights") = std::optional<std::vector<std::complex<double>>>{},
+           py::arg("edgePhases") = std::optional<std::vector<std::complex<double>>>{},
+           R"doc(Build a complex from existing simplices, carrying their geometry.
+
+Each cell's edges are read for their squared length and Hermitian phase, and the
+corresponding edge of the new complex is given the same values. Cells may be of
+any dimension -- 1-simplices, top simplices, or a mix.
+
+Where two cells share an edge they must agree on its geometry, since the shared
+edge is one edge; a disagreement raises rather than picking a winner.
+
+edgeWeights and edgePhases override what the cells carry. Each, if given, must
+have exactly one entry per edge of the resulting complex, in the order
+described on fromVertexTuples.)doc")
+      .def_static("fromVertexTuples",
+           py::overload_cast<int, const std::vector<std::vector<std::uint64_t>> &,
+                             double, std::complex<double>,
+                             const std::optional<std::vector<double>> &,
+                             const std::optional<std::vector<std::complex<double>>> &,
+                             const std::optional<std::vector<std::complex<double>>> &>(
+               &Spacetime::fromVertexTuples),
            py::arg("dimensions"), py::arg("cells"),
            py::arg("weight") = 1.0,
            py::arg("phase") = std::complex<double>{0.0, 0.0},
            py::arg("vertexTimes") = std::optional<std::vector<double>>{},
+           py::arg("edgeWeights") = std::optional<std::vector<std::complex<double>>>{},
+           py::arg("edgePhases") = std::optional<std::vector<std::complex<double>>>{},
            R"doc(Build a pre-geometric complex from an explicit list of top cells.
 
 Creates a coordinate-free Lorentzian ``dimensions``-D CDT spacetime, one vertex
@@ -559,8 +594,13 @@ insertions.)doc")
 
 Automatically creates vertices at times 0 and 1.  Useful for building
 minimal test lattices, e.g. createSimplex((1, 4)) for a (1,4) simplex.)doc")
-      .def("getSimplexCount", &Spacetime::getSimplexCount,
-           "Return N4 = N41 + N32, the total number of top-dimensional simplices.")
+      .def("getTopSimplexCount", &Spacetime::getTopSimplexCount,
+           R"doc(The number of top-dimensional simplices, N4 in 4D CDT.
+
+Counted from the live top-cell list, so it holds for any complex. It is not
+N41 + N32: those count only the cells carrying a CDT causal type, and a cell
+outside that classification -- every cell of an all-spacelike complex, for
+instance -- appears in neither. Under a CDT foliation the two agree.)doc")
       .def("getVertexCount", &Spacetime::getVertexCount,
            "Return N0, the total number of vertices.")
       .def("getN41", &Spacetime::getN41,

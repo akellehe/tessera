@@ -48,7 +48,7 @@ def _squared_lengths(st):
 def _jittered_simplex(nverts, imaginary=True):
     """One `nverts`-vertex cell with deliberately asymmetric complex l^2, so no
     identity below can pass by symmetry alone."""
-    st = T.Spacetime.fromCells(nverts - 1, [list(range(nverts))], 1.0, 0.0)
+    st = T.Spacetime.fromVertexTuples(nverts - 1, [list(range(nverts))], 1.0, 0.0)
     for i, e in enumerate(st.getEdgeList().toVector()):
         value = complex(1.0 + 0.031 * (i % 7), 0.011 * (i % 3) if imaginary else 0.0)
         e.setLength(cmath.sqrt(value))

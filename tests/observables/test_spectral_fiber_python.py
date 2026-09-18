@@ -334,7 +334,7 @@ class TestExactSmallFixtures(unittest.TestCase):
             [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
             [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
         ]
-        closed = tessera.Spacetime.fromCells(2, faces, 1.0, 0.0)
+        closed = tessera.Spacetime.fromVertexTuples(2, faces, 1.0, 0.0)
         closed.materializeFacets()
         read = _tracker(closed, **ANY_LOCALIZATION).enumerateBands(
             _all_vertices(closed), 2)
@@ -663,8 +663,8 @@ class TestPropertyInvariance(unittest.TestCase):
         holed = [f for f in faces if tuple(sorted(f)) not in windows]
         perm = dict(zip(range(12), rng.sample(range(500, 620), 12)))
         relabeled = [[perm[v] for v in f] for f in holed]
-        st_a = tessera.Spacetime.fromCells(2, holed, 1.0, 0.0)
-        st_b = tessera.Spacetime.fromCells(2, relabeled, 1.0, 0.0)
+        st_a = tessera.Spacetime.fromVertexTuples(2, holed, 1.0, 0.0)
+        st_b = tessera.Spacetime.fromVertexTuples(2, relabeled, 1.0, 0.0)
         for st in (st_a, st_b):
             st.materializeFacets()
         read_a = _tracker(st_a).enumerateBands(_all_vertices(st_a), 1)
@@ -1022,7 +1022,7 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
         rev = st.metricRevisionKey()
         n_v = st.getVertexCount()
         n_e = st.getEdgeList().size()
-        n_s = st.getSimplexCount()
+        n_s = st.getTopSimplexCount()
         lengths = [e.getLength() for e in st.getEdgeList().toVector()]
         tr = _tracker(st, crossValidateDense=True)
         tr.enumerateBands([0, 1, 2], 0)
@@ -1031,7 +1031,7 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
         self.assertEqual(st.metricRevisionKey(), rev)
         self.assertEqual(st.getVertexCount(), n_v)
         self.assertEqual(st.getEdgeList().size(), n_e)
-        self.assertEqual(st.getSimplexCount(), n_s)
+        self.assertEqual(st.getTopSimplexCount(), n_s)
         self.assertEqual(
             [e.getLength() for e in st.getEdgeList().toVector()], lengths)
 

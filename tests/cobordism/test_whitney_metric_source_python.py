@@ -24,7 +24,7 @@ THREE_COMPLEX = [[0, 1, 2, 3], [1, 2, 3, 4], [0, 1, 2, 4]]
 
 
 def _spacetime(cells, dim, rng, scale=0.2, phases=False):
-    st = tessera.Spacetime.fromCells(dim, cells, 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(dim, cells, 1.0, 0.0)
     for i, e in enumerate(st.getEdgeList().toVector()):
         s = complex(1.0 + scale * rng.normal(), scale * rng.normal())
         e.setLength(cmath.sqrt(s))
@@ -43,7 +43,7 @@ class TestDefaults:
         construction (read at call time, never captured at import), and an
         explicit metric_source overrides it."""
         assert HL.defaultMetricSource() == Diagonal
-        st = tessera.Spacetime.fromCells(2, TWO_COMPLEX, 1.0, 0.0)
+        st = tessera.Spacetime.fromVertexTuples(2, TWO_COMPLEX, 1.0, 0.0)
         assert HL(st).metricSource() == Diagonal
         assert MC(st, [], [], [1]).metricSource() == Diagonal
         assert MC(st, [], [], [1], metric_source=Whitney).metricSource() == Whitney
@@ -195,7 +195,7 @@ class TestAdmissibility:
         # torus with a complex conformal factor, argument sum >= pi.
         from tests.chainhodge._fixtures import conformal_torus, edges as cedges_of
         Kt, st_lengths, _W = conformal_torus(6, 0.3 + 0.2j, 0.15, True, seed=1)
-        bad = tessera.Spacetime.fromCells(2, [list(t) for t in Kt.orientedTopSimplices()], 1.0, 0.0)
+        bad = tessera.Spacetime.fromVertexTuples(2, [list(t) for t in Kt.orientedTopSimplices()], 1.0, 0.0)
         table = dict(zip(cedges_of(Kt), st_lengths))
         for e in bad.getEdgeList().toVector():
             a, b = e.getSource().getId(), e.getTarget().getId()
@@ -204,7 +204,7 @@ class TestAdmissibility:
         assert not mc.geometryAdmissible(bad)
         assert MC(st, [], [], [1], metric_source=Diagonal).geometryAdmissible(bad)
         # The real Lorentzian boundary (margin exactly zero) is admitted.
-        lor = tessera.Spacetime.fromCells(2, TWO_COMPLEX, 1.0, 0.0)
+        lor = tessera.Spacetime.fromVertexTuples(2, TWO_COMPLEX, 1.0, 0.0)
         for i, e in enumerate(lor.getEdgeList().toVector()):
             e.setLength(cmath.sqrt(complex(1.0 if i % 3 else -0.5)))
         assert HL.kontsevichSegalMargin(lor) == pytest.approx(0.0, abs=1e-12)

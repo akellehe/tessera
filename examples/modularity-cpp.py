@@ -131,7 +131,7 @@ def _sweep_with_bar(opt, cdt, st, direction, max_iter, label_prefix, M):
         # Initial state line.
         bar.update(current=0, force=True,
                    Q=f"{initial_q:.4f}", dQ="+0.000",
-                   N4=st.getSimplexCount(),
+                   N4=st.getTopSimplexCount(),
                    N0=st.getVertexCount(),
                    meas=1)
 
@@ -140,7 +140,7 @@ def _sweep_with_bar(opt, cdt, st, direction, max_iter, label_prefix, M):
                 current=it,
                 Q=f"{q:.4f}",
                 dQ=f"{q - initial_q:+.3f}",
-                N4=st.getSimplexCount(),
+                N4=st.getTopSimplexCount(),
                 N0=st.getVertexCount(),
                 meas=n_meas,
                 ok=opt.getNAccepted(),
@@ -151,7 +151,7 @@ def _sweep_with_bar(opt, cdt, st, direction, max_iter, label_prefix, M):
         bar.update(force=True,
                    Q=f"{ms[-1].Q:.4f}",
                    dQ=f"{ms[-1].Q - initial_q:+.3f}",
-                   N4=st.getSimplexCount(),
+                   N4=st.getTopSimplexCount(),
                    N0=st.getVertexCount(),
                    meas=len(ms),
                    ok=opt.getNAccepted(),
@@ -173,7 +173,7 @@ def _run_one_d(d, args):
     """Build a d-dim CDT spacetime, optionally thermalize, then run the
     modularity optimizer up + down (depending on --direction)."""
     cdt, st = _build_cdt(d, args.n_simplices)
-    label = (f"CDT(d={d}, Toroid) on {st.getSimplexCount()} simplices, "
+    label = (f"CDT(d={d}, Toroid) on {st.getTopSimplexCount()} simplices, "
              f"{st.getVertexCount()} vertices")
     logger.info("--- d=%d ---", d)
     logger.info("Initial: %s", label)
@@ -184,7 +184,7 @@ def _run_one_d(d, args):
         cdt.tune()
         cdt.sweep(args.cdt_thermalize)
         logger.info("Thermalized: %d simplices, %d vertices",
-                    st.getSimplexCount(), st.getVertexCount())
+                    st.getTopSimplexCount(), st.getVertexCount())
 
     cfg = _make_config(args)
     opt = tessera.ModularityOptimizer(cfg, seed=args.seed + d)

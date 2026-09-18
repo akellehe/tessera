@@ -27,7 +27,7 @@ MC = cob.MultiCobordism
 
 
 def _pentatope_host():
-    return tessera.Spacetime.fromCells(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 def _dispositions(st):

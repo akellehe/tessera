@@ -46,7 +46,7 @@ def tube(layers):
     cells = tessera.Spacetime.prismCells(BASE, n, {})
     relabel = {i * 3 + j: layers[i][j] for i in range(n + 1) for j in range(3)}
     cells = [[relabel[v] for v in c] for c in cells]
-    st = tessera.Spacetime.fromCells(2, cells, 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(2, cells, 1.0, 0.0)
     for e in st.getEdgeList().toVector():
         a, b = e.getSource().getId(), e.getTarget().getId()
         e.setLength(math.sqrt(_edge_length(a, b)))

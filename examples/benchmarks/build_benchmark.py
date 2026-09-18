@@ -61,7 +61,7 @@ def build_once(dim, target_n):
         "elapsed_s": elapsed,
         "vertices": st.getVertexCount(),
         "edges": st.getEdgeList().size(),
-        "simplices": st.getSimplexCount(),
+        "simplices": st.getTopSimplexCount(),
     }
 
 

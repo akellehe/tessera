@@ -238,7 +238,7 @@ const std::shared_ptr<InteriorHinges> &RegisterContext::interiorHinges() const {
   if (!caches_->interiorHinges) {
     // The 4D hinge selection reads a const spacetime, so it is read-only by
     // construction. The live complex must already carry its facet skeleton; the
-    // loader completes one after a bare fromCells rehydration.
+    // loader completes one after a bare fromVertexTuples rehydration.
     caches_->interiorHinges = std::make_shared<InteriorHinges>(
         std::shared_ptr<const Spacetime>(spacetime_), holes_);
   }

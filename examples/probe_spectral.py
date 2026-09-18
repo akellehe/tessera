@@ -64,7 +64,7 @@ def volume_profile(st):
 
 
 def report(label, st, max_sigma=200.0, n_walks=20, seed=0):
-    N = st.getSimplexCount()
+    N = st.getTopSimplexCount()
     n41 = st.getN41()
     n32 = st.getN32()
     nverts = st.getVertexCount()
@@ -134,7 +134,7 @@ def main():
                           tessera.Toroid())
     st.build(min(args.n_simplices, args.max_build))
     target = st.getN41() if args.n_simplices <= args.max_build else args.n_simplices // 2
-    print(f"Initial build done.  N4={st.getSimplexCount()} "
+    print(f"Initial build done.  N4={st.getTopSimplexCount()} "
           f"N41={st.getN41()}  target N41={target}")
     report("post-build", st, args.max_sigma, args.n_walks, args.seed)
 
@@ -151,7 +151,7 @@ def main():
         cdt.sweep(batch)
         if (start // chunk) % 2 == 0:
             print(f"  therm progress: {start+batch}/{args.n_therm} sweeps; "
-                  f"N4={st.getSimplexCount()} N41={st.getN41()}  "
+                  f"N4={st.getTopSimplexCount()} N41={st.getN41()}  "
                   f"elapsed={time.time()-t0:.1f}s")
     print(f"Thermalization done in {time.time()-t0:.1f}s")
     report("post-therm", st, args.max_sigma, args.n_walks, args.seed)

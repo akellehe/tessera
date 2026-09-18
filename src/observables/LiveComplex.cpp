@@ -29,10 +29,10 @@ std::shared_ptr<Spacetime> LiveComplex::load(
   if (cells.empty()) {
     throw std::invalid_argument("LiveComplex::load needs at least one top cell");
   }
-  // fromCells lays down the top cells; `dimensions` is the recorded complex
+  // fromVertexTuples lays down the top cells; `dimensions` is the recorded complex
   // dimension, passed through rather than inferred. The metric and vertex times
   // are then restored as recorded and the facet skeleton is completed.
-  auto st = Spacetime::fromCells(dimensions, cells, 1.0, 0.0);
+  auto st = Spacetime::fromVertexTuples(dimensions, cells, 1.0, 0.0);
   if (!vertexTimes.empty()) {
     const auto &vertexList = st->getVertexList();
     for (const auto &kv : vertexTimes) {
@@ -56,7 +56,7 @@ std::shared_ptr<Spacetime> LiveComplex::load(
     e->setLength(std::sqrt(it->second));
   }
   // Complete the facet/coface skeleton that the dual-volume and deficit reads
-  // walk. fromCells leaves only the top cells; this builds the same skeleton a
+  // walk. fromVertexTuples leaves only the top cells; this builds the same skeleton a
   // ReggeSolver or ChainComplex pass would.
   st->materializeFacets();
   return st;
@@ -71,7 +71,7 @@ std::shared_ptr<Spacetime> LiveComplex::subcomplex(
   // The cells are selected by the caller from the ambient top cells, and
   // `dimensions` is the ambient complex's dimension. This re-instantiates that
   // selection with a uniform metric for the block-residual diagnostic.
-  return Spacetime::fromCells(dimensions, cells, 1.0, 0.0);
+  return Spacetime::fromVertexTuples(dimensions, cells, 1.0, 0.0);
 }
 
 LiveComplex::Relabeled LiveComplex::relabel(const Spacetime &spacetime,

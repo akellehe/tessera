@@ -40,7 +40,7 @@ _SINGLET = [1 + 0j, _OMEGA, _OMEGA * _OMEGA]
 
 
 def _seed():
-    return tessera.Spacetime.fromCells(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 class NearKernelResidualTest(unittest.TestCase):

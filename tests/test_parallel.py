@@ -24,7 +24,7 @@ def _make_cdt(n_simplices=50):
     st = tessera.Spacetime(metric, tessera.CDT, 1.0, 1.0, tessera.PREFERRED,
                          tessera.Toroid())
     st.build(n_simplices)
-    target = st.getSimplexCount()
+    target = st.getTopSimplexCount()
     cdt = tessera.CDTSimulation(st, 2.2, 0.5, 0.6, 1.0 / max(target, 1), target)
     return cdt, st
 
@@ -69,7 +69,7 @@ class TestSweepN(unittest.TestCase):
     def test_sweep_zero_is_noop(self):
         """sweep(0) should do nothing and return 0."""
         cdt, st = _make_cdt()
-        initial_count = st.getSimplexCount()
+        initial_count = st.getTopSimplexCount()
         result = cdt.sweep(0)
         self.assertEqual(result, 0)
 
@@ -181,7 +181,7 @@ class TestThreadParallelism(unittest.TestCase):
         def worker(wid):
             cdt, st = _make_cdt(n_simplices=50)
             accepted = cdt.sweep(20)
-            return wid, accepted, st.getSimplexCount()
+            return wid, accepted, st.getTopSimplexCount()
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(worker, i): i for i in range(4)}
@@ -260,7 +260,7 @@ class TestThreadParallelism(unittest.TestCase):
             profile = cdt.getVolumeProfile()
             n41 = st.getN41()
             n32 = st.getN32()
-            n4 = st.getSimplexCount()
+            n4 = st.getTopSimplexCount()
             return wid, n4, n41, n32, profile
 
         # Give each worker a different size so we can verify independence
@@ -290,7 +290,7 @@ class TestThreadParallelism(unittest.TestCase):
         def worker(wid):
             cdt, st = _make_cdt(n_simplices=20)
             cdt.sweep(10)
-            return st.getSimplexCount()
+            return st.getTopSimplexCount()
 
         with ThreadPoolExecutor(max_workers=16) as pool:
             futures = [pool.submit(worker, i) for i in range(16)]

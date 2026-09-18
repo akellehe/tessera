@@ -64,7 +64,7 @@ def _full_snapshot(st):
         "n0": st.getVertexCount(),
         "n41": st.getN41(),
         "n32": st.getN32(),
-        "n4": st.getSimplexCount(),
+        "n4": st.getTopSimplexCount(),
         "top_fps": frozenset(
             hash(s) for s in st.getSimplices()
             if len(s.getVertices()) == dPlus1
@@ -198,9 +198,9 @@ class TestShiftApply(unittest.TestCase):
         st = _make_st()
         m = _try_propose(st, range(200), tessera.ShiftMove)
         self.assertIsNotNone(m)
-        n4_b = st.getSimplexCount()
+        n4_b = st.getTopSimplexCount()
         m.apply()
-        actual_dN4 = st.getSimplexCount() - n4_b
+        actual_dN4 = st.getTopSimplexCount() - n4_b
         self.assertIn(actual_dN4, (-3, -2, -1, 0),
                       f"Shift's actual ΔN4 ({actual_dN4}) outside "
                       f"documented [-3, 0] range")

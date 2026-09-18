@@ -208,6 +208,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} KuennethProduct.h
 ```
+```{doxygenfile} SpacetimeComposition.h
+```
 ```{doxygenfile} OccupationSpectra.h
 ```
 ```{doxygenfile} LowRankUpdate.h

@@ -1650,7 +1650,7 @@ saved combinatorial and metric description back into a live,
 skeleton-complete Spacetime, and produces a relabeled copy for the relabel
 gate. Never builds a spacetime of its own and never re-runs the emergent
 dynamics (those live in Proton / ProtonIngredients / MultiCobordism); it
-reads a recorded geometry back through ``Spacetime.fromCells``, completing
+reads a recorded geometry back through ``Spacetime.fromVertexTuples``, completing
 the facet skeleton with ``materializeFacets``.)doc")
       .def_static("load", &LiveComplex::load, py::arg("cells"),
                   py::arg("squared_lengths"), py::arg("vertex_times"),
@@ -2857,11 +2857,11 @@ certificate, never sampled independently.)doc")
       .def_static("chainTransfer",
                   [](const std::shared_ptr<Spacetime> &st, int degree,
                      const std::vector<std::vector<std::uint64_t>> &toCells,
-                     const std::vector<std::vector<std::uint64_t>> &fromCells,
+                     const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
                      std::optional<cobordism::HodgeLaplacian::WeightConvention>
                          weights) {
                     return FiberConnection::chainTransfer(
-                        st, degree, toCells, fromCells,
+                        st, degree, toCells, fromVertexTuples,
                         weights.value_or(cobordism::HodgeLaplacian::
                                              defaultWeightConvention()));
                   },

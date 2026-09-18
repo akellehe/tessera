@@ -41,7 +41,7 @@ def _full_snapshot(st):
         "n0": st.getVertexCount(),
         "n41": st.getN41(),
         "n32": st.getN32(),
-        "n4": st.getSimplexCount(),
+        "n4": st.getTopSimplexCount(),
         "top_fps": frozenset(
             hash(s) for s in st.getSimplices()
             if len(s.getVertices()) == dPlus1

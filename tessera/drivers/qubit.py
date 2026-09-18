@@ -911,7 +911,7 @@ def _layer_far_flips(host, far_ids, grid, tau_far, passes, factor):
     ok, why = cob.ChainComplex.dualComplexIsValid(cells, 3)
     if not ok:
         raise ValueError("the layered flips are not a manifold-with-boundary: %s" % why)
-    rebuilt = T.spacetime.Spacetime.fromCells(3, cells, 1.0, 0.0)
+    rebuilt = T.spacetime.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
     for edge in rebuilt.getEdgeList().toVector():
         u, v = int(edge.getSource().getId()), int(edge.getTarget().getId())
         edge.setLength(lengths[key(u, v)])

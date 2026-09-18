@@ -79,7 +79,7 @@ ModularityMeasurement ModularityOptimizer::measure(
       Q, dsSmall, dsLarge,
       st.getVertexCount(),
       st.getEdgeList()->size(),
-      st.getSimplexCount(),
+      st.getTopSimplexCount(),
       iter, direction
   };
 }

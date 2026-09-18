@@ -202,7 +202,7 @@ bool IFlipMove::proposeOn(SimplexPtr sigma, EdgePtr edge) {
   if (mode_ == PachnerMode::PreGeometric) {
     logPrefactor_ = 0.0;
   } else {
-    double N4 = static_cast<double>(st_->getSimplexCount());
+    double N4 = static_cast<double>(st_->getTopSimplexCount());
     logPrefactor_ = std::log(N4) - std::log(N4 - d + 2);
   }
 

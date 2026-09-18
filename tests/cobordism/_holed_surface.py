@@ -41,7 +41,7 @@ def holed_surface(degree=1, jitter=True):
     ``(b_k, n_holes)``."""
     rm = {tuple(sorted(t)) for t in _WINDOWS}
     holed = [list(f) for f in _ICOSA_FACES if tuple(sorted(f)) not in rm]
-    st = tessera.Spacetime.fromCells(2, holed, 1.0, 0.0)
+    st = tessera.Spacetime.fromVertexTuples(2, holed, 1.0, 0.0)
     if jitter:
         for i, e in enumerate(st.getEdgeList().toVector()):
             e.setLength(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))

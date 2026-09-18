@@ -20,7 +20,7 @@ cob = tessera.cobordism
 
 def _pentatope():
     """A single solid 4-simplex (one top cell, 5 vertices, a 4-ball)."""
-    return tessera.Spacetime.fromCells(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
+    return tessera.Spacetime.fromVertexTuples(4, [[0, 1, 2, 3, 4]], 1.0, 0.0)
 
 
 def _counts(st):
