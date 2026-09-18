@@ -12,6 +12,7 @@ import pytest
 try:
     from tessera import (
         Foliation,
+        Edge,
         Metric,
         Signature,
         SignatureType,
@@ -79,7 +80,7 @@ def vertex_at_position(s, p):
 
 
 def edge_squared_length(s, p, q):
-    """Edge squaredLength_ for the (p, q) edge of the cell."""
+    """Squared edge length for the (p, q) edge of the cell."""
     verts = s.getVertices()
     u, v = verts[int(p)], verts[int(q)]
     for e in s.getEdges():
@@ -164,14 +165,12 @@ class TestQuantumVertex(unittest.TestCase):
         self.assertEqual(qv.stateDim(), 2)
         np.testing.assert_allclose(qv.getState(), rho, atol=1e-12)
 
-    def test_van_raamsdonk_distance_product_is_inf(self):
-        st = fresh_spacetime()
-        qa = createQuantumVertex(st, half_I(2).astype(complex))
-        qb = createQuantumVertex(st, half_I(2).astype(complex))
-        # Two marginal states have I = 0 under the product joint,
-        # so d_VR = +∞ for any positive iMax.
+    def test_van_raamsdonk_distance_of_an_uncorrelated_pair_is_inf(self):
+        # Two systems with no mutual information are unrelated, so the law
+        # diverges. The KI factory asks Edge for this with the floor opted
+        # out (epsilon = 0), which is what makes +∞ reachable.
         self.assertEqual(
-            qa.vanRaamsdonkDistanceTo(qb, 2.0 * math.log(2.0)),
+            Edge.vanRaamsdonkLength(0.0, 2.0 * math.log(2.0), 0.0),
             math.inf)
 
 

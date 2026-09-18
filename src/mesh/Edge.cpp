@@ -185,10 +185,13 @@ class Simplex;
 
 double Edge::vanRaamsdonkLength(double I, double iMax,
                                 double epsilon) noexcept {
-  const double cap = -std::log(epsilon);  // floor on d_VR => finite length
   const double x = (iMax > 0.0 && I > 0.0) ? (I / iMax) : 0.0;
   double dVR = (x > 0.0) ? -std::log(x)
                          : std::numeric_limits<double>::infinity();
+  if (epsilon <= 0.0) {
+    return dVR;  // caller opted out of the floor; +inf is the law's value
+  }
+  const double cap = -std::log(epsilon);  // floor on d_VR => finite length
   if (!std::isfinite(dVR) || dVR > cap) {
     dVR = cap;
   }

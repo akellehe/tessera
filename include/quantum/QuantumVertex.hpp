@@ -63,22 +63,6 @@ class QuantumVertex : public ::tessera::mesh::Vertex {
       return static_cast<int>(state_.rows());
     }
 
-    /// Van Raamsdonk distance d_VR = −log(I / iMax) between this vertex
-    /// and ``other``. I is the mutual information of the product joint
-    /// ρ_this ⊗ ρ_other, which is the right joint for a pair carrying no
-    /// inherited correlation — every pair the KI factories build except
-    /// the input (A, B) edge. A product joint has I = 0, so the returned
-    /// distance is +∞.
-    ///
-    /// The KI-cell factory uses this method for the nine non-(A, B)
-    /// edges and computes the (A, B) edge from its input joint ρ_AB. It
-    /// then writes d_VR² into ``Edge::squaredLength``.
-    ///
-    /// Throws std::invalid_argument if ``other`` is not a QuantumVertex.
-    [[nodiscard]] double
-    vanRaamsdonkDistanceTo(const ::tessera::mesh::Vertex* other,
-                           double                          iMax) const;
-
     /// Downcast a Vertex* to QuantumVertex*; throws
     /// std::invalid_argument if the dynamic type is wrong.
     static QuantumVertex* require(::tessera::mesh::Vertex* v) {

@@ -111,11 +111,10 @@ endpoint vertex IDs, so Edge(v1, v2) == Edge(v2, v1).)doc")
           std::complex<double>>(),
         py::arg("source"),
         py::arg("target"),
-        py::arg("squaredLength"),
+        py::arg("length"),
         "Create an edge with a specified (possibly complex) length l, stored "
-        "exactly (real = spacelike, imaginary = timelike). Note the keyword is "
-        "named squaredLength but the value is the length: l^2 is derived by "
-        "squaring, so pass sqrt(l2) to specify a squared value."
+        "exactly (real = spacelike, imaginary = timelike). To specify a squared "
+        "length l^2, pass sqrt(l2)."
       )
       .def("simplices", &Edge::simplicesCopy,
         "The simplices registered on this edge -- every simplex that carries it, "
@@ -289,15 +288,13 @@ keeps references to its incident edges and the simplices containing it.)doc")
            py::return_value_policy::reference,
            "Add an edge with auto-computed squared length, or return existing if duplicate.")
       .def("tryAdd", &EdgeList::tryAdd,
-           py::arg("source"), py::arg("target"), py::arg("squaredLength"),
+           py::arg("source"), py::arg("target"), py::arg("length"),
            py::return_value_policy::reference,
            R"doc(Insert if absent, otherwise return the existing edge.
 
 Returns ``(edge, inserted)`` where ``inserted`` is ``True`` on a fresh insert
 and ``False`` on a deduplication hit. Transactional Pachner moves use the flag
-to record the edges they created, so rollback knows which to remove.
-
-Note the keyword is named squaredLength but the value is the edge length.)doc")
+to record the edges they created, so rollback knows which to remove.)doc")
       .def("remove", py::overload_cast<const EdgePtr &>(&EdgeList::remove), py::arg("edge"),
            "Remove an edge from the list.")
       .def("size", &EdgeList::size,

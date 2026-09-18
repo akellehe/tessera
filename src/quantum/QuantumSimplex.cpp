@@ -24,9 +24,7 @@ constexpr PositionPair kAllEdges[10] = {
     {3, 4},
 };
 
-// ρ_u ⊗ ρ_v in (u ⊗ v) ordering. Used only for the (A, B) edge, where
-// the factory has the input joint ρ_AB; every other edge asks its
-// endpoint QuantumVertex via vanRaamsdonkDistanceTo.
+// ρ_u ⊗ ρ_v in (u ⊗ v) ordering.
 Eigen::MatrixXcd kron(const Eigen::MatrixXcd& a, const Eigen::MatrixXcd& b) {
     const int dA = static_cast<int>(a.rows());
     const int dB = static_cast<int>(b.rows());
@@ -39,18 +37,18 @@ Eigen::MatrixXcd kron(const Eigen::MatrixXcd& a, const Eigen::MatrixXcd& b) {
     return out;
 }
 
+// The Van Raamsdonk law is Edge::vanRaamsdonkLength. epsilon = 0 opts out of
+// its floor, so an uncorrelated pair gives the divergent +inf rather than a
+// capped length: on a KI cell a vanishing mutual information means the two
+// systems are unrelated, not merely weakly related.
+constexpr double kNoFloor = 0.0;
+
 double vrFromJoint(const Eigen::MatrixXcd& rhoAB,
                    const Eigen::MatrixXcd& rhoA,
                    const Eigen::MatrixXcd& rhoB,
                    double                  iMax) {
-    if (!(iMax > 0.0)) {
-        return std::numeric_limits<double>::infinity();
-    }
     const double I = mutualInformation(rhoAB, rhoA, rhoB);
-    if (!(I > 0.0)) {
-        return std::numeric_limits<double>::infinity();
-    }
-    return -std::log(I / iMax);
+    return ::tessera::mesh::Edge::vanRaamsdonkLength(I, iMax, kNoFloor);
 }
 
 struct SortedEig {
@@ -143,10 +141,9 @@ Eigen::MatrixXcd classicalJointFromMarginals(const Eigen::MatrixXcd& rhoA,
 // Build the five-vertex / ten-edge mesh::Simplex from the joint ρ_AB on
 // (qva, qvb). Allocates the Σ, A', B' QuantumVertex objects in the
 // spacetime's vertex list, carrying the KI core and tail states, and
-// computes d_VR per edge: for (A, B) directly from the input joint, for
-// every other edge from the endpoint QuantumVertex
-// (vanRaamsdonkDistanceTo, which assumes a product joint). d_VR² is
-// written to ``Edge::squaredLength`` at edge creation.
+// computes d_VR per edge through Edge::vanRaamsdonkLength: for (A, B) from
+// the input joint's mutual information, for every other edge from a mutual
+// information of zero. d_VR is stored as the edge length at edge creation.
 ::tessera::mesh::Simplex*
 buildSimplexFromJoint(::tessera::spacetime::Spacetime& spacetime,
                       QuantumVertex*                   qva,
@@ -205,8 +202,10 @@ buildSimplexFromJoint(::tessera::spacetime::Spacetime& spacetime,
             || (u == QuantumSimplex::B && v == QuantumSimplex::A)) {
             dvr = vrFromJoint(rhoAB, rhoA, rhoB, iMax);
         } else {
-            dvr = positions[u]->vanRaamsdonkDistanceTo(
-                positions[v], iMax);
+            // Every pair but (A, B) is built from marginals that carry no
+            // inherited correlation, so the mutual information is zero.
+            dvr = ::tessera::mesh::Edge::vanRaamsdonkLength(
+                0.0, iMax, kNoFloor);
         }
         const double dvrSq = dvr * dvr;
         ::tessera::mesh::EdgePtr edge =

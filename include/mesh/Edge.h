@@ -296,10 +296,12 @@ class Edge {
       }
     }
 
-    /// The Van Raamsdonk metric law: the spacelike signed squared length for a
-    /// given mutual information ``I`` — the value to store via ``setLength`` on a
-    /// same-time-slice edge. Returns −log(I/iMax), floored at −log(epsilon) (so the
-    /// length stays finite) when I < epsilon·iMax (and when iMax ≤ 0 or I ≤ 0).
+    /// The Van Raamsdonk metric law: the spacelike length for a given mutual
+    /// information ``I`` — the value to store via ``setLength`` on a
+    /// same-time-slice edge. Returns −log(I/iMax), floored at −log(epsilon) (so
+    /// the length stays finite) when I < epsilon·iMax, and when iMax ≤ 0 or
+    /// I ≤ 0. Pass epsilon ≤ 0 to opt out of the floor, in which case a
+    /// vanishing mutual information gives the divergent +∞ the law implies.
     /// Always real and ≥ 0, i.e. spacelike.
     [[nodiscard]] static double
     vanRaamsdonkLength(double I, double iMax,
