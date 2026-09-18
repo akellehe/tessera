@@ -406,25 +406,6 @@ Eigen::SparseMatrix<double> EmergentGraph::laplacian() const {
     return L;
 }
 
-void EmergentGraph::applyLaplacian(std::vector<double> const& x,
-                                       std::vector<double>& y) const {
-    // y = (D − W) · x. The implicit Laplacian acts on a CSR adjacency:
-    // diagonal term degrees_[i] · x[i] and off-diagonal subtraction
-    // over the row's neighbour list.
-    y.assign(static_cast<std::size_t>(n_), 0.0);
-    for (int i = 0; i < n_; ++i) {
-        double s = degrees_[static_cast<std::size_t>(i)] *
-                   x[static_cast<std::size_t>(i)];
-        const int lo = indptr_[static_cast<std::size_t>(i)];
-        const int hi = indptr_[static_cast<std::size_t>(i) + 1];
-        for (int k = lo; k < hi; ++k) {
-            s -= weights_[static_cast<std::size_t>(k)] *
-                 x[static_cast<std::size_t>(indices_[static_cast<std::size_t>(k)])];
-        }
-        y[static_cast<std::size_t>(i)] = s;
-    }
-}
-
 std::string EmergentGraph::toGraphML() const {
     std::ostringstream os;
     os << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";

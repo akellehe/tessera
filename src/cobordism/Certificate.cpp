@@ -3,13 +3,13 @@
 
 #include "cobordism/Certificate.h"
 
+#include <stdexcept>
+
 #include <sstream>
 
 namespace tessera::cobordism {
 
-namespace {
-
-const char *gradeName(CertificateGrade grade) {
+const char *gradeName(CertificateGrade grade) noexcept {
   switch (grade) {
   case CertificateGrade::AlgebraicallyExact:
     return "algebraically-exact";
@@ -23,7 +23,7 @@ const char *gradeName(CertificateGrade grade) {
   return "unknown";
 }
 
-const char *domainName(CertificateDomain domain) {
+const char *domainName(CertificateDomain domain) noexcept {
   switch (domain) {
   case CertificateDomain::Static:
     return "static";
@@ -33,7 +33,7 @@ const char *domainName(CertificateDomain domain) {
   return "unknown";
 }
 
-const char *regimeName(CertificateRegime regime) {
+const char *regimeName(CertificateRegime regime) noexcept {
   switch (regime) {
   case CertificateRegime::PositiveSemidefinite:
     return "positive-semidefinite";
@@ -47,7 +47,30 @@ const char *regimeName(CertificateRegime regime) {
   return "unknown";
 }
 
-} // namespace
+CertificateGrade gradeFromName(const std::string &name) {
+  if (name == "algebraically-exact") return CertificateGrade::AlgebraicallyExact;
+  if (name == "structure-exact") return CertificateGrade::StructureExact;
+  if (name == "certified-numerical") return CertificateGrade::CertifiedNumerical;
+  if (name == "heuristic-discovery") return CertificateGrade::HeuristicDiscovery;
+  throw std::invalid_argument("Certificate: unknown grade '" + name + "'");
+}
+
+CertificateDomain domainFromName(const std::string &name) {
+  if (name == "static") return CertificateDomain::Static;
+  if (name == "band-window") return CertificateDomain::BandWindow;
+  throw std::invalid_argument("Certificate: unknown domain '" + name + "'");
+}
+
+CertificateRegime regimeFromName(const std::string &name) {
+  if (name == "positive-semidefinite")
+    return CertificateRegime::PositiveSemidefinite;
+  if (name == "hermitian-indefinite")
+    return CertificateRegime::HermitianIndefinite;
+  if (name == "non-normal") return CertificateRegime::NonNormal;
+  if (name == "complex-symmetric-pencil")
+    return CertificateRegime::ComplexSymmetricPencil;
+  throw std::invalid_argument("Certificate: unknown regime '" + name + "'");
+}
 
 Certificate Certificate::algebraicallyExact(CertificateDomain domain,
                                             CertificateRegime regime,

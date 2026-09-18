@@ -89,6 +89,13 @@ private:
   // walk. Call after removing the incident top cells, before removing ``v_``.
   void removeIncidentSubSimplices();
 
+  /// Tear down the star of ``v_``: remove its incident top cells, drop the
+  /// sub-simplices they materialised on it, unlink and delete its edges from
+  /// both endpoints and the global list, then drop the vertex itself once it
+  /// is isolated. Shared by ``apply`` and ``applyPreGeometric``, which differ
+  /// only in what they weld in afterwards.
+  void tearDownVertexStar();
+
   Spacetime *st_;
   std::unique_ptr<std::mt19937> ownedRng_;
   std::mt19937 *rng_;

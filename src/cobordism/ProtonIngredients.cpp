@@ -45,20 +45,15 @@ ProtonIngredients::ProtonIngredients(std::uint64_t seed, int registerDegree,
       shouldUseDirectedSurgery_(shouldUseDirectedSurgery) {}
 
 std::shared_ptr<Spacetime> ProtonIngredients::buildMinimalSeed() {
-  using namespace ::tessera::spacetime;
-  // Mirrors Proton::buildMinimalSeed (private there): one Δ⁴ pentatope, uniform
-  // ℓ² = +1. The metric is all-spacelike by design — at initialization no time
-  // has passed, so no causal structure is put in by hand; any causal content
-  // must emerge.
-  auto metric =
-      std::make_shared<Metric>(true, Signature(kDim, SignatureType::Lorentzian));
-  std::shared_ptr<Topology> topology = std::make_shared<SolidSimplex>(kDim);
-  auto host = std::make_shared<Spacetime>(metric, SpacetimeType::CDT, 1.0, 1.0,
-                                          Foliation::PREFERRED, topology);
-  host->build();
-  for (auto *edge : host->getEdgeList()->toVector())
-    edge->setLength(std::sqrt(complexd(1.0, 0.0)));
-  return host;
+  // One pentatope with uniform |l^2| = 1, from the dimension-generic builder
+  // the canonical arm also uses. The metric is all-spacelike by design: at
+  // initialization no time has passed, so no causal structure is put in by
+  // hand and any causal content must emerge.
+  //
+  // Unbalanced wiring, which is what this arm has always built. Unlike
+  // Proton::buildMinimalSeed there is no parameter to select the balanced
+  // variant, because nothing composes this arm with balanced edges.
+  return MultiCobordism::seedSimplex(kDim, /*balancedEdges=*/false);
 }
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::recombinationNode(
@@ -128,19 +123,12 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
   if (attempted_) return;
   attempted_ = true;
 
-  // Proton::build()'s drive per node: initialization pass
-  // (grow_boundaries=true), optional directed cone-out, evolution pass (∂W
-  // frozen), optional directed cone-in, then the geometric relaxation.
+  // The canonical arm's schedule, run through the same function it uses.
+  const Proton::NodeDrive schedule{initSteps, evolveSteps,
+                                   stage1CandidateMoves, stage2Beta,
+                                   stage2MaxIters, shouldUseDirectedSurgery_};
   const auto runNode = [&](MultiCobordism &node) {
-    node.runStage1(initSteps, stage1CandidateMoves,
-                   /*growBoundaries=*/true);
-    if (shouldUseDirectedSurgery_)
-      (void)node.directedConeOut();
-    node.runStage1(evolveSteps, stage1CandidateMoves,
-                   /*growBoundaries=*/false);
-    if (shouldUseDirectedSurgery_)
-      (void)node.directedConeIn();
-    node.runStage2(stage2Beta, stage2MaxIters);
+    Proton::driveNode(node, schedule);
   };
 
   // The answer-agnostic summary the persistence check compares: the emergent

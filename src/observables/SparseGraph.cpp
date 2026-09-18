@@ -243,30 +243,23 @@ std::pair<double, double> SparseGraph::spectralDimension(
     Kavg[j] = s / n;
   }
 
-  // Spectral dimension d_s = -2 d(log K) / d(log t) by centred finite
-  // differences, skipping non-positive and non-finite samples.
-  std::vector<double> logT, logK;
-  logT.reserve(nTimes);
-  logK.reserve(nTimes);
+  // Drop non-positive and non-finite samples, so the differencing below sees
+  // only usable points and a bad sample does not poison the tail averages.
+  std::vector<double> keptTimes, keptK;
+  keptTimes.reserve(nTimes);
+  keptK.reserve(nTimes);
   for (int j = 0; j < nTimes; ++j) {
     if (Kavg[j] > 0.0 && std::isfinite(Kavg[j])) {
-      logT.push_back(std::log(times[j]));
-      logK.push_back(std::log(Kavg[j]));
+      keptTimes.push_back(times[j]);
+      keptK.push_back(Kavg[j]);
     }
   }
-  if (logT.size() < 2) return {NaN, NaN};
+  if (keptTimes.size() < 2) return {NaN, NaN};
 
-  std::vector<double> ds(logT.size());
-  for (std::size_t i = 0; i + 1 < logT.size(); ++i) {
-    if (i == 0) {
-      ds[0] = (logK[1] - logK[0]) / (logT[1] - logT[0]);
-    } else {
-      ds[i] = (logK[i + 1] - logK[i - 1]) / (logT[i + 1] - logT[i - 1]);
-    }
-  }
-  ds.back() = (logK[logT.size() - 1] - logK[logT.size() - 2])
-            / (logT[logT.size() - 1] - logT[logT.size() - 2]);
-  for (auto &d : ds) d *= -2.0;
+  // d_s = -2 d(log K) / d(log t) by centred differences, one-sided at the
+  // ends: the inherited law, qualified because the member hides the name.
+  const std::vector<double> ds =
+      ::tessera::graph::SpectralGraph::spectralDimension(keptTimes, keptK);
 
   std::size_t nTail = std::max<std::size_t>(
       1, static_cast<std::size_t>(ds.size() * tailFraction));

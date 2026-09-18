@@ -59,6 +59,16 @@ Proton::Proton(std::uint64_t seed, int registerDegree, double gamma,
   einsteinHilbert_ = einsteinHilbert;
 }
 
+void Proton::driveNode(MultiCobordism &node, const NodeDrive &schedule) {
+  node.runStage1(schedule.initSteps, schedule.stage1CandidateMoves,
+                 /*growBoundaries=*/true);
+  if (schedule.directedSurgery) (void)node.directedConeOut();
+  node.runStage1(schedule.evolveSteps, schedule.stage1CandidateMoves,
+                 /*growBoundaries=*/false);
+  if (schedule.directedSurgery) (void)node.directedConeIn();
+  node.runStage2(schedule.stage2Beta, schedule.stage2MaxIters);
+}
+
 std::shared_ptr<Spacetime> Proton::buildMinimalSeed(bool balancedEdges) {
   // A single Δ⁴ simplex (one pentatope, 5 vertices). Nothing is pre-built: the
   // proton's whole topology emerges from here, and the metric is uniform
@@ -224,15 +234,11 @@ void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
   // with ∂W frozen (grow_boundaries=false), then the geometric relaxation. Node
   // setup — seed, targets, seeding, input weight — lives in
   // recombinationNode/formationNode, the same factories the animation drives.
+  const NodeDrive schedule{initSteps, evolveSteps, stage1CandidateMoves,
+                           stage2Beta, stage2MaxIters,
+                           shouldUseDirectedSurgery_};
   const auto runNode = [&](MultiCobordism &node) {
-    node.runStage1(initSteps, stage1CandidateMoves, /*growBoundaries=*/true);
-    if (shouldUseDirectedSurgery_)  // directed surgery: remove cells / cap facets
-      (void)node.directedConeOut();
-    node.runStage1(evolveSteps, stage1CandidateMoves,
-                   /*growBoundaries=*/false);
-    if (shouldUseDirectedSurgery_)  // select the best register (drop holes that hurt)
-      (void)node.directedConeIn();
-    node.runStage2(stage2Beta, stage2MaxIters);
+    driveNode(node, schedule);
   };
 
   double bestColorResidual = std::numeric_limits<double>::infinity();

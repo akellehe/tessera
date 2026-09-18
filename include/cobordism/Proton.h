@@ -186,6 +186,24 @@ class Proton {
   /// Triggers `build()`.
   [[nodiscard]] double diquarkResidual();
 
+  /// The per-node drive schedule: one initialization pass with the boundary
+  /// free to grow, an optional directed cone-out, one evolution pass with the
+  /// boundary frozen, an optional directed cone-in, then the geometric
+  /// relaxation.
+  struct NodeDrive {
+    int initSteps{180};
+    int evolveSteps{60};
+    int stage1CandidateMoves{8};
+    double stage2Beta{1.0};
+    int stage2MaxIters{10};
+    /// Remove cells and cap facets between the two stage-1 passes.
+    bool directedSurgery{false};
+  };
+
+  /// Drive one node through `schedule`. Shared by the canonical arm and the
+  /// ingredients arm, which run the identical schedule.
+  static void driveNode(MultiCobordism &node, const NodeDrive &schedule);
+
  private:
   /// Lazily run `build()` with default parameters on first accessor use.
   void ensureBuilt();
@@ -196,6 +214,7 @@ class Proton {
   /// pre-built.
   [[nodiscard]] static std::shared_ptr<Spacetime> buildMinimalSeed(
       bool balancedEdges = false);
+
 
   // ---- configuration ----
   std::uint64_t baseSeed_;

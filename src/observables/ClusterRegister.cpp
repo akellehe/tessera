@@ -20,6 +20,8 @@ namespace tessera::observables {
 using ::tessera::cobordism::Certificate;
 using ::tessera::cobordism::CertificateDomain;
 using ::tessera::cobordism::CertificateRegime;
+using ::tessera::cobordism::regimeName;
+using ::tessera::cobordism::regimeFromName;
 
 namespace {
 
@@ -56,31 +58,7 @@ std::vector<std::uint64_t> supportFromRecord(const Record &record) {
   return out;
 }
 
-const char *regimeName(CertificateRegime regime) {
-  switch (regime) {
-    case CertificateRegime::PositiveSemidefinite:
-      return "positive-semidefinite";
-    case CertificateRegime::HermitianIndefinite:
-      return "hermitian-indefinite";
-    case CertificateRegime::NonNormal:
-      return "non-normal";
-    case CertificateRegime::ComplexSymmetricPencil:
-      return "complex-symmetric-pencil";
-  }
-  return "non-normal";
-}
 
-CertificateRegime regimeFromName(const std::string &name) {
-  if (name == "positive-semidefinite")
-    return CertificateRegime::PositiveSemidefinite;
-  if (name == "hermitian-indefinite")
-    return CertificateRegime::HermitianIndefinite;
-  if (name == "non-normal") return CertificateRegime::NonNormal;
-  if (name == "complex-symmetric-pencil")
-    return CertificateRegime::ComplexSymmetricPencil;
-  throw std::invalid_argument("ClusterRegister: unknown regime name '" + name +
-                              "'");
-}
 
 }  // namespace
 

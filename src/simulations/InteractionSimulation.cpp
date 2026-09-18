@@ -17,6 +17,7 @@
 #include "observables/MIUnits.hpp"
 #include "quantum/ChoiJamiolkowski.h"
 #include "quantum/Holography.hpp"
+#include "quantum/KoashiImoto.hpp"
 #include "spacetime/Metric.h"
 #include "spacetime/Spacetime.h"
 
@@ -107,42 +108,50 @@ std::pair<VertexPtr, VertexPtr> sortedPair(VertexPtr a, VertexPtr b) {
     return (a < b) ? std::make_pair(a, b) : std::make_pair(b, a);
 }
 
-// Swap the two qubits of a two-qubit operator: (X ⊗ Y) -> (Y ⊗ X).
+// Kronecker product of two d x d operators, ordering (A (x) B): the (i,k)
+// row of the result pairs A's row i with B's row k.
+Eigen::MatrixXcd kronDense(Eigen::MatrixXcd const& a,
+                           Eigen::MatrixXcd const& b) {
+    const int d = static_cast<int>(a.rows());
+    Eigen::MatrixXcd out(d * d, d * d);
+    for (int i = 0; i < d; ++i)
+        for (int j = 0; j < d; ++j)
+            for (int k = 0; k < d; ++k)
+                for (int l = 0; l < d; ++l)
+                    out(d * i + k, d * j + l) = a(i, j) * b(k, l);
+    return out;
+}
+
+// Swap the two d-dimensional subsystems of a (d*d) x (d*d) operator:
+// (A (x) B) -> (B (x) A).
+Eigen::MatrixXcd swapSubsystems(Eigen::MatrixXcd const& m, int d) {
+    Eigen::MatrixXcd out(d * d, d * d);
+    for (int a = 0; a < d; ++a)
+        for (int b = 0; b < d; ++b)
+            for (int c = 0; c < d; ++c)
+                for (int e = 0; e < d; ++e)
+                    out(d * b + a, d * e + c) = m(d * a + b, d * c + e);
+    return out;
+}
+
+// Swap the two qubits of a two-qubit operator: (X (x) Y) -> (Y (x) X).
 Eigen::Matrix4cd swapQubits(Eigen::Matrix4cd const& m) {
-    Eigen::Matrix4cd out;
-    for (int a = 0; a < 2; ++a)
-        for (int b = 0; b < 2; ++b)
-            for (int c = 0; c < 2; ++c)
-                for (int d = 0; d < 2; ++d)
-                    out(2 * b + a, 2 * d + c) = m(2 * a + b, 2 * c + d);
-    return out;
+    return swapSubsystems(m, 2);
 }
 
-// Kronecker product of two one-qubit states, ordering (X ⊗ Y).
+// Kronecker product of two one-qubit states, ordering (X (x) Y).
 Eigen::Matrix4cd tensor2(SystemState const& a, SystemState const& b) {
-    Eigen::Matrix4cd out;
-    for (int i = 0; i < 2; ++i)
-        for (int j = 0; j < 2; ++j)
-            for (int k = 0; k < 2; ++k)
-                for (int l = 0; l < 2; ++l)
-                    out(2 * i + k, 2 * j + l) = a(i, j) * b(k, l);
-    return out;
+    return kronDense(a, b);
 }
 
-// Partial traces of a two-qubit joint state.
+// Partial traces of a two-qubit joint state. The index convention -- A most
+// significant -- is the one quantum::partialTrace{A,B} implement, so these are
+// that implementation at dimension two.
 SystemState traceOutSecond(Eigen::Matrix4cd const& rho) {  // -> X marginal
-    SystemState out;
-    for (int i = 0; i < 2; ++i)
-        for (int j = 0; j < 2; ++j)
-            out(i, j) = rho(2 * i + 0, 2 * j + 0) + rho(2 * i + 1, 2 * j + 1);
-    return out;
+    return ::tessera::quantum::partialTraceB(rho, 2, 2);
 }
 SystemState traceOutFirst(Eigen::Matrix4cd const& rho) {  // -> Y marginal
-    SystemState out;
-    for (int k = 0; k < 2; ++k)
-        for (int l = 0; l < 2; ++l)
-            out(k, l) = rho(0 + k, 0 + l) + rho(2 + k, 2 + l);
-    return out;
+    return ::tessera::quantum::partialTraceA(rho, 2, 2);
 }
 
 // The Schwinger two-site interaction unitary U = exp(-i H_XY dt).
@@ -263,56 +272,24 @@ Eigen::MatrixXcd quditPairU(double jCharge, double jSpin,
            * es.eigenvectors().adjoint();
 }
 
-// Partial trace of a 16×16 joint state on a 2-ququart bipartite space:
-// keep the A subsystem (index 0), trace out the B subsystem (index 1).
-// Returns the 4×4 marginal density matrix for A.
+// The same partial traces at dimension four, on a 2-ququart joint: keep A and
+// trace out B, or the reverse.
 Eigen::Matrix4cd quditTraceOutB(Eigen::MatrixXcd const& rho) {
-    Eigen::Matrix4cd out = Eigen::Matrix4cd::Zero();
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j)
-            for (int k = 0; k < 4; ++k)
-                out(i, j) += rho(4*i + k, 4*j + k);
-    return out;
+    return ::tessera::quantum::partialTraceB(rho, 4, 4);
 }
 Eigen::Matrix4cd quditTraceOutA(Eigen::MatrixXcd const& rho) {
-    Eigen::Matrix4cd out = Eigen::Matrix4cd::Zero();
-    for (int k = 0; k < 4; ++k)
-        for (int l = 0; l < 4; ++l)
-            for (int i = 0; i < 4; ++i)
-                out(k, l) += rho(4*i + k, 4*i + l);
-    return out;
+    return ::tessera::quantum::partialTraceA(rho, 4, 4);
 }
 
-// Tensor product of two 4-dim qudit states → 16×16 separable joint.
+// The same Kronecker product at dimension four: a 16x16 separable joint.
 Eigen::MatrixXcd quditTensor(Eigen::Matrix4cd const& a,
                              Eigen::Matrix4cd const& b) {
-    Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(16, 16);
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j)
-            for (int k = 0; k < 4; ++k)
-                for (int l = 0; l < 4; ++l)
-                    out(4*i + k, 4*j + l) = a(i, j) * b(k, l);
-    return out;
+    return kronDense(a, b);
 }
 
-// Swap the two ququart subsystems of a 16×16 joint: (A ⊗ B) → (B ⊗ A).
+// The same subsystem swap at dimension four.
 Eigen::MatrixXcd quditSwap(Eigen::MatrixXcd const& m) {
-    Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(16, 16);
-    for (int a = 0; a < 4; ++a)
-        for (int b = 0; b < 4; ++b)
-            for (int c = 0; c < 4; ++c)
-                for (int d = 0; d < 4; ++d)
-                    out(4*b + a, 4*d + c) = m(4*a + b, 4*c + d);
-    return out;
-}
-
-// von Neumann entropy of any d×d density matrix (handles d=4 and d=16).
-double vonNeumannEntropyAny(Eigen::MatrixXcd const& rho) {
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> es(rho);
-    double s = 0.0;
-    for (double lambda : es.eigenvalues())
-        if (lambda > 1e-13) s -= lambda * std::log(lambda);
-    return s;
+    return swapSubsystems(m, 4);
 }
 
 // Mutual information of a bipartite 16-dim joint, in nats.
@@ -320,9 +297,9 @@ double quditJointMI(Eigen::MatrixXcd const& rho) {
     const Eigen::Matrix4cd rhoA = quditTraceOutB(rho);
     const Eigen::Matrix4cd rhoB = quditTraceOutA(rho);
     const Eigen::MatrixXcd full = rho;
-    const double sA  = vonNeumannEntropyAny(rhoA);
-    const double sB  = vonNeumannEntropyAny(rhoB);
-    const double sAB = vonNeumannEntropyAny(full);
+    const double sA  = vonNeumannEntropy(rhoA);
+    const double sB  = vonNeumannEntropy(rhoB);
+    const double sAB = vonNeumannEntropy(full);
     return std::max(sA + sB - sAB, 0.0);
 }
 
@@ -779,8 +756,8 @@ InteractionSimulation::computeInteractionQudit(VertexPtr x,
     // Input marginals' entropies (the worldline self-MI).
     const Eigen::Matrix4cd rhoX_in = quditTraceOutB(rhoXY);
     const Eigen::Matrix4cd rhoY_in = quditTraceOutA(rhoXY);
-    const double sX = vonNeumannEntropyAny(rhoX_in);
-    const double sY = vonNeumannEntropyAny(rhoY_in);
+    const double sX = vonNeumannEntropy(rhoX_in);
+    const double sY = vonNeumannEntropy(rhoY_in);
     const double iJoint = quditJointMI(rhoAB);
     const double iInput = quditJointMI(rhoXY);
 

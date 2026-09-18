@@ -100,23 +100,13 @@ bool FlipMove::propose() {
   }
 
   // Reject if any new simplex would have a non-CDT orientation.
-  for (const auto &nv : proposedNew) {
-    if (!isValidCDTOrientation(nv, d)) return false;
-  }
+  if (!allValidCDTOrientation(proposedNew, d)) return false;
 
-  int newN41 = 0, newN32 = 0;
-  for (const auto &nv : proposedNew) {
-    if (isN41TypeVerts(nv, d)) ++newN41;
-    else if (isN32TypeVerts(nv, d)) ++newN32;
-  }
+  const auto [newN41, newN32] = countOrientationTypes(proposedNew, d);
 
   // Capture state for apply / rollback.
   oldSimplices_ = {s1, s2};
-  oldSimplexVerts_.reserve(2);
-  for (const auto &s : oldSimplices_) {
-    const auto &verts = s->getVertices();
-    oldSimplexVerts_.emplace_back(verts.begin(), verts.end());
-  }
+  oldSimplexVerts_ = vertexTuplesOf(oldSimplices_);
   newSimplexVerts_ = std::move(proposedNew);
   dN41_ = newN41 - oldN41;
   dN32_ = newN32 - oldN32;

@@ -21,6 +21,7 @@
 #include "graph/DualGraph.hpp"
 #include "graph/IndexByKey.hpp"
 #include "graph/SpectralGraph.hpp"
+#include "graph/WeightedCsrGraph.hpp"
 #include "mesh/SimplexFilter.h"
 #include "observables/MIUnits.hpp"
 #include "observables/SparseGraph.h"
@@ -1222,45 +1223,6 @@ namespace {
 // Private SpectralGraph subclass used only by
 // Spacetime::getSpectralDimensionOnSkeleton — holds the CSR of the
 // weighted 1-skeleton of filtered top simplices and supplies the
-// L = D - W matvec. Kept in an anonymous namespace: no other code path
-// consumes the weighted-skeleton graph directly.
-class SkeletonSpectralView final : public SpectralGraph {
- public:
-  SkeletonSpectralView(int n,
-                       std::vector<int> indptr,
-                       std::vector<int> indices,
-                       std::vector<double> weights,
-                       std::vector<double> degrees)
-      : n_(n),
-        indptr_(std::move(indptr)),
-        indices_(std::move(indices)),
-        weights_(std::move(weights)),
-        degrees_(std::move(degrees)) {}
-
-  int nVertices() const override { return n_; }
-
-  void applyLaplacian(std::vector<double> const& x,
-                        std::vector<double>& y) const override {
-    y.assign(static_cast<std::size_t>(n_), 0.0);
-    for (int i = 0; i < n_; ++i) {
-      double s = degrees_[static_cast<std::size_t>(i)] *
-                 x[static_cast<std::size_t>(i)];
-      const int lo = indptr_[static_cast<std::size_t>(i)];
-      const int hi = indptr_[static_cast<std::size_t>(i) + 1];
-      for (int k = lo; k < hi; ++k) {
-        s -= weights_[static_cast<std::size_t>(k)] *
-             x[static_cast<std::size_t>(indices_[
-                 static_cast<std::size_t>(k)])];
-      }
-      y[static_cast<std::size_t>(i)] = s;
-    }
-  }
-
- private:
-  int n_;
-  std::vector<int>    indptr_, indices_;
-  std::vector<double> weights_, degrees_;
-};
 
 }  // anonymous namespace
 
@@ -1341,7 +1303,7 @@ Spacetime::getSpectralDimensionOnSkeleton(
     }
   }
 
-  SkeletonSpectralView view(n, std::move(indptr), std::move(indices),
+  ::tessera::graph::WeightedCsrGraph view(n, std::move(indptr), std::move(indices),
                               std::move(weights), std::move(degrees));
   const std::vector<double> p = view.returnProbability(sigmas, krylovDim);
   return SpectralGraph::spectralDimension(sigmas, p);

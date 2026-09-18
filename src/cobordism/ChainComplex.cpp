@@ -998,44 +998,56 @@ std::pair<bool, std::string> ChainComplex::dualComplexIsValid(
   return {true, "ok"};
 }
 
-std::vector<int> ChainComplex::endSignCovector(
-    const std::vector<std::vector<std::uint64_t>> &surfaceCells,
-    const std::vector<std::vector<std::uint64_t>> &holes) {
-  using Cell = std::vector<std::uint64_t>;
-  const auto joinIds = [](const Cell &c) {
-    std::string out = "(";
-    for (std::size_t i = 0; i < c.size(); ++i) {
-      if (i) out += ",";
-      out += std::to_string(c[i]);
-    }
-    return out + ")";
-  };
-  if (holes.empty()) return {};
+namespace {
 
-  // The oriented complex is the union surface ∪ holes, as sorted-unique sorted
-  // tuples; the lexicographic order makes the component roots deterministic.
-  std::set<Cell> uniq;
-  const std::size_t nv = holes.front().size();
-  const auto addCell = [&](const Cell &raw) {
+using OrientCell = std::vector<std::uint64_t>;
+
+/// Parenthesised vertex-id tuple, for error messages.
+std::string joinCellIds(const OrientCell &c) {
+  std::string out = "(";
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    if (i) out += ",";
+    out += std::to_string(c[i]);
+  }
+  return out + ")";
+}
+
+/// Sorted-unique cells of uniform size `nv`, in lexicographic order.
+///
+/// The order makes the component roots of the propagation below deterministic
+/// and independent of the order the caller supplies cells in.
+void collectOrientCells(const std::vector<std::vector<std::uint64_t>> &raws,
+                        std::size_t nv, const char *context,
+                        std::set<OrientCell> &uniq) {
+  for (const auto &raw : raws) {
     if (raw.size() != nv)
       throw std::runtime_error(
-          "ChainComplex::endSignCovector: cell " + joinIds(raw) + " has " +
-          std::to_string(raw.size()) + " vertices, expected " +
-          std::to_string(nv) + " (one dimension throughout)");
-    Cell c = raw;
+          std::string("ChainComplex::") + context + ": cell " +
+          joinCellIds(raw) + " has " + std::to_string(raw.size()) +
+          " vertices, expected " + std::to_string(nv) +
+          " (one dimension throughout)");
+    OrientCell c = raw;
     std::sort(c.begin(), c.end());
     uniq.insert(std::move(c));
-  };
-  for (const auto &raw : holes) addCell(raw);
-  for (const auto &raw : surfaceCells) addCell(raw);
-  const std::vector<Cell> cells(uniq.begin(), uniq.end());
+  }
+}
 
-  // facet -> its cofaces as (cell index, boundary sign of the facet in that
-  // cell): facet j of a sorted cell drops vertex j and carries (-1)^j.
-  std::map<Cell, std::vector<std::pair<std::size_t, int>>> cofaces;
+/// The orientation covector of a pseudomanifold, one entry per cell.
+///
+/// Facet j of a sorted cell drops vertex j and carries the boundary sign
+/// (-1)^j. Across an interior facet the two induced signs must cancel, so
+/// eps_b = -eps_a * s_a * s_b; a boundary facet imposes nothing. Each connected
+/// component is rooted at its lex-smallest cell with eps = +1.
+///
+/// Throws if a facet has more than two cofaces (not a pseudomanifold), or if
+/// propagation reaches a cell twice with opposite signs (not orientable).
+std::vector<int> propagateOrientation(const std::vector<OrientCell> &cells,
+                                      std::size_t nv, const char *context,
+                                      const char *nonOrientableNote) {
+  std::map<OrientCell, std::vector<std::pair<std::size_t, int>>> cofaces;
   for (std::size_t ci = 0; ci < cells.size(); ++ci)
     for (std::size_t j = 0; j < nv; ++j) {
-      Cell f;
+      OrientCell f;
       f.reserve(nv - 1);
       for (std::size_t i = 0; i < nv; ++i)
         if (i != j) f.push_back(cells[ci][i]);
@@ -1044,12 +1056,10 @@ std::vector<int> ChainComplex::endSignCovector(
   for (const auto &[f, at] : cofaces)
     if (at.size() > 2)
       throw std::runtime_error(
-          "ChainComplex::endSignCovector: facet " + joinIds(f) + " has " +
-          std::to_string(at.size()) + " cofaces (not a pseudomanifold)");
+          std::string("ChainComplex::") + context + ": facet " +
+          joinCellIds(f) + " has " + std::to_string(at.size()) +
+          " cofaces (not a pseudomanifold)");
 
-  // Orient by propagation: across an interior facet the two induced signs
-  // cancel (eps_b = -eps_a * s_a * s_b); boundary facets impose nothing.
-  // Component roots are the lex-smallest unvisited cells, eps = +1.
   std::vector<int> eps(cells.size(), 0);
   for (std::size_t root = 0; root < cells.size(); ++root) {
     if (eps[root] != 0) continue;
@@ -1059,7 +1069,7 @@ std::vector<int> ChainComplex::endSignCovector(
       const std::size_t a = stack.back();
       stack.pop_back();
       for (std::size_t j = 0; j < nv; ++j) {
-        Cell f;
+        OrientCell f;
         f.reserve(nv - 1);
         for (std::size_t i = 0; i < nv; ++i)
           if (i != j) f.push_back(cells[a][i]);
@@ -1072,19 +1082,39 @@ std::vector<int> ChainComplex::endSignCovector(
             stack.push_back(b);
           } else if (eps[b] != want) {
             throw std::runtime_error(
-                "ChainComplex::endSignCovector: orientation propagation "
-                "contradicts itself at facet " + joinIds(f) +
-                " (the end surface is non-orientable)");
+                std::string("ChainComplex::") + context +
+                ": orientation propagation contradicts itself at facet " +
+                joinCellIds(f) + " (" + nonOrientableNote + ")");
           }
         }
       }
     }
   }
+  return eps;
+}
 
+} // namespace
+
+std::vector<int> ChainComplex::endSignCovector(
+    const std::vector<std::vector<std::uint64_t>> &surfaceCells,
+    const std::vector<std::vector<std::uint64_t>> &holes) {
+  if (holes.empty()) return {};
+
+  // The oriented complex is the union surface u holes.
+  std::set<OrientCell> uniq;
+  const std::size_t nv = holes.front().size();
+  collectOrientCells(holes, nv, "endSignCovector", uniq);
+  collectOrientCells(surfaceCells, nv, "endSignCovector", uniq);
+  const std::vector<OrientCell> cells(uniq.begin(), uniq.end());
+
+  const std::vector<int> eps = propagateOrientation(
+      cells, nv, "endSignCovector", "the end surface is non-orientable");
+
+  // Project back onto the hole cells, in the order the caller gave them.
   std::vector<int> sigma;
   sigma.reserve(holes.size());
   for (const auto &raw : holes) {
-    Cell h = raw;
+    OrientCell h = raw;
     std::sort(h.begin(), h.end());
     const auto it = std::lower_bound(cells.begin(), cells.end(), h);
     sigma.push_back(eps[static_cast<std::size_t>(it - cells.begin())]);
@@ -1094,84 +1124,17 @@ std::vector<int> ChainComplex::endSignCovector(
 
 std::vector<int> ChainComplex::orientationCovector(
     const std::vector<std::vector<std::uint64_t>> &topCells) {
-  using Cell = std::vector<std::uint64_t>;
-  const auto joinIds = [](const Cell &c) {
-    std::string out = "(";
-    for (std::size_t i = 0; i < c.size(); ++i) {
-      if (i) out += ",";
-      out += std::to_string(c[i]);
-    }
-    return out + ")";
-  };
   if (topCells.empty()) return {};
 
   // Sorted-unique cells: the canonical C_d column order, so the covector aligns
   // with orientedTopSimplices() and ignores the order topCells arrives in.
-  std::set<Cell> uniq;
+  std::set<OrientCell> uniq;
   const std::size_t nv = topCells.front().size();
-  for (const auto &raw : topCells) {
-    if (raw.size() != nv)
-      throw std::runtime_error(
-          "ChainComplex::orientationCovector: cell " + joinIds(raw) + " has " +
-          std::to_string(raw.size()) + " vertices, expected " +
-          std::to_string(nv) + " (one dimension throughout)");
-    Cell c = raw;
-    std::sort(c.begin(), c.end());
-    uniq.insert(std::move(c));
-  }
-  const std::vector<Cell> cells(uniq.begin(), uniq.end());
+  collectOrientCells(topCells, nv, "orientationCovector", uniq);
+  const std::vector<OrientCell> cells(uniq.begin(), uniq.end());
 
-  // facet -> its cofaces as (cell index, boundary sign): facet j of a sorted
-  // cell drops vertex j and carries (-1)^j.
-  std::map<Cell, std::vector<std::pair<std::size_t, int>>> cofaces;
-  for (std::size_t ci = 0; ci < cells.size(); ++ci)
-    for (std::size_t j = 0; j < nv; ++j) {
-      Cell f;
-      f.reserve(nv - 1);
-      for (std::size_t i = 0; i < nv; ++i)
-        if (i != j) f.push_back(cells[ci][i]);
-      cofaces[f].emplace_back(ci, (j % 2 == 0) ? 1 : -1);
-    }
-  for (const auto &[f, at] : cofaces)
-    if (at.size() > 2)
-      throw std::runtime_error(
-          "ChainComplex::orientationCovector: facet " + joinIds(f) + " has " +
-          std::to_string(at.size()) + " cofaces (not a pseudomanifold)");
-
-  // Orient by propagation: across an interior facet the two induced signs
-  // cancel (eps_b = -eps_a * s_a * s_b); boundary facets impose nothing.
-  // Component roots are the lex-smallest unvisited cells, eps = +1.
-  std::vector<int> eps(cells.size(), 0);
-  for (std::size_t root = 0; root < cells.size(); ++root) {
-    if (eps[root] != 0) continue;
-    eps[root] = 1;
-    std::vector<std::size_t> stack{root};
-    while (!stack.empty()) {
-      const std::size_t a = stack.back();
-      stack.pop_back();
-      for (std::size_t j = 0; j < nv; ++j) {
-        Cell f;
-        f.reserve(nv - 1);
-        for (std::size_t i = 0; i < nv; ++i)
-          if (i != j) f.push_back(cells[a][i]);
-        const int sa = (j % 2 == 0) ? 1 : -1;
-        for (const auto &[b, sb] : cofaces.at(f)) {
-          if (b == a) continue;
-          const int want = -eps[a] * sa * sb;
-          if (eps[b] == 0) {
-            eps[b] = want;
-            stack.push_back(b);
-          } else if (eps[b] != want) {
-            throw std::runtime_error(
-                "ChainComplex::orientationCovector: orientation propagation "
-                "contradicts itself at facet " + joinIds(f) +
-                " (the complex is non-orientable)");
-          }
-        }
-      }
-    }
-  }
-  return eps;
+  return propagateOrientation(cells, nv, "orientationCovector",
+                              "the complex is non-orientable");
 }
 
 }  // namespace tessera::cobordism
