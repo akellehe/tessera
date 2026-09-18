@@ -11,51 +11,40 @@
 
 namespace tessera::cobordism {
 
-/// How a result was obtained, in decreasing order of a-priori strength. The
-/// grade names the CLAIM CLASS — what kind of statement the producer is
-/// making — while `Certificate::holds()` reports whether the measured
-/// residual actually met the declared tolerance. The vocabulary is shared by
-/// every analytic-first kernel (epic #763): a consumer that needs an exact
-/// quantity refuses anything below its required grade instead of silently
-/// accepting a looser one.
+/// How a result was obtained, in decreasing order of a-priori strength: the
+/// class of statement the producer makes.
 enum class CertificateGrade {
-  /// A closed-form identity evaluated in floating point — e.g. the
-  /// Kronecker-sum spectrum rule or a subset-sum enumeration. The only error
-  /// source is rounding, so the residual is expected at machine precision
-  /// (~1e-15 relative for doubles).
+  /// A closed-form identity evaluated in floating point, such as the
+  /// Kronecker-sum spectrum rule; the only error source is rounding, so the
+  /// residual sits at machine precision.
   AlgebraicallyExact,
-  /// Exact GIVEN a verified structural premise — e.g. a Woodbury solve is
-  /// exact given that the registered low-rank factors span the FULL operator
-  /// change (`LowRankUpdate::spansAffectedChange`). The premise check and the
-  /// arithmetic residual are both reported.
+  /// Exact given a verified structural premise: a Woodbury solve is exact
+  /// provided the registered low-rank factors span the whole operator change.
+  /// The premise check and the arithmetic residual are both reported.
   StructureExact,
-  /// An iterative or truncated computation carrying an explicit residual,
-  /// conditioning number, and — on crossover fixtures — a dense-reference
-  /// error. Honest label for anything looser than machine precision.
+  /// An iterative or truncated computation carrying an explicit residual, a
+  /// condition number and, on crossover fixtures, a dense-reference error.
   CertifiedNumerical,
   /// An uncertified proposal (search heuristics, discovery scores). Never
-  /// `holds()`; it must be re-derived through a certified path before any
-  /// downstream claim is made.
+  /// `holds()`.
   HeuristicDiscovery,
 };
 
 /// The spectral domain a certificate speaks for. `Static` is the
-/// zero-frequency/whole-operator statement; `BandWindow` restricts the claim
-/// to an explicit frequency window \f$ \Omega \f$ — no nonzero-spectrum
-/// claim is ever attached to a static reduction.
+/// zero-frequency, whole-operator statement; `BandWindow` restricts the claim
+/// to an explicit frequency window \f$ \Omega \f$.
 enum class CertificateDomain { Static, BandWindow };
 
-/// The metric regime the producing kernel verified.
-/// A self-adjoint solver is never applied outside `PositiveSemidefinite` /
-/// `HermitianIndefinite`; `NonNormal` results carry general-eigensolver
-/// conditioning instead.
-/// `ComplexSymmetricPencil` is the chain-level Whitney pencil's own regime
-/// (specification §3, §6, §9): the operator is symmetric for a COMPLEX
-/// SYMMETRIC chain metric \f$ M \f$, \f$ M L = (M L)^T \f$ (for a dressed
-/// connection, \f$ (\tilde A^U)^T = \tilde A^{U^{-1}} \f$), verified before it
-/// is claimed. Its pairings are bilinear, so a band carries `det B_C`,
-/// `cond B_C`, and an isotropy certificate and NO inertia; nothing Hermitian
-/// is asserted, and it is never silently folded into `NonNormal`.
+/// The metric regime the producing kernel verified. A self-adjoint solver is
+/// applied only under `PositiveSemidefinite` or `HermitianIndefinite`;
+/// `NonNormal` results carry general-eigensolver conditioning instead.
+///
+/// `ComplexSymmetricPencil` is the chain-level Whitney pencil's regime: the
+/// operator is symmetric for a complex symmetric chain metric \f$ M \f$,
+/// \f$ M L = (M L)^T \f$ (for a dressed connection,
+/// \f$ (\tilde A^U)^T = \tilde A^{U^{-1}} \f$). Its pairings are bilinear, so a
+/// band carries `det B_C`, `cond B_C` and an isotropy certificate but no
+/// inertia.
 enum class CertificateRegime {
   PositiveSemidefinite,
   HermitianIndefinite,
@@ -65,13 +54,10 @@ enum class CertificateRegime {
 
 /// # Certificate
 ///
-/// The certification record attached to every analytic-first kernel result
-/// (#764): the claim grade, its domain and metric regime, the measured
-/// residual, the conditioning of the computation, the dense-reference error
-/// where one was measured, and the tolerance the producer declared. All
-/// quantities are RELATIVE (scale-free) unless the producer documents
-/// otherwise; quantities that were not measured are quiet NaN, never zero —
-/// a zero would claim a perfect measurement that was not made.
+/// The certification record attached to a kernel result: the claim grade, its
+/// domain and metric regime, and the measured numbers below. Quantities are
+/// relative unless the producer documents otherwise; an unmeasured one is a
+/// quiet NaN, not zero.
 class Certificate {
   public:
     /// Not-measured marker for the optional fields.
@@ -160,9 +146,7 @@ class Certificate {
 };
 
 /// A vector-valued kernel result (a solution, an eigenvalue list, a spectrum)
-/// together with the `Certificate` that grades it. The uniform return record
-/// of the analytic-first kernels, so no result travels without its
-/// certification.
+/// together with the `Certificate` that grades it.
 struct CertifiedVector {
   /// The result values (a solution vector or a sorted eigenvalue list).
   std::vector<std::complex<double>> values{};

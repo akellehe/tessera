@@ -27,41 +27,17 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
+/// \brief A vertex in a causal set (causet) spacetime discretization.
 ///
-/// \brief Represents a vertex in a causal set (causet) spacetime discretization
+/// Vertices are the nodes of a directed graph:
+/// - edges carry a direction (source to target) representing a causal relation
+/// - coordinates are optional and of arbitrary dimension (getTime() constrains which
+///   dimensions are supported)
+/// - each vertex keeps both incident edge lists, incoming and outgoing
+/// - simplices register themselves on their constituent vertices, so topology queries
+///   stay local to a vertex
 ///
-/// # Physical Context
-///
-/// In lattice gauge theory, vertices represent discrete points in spacetime where gauge fields
-/// and matter fields are defined. The coupling parameters at each vertex determine the strength
-/// of interactions:
-///
-/// - **Strong Force**: Described by quantum chromodynamics (QCD) with running coupling
-///   \f$ \alpha_s(Q^2) \f$ that varies with energy scale \f$ Q^2 \f$
-/// - **Weak Force**: Governed by the electroweak coupling \f$ g_W \f$
-/// - **Electromagnetic Force**: Characterized by the fine structure constant \f$ \alpha_{EM} \approx 1/137 \f$
-///
-/// A key challenge is that QCD exhibits **asymptotic freedom**: the coupling becomes weaker at
-/// high energies (short distances) and stronger at low energies (long distances), preventing
-/// perturbative calculations in the infrared regime. This is modeled through "running coupling"
-/// theories.
-///
-/// # Gauge Invariance
-///
-/// Observables in gauge theory must be gauge-invariant. The electromagnetic 4-potential
-/// \f$ A_\mu \f$ is gauge-variant and thus not directly observable. However, field strengths
-/// \f$ F_{\mu\nu} = \partial_\mu A_\nu - \partial_\nu A_\mu \f$ are gauge-invariant observables.
-///
-/// # Implementation Details
-///
-/// This class represents vertices in a **directed graph** structure where:
-/// - Edges have direction (source → target) to represent causal relationships
-/// - Vertices can have coordinates in arbitrary dimensions (though time calculation has constraints)
-/// - Each vertex maintains bidirectional edge lists (incoming and outgoing)
-/// - Simplices are registered to their constituent vertices for efficient topology queries
-///
-/// The vertex class uses shared_from_this to enable safe shared_ptr creation from member functions.
-///
+/// Reference: Sorkin, arXiv:gr-qc/0309009
 class Vertex {
     public:
         // ========================================
@@ -108,33 +84,23 @@ class Vertex {
         ///
         std::uint64_t getId() const noexcept;
 
-        /// Set the vertex ID. Used by Spacetime::swapVertexLabels for
-        /// Brunekreef vertex relabeling (Sec. 2.2.1, 2.3.1).
-        /// WARNING: caller must update all containing data structures
-        /// (VertexList, Simplex fingerprints, etc.) after calling this.
+        /// Set the vertex id. Used by Spacetime::swapVertexLabels for vertex
+        /// relabeling. The caller updates every containing data structure
+        /// (VertexList, Simplex fingerprints, and so on) afterwards.
         void setId(std::uint64_t newId) noexcept { id = newId; }
 
+        /// \brief The temporal coordinate, by coordinate dimensionality:
         ///
-        /// \brief Compute the temporal coordinate in arbitrary dimensions
+        /// - 0 coordinates (empty): returns 0
+        /// - 1 coordinate: \f$ t = |x_0| \f$
+        /// - 4 or more: \f$ t = \sqrt{\sum_{i=0}^{N-1} x_i^2} \f$ (Euclidean norm)
+        /// - 2 or 3: throws std::out_of_range
         ///
-        /// # Mathematical Definition
-        ///
-        /// The time coordinate is computed based on coordinate dimensionality:
-        ///
-        /// - **0D** (empty): Returns 0
-        /// - **1D**: \f$ t = |x_0| \f$
-        /// - **4D+**: \f$ t = \sqrt{\sum_{i=0}^{N-1} x_i^2} \f$ (Euclidean norm)
-        /// - **2D, 3D**: Throws std::out_of_range (unsupported)
-        ///
-        /// # Rationale
-        ///
-        /// In standard 4D Minkowski spacetime, we typically separate time and space.
-        /// For higher-dimensional theories (e.g., Kaluza-Klein, string theory), this
-        /// convention uses the Euclidean magnitude across all temporal dimensions,
-        /// with spatial dimensions handled separately by the embedding geometry.
+        /// Above four dimensions the convention takes the Euclidean magnitude across all
+        /// temporal dimensions and leaves the spatial ones to the embedding geometry.
         ///
         /// \return The time coordinate
-        /// \throws std::out_of_range if coordinate vector has length 2 or 3
+        /// \throws std::out_of_range if the coordinate vector has length 2 or 3
         ///
         [[nodiscard]] double getTime() const;
 
@@ -144,12 +110,11 @@ class Vertex {
         /// \brief Get the coordinate vector for this vertex
         ///
         /// \return Vector of coordinate values
-        /// \throws std::runtime_error if vertex is coordinate-independent (empty coordinates)
+        /// \throws std::runtime_error if the vertex is coordinate-independent (empty
+        ///   coordinates)
         ///
-        /// # Usage Notes
-        ///
-        /// Not all vertices need coordinates - some algorithms work purely with combinatorial
-        /// structure. Only call this if you're certain the vertex has coordinate data.
+        /// Vertices need not carry coordinates; some algorithms work purely with the
+        /// combinatorial structure.
         ///
         const std::vector<double> &getCoordinates() const;
 
@@ -157,8 +122,8 @@ class Vertex {
         /// \brief Set new coordinates for this vertex
         /// \param coords New coordinate vector
         ///
-        /// This operation does not update any cached values in edges or simplices.
-        /// Use with caution if edge lengths depend on coordinates.
+        /// Does not update cached values in edges or simplices, so edge lengths derived
+        /// from coordinates go stale.
         ///
         void setCoordinates(const std::vector<double> &coords) noexcept;
 
@@ -179,8 +144,8 @@ class Vertex {
         /// \param edge Edge to search for (compared by ID)
         /// \return Shared pointer to the edge if found, nullptr otherwise
         ///
-        /// Searches both inEdges and outEdges. Useful for verifying edge membership
-        /// without needing to know direction.
+        /// Searches both inEdges and outEdges, so the caller need not know the
+        /// direction.
         ///
         EdgePtr getEdge(const EdgePtr &edge) const;
 
@@ -208,7 +173,8 @@ class Vertex {
         /// \brief Add an incoming edge to this vertex
         /// \param edge Edge where this vertex is the target
         ///
-        /// **Caveat**: Does not verify that edge->getTarget() == this. Caller must ensure consistency.
+        /// Does not verify that edge->getTarget() == this; the caller keeps the two
+        /// consistent.
         ///
         void addInEdge(const EdgePtr &edge) noexcept;
 
@@ -216,24 +182,20 @@ class Vertex {
         /// \brief Add an outgoing edge from this vertex
         /// \param edge Edge where this vertex is the source
         ///
-        /// **Caveat**: Does not verify that edge->getSource() == this. Caller must ensure consistency.
+        /// Does not verify that edge->getSource() == this; the caller keeps the two
+        /// consistent.
         ///
         void addOutEdge(const EdgePtr &edge) noexcept;
 
         ///
         /// \brief Remove an incoming edge and update all affected simplices
         /// \param edge The edge to remove from inEdges
-        /// \return Set of simplices that contained this edge (now modified)
         ///
-        /// # Implementation Details
+        /// Removes the edge from every simplex containing it (via Simplex::removeEdge)
+        /// and then from this vertex's inEdges.
         ///
-        /// 1. Removes the edge from all simplices that contain it via Simplex::removeEdge()
-        /// 2. Removes the edge from this vertex's inEdges set
-        /// 3. Returns affected simplices for caller to handle (e.g., re-validation)
-        ///
-        /// **Assertions**: When TESSERA_ASSERTIONS is defined:
-        /// - Aborts if edge is nullptr
-        /// - Aborts if edge is not in inEdges
+        /// With TESSERA_ASSERTIONS defined, aborts if the edge is null or is not in
+        /// inEdges.
         ///
         void removeInEdge(const EdgePtr &edge) noexcept;
 
@@ -241,11 +203,10 @@ class Vertex {
         /// \brief Remove an outgoing edge and update all affected simplices
         /// \param edge The edge to remove from outEdges
         ///
-        /// Symmetric to removeInEdge() but operates on outEdges.
+        /// Symmetric to removeInEdge(), on outEdges.
         ///
-        /// **Assertions**: When TESSERA_ASSERTIONS is defined:
-        /// - Aborts if edge is nullptr
-        /// - Aborts if edge is not in outEdges
+        /// With TESSERA_ASSERTIONS defined, aborts if the edge is null or is not in
+        /// outEdges.
         ///
         void removeOutEdge(const EdgePtr &edge) noexcept;
 
@@ -257,27 +218,21 @@ class Vertex {
         /// \brief Get all simplices that contain this vertex
         /// \return Set of simplices where this vertex is a constituent
         ///
-        /// A vertex belongs to a simplex if it's one of the simplex's vertices.
-        /// This is the inverse relationship: vertex → simplices containing it.
+        /// The inverse of the simplex-to-vertices relation.
         ///
         const Simplices &getSimplices() const noexcept;
 
         ///
         /// \brief Register a simplex as containing this vertex
         /// \param simplex The simplex to add
-        /// \return true if simplex was newly added, false if already present
+        /// \return true if the simplex was newly added, false if already present
         ///
-        /// # Duplicate Detection
+        /// The Simplex-to-Vertex relation is bidirectional: a simplex created with a set
+        /// of vertices calls addSimplex() on each of them.
         ///
-        /// **Assertions**: When TESSERA_ASSERTIONS is defined:
-        /// - Checks for null simplex pointer
-        /// - Checks for null 'this' pointer
-        /// - Calls checkDuplicates() before and after insertion
-        /// - Aborts on any violation
-        ///
-        /// This bidirectional relationship (Simplex ↔ Vertex) must be maintained
-        /// consistently: when a simplex is created with vertices, it must call
-        /// addSimplex() on each vertex.
+        /// With TESSERA_ASSERTIONS defined, this checks for a null simplex or null
+        /// ``this``, runs checkDuplicates() before and after insertion, and aborts on a
+        /// violation.
         ///
         bool addSimplex(const SimplexPtr &simplex);
 
@@ -286,8 +241,7 @@ class Vertex {
         /// \param simplex The simplex to remove
         /// \return true if simplex was removed, false if not found
         ///
-        /// Called during simplex destruction or vertex replacement operations.
-        /// Removes the simplex from the internal simplices set.
+        /// Called during simplex destruction and vertex replacement.
         ///
         bool removeSimplex(const SimplexPtr &simplex);
 
@@ -295,9 +249,9 @@ class Vertex {
         /// \brief Debug utility to detect duplicate simplices
         /// \param msg Error message to log/throw if duplicates found
         ///
-        /// **Assertions Only**: Only performs checks when TESSERA_ASSERTIONS is defined.
-        /// Scans all registered simplices and checks for duplicate fingerprints.
-        /// Logs at CRITICAL_LEVEL and throws std::runtime_error if duplicates exist.
+        /// Only checks anything when TESSERA_ASSERTIONS is defined: scans the registered
+        /// simplices for duplicate fingerprints, logs at CRITICAL_LEVEL and throws
+        /// std::runtime_error if any exist.
         ///
         void checkDuplicates(const std::string &msg) const;
 
@@ -311,19 +265,13 @@ class Vertex {
         /// \param spacetime The spacetime context (must be non-null)
         /// \return Pair of (old edges removed, new edges created)
         ///
-        /// # Algorithm
+        /// For each edge incident to this vertex: remove it from the endpoint edge lists
+        /// and from the spacetime's edge registry, create the edge with ``vertex``
+        /// substituted for ``this``, and insert that into the spacetime. Edge properties
+        /// such as the length are preserved.
         ///
-        /// For each edge connected to this vertex:
-        /// 1. Remove edge from source/target vertex's edge lists
-        /// 2. Remove edge from spacetime's edge registry
-        /// 3. Create new edge with 'vertex' substituted for 'this'
-        /// 4. Insert new edge into spacetime
-        ///
-        /// This is equivalent to "redirecting" all edges to point to/from the new vertex
-        /// while preserving edge properties (e.g., squared length).
-        ///
-        /// **Assertions**: When TESSERA_ASSERTIONS is defined:
-        /// - Throws std::runtime_error if spacetime is nullptr
+        /// With TESSERA_ASSERTIONS defined, throws std::runtime_error if spacetime is
+        /// null.
         ///
         /// \see moveInEdgesTo(), moveOutEdgesTo()
         ///
@@ -335,16 +283,12 @@ class Vertex {
         /// \param spacetime The spacetime context (must be non-null)
         /// \return Pair of (old edges removed, new edges created)
         ///
-        /// # Example
+        /// \f$ u \rightarrow \text{this} \f$ becomes
+        /// \f$ u \rightarrow \text{vertex} \f$: the source vertices are unchanged and
+        /// only the target is redirected.
         ///
-        /// Before: \f$ u \rightarrow \text{this} \f$
-        /// After:  \f$ u \rightarrow \text{vertex} \f$
-        ///
-        /// The source vertices remain unchanged; only the target is redirected.
-        ///
-        /// **Assertions**: When TESSERA_ASSERTIONS is defined:
-        /// - Throws std::runtime_error if spacetime is nullptr
-        /// - Verifies sourceVertex != this (logic error if violated)
+        /// With TESSERA_ASSERTIONS defined, throws std::runtime_error if spacetime is
+        /// null, and checks that sourceVertex != this.
         ///
         std::pair<EdgePtrSet, EdgePtrSet> moveInEdgesTo(const VertexPtr &vertex, Spacetime *spacetime);
 
@@ -354,16 +298,12 @@ class Vertex {
         /// \param spacetime The spacetime context (must be non-null)
         /// \return Pair of (old edges removed, new edges created)
         ///
-        /// # Example
+        /// \f$ \text{this} \rightarrow u \f$ becomes
+        /// \f$ \text{vertex} \rightarrow u \f$: the target vertices are unchanged and
+        /// only the source is redirected.
         ///
-        /// Before: \f$ \text{this} \rightarrow u \f$
-        /// After:  \f$ \text{vertex} \rightarrow u \f$
-        ///
-        /// The target vertices remain unchanged; only the source is redirected.
-        ///
-        /// **Assertions**: When TESSERA_ASSERTIONS is defined:
-        /// - Throws std::runtime_error if spacetime is nullptr
-        /// - Verifies targetVertex != this (logic error if violated)
+        /// With TESSERA_ASSERTIONS defined, throws std::runtime_error if spacetime is
+        /// null, and checks that targetVertex != this.
         ///
         std::pair<EdgePtrSet, EdgePtrSet> moveOutEdgesTo(const VertexPtr &vertex, Spacetime *spacetime);
 
@@ -376,22 +316,18 @@ class Vertex {
         /// \param vertex Vertex to compare against
         /// \return true if IDs match, false otherwise
         ///
-        /// Two vertices are considered equal iff they have the same ID, regardless
-        /// of coordinates or topology. This is consistent with the hash function.
+        /// Two vertices are equal iff they have the same id, regardless of coordinates
+        /// or topology, consistent with the hash function.
         ///
         bool operator==(const Vertex &vertex) const noexcept;
 
         ///
-        /// \brief Generate human-readable string representation
+        /// \brief Human-readable representation
         /// \return LaTeX-formatted UTF-8 string describing the vertex
         ///
-        /// # Format
-        ///
-        /// When TESSERA_VERBOSE is defined:
-        /// - Shows vertex ID, in-degree, out-degree, and time
-        /// - Example: \f$ V_{42}^{in=3} _{out=5}~(t=1.0) \f$
-        ///
-        /// When not defined: returns empty string for performance
+        /// With TESSERA_VERBOSE defined, shows the vertex id, in-degree, out-degree and
+        /// time, e.g. \f$ V_{42}^{in=3} _{out=5}~(t=1.0) \f$. Otherwise returns the empty
+        /// string.
         ///
 #ifdef TESSERA_VERBOSE
         std::string toString() const noexcept;
@@ -408,10 +344,9 @@ class Vertex {
         ///
         /// \brief Fingerprint for hashing and equality testing
         ///
-        /// The fingerprint is computed from the vertex ID and used in hash tables
-        /// for SimplexPtrSet, VertexPtrSet, etc. This enables O(1) lookup.
-        ///
-        /// **Note**: This is public to allow direct access for performance-critical code.
+        /// Computed from the vertex id and used as the hash-table key for SimplexPtrSet,
+        /// VertexPtrSet and similar, giving O(1) lookup. Public so hot paths can read it
+        /// directly.
         ///
         Fingerprint fingerprint;
 
@@ -458,11 +393,9 @@ namespace std {
 ///
 /// \brief Hash function specialization for tessera::mesh::Vertex
 ///
-/// Enables Vertex objects to be used as keys in std::unordered_set and std::unordered_map.
-/// The hash is computed from the vertex ID, ensuring consistent hashing across equal vertices.
-///
-/// # Complexity
-/// O(1) - delegates to std::hash<std::uint64_t>
+/// Lets Vertex objects be keys in std::unordered_set and std::unordered_map. The hash
+/// is taken from the vertex id, so equal vertices hash equally. O(1): delegates to
+/// std::hash<std::uint64_t>.
 ///
 template<>
 struct hash<tessera::mesh::Vertex> {
@@ -474,12 +407,8 @@ struct hash<tessera::mesh::Vertex> {
 ///
 /// \brief Hash function specialization for tessera::mesh::Vertex*
 ///
-/// Enables VertexPtr (Vertex*) to be used as keys in hash tables.
-/// Hashes the underlying vertex ID, not the pointer address.
-///
-/// # Important
-/// Two pointers pointing to vertices with the same ID will hash to the same value,
-/// even if they are different pointer instances.
+/// Lets VertexPtr (Vertex*) be a hash-table key. Hashes the vertex id, not the pointer
+/// address, so two distinct pointers to vertices with the same id hash equally.
 ///
 template<>
 struct hash<tessera::mesh::Vertex*> {
@@ -491,11 +420,8 @@ struct hash<tessera::mesh::Vertex*> {
 ///
 /// \brief Equality comparison specialization for tessera::mesh::Vertex
 ///
-/// Used by standard library containers to compare Vertex objects.
-/// Two vertices are equal iff they have the same ID.
-///
-/// # Note
-/// This is consistent with the hash specialization above.
+/// Used by standard library containers to compare Vertex objects: two vertices are
+/// equal iff they have the same id, consistent with the hash specialization above.
 ///
 template<>
 struct equal_to<tessera::mesh::Vertex> {
@@ -507,8 +433,8 @@ struct equal_to<tessera::mesh::Vertex> {
 ///
 /// \brief Equality comparison specialization for tessera::mesh::Vertex*
 ///
-/// Compares vertices by ID, not by pointer address.
-/// Consistent with the hash specialization for Vertex*.
+/// Compares vertices by id, not by pointer address, consistent with the hash
+/// specialization for Vertex*.
 ///
 template<>
 struct equal_to<tessera::mesh::Vertex*> {

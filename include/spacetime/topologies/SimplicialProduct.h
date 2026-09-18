@@ -12,10 +12,11 @@
 namespace tessera::spacetime {
 class Spacetime;
 
-/// # Simplicial product \f$ K \times L \f$
+/// # Simplicial product of two triangulations
 ///
-/// The product of two triangulations, triangulated by the standard *staircase*
-/// (Eilenberg–Zilber) construction. Vertices are pairs \f$ (u, v) \in V(K)
+/// The product \f$ K \times L \f$ of two triangulations, triangulated by the
+/// standard staircase (Eilenberg–Zilber) construction. Vertices are pairs
+/// \f$ (u, v) \in V(K)
 /// \times V(L) \f$; a product cell \f$ \sigma^p \times \tau^q \f$ is cut into
 /// \f$ \binom{p+q}{p} \f$ simplices of dimension \f$ p+q \f$, one per monotone
 /// lattice path \f$ (0,0) \to (p,q) \f$, using each factor's vertex order so the

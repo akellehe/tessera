@@ -14,9 +14,9 @@ using namespace ::tessera::spacetime;
 /// spatial coordinates optimized via spring + repulsion forces.
 /// The layout is computed internally and does not modify vertex state.
 ///
-/// For .gif paths, produces an animated GIF.  The rotation is
-/// controlled by three parameters that guarantee perfect looping
-/// when spin and precession are integers:
+/// A .gif path produces an animated GIF. Three parameters control the
+/// rotation; the animation loops seamlessly when spin and precession
+/// are integers:
 ///
 ///   tilt        – cone half-angle in degrees (default 25)
 ///   spin        – full Y-axis rotations per loop (default 1)
@@ -27,7 +27,7 @@ using namespace ::tessera::spacetime;
 ///   rx = tilt · cos(2π · precession · t)
 ///   rz = tilt · sin(2π · precession · t)
 ///
-/// For other paths, produces a static PNG with four panels.
+/// Any other path produces a static four-panel PNG.
 void renderSpacetime(const Spacetime &st, const std::string &path,
                      int panelSize = 800, int layoutIters = 500,
                      double tilt = 25.0, int spin = 1,

@@ -5,11 +5,10 @@ total-charge conservation, contiguous-cut Schmidt spectra and the
 majorization poset on those spectra, a q-qbar quench + 2-site TDVP
 pipeline that produces real-time-evolution snapshots, and an end-to-end
 causal-order comparison between the majorization order, the Lieb-
-Robinson cone, and the (regular-chain) causet order — the experimental
-harness for the causal-order charter (``docs/source/quantum-experiments/earlier-work/emergent-causal-order-from-majorization.md``).
+Robinson cone, and the (regular-chain) causet order.
 The C++ backend is ITensor v3 vendored under ``third_party/itensor``;
-this Python layer is a thin result viewer per the architectural
-principle in PLAN.md §1 ("minimize Python/C++ crossings"). No MPS or
+this Python layer is a thin result viewer: Python and C++ cross as
+rarely as possible. No MPS or
 MPO objects cross the language barrier — only scalar configs in and
 scalar / list diagnostics out.
 
@@ -56,7 +55,7 @@ accessing a workflow class in a build without it raises
     if q.is_available():
         result = q.SchwingerModel(q.QuantumConfig()).solve()
 
-Hamiltonian (PLAN.md §4 / Bañuls et al. 2013 eq. 2.6)
+Hamiltonian
 -----------------------------------------------------
 
 After Jordan-Wigner mapping and Gauss's-law elimination, the staggered
@@ -73,7 +72,7 @@ Schwinger Hamiltonian on N sites with open boundary conditions is::
 Quickstart
 ----------
 
-Compute the ground state at PLAN.md §4 spec parameters::
+Compute the ground state at the spec parameters::
 
     >>> from tessera.quantum import QuantumConfig, SchwingerModel
     >>> cfg = QuantumConfig()
@@ -190,14 +189,14 @@ _EXPORTS = (
     # Coarse-grained workflow classes
     "SchwingerModel", "SchwingerQuench", "InteractionSimulation",
     "Majorization", "Causet", "MutualInformation", "ChoiJamiolkowski",
-    # Exterior-algebra / graded-tensor primitives (issue #766): occupation
+    # Exterior-algebra / graded-tensor primitives: occupation
     # bitsets with the prefix-popcount sign rule, the CAR operator layer,
     # the graded chain/tensor differential, the Fock direct-sum functor and
     # dGamma, and the edge-mode registry with its deterministic compilation
     # order and relabeling parity.
     "OccupationBitset", "ExteriorAlgebra", "GradedTensorComplex",
     "FockDirectSum", "EdgeModeRecord", "EdgeModeRegistry",
-    # Lazy graded Fock oracle and boundary carrier (issue #771): the
+    # Lazy graded Fock oracle and boundary carrier: the
     # expression-DAG engine over the #766 primitives — lazy graded tensor
     # products with crossing-only expansion, sector direct sums, Slater
     # wedges with the exact projector covariance, bit-level dGamma, the
@@ -207,10 +206,10 @@ _EXPORTS = (
     "LazySlaterReference", "LazyCovarianceRead", "LazyCompatibilityRead",
     "LazyFockEngine",
 
-    # Quasi-free covariance layer (issue #780): the number-conserving
+    # Quasi-free covariance layer: the number-conserving
     # covariance state Gamma_ij = <a_j+ a_i> with exact Wick contraction of
     # every polynomial certificate, exact one-particle propagation, the
-    # certificates-blind mean-field loop, cached Wick reads (#764), and
+    # certificates-blind mean-field loop, cached Wick reads, and
     # checkpoint serialization of Gamma.
     "CovarianceState", "WickCertificateRead", "MeanFieldStepRead",
     # KI + QuantumSimplex (Van Raamsdonk-metric simplex factory)

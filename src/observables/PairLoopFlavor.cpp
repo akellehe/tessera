@@ -17,11 +17,11 @@ using ::tessera::cobordism::EigenstateSynthesis;
 
 namespace {
 
-// Hole `h`'s five boundary tetrahedra as (cochain index, (-1)^j sign) pairs:
-// facet j of the sorted hole drops vertex v_j and carries (-1)^j — the same
-// boundary-operator convention cyclePeriods documents. Facets matched by vertex
-// SET (never an imposed order); the physical orientation is supplied separately
-// by the induced-orientation signs.
+// A hole's boundary facets as (cochain index, sign) pairs: facet j of the
+// sorted hole drops vertex j and carries (-1)^j, the boundary-operator
+// convention used throughout. Facets are matched by vertex set, never by an
+// imposed order; the physical orientation comes separately from the
+// induced-orientation signs.
 std::vector<std::pair<std::size_t, int>> facetIndices(
     const std::map<std::vector<std::uint64_t>, std::size_t> &cellIndex,
     const std::vector<std::uint64_t> &hole) {
@@ -59,7 +59,7 @@ std::pair<int, double> PairLoopFlavor::oddOneOut(
     }
     separations[k] = std::fabs(loopQ[k] - (others[0] + others[1]) / 2.0);
   }
-  // np.argmax: the FIRST maximal index.
+  // Ties break to the first maximal index.
   int odd = 0;
   for (int k = 1; k < 3; ++k) {
     if (separations[k] > separations[odd]) odd = k;
@@ -157,9 +157,9 @@ Record PairLoopFlavor::record(const RegisterContext &ctx) const {
   const JointRead read = jointRead(ctx);
   const Verdict verdict = evaluateCriteria(read);
 
-  // The oriented periods are U(1)-covariant (w -> e^{iθ} w) and flip with the
-  // endSignCovector propagation root under RELABEL; dividing out w0's unit phase
-  // reports them in the one propagation-root-fixed convention, so every leaf is
+  // The oriented periods are U(1)-covariant (w -> e^{i theta} w) and flip with
+  // the endSignCovector propagation root under relabelling. Dividing out the
+  // unit phase of w[0] fixes that convention, so every reported value is
   // invariant.
   const std::complex<double> phase0 =
       std::abs(read.w[0]) > 0.0 ? read.w[0] / std::abs(read.w[0])

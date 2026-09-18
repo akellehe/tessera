@@ -1,250 +1,272 @@
 # Theory
 
-This page is background reading for the rest of the docs — a personal-tour summary of the lattice-spacetime ideas
-the package plays with, with enough test coverage on the implementation that the experiments are reproducible.
+Background reading for the rest of the docs: the lattice-spacetime ideas the
+package implements.
 
-Since Tullio Regge's work in the 1960s there's been a ton of interest in implementing GR
-in such a way that it's compatible with quantum mechanics, quantum field theory (QFT), and quantum chromodynamics (QCD).
+Since Tullio Regge's work in the 1960s there has been sustained interest in
+formulating general relativity so that it is compatible with quantum mechanics,
+quantum field theory, and quantum chromodynamics.
 
-Regge Calculus is apparently not computationally efficient to work for any real world simulation. Dynamical
-triangulations are a newer approach, eventually arguably subsumed into the work on Causal Dynamical Triangulations
-(CDT).
+Regge calculus is not computationally efficient for large simulations. Dynamical
+triangulations are a later approach, largely subsumed into causal dynamical
+triangulations (CDT).
 
-CDT tends to work with a "preferred foliation", meaning that spacetime is sliced into spatial hypersurfaces at integer
-time steps. Within each time slice, edges are spacelike; connecting adjacent time slices, edges are timelike. The
-simplices that span two adjacent slices (e.g. (4,1) and (3,2) types in 4D) contain both spacelike and timelike edges.
+CDT works with a *preferred foliation*: spacetime is sliced into spatial
+hypersurfaces at integer time steps. Within a time slice, edges are spacelike;
+edges connecting adjacent slices are timelike. The simplices spanning two
+adjacent slices (the (4,1) and (3,2) types in 4D) contain both. Later work
+explores models without a preferred foliation while fixing edge lengths or the
+ratio of temporal to spatial edge lengths.
 
-Some of the later work in CDT explores models _without_ preferred foliation while maintaining contributions around fixed 
-edge lengths or fixed ratios of temporal and spatial edge lengths.
+## Why the Lorentzian metric matters
 
-## Why the Lorentzian Metric is Important
+Lorentzian path integrals are taken over an infinite domain and tend to diverge.
+Euclidean path integrals are easier to evaluate, but they obscure causal
+structure: in a Euclidean spacetime all points are effectively spacelike
+separated, and unitarity is tied to the Lorentzian structure. See
+[Loll, arXiv:hep-th/0011194](https://arxiv.org/abs/hep-th/0011194).
 
-Lorentzian path integrals tend to integrate over an infinite domain, so they tend to "blow up". Euclidean path integrals 
-are easier to solve, but they obscure the causal structure of spacetime.
+## Path integrals and Wick rotation
 
-In Euclidean spacetimes, all points are effectively spacelike separated. Unitarity/probability conservation is tied to 
-the Lorentzian structure. 
-
-More interesting physics come into play when we use a Lorentzian metric, as described in [Discrete Lorentzian Quantum Gravity, 2000, R.Loll](https://arxiv.org/abs/hep-th/0011194).
-
-## Path Integrals and Wick Rotations
-
-The path integral formulation of quantum mechanics, introduced by Richard Feynman, lets us compute the probability 
-amplitude for a system to transition from one state to another. It's calculated by summing over all paths the system can 
-take, weighted by the exponential of the action (in units of $ \hbar $). The path integral is the foundation for lattice 
-gauge theory as well as quantum chromodynamics.
-
-Mathematically, this is expressed as:
+The path integral formulation of quantum mechanics, introduced by Richard
+Feynman, gives the probability amplitude for a system to go from one state to
+another. It sums over every path the system can take, weighted by the
+exponential of the action in units of $\hbar$. The path integral underlies
+lattice gauge theory and quantum chromodynamics:
 
 $$
-\langle x_f, t_f | x_i, t_i \rangle = \int \mathcal{D}[x(t)] e^{\frac{i}{\hbar} S[x(t)]} 
+\langle x_f, t_f | x_i, t_i \rangle = \int \mathcal{D}[x(t)] e^{\frac{i}{\hbar} S[x(t)]}
 $$
 
-which can be thought of as the "sum over all possible histories".
+— the "sum over all possible histories".
 
-In field theory the $ x(t) $ becomes a field $ \phi(x) $ and the action $ S[x(t)] $ becomes the action functional 
-$ S[\phi] $, leading to
+In field theory $x(t)$ becomes a field $\phi(x)$ and $S[x(t)]$ becomes the
+action functional $S[\phi]$:
 
 $$
 Z = \int \mathcal{D}[\phi] e^{\frac{i}{\hbar} S[\phi]}
 $$
 
-where $ Z $ is the partition function, encoding all the dynamics of the quantum field theory.
+where $Z$ is the partition function. This is the Lorentzian path integral,
+because $S[\phi]$ is computed with the Lorentzian metric $g_{\mu\nu}$.
 
-This is the Lorentzian path integral, because $ S[\phi] $ is computed with the Lorentzian metric, $ g_{\mu\nu} $.
-
-The exponential term in the integral oscillates rapidly for large actions. It's not typically convergent. To make sense 
-of this integral, people use a Wick rotation to go from Lorentzian to Euclidean signature:
+The exponential oscillates rapidly for large actions and is not generally
+convergent. A Wick rotation takes the integral from Lorentzian to Euclidean
+signature,
 
 $$
 t \rightarrow -i \tau
 $$
 
-which makes the term 
+so that
 
 $$
 e^{iS} \rightarrow e^{-S_E}
 $$
 
-where $ S_E $ is the Euclidean action. Now it acts like a statistical partition function that converges. This new form is
-no longer timelike, though. It is a mathematical trick to make the integral manageable, but it obscures the causal 
-structure of spacetime.
+where $S_E$ is the Euclidean action. The result converges and behaves like a
+statistical partition function, but it is no longer timelike: the rotation
+obscures causal structure. There is no known general mapping between Euclidean
+and Lorentzian metrics, or between their diffeomorphism equivalence classes.
 
-There is no known general mapping to go to and from Euclidean and Lorentzian metrics, or even equivalence classes of 
-diffeomorphic metrics.
+## Quantum gravity
 
-## Quantum Gravity
-
-The Lorentzian path integral is particularly important in quantum gravity, where the goal is to quantize the 
-gravitational field. In this context, the path integral takes the form:
+In quantum gravity the path integral takes the form
 
 $$
-Z = \int \frac{\mathcal{D}[g_{\mu\nu}]}{Diff(M)} e^{\frac{i}{\hbar} S_{EH}[g_{\mu\nu}]}
+Z = \int \frac{\mathcal{D}[g_{\mu\nu}]}{\mathrm{Diff}(M)} e^{\frac{i}{\hbar} S_{EH}[g_{\mu\nu}]}
 $$
 
-Where $ S_{EH} $ is the Einstein-Hilbert action, given by
+where $S_{EH}$ is the Einstein-Hilbert action,
 
 $$
-S_{EH} = \frac{1}{16 \pi G} \int d^4x \sqrt{-g} (R - 2 \Lambda)
+S_{EH} = \frac{1}{16 \pi G} \int d^4x \sqrt{-g} (R - 2 \Lambda).
 $$
 
-This is the integral over equivalence classes of Lorentzian metrics, where two metrics are equivalent if they differ by a
-diffeomorphism — i.e. they are frame independent (since diffeomorphisms allow us to switch between frames). Another
-common way of saying that which is pretty cryptic is "The integral over all Lorentzian geometries modulo
-diffeomorphisms." This is Feynman's "sum over all spacetimes". It requires regularization or contour deformation to
-make sense of it, though.
+This integrates over equivalence classes of Lorentzian metrics, two metrics
+being equivalent if they differ by a diffeomorphism — that is, over all
+Lorentzian geometries modulo diffeomorphisms. It requires regularization or
+contour deformation to be well defined.
 
-## Lattice Gravity Approaches
+## Lattice gravity approaches
 
-### Regge Calculus
+### Regge calculus
 
-Regge Calculus allows for edge lengths to vary, providing a discrete approximation to General Relativity. In this 
-framework, spacetime is represented as a simplicial complex, where curvature is concentrated on the hinges (the 
-(D-2)-dimensional simplices). The Einstein-Hilbert action can be expressed in terms of the deficit angles around these 
-hinges, leading to a discrete version of the gravitational action.
+Regge calculus lets edge lengths vary, giving a discrete approximation to
+general relativity. Spacetime is a simplicial complex and curvature is
+concentrated on the hinges, the $(D-2)$-dimensional simplices. The
+Einstein-Hilbert action is expressed in terms of the deficit angles around those
+hinges, giving a discrete gravitational action.
 
-### CDT (Causal Dynamical Triangulations)
+### Causal dynamical triangulations
 
-Causal Dynamical Triangulations (CDT) is a non-perturbative approach to quantum gravity that constructs spacetime from 
-causally ordered simplices. This is explained very well in 
-[Quantum Gravity from Causal Dynamical Triangulations: A Review, R. Loll, 2019](https://arxiv.org/abs/1905.08669). In CDT,
-the path integral over geometries is approximated by summing over all possible causal triangulations. From
-equation (5) in [Discrete Lorentzian Quantum Gravity, R. Loll, 2000](https://arxiv.org/abs/hep-th/0011194) the partition 
+CDT is a non-perturbative approach to quantum gravity that builds spacetime from
+causally ordered simplices; see
+[Loll, arXiv:1905.08669](https://arxiv.org/abs/1905.08669). The path integral
+over geometries is approximated by a sum over causal triangulations. From
+equation (5) of
+[Loll, arXiv:hep-th/0011194](https://arxiv.org/abs/hep-th/0011194) the partition
 function is
 
 $$
-Z(\lambda, G) = \sum_{causal T} \frac{1}{C_T} e^{iS^{Regge}}
+Z(\lambda, G) = \sum_{\text{causal } T} \frac{1}{C_T} e^{iS^{\text{Regge}}}
 $$
 
 $$
-e^{iS^{Lor}} \rightarrow e^{-S^{Euclid}}
+e^{iS^{\text{Lor}}} \rightarrow e^{-S^{\text{Euclid}}}
 $$
 
-In the Lorentzian signature, squared temporal edge lengths are negative: $ l_t^2 = -\alpha a^2 $.
-The Wick rotation takes them to positive values for Euclidean computation:
+In Lorentzian signature, squared temporal edge lengths are negative,
+$l_t^2 = -\alpha a^2$. The Wick rotation takes them positive for Euclidean
+computation:
 
 $$
 l_t^2 = -\alpha a^2 \xrightarrow{\text{Wick}} l_t^2 = +\alpha a^2
 $$
 
-There has been much success in implementing CDT as an MCMC algorithm, ensuring that the causal structure of spacetime is 
-preserved. You can find a detailed description and source code in [Simulating CDT quantum gravity, Brunekreef et. al, 2023](https://arxiv.org/abs/2310.16744) 
-This approach has shown promise in recovering classical spacetime at large scales while incorporating quantum effects at 
-small scales. You can find lots of details of those results in [Causal Dynamical Triangulations without Preferred Foliation, 2013](https://arxiv.org/abs/1305.4582), 
-[Quantum Gravity or The Art of Building Spacetime, 2006](https://arxiv.org/abs/hep-th/0604212), [De Sitter Universe from Causal Dynamical Triangulations without Preferred Foliation, 2013](https://arxiv.org/abs/1307.5469),
-as well as others in the CDT literature.
+CDT is implemented as a Markov chain Monte Carlo that preserves causal
+structure. A detailed description with source code is in
+[Brunekreef, Görlich & Loll, arXiv:2310.16744](https://arxiv.org/abs/2310.16744).
+The approach recovers classical spacetime at large scales while retaining
+quantum effects at small scales; results appear in
+[Jordan & Loll, arXiv:1305.4582](https://arxiv.org/abs/1305.4582),
+[Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0604212](https://arxiv.org/abs/hep-th/0604212),
+and
+[Jordan & Loll, arXiv:1307.5469](https://arxiv.org/abs/1307.5469).
 
-### Causal Sets
+### Causal sets
 
-Causal Set Theory posits that spacetime is fundamentally discrete, composed of a set of events with a partial order 
-representing causal relationships. In this framework, the geometry of spacetime emerges from the underlying causal 
-structure. Causal sets are locally finite, meaning that between any two events, there are a finite number of 
-intermediate events. This discreteness leads to a natural ultraviolet cutoff, potentially resolving issues in quantum
-gravity.
+Causal set theory posits that spacetime is fundamentally discrete: a set of
+events with a partial order representing causal relationships, from which the
+geometry emerges. Causal sets are locally finite — between any two events there
+are finitely many intermediate events — which supplies a natural ultraviolet
+cutoff.
 
-## Connections Between Theories
+## Connections between the three
 
-These three approaches to quantum gravity share a common theme of discretizing spacetime, albeit in different ways.
+All three discretize spacetime, in different ways.
 
-- Regge Calculus focuses on varying edge lengths in a simplicial complex, capturing curvature through deficit angles.
-- CDT emphasizes the causal structure of spacetime by constructing it from causally ordered simplices.
-- Causal Set Theory abstracts spacetime to a set of events with causal relationships, highlighting the fundamental discreteness of spacetime.
+- Regge calculus varies edge lengths in a simplicial complex and captures
+  curvature through deficit angles.
+- CDT builds spacetime from causally ordered simplices.
+- Causal set theory abstracts spacetime to a set of events with causal
+  relationships.
 
 ## Incompatibilities
 
-While these theories share the goal of discretizing spacetime, they differ in their foundational assumptions and
-methodologies. Regge Calculus and CDT both utilize simplicial complexes, but CDT imposes a strict causal structure,
-which is not a requirement in Regge Calculus. 
+Regge calculus and CDT both use simplicial complexes, but CDT imposes a strict
+causal structure that Regge calculus does not require. Regge calculus allows
+continuously varying edge lengths; CDT fixes them. Regge calculus allows
+arbitrary triangulations; CDT restricts to causality-preserving ones, and
+retriangulates by rules that preserve causality.
 
-Regge Calculus allows for continuously defined edge lengths, while CDT fixes them. 
-Regge Calculus allows for arbitrary triangulations, whereas CDT restricts to those that preserve causality.
-CDT allows for re-drawing of triangulation by a set of defined rules that preserve causality, while Regge Calculus does 
-not have such freedom.
+Causal set theory does not use a simplicial complex at all, focusing on the
+causal relations between discrete events. The three therefore have distinct
+mathematical frameworks, and direct comparison is difficult.
 
-Causal Set Theory, on the other hand, does not rely on a simplicial complex representation, instead focusing on the 
-causal relationships between discrete events. These differences lead to distinct mathematical frameworks and physical 
-interpretations, making direct comparisons and integrations between the theories challenging.
+Regge calculus and CDT both avoid coordinates by discretizing spacetime
+geometrically rather than analytically, which removes diffeomorphism redundancy.
+Two triangulations differing only by vertex labels are the same geometry in CDT,
+so the path integral becomes a sum over inequivalent triangulations rather than
+an integral over $g_{\mu\nu}$ modulo diffeomorphisms.
 
-Regge Calculus and CDT both sidestep coordinates by discretizing spacetime geometrically instead of analytically. That 
-means the structure of spacetime is purely geometric. This gains the benefit of removing diffeomorphism redundancy.
+### Path integrals
 
-Two triangulations that differ by the vertex labels are considered the same geometry in CDT. The path integral then 
-becomes a sum over inequivalent triangulations instead of an integral over $ g_{\mu\nu} $ modulo diffeomorphisms.
-
-### Path Integrals 
-
-So CDT's path integral is (not Wick rotated):
+CDT's path integral, before Wick rotation, is
 
 $$
-Z = \sum_{T \in \text{Causal Triangulations}} \frac{1}{C(T)} e^{i S_{Regge}(T)}
+Z = \sum_{T \in \text{Causal Triangulations}} \frac{1}{C(T)} e^{i S_{\text{Regge}}(T)}
 $$
 
-where $ C(T) $ is a symmetry factor for the triangulation $ T $, and $ S_{Regge}(T) $ is the Regge action, the discrete 
-version of the Einstein-Hilbert action.
+where $C(T)$ is the symmetry factor of the triangulation $T$ and
+$S_{\text{Regge}}(T)$ is the Regge action, the discrete Einstein-Hilbert action.
 
-In Quantum Regge Calculus; you replace the continuum gravitational path integral
-
-$$
-Z = \int_{Lor(M)/Diff(M)} \mathcal{D}[g_{\mu\nu}] e^{i S_{EH}[g_{\mu\nu}]/\hbar}
-$$
-
-with the discrete analog integrating over edge lengths $ l_{ij} $ for all triangulations, $ \mathcal{T} $, of the 
-manifold $ M $:
+Quantum Regge calculus instead replaces the continuum gravitational path
+integral
 
 $$
-Z = \sum_{T \in \mathcal{T}} \int_{l_{ij} > 0} \prod_{i < j \in T} dl_{ij} \mu(l_{ij}) e^{i S_{Regge}([T,l_{ij}])/\hbar}
+Z = \int_{\mathrm{Lor}(M)/\mathrm{Diff}(M)} \mathcal{D}[g_{\mu\nu}] e^{i S_{EH}[g_{\mu\nu}]/\hbar}
 $$
 
-where $\mu(l_{ij}) $ is a measure factor for the edge lengths.
+with a discrete analogue integrating over edge lengths $l_{ij}$ for all
+triangulations $\mathcal{T}$ of the manifold $M$:
 
-### Phase Transitions
+$$
+Z = \sum_{T \in \mathcal{T}} \int_{l_{ij} > 0} \prod_{i < j \in T} dl_{ij} \mu(l_{ij}) e^{i S_{\text{Regge}}([T,l_{ij}])/\hbar}
+$$
 
-The big difference is that CDT fixes edge lengths and only sums over _causal_ triangulations, which are enforced via 
-(time) foliation. They both implement a sum over possible geometries, but CDT restricts the geometries to those that 
-preserve causality. In either case this provides a partition function in the statistical mechanics sense.
+where $\mu(l_{ij})$ is a measure factor on the edge lengths.
 
-Note that a phase transition occurs when changing a parameter (e.g. temperature, pressure) results in a qualitative 
-change in the system's structure or large scale behavior. In CDT, varying the coupling constants in the Regge action can 
-lead to different phases of spacetime geometry. For example, one phase may exhibit a well-defined four-dimensional 
-spacetime, while another phase may lead to a crumpled or degenerate geometry. Identifying and understanding these phase 
-transitions is crucial for exploring the continuum limit of quantum gravity theories.
+### Phase transitions
 
-### Observables 
+CDT fixes edge lengths and sums only over causal triangulations, enforced by the
+time foliation. Both formulations sum over geometries and both yield a partition
+function in the statistical-mechanics sense.
 
-In Regge Calculus curvature is calculated via deficit angle. In CDT observables are defined across the ensemble of
-triangulations. The spatial volume as a function of discrete proper time encodes the effective curvature radius of 
-spacetime. 
+A phase transition occurs when changing a parameter produces a qualitative
+change in the system's structure or large-scale behaviour. In CDT, varying the
+coupling constants in the Regge action gives different phases of spacetime
+geometry: one phase is an extended four-dimensional spacetime, others are
+crumpled or degenerate. These transitions are central to the search for a
+continuum limit.
+
+### Observables
+
+In Regge calculus curvature is computed from deficit angles. In CDT observables
+are defined across the ensemble of triangulations. Spatial volume as a function
+of discrete proper time encodes the effective curvature radius of spacetime,
 
 $$
 V_3(t) = \text{number of 3-simplices in time slice } t
 $$
 
-the ensemble average is
+with ensemble average
 
 $$
-\braket{V_3(t)} = \frac{1}{Z} \sum_{T \in \text{Causal Triangulations}} V_3(t)_T e^{i S_{Regge}(T) / \hbar}
+\langle V_3(t) \rangle = \frac{1}{Z} \sum_{T \in \text{Causal Triangulations}} V_3(t)_T e^{i S_{\text{Regge}}(T) / \hbar}
 $$
- 
+
 which fits the classical Euclidean de Sitter solution in 4D:
 
 $$
 V_3(t) \propto \cos^3\left(\frac{t}{R}\right)
 $$
 
-Another approach is the spectral dimension $ D_S(\sigma) $, measured via a diffusion process on the triangulated
-spacetime. A random walk with diffusion time $ \sigma $ has a return probability $ P(\sigma) $ that decays as
-$ P(\sigma) \sim \sigma^{-D_S/2} $, giving a scale-dependent measure of the effective dimensionality. In 4D CDT,
-$ D_S $ flows from $ \approx 2 $ at short scales to $ \approx 4 $ at large scales. Both of these observables are
-described in the 'Observables' section of
-["Quantum Gravity from Causal Dynamical Triangulations: A Review" by R. Loll](http://arxiv.org/abs/1905.08669).
+The spectral dimension $D_S(\sigma)$ is measured by diffusion on the
+triangulation: a random walk with diffusion time $\sigma$ has return probability
+$P(\sigma) \sim \sigma^{-D_S/2}$, a scale-dependent measure of effective
+dimensionality. In 4D CDT, $D_S$ flows from $\approx 2$ at short scales to
+$\approx 4$ at large scales
+([Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0505113](https://arxiv.org/abs/hep-th/0505113)).
+Both observables are described in the 'Observables' section of
+[Loll, arXiv:1905.08669](https://arxiv.org/abs/1905.08669).
 
-Another approach is Geodesic distance distributions. You measure the volume of a geodesic ball.
+Geodesic distance distributions are a third family of observables: measure the
+volume of a geodesic ball as a function of its radius.
 
-## Improvements
+## References
 
- - We should consider how to represent light-like edges.
- - We should decide if there's a more computationally efficient method for solving Regge Calculus
- - We should consider how to represent topology change/gluing/rewriting/retriangulating rules.
- - Implement Chain and Co-Chain definitions
- - Optimize the CDT Markov Chain Monte Carlo algorithms
-
+1. T. Regge, *General relativity without coordinates*, Nuovo Cimento **19**
+   (1961) 558.
+2. R. Loll, *Discrete Lorentzian quantum gravity*,
+   [arXiv:hep-th/0011194](https://arxiv.org/abs/hep-th/0011194)
+3. J. Ambjorn, J. Jurkiewicz, R. Loll, *Emergence of a 4D world from causal
+   quantum gravity*,
+   [arXiv:hep-th/0404156](https://arxiv.org/abs/hep-th/0404156)
+4. J. Ambjorn, J. Jurkiewicz, R. Loll, *Reconstructing the Universe*,
+   [arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)
+5. J. Ambjorn, J. Jurkiewicz, R. Loll, *Spectral dimension of the universe*,
+   [arXiv:hep-th/0505113](https://arxiv.org/abs/hep-th/0505113)
+6. J. Ambjorn, J. Jurkiewicz, R. Loll, *Quantum gravity, or the art of building
+   spacetime*, [arXiv:hep-th/0604212](https://arxiv.org/abs/hep-th/0604212)
+7. S. Jordan, R. Loll, *Causal dynamical triangulations without preferred
+   foliation*, [arXiv:1305.4582](https://arxiv.org/abs/1305.4582)
+8. S. Jordan, R. Loll, *De Sitter universe from causal dynamical triangulations
+   without preferred foliation*,
+   [arXiv:1307.5469](https://arxiv.org/abs/1307.5469)
+9. R. Loll, *Quantum gravity from causal dynamical triangulations: a review*,
+   [arXiv:1905.08669](https://arxiv.org/abs/1905.08669)
+10. J. Brunekreef, A. Görlich, R. Loll, *Simulating CDT quantum gravity*,
+    [arXiv:2310.16744](https://arxiv.org/abs/2310.16744)
+11. L. Bombelli, J. Lee, D. Meyer, R. Sorkin, *Space-time as a causal set*,
+    Phys. Rev. Lett. **59** (1987) 521.

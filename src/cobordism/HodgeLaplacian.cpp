@@ -44,9 +44,9 @@ namespace {
 using Face = std::vector<std::uint64_t>;  // sorted vertex ids
 using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
 
-// Sorted vertex ids of a simplex — the homological reference ordering, identical
-// to ChainComplex's. Distinct simplices have distinct tuples, so sorting by it is
-// a canonical total order that reproduces ChainComplex's column order exactly.
+// Sorted vertex ids of a simplex — the homological reference ordering. Distinct
+// simplices have distinct tuples, so sorting by it reproduces ChainComplex's
+// column order.
 Face sortedIds(const SimplexPtr &s) {
   Face ids;
   for (const auto &v : s->getVertices()) ids.push_back(v->getId());
@@ -55,9 +55,8 @@ Face sortedIds(const SimplexPtr &s) {
 }
 
 // Face-closure of the complex, bucketed by dimension and ordered within each
-// dimension by sorted vertex ids — the same BFS-over-getFacets construction
-// ChainComplex uses, so faces[k][j] is the simplex behind column j of
-// boundaryMatrix(k). Returns the SimplexPtrs (needed for their volumes).
+// dimension by sorted vertex ids, so faces[k][j] is the simplex behind column j
+// of boundaryMatrix(k). Returns SimplexPtrs, for their volumes.
 std::vector<std::vector<SimplexPtr>> orderedFaces(const Spacetime &K) {
   std::map<int, std::map<Face, SimplexPtr>> byDim;  // dim -> (sorted ids -> simplex)
   std::unordered_set<std::uint64_t> seen;
@@ -79,12 +78,11 @@ std::vector<std::vector<SimplexPtr>> orderedFaces(const Spacetime &K) {
   return faces;
 }
 
-// Diagonal weights W_k (length `count`) in ChainComplex column order: the
-// per-k-simplex |volume| (Euclidean content via Simplex::volume), or all ones for
-// k == 0 or the combinatorial path. A degenerate (zero) cell falls back to 1 so
-// W_k stays positive-definite (W_k^{-1/2} is finite). With `lorentzian` the
-// **signed** volume is used (timelike cells negative ⇒ W_k indefinite); degenerate
-// cells still fall back to +1 so W_k stays invertible (W_k^{-1} is finite).
+// Diagonal weights W_k (length `count`) in ChainComplex column order: the signed
+// per-k-simplex content Simplex::volume() under `convention`, or all ones for
+// k <= 0, for k above the top dimension, and for `metric == false`. Timelike
+// cells carry a negative or imaginary weight, so W_k is indefinite; a degenerate
+// (zero) cell falls back to +1 to stay invertible.
 std::vector<std::complex<double>> simplexWeights(
     const std::vector<std::vector<SimplexPtr>> &faces, int k, int count,
     bool metric, HodgeLaplacian::WeightConvention convention) {
@@ -93,13 +91,11 @@ std::vector<std::complex<double>> simplexWeights(
   if (!metric || k == 0 || k < 0 || k >= static_cast<int>(faces.size())) return w;
   const auto &fk = faces[static_cast<std::size_t>(k)];
   for (int j = 0; j < count && j < static_cast<int>(fk.size()); ++j) {
-    // Both branches are signed and complex-valued; there is no |vol| mode, which
-    // was a Euclidean read that discarded a cell's causal character (#640/#641).
-    //
-    //  Content        W = V, the k-content. For an edge that is sqrt(l^2), so a
-    //                 timelike cell's weight is IMAGINARY.
-    //  SquaredContent W = V^2 = det G/(d!)^2, a polynomial in the squared edge
-    //                 lengths, so on real signed l^2 it is real and SIGNED.
+    // Both branches are signed and complex-valued; there is no |vol| mode.
+    //  Content        W = V, the k-content; sqrt(l^2) for an edge, so a timelike
+    //                 cell's weight is imaginary.
+    //  SquaredContent W = V^2 = det G/(d!)^2, polynomial in the squared edge
+    //                 lengths, so on real signed l^2 it is real and signed.
     const cdw vol = fk[static_cast<std::size_t>(j)]->volume();
     const cdw wt = (convention == HodgeLaplacian::WeightConvention::SquaredContent)
                        ? vol * vol
@@ -110,21 +106,15 @@ std::vector<std::complex<double>> simplexWeights(
 }
 
 // Exact d(L_k)/d(l^2_(ea,eb)) for the signed-weight Laplacian
-//   L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k,
-// so with every W diagonal and linear-free in l^2 only through the cell
-// contents,
+//   L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k.
+// Every W is diagonal and depends on l^2 only through the cell contents, so
 //   dL = -W_k^-1 dW_k W_k^-1 d_k^T W_{k-1} d_k + W_k^-1 d_k^T dW_{k-1} d_k
 //        -d_{k+1} W_{k+1}^-1 dW_{k+1} W_{k+1}^-1 d_{k+1}^T W_k
-//        +d_{k+1} W_{k+1}^-1 d_{k+1}^T dW_k.
-// dW is the SIGNED volumeGradient verbatim -- no modulus chain rule, because
-// the weights are no longer moduli (#641). One exact derivative workspace for a
-// fixed (spacetime revision, degree, weight convention). The old
-// entropy-gradient path rebuilt ChainComplex, the complete face closure, every
-// weight diagonal, and both boundary matrices for EVERY edge coordinate. It
-// also re-ran every simplex volumeGradient while looking for that one edge.
-// Here those immutable ingredients are assembled once; simplex derivatives are
-// indexed sparsely by edge, and each dL_e is a sum of local row/column scalings
-// and rank-one updates.
+//        +d_{k+1} W_{k+1}^-1 d_{k+1}^T dW_k,
+// with dW the signed volumeGradient verbatim. One workspace serves a fixed
+// (spacetime revision, degree, weight convention): immutable ingredients are
+// assembled once, simplex derivatives are indexed sparsely by edge, and each
+// dL_e is a sum of local row/column scalings and rank-one updates.
 class LaplacianDerivativeWorkspace {
 public:
   LaplacianDerivativeWorkspace(const Spacetime &spacetime, int degree,
@@ -179,11 +169,10 @@ public:
   [[nodiscard]] Eigen::MatrixXcd gradient(std::uint64_t edgeA,
                                           std::uint64_t edgeB) const {
     Eigen::MatrixXcd result = Eigen::MatrixXcd::Zero(degreeSize_, degreeSize_);
-    // Degree zero is included: W_0 = I contributes no derivative and there is
-    // no lower boundary block, so the only surviving term is the W_1 one,
-    // -d_1 W_1^-1 dW_1 W_1^-1 d_1^T -- the exact derivative of
-    // L_0 = d_1 W_1^-1 d_1^T. The buildWeightData/derivativesFor lookups below
-    // return nothing for the absent blocks, so no degree special case is needed.
+    // At degree zero W_0 = I contributes no derivative and there is no lower
+    // boundary block, leaving -d_1 W_1^-1 dW_1 W_1^-1 d_1^T. The lookups below
+    // return nothing for the absent blocks, so no degree special case is
+    // needed.
     if (degree_ < 0 || degreeSize_ == 0)
       return result;
     const EdgeKey edge{std::min(edgeA, edgeB), std::max(edgeA, edgeB)};
@@ -211,11 +200,10 @@ public:
     return result;
   }
 
-  // Everything the second directional derivative needs that does NOT depend on
-  // the differentiated edge: the weight-diagonal velocities Wdot_j, the
-  // edge-keyed second weight derivatives, and the four base blocks
-  // differentiated once. Built ONCE per direction, so a full Hessian-vector
-  // product costs the same sparse per-edge assembly the gradient does.
+  // What the second directional derivative needs that does not depend on the
+  // differentiated edge: the weight-diagonal velocities Wdot_j, the edge-keyed
+  // second weight derivatives, and the four base blocks differentiated once.
+  // Built once per direction.
   struct DirectionData {
     Eigen::ArrayXcd lowerVelocity{};   // Wdot_{k-1}
     Eigen::ArrayXcd degreeVelocity{};  // Wdot_k
@@ -229,8 +217,8 @@ public:
     Eigen::MatrixXcd upperRightDot{};  // d_{k+1}^T Wdot_k
   };
 
-  // The direction is edge-keyed exactly like `Simplex::volumeGradient`, so it
-  // is handed straight to the simplices without a second indexing convention.
+  // The direction is edge-keyed like `Simplex::volumeGradient` and is handed
+  // straight to the simplices.
   [[nodiscard]] DirectionData directionData(
       const std::map<EdgeKey, cd> &direction) const {
     DirectionData data;
@@ -266,9 +254,8 @@ public:
   }
 
   // Sum_f v_f d(dL/dz_e)/dz_f for one edge e: the exact second derivative,
-  // contracted against the direction. L is rational in the weights and the
-  // weights are smooth in l^2, so every term below is a product rule on the
-  // same four blocks `gradient()` assembles.
+  // contracted against the direction. Every term is a product rule on the four
+  // blocks `gradient()` assembles.
   [[nodiscard]] Eigen::MatrixXcd gradientDirectionalDerivative(
       std::uint64_t edgeA, std::uint64_t edgeB,
       const DirectionData &data) const {
@@ -347,8 +334,8 @@ private:
     return cd{0.0, 0.0};
   }
 
-  // Wdot_j = sum_f v_f dW_j/dz_f, over exactly the simplices `buildWeightData`
-  // admitted (a pinned fallback weight has no derivative and no velocity).
+  // Wdot_j = sum_f v_f dW_j/dz_f, over the simplices `buildWeightData` admitted
+  // (a pinned fallback weight has no derivative and no velocity).
   [[nodiscard]] Eigen::ArrayXcd weightVelocity(
       const WeightData &weights, int degree,
       const std::map<EdgeKey, cd> &direction) const {
@@ -366,9 +353,9 @@ private:
   }
 
   // The edge-keyed second weight derivative contracted against the direction,
-  // built from the exact simplex volume Hessian. The admission rule mirrors
-  // `buildWeightData` exactly, so the first- and second-derivative tables
-  // always cover the same (edge, index) pairs.
+  // from the simplex volume Hessian. The admission rule mirrors
+  // `buildWeightData`, so the first- and second-derivative tables cover the
+  // same (edge, index) pairs.
   [[nodiscard]] std::map<EdgeKey, std::vector<IndexedDerivative>> weightSecond(
       const WeightData &weights, int degree,
       const std::map<EdgeKey, cd> &direction) const {
@@ -408,8 +395,8 @@ private:
                 ? 2.0 * volumeVelocity * volumeDerivative +
                       2.0 * volume * volumeSecond
                 : volumeSecond;
-        // Mirror buildWeightData's own admission test on the FIRST derivative:
-        // an edge it dropped has no gradient entry, so it gets no second one.
+        // Mirror buildWeightData's admission test: an edge it dropped has no
+        // gradient entry, so it gets no second one.
         const cd weightDerivative =
             convention_ == HodgeLaplacian::WeightConvention::SquaredContent
                 ? 2.0 * volume * volumeDerivative
@@ -494,22 +481,14 @@ private:
   Eigen::MatrixXcd upperRight_{};
 };
 
-// Signed-weight (Lorentzian) metric Hodge Laplacian for k >= 0 — the discrete
-// d'Alembertian. With W indefinite the symmetric W^{1/2} similarity breaks, so the
-// operator is assembled directly from the signed metric adjoint
-// d_k* = W_k^{-1} d_k^T W_{k-1}:
+// Signed-weight (Lorentzian) metric Hodge Laplacian for k >= 0, assembled from
+// the signed metric adjoint d_k* = W_k^{-1} d_k^T W_{k-1}:
 //   L_k = W_k^{-1} d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^{-1} d_{k+1}^T W_k.
-// DEGREE ZERO IS NOT A SPECIAL CASE: term 1 is simply absent (no (-1)-chains)
-// and W_0 = I, leaving L_0 = d_1 W_1^{-1} d_1^T, whose row sums vanish
-// identically because d_1^T has zero column sums. That is the whitepaper's
-// L_0 = d_1 d*_1 verbatim.
-// This is similar to the symmetric metricLaplacian when every weight is positive
-// (W_k^{-1/2} L_k W_k^{1/2} = L_k^sym), so the spectrum/kernel coincide there; with
-// signed weights it is generally NON-symmetric (a true d'Alembertian). Returns a
-// |C_k| x |C_k| COMPLEX matrix (0 x 0 if no k-cells): a Lorentzian cell's signed
-// d-content is imaginary once volume() is complex (#640), so the signed weights are
-// no longer real. `metric == false` ⇒ unit weights (the positive combinatorial
-// operator, no Lorentzian content).
+// At degree zero term 1 is absent and W_0 = I, leaving L_0 = d_1 W_1^{-1} d_1^T,
+// whose row sums vanish identically. At positive weights
+// W_k^{-1/2} L_k W_k^{1/2} = L_k^sym; with signed weights it is generally
+// non-symmetric. Returns a |C_k| x |C_k| complex matrix, 0 x 0 if no k-cells.
+// `metric == false` ⇒ unit weights (the positive combinatorial operator).
 Eigen::MatrixXcd laplacianMatrix(const Spacetime &K, int k, bool metric,
                                  HodgeLaplacian::WeightConvention conv) {
   const ChainComplex cc = ChainComplex::fromSpacetime(K);
@@ -564,9 +543,8 @@ struct SpectralEntropyData {
   Eigen::MatrixXcd entropyDerivative{};
   double entropy{0.0};
   bool zeroOperator{true};
-  // Retained so the exact derivative of `entropyDerivative` can be formed
-  // without a second eigensolve: the SAME decomposition, support mask and
-  // trace the value and the first derivative were built from.
+  // Retained so the derivative of `entropyDerivative` can be formed without a
+  // second eigensolve: the same decomposition, support mask and trace.
   Eigen::MatrixXcd eigenvectors{};
   Eigen::VectorXd eigenvalues{};
   std::vector<char> supported{};
@@ -574,20 +552,17 @@ struct SpectralEntropyData {
 };
 
 // d(dS/dA)/dt on the fixed-rank stratum, given the positive operator's own
-// velocity. With C = -(1/T)[log(A/T) + S P] and P the (fixed) support
-// projector, differentiating gives
+// velocity. With C = -(1/T)[log(A/T) + S P] and P the fixed support projector,
 //   Cdot = -(Tdot/T) C - (1/T) P DLog(A/T)[Rdot] P - (Sdot/T) P,
-// where DLog is the Frechet derivative of the matrix logarithm — the
-// Daleckii-Krein divided differences of log in the eigenbasis. Exact: no step
-// size, no finite difference.
+// where DLog is the Frechet derivative of the matrix logarithm, the
+// Daleckii-Krein divided differences of log in the eigenbasis.
 Eigen::MatrixXcd entropyDerivativeVelocity(const SpectralEntropyData &data,
                                            const Eigen::MatrixXcd &velocity) {
   const Eigen::Index n = data.eigenvalues.size();
   if (n == 0 || data.zeroOperator || data.trace <= 0.0)
     return Eigen::MatrixXcd::Zero(velocity.rows(), velocity.cols());
   const double T = data.trace;
-  // Hermitian part only: the value path symmetrizes A the same way, so the
-  // anti-Hermitian roundoff must not leak into the derivative either.
+  // Hermitian part only, as the value path symmetrizes A the same way.
   const Eigen::MatrixXcd hermitianVelocity =
       0.5 * (velocity + velocity.adjoint());
   const Eigen::MatrixXcd inBasis =
@@ -713,7 +688,7 @@ spectralEntropyData(Eigen::MatrixXcd laplacian,
 }
 
 // Row-major flat operator to a dense square matrix; `context` names the caller
-// so the not-square message stays specific.
+// in the not-square message.
 Eigen::MatrixXcd squareFromFlat(const std::vector<cd> &flat,
                                 const char *context) {
   const auto n = static_cast<std::size_t>(
@@ -740,20 +715,12 @@ spectralEntropyData(const std::vector<cd> &flat,
       squareFromFlat(flat, "HodgeLaplacian::spectralEntropy"), phaseMode);
 }
 
-// Spectral data for the C* connection operator, read from its EIGENVALUES.
+// Spectral data for the C* connection operator, read from its eigenvalues.
 //
-// The weights are |lambda|^2 rather than the eigenvalues of A = M^dag M. Do not
-// "simplify" this back to A: that one is a functional of the SINGULAR values,
-// which only UNITARY similarity preserves, while the C* gauge action
-// diag(g)^-1 (.) diag(g) is non-unitary whenever g has a modulus. Eigenvalues
-// survive the full similarity; singular values do not, and this operator is
-// explicitly non-normal under complex phase, which is exactly where the two
-// part company. Going back to A would silently break C* gauge invariance.
-//
-// The SQUARE is what makes the two agree in the Hermitian limit, where
-// |lambda_i|^2 = sigma_i^2 are exactly the eigenvalues of A. So this reduces to
-// the Hodge term's own functional there while staying C*-invariant away from
-// it. See the header for both measurements.
+// The weights are |lambda|^2, not the eigenvalues of A = M^dag M: eigenvalues
+// survive the non-unitary C* gauge similarity diag(g)^-1 (.) diag(g) and the
+// singular values A depends on do not. Squaring makes the two agree in the
+// Hermitian limit, where |lambda_i|^2 = sigma_i^2. See the header.
 struct ConnectionEntropyData {
   Eigen::MatrixXcd laplacian{};
   Eigen::MatrixXcd eigenvectors{};
@@ -778,7 +745,7 @@ ConnectionEntropyData connectionEntropyData(Eigen::MatrixXcd laplacian) {
   const Eigen::Index n = data.laplacian.rows();
 
   // General complex eigensolve: the operator is non-Hermitian as soon as the
-  // phase or a weight is complex, so no self-adjoint shortcut applies.
+  // phase or a weight is complex.
   Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(data.laplacian);
   if (solver.info() != Eigen::Success)
     throw std::runtime_error(
@@ -795,8 +762,7 @@ ConnectionEntropyData connectionEntropyData(Eigen::MatrixXcd laplacian) {
   if (total <= 0.0)
     return data;
 
-  // Same support convention the M^dag M path uses: p log p -> 0 at the floor,
-  // and a kernel eigenvalue carries no probability to differentiate.
+  // Same support convention the M^dag M path uses: p log p -> 0 at the floor.
   const double supportTolerance =
       std::numeric_limits<double>::epsilon() *
       static_cast<double>(std::max<Eigen::Index>(n, 1)) *
@@ -833,8 +799,9 @@ HodgeLaplacian::WeightConvention HodgeLaplacian::defaultWeightConvention_ =
 HodgeLaplacian::MetricSource HodgeLaplacian::defaultMetricSource_ =
     HodgeLaplacian::MetricSource::DiagonalWeights;
 
-// The Whitney pencil of the current geometry: rebuilt whenever the structural
-// revision or any edge's length/phase revision moved since the last build.
+/// The Whitney pencil of the current geometry: chain complex, dressed operator
+/// and orientation signs, rebuilt whenever the structural revision or any edge's
+/// length or phase revision moves.
 struct HodgeLaplacian::WhitneyState {
   std::uint64_t stamp{0};
   cobordism::ChainComplex complex;
@@ -844,7 +811,7 @@ struct HodgeLaplacian::WhitneyState {
   std::shared_ptr<chainhodge::ChainHodge> base;
   chainhodge::InstanceCertificate certificate;
   // D_k: stored orientation relative to the reference orientation, per degree.
-  // Every operator of the pencil is reported in the STORED basis, D L^ref D.
+  // Every operator of the pencil is reported in the stored basis, D L^ref D.
   std::vector<Eigen::VectorXd> signs;
   [[nodiscard]] Eigen::MatrixXcd toStored(int k, const Eigen::MatrixXcd &ref) const {
     if (k < 0 || k >= static_cast<int>(signs.size()) || ref.rows() == 0) return ref;
@@ -874,9 +841,9 @@ const HodgeLaplacian::WhitneyState &HodgeLaplacian::whitneyState() const {
   auto w = std::make_shared<WhitneyState>();
   w->stamp = stamp;
   w->complex = chainhodge::WhitneyMass::complexOf(*st_);
-  // The pencil is in the reference orientation (ascending vertex id); every
-  // consumer of this operator indexes cells by ChainComplex::fromSpacetime's
-  // basis, so the two boundary maps must coincide. Refused by name otherwise.
+  // The pencil is in the reference orientation (ascending vertex id) while
+  // consumers index cells by ChainComplex::fromSpacetime's basis, so the two
+  // boundary maps must coincide. Refused by name otherwise.
   const ChainComplex stored = ChainComplex::fromSpacetime(*st_);
   if (stored.dimension() != w->complex.dimension())
     throw std::runtime_error("HodgeLaplacian: WhitneyPencil — the spacetime's chain complex and the "
@@ -887,8 +854,8 @@ const HodgeLaplacian::WhitneyState &HodgeLaplacian::whitneyState() const {
           "HodgeLaplacian: WhitneyPencil — the spacetime's cell order differs from the canonical "
           "order at degree " + std::to_string(k));
   // The stored orientations may differ from the reference (ascending id) ones
-  // by a sign per cell (cells created by surgery keep their creation order);
-  // orientationSigns derives and VERIFIES those signs from the stored maps.
+  // by a sign per cell, cells created by surgery keeping their creation order.
+  // orientationSigns derives and verifies those signs from the stored maps.
   const auto signs = stored.orientationSigns();
   w->signs.reserve(signs.size());
   for (const auto &sk : signs) {
@@ -914,9 +881,8 @@ Eigen::MatrixXcd HodgeLaplacian::operatorMatrix(int k, bool metric) const {
   if (metricSource_ == MetricSource::WhitneyPencil && metric) {
     const WhitneyState &w = whitneyState();
     if (k > w.complex.dimension()) return Eigen::MatrixXcd();
-    // The operator on GEOMETRIC IMAGES, L_z = (M^U)^{-1} h M^U (same spectrum as
-    // h; its kernel vectors are the images z = G h whose entries are the edge
-    // integrals the register readouts pair with cycles, specification §4.3, §6).
+    // The operator on geometric images, L_z = (M^U)^{-1} h M^U; its kernel
+    // vectors are the images z = G h.
     const Eigen::MatrixXcd h = w.op->covariantOperator(k);
     const Eigen::MatrixXcd hM = h * w.op->dressed(k);
     return w.toStored(k, w.op->applyG(k, hM));
@@ -939,9 +905,8 @@ HodgeLaplacian::HodgeLaplacian(std::shared_ptr<Spacetime> st,
     return;
   }
   // Adopt the spacetime's shared spectrum map when its revision stamp is
-  // current; otherwise start a fresh one and stamp it (#688). Geometry
-  // changes after construction do not touch this instance: it keeps the
-  // map it captured, exactly like the old per-instance cache.
+  // current; otherwise start a fresh one and stamp it. This instance keeps the
+  // map it captured across later geometry changes.
   if (auto slot = std::static_pointer_cast<SharedSpectrumMap>(
           st_->cachedSpectralSlot())) {
     sharedSpectra_ = std::move(slot);
@@ -973,16 +938,13 @@ std::vector<std::vector<std::uint64_t>> HodgeLaplacian::cochainOrdering(
   if (k < 0 || !st_) return ord;
   if (useVertexSet && k == 0) {
     // The Hermitian U(1) connection operator is indexed over the full sorted-id
-    // vertex set (it reads every vertex, including any lone vertices
-    // ChainComplex omits).
+    // vertex set, including lone vertices ChainComplex omits.
     ord.reserve(ids_.size());
     for (const std::uint64_t id : ids_) ord.push_back({id});
     return ord;
   }
-  // L_k is assembled from the ChainComplex boundary maps at every degree, so
-  // the eigenvector components are indexed in the canonical ChainComplex
-  // k-simplex column order — exactly kSimplexVertices(k), whose count always
-  // matches the operator dimension numSimplices(k).
+  // Eigenvector components are indexed in the canonical ChainComplex k-simplex
+  // column order, kSimplexVertices(k), whose count matches numSimplices(k).
   return ChainComplex::fromSpacetime(*st_).kSimplexVertices(k);
 }
 
@@ -1032,22 +994,18 @@ void HodgeLaplacian::assemble(std::vector<cd> &A, std::vector<double> &D) const 
     const cd phase = e->getPhase();  // C* connection on src->tgt
 
     // Degree uses the magnitude convention D_ii = sum |squaredLength| over
-    // incident edges (phase-independent; keeps L Hermitian and e^{-iLt} unitary
-    // in the real-phase, positive-weight case).
+    // incident edges: phase-independent, and Hermitian with unitary e^{-iLt} in
+    // the real-phase, positive-weight case.
     D[i] += std::abs(w);
     D[j] += std::abs(w);
 
-    // The link variable U = e^{i*phase} in C*, and the reverse orientation
-    // carries its INVERSE U^{-1} = e^{-i*phase}, never its conjugate. The two
-    // agree only for real phase; for complex phase the conjugate convention
-    // breaks gauge covariance, because conj(g) != g^{-1} once the gauge
-    // function leaves U(1). With the inverse, a gauge transformation
-    // U_ij -> g_i^{-1} U_ij g_j acts on A by the similarity
-    // diag(g)^{-1} A diag(g), so the spectrum is gauge-invariant exactly.
-    //
-    // The geometry keeps the conjugate it always had: only the LINK is
-    // inverted, so a real phase reproduces the previous Hermitian magnetic
-    // operator entry for entry.
+    // The link variable U = e^{i*phase} in C*; the reverse orientation carries
+    // its inverse U^{-1} = e^{-i*phase}, never its conjugate, since
+    // conj(g) != g^{-1} once the gauge function leaves U(1). A gauge
+    // transformation U_ij -> g_i^{-1} U_ij g_j then acts on A by the similarity
+    // diag(g)^{-1} A diag(g), so the spectrum is gauge-invariant exactly. Only
+    // the link is inverted; the geometry keeps its conjugate, so a real phase
+    // reproduces the Hermitian magnetic operator entry for entry.
     const cd link = std::exp(cd(0.0, 1.0) * phase);
     const cd linkInverse = std::exp(cd(0.0, -1.0) * phase);
     A[i * N + j] += w * link;
@@ -1071,12 +1029,9 @@ std::vector<double> HodgeLaplacian::degree() const {
 
 std::vector<cd> HodgeLaplacian::laplacian(int k, bool metric) const {
   requireNonNegativeDegree(k);
-  // The signed-weight d'Alembertian, complex and generally non-symmetric, at
-  // EVERY degree: L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k
-  // (#805). Degree zero used to be a separately specified Hermitian U(1) graph
-  // Laplacian D - A whose magnitude diagonal disagreed with its signed
-  // off-diagonal; that operator survives under its own name,
-  // connectionLaplacian(), and is no longer called L_0.
+  // The signed-weight d'Alembertian, complex and generally non-symmetric:
+  // L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k.
+  // The Hermitian U(1) graph Laplacian D - A is connectionLaplacian().
   if (!st_) return {};
   const Eigen::MatrixXcd L = operatorMatrix(k, metric);
   const int nk = static_cast<int>(L.rows());
@@ -1089,10 +1044,9 @@ std::vector<cd> HodgeLaplacian::laplacian(int k, bool metric) const {
 
 std::vector<cd> HodgeLaplacian::connectionLaplacian() const {
   // L^U(1) = D - A. Off-diagonal entries are -A_ij; the diagonal carries D_ii
-  // (the adjacency has no diagonal in a complex without self-loops). NOT L_0:
-  // the diagonal is the MAGNITUDE sum while the off-diagonal is the signed
-  // complex weight, so the row sums do not vanish once a squared length is
-  // negative or complex.
+  // (the adjacency has no diagonal without self-loops). Not L_0: the diagonal
+  // is the magnitude sum and the off-diagonal the signed complex weight, so the
+  // row sums do not vanish once a squared length is negative or complex.
   std::vector<cd> A;
   std::vector<double> D;
   assemble(A, D);
@@ -1108,8 +1062,8 @@ std::vector<std::complex<double>> HodgeLaplacian::weights(int k) const {
   const ChainComplex cc = ChainComplex::fromSpacetime(*st_);
   if (k > cc.dimension()) return {};
   const int m = static_cast<int>(cc.numSimplices(k));
-  // W_0 = I: the whitepaper weight on 0-chains, and precisely what makes the
-  // row sums of L_0 = d_1 W_1^-1 d_1^T W_0 vanish identically.
+  // W_0 = I, the unit weight on 0-chains, is what makes the row sums of
+  // L_0 = d_1 W_1^-1 d_1^T W_0 vanish identically.
   if (k == 0)
     return std::vector<std::complex<double>>(static_cast<std::size_t>(m),
                                              std::complex<double>{1.0, 0.0});
@@ -1184,10 +1138,9 @@ double HodgeLaplacian::spectralEntropy(int k,
 }
 
 double HodgeLaplacian::connectionSpectralEntropy() const {
-  // -sum p log p over the normalized EIGENVALUE moduli. No EntropyPhaseMode
-  // here: the phase-blind ablation is an entrywise |.| that would erase exactly
-  // the dependence being measured, and the M^dag M route it belongs to is the
-  // one that is not C*-gauge-invariant. See `connectionEntropyData`.
+  // -sum p log p over the normalized eigenvalue moduli. No EntropyPhaseMode
+  // here: the entrywise |.| ablation would erase the dependence being measured.
+  // See `connectionEntropyData`.
   return connectionEntropyData(connectionLaplacian()).entropy;
 }
 
@@ -1205,14 +1158,13 @@ HodgeLaplacian::connectionSpectralEntropyPhaseGradient() const {
 
   // Each simple eigenvalue moves holomorphically,
   //   dlambda_k = u_k^dag (dL) v_k / (u_k^dag v_k),
-  // and with V^-1 supplying the left eigenvectors that normalization is 1. The
-  // squared modulus supplies the only non-holomorphic step, in closed form:
-  // writing a_k = lambda_k conj(lambda_k) and u = conj(lambda_k) dlambda_k,
+  // with normalization 1 since V^-1 supplies the left eigenvectors. The squared
+  // modulus is the only non-holomorphic step: with a_k = lambda_k conj(lambda_k)
+  // and u = conj(lambda_k) dlambda_k,
   //   da_k/dx = 2 Re(u),   da_k/dy = -2 Im(u),
   // so in the h = S_x - i S_y convention h = sum_k beta_k dlambda_k with
-  // beta_k = 2 (dS/da_k) conj(lambda_k). No division by |lambda| appears, which
-  // is one reason the square is the better-conditioned weight. Contracting the
-  // sum over k ONCE into P = V diag(beta) V^-1 leaves O(1) work per edge.
+  // beta_k = 2 (dS/da_k) conj(lambda_k). Contracting the sum over k once into
+  // P = V diag(beta) V^-1 leaves O(1) work per edge.
   const Eigen::Index n = data.eigenvalues.size();
   Eigen::VectorXcd beta = Eigen::VectorXcd::Zero(n);
   for (Eigen::Index index = 0; index < n; ++index)
@@ -1221,8 +1173,8 @@ HodgeLaplacian::connectionSpectralEntropyPhaseGradient() const {
   const Eigen::MatrixXcd contraction =
       data.eigenvectors * beta.asDiagonal() * data.eigenvectors.inverse();
   // The perturbation formula assumes simple eigenvalues. A defective operator
-  // has no eigenbasis to invert and `inverse()` reports that as non-finite
-  // rather than by failing; say so loudly instead of returning NaN gradients.
+  // has no eigenbasis to invert and `inverse()` reports that as non-finite;
+  // throw rather than return NaN gradients.
   if (!contraction.allFinite())
     throw std::runtime_error(
         "HodgeLaplacian::connectionSpectralEntropyPhaseGradient: the "
@@ -1241,12 +1193,11 @@ HodgeLaplacian::connectionSpectralEntropyPhaseGradient() const {
     const auto j = static_cast<Eigen::Index>(it->second);
     if (i == j) continue;  // no self-loops in a simplicial complex
 
-    // L = D - A. The diagonal is the MAGNITUDE sum and carries no phase, so
+    // L = D - A. The diagonal is the magnitude sum and carries no phase, so
     // only the two off-diagonal entries move:
     //   L_ij = -w e^{i phi}      => dL_ij/dphi =  i L_ij
     //   L_ji = -conj(w) e^{-i phi} => dL_ji/dphi = -i L_ji
-    // Both are exact and holomorphic: no conj(phi) appears anywhere, which is
-    // what the inverse-link convention buys. Contracting dL/dphi against P then
+    // Both are holomorphic; no conj(phi) appears. Contracting dL/dphi against P
     // collapses to these two terms.
     const cd lowerLeft = data.laplacian(j, i);
     const cd upperRight = data.laplacian(i, j);
@@ -1266,10 +1217,8 @@ double HodgeLaplacian::connectionSpectralEntropyPhaseGradientNorm() const {
 std::vector<std::complex<double>> HodgeLaplacian::spectralEntropyGradient(
     int k, EntropyPhaseMode phaseMode) const {
   requireNonNegativeDegree(k);
-  // Degree zero is included (#805): L_0 = d_1 W_1^-1 d_1^T is holomorphic in
-  // z = l^2, so the same workspace derivative applies. The old throw was
-  // specific to the magnitude-weighted diagonal of the U(1) connection
-  // operator, which is no longer what degree zero assembles.
+  // At degree zero L_0 = d_1 W_1^-1 d_1^T is holomorphic in z = l^2, so the
+  // same workspace derivative applies.
   const auto edges = st_ && st_->getEdgeList()
                          ? st_->getEdgeList()->toVector()
                          : std::vector<EdgePtr>{};
@@ -1305,13 +1254,13 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralEntropyGradient(
         edge->getSource()->getId(), edge->getTarget()->getId());
 
     if (phaseMode == EntropyPhaseMode::IncludeComplexPhase) {
-      // dS = 2 Re Tr(C L^dagger dL). In the documented convention
-      // h=S_x-iS_y this is h=2 Tr(C L^dagger dL/dz).
+      // dS = 2 Re Tr(C L^dagger dL), so in the h = S_x - i S_y convention
+      // h = 2 Tr(C L^dagger dL/dz).
       gradient[static_cast<std::size_t>(edgeIndex)] =
           2.0 * (fullPhaseLeft.array() * derivative.transpose().array()).sum();
     } else {
-      // d|L_ij| = Re(conj(L_ij)/|L_ij| dL_ij). Contract that chain rule with
-      // dS/dM; a zero entry contributes zero on this fixed support stratum.
+      // d|L_ij| = Re(conj(L_ij)/|L_ij| dL_ij), contracted with dS/dM; a zero
+      // entry contributes zero on this fixed support stratum.
       cd component{0.0, 0.0};
       for (Eigen::Index row = 0; row < n; ++row)
         for (Eigen::Index column = 0; column < n; ++column) {
@@ -1366,8 +1315,7 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
   const Eigen::Index n = data.laplacian.rows();
   const auto directionData = workspace.directionData(keyedDirection);
 
-  // Ldot = sum_f v_f dL/dz_f — one pass over the same sparse per-edge
-  // derivatives the gradient uses.
+  // Ldot = sum_f v_f dL/dz_f, one pass over the per-edge derivatives.
   Eigen::MatrixXcd laplacianVelocity = Eigen::MatrixXcd::Zero(n, n);
   for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
     const auto *edge = edges[edgeIndex];
@@ -1397,8 +1345,8 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
         entropyDerivativeVelocityMatrix * data.laplacian.adjoint() +
         data.entropyDerivative * laplacianVelocity.adjoint();
   } else {
-    // M = |L| entrywise. d|L_ij| = Re(conj(L_ij)/|L_ij| dL_ij), so the unit
-    // phase factor and the magnitude both carry a velocity here.
+    // M = |L| entrywise, d|L_ij| = Re(conj(L_ij)/|L_ij| dL_ij): the unit phase
+    // factor and the magnitude both carry a velocity.
     const Eigen::MatrixXcd &L = data.laplacian;
     phaseFactor = Eigen::MatrixXcd::Zero(n, n);
     phaseFactorVelocity = Eigen::MatrixXcd::Zero(n, n);
@@ -1446,8 +1394,7 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
         workspace.gradientDirectionalDerivative(source, target, directionData);
 
     if (phaseMode == EntropyPhaseMode::IncludeComplexPhase) {
-      // d/dt [2 Tr(C L^dagger dL/dz_e)] by the product rule; every factor is
-      // exact and no step size appears.
+      // d/dt [2 Tr(C L^dagger dL/dz_e)] by the product rule.
       velocityOfGradient[static_cast<std::size_t>(edgeIndex)] =
           2.0 * ((fullPhaseLeftVelocity.array() *
                   derivative.transpose().array())
@@ -1485,8 +1432,8 @@ double HodgeLaplacian::spectralEntropyGradientNorm(
 
 const HodgeLaplacian::SpectrumCache &HodgeLaplacian::ensureSpectrum(
     int k, bool metric) const {
-  // (k, metric, weight convention): the map is shared across instances (#688)
-  // whose conventions may differ, so the convention is part of the key.
+  // Key is (k, metric, weight convention); the map is shared across instances
+  // whose conventions may differ.
   const long long key =
       ((static_cast<long long>(k) * 2 + (metric ? 1 : 0)) * 2 +
        (weightConvention_ == WeightConvention::SquaredContent ? 1 : 0)) * 2 +
@@ -1504,8 +1451,8 @@ const HodgeLaplacian::SpectrumCache &HodgeLaplacian::ensureSpectrum(
     sp.evecs.assign(static_cast<std::size_t>(nk) * nk, cd(0.0, 0.0));
     sp.wk = weights(k);
     if (nk > 0) {
-      // Indefinite metric ⇒ the operator is non-self-adjoint; a general solver is
-      // needed (eigenvalues may be negative or complex-conjugate pairs).
+      // Indefinite metric ⇒ non-self-adjoint, so a general solver is needed;
+      // eigenvalues may be negative or complex-conjugate pairs.
       Eigen::ComplexEigenSolver<Eigen::MatrixXcd> es(L);
       const Eigen::VectorXcd lam = es.eigenvalues();
       const Eigen::MatrixXcd V = es.eigenvectors();
@@ -1529,7 +1476,7 @@ const HodgeLaplacian::SpectrumCache &HodgeLaplacian::ensureSpectrum(
 }
 
 void HodgeLaplacian::ensureDecomposition() const {
-  // The U(1) CONNECTION Laplacian's Hermitian eigendecomposition (not L_0).
+  // The U(1) connection Laplacian's Hermitian eigendecomposition (not L_0).
   if (decomposed_) return;
   const int N = static_cast<int>(order_);
   evals_.assign(static_cast<std::size_t>(N), 0.0);
@@ -1594,9 +1541,9 @@ double HodgeLaplacian::unitarityResidual(double t) const {
 Spectrum HodgeLaplacian::spectrum(int k, bool metric) const {
   requireNonNegativeDegree(k);
   const SpectrumCache &sp = ensureSpectrum(k, metric);
-  // L_k is the signed d'Alembertian at every degree: complex and generally
-  // non-self-adjoint, so the spectrum is not flagged Hermitian (#641/#805).
-  // Components are indexed over the canonical ChainComplex k-cell order.
+  // L_k is complex and generally non-self-adjoint, so the spectrum is not
+  // flagged Hermitian. Components are indexed over the canonical ChainComplex
+  // k-cell order.
   return makeSpectrum(k, cochainOrdering(k, /*useVertexSet=*/false), sp.evals,
                       sp.evecs, sp.dim, /*hermitian=*/false);
 }
@@ -1620,8 +1567,8 @@ Spectrum HodgeLaplacian::connectionSpectrum() const {
 }
 
 std::vector<cd> HodgeLaplacian::connectionEigenvalues() const {
-  // Genuinely Hermitian, so the eigenvalues are real and ascending; widened to
-  // complex for type parity with the L_k family.
+  // Hermitian, so the eigenvalues are real and ascending; widened to complex
+  // for type parity with the L_k family.
   ensureDecomposition();
   return std::vector<cd>(evals_.begin(), evals_.end());
 }
@@ -1650,15 +1597,15 @@ std::vector<cd> HodgeLaplacian::connectionHarmonicMatrix(double tol) const {
 std::vector<Cochain> HodgeLaplacian::harmonics(int k, double tol,
                                                bool metric) const {
   // ker L_k as Cochains: the eigenvectors with (near-)zero eigenvalue, a basis
-  // for H_k (the count is b_k). requireNonNegativeDegree runs inside spectrum().
+  // for H_k. requireNonNegativeDegree runs inside spectrum().
   return spectrum(k, metric).harmonics(tol);
 }
 
 std::vector<cd> HodgeLaplacian::harmonicMatrix(int k, double tol,
                                                bool metric) const {
   requireNonNegativeDegree(k);
-  // The same cached eigendecompositions harmonics() reads, emitted column-by-
-  // selected-column so no Cochain objects are materialized.
+  // The cached eigendecompositions harmonics() reads, emitted column by
+  // selected column so no Cochain objects are materialized.
   const SpectrumCache &sp = ensureSpectrum(k, metric);
   const std::vector<cd> *evals = &sp.evals;
   const std::vector<cd> *evecs = &sp.evecs;
@@ -1682,13 +1629,10 @@ std::vector<std::complex<double>> HodgeLaplacian::nullNorms(int k, double tol,
   std::vector<cd> norms;
   for (std::size_t j = 0; j < N; ++j) {
     if (std::abs(sp.evals[j]) >= tol) continue;
-    // Indefinite W-norm <h,h>_W = sum_i W_{k,i} |h_i|^2 (real; signed W_k). A
-    // value ≈ 0 marks a null (lightlike) harmonic direction.
-    // <h,h>_W = sum_i W_{k,i} |h_i|^2. |h_i|^2 is real but W_k is complex once a
-    // Lorentzian cell's signed content is imaginary, so the indefinite norm is
-    // COMPLEX and is returned as such. Taking a modulus here would destroy the
-    // sign, and the sign is the physics: it says whether the direction is
-    // spacelike- or timelike-dominated, and ~0 marks a lightlike one.
+    // Indefinite W-norm <h,h>_W = sum_i W_{k,i} |h_i|^2 with signed W_k. W_k is
+    // complex once a Lorentzian cell's signed content is imaginary, so the norm
+    // is returned complex: its sign says whether the direction is spacelike- or
+    // timelike-dominated, and ~0 marks a null (lightlike) harmonic.
     cd nrm{0.0, 0.0};
     for (std::size_t i = 0; i < N; ++i) {
       const cd hi = sp.evecs[i * N + j];

@@ -49,28 +49,12 @@ static int getDim(const std::shared_ptr<Spacetime> &st) {
   return st->getMetric()->getSignature()->getDimensions();
 }
 
-/// Check that a proposed simplex vertex set has a valid CDT orientation:
-/// (d,1), (1,d), (d-1,2), or (2,d-1), AND spans exactly 2 time slices.
-static bool isValidCDTOrientation(const VertexPtrs &verts, int d) {
-  // Must span exactly 2 distinct times (CDT causality constraint)
-  std::unordered_set<std::uint64_t> times;
-  for (const auto &v : verts) {
-    // Use floor cast (consistent with volume profile time binning)
-    times.insert(static_cast<std::uint64_t>(v->getTime()));
-  }
-  if (times.size() != 2) return false;
-
-  auto orient = TemporalOrientation::orientationOf(verts);
-  auto [ti, tf] = orient.numeric();
-  if ((ti == d && tf == 1) || (ti == 1 && tf == d)) return true;
-  if ((ti == d - 1 && tf == 2) || (ti == 2 && tf == d - 1)) return true;
-  return false;
-}
-
-static bool isN41Type(const SimplexPtr &s, int d) {
-  auto [ti, tf] = s->getOrientation().numeric();
-  return (ti == d && tf == 1) || (ti == 1 && tf == d);
-}
+// The causal dynamical triangulation (CDT) orientation predicates live in
+// spacetime/PachnerMove.h, where the move classes use them to decide move
+// legality. This translation unit includes that header through the five
+// *Move.h includes above, so it uses them directly rather than keeping a
+// second copy that has to be kept in step.
+using tessera::spacetime::pachner_detail::isN41Type;
 
 
 /// Select a uniformly random N41-type top simplex.
@@ -132,7 +116,7 @@ bool CDT::add() {
 }
 
 // ========================================
-// (2d, 2) Remove Move: vertex deletion (blind guessing)
+// (2d, 2) Remove Move: vertex deletion
 // ========================================
 bool CDT::remove() {
   removeAttempts++;
@@ -206,12 +190,11 @@ bool CDT::shiftImpl() {
 // Transactional move factories
 // ========================================
 //
-// These hand the caller a fresh PachnerMove already bound to this
-// simulation's spacetime and Markov-chain RNG.  Useful for the
-// modularity-sweep optimizer (observables/ModularityOptimizer.h),
-// which needs to layer custom acceptance (Q-direction filter) on top
-// of the bare move mechanics.  Each factory calls ``propose()``;
-// returns nullptr if no eligible target.
+// These hand the caller a fresh PachnerMove already bound to this simulation's
+// spacetime and Markov-chain RNG. Used by the modularity-sweep optimizer
+// (observables/ModularityOptimizer.h), which layers its own acceptance (a
+// Q-direction filter) on the bare move mechanics. Each factory calls
+// ``propose()`` and returns nullptr if there is no eligible target.
 
 std::unique_ptr<PachnerMove> CDT::proposeAdd() {
   auto m = std::make_unique<AddMove>(spacetime.get(), &rng, relabelVertices_);
@@ -267,8 +250,8 @@ int CDT::sweep() {
   }
   // No move is in flight here, so the slots the sweep's removals left behind
   // can be handed out again. Holding them until this point is what keeps a
-  // SimplexPtr a move captured in propose() from addressing a different simplex
-  // by the time apply() reads it.
+  // SimplexPtr captured by propose() from addressing a different simplex by
+  // the time apply() reads it.
   spacetime->reclaimSimplexSlots();
   return accepted;
 }

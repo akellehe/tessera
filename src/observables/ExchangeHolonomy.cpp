@@ -33,7 +33,7 @@ using cobordism::CertificateRegime;
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
 // Severity order of the metric regimes (Positive < HermitianIndefinite <
-// ComplexSymmetricPencil < NonNormal); the composed read reports the WORST
+// ComplexSymmetricPencil < NonNormal); a composed read reports the worst
 // regime it touched.
 int regimeSeverity(CertificateRegime regime) {
   switch (regime) {
@@ -61,7 +61,7 @@ double distanceToSignedIdentity(const Eigen::MatrixXcd &m, double sign) {
 }
 
 // Deterministic sign fix of a real vector: flips so its first component of
-// magnitude > tol is positive (the documented pi-branch axis rule).
+// magnitude > tol is positive (the pi-branch axis rule).
 void canonicalizeSign(Eigen::VectorXd &v, double tol = 1e-12) {
   for (Eigen::Index i = 0; i < v.size(); ++i) {
     if (std::abs(v[i]) > tol) {
@@ -282,8 +282,8 @@ LoopHolonomyRead ExchangeHolonomy::fiberLoopHolonomy(
     regime = worseRegime(regime, fiber.certificate().certificate.regime());
   }
   if (rankChanged) {
-    // A rank change along the track is a PHYSICAL invalidation (the band
-    // identity broke): an uncertified read, never a sign and never a throw.
+    // A rank change along the track breaks the band identity: the read is
+    // returned uncertified, with no sign and no exception.
     return finalizeLoop(Eigen::MatrixXcd(), {}, T, rank, regime,
                         /*uncertifiedBand=*/true, cfg);
   }
@@ -405,8 +405,8 @@ int ExchangeHolonomy::permutationSign(
   if (m == 0) return 1;
   std::vector<std::size_t> all(m);
   std::iota(all.begin(), all.end(), std::size_t{0});
-  // The exact #766 rule: with every mode occupied, permutationParity is the
-  // sign of the permutation itself (the algebraic wedge sign).
+  // With every mode occupied, permutationParity is the sign of the
+  // permutation itself (the algebraic wedge sign).
   return quantum::OccupationBitset::fromOccupiedModes(m, all)
       .permutationParity(permutation);
 }
@@ -438,8 +438,8 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
 
   const auto uncertified = [&read, regime]() {
     // A failed premise (gap closure, rank change, ambiguous matching, a
-    // malformed reference) invalidates the WHOLE read: no permutation and
-    // no parity may leak out of an uncertified experiment.
+    // malformed reference) invalidates the whole read: no permutation and no
+    // parity is reported from an uncertified experiment.
     read.blockPermutation.clear();
     read.compositePermutation.clear();
     read.blockParity = 0;
@@ -455,8 +455,8 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
   for (const SpectralFiber &f : steps.front())
     read.blockRanks.push_back(f.rank());
 
-  // Per-step block matching, delegated to the #769 tracker.  Every match
-  // must be a certified continuation and the mapping a bijection.
+  // Per-step block matching via SpectralFiberTracker::matchFibers. Every
+  // match must be a certified continuation and the mapping a bijection.
   std::vector<std::vector<std::size_t>> stepMaps(T);
   std::vector<std::vector<Eigen::MatrixXcd>> stepTransports(T);
   double minOverlap = std::numeric_limits<double>::infinity();
@@ -507,7 +507,7 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
   read.blockParity = permutationSign(pi);
 
   // Mode-level parity (the exchange statistic): blocks expanded to their
-  // ranks, in-block order carried — the #766 graded sign, exactly.
+  // ranks, in-block order carried, giving the graded sign.
   std::vector<std::size_t> offsets(B, 0);
   std::size_t modeCount = 0;
   for (std::size_t b = 0; b < B; ++b) {
@@ -566,7 +566,7 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
       read.compositeParity = permutationSign(compPerm);
     }
     // A scattered composite leaves the composite view empty; the block and
-    // mode channels remain certified — the composite claim alone is absent.
+    // mode channels remain certified.
   }
 
   // Residual in-block motion after reference cancellation.
@@ -614,7 +614,7 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
         }
       }
       if (refOk) {
-        // The reference must be NON-exchanging: identity full-loop map.
+        // The reference must be non-exchanging: the identity full-loop map.
         for (std::size_t b = 0; b < B && refOk; ++b) {
           std::size_t pos = b;
           for (std::size_t t = 0; t < T; ++t) pos = refMaps[t][pos];
@@ -674,7 +674,7 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
     read.residualInBlockMotion = worst;
   }
 
-  // Parities are exact integers GIVEN the verified matching premise.
+  // Parities are exact integers given the verified matching premise.
   read.certificate = Certificate::structureExact(
       CertificateDomain::Static, regime, 1.0 - read.minMatchOverlap,
       worstConditioning, 1.0 - cfg.blockMatchThreshold);
@@ -707,8 +707,8 @@ Eigen::MatrixXcd ExchangeHolonomy::gamma(int a, int d) {
     if (a == 1) return s2;
     return s3;
   }
-  // The documented Euclidean layer: kron(s1, s1), kron(s1, s2),
-  // kron(s1, s3), kron(s2, I).
+  // The d = 4 Euclidean layer: kron(s1, s1), kron(s1, s2), kron(s1, s3),
+  // kron(s2, I).
   const auto kron2 = [](const Eigen::Matrix2cd &p, const Eigen::Matrix2cd &q) {
     Eigen::MatrixXcd out(4, 4);
     for (int i = 0; i < 2; ++i)
@@ -746,8 +746,8 @@ Eigen::MatrixXcd ExchangeHolonomy::transverseSpinorFrame(int a, int b,
                                                          int d) {
   const int dim = spinorDimension(d);
   const Eigen::MatrixXcd sigma = spinGenerator(a, b, d);
-  // i Sigma is Hermitian with eigenvalues -+1/2; the transverse line is
-  // the equal superposition of one from each eigenspace, with a
+  // i Sigma is Hermitian with eigenvalues -+1/2; the transverse line is the
+  // equal superposition of one vector from each eigenspace, with a
   // deterministic phase convention.
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> solver(cd(0, 1) * sigma);
   Eigen::VectorXcd low = solver.eigenvectors().col(0);
@@ -880,8 +880,8 @@ double ExchangeHolonomy::totalJSquared(const Eigen::VectorXcd &state) {
 // ---------------------------------------------------------------------------
 
 struct ExchangeHolonomy::PlaneDecomposition {
-  // Orthonormal plane pairs (u_k, v_k) with angles theta_k in (-pi, pi],
-  // plus the +1 fixed axes.  exp(sum theta_k (v u^T - u v^T)) = R.
+  // Orthonormal plane pairs (u_k, v_k) with angles theta_k in (-pi, pi], plus
+  // the +1 fixed axes. exp(sum theta_k (v u^T - u v^T)) = R.
   std::vector<Eigen::VectorXd> u{};
   std::vector<Eigen::VectorXd> v{};
   std::vector<double> angles{};
@@ -926,9 +926,8 @@ ExchangeHolonomy::PlaneDecomposition ExchangeHolonomy::planeDecomposition(
     }
   }
   // det = +1 guarantees an even count of -1 eigenvalues; pair them into
-  // angle-pi planes with the deterministic axis-sign rule (the documented
-  // pi-branch convention — it fixes the branch representative, never the
-  // conjugacy class).
+  // angle-pi planes with the deterministic axis-sign rule. The pi-branch
+  // convention fixes the branch representative, not the conjugacy class.
   for (std::size_t k = 0; k + 1 < minusOnes.size(); k += 2) {
     Eigen::VectorXd u = q.col(minusOnes[k]);
     Eigen::VectorXd v = q.col(minusOnes[k + 1]);
@@ -986,13 +985,13 @@ Eigen::MatrixXcd ExchangeHolonomy::rotationToSpin(
       gu += dec.u[k][axis] * gamma(axis, d);
       gv += dec.v[k][axis] * gamma(axis, d);
     }
-    // For orthonormal u perp v the plane bivector gamma(u) gamma(v)
-    // squares to -I, so the factor is the closed-form half-angle rotation;
-    // factors over orthogonal planes commute.  The MINUS sign selects the
-    // covering-homomorphism orientation S gamma(x) S^{-1} = gamma(R x)
-    // (with +sin the identity comes out with R^{-1} — an anti-
-    // homomorphism, which would silently break every noncommuting lift
-    // composition, e.g. the Cech triangle products of spinLift).
+    // For orthonormal u perp v the plane bivector gamma(u) gamma(v) squares
+    // to -I, so the factor is the closed-form half-angle rotation; factors
+    // over orthogonal planes commute. The minus sign selects the
+    // covering-homomorphism orientation S gamma(x) S^{-1} = gamma(R x); with
+    // +sin the identity comes out with R^{-1}, an anti-homomorphism that
+    // breaks noncommuting lift compositions such as the Cech triangle
+    // products in spinLift.
     spin = (std::cos(dec.angles[k] / 2.0) *
                 Eigen::MatrixXcd::Identity(dim, dim) -
             std::sin(dec.angles[k] / 2.0) * (gu * gv)) *
@@ -1048,7 +1047,7 @@ bool ExchangeHolonomy::gf2Solve(std::vector<int> matrix, int rows, int cols,
                                 std::vector<int> rhs,
                                 std::vector<int> &solution) {
   // Gaussian elimination over GF(2) on the augmented system; returns the
-  // particular solution with free variables 0 when consistent.
+  // particular solution with free variables set to 0 when consistent.
   std::vector<int> pivotCol(rows, -1);
   int rank = 0;
   for (int c = 0; c < cols && rank < rows; ++c) {
@@ -1122,8 +1121,8 @@ SpinLiftRead ExchangeHolonomy::spinLift(
           "ExchangeHolonomy::spinLift: duplicate unordered edge");
   }
 
-  // The directed transition g(i -> j) and its principal lift.  g(j -> i)
-  // is the transpose, lifted INDEPENDENTLY by the same principal rule.
+  // The directed transition g(i -> j) and its principal lift. g(j -> i) is
+  // the transpose, lifted independently by the same principal rule.
   const auto directedRotation = [&](std::uint64_t i, std::uint64_t j) {
     const auto key = std::minmax(i, j);
     const auto hit = edgeIndex.find(std::make_pair(key.first, key.second));
@@ -1172,9 +1171,9 @@ SpinLiftRead ExchangeHolonomy::spinLift(
     return read;
   }
 
-  // The exact GF(2) coboundary decision.  Decision via the shared
-  // cobordism::gf2Rank kernel (rank(D) == rank([D | w])), the witness sign
-  // choice via the private augmented solve — both exact.
+  // Exact GF(2) coboundary decision via cobordism::gf2Rank
+  // (rank(D) == rank([D | w])); the witness signs come from the augmented
+  // solve, also exact.
   const int rows = static_cast<int>(triangles.size());
   const int cols = static_cast<int>(edges.size());
   std::vector<int> incidence(static_cast<std::size_t>(rows) * cols, 0);

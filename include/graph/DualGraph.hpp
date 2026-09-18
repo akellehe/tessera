@@ -1,14 +1,10 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
 // Centralised definition of the simplicial-complex dual graph: every
-// top-simplex is a vertex, and two top-simplices are adjacent when they
-// share a facet.
-//
-// Previously this walk lived in two places: ``Spacetime::getDualAdjacency``
-// (which collects the edges into a COO array) and
-// ``WilsonLoop::dualNeighbors`` (which uses the same neighbour list to
-// trace dual-graph loops). Putting the walk here keeps the dual-graph
-// definition in one spot — both callers thread through this helper.
+// top-simplex is a vertex, and two top-simplices are adjacent when they share
+// a facet. Both Spacetime::getDualAdjacency (which collects the edges into a
+// COO array) and WilsonLoop::dualNeighbors (which traces dual-graph loops)
+// go through this walk.
 
 #pragma once
 

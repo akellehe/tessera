@@ -45,8 +45,8 @@ double factorial(int n) {
 
 // Principal square root with a negative real axis resolved to +i: a negative
 // real argument carrying a signed zero imaginary part (-0.0) would otherwise
-// land on the -i side. The specification's real Lorentzian convention is
-// uniformly +i (§4.2), the e^{-2 i eps} side of the cut.
+// land on the -i side. The real Lorentzian convention is uniformly +i, the
+// e^{-2 i eps} side of the cut.
 Complex principalSqrt(Complex z) {
   if (z.imag() == 0.0) z = Complex(z.real(), 0.0);
   return std::sqrt(z);

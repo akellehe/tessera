@@ -13,5 +13,5 @@ using namespace ::tessera::spacetime;
 using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
-// All methods are now inlined in VertexList.h.
+// VertexList is header-only; every method is defined inline in VertexList.h.
 } // namespace tessera::mesh

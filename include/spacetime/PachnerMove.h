@@ -32,10 +32,9 @@ using namespace ::tessera::quantum;
 
 namespace pachner_detail {
 
-/// Check that a proposed simplex vertex set has a valid CDT
-/// orientation — one of (d,1), (1,d), (d-1,2), (2,d-1) — and spans
-/// exactly 2 time slices.  Mirrors the static helper in CDT.cpp; lives
-/// here so the move classes can share it.
+/// Check that a proposed simplex vertex set has a valid causal dynamical
+/// triangulation (CDT) orientation — one of (d,1), (1,d), (d-1,2), (2,d-1) —
+/// and spans exactly 2 time slices.  Shared by the move classes.
 inline bool isValidCDTOrientation(const VertexPtrs &verts, int d) {
   std::unordered_set<std::uint64_t> times;
   for (const auto &v : verts) {
@@ -81,7 +80,7 @@ inline void removeAndClearEdges(Edges &edges, Spacetime *st) {
   for (const auto &e : edges) {
     e->getSource()->removeOutEdge(e);
     e->getTarget()->removeInEdge(e);
-    st->absorbRemovedEdgeRevisions(e);   // #692: keep metricRevisionKey monotone
+    st->absorbRemovedEdgeRevisions(e);   // keep metricRevisionKey monotone
     st->getEdgeList()->remove(e);
   }
   edges.clear();
@@ -91,8 +90,7 @@ inline void removeAndClearEdges(Edges &edges, Spacetime *st) {
 /// de-duplicated by vertex ID. Used by FlipMove / IFlipMove /
 /// ShiftMove during ``propose()`` to build the (d+2)-vertex span of
 /// adjacent simplices before checking the orientation constraint.
-/// Hash-set dedup makes this O(n) over the total vertex count instead
-/// of the inlined O(n²) loop the move classes used to carry.
+/// Hash-set dedup makes this O(n) over the total vertex count.
 template <typename SimplexRange>
 inline VertexPtrs unionVerticesAcross(SimplexRange const &simplices) {
   VertexPtrs out;
@@ -109,12 +107,12 @@ inline VertexPtrs unionVerticesAcross(SimplexRange const &simplices) {
 // Pre-geometric / boundary-fixed helpers.
 //
 // These read the incidence structure straight off the vertices'
-// simplex lists, so they work on a *pre-geometric* complex (one built
+// simplex lists, so they work on a pre-geometric complex (one built
 // combinatorially via ``Topology::buildExplicit``, where facet/coface
 // caches are not pre-materialised and the metric dimension may differ
-// from the manifold dimension).  They are also coface-cache-independent
-// in the CDT case, but the CDT move paths deliberately keep using the
-// cached ``getCofaces`` walk so their behaviour is byte-identical.
+// from the manifold dimension).  They are coface-cache-independent in
+// the CDT case too, but the CDT move paths keep using the cached
+// ``getCofaces`` walk so their behaviour is unchanged.
 // ===================================================================
 
 /// Every top-dimensional simplex (``topVerts`` vertices) that contains
@@ -151,8 +149,8 @@ inline bool isBoundaryFacet(const VertexPtrs &facetVerts, int topVerts) {
 /// ordering as each simplex's reference orientation, so the simplicial
 /// boundary signs (facet ``i`` ↦ ``(-1)^i``) glue consistently and
 /// ``∂² = 0`` holds globally.  Pre-geometric moves build new cells from
-/// mixed (shared/unique) vertex lists, so they must re-sort before
-/// committing or the homology of the mutated complex is corrupted.
+/// mixed (shared/unique) vertex lists and must re-sort before
+/// committing, or the homology of the mutated complex is corrupted.
 inline void sortByVertexId(VertexPtrs &verts) {
   std::sort(verts.begin(), verts.end(),
             [](const VertexPtr &a, const VertexPtr &b) {
@@ -172,7 +170,7 @@ inline bool verticesAdjacent(const VertexPtr &a, const VertexPtr &b) {
 
 /// True iff the edge ``a–b`` is interior: no boundary facet contains
 /// both endpoints.  An interior-only (boundary-fixed) ``d→2`` flip
-/// must not collapse an edge that lies on ``∂W``.
+/// may not collapse an edge that lies on ``∂W``.
 inline bool isInteriorEdge(const VertexPtr &a, const VertexPtr &b,
                            int topVerts) {
   for (const auto &s : a->getSimplices()) {
@@ -217,13 +215,12 @@ inline bool isInteriorVertex(const VertexPtr &v, int topVerts) {
 
 }  // namespace pachner_detail
 
-/// Validity regime a :class:`PachnerMove` runs under.
+/// Validity regime a PachnerMove runs under.
 ///
-/// * ``CDT`` — the original causal-dynamical-triangulations path: every
+/// * ``CDT`` — the causal dynamical triangulation path: every
 ///   proposed cell must satisfy the time-sliced CDT orientation
 ///   constraint (``pachner_detail::isValidCDTOrientation``) and the
-///   move dimension comes from the metric signature.  This path is left
-///   byte-identical to the pre-#112 behaviour.
+///   move dimension comes from the metric signature.
 /// * ``PreGeometric`` — the CDT orientation/time-slice guards are
 ///   dropped so the bistellar moves run on a coordinate-free simplicial
 ///   complex (e.g. a ``SimplicialProduct`` fixture).  The move dimension
@@ -234,6 +231,13 @@ enum class PachnerMode : std::uint8_t { CDT = 0, PreGeometric = 1 };
 
 /// Transactional Pachner move: a propose-apply-rollback wrapper around
 /// the geometric mutations of CDT::add / remove / flip / iflip / shift.
+/// The bistellar moves are Pachner's; the causal (d,1)/(d-1,2) move set
+/// they are restricted to in CDT mode is the one of Ambjorn, Jurkiewicz
+/// and Loll.
+///
+/// References: Pachner, "P.L. homeomorphic manifolds are equivalent by
+/// elementary shellings", 1991; Ambjorn, Jurkiewicz & Loll,
+/// arXiv:hep-th/0105267.
 ///
 /// The interface separates a move's three life-cycle phases:
 ///
@@ -255,29 +259,26 @@ enum class PachnerMode : std::uint8_t { CDT = 0, PreGeometric = 1 };
 /// The combinatorial Δ in (N0, N41, N32) is published by
 /// ``dN0() / dN41() / dN32()`` after a successful ``propose()``, so the
 /// caller (typically ``CDT::add()`` / etc.) can plug those into its
-/// own action computation.  The base class deliberately *does not*
-/// compute ΔS — the move is purely about geometry, not the action it
-/// happens to be sampled against.
+/// own action computation.  The base class does not compute ΔS — the
+/// move is about geometry, not the action it is sampled against.
 ///
-/// Locked-in characterization (see
-/// docs/source/modularity-plan.md, "Discoveries from the safety-net pass"):
+/// Invariants every subclass relies on:
 ///
-/// * Edges added by ``apply()`` are recorded by EdgePtr identity (not
+/// * Edges added by ``apply()`` are recorded by EdgePtr identity, not
 ///   by fingerprint hash, which is unstable under
-///   ``swapVertexLabels``).
+///   ``swapVertexLabels``.
 /// * ``apply()`` does not force facet/coface registration on newly
-///   created simplices.  Coface registration is tessera's lazy
-///   responsibility (triggered on the next ``getFacets`` walk).
-/// * ``rollback()`` for moves that delete edges
-///   (``RemoveMove``) must capture the deleted edges'
-///   ``(sourceId, targetId, squaredLength)`` so it can reinsert them.
+///   created simplices; that happens lazily on the next ``getFacets``
+///   walk.
+/// * ``rollback()`` for a move that deletes edges (``RemoveMove``)
+///   captures the deleted edges' ``(sourceId, targetId,
+///   squaredLength)`` so it can reinsert them.
 class PachnerMove {
 public:
   virtual ~PachnerMove() = default;
 
   /// The validity regime this move runs under (CDT vs. pre-geometric).
-  /// Defaults to :enumerator:`PachnerMode::CDT` so existing callers and
-  /// the CDT Markov chain are unaffected.
+  /// Defaults to ``PachnerMode::CDT``.
   PachnerMode mode() const { return mode_; }
 
   /// True iff the move is restricted to the interior of the complex:
@@ -289,24 +290,24 @@ public:
   /// Returns ``true`` on success, ``false`` if no eligible target.
   virtual bool propose() = 0;
 
-  /// Propose at a NAMED site instead of a drawn one, so a caller can walk the
+  /// Propose at a named site instead of a drawn one, so a caller can walk the
   /// move space instead of sampling it.
   ///
   /// ``propose()`` draws its target, which makes the move space impossible to
   /// enumerate and, for the subclasses whose draw reads ``Spacetime::rng``
   /// (seeded from ``std::random_device``), impossible to reproduce from any
   /// seed.  ``proposeAt`` takes the same decision from its argument.  On
-  /// success the object is in exactly the state a successful ``propose()``
-  /// leaves it in, so ``apply()``, ``rollback()`` and the ``dN*`` counters
-  /// behave identically; the two differ only in how the target was chosen.
+  /// success the object is in the state a successful ``propose()`` leaves it
+  /// in, so ``apply()``, ``rollback()`` and the ``dN*`` counters behave
+  /// identically; only the choice of target differs.
   ///
   /// The site encoding is the subclass's own, documented on each override and
   /// produced by its ``sitesOn``.  Returns ``false`` when the site does not
-  /// exist or is not eligible, exactly as ``propose()`` does when it finds no
-  /// eligible target.
+  /// exist or is not eligible, as ``propose()`` does when it finds no eligible
+  /// target.
   ///
-  /// Defaults to ``false``: a subclass that has not opted in is simply not
-  /// enumerable, and says so rather than silently proposing something else.
+  /// Defaults to ``false``: a subclass that has not opted in is not
+  /// enumerable, and says so rather than proposing something else.
   virtual bool proposeAt(const std::vector<std::uint64_t> & /*site*/) {
     return false;
   }
@@ -316,8 +317,8 @@ public:
   /// A linear scan of the top cells rather than a lookup: every enumerable
   /// site is itself a top cell, so a walk of the move space is already
   /// O(cells) and this keeps each subclass from re-deriving the same match.
-  /// Compares as a SET, because a site is named by which vertices it has and
-  /// never by the order they happen to be stored in.
+  /// Vertex ids are compared as a set: a site is named by which vertices it
+  /// has, not by their stored order.
   static SimplexPtr topSimplexWithIds(const Spacetime &spacetime,
                                       const std::vector<std::uint64_t> &site) {
     if (site.empty()) return nullptr;
@@ -344,15 +345,15 @@ public:
   virtual int dN32() const = 0;
 
   /// Log of the Metropolis combinatorial prefactor
-  /// ``log(g(T'→T) · P_l(T') / [g(T→T') · P_l(T)])`` ([BGL] eq. 26).
+  /// ``log(g(T'→T) · P_l(T') / [g(T→T') · P_l(T)])``, where ``g`` is the
+  /// proposal probability and ``P_l`` the vertex-labelling weight.
   /// 0.0 for self-symmetric moves (shift) and the (2,d)/(d,2)
   /// flips; non-trivial for add/remove because of vertex selection.
   /// Valid only after a successful ``propose()``.
   virtual double metropolisLogPrefactor() const = 0;
 
-  /// Commit the proposed move.  Builds the undo log.
-  /// Must be called at most once per object.  Returns ``true`` on
-  /// success.
+  /// Commit the proposed move and build the undo log.  Call at most once
+  /// per object.  Returns ``true`` on success.
   virtual bool apply() = 0;
 
   /// Replay the undo log in reverse.  After this returns,
@@ -374,7 +375,7 @@ public:
   virtual std::string moveType() const = 0;
 
 protected:
-  /// CDT-mode move (the default; preserves the pre-#112 behaviour).
+  /// CDT-mode move (the default).
   PachnerMove() = default;
   /// Move configured with an explicit validity regime / boundary policy.
   PachnerMove(PachnerMode mode, bool boundaryFixed)
@@ -384,6 +385,6 @@ protected:
   bool boundaryFixed_ = false;
 };
 
-}  // namespace tessera
+}  // namespace tessera::spacetime
 
 #endif  // TESSERA_PACHNERMOVE_H

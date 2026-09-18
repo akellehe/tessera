@@ -1,6 +1,6 @@
-// Schmidt-spectrum extraction for contiguous-interval bipartitions of an
-// MPS. See include/quantum/Schmidt.hpp for the header-level explanation
-// of what we're computing and why.
+// Schmidt-spectrum extraction for contiguous-interval bipartitions of a
+// matrix product state. See include/quantum/Schmidt.hpp for what is
+// computed and why.
 
 #include "quantum/Schmidt.hpp"
 
@@ -26,10 +26,10 @@ using namespace ::tessera::simulations;
 
 namespace {
 
-// Extract the non-increasing list of singular-values-squared from the
-// diagonal "S" tensor returned by ITensor's three-arg svd(). Squaring
-// turns Schmidt values σ into density-matrix eigenvalues λ = σ², which is
-// the convention used by the methodology page and by Majorization::posetOf.
+// Extract the non-increasing list of squared singular values from the
+// diagonal "S" tensor returned by ITensor's three-argument svd().
+// Squaring turns Schmidt values σ into density-matrix eigenvalues
+// λ = σ², the convention Majorization::posetOf expects.
 std::vector<double> diag_squared(itensor::ITensor const& S) {
     using namespace itensor;
     auto inds = S.inds();
@@ -64,11 +64,11 @@ std::vector<double> Schmidt::of(itensor::MPS const& psi_in, int i, int j) {
         return {1.0};
     }
 
-    // Bring the orthogonality center inside [i, j] (we put it at site i).
-    // After this call, sites 1..i-1 are left-canonical and sites i+1..N
-    // are right-canonical, so contractions outside [i, j] collapse to
-    // identities and the reduced density matrix on A is purely a function
-    // of the contracted T_i...T_j tensor — see the schmidt.hpp header.
+    // Bring the orthogonality center inside [i, j], at site i. Sites
+    // 1..i-1 are then left-canonical and sites i+1..N right-canonical, so
+    // contractions outside [i, j] collapse to identities and the reduced
+    // density matrix on A depends only on the contracted T_i...T_j
+    // tensor (see include/quantum/Schmidt.hpp).
     MPS psi = psi_in;
     psi.position(i);
 
@@ -87,9 +87,9 @@ std::vector<double> Schmidt::of(itensor::MPS const& psi_in, int i, int j) {
         site_inds.push_back(siteIndex(psi, k));
     }
 
-    // Disable cutoff truncation so we read the full spectrum (including
-    // small but nonzero values that the default SVD would drop). MaxDim
-    // is set generously — the actual rank is bounded by min(2^|A|, D²).
+    // Cutoff truncation is disabled so the full spectrum is read,
+    // including small but nonzero values the default SVD would drop.
+    // MaxDim is generous; the actual rank is bounded by min(2^|A|, D²).
     auto args = Args("Cutoff", 0.0, "MaxDim", 1 << 24);
     auto [U, S, V] = svd(M, IndexSet(site_inds), args);
 

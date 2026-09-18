@@ -30,22 +30,38 @@ const short int WARN_LEVEL = 30;
 const short int ERROR_LEVEL = 40;
 const short int CRITICAL_LEVEL = 50;
 
+/// Severity-filtered logger. Records go to stderr as
+/// `<time> [<LEVEL>] <file>:<line> <func> :: <message>`, colorized when stderr is an
+/// interactive terminal. Every member is static; there is no instance state. Use the CLOG
+/// macro rather than calling log() directly, so that __FILE__/__func__/__LINE__ are the
+/// caller's.
 class Logger {
 
  public:
+  /// The active threshold, once resolved. Set it to override the LOG_LEVEL environment
+  /// variable; leave it empty to have getLevel() resolve it on first use.
   static std::optional<short int> LEVEL;
+  /// The current local time as "YYYY-MM-DD HH:MM:SS".
   static std::string getTime();
+  /// The active threshold, resolved on first call from LEVEL, else from the LOG_LEVEL
+  /// environment variable, else INFO_LEVEL. The result is cached in LEVEL.
   static short int getLevel();
+  /// The name of a severity level ("DEBUG" ... "CRITICAL"), or "UNKNOWN".
   static std::string nameLevel(short int level);
 
+  /// Write one already-formatted record to stderr.
   static void emit(short int level,
                    const std::string &filename,
                    std::string func,
                    const int lineno,
                    const std::string &message);
 
+  /// `absolute` with everything up to and including `root` stripped; `absolute` unchanged
+  /// if `root` does not occur in it.
   static std::string makeRelative(const std::string &absolute, const std::string &root);
 
+    /// Stream `args` into one message and emit it, if `level` passes getLevel().
+    /// The filename is reported relative to SOURCES_ROOT.
     template<typename... Args>
     static void log(const short int level,
                 const std::string &filename,
@@ -67,7 +83,7 @@ class Logger {
     if (!v) return false;
     while (*v && std::isspace(static_cast<unsigned char>(*v))) ++v;
     if (!*v) return false;
-    // treat "0", "false", "no", "off" as false-ish; anything else as true
+    // "0", "false", "no" and "off" are false; anything else is true
     if (v[0] == '0' && v[1] == '\0') return false;
     auto lower = [](unsigned char c){ return static_cast<char>(std::tolower(c)); };
     std::string s;
@@ -91,7 +107,7 @@ class Logger {
     if (envTruthy(std::getenv("TESSERA_LOG_COLOR"))) return true;
     if (envFalsy(std::getenv("TESSERA_LOG_COLOR")))  return false;
 
-    // Standards-ish opt-out.
+    // The conventional opt-out.
     if (std::getenv("NO_COLOR")) return false;
 
     // If stderr isn't a terminal, don't inject escape codes.
@@ -104,8 +120,8 @@ class Logger {
   }
 
   static std::string_view levelStyle(short int level) {
-    // ANSI SGR. Keep it simple and readable.
-    // dim: 2, bold: 1, colors: 31 red, 32 green, 33 yellow, 36 cyan, 90 bright black.
+    // ANSI SGR codes. dim: 2, bold: 1; colors: 31 red, 32 green, 33 yellow, 36 cyan,
+    // 90 bright black.
     if (level >= CRITICAL_LEVEL) return "\x1b[1;31m"; // bold red
     if (level >= ERROR_LEVEL)    return "\x1b[31m  ";   // red
     if (level >= WARN_LEVEL)     return "\x1b[33m    ";   // yellow
@@ -116,7 +132,7 @@ class Logger {
   static constexpr std::string_view resetStyle() { return "\x1b[0m"; }
 };
 
-// --- implement emit() with colorization ---
+// --- emit(), with colorization ---
 inline void Logger::emit(short int level,
                          const std::string &filename,
                          std::string func,

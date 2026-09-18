@@ -14,34 +14,26 @@ namespace tessera::cobordism {
 
 /// # DenseReference
 ///
-/// The dense reference kernels of the analytic-first contract (#764), used
-/// ONLY below a configurable dimension crossover: on small fixtures they
-/// supply the independent answer a structured path is compared against (the
-/// `denseReferenceError` field of a `Certificate`); above the crossover they
-/// REFUSE (throw) — a dense global solve is the prohibited default at scale,
-/// never a silent fallback.
+/// Dense reference kernels, usable only below a configurable dimension
+/// crossover. They supply the independent answer a structured path is compared
+/// against (a `Certificate`'s `denseReferenceError`); at or above the crossover
+/// they throw.
 ///
 /// Kernels:
-///  - `solve` — dense partial-pivot LU factor solve (a factor solve computes
-///    the same object an explicit inverse would; the inverse is never
-///    formed);
-///  - `spectrum` — dense eigenvalues; the self-adjoint solver is applied
-///    only after VERIFYING Hermiticity (`||A - A^dagger|| <= tol * ||A||`),
-///    otherwise the general non-normal solver runs and the certificate says
-///    so (a self-adjoint solver is never applied to a non-self-adjoint
-///    operator);
-///  - `fockSpectrum` — the dense-Fock oracle at the SPECTRUM level: dense
-///    one-particle eigensolve, then explicit occupation subset-sum
-///    enumeration. The reference the structured `OccupationSpectra` path and
-///    the quasi-free (Wick) reads are validated against on crossover
-///    fixtures; Fock OPERATOR matrices (creation/annihilation, wedge) are
-///    the exterior-algebra track's and are not built here.
+///  - `solve` — dense partial-pivot LU factor solve; the inverse is never
+///    formed;
+///  - `spectrum` — dense eigenvalues. The self-adjoint solver is applied only
+///    after Hermiticity is verified
+///    (\f$ \|A - A^\dagger\| \le \text{tol}\cdot\|A\| \f$); otherwise the
+///    general non-normal solver runs and the certificate records that;
+///  - `fockSpectrum` — a dense one-particle eigensolve, then explicit
+///    occupation subset-sum enumeration.
 ///
 /// Every result carries a `Certificate` with the measured residual and
-/// conditioning; nothing is returned bare.
+/// conditioning.
 class DenseReference {
   public:
-    /// Ships small: dense kernels are for fixtures, not production scale.
+    /// Dense kernels are for fixtures, not production scale.
     static constexpr int kDefaultCrossoverDimension = 512;
 
     /// @param crossoverDimension The dimension at and above which every
@@ -68,24 +60,23 @@ class DenseReference {
                                         double tolerance = 1e-12) const;
 
     /// Dense eigenvalues of a `dim` x `dim` operator, sorted ascending by
-    /// \f$ (\mathrm{Re}, \mathrm{Im}) \f$. `selfAdjoint = true` REQUESTS the
-    /// self-adjoint solver; it is honored only when
-    /// \f$ \|A-A^\dagger\| \le \text{tol}\cdot\|A\| \f$ is verified, else
-    /// the general solver runs and the certificate's regime reports
-    /// `NonNormal`. Residual: \f$ \max_i \|Av_i-\lambda_iv_i\| /
-    /// \|A\| \f$ over the computed pairs; conditioning: the eigenvector
-    /// matrix condition estimate (1 for the verified self-adjoint path).
+    /// \f$ (\mathrm{Re}, \mathrm{Im}) \f$. `selfAdjoint = true` requests the
+    /// self-adjoint solver; the request is honoured only when
+    /// \f$ \|A-A^\dagger\| \le \text{tol}\cdot\|A\| \f$ is verified, else the
+    /// general solver runs and the certificate's regime reports `NonNormal`.
+    /// The residual is \f$ \max_i \|Av_i-\lambda_iv_i\| / \|A\| \f$ over the
+    /// computed pairs; the conditioning is the eigenvector matrix condition
+    /// estimate (1 on the verified self-adjoint path).
     /// @throws std::invalid_argument on size mismatch; std::length_error at
     ///   or above the crossover.
     [[nodiscard]] CertifiedVector spectrum(const std::vector<std::complex<double>> &matrix,
                                            int dim, bool selfAdjoint,
                                            double tolerance = 1e-10) const;
 
-    /// The dense-Fock oracle at the spectrum level: eigenvalues of the
-    /// one-particle operator (as `spectrum`), then the exact
-    /// \f$ \binom{n}{N} \f$ occupation subset sums for the `particles`
-    /// sector. The certificate inherits the eigensolve's measured residual,
-    /// regime, and conditioning (the enumeration adds only rounding).
+    /// Eigenvalues of the one-particle operator (as `spectrum`), then the exact
+    /// \f$ \binom{n}{N} \f$ occupation subset sums for the `particles` sector.
+    /// The certificate inherits the eigensolve's residual, regime and
+    /// conditioning; the enumeration adds only rounding.
     /// @throws as `spectrum`, plus std::length_error when the sector itself
     ///   is unmaterializable.
     [[nodiscard]] CertifiedVector fockSpectrum(

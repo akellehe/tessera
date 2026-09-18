@@ -56,13 +56,15 @@ void register_simulations(py::module_ m) {
       R"doc(Causal Dynamical Triangulations Monte Carlo simulation.
 
 Implements the five Pachner moves (add, remove, flip, iflip, shift) with
-Metropolis-Hastings acceptance including combinatorial prefactors per
-[BGL] eq. 11, 26, 27.
+Metropolis-Hastings acceptance, including the combinatorial prefactors.
 
-The Regge action is ([RU] eq. 2)::
+The Regge action is::
 
     S = -(k0 + 6*delta)*N0 + (k4 + 2*delta)*N41
         + (k4 + delta)*N32 + epsilon*(N41 - target)^2
+
+Reference: Ambjorn, Jurkiewicz & Loll, "Reconstructing the Universe",
+arXiv:hep-th/0505154.
 
 Args:
     spacetime: A built Spacetime object.
@@ -70,9 +72,9 @@ Args:
     k4: Cosmological constant coupling (tuned to pseudo-critical value).
     delta: Asymmetry parameter between timelike and spacelike edges.
     epsilon: Volume-fixing strength.
-    targetN41: Target (d,1)-type four-volume for volume-fixing ([RU] eq. 6).
+    targetN41: Target (d,1)-type four-volume for volume-fixing.
     quadraticVolumeFix: If True (default), use epsilon*(N41 - target)^2;
-        if False, use epsilon*|N41 - target| ([RU] eq. 6).)doc")
+        if False, use epsilon*|N41 - target|.)doc")
       .def(py::init<std::shared_ptr<Spacetime>, double, double, double, double, std::size_t, bool>(),
            py::arg("spacetime"),
            py::arg("k0"),
@@ -82,22 +84,23 @@ Args:
            py::arg("targetN41"),
            py::arg("quadraticVolumeFix") = true)
       .def("add", &CDT::add,
-           R"doc(Attempt one (2,2d) vertex insertion move ([BGL] Sec. 2.3.1).
+           R"doc(Attempt one (2,2d) vertex insertion move.
 
 Picks a random N41 simplex, finds a spatial face with a partner, and
 proposes inserting a new vertex.  Accepted via Metropolis with prefactor
-N41/(N0+1).  On acceptance, the new vertex is relabeled uniformly.
+N41/(N0+1).  The new vertex is relabeled uniformly on acceptance when
+setRelabelVertices(True) is set.
 
 Returns True if accepted, False if rejected.)doc")
       .def("remove", &CDT::remove,
-           R"doc(Attempt one (2d,2) vertex deletion move ([BGL] Sec. 2.3.1).
+           R"doc(Attempt one (2d,2) vertex deletion move.
 
-Picks a random vertex via blind guessing, checks if it has order 2d
-(all N41-type), and proposes removing it.  Inverse of add().
+Picks a random vertex, checks whether it has order 2d (all N41-type), and
+proposes removing it.  Inverse of add().
 
 Returns True if accepted, False if rejected.)doc")
       .def("flip", &CDT::flip,
-           R"doc(Attempt one (2,d) flip move ([BGL] Sec. 2.3.2).
+           R"doc(Attempt one (2,d) flip move.
 
 Picks a random top simplex, picks a random facet, and proposes
 replacing the 2 simplices sharing that facet with d new simplices.
@@ -105,7 +108,7 @@ dN0 = 0, dN4 = d - 2 = +2 in 4D.
 
 Returns True if accepted, False if rejected.)doc")
       .def("iflip", &CDT::iflip,
-           R"doc(Attempt one (d,2) inverse flip move ([BGL] Sec. 2.3.2).
+           R"doc(Attempt one (d,2) inverse flip move.
 
 Picks a random top simplex, picks a random edge, and proposes
 replacing the d simplices sharing that edge with 2 new simplices.
@@ -113,7 +116,7 @@ dN0 = 0, dN4 = -(d - 2) = -2 in 4D.  Inverse of flip().
 
 Returns True if accepted, False if rejected.)doc")
       .def("shift", &CDT::shift,
-           R"doc(Attempt one (3,3) shift move ([BGL] Sec. 2.3.3).
+           R"doc(Attempt one (3,3) shift move.
 
 Replaces 3 simplices sharing a (d-2)-face with 3 new simplices
 sharing the complementary (d-2)-face.  Self-inverse: dN0 = 0, dN4 = 0.
@@ -122,9 +125,9 @@ Combinatorial prefactor is 1 (symmetric selection).
 Returns True if accepted, False if rejected.)doc")
       .def("proposeAdd", &CDT::proposeAdd,
            R"doc(Construct a transactional AddMove bound to this
-simulation's spacetime + RNG, with propose() already called.  Returns
-None if no eligible target.  Caller drives apply()/rollback().  Does
-NOT update acceptance counters.)doc")
+simulation's spacetime and RNG, with propose() already called.  Returns
+None if there is no eligible target.  The caller drives apply()/rollback().
+Does not update acceptance counters.)doc")
       .def("proposeRemove", &CDT::proposeRemove,
            "Like proposeAdd() for the (2d,2) remove move.")
       .def("proposeFlip", &CDT::proposeFlip,
@@ -180,14 +183,15 @@ Returns the total number of accepted moves across all sweeps.)doc")
               });
           }
       }, py::arg("progress") = py::none(),
-           R"doc(Tune k4 to its pseudo-critical value ([BGL] Sec. 3.3.1).
+           R"doc(Tune k4 to its pseudo-critical value.
 
-Computes an initial estimate of k4 from the coupling constants, then
-performs 20 feedback sweeps adjusting k4 to drive N41 toward the target.
-Call this before sweep() for stable simulations.
+Estimates k4 from the coupling constants, then locates the coupling at which
+the four-volume drift changes sign: brackets it in doubling steps and
+bisects. Measurements run with the volume-fixing term inactive; the
+configured epsilon is restored before returning. Call this before sweep().
 
 Args:
-    progress: Optional callback(i, n) called after each tuning sweep.)doc")
+    progress: Optional callback(i, n) called once per drift measurement.)doc")
       .def("thermalize", &CDT::thermalize, py::call_guard<py::gil_scoped_release>(),
            R"doc(Thermalize the simulation until the action stabilizes.
 
@@ -195,7 +199,7 @@ Runs sweeps until the relative change in action is < 1%, with a minimum
 of 20 sweeps.  Use after tune() to reach thermal equilibrium before
 taking measurements.)doc")
       .def("computeAction", &CDT::computeAction,
-           R"doc(Compute the Regge action S from current counts ([RU] eq. 2).
+           R"doc(Compute the Regge action S from the current counts.
 
 S = -(k0 + 6*delta)*N0 + (k4 + 2*delta)*N41
     + (k4 + delta)*N32 + volume_fix_term)doc")
@@ -220,8 +224,9 @@ Values: fraction of attempts accepted (0.0 to 1.0).)doc")
       .def("setRelabelVertices", &CDT::setRelabelVertices, py::arg("enabled"),
            R"doc(Enable or disable vertex relabeling after add/remove moves.
 
-Enabled by default per [BGL] Sec. 2.2.1.  Disable for deterministic
-tests that compare simplex fingerprints before and after moves.)doc")
+Disabled by default: in the labeled formalism the acceptance ratio already
+carries the uniform-labeling requirement, and the swap walks a list whose
+length grows with the four-volume.)doc")
       .def("setSeed",
            [](CDT& self, std::uint32_t seed) { self.setSeed(seed); },
            py::arg("seed"),
@@ -267,12 +272,12 @@ Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
            "— the affected-hinge index for the incremental ΔS_Regge. `cells` is a "
            "list of vertex-id tuples; returns the dedup'd sorted (d-1)-vertex "
            "sub-tuples. Build from a move's touched cells (created ∪ removed ∪ the "
-           "perturbed edge's top cofaces) and reuse the SAME set before/after.")
+           "perturbed edge's top cofaces) and reuse the same set before/after.")
       .def("dualReggeActionOverHinges", &ReggeSolver::dualReggeActionOverHinges,
            py::arg("hinges"),
            "Localized dual Regge action Σ |*h|·ε_h over only the given (d-2) hinge "
            "tuples that are genuine (registered, with a top coface; orphans → 0). "
-           "Same per-term measure as dualReggeAction. Evaluated over a FIXED hinge "
+           "Same per-term measure as dualReggeAction. Evaluated over a fixed hinge "
            "set across a move, ΔS = after − before is exact.")
       .def("affectedEdgesOfCells", &ReggeSolver::affectedEdgesOfCells,
            py::arg("cells"),
@@ -283,7 +288,7 @@ Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
            py::arg("edges"),
            "Localized squared gradient norm Σ_e |∂S/∂ℓ²_e|² (the geometry term of "
            "F = ‖∇S_Regge‖² + Γ·r_U, extremize δS=0). Each ∂S/∂ℓ²_e is the full "
-           "per-edge complex gradient (e's star). Over a FIXED affected-edge set "
+           "per-edge complex gradient (e's star). Over a fixed affected-edge set "
            "across a move, Δ‖∇S‖² = after − before is exact; over all edges it "
            "equals Σ_e |actionGradientExact()_e|².")
       .def("matterAction", &ReggeSolver::matterAction,

@@ -132,24 +132,24 @@ Vertex::moveEdgesToImpl(
       targetVertex->removeInEdge(oldEdge);
     }
 
-    // Capture the exact state BEFORE the slot is freed: EdgeList::remove frees
-    // the pool slot and createEdge reuses freed slots, so oldEdge can alias the
-    // NEW edge afterwards — reading through it then returns the new edge's own
-    // fresh state, not the moved edge's (#597).
+    // Capture the state before the slot is freed: EdgeList::remove frees the pool
+    // slot and createEdge reuses freed slots, so oldEdge can alias the new edge
+    // afterwards, and reading through it then returns the new edge's own fresh
+    // state rather than the moved edge's.
     const std::complex<double> movedLength = oldEdge->getLength();
     const std::complex<double> movedPhase = oldEdge->getPhase();
 
     spacetime->absorbRemovedEdgeRevisions(oldEdge);
     spacetime->getEdgeList()->remove(oldEdge);
 
-    // For inEdges: redirect edge to point TO the new vertex (new source = vertex)
-    // For outEdges: redirect edge to point FROM the new vertex (new target = vertex)
+    // For inEdges: redirect the edge to point to the new vertex (new source = vertex)
+    // For outEdges: redirect it to point from the new vertex (new target = vertex)
     const auto &newEdge = (direction == EdgeDirection::In)
                             ? spacetime->createEdge(sourceVertex, recipient, movedLength)
                             : spacetime->createEdge(recipient, targetVertex, movedLength);
-    // Re-apply the exact edge state (the RemoveMove/SurgicalCone restore idiom,
-    // #597): the complex LENGTH verbatim — no sqrt/square round-trip, so the
-    // branch (which of ±l this edge carried) survives — and the connection phase.
+    // Re-apply the edge state: the complex length verbatim, with no sqrt/square
+    // round-trip so the branch (which of ±l this edge carried) survives, and the
+    // connection phase.
     newEdge->setLength(movedLength);
     newEdge->setPhase(movedPhase);
 
@@ -272,13 +272,11 @@ void Vertex::removeInEdge(const EdgePtr &edge) noexcept {
     std::abort();
   }
 #endif
-  // Edge-coface index: iterate only the simplices that actually contain
-  // this edge — replaces the previous "iterate all simplices touching
-  // this vertex, filter by hasVertex × 2" pattern that dominated
-  // `thermalize` wall time at T=2500 (≈22% of samples in
-  // `Simplex::hasVertex`). Snapshot is required because
-  // `simplex->removeEdge(edge)` calls back into `edge->unregisterSimplex`
-  // which mutates `edge->simplices_`.
+  // Edge-coface index: iterate only the simplices that contain this edge, rather
+  // than every simplex touching this vertex filtered by hasVertex, which dominated
+  // `thermalize` wall time. The snapshot is needed because
+  // `simplex->removeEdge(edge)` calls back into `edge->unregisterSimplex`, which
+  // mutates `edge->simplices_`.
   Simplices cofaces = edge->simplicesCopy();
   for (auto const& simplex : cofaces) {
     if (simplex != nullptr) simplex->removeEdge(edge);
@@ -300,7 +298,7 @@ void Vertex::removeOutEdge(const EdgePtr &edge) noexcept {
     std::abort();
   }
 #endif
-  // See removeInEdge for the design note — same pattern.
+  // Same pattern as removeInEdge; see the note there.
   Simplices cofaces = edge->simplicesCopy();
   for (auto const& simplex : cofaces) {
     if (simplex != nullptr) simplex->removeEdge(edge);

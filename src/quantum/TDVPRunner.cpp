@@ -1,6 +1,6 @@
-// Implementation of SchwingerQuench — the q-qbar-quench + TDVP pipeline
-// and the causal-order comparison. See
-// include/quantum/TDVPRunner.hpp for the architectural narrative.
+// Implementation of SchwingerQuench — the q-qbar quench + TDVP pipeline
+// and the causal-order comparison. See include/quantum/TDVPRunner.hpp
+// for the pipeline description.
 
 #include "quantum/TDVPRunner.hpp"
 
@@ -9,7 +9,7 @@
 #include "quantum/Quench.hpp"
 #include "quantum/SchwingerModel.hpp"
 
-#include "quantum/TDVPIntegrator.hpp"  // tessera-owned 2-site TDVP (Apache-2.0 core only)
+#include "quantum/TDVPIntegrator.hpp"  // two-site TDVP on ITensor core primitives
 
 #include <itensor/all.h>
 
@@ -33,9 +33,9 @@ namespace {
 
 // ─── Observable helpers ───────────────────────────────────────────────────
 
-// ⟨σ^z_n⟩ for every site n = 1..N. Uses the standard ITensor pattern of
-// orthogonalising at site n and contracting bra × Sz × ket; multiplies
-// the result by 2 to convert from ITensor's "Sz" (= ½ σ^z) to bare σ^z.
+// ⟨σ^z_n⟩ for every site n = 1..N: orthogonalise at site n, contract
+// bra × Sz × ket, and multiply by 2 to convert ITensor's "Sz" (= ½ σ^z)
+// to bare σ^z.
 std::vector<double> sigmaZProfile(itensor::MPS const& psi_in,
                                     itensor::SpinHalf const& sites) {
     using namespace itensor;
@@ -53,9 +53,9 @@ std::vector<double> sigmaZProfile(itensor::MPS const& psi_in,
     return out;
 }
 
-// ⟨L_n⟩ for every link n = 1..N-1 from the σ^z profile. Closed form:
+// ⟨L_n⟩ for every link n = 1..N-1 from the σ^z profile:
 //   ⟨L_n⟩  =  c_n  -  ½ Σ_{k=1..n} ⟨σ^z_k⟩
-// with c_n = L0 + ((-1)^n - 1)/4 (matches schwinger_model.cpp).
+// with c_n = L0 + ((-1)^n - 1)/4, matching SchwingerModel.cpp.
 std::vector<double> lProfileFromSz(std::vector<double> const& sz, double L0) {
     const int N = static_cast<int>(sz.size());
     std::vector<double> L(static_cast<std::size_t>(std::max(N - 1, 0)), 0.0);
@@ -94,8 +94,8 @@ TDVPSnapshot makeSnapshot(double t,
         }
     }
     if (recordMutualInformation) {
-        // All-pairs site-site MI. Flatten to row-major for the
-        // Python-side rebuilding.
+        // All-pairs site-site mutual information, flattened row-major
+        // for the Python side to rebuild.
         auto mi = MutualInformation::allPairs(psi);
         const int N = static_cast<int>(mi.rows());
         snap.mutualInformation.assign(static_cast<std::size_t>(N) * N, 0.0);
@@ -182,13 +182,13 @@ QuenchResult SchwingerQuench::evolve() const {
     result.groundState.bondDim        = itensor::maxLinkDim(psiGs);
     result.groundState.truncationErr  = cfg.dmrgCutoff;
 
-    // (2) Apply the q-qbar quench (Buyens 2014 string state).
+    // (2) Apply the q-qbar quench, producing the string state.
     auto psi = QqbarQuench{cfg.i0, cfg.d, cfg.quenchEnforceParity}
                    .apply(psiGs, sm.sites);
 
-    // (3) Initial snapshot: t = 0 means "right after the quench, before
-    // any TDVP step". Energy here is generally above the GS energy by
-    // the quench excitation cost.
+    // (3) Initial snapshot. t = 0 is immediately after the quench,
+    // before any TDVP step; its energy sits above the ground-state
+    // energy by the quench excitation cost.
     result.snapshots.push_back(makeSnapshot(
         /*t=*/0.0, psi, sm, p,
         cfg.recordSpectra, cfg.recordPoset,
@@ -196,7 +196,7 @@ QuenchResult SchwingerQuench::evolve() const {
         cfg.recordBondMutualInformation));
 
     // (4) TDVP loop. Real-time evolution e^{-i H Δt} corresponds to
-    // ITensor's tdvp(...) with the time argument t = -i Δt.
+    // TDVPIntegrator::evolve with the time argument t = -i Δt.
     auto sweepsTdvp = makeTdvpSweeps(
         cfg.maxBondDim, cfg.krylovDim, cfg.cutoff);
     const itensor::Cplx tStep{0.0, -cfg.dt};
@@ -227,9 +227,9 @@ CausalComparisonReport SchwingerQuench::compareCausalOrders(
     double vLr,
     MajorizationPredicate const* predicate) const
 {
-    // Force spectra recording — the cross-time majorization poset needs
-    // them. recordPoset is left off because we build per-time-and-cut
-    // posets ourselves.
+    // The cross-time majorization poset needs the spectra, so force
+    // recordSpectra on. recordPoset stays off: the per-(time, cut)
+    // posets are built below instead.
     TDVPConfig cfg = config_;
     cfg.recordSpectra = true;
     cfg.recordPoset   = false;

@@ -30,14 +30,14 @@ using namespace ::tessera::quantum;
 enum class WilsonMode : uint8_t {
     COMBINATORIAL,   ///< Dual-graph topology only (loop length, enclosed hinges)
     DEFICIT_ANGLE,   ///< Uses deficit angles: W = ((d-2)+2cos(ε))/d
-    CAUSAL,          ///< CDT causal orientation changes around the loop
-    U1_CONNECTION    ///< U(1) connection holonomy: oriented Σ Edge::phase around a 1-skeleton cycle (mod 2π)
+    CAUSAL,          ///< Causal orientation changes around the loop
+    U1_CONNECTION    ///< U(1) connection holonomy: oriented sum of Edge::phase around a 1-skeleton cycle, modulo 2π
 };
 
 /// Which loop-shape generator to use.
 enum class LoopType : uint8_t {
     HINGE,           ///< Elementary loop around a (d-2)-simplex
-    DUAL_LATTICE,    ///< BFS-discovered loop of a target size
+    DUAL_LATTICE,    ///< Breadth-first-search loop of a target size
     GEODESIC         ///< Shortest cycle through a start simplex
 };
 
@@ -50,38 +50,39 @@ struct LoopPath {
 
 /// Result of evaluating a Wilson loop in any mode.
 struct WilsonResult {
-    /// Primary scalar. COMPLEX: in the deficit-angle mode the holonomy around a
-    /// hinge is cos of the COMPLEX Lorentzian deficit — the boost part
-    /// contributes a cosh, so |value| may exceed 1 and a mixed hinge yields a
-    /// genuinely complex character. Real-valued modes fill the real part.
+    /// Primary scalar, complex-valued. In the deficit-angle mode the holonomy
+    /// around a hinge is the cosine of the complex Lorentzian deficit angle; the
+    /// boost part contributes a hyperbolic cosine, so \f$ |value| \f$ may exceed
+    /// 1 and a mixed hinge gives a genuinely complex character. Real-valued modes
+    /// fill only the real part.
     ///
-    /// In ``U1_CONNECTION`` mode this is a DERIVED VIEW of
-    /// ``connectionAccumulation`` — its ``residualPhase()`` — kept because
-    /// consumers read it as the mod-2π holonomy angle. The datum is the
-    /// accumulation; this is one reading of it.
+    /// In ``U1_CONNECTION`` mode this is the ``residualPhase()`` of
+    /// ``connectionAccumulation``, kept for consumers that read the holonomy
+    /// angle modulo \f$ 2\pi \f$. The accumulation is the datum; this is one
+    /// reading of it.
     std::complex<double> value{0.0, 0.0};
 
-    /// The complete gauge-invariant datum of a ``U1_CONNECTION`` read: the
-    /// UNREDUCED complex accumulation \f$ \Sigma_\gamma\varphi \f$ of the
-    /// oriented ``Edge::phase`` around the cycle.
+    /// The gauge-invariant datum of a ``U1_CONNECTION`` read: the unreduced
+    /// complex accumulation \f$ \Sigma_\gamma\varphi \f$ of the oriented
+    /// ``Edge::phase`` around the cycle.
     ///
-    /// Both components are carried. Around a CLOSED loop a gauge
-    /// transformation \f$ \varphi\mapsto\varphi+d\chi \f$ telescopes to zero,
-    /// so the whole complex sum is gauge-invariant — the imaginary part no
-    /// less than the real one. Of the structure group
-    /// \f$ \mathbb{C}^{*}=U(1)\times\mathbb{R}^{+} \f$ only the compact factor
-    /// has winding, so only \f$ \mathrm{Re} \f$ quantizes; that makes
-    /// \f$ e^{-\mathrm{Im}\Sigma} \f$ a gauge-invariant real rather than a
-    /// quantum number, which is not a reason to discard it. If the
-    /// non-compact direction is inert then \f$ \mathrm{Im}\Sigma\to 0 \f$ and
-    /// the modulus tends to 1 — a cancellation to be OBSERVED, never imposed.
+    /// Both components are carried. Around a closed loop a gauge transformation
+    /// \f$ \varphi\mapsto\varphi+d\chi \f$ telescopes to zero, so the whole
+    /// complex sum is gauge-invariant, imaginary part included. Of the structure
+    /// group \f$ \mathbb{C}^{*}=U(1)\times\mathbb{R}^{+} \f$ only the compact
+    /// factor has winding, so only \f$ \mathrm{Re} \f$ quantizes and
+    /// \f$ e^{-\mathrm{Im}\Sigma} \f$ is a gauge-invariant real rather than a
+    /// quantum number. If the non-compact direction is inert then
+    /// \f$ \mathrm{Im}\Sigma\to 0 \f$ and the modulus tends to 1; that
+    /// cancellation is observed, not imposed.
     ///
-    /// Deliberately NOT reduced modulo 2π at accumulation time: reducing
+    /// Not reduced modulo \f$ 2\pi \f$ at accumulation time, since reducing
     /// destroys the winding irrecoverably. ``holonomy()``,
     /// ``holonomyModulus()``, ``residualPhase()`` and ``windingNumber()`` are
-    /// derived from this and must never replace it.
+    /// derived from it.
     ///
-    /// NaN outside ``U1_CONNECTION`` mode — unmeasured, never zero.
+    /// NaN outside ``U1_CONNECTION`` mode, marking it unmeasured rather than
+    /// zero.
     std::complex<double> connectionAccumulation{
         std::numeric_limits<double>::quiet_NaN(),
         std::numeric_limits<double>::quiet_NaN()};
@@ -111,13 +112,17 @@ struct WilsonResult {
 
 /// Wilson loop observable on a triangulated spacetime.
 ///
-/// Computes holonomy-like quantities around closed paths.  The dual-graph
-/// modes (top-simplices as nodes, shared facets as edges) let users choose
-/// between purely combinatorial, curvature-based, and causal-structure
-/// analyses.  The ``U1_CONNECTION`` mode instead accumulates the U(1)
-/// connection (``Edge::phase``) around a cycle on the primal 1-skeleton,
-/// returning the gauge-invariant holonomy (mod 2π) — the Wilson-loop view of
-/// the Stage-1 ``cobordism::HodgeLaplacian`` cycle flux.
+/// Computes holonomy around closed paths. The dual-graph modes (top-simplices
+/// as nodes, shared facets as edges) offer purely combinatorial,
+/// curvature-based and causal-structure analyses. The ``U1_CONNECTION`` mode
+/// instead accumulates the U(1) connection (``Edge::phase``) around a cycle on
+/// the primal 1-skeleton and returns the gauge-invariant holonomy modulo
+/// \f$ 2\pi \f$, the Wilson-loop view of the ``cobordism::HodgeLaplacian``
+/// cycle flux.
+///
+/// References: K. G. Wilson, "Confinement of quarks", Phys. Rev. D 10, 2445
+/// (1974); Greensite, "The Confinement Problem in Lattice Gauge Theory",
+/// arXiv:hep-lat/0301023.
 ///
 /// Usage:
 /// @code
@@ -142,19 +147,17 @@ class WilsonLoop {
     [[nodiscard]] WilsonResult evaluateCausal(const LoopPath &loop) const;
 
     /// Connection holonomy around a closed cycle of vertices on the primal
-    /// 1-skeleton.  Accumulates the COMPLEX ``Edge::phase`` oriented along the
-    /// stored source→target direction (``+phase`` forward, ``−phase`` on
-    /// reversal) and carries the total UNREDUCED in
-    /// ``connectionAccumulation`` — the datum. ``value`` is its
-    /// ``residualPhase()``, kept for consumers that read the mod-2π angle;
-    /// ``loopSize`` is the number of edges.
-    /// Returns an empty result if the cycle has fewer than two vertices or any
-    /// consecutive pair is not joined by an edge (an open path).
+    /// 1-skeleton. Accumulates the complex ``Edge::phase`` oriented along the
+    /// stored source-to-target direction (``+phase`` forward, ``−phase`` on
+    /// reversal) and carries the unreduced total in ``connectionAccumulation``.
+    /// ``value`` is its ``residualPhase()``; ``loopSize`` is the number of
+    /// edges. Returns an empty result if the cycle has fewer than two vertices
+    /// or any consecutive pair is not joined by an edge, i.e. the path is open.
     ///
-    /// This is the Wilson-loop counterpart of the Stage-1 cycle flux carried
-    /// by the Hermitian-weighted ``cobordism::HodgeLaplacian`` (the same
-    /// oriented phase sum); restricted to phases in {0, π} it reproduces the
-    /// ℤ₂ flux.
+    /// This is the Wilson-loop counterpart of the cycle flux carried by the
+    /// Hermitian-weighted ``cobordism::HodgeLaplacian``, the same oriented phase
+    /// sum. Restricted to phases in \f$ \{0, \pi\} \f$ it reproduces the
+    /// \f$ \mathbb{Z}_2 \f$ flux.
     [[nodiscard]] WilsonResult evaluateU1Connection(
         const std::vector<VertexPtr> &cycle) const;
 
@@ -163,7 +166,8 @@ class WilsonLoop {
     /// Loop of top-simplices around a hinge, ordered cyclically.
     [[nodiscard]] LoopPath hingeLoop(SimplexPtr hinge) const;
 
-    /// BFS-discovered loop of approximately \a targetLength simplices.
+    /// Loop of approximately \a targetLength simplices, found by breadth-first
+    /// search.
     [[nodiscard]] LoopPath dualLatticeLoop(SimplexPtr start,
                                             int targetLength) const;
 
@@ -196,19 +200,16 @@ class WilsonLoop {
     [[nodiscard]] LoopPath buildLoopPath(
         const std::vector<SimplexPtr> &simplices) const;
 
-    /// BFS over the dual graph starting at \a start, yielding each
-    /// cycle to ``onCycle(path)``. The path runs start → ... → start.
-    /// If \a onCycle returns true, the walk terminates; otherwise it
-    /// continues searching.
+    /// Breadth-first search over the dual graph starting at \a start, yielding
+    /// each cycle to ``onCycle(path)``. The path runs start → ... → start. The
+    /// walk terminates when \a onCycle returns true.
     ///
-    /// ``maxDepth < 0`` disables the depth cap. ``minCurDepth`` filters
-    /// out cycles whose far endpoint is too close to the start
-    /// (used by the target-length search to skip trivial back-and-forth
-    /// cycles of length 2).
+    /// ``maxDepth < 0`` disables the depth cap. ``minCurDepth`` filters out
+    /// cycles whose far endpoint is too close to the start, which the
+    /// target-length search uses to skip trivial length-2 cycles.
     ///
-    /// Shared implementation backing both ``geodesicLoop`` (first
-    /// cycle, no depth cap) and ``dualLatticeLoop`` (best target-length
-    /// cycle within a depth budget).
+    /// Backs both ``geodesicLoop`` (first cycle, no depth cap) and
+    /// ``dualLatticeLoop`` (best target-length cycle within a depth budget).
     template <typename OnCycleFn>
     void bfsFindCycles(SimplexPtr start, int maxDepth, int minCurDepth,
                           OnCycleFn onCycle) const;

@@ -45,23 +45,19 @@ bool RemoveMove::propose() {
   const int dPlus1 = d + 1;
   const int requiredOrder = 2 * d;
 
-  // Mirrors CDT::remove's blind-guessing strategy.
-  // Use the spacetime's RNG-free getRandomVertex for parity with the
-  // existing code; we don't get to influence vertex selection here.
-  // (CDT::remove does the same.)
-  // The generator this move was HANDED, not the complex's own. The
-  // no-argument overload reads `Spacetime::rng`, which is initialized from
-  // `std::random_device`, so a target drawn through it comes from entropy and
-  // no seed can reproduce it (#1013). Every caller already supplies a
-  // generator for exactly this purpose.
+  // Blind guess, as in CDT::remove: draw a vertex and test its order.
+  // Draw through the generator this move was handed, not the complex's own:
+  // the no-argument overload reads `Spacetime::rng`, which is initialized
+  // from `std::random_device`, so a target drawn through it comes from
+  // entropy and no seed reproduces it.
   VertexPtr v = st_->getRandomVertex(*rng_);
   if (!v) return false;
 
-  // The move only fires on a vertex of order exactly 2d, and almost every draw
-  // is not one. Stop as soon as the count passes 2d rather than walking the
-  // whole star to find out: that star grows with the four-volume -- measured, a
-  // vertex carries 148 simplices on average at N4 = 50k against an order of 8 --
-  // so walking it in full made the rejection path O(N4) (#970).
+  // The move only fires on a vertex of order exactly 2d, and almost every
+  // draw is not one. Stop as soon as the count passes 2d rather than walking
+  // the whole star: that star grows with the four-volume (measured: a vertex
+  // carries 148 simplices on average at N4 = 50k against an order of 8), so
+  // walking it in full makes the rejection path O(N4).
   std::vector<SimplexPtr> incident;
   incident.reserve(static_cast<std::size_t>(requiredOrder));
   for (const auto &s : v->getSimplices()) {
@@ -156,8 +152,8 @@ bool RemoveMove::proposeAt(const std::vector<std::uint64_t> &site) {
 }
 
 bool RemoveMove::proposePreGeometric() {
-  // The generator this move was HANDED, not the complex's own (#1013): the
-  // no-argument overload reads `Spacetime::rng`, initialized from
+  // Draw through the generator this move was handed, not the complex's own:
+  // the no-argument overload reads `Spacetime::rng`, initialized from
   // `std::random_device`, so a target drawn through it comes from entropy.
   return proposePreGeometricOn(st_->getRandomVertex(*rng_));
 }
@@ -188,8 +184,8 @@ bool RemoveMove::proposePreGeometricOn(VertexPtr v) {
       counts[vert->getId()]++;
     }
   if (static_cast<int>(otherVerts.size()) != dPlus1) return false;
-  // Each link vertex must be omitted from exactly one cell (present in
-  // exactly d): the signature of a stellar star whose link is ∂(newTop).
+  // Each link vertex is omitted from exactly one cell (present in exactly d):
+  // the signature of a stellar star whose link is ∂(newTop).
   for (const auto &[vid, c] : counts) {
     (void)vid;
     if (c != d) return false;
@@ -259,10 +255,10 @@ bool RemoveMove::applyPreGeometric() {
 
   // Drop the sub-simplices (facets/hinges) those cells materialised on v: with
   // v's top cells gone they are orphans, and leaving them registered lets a
-  // later materialisation reuse them by fingerprint carrying a now-stale pointer
-  // to v once removeIfIsolated frees v and rollback recreates it as a fresh
-  // object — which would corrupt the dual-volume / deficit coface walk over the
-  // restored star. rollback re-materialises clean ones referencing the new v.
+  // later materialisation reuse them by fingerprint while they hold a stale
+  // pointer to v (removeIfIsolated frees v, and rollback recreates it as a
+  // fresh object), corrupting the dual-volume / deficit coface walk over the
+  // restored star. Rollback materialises clean ones referencing the new v.
   removeIncidentSubSimplices();
 
   // Remove edges incident to v from both endpoints + the global list.
@@ -295,14 +291,14 @@ bool RemoveMove::apply() {
   if (!proposed_ || applied_) return false;
   if (mode_ == PachnerMode::PreGeometric) return applyPreGeometric();
 
-  // 1. Capture edge data BEFORE deletion (for rollback).
-  // Mirrors CDT::remove's edge-cleanup loop.
+  // 1. Capture edge data before deletion, for rollback.  Mirrors
+  // CDT::remove's edge-cleanup loop.
   vertexId_ = v_->getId();
   vertexCoords_ = v_->getCoordinates();
 
-  // Snapshot incident edges (in + out): the full complex squared length
-  // AND the U(1) phase, so rollback is bit-exact (#581).  (We can't
-  // capture EdgePtr — those slots get freed by EdgeList::remove.)
+  // Snapshot incident edges (in + out): the complex length and the U(1)
+  // phase, so rollback is bit-exact.  An EdgePtr cannot be captured — the
+  // slot is freed by EdgeList::remove.
   for (const auto &e : v_->getInEdges()) {
     deletedEdges_.push_back({e->getSource(), e->getTarget(),
                              e->getLength(), e->getPhase()});
@@ -315,10 +311,10 @@ bool RemoveMove::apply() {
   // 2. Remove the 2d incident simplices.
   for (const auto &s : incident_) st_->removeSimplex(s);
 
-  // 2b. Drop the now-orphaned sub-simplices the removed cells materialised on v
-  // (see applyPreGeometric for the stale-pointer rationale): rollback recreates
-  // v as a fresh object, so any lingering facet/hinge that still points at the
-  // old v would corrupt the restored star's dual/coface walk.
+  // 2b. Drop the now-orphaned sub-simplices the removed cells materialised on
+  // v (see applyPreGeometric for the stale-pointer rationale): rollback
+  // recreates v as a fresh object, so a lingering facet/hinge still pointing at
+  // the old v would corrupt the restored star's dual/coface walk.
   removeIncidentSubSimplices();
 
   // 3. Remove edges incident to v from both endpoints + the global list.
@@ -370,36 +366,22 @@ void RemoveMove::rollback() {
   // 2. Remove freshly-inserted edges (from the replacement simplices).
   pachner_detail::removeAndClearEdges(createdEdges_, st_);
 
-  // 3. Recreate the deleted vertex with its original ID and coordinates.
+  // 3. Recreate the deleted vertex with its original id and coordinates.
   v_ = st_->createVertex(vertexId_, vertexCoords_);
 
-  // 4. Reinsert the deleted edges.  All endpoints still exist
-  // (only v_ was removed, and we just recreated it).  Need to be
-  // careful: the EdgeRecord's source/target pointers refer to
-  // pre-deletion VertexPtrs.  v_'s pointer is fresh (from step 3),
-  // so swap any reference to the *old* v_ pointer with the new one.
-  // Actually — the way createVertex works, it allocates a new Vertex
-  // and returns its pointer.  The OLD v_ pointer (from before
-  // step 3) is invalid, but we already overwrote v_ with the new
-  // pointer in step 3.  EdgeRecord captured pointers BEFORE we
-  // overwrote v_, so those still point to the old (deleted) Vertex.
-  //
-  // To handle this cleanly: identify edges that reference the deleted
-  // vertex by ID match (vertexId_) rather than by pointer comparison.
-  // For each EdgeRecord:
-  //   - If src->getId() == vertexId_ → use new v_ as source, target unchanged
-  //   - Else if tgt->getId() == vertexId_ → use new v_ as target
-  //   - Else: shouldn't happen (every captured edge was incident to v).
+  // 4. Reinsert the deleted edges.  Every endpoint exists again (only v_ was
+  // removed, and step 3 recreated it), but each EdgeRecord holds pre-deletion
+  // pointers and the recreated v_ is a fresh allocation, so the captured
+  // pointer to the old v_ is dangling.  Identify the deleted vertex by id
+  // match (vertexId_) rather than by pointer and substitute the new v_ for it;
+  // every captured edge was incident to v, so one endpoint always matches.
   for (const auto &er : deletedEdges_) {
     VertexPtr src = (er.source->getId() == vertexId_) ? v_ : er.source;
     VertexPtr tgt = (er.target->getId() == vertexId_) ? v_ : er.target;
-    // After re-creating the vertex with the original ID, the OLD
-    // pointer captured in EdgeRecord may have been freed.  We rely on
-    // the ID match above; ID-stable accessors are sufficient.
-    // tryAdd's factory unit is the real signed l^2; the exact complex
-    // value and the U(1) phase are written onto the fresh edge right
-    // after creation so the restore is bit-exact (#581).  An edge that
-    // already exists was never deleted, so its values are left alone.
+    // tryAdd's factory unit is the real signed l^2; the exact complex value
+    // and the U(1) phase are written onto the fresh edge right after creation,
+    // so the restore is bit-exact.  An edge that already exists was never
+    // deleted, so its values are left alone.
     auto r = st_->getEdgeList()->tryAdd(src, tgt, er.length);
     if (r.second) {
       r.first->setLength(er.length);  // verbatim: branch-exact, no round-trip
@@ -410,9 +392,8 @@ void RemoveMove::rollback() {
   }
   deletedEdges_.clear();
 
-  // 5. Recreate the 2d removed simplices.  Their vertex tuples
-  // contain the OLD v_ pointer (captured pre-deletion).  Swap to the
-  // new pointer based on ID.
+  // 5. Recreate the 2d removed simplices.  Their vertex tuples hold the old
+  // v_ pointer (captured pre-deletion); swap in the new one by id.
   for (const auto &origVerts : incidentVerts_) {
     VertexPtrs verts;
     verts.reserve(origVerts.size());

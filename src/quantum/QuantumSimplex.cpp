@@ -24,9 +24,9 @@ constexpr PositionPair kAllEdges[10] = {
     {3, 4},
 };
 
-// ρ_u ⊗ ρ_v in (u ⊗ v) ordering. Used only for the (A, B) edge
-// where the factory has the input joint ρ_AB; everything else
-// asks the QuantumVertex itself via vanRaamsdonkDistanceTo.
+// ρ_u ⊗ ρ_v in (u ⊗ v) ordering. Used only for the (A, B) edge, where
+// the factory has the input joint ρ_AB; every other edge asks its
+// endpoint QuantumVertex via vanRaamsdonkDistanceTo.
 Eigen::MatrixXcd kron(const Eigen::MatrixXcd& a, const Eigen::MatrixXcd& b) {
     const int dA = static_cast<int>(a.rows());
     const int dB = static_cast<int>(b.rows());
@@ -140,13 +140,13 @@ Eigen::MatrixXcd classicalJointFromMarginals(const Eigen::MatrixXcd& rhoA,
     return out;
 }
 
-// Build the five-vertex / ten-edge mesh::Simplex from the given
-// joint ρ_AB on (qva, qvb). Allocates Σ, A', B' QuantumVertex via
-// the spacetime's vertex list with the KI core / tail states.
-// Computes d_VR per edge: for (A, B) directly from the input joint;
-// for every other edge by asking the endpoint QuantumVertex
-// (vanRaamsdonkDistanceTo, which assumes a product joint). Writes
-// d_VR² to ``Edge::squaredLength`` at edge creation time.
+// Build the five-vertex / ten-edge mesh::Simplex from the joint ρ_AB on
+// (qva, qvb). Allocates the Σ, A', B' QuantumVertex objects in the
+// spacetime's vertex list, carrying the KI core and tail states, and
+// computes d_VR per edge: for (A, B) directly from the input joint, for
+// every other edge from the endpoint QuantumVertex
+// (vanRaamsdonkDistanceTo, which assumes a product joint). d_VR² is
+// written to ``Edge::squaredLength`` at edge creation.
 ::tessera::mesh::Simplex*
 buildSimplexFromJoint(::tessera::spacetime::Spacetime& spacetime,
                       QuantumVertex*                   qva,
@@ -303,8 +303,8 @@ QuantumSimplex::fromTargetMutualInformation(
             "fromTargetMutualInformation: target exceeds the "
             "achievable maximum 2·H(λ) for the given marginals");
     }
-    // Short-circuit the trivial endpoints so the binary search
-    // doesn't leave residual α > 0 contaminating an MI=0 target.
+    // Short-circuit the trivial endpoints, so the binary search cannot
+    // leave a residual α > 0 on an MI = 0 target.
     if (targetMI <= tol.getEpsKiCondState()) {
         return buildSimplexFromJoint(spacetime, qva, qvb, product, iMax, tol);
     }

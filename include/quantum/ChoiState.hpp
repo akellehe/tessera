@@ -19,25 +19,26 @@
 //
 //     site 1 = in_1,  site 2 = out_1,  site 3 = in_2,  site 4 = out_2, …
 //
-// so Bell pairs are nearest-neighbour (bond dim 2 within pairs,
-// dim 1 between pairs) and the bond-dim growth during TDVP stays local.
+// so Bell pairs are nearest-neighbour (bond dimension 2 within pairs,
+// 1 between pairs) and bond-dimension growth under the time-dependent
+// variational principle (TDVP) stays local.
 //
 // The Hamiltonian on the doubled chain acts as the identity on every
-// in-site and as the Schwinger H on the out-sites — re-indexed onto
-// the even-numbered sites of the doubled chain. AutoMPO handles the
-// (now longer-range) σ⁺σ⁻ + σ⁻σ⁺ hopping and the L_n² expansion
-// straightforwardly.
+// in-site and as the Schwinger H on the out-sites, re-indexed onto the
+// even-numbered sites. AutoMPO handles the resulting longer-range
+// σ⁺σ⁻ + σ⁻σ⁺ hopping and the L_n² expansion.
 //
 // References:
-//   Choi, *Completely positive linear maps on complex matrices*,
-//     Linear Algebra Appl. 10, 285 (1975) — the original Choi-state
-//     correspondence between channels and bipartite states.
-//   Jamiołkowski, *Linear transformations which preserve trace …*,
-//     Rep. Math. Phys. 3, 275 (1972) — the equivalent map.
-//   Pollock, Rodríguez-Rosario, Frenzel, Modi, Modi,
-//     *Operational Markov condition for quantum processes*,
+//   Choi, "Completely positive linear maps on complex matrices",
+//     Linear Algebra Appl. 10, 285 (1975) — the correspondence between
+//     channels and bipartite states.
+//   Jamiołkowski, "Linear transformations which preserve trace and
+//     positive semidefiniteness of operators", Rep. Math. Phys. 3, 275
+//     (1972) — the equivalent map.
+//   Pollock, Rodríguez-Rosario, Frauenheim, Paternostro & Modi,
+//     "Operational Markov condition for quantum processes",
 //     arXiv:1801.09811 — the process-tensor / Choi-state view of
-//     multi-time correlations used in the holography charter.
+//     multi-time correlations.
 
 #pragma once
 
@@ -59,19 +60,18 @@ using namespace ::tessera::spacetime;
 using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 
-// Stateless utility class — not instantiable. Methods are static.
-// (Unlike SchwingerModel / SchwingerQuench, this isn't a workflow
-// class: it doesn't hold a config, just exposes building blocks for
-// MutualInformationProfile to compose.)
+// Stateless utility class — not instantiable, all methods static. It
+// holds no config; it exposes the building blocks that
+// MutualInformationProfile composes.
 class ChoiPropagator {
 public:
     ChoiPropagator() = delete;
     ChoiPropagator(ChoiPropagator const&) = delete;
     ChoiPropagator& operator=(ChoiPropagator const&) = delete;
 
-    // Sweep settings for the TDVP evolution on the doubled chain.
-    // Kept as a small struct so callers don't have to thread half a
-    // dozen scalars through the public API.
+    // Sweep settings for the TDVP evolution on the doubled chain,
+    // grouped so callers need not thread the scalars individually
+    // through the public API.
     struct TDVPSettings {
         double dt{0.05};
         int    maxBondDim{200};
@@ -86,10 +86,10 @@ public:
     [[nodiscard]] static itensor::SpinHalf
     doubledSites(int N);
 
-    // The product-Bell-pair initial state |Φ+⟩^{⊗N} as a 2N-site MPS
-    // with bond dim 2 within each (in_k, out_k) pair and bond dim 1
-    // between pairs. Reproduces the maximally entangled state of the
-    // identity channel.
+    // The product-Bell-pair initial state |Φ+⟩^{⊗N} as a 2N-site matrix
+    // product state, with bond dimension 2 within each (in_k, out_k)
+    // pair and 1 between pairs. This is the Choi state of the identity
+    // channel.
     [[nodiscard]] static itensor::MPS
     bellChainMPS(itensor::SpinHalf const& doubled);
 
@@ -112,8 +112,7 @@ public:
            TDVPSettings const& settings);
 
     // Build the Choi state of U_{0→duration} from scratch: Bell-chain
-    // init → TDVP evolve under outputHamiltonianMPO. Convenience for
-    // callers that don't want to track the intermediate objects.
+    // initial state, then TDVP evolution under outputHamiltonianMPO.
     [[nodiscard]] static itensor::MPS
     choiState(SchwingerParams const& p,
               double duration,

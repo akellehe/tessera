@@ -17,25 +17,28 @@ namespace tessera::observables {
 
 /// # PairLoopFlavor
 ///
-/// The #561/#576 pair-loop dual-basis flavor read over three emergent holes, migrated
-/// as a C++ Observable (the `pair_loop_quarks.tex` §7 experiment). On a structure
-/// whose periods over three emergent holes carry the color singlet `[1, ω, ω²]`:
+/// Pair-loop dual-basis flavor read over three emergent holes, on a structure
+/// whose periods over those holes carry the color singlet `[1, ω, ω²]`:
 ///
-///   1. ONE correlated multi-hole read — the single joint carried representative
-///      `ψ = EigenstateSynthesis.carriedRepresentative(holes, σ·target)`, never
-///      three independent per-hole extractions. Per-hole weight
-///      `w_h = σ_h ∮_h ψ` (the five (-1)^j-signed tetrahedral facets of the
-///      removed 4-cell); per-hole DK charge `q_h = Σ_{c∈∂h} W_c |ψ_c|²`.
-///   2. Pair loops `γ_ij` are homologous to `[i]+[j]`: `w_i + w_j` (arithmetic,
-///      no new geometry). The singlet gives the duality `[γ_ij] = -[k]`.
-///   3. Criterion (a) multiplicity 2:1 via `rho`; criterion (b) odd-one-out vs
-///      the recorded diquark pair (ctor provenance) — evaluated ONLY when the
-///      build history supplies it, never guessed.
+///   1. A single correlated multi-hole read: the joint carried representative
+///      `ψ = EigenstateSynthesis.carriedRepresentative(holes, σ·target)`, not
+///      three independent per-hole extractions. The per-hole weight is
+///      \f$ w_h = \sigma_h \oint_h \psi \f$ over the five
+///      \f$ (-1)^j \f$-signed tetrahedral facets of the removed 4-cell, and the
+///      per-hole Dirac-Kähler charge is
+///      \f$ q_h = \sum_{c \in \partial h} W_c |\psi_c|^2 \f$.
+///   2. Pair loops \f$ \gamma_{ij} \f$ are homologous to `[i]+[j]`, so their
+///      period is `w_i + w_j` — arithmetic on the per-hole weights, with no new
+///      geometry. The singlet gives the duality
+///      \f$ [\gamma_{ij}] = -[k] \f$.
+///   3. Criterion (a): 2:1 multiplicity via `rho`. Criterion (b): odd-one-out
+///      against the recorded diquark pair, supplied to the constructor and
+///      evaluated only when the build history provides it.
 ///
-/// headline (`compute`) = `rho`; typed accessors expose the joint read and the
-/// verdict. The oriented periods are reported in the propagation-root-fixed
-/// convention (divided by `w0`'s unit phase) so every record leaf is GAUGE- and
-/// RELABEL-invariant. Requires 3 holes on a 4-complex.
+/// The headline (`compute`) is `rho`; accessors expose the joint read and the
+/// verdict. Oriented periods are reported divided by the unit phase of `w0`, so
+/// every record leaf is GAUGE- and RELABEL-invariant. Requires 3 holes on a
+/// 4-complex.
 class PairLoopFlavor : public RegisterObservable {
   public:
     /// The three pair loops as (i, j) hole-index pairs; `γ_ij` encircles i, j.
@@ -44,7 +47,7 @@ class PairLoopFlavor : public RegisterObservable {
     /// Criterion (a): the closest pair's spread over its separation from the odd
     /// one must stay below this for a 2:1 (u:u:d) verdict.
     static constexpr double RHO_MAX = 0.5;
-    /// Criterion-(b) status sentinels (named, never inline literals).
+    /// Criterion-(b) status sentinels.
     static constexpr std::string_view kOddDiquarkEvaluated = "evaluated";
     static constexpr std::string_view kOddDiquarkNotEvaluable =
         "not_evaluable(no_provenance)";
@@ -55,7 +58,7 @@ class PairLoopFlavor : public RegisterObservable {
       std::vector<int> sigma;                    ///< induced-orientation signs
       double rU = 0.0;                           ///< residualForPeriods of the pin
       std::vector<std::complex<double>> w;       ///< oriented per-hole weights
-      std::vector<double> q;                     ///< per-hole DK charges
+      std::vector<double> q;                     ///< per-hole Dirac-Kähler charges
       std::vector<std::complex<double>> loopW;   ///< pair-loop periods (w_i+w_j)
       std::vector<double> loopQ;                 ///< pair-loop charges
       std::vector<double> dualResidual;          ///< |w_i+w_j+w_k| per loop
@@ -70,20 +73,20 @@ class PairLoopFlavor : public RegisterObservable {
       std::optional<bool> oddIsDiquarkLoop;      ///< empty ⇒ not evaluable
     };
 
-    /// Read over three emergent holes with no recorded diquark pair (criterion (b)
-    /// stays not-evaluable).
+    /// Read over three emergent holes with no recorded diquark pair, leaving
+    /// criterion (b) not evaluable.
     PairLoopFlavor() = default;
-    /// Read over three emergent holes with the step-1 hole-index pair of the diquark
-    /// from the specimen's build history (makes criterion (b) decidable).
+    /// Read over three emergent holes with the diquark's hole-index pair taken
+    /// from the specimen's build history, making criterion (b) decidable.
     explicit PairLoopFlavor(std::pair<int, int> diquarkPair)
         : diquarkPair_(diquarkPair) {}
 
     [[nodiscard]] std::string recordKey() const override {
       return std::string(kRecordKey);
     }
-    /// The derived clustering ratio `rho` divides two small charge differences
-    /// and amplifies eigensolve roundoff to ~1e-13 (the source's RHO_GATE_TOL) —
-    /// one tolerance covers every leaf, raw residuals reported alongside.
+    /// The clustering ratio `rho` divides two small charge differences, which
+    /// amplifies eigensolver roundoff to around 1e-13. One tolerance covers
+    /// every leaf; raw residuals are reported alongside.
     [[nodiscard]] double gateTol() const override { return 1e-9; }
     [[nodiscard]] int minHoles() const override { return 3; }
     [[nodiscard]] int requiredDimensions() const override { return 4; }

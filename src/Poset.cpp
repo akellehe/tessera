@@ -138,7 +138,7 @@ std::string Poset::toDot() const {
 }
 
 Poset Poset::fromSpacetime(Spacetime const& st) {
-    // Causet-adapter inheritance (docs/source/quantum-plan.md §6) —
+    // Causet-adapter inheritance —
     // inherit a partial order
     // from a tessera::spacetime::Spacetime by treating each timelike edge as a strict
     // precedes-relation oriented earliest-time → latest-time, then
@@ -173,7 +173,7 @@ Poset Poset::fromSpacetime(Spacetime const& st) {
     // Collect strict-precedes pairs (earliest → latest) from timelike
     // edges. "Timelike" is the canonical Edge::isTimelike() classifier
     // (see include/mesh/Edge.h §EdgeDisposition; the superseded
-    // sign-of-Re-squaredLength test is NOT used, #581) AND we require a
+    // sign-of-Re-squaredLength test is NOT used) AND we require a
     // strict time ordering between endpoints, since a timelike edge
     // with zero time difference would be a metric inconsistency we
     // don't want to silently propagate as a partial-order relation.

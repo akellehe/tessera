@@ -25,10 +25,10 @@ using complexd = std::complex<double>;
 
 namespace {
 constexpr int kDim = 4;  // framework dimension; the seed is a single Δ⁴ simplex
-// How many settle-and-verify evolution+relaxation passes an attempt may take before it
-// is judged non-persistent: the LAST pass must leave holes, b_k, and F stable, so early
-// passes are allowed to finish settling a not-quite-stationary complex instead of
-// throwing the attempt away.
+// How many settle-and-verify evolution+relaxation passes an attempt may take
+// before it is judged non-persistent. The last pass must leave holes, b_k and F
+// stable; earlier passes are allowed to finish settling a not-quite-stationary
+// complex rather than throwing the attempt away.
 constexpr int kMaxPersistencePasses = 3;
 }  // namespace
 
@@ -47,8 +47,9 @@ ProtonIngredients::ProtonIngredients(std::uint64_t seed, int registerDegree,
 std::shared_ptr<Spacetime> ProtonIngredients::buildMinimalSeed() {
   using namespace ::tessera::spacetime;
   // Mirrors Proton::buildMinimalSeed (private there): one Δ⁴ pentatope, uniform
-  // ℓ² = +1. The metric is deliberately all-spacelike — at initialization no time has
-  // passed, so no causal structure is put in by hand; any causal content must emerge.
+  // ℓ² = +1. The metric is all-spacelike by design — at initialization no time
+  // has passed, so no causal structure is put in by hand; any causal content
+  // must emerge.
   auto metric =
       std::make_shared<Metric>(true, Signature(kDim, SignatureType::Lorentzian));
   std::shared_ptr<Topology> topology = std::make_shared<SolidSimplex>(kDim);
@@ -62,25 +63,25 @@ std::shared_ptr<Spacetime> ProtonIngredients::buildMinimalSeed() {
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::recombinationNode(
     std::uint64_t seed) const {
-  // Step A is the canonical arm's node, verbatim — the composed Proton is the single
-  // source of truth for the recombination setup.
+  // Step A is the canonical arm's node, verbatim: the composed Proton defines
+  // the recombination setup.
   return proton_.recombinationNode(seed);
 }
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::formationNode(
     std::uint64_t seed) const {
   // Step B with nothing pinned: the same seed complex and the same ideal diquark
-  // {1,ω} + third quark {ω²} inputs as Proton::formationNode — but the output-target
-  // list is EMPTY, so the objective's matter term is the inputs' residuals alone and
-  // the whole's final state emerges. (MultiCobordism supports the empty list: with no
-  // output targets, rU sums only the input blocks.)
+  // {1,ω} plus third quark {ω²} inputs as Proton::formationNode, but with an
+  // empty output-target list, so the objective's matter term is the inputs'
+  // residuals alone and the whole's final state emerges. MultiCobordism supports
+  // the empty list: with no output targets, rU sums only the input blocks.
   const complexd w = Proton::omega();
   const std::vector<complexd> diquark = {complexd(1.0, 0.0), w};
   const std::vector<complexd> thirdQuark = {w * w};
   auto host = buildMinimalSeed();
-  // Capture the seed vertex IDS before constructing the node (see
-  // Proton::recombinationNode): precone_ > 0 regrows the complex in the ctor, but the
-  // seed ids persist.
+  // Capture the seed vertex ids before constructing the node (see
+  // Proton::recombinationNode): precone_ > 0 regrows the complex in the
+  // constructor, but the seed ids persist.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -95,19 +96,19 @@ std::shared_ptr<MultiCobordism> ProtonIngredients::formationNode(
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::jointNode(
     std::uint64_t seed) const {
-  // The joint inputs-only node (semantics: jointNode in ProtonIngredients.h — the
-  // authoritative statement). Inputs are the three Z₃-symmetric neutral pairs, the
-  // ONLY prepared content; outputs = {}. No diquark, no bare quark, no intermediate
-  // imposed anywhere — the pre-registered expectation (a baryon with a conjugate
-  // partner) is read off the relaxed whole afterwards, never driven.
+  // The joint inputs-only node; ProtonIngredients::jointNode states the
+  // semantics. Inputs are the three Z₃-symmetric neutral pairs, the only
+  // prepared content; outputs = {}. No diquark, bare quark or intermediate is
+  // imposed anywhere — the pre-registered expectation, a baryon with a conjugate
+  // partner, is read off the relaxed whole afterwards, never driven.
   const std::vector<std::vector<complexd>> pairs = {
       {complexd(1.0, 0.0), complexd(-1.0, 0.0), complexd(0.0, 0.0)},
       {complexd(0.0, 0.0), complexd(1.0, 0.0), complexd(-1.0, 0.0)},
       {complexd(-1.0, 0.0), complexd(0.0, 0.0), complexd(1.0, 0.0)}};
   auto host = buildMinimalSeed();
-  // Capture the seed vertex IDS before constructing the node (see
-  // Proton::recombinationNode): precone_ > 0 regrows the complex in the ctor, but the
-  // seed ids persist.
+  // Capture the seed vertex ids before constructing the node (see
+  // Proton::recombinationNode): precone_ > 0 regrows the complex in the
+  // constructor, but the seed ids persist.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -127,9 +128,9 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
   if (attempted_) return;
   attempted_ = true;
 
-  // Proton::build()'s exact drive per node: INITIALIZATION pass (grow_boundaries=true),
-  // optional directed cone-out, EVOLUTION pass (∂W frozen), optional directed cone-in,
-  // then the geometric relaxation.
+  // Proton::build()'s drive per node: initialization pass
+  // (grow_boundaries=true), optional directed cone-out, evolution pass (∂W
+  // frozen), optional directed cone-in, then the geometric relaxation.
   const auto runNode = [&](MultiCobordism &node) {
     node.runStage1(initSteps, stage1CandidateMoves,
                    /*growBoundaries=*/true);
@@ -142,8 +143,8 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
     node.runStage2(stage2Beta, stage2MaxIters);
   };
 
-  // The answer-agnostic summary the persistence check compares: the emergent hole
-  // count, b_k, and the objective. Deliberately NOT the singlet residual — no
+  // The answer-agnostic summary the persistence check compares: the emergent
+  // hole count, b_k, and the objective. Not the singlet residual — no
   // answer-shaped quantity may steer or gate this build.
   const auto holeCount = [&](const std::shared_ptr<Spacetime> &whole) {
     return static_cast<int>(
@@ -170,9 +171,10 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
     auto stepB = formationNode(seedB);
     runNode(*stepB);
 
-    // Persistence: continued evolution (∂W frozen) + relaxation must leave the
-    // answer-agnostic summary stable. Up to kMaxPersistencePasses passes may settle a
-    // not-quite-stationary complex; the LAST pass has to be the stable one.
+    // Persistence: continued evolution (∂W frozen) plus relaxation must leave
+    // the answer-agnostic summary stable. Up to kMaxPersistencePasses passes may
+    // settle a not-quite-stationary complex; the last pass has to be the stable
+    // one.
     bool persisted = false;
     for (int pass = 0; pass < kMaxPersistencePasses && !persisted; ++pass) {
       const auto whole = stepB->spacetime();
@@ -195,8 +197,8 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
     const auto whole = stepB->spacetime();
     const double finalObjective = stepB->objective();
 
-    // Keep the converged attempt, or the lowest-objective one so far otherwise — the
-    // objective itself is the only ranking, never a target state.
+    // Keep the converged attempt, or the lowest-objective one so far. The
+    // objective is the only ranking, never a target state.
     if (ok || finalObjective < bestObjective) {
       bestObjective = finalObjective;
       converged_ = ok;

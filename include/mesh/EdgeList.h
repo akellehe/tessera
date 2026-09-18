@@ -26,9 +26,8 @@ using namespace ::tessera::quantum;
 
 /// Flat-pool edge container.
 ///
-/// Edges live in a `std::deque` (stable element addresses) with a free-list
-/// for slot reuse.  `fpToSlot_` maps edge fingerprint → pool slot for O(1)
-/// deduplication.
+/// Edges live in a `std::deque` (stable element addresses) with a free list for slot
+/// reuse. `fpToSlot_` maps edge fingerprint to pool slot for O(1) deduplication.
 class EdgeList {
   public:
     [[nodiscard]] std::size_t size() const;
@@ -37,9 +36,9 @@ class EdgeList {
     EdgePtr add(const VertexPtr &source, const VertexPtr &target);
     EdgePtr add(const VertexPtr &source, const VertexPtr &target, std::complex<double> length) noexcept;
     /// Insert if absent, otherwise return the existing edge.
-    /// Returns {ptr, true} on fresh insert, {ptr, false} on dedupe-hit.
-    /// Used by transactional Pachner moves to record which edges they
-    /// freshly created (so rollback knows which to remove).
+    /// Returns {ptr, true} on a fresh insert, {ptr, false} on a deduplication hit.
+    /// Transactional Pachner moves use the flag to record the edges they created, so
+    /// rollback knows which to remove.
     std::pair<EdgePtr, bool> tryAdd(const VertexPtr &source, const VertexPtr &target,
                                     std::complex<double> length);
     EdgePtr get(const std::uint64_t &fingerprint);
@@ -47,18 +46,18 @@ class EdgeList {
 
     /// The lookup key for an edge, derived from the ids its endpoints hold now.
     ///
-    /// This is the key ``add``/``tryAdd`` insert under, so it is the only value
-    /// that is guaranteed to find an edge again. An ``Edge``'s own
-    /// ``fingerprint`` member is maintained incrementally and can fall out of
-    /// step with its endpoints; keying off it silently misses.
+    /// This is the key ``add``/``tryAdd`` insert under, so it is the only value that
+    /// is guaranteed to find an edge again. An ``Edge``'s own ``fingerprint`` member is
+    /// maintained incrementally and can fall out of step with its endpoints; keying off
+    /// it silently misses.
     [[nodiscard]] static std::uint64_t keyOf(const Edge &edge) noexcept;
 
     /// Re-key an edge's fingerprint in the lookup map without moving the object.
     void rekeyEdge(std::uint64_t oldFp, std::uint64_t newFp);
 
-    /// Detach an edge from the lookup (but keep it in the pool).
-    /// Returns the pool slot so the caller can update the fingerprint and call
-    /// reattachEdge().  Returns UINT32_MAX if not found.
+    /// Detach an edge from the lookup while keeping it in the pool.
+    /// Returns the pool slot, so the caller can update the fingerprint and call
+    /// reattachEdge(). Returns UINT32_MAX if the key is not found.
     std::uint32_t detachEdge(std::uint64_t fp) {
       auto it = fpToSlot_.find(fp);
       if (it == fpToSlot_.end()) return UINT32_MAX;
@@ -69,11 +68,10 @@ class EdgeList {
 
     /// Re-attach a previously detached edge under its current key.
     ///
-    /// Returns false when the key is already taken by a different slot, which
-    /// means two live edges now claim the same vertex pair. The caller has to
-    /// decide what that means; silently dropping one leaves it in the live
-    /// vector with no way to find it again, and every later lookup for that
-    /// pair then creates a duplicate.
+    /// Returns false when the key is already taken by a different slot, meaning two
+    /// live edges claim the same vertex pair. The caller decides what to do: dropping
+    /// one silently leaves it in the live vector with no way to find it again, and
+    /// every later lookup for that pair then creates a duplicate.
     bool reattachEdge(std::uint32_t slot) {
       const auto fp = keyOf(pool_[slot]);
       const auto [it, inserted] = fpToSlot_.emplace(fp, slot);

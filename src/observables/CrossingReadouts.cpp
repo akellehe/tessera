@@ -1,6 +1,13 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// World-tube crossing readouts on level sets of the Lorentzian distance from
+/// the incoming boundary: crossing mass, baryon number, and the spectral
+/// charge-power profile.
+/// Reference: Ambjorn, Goerlich, Jurkiewicz, Loll, "Nonperturbative Quantum
+/// Gravity", arXiv:1203.3591
+
 #include "observables/CrossingReadouts.h"
 
 #include <algorithm>
@@ -36,9 +43,9 @@ EdgeKeyPair edgeKey(std::uint64_t a, std::uint64_t b) {
 }
 
 /// The future-directed proper time of a causal edge with complex squared
-/// length `z`: `sqrt(-z)`, on the branch whose real part is non-negative.
-/// The branch is PINNED here rather than left to the principal root, so a
-/// sign convention never leaks in through an unstated square root.
+/// length `z`: `sqrt(-z)` on the branch whose real part is non-negative.
+/// The branch is fixed here rather than left to the principal root, so the
+/// sign convention is explicit.
 std::complex<double> properTime(std::complex<double> z) {
   std::complex<double> root = std::sqrt(-z);
   if (root.real() < 0.0 || (root.real() == 0.0 && root.imag() < 0.0)) {
@@ -185,10 +192,11 @@ TemporalFunctionRead CrossingReadouts::temporalFunction(
     return read;
   }
 
-  // The time orientation M0 induces: the combinatorial layer (hop distance
-  // from M0 in the 1-skeleton).  An edge from a lower to a higher layer
-  // points to the future.  This is intrinsic to the cobordism and its
-  // incoming boundary — no vertex coordinate is ever read.
+  // The time orientation induced by M0: the combinatorial layer is the
+  // breadth-first-search (BFS) hop distance from M0 in the 1-skeleton, and an
+  // edge from a lower to a higher layer points to the future.  This is
+  // intrinsic to the cobordism and its incoming boundary; no vertex
+  // coordinate is read.
   std::deque<std::size_t> queue;
   for (std::size_t seed : seeds) {
     if (read.layer[seed] != 0) {
@@ -214,9 +222,9 @@ TemporalFunctionRead CrossingReadouts::temporalFunction(
     nameFailure(read.failedCertificates, "unreachable-vertices");
   }
 
-  // tau accumulates the proper time of future-directed CAUSAL edges along
-  // the path maximizing Re tau — the discrete Lorentzian distance from a
-  // hypersurface as a supremum over causal curves.  Layer order is a
+  // tau accumulates the proper time of future-directed causal edges along the
+  // path maximizing Re tau: the discrete Lorentzian distance from a
+  // hypersurface, a supremum over causal curves.  Layer order is a
   // topological order of the induced orientation, so one sweep suffices.
   std::vector<std::size_t> order;
   order.reserve(n);
@@ -598,8 +606,8 @@ BaryonCrossingRead CrossingReadouts::baryonNumber(
       if (!collectDefects) continue;
       ++read.quarkTubes;
       // The crossing sign and the determinant-line winding must agree on
-      // every certified tube.  Disagreement is a DEFECT SIGNAL: reported,
-      // never resolved, and never silently dropped from the sum.
+      // every certified tube.  Disagreement is reported as a defect; the tube
+      // is neither resolved nor dropped from the sum.
       if (tube.determinantWinding.has_value() &&
           *tube.determinantWinding != 0) {
         const int windingSign = *tube.determinantWinding > 0 ? 1 : -1;
@@ -673,7 +681,7 @@ ChargePowerProfileRead CrossingReadouts::chargePowerProfile(
     nodes.push_back(entry.first);
   }
 
-  // The slice Laplacian is the discrete -grad^2 on the crossing set: two
+  // The slice Laplacian is the graph Laplacian on the crossing set: two
   // crossing edges are adjacent when they share a vertex.
   const Eigen::Index size = static_cast<Eigen::Index>(nodes.size());
   Eigen::MatrixXd laplacian = Eigen::MatrixXd::Zero(size, size);
@@ -762,11 +770,12 @@ ElectromagneticFormFactorRead CrossingReadouts::formFactor(
     const ChargePowerProfileRead &profile, const CrossingReadoutsConfig &cfg) {
   (void)profile;
   (void)cfg;
-  // G_E needs a certified conserved U(1) current, certified momentum-transfer
-  // states, and a documented small-Q^2 refinement extrapolation.  This tree
-  // certifies none of the three, so the radius is UNAVAILABLE with each
-  // missing certificate named.  The spectral charge-power profile is an
-  // incoherent structure factor and is never substituted here.
+  // The electric form factor G_E needs a certified conserved U(1) current,
+  // certified momentum-transfer states, and a small-Q^2 refinement
+  // extrapolation.  None of the three is available here, so the charge radius
+  // is reported as unavailable with each missing certificate named.  The
+  // spectral charge-power profile is an incoherent structure factor and is
+  // not substituted for it.
   ElectromagneticFormFactorRead read;
   read.available = false;
   read.failedCertificates = {"no-certified-conserved-current",

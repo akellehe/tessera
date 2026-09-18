@@ -125,7 +125,8 @@ int gf2Rank(std::vector<int> M, int rows, int cols) {
 std::vector<std::vector<int>> gf2Nullspace(std::vector<int> M, int rows, int cols) {
   auto idx = [cols](int i, int j) { return static_cast<std::size_t>(i) * cols + j; };
   for (auto &v : M) v &= 1;
-  // Reduce to RREF (mirroring gf2Rank), recording each pivot's column.
+  // Reduce to reduced row echelon form (mirroring gf2Rank), recording each
+  // pivot's column.
   std::vector<int> pivotCol;  // pivotCol[r] == pivot column of reduced row r
   int rank = 0;
   for (int col = 0; col < cols && rank < rows; ++col) {
@@ -165,8 +166,8 @@ std::vector<std::vector<int>> gf2Nullspace(std::vector<int> M, int rows, int col
 
 namespace {
 
-/// Exact rational arithmetic for integerNullspace. Overflow fails loudly —
-/// the exact-integer claim is never silently rounded.
+/// Exact rational arithmetic for integerNullspace. Overflow throws rather than
+/// wrapping.
 struct Rational {
   long long num{0};
   long long den{1};
@@ -238,7 +239,8 @@ std::vector<std::vector<long>> integerNullspace(const std::vector<long> &M,
       a[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] =
           Rational(M[static_cast<std::size_t>(i) * cols + j]);
 
-  // Gauss-Jordan to RREF over Q with deterministic first-nonzero pivoting.
+  // Gauss-Jordan to reduced row echelon form over Q, with deterministic
+  // first-nonzero pivoting.
   std::vector<int> pivotColOfRow;
   std::vector<char> isPivotCol(static_cast<std::size_t>(cols), 0);
   int rank = 0;

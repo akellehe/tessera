@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import qubit as qa
 from tessera import cobordism as cob  # noqa: E402
 from tessera import observables as obs  # noqa: E402
 from tessera._tessera.cobordism import MultiCobordism as MC, PencilLayer  # noqa: E402

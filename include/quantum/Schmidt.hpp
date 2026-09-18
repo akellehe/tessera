@@ -1,7 +1,7 @@
-// Schmidt-spectrum extraction for contiguous-interval bipartitions of an
-// MPS. PLAN.md §5: given an MPS and a contiguous interval [i, j],
-// return the Schmidt spectrum of the bipartition A = [i, j] vs. its
-// complement.
+// Schmidt-spectrum extraction for contiguous-interval bipartitions of a
+// matrix product state (MPS): given an MPS and a contiguous interval
+// [i, j], return the Schmidt spectrum of the bipartition A = [i, j]
+// against its complement.
 //
 // ─── What we compute ──────────────────────────────────────────────────────
 //
@@ -17,12 +17,12 @@
 // and so the entries of the Schmidt spectrum — the eigenvalues of ρ_A —
 // are the squared singular values of M reshaped as
 // (sites = rows) × (bonds = cols). Equivalently they are the squares of
-// the Schmidt coefficients in the decomposition |ψ⟩ = Σ_α λ_α |α⟩_A ⊗
-// |α⟩_{Ā}.
+// the Schmidt coefficients σ_α in the decomposition
+// |ψ⟩ = Σ_α σ_α |α⟩_A ⊗ |α⟩_{Ā}.
 //
-// We use the convention λ_α = σ_α² throughout (the eigenvalues of ρ_A,
-// summing to 1 for a normalized state) so that downstream majorization
-// calls behave as the methodology page specifies.
+// The convention throughout is λ_α = σ_α²: the eigenvalues of ρ_A,
+// summing to 1 for a normalized state. Majorization::posetOf expects
+// spectra in this form.
 
 #pragma once
 
@@ -50,16 +50,16 @@ struct Interval {
 };
 
 // All-contiguous-cut Schmidt spectra of an MPS, excluding the trivial
-// full-chain bipartition [1, N] | ∅. PLAN.md §5 specifies exactly
-// this set as the cut family $\mathcal{F}$.
+// full-chain bipartition [1, N] | ∅. This set is the cut family
+// \f$\mathcal{F}\f$.
 struct SchmidtSpectra {
     int N{0};                                 // chain length
     std::vector<Interval> intervals;          // labels for each spectrum
     std::vector<std::vector<double>> spectra; // spectra[k] for intervals[k]
 };
 
-// Coarse-grained interface for Schmidt-spectrum extraction. Stateless;
-// not instantiable. Call the static methods on the class.
+// Schmidt-spectrum extraction. Stateless and not instantiable; call the
+// static methods on the class.
 class Schmidt {
 public:
     Schmidt() = delete;

@@ -18,31 +18,29 @@ namespace tessera::observables {
 
 /// # RegisterObservable
 ///
-/// The base for the emergent-proton readouts (#593): a pure post-hoc reader over
-/// a `RegisterContext` (a live, already-built complex). It extends the existing
-/// `tessera::observables::Observable` — every subclass is-an `Observable` — and
-/// adds the register-aware surface the SpacetimeVolume/VolumeProfile house
-/// pattern lacks:
+/// Base for the emergent-proton readouts: a read-only, post-hoc reader over a
+/// `RegisterContext` (a live, already-built complex). It extends
+/// `tessera::observables::Observable` with a register-aware surface:
 ///
 ///   * `record(ctx)` — the full JSON-able `Record` (bound to Python as a dict),
 ///     containing only GAUGE- and RELABEL-invariant channels;
-///   * `compute(ctx)` — the headline scalar (also reachable through the base
+///   * `compute(ctx)` — the headline scalar, also reachable through the base
 ///     `Observable::compute(spacetime)`, which reads a default register off the
-///     spacetime);
-///   * the declarative skip surface (`minHoles`/`requiredDimensions`/
-///     `needsProvenance`/`needsCausalContent`) so an inapplicable observable is a
-///     reported skip, never a crash;
+///     spacetime;
+///   * a declarative skip surface (`minHoles`, `requiredDimensions`,
+///     `needsProvenance`, `needsCausalContent`) so an inapplicable observable is
+///     a reported skip rather than a crash;
 ///   * `recordRelabeled(ctx, perm)` — the RELABEL-gate hook, defaulting to
-///     `record(ctx)`; observables whose configuration carries vertex ids (e.g.
-///     `BlockResiduals` block regions) override it to map their provenance
-///     through the permutation so the gate compares like with like.
+///     `record(ctx)`. Observables whose configuration carries vertex ids (such
+///     as `BlockResiduals` block regions) override it to map their provenance
+///     through the permutation.
 ///
-/// An Observable NEVER shapes the lattice, never builds, never solves — it reads
-/// and reports. The GAUGE/RELABEL gates (`ObservableGates`) are post-hoc
-/// validation, never a loop condition.
+/// An Observable never shapes the lattice, builds or solves; it reads and
+/// reports. The GAUGE/RELABEL gates (`ObservableGates`) are post-hoc validation,
+/// never a loop condition.
 class RegisterObservable : public Observable {
   public:
-    // ---- skip-reason sentinels (named, never inline literals) ----
+    // ---- skip-reason sentinels ----
     /// The observable needs provenance it was not given.
     static constexpr std::string_view kSkipNoProvenance = "no_provenance";
     /// The observable reads causal structure the all-spacelike specimen lacks.
@@ -57,11 +55,12 @@ class RegisterObservable : public Observable {
     /// The battery record key (unique within a battery).
     [[nodiscard]] virtual std::string recordKey() const = 0;
 
-    /// The GAUGE/RELABEL residual tolerance for the `*_ok` verdicts. Direct
-    /// period/charge reads sit at ~1e-16; derived ratios amplify eigensolve
+    /// GAUGE/RELABEL residual tolerance for the `*_ok` verdicts. Direct period
+    /// and charge reads sit near 1e-16; derived ratios amplify eigensolver
     /// roundoff; geometric aggregates re-summed in a relabeled container order
-    /// carry order-ULP noise — subclasses pick the tolerance their channels
-    /// warrant and the raw residuals are always reported alongside.
+    /// carry rounding noise of a few units in the last place. Subclasses pick the
+    /// tolerance their channels warrant, and raw residuals are always reported
+    /// alongside.
     [[nodiscard]] virtual double gateTol() const { return 1e-9; }
 
     /// The full JSON-able record of invariant channels (the pure read).
@@ -81,7 +80,7 @@ class RegisterObservable : public Observable {
       return record(ctx);
     }
 
-    // ---- the declarative skip surface ----
+    // ---- declarative skip surface ----
     /// Emergent holes this observable's readout needs (0 = none).
     [[nodiscard]] virtual int minHoles() const { return 0; }
     /// The top-cell dimension this observable requires (-1 = any).
@@ -97,7 +96,7 @@ class RegisterObservable : public Observable {
     /// reports), or empty when it can.
     [[nodiscard]] std::string skipReason(const RegisterContext &ctx) const;
 
-    // ---- the base Observable contract ----
+    // ---- base Observable contract ----
     /// Read a default register (`count=3`, `degree=3`, singlet target) off the
     /// live spacetime and return the headline scalar.
     /// @throws std::invalid_argument if the spacetime does not supply three

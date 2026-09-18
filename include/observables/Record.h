@@ -15,17 +15,15 @@ namespace tessera::observables {
 
 /// # Record
 ///
-/// A JSON-able observable record — the C++ home of the Python framework's
-/// nested `dict` of `float / int / bool / str / None / list / dict` leaves
-/// (#593). Every emergent-proton observable's `record()` returns one; the
-/// binding layer turns it into a Python `dict`. Keeping the record type in
-/// pybind-free `tessera_core` lets the GAUGE/RELABEL gates traverse it in C++
-/// (`reportDelta`).
+/// A JSON-able observable record: a nested tree of
+/// `float / int / bool / str / None / list / dict` leaves. Every observable's
+/// `record()` returns one, and the binding layer turns it into a Python `dict`.
+/// Keeping the type in the pybind-free `tessera_core` library lets the
+/// GAUGE/RELABEL gates traverse it in C++ (`reportDelta`).
 ///
-/// The propagation discipline (#580) lives at the reporting layer: a channel
-/// is real BY CONSTRUCTION or it carries both parts explicitly — complex
-/// values enter through `splitComplex`, which stores the two real leaves
-/// `{name}_re` / `{name}_im`; nothing is ever silently `.real`-ed.
+/// A channel is either real by construction or carries both parts explicitly:
+/// complex values enter through `splitComplex`, which stores the two real leaves
+/// `{name}_re` and `{name}_im`. An imaginary part is never silently discarded.
 class Record {
   public:
     enum class Type { Null, Bool, Int, Double, String, List, Map };
@@ -71,27 +69,25 @@ class Record {
     [[nodiscard]] const List &asList() const { return list_; }
     [[nodiscard]] const Map &asMap() const { return map_; }
 
-    /// The two explicit JSON-able leaves `{name}_re` / `{name}_im` of a
-    /// complex scalar — the one naming convention for complex record channels
-    /// (#580: the imaginary part is real physics and is always carried).
-    /// Merges them into `into`.
+    /// Store a complex scalar as the two JSON-able leaves `{name}_re` and
+    /// `{name}_im`, the naming convention for complex record channels. Merges
+    /// them into `into`.
     static void splitComplex(Map &into, const std::string &name,
                              std::complex<double> value);
     /// `splitComplex` for a sequence: `{name}_re` / `{name}_im` become lists.
     static void splitComplex(Map &into, const std::string &name,
                              const std::vector<std::complex<double>> &values);
 
-    /// The max absolute difference over every numeric leaf of two records —
-    /// the C_ij chamber readout's every-channel gate metric (ported verbatim
-    /// from the Python `report_delta`):
+    /// Maximum absolute difference over every numeric leaf of two records, the
+    /// gate metric applied to all channels:
     ///
     ///   * maps must have identical keys (a shape mismatch throws);
-    ///   * lists must have identical lengths (else `inf`);
-    ///   * strings and nulls must be equal (else `inf` — a changed status IS a
-    ///     flagged channel);
-    ///   * bools compare as 0/1; numbers as `|a - b|`; two NaNs agree
-    ///     (delta 0 — NaN is a legitimate reported value, e.g. a
-    ///     not-applicable reading), a NaN against a number is `inf`.
+    ///   * lists must have identical lengths (otherwise `inf`);
+    ///   * strings and nulls must be equal (otherwise `inf`: a changed status is
+    ///     a flagged channel);
+    ///   * bools compare as 0/1 and numbers as `|a - b|`; two NaNs agree
+    ///     (delta 0, since NaN is a legitimate reading such as "not
+    ///     applicable"), while a NaN against a number gives `inf`.
     ///
     /// @throws std::invalid_argument when two maps have different key sets.
     [[nodiscard]] static double reportDelta(const Record &a, const Record &b);

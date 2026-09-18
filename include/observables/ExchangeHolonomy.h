@@ -19,16 +19,14 @@
 
 namespace tessera::observables {
 
-/// Analysis parameters of the exchange/rotation holonomy reads (ticket
-/// #772).  Every threshold selects which
-/// reads are CERTIFIED, never which value is reported: a failed threshold
-/// yields an UNCERTIFIED read (the #769 gap-closure semantics), never a
-/// different sign.
+/// Analysis parameters of the exchange and rotation holonomy reads. Every
+/// threshold selects which reads are certified, never which value is reported:
+/// a failed threshold yields an uncertified read, never a different sign.
 struct ExchangeHolonomyConfig {
   /// A certified transport step needs every singular value of its overlap
-  /// matrix at least this large (a leaking transfer — the tracked subspace
-  /// turning away from its successor — invalidates the read BEFORE polar
-  /// normalization).
+  /// matrix at least this large. A leaking transfer — the tracked subspace
+  /// turning away from its successor — invalidates the read before polar
+  /// normalization.
   double leakFloor = 1e-6;
   /// A certified transport step needs overlap conditioning
   /// sigma_max/sigma_min at most this large.
@@ -41,25 +39,25 @@ struct ExchangeHolonomyConfig {
   /// holds); otherwise characterSign = 0 and only the complex value speaks.
   double signTolerance = 1e-6;
   /// Minimum subspace overlap for a certified block continuation in
-  /// :func:`ExchangeHolonomy::blockPermutation` (mirrors the #769
+  /// :func:`ExchangeHolonomy::blockPermutation`. Matches
   /// `SpectralFiberConfig::trackOverlapThreshold`; the matching itself is
-  /// delegated to `SpectralFiberTracker::matchFibers`).
+  /// delegated to `SpectralFiberTracker::matchFibers`.
   double blockMatchThreshold = 0.5;
-  /// Incremental steps of a lifted SO(d) loop must keep their rotation
-  /// angle at least this far below pi (the double-cover branch cut); a
-  /// larger step makes the principal lift ambiguous and the loop character
-  /// UNCERTIFIED instead of a guessed sign.
+  /// Incremental steps of a lifted SO(d) loop must keep their rotation angle at
+  /// least this far below pi, the double-cover branch cut. A larger step makes
+  /// the principal lift ambiguous and leaves the loop character uncertified
+  /// rather than guessed.
   double liftAngleMargin = 1e-6;
   /// Cap on the verified SO(d) cocycle residual
-  /// max_t ||g_ij g_jk g_ki - I||_F of :func:`ExchangeHolonomy::spinLift`
-  /// (the structural premise the GF(2) obstruction decision is exact under).
+  /// max_t ||g_ij g_jk g_ki - I||_F of :func:`ExchangeHolonomy::spinLift`: the
+  /// premise under which the GF(2) obstruction decision is exact.
   double cocycleTolerance = 1e-9;
 };
 
-/// Which physical question a Berry-cancelled character answers.  The ticket
-/// requires particle exchange and physical rotation to be SEPARATE channels
-/// in the API and the report: the same interferometric machinery runs both,
-/// but a read is always tagged with the channel it certifies, and
+/// Which physical question a Berry-cancelled character answers. Particle
+/// exchange and physical rotation are separate channels in the interface and
+/// the report: the same interferometric machinery runs both, a read is always
+/// tagged with the channel it certifies, and
 /// :func:`ExchangeHolonomy::doublyCancelledRatio` refuses mislabeled inputs.
 enum class HolonomyChannel {
   /// A configuration-space loop that permutes identical clusters.
@@ -69,9 +67,9 @@ enum class HolonomyChannel {
   PhysicalRotation,
 };
 
-/// One overlap-transport step of a closed loop: the singular-value data of
-/// the r x r frame overlap BEFORE polar normalization, and whether the step
-/// met the leak/conditioning thresholds.
+/// One overlap-transport step of a closed loop: the singular-value data of the
+/// r x r frame overlap before polar normalization, and whether the step met the
+/// leak and conditioning thresholds.
 struct TransportStepRead {
   /// Loop positions transported from / to (toIndex = (fromIndex+1) mod T).
   std::size_t fromIndex = 0;
@@ -88,29 +86,30 @@ struct TransportStepRead {
 
 /// # LoopHolonomyRead
 ///
-/// The certified overlap transport of one tracked frame around one CLOSED
+/// The certified overlap transport of one tracked frame around one closed
 /// configuration-space loop:
 ///
 ///   R_t = polar(Phi_{t+1 mod T}^dagger W_t Phi_t),
 ///   U_gamma = R_{T-1} ... R_1 R_0 .
 ///
-/// The transport is cyclic — the last step closes the loop back onto the
-/// t = 0 frame, so U_gamma maps the base frame's gauge to itself and
-/// det U_gamma is invariant under EVERY in-band frame rotation
-/// Phi_t -> Phi_t g_t (polar is unitarily equivariant, so the g's cancel
-/// around the cycle up to conjugation).
+/// The transport is cyclic: the last step closes the loop back onto the t = 0
+/// frame, so U_gamma maps the base frame's gauge to itself and det U_gamma is
+/// invariant under every in-band frame rotation Phi_t -> Phi_t g_t, since polar
+/// decomposition is unitarily equivariant and the g's cancel around the cycle
+/// up to conjugation.
 ///
-/// `determinant` is the RAW loop determinant chi_raw = det U_gamma.  It
-/// contains the ordinary path-dependent Berry phase of the reference motion
-/// and IS NEVER an exchange sign by itself — only the interferometric ratio
-/// of :func:`ExchangeHolonomy::exchangeCharacter` (a matched non-exchanging
-/// reference loop) or :func:`ExchangeHolonomy::rotationCharacter` (a matched
-/// co-moving non-rotating reference) is.
+/// `determinant` is the raw loop determinant chi_raw = det U_gamma. It contains
+/// the ordinary path-dependent Berry phase of the reference motion and is not
+/// an exchange sign by itself; only the interferometric ratio of
+/// :func:`ExchangeHolonomy::exchangeCharacter` (against a matched
+/// non-exchanging reference loop) or
+/// :func:`ExchangeHolonomy::rotationCharacter` (against a matched co-moving
+/// non-rotating reference) is.
 struct LoopHolonomyRead {
   /// The composed loop holonomy U_gamma (rank x rank).  Empty when the
   /// read was structurally invalidated (rank change along a fiber track).
   Eigen::MatrixXcd holonomy{};
-  /// chi_raw = det U_gamma — Berry phase INCLUDED, never a sign by itself.
+  /// chi_raw = det U_gamma, Berry phase included; not a sign by itself.
   std::complex<double> determinant{std::numeric_limits<double>::quiet_NaN(),
                                    std::numeric_limits<double>::quiet_NaN()};
   /// Number of loop frames T (= number of cyclic transport steps).
@@ -125,13 +124,13 @@ struct LoopHolonomyRead {
   /// worst leak) and max over steps of the overlap conditioning.
   double minStepSingularValue = std::numeric_limits<double>::quiet_NaN();
   double conditioning = std::numeric_limits<double>::quiet_NaN();
-  /// True when a fiber on the loop carried an UNCERTIFIED band certificate
-  /// (its isolating gap closed): the read is reported but never certified —
-  /// the #769 semantics, a closing gap invalidates instead of flipping.
+  /// True when a fiber on the loop carried an uncertified band certificate,
+  /// i.e. its isolating gap closed. The read is then reported but not
+  /// certified: a closing gap invalidates rather than flipping a sign.
   bool uncertifiedBand = false;
-  /// #764 certificate: `CertifiedNumerical` on the verified regime when
-  /// every step met the thresholds and no band was uncertified;
-  /// `HeuristicDiscovery` (never holds) otherwise.
+  /// Certificate: `CertifiedNumerical` on the verified regime when every step
+  /// met the thresholds and no band was uncertified; `HeuristicDiscovery`,
+  /// which never holds, otherwise.
   cobordism::Certificate certificate{};
 };
 
@@ -142,21 +141,20 @@ struct LoopHolonomyRead {
 ///
 ///   chi_hat_F = det U_loop / det U_reference
 ///
-/// (whitepaper "Fermion statistics from simplicial orientation").  The
-/// report keeps the three phase channels SEPARATE:
-/// `rawLoopDeterminant` (exchange or rotation motion + Berry),
-/// `referenceDeterminant` (the Berry reference motion alone), and
-/// `character` (the cancelled ratio — the dynamical certificate).
+/// The report keeps the three phase channels separate: `rawLoopDeterminant`
+/// (exchange or rotation motion plus Berry), `referenceDeterminant` (the Berry
+/// reference motion alone), and `character` (the cancelled ratio, the dynamical
+/// certificate).
 struct HolonomyCharacterRead {
-  /// Which physical question this character answers (exchange vs rotation
-  /// are separate channels by construction — the ticket's API separation).
+  /// Which physical question this character answers. Exchange and rotation are
+  /// separate channels by construction.
   HolonomyChannel channel = HolonomyChannel::ParticleExchange;
-  /// det U of the exchange/rotation loop — Berry phase INCLUDED.
+  /// det U of the exchange or rotation loop, Berry phase included.
   std::complex<double> rawLoopDeterminant{
       std::numeric_limits<double>::quiet_NaN(),
       std::numeric_limits<double>::quiet_NaN()};
-  /// det U of the matched non-exchanging / co-moving non-rotating
-  /// reference loop — the Berry reference channel on its own.
+  /// det U of the matched non-exchanging or co-moving non-rotating reference
+  /// loop: the Berry reference channel on its own.
   std::complex<double> referenceDeterminant{
       std::numeric_limits<double>::quiet_NaN(),
       std::numeric_limits<double>::quiet_NaN()};
@@ -164,7 +162,7 @@ struct HolonomyCharacterRead {
   std::complex<double> character{std::numeric_limits<double>::quiet_NaN(),
                                  std::numeric_limits<double>::quiet_NaN()};
   /// -1 or +1 when the certificate holds and |character -+ 1| is within
-  /// `signTolerance`; 0 otherwise (an uncertified read NEVER emits a sign).
+  /// `signTolerance`; 0 otherwise. An uncertified read never emits a sign.
   int characterSign = 0;
   /// |character - characterSign| when a sign was emitted (NaN otherwise).
   double signResidual = std::numeric_limits<double>::quiet_NaN();
@@ -173,36 +171,34 @@ struct HolonomyCharacterRead {
   bool timingMatched = false;
   /// Whether the two loops had equal tracked rank.
   bool ranksMatched = false;
-  /// #764 certificate: holds only when both loop certificates hold, timing
-  /// and ranks match, and | |character| - 1 | is within tolerance.
+  /// Certificate: holds only when both loop certificates hold, timing and
+  /// ranks match, and | |character| - 1 | is within tolerance.
   cobordism::Certificate certificate{};
 };
 
 /// # BlockPermutationRead
 ///
 /// The structural channel of the exchange experiment: persistent-component
-/// matching of localized odd blocks around the loop, the extracted
-/// permutation, its EXACT parities (the algebraic wedge sign, delegated to
-/// the #766 grading), and the residual in-block motion left after the
-/// matched reference loop is cancelled — kept strictly separate from the
-/// interferometric determinant channel.
+/// matching of localized odd blocks around the loop, the extracted permutation,
+/// its exact parities (the algebraic wedge sign from the exterior-algebra
+/// grading), and the residual in-block motion left after the matched reference
+/// loop is cancelled. Kept separate from the interferometric determinant
+/// channel.
 struct BlockPermutationRead {
   /// blockPermutation[b] = index (in the t = 0 block list) the block at
   /// position b arrives at after one full loop.  Empty when uncertified.
   std::vector<std::size_t> blockPermutation{};
   /// The tracked blocks' ranks at t = 0.
   std::vector<std::size_t> blockRanks{};
-  /// Sign of `blockPermutation` as a permutation of block LABELS
-  /// (+1/-1; 0 when uncertified).  A combinatorial datum — NOT the
-  /// exchange statistic (a rank-1 <-> rank-2 block swap has blockParity -1
-  /// but graded sign +1).
+  /// Sign of `blockPermutation` as a permutation of block labels: +1 or -1, 0
+  /// when uncertified. A combinatorial datum, not the exchange statistic: a
+  /// rank-1 to rank-2 block swap has blockParity -1 but graded sign +1.
   int blockParity = 0;
-  /// The EXCHANGE STATISTIC: the sign of the induced MODE permutation
-  /// (blocks expanded to their `blockRanks` modes, in-block order carried),
-  /// computed by the exact #766 rule
-  /// `quantum::OccupationBitset::permutationParity` — equal to the graded
-  /// sign prod (-1)^{n_a n_b} over exchanged cluster pairs.  +1/-1; 0 when
-  /// uncertified.
+  /// The exchange statistic: the sign of the induced mode permutation, with
+  /// blocks expanded to their `blockRanks` modes and in-block order carried.
+  /// Computed by `quantum::OccupationBitset::permutationParity` and equal to
+  /// the graded sign prod (-1)^{n_a n_b} over exchanged cluster pairs. +1 or
+  /// -1; 0 when uncertified.
   int modeParity = 0;
   /// Optional composite-level view (when `composites` was supplied):
   /// compositePermutation[c] = composite that composite c's blocks landed
@@ -221,10 +217,10 @@ struct BlockPermutationRead {
   /// transport, multiplied in the cycle's visit order.  NaN when no
   /// reference was supplied (`cobordism::Certificate::kUnmeasured`).
   double residualInBlockMotion = std::numeric_limits<double>::quiet_NaN();
-  /// #764 certificate: `StructureExact` (parities are exact integers GIVEN
-  /// the verified premise that every step's block matching is a certified
-  /// bijection of equal-rank accepted bands); `HeuristicDiscovery` when the
-  /// premise failed (gap closure, rank change, ambiguous matching).
+  /// Certificate: `StructureExact`, since parities are exact integers given the
+  /// verified premise that every step's block matching is a certified bijection
+  /// of equal-rank accepted bands; `HeuristicDiscovery` when that premise
+  /// failed through gap closure, rank change, or ambiguous matching.
   cobordism::Certificate certificate{};
 };
 
@@ -254,13 +250,14 @@ struct LoopLiftRead {
 /// exact GF(2) coboundary decision (does an edge-sign choice make every
 /// triangle +1?), and — when the lift exists — one such choice.  This is
 /// CONDITIONAL machinery for continuum spin claims on emergent
-/// manifold-like regimes only; the abstract CAR/Fock exchange algebra
+/// manifold-like regimes only; the abstract canonical
+/// anticommutation-relation (CAR) Fock exchange algebra
 /// requires no spin structure and no Kasteleyn orientation.
 struct SpinLiftRead {
   /// Whether a consistent sign choice exists (w2 cohomologically trivial).
   bool liftExists = false;
-  /// The negation of `liftExists` once certified (kept explicit so an
-  /// UNCERTIFIED read can report neither).
+  /// The negation of `liftExists` once certified. Kept explicit so an
+  /// uncertified read can report neither.
   bool obstructed = false;
   /// Per-triangle cocycle signs (+1 / -1) in input triangle order.
   std::vector<int> triangleSigns{};
@@ -283,88 +280,88 @@ struct SpinLiftRead {
 /// # ExchangeHolonomy
 ///
 /// Berry-cancelled exchange statistics, the constructed total-space spin
-/// holonomy cycle, and the conditional SO(d) -> Spin(d) lift (ticket #772,
-/// Wave 2 of #763; whitepaper section "Fermion statistics from simplicial
-/// orientation").
+/// holonomy cycle, and the conditional SO(d) -> Spin(d) lift.
 ///
-/// **Identities implemented.**
+/// ## Identities implemented
 ///
 ///  1. Certified cyclic overlap transport of an isolated tracked subspace:
-///     `R_t = polar(Phi_{t+1 mod T}^dagger W_t Phi_t)`,
-///     `U_gamma = R_{T-1} ... R_0` — composes #769 `SpectralFiber` frames
-///     (cells matched by sorted vertex-id tuple; no second subspace tracker
-///     is built here) or explicit frame paths.  det U_gamma is invariant
+///     `R_t = polar(Phi_{t+1 mod T}^dagger W_t Phi_t)` and
+///     `U_gamma = R_{T-1} ... R_0`. It composes `SpectralFiber` frames, with
+///     cells matched by sorted vertex-id tuple, or explicit frame paths; no
+///     second subspace tracker is built here. det U_gamma is exactly invariant
 ///     under in-band frame rotations, vertex relabeling, and simplex
-///     reorientation (a common row sign flip), exactly.
+///     reorientation (a common row sign flip).
 ///  2. The interferometric exchange character
 ///     `chi_hat_F = det U_exchange / det U_reference` against a matched
-///     non-exchanging reference loop with the same timing (step count) and
-///     rank.  The RAW determinant contains an ordinary Berry phase and is
-///     never the exchange sign; only the cancelled ratio is the dynamical
-///     certificate.  Domain: equal-step, equal-rank certified loops.
-///  3. The structural permutation of persistent localized odd blocks
-///     (matching delegated to `SpectralFiberTracker::matchFibers`), its
-///     exact parity through the #766 grading
-///     (`quantum::OccupationBitset::permutationParity` — the algebraic
-///     wedge sign, an integer, exact), and the residual in-block motion
-///     after reference cancellation.  Algebraic and dynamical channels are
-///     reported separately and never conflated.
-///  4. The total-space spin holonomy cycle, constructed HERE as the
-///     canonical physical rotation path (no prior document supplies a
-///     cycle, a closed loop, or a reference normalization): the
-///     Euclidean gamma layer, spin generators `Sigma_ab = [gamma_a,
-///     gamma_b]/4`, the closed-form plane rotation
-///     `exp(theta Sigma_ab) = cos(theta/2) I + sin(theta/2) gamma_a
-///     gamma_b`, and the closed 2 pi cluster-frame loop with its matched
-///     co-moving non-rotating reference.  The rotation acts on the WHOLE
-///     carried frame at once — never a product of per-hole or per-edge
-///     Bloch vectors.  The transverse frame makes the double cover
-///     interferometrically visible (a frame polarized along the rotation
-///     axis does not precess and shows no relative phase).
+///     non-exchanging reference loop with the same step count and rank. The raw
+///     determinant contains an ordinary Berry phase and is never the exchange
+///     sign; only the cancelled ratio is the dynamical certificate. Valid for
+///     equal-step, equal-rank certified loops.
+///  3. The structural permutation of persistent localized odd blocks, with
+///     matching delegated to `SpectralFiberTracker::matchFibers`, its exact
+///     parity through the exterior-algebra grading
+///     (`quantum::OccupationBitset::permutationParity`, the algebraic wedge
+///     sign, an exact integer), and the residual in-block motion after
+///     reference cancellation. The algebraic and dynamical channels are
+///     reported separately.
+///  4. The total-space spin holonomy cycle as the canonical physical rotation
+///     path: the Euclidean gamma layer, spin generators
+///     `Sigma_ab = [gamma_a, gamma_b]/4`, the closed-form plane rotation
+///     `exp(theta Sigma_ab) = cos(theta/2) I + sin(theta/2) gamma_a gamma_b`,
+///     and the closed 2 pi cluster-frame loop with its matched co-moving
+///     non-rotating reference. The rotation acts on the whole carried frame at
+///     once, never as a product of per-hole or per-edge Bloch vectors. The
+///     transverse frame makes the double cover interferometrically visible: a
+///     frame polarized along the rotation axis does not precess and shows no
+///     relative phase.
 ///  5. The total-space spin read `J^2 = sum_a (sum_i S_a^(i))^2` on
-///     `(C^2)^(tensor n)` — the exact measuring stick whose oracle values
-///     are pinned: proton eigenstate `2|uud> - |udu> - |duu>` -> 3/4,
-///     Delta `|uuu>` -> 15/4, product `|uud>` -> 7/4.  The operator and
-///     these oracle values are what `joint_proton_spin_findings.md`
-///     supplies; the rotation cycle of item 4 is not from that document.
-///  6. The conditional Spin(d) lift: the principal rotation logarithm via
-///     the real Schur plane decomposition, the closed-form plane-product
-///     lift SO(d) -> Spin(d) (d = 3, 4), the Z2 character of a closed
-///     SO(d) loop, and the second Stiefel-Whitney obstruction of Cech
-///     transition data with the exact GF(2) coboundary decision
-///     (`cobordism::gf2Rank`).  Continuum-claim machinery only.
+///     `(C^2)^(tensor n)`, whose oracle values are pinned: the proton
+///     eigenstate `2|uud> - |udu> - |duu>` gives 3/4, the Delta `|uuu>` gives
+///     15/4, and the product state `|uud>` gives 7/4.
+///  6. The conditional Spin(d) lift: the principal rotation logarithm via the
+///     real Schur plane decomposition, the closed-form plane-product lift
+///     SO(d) -> Spin(d) for d = 3, 4, the Z2 character of a closed SO(d) loop,
+///     and the second Stiefel-Whitney obstruction of Cech transition data with
+///     the exact GF(2) coboundary decision (`cobordism::gf2Rank`).
 ///
-/// **Channel separation (ticket requirement).**  Five channels are kept
-/// distinct in the API and reports: (i) simplex REORIENTATION is a common
-/// row sign flip `reorientedFrames` under which every read is exactly
-/// invariant; (ii) COMPILATION ORDERING (mode order, vertex labels) is a
-/// #766 compilation artifact — reads here match cells by vertex tuple /
-/// permute rows and are exactly invariant, with any bookkeeping parity
-/// supplied by `EdgeModeRegistry`/`OccupationBitset`, never by this class;
-/// (iii) PARTICLE EXCHANGE is `HolonomyChannel::ParticleExchange` plus the
-/// structural `modeParity`; (iv) BERRY REFERENCE MOTION is the
-/// `referenceDeterminant` channel, reported raw and cancelled, never
-/// interpreted alone; (v) PHYSICAL ROTATION is
-/// `HolonomyChannel::PhysicalRotation` with its own loop builder and
-/// co-moving reference.  `doublyCancelledRatio` enforces the channel tags.
+/// ## Channel separation
 ///
-/// **What is exact and what is certified.**  Parities and wedge/graded
-/// signs are algebraically exact integers (#766).  Transported characters
-/// are `CertifiedNumerical` with reported residuals and conditioning (#764
-/// vocabulary).  Gap closure, leaks, ill-conditioning, rank changes, and
-/// ambiguous matchings return UNCERTIFIED reads — never a sign.
+/// Five channels are kept distinct in the interface and the reports.
 ///
-/// **Read-only observable.**  Stateless; never calls a solver, never
-/// mutates anything it reads, and nothing here may enter any emergence
-/// objective.  No Kasteleyn orientation is required anywhere: the abstract
-/// exterior algebra is order-independent (#766), and a Kasteleyn gadget is
-/// only a possible surface-dimer IMPLEMENTATION detail, never the general
-/// spin certificate.
+///  (i)   Simplex reorientation is a common row sign flip, `reorientedFrames`,
+///        under which every read is exactly invariant.
+///  (ii)  Compilation ordering (mode order, vertex labels) is a compilation
+///        artifact. Reads here match cells by vertex tuple and permute rows, so
+///        they are exactly invariant; any bookkeeping parity is supplied by
+///        `EdgeModeRegistry` or `OccupationBitset`, never by this class.
+///  (iii) Particle exchange is `HolonomyChannel::ParticleExchange` plus the
+///        structural `modeParity`.
+///  (iv)  Berry reference motion is the `referenceDeterminant` channel,
+///        reported raw and cancelled, and never interpreted alone.
+///  (v)   Physical rotation is `HolonomyChannel::PhysicalRotation`, with its
+///        own loop builder and co-moving reference.
+///
+/// `doublyCancelledRatio` enforces the channel tags.
+///
+/// ## What is exact and what is certified
+///
+/// Parities and wedge (graded) signs are algebraically exact integers.
+/// Transported characters are `CertifiedNumerical` with reported residuals and
+/// conditioning. Gap closure, leaks, ill-conditioning, rank changes and
+/// ambiguous matchings return uncertified reads, never a sign.
+///
+/// ## Read-only
+///
+/// Stateless: it never calls a solver, never mutates anything it reads, and
+/// nothing here may enter any emergence objective. No Kasteleyn orientation is
+/// required: the abstract exterior algebra is order-independent, and a
+/// Kasteleyn gadget is only a possible surface-dimer implementation detail, not
+/// the general spin certificate.
 class ExchangeHolonomy {
   public:
     ExchangeHolonomy() = delete;  // static-only utility class
 
-    // ---- certified overlap transport (composing #769 frames) ------------
+    // ---- certified overlap transport --------------------------------------
 
     /// The unitary polar factor of a (square) matrix M = U Sigma V^dagger
     /// -> U V^dagger.  Exposed because the polar step is the normative
@@ -391,13 +388,12 @@ class ExchangeHolonomy {
         const std::vector<Eigen::VectorXcd> &stepWeights,
         const ExchangeHolonomyConfig &cfg = {});
 
-    /// Closed-loop holonomy of a #769 fiber track: consecutive fibers'
-    /// frames are restricted to their SHARED cells (matched by sorted
-    /// vertex-id tuple — gauge- and relabeling-invariant, the
-    /// `SpectralFiber::overlap` convention), with W_t the departing fiber's
-    /// weight diagonal on the shared cells.  An uncertified band anywhere
-    /// on the loop (a closed gap) or a rank change yields an UNCERTIFIED
-    /// read, never a sign (#769 semantics).
+    /// Closed-loop holonomy of a fiber track: consecutive fibers' frames are
+    /// restricted to their shared cells, matched by sorted vertex-id tuple
+    /// (gauge- and relabeling-invariant, the `SpectralFiber::overlap`
+    /// convention), with W_t the departing fiber's weight diagonal on the
+    /// shared cells. An uncertified band anywhere on the loop — a closed gap —
+    /// or a rank change yields an uncertified read, never a sign.
     [[nodiscard]] static LoopHolonomyRead fiberLoopHolonomy(
         const std::vector<SpectralFiber> &loop,
         const ExchangeHolonomyConfig &cfg = {});
@@ -446,8 +442,8 @@ class ExchangeHolonomy {
     /// pass empty to skip (residual reported unmeasured).  `composites`
     /// optionally groups block indices into clusters for the composite-
     /// level permutation view (e.g. one odd block + one even 2-mode
-    /// composite).  Parities are exact #766 integers; everything else
-    /// carries residuals.
+    /// composite). Parities are exact integers; everything else carries
+    /// residuals.
     [[nodiscard]] static BlockPermutationRead blockPermutation(
         const std::vector<std::vector<SpectralFiber>> &steps,
         const std::vector<std::vector<SpectralFiber>> &referenceSteps = {},
@@ -491,10 +487,9 @@ class ExchangeHolonomy {
 
     /// The constructed total-space spin holonomy cycle as an explicit closed
     /// frame path: Phi_t = exp(theta_t Sigma_ab) Phi_0 with theta_t =
-    /// 2 pi turns t / steps, t = 0..steps-1 (cyclically closed).  ONE
-    /// global rotation of the whole carried frame `frame0`
-    /// (spinorDimension(d) rows) — never a per-hole product.  The rotation
-    /// path is never left abstract: this IS the executable path.
+    /// 2 pi turns t / steps, t = 0..steps-1, cyclically closed. One global
+    /// rotation of the whole carried frame `frame0` (spinorDimension(d) rows),
+    /// never a per-hole product.
     [[nodiscard]] static std::vector<Eigen::MatrixXcd> rotationLoopFrames(
         const Eigen::MatrixXcd &frame0, int a, int b, int d, int turns,
         int steps);
@@ -516,8 +511,8 @@ class ExchangeHolonomy {
     // ---- the total-space spin read (the existing measuring stick) --------
 
     /// The total-spin Casimir J^2 = sum_a (sum_i S_a^(i))^2 on
-    /// (C^2)^(tensor n) as a dense matrix (S_a = Pauli/2) — the TOTAL-SPACE
-    /// operator acting on the whole composite state at once.
+    /// (C^2)^(tensor n) as a dense matrix with S_a = Pauli/2: the total-space
+    /// operator, acting on the whole composite state at once.
     /// @throws std::invalid_argument for constituents < 1 or > 10 (the
     /// dense 2^n matrix cap; the read is a fixture-scale measuring stick).
     [[nodiscard]] static Eigen::MatrixXcd totalJSquaredOperator(
@@ -553,19 +548,18 @@ class ExchangeHolonomy {
     /// rotationToSpin(R_ab(theta)) = spinorRotation(-theta, a, b, d), the
     /// two documented conventions related by the plane orientation.  A
     /// rotation by theta lifts with the half angle theta/2; the two lifts
-    /// +-S differ by the center, and THIS function returns the principal
-    /// one (plane angles in (-pi, pi], the pi branch by the documented
-    /// axis rule).
+    /// +-S differ by the center, and this function returns the principal one,
+    /// with plane angles in (-pi, pi] and the pi branch fixed by the documented
+    /// axis rule.
     [[nodiscard]] static Eigen::MatrixXcd rotationToSpin(
         const Eigen::MatrixXd &rotation, int d);
 
-    /// The Z2 character of a CLOSED discretized SO(d) loop `loop[t]`
-    /// (t = 0..T-1, cyclic): incremental rotations R_{t+1} R_t^T are
-    /// lifted principally and composed; the closed product is +-I and the
-    /// sign is the pi_1(SO(d)) class (+1 contractible, -1 the double-cover
-    /// generator, e.g. a 2 pi plane rotation).  A step at or beyond
-    /// pi - liftAngleMargin makes the branch ambiguous: UNCERTIFIED, no
-    /// sign.
+    /// The Z2 character of a closed discretized SO(d) loop `loop[t]`,
+    /// t = 0..T-1, cyclic: incremental rotations R_{t+1} R_t^T are lifted
+    /// principally and composed. The closed product is +-I and the sign is the
+    /// pi_1(SO(d)) class: +1 contractible, -1 the double-cover generator, such
+    /// as a 2 pi plane rotation. A step at or beyond pi - liftAngleMargin makes
+    /// the branch ambiguous, leaving the read uncertified with no sign.
     [[nodiscard]] static LoopLiftRead loopLiftCharacter(
         const std::vector<Eigen::MatrixXd> &loop, int d,
         const ExchangeHolonomyConfig &cfg = {});
@@ -574,11 +568,11 @@ class ExchangeHolonomy {
     /// `edges[e] = (i, j)` carries `edgeRotations[e]` = g_ij (g_ji is its
     /// transpose, lifted independently by the same principal rule);
     /// `triangles` lists vertex triples (i, j, k) traversed as given.  The
-    /// SO cocycle g_ij g_jk g_ki = I is VERIFIED per triangle (the
-    /// structural premise); per-triangle lift signs w_t are computed, and
-    /// the exact GF(2) coboundary decision (via `cobordism::gf2Rank`)
-    /// accepts (returning a consistent per-edge sign choice) or rejects
-    /// (the w2 obstruction) the lift.  The CLASS is independent of the
+    /// SO cocycle g_ij g_jk g_ki = I is verified per triangle, which is the
+    /// structural premise. Per-triangle lift signs w_t are computed, and the
+    /// exact GF(2) coboundary decision via `cobordism::gf2Rank` either accepts
+    /// the lift, returning a consistent per-edge sign choice, or rejects it as
+    /// the w2 obstruction. The class is independent of the
     /// pi-branch convention (an edge's branch flip toggles exactly its
     /// adjacent triangles).  This concerns only continuum spinor claims —
     /// never the abstract CAR/Fock algebra, and no Kasteleyn orientation
@@ -594,21 +588,21 @@ class ExchangeHolonomy {
 
     // ---- channel-separation gauge actions (for tests and reports) --------
 
-    /// The simplex-reorientation gauge on a frame path: row r of every
-    /// frame multiplied by cellSigns[r] (+-1) — reversing a k-cell's
-    /// orientation flips its cochain component on every frame alike, and
-    /// every read of this class is EXACTLY invariant (the diagonal sign
-    /// conjugates away in Phi^dagger W Phi since W is diagonal).
+    /// The simplex-reorientation gauge on a frame path: row r of every frame
+    /// multiplied by cellSigns[r] (+-1). Reversing a k-cell's orientation flips
+    /// its cochain component on every frame alike, and every read of this class
+    /// is exactly invariant, since the diagonal sign conjugates away in
+    /// Phi^dagger W Phi when W is diagonal.
     /// @throws std::invalid_argument on a sign not in {-1, +1} or a size
     /// mismatch.
     [[nodiscard]] static std::vector<Eigen::MatrixXcd> reorientedFrames(
         const std::vector<Eigen::MatrixXcd> &frames,
         const std::vector<int> &cellSigns);
 
-    /// The compilation-ordering gauge on a frame path: every frame's rows
-    /// (and the caller's weights, separately) permuted by `rowPermutation`
-    /// (new row r = old row rowPermutation[r]) — a vertex relabeling /
-    /// cell reordering under which every read is EXACTLY invariant.
+    /// The compilation-ordering gauge on a frame path: every frame's rows, and
+    /// the caller's weights separately, permuted by `rowPermutation` so that new
+    /// row r is old row rowPermutation[r]. A vertex relabeling or cell
+    /// reordering under which every read is exactly invariant.
     /// @throws std::invalid_argument unless `rowPermutation` is a
     /// bijection of the row count.
     [[nodiscard]] static std::vector<Eigen::MatrixXcd> permutedCellFrames(
@@ -646,7 +640,7 @@ class ExchangeHolonomy {
         const LoopHolonomyRead &loop, const LoopHolonomyRead &reference,
         HolonomyChannel channel, const ExchangeHolonomyConfig &cfg);
 
-    // Exact parity of a permutation via the #766 grading.
+    // Exact parity of a permutation via the exterior-algebra grading.
     [[nodiscard]] static int permutationSign(
         const std::vector<std::size_t> &permutation);
 

@@ -4,149 +4,143 @@
 #ifndef TESSERA_OBSERVABLES_FIBERCONNECTION_H
 #define TESSERA_OBSERVABLES_FIBERCONNECTION_H
 
-// Derived U(r) fiber transport and center-aware rank-three holonomies
-// (issue #770, Wave 2 of the recursive spectral-fiber program — the
-// whitepaper section "Color transport and Wilson loops from spectral
-// frames").
+// Derived U(r) fiber transport and center-aware rank-three holonomies.
 //
-// ─── What lives here ─────────────────────────────────────────────────────
+// Reference: Greensite, "The Confinement Problem in Lattice Gauge Theory",
+// arXiv:hep-lat/0301023.
 //
-//   • FiberConnection      — the derived-connection kernel: assembles the
-//                            chain transfer T_AB from EXISTING machinery
-//                            (the Hodge d'Alembertian's intercomponent
-//                            block, or a RecursiveQuotient response-network
-//                            block), forms the overlap
-//                            M_AB = Φ_A†W_A T_AB Φ_B (Ψ_A† on the
+// ## Contents
+//
+//   • FiberConnection      — the derived-connection kernel: assembles the chain
+//                            transfer T_AB from existing machinery (the Hodge
+//                            d'Alembertian's intercomponent block, or a
+//                            RecursiveQuotient response-network block), forms
+//                            the overlap M_AB = Φ_A†W_A T_AB Φ_B (Ψ_A† on the
 //                            biorthogonal path), reports every
-//                            pre-normalization diagnostic, gates, and only
-//                            then reduces to the polar U(r) /
-//                            pseudo-unitary factor; composes accepted maps
-//                            into Wilson observables; continues rank-three
-//                            cube-root branches; and certifies determinant
-//                            windings for closed families and declared
-//                            open-segment closures.
+//                            pre-normalization diagnostic, gates, and only then
+//                            reduces to the polar U(r) or pseudo-unitary
+//                            factor. It composes accepted maps into Wilson
+//                            observables, continues rank-three cube-root
+//                            branches, and certifies determinant windings for
+//                            closed families and declared open-segment
+//                            closures.
 //   • FiberTransportRead   — one derived transport A ← B with its raw map,
-//                            diagnostics, normalized factor, determinant
-//                            phase, and #764 certificate (spec §6.6; the
-//                            spec's per-transport winding/center fields
-//                            materialize on the dedicated family reads
-//                            below, because an integer winding exists only
-//                            for a declared family/closure and a center
-//                            sector only for a declared lift path).
-//   • WilsonHolonomyRead   — the loop product: full U(r) holonomy,
-//                            normalized trace, determinant line, and the
-//                            center-blind adjoint reads.
-//   • FundamentalLiftRead  — the explicitly lifted SU(3) fundamental
-//                            holonomy with its declared base branch and
-//                            accumulated Z₃ center sector.
+//                            diagnostics, normalized factor, determinant phase,
+//                            and certificate. Winding and center sector appear
+//                            on the dedicated family reads below, because an
+//                            integer winding exists only for a declared family
+//                            or closure and a center sector only for a declared
+//                            lift path.
+//   • WilsonHolonomyRead   — the loop product: full U(r) holonomy, normalized
+//                            trace, determinant line, and the centre-blind
+//                            adjoint reads.
+//   • FundamentalLiftRead  — the explicitly lifted SU(3) fundamental holonomy
+//                            with its declared base branch and accumulated Z₃
+//                            center sector.
 //   • DeterminantWindingRead / WindingClosureSpec
 //                          — the integer determinant winding of a closed
-//                            full-rank family, or the RELATIVE winding of
-//                            an open cobordism segment under a recorded
-//                            closure specification (matched-reference or
-//                            endpoint trivialization); unknown when no
-//                            closure is declared.
+//                            full-rank family, or the relative winding of an
+//                            open cobordism segment under a recorded closure
+//                            specification (matched-reference or endpoint
+//                            trivialization). Unknown when no closure is
+//                            declared.
 //
-// ─── Exact identities implemented, and their domains ────────────────────
+// ## Identities implemented, and their domains
 //
-//   • Chain transfer (both sources are wrappers over existing machinery,
-//     never a sampled gauge field):
+//   • Chain transfer. Both sources wrap existing machinery and neither samples
+//     a gauge field.
 //       -- `chainTransfer` reads the off-diagonal block
-//          T_AB = L_k[cells(A), cells(B)] of the whole-complex weighted
-//          Hodge operator `cobordism::HodgeLaplacian::laplacian(k)` (the
+//          T_AB = L_k[cells(A), cells(B)] of the whole-complex weighted Hodge
+//          operator `cobordism::HodgeLaplacian::laplacian(k)`, the
 //          cochain-coordinate d'Alembertian
-//          L_k = W_k⁻¹d_kᵀW_{k-1}d_k + d_{k+1}W_{k+1}⁻¹d_{k+1}ᵀW_k).  At
-//          k = 0 it reads the Hermitian U(1) CONNECTION graph Laplacian
-//          `connectionLaplacian` instead — the oriented link entry
-//          −l²e^{iφ}, which is what the Wilson-loop machinery this
-//          transport is compared against carries — NOT the Hodge
-//          L₀ = d₁W₁⁻¹d₁ᵀ, whose off-diagonal is −1/W₁(e) and which has no
-//          separate link phase (#805).  This block equals
-//          the same block of the operator of the induced subcomplex on
-//          support(A) ∪ support(B) EXACTLY: every coupling path between a
-//          k-cell of A and a k-cell of B — a shared (k−1)-facet or a
-//          common (k+1)-coface — has all its vertices inside the two
-//          cells, hence inside the union support, and the per-cell weights
-//          are identical.  Domain: any degree with both fibers' cells
-//          present in the complex.
+//          L_k = W_k⁻¹d_kᵀW_{k-1}d_k + d_{k+1}W_{k+1}⁻¹d_{k+1}ᵀW_k. At k = 0 it
+//          reads the Hermitian U(1) connection graph Laplacian
+//          `connectionLaplacian` instead — the oriented link entry −l²e^{iφ},
+//          which is what the Wilson-loop machinery this transport is compared
+//          against carries — rather than the Hodge L₀ = d₁W₁⁻¹d₁ᵀ, whose
+//          off-diagonal is −1/W₁(e) and which has no separate link phase. This
+//          block equals the same block of the operator of the induced
+//          subcomplex on support(A) ∪ support(B) exactly: every coupling path
+//          between a k-cell of A and a k-cell of B — a shared (k−1)-facet or a
+//          common (k+1)-coface — has all its vertices inside the two cells,
+//          hence inside the union support, and the per-cell weights are
+//          identical. Valid at any degree with both fibers' cells present in
+//          the complex.
 //       -- `responseTransfer` returns the effective response block of an
-//          existing `cobordism::RecursiveQuotient::ResponseNetworkRead`
-//          edge (rows = A's stalk, columns = B's stalk) — the
-//          coarse-level induced transfer.
-//   • Overlap and leakage (spec §5.5): M_AB = Φ_A†W_A T_AB Φ_B in the
-//     self-adjoint regimes, M_AB = Ψ_A†W_A T_AB Φ_B (Ψ_A†W_AΦ_A = I) on
-//     the biorthogonal path; leakage η = ‖M†M − I‖₂ in the positive
-//     regime, the J-isometry defect ‖M†J_A M − J_B‖₂ in the Krein regime
-//     (J = diag(I_p, −I_q) from the band signatures; identity in the
-//     positive regime, so the two coincide there).
-//   • Polar reduction (positive regime): V = M(M†M)^{−1/2} ∈ U(r) via
-//     SVD, exactly unitary-equivariant — Φ_A ↦ Φ_A g_A, Φ_B ↦ Φ_B g_B
-//     gives M ↦ g_A†Mg_B and V ↦ g_A†Vg_B (bifundamental; tested with
-//     independent random U(r) changes at every component).  Domain:
-//     accepted equal-rank bands, full numerical rank, leakage and
-//     conditioning below their gates.
-//   • Pseudo-unitary reduction (Krein regime, MATCHING signatures only):
-//     V = M·K^{−1/2}, K = J_B M†J_A M (K is J_B-self-adjoint; the
-//     principal square root is well defined for the near-J-isometric maps
-//     the leakage gate admits), giving V†J_A V = J_B exactly in exact
-//     arithmetic — inertia is retained, never silently Euclideanized.  A
-//     signature mismatch REJECTS before reduction.
-//   • Non-normal regime: the raw GL(r,C) transport is retained and
-//     certified (rank, singular values, conditioning); no U(r) or SU(3)
-//     value is emitted by applying the positive-metric formula outside
-//     its domain.
+//          existing `cobordism::RecursiveQuotient::ResponseNetworkRead` edge
+//          (rows A's stalk, columns B's stalk), the coarse-level induced
+//          transfer.
+//   • Overlap and leakage. M_AB = Φ_A†W_A T_AB Φ_B in the self-adjoint regimes
+//     and M_AB = Ψ_A†W_A T_AB Φ_B (with Ψ_A†W_AΦ_A = I) on the biorthogonal
+//     path. Leakage is η = ‖M†M − I‖₂ in the positive regime and the
+//     J-isometry defect ‖M†J_A M − J_B‖₂ in the Krein regime, with
+//     J = diag(I_p, −I_q) from the band signatures; J is the identity in the
+//     positive regime, so the two coincide there.
+//   • Polar reduction (positive regime): V = M(M†M)^{−1/2} ∈ U(r) by singular
+//     value decomposition, exactly unitary-equivariant — Φ_A ↦ Φ_A g_A,
+//     Φ_B ↦ Φ_B g_B gives M ↦ g_A†Mg_B and V ↦ g_A†Vg_B, the bifundamental
+//     transformation. Valid for accepted equal-rank bands at full numerical
+//     rank with leakage and conditioning below their gates.
+//   • Pseudo-unitary reduction (Krein regime, matching signatures only):
+//     V = M·K^{−1/2} with K = J_B M†J_A M. K is J_B-self-adjoint and its
+//     principal square root is well defined for the near-J-isometric maps the
+//     leakage gate admits, giving V†J_A V = J_B in exact arithmetic, so the
+//     inertia is retained rather than Euclideanized. A signature mismatch is
+//     rejected before reduction.
+//   • Non-normal regime: the raw GL(r,C) transport is retained and certified
+//     (rank, singular values, conditioning). No U(r) or SU(3) value is emitted
+//     by applying the positive-metric formula outside its domain.
 //   • Wilson observables: H(γ) = Π_{(AB)∈γ} V_AB with V_AB : fiber(B) →
-//     fiber(A); under local frame changes a CLOSED holonomy is conjugated
-//     at its base component, H ↦ g_{A₀}†Hg_{A₀}, so the normalized trace
-//     Tr H / r, det H, and the adjoint reads are base-point-conjugation
-//     observables.  The determinant-line, projective/adjoint (center
-//     blind: χ_adj = |Tr H|² − 1; at rank three the faithful PU(3) image
-//     Ad(H) built with `ColorFiber::adjointOctetProjector`), and the
-//     explicitly lifted fundamental are exposed as DISTINCT observables.
-//   • Rank-three center structure: the read stores the full U(3) factor
-//     AND det V ∈ U(1) — the cube-root ambiguity V ↦ V/(det V)^{1/3} is
-//     Z₃, so the faithful data are (V, det V, [V] ∈ PU(3)).  A requested
-//     fundamental lift continues a cube-root branch from a declared base
-//     branch s₀ ∈ {0,1,2}: with per-link principal phases
-//     θ_j = Arg det V_j ∈ (−π, π] and Θ = Σθ_j the accumulated
-//     determinant phase, H̃ = H·e^{−iΘ/3}·ω^{−s₀} ∈ SU(3) exactly
-//     (det H = e^{iΘ} by construction), and the accumulated center sector
-//     m ≡ (Θ − Arg e^{iΘ})/2π (mod 3) is RECORDED — branch-independent,
+//     fiber(A). Under local frame changes a closed holonomy is conjugated at
+//     its base component, H ↦ g_{A₀}†Hg_{A₀}, so the normalized trace Tr H / r,
+//     det H, and the adjoint reads are base-point-conjugation observables. The
+//     determinant line, the projective (adjoint) read — centre blind, with
+//     χ_adj = |Tr H|² − 1, and at rank three the faithful PU(3) image Ad(H)
+//     built with `ColorFiber::adjointOctetProjector` — and the explicitly
+//     lifted fundamental are exposed as distinct observables.
+//   • Rank-three center structure: the read stores both the full U(3) factor
+//     and det V ∈ U(1), since the cube-root ambiguity V ↦ V/(det V)^{1/3} is
+//     Z₃ and the faithful data are (V, det V, [V] ∈ PU(3)). A requested
+//     fundamental lift continues a cube-root branch from a declared base branch
+//     s₀ ∈ {0,1,2}: with per-link principal phases θ_j = Arg det V_j ∈ (−π, π]
+//     and Θ = Σθ_j the accumulated determinant phase,
+//     H̃ = H·e^{−iΘ/3}·ω^{−s₀} ∈ SU(3) exactly, since det H = e^{iΘ} by
+//     construction. The accumulated center sector
+//     m ≡ (Θ − Arg e^{iΘ})/2π (mod 3) is recorded and is branch-independent,
 //     while the lift itself shifts by ω^{−s₀} across branches and every
-//     projective/adjoint read of the lift is branch-independent.
-//   • Determinant winding (spec §5.11): for a CLOSED, continuous,
-//     full-rank, gapped family of accepted transports the integer winding
-//     ν = (1/2π)Σ principal steps of arg det around the cycle; the read
-//     is INVALIDATED (winding = nullopt, reason recorded) when any sample
-//     is unaccepted (a closed gap or lost rank), ranks disagree, or a
-//     phase step reaches π (aliasing).  An OPEN segment gets only the
-//     RELATIVE winding of the closed composite under a recorded closure
-//     specification: matched-reference (caller-supplied reference
-//     transports traversed backwards) or endpoint trivializations
-//     (register-supplied frames; the four principal legs close the
-//     determinant path exactly).  With no declared closure the winding is
-//     UNKNOWN — a raw endpoint phase difference is never promoted to an
-//     integer.  Interpretation as baryon flux is out of scope (#773).
+//     projective or adjoint read of the lift is branch-independent.
+//   • Determinant winding: for a closed, continuous, full-rank, gapped family
+//     of accepted transports the integer winding is ν = (1/2π)Σ of the
+//     principal steps of arg det around the cycle. The read is invalidated —
+//     winding nullopt, reason recorded — when any sample is unaccepted (a
+//     closed gap or lost rank), ranks disagree, or a phase step reaches π
+//     (aliasing). An open segment gets only the relative winding of the closed
+//     composite under a recorded closure specification: matched-reference
+//     (caller-supplied reference transports traversed backwards) or endpoint
+//     trivializations (register-supplied frames, whose four principal legs
+//     close the determinant path exactly). With no declared closure the winding
+//     is unknown; a raw endpoint phase difference is never promoted to an
+//     integer. Interpretation as baryon flux is out of scope here.
 //
-// ─── Caching ─────────────────────────────────────────────────────────────
+// ## Caching
 //
-// Spacetime-backed transports and loop products go through the #764
-// `AnalyticCache` contract: entries are keyed by the participating fibers'
-// cell-vertex sets, so a published `TouchedStar` invalidates ONLY the
-// transports/loops touching the changed star — disjoint siblings are
-// served from cache, and cached results equal cold recomputation.
+// Spacetime-backed transports and loop products go through the `AnalyticCache`
+// contract. Entries are keyed by the participating fibers' cell-vertex sets, so
+// a published `TouchedStar` invalidates only the transports and loops touching
+// the changed star; disjoint siblings are served from cache, and cached results
+// equal recomputation from scratch.
 //
-// ─── Boundaries ──────────────────────────────────────────────────────────
+// ## Boundaries
 //
-// Read-only observable: consumes accepted #769 fibers, never re-extracts
-// bands, never mutates the spacetime, and nothing here enters any
-// emergence objective.  The link matrix is always reconstructed from
-// neighboring Hodge frames with a leakage certificate — no independently
-// sampled gauge connection.  Polar normalization never conceals a bad
-// assignment: every gate fires BEFORE reduction, and a rejected read
-// still carries its raw map and full diagnostics.  Exchange characters,
-// rotation loops, and spin lifts belong to #772; quark classification and
-// baryon-flux interpretation to #773.
+// Read-only observable: it consumes accepted fibers, never re-extracts bands,
+// never mutates the spacetime, and nothing here enters any emergence objective.
+// The link matrix is always reconstructed from neighboring Hodge frames with a
+// leakage certificate; there is no independently sampled gauge connection.
+// Polar normalization cannot conceal a bad assignment: every gate fires before
+// reduction, and a rejected read still carries its raw map and full
+// diagnostics. Exchange characters, rotation loops and spin lifts live in
+// `ExchangeHolonomy`; quark classification and baryon-flux interpretation in
+// `ParticleClusters`.
 
 #include <complex>
 #include <cstdint>
@@ -174,31 +168,32 @@ namespace tessera::cobordism {
 }
 namespace tessera::observables {
 
-/// Threshold configuration of the derived-transport gates (#770).  All
-/// gates fire BEFORE polar/pseudo-unitary reduction — a failed gate yields
-/// a rejected read that still reports its raw map and diagnostics.
+/// Threshold configuration of the derived-transport gates. Every gate fires
+/// before polar or pseudo-unitary reduction; a failed gate yields a rejected
+/// read that still reports its raw map and diagnostics.
 struct FiberConnectionConfig {
   /// Relative singular-value cut for the numerical rank of the overlap
   /// (σ_i > rankTolerance · σ_max counts toward the rank).
   double rankTolerance = 1e-9;
-  /// Cap on the regime-appropriate isometry leakage η before a unitary /
-  /// pseudo-unitary factor may be emitted (spec §5.5).
+  /// Cap on the regime-appropriate isometry leakage η before a unitary or
+  /// pseudo-unitary factor may be emitted.
   double leakageTolerance = 1e-6;
-  /// Cap on projector/overlap conditioning: each endpoint band's certified
-  /// PROJECTOR NORM ‖P‖₂ and the overlap's σ_max/σ_min must stay below it.
-  /// The endpoints' FRAME condition numbers are reported, not capped: they
-  /// depend on the in-band basis choice, the projector norm does not.
+  /// Cap on projector and overlap conditioning: each endpoint band's certified
+  /// projector norm ‖P‖₂ and the overlap's σ_max/σ_min must stay below it. The
+  /// endpoints' frame condition numbers are reported rather than capped, since
+  /// they depend on the in-band basis choice and the projector norm does
+  /// not.
   double conditionNumberCap = 1e8;
   /// Absolute floor on each endpoint band's isolation min(lowerGap,
-  /// upperGap).  0 = rely on the bands' own certification.
+  /// upperGap). 0 means rely on the bands' own certification.
   double minEndpointGap = 0.0;
-  /// Require both endpoint bands to be certificate-accepted (a closing
-  /// gap makes a band uncertified, which rejects the transport here).
+  /// Require both endpoint bands to be certificate-accepted. A closing gap
+  /// makes a band uncertified, which rejects the transport here.
   bool requireCertifiedFibers = true;
-  /// Tolerance the emitted #764 certificates hold against (polar /
-  /// pseudo-unitary residuals, winding closure defects).
+  /// Tolerance the emitted certificates hold against: polar and pseudo-unitary
+  /// residuals, and winding closure defects.
   double certificateTolerance = 1e-10;
-  /// Relative endpoint-mismatch cap for a certified matched-reference /
+  /// Relative endpoint-mismatch cap for a certified matched-reference or
   /// closed-family winding closure.
   double closureTolerance = 1e-9;
 };
@@ -207,23 +202,23 @@ struct FiberConnectionConfig {
 ///
 /// One derived fiber transport A ← B: the raw overlap
 /// map, every pre-normalization diagnostic, the normalized factor when its
-/// gates passed, the determinant-line datum, and the #764 certificate.
+/// gates passed, the determinant-line datum, and the certificate.
 /// Quantities that were not measured are quiet NaN, never zero.
 struct FiberTransportRead {
   /// Order-independent identifier of the DESTINATION fiber A (the
   /// `Fingerprint::fingerprintOf` hash of its deduplicated cell-vertex-id
   /// set — the `AnalyticCache::componentKey` convention).
   std::uint64_t toKey = 0;
-  /// Order-independent identifier of the SOURCE fiber B.
+  /// Order-independent identifier of the source fiber B.
   std::uint64_t fromKey = 0;
   /// Form degree of the two bands.
   int degree = 0;
-  /// Common frame rank r (columns of both frames); the reported reads are
-  /// r×r.  When the ranks disagree the read is rejected and `rank` holds
-  /// the DESTINATION rank while `rawMap` stays rectangular.
+  /// Common frame rank r (columns of both frames); the reported reads are r×r.
+  /// When the ranks disagree the read is rejected and `rank` holds the
+  /// destination rank while `rawMap` stays rectangular.
   int rank = 0;
-  /// The raw overlap M_AB = Φ_A†W_A T_AB Φ_B (Ψ_A† on the biorthogonal
-  /// path) BEFORE any normalization.
+  /// The raw overlap M_AB = Φ_A†W_A T_AB Φ_B (Ψ_A† on the biorthogonal path),
+  /// before any normalization.
   Eigen::MatrixXcd rawMap{};
   /// Singular values of `rawMap`, descending.
   std::vector<double> singularValues{};
@@ -246,60 +241,60 @@ struct FiberTransportRead {
   int fromPositiveSignature = 0;
   /// Krein inertia q of the source band.
   int fromNegativeSignature = 0;
-  /// Destination band PROJECTOR NORM ‖P‖₂ from its certificate (Kato's
-  /// condition number of the spectral projector — the gauge-invariant
-  /// conditioning `FiberConnectionConfig::conditionNumberCap` caps).
+  /// Destination band projector norm ‖P‖₂ from its certificate: Kato's
+  /// condition number of the spectral projector, the gauge-invariant
+  /// conditioning `FiberConnectionConfig::conditionNumberCap` caps.
   double toProjectorNorm = std::numeric_limits<double>::quiet_NaN();
   /// Source band projector norm ‖P‖₂ from its certificate.
   double fromProjectorNorm = std::numeric_limits<double>::quiet_NaN();
-  /// max of the endpoints' FRAME condition numbers
-  /// (`SpectralBandCertificate::frameConditionNumber`) — the spec §6.6
-  /// field, and a DIFFERENT quantity from the projector norms above
-  /// (#808): the Riesz conditioning of the reported frames, not of their
-  /// ranges.  NaN when an endpoint certificate predates the measurement.
+  /// Maximum of the endpoints' frame condition numbers
+  /// (`SpectralBandCertificate::frameConditionNumber`). Distinct from the
+  /// projector norms above: the Riesz conditioning of the reported frames, not
+  /// of their ranges. NaN when an endpoint certificate does not carry it.
   double frameConditionNumber = std::numeric_limits<double>::quiet_NaN();
   /// The metric regime this transport was computed in (the paired
   /// endpoint regimes; NonNormal whenever either endpoint is).
   cobordism::CertificateRegime regime =
       cobordism::CertificateRegime::NonNormal;
-  /// The normalized factor: the polar V_AB ∈ U(r) in the positive regime,
-  /// the pseudo-unitary V (V†J_A V = J_B) on matching Krein signatures.
-  /// EMPTY (0×0) when not emitted — a rejected map or the certified
-  /// GL(r,C) non-normal transport, which deliberately retains `rawMap`.
+  /// The normalized factor: the polar V_AB ∈ U(r) in the positive regime, or
+  /// the pseudo-unitary V with V†J_A V = J_B on matching Krein signatures.
+  /// Empty (0×0) when not emitted, i.e. for a rejected map or the certified
+  /// GL(r,C) non-normal transport, which retains `rawMap` instead.
   Eigen::MatrixXcd unitaryMap{};
-  /// det of the emitted factor (∈ U(1) to `determinantResidual`); for a
-  /// certified GL transport the PHASE det(M)/|det M| of the raw map — the
-  /// determinant phase is never discarded.  0 only when nothing could be
-  /// measured (rank-deficient raw map).
+  /// Determinant of the emitted factor, in U(1) to `determinantResidual`. For a
+  /// certified GL transport it is the phase det(M)/|det M| of the raw map. 0
+  /// only when nothing could be measured, i.e. a rank-deficient raw map.
   std::complex<double> determinantPhase{0.0, 0.0};
-  /// ‖V†V − I‖₂ (positive) or ‖V†J_A V − J_B‖₂ (Krein) of the emitted
-  /// factor; NaN when no factor was emitted.
+  /// ‖V†V − I‖₂ in the positive regime, or ‖V†J_A V − J_B‖₂ in the Krein
+  /// regime, of the emitted factor. NaN when no factor was emitted.
   double polarResidual = std::numeric_limits<double>::quiet_NaN();
-  /// | |det V| − 1 | of the emitted factor; NaN when none / GL-only.
+  /// | |det V| − 1 | of the emitted factor; NaN when none was emitted or the
+  /// read is GL-only.
   double determinantResidual = std::numeric_limits<double>::quiet_NaN();
-  /// True when a rank-three factor was emitted whose determinant-line
-  /// datum failed its residual check while the projective class remains
-  /// certified — the read is then trustworthy only in PU(3).
+  /// True when a rank-three factor was emitted whose determinant-line datum
+  /// failed its residual check while the projective class remains certified.
+  /// The read is then trustworthy only in PU(3).
   bool projectiveOnly = false;
-  /// Whether the transport passed every applicable gate (positive/Krein:
-  /// reduction emitted; non-normal: certified GL transport).
+  /// Whether the transport passed every applicable gate: a reduction emitted in
+  /// the positive and Krein regimes, or a certified GL transport in the
+  /// non-normal regime.
   bool accepted = false;
-  /// Human-readable reason of the FIRST failed gate ("" when accepted).
+  /// Human-readable reason of the first failed gate; empty when accepted.
   std::string rejectionReason{};
-  /// The graded #764 record: BandWindow domain, the detected regime,
-  /// CertifiedNumerical with the reduction residual (or the GL rank/
-  /// conditioning claim); a rejected read carries HeuristicDiscovery,
-  /// which never holds.
+  /// The graded record: BandWindow domain, the detected regime, and
+  /// CertifiedNumerical with the reduction residual or the GL rank and
+  /// conditioning claim. A rejected read carries HeuristicDiscovery, which
+  /// never holds.
   cobordism::Certificate certificate{};
 
   /// One-line human-readable summary (direction, rank, leakage, gates).
   [[nodiscard]] std::string describe() const;
 
-  /// Checkpoint serialization (the `transports` array): the JSON-able
-  /// :class:`Record` of the read — at rank three the
-  /// full U(3) factor, det V (U(1)), and thereby the PU(3) class (the
-  /// class is `[V]` = V modulo center, determined by the serialized V) all
-  /// travel; complex leaves split `{name}_re`/`{name}_im` per #580.
+  /// Checkpoint serialization of the `transports` array: the JSON-able
+  /// :class:`Record` of the read. At rank three the full U(3) factor,
+  /// det V ∈ U(1), and hence the PU(3) class (V modulo center, determined by
+  /// the serialized V) all travel. Complex leaves split into `{name}_re` and
+  /// `{name}_im`.
   [[nodiscard]] Record toRecord() const;
   /// Rehydrate from `toRecord()` output; rejects an unknown
   /// `schema_version` (std::invalid_argument) per the checkpoint-reader
@@ -317,9 +312,9 @@ struct WilsonHolonomyRead {
   int rank = 0;
   /// Number of links multiplied.
   std::size_t loopLength = 0;
-  /// Whether the links chain (link i's source = link i+1's destination)
-  /// and the last source equals the first destination.  Base-point
-  /// conjugation covariance is a CLOSED-loop statement.
+  /// Whether the links chain — link i's source is link i+1's destination — and
+  /// the last source equals the first destination. Base-point conjugation
+  /// covariance is a statement about closed loops only.
   bool closed = false;
   /// The base component (first link's destination key).
   std::uint64_t baseKey = 0;
@@ -399,22 +394,22 @@ struct FundamentalLiftRead {
   /// CertifiedNumerical against `detResidual` when valid.
   cobordism::Certificate certificate{};
 
-  /// Checkpoint serialization: the lift matrix and its ACCUMULATED center
-  /// sector travel together (the ticket's "continuously chosen SU(3) lift
-  /// with its accumulated center sector").
+  /// Checkpoint serialization: the lift matrix and its accumulated center
+  /// sector travel together, giving a continuously chosen SU(3) lift with its
+  /// accumulated center sector.
   [[nodiscard]] Record toRecord() const;
   /// Rehydrate; rejects an unknown `schema_version`.
   [[nodiscard]] static FundamentalLiftRead fromRecord(const Record &record);
 };
 
-/// The declared closure of an open-segment determinant winding (design
-/// spec §5.11): HOW the open composite is closed is part of the
-/// certificate.  With `Mode::None` the winding is left unknown.
+/// The declared closure of an open-segment determinant winding: how the open
+/// composite is closed is part of the certificate. With `Mode::None` the
+/// winding is left unknown.
 struct WindingClosureSpec {
   /// The declared closure convention.
   enum class Mode {
-    /// No closure declared — the winding is reported UNKNOWN (a raw
-    /// endpoint phase difference is never promoted to an integer).
+    /// No closure declared; the winding is reported unknown, since a raw
+    /// endpoint phase difference is never promoted to an integer.
     None,
     /// Close with the inverse of a matched reference transport family
     /// (caller-supplied, e.g. a non-exchanging reference construction):
@@ -431,15 +426,15 @@ struct WindingClosureSpec {
   /// Caller-supplied identifier of the reference specification, recorded
   /// verbatim on the read.
   std::string referenceId{};
-  /// MatchedReference: the reference transports over the SAME parameter
-  /// samples, same orientation as the segment (traversed backwards by the
-  /// closure).
+  /// MatchedReference: the reference transports over the same parameter
+  /// samples and the same orientation as the segment, traversed backwards by
+  /// the closure.
   std::vector<Eigen::MatrixXcd> referenceTransports{};
-  /// EndpointTrivialization: the register-supplied r×r frame at the START
-  /// of the segment.
+  /// EndpointTrivialization: the register-supplied r×r frame at the start of
+  /// the segment.
   Eigen::MatrixXcd startTrivialization{};
-  /// EndpointTrivialization: the register-supplied r×r frame at the END
-  /// of the segment.
+  /// EndpointTrivialization: the register-supplied r×r frame at the end of the
+  /// segment.
   Eigen::MatrixXcd endTrivialization{};
 };
 
@@ -447,23 +442,23 @@ struct WindingClosureSpec {
 ///
 /// The integer determinant winding of a closed full-rank transport family,
 /// or the relative winding of an open segment under a recorded closure.
-/// `winding` is EMPTY when invalidated
-/// (a closed gap / lost rank / aliasing step) or when no closure was
-/// declared — never a silently wrong integer.
+/// `winding` is empty when invalidated — a closed gap, lost rank or aliasing
+/// step — or when no closure was declared; it is never a silently wrong
+/// integer.
 struct DeterminantWindingRead {
-  /// ν ∈ ℤ, or nullopt (unknown / invalidated).
+  /// ν ∈ ℤ, or nullopt when unknown or invalidated.
   std::optional<int> winding{};
-  /// "closed-family", "matched-reference", "endpoint-trivialization", or
-  /// "none" — the recorded closure specification (spec §6.6 field).
+  /// The recorded closure specification: "closed-family",
+  /// "matched-reference", "endpoint-trivialization", or "none".
   std::string windingClosure{"none"};
   /// The caller's reference identifier ("" when none).
   std::string windingReferenceId{};
-  /// Total unwrapped determinant phase of the CLOSED composite (2πν when
-  /// valid); for an undeclared closure, the raw open-path phase — which
-  /// is deliberately NOT an integer certificate.
+  /// Total unwrapped determinant phase of the closed composite, 2πν when
+  /// valid. For an undeclared closure it is the raw open-path phase, which is
+  /// not an integer certificate.
   double accumulatedPhase = 0.0;
-  /// Largest single principal step (radians) across the composite,
-  /// closure legs included — the aliasing guard (must stay < π).
+  /// Largest single principal step in radians across the composite, closure
+  /// legs included: the aliasing guard, which must stay below π.
   double maxPhaseStep = 0.0;
   /// maxPhaseStep / π (the `phaseStepMargin` convention of
   /// `RecursiveQuotient::MultiplicityRead`).
@@ -480,9 +475,9 @@ struct DeterminantWindingRead {
   /// step margin as conditioning; HeuristicDiscovery when invalidated.
   cobordism::Certificate certificate{};
 
-  /// Checkpoint serialization: the closure SPECIFICATION travels with the
-  /// integer (spec section 5.11 — the closure is part of the certificate);
-  /// an unknown winding serializes as unknown, never as zero.
+  /// Checkpoint serialization: the closure specification travels with the
+  /// integer, since the closure is part of the certificate. An unknown winding
+  /// serializes as unknown, never as zero.
   [[nodiscard]] Record toRecord() const;
   /// Rehydrate; rejects an unknown `schema_version`.
   [[nodiscard]] static DeterminantWindingRead fromRecord(const Record &record);
@@ -490,10 +485,9 @@ struct DeterminantWindingRead {
 
 /// # FiberConnection
 ///
-/// Derived spectral-frame transport and Wilson observables (ticket #770).
-/// See the file banner for the exact
-/// identities and their domains.  Pure read layer: consumes accepted #769
-/// `SpectralFiber`s and existing chain/response operators, mutates
+/// Derived spectral-frame transport and Wilson observables. See the file banner
+/// for the identities and their domains. A read-only layer: it consumes
+/// accepted `SpectralFiber`s and existing chain and response operators, mutates
 /// nothing, and none of its outputs enters any emergence objective.
 class FiberConnection {
   public:
@@ -526,10 +520,10 @@ class FiberConnection {
         cobordism::HodgeLaplacian::WeightConvention weights =
             cobordism::HodgeLaplacian::defaultWeightConvention());
 
-    /// The effective response block of an existing #768 response network:
-    /// the edge block with rows = `toComponent`'s stalk and columns =
-    /// `fromComponent`'s stalk (zero block of the right shape when the
-    /// network carries no such edge).
+    /// The effective response block of an existing response network: the edge
+    /// block with rows `toComponent`'s stalk and columns `fromComponent`'s
+    /// stalk. A zero block of the right shape when the network carries no such
+    /// edge.
     /// @throws std::out_of_range on a bad component index.
     [[nodiscard]] static Eigen::MatrixXcd responseTransfer(
         const cobordism::RecursiveQuotient::ResponseNetworkRead &network,
@@ -537,11 +531,11 @@ class FiberConnection {
 
     // ── the derived transport ───────────────────────────────────────────
 
-    /// Derive the transport A ← B from an explicit transfer block
-    /// (rows = A's cells, columns = B's cells): compute the overlap in the
-    /// paired regime, report EVERY diagnostic, gate, and only then reduce
-    /// in that order.  A rejected read still carries the raw
-    /// map, singular values, leakage, gaps, signatures, and conditioning.
+    /// Derive the transport A ← B from an explicit transfer block (rows A's
+    /// cells, columns B's cells): compute the overlap in the paired regime,
+    /// report every diagnostic, gate, and only then reduce, in that order. A
+    /// rejected read still carries the raw map, singular values, leakage, gaps,
+    /// signatures and conditioning.
     /// @throws std::invalid_argument on a transfer/frame shape mismatch.
     [[nodiscard]] FiberTransportRead transport(
         const SpectralFiber &to, const SpectralFiber &from,
@@ -565,11 +559,11 @@ class FiberConnection {
         cobordism::HodgeLaplacian::WeightConvention weights =
             cobordism::HodgeLaplacian::defaultWeightConvention()) const;
 
-    /// `transportOnSpacetime` through the #764 `AnalyticCache` contract:
-    /// served while both fibers' cell-vertex stars are untouched,
-    /// recomputed (and re-stored) otherwise.  Key: the union of the two
-    /// fibers' cell-vertex-id sets; kind `kTransportCacheKind`;
-    /// parameter = degree.  Cached results equal cold recomputation.
+    /// `transportOnSpacetime` through the `AnalyticCache` contract: served
+    /// while both fibers' cell-vertex stars are untouched, and otherwise
+    /// recomputed and re-stored. The key is the union of the two fibers'
+    /// cell-vertex-id sets, the kind `kTransportCacheKind`, and the parameter
+    /// the degree. Cached results equal recomputation from scratch.
     [[nodiscard]] FiberTransportRead transportOnSpacetimeCached(
         cobordism::AnalyticCache &cache, const std::shared_ptr<Spacetime> &st,
         const SpectralFiber &to, const SpectralFiber &from,
@@ -578,15 +572,15 @@ class FiberConnection {
 
     // ── Wilson observables ──────────────────────────────────────────────
 
-    /// Multiply accepted transports along `links` (link i maps its source
-    /// fiber to its destination; the product H = V₀V₁⋯V_{n−1} maps the
-    /// LAST source into the FIRST destination — the base component).
-    /// Emits the full holonomy, normalized trace, determinant line, and
-    /// the center-blind adjoint reads; `closed` reports whether the keys
-    /// chain into a loop.  Uses the unitary factors when every link has
-    /// one, the certified GL raw maps otherwise — never a mixture.
+    /// Multiply accepted transports along `links`. Link i maps its source
+    /// fiber to its destination, and the product H = V₀V₁⋯V_{n−1} maps the last
+    /// source into the first destination, the base component. Emits the full
+    /// holonomy, normalized trace, determinant line, and the centre-blind
+    /// adjoint reads; `closed` reports whether the keys chain into a loop. Uses
+    /// the unitary factors when every link has one and the certified GL raw
+    /// maps otherwise, never a mixture.
     /// @throws std::invalid_argument on an empty chain, a rank mismatch,
-    ///   or an unaccepted link (only ACCEPTED maps are multiplied).
+    ///   or an unaccepted link; only accepted maps are multiplied.
     [[nodiscard]] WilsonHolonomyRead holonomy(
         const std::vector<FiberTransportRead> &links) const;
 
@@ -601,12 +595,12 @@ class FiberConnection {
             cobordism::HodgeLaplacian::defaultWeightConvention()) const;
 
     /// `holonomyOnSpacetime` through the `AnalyticCache`: each link via
-    /// `transportOnSpacetimeCached`, and the loop product itself cached
-    /// under the union of ALL participating fibers' vertex sets (kind
-    /// `kHolonomyCacheKind`; parameter = an order-sensitive hash of the
-    /// fiber sequence folded with the degree, so distinct loop orders
-    /// never collide).  A published `TouchedStar` invalidates ONLY the
-    /// loops (and links) whose fibers meet the star.
+    /// `transportOnSpacetimeCached`, and the loop product itself cached under
+    /// the union of all participating fibers' vertex sets, with kind
+    /// `kHolonomyCacheKind` and parameter an order-sensitive hash of the fiber
+    /// sequence folded with the degree, so distinct loop orders never collide.
+    /// A published `TouchedStar` invalidates only the loops and links whose
+    /// fibers meet the star.
     [[nodiscard]] WilsonHolonomyRead holonomyOnSpacetimeCached(
         cobordism::AnalyticCache &cache, const std::shared_ptr<Spacetime> &st,
         const std::vector<SpectralFiber> &fibers,
@@ -615,36 +609,34 @@ class FiberConnection {
 
     // ── rank-three center structure ─────────────────────────────────────
 
-    /// A canonical PU(3) class representative of an emitted rank-three
-    /// factor: V·δ^{−1/3} with the PRINCIPAL cube root of δ = det V.  The
-    /// projective CLASS {U, ωU, ω²U} is the faithful datum; this fixes
-    /// one representative deterministically (tests exercise all three
-    /// branches via `fundamentalLift`).
+    /// A canonical PU(3) class representative of an emitted rank-three factor:
+    /// V·δ^{−1/3} with the principal cube root of δ = det V. The projective
+    /// class {U, ωU, ω²U} is the faithful datum; this fixes one representative
+    /// deterministically.
     ///
-    /// GATED on the triangle-anchor certificate, as the exactness contract
-    /// requires of every colour-specific kernel: rank three and an accepted
-    /// transport are NOT sufficient to emit a colour datum.  A closed
-    /// `AnchorGate` — including the default-constructed one — is refused.
+    /// Gated on the triangle-anchor certificate, as every color-specific kernel
+    /// is: rank three and an accepted transport are not sufficient to emit a
+    /// color datum. A closed `AnchorGate`, including the default-constructed
+    /// one, is refused.
     /// @throws std::invalid_argument unless `unitary` is 3×3, or when
     ///   `gate` is closed (the refusal names which conjunct failed).
     [[nodiscard]] static Eigen::MatrixXcd projectiveRepresentative(
         const Eigen::MatrixXcd &unitary, const AnchorGate &gate);
 
     /// The faithful PU(3) image of a 3×3 unitary: the 9×9 matrix of
-    /// M ↦ U M U† restricted to the traceless octet
-    /// (`ColorFiber::adjointOctetProjector` — the #767 conventions are
-    /// consumed, never reimplemented).  Center-blind: Ad(ωU) = Ad(U).
+    /// M ↦ U M U† restricted to the traceless octet, using
+    /// `ColorFiber::adjointOctetProjector`. Centre-blind: Ad(ωU) = Ad(U).
     /// @throws std::invalid_argument unless `unitary` is 3×3.
     [[nodiscard]] static Eigen::MatrixXcd adjointRepresentation(
         const Eigen::MatrixXcd &unitary);
 
-    /// Continue a cube-root branch along `links` from the declared base
-    /// branch and RECORD the accumulated Z₃ center sector (file banner
-    /// for the exact lift identity).  Requires rank three, unitary links,
-    /// the POSITIVE regime, AND an open triangle-anchor `gate`; an invalid
-    /// request reports `valid = false` with the reason — SU(3) is never
-    /// emitted at generic rank, from a GL transport, from a pseudo-unitary
-    /// (Krein) factor outside U(3), or from an unanchored band.
+    /// Continue a cube-root branch along `links` from the declared base branch
+    /// and record the accumulated Z₃ center sector; see the file banner for the
+    /// lift identity. Requires rank three, unitary links, the positive regime,
+    /// and an open triangle-anchor `gate`. An invalid request reports
+    /// `valid = false` with the reason: SU(3) is never emitted at generic rank,
+    /// from a GL transport, from a pseudo-unitary (Krein) factor outside U(3),
+    /// or from an unanchored band.
     ///
     /// The gate is what the exactness contract demands: rank and transport
     /// acceptance alone never license a colour kernel.  A closed gate —
@@ -658,20 +650,20 @@ class FiberConnection {
 
     // ── determinant winding ─────────────────────────────────────────────
 
-    /// The integer determinant winding of a CLOSED transport family
-    /// (world-tube samples V(t₀), …, V(t_{n−1}), traversed cyclically —
-    /// the closing step returns to sample 0).  Invalidated (nullopt +
-    /// reason) when any sample is unaccepted (gap/rank closed), ranks
-    /// disagree, or a phase step reaches π.
+    /// The integer determinant winding of a closed transport family: world-tube
+    /// samples V(t₀), …, V(t_{n−1}) traversed cyclically, with the closing step
+    /// returning to sample 0. Invalidated, with nullopt and a reason, when any
+    /// sample is unaccepted (a closed gap or lost rank), ranks disagree, or a
+    /// phase step reaches π.
     /// @throws std::invalid_argument on an empty family.
     [[nodiscard]] DeterminantWindingRead closedFamilyWinding(
         const std::vector<FiberTransportRead> &family) const;
 
-    /// The RELATIVE determinant winding of an OPEN cobordism segment
-    /// under the declared closure (spec §5.11): matched-reference or
-    /// endpoint-trivialization, with the specification recorded on the
-    /// read.  `Mode::None` reports the raw open-path phase and an UNKNOWN
-    /// winding.  Same invalidation rules as `closedFamilyWinding`.
+    /// The relative determinant winding of an open cobordism segment under the
+    /// declared closure — matched-reference or endpoint-trivialization — with
+    /// the specification recorded on the read. `Mode::None` reports the raw
+    /// open-path phase and an unknown winding. Same invalidation rules as
+    /// `closedFamilyWinding`.
     /// @throws std::invalid_argument on an empty segment or a malformed
     ///   closure (wrong reference length / trivialization shape).
     [[nodiscard]] DeterminantWindingRead openSegmentWinding(
@@ -680,23 +672,21 @@ class FiberConnection {
 
     // ── shared key helpers ──────────────────────────────────────────────
 
-    /// The order-independent key of a fiber: `Fingerprint::fingerprintOf`
-    /// over its DEDUPLICATED cell-vertex-id set (the `AnalyticCache`
-    /// component-key convention; relabeling-covariant, order-invariant).
+    /// The order-independent key of a fiber: `Fingerprint::fingerprintOf` over
+    /// its deduplicated cell-vertex-id set. This is the `AnalyticCache`
+    /// component-key convention: relabeling-covariant and order-invariant.
     [[nodiscard]] static std::uint64_t fiberKey(const SpectralFiber &fiber);
 
-    /// The BAND identity of a fiber: degree, rank, and the exact bit
-    /// patterns of its eigenvalues, folded order-sensitively.
+    /// The band identity of a fiber: degree, rank, and the exact bit patterns
+    /// of its eigenvalues, folded order-sensitively.
     ///
-    /// `fiberKey` alone is the COMPONENT identity — every band of one
-    /// component restricts to the same cells, so every band of one component
-    /// shares it. It is therefore not enough to key a cached transport:
-    /// without this, all of a component pair's band-to-band transports
-    /// collide on one cache entry and the second onward are served the
-    /// first's read (found by the #776 incremental-versus-cold comparison,
-    /// where 169 of 170 transports came back stale). `toKey`/`fromKey` and
-    /// the holonomy chaining rule keep using `fiberKey`, which is the
-    /// component-level identity they mean.
+    /// `fiberKey` alone is the component identity, since every band of one
+    /// component restricts to the same cells and so shares it. That is not
+    /// enough to key a cached transport: without the band identity, all of a
+    /// component pair's band-to-band transports collide on one cache entry and
+    /// every transport after the first is served the first's read. `toKey`,
+    /// `fromKey` and the holonomy chaining rule keep using `fiberKey`, which is
+    /// the component-level identity they mean.
     [[nodiscard]] static std::uint64_t bandFingerprint(
         const SpectralFiber &fiber);
 

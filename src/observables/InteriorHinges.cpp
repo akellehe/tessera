@@ -30,11 +30,11 @@ std::vector<std::uint64_t> sortedVids(const Simplex &s) {
   return vids;
 }
 
-// Multi-source BFS shell distance from `seeds` over the 1-skeleton of the
-// CURRENT top cells (combinatorial, orphan-immune — the #451 methodology: an
-// orphan edge stranded by a Pachner move must never shortcut the shell walk, so
-// the walk graph is built from `getTopSimplices()`, not the raw edge list).
-// Returns {vertex_id: shell}; unreachable vertices are absent.
+// Multi-source breadth-first search (BFS) shell distance from `seeds` over the
+// one-skeleton of the current top cells. The walk graph is built from the top
+// cells rather than the raw edge list, so an orphan edge stranded by a Pachner
+// move cannot shortcut the walk. Returns vertex id -> shell; unreachable
+// vertices are absent.
 std::unordered_map<std::uint64_t, int> bfsShells(
     const std::vector<std::vector<std::uint64_t>> &tops,
     const std::vector<std::uint64_t> &seeds) {
@@ -75,7 +75,7 @@ double mean(const std::vector<double> &xs) {
   return s / static_cast<double>(xs.size());
 }
 
-// numpy.std default: population std (ddof = 0).
+// Population standard deviation (ddof = 0).
 double populationStd(const std::vector<double> &xs) {
   const double m = mean(xs);
   double acc = 0.0;
@@ -88,9 +88,9 @@ double populationStd(const std::vector<double> &xs) {
 InteriorHinges::InteriorHinges(std::shared_ptr<const Spacetime> spacetime,
                                std::vector<std::vector<std::uint64_t>> holes)
     : spacetime_(std::move(spacetime)), holes_(std::move(holes)) {
-  // Current top cells, canonical (orphan-immune). This reader is 4D-specific:
-  // the hinge dimension (triangles) and the radius root (1/4) both track d = 4,
-  // so a non-4D complex must be refused, never read as nonsense.
+  // Current top cells. This reader is 4D-specific: the hinge dimension
+  // (triangles) and the radius root (1/4) both track d = 4, so a non-4D complex
+  // is refused rather than read.
   const auto &topSimplices = spacetime_->getTopSimplices();
   std::vector<std::vector<std::uint64_t>> tops;
   tops.reserve(topSimplices.size());
@@ -109,12 +109,11 @@ InteriorHinges::InteriorHinges(std::shared_ptr<const Spacetime> spacetime,
     throw std::invalid_argument("InteriorHinges: spacetime has no top cells");
   }
 
-  // The boundary tetrahedra are the canonical codim-1 faces owned by exactly one
-  // top cell (Spacetime::getBoundary — the same orphan-immune facet-count the
-  // #451 methodology derives by hand, but the blessed reused method). A triangle
-  // is a BOUNDARY hinge iff it is a face of some boundary tet (its coface fan
-  // then has a once-shared tetrahedron); every other triangle of the current top
-  // cells is INTERIOR (closed fan).
+  // Boundary tetrahedra are the codimension-1 faces owned by exactly one top
+  // cell (Spacetime::getBoundary). A triangle is a boundary hinge iff it is a
+  // face of some boundary tetrahedron, i.e. its coface fan contains a
+  // once-shared tetrahedron; every other triangle of the current top cells is
+  // interior (closed fan).
   census_.boundaryTets = spacetime_->getBoundary();
   census_.nBoundaryTets = static_cast<int>(census_.boundaryTets.size());
   std::set<std::vector<std::uint64_t>> boundaryTriangles;
@@ -139,12 +138,11 @@ InteriorHinges::InteriorHinges(std::shared_ptr<const Spacetime> spacetime,
                      holeVertices.end());
   const auto shellOf = bfsShells(tops, holeVertices);
 
-  // The registered triangle / tetrahedron Simplex objects live in
+  // The registered triangle and tetrahedron Simplex objects live in
   // getSimplices(); hasTopCoface() keeps exactly those contained in a current
-  // top cell (the deficit / dual-volume readers require these canonical
-  // objects — the skeleton the RegisterContext constructor materialized). We
-  // walk getSimplices() once, reading the triangle census + the interior
-  // hinges' curvature, and counting the tetrahedra for the census.
+  // top cell, which are the objects the deficit and dual-volume reads need. One
+  // pass over getSimplices() collects the triangle census, the interior hinges'
+  // curvature and the tetrahedron count.
   int nTets = 0;
   int nHingesTotal = 0;
   int nHingesBoundary = 0;
@@ -167,8 +165,8 @@ InteriorHinges::InteriorHinges(std::shared_ptr<const Spacetime> spacetime,
     hinge.re = deficit.real();
     hinge.im = deficit.imag();
     hinge.dv = s->dualVolume().real();
-    // shell = min BFS distance over the triangle's vertices reachable from a
-    // hole (None when no vertex is reachable / no holes were given).
+    // shell = the minimum BFS distance over the triangle's vertices reachable
+    // from a hole; empty when no vertex is reachable or no holes were given.
     std::optional<int> shell;
     for (std::uint64_t v : tri) {
       auto it = shellOf.find(v);
@@ -180,8 +178,8 @@ InteriorHinges::InteriorHinges(std::shared_ptr<const Spacetime> spacetime,
     hinge.vids = std::move(tri);
     interior.push_back(std::move(hinge));
   }
-  // Deterministic hinge order (sorted by vertex tuple), matching the Python
-  // reader's `sorted(tri_fans)` walk so every downstream sum is bit-stable.
+  // Deterministic hinge order (sorted by vertex tuple) so every downstream sum
+  // is bit-stable.
   std::sort(interior.begin(), interior.end(),
             [](const Hinge &a, const Hinge &b) { return a.vids < b.vids; });
   hinges_ = std::move(interior);
@@ -204,8 +202,8 @@ InteriorHinges::Masses InteriorHinges::masses() const {
     return out;
   }
   out.empty = false;
-  // Per-shell Re-deficit bins, ordered shell-ascending with the unshelled bin
-  // (nullopt) last — the Python `sorted(bins, key=(is None, shell))`.
+  // Per-shell bins of the real part of the deficit angle, shell-ascending with
+  // the unshelled bin (nullopt) last.
   std::map<int, std::vector<double>> shelled;
   std::vector<double> unshelled;
   double mSum = 0.0;
@@ -248,9 +246,10 @@ InteriorHinges::Radii InteriorHinges::radii() const {
   for (const auto &tet : census_.boundaryTets) {
     for (std::uint64_t v : tet) boundaryVertexIds.insert(v);
   }
-  // V_dual: sum |★v| over the strictly INTERIOR vertices (on no boundary tet).
-  // The 0-simplices sorted by id, skipping orphans (no top coface) and boundary
-  // vertices — the signature-aware circumcentric dual 4-volume.
+  // V_dual: the sum of dual-volume magnitudes over the strictly interior
+  // vertices (those on no boundary tetrahedron), i.e. the signature-aware
+  // circumcentric dual 4-volume. The 0-simplices are walked in id order,
+  // skipping orphans (no top coface) and boundary vertices.
   std::vector<const Simplex *> vertexSimplices;
   for (const auto *s : spacetime_->getSimplices()) {
     if (s->getVertices().size() == 1) vertexSimplices.push_back(s);
@@ -357,8 +356,7 @@ InteriorHinges::RmTable InteriorHinges::rmTable(const Masses &mass,
                                                 const Radii &rad) const {
   RmTable out;
   out.physical = PHYSICAL_RM;
-  // 3 mass definitions × 2 radius definitions, mass outer / radius inner —
-  // the Python `rm_table` insertion order.
+  // 3 mass definitions x 2 radius definitions, mass outer and radius inner.
   const std::pair<const char *, double> masses[] = {
       {"m_shell", mass.mShell}, {"m_sum", mass.mSum}, {"m_action", mass.mAction}};
   const std::pair<const char *, double> radii[] = {{"r_dual", rad.rDual},

@@ -42,11 +42,10 @@ bool FlipMove::propose() {
   const int d = spacetimeDim(*st_);
   const int dPlus1 = d + 1;
 
-  // The generator this move was HANDED, not the complex's own. The
-  // no-argument overload reads `Spacetime::rng`, which is initialized from
-  // `std::random_device`, so a target drawn through it comes from entropy and
-  // no seed can reproduce it (#1013). Every caller already supplies a
-  // generator for exactly this purpose.
+  // Draw through the generator this move was handed, not the complex's own:
+  // the no-argument overload reads `Spacetime::rng`, which is initialized
+  // from `std::random_device`, so a target drawn through it comes from
+  // entropy and no seed reproduces it.
   SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
 
@@ -155,7 +154,7 @@ bool FlipMove::proposeAt(const std::vector<std::uint64_t> &site) {
   SimplexPtr sigma = topSimplexWithIds(
       *st_, std::vector<std::uint64_t>(site.begin(), site.end() - 1));
   if (!sigma) return false;
-  // The drop is an INDEX into the cell's stored vertex order, which is what
+  // `drop` is an index into the cell's stored vertex order, which is what
   // the body walks; the site names the vertex, so resolve it here.
   const auto &vertices = sigma->getVertices();
   for (std::size_t i = 0; i < vertices.size(); ++i)
@@ -165,8 +164,8 @@ bool FlipMove::proposeAt(const std::vector<std::uint64_t> &site) {
 }
 
 bool FlipMove::proposePreGeometric() {
-  // The generator this move was HANDED, not the complex's own (#1013): the
-  // no-argument overload reads `Spacetime::rng`, initialized from
+  // Draw through the generator this move was handed, not the complex's own:
+  // the no-argument overload reads `Spacetime::rng`, initialized from
   // `std::random_device`, so a target drawn through it comes from entropy.
   SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
@@ -184,10 +183,9 @@ bool FlipMove::proposePreGeometricOn(SimplexPtr sigma, std::size_t drop) {
   const int d = dPlus1 - 1;
   if (d < 2) return false;
 
-  // Pick a random facet of sigma combinatorially (drop one vertex).  We
-  // deliberately avoid Simplex::getFacets here: it materialises facet
-  // simplices that the mesh never garbage-collects, which would litter
-  // the complex with orphans after the flip removes sigma.
+  // Pick a facet of sigma combinatorially (drop one vertex).  Simplex::getFacets
+  // is avoided here: it materialises facet simplices the mesh never collects,
+  // which would be left orphaned once the flip removes sigma.
   const auto &svRef = sigma->getVertices();
   VertexPtrs sigmaV(svRef.begin(), svRef.end());
   if (drop >= sigmaV.size()) return false;
@@ -217,14 +215,14 @@ bool FlipMove::proposePreGeometricOn(SimplexPtr sigma, std::size_t drop) {
   if (static_cast<int>(shared.size()) != d ||
       static_cast<int>(unique.size()) != 2) return false;
 
-  // Manifold check: the 2→(d+1) flip introduces the apex edge between
-  // the two unique vertices.  If that edge already exists the flip would
-  // create a degenerate (non-embedded) cell, so reject.
+  // Manifold check: the 2→d flip introduces the apex edge between the two
+  // unique vertices.  If that edge already exists the flip would create a
+  // degenerate (non-embedded) cell, so reject.
   if (verticesAdjacent(unique[0], unique[1])) return false;
 
-  // Boundary-fixed: the operative facet is interior by construction (it
-  // has exactly two top cofaces), so this flip never touches ∂W.  No
-  // further restriction is needed — see ticket #112.
+  // Boundary-fixed: the operative facet is interior by construction (it has
+  // exactly two top cofaces), so this flip never touches ∂W and needs no
+  // further restriction.
 
   std::vector<VertexPtrs> proposedNew;
   proposedNew.reserve(d);

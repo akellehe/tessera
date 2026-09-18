@@ -42,26 +42,13 @@ Face sortedIds(const SimplexPtr &s) {
 ChainComplex ChainComplex::fromSpacetime(const Spacetime &K) {
   ChainComplex cc;
 
-  // Collect the face lattice through the mesh's own facet operation
-  // (Simplex::getFacets) — a BFS down from the registered simplices,
-  // de-duplicated by fingerprint and bucketed by dimension. We do NOT
-  // re-derive faces; getFacets is the single source of truth for "the faces of
-  // a simplex". The only thing ChainComplex adds is the homological boundary
-  // sign below, which mesh facets don't carry.
+  // Face lattice via Simplex::getFacets: a BFS down from the top cells,
+  // de-duplicated by fingerprint and bucketed by dimension.
   std::map<int, std::vector<SimplexPtr>> byDim;
   std::unordered_set<std::uint64_t> seen;
-  // Seed the downward BFS from the top-dimensional cells only.  Genuine
-  // lower-dimensional faces are reached through getFacets below; starting
-  // from *every* registered simplex would also pull in orphaned
-  // sub-simplices that the mesh creates lazily (Simplex::getFacets) and
-  // never garbage-collects once their cofaces are removed — e.g. the
-  // shared facet a 2->3 Pachner flip deletes, or any facet materialised
-  // by a previous fromSpacetime() call whose top cell a later move
-  // removed.  Such orphans are faces of no current top cell and would
-  // corrupt the chain groups (spurious cycles, even negative Betti
-  // numbers).  For a pure complex — every manifold/fixture here — the top
-  // cells' face-closure is exactly the chain complex, so on a freshly
-  // built complex this seeds the identical simplex set as before.
+  // Seed from the top-dimensional cells only: the mesh keeps orphaned
+  // sub-simplices belonging to no current top cell, which would add spurious
+  // cycles and negative Betti numbers.
   std::size_t topSize = 0;
   for (const auto &s : K.getSimplices())
     if (s != nullptr) topSize = std::max(topSize, static_cast<std::size_t>(s->size()));
@@ -103,11 +90,9 @@ ChainComplex ChainComplex::fromSpacetime(const Spacetime &K) {
     }
   }
 
-  // Boundary ∂_k (rows = |C_{k-1}|, cols = |C_k|): each column is a k-simplex,
-  // its nonzero rows are its facets, and the orientation is already carried by
-  // getFacets()'s canonical order — facet at index i is the i-th vertex
-  // dropped, so its coefficient is (-1)^i (see Simplex::getFacets). We read it
-  // off the index rather than recomputing any sign.
+  // Boundary ∂_k (rows = |C_{k-1}|, cols = |C_k|): each column is a k-simplex
+  // and its nonzero rows are its facets. getFacets() is in canonical order —
+  // facet i drops vertex i — so the coefficient is (-1)^i.
   cc.boundary_.assign(n + 1, {});
   for (int k = 1; k <= n; ++k) {
     const int rows = static_cast<int>(cc.counts_[k - 1]);
@@ -312,11 +297,8 @@ std::vector<std::vector<std::uint64_t>> ChainComplex::orientedTopSimplices() con
 }
 
 std::vector<int> ChainComplex::fundamentalClass() const {
-  // [W] ∈ H_d is the ±1 generator of ker ∂_d: the orientation each top simplex
-  // must carry (relative to its increasing-vertex reference orientation) so the
-  // top chain Σ_t ε_t·t is a cycle. For a closed connected oriented d-manifold
-  // this kernel is one-dimensional (b_d = 1), so the generator is unique up to
-  // an overall sign.
+  // [W] ∈ H_d is the ±1 generator of ker ∂_d, relative to the
+  // increasing-vertex reference orientation of each top simplex.
   const int d = dimension_;
   if (d < 1)
     throw std::runtime_error(
@@ -331,13 +313,9 @@ std::vector<int> ChainComplex::fundamentalClass() const {
       topBoundary(r, c) =
           static_cast<double>(flat[static_cast<std::size_t>(r) * cols + c]);
 
-  // Ask the decomposition for the genuine nullity rather than reading
-  // kernel().cols(): Eigen's FullPivLU::kernel() returns a single all-zero
-  // column for a 0-dimensional kernel (it never hands back a zero-*column*
-  // matrix), so kernel().cols() is always ≥ 1 and cannot tell b_d = 0 (every
-  // ball SolidSimplex(n), ℝP²) apart from b_d = 1. dimensionOfKernel() = cols −
-  // rank reports the true dim ker ∂_d, so the documented contract — a
-  // fundamental class exists only when dim ker ∂_d = 1 — is actually enforced.
+  // dimensionOfKernel() = cols − rank is the true dim ker ∂_d. Eigen's
+  // FullPivLU::kernel() returns one all-zero column for a 0-dimensional kernel,
+  // so kernel().cols() cannot distinguish b_d = 0 from b_d = 1.
   const Eigen::FullPivLU<Eigen::MatrixXd> decomposition(topBoundary);
   if (decomposition.dimensionOfKernel() != 1)
     throw std::runtime_error(
@@ -347,12 +325,8 @@ std::vector<int> ChainComplex::fundamentalClass() const {
         " must be 1, so the fundamental class is unique up to sign)");
   const Eigen::MatrixXd kernel = decomposition.kernel();
 
-  // Every entry of this generator has the same magnitude (one orientation per
-  // top simplex), so scaling by the first nonzero entry makes the entries
-  // exactly ±1; fixing that entry to +1 makes the overall sign deterministic.
-  // dim ker ∂_d = 1 guarantees a genuine (nonzero) generator, so firstNonzero
-  // lands on a real entry; the size() guard keeps sign normalization from ever
-  // indexing past the end even if the generator were numerically zero.
+  // All entries share one magnitude, so scaling by the first nonzero entry
+  // makes them exactly ±1 and fixes the overall sign.
   Eigen::VectorXd generator = kernel.col(0);
   const double scale = generator.cwiseAbs().maxCoeff();
   const double threshold = 1e-9 * (scale > 0.0 ? scale : 1.0);
@@ -373,22 +347,15 @@ std::vector<int> ChainComplex::fundamentalClass() const {
   return epsilon;
 }
 
-// The intersection form records how the two-dimensional surfaces sitting
-// inside a four-dimensional manifold cross one another: given two such
-// surfaces it returns an integer counting their (signed) crossing points. We
-// compute it the standard algebraic-topology way, which needs no geometry:
+// Intersection form, computed without geometry:
 //
-//   1. Find the manifold's independent two-dimensional surfaces. Working with
-//      "cochains" (a number assigned to each triangle), these are the *closed*
-//      cochains that are not *exact*; one representative per two-dimensional
-//      hole gives a basis of the relevant cohomology.
-//   2. Pair them with the cup product (the Alexander-Whitney recipe): on a
-//      four-simplex with vertices v0<v1<v2<v3<v4, the product of two such
-//      cochains evaluates the first on the front triangle (v0,v1,v2) and the
-//      second on the back triangle (v2,v3,v4).
-//   3. Sum those products over the whole manifold, with each four-simplex
-//      weighted by its orientation (+/-1, from the "fundamental class"). The
-//      result is the symmetric crossing-number matrix.
+//   1. A basis of H^2 as triangle cochains: closed but not exact, one per
+//      two-dimensional hole.
+//   2. Pair them with the Alexander-Whitney cup product: on a four-simplex
+//      v0<v1<v2<v3<v4 the first cochain is evaluated on the front triangle
+//      (v0,v1,v2) and the second on the back triangle (v2,v3,v4).
+//   3. Sum over the manifold, each four-simplex weighted by its ±1 orientation
+//      from the fundamental class.
 std::vector<double> ChainComplex::intersectionForm() const {
   if (dimension_ != 4) return {};
   const int numTwoDimensionalHoles = bettiNumbers()[2];  // rank of H_2
@@ -414,19 +381,13 @@ std::vector<double> ChainComplex::intersectionForm() const {
   const Eigen::MatrixXd tetrahedronBoundaries =
       boundaryMatrixAsEigen(3, numTriangles, numTetrahedra);     // tetrahedra -> triangles
 
-  // Fundamental class: the single way (up to sign) to orient all the
-  // four-simplices coherently so their boundaries cancel — the ±1 generator of
-  // ker ∂_4, one orientation per four-simplex (see fundamentalClass()). A closed
-  // orientable 4-manifold has exactly this; anything else has no fundamental
-  // class and no well-defined signature, and the call throws.
+  // The ±1 generator of ker ∂_4; throws unless the complex is a closed
+  // orientable 4-manifold.
   const std::vector<int> orientationPerFourSimplex = fundamentalClass();
 
-  // Two-dimensional cohomology classes as triangle-cochains:
-  //  - "closed" cochains are the null space of the transposed tetrahedron
-  //    boundary map (the coboundary operator on triangle-cochains);
-  //  - "exact" cochains are the columns of the transposed triangle boundary map.
-  // A basis of cohomology is a set of closed cochains that stay independent
-  // after the exact ones are accounted for.
+  // Closed triangle cochains are the null space of the transposed tetrahedron
+  // boundary map; exact ones are the columns of the transposed triangle
+  // boundary map. The basis is the closed cochains independent of the exact.
   const Eigen::MatrixXd closedTriangleCochains =
       Eigen::FullPivLU<Eigen::MatrixXd>(tetrahedronBoundaries.transpose()).kernel();
   const Eigen::MatrixXd exactTriangleCochains = triangleBoundaries.transpose();
@@ -454,8 +415,7 @@ std::vector<double> ChainComplex::intersectionForm() const {
     }
   }
 
-  // Look up a triangle's index from its (sorted) three vertices, for the
-  // cup-product front/back faces below.
+  // Triangle index from its sorted vertices, for the cup-product faces below.
   std::map<std::array<std::uint64_t, 3>, int> triangleIndexByVertices;
   for (int j = 0; j < numTriangles; ++j) {
     const auto &vertices = faceVerts_[2][static_cast<std::size_t>(j)];
@@ -506,8 +466,8 @@ int ChainComplex::signature() const {
   double largestMagnitude = 0.0;
   for (int i = 0; i < size; ++i)
     largestMagnitude = std::max(largestMagnitude, std::abs(solver.eigenvalues()[i]));
-  // Relative threshold for "nonzero": the form is nondegenerate (unimodular) on
-  // a closed 4-manifold, so its eigenvalues sit well away from zero.
+  // Relative threshold for "nonzero"; the form is unimodular on a closed
+  // 4-manifold, so its eigenvalues sit well away from zero.
   const double zeroTolerance = 1e-7 * (largestMagnitude > 0 ? largestMagnitude : 1.0);
   int numPositive = 0, numNegative = 0;
   for (int i = 0; i < size; ++i) {
@@ -534,24 +494,20 @@ std::vector<long> ChainComplex::torsion(int k) const {
 // Stiefel–Whitney numbers (mod-2 characteristic numbers)
 // ===========================================================================
 //
-// These are read off the mod-2 cohomology ring. The pipeline is:
+// Read off the mod-2 cohomology ring:
 //
-//   1. Mod-2 cohomology H^k(K; Z/2): cocycles modulo coboundaries, with the
-//      coboundary operator being the transpose of the (mod-2) boundary map.
-//   2. Cup product on cochains via the Alexander–Whitney recipe — the same
-//      front/back-face rule used by the integral intersection form, now mod 2
-//      and for arbitrary degrees.
+//   1. H^k(K; Z/2): cocycles modulo coboundaries, the coboundary being the
+//      transpose of the mod-2 boundary operator.
+//   2. Cup product on cochains via Alexander–Whitney (front/back faces).
 //   3. Wu classes v_k, defined by <v_k ∪ x, [K]> = <Sq^k x, [K]> for every
-//      x in H^{n-k}. Solving this small linear system (its matrix is the
-//      nondegenerate Poincaré-duality pairing) gives each v_k.
-//   4. The total Stiefel–Whitney class w = Sq(v); then each Stiefel–Whitney
-//      number is a degree-n monomial in the w_i evaluated on the fundamental
-//      class [K] (the mod-2 sum of all top simplices).
+//      x in H^{n-k}; the defining system's matrix is the Poincaré-duality
+//      pairing.
+//   4. w = Sq(v); each Stiefel–Whitney number is a degree-n monomial in the
+//      w_i evaluated on [K] (the mod-2 sum of all top simplices).
 //
 // Only the Steenrod squares expressible through the ordinary cup product are
 // implemented (Sq^k on a degree-k class is the cup square; Sq^k on a lower
-// degree class is zero). The general Sq^i needs higher cup-i products and is
-// deferred (#65); a class that genuinely requires it raises an exception.
+// degree class is zero). A class that needs a higher cup-i product raises.
 namespace {
 
 using Gf2Vector = std::vector<std::uint8_t>;  // dense vector over GF(2), entries 0/1
@@ -579,8 +535,7 @@ std::vector<int> gf2ReduceRows(Gf2Matrix &rows, int numColumns) {
 }
 
 // Basis of the null space {x : matrix·x = 0} of a GF(2) matrix with `numColumns`
-// columns (rows may be empty, in which case every standard basis vector is a
-// kernel vector).
+// columns. With no rows, every standard basis vector is a kernel vector.
 Gf2Matrix gf2Kernel(Gf2Matrix matrix, int numColumns) {
   const std::vector<int> pivotColumns = gf2ReduceRows(matrix, numColumns);
   std::vector<char> isPivot(numColumns, 0);
@@ -597,9 +552,8 @@ Gf2Matrix gf2Kernel(Gf2Matrix matrix, int numColumns) {
   return basis;
 }
 
-// Incrementally maintained spanning set (kept in echelon form). add() returns
-// true iff `candidate` was linearly independent of everything added so far
-// (and then records it). Used to split cocycles into cohomology classes.
+// Incrementally maintained spanning set, kept in echelon form. add() records
+// `candidate` and returns true iff it is independent of everything added so far.
 struct Gf2Span {
   Gf2Matrix echelonRows;
   std::vector<int> leadingColumn;
@@ -619,8 +573,8 @@ struct Gf2Span {
   }
 };
 
-// Solve matrix·x = rhs over GF(2) for a square, invertible matrix (the
-// duality pairing). Throws if the system is not uniquely solvable.
+// Solve matrix·x = rhs over GF(2) for a square, invertible matrix. Throws if
+// the system is not uniquely solvable.
 Gf2Vector gf2Solve(const Gf2Matrix &matrix, const Gf2Vector &rhs) {
   const int n = static_cast<int>(rhs.size());
   Gf2Matrix augmented(matrix.size(), Gf2Vector(n + 1, 0));
@@ -669,7 +623,7 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
     for (int i = 0; i < countAt(k); ++i)
       indexOfFace[k][faceVerts_[k][static_cast<std::size_t>(i)]] = i;
 
-  // ---- mod-2 cohomology bases, one representative cocycle per class ----
+  // ---- mod-2 cohomology bases, one cocycle per class ----
   // H^k = ker(δ^k) / im(δ^{k-1}); δ^k = (∂_{k+1})^T, coboundaries = rows of ∂_k.
   std::vector<Gf2Matrix> cohomology(n + 1);  // cohomology[k] = basis cochains in C^k
   for (int k = 0; k <= n; ++k) {
@@ -725,9 +679,8 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
   };
 
   // ---- Wu classes v_k (1 ≤ k ≤ n/2; the rest vanish for degree reasons) ----
-  // v_k is the element of H^k with <v_k ∪ x, [K]> = <Sq^k x, [K]> for all
-  // x in H^{n-k}. Sq^k on a degree-(n-k) class is the cup square when k = n-k,
-  // zero when k > n-k, and (deferred) a higher cup-i product when k < n-k.
+  // Sq^k on a degree-(n-k) class is the cup square when k = n-k, zero when
+  // k > n-k, and a higher cup-i product when k < n-k.
   std::vector<Gf2Vector> wuClass(n + 1);
   for (int k = 0; k <= n; ++k) wuClass[k].assign(countAt(k), 0);
   for (int k = 1; 2 * k <= n; ++k) {
@@ -752,14 +705,12 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
       if (k == complement)  // Sq^k on a degree-k class is the cup square
         rightHandSide[j] = static_cast<std::uint8_t>(evaluateOnFundamentalClass(
             cup(basisComplement[j], complement, basisComplement[j], complement)));
-      // k < complement would need a higher cup-i product; but H^k ≠ 0 with
-      // k < n-k cannot occur for the supported manifolds (it requires a
-      // nonzero low-degree cohomology paired against a higher one). Guard it.
+      // k < complement would need a higher cup-i product.
       else
         throw std::runtime_error(
             "ChainComplex::stiefelWhitneyNumbers: Wu class v_" + std::to_string(k) +
             " requires a higher Steenrod cup-i product (i>0), which is deferred "
-            "(see issue #65)");
+            "");
     }
     const Gf2Vector coefficients = gf2Solve(pairing, rightHandSide);
     Gf2Vector v(countAt(k), 0);
@@ -770,10 +721,9 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
   }
 
   // ---- Stiefel–Whitney classes w_i = Σ_j Sq^j(v_{i-j}) ----
-  // Sq^0(v_i) = v_i; Sq^j(v_{i-j}) for j ≥ 1 is the cup square when 2j = i
-  // (degree i-j = j) and zero when the Wu class vanishes; anything else is a
-  // deferred higher square. Computed lazily so a deferred term is only hit if
-  // it is actually needed (and nonzero).
+  // Sq^0(v_i) = v_i; Sq^j(v_{i-j}) for j ≥ 1 is the cup square when 2j = i and
+  // zero when the Wu class vanishes; anything else needs a higher square.
+  // Evaluated lazily.
   std::vector<bool> haveW(n + 1, false);
   std::vector<Gf2Vector> wClass(n + 1);
   const auto stiefelWhitney = [&](int i) -> const Gf2Vector & {
@@ -793,7 +743,7 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
       throw std::runtime_error(
           "ChainComplex::stiefelWhitneyNumbers: Stiefel–Whitney class w_" +
           std::to_string(i) + " requires a higher Steenrod cup-i product (i>0), "
-          "which is deferred (see issue #65)");
+          "which is deferred");
     }
     haveW[i] = true;
     wClass[i] = std::move(w);
@@ -801,10 +751,9 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
   };
 
   // ---- Stiefel–Whitney numbers: every partition of n into positive parts ----
-  // The monomial w_{i_1}···w_{i_r} (parts ascending) cupped together and
-  // evaluated on [K]. Parts are processed smallest-first so a zero factor (e.g.
-  // w_1 = 0 on an orientable manifold) short-circuits before a deferred,
-  // would-be-higher-square factor is ever requested.
+  // The monomial w_{i_1}···w_{i_r} cupped together and evaluated on [K]. Parts
+  // ascend so a zero factor short-circuits before an unimplemented
+  // higher-square factor is requested.
   std::function<void(int, int, std::vector<int> &)> forEachPartition =
       [&](int remaining, int minimumPart, std::vector<int> &parts) {
         if (remaining == 0) {
@@ -917,7 +866,7 @@ std::pair<bool, std::string> ChainComplex::dualComplexIsValid(
   }
 
   // Ridge links: the top cells around each (n-2)-simplex, glued along the
-  // facets containing it, must form ONE path or cycle (no pinches).
+  // facets containing it, must form a single path or cycle (no pinches).
   std::map<Cell, std::vector<int>> atRidge;
   for (std::size_t ci = 0; ci < cells.size(); ++ci) {
     const Cell &c = cells[ci];
@@ -951,14 +900,9 @@ std::pair<bool, std::string> ChainComplex::dualComplexIsValid(
   }
   if (dim == 2) return {true, "ok"};
 
-  // n >= 4: a complex is a PL manifold iff every facet is in <= 2 cofaces (checked
-  // above) AND every vertex link is itself a valid (n-1)-manifold. Recurse on the
-  // links (link top cells = each cell minus the vertex); the recursion bottoms out
-  // at the n==3 S^2-vertex-link rigor below, so a 4-manifold's links are certified
-  // as genuine closed 3-manifolds (interior) or balls (boundary). The n==3 inline
-  // check (chi-based, slightly stronger: it pins links to S^2 rather than any
-  // closed surface) is kept; sphere-vs-other-manifold at the top is the caller's
-  // separate Betti check.
+  // n >= 4: a PL manifold has every facet in <= 2 cofaces (checked above) and
+  // every vertex link a valid (n-1)-manifold. Recurse on the links (link top
+  // cells = each cell minus the vertex), bottoming out at the n == 3 check.
   if (dim >= 4) {
     std::map<std::uint64_t, std::vector<Cell>> linkTops;
     for (const auto &c : cells)
@@ -1068,9 +1012,8 @@ std::vector<int> ChainComplex::endSignCovector(
   };
   if (holes.empty()) return {};
 
-  // The oriented complex is the union surface ∪ holes (the capped end), as
-  // sorted-unique sorted tuples — the lexicographic order makes the component
-  // roots, and with them the whole covector, deterministic.
+  // The oriented complex is the union surface ∪ holes, as sorted-unique sorted
+  // tuples; the lexicographic order makes the component roots deterministic.
   std::set<Cell> uniq;
   const std::size_t nv = holes.front().size();
   const auto addCell = [&](const Cell &raw) {
@@ -1104,9 +1047,9 @@ std::vector<int> ChainComplex::endSignCovector(
           "ChainComplex::endSignCovector: facet " + joinIds(f) + " has " +
           std::to_string(at.size()) + " cofaces (not a pseudomanifold)");
 
-  // Orient by propagation: across an interior facet the two induced signs must
-  // cancel (eps_b = -eps_a * s_a * s_b); boundary facets (one coface) impose
-  // nothing. Component roots are the lex-smallest unvisited cells, eps = +1.
+  // Orient by propagation: across an interior facet the two induced signs
+  // cancel (eps_b = -eps_a * s_a * s_b); boundary facets impose nothing.
+  // Component roots are the lex-smallest unvisited cells, eps = +1.
   std::vector<int> eps(cells.size(), 0);
   for (std::size_t root = 0; root < cells.size(); ++root) {
     if (eps[root] != 0) continue;
@@ -1162,9 +1105,8 @@ std::vector<int> ChainComplex::orientationCovector(
   };
   if (topCells.empty()) return {};
 
-  // Sorted-unique cells: the canonical C_d column order, so the returned
-  // covector aligns with orientedTopSimplices() / kSimplexVertices(dim) and is
-  // independent of the order topCells is supplied in.
+  // Sorted-unique cells: the canonical C_d column order, so the covector aligns
+  // with orientedTopSimplices() and ignores the order topCells arrives in.
   std::set<Cell> uniq;
   const std::size_t nv = topCells.front().size();
   for (const auto &raw : topCells) {
@@ -1196,9 +1138,9 @@ std::vector<int> ChainComplex::orientationCovector(
           "ChainComplex::orientationCovector: facet " + joinIds(f) + " has " +
           std::to_string(at.size()) + " cofaces (not a pseudomanifold)");
 
-  // Orient by propagation: across an interior facet the two induced signs must
-  // cancel (eps_b = -eps_a * s_a * s_b); boundary facets (one coface) impose
-  // nothing. Component roots are the lex-smallest unvisited cells, eps = +1.
+  // Orient by propagation: across an interior facet the two induced signs
+  // cancel (eps_b = -eps_a * s_a * s_b); boundary facets impose nothing.
+  // Component roots are the lex-smallest unvisited cells, eps = +1.
   std::vector<int> eps(cells.size(), 0);
   for (std::size_t root = 0; root < cells.size(); ++root) {
     if (eps[root] != 0) continue;

@@ -17,21 +17,19 @@ namespace tessera::observables {
 
 /// # BlockResiduals
 ///
-/// The #574 per-output-block carry residuals, migrated as a C++ Observable. Each
-/// provenance block (a vertex region + a target, e.g. `ProtonIngredients`'s
-/// output blocks or a campaign record) is scored against its OWN sub-complex
-/// exactly as `ProtonIngredients::outputBlockResidual` scores it: the ambient top
-/// cells whose vertices ALL lie in the region form the block's own sub-complex
-/// (uniform-metric — matching how the drive's `r_U` scored the block), scored
-/// with `MultiCobordism::residualOfTargetStateAgainstHarmonic`; an empty region
-/// reports the full leak `‖target‖²`.
+/// Per-output-block carry residuals. Each provenance block (a vertex region plus
+/// a target) is scored against its own sub-complex, as
+/// `ProtonIngredients::outputBlockResidual` scores it: the ambient top cells all
+/// of whose vertices lie in the region form the block's sub-complex, carrying a
+/// uniform metric, and are scored with
+/// `MultiCobordism::residualOfTargetStateAgainstHarmonic`. An empty region
+/// reports the full leak \f$ \|\mathrm{target}\|^2 \f$.
 ///
-/// The blocks are ctor provenance (build history travels via the campaign record
-/// / geometry-dump metadata — never guessed). The sub-complex is LOADED by the
-/// `LiveComplex` loader (a strict selection of existing cells re-instantiated
-/// through the canonical `fromCells`), never built inside this reader. Because
-/// block regions carry vertex ids, `recordRelabeled` maps them through the
-/// RELABEL permutation so the gate compares like with like.
+/// Blocks are supplied to the constructor from recorded build history, never
+/// inferred. The sub-complex is loaded by `LiveComplex` — a strict selection of
+/// existing cells re-instantiated through `Spacetime::fromCells` — and never
+/// built inside this reader. Block regions carry vertex ids, so
+/// `recordRelabeled` maps them through the RELABEL permutation.
 class BlockResiduals : public RegisterObservable {
   public:
     /// One provenance block: a label, its emergent vertex region, and its

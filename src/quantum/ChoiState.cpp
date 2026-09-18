@@ -1,12 +1,12 @@
-// Implementation of ChoiPropagator. See choi_state.hpp for the
-// architectural overview.
+// Implementation of ChoiPropagator. See include/quantum/ChoiState.hpp
+// for the construction and the site-ordering convention.
 
 #include "quantum/ChoiState.hpp"
 
 #include "quantum/MutualInformation.hpp"
 #include "quantum/SchwingerModel.hpp"
 
-#include "quantum/TDVPIntegrator.hpp"  // tessera-owned 2-site TDVP (Apache-2.0 core only)
+#include "quantum/TDVPIntegrator.hpp"  // two-site TDVP on ITensor core primitives
 
 #include <itensor/all.h>
 #include <itensor/mps/autompo.h>
@@ -30,12 +30,12 @@ using namespace ::tessera::simulations;
 
 namespace {
 
-// Helper for the Schwinger constant — duplicates the closed form from
-// schwinger_model.cpp so this translation unit doesn't have to depend
-// on internal helpers there. The constant doesn't enter the temporal
-// MI (it's a c-number shift on energy, not on the dynamics) but is
-// included so out-register expectation values stay consistent with
-// the standard SchwingerMPO build.
+// Closed form of the Schwinger c-number coefficients, duplicated from
+// SchwingerModel.cpp so this translation unit does not depend on the
+// internal helpers there. The constant does not enter the temporal
+// mutual information — it is a c-number shift on energy, not on the
+// dynamics — but keeping it makes out-register expectation values
+// consistent with the standard SchwingerMPO build.
 inline double c_n(int n, double L0) {
     return L0 + ((n % 2 == 0) ? 0.0 : -0.5);
 }
@@ -68,14 +68,13 @@ ChoiPropagator::bellChainMPS(itensor::SpinHalf const& sites) {
     }
     const int N = twoN / 2;
 
-    // Bell-pair construction strategy: start from |↑↑…↑⟩, then apply
-    // the unitary U = CNOT · (H ⊗ I) to each (in_k, out_k) pair —
-    // U|↑↑⟩ = (|↑↑⟩ + |↓↓⟩) / √2 = |Φ+⟩.
+    // Start from |↑↑…↑⟩ and apply U = CNOT · (H ⊗ I) to each
+    // (in_k, out_k) pair: U|↑↑⟩ = (|↑↑⟩ + |↓↓⟩) / √2 = |Φ+⟩.
     //
-    // For each pair the gate is a 4×4 unitary; we apply it via the
-    // standard two-site ITensor pattern (contract neighbouring site
-    // tensors, multiply by the gate, SVD back) so the resulting MPS
-    // has bond dim 2 within each pair and bond dim 1 between pairs.
+    // Each pair's gate is a 4×4 unitary applied by the standard two-site
+    // ITensor pattern (contract neighbouring site tensors, multiply by
+    // the gate, SVD back), so the resulting MPS has bond dimension 2
+    // within each pair and 1 between pairs.
 
     auto state = InitState(sites);
     for (int i = 1; i <= twoN; ++i) state.set(i, "Up");
@@ -91,19 +90,17 @@ ChoiPropagator::bellChainMPS(itensor::SpinHalf const& sites) {
         auto si = sites(i);
         auto sj = sites(j);
 
-        // 4×4 unitary in basis (|↑↑⟩, |↑↓⟩, |↓↑⟩, |↓↓⟩):
-        //   ITensor SpinHalf indexes Up=1, Dn=2.
+        // 4×4 unitary in the basis (|↑↑⟩, |↑↓⟩, |↓↑⟩, |↓↓⟩); ITensor
+        // SpinHalf indexes Up = 1, Dn = 2.
         //
-        //   U·|↑↑⟩ = (|↑↑⟩ + |↓↓⟩)/√2          <- Bell prep, the only column we need
+        //   U·|↑↑⟩ = (|↑↑⟩ + |↓↓⟩)/√2   <- the Bell-prep column
         //
-        // Fill out the remaining columns to make U unitary so the SVD
-        // afterward doesn't accumulate noise on the unused subspace:
+        // The remaining columns keep U unitary (their output columns are
+        // orthonormal), so the following SVD accumulates no noise on the
+        // unused subspace:
         //   U·|↑↓⟩ = (|↑↓⟩ + |↓↑⟩)/√2
         //   U·|↓↑⟩ = (|↑↑⟩ − |↓↓⟩)/√2
         //   U·|↓↓⟩ = (|↑↓⟩ − |↓↑⟩)/√2
-        //
-        // (One can check the four output columns are orthonormal: each
-        //  has norm 1, and pairwise overlaps are 0.)
         ITensor G(prime(si), prime(sj), si, sj);
         // Column |↑↑⟩:
         G.set(prime(si) = 1, prime(sj) = 1, si = 1, sj = 1, s2inv);
@@ -167,8 +164,8 @@ ChoiPropagator::outputHamiltonianMPO(itensor::SpinHalf const& sites,
         }
     }
 
-    // ── Electric-field operator part. Same L_n² expansion as the
-    // standard Schwinger MPO, just with out_k = site 2k:
+    // ── Electric-field operator part: the same L_n² expansion as the
+    // standard Schwinger MPO, with out_k = site 2k:
     //   H_E_op = − Σ_{k=1..N-1} (g² a A_k) "Sz"_{out_k}
     //          + Σ_{1 ≤ j < k ≤ N-1} (g² a (N−k)) "Sz"_{out_j} "Sz"_{out_k}.
     {
@@ -273,11 +270,10 @@ ChoiPropagator::temporalMutualInformation(itensor::MPS const& choi, int N) {
         for (int j = 1; j <= N; ++j) {
             const int siteIn  = 2 * i - 1;
             const int siteOut = 2 * j;
-            // Schmidt convention requires siteIn < siteOut in our
-            // helper. siteIn = 2i-1 and siteOut = 2j, so siteIn <
-            // siteOut iff 2i - 1 < 2j iff i ≤ j. The i > j case is
-            // covered by symmetry of the joint state across labels
-            // — for the Choi state, ρ_{in_i, out_j} and
+            // twoSiteReducedDensity requires its first site index to
+            // be the smaller one. siteIn = 2i-1 and siteOut = 2j, so
+            // siteIn < siteOut iff i ≤ j; for i > j the two are swapped,
+            // which is harmless because ρ_{in_i, out_j} and
             // ρ_{out_j, in_i} carry the same information.
             int lo = std::min(siteIn, siteOut);
             int hi = std::max(siteIn, siteOut);

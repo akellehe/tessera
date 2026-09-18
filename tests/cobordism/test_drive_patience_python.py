@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+from tessera.drivers import emergence as ea
 
 #: A host small enough that a unit is cheap; the assertions here are about the
 #: loop's counting, not about any geometry it drives.

@@ -18,7 +18,7 @@ namespace tessera::chainhodge {
 /// # BandDerivative
 ///
 /// Analytic derivatives of a Riesz band's geometric images with respect to
-/// one squared edge length or one link phase (#947). The band's projector is
+/// one squared edge length or one link phase. The band's projector is
 /// the contour quadrature \f$ P=\sum_j w_j R(\zeta_j) \f$ of the pencil
 /// resolvent \f$ R(\zeta)=(\zeta I-h)^{-1} \f$ on chains, its right frame
 /// \f$ \Phi \f$ spans \f$ \operatorname{Ran}P \f$, and its images are

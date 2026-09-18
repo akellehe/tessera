@@ -114,8 +114,8 @@ std::pair<bool, std::string> SurgicalCone::coneOut(
   std::vector<std::uint64_t> want(cell.begin(), cell.end());
   std::sort(want.begin(), want.end());
 
-  // Locate the target top cell; collect the OTHER top cells (to know which of
-  // want's edges survive). Refuse to remove the last top cell of the dimension.
+  // Locate the target top cell and collect the others, which decide which of
+  // its edges survive. Refuse to remove the last top cell of the dimension.
   ::tessera::mesh::Simplex *target = nullptr;
   std::vector<std::vector<std::uint64_t>> otherTop;
   for (const auto s : st_->getSimplices()) {
@@ -135,7 +135,7 @@ std::pair<bool, std::string> SurgicalCone::coneOut(
 
   // An edge {u,v} of the cell is orphaned iff no surviving top cell covers both
   // endpoints. Capture (u, v, complex l2, phase) for each orphan so rollback
-  // restores it bit-exactly (#581: the full complex value, never Re alone).
+  // restores it bit-exactly.
   const auto covered = [&](std::uint64_t u, std::uint64_t v) {
     for (const auto &c : otherTop) {
       const bool hu = std::find(c.begin(), c.end(), u) != c.end();
@@ -169,16 +169,13 @@ std::pair<bool, std::string> SurgicalCone::coneOut(
     if (it != vidx.end()) coordSnap[id] = coordsOf(it->second);
   }
 
-  // Mutate: drop the top cell, then its orphaned faces, then its orphaned
-  // edges. The face prune must precede the edge removal (removeEdge's
-  // contract: no simplex may still contain the edge) — a registered face
-  // stripped of its edge would stay wired into the hinges' coface walk while
-  // reading l2 = 0 in every Gram-matrix computation, the #587 drift.
+  // Drop the top cell, then its orphaned faces, then its orphaned edges. The
+  // face prune must precede the edge removal (removeEdge's contract: no simplex
+  // may still contain the edge).
   st_->removeSimplex(target);
   // If anything was pruned, the undo must re-materialize even when the cell
-  // itself carried no facet cache (a partially materialized host can hold
-  // faces registered by a neighbor cell's getFacets) — registered faces are
-  // never lost across a round trip.
+  // itself carried no facet cache: a partially materialized host can hold faces
+  // registered by a neighbor cell's getFacets.
   if (st_->pruneOrphanedSimplices(want) > 0) m.hadFacets = true;
   for (auto *e : toRemove)
     if (e != nullptr) st_->removeEdge(e);
@@ -194,8 +191,7 @@ std::pair<bool, std::string> SurgicalCone::coneOut(
     }
   }
 
-  // Gate: the result must be a valid manifold-with-boundary. On rejection,
-  // restore the cell exactly (the inverse of this same move) and report.
+  // Gate on the manifold check; on rejection restore the cell exactly.
   const auto verdict = validate();
   if (!verdict.first) {
     undoConeOut(m);
@@ -240,10 +236,9 @@ std::pair<bool, std::string> SurgicalCone::coneIn(
   m.cell = cellIds;
 
   auto r = st_->createSimplexTracked(verts);
-  // #613: seed the apex edges' causal disposition BEFORE they are recorded below,
-  // so the rollback record and the complex never disagree. Only edges incident to
-  // the fresh apex are written; every pre-existing edge is left exactly as it was.
-  // `timelike == false` (the default) writes nothing at all.
+  // Seed the apex edges' causal disposition before they are recorded below, so
+  // the rollback record and the complex agree. Only edges incident to the fresh
+  // apex are written. `timelike == false` writes nothing.
   if (timelike) {
     const std::uint64_t apexId = apex->getId();
     for (const auto &e : r.newEdges)
@@ -251,11 +246,9 @@ std::pair<bool, std::string> SurgicalCone::coneIn(
           e->getTarget() != nullptr &&
           (e->getSource()->getId() == apexId ||
            e->getTarget()->getId() == apexId))
-        // Under balanced wiring the timelike class takes the OTHER root, so
-        // l^2 = -i|m| rather than +i|m| (#741). Passing -kTimelikeSquaredLength
-        // to the unbranched form landed on +1 — kTimelikeSquaredLength is
-        // already negative — which is exactly the spacelike auto-wiring value,
-        // so a timelike cone-in produced edges identical to a spacelike one.
+        // Under balanced wiring the timelike class takes the other root, so
+        // l^2 = -i|m| rather than +i|m|. kTimelikeSquaredLength is negative, so
+        // negating it for the unbranched form lands on the spacelike value +1.
         e->setLength(st_->balancedEdgeWiring()
                          ? ::tessera::spacetime::Spacetime::balancedLength(
                                kTimelikeSquaredLength, /*timelikeBranch=*/true)
@@ -297,7 +290,7 @@ std::pair<bool, std::string> SurgicalCone::bridge(
   if (cellVertices.size() != tv)
     return {false, "bridge needs " + std::to_string(tv) + " vertices (got " +
                        std::to_string(cellVertices.size()) + ")"};
-  // The vertices must be distinct and already exist: a bridge mints nothing.
+  // The vertices must be distinct and already exist.
   auto vidx = vertexIndex(st_);
   std::unordered_set<std::uint64_t> seen;
   ::tessera::mesh::VertexPtrs verts;
@@ -316,10 +309,9 @@ std::pair<bool, std::string> SurgicalCone::bridge(
   m.kind = Move::Kind::Bridge;
   m.cell = cellVertices;
   std::sort(m.cell.begin(), m.cell.end());
-  // Which proper sub-faces of the cell are registered BEFORE the move (the
-  // surfaces' own triangles among them, plus whatever a neighbouring cell's
-  // lattice already materialized). Everything else the move's lifetime
-  // registers under this cell is the move's own and goes on undo.
+  // Proper sub-faces of the cell registered before the move: the surfaces' own
+  // triangles, plus whatever a neighbouring cell's lattice already
+  // materialized. Everything else under this cell is the move's own.
   {
     std::unordered_map<std::uint64_t, ::tessera::mesh::Vertex *> byId;
     for (const auto v : verts) byId.emplace(v->getId(), v);
@@ -341,7 +333,7 @@ std::pair<bool, std::string> SurgicalCone::bridge(
       m.edges.emplace_back(e->getSource()->getId(), e->getTarget()->getId(),
                            e->getLength(), e->getPhase());
 
-  // Gate: the manifold check over the top cells that exist, and nothing else.
+  // Gate on the manifold check, and nothing else.
   const auto verdict = validate();
   if (!verdict.first) {
     undoBridge(m);
@@ -352,9 +344,8 @@ std::pair<bool, std::string> SurgicalCone::bridge(
 }
 
 void SurgicalCone::undoBridge(const Move &m) {
-  // Drop the top cell first: removeSimplex clears its facets' coface links,
-  // so a sub-face the move introduced is then recognisable by having no
-  // coface left at all.
+  // Drop the top cell first: removeSimplex clears its facets' coface links, so
+  // a sub-face the move introduced is then recognisable by having no coface.
   auto vidx = vertexIndex(st_);
   ::tessera::mesh::VertexPtrs verts;
   verts.reserve(m.cell.size());
@@ -368,11 +359,9 @@ void SurgicalCone::undoBridge(const Move &m) {
   }
   // Sub-faces the move introduced: registered now, not registered before the
   // move, and held by no surviving simplex. Largest first, so a face's own
-  // facets still see it when its coface links are cleaned. A pre-existing
-  // face — a surface triangle no top cell covers, or a neighbour's
-  // materialized facet — is never touched, which is why this is not
-  // Spacetime::pruneOrphanedSimplices (that would delete the uncovered
-  // surface triangles the bulk is being drawn onto).
+  // facets still see it when its coface links are cleaned. Pre-existing faces
+  // are untouched, so this is not Spacetime::pruneOrphanedSimplices, which
+  // would delete the uncovered surface triangles the bulk is drawn onto.
   const std::set<std::vector<std::uint64_t>> preexisting(
       m.preexistingFaces.begin(), m.preexistingFaces.end());
   const std::size_t n = m.cell.size();
@@ -397,9 +386,9 @@ void SurgicalCone::undoBridge(const Move &m) {
       st_->removeSimplex(face);
     }
   }
-  // The edges this move alone inserted. Every simplex that contained one of
-  // them was introduced by the move too and is gone by now, so removeEdge's
-  // contract (no simplex still holds the edge) is met.
+  // The edges this move alone inserted. Every simplex that contained one was
+  // introduced by the move too and is already gone, so removeEdge's contract
+  // (no simplex still holds the edge) is met.
   auto eidx = edgeIndex(st_);
   for (const auto &[u, v, w, theta] : m.edges) {
     (void)w;
@@ -432,28 +421,23 @@ void SurgicalCone::undoConeOut(const Move &m) {
   for (const auto &[u, v, w, theta] : m.edges) {
     const auto it = eidx.find({std::min(u, v), std::max(u, v)});
     if (it != eidx.end()) {
-      it->second->setLength(w);  // the recorded complex LENGTH, bit-exact
+      it->second->setLength(w);  // the recorded complex length, bit-exact
       it->second->setPhase(theta);
     }
   }
 
-  // Restore the cell's facet/coface lattice: createSimplexTracked wires the
-  // cell to vertices and edges only, so without this the restored cell is
-  // nobody's coface and every surrounding hinge's dualVolume misses its
-  // wedges until some global re-materialization — and the pruned faces
-  // (fresh objects bound to the fresh edges) would never come back at all.
-  // Skipped when the pre-move cell had no materialized facets, so the undo
-  // never creates bookkeeping the pre-move complex lacked.
+  // Restore the cell's facet/coface lattice: createSimplexTracked wires the cell
+  // to vertices and edges only, so without this the restored cell is nobody's
+  // coface and the pruned faces never come back. Skipped when the pre-move cell
+  // had no materialized facets.
   if (m.hadFacets) st_->materializeFacets(restored.simplex);
 }
 
 void SurgicalCone::undoConeIn(const Move &m) {
-  // Drop the added top cell, its orphaned faces, its fresh edges, then the
-  // fresh apex vertex. The face prune covers the case where the lattice was
-  // materialized between the accepted move and this rollback (e.g. a solver
-  // scoring the probe): the apex's faces would otherwise stay registered
-  // with their edges stripped — the same zombie class as the cone-out side.
-  // Faces shared with surviving top cells are kept.
+  // Drop the added top cell, its orphaned faces, its fresh edges, then the fresh
+  // apex vertex. The face prune covers a lattice materialized between the
+  // accepted move and this rollback, whose faces would otherwise stay registered
+  // with their edges stripped. Faces shared with surviving top cells are kept.
   auto vidx = vertexIndex(st_);
   ::tessera::mesh::VertexPtrs verts;
   verts.reserve(m.cell.size());

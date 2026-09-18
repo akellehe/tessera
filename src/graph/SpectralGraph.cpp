@@ -331,7 +331,7 @@ SpectralGraph::returnProbability(std::vector<double> const& sigmas,
     std::vector<double> P(sigmas.size(), 0.0);
     if (n == 0 || sigmas.empty()) return P;
 
-    // Tier-1 from #28: subsample a random m-subset of starting vertices.
+    // Subsample a random m-subset of starting vertices.
     // m <= 0 → default `min(n, 3000)`. m >= n → all vertices (exact).
     int sampleSize;
     if (m <= 0) {

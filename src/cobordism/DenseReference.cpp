@@ -96,8 +96,7 @@ CertifiedVector DenseReference::spectrum(const std::vector<cd> &matrix, int dim,
   const double scale = std::max(a.norm(), 1e-300);
 
   CertifiedVector result;
-  // The self-adjoint request is honored only after verification — a
-  // self-adjoint solver is never applied to a non-self-adjoint operator.
+  // The self-adjoint request is honoured only after Hermiticity is verified.
   const double hermitianDefect = (a - a.adjoint()).norm() / scale;
   if (selfAdjoint && hermitianDefect <= tolerance) {
     const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> solver(a);

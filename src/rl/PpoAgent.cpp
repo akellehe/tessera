@@ -56,7 +56,7 @@ HybridActorCriticImpl::HybridActorCriticImpl(int obsDim, int nMoves, int paramDi
   moveHead = register_module("move", torch::nn::Linear(hidden, nMoves));
   paramMeanHead = register_module("param_mean", torch::nn::Linear(hidden, paramDim));
   valueHead = register_module("value", torch::nn::Linear(hidden, 1));
-  // State-independent log-σ for the continuous params (standard PPO parameterization).
+  // State-independent log-σ for the continuous parameters (the usual PPO parameterization).
   paramLogStd = register_parameter("param_log_std", torch::full({paramDim}, -0.5, torch::kFloat));
 }
 
@@ -140,8 +140,8 @@ std::vector<Transition> PPO::collectEpisode(CobordismObjectiveEnv &env, std::uin
     done = res.done;
     finalInfo = res;
   }
-  // Bootstrap: 0 if truly terminated (target carried), else V(final) for a time-limit
-  // truncation — the standard fixed-horizon bias fix.
+  // Bootstrap value: zero on a true termination (the target was carried), otherwise
+  // V(final), which removes the bias a time-limit truncation would otherwise introduce.
   const double lastValue =
       finalInfo.terminated ? 0.0 : policy->valueOf(obsToTensor(obs).unsqueeze(0));
   finishGae(transitions, lastValue);

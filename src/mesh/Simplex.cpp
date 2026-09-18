@@ -27,10 +27,9 @@ namespace tessera::simulations {}
 namespace tessera::spacetime {}
 namespace tessera::mesh {
 namespace {
-/// Principal complex square root with a negative-zero imaginary part normalised
-/// away first: std::sqrt lands on the far side of the branch cut for -0.0, and the
-/// real-typed sign tests this replaces were immune to that where the complex form
-/// is not (#638).
+/// Principal complex square root, with a negative-zero imaginary part normalised away
+/// first: std::sqrt lands on the far side of the branch cut for -0.0, which a real-typed
+/// sign test would never see but the complex form does.
 inline std::complex<double> principalSqrt(std::complex<double> z) {
     if (z.imag() == 0.0) z = {z.real(), 0.0};
     return std::sqrt(z);
@@ -42,12 +41,11 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-// Tripwire: catch dereferences of stale Simplex pointers.  Storage is
-// stable, so reads from a logically-removed simplex won't fault — they'd
-// just see empty child vectors and proceed silently.  This macro turns
-// that silent failure mode into a loud abort under TESSERA_ASSERTIONS,
-// while costing nothing in release builds.  Used at the top of the
-// hot getters that callers might invoke through a cached SimplexPtr.
+// Tripwire for dereferences of stale Simplex pointers. Storage is stable, so a read
+// from a logically removed simplex does not fault: it sees empty child vectors and
+// proceeds silently. This macro turns that into an abort under TESSERA_ASSERTIONS and
+// costs nothing in release builds. Used at the top of the hot getters a caller might
+// reach through a cached SimplexPtr.
 #ifdef TESSERA_ASSERTIONS
   #define TESSERA_TRIPWIRE_LIVE(method_name)                              \
     do {                                                                  \
@@ -100,7 +98,7 @@ const std::vector<SimplexPtr> &Simplex::getFacets() {
 
     facets.reserve(n);
 
-    // CRITICAL OPTIMIZATION: Cache edges once before loop
+    // Cache the edges once, outside the loop.
     const auto &allEdges = getEdges();
 
     // Use this directly — no hash lookup needed.
@@ -109,7 +107,7 @@ const std::vector<SimplexPtr> &Simplex::getFacets() {
     for (std::size_t skip = 0; skip < n; ++skip) {
       const auto skipVertexId = verts[skip]->getId();
 
-      // Build faceVertices efficiently in one pass
+      // Build faceVertices in one pass
       VertexPtrs faceVertices{};
       faceVertices.reserve(facetSize);
       for (std::size_t i = 0; i < n; ++i) {
@@ -142,8 +140,6 @@ const std::vector<SimplexPtr> &Simplex::getFacets() {
   return facets;
 }
 
-///
-/// @param vertices_
 Simplex::Simplex(
   Spacetime *spacetime_,
   const VertexPtrs &vertices_,
@@ -235,7 +231,7 @@ void Simplex::initialize(Simplex* simplex) {
   fingerprint.setIds(ids);
   _isSpatial = ti == tf;
 
-  // We have to register AFTER the fingerprint is set:
+  // Register after the fingerprint is set:
   registerToVertices(simplex);
   initialized = true;
 }
@@ -423,9 +419,13 @@ void Simplex::validate() const {
   if (!hasVertex(edge->getTarget())) {
     return false;
   }
+  // Edge identity is order-free -- Edge::operator== compares fingerprints, and
+  // a fingerprint is an XOR over the endpoint ids -- so an edge stored
+  // target-to-source is the same edge. Comparing source to source and target to
+  // target would answer false for an edge EdgeList considers identical, and
+  // disagree with the hasEdge(VertexPtr, VertexPtr) overload below.
   for (const auto &e : getEdges()) {
-    if (e->getSource()->getId() == edge->getSource()->getId() && e->getTarget()->getId() == edge->getTarget()->
-      getId()) {
+    if (*e == *edge) {
       return true;
     }
   }
@@ -492,7 +492,6 @@ std::size_t Simplex::maxKPlusOneCofaces() const {
 // size() inlined in Simplex.h
 
 bool Simplex::replaceVertex(const VertexPtr &oldVertex, const VertexPtr &newVertex) {
-  // TODO: Probably make this cascade, but we should just go to the Vertex for things to cascade to.
   if (hasVertex(newVertex)) {
 #if TESSERA_ASSERTIONS
     validate();
@@ -578,17 +577,18 @@ std::pair<SimplexPtr, Simplices> Simplex::cone(VertexPtr vertex) {
   auto signature = spacetime->getMetric()->getSignature();
   auto foliation = spacetime->getFoliation();
   if (signature->getSignatureType() == SignatureType::Lorentzian) {
-    // We have to preserve causality. That means if we cone to e.g. a (1, 3) facet (one vertex at \f$ t \f$, 3 at
-    // \f$ t+1 \f$) with a (1, 4) coface; then the new simplex has to be a (2, 3) simplex with (2, 3) - (1, 3) = (1, 0)
-    // so we have to create a new vertex at time \f$ t \f$ rather than \f$ t+1 \f$ (which would have been the second
-    // slot)
-    // In general given a \f$ (n, m) \f$ simplex with a \f$ (n-1, m) \f$ or \f$ (n, m-1) \f$ facet; we have to match the
-    // facet, but then what happens next depends on the foliation (preferred or not). If the foliation is preferred;
-    // then we need a layer of timelike edges between every layer of spacelike edges. In order to ensure we only pair
-    // compatible simplices; we just have to ensure the vertices stay balanced on either end of the spacelike sheet.
+    // Causality has to be preserved. Coning a (1, 3) facet (one vertex at t, three at
+    // t+1) into a (1, 4) coface needs a (2, 3) simplex, and (2, 3) - (1, 3) = (1, 0),
+    // so the new vertex goes at t rather than t+1.
     //
-    // If we have a e.g. a (3, 1) simplex with a (2, 1) facet, then we have (3, 1) - (2, 1) = (1, 0) = 1 extra vertex
-    // at \f$ t \f$ . So we need to add the vertex with which we cone at \f$ t = t+1 \f$ to make the new coface a (2, 2)
+    // In general an (n, m) simplex with an (n-1, m) or (n, m-1) facet has to match the
+    // facet; what follows depends on the foliation. A preferred foliation needs a layer
+    // of timelike edges between every layer of spacelike edges, so pairing only
+    // compatible simplices amounts to keeping the vertices balanced on either side of
+    // the spacelike sheet.
+    //
+    // A (3, 1) simplex with a (2, 1) facet leaves (3, 1) - (2, 1) = (1, 0), one extra
+    // vertex at t, so the coning vertex goes at t+1 to make the new coface a (2, 2)
     // simplex.
     if (foliation == Foliation::PREFERRED && !cofaces.empty()) {
       auto [facet_ti, facet_tf] = getOrientation().numeric();
@@ -684,15 +684,12 @@ std::vector<std::complex<double>> Simplex::cofactorMatrix(
 
 std::vector<std::complex<double>> Simplex::localSquaredLengths(
     const VertexPtrs &ordering) const {
-    // Flat (n x n) table of signed squared lengths by LOCAL index in
+    // Flat (n x n) table of signed squared lengths by local index in
     // `ordering`: entry (i*n + j) is l^2 of the edge between ordering[i] and
-    // ordering[j], 0 when the pair carries no edge — the same convention the
-    // hashed per-entry lookups this replaces used (#672). One linear pass over
-    // the edge list with direct id matching: no mix64 hashing, no
-    // unordered_map, and immune to the (astronomically unlikely) XOR-pair
-    // aliasing the hashed form admitted. Duplicate pairs keep the old
-    // last-edge-wins order; a self-edge matches no (i, j) pair, exactly as a
-    // zero-fingerprint entry was never read.
+    // ordering[j], 0 when the pair carries no edge. One linear pass over the edge list
+    // with direct id matching: no mix64 hashing, no unordered_map, and immune to the
+    // XOR-pair aliasing a hashed lookup admits. Duplicate pairs are last-edge-wins; a
+    // self-edge matches no (i, j) pair.
     const int n = static_cast<int>(ordering.size());
     std::vector<std::complex<double>> sq(static_cast<std::size_t>(n) * n,
                                          std::complex<double>{0.0, 0.0});
@@ -719,10 +716,9 @@ std::vector<std::complex<double>> Simplex::gramMatrix() const {
     int d = dPlus1 - 1;
     if (d < 1) return {};
 
-    // Squared-distance lookup on the honest signed l^2: a timelike edge keeps its
-    // Lorentzian sign in G, so det(G) records the cell's metric signature. There is
-    // no Wick-rotated (|l^2|) mode -- the Euclidean path is gone, not merely unused
-    // (#641).
+    // Squared-distance lookup on the signed l^2: a timelike edge keeps its Lorentzian
+    // sign in G, so det(G) records the cell's metric signature. There is no
+    // Wick-rotated (|l^2|) mode.
     const auto sq = localSquaredLengths(vertices);
     auto getSq = [&](int i, int j) -> std::complex<double> {
         return sq[static_cast<std::size_t>(i) * dPlus1 + j];
@@ -785,13 +781,13 @@ std::uint64_t Simplex::geometryRevisionKey() const noexcept {
     return key;
 }
 
-// Each section accessor is the same double-checked pattern: a lock-free hit
-// when the section's published key equals the current geometry-revision key,
-// else a mutex-serialized fill that publishes the key LAST (release), so a
-// concurrent reader either sees the old key (and takes the mutex) or the new
-// key with the payload already written. Lengths only mutate in the serial
-// phases between parallel evaluations, so within a parallel region the key is
-// constant and the returned reference stays valid.
+// Each section accessor is the same double-checked pattern: a lock-free hit when the
+// section's published key equals the current geometry-revision key, otherwise a
+// mutex-serialized fill that publishes the key last (release), so a concurrent reader
+// either sees the old key and takes the mutex, or sees the new key with the payload
+// already written. Lengths mutate only in the serial phases between parallel
+// evaluations, so within a parallel region the key is constant and the returned
+// reference stays valid.
 const Simplex::GeomCache &Simplex::gramCache() const {
     const std::uint64_t key = geometryRevisionKey();
     if (geomCacheState_().gramKey.load(std::memory_order_acquire) != key) {
@@ -834,8 +830,8 @@ const Simplex::GeomCache &Simplex::cmCanonicalCache() const {
     return geomCacheState_().cache;
 }
 
-// The fills run the direct pipeline verbatim — same functions, same inputs —
-// so cached values are bit-for-bit what an uncached call would produce.
+// The fills run the direct pipeline verbatim, same functions and same inputs, so a
+// cached value is bit-for-bit what an uncached call produces.
 void Simplex::fillGramSection(std::uint64_t key) const {
     const int d = static_cast<int>(vertices.size()) - 1;
     geomCacheState_().cache.gram = gramMatrix();
@@ -892,33 +888,33 @@ std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     if (opposite.size() != 2) return {0.0, 0.0};
     const int vi = opposite[0], vj = opposite[1];
 
-    // Cayley-Menger cofactors -> the dihedral cosine ratio, UN-clamped:
+    // Cayley-Menger cofactors -> the dihedral cosine ratio, unclamped:
     //
     //     cos(theta) = -C_ij / (sqrt(C_ii) * sqrt(C_jj))
     //
-    // TWO separate principal square roots, never sqrt(C_ii * C_jj). For complex
-    // a, b the two differ by a sign exactly when both sit on the negative real
-    // axis -- with the unit tetrahedron's C_ii = C_jj = -3, sqrt(C_ii*C_jj) is
-    // +3 while sqrt(C_ii)*sqrt(C_jj) is (i*r3)(i*r3) = -3. Folding the product
-    // under one root is what used to force a hand-applied (-1)^d parity fix, a
-    // three-way branch dispatch, and an i<->j anchoring swap; taking the roots
-    // separately makes all three emerge from the branch structure instead (#638).
+    // Two separate principal square roots, not sqrt(C_ii * C_jj). For complex a, b the
+    // two differ by a sign exactly when both sit on the negative real axis: with the
+    // unit tetrahedron's C_ii = C_jj = -3, sqrt(C_ii*C_jj) is +3 while
+    // sqrt(C_ii)*sqrt(C_jj) is (i*r3)(i*r3) = -3. Folding the product under one root
+    // forces a hand-applied (-1)^d parity fix, a three-way branch dispatch and an
+    // i<->j anchoring swap; taking the roots separately makes all three emerge from the
+    // branch structure.
     //
-    // Every causal configuration is this one expression. Same-sign cofactors put
-    // the wedge on one side of the light cone: a real angle for |r| <= 1, a boost
-    // (pure-imaginary acos) for |r| > 1. Opposite signs mean the wedge CROSSES the
-    // cone -- the denominator turns pure-imaginary, r = i*y, and the principal
-    // acos(i*y) = pi/2 - i*asinh(y) reproduces Sorkin's quarter turn (#581) with
-    // no special case. Around a flat one-ray-per-quadrant vertex star the boosts
-    // telescope to zero and four crossings sum to 2*pi, so 2*pi - sum = 0 holds.
+    // Every causal configuration is this one expression. Same-sign cofactors put the
+    // wedge on one side of the light cone: a real angle for |r| <= 1, a boost
+    // (pure-imaginary acos) for |r| > 1. Opposite signs mean the wedge crosses the cone:
+    // the denominator turns pure-imaginary, r = i*y, and the principal
+    // acos(i*y) = pi/2 - i*asinh(y) reproduces Sorkin's quarter turn with no special
+    // case. Around a flat one-ray-per-quadrant vertex star the boosts telescope to zero
+    // and four crossings sum to 2*pi, so 2*pi - sum = 0 holds.
     //
-    // Evaluate in the canonical (sorted-by-id) frame so a cell a Pachner move
-    // stored in causal order yields the same deficit as the same geometry built
-    // sorted -- otherwise the action depends on build history.
+    // Evaluate in the canonical (sorted-by-id) frame so a cell a Pachner move stored in
+    // causal order yields the same deficit as the same geometry built sorted; otherwise
+    // the action depends on build history.
     const int n = dPlus1 + 1;
-    // Cached canonical frame (#668): the sorted-by-id Cayley-Menger matrix and
-    // its cofactors are hinge-independent, so every hinge of this cell reads
-    // the same fill instead of recomputing the O(n^5) cofactor pass per call.
+    // Cached canonical frame: the sorted-by-id Cayley-Menger matrix and its cofactors
+    // are hinge-independent, so every hinge of this cell reads the same fill instead of
+    // recomputing the O(n^5) cofactor pass per call.
     const GeomCache &cc = cmCanonicalCache();
     const auto &cof = cc.cmCanonCof;
     if (static_cast<int>(cof.size()) != n * n) return {0.0, 0.0};
@@ -931,14 +927,13 @@ std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     const std::complex<double> denom = principalSqrt(Cii) * principalSqrt(Cjj);
     if (std::abs(denom) < 1e-15) return {0.0, 0.0};
     std::complex<double> r = -Cij / denom;
-    // acos is cut on (-inf,-1] and [1,inf), so for a REAL ratio with |r| > 1 --
-    // the same-sign (boost) wedge -- the sign of Im(theta) is decided by which
-    // side of the cut the argument sits on, i.e. by the sign of its zero
-    // imaginary part. Complex division leaves that to floating-point accident,
-    // so it is pinned here instead: +0.0, the side the real-typed
-    // acos(complex(r, 0.0)) took. The boost ORIENTATION is not determined by
-    // edge lengths alone (a PT reflection flips it at identical l^2), so this is
-    // a convention -- but it must be a stated one, not an emergent rounding.
+    // acos is cut on (-inf,-1] and [1,inf), so for a real ratio with |r| > 1 (the
+    // same-sign, boost wedge) the sign of Im(theta) is decided by which side of the cut
+    // the argument sits on, i.e. by the sign of its zero imaginary part. Complex
+    // division would leave that to floating-point accident, so it is pinned here to
+    // +0.0, the side acos(complex(r, 0.0)) takes. Boost orientation is not determined by
+    // edge lengths alone (a PT reflection flips it at identical l^2), so this is a
+    // convention, and a stated one rather than an emergent rounding.
     if (r.imag() == 0.0) r = {r.real(), 0.0};
     return std::acos(r);
 }
@@ -970,7 +965,7 @@ Simplex::deficitAngleGradient() const {
     for (auto *tau : incidentTopCells()) {
         const auto &tv = tau->getVertices();
         const int m = static_cast<int>(tv.size());          // d + 1
-        // local indices of the two vertices NOT in the hinge
+        // local indices of the two vertices not in the hinge
         std::vector<int> opp;
         for (int k = 0; k < m; ++k) {
             bool inHinge = false;
@@ -982,8 +977,8 @@ Simplex::deficitAngleGradient() const {
         const int bi = opp[0] + 1, bj = opp[1] + 1;          // CM border offset
 
         const int n = m + 1;                                 // CM is (d+2)x(d+2)
-        // Cached raw-order Cayley-Menger pipeline (#668): shared by every
-        // hinge of tau and by the Hessian below.
+        // Cached raw-order Cayley-Menger pipeline, shared by every hinge of tau and
+        // by the Hessian below.
         const GeomCache &tc = tau->cmCache();
         const std::complex<double> detB = tc.cmDet;
         if (std::abs(detB) < 1e-300) continue;
@@ -998,17 +993,16 @@ Simplex::deficitAngleGradient() const {
         const cd Cij = C[bi * n + bj];
         const cd Cii = C[bi * n + bi];
         const cd Cjj = C[bj * n + bj];
-        // Same unified branch as dihedralAngle (#638): two separate
-        // principal roots, one expression for every causal regime. The sC/sP
-        // sign flags and the crossing/non-crossing dispatch this replaces were
-        // artifacts of folding the product under one root.
+        // Same unified branch as dihedralAngle: two separate principal roots, one
+        // expression for every causal regime. Sign flags and a crossing/non-crossing
+        // dispatch would be artifacts of folding the product under one root.
         const cd denom = principalSqrt(Cii) * principalSqrt(Cjj);
         if (std::abs(denom) < 1e-300) continue;
         cd r = -Cij / denom;
-        // Pin the branch side exactly as the value does: for a real ratio with
-        // |r| > 1 the sign of Im(theta) is decided by the sign of the zero
-        // imaginary part, and the derivative must sit on the SAME sheet as the
-        // value or it disagrees with a finite difference of it.
+        // Pin the branch side exactly as the value does: for a real ratio with |r| > 1
+        // the sign of Im(theta) is decided by the sign of the zero imaginary part, and
+        // the derivative sits on the same sheet as the value or it disagrees with a
+        // finite difference of it.
         if (r.imag() == 0.0) r = {r.real(), 0.0};
         const cd theta = std::acos(r);
         const cd sinTheta = std::sin(theta);
@@ -1075,7 +1069,7 @@ Simplex::deficitAngleHessian() const {
         const int bi = opp[0] + 1, bj = opp[1] + 1;
 
         const int n = m + 1;
-        // Same cached raw-order Cayley-Menger section as the gradient (#668).
+        // Same cached raw-order Cayley-Menger section as the gradient.
         const GeomCache &tc = tau->cmCache();
         const std::complex<double> detB = tc.cmDet;
         if (std::abs(detB) < 1e-300) continue;
@@ -1089,16 +1083,16 @@ Simplex::deficitAngleHessian() const {
         const cd Cij = C[bi * n + bj];
         const cd Cii = C[bi * n + bi];
         const cd Cjj = C[bj * n + bj];
-        // One branch for every causal regime, as in the value and the gradient
-        // (#638). theta = acos(r), r = -Cij/(sqrt(Cii)*sqrt(Cjj)), so
+        // One branch for every causal regime, as in the value and the gradient.
+        // theta = acos(r), r = -Cij/(sqrt(Cii)*sqrt(Cjj)), so
         // dtheta/dr = -1/sin(theta) and d2theta/dr2 = -r/sin^3(theta).
         const cd denom = principalSqrt(Cii) * principalSqrt(Cjj);
         if (std::abs(denom) < 1e-300) continue;
         cd r = -Cij / denom;
-        // Pin the branch side exactly as the value does: for a real ratio with
-        // |r| > 1 the sign of Im(theta) is decided by the sign of the zero
-        // imaginary part, and the derivative must sit on the SAME sheet as the
-        // value or it disagrees with a finite difference of it.
+        // Pin the branch side exactly as the value does: for a real ratio with |r| > 1
+        // the sign of Im(theta) is decided by the sign of the zero imaginary part, and
+        // the derivative sits on the same sheet as the value or it disagrees with a
+        // finite difference of it.
         if (r.imag() == 0.0) r = {r.real(), 0.0};
         const cd theta = std::acos(r);
         const cd sinT = std::sin(theta);
@@ -1189,10 +1183,10 @@ std::complex<double> Simplex::area() const {
     const std::complex<double> a2 = sq(0), b2 = sq(1), c2 = sq(2);
     const std::complex<double> val = 2.0 * (a2 * b2 + b2 * c2 + c2 * a2)
                                      - (a2 * a2 + b2 * b2 + c2 * c2);
-    // Heron's radicand under a COMPLEX root. The old real path clamped a
-    // non-positive radicand to 0, which silently reported zero area for every
-    // timelike triangle (the mixed-causal hinge of a CDT (4,1) cell, among
-    // others). Zero was never their area; it was what a double could represent.
+    // Heron's radicand under a complex root. Clamping a non-positive radicand to 0
+    // would report zero area for every timelike triangle (the mixed-causal hinge of a
+    // causal dynamical triangulation (CDT) (4,1) cell, among others). Zero is not their
+    // area; it is only what a double can represent.
     return std::sqrt(val) / 4.0;
 }
 
@@ -1200,9 +1194,9 @@ std::complex<double> Simplex::volume() const {
     int d = static_cast<int>(vertices.size()) - 1;
     if (d < 1) return {0.0, 0.0};
 
-    // Honest, signature-respecting Gram matrix: timelike edges keep l^2 < 0,
-    // so det(G) can be negative for a Lorentzian cell. Cached (#668): volume()
-    // is evaluated once per facet per dual-volume recursion step.
+    // Signature-respecting Gram matrix: timelike edges keep l^2 < 0, so det(G) can be
+    // negative for a Lorentzian cell. Cached, because volume() is evaluated once per
+    // facet per dual-volume recursion step.
     const GeomCache &gc = gramCache();
     if (static_cast<int>(gc.gram.size()) != d * d) return {0.0, 0.0};
 
@@ -1210,12 +1204,11 @@ std::complex<double> Simplex::volume() const {
     double factorial = 1.0;
     for (int i = 2; i <= d; ++i) factorial *= static_cast<double>(i);
 
-    // V = sqrt(det G)/d!, principal branch. The old real path took
-    // sqrt(|det G|) and hand-restored sign(det G) -- the same artifact as the
-    // dihedral parity fix (#638): folding the magnitude under the root discards
-    // a sign the complex root carries by itself. A Lorentzian cell with
-    // det G < 0 therefore returns an IMAGINARY content, which is what its
-    // d-content is, rather than the negative real a double could hold.
+    // V = sqrt(det G)/d!, principal branch. Taking sqrt(|det G|) and hand-restoring
+    // sign(det G) would be the same artifact as the dihedral parity fix: folding the
+    // magnitude under the root discards a sign the complex root carries itself. A
+    // Lorentzian cell with det G < 0 therefore returns an imaginary content, which is
+    // its d-content, rather than the negative real a double can hold.
     return std::sqrt(detG) / factorial;
 }
 
@@ -1226,9 +1219,8 @@ void Simplex::assertSpacelikeAdmissible(double tol) const {
 
     // Skip simplices that contain any non-spacelike (null/timelike/worldline)
     // edge: their admissibility is Lorentzian, not the spacelike triangle
-    // inequalities. Causal character is the canonical Edge classification
-    // (Edge::isSpacelike, Im of the complex length), not a hand-rolled
-    // sign-of-l^2 test (#581).
+    // inequalities. Causal character comes from the canonical Edge classification
+    // (Edge::isSpacelike), not from a hand-rolled sign-of-l^2 test.
     for (const auto &e : edges)
         if (!e->isSpacelike()) return;
 
@@ -1260,15 +1252,14 @@ void Simplex::assertSpacelikeAdmissible(double tol) const {
 
 namespace {
 
-// The old signedSqrt = sign(x)*sqrt(|x|) is gone: it was not a branch choice but a
-// real-valued convention that refused to go imaginary, mapping a timelike
+// Roots here are principalSqrt (file scope, above), not sign(x)*sqrt(|x|): the latter
+// is a real-valued convention that refuses to go imaginary, mapping a timelike
 // circumcentric height to a negative real instead of the imaginary value it is.
-// principalSqrt (file scope, above) replaces it (#641).
 
-// Circumcenter (barycentric) + signed R² from the Gram matrix G (flat d×d,
-// relative to vertex 0) with its determinant and cofactors precomputed — the
-// cached Gram sections (#668) enter here. Solves G β = ½·diag(G) Eigen-free
-// via the adjugate (cofactorᵀ/det); λ_0 = 1−Σβ, λ_i = β_i; R² = Σ_i β_i·(½ G_ii).
+// Circumcenter (barycentric) + signed R² from the Gram matrix G (flat d×d, relative to
+// vertex 0) with its determinant and cofactors precomputed; the cached Gram sections
+// enter here. Solves G β = ½·diag(G) Eigen-free via the adjugate (cofactorᵀ/det);
+// λ_0 = 1−Σβ, λ_i = β_i; R² = Σ_i β_i·(½ G_ii).
 void circumFromGramCore(const std::vector<std::complex<double>>& G,
                         const std::complex<double> detG,
                         const std::vector<std::complex<double>>& cof, int d,
@@ -1311,16 +1302,14 @@ double oppositeVertexSign(const ::tessera::mesh::Simplex* cf,
     }
     if (oppIdx < 0) return 1.0;
     const std::vector<std::complex<double>> bary = cf->circumcenterBarycentric();
-    // This +/-1 is GEOMETRIC, not a branch of a square root: it records which side
-    // of the shared facet c(cf) fell on, and an obtuse cell genuinely needs the -1.
-    // Orientation is not a function of edge lengths, so no complex root supplies
-    // it -- deleting this would silently switch the signed dual-volume convention
-    // to the unsigned overcount (#605 audits exactly this sign).
+    // This +/-1 is geometric, not a branch of a square root: it records which side of
+    // the shared facet c(cf) fell on, and an obtuse cell needs the -1. Orientation is
+    // not a function of edge lengths, so no complex root supplies it; dropping it would
+    // silently switch the signed dual-volume convention to the unsigned overcount.
     //
-    // Reading it off Re(bary) is bit-identical to the real-Lorentzian behaviour,
-    // since bary is real there, and continues off-axis by continuity in Re. How it
-    // should generalise for a genuinely off-axis geometry is the open design
-    // question on #637; it is deliberately NOT settled here.
+    // Reading it off Re(bary) is bit-identical to the real-Lorentzian behaviour, since
+    // bary is real there, and continues off-axis by continuity in Re. It is not settled
+    // how this should generalise for a genuinely off-axis geometry.
     return (bary[static_cast<std::size_t>(oppIdx)].real() < 0.0) ? -1.0 : 1.0;
 }
 
@@ -1346,8 +1335,8 @@ std::complex<double> dCircumR2(const ::tessera::mesh::Simplex* s,
     const int d = static_cast<int>(s->size()) - 1;
     if (d <= 0) return {0.0, 0.0};
     const auto& sv = s->getVertices();
-    // Cached Gram pipeline (#668): this runs once per (cell, edge) pair in the
-    // dual-volume gradient, all against the same cell geometry.
+    // Cached Gram pipeline: this runs once per (cell, edge) pair in the dual-volume
+    // gradient, all against the same cell geometry.
     const auto &gc = s->gramCofCache();
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return {0.0, 0.0};
@@ -1389,8 +1378,8 @@ std::complex<double> d2CircumR2(const ::tessera::mesh::Simplex* s,
     const int d = static_cast<int>(s->size()) - 1;
     if (d <= 0) return {0.0, 0.0};
     const auto& sv = s->getVertices();
-    // Cached Gram pipeline (#668), as in dCircumR2: one fill serves every
-    // (edge, edge) pair of this cell's Hessian block.
+    // Cached Gram pipeline, as in dCircumR2: one fill serves every (edge, edge) pair
+    // of this cell's Hessian block.
     const auto &gc = s->gramCofCache();
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return {0.0, 0.0};
@@ -1453,7 +1442,7 @@ std::vector<std::complex<double>> Simplex::circumcenterBarycentric() const {
     const int d = static_cast<int>(size()) - 1;
     std::vector<std::complex<double>> bary;
     std::complex<double> r2{0.0, 0.0};
-    const GeomCache &gc = gramCofCache();       // (#668)
+    const GeomCache &gc = gramCofCache();
     circumFromGramCore(gc.gram, gc.gramDet, gc.gramCof, d, bary, r2);
     return bary;
 }
@@ -1462,7 +1451,7 @@ std::complex<double> Simplex::circumradiusSquared() const {
     const int d = static_cast<int>(size()) - 1;
     std::vector<std::complex<double>> bary;
     std::complex<double> r2{0.0, 0.0};
-    const GeomCache &gc = gramCofCache();       // (#668)
+    const GeomCache &gc = gramCofCache();
     circumFromGramCore(gc.gram, gc.gramDet, gc.gramCof, d, bary, r2);
     return r2;
 }
@@ -1512,13 +1501,13 @@ std::complex<double> Simplex::dualVolume() const {
 std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
 Simplex::volumeGradient() const {
     // dV/dl^2_e = (V/2) tr(G^-1 dG_e), Jacobi's formula on the Gram determinant
-    // (V = sgn sqrt(|det G|)/d!, G linear in l^2 so dG_e is an indicator matrix —
-    // the same dG the #354 dCircumR2 uses). G^-1 via the adjugate (cofactor^T/det),
+    // (V = sgn sqrt(|det G|)/d!, G linear in l^2 so dG_e is an indicator matrix, the
+    // same dG dCircumR2 uses). G^-1 via the adjugate (cofactor^T/det),
     // Eigen-free, matching circumFromGram / volume().
     std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> grad;
     const int d = static_cast<int>(size()) - 1;
     if (d < 1) return grad;
-    const GeomCache &gc = gramCofCache();       // (#668)
+    const GeomCache &gc = gramCofCache();
     const std::vector<std::complex<double>> &G = gc.gram;
     if (static_cast<int>(G.size()) != d * d) return grad;
     const std::complex<double> detG = gc.gramDet;
@@ -1557,7 +1546,7 @@ std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
 Simplex::volumeGradientDirectionalDerivative(
     const std::map<std::pair<std::uint64_t, std::uint64_t>,
                    std::complex<double>> &direction) const {
-    // Jacobi's formula differentiated a second time. G is LINEAR in l^2, so the
+    // Jacobi's formula differentiated a second time. G is linear in l^2, so the
     // d^2G/dl^2 dl^2 term vanishes identically and the entire second derivative
     // is carried by the two first-order pieces assembled below.
     std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> out;
@@ -1760,9 +1749,8 @@ Simplex::dualVolumeGradient() const {
             const std::complex<double> dR1 = dCircumR2(f.cf, e.first, e.second);
             const std::complex<double> x1 = f.R1 - Rh2;
             const std::complex<double> ss1 = principalSqrt(x1);
-            // d/dx sqrt(x) = 1/(2 sqrt(x)) on the principal branch. The old form
-            // took 1/(2 sqrt(|x| + eps)), which is the derivative of signedSqrt
-            // plus a regulator; neither is needed once the root is complex.
+            // d/dx sqrt(x) = 1/(2 sqrt(x)) on the principal branch. A regulated
+            // 1/(2 sqrt(|x| + eps)) is not needed once the root is complex.
             std::complex<double> dinner{0.0, 0.0};
             for (const auto& t : f.tops) {
                 const std::complex<double> R2 = t.second.second;

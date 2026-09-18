@@ -1,7 +1,5 @@
 // Implementation of the emergent-spectral-dimension submodule. See
-// include/quantum/Holography.hpp for the architectural overview and
-// docs/source/quantum-experiments/earlier-work/emergent-spectral-dimension-schwinger-tdvp.md for the
-// scientific charter and falsification criteria.
+// include/quantum/Holography.hpp for the architectural overview.
 
 #include "quantum/Holography.hpp"
 
@@ -34,9 +32,9 @@ using namespace ::tessera::simulations;
 
 namespace detail {
 
-// Minimal JSON formatting — the holography spec §10 schema uses only
-// scalar / array primitives, so a small hand-rolled writer beats
-// pulling in nlohmann_json or rapidjson.
+// Minimal JSON formatting. The emitted schema uses only scalar and
+// array primitives, so a small hand-rolled writer avoids pulling in
+// nlohmann_json or rapidjson.
 void writeArray(std::ostringstream& os,
                  std::vector<double> const& xs) {
     os << "[";
@@ -313,8 +311,8 @@ MutualInformationProfile::weightedAdjacency() const {
     coo.n = n;
     if (n == 0) return coo;
 
-    // Reserve a heuristic upper bound. Each snapshot contributes at
-    // most N(N-1)/2 distinct edges; we list each edge twice.
+    // Heuristic reservation: each snapshot contributes at most
+    // N(N-1)/2 distinct edges, and each edge is listed twice.
     coo.rows.reserve(static_cast<std::size_t>(n * nSites_));
     coo.cols.reserve(static_cast<std::size_t>(n * nSites_));
     coo.weights.reserve(static_cast<std::size_t>(n * nSites_));
@@ -506,8 +504,8 @@ AmbjornLollFit::fit(std::vector<double> const& sigmas,
     const int n = static_cast<int>(sFit.size());
     if (n < 4) return r;
 
-    // Initial guesses. D_∞ = max(y) (the large-σ asymptote), B = σ at
-    // the median point, C set so the curve passes through that point.
+    // Initial guesses: D_∞ = max(y), the large-σ asymptote; B = σ at the
+    // median point; C chosen so the curve passes through that point.
     double dInf = *std::max_element(yFit.begin(), yFit.end());
     double B    = sFit[static_cast<std::size_t>(n / 2)];
     double yMid = yFit[static_cast<std::size_t>(n / 2)];
@@ -567,8 +565,8 @@ AmbjornLollFit::fit(std::vector<double> const& sigmas,
 EmergentSpectralDimension::EmergentSpectralDimension(HolographyConfig config)
     : config_(std::move(config)) {
     config_.validate();
-    // The pipeline needs all-pairs MI per snapshot — force the flag
-    // here so callers can't trip themselves up by leaving it off.
+    // The pipeline needs all-pairs MI per snapshot, so the flag is
+    // forced on here rather than left to the caller.
     config_.tdvp.recordMutualInformation = true;
 }
 
@@ -578,12 +576,10 @@ EmergentSpectralDimension::computeFromSnapshots(QuenchResult const& quench) cons
 
     // (1) Build the MI profile on the (site, snapshot) label set.
     //
-    // Note: D_S is measured here on the *boundary* MI graph directly.
-    // The MI/TDVP "holographic dual" idea was tried and rolled back —
-    // see #41 (vertex-state on Spacetime is the right architecture for
-    // an MI-driven Spacetime, not a snapshot-based bulk reconstruction).
-    // For a physical-bulk D_S, use the interaction-history pipeline
-    // (InteractionSimulation::getSpectralDimension), which now routes
+    // D_S is measured here on the boundary MI graph directly, not on a
+    // reconstructed bulk. For a physical-bulk D_S, use the
+    // interaction-history pipeline
+    // (InteractionSimulation::getSpectralDimension), which routes
     // through Spacetime::getSpectralDimensionOnSkeleton.
     MutualInformationProfile profile(quench.snapshots, config_);
     EmergentGraph graph(profile);
@@ -608,13 +604,13 @@ EmergentSpectralDimension::computeFromSnapshots(QuenchResult const& quench) cons
     result.P  = graph.returnProbability(sigmas, config_.krylovDim);
 
     // (4) D_S(σ) via centered finite differences (raw) and a
-    // Savitzky-Golay local-polynomial fit (smoothed). The spec §8
-    // calls for both to be reported.
+    // Savitzky-Golay local-polynomial fit (smoothed). Both are
+    // reported.
     result.dS         = EmergentGraph::spectralDimension(sigmas, result.P);
     result.dSSmoothed = EmergentGraph::spectralDimensionSmoothed(
         sigmas, result.P, /*windowSize=*/5, /*polyOrder=*/2);
 
-    // (5) Ambjorn–Loll three-parameter fit on the smoothed D_S — the
+    // (5) Ambjorn-Loll three-parameter fit on the smoothed D_S; the raw
     // finite-difference signal can latch onto grid-spacing noise.
     auto fit = AmbjornLollFit::fit(sigmas, result.dSSmoothed);
     result.dInfinity     = fit.dInfinity;

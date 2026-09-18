@@ -24,8 +24,8 @@ enum class CausalType { Spacelike, Timelike, Null };
 /// One declared causal type per edge, in the canonical edge order.
 using CausalTypes = std::vector<CausalType>;
 
-/// One member of the \f$ \varepsilon \f$ family (specification §10): the read
-/// of a Lorentzian instance at a reported rotation, carrying its allowability,
+/// One member of the \f$ \varepsilon \f$ family: the read of a Lorentzian
+/// instance at a reported rotation, carrying its allowability,
 /// margin, and the harmonic kernel's gap certificate. A read at
 /// \f$ \varepsilon = 0 \f$ exists only as a member of a family and always
 /// carries its gap.
@@ -56,20 +56,22 @@ struct LorentzianExtrapolation {
 
 /// # LorentzianFamily
 ///
-/// The Lorentzian protocol of specification §10. A Lorentzian instance is
-/// computed as the family \f$ s_e(\varepsilon) \f$ with the timelike part of
-/// every squared length rotated by \f$ e^{-2i\varepsilon} \f$ (equivalently,
-/// complex lengths on the allowable side of the Kontsevich–Segal boundary), at
-/// one or more reported \f$ \varepsilon > 0 \f$. Results at \f$ \varepsilon = 0 \f$
-/// are reported only alongside their gap certificate and never alone.
-/// Extrapolation to \f$ \varepsilon \to 0 \f$ is a separate, labeled step. This
-/// is the operational content of "complex lengths are the \f$ i\varepsilon \f$"
-/// (CH §1) and of RSF's requirement that spectral bands be selected on the
-/// complex plane. The instance certificate of §4.2 carries \f$ \varepsilon \f$.
+/// A Lorentzian instance is computed as the family \f$ s_e(\varepsilon) \f$ with
+/// the timelike part of every squared length rotated by
+/// \f$ e^{-2i\varepsilon} \f$ — complex lengths on the allowable side of the
+/// Kontsevich–Segal boundary — at one or more reported
+/// \f$ \varepsilon > 0 \f$. Complex lengths are the \f$ i\varepsilon \f$, and
+/// spectral bands are selected on the complex plane. Results at
+/// \f$ \varepsilon = 0 \f$ are reported only alongside their gap certificate and
+/// never alone; extrapolation to \f$ \varepsilon \to 0 \f$ is a separate,
+/// labeled step. The instance certificate carries \f$ \varepsilon \f$.
 ///
 /// Every squared length carries a declared `CausalType`; `rotate` multiplies
 /// the timelike ones by \f$ e^{-2i\varepsilon} \f$ and leaves the others
 /// untouched. Null edges are not rotated. Nothing here classifies an edge.
+///
+/// Reference: Kontsevich & Segal, "Wick rotation and the positivity of energy
+/// in quantum field theory", arXiv:2105.10161.
 class LorentzianFamily {
  public:
   /// \f$ s_e(\varepsilon) \f$: timelike entries multiplied by

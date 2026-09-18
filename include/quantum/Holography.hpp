@@ -1,27 +1,34 @@
-// Emergent spectral dimension from the Schwinger TDVP state.
+// Emergent spectral dimension from the Schwinger time-dependent
+// variational principle (TDVP) state.
 //
-// See docs/source/quantum-experiments/earlier-work/emergent-spectral-dimension-schwinger-tdvp.md for
-// the scientific charter and falsification criteria. This header
-// declares the C++-side classes that implement that charter:
+// Classes declared here:
 //
-//   • HolographyConfig         — composes TDVPConfig with σ-grid + ε_I
-//                                + temporal-stride controls
-//   • MutualInformationProfile — flat (site, snapshot) label set with
-//                                a symmetric N·K × N·K MI matrix
-//                                derived from per-snapshot all-pairs MI
-//   • EmergentGraph            — weighted Laplacian + heat-kernel
-//                                trace + Graphviz export
-//   • AmbjornLollFit           — three-parameter D_S(σ) curve fit
-//   • SpectralDimensionResult  — data bundle
-//   • EmergentSpectralDimension — coarse-grained workflow class:
-//                                 binds a HolographyConfig and exposes
-//                                 ``compute()`` returning a
-//                                 SpectralDimensionResult
+//   • HolographyConfig          — composes TDVPConfig with the σ-grid,
+//                                 the mutual-information cutoff ε_I, and
+//                                 the temporal-stride controls
+//   • MutualInformationProfile  — flat (site, snapshot) label set with a
+//                                 symmetric N·K × N·K mutual-information
+//                                 (MI) matrix derived from the
+//                                 per-snapshot all-pairs MI
+//   • EmergentGraph             — weighted Laplacian, heat-kernel trace,
+//                                 Graphviz / GraphML export
+//   • AmbjornLollFit            — three-parameter D_S(σ) curve fit
+//   • SpectralDimensionResult   — data bundle
+//   • EmergentSpectralDimension — workflow class: binds a
+//                                 HolographyConfig and exposes
+//                                 ``compute()``
 //
-// The implementation mirrors the existing SchwingerModel /
-// SchwingerQuench layout: a single workflow class binds the config and
-// runs the full pipeline; pure-math operations live on stateless
-// utility classes.
+// The layout mirrors SchwingerModel / SchwingerQuench: one workflow
+// class binds the config and runs the pipeline; the pure-math
+// operations live on stateless utility classes.
+//
+// References:
+//   Ambjorn, Jurkiewicz & Loll, "Spectral Dimension of the Universe",
+//     arXiv:hep-th/0505113 — the D_S(σ) observable and the
+//     three-parameter fit form.
+//   Ryu & Takayanagi, "Holographic Derivation of Entanglement Entropy
+//     from AdS/CFT", arXiv:hep-th/0603001 — the entanglement-geometry
+//     correspondence this pipeline probes.
 
 #pragma once
 
@@ -79,23 +86,21 @@ struct HolographyConfig {
     // Krylov dimension for the heat-kernel trace estimator.
     int    krylovDim{30};
 
-    // Reproducibility (TDVP itself is deterministic; this seeds the
-    // Hutchinson-style trace estimator and any future stochastic
-    // steps).
+    // Seed for the Hutchinson-style trace estimator. TDVP itself is
+    // deterministic.
     int    seed{0};
 
-    // Optional: spacetime-vertex labels for the site axis of the
-    // (site, time) graph. Defaults to an empty vector, which means
-    // "use flat-lattice indices 0..N−1 as labels". When sourced from
-    // a tessera::quantum::Causet::chainFrom(spacetime), each entry
-    // is the spacetime vertex ID at that flat-lattice site — so
-    // graph vertices can be looked up as (spacetime-vertex-id,
-    // snapshot) per the holography spec §H6.
+    // Optional spacetime-vertex labels for the site axis of the
+    // (site, time) graph. Empty (the default) means "use flat-lattice
+    // indices 0..N−1 as labels". When sourced from
+    // tessera::quantum::Causet::chainFrom(spacetime), each entry is the
+    // spacetime vertex ID at that flat-lattice site, so graph vertices
+    // can be looked up as (spacetime-vertex-id, snapshot).
     std::vector<std::uint64_t> vertexIds;
 
-    // Throws std::invalid_argument on contradictions:
-    //   sigmaMin <= 0, sigmaMax <= sigmaMin, sigmaCount < 8,
-    //   epsilonI < 0, maxTemporalStride < 0.
+    /// Checks the configuration for contradictions.
+    /// @throws std::invalid_argument if sigmaMin <= 0, sigmaMax <= sigmaMin,
+    ///   sigmaCount < 8, epsilonI < 0, or maxTemporalStride < 0.
     void validate() const;
 };
 
@@ -104,9 +109,10 @@ struct HolographyConfig {
 // Symmetric MI matrix on the (site × snapshot) label set.
 //
 // Built from a vector of TDVPSnapshots that have ``mutualInformation``
-// recorded (i.e. TDVPConfig::recordMutualInformation = true). Storage
-// is a dense symmetric (N·K) × (N·K) matrix; zero off-diagonal for
-// (site, snap)-pairs in different snapshots until temporal MI lands.
+// recorded (TDVPConfig::recordMutualInformation = true). Storage is a
+// dense symmetric (N·K) × (N·K) matrix. Cross-snapshot blocks are zero
+// unless HolographyConfig::includeTemporal requested the Choi-state
+// temporal MI.
 //
 // Flat index convention: idx = snap * N + site, with snap ∈ [0, K) and
 // site ∈ [0, N).
@@ -120,9 +126,8 @@ public:
     [[nodiscard]] int nSnapshots() const noexcept { return nSnapshots_; }
     [[nodiscard]] int nLabels()    const noexcept { return nSites_ * nSnapshots_; }
 
-    // I({site_v, snap_v} : {site_w, snap_w}). 0-based indices.
-    // Returns 0 outside the dense block (different-snapshot pairs in
-    // v1, or sites equal).
+    // I({site_v, snap_v} : {site_w, snap_w}) in nats. 0-based indices.
+    // Returns 0 for out-of-range labels and on the diagonal.
     [[nodiscard]] double
     at(int siteV, int snapV, int siteW, int snapW) const;
 
@@ -157,11 +162,11 @@ private:
     int                 nSites_{0};
     int                 nSnapshots_{0};
     double              epsilonI_{0.0};
-    // Row-major (nLabels × nLabels) MI values; zero outside same-
-    // snapshot blocks in v1.
+    // Row-major (nLabels × nLabels) MI values. Cross-snapshot blocks
+    // are zero unless temporal MI was requested.
     std::vector<double> mi_;
     // Optional spacetime-vertex labels for the site axis (CausetChain
-    // integration, spec §H6). Empty = flat-site labelling.
+    // integration). Empty = flat-site labelling.
     std::vector<std::uint64_t> vertexIds_;
 };
 
@@ -181,10 +186,10 @@ public:
     explicit EmergentGraph(MutualInformationProfile const& profile);
 
     // Direct construction from a weighted edge list. Each undirected
-    // edge (u, v) with weight w should appear once; the constructor
-    // installs both (u → v) and (v → u) into the CSR adjacency.
-    // `n` is the total vertex count. Used for the §H4 known-graph
-    // acceptance tests (1D chain, 2D lattice, complete graph).
+    // edge (u, v) with weight w appears once; the constructor installs
+    // both (u → v) and (v → u) into the CSR adjacency. `n` is the total
+    // vertex count. Throws std::invalid_argument on an out-of-range
+    // endpoint or a self-loop.
     [[nodiscard]] static EmergentGraph
     fromWeightedEdges(int n,
                        std::vector<std::tuple<int, int, double>> const& edges);
@@ -228,12 +233,13 @@ private:
 
 // ─── AmbjornLollFit ──────────────────────────────────────────────────
 
-// D_S(σ) = D_∞ - C / (B + σ), the three-parameter form used by
-// Ambjorn-Loll for CDT (and by examples/spectral_dimension.py).
+// D_S(σ) = D_∞ - C / (B + σ), the three-parameter form Ambjorn,
+// Jurkiewicz & Loll use for causal dynamical triangulations
+// (arXiv:hep-th/0505113).
 //
-// Stateless utility class. Fit is done by Levenberg-Marquardt-style
-// Gauss-Newton iteration; for our σ-grid sizes (~50) this converges in
-// a few hundred microseconds and never needs an external dependency.
+// Stateless utility class. The fit uses a damped (Levenberg-Marquardt
+// style) Gauss-Newton iteration, which converges in microseconds on
+// σ-grids of the size used here (~50 points) with no extra dependency.
 class AmbjornLollFit {
 public:
     AmbjornLollFit() = delete;
@@ -262,9 +268,9 @@ public:
 struct SpectralDimensionResult;
 
 namespace detail {
-// Tiny self-contained JSON writer for SpectralDimensionResult — keeps
-// the header free of an external JSON dependency. Defined in
-// holography.cpp.
+// Self-contained JSON writer for SpectralDimensionResult; keeps the
+// header free of an external JSON dependency. Defined in
+// src/quantum/Holography.cpp.
 [[nodiscard]] std::string
 serialiseResultToJson(SpectralDimensionResult const& result,
                        HolographyConfig const& config);
@@ -277,9 +283,9 @@ struct SpectralDimensionResult {
     std::vector<double> dS;          // centered finite differences (raw)
     std::vector<double> dSSmoothed;  // Savitzky-Golay smoothed (window 5, poly 2)
 
-    // Ambjorn-Loll fit on the smoothed D_S(σ) — the raw signal has
-    // grid-spacing noise that the fit can latch onto. Spec §8
-    // recommends reporting both.
+    // Ambjorn-Loll fit on the smoothed D_S(σ): the raw finite-difference
+    // signal carries grid-spacing noise the fit can latch onto. Both the
+    // raw and the smoothed curves are reported above.
     double dInfinity{0.0};
     double C{0.0};
     double B{0.0};
@@ -294,9 +300,8 @@ struct SpectralDimensionResult {
     std::vector<int>    snapshotBondDims;
     std::vector<double> snapshotEnergies;
 
-    // Reproducibility serialisation per spec §10 — emit a single JSON
-    // record with config, tdvp_summary, graph, spectral_dimension,
-    // and a small provenance block.
+    // Serialise to one JSON record: config, tdvp_summary, graph,
+    // spectral_dimension, and a provenance block.
     [[nodiscard]] std::string
     toJson(HolographyConfig const& config) const {
         return detail::serialiseResultToJson(*this, config);
@@ -305,29 +310,27 @@ struct SpectralDimensionResult {
 
 // ─── Pipeline ────────────────────────────────────────────────────────
 
-// Coarse-grained workflow class: binds a HolographyConfig and exposes
-// `compute()` returning the full result. Mirrors the
-// SchwingerModel(cfg).solve() / SchwingerQuench(cfg).evolve() pattern.
+// Workflow class: binds a HolographyConfig and exposes `compute()`,
+// returning the full result. Mirrors SchwingerModel(cfg).solve() and
+// SchwingerQuench(cfg).evolve().
 class EmergentSpectralDimension {
 public:
     explicit EmergentSpectralDimension(HolographyConfig config);
 
     [[nodiscard]] HolographyConfig const& config() const noexcept { return config_; }
 
-    // Run the TDVP-only pipeline: DMRG ground state → q-qbar quench →
-    // TDVP loop with MI recording → (site, time) graph → heat-kernel
-    // trace → D_S(σ) → Ambjorn-Loll fit.
+    // Run the pipeline: DMRG ground state → q-qbar quench → TDVP loop
+    // with MI recording → (site, time) graph → heat-kernel trace →
+    // D_S(σ) → Ambjorn-Loll fit.
     //
-    // ``recordMutualInformation`` is forced to true on the underlying
-    // TDVPConfig regardless of what the caller set, because the graph
-    // construction needs the all-pairs MI per snapshot. ``epsilonI``
-    // controls the MI cutoff for edge construction (smaller = denser
-    // graph).
+    // ``recordMutualInformation`` is forced true on the underlying
+    // TDVPConfig whatever the caller set, because the graph needs the
+    // all-pairs MI per snapshot. ``epsilonI`` is the MI cutoff for edge
+    // construction: smaller gives a denser graph.
     [[nodiscard]] SpectralDimensionResult compute() const;
 
-    // Compute D_S on an already-evolved quench. Useful when the caller
-    // wants to reuse a single TDVP run across multiple σ-grids or
-    // ε_I values without re-running TDVP.
+    // Compute D_S on an already-evolved quench, so one TDVP run can be
+    // reused across several σ-grids or ε_I values.
     [[nodiscard]] SpectralDimensionResult
     computeFromSnapshots(QuenchResult const& quench) const;
 

@@ -186,7 +186,7 @@ std::vector<Complex> FaceAnchor::anchorCoordinates(const CovariantChainHodge &co
   return out;
 }
 
-// ---- tetrahedral anchor at degree 0 (#939) ----
+// ---- tetrahedral anchor at degree 0 ----
 
 std::vector<int> FaceAnchor::tetrahedronVertexIndices(const cobordism::ChainComplex &K,
                                                       std::size_t tetrahedronIndex) {

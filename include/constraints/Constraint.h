@@ -13,11 +13,11 @@ using namespace ::tessera::spacetime;
 
 /// Types of constraints that can be applied to a spacetime.
 ///
-///   - **PachnerMove**: Constraints specific to a proposed Pachner move (e.g.,
-///     checking that a bistellar flip preserves the manifold condition).
-///   - **All**: Global constraints that must hold at all times (e.g.,
-///     the simplicial complex must remain a manifold, the causal structure
-///     must be preserved).
+///   - PachnerMove: constraints on a proposed Pachner move, e.g. that a
+///     bistellar flip preserves the manifold condition.
+///   - All: global constraints that must hold at all times, e.g. that the
+///     simplicial complex remains a manifold and the causal structure is
+///     preserved.
 enum class ConstraintType : uint8_t {
   PachnerMove = 0,
   All = 1
@@ -25,19 +25,20 @@ enum class ConstraintType : uint8_t {
 
 /// # Constraint Base Class
 ///
-/// Encodes conditions that a spacetime triangulation must satisfy. In CDT, the
-/// central constraint is **causality**: every \f$ d \f$-simplex must have its
-/// vertices distributed across exactly two adjacent time slices, preserving the
-/// global time foliation. This ensures that each spatial slice is a closed
-/// \f$(d\!-\!1)\f$-manifold and that the causal structure is well-defined.
+/// Encodes conditions that a spacetime triangulation must satisfy. In causal
+/// dynamical triangulation (CDT) the central constraint is causality: every
+/// \f$ d \f$-simplex must have its vertices distributed across exactly two
+/// adjacent time slices, preserving the global time foliation. That keeps each
+/// spatial slice a closed \f$(d\!-\!1)\f$-manifold and the causal structure
+/// well-defined.
 ///
-/// Additional constraints may include:
-///   - **Manifoldness**: every \f$(d\!-\!1)\f$-face is shared by at most 2
+/// Other constraints a subclass may encode:
+///   - Manifoldness: every \f$(d\!-\!1)\f$-face is shared by at most 2
 ///     \f$ d \f$-simplices (the link of every simplex is a sphere).
-///   - **Topology preservation**: Pachner moves must not change the topology of
-///     the spatial slices or the overall manifold.
-///   - **Volume bounds**: the total four-volume \f$ N_4 \f$ must remain within
-///     a specified range during the simulation.
+///   - Topology preservation: Pachner moves must not change the topology of the
+///     spatial slices or of the overall manifold.
+///   - Volume bounds: the total four-volume \f$ N_4 \f$ must remain within a
+///     specified range during the simulation.
 ///
 class Constraint {
   public:

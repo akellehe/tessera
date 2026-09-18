@@ -51,7 +51,7 @@ namespace {
   throw std::invalid_argument(oss.str());
 }
 
-// Python `int(x)`: bools are 0/1, floats truncate toward zero.
+// Integer view of a scalar: bools are 0/1, doubles truncate toward zero.
 std::int64_t asIntegerValue(const Record &r) {
   switch (r.type()) {
     case Record::Type::Bool:
@@ -70,7 +70,7 @@ std::int64_t asIntegerValue(const Record &r) {
 double Record::reportDelta(const Record &a, const Record &b) {
   const double inf = std::numeric_limits<double>::infinity();
 
-  // dicts must have identical keys; else the max over their shared keys.
+  // Maps must carry identical keys; the delta is the maximum over them.
   if (a.type_ == Type::Map || b.type_ == Type::Map) {
     if (!(a.type_ == Type::Map && b.type_ == Type::Map)) {
       return inf;
@@ -89,7 +89,7 @@ double Record::reportDelta(const Record &a, const Record &b) {
     return worst;
   }
 
-  // strings (and None) must be equal; a changed status is a flagged channel.
+  // Strings and nulls must be equal; any difference reports infinity.
   if (a.type_ == Type::String || b.type_ == Type::String) {
     if (a.type_ == Type::String && b.type_ == Type::String &&
         a.string_ == b.string_) {
@@ -101,7 +101,7 @@ double Record::reportDelta(const Record &a, const Record &b) {
     return (a.type_ == Type::Null && b.type_ == Type::Null) ? 0.0 : inf;
   }
 
-  // lists must match in length, then the max over their elements.
+  // Lists must match in length; the delta is the maximum over elements.
   if (a.type_ == Type::List || b.type_ == Type::List) {
     if (!(a.type_ == Type::List && b.type_ == Type::List)) {
       return inf;
@@ -116,13 +116,13 @@ double Record::reportDelta(const Record &a, const Record &b) {
     return worst;
   }
 
-  // bools compare as 0/1 (checked before the numeric branch, as in Python).
+  // Bools compare as 0/1, checked ahead of the numeric branch.
   if (a.type_ == Type::Bool || b.type_ == Type::Bool) {
     return std::fabs(
         static_cast<double>(asIntegerValue(a) - asIntegerValue(b)));
   }
 
-  // numbers: two NaNs agree (delta 0); a NaN against a number is inf.
+  // Numbers: two NaNs agree (delta 0); a NaN against a number is infinite.
   const double x = (a.type_ == Type::Int) ? static_cast<double>(a.int_)
                                           : a.double_;
   const double y = (b.type_ == Type::Int) ? static_cast<double>(b.int_)

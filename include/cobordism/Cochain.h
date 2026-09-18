@@ -15,16 +15,13 @@ namespace tessera::cobordism {
 /// # Cochain
 ///
 /// A \f$ k \f$-cochain value object: an Eigen-backed vector of complex
-/// amplitudes (`Eigen::VectorXcd`) together with the degree \f$ k \f$ and the
-/// \f$ k \f$-simplex ordering it is indexed over, so its indices are meaningful
-/// (not bare). The ordering is the same `HodgeLaplacian` / `ChainComplex` column
-/// order: component \f$ i \f$ is the amplitude on the \f$ i \f$-th \f$ k \f$-cell,
-/// each cell recorded as its sorted vertex-id tuple (`simplices()[i]`). For
-/// \f$ k = 0 \f$ each tuple is a single vertex id (the sorted-id vertex order).
+/// amplitudes (`Eigen::VectorXcd`) with the degree \f$ k \f$ and the
+/// \f$ k \f$-simplex ordering it is indexed over. The ordering is the
+/// `HodgeLaplacian` / `ChainComplex` column order: component \f$ i \f$ is the
+/// amplitude on the \f$ i \f$-th \f$ k \f$-cell, recorded as its sorted
+/// vertex-id tuple (`simplices()[i]`); at \f$ k = 0 \f$, a single vertex id.
 ///
-/// Eigen-backed and iTensor-free — the cobordism/Hodge layer stays purely dense
-/// linear algebra (consistent with `quantum::ChoiJamiolkowski`'s "Eigen only, no
-/// ITensor, no MPS"). The Hermitian inner product follows the numpy convention
+/// The Hermitian inner product follows the numpy convention
 /// \f$ \langle a, b\rangle = \sum_i \overline{a_i}\,b_i = \texttt{np.vdot(a, b)} \f$
 /// (conjugate-linear in the first argument).
 class Cochain {
@@ -46,7 +43,7 @@ class Cochain {
       return static_cast<std::size_t>(coeffs_.size());
     }
 
-    /// The amplitude vector, Eigen-backed; pybind exposes it as a 1-D complex
+    /// The amplitude vector; pybind exposes it as a 1-D complex
     /// `numpy.ndarray`.
     [[nodiscard]] const Eigen::VectorXcd &coeffs() const noexcept { return coeffs_; }
 

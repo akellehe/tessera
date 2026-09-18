@@ -10,6 +10,8 @@ tessera/_tessera*.so
 dist
 docs/_build
 docs/_doxygen
+# doxygen run from the repo root instead of docs/ lands here
+/_doxygen
 vendor/libtorch*
 .DS_Store
 __pycache__

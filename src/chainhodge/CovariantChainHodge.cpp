@@ -567,9 +567,9 @@ Pencil CovariantChainHodge::pencil(int k) const {
   if (preset() == Preset::L2) {
     P.variable = PencilVariable::GeometricImage;
     if (k >= 1) {
-      // M_k^U (∂_k^{U^{-1}})^T (M_{k-1}^U)^{-1} ∂_k^U M_k^U
-      // M_k^U (∂_k^{U^{-1}})^T (M_{k-1}^U)^{-1} ∂_k^U M_k^U. The dressed metric is
-      // NOT symmetric ((M^U)^T = M^{U^{-1}}), so the left factor is formed as written.
+      // M_k^U (∂_k^{U^{-1}})^T (M_{k-1}^U)^{-1} ∂_k^U M_k^U. The dressed metric
+      // is not symmetric ((M^U)^T = M^{U^{-1}}), so the left factor is formed as
+      // written.
       const Eigen::MatrixXcd X = Eigen::MatrixXcd(twisted_[static_cast<std::size_t>(k)] * Mk);
       const Eigen::MatrixXcd Y = solveDressed(k - 1, X);
       P.A += Eigen::MatrixXcd(Mk * SparseMatrix(twistedDual_[static_cast<std::size_t>(k)].transpose())) * Y;
@@ -967,7 +967,7 @@ void CovariantChainHodge::completeBand(Band &band, const CovariantChainHodge &du
     band.certificate.detB = band.pairing.determinant();
     band.certificate.condB = (bs(bs.size() - 1) > 0.0) ? bs(0) / bs(bs.size() - 1)
                                                        : std::numeric_limits<double>::infinity();
-    // Isotropy is judged on the NORMALIZED pairing: the frames are orthonormal,
+    // Isotropy is judged on the normalized pairing: the frames are orthonormal,
     // so sigma_min(B_C) relative to ||G^U Phi||_2 vanishes exactly when a
     // direction of the band is self-orthogonal (rank one: |u^vee^T G u| /
     // ||G u||). A condition number cannot see rank-one isotropy.
@@ -978,7 +978,7 @@ void CovariantChainHodge::completeBand(Band &band, const CovariantChainHodge &du
       band.certificate.leftFrameAvailable = false;
       band.certificate.leftFrameRefusal =
           "isotropic band: det B_C = 0 (the exceptional-point indicator); the canonical left frame "
-          "G^{U^-1} Phi^vee B_C^{-T} does not exist and RSF's general biorthogonal machinery is required";
+          "G^{U^-1} Phi^vee B_C^{-T} does not exist and the general biorthogonal machinery is required";
     } else {
       band.certificate.leftFrameAvailable = true;
       // Phi~ = G^{U^-1} Phi^vee B^{-T}: Phi~^T = B^{-1} (G^{U^-1} Phi^vee)^T
@@ -1005,7 +1005,7 @@ void CovariantChainHodge::completeBand(Band &band, const CovariantChainHodge &du
 
 SparseMatrix CovariantChainHodge::stackedMatrix(int k) const {
   if (preset() != Preset::L2)
-    throw std::logic_error("CovariantChainHodge::stackedMatrix: the stacked matrix of RSF Sec. 5 is "
+    throw std::logic_error("CovariantChainHodge::stackedMatrix: the stacked matrix is "
                            "the Whitney preset's");
   const int d = dimension();
   const int n = base_->size(k);
@@ -1086,7 +1086,7 @@ HarmonicRead CovariantChainHodge::harmonicChains(int k, double kappa, bool force
     kernel = Q.rightCols(n - r);
   }
   read.nullity = static_cast<int>(kernel.cols());
-  // For the Whitney preset the kernel vectors ARE the geometric images: the
+  // For the Whitney preset the kernel vectors are the geometric images: the
   // chains are H_k = M_k^U ker S^U, and G_k^U H_k = ker S^U back again.
   read.images = kernel;
   read.chains = applyMinv(k, kernel);
@@ -1106,7 +1106,7 @@ Band CovariantChainHodge::harmonicBand(int k, double kappa, double isotropyToler
     throw std::runtime_error("CovariantChainHodge::harmonicBand: the dual connection's harmonic space has "
                              "a different dimension (" + std::to_string(left.nullity) + " vs " +
                              std::to_string(right.nullity) +
-                             "); the rank conditions (R1)-(R4) of RSF Sec. 5 do not hold here, and the "
+                             "); the rank conditions (R1)-(R4) do not hold here, and the "
                              "lambda = 0 Riesz projector is not the projector onto H_k");
   Band band;
   band.degree = k;

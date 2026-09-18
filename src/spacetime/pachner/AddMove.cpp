@@ -48,7 +48,7 @@ bool AddMove::propose() {
   // (rejection-sample with linear-scan fallback).
   SimplexPtr sigma = nullptr;
   for (int attempt = 0; attempt < 100; ++attempt) {
-    auto s = st_->getRandomTopSimplex(*rng_);  // this move's seeded rng (#262)
+    auto s = st_->getRandomTopSimplex(*rng_);  // this move's seeded rng
     if (s && static_cast<int>(s->size()) == dPlus1 && isN41Type(s, d)) {
       sigma = s;
       break;
@@ -82,7 +82,7 @@ bool AddMove::propose() {
     }
   }
   if (!sigmaAdj) return false;
-  if (!isN41Type(sigmaAdj, d)) return false; // TODO: This can never be true for != 4-complexes!
+  if (!isN41Type(sigmaAdj, d)) return false;  // may never hold outside 4D
 
   // Identify the non-spatial ("top" and "bottom") vertices.
   VertexPtr vertA = nullptr, vertB = nullptr;
@@ -137,7 +137,7 @@ bool AddMove::propose() {
 std::vector<std::vector<std::uint64_t>> AddMove::sitesOn(const Spacetime &spacetime) {
   std::vector<std::vector<std::uint64_t>> sites;
   for (const auto &topSimplex : spacetime.getTopSimplices()) {
-    // The same eligibility `proposePreGeometricOn` applies, asked here so a
+    // The eligibility test `proposePreGeometricOn` applies, asked here so a
     // walk of this list never offers a site that is then refused.
     if (!topSimplex || static_cast<int>(topSimplex->size()) < 3) continue;
     sites.push_back(topSimplex->topTuple());
@@ -151,7 +151,7 @@ bool AddMove::proposeAt(const std::vector<std::uint64_t> &site) {
 }
 
 bool AddMove::proposePreGeometric() {
-  return proposePreGeometricOn(st_->getRandomTopSimplex(*rng_));  // seeded rng (#262)
+  return proposePreGeometricOn(st_->getRandomTopSimplex(*rng_));  // seeded rng
 }
 
 bool AddMove::proposePreGeometricOn(SimplexPtr sigma) {
@@ -194,8 +194,8 @@ bool AddMove::applyPreGeometric() {
       if (i != skip) verts.push_back(sigmaVerts_[i]);
     }
     verts.push_back(newVert_);
-    // Increasing-id orientation (the new vertex has the largest id, so
-    // this is already sorted, but keep it explicit and robust).
+    // Increasing-id orientation.  The new vertex has the largest id, so the
+    // tuple is already sorted; the sort is kept explicit.
     pachner_detail::sortByVertexId(verts);
     auto r = st_->createSimplexTracked(verts);
     if (r.created) createdSimplexVerts_.push_back(verts);
@@ -270,7 +270,7 @@ bool AddMove::apply() {
   // 4. Optional vertex relabeling.  Save the swap partner so rollback
   // can un-swap.
   if (relabelEnabled_) {
-    VertexPtr partner = st_->getRandomVertex(*rng_);  // seeded rng (#262)
+    VertexPtr partner = st_->getRandomVertex(*rng_);  // seeded rng
     if (partner && partner->getId() != newVert_->getId()) {
       st_->swapVertexLabels(newVert_, partner);
       swapPartner_ = partner;
@@ -285,20 +285,18 @@ void AddMove::rollback() {
   if (!applied_) return;
   if (mode_ == PachnerMode::PreGeometric) { rollbackPreGeometric(); return; }
 
-  // 1. Reverse the label swap (if any).  ``swapVertexLabels`` is its
-  // own inverse — calling it again restores both vertices to their
-  // pre-swap IDs and rekeys all dependent fingerprints (edges,
-  // simplices) back to their pre-swap state.
+  // 1. Reverse the label swap, if any.  ``swapVertexLabels`` is its own
+  // inverse: calling it again restores both vertex ids and rekeys the
+  // dependent fingerprints (edges, simplices).
   if (swapPartner_ != nullptr) {
     st_->swapVertexLabels(newVert_, swapPartner_);
     swapPartner_ = nullptr;
   }
 
-  // 2. Remove the 2d created simplices.  Their fingerprints are now
-  // back to the pre-swap state (involving newVert's auto-assigned ID).
-  // Resolve by verts at rollback time — captured SimplexPtrs would be
-  // stale if any other move removed-and-recreated these in between
-  // (see ShiftMove for the full rationale).
+  // 2. Remove the 2d created simplices.  Their fingerprints are back to the
+  // pre-swap state (newVert's auto-assigned id).  Resolve by verts at
+  // rollback time: a captured SimplexPtr would be stale if another move
+  // removed and recreated these in between (see ShiftMove).
   for (const auto &verts : createdSimplexVerts_) {
     if (auto s = st_->findSimplexByVerts(verts)) st_->removeSimplex(s);
   }

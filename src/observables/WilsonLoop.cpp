@@ -1,4 +1,10 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
+/// \file
+/// Wilson loops on the dual graph of a triangulation, plus the U(1) connection
+/// holonomy around a cycle of the primal one-skeleton.
+/// Reference: Greensite, "The Confinement Problem in Lattice Gauge Theory",
+/// arXiv:hep-lat/0301023
+
 #include "observables/WilsonLoop.h"
 #include "spacetime/Spacetime.h"
 #include "graph/DualGraph.hpp"
@@ -34,7 +40,7 @@ using namespace ::tessera::quantum;
 WilsonLoop::WilsonLoop(std::shared_ptr<Spacetime> spacetime)
     : spacetime_(std::move(spacetime)),
       d_(spacetime_->getMetric()->getSignature()->getDimensions()) {
-    // Ensure hinges are registered (same pattern as ReggeSolver ctor).
+    // Ensure the hinges of every top cell are registered.
     auto nBefore = spacetime_->getSimplices().size();
     for (std::size_t i = 0; i < nBefore; ++i) {
         auto s = spacetime_->getSimplices()[i];
@@ -48,9 +54,7 @@ WilsonLoop::WilsonLoop(std::shared_ptr<Spacetime> spacetime)
 // =====================================================================
 
 std::vector<SimplexPtr> WilsonLoop::dualNeighbors(SimplexPtr sigma) const {
-    // Delegate to the shared dual-graph walk and retain WilsonLoop's
-    // defensive top-dimension filter — same set of neighbours as
-    // before for any well-formed manifold.
+    // The shared dual-graph walk, filtered to top-dimensional cofaces.
     const int topSize = d_ + 1;
     auto raw = ::tessera::graph::dualNeighbors(sigma);
     std::vector<SimplexPtr> nbrs;
@@ -266,10 +270,8 @@ WilsonResult WilsonLoop::evaluateCombinatorial(const LoopPath &loop) const {
     for (const auto &s : loop.simplices)
         loopFps.insert(s->fingerprint.fingerprint());
 
-    // Count hinges shared by ALL loop simplices (enclosed hinges).
-    // A hinge is "enclosed" if every loop simplex contains it.
-    // For hinge loops this is 1 (the hinge itself); for general loops
-    // we count hinges present in every simplex of the loop.
+    // A hinge is enclosed by the loop if every loop simplex contains it. For a
+    // hinge loop that is 1, the hinge itself.
     int enclosed = 0;
     if (!loop.simplices.empty()) {
         for (const auto &h : spacetime_->getSimplices()) {
@@ -300,7 +302,7 @@ WilsonResult WilsonLoop::evaluateDeficitAngle(const LoopPath &loop) const {
 
     int hingeSize = d_ - 1;
 
-    // Find hinges shared by ALL loop simplices (same as combinatorial).
+    // The hinges enclosed by the loop, as in the combinatorial mode.
     std::vector<SimplexPtr> enclosedHinges;
     for (const auto &h : spacetime_->getSimplices()) {
         if (static_cast<int>(h->size()) != hingeSize) continue;
@@ -317,15 +319,14 @@ WilsonResult WilsonLoop::evaluateDeficitAngle(const LoopPath &loop) const {
     r.enclosedHinges = static_cast<int>(enclosedHinges.size());
 
     if (enclosedHinges.size() == 1) {
-        // Hinge loop: exact Wilson loop value. The deficit is COMPLEX and the
-        // holonomy character keeps it whole: cos(Re eps) rotates, the boost
-        // part enters as a cosh. A .real() here silently discarded the boost
-        // content (#644).
+        // Hinge loop: the exact Wilson loop value. The deficit angle is
+        // complex and the holonomy character keeps both parts — the real part
+        // rotates, the imaginary part enters as a boost (cosh).
         const std::complex<double> eps = enclosedHinges[0]->deficitAngle();
         r.value = (static_cast<double>(d_ - 2) + 2.0 * std::cos(eps))
                   / static_cast<double>(d_);
     } else {
-        // General loop: U(1) approximation — product of cos(epsilon), complex.
+        // General loop: the U(1) approximation, a product of cos(deficit).
         std::complex<double> product{1.0, 0.0};
         for (const auto &h : enclosedHinges)
             product *= std::cos(h->deficitAngle());
@@ -341,8 +342,8 @@ WilsonResult WilsonLoop::evaluateCausal(const LoopPath &loop) const {
     r.loopSize = static_cast<int>(loop.simplices.size());
     if (r.loopSize < 2) return r;
 
-    // Track how the time orientation changes around the loop.
-    // At each face crossing, compare tf of current simplex with tf of next.
+    // Winding of the time orientation around the loop: at each face crossing,
+    // compare the final time of the current simplex with that of the next.
     int winding = 0;
     int n = r.loopSize;
     for (int i = 0; i < n; ++i) {
@@ -375,17 +376,15 @@ double WilsonResult::principalAngle(double theta) {
     return r;
 }
 
-// The four derived views of `connectionAccumulation`. Each reads the stored
-// datum; none of them is stored, so no reading can drift from another and the
-// datum can never be reconstructed FROM a view.
+// Four derived views of `connectionAccumulation`. Each is computed on read and
+// none is stored, so the views cannot drift apart.
 
 std::complex<double> WilsonResult::holonomy() const {
     return std::exp(std::complex<double>(0.0, 1.0) * connectionAccumulation);
 }
 
 double WilsonResult::holonomyModulus() const {
-    // |e^{i(a+ib)}| = e^{-b}. Exactly 1 when the connection is purely compact,
-    // which is the emergent cancellation this reading exists to expose.
+    // |e^{i(a+ib)}| = e^{-b}, exactly 1 when the connection is purely compact.
     return std::exp(-connectionAccumulation.imag());
 }
 
@@ -397,8 +396,8 @@ long WilsonResult::windingNumber() const {
     constexpr double twoPi = 2.0 * std::numbers::pi;
     const double re = connectionAccumulation.real();
     if (!std::isfinite(re)) return 0;
-    // Recoverable ONLY because the accumulation was never reduced: the whole
-    // turns are what a mod-2π fold at accumulation time would have destroyed.
+    // Recoverable because the accumulation is never reduced: a mod-2π fold at
+    // accumulation time would have destroyed the whole turns.
     return std::lround((re - principalAngle(re)) / twoPi);
 }
 
@@ -408,9 +407,9 @@ WilsonResult WilsonLoop::evaluateU1Connection(
     if (n < 2) return {};  // need at least one edge
 
     // Each consecutive pair cycle[i] -> cycle[i+1] (mod n) is one directed
-    // traversal step, walked through the shared Edge::walkLoop primitive. The
-    // step Edges carry a dummy unit length; only their endpoints are read. A
-    // small id -> VertexPtr lookup recovers the mesh edge inside the walk.
+    // traversal step, walked through Edge::walkLoop. The step Edges carry a
+    // placeholder unit length; only their endpoints are read. An id -> VertexPtr
+    // lookup recovers the mesh edge inside the walk.
     std::vector<Edge> steps;
     steps.reserve(static_cast<std::size_t>(n));
     std::unordered_map<std::uint64_t, VertexPtr> byId;
@@ -426,17 +425,15 @@ WilsonResult WilsonLoop::evaluateU1Connection(
         if (open) return;
         EdgePtr e = edgeBetween(byId[u], byId[v]);
         if (!e) { open = true; return; }  // open path — not a closed cycle
-        // +phase along the stored source→target orientation, −phase reversed.
-        // The canonical-orientation `sign` folds the edge's stored orientation
-        // back to the cycle's u->v direction: sign * stored == (forward ? +1 :
-        // -1), so this is algebraically identical to the old forward test.
+        // +phase along the stored source→target orientation, −phase reversed:
+        // the canonical-orientation `sign` folds the edge's stored orientation
+        // back to the cycle's u->v direction, so sign * stored is +1 when the
+        // traversal runs forward along the edge and -1 when it runs against it.
         //
-        // The WHOLE complex phase accumulates. Around a closed loop a gauge
+        // The whole complex phase accumulates. Around a closed loop a gauge
         // transformation telescopes to zero, so both components of the sum are
-        // gauge-invariant; only Re quantizes, which makes e^{-Im} a
-        // gauge-invariant real rather than a quantum number — not grounds for
-        // dropping it. Taking `.real()` here discarded the non-compact
-        // direction and with it any evidence of whether it does anything.
+        // gauge-invariant; only the real part quantizes, which makes e^{-Im} a
+        // gauge-invariant modulus rather than a quantum number.
         const double stored =
             (e->getSource()->getId() < e->getTarget()->getId()) ? 1.0 : -1.0;
         total += (sign * stored) * e->getPhase();
@@ -445,10 +442,10 @@ WilsonResult WilsonLoop::evaluateU1Connection(
 
     WilsonResult r;
     r.loopSize = n;
-    // The datum, unreduced: folding mod 2π here would destroy the winding.
+    // Stored unreduced: folding mod 2π here would destroy the winding number.
     r.connectionAccumulation = total;
-    // A derived reading, not a second datum. Re is linear over the sum, so
-    // principalAngle(Re total) == the old principalAngle(sum of Re) exactly.
+    // A derived reading, not a second datum: the principal angle of the
+    // accumulated real part.
     r.value = r.residualPhase();
     return r;
 }

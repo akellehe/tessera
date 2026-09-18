@@ -1,13 +1,13 @@
 // Concrete implementations of the `MajorizationPredicate` hierarchy and
 // the variant-agnostic `Majorization` façade. See
 // include/quantum/Majorization.hpp for the abstract contract, the
-// partial-order axioms each variant satisfies, and the bibliographic
-// references — short references in this file point back to the header.
+// partial-order axioms each variant satisfies, and the full
+// bibliography; the short keys below point back to it.
 //
-// References used in this file: {N1999} = Nielsen, M. A. (1999), Phys.
-// Rev. Lett. 83, 436 (arXiv: quant-ph/9811053); {B2015} = Brändén, P.
-// (2015), arXiv: 1410.6601; {AN2008} = Aubrun, G. & Nechita, I. (2008),
-// arXiv: 0707.0211.
+//   {N1999}  = Nielsen (1999), Phys. Rev. Lett. 83, 436,
+//              arXiv:quant-ph/9811053.
+//   {B2015}  = Brändén (2015), arXiv:1410.6601.
+//   {AN2008} = Aubrun & Nechita (2008), arXiv:0707.0211.
 
 #include "quantum/Majorization.hpp"
 
@@ -64,7 +64,7 @@ bool StandardMajorization::majorizes(std::vector<double> const& mu,
     auto mus  = sortedPadded(mu,     n);
     auto lams = sortedPadded(lambda, n);
 
-    // {N1999} eq. (1): at every k we need
+    // {N1999}: at every k,
     //     sum(mus[0..k])  ≥  sum(lams[0..k])
     // with equality at k = n (the total-mass condition).
     double sumMu = 0.0;
@@ -100,7 +100,7 @@ bool LogConcaveMajorization::isLogConcave(std::vector<double> const& v,
                                             double tol) {
     auto s = sortedTrimmed(v, tol);
     if (s.size() < 3) return true;  // length 0/1/2: trivially log-concave
-    // {B2015} §1: s_i² ≥ s_{i-1} · s_{i+1}, with `tol` slack on the right.
+    // {B2015}: s_i² ≥ s_{i-1} · s_{i+1}, with `tol` slack on the right.
     for (std::size_t i = 1; i + 1 < s.size(); ++i) {
         if (s[i] * s[i] + tol < s[i - 1] * s[i + 1]) return false;
     }
@@ -145,9 +145,9 @@ Poset Majorization::posetOf(std::vector<std::vector<double>> const& spectra,
     Poset out(N);
     if (N == 0) return out;
 
-    // Pre-compute the strict adjacency. We pay O(N²) predicate calls
-    // here so the transitive-reduction loop below is O(N³) bool ops
-    // rather than O(N³) sort+compare ops.
+    // Pre-compute the strict adjacency: O(N²) predicate calls here make
+    // the transitive-reduction loop below O(N³) boolean operations
+    // instead of O(N³) sort-and-compare operations.
     std::vector<std::vector<char>> strict(
         static_cast<std::size_t>(N),
         std::vector<char>(static_cast<std::size_t>(N), 0));

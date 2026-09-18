@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// Spatial volume as a function of discrete time, and its peak-centred average
+/// over measurements.
+/// Reference: Ambjorn, Jurkiewicz, Loll, "Reconstructing the Universe",
+/// arXiv:hep-th/0505154
+
 #include "observables/VolumeProfile.h"
 #include <algorithm>
 
@@ -35,7 +41,7 @@ double VolumeProfile::compute(const std::shared_ptr<Spacetime> &spacetime) {
   for (const auto &[t, count] : profile) {
     currentProfile[t - tMinKey] = count;
   }
-  // Return the peak volume
+  // The peak spatial volume over the time slices.
   return static_cast<double>(*std::max_element(currentProfile.begin(), currentProfile.end()));
 }
 
@@ -54,7 +60,7 @@ void VolumeProfile::measure(const std::shared_ptr<Spacetime> &spacetime) {
 
 std::vector<double> VolumeProfile::getAverageProfile() const {
   if (measurements.empty()) return {};
-  // Find max length
+  // Longest recorded profile.
   std::size_t maxLen = 0;
   for (const auto &m : measurements) maxLen = std::max(maxLen, m.size());
   std::vector<double> avg(maxLen, 0.0);
@@ -100,8 +106,8 @@ std::vector<double> VolumeProfile::centeredAverage(
       for (auto &v : arr) v -= stalk;
     }
 
-    // Circularly roll so the peak (first max) sits at maxLen/2.  Matches
-    // numpy.roll: result[(i + shift) mod n] = arr[i].
+    // Circularly roll so the peak (the first maximum) sits at maxLen/2:
+    // result[(i + shift) mod n] = arr[i].
     std::size_t peakIdx = static_cast<std::size_t>(
         std::max_element(arr.begin(), arr.end()) - arr.begin());
     std::size_t shift = (mid + maxLen - peakIdx % maxLen) % maxLen;

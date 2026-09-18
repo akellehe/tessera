@@ -2,12 +2,12 @@
 //
 // The Choi–Jamiołkowski isomorphism bends an operator into a state: a linear
 // map / matrix U on H_A → H_B becomes a vector |vec(U)⟩ in H_A ⊗ H_B. This
-// class is the pure-dense-linear-algebra realisation of that bend — Eigen
-// only, no ITensor, no MPS. It is the algebraic-layer (Stage 1) oracle for the
-// cobordism-correspondence experiment, where the "bending" of an operation
-// into a boundary state is checked against its transition amplitude.
+// class is the dense-linear-algebra realisation of that bend — Eigen only,
+// no ITensor, no matrix product states. It serves as the reference oracle
+// for the tensor-network path: the bent operation is checked against its
+// transition amplitude.
 //
-// ─── Conventions (locked) ──────────────────────────────────────────────────
+// ─── Conventions ──────────────────────────────────────────────────
 //
 // Matrices are passed flat, ROW-MAJOR: a dA×dB matrix U has
 //   U_{ij} = U[i*dB + j],   i ∈ [0, dA),  j ∈ [0, dB).
@@ -59,10 +59,10 @@ using namespace ::tessera::simulations;
 
 /// Dense Choi–Jamiołkowski map–state duality ("bending").
 ///
-/// A stateless static-only utility (the `cobordism::Cobordism` pattern): not
-/// instantiable, every operation is a static method. All matrices/vectors are
-/// flat, row-major `std::vector<std::complex<double>>` (see the file header for
-/// the locked conventions); Eigen is used internally for the SVD.
+/// Stateless and static-only: not instantiable, every operation is a static
+/// method. All matrices and vectors are flat, row-major
+/// `std::vector<std::complex<double>>` (see the file header for the
+/// conventions); Eigen is used internally for the SVD.
 class ChoiJamiolkowski {
   public:
     ChoiJamiolkowski() = delete;
@@ -75,11 +75,11 @@ class ChoiJamiolkowski {
         const std::vector<std::complex<double>> &U, int dA, int dB);
 
     /// Un-vectorise — the inverse of `vectorize`: reshape a length-(dA·dB) state
-    /// |v⟩ = Σ_{ij} v_{ij} |i⟩_A ⊗ |j⟩_B back into the dA×dB operator U with
-    /// U_{ij} = v_{i·dB + j}. With the row-major convention this is the validated
-    /// reshape — the returned buffer equals the input (length dA·dB), now read as
-    /// a matrix — so `unvectorize(vectorize(U), dA, dB) == U`. Throws
-    /// std::invalid_argument if v.size() != dA·dB or a dimension is non-positive.
+    /// |v⟩ = Σ_{ij} v_{ij} |i⟩_A ⊗ |j⟩_B into the dA×dB operator U with
+    /// U_{ij} = v_{i·dB + j}. With the row-major convention the returned buffer
+    /// equals the input, now read as a matrix, so
+    /// `unvectorize(vectorize(U), dA, dB) == U`. Throws std::invalid_argument
+    /// if v.size() != dA·dB or a dimension is non-positive.
     [[nodiscard]] static std::vector<std::complex<double>> unvectorize(
         const std::vector<std::complex<double>> &v, int dA, int dB);
 
@@ -110,11 +110,11 @@ class ChoiJamiolkowski {
         const std::vector<std::complex<double>> &U,
         const std::vector<std::complex<double>> &psiB, int dA, int dB);
 
-    /// Choi–Jamiołkowski *state* of a square d×d operator U: the maximally-
-    /// entangled bend |Φ_U⟩ = (U ⊗ I)|Φ⁺⟩ with |Φ⁺⟩ = (1/√d) Σ_k |k⟩|k⟩, which
-    /// in the row-major convention is the normalised vec, (1/√d)·vec(U) (length
-    /// d·d). For unitary U this is a unit vector. Throws std::invalid_argument
-    /// if U.size() != d·d or d is non-positive.
+    /// Choi–Jamiołkowski *state* of a square d×d operator U:
+    /// |Φ_U⟩ = (U ⊗ I)|Φ⁺⟩ with |Φ⁺⟩ = (1/√d) Σ_k |k⟩|k⟩, which in the
+    /// row-major convention is (1/√d)·vec(U) (length d·d). For unitary U this
+    /// is a unit vector. Throws std::invalid_argument if U.size() != d·d or d
+    /// is non-positive.
     [[nodiscard]] static std::vector<std::complex<double>> choiState(
         const std::vector<std::complex<double>> &U, int d);
 

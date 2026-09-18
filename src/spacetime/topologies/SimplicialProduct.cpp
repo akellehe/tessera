@@ -57,9 +57,8 @@ void SimplicialProduct::build(Spacetime *spacetime, int /*numSimplices*/) {
     for (const auto &tau : B.tops) {
       const int p = static_cast<int>(sigma.size()) - 1;
       const int q = static_cast<int>(tau.size()) - 1;
-      // Each monotone lattice path (0,0)->(p,q) is an interleaving of p
-      // i-steps and q j-steps; enumerate by choosing which of the p+q step
-      // slots are i-steps.
+      // Each monotone lattice path (0,0)->(p,q) interleaves p i-steps with q
+      // j-steps; enumerate by choosing which of the p+q slots are i-steps.
       std::vector<int> iStep(static_cast<std::size_t>(p + q));
       for (int s = 0; s < p; ++s) iStep[s] = 1;  // first p are i-steps...
       std::sort(iStep.begin(), iStep.end());     // ...then permute (000..111..)

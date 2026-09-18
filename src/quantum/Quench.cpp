@@ -1,5 +1,5 @@
 // Implementation of the QqbarQuench operator. See
-// include/quantum/Quench.hpp for the physics + parity discussion.
+// include/quantum/Quench.hpp for the physics and the parity constraint.
 
 #include "quantum/Quench.hpp"
 
@@ -51,9 +51,9 @@ itensor::MPS QqbarQuench::apply(itensor::MPS const& psi_in,
         }
     }
 
-    // ITensor pattern for applying a 1-site operator to an MPS:
-    //   1) bring the orthogonality center to the site
-    //   2) contract op * tensor and remove the prime introduced by op
+    // Apply a one-site operator to an MPS:
+    //   1) bring the orthogonality center to the site;
+    //   2) contract op * tensor and remove the prime op introduced;
     //   3) overwrite the site tensor.
     auto applyLocal = [&](MPS& psi, int site, std::string const& opName) {
         psi.position(site);

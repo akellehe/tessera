@@ -1,11 +1,10 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
-// Open-addressing hash map with linear probing for uint64_t keys.
-// Designed for fingerprint-keyed lookups in the CDT hot path where
-// std::unordered_map's chained hashing causes cache misses.
+// Open-addressing hash map with linear probing for uint64_t keys. Intended for
+// fingerprint-keyed lookups in the causal dynamical triangulation (CDT) hot path,
+// where std::unordered_map's chained hashing costs cache misses.
 //
-// Keys are already well-mixed (via Fingerprint::mix64), so we use
-// an identity hash — no re-hashing overhead.
+// Keys are already well mixed (by Fingerprint::mix64), so the hash is the identity.
 
 #ifndef TESSERA_FLAT_HASH_MAP_H
 #define TESSERA_FLAT_HASH_MAP_H
@@ -36,12 +35,12 @@ struct IdentityHash {
 
 /// Open-addressing hash map: uint64_t → V with linear probing.
 ///
-/// ~3x faster than std::unordered_map for lookup-heavy workloads due to
-/// cache-friendly flat layout (keys and values in contiguous arrays).
+/// Roughly 3x faster than std::unordered_map on lookup-heavy workloads: keys and
+/// values sit in contiguous arrays.
 ///
-/// Reserves key 0 as the empty sentinel.  If 0 is a valid key, the
-/// caller must offset keys by 1.  In practice, fingerprints from XOR
-/// of mix64 values are never 0 for non-empty simplices.
+/// Key 0 is reserved as the empty sentinel; a caller for whom 0 is a valid key has to
+/// offset keys by 1. Fingerprints formed by XOR of mix64 values are never 0 for a
+/// non-empty simplex.
 template<typename V>
 class FlatHashMap {
   public:
@@ -72,7 +71,7 @@ class FlatHashMap {
         }
     }
 
-    /// Insert or update.  Returns pointer to the value.
+    /// Insert or update. Returns a reference to the value.
     V& operator[](std::uint64_t key) {
         if (size_ * 10 >= cap_ * 7) grow();
         std::size_t idx = key & mask_;
@@ -88,8 +87,8 @@ class FlatHashMap {
         }
     }
 
-    /// Insert key-value pair.  No-op if key already exists.
-    /// Returns pointer to the (existing or new) value.
+    /// Insert a key-value pair; no-op if the key already exists.
+    /// Returns a reference to the existing or new value.
     V& insert(std::uint64_t key, const V &val) {
         if (size_ * 10 >= cap_ * 7) grow();
         std::size_t idx = key & mask_;

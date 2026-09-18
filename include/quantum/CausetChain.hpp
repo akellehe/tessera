@@ -1,28 +1,27 @@
-// Spacetime → causet-chain adapter for the quantum subsystem.
-// See docs/source/quantum-plan.md §6.
+// Spacetime → causal-set-chain adapter for the quantum subsystem.
 //
-// The vanilla Schwinger MPO (include/quantum/SchwingerModel.hpp) lives
-// on a regular 1D lattice with N sites and nearest-neighbour hopping
-// pairs (n, n+1). This adapter generalises that lattice: replace it with a
-// "chain of antichains" sourced from a tessera::spacetime::Spacetime, where each
-// antichain is the set of vertices at a fixed integer time slice and
-// hopping follows the timelike causet edges that connect adjacent
-// slices.
+// The Schwinger MPO (SchwingerModel.hpp) lives on a regular 1D lattice
+// with N sites and nearest-neighbour hopping pairs (n, n+1). This
+// adapter replaces that lattice with a "chain of antichains" sourced
+// from a tessera::spacetime::Spacetime: each antichain is the set of
+// vertices at a fixed integer time slice, and hopping follows the
+// timelike causal-set edges connecting adjacent slices.
 //
-// This header provides the minimal data extraction needed to drive
-// that generalisation. It does NOT itself rebuild an MPO on the
-// chain — for the simplest case where every antichain has exactly one
-// vertex the chain-of-antichains coincides with the existing 1D
-// lattice, and `SchwingerHamiltonian::mpoChain(...)` in
-// schwinger_model.hpp can run directly with `params.N = chain.nSites`
-// and `chain.hoppingPairs` as the hopping graph.
+// This header only extracts the data; it does not rebuild an MPO. When
+// every antichain holds exactly one vertex the chain of antichains
+// coincides with the 1D lattice, so `SchwingerHamiltonian::mpoChain`
+// can run directly with `params.N = chain.nSites` and
+// `chain.hoppingPairs` as the hopping graph.
 //
-// ─── What this provides ───────────────────────────────────────────────
+// Provided here:
+//   • CausetChain — flattened (lattice site → spacetime vertex ID)
+//     mapping, the hopping pairs, and the inherited Hasse-cover Poset.
+//   • Causet — adapter façade (static methods only).
 //
-// • CausetChain — flattened (lattice site → spacetime vertex ID)
-//                 mapping plus the hopping pairs and the inherited
-//                 Hasse-cover Poset.
-// • Causet — coarse-grained adapter façade (static methods only).
+// References:
+//   Sorkin, "Causal Sets: Discrete Gravity", arXiv:gr-qc/0309009.
+//   Bombelli, Lee, Meyer & Sorkin, "Space-time as a causal set",
+//     Phys. Rev. Lett. 59, 521 (1987).
 
 #pragma once
 
@@ -59,18 +58,17 @@ using namespace ::tessera::simulations;
 // `vertexIds[flat_idx]` is the inverse map: lattice site → spacetime
 // vertex ID. `nSites = sum(|antichains[s]|) = vertexIds.size()`.
 //
-// `hoppingPairs` lists the (i, j) flat-lattice-site pairs coupled
-// by adjacent-time-slice timelike edges: this is what would replace
-// the "Σ_n (X_n X_{n+1} + Y_n Y_{n+1})" sum in H_hop on the causet.
-// Pairs are stored once with i < j; the MPO builder applies σ⁺σ⁻ +
-// σ⁻σ⁺ symmetrically per pair. Edges that span non-adjacent slices
-// are skipped — they're transitively reduced out by Poset::fromSpacetime
-// and would not contribute a physical hopping term anyway.
+// `hoppingPairs` lists the (i, j) flat-lattice-site pairs coupled by
+// adjacent-time-slice timelike edges; they replace the
+// "Σ_n (X_n X_{n+1} + Y_n Y_{n+1})" sum in H_hop. Pairs are stored once
+// with i < j; the MPO builder applies σ⁺σ⁻ + σ⁻σ⁺ symmetrically per
+// pair. Edges spanning non-adjacent slices are skipped — they are
+// transitively reduced out by Poset::fromSpacetime and carry no
+// physical hopping term.
 //
 // `partialOrder` is the Hasse-cover Poset on flat-lattice-site IDs,
-// inherited from Spacetime via Poset::fromSpacetime. It's one of the
-// three orders compared in the causal-comparison machinery
-// (the "≼_cs" entry).
+// inherited from Spacetime via Poset::fromSpacetime. It is the "≼_cs"
+// entry of the causal-order comparison.
 struct CausetChain {
     int nSites{0};
     std::vector<int> times;                                 // ascending
@@ -80,7 +78,7 @@ struct CausetChain {
     tessera::Poset partialOrder;
 };
 
-// Coarse-grained façade for tessera::spacetime::Spacetime → causet adapters.
+// Façade for tessera::spacetime::Spacetime → causal-set adapters.
 // Stateless; not instantiable.
 class Causet {
 public:
@@ -97,13 +95,13 @@ public:
     //   • the Hasse cover Poset on flat lattice IDs.
     //
     // All four outputs share the same flat-index labelling, so a
-    // caller can interchangeably feed them to Majorization::agreement,
+    // caller can feed them interchangeably to Majorization::agreement,
     // an MPO builder, or a visualisation backend.
     //
     // Antichain ordering inside a slice is by ascending Spacetime
-    // vertex ID — stable and deterministic. Edges with squaredLength
-    // ≥ 0 (spacelike or null) are ignored, as are any timelike edges
-    // with src.time == tgt.time.
+    // vertex ID, so the result is deterministic. Edges with
+    // squaredLength ≥ 0 (spacelike or null) are ignored, as are
+    // timelike edges with src.time == tgt.time.
     [[nodiscard]] static CausetChain
     chainFrom(tessera::spacetime::Spacetime const& st);
 };

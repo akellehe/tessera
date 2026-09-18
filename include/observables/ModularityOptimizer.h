@@ -35,9 +35,8 @@ using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
 
-/// One recorded measurement on the (Q, D_S) trajectory.
-///
-/// Mirrors ``examples/modularity.py:Measurement``.
+/// One recorded measurement on the (modularity, spectral dimension)
+/// trajectory.
 struct ModularityMeasurement {
   double Q;            ///< Newman-Girvan modularity at the time of measurement.
   double dsSmall;      ///< Spectral dimension at small diffusion times.
@@ -58,43 +57,46 @@ struct ModularityOptimizerConfig {
   int negativeRetryMax = 10;       ///< Max retries when D_S comes back negative.
   double epsilonQMax = 0.01;       ///< Up-sweep early-exit tolerance.
   int krylovDim = 30;              ///< Krylov subspace dim for heat kernel.
-  int targetNModules = 4;          ///< M (modulo partition).
+  int targetNModules = 4;          ///< Number of modules in the fixed partition.
 };
 
-/// Modularity sweep on a CDT spacetime, driven by transactional
-/// Pachner moves with Q-direction acceptance.
+/// Modularity sweep on a causal dynamical triangulation (CDT) spacetime, driven
+/// by transactional Pachner moves accepted on the sign of the modularity change.
 ///
-/// **Score domain and status.**  Every modularity number this class
-/// produces — the sweep's Q trajectory (via
-/// ``Spacetime::modularityOnSkeleton``) and the label-free discovery
-/// reachable through :func:`discoverComponents` — is a Newman-Girvan /
-/// generalized-modularity score evaluated on a combinatorial /
-/// nonnegative one-skeleton.  It is blind to signed and complex Hodge
-/// weights, so it is a heuristic proposal generator only: it may
-/// propose candidate component supports, it never enters the emergence
-/// objective, and it may not veto an otherwise certified fiber.  Fiber
-/// acceptance rests solely on the independent weight-aware
-/// gap/localization/leakage/persistence/anchor certificates.
+/// References: Newman, "Modularity and community structure in networks",
+/// arXiv:physics/0602124; Ambjorn, Jurkiewicz, Loll, "Spectral Dimension of the
+/// Universe", arXiv:hep-th/0505113.
 ///
-/// Algorithm (per iteration):
+/// # Score domain
+///
+/// Every modularity number this class produces — the sweep's \f$ Q \f$
+/// trajectory (via ``Spacetime::modularityOnSkeleton``) and the label-free
+/// discovery in :func:`discoverComponents` — is a Newman-Girvan or
+/// generalized-modularity score on a combinatorial, nonnegative one-skeleton.
+/// It is blind to signed and complex Hodge weights, so it is a heuristic
+/// proposal generator: it may propose candidate component supports, it never
+/// enters the emergence objective, and it may not veto an otherwise certified
+/// fiber. Fiber acceptance rests on the independent weight-aware gap,
+/// localization, leakage, persistence and anchor certificates.
+///
+/// Algorithm, per iteration:
 ///   1. Pick a random move type from {add, remove, flip, iflip, shift}.
-///   2. ``cdt.proposeXxx()`` — read-only target selection.  If no
-///      eligible target, try another move type (one fallback each
-///      iteration).
-///   3. Snapshot Q on the spacetime 1-skeleton.
-///   4. ``move.apply()`` — commit the move.
-///   5. Compute Q after.  If direction matches (up: Q rose; down: Q
-///      fell), keep the move.  Otherwise ``move.rollback()``.
-///   6. If Q crossed the next ``target_dq`` threshold, build the dual
-///      graph and measure D_S; record a Measurement.
+///   2. ``cdt.proposeXxx()`` selects a target read-only. If no target is
+///      eligible, try another move type (one fallback per iteration).
+///   3. Snapshot \f$ Q \f$ on the spacetime 1-skeleton.
+///   4. ``move.apply()`` commits the move.
+///   5. Recompute \f$ Q \f$. Keep the move if it changed in the requested
+///      direction, otherwise ``move.rollback()``.
+///   6. If \f$ Q \f$ crossed the next ``targetDq`` threshold, build the dual
+///      graph, measure the spectral dimension, and record a measurement.
 ///
-/// The sweep's fixed-partition read (community = vertex id mod M) is
-/// unchanged and remains available; label-free discovery is the
-/// :class:`PersistentModularity` extension below.
+/// The sweep's fixed-partition read (community = vertex id modulo
+/// ``targetNModules``) remains available; label-free discovery is
+/// :class:`PersistentModularity`.
 ///
-/// The "informed proposal" hook in ``selectMoveType`` can bias the
-/// move-type distribution toward those most likely to move Q in the
-/// target direction.  Default: uniform over all 5 types.
+/// The move-type hook in ``selectMoveType`` can bias the distribution toward
+/// move types most likely to shift \f$ Q \f$ in the target direction; the
+/// default is uniform over all five.
 class ModularityOptimizer {
 public:
   /// Progress callback signature: (iter, maxIter, currentQ, n_meas).
@@ -104,36 +106,35 @@ public:
   ModularityOptimizer(ModularityOptimizerConfig cfg, std::uint64_t seed)
       : cfg_(cfg), rng_(seed) {}
 
-  /// Drive the spacetime via ``cdt`` Pachner moves to walk Q in the
-  /// given ``direction`` ("up" or "down").  Records (Q, D_S) at every
-  /// ``targetDq`` threshold crossing.  Mutates ``cdt``'s spacetime
-  /// in place.  Resets the per-sweep counters before running.
+  /// Drive the spacetime via ``cdt`` Pachner moves to walk \f$ Q \f$ in the
+  /// given ``direction`` ("up" or "down"). Records (modularity, spectral
+  /// dimension) at every ``targetDq`` threshold crossing. Mutates ``cdt``'s
+  /// spacetime in place and resets the per-sweep counters before running.
   std::vector<ModularityMeasurement> sweep(
       CDT &cdt,
       const std::string &direction,
       ProgressCallback progress = nullptr);
 
-  /// Label-free discovery of persistent modular components on the CURRENT
-  /// spacetime one-skeleton (ticket #765): builds
-  /// the nonnegative similarity graph under ``map`` and delegates to
-  /// :func:`PersistentModularity::scanResolutions`.  Read-only — never
-  /// mutates the spacetime, never proposes or applies moves, and its
-  /// result must never feed the emergence objective (heuristic proposal
-  /// generator; see the class documentation).  Deterministic for a fixed
-  /// ``cfg`` seed sequence; the optimizer's own RNG is untouched.
+  /// Label-free discovery of persistent modular components on the current
+  /// spacetime one-skeleton: builds the nonnegative similarity graph under
+  /// ``map`` and delegates to :func:`PersistentModularity::scanResolutions`.
+  /// Read-only: it never mutates the spacetime and never proposes or applies
+  /// moves. The result is a heuristic proposal and must not feed the emergence
+  /// objective. Deterministic for a fixed ``cfg`` seed sequence; the optimizer's
+  /// own random number generator is untouched.
   ScanReport discoverComponents(
       const Spacetime &st, const PersistentModularityConfig &cfg,
       PersistentModularity::WeightMap map =
           PersistentModularity::WeightMap::ExpNegAbsLength) const;
 
-  // Per-sweep counters.  Reset at the top of each ``sweep()`` call.
-  /// Number of moves applied + kept (Q moved in the desired direction).
+  // Per-sweep counters, reset at the top of each ``sweep()`` call.
+  /// Moves applied and kept, i.e. \f$ Q \f$ moved in the desired direction.
   std::int64_t getNAccepted() const noexcept { return nAccepted_; }
-  /// Number of moves applied then rolled back (Q moved the wrong way).
+  /// Moves applied then rolled back, i.e. \f$ Q \f$ moved the wrong way.
   std::int64_t getNRolledBack() const noexcept { return nRolledBack_; }
-  /// Number of iterations with no eligible Pachner-move proposal.
+  /// Iterations with no eligible Pachner-move proposal.
   std::int64_t getNNoMove() const noexcept { return nNoMove_; }
-  /// Number of D_S measurements taken (equal to len(sweep result)).
+  /// Spectral-dimension measurements taken; equals the sweep result length.
   std::int64_t getNMeasurements() const noexcept { return nMeasurements_; }
 
 private:
@@ -144,12 +145,13 @@ private:
   std::int64_t nNoMove_ = 0;
   std::int64_t nMeasurements_ = 0;
 
-  // Try each move type in turn (random order) until one validates
-  // via propose().  Returns nullptr if all 5 fail.
+  // Try each move type in random order until one validates via propose().
+  // Returns nullptr if all five fail.
   std::unique_ptr<PachnerMove> proposeAny(CDT &cdt);
 
-  // Measure D_S on the dual graph; recompute Q on the 1-skeleton.
-  // The "negative D_S retry" safety net is built in.
+  // Measure the spectral dimension on the dual graph and recompute modularity
+  // on the 1-skeleton, retrying when the spectral dimension comes back
+  // negative.
   ModularityMeasurement measure(
       CDT &cdt, int iter, const std::string &direction);
 };

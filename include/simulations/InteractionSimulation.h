@@ -1,7 +1,7 @@
 // InteractionSimulation — Metropolis Monte Carlo over interaction histories,
 // weighted by the geometric Regge action on the dual lattice.
 //
-// See docs/source/interaction-history-monte-carlo.md for the full charter.
+// See docs/source/interaction-history-monte-carlo.md.
 //
 // ─── The construction ────────────────────────────────────────────────────
 //
@@ -9,12 +9,12 @@
 // from a Poisson-Delaunay initial layer of quantum systems by pairwise
 // interaction events.
 //
-//   • Initial layer. N systems, each a known randomized *mixed* state
-//     (S(ρ) > 0), Delaunay-triangulated in 2D.
+//   • Initial layer. N systems, each a randomized mixed state (S(ρ) > 0),
+//     Delaunay-triangulated in 2D.
 //
 //   • Interaction event. Two frontier systems X, Y interact through a
-//     two-system unitary U; the interaction product is the genuine joint
-//     state ρ_AB = U (ρ_X ⊗ ρ_Y) U†. The (2,3) cell {X, Y, X', AB, Y'} is
+//     two-system unitary U; the interaction product is the joint state
+//     ρ_AB = U (ρ_X ⊗ ρ_Y) U†. The (2,3) cell {X, Y, X', AB, Y'} is
 //     attached: X, Y leave the frontier, the marginals X', Y' and the
 //     joint-state node AB join it.
 //
@@ -22,21 +22,21 @@
 //     ordinary mutual informations; the temporal edges close by a
 //     conservation law — S(X) = I(X:X') + I(X:AB) with I(X:X') the
 //     residual. Every quantity is a reduced-density-matrix computation on
-//     a state that concretely exists: no MPS, no Choi, no freeze.
+//     a state that concretely exists.
 //
 // ─── The ensemble ────────────────────────────────────────────────────────
 //
-// The geometric Regge action S = Σ_h A_h ε_h on the MI-lengthed complex,
-// sampled at inverse temperature β by Metropolis-Hastings with the
-// interact / un-interact move pair:
+// The geometric Regge action S = Σ_h A_h ε_h on the mutual-information
+// lengthed complex, sampled at inverse temperature β by Metropolis-Hastings
+// with the interact / un-interact move pair:
 //
 //     A(C→C') = min{ 1, (N₊/N₋)·(C_C/C_{C'})·e^{-β ΔS} }.
 //
 // Volume is controlled by capping the interaction count (the T-cap). The
-// object of the search is the β at which the emergent spectral dimension
-// reaches 4. The class mirrors the abstraction level of tessera::simulations::CDT —
-// move primitives, propose* counterparts, sweep / thermalize / tune, and
-// the computeAction / getAcceptanceRates / observable getters.
+// target of the search is the β at which the emergent spectral dimension
+// reaches 4. The class mirrors tessera::simulations::CDT: move primitives,
+// propose* counterparts, sweep / thermalize / tune, and the computeAction /
+// getAcceptanceRates / observable getters.
 
 #pragma once
 
@@ -73,7 +73,7 @@ using namespace ::tessera::quantum;
 // A single system's quantum state — a one-qubit density matrix.
 using SystemState = Eigen::Matrix2cd;
 
-// Initial charge assignment for the v0.1 charged-model initial layer.
+// Initial charge assignment for the charged-model initial layer.
 enum class InitialChargeMode {
     ALTERNATING,  // even-index vertex +1, odd-index −1 (exact Q = 0)
     RANDOM,       // independent ±1 per vertex (Q ≈ 0 ± √N)
@@ -103,17 +103,14 @@ struct InteractionConfig {
     // supplied by the caller (scipy.spatial.Delaunay).
     std::vector<std::pair<int, int>> delaunayEdges;
 
-    // ─── Charged Cartan Monte Carlo (v0.1) ──────────────────────────────
-    // Experimental features are toggled by booleans named `featureXxx`,
-    // all defaulting to false. See
-    // docs/source/quantum-experiments/charged_cartan_monte_carlo_v0.1.md
-    // for the full convention. Old runs stay reproducible because every
-    // new behaviour is opt-in.
+    // ─── Charged Monte Carlo ────────────────────────────────────────────
+    // Optional features are toggled by booleans named `featureXxx`, all
+    // defaulting to false, so every added behaviour is opt-in.
     bool featureCharges{false};
     bool featureDeactivateOnAnnihilate{false};
     bool featurePhotonOnAnnihilate{false};
-    // Convenience alias kept for backward-compat with existing scripts:
-    // sets / mirrors featureCharges.
+    // Alias for featureCharges: setting either one enables the charged
+    // code paths.
     bool useCharges{false};
     // CP-violation bias for pair-creation. The first vertex of a
     // spontaneously-created (+, −) pair gets charge 0.5 + δ. If cpBias
@@ -123,31 +120,28 @@ struct InteractionConfig {
     double cpBias{0.0};
     InitialChargeMode initialChargeMode{InitialChargeMode::ALTERNATING};
 
-    // ─── v0.2: qudit-basis vertices (4-dim Hilbert per vertex) ──────────
+    // ─── Qudit-basis vertices (4-dim Hilbert space per vertex) ──────────
     // When true, vertices carry a 4-dim ququart state with the basis
     // {|+0⟩, |+1⟩, |−0⟩, |−1⟩} so charge is intrinsic via the operator
     // Q̂ = diag(+1, +1, −1, −1). The 16×16 pair Hamiltonian is built
     // from the parameters below; the unitary is U = exp(−i H_pair · dt).
-    // When this flag is on, the v0.1 charge-related flags are ignored
-    // (v0.2 supersedes them).
+    // When this flag is on, the scalar-charge flags above are ignored.
     bool featureQuditBasis{false};
-    // ─── v0.2 + #16: Σ_AB as full 256-dim Choi state ───────────────────
+    // ─── Σ_AB as a full 256-dim Choi state ──────────────────────────────
     // When true (requires featureQuditBasis), the Σ_AB entangling-core
     // vertex carries the full Choi state J(U) = (U ⊗ I)|Ω⟩⟨Ω|(U† ⊗ I)
-    // — a 256×256 pure state on the doubled Hilbert — instead of the
-    // I/4 maximally-mixed proxy. This makes Σ_AB's marginal consistent
-    // with its joint correlations and eliminates the discrete Q-drift
-    // documented in v02_finite_size_investigation.md. When Σ_AB is
-    // consumed by a later interaction, its Choi state is reduced to
-    // 4 dimensions via charge-basis projection matched to the partner.
+    // — a 256×256 pure state on the doubled Hilbert space — instead of
+    // the I/4 maximally-mixed proxy. This makes Σ_AB's marginal
+    // consistent with its joint correlations and removes a discrete
+    // drift in the total charge. When Σ_AB is consumed by a later
+    // interaction, its Choi state is reduced to 4 dimensions via
+    // charge-basis projection matched to the partner.
     //
-    // Default: true. The constructor auto-clears this to false when
-    // featureQuditBasis is off (it has no meaning without the qudit
-    // basis), so v0/v0.1 configurations don't get an unexpected
-    // exception or behavior change.
+    // Default: true. The constructor clears it when featureQuditBasis is
+    // off, since it has no meaning without the qudit basis.
     bool featureChoiSigmaAB{true};
-    // Pair-Hamiltonian parameters. Sensible defaults map to a
-    // "v0.1-ish" regime in the J_c → 0 limit; experiments can scan.
+    // Pair-Hamiltonian parameters. The J_c → 0 limit reduces to the
+    // scalar-charge regime; experiments can scan them.
     double j_chargeCharge{1.0};    // J_c · (Q̂_A · Q̂_B)
     double j_spinSpin{0.25};       // J_s · (XX + YY)_spin
     double massShift{0.5};         // δ_m · (Q̂_A + Q̂_B)
@@ -179,11 +173,12 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     // Returns true if the Metropolis test accepted.
     bool interact();
 
-    // Remove a uniformly-random leaf cell, restoring its parents to the
-    // frontier. Returns true if accepted.
+    // Remove a uniformly-random cell along with the future cone of its
+    // products, restoring the parents it consumed to the frontier. Returns
+    // true if accepted.
     bool unInteract();
 
-    // ─── Charged Cartan Monte Carlo (v0.1) moves ────────────────────────
+    // ─── Charge moves ───────────────────────────────────────────────────
 
     // Spontaneous partial-annihilation: pick a uniformly-random (+, −)
     // frontier pair, cancel the matched portion of their charges, leave
@@ -236,7 +231,7 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     // Accepted / attempted ratio per move type.
     [[nodiscard]] std::map<std::string, double> getAcceptanceRates() const;
 
-    // ─── Charged Cartan observables (v0.1) ──────────────────────────────
+    // ─── Charge observables ─────────────────────────────────────────────
 
     // Σ_v q_v over the entire complex. Exactly conserved at cpBias = 0;
     // drifts as the integrated CP-violation when cpBias ≠ 0.
@@ -259,7 +254,7 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     [[nodiscard]] const std::shared_ptr<tessera::spacetime::Spacetime> &
     getSpacetime() const noexcept { return spacetime_; }
 
-    // ─── Charged Cartan v0.2 observables ────────────────────────────────
+    // ─── Qudit-basis observables ────────────────────────────────────────
 
     // Per-vertex continuous charge ⟨Q̂⟩ = Tr[ρ · Q̂], where
     // Q̂ = diag(+1, +1, -1, -1) on the {|+0⟩, |+1⟩, |−0⟩, |−1⟩} basis.
@@ -316,7 +311,7 @@ class InteractionSimulation : public tessera::simulations::Simulation {
              Eigen::Matrix4cd>
         jointOf_;
 
-    // ─── Frontier / move bookkeeping (the DP tables) ────────────────────
+    // ─── Frontier / move bookkeeping ────────────────────────────────────
     // The frontier — systems that have not yet interacted (no temporal
     // out-edges). Any pair of frontier vertices is an eligible interact
     // candidate, so N₊ = |frontier|·(|frontier|−1)/2 and a uniform-random
@@ -326,13 +321,13 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     std::vector<tessera::mesh::VertexPtr> frontier_;
     std::unordered_map<tessera::mesh::VertexPtr, std::size_t> frontierIdx_;
 
-    // ─── Charge bookkeeping (v0.1) ──────────────────────────────────────
+    // ─── Charge bookkeeping ─────────────────────────────────────────────
     // Continuous charge per vertex in [−1, +1]. Only populated when
     // config.useCharges is true. Worldline-product vertices inherit
     // their parent's charge; Σ_AB products are neutral (0).
     std::unordered_map<tessera::mesh::VertexPtr, double> chargeOf_;
 
-    // ─── v0.2: qudit-basis state buffers ────────────────────────────────
+    // ─── Qudit-basis state buffers ──────────────────────────────────────
     // Populated only when config.featureQuditBasis is on. Per-vertex 4×4
     // density matrix in the basis {|+0⟩, |+1⟩, |−0⟩, |−1⟩}. Charge is
     // derived as Tr[ρ · Q̂] where Q̂ = diag(+1, +1, −1, −1).
@@ -358,7 +353,7 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     std::vector<tessera::mesh::VertexPtr> frontierPos_, frontierNeg_;
     std::unordered_map<tessera::mesh::VertexPtr, std::size_t>
         frontierPosIdx_, frontierNegIdx_;
-    // Counters for the new moves.
+    // Counters for the charge moves.
     std::int64_t annihilateAttempts_{0}, annihilateAccepted_{0};
     std::int64_t pairCreateAttempts_{0}, pairCreateAccepted_{0};
 
@@ -425,11 +420,11 @@ class InteractionSimulation : public tessera::simulations::Simulation {
         Eigen::Matrix4cd jointAB;    // ρ_AB in (X' ⊗ Y') order
     };
 
-    // v0.2: the same construction at 4-dim qudit vertices. ρ are
-    // 4×4; joints are 16×16. statePrimeX/Y are the 4-dim marginals;
-    // stateAB carries the Σ_AB proxy as a 4-dim state (the v0.2 default
-    // is the A-side marginal of the qudit joint, mirroring v0.1's
-    // proxy choice; the full 256-dim Choi state is a deferred upgrade).
+    // The same construction at 4-dim qudit vertices: ρ are 4×4, joints are
+    // 16×16. statePrimeX/Y are the 4-dim marginals; stateAB carries the Σ_AB
+    // proxy as a 4-dim state (the A-side marginal of the qudit joint). With
+    // featureChoiSigmaAB the Σ_AB vertex instead carries the 256-dim Choi
+    // state.
     struct InteractionResultQudit {
         std::map<std::pair<int, int>, double> edgeMI;
         Eigen::Matrix4cd statePrimeX;
@@ -442,7 +437,7 @@ class InteractionSimulation : public tessera::simulations::Simulation {
     [[nodiscard]] InteractionResult
     computeInteraction(tessera::mesh::VertexPtr x, tessera::mesh::VertexPtr y) const;
 
-    // v0.2 analog: 4-dim qudit inputs, 16×16 interaction unitary.
+    // Qudit analog: 4-dim qudit inputs, 16×16 interaction unitary.
     [[nodiscard]] InteractionResultQudit
     computeInteractionQudit(tessera::mesh::VertexPtr x,
                             tessera::mesh::VertexPtr y) const;

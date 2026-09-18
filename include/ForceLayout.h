@@ -6,18 +6,14 @@
 
 namespace tessera {
 
-/// Fruchterman-Reingold spring-electrical graph layout.
-///
-/// Static-method utility class: spring attraction along edges plus Coulomb
-/// repulsion between node pairs, with multiplicative step cooling and an
-/// O(n^2)-repulsion cap for large graphs.
+/// Fruchterman-Reingold spring-electrical graph layout: spring attraction along
+/// edges plus Coulomb repulsion between node pairs, with multiplicative step
+/// cooling and a node cap on the O(n^2) repulsion for large graphs. All members
+/// are static.
 class ForceLayout {
 public:
-    /// Spring-electrical force-directed layout in 3D.
-    ///
-    /// Places \a n nodes in 3D space using spring attraction along edges
-    /// and Coulomb repulsion between node pairs.  Returns a flat row-major
-    /// vector of size \a n * 3 containing the (x, y, z) positions.
+    /// Spring-electrical force-directed layout in 3D. Returns a flat row-major
+    /// vector of size \a n * 3 holding the (x, y, z) positions.
     ///
     /// @param n           Number of nodes
     /// @param edges       Index pairs (i, j) defining graph edges
@@ -57,9 +53,8 @@ public:
     ///     runs only between nodes sharing a group id (e.g. one time slice);
     ///     when empty, repulsion is global (capped).
     ///
-    /// The two are independent and may be combined.  The \a centerIdx node is
-    /// pinned at the origin.  Returns a flat row-major vector of size
-    /// \a n * 2 with the (x, y) positions.
+    /// The two are independent and may be combined. Returns a flat row-major
+    /// vector of size \a n * 2 with the (x, y) positions.
     ///
     /// @param n           Number of nodes
     /// @param edges       Index pairs (i, j) defining graph edges

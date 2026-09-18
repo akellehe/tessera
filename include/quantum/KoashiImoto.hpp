@@ -8,8 +8,8 @@
 //
 // The L-parts on both sides hold the joint correlation; the R-parts on
 // each side are uncorrelated with the other side. j is a classical
-// register both sides agree on. Single general algorithm — no
-// pure/product shortcuts; those fall out as degenerate cases.
+// register both sides agree on. One general algorithm covers every
+// input: pure and product states come out as degenerate cases.
 //
 // References:
 //   Koashi, Imoto. "Operations that do not disturb partially known
@@ -34,10 +34,10 @@ namespace tessera::quantum {
 
 /// Numerical tolerances used by ``koashiImotoDecompose``.
 ///
-/// The KI algorithm does several rank-detection / eigendecomposition
-/// steps. Each step has its own conditioning threshold, separated so
-/// callers can dial them independently when chasing edge cases (in
-/// practice they all sit at ~1e-10 for double precision).
+/// The Koashi-Imoto (KI) algorithm performs several rank-detection and
+/// eigendecomposition steps. Each step has its own conditioning
+/// threshold, kept separate so callers can set them independently. All
+/// three default to 1e-10, which suits double precision.
 class KoashiImotoTolerances {
   public:
     KoashiImotoTolerances() = default;
@@ -65,8 +65,7 @@ class KoashiImotoTolerances {
 /// state on the left blocks (``coreState``), the per-side right-tail
 /// states (``tailA``, ``tailB``), and the four block dimensions.
 ///
-/// Constructed by ``koashiImotoDecompose``; immutable after build
-/// (callers should treat instances as read-only outputs).
+/// Constructed by ``koashiImotoDecompose``; read-only thereafter.
 class KoashiImotoBlock {
   public:
     KoashiImotoBlock() = default;
@@ -112,7 +111,7 @@ class KoashiImotoBlock {
 /// are the per-side classical-quantum tails. ``blocks`` carries each
 /// j-summand explicitly for callers that want block-by-block access.
 ///
-/// Constructed by ``koashiImotoDecompose``; immutable after build.
+/// Constructed by ``koashiImotoDecompose``; read-only thereafter.
 class KoashiImotoResult {
   public:
     KoashiImotoResult() = default;
@@ -145,12 +144,11 @@ koashiImotoDecompose(const Eigen::MatrixXcd&        rhoAB,
                      int                            dimB,
                      const KoashiImotoTolerances&   tol = {});
 
-/// Overload taking explicit marginals ρ_A, ρ_B. Use this when the
-/// caller already has the marginals on hand (e.g. they came in on
-/// QuantumVertex objects) — the algorithm uses ρ_A / ρ_B for the
-/// eigendecompositions that seed the KI block structure, so passing
-/// them directly avoids recomputing partial traces and avoids the
-/// numerical drift of partial-trace round-trips.
+/// Overload taking explicit marginals ρ_A, ρ_B. The algorithm uses
+/// ρ_A / ρ_B for the eigendecompositions that seed the KI block
+/// structure, so a caller that already holds the marginals (for
+/// example on QuantumVertex objects) avoids both the recomputed
+/// partial traces and their round-trip numerical drift.
 ///
 /// ``rhoA`` must be dimA-square, ``rhoB`` must be dimB-square, and
 /// the partial traces of ``rhoAB`` over B (resp. A) must agree with
@@ -178,10 +176,9 @@ partialTraceA(const Eigen::MatrixXcd& rhoAB, int dimA, int dimB);
 [[nodiscard]] double
 mutualInformation(const Eigen::MatrixXcd& rhoAB, int dimA, int dimB);
 
-/// Overload taking ρ_A, ρ_B alongside ρ_AB. Avoids the partial
-/// traces inside this function and lets callers pass marginals they
-/// already have (e.g. from QuantumVertex state) without round-trip
-/// numerical noise.
+/// Overload taking ρ_A, ρ_B alongside ρ_AB. Skips the internal
+/// partial traces, so callers that already hold the marginals (for
+/// example from QuantumVertex state) avoid the round-trip noise.
 [[nodiscard]] double
 mutualInformation(const Eigen::MatrixXcd& rhoAB,
                   const Eigen::MatrixXcd& rhoA,

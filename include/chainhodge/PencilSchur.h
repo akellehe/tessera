@@ -17,7 +17,7 @@
 
 namespace tessera::chainhodge {
 
-/// One Feshbach complement of a symmetric pencil (specification Prop. 7.1(a)).
+/// One Feshbach complement of a symmetric pencil.
 struct FeshbachResult {
   Complex lambda{0.0, 0.0};
   /// Interface (kept) and interior (eliminated) coordinates, ascending.
@@ -41,15 +41,15 @@ struct FeshbachResult {
   bool interiorSingular{false};
 };
 
-/// A congruence \f$ (T^T A T,\ T^T M T) \f$ (Prop. 7.1(b)).
+/// A congruence \f$ (T^T A T,\ T^T M T) \f$.
 struct CongruenceResult {
   Eigen::MatrixXcd A{};
   Eigen::MatrixXcd M{};
 };
 
-/// The coarse pencil and chain metric restricted to retained fibers
-/// (Prop. 7.1(c)): \f$ (\hat A, \mathcal G) = (Z^T \tilde A Z,\ Z^T M Z) \f$ with
-/// the block offsets of the fibers that were concatenated.
+/// The coarse pencil and chain metric restricted to retained fibers,
+/// \f$ (\hat A, \mathcal G) = (Z^T \tilde A Z,\ Z^T M Z) \f$, with the block
+/// offsets of the fibers that were concatenated.
 struct FiberRestriction {
   Eigen::MatrixXcd A{};
   Eigen::MatrixXcd gram{};
@@ -57,7 +57,7 @@ struct FiberRestriction {
   std::vector<int> blockRanks{};
 };
 
-/// A transfer between two fibers with its reversal certificate (Prop. 7.1(d)).
+/// A transfer between two fibers with its reversal certificate.
 struct TransferResult {
   /// \f$ T_{AB}(U) = (Z_A^\vee)^T (\tilde A^U)_{AB} Z_B \f$.
   Eigen::MatrixXcd forward{};
@@ -71,16 +71,16 @@ struct TransferResult {
   /// \f$ \|T_{BA} T_{AB} - I\| \f$ (square, same rank); false otherwise.
   bool groupoidHolds{false};
   double groupoidResidual{std::numeric_limits<double>::quiet_NaN()};
-  /// \f$ T_{AB}^{-T} \f$, emitted ONLY when the groupoid hypothesis holds
-  /// (RSF's \f$ M^\vee = M^{-T} \f$); empty otherwise.
+  /// \f$ T_{AB}^{-T} \f$, the dual transfer \f$ M^\vee = M^{-T} \f$, emitted only
+  /// when the groupoid hypothesis holds; empty otherwise.
   Eigen::MatrixXcd dualTransfer{};
 };
 
 /// # PencilSchur
 ///
 /// The recursion on the symmetric pencil \f$ \mathcal P(\lambda) = \tilde A -
-/// \lambda M \f$ on geometric images (specification §7, §13), dense below the
-/// crossover. Partition coordinates into interface \f$ B \f$ and interior \f$ I \f$.
+/// \lambda M \f$ on geometric images, dense below the crossover. Partition
+/// coordinates into interface \f$ B \f$ and interior \f$ I \f$.
 ///
 /// * (a) `feshbach`: \f$ F_B(\lambda) = \mathcal P_{BB} - \mathcal P_{BI}\mathcal P_{II}^{-1}
 ///   \mathcal P_{IB} \f$, \f$ \det\mathcal P = \det\mathcal P_{II}\det F_B \f$;
@@ -127,10 +127,14 @@ class PencilSchur {
   [[nodiscard]] static std::vector<int> support(const Eigen::MatrixXcd &Z,
                                                 double threshold = 1e-12);
   /// The transfer between fibers with the reversal identity asserted.
-  /// @param AtildeU the dressed pencil operator for \f$ U \f$ and
-  ///   @param AtildeUinv for \f$ U^{-1} \f$ (the dual instance);
-  /// @param ZA, @param ZAdual the band's images for \f$ U \f$ and \f$ U^{-1} \f$
-  ///   on \f$ A \f$; likewise @param ZB, @param ZBdual on \f$ B \f$.
+  /// @param AtildeU the dressed pencil operator for \f$ U \f$.
+  /// @param AtildeUinv the dressed pencil operator for \f$ U^{-1} \f$ (the dual
+  ///   instance).
+  /// @param ZA the band's images on \f$ A \f$ for \f$ U \f$.
+  /// @param ZAdual the band's images on \f$ A \f$ for \f$ U^{-1} \f$.
+  /// @param ZB the band's images on \f$ B \f$ for \f$ U \f$.
+  /// @param ZBdual the band's images on \f$ B \f$ for \f$ U^{-1} \f$.
+  /// @param tolerance relative tolerance on the reversal identity.
   /// @throws std::runtime_error, by name with the measured residual, when
   ///   \f$ \|T_{BA}(U^{-1}) - T_{AB}(U)^T\| \f$ exceeds \p tolerance times
   ///   \f$ \|T_{AB}\| \f$.

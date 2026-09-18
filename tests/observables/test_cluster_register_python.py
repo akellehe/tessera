@@ -639,7 +639,7 @@ class TestRealHost(unittest.TestCase):
         sys.path.insert(
             0, str(Path(__file__).resolve().parent.parent.parent /
                    "examples" / "cobordism"))
-        import emergence_animation as ea
+        from tessera.drivers import emergence as ea
         st = ea.build_cobordism_host(6, 3)
         # Materialise the skeleton before reading (#850): the objective and
         # the operators are functions of the FULL complex, not of a partial

@@ -4,305 +4,197 @@
 #ifndef TESSERA_OBSERVABLES_PARTICLECLUSTERS_H
 #define TESSERA_OBSERVABLES_PARTICLECLUSTERS_H
 
-// Particle classification from persistent modular spectral components
-// (issue #773, Wave 3 of the recursive spectral-fiber program — the
-// whitepaper section "Quarks as modular clusters").
+// Particle classification from persistent modular spectral components.
 //
-// ─── What lives here ─────────────────────────────────────────────────────
+// References: Newman, "Modularity and community structure in networks",
+// arXiv:physics/0602124; Greensite, "The Confinement Problem in Lattice Gauge
+// Theory", arXiv:hep-lat/0301023.
 //
-//   • ParticleClusters       — the QUARK/ANTIQUARK classifier: combines the
-//                              already-certified Wave 1/2 evidence
-//                              (persistence/localization, odd exterior
-//                              parity, an accepted rank-three color band,
-//                              the calibrated oriented-triangle anchor
-//                              profile, bounded transport leakage, and the
-//                              certified determinant-line winding) into a
-//                              QuarkRead; searches for the unlabeled
-//                              two-state flavor subclass; adapts the
-//                              EXISTING Gauss-flux read onto nested
-//                              enclosing surfaces; and verifies conjugate-
-//                              pair conservation.  #774 adds the EVEN
-//                              sector reads BESIDE the quark surface: the
-//                              quasi-free octet bilinear read on the #780
-//                              covariance layer, and the gluon-candidate /
-//                              meson-candidate / diquark-candidate
-//                              classifiers (see below).  #775 adds the
-//                              THREE-cluster sector beside these: the
-//                              bound-supercomponent search, the color
-//                              singlet, and the complete proton
-//                              certificate (see below).
-//   • OctetBilinearRead      — the #774 quasi-free traceless-bilinear read
-//                              of three declared color modes of a carried
-//                              #780 CovarianceState: the bilinear matrix
-//                              M_ij = ⟨a_i†a_j⟩ = (Γ_S)ᵀ, its exact
-//                              1 ⊕ 8 split (delegated to
-//                              ColorFiber::octetRead / tracelessPart /
-//                              adjointOctetProjector — never re-derived),
-//                              the adjoint Casimir, the quartic-Wick color
-//                              Casimir expectation, subset occupation and
-//                              parity.  Dense Fock vectors appear only in
-//                              tests; #771 stays the oracle layer.
-//   • GluonCandidateEvidence / GluonRead
-//                            — the #774 gluon-candidate classifier: a
-//                              persistent transported octet excitation
-//                              with certified even parity, certified ZERO
-//                              total determinant winding (zero baryon
-//                              flux), and accepted rank-three transports.
-//                              "Candidate" is the strongest claim ever
-//                              emitted — no even octet excitation is
-//                              classified a physical gluon.
-//   • CompositeCandidateEvidence / MesonRead / DiquarkRead
-//                            — the #774 TWO-cluster composite classifiers
-//                              over constituent QuarkReads: meson = one
-//                              certified quark + one certified antiquark,
-//                              even composite parity (the exact graded
-//                              product of the certified constituent
-//                              parities), color-singlet pairing (the 1 ⊕ 8
-//                              split of the caller-assembled pair
-//                              bilinear), and zero total winding/baryon
-//                              flux; diquark = two certified quarks, even
-//                              parity, a certified Λ²C³ anti-triplet
-//                              wedge occupation (#780 Gram determinant —
-//                              exactly zero for duplicated color modes),
-//                              and the PRESERVED constituent baryon flux
-//                              B = 2/3 (≠ an antiquark's −1/3; occupation
-//                              two and even parity are the recorded
-//                              distinction channels, exactly the #773
-//                              anti-triplet fixture).
-//   • BoundCandidateEvidence / BoundSupercomponentRead
-//                            — the #775 bound-supercomponent search
-//                              search: enumerate the NEXT
-//                              modular level for components containing
-//                              exactly three certified quark candidates
-//                              whose #765 persistence windows overlap and
-//                              whose mutual #770 transports stay bounded
-//                              inside the supercomponent.
-//   • ScaleProfileSample / ScaleProfileRead
-//                            — the #775 refinement-window read over the
-//                              EXISTING #575/#566/#593 mass-radius
-//                              battery (`InteriorHinges` via
-//                              `RegisterContext::interiorHinges`): a
-//                              finite emergent radius plus the
-//                              refinement stability of the DIMENSIONLESS
-//                              channels.  See "The form-factor situation"
-//                              below — nothing here is a form factor.
-//   • BaryonCandidateEvidence / BaryonRead
-//                            — the #775 THREE-cluster classifier and the
-//                              complete proton certificate: the invariant
-//                              color volume det C and Gram determinant
-//                              det(C†C), the independent vanishing
-//                              net-color-flux diagnostic, summed certified
-//                              determinant winding and exterior parity,
-//                              the reused #773 flavor/charge reads, the
-//                              #772 Berry-cancelled 2π character and spin
-//                              lift, and the SHARP total-space spin
-//                              certificate ⟨J²⟩ = 3/4 with Var(J²) ≈ 0
-//                              evaluated by exact Wick contraction on the
-//                              #780 covariance layer.  Four verdicts:
-//                              "no-baryon", "baryon-candidate",
-//                              "certified-proton", and
-//                              "quasi-free-sharp-spin-obstruction".
-//   • QuarkCandidateEvidence — the assembled evidence bundle: every field
-//                              is a read produced by the merged upstream
-//                              kernels (#765/#767/#769/#770/#772/#780);
-//                              nothing is recomputed here.
-//   • QuarkRead              — the spec §6.8 particle read (spec field
-//                              names preserved), plus the additive evidence
-//                              summary the classification consumed, the
-//                              recorded thresholds, and the #764
-//                              certificate.  Unknown or uncertified values
-//                              are NULL (empty optional / NaN / 0 for the
-//                              sign-valued ints), never zero-filled.
+// ─── Contents ────────────────────────────────────────────────────────────
+//
+//   • ParticleClusters       — the classifier: quarks and antiquarks, the
+//                              even-parity sector (octet bilinear read,
+//                              gluon/meson/diquark candidates), and the
+//                              three-cluster sector (bound-supercomponent
+//                              search, color singlet, proton certificate).
+//   • QuarkCandidateEvidence / QuarkRead
+//                            — the per-candidate evidence bundle and the
+//                              quark/antiquark verdict.
 //   • FlavorDoubletRead      — the emergent transported two-state spectral
-//                              subclass (searched WITHOUT a requested
-//                              dimension).
-//   • GaussFluxRead          — the nested-enclosing-surface consistency
-//                              read over the EXISTING
-//                              EigenstateSynthesis::gaussLawCharge.
-//   • ConjugatePairRead      — pair-conservation verification of a
-//                              certified conjugate creation homotopy.
+//                              subclass, searched without a requested
+//                              dimension.
+//   • GaussFluxRead          — electric flux consistency across nested
+//                              enclosing surfaces.
+//   • ConjugatePairRead      — pair conservation of a conjugate creation
+//                              homotopy.
+//   • OctetBilinearRead      — the quasi-free 1 ⊕ 8 read of three declared
+//                              color modes of a covariance.
+//   • GluonCandidateEvidence / GluonRead
+//                            — the octet-excitation verdict.  "Candidate" is
+//                              the strongest claim emitted; no even octet
+//                              excitation is classified a physical gluon.
+//   • CompositeCandidateEvidence / MesonRead / DiquarkRead
+//                            — the two-cluster composite verdicts.
+//   • BoundCandidateEvidence / BoundSupercomponentRead
+//                            — the bound-supercomponent search.
+//   • ScaleProfileSample / ScaleProfileRead
+//                            — the refinement-window scale certificate.
+//                              Nothing here is a form factor; see below.
+//   • BaryonCandidateEvidence / BaryonRead
+//                            — the three-cluster verdict and the proton
+//                              certificate.
 //
-// ─── Exact identities / certified combinations, and their domains ───────
+// Every field is a read produced by an upstream kernel; nothing is
+// recomputed here.  Unknown or uncertified values are null throughout (an
+// empty optional, NaN, or a 0 sign for the sign-valued ints), never
+// zero-filled, and every gap is named in the read's `failedCertificates`.
 //
-//   • The classification verdict is an exact boolean combination of
-//     CONSUMED certificates (a StructureExact claim: exact GIVEN the
-//     verified upstream certificates; the residual reported is the maximum
-//     residual of the held certificates it consumed).  No anchor, band,
-//     transport, winding, parity, or Wick quantity is recomputed here —
-//     recomputing any of them would fork the upstream kernels.
-//   • Exterior parity and total occupation are the #780 Wick reads on the
-//     candidate's carried quasi-free state: ⟨(−1)^N⟩ = det(I − 2Γ) and
-//     ⟨N⟩ = tr Γ — algebraically exact on the covariance (the #766 grading
-//     evaluated through the quasi-free layer).  Domain: the caller's
-//     carried CovarianceState for the component's modes.
-//   • Baryon flux: B = ν/3 with ν the CERTIFIED determinant-line winding
-//     of #770 (closed full-rank gapped family, or an open cobordism
-//     segment closed by its RECORDED matched-reference / boundary-register
-//     trivialization — `DeterminantWindingRead::windingClosure` travels on
-//     the QuarkRead).  A raw endpoint phase is never baryon-flux evidence:
-//     with no certified winding the flux is unknown (null), never zero.
-//     The quark/antiquark verdict additionally requires ν = ±1; a
-//     certified ν = 0 is a certified ZERO flux (needed by the #774 gluon
-//     sector), not a quark.
-//   • Quark vs antiquark = determinant-line ORIENTATION (the sign of ν;
-//     reversing the world-tube reverses it and transports in the dual
-//     color representation), never the color representation alone: the
-//     Λ²C³ anti-triplet of two quarks is excluded by its EVEN parity and
-//     total occupation two, exactly the whitepaper distinction.
-//   • The Gauss-flux electric read REUSES
-//     `cobordism::EigenstateSynthesis::gaussLawCharge` verbatim on a
-//     family of nested enclosing surfaces (closed stars of nested vertex
-//     sets); the flux sum is algebraically exact in the supplied
-//     field-strength 2-cochain, and the consistency claim is the measured
-//     max deviation across the surfaces.
-//   • Q = I3 + B/2 (the Gell-Mann–Nishijima relation on the accepted
-//     doublet hypothesis) is TESTED, never asserted: only when baryon
-//     flux, the emergent flavor doublet, and the Gauss read are all
-//     independently certified, and a pass is recorded as the PROPOSED u/d
-//     identification (`udIdentificationProposed`), not a charge
-//     definition.
+// ─── Exact identities and their domains ──────────────────────────────────
 //
-// ─── #775: the three-cluster (baryon / proton) identities ────────────────
+//   • The verdict is an exact boolean combination of consumed certificates
+//     (a StructureExact claim; the reported residual is their maximum).
+//   • Exterior parity and total occupation are Wick reads on the candidate's
+//     carried quasi-free state: ⟨(−1)^N⟩ = det(I − 2Γ) and ⟨N⟩ = tr Γ,
+//     algebraically exact on the covariance.  Domain: the caller's carried
+//     CovarianceState for the component's modes.
+//   • Baryon flux B = ν/3, with ν the certified determinant-line winding of
+//     a closed full-rank gapped family, or of an open cobordism segment
+//     closed by its recorded matched-reference or boundary-register
+//     trivialization (`DeterminantWindingRead::windingClosure` travels on
+//     the QuarkRead).  A raw endpoint phase is not evidence: with no
+//     certified winding the flux is unknown (null), never zero.  The
+//     quark/antiquark verdict also requires ν = ±1; a certified ν = 0 is a
+//     certified zero flux (used by the gluon sector), not a quark.
+//   • Quark vs antiquark is determinant-line orientation (the sign of ν;
+//     reversing the world-tube reverses it and transports in the dual color
+//     representation), never the color representation alone: the Λ²C³
+//     anti-triplet of two quarks is excluded by its even parity and total
+//     occupation two.
+//   • The Gauss-flux electric read applies
+//     `cobordism::EigenstateSynthesis::gaussLawCharge` to nested enclosing
+//     surfaces (closed stars of nested vertex sets); the flux sum is
+//     algebraically exact in the supplied field-strength 2-cochain, and the
+//     consistency claim is the measured max deviation across surfaces.
+//   • Q = I3 + B/2, the Gell-Mann–Nishijima relation on the accepted doublet
+//     hypothesis, is tested rather than asserted: only when baryon flux, the
+//     emergent flavor doublet and the Gauss read are independently certified,
+//     and a pass is recorded as the proposed u/d identification
+//     (`udIdentificationProposed`), not a charge definition.
 //
-//   • Invariant color volume: S_ABC = det[c_A c_B c_C] = ε_ijk c_A^i c_B^j
-//     c_C^k, delegated VERBATIM to `ColorFiber::colorWedge`; invariant
-//     under a common g ∈ SU(3) because det(gC) = det(g) det(C) = det(C).
-//     Its squared magnitude is the singlet Gram certificate
-//     |S_ABC|² = det(C†C) ∈ [0, 1] (`ColorFiber::singletGram`) — exactly
-//     one for an orthonormal anchored triad, exactly zero for duplicated
-//     color modes (the Pauli/Gram alternation).  Domain: three normalized
-//     color columns.
-//   • THE WEDGE IS BUILT ONCE.  The antisymmetry of the three-mode wedge
-//     IS the ε tensor inside the determinant: no extra fermion permutation
-//     sign is ever multiplied onto it.  A transposition of two color
-//     columns therefore flips `colorWedge` (det C) and leaves the SINGLET
-//     certificate det(C†C) = |det C|² exactly invariant; the composite's
-//     fermionic statistics come from the graded product of the three
-//     CONSTITUENT parities, never from re-signing the wedge.
+// ─── Three-cluster (baryon / proton) identities ──────────────────────────
+//
+//   • Invariant color volume S_ABC = det[c_A c_B c_C] = ε_ijk c_A^i c_B^j
+//     c_C^k (`ColorFiber::colorWedge`), invariant under a common g ∈ SU(3)
+//     because det(gC) = det(g) det(C) = det(C).  Its squared magnitude is
+//     the singlet Gram certificate |S_ABC|² = det(C†C) ∈ [0, 1]
+//     (`ColorFiber::singletGram`): exactly one for an orthonormal anchored
+//     triad, exactly zero for duplicated color modes.  Domain: three
+//     normalized color columns.
+//   • The wedge is built once.  Its antisymmetry is the ε tensor inside the
+//     determinant, so no extra fermion permutation sign is multiplied onto
+//     it.  Transposing two color columns flips `colorWedge` (det C) and
+//     leaves det(C†C) = |det C|² invariant; the composite's fermionic
+//     statistics come from the graded product of the three constituent
+//     parities.
 //   • Net color flux: the octet (traceless) Frobenius weight
 //     ‖M − (Tr M/3) I‖_F² of the bound object's color bilinear
-//     M_ij = ⟨a_i†a_j⟩ under the exact 1 ⊕ 8 split — the #774
-//     `octetBilinearRead` REUSED, not re-derived.  Zero octet weight = no
-//     net color polarization.  This is an INDEPENDENT diagnostic on a
-//     FINITE complex: it is deliberately not presented, by itself, as a
-//     proof of confinement, and no method here makes that claim.
-//   • Composite baryon flux: ν = ν_A + ν_B + ν_C over the three CERTIFIED
-//     determinant windings (each carrying its own recorded #770 closure
-//     specification), provisionally B = ν/3 — so a certified proton reads
-//     ν = 3 ⇒ B = +1.  An uncertified leg leaves the total UNKNOWN (null),
-//     never zero: the closure specification is part of the certificate
-//     (spec §5.11), and this class only ever sums integers that already
-//     carry one.
-//   • Composite exterior parity: the exact graded product of the three
-//     certified constituent parities (parity adds mod 2) — odd for three
-//     odd clusters.  Unknown when any constituent parity is uncertified.
-//   • Flavor / charge: the #773 constituent reads CONSUMED VERBATIM.  The
+//     M_ij = ⟨a_i†a_j⟩ under the 1 ⊕ 8 split, from `octetBilinearRead`.
+//     Zero octet weight means no net color polarization.  An independent
+//     diagnostic on a finite complex, not by itself a proof of confinement.
+//   • Composite baryon flux ν = ν_A + ν_B + ν_C over the three certified
+//     determinant windings, each carrying its own closure specification,
+//     with B = ν/3 — a certified proton reads ν = 3, B = +1.  An uncertified
+//     leg leaves the total unknown (null), never zero; only integers already
+//     carrying a closure specification are summed.
+//   • Composite exterior parity: the graded product of the three certified
+//     constituent parities (parity adds mod 2), odd for three odd clusters.
+//     Unknown when any constituent parity is uncertified.
+//   • Flavor and charge: the constituent reads are consumed verbatim.  The
 //     `uud` pattern is the certified-isospin multiset {+1/2, +1/2, −1/2}
-//     under each constituent's own recorded doublet orientation, and the
-//     electric flux is the sum of the three CERTIFIED Gauss-consistent
-//     constituent fluxes (2/3 + 2/3 − 1/3 = +1 for a proton).  Nothing is
-//     re-derived and no u/d label is inserted.
+//     under each constituent's recorded doublet orientation, and the
+//     electric flux is the sum of the three certified Gauss-consistent
+//     constituent fluxes (2/3 + 2/3 − 1/3 = +1 for a proton).  No u/d label
+//     is inserted.
 //   • Sharp total-space spin: ⟨J²⟩ = Σ_α ⟨dΓ(J_α)²⟩ and
-//     Var(J²) = ⟨(J²)²⟩ − ⟨J²⟩², both exact finite Wick sums on the #780
+//     Var(J²) = ⟨(J²)²⟩ − ⟨J²⟩², both exact finite Wick sums on the
 //     covariance (`CovarianceState::wickSpinSquaredExpectation` /
-//     `wickSpinSquaredVariance`) — the TOTAL-SPACE operator, never a
-//     product of per-hole or per-edge spinors.  A candidate carried as an
-//     explicit composite state instead supplies the #772 dense oracle
-//     (`ExchangeHolonomy::totalJSquared`), which certifies ⟨J²⟩ and leaves
-//     Var(J²) UNKNOWN — expectation alone is never a sharp-spin
-//     certificate (spec §5.12).
-//   • The reference-normalized 2π character is the #772 `rotationCharacter`
-//     read (channel `PhysicalRotation`), required at characterSign = −1;
-//     the SO(d) → Spin(d) lift is required only when the caller declares a
-//     CONTINUUM spin claim (spec §16.4: "accepted when a continuum spin
-//     claim is made").  The #772 PARTICLE-EXCHANGE channel is reused as a
-//     REPORT channel only — `exchangeCharacter` and the doubly cancelled
-//     spin-statistics ratio χ̂(exchange)·χ̂(2π)^{-1} travel on the read,
-//     but neither the ticket's proton-certificate list nor spec §16.4
-//     carries an exchange row, so neither gates the verdict.  A read
-//     tagged with the wrong channel is refused, never reinterpreted.
-//   • Verdicts (spec §16.4): "no-baryon" when the structural gates fail;
-//     "certified-proton" when every certificate in the table holds;
-//     "quasi-free-sharp-spin-obstruction" when the ONLY failure is
-//     `sharp-spin`, the candidate's OWN Var(J²) was MEASURED (an absent
-//     variance is an unknown, never an obstruction), and the accepted
-//     covariance-only class was swept with its Var(J²) floor staying above
-//     tolerance; "baryon-candidate" otherwise.
-//     The obstruction is a BRANCH POINT mandating an explicit non-Gaussian
-//     mechanism (its own scope decision and ticket) — never a refutation of
-//     the geometry, and nothing here silently adds such a mechanism.
+//     `wickSpinSquaredVariance`) — the total-space operator, not a product
+//     of per-hole or per-edge spinors.  A candidate carried as an explicit
+//     composite state instead supplies `ExchangeHolonomy::totalJSquared`,
+//     which certifies ⟨J²⟩ and leaves Var(J²) unknown: expectation alone is
+//     not a sharp-spin certificate.
+//   • The reference-normalized 2π character is the `rotationCharacter` read
+//     (channel `PhysicalRotation`), required at characterSign = −1.  The
+//     SO(d) → Spin(d) lift is required only when the caller declares a
+//     continuum spin claim.  The particle-exchange channel reports only:
+//     `exchangeCharacter` and the doubly cancelled spin-statistics ratio
+//     χ̂(exchange)·χ̂(2π)^{-1} travel on the read but gate nothing.  A read
+//     tagged with the wrong channel is refused.
+//   • Verdicts: "no-baryon" when a structural gate fails; "certified-proton"
+//     when every certificate holds; "quasi-free-sharp-spin-obstruction" when
+//     the only failure is `sharp-spin`, the candidate's own Var(J²) was
+//     measured (an absent variance is unknown, not an obstruction), and the
+//     accepted covariance-only class was swept with its Var(J²) floor above
+//     tolerance; "baryon-candidate" otherwise.  The obstruction is a branch
+//     point calling for an explicit non-Gaussian mechanism, not a refutation
+//     of the geometry, and nothing here adds such a mechanism.
 //
-// ─── the form-factor situation (stated plainly) ──────────────────────────
+// ─── Form factors ────────────────────────────────────────────────────────
 //
-// The whitepaper asks for "a finite radius and stable crossing-mass and
-// form-factor readouts, in the world-tube-crossing sense".  Two DIFFERENT
-// things answer that, and they are not interchangeable.
+// Two different observables bear on a finite radius and stable
+// crossing-mass readouts; they are not interchangeable.
 //
-// `CrossingReadouts` implements the whitepaper's readout section directly:
-// the crossing mass m_x = kappa_m sum |pi_perp|, the coherent one-third
-// baryon sum, and the spectral charge-power profile, each a DIFFERENCE
-// against M0.  They reach the baryon verdict through
-// `BaryonCandidateEvidence::crossingMass` / `crossingBaryon` and the
-// `crossing-readouts` gate, which is APPLICABLE-GATED exactly like
+// `CrossingReadouts` supplies the crossing readouts: the crossing mass
+// m_x = kappa_m sum |pi_perp|, the coherent one-third baryon sum, and the
+// spectral charge-power profile, each a difference against M0.  They reach
+// the baryon verdict through `BaryonCandidateEvidence::crossingMass` /
+// `crossingBaryon` and the `crossing-readouts` gate, applicable-gated like
 // `spin-lift`: absent evidence passes vacuously, supplied evidence is
-// ENFORCED.  Even there the ELECTROMAGNETIC form factor G_E stays
-// UNAVAILABLE — it needs a certified conserved U(1) current and certified
-// momentum-transfer states, neither of which exists in this tree, so
-// `ElectromagneticFormFactorRead` NAMES those missing certificates and the
-// charge radius is refused rather than inferred.  The spectral
-// charge-power profile is an incoherent structure factor and is NEVER
-// substituted for it.
+// enforced.  The electromagnetic form factor G_E stays unavailable — it
+// needs a certified conserved U(1) current and certified momentum-transfer
+// states, neither of which exists in this tree, so
+// `ElectromagneticFormFactorRead` names those missing certificates and the
+// charge radius is refused rather than inferred.  The spectral charge-power
+// profile is an incoherent structure factor, never a substitute for G_E.
 //
-// What the REFINEMENT certificate below consumes is a different and older
-// thing: the EXISTING #575/#566/#593 mass-radius battery (`InteriorHinges`,
-// read through `RegisterContext::interiorHinges`, exactly what
-// `EmergentRadius` / `EmergentMass` read):
+// The refinement certificate below consumes the mass-radius battery instead
+// (`InteriorHinges` through `RegisterContext::interiorHinges`, exactly what
+// `EmergentRadius` / `EmergentMass` read): the emergent radius
+// r = V_dual^{1/4} (dimensionful, lattice units — only its finiteness is
+// certified); the mean interior deficit angle m_shell (an angle, so
+// dimensionless in lattice units) as the spectral-mass channel; the
+// participation ratio of the curvature weight; and `radialWeightProfile`,
+// the share of the |Re ε · ★h| curvature weight per breadth-first shell — a
+// normalized radial curvature-weight density.
 //
-//   • the emergent radius r = V_dual^{1/4} (DIMENSIONFUL, lattice units —
-//     only its FINITENESS is certified, never an absolute value);
-//   • the mean interior deficit angle m_shell (an angle: dimensionless in
-//     lattice units) as the spectral-mass channel;
-//   • the participation ratio of the curvature weight; and
-//   • `radialWeightProfile` — the per-BFS-shell share of the |Re ε · ★h|
-//     curvature weight: a normalized RADIAL CURVATURE-WEIGHT DENSITY.
+// `radialWeightProfile` is not a form factor: no charge radius is extracted
+// from a slope at q² → 0, and the profiled density is curvature weight
+// rather than electromagnetic charge.  Its certificate, `profile-stability`,
+// certifies only a refinement-stable dimensionless radial profile.
 //
-// `radialWeightProfile` is NOT a form factor.  No charge radius is
-// extracted from a slope at q² → 0 here, and the profiled density is
-// CURVATURE weight, not electromagnetic charge.  The certificate it grades
-// is named `profile-stability`, never "form-factor": it certifies only "a
-// refinement-stable dimensionless radial profile".  The whitepaper's
-// momentum-transfer observable lives in `CrossingReadouts` above, on a
-// charge density built from world-tube crossings, and even that one is the
-// incoherent spectral power rather than G_E.
-//
-// Any DIMENSIONFUL mass stays UNKNOWN: `ScaleProfileRead::physicalMass` and
-// `BaryonRead::physicalMass` are ALWAYS empty, because converting a
+// Any dimensionful mass stays unknown: `ScaleProfileRead::physicalMass` and
+// `BaryonRead::physicalMass` are always empty, because converting a
 // deficit-angle reading into a physical mass needs a physical scale this
 // program has not independently established.  The crossing mass is likewise
-// UNCALIBRATED by default (`CrossingReadoutsConfig::kappaMass` ships at 1.0
+// uncalibrated by default (`CrossingReadoutsConfig::kappaMass` ships at 1.0
 // with `massCalibrated` false), so `BaryonRead::crossingMassValue` is a
-// ratio-only quantity and never a physical mass either.
+// ratio-only quantity and not a physical mass.
 //
-// ─── Thresholds ──────────────────────────────────────────────────────────
+// ─── Thresholds and boundaries ───────────────────────────────────────────
 //
-// "Exact" is exact where algebraic; every ACCEPTANCE threshold here is an
+// "Exact" is exact where algebraic; every acceptance threshold is an
 // analysis parameter (`ParticleClustersConfig`), echoed verbatim on every
 // read (`QuarkRead::thresholds`) so a checkpoint carries the configuration
 // that produced its verdicts.
 //
-// ─── Boundaries ──────────────────────────────────────────────────────────
-//
-// Read-only observable: consumes caller-assembled reads, never calls a
-// solver, never mutates the spacetime (the Gauss adapter constructs a
-// degree-2 EigenstateSynthesis solely for its documented read-only
-// charge/curvature entry points), and NOTHING here enters any emergence
-// objective.  No "quark = hole", no hard-coded u/d labels, no baryon
+// Read-only observable: it consumes caller-assembled reads, never calls a
+// solver and never mutates the spacetime (the Gauss adapter constructs a
+// degree-2 EigenstateSynthesis solely for its read-only charge and curvature
+// entry points).  No "quark = hole", no hard-coded u/d labels, no baryon
 // number without determinant-winding evidence, and no rank-three band is
-// called a quark without its anchor, parity, persistence, and leakage
-// certificates — a missing certificate is NAMED in `failedCertificates`.
-// No proton certificate, and no quantity derived from one, enters any
-// emergence objective; software completion is not evidence that an unforced
-// proton exists.
+// called a quark without its anchor, parity, persistence and leakage
+// certificates.  No output, and no quantity derived from one, enters any
+// emergence objective.
 
 #include <array>
 #include <complex>
@@ -335,16 +227,14 @@ namespace tessera::cobordism {
 }
 namespace tessera::observables {
 
-class RegisterContext;  // the #593 validated read context (RegisterContext.h)
+class RegisterContext;  // the validated read context (RegisterContext.h)
 
-/// Analysis thresholds of the particle classification (#773).  Every value
-/// selects which reads are CERTIFIED, never which value is reported, and
-/// the whole configuration is echoed on every read
-/// (`QuarkRead::thresholds`) per the "classification thresholds are
-/// configuration, recorded in every read" contract.
+/// Analysis thresholds of the particle classification.  Every value selects
+/// which reads are certified, never which value is reported, and the whole
+/// configuration is echoed on every read (`QuarkRead::thresholds`).
 struct ParticleClustersConfig {
-  /// |⟨(−1)^N⟩ ∓ 1| cap for a definite exterior-parity sign (the #780
-  /// Wick parity is exact on the covariance; this absorbs rounding).
+  /// |⟨(−1)^N⟩ ∓ 1| cap for a definite exterior-parity sign.  The Wick
+  /// parity is exact on the covariance; this absorbs rounding.
   double parityTolerance = 1e-9;
   /// |⟨N⟩ − 1| cap for the single-fermion occupation certificate (the
   /// total-occupation channel distinguishing an antiquark from the
@@ -354,38 +244,30 @@ struct ParticleClustersConfig {
   double minAnchorScore = 0.5;
   /// Determinant-phase coherence floor of the anchor profile (∈ [0, 1]).
   double minPhaseCoherence = 0.5;
-  /// Cap on the worst lifetime transport leakage (the #770 regime-
-  /// appropriate isometry defect); mirrors
-  /// `FiberConnectionConfig::leakageTolerance`.
+  /// Cap on the worst lifetime transport leakage (the regime-appropriate
+  /// isometry defect); mirrors `FiberConnectionConfig::leakageTolerance`.
   double maxTransportLeakage = 1e-6;
-  /// Minimum persistence lifetime: the number of COBORDISM FRAMES the
+  /// Minimum persistence lifetime: the number of cobordism frames the
   /// candidate was tracked through
-  /// (`QuarkCandidateEvidence::frameLifetime`, supplied by
-  /// `PersistentModularity::trackAcrossFrames`) — the whitepaper conjunct
-  /// "lifetime across multiple cobordism frames".  The modularity
-  /// RESOLUTION-slice lifetime is a different quantity: it is reported
-  /// beside this one and never gates, because a modularity read may not
-  /// veto an otherwise certified fiber.
+  /// (`QuarkCandidateEvidence::frameLifetime`, from
+  /// `PersistentModularity::trackAcrossFrames`).  The modularity
+  /// resolution-slice lifetime is a different quantity, reported beside
+  /// this one and never gating: a modularity read may not veto an
+  /// otherwise certified fiber.
   double minPersistenceLifetime = 2.0;
-  /// Minimum adjacent-FRAME support overlap along the cobordism-frame
-  /// track (the whitepaper conjunct "overlap with its predecessor and
-  /// successor components").
+  /// Minimum adjacent-frame support overlap along the cobordism-frame
+  /// track: overlap with the predecessor and successor components.
   double minPersistenceOverlap = 0.5;
-  /// Band-localization floor (inverse participation ratio of the color
-  /// band, ∈ [1/n, 1/rank]).  The whitepaper's localization conjunct is
-  /// enforced UPSTREAM, in fiber acceptance
-  /// (`SpectralFiberConfig::maxLocalizationExcess`), so a
-  /// delocalized band never arrives here accepted; this floor remains as
-  /// an additional analysis knob and its default 0 adds nothing beyond the
-  /// upstream conjunct (an unmeasured NaN still fails).
+  /// Band-localization floor: the inverse participation ratio of the color
+  /// band, ∈ [1/n, 1/rank].  Localization is already enforced in fiber
+  /// acceptance (`SpectralFiberConfig::maxLocalizationExcess`), so the
+  /// default 0 adds nothing; an unmeasured NaN still fails.
   double minLocalization = 0.0;
   /// Minimum band subspace overlap across a refinement for the
   /// refinement-stability certificate.
   double minRefinementOverlap = 0.9;
-  /// Minimum number of FRAMES a "stable" quark condition must hold at.
-  /// The whitepaper's conditions two and three ("its selected color fiber
-  /// has STABLE rank three"; "its calibrated triangle-anchor profile and
-  /// determinant-line coherence are STABLE") are across-frame statements,
+  /// Minimum number of frames a stable quark condition must hold at.  Rank
+  /// stability and anchor/coherence stability are across-frame statements,
   /// so a single frame can never establish them.
   std::size_t minStabilityFrames = 2;
   /// Subspace-overlap threshold of the flavor-doublet tracking (passed to
@@ -403,52 +285,48 @@ struct ParticleClustersConfig {
   /// |Q_gauss − (I3 + B/2)| cap for the proposed u/d identification.
   double udTolerance = 1e-9;
 
-  // ── #774 even-sector thresholds ────────────────────────────────────────
+  // ── even-sector thresholds ─────────────────────────────────────────────
 
   /// Floor on the octet Frobenius weight ‖M − (Tr M/3) I‖_F² of a gluon
-  /// candidate's bilinear — a genuinely nonzero color polarization (the
-  /// vacuum reads exactly zero and fails by name).
+  /// candidate's bilinear: a nonzero color polarization.  The vacuum reads
+  /// exactly zero and fails by name.
   double minOctetWeight = 1e-9;
   /// Cap on the octet-projector residual ‖(I₉ − P₈) vec(M₈)‖ / ‖M₈‖_F of
-  /// the excitation: the traceless bilinear lies in the 8 EXACTLY (the
-  /// residual is rounding), so this is a machine-precision certificate.
+  /// the excitation.  The traceless bilinear lies in the 8 exactly, so the
+  /// residual is rounding and this is a machine-precision certificate.
   double octetPurityTolerance = 1e-9;
   /// Cap on the octet fraction octet/(octet + singlet) of a meson's pair
-  /// color bilinear — the color-SINGLET certificate of the q-q̄ composite.
+  /// color bilinear — the color-singlet certificate of the q-q̄ composite.
   double compositeOctetTolerance = 1e-9;
   /// Floor on the certified Λ²C³ anti-triplet wedge occupation
-  /// det(C†ΓC) ∈ [0, 1] of a diquark candidate (exactly 1 for the
-  /// two-orthonormal-column Slater fixture, exactly 0 for a duplicated
-  /// color mode — the Pauli/Gram identity).
+  /// det(C†ΓC) ∈ [0, 1] of a diquark candidate: 1 for two orthonormal
+  /// columns, 0 for a duplicated color mode.
   double minAntiTripletWeight = 0.5;
 
-  // ── #775 baryon / proton thresholds ────────────────────────────────────
+  // ── baryon / proton thresholds ─────────────────────────────────────────
 
-  /// |det(C†C) − 1| cap of the COLOR-SINGLET certificate of the three
-  /// normalized anchored color columns (`ColorFiber::singletGram`):
-  /// exactly 1 for an orthonormal triad, exactly 0 for duplicate color
-  /// modes, so this only absorbs rounding.
+  /// |det(C†C) − 1| cap of the color-singlet certificate of the three
+  /// normalized anchored color columns (`ColorFiber::singletGram`).  The
+  /// value is 1 for an orthonormal triad and 0 for duplicate color modes,
+  /// so this only absorbs rounding.
   double colorGramTolerance = 1e-9;
-  /// Cap on the composite's NET COLOR FLUX — the octet (traceless)
-  /// Frobenius weight of the bound object's color bilinear.  An
-  /// INDEPENDENT confinement diagnostic on a finite complex, never a
-  /// proof of confinement on its own.
+  /// Cap on the composite's net color flux: the octet (traceless)
+  /// Frobenius weight of the bound object's color bilinear.
   double colorFluxTolerance = 1e-9;
   /// |⟨J²⟩ − 3/4| cap of the total-space spin expectation.
   double spinExpectationTolerance = 1e-9;
-  /// |Var(J²)| cap of the SHARP-spin certificate: the
-  /// quantity that separates a proton certificate from an accidental
-  /// expectation value.
+  /// |Var(J²)| cap of the sharp-spin certificate, the quantity separating
+  /// a proton certificate from an accidental expectation value.
   double spinVarianceTolerance = 1e-9;
   /// Minimum fraction of a constituent's level-0 support that must lie
   /// inside a candidate supercomponent (1.0 = full containment).
   double minSupportContainment = 1.0;
-  /// Minimum number of SHARED persistence slices across the three
-  /// constituents' #765 lifetime windows.
+  /// Minimum number of shared persistence slices across the three
+  /// constituents' lifetime windows.
   double minLifetimeOverlap = 1.0;
   /// Strict floor a finite emergent radius must exceed.
   double minRadius = 0.0;
-  /// Cap on the deviation of every DIMENSIONLESS scale channel across the
+  /// Cap on the deviation of every dimensionless scale channel across the
   /// configured refinement window (relative spread for the scalars,
   /// max absolute per-shell deviation for the radial weight profile).
   double maxProfileDeviation = 1e-6;
@@ -456,16 +334,14 @@ struct ParticleClustersConfig {
 
 /// # GaussFluxRead
 ///
-/// The electric Gauss-flux consistency read over nested enclosing surfaces
-/// (#773 scope: "reuse the existing Gauss-flux read on nested enclosing
-/// surfaces").  Each per-surface flux is the EXISTING
-/// `cobordism::EigenstateSynthesis::gaussLawCharge` value — an
-/// orientation-signed sum of the supplied field-strength 2-cochain over
-/// the closed star boundary of one enclosed vertex set, restricted to the
+/// The electric Gauss-flux consistency read over nested enclosing surfaces.
+/// Each per-surface flux is a
+/// `cobordism::EigenstateSynthesis::gaussLawCharge` value: an
+/// orientation-signed sum of the supplied field-strength 2-cochain over the
+/// closed star boundary of one enclosed vertex set, restricted to the
 /// electric (timelike-leg) plaquettes when `electricOnly`.  Charge is
-/// certified only when the read is CONSISTENT across the surfaces; an
-/// inconsistent or single-surface read reports an unknown flux (null),
-/// never zero.
+/// certified only when the surfaces agree; an inconsistent or
+/// single-surface read reports an unknown flux.
 struct GaussFluxRead {
   /// The per-surface complex fluxes, in the nested-surface input order.
   std::vector<std::complex<double>> fluxes{};
@@ -475,17 +351,17 @@ struct GaussFluxRead {
   bool electricOnly = true;
   /// Max |flux_i − flux_j| over all surface pairs (0 for < 2 surfaces).
   double maxDeviation = std::numeric_limits<double>::quiet_NaN();
-  /// Max |Im flux_i| — the imaginary leakage of the real-by-construction
-  /// electric charge (never silently discarded).
+  /// Max |Im flux_i|: the imaginary leakage of the real-by-construction
+  /// electric charge, never silently discarded.
   double imagLeakage = std::numeric_limits<double>::quiet_NaN();
   /// Whether the read met `gaussTolerance` across at least
   /// `minEnclosingSurfaces` surfaces.
   bool consistent = false;
-  /// The consistent electric flux: Re(mean of the per-surface values)
-  /// when `consistent`; EMPTY (unknown) otherwise — never a default zero.
+  /// The consistent electric flux: Re(mean of the per-surface values) when
+  /// `consistent`; empty otherwise.
   std::optional<double> electricFlux{};
-  /// Names of the failed/missing consistency certificates ("" when
-  /// consistent): "gauss-consistency".
+  /// Names of the failed consistency certificates ("gauss-consistency";
+  /// empty when consistent).
   std::vector<std::string> failedCertificates{};
   /// AlgebraicallyExact (the flux sums are exact signed sums of the
   /// supplied cochain) with residual = max(maxDeviation, imagLeakage)
@@ -496,13 +372,12 @@ struct GaussFluxRead {
 /// # FlavorDoubletRead
 ///
 /// The emergent, unlabeled, transported two-state spectral subclass that
-/// could carry isospin (#773 scope).  The search runs
-/// WITHOUT a requested dimension: every stable transported subclass of the
-/// candidate's band enumeration is followed, and "two-state" is an
-/// OUTCOME (`stableSubclassRanks` reports every stable rank found).  The
-/// doublet's stored first-frame fiber is the RECORDED member
-/// trivialization — a compilation convention like a declared anchor
-/// weighting, never a physical u/d label.
+/// could carry isospin.  The search runs without a requested dimension:
+/// every stable transported subclass of the candidate's band enumeration is
+/// followed, and "two-state" is an outcome (`stableSubclassRanks` reports
+/// every stable rank found).  The stored first-frame fiber is the recorded
+/// member trivialization, a convention like a declared anchor weighting and
+/// not a physical u/d label.
 struct FlavorDoubletRead {
   /// Whether exactly one stable transported two-state subclass emerged.
   bool found = false;
@@ -516,18 +391,17 @@ struct FlavorDoubletRead {
   double minContinuationOverlap = std::numeric_limits<double>::quiet_NaN();
   /// Worst band isolation min(lowerGap, upperGap) along the winning track.
   double minIsolation = std::numeric_limits<double>::quiet_NaN();
-  /// Ranks of ALL stable full-length certified subclasses found, in
+  /// Ranks of all stable full-length certified subclasses found, in
   /// first-frame band order — the no-requested-dimension witness.
   std::vector<std::size_t> stableSubclassRanks{};
-  /// Number of stable TWO-state subclasses (found requires exactly one;
-  /// 2+ is an ambiguous doublet hypothesis and stays uncertified).
+  /// Number of stable two-state subclasses.  `found` requires exactly one;
+  /// two or more is an ambiguous doublet hypothesis and stays uncertified.
   std::size_t twoStateCount = 0;
-  /// The winning subclass's first-frame fiber — the recorded member
-  /// trivialization isospin occupancy is measured against.  Default-
-  /// constructed when not `found`.
+  /// The winning subclass's first-frame fiber: the trivialization isospin
+  /// occupancy is measured against.  Default-constructed when not `found`.
   SpectralFiber doublet{};
-  /// Names of the failed/missing certificates ("flavor-doublet" when the
-  /// doublet hypothesis is uncertified).
+  /// Names of the failed certificates ("flavor-doublet" when the doublet
+  /// hypothesis is uncertified).
   std::vector<std::string> failedCertificates{};
   /// Why the doublet is uncertified, when it is ("" when found):
   /// "insufficient-frames", "no-stable-two-state-subclass", or
@@ -541,74 +415,64 @@ struct FlavorDoubletRead {
 
 /// # QuarkCandidateEvidence
 ///
-/// The assembled evidence bundle of ONE candidate — every field is a read
-/// PRODUCED BY the merged upstream kernels; this header never recomputes
-/// any of them.  Unsupplied evidence (a default-constructed / NaN / empty
-/// field) is MISSING evidence: the corresponding certificate fails by
-/// name, it is never presumed to pass.
+/// The assembled evidence bundle of one candidate.  Unsupplied evidence (a
+/// default-constructed, NaN or empty field) fails its certificate by name.
 struct QuarkCandidateEvidence {
-  /// The candidate's #765 label-free identity.
+  /// The candidate's label-free identity.
   ComponentId component{};
-  /// The candidate's selected color band (#769) — the classifier only
-  /// reads its rank/acceptance/localization; rank three is REQUIRED,
-  /// never requested from the detector.  This is the REPORTED band; the
-  /// STABILITY of its rank is decided on `colorBandFrames`.
+  /// The candidate's selected color band.  The classifier reads only its
+  /// rank, acceptance and localization; rank three is required, never
+  /// requested from the detector.  Rank stability is decided on
+  /// `colorBandFrames`.
   SpectralFiber colorBand{};
-  /// The candidate's color band AT EACH COBORDISM FRAME of its tracked
+  /// The candidate's color band at each cobordism frame of its tracked
   /// lifetime, in frame order (`colorBand` is conventionally the first).
-  /// Whitepaper quark condition two — "its selected color fiber has STABLE
-  /// rank three" — is decided here: every frame's band accepted at rank
-  /// three AND consecutive frames CERTIFIED CONTINUATIONS
+  /// Stable rank three is decided here: every frame's band accepted at rank
+  /// three, consecutive frames certified continuations
   /// (`SpectralFiberTracker::matchFibers`: equal rank, both accepted,
-  /// subspace overlap at or above `doubletOverlapThreshold`), over at
-  /// least `minStabilityFrames` frames.  Fewer frames means the stability
-  /// was never measured: the certificate fails BY NAME rather than
-  /// silently falling back to a single-frame threshold test.
+  /// subspace overlap at or above `doubletOverlapThreshold`), over at least
+  /// `minStabilityFrames` frames.  With fewer frames the stability was
+  /// never measured and the certificate fails by name.
   std::vector<SpectralFiber> colorBandFrames{};
-  /// The #767 calibrated oriented-triangle anchor profile of `colorBand`
+  /// The calibrated oriented-triangle anchor profile of `colorBand`
   /// (`ColorAnchor::evaluate` output with its pre-declared weighting).
-  /// The REPORTED profile; its STABILITY is decided on `anchorFrames`.
+  /// The reported profile; its stability is decided on `anchorFrames`.
   AnchorProfile anchor{};
-  /// The candidate's anchor profile AT EACH COBORDISM FRAME, in frame
-  /// order (`anchor` is conventionally the first).  Whitepaper quark
-  /// condition three — "its calibrated triangle-anchor profile and
-  /// determinant-line coherence are STABLE" — is decided here: every
-  /// frame's profile certified, with its score and its OVERLAP-RESTRICTED
-  /// determinant-phase coherence above their floors, over at least
-  /// `minStabilityFrames` frames.  The measured across-frame spreads
-  /// travel on the read as diagnostics.
+  /// The candidate's anchor profile at each cobordism frame, in frame
+  /// order (`anchor` is conventionally the first).  Anchor and coherence
+  /// stability are decided here: every frame's profile certified, with its
+  /// score and its overlap-restricted determinant-phase coherence above
+  /// their floors, over at least `minStabilityFrames` frames.  The measured
+  /// across-frame spreads travel on the read as diagnostics.
   std::vector<AnchorProfile> anchorFrames{};
-  /// The candidate's lifetime transports (#770 world-tube family): every
+  /// The candidate's lifetime transports (the world-tube family): every
   /// link must be accepted with leakage under the configured cap.
   std::vector<FiberTransportRead> lifetimeTransports{};
-  /// The #770 determinant-line winding of the lifetime family: a closed
-  /// full-rank family, or an open cobordism segment under its RECORDED
-  /// closure specification.  An invalidated/unclosed winding leaves the
-  /// baryon flux unknown.
+  /// The determinant-line winding of the lifetime family: a closed
+  /// full-rank family, or an open cobordism segment under its recorded
+  /// closure specification.  Invalidated or unclosed leaves the baryon
+  /// flux unknown.
   DeterminantWindingRead winding{};
-  /// The #780 Wick parity ⟨(−1)^N⟩ of the candidate's carried quasi-free
-  /// state (`CovarianceState::wickParity`).
+  /// The Wick parity ⟨(−1)^N⟩ of the candidate's carried quasi-free state
+  /// (`CovarianceState::wickParity`).
   quantum::WickCertificateRead parityRead{};
-  /// The #780 Wick total occupation ⟨N⟩
-  /// (`CovarianceState::wickTotalNumber`).
+  /// The Wick total occupation ⟨N⟩ (`CovarianceState::wickTotalNumber`).
   quantum::WickCertificateRead occupationRead{};
-  /// #765 modularity RESOLUTION-slice lifetime (covered slices; NaN =
-  /// missing).  REPORT-ONLY: a resolution-scan count states how stable a
-  /// modularity proposal is under the resolution parameter, not how long
-  /// the candidate lived, and modularity may not veto a certified fiber.
+  /// Modularity resolution-slice lifetime (covered slices; NaN = missing).
+  /// Report-only: a resolution-scan count states how stable a modularity
+  /// proposal is under the resolution parameter, not how long the candidate
+  /// lived, and modularity may not veto a certified fiber.
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// #765 smallest adjacent-SLICE support overlap along the resolution
-  /// track.  REPORT-ONLY, for the same reason.
+  /// Smallest adjacent-slice support overlap along the resolution track.
+  /// Report-only, for the same reason.
   double persistenceMinOverlap = std::numeric_limits<double>::quiet_NaN();
-  /// COBORDISM-FRAME lifetime: consecutive frames the candidate was
+  /// Cobordism-frame lifetime: consecutive frames the candidate was
   /// tracked through (`FrameTrack::frames` from
-  /// `PersistentModularity::trackAcrossFrames`; NaN = missing).  THE GATED
-  /// quantity — the whitepaper's "lifetime across multiple cobordism
-  /// frames".
+  /// `PersistentModularity::trackAcrossFrames`; NaN = missing).  This is
+  /// the gated persistence quantity.
   double frameLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// Smallest adjacent-FRAME support overlap along that track
-  /// (`FrameTrack::minAdjacentOverlap`; NaN = missing) — the whitepaper's
-  /// "overlap with its predecessor and successor components".
+  /// Smallest adjacent-frame support overlap along that track
+  /// (`FrameTrack::minAdjacentOverlap`; NaN = missing).
   double frameMinOverlap = std::numeric_limits<double>::quiet_NaN();
   /// Band subspace overlap across a refinement
   /// (`SpectralFiber::overlap(...).subspaceOverlap` between the band and
@@ -622,8 +486,8 @@ struct QuarkCandidateEvidence {
   /// absent = occupancy unknown.
   std::optional<Eigen::Vector2cd> doubletOccupancy{};
   /// The declared doublet orientation s ∈ {+1, −1}: which member carries
-  /// I3 = +1/2 under the PROPOSED identification (a recorded convention,
-  /// like a declared anchor weighting — never a hidden label).
+  /// I3 = +1/2 under the proposed identification.  A recorded convention,
+  /// like a declared anchor weighting, not a hidden label.
   int doubletOrientation = +1;
   /// The nested-surface Gauss-flux read (`gaussFluxOnSurfaces`); absent =
   /// no charge evidence, charge unknown.
@@ -632,13 +496,10 @@ struct QuarkCandidateEvidence {
 
 /// # QuarkRead
 ///
-/// The quark/antiquark particle read, extended with the evidence summary the
-/// classification consumed, the recorded thresholds, and the #764
-/// certificate.  Unknown or uncertified values are NULL (empty optional;
-/// NaN for unmeasured doubles; 0 for the sign-valued ints), never zero-
-/// filled, and every gap is NAMED in `failedCertificates`.
+/// The quark/antiquark particle read: the verdict, the evidence summary the
+/// classification consumed, the recorded thresholds, and the certificate.
 struct QuarkRead {
-  /// The candidate's #765 label-free identity.
+  /// The candidate's label-free identity.
   ComponentId component{};
   /// Certified exterior parity: −1 (odd) / +1 (even) / 0 = unknown (an
   /// uncertified parity read never emits a sign).
@@ -656,42 +517,34 @@ struct QuarkRead {
   double anchorPhaseDispersion = std::numeric_limits<double>::quiet_NaN();
   /// The pre-declared anchor weighting rule ("uniform" / "declared").
   std::string anchorWeightingId{};
-  /// The certified determinant-line winding ν; EMPTY when the family was
-  /// invalidated or no closure was declared (spec §5.11).
+  /// The certified determinant-line winding ν; empty when the family was
+  /// invalidated or no closure was declared.
   std::optional<int> determinantWinding{};
   /// The recorded winding closure specification: "closed-family",
   /// "matched-reference", "endpoint-trivialization", or "none".
   std::string windingClosure{"none"};
   /// The caller's closure reference identifier ("" when none).
   std::string windingReferenceId{};
-  /// B = ν/3 under a CERTIFIED winding (a certified ν = 0 is a certified
-  /// zero flux); EMPTY (unknown) without the winding certificate — baryon
-  /// number is never inserted by definition.  The spec sketches this
-  /// field as a bare double; its own "unknown or uncertified values are
-  /// null, not zero" prose is encoded as the optional.
+  /// B = ν/3 under a certified winding (a certified ν = 0 is a certified
+  /// zero flux); empty without the winding certificate.
   std::optional<double> baryonFlux{};
   /// I3 = ±1/2 under the certified doublet hypothesis and the declared
-  /// orientation; EMPTY when the doublet is missing/unstable or the
+  /// orientation; empty when the doublet is missing or unstable, or the
   /// occupancy is not a definite member.
   std::optional<double> isospin{};
-  /// The Gauss-consistent electric flux; EMPTY unless BOTH the nested-
-  /// surface Gauss read is consistent AND the flavor doublet is certified
-  /// (#773 acceptance: a missing/unstable doublet yields unknown flavor
-  /// AND charge).
+  /// The Gauss-consistent electric flux; empty unless the nested-surface
+  /// Gauss read is consistent and the flavor doublet is certified, since a
+  /// missing doublet leaves both flavor and charge unknown.
   std::optional<double> electricFlux{};
-  /// Passed-fraction of the twelve core quark certificates (persistence,
-  /// localization, parity-odd, occupation-one, color-rank-three,
-  /// color-rank-stability, anchor, anchor-stability, transport-leakage,
-  /// winding, winding-unit, refinement-stability): 1.0 exactly when the
-  /// candidate is a certified quark/antiquark.
+  /// Passed-fraction of the twelve core quark certificates; 1.0 exactly
+  /// when the candidate is a certified quark or antiquark.
   double confidence = 0.0;
-  /// Names of every failed/missing certificate, in the fixed core order
-  /// then the flavor/charge order ("flavor-doublet", "isospin",
-  /// "gauss-consistency", "ud-identification").  Empty for a fully
-  /// certified u/d-identified quark.
+  /// Names of every failed or missing certificate, core order first then
+  /// flavor/charge order.  Empty for a fully certified, u/d-identified
+  /// quark.
   std::vector<std::string> failedCertificates{};
 
-  // ── additive evidence summary (consumed by #774/#775 unchanged) ──────
+  // ── evidence summary ─────────────────────────────────────────────────
 
   /// "quark" (ν = +1), "antiquark" (ν = −1), or "none".
   std::string classification{"none"};
@@ -703,25 +556,25 @@ struct QuarkRead {
   std::size_t transportCount = 0;
   /// Worst lifetime transport leakage (NaN when none supplied).
   double transportLeakageMax = std::numeric_limits<double>::quiet_NaN();
-  /// #765 modularity RESOLUTION-slice lifetime consumed (NaN = missing).
-  /// REPORTED, never gated (see `QuarkCandidateEvidence`).
+  /// Modularity resolution-slice lifetime consumed (NaN = missing).
+  /// Reported, never gated (see `QuarkCandidateEvidence`).
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// #765 minimum adjacent-SLICE overlap consumed.  Reported, never gated.
+  /// Minimum adjacent-slice overlap consumed.  Reported, never gated.
   double persistenceMinOverlap = std::numeric_limits<double>::quiet_NaN();
-  /// COBORDISM-FRAME lifetime consumed — the GATED persistence quantity
+  /// Cobordism-frame lifetime consumed — the gated persistence quantity
   /// (NaN = missing).
   double frameLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// Smallest adjacent-FRAME overlap consumed — the GATED overlap
+  /// Smallest adjacent-frame overlap consumed — the gated overlap
   /// quantity (NaN = missing).
   double frameMinOverlap = std::numeric_limits<double>::quiet_NaN();
   /// Number of frames the color band / anchor stability was measured over
   /// (0 = never measured; the stability certificates then fail by name).
   std::size_t stabilityFrames = 0;
   /// Measured across-frame spread (max − min) of the anchor atlas score
-  /// and of its overlap-restricted determinant-phase coherence.  Reported
-  /// diagnostics: the stability certificate requires each frame's value to
-  /// clear its floor, not the spread to clear a cap.  NaN when the
-  /// stability was never measured.
+  /// and of its overlap-restricted determinant-phase coherence; NaN when
+  /// stability was never measured.  Diagnostics only: the stability
+  /// certificate requires each frame's value to clear its floor, not the
+  /// spread to clear a cap.
   double anchorScoreSpread = std::numeric_limits<double>::quiet_NaN();
   double anchorCoherenceSpread = std::numeric_limits<double>::quiet_NaN();
   /// Smallest certified-continuation subspace overlap between consecutive
@@ -729,21 +582,21 @@ struct QuarkRead {
   double bandContinuationOverlap = std::numeric_limits<double>::quiet_NaN();
   /// Band localization consumed (from the color-band certificate).
   double localization = std::numeric_limits<double>::quiet_NaN();
-  /// The band's effective support fraction consumed (the upstream
-  /// localization conjunct's quantity; NaN = missing).
+  /// The band's effective support fraction consumed (the quantity the
+  /// upstream localization condition uses; NaN = missing).
   double localizationSupportFraction =
       std::numeric_limits<double>::quiet_NaN();
   /// Refinement subspace overlap consumed (NaN = missing).
   double refinementOverlap = std::numeric_limits<double>::quiet_NaN();
-  /// Whether Q = I3 + B/2 was tested AND held — the proposed u/d
-  /// identification (never a general charge definition).
+  /// Whether Q = I3 + B/2 was tested and held — the proposed u/d
+  /// identification, not a general charge definition.
   bool udIdentificationProposed = false;
   /// The declared doublet orientation the isospin was reported under
   /// (0 when no isospin was reported).
   int doubletOrientation = 0;
   /// The thresholds that produced this read (echoed configuration).
   ParticleClustersConfig thresholds{};
-  /// StructureExact (exact boolean combination GIVEN the consumed held
+  /// StructureExact (an exact boolean combination given the consumed held
   /// certificates; residual = their maximum residual) for a certified
   /// quark/antiquark; HeuristicDiscovery (never holds) otherwise.
   cobordism::Certificate certificate{};
@@ -752,29 +605,26 @@ struct QuarkRead {
   /// failed certificates).
   [[nodiscard]] std::string describe() const;
 
-  /// Checkpoint serialization (`particles.quarks`): every
-  /// field, the evidence summary, the failed-certificate names, and
-  /// the threshold echo travel together; unknown values serialize as
-  /// null, never zero.
+  /// Checkpoint serialization (`particles.quarks`): every field, the
+  /// evidence summary, the failed-certificate names and the threshold echo
+  /// travel together.
   [[nodiscard]] Record toRecord() const;
   /// Rehydrate from `toRecord()` output; rejects an unknown
-  /// `schema_version` (std::invalid_argument) per the checkpoint-reader
-  /// contract.
+  /// `schema_version` (std::invalid_argument).
   [[nodiscard]] static QuarkRead fromRecord(const Record &record);
 };
 
 /// # ConjugatePairRead
 ///
 /// Pair-conservation verification of a conjugate quark-antiquark creation
-/// path (#773 scope: verified only for a CERTIFIED conjugate homotopy).  A
-/// gap-preserving conjugate path has certified windings on both legs and
-/// they cancel exactly; a singular (rank/gap-closing) leg leaves the total
-/// flux UNKNOWN — never zero by assumption.
+/// path, valid only for a certified conjugate homotopy.  A gap-preserving
+/// path has certified windings on both legs and they cancel exactly; a
+/// singular (rank- or gap-closing) leg leaves the total flux unknown.
 struct ConjugatePairRead {
-  /// ν_a + ν_b when both windings are certified; EMPTY otherwise.
+  /// ν_a + ν_b when both windings are certified; empty otherwise.
   std::optional<int> totalWinding{};
-  /// B_a + B_b when both baryon fluxes are known; EMPTY otherwise (the
-  /// "singular path returns unknown flux" acceptance channel).
+  /// B_a + B_b when both baryon fluxes are known; empty otherwise — the
+  /// channel on which a singular path returns an unknown flux.
   std::optional<double> totalBaryonFlux{};
   /// Product of the two certified parities (+1 even / −1 odd / 0 =
   /// unknown).
@@ -784,56 +634,53 @@ struct ConjugatePairRead {
   /// Certified conservation: both windings certified, total winding 0,
   /// and even total parity.
   bool conserved = false;
-  /// Names of the failed/missing certificates ("winding-first",
-  /// "winding-second", "parity-first", "parity-second",
-  /// "winding-conservation", "parity-even").
+  /// Names of the failed certificates: "winding-first", "winding-second",
+  /// "parity-first", "parity-second", "winding-conservation",
+  /// "parity-even".
   std::vector<std::string> failedCertificates{};
-  /// StructureExact (integer sums are exact GIVEN certified integer
-  /// windings/parities) when conserved; HeuristicDiscovery otherwise.
+  /// StructureExact (integer sums are exact given certified integer
+  /// windings and parities) when conserved; HeuristicDiscovery otherwise.
   cobordism::Certificate certificate{};
 };
 
 /// # OctetBilinearRead
 ///
-/// The #774 quasi-free traceless-bilinear (octet) read of THREE declared
-/// color modes of a carried #780 `quantum::CovarianceState` — evaluated on
-/// the covariance layer (polynomial in the mode count, no Fock vector;
-/// the #771 lazy engine remains the dense oracle in tests and the carrier
-/// of explicitly non-Gaussian boundary data).
+/// The quasi-free traceless-bilinear (octet) read of three declared color
+/// modes of a carried `quantum::CovarianceState`, evaluated on the
+/// covariance layer: polynomial in the mode count, with no Fock vector.
+/// The lazy engine is the dense oracle in tests and the carrier of
+/// explicitly non-Gaussian boundary data.
 ///
-/// Exact identities (all delegations, tested to rounding):
+/// Exact identities, all delegated and tested to rounding:
 ///   • M_ij = ⟨a_i†a_j⟩ = Γ_{ji} on the declared modes — `bilinear` is the
 ///     transposed principal submatrix of Γ.
-///   • 1 ⊕ 8 resolution: `singletWeight`/`octetWeight` are EXACTLY
-///     `ColorFiber::octetRead(bilinear)`; `octetComponent` is EXACTLY
-///     `ColorFiber::tracelessPart(bilinear)`, which lies in the octet BY
-///     THE ALGEBRA — `octetProjectorResidual` measures
+///   • 1 ⊕ 8 resolution: `singletWeight`/`octetWeight` are exactly
+///     `ColorFiber::octetRead(bilinear)`; `octetComponent` is exactly
+///     `ColorFiber::tracelessPart(bilinear)`, which lies in the octet by
+///     the algebra, so `octetProjectorResidual` measures
 ///     ‖(I₉ − P₈) vec(M₈)‖/‖M₈‖_F ≈ 0 (rounding only).
 ///   • `casimir` = `ColorFiber::adjointCasimir(octetComponent)` = 3 for a
 ///     nonzero excitation (C = 3 P₈).
 ///   • `casimirExpectation` = ⟨Σ_a dΓ(λ_a/2)²⟩ by quartic Wick sums
-///     (#780 `wickBilinearMoment` with the embedded Gell-Mann halves):
-///     exactly 0 on the vacuum and the fully occupied singlet, exactly
-///     C₂ = 4/3 on the fundamental (N = 1) and anti-triplet (N = 2)
-///     Slater states.
+///     (`wickBilinearMoment` with the embedded Gell-Mann halves): exactly 0
+///     on the vacuum and the fully occupied singlet, exactly C₂ = 4/3 on
+///     the fundamental (N = 1) and anti-triplet (N = 2) Slater states.
 ///   • `gellMannComponents[a-1]` = Tr(λ_a M)/2 — the octet coordinates:
 ///     M = (Tr M/3) I + Σ_a comp_a λ_a exactly.
 ///
-/// Adding microscopic modes (vacuum embedding, #771 `embedInVacuum` or a
+/// Adding microscopic modes (vacuum embedding via `embedInVacuum` or a
 /// zero-block covariance extension) leaves this read unchanged: arbitrarily
-/// many collective excitations are represented WITHOUT changing any
-/// two-dimensional edge-mode factor.  Unknown values are NaN/0-sign, never
-/// zero-filled.
+/// many collective excitations are represented without changing any
+/// two-dimensional edge-mode factor.
 struct OctetBilinearRead {
-  /// The three declared color modes, in the caller's recorded order (the
-  /// color trivialization; a compilation convention like a declared anchor
-  /// weighting).
+  /// The three declared color modes, in the caller's recorded order: the
+  /// color trivialization.
   std::vector<std::size_t> colorModes{};
   /// Certified subset occupation ⟨N_S⟩ = tr Γ_S (NaN when the constituent
   /// Wick reads did not certify).
   double occupation = std::numeric_limits<double>::quiet_NaN();
   /// Certified subset parity sign of ⟨(−1)^{N_S}⟩: +1 / −1 / 0 = unknown
-  /// or indefinite (never a forced sign).
+  /// or indefinite.  Never a forced sign.
   int subsetParity = 0;
   /// The bilinear matrix M_ij = ⟨a_i†a_j⟩ on the declared modes.
   Eigen::Matrix3cd bilinear = Eigen::Matrix3cd::Zero();
@@ -844,9 +691,9 @@ struct OctetBilinearRead {
   double octetWeight = std::numeric_limits<double>::quiet_NaN();
   /// |Tr M|²/3 — the singlet (trace/number) Frobenius weight.
   double singletWeight = std::numeric_limits<double>::quiet_NaN();
-  /// ‖(I₉ − P₈) vec(octetComponent)‖ / ‖octetComponent‖_F — rounding-level
-  /// for any state (the excitation is octet by the algebra); NaN when the
-  /// excitation vanishes (an undefined residual is unknown, never zero).
+  /// ‖(I₉ − P₈) vec(octetComponent)‖ / ‖octetComponent‖_F, rounding-level
+  /// for any state since the excitation is octet by the algebra; NaN when
+  /// the excitation vanishes, an undefined residual being unknown.
   double octetProjectorResidual = std::numeric_limits<double>::quiet_NaN();
   /// `ColorFiber::adjointCasimir(octetComponent)` ∈ [0, 3]; 3 exactly for
   /// a nonzero excitation; NaN when it vanishes.
@@ -856,18 +703,18 @@ struct OctetBilinearRead {
   double casimirExpectation = std::numeric_limits<double>::quiet_NaN();
   /// Tr(λ_a M)/2 for a = 1..8 — the octet coordinates of the bilinear.
   std::vector<std::complex<double>> gellMannComponents{};
-  /// Max residual of the consumed #780 Wick reads (their certificates all
+  /// Max residual of the consumed Wick reads (their certificates all
   /// travel through `certificate`).
   double residual = std::numeric_limits<double>::quiet_NaN();
   /// AlgebraicallyExact / Static in the covariance's verified regime
-  /// (residual = the consumed Wick residual maximum against the #780 read
+  /// (residual = the consumed Wick residual maximum against the read
   /// tolerance): the read is a finite exact Wick sum on the covariance.
   cobordism::Certificate certificate{};
 
   /// One-line human-readable summary.
   [[nodiscard]] std::string describe() const;
-  /// Checkpoint serialization (complex leaves split `{name}_re`/`{name}_im`
-  /// per #580; unknown values serialize as null/NaN, never zero).
+  /// Checkpoint serialization; complex leaves split into
+  /// `{name}_re`/`{name}_im`.
   [[nodiscard]] Record toRecord() const;
   /// Rehydrate; rejects an unknown `schema_version`.
   [[nodiscard]] static OctetBilinearRead fromRecord(const Record &record);
@@ -875,59 +722,51 @@ struct OctetBilinearRead {
 
 /// # GluonCandidateEvidence
 ///
-/// The assembled evidence bundle of ONE gluon candidate (#774): every
-/// field is a read produced by a merged upstream kernel —
-/// the #780 carried-state Wick parity/occupation, this class's own
-/// quasi-free octet bilinear read, the #770 lifetime transports and
-/// determinant winding, and the #765 persistence diagnostics.  Missing
-/// evidence fails its certificate BY NAME, it is never presumed.
+/// The assembled evidence bundle of one gluon candidate: the carried-state
+/// Wick parity and occupation, the quasi-free octet bilinear read, the
+/// lifetime transports and determinant winding, and the persistence
+/// diagnostics.  Missing evidence fails its certificate by name.
 struct GluonCandidateEvidence {
-  /// The excitation's #765 label-free identity.
+  /// The excitation's label-free identity.
   ComponentId component{};
-  /// The component the excitation is bound to / lives on (reported
-  /// verbatim — the "binding component" of the ticket's report set).
+  /// The component the excitation is bound to, reported verbatim.
   ComponentId bindingComponent{};
   /// The quasi-free octet bilinear read of the carried state
   /// (`octetBilinearRead`).
   OctetBilinearRead octet{};
-  /// The #780 Wick parity ⟨(−1)^N⟩ of the WHOLE carried state
+  /// The Wick parity ⟨(−1)^N⟩ of the whole carried state
   /// (`CovarianceState::wickParity`) — the even-parity gate.
   quantum::WickCertificateRead parityRead{};
-  /// The #780 Wick total occupation ⟨N⟩ (`wickTotalNumber`; report-only).
+  /// The Wick total occupation ⟨N⟩ (`wickTotalNumber`; report-only).
   quantum::WickCertificateRead occupationRead{};
-  /// The candidate's lifetime transports (#770): every link must be
-  /// accepted, rank three, with leakage under the configured cap — the
-  /// "accepted octet transport" gate (the adjoint action on the octet is
-  /// exact GIVEN the accepted rank-three factor:
-  /// `FiberConnection::adjointRepresentation`).
+  /// The candidate's lifetime transports: every link must be accepted,
+  /// rank three, with leakage under the configured cap.  The adjoint action
+  /// on the octet is exact given the accepted rank-three factor
+  /// (`FiberConnection::adjointRepresentation`).
   std::vector<FiberTransportRead> lifetimeTransports{};
-  /// The #770 determinant-line winding of the lifetime family — the gluon
-  /// gate requires a CERTIFIED ν = 0 (zero baryon flux is evidence, never
-  /// a default: an unknown winding leaves the flux unknown).
+  /// The determinant-line winding of the lifetime family.  The gluon gate
+  /// requires a certified ν = 0; an unknown winding leaves the flux
+  /// unknown.
   DeterminantWindingRead winding{};
-  /// #765 modularity RESOLUTION-slice lifetime (NaN = missing).
-  /// REPORT-ONLY, exactly as on `QuarkCandidateEvidence`.
+  /// Modularity resolution-slice lifetime (NaN = missing).  Report-only,
+  /// exactly as on `QuarkCandidateEvidence`.
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// COBORDISM-FRAME lifetime (NaN = missing) — the GATED persistence
-  /// quantity ("lifetime across multiple cobordism frames").
+  /// Cobordism-frame lifetime (NaN = missing) — the gated persistence
+  /// quantity.
   double frameLifetime = std::numeric_limits<double>::quiet_NaN();
 };
 
 /// # GluonRead
 ///
-/// The #774 gluon-candidate read: a persistent transported octet
-/// excitation with certified even parity and certified zero total
-/// determinant winding / baryon flux.  `classification` is
-/// "gluon-candidate" or "none" — NEVER "gluon": no even octet excitation
-/// is claimed to be a physical gluon (ticket out-of-scope list).  Unknown
-/// or uncertified values are NULL (empty optional / NaN / 0-sign), never
-/// zero-filled, and every gap is NAMED in `failedCertificates`.
+/// The gluon-candidate read: a persistent transported octet excitation with
+/// certified even parity and certified zero total determinant winding and
+/// baryon flux.  `classification` is "gluon-candidate" or "none", never
+/// "gluon": no even octet excitation is claimed to be a physical gluon.
 ///
-/// Certificate name vocabulary (fixed order): "parity-even",
-/// "octet-excitation", "octet-purity", "octet-transport", "winding-zero",
-/// "persistence".
+/// Certificate names, in fixed order: "parity-even", "octet-excitation",
+/// "octet-purity", "octet-transport", "winding-zero", "persistence".
 struct GluonRead {
-  /// The excitation's #765 identity.
+  /// The excitation's label-free identity.
   ComponentId component{};
   /// The reported binding component.
   ComponentId bindingComponent{};
@@ -938,36 +777,33 @@ struct GluonRead {
   int exteriorParity = 0;
   /// ⟨N⟩ of the whole carried state (NaN when unmeasured).
   double occupationTotal = std::numeric_limits<double>::quiet_NaN();
-  /// Flat consumed-scalar summaries of the octet evidence (the QuarkRead
-  /// anchor-profile convention — ONE source of truth: the full
-  /// `OctetBilinearRead` travels on the EVIDENCE and serializes itself;
-  /// the read carries only the consumed decision/report scalars, NaN when
-  /// missing): the adjoint Casimir, the quartic-Wick color Casimir
-  /// expectation, the octet-projector residual, and the 1 ⊕ 8 Frobenius
-  /// weights.
+  /// Consumed scalars of the octet evidence: the adjoint Casimir, the
+  /// quartic-Wick color Casimir expectation, the octet-projector residual,
+  /// and the 1 ⊕ 8 Frobenius weights (NaN when missing).  The full
+  /// `OctetBilinearRead` travels on the evidence and serializes itself.
   double casimir = std::numeric_limits<double>::quiet_NaN();
   double casimirExpectation = std::numeric_limits<double>::quiet_NaN();
   double octetProjectorResidual = std::numeric_limits<double>::quiet_NaN();
   double octetWeight = std::numeric_limits<double>::quiet_NaN();
   double singletWeight = std::numeric_limits<double>::quiet_NaN();
   /// The certified determinant winding (0 for a certified gluon
-  /// candidate); EMPTY when invalidated/unclosed.
+  /// candidate); empty when invalidated or unclosed.
   std::optional<int> determinantWinding{};
-  /// The recorded winding closure specification (#770 vocabulary).
+  /// The recorded winding closure specification.
   std::string windingClosure{"none"};
   /// The caller's closure reference identifier ("" when none).
   std::string windingReferenceId{};
-  /// B = ν/3 under a CERTIFIED winding — 0.0 is a CERTIFIED zero flux;
-  /// EMPTY (unknown) without the winding certificate, never zero.
+  /// B = ν/3 under a certified winding; 0.0 is a certified zero flux.
+  /// Empty without the winding certificate.
   std::optional<double> baryonFlux{};
   /// Number of lifetime transports supplied.
   std::size_t transportCount = 0;
   /// Worst lifetime transport leakage (NaN when none supplied).
   double transportLeakageMax = std::numeric_limits<double>::quiet_NaN();
-  /// #765 modularity RESOLUTION-slice lifetime consumed (report-only;
-  /// NaN = missing).
+  /// Modularity resolution-slice lifetime consumed (report-only; NaN =
+  /// missing).
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// COBORDISM-FRAME lifetime consumed — the GATED persistence quantity.
+  /// Cobordism-frame lifetime consumed — the gated persistence quantity.
   double frameLifetime = std::numeric_limits<double>::quiet_NaN();
   /// Passed-fraction of the six gluon certificates; 1.0 exactly for a
   /// certified gluon candidate.
@@ -976,7 +812,7 @@ struct GluonRead {
   std::vector<std::string> failedCertificates{};
   /// The thresholds that produced this read (echoed configuration).
   ParticleClustersConfig thresholds{};
-  /// StructureExact (exact boolean combination GIVEN the consumed held
+  /// StructureExact (an exact boolean combination given the consumed held
   /// certificates) for a certified candidate; HeuristicDiscovery
   /// otherwise.
   cobordism::Certificate certificate{};
@@ -991,61 +827,58 @@ struct GluonRead {
 
 /// # CompositeCandidateEvidence
 ///
-/// The assembled evidence bundle of ONE two-cluster composite (#774 meson
-/// and diquark candidates; the THREE-cluster bundle is the #775
-/// `BaryonCandidateEvidence` below).  The
-/// constituents are #773 `QuarkRead`s CONSUMED VERBATIM — their windings,
-/// parities, and certificates are never recomputed here; the composite
+/// The assembled evidence bundle of one two-cluster composite, meson or
+/// diquark; the three-cluster bundle is `BaryonCandidateEvidence` below.
+/// The constituents are `QuarkRead`s consumed verbatim, and the composite
 /// channels (carried-state occupation, the pair color bilinear, the
 /// anti-triplet wedge read) are caller-assembled upstream reads.
 struct CompositeCandidateEvidence {
-  /// The component binding the two clusters (reported verbatim).
+  /// The component binding the two clusters, reported verbatim.
   ComponentId bindingComponent{};
-  /// The first constituent's #773 read.
+  /// The first constituent's read.
   QuarkRead first{};
-  /// The second constituent's #773 read.
+  /// The second constituent's read.
   QuarkRead second{};
-  /// The #780 Wick total occupation ⟨N⟩ of the carried composite state
-  /// (report-only; NaN/uncertified = unknown).
+  /// The Wick total occupation ⟨N⟩ of the carried composite state
+  /// (report-only; NaN or uncertified = unknown).
   quantum::WickCertificateRead occupationRead{};
   /// Meson channel: the pair color bilinear M_ij pairing constituent color
-  /// i with conjugate color j (3 ⊗ 3̄) — a singlet composite has M ∝ I.
-  /// ABSENT = no pairing evidence: the color-singlet certificate fails by
-  /// name.
+  /// i with conjugate color j (3 ⊗ 3̄); a singlet composite has M ∝ I.
+  /// Absent means no pairing evidence, and the color-singlet certificate
+  /// fails by name.
   std::optional<Eigen::Matrix3cd> colorPairing{};
-  /// Diquark channel: the certified Λ²C³ wedge occupation det(C†ΓC) of
-  /// the two constituent color columns on the carried state (#780
-  /// `wickGramDeterminant` / `wickColorWedgeSquared` family) — exactly
-  /// zero for duplicated color modes (Pauli).  Default-constructed =
-  /// missing evidence.
+  /// Diquark channel: the certified Λ²C³ wedge occupation det(C†ΓC) of the
+  /// two constituent color columns on the carried state
+  /// (`wickGramDeterminant` / `wickColorWedgeSquared`), exactly zero for
+  /// duplicated color modes by the Pauli principle.  Default-constructed
+  /// means missing evidence.
   quantum::WickCertificateRead antiTripletRead{};
-  /// The composite's lifetime transports (#770; report-only for the
-  /// two-cluster reads — the max leakage travels on the read).
+  /// The composite's lifetime transports (report-only for the two-cluster
+  /// reads — the max leakage travels on the read).
   std::vector<FiberTransportRead> lifetimeTransports{};
-  /// #765 persistence-track lifetime of the composite (NaN = missing).
+  /// Persistence-track lifetime of the composite (NaN = missing).
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
 };
 
 /// # MesonRead
 ///
-/// The #774 meson-candidate read: one certified quark plus one certified
-/// antiquark (order-insensitive), EVEN composite parity — the exact graded
-/// product of the certified constituent parities (whitepaper "Fermion
-/// statistics from simplicial orientation": parity adds mod 2) — a
-/// color-SINGLET pair bilinear under the exact 1 ⊕ 8 split, and zero total
-/// certified winding/baryon flux (the #773 conjugate-pair integer sums).
+/// The meson-candidate read: one certified quark plus one certified
+/// antiquark (order-insensitive), even composite parity — the graded
+/// product of the constituent parities, since parity adds mod 2 — a
+/// color-singlet pair bilinear under the 1 ⊕ 8 split, and zero total
+/// certified winding and baryon flux.
 ///
-/// Certificate name vocabulary (fixed order): "constituent-quark",
+/// Certificate names, in fixed order: "constituent-quark",
 /// "constituent-antiquark", "parity-even", "color-singlet", "flux-zero".
 struct MesonRead {
   /// The reported binding component.
   ComponentId bindingComponent{};
-  /// The two constituents' #765 identities, in evidence order.
+  /// The two constituents' label-free identities, in evidence order.
   ComponentId firstConstituent{};
   ComponentId secondConstituent{};
   /// "meson-candidate" or "none".
   std::string classification{"none"};
-  /// The composite exterior parity: the exact product of the two certified
+  /// The composite exterior parity: the product of the two certified
   /// constituent parities (+1 even / −1 odd / 0 = unknown).
   int exteriorParity = 0;
   /// ⟨N⟩ of the carried composite state (NaN when unmeasured).
@@ -1056,16 +889,16 @@ struct MesonRead {
   double pairingOctetWeight = std::numeric_limits<double>::quiet_NaN();
   /// octet/(octet + singlet) of the pairing (NaN when missing or zero).
   double pairingOctetFraction = std::numeric_limits<double>::quiet_NaN();
-  /// ν₁ + ν₂ when both constituent windings are certified; EMPTY
+  /// ν₁ + ν₂ when both constituent windings are certified; empty
   /// otherwise (unknown, never zero).
   std::optional<int> totalWinding{};
-  /// B₁ + B₂ when both baryon fluxes are known; EMPTY otherwise.
+  /// B₁ + B₂ when both baryon fluxes are known; empty otherwise.
   std::optional<double> totalBaryonFlux{};
   /// Number of composite lifetime transports supplied.
   std::size_t transportCount = 0;
   /// Worst composite transport leakage (NaN when none supplied).
   double transportLeakageMax = std::numeric_limits<double>::quiet_NaN();
-  /// #765 composite persistence lifetime (the "lifetime" report).
+  /// Composite persistence lifetime.
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
   /// Passed-fraction of the five meson certificates.
   double confidence = 0.0;
@@ -1073,7 +906,7 @@ struct MesonRead {
   std::vector<std::string> failedCertificates{};
   /// The thresholds that produced this read (echoed configuration).
   ParticleClustersConfig thresholds{};
-  /// StructureExact GIVEN the consumed held certificates when certified;
+  /// StructureExact given the consumed held certificates when certified;
   /// HeuristicDiscovery otherwise.
   cobordism::Certificate certificate{};
 
@@ -1087,26 +920,25 @@ struct MesonRead {
 
 /// # DiquarkRead
 ///
-/// The #774 diquark-candidate read: TWO certified quarks (ν = +1 each),
-/// EVEN composite parity (exact graded product), a certified Λ²C³
-/// anti-triplet wedge occupation, and the PRESERVED constituent baryon
-/// flux B = B₁ + B₂ = 2/3.  A diquark is explicitly NOT an antiquark: the
-/// color representation alone (3̄) coincides, but the recorded distinction
-/// channels are total occupation TWO, EVEN parity, and B = +2/3 (an
-/// antiquark is occupation one, odd, B = −1/3) — exactly the #773
-/// anti-triplet fixture's channels.
+/// The diquark-candidate read: two certified quarks (ν = +1 each), even
+/// composite parity (the graded product), a certified Λ²C³ anti-triplet
+/// wedge occupation, and the preserved constituent baryon flux
+/// B = B₁ + B₂ = 2/3.  A diquark is not an antiquark: the color
+/// representation alone (3̄) coincides, but the recorded distinction
+/// channels are total occupation two, even parity and B = +2/3, against an
+/// antiquark's occupation one, odd parity and B = −1/3.
 ///
-/// Certificate name vocabulary (fixed order): "constituent-quarks",
-/// "parity-even", "anti-triplet", "baryon-flux-two-thirds".
+/// Certificate names, in fixed order: "constituent-quarks", "parity-even",
+/// "anti-triplet", "baryon-flux-two-thirds".
 struct DiquarkRead {
   /// The reported binding component.
   ComponentId bindingComponent{};
-  /// The two constituents' #765 identities, in evidence order.
+  /// The two constituents' label-free identities, in evidence order.
   ComponentId firstConstituent{};
   ComponentId secondConstituent{};
   /// "diquark-candidate" or "none".
   std::string classification{"none"};
-  /// The composite exterior parity (exact constituent product; 0 =
+  /// The composite exterior parity: the constituent product (0 =
   /// unknown).
   int exteriorParity = 0;
   /// ⟨N⟩ of the carried composite state (NaN when unmeasured).
@@ -1115,16 +947,16 @@ struct DiquarkRead {
   /// wedge read is missing/uncertified).
   double antiTripletWeight = std::numeric_limits<double>::quiet_NaN();
   /// ν₁ + ν₂ when both constituent windings are certified (2 for a
-  /// certified diquark); EMPTY otherwise.
+  /// certified diquark); empty otherwise.
   std::optional<int> totalWinding{};
-  /// B₁ + B₂ (2/3 for a certified diquark — the constituent flux is
-  /// PRESERVED, never re-derived); EMPTY when unknown.
+  /// B₁ + B₂, which is 2/3 for a certified diquark: the constituent flux is
+  /// preserved, never re-derived.  Empty when unknown.
   std::optional<double> totalBaryonFlux{};
   /// Number of composite lifetime transports supplied.
   std::size_t transportCount = 0;
   /// Worst composite transport leakage (NaN when none supplied).
   double transportLeakageMax = std::numeric_limits<double>::quiet_NaN();
-  /// #765 composite persistence lifetime (the "lifetime" report).
+  /// Composite persistence lifetime.
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
   /// Passed-fraction of the four diquark certificates.
   double confidence = 0.0;
@@ -1132,7 +964,7 @@ struct DiquarkRead {
   std::vector<std::string> failedCertificates{};
   /// The thresholds that produced this read (echoed configuration).
   ParticleClustersConfig thresholds{};
-  /// StructureExact GIVEN the consumed held certificates when certified;
+  /// StructureExact given the consumed held certificates when certified;
   /// HeuristicDiscovery otherwise.
   cobordism::Certificate certificate{};
 
@@ -1146,47 +978,43 @@ struct DiquarkRead {
 
 /// # BoundCandidateEvidence
 ///
-/// One constituent's datum for the #775 bound-supercomponent search.
-/// Every field is an upstream read consumed
-/// verbatim: the #773 quark verdict, the #765 level-0 support and
-/// persistence window, and the #770 transports to the other constituents.
+/// One constituent's datum for the bound-supercomponent search: the quark
+/// verdict, the level-0 support and persistence window, and the transports
+/// to the other constituents, each consumed verbatim.
 struct BoundCandidateEvidence {
-  /// The candidate's #773 read (only a CERTIFIED "quark" verdict counts
-  /// toward the three-quark census).
+  /// The candidate's quark read; only a certified "quark" verdict counts
+  /// toward the three-quark census.
   QuarkRead quark{};
-  /// The candidate's level-0 cell support (`ComponentRead::support`) —
-  /// the set tested for containment in the supercomponent.  Empty =
-  /// missing evidence: the containment certificate fails by name.
+  /// The candidate's level-0 cell support (`ComponentRead::support`), the
+  /// set tested for containment in the supercomponent.  Empty means
+  /// missing evidence and the containment certificate fails by name.
   std::vector<std::uint64_t> support{};
-  /// The candidate's #765 persistence window
-  /// {`PersistenceTrack::firstSlice`, `PersistenceTrack::lastSlice`}
-  /// (inclusive slice indices).  EMPTY = no lifetime evidence — the
-  /// overlap certificate fails by name, never presumed.
+  /// The candidate's persistence window {`PersistenceTrack::firstSlice`,
+  /// `PersistenceTrack::lastSlice`}, inclusive slice indices.  Empty means
+  /// no lifetime evidence, and the overlap certificate fails by name.
   std::optional<std::pair<std::size_t, std::size_t>> lifetime{};
-  /// The #770 transports between this constituent and the others.  Every
-  /// supplied link must be ACCEPTED with leakage under
-  /// `maxTransportLeakage` — the "mutual transport remains inside the
-  /// supercomponent" requirement, stated in the #770 isometry-defect
-  /// vocabulary (a leaking transfer is the tracked subspace turning away
-  /// from its successor).  Empty = missing evidence.
+  /// The transports between this constituent and the others.  Every
+  /// supplied link must be accepted with leakage under
+  /// `maxTransportLeakage`, so that mutual transport remains inside the
+  /// supercomponent; a leaking transfer is the tracked subspace turning
+  /// away from its successor.  Empty means missing evidence.
   std::vector<FiberTransportRead> mutualTransports{};
 };
 
 /// # BoundSupercomponentRead
 ///
-/// One next-modular-level component examined by the #775 bound-
-/// supercomponent search: which certified quark candidates it contains,
-/// their shared lifetime window, and the containment / transport
-/// certificates.  Unknown values are NaN / empty, never zero-filled.
+/// One next-modular-level component examined by the bound-supercomponent
+/// search: which certified quark candidates it contains, their shared
+/// lifetime window, and the containment and transport certificates.
 ///
-/// Certificate name vocabulary (fixed order): "supercomponent-level",
+/// Certificate names, in fixed order: "supercomponent-level",
 /// "quark-count", "support-containment", "lifetime-overlap",
 /// "transport-containment".
 struct BoundSupercomponentRead {
-  /// The examined next-level component's #765 identity.
+  /// The examined next-level component's label-free identity.
   ComponentId boundComponent{};
-  /// The CONTAINED certified quark candidates' identities, in input
-  /// order (three when `found`).
+  /// The contained certified quark candidates' identities, in input order
+  /// (three when `found`).
   std::vector<ComponentId> quarks{};
   /// Indices of the contained candidates in the input candidate list.
   std::vector<std::size_t> quarkIndices{};
@@ -1194,10 +1022,10 @@ struct BoundSupercomponentRead {
   /// exactly three lifetime-overlapping certified quark candidates.
   bool found = false;
   /// The shared lifetime window [first, last] of the contained
-  /// candidates; EMPTY when any lifetime is missing or the windows are
+  /// candidates; empty when any lifetime is missing or the windows are
   /// disjoint.
   std::optional<std::pair<std::size_t, std::size_t>> lifetimeWindow{};
-  /// Number of SHARED persistence slices (0 when disjoint/unknown).
+  /// Number of shared persistence slices (0 when disjoint or unknown).
   double lifetimeOverlap = 0.0;
   /// Smallest per-constituent support-containment fraction (NaN when a
   /// constituent supplied no support).
@@ -1211,10 +1039,10 @@ struct BoundSupercomponentRead {
   std::vector<std::string> failedCertificates{};
   /// The thresholds that produced this read (echoed configuration).
   ParticleClustersConfig thresholds{};
-  /// StructureExact (the containment/overlap decisions are exact set and
-  /// integer-interval statements GIVEN the consumed certified constituent
-  /// reads; residual = their maximum) when `found`; HeuristicDiscovery
-  /// otherwise.
+  /// StructureExact (the containment and overlap decisions are exact set
+  /// and integer-interval statements given the consumed certified
+  /// constituent reads; residual = their maximum) when `found`;
+  /// HeuristicDiscovery otherwise.
   cobordism::Certificate certificate{};
 
   /// One-line human-readable summary.
@@ -1223,45 +1051,43 @@ struct BoundSupercomponentRead {
 
 /// # ScaleProfileSample
 ///
-/// One refinement-window sample of the EXISTING #575/#566/#593 mass-radius
-/// battery (`InteriorHinges`).  See the file banner section "the
-/// form-factor situation": `radialWeightProfile` is a radial CURVATURE-
-/// WEIGHT density, not a momentum-transfer form factor.
+/// One refinement-window sample of the mass-radius battery
+/// (`InteriorHinges`).  See the file banner section "Form factors":
+/// `radialWeightProfile` is a radial curvature-weight density, not a
+/// momentum-transfer form factor.
 struct ScaleProfileSample {
-  /// The emergent radius r = V_dual^{1/4} (`InteriorHinges::Radii::rDual`)
-  /// — DIMENSIONFUL lattice units; only its finiteness is certified.
+  /// The emergent radius r = V_dual^{1/4} (`InteriorHinges::Radii::rDual`),
+  /// dimensionful in lattice units; only its finiteness is certified.
   double radius = std::numeric_limits<double>::quiet_NaN();
   /// The primal cross-check radius V_primal^{1/4}
-  /// (`InteriorHinges::Radii::rPrimal`) — DIMENSIONFUL; its RATIO to
+  /// (`InteriorHinges::Radii::rPrimal`), dimensionful; its ratio to
   /// `radius` is the dimensionless channel.
   double radiusCrossCheck = std::numeric_limits<double>::quiet_NaN();
   /// The spectral-mass channel: the intensive shell mass
-  /// (`InteriorHinges::Masses::mShell`), a mean interior deficit ANGLE
-  /// and therefore dimensionless in lattice units.
+  /// (`InteriorHinges::Masses::mShell`), a mean interior deficit angle and
+  /// therefore dimensionless in lattice units.
   double spectralMass = std::numeric_limits<double>::quiet_NaN();
   /// The curvature-weight participation ratio
-  /// (`InteriorHinges::Localization::pr` ∈ (0, 1]) — dimensionless.
+  /// (`InteriorHinges::Localization::pr` ∈ (0, 1]), dimensionless.
   double localization = std::numeric_limits<double>::quiet_NaN();
-  /// The per-BFS-shell share of the |Re ε · ★h| curvature weight
+  /// The share of the |Re ε · ★h| curvature weight per breadth-first shell
   /// (`InteriorHinges::Localization::shellProfile[k].weightShare`), shell
-  /// ascending — dimensionless.  Empty when the interior carried no
-  /// shell seeds (no emergent holes): then the profile is UNKNOWN and the
-  /// stability certificate fails by name.
+  /// ascending, dimensionless.  Empty when the interior carried no shell
+  /// seeds, and the stability certificate then fails by name.
   std::vector<double> radialWeightProfile{};
 
-  // ── the remaining DIMENSIONLESS certificate channels ─────────────────
+  // ── the remaining dimensionless certificate channels ─────────────────
   //
-  // The whitepaper's proton certificate requires "stability of EVERY
-  // dimensionless certificate under refinement", not of the mass-radius
-  // battery alone.  These channels carry the candidate's own certificate
-  // values AT THIS REFINEMENT; the caller fills them from the same
-  // constituent reads `classifyBaryon` consumes.  An unfilled channel is
-  // NaN / 0-sign — unknown, never zero — and its stability certificate
-  // then fails BY NAME rather than passing vacuously.
+  // Every dimensionless certificate must be stable under refinement, not
+  // the mass-radius battery alone.  These channels carry the candidate's
+  // own certificate values at this refinement, filled by the caller from
+  // the same constituent reads `classifyBaryon` consumes.  An unfilled
+  // channel is NaN or a 0 sign, and its stability certificate then fails
+  // by name rather than passing vacuously.
 
   /// det(C†C) of the three normalized color columns at this refinement.
   double colorGramDeterminant = std::numeric_limits<double>::quiet_NaN();
-  /// The #772 Berry-cancelled 2π rotation character at this refinement.
+  /// The Berry-cancelled 2π rotation character at this refinement.
   std::complex<double> rotationCharacter{
       std::numeric_limits<double>::quiet_NaN(),
       std::numeric_limits<double>::quiet_NaN()};
@@ -1271,42 +1097,40 @@ struct ScaleProfileSample {
   /// refinement.
   double electricFlux = std::numeric_limits<double>::quiet_NaN();
   /// The composite exterior parity at this refinement: −1 (odd) / +1
-  /// (even) / 0 = unknown.  An INTEGER channel: stability is exact
+  /// (even) / 0 = unknown.  An integer channel: stability is exact
   /// equality across the window, never a tolerance.
   int compositeParity = 0;
   /// The anchor atlas score a² carried by the composite at this
-  /// refinement: the MINIMUM over the three constituents' certified
-  /// scores (the worst leg governs the composite's stability).
+  /// refinement: the minimum over the three constituents' certified
+  /// scores, so the worst leg governs the composite's stability.
   double anchorScore = std::numeric_limits<double>::quiet_NaN();
 };
 
 /// # ScaleProfileRead
 ///
-/// The #775 refinement-window certificate over `ScaleProfileSample`s: a
-/// FINITE emergent radius plus the refinement stability of every
-/// DIMENSIONLESS channel.  A dimensionful mass is never emitted
-/// (`physicalMass` is always empty — no physical scale has been
-/// independently established).
+/// The refinement-window certificate over `ScaleProfileSample`s: a finite
+/// emergent radius plus the refinement stability of every dimensionless
+/// channel.  `physicalMass` is always empty, since no physical scale has
+/// been independently established.
 ///
-/// Certificate name vocabulary (fixed order): "refinement-window",
-/// "finite-radius", "radius-ratio-stability", "spectral-mass-stability",
+/// Certificate names, in fixed order: "refinement-window", "finite-radius",
+/// "radius-ratio-stability", "spectral-mass-stability",
 /// "localization-stability", "profile-stability", "color-gram-stability",
 /// "rotation-character-stability", "baryon-flux-stability",
 /// "electric-flux-stability", "composite-parity-stability",
-/// "anchor-score-stability" — every DIMENSIONLESS certificate of the
-/// proton conjunction, not the mass-radius battery alone.
+/// "anchor-score-stability".
 struct ScaleProfileRead {
   /// Number of refinement samples consumed.
   std::size_t sampleCount = 0;
-  /// The reported emergent radius (the FIRST sample's `radius`).
+  /// The reported emergent radius (the first sample's `radius`).
   double radius = std::numeric_limits<double>::quiet_NaN();
   /// Whether every sample's radius is finite and above `minRadius`.
   bool radiusFinite = false;
-  /// The dimensionless radius ratio r_dual / r_primal of the first
-  /// sample, and its normalized spread (max − min)/max(|mean|, 1) over the
-  /// window — RELATIVE for O(1)-and-larger channels, ABSOLUTE for channels
-  /// near zero (so a near-zero channel is never reported as infinitely
-  /// unstable).  Every spread below uses the same normalization.
+  /// The dimensionless radius ratio r_dual / r_primal of the first sample,
+  /// and its normalized spread (max − min)/max(|mean|, 1) over the window:
+  /// relative for O(1)-and-larger channels, absolute for channels near
+  /// zero, so a near-zero channel is never reported as infinitely unstable.
+  /// Every spread below uses the same normalization.
   double radiusRatio = std::numeric_limits<double>::quiet_NaN();
   double radiusRatioSpread = std::numeric_limits<double>::quiet_NaN();
   /// The dimensionless spectral-mass channel of the first sample and its
@@ -1317,15 +1141,15 @@ struct ScaleProfileRead {
   /// spread over the window.
   double localization = std::numeric_limits<double>::quiet_NaN();
   double localizationSpread = std::numeric_limits<double>::quiet_NaN();
-  /// Max absolute per-shell deviation of the radial weight profiles
-  /// across the window (NaN when a profile was missing or the shell
-  /// counts disagree — unknown, never zero).
+  /// Max absolute per-shell deviation of the radial weight profiles across
+  /// the window (NaN when a profile was missing or the shell counts
+  /// disagree).
   double profileMaxDeviation = std::numeric_limits<double>::quiet_NaN();
   /// Number of shells the profiles share (0 when unavailable).
   std::size_t profileShells = 0;
-  /// The remaining DIMENSIONLESS certificate channels: the first sample's
+  /// The remaining dimensionless certificate channels: the first sample's
   /// value and its spread over the refinement window, under the same
-  /// normalization as the scalars above.  NaN = the channel was never
+  /// normalization as the scalars above.  NaN means the channel was never
   /// supplied, and its certificate fails by name.
   double colorGramDeterminant = std::numeric_limits<double>::quiet_NaN();
   double colorGramSpread = std::numeric_limits<double>::quiet_NaN();
@@ -1339,15 +1163,15 @@ struct ScaleProfileRead {
   double electricFlux = std::numeric_limits<double>::quiet_NaN();
   double electricFluxSpread = std::numeric_limits<double>::quiet_NaN();
   /// The composite parity of the first sample (0 = unknown) and whether
-  /// every sample carried the SAME definite parity (exact integer
-  /// equality — no tolerance).
+  /// every sample carried the same definite parity (exact integer
+  /// equality, no tolerance).
   int compositeParity = 0;
   bool compositeParityStable = false;
   double anchorScore = std::numeric_limits<double>::quiet_NaN();
   double anchorScoreSpread = std::numeric_limits<double>::quiet_NaN();
-  /// The DIMENSIONFUL mass — ALWAYS empty: unknown until a physical scale
-  /// is independently established (never zero, never a lattice number
-  /// relabeled as a mass).
+  /// The dimensionful mass: always empty, unknown until a physical scale is
+  /// independently established.  Never zero, and never a lattice number
+  /// relabeled as a mass.
   std::optional<double> physicalMass{};
   /// Whether every listed certificate held.
   bool stable = false;
@@ -1366,91 +1190,84 @@ struct ScaleProfileRead {
 
 /// # BaryonCandidateEvidence
 ///
-/// The assembled evidence bundle of ONE three-cluster candidate (#775).
-/// Every field is a read produced by a merged upstream kernel — the #773
-/// constituent verdicts, this class's own bound-supercomponent search and
-/// octet bilinear read, the #767 color columns, the #772 rotation
-/// character and spin lift, the #780 Wick spin reads, and the #575
-/// mass-radius samples.  Missing evidence fails its certificate BY NAME;
-/// it is never presumed to pass.
+/// The assembled evidence bundle of one three-cluster candidate: the
+/// constituent verdicts, the bound-supercomponent search and octet bilinear
+/// read, the color columns, the rotation character and spin lift, the Wick
+/// spin reads, and the mass-radius samples.  Missing evidence fails its
+/// certificate by name.
 struct BaryonCandidateEvidence {
-  /// The bound supercomponent's #765 identity (reported verbatim).
+  /// The bound supercomponent's label-free identity, reported verbatim.
   ComponentId boundComponent{};
-  /// The three constituents' #773 reads, CONSUMED VERBATIM.
+  /// The three constituents' quark reads, consumed verbatim.
   std::array<QuarkRead, 3> quarks{};
   /// The bound-supercomponent search result
   /// (`boundSupercomponentSearch`).  Its contained-candidate set must be
-  /// exactly these three constituents' label-free identities — the
-  /// whitepaper's "one persistent bound supercluster CONTAINING THEM";
-  /// an incoherent bundle fails `bound-supercomponent` by name.
+  /// exactly these three constituents' identities — one persistent bound
+  /// supercluster containing them; an incoherent bundle fails
+  /// `bound-supercomponent` by name.
   BoundSupercomponentRead binding{};
-  /// The three NORMALIZED anchored color columns C = [c_A c_B c_C], in
-  /// constituent order.  The three-mode wedge is built ONCE from this
-  /// matrix — no extra fermion sign is multiplied onto the color ε.
+  /// The three normalized anchored color columns C = [c_A c_B c_C], in
+  /// constituent order.  The three-mode wedge is built once from this
+  /// matrix; no extra fermion sign is multiplied onto the color ε.
   Eigen::Matrix3cd colorColumns = Eigen::Matrix3cd::Zero();
   /// The bound object's octet bilinear read (`octetBilinearRead` on the
   /// composite's carried state and its three declared color modes) — the
-  /// INDEPENDENT net-color-flux diagnostic.  Default-constructed =
+  /// independent net-color-flux diagnostic.  Default-constructed means
   /// missing evidence.
   OctetBilinearRead colorFlux{};
-  /// The #772 Berry-cancelled PHYSICAL-ROTATION character of the closed
+  /// The Berry-cancelled physical-rotation character of the closed
   /// total-space 2π cluster-frame cycle against its matched co-moving
   /// non-rotating reference (`ExchangeHolonomy::rotationCharacter`).
   HolonomyCharacterRead rotation{};
-  /// The #772 Berry-cancelled PARTICLE-EXCHANGE character
+  /// The Berry-cancelled particle-exchange character
   /// (`ExchangeHolonomy::exchangeCharacter`), when the caller ran the
-  /// exchange experiment.  REPORT-ONLY: the proton certificate has no
-  /// exchange row, so it gates nothing — it only fills
-  /// `BaryonRead::exchangeCharacter` and the
-  /// doubly cancelled spin-statistics ratio.  A read tagged with the wrong
-  /// channel is refused (the #772 channels are never interchangeable).
+  /// exchange experiment.  Report-only: it gates nothing and only fills
+  /// `BaryonRead::exchangeCharacter` and the doubly cancelled
+  /// spin-statistics ratio.  A read tagged with the wrong channel is
+  /// refused.
   std::optional<HolonomyCharacterRead> exchange{};
-  /// Whether the caller is making a CONTINUUM spin claim.  When true the
-  /// SO(d) → Spin(d) lift is REQUIRED (a missing/obstructed lift fails by
-  /// name); when false the lift is not applicable and is never demanded.
+  /// Whether the caller is making a continuum spin claim.  When true the
+  /// SO(d) → Spin(d) lift is required, and a missing or obstructed lift
+  /// fails by name; when false the lift is not applicable and is never
+  /// demanded.
   bool continuumSpinClaim = false;
-  /// The #772 `ExchangeHolonomy::spinLift` decision, when one was made.
+  /// The `ExchangeHolonomy::spinLift` decision, when one was made.
   std::optional<SpinLiftRead> spinLift{};
-  /// The #780 total-space ⟨J²⟩ of the carried quasi-free state
+  /// The total-space ⟨J²⟩ of the carried quasi-free state
   /// (`CovarianceState::wickSpinSquaredExpectation`).
   quantum::WickCertificateRead spinSquaredRead{};
-  /// The #780 Var(J²) of the carried quasi-free state
+  /// The Var(J²) of the carried quasi-free state
   /// (`CovarianceState::wickSpinSquaredVariance`) — the sharp-spin
   /// certificate.
   quantum::WickCertificateRead spinVarianceRead{};
-  /// The ACCEPTED COVARIANCE-ONLY CLASS: the Var(J²) read of every
-  /// quasi-free candidate of the class the obstruction verdict quantifies
-  /// over (the candidate's own read included by the caller).  Empty or
-  /// partially uncertified = the class was NOT swept, so a variance
-  /// failure is an unknown, never an obstruction.
+  /// The accepted covariance-only class: the Var(J²) read of every
+  /// quasi-free candidate the obstruction verdict quantifies over,
+  /// including the candidate's own read.  Empty or partially uncertified
+  /// means the class was not swept, so a variance failure is unknown rather
+  /// than an obstruction.
   std::vector<quantum::WickCertificateRead> classVarianceReads{};
-  /// The #772 DENSE total-space ⟨J²⟩ oracle
+  /// The dense total-space ⟨J²⟩ oracle
   /// (`ExchangeHolonomy::totalJSquared`) for a candidate carried as an
   /// explicit composite state rather than a covariance.  Consulted only
-  /// when the #780 Wick expectation is absent/uncertified, and it never
-  /// supplies a variance: expectation alone is not a sharp-spin
-  /// certificate.
+  /// when the Wick expectation is absent or uncertified; it supplies no
+  /// variance, and expectation alone is not a sharp-spin certificate.
   std::optional<double> totalSpaceJ2{};
-  /// The refinement-window samples of the existing mass-radius battery
+  /// The refinement-window samples of the mass-radius battery
   /// (`scaleProfileSample`).
   std::vector<ScaleProfileSample> scaleSamples{};
-  /// #765 persistence-track lifetime of the BOUND component (NaN =
-  /// missing; report-only — the persistence requirement lives in the
-  /// supercomponent search's lifetime-overlap certificate).
+  /// Persistence-track lifetime of the bound component (NaN = missing).
+  /// Report-only: the persistence requirement lives in the supercomponent
+  /// search's lifetime-overlap certificate.
   double persistenceLifetime = std::numeric_limits<double>::quiet_NaN();
-  /// The composite's lifetime transports (#770; report-only — the max
-  /// leakage travels on the read).
+  /// The composite's lifetime transports (report-only — the max leakage
+  /// travels on the read).
   std::vector<FiberTransportRead> lifetimeTransports{};
-  /// The whitepaper's world-tube crossing mass for this candidate (the
-  /// readout section: `m_x = kappa_m sum |pi_perp|`, a difference against
-  /// M0).  EMPTY when the caller supplied none, and then the
-  /// `crossing-readouts` gate passes VACUOUSLY — exactly the
-  /// applicable-gated discipline `spin-lift` uses, so a candidate assembled
-  /// without crossing evidence is graded as it was before the readouts
-  /// existed rather than being failed for a certificate nobody claimed.
-  /// Supplied, it is ENFORCED: the crossing mass must be finite and the
-  /// coherent one-third sum must read B = +1 with no determinant-line sign
-  /// defect.
+  /// The world-tube crossing mass for this candidate,
+  /// `m_x = kappa_m sum |pi_perp|`, a difference against M0.  Empty when
+  /// the caller supplied none, and the `crossing-readouts` gate then passes
+  /// vacuously, as `spin-lift` does.  When supplied it is enforced: the
+  /// crossing mass must be finite and the coherent one-third sum must read
+  /// B = +1 with no determinant-line sign defect.
   std::optional<CrossingMassRead> crossingMass{};
   /// The coherent one-third baryon sum for the same candidate and level.
   /// Travels with `crossingMass`; supplying one without the other fails the
@@ -1460,130 +1277,118 @@ struct BaryonCandidateEvidence {
 
 /// # BaryonRead
 ///
-/// The #775 three-quark baryon read and complete proton certificate,
-/// extended with the evidence summary the verdict
-/// consumed, the recorded thresholds, and the #764 certificate.
+/// The three-quark baryon read and proton certificate, with the evidence
+/// summary the verdict consumed, the recorded thresholds, and the
+/// certificate.  `classification` is one of "no-baryon",
+/// "baryon-candidate", "certified-proton", or
+/// "quasi-free-sharp-spin-obstruction".
 ///
-/// `classification` is one of "no-baryon", "baryon-candidate",
-/// "certified-proton", or "quasi-free-sharp-spin-obstruction" (the
-/// hyphenated spelling of the spec's `quasi_free_sharp_spin_obstruction`,
-/// matching this class's existing "gluon-candidate"/"meson-candidate"
-/// verdict vocabulary).
-///
-/// Certificate name vocabulary — the two STRUCTURAL gates first
-/// (a failure of either is "no-baryon"): "constituent-quarks",
-/// "bound-supercomponent"; then the proton-certificate gates:
-/// "color-singlet", "color-flux-zero", "baryon-flux-unit",
-/// "composite-parity-odd", "flavor-uud", "electric-flux-unit",
-/// "spin-expectation", "sharp-spin", "rotation-character", "spin-lift",
-/// "finite-radius", "profile-stability", "crossing-readouts".
-///
-/// Unknown or uncertified values are NULL (empty optional; NaN for
-/// unmeasured doubles; 0 for the sign-valued ints), never zero-filled, and
-/// every gap is NAMED in `failedCertificates`.
+/// Certificate names: the two structural gates first, a failure of either
+/// giving "no-baryon" — "constituent-quarks", "bound-supercomponent" — then
+/// the proton-certificate gates "color-singlet", "color-flux-zero",
+/// "baryon-flux-unit", "composite-parity-odd", "flavor-uud",
+/// "electric-flux-unit", "spin-expectation", "sharp-spin",
+/// "rotation-character", "spin-lift", "finite-radius", "profile-stability",
+/// "crossing-readouts".
 struct BaryonRead {
-  /// The three constituents' #765 identities, in evidence order.
+  /// The three constituents' label-free identities, in evidence order.
   std::array<ComponentId, 3> quarks{};
-  /// The bound supercomponent's #765 identity.
+  /// The bound supercomponent's label-free identity.
   ComponentId boundComponent{};
   /// det(C†C) = |det C|² of the three normalized color columns (NaN when
   /// no color evidence was supplied).
   double colorGramDeterminant = std::numeric_limits<double>::quiet_NaN();
-  /// The NET COLOR FLUX diagnostic: the octet Frobenius weight of the
+  /// The net-color-flux diagnostic: the octet Frobenius weight of the
   /// bound object's color bilinear (NaN when the octet read is missing or
-  /// uncertified).  An independent finite-complex diagnostic — never on
-  /// its own a proof of confinement.
+  /// uncertified).  Not on its own a proof of confinement.
   double colorFlux = std::numeric_limits<double>::quiet_NaN();
-  /// B = ν/3 with ν the SUM of the three certified constituent windings
-  /// (+1 for a certified proton); EMPTY when any leg is uncertified.
+  /// B = ν/3 with ν the sum of the three certified constituent windings
+  /// (+1 for a certified proton); empty when any leg is uncertified.
   std::optional<double> baryonFlux{};
-  /// The summed CERTIFIED constituent electric Gauss fluxes (+1 for a
-  /// certified proton); EMPTY when any constituent's charge is unknown.
+  /// The summed certified constituent electric Gauss fluxes (+1 for a
+  /// certified proton); empty when any constituent's charge is unknown.
   std::optional<double> electricFlux{};
   /// The certified total-space ⟨J²⟩ (3/4 for a proton, 15/4 for a Δ);
-  /// EMPTY when neither the #780 Wick read nor the #772 dense oracle
-  /// certified it.
+  /// empty when neither the Wick read nor the dense oracle certified it.
   std::optional<double> totalJ2{};
-  /// The certified Var(J²) (≈ 0 for a sharp spin); EMPTY when the
-  /// quasi-free variance read is missing/uncertified — UNKNOWN, never
+  /// The certified Var(J²) (≈ 0 for a sharp spin); empty when the
+  /// quasi-free variance read is missing or uncertified — unknown, never
   /// zero, and never inferred from the expectation.
   std::optional<double> totalJ2Variance{};
-  /// The #772 Berry-cancelled 2π character; EMPTY when the rotation read
-  /// did not certify.
+  /// The Berry-cancelled 2π character; empty when the rotation read did
+  /// not certify.
   std::optional<std::complex<double>> rotationCharacter{};
   /// "no-baryon", "baryon-candidate", "certified-proton", or
   /// "quasi-free-sharp-spin-obstruction".
   std::string classification{"no-baryon"};
-  /// The bound component's #765 persistence lifetime (NaN = missing).
+  /// The bound component's persistence lifetime (NaN = missing).
   double persistence = std::numeric_limits<double>::quiet_NaN();
   /// Names of every failed/missing certificate, in the fixed order above.
   std::vector<std::string> failedCertificates{};
 
-  // ── additive evidence summary (consumed by #776/#777/#778 unchanged) ──
+  // ── evidence summary ─────────────────────────────────────────────────
 
-  /// The invariant color volume S_ABC = det[c_A c_B c_C] — built ONCE
-  /// (NaN when no color evidence).  A transposition of two constituents
-  /// flips this sign and leaves `colorGramDeterminant` invariant.
+  /// The invariant color volume S_ABC = det[c_A c_B c_C], built once (NaN
+  /// when no color evidence).  Transposing two constituents flips this sign
+  /// and leaves `colorGramDeterminant` invariant.
   std::complex<double> colorWedge{std::numeric_limits<double>::quiet_NaN(),
                                   std::numeric_limits<double>::quiet_NaN()};
   /// ν = ν_A + ν_B + ν_C over the certified constituent windings (3 for a
-  /// certified proton); EMPTY when any leg is uncertified.
+  /// certified proton); empty when any leg is uncertified.
   std::optional<int> totalWinding{};
-  /// The composite exterior parity: the exact graded product of the three
+  /// The composite exterior parity: the graded product of the three
   /// certified constituent parities (−1 odd / +1 even / 0 = unknown).
   int exteriorParity = 0;
   /// The certified flavor occupation pattern under the constituents'
-  /// recorded doublet orientations ("uud", "uuu", "udd", "ddd"); EMPTY
+  /// recorded doublet orientations ("uud", "uuu", "udd", "ddd"); empty
   /// when any constituent's isospin is unknown.
   std::string flavorPattern{};
-  /// The summed certified constituent I3 (+1/2 for uud); EMPTY when any
+  /// The summed certified constituent I3 (+1/2 for uud); empty when any
   /// constituent's isospin is unknown.
   std::optional<double> totalIsospin{};
-  /// −1 / +1 when the #772 rotation read emitted a sign; 0 otherwise.
+  /// −1 / +1 when the rotation read emitted a sign; 0 otherwise.
   int rotationCharacterSign = 0;
-  /// The #772 Berry-cancelled PARTICLE-EXCHANGE character, when the caller
-  /// supplied a certified exchange read; EMPTY otherwise.  REPORT-ONLY.
+  /// The Berry-cancelled particle-exchange character, when the caller
+  /// supplied a certified exchange read; empty otherwise.  Report-only.
   std::optional<std::complex<double>> exchangeCharacter{};
   /// The doubly cancelled spin-statistics ratio
   /// χ̂(exchange) · χ̂(2π)^{-1} (`ExchangeHolonomy::doublyCancelledRatio`;
-  /// +1 on a spin-½ fixture, each factor separately near −1) — filled only
-  /// when BOTH channels are certified and correctly tagged.  REPORT-ONLY.
+  /// +1 on a spin-½ fixture, each factor separately near −1), filled only
+  /// when both channels are certified and correctly tagged.  Report-only.
   std::optional<std::complex<double>> spinStatisticsRatio{};
-  /// Whether a CONTINUUM spin claim was declared (so the lift was
-  /// demanded) and, when demanded, whether it was accepted.
+  /// Whether a continuum spin claim was declared, so the lift was
+  /// demanded, and, when demanded, whether it was accepted.
   bool spinLiftApplicable = false;
   bool spinLiftAccepted = false;
   /// Whether the sharp-spin certificate (certified Var(J²) within
   /// `spinVarianceTolerance`) held.
   bool sharpSpin = false;
   /// Whether the accepted covariance-only class was swept (every class
-  /// variance read supplied AND certified) — the premise the obstruction
+  /// variance read supplied and certified) — the premise the obstruction
   /// verdict quantifies over.
   bool quasiFreeClassSwept = false;
   /// min over the swept class of |Var(J²)| (NaN when not swept): the
   /// floor the variance failed to converge below.
   double classVarianceFloor = std::numeric_limits<double>::quiet_NaN();
-  /// The consumed scale-profile scalars (the QuarkRead flat-summary
-  /// convention — the full `ScaleProfileRead` is recomputed by
-  /// `scaleProfile` from the same evidence): the emergent radius, its
-  /// finiteness, the dimensionless spectral-mass channel, the
-  /// dimensionless radius ratio, the worst dimensionless deviation across
-  /// the refinement window, and whether every dimensionless channel was
-  /// stable.
+  /// The consumed scale-profile scalars: the emergent radius, its
+  /// finiteness, the dimensionless spectral-mass channel and radius ratio,
+  /// the worst dimensionless deviation across the refinement window, and
+  /// whether every dimensionless channel was stable.  `scaleProfile`
+  /// recomputes the full `ScaleProfileRead` from the same evidence.
   double radius = std::numeric_limits<double>::quiet_NaN();
   bool radiusFinite = false;
   double spectralMass = std::numeric_limits<double>::quiet_NaN();
   double radiusRatio = std::numeric_limits<double>::quiet_NaN();
   double profileMaxDeviation = std::numeric_limits<double>::quiet_NaN();
   bool profileStable = false;
-  /// The DIMENSIONFUL mass — ALWAYS empty (see the file banner).
+  /// The dimensionful mass: always empty (see the file banner).
   std::optional<double> physicalMass{};
-  /// The whitepaper's world-tube crossing readouts, when the caller supplied
-  /// them.  `crossingMassApplicable` is false when none were supplied, and
-  /// the `crossing-readouts` gate then passed VACUOUSLY; the value is NaN
-  /// and the baryon number EMPTY in that case — unknown, never zero.  The
-  /// crossing mass is UNCALIBRATED unless the producing configuration
-  /// declared otherwise, so it is never a dimensionful physical mass.
+  /// The world-tube crossing readouts, when the caller supplied them.
+  /// `crossingMassApplicable` is false when none were supplied and the
+  /// `crossing-readouts` gate then passed vacuously, leaving the value NaN
+  /// and the baryon number empty.  The crossing mass is uncalibrated unless
+  /// the producing configuration declared otherwise, so it is not a
+  /// dimensionful physical mass.
   bool crossingMassApplicable = false;
   double crossingMassValue = std::numeric_limits<double>::quiet_NaN();
   std::optional<double> crossingBaryonNumber{};
@@ -1601,19 +1406,18 @@ struct BaryonRead {
   double confidence = 0.0;
   /// The thresholds that produced this read (echoed configuration).
   ParticleClustersConfig thresholds{};
-  /// StructureExact (exact boolean combination GIVEN the consumed held
+  /// StructureExact (an exact boolean combination given the consumed held
   /// certificates; residual = their maximum) for a certified proton;
-  /// HeuristicDiscovery (never holds) otherwise — including for the
-  /// obstruction verdict, which is a reported branch point, not a held
-  /// claim.
+  /// HeuristicDiscovery (never holds) otherwise, including for the
+  /// obstruction verdict, which is a reported branch point rather than a
+  /// held claim.
   cobordism::Certificate certificate{};
 
   /// One-line human-readable summary.
   [[nodiscard]] std::string describe() const;
-  /// Checkpoint serialization (`particles.baryons`): every
-  /// field, the evidence summary, the failed-certificate names, and
-  /// the threshold echo travel together; unknown values serialize as
-  /// null, never zero.
+  /// Checkpoint serialization (`particles.baryons`): every field, the
+  /// evidence summary, the failed-certificate names and the threshold echo
+  /// travel together.
   [[nodiscard]] Record toRecord() const;
   /// Rehydrate from `toRecord()` output; rejects an unknown
   /// `schema_version` (std::invalid_argument).
@@ -1622,35 +1426,30 @@ struct BaryonRead {
 
 /// # ParticleClusters
 ///
-/// The #773 quark/antiquark classifier over persistent modular spectral
-/// components (whitepaper "Quarks as modular clusters").  See the file
-/// banner for the identities implemented, their domains, and the
-/// certificate vocabulary.
+/// The quark/antiquark classifier over persistent modular spectral
+/// components.  See the file banner for the identities implemented, their
+/// domains, and the certificate names.
 ///
 /// **Composition, not recomputation.**  Every certificate consumed here is
-/// produced by a merged upstream kernel: #765 persistence diagnostics,
-/// #769 band certificates and tracking, #767 anchor profiles, #770
-/// transports and determinant windings (with their recorded closure
-/// specifications), #772-adjacent parity via the #780 Wick reads, and the
-/// EXISTING Gauss-flux read (`EigenstateSynthesis::gaussLawCharge`).  The
-/// classifier's own claim is the exact boolean combination.
+/// produced by an upstream kernel: persistence diagnostics, band
+/// certificates and tracking, anchor profiles, transports and determinant
+/// windings, parity via the Wick reads, and the Gauss-flux read
+/// (`EigenstateSynthesis::gaussLawCharge`).  The classifier's own claim is
+/// the exact boolean combination.
 ///
-/// **Certificate name vocabulary** (`failedCertificates`): "persistence",
-/// "localization", "parity-odd", "occupation-one", "color-rank-three",
-/// "color-rank-stability", "anchor", "anchor-stability",
-/// "transport-leakage", "winding", "winding-unit", "refinement-stability"
-/// (the twelve core gates, in that order), then
-/// "flavor-doublet", "isospin", "gauss-consistency", "ud-identification"
-/// (the flavor/charge gates, which never veto quark-ness — they only
-/// leave their own fields unknown).
+/// **Certificate names** (`failedCertificates`): the twelve core gates, in
+/// order — "persistence", "localization", "parity-odd", "occupation-one",
+/// "color-rank-three", "color-rank-stability", "anchor",
+/// "anchor-stability", "transport-leakage", "winding", "winding-unit",
+/// "refinement-stability" — then the flavor and charge gates
+/// "flavor-doublet", "isospin", "gauss-consistency", "ud-identification",
+/// which never veto quark-ness and only leave their own fields unknown.
 ///
 /// **Read-only observable.**  Never calls a solver, never mutates the
-/// spacetime, and no output of this class may enter any emergence
-/// objective ("no quark-specific quantity enters the emergence
-/// objective" is a tested acceptance bullet).
+/// spacetime, and no output may enter any emergence objective.
 class ParticleClusters {
   public:
-    /// `AnalyticCache` kind string of a cached QuarkRead (#764 contract).
+    /// `AnalyticCache` kind string of a cached QuarkRead.
     static constexpr const char *kCacheKind = "quark-read";
 
     /// Bind the classification thresholds (echoed on every read).
@@ -1664,11 +1463,11 @@ class ParticleClusters {
     // ── the quark classifier ────────────────────────────────────────────
 
     /// Classify one candidate from its assembled evidence: evaluate the
-    /// ten core certificates, derive quark vs antiquark from the
+    /// core certificates, derive quark vs antiquark from the
     /// determinant-line orientation, attach the provisional baryon flux
-    /// under the certified winding, and fill isospin/charge only from
-    /// their own independent certificates.  Never throws on missing
-    /// evidence — missing evidence is a NAMED failed certificate.
+    /// under the certified winding, and fill isospin and charge only from
+    /// their own certificates.  Never throws; missing evidence is a named
+    /// failed certificate.
     [[nodiscard]] QuarkRead classifyQuark(
         const QuarkCandidateEvidence &evidence) const;
 
@@ -1676,17 +1475,17 @@ class ParticleClusters {
     [[nodiscard]] std::vector<QuarkRead> classifyQuarks(
         const std::vector<QuarkCandidateEvidence> &candidates) const;
 
-    /// `classifyQuark` through the #764 `AnalyticCache` contract: keyed by
-    /// the color band's cell-vertex set (kind `kCacheKind`, parameter =
+    /// `classifyQuark` through the `AnalyticCache` contract: keyed by the
+    /// color band's cell-vertex set (kind `kCacheKind`, parameter =
     /// `evidenceFingerprint`), served while the band's star is untouched
-    /// AND the evidence fingerprint matches, recomputed (and re-stored)
+    /// and the evidence fingerprint matches, recomputed and re-stored
     /// otherwise.  Cached results equal cold recomputation.
     [[nodiscard]] QuarkRead classifyQuarkCached(
         cobordism::AnalyticCache &cache,
         const QuarkCandidateEvidence &evidence) const;
 
     /// Order-sensitive content fingerprint of the decision-relevant
-    /// evidence AND the threshold configuration (the cache parameter): any
+    /// evidence and the threshold configuration (the cache parameter): a
     /// change in either recomputes rather than serving a stale verdict.
     [[nodiscard]] std::uint64_t evidenceFingerprint(
         const QuarkCandidateEvidence &evidence) const;
@@ -1700,28 +1499,28 @@ class ParticleClusters {
     [[nodiscard]] ConjugatePairRead conjugatePair(const QuarkRead &first,
                                                   const QuarkRead &second) const;
 
-    // ── #774 even sectors: octet bilinear read + gluon/meson/diquark ────
+    // ── even sectors: octet bilinear read + gluon/meson/diquark ─────────
 
     /// `AnalyticCache` kind string of a cached octet bilinear read.
     static constexpr const char *kOctetCacheKind = "octet-bilinear-read";
 
     /// The quasi-free traceless-bilinear (octet) read of three declared
-    /// color modes of a carried #780 covariance (see `OctetBilinearRead`
-    /// for the exact identities).  Every quantity is a finite exact Wick
-    /// sum evaluated through the PUBLIC `CovarianceState` reads — dense
-    /// Fock objects never appear on this path; adding vacuum-embedded
+    /// color modes of a carried covariance (see `OctetBilinearRead` for the
+    /// exact identities).  Every quantity is a finite exact Wick sum
+    /// evaluated through the public `CovarianceState` reads; dense Fock
+    /// objects never appear on this path, and adding vacuum-embedded
     /// microscopic modes leaves the read unchanged.
     /// @throws std::invalid_argument unless `colorModes` names exactly
-    ///   three DISTINCT in-range modes.
+    ///   three distinct in-range modes.
     [[nodiscard]] OctetBilinearRead octetBilinearRead(
         const quantum::CovarianceState &state,
         const std::vector<std::size_t> &colorModes) const;
 
-    /// `octetBilinearRead` through the #764 `AnalyticCache` contract:
-    /// keyed by the caller's component vertex set (kind `kOctetCacheKind`,
+    /// `octetBilinearRead` through the `AnalyticCache` contract: keyed by
+    /// the caller's component vertex set (kind `kOctetCacheKind`,
     /// parameter = `octetFingerprint` — the covariance hash, the declared
     /// modes, and the sign-extraction threshold), served while the
-    /// component's star is untouched AND the fingerprint matches (a Γ
+    /// component's star is untouched and the fingerprint matches (a Γ
     /// change is a state change), recomputed and re-stored otherwise.
     /// Cached results equal cold recomputation.
     [[nodiscard]] OctetBilinearRead octetBilinearReadCached(
@@ -1737,13 +1536,12 @@ class ParticleClusters {
         const quantum::CovarianceState &state,
         const std::vector<std::size_t> &colorModes) const;
 
-    /// Classify one gluon candidate from its assembled evidence (design
-    /// spec §14.3): certified even parity, a nonzero certified octet
-    /// excitation with machine-level octet purity, accepted rank-three
-    /// lifetime transports under the leakage cap, a CERTIFIED zero total
-    /// determinant winding (zero baryon flux — evidence, never a default),
-    /// and sufficient persistence.  Never throws on missing evidence —
-    /// missing evidence is a NAMED failed certificate.
+    /// Classify one gluon candidate from its assembled evidence: certified
+    /// even parity, a nonzero certified octet excitation with machine-level
+    /// octet purity, accepted rank-three lifetime transports under the
+    /// leakage cap, a certified zero total determinant winding, and
+    /// sufficient persistence.  Never throws; missing evidence is a named
+    /// failed certificate.
     [[nodiscard]] GluonRead classifyGluon(
         const GluonCandidateEvidence &evidence) const;
 
@@ -1760,79 +1558,73 @@ class ParticleClusters {
     [[nodiscard]] DiquarkRead classifyDiquark(
         const CompositeCandidateEvidence &evidence) const;
 
-    // ── #775 three-cluster sector: baryons and the proton certificate ───
+    // ── three-cluster sector: baryons and the proton certificate ────────
 
-    /// The bound-supercomponent search: for each
-    /// NEXT-modular-level component, report which certified quark
-    /// candidates it contains, their shared #765 lifetime window, and the
-    /// containment / mutual-transport certificates.  One read is emitted
-    /// per component containing at least one contained candidate, in
-    /// input order; `found` requires the component to sit at a strictly
-    /// higher modular level than every constituent, to contain EXACTLY
-    /// three certified quark candidates, and for their lifetimes to
-    /// overlap and their mutual transports to stay bounded.  Never throws
-    /// on missing evidence — missing evidence is a NAMED failed
+    /// The bound-supercomponent search: for each next-modular-level
+    /// component, report which certified quark candidates it contains,
+    /// their shared lifetime window, and the containment and
+    /// mutual-transport certificates.  One read is emitted per component
+    /// containing at least one candidate, in input order.  `found` requires
+    /// the component to sit at a strictly higher modular level than every
+    /// constituent, to contain exactly three certified quark candidates,
+    /// and for their lifetimes to overlap and their mutual transports to
+    /// stay bounded.  Never throws; missing evidence is a named failed
     /// certificate.
     [[nodiscard]] std::vector<BoundSupercomponentRead>
     boundSupercomponentSearch(
         const std::vector<ComponentRead> &nextLevelComponents,
         const std::vector<BoundCandidateEvidence> &candidates) const;
 
-    /// One refinement sample of the EXISTING #575/#566/#593 mass-radius
-    /// battery, read through the #593 validated context exactly as
-    /// `EmergentRadius` / `EmergentMass` do
-    /// (`RegisterContext::interiorHinges`): the dual/primal radii, the
-    /// intensive shell mass, the curvature-weight participation ratio,
-    /// and the per-shell curvature-weight profile.  Read-only; nothing is
+    /// One refinement sample of the mass-radius battery, read through the
+    /// validated context exactly as `EmergentRadius` / `EmergentMass` do
+    /// (`RegisterContext::interiorHinges`): the dual and primal radii, the
+    /// intensive shell mass, the curvature-weight participation ratio, and
+    /// the per-shell curvature-weight profile.  Read-only; nothing is
     /// recomputed and no solver is called.
     [[nodiscard]] static ScaleProfileSample scaleProfileSample(
         const RegisterContext &ctx);
 
     /// The refinement-window certificate over `ScaleProfileSample`s: a
     /// finite emergent radius plus the refinement stability of every
-    /// DIMENSIONLESS channel (see `ScaleProfileRead`, and the file banner
-    /// section "the form-factor situation" — nothing here is a form
-    /// factor and no dimensionful mass is ever emitted).
+    /// dimensionless channel (see `ScaleProfileRead`, and the file banner
+    /// section "Form factors" — nothing here is a form factor and no
+    /// dimensionful mass is ever emitted).
     [[nodiscard]] ScaleProfileRead scaleProfile(
         const std::vector<ScaleProfileSample> &samples) const;
 
-    /// Classify one three-cluster candidate and evaluate the complete
-    /// proton certificate: the two structural
-    /// gates, the color volume / Gram determinant with the wedge built
-    /// ONCE, the independent net-color-flux diagnostic, the summed
-    /// certified winding and graded parity, the reused #773 flavor/charge
-    /// reads, the #772 2π character and (when a continuum spin claim is
-    /// declared) the spin lift, the SHARP total-space spin certificate,
-    /// and the refinement-window scale reads.  Returns "no-baryon",
-    /// "baryon-candidate", "certified-proton", or
+    /// Classify one three-cluster candidate and evaluate the proton
+    /// certificate: the two structural gates, the color volume and Gram
+    /// determinant with the wedge built once, the net-color-flux
+    /// diagnostic, the summed certified winding and graded parity, the
+    /// constituent flavor and charge reads, the 2π character and (when a
+    /// continuum spin claim is declared) the spin lift, the sharp
+    /// total-space spin certificate, and the refinement-window scale reads.
+    /// Returns "no-baryon", "baryon-candidate", "certified-proton", or
     /// "quasi-free-sharp-spin-obstruction" with every failed or unknown
-    /// certificate NAMED.  Never throws on missing evidence.
+    /// certificate named.  Never throws.
     [[nodiscard]] BaryonRead classifyBaryon(
         const BaryonCandidateEvidence &evidence) const;
 
     /// `classifyBaryon` over the `boundSupercomponentSearch` result: for
-    /// every binding that grouped EXACTLY three certified constituents,
+    /// every binding that grouped exactly three certified constituents,
     /// assemble the evidence bundle from the constituent verdicts the
     /// caller already produced and classify it.  One `BaryonRead` per such
-    /// binding, in `bindings` order.
+    /// binding, in `bindings` order.  A binding that grouped a different
+    /// number of certified constituents emits nothing; the missing legs are
+    /// never padded with default reads, which would report a structural gap
+    /// the geometry did not have.
     ///
-    /// A binding that grouped a different number of certified constituents
-    /// emits NOTHING: a three-cluster verdict is never assembled by padding
-    /// the missing legs with default reads, because a padded leg would
-    /// report a structural gap the geometry did not have.
-    ///
-    /// Only the evidence the caller HAS travels: the binding, the three
+    /// Only the evidence the caller has travels: the binding, the three
     /// `QuarkRead`s (`BoundSupercomponentRead::quarkIndices` indexes
-    /// `constituentReads`), and the bound component's #765 persistence
-    /// lifetime.  The color columns, the octet flux read, the #772 rotation
-    /// character, the #780 quasi-free spin reads, the swept covariance-only
-    /// class, and the refinement-window samples are left ABSENT, so
-    /// `classifyBaryon` NAMES each gap rather than presuming it — an
-    /// unsupplied quantity is unknown, never a fabricated pass.  A caller
-    /// holding any of them classifies through `classifyBaryon` directly.
+    /// `constituentReads`), and the bound component's persistence lifetime.
+    /// The color columns, the octet flux read, the rotation character, the
+    /// quasi-free spin reads, the swept covariance-only class and the
+    /// refinement-window samples are left absent, so `classifyBaryon` names
+    /// each gap rather than presuming it.  A caller holding any of them
+    /// classifies through `classifyBaryon` directly.
     ///
     /// `boundLifetimes` is the bound component's persistence lifetime per
-    /// binding, in `bindings` order; EMPTY leaves every one unknown (NaN).
+    /// binding, in `bindings` order; empty leaves every one unknown (NaN).
     /// Read-only, and never throws on missing evidence.
     /// @throws std::invalid_argument when `boundLifetimes` is neither empty
     ///   nor exactly as long as `bindings`, or when a binding indexes a
@@ -1845,25 +1637,23 @@ class ParticleClusters {
 
     // ── the emergent flavor doublet (no requested dimension) ────────────
 
-    /// Search the candidate's band enumeration ACROSS FRAMES for a stable
-    /// transported two-state subclass: follow every
-    /// #769 band through consecutive frames via
-    /// `SpectralFiberTracker::matchFibers` (certified continuations only,
-    /// unambiguous — two chains merging onto one band invalidate each
-    /// other), report every stable subclass rank, and accept exactly one
-    /// full-length rank-two subclass.  `frames[t]` is the candidate's
-    /// `ComponentBandRead` at time/scale sample t (one degree per call —
-    /// pass each degree's enumeration separately or concatenated fibers
-    /// of one read).  No dimension is ever requested.
+    /// Search the candidate's band enumeration across frames for a stable
+    /// transported two-state subclass: follow every band through
+    /// consecutive frames via `SpectralFiberTracker::matchFibers`
+    /// (certified continuations only, and unambiguous — two chains merging
+    /// onto one band invalidate each other), report every stable subclass
+    /// rank, and accept exactly one full-length rank-two subclass.
+    /// `frames[t]` is the candidate's `ComponentBandRead` at time or scale
+    /// sample t, one degree per call.  No dimension is requested.
     [[nodiscard]] FlavorDoubletRead flavorDoubletSearch(
         const std::vector<ComponentBandRead> &frames) const;
 
     // ── the reused Gauss-flux electric read ─────────────────────────────
 
-    /// The EXISTING Gauss-flux read on nested enclosing surfaces: for each
-    /// enclosed vertex set, `EigenstateSynthesis(st, 2).gaussLawCharge(F,
-    /// set, electricOnly)` — the closed-star boundary flux of the supplied
-    /// field-strength 2-cochain `F` (canonical degree-2 cell order) —
+    /// The Gauss-flux read on nested enclosing surfaces: for each enclosed
+    /// vertex set, `EigenstateSynthesis(st, 2).gaussLawCharge(F, set,
+    /// electricOnly)` — the closed-star boundary flux of the supplied
+    /// field-strength 2-cochain `F` in canonical degree-2 cell order —
     /// then the consistency combination `gaussFluxConsistency`.  Read-only
     /// on the spacetime.
     /// @throws std::invalid_argument on an empty surface list;
@@ -1884,10 +1674,11 @@ class ParticleClusters {
         bool electricOnly = true) const;
 
     /// Nested enclosing vertex sets by breadth-first shell growth: returns
-    /// exactly `shells` sets, sets[0] = the seed ids (deduplicated,
-    /// restricted to vertices present in the complex), sets[k] = sets[k−1]
-    /// plus every vertex sharing an edge with it.  Nested by construction
-    /// (growth saturates at the whole one-skeleton component); read-only.
+    /// exactly `shells` sets, with sets[0] the seed ids (deduplicated and
+    /// restricted to vertices present in the complex) and sets[k] = sets[k−1]
+    /// plus every vertex sharing an edge with it.  Nested by construction,
+    /// since growth saturates at the whole one-skeleton component.
+    /// Read-only.
     /// @throws std::invalid_argument on an empty seed, no seed vertex in
     ///   the complex, or shells < 1.
     [[nodiscard]] static std::vector<std::vector<std::uint64_t>>
@@ -1897,11 +1688,11 @@ class ParticleClusters {
 
     // ── candidate tracking across scale/time ────────────────────────────
 
-    /// Track candidates across frames by their color bands (#769
-    /// delegation: `SpectralFiberTracker::matchFibers` on the evidence
-    /// bands with `doubletOverlapThreshold`-independent `overlapThreshold`
-    /// — the certified-continuation semantics).  Entry (fromIndex,
-    /// toIndex) indexes the input evidence lists.
+    /// Track candidates across frames by their color bands, delegating to
+    /// `SpectralFiberTracker::matchFibers` on the evidence bands with an
+    /// `overlapThreshold` independent of `doubletOverlapThreshold`, under
+    /// certified-continuation semantics.  Entry (fromIndex, toIndex)
+    /// indexes the input evidence lists.
     [[nodiscard]] static std::vector<FiberMatchRead> trackCandidates(
         const std::vector<QuarkCandidateEvidence> &from,
         const std::vector<QuarkCandidateEvidence> &to,

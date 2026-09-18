@@ -15,9 +15,9 @@
 namespace tessera::rl {
 
 EnvConfig carryProfileEnv() {
-  // train.py's CARRY_PROFILE env_kwargs + shaping: a single GROW gets a big run_stage1
-  // budget (the register carries in ~50-120 engine steps), dense hole + r_state shaping and
-  // a strong terminal carry bonus, a short action horizon, and the directed cone probes on.
+  // The proton-carry profile: one Grow move gets a large stage-1 budget (the register
+  // carries in roughly 50-120 engine steps), hole and r_state shaping are dense, the terminal
+  // carry bonus is large, the action horizon is short, and the directed cone probes are on.
   EnvConfig c;
   c.maxActions = 3;
   c.growSteps = {50, 130};
@@ -33,7 +33,7 @@ EnvConfig carryProfileEnv() {
 }
 
 TrainConfig carryProfileTrain() {
-  return TrainConfig{};  // the defaults already match CARRY_PROFILE's benchmark args
+  return TrainConfig{};  // the defaults are already the proton-carry profile
 }
 
 namespace {
@@ -67,7 +67,7 @@ std::vector<IterStat> trainLoop(PPO &ppo, CobordismObjectiveEnv &env, int iterat
   const double entropyStart = ppo.entropyCoef;
   std::size_t seedIdx = 0;
   for (int it = 0; it < iterations; ++it) {
-    // Linearly anneal the entropy bonus (explore the move mix early, commit late).
+    // Linearly anneal the entropy bonus: explore the move mix early, commit late.
     if (entropyCoefFinal >= 0.0 && iterations > 1) {
       const double frac = static_cast<double>(it) / (iterations - 1);
       ppo.entropyCoef = entropyStart + frac * (entropyCoefFinal - entropyStart);
@@ -136,7 +136,7 @@ BenchmarkResult benchmark(EnvConfig envConfig, TrainConfig trainConfig, bool for
           trainConfig.entropyCoef, trainConfig.updateEpochs, /*minibatch=*/64,
           /*maxGradNorm=*/0.5);
 
-  // Train + eval on disjoint seed sets (measure generalization, not memorization).
+  // Train and evaluate on disjoint seed sets, so the benchmark measures generalization.
   std::vector<std::uint64_t> trainSeeds;
   const int nTrainSeeds = std::max(8, trainConfig.episodesPerIter * 2);
   for (int i = 0; i < nTrainSeeds; ++i) trainSeeds.push_back(100 + i);
@@ -168,7 +168,7 @@ BenchmarkResult benchmark(EnvConfig envConfig, TrainConfig trainConfig, bool for
   BenchmarkResult result;
   result.history = std::move(history);
   result.rl = evaluate(env, rlPolicy, heldOut);
-  setSeed(trainConfig.agentSeed + 1);  // independent randomness for the baseline
+  setSeed(trainConfig.agentSeed + 1);  // independent randomness for the baselines
   result.randomBaseline = evaluate(env, randomPolicy, heldOut);
   result.growOnly = evaluate(env, growOnly, heldOut);
   result.trainTimeS = std::chrono::duration<double>(t1 - t0).count();

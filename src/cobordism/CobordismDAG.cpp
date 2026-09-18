@@ -74,7 +74,7 @@ void CobordismDAG::run(int stage1MaxSteps, int stage1CandidateMoves,
       opt.seedInputs(inSeeds);
       opt.seedOutputs(outSeeds);
       if (pipeFibers_) {
-        opt.useFiberResiduals(scoreBlocksByFiber_);  // #940
+        opt.useFiberResiduals(scoreBlocksByFiber_);
         // Pipe upstream output fibers into the downstream input blocks the
         // edges name (input slots after the literals), beside the targets.
         std::size_t slot = nd.literalInputs.size();
@@ -84,7 +84,7 @@ void CobordismDAG::run(int stage1MaxSteps, int stage1CandidateMoves,
               slot < opt.inputs().size()) {
             const auto attachment = attachments_[i].find(static_cast<int>(slot));
             if (attachment != attachments_[i].end())
-              opt.attachInputFiber(slot, *fibers[e.second], attachment->second);  // #941
+              opt.attachInputFiber(slot, *fibers[e.second], attachment->second);
             else
               opt.setInputFiber(slot, *fibers[e.second]);
             ++pipedInputs_[i];
@@ -99,7 +99,7 @@ void CobordismDAG::run(int stage1MaxSteps, int stage1CandidateMoves,
       residuals_[i] = opt.rU(opt.spacetime());
       if (twoBodyTargets_[i]) {
         try {
-          twoBodyReads_[i] = opt.readTwoBody();  // #941
+          twoBodyReads_[i] = opt.readTwoBody();
         } catch (const std::exception &ex) {
           fiberRefusals_[i] = ex.what();
         }

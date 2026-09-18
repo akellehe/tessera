@@ -206,7 +206,7 @@ def layout_from_spacetime(verts, edges, **kwargs):
             # rest length |Re l^2| (Im and the causal sign are deliberately
             # NOT drawn), with an epsilon floor so null edges don't pin two
             # vertices together — the multicobordism animation's convention
-            # (#581).
+            #.
             rest_lens.append(
                 math.sqrt(max(abs((e.getLength()**2).real), 1e-6)))
 

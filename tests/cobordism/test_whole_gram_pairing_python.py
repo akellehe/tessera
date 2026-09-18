@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import qubit as qa
 from tessera._tessera.cobordism import MultiCobordism as MC  # noqa: E402
 
 GRID, TAU_A, TAU_B, TAU_OUT = 3, 0.3 + 1.1j, -0.2 + 0.8j, "0.1+1.3j"

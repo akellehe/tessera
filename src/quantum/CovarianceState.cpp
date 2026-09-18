@@ -478,7 +478,7 @@ CovarianceState::Complex CovarianceState::bilinearMoment(
             if (static_cast<std::size_t>(std::popcount(r)) < j) continue;
             Eigen::MatrixXcd acc =
                 Eigen::MatrixXcd::Zero(gamma_.rows(), gamma_.cols());
-            // Enumerate nonempty proper submasks s of r (the FIRST part).
+            // Enumerate nonempty proper submasks s of r (the first part).
             for (std::size_t s = (r - 1) & r; s != 0; s = (s - 1) & r) {
                 const std::size_t tail = r ^ s;
                 if (static_cast<std::size_t>(std::popcount(tail)) < j - 1)
@@ -586,7 +586,7 @@ WickCertificateRead CovarianceState::wickSpinSquaredVariance(
                     std::string("spin-squared-variance[") + hex + "]");
 }
 
-// ─── cached Wick reads (#764 contract) ────────────────────────────────────
+// ─── cached Wick reads (the AnalyticCache contract) ────────────────────────────────────
 
 WickCertificateRead CovarianceState::wickReadCached(
     cobordism::AnalyticCache& cache,
@@ -604,7 +604,7 @@ WickCertificateRead CovarianceState::wickReadCached(
             cache.fetch(componentVertexIds, kCacheKind, parameter)) {
         const auto read =
             std::static_pointer_cast<const WickCertificateRead>(cached);
-        // A Γ change is a STATE change, not a geometry change: verified
+        // A Γ change is a state change, not a geometry change: verified
         // explicitly, so a stale-Γ payload causes recomputation, never a
         // wrong serve.
         if (read->polynomialId == polynomialId && read->covarianceHash == hash)

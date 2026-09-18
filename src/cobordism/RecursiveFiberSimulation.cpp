@@ -1,13 +1,11 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 //
-// #776 — the unforced recursive-analysis integration of `MultiCobordism`.
-//
-// This translation unit holds the simulation modes, the one permitted
-// carried-state energy coupling, the particle-independent refinement rule, the
-// post-hoc analysis overlay, and the versioned checkpoint/replay path. The
-// scalar objective itself stays in `MultiCobordism.cpp`; nothing here is
-// reachable from it (see the firewall note in `MultiCobordism.h`).
+// The recursive-analysis integration of `MultiCobordism`: the simulation
+// modes, the one permitted carried-state energy coupling, the
+// particle-independent refinement rule, the post-hoc analysis overlay, and the
+// versioned checkpoint/replay path. The scalar objective stays in
+// `MultiCobordism.cpp` and nothing here is reachable from it.
 
 #include "cobordism/MultiCobordism.h"
 
@@ -69,14 +67,9 @@ namespace {
 
 /// # Json
 ///
-/// The minimal writer/reader the checkpoint schema needs
-/// (scalars, strings, arrays, objects, `null`). The schema uses no other
-/// construct, so a small self-contained implementation beats a third-party
-/// dependency — the same call the holography schema made.
-///
-/// The `number` writer is where the "unknown is null, never zero" rule is
-/// enforced: a non-finite double is a quantity that was NOT measured, and it
-/// serializes as `null`.
+/// The writer/reader the checkpoint schema needs: scalars, strings, arrays,
+/// objects and `null`. The `number` writer serializes a non-finite double —
+/// an unmeasured quantity — as `null`, never zero.
 class Json {
   public:
     /// A JSON string literal with the mandatory escapes.
@@ -103,15 +96,15 @@ class Json {
       return out + "\"";
     }
 
-    /// A double: round-trip exact, or `null` when the value was never
-    /// measured (NaN / infinite). Unknown is NEVER zero.
+    /// A double: round-trip exact, or `null` when never measured (NaN or
+    /// infinite).
     static std::string number(double value) {
       if (!std::isfinite(value)) return "null";
       std::ostringstream stream;
       stream << std::setprecision(17) << value;
       std::string text = stream.str();
       // A measured double stays a JSON float even at a whole value, so a
-      // downstream reader never sees `1` where the schema promises a real.
+      // reader never sees `1` where the schema promises a real.
       if (text.find_first_of(".eE") == std::string::npos) text += ".0";
       return text;
     }
@@ -134,8 +127,8 @@ class Json {
     static std::string optional(const std::optional<int> &value) {
       return value.has_value() ? integer(*value) : std::string("null");
     }
-    /// An optional complex: `null` when the read never certified one — an
-    /// ABSENT character, distinct from a measured `[null, null]`.
+    /// An optional complex: `null` when absent, distinct from a measured
+    /// `[null, null]`.
     static std::string optional(const std::optional<complexd> &value) {
       return value.has_value() ? complexPair(*value) : std::string("null");
     }
@@ -171,8 +164,8 @@ class Json {
       return out + "}";
     }
 
-    /// The certificate record every analytic-first kernel result travels
-    /// with (#764), rendered with unmeasured fields as `null`.
+    /// The certificate record every analytic-first kernel result travels with,
+    /// unmeasured fields rendered as `null`.
     static std::string certificate(const Certificate &record) {
       return object({
           {"grade", str(gradeName(record.grade()))},
@@ -187,35 +180,36 @@ class Json {
       });
     }
 
+    // Hyphenated to match Certificate.cpp and the regimeFromName readers in
+    // observables, which throw std::invalid_argument on an unknown token.
     static std::string gradeName(CertificateGrade grade) {
       switch (grade) {
-        case CertificateGrade::AlgebraicallyExact: return "algebraically_exact";
-        case CertificateGrade::StructureExact: return "structure_exact";
-        case CertificateGrade::CertifiedNumerical: return "certified_numerical";
-        case CertificateGrade::HeuristicDiscovery: return "heuristic_discovery";
+        case CertificateGrade::AlgebraicallyExact: return "algebraically-exact";
+        case CertificateGrade::StructureExact: return "structure-exact";
+        case CertificateGrade::CertifiedNumerical: return "certified-numerical";
+        case CertificateGrade::HeuristicDiscovery: return "heuristic-discovery";
       }
-      return "heuristic_discovery";
+      return "heuristic-discovery";
     }
 
     static std::string regimeName(CertificateRegime regime) {
       switch (regime) {
         case CertificateRegime::PositiveSemidefinite:
-          return "positive_semidefinite";
+          return "positive-semidefinite";
         case CertificateRegime::HermitianIndefinite:
-          return "hermitian_indefinite";
-        case CertificateRegime::NonNormal: return "non_normal";
+          return "hermitian-indefinite";
+        case CertificateRegime::NonNormal: return "non-normal";
         case CertificateRegime::ComplexSymmetricPencil:
-          return "complex_symmetric_pencil";
+          return "complex-symmetric-pencil";
       }
-      return "non_normal";
+      return "non-normal";
     }
 
     // ── the reader (replay) ───────────────────────────────────────────────
 
-    /// The value of a TOP-LEVEL key of a JSON object document, as raw text
-    /// (`""` when absent). Nesting, strings, and escapes are tracked, so a
-    /// key that also appears inside a nested object is not mistaken for the
-    /// top-level one.
+    /// The value of a top-level key of a JSON object document, as raw text
+    /// (`""` when absent). Nesting, strings and escapes are tracked, so a key
+    /// inside a nested object is not mistaken for the top-level one.
     static std::string topLevelValue(const std::string &document,
                                      const std::string &key) {
       std::size_t position = skipSpace(document, 0);
@@ -292,7 +286,7 @@ class Json {
       return position;
     }
 
-    /// One PAST the closing quote of the string starting at `position`.
+    /// One past the closing quote of the string starting at `position`.
     static std::size_t endOfString(const std::string &text,
                                    std::size_t position) {
       ++position;
@@ -308,7 +302,7 @@ class Json {
           "MultiCobordism checkpoint: unterminated string");
     }
 
-    /// One PAST the end of the value starting at `position`.
+    /// One past the end of the value starting at `position`.
     static std::size_t endOfValue(const std::string &text,
                                   std::size_t position) {
       if (position >= text.size())
@@ -363,16 +357,15 @@ class Json {
 
 /// # BandAnchor
 ///
-/// The #767 calibrated oriented-triangle anchor of one accepted degree-one
-/// rank-three band, built from the complex the band was read on: the atlas is
+/// The calibrated oriented-triangle anchor of one accepted degree-one
+/// rank-three band, built from the complex the band was read on. The atlas is
 /// every 2-cell all three of whose boundary edges are cells of the band, with
 /// the standard incidence signs (+, −, +) of \f$ \partial[a,b,c] \f$. The
-/// weighting is the UNIFORM convex one and is declared BEFORE any evaluation,
-/// so no post-hoc weight selection is possible.
+/// weighting is uniform convex and is declared before any evaluation.
 ///
 /// An empty atlas (a band whose cells carry no complete triangle) returns the
-/// default profile — MISSING anchor evidence, which the classifier reports as
-/// a named failed certificate rather than a presumed pass.
+/// default profile: missing anchor evidence, which the classifier reports as a
+/// named failed certificate.
 class BandAnchor {
   public:
     static ::tessera::observables::AnchorProfile of(
@@ -435,10 +428,8 @@ void MultiCobordism::setSimulationMode(SimulationMode mode,
                                        EmergenceSubmode submode) {
   simulationMode_ = mode;
   emergenceSubmode_ = submode;
-  // Leaving the backreaction sub-mode SELECTS the strict one, which is the
-  // acceptance statement of #776: "disabling the state-energy coupling selects
-  // the different strict sub-mode". The weight is the coupling, so it is what
-  // gets zeroed.
+  // Leaving the backreaction sub-mode selects the strict one by zeroing the
+  // state-energy coupling weight.
   if (mode != SimulationMode::Emergence ||
       submode != EmergenceSubmode::CertificatesBlindMeanField)
     carriedStateEnergyWeight_ = 0.0;
@@ -463,20 +454,16 @@ std::string MultiCobordism::submodeName(EmergenceSubmode submode) {
 }
 
 // ======================================================================
-// the carried quasi-free state — the ONE permitted coupling
+// the carried quasi-free state — the one permitted coupling
 // ======================================================================
 
 void MultiCobordism::setCarriedState(
     const std::vector<std::vector<std::uint64_t>> &modeCells, int degree,
     const std::vector<complexd> &covariance) {
-  // Degree ONE and above. At degree zero the Hodge operator is the graph
-  // Laplacian over vertices in sorted-id order rather than the canonical
-  // ChainComplex cell order, so a mode cell would be located against the
-  // wrong index; and `laplacianGradient` — the coupling's exact derivative —
-  // is defined only for k >= 1 anyway. Refusing loudly beats mis-mapping.
-  // A DECLARED domain for the carried state, not a capability limit: since
-  // #805 L_0 and its exact gradient exist too (a degree-zero carried state
-  // would put the modes on VERTICES, which is a separate design decision).
+  // Degree one and above is the declared domain for the carried state. At
+  // degree zero the Hodge operator is indexed over vertices in sorted-id order
+  // rather than the canonical ChainComplex cell order, so a mode cell would be
+  // located against the wrong index.
   if (degree < 1)
     throw std::invalid_argument(
         "MultiCobordism::setCarriedState: the carried state is declared over "
@@ -517,7 +504,7 @@ std::vector<complexd> MultiCobordism::carriedStateGenerator(
   if (!spacetime || modeCount == 0) return generator;
 
   // The carried modes' cells, located in the canonical ChainComplex order by
-  // vertex SET (no vertex order is ever imposed).
+  // vertex set; no vertex order is imposed.
   const auto chainComplex = ChainComplex::fromSpacetime(*spacetime);
   const auto cells = chainComplex.kSimplexVertices(carriedStateDegree_);
   std::map<std::vector<std::uint64_t>, std::size_t> indexOfCell;
@@ -542,10 +529,10 @@ std::vector<complexd> MultiCobordism::carriedStateGenerator(
       HodgeLaplacian(spacetime).laplacian(carriedStateDegree_, /*metric=*/true);
   const std::size_t cellCount = cells.size();
   if (laplacian.size() != cellCount * cellCount) return generator;
-  // h_S = the HERMITIAN PART of L_k restricted to the carried cells. The
-  // signed-weight operator is generally non-normal, and a mean-field generator
-  // must be Hermitian for the covariance evolution to stay unitary (and hence
-  // Gaussian-closed); (L + L†)/2 is that part exactly, never a repair.
+  // h_S is the Hermitian part (L + L†)/2 of L_k restricted to the carried
+  // cells. The signed-weight operator is generally non-normal, and a mean-field
+  // generator must be Hermitian for the covariance evolution to stay unitary
+  // and so Gaussian-closed.
   for (std::size_t i = 0; i < modeCount; ++i) {
     if (row[i] < 0) continue;
     for (std::size_t j = 0; j < modeCount; ++j) {
@@ -589,9 +576,8 @@ std::vector<complexd> MultiCobordism::carriedStateEnergyGradient(
   if (simulationMode_ != SimulationMode::Emergence ||
       emergenceSubmode_ != EmergenceSubmode::CertificatesBlindMeanField)
     return gradient;
-  // No degree guard: setCarriedState already declares the carried degree's
-  // domain, and laplacianGradient is exact at every degree it admits --
-  // including zero since #805, where L_0 = d_1 W_1^-1 d_1^T is holomorphic in z.
+  // No degree guard: setCarriedState declares the carried degree's domain, and
+  // laplacianGradient is exact at every degree it admits.
 
   const auto chainComplex = ChainComplex::fromSpacetime(*spacetime);
   const auto cells = chainComplex.kSimplexVertices(carriedStateDegree_);
@@ -623,10 +609,9 @@ std::vector<complexd> MultiCobordism::carriedStateEnergyGradient(
         carriedStateDegree_, edge->getSource()->getId(),
         edge->getTarget()->getId());
     if (derivative.size() != cellCount * cellCount) continue;
-    // ∂E/∂z_e = Re tr(Γ_S ∂h_S/∂z_e), with ∂h = (∂L + ∂L†)/2 exactly as the
-    // value uses. Real-analytic in z: the operator's dependence on ℓ² enters
-    // only through the real inner-product weights, so ∂E/∂(Im z) = 0 and the
-    // real-plane ascent displacement is the real derivative alone.
+    // ∂E/∂z_e = Re tr(Γ_S ∂h_S/∂z_e), with ∂h = (∂L + ∂L†)/2 as the value
+    // uses. The dependence on ℓ² enters only through the real inner-product
+    // weights, so ∂E/∂(Im z) = 0.
     complexd trace{0.0, 0.0};
     for (std::size_t i = 0; i < modeCount; ++i) {
       if (row[i] < 0) continue;
@@ -693,10 +678,9 @@ double MultiCobordism::advanceCarriedState() {
                                        static_cast<std::size_t>(j)];
   CovarianceState state(std::move(gamma));
 
-  // h(Γ, g): the classical geometry is closed over by THIS caller, exactly as
-  // #780's `meanFieldEvolve` contract states. The generator is the same
-  // Hermitian one-particle operator the energy term measures, so the objective
-  // coupling and the state's propagation are one functional, not two.
+  // h(Γ, g): the classical geometry is closed over by this caller, per the
+  // `meanFieldEvolve` contract. The generator is the same Hermitian
+  // one-particle operator the energy term measures.
   const auto generatorFlat = carriedStateGenerator(spacetime_);
   Eigen::MatrixXcd generator(modeCount, modeCount);
   for (Eigen::Index i = 0; i < modeCount; ++i)
@@ -779,10 +763,7 @@ void MultiCobordism::setRefinementThresholds(
 MultiCobordism::RefinementDecision MultiCobordism::refinementDecisionOf(
     const RefinementIndicators &indicators,
     const RefinementIndicators &thresholds) {
-  // STATIC over two indicator records. There is no third argument: no coarse
-  // response residual, band gap, modularity, transport leakage, Wilson/center
-  // read, exchange read, anchor score, amplitude Gram defect, or particle
-  // score can reach this decision, because none of them is in scope.
+  // Static over two indicator records; nothing else is in scope here.
   RefinementDecision decision;
   decision.indicators = indicators;
   const auto exceeded = [](double value, double threshold) {
@@ -818,17 +799,16 @@ MultiCobordism::RefinementDecision MultiCobordism::refinementDecision() const {
 int MultiCobordism::refineGeometry(int maxCells) {
   if (maxCells <= 0) return 0;
   if (!refinementDecision().refine) return 0;
-  // The refinement move is the EXISTING gated cone-in — `preconeCells` drives
-  // exactly the same `applyMoveSpecification` / `dualComplexValid` primitive
-  // stage 1 uses. Nothing is reimplemented and nothing bypasses the manifold
-  // and orientation gates.
+  // The refinement move is the gated cone-in: `preconeCells` drives the same
+  // `applyMoveSpecification` / `dualComplexValid` primitive stage 1 uses, so
+  // the manifold and orientation gates always apply.
   const std::size_t cellsBefore = spacetime_ ? spacetime_->getTopSimplices().size() : 0;
   preconeCells(maxCells, /*timelike=*/false, /*alternate=*/false);
   const std::size_t cellsAfter = spacetime_ ? spacetime_->getTopSimplices().size() : 0;
   const int committed =
       cellsAfter > cellsBefore ? static_cast<int>(cellsAfter - cellsBefore) : 0;
   // Each committed refinement cell is an accepted move, so the cadence counts
-  // it as one — the same bookkeeping a stage-1 commit gets.
+  // it as one.
   for (int cell = 0; cell < committed; ++cell) noteAcceptedMove();
   return committed;
 }
@@ -876,17 +856,11 @@ std::string MultiCobordism::rawComplexJson(
     cellText += Json::idArray(cells[index]);
   }
   cellText += "]";
-  // Serialized in CANONICAL endpoint order, not in the live list order: the
-  // raw complex a checkpoint records is then a pure function of the geometry,
-  // so two runs that reached the same complex write the same bytes even when
-  // their internal edge lists were built in different orders.
-  // Both edge fields are recorded. The length is orientation-free, but the
-  // connection phase is NOT: the link on the reverse orientation is the
-  // inverse, so a phase written against the canonical min->max direction must
-  // be negated whenever the live edge stores target->source. Recording the
-  // canonical-direction phase (`edgeGeometryOf`, the stage-1 snapshot's own
-  // record) keeps the document a pure function of the geometry, exactly as
-  // the endpoint sort does for the cell order.
+  // Serialized in canonical endpoint order rather than live list order, so the
+  // recorded complex is a pure function of the geometry. Both edge fields are
+  // recorded: the length is orientation-free, while the connection phase is
+  // not, so the canonical min->max direction phase (`edgeGeometryOf`) is what
+  // keeps the document orientation-independent.
   std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> edgesByEndpoints;
   for (const auto *edge : spacetime->getEdgeList()->toVector()) {
     if (edge == nullptr || edge->getSource() == nullptr ||
@@ -921,29 +895,21 @@ void MultiCobordism::runRecursiveAnalysisOn(
   if (!spacetime) return;
   ++analysisPassCount_;
 
-  // ── §17.0 record the objective of the state about to be analysed ─────
+  // ── record the objective of the state about to be analysed ───────────
   //
-  // FIRST, before any spectral read. Measured (#776): the engine's stage-2
-  // trajectory shifts by ~1e-11 relative when ANY read-only Hodge observable
-  // — `HodgeLaplacian::spectrum`, `spectralEntropy`, `MultiCobordism::betti`,
-  // `hodgeEntropy` — is evaluated before `ReggeSolver::actionGradientExact`
-  // rather than after it. That sensitivity is pre-existing and has nothing to
-  // do with this ticket (a bare `HodgeLaplacian(st).spectralEntropy(1)` with
-  // no analysis at all reproduces it exactly, value for value), but the
-  // overlay would inherit it. Evaluating the objective's own terms first —
-  // which is the order `objective()` itself uses — keeps an analysed run
-  // BIT-IDENTICAL to an unanalysed one, and is the natural order anyway:
-  // a checkpoint records the objective of the state it describes.
+  // This runs before any spectral read. Evaluating the objective's own terms
+  // first, in the order `objective()` uses, keeps an analysed run bit-identical
+  // to an unanalysed one.
   const auto terms = objectiveTermsFor(spacetime);
   const auto indicators = refinementIndicators();
   const auto decision = refinementDecisionOf(indicators, refinementThresholds_);
 
-  // ── §17.1 publish the accepted move and update the analytic caches ──
+  // ── publish the accepted move and update the analytic caches ─────────
   //
-  // The touched star is the exact support of what changed since the last pass:
-  // the vertices of every created/deleted top cell, plus the endpoints of every
+  // The touched star is the support of what changed since the last pass: the
+  // vertices of every created or deleted top cell plus the endpoints of every
   // edge whose complex length moved. Entries whose component misses the star
-  // survive — the invalidation is local, not global.
+  // survive.
   std::set<std::vector<std::uint64_t>> cellSet;
   for (const auto &topSimplex : spacetime->getTopSimplices())
     cellSet.insert(topSimplex->topTuple());
@@ -975,10 +941,9 @@ void MultiCobordism::runRecursiveAnalysisOn(
   analysisEdgeLengths_ = edgeLengths;
   analysisCellSetValid_ = true;
 
-  // The cache survives ACROSS passes while the complex object does, so a
-  // published star drops only the entries whose component it meets. A
-  // committed combinatorial move rebuilds the complex (the engine's existing
-  // `build(snapshot)` behaviour), which necessarily rebinds the cache.
+  // The cache survives across passes while the complex object does, so a
+  // published star drops only the entries whose component it meets. A committed
+  // combinatorial move rebuilds the complex, which rebinds the cache.
   const auto boundSpacetime = analysisCacheBinding_.lock();
   if (!analysisCache_ || boundSpacetime != spacetime) {
     analysisCache_ = std::make_shared<AnalyticCache>(spacetime);
@@ -986,14 +951,13 @@ void MultiCobordism::runRecursiveAnalysisOn(
   }
   auto cache = std::static_pointer_cast<AnalyticCache>(analysisCache_);
   cache->setEnabled(!analysisConfig_.coldCaches);
-  // The checkpoint reports THIS pass's cache activity, not the cache's
-  // lifetime totals, so a reader can see what one incremental update cost.
+  // The checkpoint reports this pass's cache activity, not lifetime totals.
   const std::uint64_t hitsBefore = cache->hits();
   const std::uint64_t missesBefore = cache->misses();
   const std::uint64_t invalidationsBefore = cache->invalidations();
   if (!star.empty()) cache->publish(star);
 
-  // ── §17.2 the local component hierarchy ──────────────────────────────
+  // ── the local component hierarchy ────────────────────────────────────
   PersistentModularityConfig modularityConfig;
   modularityConfig.resolutions = analysisConfig_.resolutions.empty()
                                      ? std::vector<double>{1.0}
@@ -1003,8 +967,8 @@ void MultiCobordism::runRecursiveAnalysisOn(
   const ScanReport report = modularity.scanResolutions(modularityConfig);
   const auto invalidated =
       PersistentModularity::invalidatedAncestry(report, touchedCells);
-  // Every component at every hierarchy level of every slice — the denominator
-  // the invalidated count is local WITH RESPECT TO.
+  // Every component at every hierarchy level of every slice: the denominator
+  // the invalidated count is local against.
   std::size_t totalComponents = 0;
   for (const auto &slice : report.slices)
     for (const auto &level : slice.hierarchy) totalComponents += level.size();
@@ -1013,21 +977,21 @@ void MultiCobordism::runRecursiveAnalysisOn(
   std::vector<ComponentRead> nextLevelComponents;
   if (!report.slices.empty()) {
     components = report.slices.front().components;
-    // The NEXT modular level of the same slice: the bound-supercomponent
-    // search reads it, and it is where a three-quark binding would live.
+    // The next modular level of the same slice, read by the
+    // bound-supercomponent search.
     if (report.slices.front().hierarchy.size() > 1)
       nextLevelComponents = report.slices.front().hierarchy[1];
   }
 
-  // ── §17.3 spectral projectors, the labeled fiber sum, and transports ──
+  // ── spectral projectors, the labeled fiber sum, and transports ───────
   SpectralFiberConfig fiberConfig;
   fiberConfig.degrees = analysisConfig_.degrees.empty()
                             ? std::vector<int>{1}
                             : analysisConfig_.degrees;
   const SpectralFiberTracker tracker(spacetime, fiberConfig);
   std::vector<ComponentBandRead> bandReads;
-  // `ComponentBandRead` carries the component's SUPPORT, not its label-free
-  // #765 identity, so the owning component index travels beside each read.
+  // `ComponentBandRead` carries the component's support, not its label-free
+  // identity, so the owning component index travels beside each read.
   std::vector<std::size_t> bandComponent;
   for (std::size_t componentIndex = 0; componentIndex < components.size();
        ++componentIndex)
@@ -1055,13 +1019,13 @@ void MultiCobordism::runRecursiveAnalysisOn(
                                  quotient.labeledFiberSum());
       } catch (const std::exception &) {
         // A degree the reduction refuses (an uncovered or empty skeleton) is
-        // an UNKNOWN, recorded by its absence from the checkpoint — never a
-        // fabricated zero and never a reason to disturb the geometry.
+        // unknown, recorded by its absence from the checkpoint rather than as
+        // a zero.
       }
     }
   }
 
-  // The candidate band of each component read: the FIRST accepted band, the
+  // The candidate band of each component read: the first accepted band, the
   // one every downstream read is assembled around.
   std::vector<int> candidateBand(bandReads.size(), -1);
   for (std::size_t index = 0; index < bandReads.size(); ++index)
@@ -1071,18 +1035,16 @@ void MultiCobordism::runRecursiveAnalysisOn(
         break;
       }
 
-  // MUTUAL transports: one derived link per ordered pair of candidate bands
-  // at the same degree — the cross-component family the bound-supercomponent
-  // search reads. Deliberately NOT every band against every band: a
-  // component's bands are alternative carriers, not links, and pairing them
-  // all costs O(bands²) derived transports per component pair (measured 663
-  // at 62 cells, 30x the optimizer step) for links no certificate consumes.
+  // Mutual transports: one derived link per ordered pair of candidate bands at
+  // the same degree, the cross-component family the bound-supercomponent search
+  // reads. Not every band against every band: a component's bands are
+  // alternative carriers rather than links, and pairing them all costs
+  // O(bands²) derived transports per component pair that no certificate
+  // consumes.
   //
-  // The LIFETIME family — the world-tube transports of ONE candidate across
-  // frames — is a different object, and one analysis pass sees exactly one
-  // frame, so it stays empty here and the corresponding certificate is
-  // NAMED as missing rather than filled with cross-component links that do
-  // not mean that.
+  // The lifetime family — the world-tube transports of one candidate across
+  // frames — is a different object. One analysis pass sees one frame, so it
+  // stays empty here and its certificate is named as missing.
   const FiberConnection connection;
   struct TransportRecord {
     std::size_t fromRead = 0;
@@ -1111,12 +1073,11 @@ void MultiCobordism::runRecursiveAnalysisOn(
     }
   }
 
-  // ── §17.4 the quasi-free covariance and its Wick reads ───────────────
+  // ── the quasi-free covariance and its Wick reads ─────────────────────
   //
   // The carried state when the run declares one; otherwise the exact pure
-  // Slater covariance of each ACCEPTED band projector (#780's documented
-  // `fromBandProjector` entry point) — a READ of the relaxed geometry, never a
-  // fabricated occupancy.
+  // Slater covariance of each accepted band projector, via
+  // `fromBandProjector`.
   std::vector<std::optional<CovarianceState>> bandStates(bandReads.size());
   double worstPurityDefect = std::numeric_limits<double>::quiet_NaN();
   std::size_t activeModes = 0;
@@ -1140,14 +1101,12 @@ void MultiCobordism::runRecursiveAnalysisOn(
   const bool carriedStatePresent = hasCarriedState();
   const double carriedPurityDefect = carriedStatePurityDefect();
 
-  // ── §17.5 the lazy Fock expression — ORACLE / non-Gaussian only ──────
+  // ── the lazy Fock expression, oracle / non-Gaussian only ─────────────
   //
-  // Built ONLY when the oracle is selected, and built for real: the #771
-  // lazy Slater DAG of the first accepted band's projector, reporting its own
-  // node count, discarded norm, and exactness. Never the quasi-free
-  // production representation — the covariance above is that. A band wider
-  // than the DAG's support cap is reported ABSENT with its reason, not
-  // silently claimed.
+  // Built only when the oracle is selected: the lazy Slater DAG of the first
+  // accepted band's projector, with its node count, discarded norm and
+  // exactness. A band wider than the DAG's support cap is reported absent with
+  // its reason.
   std::size_t oracleModes = 0;
   std::size_t oracleNodes = 0;
   bool oracleExact = false;
@@ -1187,7 +1146,7 @@ void MultiCobordism::runRecursiveAnalysisOn(
     }
   }
 
-  // ── §17.6 particle reads ─────────────────────────────────────────────
+  // ── particle reads ───────────────────────────────────────────────────
   const ParticleClusters classifier;
   std::vector<QuarkRead> quarkReads;
   std::vector<std::size_t> quarkBandRead;
@@ -1203,10 +1162,9 @@ void MultiCobordism::runRecursiveAnalysisOn(
     evidence.component = componentId;
     evidence.colorBand = fiber;
     // The calibrated oriented-triangle anchor, when the band's cells carry a
-    // triangle atlas (a rank-three degree-one band). Missing evidence is a
-    // NAMED failed certificate downstream — never a presumed pass, and the
-    // LIFETIME transport family is deliberately left unsupplied: one pass is
-    // one frame, and a world tube needs more than one.
+    // triangle atlas. Missing evidence becomes a named failed certificate
+    // downstream. The lifetime transport family is left unsupplied: one pass is
+    // one frame.
     if (bandRead.degree == 1 && fiber.rank() == 3)
       evidence.anchor = BandAnchor::of(spacetime, fiber);
     if (bandStates[index].has_value()) {
@@ -1220,12 +1178,9 @@ void MultiCobordism::runRecursiveAnalysisOn(
               static_cast<double>(track.lastSlice - track.firstSlice + 1);
           evidence.persistenceMinOverlap = track.minAdjacentOverlap;
         }
-    // This driver reads ONE cobordism frame, so the frame lifetime is one
-    // and its adjacent-frame overlap is vacuously one (there is no adjacent
-    // pair).  Both are MEASURED facts about this read, not placeholders:
-    // the persistence certificate fails because the candidate was seen in a
-    // single frame, which is a physical statement about the evidence, not
-    // an artifact of reading a single modularity resolution.
+    // This driver reads one cobordism frame, so the frame lifetime is one and
+    // its adjacent-frame overlap is vacuously one. The persistence certificate
+    // fails because the candidate was seen in a single frame.
     evidence.frameLifetime = 1.0;
     evidence.frameMinOverlap = 1.0;
     quarkReads.push_back(classifier.classifyQuarkCached(*cache, evidence));
@@ -1239,7 +1194,7 @@ void MultiCobordism::runRecursiveAnalysisOn(
       candidate.quark = quarkReads[index];
       const std::size_t readIndex = quarkBandRead[index];
       candidate.support = bandReads[readIndex].support;
-      // The cross-component links ARE this candidate's mutual transports.
+      // The cross-component links are this candidate's mutual transports.
       for (const auto &record : transports)
         if (record.toRead == readIndex || record.fromRead == readIndex)
           candidate.mutualTransports.push_back(record.read);
@@ -1247,15 +1202,10 @@ void MultiCobordism::runRecursiveAnalysisOn(
     }
     bindings = classifier.boundSupercomponentSearch(nextLevelComponents,
                                                     candidates);
-    // The three-cluster verdict itself: every binding
-    // that grouped EXACTLY three CERTIFIED constituents is classified. The
-    // evidence this pass HAS is the binding, those three #773 verdicts, and
-    // the bound component's #765 lifetime; the color columns, the octet
-    // flux, the #772 2π character, the #780 spin reads, the swept
-    // covariance-only class and the refinement window are not read here, and
-    // the classifier NAMES each of them as missing. That is the honest
-    // report of one analysis pass on one frame — an unsupplied quantity is
-    // unknown, never a fabricated pass.
+    // The three-cluster verdict: every binding that grouped exactly three
+    // certified constituents is classified. The evidence available is the
+    // binding, those three constituent verdicts and the bound component's
+    // lifetime; the classifier names everything else as missing.
     std::vector<double> boundLifetimes;
     boundLifetimes.reserve(bindings.size());
     for (const auto &binding : bindings) {
@@ -1271,7 +1221,7 @@ void MultiCobordism::runRecursiveAnalysisOn(
         bindings, quarkReads, boundLifetimes);
   }
 
-  // ── the checkpoint (schema version 4) ────────────────────────────────
+  // ── the checkpoint ───────────────────────────────────────────────────
   std::string hierarchyText = "[";
   for (std::size_t sliceIndex = 0; sliceIndex < report.slices.size();
        ++sliceIndex) {
@@ -1295,9 +1245,8 @@ void MultiCobordism::runRecursiveAnalysisOn(
     componentText += "]";
     hierarchyText += Json::object({
         {"gamma", Json::number(slice.gamma)},
-        // `q` stays the real ordered scalar the search maximized, so a
-        // reader can compare two runs; the unreduced complex score is
-        // alongside it rather than in place of it.
+        // `q` stays the real ordered scalar the search maximized; the
+        // unreduced complex score sits alongside it.
         {"q", Json::number(slice.objectiveValue)},
         {"q_complex", Json::complexPair(slice.q)},
         {"levels", Json::integer(static_cast<long long>(slice.levels))},
@@ -1429,11 +1378,10 @@ void MultiCobordism::runRecursiveAnalysisOn(
   }
   bindingText += "]";
 
-  // `particles.baryons` carries the §16.4 THREE-CLUSTER VERDICT — one
-  // `BaryonRead` per binding that grouped exactly three certified
-  // constituents — in the `BaryonRead::toRecord` field vocabulary. Unknown
-  // and uncertified values are `null`, never zero, and every gap is NAMED in
-  // `failed_certificates`.
+  // `particles.baryons` carries the three-cluster verdict — one `BaryonRead`
+  // per binding that grouped exactly three certified constituents — in the
+  // `BaryonRead::toRecord` field vocabulary. Unknown values are `null`, never
+  // zero, and every gap is named in `failed_certificates`.
   std::string baryonText = "[";
   for (std::size_t index = 0; index < baryonReads.size(); ++index) {
     if (index) baryonText += ", ";
@@ -1671,11 +1619,10 @@ std::string MultiCobordism::replayCheckpoint(const std::string &checkpoint) {
       cell.push_back(static_cast<std::uint64_t>(Json::asNumber(idText)));
     cells.push_back(std::move(cell));
   }
-  // The document IS a snapshot: the cells and, per edge on the canonical
+  // The document is a snapshot: the cells and, per edge on the canonical
   // min->max direction, the length and the phase. It is rebuilt through the
-  // same `rebuild` a committed stage-1 move goes through, so replay and the
-  // incremental run restore an edge identically. An edge the document
-  // records without a phase takes `replayPhaseDefault`.
+  // same `rebuild` a committed stage-1 move uses. An edge recorded without a
+  // phase takes `replayPhaseDefault`.
   Snapshot recorded;
   recorded.first = std::move(cells);
   for (const auto &edgeText :
@@ -1698,7 +1645,8 @@ std::string MultiCobordism::replayCheckpoint(const std::string &checkpoint) {
   }
   auto spacetime = rebuild(dimensions, recorded);
 
-  // Rebuild the node the checkpoint describes and recompute EVERYTHING cold.
+  // Rebuild the node the checkpoint describes and recompute everything
+  // cold.
   const std::string provenance = Json::topLevelValue(checkpoint, "provenance");
   const std::uint64_t seed =
       provenance.empty()

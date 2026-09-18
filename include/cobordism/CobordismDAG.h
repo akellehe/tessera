@@ -23,29 +23,24 @@ using ::tessera::spacetime::Spacetime;
 
 /// # CobordismDAG
 ///
-/// Chain emergent merges (`MultiCobordism`) into a DAG: the **output of one
-/// cobordism is an input to the next** (#491). Generalizes the
-/// `proton_merge_sequence` compose — `merge(q,q)→diquark`, then
-/// `merge(diquark,q)→proton` — to an arbitrary acyclic graph, on the C++
-/// source-of-truth engine.
+/// Chains emergent merges (`MultiCobordism`) into a directed acyclic graph: the
+/// output of one cobordism is an input to the next.
 ///
 /// Each node is one merge: a bare host, literal input targets, edges that pipe
 /// upstream nodes' outputs into further input slots, and a prescribed
-/// `outputTarget` (the MultiCobordism semantics — the output is scored by its
-/// own `r_U`). `run()` executes the nodes in topological order, assembling each
-/// node's input targets from its literals plus the resolved upstream outputs,
-/// running both stages, and recording the node's output (its verified
-/// `outputTarget`) and its final realizability residual `r_U`.
+/// `outputTarget` scored by its own `r_U`. `run()` executes the nodes in
+/// topological order, assembling each node's input targets from its literals
+/// plus the resolved upstream outputs, and records each node's output and
+/// realizability residual.
 class CobordismDAG {
  public:
-  /// Add a node — one co-optimized `MultiCobordism` system. `host` is a bare
-  /// emergent host. The node's input targets are `literalInputs` followed by, for
-  /// each `(nodeId, outputIndex)` in `upstream`, that upstream node's
+  /// Add a node — one co-optimized `MultiCobordism` system on the bare emergent
+  /// host `host`. The node's input targets are `literalInputs` followed by,
+  /// for each `(nodeId, outputIndex)` in `upstream`, that upstream node's
   /// `outputIndex`-th output. `outputTargets` is the list of output boundary
   /// blocks (one for a merge, two for a 2→2 recombination). `degrees` is the
-  /// user-defined register degree(s) k. Returns the node id. Coupled interactions
-  /// (e.g. the recombination's two pairs) MUST be one node; uncoupled ones (the
-  /// proton/antiproton legs) are separate nodes.
+  /// register degree(s) k. Returns the node id. Coupled interactions belong in
+  /// one node, uncoupled ones in separate nodes.
   int addNode(
       std::shared_ptr<Spacetime> host,
       const std::vector<std::vector<std::complex<double>>> &literalInputs,
@@ -68,15 +63,15 @@ class CobordismDAG {
   [[nodiscard]] double residual(int node) const;
   [[nodiscard]] std::size_t size() const { return nodes_.size(); }
 
-  /// Pipe fibers (#916): after each node runs, read the fiber form of every
-  /// output block at `degree` (`MultiCobordism::readOutputFiber` on the
-  /// harmonic contour) and attach it to the downstream input block the edge
-  /// names, beside the period target. A read that refuses leaves the slot
-  /// empty and records the reason (`fiberRefusal`). Requires the
-  /// process-wide Whitney pencil metric source when the DAG runs.
-  /// \p scoreBlocksByFiber makes every node score its piped input blocks by
-  /// the fiber residual (`MultiCobordism::useFiberResiduals`, #940) instead of
-  /// the period residual; off by default.
+  /// Pipe fibers: after each node runs, read the fiber form of every output
+  /// block at `degree` (`MultiCobordism::readOutputFiber` on the harmonic
+  /// contour) and attach it to the downstream input block the edge names,
+  /// beside the period target. A read that refuses leaves the slot empty and
+  /// records the reason (`fiberRefusal`). Requires the process-wide Whitney
+  /// pencil metric source when the DAG runs.
+  /// \p scoreBlocksByFiber makes every node score its piped input blocks by the
+  /// fiber residual (`MultiCobordism::useFiberResiduals`) instead of the period
+  /// residual; off by default.
   void setFiberPiping(bool enabled, int degree = 1, bool scoreBlocksByFiber = false);
   [[nodiscard]] bool scoresBlocksByFiber() const noexcept { return scoreBlocksByFiber_; }
   [[nodiscard]] bool fiberPiping() const noexcept { return pipeFibers_; }
@@ -88,12 +83,12 @@ class CobordismDAG {
   /// How many upstream fibers were attached to a node's input blocks when it ran.
   [[nodiscard]] int pipedInputCount(int node) const;
 
-  /// Two-body cobordism map (#941). `setInputAttachment` names the cells of
-  /// \p node's own complex that input slot \p slot's piped fiber is attached
-  /// to, in the attachment order (`MultiCobordism::attachInputFiber`); without
-  /// one the fiber is attached by upstream cell id as before. `setTwoBodyTarget`
-  /// gives the node its \f$ \chi \f$ on the pair of attached frames in the
-  /// chosen reading; the node then scores it inside `rU` (fiber residuals on).
+  /// Two-body cobordism map. `setInputAttachment` names the cells of \p node's
+  /// own complex that input slot \p slot's piped fiber attaches to, in the
+  /// attachment order (`MultiCobordism::attachInputFiber`); without one the
+  /// fiber is attached by upstream cell id. `setTwoBodyTarget` gives the node
+  /// its \f$ \chi \f$ on the pair of attached frames in the chosen reading; the
+  /// node then scores it inside `rU` (with fiber residuals on).
   void setInputAttachment(int node, int slot, std::vector<std::vector<std::uint64_t>> cells);
   void setTwoBodyTarget(int node, Eigen::MatrixXcd chi, bool choiDecomposed = true);
   /// The node's two-body reading after `run`; throws when the node carries none.

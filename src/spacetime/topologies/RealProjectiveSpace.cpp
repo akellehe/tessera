@@ -13,8 +13,8 @@ void RealProjectiveSpace::build(Spacetime *spacetime, int /*numSimplices*/) {
   // tetrahedra tabulated by Lutz and shipped by SageMath's
   // RealProjectiveSpace(3), relabeled from the literature's 1..11 down to
   // 0..10. Every triangle lies in exactly two tetrahedra (closed 3-manifold),
-  // and the complex is orientable with H_1 = Z/2 — the Dijkgraaf–Witten sign
-  // cocycle's positive control.
+  // and the complex is orientable with H_1 = Z/2, which is what makes the
+  // Dijkgraaf–Witten sign cocycle distinguish it.
   const std::vector<std::vector<std::uint64_t>> tops{
       {0, 1, 2, 6}, {0, 1, 2, 10}, {0, 1, 5, 8}, {0, 1, 5, 10},
       {0, 1, 6, 8}, {0, 2, 4, 9}, {0, 2, 4, 10}, {0, 2, 6, 9},

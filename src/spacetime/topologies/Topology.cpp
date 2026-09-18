@@ -23,7 +23,6 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 Topology::~Topology() = default;
-// std::vector<std::shared_ptr<Constraint> > Topology::getConstraints() {return {};}
 void Topology::build(Spacetime *spacetime, int numSimplices) {
   std::cout << "Building Topology (base)" << std::endl;
 }
@@ -44,12 +43,12 @@ void Topology::buildExplicit(
     const std::vector<std::vector<std::uint64_t>> &topSimplices) {
   std::vector<VertexPtr> verts;
   verts.reserve(numVertices);
-  // Coordinate-free vertices: the triangulation is purely combinatorial
-  // here.  Allocate through the id-counter path (not the explicit-id
-  // overload) so the counter advances past these ids — on a fresh
-  // spacetime this still assigns 0..numVertices-1, but it leaves the
-  // counter able to hand out collision-free ids to anything that later
-  // grows the complex (e.g. a pre-geometric Pachner add move).
+  // Coordinate-free vertices: the triangulation is purely combinatorial here.
+  // Allocate through the id-counter path, not the explicit-id overload, so the
+  // counter advances past these ids.  On a fresh spacetime that still assigns
+  // 0..numVertices-1, and it leaves the counter able to hand out collision-free
+  // ids to anything that later grows the complex (e.g. a pre-geometric Pachner
+  // add move).
   for (std::size_t i = 0; i < numVertices; ++i) {
     verts.push_back(spacetime->createVertex());
   }

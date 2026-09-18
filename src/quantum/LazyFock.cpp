@@ -1,14 +1,15 @@
-// Lazy graded Fock oracle and boundary carrier (issue #771) — implementation.
+// Lazy graded Fock oracle and boundary carrier — implementation of
+// include/quantum/LazyFock.h.
 //
 // Exactness spine: every amplitude is evaluated through the Koszul sign
 // ε(A,B) = (−1)^{#inversions between disjoint occupied sets}, computed
-// against the single global compilation order. The CAR bit-level signs are
-// OccupationBitset's (#766) — nothing fermionic is re-derived here. Subset
-// sums delegate to cobordism::OccupationSpectra (#764); certificates are
-// cobordism::Certificate (#764); content hashes chain
-// mesh::Fingerprint::mix64 (order-SENSITIVE chaining — fingerprintOf's XOR
-// set hash is deliberately not used because expression content is
-// order-sensitive).
+// against the single global compilation order. The bit-level canonical
+// anticommutation relation (CAR) signs are OccupationBitset's — nothing
+// fermionic is re-derived here. Subset sums
+// delegate to cobordism::OccupationSpectra; certificates are
+// cobordism::Certificate; content hashes chain mesh::Fingerprint::mix64
+// (order-sensitive chaining — fingerprintOf's XOR set hash is not used,
+// because expression content is order-sensitive).
 
 #include "quantum/LazyFock.h"
 
@@ -1414,7 +1415,7 @@ LazyFockEngine::NodePtr LazyFockEngine::applyOperator(
             const NodePtr& right = node->children()[1];
             if (Bits::isSubset(op.supportModes, left->modes())) {
                 // Any-parity operators act as O ⊗̂ 1 on the left factor —
-                // the sibling is SHARED, never expanded.
+                // the sibling is shared, never expanded.
                 return makeTensor(applyOperator(left, op, drops), right);
             }
             if (Bits::isSubset(op.supportModes, right->modes())) {
@@ -1711,7 +1712,7 @@ LazyFockState LazyFockEngine::permuteModes(
                         newSupport.push_back(perm[m]);
                     std::sort(newSupport.begin(), newSupport.end());
                     // Support-local induced permutation and its exact
-                    // signed unitary (#766 ExteriorAlgebra).
+                    // signed unitary (ExteriorAlgebra).
                     std::vector<std::size_t> sigma(oldSupport.size());
                     for (std::size_t k = 0; k < oldSupport.size(); ++k)
                         sigma[k] = static_cast<std::size_t>(
@@ -1758,8 +1759,8 @@ cobordism::Certificate LazyFockEngine::readCertificate(
             cobordism::CertificateDomain::Static,
             cobordism::CertificateRegime::PositiveSemidefinite,
             /*residual=*/0.0, /*tolerance=*/0.0);
-    // ABSOLUTE accumulated discarded-norm bound as the residual
-    // (documented deviation from the relative default).
+    // Absolute accumulated discarded-norm bound as the residual (a
+    // deviation from the relative default).
     return cobordism::Certificate::certifiedNumerical(
         cobordism::CertificateDomain::Static,
         cobordism::CertificateRegime::PositiveSemidefinite, discardedNorm,
@@ -2005,8 +2006,8 @@ cobordism::CertifiedVector LazyFockEngine::freeSpectrumFromEigenvalues(
     cobordism::CertifiedVector out;
     out.values = cobordism::OccupationSpectra::subsetSums(
         oneParticleSpectrum, particles, maxExpansionTerms_);
-    // Independent-path residual: the #764 direct-sum identity evaluated
-    // through OccupationSpectra::directSumSubsetSums on a half split.
+    // Independent-path residual: the direct-sum identity evaluated through
+    // OccupationSpectra::directSumSubsetSums on a half split.
     double residual = 0.0;
     if (oneParticleSpectrum.size() >= 2) {
         const std::size_t half = oneParticleSpectrum.size() / 2;

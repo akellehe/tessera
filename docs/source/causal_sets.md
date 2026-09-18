@@ -1,17 +1,17 @@
 # Causal sets
 
-This page documents tessera's causal-set machinery: the `Poset` primitive,
-the `Spacetime → CausetChain` adapter, and the causal-comparison harness
-that compares the entanglement-derived majorization order, the
-Lieb–Robinson cone, and the causet order on the same label set.
+tessera's causal-set machinery: the `Poset` primitive, the
+`Spacetime`-to-`CausetChain` adapter, and the causal-comparison harness that
+compares the entanglement-derived majorization order, the Lieb-Robinson cone,
+and the causet order on the same label set.
 
-The motivation, in one sentence: the underlying causal structure of a
-Lorentzian manifold is captured by the **partial order** on its points,
-and a spacetime can be reconstructed up to conformal factor from that
-order alone {cite}`C-MalamentSorkin1977, C-BombelliLeeMeyerSorkin1987`. tessera
-exposes this partial order as a concrete data structure
-(`tessera.Poset`) and provides factories that derive it from a
-triangulated `tessera.Spacetime` or from a Schwinger TDVP quench run.
+The causal structure of a Lorentzian manifold is captured by the **partial
+order** on its points, and a spacetime can be reconstructed up to a conformal
+factor from that order alone
+{cite}`C-MalamentSorkin1977, C-BombelliLeeMeyerSorkin1987`. tessera exposes
+this partial order as a data structure (`tessera.Poset`) and provides factories
+that derive it from a triangulated `tessera.Spacetime` or from a Schwinger-model
+time-dependent variational principle (TDVP) quench run.
 
 ## Quick taxonomy
 
@@ -36,10 +36,10 @@ relation. `a → b` in the cover graph means "$a$ strictly precedes $b$
 with no intermediate", and the full order is the transitive closure of
 the covers.
 
-All classes named `tessera.X` below live under `tessera.quantum.X` —
-the bindings are co-located with the quantum subsystem because the
-historical first user of `Poset` was the causal-comparison harness.
-Examples below use `from tessera.quantum import Poset, ...`.
+All classes named `tessera.X` below live under `tessera.quantum.X`; the
+bindings are co-located with the quantum subsystem, alongside the
+causal-comparison harness. Examples below use
+`from tessera.quantum import Poset, ...`.
 
 ### Constructing a poset by hand
 
@@ -58,9 +58,9 @@ print(sorted(p.covers))                  # [(0, 1), (1, 2), (1, 3)]
 ```
 
 `addCover(a, b)` adds the cover edge $a \to b$ without validation —
-callers are responsible for transitivity and acyclicity. The standard
+callers are responsible for transitivity and acyclicity. The usual
 usage is to feed covers from a transitive-reduction algorithm where
-duplicates can't arise. For replacing the full cover list at once, use
+duplicates cannot arise. To replace the full cover list at once, use
 `setCovers([(a, b), ...])`.
 
 ### Exporting a Hasse diagram
@@ -73,7 +73,7 @@ with open("/tmp/p.dot", "w") as f:
 ```
 
 The DOT representation uses node IDs as labels and one directed edge per
-cover. Suitable for visual sanity checks at $\lvert V \rvert \lesssim 100$.
+cover. Suitable for visual checks at $\lvert V \rvert \lesssim 100$.
 
 ### Comparing two posets on a shared label set
 
@@ -91,20 +91,20 @@ print(stats.nConcordant, stats.nDiscordant, stats.nOnlyA, stats.nOnlyB)
 ```
 
 The five counts (`nConcordant`, `nDiscordant`, `nOnlyA`, `nOnlyB`,
-`neither`) partition the $\binom{N}{2}$ unordered label pairs. They
-underpin the causal-comparison harness described below.
+`neither`) partition the $\binom{N}{2}$ unordered label pairs, and
+underpin the causal-comparison harness below.
 
 `compareOrders` is $O(N^3)$ via Floyd–Warshall transitive closure, then
 $O(N^2)$ counting. Practical up to a few thousand nodes.
 
-## `Spacetime → CausetChain` adapter
+## The `Spacetime`-to-`CausetChain` adapter
 
-A triangulated `Spacetime` carries a finer structure than a 1D chain:
-its vertices are distributed across (potentially many) time slices, and
-its directed timelike edges define the local causal structure. The
-`Causet` adapter flattens this into a 1D **chain of antichains** — a
-shape compatible with the existing Schwinger MPO machinery, which
-expects a 1D lattice with explicit nearest-neighbour-style hopping.
+A triangulated `Spacetime` carries finer structure than a 1D chain: its
+vertices are distributed across time slices, and its directed timelike edges
+define the local causal structure. The `Causet` adapter flattens this into a 1D
+**chain of antichains**, a shape compatible with the Schwinger matrix product
+operator (MPO) machinery, which expects a 1D lattice with nearest-neighbour-style
+hopping.
 
 ```python
 from tessera import Spacetime
@@ -143,23 +143,24 @@ integer time slice (truncating `Vertex.getTime()`), and produces:
 
 Edges with spacelike or null squared length are ignored, as are any
 timelike edges with `src.time == tgt.time` (no propagation across the
-same slice). Edges spanning non-adjacent slices are skipped — they're
-transitively reduced out by `Poset.fromSpacetime` and wouldn't
-contribute a physical hopping term anyway.
+same slice). Edges spanning non-adjacent slices are skipped: they are
+transitively reduced out by `Poset.fromSpacetime` and would not
+contribute a physical hopping term.
 
 ### Reduced 1D chain
 
-When every antichain has exactly one vertex, the chain-of-antichains
+When every antichain has exactly one vertex, the chain of antichains
 coincides with the standard 1D lattice and `hoppingPairs` reduces to
-`[(0, 1), (1, 2), ..., (N-2, N-1)]`. In that case the existing
-`SchwingerHamiltonian.mpoChain(...)` runs unchanged with `params.N =
-chain.nSites` and `chain.hoppingPairs` as the hopping graph.
+`[(0, 1), (1, 2), ..., (N-2, N-1)]`. `SchwingerHamiltonian.mpoChain(...)`
+then runs unchanged with `params.N = chain.nSites` and
+`chain.hoppingPairs` as the hopping graph.
 
 ### Threading the chain into the Schwinger pipeline
 
 `TDVPConfig.hoppingPairs` is the connection point. If empty (the
-default), the Schwinger TDVP runs on the standard 1D chain with NN
-hopping; non-empty selects the causet hopping graph instead.
+default), the Schwinger TDVP runs on the standard 1D chain with
+nearest-neighbour hopping; non-empty selects the causet hopping graph
+instead.
 
 ```python
 from tessera.quantum import TDVPConfig, SchwingerQuench
@@ -182,8 +183,9 @@ cfg.hoppingPairs = chain.hoppingPairs    # ← the causet rewiring
 r = SchwingerQuench(cfg).evolve()
 ```
 
-The DMRG ground state and TDVP evolution now propagate excitations along
-the causet's timelike-edge graph rather than the regular 1D chain.
+The density-matrix renormalization group (DMRG) ground state and TDVP
+evolution then propagate excitations along the causet's timelike-edge graph
+rather than the regular 1D chain.
 
 ## The causal-comparison harness
 
@@ -191,9 +193,9 @@ the causet's timelike-edge graph rather than the regular 1D chain.
 TDVP pipeline and compares three partial orders on the (cut, time) label
 set:
 
-1. **$\preceq_{\rm maj}$** — strict-majorization on Schmidt spectra
+1. **$\preceq_{\rm maj}$** — strict majorization on Schmidt spectra
    across cuts and time.
-2. **$\preceq_{\rm LR}$** — Lieb–Robinson cone: $(A, s) \preceq_{\rm LR}
+2. **$\preceq_{\rm LR}$** — Lieb-Robinson cone: $(A, s) \preceq_{\rm LR}
    (B, t)$ iff $s < t$ and $\mathrm{dist}(A, B) \leq v_{LR} \cdot (t-s)$.
 3. **$\preceq_{\rm cs}$** — causet order: on a regular chain this is
    time-only; on a Spacetime-derived chain it reads off `partialOrder`.
@@ -209,9 +211,9 @@ print(f"LR  vs cs: tau = {report.lrVsCs.kendallTau:.3f}")
 ```
 
 The strongest invariant is $\preceq_{\rm LR} \subset \preceq_{\rm cs}$:
-every LR pair is automatically a causet pair in the same direction on a
-regular chain, so `report.lrVsCs.kendallTau == 1.0` is a sanity check
-that the order extraction is consistent.
+every Lieb-Robinson pair is a causet pair in the same direction on a
+regular chain, so `report.lrVsCs.kendallTau == 1.0` checks that the order
+extraction is consistent.
 
 ### Reading `OrderAgreement`
 
@@ -223,15 +225,15 @@ that the order extraction is consistent.
 * `hasseEditDistance = |E_a △ E_b| / |E_a ∪ E_b|` ∈ [0, 1], the
   symmetric-difference fraction of cover edges.
 
-For the methodology-level falsification test of the entanglement-causes-
-spacetime claim, `nOnlyA` with $(A, B) = (\preceq_{\rm maj}, \preceq_{\rm
-LR})$ is the count of majorization-related pairs that lie outside the
-Lieb–Robinson cone — a non-zero number falsifies the strong claim.
+For the falsification test of the claim that entanglement generates
+spacetime, `nOnlyA` with $(A, B) = (\preceq_{\rm maj}, \preceq_{\rm LR})$
+counts majorization-related pairs lying outside the Lieb-Robinson cone; a
+non-zero count falsifies the strong form of the claim.
 
-## `LabelSpacetime` and `CausalOrders` directly
+## Using `LabelSpacetime` and `CausalOrders` directly
 
-Power users who want to skip `SchwingerQuench` and stitch the orders
-themselves can call `CausalOrders.fromSnapshots`:
+To skip `SchwingerQuench` and stitch the orders yourself, call
+`CausalOrders.fromSnapshots`:
 
 ```python
 from tessera.quantum import (
@@ -262,19 +264,29 @@ position, snapshot index, and physical time.
 
 ## Reading list
 
-* {cite}`C-MalamentSorkin1977` — the order-reconstructs-conformal-class
-  theorem.
-* {cite}`C-BombelliLeeMeyerSorkin1987` — the causet program; spacetime
+* {cite}`C-MalamentSorkin1977` — the order reconstructs the conformal class.
+* {cite}`C-BombelliLeeMeyerSorkin1987` — the causal set program; spacetime
   emerges from a locally finite partial order.
-* {cite}`C-LiebRobinson1972` — the Lieb–Robinson bound that bounds the
+* {cite}`C-LiebRobinson1972` — the Lieb-Robinson bound that bounds the
   $\preceq_{\rm LR}$ order.
-* {cite}`C-HastingsKoma2006` — refined LR bound for lattice systems
-  relevant to the Schwinger TDVP setup.
-
-See also [Emergent Causal Order from Majorization](quantum-experiments/earlier-work/emergent-causal-order-from-majorization.md) §1 and §4.4 for the
-scientific motivation behind the three-order comparison, and
-[Emergent Spectral Dimension from the Schwinger TDVP State](quantum-experiments/earlier-work/emergent-spectral-dimension-schwinger-tdvp.md) §5 for
-the integration of `CausetChain` with the holography pipeline.
+* {cite}`C-HastingsKoma2006` — refined Lieb-Robinson bound for lattice
+  systems, [arXiv:math-ph/0507008](https://arxiv.org/abs/math-ph/0507008).
+* M. A. Nielsen, *Conditions for a class of entanglement transformations*,
+  [arXiv:quant-ph/9811053](https://arxiv.org/abs/quant-ph/9811053) — the
+  majorization criterion behind $\preceq_{\rm maj}$.
+* U. Schollwöck, *The density-matrix renormalization group in the age of
+  matrix product states*,
+  [arXiv:1008.3477](https://arxiv.org/abs/1008.3477) — DMRG and MPO
+  background.
+* J. Haegeman et al., *Unifying time evolution and optimization with matrix
+  product states*, [arXiv:1408.5056](https://arxiv.org/abs/1408.5056) — TDVP.
+* M. C. Bañuls, K. Cichy, K. Jansen, J. I. Cirac, *The mass spectrum of the
+  Schwinger model with Matrix Product States*,
+  [arXiv:1305.3765](https://arxiv.org/abs/1305.3765).
+* M. Van Raamsdonk, *Building up spacetime with quantum entanglement*,
+  [arXiv:1005.3035](https://arxiv.org/abs/1005.3035).
+* S. Ryu, T. Takayanagi, *Holographic derivation of entanglement entropy from
+  AdS/CFT*, [arXiv:hep-th/0603001](https://arxiv.org/abs/hep-th/0603001).
 
 ## References
 

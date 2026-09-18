@@ -25,7 +25,7 @@ dpkg -l | grep nvidia-cuda-toolkit                 # Ubuntu package
 ls /opt/nvidia/hpc_sdk/*/compilers/bin/nvcc 2>/dev/null  # HPC SDK
 ```
 
-## Option A: Symlink (no downtime — recommended if HPC SDK is installed)
+## Option A: symlink an existing HPC SDK install
 
 If you have the HPC SDK with CUDA 13.0 at the default path:
 
@@ -39,7 +39,7 @@ ls /usr/local/cuda/targets/x86_64-linux/include/cuda_runtime.h
 ls /usr/local/cuda/targets/x86_64-linux/lib/libcudart.so
 ```
 
-Optionally remove the older Ubuntu CUDA 12.0 package to avoid confusion:
+Optionally remove the older Ubuntu CUDA 12.0 package:
 
 ```bash
 sudo apt remove nvidia-cuda-toolkit
@@ -52,11 +52,11 @@ export PATH=/usr/local/cuda/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
 ```
 
-## Option B: Clean install from NVIDIA's repo
+## Option B: clean install from NVIDIA's repo
 
-Use this if you don't have a working CUDA install, or want a fresh start.
+Use this if you have no working CUDA install, or want a fresh start.
 
-### Step 1: Remove existing CUDA installations
+### Step 1: remove existing CUDA installations
 
 ```bash
 # Remove Ubuntu's packaged CUDA toolkit (12.0)
@@ -73,7 +73,7 @@ sudo rm -f /usr/local/cuda
 **Do NOT remove the NVIDIA driver** (`nvidia-driver-*`) — that's separate
 from the CUDA toolkit and removing it will kill your display.
 
-### Step 2: Add NVIDIA's official package repo
+### Step 2: add NVIDIA's package repo
 
 ```bash
 # For Ubuntu 24.04 x86_64:
@@ -86,7 +86,7 @@ For other Ubuntu versions, replace `ubuntu2404` with your version
 (`ubuntu2204`, `ubuntu2004`, etc.).  Check
 <https://developer.nvidia.com/cuda-downloads> for the exact URL.
 
-### Step 3: Install the CUDA Toolkit
+### Step 3: install the CUDA Toolkit
 
 ```bash
 # Install just the toolkit (compiler + libraries), NOT the driver
@@ -96,7 +96,7 @@ sudo apt install cuda-toolkit-13-0
 This installs to `/usr/local/cuda-13.0/` and creates a symlink at
 `/usr/local/cuda/`.
 
-### Step 4: Set up your PATH
+### Step 4: set up your PATH
 
 Add to `~/.bashrc` or `~/.zshrc`:
 
@@ -111,7 +111,7 @@ Then reload:
 source ~/.bashrc  # or ~/.zshrc
 ```
 
-### Step 5: Verify
+### Step 5: verify
 
 ```bash
 nvcc --version
@@ -151,8 +151,7 @@ python examples/curvature_slice_gif.py --n-simplices 200 --seed 7 \
 
 **"Imported target CUDA::cudart includes non-existent path"**
 → CMake found CUDA metadata but the include directory doesn't exist.
-  This usually means a broken or partial install.  Use Option A (symlink)
-  or Option B (clean install).
+  This means a broken or partial install.  Use Option A or Option B.
 
 **Build succeeds but `import tessera` crashes with "libcudart.so not found"**
 → Add the CUDA lib directory to `LD_LIBRARY_PATH`:

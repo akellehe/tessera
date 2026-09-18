@@ -14,7 +14,7 @@ import tessera as T  # noqa: F401  (the driver imports the package)
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import qubit as qa
 
 TOL = 1e-12
 SWAP = np.array([[0.0, 1.0], [1.0, 0.0]])

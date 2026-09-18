@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
+from tessera.drivers import emergence as ea
 
 cob = T.cobordism
 obs = T.observables
@@ -270,10 +270,8 @@ class AbsenceTest(unittest.TestCase):
 class OntologyTest(unittest.TestCase):
     """A quark is a persistent modular spectral cluster, never a hole."""
 
-    SOURCE = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))),
-        "examples", "cobordism", "emergence_animation.py")
+    #: The driver's own source file, wherever the package puts it.
+    SOURCE = ea.__file__
 
     #: Vocabulary of the construction the whitepaper abandoned.
     RETIRED = ("_MIN_QUARK_HOLES", "r_state", "hole = quark",

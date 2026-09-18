@@ -25,18 +25,18 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-/// Inverse (d, 2) Pachner flip with apply / rollback.
+/// (d, 2) Pachner move (bistellar flip) with apply / rollback: the inverse
+/// of :class:`FlipMove`.
 ///
 /// Removes d d-simplices sharing an edge and creates 2 new
 /// d-simplices sharing a (d-1)-face.  ``dN0 = 0``;
-/// ``ΔN4 = -(d - 2) = -2`` in 4D.  Inverse: :class:`FlipMove`.
+/// ``ΔN4 = -(d - 2) = -2`` in 4D.
 ///
-/// Includes an explicit manifold-preservation check (matches
-/// CDT::iflip): rejects if either of the two proposed new simplices
-/// would already exist in the lattice (preventing duplicate-simplex
-/// creation).  This makes iflip the only Pachner move that detects
-/// dedupe in propose() — apply() will always make exactly the
-/// advertised changes.
+/// ``propose()`` rejects when either of the two proposed simplices already
+/// exists, so ``apply()`` always makes exactly the advertised changes. This
+/// is the only move of the set that detects deduplication at proposal time.
+///
+/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267.
 class IFlipMove : public PachnerMove {
 public:
   IFlipMove(Spacetime *st, std::mt19937 *rng,
@@ -45,7 +45,7 @@ public:
             PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
-  /// Propose at a NAMED edge: \p site is the top cell's vertex ids followed by
+  /// Propose at a named edge: \p site is the top cell's vertex ids followed by
   /// the edge's two endpoint ids (see `sitesOn`).
   bool proposeAt(const std::vector<std::uint64_t> &site) override;
   /// Every (cell, edge-in-that-cell) pair, each as the cell's ids followed by
@@ -59,15 +59,14 @@ public:
   void rollback() override;
   bool isApplied() const override { return applied_; }
   std::vector<std::uint64_t> touchedVertexIds() const override;
-  /// The canonical name of this move type, defined ONCE here so callers
-  /// that dispatch on it (MultiCobordism's move draw, CDT's acceptance-rate
-  /// accounting) reference this rather than re-spelling the literal.
+  /// Canonical name of this move type, for the callers that dispatch on it
+  /// (MultiCobordism's move draw, CDT's acceptance-rate accounting).
   static constexpr const char *kMoveType = "iflip";
   std::string moveType() const override { return kMoveType; }
 
 private:
-  /// The shared body of every proposal: everything after the cell and the edge
-  /// within it are chosen. `propose` draws them, `proposeAt` is handed them.
+  /// Shared body of every proposal: everything after the cell and the edge
+  /// within it are chosen. `propose` draws them; `proposeAt` is handed them.
   bool proposeOn(SimplexPtr sigma, EdgePtr edge);
 
 

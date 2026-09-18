@@ -26,23 +26,21 @@ using SparseMatrix = Eigen::SparseMatrix<Complex>;
 /// transpose, i.e. `ChainComplex::kSimplexVertices(1)`).
 using SquaredLengths = std::vector<Complex>;
 
-/// Which chain metric family an instance uses (specification §4.4, §12).
+/// Which chain metric family an instance uses.
 enum class Preset {
   /// The Whitney (Galerkin) metric: \f$ W_k := G_k = M_k^{-1} \f$ on chains,
   /// with the sparse inverse chain metric \f$ M_k \f$ assembled per top
   /// simplex. The default.
   L2,
-  /// The Grassmann projection metric of the chain-Hodge specification §6: the
-  /// sparse *chain* metric \f$ G_k = \text{multiplicity} \circ \Gamma_k \f$ of
-  /// blade pairings, polynomial in \f$ s \f$ and branch-free. Retained as a
-  /// named option with its documented deviation: its harmonic representatives
-  /// depend on the triangulation at \f$ O(1) \f$ and its per-face block has
-  /// rank two.
+  /// The Grassmann projection metric: the sparse *chain* metric
+  /// \f$ G_k = \text{multiplicity} \circ \Gamma_k \f$ of blade pairings,
+  /// polynomial in \f$ s \f$ and branch-free. A named alternative with a known
+  /// deviation: its harmonic representatives depend on the triangulation at
+  /// \f$ O(1) \f$ and its per-face block has rank two.
   GRASSMANN_ALL,
 };
 
-/// How the one root per top simplex, \f$ \sqrt{\det g_T} \f$, is fixed
-/// (specification §4.2).
+/// How the one root per top simplex, \f$ \sqrt{\det g_T} \f$, is fixed.
 enum class Branch {
   /// Continuation from the unit Euclidean reference simplex along the straight
   /// segment \f$ g_T(t) = (1-t)\,g_{\rm ref} + t\,g_T \f$: the argument of the
@@ -59,10 +57,10 @@ enum class Branch {
   KontsevichSegal,
 };
 
-/// The instance certificate the specification requires of every instance
-/// (§4.2): Kontsevich–Segal allowability of every top simplex, the minimal
-/// margin \f$ \pi - \sum_i |\arg\lambda_i(g_T)| \f$, and, once the Lorentzian
-/// protocol has set it, the rotation \f$ \varepsilon \f$.
+/// The certificate carried by every instance: Kontsevich–Segal allowability of
+/// every top simplex, the minimal margin
+/// \f$ \pi - \sum_i |\arg\lambda_i(g_T)| \f$, and, once the Lorentzian protocol
+/// has set it, the rotation \f$ \varepsilon \f$.
 struct InstanceCertificate {
   Branch branch{Branch::Continuation};
   /// True when every top simplex has strictly positive margin.
@@ -107,8 +105,8 @@ struct TopSimplexBlock {
 /// # WhitneyMass
 ///
 /// The sparse complex symmetric inverse chain metrics \f$ M_k \f$ of the
-/// chain-level Whitney Hodge pencil (specification §4.1, §4.2, §13), assembled
-/// from the complex squared edge lengths alone.
+/// chain-level Whitney Hodge pencil, assembled from the complex squared edge
+/// lengths alone.
 ///
 /// For a top simplex \f$ T = [v_0 < \dots < v_d] \f$ with Gram matrix
 /// \f$ (g_T)_{ij} = \tfrac12(s_{v_0v_i} + s_{v_0v_j} - s_{v_iv_j}) \f$,
@@ -132,13 +130,13 @@ struct TopSimplexBlock {
 ///     (-1)^{i+j}\, I^T_{a_ib_j}\,
 ///     \det\bigl[\Gamma_{c_pe_q}\bigr]_{p,q=1..k},
 /// \f]
-/// \f$ c = \sigma\setminus a_i \f$, \f$ e = \tau\setminus b_j \f$, which
-/// reproduces the specification's closed forms
+/// \f$ c = \sigma\setminus a_i \f$, \f$ e = \tau\setminus b_j \f$, which reproduces
+/// the closed forms
 /// \f$ (M_0)_{vv'} = \sum_T |T|(1+\delta_{vv'})/((d+1)(d+2)) \f$,
 /// \f$ (M_1)_{ee'} = \sum_T \tfrac{|T|}{(d+1)(d+2)}[(1+\delta_{ik})\Gamma_{jl}
 /// - (1+\delta_{il})\Gamma_{jk} - (1+\delta_{jk})\Gamma_{il} + (1+\delta_{jl})\Gamma_{ik}] \f$
 /// and \f$ (M_2)_{tt} = 1/|t| \f$ at \f$ d = 2 \f$, and supplies \f$ M_2 \f$ for
-/// \f$ d \ge 3 \f$ by the stated expansion
+/// \f$ d \ge 3 \f$ by the expansion
 /// \f$ \langle d\lambda_a\wedge d\lambda_b, d\lambda_c\wedge d\lambda_e\rangle =
 /// \Gamma_{ac}\Gamma_{be} - \Gamma_{ae}\Gamma_{bc} \f$. Each \f$ M_k \f$ is
 /// complex symmetric and sparse: \f$ (M_k)_{\sigma\tau} \ne 0 \f$ only if
@@ -157,6 +155,9 @@ struct TopSimplexBlock {
 /// \mathrm{tr}(g_T^{-1}\partial g_T) \f$); it satisfies the scaling identity
 /// \f$ \sum_e s_e\,\partial M_k/\partial s_e = (d/2 - k)\,M_k \f$, which is the
 /// validation the tests use instead of finite differences.
+///
+/// Reference: Whitney, "Geometric Integration Theory", 1957, for the Whitney
+/// forms.
 class WhitneyMass {
  public:
   /// The oriented complex of a triangulation in the reference orientation
@@ -189,7 +190,7 @@ class WhitneyMass {
                                              const SquaredLengths &s, int k,
                                              Preset preset, Branch branch);
 
-  /// The Grassmann projection chain metric of CH §6 (`Preset::GRASSMANN_ALL`):
+  /// The Grassmann projection chain metric (`Preset::GRASSMANN_ALL`):
   /// \f$ (G_k)_{\sigma\tau} = m_{\sigma\tau}\,\langle\vec\sigma,\vec\tau\rangle \f$
   /// with \f$ m_{\sigma\tau} \f$ the number of simplices of the complex (of every
   /// dimension \f$ \ge k \f$) containing both \f$ \sigma \f$ and \f$ \tau \f$,
@@ -206,7 +207,7 @@ class WhitneyMass {
   [[nodiscard]] static double allowabilityMargin(const cobordism::ChainComplex &K,
                                                  const SquaredLengths &s);
 
-  /// The full instance certificate (§4.2): allowability, margins, volumes on
+  /// The full instance certificate: allowability, margins, volumes on
   /// the declared branch, Gram determinants, and continuation ambiguity.
   [[nodiscard]] static InstanceCertificate certificate(
       const cobordism::ChainComplex &K, const SquaredLengths &s,

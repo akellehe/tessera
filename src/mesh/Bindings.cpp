@@ -62,7 +62,7 @@ Every object identified by its constituent vertices (a simplex, a boundary
 block's region) is named by this hash, so the name does not depend on the
 order the vertices were listed in.
 
-An INSTANCE stores at most `kMax` identifiers and drops the rest silently,
+An instance stores at most `kMax` identifiers and drops the rest silently,
 which suits a simplex; `fingerprintOf` is the same hash without that limit,
 for sets held in the caller's own container.)doc")
       .def_static("fingerprintOf",
@@ -90,9 +90,9 @@ for sets held in the caller's own container.)doc")
   py::class_<Edge, std::unique_ptr<Edge, py::nodelete>>(m, "Edge",
       R"doc(An edge connecting two vertices in the simplicial complex.
 
-Edges are 1-simplices linking a source and target vertex.  In CDT the
-squared length determines the edge disposition: positive = spacelike,
-negative = timelike, zero = lightlike.
+Edges are 1-simplices linking a source and target vertex. In causal dynamical
+triangulation (CDT) the squared length fixes the edge disposition: positive is
+spacelike, negative timelike, zero lightlike.
 
 Edges are identified by an order-independent fingerprint of their
 endpoint vertex IDs, so Edge(v1, v2) == Edge(v2, v1).)doc")
@@ -112,15 +112,16 @@ endpoint vertex IDs, so Edge(v1, v2) == Edge(v2, v1).)doc")
         py::arg("source"),
         py::arg("target"),
         py::arg("squaredLength"),
-        "Create an edge with a specified (possibly complex) squared length l^2, "
-        "stored exactly. The length is derived as its sqrt (real = spacelike, "
-        "imaginary = timelike). A real value is a real l^2, not a length."
+        "Create an edge with a specified (possibly complex) length l, stored "
+        "exactly (real = spacelike, imaginary = timelike). Note the keyword is "
+        "named squaredLength but the value is the length: l^2 is derived by "
+        "squaring, so pass sqrt(l2) to specify a squared value."
       )
       .def("simplices", &Edge::simplicesCopy,
         "The simplices registered on this edge -- every simplex that carries it, "
         "of any dimension. Spacetime::registerSimplex mirrors each simplex into "
-        "its edges, so this is the edge's own incidence list and its length does "
-        "not grow with the four-volume, unlike a vertex's."
+        "its edges, so this is the edge's own incidence list, and unlike a "
+        "vertex's it does not grow with the four-volume."
       )
       .def("__str__", &Edge::toString)
       .def("__repr__", &Edge::toString)
@@ -132,20 +133,20 @@ endpoint vertex IDs, so Edge(v1, v2) == Edge(v2, v1).)doc")
            R"doc(Return the (possibly complex) edge length — the causal DOF.
 
 Real for spacelike, imaginary for timelike, general complex off the
-real-Lorentzian locus. This is the edge's ONE degree of freedom: l^2 is derived
-by squaring and is never stored (#639), so square getLength() where you need it.
-Causal character is the ARGUMENT of l^2 -- see squaredArgument() and the
-predicates below -- never the Euclidean modulus abs(l). Distinct from getPhase()
-(the C* connection).)doc")
+real-Lorentzian locus. This is the edge's one degree of freedom: l^2 is derived
+by squaring and is never stored, so square getLength() where you need it.
+Causal character is the argument of l^2 -- see squaredArgument() and the
+predicates below -- never the Euclidean modulus abs(l). Distinct from getPhase(),
+the C* connection.)doc")
       .def("squaredArgument", &Edge::squaredArgument,
-           "arg(l^2) in (-pi, pi] -- the MEASURED quantity every causal predicate "
+           "arg(l^2) in (-pi, pi] -- the measured quantity every causal predicate "
            "classifies. 0 is spacelike, +/-pi/2 lightlike, +/-pi timelike, anything "
-           "else mixed. Carried so a consumer can see where an edge actually sits "
-           "rather than only which bucket it fell in.")
+           "else mixed. Carried so a consumer can see where an edge sits rather "
+           "than only which bucket it fell in.")
       .def("lorentzianMagnitude", &Edge::lorentzianMagnitude,
            "Re(l^2) = x^2 - t^2 for l = x + i t. Carried for consumers that want "
-           "the interval itself; it does NOT decide the disposition alone, since "
-           "that would discard Im(l^2) -- which is nonzero precisely at the "
+           "the interval itself; it does not decide the disposition alone, since "
+           "that would discard Im(l^2), which is nonzero precisely at the "
            "lightlike point.")
       .def("isTimelike", &Edge::isTimelike,
            "Timelike iff arg(l^2) ~ +/-pi, i.e. l^2 real negative.")
@@ -153,27 +154,27 @@ predicates below -- never the Euclidean modulus abs(l). Distinct from getPhase()
            "Spacelike iff arg(l^2) ~ 0, i.e. l^2 real positive.")
       .def("isNull", &Edge::isNull,
            "Null/lightlike iff arg(l^2) ~ +/-pi/2, i.e. l^2 purely imaginary and "
-           "NONZERO -- the light cone, reached non-trivially at Re(l) == Im(l) != 0. "
+           "nonzero -- the light cone, reached non-trivially at Re(l) == Im(l) != 0. "
            "Distinct from isDegenerate(): a null edge is a physical lightlike ray.")
       .def("isMixed", &Edge::isMixed,
-           "A genuinely complex l^2 with no definite causal character. NOT snapped "
+           "A genuinely complex l^2 with no definite causal character. Not snapped "
            "to the nearest of the three -- that would invent definiteness the "
            "geometry does not have. The common case for a uniformly drawn argument.")
       .def("isDegenerate", &Edge::isDegenerate,
-           "An ABSENT edge (Euclidean modulus ~ 0), which is not a causal type. "
+           "An absent edge (Euclidean modulus ~ 0), which is not a causal type. "
            "Exactly one of isSpacelike/isTimelike/isNull/isMixed/isDegenerate holds.")
       .def("getPhase", &Edge::getPhase,
            R"doc(Return the complex C* connection phase carried by this edge.
 
-The SECOND edge field, independent of the geometry. The link variable is
-U = exp(i * phase) in C*, and the reverse orientation carries its INVERSE
+A second edge field, independent of the geometry. The link variable is
+U = exp(i * phase) in C*, and the reverse orientation carries its inverse
 U**-1, not its conjugate (they agree only for a real phase). A gauge
 transformation acts by U_xy -> g_x**-1 U_xy g_y and leaves the length, and
 every metric weight built from it, untouched.
 
 The phase is complex because the structure group is C* = U(1) x R+:
 exp(i*phase) = exp(i*Re(phase)) * exp(-Im(phase)). Re is the compact U(1)
-angle in radians -- the only part with winding, hence the only part that
+angle in radians -- the only part with winding, so the only part that
 quantizes and the only part a Wilson loop reads. Im is the non-compact local
 scale and carries no quantum number.
 
@@ -182,9 +183,9 @@ It twists the hopping of the Aharonov-Bohm operator
 geometric Hodge laplacian(k) is built from the lengths alone and is blind to
 it at every degree. The default of 0 leaves an untwisted CDT edge unchanged.)doc")
       .def("setLength", &Edge::setLength, py::arg("length"),
-           "Set the (complex) edge LENGTH: real=spacelike, imaginary=timelike, "
+           "Set the complex edge length l: real = spacelike, imaginary = timelike, "
            "general complex off the real-Lorentzian locus. There is no squared "
-           "setter (#639) -- pass sqrt(l2) and choose the branch explicitly.")
+           "setter -- pass sqrt(l2) and choose the branch explicitly.")
       .def("setPhase", &Edge::setPhase, py::arg("phase"),
            "Set the complex C* connection phase carried by this edge: Re is "
            "the compact U(1) angle in radians, Im the non-compact log-scale. "
@@ -207,9 +208,8 @@ it at every degree. The default of 0 leaves an untwisted CDT edge unchanged.)doc
   py::class_<Vertex, std::unique_ptr<Vertex, py::nodelete>>(m, "Vertex",
       R"doc(A point in the simplicial spacetime, identified by a unique integer ID.
 
-Each vertex carries a time coordinate (the first element of its
-coordinate vector) and maintains references to its incident edges
-and containing simplices.)doc")
+Each vertex carries a time coordinate derived from its coordinate vector and
+keeps references to its incident edges and the simplices containing it.)doc")
       .def("__eq__", &Vertex::operator==, py::arg("other"))
       .def("__repr__", &Vertex::toString)
       .def("__str__", &Vertex::toString)
@@ -232,7 +232,8 @@ and containing simplices.)doc")
       .def("getSimplices", &Vertex::getSimplices, py::return_value_policy::copy,
            "Return all simplices (of any dimension) containing this vertex.")
       .def("getTime", &Vertex::getTime,
-           "Return the time coordinate of this vertex (first coordinate).")
+           "Return the time coordinate of this vertex; see Vertex::getTime for "
+           "the convention by coordinate dimension.")
       .def("setTime", &Vertex::setTime, py::arg("time"),
            "Set the time coordinate (first coordinate) of this vertex; "
            "creates a 1-D coordinate when the vertex had none.")
@@ -255,7 +256,7 @@ and containing simplices.)doc")
       .def("__getitem__", &VertexList::operator[], py::arg("vertexId"), py::return_value_policy::reference,
            "Look up a vertex by ID (operator[]).")
       .def("get", &VertexList::get, py::arg("id"), py::return_value_policy::reference,
-           "Look up a vertex by its integer ID.  Raises if not found.")
+           "Look up a vertex by its integer ID. Raises if not found.")
       .def("add",
            py::overload_cast<const std::uint64_t, const std::vector<double> &>(&VertexList::add),
            py::arg("id"), py::arg("coordinates"),
@@ -281,8 +282,8 @@ and containing simplices.)doc")
                                     std::complex<double>>(&EdgeList::add),
            py::arg("source"), py::arg("target"), py::arg("length"),
            py::return_value_policy::reference,
-           "Add an edge with a specified complex LENGTH (pass sqrt(l2) to give it "
-           "by squared value), or return the existing one if duplicate.")
+           "Add an edge with a specified complex length (pass sqrt(l2) to give it "
+           "by squared value), or return the existing one if it is a duplicate.")
       .def("add", py::overload_cast<const VertexPtr &, const VertexPtr &>(&EdgeList::add),
            py::arg("source"), py::arg("target"),
            py::return_value_policy::reference,
@@ -292,10 +293,11 @@ and containing simplices.)doc")
            py::return_value_policy::reference,
            R"doc(Insert if absent, otherwise return the existing edge.
 
-Returns ``(edge, inserted)`` where ``inserted`` is ``True`` on a fresh
-insert and ``False`` on a dedupe-hit.  Used by transactional Pachner
-moves to record which edges they freshly created (so rollback knows
-which to remove).)doc")
+Returns ``(edge, inserted)`` where ``inserted`` is ``True`` on a fresh insert
+and ``False`` on a deduplication hit. Transactional Pachner moves use the flag
+to record the edges they created, so rollback knows which to remove.
+
+Note the keyword is named squaredLength but the value is the edge length.)doc")
       .def("remove", py::overload_cast<const EdgePtr &>(&EdgeList::remove), py::arg("edge"),
            "Remove an edge from the list.")
       .def("size", &EdgeList::size,
@@ -306,7 +308,8 @@ which to remove).)doc")
   // TemporalOrientation
   // ========================================
   py::class_<TemporalOrientation, std::shared_ptr<TemporalOrientation> >(m, "TemporalOrientation",
-      R"doc(CDT simplex orientation (ti, tf) counting vertices at each time slice.
+      R"doc(Causal dynamical triangulation (CDT) simplex orientation (ti, tf),
+counting vertices on each time slice.
 
 For a d-simplex spanning times t and t+1:
   - ti = number of vertices at time t
@@ -317,7 +320,9 @@ Valid CDT orientations: (d,1), (1,d), (d-1,2), (2,d-1).
 For d=4: (4,1), (1,4), (3,2), (2,3).)doc")
       .def(py::init<uint8_t, uint8_t>(), py::arg("ti"), py::arg("tf"))
       .def("getOrientation", &TemporalOrientation::getOrientation,
-           "Return the (ti, tf) orientation as a pair.")
+           "Return the TimeOrientation: FUTURE when more vertices lie on the "
+           "later slice, PRESENT when more lie on the earlier one, UNKNOWN when "
+           "the counts are equal. Use numeric() for the (ti, tf) pair.")
       .def("__hash__", &TemporalOrientation::hash)
       .def("__eq__", &TemporalOrientation::operator==, py::arg("other"))
       .def("__str__", &TemporalOrientation::toString)
@@ -335,9 +340,9 @@ For d=4: (4,1), (1,4), (3,2), (2,3).)doc")
   py::class_<Simplex, std::unique_ptr<Simplex, py::nodelete>>(m, "Simplex",
       R"doc(A k-simplex in the simplicial complex.
 
-A k-simplex has k+1 vertices, C(k+1,2) edges, and k+1 facets
-(each a (k-1)-simplex).  Top-dimensional simplices in d-dimensional
-CDT have d+1 vertices (e.g. 5 vertices for d=4).
+A k-simplex has k+1 vertices, C(k+1,2) edges, and k+1 facets (each a
+(k-1)-simplex). Top-dimensional simplices in d-dimensional causal dynamical
+triangulation (CDT) have d+1 vertices, e.g. 5 vertices for d=4.
 
 Simplices are identified by an order-independent fingerprint of
 their vertex IDs.)doc")
@@ -354,9 +359,8 @@ their vertex IDs.)doc")
            py::return_value_policy::reference_internal,
            "Return all simplices of one dimension higher that contain this simplex "
            "as a face. Returned by reference to the canonical Spacetime-owned "
-           "simplices (not copies): driving facet/coface materialization from "
-           "Python therefore registers the real cofaces, matching the C++ path "
-           "(issue #261).")
+           "simplices, not copies, so driving facet/coface materialization from "
+           "Python registers the real cofaces and matches the C++ path.")
       .def("getEdges", &Simplex::getEdges, py::return_value_policy::copy,
            "Return the edges (1-faces) of this simplex.")
       .def("assertSpacelikeAdmissible", &Simplex::assertSpacelikeAdmissible,
@@ -370,16 +374,14 @@ their vertex IDs.)doc")
            py::return_value_policy::reference_internal,
            R"doc(Return the (k-1)-dimensional faces of this k-simplex.
 
-For a top d-simplex with d+1 vertices, returns d+1 facets each with
-d vertices.  Also registers coface relationships so that
-facet.getCofaces() includes this simplex.
+For a top d-simplex with d+1 vertices, returns d+1 facets each with d
+vertices. Also registers coface relationships, so facet.getCofaces() includes
+this simplex.
 
-Returned by reference to the canonical Spacetime-owned facets (not copies).
-Previously bound return_value_policy::copy, which handed Python detached
-copies of the sub-simplices: calling getFacets() on such a copy registered
-the copy (with an incomplete coface list) onto the shared vertices, so a
-Python-driven materialization corrupted dualVolume(). Reference fixes it
-(issue #261).)doc")
+Returned by reference to the canonical Spacetime-owned facets, not copies. A
+detached copy would register itself, with an incomplete coface list, onto the
+shared vertices, and a Python-driven materialization would then corrupt
+dualVolume().)doc")
       .def("getNumberOfFaces", &Simplex::getNumberOfFaces,
            "Return the number of sub-faces at each dimension.")
       .def("getOrientation", &Simplex::getOrientation,
@@ -397,7 +399,8 @@ Python-driven materialization corrupted dualVolume(). Reference fixes it
       .def("isSpatial", &Simplex::isSpatial,
            "Return True if all vertices lie on the same time slice (purely spatial simplex).")
       .def("isTimelike", &Simplex::isTimelike,
-           "Deprecated: misnamed. Returns True for *spatial* simplices (all same time). Use isSpatial().")
+           "Deprecated, and misleadingly named: returns True for spatial "
+           "simplices (all vertices at the same time). Use isSpatial().")
       .def("replaceVertex", &Simplex::replaceVertex, py::arg("oldVertex"), py::arg("newVertex"),
            "Replace a vertex in this simplex (updates fingerprint and internal maps).")
       .def("validate", &Simplex::validate,
@@ -409,23 +412,24 @@ Python-driven materialization corrupted dualVolume(). Reference fixes it
            "Cayley-Menger bordered matrix (flat (d+2)*(d+2) row-major) whose "
            "cofactors give the dihedral angles. Complex, always signed l^2.")
       .def("area", &Simplex::area,
-           "Area of this triangle (hinge) via Heron's formula, COMPLEX: a "
-           "negative Heron radicand (every timelike triangle) gives an imaginary "
-           "area, not the 0 the old real-typed clamp returned (#641).")
+           "Area of this triangle (hinge) via Heron's formula, complex: a "
+           "negative Heron radicand, which every timelike triangle has, gives an "
+           "imaginary area rather than zero.")
       .def("volume", &Simplex::volume,
-           "d-content sqrt(det G)/d! on the honest geometry, COMPLEX. A "
-           "Lorentzian cell with det G < 0 has an IMAGINARY content -- that is "
-           "what its d-content is, not the negative real a double could hold.")
+           "d-content sqrt(det G)/d! on the signature-aware geometry, complex. A "
+           "Lorentzian cell with det G < 0 has an imaginary content: that is its "
+           "d-content, not the negative real a double can hold.")
       .def("volumeGradient", &Simplex::volumeGradient,
            "Exact analytic gradient dV/dl^2_e of volume() w.r.t. each edge's "
            "squared length (edge-keyed map, complex values), via Jacobi's formula "
-           "on the Gram determinant: dV = (V/2) tr(G^-1 dG). The per-degree Hodge "
-           "weight gradient -- keystone for arbitrary-k.")
+           "on the Gram determinant: dV = (V/2) tr(G^-1 dG). This is the "
+           "per-degree Hodge weight gradient, from which the arbitrary-k case "
+           "follows.")
       .def("volumeGradientDirectionalDerivative",
            &Simplex::volumeGradientDirectionalDerivative, py::arg("direction"),
-           "Exact directional SECOND derivative sum_f v_f d^2V/dl^2_e dl^2_f, "
+           "Exact directional second derivative sum_f v_f d^2V/dl^2_e dl^2_f, "
            "edge-keyed in e, for the direction v given in the same edge-keyed "
-           "shape volumeGradient() returns. G is LINEAR in l^2, so the "
+           "shape volumeGradient() returns. G is linear in l^2, so the "
            "d^2G term vanishes identically and the Hessian is closed form. "
            "Euler: contracting against l^2 itself returns (d/2 - 1) dV/dl^2_e.")
       .def("circumcenterBarycentric", &Simplex::circumcenterBarycentric,
@@ -468,12 +472,12 @@ Python-driven materialization corrupted dualVolume(). Reference fixes it
            "content), complex.")
       .def("dihedralAngle", &Simplex::dihedralAngle,
            py::arg("hinge"),
-           "Complex Lorentzian (Sorkin) dihedral angle at the hinge — the full "
-           "m in {0,1,2} structure (#581): real for an ordinary wedge, complex "
-           "(imaginary part = boost rapidity) for a same-character wedge in "
-           "the boost regime, and pi/2 - i*asinh(.) for a wedge CROSSING the "
-           "light cone (one facet direction spacelike, one timelike). Unlike "
-           "the removed real-typed pair it is not clamped, so boosts survive.")
+           "Complex Lorentzian (Sorkin) dihedral angle at the hinge, carrying the "
+           "full m in {0,1,2} structure: real for an ordinary wedge, complex "
+           "(imaginary part = boost rapidity) for a same-character wedge in the "
+           "boost regime, and pi/2 - i*asinh(.) for a wedge crossing the light "
+           "cone (one facet direction spacelike, one timelike). Unclamped, so "
+           "boosts survive. See Sorkin, arXiv:1908.10022.")
       .def("deficitAngle", &Simplex::deficitAngle,
            "Complex Lorentzian deficit 2π − Σ dihedralAngle over the "
            "top cells at this hinge; real for an all-spacelike neighbourhood, "
@@ -498,17 +502,16 @@ Python-driven materialization corrupted dualVolume(). Reference fixes it
   // SimplexFilter (predicate over top simplices)
   // ========================================
   //
-  // Held as ``std::shared_ptr<SimplexFilter>`` so the same object can
-  // be referenced from HolographyConfig.simplexFilter and survive
-  // copy-by-value of the config. Python subclassing is not supported
-  // in this build — extend via C++ subclass + binding instead.
+  // Held as ``std::shared_ptr<SimplexFilter>`` so the same object can be
+  // referenced from HolographyConfig.simplexFilter and survive copy-by-value of
+  // the config. Python subclassing is not supported; extend with a C++ subclass
+  // and a binding.
   py::class_<SimplexFilter, std::shared_ptr<SimplexFilter>>(m, "SimplexFilter",
       R"doc(Predicate over top simplices (abstract base).
 
 Selects which top simplices participate in a downstream observable
-(``Spacetime.getSpectralDimensionOnSkeleton``). Use one of the
-concrete subclasses below; in this build, custom filters require a
-C++ subclass + binding.)doc")
+(``Spacetime.getSpectralDimensionOnSkeleton``). Use one of the concrete
+subclasses below; a custom filter requires a C++ subclass and a binding.)doc")
       .def("accept", &SimplexFilter::accept, py::arg("simplex"),
            "Return True iff the simplex should participate in the "
            "downstream observable.")
@@ -522,18 +525,18 @@ C++ subclass + binding.)doc")
              std::shared_ptr<AllSimplexFilter>>(m, "AllSimplexFilter",
       R"doc(Accepts every top simplex.
 
-Default for the holographic-dual measurement (issue #31). Registration
-via ``Spacetime.createSimplex`` already implies combinatorial
-constructibility (the ``k + 1`` vertices form a complete subgraph in
-the edge set), so this filter intentionally ignores edge-length
-geometry.)doc")
+The default for the holographic-dual measurement. Registration via
+``Spacetime.createSimplex`` already implies combinatorial constructibility
+(the ``k + 1`` vertices form a complete subgraph in the edge set), so this
+filter ignores edge-length geometry.)doc")
       .def(py::init<>());
   py::class_<PositiveGramDeterminantFilter, SimplexFilter,
              std::shared_ptr<PositiveGramDeterminantFilter>>(m, "PositiveGramDeterminantFilter",
-      R"doc(Accepts simplices whose Gram matrix has positive determinant.
+      R"doc(Accepts simplices whose Gram matrix has non-zero determinant.
 
-Restricts the measurement to metrically valid (non-degenerate,
-non-collapsed) Euclidean cells. Stricter alternative to the default
+Restricts the measurement to non-degenerate, non-collapsed cells. The test is
+non-degeneracy rather than positive-definiteness: on a Lorentzian complex the
+determinant is signed and may be complex. A stricter alternative to the default
 ``AllSimplexFilter``.)doc")
       .def(py::init<>());
 }

@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// Undirected graph in compressed sparse row (CSR) form, with the symmetric
+/// normalized Laplacian, modularity, and a heat-kernel spectral dimension.
+/// Reference: Burioni & Cassi, "Random walks on graphs: ideas, techniques and
+/// results", arXiv:cond-mat/0507142
+
 #include "observables/SparseGraph.h"
 
 #include "graph/CSRBuilder.hpp"
@@ -29,8 +35,8 @@ SparseGraph SparseGraph::fromCOO(
     const std::vector<std::uint32_t> &rows,
     const std::vector<std::uint32_t> &cols,
     std::uint32_t n) {
-  // Dedupe edges using a (min, max) packed-pair convention so that
-  // each undirected edge is represented once.
+  // Dedupe edges with a (min, max) packed-pair key so each undirected edge is
+  // represented once.
   std::vector<std::uint64_t> packed;
   packed.reserve(rows.size());
   for (std::size_t k = 0; k < rows.size(); ++k) {
@@ -43,8 +49,8 @@ SparseGraph SparseGraph::fromCOO(
   std::sort(packed.begin(), packed.end());
   packed.erase(std::unique(packed.begin(), packed.end()), packed.end());
 
-  // Expand to the symmetric COO form expected by buildCSRFromCOO:
-  // each unique edge contributes both directions.
+  // Expand to the symmetric coordinate (COO) form the CSR builder expects: each
+  // unique edge contributes both directions.
   std::vector<std::uint32_t> rowsSym, colsSym;
   rowsSym.reserve(packed.size() * 2);
   colsSym.reserve(packed.size() * 2);
@@ -61,8 +67,8 @@ SparseGraph SparseGraph::fromCOO(
   ::tessera::graph::buildCSRFromCOO<std::uint32_t, std::int64_t>(
       static_cast<std::size_t>(n), rowsSym, colsSym, g.indptr_, g.indices_);
 
-  // Precompute D^{-1/2} once; isolated nodes get 0.0 (matvec then
-  // collapses to the identity for those rows — see applyLaplacian).
+  // Precompute D^{-1/2} once; isolated nodes get 0.0, which collapses
+  // applyLaplacian to the identity on those rows.
   g.invSqrtDeg_.assign(n, 0.0);
   for (std::uint32_t i = 0; i < n; ++i) {
     auto d = g.degree(i);
@@ -121,12 +127,13 @@ double SparseGraph::modularity(const std::vector<int> &labels) const {
   }
   if (nNodes_ == 0 || nEdges_ == 0) return 0.0;
 
-  // Sum of degrees = 2m (no self-loops in the CSR), the Q denominator.
+  // The sum of degrees is 2m (the CSR holds no self-loops), the modularity
+  // denominator.
   const double twoM = 2.0 * static_cast<double>(nEdges_);
 
-  // Intra-community edge contribution. The CSR stores each undirected
-  // edge in both directions, so this directed scan counts 2·L_c summed
-  // over communities — exactly twoM · Σ_c (L_c/m).
+  // Intra-community edge contribution. The CSR stores each undirected edge in
+  // both directions, so this directed scan counts 2·L_c summed over communities,
+  // i.e. twoM · Σ_c (L_c/m).
   double intra = 0.0;
   for (std::size_t i = 0; i < nNodes_; ++i) {
     const int ci = labels[i];
@@ -135,7 +142,7 @@ double SparseGraph::modularity(const std::vector<int> &labels) const {
     }
   }
 
-  // Per-community summed degree D_c.
+  // Summed degree D_c per community.
   std::unordered_map<int, double> degByComm;
   for (std::size_t i = 0; i < nNodes_; ++i) {
     degByComm[labels[i]] += static_cast<double>(degree(static_cast<std::uint32_t>(i)));
@@ -158,21 +165,17 @@ std::vector<double> SparseGraph::diagonalHeatKernel(
   std::vector<double> out(nStarts * nT, 0.0);
   if (nNodes_ == 0 || nStarts == 0) return out;
 
-  // Empty-graph shortcut: by convention this class reports 1.0 for
-  // every (start, t) pair when there are no edges anywhere, treating
-  // an edgeless graph as having no diffusion. (When *some* nodes are
-  // isolated within an otherwise-connected graph, applyLaplacian
-  // collapses L_sym to identity on those rows, giving exp(-σ)
-  // diagonals — that's the pre-existing convention this method
-  // preserves.)
+  // Edgeless graph: report 1.0 for every (start, t) pair, i.e. no diffusion.
+  // Nodes isolated inside an otherwise-connected graph are a different case:
+  // there applyLaplacian collapses the symmetric Laplacian to the identity on
+  // those rows, giving exp(-σ) diagonals.
   if (nEdges_ == 0) {
     std::fill(out.begin(), out.end(), 1.0);
     return out;
   }
 
-  // Convert uint32_t starts to int for the base call; preserve filter
-  // on out-of-range entries (their rows are left zero, matching the
-  // earlier implementation).
+  // Convert the starts to int for the base call; out-of-range entries are
+  // marked with a sentinel and their rows are left zero.
   std::vector<int> startsInt;
   startsInt.reserve(nStarts);
   for (auto s : starts) {
@@ -180,8 +183,8 @@ std::vector<double> SparseGraph::diagonalHeatKernel(
     else             startsInt.push_back(-1);  // sentinel; base skips
   }
 
-  // Compress the sentinel rows out before calling the base, then re-
-  // expand into ``out`` so the row order still matches ``starts``.
+  // Compress the sentinel rows out before calling the base, then expand back
+  // into `out` so the row order still matches `starts`.
   std::vector<int> validIdx;
   std::vector<int> validStarts;
   validIdx.reserve(nStarts);
@@ -220,7 +223,7 @@ std::pair<double, double> SparseGraph::spectralDimension(
   std::shuffle(all.begin(), all.end(), *rng);
   std::vector<std::uint32_t> starts(all.begin(), all.begin() + n);
 
-  // Log-spaced t grid in [tMin, maxSigma].
+  // Log-spaced diffusion-time grid on [tMin, maxSigma].
   if (nTimes < 2) return {NaN, NaN};
   std::vector<double> times(nTimes);
   double logMin = std::log(tMin);
@@ -232,7 +235,7 @@ std::pair<double, double> SparseGraph::spectralDimension(
 
   auto K = diagonalHeatKernel(starts, times, krylovDim);
 
-  // Average K over starts.
+  // Average the return probability over the starts.
   std::vector<double> Kavg(nTimes, 0.0);
   for (int j = 0; j < nTimes; ++j) {
     double s = 0.0;
@@ -240,8 +243,8 @@ std::pair<double, double> SparseGraph::spectralDimension(
     Kavg[j] = s / n;
   }
 
-  // Centered finite differences on (log t, log K).  Skip
-  // non-positive / non-finite samples.
+  // Spectral dimension d_s = -2 d(log K) / d(log t) by centred finite
+  // differences, skipping non-positive and non-finite samples.
   std::vector<double> logT, logK;
   logT.reserve(nTimes);
   logK.reserve(nTimes);
@@ -275,4 +278,4 @@ std::pair<double, double> SparseGraph::spectralDimension(
   return {small / nTail, large / nTail};
 }
 
-}  // namespace tessera
+}  // namespace tessera::observables

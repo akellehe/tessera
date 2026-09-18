@@ -19,37 +19,31 @@ using namespace ::tessera::spacetime;
 
 /// # KuennethProduct
 ///
-/// The exact Kronecker-sum/Künneth rule for actual product complexes (#764):
+/// The exact Kronecker-sum / Kuenneth rule for product complexes:
 ///
 /// \f[ L_{A\times B} \;=\; L_A \otimes I \;+\; I \otimes L_B . \f]
 ///
-/// **Identity and domain.** As a matrix identity the Kronecker sum is
-/// algebraically exact for ANY two square operators, and because
-/// \f$ L_A\otimes I \f$ and \f$ I\otimes L_B \f$ commute, its spectrum is
-/// exactly the pairwise sums \f$ \{\lambda_i+\mu_j\} \f$ — no product
-/// eigensolve is ever needed. The degree-zero operator here is the **U(1)
-/// connection** graph Laplacian `HodgeLaplacian::connectionLaplacian`, not the
-/// Hodge \f$ L_0 \f$. As a statement about a COMPLEX it holds only
-/// for an actual product cell structure with product weights: at degree
-/// zero, a complex whose weighted 1-skeleton is the Cartesian product of the
-/// factors' 1-skeletons (product vertices \f$ (u,v) \f$; edges
-/// \f$ (u,v)\!-\!(u',v) \f$ with \f$ A \f$'s weight and
-/// \f$ (u,v)\!-\!(u,v') \f$ with \f$ B \f$'s weight). A staircase-subdivided
-/// `SimplicialProduct` is NOT in this domain — its diagonal edges break the
-/// identity — and `productCertificate` refuses it (`holds() == false`)
-/// rather than approximating. Weights stay complex/signed throughout; the
-/// rule never assumes positive-definite.
+/// **Identity and domain.** The Kronecker sum is exact for any two square
+/// operators, and since \f$ L_A\otimes I \f$ and \f$ I\otimes L_B \f$ commute
+/// its spectrum is the pairwise sums \f$ \{\lambda_i+\mu_j\} \f$. The
+/// degree-zero operator here is the U(1) connection graph Laplacian
+/// `HodgeLaplacian::connectionLaplacian`, not the Hodge \f$ L_0 \f$. As a
+/// statement about a complex it needs a product cell structure with product
+/// weights: at degree zero, a weighted 1-skeleton that is the Cartesian product
+/// of the factors' (product vertices \f$ (u,v) \f$; edges
+/// \f$ (u,v)\!-\!(u',v) \f$ with \f$ A \f$'s weight, \f$ (u,v)\!-\!(u,v') \f$
+/// with \f$ B \f$'s). A staircase-subdivided `SimplicialProduct` falls outside
+/// that domain, and `productCertificate` reports `holds() == false` for it.
+/// Weights may be complex or signed; positive definiteness is not assumed.
 ///
-/// This class is spectrum/matrix level only. Fock-operator structure
-/// (creation/annihilation, wedge, \f$ d\Gamma \f$ as an operator) lives in
-/// the exterior-algebra track; the free many-body spectra derived from these
-/// one-particle rules are `OccupationSpectra`'s job.
+/// This class works at the spectrum/matrix level; the derived many-body spectra
+/// are `OccupationSpectra`'s job.
 class KuennethProduct {
   public:
     /// The Kronecker sum \f$ L_A\otimes I_{n_B} + I_{n_A}\otimes L_B \f$ as a
     /// flat row-major \f$ (n_An_B)\times(n_An_B) \f$ matrix. Product index
-    /// \f$ (i_A, i_B) \mapsto i_A\,n_B + i_B \f$. Algebraically exact
-    /// assembly (additions only).
+    /// \f$ (i_A, i_B) \mapsto i_A\,n_B + i_B \f$. The assembly is exact
+    /// (additions only).
     /// @throws std::invalid_argument on dimension mismatch.
     [[nodiscard]] static std::vector<std::complex<double>> kroneckerSum(
         const std::vector<std::complex<double>> &laplacianA, int dimA,
@@ -58,30 +52,27 @@ class KuennethProduct {
     /// The exact spectrum of the Kronecker sum from the factor spectra: all
     /// pairwise sums \f$ \lambda_i + \mu_j \f$, sorted ascending by
     /// \f$ (\mathrm{Re}, \mathrm{Im}) \f$ (the `Spectrum` convention).
-    /// Output-sensitive \f$ O(n_An_B\log(n_An_B)) \f$ — never diagonalizes
-    /// the product operator.
+    /// Costs \f$ O(n_An_B\log(n_An_B)) \f$; the product operator is never
+    /// diagonalized.
     [[nodiscard]] static std::vector<std::complex<double>> pairwiseSpectrum(
         const std::vector<std::complex<double>> &spectrumA,
         const std::vector<std::complex<double>> &spectrumB);
 
-    /// Certify that `product` IS an actual product complex of the two
-    /// factors at degree zero: its **U(1) connection** graph Laplacian
+    /// Certify that `product` is a product complex of the two factors at degree
+    /// zero: its U(1) connection graph Laplacian
     /// (`HodgeLaplacian::connectionLaplacian`, \f$ D - A \f$ over the sorted
     /// vertex order) equals the Kronecker sum of the factors' under the declared
-    /// vertex `pairing`, entrywise, to relative `tolerance`. The rule's domain is
-    /// a weighted 1-skeleton, which is that operator's subject; this is NOT a
+    /// vertex `pairing`, entrywise, to relative `tolerance`. This is not a
     /// statement about the Hodge \f$ L_0 \f$.
     ///
-    /// `pairing` lists (product vertex id, factor-A vertex id, factor-B
-    /// vertex id) — the product structure is DATA carried by the caller, not
-    /// discovered. The check matches vertices by identifier set (any input
-    /// order, any relabeling of product ids), never by an imposed sort.
+    /// `pairing` lists (product vertex id, factor-A vertex id, factor-B vertex
+    /// id): the product structure is supplied by the caller, not discovered.
+    /// Vertices are matched by identifier, not by an imposed sort.
     ///
-    /// The returned certificate carries the measured relative residual
-    /// \f$ \max_{ij}|L_{\text{prod}} - (L_A\otimes I + I\otimes L_B)|_{ij}
-    /// / \max_{ij}|L_{\text{prod}}|_{ij} \f$; `holds()` grants the
-    /// Künneth/Kronecker rule for this complex, and a failed check (e.g. a
-    /// staircase triangulation) reports `holds() == false`.
+    /// The certificate carries the relative residual
+    /// \f$ \max_{ij}|L_{\text{prod}} - (L_A\otimes I + I\otimes L_B)|_{ij} \f$
+    /// divided by the largest entry magnitude in either matrix. `holds()` is
+    /// false for a complex outside the domain.
     ///
     /// @throws std::invalid_argument when the pairing is malformed: wrong
     ///   size, duplicate or unknown identifiers, or a missing factor pair.

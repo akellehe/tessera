@@ -28,13 +28,13 @@ double ObservableGates::relabelDelta(const RegisterObservable &observable,
                                      const RegisterContext &ctx) {
   const Record base = observable.record(ctx);
 
-  // The relabeled rebuild is a construction — it lives in the loader, not here.
+  // The relabeled complex is rebuilt by the loader.
   const LiveComplex::Relabeled rel =
       LiveComplex::relabel(*ctx.spacetime(), GATE_SEED);
 
-  // Match this register's hole images among the relabeled complex's emergent
-  // holes by permuted vertex SET (a missing image throws — the gate must compare
-  // like with like).
+  // Match this register's holes to the relabeled complex's emergent holes by
+  // permuted vertex set; a missing image throws, since the gate has to compare
+  // like with like.
   const std::vector<std::vector<std::uint64_t>> rederived =
       MultiCobordism::emergentHoles(*rel.spacetime, ctx.degree());
   std::map<std::set<std::uint64_t>, std::vector<std::uint64_t>> found;
@@ -82,7 +82,7 @@ bool ObservableGates::selfTest(const RegisterContext &ctx) {
          gaugeDelta(gaugeProbe, ctx) > 0.0;
 }
 
-// ---- the self-test probes ----
+// ---- Self-test probes ----
 
 Record LabelLeakProbe::record(const RegisterContext &ctx) const {
   double sum = 0.0;

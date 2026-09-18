@@ -10,15 +10,15 @@ namespace tessera::observables {
 
 namespace {
 
-// The shell-bin key: the unshelled bin (no hole reachable) is "unshelled"; a
-// shelled bin is its integer distance — the Python adapter's `_shell_key`.
+// Shell-bin key: a shelled bin is keyed by its integer distance, the bin with
+// no reachable hole by "unshelled".
 std::string shellKey(const std::optional<int> &shell) {
   return shell ? std::to_string(*shell) : std::string("unshelled");
 }
 
 Record::Map censusRecord(const InteriorHinges::Census &c) {
-  // The vertex-id-bearing `boundary_tets` list is label-bound and dropped from
-  // the record (the Python adapter drops it too); the counts stay.
+  // The `boundary_tets` list carries vertex ids, so it is label-bound and left
+  // out of the record; the counts stay.
   Record::Map m;
   m["n_tops"] = c.nTops;
   m["n_tets"] = c.nTets;

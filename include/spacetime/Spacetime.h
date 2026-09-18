@@ -53,17 +53,14 @@ enum class SpacetimeType : uint8_t {
 ///
 /// # Spacetime
 ///
-/// The Spacetime class provides methods to create and manipulate the basic building blocks of a simplicial
-/// complex \f$ \mathcal{K} \f$.
+/// Owns the simplicial complex \f$ \mathcal{K} \f$ of a causal dynamical triangulation (CDT): its vertices
+/// \f$ V \f$, edges \f$ E \f$ and simplices \f$ \{\sigma^k_i\} \f$ of every dimension, together with the
+/// metric and the topology, and maintains the incidence relations between them.
 ///
-/// The Spacetime manages the simplicial complex structure, including vertices \f$ V \f$, edges \f$ E \f$, and
-/// simplices \f$ \{\sigma^k_i\} \f$ of varying dimensions. It is responsible for constructing and maintaining
-/// the topological relationships between these elements.
+/// Spacetime constructs the simplices; the Topology subclass decides which ones to build so that the complex
+/// matches the chosen topology. State a Topology needs while building belongs on the Simplex.
 ///
-/// The Spacetime Topology is responsible for constructing Simplex(es) and the Topology (subclass) is responsible for
-/// building the complex to match that topology.
-///
-/// Any assertions or state needed by the Topology to build the complex should be implemented in the Simplex.
+/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267
 ///
 class Spacetime {
   public:
@@ -113,87 +110,46 @@ class Spacetime {
     };
 
     ///
-    /// This method computes energy for every Edge in the Spacetime that doesn't already have an energyDensity assigned
-    /// to it.
+    /// Assigns an energy density to every edge that does not already carry one.
     ///
-    /// Timelike edges go from a time t to a time t + 1.
-    /// Spacelike edges go from a point in space to another point in space.
+    /// The energy has two contributions: a spacelike term summed over the edges (1-simplices) lying inside a
+    /// slice, and a timelike term summed over the triangles (2-simplices) that bridge consecutive slices.
+    /// Timelike edges run from time \f$ t \f$ to \f$ t+1 \f$; spacelike edges stay within one slice.
     ///
-    /// Energy is calculated as two terms. One is spacelike and is summed over edges (1-simplices). The second is
-    /// timelike and is summed over triangles (2-simplices).
+    /// The energy of the spatial slice \f$ \Sigma_t \f$ is the Regge Hamiltonian
     ///
-    /// The crazy thing is that the energy is a term of the Hamiltonian present in the time evolution operator,
+    /// \f[
+    ///   E_t = \frac{1}{8\pi G}\left[\,
+    ///           \sum_{\ell \subset \Sigma_t} L_\ell\, \delta^{(3)}_\ell
+    ///           \;-\; \sum_{\Delta\ \mathrm{bridging}} A_\Delta\, \psi_\Delta
+    ///         \,\right]
+    /// \f]
     ///
-    /// U(t, t_0) | n \ket = e^{-iE_n(t - t_0)/\hbar} | n \ket
+    /// with the intrinsic 3D deficit angle at a slice edge and the extrinsic boost deficit at a bridging
+    /// triangle given by
     ///
-    /// and it's the interaction of two systems that define both a triangle and a step forward in time. So for the
-    /// operator that causes their interaction, we can just use time evolution with t - t_0 = 1 (one tick forward in
-    /// time) and E_n is that which applies to the triangle formed by two systems and their resultant (mixed) state.
+    /// \f[
+    ///   \begin{aligned}
+    ///     \delta^{(3)}_\ell &= 2\pi - \sum_{\tau \supset \ell} \theta_{\ell,\tau}, \\
+    ///     \psi_\Delta       &= \sum_{\sigma \supset \Delta} \eta_{\Delta,\sigma}.
+    ///   \end{aligned}
+    /// \f]
     ///
-    /// We can calculate E_t as:
+    /// Here \f$ G \f$ is Newton's constant; \f$ \ell \f$ is an edge contained in \f$ \Sigma_t \f$ of length
+    /// \f$ L_\ell \f$; \f$ \tau \f$ is a tetrahedron of \f$ \Sigma_t \f$ and \f$ \theta_{\ell,\tau} \f$ its
+    /// dihedral angle at \f$ \ell \f$; \f$ \Delta \f$ is a triangle with vertices split between
+    /// \f$ \Sigma_t \f$ and \f$ \Sigma_{t+1} \f$, of area \f$ A_\Delta \f$; \f$ \sigma \f$ is a 4-simplex
+    /// containing \f$ \Delta \f$ and \f$ \eta_{\Delta,\sigma} \f$ the boost angle (rapidity) at that hinge.
     ///
-    /// E_t = \frac{1}{8\pi G}\left[\,\sum_{\ell \subset \Sigma_t} L_\ell\,\delta_\ell^{(3)} \;-\; \sum_{\Delta\,\text{bridging}} A_\Delta\,\psi_\Delta\,\right]
-    /// \delta_\ell^{(3)} = 2\pi - \sum_{\tau \supset \ell} \theta_{\ell,\tau}
+    /// The slice energy is the Hamiltonian in the time-evolution operator
+    /// \f$ U(t, t_0) = e^{-iE(t - t_0)/\hbar} \f$. One interaction between two systems defines both a
+    /// bridging triangle and one tick forward in time, so \f$ t - t_0 = 1 \f$ and the relevant \f$ E \f$ is
+    /// the one carried by that triangle.
     ///
-    /// \psi_\Delta = \sum_{\sigma \supset \Delta} \eta_{\Delta,\sigma}
-    ///
-    /// \begin{align*}
-    /// E_t &= \text{discrete gravitational Hamiltonian (energy) on the spatial slice } \Sigma_t \\
-    /// G &= \text{Newton's gravitational constant} \\
-    /// \Sigma_t &= \text{3D spatial slice at time } t \text{ (triangulated by tetrahedra)} \\
-    /// \ell &= \text{a 1-simplex (edge) lying entirely within } \Sigma_t \text{; "slice edge"} \\
-    /// L_\ell &= \text{length of edge } \ell \\
-    /// \delta_\ell^{(3)} &= \text{intrinsic 3D deficit angle around edge } \ell \\
-    /// \tau &= \text{a 3-simplex (tetrahedron) of } \Sigma_t \\
-    /// \theta_{\ell,\tau} &= \text{dihedral angle at edge } \ell \text{ inside tetrahedron } \tau \\
-    /// \Delta &= \text{a 2-simplex (triangle) with vertices split between } \Sigma_t,\,\Sigma_{t+1}; \\
-    /// &\quad \text{"bridging" or "timelike" triangle} \\
-    /// A_\Delta &= \text{area of triangle } \Delta \\
-    /// \psi_\Delta &= \text{extrinsic boost deficit around } \Delta \text{ (Lorentzian dihedral sum)} \\
-    /// \sigma &= \text{a 4-simplex (pentatope) of the 4D triangulation} \\
-    /// \eta_{\Delta,\sigma} &= \text{boost angle (rapidity) at hinge } \Delta \text{ inside 4-simplex } \sigma
-    /// \end{align*}
-    ///
-    /// \begin{align*}
-    /// \sum_{\ell \subset \Sigma_t} &: \text{sum over all edges } \ell \text{ contained in the slice } \Sigma_t \\
-    /// \sum_{\tau \supset \ell} &: \text{sum over all tetrahedra } \tau \text{ containing edge } \ell \\
-    /// \sum_{\Delta\,\text{bridging}} &: \text{sum over all bridging triangles between } \Sigma_t \text{ and } \Sigma_{t+1} \\
-    /// \sum_{\sigma \supset \Delta} &: \text{sum over all 4-simplices } \sigma \text{ containing triangle } \Delta
-    /// \end{align*}
-    ///
-    /// Now, in order to determine E_t at each triangle/hinge, we can just say that the temporal triangle carries across
-    /// it the spatial energy of the edge at it's base. Concretely; given systems A and B \in \Sigma_t (a spatial slice)
-    /// with state \rho_A and \rho_B there is an edge between them representing their mutual information. It should
-    /// be assigned at the initial state we set up for the graph. Probably randomly or according to the constraint that
-    /// each share some particular amount of mutual information with the other vertices in the slice.
-    ///
-    /// If we assume some value for the total energy of the system, E_{total}, then we can split that energy across
-    /// every (spatial) edge in proportion to the edge length described by the van raamsdonk metric between those
-    /// vertices. So each Edge in the initial (totally spatial) state should be assigned energy \frac{l}{E_{total}}.
-    ///
-    /// Now, given the energy on, E_{AB}, we can understand how time evolution moves them forward. If we have
-    /// systems with \rho_A and \rho_B joined by edge E_{A \rightarrow B} then time evolution looks like
-    ///
-    /// \rho_AB = U(t, t_0) \rho_A \otimes \rho_B U^{\dagger}(t, t_0)
-    ///
-    /// where U(t, t_0) = e^{-i E_{A \rightarrow B} (t - t_0)}
-    ///
-    /// and since we're defining one interaction as one step forward in time; we can take (t - t_0) to be 1 and then
-    /// we have
-    ///
-    /// U(t, t_0) = e^{-i E_{A \rightarrow B}}
-    ///
-    /// to use for mixing the systems. After they're mixed and we have the joint state \rho_{AB} then we can use KI
-    /// decomposition to expand the \rho_{AB} (virtual) node into the three physical nodes A', \Sigma_{AB}, B' from
-    /// which we actually draw our simplex.
-    ///
-    /// Once the simplex is drawn, we take that E_{A \rightarrow B} and distribute it across
-    /// E_{A' \rightarrow \Sigma_{AB}} and E_{B' \rightarrow \Sigma_{AB}} in proportion to their edge lengths so there
-    /// is a constant amount of energy per unit of length:
-    ///
-    /// \frac{E_{A \rightarrow B}}{d_{VR}(A' \rightarrow \Sigma_{AB}) + d_{VR}(B' \rightarrow \Sigma_{AB})}
-    ///
-    ///
+    /// A bridging triangle therefore carries the energy of the slice edge at its base. A total energy
+    /// \f$ E_{\mathrm{total}} \f$ is split across the spacelike edges in proportion to their lengths, and
+    /// when a new simplex is drawn the edge's energy is redistributed over the replacement edges in the same
+    /// proportion, so the energy per unit length is constant.
     ///
     void labelEnergyDensity();
 
@@ -237,19 +193,17 @@ class Spacetime {
     /// @return Shared pointer to the created vertex
     [[nodiscard]] VertexPtr createVertex(std::uint64_t id, const std::vector<double> &coords) const noexcept;
 
-    /// Creates an edge \f$ e = (v_s, v_t) \f$ as a NULL edge: \f$ \ell^2 = 0 \f$,
-    /// explicitly — no metric evaluation happens (#581; the doc previously
-    /// claimed a metric-computed length). Callers that want a geometric length
-    /// use the explicit-length overload or set it afterwards (``Edge::setLength``).
+    /// Creates an edge \f$ e = (v_s, v_t) \f$ as a null edge: \f$ \ell^2 = 0 \f$.
+    /// No metric evaluation happens. Callers that want a geometric length use the
+    /// explicit-length overload or set it afterwards (``Edge::setLength``).
     /// @param src The source vertex \f$ v_s \f$
     /// @param tgt The target vertex \f$ v_t \f$
     /// @return Shared pointer to the created (null) edge
     [[nodiscard]] EdgePtr createEdge(const VertexPtr &src, const VertexPtr &tgt) const noexcept;
 
-    /// Creates an edge \f$ e = (v_s, v_t) \f$ with an explicit complex LENGTH.
+    /// Creates an edge \f$ e = (v_s, v_t) \f$ with an explicit complex length.
     /// A caller holding an \f$\ell^2\f$ passes ``std::sqrt(l2)`` and so chooses the
-    /// branch explicitly (#639); this used to be a ``double`` funnel that could only
-    /// express a real \f$\ell^2\f$.
+    /// square-root branch explicitly.
     /// @param src The source vertex \f$ v_s \f$
     /// @param tgt The target vertex \f$ v_t \f$
     /// @param length The complex length \f$ \ell \f$ of the edge
@@ -268,26 +222,22 @@ class Spacetime {
     void build(int numSimplices=3);
 
     /// Factory: build a pre-geometric simplicial complex from an explicit list
-    /// of top \p cells (each a vertex-id tuple) — the cells-to-Spacetime
-    /// builder the register/fill examples share. Creates a coordinate-free
+    /// of top \p cells (each a vertex-id tuple). Creates a coordinate-free
     /// Lorentzian \f$ d \f$-dimensional CDT Spacetime, one vertex per distinct
     /// id, one top simplex per cell (auto-wiring the edges via
-    /// :func:`createSimplex`), and sets the edge geometry by one of two
-    /// explicit rules:
+    /// ``createSimplex``), and sets the edge geometry by one of two rules:
     ///
     ///   - **Uniform Hermitian pin** (when \p vertexTimes is absent): every
-    ///     edge is pinned to squared length \p weight and phase \p phase. The
-    ///     pre-geometric register/bulk surfaces use this.
+    ///     edge is pinned to squared length \p weight and phase \p phase.
     ///   - **Tracked metric** (when \p vertexTimes is present): each vertex
     ///     \f$ v \f$ is created carrying the single time coordinate
-    ///     \f$ \text{vertexTimes}[v] \f$, so the tracked metric rule assigns
-    ///     spacelike (equal-time) and timelike (differing-time) edges
-    ///     automatically — the CDT-natural layered fill. \p weight and \p phase
-    ///     are ignored.
+    ///     \f$ \text{vertexTimes}[v] \f$, so spacelike (equal-time) and
+    ///     timelike (differing-time) edges are assigned automatically — the
+    ///     layered CDT fill. \p weight and \p phase are ignored.
     ///
     /// The time coordinate is always arity one: a vertex carries \f$ \{t\} \f$
     /// or no coordinate at all, never the length-2/3 vector that makes
-    /// @ref Vertex::getTime throw (the coordinate-arity trap).
+    /// ``Vertex::getTime`` throw.
     ///
     /// @param dimensions The metric/signature dimension \f$ d \f$; cells should
     ///   be \f$ (d{+}1) \f$-vertex tuples to register as top simplices.
@@ -322,10 +272,9 @@ class Spacetime {
     /// is \f$ \mathrm{hi}[x] = \varphi^{\ell+1}(x) + s\,(\ell{+}1) \f$, with
     /// \f$ s \f$ the per-layer vertex stride (one past the largest base id).
     /// Adjacent prisms split shared walls by the same vertex-order rule, so the
-    /// result is a consistent complex. This is the single source of the
-    /// staircase the register fills carried as separate 3d and 4d copies; the
-    /// rule is identical in every dimension (\f$ m = 3 \f$ gives tetrahedra
-    /// over triangles, \f$ m = 4 \f$ gives 4-simplices over tetrahedra, …).
+    /// result is a consistent complex. The rule is identical in every dimension
+    /// (\f$ m = 3 \f$ gives tetrahedra over triangles, \f$ m = 4 \f$ gives
+    /// 4-simplices over tetrahedra, and so on).
     ///
     /// @param cells Base top cells as vertex-id tuples.
     /// @param layers Number of product layers (\f$ \ge 1 \f$).
@@ -352,26 +301,25 @@ class Spacetime {
     /// with the boundary of the worldprism \f$ g \times I \f$:
     /// \f$ [f_1,f_2] * \partial(g\times I) \f$. Its caps reproduce the up/down
     /// reflection; its sides mirror the connectivity across \f$ g \f$'s lower faces.
-    /// In \f$ d=2 \f$ this is **exactly** the \#413 octahedron split on the dual edge
-    /// (the worldprism sides are worldlines --- no diagonal); in \f$ d\ge 3 \f$ the
-    /// side worldsheets take a globally-consistent (vertex-id-ordered) staircase
-    /// diagonal, yielding a valid manifold on a tetrahedral \f$ S^3 \f$ base.
+    /// In \f$ d=2 \f$ this is the octahedron split on the dual edge (the worldprism
+    /// sides are worldlines --- no diagonal); in \f$ d\ge 3 \f$ the side worldsheets
+    /// take a globally-consistent (vertex-id-ordered) staircase diagonal, yielding a
+    /// valid manifold on a tetrahedral \f$ S^3 \f$ base.
     ///
     /// The apex is a point reflection (a parity+time inversion), so the down-cone is
     /// the orientation-reverse of the up-cone: stacking \p nApexSlices reflect-and-cap
-    /// layers gives an **alternating** \f$ (-1)^j \f$ per-slice chirality (a Dirac,
-    /// non-chiral, twist --- both senses at once), never a single chiral screw.
+    /// layers gives an alternating \f$ (-1)^j \f$ per-slice chirality (both senses at
+    /// once), never a single chiral screw.
     ///
     /// IDs: primal layer \f$ \ell \f$ (\f$ 0 \le \ell \le \texttt{nApexSlices} \f$)
     /// holds \f$ v + \ell\,\text{stride} \f$; apexes start at
     /// \f$ (\texttt{nApexSlices}{+}1)\,\text{stride} \f$ (one per top simplex per
-    /// slice). \p nApexSlices \f$ = 1 \f$ reproduces the single-reflection \#413
-    /// result bit-for-bit. A facet with a single incident top simplex (a hole
-    /// boundary) is a tube wall, not gap-filled.
+    /// slice). \p nApexSlices \f$ = 1 \f$ is the single reflection. A facet with a
+    /// single incident top simplex (a hole boundary) is a tube wall, not gap-filled.
     /// @param baseCells the base manifold's top \f$ d \f$-simplices as vertex-id
     ///   tuples (uniform \f$ (d{+}1) \f$-vertex cells; \f$ d \f$ is inferred).
     /// @param nApexSlices the number of stacked apex (reflect-and-cap) layers
-    ///   (\f$ \ge 1 \f$); 1 is the single \#413 reflection.
+    ///   (\f$ \ge 1 \f$); 1 is a single reflection.
     /// @return the cobordism's \f$ (d{+}1) \f$-simplices as sorted vertex-id tuples,
     ///   uniqued.
     [[nodiscard]] static std::vector<std::vector<std::uint64_t>> symmetricStackCells(
@@ -434,10 +382,8 @@ class Spacetime {
     ///
     /// The no-argument form draws from the spacetime's own ``rng`` (seeded from
     /// ``std::random_device`` unless ``setSeed`` was called). The overload draws
-    /// from a **caller-supplied** generator so a move with its own seeded engine
-    /// (e.g. ``AddMove``) selects reproducibly from that seed — without this, a
-    /// seeded move still made its random picks against the global ``rng`` and so
-    /// was nondeterministic (issue #262).
+    /// from a caller-supplied generator, so a move with its own seeded engine
+    /// (e.g. ``AddMove``) selects reproducibly from that seed.
     [[nodiscard]] VertexPtr getRandomVertex();
     [[nodiscard]] VertexPtr getRandomVertex(std::mt19937 &generator);
 
@@ -447,8 +393,8 @@ class Spacetime {
     [[nodiscard]] SimplexPtr getRandomSimplex(std::mt19937 &generator);
 
     /// The vertex count of a top-dimensional simplex: \f$ d+1 \f$, where
-    /// \f$ d \f$ is the metric signature's dimension. This is the **single
-    /// source of truth** for "what counts as a top cell": ``registerSimplex``
+    /// \f$ d \f$ is the metric signature's dimension. This is the single
+    /// definition of "top cell": ``registerSimplex``
     /// pushes a simplex onto ``topSimplicesVec`` exactly when its vertex count
     /// equals this, and ``getBoundary`` / ``getRandomTopSimplex`` read that set.
     /// A triangulation whose top cells are \f$ d' \f$-simplices is only seen as
@@ -460,7 +406,7 @@ class Spacetime {
     /// Used by the Metropolis algorithm to pick random move targets.
     /// @return A random d-simplex, or nullptr if none exist
     /// The overload draws from a caller-supplied generator (see
-    /// ``getRandomVertex``; issue #262).
+    /// ``getRandomVertex``).
     [[nodiscard]] SimplexPtr getRandomTopSimplex();
     [[nodiscard]] SimplexPtr getRandomTopSimplex(std::mt19937 &generator);
 
@@ -478,7 +424,7 @@ class Spacetime {
     /// @param simplex The simplex \f$ \sigma \f$ to remove
     void removeSimplex(const SimplexPtr &simplex);
 
-    /// Monotone COMBINATORIAL revision of this complex: bumped by every simplex
+    /// Monotone combinatorial revision of this complex: bumped by every simplex
     /// registration/unregistration and by standalone edge creation, never by an
     /// edge-length change. Purely topological invariants (Betti numbers) key
     /// their caches on it — an unchanged revision proves the complex's
@@ -495,56 +441,46 @@ class Spacetime {
     [[nodiscard]] const std::vector<int> *cachedBettiNumbers() const noexcept {
       return bettiCacheRevision_ == structuralRevision_ ? &bettiCache_ : nullptr;
     }
-    /// Store Betti numbers computed against the CURRENT structural revision.
+    /// Store Betti numbers computed against the current structural revision.
     void storeBettiNumbers(std::vector<int> numbers) const noexcept {
       bettiCache_ = std::move(numbers);
       bettiCacheRevision_ = structuralRevision_;
     }
 
     /// The Betti numbers of the sub-complex spanned by the vertex set that
-    /// `vertexSetKey` names — the SUB-COMPLEX analogue of
+    /// `vertexSetKey` names — the sub-complex analogue of
     /// `cachedBettiNumbers`. `vertexSetKey` is the caller's hash of the
-    /// region's vertex identifiers (see
-    /// `MultiCobordism::blockVertexSetKey`).
+    /// region's vertex identifiers.
     ///
-    /// Consumers: the cobordism input-block residuals. Each block region is
-    /// re-materialized as a FRESH spacetime on every objective evaluation, so
+    /// Used by the cobordism input-block residuals: each block region is
+    /// re-materialized as a fresh spacetime on every objective evaluation, so
     /// its own `cachedBettiNumbers` slot is always empty and the Smith normal
-    /// form recomputed every time (measured: 47.5% of the cycles in a live
+    /// form is recomputed every time (measured at 47.5% of the cycles in a live
     /// run). The parent outlives those temporaries and holds the answers for
     /// them.
     ///
-    /// **When an entry stops being served.** Nothing marks entries dirty.
-    /// Each entry records the `structuralRevision()` it was computed at and
-    /// is returned only while that number still matches the parent's current
-    /// one. `structuralRevision()` rises on every cell registration, cell
-    /// removal, and edge creation, so one topology change retires every entry
-    /// at once, whether or not it touched that particular region.
+    /// Nothing marks entries dirty. Each entry records the
+    /// `structuralRevision()` it was computed at and is returned only while
+    /// that number still matches the parent's current one; since the revision
+    /// rises on every cell registration, cell removal and edge creation, one
+    /// topology change retires every entry at once.
     ///
-    /// **Why an entry cannot answer for the wrong sub-complex.** A
-    /// sub-complex is determined by two things and no others: the parent's
-    /// cells, and the vertex set (`subcomplexWithinVertexSet` takes the
-    /// parent's top cells whose vertices all lie in the set). Serving an
-    /// entry requires both to agree — the revision match fixes the parent's
-    /// cells, and the key match fixes the vertex set — so a served answer was
-    /// computed for a sub-complex identical to the one being asked about.
-    /// Vertex identifiers are the right key because they ARE the region's
-    /// definition; and although identifiers can be retired and reissued, any
-    /// such change registers or removes cells and therefore moves the
-    /// revision, retiring the entry before it could be mismatched.
+    /// A served entry cannot answer for the wrong sub-complex: a sub-complex is
+    /// fixed by the parent's cells and the vertex set alone
+    /// (`subcomplexWithinVertexSet` takes the parent's top cells whose vertices
+    /// all lie in the set), the revision match fixes the former and the key
+    /// match the latter. Identifiers can be retired and reissued, but any such
+    /// change registers or removes cells and so moves the revision first.
     ///
-    /// **Lifetime.** The store is a member, so it is created and destroyed
-    /// with the spacetime and never outlives one; there is no registry and no
-    /// clearing step between runs. A spacetime rebuilt from a snapshot is a
-    /// new object that starts empty. A COPIED spacetime carries the entries
-    /// and the revision they were stamped at together, and is combinatorially
-    /// identical to its source at that moment, so they answer for it
-    /// correctly.
+    /// Lifetime: the store is a member, created and destroyed with the
+    /// spacetime; there is no registry and no clearing step between runs. A
+    /// spacetime rebuilt from a snapshot starts empty. A copied spacetime
+    /// carries the entries and their revision stamp together and is
+    /// combinatorially identical to its source, so they answer for it.
     ///
-    /// **Threading.** Not synchronized, on the same grounds as
-    /// `cachedBettiNumbers`: the parallel candidate loop gives every thread
-    /// its own rebuilt spacetime and reads and writes only that one, and the
-    /// shared complex is scored serially.
+    /// Not synchronized, on the same grounds as `cachedBettiNumbers`: the
+    /// parallel candidate loop gives every thread its own rebuilt spacetime,
+    /// and the shared complex is scored serially.
     [[nodiscard]] const std::vector<int> *cachedSubcomplexBettiNumbers(
         std::uint64_t vertexSetKey) const noexcept {
       const auto entry = subBettiCache_.find(vertexSetKey);
@@ -553,7 +489,7 @@ class Spacetime {
         return nullptr;
       return &entry->second.second;
     }
-    /// Store a sub-complex's Betti numbers against the CURRENT structural
+    /// Store a sub-complex's Betti numbers against the current structural
     /// revision. An entry under the same key is overwritten; entries under
     /// other keys stay until a revision mismatch retires them, which costs
     /// only their memory — a complex carries a handful of block regions, so
@@ -564,7 +500,7 @@ class Spacetime {
       subBettiCache_[vertexSetKey] = {structuralRevision_, std::move(numbers)};
     }
 
-    /// Monotone METRIC revision: the structural revision plus the sum of every
+    /// Monotone metric revision: the structural revision plus the sum of every
     /// edge's length and phase revisions. Any combinatorial change, any
     /// ``setLength``, and any ``setPhase`` strictly increases it, so an
     /// unchanged value proves the operators built from this spacetime's
@@ -572,7 +508,7 @@ class Spacetime {
     /// O(#edges) walk per call — trivial beside the O(n³) work it gates.
     [[nodiscard]] std::uint64_t metricRevisionKey() const noexcept;
 
-    /// The opaque spectral-cache slot stamped at the CURRENT metric revision,
+    /// The opaque spectral-cache slot stamped at the current metric revision,
     /// or nullptr when stale. The payload type is owned by the cobordism layer
     /// (HodgeLaplacian's shared spectrum map); this layer only provides the
     /// revision-stamped storage so the cache dies with the spacetime. The same
@@ -583,20 +519,20 @@ class Spacetime {
       return spectralSlotRevision_ == metricRevisionKey() ? spectralSlot_
                                                           : nullptr;
     }
-    /// Store the spectral payload computed against the CURRENT metric revision.
+    /// Store the spectral payload computed against the current metric revision.
     void storeSpectralSlot(std::shared_ptr<void> payload) const noexcept {
       spectralSlot_ = std::move(payload);
       spectralSlotRevision_ = metricRevisionKey();
     }
 
-    /// Balanced (causally undecided) edge-wiring mode (#690). OFF (default):
+    /// Balanced (causally undecided) edge-wiring mode. Off (the default):
     /// new edges are wired on the causal axes — same-time ℓ = (√a, 0),
-    /// cross-slice ℓ = (0, √(α·a)). ON: every auto-wired edge gets EQUAL real
+    /// cross-slice ℓ = (0, √(α·a)). On: every auto-wired edge gets equal real
     /// and imaginary components with the same per-class magnitude —
     /// ℓ = √(a/2)·(1+i) resp. √(α·a/2)·(1+i) — so ℓ² is purely imaginary
-    /// (Re ℓ² = 0: born exactly on the null locus) and stage-2 relaxation
-    /// must choose each edge's causal character. Creation-time convention
-    /// only; existing edges are never rewritten by toggling this.
+    /// (Re ℓ² = 0: born on the null locus) and relaxation must choose each
+    /// edge's causal character. A creation-time convention only; existing
+    /// edges are never rewritten by toggling this.
     void setBalancedEdgeWiring(bool balanced) noexcept {
       balancedEdgeWiring_ = balanced;
     }
@@ -609,22 +545,22 @@ class Spacetime {
     /// `c(1 + i)`, i.e. `l^2 = -i|m|` instead of `+i|m|`. Both sit on the
     /// balanced convention (`Re l^2 = 0`, causally undecided at birth) and both
     /// carry the same magnitude, so the branch is what keeps a timelike
-    /// disposition distinguishable from a spacelike one under balanced wiring
-    /// — without it the two coincide and the disposition is silently erased
-    /// (#741). `squaredMagnitude` is a MAGNITUDE: pass |m|, since `std::sqrt`
-    /// of a negative double is NaN.
+    /// disposition distinguishable from a spacelike one under balanced wiring;
+    /// without it the two coincide and the disposition is erased.
+    /// `squaredMagnitude` is a magnitude: pass |m|, since `std::sqrt` of a
+    /// negative double is NaN.
     [[nodiscard]] static std::complex<double> balancedLength(
         double squaredMagnitude, bool timelikeBranch = false) noexcept {
       const double c = std::sqrt(std::abs(squaredMagnitude) * 0.5);
       return {c, timelikeBranch ? -c : c};
     }
     /// Absorb a departing edge's revision counters into the structural
-    /// revision, called immediately BEFORE removing it from the edge list.
+    /// revision, called immediately before removing it from the edge list.
     /// metricRevisionKey() sums live edges' counters, so an uncompensated
-    /// removal would DECREASE the key and could later collide with a stamp
-    /// made for an older geometry — a false spectral-cache hit (#692). The
-    /// +1 covers the removal event itself; the mirror of the absorption
-    /// Simplex::removeEdge already performs for its own geometry cache.
+    /// removal would decrease the key and could later collide with a stamp
+    /// made for an older geometry — a false spectral-cache hit. The +1 covers
+    /// the removal event itself; it mirrors the absorption Simplex::removeEdge
+    /// already performs for its own geometry cache.
     void absorbRemovedEdgeRevisions(const EdgePtr &edge) noexcept {
       if (edge)
         structuralRevision_ += edge->lengthRevision() + edge->phaseRevision() + 1;
@@ -639,7 +575,7 @@ class Spacetime {
     /// that is no longer a face of any current top cell. Lazy facet/hinge
     /// materialisation (``Simplex::getFacets``) registers sub-simplices that a
     /// later Pachner move can strand once it removes the top cells above them.
-    /// Such orphans are not part of the simplicial complex — they only persist
+    /// Such orphans are not part of the simplicial complex — they persist only
     /// as stale cache entries — yet they linger in ``getSimplices()``. The Regge
     /// action already excludes them (``Simplex::hasTopCoface`` filtering in
     /// ``ReggeSolver``), so this is not needed for action correctness; it is for
@@ -650,18 +586,17 @@ class Spacetime {
     /// number of simplices pruned.
     std::size_t pruneOrphanedSimplices();
 
-    /// Scoped variant: unregister the orphaned proper faces of **one** cell —
+    /// Scoped variant: unregister the orphaned proper faces of one cell —
     /// every registered sub-simplex spanned by a proper subset of
     /// \p cellVertexIds that no current top cell covers. This is the same
     /// operation as the full sweep restricted to a single (typically
     /// just-removed) top cell's face lattice, so a move class can keep the
     /// "registered simplices = closure of the top cells" invariant at
     /// \f$ O(2^d) \f$ per move instead of an \f$ O(N) \f$ pass. Faces still
-    /// covered by a surviving top cell are kept. Pruning is essential before
-    /// :func:`removeEdge` on an orphaned edge: a registered face that outlives
-    /// its edge keeps an empty edge set and silently reads
-    /// \f$ \ell^2 = 0 \f$ in every Gram-matrix computation thereafter (#587).
-    /// Returns the number of simplices pruned.
+    /// covered by a surviving top cell are kept. Prune before ``removeEdge``
+    /// on an orphaned edge: a registered face that outlives its edge keeps an
+    /// empty edge set and then reads \f$ \ell^2 = 0 \f$ in every Gram-matrix
+    /// computation. Returns the number of simplices pruned.
     /// @param cellVertexIds The vertex ids spanning the cell whose face
     ///   lattice is checked (need not itself be registered).
     std::size_t pruneOrphanedSimplices(
@@ -674,7 +609,7 @@ class Spacetime {
     void removeEdge(const EdgePtr &edge);
 
     /// Fully remove a vertex from the complex: remove every edge incident
-    /// to it (via :func:`removeEdge`) and drop the vertex from the
+    /// to it (via ``removeEdge``) and drop the vertex from the
     /// VertexList. The caller is responsible for first removing any
     /// simplices that contain the vertex.
     /// @param vertex The vertex \f$ v \f$ to remove
@@ -719,14 +654,14 @@ class Spacetime {
     ///
     /// This is the canonical, single-source boundary derivation. It is computed
     /// purely by facet-counting from the top-dimensional simplices (incidence
-    /// \f$ == 1 \f$), so it is **side-effect-free** (``const``) and robust to
+    /// \f$ == 1 \f$), so it is side-effect-free (``const``) and robust to
     /// lazily-materialized facets: "top" is the maximal vertex count actually
     /// present in the complex, and the codimension-one faces are enumerated
     /// combinatorially from the vertex sets rather than from materialized
     /// ``Simplex`` facet objects. A closed manifold returns an empty list.
     ///
-    /// Contrast :func:`getExternalSimplices`, which returns the boundary
-    /// *top cells* (whole d-simplices touching the boundary) and materializes
+    /// Contrast ``getExternalSimplices``, which returns the boundary
+    /// top cells (whole d-simplices touching the boundary) and materializes
     /// facets as a side-effect.
     [[nodiscard]] std::vector<std::vector<std::uint64_t>> getBoundary() const;
 
@@ -737,33 +672,32 @@ class Spacetime {
     /// vertices, wiring up the coface incidence as it goes. After this call the
     /// complex's facet/coface structure is complete.
     ///
-    /// This exposes — as an explicit, separately callable operation — the
-    /// side-effect that :func:`getExternalSimplices` performs internally; call
-    /// it directly when you want the materialization without the boundary scan.
+    /// This is the side-effect ``getExternalSimplices`` performs internally,
+    /// exposed separately for callers that want the materialization without the
+    /// boundary scan.
     void materializeFacets() noexcept;
 
-    /// Scoped variant: materialize the face lattice of **one** simplex —
+    /// Scoped variant: materialize the face lattice of one simplex —
     /// recursive ``Simplex::getFacets()`` from \p root down to its vertices,
     /// wiring the facet/coface incidence of every face on the way. Faces that
     /// already exist are reused (gaining only the missing coface link); the
     /// rest are created and registered. ``Simplex::dualVolume`` walks a hinge
-    /// **up** through exactly these coface links, so a move class restoring a
-    /// removed cell must restore this lattice too (#587) — this does that at
+    /// up through exactly these coface links, so a move class restoring a
+    /// removed cell must restore this lattice too — this does that at
     /// \f$ O(2^d) \f$ instead of the full-complex fixpoint pass above.
     /// @param root The simplex whose face lattice to materialize.
     void materializeFacets(const SimplexPtr &root) noexcept;
 
-    /// @return Simplices around the boundary of the simplicial complex. These simplices have at
-    /// least one external face. They will tend to be in order of orientation (e.g. (4, 1) and (3, 2) for 4D CDT). Note
-    /// that this method does not return 2-simplices as you might expect, but 5-simplices since those are the standard
-    /// building blocks. You can get the 2-simplices by calling `getFacets()` on the 5-simplices and their facets until
-    /// \f$ k=2 \f$.
+    /// @return Top-dimensional simplices touching the boundary of the complex, i.e. those with at least one
+    /// external face, tending to come out grouped by causal orientation (e.g. (4,1) then (3,2) in 4D CDT).
+    /// These are whole \f$ d \f$-simplices, not their lower-dimensional faces; call ``getFacets()``
+    /// repeatedly to descend to the \f$ k \f$-faces.
     ///
-    /// Materializes facets to a fixpoint (via :func:`materializeFacets`) as a
+    /// Materializes facets to a fixpoint (via ``materializeFacets``) as a
     /// side-effect, since the coface counts that flag a boundary facet are only
     /// complete once every facet exists. For the side-effect alone, call
-    /// :func:`materializeFacets`; for the codimension-one boundary *faces*
-    /// (rather than the top cells touching them), call :func:`getBoundary`.
+    /// ``materializeFacets``; for the codimension-one boundary faces
+    /// (rather than the top cells touching them), call ``getBoundary``.
     [[nodiscard]] SimplexSet getExternalSimplices() noexcept;
 
     /// Retrieves all simplices with a specific causal orientation.
@@ -807,7 +741,7 @@ class Spacetime {
                              std::uint32_t>
     getDualAdjacency() const;
 
-    /// Convenience: build a :class:`SparseGraph` of the dual
+    /// Build a SparseGraph of the dual
     /// triangulation in one call.  Equivalent to
     /// ``SparseGraph::fromCOO(*getDualAdjacency())`` but avoids the
     /// intermediate Python-side conversion.
@@ -823,13 +757,12 @@ class Spacetime {
     /// ``SpectralGraph::spectralDimension`` of the heat-kernel return
     /// probability.
     ///
-    /// Sits next to :func:`modularityOnSkeleton`: Spacetime exposes
-    /// graph-based observables as single methods that compose the
-    /// inherited heat-kernel pipeline with a filtered top-simplex
-    /// projection.
+    /// Composes the heat-kernel pipeline with a filtered top-simplex
+    /// projection, as ``modularityOnSkeleton`` does.
     ///
-    /// ``skeletonDim`` reserves API space for higher-k skeletons; only
-    /// ``skeletonDim == 1`` is currently supported.
+    /// Only ``skeletonDim == 1`` is supported.
+    ///
+    /// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0505113
     [[nodiscard]] std::vector<double>
     getSpectralDimensionOnSkeleton(
         std::vector<double> const& sigmas,
@@ -886,9 +819,9 @@ class Spacetime {
 
     /// Swap the labels (IDs) of two vertices, updating all affected data structures.
     ///
-    /// Implements the vertex relabeling step from Brunekreef Sec. 2.2.1/2.3.1:
-    /// after inserting a new vertex, swap its label with a randomly chosen vertex
-    /// to ensure uniform sampling over labelled triangulations.
+    /// After inserting a new vertex, swap its label with a randomly chosen vertex
+    /// so that sampling over labelled triangulations stays uniform.
+    /// Reference: Brunekreef, Gorlich & Loll, "Simulating CDT quantum gravity" (2023).
     ///
     /// Updates: VertexList keys, Simplex fingerprints and vertex-ID maps,
     /// and re-registers affected simplices in the hash tables.
@@ -952,33 +885,16 @@ class Spacetime {
       return simplexStorage_.size();
     }
 
-    /// Alpha is the coefficient that determines the ratio of timelike edge lengths to space like edge lengths. That
-    /// relationship is
+    /// \f$ \alpha \f$ sets the ratio of timelike to spacelike edge length: spacelike edges carry squared
+    /// length \f$ \ell_s^2 = a \f$ and timelike edges \f$ \ell_t^2 = -\alpha a \f$ (see ``autoWiredLength``).
     ///
-    /// \f[
-    ///  l_s = +a
-    /// \f]
-    /// and
-    /// \f[
-    ///  l_t = - \alpha a
-    /// \f]
-    ///
-    /// @return The coefficient representing the number of times the timelike length is compared to the spatial length.
+    /// @return The coefficient \f$ \alpha \f$.
     [[nodiscard]] double getAlpha() const noexcept;
 
-    /// `a` is the coefficient that sets the fixed edge length for spacelike edges according to
+    /// \f$ a \f$ is the fixed length unit: spacelike edges carry squared length
+    /// \f$ \ell_s^2 = a \f$ and timelike edges \f$ \ell_t^2 = -\alpha a \f$.
     ///
-    /// \f[
-    ///  l_s = +a
-    /// \f]
-    /// for spacelike edges and
-    /// \f[
-    ///  l_t = - \alpha a
-    /// \f]
-    ///
-    /// for timelike edges.
-    ///
-    /// @return The constant spacelike edge length.
+    /// @return The constant spacelike edge length scale \f$ a \f$.
     [[nodiscard]] double getA() const noexcept;
 
     [[nodiscard]] int getDimensions() const noexcept;
@@ -1001,7 +917,7 @@ class Spacetime {
     // the dual edge it forms a \f$ (d{+}1) \f$-cell. The diagonal is the global
     // vertex-id staircase, so a worldsheet shared by several facets is split
     // consistently (a valid complex). In \f$ d=2 \f$ the sides are worldlines, so
-    // the result is exactly the \#413 octahedron's boundary edges.
+    // the result is exactly the octahedron's boundary edges.
     [[nodiscard]] static std::vector<std::vector<std::uint64_t>> worldprismBoundaryFaces(
         const std::vector<std::uint64_t> &facet, std::uint64_t loOffset,
         std::uint64_t hiOffset);
@@ -1009,7 +925,7 @@ class Spacetime {
     // The next vertex id not already in use: advances vertexIdCounter past any
     // explicitly-assigned ids so a no-arg/reserved id never aliases an existing
     // vertex (VertexList::add returns the existing vertex on a duplicate id;
-    // coning that alias makes a self-edge — #267).
+    // coning that alias makes a self-edge).
     [[nodiscard]] std::uint64_t nextFreeVertexId() noexcept;
 
     std::shared_ptr<EdgeList> edgeList = std::make_shared<EdgeList>();
@@ -1030,7 +946,7 @@ class Spacetime {
     /// simplex lists, simplex facets/cofaces, edge simplex indices, Pachner-
     /// move snapshots, etc.) remain valid for the Spacetime's lifetime.
     ///
-    /// Slots ARE recycled, one sweep behind. ``unregisterSimplex`` marks a slot
+    /// Slots are recycled, one sweep behind. ``unregisterSimplex`` marks a slot
     /// stale via vecIdx_ == UINT32_MAX, clears the Simplex's heap-allocated
     /// children, and puts the slot on ``pendingSimplexSlots_``;
     /// ``reclaimSimplexSlots`` moves that list to ``freeSimplexSlots_``, from
@@ -1065,7 +981,7 @@ class Spacetime {
     void updateOrientationCounters(const SimplexPtr &simplex, int delta);
 
     /// See structuralRevision(). Mutable because ``createEdge`` is const yet
-    /// combinatorially mutates the complex (pre-existing API shape).
+    /// combinatorially mutates the complex.
     mutable std::uint64_t structuralRevision_{1};
     /// Betti cache slot; valid iff bettiCacheRevision_ == structuralRevision_.
     mutable std::vector<int> bettiCache_{};

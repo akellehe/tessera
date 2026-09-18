@@ -5,7 +5,6 @@
 // Created by andrew on 10/23/25.
 //
 
-// (was: #include <pybind11/pybind11.h> — removed; unreferenced.)
 #include "Logger.h"
 #include <algorithm>
 #include <bit>
@@ -85,15 +84,15 @@ std::pair<SimplexPtr, bool> Spacetime::createSimplex(
   // IDs (mesh/Fingerprint.h). Past that, addId() silently drops IDs, so two
   // distinct >kMax-vertex simplices can share a (truncated) fingerprint and the
   // second is silently treated as a duplicate — never registered, but returned
-  // with created=true. Fail loudly instead of corrupting the complex (issue
-  // #77). kMax = 8 supports simplices up to dimension 7, well beyond CDT (≤5
-  // vertices) and the cobordism extension (≤6).
+  // with created=true. Throw instead of corrupting the complex. kMax = 8
+  // supports simplices up to dimension 7, beyond CDT (≤5 vertices) and the
+  // cobordism extension (≤6).
   if (vertices.size() > kMax) {
     throw std::invalid_argument(
         "Spacetime::createSimplex: " + std::to_string(vertices.size()) +
         "-vertex simplex exceeds the Fingerprint capacity kMax=" +
         std::to_string(kMax) + " (max simplex dimension " +
-        std::to_string(kMax - 1) + "). See issue #77.");
+        std::to_string(kMax - 1) + ").");
   }
   // Compute hash directly without allocating a temporary Fingerprint.
   std::uint64_t hash = 0;
@@ -150,10 +149,10 @@ Spacetime::CreateSimplexResult Spacetime::createSimplexTracked(
   Edges edges_{};
   for (std::size_t i = 0; i < vertices.size() - 1; i++) {
     for (std::size_t j = i + 1; j < vertices.size(); j++) {
-      // Auto-wired causal LENGTHS (#639): same-time => spacelike l = sqrt(a),
+      // Auto-wired causal lengths: same-time => spacelike l = sqrt(a),
       // cross-slice => timelike l = i*sqrt(alpha*a) (l^2 = -alpha*a). Always
-      // Lorentzian — the old signature guard made a non-Lorentzian metric wire
-      // every edge spacelike, which was a Euclidean path (#641).
+      // Lorentzian: wiring every edge spacelike for a non-Lorentzian metric
+      // would make this a Euclidean path.
       const std::complex<double> len = autoWiredLength(
           vertices[i]->getTime() != vertices[j]->getTime());
       auto [edge, inserted] =
@@ -172,16 +171,15 @@ Spacetime::CreateSimplexResult Spacetime::createSimplexTracked(
   result.created = created;
   // If the simplex already existed, every edge we touched was also
   // already there — tryAdd returned inserted=false for each — so
-  // newEdges is empty.  Belt-and-braces:
+  // newEdges is empty. Clear it anyway:
   if (!created) result.newEdges.clear();
   return result;
 }
 
 std::pair<SimplexPtr, bool> Spacetime::createSimplex(const std::tuple<uint8_t, uint8_t> &numericOrientation) {
-  // The factory speaks LENGTHS (#639): spacelike ℓ = √a is real, timelike
-  // ℓ = i·√(α·a) is imaginary (ℓ² = -α·a). There is no non-Lorentzian branch —
-  // the old "Euclidean: all edges positive" fallback was a Euclidean path and
-  // is gone (#641).
+  // The factory speaks lengths: spacelike ℓ = √a is real, timelike
+  // ℓ = i·√(α·a) is imaginary (ℓ² = -α·a). There is no non-Lorentzian branch;
+  // an "all edges positive" fallback would be a Euclidean path.
   const std::complex<double> spacelikeLength = autoWiredLength(false);
   const std::complex<double> timelikeLength = autoWiredLength(true);
   TemporalOrientation orientation = {
@@ -209,8 +207,8 @@ std::pair<SimplexPtr, bool> Spacetime::createSimplex(const std::tuple<uint8_t, u
   for (int i = 0; i < tf; i++) {
     // Create ti Spacelike vertices
     // Use coning to construct the vertex edges. For each new vertex; draw an edge to each existing vertex.
-    /// We can't just use the vertexList .size() here, because some vertices can be removed. We need to keep a
-    /// counter:
+    // vertexList.size() will not do here: vertices can be removed, so keep a
+    // counter instead.
     VertexPtr newVertex = vertexList->add(vertexIdCounter++, {static_cast<double>(currentTime + 1)});
     for (const auto &existingVertex : vertices) {
       EdgePtr edge;
@@ -260,7 +258,7 @@ std::uint64_t Spacetime::nextFreeVertexId() noexcept {
   // Advance past any id already in use (explicit createVertex(id) or a topology
   // builder) so a no-arg / reserved id never collides with an existing vertex.
   // VertexList::add on a duplicate id returns the EXISTING vertex — a silent
-  // alias that, when coned, makes a self-edge (#267).
+  // alias that, when coned, makes a self-edge.
   while (vertexList->contains(vertexIdCounter)) ++vertexIdCounter;
   return vertexIdCounter++;
 }
@@ -364,11 +362,9 @@ std::shared_ptr<Spacetime> Spacetime::fromCells(
   }
 
   // Uniform Hermitian pin: overwrite every edge's geometry. Skipped under the
-  // tracked-metric rule, where the auto-wired causal lengths ARE the geometry —
+  // tracked-metric rule, where the auto-wired causal lengths are the geometry:
   // pinning there would overwrite every timelike edge with a spacelike unit
-  // length and hand back a Euclidean complex in disguise (#644; the guard was
-  // found commented out, contradicting both this comment and the causal-sign
-  // tests).
+  // length and hand back a Euclidean complex in disguise.
   if (!vertexTimes) {
     for (const auto &edge : st->getEdgeList()->toVector()) {
       edge->setLength(std::sqrt(std::complex<double>{weight, 0.0}));
@@ -502,11 +498,11 @@ std::vector<std::vector<std::uint64_t>> Spacetime::symmetricStackCells(
   // f1, f2) is [f1,f2] * partial(g x I): the join of the canonical dual edge with
   // the boundary of the worldprism over g (worldprismBoundaryFaces). Its caps
   // reproduce the up/down reflection; its sides mirror across g's lower faces. In
-  // d=2 the sides are worldlines, so this is EXACTLY the #413 octahedron split on
-  // the dual edge (no diagonal); in d>=3 the side worldsheets take a globally
+  // d=2 the sides are worldlines, so this is exactly the octahedron split on the
+  // dual edge (no diagonal); in d>=3 the side worldsheets take a globally
   // consistent staircase diagonal. nApexSlices reflect-and-cap layers stack into a
   // tall cobordism: primal layer ell holds v + ell*stride, apexes start at
-  // (nApexSlices+1)*stride. nApexSlices = 1 is the single #413 reflection.
+  // (nApexSlices+1)*stride. nApexSlices = 1 is a single reflection.
   if (nApexSlices < 1)
     throw std::runtime_error("symmetricStackCells: nApexSlices must be >= 1");
 
@@ -522,8 +518,8 @@ std::vector<std::vector<std::uint64_t>> Spacetime::symmetricStackCells(
   const int dim = static_cast<int>(cellSize) - 1;  // base manifold dimension
   (void)dim;  // documented; the per-facet loop derives the codimension structure
 
-  // Dedup top d-simplices in first-appearance order (the apex indexing matches
-  // the original #413 lexicographic-per-input order in d=2).
+  // Dedup top d-simplices in first-appearance order (in d=2 the apex indexing
+  // then follows the lexicographic-per-input order).
   std::vector<std::vector<std::uint64_t>> tops;
   std::map<std::vector<std::uint64_t>, std::size_t> topIndex;
   for (const auto &raw : baseCells) {
@@ -1226,9 +1222,8 @@ namespace {
 // Private SpectralGraph subclass used only by
 // Spacetime::getSpectralDimensionOnSkeleton — holds the CSR of the
 // weighted 1-skeleton of filtered top simplices and supplies the
-// L = D - W matvec. Lives in an anonymous namespace because no other
-// code paths currently consume the weighted-skeleton graph directly;
-// promote to a public class when a second consumer appears.
+// L = D - W matvec. Kept in an anonymous namespace: no other code path
+// consumes the weighted-skeleton graph directly.
 class SkeletonSpectralView final : public SpectralGraph {
  public:
   SkeletonSpectralView(int n,
@@ -1279,7 +1274,7 @@ Spacetime::getSpectralDimensionOnSkeleton(
   if (skeletonDim != 1) {
     throw std::invalid_argument(
         "Spacetime::getSpectralDimensionOnSkeleton: skeletonDim != 1 "
-        "is reserved for follow-up #36; only the 1-skeleton is "
+        "is not supported; only the 1-skeleton is "
         "supported in this build");
   }
   if (topK < 1) {
@@ -1290,9 +1285,8 @@ Spacetime::getSpectralDimensionOnSkeleton(
       static_cast<std::uint64_t>(topK) + 1;
 
   // Walk filtered top simplices; collect unique edges with MI-derived
-  // weights. Same shape as the previous body of
-  // InteractionSimulation::getSpectralDimension (pre-#31), now living
-  // here so both pipelines share it.
+  // weights. Shared with the InteractionSimulation spectral-dimension
+  // pipeline.
   std::unordered_map<VertexPtr, int> idx;
   std::vector<std::tuple<int, int, double>> edgeList;
   std::set<std::pair<int, int>> seen;

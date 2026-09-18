@@ -82,7 +82,6 @@ suppress_warnings = [
     # ("Quickstart", "Causal-order comparison", ...) that also appear as
     # hand-written headings on the page, colliding at autosectionlabel
     # time.
-    "autosectionlabel.quantum-experiments/earlier-work/spectral-dimension-schwinger-mps-dmrg",
 ]
 
 

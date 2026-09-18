@@ -1,9 +1,8 @@
-// QuantumSimplex — KI factories that build a 5-vertex / 10-edge
-// mesh::Simplex from two QuantumVertex inputs.
+// QuantumSimplex — Koashi-Imoto (KI) factories that build a 5-vertex /
+// 10-edge mesh::Simplex from two QuantumVertex inputs.
 //
-// QuantumSimplex is **not** a separate type at runtime. It is a
-// static-only utility class whose only methods are the four KI
-// factory entry points that:
+// QuantumSimplex is not a runtime type. It is a static-only utility
+// class whose only methods are the four KI factory entry points, which:
 //   - take two pre-existing QuantumVertex objects (A and B) and a
 //     simulation-wide ``iMax``;
 //   - construct ρ_AB by one of four strategies (see the methods);
@@ -21,10 +20,10 @@
 //   - per-edge Van Raamsdonk distance lives on ``Edge::squaredLength_``
 //     (d_VR² so callers recover d_VR via sqrt and MI via
 //     ``iMax · exp(−sqrt(squaredLength))``);
-//   - ``iMax`` is global to the simulation and is **not** stored on
-//     the simplex; callers track it externally;
+//   - ``iMax`` is global to the simulation and is not stored on the
+//     simplex; callers track it externally;
 //   - the KoashiImotoResult is computed inside the factory and
-//     discarded — the vertex states plus block dimensions encode
+//     discarded: the vertex states plus block dimensions encode
 //     everything the simplex needs at runtime.
 //
 // The five Position constants give canonical indices into the
@@ -48,11 +47,10 @@ namespace tessera::quantum {
 
 class QuantumSimplex {
   public:
-    // Static-only utility class — never constructed at runtime.
-    // The default constructor is deleted so callers can't make
-    // an instance accidentally; the destructor stays compiler-
-    // generated because pybind11 needs to register a deallocator
-    // when it binds this name into Python.
+    // Static-only utility class — never constructed at runtime. The
+    // default constructor is deleted; the destructor stays
+    // compiler-generated because pybind11 registers a deallocator when
+    // it binds this name into Python.
     QuantumSimplex() = delete;
 
     // Canonical positions in the returned ``mesh::Simplex``'s vertex

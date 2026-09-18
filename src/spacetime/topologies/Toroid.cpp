@@ -22,21 +22,21 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-/// Build a CDT triangulation using the staircase product triangulation.
+/// Build the causal dynamical triangulation (CDT) as a staircase product.
 ///
-/// Constructs time slabs between adjacent layers of (d+1) vertices each.
-/// The spatial topology at each time slice is the boundary of the d-simplex
-/// (S^{d-1}): for d=4 this gives S^3 with 5 vertices and 5 tetrahedra.
+/// Time slabs run between adjacent layers of \f$ d+1 \f$ vertices. The spatial
+/// slice at each time is the boundary of the \f$ d \f$-simplex, i.e.
+/// \f$ S^{d-1} \f$; at \f$ d = 4 \f$ that is \f$ S^3 \f$ with 5 vertices and
+/// 5 tetrahedra.
 ///
-/// Each slab is triangulated using the staircase decomposition of the
-/// product S^{d-1} × [t, t+1]. For each spatial (d-1)-simplex (face),
-/// the staircase produces d top-simplices covering all CDT orientation
-/// types: (d,1), (d-1,2), ..., (2,d-1), (1,d). This yields d*(d+1)
-/// simplices per slab (20 for d=4), including (3,2)/(2,3) types that
-/// enable flip and shift moves ([BGL] Sec. 2.3.2–2.3.3).
+/// Each slab is the staircase decomposition of \f$ S^{d-1} \times [t, t+1] \f$.
+/// Every spatial (d-1)-simplex contributes d top simplices covering the CDT
+/// orientation types (d,1), (d-1,2), ..., (2,d-1), (1,d), giving
+/// \f$ d(d+1) \f$ simplices per slab (20 at \f$ d = 4 \f$). The (3,2) and
+/// (2,3) types are what make the flip and shift moves possible.
 ///
-/// Ref: Ambjorn et al. "Reconstructing the Universe" (2005), Sec. 3;
-///      Brunekreef et al. "Simulating CDT quantum gravity" (2023), Sec. 2.3.
+/// Reference: Ambjorn, Jurkiewicz & Loll, "Reconstructing the Universe",
+/// arXiv:hep-th/0505154.
 void Toroid::build(Spacetime *spacetime, int nSimplices) {
   auto d = spacetime->getMetric()->getSignature()->getDimensions();
   int dPlus1 = d + 1;
@@ -56,9 +56,9 @@ void Toroid::build(Spacetime *spacetime, int nSimplices) {
     if (t > 0) spacetime->incrementTime();
   }
 
-  // Create simplices for each time slab using staircase triangulation.
-  // For each spatial face F_i (skip vertex i), the face has d vertices.
-  // The staircase produces d simplices with orientations (d,1) down to (1,d):
+  // One staircase-triangulated slab per time step.  For each spatial face
+  // F_i (skip vertex i) the face has d vertices, and the staircase produces
+  // d simplices with orientations (d,1) down to (1,d):
   //   k=d-1: {v0,...,v_{d-1}, w_{d-1}}             — (d,1)
   //   k=d-2: {v0,...,v_{d-2}, w_{d-2}, w_{d-1}}    — (d-1,2)
   //   ...
@@ -94,11 +94,10 @@ void Toroid::build(Spacetime *spacetime, int nSimplices) {
     }
   }
 
-  // Force facet computation on all top simplices so that coface
-  // relationships are established. This is needed for the add move
-  // to find spatial-face partners via getCofaces().
-  // Iterate by index: getFacets() may register new sub-simplices,
-  // growing simplicesVec.  We only process the original top-simplices.
+  // Force facet computation on every top simplex so the coface relations
+  // exist: the add move finds its spatial-face partner through getCofaces().
+  // Iterate by index — getFacets() registers new sub-simplices and so grows
+  // simplicesVec — so that only the original top simplices are processed.
   auto nBefore = spacetime->getSimplices().size();
   for (std::size_t i = 0; i < nBefore; ++i) {
     auto s = spacetime->getSimplices()[i];

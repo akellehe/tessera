@@ -74,10 +74,10 @@ void EigenstateSynthesis::capture() {
   }
   order_ = cellOrdering_.size();
 
-  // Stable edge order: the tunable edges in EdgeList order — those that actually
-  // carry weight in L = D - A (both endpoints present in the vertex set, not a
-  // self-loop). This is exactly HodgeLaplacian::assemble's edge filter, so the
-  // {w_ij, theta_ij} we expose are the parameters the Laplacian reads.
+  // Stable edge order: the tunable edges in EdgeList order — those carrying
+  // weight in L = D - A (both endpoints present in the vertex set, not a
+  // self-loop). This is HodgeLaplacian::assemble's edge filter, so the exposed
+  // {w_ij, theta_ij} are the parameters the Laplacian reads.
   for (const auto e : st_->getEdgeList()->toVector()) {
     if (e == nullptr) continue;
     const auto s = e->getSource();
@@ -105,9 +105,9 @@ void EigenstateSynthesis::classifyBoundary() {
   const std::size_t topVerts = (d >= 0) ? static_cast<std::size_t>(d) + 1 : 0;
 
   // ∂W: codim-1 faces (a top cell with one vertex dropped) belonging to exactly
-  // one top cell. An *edge* sits on the boundary only once codim-1 faces are at
-  // least edges themselves (topVerts >= 3); below that there is no boundary —
-  // every tunable edge is interior (the free §4b regime, owned by #134).
+  // one top cell. An edge sits on the boundary only once codim-1 faces are at
+  // least edges themselves (topVerts >= 3); below that there is no boundary and
+  // every tunable edge is interior.
   std::set<std::pair<std::uint64_t, std::uint64_t>> boundaryEdgeKeys;
   std::unordered_set<std::uint64_t> boundaryVertexIds;
   if (topVerts >= 3) {
@@ -177,7 +177,7 @@ std::vector<cd> EigenstateSynthesis::apply(const std::vector<cd> &psi) const {
   std::vector<cd> out(N, cd(0.0, 0.0));
   if (N == 0) return out;
   // Reassembled from the live edges on each call (see readoutLaplacian): the
-  // U(1) connection L = D - A at k=0, the Hodge L_k at k>=1.
+  // U(1) connection L = D - A at k = 0, the Hodge L_k at k >= 1.
   const std::vector<cd> L = readoutLaplacian();
   for (std::size_t i = 0; i < N; ++i) {
     cd acc(0.0, 0.0);
@@ -195,8 +195,8 @@ double EigenstateSynthesis::residual(const std::vector<cd> &psi) const {
         std::to_string(psi.size()) + ", expected " + std::to_string(N));
   if (N == 0) return 0.0;
 
-  // Normalize: r and the eigenvector condition are scale-invariant, and the spec
-  // writes r for a unit target.
+  // Normalize: r and the eigenvector condition are scale-invariant, and r is
+  // defined for a unit target.
   double nrm2 = 0.0;
   for (const cd &c : psi) nrm2 += std::norm(c);
   if (nrm2 <= 0.0) return 0.0;
@@ -268,7 +268,7 @@ void EigenstateSynthesis::setPhases(
     edges_[i]->setPhase(theta[i]);
 }
 
-// === Fixed-boundary interior fill (§5.0) ===
+// === Fixed-boundary interior fill ===
 
 std::vector<std::complex<double>> EigenstateSynthesis::interiorWeights() const {
   std::vector<std::complex<double>> w;
@@ -333,8 +333,8 @@ EigenstateSynthesis::interiorEdges() const {
 bool EigenstateSynthesis::growInterior(std::uint64_t seed) {
   if (!st_) return false;
   // Cone a fresh interior vertex via the boundary-fixed pre-geometric Pachner
-  // add (#112): a 1→(d+1) stellar subdivision, always interior, so ∂W is left
-  // exactly fixed (the move never touches a boundary face).
+  // add: a 1→(d+1) stellar subdivision, always interior, so ∂W is left exactly
+  // fixed (the move never touches a boundary face).
   ::tessera::spacetime::AddMove move(
       st_.get(), seed, /*relabelEnabled=*/false,
       ::tessera::spacetime::PachnerMode::PreGeometric, /*boundaryFixed=*/true);
@@ -350,13 +350,13 @@ bool EigenstateSynthesis::growInterior(std::uint64_t seed) {
   return true;
 }
 
-// === Free interior connectivity (general growth primitive, #200) ===
+// === Free interior connectivity (general growth primitive) ===
 
 void EigenstateSynthesis::rollbackAttachment(const Attachment &att) {
-  // Remove in dependency order: simplices reference edges/vertices, edges
+  // Remove in dependency order: simplices reference edges and vertices, edges
   // reference vertices. removeVertex also drops any edge still incident to the
-  // vertex, so removing the created edges first (some — among the spec's own
-  // vertices — are not incident to the new vertex) leaves only the vertex.
+  // vertex, so removing the created edges first (some, among the spec's own
+  // vertices, are not incident to the new vertex) leaves only the vertex.
   for (auto *s : att.createdSimplices)
     if (s != nullptr) st_->removeSimplex(s);
   for (auto *e : att.createdEdges)
@@ -394,8 +394,8 @@ bool EigenstateSynthesis::attachInteriorVertex(
   }
 
   // Snapshot the pinned boundary (id-pair -> (complex w, theta)) for the
-  // bit-exact check. The FULL complex l2 is compared, not (Re, phase) — the
-  // dW invariant must catch Im-only corruption too (#581).
+  // bit-exact check. The whole complex l2 is compared, not (Re, phase), so the
+  // dW invariant catches Im-only corruption too.
   std::map<std::pair<std::uint64_t, std::uint64_t>,
            std::pair<std::complex<double>, std::complex<double>>>
       boundaryBefore;
@@ -406,10 +406,9 @@ bool EigenstateSynthesis::attachInteriorVertex(
         (edges_[i]->getLength() * edges_[i]->getLength()), edges_[i]->getPhase()};
   }
 
-  // Fresh interior vertex with the largest id (sorts last; preserves the
-  // boundary-support psi prefix). Use the maxId+1 idiom rather than the
-  // vertexIdCounter, which can be stale relative to explicitly-id'd fixture
-  // vertices.
+  // Fresh interior vertex with the largest id, so it sorts last and preserves
+  // the boundary-support psi prefix. maxId+1 rather than the vertexIdCounter,
+  // which can be stale relative to explicitly-id'd fixture vertices.
   Attachment att;
   ::tessera::mesh::Vertex *vnew = st_->createVertex(maxId + 1);
   att.vertex = vnew;
@@ -434,7 +433,7 @@ bool EigenstateSynthesis::attachInteriorVertex(
   capture();
   classifyBoundary();
 
-  // Validate the ONLY two invariants the experiment allows.
+  // Validate the only two invariants the experiment allows.
   // (a) Valid downward-closed complex: every pair within each new simplex carries
   //     an edge (createSimplexTracked guarantees this — assert it as a real gate).
   std::set<std::pair<std::uint64_t, std::uint64_t>> edgeKeys;
@@ -509,7 +508,7 @@ std::vector<std::uint64_t> EigenstateSynthesis::boundaryVertexIds() const {
   return boundaryVertexIdsSorted_;
 }
 
-// === Surgery: the topology-changing interior remove move (#196) ===
+// === Surgery: the topology-changing interior remove move ===
 
 std::vector<std::vector<std::uint64_t>>
 EigenstateSynthesis::interiorTopCells() const {
@@ -554,7 +553,7 @@ bool EigenstateSynthesis::removeInteriorCell(
   for (const std::uint64_t id : want)
     if (bverts.find(id) != bverts.end()) return false;
 
-  // Locate the matching top simplex, and collect the OTHER top cells' vertex
+  // Locate the matching top simplex, and collect the other top cells' vertex
   // sets (to tell which of `want`'s edges remain covered after removal). Refuse
   // to remove the last top cell of the top dimension (it would drop the complex
   // dimension and promote orphan facets to top cells).
@@ -600,15 +599,19 @@ bool EigenstateSynthesis::removeInteriorCell(
       const std::uint64_t u = want[i];
       const std::uint64_t v = want[j];
       if (covered(u, v)) continue;  // edge survives in another top cell
-      const auto it = edgeByPair.find({u, v});
+      // edgeByPair is keyed {min, max}; canonicalize here too rather than
+      // leaning on `want` having been sorted fifty lines up. A miss would
+      // silently leave an orphaned edge in place and out of removedEdges,
+      // so the rollback could not undo the move.
+      const auto it = edgeByPair.find({std::min(u, v), std::max(u, v)});
       if (it == edgeByPair.end()) continue;  // already absent
       rem.removedEdges.emplace_back(u, v, it->second->getLength(),
                                     it->second->getPhase());
       toRemove.push_back(it->second);
     }
 
-  // Snapshot ∂W (id-pair -> (complex w, theta)) for the bit-exact check. Full
-  // complex l2, not (Re, phase): the dW invariant covers Im corruption (#581).
+  // Snapshot ∂W (id-pair -> (complex w, theta)) for the bit-exact check. The
+  // whole complex l2, not (Re, phase): the dW invariant covers Im corruption.
   std::map<std::pair<std::uint64_t, std::uint64_t>,
            std::pair<std::complex<double>, std::complex<double>>>
       boundaryBefore;
@@ -629,8 +632,8 @@ bool EigenstateSynthesis::removeInteriorCell(
   classifyBoundary();
 
   // ∂W must be preserved bit-exactly: every previously-boundary edge still
-  // present with the same weight/phase (newly EXPOSED boundary edges are allowed
-  // — the opened hole — so this is a subset check, not equality).
+  // present with the same weight/phase. Newly exposed boundary edges — the
+  // opened hole — are allowed, so this is a subset check, not equality.
   bool valid = true;
   std::map<std::pair<std::uint64_t, std::uint64_t>,
            std::pair<std::complex<double>, std::complex<double>>>
@@ -761,8 +764,9 @@ std::pair<bool, std::string> EigenstateSynthesis::stellarSubdivideInterior(
   }
 
   // The uniform re-pin: the seeds are built with every edge at squared length 1
-  // and phase 0 (the unit cochain metric), and the move must hold that by
-  // construction, not by the time-rule coincidence on all-same-time seeds.
+  // and phase 0 (the unit cochain metric), and the move holds that by
+  // construction rather than by the time-rule coincidence on all-same-time
+  // seeds.
   for (const auto e : st_->getEdgeList()->toVector()) {
     if (e == nullptr) continue;
     e->setLength({1.0, 0.0});  // spacelike unit length
@@ -797,10 +801,10 @@ std::pair<bool, std::string> EigenstateSynthesis::dualComplexValid() const {
   const auto tops = topCells();
   if (tops.empty()) return {false, "no top cells"};
   const int dim = static_cast<int>(tops.front().size()) - 1;
-  // The dangling-facet check needs the (n-1)-cell universe; cellSimplices()
-  // is exactly that when the synthesis degree sits one below the top
-  // dimension (the register layers). At other degrees the facet universe is
-  // not tracked here, so only the top-cell conditions are checked.
+  // The dangling-facet check needs the (n-1)-cell universe, which
+  // cellSimplices() is when the synthesis degree sits one below the top
+  // dimension (the register layers). At other degrees the facet universe is not
+  // tracked here, so only the top-cell conditions are checked.
   const bool facetDegree = (k_ == dim - 1);
   return ChainComplex::dualComplexIsValid(
       tops, dim,
@@ -808,7 +812,7 @@ std::pair<bool, std::string> EigenstateSynthesis::dualComplexValid() const {
                   : std::vector<std::vector<std::uint64_t>>{});
 }
 
-// === The discovered operator: ker L₁(W − ∂W) (#363) ===
+// === The discovered operator: ker L₁(W − ∂W) ===
 
 std::vector<std::vector<std::uint64_t>>
 EigenstateSynthesis::bulkMinusBoundaryCells() const {
@@ -835,10 +839,10 @@ EigenstateSynthesis::bulkMinusBoundaryHarmonicMatrix(double tol,
   if (!st_)
     return {};
 
-  // W − ∂W is the subcomplex induced on the interior vertices (the ones on no
-  // ∂W face); a cell belongs to it iff all of its vertices are interior. This
-  // is the ticket's "boundary removed" — and ties to its measured "3 interior
-  // vertices carry nothing" (too few interior vertices ⇒ no interior 1-cycle).
+  // W − ∂W is the subcomplex induced on the interior vertices (those on no ∂W
+  // face); a cell belongs to it iff all of its vertices are interior. Too few
+  // interior vertices means no interior 1-cycle, so nothing is carried: three
+  // interior vertices already carry nothing.
   const std::unordered_set<std::uint64_t> bverts(
       boundaryVertexIdsSorted_.begin(), boundaryVertexIdsSorted_.end());
   const auto interiorCell = [&](const std::vector<std::uint64_t> &c) {
@@ -955,18 +959,18 @@ EigenstateSynthesis::bulkMinusBoundaryHarmonicMatrix(double tol,
 }
 
 std::vector<cd> EigenstateSynthesis::readoutLaplacian() const {
-  // k = 0 scores the U(1) CONNECTION operator, k >= 1 the Hodge L_k (#805).
-  // Read through the CAPTURED operator: its vertex/cell ordering is the one
+  // k = 0 scores the U(1) connection operator, k >= 1 the Hodge L_k. Read
+  // through the captured operator: its vertex/cell ordering is the one
   // cellOrdering_ was built from, and neither entry point consults a spectral
   // cache (both reassemble from the live edges on every call), so repeated
-  // perturb-then-query stays honest.
+  // perturb-then-query reflects every perturbation.
   return k_ == 0 ? laplacian_.connectionLaplacian()
                  : laplacian_.laplacian(k_, /*metric=*/true);
 }
 
 std::vector<cd> EigenstateSynthesis::readoutHarmonicMatrix() const {
-  // k = 0 reads the U(1) CONNECTION operator, k >= 1 the Hodge L_k (#805).
-  // The degree-zero register's content is the U(1) flux carried around a hole:
+  // k = 0 reads the U(1) connection operator, k >= 1 the Hodge L_k. The
+  // degree-zero register's content is the U(1) flux carried around a hole:
   // ker L_0 = b_0 at any weights, so L_0's harmonics can carry no flux and a
   // degree-zero readout taken from them would be identically gauge-flat. The
   // connection operator is indexed over the full sorted vertex order, which is
@@ -989,7 +993,7 @@ EigenstateSynthesis::RegisterReadout EigenstateSynthesis::assembleRegisterReadou
 
   RegisterReadout out;
   const std::size_t n = order_;
-  // Harmonics fresh from the live complex — surgery between calls moves them,
+  // Harmonics fresh from the live complex: surgery between calls moves them,
   // and the operator's own spectral cache is keyed to construction time.
   out.H = readoutHarmonicMatrix();
   if (n == 0) {
@@ -1023,13 +1027,12 @@ EigenstateSynthesis::RegisterReadout EigenstateSynthesis::assembleRegisterReadou
           " has " + std::to_string(h.size()) + " vertices; a degree-" +
           std::to_string(k_) + " period needs a removed (k+1)-cell of " +
           std::to_string(hv));
-    // Facets are visited in the degree's established walk order — the
-    // (a,b),(b,c),(a,c) edge walk of a circle at k = 1 (so the period
-    // accumulates in exactly the register layers' summation order, bit for
-    // bit), the canonical drop-v_j order otherwise. The hole's leak facet is
-    // the first of the walk — the (a,b) edge / the drop-v_0 facet — which
-    // carries boundary sign +1 in both conventions, so adding the leak there
-    // moves that hole's period by exactly the leak.
+    // Facets are visited in the degree's walk order: the (a,b),(b,c),(a,c) edge
+    // walk of a circle at k = 1, so the period accumulates bit for bit in the
+    // register layers' summation order; the canonical drop-v_j order otherwise.
+    // The hole's leak facet is the first of the walk — the (a,b) edge, or the
+    // drop-v_0 facet — which carries boundary sign +1 in both conventions, so
+    // adding the leak there moves that hole's period by exactly the leak.
     std::vector<std::size_t> walk(hv);
     for (std::size_t i = 0; i < hv; ++i) walk[i] = i;
     if (k_ == 1) std::rotate(walk.begin(), walk.end() - 1, walk.end());
@@ -1072,7 +1075,7 @@ std::vector<cd> EigenstateSynthesis::carriedRepresentative(
   return carriedFromReadout(assembleRegisterReadout(holes), targetPeriods);
 }
 
-// === Charge sector: the E/B split of the field strength F ∈ Ω² (#417) ===
+// === Charge sector: the E/B split of the field strength F ∈ Ω² ===
 
 std::vector<cd> EigenstateSynthesis::curvatureFromConnection(
     const std::vector<cd> &A) const {
@@ -1083,7 +1086,7 @@ std::vector<cd> EigenstateSynthesis::curvatureFromConnection(
         "degree " +
         std::to_string(k_));
   // The connection A is a degree-1 cochain in the canonical ChainComplex 1-cell
-  // order — map each sorted edge (u,v) to its index so the per-plaquette signed
+  // order; map each sorted edge (u,v) to its index so the per-plaquette signed
   // edge sum can read A by edge.
   const auto edges1 = ChainComplex::fromSpacetime(*st_).kSimplexVertices(1);
   if (A.size() != edges1.size())
@@ -1134,16 +1137,14 @@ EigenstateSynthesis::FieldStrengthSplit EigenstateSynthesis::fieldStrengthSplit(
         std::to_string(F.size()) + " components; the degree-2 operator has " +
         std::to_string(order_) + " cells");
 
-  // Map each sorted edge (u,v) to its live Edge* so each plaquette's causal type
-  // is read off Edge::isTimelike() — the sanctioned causal test, which since
-  // #870 is arg(l^2) ~ +/-pi rather than Im(length) != 0.
+  // Map each sorted edge (u,v) to its live Edge* so each plaquette's causal
+  // type is read off Edge::isTimelike(), the sanctioned causal test:
+  // arg(l^2) ~ +/-pi.
   //
-  // NOTE the split is BINARY: a cell is electric if any edge is timelike and
-  // magnetic otherwise, so it cannot express a cell whose edges are MIXED (off
-  // every definite argument). Such a cell lands in `magnetic` by default rather
-  // than being reported as indefinite, and a cell that read electric under the
-  // superseded test purely because an edge carried some imaginary part now
-  // falls to magnetic. Widening the split is out of scope here; the gap is
+  // The split is binary: a cell is electric if any edge is timelike and magnetic
+  // otherwise, so it cannot express a cell whose edges are mixed (off every
+  // definite argument). Such a cell lands in `magnetic` rather than being
+  // reported as indefinite. Widening the split is out of scope here; the gap is
   // recorded so it is not mistaken for a measurement.
   std::map<std::pair<std::uint64_t, std::uint64_t>, ::tessera::mesh::Edge *> em;
   for (auto *e : edges_) {
@@ -1199,9 +1200,9 @@ cd EigenstateSynthesis::gaussLawCharge(
         std::to_string(F.size()) + " components; the degree-2 operator has " +
         std::to_string(order_) + " cells");
 
-  // The electric (timelike-leg) plaquettes — the same E/B causal split #417
-  // delivers, so Q lives on the same temporal sector. magnetic-only Q (the full
-  // flux on an all-spacelike complex) is recovered with electricOnly = false.
+  // The electric (timelike-leg) plaquettes, the same E/B causal split, so Q
+  // lives on the same temporal sector. The magnetic-only Q — the full flux on an
+  // all-spacelike complex — is recovered with electricOnly = false.
   const FieldStrengthSplit split = fieldStrengthSplit(F);
   const std::set<std::size_t> electric(split.electricCells.begin(),
                                        split.electricCells.end());
@@ -1284,10 +1285,10 @@ std::vector<cd> EigenstateSynthesis::carriedFromReadout(
 
 std::vector<cd> EigenstateSynthesis::lstsqOverReadout(
     const RegisterReadout &ro, const std::vector<cd> &targetPeriods) const {
-  // c = (P^T)^+ target (minimum-norm least squares, what numpy.linalg.lstsq
-  // returns): the SVD projection of the targets onto the carried period rows.
-  // Shared by carriedFromReadout (r_U's leak'd state) and periodGapForLoops
-  // (r_psi's period gap), so the two terms fit onto the same carried space.
+  // c = (P^T)^+ target (minimum-norm least squares, matching numpy.linalg.lstsq):
+  // the SVD projection of the targets onto the carried period rows. Shared by
+  // carriedFromReadout (r_U's leaked state) and periodGapForLoops (r_psi's
+  // period gap), so the two terms fit onto the same carried space.
   const std::size_t m = ro.leakColumns.size();
   if (ro.dim == 0) return {};
   Eigen::VectorXcd t(static_cast<Eigen::Index>(m));
@@ -1434,8 +1435,8 @@ double EigenstateSynthesis::periodGapForLoops(
         std::to_string(m) + " loops");
   if (m == 0) return 0.0;
   const RegisterReadout ro = assembleReadoutOverLoops(loops);
-  // The carried object stays a PURE harmonic (no leak): least-squares-fit the
-  // target onto the carried period rows (lstsqOverReadout — the SAME projection
+  // The carried object stays a pure harmonic (no leak): least-squares-fit the
+  // target onto the carried period rows (lstsqOverReadout, the same projection
   // r_U's carriedFromReadout uses, so the two terms share the realizable zero
   // set) and return the squared norm of the remainder no harmonic can reach,
   // ||carried - target||^2 = ||P^T c - target||^2. When ro.dim == 0 nothing is
@@ -1461,11 +1462,10 @@ double EigenstateSynthesis::periodGapForPeriods(
 std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
     const std::vector<EdgeLoop> &loops,
     const std::vector<cd> &targetPeriods) const {
-  // Contract: the signed edge-loop machinery is degree-1 by construction — a
-  // loop period reads an edge (1-cell) cochain, and everything below (M = L_1,
-  // the triangle low-rank dM, the cell->index map over 2-vertex tuples) is the
-  // k = 1 layout. Other degrees go through the hole APIs
-  // (residualForPeriodsGradient routes by degree).
+  // The signed edge-loop machinery is degree-1 by construction: a loop period
+  // reads an edge (1-cell) cochain, and everything below (M = L_1, the triangle
+  // low-rank dM, the cell->index map over 2-vertex tuples) is the k = 1 layout.
+  // Other degrees go through the hole entry points, which route by degree.
   if (k_ != 1)
     throw std::runtime_error(
         "EigenstateSynthesis::periodGradientOverLoops: the edge-loop core is "
@@ -1543,9 +1543,9 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   };
 
   // ---- Q (signed edge-loop covector) + each cycle's leak column ----
-  // Generalizes the removed-triangle boundary to any closed walk of oriented
-  // edges: Q(q, edge) += +1 along the stored orientation, -1 against; the leak
-  // is the loop's first edge.
+  // Any closed walk of oriented edges, not just a removed triangle's boundary:
+  // Q(q, edge) += +1 along the stored orientation, -1 against; the leak is the
+  // loop's first edge.
   MatrixXcd Q = MatrixXcd::Zero(static_cast<Index>(m), N);
   std::vector<std::size_t> leakCol(m);
   for (std::size_t q = 0; q < m; ++q) {
@@ -1563,10 +1563,10 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   }
 
   // ---- eigendecomposition of M; harmonic (null) / non-null split ----
-  // The signed operator is generally NON-self-adjoint (real but non-symmetric
-  // on the real-l^2 manifold), so a general eigensolver — a self-adjoint one
-  // reads a single triangle and silently symmetrizes, which is how this
-  // gradient once returned identically zero (#644).
+  // The signed operator is generally non-self-adjoint (real but non-symmetric
+  // on the real-l^2 manifold), so a general eigensolver is required: a
+  // self-adjoint one reads a single triangle and silently symmetrizes, which
+  // makes this gradient come out identically zero.
   Eigen::ComplexEigenSolver<MatrixXcd> eig(M);
   const VectorXcd lam = eig.eigenvalues();
   const MatrixXcd U = eig.eigenvectors();
@@ -1579,7 +1579,7 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   for (Index r = 0; r < nd; ++r) Un.col(r) = U.col(nullIdx[r]);
   for (Index r = 0; r < nnd; ++r) Unn.col(r) = U.col(nnIdx[r]);
   // Left (dual) basis for the non-self-adjoint perturbation: rows of U^-1 are
-  // the covectors v_m with v_m . u_l = delta_ml — what first-order eigenvector
+  // the covectors v_m with v_m . u_l = delta_ml, which first-order eigenvector
   // perturbation of a non-symmetric M needs in place of U^T.
   const MatrixXcd Uinv = U.inverse();
   MatrixXcd Vnn(nnd, N);
@@ -1610,15 +1610,14 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   for (std::size_t je = 0; je < n1; ++je) {
     const Index j = static_cast<Index>(je);
     const auto ek = key(cells1[je][0], cells1[je][1]);
-    // dM for the SIGNED operator M = W1^-1 K1 + K2 W1 (K2 = d2 W2^-1 d2^T),
+    // dM for the signed operator M = W1^-1 K1 + K2 W1 (K2 = d2 W2^-1 d2^T),
     // under the V^2 weights (the HodgeLaplacian default): W1_j = l^2_j exactly,
     // so dW1_j/dl^2_j = 1 and, every piece rank one,
     //   dM = -(1/W1_j^2) e_j (K1 row j)                       [d(W1^-1) K1]
     //      + (K2 col j) e_j^T                                 [K2 W1 -> K2 dW1]
     //      + per triangle t on e:
     //        -(dW2_t/W2_t^2) (d2 col t)((W1 o d2 col t))^T    [d(W2^-1) term]
-    // dM is generally NON-symmetric, like M itself. The old columns here
-    // differentiated the removed sqrt(W)-conjugated symmetric form (#644).
+    // dM is generally non-symmetric, like M itself.
     VectorXcd dMp;
     MatrixXcd core;
     if (metricSource_ == HodgeLaplacian::MetricSource::WhitneyPencil) {
@@ -1648,7 +1647,7 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
             G(i, jj) = 0.5 * (L2(t[0], t[i + 1]) + L2(t[0], t[jj + 1]) - L2(t[i + 1], t[jj + 1]));
         const cd detG = G.determinant();
         const cd W2ti = W2v[ti];
-        // Consistency: W2 must be the V^2 weight detG/4 this derivation assumes.
+        // W2 must be the V^2 weight detG/4 this derivation assumes.
         if (std::abs(detG / 4.0 - W2ti) > 1e-9 * std::max(1.0, std::abs(W2ti)) ||
             std::abs(detG) < 1e-12)
           continue;
@@ -1659,8 +1658,7 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
         for (int i = 0; i < 2; ++i)
           for (int jj = 0; jj < 2; ++jj)
             dG(i, jj) = 0.5 * (ind(0, i + 1) + ind(0, jj + 1) - ind(i + 1, jj + 1));
-        // W2 = detG/4 => dW2 = W2 * tr(G^-1 dG) (Jacobi). The old 1/2 belonged
-        // to the removed sqrt(detG)/2 content weight.
+        // W2 = detG/4 => dW2 = W2 * tr(G^-1 dG), by Jacobi's formula.
         const cd dW2ti = W2ti * (G.inverse() * dG).trace();
         const VectorXcd dcol = d2m.col(static_cast<Index>(ti));
         colsA.push_back(dcol);
@@ -1698,16 +1696,17 @@ std::vector<double> EigenstateSynthesis::periodGradientGeneral(
     const std::vector<std::vector<std::uint64_t>> &holes,
     const std::vector<cd> &targetPeriods) const {
   // k = 0 reads a different operator, not a different weight: the U(1)
-  // connection L^U(1) = D - A is genuinely complex Hermitian (full l^2 +
-  // U(1) phases), so it gets its own complex core rather than the
-  // laplacian(k).real() projection below (#589).
+  // connection L^U(1) = D - A is complex Hermitian (full l^2 and U(1) phases),
+  // so it gets its own complex core rather than the laplacian(k).real()
+  // projection below.
   if (k_ == 0) return periodGradientDegreeZero(holes, targetPeriods);
-  // Arbitrary-degree exact d r_U / d l^2 over the removed-(k+1)-cell holes. M = L_k,
-  // the per-edge dL_k/dl^2 (HodgeLaplacian::laplacianGradient, on Simplex::volumeGradient)
-  // through first-order eigenvector perturbation, period covector + leak from each
-  // hole's facet boundary (the assembleRegisterReadout convention). Equals the k=1
-  // loop core (periodGradientOverLoops) on triangle holes; certified by the Euler
-  // identity Sum_e l^2_e d r_U/d l^2_e = -r_U.
+  // Arbitrary-degree exact d r_U / d l^2 over the removed-(k+1)-cell holes.
+  // M = L_k, with the per-edge dL_k/dl^2 (HodgeLaplacian::laplacianGradient, on
+  // Simplex::volumeGradient) through first-order eigenvector perturbation, and
+  // the period covector plus leak from each hole's facet boundary (the
+  // assembleRegisterReadout convention). Equals the k = 1 loop core
+  // (periodGradientOverLoops) on triangle holes; certified by the Euler identity
+  // Sum_e l^2_e d r_U/d l^2_e = -r_U.
   using Eigen::Index;
   using Eigen::MatrixXcd;
   using Eigen::VectorXcd;
@@ -1725,8 +1724,8 @@ std::vector<double> EigenstateSynthesis::periodGradientGeneral(
   static constexpr double kNullTol = 1e-7;
   const Index N = static_cast<Index>(nk);
 
-  // ---- M = L_k, the signed operator, complex VERBATIM (a .real() here once
-  // silently projected it; value and gradient must see the same M) ----
+  // ---- M = L_k, the signed operator, kept complex: a .real() here would
+  // project it, and value and gradient must see the same M ----
   const std::vector<cd> Lflat = HodgeLaplacian(st_, HodgeLaplacian::defaultWeightConvention(), metricSource_).laplacian(k_, /*metric=*/true);
   MatrixXcd M(N, N);
   for (std::size_t i = 0; i < nk; ++i)
@@ -1769,10 +1768,10 @@ std::vector<double> EigenstateSynthesis::periodGradientGeneral(
   }
 
   // ---- harmonic (null) / non-null eigensplit of M ----
-  // The signed operator is generally NON-self-adjoint (real but non-symmetric
-  // on the real-l^2 manifold), so a general eigensolver — a self-adjoint one
-  // reads a single triangle and silently symmetrizes, which is how this
-  // gradient once returned identically zero (#644).
+  // The signed operator is generally non-self-adjoint (real but non-symmetric
+  // on the real-l^2 manifold), so a general eigensolver is required: a
+  // self-adjoint one reads a single triangle and silently symmetrizes, which
+  // makes this gradient come out identically zero.
   Eigen::ComplexEigenSolver<MatrixXcd> eig(M);
   const VectorXcd lam = eig.eigenvalues();
   const MatrixXcd U = eig.eigenvectors();
@@ -1786,7 +1785,7 @@ std::vector<double> EigenstateSynthesis::periodGradientGeneral(
   for (Index r = 0; r < nd; ++r) Un.col(r) = U.col(nullIdx[r]);
   for (Index r = 0; r < nnd; ++r) Unn.col(r) = U.col(nnIdx[r]);
   // Left (dual) basis for the non-self-adjoint perturbation: rows of U^-1 are
-  // the covectors v_m with v_m . u_l = delta_ml — what first-order eigenvector
+  // the covectors v_m with v_m . u_l = delta_ml, which first-order eigenvector
   // perturbation of a non-symmetric M needs in place of U^T.
   const MatrixXcd Uinv = U.inverse();
   MatrixXcd Vnn(nnd, N);
@@ -1848,27 +1847,26 @@ std::vector<double> EigenstateSynthesis::periodGradientDegreeZero(
     const std::vector<std::vector<std::uint64_t>> &holes,
     const std::vector<cd> &targetPeriods) const {
   // Exact d r_U / d l^2 at k = 0, against the operator residualForPeriods
-  // actually scores: the genuinely COMPLEX Hermitian vertex operator
-  // L^U(1) = D - A (HodgeLaplacian::connectionLaplacian — D_ii = sum_e |l^2_e|,
-  // A_ij = l^2_e e^{i phase_e}). That is the U(1) CONNECTION Laplacian, NOT the
-  // Hodge L_0 = d_1 W_1^-1 d_1^T (#805): the degree-zero register carries U(1)
-  // flux, and ker L_0 is always b_0, so an L_0 readout would be identically
-  // gauge-flat and carry nothing. readoutHarmonicMatrix() picks the same
-  // operator, so value and gradient agree.
-  // Structure mirrors periodGradientGeneral in complex arithmetic; the product
-  // rule d||rho||^2 = 2 Re(rho^dagger d rho) is complex-safe as-is. Differences
-  // from the k >= 1 core, both forced by the operator:
+  // scores: the complex Hermitian vertex operator L^U(1) = D - A
+  // (HodgeLaplacian::connectionLaplacian, D_ii = sum_e |l^2_e|,
+  // A_ij = l^2_e e^{i phase_e}). That is the U(1) connection Laplacian, not the
+  // Hodge L_0 = d_1 W_1^-1 d_1^T: the degree-zero register carries U(1) flux,
+  // and ker L_0 is always b_0, so an L_0 readout would be identically gauge-flat
+  // and carry nothing. readoutHarmonicMatrix() picks the same operator, so value
+  // and gradient agree.
+  // The structure mirrors periodGradientGeneral in complex arithmetic; the
+  // product rule d||rho||^2 = 2 Re(rho^dagger d rho) is complex-safe as-is. Two
+  // differences from the k >= 1 core, both forced by the operator:
   //   * dL^U(1) per edge has exactly four entries — dL_ii = dL_jj = d|w|/dw
   //     evaluated along the real axis (Re w / |w|; the manifold is real
-  //     signed l^2), dL_ij = -e^{i phase}, dL_ji = -e^{-i phase} — no volume
-  //     weights.
-  //   * The least-squares fit uses the SVD pseudo-inverse and its
-  //     constant-rank derivative (Golub–Pereyra): at k = 0 a globally
-  //     gauge-flat harmonic has zero period on every hole, so A = Q U_n is
-  //     generically COLUMN-RANK-DEFICIENT and the k >= 1 cores'
-  //     (A^dagger A)^{-1} would be singular. The SVD fit is exactly what the
-  //     functional's lstsqOverReadout applies, so the gradient differentiates
-  //     the value actually returned.
+  //     signed l^2), dL_ij = -e^{i phase}, dL_ji = -e^{-i phase} — and no
+  //     volume weights.
+  //   * The least-squares fit uses the SVD pseudo-inverse and its constant-rank
+  //     derivative (Golub-Pereyra): at k = 0 a globally gauge-flat harmonic has
+  //     zero period on every hole, so A = Q U_n is generically
+  //     column-rank-deficient and the k >= 1 cores' (A^dagger A)^{-1} would be
+  //     singular. The SVD fit is what the functional's lstsqOverReadout
+  //     applies, so the gradient differentiates the value returned.
   // Euler identity: L^U(1)(s l^2) = s L^U(1)(l^2) for s > 0 (degree +1), so
   // Sum_e l^2_e d r_U/d l^2_e = +2 r_U (the k >= 1 metric L_k is degree -1,
   // giving -r_U there).
@@ -2037,14 +2035,15 @@ std::vector<double> EigenstateSynthesis::residualForPeriodsGradient(
     const std::vector<std::vector<std::uint64_t>> &holes,
     const std::vector<cd> &targetPeriods) const {
   // Arbitrary-degree exact d r_U / d l^2, in ChainComplex 1-cell (edge) order.
-  // At k = 1 (triangle holes) route through the fast low-rank edge-loop core
-  // (periodGradientOverLoops): it builds the chain complex once and uses a per-edge
-  // low-rank dM, so a relaxation loop stays affordable. It is value-identical to the
-  // general path (verified to 1.7e-15). For k >= 2 use the degree-generic
-  // periodGradientGeneral (M = L_k, the per-edge analytic dL_k/dl^2). Both satisfy
-  // the exact Euler identity Sum_e l^2_e d r_U/d l^2_e = -2 r_U: with the V^2
-  // weights L_k is homogeneous of degree -1 in l^2 and r_U = ||(L - lambda)p||^2
-  // of degree -2 (measured: r_U(s*l^2) = r_U/s^2 exactly).
+  // At k = 1 (triangle holes) this routes through the fast low-rank edge-loop
+  // core (periodGradientOverLoops), which builds the chain complex once and uses
+  // a per-edge low-rank dM, so a relaxation loop stays affordable; it is
+  // value-identical to the general path (verified to 1.7e-15). For k >= 2 the
+  // degree-generic periodGradientGeneral is used (M = L_k, the per-edge analytic
+  // dL_k/dl^2). Both satisfy the exact Euler identity
+  // Sum_e l^2_e d r_U/d l^2_e = -2 r_U: with the V^2 weights L_k is homogeneous
+  // of degree -1 in l^2 and r_U = ||(L - lambda)p||^2 of degree -2, measured as
+  // r_U(s*l^2) = r_U/s^2 exactly.
   if (k_ == 1 && metricSource_ == HodgeLaplacian::MetricSource::DiagonalWeights)
     return periodGradientOverLoops(
         holeLoops(holes, "EigenstateSynthesis::residualForPeriodsGradient"),
@@ -2058,7 +2057,7 @@ std::vector<double> EigenstateSynthesis::residualForPeriodsGradient(
 std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
     const std::vector<EdgeLoop> &loops,
     const std::vector<cd> &targetPeriods) const {
-  // Contract: degree-1 machinery, exactly as periodGradientOverLoops (and as
+  // Degree-1 machinery, exactly as periodGradientOverLoops (and as
   // the r_psi functional itself — periodGapForLoops reads loop periods of an
   // edge cochain, defined only at k = 1).
   if (k_ != 1)
@@ -2068,15 +2067,16 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
         "synthesis is degree " + std::to_string(k_) + ".");
   // The hard-pin sibling of periodGradientOverLoops (r_U): same first-order
   // eigenvector-perturbation setup (M = L1, harmonic split Un/Unn, the per-edge
-  // low-rank dM, dUn), but the score is the period GAP r_psi = ||A c - t||^2 with
-  // A = Q Un and c the least-squares fit, NOT the leak'd state's non-harmonicity.
-  // Least-squares optimality A^T r = 0 (envelope theorem) drops the dc term, so
-  // d r_psi / d l^2 = 2 Re( r^H (Q dUn) c ) -- no leak, no dpsi chain.
+  // low-rank dM, dUn), but the score is the period gap r_psi = ||A c - t||^2
+  // with A = Q Un and c the least-squares fit, rather than the leaked state's
+  // non-harmonicity. Least-squares optimality A^T r = 0 (envelope theorem) drops
+  // the dc term, so d r_psi / d l^2 = 2 Re( r^H (Q dUn) c ): no leak, no dpsi
+  // chain.
   //
-  // NB the M / eigensplit / per-edge-dM machinery below is DELIBERATELY duplicated
-  // from periodGradientOverLoops: that r_U gradient is frozen (FD- and GPU-mirror
-  // verified), so a shared helper would have to edit do-not-change code. Keep the
-  // two copies in sync; test_period_gap_python.py FD-guards this one.
+  // The M / eigensplit / per-edge-dM machinery below duplicates
+  // periodGradientOverLoops so that the r_U gradient, which is finite-difference
+  // and GPU-mirror verified, need not be touched. Keep the two copies in sync;
+  // test_period_gap_python.py finite-difference-guards this one.
   using Eigen::Index;
   using Eigen::MatrixXcd;
   using Eigen::VectorXcd;
@@ -2160,10 +2160,10 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
   }
 
   // ---- eigendecomposition of M; harmonic (null) / non-null split ----
-  // The signed operator is generally NON-self-adjoint (real but non-symmetric
-  // on the real-l^2 manifold), so a general eigensolver — a self-adjoint one
-  // reads a single triangle and silently symmetrizes, which is how this
-  // gradient once returned identically zero (#644).
+  // The signed operator is generally non-self-adjoint (real but non-symmetric
+  // on the real-l^2 manifold), so a general eigensolver is required: a
+  // self-adjoint one reads a single triangle and silently symmetrizes, which
+  // makes this gradient come out identically zero.
   Eigen::ComplexEigenSolver<MatrixXcd> eig(M);
   const VectorXcd lam = eig.eigenvalues();
   const MatrixXcd U = eig.eigenvectors();
@@ -2176,7 +2176,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
   for (Index r = 0; r < nd; ++r) Un.col(r) = U.col(nullIdx[r]);
   for (Index r = 0; r < nnd; ++r) Unn.col(r) = U.col(nnIdx[r]);
   // Left (dual) basis for the non-self-adjoint perturbation: rows of U^-1 are
-  // the covectors v_m with v_m . u_l = delta_ml — what first-order eigenvector
+  // the covectors v_m with v_m . u_l = delta_ml, which first-order eigenvector
   // perturbation of a non-symmetric M needs in place of U^T.
   const MatrixXcd Uinv = U.inverse();
   MatrixXcd Vnn(nnd, N);
@@ -2186,12 +2186,11 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
 
   // ---- the least-squares fit c and the period-gap residual r = A c - target ----
   // Rank-robust min-norm fit (Jacobi SVD), matching periodGapForLoops's value so
-  // the analytic gradient stays consistent with the function it differentiates,
-  // and so a column-rank-deficient A (carried harmonic count nd > read-out cycle
-  // count m, or dependent/zero-period harmonics) yields the min-norm solution
-  // rather than the NaN a singular (A^T A)^{-1} would give. The optimality
-  // A^T r = 0 holds for ANY least-squares solution, so the envelope theorem
-  // (the dropped dc term) is unaffected by the min-norm choice.
+  // the gradient stays consistent with the function it differentiates, and so a
+  // column-rank-deficient A (carried harmonic count nd > read-out cycle count m,
+  // or dependent/zero-period harmonics) yields the min-norm solution rather than
+  // the NaN a singular (A^T A)^{-1} would give. A^T r = 0 holds for any
+  // least-squares solution, so the dropped dc term is unaffected.
   VectorXcd target(static_cast<Index>(m));
   for (std::size_t q = 0; q < m; ++q) target[static_cast<Index>(q)] = targetPeriods[q];
   const MatrixXcd A = Q * Un;                            // m x nd
@@ -2204,15 +2203,14 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
   for (std::size_t je = 0; je < n1; ++je) {
     const Index j = static_cast<Index>(je);
     const auto ek = key(cells1[je][0], cells1[je][1]);
-    // dM for the SIGNED operator M = W1^-1 K1 + K2 W1 (K2 = d2 W2^-1 d2^T),
+    // dM for the signed operator M = W1^-1 K1 + K2 W1 (K2 = d2 W2^-1 d2^T),
     // under the V^2 weights (the HodgeLaplacian default): W1_j = l^2_j exactly,
     // so dW1_j/dl^2_j = 1 and, every piece rank one,
     //   dM = -(1/W1_j^2) e_j (K1 row j)                       [d(W1^-1) K1]
     //      + (K2 col j) e_j^T                                 [K2 W1 -> K2 dW1]
     //      + per triangle t on e:
     //        -(dW2_t/W2_t^2) (d2 col t)((W1 o d2 col t))^T    [d(W2^-1) term]
-    // dM is generally NON-symmetric, like M itself. The old columns here
-    // differentiated the removed sqrt(W)-conjugated symmetric form (#644).
+    // dM is generally non-symmetric, like M itself.
     std::vector<VectorXcd> colsA, colsB;
     VectorXcd ev = VectorXcd::Zero(N);
     ev[j] = 1.0;
@@ -2228,7 +2226,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
           G(i, jj) = 0.5 * (L2(t[0], t[i + 1]) + L2(t[0], t[jj + 1]) - L2(t[i + 1], t[jj + 1]));
       const cd detG = G.determinant();
       const cd W2ti = W2v[ti];
-      // Consistency: W2 must be the V^2 weight detG/4 this derivation assumes.
+      // W2 must be the V^2 weight detG/4 this derivation assumes.
       if (std::abs(detG / 4.0 - W2ti) > 1e-9 * std::max(1.0, std::abs(W2ti)) ||
           std::abs(detG) < 1e-12)
         continue;
@@ -2239,8 +2237,7 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
       for (int i = 0; i < 2; ++i)
         for (int jj = 0; jj < 2; ++jj)
           dG(i, jj) = 0.5 * (ind(0, i + 1) + ind(0, jj + 1) - ind(i + 1, jj + 1));
-      // W2 = detG/4 => dW2 = W2 * tr(G^-1 dG) (Jacobi). The old 1/2 belonged
-      // to the removed sqrt(detG)/2 content weight.
+      // W2 = detG/4 => dW2 = W2 * tr(G^-1 dG), by Jacobi's formula.
       const cd dW2ti = W2ti * (G.inverse() * dG).trace();
       const VectorXcd dcol = d2m.col(static_cast<Index>(ti));
       colsA.push_back(dcol);
@@ -2257,12 +2254,12 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
     const MatrixXcd core = (Vnn * fa) * (fb.transpose() * Un);  // nnd x nd
     const MatrixXcd dUn = Unn * (invlam.asDiagonal() * core);               // n1 x nd
     const MatrixXcd dA = Q * dUn;                                           // m x nd
-    // Complex gradient (#746): r is holomorphic in l^2, so no .real()
-    // projection belongs here. The value is
+    // Complex gradient: r is holomorphic in l^2, so no .real() projection
+    // belongs here. The value is
     //   g = dr/d(Re l^2) - i dr/d(Im l^2),
-    // whose real part is exactly what this line used to return — discarding
-    // the imaginary half is what left the register term unable to move in the
-    // plane the descent direction actually steps in.
+    // whose real part is the real-locus derivative. Discarding the imaginary
+    // half would leave the register term unable to move in the plane the
+    // descent direction steps in.
     grad[je] = 2.0 * r.dot(dA.cast<cd>() * c);
   }
   return grad;
@@ -2271,12 +2268,11 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
 std::vector<cd> EigenstateSynthesis::periodGapForPeriodsGradient(
     const std::vector<std::vector<std::uint64_t>> &holes,
     const std::vector<cd> &targetPeriods) const {
-  // Route by degree, exactly as residualForPeriodsGradient does (#630): the
-  // fast low-rank edge-loop core at k = 1, the degree-generic core at k >= 2.
-  // k = 0 reads a DIFFERENT operator (the U(1) connection L^U(1) = D - A,
-  // genuinely complex Hermitian), not a weight variant of L_k, so it has no
-  // period-gap core at all — the contract is stated here, at the entry point,
-  // rather than deeper in.
+  // Route by degree, exactly as residualForPeriodsGradient does: the fast
+  // low-rank edge-loop core at k = 1, the degree-generic core at k >= 2. k = 0
+  // reads a different operator — the complex Hermitian U(1) connection
+  // L^U(1) = D - A, not a weight variant of L_k — so it has no period-gap core
+  // at all, and that is stated here at the entry point rather than deeper in.
   if (k_ == 0)
     throw std::runtime_error(
         "EigenstateSynthesis::periodGapForPeriodsGradient: the period gap has "
@@ -2294,11 +2290,11 @@ std::vector<cd> EigenstateSynthesis::periodGapForPeriodsGradient(
 std::vector<cd> EigenstateSynthesis::periodGapGradientOverHoles(
     const std::vector<std::vector<std::uint64_t>> &holes,
     const std::vector<cd> &targetPeriods) const {
-  // Arbitrary-degree exact d r_psi / d l^2 for the period GAP
+  // Arbitrary-degree exact d r_psi / d l^2 for the period gap
   // r_psi = ||A c - t||^2, with A = Q U_n the periods of the harmonic basis and
-  // c the least-squares fit. Setup mirrors periodGradientGeneral term for term —
-  // same M = L_k, same period covector Q, same non-self-adjoint eigensplit — but
-  // the score differs, and so does the derivative:
+  // c the least-squares fit. The setup mirrors periodGradientGeneral term for
+  // term — same M = L_k, same period covector Q, same non-self-adjoint
+  // eigensplit — but the score differs, and so does the derivative:
   //
   // least-squares optimality gives A^dagger r = 0, so by the envelope theorem the
   // dc term drops out entirely and
@@ -2308,14 +2304,14 @@ std::vector<cd> EigenstateSynthesis::periodGapGradientOverHoles(
   //
   // The fit uses the SVD pseudo-inverse rather than normal equations: A can be
   // rank-deficient (more harmonics than holes, or degenerate periods), where
-  // (A^T A)^-1 is singular. It matches lstsqOverReadout, which is what the VALUE
+  // (A^T A)^-1 is singular. It matches lstsqOverReadout, which is what the value
   // uses, so gradient and value fit the same way.
   //
   // Certified by the Euler identity for a degree-0 functional:
   //     Sum_e l^2_e d r_psi / d l^2_e = 0.
-  // L_k is homogeneous of degree -1 in l^2, so l^2 -> s l^2 sends L -> L/s, which
-  // leaves the KERNEL — and hence the normalized harmonic basis, A, c and the gap
-  // — unchanged. (Contrast r_U, of degree -2, whose Euler sum is -2 r_U.)
+  // L_k is homogeneous of degree -1 in l^2, so l^2 -> s l^2 sends L -> L/s,
+  // which leaves the kernel — and hence the normalized harmonic basis, A, c and
+  // the gap — unchanged. By contrast r_U is of degree -2, with Euler sum -2 r_U.
   using Eigen::Index;
   using Eigen::MatrixXcd;
   using Eigen::VectorXcd;
@@ -2339,7 +2335,7 @@ std::vector<cd> EigenstateSynthesis::periodGapGradientOverHoles(
         std::to_string(k_) + ".");
   static constexpr double kNullTol = 1e-9;   // harmonicMatrix's tolerance: this
                                              // must differentiate the harmonic
-                                             // set the VALUE reads, not r_U's 1e-7
+                                             // set the value reads, not r_U's 1e-7
   const Index N = static_cast<Index>(nk);
 
   const std::vector<cd> Lflat = HodgeLaplacian(st_, HodgeLaplacian::defaultWeightConvention(), metricSource_).laplacian(k_, /*metric=*/true);
@@ -2377,7 +2373,7 @@ std::vector<cd> EigenstateSynthesis::periodGapGradientOverHoles(
   }
 
   // Non-self-adjoint eigensplit: the signed operator is real but not symmetric,
-  // so a self-adjoint solver would read one triangle and symmetrize (#644).
+  // so a self-adjoint solver would read one triangle and symmetrize.
   Eigen::ComplexEigenSolver<MatrixXcd> eig(M);
   const VectorXcd lam = eig.eigenvalues();
   const MatrixXcd U = eig.eigenvectors();
@@ -2415,7 +2411,7 @@ std::vector<cd> EigenstateSynthesis::periodGapGradientOverHoles(
     const MatrixXcd core = (Vnn * dM) * Un;                     // nnd x nd
     const MatrixXcd dUn = Unn * (invlam.asDiagonal() * core);   // N x nd
     const MatrixXcd dA = Q * dUn;                               // m x nd
-    // Envelope theorem, kept COMPLEX (#746) — see the k = 1 core.
+    // Envelope theorem, kept complex; see the k = 1 core.
     grad[je] = 2.0 * r.dot(dA * c);
   }
   return grad;

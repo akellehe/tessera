@@ -1,34 +1,34 @@
-// Causal-order comparison data classes plus the
-// `CausalOrders::fromSnapshots` factory. PLAN.md §5 / methodology
-// page §1, §4.4.
+// Causal-order comparison data classes and the
+// `CausalOrders::fromSnapshots` factory.
 //
-// ─── The three orders ────────────────────────────────────────────────────
+// The three orders on the (cut, time) label set:
 //
-//   1. ≼_maj — majorization order: (A, s) ≼_maj (B, t) iff the Schmidt
-//      spectrum λ_A(s) is majorized by λ_B(t). Built by feeding all
-//      snapshot spectra (across cuts AND times) into the
-//      Majorization::posetOf routine. The hypothesis that this order
-//      "sees" the entanglement causal structure is the methodology
-//      page's central claim.
+//   1. ≼_maj - majorization order: (A, s) ≼_maj (B, t) iff the Schmidt
+//      spectrum λ_A(s) is majorized by λ_B(t). Built by feeding every
+//      snapshot spectrum (across cuts and times) into
+//      Majorization::posetOf.
 //
-//   2. ≼_LR — Lieb-Robinson cone: (A, s) ≼_LR (B, t) iff s < t AND the
+//   2. ≼_LR - Lieb-Robinson cone: (A, s) ≼_LR (B, t) iff s < t and the
 //      shortest distance between intervals A and B is ≤ vLr · (t − s).
-//      Within-cone information transport bound from
-//      {LiebRobinson1972, HastingsKoma2006}.
 //
-//   3. ≼_cs — causet order: on a regular chain this is just the time
-//      order: (A, s) ≼_cs (B, t) iff s < t. Replacing the chain with
-//      a non-trivial causet (see the Causet adapter) makes ≼_cs
-//      informative within time slices too.
+//   3. ≼_cs - causal-set order: on a regular chain this is the time
+//      order, (A, s) ≼_cs (B, t) iff s < t. With a non-trivial causal
+//      set (see the Causet adapter) ≼_cs is informative within a time
+//      slice too.
 //
 // Each order is stored as a Hasse-cover Poset over the same shared
-// label set. `Majorization::agreement` then computes Kendall-τ, the
+// label set. `Majorization::agreement` computes Kendall-τ, the
 // discordant-pair fraction, and the Hasse-graph edit distance between
 // any two of the three.
 //
 // The end-to-end pipeline (config → snapshots → orders → report) lives
-// on SchwingerQuench (see tdvp_runner.hpp). This file just defines the
-// data types and the orders factory.
+// on SchwingerQuench (TDVPRunner.hpp); this file defines the data types
+// and the orders factory.
+//
+// References:
+//   Lieb & Robinson, "The finite group velocity of quantum spin
+//     systems" (1972); Nachtergaele & Sims, arXiv:math-ph/0506030.
+//   Sorkin, "Causal Sets: Discrete Gravity", arXiv:gr-qc/0309009.
 
 #pragma once
 
@@ -51,8 +51,8 @@ using namespace ::tessera::spacetime;
 using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 
-// Forward decl — TDVPSnapshot is defined in tdvp_runner.hpp; we only
-// need its name to declare CausalOrders::fromSnapshots.
+// TDVPSnapshot is defined in TDVPRunner.hpp; only its name is needed
+// to declare CausalOrders::fromSnapshots.
 struct TDVPSnapshot;
 
 // One node in the (cut, time) label set.
@@ -71,15 +71,15 @@ struct CausalOrders {
     std::vector<LabelSpacetime> labels;
     Poset maj;     // strict-majorization
     Poset lr;      // Lieb-Robinson cone
-    Poset cs;      // causet (time-only on regular chain)
+    Poset cs;      // causal set (time-only on a regular chain)
 
     // Build the cross-time majorization poset, the Lieb-Robinson cone
-    // poset, and the (regular-chain) causet poset from a list of
+    // poset, and the (regular-chain) causal-set poset from a list of
     // snapshots. Snapshots must have been recorded with
     // `recordSpectra=true`.
     //
     // `predicate` selects the majorization variant for ≼_maj. nullptr
-    // means classical {N1999} majorization (StandardMajorization{1e-12}).
+    // means classical majorization (StandardMajorization{1e-12}).
     [[nodiscard]] static CausalOrders fromSnapshots(
         std::vector<TDVPSnapshot> const& snapshots,
         double vLr,

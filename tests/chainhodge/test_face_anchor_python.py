@@ -135,7 +135,12 @@ class TestAnchorCoordinate:
         g = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
         g_inv_t = np.linalg.inv(g).T
         again = np.asarray(FA.anchorCoordinates(cov, Zd @ g_inv_t, Z @ g))
-        np.testing.assert_allclose(again, alpha, rtol=1e-9)
+        # atol floored at the vector's own scale: an entry that is small through
+        # cancellation carries the absolute error of the whole computation, not
+        # the error its own magnitude suggests, so a bare rtol asks it for
+        # accuracy the arithmetic never had.
+        np.testing.assert_allclose(again, alpha, rtol=1e-9,
+                                   atol=1e-9 * np.abs(alpha).max())
 
     def test_invariant_under_orthogonal_frame_gauge_at_trivial_connection(self):
         rng = np.random.default_rng(17)
@@ -151,7 +156,8 @@ class TestAnchorCoordinate:
         O = expm(A)  # O^T O = I, det O = 1
         np.testing.assert_allclose(O.T @ O, np.eye(3), atol=1e-12)
         again = np.asarray(FA.anchorCoordinates(cov, Z @ O, Z @ O))
-        np.testing.assert_allclose(again, alpha, rtol=1e-9)
+        np.testing.assert_allclose(again, alpha, rtol=1e-9,
+                                   atol=1e-9 * np.abs(alpha).max())
 
     def test_invariant_under_vertex_gauge(self):
         rng = np.random.default_rng(19)

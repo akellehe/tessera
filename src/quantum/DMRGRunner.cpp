@@ -1,5 +1,5 @@
-// Implementation of SchwingerModel — see dmrg_runner.hpp for the
-// architectural rationale.
+// Implementation of SchwingerModel — see include/quantum/DMRGRunner.hpp
+// for the design.
 
 #include "quantum/DMRGRunner.hpp"
 
@@ -22,9 +22,9 @@ using namespace ::tessera::simulations;
 
 namespace {
 
-// Néel |↑↓↑↓…⟩ initial state. Total Sz = 0 (for even N), which is the
-// charge-neutral sector Bañuls 2013 works in. With ConserveQNs=true on
-// the SiteSet, DMRG stays in this sector.
+// Néel |↑↓↑↓…⟩ initial state. For even N the total Sz is 0, the
+// charge-neutral sector. With ConserveQNs=true on the SiteSet, DMRG
+// stays in that sector.
 itensor::MPS neelInit(itensor::SpinHalf const& sites, int N) {
     auto state = itensor::InitState(sites);
     for (int i = 1; i <= N; ++i) {
@@ -33,11 +33,11 @@ itensor::MPS neelInit(itensor::SpinHalf const& sites, int N) {
     return itensor::MPS(state);
 }
 
-// Build the sweep schedule for ITensor::dmrg. We ramp the bond-dim cap
-// (20 → 40 → 80 → max) over the first sweeps so early iterations don't
-// commit truncation errors that later sweeps have to undo. Noise is on
-// for the first two sweeps to perturb out of local minima, then off so
-// later sweeps converge cleanly.
+// Sweep schedule for ITensor::dmrg. The bond-dimension cap ramps
+// 20 → 40 → 80 → max over the first sweeps, so early iterations do not
+// commit truncation errors that later sweeps must undo. Noise is on for
+// the first two sweeps to escape local minima, then off so the later
+// sweeps converge cleanly.
 itensor::Sweeps makeSweeps(QuantumConfig const& cfg) {
     auto sweeps = itensor::Sweeps(cfg.nSweeps);
     const int b = cfg.maxBondDim;
@@ -51,9 +51,8 @@ itensor::Sweeps makeSweeps(QuantumConfig const& cfg) {
     return sweeps;
 }
 
-// Run DMRG and package the diagnostics. Returns the optimized MPS as the
-// second member of the pair so callers wanting Schmidt spectra can keep
-// using it.
+// Run DMRG and package the diagnostics. The optimized MPS is returned
+// alongside so callers that want Schmidt spectra can reuse it.
 struct DmrgRun {
     GroundStateResult result;
     itensor::MPS      psi;
@@ -98,8 +97,8 @@ SchwingerModel::solveWithMajorization(double tol) const {
     GroundStateMajorizationResult out;
     out.groundState = run.result;
 
-    // All contiguous-cut Schmidt spectra. For the sizes we test
-    // (N ≤ 20) this is well under a second on top of the DMRG run.
+    // All contiguous-cut Schmidt spectra. At N ≤ 20 this adds well under
+    // a second to the DMRG run.
     out.spectra = Schmidt::allOf(run.psi);
 
     // Majorization poset (Hasse cover edges only).

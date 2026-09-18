@@ -9,9 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples" / "cobordism"))
-import harmonic_correspondence as hc  # noqa: E402
+from tessera.drivers import harmonic as hc
 
 
 def graph_fixture(operator):
@@ -137,7 +135,7 @@ def test_choi_ray_survives_extreme_nonzero_operator_scale(scale):
 
 @pytest.fixture
 def geometry():
-    import qubit_animation as qa
+    from tessera.drivers import qubit as qa
     return qa.build_qubit_node(qa.build_config(steps=0, grid=3, regge=False))
 
 
@@ -179,7 +177,7 @@ def test_scalar_bulk_geometry_changes_gram_not_period_transport(geometry):
 
 
 def test_animation_record_and_render(tmp_path):
-    import qubit_animation as qa
+    from tessera.drivers import qubit as qa
     result = qa.drive(qa.build_config(steps=0, grid=3, regge=False))
     record = json.loads(json.dumps(result.frames[0].to_json(), allow_nan=False))
     assert not record["correspondence"]["requested_gate"]["certified"]
@@ -275,7 +273,7 @@ def test_a_gram_obstruction_does_not_hide_period_transport(geometry):
 
 
 def test_numerical_failure_is_a_named_animation_absence(monkeypatch):
-    import qubit_animation as qa
+    from tessera.drivers import qubit as qa
 
     def failed_read(node):
         raise np.linalg.LinAlgError("test singular-value solve failure")

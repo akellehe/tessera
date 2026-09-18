@@ -12,13 +12,10 @@ namespace tessera::cobordism {
 
 /// # OccupationSpectra
 ///
-/// Fermionic second quantization at the SPECTRUM/MATRIX level (#764): the
-/// free many-body spectra and one-particle block assemblies that follow
-/// algebraically from a one-particle operator, with no Fock-space operator
-/// ever materialized. The operator layer itself — creation/annihilation
-/// matrices, wedge products, \f$ d\Gamma \f$ as a Fock operator — is the
-/// exterior-algebra track's; everything here is a consequence of the exact
-/// identities
+/// Fermionic second quantization at the spectrum/matrix level: the free
+/// many-body spectra and one-particle block assemblies that follow from a
+/// one-particle operator, with no Fock-space operator materialized. Everything
+/// here follows from the exact identities
 ///
 /// \f[ \mathrm{spec}\, d\Gamma(h)\big|_{\Lambda^N} =
 ///     \Big\{ \textstyle\sum_{i\in S}\lambda_i : S\subseteq\mathrm{spec}\,h,
@@ -31,13 +28,11 @@ namespace tessera::cobordism {
 /// spectrum identity that the subset sums of \f$ h_A\oplus h_B \f$ are the
 /// merged pairwise sums over particle splits \f$ N = N_A + N_B \f$.
 ///
-/// Domain: exact for ANY square one-particle operator — eigenvalues may be
-/// complex (the Lorentzian d'Alembertian is generally non-normal); nothing
-/// here assumes Hermitian or positive-definite. All returned spectra are
-/// sorted ascending by \f$ (\mathrm{Re}, \mathrm{Im}) \f$, the `Spectrum`
-/// convention, so equal multisets compare elementwise. Enumerations are
-/// output-sensitive and refuse to materialize outputs beyond `maxTerms`
-/// (the `gf2Span` convention) instead of allocating an unbounded result.
+/// Exact for any square one-particle operator: eigenvalues may be complex and
+/// nothing assumes a Hermitian or positive-definite operator. Returned spectra
+/// are sorted ascending by \f$ (\mathrm{Re}, \mathrm{Im}) \f$, the `Spectrum`
+/// convention, so equal multisets compare elementwise. An enumeration whose
+/// output would exceed `maxTerms` throws.
 class OccupationSpectra {
   public:
     /// Refusal threshold for enumerated outputs (number of terms).
@@ -53,19 +48,17 @@ class OccupationSpectra {
         const std::vector<std::complex<double>> &oneParticle, int particles,
         std::size_t maxTerms = kDefaultMaxTerms);
 
-    /// All \f$ 2^n \f$ subset sums — the full free fermionic Fock spectrum of
+    /// All \f$ 2^n \f$ subset sums: the free fermionic Fock spectrum of
     /// \f$ d\Gamma(h) \f$ across every particle number.
     /// @throws std::length_error when \f$ 2^n \f$ would exceed `maxTerms`.
     [[nodiscard]] static std::vector<std::complex<double>> fockSums(
         const std::vector<std::complex<double>> &oneParticle,
         std::size_t maxTerms = kDefaultMaxTerms);
 
-    /// The free \f$ N \f$-particle spectrum of \f$ h_A \oplus h_B \f$
-    /// computed FROM THE FACTORS — the \f$ F_-(h_A)\hat\otimes F_-(h_B) \f$
-    /// identity at the spectrum level: merge over \f$ N_A + N_B = N \f$ of
-    /// the pairwise sums of the factors' subset sums. Equals
-    /// `subsetSums(concat(A, B), N)` exactly; the two paths cross-validate
-    /// the direct-sum identity.
+    /// The free \f$ N \f$-particle spectrum of \f$ h_A \oplus h_B \f$ computed
+    /// from the factors — the \f$ F_-(h_A)\hat\otimes F_-(h_B) \f$ identity at
+    /// the spectrum level: merge over \f$ N_A + N_B = N \f$ of the pairwise sums
+    /// of the factors' subset sums. Equals `subsetSums(concat(A, B), N)`.
     /// @throws as `subsetSums`.
     [[nodiscard]] static std::vector<std::complex<double>> directSumSubsetSums(
         const std::vector<std::complex<double>> &factorA,
@@ -80,14 +73,13 @@ class OccupationSpectra {
         const std::vector<std::complex<double>> &blockB, int dimB);
 
     /// The one-particle hopping-block assembly
-    /// \f[ h = \begin{pmatrix} h_A & C \\ C' & h_B \end{pmatrix}, \f]
-    /// where `coupling` is the \f$ n_A\times n_B \f$ block \f$ C \f$ and
-    /// `couplingReverse` the \f$ n_B\times n_A \f$ block \f$ C' \f$. An
-    /// EMPTY `couplingReverse` selects \f$ C' = C^\dagger \f$ — the
-    /// Hermitian hopping term \f$ \sum c_i^\dagger C_{ij} c_j +
-    /// \text{h.c.} \f$ at the one-particle level; passing it explicitly
-    /// supports the non-normal regime, where the reverse block is
-    /// independent data.
+    /// \f$ h = \begin{pmatrix} h_A & C \\ C' & h_B \end{pmatrix} \f$, where
+    /// `coupling` is the \f$ n_A\times n_B \f$ block \f$ C \f$ and
+    /// `couplingReverse` the \f$ n_B\times n_A \f$ block \f$ C' \f$. An empty
+    /// `couplingReverse` selects \f$ C' = C^\dagger \f$, the Hermitian hopping
+    /// term \f$ \sum c_i^\dagger C_{ij} c_j + \text{h.c.} \f$ at the
+    /// one-particle level; in the non-normal regime the reverse block is
+    /// independent data and must be passed explicitly.
     /// @throws std::invalid_argument on dimension mismatch.
     [[nodiscard]] static std::vector<std::complex<double>> hoppingBlock(
         const std::vector<std::complex<double>> &blockA, int dimA,

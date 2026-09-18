@@ -25,18 +25,18 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-/// (3,3) Pachner shift move with apply / rollback.
+/// (3,3) Pachner move (shift) with apply / rollback.
 ///
-/// Removes 3 d-simplices sharing a (d-2)-face and creates 3 new
+/// Removes 3 d-simplices sharing a (d-2)-face (hinge) and creates 3 new
 /// simplices sharing the complementary (d-2)-face.  ``dN0 = 0`` and
-/// ``dN41 + dN32 = 0`` (the move preserves the top-simplex count).
-/// Self-inverse: the inverse is another shift on the same hinge with
-/// roles swapped.
+/// ``dN41 + dN32 = 0``: the top-simplex count is preserved.  Self-inverse —
+/// the inverse is another shift on the same hinge with the roles swapped.
 ///
-/// The Metropolis log prefactor is 0 — the move's selection is
-/// symmetric under the swap.  See ``CDT::shiftImpl`` in
-/// ``src/simulations/CDT.cpp`` for the original (non-transactional)
-/// implementation.
+/// The Metropolis log prefactor is 0: selection is symmetric under that
+/// swap.  ``CDT::shiftImpl`` is the non-transactional version of the same
+/// move.
+///
+/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267.
 class ShiftMove : public PachnerMove {
 public:
   /// Construct with a caller-owned RNG (used by CDT internally so all
@@ -58,9 +58,8 @@ public:
   void rollback() override;
   bool isApplied() const override { return applied_; }
   std::vector<std::uint64_t> touchedVertexIds() const override;
-  /// The canonical name of this move type, defined ONCE here so callers
-  /// that dispatch on it (MultiCobordism's move draw, CDT's acceptance-rate
-  /// accounting) reference this rather than re-spelling the literal.
+  /// Canonical name of this move type, for the callers that dispatch on it
+  /// (MultiCobordism's move draw, CDT's acceptance-rate accounting).
   static constexpr const char *kMoveType = "shift";
   std::string moveType() const override { return kMoveType; }
 
@@ -80,12 +79,11 @@ private:
   // Filled in by apply() — used by rollback()
   bool applied_ = false;
   std::vector<SimplexPtr> oldSimplices_;      // captured pre-apply
-  // Vertex tuples of simplices we *actually* created (i.e. createSimplexTracked
-  // returned created=true).  Stored as verts rather than SimplexPtr so rollback
-  // is robust when another move runs in between and deletes the underlying
-  // Simplex (the pointer would become dangling; the verts are stable).  See
-  // tests/test_pachner_shift_move.py::TestShiftStress::test_apply_apply_rollback_rollback_chain
-  // and Spacetime::findSimplexByVerts.
+  // Vertex tuples of the simplices actually created (createSimplexTracked
+  // returned created=true).  Stored as verts rather than SimplexPtr so
+  // rollback survives another move deleting the underlying Simplex in
+  // between: the pointer would dangle, the verts stay valid.  Resolved
+  // through Spacetime::findSimplexByVerts.
   std::vector<VertexPtrs> createdSimplexVerts_;
   Edges createdEdges_;
 };

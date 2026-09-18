@@ -23,10 +23,11 @@ using namespace ::tessera::quantum;
 
 class Spacetime;
 
-/// # Spatial Topology
+/// # Spatial topology
 ///
-/// Abstract base class for the topology of spatial slices in a foliated spacetime.
-/// In CDT, the spacetime manifold \f$ \mathcal{M} \f$ has the product structure
+/// Abstract base class for the topology of spatial slices in a foliated
+/// spacetime. In causal dynamical triangulation (CDT) the spacetime manifold
+/// \f$ \mathcal{M} \f$ has the product structure
 ///
 /// \f[
 ///   \mathcal{M} \cong \Sigma \times I
@@ -37,10 +38,14 @@ class Spacetime;
 /// The topology of \f$ \Sigma \f$ is fixed throughout the simulation and
 /// determines the boundary conditions and initial triangulation.
 ///
-/// Subclasses implement `build()` to construct an initial triangulation matching
-/// their spatial topology via the coning mechanism: a seed \f$ d \f$-simplex is
-/// created at each time layer, and exterior facets are iteratively coned to new
-/// vertices to grow the complex.
+/// Subclasses implement `build()` to construct an initial triangulation with
+/// their spatial topology. The CDT topologies grow one by coning — a seed
+/// \f$ d \f$-simplex per time layer whose exterior facets are iteratively coned
+/// to new vertices — or, for :class:`Toroid`, by stacking staircase-triangulated
+/// time slabs. The fixed-triangulation fixtures instead list their top simplices
+/// explicitly (``buildExplicit``).
+///
+/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267.
 ///
 class Topology {
   public:
@@ -57,12 +62,12 @@ class Topology {
     virtual void build(Spacetime *spacetime, int numSimplices) = 0;
 
     /// The intrinsic dimension \f$ d \f$ of the manifold this topology
-    /// triangulates — i.e. its top cells are \f$ d \f$-simplices on
-    /// \f$ d+1 \f$ vertices. This is the single source of truth a caller uses
-    /// to pick the matching ``Signature(d, …)`` so the complex's top cells
-    /// register as top-dimensional (``Spacetime::getTopVertexCount`` == d+1);
-    /// without that match ``topSimplicesVec`` stays empty and boundary / random-
-    /// top queries see nothing.
+    /// triangulates: its top cells are \f$ d \f$-simplices on \f$ d+1 \f$
+    /// vertices. A caller uses it to pick the matching ``Signature(d, …)`` so
+    /// the complex's top cells register as top-dimensional
+    /// (``Spacetime::getTopVertexCount`` == d+1). Without that match
+    /// ``topSimplicesVec`` stays empty and boundary / random-top queries return
+    /// nothing.
     ///
     /// The fixed-triangulation fixtures (``SimplexBoundarySphere``,
     /// ``SolidSimplex``, ``RealProjectivePlane``, ``RealProjectiveSpace``,
@@ -75,18 +80,18 @@ class Topology {
     [[nodiscard]] virtual int dimension() const;
 
   protected:
-    /// Build an explicit, *pre-geometric* triangulation from a combinatorial
-    /// description: create `numVertices` **coordinate-free** vertices
+    /// Build an explicit, pre-geometric triangulation from a combinatorial
+    /// description: create `numVertices` coordinate-free vertices
     /// (ids 0..numVertices-1) and one top simplex per vertex-id tuple in
     /// `topSimplices`.
     ///
-    /// No coordinates are assigned — the cobordism capabilities (homology,
+    /// No coordinates are assigned. The cobordism capabilities (homology,
     /// characteristic numbers, cobordism existence) are purely combinatorial;
     /// geometry (vertex coordinates / edge lengths) is layered on only when a
-    /// geometric capability (reconstruction, Regge) actually needs it. Edges
-    /// are still materialized by ``createSimplex`` so the incidence structure
-    /// is complete; any squared length they carry is an unused placeholder, not
-    /// meaningful geometry.
+    /// geometric capability such as reconstruction or the Regge action needs
+    /// it. Edges are still materialized by ``createSimplex`` so the incidence
+    /// structure is complete; any squared length they carry is an unused
+    /// placeholder, not meaningful geometry.
     ///
     /// Shared by the exact, fixed-triangulation topologies
     /// (``SimplexBoundarySphere``, ``SolidSimplex``, ``RealProjectivePlane``,

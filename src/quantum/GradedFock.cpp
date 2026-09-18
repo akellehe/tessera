@@ -1,5 +1,5 @@
 // Implementation of the exterior-algebra / graded-tensor primitives declared
-// in include/quantum/GradedFock.h (issue #766). Everything here is an exact
+// in include/quantum/GradedFock.h. Everything here is an exact
 // integer/algebraic identity compiled into matrices — no approximation, no
 // tolerance, no runtime guards beyond argument validation.
 
@@ -433,7 +433,7 @@ ExteriorAlgebra::SparseOp ExteriorAlgebra::annihilationOperator(
 Eigen::VectorXcd ExteriorAlgebra::wedge(
     const std::vector<Eigen::VectorXcd>& vectors) const {
     Eigen::VectorXcd state = vacuumState();
-    // v1 ∧ … ∧ vn = a†(v1)…a†(vn) Ω: the RIGHTMOST factor acts first.
+    // v1 ∧ … ∧ vn = a†(v1)…a†(vn) Ω: the rightmost factor acts first.
     for (auto it = vectors.rbegin(); it != vectors.rend(); ++it) {
         const Eigen::VectorXcd& v = *it;
         if (static_cast<std::size_t>(v.size()) != modeCount_) {
@@ -809,7 +809,7 @@ FockDirectSum::SparseOp FockDirectSum::liftLeft(const SparseOp& opA) const {
                                     ", expected " + std::to_string(dimA) +
                                     "x" + std::to_string(dimA));
     }
-    // Joint index n(b) = i_A + 2^{M_A} i_B  ⇒  the B index is the OUTER
+    // Joint index n(b) = i_A + 2^{M_A} i_B, so the B index is the outer
     // (slow) factor: X_A ⊗ 1 compiles to kron(Id_B, X_A).
     SparseOp idB(static_cast<Eigen::Index>(1ull << modesB_),
                  static_cast<Eigen::Index>(1ull << modesB_));
@@ -912,7 +912,7 @@ EdgeModeRegistry EdgeModeRegistry::fromSpacetime(
         const auto& source = edge->getSource();
         const auto& target = edge->getTarget();
         if (source == nullptr || target == nullptr) continue;
-        // The stored source -> target direction IS the mode's orientation, so
+        // The stored source -> target direction is the mode's orientation, so
         // the sign against the canonical min -> max direction stays derivable
         // from the ids alone (canonicalOrientationSign).
         registry.addEdge(source->getId(), target->getId(), +1, lineageKey);

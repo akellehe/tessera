@@ -1,12 +1,12 @@
 // QuantumVertex — mesh::Vertex carrying a density matrix.
 //
-// QuantumVertex extends mesh::Vertex with an Eigen-typed density
-// matrix in its local Hilbert space. The matrix dimension is set at
-// construction time (no compile-time template), so different
-// QuantumVertex objects in the same VertexList can carry states of
-// different sizes — e.g. the A, B vertices of a KI-interaction cell
-// carry ρ_A, ρ_B (dim d_A, d_B), the Σ vertex carries ρ_Σ on the KI
-// core, and the A', B' tail vertices carry ρ_{A'}, ρ_{B'}.
+// QuantumVertex extends mesh::Vertex with an Eigen-typed density matrix
+// in its local Hilbert space. The dimension is fixed at construction
+// rather than by template parameter, so QuantumVertex objects in one
+// VertexList can carry states of different sizes: the A, B vertices of a
+// Koashi-Imoto (KI) interaction cell carry ρ_A, ρ_B of dimension d_A,
+// d_B, the Σ vertex carries ρ_Σ on the KI core, and the A', B' tail
+// vertices carry ρ_{A'}, ρ_{B'}.
 //
 // QuantumVertex lives in tessera_quantum because density matrices
 // require Eigen, and tessera_core is deliberately Eigen-free.
@@ -63,29 +63,24 @@ class QuantumVertex : public ::tessera::mesh::Vertex {
       return static_cast<int>(state_.rows());
     }
 
-    /// Compute the Van Raamsdonk distance d_VR = −log(I / iMax)
-    /// between this vertex and ``other``. I is the mutual
-    /// information of the bipartite *product joint*
-    /// ρ_this ⊗ ρ_other, so this method gives the correct d_VR for
-    /// any pair that has no inherited correlation (which is every
-    /// pair the KI factories build except the input (A, B) edge).
-    /// Two product marginals have I = 0, so the returned distance
-    /// is +∞ except in trivial cases.
+    /// Van Raamsdonk distance d_VR = −log(I / iMax) between this vertex
+    /// and ``other``. I is the mutual information of the product joint
+    /// ρ_this ⊗ ρ_other, which is the right joint for a pair carrying no
+    /// inherited correlation — every pair the KI factories build except
+    /// the input (A, B) edge. A product joint has I = 0, so the returned
+    /// distance is +∞.
     ///
-    /// The KI-cell factory uses this method for the nine
-    /// non-(A, B) edges and computes the (A, B) edge separately
-    /// from its input joint ρ_AB. The factory then writes
-    /// d_VR² into ``Edge::squaredLength`` (the canonical edge
-    /// length-property field).
+    /// The KI-cell factory uses this method for the nine non-(A, B)
+    /// edges and computes the (A, B) edge from its input joint ρ_AB. It
+    /// then writes d_VR² into ``Edge::squaredLength``.
     ///
-    /// ``other`` must be a QuantumVertex — throws otherwise.
+    /// Throws std::invalid_argument if ``other`` is not a QuantumVertex.
     [[nodiscard]] double
     vanRaamsdonkDistanceTo(const ::tessera::mesh::Vertex* other,
                            double                          iMax) const;
 
-    /// Convenience downcast: pulls a QuantumVertex* out of a
-    /// Vertex* via dynamic_cast and throws if the dynamic type is
-    /// wrong.
+    /// Downcast a Vertex* to QuantumVertex*; throws
+    /// std::invalid_argument if the dynamic type is wrong.
     static QuantumVertex* require(::tessera::mesh::Vertex* v) {
       auto* qv = dynamic_cast<QuantumVertex*>(v);
       if (qv == nullptr) {

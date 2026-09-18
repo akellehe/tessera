@@ -10,11 +10,12 @@
 namespace tessera::spacetime {
 class Spacetime;
 
-/// # Complex projective plane \f$ \mathbb{CP}^2 \f$ (minimal 9-vertex)
+/// # Complex projective plane (minimal 9-vertex triangulation)
 ///
-/// Kühnel's 9-vertex triangulation of \f$ \mathbb{CP}^2 \f$ — the unique
-/// minimal triangulation of any manifold that is neither a sphere nor a
-/// boundary of a simplex. A closed, orientable, smooth 4-manifold with
+/// Kühnel's 9-vertex triangulation of the complex projective plane
+/// \f$ \mathbb{CP}^2 \f$ — the unique minimal triangulation of any manifold
+/// that is neither a sphere nor the boundary of a simplex. A closed,
+/// orientable, smooth 4-manifold with
 /// f-vector \f$ (9, 36, 84, 90, 36) \f$, Euler characteristic
 /// \f$ \chi = 3 \f$, Betti numbers \f$ (1, 0, 1, 0, 1) \f$, and a definite
 /// intersection form of rank one — so the signature has absolute value one,
@@ -30,14 +31,14 @@ class Spacetime;
 /// from the literature's \f$ 1\ldots 9 \f$ to tessera's \f$ 0\ldots 8 \f$, under
 /// which \f$ S \f$ becomes \f$ (0\,3\,6)(1\,4\,7)(2\,5\,8) \f$.
 ///
-/// ## Orientation note
+/// ## Orientation
 ///
-/// \f$ \mathbb{CP}^2 \f$ and its orientation reversal \f$ \overline{\mathbb{CP}}^2 \f$
-/// are the *same* simplicial complex; they differ only by a choice of
-/// fundamental class (which generator of \f$ \ker \partial_4 \f$). The
-/// signature's magnitude \f$ |\sigma| = 1 \f$ is the orientation-independent
-/// invariant; its sign is a convention fixed by how the fundamental class is
-/// selected.
+/// \f$ \mathbb{CP}^2 \f$ and its orientation reversal
+/// \f$ \overline{\mathbb{CP}}^2 \f$ are the same simplicial complex; they
+/// differ only in the choice of fundamental class (which generator of
+/// \f$ \ker \partial_4 \f$). The orientation-independent invariant is the
+/// signature's magnitude \f$ |\sigma| = 1 \f$; its sign follows from how the
+/// fundamental class is picked.
 ///
 /// Exact, fixed, pre-geometric (coordinate-free); ``build()`` ignores
 /// ``numSimplices``.

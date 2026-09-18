@@ -1,16 +1,15 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 //
-// A Gym-style environment over the `MultiCobordism` objective search — the C++/libtorch
-// port of `examples/cobordism/rl/objective_env.py` (#537/#546, ported in #551).
+// A Gym-style reinforcement-learning environment over the `MultiCobordism` objective search.
 //
-// This is a HARNESS, not a builder: MultiCobordism + Proton are the sole source of truth for
-// proton construction, and this env only DRIVES them. Every macro-action is one
-// `MultiCobordism::buildStep` (and, when `directedGrow`, the CANONICAL `directedConeOut`/
-// `directedConeIn` probe, #550 — never a reimplementation); the observation and reward only
-// READ published engine quantities (r_U, reggeActionGradient, emergentHoles, r_state, betti).
-// The fixed `Proton.build()` schedule (init -> evolve -> relax) becomes the RL problem: the
-// agent learns WHICH macro-action to take and with what parameters.
+// This is a harness, not a builder: MultiCobordism and Proton are the source of truth for
+// proton construction, and this environment only drives them. Every macro-action is one
+// `MultiCobordism::buildStep`, plus the `directedConeOut`/`directedConeIn` probe when
+// `directedGrow` is set; the observation and reward only read published engine quantities
+// (r_U, reggeActionGradient, emergentHoles, r_state, Betti numbers). The fixed
+// `Proton.build()` schedule (init -> evolve -> relax) becomes the learning problem: the
+// agent chooses which macro-action to take, and with what parameters.
 
 #ifndef TESSERA_RL_COBORDISM_OBJECTIVE_ENV_H
 #define TESSERA_RL_COBORDISM_OBJECTIVE_ENV_H
@@ -27,24 +26,25 @@ namespace tessera::cobordism { class MultiCobordism; }
 
 namespace tessera::rl {
 
-/// The discrete macro-moves (the policy's categorical head): GROW/EVOLVE are stage-1 surgery
-/// passes (boundary-growing vs frozen-boundary evolution); RELAX is a stage-2 relaxation.
+/// The discrete macro-moves, drawn from the policy's categorical head. Grow and Evolve are
+/// stage-1 surgery passes (boundary-growing and frozen-boundary respectively); Relax is a
+/// stage-2 relaxation.
 enum class Move { Grow = 0, Evolve = 1, Relax = 2 };
 inline constexpr int kNumMoves = 3;
-/// Continuous params per action (the Gaussian head): [intensity, knob], each clipped to [0,1].
+/// Continuous parameters per action, from the Gaussian head: [intensity, knob], each
+/// clipped to [0, 1].
 inline constexpr int kParamDim = 2;
 inline constexpr int kBettiSlots = 5;
-/// Observation layout: 4 slog scalars + 5 Betti slots + hole count + 3 size counts + budget
-/// fraction + kNumMoves last-move one-hot.
+/// Observation layout: 4 signed-log scalars, 5 Betti slots, the hole count, 3 size counts,
+/// the budget fraction, and a `kNumMoves`-wide one-hot of the previous move.
 inline constexpr int kObsDim = 4 + kBettiSlots + 1 + 3 + 1 + kNumMoves;  // 17
 
-/// `seed -> node` factory (Step A recombination or Step B formation).
+/// `seed -> node` factory, for either the recombination or the formation setup.
 using NodeFactory =
     std::function<std::shared_ptr<cobordism::MultiCobordism>(std::uint64_t)>;
 
-/// Knobs mirroring the Python `CobordismObjectiveEnv`. The Python-probe-only knobs
-/// (cone_strategy / max_candidates / overshoot / probe_openers) are gone: directed surgery
-/// is now the canonical engine probe (`MultiCobordism::directedConeOut`/`directedConeIn`).
+/// Environment knobs: the engine setup, the per-move parameter ranges that the continuous
+/// action interpolates within, the reward weights, and the termination rule.
 struct EnvConfig {
   int registerDegree = 3;
   double gamma = 50.0;
@@ -65,7 +65,7 @@ struct EnvConfig {
   bool directedGrow = false;
 };
 
-/// One env transition's outcome — the Python `(obs, reward, done, info)` tuple flattened.
+/// One environment transition: the `(obs, reward, done, info)` tuple, flattened.
 struct StepResult {
   std::vector<float> obs;  // kObsDim
   double reward = 0.0;
@@ -83,20 +83,22 @@ struct StepResult {
   bool engineError = false;
 };
 
-/// A Gym-style RL environment over one `MultiCobordism` node's objective search. Faithful
-/// port of `objective_env.py`: same 17-dim observation, hybrid action (move + 2 params), and
-/// reward (slog ΔF + hole/r_state shaping + carry bonus + error penalty). Deterministic in
-/// the reset seed.
+/// A Gym-style reinforcement-learning environment over one `MultiCobordism` node's objective
+/// search: a 17-dimensional observation, a hybrid action (one move plus two continuous
+/// parameters), and a reward made of the signed-log ΔF drop, optional hole and r_state
+/// shaping, a carry bonus and an error penalty. Deterministic in the reset seed.
 class CobordismObjectiveEnv {
  public:
-  /// `target` empty = recombination (success = r_U → 0); non-empty = a whole-cobordism target
-  /// color state (e.g. the proton singlet), success = it is carried over ≥ targetHoles holes.
+  /// An empty `target` selects recombination, where success is \f$ r_U \to 0 \f$. A
+  /// non-empty `target` is a whole-cobordism target color state (for example the proton
+  /// singlet); success is that state being carried over at least `targetHoles` holes.
   CobordismObjectiveEnv(NodeFactory nodeFactory,
                         std::vector<std::complex<double>> target, EnvConfig config);
 
-  /// Seed a fresh node on a single Δ⁴ simplex; return the initial observation.
+  /// Seed a fresh node on a single Δ⁴ simplex and return the initial observation.
   std::vector<float> reset(std::uint64_t seed);
-  /// Apply ONE macro-action (move + params, clipped to [0,1]); return the transition.
+  /// Apply one macro-action (a move plus parameters clipped to [0, 1]) and return the
+  /// resulting transition.
   StepResult step(Move move, std::array<float, kParamDim> params);
 
   [[nodiscard]] int obsDim() const { return kObsDim; }
@@ -131,19 +133,18 @@ class CobordismObjectiveEnv {
   Metrics lastMetrics_;
 };
 
-/// `seed -> node` factories mirroring `formation_node_factory` / `recombination_node_factory`:
-/// Step B formation (2→1, the proton singlet carried by the whole) and Step A recombination
-/// (2→2, a colored diquark ⊔ antidiquark; no whole-cobordism target). Both build the node via
-/// `Proton` — the source of truth — so the RL drives the exact same setup `Proton.build()` does.
+/// `seed -> node` factories for the two setups: formation (2→1, the proton singlet carried by
+/// the whole cobordism) and recombination (2→2, a colored diquark ⊔ antidiquark, with no
+/// whole-cobordism target). Both build the node through `Proton`, so the agent drives the
+/// same setup `Proton.build()` does.
 [[nodiscard]] NodeFactory formationNodeFactory(int registerDegree = 3, double gamma = 50.0,
                                                double inputWeight = 20.0);
 [[nodiscard]] NodeFactory recombinationNodeFactory(int registerDegree = 3, double gamma = 50.0,
                                                    double inputWeight = 20.0);
 
-/// Convenience env builders mirroring `make_formation_env` / `make_recombination_env`:
-/// formation carries the proton singlet on the whole cobordism; recombination has no
-/// whole-cobordism target (success = r_U → 0). Both wire the `Proton`-backed factory +
-/// target internally, so the RL drives the exact node `Proton.build()` uses.
+/// Environment builders for the two setups. Formation carries the proton singlet on the whole
+/// cobordism; recombination has no whole-cobordism target, and succeeds as
+/// \f$ r_U \to 0 \f$. Both wire up the `Proton`-backed factory and target internally.
 [[nodiscard]] CobordismObjectiveEnv makeFormationEnv(EnvConfig config, double inputWeight = 20.0);
 [[nodiscard]] CobordismObjectiveEnv makeRecombinationEnv(EnvConfig config,
                                                          double inputWeight = 20.0);

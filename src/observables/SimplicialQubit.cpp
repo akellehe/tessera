@@ -1,6 +1,13 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// The qubit carried by a triangulated torus: the holomorphic line of its
+/// harmonic space, its period ratio tau, and the state and distances built
+/// from tau.
+/// Reference: Mercat, "Discrete Riemann Surfaces and the Ising model",
+/// arXiv:0909.3600
+
 #include "observables/SimplicialQubit.h"
 
 #include <algorithm>
@@ -32,22 +39,22 @@ using Complex = std::complex<double>;
 using chainhodge::Connection;
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kEps = std::numeric_limits<double>::epsilon();
-/// Rounding tolerance of the pure-gauge certificate (spec section 16): a
-/// gauge phi_e = g(target) - g(source) evaluated in doubles closes every loop
-/// to a few ulps; flux or holonomy of physical size sits far above this.
+/// Rounding tolerance of the pure-gauge check. A gauge
+/// phi_e = g(target) - g(source) evaluated in doubles closes every loop to a
+/// few units in the last place (ULP); physical flux or holonomy is far larger.
 constexpr double kGaugeTolerance = 1e-10;
-/// The sign relating the ordered simplicial cup product (f_A ∪ f_B)[K] of the
-/// period frame to the intersection number A · B of the marked cycles, fixed
-/// so that the flat torus of spec §12 (counterclockwise faces, A along 1 and
-/// B along tau: A · B = +1 by construction) reads +1 (`intersectionNumber`).
+/// Sign relating the ordered simplicial cup product (f_A ∪ f_B)[K] of the
+/// period frame to the intersection number A · B of the marked cycles. Fixed
+/// so that `flatTorus` (counterclockwise faces, A along 1 and B along tau, so
+/// that A · B = +1) reads +1 in `intersectionNumber`.
 constexpr double kCupSign = 1.0;
 
-/// rot90(x, y) = (-y, x): the +90 degree rotation of spec §7 / §8.
+/// rot90(x, y) = (-y, x): rotation by +90 degrees in the plane.
 Eigen::Vector2d rot90(const Eigen::Vector2d &v) { return Eigen::Vector2d(-v(1), v(0)); }
 Eigen::Vector2cd rot90c(const Eigen::Vector2cd &v) { return Eigen::Vector2cd(-v(1), v(0)); }
 
-/// The transpose (bilinear) pairing of spec §16: a . b = a_1 b_1 + a_2 b_2,
-/// never a conjugate (Eigen's dot() conjugates its first argument).
+/// Bilinear (transpose) pairing a . b = a_1 b_1 + a_2 b_2, never conjugated
+/// (Eigen's dot() conjugates its first argument).
 Complex pairT(const Eigen::Vector2cd &a, const Eigen::Vector2cd &b) { return a(0) * b(0) + a(1) * b(1); }
 
 std::string edgeText(std::uint64_t u, std::uint64_t v) {
@@ -64,8 +71,8 @@ std::string complexText(Complex z) {
   return s.str();
 }
 
-/// The face's boundary traversal (spec §3): local edge slots 0, 1, 2 are
-/// (i, j), (j, k), (k, i); slot s is opposite the local vertex (s + 2) mod 3.
+/// The face's boundary traversal: local edge slots 0, 1, 2 are (i, j), (j, k),
+/// (k, i); slot s is opposite the local vertex (s + 2) mod 3.
 std::pair<std::uint64_t, std::uint64_t> traversal(const SimplicialQubit::Face &f, int slot) {
   switch (slot) {
     case 0: return {f[0], f[1]};
@@ -76,10 +83,9 @@ std::pair<std::uint64_t, std::uint64_t> traversal(const SimplicialQubit::Face &f
 
 int oppositeVertexSlot(int edgeSlot) { return (edgeSlot + 2) % 3; }
 
-/// Spec §4: the three angles of a triangle with a = l(jk), b = l(ki), c = l(ij)
-/// by the law of cosines (the cosine is clamped to [-1, 1]; with the strict
-/// triangle inequality it lies strictly inside, so the clamp only absorbs
-/// rounding).
+/// The three angles of a triangle with a = l(jk), b = l(ki), c = l(ij), by the
+/// law of cosines. The cosine is clamped to [-1, 1]; under the strict triangle
+/// inequality it lies strictly inside, so the clamp only absorbs rounding.
 std::array<double, 3> anglesOf(double a, double b, double c) {
   auto angle = [](double cosine) { return std::acos(std::clamp(cosine, -1.0, 1.0)); };
   return {angle((b * b + c * c - a * a) / (2.0 * b * c)),
@@ -94,16 +100,16 @@ int numericalRank(const Eigen::MatrixXd &m) {
   return static_cast<int>(lu.rank());
 }
 
-/// The principal square root with a real argument kept on the +0 side of the
-/// cut (the `WhitneyMass` convention): a negative real squared length gives
-/// +i times the root, never -i through a signed zero.
+/// Principal square root with a real argument kept on the +0 side of the cut
+/// (the `WhitneyMass` convention): a negative real squared length gives +i
+/// times the root, never -i through a signed zero.
 Complex principalSqrt(Complex z) {
   if (z.imag() == 0.0) z = Complex(z.real(), 0.0);
   return std::sqrt(z);
 }
 
-/// scipy.linalg.null_space over C: the right singular vectors of the singular
-/// values at or below eps * max(M, N) * sigma_max (spec §6, §16).
+/// Complex null space: the right singular vectors whose singular values are at
+/// or below eps * max(M, N) * sigma_max (the scipy.linalg.null_space rule).
 Eigen::MatrixXcd complexNullSpace(const Eigen::MatrixXcd &S) {
   Eigen::BDCSVD<Eigen::MatrixXcd> svd(S, Eigen::ComputeFullV);
   const Eigen::VectorXd sigma = svd.singularValues();
@@ -115,9 +121,9 @@ Eigen::MatrixXcd complexNullSpace(const Eigen::MatrixXcd &S) {
   return svd.matrixV().rightCols(S.cols() - rank);
 }
 
-/// The Hermitian overlap |<a, b>| / (|a| |b|) of two lines (the tracking
-/// criterion of spec §16's continuity rule; a numerical criterion, not a
-/// pairing of the construction).
+/// Hermitian overlap |<a, b>| / (|a| |b|) of two lines, used to track an
+/// eigenline by continuity. A numerical criterion, not a pairing of the
+/// construction.
 double lineOverlap(const Eigen::VectorXcd &a, const Eigen::VectorXcd &b) {
   const double scale = a.norm() * b.norm();
   return scale > 0.0 ? std::abs(a.dot(b)) / scale : 0.0;
@@ -125,8 +131,8 @@ double lineOverlap(const Eigen::VectorXcd &a, const Eigen::VectorXcd &b) {
 
 }  // namespace
 
-/// The §4–§8 quantities of the complex path at one point of the segment from
-/// the real reference (spec §16).
+/// Geometry, cotangent weights, harmonic space and complex structure at one
+/// point of the continuation segment from the real reference.
 struct SimplicialQubit::ComplexStage {
   Eigen::MatrixXcd angles;
   Eigen::VectorXcd areas;
@@ -157,9 +163,9 @@ SimplicialQubit::SimplicialQubit(std::vector<std::uint64_t> vertices, std::vecto
       degeneracyThreshold_(degeneracyThreshold) {
   indexEdges();
   validateCombinatorics();
-  // The container: the faces as cells, then the lengths onto its edges. The
-  // container keeps its own (sorted) vertex order per face; the oriented faces
-  // stay in faces_. The phases are zero: the trivial connection.
+  // Build the spacetime from the faces as cells, then copy the lengths onto its
+  // edges. The spacetime keeps its own (sorted) vertex order per face; the
+  // oriented faces stay in faces_. Zero phases: the trivial connection.
   std::vector<std::vector<std::uint64_t>> cells;
   cells.reserve(faces_.size());
   for (const Face &f : faces_) cells.push_back({f[0], f[1], f[2]});
@@ -206,8 +212,8 @@ SimplicialQubit::SimplicialQubit(const std::shared_ptr<Spacetime> &spacetime, Cy
     lengths_.push_back(length);
   }
 
-  // Faces: the triangles, consistently oriented by the fundamental class
-  // (the container sorts vertex orders, so orientation is derived here).
+  // Faces: the triangles, consistently oriented by the fundamental class. The
+  // spacetime sorts vertex orders, so orientation is derived here.
   std::vector<std::vector<std::uint64_t>> cells, cellsById;
   for (const auto &simplex : spacetime_->getSimplices()) {
     if (simplex->size() != 3) continue;
@@ -238,9 +244,9 @@ SimplicialQubit::SimplicialQubit(const std::shared_ptr<Spacetime> &spacetime, Cy
 
   indexEdges();
   validateCombinatorics();
-  // The link phases (spec §16), by the Connection::fromSpacetime convention
-  // over the ids; the relabeling is monotone, so the canonical order over ids
-  // is the canonical order over indices.
+  // The link phases in the Connection::fromSpacetime convention over the ids;
+  // the relabeling is monotone, so the canonical order over ids is the
+  // canonical order over indices.
   buildConnection(Connection::fromSpacetime(*spacetime_, cobordism::ChainComplex::fromTopCells(cellsById)).links());
   initialize();
 }
@@ -282,7 +288,7 @@ void SimplicialQubit::initialize() {
     buildHarmonicSpace();
     buildComplexStructure();
   } else {
-    // Spec §16: every formula of §4–§8 over C, on the twisted complex.
+    // Off the real locus: the whole construction over C, on the twisted complex.
     ComplexStage stage = complexStageAt(lengths_);
     angles_ = std::move(stage.angles);
     areas_ = std::move(stage.areas);
@@ -302,7 +308,7 @@ void SimplicialQubit::initialize() {
 }
 
 // ============================================================================
-// Spec section 2: input validation
+// Input validation
 // ============================================================================
 
 void SimplicialQubit::indexEdges() {
@@ -331,10 +337,10 @@ void SimplicialQubit::indexEdges() {
                               " has length " + complexText(length);
     if (!std::isfinite(length.real()) || !std::isfinite(length.imag()) || length == Complex(0.0, 0.0))
       throw std::invalid_argument(where + "; lengths must be nonzero and finite");
-    // Spec §2 on the real locus; §16 admits any nonzero complex length (only
-    // its square enters the construction).
+    // On the real locus lengths must be positive; off it any nonzero complex
+    // length is admissible, since only its square enters the construction.
     if (length.imag() == 0.0 && !(length.real() > 0.0))
-      throw std::invalid_argument(where + "; real lengths must be real and positive (spec section 2)");
+      throw std::invalid_argument(where + "; real lengths must be real and positive");
   }
 }
 
@@ -394,9 +400,9 @@ void SimplicialQubit::validateCombinatorics() {
     throw std::invalid_argument("SimplicialQubit: nV - nE + nF = " + std::to_string(chi) +
                                 "; a torus needs Euler characteristic 0");
 
-  // The strict triangle inequality on every face, on real lengths (§2); off
-  // the real locus the admissibility of a face is the existence of its
-  // continuation from the real reference (§16, buildFaceGeometry).
+  // The strict triangle inequality on every face, for real lengths. Off the
+  // real locus a face is admissible when its continuation from the real
+  // reference exists.
   const bool allReal = std::all_of(lengths_.begin(), lengths_.end(), [](Complex l) { return l.imag() == 0.0; });
   if (!allReal) return;
   for (const Face &f : faces_) {
@@ -453,7 +459,7 @@ void SimplicialQubit::validateCycles() const {
 }
 
 // ============================================================================
-// Spec section 16: the link phases must be a pure gauge
+// The link phases must be a pure gauge
 // ============================================================================
 
 void SimplicialQubit::validatePureGauge() const {
@@ -470,12 +476,12 @@ void SimplicialQubit::validatePureGauge() const {
                                   complexText(F) + " (|F - 1| = " +
                                   std::to_string(std::abs(F - Complex(1.0, 0.0))) +
                                   "); the twisted harmonic space of a torus with flux does not have "
-                                  "dimension 2 (spec section 16)");
+                                  "dimension 2");
   }
   // Holonomy: a flat connection is a pure gauge U_xy = g_x^{-1} g_y iff the
   // gauge propagated along a spanning tree (g_y = g_x U_xy) closes every
   // non-tree edge; the defect of an edge is the holonomy around the cycle it
-  // closes. The root is a choice; the verdict is not.
+  // closes. The verdict does not depend on the root.
   const std::size_t nV = vertices_.size();
   std::vector<std::vector<std::pair<std::uint64_t, std::size_t>>> adjacency(nV);
   for (std::size_t e = 0; e < edges_.size(); ++e) {
@@ -509,12 +515,12 @@ void SimplicialQubit::validatePureGauge() const {
                                   edgeText(x, y) + " (|h - 1| = " +
                                   std::to_string(std::abs(h - Complex(1.0, 0.0))) +
                                   "); a flat connection with holonomy has no twisted harmonic space of "
-                                  "dimension 2 (spec section 16)");
+                                  "dimension 2");
   }
 }
 
 // ============================================================================
-// Spec section 16: the marked cycles as closed walks with a common base point
+// The marked cycles as closed walks with a common base point
 // ============================================================================
 
 SimplicialQubit::Walk SimplicialQubit::walkOf(const Cycle &cycle, const char *name,
@@ -544,8 +550,7 @@ void SimplicialQubit::buildWalks() {
   if (walkObstruction_.empty()) walkB_ = walkOf(cycleB_, "B", walkObstruction_);
   if (walkObstruction_.empty()) {
     // The common base point: the first vertex of A's walk that lies on B's;
-    // both walks are rotated to start there (`Connection::commonBasePoint`,
-    // the one rule every reader of a marking uses).
+    // both walks are rotated to start there (`Connection::commonBasePoint`).
     std::vector<Walk> walks = {walkA_, walkB_};
     baseVertex_ = Connection::commonBasePoint(walks);
     if (baseVertex_) {
@@ -559,7 +564,7 @@ void SimplicialQubit::buildWalks() {
   if (!walkObstruction_.empty() && !trivialConnection_)
     throw std::invalid_argument("SimplicialQubit: " + walkObstruction_ +
                                 "; the periods under a nontrivial connection are taken with parallel transport "
-                                "along the cycles (spec section 16)");
+                                "along the cycles");
 }
 
 std::uint64_t SimplicialQubit::baseVertex() const {
@@ -568,7 +573,7 @@ std::uint64_t SimplicialQubit::baseVertex() const {
 }
 
 // ============================================================================
-// Spec section 3: incidence matrices
+// Incidence matrices
 // ============================================================================
 
 void SimplicialQubit::buildIncidence() {
@@ -592,8 +597,7 @@ void SimplicialQubit::buildIncidence() {
 }
 
 // ============================================================================
-// Spec section 4 (per-triangle geometry) and section 7 (barycentric gradients),
-// the real locus
+// Per-triangle geometry and barycentric gradients, the real locus
 // ============================================================================
 
 void SimplicialQubit::buildFaceGeometry() {
@@ -642,7 +646,7 @@ void SimplicialQubit::buildFaceGeometry() {
 }
 
 // ============================================================================
-// Spec section 5: cotangent weights, the real locus
+// Cotangent weights, the real locus
 // ============================================================================
 
 void SimplicialQubit::buildWeights() {
@@ -680,7 +684,7 @@ void SimplicialQubit::buildWeights() {
 }
 
 // ============================================================================
-// Spec section 6: harmonic space, the real locus
+// Harmonic space, the real locus
 // ============================================================================
 
 void SimplicialQubit::buildHarmonicSpace() {
@@ -707,7 +711,7 @@ void SimplicialQubit::buildHarmonicSpace() {
 }
 
 // ============================================================================
-// Spec section 7 (Whitney interpolant, L2 inner product) and section 8 (J),
+// Whitney interpolant, L2 inner product and the complex structure J,
 // the real locus
 // ============================================================================
 
@@ -734,12 +738,10 @@ Eigen::Matrix<Scalar, 2, 1> SimplicialQubit::whitneyAtBarycenter(
 }
 
 void SimplicialQubit::buildComplexStructure() {
-  // The real path, kept in the real-length construction's own form (member
-  // accumulators, the same expressions). Measured against origin/main's
-  // build: bit-identical on every case but the square torus, where two
-  // entries of G differ by 2 ulps through the compiler's floating-point
-  // contraction of this accumulation (-O3 -march=native), which no source
-  // form pins down.
+  // G and R are accumulated in real arithmetic here. Entries can differ from
+  // the complex path by a couple of units in the last place (ULP) wherever the
+  // compiler contracts this accumulation (-O3 -march=native); no source form
+  // pins that down.
   const std::size_t nF = faces_.size();
   const Eigen::MatrixXd H = H_.real();
   const Eigen::VectorXd areas = areas_.real();
@@ -756,7 +758,7 @@ void SimplicialQubit::buildComplexStructure() {
         realR_(a, b) += area * rot90(w[a]).dot(w[b]);
       }
   }
-  // J = G^{-1} @ R.T; the residual is exposed, never symmetrized away.
+  // J = G^{-1} R^T; the residual of J^2 = -I is reported, not symmetrized away.
   realJ_ = realG_.inverse() * realR_.transpose();
   jResidual_ = (realJ_ * realJ_ + Eigen::MatrixXd::Identity(2, 2)).norm();
   G_ = realG_.cast<Complex>();
@@ -765,14 +767,14 @@ void SimplicialQubit::buildComplexStructure() {
 }
 
 // ============================================================================
-// Spec section 16: sections 4–8 over C on the twisted complex, at one point of
-// the segment from the real reference
+// The construction over C on the twisted complex, at one point of the
+// continuation segment from the real reference
 // ============================================================================
 
 Eigen::Vector2cd SimplicialQubit::twistedWhitneyAtBarycenter(std::size_t t, const Eigen::MatrixXcd &gradients,
                                                              const Eigen::VectorXcd &omega, bool dual) const {
   // W_t^U(omega): each edge value carried to the face's base vertex by
-  // U_{b(t) b(e)} (the inverse link for the dual), then the interpolant of §7.
+  // U_{b(t) b(e)} (the inverse link for the dual), then the Whitney interpolant.
   const Face &f = faces_[t];
   const Eigen::Index row = static_cast<Eigen::Index>(t);
   const std::uint64_t base = std::min({f[0], f[1], f[2]});
@@ -806,8 +808,9 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
   Eigen::MatrixXcd cotangents(static_cast<Eigen::Index>(nF), 3);
   double gradientScale = 0.0, gradientDefect = 0.0;
 
-  // §4 over C. The face's Gram matrix in the WhitneyMass convention, local
-  // vertices (0, 1, 2) = (i, j, k): s_01 = c^2, s_02 = b^2, s_12 = a^2.
+  // Per-triangle geometry over C. The face's Gram matrix in the WhitneyMass
+  // convention, local vertices (0, 1, 2) = (i, j, k): s_01 = c^2, s_02 = b^2,
+  // s_12 = a^2.
   for (std::size_t t = 0; t < nF; ++t) {
     const Face &f = faces_[t];
     const Complex a = lengths[edgeIndexOf(f[1], f[2])];  // l(jk)
@@ -827,7 +830,7 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
       throw std::invalid_argument("SimplicialQubit: face " + faceText(f) +
                                   ": the continuation of the Heron root from the real reference meets a root "
                                   "of det G on the segment in the squared lengths (a degenerate triangle on "
-                                  "the way, or at the end); no continuous branch (spec section 16)");
+                                  "the way, or at the end); no continuous branch");
     stage.areas(row) = area;
 
     // The principal branch of acos of the complex cosine of the law of cosines.
@@ -849,7 +852,7 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
     cotangents(row, 1) = (sc + sa - sb) / (4.0 * area);
     cotangents(row, 2) = (sa + sb - sc) / (4.0 * area);
 
-    // §7: the barycentric gradients in the local frame.
+    // The barycentric gradients in the local frame.
     const Eigen::Vector2cd gi = rot90c(Eigen::Vector2cd(pk - pj)) / (2.0 * area);
     const Eigen::Vector2cd gj = rot90c(Eigen::Vector2cd(pi - pk)) / (2.0 * area);
     const Eigen::Vector2cd gk = rot90c(Eigen::Vector2cd(pj - pi)) / (2.0 * area);
@@ -860,7 +863,8 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
   if (gradientDefect > 1e-10 * std::max(gradientScale, 1.0))
     throw std::logic_error("SimplicialQubit: the barycentric gradients of a face do not sum to zero");
 
-  // §5 over C: w_e = (cot alpha_e + cot beta_e) / 2 on the continuation branch.
+  // Cotangent weights over C: w_e = (cot alpha_e + cot beta_e) / 2, on the
+  // continuation branch.
   stage.weights.resize(static_cast<Eigen::Index>(nE));
   for (std::size_t e = 0; e < nE; ++e) {
     Complex cotangentSum(0.0, 0.0);
@@ -869,7 +873,7 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
     stage.weights(static_cast<Eigen::Index>(e)) = 0.5 * cotangentSum;
   }
 
-  // §6 over C on the twisted complex: S^U = [d_1^U; ∂_1^U M_1] with
+  // Harmonic space over C on the twisted complex: S^U = [d_1^U; ∂_1^U M_1] with
   // (d_1^U)_{te} = (d_1)_{te} U_{b(t) b(e)} and (∂_1^U M_1)_{ve} = (∂_1)_{ve} U_{v b(e)} w_e;
   // the dual kernel is the same construction under U^{-1}.
   auto stacked = [&](bool dual) {
@@ -913,8 +917,8 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
                                " != 2 for the kernel twisted by the inverse links");
   }
 
-  // §7, §8 over C: the transpose pairing between the dual kernel and the
-  // kernel; J = G^{-1} R^T, its residual exposed.
+  // The L2 pairing and complex structure over C: the transpose pairing between
+  // the dual kernel and the kernel; J = G^{-1} R^T, its residual reported.
   stage.G = Eigen::MatrixXcd::Zero(2, 2);
   stage.R = Eigen::MatrixXcd::Zero(2, 2);
   for (std::size_t t = 0; t < nF; ++t) {
@@ -936,18 +940,18 @@ SimplicialQubit::ComplexStage SimplicialQubit::complexStageAt(const std::vector<
 }
 
 // ============================================================================
-// Spec section 9: holomorphic line and period ratio
+// Holomorphic line and period ratio
 // ============================================================================
 
 Complex SimplicialQubit::periodOf(const Eigen::VectorXcd &omega, const Cycle &cycle, const Walk &walk) const {
   if (trivialConnection_) {
-    // The plain signed sum of §9.
+    // The plain signed sum over the cycle's steps.
     Complex total(0.0, 0.0);
     for (const auto &[e, sign] : cycle) total += static_cast<double>(sign) * omega(static_cast<Eigen::Index>(e));
     return total;
   }
-  // §16: with parallel transport along the cycle's walk from the base point,
-  // the cochain handed over in the connection's canonical edge order.
+  // Otherwise: parallel transport along the cycle's walk from the base point,
+  // with the cochain passed in the connection's canonical edge order.
   Eigen::VectorXcd canonical(omega.size());
   for (std::size_t e = 0; e < edges_.size(); ++e)
     canonical(static_cast<Eigen::Index>(canonicalOf_[e])) = omega(static_cast<Eigen::Index>(e));
@@ -955,8 +959,8 @@ Complex SimplicialQubit::periodOf(const Eigen::VectorXcd &omega, const Cycle &cy
 }
 
 void SimplicialQubit::buildHolomorphicLine() {
-  // The periods of a candidate form over the marking, with the §9 rule for a
-  // vanishing |P_A| (the marking (B, -A), reporting -1/tau).
+  // The periods of a candidate form over the marking. When |P_A| vanishes the
+  // marking (B, -A) is used instead and -1/tau is reported.
   auto evaluate = [&](const Eigen::VectorXcd &omega, Complex &pA, Complex &pB, bool &swapped) {
     const Complex rawA = periodOf(omega, cycleA_, walkA_);
     const Complex rawB = periodOf(omega, cycleB_, walkB_);
@@ -998,9 +1002,9 @@ void SimplicialQubit::buildHolomorphicLine() {
           "flipped; the conjugate eigenvector was taken");
     }
   } else {
-    // Spec §16: the eigenline chosen by continuity from the real reference
-    // along the straight segment s_e(t) = (1 - t) + t l_e^2 in the squared
-    // lengths, with the marking and the links held fixed.
+    // Off the real locus: the eigenline chosen by continuity from the real
+    // reference along the straight segment s_e(t) = (1 - t) + t l_e^2 in the
+    // squared lengths, with the marking and the links held fixed.
     const std::size_t nE = edges_.size();
     auto lengthsAt = [&](double t) {
       std::vector<Complex> at(nE);
@@ -1024,7 +1028,7 @@ void SimplicialQubit::buildHolomorphicLine() {
       return lines;
     };
 
-    // At the real reference: the §9 rule selects the line.
+    // At the real reference: the eigenvalue nearest -i selects the line.
     const ComplexStage reference = complexStageAt(std::vector<Complex>(nE, Complex(1.0, 0.0)));
     Eigenlines lines = eigenlinesOf(reference.J, reference.H);
     std::size_t pick = std::abs(lines.eigenvalues[1] - Complex(0.0, -1.0)) <
@@ -1039,7 +1043,7 @@ void SimplicialQubit::buildHolomorphicLine() {
         pick = 1 - pick;
         warnings_.push_back(
             "Im tau < 0 at the real reference on the eigenvector nearest -i: the surface orientation or the "
-            "eigenvalue branch is flipped; the other eigenline was taken and continued (spec section 16)");
+            "eigenvalue branch is flipped; the other eigenline was taken and continued");
       }
     }
     Eigen::VectorXcd tracked = lines.forms[pick];
@@ -1066,7 +1070,7 @@ void SimplicialQubit::buildHolomorphicLine() {
               "SimplicialQubit: the eigenline cannot be continued from the real reference: at t = " +
               std::to_string(next) + " of the segment in the squared lengths the overlap with the tracked "
               "line is " + std::to_string(overlap[best]) + " below " + std::to_string(kOverlap) +
-              " at the minimum step (spec section 16)");
+              " at the minimum step");
         step /= 2.0;
         continue;
       }
@@ -1075,7 +1079,7 @@ void SimplicialQubit::buildHolomorphicLine() {
             "SimplicialQubit: the eigenline cannot be continued from the real reference: at t = " +
             std::to_string(next) + " of the segment in the squared lengths the two eigenlines of J cannot be "
             "told apart (overlaps " + std::to_string(overlap[0]) + ", " + std::to_string(overlap[1]) +
-            "); the complex structure is degenerate there (spec section 16)");
+            "); the complex structure is degenerate there");
       tracked = candidate.forms[best];
       lines = candidate;
       pick = best;
@@ -1087,7 +1091,7 @@ void SimplicialQubit::buildHolomorphicLine() {
     if (!(tau.imag() > 0.0) && std::isfinite(tau.imag()))
       warnings_.push_back("Im tau = " + std::to_string(tau.imag()) +
                           " <= 0 off the real locus: the state lies in the other hemisphere; the eigenline "
-                          "is the continuation of the real reference's, not chosen by Im tau (spec section 16)");
+                          "is the continuation of the real reference's, not chosen by Im tau");
   }
 
   if (!std::isfinite(tau.real()) || !std::isfinite(tau.imag()))
@@ -1102,8 +1106,8 @@ void SimplicialQubit::buildHolomorphicLine() {
   tau_ = tau;
   swapped_ = swapped;
 
-  // Section 10's assertion: |r| == 1 to machine precision (an identity in
-  // tau, on and off the real locus).
+  // |r| == 1 to machine precision: an identity in tau, on and off the real
+  // locus.
   const double blochNorm = bloch().norm();
   if (std::abs(blochNorm - 1.0) > 1e-12)
     throw std::logic_error("SimplicialQubit: the Bloch vector is not a unit vector (|r| = " +
@@ -1111,7 +1115,7 @@ void SimplicialQubit::buildHolomorphicLine() {
 }
 
 // ============================================================================
-// Spec section 10: the qubit state
+// The qubit state
 // ============================================================================
 
 Eigen::VectorXcd SimplicialQubit::state() const {
@@ -1142,7 +1146,7 @@ Eigen::MatrixXcd SimplicialQubit::densityMatrix() const {
 }
 
 // ============================================================================
-// Spec section 11: the two metrics on the state space
+// The two metrics on the state space
 // ============================================================================
 
 double SimplicialQubit::fubiniStudyDistance(const SimplicialQubit &q1, const SimplicialQubit &q2) {
@@ -1161,7 +1165,7 @@ double SimplicialQubit::weilPeterssonDistance(const SimplicialQubit &q1, const S
 }
 
 // ============================================================================
-// Spec section 12: the flat torus C / (Z + tau Z)
+// The flat torus C / (Z + tau Z)
 // ============================================================================
 
 SimplicialQubit SimplicialQubit::flatTorus(std::complex<double> tau, int nx, int ny) {
@@ -1219,7 +1223,7 @@ SimplicialQubit SimplicialQubit::flatTorus(std::complex<double> tau, int nx, int
 }
 
 // ============================================================================
-// Spec section 5: the optional intrinsic Delaunay edge-flip pass
+// The optional intrinsic Delaunay edge-flip pass
 // ============================================================================
 
 SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
@@ -1294,7 +1298,7 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
       continue;
     }
 
-    // Lay both triangles out in the frame of t1 (spec section 4): p_i = 0,
+    // Lay both triangles out in the frame of t1: p_i = 0,
     // p_j = (c, 0), p_k above the edge, p_l below it; the new diagonal is the
     // distance between the two apexes.
     const double a = lengthOf(j, k), b = lengthOf(k, i), c = lengthOf(i, j);
@@ -1360,15 +1364,15 @@ SimplicialQubit SimplicialQubit::intrinsicDelaunay() const {
 }
 
 // ============================================================================
-// The period frame (qubit cobordism spec D3) and spec section 13 diagnostics
+// The period frame and the degeneration diagnostics
 // ============================================================================
 
 void SimplicialQubit::buildPeriodFrame() {
   // Pi_{ca} = the period of h_a over cycle c, the cycles in force: (A, B), or
-  // (B, -A) when section 9 swapped the marking (|P_A| vanished), so that the
-  // frame is the basis tau() is a coordinate in. The period map of the
-  // harmonic space over a homology basis is an isomorphism (section 2 checked
-  // the cycles' independence), so Pi is invertible whenever dim H = 2.
+  // (B, -A) when the marking was swapped (|P_A| vanished), so that the frame is
+  // the basis tau() is a coordinate in. The period map of the harmonic space
+  // over a homology basis is an isomorphism (validateCycles checked the cycles'
+  // independence), so Pi is invertible whenever dim H = 2.
   if (real_) {
     Eigen::Matrix2d Pi;
     for (Eigen::Index a = 0; a < 2; ++a) {
@@ -1382,14 +1386,14 @@ void SimplicialQubit::buildPeriodFrame() {
     if (!std::isfinite(det) || det == 0.0)
       throw std::runtime_error("SimplicialQubit: the period matrix of the harmonic basis over the marking is "
                                "singular; the marked cycles do not span the torus's homology");
-    // The real basis materialized first, so the product is the one the
-    // real-length construction evaluates (bit-identical on the real locus).
+    // The real basis is materialized first so that the product is evaluated in
+    // real arithmetic.
     const Eigen::MatrixXd H = H_.real();
     const Eigen::MatrixXd F = H * Pi.inverse();
     F_ = F.cast<Complex>();
     return;
   }
-  // §16: the transported periods (a common base point), complex.
+  // Off the real locus: the transported periods from the common base point.
   Eigen::Matrix2cd Pi;
   for (Eigen::Index a = 0; a < 2; ++a) {
     const Eigen::VectorXcd h = H_.col(a);
@@ -1436,7 +1440,7 @@ void SimplicialQubit::diagnoseDegeneration() {
 }
 
 // ============================================================================
-// Qubit cobordism spec D2: the derivative of tau and the intersection number
+// The derivative of tau and the intersection number
 // ============================================================================
 
 Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
@@ -1448,7 +1452,7 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
   const Complex one(1.0, 0.0), zero(0.0, 0.0);
   auto row = [](std::size_t n) { return static_cast<Eigen::Index>(n); };
 
-  // ---- the links the twisted operators carry (§16): U for the primal
+  // ---- the links the twisted operators carry: U for the primal
   // operators, U^{-1} for the dual ones; 1 on the trivial connection.
   auto carry = [&](std::uint64_t from, std::uint64_t to, bool dual) -> Complex {
     if (trivialConnection_) return one;
@@ -1466,7 +1470,7 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
     return inverseConnection->transportedPeriod(canonical, walk);
   };
 
-  // ---- the period frames over the GIVEN marking (A, B): F = H Pi^{-1} on the
+  // ---- the period frames over the given marking (A, B): F = H Pi^{-1} on the
   // kernel, Fd = H^vee Pi_d^{-1} on the dual kernel. Both are canonical
   // functions of the lengths, which the null-space bases are not; J_F is
   // independent of the dual basis altogether, and so is its derivative once
@@ -1488,7 +1492,7 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
   const Matrix F = frameOf(H_, false, "kernel");
   const Matrix Fd = trivialConnection_ ? F : frameOf(Hdual_, true, "dual kernel");
 
-  // ---- the twisted incidences of §3/§16 as dense matrices: B = ∂_1^U
+  // ---- the twisted incidences as dense matrices: B = ∂_1^U
   // (n_V x n_E, (∂_1^U)_{ve} = (∂_1)_{ve} U_{v b(e)}) and D = d_0^U
   // (n_E x n_V, (d_0^U φ)_e = U_{b(e) y} φ_y - φ_x for the edge x < y, whose
   // base is x), so that L_0^U = B M_1 D is the twisted weighted graph
@@ -1546,13 +1550,13 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
     return out;
   };
 
-  // ---- §4, §5, §7 in closed form per face: the derivatives of the Heron
-  // area, the layout, the barycentric gradients and the three cotangents
-  // with respect to each of the face's three squared lengths, on the same
-  // branch as the stored values (A_t is the continued root; c = l(ij) the
-  // resident length, dc = dz_c / (2c)). Local index m: 0 = a = l(jk),
-  // 1 = b = l(ki), 2 = c = l(ij); edge slot s of §3 (0 = (i,j), 1 = (j,k),
-  // 2 = (k,i)) has length index m = (s + 2) % 3, the vertex slot opposite it.
+  // ---- closed-form per-face derivatives of the Heron area, the layout, the
+  // barycentric gradients and the three cotangents with respect to each of the
+  // face's three squared lengths, on the same branch as the stored values (A_t
+  // is the continued root; c = l(ij) the resident length, dc = dz_c / (2c)).
+  // Local index m: 0 = a = l(jk), 1 = b = l(ki), 2 = c = l(ij); edge slot s
+  // (0 = (i,j), 1 = (j,k), 2 = (k,i)) has length index m = (s + 2) % 3, the
+  // vertex slot opposite it.
   struct FaceDerivative {
     std::array<std::size_t, 3> edge{};
     std::array<Complex, 3> dA{};
@@ -1598,8 +1602,8 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
     }
   }
 
-  // ---- the Whitney interpolant of §7 at a face's barycenter for a given
-  // gradient row (the stored one or its derivative), with the carries of §16.
+  // ---- the Whitney interpolant at a face's barycenter for a given gradient
+  // row (the stored one or its derivative), with the connection carries.
   auto whitney = [&](std::size_t t, const std::array<Eigen::Vector2cd, 3> &g, const Vector &omega, bool dual) {
     const Face &f = faces_[t];
     const std::uint64_t base = std::min({f[0], f[1], f[2]});
@@ -1620,7 +1624,8 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
     return g;
   };
 
-  // ---- §8 in the frames: G_F, R_F, J_F, and the quadratic tau solves.
+  // ---- the pairing and the complex structure in the frames: G_F, R_F, J_F,
+  // and the quadratic tau solves.
   std::vector<std::array<Eigen::Vector2cd, 2>> Wp(nF), Wd(nF);
   Eigen::Matrix2cd G = Eigen::Matrix2cd::Zero(), R = Eigen::Matrix2cd::Zero();
   for (std::size_t t = 0; t < nF; ++t) {
@@ -1638,7 +1643,7 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
   }
   const Eigen::Matrix2cd Ginv = G.inverse();
   const Eigen::Matrix2cd J = Ginv * R.transpose();
-  // tau over the given marking: tau() is -1/tau_raw when §9 swapped it.
+  // tau over the given marking: tau() is -1/tau_raw when the marking was swapped.
   const Complex tauRaw = swapped_ ? -one / tau_ : tau_;
   const bool sigmaChart = std::abs(tauRaw) > 1.0;
   const Complex sigma = one / tauRaw;
@@ -1661,7 +1666,7 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
   Vector derivative(NE);
   for (std::size_t e = 0; e < nE; ++e) {
     // The cotangent weights that move with z_e: those of the edges of the
-    // faces containing e (§5), through dcot of the opposite vertex.
+    // faces containing e, through dcot of the opposite vertex.
     std::vector<std::pair<std::size_t, Complex>> dWeights;
     struct Adjacent {
       std::size_t face;
@@ -1731,7 +1736,7 @@ Eigen::VectorXcd SimplicialQubit::tauDerivative() const {
 }
 
 double SimplicialQubit::intersectionNumber() const {
-  // The untwisted reference of §16 (unit lengths, no links): the cotangent
+  // The untwisted reference (unit lengths, no links): the cotangent
   // weights of the unit equilateral triangle are all equal, so the harmonic
   // space is the null space of [d_1; d_0^T]; its period frame f_A, f_B has
   // periods (1, 0) and (0, 1), and the ordered cup product

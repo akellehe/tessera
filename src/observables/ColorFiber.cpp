@@ -23,9 +23,8 @@ namespace {
 
 using tessera::quantum::ExteriorAlgebra;
 
-/// The three-mode exterior algebra of the color kernel — the #766
-/// primitive this class delegates to.  Generated once (function-local
-/// static; the object itself is a lightweight handle).
+/// The three-mode exterior algebra this class delegates to.  Generated once
+/// as a function-local static; the object itself is a lightweight handle.
 const ExteriorAlgebra& colorAlgebra() {
     static const ExteriorAlgebra algebra(3);
     return algebra;
@@ -220,11 +219,11 @@ Eigen::Matrix3cd ColorFiber::tracelessPart(const Eigen::Matrix3cd& m) {
     return m - (m.trace() / 3.0) * Eigen::Matrix3cd::Identity();
 }
 
-// ── #774 additions beside the octet projector ──────────────────────────────
+// ── The adjoint singlet/octet decomposition ────────────────────────────────
 
 Eigen::MatrixXcd ColorFiber::adjointSingletProjector() {
-    // Literally the complement of the octet projector, so P₁ + P₈ = I₉ is
-    // a bitwise-exact resolution of 3 ⊗ 3̄ = 1 ⊕ 8.
+    // The complement of the octet projector, so P₁ + P₈ = I₉ is a
+    // bitwise-exact resolution of 3 ⊗ 3̄ = 1 ⊕ 8.
     return Eigen::MatrixXcd::Identity(9, 9) - adjointOctetProjector();
 }
 
@@ -233,18 +232,17 @@ Eigen::MatrixXcd ColorFiber::octetBilinear(std::size_t i, std::size_t j) {
         throw std::invalid_argument(
             "ColorFiber::octetBilinear: indices must be in 0..2");
     }
-    // The literal composition — the traceless even bilinear
-    // a_i†a_j − (δ_ij/3) N̂ is dΓ of the traceless matrix unit.
+    // The traceless even bilinear a_i†a_j − (δ_ij/3) N̂ is dΓ of the
+    // traceless matrix unit.
     return dGamma(tracelessPart(matrixUnit(i, j)));
 }
 
 Eigen::MatrixXcd ColorFiber::adjointCasimirMatrix() {
     // C = Σ_a K_a², K_a = I ⊗ (λ_a/2) − (λ_a/2)ᵀ ⊗ I acting on the
     // column-major vec(M): K_a vec(M) = vec([λ_a/2, M]), by the Kronecker
-    // rule vec(A M B) = (Bᵀ ⊗ A) vec(M).  A constant of the algebra —
-    // generated once (the colorAlgebra() precedent) as the INDEPENDENT
-    // commutator-sum construction; verifyConstantAlgebra cross-checks it
-    // against 3 P₈, where that independence is load-bearing.
+    // rule vec(A M B) = (Bᵀ ⊗ A) vec(M).  Generated once as a function-local
+    // static.  The commutator sum is built independently of P₈ so that the
+    // cross-check against 3 P₈ in verifyConstantAlgebra is meaningful.
     static const Eigen::MatrixXcd casimir = [] {
         Eigen::MatrixXcd sum = Eigen::MatrixXcd::Zero(9, 9);
         const Eigen::Matrix3cd id = Eigen::Matrix3cd::Identity();
@@ -265,13 +263,13 @@ double ColorFiber::adjointCasimir(const Eigen::Matrix3cd& m) {
     if (norm2 == 0.0) {
         return std::numeric_limits<double>::quiet_NaN();
     }
-    // Evaluated through the EXACT identity C = 3 P₈: the quadratic form
+    // Evaluated through the identity C = 3 P₈: the quadratic form
     // ⟨vec M, C vec M⟩ equals 3 ‖P₈ vec M‖² = 3 ‖M − (Tr M/3) I‖_F².
     return 3.0 * tracelessPart(m).squaredNorm() / norm2;
 }
 
 ColorFiber::Complex ColorFiber::omega() {
-    // The ALGEBRAIC value (−1 + i√3)/2, never exp(2πi/3): with these
+    // The algebraic value (−1 + i√3)/2 rather than exp(2πi/3): with these
     // components 1 + ω + ω̄ cancels exactly in floating point.
     return Complex(-0.5, std::sqrt(3.0) / 2.0);
 }
@@ -427,7 +425,7 @@ double ColorFiber::verifyConstantAlgebra() {
     }
 
     // gl(3): [E_ij, E_kl] = δ_jk E_il − δ_il E_kj on the 3×3 matrix units
-    // AND on the full 8×8 Fock bilinears.
+    // and on the full 8×8 Fock bilinears.
     for (std::size_t i = 0; i < 3; ++i) {
         for (std::size_t j = 0; j < 3; ++j) {
             for (std::size_t k = 0; k < 3; ++k) {
@@ -488,9 +486,9 @@ double ColorFiber::verifyConstantAlgebra() {
         track((p8 * v).cwiseAbs().maxCoeff());
     }
 
-    // #774: the singlet complement resolves 3 ⊗ 3̄ = 1 ⊕ 8 — P₁ + P₈ = I₉
-    // (bitwise by construction), P₁ idempotent/Hermitian/rank one,
-    // P₁P₈ = P₈P₁ = 0, and P₁ vec(M) = vec((Tr M / 3) I).
+    // The singlet complement resolves 3 ⊗ 3̄ = 1 ⊕ 8: P₁ + P₈ = I₉ (bitwise
+    // by construction), P₁ idempotent, Hermitian and rank one, and
+    // P₁P₈ = P₈P₁ = 0.
     {
         const Eigen::MatrixXcd p1 = adjointSingletProjector();
         track((p1 + p8 - Eigen::MatrixXcd::Identity(9, 9))
@@ -503,10 +501,9 @@ double ColorFiber::verifyConstantAlgebra() {
         track((p8 * p1).cwiseAbs().maxCoeff());
     }
 
-    // #774: the traceless even bilinears — delegation identity
-    // T_ij = E_ij − (δ_ij/3) Σ_k E_kk, exact tracelessness of the family,
-    // N-conservation (even fermion parity: T commutes with (−1)^N), and
-    // the N = 1 restriction is the traceless matrix unit.
+    // The traceless even bilinears: T_ij = E_ij − (δ_ij/3) Σ_k E_kk, exact
+    // tracelessness of the family, commutation with the fermion parity
+    // (−1)^N, and the N = 1 restriction to the traceless matrix unit.
     {
         Eigen::MatrixXcd number = Eigen::MatrixXcd::Zero(8, 8);
         for (std::size_t k = 0; k < 3; ++k) number += hoppingMatrix(k, k);
@@ -532,7 +529,7 @@ double ColorFiber::verifyConstantAlgebra() {
         track(diagonalSum.cwiseAbs().maxCoeff());
     }
 
-    // #774: the adjoint quadratic Casimir equals 3 P₈ — 0 on the singlet,
+    // The adjoint quadratic Casimir equals 3 P₈: zero on the singlet,
     // C₂(adjoint) = 3 on every octet direction.
     {
         const Eigen::MatrixXcd casimir = adjointCasimirMatrix();
@@ -569,8 +566,7 @@ double ColorFiber::verifyConstantAlgebra() {
 
 #ifndef NDEBUG
 namespace {
-/// Design spec §11: the constant algebra is generated once and CHECKED AT
-/// STARTUP in debug builds.  Release builds (the shipped RelWithDebInfo)
+/// Debug builds verify the constant algebra once at startup.  Release builds
 /// skip the check; tests exercise verifyConstantAlgebra in every build.
 struct ColorFiberStartupCheck {
     ColorFiberStartupCheck() {
@@ -664,11 +660,11 @@ ColorAnchor::ColorAnchor(std::vector<OrientedTriangle> triangles,
 }
 
 void ColorAnchor::markOverlaps() {
-    // Which declared triangles genuinely OVERLAP: an edge row occurring in
-    // more than one triangle makes every triangle carrying it an
-    // overlapping one.  This is the shared-EDGE relation, the only sharing
-    // relation an OrientedTriangle atlas determines (a triangle declares
-    // edge rows and incidence signs, never vertex identities).
+    // Which declared triangles overlap: an edge row occurring in more than
+    // one triangle marks every triangle carrying it as overlapping.  This is
+    // the shared-edge relation, the only sharing relation an OrientedTriangle
+    // atlas determines, since a triangle declares edge rows and incidence
+    // signs rather than vertex identities.
     overlapping_.assign(triangles_.size(), 0);
     overlapCount_ = 0;
     std::map<Eigen::Index, std::vector<std::size_t>> byEdge;
@@ -780,10 +776,9 @@ Eigen::MatrixXcd ColorAnchor::orthonormalizeFrame(
 
 bool ColorAnchor::accepts(const AnchorProfile& profile, double minScore,
                           double minPhaseCoherence) {
-    // An empty weightingId means no weighting was ever declared, so no anchor
-    // was measured: MISSING evidence, which is an absent score rather than a
-    // zero one. The calibration certificate must hold on its own terms before
-    // either floor is consulted.
+    // An empty weightingId means no weighting was declared and no anchor was
+    // measured, so the score is absent rather than zero.  The calibration
+    // certificate must hold before either floor is consulted.
     return !profile.weightingId.empty() && profile.certificate.holds() &&
            profile.score >= minScore &&
            profile.phaseCoherence >= minPhaseCoherence;
@@ -829,8 +824,8 @@ AnchorProfile ColorAnchor::evaluate(const Eigen::MatrixXcd& frame,
 
     // Diagonal weights: the τ-oriented restricted block S W_τ S is again
     // diagonal (the signs cancel), so |W_τ|^{1/2} = diag(|w_e|^{1/2}) and
-    // the Krein signature reads off the raw weight signs EXACTLY — no
-    // per-triangle eigensolve on the production path.
+    // the Krein signature reads off the raw weight signs exactly, with no
+    // per-triangle eigensolve on this path.
     std::vector<Eigen::Matrix3cd> sqrtBlocks;
     std::vector<std::array<int, 3>> signatures;
     sqrtBlocks.reserve(triangles_.size());
@@ -969,10 +964,10 @@ AnchorProfile ColorAnchor::evaluateBlocks(
         if (det != std::complex<double>(0.0, 0.0)) {
             const double phase = std::arg(det);
             profile.detPhases[t] = phase;
-            // The coherence is the agreement of the local determinant-line
-            // trivializations WHERE THEY OVERLAP: only triangles sharing a
+            // The coherence measures agreement of the local determinant-line
+            // trivializations where they overlap: only triangles sharing a
             // boundary edge with another declared triangle contribute.  An
-            // isolated face has no overlap partner and no say in it.
+            // isolated face has no overlap partner.
             if (overlapping_[t] != 0) {
                 const double u = weights_[t] * term;
                 resultant += u * std::complex<double>(std::cos(phase),
@@ -988,18 +983,18 @@ AnchorProfile ColorAnchor::evaluateBlocks(
         profile.phaseCoherence = std::abs(resultant) / resultantWeight;
         profile.phaseDispersion = 1.0 - profile.phaseCoherence;
     } else {
-        // No overlapping triangle carries a nonzero determinant: there is
-        // no overlap phase datum.  Unknown is reported as NaN, never as
-        // zero — a DISJOINT atlas lands here by construction.
+        // No overlapping triangle carries a nonzero determinant, so there is
+        // no overlap phase datum.  Unknown is reported as NaN, not zero; a
+        // disjoint atlas lands here by construction.
         profile.phaseCoherence = std::numeric_limits<double>::quiet_NaN();
         profile.phaseDispersion = std::numeric_limits<double>::quiet_NaN();
     }
     profile.calibrationMargin = maxLambda - 1.0;
 
-    // Attach the #764 certification record (never a bare read).  The
-    // graded claim is the calibrated score: closed-form given the verified
-    // |W|-orthonormal premise on a decoupled (diagonal) weight, an
-    // eigen-modulus numerical evaluation on a general Hermitian weight.
+    // Attach the certification record.  The graded claim is the calibrated
+    // score: closed-form given the verified |W|-orthonormal premise on a
+    // diagonal weight, an eigen-modulus numerical evaluation on a general
+    // Hermitian weight.
     using ::tessera::cobordism::Certificate;
     using ::tessera::cobordism::CertificateDomain;
     using ::tessera::cobordism::CertificateRegime;

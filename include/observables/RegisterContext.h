@@ -35,81 +35,76 @@ class InteriorHinges;  // the shared 4D hinge-selection core (InteriorHinges.h)
 
 /// # RegisterContext
 ///
-/// The one **validated read context** every emergent-proton observable measures
-/// (#593, part of #559): a converged spacetime, its emergent holes, the
-/// induced-orientation signs, and the shared per-complex caches — composed from the
-/// protected readout cores (`cobordism::EigenstateSynthesis`,
-/// `cobordism::MultiCobordism`, `cobordism::ChainComplex`), never refactoring them.
+/// The validated read context every emergent-proton observable measures: a
+/// converged spacetime, its emergent holes, the induced-orientation signs, and
+/// the shared per-complex caches. Composed from the readout cores
+/// `cobordism::EigenstateSynthesis`, `cobordism::MultiCobordism` and
+/// `cobordism::ChainComplex`.
 ///
-///   * **A pure reader — never a builder.** The context READS an already-built,
-///     relaxed spacetime (a `Proton::block()`, a `ProtonIngredients` state, a
-///     relaxed `MultiCobordism` complex, or a dump the loader already rehydrated
-///     into a live complex). It never builds, solves, or materializes anything —
-///     the emergent build lives exclusively in Proton/ProtonIngredients/
-///     MultiCobordism and is never re-run here. The facet/coface skeleton the
-///     `dualVolume()` / `deficitAngle()` reads walk is expected to be
-///     already present on the live complex (it is, on every built state); the
-///     construction that completes a bare `Spacetime::fromCells` skeleton — the
-///     dump-rehydration and the RELABEL-gate rebuild — lives OUTSIDE this class,
-///     in `LiveComplex` (the loader/transform), and only ever reads the recorded
-///     geometry back, never the emergent dynamics.
-///   * **Hole selection validated at ONE entry point.** The selected holes are the
+///   * A reader, not a builder. The context reads an already-built, relaxed
+///     spacetime: a `Proton::block()`, a `ProtonIngredients` state, a relaxed
+///     `MultiCobordism` complex, or a dump the loader already rehydrated into a
+///     live complex. It never builds, solves or materializes anything; the
+///     emergent build lives in Proton, ProtonIngredients and MultiCobordism. The
+///     facet/coface skeleton that the `dualVolume()` and `deficitAngle()` reads
+///     walk must already be present on the live complex, as it is on every built
+///     state. Completing a bare `Spacetime::fromCells` skeleton — for dump
+///     rehydration and the RELABEL-gate rebuild — is the job of `LiveComplex`.
+///   * Hole selection is validated at one entry point. The selected holes are the
 ///     emergent `(degree+2)`-vertex removed top cells
 ///     (`cobordism::MultiCobordism::emergentHoles`), in emergent-hole order. A
-///     **deficit throws** (`std::invalid_argument` naming the found holes); a
-///     **surplus is an explicit, recorded truncation** naming the dropped holes in
-///     `selectionWarning()` (the Python binding emits it as a `UserWarning`), never
-///     a silent slice. Both censuses are kept (`holesUsed()` / `holesTotal()`)
-///     alongside Betti at the register degree (`bK()`) and the
-///     `holesVsBettiDivergent()` flag — the campaign taught us holes and \f$ b_k \f$
-///     can disagree (e.g. holes=3 / \f$ b_3 \f$=2), so the divergence is always
-///     recorded, never papered over.
-///   * **One orientation convention.** The induced-orientation signs
+///     deficit throws `std::invalid_argument` naming the holes found. A surplus
+///     is a recorded truncation naming the dropped holes in `selectionWarning()`
+///     (the Python binding emits it as a `UserWarning`), never a silent slice.
+///     Both censuses are kept (`holesUsed()` and `holesTotal()`) alongside the
+///     Betti number at the register degree (`bK()`) and the
+///     `holesVsBettiDivergent()` flag, since the hole count and \f$ b_k \f$ can
+///     disagree (for instance 3 holes against \f$ b_3 = 2 \f$).
+///   * One orientation convention. The induced-orientation signs
 ///     \f$ \varepsilon_h = \pm 1 \f$ come from
-///     `cobordism::ChainComplex::endSignCovector` — the label-free orientation
+///     `cobordism::ChainComplex::endSignCovector`: the label-free orientation
 ///     under which every closed form's signed periods obey
-///     \f$ \sum_h \varepsilon_h p_h = 0 \f$, determined up to one global sign (the
-///     propagation root, \f$ -1 \in U(1) \f$ on the register — gauge, not physics).
-///     Vertices are never sorted to impose a convention; holes are matched by
-///     vertex SET.
-///   * **One cached `EigenstateSynthesis`** per (spacetime, degree), plus the other
-///     shared per-complex structures (Hodge metric weights, the canonical
-///     \f$ k \f$-cell index, the Betti vector, the 4D interior-hinge selection).
-///     `gauged()` copies share the caches — the gauge knob only rotates the target.
+///     \f$ \sum_h \varepsilon_h p_h = 0 \f$, determined up to one global sign
+///     (the propagation root, \f$ -1 \in U(1) \f$ on the register, which is gauge
+///     rather than physics). Vertices are never sorted to impose a convention;
+///     holes are matched by vertex set.
+///   * One cached `EigenstateSynthesis` per (spacetime, degree), plus the other
+///     shared per-complex structures: Hodge metric weights, the canonical
+///     \f$ k \f$-cell index, the Betti vector, and the 4D interior-hinge
+///     selection. `gauged()` copies share the caches, since the gauge knob only
+///     rotates the target.
 ///
 /// The GAUGE gate transform acts on the context, not on the observables:
-/// `gauged(theta)` rotates the register target by the surviving global U(1) phase
-/// (which contains the Z₃ cyclic recolor of the singlet and the orientation flip)
-/// — a construction-free operation that shares the same live complex. The RELABEL
-/// gate needs a rebuilt (relabeled) complex, which is a construction: that lives
-/// in `LiveComplex` and is orchestrated by `ObservableGates`, never here — this
-/// reader never rebuilds anything.
+/// `gauged(theta)` rotates the register target by the surviving global U(1)
+/// phase, which contains the \f$ \mathbb{Z}_3 \f$ cyclic recolor of the singlet
+/// and the orientation flip. It builds nothing and shares the same live complex.
+/// The RELABEL gate needs a rebuilt, relabeled complex; that construction lives
+/// in `LiveComplex` and is orchestrated by `ObservableGates`.
 class RegisterContext {
   public:
     /// Read the context over the already-built `spacetime`, selecting and
-    /// validating `count`
-    /// emergent holes at `degree` (see the class note: deficit throws, surplus
-    /// is recorded in `selectionWarning()` naming the dropped holes). `target`
-    /// is the register target state, one component per hole slot — the color
-    /// singlet \f$ [1, \omega, \omega^2] \f$ by default; the GAUGE gate rotates
-    /// exactly this.
+    /// validating `count` emergent holes at `degree`: a deficit throws, and a
+    /// surplus is recorded in `selectionWarning()` naming the dropped holes.
+    /// `target` is the register target state, one component per hole slot,
+    /// defaulting to the color singlet \f$ [1, \omega, \omega^2] \f$. The GAUGE
+    /// gate rotates exactly this.
     /// @throws std::invalid_argument on a hole deficit (fewer than `count`
     ///   emergent holes), an empty complex, or `count < 0` / `degree < 0`.
     explicit RegisterContext(
         std::shared_ptr<Spacetime> spacetime, int count = 3, int degree = 3,
         std::vector<std::complex<double>> target = cobordism::Proton::singlet());
 
-    /// Build the context with an EXPLICIT hole selection (e.g. a build's own
-    /// census, or the relabel gate's matched images), validated with the same
-    /// count semantics as the selecting constructor: fewer than `count` throws,
-    /// more than `count` is a recorded truncation naming the dropped holes.
+    /// Build the context with an explicit hole selection, such as a build's own
+    /// census or the relabel gate's matched images. Validated with the same count
+    /// semantics as the selecting constructor: fewer than `count` throws, more
+    /// than `count` is a recorded truncation naming the dropped holes.
     /// `holesTotal()` still reports the complex's own emergent census.
     RegisterContext(std::shared_ptr<Spacetime> spacetime,
                     const std::vector<std::vector<std::uint64_t>> &holes,
                     int count, int degree,
                     std::vector<std::complex<double>> target);
 
-    // ---- the validated register ----
+    // ---- validated register ----
     [[nodiscard]] const std::shared_ptr<Spacetime> &spacetime() const noexcept {
       return spacetime_;
     }
@@ -142,8 +137,8 @@ class RegisterContext {
     [[nodiscard]] int bK() const;
     /// The full Betti vector of the complex (cached).
     [[nodiscard]] const std::vector<int> &betti() const;
-    /// True when the emergent-hole census and Betti at the register degree
-    /// disagree — the campaign's holes=3 / b₃=2 style finding, always recorded.
+    /// True when the emergent-hole census and the Betti number at the register
+    /// degree disagree.
     [[nodiscard]] bool holesVsBettiDivergent() const { return holesTotal_ != bK(); }
     /// The surplus-selection warning naming the dropped holes (empty when the
     /// selection was exact). The Python binding emits it as a `UserWarning` at
@@ -151,16 +146,15 @@ class RegisterContext {
     [[nodiscard]] const std::string &selectionWarning() const noexcept {
       return selectionWarning_;
     }
-    /// The canonical spacetime dimension \f$ d \f$ — the metric signature's
-    /// dimension (`getMetric()->getSignature()->getDimensions()`, the same
-    /// accessor WilsonLoop / ReggeSolver read). The driver's dimension gates
-    /// read this.
+    /// The canonical spacetime dimension \f$ d \f$: the metric signature's
+    /// dimension, from `getMetric()->getSignature()->getDimensions()`, the same
+    /// accessor `WilsonLoop` and `ReggeSolver` read.
     [[nodiscard]] int dimensions() const noexcept { return dimensions_; }
     /// The number of top cells.
     [[nodiscard]] int topCellCount() const noexcept { return topCellCount_; }
-    /// True iff any edge is non-spacelike (timelike or null). At
-    /// initialization no time has passed — causal structure may only emerge —
-    /// so all-spacelike specimens honestly report false.
+    /// True iff any edge is non-spacelike (timelike or null). At initialization
+    /// no time has passed and causal structure has yet to emerge, so
+    /// all-spacelike specimens report false.
     [[nodiscard]] bool causalContent() const noexcept { return causalContent_; }
 
     // ---- shared per-complex caches ----
@@ -168,8 +162,8 @@ class RegisterContext {
     /// period readout shares (lazily built; `gauged()` copies share it).
     [[nodiscard]] cobordism::EigenstateSynthesis &synthesis() const;
     /// The induced-orientation signs \f$ \varepsilon_h = \pm 1 \f$ of the
-    /// selected holes (`cobordism::ChainComplex::endSignCovector` — the ONE
-    /// orientation convention; lazily built, shared across `gauged()` copies).
+    /// selected holes, from `cobordism::ChainComplex::endSignCovector`. Lazily
+    /// built and shared across `gauged()` copies.
     [[nodiscard]] const std::vector<int> &epsilonSigns() const;
     /// The Hodge metric weights \f$ W_k \f$ at the register degree, in the
     /// canonical `ChainComplex` \f$ k \f$-cell order (lazily built, shared).
@@ -178,31 +172,31 @@ class RegisterContext {
     /// index into `synthesis().cellSimplices()` (lazily built, shared).
     [[nodiscard]] const std::map<std::vector<std::uint64_t>, std::size_t> &
     cellIndex() const;
-    /// The shared 4D interior-hinge selection (`InteriorHinges` over this
-    /// context's spacetime and holes; lazily built, shared — `EmergentMass` and
-    /// `EmergentRadius` compose exactly this one instance).
+    /// The shared 4D interior-hinge selection: `InteriorHinges` over this
+    /// context's spacetime and holes, lazily built and shared. `EmergentMass` and
+    /// `EmergentRadius` compose this one instance.
     /// @throws std::invalid_argument if the complex is not genuinely 4D.
     [[nodiscard]] const std::shared_ptr<InteriorHinges> &interiorHinges() const;
 
-    // ---- the GAUGE gate transform (construction-free) ----
-    /// The GAUGE-gate variant: the same live complex and register with the
+    // ---- GAUGE gate transform ----
+    /// The GAUGE-gate variant: the same live complex and register, with the
     /// target rotated by the global U(1) phase \f$ e^{i\theta} \f$ — the
-    /// register's one surviving gauge freedom (it contains the Z₃ cyclic recolor
-    /// of the singlet and the orientation flip). Shares this context's spacetime
-    /// and caches (the gauge knob only rotates the target; nothing is rebuilt).
-    /// The RELABEL gate — which needs a rebuilt, relabeled complex — is a
-    /// construction and lives in `LiveComplex` / `ObservableGates`, never here.
+    /// register's one surviving gauge freedom, containing the
+    /// \f$ \mathbb{Z}_3 \f$ cyclic recolor of the singlet and the orientation
+    /// flip. Shares this context's spacetime and caches; nothing is rebuilt. The
+    /// RELABEL gate needs a rebuilt, relabeled complex and lives in
+    /// `LiveComplex` and `ObservableGates`.
     [[nodiscard]] std::shared_ptr<RegisterContext> gauged(double theta) const;
 
   private:
-    /// The lazily-built shared structures. Held behind one shared_ptr so
-    /// `gauged()` copies share every cache both ways (a cache built by either
-    /// context is visible to the other — the complex is the same object).
+    /// The lazily-built shared structures. Held behind one `shared_ptr` so
+    /// `gauged()` copies share every cache in both directions: a cache built by
+    /// either context is visible to the other, since the complex is one object.
     struct Caches;
 
     /// Shared constructor tail: read the live complex's censuses and validate
-    /// the hole selection (`explicitHoles` null ⇒ select from the emergent
-    /// census). Reads only — nothing is built or materialized.
+    /// the hole selection. A null `explicitHoles` selects from the emergent
+    /// census. Reads only; nothing is built or materialized.
     void initialize(int count,
                     const std::vector<std::vector<std::uint64_t>> *explicitHoles);
 

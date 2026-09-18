@@ -112,9 +112,12 @@ using namespace ::tessera::quantum;
 ///
 /// ## References
 ///
-///   - Ambjorn, Jurkiewicz, Loll, *Reconstructing the Universe*, Phys. Rev. D 72 (2005)
-///   - Gorlich, *Introduction to Causal Dynamical Triangulations* (2013)
-///   - Loll, *Quantum Gravity from Causal Dynamical Triangulations: A Review*, Class. Quant. Grav. 37 (2020)
+///   - Ambjorn, Jurkiewicz & Loll, "Dynamically Triangulating Lorentzian
+///     Quantum Gravity", arXiv:hep-th/0105267
+///   - Ambjorn, Jurkiewicz & Loll, "Reconstructing the Universe",
+///     arXiv:hep-th/0505154
+///   - Ambjorn, Goerlich, Jurkiewicz & Loll, "Nonperturbative Quantum Gravity"
+///     (a review), arXiv:1203.3591
 ///
 class CDT : public Simulation {
   public:
@@ -132,11 +135,11 @@ class CDT : public Simulation {
     /// @param epsilon Volume-fixing strength \f$ \varepsilon \f$
     /// @param targetN41 Target \f$(d,1)\f$-type four-volume \f$ \tilde{N}_4 = N_4^{(4,1)} \f$
     /// @param quadraticVolumeFix If true, use \f$ \varepsilon(N_{41} - \tilde{N}_4)^2 \f$;
-    ///   if false, use \f$ \varepsilon |N_{41} - \tilde{N}_4| \f$ (Reconstructing the Universe eq. 6)
+    ///   if false, use \f$ \varepsilon |N_{41} - \tilde{N}_4| \f$
     CDT(std::shared_ptr<Spacetime> spacetime, double k0, double k4, double delta,
         double epsilon, std::size_t targetN41, bool quadraticVolumeFix = true);
 
-    /// \f$(2, 2d)\f$ vertex insertion move (Brunekreef Sec. 2.3.1, adapted to 4D).
+    /// \f$(2, 2d)\f$ vertex insertion move.
     ///
     /// Picks a random \f$ N_{41} \f$-type simplex, finds its spatial \f$(d\!-\!1)\f$-face
     /// and the adjacent simplex of opposite orientation. Inserts a new vertex at the
@@ -189,12 +192,12 @@ class CDT : public Simulation {
     /// Deprecated alias for shift(). The \f$(3,3)\f$ move is self-inverse.
     bool ishift();
 
-    /// Construct a transactional :class:`AddMove` bound to this
-    /// simulation's spacetime + RNG.  Caller drives propose() / apply()
-    /// / rollback() directly.  Useful for the modularity sweep
-    /// optimizer in observables/ModularityOptimizer.h, which layers
-    /// custom acceptance (Q-direction filter) on top of the bare
-    /// move mechanics.  Does *not* update CDT's acceptance counters.
+    /// Construct a transactional ``AddMove`` bound to this simulation's
+    /// spacetime and RNG. The caller drives propose() / apply() / rollback().
+    /// Used by the modularity sweep optimizer in
+    /// observables/ModularityOptimizer.h, which layers its own acceptance
+    /// (a Q-direction filter) on the bare move mechanics. Does not update CDT's
+    /// acceptance counters.
     [[nodiscard]] std::unique_ptr<class ::tessera::spacetime::PachnerMove> proposeAdd();
     [[nodiscard]] std::unique_ptr<class ::tessera::spacetime::PachnerMove> proposeRemove();
     [[nodiscard]] std::unique_ptr<class ::tessera::spacetime::PachnerMove> proposeFlip();
@@ -267,9 +270,8 @@ class CDT : public Simulation {
 
     /// Enable or disable vertex relabeling after add/remove moves.
     ///
-    /// [BGL] Sec. 2.2.1 requires the labeling of a triangulation to be uniform
-    /// for the chain to satisfy detailed balance. In the labeled formalism that
-    /// requirement is carried by the acceptance ratio, and it is:
+    /// Detailed balance requires the labeling of a triangulation to be uniform,
+    /// and in the labeled formalism the acceptance ratio already carries that:
     /// ``AddMove``'s Metropolis prefactor is
     /// \f$ \log N_4^{(4,1)} - \log (N_0 + 1) \f$ and ``RemoveMove``'s is
     /// \f$ \log N_0 - \log N_4^{(4,1)} \f$ after the move, the factors for
@@ -277,7 +279,7 @@ class CDT : public Simulation {
     ///
     /// Swapping two vertices' labels on top of that changes nothing the chain
     /// reads. The action is a function of \f$ N_0 \f$, \f$ N_4^{(4,1)} \f$
-    /// and \f$ N_4^{(3,2)} \f$; the guards read vertex *times*
+    /// and \f$ N_4^{(3,2)} \f$; the guards read vertex times
     /// (``isValidCDTOrientation``, ``isN41Type``, ``isN32Type``, all through
     /// ``TemporalOrientation::orientationOf``); and every draw indexes a live
     /// vector by position rather than by label (``getRandomVertex``,
@@ -289,17 +291,16 @@ class CDT : public Simulation {
     /// ``Spacetime::swapVertexLabels`` walks a list whose length grows with the
     /// four-volume, and a sweep pays that on every add move it accepts.
     ///
-    /// Disabled by default. Enabling it applies the swap to
-    /// ``CDT::add`` and to every move drawn through ``CDT::proposeAdd``,
-    /// including ``observables::ModularityOptimizer``'s.
+    /// Disabled by default. Enabling it applies the swap to ``CDT::add`` and to
+    /// every move drawn through ``CDT::proposeAdd``, including
+    /// ``observables::ModularityOptimizer``'s.
     void setRelabelVertices(bool enabled) noexcept { relabelVertices_ = enabled; }
 
-    /// Re-seed the internal RNG. The default constructor pulls a
-    /// random seed from std::random_device — useful for production
-    /// MC sweeps but flaky for tests that depend on a specific
-    /// growth pattern (e.g. tests/test_pachner_remove_move.py needs
-    /// a topology that admits an order-2d vertex). Call this with a
-    /// fixed seed at the top of such tests to make the result
+    /// Re-seed the internal RNG. The default constructor seeds from
+    /// std::random_device, which suits production Monte Carlo sweeps but not
+    /// tests that depend on a specific growth pattern (e.g.
+    /// tests/test_pachner_remove_move.py needs a topology that admits an
+    /// order-2d vertex). Call this with a fixed seed to make such a test
     /// reproducible.
     void setSeed(std::uint32_t s) noexcept { rng.seed(s); }
 
@@ -328,12 +329,12 @@ class CDT : public Simulation {
     /// Width in \f$ k_4 \f$ below which the bracket is considered located.
     static constexpr double kTuneTolerance = 0.01;
 
-    /// Fraction of the volume a drift measurement is allowed to move before it
-    /// stops early, bounding the complex to between half and double the volume
-    /// tuning started at. Wide enough that a long window near the critical
-    /// coupling runs to completion -- the volume's own fluctuations are a few
-    /// percent and it wanders while the fixing term is inactive -- and narrow
-    /// enough that a coupling far from critical stops early.
+    /// Fractional band around the volume tuning started at; a drift measurement
+    /// stops early once the volume leaves it. Wide enough that a long window
+    /// near the critical coupling runs to completion -- the volume's own
+    /// fluctuations are a few percent and it wanders while the fixing term is
+    /// inactive -- and narrow enough that a coupling far from critical stops
+    /// early.
     static constexpr double kTuneVolumeBand = 1.0;
 
     /// Relative drift of the four-volume per sweep at the current couplings,

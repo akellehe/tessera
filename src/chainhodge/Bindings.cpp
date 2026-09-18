@@ -38,8 +38,8 @@ void register_chainhodge(py::module_ m) {
       .value("KontsevichSegal", Branch::KontsevichSegal);
 
   py::class_<InstanceCertificate>(m, "InstanceCertificate",
-      R"doc(The instance certificate of specification §4.2: Kontsevich-Segal allowability
-of every top simplex, the minimal margin pi - sum_i |arg lambda_i(g_T)|, the volumes on
+      R"doc(The instance certificate: Kontsevich-Segal allowability of every top
+simplex, the minimal margin pi - sum_i |arg lambda_i(g_T)|, the volumes on
 the declared branch, the Gram determinants, continuation ambiguity, and the Lorentzian
 protocol rotation epsilon (NaN until set).)doc")
       .def_readonly("branch", &InstanceCertificate::branch)
@@ -63,9 +63,11 @@ protocol rotation epsilon (NaN until set).)doc")
 
   py::class_<WhitneyMass>(m, "WhitneyMass",
       R"doc(Sparse complex symmetric inverse chain metrics M_k of the chain-level Whitney
-Hodge pencil, assembled per top simplex from the complex squared edge lengths alone
-(specification §4.1, §4.2). Reference orientation is ascending vertex id
-(ChainComplex.fromTopCells). Sparse results are scipy CSC matrices.)doc")
+Hodge pencil, assembled per top simplex from the complex squared edge lengths alone.
+Reference orientation is ascending vertex id (ChainComplex.fromTopCells). Sparse
+results are scipy CSC matrices.
+
+Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_static("complexOf", &WhitneyMass::complexOf, py::arg("spacetime"),
            "ChainComplex.fromTopCells over the spacetime's top simplices (sorted vertex ids).")
       .def_static("squaredLengthsOf", &WhitneyMass::squaredLengthsOf,
@@ -85,14 +87,14 @@ Hodge pencil, assembled per top simplex from the complex squared edge lengths al
            "Preset dispatch: L2 -> M_k (inverse chain metric); GRASSMANN_ALL -> G_k (chain metric).")
       .def_static("assembleGrassmann", &WhitneyMass::assembleGrassmann,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
-           "The Grassmann projection chain metric G_k = multiplicity o blade pairing (CH §6).")
+           "The Grassmann projection chain metric G_k = multiplicity o blade pairing.")
       .def_static("allowabilityMargin", &WhitneyMass::allowabilityMargin,
            py::arg("complex"), py::arg("squared_lengths"),
            "min over top simplices of pi - sum_i |arg lambda_i(g_T)|.")
       .def_static("certificate", &WhitneyMass::certificate,
            py::arg("complex"), py::arg("squared_lengths"),
            py::arg("branch") = Branch::Continuation,
-           "The full instance certificate (§4.2).")
+           "The full instance certificate.")
       .def_static("volumeOnBranch",
            [](const Eigen::MatrixXcd &gram, Branch branch) {
              bool ambiguous = false;
@@ -139,7 +141,7 @@ Hodge pencil, assembled per top simplex from the complex squared edge lengths al
       .def_readonly("dense", &HarmonicRead::dense);
 
   py::class_<RankReport>(m, "RankReport",
-      "The rank conditions (R1)-(R4) of specification Prop. 4.2 at one degree.")
+      "The rank conditions (R1)-(R4) at one degree.")
       .def_readonly("degree", &RankReport::degree)
       .def_property_readonly("measured", [](const RankReport &r) {
         return std::vector<int>(r.measured.begin(), r.measured.end()); })
@@ -158,11 +160,14 @@ Hodge pencil, assembled per top simplex from the complex squared edge lengths al
       .def_readonly("vectors", &SpectrumRead::vectors);
 
   py::class_<ChainHodge>(m, "ChainHodge",
-      R"doc(The chain-level Hodge pencil of a complexified simplicial complex (specification
-§4.3, §9, §13): sparse inverse chain metrics, geometric images by solves, the symmetric
-pencil and its auxiliary form, harmonic chains H_k = M_k ker S, rank conditions R1-R4,
-exact Betti numbers, and the dense spectrum below the crossover. The adjoint is the
-transpose; no conjugation enters any operator.)doc")
+      R"doc(The chain-level Hodge pencil of a complexified simplicial complex: sparse
+inverse chain metrics, geometric images by solves, the symmetric pencil and its
+auxiliary form, harmonic chains H_k = M_k ker S, rank conditions R1-R4, exact Betti
+numbers, and the dense spectrum below the crossover. The adjoint is the transpose;
+no conjugation enters any operator.
+
+Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komplex",
+1944, for the combinatorial Hodge Laplacian.)doc")
       .def(py::init<ChainComplex, SquaredLengths, Preset, Branch, int, double>(),
            py::arg("complex"), py::arg("squared_lengths"), py::arg("preset") = Preset::L2,
            py::arg("branch") = Branch::Continuation,
@@ -221,10 +226,13 @@ transpose; no conjugation enters any operator.)doc")
       .def_readonly("label", &LorentzianExtrapolation::label);
 
   py::class_<LorentzianFamily>(m, "LorentzianFamily",
-      R"doc(The Lorentzian protocol (specification §10): the family s_e(epsilon) with the
-timelike squared lengths rotated by e^{-2 i epsilon} at reported epsilon > 0; reads at
-epsilon = 0 exist only inside a family and carry their gap; extrapolation to
-epsilon -> 0 is a separate, labeled step.)doc")
+      R"doc(The Lorentzian protocol: the family s_e(epsilon) with the timelike squared
+lengths rotated by e^{-2 i epsilon} at reported epsilon > 0; reads at epsilon = 0
+exist only inside a family and carry their gap; extrapolation to epsilon -> 0 is a
+separate, labeled step.
+
+Reference: Kontsevich & Segal, "Wick rotation and the positivity of energy in quantum
+field theory", arXiv:2105.10161.)doc")
       .def_static("rotate", &LorentzianFamily::rotate, py::arg("squared_lengths"),
            py::arg("causal_types"), py::arg("epsilon"),
            "Timelike entries times e^{-2 i epsilon}; others unchanged.")
@@ -244,7 +252,7 @@ epsilon -> 0 is a separate, labeled step.)doc")
            "Labeled polynomial extrapolation of reads at epsilon > 0 to epsilon -> 0.");
   py::class_<Connection>(m, "Connection",
       R"doc(A C* connection on the canonical edges x < y: U_xy per edge, U_yx = 1/U_xy exactly,
-U_xx = 1 (specification Def. 5.1). Gauge: U_xy -> g_x^{-1} U_xy g_y. Links are never
+U_xx = 1. Gauge: U_xy -> g_x^{-1} U_xy g_y. Links are never
 normalized or conjugated.)doc")
       .def(py::init<const ChainComplex &, std::vector<Complex>>(), py::arg("complex"), py::arg("links"))
       .def_static("trivial", &Connection::trivial, py::arg("complex"))
@@ -271,7 +279,8 @@ normalized or conjugated.)doc")
       .def("isUnitary", &Connection::isUnitary, py::arg("tolerance") = 1e-12);
 
   py::class_<CovarianceCertificate>(m, "CovarianceCertificate",
-      "Residuals of specification Prop. 5.1 (i)-(vi) on an instance; NaN means unmeasured.")
+      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance; "
+      "NaN means unmeasured.")
       .def_readonly("transposeMetric", &CovarianceCertificate::transposeMetric)
       .def_readonly("transposePencil", &CovarianceCertificate::transposePencil)
       .def_readonly("covarianceMetric", &CovarianceCertificate::covarianceMetric)
@@ -293,7 +302,7 @@ normalized or conjugated.)doc")
       .def("nodeCount", &Contour::nodeCount);
 
   py::class_<BandCertificate>(m, "BandCertificate",
-      "Certificates of one Riesz band (specification §6); NaN means unmeasured; no sign or "
+      "Certificates of one Riesz band; NaN means unmeasured; no sign or "
       "inertia is extracted from B_C.")
       .def_readonly("contour", &BandCertificate::contour)
       .def_readonly("nodeCount", &BandCertificate::nodeCount)
@@ -311,7 +320,7 @@ normalized or conjugated.)doc")
       .def_readonly("leftResidual", &BandCertificate::leftResidual);
 
   py::class_<Band>(m, "Band",
-      R"doc(One Riesz band of h_k(s,U) (specification §6): projector P on chains, right frame Phi,
+      R"doc(One Riesz band of h_k(s,U): projector P on chains, right frame Phi,
 the dual connection's frame Phi^vee on the same contour, images Z = G^U Phi, pairing
 B_C = (Phi^vee)^T G^U Phi, the canonical left frame Phi~ = G^{U^-1} Phi^vee B_C^{-T} (empty
 when refused), the reduced operator J = Phi~^T h Phi, the covariance Gamma = Phi Phi~^T, and
@@ -340,10 +349,10 @@ the certificates.)doc")
       .def_readonly("tolerance", &PencilRegimeCertificate::tolerance);
 
   py::class_<CovariantChainHodge>(m, "CovariantChainHodge",
-      R"doc(The covariant one-particle operator h_k(s,U) of specification §5: the sparse
-inverse chain metric dressed by U_{b(sigma) b(tau)} and the incidences twisted by
-U_{b(tau) b(sigma)}, b(sigma) = min sigma, with the dressed pencil (A~_k^U, M_k^U) on
-images and the exact properties of Prop. 5.1 measured on every instance.)doc")
+      R"doc(The covariant one-particle operator h_k(s,U): the sparse inverse chain metric
+dressed by U_{b(sigma) b(tau)} and the incidences twisted by U_{b(tau) b(sigma)},
+b(sigma) = min sigma, with the dressed pencil (A~_k^U, M_k^U) on images and the exact
+properties (i)-(vi) measured on every instance.)doc")
       .def(py::init<const ChainHodge &, Connection, std::uint64_t, bool>(), py::arg("base"),
            py::arg("connection"), py::arg("gauge_seed") = 7, py::arg("measure_certificate") = true)
       .def("base", &CovariantChainHodge::base, py::return_value_policy::reference_internal)
@@ -382,7 +391,7 @@ images and the exact properties of Prop. 5.1 measured on every instance.)doc")
            "(zeta I - h_k)^{-1} c = M^U (zeta M^U - A~^U)^{-1} c by one sparse bordered factorization.")
       .def("harmonicChains", &CovariantChainHodge::harmonicChains, py::arg("k"),
            py::arg("kappa") = 10.0, py::arg("force_sparse") = false,
-           "H_k = M_k^U ker S^U with S^U = [(d_{k+1}^{U^-1})^T; d_k^U M_k^U] (RSF Sec. 5): the "
+           "H_k = M_k^U ker S^U with S^U = [(d_{k+1}^{U^-1})^T; d_k^U M_k^U]: the "
            "harmonic chains read as a null space, dense SVD below the crossover and sparse "
            "rank-revealing QR at or above it.")
       .def("harmonicBand", &CovariantChainHodge::harmonicBand, py::arg("k"), py::arg("kappa") = 10.0,
@@ -418,7 +427,7 @@ images and the exact properties of Prop. 5.1 measured on every instance.)doc")
       .def_readonly("degree", &BandDerivative::ResolventFrames::degree)
       .def_readonly("frame", &BandDerivative::ResolventFrames::frame);
   py::class_<BandDerivative>(m, "BandDerivative",
-      "Analytic derivatives of a Riesz band's geometric images (#947): dZ = G^U(-dM^U Z + dP Phi) with "
+      "Analytic derivatives of a Riesz band's geometric images: dZ = G^U(-dM^U Z + dP Phi) with "
       "dP Phi = sum_j w_j R(zeta_j) dh R(zeta_j) Phi; and d(A~^U) = dM^U h + M^U dh.")
       .def_static("resolventFrames", &BandDerivative::resolventFrames, py::arg("covariant"), py::arg("k"),
            py::arg("contour"), py::arg("frame"))
@@ -431,8 +440,8 @@ images and the exact properties of Prop. 5.1 measured on every instance.)doc")
       .def_static("pencilOperatorPhaseDerivative", &BandDerivative::pencilOperatorPhaseDerivative,
            py::arg("covariant"), py::arg("k"), py::arg("edge_index"));
   py::class_<FaceAnchor>(m, "FaceAnchor",
-      R"doc(The face anchor of specification §8 with the Whitney metric: the per-triangle
-Whitney block M_1^{(t)} (rank 3, Prop. 8.1), its connection dressing by U_{b(e)b(e')},
+      R"doc(The face anchor with the Whitney metric: the per-triangle Whitney block
+M_1^{(t)} (rank 3), its connection dressing by U_{b(e)b(e')},
 the face endomorphism Pi_tau(U) = G_1^U M_1^{(tau)U} G_1^U applied by solves, and the
 invariant anchor coordinate alpha_tau = det((Z^vee)^T M_1^{(tau)U} Z) of a fiber paired
 through its geometric images. The Grassmann per-face blade block has rank 2 and makes
@@ -458,7 +467,7 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_static("anchorCoordinates", &FaceAnchor::anchorCoordinates, py::arg("covariant"),
            py::arg("Z_dual"), py::arg("Z"), "alpha_tau for every triangle.")
       .def_static("numericalRank", &FaceAnchor::numericalRank, py::arg("A"), py::arg("kappa") = 10.0)
-      // ---- tetrahedral anchor at degree 0 (#939) ----
+      // ---- tetrahedral anchor at degree 0 ----
       .def_static("whitneyTetrahedronBlock", &FaceAnchor::whitneyTetrahedronBlock, py::arg("complex"),
            py::arg("squared_lengths"), py::arg("tetrahedron_index"),
            py::arg("branch") = Branch::Continuation,
@@ -523,11 +532,11 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("dualTransfer", &TransferResult::dualTransfer);
 
   py::class_<PencilSchur>(m, "PencilSchur",
-      R"doc(The recursion on the symmetric pencil P(lambda) = A~ - lambda M on geometric images
-(specification §7, §13): the Feshbach complement with its determinant factorization, the
-Craig-Bampton congruence, the restriction of pencil and chain metric to retained fibers, and
-the transfer between fibers with the reversal identity asserted at runtime. Every pairing is
-the transpose.)doc")
+      R"doc(The recursion on the symmetric pencil P(lambda) = A~ - lambda M on geometric
+images: the Feshbach complement with its determinant factorization, the Craig-Bampton
+congruence, the restriction of pencil and chain metric to retained fibers, and the
+transfer between fibers with the reversal identity asserted at runtime. Every pairing
+is the transpose.)doc")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
            py::arg("interface"), py::arg("rank_tolerance") = 1e-12)
       .def_static("craigBampton", &PencilSchur::craigBampton, py::arg("A"), py::arg("M"), py::arg("T"))

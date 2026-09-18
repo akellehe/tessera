@@ -52,8 +52,7 @@ LowRankUpdate::LowRankUpdate(const std::vector<cd> &base, int dim) {
 void LowRankUpdate::refactor(const std::vector<cd> &base, int dim) {
   base_ = toMatrix(base, dim, dim, "LowRankUpdate: base");
   baseFactorization_.compute(base_);
-  // The condition estimate is a property of the factorization: computed
-  // once here, reported by every solve.
+  // Condition estimate of the factorization, reported by every solve.
   baseConditioning_ = inverseRcond(baseFactorization_.rcond());
   dim_ = dim;
   clearUpdate();
@@ -67,8 +66,7 @@ void LowRankUpdate::setUpdate(const std::vector<cd> &left,
   right_ = toMatrix(right, rank, dim_, "setUpdate: right");
   rank_ = rank;
   // Z = A^{-1} U (factor solve, multi-rhs) and the LU of the capacitance
-  // I_r + W Z depend only on the factors: computed once per update, reused
-  // by every solve.
+  // I_r + W Z depend only on the factors, so they are computed once per update.
   if (rank_ > 0) {
     capacitanceSolvedLeft_ = baseFactorization_.solve(left_);
     capacitanceFactorization_.compute(Eigen::MatrixXcd::Identity(rank_, rank_) +
@@ -112,7 +110,7 @@ CertifiedVector LowRankUpdate::solve(const std::vector<cd> &rhs,
     conditioning = std::max(conditioning, capacitanceConditioning_);
   }
 
-  // Measured residual of the UPDATED system, never assumed.
+  // Measured residual of the updated system.
   Eigen::VectorXcd residualVector = base_ * solution - b;
   if (rank_ > 0)
     residualVector.noalias() += left_ * (right_ * solution);
@@ -166,9 +164,8 @@ LowRankUpdate::TouchedFactors LowRankUpdate::factorsFromTouched(
   const Eigen::MatrixXcd delta = updatedMatrix - baseMatrix;
 
   TouchedFactors factors;
-  // Support check FIRST: any nonzero outside touched rows and columns means
-  // the declared star does not span the change — the low-rank path may not
-  // be called exact and the caller must cold-recompute.
+  // Support check: a nonzero outside the touched rows and columns means the
+  // declared star does not span the change, so the factors are not exact.
   factors.spansChange = true;
   for (int i = 0; i < dim && factors.spansChange; ++i) {
     if (isTouched[static_cast<std::size_t>(i)])
@@ -185,10 +182,10 @@ LowRankUpdate::TouchedFactors LowRankUpdate::factorsFromTouched(
   if (!factors.spansChange)
     return factors;
 
-  // Left part: touched ROWS carry their full delta rows (selector column e_i,
-  // right row = delta row). Remaining support sits in touched COLUMNS on
-  // untouched rows: carried as (residual column, selector row e_j). All-zero
-  // rows/columns are trimmed so the rank stays at most 2 * |active touched|.
+  // Touched rows carry their whole delta rows (selector column e_i, right row =
+  // delta row). Remaining support sits in touched columns on untouched rows,
+  // carried as (residual column, selector row e_j). All-zero rows and columns
+  // are trimmed, so the rank stays at most 2 * |active touched|.
   std::vector<Eigen::VectorXcd> leftColumns;
   std::vector<Eigen::RowVectorXcd> rightRows;
   for (int i = 0; i < dim; ++i) {
@@ -267,9 +264,9 @@ CertifiedVector LowRankUpdate::rankOneEigenvalues(
   if (rho == 0.0 || totalWeight == 0.0) {
     updated = eigenvalues;
   } else {
-    // Deflation: modes with negligible weight keep their eigenvalue; the
-    // neglected shift is charged to the residual. Coincident poles merge
-    // their weights, each extra copy keeping its eigenvalue exactly.
+    // Deflation: modes with negligible weight keep their eigenvalue and the
+    // neglected shift is charged to the residual. Coincident poles merge their
+    // weights, each extra copy keeping its eigenvalue.
     constexpr double eps = std::numeric_limits<double>::epsilon();
     const double weightFloor = eps * totalWeight;
     const double mergeGap = eps * spread;
@@ -294,7 +291,7 @@ CertifiedVector LowRankUpdate::rankOneEigenvalues(
     const double activeWeight =
         std::accumulate(poleWeights.begin(), poleWeights.end(), 0.0);
     // Sensitivity scale of the secular roots: the spread over the smallest
-    // active pole gap (classical eigenvalue-update conditioning).
+    // active pole gap.
     for (std::size_t i = 1; i < m; ++i)
       conditioning = std::max(
           conditioning, spread / std::max(poles[i] - poles[i - 1], mergeGap));
@@ -304,15 +301,12 @@ CertifiedVector LowRankUpdate::rankOneEigenvalues(
         value += rho * poleWeights[i] / (poles[i] - lambda);
       return value;
     };
-    // One root per interlacing interval: (d_k, d_{k+1}) plus the outer
-    // interval on the sign(rho) side, bounded by |rho| * total weight. On
-    // each interval f is monotone (derivative sign = sign(rho)) with KNOWN
-    // limit signs at the pole endpoints — f -> -inf at the lower pole and
-    // +inf at the upper for rho > 0, mirrored for rho < 0 — and the finite
-    // outer endpoint satisfies sign(f) = sign(rho) side by the
-    // |rho| * activeWeight bound. Bisection therefore never evaluates AT a
-    // pole: only strict midpoints are probed (a midpoint that rounds onto
-    // an endpoint means the bracket is at representability and we stop).
+    // One root per interlacing interval: (d_k, d_{k+1}) plus the outer interval
+    // on the sign(rho) side, bounded by |rho| * total weight. On each interval f
+    // is monotone with known limit signs at the pole endpoints, and the finite
+    // outer endpoint satisfies sign(f) = sign(rho). Bisection probes only strict
+    // midpoints, so it never evaluates at a pole; a midpoint that rounds onto an
+    // endpoint means the bracket has reached representability and the loop stops.
     for (std::size_t k = 0; k < m; ++k) {
       double lo;
       double hi;

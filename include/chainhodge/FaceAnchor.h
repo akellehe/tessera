@@ -31,8 +31,8 @@ struct FaceBlock {
   Preset preset{Preset::L2};
 };
 
-/// One tetrahedron's block at degree 0 (#939): the \f$ 4\times4 \f$ matrix
-/// over the tetrahedron's four vertices (canonical \f$ C_0 \f$ indices in
+/// One tetrahedron's block at degree 0: the \f$ 4\times4 \f$ matrix over the
+/// tetrahedron's four vertices (canonical \f$ C_0 \f$ indices in
 /// `vertexIndices`, in ascending vertex order), its numerical rank, and the
 /// preset it was assembled under.
 struct TetrahedronBlock {
@@ -48,28 +48,26 @@ struct TetrahedronBlock {
 
 /// # FaceAnchor
 ///
-/// The face anchor of specification §8, realized with the Whitney metric.
+/// The face anchor, realized with the Whitney metric.
 ///
 /// For a nondegenerate triangle \f$ t \f$ the Whitney block
 /// \f$ M_1^{(t)}\in\mathbb{C}^{3\times3} \f$ — the contribution of \f$ t \f$ to
-/// \f$ M_1 \f$, restricted to its three edges — is nonsingular (Prop. 8.1):
-/// the three Whitney 1-forms of \f$ t \f$ are linearly independent functions on
+/// \f$ M_1 \f$, restricted to its three edges — is nonsingular: the three
+/// Whitney 1-forms of \f$ t \f$ are linearly independent functions on
 /// \f$ t \f$ and \f$ M_1^{(t)} \f$ is their Gram matrix in a nondegenerate
 /// metric. At \f$ d = 2 \f$ the triangle is a top simplex and the block is its
-/// local block. At \f$ d\ge3 \f$ the specification writes the block for a
-/// triangle only; here it is read as the sum of the local \f$ M_1 \f$ blocks of
-/// every top simplex containing \f$ t \f$, restricted to \f$ t \f$'s three
-/// edges, i.e. the part of \f$ M_1 \f$'s assembly that \f$ t \f$'s edges receive
-/// from the top simplices through \f$ t \f$. That reading is this class's, not
-/// the specification's text.
+/// local block. At \f$ d\ge3 \f$ the block is the sum of the local \f$ M_1 \f$
+/// blocks of every top simplex containing \f$ t \f$, restricted to \f$ t \f$'s
+/// three edges: the part of \f$ M_1 \f$'s assembly that \f$ t \f$'s edges
+/// receive from the top simplices through \f$ t \f$.
 ///
 /// With the connection, the connection-dressed face endomorphism on chains is
 /// \f[
 ///   \Pi_\tau(U) = G_1^U\,M_1^{(\tau)U}\,G_1^U,\qquad
 ///   (M_1^{(\tau)U})_{ee'} = (M_1^{(\tau)})_{ee'}\,U_{b(e)b(e')},
 /// \f]
-/// covariant by the argument of Prop. 5.1(iii), applied by solves and never
-/// formed densely; and the invariant anchor coordinate of a fiber
+/// covariant by property (iii) of `CovariantChainHodge`, applied by solves and
+/// never formed densely; and the invariant anchor coordinate of a fiber
 /// \f$ Q \f$ with right frame \f$ \Phi_Q \f$ (chains) and dual frame
 /// \f$ \Phi_Q^\vee \f$ (the same band for \f$ U^{-1} \f$) is
 /// \f[
@@ -88,8 +86,8 @@ struct TetrahedronBlock {
 /// rank-three fiber. No conjugation appears anywhere; the pairing is the
 /// transpose.
 ///
-/// **The tetrahedral anchor at degree 0 (#939).** The same construction one
-/// degree down and one dimension up: for a nondegenerate tetrahedron \f$ T \f$
+/// **The tetrahedral anchor at degree 0.** The same construction one degree
+/// down and one dimension up: for a nondegenerate tetrahedron \f$ T \f$
 /// the Whitney block \f$ M_0^{(T)}\in\mathbb{C}^{4\times4} \f$ over its four
 /// vertices is \f$ \mathrm{vol}(T)\,(I+\mathbf 1\mathbf 1^T)/20 \f$ at
 /// \f$ d = 3 \f$ (the Gram of the four barycentric functions), rank four, and
@@ -102,8 +100,9 @@ struct TetrahedronBlock {
 /// \f]
 /// since \f$ b(v) = v \f$ for a vertex, and the anchor coordinate of a rank-four
 /// fiber is \f$ \alpha_T = \det((Z_Q^\vee)^T M_0^{(T)U} Z_Q) \f$. Because
-/// \f$ (G_0^U)^T = G_0^{U^{-1}} \f$ (Prop. 5.1(ii)), the left factor of
-/// \f$ \Pi_T \f$ is already the transposed dual-side metric: the form is
+/// \f$ (G_0^U)^T = G_0^{U^{-1}} \f$ (property (ii) of `CovariantChainHodge`),
+/// the left factor of \f$ \Pi_T \f$ is already the transposed dual-side
+/// metric: the form is
 /// covariant under the transpose pairing and no dagger enters. The Grassmann
 /// degree-0 block pairs scalars and has rank one, so the tetrahedral anchor is
 /// defined for the Whitney metric only and refuses the Grassmann preset by
@@ -114,7 +113,7 @@ struct TetrahedronBlock {
 /// content). Nothing is excluded by it.
 class FaceAnchor {
  public:
-  // ---- tetrahedral anchor at degree 0 (#939) ----
+  // ---- tetrahedral anchor at degree 0 ----
 
   /// \f$ M_0^{(T)} \f$ of the tetrahedron at canonical index
   /// \p tetrahedronIndex under the Whitney metric (sum over the top simplices
@@ -184,8 +183,8 @@ class FaceAnchor {
                                                                 const SquaredLengths &s,
                                                                 Branch branch = Branch::Continuation);
   /// The Grassmann per-face blade block: \f$ \langle u_e, u_{e'}\rangle \f$ of the
-  /// triangle's three edge vectors by the polarization identity (CH §6),
-  /// rank two for a nondegenerate triangle.
+  /// triangle's three edge vectors by the polarization identity; rank two for a
+  /// nondegenerate triangle.
   [[nodiscard]] static FaceBlock grassmannFaceBlock(const cobordism::ChainComplex &K,
                                                     const SquaredLengths &s, std::size_t faceIndex);
   /// The face block of the instance's own preset: Whitney for `Preset::L2`,

@@ -33,7 +33,7 @@ namespace tessera::chainhodge {
 /// A \f$ \mathbb{C}^* \f$ connection on the edges of a reference-oriented
 /// complex: one link \f$ U_{xy} \in \mathbb{C}^* \f$ per canonical edge
 /// \f$ x < y \f$, with \f$ U_{yx} = U_{xy}^{-1} \f$ derived exactly and
-/// \f$ U_{xx} = 1 \f$ (specification Def. 5.1). A gauge transformation acts by
+/// \f$ U_{xx} = 1 \f$. A gauge transformation acts by
 /// \f$ U_{xy} \mapsto g_x^{-1} U_{xy} g_y \f$, and the curvature of a triangle
 /// \f$ t = [p < q < r] \f$ is the ordered product \f$ \mathcal F_t = U_{rq}U_{qp}U_{pr} \f$.
 /// Links are never normalized to \f$ U/|U| \f$ and never conjugated.
@@ -68,7 +68,7 @@ class Connection {
 
   /// A closed walk on the 1-skeleton as directed steps \f$ (u \to v) \f$:
   /// consecutive steps chain (the target of one step is the source of the
-  /// next) and the last target is the first source, the walk's BASE POINT.
+  /// next) and the last target is the first source, the walk's base point.
   /// The engine's loop convention (`mesh::Edge::walkLoop`, the cycles of a
   /// `cobordism::MultiCobordism::Marking`): a step \f$ u \to v \f$ traverses
   /// the canonical edge \f$ [\min(u,v) < \max(u,v)] \f$ with sign \f$ +1 \f$
@@ -84,9 +84,9 @@ class Connection {
   /// @throws std::invalid_argument when the walk is empty, does not chain or
   ///   close, or steps across a pair that is not an edge.
   [[nodiscard]] Complex holonomy(const Walk &walk) const;
-  /// The TRANSPORTED PERIOD of a 1-cochain over a closed walk.
+  /// The transported period of a 1-cochain over a closed walk.
   ///
-  /// WHAT: \p cochain is indexed like `links()` (the canonical edge order), and
+  /// \p cochain is indexed like `links()` (the canonical edge order), and
   /// its value on an edge \f$ \sigma \f$ is expressed in the frame at the
   /// edge's base vertex \f$ b(\sigma) = \min\sigma \f$ — the convention of
   /// the twisted incidences \f$ (\partial_k^U)_{\tau\sigma} =
@@ -104,7 +104,7 @@ class Connection {
   /// the link \f$ U_{v_kv_{k+1}} \f$ against it) and then back along the walk
   /// to \f$ v_0 \f$.
   ///
-  /// WHY: with the trivial connection this is the plain signed sum
+  /// With the trivial connection this is the plain signed sum
   /// \f$ \sum_k s_k\,\omega_{\sigma_k} \f$ of
   /// `cobordism::EigenstateSynthesis::periodsOfCochainOverLoops` and
   /// `cobordism::MultiCobordism::monodromy`. Under a pure gauge
@@ -114,15 +114,15 @@ class Connection {
   /// \f$ g_{v_0}^{-1} s_k\omega_{\sigma_k} \f$: the transported period is
   /// \f$ g_{v_0}^{-1} \f$ times the plain period of the untwisted cochain —
   /// the base-point gauge factor only — so the ratio of the periods over two
-  /// walks with a COMMON base point (\f$ \tau = P_B/P_A \f$ of a qubit torus,
+  /// walks with a common base point (\f$ \tau = P_B/P_A \f$ of a qubit torus,
   /// the coefficient pair of a state in a period frame) is gauge invariant.
   /// This is the one place the engine takes a period with parallel transport
-  /// (`observables::SimplicialQubit`, the qubit spec §16; the period frames
-  /// and the monodromy read of the cobordism spec §2, D3).
+  /// (`observables::SimplicialQubit`; the period frames and the monodromy read
+  /// of `cobordism::MultiCobordism`).
   /// @throws std::invalid_argument when the cochain has the wrong length or
   ///   the walk is empty, does not chain or close, or steps across a non-edge.
   [[nodiscard]] Complex transportedPeriod(const Eigen::VectorXcd &cochain, const Walk &walk) const;
-  /// The steps of a closed walk, given in ANY order, as one closed walk:
+  /// The steps of a closed walk, given in any order, as one closed walk:
   /// Hierholzer's circuit over the multigraph of the directed steps, started
   /// at the first step's source and taking each vertex's outgoing steps in
   /// the given order, so steps that already chain as given come back as
@@ -130,14 +130,14 @@ class Connection {
   /// the steps do not form one closed walk: a vertex whose in- and
   /// out-degrees differ, or steps in more than one connected component.
   ///
-  /// WHY: a marking's cycles are stated as edge steps whose order is a
-  /// convenience (`observables::SimplicialQubit`'s cycles, the qubit spec
-  /// §16; `cobordism::MultiCobordism::Marking`), while `transportedPeriod`
+  /// A marking's cycles are stated as edge steps whose order is a convenience
+  /// (`observables::SimplicialQubit`'s cycles;
+  /// `cobordism::MultiCobordism::Marking`), while `transportedPeriod`
   /// walks the cycle in the order it is traversed, so every reader orders
   /// the steps by this one rule and two readers of one marking walk it the
   /// same way.
   [[nodiscard]] static Walk closedWalkOf(const Walk &steps);
-  /// The common base point of several closed walks (the qubit spec §16): the
+  /// The common base point of several closed walks: the
   /// first vertex of `walks[0]` that lies on every other walk, every walk
   /// rotated in place to start there — so that the transported periods of a
   /// twisted section over all of them carry one and the same base-point
@@ -159,10 +159,10 @@ class Connection {
   [[nodiscard]] std::vector<std::pair<int, double>> checkWalk(const Walk &walk, const char *who) const;
 };
 
-/// The residuals of the exact properties of specification Prop. 5.1, measured
-/// on an instance. Sparse identities are measured on construction; the dense
-/// ones ((i) and (v)) on demand below the crossover. Each residual is relative
-/// to the norm of the object it tests; quiet NaN means unmeasured.
+/// The residuals of the exact properties (i)–(vi) of `CovariantChainHodge`,
+/// measured on an instance. Sparse identities are measured on construction;
+/// the dense ones ((i) and (v)) on demand below the crossover. Each residual is
+/// relative to the norm of the object it tests; quiet NaN means unmeasured.
 struct CovarianceCertificate {
   /// (ii) \f$ \|(M_k^U)^T - M_k^{U^{-1}}\| / \|M_k^U\| \f$, max over degrees.
   double transposeMetric{std::numeric_limits<double>::quiet_NaN()};
@@ -188,11 +188,11 @@ struct CovarianceCertificate {
   int checkedDegree{1};
 };
 
-/// The chain-level pencil's own metric regime, measured (never assumed): the
-/// operator is symmetric for the COMPLEX SYMMETRIC chain metric,
+/// The chain-level pencil's own metric regime, measured and never assumed: the
+/// operator is symmetric for the complex symmetric chain metric,
 /// \f$ M L = (M L)^T \f$, which for a dressed connection is the transpose
 /// identity \f$ (\tilde A^U)^T = \tilde A^{U^{-1}} \f$ and
-/// \f$ (M^U)^T = M^{U^{-1}} \f$ of Prop. 5.1(ii). When both defects sit within
+/// \f$ (M^U)^T = M^{U^{-1}} \f$ of property (ii). When both defects sit within
 /// the tolerance the regime is `CertificateRegime::ComplexSymmetricPencil`;
 /// otherwise it is `NonNormal`, and the defects say by how much.
 struct PencilRegimeCertificate {
@@ -209,9 +209,9 @@ struct PencilRegimeCertificate {
 
 /// # CovariantChainHodge
 ///
-/// The covariant one-particle operator of specification §5: the sparse
-/// inverse chain metrics dressed by the connection and the incidences twisted
-/// by it, with single connection variables and no path,
+/// The covariant one-particle operator: the sparse inverse chain metrics
+/// dressed by the connection and the incidences twisted by it, with single
+/// connection variables and no path,
 /// \f[
 ///   (\partial_k^U)_{\tau\sigma} = (\partial_k)_{\tau\sigma}\,U_{b(\tau)b(\sigma)},\qquad
 ///   (M_k^U)_{\sigma\tau} = (M_k)_{\sigma\tau}\,U_{b(\sigma)b(\tau)},\qquad
@@ -292,13 +292,13 @@ class CovariantChainHodge {
   [[nodiscard]] Eigen::MatrixXcd covariantOperatorPhaseDerivative(int k, std::size_t edgeIndex) const;
   /// Populate the lazy derivative caches at degree \p k (the sparse metric
   /// factorizations and the dense derivative workspace) so that later `const`
-  /// calls only READ them.
+  /// calls only read them.
   ///
   /// `solveDressed` and `derivativeWorkspace` fill `mutable` slots on first
   /// use, which makes two threads calling any of the derivative entry points
   /// concurrently a data race on the shared instance — the same hazard
-  /// `MultiCobordism::step` fixed for the facet lattice with
-  /// `materializeFacets`. A per-edge gradient loop calls this ONCE, serially,
+  /// `MultiCobordism::step` avoids for the facet lattice with
+  /// `materializeFacets`. A per-edge gradient loop calls this once, serially,
   /// before going parallel; after it every slot is non-null and the shared
   /// `Eigen::SparseLU` is only ever solved against, which is thread-safe (the
   /// factors are read-only and the supernodal solve keeps its work buffer on
@@ -324,7 +324,7 @@ class CovariantChainHodge {
   [[nodiscard]] CovariantChainHodge gauged(const std::map<std::uint64_t, Complex> &g) const;
 
   /// The pencil resolvent applied to chains, \f$ (\zeta I - h_k)^{-1} c =
-  /// M_k^U(\zeta M_k^U - \tilde A_k^U)^{-1} c \f$, through ONE sparse
+  /// M_k^U(\zeta M_k^U - \tilde A_k^U)^{-1} c \f$, through one sparse
   /// factorization of the bordered system
   /// \f$ \begin{pmatrix} \zeta M_k^U - \partial_{k+1}^U M_{k+1}^U(\partial_{k+1}^{U^{-1}})^T &
   /// -M_k^U(\partial_k^{U^{-1}})^T \\ -\partial_k^U M_k^U & M_{k-1}^U \end{pmatrix} \f$,
@@ -334,10 +334,10 @@ class CovariantChainHodge {
   ///   \f$ \zeta \f$ is an eigenvalue (singular bordered system).
   [[nodiscard]] Eigen::MatrixXcd resolvent(int k, Complex zeta, const Eigen::MatrixXcd &c) const;
 
-  /// The Riesz band of the contour (specification §6): \f$ P_C(U) =
+  /// The Riesz band of the contour: \f$ P_C(U) =
   /// \sum_j w_j (\zeta_j I - h_k)^{-1} \f$ by the contour's quadrature rule, one
   /// sparse factorization per node, applied to the identity; the right frame
-  /// from the SVD of \f$ P \f$ at the CH tolerance \f$ \kappa\,n\,\epsilon_m\,
+  /// from the SVD of \f$ P \f$ at the tolerance \f$ \kappa\,n\,\epsilon_m\,
   /// \sigma_{\max} \f$; the dual band \f$ \Phi^\vee \f$ from `dual()` on the SAME
   /// contour; \f$ B_C \f$, the left frame (refused by name when
   /// \f$ \sigma_{\min}(B_C) \le \text{isotropyTolerance}\cdot\sigma_{\max}(B_C) \f$,
@@ -348,13 +348,12 @@ class CovariantChainHodge {
 
   /// # The harmonic band without a contour
   ///
-  /// The \f$ \lambda = 0 \f$ band of the pencil, read as the null space the
-  /// specification prescribes rather than as a contour integral around it.
+  /// The \f$ \lambda = 0 \f$ band of the pencil, read as a null space rather
+  /// than as a contour integral around it.
   ///
-  /// The specification (RSF §5, Prop. 2) states both the identification and
-  /// the computational path: under the rank conditions (R1)–(R4)
-  /// \f$ \ker L_1 = H_1 \f$ with no Jordan block at zero and the
-  /// \f$ \lambda = 0 \f$ Riesz projector IS the projector onto \f$ H_1 \f$;
+  /// Under the rank conditions (R1)–(R4), \f$ \ker L_1 = H_1 \f$ with no
+  /// Jordan block at zero and the \f$ \lambda = 0 \f$ Riesz projector is the
+  /// projector onto \f$ H_1 \f$;
   /// and \f$ H_k = M_k^U \ker S^U \f$ with the sparse stacked matrix
   /// \f[
   ///   S^U = \begin{pmatrix} (\partial_{k+1}^{U^{-1}})^T \\ \partial_k^U M_k^U \end{pmatrix},
@@ -363,11 +362,11 @@ class CovariantChainHodge {
   /// dressed form of `ChainHodge::harmonicChains`, which reads the same null
   /// space for the undressed operator.
   ///
-  /// WHY it is not the same work as `band`: a contour reading factorizes the
+  /// This is not the same work as `band`: a contour reading factorizes the
   /// bordered system once per node and applies it to the whole identity, for
   /// \f$ U \f$ and again for \f$ U^{-1} \f$, then takes the SVD of an
   /// \f$ n\times n \f$ projector. That is the general machinery for a band
-  /// of a non-normal pencil ANYWHERE in the plane. The harmonic band is not
+  /// of a non-normal pencil anywhere in the plane. The harmonic band is not
   /// anywhere: it is at zero, where the invariant subspace is a kernel.
   ///
   /// The conditions are not free. (R1)–(R4) hold automatically only for
@@ -449,7 +448,7 @@ class CovariantChainHodge {
   };
   [[nodiscard]] ProjectorRead projectorOnContour(int k, const Contour &contour, double kappa) const;
   /// \f$ S^U = [(\partial_{k+1}^{U^{-1}})^T;\ \partial_k^U M_k^U] \f$, the
-  /// dressed stacked matrix of RSF §5 whose kernel is \f$ G_k^U H_k \f$.
+  /// dressed stacked matrix whose kernel is \f$ G_k^U H_k \f$.
   [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
   /// Everything a band carries beyond its two frames: \f$ B_C \f$, the
   /// isotropy verdict, the left frame, \f$ J \f$, \f$ \Gamma \f$ and the

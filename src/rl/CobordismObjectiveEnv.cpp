@@ -24,7 +24,7 @@ double lerp(double lo, double hi, double t) {
   t = std::clamp(t, 0.0, 1.0);
   return lo + (hi - lo) * t;
 }
-// Signed-magnitude log: sign(x)·log1p(|x|) — compresses F / ||grad S||^2's wide range.
+// Signed log: sign(x)·log1p(|x|), which compresses the wide range of F and ||grad S||^2.
 double slog(double x) { return std::copysign(std::log1p(std::abs(x)), x); }
 }  // namespace
 
@@ -36,9 +36,9 @@ CobordismObjectiveEnv::CobordismObjectiveEnv(NodeFactory nodeFactory,
       config_(config) {}
 
 CobordismObjectiveEnv::Metrics CobordismObjectiveEnv::computeMetrics() const {
-  // Read the engine's published quantities — never recompute construction. F is
-  // reconstructed from its two components (the same value objective() returns, without a
-  // third redundant eigensolve). r_state only when a whole-cobordism target is set.
+  // Read the engine's published quantities rather than recomputing the construction. F is
+  // assembled from its two components, giving the value objective() returns without a third
+  // eigensolve. r_state is only defined when a whole-cobordism target is set.
   const auto st = node_->spacetime();
   Metrics m;
   m.gradN2 = MultiCobordism::reggeActionGradient(st);
@@ -58,8 +58,8 @@ CobordismObjectiveEnv::Metrics CobordismObjectiveEnv::computeMetrics() const {
 }
 
 bool CobordismObjectiveEnv::isCarried(const Metrics &m) const {
-  // Carried = the target color state is an L_k harmonic over ≥ targetHoles emergent holes.
-  // With no whole-cobordism target (recombination), success = realizability r_U ≈ 0.
+  // Carried: the target color state is an L_k harmonic over at least targetHoles emergent
+  // holes. With no whole-cobordism target (recombination), success is realizability r_U ~ 0.
   if (target_.empty()) return m.rU < 1e-3;
   return m.holes >= config_.targetHoles && m.rstate < config_.carryTol;
 }
@@ -101,7 +101,7 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
   const double intensity = std::clamp(static_cast<double>(params[0]), 0.0, 1.0);
   const double knob = std::clamp(static_cast<double>(params[1]), 0.0, 1.0);
 
-  const Metrics prev = lastMetrics_;  // state BEFORE this macro-action
+  const Metrics prev = lastMetrics_;  // state before this macro-action
   const double fBefore = currentF_;
   bool engineError = false;
   try {
@@ -110,7 +110,7 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
           lerp(config_.growSteps.first, config_.growSteps.second, intensity)));
       node_->buildStep(MultiCobordism::BuildAction::Grow, std::max(1, maxSteps),
                        config_.nCandidateMoves);
-      if (config_.directedGrow)  // finish the register the random draws left short
+      if (config_.directedGrow)  // finish a register the random draws left short
         (void)node_->directedConeOut();
     } else if (move == Move::Evolve) {
       const int maxSteps = static_cast<int>(std::lround(
@@ -130,7 +130,7 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
                        std::max(1, maxIters), alpha0);
     }
   } catch (...) {
-    engineError = true;  // a failed engine stage no-ops this action (small penalty below)
+    engineError = true;  // a failed engine stage makes this action a no-op; penalized below
   }
 
   lastMove_ = static_cast<int>(move);
@@ -139,9 +139,9 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
   lastMetrics_ = m;
   currentF_ = m.F;
 
-  // Reward: dense −ΔF (slog-compressed, telescoping) + optional proton shaping + one-time
-  // carry bonus + a small penalty for a faulting engine move. With both shaping weights 0
-  // this is exactly the foundation's −ΔF drop.
+  // Reward: a dense, telescoping signed-log −ΔF term, optional proton shaping, a one-time
+  // carry bonus, and a small penalty for a faulting engine move. With both shaping weights
+  // at zero the reward is exactly the −ΔF drop.
   const double dFterm = config_.rewardScale * (slog(fBefore) - slog(m.F));
   double holeTerm = 0.0;
   if (config_.holeRewardWeight != 0.0) {

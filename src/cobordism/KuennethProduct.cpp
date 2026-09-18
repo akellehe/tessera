@@ -132,12 +132,10 @@ Certificate KuennethProduct::productCertificate(
     pairSeen[static_cast<std::size_t>(kron)] = true;
   }
 
-  // The U(1) CONNECTION graph Laplacians D - A, indexed over the full sorted
-  // vertex order the pairing is expressed in -- NOT the Hodge L_0 (#805). The
-  // domain of this rule is a weighted 1-SKELETON that is the Cartesian product
-  // of the factors', with the factor edges' complex weights and phases; that is
-  // the connection operator's subject, and its Hermitian PSD regime below is a
-  // property of it, not of L_0.
+  // The U(1) connection graph Laplacians D - A, indexed over the full sorted
+  // vertex order the pairing is expressed in -- not the Hodge L_0. The rule's
+  // domain is a weighted 1-skeleton that is the Cartesian product of the
+  // factors', with the factor edges' complex weights and phases.
   const HodgeLaplacian hodgeProduct(product);
   const HodgeLaplacian hodgeA(factorA);
   const HodgeLaplacian hodgeB(factorB);
@@ -162,11 +160,8 @@ Certificate KuennethProduct::productCertificate(
     residual /= scale;
 
   // The U(1) connection operator is Hermitian and diagonally dominant with
-  // |A_ij|-magnitude degrees, hence positive semidefinite by Gershgorin -- a
-  // derivation valid for EVERY complex/signed edge weight, since
-  // |sum_e z_e e^{i theta}| <= sum_e |z_e| entrywise. It is a claim about this
-  // operator only: the Hodge L_0 is routinely indefinite on a Lorentzian
-  // complex and carries no such bound.
+  // |A_ij|-magnitude degrees, hence positive semidefinite by Gershgorin, for any
+  // complex or signed edge weight. The Hodge L_0 carries no such bound.
   return Certificate::algebraicallyExact(CertificateDomain::Static,
                                          CertificateRegime::PositiveSemidefinite,
                                          residual, tolerance);

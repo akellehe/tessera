@@ -20,18 +20,16 @@ using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 class Spacetime;
 
-/// # Cylindrical Topology \f$ \Sigma \times [0, T] \f$
+/// # Cylindrical topology
 ///
-/// Spatial slices have a closed topology \f$ \Sigma \f$ but time is non-periodic:
-/// the manifold has the structure \f$ \Sigma \times [0, T] \f$ with open temporal
-/// boundaries at \f$ t = 0 \f$ and \f$ t = T \f$.
+/// Spatial slices have a closed topology \f$ \Sigma \f$ but time is not
+/// periodic: the manifold is \f$ \Sigma \times [0, T] \f$, with open temporal
+/// boundaries at \f$ t = 0 \f$ and \f$ t = T \f$. Used for fixed initial and
+/// final spatial slices, e.g. the transition amplitude between two spatial
+/// geometries.
 ///
-/// This topology is useful for studying spacetimes with initial and final
-/// spatial slices, analogous to the "no-boundary" proposals in quantum cosmology,
-/// or for computing transition amplitudes between two spatial geometries.
-///
-/// The build creates layers by coning only in the forward time direction,
-/// producing a monotonically increasing time structure.
+/// The build creates layers by coning in the forward time direction only, so
+/// time increases monotonically.
 ///
 class Cylinder : public Topology {
   public:

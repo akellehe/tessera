@@ -25,7 +25,7 @@ namespace {
 
 constexpr int kSchemaVersion = 1;
 
-/// Whether a measured double is present (a NaN means "not measured").
+/// Whether a value was measured; NaN means "not measured".
 bool measured(double value) { return !std::isnan(value); }
 
 Record stringsToRecord(const std::vector<std::string> &names) {
@@ -238,7 +238,7 @@ std::pair<bool, std::size_t> ClusterRegister::supportConnectivity(
     adjacency[b].push_back(a);
   }
 
-  // Count connected pieces by breadth-first traversal.
+  // Count connected pieces by flood fill.
   std::unordered_set<std::uint64_t> seen;
   seen.reserve(inside.size());
   std::size_t pieces = 0;
@@ -274,7 +274,7 @@ ClusterRegisterRead ClusterRegister::read(
 
   const SpectralBandCertificate &cert = band.certificate();
 
-  // The regime report — what the specification requires be reported of each.
+  // Classify the band's operator regime from its certificate.
   read.regime.regime =
       cert.certificate.regime() == CertificateRegime::ComplexSymmetricPencil
           ? CertificateRegime::ComplexSymmetricPencil  // bilinear: no inertia
@@ -294,7 +294,7 @@ ClusterRegisterRead ClusterRegister::read(
   read.regime.leftResidual = cert.leftResidual;
   read.regime.frameConditionNumber = cert.frameConditionNumber;
 
-  // ── conjunct 1: a persistent connected cluster support, however proposed
+  // conjunct 1: connected cluster support
   if (st == nullptr) {
     read.unmeasured.emplace_back(RegisterUnmeasured::kSupportUnreadable);
   } else {
@@ -310,18 +310,18 @@ ClusterRegisterRead ClusterRegister::read(
   const bool haveBand = band.rank() > 0;
   if (!haveBand) read.unmeasured.emplace_back(RegisterUnmeasured::kNoBand);
 
-  // ── conjunct 2: a localized spectral projector with stable rank
+  // conjunct 2: a localized spectral projector with stable rank
   read.localizationExcess = cert.localizationExcess;
   if (haveBand) {
     if (!measured(read.localizationExcess))
       read.unmeasured.emplace_back(RegisterUnmeasured::kLocalizationUnmeasured);
     else if (!cert.accepted)
-      // The detector's own localization cap is the specification's conjunct
-      // and is enforced there; an uncertified band fails it here by name.
+      // The localization cap is enforced by the detector; an uncertified band
+      // fails this conjunct by name.
       read.failedConjuncts.emplace_back(RegisterConjunct::kLocalizedProjector);
   }
 
-  // ── conjunct 3: a nonzero band gap separating it from discarded modes
+  // conjunct 3: a nonzero band gap separating it from discarded modes
   read.bandGap = cert.nearestDiscardedSeparation;
   if (haveBand) {
     if (!measured(read.bandGap))
@@ -330,7 +330,7 @@ ClusterRegisterRead ClusterRegister::read(
       read.failedConjuncts.emplace_back(RegisterConjunct::kBandGap);
   }
 
-  // ── conjuncts 4 and 5: neighbour overlap and cobordism-frame lifetime
+  // conjuncts 4 and 5: neighbour overlap and cobordism-frame lifetime
   if (!track.has_value()) {
     read.unmeasured.emplace_back(RegisterUnmeasured::kNoFrameTrack);
   } else {
@@ -342,7 +342,7 @@ ClusterRegisterRead ClusterRegister::read(
       read.failedConjuncts.emplace_back(RegisterConjunct::kFrameLifetime);
   }
 
-  // ── conjunct 6: small external transport leakage
+  // conjunct 6: small external transport leakage
   if (externalTransports.empty()) {
     read.unmeasured.emplace_back(RegisterUnmeasured::kNoTransport);
   } else {

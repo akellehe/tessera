@@ -17,8 +17,8 @@ using ::tessera::cobordism::MultiCobordism;
 
 namespace {
 
-// The ambient top cells (intrinsic vertex order) whose vertices ALL lie in the
-// region — a pure READ of the live complex; nothing is built here.
+// The ambient top cells (intrinsic vertex order) whose vertices all lie in the
+// region. This reads the live complex; it builds nothing.
 std::vector<std::vector<std::uint64_t>> cellsInRegion(
     const RegisterContext &ctx, const std::set<std::uint64_t> &region) {
   std::vector<std::vector<std::uint64_t>> inside;
@@ -51,10 +51,10 @@ double BlockResiduals::blockResidual(const RegisterContext &ctx,
   targetNorm2 = 0.0;
   for (const auto &t : block.target) targetNorm2 += std::norm(t);
   if (cellsInside.empty()) {
-    return targetNorm2;  // the full leak — nothing carries it
+    return targetNorm2;  // full leak: no cell carries the target
   }
-  // The block's own sub-complex is LOADED (selection of existing cells,
-  // canonical fromCells, uniform metric) by the loader — never built here.
+  // The block's sub-complex is a selection of existing cells re-instantiated
+  // with a uniform metric by the loader.
   auto sub = LiveComplex::subcomplex(cellsInside, ctx.dimensions());
   return MultiCobordism::residualOfTargetStateAgainstHarmonic(
       sub, ctx.degree(), block.target);
@@ -96,11 +96,11 @@ Record BlockResiduals::record(const RegisterContext &ctx) const {
 Record BlockResiduals::recordRelabeled(
     const RegisterContext &ctx,
     const std::map<std::uint64_t, std::uint64_t> &perm) const {
-  // Block regions are vertex-id sets — map them through the RELABEL permutation
-  // (targets and labels are id-free). An emergent region can reference vertices
-  // no longer in any top cell (surgical moves orphan them); such ids are inert
-  // in the residual and the permutation maps the live set onto itself, so
-  // `perm.get(v, v)` keeps an orphan inert and preserves the region size.
+  // Block regions are vertex-id sets; map them through the relabel permutation
+  // (targets and labels carry no ids). A region can reference vertices no longer
+  // in any top cell (surgical moves orphan them); those ids are inert in the
+  // residual and the permutation maps the live set onto itself, so leaving an
+  // unmapped id unchanged preserves the region size.
   std::vector<Block> mapped;
   mapped.reserve(blocks_.size());
   for (const Block &block : blocks_) {

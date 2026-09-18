@@ -66,6 +66,11 @@
 #include <vector>
 #include <algorithm>
 
+// Background for the observables bound here:
+//   Ambjorn, Goerlich, Jurkiewicz, Loll, "Nonperturbative Quantum Gravity",
+//   arXiv:1203.3591 -- causal dynamical triangulations, volume profiles.
+//   Newman, "Modularity and community structure in networks",
+//   arXiv:physics/0602124 -- modularity and the leading-eigenvector method.
 
 namespace py = pybind11;
 using namespace tessera;
@@ -147,14 +152,14 @@ void register_observables(py::module_ m) {
   // SparseGraph (for modularity / spectral dimension)
   // ========================================
   py::class_<SparseGraph>(m, "SparseGraph",
-      R"doc(Undirected sparse graph in CSR form.
+      R"doc(Undirected sparse graph in compressed sparse row (CSR) form.
 
-Built from the COO output of ``Spacetime.getDualAdjacency`` (or
-similar).  Used by the modularity sweep to compute spectral
-dimension on the dual graph.)doc")
+Built from the coordinate-list (COO) output of
+``Spacetime.getDualAdjacency``.  Used by the modularity sweep to compute
+spectral dimension on the dual graph.)doc")
       .def_static("fromCOO", &SparseGraph::fromCOO,
                   py::arg("rows"), py::arg("cols"), py::arg("n"),
-                  "Construct from COO arrays + node count.")
+                  "Construct from coordinate-list arrays and a node count.")
       .def("nNodes", &SparseGraph::nNodes,
            "Number of nodes.")
       .def("nEdges", &SparseGraph::nEdges,
@@ -207,36 +212,32 @@ empty / edgeless graph; raises ValueError if len(labels) != nNodes().)doc")
 
 Returns ``(D_S_small, D_S_large)``.  Mirrors the Python implementation
 in ``examples/modularity.py:Graph.spectral_dimension``.)doc")
-      // ── Per-sigma return probability + spectral-dimension curve ──────────
-      // Inherited from SpectralGraph (SparseGraph::applyLaplacian installs
-      // the symmetric-normalised Laplacian L_sym).  Exposed here so the
-      // examples can read the full D_S(sigma) curve straight off the dual
-      // graph instead of re-implementing dual-graph diffusion + finite
-      // differences in NumPy/SciPy.  Mirrors the EmergentGraph bindings.
+      // Per-sigma return probability and spectral-dimension curve,
+      // inherited from SpectralGraph; SparseGraph::applyLaplacian installs
+      // the symmetric-normalised Laplacian L_sym.
       .def("returnProbability",
            &::tessera::graph::SpectralGraph::returnProbability,
            py::arg("sigmas"), py::arg("krylovDim") = 30,
            py::arg("m") = 0, py::arg("seed") = 0,
-           R"doc(P(sigma) = (1/|V|) Tr exp(-sigma L_sym) via Krylov-Lanczos
+           R"doc(P(sigma) = (1/|V|) Tr exp(-sigma L_sym) by Krylov-Lanczos
 diagonal estimation, evaluated at each diffusion time in ``sigmas``.
 
 ``m`` is the Hutchinson-style subsample of start vertices: 0 (the default)
 uses ``min(nNodes(), 3000)``; pass ``m = nNodes()`` for the exact trace.
-``seed`` controls the subset RNG for reproducibility.
+``seed`` controls the subset random number generator.
 
-This is the continuous-diffusion counterpart of the discrete random-walk
-return probability the modularity / spectral-dimension examples used to
-build by hand; feed the result to ``spectralDimensionCurve`` (or
-``spectralDimensionSmoothed``) to extract D_S(sigma).)doc")
+Feed the result to ``spectralDimensionCurve`` or
+``spectralDimensionSmoothed`` to extract D_S(sigma).)doc")
       .def_static("spectralDimensionCurve",
                   &::tessera::graph::SpectralGraph::spectralDimension,
                   py::arg("sigmas"), py::arg("P"),
-                  R"doc(D_S(sigma) = -2 d log P / d log sigma via centered finite
-differences (one-sided at the endpoints); NaN where P <= 0 or non-finite.
+                  R"doc(D_S(sigma) = -2 d log P / d log sigma by centered
+finite differences (one-sided at the endpoints); NaN where P <= 0 or
+non-finite.
 
-The full per-sigma curve, aligned with ``sigmas``.  Distinct from the
-``spectralDimension(nWalks, maxSigma, ...)`` instance method above, which
-random-walk samples and returns only the (small, large) summary pair.)doc")
+The full per-sigma curve, aligned with ``sigmas``.  The
+``spectralDimension`` instance method instead random-walk samples and
+returns only the (small, large) summary pair.)doc")
       .def_static("spectralDimensionSmoothed",
                   &::tessera::graph::SpectralGraph::spectralDimensionSmoothed,
                   py::arg("sigmas"), py::arg("P"),
@@ -246,7 +247,7 @@ order ``polyOrder`` is fit over a centered ``windowSize`` window in
 (log sigma, log P) and its slope read off at each point.  ``windowSize``
 must be odd and >= ``polyOrder + 1``.)doc");
   // ========================================
-  // PersistentModularity (#765): label-free persistent component discovery
+  // PersistentModularity: label-free persistent component discovery
   // ========================================
   py::class_<ComponentId>(m, "ComponentId",
       R"doc(Stable label-free component identity: a canonical hash derived
@@ -278,24 +279,24 @@ Structurally identical (automorphic) components share a hash.)doc")
            });
 
   py::enum_<DiscoveryStrategy>(m, "DiscoveryStrategy",
-      "Which search proposes the communities.  Both score the SAME exact "
-      "Q_gamma closed form, so their slices are directly comparable; they "
-      "differ only in how a partition is searched for.  An enum rather than "
-      "a name string, so a mis-spelling is an error instead of a value that "
-      "silently selects a default.")
+      "Which search proposes the communities. "
+      "Both score the same exact Q_gamma closed "
+      "form, so their slices are directly comparable; "
+      "they differ only in how a partition "
+      "is searched for.")
       .value("MultilevelAggregation", DiscoveryStrategy::MultilevelAggregation,
              "Multilevel aggregation from a fixed restart seed sequence, "
              "keeping the best exact score and reporting the restart spread.")
       .value("LeadingEigenvector", DiscoveryStrategy::LeadingEigenvector,
              "Newman's leading-eigenvector bisection of B_gamma = A - gamma "
              "k k^T / 2m, recursed until no group has a positive leading "
-             "eigenvalue.  The community COUNT is fixed by the spectrum "
+             "eigenvalue.  The community count is fixed by the spectrum "
              "rather than by a parameter, and the search carries no seed.");
 
   py::class_<SplitReason>(m, "SplitReason",
       "The named outcomes of one attempted leading-eigenvector bisection.  "
-      "Reference these constants rather than retyping the strings: a "
-      "mis-spelled literal produces a reason no consumer matches.")
+      "Reference these constants rather than retyping the strings; a "
+      "mis-spelled literal names a reason no consumer matches.")
       .def_property_readonly_static("SPLIT_ACCEPTED",
           [](py::object) { return SplitReason::kSplitAccepted; })
       .def_property_readonly_static("NO_POSITIVE_EIGENVALUE",
@@ -334,7 +335,7 @@ Structurally identical (automorphic) components share a hash.)doc")
                     "Whether the group was actually bisected.")
       .def_readonly("resolved", &SplitRead::resolved,
                     "Whether the spectrum determined the outcome.  False "
-                    "means the split was REFUSED as not well determined, "
+                    "means the split was refused as not well determined, "
                     "which is distinct from a determined 'do not split'.")
       .def_readonly("reason", &SplitRead::reason,
                     "One of the SplitReason constants.")
@@ -345,16 +346,16 @@ Structurally identical (automorphic) components share a hash.)doc")
       "Configuration for the label-free multiscale component discovery.")
       .def(py::init<>())
       .def_readwrite("strategy", &PersistentModularityConfig::strategy,
-                     "Which search proposes the communities.  Default keeps "
-                     "the incumbent multilevel aggregation.")
+                     "Which search proposes the communities. "
+                     "The default is multilevel aggregation.")
       .def_readwrite("objective", &PersistentModularityConfig::objective,
                      R"doc(Which real functional of Q the search maximizes.
-Default Score keeps the incumbent's behaviour on a real graph; a COMPLEX
-graph selects Magnitude regardless, since Score is not an ordering there.
+The default is Score on a real graph; a complex graph selects Magnitude
+regardless, since Score is not an ordering there.
 
-Setting Magnitude on a real graph is how ANTI-community structure is
-pursued: it has Q < 0, so maximizing Q passes it over in favour of the
-one-community partition while maximizing |Q| finds it.)doc")
+Setting Magnitude on a real graph pursues anti-community structure: it has
+Q < 0, so maximizing Q passes it over in favour of the one-community
+partition, while maximizing |Q| finds it.)doc")
       .def_readwrite("leadingEigenvalueTolerance",
                      &PersistentModularityConfig::leadingEigenvalueTolerance,
                      "LeadingEigenvector: a group is indivisible when its "
@@ -367,7 +368,7 @@ one-community partition while maximizing |Q| finds it.)doc")
       .def_readwrite("denseEigenSolveMaxGroup",
                      &PersistentModularityConfig::denseEigenSolveMaxGroup,
                      "LeadingEigenvector: groups of at most this many cells "
-                     "get an EXACT dense symmetric eigendecomposition; larger "
+                     "get an exact dense symmetric eigendecomposition; larger "
                      "groups fall back to shifted power iteration.  The dense "
                      "path exists because iteration is slowest exactly where "
                      "the pair is near-degenerate, which is the case the gap "
@@ -415,7 +416,7 @@ one-community partition while maximizing |Q| finds it.)doc")
       .def_readonly("conductance", &ComponentRead::conductance,
                     R"doc(cut(C)/min(vol C, vol V\C); 0 when the denominator
 vanishes.  NaN on a signed graph, where a community's strength is a
-difference and there is no volume for the cut to be a fraction of -- left
+difference and there is no volume for the cut to be a fraction of; left
 unmeasured rather than computed by a formula that does not apply.)doc")
       .def_readonly("modularityContribution",
                     &ComponentRead::modularityContribution,
@@ -434,17 +435,16 @@ level's exact Q_gamma either way.)doc");
 
   py::class_<ResolutionSlice>(m, "ResolutionSlice",
       R"doc(Discovery result at one resolution gamma.  ``q`` is the exact
-Q_gamma of the winning partition (cold recompute) — the best score across
-deterministic restarts, a heuristic proposal, never the NP-hard global
-optimum.  ``qIncremental`` is the accepted-delta-Q ledger and must agree
-with ``q`` to double round-off.
+Q_gamma of the winning partition (cold recompute): the best score across
+deterministic restarts, a heuristic proposal, never the global optimum
+(modularity maximization is NP-hard).  ``qIncremental`` is the
+accepted-delta-Q ledger and must agree with ``q`` to double round-off.
 
-``q`` is COMPLEX and unreduced: ``abs(q)`` is how much structure the
-partition has, ``cmath.phase(q)`` is what KIND — 0 a community, pi an
-ANTI-community, +-pi/2 lightlike cohesion, anything else mixed.  It is
+``q`` is complex and unreduced: ``abs(q)`` is how much structure the
+partition has, ``cmath.phase(q)`` which kind — 0 a community, pi an
+anti-community, +-pi/2 lightlike cohesion, anything else mixed.  It is
 exactly real on a real graph.  ``objectiveValue`` is the real scalar the
-search actually maximized and ``objective`` says which functional that
-was.)doc")
+search maximized; ``objective`` says which functional that was.)doc")
       .def_readonly("gamma", &ResolutionSlice::gamma)
       .def_readonly("q", &ResolutionSlice::q)
       .def_readonly("qIncremental", &ResolutionSlice::qIncremental)
@@ -463,9 +463,9 @@ was.)doc")
                     "hierarchy[k] = communities at aggregation level k+1.")
       .def_readonly("restarts", &ResolutionSlice::restarts)
       .def_readonly("restartSpread", &ResolutionSlice::restartSpread,
-                    "max - min of the restart scores (honest heuristic "
-                    "uncertainty).  NaN under LeadingEigenvector, which has "
-                    "no restarts — unmeasured is never encoded as zero.")
+                    "max - min of the restart scores, the heuristic spread. "
+                    "NaN under LeadingEigenvector, which has no restarts; "
+                    "unmeasured is never encoded as zero.")
       .def_readonly("strategy", &ResolutionSlice::strategy,
                     "Which search produced this slice.")
       .def_readonly("splits", &ResolutionSlice::splits,
@@ -475,9 +475,8 @@ was.)doc")
 
   py::class_<ComponentMatch>(m, "ComponentMatch",
       R"doc(Matched component pair across adjacent resolutions or cobordism
-time.  ``projectorOverlap`` is the documented spectral-projector hook: None
-(unknown) until a later ticket supplies projectors and a hook is installed;
-unknown is never encoded as zero.)doc")
+time.  ``projectorOverlap`` is the value of the spectral-projector hook, or
+None when no hook is installed; unknown is never encoded as zero.)doc")
       .def_readonly("fromId", &ComponentMatch::from)
       .def_readonly("toId", &ComponentMatch::to)
       .def_readonly("fromIndex", &ComponentMatch::fromIndex)
@@ -488,11 +487,11 @@ unknown is never encoded as zero.)doc")
 
   py::class_<PersistenceTrack>(m, "PersistenceTrack",
       R"doc(A component followed across the resolution scan by maximum
-support overlap.  Lifetime/overlap/conductance are proposal diagnostics
-only: they neither accept nor veto a fiber.  ``weightAwareStatus`` is the
-downstream weight-aware gap/localization/persistence status — None until
-the later weight-aware certificate tickets populate it (unknown is never
-encoded as zero).)doc")
+support overlap.  Lifetime, overlap and conductance are proposal
+diagnostics only: they neither accept nor veto a fiber.
+``weightAwareStatus`` is the downstream weight-aware
+gap/localization/persistence status, or None when unpopulated (unknown is
+never encoded as zero).)doc")
       .def_readonly("members", &PersistenceTrack::members)
       .def_readonly("memberIndices", &PersistenceTrack::memberIndices)
       .def_readonly("firstSlice", &PersistenceTrack::firstSlice)
@@ -508,11 +507,10 @@ encoded as zero).)doc")
            });
 
   py::class_<FrameTrack>(m, "FrameTrack",
-      R"doc(A component followed across COBORDISM FRAMES by maximum support
-overlap.  ``frames`` is the lifetime the whitepaper's fiber-acceptance
-conjunct names ("lifetime across multiple cobordism frames") -- a different
-quantity from :class:`PersistenceTrack`, which counts MODULARITY RESOLUTION
-SLICES of a single frame.)doc")
+      R"doc(A component followed across cobordism frames by maximum support
+overlap.  ``frames`` is the lifetime measured in cobordism frames, a
+different quantity from :class:`PersistenceTrack`, which counts modularity
+resolution slices of a single frame.)doc")
       .def_readonly("members", &FrameTrack::members)
       .def_readonly("memberIndices", &FrameTrack::memberIndices)
       .def_readonly("firstFrame", &FrameTrack::firstFrame)
@@ -538,7 +536,7 @@ SLICES of a single frame.)doc")
 
   py::class_<PersistentModularity> pm(m, "PersistentModularity",
       R"doc(Label-free discovery of modular components that persist across
-resolution and cobordism time (ticket #765).
+resolution and cobordism time.
 
 Exact identities on the nonnegative weighted undirected similarity graph:
 generalized modularity Q_gamma(P) = (1/2m) sum_ij (A_ij - gamma k_i k_j/2m)
@@ -548,20 +546,20 @@ dQ(v: a->b) = (w_vb - w_va)/m - gamma k_v (k_v + S_b - S_a)/(2 m^2), so one
 sparse sweep is near O(|E|).  Incremental accumulations are tested against
 cold recomputation at double round-off.
 
-Heuristic status: global modularity maximization is NP-hard; discovery is a
-deterministic multilevel aggregation from a fixed seed sequence with the
-restart spread reported honestly.  The score is blind to signed/complex
-Hodge weights.  Modularity is a heuristic proposal generator only: it never
-enters the emergence objective and may not veto an otherwise certified
-fiber (acceptance belongs to the independent weight-aware certificates,
-which later tickets supply; unknown is reported as None, never zero).
+Global modularity maximization is NP-hard; discovery is a deterministic
+multilevel aggregation from a fixed seed sequence, with the restart spread
+reported.  The score is blind to signed and complex Hodge weights.
+Modularity is a proposal generator only: it never enters the emergence
+objective and may not veto an otherwise certified fiber; acceptance belongs
+to the independent weight-aware certificates, and unknown is reported as
+None, never zero.
 
 Read-only: never calls a solver, never mutates the spacetime it reads.)doc");
 
   py::enum_<PersistentModularity::WeightMap>(pm, "WeightMap",
       "Documented monotone map from complex edge magnitude to similarity.")
       .value("Unit", PersistentModularity::WeightMap::Unit,
-             "w = 1: the combinatorial one-skeleton, exactly the legacy "
+             "w = 1: the combinatorial one-skeleton, exactly the standard "
              "Newman-Girvan graph.")
       .value("ExpNegAbsLength",
              PersistentModularity::WeightMap::ExpNegAbsLength,
@@ -571,24 +569,24 @@ Read-only: never calls a solver, never mutates the spacetime it reads.)doc");
              "magnitude give the identical weight.")
       .value("CausalPhaseExpNegAbsLength",
              PersistentModularity::WeightMap::CausalPhaseExpNegAbsLength,
-             "w = exp(-|l|) exp(i arg(l^2)): the same similarity MAGNITUDE "
+             "w = exp(-|l|) exp(i arg(l^2)): the same similarity magnitude "
              "as ExpNegAbsLength, carrying the edge's causal character as "
-             "its ARGUMENT.  Spacelike lands on the positive real axis, "
+             "its argument.  Spacelike lands on the positive real axis, "
              "timelike on the negative, lightlike on +-i, and a generic "
              "argument stays where it is -- nothing is bucketed, so there "
              "is no indefinite case to refuse.");
 
   py::enum_<ModularityObjective>(m, "ModularityObjective",
       R"doc(Which real functional of the complex Q the search maximizes.
-Both readings are always REPORTED; this chooses only what is pursued.)doc")
+Both readings are always reported; this chooses only what is pursued.)doc")
       .value("Score", ModularityObjective::Score,
-             "Maximize Q itself.  Available only where Q is real; the "
-             "default, so existing behaviour does not move.  Finds "
-             "community structure and passes over anti-communities, which "
-             "score below the one-community partition.")
+             "Maximize Q itself. Available only where Q is "
+             "real, and the default. Finds community structure "
+             "and passes over anti-communities, which score "
+             "below the one-community partition.")
       .value("Magnitude", ModularityObjective::Magnitude,
              "Maximize |Q|.  Always available, and the only ordered choice "
-             "once A is genuinely complex.  Finds community AND "
+             "once A is genuinely complex.  Finds community and "
              "anti-community structure, with arg(Q) saying which.");
 
   py::class_<PersistentModularity::CausalWeightRead>(pm, "CausalWeightRead",
@@ -606,7 +604,7 @@ interval; `reason` then names which, and is empty when available.)doc")
       .def_readonly("lightlike",
                     &PersistentModularity::CausalWeightRead::lightlike)
       .def_readonly("mixed", &PersistentModularity::CausalWeightRead::mixed,
-                    "Edges with a generic arg(l^2).  ORDINARY edges for the "
+                    "Edges with a generic arg(l^2).  Ordinary edges for the "
                     "complex weight map, which carries their argument as it "
                     "stands; a diagnostic, not a gate.")
       .def_readonly("degenerate",
@@ -618,39 +616,37 @@ interval; `reason` then names which, and is empty when available.)doc")
                 },
                 py::arg("spacetime"),
                 R"doc(Census of the one-skeleton's causal characters and
-whether CausalPhaseExpNegAbsLength can be read from it.  Read-only; asks
+whether CausalPhaseExpNegAbsLength can be read from it.  Read-only; uses
 the same Edge.disposition() classifier, so a True here is exactly the
 condition under which fromSpacetime will not raise.
 
-A MIXED count does NOT make the map unavailable -- the complex weight
-carries a generic argument as readily as a definite one.  Only a genuine
-absence does.  The mixed FRACTION is still worth reading: it is the #870
-diagnostic, and it should FALL if relaxation is imposing causal
-character.)doc")
+A mixed count does not make the map unavailable: the complex weight carries
+a generic argument as readily as a definite one.  Only a genuine absence
+does.  The mixed fraction is a diagnostic, and falls if relaxation is
+imposing causal character.)doc")
       .def_static("fromWeightedEdges",
                 &PersistentModularity::fromWeightedEdges,
                 py::arg("src"), py::arg("tgt"), py::arg("weight"),
                 py::arg("isolatedCells") = std::vector<std::uint64_t>{},
-                R"doc(Build from an explicit REAL weighted edge list, signed
-or not (cells are arbitrary 64-bit ids; parallel edges consolidate by weight
-summation; self-loops are ignored, as are edges whose consolidated weight is
-zero -- a measured absence of net similarity).  Raises ValueError on
-non-finite weights or mismatched lengths.
+                R"doc(Build from an explicit real weighted edge list, signed
+or not.  Cells are arbitrary 64-bit ids; parallel edges consolidate by
+weight summation; self-loops are ignored, as are edges whose consolidated
+weight is zero (a measured absence of net similarity).  Raises ValueError
+on non-finite weights or mismatched lengths.
 
-A wholly nonnegative edge list scores bit-identically to what it always
-has.  See fromComplexWeightedEdges for the general domain.)doc")
+See fromComplexWeightedEdges for the general domain.)doc")
       .def_static("fromComplexWeightedEdges",
                 &PersistentModularity::fromComplexWeightedEdges,
                 py::arg("src"), py::arg("tgt"), py::arg("weight"),
                 py::arg("isolatedCells") = std::vector<std::uint64_t>{},
-                R"doc(Build from an explicit COMPLEX weighted edge list.
+                R"doc(Build from an explicit complex weighted edge list.
 Consolidation, self-loops and the cancel-to-zero convention are as for
 fromWeightedEdges; both components must be finite.  A list that happens to
 be real takes the real path and scores exactly as fromWeightedEdges would.
 
-The adjacency is complex SYMMETRIC -- A_ij = A_ji, no conjugation -- because
-a weight is a property of the EDGE, and its magnitude and argument do not
-depend on which end you read it from.)doc")
+The adjacency is complex symmetric (A_ij = A_ji, no conjugation): a weight
+is a property of the edge, and its magnitude and argument do not depend on
+which end it is read from.)doc")
       .def_static("fromSpacetime",
                   [](const std::shared_ptr<Spacetime> &st,
                      PersistentModularity::WeightMap map) {
@@ -662,7 +658,7 @@ depend on which end you read it from.)doc")
                   R"doc(Build the similarity graph from the spacetime
 one-skeleton (read-only).  With CausalPhaseExpNegAbsLength this raises
 ValueError, naming the reason, when causalWeightAvailability() reports the
-map unreadable.  That happens only for a genuine ABSENCE -- a degenerate
+map unreadable.  That happens only for a genuine absence: a degenerate
 edge has no argument to carry, and arg(0) is not a reading of anything.  An
 indefinite argument is not an absence and is carried as it stands.)doc")
       .def("nCells", &PersistentModularity::nCells)
@@ -673,15 +669,14 @@ Q is genuinely complex and Score is not an ordering.  A property of the
 graph, not a setting.)doc")
       .def("isSigned", &PersistentModularity::isSigned,
            R"doc(True when some edge weight is negative or non-real, i.e.
-when the graph leaves the nonnegative regime the incumbent formula was
-written for.  A property of the graph, not a setting.)doc")
+when the graph leaves the nonnegative regime the standard modularity
+formula assumes.  A property of the graph, not a setting.)doc")
       .def("totalWeight2", &PersistentModularity::totalWeight2,
            R"doc(T = sum_ij |A_ij|, the real positive scale the score divides
-by.  It cannot vanish while any edge exists, which is what the signed total
-could do.  Equal to 2m = sum_ij A_ij on a nonnegative graph, which is what
-it has always returned there.)doc")
+by.  It cannot vanish while any edge exists, unlike the signed total.
+Equal to 2m = sum_ij A_ij on a nonnegative graph.)doc")
       .def("totalWeightSum", &PersistentModularity::totalWeightSum,
-           R"doc(SA = sum_ij A_ij, the COMPLEX total the configuration null
+           R"doc(SA = sum_ij A_ij, the complex total the configuration null
 model redistributes.  Equal to totalWeight2() on a nonnegative graph.  A
 vanishing SA leaves the null model undefined and is refused by name.)doc")
       .def("cellIds", &PersistentModularity::cellIds,
@@ -713,8 +708,7 @@ gamma = 1 on a Unit-weight graph this is exactly the Newman-Girvan score.)doc")
            R"doc(Match components across resolution or cobordism time by
 simplex-support overlap (Jaccard on level-0 cell ids over a common cell-id
 universe).  When a projector-overlap hook is installed its value is
-reported per match; matching decisions remain support-based until a later
-ticket supplies the projectors.)doc")
+reported per match; matching decisions are support-based.)doc")
       .def("trackAcrossFrames",
            [](const PersistentModularity &self,
               const std::vector<std::vector<ComponentRead>> &frames,
@@ -723,13 +717,12 @@ ticket supplies the projectors.)doc")
              return self.trackAcrossFrames(frames, overlapThreshold);
            },
            py::arg("frames"), py::arg("overlapThreshold") = 0.5,
-           R"doc(Follow components across COBORDISM FRAMES: frames[t] is the
+           R"doc(Follow components across cobordism frames: frames[t] is the
 component list read from frame t over a common cell-id universe.  Chains
-consecutive frames with matchComponents by best support overlap, exactly the
-rule scanResolutions chains resolution slices with.  This is the supplier of
-the whitepaper's "lifetime across multiple cobordism frames"; a component
-seen in one frame gets a one-frame track, which is a measured fact and not a
-structural artifact of reading a single resolution.)doc")
+consecutive frames with matchComponents by best support overlap, the same
+rule scanResolutions applies to resolution slices.  Supplies the lifetime
+measured in cobordism frames; a component seen in one frame gets a
+one-frame track, which is a measured fact.)doc")
       .def("setProjectorOverlapHook",
            [](PersistentModularity &self, py::object hook) {
              if (hook.is_none()) {
@@ -743,9 +736,9 @@ structural artifact of reading a single resolution.)doc")
                  });
            },
            py::arg("hook"),
-           "Install (or clear with None) the documented spectral-projector "
-           "overlap hook: hook(fromId, toId) -> float in [0, 1].  This "
-           "ticket only plumbs the hook; a later ticket supplies the "
+           "Install (or clear with None) the spectral-projector "
+           "overlap hook: hook(fromId, toId) -> float in [0, 1].  "
+           "The caller supplies the "
            "projectors.")
       .def_static("invalidatedAncestry",
                   &PersistentModularity::invalidatedAncestry,
@@ -756,13 +749,13 @@ tracks.  Siblings with disjoint support remain valid.  Pure bookkeeping —
 no recomputation.)doc");
 
   // ========================================
-  // SpectralFiber (#769): localized spectral bands and their certificates
+  // SpectralFiber: localized spectral bands and their certificates
   // ========================================
   py::class_<SpectralFiberConfig>(m, "SpectralFiberConfig",
-      "Configuration of the spectral-band detector/tracker (ticket #769). "
-      "Thresholds select which bands are "
-      "CERTIFIED, never which eigenvalues exist; no threshold is a "
-      "Betti-number oracle and no rank is ever requested.")
+      "Configuration of the spectral-band detector and tracker. "
+      "Thresholds select which bands are certified, never "
+      "which eigenvalues exist; no threshold is a Betti-number "
+      "oracle and no rank is ever requested.")
       .def(py::init<>())
       .def_readwrite("degrees", &SpectralFiberConfig::degrees,
                      "Form degrees enumerated by enumerateOnComponents.")
@@ -821,15 +814,15 @@ no recomputation.)doc");
   py::class_<SpectralBandCertificate>(m, "SpectralBandCertificate",
       R"doc(Certification record of one whole spectral band: degree, rank,
 lower/upper gap, localization (projector-diagonal inverse participation
-ratio), projector/eigen/left residuals,
-weighted Gram/signature defect ||Phi^dagger W Phi - J||, band condition
-number ||P||_2, Krein inertia (p, q), frequency window, self-adjointness
-flag, and the graded #764 Certificate (BandWindow domain; an uncertified
-band carries HeuristicDiscovery, which never holds).
+ratio, IPR), projector/eigen/left residuals, weighted Gram/signature defect
+||Phi^dagger W Phi - J||, band condition number ||P||_2, Krein inertia
+(p, q), frequency window, self-adjointness flag, and the graded Certificate
+(BandWindow domain; an uncertified band carries HeuristicDiscovery, which
+never holds).
 
 A degenerate band is one object of rank >= 2; an unexplained multiplicity
-is reported exactly as its rank and never labeled.  Negative signature is
-a certificate, never an automatic antiparticle identification.  Unmeasured
+is reported as its rank and never labeled.  Negative signature is a
+certificate, never an automatic antiparticle identification.  Unmeasured
 quantities are NaN, never zero.)doc")
       .def_readonly("degree", &SpectralBandCertificate::degree)
       .def_readonly("rank", &SpectralBandCertificate::rank)
@@ -837,7 +830,7 @@ quantities are NaN, never zero.)doc")
       .def_readonly("upperGap", &SpectralBandCertificate::upperGap)
       .def_readonly("nearestDiscardedSeparation",
                     &SpectralBandCertificate::nearestDiscardedSeparation,
-                    "Distance in the complex plane to the nearest DISCARDED "
+                    "Distance in the complex plane to the nearest discarded "
                     "eigenvalue -- the isolation acceptance conjunct.")
       .def_readonly("localization", &SpectralBandCertificate::localization)
       .def_readonly("localizationSupportFraction",
@@ -846,7 +839,7 @@ quantities are NaN, never zero.)doc")
                     "exactly for a perfectly delocalized band.")
       .def_readonly("localizationExcess",
                     &SpectralBandCertificate::localizationExcess,
-                    "(n_eff - rank)/(n - rank) in [0, 1] -- the GATED "
+                    "(n_eff - rank)/(n - rank) in [0, 1] -- the gated "
                     "localization datum; 0 = as concentrated as the rank "
                     "permits, 1 = perfectly delocalized.")
       .def_readonly("projectorResidual",
@@ -859,7 +852,7 @@ quantities are NaN, never zero.)doc")
                     "projector (gauge-invariant).")
       .def_readonly("frameConditionNumber",
                     &SpectralBandCertificate::frameConditionNumber,
-                    "The FRAME condition number: max Riesz conditioning of "
+                    "The frame condition number: max Riesz conditioning of "
                     "the reported matched frames in the |W| metric.")
       .def_readonly("positiveSignature",
                     &SpectralBandCertificate::positiveSignature)
@@ -896,7 +889,7 @@ quantities are NaN, never zero.)doc")
       R"doc(One whole isolated spectral band of a component-restricted Hodge
 operator: right/left frames, band projector
 P = Phi Psi^dagger W with Psi^dagger W Phi = I, eigenvalues, and the
-SpectralBandCertificate.  The band is represented by its PROJECTOR —
+SpectralBandCertificate.  The band is represented by its projector;
 individual eigenvectors are a gauge choice and never determine an identity
 or a downstream observable.)doc")
       .def("degree", &SpectralFiber::degree)
@@ -938,9 +931,9 @@ or a downstream observable.)doc")
                   "schema_version (ValueError).");
 
   py::class_<SpectralBandWindow>(m, "SpectralBandWindow",
-      "An accepted band's frequency window as PLAIN DATA for the response "
-      "consumer (#768): lower/upper frequency bounds plus the band "
-      "certificate.  Carries no operator, frame, or quotient reference.")
+      "An accepted band's frequency window as plain data for the response "
+      "consumer: lower and upper frequency bounds plus the band certificate. "
+      "Carries no operator, frame, or quotient reference.")
       .def_readonly("degree", &SpectralBandWindow::degree)
       .def_readonly("rank", &SpectralBandWindow::rank)
       .def_readonly("frequencyLower", &SpectralBandWindow::frequencyLower)
@@ -991,25 +984,25 @@ or a downstream observable.)doc")
 
   py::class_<SpectralFiberTracker>(m, "SpectralFiberTracker",
       R"doc(Extraction and tracking of whole isolated localized Hodge bands
-on persistent components (ticket #769).
+on persistent components.
 
-Identity: for a component support S the tracker assembles the weighted
-Hodge operator of the full induced subcomplex on S (the same boundary maps,
-canonical cell order, and diagonal inner-product weights as the
-whole-complex HodgeLaplacian, consumed read-only), so support = all
-vertices reproduces HodgeLaplacian.laplacian(k) entry for entry.  Regimes
-are VERIFIED, never assumed: positive -> self-adjoint solves (exact dense
-below the crossover, deterministic sparse block shift-invert at/above);
-real signed weights -> W-self-adjointness verified, Krein inertia of
-Phi^dagger W Phi recorded and normalized to diag(I_p, -I_q); complex
-weights -> matched biorthogonal right/left subspaces with
-Psi^dagger W Phi = I.  Bands are grouped by a relative gap rule and every
-band is reported with its projector and certificate; a closing gap yields
-an uncertified band, never a different identity.  The detector never
-requests rank three and no eigenvalue threshold is a Betti oracle.
+For a component support S the tracker assembles the weighted Hodge operator
+of the full induced subcomplex on S, using the same boundary maps, canonical
+cell order and diagonal inner-product weights as the whole-complex
+HodgeLaplacian, so support = all vertices reproduces
+HodgeLaplacian.laplacian(k) entry for entry.  Regimes are verified, never
+assumed: positive -> self-adjoint solves (exact dense below the crossover,
+deterministic sparse block shift-invert at or above it); real signed
+weights -> W-self-adjointness verified, Krein inertia of Phi^dagger W Phi
+recorded and normalized to diag(I_p, -I_q); complex weights -> matched
+biorthogonal right/left subspaces with Psi^dagger W Phi = I.  Bands are
+grouped by a relative gap rule and every band is reported with its projector
+and certificate; a closing gap yields an uncertified band, never a different
+identity.  No rank is requested and no eigenvalue threshold is a Betti
+oracle.
 
-Read-only observable: never calls a solver on the spacetime, never mutates
-it, and nothing here enters any emergence objective.)doc")
+Read-only: never calls a solver on the spacetime, never mutates it, and
+nothing here enters any emergence objective.)doc")
       .def(py::init([](std::shared_ptr<Spacetime> st, const SpectralFiberConfig &cfg,
                        cobordism::HodgeLaplacian::MetricSource source) {
              return SpectralFiberTracker(std::move(st), cfg, source);
@@ -1055,7 +1048,7 @@ it, and nothing here enters any emergence objective.)doc")
              return self.enumerateOnComponents(components);
            },
            py::arg("components"),
-           "Enumerate every configured degree on every #765 component.")
+           "Enumerate every configured degree on every component.")
       .def("enumerateBandsCached",
            [](const SpectralFiberTracker &self,
               tessera::cobordism::AnalyticCache &cache,
@@ -1064,13 +1057,13 @@ it, and nothing here enters any emergence objective.)doc")
              return self.enumerateBandsCached(cache, support, degree);
            },
            py::arg("cache"), py::arg("support"), py::arg("degree"),
-           "enumerateBands through the #764 AnalyticCache contract "
+           "enumerateBands through the AnalyticCache contract "
            "(touched-star invalidation; served while the component is "
            "untouched).")
       .def_static("acceptedWindows", &SpectralFiberTracker::acceptedWindows,
                   py::arg("reads"),
                   "The accepted bands' frequency windows as plain data for "
-                  "the response consumer (#768).")
+                  "the response consumer.")
       .def_static("matchFibers", &SpectralFiberTracker::matchFibers,
                   py::arg("fromFibers"), py::arg("toFibers"),
                   py::arg("overlapThreshold") = 0.5,
@@ -1111,8 +1104,9 @@ Mirrors examples/modularity.py:Measurement.)doc")
                      &ModularityOptimizerConfig::targetNModules);
 
   py::class_<ModularityOptimizer>(m, "ModularityOptimizer",
-      R"doc(Modularity sweep on a CDT spacetime, driven by transactional
-Pachner moves with Q-direction acceptance.
+      R"doc(Modularity sweep on a causal dynamical triangulation (CDT)
+spacetime, driven by transactional Pachner moves with Q-direction
+acceptance.
 
 Each iteration:
   1. Picks a random move type from {add, remove, flip, iflip, shift}.
@@ -1122,9 +1116,7 @@ Each iteration:
   5. Computes new Q.  If direction matches, keeps the move; else
      calls move.rollback().
   6. If Q crossed the next target_dq threshold, builds the dual graph
-     and measures D_S.
-
-See docs/source/modularity-plan.md for the design rationale.)doc")
+     and measures D_S.)doc")
       .def(py::init<ModularityOptimizerConfig, std::uint64_t>(),
            py::arg("config"), py::arg("seed") = 0)
       .def("sweep",
@@ -1164,11 +1156,11 @@ See docs/source/modularity-plan.md for the design rationale.)doc")
            py::arg("spacetime"), py::arg("config"),
            py::arg("map") = PersistentModularity::WeightMap::ExpNegAbsLength,
            R"doc(Label-free discovery of persistent modular components on the
-CURRENT spacetime one-skeleton (ticket #765).  Read-only: never mutates the
-spacetime and never proposes moves.  Builds the nonnegative similarity graph
-under ``map`` and runs PersistentModularity.scanResolutions(config).  A
-heuristic proposal generator — blind to signed/complex Hodge weights, never
-part of the emergence objective, and never a veto over a certified fiber.)doc");
+current spacetime one-skeleton.  Read-only: never mutates the spacetime and
+never proposes moves.  Builds the nonnegative similarity graph under
+``map`` and runs PersistentModularity.scanResolutions(config).  A proposal
+generator: blind to signed and complex Hodge weights, never part of the
+emergence objective, and never a veto over a certified fiber.)doc");
   // ========================================
   // VolumeProfile
   // ========================================
@@ -1209,8 +1201,7 @@ Args:
       .def("reset", &VolumeProfile::reset,
            "Reset the accumulated measurements.");
   // ========================================
-  // Simplicial qubit (#955): docs/design/simplicial_qubit_spec.md, section 14 API;
-  // complex geometry and pure-gauge link phases (#976): section 16
+  // Simplicial qubit: complex geometry and pure-gauge link phases.
   // ========================================
   {
     auto emitWarnings = [](const SimplicialQubit &q) {
@@ -1244,33 +1235,33 @@ Args:
       return out;
     };
     py::class_<SimplicialQubit>(m, "SimplicialQubit",
-        "A single qubit state encoded as the holomorphic line in the harmonic space of the "
-        "metric Hodge Laplacian on a triangulated torus (docs/design/simplicial_qubit_spec.md). "
-        "Input: vertices 0..nV-1, edges (i, j) with i < j, consistently oriented faces (i, j, k), "
-        "edge lengths (real positive, or complex per section 16), and marked cycles A, B as "
-        "(edge_index, sign) lists with A.B = +1. Computed on load: the section-2 validations; d0, d1; "
-        "per-face angles, Heron areas and local layouts; cotangent weights M1 = diag(w_e) (negative "
-        "weights and Delaunay violations flagged on the real locus); the harmonic space "
-        "H = null_space([d1; d0.T M1]) of dimension 2; the Whitney-form L2 inner product at barycenters; "
-        "the complex structure J = G^{-1} R.T by rotate-then-project with its residual ||J J + I||_F; the "
-        "holomorphic line, periods, tau = P_B / P_A (in the upper half plane on the real locus); the "
-        "state, Bloch vector and density matrix; and the section-13 degeneration warnings. The optional "
-        "intrinsic Delaunay edge-flip pass is intrinsic_delaunay(). Alternatively read a Spacetime of "
-        "dimension 2 directly (its faces are oriented by the fundamental class; reversed=True selects "
-        "the other hemisphere; its edge phases are the pure-gauge link connection of section 16).\n\n"
-        "Section 16 (complex geometry): off the REAL LOCUS (real lengths, no phases) every formula of "
-        "sections 4-9 runs over C. The real reference is the same complex with every squared length 1 "
-        "(the unit equilateral reference simplex of chainhodge.WhitneyMass); angles are the principal "
-        "acos, Heron areas the continuation branch of sqrt(det G)/2 (WhitneyMass.volumeOnBranch) along "
-        "the straight segment in the squared lengths from the reference, pairings are the transpose "
-        "(bilinear) pairing, the harmonic space a complex null space, and the eigenline of section 9 is "
-        "chosen by continuity from the reference (the Im tau > 0 rule holds on the real locus only). Link "
-        "phases must be a pure gauge (flux or holonomy is refused by name): they twist the incidences and "
-        "the Whitney pairing (against the kernel of the inverse links, dual_harmonic_basis()) and the "
-        "periods are taken with parallel transport along the marked cycles from one base point "
-        "(base_vertex()), which leaves tau, the state and the coefficient pairs in the period frame "
-        "invariant. On the real locus the matrix-valued reads return real arrays, bit-identical to the "
-        "real-length construction; off it complex arrays.")
+        "A single qubit state encoded as the holomorphic line in the harmonic space of the metric "
+        "Hodge Laplacian on a triangulated torus. Input: vertices 0..nV-1, edges (i, j) with i "
+        "< j, consistently oriented faces (i, j, k), edge lengths (real positive, or complex), "
+        "and marked cycles A, B as (edge_index, sign) lists with A.B = +1. Computed on load: the "
+        "input validations; d0, d1; per-face angles, Heron areas and local layouts; cotangent "
+        "weights M1 = diag(w_e) (negative weights and Delaunay violations flagged on the real "
+        "locus); the harmonic space H = null_space([d1; d0.T M1]) of dimension 2; the Whitney-form "
+        "L2 inner product at barycenters; the complex structure J = G^{-1} R.T by rotate-then-project "
+        "with its residual ||J J + I||_F; the holomorphic line, periods, tau = P_B / P_A (in the "
+        "upper half plane on the real locus); the state, Bloch vector and density matrix; and "
+        "the degeneration warnings. The optional intrinsic Delaunay edge-flip pass is intrinsic_delaunay(). "
+        "Alternatively read a Spacetime of dimension 2 directly: its faces are oriented by the "
+        "fundamental class, reversed=True selects the other hemisphere, and its edge phases are "
+        "the pure-gauge link connection.\n\n"
+        "Complex geometry: off the real locus (real lengths, no phases) every formula runs over "
+        "C. The real reference is the same complex with every squared length 1 (the unit equilateral "
+        "reference simplex of chainhodge.WhitneyMass); angles are the principal acos, Heron areas "
+        "the continuation branch of sqrt(det G)/2 (WhitneyMass.volumeOnBranch) along the straight "
+        "segment in the squared lengths from the reference, pairings are the transpose (bilinear) "
+        "pairing, the harmonic space a complex null space, and the eigenline is chosen by continuity "
+        "from the reference (the Im tau > 0 rule holds on the real locus only). Link phases must "
+        "be a pure gauge (flux or holonomy is refused by name): they twist the incidences and the "
+        "Whitney pairing, taken against the kernel of the inverse links (dual_harmonic_basis()), "
+        "and the periods are taken with parallel transport along the marked cycles from one base "
+        "point (base_vertex()), which leaves tau, the state and the coefficient pairs in the period "
+        "frame invariant. On the real locus the matrix-valued reads return real arrays, bit-identical "
+        "to the real-length construction; off it complex arrays.")
         .def(py::init([emitWarnings](std::vector<std::uint64_t> vertices,
                                      std::vector<SimplicialQubit::EdgePair> edges,
                                      std::vector<SimplicialQubit::Face> faces,
@@ -1284,9 +1275,9 @@ Args:
              }),
              py::arg("vertices"), py::arg("edges"), py::arg("faces"), py::arg("lengths"),
              py::arg("cycle_A"), py::arg("cycle_B"), py::arg("degeneracy_threshold") = 1e8,
-             "The section-2 / section-14 constructor; lengths real positive or complex (section 16), the "
-             "trivial connection. Raises ValueError when a validation of section 2 or a continuation of "
-             "section 16 fails and RuntimeError when dim H != 2 (section 6).")
+             "The explicit constructor; lengths real positive or complex, the trivial "
+             "connection. Raises ValueError when an input validation or a complex "
+             "continuation fails, and RuntimeError when dim H != 2.")
         .def(py::init([emitWarnings](const std::shared_ptr<Spacetime> &spacetime,
                                      SimplicialQubit::Cycle cycle_A, SimplicialQubit::Cycle cycle_B,
                                      bool reversed, double degeneracy_threshold) {
@@ -1301,41 +1292,41 @@ Args:
              "order (the order the cycles index), faces oriented by the fundamental class "
              "(reversed flips them), lengths real positive or complex, edge phases as the pure-gauge "
              "link connection (flux or holonomy refused by name).")
-        // ---- section 14
+        // ---- derived reads
         .def("harmonic_basis", [realOr](const SimplicialQubit &q) { return realOr(q, q.harmonicBasis()); },
-             "H: nE x 2 (section 6); real on the real locus.")
+             "H: nE x 2; real on the real locus.")
         .def("dual_harmonic_basis",
              [realOr](const SimplicialQubit &q) { return realOr(q, q.dualHarmonicBasis()); },
-             "H^vee: nE x 2, the kernel twisted by the inverse links that the section-7/8 pairings are "
-             "taken against (section 16); harmonic_basis() itself on the trivial connection.")
+             "H^vee: nE x 2, the kernel twisted by the inverse links the pairings are "
+             "taken against; harmonic_basis() itself on the trivial connection.")
         .def("complex_structure", [realOr](const SimplicialQubit &q) { return realOr(q, q.complexStructure()); },
-             "J: 2 x 2 (section 8); real on the real locus.")
-        .def("j_residual", &SimplicialQubit::jResidual, "||J @ J + I||_F (section 8).")
-        .def("holomorphic_form", &SimplicialQubit::holomorphicForm, "omega: nE complex (section 9).")
+             "J: 2 x 2; real on the real locus.")
+        .def("j_residual", &SimplicialQubit::jResidual, "||J @ J + I||_F.")
+        .def("holomorphic_form", &SimplicialQubit::holomorphicForm, "omega: nE complex.")
         .def("periods", &SimplicialQubit::periods,
-             "(P_A, P_B) (section 9); transported from base_vertex() under a nontrivial connection.")
-        .def("tau", &SimplicialQubit::tau, "P_B / P_A (section 9).")
+             "(P_A, P_B); transported from base_vertex() under a nontrivial connection.")
+        .def("tau", &SimplicialQubit::tau, "P_B / P_A.")
         .def("tau_derivative", &SimplicialQubit::tauDerivative,
-             "d tau / d z_e for every edge in edge order, z_e = l_e^2 (qubit cobordism spec D2): the "
-             "holomorphic derivative of tau() with respect to each squared edge length, from the "
-             "complex structure in the period frame and its dual (no eigen-decomposition and no "
-             "null-space basis is differentiated); scale-free (sum_e z_e d tau/d z_e = 0) and gauge "
-             "invariant. Raises RuntimeError when the two eigenlines of J coincide.")
+             "d tau / d z_e for every edge in edge order, z_e = l_e^2: the holomorphic derivative "
+             "of tau() with respect to each squared edge length, from the complex structure "
+             "in the period frame and its dual (no eigen-decomposition and no null-space basis "
+             "is differentiated); scale-free (sum_e z_e d tau/d z_e = 0) and gauge invariant. "
+             "Raises RuntimeError when the two eigenlines of J coincide.")
         .def("intersection_number", &SimplicialQubit::intersectionNumber,
              "A . B of the marked cycles on the surface as oriented by the faces: the ordered cup "
              "product of the reference period frame on the fundamental cycle, +1 or -1 to rounding "
              "(+1 on flat_torus, -1 under reversed=True).")
         .def("period_frame", [realOr](const SimplicialQubit &q) { return realOr(q, q.periodFrame()); },
-             "F: nE x 2 (real on the real locus), the period frame (qubit cobordism spec D3) - the basis "
-             "(f_A, f_B) of the harmonic space with periods (1, 0) and (0, 1) over the marking in force, "
-             "harmonic_basis() times the inverse period matrix, in the torus's edge order. The coordinates a "
-             "state is written in: holomorphic_form() == period_frame() @ (P_A, P_B), i.e. P_A * F @ (1, tau), "
-             "the qubit |0> + tau|1> read as a 1-form (f_A <-> |0>, f_B <-> |1>); the frame a two-body "
-             "target chi compares with the transfer in (MultiCobordism.set_input_frame). Under a nontrivial "
+             "F: nE x 2 (real on the real locus), the period frame: the basis (f_A, f_B) of the harmonic "
+             "space with periods (1, 0) and (0, 1) over the marking in force, harmonic_basis() times "
+             "the inverse period matrix, in the torus's edge order. The coordinates a state is written "
+             "in: holomorphic_form() == period_frame() @ (P_A, P_B), i.e. P_A * F @ (1, tau), the qubit "
+             "|0> + tau|1> read as a 1-form (f_A <-> |0>, f_B <-> |1>); the frame a two-body target "
+             "chi compares with the transfer in (MultiCobordism.set_input_frame). Under a nontrivial "
              "connection the periods are the transported ones from base_vertex().")
-        .def("state", &SimplicialQubit::state, "(|0> + tau|1>) / sqrt(1 + |tau|^2) (section 10).")
-        .def("bloch", &SimplicialQubit::bloch, "The Bloch vector (section 10), a unit vector for every tau.")
-        .def("density_matrix", &SimplicialQubit::densityMatrix, "rho = (I + r . sigma) / 2 (section 10).")
+        .def("state", &SimplicialQubit::state, "(|0> + tau|1>) / sqrt(1 + |tau|^2).")
+        .def("bloch", &SimplicialQubit::bloch, "The Bloch vector, a unit vector for every tau.")
+        .def("density_matrix", &SimplicialQubit::densityMatrix, "rho = (I + r . sigma) / 2.")
         .def_static("flat_torus",
                     [emitWarnings](std::complex<double> tau, int nx, int ny) {
                       SimplicialQubit q = SimplicialQubit::flatTorus(tau, nx, ny);
@@ -1345,8 +1336,8 @@ Args:
                     py::arg("tau"), py::arg("nx"), py::arg("ny"),
                     "The flat torus C / (Z + tau Z): unit cell spanned by 1 and tau as an nx x ny "
                     "grid split by its diagonals, sides identified, marked by the row loop A and "
-                    "the column loop B (section 12). Exact: returns tau to rounding.")
-        // ---- section 5: the optional preprocessing pass
+                    "the column loop B. Exact: returns tau to rounding.")
+        // ---- the optional preprocessing pass
         .def("intrinsic_delaunay",
              [emitWarnings](const SimplicialQubit &q) {
                SimplicialQubit r = q.intrinsicDelaunay();
@@ -1354,7 +1345,7 @@ Args:
                return r;
              },
              "Flip every edge with alpha_e + beta_e > pi until none remains (marked cycles "
-             "rerouted); returns the qubit of the flipped triangulation (section 5). Real locus only.")
+             "rerouted); returns the qubit of the flipped triangulation. Real locus only.")
         .def("delaunay_flip_count", &SimplicialQubit::delaunayFlipCount)
         // ---- inputs
         .def("vertices", &SimplicialQubit::vertices)
@@ -1372,54 +1363,54 @@ Args:
         .def("cycle_A", &SimplicialQubit::cycleA)
         .def("cycle_B", &SimplicialQubit::cycleB)
         .def("walk_A", &SimplicialQubit::walkA,
-             "Cycle A as a closed walk of directed vertex steps (section 16); starts at base_vertex() "
+             "Cycle A as a closed walk of directed vertex steps; starts at base_vertex() "
              "under a nontrivial connection.")
-        .def("walk_B", &SimplicialQubit::walkB, "Cycle B as a closed walk (section 16).")
+        .def("walk_B", &SimplicialQubit::walkB, "Cycle B as a closed walk.")
         .def("base_vertex", &SimplicialQubit::baseVertex,
              "The common base point of the transported periods: the first vertex of A's walk on B's.")
         .def("degeneracy_threshold", &SimplicialQubit::degeneracyThreshold)
         .def("spacetime", &SimplicialQubit::spacetime, "The Spacetime holding vertices, edges, lengths, phases.")
         .def("on_real_locus", &SimplicialQubit::onRealLocus,
              "True when every length is real and every link is 1: the real-number construction ran, "
-             "bit-identical to the real-length one (section 16).")
+             "bit-identical to the real-length one.")
         .def("trivial_connection", &SimplicialQubit::trivialConnection, "True when every link is 1.")
         // ---- intermediate quantities
-        .def("d0", &SimplicialQubit::d0, "nE x nV (section 3).")
-        .def("d1", &SimplicialQubit::d1, "nF x nE (section 3).")
+        .def("d0", &SimplicialQubit::d0, "nE x nV cells.")
+        .def("d1", &SimplicialQubit::d1, "nF x nE cells.")
         .def("angles", [realOr](const SimplicialQubit &q) { return realOr(q, q.angles()); },
-             "Per face (alpha_i, alpha_j, alpha_k) (section 4); the principal acos off the real locus.")
+             "Per face (alpha_i, alpha_j, alpha_k); the principal acos off the real locus.")
         .def("areas", [realOrVector](const SimplicialQubit &q) { return realOrVector(q, q.areas()); },
-             "Per face the Heron area (section 4); the continuation branch off the real locus.")
+             "Per face the Heron area; the continuation branch off the real locus.")
         .def("layout", [realOr](const SimplicialQubit &q) { return realOr(q, q.layout()); },
-             "Per face (p_i, p_j, p_k) in its local frame (section 4).")
+             "Per face (p_i, p_j, p_k) in its local frame.")
         .def("barycentric_gradients",
              [realOr](const SimplicialQubit &q) { return realOr(q, q.barycentricGradients()); },
-             "Per face (grad lambda_i, grad lambda_j, grad lambda_k) (section 7).")
+             "Per face (grad lambda_i, grad lambda_j, grad lambda_k).")
         .def("weights", [realOrVector](const SimplicialQubit &q) { return realOrVector(q, q.weights()); },
-             "The cotangent weights w_e (section 5).")
+             "The cotangent weights w_e.")
         .def("negative_weight_edges", &SimplicialQubit::negativeWeightEdges)
         .def("non_delaunay_edges", &SimplicialQubit::nonDelaunayEdges,
-             "Edges with alpha_e + beta_e > pi (section 5); evaluated on the real locus only.")
+             "Edges with alpha_e + beta_e > pi; evaluated on the real locus only.")
         .def("gram", [realOr](const SimplicialQubit &q) { return realOr(q, q.gram()); },
-             "G[a][b] = <h_a, h_b> (section 8): the transpose pairing, between the dual kernel and the "
-             "kernel under a nontrivial connection (section 16).")
+             "G[a][b] = <h_a, h_b>: the transpose pairing, between the dual kernel and the "
+             "kernel under a nontrivial connection.")
         .def("rotation_pairing", [realOr](const SimplicialQubit &q) { return realOr(q, q.rotationPairing()); },
-             "R[a][b] = sum_t A_t rot90(W_t(h_a)) . W_t(h_b) (section 8).")
+             "R[a][b] = sum_t A_t rot90(W_t(h_a)) . W_t(h_b).")
         .def("marking_swapped", &SimplicialQubit::markingSwapped,
-             "True when |P_A| vanished and -1/tau of the given marking is reported (section 9).")
-        .def("condition_m1", &SimplicialQubit::conditionM1, "cond(M1) (section 13).")
-        .def("condition_g", &SimplicialQubit::conditionG, "cond(G) (section 13).")
+             "True when |P_A| vanished and -1/tau of the given marking is reported.")
+        .def("condition_m1", &SimplicialQubit::conditionM1, "cond(M1) of the cotangent weights.")
+        .def("condition_g", &SimplicialQubit::conditionG, "cond(G) of the harmonic Gram matrix.")
         .def("near_degenerate", &SimplicialQubit::nearDegenerate)
         .def("warnings", &SimplicialQubit::warnings, "Every warning the construction raised.");
     m.def("fubini_study_distance", &SimplicialQubit::fubiniStudyDistance, py::arg("q1"), py::arg("q2"),
           "arccos(|1 + conj(tau1) tau2| / sqrt((1+|tau1|^2)(1+|tau2|^2))): distinguishability, "
-          "curvature +4 (section 11).");
+          "curvature +4.");
     m.def("weil_petersson_distance", &SimplicialQubit::weilPeterssonDistance, py::arg("q1"), py::arg("q2"),
           "arccosh(1 + |tau1 - tau2|^2 / (2 Im tau1 Im tau2)): the moduli distance between shapes, "
-          "curvature -1 (section 11).");
+          "curvature -1.");
   }
   // ========================================
-  // Hodge spectral Observables (#95): scalars over cobordism::HodgeLaplacian
+  // Hodge spectral observables: scalars over cobordism::HodgeLaplacian
   // ========================================
   py::class_<SpectralGap, std::shared_ptr<SpectralGap>>(m, "SpectralGap",
       "Observable: first spectral gap lambda_1 - lambda_0 of the Hermitian-"
@@ -1436,6 +1427,9 @@ Args:
       .def("compute", &HarmonicDimension::compute, py::arg("spacetime"));
   // ========================================
   // WilsonLoop
+  //   K. G. Wilson, "Confinement of quarks", Phys. Rev. D 10, 2445 (1974).
+  //   Greensite, "The Confinement Problem in Lattice Gauge Theory",
+  //   arXiv:hep-lat/0301023.
   // ========================================
   py::enum_<WilsonMode>(m, "WilsonMode",
       "Evaluation mode for Wilson loops.")
@@ -1444,18 +1438,18 @@ Args:
       .value("DEFICIT_ANGLE", WilsonMode::DEFICIT_ANGLE,
              "Deficit-angle based: W = ((d-2)+2cos(epsilon))/d.")
       .value("CAUSAL", WilsonMode::CAUSAL,
-             "CDT causal orientation changes around the loop.")
+             "Causal-orientation changes around the loop.")
       .value("U1_CONNECTION", WilsonMode::U1_CONNECTION,
-             "U(1) connection holonomy: oriented sum of Edge.phase around a "
-             "1-skeleton vertex cycle, reduced mod 2*pi. The Wilson-loop view "
-             "of the Stage-1 cobordism.HodgeLaplacian cycle flux.");
+             "U(1) connection holonomy: oriented sum of Edge.phase around "
+             "a 1-skeleton vertex cycle, reduced mod 2*pi. The Wilson-loop "
+             "view of the cobordism.HodgeLaplacian cycle flux.");
 
   py::enum_<LoopType>(m, "LoopType",
       "Which loop-shape generator to use.")
       .value("HINGE", LoopType::HINGE,
              "Elementary loop around a (d-2)-simplex.")
       .value("DUAL_LATTICE", LoopType::DUAL_LATTICE,
-             "BFS-discovered loop of a target size.")
+             "Breadth-first-search loop of a target size.")
       .value("GEODESIC", LoopType::GEODESIC,
              "Shortest cycle through a start simplex.");
 
@@ -1471,12 +1465,12 @@ Args:
       "Result of evaluating a Wilson loop.")
       .def_readonly("value", &WilsonResult::value,
                     "Primary scalar value. In U1_CONNECTION mode this is a "
-                    "DERIVED view of connectionAccumulation (its "
+                    "derived view of connectionAccumulation (its "
                     "residualPhase()), not a second datum.")
       .def_readonly("connectionAccumulation",
                     &WilsonResult::connectionAccumulation,
                     "U1_CONNECTION mode: the complete gauge-invariant datum -- "
-                    "the UNREDUCED complex accumulation of the oriented edge "
+                    "the unreduced complex accumulation of the oriented edge "
                     "phase around the cycle. Both components are carried: "
                     "around a closed loop a gauge transformation telescopes to "
                     "zero, so the whole complex sum is gauge-invariant. Only Re "
@@ -1507,55 +1501,39 @@ Args:
       R"doc(Wilson loop observable on a triangulated spacetime.
 
 A Wilson loop is the trace of a parallel-transport operator around a
-closed path. On a curved triangulation without an explicit gauge field
-tessera computes the Levi-Civita holonomy analogue: closed walks on the
-dual graph (top-simplices as nodes, shared facets as edges), with the
-loop value determined by the deficit angles of enclosed hinges.
+closed path. Without an explicit gauge field the Levi-Civita holonomy
+analogue is computed: closed walks on the dual graph (top-simplices as
+nodes, shared facets as edges), with the loop value set by the deficit
+angles of the enclosed hinges.
 
-Four evaluation modes:
+Evaluation modes:
 
-* ``COMBINATORIAL``  — dual-graph topology only. ``value`` is the loop
+* ``COMBINATORIAL`` — dual-graph topology only. ``value`` is the loop
   length; ``enclosedHinges`` counts hinges contained in every loop
   simplex; ``contractible`` is True iff ``enclosedHinges == 0``.
-* ``DEFICIT_ANGLE``  — Regge-curvature holonomy. For a hinge loop
+* ``DEFICIT_ANGLE`` — Regge-curvature holonomy. For a hinge loop
   enclosing one hinge h:
       W = ((d-2) + 2 cos(eps_h)) / d
-  For multi-hinge loops the U(1) approximation is used:
+  For multi-hinge loops the U(1) approximation:
       W = product_{h in enclosed} cos(eps_h).
-  W = 1 corresponds to a flat loop; deviation from 1 measures local
-  curvature.
-* ``CAUSAL``  — CDT causal-orientation winding. ``causalWindingNumber``
-  is the signed net change in foliation index around the loop; non-
-  zero values mark loops that cross a CDT slice boundary.
-* ``U1_CONNECTION``  — U(1) connection holonomy. The oriented sum of the
+  W = 1 is a flat loop; deviation from 1 measures local curvature.
+* ``CAUSAL`` — causal-orientation winding. ``causalWindingNumber`` is the
+  signed net change in foliation index around the loop; nonzero values
+  mark loops that cross a causal dynamical triangulation (CDT) slice
+  boundary.
+* ``U1_CONNECTION`` — U(1) connection holonomy. The oriented sum of the
   ``Edge.phase`` carried on the primal 1-skeleton around a closed vertex
   cycle (``+phase`` along the stored source->target orientation,
   ``-phase`` reversed), reduced mod 2*pi. Evaluated via
-  ``evaluateU1Connection(cycle)`` (the connection is a primal-edge, not a
-  dual-graph, quantity); ``value`` carries the holonomy. This is the
-  Wilson-loop view of the Stage-1 ``cobordism.HodgeLaplacian`` cycle flux.
+  ``evaluateU1Connection(cycle)``; the connection is a primal-edge, not a
+  dual-graph, quantity. ``value`` carries the holonomy.
 
-Three loop-shape generators:
+Loops come from ``hingeLoop``, ``dualLatticeLoop`` or ``geodesicLoop``.
+``measure()`` and ``measureAllHinges()`` append ``WilsonResult`` entries to
+an internal list; ``getMeasurements()`` returns it, ``getAverageBySize()``
+aggregates by loop length, and ``reset()`` clears it.
 
-* ``hingeLoop(h)``        — cyclically ordered loop of top-simplices
-                            around the (d-2)-simplex ``h``. Encloses
-                            exactly one hinge (``h``), so the
-                            DEFICIT_ANGLE formula above is exact.
-* ``dualLatticeLoop(start, L)``  — BFS-discovered loop of approximately
-                            ``L`` simplices through ``start``. Suitable
-                            for population sweeps at fixed loop scale.
-* ``geodesicLoop(start)``  — shortest cycle through ``start`` in the
-                            dual graph (girth at that simplex).
-
-Measurement bookkeeping: ``measure()`` and ``measureAllHinges()`` append
-``WilsonResult`` entries to an internal list. ``getMeasurements()``
-returns the accumulated list; ``getAverageBySize()`` aggregates by loop
-length (the standard form for Creutz-ratio-style analyses);
-``reset()`` clears.
-
-See ``docs/source/wilson_loops.md`` for an end-to-end tutorial with
-curvature-scan, contractibility-statistics, and causal-winding
-examples.
+See ``docs/source/wilson_loops.md`` for a tutorial.
 )doc")
       .def(py::init<std::shared_ptr<Spacetime>>(), py::arg("spacetime"),
            "Construct a Wilson-loop calculator bound to a Spacetime.")
@@ -1597,17 +1575,16 @@ the net winding; ``value`` carries the same number as a double.
            R"doc(U(1) connection holonomy around a closed vertex cycle.
 
 ``cycle`` is an ordered list of vertices on the primal 1-skeleton whose
-consecutive pairs (with wrap-around) are joined by edges. Accumulates each
-edge's ``phase`` along its stored source->target orientation (``+phase``
-forward, ``-phase`` reversed) and returns the total reduced into the
-principal interval ``(-pi, pi]`` in ``value``; ``loopSize`` is the number of
-edges. Returns an empty result (``loopSize == 0``) for a degenerate (fewer
-than two vertices) or open (a consecutive pair with no joining edge) cycle.
+consecutive pairs (with wrap-around) are joined by edges. Each edge's
+``phase`` is accumulated along its stored source->target orientation
+(``+phase`` forward, ``-phase`` reversed); ``value`` is the total reduced
+into ``(-pi, pi]`` and ``loopSize`` is the number of edges. Returns an empty
+result (``loopSize == 0``) for a degenerate (fewer than two vertices) or
+open (a consecutive pair with no joining edge) cycle.
 
-This is the Wilson-loop counterpart of the Stage-1 cycle flux carried by the
-Hermitian-weighted ``cobordism.HodgeLaplacian`` — the same oriented phase
-sum. Restricted to phases in ``{0, pi}`` the holonomy lands in ``{0, pi}``
-and reproduces the Z2 flux.
+This is the same oriented phase sum as the cycle flux of the
+Hermitian-weighted ``cobordism.HodgeLaplacian``. Restricted to phases in
+``{0, pi}`` the holonomy lands in ``{0, pi}`` and reproduces the Z2 flux.
 )doc")
       .def("hingeLoop", &WilsonLoop::hingeLoop,
            py::arg("hinge"),
@@ -1618,13 +1595,13 @@ Encloses exactly one hinge (the input). This is the natural loop for
 )doc")
       .def("dualLatticeLoop", &WilsonLoop::dualLatticeLoop,
            py::arg("start"), py::arg("targetLength"),
-           R"doc(BFS-discovered loop of approximately ``targetLength`` simplices.
+           R"doc(Breadth-first-search loop of approximately ``targetLength``
+simplices.
 
-Not guaranteed to be exactly ``targetLength`` — the BFS may overshoot
-or return a shorter loop if local connectivity doesn't permit closing
-at the target size. Suitable for population-level scans at a fixed
-loop scale (analogous to specifying Wilson-loop side length in lattice
-gauge theory).
+Not guaranteed to be exactly ``targetLength``: the search may overshoot or
+return a shorter loop if local connectivity does not permit closing at the
+target size. Suitable for population-level scans at a fixed loop scale
+(the analogue of a Wilson-loop side length in lattice gauge theory).
 )doc")
       .def("geodesicLoop", &WilsonLoop::geodesicLoop,
            py::arg("start"),
@@ -1641,9 +1618,8 @@ target size.
       .def("measureAllHinges", &WilsonLoop::measureAllHinges,
            py::arg("mode"),
            R"doc(Walk every (d-2)-simplex of the spacetime, generate its hinge
-loop, and record the evaluation in ``mode``. Skips degenerate hinges
-whose loop has fewer than 2 distinct simplices. Bulk shortcut for a
-curvature scan.
+loop, and record the evaluation in ``mode``. Skips degenerate hinges whose
+loop has fewer than 2 distinct simplices.
 )doc")
       .def("reset", &WilsonLoop::reset,
            "Clear all accumulated measurements.")
@@ -1652,13 +1628,13 @@ curvature scan.
       .def("getAverageBySize", &WilsonLoop::getAverageBySize,
            R"doc(Mean ``value`` grouped by loop size, as a ``{size: mean}`` dict.
 
-The standard form for Creutz-ratio-style analyses: fix loop size L,
-read off the population-averaged Wilson value at that scale.
+The standard form for Creutz-ratio analyses: fix loop size L, read off the
+population-averaged Wilson value at that scale.
 )doc");
 
   // ==========================================================================
-  // Emergent-proton readout battery (#593): pure readers over a live complex,
-  // the loader/transform layer, and the GAUGE/RELABEL gates.
+  // Emergent-proton readout battery: pure readers over a live complex, the
+  // loader/transform layer, and the gauge/relabel gates.
   // ==========================================================================
 
   // ---- LiveComplex: the loader / transform layer (outside the readers) ----
@@ -1669,12 +1645,13 @@ read off the population-averaged Wilson value at that scale.
       .def_readonly("vertex_map", &LiveComplex::Relabeled::vertexMap);
 
   py::class_<LiveComplex>(m, "LiveComplex",
-      R"doc(The loader / transform layer OUTSIDE the pure readers: LOAD a saved
-combinatorial + metric description back into a live, skeleton-complete Spacetime,
-and produce a relabeled copy for the RELABEL gate. Never builds a spacetime of
-its own or re-runs the emergent dynamics (those live in Proton / ProtonIngredients
-/ MultiCobordism) — only reads a recorded geometry back through the canonical
-``Spacetime.fromCells``, completing the facet skeleton with ``materializeFacets``.)doc")
+      R"doc(The loader / transform layer outside the pure readers: loads a
+saved combinatorial and metric description back into a live,
+skeleton-complete Spacetime, and produces a relabeled copy for the relabel
+gate. Never builds a spacetime of its own and never re-runs the emergent
+dynamics (those live in Proton / ProtonIngredients / MultiCobordism); it
+reads a recorded geometry back through ``Spacetime.fromCells``, completing
+the facet skeleton with ``materializeFacets``.)doc")
       .def_static("load", &LiveComplex::load, py::arg("cells"),
                   py::arg("squared_lengths"), py::arg("vertex_times"),
                   py::arg("dimensions"),
@@ -1688,15 +1665,15 @@ its own or re-runs the emergent dynamics (those live in Proton / ProtonIngredien
       .def_static("relabel", &LiveComplex::relabel, py::arg("spacetime"),
                   py::arg("seed"),
                   "A relabeled rebuild under a deterministic vertex-id "
-                  "permutation (the RELABEL-gate transform).");
+                  "permutation (the relabel-gate transform).");
 
   // ---- RegisterContext: the validated read context (pure reader) ----
   py::class_<RegisterContext, std::shared_ptr<RegisterContext>>(
       m, "RegisterContext",
       R"doc(The one validated read context every emergent-proton observable
-measures: a LIVE, already-built complex, its emergent holes, the
-induced-orientation signs, and the shared per-complex caches. A pure reader — it
-never builds, solves, or materializes anything.)doc")
+measures: a live, already-built complex, its emergent holes, the
+induced-orientation signs, and the shared per-complex caches. A pure reader:
+it never builds, solves, or materializes anything.)doc")
       .def(py::init([](std::shared_ptr<Spacetime> st, int count, int degree,
                        std::vector<std::complex<double>> target) {
              auto ctx = std::make_shared<RegisterContext>(
@@ -1779,7 +1756,7 @@ never builds, solves, or materializes anything.)doc")
 
   py::class_<SingletResidual, RegisterObservable,
              std::shared_ptr<SingletResidual>>(m, "SingletResidual",
-      "The #574 whole-complex singlet diagnostic (headline = singlet r_state).")
+      "The whole-complex singlet diagnostic (headline = singlet r_state).")
       .def(py::init<>())
       .def("conjugate_residual", &SingletResidual::conjugateResidual,
            py::arg("ctx"));
@@ -1798,7 +1775,7 @@ never builds, solves, or materializes anything.)doc")
 
   py::class_<BlockResiduals, RegisterObservable,
              std::shared_ptr<BlockResiduals>>(m, "BlockResiduals",
-      "The #574 per-output-block carry residuals (blocks are ctor provenance).")
+      "Per-output-block carry residuals (blocks are constructor provenance).")
       .def(py::init<std::vector<BlockResiduals::Block>>(), py::arg("blocks"));
 
   // The mass/radius reader structs (typed accessors).
@@ -1831,14 +1808,14 @@ never builds, solves, or materializes anything.)doc")
 
   py::class_<EmergentMass, RegisterObservable, std::shared_ptr<EmergentMass>>(
       m, "EmergentMass",
-      "The #575 mass half on the relaxed 4D interior (headline = m_shell).")
+      "The mass half of the relaxed 4D interior read (headline = m_shell).")
       .def(py::init<>())
       .def("masses", &EmergentMass::masses, py::arg("ctx"))
       .def("localization", &EmergentMass::localization, py::arg("ctx"));
 
   py::class_<EmergentRadius, RegisterObservable,
              std::shared_ptr<EmergentRadius>>(m, "EmergentRadius",
-      "The #575 radius half on the relaxed 4D interior (headline = r_dual).")
+      "The radius half of the relaxed 4D interior read (headline = r_dual).")
       .def(py::init<>())
       .def("radii", &EmergentRadius::radii, py::arg("ctx"));
 
@@ -1860,7 +1837,7 @@ never builds, solves, or materializes anything.)doc")
 
   py::class_<PairLoopFlavor, RegisterObservable,
              std::shared_ptr<PairLoopFlavor>>(m, "PairLoopFlavor",
-      "The #561/#576 pair-loop dual-basis flavor read (headline = rho).")
+      "The pair-loop dual-basis flavor read (headline = rho).")
       .def(py::init<>())
       .def(py::init([](std::pair<int, int> diquark) {
              return std::make_shared<PairLoopFlavor>(diquark);
@@ -1877,14 +1854,14 @@ never builds, solves, or materializes anything.)doc")
   // ---- the self-test probes ----
   py::class_<LabelLeakProbe, RegisterObservable,
              std::shared_ptr<LabelLeakProbe>>(m, "LabelLeakProbe",
-      "A deliberately label-dependent probe (RELABEL must flag it).")
+      "A deliberately label-dependent probe; the relabel gate must flag it.")
       .def(py::init<>());
   py::class_<GaugeLeakProbe, RegisterObservable,
              std::shared_ptr<GaugeLeakProbe>>(m, "GaugeLeakProbe",
-      "A deliberately gauge-dependent probe (GAUGE must flag it).")
+      "A deliberately gauge-dependent probe; the gauge gate must flag it.")
       .def(py::init<>());
 
-  // ---- the GAUGE/RELABEL gate harness ----
+  // ---- the gauge/relabel gate harness ----
   py::class_<ObservableGates::GateResult>(m, "GateResult")
       .def_readonly("gauge_delta", &ObservableGates::GateResult::gaugeDelta)
       .def_readonly("relabel_delta", &ObservableGates::GateResult::relabelDelta)
@@ -1893,7 +1870,7 @@ never builds, solves, or materializes anything.)doc")
       .def_readonly("relabel_ok", &ObservableGates::GateResult::relabelOk);
 
   py::class_<ObservableGates>(m, "ObservableGates",
-      "The GAUGE/RELABEL gate harness — post-hoc validation, never a loop "
+      "The gauge/relabel gate harness: post-hoc validation, never a loop "
       "condition.")
       .def_static("gauge_delta", &ObservableGates::gaugeDelta,
                   py::arg("observable"), py::arg("ctx"))
@@ -1915,10 +1892,10 @@ never builds, solves, or materializes anything.)doc")
       py::int_(ObservableGates::GATE_SEED);
 
   // ========================================
-  // DualVolumeSigns (#605)
+  // DualVolumeSigns
   // ========================================
   py::class_<DualVolumeSigns::DimensionReport>(m, "DualVolumeDimensionReport",
-      "Per-dimension counts from the diagonal DEC Hodge star sign audit.")
+      "Per-dimension counts from the diagonal discrete exterior calculus (DEC) Hodge star sign audit.")
       .def_readonly("dimension", &DualVolumeSigns::DimensionReport::dimension)
       .def_readonly("n_simplices", &DualVolumeSigns::DimensionReport::nSimplices)
       .def_readonly("n_negative_dual_volume",
@@ -1956,23 +1933,24 @@ never builds, solves, or materializes anything.)doc")
 
   py::class_<DualVolumeSigns, std::shared_ptr<DualVolumeSigns> >(
       m, "DualVolumeSigns",
-      R"doc(Read-only audit of the sign of the diagonal DEC Hodge star.
+      R"doc(Read-only audit of the sign of the diagonal discrete exterior
+calculus (DEC) Hodge star.
 
-The diagonal Discrete Exterior Calculus Hodge star assigns each k-simplex the
-scalar ratio |*sigma| / |sigma|, the signed circumcentric dual cell content over
-the simplex's own signed content. A Maxwell-type or gauge term discretised with
-DEC carries its whole metric dependence in that ratio, so a negative entry costs
-positive-definiteness of the Hodge Laplacian and breaks the sign structure a
-self-dual / anti-self-dual split of a 2-cochain relies on.
+The star assigns each k-simplex the scalar ratio |*sigma| / |sigma|: the
+signed circumcentric dual cell content over the simplex's own signed content.
+A gauge term discretised with DEC carries its whole metric dependence in that
+ratio, so a negative entry costs positive-definiteness of the Hodge Laplacian
+and breaks the sign structure a self-dual / anti-self-dual split of a
+2-cochain relies on.
 
-The audit separates the two causes of a negative ratio. A circumcenter falling
-outside its simplex (a negative barycentric coordinate) is the Riemannian
+Two causes of a negative ratio are separated. A circumcenter outside its
+simplex (a negative barycentric coordinate) is the Riemannian
 well-centeredness violation and indicates badly shaped cells. A timelike
 circumcenter displacement (negative signed circumradius squared) is reachable
-only in Lorentzian signature and is expected rather than defective. Counts are
-therefore broken out by all-spacelike versus mixed-signature cells.
+only in Lorentzian signature and is expected rather than defective. Counts
+are therefore broken out by all-spacelike versus mixed-signature cells.
 
-Measures only: changes no geometry and enforces nothing.)doc")
+Changes no geometry and enforces nothing.)doc")
       .def(py::init<double>(), py::arg("tolerance") = 1e-12)
       .def("analyze", &DualVolumeSigns::analyze, py::arg("spacetime"),
            "The full per-dimension audit.")
@@ -1981,7 +1959,7 @@ Measures only: changes no geometry and enforces nothing.)doc")
            "negative. Zero means the diagonal star is positive everywhere.");
 
   // ==========================================================================
-  // ColorFiber / ColorAnchor (#767): the exact three-edge SU(3) color kernel
+  // ColorFiber / ColorAnchor: the exact three-edge SU(3) color kernel
   // and the calibrated weighted oriented-triangle anchor.  Pure reads over
   // caller-supplied data; nothing enters the emergence objective.
   // ==========================================================================
@@ -2001,16 +1979,14 @@ negates under an odd permutation (the opposite orientation).)doc")
       .def_readwrite("signs", &OrientedTriangle::signs);
 
   py::class_<AnchorProfile>(m, "AnchorProfile",
-      R"doc(The reported anchor datum -- the PROFILE, not only the score:
-the calibrated atlas score a^2 = sum_tau w_tau |det A_tau|^2, the per-
-triangle terms, the maximal term, the participation ratio of the term
-distribution, the determinant phases with their circular coherence /
-dispersion on overlapping oriented triangles (NaN when no determinant is
-nonzero -- unknown is never encoded as zero), the per-triangle Krein
-signatures (n+, n0, n-) of the restricted weight blocks (reported
-separately from the |W_tau|-restricted score), the frame-normalization
-residual, the numerically-checked calibration margin, and the pre-declared
-convex weighting that produced the score.)doc")
+      R"doc(The full anchor profile, not only the score: the calibrated atlas
+score a^2 = sum_tau w_tau |det A_tau|^2, the per-triangle terms, the maximal
+term, the participation ratio of the term distribution, the determinant
+phases with their circular coherence and dispersion on overlapping oriented
+triangles (NaN when no determinant is nonzero; unknown is never encoded as
+zero), the per-triangle Krein signatures (n+, n0, n-) of the restricted
+weight blocks, the frame-normalization residual, the checked calibration
+margin, and the pre-declared convex weighting that produced the score.)doc")
       .def(py::init<>())
       .def_readonly("score", &AnchorProfile::score)
       .def_readonly("terms", &AnchorProfile::terms)
@@ -2019,7 +1995,7 @@ convex weighting that produced the score.)doc")
       .def_readonly("participation_ratio", &AnchorProfile::participationRatio)
       .def_readonly("det_phases", &AnchorProfile::detPhases)
       .def_readonly("phase_coherence", &AnchorProfile::phaseCoherence,
-                    "Determinant-phase coherence on OVERLAPPING triangles "
+                    "Determinant-phase coherence on overlapping triangles "
                     "(NaN on a disjoint atlas: no overlap content).")
       .def_readonly("phase_dispersion", &AnchorProfile::phaseDispersion)
       .def_readonly("overlapping_triangles",
@@ -2035,7 +2011,7 @@ convex weighting that produced the score.)doc")
       .def_readonly("weighting_id", &AnchorProfile::weightingId)
       .def_readonly("weights", &AnchorProfile::weights)
       .def_readonly("certificate", &AnchorProfile::certificate,
-          "The #764 tessera.cobordism.Certificate grading the calibrated "
+          "The tessera.cobordism.Certificate grading the calibrated "
           "score: StructureExact on the diagonal (decoupled) weight path, "
           "CertifiedNumerical on the general Hermitian-matrix path; regime "
           "PositiveSemidefinite / HermitianIndefinite per the Krein read; "
@@ -2043,11 +2019,11 @@ convex weighting that produced the score.)doc")
           "against the evaluate gram tolerance.");
 
   py::class_<AnchorGate>(m, "AnchorGate",
-      "The triangle-anchor gate the exactness contract requires before any "
-      "colour-specific kernel runs. DEFAULT-CONSTRUCTED IS CLOSED, so a "
-      "caller that supplies nothing is refused rather than admitted; the "
-      "only way to open one is ColorAnchor.gateFor, which applies the same "
-      "acceptance predicate the quark verdict uses.")
+      "The triangle-anchor gate required before any colour-specific "
+      "kernel runs. A default-constructed gate is closed, so a caller "
+      "that supplies nothing is refused rather than admitted; the "
+      "only way to open one is ColorAnchor.gateFor, which applies "
+      "the same acceptance predicate the quark verdict uses.")
       .def(py::init<>())
       .def_readonly("accepted", &AnchorGate::accepted)
       .def_readonly("score", &AnchorGate::score)
@@ -2060,7 +2036,7 @@ convex weighting that produced the score.)doc")
       "Occupation-sector weights ||P_N psi||^2 of an 8-dimensional Fock "
       "vector over the three edge modes: vacuum (N=0), quark / fundamental "
       "triplet (N=1), anti-triplet / diquark (N=2), top-wedge color singlet "
-      "(N=3).  Sector READS only -- never a particle classification.")
+      "(N=3).  Sector reads only; never a particle classification.")
       .def_readonly("vacuum", &ColorFiber::SectorWeights::vacuum)
       .def_readonly("quark", &ColorFiber::SectorWeights::quark)
       .def_readonly("anti_triplet", &ColorFiber::SectorWeights::antiTriplet)
@@ -2074,11 +2050,11 @@ convex weighting that produced the score.)doc")
       .def_readonly("singlet", &ColorFiber::OctetRead::singlet);
 
   py::class_<ColorFiber>(m, "ColorFiber",
-      R"doc(The exact three-edge SU(3) color kernel (#767): the constant
-color-sector algebra of three
-oriented edge modes, Lambda* C^3 = 1 (+) 3 (+) 3bar (+) 1, layered over the
-#766 exterior-algebra primitives (sector projectors and CAR matrices are
-delegated to tessera.quantum.ExteriorAlgebra, never reimplemented).
+      R"doc(The exact three-edge SU(3) color kernel: the constant
+color-sector algebra of three oriented edge modes,
+Lambda* C^3 = 1 (+) 3 (+) 3bar (+) 1, layered over the exterior-algebra
+primitives; sector projectors and canonical anticommutation relation (CAR)
+matrices are delegated to tessera.quantum.ExteriorAlgebra.
 
 All members are static; Fock operators are dense 8x8 matrices on the
 occupation basis n(b) = sum_i b_i 2^i, and the one-occupation (triplet)
@@ -2137,22 +2113,22 @@ solver call, no mutation, nothing enters the emergence objective.)doc")
                   "The 9x9 projector vec(I)vec(I)^dag/3 onto the trace "
                   "(singlet) part -- implemented literally as I9 - "
                   "adjointOctetProjector(), so P1 + P8 = I9 resolves "
-                  "3 x 3bar = 1 + 8 exactly (#774).")
+                  "3 x 3bar = 1 + 8 exactly.")
       .def_static("octetBilinear", &ColorFiber::octetBilinear,
                   py::arg("i"), py::arg("j"),
-                  "The 8x8 traceless even bilinear "
-                  "T_ij = a_i^dag a_j - (delta_ij/3) N on Fock space "
-                  "(= dGamma(tracelessPart(matrixUnit(i, j)))): conserves N "
-                  "(even fermion parity) and the nine T_ij span the octet "
-                  "(#774).")
+                  "The 8x8 traceless even bilinear T_ij = "
+                  "a_i^dag a_j - (delta_ij/3) N on Fock space "
+                  "(= dGamma(tracelessPart(matrixUnit(i, j)))): "
+                  "conserves N (even fermion parity), and "
+                  "the nine T_ij span the octet.")
       .def_static("adjointCasimirMatrix", &ColorFiber::adjointCasimirMatrix,
                   "The 9x9 quadratic Casimir of the adjoint action, "
                   "C = sum_a K_a^2 with K_a vec(M) = vec([lambda_a/2, M]); "
-                  "exactly C = 3 P8 (#774).")
+                  "exactly C = 3 P8.")
       .def_static("adjointCasimir", &ColorFiber::adjointCasimir,
                   py::arg("m"),
                   "The adjoint-Casimir Rayleigh quotient in [0, 3]: exactly "
-                  "3 for traceless M, 0 for M ~ I, NaN for M = 0 (#774).")
+                  "3 for traceless M, 0 for M ~ I, NaN for M = 0.")
       .def_static("omega", &ColorFiber::omega,
                   "The primitive cube root of unity as its algebraic value "
                   "(-1 + i sqrt(3))/2 (never exp), so 1 + omega + omega^2 "
@@ -2166,23 +2142,23 @@ solver call, no mutation, nothing enters the emergence objective.)doc")
                   "Column k of F3: the Z3 character vector "
                   "(1, omega^k, omega^{2k})/sqrt(3).")
       .def_static("omegaPhaseState", &ColorFiber::omegaPhaseState,
-                  "The existing phase pattern (1, omega, omega^2)/sqrt(3), "
-                  "identified as ONE color basis vector "
+                  "The phase pattern (1, omega, omega^2)/sqrt(3), "
+                  "identified as one color basis vector "
                   "(fourierBasisVector(1)); its cyclic orbit under pointwise "
                   "Z3 powers is the exact orthonormal triad = the columns of "
                   "F3.")
       .def_static("perimeter", &ColorFiber::perimeter, py::arg("z"),
                   "The triangle perimeter sum_i |z_i|^{1/2} of three stored "
-                  "complex SQUARED lengths (the L1 geometric datum).")
+                  "complex squared lengths (the L1 geometric datum).")
       .def_static("perimeterNormalized", &ColorFiber::perimeterNormalized,
                   py::arg("z"),
                   "Rescale the squared lengths so the perimeter is one -- a "
-                  "GEOMETRIC SCALE GAUGE (L1), never a state normalization.")
+                  "geometric scale gauge (L1), never a state normalization.")
       .def_static("hilbertNorm", &ColorFiber::hilbertNorm, py::arg("z"),
                   "The Hilbert L2 norm ||z||_2.")
       .def_static("hilbertNormalized", &ColorFiber::hilbertNormalized,
                   py::arg("z"),
-                  "z / ||z||_2 with <c|c> = 1 -- the STATE normalization, "
+                  "z / ||z||_2 with <c|c> = 1 -- the state normalization, "
                   "distinct from the perimeter gauge.")
       .def_static("colorVector", &ColorFiber::colorVector, py::arg("z"),
                   "The color vector from the stored complex squared "
@@ -2220,37 +2196,36 @@ solver call, no mutation, nothing enters the emergence objective.)doc")
                   "builds; callable in every build).")
       .def_static("constantAlgebraCertificate",
                   &ColorFiber::constantAlgebraCertificate,
-                  "The #764 AlgebraicallyExact certificate of the constant "
+                  "The AlgebraicallyExact certificate of the constant "
                   "algebra (measured verifyConstantAlgebra residual against "
                   "the startup tolerance 1e-12).");
 
   py::class_<ColorAnchor>(m, "ColorAnchor",
-      R"doc(The calibrated weighted oriented-triangle anchoring kernel for
-an abstract rank-three band (#767; whitepaper "Quarks as modular
-clusters"): A_tau = |W_tau|^{1/2} R_tau Phi per declared oriented triangle,
-atlas score a^2 = sum_tau w_tau |det A_tau|^2 with the convex weighting
-DECLARED BEFORE the data are examined (post-hoc re-weighting raises).
+      R"doc(The calibrated weighted oriented-triangle anchoring kernel for an
+abstract rank-three band: A_tau = |W_tau|^{1/2} R_tau Phi per declared
+oriented triangle, atlas score a^2 = sum_tau w_tau |det A_tau|^2 with the
+convex weighting declared before the data are examined (post-hoc
+re-weighting raises).
 
 Exact identity and domain: with the frame |W|-orthonormal (verified per
 evaluate and reported as frame_gram_residual) and |W| triangle-decoupled
-(any diagonal per-edge metric -- the production DEC/Hodge case), each
-|det A_tau|^2 = det(A_tau^dag A_tau) <= 1 because R_tau^dag |W_tau| R_tau
-is dominated by |W|, so the score is calibrated to [0, 1] with value one
-exactly at full concentration on the weighted edge span.  A single literal
-triangle is the exact oracle; an extended anchored fiber is the production
-case.  For a general Hermitian (coupled) weight the <= 1 bound is CHECKED
-(calibration_margin), never assumed.  Signed sectors restrict with
-|W_tau|^{1/2} and report each restricted block's Krein signature
-separately.
+(any diagonal per-edge metric, the discrete exterior calculus / Hodge
+case), each |det A_tau|^2 = det(A_tau^dag A_tau) <= 1 because
+R_tau^dag |W_tau| R_tau is dominated by |W|, so the score is calibrated to
+[0, 1], with value one exactly at full concentration on the weighted edge
+span.  A single literal triangle is the exact oracle.  For a general
+Hermitian (coupled) weight the <= 1 bound is checked (calibration_margin),
+never assumed.  Signed sectors restrict with |W_tau|^{1/2} and report each
+restricted block's Krein signature separately.
 
 Operates only on caller-supplied inputs (frame over oriented edges, edge
 weight data, oriented-triangle descriptors); mutates nothing; never enters
 the emergence objective; contains no transport code.)doc")
       .def(py::init<std::vector<OrientedTriangle>>(), py::arg("triangles"),
-           "Declare the atlas with the UNIFORM convex weighting 1/T.")
+           "Declare the atlas with the uniform convex weighting 1/T.")
       .def(py::init<std::vector<OrientedTriangle>, std::vector<double>>(),
            py::arg("triangles"), py::arg("weights"),
-           "Declare the atlas with an EXPLICIT convex weighting (each >= 0, "
+           "Declare the atlas with an explicit convex weighting (each >= 0, "
            "summing to one within 1e-12).")
       .def("triangles", &ColorAnchor::triangles,
            "The declared oriented triangles (immutable).")
@@ -2258,29 +2233,29 @@ the emergence objective; contains no transport code.)doc")
       .def("weightingId", &ColorAnchor::weightingId,
            "'uniform' or 'declared'.")
       .def("overlapsAnother", &ColorAnchor::overlapsAnother, py::arg("index"),
-           "Whether declared triangle `index` shares a boundary EDGE with "
-           "another declared triangle -- the overlap relation the "
+           "Whether declared triangle `index` shares a boundary edge with "
+           "another declared triangle: the overlap relation the "
            "determinant-phase coherence is recorded on.")
       .def("overlappingTriangleCount", &ColorAnchor::overlappingTriangleCount,
            "How many declared triangles overlap another (0 on a disjoint "
-           "atlas, where the coherence is UNKNOWN).")
+           "atlas, where the coherence is unknown).")
       .def("sealed", &ColorAnchor::sealed,
            "True once any data have been evaluated (weighting sealed).")
       .def("declareWeights", &ColorAnchor::declareWeights, py::arg("weights"),
-           "Replace the declared convex weighting -- allowed ONLY before "
-           "the first evaluate(); afterwards post-hoc weight selection is "
+           "Replace the declared convex weighting; allowed only before the "
+           "first evaluate().  Afterwards post-hoc weight selection is "
            "rejected (raises).")
       .def_static("accepts", &ColorAnchor::accepts, py::arg("profile"),
                   py::arg("min_score") = ColorAnchor::kDefaultMinScore,
                   py::arg("min_phase_coherence") =
                       ColorAnchor::kDefaultMinPhaseCoherence,
-                  "THE triangle-anchor acceptance predicate -- one "
-                  "definition, shared by the quark verdict and by the colour "
-                  "kernels the exactness contract gates on it. A profile "
-                  "passes when a weighting was actually declared (an empty "
-                  "weighting_id is MISSING evidence, not a zero score), its "
-                  "calibration certificate holds, and both the atlas score "
-                  "and the determinant-phase coherence meet their floors.")
+                  "The triangle-anchor acceptance predicate, shared "
+                  "by the quark verdict and by the colour kernels gated "
+                  "on it. A profile passes when a weighting was actually "
+                  "declared (an empty weighting_id is missing evidence, "
+                  "not a zero score), its calibration certificate holds, "
+                  "and both the atlas score and the determinant-phase "
+                  "coherence meet their floors.")
       .def_static("gateFor", &ColorAnchor::gateFor, py::arg("profile"),
                   py::arg("min_score") = ColorAnchor::kDefaultMinScore,
                   py::arg("min_phase_coherence") =
@@ -2292,8 +2267,8 @@ the emergence objective; contains no transport code.)doc")
                              double>(&ColorAnchor::evaluate),
            py::arg("frame"), py::arg("edge_weights"),
            py::arg("gram_tolerance") = 1e-9,
-           "Evaluate against a DIAGONAL (possibly signed) per-edge weight "
-           "vector -- the domain where the [0,1] calibration bound is "
+           "Evaluate against a diagonal (possibly signed) per-edge weight "
+           "vector, the domain where the [0,1] calibration bound is "
            "exact.  The frame must be |W|-orthonormal within "
            "gram_tolerance (use orthonormalizeFrame).")
       .def("evaluateMatrix",
@@ -2325,15 +2300,15 @@ the emergence objective; contains no transport code.)doc")
                   "W; uses the eigen-modulus |W|).");
 
   // ==========================================================================
-  // ExchangeHolonomy (#772): Berry-cancelled exchange statistics, the
+  // ExchangeHolonomy: Berry-cancelled exchange statistics, the
   // constructed total-space spin holonomy cycle, and the conditional
   // SO(d) -> Spin(d) lift.  Read-only; nothing enters any emergence
   // objective; no Kasteleyn orientation is required anywhere.
   // ==========================================================================
   py::class_<ExchangeHolonomyConfig>(m, "ExchangeHolonomyConfig",
-      "Analysis parameters of the exchange/rotation holonomy reads "
-      "(ticket #772).  Thresholds select which reads are CERTIFIED — a "
-      "failed threshold yields an UNCERTIFIED read, never a different "
+      "Analysis parameters of the exchange and rotation holonomy reads. "
+      "Thresholds select which reads are certified; a failed threshold "
+      "yields an uncertified read, never a different "
       "sign.")
       .def(py::init<>())
       .def_readwrite("leakFloor", &ExchangeHolonomyConfig::leakFloor,
@@ -2353,7 +2328,7 @@ the emergence objective; contains no transport code.)doc")
       .def_readwrite("blockMatchThreshold",
                      &ExchangeHolonomyConfig::blockMatchThreshold,
                      "Minimum subspace overlap of a certified block "
-                     "continuation (mirrors the #769 tracker threshold).")
+                     "continuation (mirrors the band-tracker threshold).")
       .def_readwrite("liftAngleMargin",
                      &ExchangeHolonomyConfig::liftAngleMargin,
                      "Lifted loop steps must stay this far below the pi "
@@ -2372,7 +2347,7 @@ the emergence objective; contains no transport code.)doc")
 
   py::class_<TransportStepRead>(m, "TransportStepRead",
       "One overlap-transport step: singular-value data of the r x r frame "
-      "overlap BEFORE polar normalization, and whether the step met the "
+      "overlap before polar normalization, and whether the step met the "
       "leak/conditioning thresholds.")
       .def_readonly("fromIndex", &TransportStepRead::fromIndex)
       .def_readonly("toIndex", &TransportStepRead::toIndex)
@@ -2383,13 +2358,13 @@ the emergence objective; contains no transport code.)doc")
 
   py::class_<LoopHolonomyRead>(m, "LoopHolonomyRead",
       R"doc(Certified cyclic overlap transport of one tracked frame around a
-CLOSED loop: R_t = polar(Phi_{t+1 mod T}^dagger W_t Phi_t), U_gamma =
-R_{T-1} ... R_0.  `determinant` is the RAW chi_raw = det U_gamma — it
-contains the ordinary Berry phase of the reference motion and is NEVER an
-exchange sign by itself; only the interferometric ratio against a matched
-reference loop is the dynamical certificate.  An uncertified band on the
-loop (gap closure), a leak, or ill-conditioning yields an UNCERTIFIED
-read, never a sign.)doc")
+closed loop: R_t = polar(Phi_{t+1 mod T}^dagger W_t Phi_t),
+U_gamma = R_{T-1} ... R_0.  `determinant` is the raw chi_raw = det U_gamma;
+it contains the ordinary Berry phase of the reference motion and is never
+an exchange sign by itself.  Only the interferometric ratio against a
+matched reference loop is the dynamical certificate.  An uncertified band
+on the loop (gap closure), a leak, or ill-conditioning yields an
+uncertified read, never a sign.)doc")
       .def_readonly("holonomy", &LoopHolonomyRead::holonomy)
       .def_readonly("determinant", &LoopHolonomyRead::determinant)
       .def_readonly("steps", &LoopHolonomyRead::steps)
@@ -2405,9 +2380,9 @@ read, never a sign.)doc")
 
   py::class_<HolonomyCharacterRead>(m, "HolonomyCharacterRead",
       R"doc(The interferometric (Berry-cancelled) character chi_hat =
-det U_loop / det U_reference, with the phase channels kept SEPARATE:
-rawLoopDeterminant (exchange/rotation + Berry), referenceDeterminant (the
-Berry reference motion alone), character (the cancelled ratio).
+det U_loop / det U_reference, with the phase channels kept separate:
+rawLoopDeterminant (exchange or rotation, plus Berry), referenceDeterminant
+(the Berry reference motion alone), character (the cancelled ratio).
 characterSign is -1/+1 only when the certificate holds and the character
 sits within signTolerance of -+1; an uncertified read never emits a
 sign.)doc")
@@ -2426,12 +2401,12 @@ sign.)doc")
   py::class_<BlockPermutationRead>(m, "BlockPermutationRead",
       R"doc(The structural exchange channel: the permutation of persistent
 localized blocks around the loop (matching delegated to
-SpectralFiberTracker.matchFibers), its EXACT parities through the #766
+SpectralFiberTracker.matchFibers), its exact parities through the exterior
 grading (modeParity = the graded exchange statistic; blockParity = the
 block-label sign; compositeParity = the optional composite-level sign),
 and the residual in-block motion after reference cancellation.  Parities
-are exact integers GIVEN the verified matching premise; a failed premise
-(gap closure, rank change, ambiguous matching) yields an UNCERTIFIED read
+are exact integers given the verified matching premise; a failed premise
+(gap closure, rank change, ambiguous matching) yields an uncertified read
 with no parities.)doc")
       .def_readonly("blockPermutation",
                     &BlockPermutationRead::blockPermutation)
@@ -2451,7 +2426,7 @@ with no parities.)doc")
   py::class_<LoopLiftRead>(m, "LoopLiftRead",
       "The Z2 character of a closed SO(d) loop lifted step-by-step to "
       "Spin(d): +1 contractible, -1 the double-cover generator; 0 "
-      "(UNCERTIFIED) when a step approached the pi branch cut or the "
+      "(uncertified) when a step approached the pi branch cut or the "
       "lifted product failed to close on +-I.")
       .def_readonly("character", &LoopLiftRead::character)
       .def_readonly("maxStepAngle", &LoopLiftRead::maxStepAngle)
@@ -2462,7 +2437,7 @@ with no parities.)doc")
       R"doc(The SO(d) -> Spin(d) lift decision over Cech transition data
 with the second Stiefel-Whitney obstruction: per-triangle lift signs, the
 exact GF(2) coboundary decision, and (when the lift exists) a consistent
-per-edge sign choice.  Continuum-claim machinery only — the abstract
+per-edge sign choice.  Needed only for a continuum claim: the abstract
 CAR/Fock algebra needs no spin structure and no Kasteleyn orientation.)doc")
       .def_readonly("liftExists", &SpinLiftRead::liftExists)
       .def_readonly("obstructed", &SpinLiftRead::obstructed)
@@ -2477,25 +2452,22 @@ CAR/Fock algebra needs no spin structure and no Kasteleyn orientation.)doc")
 
   py::class_<ExchangeHolonomy>(m, "ExchangeHolonomy",
       R"doc(Berry-cancelled exchange statistics, the constructed total-space
-spin holonomy cycle, and the conditional SO(d) -> Spin(d) lift (ticket
-#772).
+spin holonomy cycle, and the conditional SO(d) -> Spin(d) lift.
 
-Identities: (1) certified cyclic overlap transport R_t =
-polar(Phi_{t+1}^dagger W_t Phi_t), U_gamma = R_{T-1}...R_0, composing #769
-SpectralFiber frames; (2) the interferometric exchange character chi_hat =
-det U_exchange / det U_reference (the raw determinant contains Berry phase
-and is never the sign); (3) the structural block permutation with exact
-#766 parities and the reference-cancelled in-block residual; (4) the
-constructed total-space spin holonomy cycle as the canonical physical
-rotation path with its co-moving reference (one global rotation of the
-whole carried frame — never per-hole Bloch products); (5) the exact
-total-space J^2 measuring stick (proton eigenstate -> 3/4, Delta -> 15/4);
-(6) the principal rotation logarithm, the Spin(d) lift, the Z2 loop
-character, and the w2 obstruction over Cech data.
+Identities: certified cyclic overlap transport
+R_t = polar(Phi_{t+1}^dagger W_t Phi_t), U_gamma = R_{T-1}...R_0 over
+SpectralFiber frames; the interferometric exchange character
+chi_hat = det U_exchange / det U_reference (the raw determinant contains
+Berry phase and is never the sign); the structural block permutation with
+exact graded parities; the total-space spin holonomy cycle with its
+co-moving reference (one global rotation of the whole carried frame, never
+per-hole Bloch products); the total-space J^2 reference values (proton
+eigenstate -> 3/4, Delta -> 15/4); the principal rotation logarithm, the
+Spin(d) lift, the Z2 loop character, and the w2 obstruction over Cech data.
 
 Channels kept separate in API and report: simplex reorientation
-(reorientedFrames — exactly invariant), compilation ordering
-(permutedCellFrames / cell-tuple matching — exactly invariant), particle
+(reorientedFrames, exactly invariant), compilation ordering
+(permutedCellFrames / cell-tuple matching, exactly invariant), particle
 exchange, Berry reference motion, physical rotation.
 
 Read-only and stateless: never calls a solver, never mutates what it
@@ -2518,9 +2490,9 @@ reads, and nothing here may enter any emergence objective.)doc")
       .def_static("fiberLoopHolonomy",
                   &ExchangeHolonomy::fiberLoopHolonomy, py::arg("loop"),
                   py::arg("config") = ExchangeHolonomyConfig{},
-                  "Closed-loop holonomy of a #769 fiber track (shared "
+                  "Closed-loop holonomy of a spectral-fiber track (shared "
                   "cells matched by vertex tuple; an uncertified band or "
-                  "rank change yields an UNCERTIFIED read).")
+                  "rank change yields an uncertified read).")
       .def_static("exchangeCharacter",
                   &ExchangeHolonomy::exchangeCharacter,
                   py::arg("exchangeLoop"), py::arg("referenceLoop"),
@@ -2546,7 +2518,7 @@ reads, and nothing here may enter any emergence objective.)doc")
                       std::vector<std::vector<std::size_t>>{},
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "Structural block tracking around the loop: permutation, "
-                  "exact #766 parities, reference-cancelled in-block "
+                  "exact graded parities, reference-cancelled in-block "
                   "residual.")
       .def_static("spinorDimension", &ExchangeHolonomy::spinorDimension,
                   py::arg("d"))
@@ -2577,7 +2549,7 @@ reads, and nothing here may enter any emergence objective.)doc")
       .def_static("referenceLoopFrames",
                   &ExchangeHolonomy::referenceLoopFrames, py::arg("frame0"),
                   py::arg("steps"),
-                  "The matched co-moving NON-rotating reference (same "
+                  "The matched co-moving non-rotating reference (same "
                   "timing, no rotation).")
       .def_static("vectorLoopFrames", &ExchangeHolonomy::vectorLoopFrames,
                   py::arg("frame0"), py::arg("a"), py::arg("b"),
@@ -2607,7 +2579,7 @@ reads, and nothing here may enter any emergence objective.)doc")
                   py::arg("d"),
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "The Z2 character of a closed SO(d) loop by incremental "
-                  "principal lifts (UNCERTIFIED near the pi branch cut).")
+                  "principal lifts (uncertified near the pi branch cut).")
       .def_static("spinLift", &ExchangeHolonomy::spinLift,
                   py::arg("edges"), py::arg("edgeRotations"),
                   py::arg("triangles"), py::arg("d"),
@@ -2618,21 +2590,21 @@ reads, and nothing here may enter any emergence objective.)doc")
       .def_static("reorientedFrames", &ExchangeHolonomy::reorientedFrames,
                   py::arg("frames"), py::arg("cellSigns"),
                   "The simplex-reorientation gauge (common row sign "
-                  "flips) — every read is exactly invariant.")
+                  "flips); every read is exactly invariant.")
       .def_static("permutedCellFrames",
                   &ExchangeHolonomy::permutedCellFrames, py::arg("frames"),
                   py::arg("rowPermutation"),
                   "The compilation-ordering gauge (common row "
-                  "permutation) — every read is exactly invariant.");
+                  "permutation); every read is exactly invariant.");
   // ========================================
-  // FiberConnection (#770): derived U(r) fiber transport, Wilson
+  // FiberConnection: derived U(r) fiber transport, Wilson
   // observables, rank-three center structure, determinant winding
   // ========================================
   py::class_<FiberConnectionConfig>(m, "FiberConnectionConfig",
-      R"doc(Threshold configuration of the derived-transport gates (#770).
-Every gate fires BEFORE polar/pseudo-unitary reduction; a failed gate
-yields a rejected read that still reports its raw map and diagnostics --
-polar normalization never conceals a bad assignment.)doc")
+      R"doc(Threshold configuration of the derived-transport gates.  Every
+gate fires before polar / pseudo-unitary reduction; a failed gate yields a
+rejected read that still reports its raw map and diagnostics, so polar
+normalization never conceals a bad assignment.)doc")
       .def(py::init<>())
       .def_readwrite("rankTolerance", &FiberConnectionConfig::rankTolerance,
                      "Relative singular-value cut for the numerical rank.")
@@ -2653,7 +2625,7 @@ polar normalization never conceals a bad assignment.)doc")
                      "rejects the transport).")
       .def_readwrite("certificateTolerance",
                      &FiberConnectionConfig::certificateTolerance,
-                     "Tolerance the emitted #764 certificates hold against.")
+                     "Tolerance the emitted certificates hold against.")
       .def_readwrite("closureTolerance",
                      &FiberConnectionConfig::closureTolerance,
                      "Relative endpoint-mismatch cap for certified winding "
@@ -2661,16 +2633,15 @@ polar normalization never conceals a bad assignment.)doc")
 
   py::class_<FiberTransportRead>(m, "FiberTransportRead",
       R"doc(One derived fiber transport A <- B: the raw overlap
-M_AB = Phi_A^dagger W_A T_AB Phi_B (Psi_A^dagger on the
-biorthogonal path), EVERY pre-normalization diagnostic (rank, singular
-values, leakage, endpoint gaps/signatures, frame conditioning), the
-normalized U(r)/pseudo-unitary factor when its gates passed, the
-determinant-line datum, and the graded #764 certificate.  A rejected read
-still carries the raw map and diagnostics.  The spec's per-transport
-winding/center fields materialize on the dedicated family reads
-(DeterminantWindingRead / FundamentalLiftRead): an integer winding exists
-only for a declared family/closure, a center sector only for a declared
-lift path.)doc")
+M_AB = Phi_A^dagger W_A T_AB Phi_B (Psi_A^dagger on the biorthogonal path),
+every pre-normalization diagnostic (rank, singular values, leakage,
+endpoint gaps and signatures, frame conditioning), the normalized U(r) or
+pseudo-unitary factor when its gates passed, the determinant-line datum,
+and the graded certificate.  A rejected read still carries the raw map and
+diagnostics.  Per-transport winding and center fields live on the dedicated
+family reads (DeterminantWindingRead / FundamentalLiftRead): an integer
+winding exists only for a declared family and closure, a center sector only
+for a declared lift path.)doc")
       .def_readonly("toKey", &FiberTransportRead::toKey,
                     "Order-independent key of the destination fiber A.")
       .def_readonly("fromKey", &FiberTransportRead::fromKey,
@@ -2683,7 +2654,7 @@ lift path.)doc")
                     "Singular values of rawMap, descending.")
       .def_readonly("numericalRank", &FiberTransportRead::numericalRank)
       .def_readonly("leakage", &FiberTransportRead::leakage,
-                    "Regime-appropriate isometry defect (spec 5.5).")
+                    "Regime-appropriate isometry defect.")
       .def_readonly("overlapConditionNumber",
                     &FiberTransportRead::overlapConditionNumber)
       .def_readonly("toGap", &FiberTransportRead::toGap)
@@ -2701,11 +2672,11 @@ lift path.)doc")
                     &FiberTransportRead::fromProjectorNorm)
       .def_readonly("frameConditionNumber",
                     &FiberTransportRead::frameConditionNumber,
-                    "max of the endpoints' FRAME condition numbers "
-                    "(spec 6.6) -- distinct from the projector norms.")
+                    "max of the endpoints' frame condition numbers, "
+                    "distinct from the projector norms.")
       .def_readonly("regime", &FiberTransportRead::regime)
       .def_readonly("unitaryMap", &FiberTransportRead::unitaryMap,
-                    "The emitted U(r)/pseudo-unitary factor; EMPTY when "
+                    "The emitted U(r)/pseudo-unitary factor; empty when "
                     "rejected or on the certified GL(r,C) non-normal path.")
       .def_readonly("determinantPhase", &FiberTransportRead::determinantPhase,
                     "det of the emitted factor (U(1)); the raw determinant "
@@ -2738,7 +2709,7 @@ lift path.)doc")
       R"doc(The product of accepted transports around a loop: full U(r)
 holonomy (or the certified GL(r,C) product),
 normalized trace Tr H / r, determinant line det H, and the center-blind
-adjoint reads.  Under independent local frame changes a CLOSED holonomy is
+adjoint reads.  Under independent local frame changes a closed holonomy is
 conjugated at its base component, so the normalized trace is invariant.)doc")
       .def_readonly("rank", &WilsonHolonomyRead::rank)
       .def_readonly("loopLength", &WilsonHolonomyRead::loopLength)
@@ -2775,7 +2746,7 @@ conjugated at its base component, so the normalized trace is invariant.)doc")
 branch continued from a declared base
 branch s0, lift = H exp(-i Theta/3) omega^{-s0} with Theta the accumulated
 per-link principal determinant phase, and the accumulated Z3 center sector
-RECORDED (branch-independent; the lift shifts by omega^{-s0} across
+recorded (branch-independent; the lift shifts by omega^{-s0} across
 branches while every projective/adjoint read of it is branch-independent).
 Rank three only -- SU(3) is never hard-coded at generic rank.)doc")
       .def_readonly("rank", &FundamentalLiftRead::rank)
@@ -2806,10 +2777,10 @@ Rank three only -- SU(3) is never hard-coded at generic rank.)doc")
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<WindingClosureSpec> windingClosure(m, "WindingClosureSpec",
-      R"doc(The declared closure of an open-segment determinant winding
-HOW the open composite is closed is part of
-the certificate.  Mode.NONE leaves the winding unknown -- a raw endpoint
-phase difference is never promoted to an integer.)doc");
+      R"doc(The declared closure of an open-segment determinant winding: how
+the open composite is closed is part of the certificate.  Mode.NONE leaves
+the winding unknown; a raw endpoint phase difference is never promoted to
+an integer.)doc");
   py::enum_<WindingClosureSpec::Mode>(windingClosure, "Mode")
       .value("NONE", WindingClosureSpec::Mode::None)
       .value("MATCHED_REFERENCE", WindingClosureSpec::Mode::MatchedReference)
@@ -2832,7 +2803,7 @@ phase difference is never promoted to an integer.)doc");
 
   py::class_<DeterminantWindingRead>(m, "DeterminantWindingRead",
       R"doc(The integer determinant winding of a closed full-rank transport
-family, or the RELATIVE winding of an open segment under a recorded
+family, or the relative winding of an open segment under a recorded
 closure.  `winding` is None when
 invalidated (closed gap / lost rank / aliasing step) or when no closure
 was declared -- never a silently wrong integer.)doc")
@@ -2865,21 +2836,20 @@ was declared -- never a silently wrong integer.)doc")
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<FiberConnection>(m, "FiberConnection",
-      R"doc(Derived spectral-frame transport and Wilson observables (#770).
-Wraps EXISTING induced-transfer
-machinery -- the whole-complex Hodge d'Alembertian's intercomponent block
-and RecursiveQuotient response-network blocks -- forms the overlap
-M_AB = Phi_A^dagger W_A T_AB Phi_B (Psi_A^dagger on the biorthogonal
-path), reports every diagnostic BEFORE normalization, gates, and only then
-reduces to the polar U(r) / pseudo-unitary factor.  Composes accepted maps
-into full U(r), determinant-line, projective/adjoint, and explicitly
-lifted fundamental holonomies; certifies closed-family and declared
-open-segment determinant windings.
+      R"doc(Derived spectral-frame transport and Wilson observables.  Wraps
+the induced-transfer machinery (the whole-complex Hodge d'Alembertian's
+intercomponent block and RecursiveQuotient response-network blocks), forms
+the overlap M_AB = Phi_A^dagger W_A T_AB Phi_B (Psi_A^dagger on the
+biorthogonal path), reports every diagnostic before normalization, gates,
+and only then reduces to the polar U(r) / pseudo-unitary factor.  Composes
+accepted maps into full U(r), determinant-line, projective/adjoint, and
+explicitly lifted fundamental holonomies; certifies closed-family and
+declared open-segment determinant windings.
 
-Read-only observable: consumes accepted #769 SpectralFibers, mutates
-nothing, and none of its outputs enters any emergence objective; the link
-matrix is always reconstructed from neighboring Hodge frames with a
-leakage certificate, never sampled independently.)doc")
+Read-only observable: consumes accepted SpectralFibers, mutates nothing,
+and none of its outputs enters any emergence objective.  The link matrix is
+always reconstructed from neighboring Hodge frames with a leakage
+certificate, never sampled independently.)doc")
       .def(py::init<FiberConnectionConfig>(),
            py::arg("config") = FiberConnectionConfig{})
       .def("config", &FiberConnection::config,
@@ -2902,11 +2872,11 @@ leakage certificate, never sampled independently.)doc")
                   "cells(from)] of the whole-complex weighted Hodge "
                   "operator, cells matched by sorted vertex-id tuple.  "
                   "weights = None follows the process-wide "
-                  "HodgeWeightConvention at CALL time.")
+                  "HodgeWeightConvention at call time.")
       .def_static("responseTransfer", &FiberConnection::responseTransfer,
                   py::arg("network"), py::arg("to_component"),
                   py::arg("from_component"),
-                  "The effective response block of an existing #768 "
+                  "The effective response block of a supplied "
                   "response network (rows = to's stalk, cols = from's "
                   "stalk; zero block when the network carries no such "
                   "edge).")
@@ -2946,11 +2916,11 @@ leakage certificate, never sampled independently.)doc")
            },
            py::arg("cache"), py::arg("st"), py::arg("to_fiber"),
            py::arg("from_fiber"), py::arg("weights") = py::none(),
-           "transportOnSpacetime through the #764 AnalyticCache contract "
+           "transportOnSpacetime through the AnalyticCache contract "
            "(key: the union of the two fibers' cell-vertex sets; cached "
            "equals cold).")
       .def("holonomy", &FiberConnection::holonomy, py::arg("links"),
-           "Multiply ACCEPTED transports along a chain; reports the full "
+           "Multiply accepted transports along a chain; reports the full "
            "holonomy, normalized trace, determinant line, and adjoint "
            "reads (closed = the keys chain into a loop).")
       .def("holonomyOnSpacetime",
@@ -2978,15 +2948,15 @@ leakage certificate, never sampled independently.)doc")
            py::arg("cache"), py::arg("st"), py::arg("fibers"),
            py::arg("weights") = py::none(),
            "holonomyOnSpacetime through the AnalyticCache: per-link caching "
-           "plus the loop product keyed by ALL participating fibers, so a "
+           "plus the loop product keyed by all participating fibers, so a "
            "published TouchedStar invalidates only the loops touching the "
            "changed star.")
       .def_static("projectiveRepresentative",
                   &FiberConnection::projectiveRepresentative,
                   py::arg("unitary"), py::arg("gate"),
                   "A canonical PU(3) class representative: V / (det "
-                  "V)^{1/3} with the PRINCIPAL cube root (the class {U, "
-                  "omega U, omega^2 U} is the faithful datum). GATED on the "
+                  "V)^{1/3} with the principal cube root (the class {U, "
+                  "omega U, omega^2 U} is the faithful datum). Gated on the "
                   "triangle-anchor certificate: a closed AnchorGate raises, "
                   "because rank three plus an accepted transport is not a "
                   "licence to emit a colour datum.")
@@ -2997,17 +2967,17 @@ leakage certificate, never sampled independently.)doc")
       .def("fundamentalLift", &FiberConnection::fundamentalLift,
            py::arg("links"), py::arg("gate"), py::arg("base_branch") = 0,
            "Continue a cube-root branch along the links from the declared "
-           "base branch and RECORD the accumulated Z3 center sector. GATED "
+           "base branch and record the accumulated Z3 center sector. Gated "
            "on the triangle-anchor certificate: a closed AnchorGate reports "
            "valid=False carrying the gate's own refusal reason.")
       .def("closedFamilyWinding", &FiberConnection::closedFamilyWinding,
            py::arg("family"),
-           "Integer determinant winding of a CLOSED transport family "
+           "Integer determinant winding of a closed transport family "
            "(cyclic samples); invalidated when a gap/rank closes or a "
            "phase step reaches pi.")
       .def("openSegmentWinding", &FiberConnection::openSegmentWinding,
            py::arg("segment"), py::arg("closure"),
-           "RELATIVE determinant winding of an OPEN cobordism segment "
+           "Relative determinant winding of an open cobordism segment "
            "under the declared closure (matched-reference or endpoint "
            "trivializations), with the specification recorded; unknown "
            "when no closure is declared.")
@@ -3015,11 +2985,11 @@ leakage certificate, never sampled independently.)doc")
                   "Order-independent key of a fiber (Fingerprint over its "
                   "deduplicated cell-vertex-id set).");
 
-  // ---- ParticleClusters (#773): quark/antiquark classification ---------
+  // ---- ParticleClusters: quark/antiquark classification ---------
 
   py::class_<ParticleClustersConfig>(m, "ParticleClustersConfig",
-      R"doc(Analysis thresholds of the particle classification (#773).
-Every value selects which reads are CERTIFIED, never which value is
+      R"doc(Analysis thresholds of the particle classification.
+Every value selects which reads are certified, never which value is
 reported, and the whole configuration is echoed on every read
 (QuarkRead.thresholds).)doc")
       .def(py::init<>())
@@ -3037,27 +3007,27 @@ reported, and the whole configuration is echoed on every read
                      "Determinant-phase coherence floor of the anchor.")
       .def_readwrite("maxTransportLeakage",
                      &ParticleClustersConfig::maxTransportLeakage,
-                     "Cap on the worst lifetime transport leakage (#770).")
+                     "Cap on the worst lifetime transport leakage.")
       .def_readwrite("minPersistenceLifetime",
                      &ParticleClustersConfig::minPersistenceLifetime,
-                     "Minimum COBORDISM-FRAME lifetime (the whitepaper's "
-                     "'lifetime across multiple cobordism frames'); the "
-                     "modularity resolution-slice count never gates.")
+                     "Minimum lifetime across cobordism frames; the "
+                     "modularity resolution-slice count never gates the "
+                     "classification of a candidate.")
       .def_readwrite("minPersistenceOverlap",
                      &ParticleClustersConfig::minPersistenceOverlap,
-                     "Minimum adjacent-FRAME track overlap.")
+                     "Minimum adjacent-frame track overlap.")
       .def_readwrite("minLocalization",
                      &ParticleClustersConfig::minLocalization,
-                     "Band-localization floor (0 accepts any MEASURED "
+                     "Band-localization floor (0 accepts any measured "
                      "localization; NaN still fails).")
       .def_readwrite("minRefinementOverlap",
                      &ParticleClustersConfig::minRefinementOverlap,
                      "Minimum band subspace overlap across a refinement.")
       .def_readwrite("minStabilityFrames",
                      &ParticleClustersConfig::minStabilityFrames,
-                     "Frames a 'stable' quark condition must hold at (the "
-                     "whitepaper's conditions two and three are "
-                     "across-frame statements).")
+                     "Frames a 'stable' quark condition must hold at; "
+                     "the stability conditions are across-frame "
+                     "statements about the track.")
       .def_readwrite("doubletOverlapThreshold",
                      &ParticleClustersConfig::doubletOverlapThreshold,
                      "Subspace-overlap threshold of the doublet tracking.")
@@ -3079,62 +3049,62 @@ reported, and the whole configuration is echoed on every read
                      "identification.")
       .def_readwrite("minOctetWeight",
                      &ParticleClustersConfig::minOctetWeight,
-                     "#774: floor on a gluon candidate's octet Frobenius "
+                     "Floor on a gluon candidate's octet Frobenius "
                      "weight (a genuinely nonzero color polarization).")
       .def_readwrite("octetPurityTolerance",
                      &ParticleClustersConfig::octetPurityTolerance,
-                     "#774: cap on the (I9 - P8) residual of the excitation "
+                     "Cap on the (I9 - P8) residual of the excitation "
                      "(machine-level: the traceless bilinear is octet "
                      "exactly).")
       .def_readwrite("compositeOctetTolerance",
                      &ParticleClustersConfig::compositeOctetTolerance,
-                     "#774: cap on the octet fraction of a meson's pair "
+                     "Cap on the octet fraction of a meson's pair "
                      "color bilinear (the color-singlet certificate).")
       .def_readwrite("minAntiTripletWeight",
                      &ParticleClustersConfig::minAntiTripletWeight,
-                     "#774: floor on the certified anti-triplet wedge "
+                     "Floor on the certified anti-triplet wedge "
                      "occupation det(C^dag Gamma C) of a diquark.")
       .def_readwrite("colorGramTolerance",
                      &ParticleClustersConfig::colorGramTolerance,
-                     "#775: |det(C^dag C) - 1| cap of the color-singlet "
+                     "|det(C^dag C) - 1| cap of the color-singlet "
                      "certificate (exactly 1 for an orthonormal triad, "
                      "exactly 0 for duplicate color modes).")
       .def_readwrite("colorFluxTolerance",
                      &ParticleClustersConfig::colorFluxTolerance,
-                     "#775: cap on the NET COLOR FLUX -- the octet weight "
+                     "Cap on the net color flux: the octet weight "
                      "of the bound object's color bilinear.  An "
-                     "INDEPENDENT finite-complex diagnostic, never on its "
+                     "independent finite-complex diagnostic, never on its "
                      "own a proof of confinement.")
       .def_readwrite("spinExpectationTolerance",
                      &ParticleClustersConfig::spinExpectationTolerance,
-                     "#775: |<J^2> - 3/4| cap of the total-space spin "
+                     "|<J^2> - 3/4| cap of the total-space spin "
                      "expectation.")
       .def_readwrite("spinVarianceTolerance",
                      &ParticleClustersConfig::spinVarianceTolerance,
-                     "#775: |Var(J^2)| cap of the SHARP-spin certificate "
+                     "|Var(J^2)| cap of the sharp-spin certificate "
                      "value.")
       .def_readwrite("minSupportContainment",
                      &ParticleClustersConfig::minSupportContainment,
-                     "#775: minimum fraction of a constituent's level-0 "
+                     "Minimum fraction of a constituent's level-0 "
                      "support inside the supercomponent (1.0 = full).")
       .def_readwrite("minLifetimeOverlap",
                      &ParticleClustersConfig::minLifetimeOverlap,
-                     "#775: minimum number of SHARED persistence slices "
+                     "Minimum number of shared persistence slices "
                      "across the three constituents' lifetimes.")
       .def_readwrite("minRadius", &ParticleClustersConfig::minRadius,
-                     "#775: strict floor a finite emergent radius must "
+                     "Strict floor a finite emergent radius must "
                      "exceed.")
       .def_readwrite("maxProfileDeviation",
                      &ParticleClustersConfig::maxProfileDeviation,
-                     "#775: cap on the deviation of every DIMENSIONLESS "
+                     "Cap on the deviation of every dimensionless "
                      "scale channel across the refinement window.");
 
   py::class_<GaussFluxRead>(m, "GaussFluxRead",
       R"doc(The electric Gauss-flux consistency read over nested enclosing
-surfaces: each per-surface flux is the EXISTING
-EigenstateSynthesis.gaussLawCharge value (an exact signed sum of the
-supplied field-strength 2-cochain over the closed-star boundary,
-restricted to electric/timelike-leg plaquettes when electricOnly).
+surfaces.  Each per-surface flux is the EigenstateSynthesis.gaussLawCharge
+value: an exact signed sum of the supplied field-strength 2-cochain over
+the closed-star boundary, restricted to electric (timelike-leg) plaquettes
+when electricOnly.
 Charge is certified only when consistent across at least
 minEnclosingSurfaces surfaces; otherwise electricFlux is None (unknown),
 never zero.  No metric regime is verified by the sum, so the certificate
@@ -3160,11 +3130,11 @@ carries the non-normal (no self-adjointness claimed) regime tag.)doc")
 
   py::class_<FlavorDoubletRead>(m, "FlavorDoubletRead",
       R"doc(The emergent, unlabeled, transported two-state spectral
-subclass that could carry isospin.  The search
-runs WITHOUT a requested dimension: stableSubclassRanks reports every
-stable rank found, and "two-state" is an outcome.  The stored first-frame
-doublet fiber is the RECORDED member trivialization -- a compilation
-convention, never a physical u/d label.)doc")
+subclass that could carry isospin.  The search runs without a requested
+dimension: stableSubclassRanks reports every stable rank found, and
+"two-state" is an outcome.  The stored first-frame doublet fiber is the
+recorded member trivialization, a compilation convention and never a
+physical u/d label.)doc")
       .def(py::init<>())
       .def_readonly("found", &FlavorDoubletRead::found,
                     "Exactly one stable two-state subclass emerged.")
@@ -3180,7 +3150,7 @@ convention, never a physical u/d label.)doc")
                     "the track.")
       .def_readonly("stableSubclassRanks",
                     &FlavorDoubletRead::stableSubclassRanks,
-                    "Ranks of ALL stable subclasses (the no-requested-"
+                    "Ranks of all stable subclasses (the no-requested-"
                     "dimension witness).")
       .def_readonly("twoStateCount", &FlavorDoubletRead::twoStateCount,
                     "Stable two-state subclasses (found needs exactly 1).")
@@ -3194,55 +3164,55 @@ convention, never a physical u/d label.)doc")
       .def_readonly("certificate", &FlavorDoubletRead::certificate);
 
   py::class_<QuarkCandidateEvidence>(m, "QuarkCandidateEvidence",
-      R"doc(The assembled evidence bundle of one candidate -- every field
-is a read PRODUCED BY the merged upstream kernels (#765 persistence, #769
-bands, #767 anchors, #770 transports/windings, #780 Wick reads, the
-existing Gauss read); the classifier never recomputes any of them.
-Unsupplied evidence is MISSING evidence: the corresponding certificate
-fails by name, never presumed to pass.)doc")
+      R"doc(The assembled evidence bundle of one candidate.  Every field is
+a read produced by an upstream kernel (persistence, spectral bands,
+anchors, transports and windings, Wick reads, the Gauss read); the
+classifier never recomputes any of them.  Unsupplied evidence is missing
+evidence: the corresponding certificate fails by name, never presumed to
+pass.)doc")
       .def(py::init<>())
       .def_readwrite("component", &QuarkCandidateEvidence::component,
-                     "#765 label-free identity.")
+                     "Label-free component identity.")
       .def_readwrite("colorBand", &QuarkCandidateEvidence::colorBand,
-                     "The selected #769 band (rank is read, never "
+                     "The selected band (rank is read, never "
                      "requested).")
       .def_readwrite("colorBandFrames",
                      &QuarkCandidateEvidence::colorBandFrames,
-                     "The band AT EACH cobordism frame -- whitepaper quark "
-                     "condition two ('STABLE rank three') is decided here.")
+                     "The band at each cobordism frame; the quark "
+                     "condition 'stable rank three' is decided here.")
       .def_readwrite("anchor", &QuarkCandidateEvidence::anchor,
-                     "#767 calibrated anchor profile of the band.")
+                     "Calibrated anchor profile of the band.")
       .def_readwrite("anchorFrames", &QuarkCandidateEvidence::anchorFrames,
-                     "The anchor profile AT EACH cobordism frame -- "
-                     "whitepaper quark condition three (a STABLE profile "
-                     "and determinant-line coherence) is decided here.")
+                     "The anchor profile at each cobordism frame; the "
+                     "quark condition of a stable profile with "
+                     "determinant-line coherence is decided here.")
       .def_readwrite("lifetimeTransports",
                      &QuarkCandidateEvidence::lifetimeTransports,
-                     "#770 world-tube transports (all must be accepted).")
+                     "World-tube transports (all must be accepted).")
       .def_readwrite("winding", &QuarkCandidateEvidence::winding,
-                     "#770 determinant-line winding with its RECORDED "
+                     "Determinant-line winding with its recorded "
                      "closure specification.")
       .def_readwrite("parityRead", &QuarkCandidateEvidence::parityRead,
-                     "#780 CovarianceState.wickParity of the carried "
+                     "CovarianceState.wickParity of the carried "
                      "state.")
       .def_readwrite("occupationRead",
                      &QuarkCandidateEvidence::occupationRead,
-                     "#780 CovarianceState.wickTotalNumber.")
+                     "CovarianceState.wickTotalNumber of the state.")
       .def_readwrite("persistenceLifetime",
                      &QuarkCandidateEvidence::persistenceLifetime,
-                     "#765 modularity RESOLUTION-slice lifetime "
-                     "(REPORT-ONLY; NaN = missing).")
+                     "Modularity resolution-slice lifetime "
+                     "(report-only; NaN = missing).")
       .def_readwrite("persistenceMinOverlap",
                      &QuarkCandidateEvidence::persistenceMinOverlap,
-                     "#765 smallest adjacent-SLICE overlap (REPORT-ONLY).")
+                     "Smallest adjacent-slice overlap (report-only).")
       .def_readwrite("frameLifetime",
                      &QuarkCandidateEvidence::frameLifetime,
-                     "COBORDISM-FRAME lifetime "
-                     "(PersistentModularity.trackAcrossFrames) -- THE gated "
+                     "Cobordism-frame lifetime "
+                     "(PersistentModularity.trackAcrossFrames) -- the gated "
                      "persistence quantity.")
       .def_readwrite("frameMinOverlap",
                      &QuarkCandidateEvidence::frameMinOverlap,
-                     "Smallest adjacent-FRAME support overlap -- the gated "
+                     "Smallest adjacent-frame support overlap -- the gated "
                      "predecessor/successor overlap.")
       .def_readwrite("refinementOverlap",
                      &QuarkCandidateEvidence::refinementOverlap,
@@ -3257,17 +3227,17 @@ fails by name, never presumed to pass.)doc")
       .def_readwrite("doubletOrientation",
                      &QuarkCandidateEvidence::doubletOrientation,
                      "Declared orientation s in {+1,-1}: which member "
-                     "carries I3=+1/2 under the PROPOSED identification "
+                     "carries I3=+1/2 under the proposed identification "
                      "(a recorded convention, never a hidden label).")
       .def_readwrite("charge", &QuarkCandidateEvidence::charge,
                      "gaussFluxOnSurfaces result; None = charge unknown.");
 
   py::class_<QuarkRead>(m, "QuarkRead",
-      R"doc(The quark/antiquark particle read, plus the evidence summary the
-classification
-consumed, the recorded thresholds, and the #764 certificate.  Unknown or
+      R"doc(The quark/antiquark particle read, plus the evidence summary
+the classification consumed, the recorded thresholds, and the
+certificate.  Unknown or
 uncertified values are None/NaN/0-sign, never zero-filled, and every gap
-is NAMED in failedCertificates.  B = nu/3 exists exactly when the winding
+is named in failedCertificates.  B = nu/3 exists exactly when the winding
 certificate does; quark-ness additionally needs |nu| = 1.)doc")
       .def(py::init<>())
       .def_readonly("component", &QuarkRead::component)
@@ -3297,7 +3267,7 @@ certificate does; quark-ness additionally needs |nu| = 1.)doc")
                     "I3 = +-1/2 under the certified doublet hypothesis; "
                     "None = unknown.")
       .def_readonly("electricFlux", &QuarkRead::electricFlux,
-                    "Gauss-consistent charge; None unless BOTH the Gauss "
+                    "Gauss-consistent charge; None unless both the Gauss "
                     "read and the flavor doublet are certified.")
       .def_readonly("confidence", &QuarkRead::confidence,
                     "Passed fraction of the ten core certificates.")
@@ -3309,11 +3279,11 @@ certificate does; quark-ness additionally needs |nu| = 1.)doc")
       .def_readonly("transportCount", &QuarkRead::transportCount)
       .def_readonly("transportLeakageMax", &QuarkRead::transportLeakageMax)
       .def_readonly("persistenceLifetime", &QuarkRead::persistenceLifetime,
-                    "Modularity RESOLUTION-slice lifetime (reported).")
+                    "Modularity resolution-slice lifetime (reported).")
       .def_readonly("persistenceMinOverlap",
                     &QuarkRead::persistenceMinOverlap)
       .def_readonly("frameLifetime", &QuarkRead::frameLifetime,
-                    "COBORDISM-FRAME lifetime (the gated quantity).")
+                    "Cobordism-frame lifetime (the gated quantity).")
       .def_readonly("frameMinOverlap", &QuarkRead::frameMinOverlap)
       .def_readonly("stabilityFrames", &QuarkRead::stabilityFrames,
                     "Frames the stability certificates were measured over.")
@@ -3328,7 +3298,7 @@ certificate does; quark-ness additionally needs |nu| = 1.)doc")
       .def_readonly("refinementOverlap", &QuarkRead::refinementOverlap)
       .def_readonly("udIdentificationProposed",
                     &QuarkRead::udIdentificationProposed,
-                    "Q = I3 + B/2 was tested AND held (the proposed u/d "
+                    "Q = I3 + B/2 was tested and held (the proposed u/d "
                     "identification, never a charge definition).")
       .def_readonly("doubletOrientation", &QuarkRead::doubletOrientation)
       .def_readonly("thresholds", &QuarkRead::thresholds,
@@ -3352,7 +3322,7 @@ certificate does; quark-ness additionally needs |nu| = 1.)doc")
   py::class_<ConjugatePairRead>(m, "ConjugatePairRead",
       R"doc(Pair-conservation verification of a conjugate quark-antiquark
 creation path: total certified winding, total baryon flux, and total
-parity.  A singular (gap/rank-closing) leg leaves the totals UNKNOWN
+parity.  A singular (gap/rank-closing) leg leaves the totals unknown
 (None) -- never zero by assumption.)doc")
       .def(py::init<>())
       .def_readonly("totalWinding", &ConjugatePairRead::totalWinding,
@@ -3368,21 +3338,20 @@ parity.  A singular (gap/rank-closing) leg leaves the totals UNKNOWN
                     &ConjugatePairRead::failedCertificates)
       .def_readonly("certificate", &ConjugatePairRead::certificate);
 
-  // ---- #774 even sectors: octet bilinear + gluon/meson/diquark ----------
+  // ---- even sectors: octet bilinear + gluon/meson/diquark ----------
 
   py::class_<OctetBilinearRead>(m, "OctetBilinearRead",
-      R"doc(The #774 quasi-free traceless-bilinear (octet) read of three
-declared color modes of a carried #780 CovarianceState: the bilinear
-matrix M_ij = <a_i^dag a_j> (the transposed principal submatrix of
-Gamma), its EXACT 1+8 split (delegated to ColorFiber.octetRead /
-tracelessPart / adjointOctetProjector), the adjoint Casimir (= 3 for a
-nonzero excitation, by C = 3 P8), the quartic-Wick color Casimir
-expectation <sum_a dGamma(lambda_a/2)^2> (exactly 4/3 on the fundamental
-and anti-triplet Slater states, 0 on the vacuum and full singlet), the
-octet coordinates Tr(lambda_a M)/2, and the certified subset
-occupation/parity.  Evaluated ON THE COVARIANCE (polynomial in the mode
-count, no Fock vector); adding vacuum-embedded microscopic modes leaves
-the read unchanged.  Unknown values are NaN / 0-sign, never zero.)doc")
+      R"doc(The quasi-free traceless-bilinear (octet) read of three declared
+color modes of a carried CovarianceState: the bilinear matrix
+M_ij = <a_i^dag a_j> (the transposed principal submatrix of Gamma), its
+exact 1+8 split (delegated to ColorFiber), the adjoint Casimir (= 3 for a
+nonzero excitation, since C = 3 P8), the quartic-Wick color Casimir
+expectation <sum_a dGamma(lambda_a/2)^2> (exactly 4/3 on the fundamental and
+anti-triplet Slater states, 0 on the vacuum and full singlet), the octet
+coordinates Tr(lambda_a M)/2, and the certified subset occupation and
+parity.  Evaluated on the covariance (polynomial in the mode count, no Fock
+vector), so adding vacuum-embedded microscopic modes leaves the read
+unchanged.  Unknown values are NaN / 0-sign, never zero.)doc")
       .def(py::init<>())
       .def_readwrite("colorModes", &OctetBilinearRead::colorModes,
                      "The three declared color modes (the recorded color "
@@ -3412,7 +3381,7 @@ the read unchanged.  Unknown values are NaN / 0-sign, never zero.)doc")
                     &OctetBilinearRead::gellMannComponents,
                     "Tr(lambda_a M)/2 for a = 1..8.")
       .def_readonly("residual", &OctetBilinearRead::residual,
-                    "Max residual of the consumed #780 Wick reads.")
+                    "Max residual of the consumed Wick reads.")
       .def_readonly("certificate", &OctetBilinearRead::certificate)
       .def("describe", &OctetBilinearRead::describe)
       .def("__repr__", &OctetBilinearRead::describe)
@@ -3430,47 +3399,47 @@ the read unchanged.  Unknown values are NaN / 0-sign, never zero.)doc")
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<GluonCandidateEvidence>(m, "GluonCandidateEvidence",
-      R"doc(The assembled evidence bundle of one #774 gluon candidate
-the quasi-free octet bilinear read of the
-carried state, the #780 carried-state Wick parity/occupation, the #770
-lifetime transports and determinant winding, and the #765 persistence
-lifetime.  Missing evidence fails its certificate BY NAME.)doc")
+      R"doc(The assembled evidence bundle of one gluon candidate: the
+quasi-free octet bilinear read of the carried state, the carried-state
+Wick parity and occupation, the lifetime transports and determinant
+winding, and the persistence lifetime.  Missing evidence fails its
+certificate by name.)doc")
       .def(py::init<>())
       .def_readwrite("component", &GluonCandidateEvidence::component,
-                     "#765 label-free identity of the excitation.")
+                     "Label-free component identity of the excitation.")
       .def_readwrite("bindingComponent",
                      &GluonCandidateEvidence::bindingComponent,
                      "The component the excitation is bound to (reported "
-                     "verbatim -- the ticket's binding component).")
+                     "verbatim as the binding component).")
       .def_readwrite("octet", &GluonCandidateEvidence::octet,
                      "octetBilinearRead output of the carried state.")
       .def_readwrite("parityRead", &GluonCandidateEvidence::parityRead,
-                     "#780 CovarianceState.wickParity of the WHOLE carried "
+                     "CovarianceState.wickParity of the whole carried "
                      "state (the even-parity gate).")
       .def_readwrite("occupationRead",
                      &GluonCandidateEvidence::occupationRead,
-                     "#780 wickTotalNumber (report-only).")
+                     "wickTotalNumber (report-only).")
       .def_readwrite("lifetimeTransports",
                      &GluonCandidateEvidence::lifetimeTransports,
-                     "#770 transports: accepted, rank three, leakage under "
+                     "Transports: accepted, rank three, leakage under "
                      "the cap (the accepted-octet-transport gate).")
       .def_readwrite("winding", &GluonCandidateEvidence::winding,
-                     "#770 determinant winding -- a certified nu = 0 is the "
+                     "Determinant winding; a certified nu = 0 is the "
                      "zero-baryon-flux evidence.")
       .def_readwrite("persistenceLifetime",
                      &GluonCandidateEvidence::persistenceLifetime,
-                     "Modularity RESOLUTION-slice lifetime (REPORT-ONLY).")
+                     "Modularity resolution-slice lifetime (report-only).")
       .def_readwrite("frameLifetime",
                      &GluonCandidateEvidence::frameLifetime,
-                     "COBORDISM-FRAME lifetime -- the gated quantity.");
+                     "Cobordism-frame lifetime; the gated quantity.");
 
   py::class_<GluonRead>(m, "GluonRead",
-      R"doc(The #774 gluon-candidate read: a persistent transported octet
-excitation with certified even parity and certified ZERO total
+      R"doc(The gluon-candidate read: a persistent transported octet
+excitation with certified even parity and certified zero total
 determinant winding / baryon flux.  classification is "gluon-candidate"
-or "none" -- NEVER "gluon": no even octet excitation is claimed to be a
+or "none" -- never "gluon": no even octet excitation is claimed to be a
 physical gluon.  Unknown values are None/NaN/0-sign, never zero-filled;
-every gap is NAMED in failedCertificates ("parity-even",
+every gap is named in failedCertificates ("parity-even",
 "octet-excitation", "octet-purity", "octet-transport", "winding-zero",
 "persistence").)doc")
       .def(py::init<>())
@@ -3496,14 +3465,14 @@ every gap is NAMED in failedCertificates ("parity-even",
       .def_readonly("windingClosure", &GluonRead::windingClosure)
       .def_readonly("windingReferenceId", &GluonRead::windingReferenceId)
       .def_readonly("baryonFlux", &GluonRead::baryonFlux,
-                    "0.0 is a CERTIFIED zero flux; None = unknown, never "
+                    "0.0 is a certified zero flux; None = unknown, never "
                     "zero by default.")
       .def_readonly("transportCount", &GluonRead::transportCount)
       .def_readonly("transportLeakageMax", &GluonRead::transportLeakageMax)
       .def_readonly("persistenceLifetime", &GluonRead::persistenceLifetime,
-                    "Modularity RESOLUTION-slice lifetime (reported).")
+                    "Modularity resolution-slice lifetime (reported).")
       .def_readonly("frameLifetime", &GluonRead::frameLifetime,
-                    "COBORDISM-FRAME lifetime (the gated quantity).")
+                    "Cobordism-frame lifetime (the gated quantity).")
       .def_readonly("confidence", &GluonRead::confidence,
                     "Passed fraction of the six gluon certificates.")
       .def_readonly("failedCertificates", &GluonRead::failedCertificates)
@@ -3524,23 +3493,23 @@ every gap is NAMED in failedCertificates ("parity-even",
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<CompositeCandidateEvidence>(m, "CompositeCandidateEvidence",
-      R"doc(The assembled evidence bundle of one #774 TWO-cluster
-composite (meson/diquark; three-cluster composites belong to #775): the
-two constituent #773 QuarkReads consumed VERBATIM, the carried composite
+      R"doc(The assembled evidence bundle of one two-cluster composite
+(meson or diquark; three-cluster composites are handled by BaryonRead):
+the two constituent QuarkReads consumed verbatim, the carried composite
 occupation, the meson-channel pair color bilinear, the diquark-channel
-certified anti-triplet wedge read, composite transports, and the
-composite persistence lifetime.)doc")
+certified anti-triplet wedge read, composite transports, and the composite
+persistence lifetime.)doc")
       .def(py::init<>())
       .def_readwrite("bindingComponent",
                      &CompositeCandidateEvidence::bindingComponent,
                      "The component binding the two clusters.")
       .def_readwrite("first", &CompositeCandidateEvidence::first,
-                     "First constituent's #773 QuarkRead.")
+                     "First constituent's QuarkRead.")
       .def_readwrite("second", &CompositeCandidateEvidence::second,
-                     "Second constituent's #773 QuarkRead.")
+                     "Second constituent's QuarkRead.")
       .def_readwrite("occupationRead",
                      &CompositeCandidateEvidence::occupationRead,
-                     "#780 wickTotalNumber of the carried composite state "
+                     "wickTotalNumber of the carried composite state "
                      "(report-only).")
       .def_readwrite("colorPairing",
                      &CompositeCandidateEvidence::colorPairing,
@@ -3550,23 +3519,23 @@ composite persistence lifetime.)doc")
       .def_readwrite("antiTripletRead",
                      &CompositeCandidateEvidence::antiTripletRead,
                      "Diquark channel: the certified Lambda^2 C^3 wedge "
-                     "occupation det(C^dag Gamma C) (#780 "
+                     "occupation det(C^dag Gamma C) ("
                      "wickGramDeterminant) -- exactly zero for duplicated "
                      "color modes (Pauli).")
       .def_readwrite("lifetimeTransports",
                      &CompositeCandidateEvidence::lifetimeTransports,
-                     "#770 composite transports (report-only for the "
+                     "Composite transports (report-only for the "
                      "two-cluster reads).")
       .def_readwrite("persistenceLifetime",
                      &CompositeCandidateEvidence::persistenceLifetime,
-                     "#765 composite track lifetime (NaN = missing).");
+                     "Composite track lifetime (NaN = missing).");
 
   py::class_<MesonRead>(m, "MesonRead",
-      R"doc(The #774 meson-candidate read: one certified quark plus one
-certified antiquark (order-insensitive), EVEN composite parity (the
+      R"doc(The meson-candidate read: one certified quark plus one
+certified antiquark (order-insensitive), even composite parity (the
 exact graded product of the certified constituent parities -- the
-whitepaper parity table), a color-SINGLET pair bilinear under the exact
-1+8 split, and zero total certified winding/baryon flux (the #773
+standard parity table), a color-singlet pair bilinear under the exact
+1+8 split, and zero total certified winding and baryon flux (the
 conjugate-pair integer sums).  failedCertificates vocabulary:
 "constituent-quark", "constituent-antiquark", "parity-even",
 "color-singlet", "flux-zero".)doc")
@@ -3611,11 +3580,11 @@ conjugate-pair integer sums).  failedCertificates vocabulary:
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<DiquarkRead>(m, "DiquarkRead",
-      R"doc(The #774 diquark-candidate read: TWO certified quarks
-(nu = +1 each), EVEN composite parity, a certified anti-triplet wedge
-occupation, and the PRESERVED constituent baryon flux B = 2/3.
-Explicitly NOT an antiquark: the 3bar color representation coincides,
-but occupation TWO, EVEN parity, and B = +2/3 (vs one/odd/-1/3) are the
+      R"doc(The diquark-candidate read: two certified quarks
+(nu = +1 each), even composite parity, a certified anti-triplet wedge
+occupation, and the preserved constituent baryon flux B = 2/3.
+Explicitly not an antiquark: the 3bar color representation coincides,
+but occupation two, even parity, and B = +2/3 (vs one/odd/-1/3) are the
 recorded distinction channels.  failedCertificates vocabulary:
 "constituent-quarks", "parity-even", "anti-triplet",
 "baryon-flux-two-thirds".)doc")
@@ -3658,32 +3627,32 @@ recorded distinction channels.  failedCertificates vocabulary:
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<BoundCandidateEvidence>(m, "BoundCandidateEvidence",
-      R"doc(One constituent's datum for the #775 bound-supercomponent
-search: the #773 quark verdict, the #765 level-0
-support, the #765 persistence window (first, last) -- None = no lifetime
-evidence, the overlap certificate then fails by name -- and the #770
-mutual transports to the other constituents.)doc")
+      R"doc(One constituent's datum for the bound-supercomponent search:
+the quark verdict, the level-0 support, the persistence window
+(first, last) -- None means no lifetime evidence, and the overlap
+certificate then fails by name -- and the mutual transports to the other
+constituents.)doc")
       .def(py::init<>())
       .def_readwrite("quark", &BoundCandidateEvidence::quark,
-                     "The candidate's #773 QuarkRead (only a CERTIFIED "
+                     "The candidate's QuarkRead (only a certified "
                      "'quark' verdict counts toward the three-quark "
                      "census).")
       .def_readwrite("support", &BoundCandidateEvidence::support,
                      "Level-0 cell support (ComponentRead.support); empty "
                      "= missing evidence.")
       .def_readwrite("lifetime", &BoundCandidateEvidence::lifetime,
-                     "(firstSlice, lastSlice) of the #765 PersistenceTrack "
+                     "(firstSlice, lastSlice) of the PersistenceTrack "
                      "window, inclusive; None = unknown.")
       .def_readwrite("mutualTransports",
                      &BoundCandidateEvidence::mutualTransports,
-                     "#770 transports to the other constituents; every "
+                     "Transports to the other constituents; every "
                      "supplied link must be accepted under the leakage "
                      "cap.");
 
   py::class_<BoundSupercomponentRead>(m, "BoundSupercomponentRead",
-      R"doc(One next-modular-level component examined by the #775
+      R"doc(One next-modular-level component examined by the
 bound-supercomponent search: the contained certified quark candidates,
-their shared #765 lifetime window, and the containment/transport
+their shared lifetime window, and the containment/transport
 certificates.  failedCertificates vocabulary: "supercomponent-level",
 "quark-count", "support-containment", "lifetime-overlap",
 "transport-containment".)doc")
@@ -3691,7 +3660,7 @@ certificates.  failedCertificates vocabulary: "supercomponent-level",
       .def_readonly("boundComponent",
                     &BoundSupercomponentRead::boundComponent)
       .def_readonly("quarks", &BoundSupercomponentRead::quarks,
-                    "Contained certified quark candidates' #765 ids.")
+                    "Contained certified quark candidates' ids.")
       .def_readonly("quarkIndices", &BoundSupercomponentRead::quarkIndices,
                     "Their indices in the input candidate list.")
       .def_readonly("found", &BoundSupercomponentRead::found,
@@ -3702,7 +3671,7 @@ certificates.  failedCertificates vocabulary: "supercomponent-level",
                     "Shared (first, last) window; None = disjoint/unknown.")
       .def_readonly("lifetimeOverlap",
                     &BoundSupercomponentRead::lifetimeOverlap,
-                    "Number of SHARED persistence slices.")
+                    "Number of shared persistence slices.")
       .def_readonly("minContainment",
                     &BoundSupercomponentRead::minContainment,
                     "Smallest per-constituent support-containment "
@@ -3719,35 +3688,35 @@ certificates.  failedCertificates vocabulary: "supercomponent-level",
       .def("__repr__", &BoundSupercomponentRead::describe);
 
   py::class_<ScaleProfileSample>(m, "ScaleProfileSample",
-      R"doc(One refinement-window sample of the EXISTING #575/#566/#593
-mass-radius battery (InteriorHinges).  radialWeightProfile is the
-per-BFS-shell share of the |Re eps * star h| curvature weight -- a radial
-CURVATURE-WEIGHT density, NOT a momentum-transfer form factor: no Fourier
+      R"doc(One refinement-window sample of the mass-radius battery
+(InteriorHinges).  radialWeightProfile is the share of the
+|Re eps * star h| curvature weight per breadth-first-search shell: a radial
+curvature-weight density, not a momentum-transfer form factor.  No Fourier
 transform of a charge density is computed anywhere in this tree.)doc")
       .def(py::init<>())
       .def_readwrite("radius", &ScaleProfileSample::radius,
                      "r = V_dual^(1/4) (InteriorHinges.Radii.rDual) -- "
-                     "DIMENSIONFUL; only its finiteness is certified.")
+                     "dimensionful; only its finiteness is certified.")
       .def_readwrite("radiusCrossCheck",
                      &ScaleProfileSample::radiusCrossCheck,
-                     "r = V_primal^(1/4); its RATIO to radius is the "
+                     "r = V_primal^(1/4); its ratio to radius is the "
                      "dimensionless channel.")
       .def_readwrite("spectralMass", &ScaleProfileSample::spectralMass,
                      "The intensive shell mass m_shell -- a mean interior "
-                     "deficit ANGLE, dimensionless in lattice units.")
+                     "deficit angle, dimensionless in lattice units.")
       .def_readwrite("localization", &ScaleProfileSample::localization,
                      "Curvature-weight participation ratio (dimensionless).")
       .def_readwrite("radialWeightProfile",
                      &ScaleProfileSample::radialWeightProfile,
                      "Per-shell curvature-weight shares, shell ascending "
                      "(dimensionless); empty = no shell seeds, profile "
-                     "UNKNOWN.")
+                     "unknown.")
       .def_readwrite("colorGramDeterminant",
                      &ScaleProfileSample::colorGramDeterminant,
                      "det(C^dag C) at this refinement.")
       .def_readwrite("rotationCharacter",
                      &ScaleProfileSample::rotationCharacter,
-                     "The #772 2pi rotation character at this refinement.")
+                     "The 2pi rotation character at this refinement.")
       .def_readwrite("baryonFlux", &ScaleProfileSample::baryonFlux,
                      "B = nu/3 at this refinement.")
       .def_readwrite("electricFlux", &ScaleProfileSample::electricFlux,
@@ -3755,14 +3724,14 @@ transform of a charge density is computed anywhere in this tree.)doc")
       .def_readwrite("compositeParity",
                      &ScaleProfileSample::compositeParity,
                      "-1 odd / +1 even / 0 unknown at this refinement "
-                     "(an INTEGER channel: stability is exact equality).")
+                     "(an integer channel: stability is exact equality).")
       .def_readwrite("anchorScore", &ScaleProfileSample::anchorScore,
                      "Worst constituent anchor score at this refinement.");
 
   py::class_<ScaleProfileRead>(m, "ScaleProfileRead",
-      R"doc(The #775 refinement-window certificate: a FINITE emergent
-radius plus the refinement stability of every DIMENSIONLESS channel.
-physicalMass is ALWAYS None -- a dimensionful mass stays unknown until a
+      R"doc(The refinement-window certificate: a finite emergent
+radius plus the refinement stability of every dimensionless channel.
+physicalMass is always None -- a dimensionful mass stays unknown until a
 physical scale is independently established.  failedCertificates
 vocabulary: "refinement-window", "finite-radius",
 "radius-ratio-stability", "spectral-mass-stability",
@@ -3804,7 +3773,7 @@ vocabulary: "refinement-window", "finite-radius",
       .def_readonly("anchorScoreSpread",
                     &ScaleProfileRead::anchorScoreSpread)
       .def_readonly("physicalMass", &ScaleProfileRead::physicalMass,
-                    "ALWAYS None: unknown until a physical scale is "
+                    "Always None: unknown until a physical scale is "
                     "independently established.")
       .def_readonly("stable", &ScaleProfileRead::stable)
       .def_readonly("failedCertificates",
@@ -3815,92 +3784,90 @@ vocabulary: "refinement-window", "finite-radius",
       .def("__repr__", &ScaleProfileRead::describe);
 
   py::class_<BaryonCandidateEvidence>(m, "BaryonCandidateEvidence",
-      R"doc(The assembled evidence bundle of ONE #775 three-cluster
-candidate: the three #773 constituent verdicts consumed VERBATIM, the
-bound-supercomponent search result, the three normalized anchored color
-columns (the wedge is built ONCE from them), the #774 octet bilinear read
-of the bound object (the INDEPENDENT net-color-flux diagnostic), the #772
-Berry-cancelled 2pi rotation character and optional Spin(d) lift, the
-#780 Wick <J^2> and Var(J^2), the accepted covariance-only class's
-variance reads, and the refinement-window mass-radius samples.)doc")
+      R"doc(The assembled evidence bundle of one three-cluster candidate:
+the three constituent verdicts consumed verbatim, the bound-supercomponent
+search result, the three normalized anchored color columns (the wedge is
+built once from them), the octet bilinear read of the bound object (the
+independent net-color-flux diagnostic), the Berry-cancelled 2pi rotation
+character and optional Spin(d) lift, the Wick <J^2> and Var(J^2), the
+accepted covariance-only class's variance reads, and the refinement-window
+mass-radius samples.)doc")
       .def(py::init<>())
       .def_readwrite("boundComponent",
                      &BaryonCandidateEvidence::boundComponent)
       .def_readwrite("quarks", &BaryonCandidateEvidence::quarks,
-                     "The three constituents' #773 QuarkReads.  Assign the "
+                     "The three constituents' QuarkReads.  Assign the "
                      "whole list (ev.quarks = [a, b, c]): like every "
                      "std::array/std::vector binding, reading it yields a "
-                     "COPY, so item assignment does not stick.")
+                     "copy, so item assignment does not stick.")
       .def_readwrite("binding", &BaryonCandidateEvidence::binding,
                      "The boundSupercomponentSearch result.")
       .def_readwrite("colorColumns", &BaryonCandidateEvidence::colorColumns,
                      "The 3x3 matrix of normalized anchored color columns "
                      "C = [c_A c_B c_C]; the three-mode wedge is built "
-                     "ONCE from it -- no extra fermion sign is multiplied "
+                     "once from it -- no extra fermion sign is multiplied "
                      "onto the color epsilon.")
       .def_readwrite("colorFlux", &BaryonCandidateEvidence::colorFlux,
                      "The bound object's OctetBilinearRead -- the "
-                     "INDEPENDENT net-color-flux diagnostic.")
+                     "independent net-color-flux diagnostic.")
       .def_readwrite("rotation", &BaryonCandidateEvidence::rotation,
-                     "#772 PhysicalRotation character of the closed 2pi "
+                     "PhysicalRotation character of the closed 2pi "
                      "total-space cluster-frame cycle.")
       .def_readwrite("exchange", &BaryonCandidateEvidence::exchange,
-                     "The #772 PARTICLE-EXCHANGE character, when the "
-                     "exchange experiment was run.  REPORT-ONLY: neither "
-                     "the ticket's proton-certificate list nor spec 16.4 "
-                     "has an exchange row, so it gates nothing.")
+                     "The particle-exchange character, when the "
+                     "exchange experiment was run.  Report-only: the "
+                     "proton certificate has no exchange row, so this "
+                     "read gates nothing.")
       .def_readwrite("continuumSpinClaim",
                      &BaryonCandidateEvidence::continuumSpinClaim,
-                     "When True the SO(d)->Spin(d) lift is REQUIRED; when "
-                     "False it is never demanded (spec 16.4).")
+                     "When True the SO(d)->Spin(d) lift is required; when "
+                     "False it is never demanded.")
       .def_readwrite("spinLift", &BaryonCandidateEvidence::spinLift,
-                     "#772 spinLift decision; None = none made.")
+                     "spinLift decision; None = none made.")
       .def_readwrite("spinSquaredRead",
                      &BaryonCandidateEvidence::spinSquaredRead,
-                     "#780 wickSpinSquaredExpectation of the carried "
+                     "wickSpinSquaredExpectation of the carried "
                      "quasi-free state.")
       .def_readwrite("spinVarianceRead",
                      &BaryonCandidateEvidence::spinVarianceRead,
-                     "#780 wickSpinSquaredVariance -- the sharp-spin "
+                     "wickSpinSquaredVariance -- the sharp-spin "
                      "certificate.")
       .def_readwrite("classVarianceReads",
                      &BaryonCandidateEvidence::classVarianceReads,
-                     "Var(J^2) of every candidate of the ACCEPTED "
+                     "Var(J^2) of every candidate of the accepted "
                      "covariance-only class; empty/uncertified = the class "
-                     "was NOT swept, so a variance failure is an unknown, "
+                     "was not swept, so a variance failure is an unknown, "
                      "never an obstruction.")
       .def_readwrite("totalSpaceJ2", &BaryonCandidateEvidence::totalSpaceJ2,
-                     "The #772 DENSE ExchangeHolonomy.totalJSquared "
-                     "oracle, consulted only when the #780 Wick "
+                     "The dense ExchangeHolonomy.totalJSquared "
+                     "oracle, consulted only when the Wick "
                      "expectation is absent; it never supplies a variance.")
       .def_readwrite("scaleSamples", &BaryonCandidateEvidence::scaleSamples,
                      "Refinement-window ScaleProfileSamples.")
       .def_readwrite("persistenceLifetime",
                      &BaryonCandidateEvidence::persistenceLifetime,
-                     "#765 lifetime of the BOUND component (report-only).")
+                     "Lifetime of the bound component (report-only).")
       .def_readwrite("lifetimeTransports",
                      &BaryonCandidateEvidence::lifetimeTransports,
-                     "#770 composite transports (report-only).")
+                     "Composite transports (report-only).")
       .def_readwrite("crossingMass", &BaryonCandidateEvidence::crossingMass,
-                     "The whitepaper's world-tube crossing mass for this "
+                     "The world-tube crossing mass for this "
                      "candidate.  None = the crossing-readouts gate passes "
-                     "VACUOUSLY (applicable-gated like spin-lift); supplied, "
-                     "it is ENFORCED together with crossingBaryon.")
+                     "vacuously (applicable-gated like spin-lift); supplied, "
+                     "it is enforced together with crossingBaryon.")
       .def_readwrite("crossingBaryon",
                      &BaryonCandidateEvidence::crossingBaryon,
                      "The coherent one-third baryon sum for the same "
-                     "candidate and level.  Must travel WITH crossingMass: a "
+                     "candidate and level.  Must travel with crossingMass: a "
                      "half bundle fails the gate by name rather than grading "
                      "half a certificate.");
 
   py::class_<BaryonRead>(m, "BaryonRead",
-      R"doc(The #775 three-quark baryon read and complete proton
-certificate.  classification is one of
-"no-baryon", "baryon-candidate", "certified-proton", or
-"quasi-free-sharp-spin-obstruction" (the hyphenated spelling of the
-spec's quasi_free_sharp_spin_obstruction).
+      R"doc(The three-quark baryon read and complete proton certificate.
+classification is one of "no-baryon", "baryon-candidate",
+"certified-proton", or "quasi-free-sharp-spin-obstruction".
 
-failedCertificates vocabulary -- the two STRUCTURAL gates first (a
+failedCertificates vocabulary, the two structural gates first (a
 failure of either is "no-baryon"): "constituent-quarks",
 "bound-supercomponent"; then the proton gates: "color-singlet",
 "color-flux-zero", "baryon-flux-unit", "composite-parity-odd",
@@ -3909,16 +3876,16 @@ failure of either is "no-baryon"): "constituent-quarks",
 "crossing-readouts".
 
 Unknown values are None/NaN/0-sign, never zero-filled; physicalMass is
-ALWAYS None.)doc")
+always None.)doc")
       .def(py::init<>())
       .def_readonly("quarks", &BaryonRead::quarks,
-                    "The three constituents' #765 ids, in evidence order.")
+                    "The three constituents' component ids, in evidence order.")
       .def_readonly("boundComponent", &BaryonRead::boundComponent)
       .def_readonly("colorGramDeterminant",
                     &BaryonRead::colorGramDeterminant,
                     "det(C^dag C) = |det C|^2; NaN = no color evidence.")
       .def_readonly("colorFlux", &BaryonRead::colorFlux,
-                    "The NET COLOR FLUX diagnostic (octet weight of the "
+                    "The net color flux diagnostic (octet weight of the "
                     "bound object's color bilinear); NaN = unknown.  An "
                     "independent finite-complex diagnostic -- never on its "
                     "own a proof of confinement.")
@@ -3932,16 +3899,16 @@ ALWAYS None.)doc")
                     "Certified total-space <J^2> (3/4 proton, 15/4 Delta); "
                     "None = unknown.")
       .def_readonly("totalJ2Variance", &BaryonRead::totalJ2Variance,
-                    "Certified Var(J^2); None = UNKNOWN, never zero and "
+                    "Certified Var(J^2); None = unknown, never zero and "
                     "never inferred from the expectation.")
       .def_readonly("rotationCharacter", &BaryonRead::rotationCharacter,
-                    "The #772 Berry-cancelled 2pi character; None = "
+                    "The Berry-cancelled 2pi character; None = "
                     "uncertified.")
       .def_readonly("classification", &BaryonRead::classification)
       .def_readonly("persistence", &BaryonRead::persistence)
       .def_readonly("failedCertificates", &BaryonRead::failedCertificates)
       .def_readonly("colorWedge", &BaryonRead::colorWedge,
-                    "S_ABC = det[c_A c_B c_C], built ONCE.  A constituent "
+                    "S_ABC = det[c_A c_B c_C], built once.  A constituent "
                     "transposition flips this sign and leaves "
                     "colorGramDeterminant invariant.")
       .def_readonly("totalWinding", &BaryonRead::totalWinding,
@@ -3957,13 +3924,13 @@ ALWAYS None.)doc")
       .def_readonly("rotationCharacterSign",
                     &BaryonRead::rotationCharacterSign)
       .def_readonly("exchangeCharacter", &BaryonRead::exchangeCharacter,
-                    "The #772 Berry-cancelled exchange character; None "
+                    "The Berry-cancelled exchange character; None "
                     "unless a certified, correctly tagged exchange read "
-                    "was supplied.  REPORT-ONLY.")
+                    "was supplied.  Report-only.")
       .def_readonly("spinStatisticsRatio", &BaryonRead::spinStatisticsRatio,
                     "chi(exchange) * chi(2pi)^-1 (+1 on a spin-1/2 "
                     "fixture, each factor separately near -1); None unless "
-                    "BOTH channels certified.  REPORT-ONLY.")
+                    "both channels certified.  Report-only.")
       .def_readonly("spinLiftApplicable", &BaryonRead::spinLiftApplicable)
       .def_readonly("spinLiftAccepted", &BaryonRead::spinLiftAccepted)
       .def_readonly("sharpSpin", &BaryonRead::sharpSpin)
@@ -3982,15 +3949,15 @@ ALWAYS None.)doc")
                     &BaryonRead::profileMaxDeviation)
       .def_readonly("profileStable", &BaryonRead::profileStable)
       .def_readonly("physicalMass", &BaryonRead::physicalMass,
-                    "ALWAYS None (see ScaleProfileRead.physicalMass).")
+                    "Always None (see ScaleProfileRead.physicalMass).")
       .def_readonly("crossingMassApplicable",
                     &BaryonRead::crossingMassApplicable,
                     "False when the caller supplied no world-tube crossing "
                     "evidence; the crossing-readouts gate then passed "
-                    "VACUOUSLY, exactly like spin-lift.")
+                    "vacuously, exactly like spin-lift.")
       .def_readonly("crossingMassValue", &BaryonRead::crossingMassValue,
-                    "The whitepaper's crossing mass m_x as a difference "
-                    "against M0.  UNCALIBRATED by default: ratio-only, never "
+                    "The crossing mass m_x as a difference "
+                    "against M0.  Uncalibrated by default: ratio-only, never "
                     "a physical mass.  NaN without crossing evidence.")
       .def_readonly("crossingBaryonNumber", &BaryonRead::crossingBaryonNumber,
                     "The coherent one-third crossing sum; None when no "
@@ -4022,14 +3989,12 @@ ALWAYS None.)doc")
                   "Rehydrate; rejects an unknown schema_version.");
 
   py::class_<ParticleClusters>(m, "ParticleClusters",
-      R"doc(The #773 quark/antiquark classifier over persistent modular
-spectral components (whitepaper "Quarks as modular clusters").  Composes
-the merged Wave 1/2 certificates -- #765
-persistence, #769 bands/tracking, #767 anchors, #770 transports and
-determinant windings with recorded closures, #780 Wick parity/occupation,
-and the EXISTING Gauss-flux read -- into QuarkReads; its own claim is the
-exact boolean combination (StructureExact given the consumed held
-certificates).
+      R"doc(The quark/antiquark classifier over persistent modular
+spectral components.  Composes the upstream certificates (persistence,
+bands and tracking, anchors, transports and determinant windings with
+recorded closures, Wick parity and occupation, and the Gauss-flux read)
+into QuarkReads; its own claim is the exact boolean combination
+(StructureExact given the consumed held certificates).
 
 Certificate name vocabulary (failedCertificates): "persistence",
 "localization", "parity-odd", "occupation-one", "color-rank-three",
@@ -4052,19 +4017,19 @@ evidence.)doc")
            "core certificates, quark vs antiquark from the determinant-"
            "line orientation, B = nu/3 under the certified winding, and "
            "isospin/charge from their own independent certificates.  "
-           "Missing evidence is a NAMED failed certificate, never an "
+           "Missing evidence is a named failed certificate, never an "
            "error.")
       .def("classifyQuarks", &ParticleClusters::classifyQuarks,
            py::arg("candidates"),
            "classifyQuark over a candidate stream, in input order.")
       .def("classifyQuarkCached", &ParticleClusters::classifyQuarkCached,
            py::arg("cache"), py::arg("evidence"),
-           "classifyQuark through the #764 AnalyticCache contract (key: "
+           "classifyQuark through the AnalyticCache contract (key: "
            "the color band's cell-vertex set; parameter: the evidence "
            "fingerprint).  Cached equals cold.")
       .def("evidenceFingerprint", &ParticleClusters::evidenceFingerprint,
            py::arg("evidence"),
-           "Content fingerprint of the decision-relevant evidence AND the "
+           "Content fingerprint of the decision-relevant evidence and the "
            "thresholds (the cache parameter).")
       .def("conjugatePair", &ParticleClusters::conjugatePair,
            py::arg("first"), py::arg("second"),
@@ -4074,13 +4039,13 @@ evidence.)doc")
       .def("flavorDoubletSearch", &ParticleClusters::flavorDoubletSearch,
            py::arg("frames"),
            "Search the candidate's band enumeration across frames for a "
-           "stable transported two-state subclass (certified #769 "
+           "stable transported two-state subclass (certified "
            "continuations, unambiguous, full length).  No dimension is "
            "ever requested; every stable rank is reported.")
       .def("gaussFluxOnSurfaces", &ParticleClusters::gaussFluxOnSurfaces,
            py::arg("st"), py::arg("field_strength"),
            py::arg("enclosed_vertex_sets"), py::arg("electric_only") = true,
-           "The EXISTING Gauss-flux read "
+           "The Gauss-flux read "
            "(EigenstateSynthesis.gaussLawCharge) on nested enclosing "
            "surfaces, then the consistency combination.  Read-only on the "
            "spacetime.")
@@ -4100,20 +4065,20 @@ evidence.)doc")
                   py::arg("from_candidates"), py::arg("to_candidates"),
                   py::arg("overlap_threshold") = 0.5,
                   "Track candidates across scale/time by their color "
-                  "bands (#769 matchFibers delegation).")
-      // ---- #774 even sectors ------------------------------------------
+                  "bands (matchFibers delegation).")
+      // ---- even sectors ------------------------------------------
       .def("octetBilinearRead", &ParticleClusters::octetBilinearRead,
            py::arg("state"), py::arg("color_modes"),
            "The quasi-free traceless-bilinear (octet) read of three "
-           "declared color modes of a carried #780 covariance: exact Wick "
+           "declared color modes of a carried covariance: exact Wick "
            "sums on the covariance layer (no Fock vector); the 1+8 split "
-           "is DELEGATED to ColorFiber.  Throws unless exactly three "
+           "is delegated to ColorFiber.  Throws unless exactly three "
            "distinct in-range modes are named.")
       .def("octetBilinearReadCached",
            &ParticleClusters::octetBilinearReadCached,
            py::arg("cache"), py::arg("component_vertex_ids"),
            py::arg("state"), py::arg("color_modes"),
-           "octetBilinearRead through the #764 AnalyticCache contract "
+           "octetBilinearRead through the AnalyticCache contract "
            "(key: the caller's component vertex set; parameter: the "
            "covariance hash + declared modes + thresholds).  Cached "
            "equals cold; a Gamma change recomputes.")
@@ -4126,9 +4091,9 @@ evidence.)doc")
            "Classify one gluon candidate: "
            "certified even parity, a nonzero certified octet excitation "
            "with machine-level octet purity, accepted rank-three "
-           "transports, a CERTIFIED zero total determinant winding (zero "
+           "transports, a certified zero total determinant winding (zero "
            "baryon flux as evidence), and persistence.  Missing evidence "
-           "is a NAMED failed certificate.")
+           "is a named failed certificate.")
       .def("classifyMeson", &ParticleClusters::classifyMeson,
            py::arg("evidence"),
            "Classify one meson candidate: certified quark + antiquark "
@@ -4144,22 +4109,22 @@ evidence.)doc")
       .def("boundSupercomponentSearch",
            &ParticleClusters::boundSupercomponentSearch,
            py::arg("nextLevelComponents"), py::arg("candidates"),
-           "The #775 bound-supercomponent search: one "
+           "The bound-supercomponent search: one "
            "read per next-level component containing at least one "
            "certified quark candidate; found requires a strictly higher "
-           "modular level, EXACTLY three contained certified quark "
-           "candidates, full support containment, overlapping #765 "
-           "lifetimes, and bounded mutual #770 transports.")
+           "modular level, exactly three contained certified quark "
+           "candidates, full support containment, overlapping "
+           "lifetimes, and bounded mutual transports.")
       .def_static("scaleProfileSample",
                   &ParticleClusters::scaleProfileSample, py::arg("ctx"),
-                  "One refinement sample of the EXISTING #575/#566/#593 "
-                  "mass-radius battery, read through the #593 context "
+                  "One refinement sample of the "
+                  "mass-radius battery, read through the context "
                   "exactly as EmergentRadius/EmergentMass read it "
                   "(RegisterContext.interiorHinges).  Read-only.")
       .def("scaleProfile", &ParticleClusters::scaleProfile,
            py::arg("samples"),
-           "The #775 refinement-window certificate: a finite emergent "
-           "radius plus the refinement stability of every DIMENSIONLESS "
+           "The refinement-window certificate: a finite emergent "
+           "radius plus the refinement stability of every dimensionless "
            "channel.  Nothing here is a form factor and no dimensionful "
            "mass is ever emitted.")
       .def("classifyBaryon", &ParticleClusters::classifyBaryon,
@@ -4168,31 +4133,31 @@ evidence.)doc")
            "complete proton certificate.  Returns "
            "'no-baryon', 'baryon-candidate', 'certified-proton', or "
            "'quasi-free-sharp-spin-obstruction' with every failed or "
-           "unknown certificate NAMED.")
+           "unknown certificate named.")
       .def("classifyBoundSupercomponents",
            &ParticleClusters::classifyBoundSupercomponents,
            py::arg("bindings"), py::arg("constituentReads"),
            py::arg("boundLifetimes") = std::vector<double>{},
            "classifyBaryon over the boundSupercomponentSearch result: one "
-           "BaryonRead per binding that grouped EXACTLY three certified "
+           "BaryonRead per binding that grouped exactly three certified "
            "constituents, in bindings order.  A binding that grouped a "
-           "different number emits NOTHING -- a three-cluster verdict is "
+           "different number emits nothing -- a three-cluster verdict is "
            "never assembled by padding the missing legs.  Only the "
            "binding, the three QuarkReads (quarkIndices indexes "
            "constituentReads) and the bound component's persistence "
-           "lifetime travel; the colour columns, the octet flux, the #772 "
-           "rotation character, the #780 spin reads, the swept "
+           "lifetime travel; the colour columns, the octet flux, the "
+           "rotation character, the spin reads, the swept "
            "covariance-only class and the refinement window are left "
-           "ABSENT, so each gap is NAMED rather than presumed.");
+           "absent, so each gap is named rather than presumed.");
 
   // ========================================
-  // CrossingReadouts: the whitepaper's world-tube crossing readouts
+  // CrossingReadouts: world-tube crossing readouts
   // ========================================
   py::class_<CrossingReadoutsConfig>(m, "CrossingReadoutsConfig",
       "Analysis parameters of the world-tube crossing readouts, echoed "
-      "verbatim on every read.  kappaMass is the ONE declared mass "
+      "verbatim on every read.  kappaMass is the one declared mass "
       "calibration; while massCalibrated is False the crossing mass is "
-      "reported in UNCALIBRATED units and only ratios are meaningful.")
+      "reported in uncalibrated units and only ratios are meaningful.")
       .def(py::init<>())
       .def_readwrite("kappaMass", &CrossingReadoutsConfig::kappaMass)
       .def_readwrite("massCalibrated", &CrossingReadoutsConfig::massCalibrated)
@@ -4208,10 +4173,10 @@ evidence.)doc")
   py::class_<TemporalFunctionRead>(m, "TemporalFunctionRead",
       "The complex Lorentzian distance tau from the incoming boundary M0, "
       "with its temporal-function certificate.  tau is intrinsic: it reads "
-      "the 1-skeleton and the stored complex edge lengths, NEVER a vertex "
+      "the 1-skeleton and the stored complex edge lengths, never a vertex "
       "coordinate.  `certified` is True only when Re tau strictly increases "
       "along every future-directed causal edge; otherwise every failure is "
-      "NAMED in failedCertificates.")
+      "named in failedCertificates.")
       .def(py::init<>())
       .def_readonly("vertices", &TemporalFunctionRead::vertices)
       .def_readonly("tau", &TemporalFunctionRead::tau)
@@ -4233,7 +4198,7 @@ evidence.)doc")
   py::class_<WorldTubeInput>(m, "WorldTubeInput",
       "One persistent band tracked across cobordism frames, as the crossing "
       "readouts consume it.  `orientation` is the tube's traversal direction "
-      "(+1 future-directed, -1 the REVERSED tube): reversing it flips "
+      "(+1 future-directed, -1 the reversed tube): reversing it flips "
       "sgn(pi_perp) and sends B = +1/3 to B = -1/3.  Only certified quark "
       "tubes enter the baryon sum; every admissible crossing enters the "
       "crossing mass.")
@@ -4246,9 +4211,9 @@ evidence.)doc")
                      &WorldTubeInput::certifiedQuarkTube);
 
   py::class_<TubeCrossingRead>(m, "TubeCrossingRead",
-      "One tube's crossing of one level set.  `perpendicular` is the COMPLEX "
+      "One tube's crossing of one level set.  `perpendicular` is the complex "
       "pi_perp; `sign` is sgn(Re pi_perp) on an admissible crossing and 0 "
-      "when UNKNOWN (an inadmissible crossing has no sign at all, never a "
+      "when unknown (an inadmissible crossing has no sign at all, never a "
       "silent zero).")
       .def(py::init<>())
       .def_readonly("tubeId", &TubeCrossingRead::tubeId)
@@ -4265,7 +4230,7 @@ evidence.)doc")
       });
 
   py::class_<CrossingMassRead>(m, "CrossingMassRead",
-      "The crossing-mass functional m_x on one level, as the DIFFERENCE "
+      "The crossing-mass functional m_x on one level, as the difference "
       "against the same sum at M0.  Never a dimensionful physical mass while "
       "`calibrated` is False.")
       .def(py::init<>())
@@ -4285,7 +4250,7 @@ evidence.)doc")
 
   py::class_<BaryonCrossingRead>(m, "BaryonCrossingRead",
       "The coherent one-third sum over certified quark tubes, with the "
-      "determinant-line cross-check.  A tube whose crossing sign DISAGREES "
+      "determinant-line cross-check.  A tube whose crossing sign disagrees "
       "with its certified winding sign is named in signDefects: a defect "
       "signal, reported and never silently resolved.")
       .def(py::init<>())
@@ -4302,11 +4267,11 @@ evidence.)doc")
       });
 
   py::class_<ChargePowerProfileRead>(m, "ChargePowerProfileRead",
-      "The spectral charge-power profile S(lambda) built from the EIGENSPACE "
-      "PROJECTORS of the slice Laplacian (basis- and phase-invariant, "
-      "degeneracies handled).  An INCOHERENT power -- the analogue of a "
-      "structure factor -- and NEVER the electromagnetic form factor.  For a "
-      "neutral system the monopole vanishes, the normalized profile REFUSES "
+      "The spectral charge-power profile S(lambda) built from the eigenspace "
+      "projectors of the slice Laplacian (basis- and phase-invariant, "
+      "degeneracies handled).  An incoherent power -- the analogue of a "
+      "structure factor -- and never the electromagnetic form factor.  For a "
+      "neutral system the monopole vanishes, the normalized profile refuses "
       "('neutral-system') and the unnormalized power stays reported.")
       .def(py::init<>())
       .def_readonly("level", &ChargePowerProfileRead::level)
@@ -4324,11 +4289,11 @@ evidence.)doc")
 
   py::class_<ElectromagneticFormFactorRead>(m,
       "ElectromagneticFormFactorRead",
-      "The CONDITIONAL electromagnetic form factor G_E and the charge "
+      "The conditional electromagnetic form factor G_E and the charge "
       "radius.  This tree certifies neither a conserved U(1) current nor "
       "momentum-transfer states, so this is a refusal scaffold: `available` "
-      "is False and the radius is UNAVAILABLE with each missing certificate "
-      "NAMED.  The spectral charge-power profile is never substituted.")
+      "is False and the radius is unavailable with each missing certificate "
+      "named.  The spectral charge-power profile is never substituted.")
       .def(py::init<>())
       .def_readonly("available", &ElectromagneticFormFactorRead::available)
       .def_readonly("chargeRadiusSquared",
@@ -4341,8 +4306,8 @@ evidence.)doc")
       });
 
   py::class_<CrossingReadouts>(m, "CrossingReadouts",
-      "The whitepaper's world-tube crossing readouts (section \"Mass, "
-      "charge, and form factor from world-tube crossings\").  Read-only: no "
+      "World-tube crossing readouts: mass, charge, and form factor from "
+      "world-tube crossings.  Read-only: no "
       "solver, no facet materialization, no complex rebuild, and nothing "
       "here enters any emergence objective.")
       .def(py::init<>())
@@ -4405,9 +4370,9 @@ evidence.)doc")
                   "Every readout on one level as the versioned overlay "
                   "block.");
 
-  // ── #860: the register carried by a certified cluster ───────────────
+  // ── the register carried by a certified cluster ───────────────
   py::class_<RegisterConjunct>(m, "RegisterConjunct",
-      "The whitepaper's six fiber-acceptance conjuncts, named.  Reference "
+      "The six fiber-acceptance conjuncts, named.  Reference "
       "these constants rather than retyping the strings: a mis-spelled "
       "literal produces a name no consumer matches.")
       .def_property_readonly_static("CLUSTER_SUPPORT",
@@ -4424,7 +4389,7 @@ evidence.)doc")
           [](py::object) { return RegisterConjunct::kTransportLeakage; });
 
   py::class_<RegisterUnmeasured>(m, "RegisterUnmeasured",
-      "Why a conjunct could not be DECIDED, as distinct from being decided "
+      "Why a conjunct could not be decided, as distinct from being decided "
       "against.  An unmeasured quantity is not a failed one, and neither is "
       "ever encoded as a zero.")
       .def_property_readonly_static("NO_BAND",
@@ -4452,9 +4417,9 @@ evidence.)doc")
                      &ClusterRegisterConfig::maxTransportLeakage);
 
   py::class_<RegisterRegimeReport>(m, "RegisterRegimeReport",
-      "What the specification requires be reported of the band's metric "
-      "regime.  A negative signature is a CERTIFICATE, never an automatic "
-      "antiparticle identification.  Unmeasured values are NaN.")
+      "What is reported of the band's metric regime.  A negative signature "
+      "is a certificate, never an automatic antiparticle identification.  "
+      "Unmeasured values are NaN.")
       .def_readonly("regime", &RegisterRegimeReport::regime)
       .def_readonly("gramDefect", &RegisterRegimeReport::gramDefect)
       .def_readonly("positiveSignature",
@@ -4512,10 +4477,10 @@ evidence.)doc")
                   "schema_version (ValueError).");
 
   py::class_<ClusterRegister>(m, "ClusterRegister",
-      "Reads the register the whitepaper's 'Recursive spectral fibers' "
-      "section defines: the fiber E_C = Ran Phi_C of an isolated localized "
+      "Reads the recursive spectral-fiber register: the fiber "
+      "E_C = Ran Phi_C of an isolated localized "
       "band on a persistent cluster, accepted under the six-conjunct list.  "
-      "Assembles the existing observables and derives no spectrum, "
+      "Assembles the other observables and derives no spectrum, "
       "transport or clustering of its own.  The support's provenance is "
       "never consulted, so no proposer can veto a certified fiber.  "
       "Read-only; nothing here enters any emergence objective and no hole "
@@ -4527,7 +4492,7 @@ evidence.)doc")
            py::arg("band"), py::arg("track"), py::arg("externalTransports"),
            py::arg("component") = ComponentId{},
            "Read the register of one cluster.  An absent track leaves the "
-           "lifetime and overlap conjuncts UNMEASURED, never satisfied; an "
+           "lifetime and overlap conjuncts unmeasured, never satisfied; an "
            "empty transport list likewise leaves leakage unmeasured rather "
            "than small.")
       .def_static("supportConnectivity", &ClusterRegister::supportConnectivity,

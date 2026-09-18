@@ -7,13 +7,13 @@
 
 **[Documentation](https://akellehe.github.io/tessera/)**
 
-A personal sandbox for triangulated spacetimes and discrete-geometry experiments — building simplicial meshes, sampling them by Monte Carlo, solving the discrete Einstein equations, and rendering the results. Python on top, C++/CUDA underneath.
+A library for triangulated spacetimes: it builds simplicial meshes, samples them by Monte Carlo, evaluates the discrete Einstein equations, and renders the results. Python on top, C++/CUDA underneath.
 
-tessera bundles several discrete-geometry formulations on a shared simplicial mesh:
+Several discrete-geometry formulations share one simplicial mesh:
 
-- **Causal Dynamical Triangulations (CDT)** -- Monte Carlo path integral over geometries with a causal foliation
-- **Regge Calculus** -- discrete general relativity via deficit angles and edge-length dynamics
-- **Spin Foam / GFT**, **Coset**, and **Ricci Flow** formulations (scaffolding in place)
+- **Causal dynamical triangulations (CDT)** -- Monte Carlo path integral over geometries with a causal foliation
+- **Regge calculus** -- discrete general relativity via deficit angles and edge-length dynamics
+- **Spin foam / group field theory**, **coset**, and **Ricci flow** -- declared as spacetime types; no dynamics implemented
 
 ## Installation
 
@@ -35,13 +35,11 @@ CC=gcc-13 CXX=g++-13 pip install -e ".[dev]"
 **Why the compiler version is pinned.** Several tests compare against hex
 floats committed from one specific build, at tolerances tight enough (4 ulps,
 `atol=1e-15`, and one bit-for-bit) that they only hold on the toolchain that
-produced them. Measured on identical source and hardware, g++ 15.2 fails four
-of them while g++ 13.4 passes three and misses the last by 8 ulps — a
-difference that tracks glibc's `libm`, not the compiler. Those failures read
-exactly like numerical regressions in the code under test, so CMake rejects a
-non-13.x GNU compiler at configure time rather than letting you discover it
-from a red test run. Neither the BLAS backend nor `-march` affects this; both
-were tested and ruled out.
+produced them. On identical source and hardware, g++ 15.2 fails four of them
+while g++ 13.4 passes three and misses the last by 8 ulps — a difference that
+tracks glibc's `libm`, not the compiler. Those failures look like numerical
+regressions in the code under test, so CMake rejects a non-13.x GNU compiler at
+configure time. Neither the BLAS backend nor `-march` affects this.
 
 To build on another compiler anyway, accepting those test failures:
 
@@ -57,18 +55,14 @@ python -c "import tessera; print('tessera OK')"
 
 CUDA GPU acceleration is auto-detected. To force it off: `TESSERA_CUDA=0 pip install -e .`
 
-The **quantum subsystem** (Schwinger model / DMRG, ITensor-backed) is **always
-built** — ITensor, Eigen3, and a BLAS/LAPACK backend are unconditional
-dependencies. The ITensor submodule is fetched automatically on the first build
-(a one-time network download) if it is not already present; cloning with
-`git clone --recurse-submodules` avoids the fetch. A cold build is noticeably
-slower because ITensor is compiled from source — `ccache` (below) helps a lot.
+The **quantum subsystem** (Schwinger model, density-matrix renormalization group
+(DMRG), ITensor-backed) is always built; ITensor, Eigen3, and a BLAS/LAPACK
+backend are unconditional dependencies. The ITensor submodule is fetched on the
+first build if it is not already present; cloning with
+`git clone --recurse-submodules` avoids the fetch. A cold build is slow because
+ITensor is compiled from source — `ccache` (below) helps.
 
 ### Build performance
-
-Three things govern how long a build takes and how much of the machine it eats.
-All three are automatic; this section is only about what to install and what to
-expect.
 
 **`ccache` — install it.** Builds use [`ccache`](https://ccache.dev/) (or
 `sccache`) automatically whenever one is on `PATH`:
@@ -79,10 +73,10 @@ sudo apt-get install ccache      # or: brew install ccache
 
 The cache is content-addressed, so it survives clean builds, build-directory
 changes, and per-wheel-tag rebuilds. It matters most for ITensor's 31
-translation units, which are compiled from source and whose objects hash
-identically across Python versions: on a 16-core Linux box, `ninja itensor`
-measured **32.2 s cold vs 0.35 s warm**. CMake prints `Compiler cache enabled:
-...` at configure time. Disable with `TESSERA_CCACHE=0`.
+translation units, whose objects hash identically across Python versions: on a
+16-core Linux box, `ninja itensor` measured **32.2 s cold vs 0.35 s warm**.
+CMake prints `Compiler cache enabled: ...` at configure time. Disable with
+`TESSERA_CCACHE=0`.
 
 **`mold` — Debug builds only.** A fast linker
 ([`mold`](https://github.com/rui314/mold), else `lld`) is picked up
@@ -92,27 +86,25 @@ automatically when installed:
 sudo apt-get install mold        # or: brew install mold
 ```
 
-but it is **deliberately not used for `Release` or `RelWithDebInfo`** — and
-`RelWithDebInfo` is the shipped build type, so the default `pip install -e .`
-links with the system `ld` no matter what you have installed. The reason is
-#212: `lld` 18.1.3 silently emits an empty `_tessera.so` with no
-`PyInit__tessera` for that LTO link, so `import tessera` then fails. Both fast
-linkers are therefore restricted to `Debug`, where they link correctly and dev
-iteration wants the speed. CMake prints `Fast linker enabled: mold` only when it
-actually applies. Disable with `TESSERA_FAST_LINKER=0`.
+but it is not used for `Release` or `RelWithDebInfo`. `RelWithDebInfo` is the
+shipped build type, so the default `pip install -e .` links with the system `ld`
+regardless of what is installed. The reason: `lld` 18.1.3 silently emits an
+empty `_tessera.so` with no `PyInit__tessera` for that link-time-optimized link,
+and `import tessera` then fails. Both fast linkers are therefore restricted to
+`Debug`. CMake prints `Fast linker enabled: mold` only when it applies. Disable
+with `TESSERA_FAST_LINKER=0`.
 
-**Build parallelism is capped by memory, automatically.** This build is
-memory-bound, not CPU-bound: the template-heavy translation units
-(`MultiCobordism.cpp`, the per-subsystem `Bindings.cpp`, the Eigen-dense
-chainhodge sources) each peak near 4.7 GB in `cc1plus` at `-O3 -march=native`.
-Ninja's default parallelism is *cores + 2*, so on a 16-core machine an
-unrestricted build launches 18 of those at once — far more memory than such a
-box has. It then hits zero available memory, the OOM killer reaps unrelated
-processes, and the dead build leaves orphaned multi-GB `cc1plus` behind.
+**Build parallelism is capped by memory.** The build is memory-bound rather than
+CPU-bound: the template-heavy translation units (`MultiCobordism.cpp`, the
+per-subsystem `Bindings.cpp`, the Eigen-dense chainhodge sources) each peak near
+4.7 GB in `cc1plus` at `-O3 -march=native`. Ninja's default parallelism is
+*cores + 2*, so on a 16-core machine an unrestricted build launches 18 of those
+at once, exhausts memory, and the OOM killer reaps unrelated processes, leaving
+orphaned multi-GB `cc1plus` processes behind.
 
-So `CMakeLists.txt` derives Ninja job pools from the machine's RAM at configure
-time and bakes them into `build.ninja`. Every entry point — pip, `cmake
---build`, an IDE — inherits the cap without having to set anything:
+`CMakeLists.txt` therefore derives Ninja job pools from the machine's RAM at
+configure time and bakes them into `build.ninja`. Every entry point — pip,
+`cmake --build`, an IDE — inherits the cap:
 
 ```
 -- Build parallelism capped at 8 compile / 4 link jobs (30481 MiB RAM, 16 cores; ...)
@@ -139,21 +131,20 @@ configure time and parallelism stays uncapped — pass a small
 
 ### Reinforcement-learning subsystem (optional, libtorch)
 
-The RL harness (`tessera.rl` — a PPO policy over `MultiCobordism.buildStep`, used
-by the proton animation) is an **optional** extension built against libtorch. Because
-it is compiled against torch, torch must be visible to the build interpreter — and
-since torch is heavy and only the RL needs it, it lives in the `[rl]` extra rather
-than as a universal build dependency. Build it with a single, ordinary (build-isolated)
-install — the `TESSERA_RL` flag pulls torch into the isolated build environment on
-demand:
+`tessera.rl` is a proximal-policy-optimization (PPO) policy over
+`MultiCobordism.buildStep`. It is an optional extension compiled against
+libtorch, so torch must be visible to the build interpreter. Torch is heavy and
+only the RL needs it, so it lives in the `[rl]` extra rather than in the
+universal build dependencies. The `TESSERA_RL` flag pulls torch into the
+isolated build environment on demand:
 
 ```bash
 TESSERA_RL=1 pip install -e ".[rl]"     # or: make rl
 ```
 
-Without `TESSERA_RL`, the core and quantum builds are unaffected and never require
-torch. (`TESSERA_RL` toggles a scikit-build-core override in `pyproject.toml` that adds
-torch to `build.requires` only when set; see the `Makefile` for a fast, no-isolation
+Without `TESSERA_RL`, the core and quantum builds never require torch.
+(`TESSERA_RL` toggles a scikit-build-core override in `pyproject.toml` that adds
+torch to `build.requires` only when set; see the `Makefile` for a no-isolation
 path for rapid C++ iteration.) Verify:
 
 ```bash
@@ -162,22 +153,20 @@ python -c "import tessera.rl; print('tessera.rl OK')"
 
 ### OpenMP (optional, speeds up large meshes)
 
-Several CPU hot paths — the Regge action gradient/Hessian hinge loop and the
-spectral-graph heat-kernel — are parallelized with OpenMP. It is **optional**:
-without it the `#pragma omp` directives compile as no-ops and the code runs
-serially, so the build never fails for lack of it.
+The Regge action gradient/Hessian hinge loop and the spectral-graph heat kernel
+are parallelized with OpenMP. It is optional: without it the `#pragma omp`
+directives compile as no-ops and the code runs serially.
 
-- **Linux (gcc / clang):** the OpenMP runtime ships with the compiler — nothing
-  to install; CMake detects it automatically.
+- **Linux (gcc / clang):** the OpenMP runtime ships with the compiler; CMake
+  detects it automatically.
 - **macOS (Apple Clang):** Apple's compiler has no bundled OpenMP runtime —
   `brew install libomp` and CMake will pick it up.
 
 CMake prints `OpenMP found (...)` or `OpenMP not found; ... no-ops` at configure
-time, so you can confirm which path you built. Control the thread count at run
-time with `OMP_NUM_THREADS` (e.g. `OMP_NUM_THREADS=16`); the parallel paths scale
-near-linearly up to the core count, and the computed result is deterministic and
-independent of the thread count (to floating-point round-off). The default when
-unset is one thread per core.
+time. Control the thread count at run time with `OMP_NUM_THREADS` (e.g.
+`OMP_NUM_THREADS=16`); the parallel paths scale near-linearly up to the core
+count, and the result is deterministic and independent of the thread count to
+floating-point round-off. The default when unset is one thread per core.
 
 ## Quick start
 
@@ -188,7 +177,7 @@ import tessera
 
 metric = tessera.Metric(
     coordinateFree=True,
-    signature=tessera.Signature(dimensions=4, signature_type=tessera.Lorentzian),
+    signature=tessera.Signature(dimensions=4, signatureType=tessera.Lorentzian),
 )
 st = tessera.Spacetime(
     metric=metric, spacetimeType=tessera.CDT,
@@ -211,7 +200,10 @@ st.save("spacetime.gif", tilt=25, spin=1, precession=1)
 
 ### CDT Monte Carlo
 
-Full implementation of 4D Causal Dynamical Triangulations following [Ambjorn, Jurkiewicz & Loll (2005)](https://arxiv.org/abs/hep-th/0505154). Includes all four Pachner moves (add, remove, flip, shift), Metropolis acceptance, and automatic coupling-constant tuning.
+4D causal dynamical triangulations following [Ambjorn, Jurkiewicz & Loll,
+arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154): all four Pachner
+moves (add, remove, flip, shift), Metropolis acceptance, and automatic
+coupling-constant tuning.
 
 The CDT phase structure is accessible out of the box:
 
@@ -228,7 +220,11 @@ python examples/volume_profile_phases.py # visualize blob/crumpled/polymer shape
 
 ### Regge solver
 
-The discrete Einstein equations say that a Regge geometry's action is *stationary* in the squared edge lengths, `dS/d(l^2_e) = 0`. `ReggeSolver` evaluates that action and its exact analytic derivatives; it does not relax the geometry itself. Point-mass matter enters through the proper-time action, and the mass sources curvature around itself.
+The discrete Einstein equations say that a Regge geometry's action is stationary
+in the squared edge lengths, `dS/d(l^2_e) = 0`. `ReggeSolver` evaluates that
+action and its exact analytic derivatives; it does not relax the geometry
+itself. Point-mass matter enters through the proper-time action, and the mass
+sources curvature around itself.
 
 ```python
 matter = tessera.MatterConfiguration()
@@ -240,7 +236,14 @@ S = solver.totalAction()            # S_grav + S_matter
 F = solver.actionGradientNorm()     # sum_e |dS/d(l^2_e)|^2, zero on a solution
 ```
 
-`F` is the stationarity residual, and it rather than the action is what a relaxation drives to zero: the action is unbounded below and diverges if descended. `actionGradientExact` returns the same gradient per edge, analytically and in one pass, for the gravitational term on its own; `matterAction` carries the proper-time term. `examples/curvature_slice_gif.py` assembles both into the residual and minimizes it as a least-squares problem, bounding each edge so its `l^2` keeps its sign and no relaxation step alters the causal structure.
+`F` is the stationarity residual, and it rather than the action is what a
+relaxation drives to zero: the action is unbounded below and diverges if
+descended. `actionGradientExact` returns the same gradient per edge,
+analytically and in one pass, for the gravitational term alone; `matterAction`
+carries the proper-time term. `examples/curvature_slice_gif.py` assembles both
+into the residual and minimizes it as a least-squares problem, bounding each
+edge so its `l^2` keeps its sign and no relaxation step alters the causal
+structure.
 
 ```bash
 python examples/curvature_slice_gif.py --n-simplices 600 --seed 20260909 --mass 1.0
@@ -250,9 +253,9 @@ This produces a per-time-slice curvature heat-map GIF.
 
 ### Paper validation
 
-The examples reproduce key figures from the CDT literature, primarily from:
+The examples reproduce figures from the CDT literature, primarily:
 
-> J. Ambjorn, J. Jurkiewicz, R. Loll, **"Reconstructing the Universe"**, Phys. Rev. D 72, 064014 (2005) [[hep-th/0505154]](https://arxiv.org/abs/hep-th/0505154)
+> J. Ambjorn, J. Jurkiewicz, R. Loll, **"Reconstructing the Universe"**, Phys. Rev. D 72, 064014 (2005) [[arXiv:hep-th/0505154]](https://arxiv.org/abs/hep-th/0505154)
 
 | Example | Figures reproduced | What it shows |
 |---------|-------------------|---------------|
@@ -267,12 +270,12 @@ Each script includes the paper's coupling constants (k_0=2.2, delta=0.6) and pri
 
 ### Topologies
 
-Three spatial topologies for the foliated slices. Just swap the last argument to the `Spacetime` constructor:
+Three spatial topologies for the foliated slices. Swap the last argument to the `Spacetime` constructor:
 
 ```python
 metric = tessera.Metric(
     coordinateFree=True,
-    signature=tessera.Signature(dimensions=4, signature_type=tessera.Lorentzian),
+    signature=tessera.Signature(dimensions=4, signatureType=tessera.Lorentzian),
 )
 
 # Toroid (T^3 x S^1) -- periodic in space and time, default
@@ -311,12 +314,12 @@ render_curvature_gif(st, solver, worldline, "curvature.gif")
 
 ### GPU acceleration
 
-The Regge solver optionally offloads deficit-angle and gradient computation to CUDA. This is transparent -- the same Python API works with or without a GPU. Significant speedups on triangulations with 10k+ simplices.
+The Regge solver optionally offloads deficit-angle and gradient computation to CUDA. The same Python API works with or without a GPU. Speedups are significant on triangulations with 10k+ simplices.
 
 ## Running tests
 
-`pytest tests/` runs the **entire** suite — slow tests included. The `slow`
-marker is opt-out, not opt-in: nothing is deselected unless you ask for it.
+`pytest tests/` runs the entire suite, slow tests included. The `slow` marker is
+opt-out, not opt-in: nothing is deselected unless you ask for it.
 
 ```bash
 pytest tests/ -v                   # everything, including slow (>30s) tests
@@ -324,12 +327,8 @@ pytest tests/ -v -m "not slow"     # skip the slow tests
 pytest tests/ -v -m slow           # run only the slow tests
 ```
 
-Some tests cover the quantum subsystem (Schwinger model / DMRG). It is always
-built, so these run as part of the normal suite:
-
-```bash
-pytest tests/ -v                     # includes the quantum tests
-```
+The quantum subsystem (Schwinger model, DMRG) is always built, so its tests run
+as part of the normal suite.
 
 Build options via environment variables:
 
@@ -350,9 +349,18 @@ cd docs && pip install -r requirements-docs.txt && make html
 open _build/html/index.html
 ```
 
+## References
+
+- J. Ambjorn, J. Jurkiewicz, R. Loll, *Reconstructing the Universe*, Phys. Rev. D **72** (2005), [arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)
+- R. Loll, *Quantum Gravity from Causal Dynamical Triangulations: A Review*, Class. Quantum Grav. **37** (2020), [arXiv:1905.08669](https://arxiv.org/abs/1905.08669)
+- J. Brunekreef, A. Görlich, R. Loll, *Simulating CDT quantum gravity*, [arXiv:2310.16744](https://arxiv.org/abs/2310.16744)
+- T. Regge, *General relativity without coordinates*, Nuovo Cimento **19** (1961) 558 — the Regge action and deficit angles.
+- U. Pachner, *P.L. homeomorphic manifolds are equivalent by elementary shellings*, European J. Combin. **12** (1991) 129 — the Pachner moves.
+- M. C. Bañuls, K. Cichy, K. Jansen, J. I. Cirac, *The mass spectrum of the Schwinger model with Matrix Product States*, [arXiv:1305.3765](https://arxiv.org/abs/1305.3765)
+- U. Schollwöck, *The density-matrix renormalization group in the age of matrix product states*, [arXiv:1008.3477](https://arxiv.org/abs/1008.3477)
+
 ## License
 
 Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved. See [LICENSE.md](LICENSE.md).
 
 Third-party components linked or redistributed by tessera are inventoried in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-

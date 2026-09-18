@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// Sign audit of primal volumes, circumcentric dual volumes and the diagonal
+/// Hodge star built from them.
+/// Reference: Desbrun, Hirani, Leok, Marsden, "Discrete Exterior Calculus",
+/// arXiv:math/0508341
+
 #include "observables/DualVolumeSigns.h"
 
 #include <algorithm>
@@ -27,8 +33,8 @@ DualVolumeSigns::Report DualVolumeSigns::analyze(
   Report report;
   if (!spacetime) return report;
 
-  // Accumulate per dimension, keyed so dimensions come out sorted regardless of
-  // the order `getSimplices` happens to hand them back.
+  // Accumulate per dimension; the map keeps dimensions sorted regardless of the
+  // order getSimplices returns them in.
   std::map<int, DimensionReport> byDimension;
   std::map<int, double> starRatioSum;
 
@@ -36,8 +42,8 @@ DualVolumeSigns::Report DualVolumeSigns::analyze(
     if (!simplexPtr) continue;
     const Simplex &simplex = *simplexPtr;
 
-    // Orphans — sub-faces a Pachner move stranded with no surviving top coface —
-    // are no longer part of the complex and must not enter the statistics.
+    // Orphans (sub-faces left by a Pachner move with no surviving top coface)
+    // are no longer part of the complex and are excluded from the statistics.
     if (!simplex.hasTopCoface()) continue;
 
     const int nVertices = static_cast<int>(simplex.getVertices().size());
@@ -55,15 +61,14 @@ DualVolumeSigns::Report DualVolumeSigns::analyze(
       entry.nMixedSignature += 1;
     }
 
-    // This audit measures SIGNS. On the real-Lorentzian locus every quantity
-    // below is real and the reads are exact; off-axis the real part is what the
-    // tallies are defined on, and the imaginary part is separate information this
-    // observable does not yet report (#640).
+    // The tallies are defined on real parts. On the real-Lorentzian locus every
+    // quantity below is real, so the reads are exact; off that locus the
+    // imaginary part is separate information this observable does not report.
     const std::complex<double> dualVolume = simplex.dualVolume();
     if (dualVolume.real() < 0.0) entry.nNegativeDualVolume += 1;
 
     // A negative barycentric coordinate places the circumcenter outside the
-    // simplex on that vertex's side: the Riemannian well-centeredness violation.
+    // simplex on that vertex's side, violating well-centeredness.
     const std::vector<std::complex<double>> barycentric =
         simplex.circumcenterBarycentric();
     if (!barycentric.empty()) {
@@ -80,9 +85,10 @@ DualVolumeSigns::Report DualVolumeSigns::analyze(
     // displacement is timelike — reachable only in Lorentzian signature.
     if (simplex.circumradiusSquared().real() < 0.0) entry.nNegativeCircumradius += 1;
 
-    // The diagonal Hodge star entry itself. An almost-zero own-content makes the
-    // ratio meaningless, so those simplices are counted separately and left out
-    // of both the negative tally and the ratio statistics.
+    // The diagonal Hodge star entry is the dual-to-primal volume ratio. A
+    // near-zero primal volume makes that ratio meaningless, so those simplices
+    // are counted separately and excluded from the negative tally and from the
+    // ratio statistics.
     const std::complex<double> volume = simplex.volume();
     if (std::abs(volume) <= tolerance_) {
       entry.nDegenerateVolume += 1;

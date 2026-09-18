@@ -26,9 +26,7 @@ import time
 
 import pytest
 
-sys.path.insert(0, __file__.rsplit("/", 1)[0].rsplit("/", 2)[0] + "/examples/cobordism")
-
-import emergence_animation as ea  # noqa: E402
+from tessera.drivers import emergence as ea
 
 #: How long the fake worker spends "computing" one unit. Comfortably many poll
 #: intervals, so the count below is not a race.

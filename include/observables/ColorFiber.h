@@ -4,72 +4,67 @@
 #ifndef TESSERA_OBSERVABLES_COLORFIBER_H
 #define TESSERA_OBSERVABLES_COLORFIBER_H
 
-// The exact three-edge SU(3) color kernel (issue #767, Wave 1 of the
-// recursive spectral-fiber program — the whitepaper sections
-// "A triangle carries the exact color algebra" and
-// "Quarks as modular clusters").
+// The exact three-edge SU(3) color kernel.
 //
-// ─── What lives here ─────────────────────────────────────────────────────
+// ## Contents
 //
-//   • ColorFiber   — the CONSTANT color-sector algebra on three oriented
-//                    edge modes: the N = 0,1,2,3 exterior-sector projectors
-//                    of Λ•C³ = 1 ⊕ 3 ⊕ 3̄ ⊕ 1 (vacuum / triplet /
-//                    anti-triplet / singlet), creation/annihilation
-//                    matrices, E_ij = a_i†a_j, the eight normalized
-//                    Gell-Mann generators on the one-occupation sector, the
-//                    traceless adjoint-octet projector, the exact Fourier
-//                    frame F₃ built from ω = e^{2πi/3}, the perimeter and
-//                    Hilbert normalizers (distinct APIs), the color vector
-//                    c = z/‖z‖₂ from stored complex squared lengths, the
-//                    det(C) / det(C†C) color-wedge and singlet-Gram
-//                    certificates, and the quark / anti-triplet-diquark /
-//                    singlet / octet sector READS (weights only — no
-//                    particle classification).
+//   • ColorFiber   — the constant color-sector algebra on three oriented edge
+//                    modes: the N = 0, 1, 2, 3 exterior-sector projectors of
+//                    Λ•C³ = 1 ⊕ 3 ⊕ 3̄ ⊕ 1 (vacuum, triplet, anti-triplet,
+//                    singlet), creation and annihilation matrices,
+//                    E_ij = a_i†a_j, the eight normalized Gell-Mann generators
+//                    on the one-occupation sector, the traceless adjoint-octet
+//                    projector, the exact Fourier frame F₃ built from
+//                    ω = e^{2πi/3}, the perimeter and Hilbert normalizers (two
+//                    distinct interfaces), the color vector c = z/‖z‖₂ from
+//                    stored complex squared lengths, the det(C) and det(C†C)
+//                    color-wedge and singlet-Gram certificates, and the quark,
+//                    anti-triplet-diquark, singlet and octet sector reads.
+//                    Weights only; no particle classification.
 //   • OrientedTriangle / AnchorProfile / ColorAnchor
-//                  — the calibrated weighted oriented-triangle anchoring
-//                    kernel A_τ = |W_τ|^{1/2} R_τ Φ with an atlas score
-//                    a² = Σ_τ w_τ |det A_τ|², the convex weighting {w_τ}
-//                    DECLARED before any data are examined (post-hoc
-//                    re-weighting is rejected), and the reported profile:
-//                    maximal term, participation ratio of {|det A_τ|²}, and
-//                    determinant-phase dispersion/coherence on OVERLAPPING
-//                    oriented triangles — the resultant runs only over
-//                    triangles that share a boundary edge with another
+//                  — the calibrated weighted oriented-triangle anchoring kernel
+//                    A_τ = |W_τ|^{1/2} R_τ Φ with an atlas score
+//                    a² = Σ_τ w_τ |det A_τ|². The convex weighting {w_τ} is
+//                    declared before any data are examined; post-hoc
+//                    re-weighting is rejected. The reported profile carries the
+//                    maximal term, the participation ratio of {|det A_τ|²}, and
+//                    the determinant-phase dispersion and coherence on
+//                    overlapping oriented triangles: the resultant runs only
+//                    over triangles sharing a boundary edge with another
 //                    declared triangle, so a disjoint atlas reports the
 //                    coherence as unknown rather than as a value with no
-//                    overlap content.  Signed sectors restrict with
-//                    |W_τ|^{1/2} and report the restricted block's Krein
-//                    signature separately.
+//                    overlap content. Signed sectors restrict with |W_τ|^{1/2}
+//                    and report the restricted block's Krein signature
+//                    separately.
 //
-// ─── Exact identities implemented (tested to double round-off) ──────────
+// ## Exact identities, tested to double round-off
 //
-//   • F₃†F₃ = I and |det F₃| = 1 (F₃ assembled from the ALGEBRAIC entries
-//     ω^{jk}/√3, ω = (−1 + i√3)/2 — never from repeated multiplication, so
-//     1 + ω + ω² cancels exactly in floating point).
+//   • F₃†F₃ = I and |det F₃| = 1. F₃ is assembled from the algebraic entries
+//     ω^{jk}/√3 with ω = (−1 + i√3)/2, never from repeated multiplication, so
+//     1 + ω + ω² cancels exactly in floating point.
 //   • λ_a = λ_a†, Tr λ_a = 0, Tr(λ_a λ_b) = 2 δ_ab.
-//   • [E_ij, E_kl] = δ_jk E_il − δ_il E_kj — on the 3×3 one-occupation
-//     restriction AND on the full 8-dimensional Fock representation.
+//   • [E_ij, E_kl] = δ_jk E_il − δ_il E_kj, both on the 3×3 one-occupation
+//     restriction and on the full 8-dimensional Fock representation.
 //   • det(gC) = det(C) for g ∈ SU(3); det(C†C) = |det C|².
-//   • ‖v₁∧v₂∧v₃‖² = det[⟨v_i, v_j⟩]: the singlet wedge vanishes for
-//     duplicate color modes and reaches unit Gram determinant exactly for
-//     an orthonormal triad.
+//   • ‖v₁∧v₂∧v₃‖² = det[⟨v_i, v_j⟩]: the singlet wedge vanishes for duplicate
+//     color modes and reaches unit Gram determinant exactly for an orthonormal
+//     triad.
 //   • Calibration (see ColorAnchor for the domain): with Φ†|W|Φ = I and a
 //     triangle-decoupled |W| (any diagonal edge metric), each
 //     |det A_τ|² = det(A_τ†A_τ) ≤ 1 because R_τ†|W_τ|R_τ ⪯ |W|, so
-//     a² ∈ [0, 1] with value one exactly at full concentration on the
-//     weighted edge span of the anchoring faces.
+//     a² ∈ [0, 1], with value one exactly at full concentration on the weighted
+//     edge span of the anchoring faces.
 //
-// The constant algebra is generated once (static locals) and checked at
-// startup in debug builds (NDEBUG off) via verifyConstantAlgebra(); the
-// production operation count is constant.  Everything here is a pure
-// function of caller-supplied data: no solver call, no Spacetime mutation,
-// nothing enters the emergence objective.
+// The constant algebra is generated once in static locals and checked at
+// startup in debug builds (NDEBUG off) by verifyConstantAlgebra(); the
+// operation count is constant. Everything here is a pure function of
+// caller-supplied data: no solver call, no Spacetime mutation, and nothing
+// enters the emergence objective.
 //
-// Ownership boundary (#769/#770): this kernel operates on CALLER-SUPPLIED
-// inputs — a rank-three frame over a component's oriented edges, the edge
-// weight data, and oriented-triangle descriptors (ordered boundary edge
-// indices with incidence signs).  It does not construct spectral fibers
-// (#769) and contains no transport / Wilson-loop code (#770).
+// The kernel operates on caller-supplied inputs — a rank-three frame over a
+// component's oriented edges, the edge weight data, and oriented-triangle
+// descriptors (ordered boundary edge indices with incidence signs). It does not
+// construct spectral fibers and contains no transport or Wilson-loop code.
 
 #include "cobordism/Certificate.h"
 
@@ -88,10 +83,10 @@ namespace tessera::observables {
 /// orientation, with their incidence signs (±1: +1 when the stored oriented
 /// edge agrees with the induced boundary orientation, −1 when opposed).
 ///
-/// `edges[k]` indexes a ROW of the caller's frame / weight data — the
-/// caller's own oriented-edge indexing; this kernel never sorts or
-/// re-derives an order.  The orientation fixes the ordering up to a CYCLIC
-/// (hence even) permutation, so det A_τ is invariant under cyclic rotation
+/// `edges[k]` indexes a row of the caller's frame and weight data, in the
+/// caller's own oriented-edge indexing; this kernel never sorts or re-derives
+/// an order. The orientation fixes the ordering up to a cyclic, hence even,
+/// permutation, so det A_τ is invariant under cyclic rotation
 /// of (edges, signs) and negates under an odd permutation (= the opposite
 /// orientation); |det A_τ|² is invariant under both.
 struct OrientedTriangle {
@@ -101,11 +96,10 @@ struct OrientedTriangle {
     std::array<int, 3> signs{+1, +1, +1};
 };
 
-/// The reported anchor datum — the PROFILE, not only the score (whitepaper
-/// "Quarks as modular clusters").  Scores and terms are calibrated to
-/// [0, 1] in the documented positive/decoupled domain; the profile fields
-/// make a concentrated oracle distinguishable from an extended-but-anchored
-/// atlas and from an unanchored band at equal score.
+/// The reported anchor datum: the whole profile, not only the score. Scores and
+/// terms are calibrated to [0, 1] in the positive, decoupled domain documented
+/// below. The profile fields distinguish a concentrated oracle from an
+/// extended-but-anchored atlas and from an unanchored band at equal score.
 struct AnchorProfile {
     /// The calibrated atlas score a² = Σ_τ w_τ |det A_τ|².
     double score{0.0};
@@ -123,20 +117,20 @@ struct AnchorProfile {
     /// determinant phase is reported as unknown, never as zero).
     std::vector<double> detPhases{};
     /// Determinant-phase coherence on OVERLAPPING oriented triangles: the
-    /// circular resultant length |Σ_τ u_τ e^{i φ_τ}| with contribution
-    /// weights u_τ ∝ w_τ t_τ, RESTRICTED to the nonzero-determinant
-    /// triangles that genuinely overlap another declared triangle
-    /// (∈ [0, 1]; 1 = one common determinant-line trivialization).
-    /// Invariant under in-band SU(3) frame changes; a full U(3) change
-    /// rotates every phase by the same det g, leaving coherence unchanged.
-    /// A DISJOINT atlas has no overlap content and reports coherence as
-    /// UNKNOWN (NaN), never as a value read off non-overlapping faces.
+    /// circular resultant length |Σ_τ u_τ e^{i φ_τ}| with contribution weights
+    /// u_τ ∝ w_τ t_τ, restricted to the nonzero-determinant triangles that
+    /// overlap another declared triangle. In [0, 1], where 1 means one common
+    /// determinant-line trivialization. Invariant under in-band SU(3) frame
+    /// changes; a full U(3) change rotates every phase by the same det g,
+    /// leaving coherence unchanged. A disjoint atlas has no overlap content and
+    /// reports coherence as NaN rather than as a value read off
+    /// non-overlapping faces.
     double phaseCoherence{0.0};
     /// Circular dispersion 1 − phaseCoherence (NaN when unknown).
     double phaseDispersion{0.0};
-    /// How many declared triangles genuinely overlap another declared
-    /// triangle — the triangles the coherence resultant runs over.  Zero
-    /// on a disjoint atlas.
+    /// How many declared triangles overlap another declared triangle: the
+    /// triangles the coherence resultant runs over. Zero on a disjoint
+    /// atlas.
     std::size_t overlappingTriangles{0};
     /// The sharing relation the overlap was recorded under: "shared-edge",
     /// the only relation an `OrientedTriangle` atlas determines (a triangle
@@ -153,17 +147,17 @@ struct AnchorProfile {
     /// ‖Φ†|W|Φ − I‖_max — the frame-normalization domain certificate
     /// (evaluate() rejects the read when it exceeds the tolerance).
     double frameGramResidual{0.0};
-    /// max_τ λ_max(A_τ†A_τ) − 1: ≤ round-off in the decoupled domain; a
-    /// positive value flags weight coupling that voids the calibration
-    /// bound (score still reported honestly).
+    /// max_τ λ_max(A_τ†A_τ) − 1: at most round-off in the decoupled domain. A
+    /// positive value flags weight coupling that voids the calibration bound;
+    /// the score is still reported.
     double calibrationMargin{0.0};
     /// The pre-declared convex weighting rule that produced `score`
-    /// ("uniform" or "declared"), reported with the datum per the spec's
-    /// QuarkRead::anchorWeightingId.
+    /// ("uniform" or "declared"), reported with the datum as
+    /// `QuarkRead::anchorWeightingId`.
     std::string weightingId{};
     /// The declared convex weights w_τ actually used.
     std::vector<double> weights{};
-    /// The #764 certification record grading the calibrated score.
+    /// The certification record grading the calibrated score.
     /// Diagonal-weight path: StructureExact — the [0,1] calibration is a
     /// closed-form identity GIVEN the verified premise Φ†|W|Φ = I on a
     /// decoupled |W|; residual = max(frameGramResidual,
@@ -182,11 +176,11 @@ struct AnchorProfile {
 /// frame only after a rank-three band passes its triangle-anchor
 /// certificate".
 ///
-/// A DEFAULT-CONSTRUCTED gate is closed (`accepted = false`), so a caller that
-/// supplies nothing is refused rather than silently admitted.  The only way to
+/// A default-constructed gate is closed (`accepted = false`), so a caller that
+/// supplies nothing is refused rather than silently admitted. The only way to
 /// open one is `ColorAnchor::gateFor`, which applies the single acceptance
-/// predicate `ColorAnchor::accepts` — the SAME conjunction the quark verdict
-/// uses, so the kernels and the interpretation can never drift apart.
+/// predicate `ColorAnchor::accepts`, the same conjunction the quark verdict
+/// uses.
 ///
 /// The gate carries its own provenance so a refusal can name what failed and
 /// an acceptance records what admitted it.
@@ -205,23 +199,23 @@ struct AnchorGate {
 
 /// # ColorFiber
 ///
-/// The constant, exactly-generated color-sector algebra of THREE oriented
-/// edge modes: Λ•C³ = 1 ⊕ 3 ⊕ 3̄ ⊕ 1 with the color interpretation
-/// (vacuum / fundamental triplet / antisymmetric anti-triplet / color
-/// singlet) layered over the #766 exterior-algebra primitives
-/// (quantum::ExteriorAlgebra — the sector projectors and CAR matrices are
-/// DELEGATED, never reimplemented).
+/// The constant, exactly generated color-sector algebra of three oriented edge
+/// modes: Λ•C³ = 1 ⊕ 3 ⊕ 3̄ ⊕ 1, with the color interpretation (vacuum,
+/// fundamental triplet, antisymmetric anti-triplet, color singlet) layered over
+/// the exterior-algebra primitives of `quantum::ExteriorAlgebra`. The sector
+/// projectors and canonical anticommutation-relation matrices are delegated
+/// there, never reimplemented.
 ///
-/// All members are static: the algebra is a constant (generated once,
-/// checked at startup in debug builds).  Fock-space operators are dense
-/// 8×8 matrices on the occupation basis |b⟩, b ∈ {0,1}³, indexed by
-/// n(b) = Σ_i b_i 2^i (mode 0 = least-significant bit); the one-occupation
+/// All members are static: the algebra is a constant, generated once and
+/// checked at startup in debug builds. Fock-space operators are dense 8×8
+/// matrices on the occupation basis |b⟩, b ∈ {0,1}³, indexed by
+/// n(b) = Σ_i b_i 2^i with mode 0 the least-significant bit. The one-occupation
 /// (triplet) sector is spanned by Fock indices {1, 2, 4} in that order,
 /// identifying it with C³.
 ///
-/// Interpretation stance: these are sector WEIGHTS and algebraic
-/// certificates read from caller-supplied data.  Nothing here classifies a
-/// particle, and none of it enters the emergence objective.
+/// These are sector weights and algebraic certificates read from
+/// caller-supplied data. Nothing here classifies a particle, and none of it
+/// enters the emergence objective.
 class ColorFiber {
   public:
     /// Double-precision complex scalar of every operator/state entry.
@@ -248,7 +242,7 @@ class ColorFiber {
     /// Λ³: the odd top-wedge color singlet (N = 3).
     [[nodiscard]] static Eigen::MatrixXcd singletProjector();
 
-    // ── CAR matrices and bilinears ───────────────────────────────────────
+    // ── canonical anticommutation-relation matrices and bilinears ────────
 
     /// The 8×8 creation matrix a_i† (i ∈ {0,1,2}; delegates to
     /// quantum::ExteriorAlgebra::creationMatrix).
@@ -309,45 +303,42 @@ class ColorFiber {
     [[nodiscard]] static Eigen::Matrix3cd tracelessPart(
         const Eigen::Matrix3cd& m);
 
-    // ── #774 additions BESIDE the octet projector (nothing above is
-    //    re-derived): the singlet complement resolving 3 ⊗ 3̄, the literal
-    //    traceless even bilinear on Fock space, and the adjoint quadratic
-    //    Casimir — each an exact constant of the same algebra. ────────────
+    // ── alongside the octet projector: the singlet complement resolving
+    //    3 ⊗ 3̄, the traceless even bilinear on Fock space, and the adjoint
+    //    quadratic Casimir. Each is an exact constant of the same algebra. ──
 
     /// The 9×9 orthogonal projector P₁ = vec(I)vec(I)†/3 onto the trace
-    /// (singlet) part of a 3×3 bilinear — implemented literally as
-    /// I₉ − adjointOctetProjector(), so P₁ + P₈ = I₉ is an exact (bitwise)
-    /// complement: the singlet and octet projectors RESOLVE 3 ⊗ 3̄ = 1 ⊕ 8.
-    /// P₁ vec(M) = vec((Tr M / 3) I).  (#774)
+    /// (singlet) part of a 3×3 bilinear, implemented as
+    /// I₉ − adjointOctetProjector(), so P₁ + P₈ = I₉ is an exact bitwise
+    /// complement and the singlet and octet projectors resolve
+    /// 3 ⊗ 3̄ = 1 ⊕ 8.
     [[nodiscard]] static Eigen::MatrixXcd adjointSingletProjector();
 
     /// The 8×8 traceless even bilinear T_ij = a_i†a_j − (δ_ij/3) N̂ on Fock
-    /// space (whitepaper "Fock space as an inductive limit of
-    /// interactions") — implemented literally as
-    /// dGamma(tracelessPart(matrixUnit(i, j))), so the delegation is exact:
-    /// T_ij = E_ij − (δ_ij/3) Σ_k E_kk, Σ_i T_ii = 0 exactly, T_ij
-    /// conserves N (even fermion parity: [T_ij, (−1)^N] = 0), and the nine
-    /// T_ij span the 8-dimensional octet of 3 ⊗ 3̄ = 1 ⊕ 8.  (#774)
+    /// space, implemented as dGamma(tracelessPart(matrixUnit(i, j))), so the
+    /// delegation is exact: T_ij = E_ij − (δ_ij/3) Σ_k E_kk, Σ_i T_ii = 0
+    /// exactly, T_ij commutes with the fermion parity (−1)^N and so conserves
+    /// N, and the nine T_ij span the 8-dimensional octet of
+    /// 3 ⊗ 3̄ = 1 ⊕ 8.
     /// @throws std::invalid_argument for i or j ≥ 3.
     [[nodiscard]] static Eigen::MatrixXcd octetBilinear(std::size_t i,
                                                         std::size_t j);
 
-    /// The 9×9 quadratic Casimir of the ADJOINT action on 3 ⊗ 3̄:
-    /// C = Σ_a K_a² with K_a vec(M) = vec([λ_a/2, M]).  Exact identity
-    /// (checked by verifyConstantAlgebra): C = 3 P₈ — the Casimir
-    /// eigenvalue is 0 on the singlet and C₂(adjoint) = 3 on the octet, so
-    /// the Casimir and the octet projector are the SAME certificate up to
-    /// the constant 3.  (#774)
+    /// The 9×9 quadratic Casimir of the adjoint action on 3 ⊗ 3̄:
+    /// C = Σ_a K_a² with K_a vec(M) = vec([λ_a/2, M]). The exact identity
+    /// C = 3 P₈, checked by verifyConstantAlgebra, holds: the Casimir
+    /// eigenvalue is 0 on the singlet and C₂(adjoint) = 3 on the octet, so the
+    /// Casimir and the octet projector are the same certificate up to the
+    /// constant 3.
     [[nodiscard]] static Eigen::MatrixXcd adjointCasimirMatrix();
 
     /// The adjoint-Casimir Rayleigh quotient
     /// ⟨vec M, C vec M⟩ / ‖M‖_F² ∈ [0, 3] of a 3×3 bilinear: exactly 3 for
     /// a traceless (pure octet) M, exactly 0 for M ∝ I, and 3 × (octet
-    /// weight fraction) in between.  Evaluated through the EXACT identity
-    /// C = 3 P₈ as 3 ‖tracelessPart(M)‖_F² / ‖M‖_F² (the independent
-    /// commutator-sum construction stays in adjointCasimirMatrix, where
-    /// verifyConstantAlgebra cross-checks it).  NaN for M = 0 (an
-    /// undefined quotient is reported unknown, never zero).  (#774)
+    /// weight fraction) in between. Evaluated through the identity C = 3 P₈ as
+    /// 3 ‖tracelessPart(M)‖_F² / ‖M‖_F²; the independent commutator-sum
+    /// construction stays in adjointCasimirMatrix, where verifyConstantAlgebra
+    /// cross-checks it. NaN for M = 0, since the quotient is undefined.
     [[nodiscard]] static double adjointCasimir(const Eigen::Matrix3cd& m);
 
     // ── the exact Fourier color frame from ω = e^{2πi/3} ─────────────────
@@ -366,25 +357,24 @@ class ColorFiber {
     /// @throws std::invalid_argument for k outside 0..2.
     [[nodiscard]] static Eigen::Vector3cd fourierBasisVector(int k);
 
-    /// The existing phase pattern (1, ω, ω²)/√3 — identified as ONE color
-    /// basis vector (fourierBasisVector(1)), not by itself the whole color
-    /// fiber; its cyclic orbit under pointwise Z₃ powers is the exact
-    /// orthonormal triad {fourierBasisVector(0), (1), (2)} = the columns
-    /// of F₃.
+    /// The phase pattern (1, ω, ω²)/√3: one color basis vector,
+    /// `fourierBasisVector(1)`, and not by itself the whole color fiber. Its
+    /// cyclic orbit under pointwise Z₃ powers is the orthonormal triad
+    /// {fourierBasisVector(0), (1), (2)}, the columns of F₃.
     [[nodiscard]] static Eigen::Vector3cd omegaPhaseState();
 
     // ── normalization: perimeter (L¹ scale gauge) vs Hilbert (L² state) ──
 
-    /// The triangle perimeter Σ_i |z_i|^{1/2} of three stored complex
-    /// SQUARED lengths z_i = ℓ_i² (the L¹ geometric datum on the side
-    /// lengths |ℓ_i| = |z_i|^{1/2}).
+    /// The triangle perimeter Σ_i |z_i|^{1/2} of three stored complex squared
+    /// lengths z_i = ℓ_i²: the L¹ geometric datum on the side lengths
+    /// |ℓ_i| = |z_i|^{1/2}.
     [[nodiscard]] static double perimeter(const Eigen::Vector3cd& z);
 
     /// Rescale the squared lengths so the perimeter is one:
-    /// z ↦ z / perimeter(z)² (lengths scale by 1/perimeter).  A GEOMETRIC
-    /// SCALE GAUGE only — an L¹ condition that is NOT a state
-    /// normalization and never replaces the L² Hilbert normalization
-    /// (out-of-scope per #767: perimeter one is not ⟨c|c⟩ = 1).
+    /// z ↦ z / perimeter(z)², so lengths scale by 1/perimeter. This is a
+    /// geometric scale gauge: an L¹ condition, not a state normalization, and
+    /// it never replaces the L² Hilbert normalization. Perimeter one is not
+    /// ⟨c|c⟩ = 1.
     /// @throws std::invalid_argument when the perimeter vanishes.
     [[nodiscard]] static Eigen::Vector3cd perimeterNormalized(
         const Eigen::Vector3cd& z);
@@ -392,7 +382,7 @@ class ColorFiber {
     /// The Hilbert L² norm ‖z‖₂ = (Σ_i |z_i|²)^{1/2}.
     [[nodiscard]] static double hilbertNorm(const Eigen::Vector3cd& z);
 
-    /// The Hilbert-normalized state z / ‖z‖₂ with ⟨c|c⟩ = 1 — the STATE
+    /// The Hilbert-normalized state z / ‖z‖₂ with ⟨c|c⟩ = 1: the state
     /// normalization, distinct from the perimeter gauge.
     /// @throws std::invalid_argument when ‖z‖₂ = 0.
     [[nodiscard]] static Eigen::Vector3cd hilbertNormalized(
@@ -424,7 +414,7 @@ class ColorFiber {
     [[nodiscard]] static bool isSpecialUnitary(const Eigen::Matrix3cd& g,
                                                double tol = 1e-12);
 
-    // ── sector READS (weights only — never a particle classification) ───
+    // ── sector reads: weights only, never a particle classification ─────
 
     /// Occupation-sector weights of an 8-dimensional Fock vector: the
     /// squared norms ‖P_N ψ‖² for N = 0..3.  `vacuum` + `quark` +
@@ -468,19 +458,18 @@ class ColorFiber {
     /// off); callable from tests and bindings in every build.
     [[nodiscard]] static double verifyConstantAlgebra();
 
-    /// The #764 certificate of the constant algebra: AlgebraicallyExact /
-    /// Static / PositiveSemidefinite with the measured
-    /// verifyConstantAlgebra() residual against the startup tolerance
-    /// 1e-12 — the same claim the debug-build startup check enforces,
-    /// attached in the shared certification vocabulary.
+    /// The certificate of the constant algebra: AlgebraicallyExact, Static and
+    /// PositiveSemidefinite, with the measured verifyConstantAlgebra() residual
+    /// against the startup tolerance 1e-12 — the same claim the debug-build
+    /// startup check enforces.
     [[nodiscard]] static ::tessera::cobordism::Certificate
     constantAlgebraCertificate();
 };
 
 /// # ColorAnchor
 ///
-/// The calibrated weighted oriented-triangle anchoring kernel for an
-/// abstract rank-three band (whitepaper "Quarks as modular clusters").
+/// The calibrated weighted oriented-triangle anchoring kernel for an abstract
+/// rank-three band.
 ///
 /// For each declared oriented triangle τ with restriction
 /// R_τ : C₁ → C³ (the three ordered boundary edges with incidence signs)
@@ -488,26 +477,23 @@ class ColorFiber {
 ///
 ///     A_τ = |W_τ|^{1/2} R_τ Φ,
 ///
-/// and the atlas score is a² = Σ_τ w_τ |det A_τ|² with the convex
-/// weighting {w_τ} DECLARED BEFORE the data are examined: the weighting is
-/// fixed at construction (or via declareWeights BEFORE the first
-/// evaluate); once any data have been evaluated, re-weighting throws —
-/// post-hoc weight selection is rejected by construction.
+/// and the atlas score is a² = Σ_τ w_τ |det A_τ|², with the convex weighting
+/// {w_τ} declared before the data are examined. The weighting is fixed at
+/// construction, or via declareWeights before the first evaluate; once any data
+/// have been evaluated, re-weighting throws.
 ///
 /// ## Exact identity and domain
 ///
 /// With the frame |W|-orthonormal (Φ†|W|Φ = I, verified per evaluate to
 /// `gramTolerance` and reported as frameGramResidual) and |W|
-/// triangle-decoupled — in particular ANY diagonal per-edge metric, the
-/// production DEC/Hodge case — each
-/// |det A_τ|² = det(A_τ†A_τ) ≤ 1 exactly, because R_τ†|W_τ|R_τ ⪯ |W|;
-/// hence a² ∈ [0, 1], reaching 1 exactly at full concentration on the
-/// weighted edge span of the anchoring faces.  A single literal triangle
-/// covering the whole band is the exact oracle (a² = 1 to round-off); an
-/// extended anchored fiber is the production case.  For a general
-/// Hermitian (coupled) weight matrix the score is still reported, and the
-/// per-read `calibrationMargin` certifies whether the ≤ 1 bound held
-/// numerically rather than assuming it.
+/// triangle-decoupled — in particular any diagonal per-edge metric, which
+/// covers the discrete exterior calculus and Hodge cases — each
+/// |det A_τ|² = det(A_τ†A_τ) ≤ 1 exactly, because R_τ†|W_τ|R_τ ⪯ |W|. Hence
+/// a² ∈ [0, 1], reaching 1 exactly at full concentration on the weighted edge
+/// span of the anchoring faces. A single triangle covering the whole band gives
+/// a² = 1 to round-off. For a general Hermitian (coupled) weight matrix the
+/// score is still reported, and the per-read `calibrationMargin` certifies
+/// whether the ≤ 1 bound held numerically rather than assuming it.
 ///
 /// In signed sectors the restriction still uses |W_τ|^{1/2} (matrix
 /// modulus of the sign-conjugated block S_τ W_τ S_τ) and the restricted
@@ -538,7 +524,7 @@ class ColorAnchor {
     /// as zero in the reported Krein signature.
     [[nodiscard]] static double kreinTolerance() { return 1e-12; }
 
-    /// Declare the atlas with the UNIFORM convex weighting w_τ = 1/T.
+    /// Declare the atlas with the uniform convex weighting w_τ = 1/T.
     /// @throws std::invalid_argument on an empty atlas, a repeated edge
     ///         inside one triangle, a sign outside {−1,+1}, or a negative
     ///         edge index.
@@ -556,19 +542,18 @@ class ColorAnchor {
         return triangles_;
     }
 
-    /// Whether declared triangle `index` shares a boundary EDGE with some
-    /// other declared triangle — the overlap relation the determinant-phase
-    /// coherence is recorded on (whitepaper: "their coherence on
-    /// OVERLAPPING triangles is recorded separately").  An
-    /// `OrientedTriangle` names only its three boundary edge rows, so
-    /// shared-edge is the only sharing relation this atlas determines.
+    /// Whether declared triangle `index` shares a boundary edge with another
+    /// declared triangle: the overlap relation the determinant-phase coherence
+    /// is recorded on. An `OrientedTriangle` names only its three boundary edge
+    /// rows, so a shared edge is the only sharing relation this atlas
+    /// determines.
     [[nodiscard]] bool overlapsAnother(std::size_t index) const {
         return index < overlapping_.size() &&
                overlapping_[index] != 0;
     }
 
-    /// How many declared triangles overlap another declared triangle
-    /// (0 on a disjoint atlas, where the coherence is UNKNOWN).
+    /// How many declared triangles overlap another declared triangle; 0 on a
+    /// disjoint atlas, where the coherence is unknown.
     [[nodiscard]] std::size_t overlappingTriangleCount() const {
         return overlapCount_;
     }
@@ -586,16 +571,17 @@ class ColorAnchor {
     /// True once any data have been evaluated: the weighting is sealed.
     [[nodiscard]] bool sealed() const { return sealed_; }
 
-    /// Replace the declared convex weighting — allowed ONLY before the
-    /// first evaluate().  Afterwards the data have been examined and
-    /// post-hoc weight selection is rejected.
+    /// Replace the declared convex weighting. Allowed only before the first
+    /// evaluate(); afterwards the data have been examined and post-hoc weight
+    /// selection is rejected.
     /// @throws std::logic_error after any evaluate();
     ///         std::invalid_argument when the weighting is not convex.
     void declareWeights(std::vector<double> weights);
 
     /// Evaluate the calibrated anchor of a rank-three frame against a
     /// DIAGONAL (possibly signed) per-edge weight vector — the production
-    /// DEC/Hodge metric case, where the [0,1] calibration bound is exact.
+    /// discrete exterior calculus (DEC) and Hodge metric case, where the
+    /// [0,1] calibration bound is exact.
     ///
     /// `frame` is E×3 over the component's oriented edges (rows = the
     /// caller's edge indexing; columns = the band).  `edgeWeights` has
@@ -644,19 +630,17 @@ class ColorAnchor {
     /// Default determinant-phase coherence floor of the acceptance predicate.
     static constexpr double kDefaultMinPhaseCoherence = 0.5;
 
-    /// **The** triangle-anchor acceptance predicate — ONE definition, shared
-    /// by the quark verdict and by the colour kernels that the exactness
-    /// contract gates on it, so the two can never drift apart.  A profile
-    /// passes when a weighting was actually declared (an empty
-    /// `weightingId` is MISSING evidence, not a zero score), its calibration
-    /// certificate holds, and both the atlas score and the determinant-phase
-    /// coherence meet their floors.
+    /// The triangle-anchor acceptance predicate, shared by the quark verdict
+    /// and by the color kernels gated on it. A profile passes when a weighting
+    /// was actually declared (an empty `weightingId` is missing evidence, not a
+    /// zero score), its calibration certificate holds, and both the atlas score
+    /// and the determinant-phase coherence meet their floors.
     [[nodiscard]] static bool accepts(
         const AnchorProfile& profile, double minScore = kDefaultMinScore,
         double minPhaseCoherence = kDefaultMinPhaseCoherence);
 
-    /// The gate for a profile: `accepts` plus the provenance a refusal needs
-    /// to name what failed.  The only way to open an `AnchorGate`.
+    /// The gate for a profile: `accepts` plus the provenance a refusal needs to
+    /// name what failed. The only way to open an `AnchorGate`.
     [[nodiscard]] static AnchorGate gateFor(
         const AnchorProfile& profile, double minScore = kDefaultMinScore,
         double minPhaseCoherence = kDefaultMinPhaseCoherence);
@@ -678,8 +662,8 @@ class ColorAnchor {
 
     /// Fill `overlapping_` / `overlapCount_` from the declared atlas: a
     /// triangle overlaps when one of its three edge rows also appears in a
-    /// DIFFERENT declared triangle.  Computed once, at declaration time,
-    /// before any datum is examined.
+    /// different declared triangle. Computed once, at declaration time, before
+    /// any datum is examined.
     void markOverlaps();
 
     std::vector<OrientedTriangle> triangles_{};

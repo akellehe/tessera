@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// Derived U(r) transport between spectral fibers, the Wilson holonomy of a
+/// loop of such transports, and the determinant winding of a closed family.
+/// Reference: Greensite, "The Confinement Problem in Lattice Gauge Theory",
+/// arXiv:hep-lat/0301023
+
 #include "observables/FiberConnection.h"
 
 #include <algorithm>
@@ -30,6 +36,7 @@
 
 namespace tessera::observables {
 
+/// Shorthand for the complex scalar type used throughout this file.
 using cd = std::complex<double>;
 using cobordism::Certificate;
 using cobordism::CertificateDomain;
@@ -49,8 +56,8 @@ double spectralNorm(const Eigen::MatrixXcd &a) {
   return svd.singularValues().size() > 0 ? svd.singularValues()[0] : 0.0;
 }
 
-/// The signature matrix J = diag(I_p, -I_q) of a band certificate.  The
-/// #769 Krein-normalizable frames are stored with positives first
+/// The signature matrix J = diag(I_p, -I_q) of a band certificate.
+/// Krein-normalizable frames store the positive directions first
 /// (Phi^dagger W Phi = J), so the diagonal order is structural.
 Eigen::MatrixXcd signatureMatrix(int p, int q) {
   Eigen::MatrixXcd j = Eigen::MatrixXcd::Zero(p + q, p + q);
@@ -59,11 +66,11 @@ Eigen::MatrixXcd signatureMatrix(int p, int q) {
   return j;
 }
 
-/// The band's isolation: its separation from the nearest DISCARDED
-/// eigenvalue in the complex plane (#808), NOT the sort-order neighbour
-/// distance.  A schema-1 certificate that predates that measurement falls
-/// back to min(lowerGap, upperGap) with NaN propagation (an UNKNOWN side
-/// stays unknown — it is never reported as infinitely isolated).
+/// The band's isolation: its separation from the nearest discarded
+/// eigenvalue in the complex plane, not the sort-order neighbour distance.
+/// When that separation is unmeasured, falls back to min(lowerGap, upperGap)
+/// with NaN propagation, so an unknown side stays unknown rather than being
+/// reported as infinitely isolated.
 double isolationGap(const SpectralBandCertificate &c) {
   if (!std::isnan(c.nearestDiscardedSeparation))
     return c.nearestDiscardedSeparation;
@@ -142,9 +149,9 @@ Eigen::MatrixXcd principalSqrt(const Eigen::MatrixXcd &k, bool *ok) {
   return v * roots.asDiagonal() * v.inverse();
 }
 
-/// Order-SENSITIVE mix64 chain over the pieces of a cache parameter (the
-/// component key itself is the order-independent part; the parameter must
-/// distinguish direction and loop order, so it chains).
+/// Order-sensitive mix64 chain over the pieces of a cache parameter.  The
+/// component key is the order-independent part; the parameter must
+/// distinguish direction and loop order, so it chains.
 std::int64_t chainedParameter(int degree, int convention,
                               const std::vector<std::uint64_t> &keysInOrder) {
   std::uint64_t h = mesh::Fingerprint::mix64(
@@ -159,15 +166,12 @@ std::int64_t chainedParameter(int degree, int convention,
 double fmaxAccumulate(double acc, double value) { return std::fmax(acc, value); }
 
 // --- Record serialization helpers ------------------------------------------
-// The grade/domain/regime name tables and the Certificate (sub-)record follow
-// the #769 checkpoint conventions verbatim (SpectralFiber.cpp keeps its own
-// file-local copy; consolidating these next to Certificate/Record is a noted
-// follow-up), so `transports` checkpoint entries stay uniform.
+// The grade/domain/regime name tables and the Certificate sub-record follow
+// the shared checkpoint conventions, so `transports` entries stay uniform.
 
-// Schema 2 (#808) renames the endpoint `*_condition_number` leaves to
-// `*_projector_norm` (they always carried ||P||_2) and fills
-// `frame_condition_number` with the endpoints' own FRAME conditioning.
-// Schema 1 stays readable: its endpoint leaves are read under the old names.
+// Schema 2 names the endpoint leaves `*_projector_norm` (they carry ||P||_2)
+// and fills `frame_condition_number` with the endpoints' frame conditioning.
+// Schema 1 is still readable: its endpoint leaves use `*_condition_number`.
 constexpr int kRecordSchemaVersion = 2;
 constexpr int kOldestReadableRecordSchema = 1;
 
@@ -460,7 +464,7 @@ Record DeterminantWindingRead::toRecord() const {
   Record::Map m;
   m["schema_version"] = Record(kRecordSchemaVersion);
   m["record_type"] = Record("determinant_winding");
-  // An unknown winding serializes as unknown — never as zero.
+  // An unknown winding serializes as unknown, not as zero.
   m["winding_known"] = Record(winding.has_value());
   m["winding"] = winding.has_value() ? Record(*winding) : Record();
   m["winding_closure"] = Record(windingClosure);
@@ -545,10 +549,8 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
   if (degree < 0)
     throw std::invalid_argument("FiberConnection::chainTransfer: negative degree");
 
-  // Canonical whole-complex cell order: sorted vertex ids at degree 0 (the
-  // HodgeLaplacian U(1) CONNECTION convention, which is the operator this
-  // wrapper reads there -- see below), the ChainComplex column order at
-  // degree >= 1 (the documented laplacian(k) alignment).
+  // Canonical whole-complex cell order: sorted vertex ids at degree 0, the
+  // ChainComplex column order at degree >= 1 (the laplacian(k) alignment).
   std::vector<std::vector<std::uint64_t>> cells;
   if (degree == 0) {
     std::vector<std::uint64_t> ids;
@@ -593,11 +595,11 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
   };
 
   const cobordism::HodgeLaplacian hodge(st, weights);
-  // Degree 0 reads the U(1) CONNECTION Laplacian D - A, not the Hodge L_0
-  // (#805): this wrapper's degree-zero identity is the oriented U(1) link
-  // entry -l^2 e^{i phase}, which is what the Wilson-loop machinery this
-  // transport is compared against carries. L_0 = d_1 W_1^-1 d_1^T has no
-  // separate link phase at all -- its off-diagonal is -1/W_1(e).
+  // Degree 0 reads the U(1) connection Laplacian D - A, not the Hodge L_0:
+  // the degree-zero entry is the oriented U(1) link value -l^2 e^{i phase},
+  // matching the Wilson-loop convention this transport is compared against.
+  // L_0 = d_1 W_1^-1 d_1^T carries no link phase; its off-diagonal is
+  // -1/W_1(e).
   const std::vector<cd> flat =
       degree == 0 ? hodge.connectionLaplacian() : hodge.laplacian(degree);
   if (flat.size() != n * n)
@@ -660,9 +662,9 @@ FiberTransportRead FiberConnection::transport(
 FiberTransportRead FiberConnection::transportReverse(
     const SpectralFiber &to, const SpectralFiber &from,
     const Eigen::MatrixXcd &transfer) const {
-  // W-adjoint reverse block T_BA = W_B^{-1} T_AB^dagger W_A — the exact
-  // reverse chain transfer whenever W L is (anti)symmetric (the
-  // W-self-adjoint regimes; see the header identity).
+  // W-adjoint reverse block T_BA = W_B^{-1} T_AB^dagger W_A: the exact
+  // reverse chain transfer whenever W L is (anti)symmetric, that is, in the
+  // W-self-adjoint regimes.
   const Eigen::VectorXcd wTo = to.weightDiagonal();
   const Eigen::VectorXcd wFrom = from.weightDiagonal();
   if (transfer.rows() != wTo.size() || transfer.cols() != wFrom.size())
@@ -708,8 +710,8 @@ FiberTransportRead FiberConnection::deriveTransport(
   read.fromNegativeSignature = certFrom.negativeSignature;
   read.toProjectorNorm = certTo.projectorNorm;
   read.fromProjectorNorm = certFrom.projectorNorm;
-  // The FRAME condition number is the endpoints' own frame conditioning
-  // (#808) — a different quantity from the projector norms above.
+  // The frame condition number is the endpoints' own frame conditioning, a
+  // different quantity from the projector norms above.
   read.frameConditionNumber =
       std::fmax(certTo.frameConditionNumber, certFrom.frameConditionNumber);
   read.regime = pairedRegime(certTo.certificate.regime(),
@@ -721,7 +723,7 @@ FiberTransportRead FiberConnection::deriveTransport(
                          read.regime == CertificateRegime::ComplexSymmetricPencil;
 
   // Overlap: M = Phi_A^dagger W_A T Phi_B in the self-adjoint regimes,
-  // M = Psi_A^dagger W_A T Phi_B on the biorthogonal path (spec 5.5).
+  // M = Psi_A^dagger W_A T Phi_B on the biorthogonal path.
   const Eigen::MatrixXcd leftFrame =
       nonNormal ? to.leftFrame() : to.rightFrame();
   const Eigen::MatrixXcd m = leftFrame.adjoint() *
@@ -744,10 +746,10 @@ FiberTransportRead FiberConnection::deriveTransport(
   read.overlapConditionNumber =
       sigma.size() == 0 ? 0.0 : (sigmaMin > 0.0 ? sigmaMax / sigmaMin : kInf);
 
-  // Regime-appropriate leakage (spec 5.5).  In the self-adjoint regimes the
-  // Krein form ||M^dagger J_A M - J_B|| is used, with J = I reproducing the
-  // positive ||M^dagger M - I||; on the biorthogonal path the Euclidean
-  // unitarity defect is REPORTED (the GL transport is not gated on it).
+  // Regime-appropriate leakage.  The self-adjoint regimes use the Krein form
+  // ||M^dagger J_A M - J_B||, with J = I reproducing ||M^dagger M - I||; the
+  // biorthogonal path reports the Euclidean unitarity defect without gating
+  // the GL transport on it.
   const int rankTo = static_cast<int>(to.rank());
   const int rankFrom = static_cast<int>(from.rank());
   const bool ranksMatch = rankTo == rankFrom;
@@ -768,7 +770,7 @@ FiberTransportRead FiberConnection::deriveTransport(
         Eigen::MatrixXcd::Identity(m.cols(), m.cols()));
   }
 
-  // ── threshold gates: reject BEFORE any polar/pseudo-unitary reduction ──
+  // Threshold gates: reject before any polar or pseudo-unitary reduction.
   const auto reject = [&](const std::string &reason) {
     read.accepted = false;
     read.rejectionReason = reason;
@@ -821,14 +823,15 @@ FiberTransportRead FiberConnection::deriveTransport(
   const bool positivePair =
       read.regime == CertificateRegime::PositiveSemidefinite;
   if (positivePair) {
-    // Polar factor V = M (M^dagger M)^{-1/2} = U V^dagger from the SVD —
-    // exactly unitary-equivariant under local frame changes.
+    // Polar factor V = M (M^dagger M)^{-1/2} = U V^dagger from the singular
+    // value decomposition (SVD); exactly unitary-equivariant under local
+    // frame changes.
     read.unitaryMap = svd.matrixU() * svd.matrixV().adjoint();
     read.polarResidual = spectralNorm(
         read.unitaryMap.adjoint() * read.unitaryMap -
         Eigen::MatrixXcd::Identity(read.rank, read.rank));
   } else {
-    // Pseudo-unitary reduction on MATCHING signatures:
+    // Pseudo-unitary reduction on matching signatures:
     // V = M K^{-1/2}, K = J_B M^dagger J_A M (J_B-self-adjoint; principal
     // square root well defined for the near-J-isometric maps the leakage
     // gate admits), giving V^dagger J_A V = J_B.
@@ -872,7 +875,7 @@ FiberTransportRead FiberConnection::transportOnSpacetimeCached(
     const SpectralFiber &to, const SpectralFiber &from,
     cobordism::HodgeLaplacian::WeightConvention weights) const {
   const std::vector<std::uint64_t> ids = unionVertexIds({&to, &from});
-  // The BAND fingerprints join the component keys here: every band of one
+  // The band fingerprints join the component keys here: every band of one
   // component restricts to the same cells, so component keys alone collide
   // across a component pair's bands and the cache would serve one band's
   // transport for all of them.
@@ -926,10 +929,10 @@ WilsonHolonomyRead FiberConnection::holonomy(
   CertificateRegime regime = CertificateRegime::PositiveSemidefinite;
   double residual = kNaN;
   double conditioning = kNaN;
-  // The spec forbids polar normalization from concealing a bad fiber
-  // assignment, so the pre-normalization diagnostics of every constituent
-  // link travel with the loop: worst leakage, worst endpoint isolation,
-  // worst frame conditioning, and the singular-value/rank evidence.
+  // Polar normalization must not conceal a bad fiber assignment, so the
+  // pre-normalization diagnostics of every constituent link travel with the
+  // loop: worst leakage, worst endpoint isolation, worst frame conditioning,
+  // and the singular-value and rank evidence.
   double maxLeakage = kNaN;
   double minEndpointGap = kNaN;
   double maxFrameCondition = kNaN;
@@ -970,9 +973,8 @@ WilsonHolonomyRead FiberConnection::holonomy(
   const double traceAbs = std::abs(h.trace());
   read.adjointTrace = cd(traceAbs * traceAbs - 1.0, 0.0);
   // Metric-appropriate isometry defect: ||H^dagger H - I|| in the positive
-  // regime, the base-point J-isometry defect ||H^dagger J H - J|| on a
-  // Krein loop (a pseudo-unitary product is exactly J-unitary, never
-  // silently graded against the Euclidean metric).
+  // regime, the base-point J-isometry defect ||H^dagger J H - J|| on a Krein
+  // loop, where the pseudo-unitary product is exactly J-unitary.
   Eigen::MatrixXcd jBase = Eigen::MatrixXcd::Identity(rank, rank);
   if (regime == CertificateRegime::HermitianIndefinite &&
       links.front().toPositiveSignature + links.front().toNegativeSignature ==
@@ -1016,7 +1018,7 @@ WilsonHolonomyRead FiberConnection::holonomyOnSpacetimeCached(
   orderedKeys.reserve(fibers.size());
   for (const SpectralFiber &fiber : fibers) {
     pointers.push_back(&fiber);
-    // Component key AND band fingerprint, for the same reason
+    // Both the component key and the band fingerprint, for the same reason
     // `transportOnSpacetimeCached` needs both: two loops over the same
     // components through different bands are different loops.
     orderedKeys.push_back(fiberKey(fiber));
@@ -1044,9 +1046,9 @@ WilsonHolonomyRead FiberConnection::holonomyOnSpacetimeCached(
 
 Eigen::MatrixXcd FiberConnection::projectiveRepresentative(
     const Eigen::MatrixXcd &unitary, const AnchorGate &gate) {
-  // The exactness contract gates every colour-specific kernel on the
-  // triangle-anchor certificate: a rank-three band that was never anchored
-  // does not get an exact 3x3 colour determinant taken of it.
+  // Every colour-specific kernel is gated on the triangle-anchor
+  // certificate: a rank-three band that was never anchored gets no 3x3
+  // colour determinant.
   if (!gate.accepted)
     throw std::invalid_argument(
         "FiberConnection::projectiveRepresentative: " + gate.refusalReason);
@@ -1057,8 +1059,8 @@ Eigen::MatrixXcd FiberConnection::projectiveRepresentative(
   if (!(std::abs(det) > 0.0))
     throw std::invalid_argument(
         "FiberConnection::projectiveRepresentative: singular matrix");
-  // Principal cube root of the determinant PHASE (the modulus is left to
-  // the caller's unitarity certificate — a representative, not a cleanup).
+  // Principal cube root of the determinant phase; the modulus is left to
+  // the caller's unitarity certificate.
   const cd root = std::exp(cd(0.0, std::arg(det) / 3.0));
   return unitary / root;
 }
@@ -1068,10 +1070,10 @@ Eigen::MatrixXcd FiberConnection::adjointRepresentation(
   if (unitary.rows() != 3 || unitary.cols() != 3)
     throw std::invalid_argument(
         "FiberConnection::adjointRepresentation: expected a 3x3 matrix");
-  // vec(U M U^dagger) = (conj(U) ⊗ U) vec(M), column-major vec index
-  // i + 3j — the ColorFiber::adjointOctetProjector convention; the #767
-  // projector restricts to the traceless octet (center-blind by
-  // construction: Ad(zU) = Ad(U) for a central phase z).
+  // vec(U M U^dagger) = (conj(U) ⊗ U) vec(M), column-major vec index i + 3j,
+  // the ColorFiber::adjointOctetProjector convention.  That projector
+  // restricts to the traceless octet and is centre-blind by construction:
+  // Ad(zU) = Ad(U) for a central phase z.
   Eigen::MatrixXcd kron(9, 9);
   for (int a = 0; a < 3; ++a)
     for (int c = 0; c < 3; ++c)
@@ -1101,8 +1103,8 @@ FundamentalLiftRead FiberConnection::fundamentalLift(
     return read;
   };
 
-  // The anchor gate is checked FIRST: rank three and an accepted transport
-  // are not, by themselves, a licence to emit SU(3).
+  // The anchor gate is checked first: rank three and an accepted transport
+  // do not by themselves license an SU(3) value.
   if (!gate.accepted)
     return invalid(gate.refusalReason);
   if (read.rank != 3)
@@ -1137,8 +1139,8 @@ FundamentalLiftRead FiberConnection::fundamentalLift(
     regime = pairedRegime(regime, link.regime);
   }
 
-  // Continued branch: lift = H e^{-i Theta / 3} omega^{-s0} with omega the
-  // ALGEBRAIC #767 cube root (so the SU(3) determinant cancels exactly).
+  // Continued branch: lift = H e^{-i Theta / 3} omega^{-s0}, with omega the
+  // algebraic cube root of unity so the determinant cancels exactly.
   const cd omega = ColorFiber::omega();
   const std::array<cd, 3> centerPower{cd(1.0, 0.0), omega, omega * omega};
   const cd omegaInverseS0 = centerPower[static_cast<std::size_t>(
@@ -1202,7 +1204,7 @@ DeterminantWindingRead FiberConnection::windingRead(
   };
 
   // Family gates: an integer winding exists only for a continuous,
-  // full-rank, gapped family of ACCEPTED transports of one rank.
+  // full-rank, gapped family of accepted transports of one rank.
   const int rank = family.front().rank;
   std::vector<cd> units;
   units.reserve(family.size());
@@ -1241,8 +1243,8 @@ DeterminantWindingRead FiberConnection::windingRead(
           theta += leg;
           maxStep = std::max(maxStep, std::abs(leg));
         }
-        read.accumulatedPhase = theta;  // the raw open-path phase —
-        read.maxPhaseStep = maxStep;    // deliberately NOT an integer claim
+        read.accumulatedPhase = theta;  // raw open-path phase, not an
+        read.maxPhaseStep = maxStep;    // integer winding claim
         read.phaseStepMargin = maxStep / kPi;
         return invalidate(
             "no closure declared (a raw endpoint phase difference is not a "

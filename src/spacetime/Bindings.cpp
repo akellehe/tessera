@@ -67,9 +67,9 @@ void register_spacetime(py::module_ m) {
 are d-simplices on d+1 vertices). Use it to pick the matching
 Signature(d, ...) when building a fixture so its top cells register as
 top-dimensional. The fixed-triangulation fixtures report their dimension;
-the dimension-parametric CDT topologies (Toroid, Sphere, Cylinder) raise
-RuntimeError — their dimension comes from the signature, not the
-topology.)doc");
+the dimension-parametric causal dynamical triangulation (CDT) topologies
+(Toroid, Sphere, Cylinder) raise RuntimeError — their dimension comes from
+the signature, not the topology.)doc");
 
   py::class_<Sphere, Topology, std::shared_ptr<Sphere> >(m, "Sphere",
       "Spherical spatial topology S^{d-1}.")
@@ -302,8 +302,8 @@ Two top simplices are adjacent when they share a (d-1)-face.  Returns
 (rows, cols, N) where rows[k] and cols[k] are 0-based indices into the
 internal top-simplex array and N is the number of top simplices.
 
-This is much faster than iterating over simplices/facets/cofaces from
-Python because it makes a single C++ call instead of O(N) round trips.)doc")
+One C++ call instead of O(N) Python round trips over
+simplices/facets/cofaces.)doc")
       .def("getDualGraph", &Spacetime::getDualGraph,
            R"doc(Return the dual graph as a SparseGraph.
 
@@ -330,8 +330,7 @@ unnormalised weighted Laplacian ``L = D - W``, and returns
 ``SpectralGraph.spectralDimension`` of the heat-kernel return
 probability. Sits next to ``modularityOnSkeleton``.
 
-``skeletonDim`` reserves API space for higher-k skeletons; only
-``skeletonDim == 1`` is currently supported.)doc")
+Only ``skeletonDim == 1`` is supported.)doc")
       .def("getTimeSlices", &Spacetime::getTimeSlices,
            "Return sorted list of integer time values in the triangulation.")
       .def("getVerticesAtTime", &Spacetime::getVerticesAtTime,
@@ -354,7 +353,7 @@ may differ slightly due to slab quantization.)doc")
            "length and phase revision counters. Strictly increases under any "
            "mutation (creation, setLength, setPhase, simplex register/"
            "unregister, edge removal), so it can key caches and assert "
-           "invariants (#692).")
+           "invariants.")
       .def_static("fromCells", &Spacetime::fromCells,
            py::arg("dimensions"), py::arg("cells"),
            py::arg("weight") = 1.0,
@@ -362,10 +361,9 @@ may differ slightly due to slab quantization.)doc")
            py::arg("vertexTimes") = std::optional<std::vector<double>>{},
            R"doc(Build a pre-geometric complex from an explicit list of top cells.
 
-The cells-to-Spacetime factory the register/fill builders share. Creates a
-coordinate-free Lorentzian ``dimensions``-D CDT spacetime, one vertex per
-distinct id, one top simplex per cell (edges auto-wired), and sets the edge
-geometry by one of two explicit rules:
+Creates a coordinate-free Lorentzian ``dimensions``-D CDT spacetime, one vertex
+per distinct id, one top simplex per cell (edges auto-wired), and sets the edge
+geometry by one of two rules:
 
   - Uniform Hermitian pin (vertexTimes=None): every edge is pinned to squared
     length ``weight`` and phase ``phase``.
@@ -397,8 +395,7 @@ For each base cell (v_0 < ... < v_{m-1}) and each layer, emits the m cells
 S_j = {lo[v_0..v_j]} u {hi[v_j..v_{m-1}]}, with lo[x] = phi^l(x) + s*l and
 hi[x] = phi^{l+1}(x) + s*(l+1), where s is the per-layer vertex stride (one
 past the largest base id). The same rule in every dimension: m=3 gives
-tetrahedra over triangles, m=4 gives 4-simplices over tetrahedra, and so on —
-the single source replacing the separate 3d and 4d copies.
+tetrahedra over triangles, m=4 gives 4-simplices over tetrahedra, and so on.
 
 Args:
     cells: Base top cells as vertex-id tuples.
@@ -412,22 +409,22 @@ Returns:
     The prism's top cells as sorted vertex-id tuples, uniqued and sorted.)doc")
       .def_static("symmetricStackCells", &Spacetime::symmetricStackCells,
            py::arg("baseCells"), py::arg("nApexSlices") = 1,
-           R"doc(The symmetric apex stacking of a triangulated d-manifold (#413, #429).
+           R"doc(The symmetric apex stacking of a triangulated d-manifold.
 
 A label-independent alternative to prismCells via coface mirroring (no
 vertex-sort diagonal in d=2). Each top d-simplex t cones up to a cell-apex f_t
 (up-cone t u {f_t}) and down to the top copy (down-cone = the point reflection
 of the up-cone through f_t); the gap over a (d-1)-facet g shared by two cofaces
 (apexes f1, f2) is [f1,f2] * boundary(g x I) -- the join of the canonical dual
-edge with the worldprism boundary. In d=2 this is exactly the #413 octahedron
-split on the dual edge; in d>=3 the side worldsheets take a globally consistent
+edge with the worldprism boundary. In d=2 this is exactly the octahedron split
+on the dual edge; in d>=3 the side worldsheets take a globally consistent
 staircase diagonal, giving a valid manifold on a tetrahedral S^3 base.
 
 The apex is a point reflection (a parity+time inversion), so stacking
 nApexSlices reflect-and-cap layers gives an alternating (-1)^j per-slice
-chirality (bidirectional / Dirac, not a single chiral screw). IDs: primal layer
-ell holds v + ell*stride; apexes start at (nApexSlices+1)*stride. nApexSlices=1
-reproduces the single #413 reflection bit-for-bit.
+chirality (bidirectional, not a single chiral screw). IDs: primal layer ell
+holds v + ell*stride; apexes start at (nApexSlices+1)*stride. nApexSlices=1 is
+a single reflection.
 
 Args:
     baseCells: Base top d-simplices as vertex-id tuples (uniform (d+1)-vertex
@@ -569,7 +566,8 @@ minimal test lattices, e.g. createSimplex((1, 4)) for a (1,4) simplex.)doc")
       .def("getN41", &Spacetime::getN41,
            R"doc(Return N41: the count of (d,1) + (1,d) type simplices.
 
-This is the volume-fixing target per [RU] eq. 6.)doc")
+This is the volume the CDT path integral is fixed at. Reference:
+Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0505154.)doc")
       .def("getN32", &Spacetime::getN32,
            "Return N32: the count of (d-1,2) + (2,d-1) type simplices.")
       .def("getRandomSimplex",
@@ -620,7 +618,7 @@ its top cells match.)doc")
            "the number of simplices the spacetime has ever created; with it, it "
            "settles at the live count plus one sweep of churn.")
       .def("swapVertexLabels", &Spacetime::swapVertexLabels, py::arg("v1"), py::arg("v2"),
-           R"doc(Swap the integer IDs of two vertices ([BGL] Sec. 2.2.1).
+           R"doc(Swap the integer IDs of two vertices.
 
 Atomically re-keys all dependent data structures: VertexList,
 Edge fingerprints, Simplex vertex-ID maps, and all hash tables.
@@ -684,11 +682,10 @@ Args:
   py::enum_<PachnerMode>(m, "PachnerMode",
       R"doc(Validity regime a Pachner move runs under.
 
-  - CDT:          the causal-dynamical-triangulations path. Every
+  - CDT:          the causal dynamical triangulation path. Every
                   proposed cell must satisfy the time-sliced CDT
                   orientation constraint and the move dimension comes
-                  from the metric signature. This path is byte-identical
-                  to the pre-generalization behaviour.
+                  from the metric signature.
   - PreGeometric: the CDT orientation/time-slice guards are dropped so
                   the bistellar moves run on a coordinate-free
                   (non-time-sliced) simplicial complex. The move
@@ -697,9 +694,9 @@ Args:
                   orientation guard.)doc")
       .value("CDT", PachnerMode::CDT)
       .value("PreGeometric", PachnerMode::PreGeometric);
-      // NB: no export_values() — that would inject a module-level ``CDT``
-      // that shadows ``SpacetimeType.CDT`` (``tessera.CDT``).  Access the
-      // members as ``tessera.PachnerMode.CDT`` / ``.PreGeometric``.
+      // No export_values(): it would inject a module-level ``CDT`` that
+      // shadows ``SpacetimeType.CDT`` (``tessera.CDT``). Access the members
+      // as ``tessera.PachnerMode.CDT`` / ``.PreGeometric``.
 
   py::class_<PachnerMove>(m, "PachnerMove",
       R"doc(Abstract base class for transactional Pachner moves.
@@ -717,7 +714,9 @@ After a successful propose(), the move publishes its combinatorial
 deltas (dN0, dN41, dN32) and Metropolis log prefactor so callers can
 plug them into action-based acceptance criteria.
 
-See ``docs/source/modularity-plan.md`` for the design rationale.)doc")
+Reference: Pachner, "P.L. homeomorphic manifolds are equivalent by
+elementary shellings", 1991; Ambjorn, Jurkiewicz & Loll,
+arXiv:hep-th/0105267.)doc")
       .def("propose", &PachnerMove::propose,
            "Pick a target and validate.  No state change.  Returns "
            "True on success.")
@@ -755,9 +754,9 @@ simplex of opposite orientation, and inserts a new vertex at the
 spatial time slice.  ``dN0 = +1``; ``dN41 = +(2d-2) = +6`` in 4D;
 ``dN32 = 0``.
 
-Vertex relabeling (per [BGL] Sec. 2.2.1) is enabled by default.
-Pass ``relabel=False`` to disable for tests that need stable
-fingerprints across moves.)doc")
+Vertex relabeling is enabled by default; pass ``relabel=False``
+for tests that need stable fingerprints across moves. Reference:
+Brunekreef, Gorlich & Loll, "Simulating CDT quantum gravity" (2023).)doc")
       .def(py::init<Spacetime *, std::uint64_t, bool, PachnerMode, bool>(),
            py::arg("spacetime"), py::arg("seed"),
            py::arg("relabel") = true,
@@ -777,7 +776,7 @@ fingerprints across moves.)doc")
 
 Removes 2 d-simplices sharing a (d-1)-face and creates d new
 d-simplices sharing an edge.  ``dN0 = 0``; ``ΔN4 = d - 2 = +2`` in 4D.
-Inverse: :class:`IFlipMove`.)doc")
+Inverse: IFlipMove.)doc")
       .def(py::init<Spacetime *, std::uint64_t, PachnerMode, bool>(),
            py::arg("spacetime"), py::arg("seed"),
            py::arg("mode") = PachnerMode::CDT,
@@ -796,7 +795,7 @@ Inverse: :class:`IFlipMove`.)doc")
 Picks a random vertex with order 2d, removes the 2d incident
 N41-type simplices and the vertex, and creates 2 replacement
 simplices.  ``dN0 = -1``; ``dN41 = -(2d-2) = -6`` in 4D;
-``dN32 = 0``.  Inverse: :class:`AddMove`.
+``dN32 = 0``.  Inverse: AddMove.
 
 Rollback recreates the deleted vertex (with original ID and
 coordinates), reinserts its incident edges (with original squared
@@ -817,7 +816,7 @@ lengths), and recreates the 2d removed simplices.)doc")
 
 Removes d d-simplices sharing an edge and creates 2 new d-simplices
 sharing a (d-1)-face.  ``dN0 = 0``; ``ΔN4 = -(d - 2) = -2`` in 4D.
-Inverse: :class:`FlipMove`.
+Inverse: FlipMove.
 
 Includes a manifold-preservation check in propose() — rejects if
 either new simplex would already exist in the lattice.)doc")
@@ -853,11 +852,10 @@ fresh ``std::mt19937`` seeded with ``seed`` for the proposal.
 For sweeps that share a single Markov chain across many moves, drive
 moves via ``CDT.proposeShift()`` instead.)doc");
 
-  // #613: each Pachner move's canonical type name, exposed so Python callers that
-  // DISPATCH on it reference the same definition C++ does rather than re-spelling
-  // the literal. Tests that ASSERT the name deliberately keep their literals --
-  // comparing moveType() against this constant could never fail, so it would
-  // weaken the characterization rather than strengthen it.
+  // Each Pachner move's canonical type name, exposed so Python callers that
+  // dispatch on it reference the same definition C++ does rather than re-spelling
+  // the literal. Tests that assert the name keep their literals: comparing
+  // moveType() against this constant could never fail.
   m.attr("AddMove").attr("MOVE_TYPE") = AddMove::kMoveType;
   m.attr("RemoveMove").attr("MOVE_TYPE") = RemoveMove::kMoveType;
   m.attr("FlipMove").attr("MOVE_TYPE") = FlipMove::kMoveType;

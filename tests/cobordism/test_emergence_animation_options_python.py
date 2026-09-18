@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import emergence as ea
+from tessera.drivers import qubit as qa
 
 
 def test_combinatorial_names_are_canonical_with_legacy_replay_aliases():
@@ -179,24 +179,19 @@ def test_qubit_implementation_is_owned_only_by_the_qubit_module():
         "_panel_bloch", "_panel_moduli", "_panel_residuals",
         "_panel_topology", "_panel_transfer",
     }
-    assert qa.build_qubit_node.__module__ == "qubit_animation"
+    assert qa.build_qubit_node.__module__ == "tessera.drivers.qubit"
     assert qubit_constants and qubit_names <= vars(qa).keys()
     assert (qubit_constants | qubit_names).isdisjoint(vars(ea))
 
 
 def test_qubit_module_can_be_imported_first_in_a_fresh_process(tmp_path):
-    environment = os.environ.copy()
-    example_path = os.path.dirname(qa.__file__)
-    existing = environment.get("PYTHONPATH")
-    environment["PYTHONPATH"] = (
-        example_path if not existing else example_path + os.pathsep + existing)
     subprocess.run(
         [sys.executable, "-c",
-         "import qubit_animation as qa; import emergence_animation as ea; "
+         "from tessera.drivers import qubit as qa; "
+         "from tessera.drivers import emergence as ea; "
          "assert qa.ea is ea; "
          "assert qa.QubitFrame.__mro__[1] is ea.AnimationFrame"],
-        cwd=tmp_path, env=environment, check=True, capture_output=True,
-        text=True)
+        cwd=tmp_path, check=True, capture_output=True, text=True)
 
 
 def test_legacy_direct_script_path_loads_the_qubit_cli(tmp_path):

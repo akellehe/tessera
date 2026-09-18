@@ -12,16 +12,17 @@ namespace tessera::observables {
 
 /// # SingletResidual
 ///
-/// The #574 whole-complex singlet diagnostic (migrated as a C++ Observable): the
-/// relabeling-invariant singlet `r_state` of `Proton::singlet()` against the
-/// whole complex's `L_k` harmonic (`≈ 0` ⇒ carried), plus the hole/Betti census
-/// with the `holes_vs_b3_divergent` flag. DIAGNOSTIC only — it never steers
-/// anything.
+/// Whole-complex singlet diagnostic: the relabeling-invariant singlet residual
+/// `r_state` of `Proton::singlet()` against the whole complex's \f$ L_k \f$
+/// harmonic form (`≈ 0` means the singlet is carried), plus the hole/Betti
+/// census with the `holes_vs_b3_divergent` flag. Diagnostic only; it never
+/// steers the simulation.
 ///
-/// The headline (`compute`) is the singlet residual; `conjugateResidual` is the
+/// The headline (`compute`) is the singlet residual. `conjugateResidual` is the
 /// companion read against the conjugate singlet `[1, ω̄, ω̄²]` (the antibaryon
-/// channel). The record scores the TRUE singlet regardless of the register
-/// target, so the GAUGE gate (which rotates the target) is trivially satisfied.
+/// channel). The record scores the true singlet regardless of the register
+/// target, so the GAUGE gate (which rotates the target) is trivially
+/// satisfied.
 class SingletResidual : public RegisterObservable {
   public:
     [[nodiscard]] std::string recordKey() const override {

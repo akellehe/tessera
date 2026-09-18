@@ -1,11 +1,12 @@
 // InteractionSimulation — implementation.
 //
-// See docs/source/interaction-history-monte-carlo.md for the charter.
-// The construction is purely local: each interaction works on the
-// participating systems' one-qubit density matrices, the joint state
-// ρ_AB = U(ρ_X⊗ρ_Y)U†, and conservation-law bookkeeping. No MPS, no
-// Choi state, no global wavefunction — the global correlation structure
-// lives in the geometry (the accumulated edge lengths / Regge action).
+// See docs/source/interaction-history-monte-carlo.md.
+// The construction is local: each interaction works on the participating
+// systems' one-qubit density matrices, the joint state
+// ρ_AB = U(ρ_X⊗ρ_Y)U†, and conservation-law bookkeeping. There is no
+// matrix product state and no global wavefunction — the global correlation
+// structure lives in the geometry (the accumulated edge lengths / Regge
+// action).
 
 #include "simulations/InteractionSimulation.h"
 
@@ -45,9 +46,7 @@ using cd = std::complex<double>;
 constexpr cd I_UNIT{0.0, 1.0};
 
 // Algebraic maximum mutual information between two single qubits.
-// Shared with the holography path via observables/MIUnits.hpp; the
-// alias keeps existing call-site spellings untouched (#39 will promote
-// this to a config parameter to support qudit-basis runs).
+// Shared with the holography path via observables/MIUnits.hpp.
 using ::tessera::observables::kIMax;
 
 // Von Neumann entropy S(ρ) = -Tr ρ log ρ, in nats.
@@ -148,9 +147,11 @@ SystemState traceOutFirst(Eigen::Matrix4cd const& rho) {  // -> Y marginal
 
 // The Schwinger two-site interaction unitary U = exp(-i H_XY dt).
 // H_XY is the local two-site Hamiltonian — hopping plus the staggered
-// mass term — built as a 4×4 dense matrix and exponentiated through a
-// Hermitian eigendecomposition. (The electric term L_n² is non-local in
-// the staggered formulation and is not part of a two-site fragment.)
+// (Kogut-Susskind) mass term — built as a 4×4 dense matrix and
+// exponentiated through a Hermitian eigendecomposition. The electric term
+// L_n² is non-local in the staggered formulation and is not part of a
+// two-site fragment. Reference: Kogut & Susskind, "Hamiltonian formulation
+// of Wilson's lattice gauge theories", Phys. Rev. D 11, 395 (1975).
 Eigen::Matrix4cd schwingerTwoSiteU(double a, double m, double dt) {
     // Pauli matrices.
     Eigen::Matrix2cd X, Y, Z, Id;
@@ -187,7 +188,7 @@ double jointMutualInformation(Eigen::Matrix4cd const& rho) {
     return std::max(sX + sY - sXY, 0.0);
 }
 
-// ─── v0.2: 4-dim qudit-basis helpers ────────────────────────────────────
+// ─── 4-dim qudit-basis helpers ──────────────────────────────────────────
 //
 // Vertex Hilbert space: basis {|+0⟩, |+1⟩, |−0⟩, |−1⟩}, indexed 0..3.
 // The first label is the charge sector, the second the spin / internal.
@@ -235,7 +236,6 @@ Eigen::Matrix4cd quditSpinSy() {
 }
 
 // Build the 16×16 pair Hamiltonian H_pair and exponentiate to U.
-// See docs/source/quantum-experiments/charged_cartan_monte_carlo_v0.2.md.
 Eigen::MatrixXcd quditPairU(double jCharge, double jSpin,
                             double massShift, double gammaCp,
                             double dt) {
@@ -432,17 +432,16 @@ InteractionSimulation::InteractionSimulation(InteractionConfig config)
 
     interactionU_ = schwingerTwoSiteU(config_.a, config_.m, config_.dt);
 
-    // v0.2: build the 16×16 qudit-pair unitary if requested.
+    // Build the 16×16 qudit-pair unitary if requested.
     if (config_.featureQuditBasis) {
         quditInteractionU_ = quditPairU(
             config_.j_chargeCharge, config_.j_spinSpin,
             config_.massShift, config_.gammaCpViolation,
             config_.dtPair);
     }
-    // v0.2 + #16: build the 256-dim Choi state of U once. Requires
-    // featureQuditBasis (Choi has no meaning without the U it
-    // encodes); auto-clear when the qudit basis is off so v0/v0.1
-    // configurations don't blow up on the default-on Choi flag.
+    // Build the 256-dim Choi state of U once. It requires
+    // featureQuditBasis (a Choi state has no meaning without the U it
+    // encodes), so clear the flag when the qudit basis is off.
     if (!config_.featureQuditBasis) {
         config_.featureChoiSigmaAB = false;
     }
@@ -450,8 +449,8 @@ InteractionSimulation::InteractionSimulation(InteractionConfig config)
         // J(U) = (U ⊗ I_16) |Φ⁺⟩⟨Φ⁺| (U ⊗ I_16)^H, the Choi matrix of the
         // qudit-pair unitary on the doubled ququart space (|Φ⁺⟩ = (1/4) Σ_k
         // |k,k⟩). Delegated to quantum::ChoiJamiolkowski::choiMatrix so the
-        // vec(U) convention (standard, row-major) is canonical across the
-        // codebase and shared with the Stage-1 bending oracle.
+        // vec(U) convention (standard, row-major) stays canonical across the
+        // codebase.
         std::vector<cd> uFlat(256);
         for (int i = 0; i < 16; ++i)
             for (int j = 0; j < 16; ++j)
@@ -475,8 +474,8 @@ void InteractionSimulation::buildInitialLayer() {
     // mutual information between any pair of initial systems. All MI in
     // the complex is generated by interactions.
     std::vector<SystemState> initialStates(static_cast<std::size_t>(n));
-    // v0.2 parallel buffer: 4-dim random mixed states confined to a
-    // chosen charge sector. Built only when featureQuditBasis is on.
+    // Parallel buffer of 4-dim random mixed states confined to a chosen
+    // charge sector. Built only when featureQuditBasis is on.
     std::vector<Eigen::Matrix4cd> initialQuditStates(
         static_cast<std::size_t>(n));
     {
@@ -628,7 +627,7 @@ InteractionSimulation::computeInteraction(VertexPtr x, VertexPtr y) const {
     return res;
 }
 
-// ─── v0.2: qudit-basis interaction machinery ────────────────────────────
+// ─── Qudit-basis interaction machinery ──────────────────────────────────
 
 namespace {
 
@@ -790,9 +789,10 @@ InteractionSimulation::computeInteractionQudit(VertexPtr x,
     res.statePrimeY = primeY;
     // Σ_AB is the entangling-core analog of a neutral photon: use the
     // maximally-mixed 4-dim state, which has ⟨Q̂⟩ = 0 by construction
-    // (Tr[I/4 · diag(+1,+1,-1,-1)] = 0). The full Choi state of U is a
-    // deferred upgrade. The genuine joint correlations between AB and
-    // its bowtie neighbours live in jointAB, not in this proxy.
+    // (Tr[I/4 · diag(+1,+1,-1,-1)] = 0). The genuine joint correlations
+    // between AB and its bowtie neighbours live in jointAB, not in this
+    // proxy. With featureChoiSigmaAB the caller replaces the proxy with
+    // the full Choi state of U.
     res.stateAB = 0.25 * Eigen::Matrix4cd::Identity();
     res.jointAB = rhoAB;
 
@@ -917,11 +917,11 @@ bool InteractionSimulation::interact() {
     const std::size_t nFrontier   = frontier_.size();
     const std::size_t nPlusBefore = nFrontier * (nFrontier - 1) / 2;
 
-    // v0.1 vs v0.2: compute the interaction result on the right Hilbert
-    // space. We always populate the v0.1 result (used to length the
-    // edges and dispatch in the existing accept logic); when v0.2 is
-    // on we additionally compute the qudit result and use its edge MIs
-    // for the action and its 4-dim states for the product seeding.
+    // Compute the interaction result on the right Hilbert space. The
+    // one-qubit result is always populated (it lengths the edges and
+    // drives the accept logic); with the qudit basis on, the qudit
+    // result supplies the edge MIs for the action and the 4-dim states
+    // for the product seeding.
     const InteractionResult       res       = computeInteraction(x, y);
     InteractionResultQudit        resQudit;
     if (config_.featureQuditBasis)
@@ -1010,7 +1010,7 @@ bool InteractionSimulation::interact() {
     putJoint(xp, ab, res.jointAB);  // A'–AB joint (= ρ_AB, A' on A-side)
     putJoint(ab, yp, res.jointAB);  // AB–B' joint (= ρ_AB, B' on B-side)
 
-    // v0.2 parallel seeding: 4-dim qudit states + 16×16 joints.
+    // Qudit seeding: 4-dim qudit states + 16×16 joints.
     if (config_.featureQuditBasis) {
         quditStateOf_[xp] = resQudit.statePrimeX;
         quditStateOf_[yp] = resQudit.statePrimeY;
@@ -1020,24 +1020,19 @@ bool InteractionSimulation::interact() {
             quditJointOf_[k] = (k.first == u) ? rho : quditSwap(rho);
         };
         if (config_.featureChoiSigmaAB) {
-            // #16: Σ_AB carries the full Choi state of U (marker only;
-            // the shared 256-dim state is in quditChoiU_). The genuine
-            // products correlation rhoAB is stored as a joint
-            // *between the two worldline continuations* (xp ↔ yp),
-            // *not* duplicated as (xp, ab) and (ab, yp). This avoids
-            // the double-counting that made the v0.2 proxy
-            // inconsistent and let Q drift under un-symmetric joint
-            // accounting. The Σ_AB vertex is a properly neutral
-            // entangling core: q_ab = 0, and any interaction
-            // involving it goes through tensor(I/4, partner) as a
-            // separable input — which is exactly Q-conservation
-            // friendly because tensor(I/4, partner) has Q = q_partner.
+            // Σ_AB carries the full Choi state of U (marker only; the
+            // shared 256-dim state is in quditChoiU_). The products'
+            // correlation rhoAB is stored as a joint *between the two
+            // worldline continuations* (xp ↔ yp), not duplicated as
+            // (xp, ab) and (ab, yp); duplicating it double-counts and
+            // lets Q drift. The Σ_AB vertex is then a neutral
+            // entangling core: q_ab = 0, and any interaction involving
+            // it goes through tensor(I/4, partner) as a separable
+            // input, which has Q = q_partner and so conserves charge.
             choiSigmaAbSet_.insert(ab);
             putQuditJoint(xp, yp, resQudit.jointAB);
         } else {
-            // v0.2 default: I/4 proxy + duplicated joints (the
-            // configuration that surfaced the Q-drift bug; pinned by
-            // the test_sigma_ab_choi_state baseline tests).
+            // I/4 proxy with the joint duplicated onto both hub spokes.
             quditStateOf_[ab] = resQudit.stateAB;
             putQuditJoint(xp, ab, resQudit.jointAB);
             putQuditJoint(ab, yp, resQudit.jointAB);
@@ -1242,7 +1237,7 @@ bool InteractionSimulation::unInteract() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Charge moves (v0.1) — annihilate / pairCreate
+// Charge moves — annihilate / pairCreate
 // ─────────────────────────────────────────────────────────────────────────
 
 bool InteractionSimulation::annihilate() {
@@ -1534,7 +1529,7 @@ double InteractionSimulation::getGlobalCharge() const {
     // charge is now carried by their descendants.
     double q = 0.0;
     if (config_.featureQuditBasis) {
-        // v0.2: read charge from Tr[ρ · Q̂] per vertex.
+        // Qudit basis: read charge from Tr[ρ · Q̂] per vertex.
         for (VertexPtr v : frontier_)
             q += quditChargeOf(v);
     } else {
@@ -1627,9 +1622,8 @@ bool InteractionSimulation::accept(double deltaS, double logPrefactor) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Transactional proposers — the InteractionMove class is fleshed out
-// alongside the incremental-action work; defined here (not just
-// forward-declared) so unique_ptr can instantiate its deleter.
+// Transactional proposers — the InteractionMove class is defined here (not
+// just forward-declared) so unique_ptr can instantiate its deleter.
 // ─────────────────────────────────────────────────────────────────────────
 
 class InteractionMove {
@@ -1638,11 +1632,11 @@ class InteractionMove {
 };
 
 std::unique_ptr<InteractionMove> InteractionSimulation::proposeInteract() {
-    return nullptr;  // TODO: transactional move object
+    return nullptr;  // no transactional move object
 }
 
 std::unique_ptr<InteractionMove> InteractionSimulation::proposeUnInteract() {
-    return nullptr;  // TODO: transactional move object
+    return nullptr;  // no transactional move object
 }
 
 std::vector<double> InteractionSimulation::getSpectralDimension(
@@ -1653,11 +1647,9 @@ std::vector<double> InteractionSimulation::getSpectralDimension(
     // that never joined a cell are part of the primal interaction
     // lattice and are excluded by the topK == 4 size filter.
     //
-    // Delegates to the shared Spacetime → SpectralGraph path (issue #31)
-    // so the holography and interaction-history pipelines share one
-    // measurement code path. AllSimplexFilter matches the pre-#31
-    // behavior (every 4-simplex passes); use of a stricter filter is
-    // tracked in #38.
+    // Delegates to the shared Spacetime → SpectralGraph path so the
+    // holography and interaction-history pipelines share one measurement
+    // code path. AllSimplexFilter lets every 4-simplex pass.
     return spacetime_->getSpectralDimensionOnSkeleton(
         sigmas, krylovDim, ::tessera::AllSimplexFilter{},
         /*topK=*/4, /*skeletonDim=*/1);

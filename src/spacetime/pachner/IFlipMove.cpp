@@ -63,8 +63,8 @@ bool IFlipMove::proposeAt(const std::vector<std::uint64_t> &site) {
     if (!edge || !edge->getSource() || !edge->getTarget()) continue;
     const std::uint64_t source = edge->getSource()->getId();
     const std::uint64_t target = edge->getTarget()->getId();
-    // Matched as an unordered PAIR: an edge is named by its endpoints, never
-    // by which of them the mesh happens to store first.
+    // Matched as an unordered pair: an edge is named by its endpoints, not by
+    // which of them the mesh happens to store first.
     if ((source == a && target == b) || (source == b && target == a))
       return proposeOn(sigma, edge);
   }
@@ -73,8 +73,8 @@ bool IFlipMove::proposeAt(const std::vector<std::uint64_t> &site) {
 
 bool IFlipMove::propose() {
   if (proposed_) return false;
-  // The generator this move was HANDED, not the complex's own (#1013): the
-  // no-argument overload reads `Spacetime::rng`, initialized from
+  // Draw through the generator this move was handed, not the complex's own:
+  // the no-argument overload reads `Spacetime::rng`, initialized from
   // `std::random_device`, so a target drawn through it comes from entropy.
   SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
@@ -102,12 +102,11 @@ bool IFlipMove::proposeOn(SimplexPtr sigma, EdgePtr edge) {
   VertexPtr v1 = edge->getSource();
   VertexPtr v2 = edge->getTarget();
 
-  // Find all top simplices containing both endpoints. The edge already indexes
-  // the simplices registered on it (Spacetime::registerSimplex mirrors every
-  // simplex into each of its edges), and that index is what bounds the work:
-  // a vertex's incidence list grows with the four-volume -- measured, mean 80
-  // simplices per vertex at N4 = 24k and 148 at N4 = 50k -- while an edge's
-  // does not (#970).
+  // Top simplices containing both endpoints, taken from the edge's own
+  // simplex index (Spacetime::registerSimplex mirrors every simplex into each
+  // of its edges). That index is what bounds the work: a vertex's incidence
+  // list grows with the four-volume (measured: mean 80 simplices per vertex
+  // at N4 = 24k, 148 at N4 = 50k) while an edge's does not.
   std::vector<SimplexPtr> sharing;
   for (const auto &s : edge->simplices()) {
     if (static_cast<int>(s->size()) == dPlus1) sharing.push_back(s);
@@ -133,19 +132,18 @@ bool IFlipMove::proposeOn(SimplexPtr sigma, EdgePtr edge) {
   if (boundaryFixed_ &&
       !pachner_detail::isInteriorEdge(v1, v2, dPlus1)) return false;
 
-  // Pre-geometric manifold check: the welded (d-1)-facet is the simplex
-  // on the link (unique) vertices.  If any current top cell already
-  // contains all of them that facet is already present, so the weld
-  // would over-share it (>2 cofaces) and tear the pseudomanifold.  This
-  // subsumes the CDT "new cells already exist" check below (a pre-
-  // existing cell on those verts would be counted here).
+  // Pre-geometric manifold check: the welded (d-1)-facet is the simplex on
+  // the link (unique) vertices.  If a current top cell already contains all
+  // of them the facet is already present, so the weld would over-share it
+  // (>2 cofaces) and tear the pseudomanifold.  This subsumes the CDT
+  // "new cells already exist" check below.
   if (mode_ == PachnerMode::PreGeometric &&
       pachner_detail::topCofaceCount(unique, dPlus1) != 0) return false;
 
-  // Manifold check: would either proposed new simplex already exist?
-  // We look for a top simplex incident to unique[0] that contains all
-  // unique vertices plus one shared vertex but is NOT one of the d
-  // we're about to remove.  Matches CDT::iflip's check exactly.
+  // Manifold check: would either proposed new simplex already exist?  Look
+  // for a top simplex incident to unique[0] that contains all unique vertices
+  // plus one shared vertex and is not one of the d about to be removed.
+  // Matches CDT::iflip's check.
   for (int i = 0; i < 2; ++i) {
     for (const auto &s : unique[0]->getSimplices()) {
       if (static_cast<int>(s->size()) != dPlus1) continue;

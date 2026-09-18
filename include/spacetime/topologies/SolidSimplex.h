@@ -10,10 +10,11 @@
 namespace tessera::spacetime {
 class Spacetime;
 
-/// # Solid simplex \f$ \Delta^n \f$ (closed n-ball)
+/// # Solid simplex (closed n-ball)
 ///
-/// A single top n-simplex on \f$ n+1 \f$ vertices with all its faces — a
-/// triangulated closed n-ball whose boundary is \f$ S^{n-1} = \partial\Delta^n \f$.
+/// The solid simplex \f$ \Delta^n \f$: a single top n-simplex on
+/// \f$ n+1 \f$ vertices with all its faces — a triangulated closed n-ball
+/// whose boundary is \f$ S^{n-1} = \partial\Delta^n \f$.
 /// f-vector \f$ \binom{n+1}{k+1} \f$ for \f$ k = 0..n \f$; \f$ \chi = 1 \f$
 /// (contractible). \f$ \Delta^4 \f$ is the smallest cobordism filling
 /// \f$ S^3 \to \emptyset \f$.

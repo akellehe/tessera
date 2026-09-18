@@ -1,8 +1,8 @@
-# Getting Started
+# Getting started
 
 ## Installation
 
-You need Python 3.9+, a C++20 compiler (GCC 10+, Clang 10+, or MSVC 2019+), and CMake 3.18+.
+Requires Python 3.9+, a C++20 compiler (GCC 10+, Clang 10+, or MSVC 2019+), and CMake 3.18+.
 
 ```bash
 pip install -e ".[dev]"
@@ -16,9 +16,10 @@ python -c "import tessera; print('tessera OK')"
 
 CUDA GPU acceleration is auto-detected. To force CPU-only: `TESSERA_CUDA=0 pip install -e .`
 
-## Quick start: build a universe
+## Quick start
 
-Build a 4D Lorentzian spacetime, thermalize it with CDT Monte Carlo, and export a rotating GIF:
+Build a 4D Lorentzian spacetime, thermalize it with causal dynamical
+triangulations (CDT) Monte Carlo, and export a rotating GIF:
 
 ```python
 import tessera
@@ -49,7 +50,8 @@ st.save("spacetime.gif", tilt=25, spin=1, precession=1)
 
 ![Rotating CDT spacetime](assets/cdt/spacetime.gif)
 
-The blue edges are spacelike (within a time slice) and the red edges are timelike (connecting adjacent slices). The vertical axis is time.
+Blue edges are spacelike (within a time slice); red edges are timelike
+(connecting adjacent slices). The vertical axis is time.
 
 ## Coupling constants
 
@@ -61,7 +63,9 @@ CDT has three coupling constants that control the geometry:
 | `delta` | Asymmetry between spacelike and timelike edges | 0.6 |
 | `k4` | Cosmological constant coupling (auto-tuned) | -- |
 
-The `tune()` method adjusts `k4` to its pseudo-critical value so that the four-volume fluctuates around the target. You set `k0` and `delta`; together they determine which **phase** the universe is in.
+`tune()` adjusts `k4` to its pseudo-critical value so the four-volume fluctuates
+around the target. You set `k0` and `delta`; together they determine which
+**phase** the universe is in.
 
 ## The CDT phase diagram
 
@@ -82,7 +86,10 @@ python examples/phase_diagram.py --n-simplices 2000 --n-sweeps 200 --grid-size 1
 
 ![CDT phase diagram](assets/cdt/phase_diagram.png)
 
-The left panel shows the discrete phase classification. The right panel shows the continuous order parameter (N32/N41 simplex ratio) whose jumps mark the phase boundaries. The white star marks the de Sitter point used in the original paper.
+The left panel shows the discrete phase classification. The right panel shows
+the continuous order parameter (the N32/N41 simplex ratio) whose jumps mark the
+phase boundaries. The white star marks the de Sitter point used in
+[Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154).
 
 ## Visualizing the three phases
 
@@ -95,11 +102,14 @@ python examples/volume_profile_phases.py --n-simplices 5000 --n-therm 100 \
 
 ![Volume profiles in phases A, B, C](assets/cdt/volume_profiles_surface.png)
 
-Each panel shows the "shape of the universe" in that phase -- the radius at each time slice, rendered as a surface of revolution. Phase C (de Sitter) produces the smooth blob that matches the round four-sphere.
+Each panel shows the radius at each time slice, rendered as a surface of
+revolution. Phase C (de Sitter) produces the smooth blob that matches the round
+four-sphere.
 
-## Regge calculus: discrete general relativity
+## Regge calculus
 
-Solve the discrete Einstein equations for a point mass and watch curvature concentrate around the source:
+Evaluate the discrete Einstein equations for a point mass and watch curvature
+concentrate around the source:
 
 ```bash
 python examples/curvature_slice_gif.py --n-simplices 50 --mass 1.0 \
@@ -108,13 +118,17 @@ python examples/curvature_slice_gif.py --n-simplices 50 --mass 1.0 \
 
 ![Point mass curvature](assets/cdt/point_mass.gif)
 
-The solver minimizes the Regge action gradient. The resulting geometry concentrates curvature (deficit angles) around the mass source -- the discrete analogue of Schwarzschild spacetime.
+The solver minimizes the Regge action gradient. The resulting geometry
+concentrates curvature (deficit angles) around the mass source -- the discrete
+analogue of Schwarzschild spacetime.
 
 ## Measuring observables
 
 ### Spectral dimension
 
-Run discrete random walks on the triangulation to measure the spectral dimension -- a fractal property that interpolates between D~1.8 at short distances and D~4 at large scales:
+Run discrete random walks on the triangulation to measure the spectral
+dimension, which interpolates between $D_S \approx 1.8$ at short distances and
+$D_S \approx 4$ at large scales:
 
 ```bash
 python examples/spectral_dimension.py --n-simplices 10000 --n-configs 10 \
@@ -125,7 +139,8 @@ python examples/spectral_dimension.py --n-simplices 10000 --n-configs 10 \
 
 ### Hausdorff dimension from volume scaling
 
-Measure the volume-volume correlator at multiple system sizes to extract the Hausdorff dimension (expected D_H ~ 4 in Phase C):
+Measure the volume-volume correlator at multiple system sizes to extract the
+Hausdorff dimension (expected $D_H \approx 4$ in phase C):
 
 ```bash
 python examples/volume_scaling.py --n-simplices 5000 --n-meas 50 \
@@ -147,7 +162,9 @@ python examples/effective_action.py --n-simplices 10000 --n-meas 100 \
 
 ## Wilson loops
 
-Compute holonomies (parallel transport around closed loops) in three modes -- combinatorial, deficit-angle, and causal -- and visualize them on a spatial slice:
+Compute holonomies (parallel transport around closed loops) in three modes --
+combinatorial, deficit-angle, and causal -- and visualize them on a spatial
+slice:
 
 ```bash
 python examples/wilson_loops.py --n-simplices 100 --save wilson_loops.gif
@@ -166,7 +183,9 @@ python examples/to_graph.py --n-simplices 500 --save spacetime.dot
 
 ## Parallelization
 
-All example scripts accept `--workers N` to run independent simulations in parallel. The GIL is released during the C++ `sweep()` call, so threads get real CPU parallelism without process forking.
+All example scripts accept `--workers N` to run independent simulations in
+parallel. The GIL is released during the C++ `sweep()` call, so threads get real
+CPU parallelism without process forking.
 
 ## Running tests
 
@@ -175,9 +194,18 @@ pytest tests/ -v                      # full suite
 pytest tests/ -v -m "not slow"        # fast subset (CI mode)
 ```
 
-## What next
+## Further reading
 
 - [Theory background](theory.md) -- path integrals, CDT, and Regge calculus
-- [Examples in depth](examples.md) -- detailed parameter guidance and output interpretation
-- [C++ API reference](cpp_api.md) -- header-level documentation for extending tessera
+- [Examples in depth](examples.md) -- parameter guidance and output interpretation
+- [C++ API reference](cpp_api.md) -- header-level documentation
 - [Benchmarks](benchmarks.md) -- build-time performance across dimensions and lattice sizes
+
+## References
+
+- J. Ambjorn, J. Jurkiewicz, R. Loll, *Reconstructing the Universe*,
+  [arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)
+- J. Ambjorn, J. Jurkiewicz, R. Loll, *Spectral dimension of the universe*,
+  [arXiv:hep-th/0505113](https://arxiv.org/abs/hep-th/0505113)
+- T. Regge, *General relativity without coordinates*, Nuovo Cimento **19**
+  (1961) 558.

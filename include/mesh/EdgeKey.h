@@ -27,6 +27,9 @@ using namespace ::tessera::spacetime;
 using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
+
+/// The pair of endpoint vertex ids identifying an edge. Two edges with equal keys are
+/// the same edge; ``fingerprint`` is the hashed form used as a container key.
 class EdgeKey {
   public:
     IdType first{0};

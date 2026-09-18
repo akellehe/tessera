@@ -1,7 +1,5 @@
 // Oriented exterior-algebra and graded-tensor primitives for the finite
-// stages of a generally entangled fermionic Fock space (issue #766, Wave 0
-// of the recursive spectral-fiber program — see
-// docs/design/recursive_spectral_fibers_design_spec.md §5.6, §6.1, §14.1).
+// stages of a generally entangled fermionic Fock space.
 //
 // ─── What lives here ─────────────────────────────────────────────────────
 //
@@ -26,7 +24,8 @@
 //
 // ─── Exact identities implemented (and tested to double round-off) ──────
 //
-//   • CAR:  {a_i, a_j} = 0,  {a_i†, a_j†} = 0,  {a_i, a_j†} = δ_ij.
+//   • The canonical anticommutation relations (CAR):
+//     {a_i, a_j} = 0,  {a_i†, a_j†} = 0,  {a_i, a_j†} = δ_ij.
 //   • dim Λ•C^M = 2^M.
 //   • ‖v_1∧…∧v_n‖² = det[⟨v_i, v_j⟩]; duplicate complete one-particle
 //     modes wedge to exactly zero.
@@ -40,23 +39,23 @@
 //
 // ─── Mode order is a compilation artifact ────────────────────────────────
 //
-// The abstract exterior algebra Λ•h is ORDER-INDEPENDENT: no Kasteleyn
-// orientation (or any other global edge-orientation gadget) is required.
-// A total order on the modes is chosen only to COMPILE basis states into
-// bitsets and operators into matrices. The deterministic order comes from
-// oriented component lineage (EdgeModeRegistry::canonicalModeOrder); a
-// vertex relabeling rebuilds the canonical order and applies the
-// corresponding permutation parity (OccupationBitset::permutationParity /
+// The abstract exterior algebra Λ•h is order-independent: no Kasteleyn
+// orientation is required. A total order on the modes is chosen only to
+// compile basis states into bitsets and operators into matrices, and the
+// deterministic order comes from oriented component lineage
+// (EdgeModeRegistry::canonicalModeOrder). A vertex relabeling rebuilds the
+// canonical order and applies the corresponding permutation parity
+// (OccupationBitset::permutationParity /
 // ExteriorAlgebra::modePermutationMatrix), under which every physical
 // amplitude is invariant.
 //
 // ─── Edge-mode semantics ─────────────────────────────────────────────────
 //
-// Each edge indexes ONE two-level mode factor span{|0⟩,|1⟩} inside the
+// Each edge indexes one two-level mode factor span{|0⟩,|1⟩} inside the
 // global exterior Fock space Λ•h — identified by a modeId, never by stored
 // per-edge state vectors. An Edge's geometric datum remains exactly one
 // complex length; nothing here adds quantum state to the edge record. A
-// per-edge occupation (or Bloch vector) is a DERIVED MARGINAL of the global
+// per-edge occupation (or Bloch vector) is a derived marginal of the global
 // state, not a stored product state; a product preparation is an optional
 // boundary fixture and must be labeled as such by its owner.
 //
@@ -92,9 +91,9 @@ namespace tessera::quantum {
 ///
 /// An exterior basis state of Λ•C^M as an occupation bitset over M modes,
 /// chunked into 64-bit machine words so the representation is correct for
-/// arbitrary mode counts: one word up to the machine-word
-/// threshold, `⌈M/64⌉` words above it, with the SAME prefix-popcount sign
-/// rule in both regimes.
+/// arbitrary mode counts: one word up to the machine-word threshold,
+/// `⌈M/64⌉` words above it, with the same prefix-popcount sign rule in
+/// both regimes.
 ///
 /// The creation sign is exactly
 /// \f$ (-1)^{\mathrm{popcount}(b\,\&\,((1\ll i)-1))} \f$ — the parity of the
@@ -157,7 +156,7 @@ class OccupationBitset {
     /// Fermion parity \f$ (-1)^N \f$ as +1 / −1.
     [[nodiscard]] int parity() const noexcept;
 
-    /// Number of occupied modes STRICTLY below `mode`:
+    /// Number of occupied modes strictly below `mode`:
     /// `popcount(b & ((1 << mode) - 1))`, computed chunk-wise.
     /// @throws std::invalid_argument if `mode > modeCount()`
     /// (`mode == modeCount()` is allowed and returns `count()`).
@@ -230,9 +229,9 @@ class OccupationBitset {
 ///
 /// The matrix layer is dense/sparse over up to `kMaxMatrixModes` modes —
 /// sufficient for exact fixtures; arbitrary mode counts are supported at the
-/// data-structure level by OccupationBitset. Lazy large-scale carriers are a
-/// separate engine concern and intentionally NOT built here (no eager full
-/// Fock-state allocator beyond the requested operators).
+/// data-structure level by OccupationBitset. Lazy large-scale carriers live
+/// in LazyFockEngine; nothing here allocates a full Fock state beyond the
+/// requested operators.
 ///
 /// The mode order is a compilation artifact of the abstract (order-free)
 /// exterior algebra; `modePermutationMatrix` provides the exact signed
@@ -277,12 +276,11 @@ class ExteriorAlgebra {
     /// Zero matrix when `occupation > modeCount()`.
     [[nodiscard]] SparseOp sectorProjector(std::size_t occupation) const;
 
-    /// Occupation-sector projector for a mode SUBSET: projects onto basis
+    /// Occupation-sector projector for a mode subset: projects onto basis
     /// states whose occupation restricted to `modes` equals `occupation`.
     /// With a three-mode subset this yields the exact
     /// \f$ \Lambda^0,\Lambda^1,\Lambda^2,\Lambda^3 \f$ sector projectors of
-    /// that three-mode factor (occupation-number projectors; any further
-    /// interpretation of the sectors is out of scope here).
+    /// that three-mode factor (occupation-number projectors).
     /// @throws std::invalid_argument on out-of-range or duplicate modes.
     [[nodiscard]] SparseOp subsetSectorProjector(
         const std::vector<std::size_t>& modes, std::size_t occupation) const;
@@ -353,7 +351,7 @@ class ExteriorAlgebra {
 /// \f$ (-1)^p\, 1_{A_p} \otimes \partial^B_q \f$ into block
 /// \f$ (p,q{-}1) \f$.
 ///
-/// This IS the chain complex of an actual product cell complex (cubical /
+/// This is the chain complex of an actual product cell complex (cubical /
 /// CW products satisfy \f$ C(X\times Y) = C(X)\otimes C(Y) \f$ on the
 /// nose), so product-complex Hodge fixtures must match this construction
 /// exactly. Exact consequences carried by the sign rule:
@@ -439,8 +437,8 @@ class GradedTensorComplex {
 ///
 /// The Fock direct-sum functor on a bipartition of the modes:
 /// \f$ F(h_A \oplus h_B) \cong F(h_A) \otimes F(h_B) \f$ (graded tensor
-/// product), compiled with A-modes first. The identification is
-/// SIGN-FREE on basis states:
+/// product), compiled with A-modes first. The identification is sign-free
+/// on basis states:
 /// \f$ |b\rangle \leftrightarrow |b_A\rangle\otimes|b_B\rangle \f$ at joint
 /// Fock index \f$ n(b) = i_A + 2^{M_A}\, i_B \f$ — because listing the
 /// occupied A-modes before the occupied B-modes is already the wedge word
@@ -449,7 +447,7 @@ class GradedTensorComplex {
 /// Under this identification (all identities exact, integer signs):
 ///   • even operators lift as \f$ X_A \mapsto X_A\otimes 1 \f$,
 ///     \f$ Y_B \mapsto 1\otimes Y_B \f$;
-///   • ODD right-factor operators acquire the parity twist
+///   • odd right-factor operators acquire the parity twist
 ///     \f$ Y_B \mapsto (-1)^{N_A}\otimes Y_B \f$ (the graded tensor
 ///     product's Koszul sign — the Jordan-Wigner string over A);
 ///   • joint CAR generators satisfy `creation(i in A) = liftLeft(a_i†)`,
@@ -463,6 +461,9 @@ class GradedTensorComplex {
 ///   • the graded swap \f$ S(x\otimes y) = (-1)^{|x||y|}\, y\otimes x \f$
 ///     exchanges the factors with odd/odd sign −1 and +1 on every other
 ///     elementary parity combination.
+///
+/// Reference: Jordan & Wigner, "Ueber das Paulische Aequivalenzverbot"
+/// (1928), for the parity string carried by the odd lift.
 class FockDirectSum {
   public:
     using Complex = std::complex<double>;
@@ -536,13 +537,13 @@ class FockDirectSum {
 /// One edge-mode record of an EdgeModeRegistry (edge-mode semantics,
 /// minus geometry — the Edge's complex length stays on the Edge and is not
 /// duplicated here). Stores the oriented incidence data of the mode's edge
-/// and the mode's identity; NEVER a per-edge state vector.
+/// and the mode's identity; never a per-edge state vector.
 struct EdgeModeRecord {
     /// Stored tail vertex of the edge direction as recorded.
     std::uint64_t vertexA{0};
     /// Stored head vertex of the edge direction as recorded.
     std::uint64_t vertexB{0};
-    /// Orientation sign ±1 relative to the STORED direction; flips on a
+    /// Orientation sign ±1 relative to the stored direction; flips on a
     /// storage reversal so the effective oriented edge is unchanged.
     int orientationSign{+1};
     /// Identity of the two-level mode factor span{|0⟩,|1⟩} this edge indexes
@@ -556,7 +557,7 @@ struct EdgeModeRecord {
 /// # EdgeModeRegistry
 ///
 /// The edge-mode basis bookkeeping for the exterior algebra: each edge
-/// indexes exactly one two-level mode FACTOR (a modeId) — the registry
+/// indexes exactly one two-level mode factor (a modeId) — the registry
 /// stores oriented incidence and lineage, never per-edge state vectors, and
 /// never touches the Edge's single complex length. A per-edge occupation is
 /// a derived marginal of the global state, not a stored product state.
@@ -566,7 +567,7 @@ struct EdgeModeRecord {
 /// `canonicalModeOrder` sorts modes by
 /// `(lineageKey, min(vertexA,vertexB), max(vertexA,vertexB))` — oriented
 /// component lineage first, the unordered vertex pair as the deterministic
-/// tie-break. The order is a COMPILATION ARTIFACT of the order-independent
+/// tie-break. The order is a compilation artifact of the order-independent
 /// abstract exterior algebra (no Kasteleyn orientation is required); it
 /// exists so that bitsets and matrices can be built reproducibly.
 ///
@@ -580,11 +581,11 @@ struct EdgeModeRecord {
 ///
 /// ## Reorientation convention
 ///
-/// `reverseStoredDirection` swaps the stored endpoints AND flips
+/// `reverseStoredDirection` swaps the stored endpoints and flips
 /// `orientationSign`: the effective oriented edge — and therefore
 /// `canonicalOrientationSign`, the compilation order, and every amplitude —
 /// is invariant. `flipOrientation` flips only `orientationSign`: the edge is
-/// PHYSICALLY reversed, which multiplies the mode's one-particle embedding
+/// physically reversed, which multiplies the mode's one-particle embedding
 /// vector by −1 (a_e ↦ −a_e, a_e† ↦ −a_e†; the two-level factor itself is
 /// fixed pointwise and nothing is conjugated), preserving the CAR and every
 /// occupation observable while flipping one-particle amplitudes.
@@ -592,12 +593,10 @@ class EdgeModeRegistry {
   public:
     EdgeModeRegistry() = default;
 
-    /// Build the registry the ontology names: ONE two-level occupation mode per
-    /// edge of `spacetime`, over its whole edge list. The microscopic carrier is
-    /// \f$ \mathcal{F}(\mathfrak{h}_K) \f$ with
-    /// \f$ \mathfrak{h}_K = \operatorname{span}\{|e\rangle : e \in K_1\} \f$, so
-    /// the per-EDGE modes are the ontology and any per-band carrier is a derived
-    /// view of them.
+    /// Register one two-level occupation mode per edge of `spacetime`, over its
+    /// whole edge list. The carrier is \f$ \mathcal{F}(\mathfrak{h}_K) \f$ with
+    /// \f$ \mathfrak{h}_K = \operatorname{span}\{|e\rangle : e \in K_1\} \f$;
+    /// any per-band carrier is a derived view of these per-edge modes.
     ///
     /// Each edge is registered on its own stored source → target direction with
     /// `orientationSign = +1`, so `canonicalOrientationSign` reports exactly how
@@ -637,12 +636,12 @@ class EdgeModeRegistry {
         return records_;
     }
 
-    /// Reverse the STORED direction of `modeId`: (a, b, s) → (b, a, −s).
+    /// Reverse the stored direction of `modeId`: (a, b, s) → (b, a, −s).
     /// A pure storage convention change — the effective oriented edge, the
     /// canonical order and all amplitudes are unchanged.
     void reverseStoredDirection(std::uint64_t modeId);
 
-    /// PHYSICALLY reverse the oriented edge of `modeId`: s → −s with the
+    /// Physically reverse the oriented edge of `modeId`: s → −s with the
     /// stored direction fixed. One-particle amplitudes attached to this mode
     /// flip sign; occupation observables are unchanged.
     void flipOrientation(std::uint64_t modeId);
@@ -664,7 +663,7 @@ class EdgeModeRegistry {
     /// The registry after the vertex relabeling `vertexMap` (must cover
     /// every vertex used and be injective on them). modeIds, orientation
     /// signs and lineage keys are preserved; only vertex ids change — the
-    /// canonical order is then REBUILT from the new ids.
+    /// canonical order is then rebuilt from the new ids.
     /// @throws std::invalid_argument on a missing or non-injective mapping.
     [[nodiscard]] EdgeModeRegistry relabeled(
         const std::unordered_map<std::uint64_t, std::uint64_t>& vertexMap)

@@ -13,22 +13,23 @@ namespace tessera::observables {
 
 /// # EmergentRadius
 ///
-/// The radius half of the #575 mass/radius battery on the relaxed 4D interior,
-/// migrated as a C++ Observable. Composes the same shared `InteriorHinges` core
-/// (via `RegisterContext::interiorHinges`) that `EmergentMass` reads.
+/// Radius half of the mass/radius battery on the relaxed 4D interior. Shares the
+/// `InteriorHinges` core (via `RegisterContext::interiorHinges`) with
+/// `EmergentMass`.
 ///
-///   * headline (`compute`) = `r_dual = V_dual^{1/4}`, the dimension-correct
-///     dual-volume radius on a 4-complex;
-///   * typed accessor `radii()`: `V_dual` / `V_primal`, the primal-cross-check
-///     `r_primal`, and the strictly-interior-vertex count;
-///   * `record()` = the radius block (dual + primal) and the hole count.
+///   * headline (`compute`) = \f$ r_{\mathrm{dual}} = V_{\mathrm{dual}}^{1/4}
+///     \f$, the dimension-correct dual-volume radius on a 4-complex;
+///   * `radii()`: `V_dual` / `V_primal`, the primal cross-check `r_primal`, and
+///     the strictly-interior-vertex count;
+///   * `record()`: the radius block (dual and primal) and the hole count.
 class EmergentRadius : public RegisterObservable {
   public:
     [[nodiscard]] std::string recordKey() const override {
       return std::string(kRecordKey);
     }
     /// Volume aggregates re-summed in a relabeled container order carry
-    /// order-ULP noise scaling with the magnitudes (see `EmergentMass`).
+    /// rounding noise of a few units in the last place, scaling with the
+    /// magnitudes (see `EmergentMass`).
     [[nodiscard]] double gateTol() const override { return 1e-6; }
     [[nodiscard]] int requiredDimensions() const override { return 4; }
     [[nodiscard]] Record record(const RegisterContext &ctx) const override;

@@ -1,5 +1,6 @@
-// Implementation of MutualInformation — see mutual_information.hpp for
-// the architectural overview and the canonical-form derivation.
+// Implementation of MutualInformation — see
+// include/quantum/MutualInformation.hpp for the canonical-form
+// derivation.
 
 #include "quantum/MutualInformation.hpp"
 #include "quantum/Schmidt.hpp"
@@ -115,19 +116,18 @@ MutualInformation::twoSiteReducedDensity(itensor::MPS const& psi_in,
 
     // Transfer-matrix sweep from site i to site j. At every step the
     // intermediate tensor T carries four open indices — (site_i,
-    // site_i', current_right_bond_ket, current_right_bond_bra) — so
-    // its size is O(χ²) regardless of (j - i). Interior site indices
-    // are unprimed on the bra side and auto-trace against the ket.
-    // The left bond at site i and the right bond at site j auto-
-    // contract via the orth-canonical / right-canonical conditions
-    // (psi.position(i) places sites 1..i-1 in left-canonical form and
-    // sites i+1..N in right-canonical form), giving identity
-    // environments at both boundaries.
+    // site_i', current_right_bond_ket, current_right_bond_bra) — so its
+    // size is O(χ²) regardless of (j - i). Contracting sites i..j into a
+    // single dense tensor first would instead accumulate 2^(j-i+1)
+    // physical elements, which is intractable on long doubled chains
+    // such as the Choi state's (in_1, out_N) pair.
     //
-    // The previous implementation contracted sites i..j into a single
-    // dense tensor before forming rho; that accumulates 2^(j-i+1)
-    // physical-site elements and is intractable on long doubled
-    // chains (e.g. the Choi state's (in_1, out_N) pair).
+    // Interior site indices are unprimed on the bra side and auto-trace
+    // against the ket. The left bond at site i and the right bond at
+    // site j auto-contract via the canonical conditions
+    // (psi.position(i) puts sites 1..i-1 in left-canonical and sites
+    // i+1..N in right-canonical form), giving identity environments at
+    // both boundaries.
 
     auto primeBondAt = [&](ITensor& tensor, int bond) {
         // bond ∈ [1, N-1]: link index between sites `bond` and bond+1.
@@ -233,8 +233,8 @@ MutualInformation::allPairs(itensor::MPS const& psi) {
     Eigen::MatrixXd out = Eigen::MatrixXd::Zero(N, N);
     if (N < 2) return out;
 
-    // Cache single-site entropies — each pair would otherwise recompute
-    // S(ρ_i) and S(ρ_j) redundantly.
+    // Cache the single-site entropies; otherwise each pair recomputes
+    // S(ρ_i) and S(ρ_j).
     std::vector<double> S_single(N + 1, 0.0);  // 1-based
     for (int i = 1; i <= N; ++i) {
         S_single[i] = vonNeumannEntropy(oneSiteReducedDensity(psi, i));
@@ -272,7 +272,7 @@ MutualInformation::edgeLength(Eigen::MatrixXd const& I, double epsilon) {
 namespace {
 
 // Shannon entropy in nats from a list of non-negative probabilities.
-// Renormalises against round-off; eigenvalues below `tol` contribute 0.
+// Renormalises against round-off; entries below `tol` contribute 0.
 double shannonEntropy(std::vector<double> const& probs,
                         double tol = 1e-12) {
     double total = 0.0;
@@ -317,11 +317,10 @@ MutualInformation::regionEntropy(itensor::MPS const& psi_in, int i, int j) {
 
     // χ⁴ transfer-matrix sweep: contract sites i..j with their
     // conjugates, tracing the physical index at each site and keeping
-    // the boundary bond pair (l, l', r, r') open. The resulting tensor
-    // K has eigenvalues equal to the non-zero spectrum of ρ_{[i, j]},
-    // and its memory footprint is bounded by χ⁴ regardless of |j - i|
-    // — the d^L blow-up of the dense-contraction path is avoided
-    // entirely.
+    // the boundary bond pair (l, l', r, r') open. The resulting tensor K
+    // has eigenvalues equal to the non-zero spectrum of ρ_{[i, j]}, and
+    // its memory footprint is bounded by χ⁴ regardless of |j - i|,
+    // avoiding the d^L blow-up of a dense contraction.
     //
     // Boundary cases (left of i is left-canonical, right of j is right-
     // canonical when psi.position(i) has been called):
@@ -358,10 +357,10 @@ MutualInformation::regionEntropy(itensor::MPS const& psi_in, int i, int j) {
         K *= bra;
     }
 
-    // Step 3: extract K's open indices, build a Hermitian matrix, eigh.
-    // K's open indices are exactly the un-traced bond pairs at the
-    // interval boundaries. We separate them into ``ket`` (unprimed) and
-    // ``bra`` (primed) sides and pack into an Eigen matrix.
+    // Extract K's open indices — exactly the un-traced bond pairs at the
+    // interval boundaries — split them into ``ket`` (unprimed) and
+    // ``bra`` (primed) sides, and pack them into a Hermitian Eigen
+    // matrix for the eigendecomposition.
     std::vector<Index> ketSide;
     std::vector<Index> braSide;
     for (auto const& ind : K.inds()) {

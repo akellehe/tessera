@@ -21,8 +21,8 @@ using Complex = std::complex<double>;
 /// A closed, positively oriented contour \f$ \Gamma_C \f$ in the complex
 /// spectral plane, as quadrature nodes \f$ \zeta_j \f$ with weights
 /// \f$ w_j \f$ such that \f$ \frac{1}{2\pi i}\oint_{\Gamma_C} f(\zeta)\,d\zeta
-/// \approx \sum_j w_j f(\zeta_j) \f$ (specification §6, §11 step 4: the
-/// trapezoidal rule on the pencil resolvent). `circle` builds the
+/// \approx \sum_j w_j f(\zeta_j) \f$ — the trapezoidal rule on the pencil
+/// resolvent. `circle` builds the
 /// \f$ N \f$-node trapezoidal rule on \f$ \zeta(\theta) = c + r e^{i\theta} \f$,
 /// for which \f$ w_j = (r/N) e^{i\theta_j} \f$; an explicit rule may be
 /// supplied directly. The node count is a certificate, not a policy: a
@@ -37,8 +37,8 @@ struct Contour {
   [[nodiscard]] std::size_t nodeCount() const noexcept { return nodes.size(); }
 };
 
-/// The certificates of one Riesz band (specification §6): contour and node
-/// count, projector idempotency, rank by SVD under the CH tolerance policy,
+/// The certificates of one Riesz band: contour and node count, projector
+/// idempotency, rank by SVD under the instance tolerance policy,
 /// the maximal resolvent norm on the contour, \f$ \det B_C \f$ and
 /// \f$ \operatorname{cond} B_C \f$, and the left/right residuals of the reduced
 /// operator when the left frame exists. Quiet NaN means unmeasured. No sign
@@ -78,8 +78,8 @@ struct BandCertificate {
 
 /// # Band
 ///
-/// One Riesz band of the covariant pencil operator \f$ h_k(s,U) \f$
-/// (specification §6): the projector \f$ P_C(U) \f$ on chains, a right frame
+/// One Riesz band of the covariant pencil operator \f$ h_k(s,U) \f$: the
+/// projector \f$ P_C(U) \f$ on chains, a right frame
 /// \f$ \Phi_C \f$ spanning \f$ \operatorname{Ran}P_C(U) \f$, the same contour's
 /// band for the dual connection \f$ \Phi_C^\vee = \Phi_C(U^{-1}) \f$, the
 /// geometric images \f$ Z = G_k^U\Phi_C \f$, the pairing matrix
@@ -90,6 +90,9 @@ struct BandCertificate {
 /// and the covariance \f$ \Gamma = \Phi\tilde\Phi^T \f$ with occupations
 /// \f$ n_e = \Gamma_{ee} \f$ — at \f$ U = 1 \f$ this is \f$ \Phi\Phi^T G_1 \f$,
 /// the \f$ G_1 \f$-orthogonal projector onto the fiber.
+///
+/// Reference: Kato, "Perturbation Theory for Linear Operators", 1966, for the
+/// Riesz projector of a spectral band.
 struct Band {
   int degree{0};
   Contour contour{};

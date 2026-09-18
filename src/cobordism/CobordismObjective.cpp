@@ -20,13 +20,12 @@ using complexd = std::complex<double>;
 // ---------------------------------------------------------------- context
 
 std::vector<std::string> ObjectiveContext::inputNames() {
-  // The declaration order of `ObjectiveContext`. Enumerated as data so the
-  // no-feedback firewall stays CHECKABLE for an injected objective exactly as
-  // it was for the static `objectiveOf`: a test reads this list and confirms
+  // The declaration order of `ObjectiveContext`, enumerated as data so the
+  // no-feedback firewall stays checkable: a test reads this list and confirms
   // that nothing on it is, or leads to, a component, fiber, transport,
-  // amplitude, colour, particle, charge, flavour, exchange, spin certificate
-  // or verdict. Every entry is geometry, a region, a declared target, a
-  // configured weight, or a precomputed geometric scalar.
+  // amplitude, colour, particle, charge, flavour, exchange, spin certificate or
+  // verdict. Every entry is geometry, a region, a declared target, a configured
+  // weight, or a precomputed geometric scalar.
   return {"spacetime",
           "region",
           "scored_edges",
@@ -48,8 +47,8 @@ std::vector<std::string> ObjectiveContext::inputNames() {
 // ---------------------------------------------------------------- base
 
 double CobordismObjective::total(const ObjectiveTerms &terms) {
-  // STATIC: no `this`, so the scalar the optimizer descends provably depends
-  // on nothing but the declared terms.
+  // Static: no `this`, so the scalar the optimizer descends provably depends on
+  // nothing but the declared terms.
   return terms.reggeStationarity + terms.hodgeStationarity +
          terms.connectionStationarity + terms.registerResidual +
          terms.actionMagnitude + terms.carriedStateEnergy;
@@ -76,11 +75,10 @@ double carriedStateTerm(const ObjectiveContext &context) {
   return context.carriedStateEnergyWeight * context.carriedStateEnergy;
 }
 
-/// A per-edge mask from the resolved scope. An EMPTY mask means every edge —
-/// the whole-cobordism scope — and every sum below then runs exactly the loop
-/// it ran before scopes existed, which is what keeps the single-objective run
-/// bit-identical. A present-but-empty scope yields an all-false mask, which
-/// scores nothing; that is deliberately NOT the same as the whole cobordism.
+/// A per-edge mask from the resolved scope. An empty mask means every edge, the
+/// whole-cobordism scope, and every sum below then runs the unrestricted loop.
+/// A present-but-empty scope yields an all-false mask, which scores nothing;
+/// that is not the same as the whole cobordism.
 std::vector<bool> scopeMask(const ObjectiveContext &context,
                             std::size_t edgeCount) {
   if (!context.scoredEdges.has_value()) return {};
@@ -115,20 +113,19 @@ double reggeTerm(const ObjectiveContext &context) {
 }
 
 /// The declared weight on the `index`-th entry of `hodgeDegrees`. An empty
-/// weight list means uniform, and multiplying by exactly 1 is exact in binary
-/// floating point, so an explicitly-configured single-degree run reproduces a
-/// pre-weights run to the bit.
+/// weight list means uniform; multiplying by exactly 1 is exact in binary
+/// floating point, so an explicitly-configured single-degree run is
+/// bit-identical to the unweighted sum.
 double hodgeDegreeWeight(const ObjectiveContext &context, std::size_t index) {
   if (context.hodgeDegreeWeights.empty()) return 1.0;
   if (index >= context.hodgeDegreeWeights.size()) return 1.0;
   return context.hodgeDegreeWeights[index];
 }
 
-/// \f$\|\nabla_zS_k\|^2\f$ over the edges in scope, UNWEIGHTED.
+/// \f$\|\nabla_zS_k\|^2\f$ over the edges in scope, unweighted.
 ///
-/// The whole-cobordism path calls the same primitive the single-objective run
-/// has always called, so that path stays bit-identical; a scope restricts the
-/// identical sum to its own coordinates.
+/// The whole-cobordism path calls the single-objective primitive unchanged; a
+/// scope restricts that same sum to its own coordinates.
 double hodgeGradientNormSquared(const ObjectiveContext &context, int degree) {
   const HodgeLaplacian hodge(context.spacetime);
   if (!context.scoredEdges.has_value())
@@ -171,12 +168,11 @@ std::vector<HodgeDegreeContribution> hodgeContributions(
 
 /// The Hodge stationarity term from an already-computed breakdown.
 ///
-/// Accumulates the WEIGHTED norms and applies the entropy weight ONCE at the
-/// end, which is the order the term has always been summed in. That order is
-/// what preserves bit-identity: with uniform weights, multiplying each norm by
-/// exactly 1 leaves the partial sums untouched and the single final multiply is
-/// the same operation as before. Distributing the entropy weight across the
-/// degrees instead would be algebraically equal and numerically different.
+/// Accumulates the weighted norms and applies the entropy weight once at the
+/// end. That order preserves bit-identity: with uniform weights, multiplying
+/// each norm by exactly 1 leaves the partial sums untouched and the single final
+/// multiply is one operation. Distributing the entropy weight across the degrees
+/// instead would be algebraically equal and numerically different.
 double hodgeTermFrom(const ObjectiveContext &context,
                      const std::vector<HodgeDegreeContribution> &contributions) {
   double weightedNormSum = 0.0;
@@ -190,9 +186,9 @@ double hodgeTermFrom(const ObjectiveContext &context,
 /// wanting both the scalar and the direction pays for one eigendecomposition
 /// rather than two.
 ///
-/// Scope masks the GRADIENT, for the same reason the Regge term does: the
+/// Scope masks the gradient, for the same reason the Regge term does: the
 /// restricted functional is the sum over the region, whose Wirtinger derivative
-/// is the masked gradient — not the masked derivative of the whole.
+/// is the masked gradient, not the masked derivative of the whole.
 double connectionStationarityTerm(
     const ObjectiveContext &context, std::size_t edgeCount,
     const std::vector<bool> &mask,
@@ -222,13 +218,13 @@ double registerResidualTerm(const ObjectiveContext &context, double weight) {
 /// from. The direction is `2 conj(H) g`; the norm is returned so a caller
 /// wanting the exact baseline does not recompute the same gradient.
 ///
-/// Scope enters by masking the GRADIENT VECTOR rather than the finished ascent,
-/// and that is the mathematically exact restriction rather than a convenience:
-/// the restricted functional is \f$\sum_{e\in R}|g_e|^2\f$, whose Wirtinger
-/// derivative is \f$2\,\overline{H}g_R\f$ with \f$g_R\f$ the gradient masked to
-/// the region. Masking the ascent afterwards would instead discard couplings
-/// the restricted functional genuinely has. An empty mask leaves every
-/// coordinate in, so the whole-cobordism path is untouched.
+/// Scope enters by masking the gradient vector rather than the finished ascent,
+/// which is the exact restriction rather than a convenience: the restricted
+/// functional is \f$\sum_{e\in R}|g_e|^2\f$, whose Wirtinger derivative is
+/// \f$2\,\overline{H}g_R\f$ with \f$g_R\f$ the gradient masked to the region.
+/// Masking the ascent afterwards would instead discard couplings the restricted
+/// functional genuinely has. An empty mask leaves every coordinate in, so the
+/// whole-cobordism path is untouched.
 Eigen::VectorXcd reggeStationarityAscent(
     const std::shared_ptr<Spacetime> &spacetime, std::size_t edgeCount,
     double reggeWeight, const std::vector<bool> &mask,
@@ -294,13 +290,13 @@ ObjectiveTerms JointStationarityObjective::terms(
   terms.carriedStateEnergy = carriedStateTerm(context);
   terms.reggeStationarity = reggeTerm(context);
 
-  // Summed over the DECLARED Hodge degrees, which are configured independently
+  // Summed over the declared Hodge degrees, which are configured independently
   // of the register degrees and never read from them.
   terms.hodgeStationarity =
       hodgeTermFrom(context, hodgeContributions(context));
 
-  // The ONLY term with a phi gradient. Every L_k is blind to the connection, so
-  // without this one phi is a declared field that no update can move.
+  // The only term with a phi gradient. Every L_k is blind to the connection, so
+  // without it phi is a declared field that no update can move.
   const auto edgeCount =
       context.spacetime && context.spacetime->getEdgeList()
           ? context.spacetime->getEdgeList()->toVector().size()
@@ -340,12 +336,12 @@ ObjectiveDirection JointStationarityObjective::direction(
   if (scalar.hodgeEntropyWeight != 0.0) {
     // For each entropy S_k, h is its exact complex-z gradient. The real
     // Hessian-vector product needed by grad ||h||^2 is the directional
-    // derivative of h along conj(h), and it is CLOSED FORM
+    // derivative of h along conj(h), available in closed form
     // (`spectralEntropyGradientDirectionalDerivative`): the simplex volume
     // Hessian, the second derivative of L_k contracted against the direction,
-    // and the Daleckii-Krein derivative of dS/dA on the same fixed-rank
-    // stratum the value uses. No step size and no finite difference enter the
-    // descent direction. The resulting ascent displacement is 2 conj(dh).
+    // and the Daleckii-Krein derivative of dS/dA on the same fixed-rank stratum
+    // the value uses. No step size and no finite difference enter the descent
+    // direction. The resulting ascent displacement is 2 conj(dh).
     double weightedNormSum = 0.0;
     for (std::size_t degreeIndex = 0;
          degreeIndex < scalar.hodgeDegrees.size(); ++degreeIndex) {
@@ -356,10 +352,10 @@ ObjectiveDirection JointStationarityObjective::direction(
           hodge.spectralEntropyGradient(degree, scalar.hodgeEntropyPhaseMode);
       double entropyGradientNormSquared = 0.0;
       std::vector<complexd> entropyAscent(context.edgeCount);
-      // Scope masks the GRADIENT the HVP is contracted along, which is the
-      // exact restriction of the sum for the same reason it is in the Regge
-      // term: the restricted functional is the sum over the region, so the
-      // direction it moves along is the region-masked gradient.
+      // Scope masks the gradient the Hessian-vector product is contracted
+      // along, which is the exact restriction of the sum for the same reason it
+      // is in the Regge term: the restricted functional is the sum over the
+      // region, so the direction it moves along is the region-masked gradient.
       for (std::size_t edgeIndex = 0; edgeIndex < context.edgeCount;
            ++edgeIndex) {
         if (!edgeInScope(mask, edgeIndex)) {
@@ -369,12 +365,12 @@ ObjectiveDirection JointStationarityObjective::direction(
         entropyGradientNormSquared += std::norm(baseComponents[edgeIndex]);
         entropyAscent[edgeIndex] = std::conj(baseComponents[edgeIndex]);
       }
-      // Accumulated and weighted ONCE at the end, matching how the scalar term
-      // is summed, so an explicitly-configured single-degree run reproduces a
-      // pre-weights baseline to the bit.
+      // Accumulated and weighted once at the end, matching how the scalar term
+      // is summed, so an explicitly-configured single-degree run is
+      // bit-identical to the unweighted baseline.
       weightedNormSum += degreeWeight * entropyGradientNormSquared;
       if (entropyGradientNormSquared == 0.0)
-        continue;  // the exact HVP of the zero direction is zero
+        continue;  // the exact Hessian-vector product of zero is zero
       const auto directionalComponents =
           hodge.spectralEntropyGradientDirectionalDerivative(
               degree, entropyAscent, scalar.hodgeEntropyPhaseMode);
@@ -392,12 +388,13 @@ ObjectiveDirection JointStationarityObjective::direction(
   }
 
   addCarriedStateAscent(context, &result.ascent, &baseline);
-  // The connection term. Its gradient is with respect to PHI, not z, so it
-  // contributes to `phaseAscent` and never to `ascent` — the two fields move on
+  // The connection term. Its gradient is with respect to phi, not z, so it
+  // contributes to `phaseAscent` and never to `ascent`: the two fields move on
   // their own coordinates and are never mixed. `grad ||h||^2 = 2 conj(H) h`
   // needs the phi-Hessian; the term is instead descended by its own gradient
-  // scaled by the residual, which is exact for the STATIONARITY functional in
-  // the same sense the Regge term's is: both descend `||h||^2` along `conj(h)`.
+  // scaled by the residual, which is exact for the stationarity functional in
+  // the same sense the Regge term's is — both descend `||h||^2` along
+  // `conj(h)`.
   if (scalar.connectionEntropyWeight != 0.0) {
     std::vector<complexd> phaseGradient;
     const double term = connectionStationarityTerm(scalar, context.edgeCount,
@@ -438,16 +435,15 @@ ObjectiveTerms LegacyObjective::terms(const ObjectiveContext &context) const {
 
 double LegacyObjective::numericalRegisterResidualWeight(
     const ObjectiveContext &context) const {
-  // In residual-only legacy mode there is no Regge ray to search, so the
-  // complete r_U gradient is needed. When both historical terms are enabled,
-  // Legacy intentionally preserves its former analytic Regge direction (the
-  // exact legacy scalar still gates the line search): evaluating the composite
-  // block/target r_U at 4|E| coordinates made the compatibility mode orders of
-  // magnitude slower. Under FIBER residuals that cost is gone — their ascent
-  // is analytic (#947) — and the residual is descended next to the Regge term
-  // with its weight in the scalar, so the blocks keep representing their
-  // states while the bulk relaxes (qubit cobordism spec R3, S4) instead of
-  // drifting under Regge-only steps the scalar merely gates.
+  // In residual-only mode there is no Regge ray to search, so the complete r_U
+  // gradient is needed. With both terms enabled, Legacy takes the analytic Regge
+  // direction alone and lets the exact legacy scalar gate the line search:
+  // evaluating the composite block/target r_U at 4|E| coordinates makes this
+  // mode orders of magnitude slower. Under fiber residuals that cost is gone,
+  // their ascent being analytic, so the residual is descended next to the Regge
+  // term with its weight in the scalar and the blocks keep representing their
+  // states while the bulk relaxes, instead of drifting under Regge-only steps
+  // that the scalar merely gates.
   if (context.einsteinHilbert && context.reggeWeight != 0.0 && !context.fiberResiduals) return 0.0;
   return context.gamma;
 }

@@ -36,9 +36,9 @@ struct Pencil {
   Eigen::MatrixXcd B{};
 };
 
-/// The harmonic space at one degree (specification Prop. 4.1): the kernel of
-/// the stacked matrix \f$ S \f$, the harmonic chains, and the rank
-/// certificate of the kernel computation.
+/// The harmonic space at one degree: the kernel of the stacked matrix
+/// \f$ S \f$, the harmonic chains, and the rank certificate of the kernel
+/// computation.
 struct HarmonicRead {
   int degree{0};
   /// Harmonic chains \f$ H_k \f$ (\f$ n_k \times \text{nullity} \f$).
@@ -59,8 +59,8 @@ struct HarmonicRead {
   bool dense{true};
 };
 
-/// The rank conditions (R1)–(R4) of specification Prop. 4.2 at one degree,
-/// measured numerically against the exact integer ranks of the boundary maps.
+/// The rank conditions (R1)–(R4) at one degree, measured numerically against
+/// the exact integer ranks of the boundary maps.
 struct RankReport {
   int degree{0};
   /// Measured ranks of the four products, in the order R1, R2, R3, R4.
@@ -91,9 +91,8 @@ struct SpectrumRead {
 
 /// # ChainHodge
 ///
-/// The chain-level Hodge pencil of a complexified simplicial complex
-/// (specification §4.3, §9, §13): the operators of CH §7 with the chain metric
-/// \f$ G_k = M_k^{-1} \f$ applied only by solves and never formed.
+/// The chain-level Hodge pencil of a complexified simplicial complex, with the
+/// chain metric \f$ G_k = M_k^{-1} \f$ applied only by solves and never formed.
 ///
 /// With the sparse inverse chain metrics \f$ M_k \f$ of `WhitneyMass`,
 /// \f[
@@ -105,7 +104,7 @@ struct SpectrumRead {
 ///   H_k = \{h:\ \partial_k h = 0,\ \partial_{k+1}^T M_k^{-1} h = 0\},\qquad
 ///   A_k = G_k L_k .
 /// \f]
-/// Auxiliary solve (Prop. 4.1): with the geometric image \f$ z = G_k h \f$, so
+/// Auxiliary solve: with the geometric image \f$ z = G_k h \f$, so
 /// \f$ h = M_k z \f$,
 /// \f[
 ///   h \in H_k \iff \partial_{k+1}^T z = 0 \text{ and } \partial_k M_k z = 0,\qquad
@@ -121,7 +120,7 @@ struct SpectrumRead {
 /// stacked matrix \f$ S = [\partial_{k+1}^T;\ \partial_k M_k] \f$, and only
 /// \f$ M_{k-1}^{-1} \f$ is applied, by sparse factorization.
 ///
-/// Rank conditions (Prop. 4.2), with \f$ Z \f$ solving \f$ M_k Z = \partial_{k+1} \f$:
+/// Rank conditions, with \f$ Z \f$ solving \f$ M_k Z = \partial_{k+1} \f$:
 /// (R1) \f$ \mathrm{rank}(\partial_{k+1}^T Z) = \mathrm{rank}\,\partial_{k+1} \f$,
 /// (R2) \f$ \mathrm{rank}(\partial_k M_k \partial_k^T) = \mathrm{rank}\,\partial_k \f$,
 /// (R3) \f$ \mathrm{rank}(\partial_k^T M_{k-1}^{-1}\partial_k) = \mathrm{rank}\,\partial_k \f$,
@@ -143,6 +142,9 @@ struct SpectrumRead {
 /// the crossover dimension; above it the kernel is computed by sparse
 /// rank-revealing QR and dense requests refuse with `std::length_error`.
 /// The adjoint is the transpose throughout; no conjugation enters any operator.
+///
+/// Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem
+/// Komplex", 1944, for the combinatorial Hodge Laplacian.
 class ChainHodge {
  public:
   /// Default crossover, mirroring `cobordism::DenseReference`.
@@ -165,7 +167,7 @@ class ChainHodge {
   [[nodiscard]] Preset preset() const noexcept { return preset_; }
   [[nodiscard]] Branch branch() const noexcept { return branch_; }
   [[nodiscard]] int crossoverDimension() const noexcept { return crossover_; }
-  /// The instance certificate (§4.2) of the assembled geometry.
+  /// The instance certificate of the assembled geometry.
   [[nodiscard]] const InstanceCertificate &certificate() const noexcept { return cert_; }
   /// Number of \f$ k \f$-cells.
   [[nodiscard]] int size(int k) const;
@@ -213,7 +215,7 @@ class ChainHodge {
   [[nodiscard]] Eigen::MatrixXcd geometricImage(int k, const Eigen::MatrixXcd &H) const;
   /// The harmonic Gram \f$ \Phi^T G_k \Phi = Z^T M_k Z \f$ of a harmonic read
   /// (the complex bilinear restriction; its determinant is the isotropy
-  /// indicator of §6).
+  /// indicator).
   [[nodiscard]] Eigen::MatrixXcd harmonicGram(const HarmonicRead &read) const;
 
   /// The rank conditions (R1)–(R4) at degree \p k with numerical ranks at

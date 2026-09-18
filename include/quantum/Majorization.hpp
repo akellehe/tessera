@@ -1,57 +1,55 @@
 // Majorization partial order on probability distributions, plus the
-// Hasse-diagram construction we use to build the majorization poset of
-// Schmidt spectra of an MPS (see docs/source/quantum-plan.md).
+// Hasse-diagram construction used to build the majorization poset of the
+// Schmidt spectra of a matrix product state (MPS).
 //
-// The Poset / OrderAgreement types themselves live at the top of tessera
-// (`include/Poset.h`) so they're shareable with non-quantum analyses;
-// this header re-exports them under `tessera::quantum::` for ergonomics
-// and adds the quantum-specific predicate hierarchy plus the
-// `Majorization` coarse-grained façade.
+// The Poset / OrderAgreement types live at the top of tessera
+// (`include/Poset.h`) so non-quantum analyses can share them; this header
+// re-exports them under `tessera::quantum::` and adds the
+// quantum-specific predicate hierarchy plus the `Majorization` façade.
 //
-// ─── Bibliographic references used throughout this file ─────────────────
+// ─── Bibliographic keys used throughout this file ────────────────────
 //
-// {N1999}    Nielsen, M. A. (1999), "Conditions for a class of entanglement
-//            transformations", Phys. Rev. Lett. 83, 436. arXiv:quant-ph/9811053.
-//            PDF in docs/source/resources/quantum/Nielsen1999_LOCC_majorization.pdf.
-//            — Eq. (1) is the canonical cumulative-sum-dominance definition of
-//            majorization. The main theorem (unnumbered, p. 437) is the iff
-//            statement: |α⟩ → |β⟩ is achievable by deterministic LOCC iff
-//            λ_α ≺ λ_β (Schmidt-spectrum majorization).
+// {N1999}    Nielsen, "Conditions for a class of entanglement
+//            transformations", Phys. Rev. Lett. 83, 436 (1999).
+//            arXiv:quant-ph/9811053. PDF in
+//            docs/source/resources/quantum/Nielsen1999_LOCC_majorization.pdf.
+//            Gives the cumulative-sum-dominance definition of
+//            majorization, and the theorem that |α⟩ → |β⟩ is achievable
+//            by deterministic LOCC iff λ_α ≺ λ_β (Schmidt-spectrum
+//            majorization).
 //
-// {AN2008}   Aubrun, G. & Nechita, I. (2008), "Stochastic domination for
-//            iterated convolutions and catalytic majorization", Comm. Math.
-//            Phys. 278, 133. arXiv:0707.0211. PDF in docs/source/resources/
-//            quantum/AubrunNechita2008_CatalyticMajorization.pdf.
-//            — Theorem 1.1 / Proposition 2.5 give the L^p-norm-dominance
-//            characterization of asymptotic / catalytic majorization.
+// {AN2008}   Aubrun & Nechita, "Stochastic domination for iterated
+//            convolutions and catalytic majorization", Comm. Math. Phys.
+//            278, 133 (2008). arXiv:0707.0211. PDF in docs/source/
+//            resources/quantum/AubrunNechita2008_CatalyticMajorization.pdf.
+//            Gives the L^p-norm-dominance characterization of asymptotic
+//            and catalytic majorization.
 //
-// {B2015}    Brändén, P. (2015), "Unimodality, log-concavity, real-rootedness
-//            and beyond", Handbook of Enumerative Combinatorics (CRC Press).
+// {B2015}    Brändén, "Unimodality, log-concavity, real-rootedness and
+//            beyond", Handbook of Enumerative Combinatorics (2015).
 //            arXiv:1410.6601. PDF in docs/source/resources/quantum/
-//            Branden2015_Unimodality_LogConcavity.pdf. — §1 introduces
-//            log-concavity (a_i² ≥ a_{i-1} · a_{i+1}); §4 surveys its
-//            structural consequences.
+//            Branden2015_Unimodality_LogConcavity.pdf. Log-concavity of a
+//            sequence: a_i² ≥ a_{i-1} · a_{i+1}.
 //
-// {B1997}    Bhatia, R. (1997), "Matrix Analysis", Springer GTM 169,
-//            Chapter II ("Majorisation"). The clean mathematical-textbook
-//            account; cited by {N1999} as the principal majorization
-//            reference.
+// {B1997}    Bhatia, "Matrix Analysis", Springer GTM 169 (1997), chapter
+//            "Majorisation" — the textbook account, and the principal
+//            majorization reference cited by {N1999}.
 //
-// {MOA2011}  Marshall, A. W., Olkin, I. & Arnold, B. C. (2011),
-//            "Inequalities: Theory of Majorization and Its Applications",
-//            Springer (2nd ed.). The encyclopedic reference.
+// {MOA2011}  Marshall, Olkin & Arnold, "Inequalities: Theory of
+//            Majorization and Its Applications", Springer, 2nd ed. (2011)
+//            — the encyclopedic reference.
 //
-// ─── Majorization recap ─────────────────────────────────────────────────
+// ─── Majorization ──────────────────────────────────────────────
 //
-// Given two finite, non-negative sequences μ and λ, both normalised to the
-// same total mass, μ majorizes λ (written μ ≻ λ) iff
+// Given finite non-negative sequences μ and λ normalised to the same
+// total mass, μ majorizes λ (written μ ≻ λ) iff
 //
 //   sum_{i=1..k} μ_i^↓  ≥  sum_{i=1..k} λ_i^↓     for every k = 1, 2, …
 //
-// — this is {N1999} eq. (1), with x_i^↓ denoting the entries of x sorted
-// non-increasingly and the shorter vector zero-padded to the longer's
-// length. Intuitively, μ is "more concentrated" than λ. For probability
-// distributions the total-mass equality at k = d is automatic.
+// with x_i^↓ the entries of x sorted non-increasingly and the shorter
+// vector zero-padded to the longer's length. μ is then "more
+// concentrated" than λ. For probability distributions the total-mass
+// equality at k = d is automatic.
 
 #pragma once
 
@@ -87,7 +85,7 @@ using OrderAgreement = ::tessera::OrderAgreement;
 // this single contract. Pass instances by `const&` everywhere; ownership
 // stays with the caller.
 //
-// Subclasses MUST satisfy the partial-order axioms on the simplex:
+// Subclasses must satisfy the partial-order axioms on the simplex:
 //   • reflexivity:    majorizes(x, x) is true for every probability x;
 //   • antisymmetry:   majorizes(x, y) and majorizes(y, x) implies x and
 //                     y are equivalent (sorted-padded equal, or whatever
@@ -97,9 +95,7 @@ using OrderAgreement = ::tessera::OrderAgreement;
 // A subclass that violates any of these breaks `Majorization::posetOf`
 // (the transitive-reduction would fail to converge to a Hasse diagram).
 //
-// References:
-//   {N1999}, eq. (1) and main theorem — classical case, the contract this
-//     interface generalises.
+// Reference: {N1999} — the classical case this interface generalises.
 class MajorizationPredicate {
 public:
     virtual ~MajorizationPredicate() = default;
@@ -117,8 +113,8 @@ public:
         return majorizes(mu, lambda) && !majorizes(lambda, mu);
     }
 
-    // Short identifier used in diagnostics and Python repr ("standard",
-    // "log-concave", "peak-radial", …). Stable across versions.
+    // Short identifier used in diagnostics and the Python repr
+    // ("standard", "log-concave", "peak-radial", …).
     [[nodiscard]] virtual std::string name() const = 0;
 
 protected:
@@ -131,12 +127,12 @@ protected:
 
 // ─── Concrete variants ───────────────────────────────────────────────────
 
-// Classical majorization, exactly as in {N1999} eq. (1):
+// Classical majorization, as in {N1999}:
 //
 //     μ ≻ λ   ⟺   ∑_{i=1..k} μ_i^↓  ≥  ∑_{i=1..k} λ_i^↓   ∀ k = 1..d
 //                                       ∧  ∑ μ_i  =  ∑ λ_i .
 //
-// References: {N1999} eq. (1); {B1997} §II.1; {MOA2011} §1.A.
+// References: {N1999}; {B1997}; {MOA2011}.
 class StandardMajorization : public MajorizationPredicate {
 public:
     explicit StandardMajorization(double tol = 1e-12) noexcept;
@@ -153,14 +149,12 @@ protected:
     double tol_;
 };
 
-// Standard majorization, restricted to spectra that are *log-concave*
-// on their support: a_i² ≥ a_{i-1} · a_{i+1} ({B2015} §1). Pairs where
-// either spectrum fails log-concavity are declared incomparable, so
-// this is a strict sub-relation of `StandardMajorization`.
+// Standard majorization, restricted to spectra that are log-concave on
+// their support: a_i² ≥ a_{i-1} · a_{i+1}. Pairs where either spectrum
+// fails log-concavity are declared incomparable, so this is a strict
+// sub-relation of `StandardMajorization`.
 //
-// References:
-//   {B2015} §1, definition of log-concavity (a_i² ≥ a_{i-1} a_{i+1});
-//           §4 for structural consequences.
+// Reference: {B2015} — log-concavity and its structural consequences.
 class LogConcaveMajorization : public StandardMajorization {
 public:
     explicit LogConcaveMajorization(double tol = 1e-12) noexcept;
@@ -180,18 +174,17 @@ public:
 };
 
 // Peak-radial dominance: μ ≻ λ iff, after sorting both descending and
-// zero-padding,
+// zero-padding, μ's normalised profile decays no slower than λ's:
 //
-//     λᵢ / λ₁  ≤  μᵢ / μ₁     for every i.
+//     μᵢ / μ₁  ≤  λᵢ / λ₁     for every i.
 //
 // Cross-multiplied form (used in the implementation for stability):
-//     λᵢ · μ₁  ≤  μᵢ · λ₁     for every i.
+//     μᵢ · λ₁  ≤  λᵢ · μ₁     for every i.
 //
 // Strictly stronger than classical majorization.
 //
-// References:
-//   {AN2008} Theorem 1.1 / Prop. 2.5 — closest published analog (different
-//             direction); structural similarity to ratio/Lp dominance.
+// Reference: {AN2008} — the closest published analog: ratio / L^p
+// dominance, in a different direction.
 class PeakRadialMajorization : public MajorizationPredicate {
 public:
     explicit PeakRadialMajorization(double tol = 1e-12) noexcept;
@@ -214,9 +207,9 @@ private:
 // order-agreement statistics. Stateless — not instantiable.
 //
 // `posetOf` builds the Hasse-cover poset on a list of spectra under a
-// chosen variant of the majorization predicate. `agreement` reports
-// pairwise statistics (Kendall-τ, discordant fraction, Hasse edit
-// distance) between two posets on a shared label set.
+// chosen majorization variant. `agreement` reports pairwise statistics
+// (Kendall-τ, discordant fraction, Hasse edit distance) between two
+// posets on a shared label set.
 class Majorization {
 public:
     Majorization() = delete;
@@ -234,9 +227,8 @@ public:
     // transitive-reduction pass. Each predicate call is O(L log L) on
     // the spectrum lengths L.
     //
-    // References:
-    //   {N1999} main theorem — the partial order this poset Hasse-encodes
-    //   for the `StandardMajorization` predicate.
+    // Reference: {N1999} — the partial order this poset Hasse-encodes
+    // for the `StandardMajorization` predicate.
     [[nodiscard]] static Poset posetOf(
         std::vector<std::vector<double>> const& spectra,
         MajorizationPredicate const& predicate);

@@ -62,8 +62,8 @@ std::vector<cd> toFlat(const Eigen::MatrixXcd &matrix) {
   return flat;
 }
 
-/// Spectral norm below a size guard, Frobenius norm above (a certified
-/// upper-bound proxy is not needed here; the guard keeps the SVD cheap).
+/// Spectral norm below a size guard, Frobenius norm above, to keep the SVD
+/// cheap.
 double matrixNorm2(const Eigen::MatrixXcd &m, int denseCrossover) {
   if (m.rows() == 0 || m.cols() == 0) return 0.0;
   if (m.rows() < denseCrossover && m.cols() < denseCrossover)
@@ -86,10 +86,10 @@ std::string cellName(const std::vector<std::uint64_t> &vertices) {
 
 RecursiveQuotient::Options::Options() = default;
 
-/// Per-component interior factorization/solve payload. Cached (as an opaque
-/// pointer) in the #764 AnalyticCache keyed by the component's cell
-/// vertex-id set, so a published TouchedStar invalidates exactly the
-/// touched components.
+/// Per-component interior factorization/solve payload, cached as an opaque
+/// pointer in the AnalyticCache and keyed by the component's cell vertex-id
+/// set, so a published TouchedStar invalidates exactly the touched
+/// components.
 struct RecursiveQuotient::ComponentSolve {
   cd lambda{0.0, 0.0};
   int interiorDim{0};
@@ -108,10 +108,9 @@ struct RecursiveQuotient::ComponentSolve {
   cd interiorDet{kNaN, 0.0};
   bool detValid{false};
   bool eliminationCertified{true};
-  // Whether the exact integer topological kernel was actually computed for
-  // this component. False on the matrix path (no boundary maps) and on an
-  // integer-kernel overflow, where an empty integerBasis means "not measured"
-  // rather than "measured zero" (#805).
+  // Whether the exact integer topological kernel was computed. False on the
+  // matrix path and on integer-kernel overflow, where an empty integerBasis
+  // means "not measured" rather than "measured zero".
   bool integerKernelMeasured{false};
   std::string note{};
 };
@@ -192,11 +191,9 @@ RecursiveQuotient RecursiveQuotient::overCells(
   const ChainComplex cc = ChainComplex::fromSpacetime(*st);
   HodgeLaplacian hodge(st);
 
-  // Canonical cell order at EVERY degree: the ChainComplex column order
-  // (sorted vertex-id tuples), which is what L_k is indexed over now that
-  // degree zero is d_1 W_1^-1 d_1^T rather than a vertex-set graph Laplacian
-  // (#805). A vertex carried by no simplex is not a 0-cell and so is not a
-  // coordinate here.
+  // Canonical cell order: the ChainComplex column order (sorted vertex-id
+  // tuples), which L_k is indexed over. A vertex carried by no simplex is not
+  // a 0-cell and so is not a coordinate.
   const std::vector<std::vector<std::uint64_t>> cells =
       cc.kSimplexVertices(degree);
   const int dim = static_cast<int>(cells.size());
@@ -241,8 +238,8 @@ RecursiveQuotient RecursiveQuotient::overCells(
     quotient.boundaryK_ = cc.boundaryMatrix(degree);
     quotient.boundaryKRows_ = static_cast<int>(cc.numSimplices(degree - 1));
   } else {
-    // k = 0: there are no (-1)-chains, so the boundary block is empty and the
-    // interior zero-mode condition is the coboundary one alone.
+    // At k = 0 there are no (-1)-chains, so the boundary block is empty and
+    // the interior zero-mode condition is the coboundary one alone.
     quotient.boundaryK_.clear();
     quotient.boundaryKRows_ = 0;
   }
@@ -261,8 +258,7 @@ RecursiveQuotient RecursiveQuotient::overVertexSupports(
     const Options &options, std::shared_ptr<AnalyticCache> cache) {
   if (!st) throw std::invalid_argument("RecursiveQuotient: null spacetime");
   const ChainComplex cc = ChainComplex::fromSpacetime(*st);
-  // The same canonical ChainComplex column order overCells uses, at every
-  // degree (#805).
+  // The same canonical ChainComplex column order overCells uses.
   const std::vector<std::vector<std::uint64_t>> cells =
       cc.kSimplexVertices(degree);
 
@@ -370,11 +366,10 @@ void RecursiveQuotient::classify() {
     }
   }
 
-  // Cache-kind qualifier: two instances may share a component VERTEX set
-  // (the AnalyticCache key) while classifying its cells differently — a
-  // different partition, degree, or rank tolerance produces a different
-  // payload. The fingerprint folds the classification so such instances
-  // never serve each other's entries (splitmix64-style mixing).
+  // Cache-kind qualifier: two instances may share a component vertex set (the
+  // AnalyticCache key) yet classify its cells differently under a different
+  // partition, degree or rank tolerance. The fingerprint folds the
+  // classification in (splitmix64-style mixing).
   auto mix = [](std::uint64_t h, std::uint64_t v) {
     h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     h *= 0xbf58476d1ce4e5b9ULL;
@@ -402,18 +397,12 @@ void RecursiveQuotient::classify() {
 }
 
 void RecursiveQuotient::detectRegime() {
-  // Every branch below MEASURES (#805). There used to be a `structuralPsd`
-  // escape that declared degree zero PositiveSemidefinite without looking at
-  // the operator, on the strength of the magnitude-diagonal convention the
-  // degree-zero graph Laplacian used to carry. That convention is gone, the
-  // escape with it: on a Lorentzian complex L_0 = d_1 W_1^-1 d_1^T is
-  // routinely indefinite (the 3-cycle with one timelike edge has
-  // spec(L_0) = {0, 3, 1 - 2/alpha^2}), and the regime has to say so.
-  //
+  // Every branch below measures the operator. On a Lorentzian complex
+  // L_0 = d_1 W_1^-1 d_1^T is routinely indefinite.
   if (pencil_) {
-    // A pencil level (Ã, M): the chain-level pencil's own regime is complex
-    // SYMMETRY of both matrices (M L = (M L)^T with M complex symmetric), not
-    // Hermiticity. Measured; a broken symmetry is the non-normal regime.
+    // A pencil level (Ã, M) is regime-classified by complex symmetry of both
+    // matrices (M L = (M L)^T with M complex symmetric) rather than by
+    // Hermiticity. A broken symmetry is the non-normal regime.
     const double tolP = std::max(options_.tolerance, 1e-12);
     const Eigen::SparseMatrix<cd> opT = Eigen::SparseMatrix<cd>(op_.transpose());
     const Eigen::SparseMatrix<cd> mT = Eigen::SparseMatrix<cd>(pencilMetric_.transpose());
@@ -445,9 +434,7 @@ void RecursiveQuotient::detectRegime() {
       break;
     }
   if (positiveMetric && dim_ < options_.denseCrossover) {
-    // Pivoted LDLT decides semidefiniteness far cheaper than an eigensolve
-    // (a factorization decision, not a spectrum claim -- the Sylvester
-    // route symmetricInertia already takes for small intersection forms).
+    // Pivoted LDLT decides semidefiniteness far cheaper than an eigensolve.
     const Eigen::MatrixXcd dense = Eigen::MatrixXcd(weighted);
     const Eigen::MatrixXcd hermitian = 0.5 * (dense + dense.adjoint());
     Eigen::LDLT<Eigen::MatrixXcd> ldlt(hermitian);
@@ -458,8 +445,8 @@ void RecursiveQuotient::detectRegime() {
       return;
     }
   }
-  // Hermitian but signed metric, verified-indefinite, or too large to
-  // verify definiteness: the honest (weaker) stationarity regime.
+  // Hermitian but signed metric, verified-indefinite, or too large to verify:
+  // the weaker stationarity regime.
   regime_ = CertificateRegime::HermitianIndefinite;
 }
 
@@ -486,9 +473,8 @@ std::vector<std::uint64_t> RecursiveQuotient::componentVertexIds(
 
 std::vector<long> RecursiveQuotient::integerKernelStack(int component,
                                                         int *rows) const {
-  // Stacked integer conditions for a combinatorial interior zero mode
-  // (unit-weight topological statement): boundary rows d_k[:, I] and
-  // coboundary rows d_{k+1}[I, :]^T.
+  // Stacked integer conditions for a combinatorial interior zero mode:
+  // boundary rows d_k[:, I] and coboundary rows d_{k+1}[I, :]^T.
   const auto &interior = interior_[static_cast<std::size_t>(component)];
   const int m = static_cast<int>(interior.size());
   const int rowsK = boundaryKRows_;
@@ -570,9 +556,9 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
     return solve;
   }
 
-  // Interior/coupling blocks in local order: sparse triplets for the
-  // interior block (dense staging only below the crossover), dense skinny
-  // couplings (m x a and a x m).
+  // Interior/coupling blocks in local order: sparse triplets for the interior
+  // block (dense staging only below the crossover), dense skinny couplings
+  // (m x a and a x m).
   std::vector<Eigen::Triplet<cd>> interiorTriplets;
   Eigen::MatrixXcd loadBlock = Eigen::MatrixXcd::Zero(m, a);      // L_IK
   Eigen::MatrixXcd keptBlock = Eigen::MatrixXcd::Zero(a, m);      // L_KI
@@ -630,8 +616,8 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
   sparseShifted.makeCompressed();
   const double loadScale = std::max(loadBlock.norm(), 1e-300);
 
-  // Exact integer topological zero modes (unshifted, spacetime path) via
-  // the shared exact-integer kernel routine (IntegerLinalg).
+  // Exact integer topological zero modes (unshifted, spacetime path), via
+  // IntegerLinalg.
   if (hasBoundary_ && lambda == cd(0.0, 0.0)) {
     int rows = 0;
     const std::vector<long> stack = integerKernelStack(component, &rows);
@@ -645,10 +631,9 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
     }
   }
 
-  // Numerical kernel + factor solve. Below the crossover, an LU factor
-  // solve runs FIRST; the rank-revealing SVD path is an escalation taken
-  // only when the pivots flag rank deficiency or the measured residual
-  // fails -- never a default dense decomposition on a regular block.
+  // Numerical kernel and factor solve. Below the crossover an LU factor solve
+  // runs first; the rank-revealing SVD path is an escalation taken when the
+  // pivots flag rank deficiency or the measured residual fails.
   if (m < options_.denseCrossover) {
     const Eigen::MatrixXcd shifted = Eigen::MatrixXcd(sparseShifted);
     {
@@ -697,8 +682,8 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
       solve->detValid = true;
     } else {
       // Supported elimination: retain the kernel, eliminate the Euclidean
-      // orthocomplement Q with adjoint test space (the Moore-Penrose
-      // response in the Hermitian regimes). No diagonal regularizer, ever.
+      // orthocomplement Q with adjoint test space — the Moore-Penrose response
+      // in the Hermitian regimes. No diagonal regularizer.
       const Eigen::MatrixXcd &kernel = solve->rightKernel;
       Eigen::HouseholderQR<Eigen::MatrixXcd> qr(kernel);
       const Eigen::MatrixXcd full =
@@ -707,8 +692,8 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
       const Eigen::MatrixXcd eliminated =
           complement.adjoint() * shifted * complement;
       Eigen::PartialPivLU<Eigen::MatrixXcd> lu(eliminated);
-      // A defective shifted block (Jordan structure meeting the kernel)
-      // makes the complement block singular; refuse rather than regularize.
+      // A defective shifted block (Jordan structure meeting the kernel) makes
+      // the complement block singular; refuse rather than regularize.
       const Eigen::MatrixXcd &luMatrix = lu.matrixLU();
       double diagMin = kInf;
       double diagMax = 0.0;
@@ -745,12 +730,12 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
           (kernel.adjoint() * shifted * complement) * solvedKernelSide;
       solve->interiorDet = cd(0.0, 0.0);
       solve->detValid = true;
-      // Left-kernel compatibility (the exact solvability condition; in the
-      // positive regime it holds automatically and this measures ~0).
+      // Left-kernel compatibility, the exact solvability condition; ~0
+      // automatically in the positive regime.
       solve->compatibilityResidual =
           (solve->leftKernel.adjoint() * loadBlock).norm() / loadScale;
-      // Residual on the ELIMINATED subspace only (kernel rows are retained
-      // couplings, not residuals).
+      // Residual on the eliminated subspace only; kernel rows are couplings,
+      // not residuals.
       solve->solveResidual =
           (complement.adjoint() * (shifted * solve->X - loadBlock)).norm() /
           loadScale;
@@ -759,8 +744,8 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
     }
   } else {
     // Sparse factor solve at scale. SparseLU pivoting reveals a singular
-    // block, which then requires the (dense) rank-revealing path — refused
-    // above the crossover rather than approximated.
+    // block, which needs the dense rank-revealing path; refused above the
+    // crossover rather than approximated.
     Eigen::SparseLU<Eigen::SparseMatrix<cd>> lu;
     lu.compute(sparseShifted);
     if (lu.info() != Eigen::Success) {
@@ -839,10 +824,9 @@ RecursiveQuotient::InteriorNullspaceRead RecursiveQuotient::interiorNullspace(
   read.integerNullity = solve->integerBasis.size();
   read.integerBasis = solve->integerBasis;
   read.integerNullityMeasured = solve->integerKernelMeasured;
-  // Record the discrepancy instead of dropping it (#805). The numerical kernel
-  // of the WEIGHTED interior block and the exact integer topological nullity
-  // are different quantities; when no integer nullity was measured the field
-  // stays NaN rather than claiming an agreement.
+  // The numerical kernel of the weighted interior block and the exact integer
+  // topological nullity are different quantities, so the discrepancy is
+  // recorded; it stays NaN when no integer nullity was measured.
   read.nullityDiscrepancy =
       solve->integerKernelMeasured
           ? static_cast<double>(static_cast<long long>(read.nullity) -
@@ -1008,8 +992,8 @@ Certificate RecursiveQuotient::staticProbeCertificate(
     for (int i = 0; i < solve->interiorDim; ++i)
       fine(interior[static_cast<std::size_t>(i)]) = interiorResponse(i);
     if (solve->leftKernel.cols() > 0) {
-      // Compatibility of THIS load: L_IB b must be orthogonal to the left
-      // kernel (exact solvability; automatic in the positive regime).
+      // Compatibility of this load: L_IB b must be orthogonal to the left
+      // kernel. Automatic in the positive regime.
       Eigen::VectorXcd loadVector = Eigen::VectorXcd::Zero(solve->interiorDim);
       std::vector<int> interiorPos(static_cast<std::size_t>(dim_), -1);
       for (int i = 0; i < solve->interiorDim; ++i)
@@ -1036,11 +1020,11 @@ Certificate RecursiveQuotient::staticProbeCertificate(
 
   if (regime_ == CertificateRegime::NonNormal ||
       regime_ == CertificateRegime::ComplexSymmetricPencil) {
-    // The complex-symmetric pencil takes this path too (bilinear, no energy
-    // minimum to claim), under its own name.
-    // Certified block elimination: eliminated interior rows of L x vanish
-    // (retained kernel directions are couplings, not residuals) AND the
-    // left-kernel compatibility condition holds.
+    // The complex-symmetric pencil takes this path too: the pairing is
+    // bilinear, so there is no energy minimum to claim. Certified block
+    // elimination: eliminated interior rows of L x vanish (retained kernel
+    // directions are couplings, not residuals) and the left-kernel
+    // compatibility condition holds.
     const Eigen::VectorXcd applied = op_ * fine;
     double eliminated = 0.0;
     for (int component = 0; component < componentCount(); ++component) {
@@ -1058,10 +1042,10 @@ Certificate RecursiveQuotient::staticProbeCertificate(
                (std::max(opNorm_, 1e-300) * std::sqrt(probeScale));
     residual = std::max(residual, compatibility);
   } else {
-    // Hermitian regimes: fine energy x^dag W L x against the coarse
-    // quadratic b^dag (W L_eff) b restricted to the kept block; the
-    // positive regime additionally certifies this as the interior MINIMUM
-    // (stationarity + convexity), the indefinite regime as stationarity.
+    // Hermitian regimes: fine energy x^dag W L x against the coarse quadratic
+    // b^dag (W L_eff) b restricted to the kept block. The positive regime
+    // certifies the interior minimum (stationarity + convexity), the
+    // indefinite regime stationarity alone.
     const cd fineEnergy = fine.dot(weighted);
     Eigen::VectorXcd keptWeights(kept);
     for (int position = 0; position < kept; ++position)
@@ -1485,8 +1469,8 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
   for (int position = 0; position < kept; ++position)
     basis(interfaceIndices_[static_cast<std::size_t>(position)], position) =
         cd(1.0, 0.0);
-  // Constraint modes: psi = -L_II^{+} L_IK per component (the static
-  // component solves, reused verbatim — child factorizations are shared).
+  // Constraint modes psi = -L_II^{+} L_IK per component, reusing the static
+  // component solves verbatim.
   for (int component = 0; component < componentCount(); ++component) {
     const auto solve = componentSolve(component);
     const auto &interior = interior_[static_cast<std::size_t>(component)];
@@ -1555,8 +1539,8 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::labeledFiberSum()
   LabeledFiberSumRead read;
   read.policy = options_.embeddingPolicy;
 
-  // Fiber E_v: every kept cell CLAIMED by v (shared interface cells appear
-  // in every claiming fiber) plus the retained modes owned by v.
+  // Fiber E_v: every kept cell claimed by v — a shared interface cell appears
+  // in every claiming fiber — plus the retained modes owned by v.
   std::vector<Eigen::VectorXcd> columns;
   for (int component = 0; component < componentCount(); ++component) {
     int rank = 0;
@@ -1598,14 +1582,11 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::summarizeFiberSum(
   read.policy = options_.embeddingPolicy;
 
   const int total = static_cast<int>(columns.size());
-  // An EMPTY labeled sum is a legitimate reduction, not a malformed one: a
-  // partition with a single component covering every cell has no interface
-  // cell to keep, and a component whose interior block has no kernel retains
-  // no mode either. The empty sum is trivially an exact isometry — but the
-  // spectral norm and the SVD below are undefined at size zero, so it is
-  // REPORTED here rather than computed. (Found by the #776 overlay at
-  // modularity resolution gamma = 0.5, where the whole complex is one
-  // component; the zero-size JacobiSVD faulted in a Release build.)
+  // An empty labeled sum is legitimate: a single component covering every cell
+  // keeps no interface cell, and an interior block with no kernel retains no
+  // mode. It is trivially an exact isometry, reported rather than computed
+  // because the spectral norm and the SVD below are undefined at size zero (a
+  // zero-size JacobiSVD faults in a Release build).
   if (total == 0) {
     read.nominalRank = 0;
     read.effectiveRank = 0;
@@ -1619,10 +1600,10 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::summarizeFiberSum(
   for (int j = 0; j < total; ++j) {
     Eigen::VectorXcd columnVector = columns[static_cast<std::size_t>(j)];
     // |W|-unit normalization keeps the Gram scale-free; a W-null column is
-    // left raw (its Gram diagonal reports the null norm honestly).
+    // left raw and its Gram diagonal reports the null norm.
     cd wNorm = cd(0.0, 0.0);
     if (pencil_) {
-      // The complex bilinear pairing c^T M c (specification §6, §7): no conjugation.
+      // The complex bilinear pairing c^T M c: no conjugation.
       wNorm = (columnVector.transpose() * (pencilMetric_ * columnVector))(0, 0);
     } else {
       for (int i = 0; i < dim_; ++i)
@@ -1685,10 +1666,8 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
   std::vector<int> summandComponents;
   std::vector<int> summandRanks;
   std::vector<CertifiedFiberSummand> summandCertificates;
-  // The worst isolation gap over the summed bands. An UNKNOWN side (NaN) does
-  // not participate: it is not a gap of zero, and treating it as one would
-  // invent a failure the band never reported. All-unknown therefore leaves
-  // the field NaN rather than claiming a measured worst case.
+  // The worst isolation gap over the summed bands. An unknown side (NaN) does
+  // not participate; all sides unknown leaves the field NaN.
   double worstGap = kInf;
   bool sawGap = false;
   bool allAccepted = true;
@@ -1710,9 +1689,8 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
       for (int j = 0; j < rank; ++j) columns.push_back(frame.col(j));
     }
 
-    // Every supplied band is REPORTED, including a rank-zero or uncertified
-    // one: the summand lists stay 1:1 with the input, so a caller can always
-    // read back what its band contributed. Nothing is silently dropped.
+    // Every supplied band is reported, rank-zero or uncertified included, so
+    // the summand lists stay 1:1 with the input.
     summandComponents.push_back(band.component);
     summandRanks.push_back(rank);
     CertifiedFiberSummand summand;
@@ -1741,10 +1719,10 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
   read.fromCertifiedBands = true;
   read.allBandsAccepted = allAccepted && !bands.empty();
   read.worstIsolationGap = sawGap ? worstGap : kNaN;
-  // An uncertified summand cannot be laundered into a certified sum by the
-  // Gram treatment: the isometry claim may still hold exactly, but the
-  // "certified ISOLATED subspace" claim of the boxed display does not, so the
-  // sum travels with a marker that never holds.
+  // The Gram treatment cannot turn an uncertified summand into a certified
+  // sum: the isometry claim may hold exactly while the certified
+  // isolated-subspace claim does not, so the sum carries a marker that never
+  // holds.
   if (!read.allBandsAccepted)
     read.certificate =
         Certificate::heuristicDiscovery(CertificateDomain::BandWindow, regime_);
@@ -1760,8 +1738,7 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
   const int total = static_cast<int>(sum.nominalRank);
   if (total == 0) {
     // Fock of the zero space is the one-dimensional vacuum line, and its
-    // free many-body spectrum is the single value 0. That is an exact
-    // statement, not an empty read.
+    // free many-body spectrum is the single value 0.
     read.modes = 0;
     read.fockDimension = 1.0;
     read.spectrumMaterialized = true;
@@ -1779,14 +1756,13 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
       toMatrix(sum.embedding, dim_, total, "labeled sum embedding");
   Eigen::MatrixXcd gram = toMatrix(sum.gram, total, total, "labeled sum gram");
   // h = J^dagger W L J: the one-particle operator compressed onto the labeled
-  // sum in the W-pairing the operator is self-adjoint against.
+  // sum in the W-pairing L is self-adjoint against.
   const Eigen::MatrixXcd dense = Eigen::MatrixXcd(op_);
   Eigen::MatrixXcd oneParticle =
       embedding.adjoint() * (weights_.asDiagonal() * (dense * embedding));
 
-  // Under `QuotientKernel` the declared treatment is to quotient ker G, so the
-  // stage is built on that quotient — the overcounted directions are gone from
-  // the basis rather than carried into the many-body space.
+  // Under `QuotientKernel` the stage is built on the quotient by ker G, so the
+  // overcounted directions leave the basis.
   bool quotiented = false;
   if (sum.policy == FiberEmbeddingPolicy::QuotientKernel &&
       sum.effectiveRank < sum.nominalRank) {
@@ -1804,13 +1780,10 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
   read.gram = toFlat(gram);
   read.fockDimension = std::ldexp(1.0, modes);
 
-  // The one-particle spectrum is the spectrum of the PENCIL (h, G): on a
-  // labeled sum the basis is not orthonormal in general, and reading the
-  // eigenvalues of h alone would silently assume G = I. When G is singular
-  // and the run did not declare `QuotientKernel`, there is no one-particle
-  // spectrum to report — the sum overcounts and the declared treatment did
-  // not remove the overcount. That REFUSES rather than reporting the
-  // eigenvalues of h as though the basis were independent.
+  // The one-particle spectrum is that of the pencil (h, G): the labeled-sum
+  // basis is not orthonormal in general, and the eigenvalues of h alone would
+  // assume G = I. A singular G without `QuotientKernel` means an unremoved
+  // overcount, so there is no spectrum to report and this refuses.
   const bool singular =
       !quotiented && sum.quotientNullity > 0 &&
       sum.policy != FiberEmbeddingPolicy::QuotientKernel;
@@ -1834,8 +1807,8 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
   read.oneParticleSpectrum = spectrum;
 
   // The free many-body spectrum of dGamma(h) is the exact set of occupation
-  // subset sums. Nothing materializes a Fock vector; the enumeration refuses
-  // past the declared budget rather than allocating 2^M entries.
+  // subset sums; the enumeration refuses past the declared budget rather than
+  // allocating 2^M entries.
   try {
     read.fockSpectrum = OccupationSpectra::fockSums(spectrum, maxTerms);
     read.spectrumMaterialized = true;
@@ -1864,11 +1837,10 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
     throw std::invalid_argument("persistentPartition: restarts must be > 0");
   if (dim == 0) return {};
 
-  // The similarity graph of a response network: the SYMMETRIZED off-diagonal
-  // magnitude w_ij = |R_ij| + |R_ji|. The diagonal never enters (a coordinate
-  // is not similar to itself), and the magnitude is taken because the operator
-  // is complex and generally non-normal — a signed or complex coupling is
-  // still a coupling, and modularity needs a nonnegative weight.
+  // The similarity graph of a response network: the symmetrized off-diagonal
+  // magnitude w_ij = |R_ij| + |R_ji|. The diagonal never enters; the magnitude
+  // is taken because modularity needs a nonnegative weight and the operator is
+  // complex.
   std::vector<std::uint64_t> src;
   std::vector<std::uint64_t> tgt;
   std::vector<double> weight;
@@ -1883,8 +1855,8 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
       weight.push_back(w);
     }
   }
-  // Every coordinate is declared a node, so a coordinate the operator does not
-  // couple to anything still exists in the partition instead of vanishing.
+  // Every coordinate is declared a node, so an uncoupled coordinate still
+  // appears in the partition.
   std::vector<std::uint64_t> isolated(static_cast<std::size_t>(dim));
   for (int i = 0; i < dim; ++i)
     isolated[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(i);
@@ -1913,9 +1885,8 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
       partition.push_back(std::move(members));
     }
   }
-  // A coordinate no discovered community claimed becomes its own component:
-  // the partition handed to `nextLevel` must cover every index, and a dropped
-  // coordinate would silently leave part of the operator unreduced.
+  // A coordinate no discovered community claimed becomes its own component;
+  // the partition handed to `nextLevel` must cover every index.
   for (int i = 0; i < dim; ++i)
     if (!claimed[static_cast<std::size_t>(i)]) partition.push_back({i});
   return partition;
@@ -1940,15 +1911,10 @@ RecursiveQuotient::ResponseNetworkRead RecursiveQuotient::responseNetwork()
   ResponseNetworkRead read;
   read.stalkCoordinates.assign(components_.size(), {});
 
-  // An EMPTY reduction is a legitimate one, exactly as for `labeledFiberSum`:
-  // a partition whose single component covers every cell keeps no interface
-  // coordinate, and a component whose interior block has no kernel retains no
-  // mode, so the reduced operator is 0 x 0. `Eigen::maxCoeff` is undefined at
-  // size zero, so the empty network is REPORTED as the exactly-empty network
-  // it is — one empty stalk per component, no edges, nothing left uncovered —
-  // rather than computed. (Found by the #777 driver at modularity resolution
-  // gamma = 0.5 on the closed-S4 host, where the scan puts the whole complex
-  // in one component; the zero-size `maxCoeff` faulted in a Release build.)
+  // An empty reduction is legitimate, as for `labeledFiberSum`, and leaves a
+  // 0 x 0 reduced operator. `Eigen::maxCoeff` is undefined at size zero, so the
+  // empty network is reported rather than computed: one empty stalk per
+  // component, no edges, nothing uncovered.
   if (reduced == 0) {
     read.stalkDimensions.assign(components_.size(), 0);
     read.vertexBlocks.assign(components_.size(), {});
@@ -2049,10 +2015,9 @@ RecursiveQuotient::SheafRealizationRead RecursiveQuotient::sheafRealization()
   SheafRealizationRead read;
   if (regime_ == CertificateRegime::NonNormal ||
       regime_ == CertificateRegime::ComplexSymmetricPencil) {
-    // The complex-symmetric pencil is refused under its own name for the same
-    // reason as the non-normal regime.
-    // A cellular sheaf Laplacian is self-adjoint; a non-normal response
-    // network has no such realization — retain the network, invent nothing.
+    // A cellular sheaf Laplacian is self-adjoint, so a non-normal response
+    // network has no such realization and is retained as is. The
+    // complex-symmetric pencil is refused for the same reason.
     read.certificate = Certificate::certifiedNumerical(
         CertificateDomain::Static, regime_, kInf, kNaN, options_.tolerance);
     return read;
@@ -2128,8 +2093,8 @@ RecursiveQuotient::SheafRealizationRead RecursiveQuotient::sheafRealization()
     maps.push_back(toFlat(rhoV));
   }
 
-  // The realization stands only when the sheaf Laplacian reproduces the
-  // vertex blocks too.
+  // The realization stands only if the sheaf Laplacian also reproduces the
+  // vertex blocks.
   double residual = 0.0;
   for (int component = 0; component < componentTotal; ++component) {
     const int stalkDim =
@@ -2165,8 +2130,8 @@ RecursiveQuotient RecursiveQuotient::childOver(
     const std::vector<std::vector<int>> &components,
     const Options &options) const {
   const int reduced = static_cast<int>(coordinates.size());
-  // Child chain metric: the reduced coordinates' W-norms (kept cells carry
-  // their weights, retained modes their indefinite norms).
+  // Child chain metric: the reduced coordinates' W-norms — kept cells their
+  // weights, retained modes their indefinite norms.
   std::vector<cd> childWeights(static_cast<std::size_t>(reduced));
   for (int coordinate = 0; coordinate < reduced; ++coordinate) {
     const RetainedCoordinate &retained =
@@ -2213,7 +2178,8 @@ Eigen::MatrixXcd RecursiveQuotient::pencilConstraintModes(
   for (int p = 0; p < reduced; ++p) {
     const RetainedCoordinate &coordinate = coordinates[static_cast<std::size_t>(p)];
     if (coordinate.fineIndex < 0) {
-      // A retained resonant mode: its embedding is the kernel vector in fine coordinates.
+      // A retained resonant mode embeds as the kernel vector in fine
+      // coordinates.
       for (int i = 0; i < dim_; ++i)
         T(i, p) = coordinate.embedding[static_cast<std::size_t>(i)];
       continue;
@@ -2275,9 +2241,8 @@ RecursiveQuotient RecursiveQuotient::nextLevel(
                       components, options);
   }
   child.levelProvenance_.origin = LevelOrigin::StaticResponse;
-  // A static level carries NO window: lambda = 0 is a point, not a band, and
-  // reporting a window here would claim a band domain the reduction does not
-  // speak for. The fields stay NaN.
+  // A static level carries no window: lambda = 0 is a point, not a band, so
+  // the window fields stay NaN.
   child.levelProvenance_.solveResidual = reduction.solveResidual;
   child.levelProvenance_.compatibilityResidual = reduction.compatibilityResidual;
   child.levelProvenance_.certificate = reduction.certificate;
@@ -2293,9 +2258,8 @@ RecursiveQuotient RecursiveQuotient::nextLevelAtLambda(
     const std::vector<std::vector<int>> &components, cd lambda,
     double windowLower, double windowUpper, const Options &options) const {
   // R_{l+1}(lambda) = Feshbach_{P_l}(R_l(lambda)): the child's operator is the
-  // exact energy-dependent response at the declared lambda, NOT the static
-  // complement. The plain static Schur complement does not preserve the
-  // nonzero spectrum, which is precisely why this path exists.
+  // exact energy-dependent response at the declared lambda, not the static
+  // complement, which does not preserve the nonzero spectrum.
   const FeshbachRead response = feshbach(lambda, windowLower, windowUpper);
   RecursiveQuotient child =
       pencil_ ? pencilChildOver(response.response, response.coordinates,
@@ -2339,13 +2303,11 @@ RecursiveQuotient RecursiveQuotient::nextLevelFromSurrogate(
   const Eigen::MatrixXcd mass = toMatrix(surrogate.reducedMass, columns,
                                          columns, "surrogate reduced mass");
 
-  // A level carries a DIAGONAL chain metric, while the surrogate's reduced
-  // pencil (K, M) is generalized. Building the child on the M-orthonormalized
-  // basis V M^{-1/2} makes the child metric the identity and its operator
-  // M^{-1/2} K M^{-1/2}. That congruence preserves the generalized
-  // eigenvalues of (K, M) EXACTLY — no spectral content is traded for the
-  // convenience, and the approximation remains entirely in the truncation the
-  // carried certificate reports.
+  // A level carries a diagonal chain metric while the surrogate's reduced
+  // pencil (K, M) is generalized. On the M-orthonormalized basis V M^{-1/2} the
+  // child metric is the identity and its operator M^{-1/2} K M^{-1/2}; that
+  // congruence preserves the generalized eigenvalues of (K, M) exactly, leaving
+  // the approximation entirely in the truncation.
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> massSolver(mass);
   if (massSolver.info() != Eigen::Success)
     throw std::invalid_argument(
@@ -2368,10 +2330,9 @@ RecursiveQuotient RecursiveQuotient::nextLevelFromSurrogate(
   const Eigen::MatrixXcd childOperator = inverseRoot * stiffness * inverseRoot;
   const Eigen::MatrixXcd childBasis = basis * inverseRoot;
 
-  // The child's coordinates are the M-orthonormalized surrogate modes. They
-  // are RETAINED interior coordinates in the reduction's vocabulary — every
-  // one of them is an explicit stalk coordinate of the surrogate, and none is
-  // a fine cell of this level.
+  // The child's coordinates are the M-orthonormalized surrogate modes:
+  // retained interior coordinates, each a stalk coordinate of the surrogate
+  // rather than a fine cell of this level.
   std::vector<RetainedCoordinate> coordinates(
       static_cast<std::size_t>(columns));
   for (int j = 0; j < columns; ++j) {
@@ -2387,9 +2348,9 @@ RecursiveQuotient RecursiveQuotient::nextLevelFromSurrogate(
 
   RecursiveQuotient child;
   if (pencil_) {
-    // A pencil level carries the CONGRUENCE (V^T A V, V^T M V) (specification
-    // Prop. 7.1(b)); the M^{-1/2} orthonormalization above is a Hermitian
-    // device and is not applied to a complex symmetric M.
+    // A pencil level carries the congruence (V^T A V, V^T M V); the M^{-1/2}
+    // orthonormalization above is Hermitian-only and is not applied to a
+    // complex symmetric M.
     const Eigen::MatrixXcd A = Eigen::MatrixXcd(op_);
     const Eigen::MatrixXcd congruentA = basis.transpose() * A * basis;
     const Eigen::MatrixXcd congruentM =

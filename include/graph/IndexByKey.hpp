@@ -1,24 +1,10 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
-// Build a ``key → index`` lookup table from a vector of items.
+// Build a "key -> index" lookup table from a vector of items: the map sending
+// keyFn(items[i]) to i, with the key extraction explicit at the call site.
 //
-// Four sites in the codebase (Spacetime::getDualAdjacency,
-// Poset::fromSpacetime, ReggeSolver::flattenMeshForGpu's edge map,
-// and similar) all hand-roll the same pattern:
-//
-//   std::unordered_map<KeyType, IndexType> map;
-//   map.reserve(items.size());
-//   for (IndexType i = 0; i < items.size(); ++i) {
-//       map.emplace(keyExtractor(items[i]), i);
-//   }
-//
-// This helper compresses the idiom to a single call and makes the
-// key-extraction function explicit at the call site.
-//
-// Note: the helper assumes keys are unique across ``items``. If two
-// items map to the same key, the first wins (``emplace`` semantics)
-// and the duplicate is silently dropped — the same behaviour each
-// original callsite already had.
+// Keys are assumed unique across items. If two items share a key the first
+// wins (emplace semantics) and the duplicate is silently dropped.
 
 #pragma once
 

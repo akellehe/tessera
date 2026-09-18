@@ -21,25 +21,27 @@ using namespace ::tessera::quantum;
 
 /// # Simulation Base Class
 ///
-/// Abstract interface for Monte Carlo simulations of discrete spacetime geometries.
-/// Each subclass implements a specific approach to quantum gravity:
+/// Abstract interface for Monte Carlo simulations of discrete spacetime
+/// geometries. Each subclass implements one approach to quantum gravity:
 ///
-///   - **CDT** (Causal Dynamical Triangulations): Metropolis sampling over causal
-///     triangulations weighted by the Regge action. Preserves a global time foliation.
-///   - **Regge calculus**: Varies edge lengths on a fixed triangulation, computing
-///     the Einstein-Hilbert action via deficit angles at hinges.
-///   - **Causal Set Theory (CST)**: Poisson sprinklings of points in a Lorentzian
+///   - Causal dynamical triangulation (CDT): Metropolis sampling over causal
+///     triangulations weighted by the Regge action. Preserves a global time
+///     foliation.
+///   - Regge calculus: varies edge lengths on a fixed triangulation, computing
+///     the Einstein-Hilbert action from deficit angles at hinges.
+///   - Causal set theory: Poisson sprinklings of points in a Lorentzian
 ///     manifold, with order relations encoding causal structure.
 ///
 /// The simulation lifecycle has two phases:
 ///
-///   1. **Tuning**: Adjust bare coupling constants (e.g., the cosmological constant)
-///      so that macroscopic observables (e.g., total spacetime volume) reach their
-///      target values. In CDT, this drives \f$ N_4 \to \bar{N}_4 \f$.
+///   1. Tuning: adjust bare coupling constants (e.g. the cosmological constant)
+///      so that macroscopic observables (e.g. total spacetime volume) reach
+///      their target values. In CDT this drives \f$ N_4 \to \bar{N}_4 \f$.
 ///
-///   2. **Thermalization**: Evolve the system under the Monte Carlo dynamics until
-///      it reaches thermal equilibrium, after which configurations are drawn from
-///      the stationary distribution \f$ P(\mathcal{T}) \propto e^{-S[\mathcal{T}]} \f$.
+///   2. Thermalization: evolve the system under the Monte Carlo dynamics until
+///      it reaches thermal equilibrium, after which configurations are drawn
+///      from the stationary distribution
+///      \f$ P(\mathcal{T}) \propto e^{-S[\mathcal{T}]} \f$.
 ///
 class Simulation {
   public:
@@ -47,16 +49,18 @@ class Simulation {
 
     /// Tune bare coupling constants toward physically meaningful values.
     ///
-    /// In CDT this adjusts \f$ k_4 \f$ so the four-volume fluctuates around the target.
-    /// In Regge calculus this constructs an initial triangulation. In CST this sets
-    /// the sprinkling density.
+    /// In CDT this adjusts \f$ k_4 \f$ so the four-volume fluctuates around the
+    /// target. In Regge calculus it constructs an initial triangulation. In
+    /// causal set theory it sets the sprinkling density.
     virtual void tune(std::function<void(int,int)> progress = nullptr);
 
     /// Evolve the system to thermal equilibrium.
+    /// Evolve the system to thermal equilibrium.
     ///
-    /// In CDT this runs Monte Carlo sweeps until the action stabilizes. In CST this
-    /// applies a Poisson sprinkling to break Lorentz-invariance-violating lattice
-    /// artifacts. In Regge calculus this applies random edge-length perturbations.
+    /// In CDT this runs Monte Carlo sweeps until the action stabilizes. In
+    /// causal set theory this applies a Poisson sprinkling to break
+    /// Lorentz-invariance-violating lattice artifacts. In Regge calculus it
+    /// applies random edge-length perturbations.
     virtual void thermalize();
 };
 

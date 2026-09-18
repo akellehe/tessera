@@ -1,6 +1,6 @@
-// Implementation of CausalOrders::fromSnapshots — the cross-time
-// poset construction. See include/quantum/CausalCompare.hpp for the
-// design and the three-order definitions.
+// Implementation of CausalOrders::fromSnapshots — the cross-time poset
+// construction. See include/quantum/CausalCompare.hpp for the
+// definitions of the three orders.
 
 #include "quantum/CausalCompare.hpp"
 #include "quantum/TDVPRunner.hpp"   // full definition of TDVPSnapshot
@@ -61,9 +61,9 @@ Poset posetFromStrict(std::vector<std::vector<char>> const& strict) {
     return p;
 }
 
-// Aggregate every (cut, time) into a flat label list, plus collect the
-// corresponding spectrum into a flat vector-of-vectors so we can call
-// Majorization::posetOf once.
+// Aggregate every (cut, time) into a flat label list and collect the
+// corresponding spectra into a flat vector-of-vectors, so
+// Majorization::posetOf is called once.
 struct Flattened {
     std::vector<LabelSpacetime>          labels;
     std::vector<std::vector<double>>     spectra;
@@ -119,7 +119,7 @@ Poset buildLrPoset(std::vector<LabelSpacetime> const& labels, double vLr) {
     return posetFromStrict(strict);
 }
 
-// Regular-chain causet Hasse poset:
+// Regular-chain causal-set Hasse poset:
 //   (a, b) is strict iff labels[a].tIdx < labels[b].tIdx.
 Poset buildCsPosetRegularChain(std::vector<LabelSpacetime> const& labels) {
     const int n = static_cast<int>(labels.size());
@@ -147,10 +147,9 @@ CausalOrders CausalOrders::fromSnapshots(
 {
     auto flat = flattenSnapshots(snapshots);
 
-    // Materialize a default StandardMajorization{1e-12} when no predicate
-    // is supplied. The lifetime of `defaultPredicate` extends to the end
-    // of this function, which is enough — Majorization::posetOf only
-    // needs it during the call.
+    // Materialize a default StandardMajorization{1e-12} when no
+    // predicate is supplied. Its lifetime ends with this function, which
+    // suffices: Majorization::posetOf only needs it during the call.
     StandardMajorization defaultPredicate{1e-12};
     MajorizationPredicate const& effectivePredicate =
         predicate ? *predicate : defaultPredicate;

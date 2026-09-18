@@ -20,17 +20,11 @@ using namespace ::tessera::spacetime;
 
 /// # TouchedStar
 ///
-/// The publication record of one accepted move: the
-/// touched simplices, changed edges, and created/deleted cells, all named by
-/// their vertex identifiers. `AnalyticCache::publish` intersects this record
-/// with each cache entry's component vertex set — entries meeting the star
-/// are invalidated, disjoint siblings survive.
-///
-/// Vertex identifiers are the right currency because a simplex IS its vertex
-/// set (matching is by set, never by any imposed vertex order), and any two
-/// cells interact through the Hodge/Regge operators only when they share a
-/// vertex — so vertex-set intersection is a conservative, exact-support test
-/// for "could this entry's operator have changed".
+/// The publication record of one accepted move: the touched simplices, changed
+/// edges, and created/deleted cells, all named by their vertex identifiers.
+/// `AnalyticCache::publish` intersects this record with each cache entry's
+/// component vertex set; entries meeting the star are invalidated, disjoint
+/// siblings survive. Matching is by vertex set, not vertex order.
 class TouchedStar {
   public:
     /// Record a simplex whose geometry or incidence changed.
@@ -58,68 +52,53 @@ class TouchedStar {
 
 /// # AnalyticCache
 ///
-/// Revision- and star-keyed cache for per-component analytic payloads (#764):
-/// Hodge blocks, component factorizations, spectral projectors, transports,
-/// covariance blocks, Wick contraction plans. Entries are keyed by
+/// Revision- and star-keyed cache for per-component analytic payloads (Hodge
+/// blocks, factorizations, spectral projectors, transports, ...). Entries are
+/// keyed by
 ///
 ///  - the **component key** — the order-independent
 ///    `Fingerprint::fingerprintOf` hash of the component's vertex-identifier
-///    set (the same convention `MultiCobordism` uses for its block-Betti
-///    slots), so the key is invariant under any vertex relabeling that
-///    preserves identifiers and under any input ordering;
-///  - a caller-chosen **kind** string (e.g. `"hodge-block"`,
-///    `"lu-factorization"`, `"spectral-projector"`); and
+///    set, so the key is invariant under input ordering;
+///  - a caller-chosen **kind** string (e.g. `"hodge-block"`); and
 ///  - an integer **parameter** (degree \f$ k \f$, band index, ...).
 ///
 /// **Freshness contract.** Every entry is stamped with the spacetime's
-/// `metricRevisionKey()` at store time; the cache additionally tracks the
-/// revision it was last synchronized to. An entry is served when either
+/// `metricRevisionKey()` at store time; the cache also tracks the revision it
+/// was last synchronized to. An entry is served when either
 ///
-///  1. the global metric revision still equals the entry's stamp (nothing
-///     anywhere changed), or
+///  1. the global metric revision still equals the entry's stamp, or
 ///  2. every change since the stamp was published through `publish` and this
-///     entry survived every intersection test (its component is untouched).
+///     entry survived every intersection test.
 ///
-/// A revision drift that was never published makes the cache serve NOTHING
-/// until the next `publish`/`store` — fail-safe: an unpublished mutation can
-/// only cause recomputation, never a stale hit. This composes with, and does
-/// not replace, the coarser whole-complex slots already on `Spacetime`
-/// (`cachedSpectralSlot`, `cachedBettiNumbers`): those invalidate globally on
-/// any change; this cache keeps disjoint siblings alive across a local move.
+/// An unpublished revision drift makes the cache serve nothing until the next
+/// `publish` or `store`, so it can only cause recomputation, never a stale hit.
 ///
-/// Payloads are opaque `shared_ptr<void>` (the `Spacetime::storeSpectralSlot`
-/// convention) plus the `Certificate` that grades them, so one container
-/// serves every kernel without a parallel cache class per payload type.
+/// Payloads are opaque `shared_ptr<void>` plus the `Certificate` grading them.
 ///
-/// Threading: not synchronized, on the same contract as the `Spacetime`
-/// cache slots — candidate spacetimes are thread-private clones and the
-/// shared complex is scored serially. Replay mode disables the cache with
-/// `setEnabled(false)` and compares against the incremental path.
+/// Threading: not synchronized.
 class AnalyticCache {
   public:
     /// Bind the cache to the spacetime whose geometry revisions gate it. The
-    /// spacetime must outlive the cache; the held `shared_ptr` keeps it alive.
+    /// held `shared_ptr` keeps it alive.
     explicit AnalyticCache(std::shared_ptr<Spacetime> st);
 
     /// The order-independent component key of a vertex-identifier set
-    /// (`Fingerprint::fingerprintOf`; XOR of mixed ids — any permutation of
-    /// `vertexIds` yields the same key).
+    /// (`Fingerprint::fingerprintOf`, an XOR of mixed ids).
     [[nodiscard]] static std::uint64_t componentKey(
         const std::vector<std::uint64_t> &vertexIds);
 
     /// The bound spacetime's current metric revision
     /// (`Spacetime::metricRevisionKey`): moves on any combinatorial change,
-    /// any `setLength`, any `setPhase`.
+    /// `setLength` or `setPhase`.
     [[nodiscard]] std::uint64_t geometryRevision() const;
 
     /// The bound spacetime's current combinatorial revision
     /// (`Spacetime::structuralRevision`).
     [[nodiscard]] std::uint64_t structuralRevision() const;
 
-    /// Store `payload` + `certificate` for (component vertex set, kind,
-    /// parameter), stamped at the CURRENT metric revision. Overwrites any
-    /// entry under the same key. The vertex-id set is retained for the
-    /// `publish` intersection test.
+    /// Store `payload` and `certificate` for (component vertex set, kind,
+    /// parameter), stamped at the current metric revision, overwriting any entry
+    /// under the same key. The vertex-id set is retained for `publish`.
     void store(const std::vector<std::uint64_t> &componentVertexIds,
                const std::string &kind, std::int64_t parameter,
                std::shared_ptr<void> payload, Certificate certificate);
@@ -130,17 +109,17 @@ class AnalyticCache {
         const std::vector<std::uint64_t> &componentVertexIds,
         const std::string &kind, std::int64_t parameter) const;
 
-    /// The certificate stored beside a payload, or nullptr under exactly the
-    /// same conditions `fetch` returns nullptr (does not count a hit/miss).
+    /// The certificate stored beside a payload, or nullptr under the same
+    /// conditions `fetch` returns nullptr. Does not count a hit or miss.
     [[nodiscard]] const Certificate *fetchCertificate(
         const std::vector<std::uint64_t> &componentVertexIds,
         const std::string &kind, std::int64_t parameter) const;
 
     /// Publish one accepted move: drop every entry whose component vertex set
     /// intersects `star.vertices()`, then mark the cache synchronized to the
-    /// CURRENT metric revision. Call AFTER the mutation, with the COMPLETE
-    /// record of what it touched; disjoint siblings survive. An empty star
-    /// asserts the revision drift touched nothing any entry depends on.
+    /// current metric revision. Call after the mutation, with the full record of
+    /// what it touched. An empty star asserts that the revision drift touched
+    /// nothing any entry depends on.
     void publish(const TouchedStar &star);
 
     /// Number of live entries.
@@ -149,8 +128,7 @@ class AnalyticCache {
     void clear();
 
     /// Replay-mode switch: a disabled cache serves nothing (fetch returns
-    /// nullptr) but keeps accepting stores, so replay can compare the cold
-    /// path against the incremental one.
+    /// nullptr) but keeps accepting stores.
     void setEnabled(bool enabled) noexcept { enabled_ = enabled; }
     /// Whether the cache is serving entries (see `setEnabled`).
     [[nodiscard]] bool enabled() const noexcept { return enabled_; }

@@ -32,20 +32,18 @@ using namespace ::tessera::quantum;
 
 /// Flat-pool vertex container.
 ///
-/// Objects live in a ``std::deque<std::unique_ptr<Vertex>>`` so that
-/// element addresses are stable across resizes AND the pool can hold
-/// polymorphic subclasses (e.g. ``quantum::QuantumVertex``) without
-/// slicing. A parallel ``liveVec_`` provides O(1) random access
-/// without copying, and ``idToIndex_`` maps vertex ID → pool slot.
+/// Objects live in a ``std::deque<std::unique_ptr<Vertex>>``, so element addresses
+/// are stable across resizes and the pool can hold polymorphic subclasses (e.g.
+/// ``quantum::QuantumVertex``) without slicing. A parallel ``liveVec_`` gives O(1)
+/// random access without copying, and ``idToIndex_`` maps vertex id to pool slot.
 ///
-/// Slots are NEVER recycled. ``remove`` drops the vertex from the
-/// live-vector and id index but leaves the ``unique_ptr<Vertex>``
-/// in place at its pool slot, mirroring ``Spacetime::simplexStorage_``.
-/// This eliminates the use-after-free hazard of slot reuse — any
-/// raw ``Vertex*`` cached elsewhere remains dereferenceable for the
-/// life of the VertexList. The cost is a modest memory growth (the
-/// Vertex shell per ever-allocated vertex); for QuantumVertex this
-/// also retains the Eigen state until VertexList is destroyed.
+/// Slots are never recycled. ``remove`` drops the vertex from the live vector and the
+/// id index but leaves the ``unique_ptr<Vertex>`` at its pool slot, mirroring
+/// ``Spacetime::simplexStorage_``. That removes the use-after-free hazard of slot
+/// reuse: a raw ``Vertex*`` cached elsewhere stays dereferenceable for the life of the
+/// VertexList. The cost is memory growth of one Vertex shell per ever-allocated
+/// vertex; for QuantumVertex it also retains the Eigen state until the VertexList is
+/// destroyed.
 class VertexList {
   public:
     Vertex* operator[](const std::uint64_t vertexId) {
@@ -72,21 +70,16 @@ class VertexList {
       return add(id, std::vector<double>{});
     }
 
-    /// Construct a vertex (or any subclass ``T``) directly into the
-    /// pool, taking ownership through ``std::unique_ptr<Vertex>``.
+    /// Construct a vertex (or any subclass ``T``) directly into the pool, taking
+    /// ownership through ``std::unique_ptr<Vertex>``.
     ///
-    /// Subclass authors call this with their derived type and the
-    /// arguments their constructor expects. The ``id`` argument is
-    /// the lookup key (stored in ``idToIndex_``); the same value
-    /// will typically be forwarded as the first constructor arg, so
-    /// callers should pass it both as the lookup key and inside
+    /// ``id`` is the lookup key stored in ``idToIndex_``. It is normally also the
+    /// first constructor argument, so callers pass it both as the key and inside
     /// ``args...``.
     ///
-    /// Returns a non-owning ``T*`` whose lifetime is tied to the
-    /// VertexList. ``nullptr`` is never returned for new IDs; if the
-    /// ID already exists the existing slot's pointer is returned
-    /// (downcast may then fail if the recorded type differs — that's
-    /// the caller's bug).
+    /// Returns a non-owning ``T*`` whose lifetime is tied to the VertexList. For a new
+    /// id the result is never null; for an existing id the existing slot's pointer is
+    /// returned, and the downcast then fails if the recorded type differs.
     template <typename T, typename... Args>
     T* addAs(std::uint64_t id, Args&&... args) noexcept {
       static_assert(std::is_base_of_v<Vertex, T>,
@@ -119,10 +112,9 @@ class VertexList {
       auto id = vertex->getId();
       auto poolIt = idToIndex_.find(id);
       if (poolIt == idToIndex_.end()) return;
-      // Slots are not recycled (see class doc); just drop the live
-      // index and the id mapping. The unique_ptr<Vertex> in pool_
-      // stays in place so any cached Vertex* into this slot remains
-      // valid for the lifetime of the VertexList.
+      // Slots are not recycled (see the class doc); drop only the live index and
+      // the id mapping. The unique_ptr<Vertex> stays in pool_, so a cached Vertex*
+      // into this slot stays valid for the lifetime of the VertexList.
       idToIndex_.erase(poolIt);
 
       // Swap-and-pop from liveVec_ using the index stored on the Vertex
@@ -163,7 +155,7 @@ class VertexList {
       return liveVec_;
     }
 
-    /// Compatibility: returns a copy of the live-vertex vector.
+    /// Returns a copy of the live-vertex vector.
     std::vector<Vertex*> toVector() const noexcept {
       return liveVec_;
     }
@@ -173,10 +165,9 @@ class VertexList {
     }
 
   private:
-    /// Stable-address polymorphic storage. The deque never moves
-    /// existing elements on growth, and ``unique_ptr`` lets us hold
-    /// ``Vertex`` subclasses without slicing. Slots are never
-    /// recycled; ``remove`` only updates the live index and id map.
+    /// Stable-address polymorphic storage. The deque never moves existing elements
+    /// on growth, and ``unique_ptr`` holds ``Vertex`` subclasses without slicing.
+    /// Slots are never recycled; ``remove`` updates only the live index and id map.
     std::deque<std::unique_ptr<Vertex>> pool_;
     std::unordered_map<std::uint64_t, std::uint32_t> idToIndex_; ///< vertex ID → pool slot
     std::vector<Vertex*> liveVec_;                             ///< Flat array of live vertices

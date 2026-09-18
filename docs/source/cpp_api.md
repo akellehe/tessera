@@ -1,30 +1,25 @@
-# The Tessera C++ API
+# C++ API
 
-Tessera is a package for simulating lattice spacetime interactions building on the notion of causal sets as well as causal
-simplicial complexes.
-
-Below the C++ API is documented for users. To document for developers you can edit the Doxyfile and comment out
-exclusions to see the entire interface.
+tessera simulates lattice spacetimes built from causal sets and causal
+simplicial complexes. This page is the public C++ interface. To see the
+internal interface as well, edit the Doxyfile and comment out its exclusions.
 
 <!--
-  MAINTENANCE / DURABILITY
-  ------------------------
-  This page must list *every* public header under ``include/`` via a Breathe
+  This page must list every public header under ``include/`` via a Breathe
   ``{doxygenfile}`` directive, grouped into the per-module sections below.
   The sections mirror the ``include/`` directory tree one-to-one.
 
   Doxygen's INPUT (see ../Doxyfile: ``INPUT = ../src ../include`` with
-  ``RECURSIVE = YES``) already covers the entire tree, so every header has a
+  ``RECURSIVE = YES``) covers the entire tree, so every header has a
   Breathe-addressable file compound — entries here only need the header's
-  *basename* (there are no duplicate header basenames in the tree).
+  basename (there are no duplicate header basenames in the tree).
 
-  When you add a new header under ``include/``, add a matching
-  ``{doxygenfile}`` entry to the correct section here. The guard test
-  ``tests/test_cpp_api_docs_coverage.py`` fails CI if a header is missing
-  from (or stale in) this page, so this list cannot silently rot.
+  When you add a header under ``include/``, add a matching ``{doxygenfile}``
+  entry to the correct section here. ``tests/test_cpp_api_docs_coverage.py``
+  fails if a header is missing from, or stale in, this page.
 -->
 
-## Core Spacetime
+## Core spacetime
 
 ```{doxygenfile} Spacetime.h
 ```
@@ -35,7 +30,7 @@ exclusions to see the entire interface.
 ```{doxygenfile} Foliation.h
 ```
 
-## Simplicial Complex
+## Simplicial complex
 
 ```{doxygenfile} Simplex.h
 ```
@@ -60,7 +55,7 @@ exclusions to see the entire interface.
 ```{doxygenfile} ForwardDeclarations.h
 ```
 
-## Pachner Moves
+## Pachner moves
 
 ```{doxygenfile} PachnerMove.h
 ```
@@ -150,7 +145,7 @@ exclusions to see the entire interface.
 ```{doxygenfile} CrossingReadouts.h
 ```
 
-### Emergent-proton readout battery (#593)
+### Emergent-proton observables
 
 ```{doxygenfile} Record.h
 ```
@@ -226,7 +221,7 @@ exclusions to see the entire interface.
 ```{doxygenfile} LevenbergMarquardt.h
 ```
 
-## Chain-level Whitney Hodge pencil
+## Whitney-form Hodge Laplacian pencil
 
 ```{doxygenfile} WhitneyMass.h
 ```
@@ -246,7 +241,7 @@ exclusions to see the entire interface.
 ```{doxygenfile} PencilSchur.h
 ```
 
-## Reinforcement Learning
+## Reinforcement learning
 
 ```{doxygenfile} CobordismObjectiveEnv.h
 ```
@@ -324,7 +319,7 @@ exclusions to see the entire interface.
 ```{doxygenfile} eigenstate_cuda.h
 ```
 
-## Core utilities & infrastructure
+## Core utilities
 
 ```{doxygenfile} Poset.h
 ```

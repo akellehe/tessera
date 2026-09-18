@@ -321,11 +321,9 @@ chainhodge::Contour PencilLayer::bandContour(const AssembledPencil &assembled, i
   double nearest = std::numeric_limits<double>::infinity();
   for (std::size_t j = 0; j < centers.size(); ++j)
     if (static_cast<int>(j) != bandIndex) nearest = std::min(nearest, std::abs(centers[j] - center));
-  // A quarter of the gap: the nearest other cluster then lies three radii
-  // from the circle, so the trapezoidal resolvent quadrature leaks
-  // (1/3)^nodeCount of it into the band instead of (1/1)^nodeCount at half the
-  // gap (which at 32 nodes left 1e-10 of a neighbouring cluster in the
-  // projector and made a simple band read as rank four on a 3-simplex).
+  // A quarter of the gap: the nearest other cluster then lies three radii from
+  // the circle, so the trapezoidal resolvent quadrature leaks (1/3)^nodeCount of
+  // it into the band.
   const double radius = std::isfinite(nearest) ? 0.25 * nearest : 1.0;
   return chainhodge::Contour::circle(center, radius, nodeCount);
 }
@@ -379,7 +377,7 @@ FiberLevel PencilLayer::level(const AssembledPencil &assembled, int k,
       throw std::invalid_argument("PencilLayer::level: a retained fiber is at degree " + std::to_string(f.degree) +
                                   ", the level is at degree " + std::to_string(k));
     std::vector<int> idx = indicesOf(assembled, k, f.cells);
-    claimed.insert(idx.begin(), idx.end());  // overlaps are the labeled sum, never refused
+    claimed.insert(idx.begin(), idx.end());  // overlaps are the labeled sum
     supports.push_back(std::move(idx));
   }
   FiberLevel L;

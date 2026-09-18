@@ -6,8 +6,8 @@ The benchmark JSON log records the exact version, platform, and Python
 version for each run so results can be compared across releases.
 ```
 
-Build-time benchmarks for constructing CDT simplicial complexes across
-dimensions 1D through 4D and a range of target sizes.
+Build-time benchmarks for constructing causal dynamical triangulation (CDT)
+simplicial complexes in dimensions 1D through 4D over a range of target sizes.
 
 All timings are wall-clock averages over 5 repetitions on a single core,
 measured with `time.perf_counter()`.  Run the benchmark script yourself to
@@ -22,7 +22,7 @@ The script writes a structured JSON log alongside the plots
 
 ---
 
-## Build Time vs. Complex Size
+## Build time vs. complex size
 
 Build time scales roughly linearly with the number of target simplices in
 every dimension.  Higher-dimensional complexes are more expensive per
@@ -37,11 +37,11 @@ $d + 1$ vertices that must be linked into the triangulation.
 
 ---
 
-## Build Throughput
+## Build throughput
 
 Throughput (simplices per second) is highest in 1D--2D (~200,000--500,000
 simpl/s) and decreases with dimension as the per-simplex bookkeeping
-grows.  4D sustains ~150,000 simpl/s at 100k simplices, meaning a
+grows.  4D sustains ~150,000 simpl/s at 100k simplices, so a
 100k-simplex triangulation builds in under 1 second.
 
 ```{image} assets/benchmarks/build_throughput.png
@@ -52,7 +52,7 @@ grows.  4D sustains ~150,000 simpl/s at 100k simplices, meaning a
 
 ---
 
-## Full Dashboard
+## Full dashboard
 
 The four-panel view combines build time, throughput, actual-vs-requested
 size, and complex density (vertices and edges per simplex) across all
@@ -73,7 +73,7 @@ completeness but are not directly comparable to 2D--4D.
 
 ---
 
-## Results Table
+## Results table
 
 ```{list-table} Build times (5-run average, v0.1.0)
 :header-rows: 1
@@ -143,86 +143,7 @@ completeness but are not directly comparable to 2D--4D.
 
 ---
 
-## Optimization History
-
-The chart below compares the original unoptimized build times against the
-current v{{version}} code.  The cumulative optimizations include:
-
-- **Fingerprint kMax 64 → 8** — eliminated ~448 bytes of dead array per
-  Fingerprint, reclaiming ~214 MB on a 100k lattice and dramatically
-  improving cache utilization.
-- **Per-simplex edges and cofaces: `unordered_set` → `vector`** — replaced
-  hash tables with flat vectors for collections of 3-10 (edges) and 0-2
-  (cofaces) elements, eliminating per-object hash table overhead.
-- **Inlined trivial accessors** — moved `isTimelike()`, `size()`, `getTi()`,
-  `getTf()`, `getOrientation()` from Simplex.cpp to the header so the
-  compiler can inline them across translation units.
-- **Return by const reference** — `getVertices()`, `getEdges()`,
-  `getCofaces()`, `getSimplices()`, `getSource()`, `getTarget()` no longer
-  copy containers or bump refcounts on every call.
-- **O(1) simplex unregistration** — replaced linear scan with an index map.
-- **Direct hash in `createSimplex()`** — eliminated temporary `Fingerprint`
-  allocation by computing the XOR hash inline and using heterogeneous lookup.
-- **CDT move locals** — replaced `unordered_set` with `vector` for small
-  per-move vertex/simplex collections.
-- **Vertex `inEdges`/`outEdges`/`simplices`: `unordered_set` → `vector`** —
-  same flat-vector optimization applied to per-vertex containers (5-20
-  elements).
-- **`shared_ptr` → raw pointers** — replaced `shared_ptr<Simplex>`,
-  `shared_ptr<Edge>`, `shared_ptr<Vertex>` with raw pointers throughout.
-  Ownership is now explicit via `unique_ptr` in the owning containers
-  (Spacetime, EdgeList, VertexList). Eliminates atomic refcount overhead
-  on every pointer copy in the sweep inner loop.
-- **Eliminated dead return values** — `removeInEdge`/`removeOutEdge` were
-  allocating a hash table of "owner" simplices on every call and returning
-  it to nobody.
-- **Merged redundant hash tables** — consolidated `simplexVecIndex` and
-  `simplexPoolIndex_` into a single `simplexIndex_`, halving hash lookups
-  in `registerSimplex`/`unregisterSimplex`.
-- **Open-addressing flat hash map** — replaced `std::unordered_map` (chained
-  hashing) with a custom `FlatHashMap` using identity hash and linear
-  probing for the two hot-path simplex index tables. ~3x better cache
-  locality on lookup-heavy workloads.
-- **Eliminated `liveIndex_` maps** — stored the live-vector index directly on
-  `Edge` and `Vertex` objects, removing two `unordered_map`s (~5k entries
-  each) and their associated hash lookups on every add/remove.
-- **Inlined `computeDeltaAction` and `accept`** — moved the Metropolis
-  acceptance test and incremental action computation to the header,
-  eliminating function call overhead on every move attempt (~100k+/sec).
-- **Stack-allocated move temporaries** — replaced heap-allocated `std::vector`
-  with a fixed-capacity `StackVec<T, 8>` for vertex/simplex lists in flip,
-  iflip, and shift moves, eliminating `malloc`/`free` on every rejected
-  move attempt.
-
-Cumulative build-time improvement is **50-67%** at large lattice sizes,
-with sweep performance improving by up to **1.7x** (7.7 → 4.6 µs/move
-at N4=19k).
-
-```{image} assets/benchmarks/benchmark_comparison.png
-:alt: Before vs. after benchmark comparison
-:width: 100%
-:align: center
-```
-
-To regenerate this comparison after further changes:
-
-```bash
-# Save a baseline
-python examples/benchmarks/build_benchmark.py --save /tmp/baseline/
-
-# ... make changes, rebuild ...
-
-# Save and compare
-python examples/benchmarks/build_benchmark.py --save /tmp/new/
-python examples/benchmarks/compare_benchmarks.py \
-    --before /tmp/baseline/benchmark_results.json \
-    --after /tmp/new/benchmark_results.json \
-    --save docs/source/assets/benchmarks/
-```
-
----
-
-## Running the Benchmark
+## Running the benchmark
 
 ```bash
 # Default: 5 sizes x 4 dimensions x 5 repeats (~1 minute)
@@ -240,3 +161,26 @@ The `--save` directory receives:
 | `build_benchmarks.png` | Four-panel dashboard |
 | `build_time.png` | Build time vs. size (standalone) |
 | `build_throughput.png` | Throughput bar chart (standalone) |
+
+`compare_benchmarks.py` plots two saved runs against each other:
+
+```bash
+# Save a baseline
+python examples/benchmarks/build_benchmark.py --save /tmp/baseline/
+
+# ... make changes, rebuild ...
+
+# Save and compare
+python examples/benchmarks/build_benchmark.py --save /tmp/new/
+python examples/benchmarks/compare_benchmarks.py \
+    --before /tmp/baseline/benchmark_results.json \
+    --after /tmp/new/benchmark_results.json \
+    --save docs/source/assets/benchmarks/
+```
+
+## References
+
+- J. Ambjorn, J. Jurkiewicz, R. Loll, *Reconstructing the Universe*,
+  [arXiv:hep-th/0505154](https://arxiv.org/abs/hep-th/0505154)
+- U. Pachner, *P.L. homeomorphic manifolds are equivalent by elementary
+  shellings*, European J. Combin. **12** (1991) 129.

@@ -1,5 +1,6 @@
 // Dense Choi–Jamiołkowski map–state duality ("bending"). See
-// include/quantum/ChoiJamiolkowski.h for the locked conventions and the math.
+// include/quantum/ChoiJamiolkowski.h for the conventions and the
+// algebra.
 
 #include "quantum/ChoiJamiolkowski.h"
 
@@ -71,9 +72,9 @@ std::vector<std::complex<double>> ChoiJamiolkowski::vectorize(
     const std::vector<std::complex<double>> &U, int dA, int dB) {
     requirePositiveDims(dA, dB, "ChoiJamiolkowski::vectorize");
     // vec(U) = Σ_{ij} U_{ij} |i⟩_A ⊗ |j⟩_B. With the row-major layout the
-    // tensor index i*dB + j coincides with U's own flat index, so the
-    // vectorisation is exactly U's buffer — validated and returned as the
-    // length-(dA·dB) state vector.
+    // tensor index i*dB + j is U's own flat index, so the vectorisation
+    // is U's buffer, validated and returned as the length-(dA·dB) state
+    // vector.
     asMatrix(U, dA, dB, "ChoiJamiolkowski::vectorize");
     return U;
 }
@@ -81,10 +82,11 @@ std::vector<std::complex<double>> ChoiJamiolkowski::vectorize(
 std::vector<std::complex<double>> ChoiJamiolkowski::unvectorize(
     const std::vector<std::complex<double>> &v, int dA, int dB) {
     requirePositiveDims(dA, dB, "ChoiJamiolkowski::unvectorize");
-    // The inverse of vectorize: |v⟩ = Σ_{ij} v_{ij} |i⟩_A ⊗ |j⟩_B reshapes to the
-    // operator U_{ij} = v_{i·dB + j}. With the row-major convention the matrix
-    // buffer is the vector buffer, so validate the length (dA·dB) and return it,
-    // now read as a dA×dB operator.
+    // The inverse of vectorize: |v⟩ = Σ_{ij} v_{ij} |i⟩_A ⊗ |j⟩_B reshapes
+    // to the operator U_{ij} = v_{i·dB + j}. With the row-major
+    // convention the matrix buffer is the vector buffer, so the length
+    // (dA·dB) is validated and the buffer returned, read as a dA×dB
+    // operator.
     asMatrix(v, dA, dB, "ChoiJamiolkowski::unvectorize");
     return v;
 }

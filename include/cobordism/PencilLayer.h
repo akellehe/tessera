@@ -27,11 +27,9 @@ namespace tessera::cobordism {
 using ::tessera::spacetime::Spacetime;
 using chainhodge::Complex;
 
-/// The fiber form of a boundary block's target (#916): a retained fiber on a
-/// block's degree-\f$ k \f$ cells, read from a certified Riesz band of the
-/// cobordism that carries it. Beside the period-vector target it is what a
-/// downstream level pins as boundary data and what the next pencil level
-/// retains as interface coordinates.
+/// A retained fiber on a block's degree-\f$ k \f$ cells, read from a certified
+/// Riesz band of the cobordism that carries it. It is the interface coordinates
+/// the next level retains.
 struct BoundaryFiber {
   int degree{1};
   /// The block's degree-\f$ k \f$ cells (sorted vertex tuples), the fiber's rows.
@@ -43,7 +41,7 @@ struct BoundaryFiber {
   /// `images` at \f$ U = 1 \f$).
   Eigen::MatrixXcd dualImages{};
   /// \f$ \mathcal G = Z_B^T M_{BB} Z_B \f$: the chain metric on the fiber's own
-  /// cells (specification §7(c) with the image support the cells).
+  /// cells.
   Eigen::MatrixXcd gram{};
   /// \f$ Z^T M Z \f$ of the whole-complex band the fiber was cut from.
   Eigen::MatrixXcd fullGram{};
@@ -56,13 +54,11 @@ struct BoundaryFiber {
   [[nodiscard]] int rank() const noexcept { return static_cast<int>(images.cols()); }
 };
 
-/// A glued pencil (#916, integration rule "assembly"): the union of several
-/// cobordisms' top cells with one geometry, assembled per top simplex so the
-/// glued \f$ M_k \f$ and \f$ \tilde A_k \f$ are the sum of the pieces' on shared
-/// cells and the direct sum elsewhere.
+/// A glued pencil: the union of several cobordisms' top cells under one
+/// geometry, assembled per top simplex.
 struct AssembledPencil {
-  /// The union complex, owned through a stable pointer: the connection and
-  /// the dressed operators refer to it, so the record may be copied or moved.
+  /// The union complex, owned through a stable pointer that the connection and
+  /// the dressed operators refer to, so the record may be copied or moved.
   std::shared_ptr<const ChainComplex> complexPtr{};
   chainhodge::SquaredLengths lengths{};
   std::shared_ptr<chainhodge::ChainHodge> base{};
@@ -72,8 +68,8 @@ struct AssembledPencil {
   double epsilon{std::numeric_limits<double>::quiet_NaN()};
   /// Each piece's top cells (sorted tuples) in the order supplied.
   std::vector<std::vector<std::vector<std::uint64_t>>> pieces{};
-  /// Cells (per degree) that belong to more than one piece — the shared
-  /// interface on which the pieces' contributions add.
+  /// Cells (per degree) belonging to more than one piece: the shared interface
+  /// on which the pieces' contributions add.
   std::vector<std::vector<std::vector<std::uint64_t>>> sharedCells{};
   [[nodiscard]] const ChainComplex &complex() const { return *complexPtr; }
   [[nodiscard]] int dimension() const noexcept { return complexPtr ? complexPtr->dimension() : -1; }
@@ -85,9 +81,9 @@ struct AssembledPencil {
 /// `CovariantChainHodge::resolvent` factorizes): coordinates are the
 /// degree-\f$ k \f$ cells followed by the degree-\f$ (k-1) \f$ cells, and the
 /// Schur complement over the lower block is \f$ \lambda M_k^U - \tilde A_k^U \f$.
-/// Every block is assembled per top simplex, so the bordered form of a glued
-/// complex is exactly the sum of the pieces' on shared cells — which the dense
-/// \f$ \tilde A_k \f$ is not, because it contains \f$ M_{k-1}^{-1} \f$.
+/// Assembled per top simplex, so on shared cells a glued complex's bordered
+/// form is the sum of the pieces'; the dense \f$ \tilde A_k \f$ is not, since it
+/// contains \f$ M_{k-1}^{-1} \f$.
 struct BorderedPencil {
   int degree{1};
   Complex lambda{0.0, 0.0};
@@ -96,9 +92,9 @@ struct BorderedPencil {
   Eigen::MatrixXcd matrix{};
 };
 
-/// A pencil level whose interface coordinates are retained fibers (#916,
-/// integration rule "levels"): the Feshbach reduction of the assembled pencil
-/// onto the fibers' cells, restricted to the fibers.
+/// A pencil level whose interface coordinates are retained fibers: the Feshbach
+/// reduction of the assembled pencil onto the fibers' cells, restricted to the
+/// fibers.
 struct FiberLevel {
   int degree{1};
   Complex lambda{0.0, 0.0};
@@ -112,55 +108,40 @@ struct FiberLevel {
   Eigen::MatrixXcd J{};
   /// \f$ \tilde J = Z \f$: the dual fibers on their cells.
   Eigen::MatrixXcd Jdual{};
-  /// \f$ (\hat A_{\ell+1}, \mathcal G_{\ell+1}) = (J^T F_B J,\ J^T M_{BB} J) \f$ —
-  /// the level pencil and the chain metric on the fibers' cells (§7(c)); the
-  /// Gram's off-diagonal blocks vanish unless two fibers' cells share a top
-  /// simplex.
+  /// \f$ (\hat A_{\ell+1}, \mathcal G_{\ell+1}) = (J^T F_B J,\ J^T M_{BB} J) \f$:
+  /// the level pencil and chain metric on the fibers' cells. The Gram's
+  /// off-diagonal blocks vanish unless two fibers' cells share a top simplex.
   chainhodge::FiberRestriction restriction{};
-  /// \f$ J^T (T^T M T) J \f$: the Gram through the Feshbach constraint modes
-  /// (the carried Gram of a Feshbach child, #914), which couples fibers through
-  /// the eliminated bulk.
+  /// \f$ J^T (T^T M T) J \f$: the Gram through the Feshbach constraint modes,
+  /// which couples fibers through the eliminated bulk.
   Eigen::MatrixXcd constraintGram{};
   std::vector<int> blockOffsets{};
   std::vector<int> blockRanks{};
   /// Whether every pair of distinct fibers neither shares a cell nor has cells
-  /// in a common top simplex (then `restriction.gram` is exactly
-  /// block-diagonal). Overlapping fibers are the abstract labeled sum with
-  /// \f$ J \f$ and \f$ \mathcal G \f$ carried exactly, never a direct sum.
+  /// in a common top simplex; then `restriction.gram` is exactly
+  /// block-diagonal. Overlapping fibers are carried as a labeled sum, with
+  /// \f$ J \f$ and \f$ \mathcal G \f$ exact.
   bool fibersDisjoint{true};
 };
 
 /// # PencilLayer
 ///
 /// Continuation of a relaxed cobordism's boundary fibers into the next pencil
-/// level (#916). Composes the merged primitives and adds no new operator:
+/// level, composed from existing primitives:
 ///
-/// * **Assembly.** `assemble` glues cobordisms along shared boundary cells by
-///   taking the union of their top cells: because `WhitneyMass` assembles every
-///   \f$ M_k \f$ per top simplex, the glued pencil is exactly the sum of the
-///   pieces' pencils on shared cells and the direct sum elsewhere. Shared
-///   edges must carry the same squared length and link, and every piece must
-///   be computed at the same Lorentzian rotation \f$ \varepsilon \f$ (#908);
-///   a mismatch is refused by name.
-/// * **Boundary response.** `boundaryResponse` is the Feshbach complement of
-///   the assembled pencil onto a set of cells (`chainhodge::PencilSchur`), and
-///   `composeResponses` is the star product of two responses along shared
-///   cells; the assembled complex's response equals the composition to
-///   round-off (the exactness identity of the assembly).
-/// * **Fibers.** `readBoundaryFiber` reads a certified Riesz band of the
-///   assembled pencil (`CovariantChainHodge::band`) and restricts it to a
-///   block's cells: the fiber form of that block's target. `harmonicContour`
-///   is the circle around zero that excludes the first nonzero eigenvalue.
-/// * **Levels.** `level` is the next pencil level: the Feshbach reduction onto
-///   the retained fibers' cells, restricted to the fibers, carrying
-///   \f$ J \f$, \f$ \tilde J = Z \f$, and \f$ \mathcal G = J^T M_{BB} J \f$ exactly.
-///   Two output fibers of different cobordisms share no top simplex, so their
-///   level Gram is \f$ \mathcal G_A \oplus \mathcal G_B \f$; a glued interface
-///   produces the §7(c) off-diagonal block. A level's own output fiber is
-///   read by the same `readBoundaryFiber`, so a second level consumes the first
-///   through the same code path.
-/// * **Transfer.** `transfer` between two retained fibers on the assembled
-///   pencil, with the reversal identity asserted by `PencilSchur::transfer`.
+/// * **Assembly.** `assemble` glues cobordisms by taking the union of their top
+///   cells. `WhitneyMass` assembles every \f$ M_k \f$ per top simplex, so the
+///   glued pencil is the sum of the pieces' on shared cells and the direct sum
+///   elsewhere.
+/// * **Boundary response.** `boundaryResponse` is the Feshbach complement onto
+///   a set of cells; `composeResponses` is the star product of two responses
+///   along shared cells.
+/// * **Fibers.** `readBoundaryFiber` restricts a certified Riesz band to a
+///   block's cells.
+/// * **Levels.** `level` is the Feshbach reduction onto the retained fibers'
+///   cells, restricted to the fibers, carrying \f$ J \f$,
+///   \f$ \tilde J = Z \f$ and \f$ \mathcal G = J^T M_{BB} J \f$ exactly.
+/// * **Transfer.** `transfer` between two retained fibers.
 ///
 /// Every pairing is the transpose; no conjugation enters. Dense below the
 /// crossover of the underlying `ChainHodge`.
@@ -201,10 +182,10 @@ class PencilLayer {
                                                      Complex lambda);
   /// The Feshbach complement of the bordered pencil onto boundary cells of
   /// degree \p k (\p upperInterface) and \p k−1 (\p lowerInterface), both as
-  /// canonical indices of their degree. Coordinates in the result are the
-  /// bordered ones (degree-\p k index, then \p upperCount + degree-\p (k−1)
-  /// index), ascending. Two glued cobordisms' bordered responses compose
-  /// exactly (`composeResponses`) to the assembled complex's.
+  /// canonical indices of their degree. Result coordinates are the bordered ones
+  /// (degree-\p k index, then \p upperCount + degree-\p (k−1) index), ascending.
+  /// Two glued cobordisms' bordered responses compose under `composeResponses`
+  /// to the assembled complex's.
   [[nodiscard]] static chainhodge::FeshbachResult borderedResponse(
       const AssembledPencil &assembled, int k, const std::vector<int> &upperInterface,
       const std::vector<int> &lowerInterface, Complex lambda);
@@ -215,8 +196,8 @@ class PencilLayer {
                                                       int upperCount);
 
   /// The star product of two boundary responses along their shared cells:
-  /// \p left is over \p leftCells and \p right over \p rightCells (canonical
-  /// indices in the SAME assembled complex); the cells in both lists are
+  /// \p left is over \p leftCells and \p right over \p rightCells, both
+  /// canonical indices in one assembled complex; the cells in both lists are
   /// summed and eliminated. Returns the response over the remaining cells in
   /// ascending canonical order.
   [[nodiscard]] static Eigen::MatrixXcd composeResponses(const Eigen::MatrixXcd &left,
@@ -224,19 +205,18 @@ class PencilLayer {
                                                          const Eigen::MatrixXcd &right,
                                                          const std::vector<int> &rightCells);
 
-  /// A circle around zero of radius half the smallest nonzero eigenvalue
-  /// modulus of the degree-\p k pencil.
   /// A circle around the \p bandIndex-th distinct eigenvalue cluster of the
   /// degree-\p k pencil, clusters ordered by modulus (index 0 is the smallest,
-  /// the harmonic cluster when zero is an eigenvalue; index 1 the lowest band
-  /// above it), with radius a quarter of the distance to the nearest other
-  /// cluster so the quadrature's leak from that cluster is \f$ 3^{-n} \f$.
-  /// Two eigenvalues belong to one cluster when they differ by less than
-  /// \f$ 10^{-9} \f$ of the spectral scale. @throws std::invalid_argument when
-  /// the index exceeds the cluster count.
+  /// the harmonic cluster when zero is an eigenvalue). The radius is a quarter
+  /// of the distance to the nearest other cluster, so the quadrature's leak from
+  /// it is \f$ 3^{-n} \f$. Two eigenvalues belong to one cluster when they
+  /// differ by less than \f$ 10^{-9} \f$ of the spectral scale.
+  /// @throws std::invalid_argument when the index exceeds the cluster count.
   [[nodiscard]] static chainhodge::Contour bandContour(const AssembledPencil &assembled, int k,
                                                        int bandIndex, int nodeCount = 64);
 
+  /// A circle around zero of radius half the smallest nonzero eigenvalue
+  /// modulus of the degree-\p k pencil.
   [[nodiscard]] static chainhodge::Contour harmonicContour(const AssembledPencil &assembled,
                                                            int k, int nodeCount = 64);
 
@@ -248,9 +228,8 @@ class PencilLayer {
                                                        double kappa = 10.0);
 
   /// The next pencil level over \p assembled with \p retained fibers as the
-  /// interface coordinates at shift \p lambda.
-  /// Fibers may overlap on cells (the labeled sum); the Gram then carries the
-  /// overlap block exactly.
+  /// interface coordinates at shift \p lambda. Fibers may overlap on cells (the
+  /// labeled sum); the Gram then carries the overlap block exactly.
   /// @throws std::invalid_argument when a fiber's cell is not a cell of the
   ///   assembled complex.
   [[nodiscard]] static FiberLevel level(const AssembledPencil &assembled, int k,

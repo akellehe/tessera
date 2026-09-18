@@ -358,16 +358,8 @@ class HodgeDegreeDriverTest(unittest.TestCase):
 
     @staticmethod
     def _driver():
-        import importlib.util
-        import os
-        path = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))),
-            "examples", "cobordism", "emergence_animation.py")
-        spec = importlib.util.spec_from_file_location("emergence_animation",
-                                                      path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
+        from tessera.drivers import emergence
+        return emergence
 
     def test_the_driver_declares_all_four_degrees(self):
         driver = self._driver()

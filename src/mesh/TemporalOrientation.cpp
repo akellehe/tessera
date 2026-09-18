@@ -5,9 +5,6 @@
 // Created by andrew on 12/14/25.
 //
 
-
-// (was: #include <pybind11/pybind11.h> — removed; unreferenced.)
-
 #include <algorithm>
 #include <limits>
 #include <memory>
@@ -31,7 +28,12 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 TemporalOrientation::TemporalOrientation(uint8_t ti_, uint8_t tf_)
-    : ti(ti_), tf(tf_), k(ti_ + tf_ - 1), fingerprint({ti_, tf_}) {
+    // A k-simplex has k+1 vertices, so k = ti + tf - 1. Clamp at zero: (0, 0)
+    // would otherwise wrap to 255 through uint8_t, and decTi()/decTf() reach
+    // (0, 0) from (1, 0) and (0, 1). The default constructor already uses 0.
+    : ti(ti_), tf(tf_),
+      k(static_cast<uint8_t>(ti_ + tf_ > 0 ? ti_ + tf_ - 1 : 0)),
+      fingerprint({ti_, tf_}) {
 }
 
 TemporalOrientation::TemporalOrientation()
@@ -97,8 +99,8 @@ bool TemporalOrientation::operator==(const TemporalOrientation &other) const noe
 }
 
 TemporalOrientation TemporalOrientation::orientationOf(const VertexPtrs &vertices) {
-  // Two-pass: first find min/max times, then count.
-  // Single-pass was buggy when the first vertex was at tf, not ti.
+  // Two passes: find the min/max times first, then count. One pass mis-counts
+  // when the first vertex seen is on the final slice rather than the initial one.
   double tMin = std::numeric_limits<double>::max();
   double tMax = std::numeric_limits<double>::lowest();
   for (const auto &v : vertices) {

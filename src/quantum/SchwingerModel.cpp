@@ -1,7 +1,7 @@
 // Implementation of the Schwinger Hamiltonian builder, the matching dense
 // reference matrix, and the c-number L_n² constant.
 //
-// ─── L_n² expansion (the only non-trivial algebra in this file) ───────────
+// ─── L_n² expansion ─────────────────────────────────────────────────
 //
 // Define
 //     T_n = (1/2) Σ_{k=1..n} σ^z_k    (operator part of L_n)
@@ -80,18 +80,17 @@ inline double c_n(int n, double L0) {
     return L0 + ((n % 2 == 0) ? 0.0 : -0.5);
 }
 
-// A_k = Σ_{n=k..N-1} c_n — the tail sum of c_n's that multiplies σ^z_k in
-// the linear part of H_E (see derivation block at top of file).
+// A_k = Σ_{n=k..N-1} c_n — the tail sum of c_n that multiplies σ^z_k in
+// the linear part of H_E (see the derivation at the top of this file).
 inline double tail_sum_c(int k, int N, double L0) {
     double s = 0.0;
     for (int n = k; n <= N - 1; ++n) s += c_n(n, L0);
     return s;
 }
 
-// Closed-form constant: E_const = (g²a/2) Σ_{n=1..N-1} (c_n² + n/4).
-// Pulled into a free helper so the SchwingerMPO / SchwingerDense
-// constructors can fill the `constant` field without going through a
-// SchwingerHamiltonian instance.
+// Closed-form constant: E_const = (g²a/2) Σ_{n=1..N-1} (c_n² + n/4). A
+// free helper, so the SchwingerMPO / SchwingerDense builders can fill
+// the `constant` field without a SchwingerHamiltonian instance.
 double schwingerEnergyConstant(SchwingerParams const& p) {
     double s = 0.0;
     for (int n = 1; n <= p.N - 1; ++n) {
@@ -101,15 +100,15 @@ double schwingerEnergyConstant(SchwingerParams const& p) {
     return 0.5 * p.g * p.g * p.a * s;
 }
 
-// Shared core: build the AutoMPO for the Schwinger Hamiltonian given an
-// explicit hopping pair list. Used by both the chain (default-NN) builder
-// and the chain-causet builder.
+// Shared core: build the AutoMPO for the Schwinger Hamiltonian from an
+// explicit hopping-pair list. Used by both the default
+// nearest-neighbour builder and the causal-set-chain builder.
 //
-// `hoppingPairs` is a vector of (i, j) with 0-based flat lattice indices
-// in [0, p.N − 1]. Both directions of σ⁺σ⁻ + σ⁻σ⁺ are added per pair so
-// the order of (i, j) within a pair is irrelevant — but to keep AutoMPO
-// from registering the same physical pair twice we ask the caller for a
-// deduplicated list.
+// `hoppingPairs` holds (i, j) with 0-based flat lattice indices in
+// [0, p.N − 1]. Both directions of σ⁺σ⁻ + σ⁻σ⁺ are added per pair, so
+// the order within a pair is irrelevant. The list must be deduplicated
+// by the caller, otherwise AutoMPO registers the same physical pair
+// twice.
 SchwingerMPO buildMpoImpl(
     SchwingerParams const& p,
     std::vector<std::pair<int, int>> const& hoppingPairs,
@@ -117,16 +116,16 @@ SchwingerMPO buildMpoImpl(
 {
     if (p.N < 2)   throw std::invalid_argument("SchwingerParams.N must be >= 2");
     if (p.a <= 0)  throw std::invalid_argument("SchwingerParams.a must be positive");
-    // We deliberately do NOT reject g = 0: that's the free-Dirac limit (gauge
-    // field decouples), the formulas below stay finite, and it gives us a
-    // useful analytic-reference test point in test_schwinger_limits.cpp.
+    // g = 0 is accepted: it is the free-Dirac limit in which the gauge
+    // field decouples, the formulas below stay finite, and it gives an
+    // analytic reference point (tests/quantum/test_schwinger_limits.cpp).
 
     using namespace itensor;
 
-    // SpinHalf SiteSet. ConserveQNs=true makes the bond indices carry total
-    // Sz quantum numbers — equivalent to U(1) total-charge conservation
-    // after the Jordan-Wigner mapping. ITensor's SpinHalf operators in this
-    // SiteSet are normalized as:
+    // SpinHalf SiteSet. ConserveQNs=true makes the bond indices carry the
+    // total Sz quantum number, which after the Jordan-Wigner
+    // transformation is U(1) total-charge conservation. ITensor's SpinHalf
+    // operators in this SiteSet are normalized as:
     //     "Sz"   = (1/2) σ^z   (eigenvalues ±1/2)
     //     "S+"   = σ⁺          (raises σ^z)
     //     "S-"   = σ⁻          (lowers σ^z)
@@ -237,9 +236,9 @@ double SchwingerHamiltonian::constant() const {
 //   • Site n (1-based) corresponds to bit at position (N − n), so site 1
 //     is the most-significant bit. This makes the lexicographic order of
 //     basis states (UU…UU, UU…UD, …) match increasing s.
-//   • Bit value 0 ↔ |Up⟩ (σ^z = +1); bit value 1 ↔ |Dn⟩ (σ^z = −1). This
-//     is opposite to "1 = present" in fermion-number language but is
-//     internally consistent — only the spectrum matters for our tests.
+//   • Bit value 0 ↔ |Up⟩ (σ^z = +1); bit value 1 ↔ |Dn⟩ (σ^z = −1).
+//     This is the opposite of "1 = present" in fermion-number language,
+//     but internally consistent; only the spectrum is compared.
 //
 // Hopping is the only non-diagonal term: σ⁺σ⁻ + σ⁻σ⁺ flips a (Up, Dn) or
 // (Dn, Up) neighbouring pair to its swap. The matrix element in either

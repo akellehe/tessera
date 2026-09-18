@@ -1,18 +1,15 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
-// Shared COO (coordinate-list) sparse edge representations.
-//
-// Three places in the codebase emit (rows, cols, [weights], n) edge
-// arrays — ``Spacetime::getDualAdjacency`` (unweighted dual graph),
-// ``MutualInformationProfile::weightedAdjacency`` (MI graph), and
-// ``EmergentGraph::fromWeightedEdges`` (test factory). Each previously
-// invented its own return shape; these two structs give the C++ side a
-// single canonical type. The CSR builder in ``graph/CSRBuilder.hpp``
+// Shared COO (coordinate-list) sparse edge representations: the one canonical
+// type for the (rows, cols, [weights], n) edge arrays emitted by
+// Spacetime::getDualAdjacency (unweighted dual graph),
+// MutualInformationProfile::weightedAdjacency (mutual-information graph) and
+// EmergentGraph::fromWeightedEdges. The CSR builder in graph/CSRBuilder.hpp
 // consumes the same field convention.
 //
-// Note: each undirected edge is expected to appear *twice* in the
-// arrays (rows[k]=u, cols[k]=v AND rows[k']=v, cols[k']=u) so the CSR
-// builder can lay out the per-row neighbour lists in one pass.
+// Each undirected edge appears twice in the arrays (rows[k]=u, cols[k]=v and
+// rows[k']=v, cols[k']=u) so the CSR builder can lay out the per-row neighbour
+// lists in one pass.
 
 #pragma once
 

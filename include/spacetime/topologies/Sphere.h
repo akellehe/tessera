@@ -19,17 +19,16 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-/// # Spherical Topology \f$ S^{d-1} \f$
+/// # Spherical topology
 ///
-/// Spatial slices have the topology of a \f$(d\!-\!1)\f$-sphere, giving a
+/// Spatial slices are \f$(d\!-\!1)\f$-spheres \f$ S^{d-1} \f$, giving a
 /// spacetime manifold \f$ \mathcal{M} \cong S^{d-1} \times S^1 \f$. This is
-/// the topology used in most 4D CDT simulations, where spatial slices are
-/// three-spheres \f$ S^3 \f$.
+/// the topology of most 4D causal dynamical triangulation (CDT) simulations,
+/// whose spatial slices are three-spheres \f$ S^3 \f$.
 ///
-/// The Euclidean de Sitter solution (the round four-sphere \f$ S^4 \f$) naturally
-/// decomposes into \f$ S^3 \f$ spatial slices, making this topology the natural
-/// choice for studying de Sitter quantum gravity. The volume profile of each
-/// slice follows
+/// The Euclidean de Sitter solution (the round four-sphere \f$ S^4 \f$)
+/// decomposes into \f$ S^3 \f$ spatial slices, so this is the topology used to
+/// study de Sitter quantum gravity. The volume profile of each slice follows
 ///
 /// \f[
 ///   V_3(t) \propto \cos^3\!\left(\frac{\pi\, t}{T}\right)
@@ -38,6 +37,9 @@ using namespace ::tessera::quantum;
 /// for the continuum \f$ S^4 \f$ geometry.
 ///
 /// The build alternates coning direction between layers to close the manifold.
+///
+/// Reference: Ambjorn, Jurkiewicz & Loll, "Reconstructing the Universe",
+/// arXiv:hep-th/0505154.
 ///
 class Sphere : public Topology {
   public:

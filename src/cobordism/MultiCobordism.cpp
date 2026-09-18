@@ -56,21 +56,19 @@ using complexd = std::complex<double>;
 namespace {
 
 // How far the monodromy between two markings may sit from the identity before
-// they are held to disagree about the frame of the whole. Measured on the
-// seeded qubit collar at 1.1e-15, so this is round-off room and not a policy
-// knob: a marking pair that genuinely frames the zero mode differently does
-// so by an SL(2, Z) element, which is a whole integer away.
+// they are held to disagree about the frame of the whole. This is round-off
+// room rather than a policy knob: a marking pair that genuinely frames the zero
+// mode differently does so by an SL(2, Z) element, a whole integer away.
 constexpr double kPeriodFrameMonodromyTolerance = 1e-8;
 
 // A marking group frames the harmonic space when its period matrix is
-// invertible. Measured at four tori: a cross pair of tori has condition 1.8,
-// a conjugate pair 1e16, so the floor sits in an empty decade and separates
-// them without judgement.
+// invertible. At four tori a cross pair has condition 1.8 and a conjugate pair
+// 1e16, so this floor sits in an empty decade between them.
 constexpr double kPeriodFrameConditionFloor = 1e-10;
 
 // Frame agreement is checked over every group, which is a subset enumeration.
-// One marking per boundary torus, so this bounds the tori, and the bound is
-// said out loud rather than silently truncating the check.
+// There is one marking per boundary torus, so this bounds the number of tori
+// rather than silently truncating the check.
 constexpr std::size_t kPeriodFrameMaxMarkings = 16;
 
 struct PeriodFrameSelection {
@@ -137,19 +135,15 @@ PeriodFrameSelection selectPeriodFrame(
         std::to_string(rank) + ") with an invertible period matrix";
     return selection;
   }
-  // The agreement is a statement about PERIODS: every marking group induces
-  // the same frame on the whole's zero mode exactly when the integer matrix
-  // relating them is the identity, and that is what makes the frame the
-  // WHOLE's rather than a chosen block's.
+  // Agreement is a statement about periods: every marking group induces the
+  // same frame on the whole's zero mode exactly when the integer matrix
+  // relating them is the identity, which is what makes the frame the whole's
+  // rather than a chosen block's.
   //
-  // Under the GRAM pairing these rows are not periods. The groups are then
-  // not related by a topological monodromy and do not agree -- measured at
-  // 0.905 on the seeded collar, where the period groups agree at 1.1e-15.
-  // That disagreement is the metric content the pairing exists to expose, so
-  // the caller reads in the first group's frame and does not demand it. Which
-  // block frames the reading is then a choice, and it is the one spec S6
-  // already describes: the coefficients of the whole's zero mode in each
-  // block's live frame.
+  // Under the Gram pairing these rows are not periods. The groups are then not
+  // related by a topological monodromy and do not agree, so the caller reads in
+  // the first group's frame instead of demanding agreement. That disagreement
+  // is the metric content the pairing exists to expose.
   const Eigen::MatrixXcd firstInverse = candidates.front().block.inverse();
   for (std::size_t b = 1; requireAgreement && b < candidates.size(); ++b) {
     const double defect =
@@ -376,10 +370,10 @@ struct FixedCochainOptimization {
   std::vector<double> stateEigenvalues;
 };
 
-/// Exact linear readout constraints on every witness (#936): chain `r` paired
-/// with witness `j` must equal `targets[j][r]`. The auxiliary block of each
-/// witness is parametrized on the affine solution set of its readout system,
-/// so the constraints hold exactly at every iterate and no penalty enters.
+/// Exact linear readout constraints on every witness: chain `r` paired with
+/// witness `j` must equal `targets[j][r]`. The auxiliary block of each witness
+/// is parametrized on the affine solution set of its readout system, so the
+/// constraints hold exactly at every iterate and no penalty enters.
 struct ReadoutSystem {
   const std::vector<MultiCobordism::ReadoutChain> *chains{nullptr};
   const std::vector<std::vector<complexd>> *targets{nullptr};
@@ -392,10 +386,10 @@ struct AffineAuxiliary {
   Eigen::MatrixXcd basis;
 };
 
-/// A warm start for one relaxation pass (#936): the previous pass's witnesses
-/// keyed by cell (cells absent from the live complex, i.e. created by growth,
-/// start at zero) together with the live edge geometry. The warm start is
-/// descended first; the remaining restarts are drawn as before.
+/// A warm start for one relaxation pass: the previous pass's witnesses keyed by
+/// cell, together with the live edge geometry. Cells absent from the live
+/// complex, i.e. created by growth, start at zero. The warm start is descended
+/// first and the remaining restarts are drawn at random.
 struct WarmStart {
   std::vector<std::map<Cell, complexd>> states;
 };
@@ -462,7 +456,7 @@ FixedCochainOptimization optimizeFixedCochainTargets(
     std::map<Cell, std::size_t> cellIndex;
     for (std::size_t index = 0; index < order; ++index)
       cellIndex.emplace(cells[index], index);
-    // The readout matrix over ALL cells, in canonical cell order.
+    // The readout matrix over all cells, in canonical cell order.
     Eigen::MatrixXcd readoutMatrix = Eigen::MatrixXcd::Zero(
         static_cast<Eigen::Index>(chains.size()),
         static_cast<Eigen::Index>(order));
@@ -790,36 +784,35 @@ MultiCobordism::MultiCobordism(
       realSquaredLengthsOnly_(realSquaredLengthsOnly),
       metricSource_(metricSource),
       randomNumberGenerator_(seed) {
-  // The wiring mode must reach the host BEFORE any precone growth below wires
-  // its first edge (#690).
+  // The wiring mode must reach the host before any precone growth below wires
+  // its first edge.
   if (spacetime_) spacetime_->setBalancedEdgeWiring(balancedEdgeWiring_);
-  // Assigned in the body rather than the init list: the member is declared last,
-  // and C++ initializes in DECLARATION order, so an init-list entry here would
-  // reorder-warn. It is a plain bool with an in-class default, so nothing depends
-  // on it being set earlier.
+  // Assigned in the body rather than the member init list: the member is
+  // declared last and C++ initializes in declaration order, so an init-list
+  // entry here would trigger a reorder warning. It is a bool with an in-class
+  // default, so nothing depends on it being set earlier.
   shouldProposeDispositions_ = shouldProposeDispositions;
-  // #776: the deterministic provenance stamp of every checkpoint this node
-  // writes. Assigned in the body for the same declaration-order reason.
+  // The deterministic provenance stamp of every checkpoint this node writes.
+  // Assigned in the body for the same declaration-order reason.
   seed_ = seed;
   // Install the built-in matching the default mode, so `objectiveSpec_` is
-  // never null and a caller that never injects one descends exactly the
-  // objective it descended before this became injectable.
+  // never null.
   objectiveSpec_ = std::make_shared<LegacyObjective>();
-  // Pre-grow the seed by `precone` gated cone-ins before any optimization, so the
-  // stage-1 search starts from a larger complex grown emergently from the host (no
-  // input/output block is seeded yet, so nothing is pinned — the gate is the only
-  // constraint). `precone <= 0` leaves the host and RNG untouched.
-  // `preconeTimelike` draws every cone-in as the TIMELIKE disposition (#613);
-  // `preconeAlternate` instead ALTERNATES timelike/spacelike for balanced
-  // causal content (it wins when both are set). Default: all-spacelike.
+  // Pre-grow the seed by `precone` gated cone-ins before any optimization, so
+  // that the stage-1 search starts from a larger complex. No input or output
+  // block is seeded yet, so nothing is pinned and the gate is the only
+  // constraint. `precone <= 0` leaves the host and RNG untouched.
+  // `preconeTimelike` draws every cone-in with the timelike disposition;
+  // `preconeAlternate` instead alternates timelike and spacelike for balanced
+  // causal content, and takes precedence. The default is all-spacelike.
   if (precone > 0) preconeCells(precone, preconeTimelike, preconeAlternate);
 }
 
 std::vector<int> MultiCobordism::betti(const Spacetime &spacetime) {
-  // Betti numbers are purely combinatorial, and the residual path calls this
-  // on every objective evaluation while only edge lengths move (7.2% of a
-  // live perf sample went to Smith normal form). The spacetime's structural
-  // revision proves when the last computation is still exact (#681).
+  // Betti numbers are purely combinatorial, and the residual path calls this on
+  // every objective evaluation while only edge lengths move, so Smith normal
+  // form dominates the profile. The spacetime's structural revision shows when
+  // the last computation is still exact.
   if (const auto *cached = spacetime.cachedBettiNumbers()) return *cached;
   auto numbers = ChainComplex::fromSpacetime(spacetime).bettiNumbers();
   spacetime.storeBettiNumbers(numbers);
@@ -908,17 +901,15 @@ Eigen::MatrixXcd MultiCobordism::holePeriodMatrix(
   const auto flattenedCyclePeriods =
       eigenstateSynthesis.cyclePeriods(cycleHoles);  // rank x m, row-major
   const std::size_t holeCount = cycleHoles.size();
-  // The row count of the flattened periods is the NUMERIC harmonic-kernel
-  // dimension the synthesizer actually computed (HodgeLaplacian::harmonicMatrix
-  // at its rank threshold, metric-dependent) — NOT necessarily the INTEGER
-  // Betti number: on geometrically extreme complexes (e.g. deep-lookahead
-  // candidates near the null-face locus) the numeric rank can
-  // fall below the topological one, and indexing by the Betti count then read
-  // past the end of the vector — the measured #636 segfault (thread 1 in
-  // residualOfTargetStateAgainstHarmonic while scoring one). Bound every
-  // index by the data's own shape; fewer usable harmonics honestly means a
-  // LARGER residual, never an out-of-bounds read (a zero-column matrix reads as
-  // the full leak in the caller).
+  // The row count of the flattened periods is the numeric harmonic-kernel
+  // dimension the synthesizer computed (HodgeLaplacian::harmonicMatrix at its
+  // metric-dependent rank threshold), which is not necessarily the integer
+  // Betti number: on geometrically extreme complexes, such as deep-lookahead
+  // candidates near the null-face locus, the numeric rank can fall below the
+  // topological one, and indexing by the Betti count would read past the end of
+  // the vector. Bound every index by the data's own shape instead; fewer usable
+  // harmonics means a larger residual, and a zero-column matrix reads as the
+  // full leak in the caller.
   const std::size_t periodRowCount =
       holeCount == 0 ? 0 : flattenedCyclePeriods.size() / holeCount;
   const int harmonicRank =
@@ -945,13 +936,13 @@ MultiCobordism::RelabelingMatch MultiCobordism::bestRelabelingOfTarget(
     const Eigen::MatrixXcd &periodMatrixTransposed,
     const Eigen::VectorXcd &targetVector,
     const std::set<std::vector<int>> &claimedMatchings, bool skipClaimed) {
-  // min over the relabelings of the target components of ||pdT c - ts||^2 (lstsq c).
-  // Total over EVERY configuration (#699): a non-finite period matrix (an
-  // unbounded stage-2 trial overflowed the polynomial cell weights, so the
-  // harmonic periods left double range) scores +inf — an infinitely bad
-  // configuration the line search rejects — instead of handing non-finite
-  // input to BDCSVD, whose compute/solve is undefined behavior with asserts
-  // compiled out (measured: a general protection fault inside rank()).
+  // Minimum over the relabelings of the target components of
+  // ||pdT c - ts||^2, with c the least-squares solution. Total over every
+  // configuration: a non-finite period matrix — an unbounded stage-2 trial can
+  // overflow the polynomial cell weights, taking the harmonic periods out of
+  // double range — scores +inf, an infinitely bad configuration the line search
+  // rejects, instead of handing non-finite input to BDCSVD, whose compute and
+  // solve are undefined behavior with asserts compiled out.
   if (!periodMatrixTransposed.allFinite()) {
     std::vector<int> identityRelabeling(
         static_cast<std::size_t>(targetVector.size()));
@@ -982,8 +973,8 @@ double MultiCobordism::residualOfTargetStateAgainstHarmonic(
     const std::shared_ptr<Spacetime> &spacetime, int registerDegree,
     const std::vector<complexd> &targetState,
     HodgeLaplacian::MetricSource metricSource) {
-  // No other register to collide with: an empty claim set excludes nothing, so this
-  // is the unconstrained min over the relabelings (`r_state`, the reference read-out).
+  // No other register to collide with: an empty claim set excludes nothing, so
+  // this is the unconstrained minimum over the relabelings (`r_state`).
   std::set<std::vector<int>> claimedMatchings;
   return residualOfTargetStateAgainstHarmonicWithDistinctMatching(
       spacetime, registerDegree, targetState, claimedMatchings, metricSource);
@@ -1013,18 +1004,20 @@ double MultiCobordism::residualOfTargetStateAgainstHarmonicWithDistinctMatching(
   const Eigen::MatrixXcd periodMatrixTransposed =
       holePeriodMatrix(spacetime, registerDegree, degreeBettiNumber, cycleHoles,
                        targetState.size(), metricSource);
-  // The matrix is bounded by the NUMERIC harmonic rank (see holePeriodMatrix,
-  // #636): zero usable harmonics on a geometrically extreme candidate means the
-  // register carries nothing — the full leak — not an SVD of a 0-column matrix.
+  // The matrix is bounded by the numeric harmonic rank (see holePeriodMatrix):
+  // Zero usable harmonics on a geometrically extreme candidate means the
+  // register carries nothing, the full leak, rather than an SVD of a 0-column
+  // matrix.
   if (periodMatrixTransposed.cols() == 0) return fullLeakResidual;
 
-  // The relabeling this register wins is withheld from the registers scored after it,
-  // so no two of them are read against the same matching of components onto holes.
+  // The relabeling this register wins is withheld from the registers scored
+  // after it, so no two are read against the same matching of components onto
+  // holes.
   RelabelingMatch match = bestRelabelingOfTarget(
       periodMatrixTransposed, targetVector, claimedMatchings, /*skipClaimed=*/true);
   if (!match.scored) {
-    // Every relabeling is already claimed — more registers than the d! this target
-    // admits. Restart the exclusion rather than return the empty minimum.
+    // Every relabeling is already claimed: more registers than the d! this
+    // target admits. Restart the exclusion rather than return an empty minimum.
     claimedMatchings.clear();
     match = bestRelabelingOfTarget(periodMatrixTransposed, targetVector,
                                    claimedMatchings, /*skipClaimed=*/false);
@@ -1045,45 +1038,41 @@ double MultiCobordism::residualForBoundaryBlockWithDistinctMatchings(
     const BoundaryBlock &boundaryBlock,
     const std::shared_ptr<Spacetime> &spacetime,
     std::set<std::vector<int>> &claimedMatchings) const {
-  // A marked block (setInputMarking, qubit cobordism spec D2) is scored by
-  // the residual of its OWN state: the leak of its input state in the
-  // holomorphic form of its own Laplacian on its live surface. The zero mode
-  // of the ENTIRE cobordism is the OUTPUT state (R1), reported by
-  // readInputState in the block's live frame.
+  // A marked block (setInputMarking) is scored by the residual of its own
+  // state: the leak of its input state in the holomorphic form of its own
+  // Laplacian on its live surface. The zero mode of the entire cobordism is the
+  // output state, reported by readInputState in the block's live frame.
   //
-  // Under scoreWholeComplexLeak the whole's leak is ADDED to that own residual
-  // rather than replacing it, so the spec's R3 — the block's own-Laplacian
-  // residual is in the objective next to the bulk terms — still holds
-  // literally. The two are different questions (see `scoreWholeComplexLeak`),
-  // and the own term is identically zero on a block whose edges cannot move,
-  // which is exactly when the whole's leak is the only thing left to say how
-  // the block sits in the cobordism.
+  // Under scoreWholeComplexLeak the whole's leak is added to that own residual
+  // rather than replacing it, so the block's own-Laplacian residual stays in
+  // the objective beside the bulk terms. The own term is identically zero on a
+  // block whose edges cannot move, which is exactly when the whole's leak is
+  // the only thing left to say how the block sits in the cobordism.
   if (useFiberResiduals_ && boundaryBlock.marking) {
     const double own = ownStateResidualOn(boundaryBlock, spacetime);
     if (!scoreWholeComplexLeak_) return own;
     return own + inputStateResidualOn(boundaryBlock, spacetime);
   }
   if (useFiberResiduals_ && boundaryBlock.fiber && boundaryBlock.fiber->images.cols() > 0)
-    return fiberResidualForBoundaryBlock(boundaryBlock, spacetime);  // #940
+    return fiberResidualForBoundaryBlock(boundaryBlock, spacetime);
   auto blockSubcomplex = spacetime->subcomplexWithinVertexSet(
     boundaryBlock.vertices);
   double residual = 0.0;
   if (!blockSubcomplex)  // no complex to read: the target leaks in full, per degree
     return static_cast<double>(registerDegrees_.size()) *
            targetStateVector(boundaryBlock.target).squaredNorm();
-  // The sub-complex is a FRESH spacetime whose per-instance Betti slot (#681)
-  // is empty, so without help every evaluation would re-run the Smith normal
-  // form — per block, per line-search trial, per candidate (measured: 47.5%
-  // of live-run cycles). The block's topology is a pure function of the
-  // PARENT's cells and the vertex set, so the parent caches the numbers per
-  // (structural revision, region fingerprint): on a hit, pre-seed the child's
-  // slot so betti() inside the scoring below never computes; on a miss, store
-  // the child's freshly computed numbers back on the parent (#705).
+  // The sub-complex is a fresh spacetime whose per-instance Betti slot is
+  // empty, so without help every evaluation would re-run the Smith normal form
+  // once per block, per line-search trial, per candidate. The block's topology
+  // is a pure function of the parent's cells and the vertex set, so the parent
+  // caches the numbers per (structural revision, region fingerprint): on a hit,
+  // pre-seed the child's slot so betti() below never computes; on a miss, store
+  // the child's freshly computed numbers back on the parent.
   //
-  // The region is named by `Fingerprint::fingerprintOf` over its vertex
-  // identifiers — the class's own hash, called as a static because a
-  // `Fingerprint` INSTANCE holds only `kMax` identifiers and drops the rest
-  // silently, while a block region grows across the complex.
+  // The region is named by `Fingerprint::fingerprintOf` over its vertex ids,
+  // called as a static because a `Fingerprint` instance holds only `kMax`
+  // identifiers and drops the rest, while a block region grows across the
+  // complex.
   const std::uint64_t vertexSetKey =
       ::tessera::mesh::Fingerprint::fingerprintOf(boundaryBlock.vertices);
   if (const auto *cached =
@@ -1098,20 +1087,19 @@ double MultiCobordism::residualForBoundaryBlockWithDistinctMatchings(
 }
 
 double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
-  // The cobordism residual. INPUTS are localized boundary sub-complexes (built near
+  // The cobordism residual. Inputs are localized boundary sub-complexes (built near
   // a seed, held representable by these terms, not pinned) — each read off its own
   // region and weighted by inputResidualWeight_ so they are not out-competed by the
   // whole/output term.
   //
-  // ONE claim set spans the whole evaluation: every register here is scored by the
+  // one claim set spans the whole evaluation: every register here is scored by the
   // same min-over-relabelings, so without it they all pick the same argmin matching
   // and the sum is smallest when the registers carry identical weights. The set
   // records each register's winning matching and withholds it from the ones after.
   std::set<std::vector<int>> claimedMatchings;
   double totalResidual = 0.0;
   // Explicit constraints are already framed: their hole and target ordering is
-  // fixed by the caller, so they bypass emergent-hole relabeling entirely. This
-  // is still the existing exact-period r_U; only the frame is no longer guessed.
+  // fixed by the caller, so they bypass emergent-hole relabeling entirely.
   for (const auto &constraint : registerConstraints_)
     totalResidual += EigenstateSynthesis(spacetime, constraint.degree, metricSource_)
                          .residualForPeriods(constraint.holes,
@@ -1121,13 +1109,13 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
                      residualForBoundaryBlockWithDistinctMatchings(inputBlock, spacetime,
                                                    claimedMatchings);
   if (outputTargets_.size() == 1) {
-    // A SINGLE output is the whole cobordism's output boundary: as in the Python
-    // reference it is "the harmonic of the entire structure", NEVER a pinned
-    // region. Read it off the WHOLE complex so the bulk loop drives the whole to
-    // carry it (the output EMERGES; it is not frozen by seedOutputs).
+    // A single output is the whole cobordism's output boundary: as in the Python
+    // reference it is "the harmonic of the entire structure", never a pinned
+    // region. Read it off the whole complex so the bulk loop drives the whole to
+    // carry it (the output emerges; it is not frozen by seedOutputs).
     // In the singularValueRatio mode this period read is part of the
     // whole-complex term the ratio below replaces, so it is skipped — the
-    // output target then names an EXPECTATION for the after-the-fact readout
+    // output target then names an expectation for the after-the-fact readout
     // (and sizes expectedRegisterCount), never a scored prescription.
     if (!singularValueRatio_)
       for (int registerDegree : registerDegrees_)
@@ -1135,10 +1123,10 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
             spacetime, registerDegree, outputTargets_.front(), claimedMatchings);
   } else {
     // Multiple outputs (e.g. a 2->2 recombination → diquark ⊔ antidiquark) live in
-    // distinct regions: read each off its own constructed block. EMPTY outputTargets
-    // is the supported nothing-pinned-downstream shape (#555): no output term at
+    // distinct regions: read each off its own constructed block. Empty outputTargets
+    // is the supported nothing-pinned-downstream shape: no output term at
     // all — rU is the weighted input residuals alone, and the whole's final state
-    // emerges (read after the fact, e.g. ProtonIngredients' singlet diagnostic).
+    // emerges (read after the fact, e.g. protonIngredients' singlet diagnostic).
     for (const auto &outputBlock : outputBlocks_)
       totalResidual +=
           residualForBoundaryBlockWithDistinctMatchings(outputBlock, spacetime,
@@ -1150,8 +1138,8 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
               spacetime, registerDegree, outputTarget, claimedMatchings);
   }
   if (singularValueRatio_) {
-    // The whole-complex term in the ratio mode (#697): one scale-invariant
-    // spectral-shape term per degree covers BOTH regimes the two terms below
+    // The whole-complex term in the ratio mode: one scale-invariant
+    // spectral-shape term per degree covers both regimes the two terms below
     // split between — it reads the full spectrum, so it presses from the bare
     // seed (no topological threshold) and keeps pressing after the holes open
     // (the lower half keeps collapsing past the exact kernel).
@@ -1159,19 +1147,19 @@ double MultiCobordism::rU(const std::shared_ptr<Spacetime> &spacetime) const {
       totalResidual += singularValueHalfSumRatio(spacetime, registerDegree, metricSource_);
     return totalResidual;
   }
-  // The pre-topological register signal (#644): the period residuals above are
-  // STEP functions in the topology — exactly flat until a register exists — so
+  // The pre-topological register signal: the period residuals above are
+  // step functions in the topology — exactly flat until a register exists — so
   // they carry no register-seeking gradient at a seed. The near-kernel residual
   // is the same functional continued below the topological threshold, and it
   // saturates at 0 the moment b_k reaches the expected count (see the header).
-  // Fiber-form targets (#940) declare no register count and no hole: the
+  // Fiber-form targets declare no register count and no hole: the
   // whole-complex fiber residual replaces the near-kernel hole-forcing term.
   if (useFiberResiduals_) {
     if (wholeFiberTarget_) totalResidual += fiberResidualOn(spacetime, *wholeFiberTarget_);
-    // The cases, when set, ARE the two-body term (#1017): one bulk scored
+    // The cases, when set, are the two-body term: one bulk scored
     // against several input pairs at once, so every move is priced against all
     // of them. With none set this is the single target, unchanged.
-    // On WHATEVER complex is being scored, never only the live one: stage 1
+    // On whatever complex is being scored, never only the live one: stage 1
     // prices each candidate on a complex rebuilt from a snapshot, so a
     // live-only test would rank moves by the first case while stage 2
     // optimized the sum.
@@ -1202,12 +1190,12 @@ double MultiCobordism::nearKernelResidual(
     std::size_t expectedRegisterCount, HodgeLaplacian::MetricSource metricSource) {
   if (expectedRegisterCount == 0) return 0.0;
   cobordism::HodgeLaplacian laplacian(spacetime, HodgeLaplacian::defaultWeightConvention(), metricSource);
-  // METRIC operator, deliberately: the term must feel the continuously-valued
-  // edge lengths, so stage 2 can tune the CAUSAL STRUCTURE toward null
+  // Metric operator, deliberately: the term must feel the continuously-valued
+  // edge lengths, so stage 2 can tune the causal structure toward null
   // directions and open near-kernels with no holes at all — that channel is
   // the point, not a loophole (measured: a build driven this way ends with
   // most edges timelike and spectral near-kernels but zero topological holes).
-  // Whether such causal near-kernels can CARRY a register is the next level of
+  // Whether such causal near-kernels can carry a register is the next level of
   // exploration; the semantics for reading them out are not implemented here.
   // Stage-1 surgery remains the other route to the same descent: a genuine
   // hole zeroes the same singular values exactly.
@@ -1223,10 +1211,10 @@ double MultiCobordism::nearKernelResidual(
     for (std::size_t j = 0; j < n; ++j)
       L(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) =
           flat[i * n + j];
-  // Total over EVERY configuration (#699): a non-finite operator evaluates to
+  // Total over every configuration: a non-finite operator evaluates to
   // +inf (see bestRelabelingOfTarget) rather than reaching BDCSVD.
   if (!L.allFinite()) return std::numeric_limits<double>::infinity();
-  // Singular values of the NON-normal signed operator: the smooth surrogate for
+  // Singular values of the non-normal signed operator: the smooth surrogate for
   // the eigenvalue magnitudes (they share the kernel exactly).
   Eigen::BDCSVD<Eigen::MatrixXcd> svd(L);
   const Eigen::VectorXd sigma = svd.singularValues();  // descending
@@ -1259,7 +1247,7 @@ std::vector<std::complex<double>> MultiCobordism::nearKernelResidualGradient(
   // is tr(H), whose derivative is the trace of the same perturbation. Quotient
   // rule over the two, times n.
   //
-  // COMPLEX throughout (#746): laplacianGradient is already complex, and the
+  // complex throughout: laplacianGradient is already complex, and the
   // return follows the same convention as the period-gap family,
   //   g = dr/d(Re l^2) - i dr/d(Im l^2),
   // so Re(g) and -Im(g) are the two directional derivatives.
@@ -1281,9 +1269,9 @@ std::vector<std::complex<double>> MultiCobordism::nearKernelResidualGradient(
   for (std::size_t i = 0; i < n; ++i)
     for (std::size_t j = 0; j < n; ++j)
       L(static_cast<Index>(i), static_cast<Index>(j)) = flat[i * n + j];
-  if (!L.allFinite()) return gradient;   // the value is +inf here (#699); no slope
+  if (!L.allFinite()) return gradient;   // the value is +inf here; no slope
 
-  // H = L^dagger L is Hermitian positive semi-definite; its eigenvalues ARE the
+  // H = L^dagger L is Hermitian positive semi-definite; its eigenvalues are the
   // sigma^2 the value reads, ascending here, and its eigenvectors give the exact
   // first-order response of each one.
   const MatrixXcd H = L.adjoint() * L;
@@ -1307,14 +1295,13 @@ std::vector<std::complex<double>> MultiCobordism::nearKernelResidualGradient(
       for (std::size_t j = 0; j < n; ++j)
         dL(static_cast<Index>(i), static_cast<Index>(j)) =
             derivativeFlat[i * n + j];
-    // L is HOLOMORPHIC in l^2 (the weights are polynomial in it), so the
-    // complex derivative of H = L^dagger L is 2 L^dagger dL — NOT
-    // dL^dagger L + L^dagger dL, which is the Hermitian combination and
-    // therefore the REAL-direction derivative alone. Using the Hermitian form
-    // makes w^dagger dH w real by construction and the gradient's imaginary
-    // part identically zero, which is the whole thing this was meant to fix
-    // (#746/#748). Re(2 L^dagger dL) reproduces the Hermitian value exactly, so
-    // the real direction is unchanged.
+    // L is holomorphic in l^2 (the weights are polynomial in it), so the
+    // complex derivative of H = L^dagger L is 2 L^dagger dL — not
+    // dL^dagger L + L^dagger dL, the Hermitian combination, and therefore the
+    // real-direction derivative alone. The Hermitian form makes w^dagger dH w
+    // real by construction and the gradient's imaginary part identically zero.
+    // Re(2 L^dagger dL) reproduces the Hermitian value exactly, so the real
+    // direction is unchanged.
     const MatrixXcd dH = 2.0 * (L.adjoint() * dL);
     // d(sum of the m smallest) and d(trace) from the same perturbation.
     complexd dSmallest(0.0, 0.0);
@@ -1334,7 +1321,7 @@ double MultiCobordism::singularValueHalfSumRatio(
     const std::shared_ptr<Spacetime> &spacetime, int registerDegree,
     HodgeLaplacian::MetricSource metricSource) {
   cobordism::HodgeLaplacian laplacian(spacetime, HodgeLaplacian::defaultWeightConvention(), metricSource);
-  // The SAME operator nearKernelResidual reads (metric, signed, generally
+  // The same operator nearKernelResidual reads (metric, signed, generally
   // non-normal — see its comment); the two terms are alternatives for the one
   // whole-complex slot in rU, so they must see the same spectrum.
   const std::vector<std::complex<double>> flat =
@@ -1351,7 +1338,7 @@ double MultiCobordism::singularValueHalfSumRatio(
     for (std::size_t j = 0; j < n; ++j)
       L(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) =
           flat[i * n + j];
-  // Total over EVERY configuration (#699): +inf, as nearKernelResidual.
+  // Total over every configuration: +inf, as nearKernelResidual.
   if (!L.allFinite()) return std::numeric_limits<double>::infinity();
   Eigen::BDCSVD<Eigen::MatrixXcd> svd(L);
   const Eigen::VectorXd sigma = svd.singularValues();  // descending
@@ -1371,9 +1358,9 @@ double MultiCobordism::singularValueHalfSumRatio(
 }
 
 double MultiCobordism::hodgeEntropy() const {
-  // Over the HODGE degrees, which are what the entropy is taken at. Reported
+  // Over the hodge degrees, which are what the entropy is taken at. Reported
   // unweighted: the per-degree weights balance the stationarity residuals
-  // against each other in the objective, and applying them to entropy VALUES
+  // against each other in the objective, and applying them to entropy values
   // would report a number that is not any degree's entropy.
   double entropy = 0.0;
   for (int degree : hodgeDegrees_)
@@ -1404,7 +1391,7 @@ double MultiCobordism::hodgeEntropyStationarity() const {
 
 void MultiCobordism::requireObjectiveAcceptable(
     const std::shared_ptr<CobordismObjective> &objective) const {
-  // The objective's own DECLARED domain, enforced here so the restriction
+  // The objective's own declared domain, enforced here so the restriction
   // travels with the objective that declares it rather than living in the
   // engine as a special case. It is a declaration, not a capability limit.
   const int minimumDegree = objective->minimumRegisterDegree();
@@ -1417,8 +1404,8 @@ void MultiCobordism::requireObjectiveAcceptable(
   // A scope can only carry a handle minted by `regionHandle`, which refuses an
   // undeclared name, so a mis-spelling cannot reach this point. Re-check
   // anyway: regions can be cleared after a handle was minted, and an objective
-  // pointing at a region that no longer exists must fail loudly rather than
-  // score nothing.
+  // pointing at a region that no longer exists must fail rather than score
+  // nothing.
   const auto scope = objective->scope();
   if (scope.isWholeCobordism()) return;
   for (const auto &region : pinnedRegions_)
@@ -1459,11 +1446,11 @@ std::string MultiCobordism::objectiveName() const {
 
 bool MultiCobordism::compositeSupportsLocalizedDelta() const {
   // A localized delta differences the objective over the cells a move touches.
-  // That shortcut is only honest while the scalar being reported is the one
+  // That shortcut is valid only while the scalar being reported is the one
   // being differenced, and with a pinned objective in force the reported scalar
-  // is the SUM of two functionals over two different scopes. Differencing the
-  // bulk alone would optimize a surrogate that is not the objective — the very
-  // thing the localized path exists to avoid — so any pinned objective drops
+  // is the sum of two functionals over two different scopes. Differencing the
+  // bulk alone would optimize a surrogate that is not the objective, so any
+  // pinned objective drops
   // the whole node back to global re-evaluation. Global is always correct,
   // merely more expensive.
   if (pinnedObjectiveSpec_) return false;
@@ -1471,7 +1458,7 @@ bool MultiCobordism::compositeSupportsLocalizedDelta() const {
 }
 
 bool MultiCobordism::objectiveIsTargetConditioned() const {
-  // The DISJUNCTION, not the bulk objective's answer. A search policy asks this
+  // The disjunction, not the bulk objective's answer. A search policy asks this
   // to find out whether the run it is driving is unforced, and a run whose
   // pinned region is held to a declared state is target-conditioned however
   // geometric the bulk objective is. Reporting the bulk alone would let a
@@ -1512,19 +1499,16 @@ std::vector<std::size_t> MultiCobordism::scopedEdgeIndices(
 ObjectiveContext MultiCobordism::objectiveContextFor(
     const std::shared_ptr<Spacetime> &spacetime,
     const std::shared_ptr<CobordismObjective> &objective) const {
-  // THE FIREWALL. Everything an objective can see is assembled here and
-  // nowhere else, and every field of it is PLAIN DATA: the complex, the region
-  // and its declared targets, the configured weights, and two precomputed
-  // geometric scalars. Deliberately no `std::function`, because a bound
-  // callable would capture `this` and hand the objective a route back into the
-  // node — which is exactly the reachability the former `static objectiveOf`
-  // denied by having no `this` at all. An objective therefore cannot consult a
-  // component, fiber, transport, amplitude, colour, particle, charge, flavour,
-  // exchange, spin certificate or verdict: it is handed nothing that leads
-  // there.
+  // The firewall. Everything an objective can see is assembled here and nowhere
+  // else, and every field of it is plain data: the complex, the region and its
+  // declared targets, the configured weights, and two precomputed geometric
+  // scalars. No `std::function`, because a bound callable would capture `this`
+  // and hand the objective a route back into the node. An objective therefore
+  // cannot consult a component, fiber, transport, amplitude, colour, particle,
+  // charge, flavour, exchange or spin certificate.
   ObjectiveContext context;
   context.spacetime = spacetime;
-  // The objective's DECLARED scope, resolved here. Declaring nothing means the
+  // The objective's declared scope, resolved here. Declaring nothing means the
   // whole cobordism, which leaves `region` and `scoredEdges` empty and every
   // sum running over every coordinate exactly as it did before scopes existed.
   const ObjectiveScope scope = objective ? objective->scope() : ObjectiveScope{};
@@ -1642,7 +1626,7 @@ std::vector<HodgeDegreeContribution> MultiCobordism::hodgeDegreeContributions()
 
 std::vector<std::string> MultiCobordism::objectiveTermNames() {
   // The declaration order of `ObjectiveTerms`. Enumerated as data so the
-  // no-feedback firewall is CHECKABLE rather than asserted in a comment: a
+  // no-feedback firewall is checkable rather than asserted in a comment: a
   // test reads this list and confirms no particle, fiber, transport, or
   // amplitude quantity is on it. Every objective records into these same
   // slots, so a record stays comparable across objectives.
@@ -1650,7 +1634,7 @@ std::vector<std::string> MultiCobordism::objectiveTermNames() {
 }
 
 double MultiCobordism::objectiveOf(const ObjectiveTerms &terms) {
-  // STATIC: no `this`, so the scalar the optimizer descends provably depends
+  // Static: no `this`, so the scalar the optimizer descends provably depends
   // on nothing but the declared terms.
   return CobordismObjective::total(terms);
 }
@@ -1680,14 +1664,14 @@ MultiCobordism::objectiveContributions() const {
 
 MultiCobordism::ObjectiveTerms MultiCobordism::objectiveTermsFor(
     const std::shared_ptr<Spacetime> &spacetime) const {
-  // The engine no longer knows which functional it is scoring: it assembles
-  // the firewalled context and the injected objective decomposes itself.
+  // The engine does not know which functional it is scoring: it assembles the
+  // firewalled context and the injected objective decomposes itself.
   ObjectiveTerms terms = objectiveSpec_->terms(objectiveContextFor(spacetime));
-  // A pinned-region objective ADDS its terms on top. The bulk objective keeps
-  // scoring the entire cobordism INCLUDING the pinned interior, so a
-  // boundary-interior edge contributes to both — additive by design rather than
-  // double-counting to be corrected, because the bulk sees one coherent
-  // cobordism and this is an additional hold on part of it.
+  // A pinned-region objective adds its terms on top. The bulk objective keeps
+  // scoring the entire cobordism including the pinned interior, so a
+  // boundary-interior edge contributes to both; the scoring is additive rather
+  // than double-counted, since the bulk sees one coherent cobordism and this is
+  // an additional hold on part of it.
   if (pinnedObjectiveSpec_) {
     const auto pinned = pinnedObjectiveSpec_->terms(
         objectiveContextFor(spacetime, pinnedObjectiveSpec_));
@@ -2226,7 +2210,7 @@ MultiCobordism::relaxWholeComplexReadoutTargets(
     for (complexd &value : targets[witness]) value *= inverseNorm;
   }
 
-  // Isolated-boundary eigenstate check on every NONZERO component
+  // Isolated-boundary eigenstate check on every nonzero component
   // restriction; an exactly zero restriction is the zero input.
   const auto isZero = [](const std::vector<complexd> &state) {
     for (const complexd value : state)
@@ -2518,7 +2502,7 @@ std::set<std::uint64_t> MultiCobordism::pinnedVertices() const {
 }
 
 bool MultiCobordism::edgeIsPinned(std::uint64_t a, std::uint64_t b) const {
-  // Both endpoints within ONE region. One pinned endpoint leaves the edge free to
+  // Both endpoints within one region. One pinned endpoint leaves the edge free to
   // relax, and two regions that each hold one endpoint do not pin the edge that
   // spans between them — that edge is bulk.
   for (const auto &region : pinnedRegions_)
@@ -2540,7 +2524,7 @@ MultiCobordism::Snapshot MultiCobordism::snapshotOf(
   // simplex it is. Absent on every node without surface inputs.
   for (const auto &face : uncoveredInputFacesOn(spacetime))
     cellVertexTuples.push_back(face);
-  // Every edge's length AND phase, verbatim and branch-exact: the phase is a
+  // Every edge's length and phase, verbatim and branch-exact: the phase is a
   // live field of the geometry (the tori's pure-gauge links), and a record
   // that dropped it would rebuild a different operator.
   std::map<std::pair<std::uint64_t, std::uint64_t>, EdgeGeometry> geometryByEdge;
@@ -2566,7 +2550,7 @@ MultiCobordism::BoundaryRecord MultiCobordism::boundaryRecordOf(
   BoundaryRecord record;
   record.facets = boundaryFacetsOf(spacetime);
   if (record.facets.empty() || spacetime.getEdgeList() == nullptr) return record;
-  // Every vertex pair of every boundary facet: an edge is ON the boundary when
+  // Every vertex pair of every boundary facet: an edge is on the boundary when
   // some boundary facet contains both its endpoints, which is the same
   // incidence the facet set is read from, so the two halves cannot disagree
   // about what the boundary is.
@@ -2620,17 +2604,17 @@ std::shared_ptr<Spacetime> MultiCobordism::rebuild(
 std::shared_ptr<Spacetime> MultiCobordism::build(
     const Snapshot &complexSnapshot) const {
   auto rebuiltSpacetime = rebuild(spacetime_->getDimensions(), complexSnapshot);
-  // Candidate clones inherit the wiring mode so COMBINATORIAL MOVES scored on
-  // them wire their new edges under the same convention (#690).
+  // Candidate clones inherit the wiring mode so combinatorial moves scored on
+  // them wire their new edges under the same convention.
   rebuiltSpacetime->setBalancedEdgeWiring(balancedEdgeWiring_);
   return rebuiltSpacetime;
 }
 
 MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
     const Spacetime &spacetime) {
-  // #613: with emergent dispositions ON the draw also offers a TIMELIKE cone-in
+  // With emergent dispositions enabled the draw also offers a timelike cone-in
   // and a disposition flip on an existing edge. Both are ordinary candidate moves:
-  // proposed at random, scored by deltaF, committed only if they lower F. Nothing
+  // Proposed at random, scored by deltaF, committed only if they lower F. Nothing
   // prescribes causal structure -- the objective decides whether it wants any.
   //
   // These discrete proposals remain useful for jumping directly between causal
@@ -2644,11 +2628,10 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
   const char *const *moveKinds =
       shouldProposeDispositions_ ? dispositionMoveKinds : baseMoveKinds;
   const std::size_t nMoveKinds = shouldProposeDispositions_ ? 8u : 6u;
-  // The bridge kind (qubit cobordism spec D1) joins the draw ONLY on a node
-  // with surface inputs whose bridge phase is incomplete: its candidates are
-  // the cells adjacent to the drawing's frontier, split across two surface
-  // blocks. Any other node draws exactly the kinds it drew before, from the
-  // same generator stream.
+  // The bridge kind joins the draw only on a node with surface inputs whose
+  // bridge phase is incomplete: its candidates are the cells adjacent to the
+  // drawing's frontier, split across two surface blocks. Any other node draws
+  // the remaining kinds from the same generator stream.
   std::vector<std::vector<std::uint64_t>> bridgeCandidates;
   if (hasSurfaceInputs()) bridgeCandidates = bridgeCandidatesOn(spacetime);
   const std::size_t nKindsOffered =
@@ -2686,8 +2669,8 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
     return {kConeOut,
             topCellTuples[randomNumberGenerator_() % topCellTuples.size()]};
   }
-  // cone_in and cone_in_timelike share a payload (the facet to cone onto); only
-  // the apex-edge disposition differs when applied. Only a BOUNDARY facet (one
+  // Cone_in and cone_in_timelike share a payload (the facet to cone onto); only
+  // the apex-edge disposition differs when applied. Only a boundary facet (one
   // coface) can accept a cone — an interior facet already has two cofaces, so
   // coning it would be non-manifold and the gate rejects it after a full
   // build+apply+deltaF evaluation. Drawing from getBoundary() directly spends
@@ -2741,21 +2724,18 @@ bool MultiCobordism::applyMoveSpecification(
   const auto &moveKind = moveSpecification.first;
   CLOG(INFO_LEVEL, "Applying a ", moveKind, " move.");
   if (moveKind == kNoop) return false;
-  // The boundary BEFORE the move (setBoundaryMayExtend). Two things can happen
-  // to it. A cone-in buries the facet it stands on and exposes the new cell's
-  // others, a cone-out exposes every facet of the cell it removes, so either
-  // can hand the boundary faces it did not have. And a disposition flip on an
-  // edge of a boundary facet leaves the facet set alone while changing the
-  // metric of ∂W underneath it -- measured on the 3x3 collar (#1022), edge
-  // (6,7) of an input torus carried across the light cone and the state that
-  // torus carries went from a residual of 2.2e-30 to 6.7e-2. So the record is
-  // taken for EVERY kind, not the cone kinds alone, and it carries the
+  // The boundary before the move (setBoundaryMayExtend). A cone-in buries the
+  // facet it stands on and exposes the new cell's others, a cone-out exposes
+  // every facet of the cell it removes, so either can hand the boundary faces
+  // it did not have; and a disposition flip on an edge of a boundary facet
+  // leaves the facet set alone while changing the metric of ∂W underneath it.
+  // The record is therefore taken for every move kind and carries the
   // boundary's geometry as well as its facets.
   const bool gateBoundary = !boundaryMayExtend_ && hasFixedBoundary();
   const BoundaryRecord boundaryBefore =
       gateBoundary ? boundaryRecordOf(*spacetime) : BoundaryRecord{};
   bool moveWasApplied = false;
-  // The site-addressed Pachner kinds (#1012): the SAME four moves, proposed at
+  // The site-addressed Pachner kinds: the same four moves, proposed at
   // the site the payload names instead of one drawn from a seed. Everything
   // after the proposal -- apply, the gates below, the rollback -- is the path
   // the drawn kinds take, because `proposeAt` leaves the move in exactly the
@@ -2815,13 +2795,13 @@ bool MultiCobordism::applyMoveSpecification(
     moveWasApplied =
         SurgicalCone(spacetime.get()).bridge(moveSpecification.second).first;
   } else if (moveKind == kFlipDisposition) {
-    // #613: negate one edge's squared length, carrying it across the light cone.
-    // Spacelike <-> timelike is a DISCRETE step stage 2 cannot take (it would have
+    // Negate one edge's squared length, carrying it across the light cone.
+    // Spacelike <-> timelike is a discrete step stage 2 cannot take (it would have
     // to pass through the singular l^2 = 0), which is why it is a move. Whether it
-    // LOWERS F is left to deltaF and step()'s acceptance test, exactly as for
+    // lowers F is left to deltaF and step()'s acceptance test, exactly as for
     // every other move; whether it is a member of the configuration space at all
     // is settled by the boundary record taken above, which refuses it on an edge
-    // of a fixed boundary (#1022).
+    // of a fixed boundary.
     if (payloadNamesAnEdge(moveSpecification.second) &&
         spacetime->getEdgeList()) {
       // O(1) via the EdgeList's fingerprint -> slot map, not an O(|E|) scan:
@@ -2842,11 +2822,11 @@ bool MultiCobordism::applyMoveSpecification(
   }
   if (!moveWasApplied) return false;
   if (gateBoundary) {
-    // REFUSED, not repaired: a complex whose boundary gained a face, or whose
+    // Refused, not repaired: a complex whose boundary gained a face, or whose
     // boundary is the same faces carrying different lengths or phases, is not
     // the cobordism of the declared states. It is not a member of the
     // configuration space and the candidate is dropped like any other gate
-    // failure. The boundary IS the input state: a trial that rewrites it is
+    // failure. The boundary is the input state: a trial that rewrites it is
     // answering a different question, however much it lowers F.
     const BoundaryRecord boundaryAfter = boundaryRecordOf(*spacetime);
     for (const auto &facet : boundaryAfter.facets)
@@ -2884,9 +2864,9 @@ double MultiCobordism::deltaF(
     const std::set<std::vector<std::uint64_t>> &baseCellSet) const {
   // An objective that declares a localized exact delta is differenced over the
   // cells the move touches, below. One that does not depends on global spectra
-  // or action magnitudes, so its true scalar difference is the only honest
-  // score. It is more expensive, but it prevents stage 1 from optimizing a
-  // surrogate different from the objective it reports.
+  // or action magnitudes, so its full scalar difference is the only valid
+  // score. It costs more, but it prevents stage 1 from optimizing a surrogate
+  // different from the objective it reports.
   if (!compositeSupportsLocalizedDelta())
     return objectiveFor(candidateSpacetime) - baseObjective;
 
@@ -2899,18 +2879,16 @@ double MultiCobordism::deltaF(
   for (const auto &cell : candidateCellSet)
     if (!baseCellSet.count(cell)) touchedCells.push_back(cell);
 
-  // The touched-cell diff alone is NOT the whole affected set (#633): a
-  // flip_disposition changes an edge's l^2 SIGN and changes no cells at all, so the
-  // diff comes back empty and the geometry term would be scored as exactly 0 --
-  // while flipping an edge between spacelike and timelike changes the deficit angle
-  // of every hinge on it. So diff the edge l^2 values too, and pull in the top cells
-  // incident to any edge that moved. Move-agnostic on purpose: this also covers
-  // cone_in_timelike's apex edges and any future move that perturbs geometry without
-  // changing cells, rather than special-casing a move kind.
+  // The touched-cell diff alone is not the whole affected set: flip_disposition
+  // changes an edge's l^2 sign and no cells, so the diff comes back empty even
+  // though flipping an edge between spacelike and timelike changes the deficit
+  // angle of every hinge on it. Diff the edge l^2 values too and pull in the
+  // top cells incident to any edge that moved. This is move-agnostic, so it
+  // also covers cone_in_timelike's apex edges.
   //
-  // Widening is safe: Delta||grad S||^2 = after - before is exact over any FIXED
-  // SUPERSET of the truly-affected edges, because every edge outside the set keeps
-  // its gradient and cancels. A superset costs compute, never correctness.
+  // Widening is safe: delta||grad S||^2 = after - before is exact over any
+  // fixed superset of the affected edges, because every edge outside the set
+  // keeps its gradient and cancels.
   std::map<std::pair<std::uint64_t, std::uint64_t>, complexd> baseLengths;
   for (const auto *edge : spacetime_->getEdgeList()->toVector())
     baseLengths[edgeKey(edge)] = edge->getLength();
@@ -2962,7 +2940,7 @@ double MultiCobordism::deltaF(
     affectedEdgeSet.insert(edgeEndpoints);
   std::vector<std::pair<std::uint64_t, std::uint64_t>> affectedEdges(
       affectedEdgeSet.begin(), affectedEdgeSet.end());
-  // Skipped entirely when the Einstein-Hilbert term is off (#724): scoring a
+  // Skipped entirely when the Einstein-Hilbert term is off: scoring a
   // move by a term the objective does not contain would make stage 1 disagree
   // with `objective()` about which moves lower F.
   const double gradientDelta =
@@ -2986,7 +2964,7 @@ std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
             fromSnapshot};
   std::pair<double, Snapshot> best{std::numeric_limits<double>::infinity(),
                                    Snapshot{}};
-  // Enumerated HERE, against this level's complex, not against the base one: a
+  // Enumerated here, against this level's complex, not against the base one: a
   // move the first move created a site for is a legitimate second move, and a
   // site the first move destroyed is not one.
   for (const auto &specification :
@@ -3013,13 +2991,13 @@ std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
 
 double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
                             double baseObjective) {
-  // The candidate loop below constructs one `ReggeSolver` on the LIVE
+  // The candidate loop below constructs one `ReggeSolver` on the live
   // spacetime per candidate (`deltaF`), and that constructor materializes the
   // facet lattice lazily — a mutation of the shared object. On a live complex
   // whose facets are not yet materialized (a fresh seed, or the complex built
   // from the snapshot of a committed move) two OpenMP threads then race in
   // `Simplex::getFacets` and corrupt the simplex deque (measured on the Δ³
-  // fiber drive, #940: SIGSEGV in `Spacetime::createSimplex` from two
+  // fiber drive: SIGSEGV in `Spacetime::createSimplex` from two
   // candidate threads). Reach the fixpoint once, here, so every thread's
   // construction is read-only.
   spacetime_->materializeFacets();
@@ -3029,7 +3007,7 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
   std::set<std::vector<std::uint64_t>> baseCellSet;
   for (const auto &topSimplex : spacetime_->getTopSimplices())
     baseCellSet.insert(topSimplex->topTuple());
-  // ONE scoring rule at every depth: the localized, UNRELAXED deltaF (#714).
+  // One scoring rule at every depth: the localized, unrelaxed deltaF.
   // The two stages have separate jobs — the combinatorial moves exist to leave
   // a local minimum, the geometric update to descend to the minimum of the
   // region the complex then sits in — and scoring a candidate through a
@@ -3040,20 +3018,18 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
   bool foundImprovingMove = false;
   Snapshot bestSnapshot;
   if (lookaheadDepth <= 1) {
-    // Depth 1: every candidate starts from the SAME base complex, so the specs
-    // can be pre-drawn serially (identical RNG order to the serial loop — the
-    // per-seed draw sequence is unchanged) and the batch scored in parallel:
-    // applyMoveSpecification is deterministic given its spec (it seeds a local
-    // engine from the payload), build() constructs an independent complex, and
-    // deltaF is const over it. The inner OpenMP region of the action gradient
-    // serializes inside each worker (nesting off), so the batch parallelism is
-    // the outer level. The reduction is the lexicographic (delta, index) min,
-    // which reproduces the serial rule exactly: the EARLIEST candidate among
-    // equals wins.
+    // Depth 1: every candidate starts from the same base complex, so the specs
+    // are pre-drawn serially, in the same RNG order as a serial loop, and the
+    // batch is scored in parallel. applyMoveSpecification is deterministic
+    // given its spec (it seeds a local engine from the payload), build()
+    // constructs an independent complex, and deltaF is const over it. The inner
+    // OpenMP region of the action gradient serializes inside each worker
+    // (nesting off). The reduction is the lexicographic (delta, index) min, so
+    // the earliest candidate among equals wins.
     std::vector<MoveSpec> specifications;
-    // A NON-POSITIVE count means every candidate rather than a sample of them
-    // (#1012). Read this way round because "how many to draw" and "draw them
-    // all" are the same question, and a caller that asks for none of them means
+    // A non-positive count means every candidate rather than a sample of them.
+    // Read this way round because "how many to draw" and "draw them all" are
+    // the same question, and a caller that asks for none of them means
     // something no drive can do.
     if (nCandidateMoves <= 0) {
       specifications = enumerateMoveSpecifications(spacetime_,
@@ -3068,8 +3044,8 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     // samples with replacement, and on a small complex the same spec recurs
     // (the cone-in space can be a dozen-odd facets). Duplicates carry
     // identical deltas, so dropping every copy after the first cannot change
-    // the lexicographic (delta, index) winner — the committed move is
-    // bit-identical, only the wasted build+apply+deltaF evaluations go away.
+    // the lexicographic (delta, index) winner; only the wasted
+    // build+apply+deltaF evaluations go away.
     // The RNG stream is untouched (all nCandidateMoves draws happen above).
     // Pachner specs carry RNG-seed payloads, so only exact seed repeats
     // collapse there; the cone/disposition kinds dedup by actual site.
@@ -3113,7 +3089,7 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
       }
     }
   } else if (nCandidateMoves <= 0) {
-    // EXHAUSTIVE at depth > 1: every gated composition of `lookaheadDepth`
+    // Exhaustive at depth > 1: every gated composition of `lookaheadDepth`
     // moves, each level enumerated against the complex the previous level
     // left. The first move is the parallel level — one independent subtree per
     // candidate, so the work divides evenly and nothing below it is shared —
@@ -3121,10 +3097,8 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     // is the same lexicographic (delta, index) min the depth-1 batch uses, so
     // the earliest first move among equals wins here too.
     //
-    // The cost is the move space raised to the depth. That is the honest price
-    // of the claim this search makes — that NO composition of that length
-    // lowers F — and it is only ever paid because a caller asked for it by
-    // passing the exhaustive sentinel.
+    // The cost is the move space raised to the depth, and is paid only when a
+    // caller passes the exhaustive sentinel.
     const auto firstMoves =
         enumerateMoveSpecifications(spacetime_, shouldProposeDispositions_);
     const int firstMoveCount = static_cast<int>(firstMoves.size());
@@ -3162,9 +3136,9 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
   for (int candidateIndex = 0; candidateIndex < nCandidateMoves; ++candidateIndex) {
     // One candidate = `lookaheadDepth` gated random moves applied in sequence,
     // each drawn against the evolving candidate complex. The sequence is scored
-    // — and, if best, committed — as a WHOLE, so an F-lowering pair whose first
-    // move alone raises F is still an honest descent step. This deepened path
-    // stays SERIAL: each draw is made against the candidate the previous move
+    // — and, if best, committed — as a whole, so an F-lowering pair whose first
+    // move alone raises F is still a descent step. This deepened path
+    // stays serial: each draw is made against the candidate the previous move
     // left, so the sequence cannot be pre-drawn the way a depth-1 batch is.
     auto candidateSpacetime = build(currentSnapshot);
     bool wholeSequenceApplied = true;
@@ -3184,7 +3158,7 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
         deltaF(candidateSpacetime, baseObjective, baseResidualU, baseCellSet);
     if (objectiveDelta < bestObjectiveDelta) {
       bestObjectiveDelta = objectiveDelta;
-      // The snapshot carries the sequence's AS-BUILT geometry: nothing was
+      // The snapshot carries the sequence's as-built geometry: nothing was
       // relaxed to earn the score, so nothing is being banked here either.
       bestSnapshot = snapshotOf(*candidateSpacetime);
       foundImprovingMove = true;
@@ -3193,9 +3167,9 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
   if (foundImprovingMove) {
     spacetime_ = build(bestSnapshot);
     // The first committed move is what starts linking the bulk, so block
-    // regions are settled from here on (#737).
+    // regions are settled from here on.
     bulkConnected_ = true;
-    // #776: the move is ALREADY committed — `bestObjectiveDelta` is fixed and
+    // The move is already committed — `bestObjectiveDelta` is fixed and
     // `spacetime_` already replaced — before the analysis overlay is offered
     // the chance to look at it. The overlay is post-hoc by construction: there
     // is no path from here back to the acceptance test above.
@@ -3206,16 +3180,15 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
 }
 
 void MultiCobordism::preconeCells(int count, bool timelike, bool alternate) {
-  // Each cone-in cones a fresh apex onto a random codim-1 facet (a top cell with one
-  // vertex dropped) and is committed only through applyMoveSpecification's
-  // dualComplexValid gate — the same gated primitive the stage-1 draw uses, so the
-  // pre-growth is sound (nothing inserted by fiat). On the single-Δ⁴ seed (a 4-ball)
-  // a cone-in over a boundary facet is valid, so this enlarges the 4-ball; a draw
-  // onto an already-saturated interior facet is rejected by the gate and retried.
-  // `timelike` draws every cone-in as the TIMELIKE disposition (apex edges
-  // ℓ² = −1); `alternate` instead interleaves timelike/spacelike cone-ins for
-  // balanced causal content. Either way every edge sits at one uniform
-  // magnitude |ℓ²| = 1; the default is the all-spacelike precone.
+  // Each cone-in cones a fresh apex onto a random codimension-1 facet (a top
+  // cell with one vertex dropped) and is committed only through
+  // applyMoveSpecification's dualComplexValid gate. On the single-Δ⁴ seed a
+  // cone-in over a boundary facet is valid, so this enlarges the 4-ball; a draw
+  // onto an already-saturated interior facet is rejected and retried.
+  // `timelike` draws every cone-in as the timelike disposition (apex edges
+  // ℓ² = −1); `alternate` interleaves timelike and spacelike for balanced
+  // causal content. Either way every edge sits at |ℓ²| = 1; the default is the
+  // all-spacelike precone.
   constexpr int kAttemptsPerCone = 20;  // gated tries before giving up on one cone
   for (int conedSoFar = 0; conedSoFar < count; ++conedSoFar) {
     std::vector<std::vector<std::uint64_t>> topCellTuples;
@@ -3248,34 +3221,22 @@ void MultiCobordism::preconeCells(int count, bool timelike, bool alternate) {
 }
 
 void MultiCobordism::growBlockRegions() {
-  // Growth is a SETUP step: it runs only before the bulk is connected, and
-  // only when a shell strictly LOWERS the block's residual (#737).
-  //
-  // Both conditions exist because the old rule had no stopping point. The gate
-  // was "keep the shell unless the residual rises", and a block that is not
-  // carrying sits at exactly the constant full-leak residual for ANY region
-  // size — so every shell scored a change of exactly zero, was always kept,
-  // and the region grew until it ran out of complex. Measured on a six-block
-  // node: regions [21, 13, 15, 5, 13, 21] became [25, 25, 25, 25, 25, 25], the
-  // whole complex, so all six blocks were reading one identical sub-complex and
-  // differed only in their target vectors.
+  // Growth is a setup step: it runs only before the bulk is connected, and only
+  // when a shell strictly lowers the block's residual. Both conditions are
+  // needed to give growth a stopping point, since a block that is not carrying
+  // sits at the constant full-leak residual for any region size — so a
+  // "keep unless the residual rises" gate scores every shell as an exact tie
+  // and the regions grow until they cover the whole complex.
   if (bulkConnected_) return;   // the bulk is linked; the states stay as they are
-  // Expand one block's READ WINDOW by a shell — the vertices of every top cell
+  // Expand one block's read window by a shell — the vertices of every top cell
   // touching it — so it gets room to open the holes that carry it. A block
-  // already carrying (residual < tolerance) is left alone, so it stops growing
-  // once it represents its state.
+  // already carrying (residual < tolerance) is left alone.
   //
-  // This grows a SCORING REGION, never the cobordism's boundary: a block is a
-  // vertex set plus a target, and that set selects the sub-complex the block's
-  // residual is read over. Nothing here creates a cell, an edge, or a vertex —
-  // the only write is to `block.vertices`, and every `spacetime_` access below
-  // is a read.
-  //
-  // GATED on the block's own residual: a shell is kept only when it STRICTLY
-  // lowers the block's r_U term, so region growth can never raise F and never
-  // buys nothing. The earlier Δ <= 0 gate was chosen so a region too small to
-  // hold a full cell (whose shells are exact ties) could still get started, but
-  // that same allowance is what let a permanently-leaking block grow forever.
+  // This grows a scoring region, never the cobordism's boundary: the only write
+  // is to `block.vertices`, and every `spacetime_` access below is a read. A
+  // shell is kept only when it strictly lowers the block's r_U term, so region
+  // growth can never raise F and a permanently-leaking block cannot grow
+  // forever.
   const auto growOneShell = [this](BoundaryBlock &block) {
     const double residualBefore = residualForBoundaryBlock(block, spacetime_);
     if (residualBefore < inputCarriedTolerance_) return;
@@ -3293,15 +3254,15 @@ void MultiCobordism::growBlockRegions() {
     }
     std::set<std::uint64_t> original = std::move(block.vertices);
     block.vertices = std::move(expanded);
-    // STRICT: a shell is kept only if it actually improves the carry. A shell
+    // Strict: a shell is kept only if it actually improves the carry. A shell
     // that leaves the residual unchanged buys nothing and is what let the
     // regions sprawl, so it is reverted like a harmful one.
     if (residualForBoundaryBlock(block, spacetime_) >= residualBefore)
       block.vertices = std::move(original);
   };
   for (auto &inputBlock : inputBlocks_) growOneShell(inputBlock);
-  // Localized OUTPUT blocks (a 2→2 recombination's diquark ⊔ antidiquark) grow the
-  // same way; a SINGLE output reads off the whole and has no block here, so this is
+  // Localized output blocks (a 2→2 recombination's diquark ⊔ antidiquark) grow the
+  // same way; a single output reads off the whole and has no block here, so this is
   // a no-op for the formation node.
   for (auto &outputBlock : outputBlocks_) growOneShell(outputBlock);
 }
@@ -3310,10 +3271,10 @@ std::vector<int> MultiCobordism::depthSchedule(int maxLookahead,
                                                int combinatorialBreadth) {
   std::vector<int> schedule;
   if (combinatorialBreadth > 0) {
-    // BACKING OFF: sequences of exactly `combinatorialBreadth` moves are
+    // Backing off: sequences of exactly `combinatorialBreadth` moves are
     // searched first, and the search shortens by one move each time nothing at
     // the current breadth lowers F, down to single moves. The breadth is
-    // searched ON ITS OWN, not on top of the shorter ones: the question the
+    // searched on its own, not on top of the shorter ones: the question the
     // schedule asks is whether a composition of that length improves a complex
     // no shorter composition improves, and answering it means looking there
     // first rather than only on a plateau.
@@ -3322,7 +3283,7 @@ std::vector<int> MultiCobordism::depthSchedule(int maxLookahead,
       schedule.push_back(depth);
     return schedule;
   }
-  // ITERATIVE DEEPENING (the default): single moves first — the cheap, common
+  // Iterative deepening (the default): single moves first — the cheap, common
   // case — deepening only on a stall.
   const int deepest = std::max(1, maxLookahead);
   schedule.reserve(static_cast<std::size_t>(deepest));
@@ -3349,21 +3310,18 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
   // In target-conditioned modes the register is "carried" once summed r_U is
   // essentially zero. JointStationarity never consults this target diagnostic.
   constexpr double kRegisterCarriedTolerance = 1e-3;
-  // INITIALIZATION ONLY: while establishing the boundary states, let each
-  // not-yet-carrying block expand its scoring region by a shell so it can develop
-  // the holes that carry its state. Off during the bulk evolution — the regions
-  // are then frozen too. This never moves ∂W (see growBlockRegions).
+  // Initialization only: while establishing the boundary states, let each
+  // not-yet-carrying block expand its scoring region by a shell so it can
+  // develop the holes that carry its state. Off during the bulk evolution.
+  // This never moves ∂W (see growBlockRegions).
   //
-  // Growing a region CHANGES F and so must be booked into the trace (#607) —
-  // though with the per-block gate in `growBlockRegions` (a shell that raises
-  // the block's residual is reverted) the booked delta is now always <= 0.
-  // `growBlockRegions` mutates only the blocks' scoring-region vertex sets and
-  // never touches `spacetime_`, so `reggeActionGradient` is provably unchanged and the
-  // whole objective change is `gamma_ * Δr_U` — exact, not an approximation of the
-  // kind `deltaF` makes for the gradient term. Leaving it unbooked let the
-  // accumulated trace drift arbitrarily far from `objective()` (measured at tens of
-  // thousands on preconed hosts), and since the SAME accumulated quantity gates
-  // acceptance, moves were being committed against a number that was not F.
+  // Growing a region changes F, so it is booked into the trace; with the
+  // per-block gate in `growBlockRegions` the booked delta is always <= 0.
+  // `growBlockRegions` mutates only the blocks' vertex sets and never touches
+  // `spacetime_`, so `reggeActionGradient` is unchanged and the whole objective
+  // change is exactly `gamma_ * Δr_U`. Leaving it unbooked would let the
+  // accumulated trace drift away from `objective()`, and that same accumulated
+  // quantity gates acceptance.
   if (growBoundaries && objectiveSpec_->needsRegisterResidual()) {
     const double objectiveBeforeGrowth = objective();
     growBlockRegions();
@@ -3376,11 +3334,10 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
   // deepening to 2-move sequences, then 3, up to `maxLookahead`, only when the
   // shorter search finds nothing), or descending from `combinatorialBreadth`
   // and backing off when a breadth is named. Either way a sequence is scored
-  // and committed as a WHOLE, so an F-lowering pair whose first move alone
-  // raises F — the plateau that used to need the trap-door escape — is reached
-  // by honest descent rather than growth on faith.
+  // and committed as a whole, so an F-lowering pair whose first move alone
+  // raises F is still reached by descent.
   lastStage1LookaheadDepth_ = 0;  // report: nothing committed until proven otherwise
-  // A stalled search is allowed to go WIDE as well as deep: depth 1 keeps the
+  // A stalled search is allowed to go wide as well as deep: depth 1 keeps the
   // caller's fast batch (the common, cheap case), while each deepened batch
   // scans on the order of a hundred candidate sequences — deep sequences die on
   // the gate chain far more often and the move space grows with depth, so a
@@ -3395,7 +3352,7 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
       compositeSupportsLocalizedDelta() ? 0.0 : objectiveFor(spacetime_);
   for (const int lookaheadDepth :
        depthSchedule(maxLookahead, combinatorialBreadth)) {
-    // A NON-POSITIVE `nCandidateMoves` is the exhaustive sentinel, and it
+    // A non-positive `nCandidateMoves` is the exhaustive sentinel, and it
     // survives the deepening: taking `max` against the deep batch size would
     // turn "every candidate" into "128 of them" the moment the search left
     // depth 1, so a run asked to be exhaustive would quietly stop being so
@@ -3406,8 +3363,8 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
             ? nCandidateMoves
             : std::max(nCandidateMoves, kDeepLookaheadCandidates);
     double objectiveDelta = step(batchSize, lookaheadDepth, baseObjective);
-    // FINAL CHECK (#625): the draws found nothing, so the step is about to
-    // report that it cannot descend. That claim is about the whole move SET,
+    // Final check: the draws found nothing, so the step is about to
+    // report that it cannot descend. That claim is about the whole move set,
     // which a sample cannot support -- so price every available move before
     // making it, rather than calling a missed draw a local minimum.
     //
@@ -3447,7 +3404,7 @@ void MultiCobordism::seedBlocks(
     const std::vector<std::vector<complexd>> &targets,
     std::vector<BoundaryBlock> &destinationBlocks) {
   // Seed one boundary block per (seed vertex, target): its initial region is the seed
-  // vertex's cell-neighbourhood. The block is NOT pre-grown here — runStage1's
+  // vertex's cell-neighbourhood. The block is not pre-grown here — runStage1's
   // growBlockRegions grows it under the objective, so the carrying topology is fully
   // emergent. The seed vertex is the only anchor (it distinguishes one input/output
   // from another); everything else emerges.
@@ -3526,11 +3483,11 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
   // A single stalled stage-1 batch is a random-draw miss, not proof the moves
   // have no effect (measured on a timelike-preconed drive: committed moves landed
   // several stalled batches apart), so exhaustion is only concluded after this
-  // many CONSECUTIVE no-effect iterations.
+  // many consecutive no-effect iterations.
   constexpr int kConsecutiveNoEffectLimit = 3;
   int consecutiveNoEffect = 0;
   for (int iterationIndex = 0; iterationIndex < maxIters; ++iterationIndex) {
-    // ONE combinatorial move (or lookahead sequence), then a FULL geometric
+    // One combinatorial move (or lookahead sequence), then a full geometric
     // relaxation: stage-2 updates repeat until the absolute-improvement test
     // reports diminishing returns. Every committed move is therefore scored
     // from — and leaves behind — relaxed geometry (stage2Update re-reads the
@@ -3540,9 +3497,9 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
         combinatorialBreadth);
     const bool moveCommitted = lastStage1LookaheadDepth_ > 0;
     // "Full" relaxation still needs a safety budget (as runStage2's maxIters):
-    // near a slow descent tail the line search can accept a near-unbounded
+    // Near a slow descent tail the line search can accept a near-unbounded
     // number of threshold-sized micro-steps, so the stationarity test alone
-    // does not bound the loop in practice. Caller-tunable (#666); the
+    // does not bound the loop in practice. Caller-tunable; the
     // stationarity test remains the real terminator.
     bool geometryRelaxed = false;
     for (int relaxIndex = 0; relaxIndex < relaxBudgetPerMove; ++relaxIndex) {
@@ -3550,7 +3507,7 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
       geometryRelaxed = true;
     }
     // "The combinatorial moves have no effect": nothing committed at any
-    // lookahead depth AND nothing left to relax — but only after enough
+    // lookahead depth and nothing left to relax — but only after enough
     // consecutive misses to rule out draw noise.
     if (!moveCommitted && !geometryRelaxed)
       ++consecutiveNoEffect;
@@ -3560,9 +3517,9 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
         (!stage1WantsAnotherIteration && !geometryRelaxed) ||
         consecutiveNoEffect >= kConsecutiveNoEffectLimit;
     if (wantsExit) {
-      // The LAST geometric relaxation before exit runs at a much tighter
+      // The last geometric relaxation before exit runs at a much tighter
       // tolerance than the in-loop diminishing-returns cut. If the tighter pass
-      // still finds descent the state was NOT truly stationary — the exit was
+      // still finds descent the state was not truly stationary — the exit was
       // premature — so keep looping on the freshly relaxed geometry (which may
       // also enable new moves). Exit only once stationary at 1e-12 too.
       constexpr double kExitRelTol = 1e-12;
@@ -3581,7 +3538,7 @@ std::vector<double> MultiCobordism::run(int maxIters, int nCandidateMoves,
 bool MultiCobordism::stage2Update(double beta, double tolerance,
                                   std::vector<double> &objectiveTrace,
                                   double &stepScale) {
-  // Reset-then-set: the flag reports THIS call's outcome, so in the combined
+  // Reset-then-set: the flag reports this call's outcome, so in the combined
   // drive (`run`) it reflects the most recent geometric update instead of
   // latching true after a stationary point a later topology change reopened.
   // (`runStage2` is unaffected: there a true flag breaks its loop immediately.)
@@ -3597,7 +3554,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
     lengths(edgeIndex) = edges[edgeIndex]->getLength();
     squaredLengths(edgeIndex) = lengths(edgeIndex) * lengths(edgeIndex);
   }
-  // The connection phase is the node's OTHER edge field, and it relaxes on its
+  // The connection phase is the node's other edge field, and it relaxes on its
   // own coordinate: phi is not derived from l, so there is no square-root
   // branch to track and the trial is written directly.
   Eigen::VectorXcd phases(edgeCount);
@@ -3620,7 +3577,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
   };
   auto fullObjective = [&]() { return objectiveFor(spacetime_); };
 
-  // Return the steepest-ASCENT displacement in the complex z plane for a real
+  // Return the steepest-ascent displacement in the complex z plane for a real
   // scalar. Stage 2 subtracts it. This finite-difference path is reserved for
   // r_U, whose target/block composition has no one closed-form derivative yet.
   const auto scalarAscentDirection = [&](const auto &functional) {
@@ -3696,10 +3653,10 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
   Eigen::VectorXcd descentDirection = Eigen::VectorXcd::Zero(edgeCount);
   // The phase's own descent direction, empty unless the injected objective
   // declares a phi dependence. Kept separate from `descentDirection` because
-  // the two are displacements in DIFFERENT coordinates — z and phi are distinct
+  // the two are displacements in different coordinates — z and phi are distinct
   // fields, and mixing them is the error the two-field split exists to prevent.
   Eigen::VectorXcd phaseDescentDirection = Eigen::VectorXcd::Zero(edgeCount);
-  // Exact acceptance baseline at the CURRENT state rather than
+  // Exact acceptance baseline at the current state rather than
   // objectiveTrace.back(). Joint mode assembles it from the exact gradients
   // already needed for its direction; the other modes recompute their scalar.
   // In the combined drive (`run`) the trace is accumulated from stage-1 deltas
@@ -3710,10 +3667,10 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
   double trialStepScale = stepScale;
   bool objectiveImproved = false;
   try {
-    // The engine no longer knows which functional it is scoring. It assembles
+    // The engine does not know which functional it is scoring. It assembles
     // the firewalled context; the injected objective supplies its own analytic
     // direction and, where it has assembled its scalar along the way, the exact
-    // baseline the line search gates on. Any NUMERICALLY differentiated
+    // baseline the line search gates on. Any numerically differentiated
     // register-residual term is applied here by weight rather than inside the
     // objective: differencing a scalar over edge coordinates is engine
     // machinery, and handing an objective a callable that did it would mean
@@ -3736,10 +3693,10 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
             directionContext.scalar);
     if (numericalResidualWeight != 0.0) {
       if (useFiberResiduals_ && readoutsHaveAnalyticGradient()) {
-        // #947: every fiber-mode term of rU has an analytic gradient through
+        // Every fiber-mode term of rU has an analytic gradient through
         // the band's Riesz projector and the frame transfer; the numerical
-        // path is not used for them. Only while every SELECTED reading has its
-        // own analytic gradient, though (#1055); otherwise this would be the
+        // path is not used for them. Only while every selected reading has its
+        // own analytic gradient, though; otherwise this would be the
         // direction of a different objective.
         const ResidualGradient analytic = fiberModeAscent();
         descentDirection += numericalResidualWeight * analytic.lengths;
@@ -3798,7 +3755,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         descentDirection[i] = complexd{descentDirection[i].real(), 0.0};
 
     restoreEdgeLengths();
-    // Pinning enters HERE and only here: a pinned edge keeps its resident squared
+    // Pinning enters here and only here: a pinned edge keeps its resident squared
     // length while the rest of the complex relaxes around it. Zeroing the descent
     // component is the whole mechanism — no clamp, no projection after the fact,
     // no special case in the line search, which then simply has no reason to move
@@ -3808,7 +3765,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         const auto key = edges[edgeIndex]->getKey();
         if (edgeIsPinned(key.first, key.second)) {
           descentDirection(edgeIndex) = complexd{0.0, 0.0};
-          // A pinned edge is held in BOTH its fields. "Do not change these"
+          // A pinned edge is held in both its fields. "Do not change these"
           // that froze the length while the phase drifted would be a pin in
           // name only.
           phaseDescentDirection(edgeIndex) = complexd{0.0, 0.0};
@@ -3838,7 +3795,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
       // l on the continuous square-root branch. No component of z is projected.
       setSquaredLengths(squaredLengths -
                         trialStepScale * descentDirection);
-      // ONE line search over BOTH fields: the same step scale moves z and phi
+      // One line search over both fields: the same step scale moves z and phi
       // together and the same strict-improvement gate accepts or rejects the
       // pair. Two searches would let one field buy an improvement the other
       // paid for, and the accepted state would not be a descent of the whole
@@ -3865,7 +3822,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         objectiveTrace.push_back(trialObjective);
         stepScale = std::min(stepScale * 1.3, 1.0);
         objectiveImproved = true;
-        // #776 solver-error indicator: the magnitude of the improvement this
+        // Solver-error indicator: the magnitude of the improvement this
         // geometric update actually banked (0 once the relaxation is
         // stationary). A base numerical quantity — nothing derived.
         lastStage2Improvement_ = std::abs(currentObjective - trialObjective);
@@ -3877,8 +3834,8 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
       trialStepScale *= 0.5;
     }
   } catch (...) {
-    // The error still propagates loudly — it just does not take the geometry with
-    // it. The throw comes from a TRIAL the line search had not accepted, so the
+    // The error still propagates; it just does not take the geometry with it.
+    // The throw comes from a trial the line search had not accepted, so the
     // complex the caller still holds must be the one it had on entry, not a
     // half-applied step everything downstream would then read.
     restoreEdgeLengths();
@@ -3887,7 +3844,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
   if (!objectiveImproved) {
     restoreEdgeLengths();
     lastStage2Stationary_ = true;
-    lastStage2Improvement_ = 0.0;  // #776: stationary means zero solver error
+    lastStage2Improvement_ = 0.0;  // stationary means zero solver error
     return false;
   }
   (void)beta;  // run/runStage2 synchronize this with reggeWeight_ before entry.
@@ -3933,7 +3890,7 @@ int MultiCobordism::directedConeOut(HolePlacementStrategy strategy, int maxOpen)
               [&](const std::vector<std::uint64_t> &a,
                   const std::vector<std::uint64_t> &b) { return orderKey(a) < orderKey(b); });
 
-    // Scored by the INJECTED objective, so topology changes when the functional
+    // Scored by the injected objective, so topology changes when the functional
     // in force wants it and not otherwise. Surgery is the only topology-changing
     // mechanism the engine has — Pachner moves are bistellar and preserve the PL
     // homeomorphism type, hence the Betti numbers, and geometric relaxation
@@ -3990,7 +3947,7 @@ int MultiCobordism::randomConeOut(int count) {
       if (held.count(vertexId)) { touchesHeld = true; break; }
     if (!touchesHeld) cells.push_back(std::move(cell));
   }
-  // UNIFORM: shuffled whole and taken in that order, so no property of a cell
+  // Uniform: shuffled whole and taken in that order, so no property of a cell
   // -- its position, its adjacency, what it would do to rU -- makes it more or
   // less likely to be chosen. Shuffling once and walking it is the same
   // distribution as drawing without replacement, and needs one pass.
@@ -4034,7 +3991,7 @@ int MultiCobordism::directedConeIn(int maxClose) {
       }
     }
 
-    // Scored by the INJECTED objective, exactly as the cone-out probe is: a
+    // Scored by the injected objective, exactly as the cone-out probe is: a
     // hole closes when the functional in force is lowered by closing it.
     const double baseObjective = objectiveFor(spacetime);
     double bestObjective = baseObjective;
@@ -4083,7 +4040,7 @@ void MultiCobordism::buildStep(BuildAction action, int maxSteps, int nCandidateM
   }
 }
 
-// ---- fiber-form boundary targets (#916) ----
+// ---- fiber-form boundary targets ----
 
 double MultiCobordism::fiberResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                        const BoundaryFiber &target, FiberBand band) const {
@@ -4124,7 +4081,7 @@ chainhodge::Contour MultiCobordism::fiberContourOn(const AssembledPencil &assemb
                                                    const BoundaryFiber &target, FiberBand band) {
   switch (band) {
     case FiberBand::ZeroMode:
-      // The zero mode of THIS pencil: the block's own Laplacian's harmonic
+      // The zero mode of this pencil: the block's own Laplacian's harmonic
       // space, whatever contour the fiber stores (see `fiberBandFor`).
       return PencilLayer::harmonicContour(assembled, target.degree);
     case FiberBand::AsStored:
@@ -4187,7 +4144,7 @@ double MultiCobordism::fiberResidualForBoundaryBlock(
                          fiberBandFor(boundaryBlock));
 }
 
-// ---- two-body cobordism map (#941) ----
+// ---- two-body cobordism map ----
 
 void MultiCobordism::attachInputFiber(std::size_t index, BoundaryFiber fiber,
                                       std::vector<std::vector<std::uint64_t>> cells) {
@@ -4542,7 +4499,7 @@ MultiCobordism::writeCaseBoundary(const TwoBodyCase &boundaryCase,
   for (const auto &[endpoints, squaredLength] : boundaryCase.boundary) {
     const ::tessera::mesh::EdgeKey key(endpoints.first, endpoints.second);
     auto *edge = spacetime->getEdgeList()->get(key.fingerprint.fingerprint());
-    // A case naming an edge the complex does not have is SKIPPED, not an
+    // A case naming an edge the complex does not have is skipped, not an
     // error: stage 1 rebuilds the complex between evaluations, so a boundary
     // edge is always present but a stale case would otherwise abort a drive.
     if (edge == nullptr) continue;
@@ -4570,7 +4527,7 @@ double MultiCobordism::twoBodyResidualOverCasesOn(
     const std::shared_ptr<Spacetime> &spacetime) const {
   if (twoBodyCases_.empty())
     return twoBodyTarget_ ? twoBodyResidualOn(spacetime, *twoBodyTarget_) : 0.0;
-  // The sum OF the per-case reads, so the number the drive minimises and the
+  // The sum of the per-case reads, so the number the drive minimises and the
   // numbers a reader inspects cannot disagree.
   double total = 0.0;
   for (const double residual : twoBodyResidualsPerCaseOn(spacetime))
@@ -4674,7 +4631,7 @@ chainhodge::TransferResult MultiCobordism::pairedFrameTransferOn(
         "when every attached block carries one; partial framing is ambiguous");
   const AssembledPencil assembled = PencilLayer::assemble({spacetime});
   // One side's frame is its blocks' frames stacked: cells concatenated, images
-  // and dual images BLOCK-DIAGONAL. A torus and its conjugate carry disjoint
+  // and dual images block-diagonal. A torus and its conjugate carry disjoint
   // cells and their own kernels, so the combined frame is their direct sum --
   // nothing is mixed here that the geometry does not already separate.
   auto side = [&](const std::vector<const BoundaryBlock *> &blocks) {
@@ -4749,13 +4706,13 @@ double MultiCobordism::bulkOperatorResidualOn(
     throw std::logic_error("MultiCobordism::bulkOperatorResidualOn: the target is " +
                            std::to_string(target.chi.rows()) + "x" + std::to_string(target.chi.cols()) +
                            ", not square");
-  // The operator the BULK names, read through a Choi frame of d^2 interior
+  // The operator the bulk names, read through a Choi frame of d^2 interior
   // edges in canonical order. A complex whose framed kernel is not rank one
   // names no operator: it scores the full leak, exactly as a refused geometry
   // does under the transfer reading, rather than a number standing in for one.
   GeometricOperatorReadout readout;
   try {
-    // metric=true: the live signed Hodge weights, so the reading retains what
+    // Metric=true: the live signed Hodge weights, so the reading retains what
     // relaxation did. The combinatorial unit-weight mode is topology-only and
     // would score the same for every geometry with the same cells, making the
     // term a constant under stage 2.
@@ -4811,7 +4768,7 @@ double MultiCobordism::wholeHarmonicResidualOn(
   if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil)
     return refuse("the whole-complex harmonic is read on the chain-level Whitney pencil; this node uses "
                   "the diagonal-weight metric");
-  // The DECLARED output state when one is set, otherwise the two-body target.
+  // The declared output state when one is set, otherwise the two-body target.
   // A rank-2 harmonic space carries a 2-dimensional state and a rank-4 one a
   // 4-dimensional state; forcing the 4-dimensional chi on a two-torus host was
   // asking the wrong question of it.
@@ -4831,17 +4788,15 @@ double MultiCobordism::wholeHarmonicResidualOn(
   try {
     assembled = PencilLayer::assemble({spacetime});
     if (assembled.dimension() < 1) return refuse("the complex has no edges");
-    // The lambda = 0 band as the null space RSF Sec. 5 prescribes rather than
-    // a contour integral around it: under the rank conditions (R1)-(R4) the
-    // two are one subspace, and `harmonicBand` refuses by name when the dual
-    // connection disagrees about its dimension, which is how those conditions
-    // fail. Measured on a 90-edge collar: same span to 5.1e-15, 68.7 ms
-    // against 3797.1 ms.
+    // The lambda = 0 band as a null space rather than a contour integral around
+    // it: the two are one subspace under the rank conditions, and
+    // `harmonicBand` refuses when the dual connection disagrees about its
+    // dimension, which is how those conditions fail. The null-space route is
+    // far cheaper.
     //
-    // This substitution is only safe because the reading below is taken in
-    // the PERIOD FRAME. Read in the band's own basis the two disagreed
-    // (0.9412 against 0.9272 on one geometry), because a Riesz band and a
-    // null-space band return different bases of the same space.
+    // This substitution is safe only because the reading below is taken in the
+    // period frame: a Riesz band and a null-space band return different bases
+    // of the same space, so read in the band's own basis the two disagree.
     band = assembled.op->harmonicBand(1);
   } catch (const std::runtime_error &error) {
     return refuse(error.what());
@@ -4849,7 +4804,7 @@ double MultiCobordism::wholeHarmonicResidualOn(
     return refuse(error.what());
   }
   const auto rank = static_cast<Eigen::Index>(band.rank());
-  // The harmonic space is a SPACE. Its rank is what can be carried, and a
+  // The harmonic space is a space. Its rank is what can be carried, and a
   // target of another dimension is not something this geometry has a state
   // for -- said rather than fitted. Two boundary tori give b_1 = 2 against a
   // 4-dimensional target; four give b_1(dW) = 8, hence rank 4.
@@ -4862,7 +4817,7 @@ double MultiCobordism::wholeHarmonicResidualOn(
   // no basis is named here that the geometry does not already carry.
   std::vector<const BlockMarking *> markings;
   std::vector<complexd> coefficients;
-  // The marking's OWN coefficients, which are the block's input state (1, tau)
+  // The marking's own coefficients, which are the block's input state (1, tau)
   // -- `readInputState` reads the same field. `block.target` is the register
   // target and is a different quantity.
   for (const auto &block : inputBlocks_) {
@@ -4890,7 +4845,7 @@ double MultiCobordism::wholeHarmonicResidualOn(
   Eigen::MatrixXcd periods(cycleCount, rank);
   Eigen::VectorXcd inputs(cycleCount);
   Eigen::Index row = 0;
-  // Under GRAM the harmonic columns are contracted against the block's live
+  // Under gram the harmonic columns are contracted against the block's live
   // frame through the chain metric rather than integrated over its cycles.
   // M_1 Z is the same for every block, so it is applied once.
   Eigen::MatrixXcd metricImages;
@@ -4941,40 +4896,30 @@ double MultiCobordism::wholeHarmonicResidualOn(
   } catch (const std::runtime_error &error) {
     return refuse(std::string("a marked cycle is not a walk on the whole complex: ") + error.what());
   }
-  // The form the INPUTS determine: the coefficient vector minimizing
-  // ||Pi c - p||. The FORM is basis-free, but this c is its coordinates in
-  // whatever basis the band happened to return, and the band's basis is not a
-  // quantity the geometry carries -- a Riesz band hands back the singular
-  // vectors of its projector, a null-space band the singular vectors of S^U,
-  // and reading c in either makes the answer depend on which.
+  // The form the inputs determine: the coefficient vector minimizing
+  // ||Pi c - p||. The form is basis-free, but this c is its coordinates in
+  // whatever basis the band returned, which the geometry does not carry.
   //
-  // The frame the spec names is the PERIOD FRAME (S6, D3, and the glossary's
-  // `SimplicialQubit::periodFrame`): the band normalized so a marking's
-  // cycles read periods (1, 0) and (0, 1), in which the coefficients are the
-  // periods of the form and `wanted`'s own (1, tau) shape is the same kind of
-  // object. Writing B for a marking's square block of Pi, that frame is
-  // Z B^-1, whose period matrix is Pi B^-1, so the coefficients there are
-  // simply B c -- the band is never rebuilt, and the reading stops depending
-  // on it.
+  // The frame is the period frame (`SimplicialQubit::periodFrame`): the band
+  // normalized so a marking's cycles read periods (1, 0) and (0, 1), in which
+  // the coefficients are the periods of the form. Writing B for a marking's
+  // square block of Pi, that frame is Z B^-1, whose period matrix is Pi B^-1,
+  // so the coefficients there are simply B c, and the band is never rebuilt.
   //
-  // Every marking of the band's rank induces such a frame, and they are ONE
-  // frame exactly when the monodromy B_y B_x^-1 between them is the identity
-  // (spec S6: "the integer matrix relating the two markings through the
-  // whole's zero mode"). Measured, not assumed: a monodromy that is not the
-  // identity means the markings disagree about the frame of the whole, and
-  // that is said by name rather than settled by taking the first one.
+  // Every marking of the band's rank induces such a frame, and they are one
+  // frame exactly when the monodromy B_y B_x^-1 between them is the identity.
+  // A monodromy that is not the identity means the markings disagree about the
+  // frame of the whole, which is reported rather than settled by taking the
+  // first one.
   Eigen::VectorXcd state = periods.completeOrthogonalDecomposition().solve(inputs);
-  // A GROUP of markings whose cycles number exactly the harmonic rank frames
+  // A group of markings whose cycles number exactly the harmonic rank frames
   // the whole: its square block of Pi is the period matrix, and the band
   // normalized by its inverse reads periods (1,0,...), (0,1,...) there. One
   // torus frames a rank-2 space by itself; a rank-4 space needs two.
   //
-  // Which two is not a free choice and not an ordering. A torus and its
-  // orientation reversal carry DEPENDENT periods, so a conjugate pair frames
-  // nothing -- measured at four tori: the two conjugate pairs have condition
-  // 1.9e16 and 1.0e16, every cross pair 1.8. So the groups are enumerated and
-  // the singular ones drop out by measurement rather than by being ordered
-  // around.
+  // Which two is not a free choice: a torus and its orientation reversal carry
+  // dependent periods, so a conjugate pair frames nothing. The groups are
+  // therefore enumerated and the singular ones drop out by conditioning.
   std::vector<Eigen::Index> markingRanks;
   markingRanks.reserve(markings.size());
   for (const auto *marking : markings)
@@ -4996,7 +4941,7 @@ double MultiCobordism::wholeHarmonicResidualOn(
 
 double MultiCobordism::twoBodyResidualOn(const std::shared_ptr<Spacetime> &spacetime,
                                          const TwoBodyTarget &target) const {
-  // The SUM over the selected readings. Each is the same projective leak on
+  // The sum over the selected readings. Each is the same projective leak on
   // the same scale, and each scores the full 1.0 when it cannot name a state,
   // so summing them is well defined however many are chosen.
   double total = 0.0;
@@ -5036,7 +4981,7 @@ double MultiCobordism::operatorResidualOn(const std::shared_ptr<Spacetime> &spac
         "MultiCobordism::operatorResidualOn: the paired-frame target must "
         "be finite and nonzero");
   if (!spacetime) return 1.0;
-  // The two sides are the two PAIRS, in block order: a state and its conjugate
+  // The two sides are the two pairs, in block order: a state and its conjugate
   // are one side, so nothing is left out of either.
   std::vector<const BoundaryBlock *> attached;
   for (const auto &block : inputBlocks_)
@@ -5170,7 +5115,7 @@ MultiCobordism::TwoBodyRead MultiCobordism::readTwoBody() const {
   return read;
 }
 
-// ---- the marking, the derived frame and the state at a block (qubit cobordism spec D2, D3) ----
+// ---- the marking, the derived frame and the state at a block ----
 
 bool MultiCobordism::orderMarking(Marking &cycles, std::uint64_t &baseVertex, std::string &obstruction) {
   for (std::size_t c = 0; c < cycles.size(); ++c) {
@@ -5277,9 +5222,9 @@ MultiCobordism::DerivedFrame MultiCobordism::deriveFrame(const BoundaryBlock &bl
       out.obstruction = "the block's own complex has no edges";
       return out;
     }
-    // The zero mode of the block's OWN covariant pencil: its harmonic contour,
-    // recomputed here as the lengths move (spec §6), the phases entering
-    // through the dressed pencil.
+    // The zero mode of the block's own covariant pencil: its harmonic contour,
+    // recomputed here as the lengths move, with the phases entering through
+    // the dressed pencil.
     const chainhodge::Contour contour = PencilLayer::harmonicContour(assembled, 1);
     const chainhodge::Band band = assembled.op->band(1, contour);
     out.kernelRank = band.rank();
@@ -5309,7 +5254,7 @@ MultiCobordism::DerivedFrame MultiCobordism::deriveFrame(const BoundaryBlock &bl
     // F^vee = Z~ (Z~^T M_1^U F)^{-T} with Z~ the dual kernel's images (the
     // zero mode under the inverse links) and M_1^U the dressed Whitney mass
     // matrix: (F^vee)^T M_1^U F = I, the BlockFrame contract paired between
-    // the kernel and the dual kernel (qubit spec §16; Prop. 5.1(vi)).
+    // the kernel and the dual kernel.
     const Eigen::MatrixXcd dualImages = assembled.dual->applyG(1, band.dualFrame);
     const Eigen::MatrixXcd M(assembled.op->Minv(1));
     const Eigen::MatrixXcd pairing = dualImages.transpose() * M * F;
@@ -5357,7 +5302,7 @@ double MultiCobordism::inputStateResidualOn(const BoundaryBlock &block,
   if (!spacetime) return 1.0;
   const DerivedFrame derived = deriveFrame(block, spacetime);
   if (!derived.derived()) return 1.0;  // no frame: the state leaks in full
-  // The whole's zero mode at the WHOLE's harmonic contour (R7), on the
+  // The whole's zero mode at the whole's harmonic contour (R7), on the
   // block's edges; the leak of the target there.
   return fiberResidualOn(spacetime, stateTargetOf(*block.marking, derived.frame), FiberBand::ZeroMode);
 }
@@ -5383,7 +5328,7 @@ observables::SimplicialQubit MultiCobordism::blockQubit(const BoundaryBlock &blo
     throw std::runtime_error("MultiCobordism::blockQubit: the block has no surface (a face of the torus lost an "
                              "edge, so it carries no state)");
   // The surface as SimplicialQubit's Spacetime constructor indexes it:
-  // vertices by ascending id, edges by ascending index pair. The marking's
+  // Vertices by ascending id, edges by ascending index pair. The marking's
   // steps (host ids, u -> v) become (edge index, sign) with the sign of the
   // step against the edge's stored orientation (min -> max).
   std::vector<std::uint64_t> ids;
@@ -5419,7 +5364,7 @@ observables::SimplicialQubit MultiCobordism::blockQubit(const BoundaryBlock &blo
   };
   const observables::SimplicialQubit::Cycle cycleA = cycleOf(block.marking->cycles[0], "A");
   const observables::SimplicialQubit::Cycle cycleB = cycleOf(block.marking->cycles[1], "B");
-  // The orientation the marking fixes (the qubit spec §2: A . B = +1). The
+  // The orientation the marking fixes, A . B = +1. The
   // container stores none; the fundamental class picks one of the two, and
   // the intersection number says whether it is the marking's.
   observables::SimplicialQubit read(surface, cycleA, cycleB, /*reversed=*/false);
@@ -5457,8 +5402,8 @@ double MultiCobordism::ownStateResidualOn(const BoundaryBlock &block,
   } catch (const std::invalid_argument &) {
     return 1.0;  // the surface refuses the qubit's validation (a degenerate triangle)
   }
-  // The periods over the GIVEN marking: the qubit spec §9 reports (B, -A)
-  // when |P_A| vanishes, and the leak is written on the raw pair.
+  // The periods over the given marking: the qubit read reports (B, -A) when
+  // |P_A| vanishes, and the leak is written on the raw pair.
   auto [pA, pB] = read->periods();
   if (read->markingSwapped()) {
     const std::complex<double> rawA = -pB, rawB = pA;
@@ -5501,7 +5446,7 @@ MultiCobordism::ResidualGradient MultiCobordism::ownStateResidualGradientOn(
   const double N = std::norm(a) + std::norm(b);
   // dr = 2 Re(d_tau r . d tau): the Wirtinger derivative of the real leak
   // with respect to the reported tau(), in the chart tau = P_B/P_A, or
-  // sigma = P_A/P_B = -tau() when the qubit spec §9 swapped the marking.
+  // sigma = P_A/P_B = -tau() when the marking is swapped.
   const Complex tau = read->tau();
   Complex dr;
   if (!read->markingSwapped()) {
@@ -5601,7 +5546,7 @@ MultiCobordism::InputStateRead MultiCobordism::readInputState(std::size_t index)
   return read;
 }
 
-// ---- analytic gradients of the fiber-mode residuals (#947) ----
+// ---- analytic gradients of the fiber-mode residuals ----
 
 namespace {
 
@@ -5660,7 +5605,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberResidualGradientOn(
     }
     return -dF / norm;
   };
-  // One edge's dZ is an independent dense solve against the SAME band, and each
+  // One edge's dZ is an independent dense solve against the same band, and each
   // writes its own slot, so the sweep is the natural parallel level: no
   // reduction, no shared accumulator, and the result is bit-identical to the
   // serial sweep. The caches the derivative path fills lazily are warmed first
@@ -5709,7 +5654,7 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
   std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> parentIndex;
   for (std::size_t e = 0; e < edges.size(); ++e) parentIndex[edgeKey(edges[e])] = e;
   // The whole: its zero mode and the resolvent frames of its band derivative,
-  // computed ONCE and shared by every block (the expensive part is the
+  // computed once and shared by every block (the expensive part is the
   // per-edge derivative of the whole's images, which does not depend on the
   // block).
   const AssembledPencil assembled = PencilLayer::assemble({spacetime});
@@ -5746,9 +5691,9 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
     term.u = term.t - ZT * term.c;
     term.norm = term.t.squaredNorm();
     term.leak = term.u.squaredNorm() / term.norm;
-    // dt = (dZ Pi^{-1} - F dPi Pi^{-1}) (a, b)^T on the block's OWN pencil, one
+    // dt = (dZ Pi^{-1} - F dPi Pi^{-1}) (a, b)^T on the block's own pencil, one
     // column per own edge (the frame's rows, the target's rows), mapped to the
-    // parent's edges by vertex pair (a surface's edges ARE host edges); zero
+    // parent's edges by vertex pair (a surface's edges are host edges); zero
     // on every bulk edge.
     const auto own = blockComplexWithGeometry(block, spacetime);
     const AssembledPencil ownAssembled = PencilLayer::assemble({own});
@@ -5795,7 +5740,7 @@ std::vector<MultiCobordism::ResidualGradient> MultiCobordism::inputStateResidual
     term.active = true;
   }
   if (std::none_of(terms.begin(), terms.end(), [](const BlockTerms &term) { return term.active; })) return gradients;
-  // dr = 2 Re(dF . dcoord), dF = [u^H (dt - dZ_T c) - r t^H dt] / |t|^2, the
+  // dr = 2 Re(dF . Dcoord), dF = [u^H (dt - dZ_T c) - r t^H dt] / |t|^2, the
   // whole's dZ on this edge shared by every block.
   // The whole's sweep, and the expensive one: dZ on this edge is shared by
   // every block, and each block writes only its own (b, e) slot, so edges
@@ -5842,7 +5787,7 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
                                : std::vector<::tessera::mesh::Edge *>{};
   ResidualGradient gradient;
   gradient.lengths = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(edges.size()));
-  // The ZERO gradient wherever the residual itself refuses: a reading that
+  // The zero gradient wherever the residual itself refuses: a reading that
   // cannot name a state has no direction either, and a direction invented for
   // it would be worse than none.
   if (!spacetime || metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil) return gradient;
@@ -5918,7 +5863,7 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
   // A singular Gram means the marked cycles do not pin the harmonic form, so
   // the coefficient vector is not a function of the geometry here and has no
   // derivative. The residual still reads (its solve takes the minimum-norm
-  // answer); the DIRECTION is what is undefined, and it is left at zero.
+  // answer); the direction is what is undefined, and it is left at zero.
   if (!gramLu.isInvertible()) return gradient;
   const Eigen::VectorXcd bandState = gramLu.solve(Pi.adjoint() * inputs);
   const Eigen::VectorXcd state = periodFrame.block * bandState;
@@ -5929,21 +5874,15 @@ MultiCobordism::ResidualGradient MultiCobordism::wholeHarmonicResidualGradientOn
   const complexd overlap = state.dot(wanted);  // <B c, w>
   // r = 1 - |<B c,w>|^2 / (|B c|^2 |w|^2), the same
   // period-frame expression the residual takes.
-  // The derivative ALONG a direction, taken twice -- once along ds = 1 and once
+  // The derivative along a direction, taken twice -- once along ds = 1 and once
   // along ds = i -- because the packed gradient is the pair
   // (dr/d(Re s), dr/d(Im s)).
   //
   // The (2 Re dF, -2 Im dF) shortcut off a single holomorphic dF is valid only
   // while everything between the coordinate and the residual is holomorphic,
-  // and c is NOT: c = G^-1 Pi* p depends on s-bar through Pi*. Along a real
+  // and c is not: c = G^-1 Pi* p depends on s-bar through Pi*. Along a real
   // direction both terms are present:
   //   dc = -G^-1 (Pi* dPi) c + G^-1 dPi* (p - Pi c).
-  // Validated against an independent NumPy computation with a
-  // Richardson-extrapolated reference: 3.0e-08, which is that reference's own
-  // accuracy (its dZ is itself a difference quotient). The Euler identity
-  // stayed exact at 3.8e-16 under the WRONG form too -- it constrains the one
-  // scaling direction and nothing else, which is why it cannot be the only
-  // check.
   const auto along = [&](const Eigen::MatrixXcd &dZ) {
     const Eigen::MatrixXcd dPi = periodsOf(dZ);
     const Eigen::VectorXcd dBandState = gramLu.solve(
@@ -6064,18 +6003,16 @@ MultiCobordism::ResidualGradient MultiCobordism::twoBodyResidualGradientOn(
     const complexd s2 = (T.conjugate().cwiseProduct(dT)).sum();           // <T, dT>
     return -(overlap * s1 * tt - std::norm(overlap) * s2) / (tt * tt * cc);
   };
-  // TWO PHASES, and the split is deliberate. The expensive half is the dense
-  // operator derivative per edge, which parallelizes; `sensitivity` is the
-  // cheap half, and it is the FP-sensitive one — a Release build links with
-  // LTO, so pulling it into an OpenMP-outlined body changes the inliner's
-  // choices and with them whether `a*b+c` contracts to an FMA, which moves the
-  // result by an ULP. Keeping it in a PLAIN SERIAL loop over the edges in
-  // order keeps that arithmetic bit-for-bit what the serial sweep produced.
+  // Two phases. The expensive half is the dense operator derivative per edge,
+  // which parallelizes. `sensitivity` is the cheap half and the FP-sensitive
+  // one: a Release build links with LTO, so pulling it into an OpenMP-outlined
+  // body changes the inliner's choices and with them whether `a*b+c` contracts
+  // to an FMA. Keeping it in a serial loop over the edges in order keeps that
+  // arithmetic bit-for-bit what the serial sweep produced.
   //
   // The derivatives are held for a bounded window rather than all at once:
   // they are dense n_k x n_k, so one per edge would be O(E n^2) live at the
-  // peak. A window keeps the scratch flat while phase 2 still walks the edges
-  // in their original order.
+  // peak.
   assembled.op->warmDerivatives(A->degree);
   const std::size_t window = 32;
   std::vector<Eigen::MatrixXcd> lengthDerivatives(window);
@@ -6211,7 +6148,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
     }
   };
   if (wholeFiberTarget_) accumulate(fiberResidualGradientOn(spacetime_, *wholeFiberTarget_), *spacetime_, 1.0);
-  // A marked block's term is its own-state residual (spec D2): the analytic
+  // A marked block's term is its own-state residual: the analytic
   // tau derivative of the holomorphic form of its own Laplacian, supported
   // on the block's own edges (already in the host's edge order; a refused
   // read has no direction and comes back as the zero gradient).
@@ -6253,7 +6190,7 @@ MultiCobordism::ResidualGradient MultiCobordism::fiberModeAscent() const {
   if (!twoBodyCases_.empty()) {
     // One gradient per case, each taken with that case's boundary written.
     // Summed because the objective is a sum; the boundary components are
-    // zeroed by pinning either way, and the BULK components are what differ
+    // zeroed by pinning either way, and the bulk components are what differ
     // between cases -- which is the whole point.
     for (const auto &boundaryCase : twoBodyCases_) {
       const auto previous = writeCaseBoundary(boundaryCase, spacetime_);
@@ -6329,7 +6266,7 @@ std::shared_ptr<Spacetime> MultiCobordism::seedSimplex(int dimension, bool balan
   auto host = std::make_shared<Spacetime>(metric, SpacetimeType::CDT, 1.0, 1.0,
                                           Foliation::PREFERRED, topology);
   host->build();
-  // #690: the wiring mode is stamped before ANY growth, and the seed's own
+  // The wiring mode is stamped before any growth, and the seed's own
   // uniform |l^2| = 1 edges honor it too (balanced: l = sqrt(1/2)*(1+i)).
   host->setBalancedEdgeWiring(balancedEdges);
   for (auto *edge : host->getEdgeList()->toVector())
@@ -6396,14 +6333,14 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
   const std::string prefix = "MultiCobordism::seedJoinedCollars: ";
   if (surfaces.size() % 2 != 0 || surfaces.empty())
     throw std::invalid_argument(prefix + "an even, non-zero number of surfaces is required: each is collared with its partner");
-  // THREE layers, not one. A prism cell spans two adjacent layers, so the
+  // Three layers, not one. A prism cell spans two adjacent layers, so the
   // all-interior cell the join removes exists only with two interior layers.
   if (layers < 3)
     throw std::invalid_argument(prefix + "layers must be at least three: with fewer, every cell touches a surface and there is none to remove");
   for (const auto &surface : surfaces)
     if (!surface) throw std::invalid_argument(prefix + "null surface");
-  // Every collar is the SAME prism over the shared face set, so it is built
-  // once and shifted. seedCollar has already refused surfaces that do not
+  // Every collar is the same prism over the shared face set, so it is built
+  // once and shifted. SeedCollar has already refused surfaces that do not
   // present one face set, and the pairs are checked through it below.
   std::vector<SurfaceSeed> collars;
   for (std::size_t pair = 0; pair < surfaces.size(); pair += 2)
@@ -6457,7 +6394,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
     auto removed = interiorCell(cells);
     if (removed.empty())
       throw std::invalid_argument(prefix + "a collar has no all-interior cell to remove; more layers are needed");
-    // Dropped BEFORE the relabel below, not after: the relabel rewrites this
+    // Dropped before the relabel below, not after: the relabel rewrites this
     // cell's own vertices, so a comparison made afterwards would not recognize
     // it and the cell would survive -- leaving its facets with three cofaces.
     cells.erase(std::remove_if(cells.begin(), cells.end(),
@@ -6467,7 +6404,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
                                  return sorted == removed;
                                }),
                 cells.end());
-    // The FIRST collar's removed cell is the sphere every other collar is
+    // The first collar's removed cell is the sphere every other collar is
     // glued onto: identifying the boundaries of two removed tetrahedra is a
     // connected sum along S^2, which adds no first homology.
     if (index == 0) {
@@ -6489,7 +6426,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedJoinedCollars(
     for (auto &cell : cells) joined.push_back(std::move(cell));
     offset += span;
   }
-  // ONE gate on the whole, as seedCollar takes on its prism.
+  // One gate on the whole, as seedCollar takes on its prism.
   const auto verdict = ChainComplex::dualComplexIsValid(joined, surfaces.front()->getDimensions() + 1);
   if (!verdict.first)
     throw std::invalid_argument(prefix + "the joined collars are not a manifold-with-boundary: " + verdict.second);
@@ -6604,7 +6541,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedTubedCollars(
     std::sort(mapped.begin(), mapped.end());
     joined.push_back(std::move(mapped));
   }
-  // ONE gate on the whole.
+  // One gate on the whole.
   const int dimension = surfaces.front()->getDimensions() + 1;
   const auto verdict = ChainComplex::dualComplexIsValid(joined, dimension);
   if (!verdict.first)
@@ -6720,7 +6657,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
   };
   const auto indexA = indexOf(*surfaceA);
   auto indexB = indexOf(*surfaceB);
-  // The TWIST: surface B's base indices relabelled before the identification,
+  // The twist: surface B's base indices relabelled before the identification,
   // so that base index k of A meets base index twist[k] of B. Empty is the
   // identity and the product collar. Whether the relabelling is a simplicial
   // automorphism is settled by the face-set comparison below, which is the
@@ -6766,7 +6703,7 @@ MultiCobordism::SurfaceSeed MultiCobordism::seedCollar(const std::shared_ptr<Spa
   const std::vector<std::vector<std::uint64_t>> base(facesA.begin(), facesA.end());
   const auto cells = Spacetime::prismCells(base, layers);
   const int dimension = surfaceA->getDimensions() + 1;
-  // ONE gate on the whole: the manifold check on the result, refused by name.
+  // One gate on the whole: the manifold check on the result, refused by name.
   const auto verdict = ChainComplex::dualComplexIsValid(cells, dimension);
   if (!verdict.first)
     throw std::invalid_argument("MultiCobordism::seedCollar: the collar is not a manifold-with-boundary: " +
@@ -6846,9 +6783,9 @@ MultiCobordism::BlockSurface MultiCobordism::blockSurface(const BoundaryBlock &b
 }
 
 bool MultiCobordism::hasFixedBoundary() const noexcept {
-  // A SURFACE block only. Its own triangles ARE a component of the boundary,
+  // A surface block only. Its own triangles are a component of the boundary,
   // declared by the caller, which is what makes dW a stated fact rather than
-  // whatever the search exposed. A PINNED REGION is deliberately not one:
+  // whatever the search exposed. A pinned region is deliberately not one:
   // "pinning constrains the geometry, it does not veto a topology change" is
   // the settled reading of `declarePinnedRegion` (the acceptance in
   // applyMoveSpecification and the ManifoldValidityIsTheOnlyGate tests), and
@@ -7075,7 +7012,7 @@ MultiCobordism::RestrictionRead MultiCobordism::restriction(const std::shared_pt
       }
   }
   // Each marking's cycles as closed walks from that marking's common base
-  // point (the qubit spec §16 rule, `Connection::commonBasePoint`), so that
+  // point (`Connection::commonBasePoint`), so that
   // the periods are taken with parallel transport: on zero phases the
   // transported period is the plain signed sum in the walk's order.
   std::vector<Marking> walks;

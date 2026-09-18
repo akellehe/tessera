@@ -25,30 +25,36 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-/// (2, d) Pachner flip with apply / rollback.
+/// (2, d) Pachner move (bistellar flip) with apply / rollback.
 ///
 /// Removes 2 d-simplices sharing a (d-1)-face and creates d new
 /// d-simplices sharing an edge.  ``dN0 = 0``; ``ΔN4 = d - 2 = +2``
 /// in 4D.  Inverse: :class:`IFlipMove` (the (d, 2) move).
 ///
-/// Metropolis log prefactor: ``log(N4 / (N4 + d - 2))``
-/// (combinatorial selection ratio between forward and reverse moves).
-/// See ``CDT::flip`` for the original (non-transactional) implementation.
+/// Metropolis log prefactor: ``log(N4 / (N4 + d - 2))``, the combinatorial
+/// selection ratio between the forward and the reverse move. ``CDT::flip``
+/// is the non-transactional version of the same move.
+///
+/// Reference: Pachner, "P.L. homeomorphic manifolds are equivalent by
+/// elementary shellings", 1991; Ambjorn, Jurkiewicz & Loll,
+/// arXiv:hep-th/0105267.
 class FlipMove : public PachnerMove {
 public:
+  /// Binds the move to \p st, drawing proposals from the caller-owned \p rng.
   FlipMove(Spacetime *st, std::mt19937 *rng,
            PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
+  /// Binds the move to \p st with an internal generator seeded from \p seed.
   FlipMove(Spacetime *st, std::uint64_t seed,
            PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
-  /// Propose at a NAMED facet: \p site is the top cell's vertex ids followed
-  /// by the id of the ONE vertex to drop, which is what names the facet to
-  /// flip across (see `sitesOn`). Pre-geometric mode only.
+  /// Propose at a named facet: \p site is the top cell's vertex ids followed
+  /// by the id of the vertex to drop, which names the facet to flip across
+  /// (see `sitesOn`). Pre-geometric mode only.
   bool proposeAt(const std::vector<std::uint64_t> &site) override;
   /// Every (cell, dropped vertex) pair, each as the cell's ids followed by the
-  /// dropped id. Whether the resulting facet actually has two cofaces is left
-  /// to the proposal, which already refuses a boundary or non-manifold facet.
+  /// dropped id. Whether the named facet has two cofaces is left to the
+  /// proposal, which refuses a boundary or non-manifold facet.
   static std::vector<std::vector<std::uint64_t>> sitesOn(const Spacetime &spacetime);
   int dN0() const override { return 0; }
   int dN41() const override { return dN41_; }
@@ -58,9 +64,8 @@ public:
   void rollback() override;
   bool isApplied() const override { return applied_; }
   std::vector<std::uint64_t> touchedVertexIds() const override;
-  /// The canonical name of this move type, defined ONCE here so callers
-  /// that dispatch on it (MultiCobordism's move draw, CDT's acceptance-rate
-  /// accounting) reference this rather than re-spelling the literal.
+  /// Canonical name of this move type, for the callers that dispatch on it
+  /// (MultiCobordism's move draw, CDT's acceptance-rate accounting).
   static constexpr const char *kMoveType = "flip";
   std::string moveType() const override { return kMoveType; }
 
@@ -69,14 +74,14 @@ private:
   std::unique_ptr<std::mt19937> ownedRng_;
   std::mt19937 *rng_;
 
-  /// Pre-geometric 2→(d+1) flip: the same combinatorial replacement as
-  /// the CDT path but without the time-slice / CDT-orientation guard,
-  /// with the move dimension read off the chosen top cell and a
-  /// manifold-preservation check (apex edge must not pre-exist).  In
-  /// boundary-fixed mode the operative facet must be interior.
+  /// Pre-geometric 2→d flip: the same combinatorial replacement as the CDT
+  /// path but without the time-slice / CDT-orientation guard, with the move
+  /// dimension read off the chosen top cell and a manifold-preservation check
+  /// (the apex edge must not already exist).  In boundary-fixed mode the
+  /// operative facet must be interior.
   bool proposePreGeometric();
-  /// The shared body of both proposals: everything after the cell and the
-  /// dropped vertex are chosen.
+  /// Shared body of both proposals: everything after the cell and the dropped
+  /// vertex are chosen.
   bool proposePreGeometricOn(SimplexPtr sigma, std::size_t drop);
 
   bool proposed_ = false;

@@ -39,11 +39,10 @@ bool ShiftMove::propose() {
   if (proposed_) return false;
   using namespace pachner_detail;
 
-  // The generator this move was HANDED, not the complex's own. The
-  // no-argument overload reads `Spacetime::rng`, which is initialized from
-  // `std::random_device`, so a target drawn through it comes from entropy and
-  // no seed can reproduce it (#1013). Every caller already supplies a
-  // generator for exactly this purpose.
+  // Draw through the generator this move was handed, not the complex's own:
+  // the no-argument overload reads `Spacetime::rng`, which is initialized
+  // from `std::random_device`, so a target drawn through it comes from
+  // entropy and no seed reproduces it.
   SimplexPtr sigma = st_->getRandomTopSimplex(*rng_);
   if (!sigma) return false;
 
@@ -67,8 +66,8 @@ bool ShiftMove::propose() {
   // belong to sigma, so the edge joining the first two is one of sigma's own,
   // and the simplices registered on that edge are the candidates. Starting from
   // the edge's index rather than a vertex's is what bounds the work: a vertex's
-  // incidence list grows with the four-volume -- measured, mean 80 simplices per
-  // vertex at N4 = 24k and 148 at N4 = 50k -- while an edge's does not (#970).
+  // incidence list grows with the four-volume (measured: mean 80 simplices per
+  // vertex at N4 = 24k, 148 at N4 = 50k) while an edge's does not.
   EdgePtr hingeEdge = nullptr;
   if (hingeSize >= 2) {
     for (const auto &e : sigma->getEdges()) {
@@ -135,8 +134,10 @@ bool ShiftMove::propose() {
     else if (isN32Type(s, d)) ++oldN32;
   }
 
-  // Build new simplex vertex tuples: each takes (hingeSize-1) shared
-  // + all unique = (d-2) + (d-1) = 2d-3 = (d+1)-2... wait, dPlus1.
+  // Build the new vertex tuples: each takes hingeSize-1 of the shared
+  // vertices plus all hingeSize unique ones, i.e. (d-2) + (d-1) = 2d-3
+  // vertices, which equals d+1 only at d = 4.  In any other dimension the
+  // size check below rejects the proposal.
   std::vector<VertexPtrs> proposedNew;
   for (int skip = 0; skip < hingeSize; ++skip) {
     VertexPtrs nv;
@@ -193,10 +194,10 @@ bool ShiftMove::apply() {
   // Remove the 3 old simplices.
   for (const auto &s : oldSimplices_) st_->removeSimplex(s);
 
-  // Create the 3 new ones, recording the verts of those we actually
-  // created (skipping any that already existed and were deduped).  We
-  // store verts rather than SimplexPtr so rollback survives another
-  // move removing the underlying Simplex in between.
+  // Create the 3 new ones, recording the verts of those actually created
+  // (skipping any that already existed and were deduped).  Verts rather than
+  // SimplexPtr, so rollback survives another move removing the underlying
+  // Simplex in between.
   createdSimplexVerts_.reserve(newSimplexVerts_.size());
   for (const auto &nv : newSimplexVerts_) {
     auto r = st_->createSimplexTracked(nv);
@@ -211,12 +212,11 @@ bool ShiftMove::apply() {
 void ShiftMove::rollback() {
   if (!applied_) return;
 
-  // 1. Remove the simplices we created.  Resolve each by its vertex
-  // tuple at rollback time — the SimplexPtr captured at apply time
-  // can be stale (another move may have removed-and-recreated the
-  // same-verts simplex with a fresh allocation; the old pointer would
-  // be dangling and trigger a use-after-free in removeSimplex's
-  // swap-and-pop on stale vecIdx_).
+  // 1. Remove the simplices created here.  Resolve each by its vertex tuple
+  // at rollback time: a SimplexPtr captured at apply time can be stale if
+  // another move removed and recreated the same-verts simplex with a fresh
+  // allocation, and the dangling pointer would trigger a use-after-free in
+  // removeSimplex's swap-and-pop on a stale vecIdx_.
   for (const auto &verts : createdSimplexVerts_) {
     if (auto s = st_->findSimplexByVerts(verts)) {
       st_->removeSimplex(s);

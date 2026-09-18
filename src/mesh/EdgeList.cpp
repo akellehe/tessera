@@ -16,9 +16,9 @@ using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
 std::uint32_t EdgeList::allocSlot(const VertexPtr &source, const VertexPtr &target, std::complex<double> length) {
-  // The factory layer speaks the edge's one degree of freedom: the complex LENGTH
+  // The factory layer speaks the edge's one degree of freedom: the complex length
   // (real = spacelike, imaginary = timelike). l^2 is derived by squaring at the point
-  // of use and is never stored, so the two cannot fall out of sync (#639).
+  // of use and is never stored, so the two cannot fall out of sync.
   const std::complex<double> squared = length;
   std::uint32_t slot;
   if (!freeSlots_.empty()) {

@@ -27,7 +27,8 @@ using namespace ::tessera::quantum;
 /// The signature type of the spacetime metric tensor \f$ g_{\mu\nu} \f$.
 ///
 ///   - **Lorentzian** \f$(-,+,+,\ldots,+)\f$: physical Minkowski-type signature
-///     with one timelike and \f$ d-1 \f$ spacelike dimensions. Used in CDT.
+///     with one timelike and \f$ d-1 \f$ spacelike dimensions. Used in causal
+///     dynamical triangulation (CDT).
 ///   - **Euclidean** \f$(+,+,+,\ldots,+)\f$: all positive signature, obtained after
 ///     Wick rotation \f$ t \to -i\tau \f$. Used in Euclidean quantum gravity.
 enum class SignatureType : uint8_t {

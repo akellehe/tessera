@@ -3,41 +3,30 @@
 // in the Python dependency. This translation unit is always added to
 // _tessera's sources (the quantum subsystem is unconditional).
 //
-// Surface area is deliberately minimal per PLAN.md §1: scalars in, scalars
-// out. No MPS / MPO / ITensor types cross the Python boundary.
+// Surface area is deliberately minimal: scalars in, scalars out. No matrix
+// product state (MPS) / MPO / ITensor type crosses the Python boundary.
 //
-// API style: every Python-visible operation is a method on a coarse-grained
-// class — there are no free functions in tessera.quantum. The four user-
-// facing classes are:
-//
-//   • SchwingerModel(config)    — DMRG ground-state pipeline.
-//   • SchwingerQuench(config)   — quench + TDVP dynamics + causal-order
-//                                 comparison pipeline.
-//   • Majorization              — static utility for predicate-driven
-//                                 poset construction and pairwise
-//                                 order-agreement statistics.
-//   • Causet                    — static utility for tessera.Spacetime
-//                                 → causet adapters.
-//
-// Plus the existing data classes (QuantumConfig, GroundStateResult,
-// SchmidtSpectra, …) and the MajorizationPredicate hierarchy.
+// Every Python-visible operation is a method on a coarse-grained class; there
+// are no free functions in tessera.quantum. The user-facing classes are
+// SchwingerModel, SchwingerQuench, Majorization and Causet, plus the data
+// classes (QuantumConfig, GroundStateResult, SchmidtSpectra, …) and the
+// MajorizationPredicate hierarchy. The module docstring in
+// register_quantum() below summarizes each of them.
 
 // pybind11 must be included *before* any quantum header that transitively pulls
-// in <itensor/all.h> (ChoiState.hpp, MutualInformation.hpp, Schmidt.hpp) — i.e.
-// before the rest of this translation unit. ITensor's itensor/global.h does an
-// unconditional `#define NDEBUG` to silence its own asserts. pybind11 auto-
-// enables PYBIND11_DETAILED_ERROR_MESSAGES only while NDEBUG is *un*defined
-// (detail/common.h), and that flag adds a `std::string type` member to
-// pybind11::arg_v. Every other binding TU is ITensor-free, so it parses pybind11
-// with NDEBUG undefined and gets the larger arg_v; letting ITensor's NDEBUG leak
-// reach pybind11 here first gives this one TU the smaller arg_v instead. The two
-// layouts are an ODR violation: arg_v's vague-linkage destructor is merged
-// across TUs, and the size-mismatched copy over-reads the `type` member and
-// frees a borrowed string-literal pointer at import — `free(): invalid pointer`,
-// which aborts every Debug build. (Release defines NDEBUG uniformly up front, so
-// both sides agree and the bug stays latent.) Parsing pybind11 first locks
-// arg_v's layout to match the rest of the module regardless of ITensor's later
-// #define, because the member's `#if` is resolved when cast.h is parsed.
+// in <itensor/all.h> (ChoiState.hpp, MutualInformation.hpp, Schmidt.hpp).
+// ITensor's itensor/global.h defines NDEBUG unconditionally to silence its own
+// asserts. pybind11 enables PYBIND11_DETAILED_ERROR_MESSAGES only while NDEBUG
+// is undefined (detail/common.h), and that flag adds a `std::string type`
+// member to pybind11::arg_v. Every other binding TU is ITensor-free and so sees
+// the larger arg_v; letting ITensor's NDEBUG reach pybind11 here first would
+// give this one TU the smaller layout. The two layouts are an ODR violation:
+// arg_v's vague-linkage destructor is merged across TUs, and the size-mismatched
+// copy over-reads the `type` member and frees a borrowed string-literal pointer
+// at import (`free(): invalid pointer`), aborting every Debug build. Release
+// defines NDEBUG uniformly, so both sides agree and the bug stays latent.
+// Parsing pybind11 first fixes arg_v's layout to match the rest of the module,
+// because the member's `#if` is resolved when cast.h is parsed.
 #include <pybind11/complex.h>
 #include <pybind11/eigen.h>
 #include <pybind11/functional.h>
@@ -68,10 +57,11 @@
 namespace py = pybind11;
 
 namespace {
-// COO conversion for sparse operators crossing the Python boundary. The
-// pybind11/eigen.h sparse binding produces an empty CSC under LTO (see
-// EmergentGraph::laplacianCOO above/below), so every sparse-returning
-// GradedFock method ships plain (rows, cols, values, n) arrays instead.
+// Coordinate-format (COO) conversion for sparse operators crossing the
+// Python boundary. The pybind11/eigen.h sparse binding produces an empty
+// CSC under LTO (see EmergentGraph::laplacianCOO), so every
+// sparse-returning GradedFock method ships plain (rows, cols, values, n)
+// arrays instead.
 // Wrap in scipy on the Python side:
 //     rows, cols, vals, n = alg.creationMatrixCOO(i)
 //     a = scipy.sparse.csr_matrix((vals, (rows, cols)), shape=(n, n))
@@ -152,22 +142,20 @@ tessera::observables::Record quantumPythonToRecord(const py::handle& o) {
 
 void register_quantum(py::module_ m) {
     using namespace tessera::quantum;
-    // InteractionSimulation moved to tessera:: (see issue #44). Keep its
-    // Python module path as tessera.quantum.InteractionSimulation for
-    // backward compatibility with existing scripts; only the C++ host
-    // namespace changed.
+    // InteractionSimulation lives in the top-level tessera namespace; its
+    // Python module path stays tessera.quantum.InteractionSimulation.
     using ::tessera::InitialChargeMode;
     using ::tessera::InteractionConfig;
     using ::tessera::InteractionSimulation;
 
     m.doc() = R"doc(
-Schwinger model + DMRG + TDVP + causal-order analysis.
+Schwinger model, density-matrix renormalization group (DMRG), time-dependent
+variational principle (TDVP), and causal-order analysis.
 
 The user-facing API is exclusively class-based:
 
-* :class:`SchwingerModel`  — DMRG ground-state pipeline (Phases 2 / 3).
-* :class:`SchwingerQuench` — q-qbar quench + TDVP + causal-order
-                              comparison (Phases 4 / 5).
+* :class:`SchwingerModel`  — DMRG ground-state pipeline.
+* :class:`SchwingerQuench` — q-qbar quench + TDVP + causal-order comparison.
 * :class:`Majorization`    — static utility: poset construction and
                               pairwise order-agreement statistics.
 * :class:`Causet`          — static utility: tessera.Spacetime → causet
@@ -178,9 +166,9 @@ TDVPConfig, …) and the MajorizationPredicate hierarchy
 (StandardMajorization, LogConcaveMajorization, PeakRadialMajorization)
 that callers configure the workflow with.
 
-The Hamiltonian is the staggered Kogut-Susskind Schwinger model after
-Jordan-Wigner mapping and Gauss's-law elimination, expressed as a spin
-chain (PLAN.md §4 / Bañuls et al., JHEP 11, 158 (2013), eq. 2.6):
+The Hamiltonian is the Kogut-Susskind (staggered) Schwinger model after the
+Jordan-Wigner transformation and Gauss's-law elimination, expressed as a
+spin chain:
 
 .. math::
 
@@ -196,10 +184,14 @@ chain (PLAN.md §4 / Bañuls et al., JHEP 11, 158 (2013), eq. 2.6):
 
 References
 ----------
-* Bañuls, Cichy, Cirac, Jansen, *JHEP* **11**, 158 (2013),
-  arXiv:1305.3765 — primary reference for the Hamiltonian and benchmarks.
-* Schwinger, *Phys. Rev.* **128**, 2425 (1962) — original gauge theory.
-* Coleman, *Ann. Phys.* **101**, 239 (1976) — massive Schwinger model.
+* Bañuls, Cichy, Jansen, Cirac, arXiv:1305.3765 — the Hamiltonian above and
+  the matrix-product-state benchmarks.
+* Schollwoeck, arXiv:1008.3477 — DMRG and matrix product states.
+* Haegeman et al., arXiv:1103.0936 and arXiv:1408.5056 — TDVP.
+* Kogut & Susskind, Phys. Rev. D 11, 395 (1975) — staggered fermions.
+* Jordan & Wigner (1928) — the Jordan-Wigner transformation.
+* Schwinger, Phys. Rev. 128, 2425 (1962) — the original gauge theory.
+* Coleman, Ann. Phys. 101, 239 (1976) — the massive Schwinger model.
 )doc";
 
     // ─── Ground-state config + result ──────────────────────────────────
@@ -207,12 +199,8 @@ References
             R"doc(Configuration for a Schwinger-model DMRG ground-state run.
 
 Bundles the dimensional Hamiltonian parameters and the DMRG sweep
-settings into a single struct so calling code only hands one Python
-object across the C++ boundary. Default-constructed instances have
-N = 0 and must be filled in before passing to :class:`SchwingerModel`.
-
-The dt and T fields are reserved for the TDVP quench pipeline and
-are ignored by SchwingerModel.
+settings into one struct. Default-constructed instances have N = 0 and
+must be filled in before passing to :class:`SchwingerModel`.
 
 Attributes
 ----------
@@ -347,10 +335,9 @@ See ``docs/source/causal_sets.md`` for the conceptual background.
             R"doc(Add the cover edge ``a -> b`` (a strictly precedes b, no intermediate).
 
 Both endpoints must already exist (call the int constructor or the
-``getNodeCount`` setter first). No deduplication is performed —
-adding the same cover twice creates two parallel edges. The standard
-use is to feed covers from a transitive-reduction algorithm where
-duplicates can't arise.
+``getNodeCount`` setter first). No deduplication is performed — adding
+the same cover twice creates two parallel edges. Covers normally come
+from a transitive reduction, where duplicates cannot arise.
 )doc")
         .def_property("getNodeCount",
             [](Poset const& p) { return p.getNodeCount(); },
@@ -412,9 +399,10 @@ poset : Poset
 
 Concrete subclasses:
 
-* :class:`StandardMajorization` -- classical Nielsen 1999 PRL 83, 436 eq. (1).
+* :class:`StandardMajorization` -- classical majorization
+  (Nielsen, arXiv:quant-ph/9811053).
 * :class:`LogConcaveMajorization` -- gated on log-concave spectra
-  (Brändén 2015 §1).
+  (Brändén, arXiv:1410.6601).
 * :class:`PeakRadialMajorization` -- peak-relative entrywise dominance.
 
 Methods that take a predicate -- :meth:`Majorization.posetOf` and
@@ -435,10 +423,10 @@ subclass instance.
 
     py::class_<StandardMajorization, MajorizationPredicate>(
             m, "StandardMajorization",
-            R"doc(Classical Nielsen-1999 majorization.
+            R"doc(Classical Nielsen majorization.
 
 μ ≻ λ iff for every k, sum of the top-k of μ ≥ sum of the top-k of λ,
-with equality at the total-mass step (Nielsen 1999 PRL 83, 436, eq. 1).
+with equality at the total-mass step (Nielsen, arXiv:quant-ph/9811053).
 )doc")
         .def(py::init<double>(), py::arg("tol") = 1e-12)
         .def_property_readonly("tol", &StandardMajorization::tol);
@@ -446,7 +434,7 @@ with equality at the total-mass step (Nielsen 1999 PRL 83, 436, eq. 1).
     py::class_<LogConcaveMajorization, StandardMajorization>(
             m, "LogConcaveMajorization",
             R"doc(Standard majorization, restricted to log-concave spectra
-(Brändén 2015 arXiv:1410.6601 §1).
+(Brändén, arXiv:1410.6601).
 )doc")
         .def(py::init<double>(), py::arg("tol") = 1e-12)
         .def_static("isLogConcave",
@@ -813,7 +801,7 @@ order-agreement statistics. Not instantiable; call methods on the class.
                 return Majorization::posetOf(spectra, tol);
             },
             py::arg("spectra"), py::arg("tol") = 1e-12,
-            R"doc(Build the classical {N1999} majorization poset at the given tolerance.)doc")
+            R"doc(Build the classical Nielsen majorization poset at the given tolerance.)doc")
         .def_static("agreement",
             &Majorization::agreement,
             py::arg("a"), py::arg("b"), py::arg("nLabels"),
@@ -822,8 +810,8 @@ label set of size nLabels. Returns an :class:`OrderAgreement`.
 )doc");
 
     py::class_<Causet>(m, "Causet",
-            R"doc(Static utility for tessera.Spacetime → causet adapters
-. Not instantiable; call methods on the class.
+            R"doc(Static utility for tessera.Spacetime → causet adapters.
+Not instantiable; call methods on the class.
 )doc")
         .def_static("chainFrom",
             [](py::object spacetime_obj) {
@@ -889,9 +877,9 @@ diagonal density matrix (which the matrix overload would re-diagonalise).
             py::arg("rho"), py::arg("tol") = 1e-12,
             R"doc(Von Neumann entropy of a Hermitian density matrix, in nats.
 
-The implementation accepts any square dimension; in the holography
-pipeline we only need 2×2 (single-site marginals) and 4×4 (two-site
-joint reduced density matrices).
+Accepts any square dimension; the holography pipeline uses 2×2
+(single-site marginals) and 4×4 (two-site joint reduced density
+matrices).
 )doc")
         .def_static("edgeLength",
             static_cast<double(*)(double, double) noexcept>(
@@ -911,8 +899,8 @@ the scalar overload, so a B x B bond-MI matrix maps in one call.)doc");
             R"doc(Static utility for the dense Choi–Jamiołkowski map–state
 duality ("bending"). Not instantiable; call the methods on the class.
 
-Operators and states are flat, ROW-MAJOR lists of complex numbers: a dA×dB
-operator U has ``U[i*dB + j] = U_{ij}``. Locked conventions:
+Operators and states are flat, row-major lists of complex numbers: a dA×dB
+operator U has ``U[i*dB + j] = U_{ij}``. Conventions:
 
 * ``vec(U) = Σ_{ij} U_{ij} |i⟩_A ⊗ |j⟩_B`` (the row-major flatten);
 * ``vec(|a⟩⟨b|) = a ⊗ conj(b)`` (separable, Schmidt rank 1);
@@ -927,8 +915,8 @@ the length-(dA·dB) row-major flatten.)doc")
         .def_static("unvectorize", &ChoiJamiolkowski::unvectorize,
             py::arg("v"), py::arg("dA"), py::arg("dB"),
             R"doc(Un-vectorise (the inverse of vectorize): reshape a
-length-(dA·dB) state back into the dA×dB operator U_{ij} = v[i·dB + j].
-The validated row-major reshape, so unvectorize(vectorize(U)) == U.)doc")
+length-(dA·dB) state back into the dA×dB operator U_{ij} = v[i·dB + j],
+so unvectorize(vectorize(U)) == U.)doc")
         .def_static("singularValues", &ChoiJamiolkowski::singularValues,
             py::arg("U"), py::arg("dA"), py::arg("dB"),
             R"doc(Singular values of the dA×dB operator U (descending); the
@@ -1050,20 +1038,20 @@ dimension reaches 4.
              &InteractionSimulation::getAcceptanceRates,
              R"doc(Accepted / attempted ratio per move type.)doc")
         .def("annihilate", &InteractionSimulation::annihilate,
-             R"doc(v0.1: spontaneous partial-annihilation of a (+, -) frontier pair.)doc")
+             R"doc(Spontaneous partial annihilation of a (+, -) frontier pair.)doc")
         .def("pairCreate", &InteractionSimulation::pairCreate,
-             R"doc(v0.1: spontaneous (+, -) pair-creation with a Bell joint.)doc")
+             R"doc(Spontaneous (+, -) pair creation with a Bell joint.)doc")
         .def("getGlobalCharge", &InteractionSimulation::getGlobalCharge,
-             R"doc(v0.1: total signed charge across the complex.)doc")
+             R"doc(Total signed charge across the complex.)doc")
         .def("getChargeProfile", &InteractionSimulation::getChargeProfile,
-             R"doc(v0.1: per-time-slice (n_+, n_0, n_-, sum_q).)doc")
+             R"doc(Per-time-slice (n_+, n_0, n_-, sum_q).)doc")
         .def("getChargeCorrelation",
              &InteractionSimulation::getChargeCorrelation,
              py::arg("maxDist"),
-             R"doc(v0.1: <q_v . q_w> as a function of graph distance.)doc")
+             R"doc(<q_v . q_w> as a function of graph distance.)doc")
         .def("quditChargeOf", &InteractionSimulation::quditChargeOf,
              py::arg("vertex"),
-             R"doc(v0.2: a single vertex's continuous charge via Tr[ρ · Q̂].
+             R"doc(A single vertex's continuous charge via Tr[ρ · Q̂].
 
 Q̂ = diag(+1, +1, -1, -1) on the {|+0⟩, |+1⟩, |−0⟩, |−1⟩} basis.
 For an integer-charge eigenstate this returns ±1; for the maximally-mixed
@@ -1079,15 +1067,14 @@ the simulation has no qudit state for.)doc")
                return py::cast(it->second);
              },
              py::arg("vertex"),
-             R"doc(v0.2: read a single vertex's 4×4 qudit density matrix, or
-``None`` if no qudit state is stored. Useful for tests that inspect
-per-vertex purity, charge content, or basis populations directly rather
-than going through the projected ``Tr[ρ · Q̂]`` accessor. Requires
-``featureQuditBasis = True``.)doc")
+             R"doc(A single vertex's 4×4 qudit density matrix, or ``None`` if
+no qudit state is stored. Exposes per-vertex purity, charge content and
+basis populations directly, rather than through the projected
+``Tr[ρ · Q̂]`` accessor. Requires ``featureQuditBasis = True``.)doc")
         .def("quditJointStateFor",
              &InteractionSimulation::quditJointStateFor,
              py::arg("x"), py::arg("y"),
-             R"doc(v0.2: 16×16 joint qudit state ρ_XY for a pair.
+             R"doc(16×16 joint qudit state ρ_XY for a pair.
 
 Returns the stored correlated joint when (x, y) share an interaction
 history or are initial-layer Delaunay neighbours; otherwise the
@@ -1106,8 +1093,7 @@ uncorrelated product ρ_x ⊗ ρ_y.)doc")
     auto holo = m.def_submodule("holography",
         R"doc(Emergent spectral dimension from the Schwinger TDVP state.
 
-See ``docs/source/quantum-experiments/earlier-work/emergent-spectral-dimension-schwinger-tdvp.md`` for
-the scientific charter. The pipeline runs through one workflow class:
+The pipeline runs through one workflow class:
 
 >>> from tessera.quantum import TDVPConfig
 >>> from tessera.quantum.holography import HolographyConfig, EmergentSpectralDimension
@@ -1177,9 +1163,7 @@ Each undirected edge appears twice (v→w and w→v).
     py::class_<EmergentGraph>(holo, "EmergentGraph",
             R"doc(Weighted graph (V_G, E_G, ℓ_G) on the (site × snapshot) label set.
 
-Edge weights are mutual-information values; the Laplacian L = D - W
-follows the convention from
-docs/source/quantum-experiments/earlier-work/emergent-spectral-dimension-schwinger-tdvp.md §3.4.
+Edge weights are mutual-information values; the Laplacian is L = D - W.
 )doc")
         .def(py::init<MutualInformationProfile const&>(), py::arg("profile"))
         .def_property_readonly("nVertices", &EmergentGraph::nVertices)
@@ -1220,9 +1204,9 @@ Wrap in scipy.sparse for downstream use::
              py::arg("m") = 0, py::arg("seed") = 0,
              R"doc(P(σ) = (1/|V|) Tr exp(-σ L) via Krylov-Lanczos diagonal estimation.
 
-``m`` is the Hutchinson-style subsample size (issue #28 Tier-1). 0 (default)
-uses ``min(n, 3000)`` start vertices, which trades a small variance penalty
-for ~100× speedup at large n. Set ``m = n`` for the exact sum.
+``m`` is the Hutchinson-style subsample size. 0 (default) uses
+``min(n, 3000)`` start vertices, trading a small variance penalty for a
+large speedup at big n. Set ``m = n`` for the exact sum.
 ``seed`` controls the subset RNG for reproducibility.)doc")
         .def_static("spectralDimension", &EmergentGraph::spectralDimension,
              py::arg("sigmas"), py::arg("P"),
@@ -1233,10 +1217,9 @@ for ~100× speedup at large n. Set ``m = n`` for the exact sum.
              py::arg("windowSize") = 5, py::arg("polyOrder") = 2,
              R"doc(D_S(σ) via local-polynomial fit on (log σ, log P).
 
-Savitzky-Golay-style smoothing per spec §8: for each grid point, fit
-a degree-`polyOrder` polynomial in (log σ, log P) over a centered
-window of size `windowSize`, then read the slope at that point.
-Defaults match the spec's recommendation (window 5, poly order 2).
+Savitzky-Golay-style smoothing: for each grid point, fit a
+degree-`polyOrder` polynomial in (log σ, log P) over a centered window
+of size `windowSize`, then read the slope at that point.
 )doc")
         .def("toDot", &EmergentGraph::toDot,
              R"doc(Graphviz DOT export. Mirrors Poset.toDot().)doc")
@@ -1254,8 +1237,7 @@ exported under the `weight` attribute.
             R"doc(Construct an EmergentGraph from a weighted edge list.
 
 `edges` is a list of (u, v, weight) tuples; each undirected edge
-should appear once. Used for known-graph acceptance tests (1D chain,
-2D lattice, complete graph) per the holography spec §H4.
+should appear once.
 )doc");
 
     py::class_<AmbjornLollFit::Result>(holo, "AmbjornLollFitResult")
@@ -1278,8 +1260,7 @@ examples/spectral_dimension.py for CDT comparisons.
     py::class_<SpectralDimensionResult>(holo, "SpectralDimensionResult",
             R"doc(Result bundle from EmergentSpectralDimension.compute().
 
-Mirrors the snapshot-style results in tessera.quantum: plain data
-container, no MPS/MPO state crosses the boundary.
+A plain data container; no MPS/MPO state crosses the boundary.
 )doc")
         .def_readonly("sigmas",           &SpectralDimensionResult::sigmas)
         .def_readonly("P",                &SpectralDimensionResult::P)
@@ -1299,7 +1280,7 @@ container, no MPS/MPO state crosses the boundary.
                 return r.toJson(cfg);
             },
             py::arg("config"),
-            R"doc(Single JSON record matching the schema in spec §10.
+            R"doc(Single JSON record of the run.
 
 Includes the bound config, the TDVP summary, the graph diagnostics,
 both raw and smoothed D_S(σ), the Ambjorn-Loll fit, and a provenance
@@ -1308,9 +1289,8 @@ block. Suitable for archiving alongside the experiment results.
 
     // ─── ChoiPropagator (temporal MI engine) ──────────────────────────
     //
-    // Exposed for unit-testing the identity-channel acceptance and
-    // the single-qubit-unitary checks from the holography spec §H2.
-    // The full pipeline reaches the same code via
+    // Exposed for unit-testing the identity-channel and single-qubit-unitary
+    // checks. The full pipeline reaches the same code via
     // MutualInformationProfile / HolographyConfig.includeTemporal.
     py::class_<ChoiPropagator::TDVPSettings>(holo, "ChoiTDVPSettings",
             R"doc(Sweep settings for the Choi-state TDVP evolution.)doc")
@@ -1345,8 +1325,7 @@ Not instantiable; call methods on the class.
 
 Returns an N×N numpy array; entry (i-1, j-1) is I({in_i} : {out_j})
 in nats. At duration = 0 the Choi state is |Φ+⟩^{⊗N} and the matrix
-equals 2·ln(2) on the diagonal, zero elsewhere — the identity-channel
-acceptance from the spec §H2.
+equals 2·ln(2) on the diagonal, zero elsewhere (the identity channel).
 )doc");
 
     py::class_<SchwingerParams>(holo, "SchwingerParams",
@@ -1370,9 +1349,8 @@ weighted (site, time) graph → heat-kernel trace → D_S(σ) →
 Ambjorn-Loll fit. Mirrors the SchwingerModel(cfg).solve() and
 SchwingerQuench(cfg).evolve() patterns in tessera.quantum.
 
-The recordMutualInformation flag on the underlying TDVPConfig is
-forced on by the constructor so callers can't trip themselves up by
-leaving it off.
+The constructor forces recordMutualInformation on in the underlying
+TDVPConfig.
 )doc")
         .def(py::init<HolographyConfig>(), py::arg("config"))
         .def_property_readonly("config",
@@ -1621,7 +1599,7 @@ if ``targetMI`` lies outside [0, 2·H(λ)].)doc");
         .value("APrime", ::tessera::quantum::QuantumSimplex::APrime)
         .value("BPrime", ::tessera::quantum::QuantumSimplex::BPrime);
 
-    // ── Exterior-algebra / graded-tensor primitives (issue #766) ─────────
+    // ── Exterior-algebra / graded-tensor primitives ────────────────────
     // Sparse operators cross the boundary as COO tuples (see sparseOpToCoo).
 
     py::class_<OccupationBitset>(m, "OccupationBitset",
@@ -1726,8 +1704,8 @@ modes wedge to exactly zero. Sparse operators are returned as COO tuples
              }, py::arg("modes"), py::arg("occupation"),
              R"doc(Projector onto occupation `occupation` restricted to the mode
 subset `modes`, as COO. With a three-mode subset these are the exact
-Lambda^0, Lambda^1, Lambda^2, Lambda^3 sector projectors of that factor —
-occupation-number projectors; sector interpretation is out of scope.)doc")
+Lambda^0, Lambda^1, Lambda^2, Lambda^3 occupation-number projectors of
+that factor.)doc")
         .def("vacuumState", &ExteriorAlgebra::vacuumState,
              "The vacuum |0...0> as a dense Fock vector.")
         .def("basisState", &ExteriorAlgebra::basisState, py::arg("bitset"),
@@ -1805,11 +1783,12 @@ block the index is i_a * dimB_q + i_b (kron(A-side, B-side)).)doc")
         R"doc(The Fock direct-sum functor F(h_A + h_B) = F(h_A) x F(h_B).
 
 Compiled with A modes first: |b> <-> |b_A> x |b_B> at joint index
-i_A + 2^M_A i_B, sign-free. Even operators lift as X x 1 and 1 x Y; ODD
+i_A + 2^M_A i_B, sign-free. Even operators lift as X x 1 and 1 x Y; odd
 right-factor operators acquire the parity twist (-1)^N_A x Y (the Koszul
-sign / Jordan-Wigner string over A), making joint CAR generators exactly
-the lifted factor generators — direct sums become graded tensor products,
-and coupling blocks of a one-particle operator become hopping terms. The
+sign, i.e. the Jordan-Wigner string over A), making the joint CAR
+generators exactly the lifted factor generators — direct sums become
+graded tensor products, and coupling blocks of a one-particle operator
+become hopping terms. The
 graded swap S(x b y) = (-1)^{|x||y|} y x x has odd/odd sign -1 and +1 on
 every other elementary parity combination. Operator arguments are dense;
 sparse results are COO tuples.)doc")
@@ -1859,7 +1838,7 @@ terms sum_{i in A, j in B} C_ij a_i^dagger a_j + h.c. COO result.)doc");
     py::class_<EdgeModeRecord>(m, "EdgeModeRecord",
         R"doc(One edge-mode record: oriented incidence + mode identity.
 
-The edge indexes one two-level mode FACTOR span{|0>, |1>} (modeId) inside
+The edge indexes one two-level mode factor span{|0>, |1>} (modeId) inside
 the global exterior Fock space. No per-edge state vector is stored, and
 the Edge's single complex length stays on the Edge; a per-edge occupation
 is a derived marginal of the global state, not a stored product state.)doc")
@@ -1881,8 +1860,8 @@ OccupationBitset.permutationParity / ExteriorAlgebra.modePermutationMatrixCOO
 give the exact parity map under which all physical amplitudes are
 invariant.
 
-Reorientation convention: reverseStoredDirection swaps endpoints AND flips
-orientationSign (pure storage change — nothing observable moves);
+Reorientation convention: reverseStoredDirection swaps endpoints and flips
+orientationSign (a pure storage change — nothing observable moves);
 flipOrientation flips only the sign (physical reversal — the mode's
 one-particle embedding vector is multiplied by -1, i.e. a_e -> -a_e,
 a_e+ -> -a_e+, with the two-level factor fixed pointwise and nothing
@@ -1890,14 +1869,14 @@ conjugated; CAR and occupation observables are preserved).)doc")
         .def(py::init<>())
         .def_static("fromSpacetime", &EdgeModeRegistry::fromSpacetime,
              py::arg("spacetime"), py::arg("lineageKey") = "K1",
-             R"doc(Build the registry the ontology names: one two-level mode per EDGE.
+             R"doc(Register one two-level mode per edge of the spacetime.
 
-The microscopic carrier is F(h_K) with h_K = span{|e> : e in K1}, so the
-per-edge modes are the ontology and any per-band carrier is a derived view of
-them. Each edge is registered on its stored source -> target direction with
-orientationSign +1, so canonicalOrientationSign reports how that orientation
-sits against the canonical min -> max direction. Every mode gets lineageKey,
-reducing the canonical order to the deterministic endpoint sort.
+The carrier is F(h_K) with h_K = span{|e> : e in K1}; any per-band carrier is
+a derived view of these per-edge modes. Each edge is registered on its stored
+source -> target direction with orientationSign +1, so canonicalOrientationSign
+reports how that orientation sits against the canonical min -> max direction.
+Every mode gets lineageKey, reducing the canonical order to the deterministic
+endpoint sort.
 
 Reads incidence only -- never a length, never a connection phase.
 
@@ -1938,12 +1917,12 @@ position i of `before`'s canonical order (matched by modeId). Feed to
 OccupationBitset.permutationParity / ExteriorAlgebra.
 modePermutationMatrixCOO for the exact parity map.)doc");
 
-    // ── Lazy graded Fock oracle and boundary carrier (issue #771) ───────
+    // ── Lazy graded Fock oracle and boundary carrier ──────────────────
     // Dense Eigen crossings only; the LocalMap COO route uses plain
     // (rows, cols, values) arrays per the repository convention.
 
     py::enum_<LazyNodeKind>(m, "LazyNodeKind",
-        "Node vocabulary of the lazy Fock expression DAG (spec 14.2).")
+        "Node vocabulary of the lazy Fock expression DAG.")
         .value("Vacuum", LazyNodeKind::Vacuum)
         .value("Occupation", LazyNodeKind::Occupation)
         .value("GradedTensor", LazyNodeKind::GradedTensor)
@@ -1962,10 +1941,9 @@ modePermutationMatrixCOO for the exact parity map.)doc");
 Carries the accumulated discarded-norm bound D (exactly 0.0 in exact
 certification mode; in truncation mode an upper bound on the l2 error of
 the represented state, reported in every scalar read) and the optional
-boundary-fixture label — set ONLY by boundaryProductFixture, the one
-sanctioned way to store a product preparation. Per-edge occupations are
-derived marginals of the global state; the handle never stores per-mode
-state vectors.)doc")
+boundary-fixture label, set only by boundaryProductFixture. Per-edge
+occupations are derived marginals of the global state; the handle never
+stores per-mode state vectors.)doc")
         .def("valid", &LazyFockState::valid)
         .def("rootNodeId", &LazyFockState::rootNodeId,
              "Process-unique root node id (sharing / negative-control "
@@ -1990,12 +1968,11 @@ state vectors.)doc")
         .def("isBoundaryFixture", &LazyFockState::isBoundaryFixture);
 
     py::class_<LazyScalarRead>(m, "LazyScalarRead",
-        R"doc(A scalar read (amplitude / inner product / squared norm) with the
-accumulated discarded norm REPORTED IN EVERY RESULT (0.0 in exact
-certification mode) and its #764 Certificate: AlgebraicallyExact when the
-discarded norm is exactly zero, CertifiedNumerical with residual = the
-ABSOLUTE discarded-norm bound otherwise. |value - exact| <= discardedNorm
-for amplitude reads.)doc")
+        R"doc(A scalar read (amplitude / inner product / squared norm) with its
+accumulated discarded norm (0.0 in exact certification mode) and its
+Certificate: AlgebraicallyExact when the discarded norm is exactly zero,
+CertifiedNumerical with residual = the absolute discarded-norm bound
+otherwise. Amplitude reads satisfy |value - exact| <= discardedNorm.)doc")
         .def_readonly("value", &LazyScalarRead::value)
         .def_readonly("discardedNorm", &LazyScalarRead::discardedNorm)
         .def_readonly("certificate", &LazyScalarRead::certificate);
@@ -2003,9 +1980,9 @@ for amplitude reads.)doc")
     py::class_<LazySlaterReference>(m, "LazySlaterReference",
         R"doc(The optional quasi-free/Slater reference from a spectral projector:
 covariance Gamma_ef = P_ef exactly (StructureExact given the verified
-premise P^2 = P = P^dagger, residual on the certificate). The quasi-free
-sector's PRIMARY representation is the covariance layer (#780); this
-engine is its dense/oracle reference.)doc")
+premise P^2 = P = P^dagger, residual on the certificate). CovarianceState
+is the primary representation of the quasi-free sector; this engine is its
+dense reference.)doc")
         .def_readonly("state", &LazySlaterReference::state)
         .def_readonly("rank", &LazySlaterReference::rank)
         .def_readonly("projectorResidual",
@@ -2022,42 +1999,41 @@ trace defect |tr Gamma - n| (closed-form Slater path).)doc")
         .def_readonly("certificate", &LazyCovarianceRead::certificate);
 
     py::class_<LazyCompatibilityRead>(m, "LazyCompatibilityRead",
-        R"doc(Design-spec 5.7 inductive compatibility read for the vacuum
-embedding: epsilon = ||iota_M U_M - U_{M+1} iota_M|| on the active
-carried subspace (top singular value of the column-stacked defect).)doc")
+        R"doc(Inductive compatibility read for the vacuum embedding:
+epsilon = ||iota_M U_M - U_{M+1} iota_M|| on the active carried subspace
+(top singular value of the column-stacked defect).)doc")
         .def_readonly("epsilon", &LazyCompatibilityRead::epsilon)
         .def_readonly("activeDimension",
                       &LazyCompatibilityRead::activeDimension)
         .def_readonly("certificate", &LazyCompatibilityRead::certificate);
 
     py::class_<LazyFockEngine>(m, "LazyFockEngine",
-        R"doc(The lazy graded Fock oracle and boundary carrier (issue #771).
+        R"doc(The lazy graded Fock oracle and boundary carrier.
 
-One-particle mode space h = span{|e>} (one two-level mode per edge, the
-#766 compilation order); global carrier F_-(h) = Lambda* h. States are
-expression DAGs — vacuum, sparse occupation blocks, graded tensor
-products, local unitary/cobordism maps, direct sums by conserved
+One-particle mode space h = span{|e>} (one two-level mode per edge, in the
+EdgeModeRegistry compilation order); global carrier F_-(h) = Lambda* h.
+States are expression DAGs — vacuum, sparse occupation blocks, graded
+tensor products, local unitary/cobordism maps, direct sums by conserved
 occupation/parity sector, antisymmetrized wedges — evaluated lazily: a
-graded tensor partition is expanded ONLY when an applied operation
-crosses it; exact subexpressions are memoized by content hash; block
-sparsity by occupation/parity short-circuits out-of-sector reads.
+graded tensor partition is expanded only when an applied operation crosses
+it; exact subexpressions are memoized by content hash; block sparsity by
+occupation/parity short-circuits out-of-sector reads.
 
-Exact identities (documented in the C++ header with domains): the Koszul
-graded-tensor amplitude rule (strictly associative — parenthesizations
-agree on the nose); exact even/odd local-operator action through the two
-Koszul signs; Slater-determinant amplitudes, det-Gram norms, and
-Gamma = V (V^dagger V)^{-1} V^dagger covariance; bit-level dGamma with
-the #766 CAR sign rule (direct sums -> graded tensor products, coupling
-blocks -> hopping terms); subset-sum free spectra DELEGATED to #764
-OccupationSpectra; the vacuum embedding iota psi = psi (x) |0> preserving
-every preexisting amplitude, with the spec-5.7 compatibility read.
+Exact identities (stated with their domains in the C++ header): the Koszul
+graded-tensor amplitude rule (strictly associative, so parenthesizations
+agree exactly); even/odd local-operator action through the two Koszul
+signs; Slater-determinant amplitudes, det-Gram norms, and
+Gamma = V (V^dagger V)^{-1} V^dagger covariance; bit-level dGamma with the
+CAR sign rule (direct sums become graded tensor products, coupling blocks
+become hopping terms); free subset-sum spectra delegated to
+cobordism::OccupationSpectra; the vacuum embedding iota psi = psi (x) |0>,
+which preserves every preexisting amplitude, with its compatibility read.
 
 Exact certification mode by default (algebraically lossless rewrites
-only); optional truncation mode accumulates and reports its discarded
-norm in every scalar read. The quasi-free sector's PRIMARY representation
-is the #780 covariance layer — this engine is the dense/oracle reference
-and the carrier for explicitly non-Gaussian boundary data. Nothing here
-enters the emergence objective, and nothing here classifies particles.)doc")
+only); optional truncation mode accumulates and reports its discarded norm
+in every scalar read. CovarianceState is the primary representation of the
+quasi-free sector; this engine is its dense reference and the carrier for
+explicitly non-Gaussian boundary data.)doc")
         .def(py::init<std::size_t>(), py::arg("modeCount"))
         .def_static("fromRegistry", &LazyFockEngine::fromRegistry,
              py::arg("registry"),
@@ -2105,8 +2081,7 @@ enters the emergence objective, and nothing here classifies particles.)doc")
              &LazyFockEngine::boundaryProductFixture, py::arg("modes"),
              py::arg("emptyAmplitudes"), py::arg("occupiedAmplitudes"),
              py::arg("label"),
-             "The LABELED optional product boundary fixture (never the "
-             "global-state ontology).")
+             "The labeled optional product boundary fixture.")
         .def("embedInVacuum", &LazyFockEngine::embedInVacuum,
              py::arg("state"), py::arg("newModes"),
              "iota: psi -> psi (x) |0>; preserves every preexisting "
@@ -2154,7 +2129,7 @@ enters the emergence objective, and nothing here classifies particles.)doc")
                  return py::make_tuple(out.values, out.certificate);
              }, py::arg("oneParticle"), py::arg("particles"),
              "(values, certificate): free N-particle spectrum of dGamma(L) "
-             "via #764 subset sums.")
+             "via OccupationSpectra subset sums.")
         .def("freeSpectrumFromEigenvalues",
              [](const LazyFockEngine& e,
                 const std::vector<std::complex<double>>& spec,
@@ -2162,15 +2137,15 @@ enters the emergence objective, and nothing here classifies particles.)doc")
                  auto out = e.freeSpectrumFromEigenvalues(spec, particles);
                  return py::make_tuple(out.values, out.certificate);
              }, py::arg("oneParticleSpectrum"), py::arg("particles"),
-             "(values, certificate): pure #764 OccupationSpectra "
-             "delegation with an independent-path residual.")
+             "(values, certificate): OccupationSpectra delegation with an "
+             "independent-path residual.")
         .def("inductiveCompatibility",
              &LazyFockEngine::inductiveCompatibility, py::arg("stageModes"),
              py::arg("extendedModes"), py::arg("stageSupport"),
              py::arg("stageOp"), py::arg("extendedSupport"),
              py::arg("extendedOp"), py::arg("activeBasis"),
              "epsilon = ||iota U_M - U_{M+1} iota|| on the active carried "
-             "subspace (spec 5.7).")
+             "subspace.")
         .def("expansionCount", &LazyFockEngine::expansionCount,
              "Partition crossings that forced a tensor expansion.")
         .def("memoHits", &LazyFockEngine::memoHits)
@@ -2185,15 +2160,15 @@ enters the emergence objective, and nothing here classifies particles.)doc")
              "Rebuild a checkpoint; verifies schema, universe, and every "
              "recomputed content hash.");
 
-    // ── The quasi-free covariance layer (#780) ─────────────────────────────
+    // ── The quasi-free covariance layer ────────────────────────────────────
 
     py::class_<WickCertificateRead>(m, "WickCertificateRead",
-        R"doc(One Wick-evaluated polynomial certificate: the
-value, the measured residual (covariance Hermiticity defect, maximized with
-the imaginary rounding leakage for real-by-construction observables), the
-normal-ordered observable / contraction-plan identifier, the covariance
-fingerprint the value was read from, and the #764 Certificate grading the
-claim (AlgebraicallyExact / Static; regime VERIFIED on the covariance).)doc")
+        R"doc(One Wick-evaluated polynomial certificate: the value, the measured
+residual (covariance Hermiticity defect, maximized with the imaginary
+rounding leakage for real-by-construction observables), the normal-ordered
+observable / contraction-plan identifier, the covariance fingerprint the
+value was read from, and the Certificate grading the claim
+(AlgebraicallyExact / Static; the regime is verified on the covariance).)doc")
         .def(py::init<>())
         .def_readonly("value", &WickCertificateRead::value)
         .def_readonly("residual", &WickCertificateRead::residual)
@@ -2205,7 +2180,7 @@ claim (AlgebraicallyExact / Static; regime VERIFIED on the covariance).)doc")
         R"doc(The per-iteration record of the mean-field self-consistency loop:
 the measured generator/covariance Hermiticity defects, the purity defect
 ||Gamma^2 - Gamma||_F (pure-Slater path), the covariance-spectrum constraint
-(mixed path), and the purity/Gaussianity Certificate of the step.)doc")
+(mixed path), and the purity/Gaussianity certificate of the step.)doc")
         .def_readonly("step", &MeanFieldStepRead::step)
         .def_readonly("time", &MeanFieldStepRead::time)
         .def_readonly("generatorHermiticityDefect",
@@ -2217,33 +2192,31 @@ the measured generator/covariance Hermiticity defects, the purity defect
         .def_readonly("certificate", &MeanFieldStepRead::certificate);
 
     py::class_<CovarianceState>(m, "CovarianceState",
-        R"doc(The number-conserving quasi-free state stored EXACTLY as its
-covariance matrix Gamma_ij = <a_j^dagger a_i> (#780).
+        R"doc(The number-conserving quasi-free state, stored exactly as its
+covariance matrix Gamma_ij = <a_j^dagger a_i>.
 
 Every polynomial observable is a finite exact Wick sum over Gamma —
 occupations, parities, Gram/Pauli determinants, the color wedge |S_ABC|^2,
-<J^2> and Var(J^2) (quartic and octic Wick sums) — evaluated in polynomial
-cost in the mode count: NO code path here allocates a 2^M object. Dense
-Fock constructions (#766 ExteriorAlgebra, Jordan-Wigner chains) are TEST
-references; the lazy graded Fock engine (#771) remains the oracle layer and
-the carrier for explicitly non-Gaussian boundary data. Nothing in this
-class enters the emergence objective: the mean-field loop takes h from the
-CALLER, and the geometry coupling h = h(Gamma, g) is wired by #776.
+<J^2> and Var(J^2) (quartic and octic Wick sums) — at polynomial cost in
+the mode count; no code path here allocates a 2^M object. Dense Fock
+constructions (ExteriorAlgebra, Jordan-Wigner chains) are test references,
+and LazyFockEngine is the oracle layer and the carrier for explicitly
+non-Gaussian boundary data. The mean-field loop takes h from the caller.
 
-Propagation (both entry points): evolve(h, dt) applies the EXACT solution
+Propagation (both entry points): evolve(h, dt) applies the exact solution
 Gamma <- exp(-i h dt) Gamma exp(+i h dt) of i dGamma/dt = [h, Gamma];
 applyTransport(U) conjugates by the one-particle transport of a cobordism
-step. Quadratic evolution — including the declared mean-field
-self-consistency — never leaves the Gaussian manifold; purity is a
-MEASURED certificate ||Gamma^2 - Gamma||_F, never an assumption. The API
-shape is Nambu-ready (numberConserving / pairing / nambuCovariance); the
-pairing sector itself is a later extension.)doc")
+step. Quadratic evolution — including the mean-field self-consistency —
+never leaves the Gaussian manifold; purity is a measured certificate
+||Gamma^2 - Gamma||_F, never an assumption. The API is Nambu-shaped
+(numberConserving / pairing / nambuCovariance) with the pairing block
+identically zero.)doc")
         .def(py::init<Eigen::MatrixXcd>(), py::arg("gamma"),
              "Adopt an explicit covariance matrix (no symmetrization, no "
              "clamping: defects are measured and reported, never repaired).")
         .def_static("fromBandProjector", &CovarianceState::fromBandProjector,
              py::arg("projector"),
-             R"doc(Gamma = P from an accepted #769 band projector (SpectralFiber.
+             R"doc(Gamma = P from an accepted band projector (SpectralFiber.
 projector() output consumed as a plain matrix). Self-adjoint-path
 projectors are orthogonal, hence pure Slater covariances; an oblique
 projector is adopted verbatim and its Hermiticity defect reported.)doc")
@@ -2288,14 +2261,14 @@ idempotent exactly when Gamma is.)doc")
              "mixed-state covariance-spectrum constraint.")
         .def("purityCertificate", &CovarianceState::purityCertificate,
              py::arg("tolerance") = 1e-9,
-             "The #764 purity certificate of the pure-Slater path (a mixed "
-             "state simply does not hold() it).")
+             "The purity certificate of the pure-Slater path; a mixed state "
+             "does not hold() it.")
         .def("covarianceHash", &CovarianceState::covarianceHash,
              "Order-sensitive fingerprint of the exact double bit patterns "
              "of Gamma (16 hex digits) — replay-stable.")
         .def("evolve", &CovarianceState::evolve, py::arg("h"), py::arg("dt"),
              py::arg("hermitianTolerance") = 1e-9,
-             R"doc(Gamma <- exp(-i h dt) Gamma exp(+i h dt): the EXACT solution of
+             R"doc(Gamma <- exp(-i h dt) Gamma exp(+i h dt): the exact solution of
 i dGamma/dt = [h, Gamma] (no step-size error; preserves Hermiticity,
 spectrum, and purity to round-off). Throws when h fails Hermiticity
 verification.)doc")
@@ -2307,18 +2280,17 @@ verification.)doc")
              py::arg("transport"),
              R"doc(Gamma <- U Gamma U+ — conjugation by the one-particle transport
 of a cobordism step. A unitary U preserves Hermiticity, spectrum, and
-purity exactly; a leaky transport's effect is MEASURED by the defect
-reads afterwards, never repaired.)doc")
+purity exactly; a leaky transport's effect shows up in the defect reads
+afterwards and is never repaired.)doc")
         .def("meanFieldEvolve", &CovarianceState::meanFieldEvolve,
              py::arg("hamiltonian"), py::arg("dt"), py::arg("steps"),
              py::arg("hermitianTolerance") = 1e-9,
              py::arg("purityTolerance") = 1e-9,
              R"doc(The certificates-blind mean-field loop: each iteration obtains
-h = hamiltonian(Gamma) from the CALLER (classical geometry is closed over
-by the caller — the geometry coupling is #776's), advances by dt via
-evolve, and records the purity/Gaussianity certificate. Generalized
-Hartree-Fock: nonlinear in Gamma but Gaussian-closed — MEASURED every
-step, never assumed.)doc")
+h = hamiltonian(Gamma) from the caller (classical geometry is closed over
+by the caller), advances by dt via evolve, and records the
+purity/Gaussianity certificate. Generalized Hartree-Fock: nonlinear in
+Gamma but Gaussian-closed, and that closure is measured every step.)doc")
         .def("wickOccupation", &CovarianceState::wickOccupation,
              py::arg("mode"), "<n_mode> as a certified Wick read.")
         .def("wickTotalNumber", &CovarianceState::wickTotalNumber,
@@ -2332,20 +2304,21 @@ step, never assumed.)doc")
         .def("wickNormalOrdered", &CovarianceState::wickNormalOrdered,
              py::arg("creators"), py::arg("annihilators"),
              R"doc(<a+_{c1}...a+_{cp} a_{ap}...a_{a1}> = det[Gamma_{a_l c_k}] in
-PAIRED SLOT ORDER (annihilators applied in reversed list order, so equal
+paired slot order (annihilators applied in reversed list order, so equal
 distinct lists give the joint occupation <n_{c1}...n_{cp}>). Mismatched
 lengths are exactly zero on a number-conserving state; duplicate creators
-give a repeated determinant row — exact Pauli zero.)doc")
+give a repeated determinant row — an exact Pauli zero.)doc")
         .def("wickGramDeterminant", &CovarianceState::wickGramDeterminant,
              py::arg("creatorFrame"), py::arg("annihilatorFrame"),
              R"doc(The smeared Gram/Pauli determinant
-<a+(v_1)...a+(v_p) a(w_p)...a(w_1)> = det(W+ Gamma V) with the #766
-smearing conventions (columns of V create, columns of W annihilate).)doc")
+<a+(v_1)...a+(v_p) a(w_p)...a(w_1)> = det(W+ Gamma V) with the
+ExteriorAlgebra smearing conventions (columns of V create, columns of W
+annihilate).)doc")
         .def("wickColorWedgeSquared", &CovarianceState::wickColorWedgeSquared,
              py::arg("colorColumns"),
              R"doc(|S_ABC|^2 = det(C+ Gamma C) of three color columns. When Gamma
-is the Slater projector onto colspan(C) this equals det(C+ C) = |det C|^2
-— exactly ColorFiber.singletGram / |ColorFiber.colorWedge|^2 (#767).)doc")
+is the Slater projector onto colspan(C) this equals det(C+ C) = |det C|^2,
+i.e. ColorFiber.singletGram / |ColorFiber.colorWedge|^2.)doc")
         .def("wickBilinearMoment", &CovarianceState::wickBilinearMoment,
              py::arg("oneParticleFactors"),
              R"doc(The ordered bilinear moment <dGamma(A_1)...dGamma(A_n)> —
@@ -2365,18 +2338,18 @@ det(I + (prod_k(I + s_k A_k) - I) Gamma). Polynomial in the mode count.)doc")
         .def("wickReadCached", &CovarianceState::wickReadCached,
              py::arg("cache"), py::arg("componentVertexIds"),
              py::arg("polynomialId"), py::arg("compute"),
-             R"doc(Fetch-or-compute one Wick read through the #764 AnalyticCache
+             R"doc(Fetch-or-compute one Wick read through the AnalyticCache
 contract (kind "wick-read"; parameter = a mixed fingerprint of the
 polynomialId and the current covarianceHash). A hit is served only when
-the cache's geometry-freshness contract holds AND the stored polynomialId
-and covarianceHash both match — a Gamma change can only cause
+the cache's geometry-freshness contract holds and the stored polynomialId
+and covarianceHash both match, so a Gamma change can only cause
 recomputation, never a wrong serve.)doc")
         .def("toRecord",
              [](const CovarianceState& self) {
                  return quantumRecordToPython(self.toRecord());
              },
              "Checkpoint serialization of Gamma (schema-versioned; complex "
-             "leaves split gamma_re / gamma_im per the #580 convention).")
+             "leaves split gamma_re / gamma_im).")
         .def_static("fromRecord",
              [](const py::handle& record) {
                  return CovarianceState::fromRecord(

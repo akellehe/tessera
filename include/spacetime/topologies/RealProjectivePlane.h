@@ -10,12 +10,13 @@
 namespace tessera::spacetime {
 class Spacetime;
 
-/// # Real projective plane \f$ \mathbb{RP}^2 \f$ (minimal 6-vertex)
+/// # Real projective plane (minimal 6-vertex triangulation)
 ///
-/// The unique minimal triangulation of \f$ \mathbb{RP}^2 \f$ — the
-/// hemi-icosahedron, i.e. the 10 triangles of the icosahedron modulo the
-/// antipodal map, on the complete graph \f$ K_6 \f$. f-vector (6, 15, 10),
-/// \f$ \chi = 1 \f$, **non-orientable** (\f$ w_1^2[\mathbb{RP}^2] = 1 \f$).
+/// The unique minimal triangulation of the real projective plane
+/// \f$ \mathbb{RP}^2 \f$ — the hemi-icosahedron, i.e. the 10 triangles of the
+/// icosahedron modulo the antipodal map, on the complete graph
+/// \f$ K_6 \f$. f-vector (6, 15, 10), \f$ \chi = 1 \f$, non-orientable
+/// (\f$ w_1^2[\mathbb{RP}^2] = 1 \f$).
 ///
 /// Exact, fixed, pre-geometric (coordinate-free); ``build()`` ignores
 /// ``numSimplices``.

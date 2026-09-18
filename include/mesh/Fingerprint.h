@@ -27,37 +27,26 @@
 /// \file Fingerprint.h
 /// \brief Order-independent hashing system for set-based object identification
 ///
-/// This file provides a fingerprinting system that creates unique hash values from unordered
-/// sets of IDs. The key property is **commutativity**: the fingerprint of {1, 2, 3} equals
+/// Hashes an unordered set of IDs commutatively: the fingerprint of {1, 2, 3} equals
 /// the fingerprint of {3, 1, 2}.
 ///
-/// # Mathematical Foundation
-///
-/// The fingerprint \f$ h \f$ of a set \f$ S = \{id_1, id_2, \ldots, id_n\} \f$ is computed as:
+/// The fingerprint \f$ h \f$ of a set \f$ S = \{id_1, id_2, \ldots, id_n\} \f$ is
 ///
 /// \f[
 /// h(S) = \bigoplus_{id \in S} \text{mix64}(id)
 /// \f]
 ///
-/// where \f$ \oplus \f$ denotes XOR (exclusive-or) and mix64 is a bijective mixing function.
+/// where \f$ \oplus \f$ is XOR and mix64 is a bijective mixing function.
 ///
-/// # Design Rationale
+/// A simplex is defined by its constituent vertices, not by the order they are given in:
+/// the 2-simplex {v1, v2, v3} is the 2-simplex {v3, v1, v2}. XOR gives a commutative hash
+/// that runs in O(n) time and O(1) space, has good avalanche behaviour, and supports
+/// incremental update without full recomputation.
 ///
-/// In causal set theory, simplices are defined by their constituent vertices, not by the order
-/// in which vertices are specified. A 2-simplex with vertices {v1, v2, v3} is the same simplex
-/// as {v3, v1, v2}. Using XOR provides an efficient commutative hash that:
-///
-/// - Runs in O(n) time
-/// - Uses O(1) space after hashing
-/// - Has good avalanche properties (small changes to input produce large changes to output)
-/// - Allows incremental updates without full recomputation
-///
-/// # Performance Characteristics
-///
-/// - **Add/Remove ID**: O(n) where n is the current number of IDs (typically < 10)
-/// - **Compute Hash**: O(n) but lazy - only recomputed when dirty flag is set
-/// - **Equality Check**: O(1) hash comparison, O(n²) fallback for collision handling
-/// - **Memory**: Fixed 64-element array + metadata ≈ 520 bytes per instance
+/// Costs:
+/// - add or remove an ID: O(n), with n the current ID count (typically under 10)
+/// - compute the hash: O(n), lazily, only when the dirty flag is set
+/// - equality: O(1) hash comparison, with an O(n²) fallback on collision
 ///
 
 // === tessera subsystem ns fwd-decls ===
@@ -88,33 +77,23 @@ using IdType = std::uint64_t;
 ///
 /// \brief Maximum number of IDs that can be stored in a fingerprint
 ///
-/// This limit is chosen based on typical simplex sizes in causal set simulations:
-/// - 0-simplex (vertex): 1 ID
-/// - 1-simplex (edge): 2 IDs
-/// - 2-simplex (triangle): 3 IDs
-/// - 3-simplex (tetrahedron): 4 IDs
-/// - k-simplex: k+1 IDs
-///
-/// The value 8 supports up to 7-simplices (a 4-simplex uses 5 slots).
-/// Reduced from 64 to save ~448 bytes per Fingerprint instance, which
-/// at scale (500k objects) translates to ~214 MB of eliminated cache waste.
+/// A k-simplex holds k+1 IDs, so 8 covers up to a 7-simplex (a 4-simplex uses 5 slots),
+/// which is ample for the simplex sizes these simulations use. The array is stored
+/// inline, so each extra slot costs 8 bytes on every Fingerprint instance; at 500k
+/// objects that is the difference between a compact and a cache-hostile layout.
 ///
 inline constexpr std::size_t kMax = 8;
 
 ///
 /// \brief Fixed-size array for storing IDs
 ///
-/// Using a fixed-size array avoids dynamic allocation and cache misses.
-/// Only the first n_ elements are valid; the rest are uninitialized.
+/// A fixed-size array avoids dynamic allocation and cache misses. Only the first n_
+/// elements are in use.
 ///
 using IdArray = std::array<IdType, kMax>;
 
 ///
-/// \brief FNV-1a hash seed (unused in current implementation)
-///
-/// This constant is a standard FNV-1a offset basis. The current mix64()
-/// implementation uses a different mixing algorithm, so this seed is not used.
-/// Kept for potential future hash function variants.
+/// \brief FNV-1a offset basis. Unused: mix64() mixes differently.
 ///
 inline constexpr std::uint64_t kSeed = 0xcbf29ce484222325ull;
 
@@ -125,13 +104,8 @@ inline constexpr std::uint64_t kSeed = 0xcbf29ce484222325ull;
 ///
 /// \brief Order-independent hash for sets of IDs
 ///
-/// # Purpose
-///
-/// The Fingerprint class provides a unique identifier for any unordered set of IDs.
-/// This is essential for causal set theory where geometric objects (simplices) are
-/// defined by their constituent vertices, regardless of specification order.
-///
-/// # Usage Pattern
+/// Identifies an unordered set of IDs, which is what a simplex is: a set of constituent
+/// vertices, independent of the order they were given in.
 ///
 /// Include a `Fingerprint` as a public member in your class:
 ///
@@ -164,27 +138,23 @@ inline constexpr std::uint64_t kSeed = 0xcbf29ce484222325ull;
 /// }
 /// ```
 ///
-/// # Implementation Details
+/// ## Lazy evaluation
 ///
-/// ## Lazy Evaluation Pattern
+/// A dirty flag defers hash computation: add and remove only set dirty, reading
+/// fingerprint() recomputes if dirty, and mutable members let const methods refresh the
+/// cache.
 ///
-/// The fingerprint uses a dirty flag to defer hash computation until needed:
-/// - Modifications (add/remove) only mark dirty=true
-/// - Reading fingerprint() triggers recomputation if dirty
-/// - Mutable members allow const methods to update cache
+/// ## Collision handling
 ///
-/// ## Collision Handling
+/// Collisions are rare (probability of order \f$ n^2 / 2^{64} \f$ for n objects), but
+/// operator== still compares the sets: quick reject on differing size or hash, then an
+/// O(n²) set comparison when the hashes match.
 ///
-/// While hash collisions are rare (probability ≈ \f$ n^2 / 2^{64} \f$ for n objects),
-/// operator== performs full set comparison to handle them:
-/// 1. Quick reject: different sizes or hash values
-/// 2. O(n²) set comparison if hashes match
+/// ## Thread safety
 ///
-/// ## Thread Safety
-///
-/// **Not thread-safe**. The mutable dirty flag and hash cache h_ can race.
-/// Concurrent reads are safe if no writes occur. Use external synchronization
-/// for concurrent modification.
+/// Not thread-safe: the mutable dirty flag and the hash cache h_ can race. Concurrent
+/// reads are safe with no concurrent writes; concurrent modification needs external
+/// synchronization.
 ///
 class Fingerprint {
   public:
@@ -195,7 +165,7 @@ class Fingerprint {
     ///
     /// \brief Default constructor creating an empty fingerprint
     ///
-    /// Initializes with zero IDs and zero hash. Not dirty since hash is already current.
+    /// Zero IDs and zero hash, and not dirty: the hash is already current.
     ///
     Fingerprint() noexcept : ids_({}), n_(0), h_(0), dirty_(false) {
     }
@@ -204,9 +174,8 @@ class Fingerprint {
     /// \brief Construct from a vector of IDs
     /// \param ids Initial set of IDs (duplicates are automatically filtered)
     ///
-    /// # Complexity
-    /// O(n²) where n = ids.size(), due to duplicate checking in addId().
-    /// For small n (< 10), this is faster than using std::unordered_set.
+    /// O(n²) in ids.size(), from the duplicate check in addId(). For small n (under 10)
+    /// that beats std::unordered_set.
     ///
     explicit Fingerprint(const std::vector<IdType> &ids) noexcept : ids_({}), n_(0), h_(0), dirty_(true) {
       setIds(ids);
@@ -221,32 +190,24 @@ class Fingerprint {
     /// \param x Input value to mix
     /// \return Mixed 64-bit hash value
     ///
-    /// # Algorithm
-    ///
-    /// This implements a variant of the MurmurHash3 64-bit finalizer:
+    /// A variant of the MurmurHash3 64-bit finalizer:
     ///
     /// \f[
-    /// \begin{align}
+    /// \begin{aligned}
     /// x &\gets x + \phi \cdot 2^{64} \\
     /// x &\gets (x \oplus (x \gg 30)) \cdot c_1 \\
     /// x &\gets (x \oplus (x \gg 27)) \cdot c_2 \\
     /// x &\gets x \oplus (x \gg 31)
-    /// \end{align}
+    /// \end{aligned}
     /// \f]
     ///
-    /// where \f$ \phi \approx 1.618 \f$ is the golden ratio and \f$ c_1, c_2 \f$
-    /// are carefully chosen mixing constants.
+    /// with \f$ \phi \approx 1.618 \f$ the golden ratio and \f$ c_1, c_2 \f$ the mixing
+    /// constants.
     ///
-    /// # Properties
-    ///
-    /// - **Bijective**: Every input maps to a unique output (invertible)
-    /// - **Avalanche**: Flipping one input bit changes ~50% of output bits
-    /// - **constexpr**: Can be evaluated at compile time
-    /// - **Fast**: 4 operations (add, 3 xor-shift-multiply sequences)
-    ///
-    /// # Performance
-    ///
-    /// On modern x86-64 CPUs: ~4-5 cycles per call (pipelined).
+    /// It is bijective, so every input maps to a distinct output; it avalanches, so
+    /// flipping one input bit changes about half the output bits; it is constexpr; and it
+    /// costs an add plus three xor-shift-multiply steps, roughly 4-5 pipelined cycles on
+    /// x86-64.
     ///
     static inline constexpr std::uint64_t mix64(IdType x) noexcept {
       x += 0x9e3779b97f4a7c15ull;  // Golden ratio * 2^64
@@ -260,36 +221,25 @@ class Fingerprint {
     /// \param first,last Iterator range over IDs (duplicates must already be filtered)
     /// \return The same hash an instance holding those IDs would report
     ///
-    /// # Purpose
+    /// The one place this hash is computed. `fingerprint()` calls it over the instance's
+    /// own IDs, and callers whose IDs live in their own container call it directly, so an
+    /// instance's hash and a caller's hash of the same set agree by construction.
     ///
-    /// The one place this hash is computed. `fingerprint()` calls it over the
-    /// instance's own IDs, and callers whose IDs live in their own container
-    /// call it directly — so an instance's hash and a caller's hash of the
-    /// same set are equal by construction rather than by two implementations
-    /// agreeing.
-    ///
-    /// # When to call this instead of holding a Fingerprint
-    ///
-    /// An instance stores at most `kMax` IDs and `addId` discards the rest
-    /// silently, which is right for a simplex and wrong for a set that can
-    /// outgrow it — past `kMax` the instance's hash describes an arbitrary
-    /// subset, so two different sets can report the same fingerprint. This
-    /// static has no such limit: it hashes every ID in the range. Use it for
-    /// sets that are not bounded by `kMax` (`MultiCobordism`'s boundary-block
-    /// regions, which grow across the complex, are the current caller).
-    ///
-    /// # Algorithm
+    /// An instance stores at most `kMax` IDs and `addId` discards the rest silently,
+    /// which suits a simplex but not a set that can outgrow it: past `kMax` the
+    /// instance's hash describes an arbitrary subset, so two different sets can report
+    /// the same fingerprint. This static has no such limit and hashes every ID in the
+    /// range, so it is the form to use for sets not bounded by `kMax`.
     ///
     /// \f[
     /// h = \bigoplus_{i} \text{mix64}(\text{id}_i)
     /// \f]
     ///
-    /// Exclusive-or is commutative and associative, so the result depends on
-    /// the set of IDs and not the order they arrive in. Duplicates cancel in
-    /// pairs, which is why the range must already be duplicate-free — every
-    /// standard set container is.
+    /// XOR is commutative and associative, so the result depends on the set of IDs and
+    /// not on the order they arrive in. Duplicates cancel in pairs, hence the
+    /// requirement that the range is already duplicate-free, as every standard set
+    /// container is.
     ///
-    /// # Complexity
     /// O(n) over the range, with no allocation.
     ///
     template <typename Iterator>
@@ -305,8 +255,8 @@ class Fingerprint {
     /// \param ids Container of unique IDs (e.g. a std::set<IdType>)
     /// \return The same hash an instance holding those IDs would report
     ///
-    /// Convenience form of the iterator-range overload; see it for the
-    /// algorithm and for when to prefer this over holding a `Fingerprint`.
+    /// Convenience form of the iterator-range overload; see it for the algorithm and for
+    /// when to prefer this over holding a `Fingerprint`.
     ///
     template <typename Container>
     [[nodiscard]] static std::uint64_t fingerprintOf(
@@ -322,11 +272,8 @@ class Fingerprint {
     /// \brief Replace all IDs with a new set
     /// \param ids New set of IDs (duplicates filtered)
     ///
-    /// Clears existing IDs and adds each new ID via addId().
-    /// Marks the fingerprint dirty for lazy recomputation.
-    ///
-    /// # Complexity
-    /// O(n²) where n = ids.size()
+    /// Clears the existing IDs, adds each new one via addId(), and marks the fingerprint
+    /// dirty for lazy recomputation. O(n²) in ids.size().
     ///
     void setIds(const std::vector<IdType> &ids) noexcept {
       n_ = 0;
@@ -340,21 +287,14 @@ class Fingerprint {
     /// \brief Add a single ID to the set
     /// \param id ID to add (ignored if already present)
     ///
-    /// # Duplicate Detection
+    /// Duplicates are found by linear search, O(n); for small n (under 10) that beats
+    /// std::unordered_set on cache locality and allocation.
     ///
-    /// Uses linear search O(n) to check for duplicates. For small n (< 10),
-    /// this is faster than std::unordered_set due to cache locality and
-    /// lack of allocation overhead.
+    /// Once n_ == kMax the ID is silently ignored. Simplices here rarely exceed 5
+    /// vertices, so the limit is not reached in practice.
     ///
-    /// # Overflow Behavior
-    ///
-    /// If n_ == kMax (64 IDs), the ID is silently ignored. In practice,
-    /// simplices rarely exceed 5 vertices, so this limit is never reached.
-    ///
-    /// # Branch Prediction
-    ///
-    /// Uses `[[unlikely]]` hint for duplicate case, optimizing the common
-    /// path where IDs are unique.
+    /// The duplicate branch is marked `[[unlikely]]`, favouring the common path of
+    /// unique IDs.
     ///
     void addId(IdType id) noexcept {
       // Check for duplicates using linear scan (fast for small n)
@@ -372,16 +312,9 @@ class Fingerprint {
     /// \brief Remove an ID from the set
     /// \param id ID to remove (no-op if not present)
     ///
-    /// # Algorithm
-    ///
-    /// Uses swap-and-pop: replace removed element with last element,
-    /// then decrement count. This avoids shifting elements and maintains
-    /// O(n) complexity.
-    ///
-    /// # Order Preservation
-    ///
-    /// The order of IDs is **not** preserved, but since the hash is commutative,
-    /// this doesn't affect correctness.
+    /// Swap-and-pop: the removed element is replaced by the last one and the count is
+    /// decremented, so nothing shifts and the cost stays O(n). ID order is not
+    /// preserved, which is harmless because the hash is commutative.
     ///
     void removeId(IdType id) noexcept {
       for (std::uint8_t i = 0; i < n_; ++i) {
@@ -402,10 +335,8 @@ class Fingerprint {
     /// \brief Get the cached fingerprint value (lazy evaluation)
     /// \return 64-bit hash value
     ///
-    /// # Lazy Evaluation
-    ///
-    /// Only recomputes if dirty flag is set. This amortizes the cost
-    /// of multiple modifications:
+    /// Recomputes only if the dirty flag is set, which amortizes repeated
+    /// modification:
     ///
     /// ```cpp
     /// fp.addId(1);  // O(1) - just marks dirty
@@ -414,19 +345,14 @@ class Fingerprint {
     /// auto h = fp.fingerprint();  // O(n) - computes once
     /// ```
     ///
-    /// # Hash Formula
-    ///
     /// \f[
     /// h = \bigoplus_{i=0}^{n-1} \text{mix64}(\text{ids}_i)
     /// \f]
     ///
-    /// XOR is commutative and associative, so order doesn't matter.
+    /// XOR is commutative and associative, so order does not matter.
     ///
-    /// # Mutable State
-    ///
-    /// Uses mutable members to allow updating cache in const method.
-    /// This is the "logical const" pattern: the observable value doesn't
-    /// change, only internal cache state.
+    /// The cache members are mutable so a const method can refresh them: logical const,
+    /// where the observable value is unchanged and only the cache moves.
     ///
     std::uint64_t fingerprint() const noexcept {
       if (dirty_) [[unlikely]] {
@@ -442,11 +368,8 @@ class Fingerprint {
     ///
     /// \brief Force immediate hash recomputation
     ///
-    /// Normally the hash is computed lazily on access. Call this to
-    /// force evaluation immediately, e.g., before a tight loop that
-    /// repeatedly reads the fingerprint.
-    ///
-    /// # Use Case
+    /// The hash is otherwise computed lazily on access. Force it before a tight loop
+    /// that reads the fingerprint repeatedly:
     ///
     /// ```cpp
     /// for (int i = 0; i < 1000000; ++i) {
@@ -468,11 +391,8 @@ class Fingerprint {
     }
 
     ///
-    /// \brief Deprecated: Batch update and refresh
+    /// \brief Batch update and refresh: setIds() followed by refresh().
     /// \param ids New set of IDs
-    ///
-    /// **Deprecated**: Use setIds() + refresh() instead.
-    /// Kept for backward compatibility.
     ///
     void refreshFingerprint(const std::vector<IdType> &ids) {
       setIds(ids);
@@ -487,11 +407,8 @@ class Fingerprint {
     /// \brief Generate debug string representation
     /// \return String showing hash value and ID list
     ///
-    /// # Format
-    ///
-    /// `<Fingerprint: 12345678901234567890 (1, 5, 9)>`
-    ///
-    /// Forces refresh to ensure hash is current before stringifying.
+    /// Formatted as `<Fingerprint: 12345678901234567890 (1, 5, 9)>`. Refreshes first, so
+    /// the hash shown is current.
     ///
     std::string toString() const {
       // Force refresh before stringifying
@@ -512,27 +429,19 @@ class Fingerprint {
     /// \param o Other fingerprint to compare
     /// \return true if both fingerprints represent the same set of IDs
     ///
-    /// # Algorithm
+    /// Refreshes both sides if dirty, rejects on differing n_, rejects on differing h_,
+    /// then falls back to a full set comparison so a hash collision cannot make two
+    /// different sets compare equal.
     ///
-    /// 1. Refresh both fingerprints if dirty
-    /// 2. Quick reject: if n_ differs, sets can't be equal
-    /// 3. Quick reject: if h_ differs, sets likely differ (collision possible)
-    /// 4. Full O(n²) set comparison to handle hash collisions
-    ///
-    /// # Hash Collision Probability
-    ///
-    /// For n fingerprints with k IDs each, birthday paradox gives:
+    /// The birthday bound for n fingerprints is
     ///
     /// \f[
     /// P(\text{collision}) \approx 1 - e^{-n^2 / (2 \cdot 2^{64})}
     /// \f]
     ///
-    /// For 1 billion simplices: \f$ P \approx 2.7 \times 10^{-11} \f$ (negligible)
+    /// giving \f$ P \approx 2.7 \times 10^{-11} \f$ at a billion simplices.
     ///
-    /// # Performance
-    ///
-    /// - Typical case (no collision): O(1)
-    /// - Collision case: O(n²) where n is number of IDs
+    /// O(1) when the hashes differ, O(n²) in the ID count on a collision.
     ///
     bool operator==(const Fingerprint &o) const noexcept {
       // Force refresh on both sides if needed
@@ -585,14 +494,10 @@ class Fingerprint {
 /// \brief Hash functor for types with a `fingerprint` member
 /// \tparam T Type that has a public `Fingerprint fingerprint` member
 ///
-/// # Purpose
+/// A generic hash functor for std::unordered_set and std::unordered_map, covering value
+/// types, shared_ptr types and heterogeneous lookup.
 ///
-/// Provides a generic hash functor for use with std::unordered_set and std::unordered_map.
-/// Supports hashing both value types and shared_ptr types, as well as heterogeneous lookup.
-///
-/// # Heterogeneous Lookup
-///
-/// Defines `is_transparent` to enable C++20 heterogeneous lookup. This allows:
+/// `is_transparent` enables C++20 heterogeneous lookup:
 ///
 /// ```cpp
 /// std::unordered_set<SimplexPtr, FingerprintHash<Simplex>, FingerprintEq<Simplex>> simplices;
@@ -600,9 +505,9 @@ class Fingerprint {
 /// auto it = simplices.find(fp);  // No temporary object created!
 /// ```
 ///
-/// Without `is_transparent`, you'd need to create a full SimplexPtr just to search.
+/// Without `is_transparent` a full SimplexPtr would have to be built just to search.
 ///
-/// # Supported Types
+/// Supported types:
 ///
 /// - `T` (value type)
 /// - `std::shared_ptr<T>`
@@ -638,12 +543,10 @@ struct FingerprintHash {
 /// \brief Equality functor for types with a `fingerprint` member
 /// \tparam T Type that has a public `Fingerprint fingerprint` member
 ///
-/// # Purpose
+/// Equality for std::unordered_set and std::unordered_map, comparing objects by
+/// fingerprint rather than by address or full state.
 ///
-/// Provides equality comparison for use with std::unordered_set and std::unordered_map.
-/// Compares objects by their fingerprint values, not by address or full state.
-///
-/// # Supported Comparisons
+/// Supported comparisons:
 ///
 /// - `T == T` (delegates to T::operator==)
 /// - `T == uint64_t` (compares fingerprint to raw value)
@@ -651,11 +554,8 @@ struct FingerprintHash {
 /// - `shared_ptr<const T> == shared_ptr<const T>` (with nullptr handling)
 /// - All combinations for heterogeneous lookup
 ///
-/// # Nullptr Handling
-///
-/// - `nullptr == nullptr`: Returns true
-/// - `nullptr == non-null`: Returns false
-/// - When TESSERA_ASSERTIONS is defined: Some nullptr cases abort instead
+/// Null handling: `nullptr == nullptr` is true and `nullptr == non-null` is false, and
+/// with TESSERA_ASSERTIONS defined some null cases abort instead.
 ///
 template<typename T>
 struct FingerprintEq {
@@ -724,16 +624,9 @@ struct FingerprintEq {
 /// \brief Hash functor for shared_ptr types with fingerprint member (strict nullptr checking)
 /// \tparam T Shared pointer type (e.g., std::shared_ptr<Simplex>)
 ///
-/// # Difference from FingerprintHash
-///
-/// This variant assumes T is already a pointer type and performs stricter nullptr checking
-/// when TESSERA_ASSERTIONS is defined. Use this when you know you're working with pointers
-/// and want to catch nullptr bugs early in development.
-///
-/// # Assertions
-///
-/// When TESSERA_ASSERTIONS is defined, aborts if given a nullptr.
-/// In production builds (no assertions), behavior is undefined for nullptr.
+/// Unlike FingerprintHash this assumes T is already a pointer type and checks for null
+/// more strictly: with TESSERA_ASSERTIONS defined it aborts on a null pointer, and
+/// without assertions a null pointer is undefined behaviour.
 ///
 template<typename T>
 struct FingerprintPtrHash {
@@ -760,10 +653,7 @@ struct FingerprintPtrHash {
 /// \brief Equality functor for shared_ptr types with fingerprint member (strict nullptr checking)
 /// \tparam T Shared pointer type (e.g., std::shared_ptr<Simplex>)
 ///
-/// # Assertions
-///
-/// When TESSERA_ASSERTIONS is defined, asserts that both pointers are non-null.
-/// Use this when nullptr should never occur and you want to catch bugs early.
+/// With TESSERA_ASSERTIONS defined, asserts that both pointers are non-null.
 ///
 template<typename T>
 struct FingerprintPtrEq {
@@ -806,18 +696,11 @@ struct FingerprintPtrEq {
 /// \tparam PtrHash Hash functor for Ptr
 /// \tparam PtrEq Equality functor for Ptr
 ///
-/// # Purpose
+/// With TESSERA_ASSERTIONS enabled, validates a hash container against the usual
+/// corruption modes: null entries left by an incomplete removal, duplicate fingerprints
+/// from a double insert, and objects sitting in the wrong bucket or missing entirely.
 ///
-/// During development with TESSERA_ASSERTIONS enabled, this class provides validation
-/// methods to detect common hash table corruption issues:
-///
-/// - **Nullptr entries**: Dangling pointers that weren't properly removed
-/// - **Duplicate fingerprints**: Same object inserted multiple times
-/// - **Hash table inconsistency**: Object in wrong bucket or missing
-///
-/// # Usage
-///
-/// Call isCorrupted() or wouldDuplicate() before/after critical operations:
+/// Call isCorrupted() or wouldDuplicate() around a critical operation:
 ///
 /// ```cpp
 /// #ifdef TESSERA_ASSERTIONS
@@ -828,10 +711,8 @@ struct FingerprintPtrEq {
 /// #endif
 /// ```
 ///
-/// # Performance Impact
-///
-/// These checks are O(n) and only active when TESSERA_ASSERTIONS is defined.
-/// In release builds (no assertions), this entire class is compiled out.
+/// The checks are O(n) and active only when TESSERA_ASSERTIONS is defined; without it
+/// the whole class is compiled out.
 ///
 template<typename Ptr, typename PtrHash, typename PtrEq>
 class CorruptionDetector {
@@ -841,13 +722,8 @@ class CorruptionDetector {
     /// \param container Set to validate
     /// \return true if corruption detected (nullptr or duplicate fingerprints)
     ///
-    /// # Checks Performed
-    ///
-    /// 1. **Nullptr check**: Ensures no null or dangling pointers
-    /// 2. **Duplicate check**: Ensures all fingerprints are unique
-    ///
-    /// # Complexity
-    /// O(n) where n = container.size()
+    /// Checks that no entry is null and that all fingerprints are unique. O(n) in
+    /// container.size().
     ///
     static bool isCorrupted(const std::unordered_set<Ptr, PtrHash, PtrEq> &container) {
       std::unordered_set<IdType> seen{};
@@ -862,8 +738,6 @@ class CorruptionDetector {
         }
         seen.insert(o->fingerprint.fingerprint());
       }
-      // TODO: Check that objects are aligned to their fingerprints.
-
       return false;
     }
 
@@ -872,15 +746,8 @@ class CorruptionDetector {
     /// \param container Map to validate
     /// \return true if corruption detected
     ///
-    /// # Checks Performed
-    ///
-    /// 1. **Nullptr check**: Ensures no null object pointers
-    /// 2. **Fingerprint nullptr check**: Ensures fingerprint member is valid
-    /// 3. **Duplicate fingerprint check**: No two objects with same fingerprint
-    /// 4. **Duplicate key check**: No duplicate keys in map
-    ///
-    /// # Complexity
-    /// O(n) where n = container.size()
+    /// Checks for null object pointers, an invalid fingerprint member, two objects with
+    /// the same fingerprint, and duplicate keys. O(n) in container.size().
     ///
     static bool isCorrupted(const std::unordered_map<IdType, Ptr, PtrHash, PtrEq> &container) {
       std::unordered_set<IdType> seen{};
@@ -912,10 +779,8 @@ class CorruptionDetector {
     /// \param container Map to validate
     /// \return true if corruption detected (duplicate keys or values)
     ///
-    /// This overload is for simple ID mappings without object pointers.
-    ///
-    /// # Complexity
-    /// O(n) where n = container.size()
+    /// This overload is for plain ID mappings, without object pointers. O(n) in
+    /// container.size().
     ///
     static bool isCorrupted(const std::unordered_map<IdType, IdType> &container) {
       std::unordered_set<IdType> seen{};
@@ -939,8 +804,6 @@ class CorruptionDetector {
     /// \param newElement Element to potentially insert
     /// \return true if element already exists (by pointer or fingerprint)
     ///
-    /// # Use Case
-    ///
     /// Call before insertion to verify uniqueness:
     ///
     /// ```cpp
@@ -951,14 +814,9 @@ class CorruptionDetector {
     /// simplices.insert(newSimplex);
     /// ```
     ///
-    /// # Checks Performed
-    ///
-    /// 1. Pointer equality (same shared_ptr instance)
-    /// 2. Fingerprint equality (different pointers, same content)
-    /// 3. Container membership (via contains())
-    ///
-    /// # Complexity
-    /// O(n) linear scan + O(1) hash lookup
+    /// Checks pointer equality (the same shared_ptr instance), fingerprint equality
+    /// (different pointers, same content), and container membership via contains().
+    /// O(n) linear scan plus an O(1) hash lookup.
     ///
     static bool wouldDuplicate(const std::unordered_set<Ptr, PtrHash, PtrEq> &container, const Ptr &newElement) {
       std::unordered_set<IdType> seen{};
@@ -985,14 +843,8 @@ class CorruptionDetector {
     /// \param newElement Element to potentially insert
     /// \return true if key or element already exists
     ///
-    /// Checks for duplicates by:
-    /// 1. Key equality
-    /// 2. Pointer equality
-    /// 3. Fingerprint equality
-    /// 4. Container membership
-    ///
-    /// # Complexity
-    /// O(n) linear scan + O(1) hash lookups
+    /// Checks key equality, pointer equality, fingerprint equality and container
+    /// membership. O(n) linear scan plus O(1) hash lookups.
     ///
     static bool wouldDuplicate(const std::unordered_map<IdType, Ptr, PtrHash, PtrEq> &container, const IdType &newKey, const Ptr &newElement) {
       std::unordered_set<IdType> seen{};

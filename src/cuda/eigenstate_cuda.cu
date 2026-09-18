@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
-// FP32 cuBLAS (SGEMM) accelerator for the per-edge r_U-gradient loop of
-// EigenstateSynthesis::residualForPeriodsGradient (#348).
+// Single-precision cuBLAS (SGEMM) accelerator for the per-edge r_U-gradient loop
+// of EigenstateSynthesis::residualForPeriodsGradient.
 //
 // The loop-invariant matrices are uploaded once; each edge streams its low-rank
-// dM/dl² factors fa, fb. The heavy GEMMs run in single precision on the GPU;
-// the CPU FP64 path stays the correctness oracle. Column-major throughout
-// (Eigen default + cuBLAS).
+// dM/dl² factors fa, fb. The heavy GEMMs run in single precision on the device;
+// the double-precision host path stays the correctness oracle. Column-major
+// throughout, matching Eigen's default storage and cuBLAS.
 
 #include "cuda/eigenstate_cuda.h"
 
@@ -42,7 +42,7 @@ namespace tessera {
 namespace cuda {
 
 namespace {
-// Allocate n floats on the device and (optionally) upload n host floats.
+// Allocate n floats on the device and, if `host` is non-null, upload n floats into them.
 float* devAlloc(int n, const float* host = nullptr) {
   float* d = nullptr;
   CUDA_CHECK(cudaMalloc(&d, static_cast<size_t>(n) * sizeof(float)));
@@ -68,7 +68,7 @@ RuGradientGpu::RuGradientGpu(int N, int nnd, int nd, int rmax,
   dM_ = devAlloc(N * N, M);
   dP2_ = devAlloc(N * 2, p2);
 
-  // Per-edge scratch (sized by the largest rank rmax).
+  // Per-edge scratch, sized by the largest rank rmax.
   dFa_ = devAlloc(N * rmax);
   dFb_ = devAlloc(N * rmax);
   dL_ = devAlloc(nnd * rmax);

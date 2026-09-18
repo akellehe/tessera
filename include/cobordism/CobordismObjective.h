@@ -24,15 +24,14 @@ using ::tessera::spacetime::Spacetime;
 
 /// # ObjectiveTerms
 ///
-/// The COMPLETE, enumerable term list a scalar cobordism objective is the sum
-/// of. `CobordismObjective::total` is static over this record, so the collapse
-/// from a decomposition to the number the optimizer compares provably reads
-/// nothing else. Every member is a geometric or target quantity; the last is
-/// the one permitted state channel.
+/// The complete term list a scalar cobordism objective is the sum of.
+/// `CobordismObjective::total` is static over this record, so the collapse to
+/// the number the optimizer compares reads nothing else. Every member is a
+/// geometric or target quantity except the last, the one permitted state
+/// channel.
 ///
-/// Declared at namespace scope so an objective can be written without
-/// depending on `MultiCobordism`; `MultiCobordism::ObjectiveTerms` aliases this
-/// type, so every existing use of that name is unchanged.
+/// At namespace scope, so an objective can be written without depending on
+/// `MultiCobordism`, which aliases it as `MultiCobordism::ObjectiveTerms`.
 struct ObjectiveTerms {
   /// \f$\beta_R\|\nabla_zS_{\rm Regge}\|^2\f$ — 0 when the Einstein-Hilbert
   /// term is deselected.
@@ -40,71 +39,54 @@ struct ObjectiveTerms {
   /// \f$\eta_H\sum_k\|\nabla_zS_{{\rm Hodge},k}\|^2\f$ — joint stationarity.
   double hodgeStationarity = 0.0;
   /// \f$\eta_C\|\nabla_\varphi S_{\mathbb{C}^{*}}\|^2\f$ — stationarity of the
-  /// connection operator's entropy in the CONNECTION PHASE. The only term with
+  /// connection operator's entropy in the connection phase. The only term with
   /// a \f$\varphi\f$ gradient: every \f$ L_k \f$ is blind to \f$\varphi\f$, so
-  /// without this one \f$\varphi\f$ is a declared field that no update moves.
+  /// without it \f$\varphi\f$ is a declared field that no update moves.
   double connectionStationarity = 0.0;
   /// \f$\gamma r_U\f$ — the target-conditioned register residual.
   double registerResidual = 0.0;
   /// \f$r_U+\beta|S_{\rm Regge}(W^*)|\f$'s action magnitude.
   double actionMagnitude = 0.0;
-  /// \f$\beta_E E_{\rm carried}(\Gamma,g)\f$ — the ONE permitted state
+  /// \f$\beta_E E_{\rm carried}(\Gamma,g)\f$ — the one permitted state
   /// channel, exactly 0.0 outside the certificates-blind mean-field sub-mode.
   double carriedStateEnergy = 0.0;
 };
 
 /// # ObjectiveContext
 ///
-/// **The no-feedback firewall, restated for an injected objective.**
+/// The no-feedback firewall for an injected objective, on the input side.
 ///
-/// The guarantee this replaces was mechanical rather than conventional:
-/// `objectiveOf` was `static`, so it had no `this` and therefore no pointer
-/// through which to dereference a member where an analysis result could live.
-/// Injection reintroduces a `this` — an objective is an object and could in
-/// principle hold a node reference or cache reads across calls — so the
-/// guarantee has to be re-established on the INPUT side instead.
+/// Plain data: geometry, a region, that region's declared target states, and
+/// scalar configuration. No `MultiCobordism` reference, no pointer to one, and
+/// no `std::function`, since a bound callable would capture the node. An
+/// objective therefore cannot consult a component, fiber, transport, amplitude,
+/// colour, charge, flavour, exchange, spin certificate or verdict.
+/// `inputNames()` enumerates every field, so a test can assert the list.
 ///
-/// It is re-established by this type being PLAIN DATA. It carries geometry, a
-/// region, that region's declared target states, and scalar configuration.
-/// There is no `MultiCobordism` reference, no pointer to one, and — deliberately
-/// — no `std::function`, because a bound callable would capture the node and
-/// smuggle exactly the reachability the static function denied. An objective
-/// therefore cannot consult a component, fiber, transport, amplitude, colour,
-/// charge, flavour, exchange, spin certificate or verdict: not because it is
-/// written not to, but because it is handed nothing that leads there.
-/// `inputNames()` enumerates every field so a test asserts the list rather than
-/// trusting this comment.
-///
-/// Geometry access is intended and necessary — an objective must read the
-/// complex it scores. What is impossible is reaching the analysis products OF
-/// that geometry, all of which land in the checkpoint document and nowhere a
-/// context can see.
+/// Reading the complex is intended; reaching the analysis products of that
+/// geometry is not, and those live in the checkpoint document, where no context
+/// can see them.
 struct ObjectiveContext {
   /// The complex being scored.
   std::shared_ptr<Spacetime> spacetime;
 
   /// The region of `spacetime` this objective is scored over, as a vertex set.
-  /// EMPTY means the whole complex. An objective is always evaluated against a
-  /// region rather than implicitly against "the node", so several objectives —
-  /// one per pinned region, say — can coexist on one complex without any of
-  /// them assuming it is the only one.
+  /// Empty means the whole complex. Scoring is always against a region rather
+  /// than implicitly against "the node", so several objectives — one per pinned
+  /// region, say — can coexist on one complex.
   std::set<std::uint64_t> region;
 
   /// The edge coordinates this objective's sums run over, as indices into the
   /// complex's edge list.
   ///
-  /// ABSENT means every edge — the whole-cobordism scope, and the
-  /// single-objective run that stays bit-identical. A PRESENT but empty list
-  /// means score nothing, which is a real and different thing: a region whose
-  /// interior contains no edge, with the straddling edges declared out, scores
-  /// no coordinate at all. Collapsing the two would silently promote such a
-  /// region to scoring the entire complex.
+  /// Absent means every edge: the whole-cobordism scope. A present but empty
+  /// list means score nothing, which is different — a region whose interior
+  /// contains no edge, with the straddling edges declared out, scores no
+  /// coordinate at all. Collapsing the two would silently promote such a region
+  /// to the entire complex.
   ///
-  /// The ENGINE resolves this from the objective's declared `ObjectiveScope` —
-  /// which region, and whether the straddling edges count — so the declaration
-  /// is honoured rather than re-derived, and an objective never recomputes edge
-  /// membership from `region`. That is why the scope is a declaration the
-  /// engine reads and not a rule the engine applies by role.
+  /// The engine resolves this from the objective's declared `ObjectiveScope`, so
+  /// an objective never recomputes edge membership from `region`.
   std::optional<std::vector<std::size_t>> scoredEdges;
 
   /// The target states the region is scored against, for a target-conditioned
@@ -114,41 +96,30 @@ struct ObjectiveContext {
   /// The register degrees the objective is declared over.
   std::vector<int> registerDegrees;
 
-  /// The Laplacian degrees \f$k\f$ the Hodge entropy term is summed over.
+  /// The Laplacian degrees \f$k\f$ the Hodge entropy term is summed over. Each
+  /// entry selects which \f$L_k\f$ the entropy
+  /// \f$S_k=-\operatorname{Tr}(\rho_k\log\rho_k)\f$ is taken of.
   ///
-  /// **This is not a register concept and must not be read as one.** Each entry
-  /// selects which \f$L_k\f$ the entropy
-  /// \f$S_k=-\operatorname{Tr}(\rho_k\log\rho_k)\f$ is taken of, and nothing
-  /// else. `registerDegrees` answers an unrelated question — the degrees at
-  /// which a register is constructed, where a target component with no cycle to
-  /// occupy scores as full leakage — and the two lists are integers over the
-  /// same range without meaning the same thing.
+  /// This is not a register concept. `registerDegrees` answers an unrelated
+  /// question — the degrees at which a register is constructed, where a target
+  /// component with no cycle to occupy scores as full leakage — and this list
+  /// never reads it, neither as a default nor as a fallback.
   ///
-  /// This list NEVER reads `registerDegrees`, not as a default and not as a
-  /// fallback. Defaulting one to the other would reinstate at the level of
-  /// implementation exactly the coupling that keeping them apart exists to
-  /// remove, and would leave a reader unable to tell whether a shared value was
-  /// chosen or merely inherited.
-  ///
-  /// The default is \f$\{0\}\f$: the degree-zero Laplacian alone.
+  /// The default is \f$\{0\}\f$, the degree-zero Laplacian alone.
   std::vector<int> hodgeDegrees{0};
 
   /// The weight on each entry of `hodgeDegrees`, positionally and of the same
-  /// length.
+  /// length. An empty list means uniform, which is the default.
   ///
-  /// Uniform \f$1\f$ is the default, and deliberately so. The per-degree
-  /// gradient norms differ by more than an order of magnitude on a real
-  /// complex, so a uniform sum lets the lowest degree dominate the descent
-  /// direction while the higher ones appear in the objective without moving the
-  /// geometry much. That imbalance is a FACT about the operator rather than a
-  /// defect to be silently corrected: rebalancing an objective on a caller's
-  /// behalf would change what is being descended without saying so, and would
-  /// bake one complex's spread into every complex. A caller that wants the
-  /// degrees comparable declares that intent here.
+  /// The per-degree gradient norms differ by more than an order of magnitude on
+  /// a real complex, so a uniform sum lets the lowest degree dominate the
+  /// descent direction while the higher ones barely move the geometry. That is a
+  /// property of the operator, not something this class rebalances on a caller's
+  /// behalf; a caller that wants the degrees comparable declares it here.
   ///
-  /// Uniform weights are also what makes an explicitly-configured single-degree
-  /// run reproduce a pre-weights run exactly, since multiplying by \f$1\f$ is
-  /// exact in binary floating point. An EMPTY list means uniform.
+  /// Multiplying by \f$1\f$ is exact in binary floating point, so a
+  /// single-degree run with uniform weights is bit-identical to the unweighted
+  /// sum.
   std::vector<double> hodgeDegreeWeights;
 
   /// \f$\beta_R\f$, the Regge stationarity weight.
@@ -166,60 +137,54 @@ struct ObjectiveContext {
   double carriedStateEnergyWeight = 0.0;
   /// Whether the Einstein-Hilbert term is selected.
   bool einsteinHilbert = true;
-  /// Whether the node scores its blocks by FIBER residuals
+  /// Whether the node scores its blocks by fiber residuals
   /// (`MultiCobordism::useFiberResiduals`), whose stage-2 direction is the
-  /// analytic band-derivative ascent (#947) rather than a numerical
-  /// difference of \f$ r_U \f$ over every edge coordinate. An objective that
-  /// skips the numerical \f$ r_U \f$ direction under the Regge term for its
-  /// cost has no reason to skip the analytic one, and the residual is then
-  /// descended next to the bulk term instead of only gating the line search
-  /// (qubit cobordism spec R3, S4). False by default: every other path is
-  /// unchanged.
+  /// analytic band-derivative ascent rather than a numerical difference of
+  /// \f$ r_U \f$ over every edge coordinate. Under fiber residuals the residual
+  /// is descended alongside the bulk term instead of only gating the line
+  /// search. False by default.
   bool fiberResiduals = false;
   /// Which entropy the Hodge term reads: the complex operator or its
   /// phase-blind entrywise ablation.
   HodgeLaplacian::EntropyPhaseMode hodgeEntropyPhaseMode =
       HodgeLaplacian::EntropyPhaseMode::IncludeComplexPhase;
 
-  /// \f$r_U\f$ on this region, computed by the engine and passed as a NUMBER
-  /// rather than as a callable, so no node is reachable from here. Computed
-  /// only when the objective declares `needsRegisterResidual`; NaN otherwise,
-  /// never a silent zero.
+  /// \f$r_U\f$ on this region, computed by the engine and passed as a number
+  /// rather than as a callable, so no node is reachable from here. Computed only
+  /// when the objective declares `needsRegisterResidual`; NaN otherwise, never a
+  /// silent zero.
   double registerResidual = std::numeric_limits<double>::quiet_NaN();
   /// \f$E_{\rm carried}(\Gamma,g)\f$, likewise a precomputed number. Exactly
   /// zero where the weight is zero.
   double carriedStateEnergy = 0.0;
 
-  /// The names of every field above, in declaration order — the firewall list
-  /// a structural test asserts against, exactly as `objectiveTermNames` does
-  /// for the output side.
+  /// The names of every field above, in declaration order — the firewall list a
+  /// structural test asserts against, as `objectiveTermNames` does for the
+  /// output side.
   [[nodiscard]] static std::vector<std::string> inputNames();
 };
 
 /// # HodgeDegreeContribution
 ///
 /// One degree's share of the Hodge stationarity term, so a reader can tell
-/// WHICH degree the descent came from rather than only the total. The same
+/// which degree the descent came from rather than only the total — the same
 /// discipline `MultiCobordism::ObjectiveContribution` applies to bulk versus
-/// pinned-region objectives: a summed number that cannot be taken apart hides
-/// where it came from.
+/// pinned-region objectives.
 struct HodgeDegreeContribution {
   /// The Laplacian degree \f$k\f$.
   int degree = 0;
   /// The declared weight on this degree.
   double weight = 1.0;
-  /// \f$\|\nabla_zS_k\|^2\f$ over the edges in scope, UNWEIGHTED, so the raw
+  /// \f$\|\nabla_zS_k\|^2\f$ over the edges in scope, unweighted, so the raw
   /// spread across degrees is visible rather than folded into the weighting.
   double gradientNormSquared = 0.0;
   /// This degree's share of `ObjectiveTerms::hodgeStationarity`: the entropy
   /// weight times the degree weight times the norm above.
   ///
   /// Summing this member over the contributions reproduces the term to double
-  /// round-off rather than to the bit. The term applies the entropy weight ONCE
-  /// to the accumulated weighted norms — the order it has always been summed
-  /// in, and the order that keeps an explicitly-configured single-degree run
-  /// bit-identical — whereas each share here carries its own multiply.
-  /// Algebraically equal, numerically distinguishable in the last places.
+  /// round-off, not to the bit: the term applies the entropy weight once to the
+  /// accumulated weighted norms, whereas each share here carries its own
+  /// multiply.
   double contribution = 0.0;
 };
 
@@ -233,12 +198,12 @@ struct HodgeDegreeContribution {
 struct ObjectiveDirection {
   /// The ascent displacement. Stage 2 subtracts a scaled multiple of it.
   Eigen::VectorXcd ascent;
-  /// The ascent displacement in the CONNECTION PHASE \f$\varphi\f$, in the same
+  /// The ascent displacement in the connection phase \f$\varphi\f$, in the same
   /// edge order. Empty when the objective has no \f$\varphi\f$ dependence,
   /// which is the case for every functional of \f$ L_k \f$ alone. Stage 2
-  /// subtracts a scaled multiple of it from the stored phases, by the same line
-  /// search and the same step scale that moves \f$ z \f$ — one search over both
-  /// fields, not two competing ones.
+  /// subtracts a scaled multiple of it from the stored phases under the same
+  /// line search and step scale that moves \f$ z \f$ — one search over both
+  /// fields.
   Eigen::VectorXcd phaseAscent;
   /// The exact objective at the current point, when the direction's assembly
   /// already produced it.
@@ -263,15 +228,12 @@ struct ObjectiveDirectionContext {
 
 /// # RegionHandle
 ///
-/// A reference to a DECLARED pinned region. The whole point of the type is
-/// that a caller cannot fabricate one: the only non-empty handle comes from
-/// `MultiCobordism::regionHandle`, which looks the name up among the declared
-/// regions and throws by name if it is not there.
-///
-/// That is what makes a mis-spelling impossible rather than merely
-/// discouraged. A bare `std::string region` would let `"boundary"` and
-/// `"boundry"` both compile and one of them silently score nothing; a handle
-/// cannot be spelled at all, only obtained.
+/// A reference to a declared pinned region. The only non-empty handle comes
+/// from `MultiCobordism::regionHandle`, which looks the name up among the
+/// declared regions and throws by name if it is not there. A bare
+/// `std::string region` would let `"boundary"` and `"boundry"` both compile,
+/// one of them silently scoring nothing; a handle cannot be spelled, only
+/// obtained.
 class RegionHandle {
  public:
   /// The whole cobordism — the default, and what declaring nothing produces.
@@ -296,22 +258,15 @@ class RegionHandle {
 
 /// # ObjectiveScope
 ///
-/// What an objective DECLARES that it references: a pinned region, or — by
-/// declaring nothing — the whole cobordism. The engine honours the
-/// declaration; it does not infer a scope from an objective's role or decide
-/// one by convention.
+/// What an objective declares that it references: a pinned region, or — by
+/// declaring nothing, the default — the whole cobordism. The engine honours the
+/// declaration rather than inferring one from the objective's role.
 ///
-/// The default is the whole cobordism, which is the single-objective run that
-/// exists today and must stay bit-identical to it.
-///
-/// Scope is deliberately independent of whether the referenced region's
-/// coordinates are frozen. Pinning does two unrelated jobs — it NAMES a region
-/// so an objective can reference it, and it CONSTRAINS relaxation by zeroing a
-/// pinned edge's descent component before the line search — and neither
-/// justifies the other. A pinned edge does not vary, yet it is still scored,
-/// and the bulk objective scores the pinned interior along with everything
-/// else. An objective scoped to a region must not have to know or care whether
-/// that region's coordinates move.
+/// Scope is independent of whether the referenced region's coordinates are
+/// frozen. Pinning does two unrelated jobs: it names a region so an objective
+/// can reference it, and it constrains relaxation by zeroing a pinned edge's
+/// descent component before the line search. A pinned edge does not vary and is
+/// still scored, and the bulk objective scores the pinned interior too.
 struct ObjectiveScope {
   /// The region referenced. Default-constructed means the whole cobordism.
   /// Obtainable only from `MultiCobordism::regionHandle`, so it cannot name a
@@ -323,13 +278,11 @@ struct ObjectiveScope {
   /// than a separate mechanism, and meaningless for a whole-cobordism scope,
   /// which has no border to straddle.
   ///
-  /// A region-scoped objective will normally declare `false`, so the edges
-  /// tying its region to the bulk are scored by the bulk's objective and not
-  /// twice; a caller that wants them counted may say otherwise. The border is
-  /// the one the node already defines — `MultiCobordism::edgeIsPinned` holds
-  /// exactly when a SINGLE region contains both endpoints — so a straddling
-  /// edge is one with a single endpoint in the region. That predicate is the
-  /// definition; nothing here restates it.
+  /// A region-scoped objective will normally declare `false`, so the edges tying
+  /// its region to the bulk are scored by the bulk's objective and not twice.
+  /// `MultiCobordism::edgeIsPinned` holds exactly when a single region contains
+  /// both endpoints, so a straddling edge is one with a single endpoint in the
+  /// region.
   bool includesStraddlingEdges = true;
 
   /// Whether this scope is the whole cobordism, i.e. nothing was declared.
@@ -340,11 +293,8 @@ struct ObjectiveScope {
 
 /// # ObjectiveName
 ///
-/// The identifiers objectives are known by, as named constants rather than
-/// string literals repeated at each site. Every identifier is written once
-/// where the objective declares it and compared against these where a caller
-/// selects or asserts one; a typo in a literal would not fail to compile, it
-/// would silently fail to match.
+/// The identifiers objectives are known by, as named constants. A typo in a
+/// repeated string literal would not fail to compile; it would fail to match.
 class ObjectiveName {
  public:
   static constexpr const char *kJointStationarity = "joint_stationarity";
@@ -373,13 +323,12 @@ class ObjectiveTermName {
 ///
 /// The functional `MultiCobordism` descends, as an injected specification
 /// rather than a value of a closed enum. An implementation declares the terms
-/// it is the sum of, decomposes itself over a REGION of a complex, and supplies
-/// a stage-2 search direction. It knows nothing about the engine that drives
-/// it, and the engine knows nothing about which objective it holds.
+/// it is the sum of, decomposes itself over a region of a complex, and supplies
+/// a stage-2 search direction. It knows nothing about the engine that drives it,
+/// and the engine knows nothing about which objective it holds.
 ///
-/// An objective is scored against a region, never implicitly against a whole
-/// node, so more than one may coexist on a single complex — a pinned region
-/// carrying its own objective alongside the node's, for instance.
+/// Scoring is against a region, never implicitly against a whole node, so more
+/// than one objective may coexist on a single complex.
 class CobordismObjective {
  public:
   virtual ~CobordismObjective() = default;
@@ -402,11 +351,9 @@ class CobordismObjective {
   /// This objective's Hodge stationarity term broken down by degree, or an
   /// empty list for an objective that has no such term.
   ///
-  /// Reported separately from `terms` because `ObjectiveTerms` is a fixed
-  /// record of scalars that `total` is static over — the property that makes
-  /// the collapse to the optimizer's number provably depend on nothing else.
-  /// A per-degree breakdown is a decomposition OF one of those scalars rather
-  /// than a new term, so it is read alongside the record and never added to it.
+  /// Reported separately from `terms` because `ObjectiveTerms` is a fixed record
+  /// of scalars that `total` is static over: a per-degree breakdown decomposes
+  /// one of those scalars rather than adding a term.
   [[nodiscard]] virtual std::vector<HodgeDegreeContribution>
   hodgeDegreeContributions(const ObjectiveContext &) const {
     return {};
@@ -421,9 +368,8 @@ class CobordismObjective {
   /// nothing — the whole cobordism. The engine honours the declaration rather
   /// than inferring one from the objective's role.
   ///
-  /// Scope is a property of the INSTANCE, not of the class, so an existing
-  /// objective can be pointed at a region without writing a new type: the same
-  /// functional is a perfectly good thing to hold a boundary to. An
+  /// Scope is a property of the instance, not of the class, so an existing
+  /// objective can be pointed at a region without writing a new type. An
   /// implementation may still override this where its scope is intrinsic.
   [[nodiscard]] virtual ObjectiveScope scope() const { return scope_; }
 
@@ -437,75 +383,71 @@ class CobordismObjective {
   /// pays for a target-conditioned quantity it does not use.
   [[nodiscard]] virtual bool needsRegisterResidual() const { return false; }
 
-  /// Whether a candidate move's objective change may be scored by a LOCALIZED
+  /// Whether a candidate move's objective change may be scored by a localized
   /// exact delta instead of by re-evaluating the whole functional.
   ///
   /// An objective built from global spectra or action magnitudes changes
-  /// everywhere when one cell changes, so its true scalar difference is the
-  /// only honest score and the engine pays for a full evaluation per candidate.
-  /// An objective assembled from per-cell contributions can instead be
-  /// differenced exactly over the cells a move touches. Declaring `false` is
-  /// always CORRECT and merely more expensive, which is why it is the default:
-  /// an objective opts in only where its decomposition genuinely supports the
-  /// cheaper route.
+  /// everywhere when one cell changes, so only its true scalar difference is
+  /// correct and the engine pays for a full evaluation per candidate. An
+  /// objective assembled from per-cell contributions can instead be differenced
+  /// exactly over the cells a move touches. `false` is always correct and merely
+  /// more expensive, hence the default.
   [[nodiscard]] virtual bool supportsLocalizedDelta() const { return false; }
 
-  /// The lowest register degree over which this objective is DECLARED. The
-  /// engine refuses to install it on a node carrying a lower degree, so a
-  /// declared domain restriction travels with the objective that declares it
-  /// rather than living in the engine as a special case.
-  ///
-  /// Zero — no restriction — is the default.
+  /// The lowest register degree over which this objective is declared. The
+  /// engine refuses to install it on a node carrying a lower degree, so the
+  /// restriction travels with the objective rather than living in the engine as
+  /// a special case. Zero — no restriction — is the default.
   [[nodiscard]] virtual int minimumRegisterDegree() const { return 0; }
 
-  /// The weight this objective puts on a NUMERICALLY differentiated
-  /// register-residual direction, given its configuration; zero for an
-  /// objective that supplies an analytic direction for every term it has.
+  /// The weight this objective puts on a numerically differentiated
+  /// register-residual direction, given its configuration; zero for an objective
+  /// that supplies an analytic direction for every term it has.
   ///
-  /// Returned as a weight rather than performed here on purpose: differencing
-  /// a scalar over edge coordinates is engine machinery, and handing an
-  /// objective a callable that could do it would mean handing it a closure over
-  /// the node. The engine applies this weight to its own differentiation of
-  /// \f$r_U\f$.
+  /// Returned as a weight rather than applied here: handing an objective a
+  /// callable that could difference a scalar over edge coordinates would mean
+  /// handing it a closure over the node. The engine applies this weight to its
+  /// own differentiation of \f$r_U\f$.
   [[nodiscard]] virtual double numericalRegisterResidualWeight(
       const ObjectiveContext &) const {
     return 0.0;
   }
 
-  /// The scalar: the plain sum of the declared terms. STATIC by design — the
-  /// collapse from the decomposition to the number the optimizer compares has
-  /// no `this` and so cannot reach any state at all.
+  /// The scalar: the plain sum of the declared terms. Static, so the collapse to
+  /// the optimizer's number has no `this` and cannot reach any state.
   [[nodiscard]] static double total(const ObjectiveTerms &terms);
 
-  /// The declaration order of `ObjectiveTerms`' members. Every objective
-  /// records into the same enumerable slots, so a record stays comparable
-  /// across objectives and a structural test can assert the list.
+  /// The declaration order of `ObjectiveTerms`' members. Every objective records
+  /// into the same slots, so records stay comparable across objectives and a
+  /// structural test can assert the list.
   [[nodiscard]] static std::vector<std::string> declaredTermNames();
 
  private:
-  /// The declared scope. Default-constructed is the whole cobordism, so an
-  /// objective that never declares one behaves exactly as it did before scopes
-  /// existed.
+  /// The declared scope. Default-constructed is the whole cobordism.
   ObjectiveScope scope_;
 };
 
 /// # JointStationarityObjective
 ///
+/// Reference: Regge and Williams, "Discrete structures in gravity",
+/// arXiv:gr-qc/0012035
+/// Reference: De Domenico and Biamonte, "Spectral entropies as
+/// information-theoretic tools for complex network comparison",
+/// arXiv:1609.01214
+///
 /// \f$\beta_R\|\nabla_zS_{\rm Regge}\|^2+\eta_H\sum_k\|\nabla_zS_{{\rm
-/// Hodge},k}\|^2\f$ — both the Regge action and the Hodge entropy stationary
-/// at the same metric. The objective the whitepaper describes, and the only
-/// one of the three built-ins that is not target-conditioned.
-/// The Hodge sum runs over `ObjectiveContext::hodgeDegrees`, which the engine
-/// resolves independently of the register degrees. Scoring more degrees makes
-/// the objective see more of the SPECTRUM; it does not make it see more of the
-/// TOPOLOGY. Exact zero modes are omitted from the entropy and from its
-/// derivative, so each degree's term is taken on the fixed-rank stratum the
-/// current topology selects and is blind to a change in its own kernel
-/// dimension. Adding degrees therefore adds one such blind spot per degree —
-/// one per Betti number — and a reader must not infer that a wider degree list
-/// makes the geometric half of the objective topology-aware. Only stage-1 move
-/// acceptance sees a topology change, by re-evaluating the functional after the
-/// move.
+/// Hodge},k}\|^2\f$ — the Regge action and the Hodge spectral entropy
+/// stationary at the same metric. The only one of the three built-ins that is
+/// not target-conditioned.
+///
+/// The Hodge sum runs over `ObjectiveContext::hodgeDegrees`, resolved
+/// independently of the register degrees. Scoring more degrees shows more of the
+/// spectrum, not more of the topology: exact zero modes are omitted from the
+/// entropy and from its derivative, so each degree's term sits on the fixed-rank
+/// stratum the current topology selects and is blind to a change in its own
+/// kernel dimension — one blind spot per degree, one per Betti number. Only
+/// stage-1 move acceptance sees a topology change, by re-evaluating the
+/// functional after the move.
 class JointStationarityObjective final : public CobordismObjective {
  public:
   [[nodiscard]] std::string name() const override;
@@ -517,11 +459,9 @@ class JointStationarityObjective final : public CobordismObjective {
   [[nodiscard]] std::vector<HodgeDegreeContribution> hodgeDegreeContributions(
       const ObjectiveContext &context) const override;
   [[nodiscard]] bool isTargetConditioned() const override { return false; }
-  /// A DECLARED domain restriction, not a capability limit. Since the
-  /// degree-zero \f$L_0=d_1W_1^{-1}d_1^{\mathsf T}\f$ is holomorphic in
-  /// \f$z\f$ and its entropy gradient is exact, the gradient exists at degree
-  /// zero too; widening this objective's declared domain to reach it is a
-  /// separate decision about the objective, taken deliberately or not at all.
+  /// A declared domain restriction, not a capability limit: the degree-zero
+  /// \f$L_0=d_1W_1^{-1}d_1^{\mathsf T}\f$ is holomorphic in \f$z\f$ and its
+  /// entropy gradient is exact, so the gradient exists at degree zero too.
   [[nodiscard]] int minimumRegisterDegree() const override { return 1; }
 };
 
@@ -550,8 +490,8 @@ class LegacyObjective final : public CobordismObjective {
 
 /// # MediatedCorrespondenceObjective
 ///
-/// \f$r_U+\beta|S_{\rm Regge}(W^*)|\f$ — the historical operator-cobordism
-/// experiment. Target-conditioned through \f$r_U\f$.
+/// \f$r_U+\beta|S_{\rm Regge}(W^*)|\f$ — the operator-cobordism experiment.
+/// Target-conditioned through \f$r_U\f$.
 class MediatedCorrespondenceObjective final : public CobordismObjective {
  public:
   [[nodiscard]] std::string name() const override;

@@ -19,7 +19,7 @@ import tessera as T
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import qubit as qa
 
 MC = T.cobordism.MultiCobordism
 
@@ -117,7 +117,7 @@ def test_verify_subcommand_passes_on_the_seeded_collar(tmp_path):
     import json
     import subprocess
 
-    script = os.path.join(os.path.dirname(qa.__file__), "qubit_animation.py")
+    script = qa.__file__
     record = tmp_path / "verify.json"
     result = subprocess.run(
         [sys.executable, script, "verify", "--collar-twist", "swap",

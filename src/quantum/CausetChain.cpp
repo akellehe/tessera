@@ -1,5 +1,5 @@
 // Implementation of the Causet adapter — see
-// include/quantum/CausetChain.hpp for the design.
+// include/quantum/CausetChain.hpp for the chain layout and conventions.
 
 #include "quantum/CausetChain.hpp"
 
@@ -35,9 +35,8 @@ CausetChain Causet::chainFrom(tessera::spacetime::Spacetime const& st) {
     if (!vlist) return out;
 
     // ── Group live vertices by integer time slice. std::map keeps the
-    // slice index in ascending order, which is exactly what the chain
-    // layout needs — earliest slice → site 0, next slice → next site
-    // block, and so on.
+    // slice index ascending, which is what the chain layout needs:
+    // earliest slice → site 0, next slice → the next block of sites.
     std::map<int, std::vector<std::uint64_t>> byTime;
     for (auto* v : vlist->liveVector()) {
         if (v == nullptr) continue;
@@ -104,8 +103,9 @@ CausetChain Causet::chainFrom(tessera::spacetime::Spacetime const& st) {
             out.hoppingPairs.emplace_back(i, j);
         }
     }
-    // Dedupe — a CDT mesh can produce parallel edges between the same
-    // vertex pair via different simplices.
+    // Deduplicate: a causal dynamical triangulation (CDT) mesh can
+    // produce parallel edges between the same vertex pair through
+    // different simplices.
     std::sort(out.hoppingPairs.begin(), out.hoppingPairs.end());
     out.hoppingPairs.erase(
         std::unique(out.hoppingPairs.begin(), out.hoppingPairs.end()),

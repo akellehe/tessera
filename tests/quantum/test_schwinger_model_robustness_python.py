@@ -279,23 +279,3 @@ class TestDocstrings(unittest.TestCase):
 class TestSchwingerExampleScript(unittest.TestCase):
     """Smoke-test the example script — guards against import / API drift."""
 
-    def test_script_runs_to_completion(self) -> None:
-        import subprocess
-        import sys
-        from pathlib import Path
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        script = repo_root / "examples" / "quantum" / "run_schwinger.py"
-        self.assertTrue(script.exists(), f"missing script: {script}")
-        result = subprocess.run(
-            [sys.executable, str(script),
-             "--N", "6", "--max-bond-dim", "16", "--n-sweeps", "6"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        self.assertEqual(
-            result.returncode, 0,
-            msg=f"script failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
-        )
-        self.assertIn("E_total", result.stdout)
-        self.assertIn("bondDim", result.stdout)

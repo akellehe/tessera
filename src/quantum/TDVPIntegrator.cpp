@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 //
-// Two-site real-time TDVP integrator. See include/quantum/TDVPIntegrator.hpp
-// for the algorithm narrative and the licensing rationale.
+// Two-site real-time integrator for the time-dependent variational
+// principle. See include/quantum/TDVPIntegrator.hpp for the algorithm
+// and the licensing rationale.
 
 #include "quantum/TDVPIntegrator.hpp"
 
@@ -21,13 +22,12 @@ TDVPIntegrator::evolve(itensor::MPS& psi,
                        itensor::Args args) {
     using namespace itensor;
 
-    // Local effective Hamiltonian (the projected MPO at the current bond),
-    // built from ITensor core. This is the same object the add-on's public
-    // tdvp(MPS&, MPO const&, ...) overload constructed.
+    // Local effective Hamiltonian: the MPO projected onto the current
+    // bond, built from ITensor core.
     LocalMPO PH(H, args);
 
-    // Match the add-on's argument defaulting so behaviour is bit-for-bit
-    // comparable on the configuration tessera uses.
+    // Degenerate singular values are kept together during svdBond unless
+    // the caller says otherwise.
     args.add("RespectDegenerate", args.getBool("RespectDegenerate", true));
 
     const bool silent = args.getBool("Silent", false);
@@ -69,8 +69,9 @@ TDVPIntegrator::evolve(itensor::MPS& psi,
         ITensor phi0, phi1;
         Spectrum spec;
 
-        // One full TDVP sweep = forward half-sweep (ha==1, bonds 1..N-1) then
-        // backward half-sweep (ha==2, bonds N-1..1), driven by sweepnext.
+        // One full TDVP sweep is a forward half-sweep (ha == 1, bonds
+        // 1..N-1) then a backward half-sweep (ha == 2, bonds N-1..1),
+        // driven by sweepnext.
         for (int b = 1, ha = 1; ha <= 2; sweepnext(b, ha, N, {"NumCenter=", numCenter})) {
             PH.numCenter(numCenter);
             PH.position(b, psi);

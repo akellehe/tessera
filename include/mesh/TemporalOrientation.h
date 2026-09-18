@@ -8,12 +8,11 @@
 #ifndef TESSERA_TEMPORALORIENTATION_H
 #define TESSERA_TEMPORALORIENTATION_H
 
-// Note: an old `#include <pybind11/pybind11.h>` was removed here. It was
-// unreferenced inside the file and was dragging Python.h into every TU
-// of the core mesh subsystem — including tessera_core, which then forced
-// every consumer (test executables, tessera_quantum) to link Python. None
-// of mesh / spacetime / observables actually use pybind11 — that's all
-// in src/bindings.cpp.
+// This header does not include pybind11 on purpose: that would pull Python.h
+// into every translation unit of the core mesh subsystem, including
+// tessera_core, and force every consumer (test executables, tessera_quantum)
+// to link Python. mesh, spacetime and observables use no pybind11; the
+// bindings translation unit holds all of it.
 
 #include <algorithm>
 #include <memory>
@@ -34,9 +33,9 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-///
-///
-/// @param timeOrientation
+/// Where a simplex sits relative to the two time slices it spans: FUTURE when more of
+/// its vertices lie on the later slice, PRESENT when more lie on the earlier one,
+/// UNKNOWN when the counts are equal.
 enum class TimeOrientation : uint8_t {
   FUTURE = 0,
   PRESENT = 1,
@@ -45,17 +44,15 @@ enum class TimeOrientation : uint8_t {
 
 class TemporalOrientation {
   public:
+    /// The temporal orientation of a simplex is how many of its vertices lie on the
+    /// initial time slice and how many on the final one. It matters for Lorentzian
+    /// causal dynamical triangulation (CDT) complexes, which admit only the
+    /// orientations that progress forward in time and share faces without gaps.
     ///
-    /// The orientation of a simplex is determined by how many vertices lie on the initial and final time slice for the
-    /// simplex. The orientation is largely only relevant for Lorentzian/CDT complexes where causality is preserved. Those
-    /// complexes restrict to allowed orientations that ensure progression forward in time and "fit together" (so they share
-    /// faces without gaps in the complex).
+    /// Every d-simplex splits its vertices across two adjacent slices t and t+1, so the
+    /// split is \f$ (n, d + 1 - n) \f$.
     ///
-    /// The convention was established in Ambjorn-Loll's "Causal Dynamical Triangulations" paper from 1998-2001. Every
-    /// d-simplex must have its vertices split across two adjacent time slices, t and t+1. That means every simplex has
-    /// a split
-    ///
-    /// \f$ (n, d + 1 - n) \f$
+    /// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267
     ///
     /// @param ti_ The number of vertices on the initial time slice.
     /// @param tf_ The number of vertices on the final time slice.

@@ -18,35 +18,36 @@ namespace tessera::cobordism {
 ///
 /// The eigendecomposition of a Hodge Laplacian \f$ L_k \f$ as a value object:
 /// the eigenvalues paired with their eigenvectors-as-`Cochain`s, in matching
-/// order. Replaces the old `(flat evals, flat M\times M evecs)` pair so the
-/// eigenvector indexing carries its degree and \f$ k \f$-simplex ordering.
+/// order, so the eigenvector indexing carries its degree and
+/// \f$ k \f$-simplex ordering.
 ///
-/// ## Representation (covers both regimes)
+/// Reference: Lim, "Hodge Laplacians on graphs", arXiv:1507.05379
+///
+/// ## Representation
 ///
 /// Eigenvalues are stored as a single complex vector (`Eigen::VectorXcd`),
-/// the cleanest representation that covers BOTH cases uniformly:
+/// which covers both regimes uniformly:
 ///
-///  - **Hermitian** (`isHermitian() == true`): the self-adjoint U(1)
-///    connection graph Laplacian (`HodgeLaplacian::connectionSpectrum`) and any
-///    other genuinely self-adjoint producer. The eigenvalues are mathematically
-///    real (their stored imaginary parts are zero) and **ascending**.
+///  - **Hermitian** (`isHermitian() == true`): self-adjoint producers such as
+///    the U(1) connection graph Laplacian. The eigenvalues are real (stored
+///    imaginary parts zero) and ascending.
 ///  - **Lorentzian** (`isHermitian() == false`): the signed-weight, generally
 ///    non-self-adjoint d'Alembertian. The eigenvalues may be negative or come in
 ///    complex-conjugate pairs, sorted ascending by \f$ (\mathrm{Re},\mathrm{Im}) \f$.
 ///
 /// `eigenvalues()[i]` is the eigenvalue of `eigenvectors()[i]`. `harmonics(tol)`
 /// is the kernel subset \f$ \{v : |\lambda_v| < \text{tol}\} = \ker L_k \f$ as
-/// `Cochain`s (a basis for \f$ H_k \f$ in the Hermitian case; the small-\f$ |\lambda| \f$
-/// near-kernel pseudo-Hodge subset in the Lorentzian case).
+/// `Cochain`s: a basis for \f$ H_k \f$ in the Hermitian case, the
+/// small-\f$ |\lambda| \f$ near-kernel subset in the Lorentzian case.
 class Spectrum {
   public:
     /// The empty spectrum (no modes).
     Spectrum() = default;
 
     /// `eigenvalues[i]` pairs with `eigenvectors[i]`; `hermitian` records whether
-    /// the eigenvalues are guaranteed real & ascending (the metric/self-adjoint
-    /// regime) vs. the indefinite Lorentzian regime. @throws std::invalid_argument
-    /// if the eigenvalue and eigenvector counts differ.
+    /// the eigenvalues are real and ascending (the self-adjoint regime) rather
+    /// than indefinite Lorentzian. @throws std::invalid_argument if the
+    /// eigenvalue and eigenvector counts differ.
     Spectrum(Eigen::VectorXcd eigenvalues, std::vector<Cochain> eigenvectors,
              bool hermitian);
 
@@ -69,8 +70,8 @@ class Spectrum {
     /// The number of modes (eigenvalues = eigenvectors).
     [[nodiscard]] std::size_t size() const noexcept { return eigenvectors_.size(); }
 
-    /// Whether the eigenvalues are guaranteed real & ascending (the
-    /// metric/self-adjoint regime) rather than the indefinite Lorentzian one.
+    /// Whether the eigenvalues are real and ascending (the self-adjoint regime)
+    /// rather than indefinite Lorentzian.
     [[nodiscard]] bool isHermitian() const noexcept { return hermitian_; }
 
     /// The \f$ i \f$-th eigenvalue. @throws std::out_of_range if `i >= size()`.

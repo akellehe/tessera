@@ -4,11 +4,10 @@
 // downstream observable (e.g. ``Spacetime::getSpectralDimensionOnSkeleton``,
 // ``Spacetime::skeletonGraph``).
 //
-// The interface intentionally has only ``accept(simplex)`` — no side
-// effects, no shared state. Filters are passed by const reference so
-// callers can compose them inline without ownership concerns. Stateful or
-// configurable filters are free to add members; the contract is just the
-// boolean predicate plus a printable name for JSON / logging.
+// The interface is just ``accept(simplex)``: no side effects, no shared state.
+// Filters are passed by const reference, so callers compose them inline without
+// ownership concerns. A stateful or configurable filter may add members; the
+// contract is the boolean predicate plus a printable name for JSON and logging.
 
 #pragma once
 
@@ -32,13 +31,12 @@ using namespace ::tessera::quantum;
 /// Boolean predicate over top simplices. ``accept(s)`` returning false
 /// means: do not include ``s`` in the downstream observable.
 ///
-/// Default for holographic-dual measurements is :class:`AllSimplexFilter`,
-/// which lets every registered top simplex through. The codebase reads MI
-/// as a quantum-entanglement correlator that need not respect a positive-
-/// volume metric (spacelike-separated subsystems can have non-zero MI), so
-/// the default does not filter by metric validity. Use
-/// :class:`PositiveGramDeterminantFilter` when you want to restrict the
-/// measurement to metrically valid Euclidean cells.
+/// The default for holographic-dual measurements is :class:`AllSimplexFilter`, which
+/// lets every registered top simplex through. Mutual information (MI) is read here as
+/// a quantum-entanglement correlator that need not respect a positive-volume metric
+/// (spacelike-separated subsystems can have non-zero MI), so the default does not
+/// filter on metric validity. Use :class:`PositiveGramDeterminantFilter` to restrict a
+/// measurement to non-degenerate cells.
 class SimplexFilter {
 public:
     virtual ~SimplexFilter() = default;
@@ -52,13 +50,12 @@ public:
     [[nodiscard]] virtual std::string name() const = 0;
 };
 
-/// Accepts every simplex. The default filter for the holographic dual
-/// measurement.
+/// Accepts every simplex. The default filter for the holographic dual measurement.
 ///
-/// Registration via :func:`Spacetime::createSimplex` already implies the
-/// simplex is combinatorially constructable (its ``k + 1`` vertices form a
-/// complete subgraph in the edge set — "constructable by coning"), so
-/// this filter intentionally ignores edge-length geometry.
+/// Registration via :func:`Spacetime::createSimplex` already implies the simplex is
+/// combinatorially constructable (its ``k + 1`` vertices form a complete subgraph in
+/// the edge set, i.e. constructable by coning), so this filter ignores edge-length
+/// geometry.
 class AllSimplexFilter : public SimplexFilter {
 public:
     [[nodiscard]] bool accept(SimplexPtr const&) const override {
@@ -69,13 +66,14 @@ public:
     }
 };
 
-/// Accepts simplices whose Gram matrix (from edge lengths via
-/// :func:`Simplex::gramMatrix`) has positive determinant — i.e. metrically
-/// valid (non-degenerate, non-collapsed) Euclidean cells.
+/// Accepts simplices whose Gram matrix (built from edge lengths by
+/// :func:`Simplex::gramMatrix`) has non-zero determinant, i.e. non-degenerate,
+/// non-collapsed cells. The test is non-degeneracy rather than positive-definiteness:
+/// on a Lorentzian complex the determinant is signed and may be complex, so an
+/// ordering comparison has no meaning.
 ///
-/// Implementation reuses :func:`Simplex::determinant` on the flat
-/// row-major Gram matrix. Simplices with fewer than 2 vertices, or with
-/// any non-finite edge lengths, are rejected.
+/// Uses :func:`Simplex::determinant` on the flat row-major Gram matrix. Simplices with
+/// fewer than 2 vertices, or with any non-finite edge length, are rejected.
 class PositiveGramDeterminantFilter : public SimplexFilter {
 public:
     [[nodiscard]] bool accept(SimplexPtr const& simplex) const override;

@@ -26,10 +26,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 
-sys.path.insert(0, str(REPO / "examples" / "cobordism"))
-
-import emergence_animation as ea  # noqa: E402
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import emergence as ea
+from tessera.drivers import qubit as qa
 
 DRIVERS = (
     pytest.param(ea, id="emergence"),

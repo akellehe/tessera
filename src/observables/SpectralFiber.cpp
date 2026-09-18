@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
+/// \file
+/// Extraction and tracking of isolated spectral bands of the
+/// component-restricted Hodge Laplacian, with their frames, projectors and
+/// certificates.
+/// Reference: Lim, "Hodge Laplacians on graphs", arXiv:1507.05379
+
 #include "observables/SpectralFiber.h"
 
 #include <algorithm>
@@ -47,12 +53,11 @@ namespace {
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
-// Schema 2 (#808) adds the separately named acceptance quantities:
-// `nearest_discarded_separation`, `localization_support_fraction`,
-// `localization_excess`, `projector_norm` (schema 1's `condition_number`),
-// and `frame_condition_number`.  Schema 1 stays READABLE: its projector
-// norm is carried over verbatim and every quantity it never measured reads
-// back UNKNOWN — NaN, never zero.
+// Schema 2 carries the acceptance quantities `nearest_discarded_separation`,
+// `localization_support_fraction`, `localization_excess`, `projector_norm`
+// (named `condition_number` in schema 1) and `frame_condition_number`.
+// Schema 1 remains readable: its projector norm is carried over verbatim and
+// quantities it never measured read back as NaN, never zero.
 constexpr int kSchemaVersion = 2;
 constexpr int kOldestReadableSchema = 1;
 
@@ -122,8 +127,8 @@ CertificateDomain domainFromName(const std::string &name) {
   throw std::invalid_argument("SpectralFiber: unknown domain '" + name + "'");
 }
 
-// A double leaf that older schemas may not carry: absent = UNKNOWN (NaN),
-// never zero.
+// A double leaf that older schemas may not carry: absent reads back as NaN
+// (unknown), never zero.
 double optionalDouble(const Record::Map &m, const char *key) {
   const auto it = m.find(key);
   return it == m.end() ? kNaN : it->second.asDouble();
@@ -339,11 +344,11 @@ double productSpectralNorm(const Eigen::MatrixXcd &A,
   return std::sqrt(std::max(0.0, best));
 }
 
-// Riesz condition number of one FRAME in the |W| metric:
-// sqrt(lambda_max / lambda_min) of X^dagger |W| X.  Exactly 1 for a
+// Riesz condition number of one frame in the |W| metric:
+// sqrt(lambda_max / lambda_min) of X^dagger |W| X. Exactly 1 for a
 // |W|-orthonormal frame (the self-adjoint path), +infinity for a
-// |W|-degenerate one, NaN when there is no frame to condition.  A property
-// of the frame, not of its range: an in-band basis change moves it.
+// |W|-degenerate one, NaN when there is no frame to condition. A property of
+// the frame, not of its range: an in-band basis change moves it.
 double frameCondition(const Eigen::MatrixXcd &X, const Eigen::VectorXcd &W) {
   if (X.rows() == 0 || X.cols() == 0) return kNaN;
   Eigen::VectorXcd absW(X.rows());
@@ -422,7 +427,7 @@ SpectralFiber::SpectralFiber(std::vector<std::vector<std::uint64_t>> cells,
 Eigen::MatrixXcd SpectralFiber::projector() const {
   if (right_.rows() == 0 || right_.cols() == 0)
     return Eigen::MatrixXcd::Zero(right_.rows(), right_.rows());
-  // The chain-level pencil regime pairs BILINEARLY: the Riesz projector is
+  // The chain-level pencil regime pairs bilinearly: the Riesz projector is
   // Phi Phi~^T (no conjugate, no diagonal metric); the left frame stored is
   // Phi~ itself and the weight diagonal is the identity placeholder.
   if (certificate_.certificate.regime() ==
@@ -629,10 +634,10 @@ SpectralFiberTracker::assembleRestricted(
                                                   op.support.end());
 
   if (degree == 0) {
-    // Induced-subgraph Hermitian U(1) CONNECTION Laplacian, under exactly
+    // Induced-subgraph Hermitian U(1) connection Laplacian, in
     // HodgeLaplacian::connectionLaplacian's conventions: A_ij = sum l^2
     // e^{i phase} (stored source->target carries +phase), D_ii = sum |l^2|,
-    // L = D - A. NOT the Hodge laplacian(0) = d_1 W_1^-1 d_1^T (#805): a
+    // L = D - A. This is not the Hodge laplacian(0) = d_1 W_1^-1 d_1^T: a
     // degree-0 spectral band tracks Aharonov-Bohm structure, which only the
     // connection operator carries.
     std::vector<std::uint64_t> ids;
@@ -660,7 +665,7 @@ SpectralFiberTracker::assembleRestricted(
       if (is == index.end() || it == index.end()) continue;
       if (is->second == it->second) continue;  // no self-loops
       const cd w = e->getLength() * e->getLength();
-      // The reverse orientation carries the INVERSE link e^{-i*phase}, never its
+      // The reverse orientation carries the inverse link e^{-i*phase}, not its
       // conjugate; the two agree only for real phase. Mirrors
       // HodgeLaplacian::assemble, the operator this reproduces.
       const cd phase = e->getPhase();
@@ -674,12 +679,12 @@ SpectralFiberTracker::assembleRestricted(
     const double norm = op.L.norm();
     const double hermDefect = (op.L - op.L.adjoint()).norm();
     if (hermDefect <= 1e-12 * std::max(1.0, norm)) {
-      // PSD by Gershgorin, and the derivation holds for every complex/signed
-      // edge weight: the diagonal is sum_e |l^2_e| over the SAME induced edge
-      // set the off-diagonals sum over, and |sum_e z_e e^{i theta}| <=
-      // sum_e |z_e|, so the operator is Hermitian and diagonally dominant with
-      // a non-negative diagonal. This is a property of the CONNECTION operator
-      // only; it does not transfer to the Hodge L_0 (#805).
+      // Positive semidefinite by Gershgorin, for every complex or signed edge
+      // weight: the diagonal is sum_e |l^2_e| over the same induced edge set
+      // the off-diagonals sum over, and |sum_e z_e e^{i theta}| <= sum_e |z_e|,
+      // so the operator is Hermitian and diagonally dominant with a
+      // non-negative diagonal. This holds for the connection operator only; it
+      // does not transfer to the Hodge L_0.
       op.positive = true;
       op.regime = CertificateRegime::PositiveSemidefinite;
       op.S = op.L.sparseView();
@@ -690,10 +695,10 @@ SpectralFiberTracker::assembleRestricted(
     return op;
   }
   if (metricSource_ == cobordism::HodgeLaplacian::MetricSource::WhitneyPencil) {
-    // The chain-level Whitney pencil of the INDUCED SUBCOMPLEX on the support:
-    // its top cells are the spacetime's top simplices with every vertex in
-    // the support, in the reference (ascending id) orientation; squared
-    // lengths and links are read from the spacetime's edges.
+    // The chain-level Whitney pencil of the induced subcomplex on the support:
+    // its top cells are the spacetime's top simplices with every vertex in the
+    // support, in the reference (ascending id) orientation; squared lengths and
+    // links are read from the spacetime's edges.
     std::size_t topSize = 0;
     for (const auto &sp : st_->getSimplices())
       if (sp != nullptr) topSize = std::max(topSize, static_cast<std::size_t>(sp->size()));
@@ -916,10 +921,10 @@ SpectralFiberTracker::assembleRestricted(
 // solve paths
 // ---------------------------------------------------------------------------
 
-/// One solve path's output, in cochain coordinates: eigen-paired right
-/// vectors Phi, Euclidean left vectors Y (Y^dagger Phi ~ I on the covered
-/// pairs), (Re, Im)-sorted eigenvalues, per-pair ABSOLUTE residual norms,
-/// and the optional truncation shield (the first uncovered Ritz value).
+/// One solve path's output, in cochain coordinates: eigen-paired right vectors
+/// Phi, Euclidean left vectors Y (Y^dagger Phi ~ I on the covered pairs),
+/// (Re, Im)-sorted eigenvalues, per-pair absolute residual norms, and the
+/// optional truncation shield (the first uncovered Ritz value).
 struct SpectralFiberTracker::SolveOutput {
   Eigen::MatrixXcd right{};
   Eigen::MatrixXcd left{};
@@ -1003,8 +1008,8 @@ void SpectralFiberTracker::solveSparseSelfAdjoint(const RestrictedOperator &op,
                               static_cast<int>(n));
 
   // Deterministic shift-invert block subspace iteration: factor S + sigma I
-  // once (S is PSD in this regime, so the shift keeps it positive definite),
-  // amplify the lowest eigenspace, Rayleigh-Ritz on S.
+  // once (S is positive semidefinite here, so the shift keeps it positive
+  // definite), amplify the lowest eigenspace, Rayleigh-Ritz on S.
   const double meanEig =
       n > 0 ? std::abs(Eigen::VectorXcd(op.S.diagonal()).sum().real()) /
                   static_cast<double>(n)
@@ -1053,7 +1058,7 @@ void SpectralFiberTracker::solveSparseSelfAdjoint(const RestrictedOperator &op,
 
   // Truncation-safe coverage: cover the first c <= m pairs where a certified
   // relative gap separates the covered block from the first uncovered Ritz
-  // value — a band is never split silently at the truncation edge.
+  // value, so a band is not split at the truncation edge.
   int covered = static_cast<int>(n);
   double shield = kNaN;
   bool truncated = false;
@@ -1192,8 +1197,8 @@ void SpectralFiberTracker::solvePencilBands(const RestrictedOperator &op,
   // Dense eigenvalues of h_k(s,U) locate the bands (the gap rule of
   // SpectralFiberConfig, sorted by (Re, Im)); every band is then the Riesz
   // projector of a circular contour drawn around its group, computed on the
-  // pencil resolvent (specification §6, §11 step 4) with the certificates of
-  // that section. Nothing here reads a sign or an inertia from the pairing.
+  // pencil resolvent. Nothing here reads a sign or an inertia from the
+  // pairing.
   const auto n = static_cast<Eigen::Index>(op.dim());
   Eigen::ComplexEigenSolver<Eigen::MatrixXcd> es(op.L, false);
   if (es.info() != Eigen::Success)
@@ -1395,10 +1400,10 @@ void SpectralFiberTracker::buildFibers(const RestrictedOperator &op,
         spread = std::max(spread,
                           std::abs(out.eigenvalues[i] - out.eigenvalues[j]));
 
-    // Sort-order neighbour gaps: REPORTED diagnostics.  The (Re, Im) sort
-    // supplies the band GROUPING; it does not supply the isolation, because
-    // with a genuinely complex spectrum the sorted neighbour need not be the
-    // nearest eigenvalue in the plane.
+    // Sort-order neighbour gaps, reported as diagnostics. The (Re, Im) sort
+    // supplies the band grouping, not the isolation: with a genuinely complex
+    // spectrum the sorted neighbour need not be the nearest eigenvalue in the
+    // plane.
     cert.lowerGap = a > 0
                         ? std::abs(out.eigenvalues[a] - out.eigenvalues[a - 1])
                         : kInf;
@@ -1410,11 +1415,10 @@ void SpectralFiberTracker::buildFibers(const RestrictedOperator &op,
       cert.upperGap = read.truncated ? kNaN : kInf;
     }
 
-    // The whitepaper's band gap: the distance IN THE COMPLEX PLANE to the
-    // nearest DISCARDED eigenvalue, over every discarded mode on either
-    // side.  On a truncated sparse read the uncovered top is bounded by the
-    // shield value; without a shield that side is UNKNOWN (NaN), never a
-    // silently generous +infinity.
+    // Band gap: the distance in the complex plane to the nearest discarded
+    // eigenvalue, over every discarded mode on either side. On a truncated
+    // sparse read the uncovered top is bounded by the shield value; without a
+    // shield that side is NaN (unknown), not +infinity.
     double separation = kInf;
     for (std::size_t i = a; i < b; ++i) {
       for (std::size_t j = 0; j < covered; ++j) {
@@ -1453,8 +1457,8 @@ void SpectralFiberTracker::buildFibers(const RestrictedOperator &op,
     // Gram / signature and the left-frame normalization Psi^dagger W Phi = I.
     // Biorthogonal fallback shared by the non-normal and neutral-Krein
     // branches: Psi = W^{-dagger} Y (Y^dagger Phi)^{-dagger}, so that
-    // Psi^dagger W Phi = (Y^dagger Phi)^{-1} Y^dagger Phi = I; the measured
-    // defect is reported, never assumed.
+    // Psi^dagger W Phi = (Y^dagger Phi)^{-1} Y^dagger Phi = I; the defect is
+    // measured, not assumed.
     const auto biorthogonalPsi = [&](Eigen::MatrixXcd &psi, double &defect) {
       const Eigen::MatrixXcd M = Yband.adjoint() * Phi;
       const Eigen::MatrixXcd Minv = M.fullPivLu().inverse();
@@ -1522,7 +1526,7 @@ void SpectralFiberTracker::buildFibers(const RestrictedOperator &op,
         Psi = Phi * J;
       } else {
         // Neutral directions (e.g. complex-eigenvalue Krein bands): keep the
-        // matched biorthogonal frames; the inertia stays reported honestly.
+        // matched biorthogonal frames; the inertia is reported as measured.
         biorthogonalPsi(Psi, cert.gramDefect);
       }
     } else {
@@ -1548,17 +1552,17 @@ void SpectralFiberTracker::buildFibers(const RestrictedOperator &op,
         B);
     const double idemDefect = productFrobenius(Phi, E, B);
     cert.projectorResidual = idemDefect / std::max(1.0, pNorm);
-    // Two SEPARATELY NAMED conditioning quantities: the gauge-invariant
-    // projector norm ||P||_2 (Kato), and the FRAME condition number the
-    // whitepaper asks for in the non-normal regime — the Riesz condition of
-    // the reported matched frames in the |W| metric.
+    // Two conditioning quantities, reported separately: the gauge-invariant
+    // projector norm ||P||_2 (Kato), and the frame condition number used in
+    // the non-normal regime — the Riesz condition of the reported matched
+    // frames in the |W| metric.
     cert.projectorNorm = productSpectralNorm(Phi, B);
     cert.frameConditionNumber =
         std::max(frameCondition(Phi, W), frameCondition(Psi, W));
 
-    // Localization: IPR of the projector's diagonal density (gauge- and
-    // relabeling-invariant; never an eigenvector read).  Rowwise:
-    // P = Phi B^dagger, so P_ii = sum_r Phi_ir conj(B_ir).
+    // Localization: inverse participation ratio (IPR) of the projector's
+    // diagonal density (gauge- and relabeling-invariant; not an eigenvector
+    // read). Rowwise: P = Phi B^dagger, so P_ii = sum_r Phi_ir conj(B_ir).
     std::vector<double> diagAbs(static_cast<std::size_t>(n), 0.0);
     double diagSum = 0.0;
     for (Eigen::Index i = 0; i < n; ++i) {
@@ -1587,9 +1591,9 @@ void SpectralFiberTracker::buildFibers(const RestrictedOperator &op,
               : 0.0;
     }
 
-    // Certification: isolation from the nearest DISCARDED eigenvalue,
-    // LOCALIZATION (the whitepaper conjunct), residuals, Gram defect, and
-    // the gauge-invariant projector conditioning.
+    // Certification: isolation from the nearest discarded eigenvalue,
+    // localization, residuals, Gram defect, and the gauge-invariant projector
+    // conditioning.
     const auto separationOk = [&](double gap) {
       if (std::isnan(gap)) return false;
       if (!std::isfinite(gap)) return true;  // nothing was discarded

@@ -28,8 +28,8 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
-import emergence_animation as ea  # noqa: E402
-import qubit_animation as qa  # noqa: E402
+from tessera.drivers import emergence as ea
+from tessera.drivers import qubit as qa
 
 MC = cob.MultiCobordism
 

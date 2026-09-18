@@ -29,10 +29,9 @@ std::shared_ptr<Spacetime> LiveComplex::load(
   if (cells.empty()) {
     throw std::invalid_argument("LiveComplex::load needs at least one top cell");
   }
-  // The canonical entry point — nothing is built outside it. fromCells lays down
-  // the top cells (`dimensions` is the recorded complex dimension, passed
-  // through, never guessed); the metric and times are then loaded back exactly
-  // as recorded, and the facet skeleton is completed for reading.
+  // fromCells lays down the top cells; `dimensions` is the recorded complex
+  // dimension, passed through rather than inferred. The metric and vertex times
+  // are then restored as recorded and the facet skeleton is completed.
   auto st = Spacetime::fromCells(dimensions, cells, 1.0, 0.0);
   if (!vertexTimes.empty()) {
     const auto &vertexList = st->getVertexList();
@@ -40,9 +39,8 @@ std::shared_ptr<Spacetime> LiveComplex::load(
       vertexList->get(kv.first)->setTime(kv.second);
     }
   }
-  // The edges of a freshly loaded complex are legitimately mutable — loading the
-  // recorded squared lengths is the whole point of a rehydration, not a change
-  // to any emergent state.
+  // The edges of a freshly loaded complex are mutable: restoring the recorded
+  // squared lengths is what rehydration means, not a change to emergent state.
   for (Edge *e : st->getEdgeList()->toVector()) {
     const std::uint64_t a = e->getSource()->getId();
     const std::uint64_t b = e->getTarget()->getId();
@@ -57,9 +55,9 @@ std::shared_ptr<Spacetime> LiveComplex::load(
     }
     e->setLength(std::sqrt(it->second));
   }
-  // Complete the facet/coface skeleton the dual-volume / deficit reads walk —
-  // the honest direct call, never a solver (fromCells leaves only the top
-  // cells; this reproduces the ReggeSolver + ChainComplex skeleton bit-for-bit).
+  // Complete the facet/coface skeleton that the dual-volume and deficit reads
+  // walk. fromCells leaves only the top cells; this builds the same skeleton a
+  // ReggeSolver or ChainComplex pass would.
   st->materializeFacets();
   return st;
 }
@@ -70,17 +68,16 @@ std::shared_ptr<Spacetime> LiveComplex::subcomplex(
     throw std::invalid_argument(
         "LiveComplex::subcomplex needs at least one cell");
   }
-  // The cells are already SELECTED by the caller (existing ambient top cells);
-  // `dimensions` is the ambient complex's canonical dimension. This only
-  // re-instantiates the selection with a uniform metric through the canonical
-  // fromCells (the block-residual carry diagnostic), never a build.
+  // The cells are selected by the caller from the ambient top cells, and
+  // `dimensions` is the ambient complex's dimension. This re-instantiates that
+  // selection with a uniform metric for the block-residual diagnostic.
   return Spacetime::fromCells(dimensions, cells, 1.0, 0.0);
 }
 
 LiveComplex::Relabeled LiveComplex::relabel(const Spacetime &spacetime,
                                             std::uint64_t seed) {
   // Read the recorded geometry off the live complex (const reads only). The
-  // dimension is the canonical metric-signature dimension, not a cell-size guess.
+  // dimension comes from the metric signature, not from a cell-size guess.
   const int dimensions = spacetime.getMetric()->getSignature()->getDimensions();
   std::vector<std::vector<std::uint64_t>> cells;
   cells.reserve(spacetime.getTopSimplices().size());
@@ -105,7 +102,7 @@ LiveComplex::Relabeled LiveComplex::relabel(const Spacetime &spacetime,
     }
   }
 
-  // A random vertex-id permutation + cell-order shuffle (deterministic in seed).
+  // A random vertex-id permutation and cell-order shuffle, both seed-determined.
   std::set<std::uint64_t> uniqueVertices;
   for (const auto &cell : cells) {
     for (std::uint64_t v : cell) uniqueVertices.insert(v);

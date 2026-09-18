@@ -19,62 +19,64 @@ using namespace ::tessera::spacetime;
 
 /// # DualVolumeSigns
 ///
-/// Read-only audit (#605) of the **sign** of the diagonal Discrete Exterior
-/// Calculus (DEC) Hodge star on a triangulation. Measures only; changes no
-/// geometry, adds no dynamics, and enforces nothing.
+/// Read-only audit of the sign of the diagonal discrete exterior calculus (DEC)
+/// Hodge star on a triangulation. It measures only: it changes no geometry, adds
+/// no dynamics, and enforces nothing.
 ///
-/// ## What is being measured, and why the sign matters
+/// Reference: Desbrun, Hirani, Leok, Marsden, "Discrete Exterior Calculus",
+/// arXiv:math/0508341.
 ///
-/// The *diagonal DEC Hodge star* assigns each \f$ k \f$-simplex \f$ \sigma \f$ the
-/// single scalar ratio \f$ |\star\sigma| / |\sigma| \f$, where \f$ |\sigma| \f$ is
-/// the simplex's own signed content (``Simplex::volume``) and
-/// \f$ |\star\sigma| \f$ is its signed circumcentric dual cell content
-/// (``Simplex::dualVolume``). It is diagonal — one number per simplex rather than
-/// a dense matrix — **only** for the circumcentric (Voronoi) dual; a barycentric
-/// dual instead yields the dense Whitney/Galerkin star.
+/// ## The measured quantity
 ///
-/// Any Maxwell-type or gauge term discretised with DEC carries its whole metric
-/// dependence in that ratio, appearing as \f$ \sum_\sigma (|\star\sigma| /
-/// |\sigma|)\,F_\sigma^2 \f$. A negative ratio therefore costs positive-definiteness
-/// of the associated Hodge Laplacian and breaks the sign structure a self-dual /
-/// anti-self-dual split of a 2-cochain relies on (the discrete analogue of
-/// \f$ \star^2 = -1 \f$ on 2-forms — the structure that makes a helicity or
-/// circular-polarisation readout meaningful). Whether the ratio *can* go negative
-/// on the complexes this project actually grows is an empirical question about
-/// those complexes, which is what this class answers.
+/// The diagonal DEC Hodge star assigns each \f$ k \f$-simplex
+/// \f$ \sigma \f$ the scalar ratio \f$ |\star\sigma| / |\sigma| \f$, where
+/// \f$ |\sigma| \f$ is the simplex's own signed content (``Simplex::volume``)
+/// and \f$ |\star\sigma| \f$ its signed circumcentric dual cell content
+/// (``Simplex::dualVolume``). It is diagonal — one number per simplex rather
+/// than a dense matrix — only for the circumcentric (Voronoi) dual; a
+/// barycentric dual yields the dense Whitney (Galerkin) star instead.
 ///
-/// ## Two distinct reasons the ratio can go negative
+/// A Maxwell-type or gauge term discretised with DEC carries its whole metric
+/// dependence in that ratio, as \f$ \sum_\sigma (|\star\sigma| /
+/// |\sigma|)\,F_\sigma^2 \f$. A negative ratio costs positive-definiteness of
+/// the associated Hodge Laplacian and breaks the sign structure that a
+/// self-dual / anti-self-dual split of a 2-cochain relies on, the discrete
+/// analogue of \f$ \star^2 = -1 \f$ on 2-forms, which is what makes a helicity
+/// or circular-polarisation readout meaningful. Whether the ratio does go
+/// negative on the complexes this project grows is an empirical question, and
+/// this class answers it.
 ///
-/// The audit separates them, because they have opposite implications:
+/// ## Two reasons the ratio can go negative
 ///
-///   * **Mesh quality.** A simplex is *well-centered* when its circumcenter lies
-///     in its interior. ``Simplex::circumcenterBarycentric`` returns the
+/// The audit separates them, because they have opposite implications.
+///
+///   * Mesh quality. A simplex is well-centered when its circumcenter lies in
+///     its interior. ``Simplex::circumcenterBarycentric`` returns the
 ///     circumcenter in barycentric coordinates, and a coordinate is negative
 ///     exactly when the circumcenter falls outside the simplex on that vertex's
-///     side. This is the Riemannian failure mode: it says the surgery or the
-///     relaxation produced badly shaped cells, and it is the one the DEC
-///     literature calls a well-centeredness violation.
-///   * **Signature.** This project relaxes along the real signed-\f$ \ell^2 \f$
+///     side. This is the Riemannian failure mode — a well-centeredness
+///     violation — and indicates badly shaped cells from surgery or relaxation.
+///   * Signature. This project relaxes along the real signed-\f$ \ell^2 \f$
 ///     manifold, so an edge may be spacelike, timelike, or null, and
-///     ``Simplex::circumradiusSquared`` is documented to go negative when the
+///     ``Simplex::circumradiusSquared`` goes negative when the
 ///     circumcenter-to-vertex displacement is timelike. Lorentzian signature has
-///     no positive-definite circumradius, so "circumcenter inside the simplex" is
-///     simply not the criterion it is in Riemannian signature. A negative ratio on
-///     a cell carrying timelike or null edges is signature-driven, not a defect.
+///     no positive-definite circumradius, so "circumcenter inside the simplex"
+///     is not the criterion it is in Riemannian signature. A negative ratio on a
+///     cell carrying timelike or null edges is signature-driven, not a defect.
 ///
-/// Accordingly every count is also broken out by whether the simplex is
-/// **all-spacelike** (every edge has \f$ \ell^2 > 0 \f$) or **mixed-signature**
-/// (at least one timelike or null edge). Negatives concentrated in the
-/// mixed-signature population mean the diagonal star is behaving as Lorentzian
-/// signature requires; negatives among all-spacelike cells mean genuine mesh
+/// Every count is therefore also broken out by whether the simplex is
+/// all-spacelike (every edge has \f$ \ell^2 > 0 \f$) or mixed-signature (at
+/// least one timelike or null edge). Negatives concentrated in the
+/// mixed-signature population mean the diagonal star behaves as Lorentzian
+/// signature requires; negatives among all-spacelike cells mean mesh
 /// degradation.
 ///
-/// ## What is audited
+/// ## Scope
 ///
 /// Only simplices that are genuine faces of the current complex, i.e. those for
-/// which ``Simplex::hasTopCoface`` is true. A Pachner move that removes a cell can
-/// leave a lazily-materialised sub-face registered with no surviving top coface —
-/// an *orphan* — and an orphan is not part of the complex and must not enter the
+/// which ``Simplex::hasTopCoface`` is true. A Pachner move that removes a cell
+/// can leave a lazily materialised sub-face registered with no surviving top
+/// coface. Such an orphan is not part of the complex and does not enter the
 /// statistics.
 class DualVolumeSigns : public Observable {
   public:
@@ -96,12 +98,11 @@ class DualVolumeSigns : public Observable {
       /// negative barycentric coordinate. The Riemannian well-centeredness
       /// violation.
       int nCircumcenterOutside{0};
-      /// Simplices with negative signed circumradius squared — a timelike
+      /// Simplices with negative signed circumradius squared: a timelike
       /// circumcenter displacement, possible only in Lorentzian signature.
       int nNegativeCircumradius{0};
-      /// Simplices whose diagonal Hodge star ratio is strictly negative. This is
-      /// the headline quantity: it is the count that decides whether the star is
-      /// indefinite.
+      /// Simplices whose diagonal Hodge star ratio is strictly negative. This
+      /// count decides whether the star is indefinite.
       int nNegativeStar{0};
 
       /// Simplices all of whose edges are spacelike.

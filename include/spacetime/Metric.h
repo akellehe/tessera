@@ -26,14 +26,20 @@ using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 /// # The Metric
 ///
+/// The metric tensor \f$ g_{\mu\nu} \f$ and the signature it carries, used to turn vertex coordinates into
+/// edge lengths when the complex is not coordinate-free.
+///
 class Metric {
   public:
+    /// @param coordinateFree_ True when squared lengths are stored on the edges rather than derived from
+    ///   vertex coordinates (the usual CDT setting).
+    /// @param signature_ The metric signature; copied into the Metric.
     Metric(bool coordinateFree_, const Signature &signature_);
 
     ///
-    /// This method computes the length of the edge between the source and target vertices when we're using a coordinate
-    /// system/euclidean metric. This uses the metric, \f$ g_{\mu \nu} \f$, to compute the distance between vertex
-    /// \f$ i \f$ and vertex \f$ j \f$ as
+    /// The squared length of the edge between the source and target vertices, for a coordinate-carrying
+    /// complex. Uses the metric \f$ g_{\mu \nu} \f$ to compute the separation of vertex \f$ i \f$ and
+    /// vertex \f$ j \f$ as
     ///
     /// \f[
     /// l_{ij}^2 = g_{\mu \nu} \Delta x^{\mu} \Delta x^{\nu}
@@ -50,9 +56,13 @@ class Metric {
     /// Timelike edges will have negative squared lengths, spacelike edges positive squared lengths, and null/lightlike
     /// edges zero squared lengths.
     ///
-    /// Note that the CDT (Causal Dynamical Triangulations) approach typically uses fixed length spacelike edges to
-    /// build (and update) the triangulation while Regge Calculus allows for dynamically updated edge lengths. See
-    /// Quantum Gravity from Causal Dynamical Triangulations: A Review by R. Loll Section 4, p 11-12 for more details.
+    /// Causal dynamical triangulation (CDT) uses fixed spacelike edge lengths to build and update the
+    /// triangulation; Regge calculus lets edge lengths vary.
+    ///
+    /// Reference: Ambjorn, Goerlich, Jurkiewicz & Loll, arXiv:1203.3591
+    ///
+    /// @throws std::runtime_error if the metric is coordinate-free, in which case the squared length is
+    ///   stored on the edge instead.
     ///
     [[nodiscard]] double getSquaredLength(
       const std::vector<double> &sourceCoords,

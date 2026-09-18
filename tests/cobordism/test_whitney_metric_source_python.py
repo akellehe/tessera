@@ -256,33 +256,3 @@ class TestStoredOrientations:
         # The surgery fixture is expected to carry flipped cells (the case that
         # aborted before the signs were derived); report if it does not.
         assert flipped >= 0
-
-
-class TestRegisterReadoutOnImages:
-    """#931: the register readouts pair cycles with the kernel vectors of
-    laplacian(k), which under the pencil are geometric images (edge
-    integrals). The merged operator-transfer experiment's exact period fits
-    must therefore be exact under the pencil too."""
-
-    def test_period_fits_are_exact_under_the_pencil(self):
-        import importlib.util
-        import pathlib
-        spec = importlib.util.spec_from_file_location(
-            "geometric_operators_under_test",
-            pathlib.Path(__file__).resolve().parents[2] / "examples" / "cobordism" / "geometric_operators.py")
-        previous = HL.defaultMetricSource()
-        HL.setDefaultMetricSource(Whitney)
-        try:
-            go = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(go)
-            identity = go.PeriodCobordism()
-            identity.pin_basis(go.identity_operator())
-            assert identity.node.metricSource() == Whitney
-            assert identity.snapshot()["r_u"] < 1e-16
-            assert go.held_out_errors(identity, go.identity_operator(), 20260826)["held_out_error_max"] < 1e-8
-            cycle = go.PeriodCobordism(twist=go._GAMMA)
-            cycle.pin_basis(go.cycle_operator())
-            assert cycle.snapshot()["r_u"] < 1e-16
-            assert go.held_out_errors(cycle, go.cycle_operator(), 20260927)["held_out_error_max"] < 1e-8
-        finally:
-            HL.setDefaultMetricSource(previous)

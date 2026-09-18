@@ -77,8 +77,8 @@ class Simplex;
     }
 
     [[nodiscard]] bool Edge::isDegenerate() const noexcept {
-      // The EUCLIDEAN modulus, and the one place it is the right norm: an edge with
-      // no extent at all is ABSENT, not lightlike.
+      // The Euclidean modulus, and the one place it is the right norm: an edge with
+      // no extent at all is absent, not lightlike.
       return std::abs(getLength()) <= kDegenerateEpsilon;
     }
 
@@ -97,7 +97,7 @@ class Simplex;
     }
 
     [[nodiscard]] bool Edge::isNull() const noexcept {
-      // arg(l^2) ~ +/- pi/2: l^2 purely imaginary and NONZERO -- the light cone,
+      // arg(l^2) ~ +/- pi/2: l^2 purely imaginary and nonzero -- the light cone,
       // reached non-trivially at Re(l) == Im(l) != 0. Not the same as degenerate.
       if (isDegenerate()) return false;
       return std::abs(std::abs(squaredArgument()) - 0.5 * std::numbers::pi)
@@ -105,9 +105,9 @@ class Simplex;
     }
 
     [[nodiscard]] bool Edge::isMixed() const noexcept {
-      // No definite causal character. Deliberately NOT snapped to the nearest of the
-      // three: a generic argument is genuinely mixed, and reporting it as definite
-      // would invent structure the geometry does not have.
+      // No definite causal character. Not snapped to the nearest of the three: a
+      // generic argument is genuinely mixed, and reporting it as definite would
+      // invent structure the geometry does not have.
       return !isDegenerate() && !isSpacelike() && !isTimelike() && !isNull();
     }
 
@@ -142,6 +142,10 @@ class Simplex;
     bool Edge::hasVertex(std::uint64_t vertexId) const {
       if (getSource()->getId() == vertexId || getTarget()->getId() == vertexId) return true;
       return false;
+    }
+
+    bool Edge::hasVertex(const VertexPtr &vertex) const {
+      return vertex != nullptr && hasVertex(vertex->getId());
     }
 
     bool Edge::operator==(const Edge &other) const {

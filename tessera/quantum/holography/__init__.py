@@ -1,9 +1,5 @@
 """tessera.quantum.holography — emergent spectral dimension from a Schwinger TDVP state.
 
-See ``docs/source/quantum-experiments/earlier-work/emergent-spectral-dimension-schwinger-tdvp.md`` for the
-scientific charter, falsification criteria, and the relationship to the
-causal-order comparison in ``tessera.quantum``.
-
 The entire compute pipeline lives in the C++ extension; this module is a
 thin re-export shim that surfaces the bindings under their natural import
 path.

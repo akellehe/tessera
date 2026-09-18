@@ -15,26 +15,25 @@ namespace tessera::observables {
 
 /// # ObservableGates
 ///
-/// The GAUGE and RELABEL gate harness (#593) — post-hoc validation, never a loop
-/// condition. Each gate re-measures an observable on a transformed context and
-/// reports the max-abs delta over every numeric leaf of its record
-/// (`Record::reportDelta`); a record channel that is not gauge- and
-/// relabel-invariant is a flagged leak.
+/// Gate harness for the GAUGE and RELABEL invariance checks. Post-hoc
+/// validation, never a loop condition. Each gate re-measures an observable on a
+/// transformed context and reports the maximum absolute delta over every numeric
+/// leaf of its record (`Record::reportDelta`); a record channel that is not
+/// gauge- and relabel-invariant is flagged as a leak.
 ///
-///   * GAUGE — re-measure on `ctx.gauged(GAUGE_THETA)` (construction-free: the
-///     same live complex, the register target rotated by the surviving global
-///     U(1) phase).
-///   * RELABEL — re-measure on a relabeled rebuild. The rebuild is a
-///     construction and so lives in the loader (`LiveComplex::relabel`), never in
-///     a reader: this harness loads the relabeled live complex, wraps it in a
-///     (pure-reader) `RegisterContext` with the register's images matched by
-///     permuted vertex SET, and maps any vertex-id-bearing provenance through the
-///     permutation (`RegisterObservable::recordRelabeled`).
+///   * GAUGE — re-measure on `ctx.gauged(GAUGE_THETA)`: the same live complex,
+///     with the register target rotated by the surviving global U(1) phase. No
+///     reconstruction.
+///   * RELABEL — re-measure on a relabeled rebuild. The rebuild lives in the
+///     loader (`LiveComplex::relabel`), not in a reader: this harness loads the
+///     relabeled live complex, wraps it in a read-only `RegisterContext` with the
+///     register's images matched by permuted vertex set, and maps any
+///     vertex-id-bearing provenance through the permutation
+///     (`RegisterObservable::recordRelabeled`).
 ///
-/// The self-test (`selfTest`) proves the harness actually compares: a
-/// deliberately label-dependent probe is flagged by RELABEL and a deliberately
-/// gauge-dependent probe is flagged by GAUGE — a silently-passing gate cannot be
-/// a comparison that never happened.
+/// `selfTest` checks that the harness actually compares: a deliberately
+/// label-dependent probe must be flagged by RELABEL and a deliberately
+/// gauge-dependent probe by GAUGE.
 class ObservableGates {
   public:
     /// GAUGE-gate angle: an incommensurate fraction of 2π, so the rotated target
@@ -70,9 +69,9 @@ class ObservableGates {
     [[nodiscard]] static bool selfTest(const RegisterContext &ctx);
 };
 
-/// A deliberately label-dependent probe: its record leaks the sum of the
-/// selected holes' vertex ids, so the RELABEL gate MUST flag it (the harness
-/// self-test).
+/// Deliberately label-dependent probe used by the harness self-test: its record
+/// leaks the sum of the selected holes' vertex ids, so the RELABEL gate must
+/// flag it.
 class LabelLeakProbe : public RegisterObservable {
   public:
     static constexpr std::string_view kRecordKey = "label_leak_probe";
@@ -86,8 +85,8 @@ class LabelLeakProbe : public RegisterObservable {
         const RegisterContext &ctx) const override;
 };
 
-/// A deliberately gauge-dependent probe: its record leaks the raw register
-/// target's first-component phase, so the GAUGE gate MUST flag it.
+/// Deliberately gauge-dependent probe: its record leaks the raw register
+/// target's first-component phase, so the GAUGE gate must flag it.
 class GaugeLeakProbe : public RegisterObservable {
   public:
     static constexpr std::string_view kRecordKey = "gauge_leak_probe";

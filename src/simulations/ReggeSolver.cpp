@@ -49,21 +49,21 @@ ReggeSolver::ReggeSolver(std::shared_ptr<Spacetime> spacetime,
     : spacetime_(std::move(spacetime)), matter_(std::move(matter)) {
     // Materialize the facet/coface lattice down to the (d-2)-hinges, in C++.
     //
-    // dualVolume() walks a hinge UP through its cofaces to a top cell, so every
-    // coface link from the hinge up to the top must exist.  getFacets() on a
+    // dualVolume() walks a hinge up through its cofaces to a top cell, so every
+    // coface link from the hinge up to the top must exist. getFacets() on a
     // k-simplex creates its (k-1)-facets and registers itself as their coface,
-    // so we must call it on every simplex of size >= d: the top d-cells (size
-    // d+1) register the (d-1)-facets, and the (d-1)-facets (size d) register the
-    // (d-2)-hinges.  build() does not guarantee the (d-1)-facets exist (e.g. a
-    // freshly built SolidSimplex holds only its top cells), so we start from the
-    // tops rather than assuming the facets are already present.
+    // so it has to run on every simplex of size >= d: the top d-cells (size d+1)
+    // register the (d-1)-facets, and the (d-1)-facets (size d) register the
+    // (d-2)-hinges. build() does not guarantee the (d-1)-facets exist (a freshly
+    // built SolidSimplex holds only its top cells), so this starts from the tops
+    // rather than assuming the facets are present.
     //
-    // This MUST run in C++.  The Python getFacets()/getCofaces() bindings use
+    // This has to run in C++. The Python getFacets()/getCofaces() bindings use
     // return_value_policy::copy, so driving materialization from Python would
-    // register *copies* of the sub-simplices — each carrying an incomplete
-    // coface list — onto the shared vertices, and the fingerprint-keyed
-    // hasCoface() guard would then block the canonical facets.  dualVolume()
-    // would then see half the cofaces it should.
+    // register copies of the sub-simplices — each carrying an incomplete coface
+    // list — onto the shared vertices; the fingerprint-keyed hasCoface() guard
+    // would then block the canonical facets and dualVolume() would see half the
+    // cofaces it should.
     //
     // getFacets() grows simplicesVec as it registers new sub-simplices, so the
     // loop re-reads size() each iteration rather than snapshotting it.
@@ -89,8 +89,8 @@ std::complex<double> ReggeSolver::deficitAngle(SimplexPtr hinge) const {
 }
 
 std::complex<double> ReggeSolver::hingeArea(SimplexPtr hinge) {
-    // The honest signed Lorentzian area. There is no Wick-rotated mode: a
-    // timelike hinge's area is imaginary, not |l^2|-real (#641).
+    // The signed Lorentzian area: a timelike hinge's area is imaginary, not
+    // |l^2|-real. There is no Wick-rotated mode.
     return hinge->area();
 }
 
@@ -100,20 +100,20 @@ std::complex<double> ReggeSolver::hingeArea(SimplexPtr hinge) {
 
 std::vector<SimplexPtr> ReggeSolver::collectHinges() const {
     // Hinges are (d-2)-simplices. In 4D, these are triangles (3 vertices).
-    // They are registered in the spacetime's simplex list (sub-simplices
-    // are registered during getFacets()).
+    // They are registered in the spacetime's simplex list (sub-simplices are
+    // registered during getFacets()).
     //
-    // Only *genuine* hinges count toward the Regge action: a (d-2)-face of at
+    // Only genuine hinges count toward the Regge action: a (d-2)-face of at
     // least one current top (d)-cell. A Pachner move that removes a cell can
     // leave a lazily-materialised hinge registered with no surviving top coface
-    // (an orphan); ``deficitAngle`` then returns a bare 2π for it
-    // while its gradient maps are empty, so an unfiltered sum would let the
-    // resident action and ``actionGradientExact`` disagree (#365/#371). Skipping
-    // orphans (``hasTopCoface``) makes ``dualReggeAction`` a pure function of the
-    // current top-cell set — exactly equal to a from-scratch rebuild — so the
-    // action is invariant under any move∘move⁻¹ that restores those cells. This
-    // is bookkeeping (which hinges are real), not a change to the action S =
-    // Σ_h |★h|·ε_h itself.
+    // (an orphan); ``deficitAngle`` then returns a bare 2π for it while its
+    // gradient maps are empty, so an unfiltered sum would let the resident
+    // action and ``actionGradientExact`` disagree. Skipping orphans
+    // (``hasTopCoface``) makes ``dualReggeAction`` a pure function of the
+    // current top-cell set — equal to a from-scratch rebuild — so the action is
+    // invariant under any move∘move⁻¹ that restores those cells. That is
+    // bookkeeping over which hinges are real, not a change to the action
+    // S = Σ_h |★h|·ε_h itself.
     int d = spacetime_->getMetric()->getSignature()->getDimensions();
     int hingeSize = d - 1; // (d-2)-simplex has (d-1) vertices
 
@@ -180,8 +180,8 @@ std::vector<std::vector<std::uint64_t>> ReggeSolver::hingeFacesOfCells(
 
 std::complex<double> ReggeSolver::dualReggeActionOverHinges(
     const std::vector<std::vector<std::uint64_t>> &hinges) const {
-    // The localized dual Regge action over a FIXED hinge set, term-for-term equal
-    // to dualReggeAction's summand: |★h|·ε_h for each genuine hinge (registered,
+    // The dual Regge action over a fixed hinge set, term-for-term equal to
+    // dualReggeAction's summand: |★h|·ε_h for each genuine hinge (registered,
     // with a top coface), 0 for orphans. Resolve tuples by vertex id.
     std::unordered_map<std::uint64_t, VertexPtr> vidx;
     for (const auto &v : spacetime_->getVertexList()->toVector())
@@ -329,10 +329,9 @@ double ReggeSolver::gradientNorm2OverEdges(
 double ReggeSolver::matterAction() const {
     // Point-particle action: S_matter = -M ∫ dτ. Causal character comes from
     // the canonical Edge::isTimelike() classifier (Im of the complex length),
-    // not a hand-rolled sign-of-Re test (#581). Under the ordinary-Lorentzian
-    // convention (resident ℓ² real and signed, Edge::setSquaredLength) the
-    // proper time of a timelike step is √(-Re ℓ²) = √(-ℓ²); null edges are
-    // not timelike and contribute nothing.
+    // not a hand-rolled sign-of-Re test. The resident ℓ² is real and signed
+    // (Edge::setSquaredLength), so the proper time of a timelike step is
+    // √(-Re ℓ²) = √(-ℓ²); null edges are not timelike and contribute nothing.
     double S = 0.0;
     for (const auto &wl : matter_.getWorldlines()) {
         for (std::size_t i = 0; i + 1 < wl.vertices.size(); ++i) {
@@ -400,17 +399,17 @@ std::vector<std::complex<double>> ReggeSolver::actionGradientExact() const {
 
     // dS/dl^2_e = sum_h [ d|*h|/dl^2_e * eps_h + |*h| * d eps_h/dl^2_e ].
     //
-    // The per-hinge work is independent: deficitAngle/dualVolume and
-    // their gradients are pure const reads over already-materialized cofaces
-    // (no mutable members, no lazy caches), so hinges parallelize cleanly. But
-    // many hinges contribute to the same edge, so writing the shared g directly
-    // would contend. Each thread accumulates into its own partial vector; the
-    // partials are then summed into g in thread-index order. With
-    // schedule(static) that order is fixed, so the result is deterministic
-    // run-to-run and bit-identical to the serial code at one thread. (At >1
-    // thread it matches serial to floating-point round-off — the per-thread
-    // split reassociates the per-edge sum.) Respects OMP_NUM_THREADS; serial
-    // no-op when built without OpenMP.
+    // The per-hinge work is independent: deficitAngle/dualVolume and their
+    // gradients are const reads over already-materialized cofaces (no mutable
+    // members, no lazy caches), so hinges parallelize cleanly. Many hinges
+    // contribute to the same edge, so writing the shared g directly would
+    // contend; each thread accumulates into its own partial vector and the
+    // partials are summed into g in thread-index order. With schedule(static)
+    // that order is fixed, so the result is deterministic run-to-run and
+    // bit-identical to the serial code at one thread. At more than one thread it
+    // matches serial to floating-point round-off, since the per-thread split
+    // reassociates the per-edge sum. Respects OMP_NUM_THREADS; serial no-op when
+    // built without OpenMP.
     const auto hinges = collectHinges();
     const auto nH = static_cast<std::ptrdiff_t>(hinges.size());
 #ifdef _OPENMP
@@ -421,11 +420,10 @@ std::vector<std::complex<double>> ReggeSolver::actionGradientExact() const {
     std::vector<std::vector<cd>> partials(
         static_cast<std::size_t>(nThreads), std::vector<cd>(E, cd(0.0, 0.0)));
 
-    // An exception may not escape an OpenMP region (std::terminate, taking the
-    // whole process). Nothing in the hinge geometry throws in normal operation,
-    // but a genuine error can (std::bad_alloc, a corrupted/empty simplex) — so
-    // capture the first exception and rethrow it after the join, turning a
-    // silent process abort into a loudly propagating error.
+    // An exception may not escape an OpenMP region: it calls std::terminate and
+    // takes the whole process. Nothing in the hinge geometry throws in normal
+    // operation, but a genuine error can (std::bad_alloc, a corrupted or empty
+    // simplex), so capture the first exception and rethrow it after the join.
     std::exception_ptr pending = nullptr;
     #pragma omp parallel
     {

@@ -25,19 +25,21 @@ using namespace ::tessera::observables;
 using namespace ::tessera::simulations;
 using namespace ::tessera::quantum;
 
-/// (2, 2d) Pachner add (vertex insertion) with apply / rollback.
+/// (2, 2d) Pachner move — vertex insertion — with apply / rollback; the
+/// (2,8) move in 4D.
 ///
-/// Picks a random N41 top simplex, finds its spatial face and the
-/// adjacent simplex of opposite orientation.  Inserts a new vertex at
-/// the shared spatial time slice, replacing the 2 simplices with 2d
-/// new ones.  ``dN0 = +1``; ``dN41 = +(2d - 2) = +6`` in 4D;
-/// ``dN32 = 0``.
+/// Picks a random N41 top simplex, finds its spatial facet and the adjacent
+/// simplex of opposite orientation, then inserts a vertex on that shared
+/// spatial slice, replacing the 2 simplices by 2d new ones.
+/// ``dN0 = +1``; ``dN41 = +(2d - 2) = +6`` in 4D; ``dN32 = 0``.
+/// Inverse: :class:`RemoveMove`.
 ///
-/// Vertex relabeling: after the move commits, the new vertex's ID is
-/// optionally swapped with a randomly-chosen existing vertex (per
-/// [BGL] Sec. 2.2.1).  Toggle via ``setRelabelEnabled(bool)`` at
-/// construction time; default is enabled.  Rollback un-swaps before
-/// removing the new vertex.
+/// After the move commits, the new vertex's id is optionally swapped with a
+/// randomly chosen existing vertex, so a vertex's id carries no trace of when
+/// it was inserted. Selected by the constructor argument ``relabelEnabled``
+/// (default true); rollback un-swaps before removing the new vertex.
+///
+/// Reference: Ambjorn, Jurkiewicz & Loll, arXiv:hep-th/0105267.
 class AddMove : public PachnerMove {
 public:
   AddMove(Spacetime *st, std::mt19937 *rng, bool relabelEnabled = true,
@@ -46,13 +48,13 @@ public:
           PachnerMode mode = PachnerMode::CDT, bool boundaryFixed = false);
 
   bool propose() override;
-  /// Propose at a NAMED top cell: \p site is that cell's vertex ids, in any
-  /// order (see `sitesOn`). Pre-geometric mode only -- the CDT path's target
-  /// is a causal pair, not a single cell, and is not addressable this way.
+  /// Propose at a named top cell: \p site is that cell's vertex ids, in any
+  /// order (see `sitesOn`). Pre-geometric mode only; the CDT path targets a
+  /// causal pair of cells rather than a single cell.
   bool proposeAt(const std::vector<std::uint64_t> &site) override;
-  /// Every cell this move could subdivide, each as its vertex ids. The 1->(d+1)
-  /// stellar move lives inside ONE cell, so the site set is exactly the top
-  /// cells big enough to subdivide.
+  /// Every cell this move could subdivide, each as its vertex ids. The
+  /// 1 -> (d+1) stellar move lives inside a single cell, so the site set is
+  /// the top cells large enough to subdivide.
   static std::vector<std::vector<std::uint64_t>> sitesOn(const Spacetime &spacetime);
   int dN0() const override { return 1; }
   int dN41() const override { return dN41_; }
@@ -62,21 +64,18 @@ public:
   void rollback() override;
   bool isApplied() const override { return applied_; }
   std::vector<std::uint64_t> touchedVertexIds() const override;
-  /// The canonical name of this move type, defined ONCE here so callers
-  /// that dispatch on it (MultiCobordism's move draw, CDT's acceptance-rate
-  /// accounting) reference this rather than re-spelling the literal.
+  /// Canonical name of this move type, for the callers that dispatch on it
+  /// (MultiCobordism's move draw, CDT's acceptance-rate accounting).
   static constexpr const char *kMoveType = "add";
   std::string moveType() const override { return kMoveType; }
 
 private:
-  // Pre-geometric 1→(d+1) stellar move: insert a fresh interior vertex
-  // into a single top cell and cone it over the cell's facets, replacing
-  // 1 cell with d+1.  Always interior (it never touches ∂W), so it is
-  // unconditionally boundary-fixed-safe.
+  // Pre-geometric 1→(d+1) stellar move: insert a fresh interior vertex into a
+  // single top cell and cone it over the cell's facets, replacing 1 cell with
+  // d+1.  It never touches ∂W, so it is always safe in boundary-fixed mode.
   bool proposePreGeometric();
-  /// The shared body of both proposals: everything after the cell is chosen.
-  /// `propose` draws the cell, `proposeAt` is handed it, and neither has its
-  /// own copy of what follows.
+  /// Shared body of both proposals: everything after the cell is chosen.
+  /// `propose` draws the cell; `proposeAt` is handed it.
   bool proposePreGeometricOn(SimplexPtr sigma);
   bool applyPreGeometric();
   void rollbackPreGeometric();

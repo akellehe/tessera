@@ -2,9 +2,8 @@
 // All rights reserved.
 
 // Pybind11 bindings for the cobordism subsystem. Lives outside tessera_core
-// (which is pybind-free) so the static library can be reused without pulling
-// in the Python dependency. This translation unit is always added to
-// _tessera's sources (see CMakeLists.txt, TESSERA_PYBIND_SOURCES).
+// (which is pybind-free) so the static library can be reused without the
+// Python dependency. Always added to _tessera's sources.
 
 #include <limits>
 #include <optional>
@@ -51,16 +50,14 @@ using namespace tessera::cobordism;
 /// the corresponding snake_case name; the three with C++ defaults fall back to
 /// the base implementation when a subclass does not define them.
 ///
-/// The firewall survives the crossing unchanged, and for the same reason it
-/// held in C++: a Python objective is handed an `ObjectiveContext`, which is
-/// plain data carrying geometry, a region, that region's targets and scalar
-/// configuration. It receives no node, no callable that closes over one, and
-/// therefore no route to a component, fiber, transport, colour, charge,
-/// flavour, exchange, spin certificate or verdict. Subclassing widens who may
-/// write an objective; it does not widen what one can read.
+/// The firewall survives the crossing: a Python objective is handed an
+/// `ObjectiveContext`, plain data carrying geometry, a region, that region's
+/// targets and scalar configuration. It receives no node and no callable that
+/// closes over one, so no route to a component, fiber, transport, colour,
+/// charge, flavour, exchange, spin certificate or verdict.
 ///
 /// The override macros acquire the GIL themselves, so an engine entry point
-/// that released it — every long-running one does — re-enters Python safely.
+/// that released it re-enters Python safely.
 class PyCobordismObjective : public CobordismObjective {
  public:
   using CobordismObjective::CobordismObjective;
@@ -115,18 +112,15 @@ class PyCobordismObjective : public CobordismObjective {
 };
 
 void register_cobordism(py::module_ m) {
-  // Smoke hook: lets tests assert the subsystem loaded before any
-  // mathematical capability (issues #63–#70) is implemented. Single leading
-  // underscore (not double) to avoid Python name-mangling inside test classes.
+  // Smoke hook: lets tests assert the subsystem loaded. Single leading
+  // underscore, to avoid Python name-mangling inside test classes.
   m.def("_cobordism_smoke", [] { return true; },
         "Returns True; confirms the cobordism subsystem is built and importable.");
 
-  // Per-complex scalar measurements are Observables (tessera's convention),
-  // not methods on Spacetime or a bespoke wrapper. The characteristic-number
-  // capabilities (Euler characteristic, signature, …) follow the same pattern;
-  // multi-complex / structural operations (cobordism verification,
-  // reconstruction, Pachner search) will be static-only classes taking a
-  // Spacetime.
+  // Per-complex scalar measurements are Observables, as are the characteristic
+  // numbers (Euler characteristic, signature, …). Multi-complex and structural
+  // operations (cobordism verification, reconstruction, Pachner search) are
+  // static-only classes taking a Spacetime.
   py::class_<CombinatorialDimension, std::shared_ptr<CombinatorialDimension>>(
       m, "CombinatorialDimension",
       R"doc(Observable: combinatorial dimension of a triangulation.
@@ -139,7 +133,7 @@ Spacetime's declared metric dimension.)doc")
       .def("compute", &CombinatorialDimension::compute, py::arg("spacetime"),
            "Return the combinatorial dimension of the given Spacetime as a double.");
 
-  // ----- Homology backbone (#64): chain complex + exact linear algebra -----
+  // ----- Homology backbone: chain complex + exact linear algebra -----
 
   py::class_<ChainComplex>(m, "ChainComplex",
       R"doc(Simplicial chain complex of a triangulation.
@@ -230,9 +224,9 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
       .def("stiefelWhitneyNumbers", &ChainComplex::stiefelWhitneyNumbers,
            "Mod-2 Stiefel-Whitney numbers <w_{i1}..w_{ir}, [K]> keyed by "
            "monomial (e.g. 'w4', 'w2^2'); empty for the empty complex. Raises "
-           "if a class needs a deferred higher Steenrod cup-i product (#65).");
+           "if a class needs a deferred higher Steenrod cup-i product.");
 
-  // ----- Eigen-backed value objects for the Hodge spectrum (#183) -----
+  // ----- Eigen-backed value objects for the Hodge spectrum -----
   py::class_<Cochain>(m, "Cochain",
       R"doc(A k-cochain: complex amplitudes over a k-simplex ordering.
 
@@ -302,7 +296,7 @@ eigenvector Cochain).)doc")
            py::return_value_policy::reference_internal,
            "The i-th eigenvector Cochain. Raises IndexError if out of range.");
 
-  // ----- Hodge Laplacian: k=0 Hermitian graph (#90), k>=1 metric Hodge (#104) -----
+  // ----- Hodge Laplacian: k=0 Hermitian graph, k>=1 metric Hodge -----
   py::enum_<HodgeLaplacian::MetricSource>(m, "HodgeMetricSource",
       R"doc(Where a Hodge operator's metric comes from: DiagonalWeights (the historical
 per-simplex diagonal weights of HodgeWeightConvention, the process default) or
@@ -343,7 +337,7 @@ not of signature; neither reintroduces a Euclidean path.)doc")
   py::class_<HodgeLaplacian>(m, "HodgeLaplacian",
       R"doc(Hodge Laplacian on a Spacetime, degree-parameterized by int k.
 
-ONE definition at every degree, the whitepaper's: with the integer boundary maps
+ONE definition at every degree: with the integer boundary maps
 d_k (ChainComplex), the diagonal metric weight W_k (weights(k); W_0 = I) and the
 weighted adjoint d_k* = W_k^-1 d_k^dagger W_{k-1},
 
@@ -371,7 +365,7 @@ yields empty results. Spectra are computed lazily and cached. This is the
 operator only -- fluxes, cycle bases, and Betti numbers belong to WilsonLoop /
 ChainComplex.
 
-The U(1) CONNECTION Laplacian is a DIFFERENT operator (#805). connectionLaplacian
+The U(1) CONNECTION Laplacian is a DIFFERENT operator. connectionLaplacian
 (with adjacency, degree, connectionSpectrum and friends) is the Hermitian
 L = D - A on the 1-skeleton assembled from each edge's complex weight
 squaredLength * exp(i*phase): adjacency Hermitian (the reverse orientation
@@ -383,8 +377,8 @@ cannot -- a nonzero flux lifts its zero mode, whereas dim ker L_0 is always b_0 
 and it is indexed over the FULL sorted vertex-id order, including any lone vertex
 ChainComplex omits.)doc")
       .def(py::init([](std::shared_ptr<Spacetime> st) {
-             // No-weights overload: read the PROCESS default at call time (the
-             // pybind default-argument form would bake it in at import).
+             // No-weights overload: read the process default at call time; a
+             // pybind default argument would bake it in at import.
              return new HodgeLaplacian(std::move(st));
            }),
            py::arg("spacetime"))
@@ -586,7 +580,7 @@ ChainComplex omits.)doc")
            "harmonics(k)[r].amplitude(c) exactly -- one call instead of one "
            "amplitudeFor round-trip per cell per harmonic. Raises for k<0; "
            "empty when the kernel is empty or k is above the top dimension.")
-      // ----- indefinite W-norms of the near-kernel (spec §5.6) -----
+      // ----- indefinite W-norms of the near-kernel -----
       .def("nullNorms", &HodgeLaplacian::nullNorms,
            py::arg("k"), py::arg("tol") = 1e-9, py::arg("metric") = true,
            "Indefinite W-norms <h,h>_W = sum_i W_{k,i} |h_i|^2 of the near-kernel "
@@ -594,9 +588,9 @@ ChainComplex omits.)doc")
            "A value ~0 flags a NULL (lightlike) harmonic; all positive on an "
            "all-spacelike complex.");
 
-  // ----- §4b eigenstate synthesis: residual + parameter access (#133) -----
+  // ----- eigenstate synthesis: residual + parameter access -----
   auto eigenstateSynthesis = py::class_<EigenstateSynthesis>(m, "EigenstateSynthesis",
-      R"doc(§4b inverse eigenvector problem on a fixed complex, degree-k.
+      R"doc(Inverse eigenvector problem on a fixed complex, degree-k.
 
 Scores how close the complex's current Hermitian edge weights make a target
 state psi to being an eigenvector of the degree-k Hodge Laplacian L_k (via
@@ -604,12 +598,12 @@ HodgeLaplacian), and reads/writes those weights so a search can perturb them.
 At k=0 the scored operator is the U(1) CONNECTION graph Laplacian D - A
 (connectionLaplacian, the magnitude convention), NOT the Hodge L_0: a
 degree-zero register carries U(1) flux and dim ker L_0 is always b_0, so an L_0
-readout would be identically gauge-flat (#805). psi is then a vertex vector
+readout would be identically gauge-flat. psi is then a vertex vector
 (|V|, sorted-id order). At k>=1 L_k is the metric Hodge Laplacian
 on k-forms (|C_k|, ChainComplex k-cell order); the tunable parameters stay the
 edge squared-lengths, which feed the volume weights W_k of L_k via Simplex.volume
 (phases enter only k=0). cellSimplices() gives each psi component's vertex tuple,
-so a caller can pin the boundary k-cells to a target form (the #176 k=1
+so a caller can pin the boundary k-cells to a target form (k=1
 3-manifold boundary-harmonic synthesis). The non-convex, multi-restart search
 itself (e.g.
 scipy.optimize.minimize L-BFGS-B over the flat {w_ij} + {theta_ij} vector) lives
@@ -625,17 +619,17 @@ setPhases in place. psi is indexed in the same sorted-vertex-id order as
 HodgeLaplacian (k=0).
 
 Parameters: the per-edge SIGNED real squared lengths {w_ij} = Re l^2
-(Edge.setSquaredLength; weights() reads Re, not a magnitude — #581) and U(1)
+(Edge.setSquaredLength; weights() reads Re, not a magnitude) and U(1)
 phases {theta_ij} (Edge.setPhase), in a stable edge order fixed at
 construction (the weight-carrying edges: both endpoints present, no self-loops).
 
-Fixed-boundary interior fill (§5.0): the tunable edges split into a boundary set
+Fixed-boundary interior fill: the tunable edges split into a boundary set
 dW (edges on a codim-1 face in exactly one top cell — held fixed) and an interior
 set (free). interiorWeights / interiorPhases + setInteriorWeights /
 setInteriorPhases read/write only the interior edges, so a search drives r -> 0
 for a target output eigenvector while dW stays byte-identical (boundaryEdges()
 exposes that fixed set). growInterior() cones a fresh interior vertex via the
-boundary-fixed pre-geometric Pachner add (#112), enriching the interior with dW
+boundary-fixed pre-geometric Pachner add, enriching the interior with dW
 untouched; interiorVertexCount / numInteriorEdges report the interior complexity
 reached. On a 1-complex there is no boundary — every edge is interior.)doc")
       .def(py::init<std::shared_ptr<Spacetime>, int, HodgeLaplacian::MetricSource>(),
@@ -675,16 +669,16 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
       .def("weights", &EigenstateSynthesis::weights,
            "The SIGNED real parts {Re l^2_ij} of the edge squared lengths, in "
            "the stable edge order — not magnitudes (a timelike edge reads "
-           "negative), and any resident Im l^2 is not reported (#581).")
+           "negative), and any resident Im l^2 is not reported.")
       .def("phases", &EigenstateSynthesis::phases,
            "Edge phases {theta_ij} (radians) in the stable edge order.")
       .def("setWeights", &EigenstateSynthesis::setWeights, py::arg("w"),
            "Write the edge squared lengths in place as REAL signed values "
            "(l^2 = w + 0i, zeroing any resident Im — the ordinary-Lorentzian "
-           "convention, #581). Raises if len(w) != numEdges().")
+           "convention). Raises if len(w) != numEdges().")
       .def("setPhases", &EigenstateSynthesis::setPhases, py::arg("theta"),
            "Write the edge phases in place. Raises if len(theta) != numEdges().")
-      // ----- Fixed-boundary interior fill (§5.0, #147) -----
+      // ----- Fixed-boundary interior fill -----
       .def("numInteriorEdges", &EigenstateSynthesis::numInteriorEdges,
            "Number of interior tunable edges (not on dW) — the length of "
            "interiorWeights() / interiorPhases() and the free parameters a "
@@ -696,13 +690,13 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "apexes; the interior complexity the synthesis grows / reports.")
       .def("interiorWeights", &EigenstateSynthesis::interiorWeights,
            "Interior edge SIGNED real squared lengths {Re l^2_ij} in "
-           "interior-edge order (Re, not magnitudes — #581).")
+           "interior-edge order (Re, not magnitudes).")
       .def("interiorPhases", &EigenstateSynthesis::interiorPhases,
            "Interior edge phases {theta_ij} (radians) in interior-edge order.")
       .def("setInteriorWeights", &EigenstateSynthesis::setInteriorWeights,
            py::arg("w"),
            "Write the interior edge squared lengths in place as REAL signed "
-           "values (l^2 = w + 0i, zeroing any resident Im — #581); the boundary "
+           "values (l^2 = w + 0i, zeroing any resident Im); the boundary "
            "edges are left untouched. Raises if len(w) != numInteriorEdges().")
       .def("setInteriorPhases", &EigenstateSynthesis::setInteriorPhases,
            py::arg("theta"),
@@ -717,13 +711,13 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "(the complement of boundaryEdges()).")
       .def("growInterior", &EigenstateSynthesis::growInterior, py::arg("seed"),
            "Cone a fresh interior vertex into a top cell via the boundary-fixed "
-           "pre-geometric Pachner add (#112): a 1->(d+1) stellar subdivision that "
+           "pre-geometric Pachner add: a 1->(d+1) stellar subdivision that "
            "leaves dW exactly fixed while enriching the interior. Re-captures the "
            "vertex order and interior/boundary partition, so order() grows by one "
            "(extend psi on the new apex, appended last in sorted-id order) and "
            "numInteriorEdges() grows. Returns False if no top cell can be "
            "subdivided (e.g. a 1-complex), leaving the complex unchanged.")
-      // ----- Free interior connectivity (general growth primitive, #200) -----
+      // ----- Free interior connectivity (general growth primitive) -----
       .def("attachInteriorVertex", &EigenstateSynthesis::attachInteriorVertex,
            py::arg("incident_simplices"),
            "Add a fresh interior vertex with an arbitrary specified set of "
@@ -756,7 +750,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "complex -- top cells from the surgery state, with the k-cell "
            "universe checked for dangling facets when k = n-1 (the register "
            "layers). Accept topology moves only while this stays true.")
-      // ----- The carried register read-outs (#286) -----
+      // ----- The carried register read-outs -----
       .def("cyclePeriods", &EigenstateSynthesis::cyclePeriods, py::arg("holes"),
            "The period matrix of the current harmonics over the boundary "
            "cycles of the given (removed) cells: flat row-major "
@@ -801,7 +795,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "hole's facets. Reproduces the k=1 edge-loop core on triangle holes. At "
            "k=0 the core runs against the genuinely COMPLEX Hermitian U(1) "
            "CONNECTION operator D - A (full l^2 + U(1) phases; holes are removed "
-           "1-cells, i.e. vertex pairs) with the SVD pseudo-inverse fit (#589) — "
+           "1-cells, i.e. vertex pairs) with the SVD pseudo-inverse fit — "
            "the k=0 Euler identity is Σ l² ∂r_U = +2 r_U (that operator is "
            "degree +1 in l²). At k>=1, certified by the exact Euler identity Σ l² ∂r_U = −r_U (FD does not "
            "converge). Raises on a hole/target length mismatch.")
@@ -824,7 +818,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "perturbation enters: d r_psi = 2 Re( r^H (Q dUn) c ) -- no leak, no "
            "dpsi chain. Raises on a hole/target length mismatch or a malformed "
            "hole.")
-      // ----- The discovered operator: ker L1(W - dW) (#363) -----
+      // ----- The discovered operator: ker L1(W - dW) -----
       .def("bulkMinusBoundaryCells",
            &EigenstateSynthesis::bulkMinusBoundaryCells,
            "The interior 1-cells of W - dW (edges both of whose endpoints are "
@@ -843,7 +837,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "(dim ker L1) x len(bulkMinusBoundaryCells()) complex array. "
            "Use metric=True for relaxed-geometry claims; metric=False is "
            "topology-only. Read fresh from the live complex.")
-      // ----- Surgery: the topology-changing interior remove move (#196) -----
+      // ----- Surgery: the topology-changing interior remove move -----
       .def("interiorTopCells", &EigenstateSynthesis::interiorTopCells,
            "The interior top cells (all-interior vertices, on no dW face) as "
            "sorted vertex-id tuples — the surgery removal candidates. Removing one "
@@ -852,7 +846,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "growInterior's subdivision and the additive attach.")
       .def("removeInteriorCell", &EigenstateSynthesis::removeInteriorCell,
            py::arg("cell"),
-           "Surgery (#196): remove the interior top cell `cell` (a tuple from "
+           "Surgery: remove the interior top cell `cell` (a tuple from "
            "interiorTopCells()) and any edges it leaves orphaned, keeping a valid "
            "downward-closed complex. Topology-CHANGING: b_k moves (a filled disk "
            "b_1=0 becomes an annulus b_1=1). dW is held bit-exact — the cell has no "
@@ -890,7 +884,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "phase 0) — the unit cochain metric the register/fill seeds are built "
            "with, held by construction rather than by the createSimplexTracked "
            "time-rule coincidence on all-same-time seeds.")
-      // ----- Charge sector: the E/B split of F in Omega^2 (#417) -----
+      // ----- Charge sector: the E/B split of F in Omega^2 -----
       .def("curvatureFromConnection",
            &EigenstateSynthesis::curvatureFromConnection, py::arg("A"),
            "The curvature 2-cochain F = dA from a U(1) connection 1-cochain A by "
@@ -918,7 +912,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "missing.")
       .def("gaussLawCharge", &EigenstateSynthesis::gaussLawCharge, py::arg("F"),
            py::arg("enclosedVertices"), py::arg("electricOnly") = true,
-           "The discrete Gauss-law charge Q = oint_S E (#411): the temporal-sector "
+           "The discrete Gauss-law charge Q = oint_S E: the temporal-sector "
            "flux of a field-strength 2-cochain F through the closed surface S = dV "
            "bounding the worldtube V (the closed star of enclosedVertices, the quark "
            "windows). Sums F over S's plaquettes with their induced (-1)^j "
@@ -931,7 +925,7 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
            "exactly 0 (the neutral total of the reduced color-only sector). Raises "
            "if degree() != 2 or len(F) != order().");
 
-  // The result of fieldStrengthSplit (#417): the E/B partition of F in Omega^2.
+  // The result of fieldStrengthSplit: the E/B partition of F in Omega^2.
   py::class_<EigenstateSynthesis::FieldStrengthSplit>(
       eigenstateSynthesis, "FieldStrengthSplit",
       "The E/B split of a field-strength 2-cochain F by plaquette causal type "
@@ -955,8 +949,8 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
                     "Indices into cellSimplices() of the magnetic "
                     "(purely-spacelike) plaquettes.");
 
-  // Exact integer / GF(2) / inertia primitives (also exposed for direct
-  // testing). Matrices are passed flat row-major with explicit dims.
+  // Exact integer / GF(2) / inertia primitives. Matrices are passed flat
+  // row-major with explicit dims.
   py::class_<SmithNormalForm>(m, "SmithNormalForm")
       .def_readonly("rank", &SmithNormalForm::rank)
       .def_readonly("invariant_factors", &SmithNormalForm::invariantFactors);
@@ -990,15 +984,15 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
         py::arg("tol") = 1e-9,
         "Inertia (#pos,#neg,#zero eigenvalues) of a symmetric integer matrix.");
 
-  // ----- Capability A (#65): characteristic numbers -----
+  // ----- Characteristic numbers -----
   // Scalar invariants are Observables; families come from CharacteristicNumbers.
   py::class_<EulerCharacteristic, std::shared_ptr<EulerCharacteristic>>(
       m, "EulerCharacteristic",
       "Observable: Euler characteristic chi = sum_k (-1)^k |C_k|.")
       .def(py::init<>())
       .def("compute", &EulerCharacteristic::compute, py::arg("spacetime"));
-  // Qualified: tessera::spacetime::Signature (metric signature) is also in
-  // scope via the using-directives.
+  // Qualified, since tessera::spacetime::Signature (metric signature) is also
+  // in scope via the using-directives.
   py::class_<cobordism::Signature, std::shared_ptr<cobordism::Signature>>(
       m, "Signature",
       "Observable: signature b+ - b- of the H_2 intersection form (closed "
@@ -1027,11 +1021,11 @@ reached. On a 1-complex there is no boundary — every edge is interior.)doc")
                   "Compute the characteristic numbers of the given manifold.");
 
 
-  // === MultiCobordism (#491): the C++ source-of-truth fully-emergent merge
-  // optimizer — emergent topology at a user-defined degree k. ===
+  // === MultiCobordism: the C++ fully-emergent merge optimizer, emergent
+  // topology at a user-defined degree k. ===
 
   py::class_<BoundaryFiber>(m, "BoundaryFiber",
-      R"doc(The fiber form of a boundary block's target (#916): a retained fiber on the
+      R"doc(The fiber form of a boundary block's target: a retained fiber on the
 block's degree-k cells (images Z_B, dual images, Gram Z_B^T M_BB Z_B, the band's eigenvalue,
 contour, certificate, and the Lorentzian rotation epsilon).)doc")
       .def(py::init<>())
@@ -1048,7 +1042,7 @@ contour, certificate, and the Lorentzian rotation epsilon).)doc")
       .def("rank", &BoundaryFiber::rank);
 
   py::class_<AssembledPencil>(m, "AssembledPencil",
-      "A glued pencil (#916): the union of cobordisms' top cells with one geometry, "
+      "A glued pencil: the union of cobordisms' top cells with one geometry, "
       "assembled per top simplex, with the shared cells and the one epsilon recorded.")
       .def_property_readonly("complex", [](const AssembledPencil &a) { return a.complex(); })
       .def_property_readonly("lengths", [](const AssembledPencil &a) { return a.lengths; })
@@ -1071,7 +1065,7 @@ contour, certificate, and the Lorentzian rotation epsilon).)doc")
       .def_readonly("matrix", &BorderedPencil::matrix);
 
   py::class_<FiberLevel>(m, "FiberLevel",
-      "A pencil level whose interface coordinates are retained fibers (#916): the Feshbach "
+      "A pencil level whose interface coordinates are retained fibers: the Feshbach "
       "reduction onto the fibers' cells restricted to the fibers, with J, J~ = Z, and the Gram.")
       .def_readonly("degree", &FiberLevel::degree)
       .def_readonly("lambda_", &FiberLevel::lambda)
@@ -1087,8 +1081,7 @@ contour, certificate, and the Lorentzian rotation epsilon).)doc")
       .def_readonly("fibersDisjoint", &FiberLevel::fibersDisjoint);
 
   py::class_<PencilLayer>(m, "PencilLayer",
-      R"doc(Continuation of a relaxed cobordism's boundary fibers into the next pencil level
-(#916): exact assembly of cobordisms along shared cells (one epsilon per assembly), boundary
+      R"doc(Continuation of a relaxed cobordism's boundary fibers into the next pencil level: exact assembly of cobordisms along shared cells (one epsilon per assembly), boundary
 responses and their star-product composition, fiber reads from certified Riesz bands, the
 next level with the Gram carried exactly, and fiber-to-fiber transfer with the reversal
 assertion. Every pairing is the transpose.)doc")
@@ -1161,8 +1154,7 @@ assertion. Every pairing is the transpose.)doc")
       .def_readonly("base_vertex", &MultiCobordism::BlockMarking::baseVertex)
       .def("rank", &MultiCobordism::BlockMarking::rank);
   py::class_<MultiCobordism::DerivedFrame>(m, "DerivedFrame",
-      "The frame the engine DERIVES for a marked block from its live own complex (spec section 2 "
-      "'Frame of a block', D3): `frame` (BlockFrame on the block's own edges) with images F = Z inv(Pi), Z "
+      "The frame the engine DERIVES for a marked block from its live own complex: `frame` (BlockFrame on the block's own edges) with images F = Z inv(Pi), Z "
       "the images of the zero mode of the block's own covariant Whitney pencil and Pi its transported "
       "periods over the marking's cycles from the common base point, so column b has period delta_cb; "
       "dual images from the DUAL kernel (the zero mode under the inverse links) normalized so that "
@@ -1175,7 +1167,7 @@ assertion. Every pairing is the transpose.)doc")
       .def_readonly("obstruction", &MultiCobordism::DerivedFrame::obstruction)
       .def("derived", &MultiCobordism::DerivedFrame::derived);
   py::class_<MultiCobordism::InputStateRead>(m, "InputStateRead",
-      "The state at a marked block (spec section 2 'State at a block', S6): `coefficients` = the "
+      "The state at a marked block: `coefficients` = the "
       "coefficients of the WHOLE's zero mode in the block's live frame -- the transported periods over "
       "the marking's cycles of the least-squares combination of the whole's zero mode fitting the "
       "block's target edge values (its `input` coefficients through the live frame) on the block's "
@@ -1211,7 +1203,7 @@ assertion. Every pairing is the transpose.)doc")
                              [](const MultiCobordism::BoundaryBlock &block) {
                                return block.fiber;
                              },
-                             "The fiber form of the target (#916), or None.")
+                             "The fiber form of the target, or None.")
       .def_property_readonly("surface",
                              [](const MultiCobordism::BoundaryBlock &block) {
                                return block.surface;
@@ -1341,7 +1333,7 @@ assertion. Every pairing is the transpose.)doc")
           "residual_trace",
           &MultiCobordism::BoundaryStateTransferResult::residualTrace);
   py::class_<MultiCobordism::TwoBodyTarget>(m, "TwoBodyTarget",
-      "chi on the pair of attached frames and the reading flag (#941).")
+      "chi on the pair of attached frames and the reading flag.")
       .def(py::init<>())
       .def_readwrite("chi", &MultiCobordism::TwoBodyTarget::chi)
       .def_readwrite("choi_decomposed", &MultiCobordism::TwoBodyTarget::choiDecomposed)
@@ -1378,12 +1370,12 @@ assertion. Every pairing is the transpose.)doc")
       .def_readwrite("face_b", &MultiCobordism::TubeSpec::faceB)
       .def_readwrite("reflect", &MultiCobordism::TubeSpec::reflect);
   py::class_<MultiCobordism::BlockSurface>(m, "BlockSurface",
-      "A block's own surface (spec D2, the enumeration half): its (d-1)-faces and its "
+      "A block's own surface: its (d-1)-faces and its "
       "edges inside its vertex set, as sorted vertex-id tuples.")
       .def_readonly("faces", &MultiCobordism::BlockSurface::faces)
       .def_readonly("edges", &MultiCobordism::BlockSurface::edges);
   py::class_<MultiCobordism::MonodromyRead>(m, "MonodromyRead",
-      "The monodromy of a drawn cobordism between two marked surfaces (spec S6): the "
+      "The monodromy of a drawn cobordism between two marked surfaces: the "
       "whole's degree-1 ZERO MODE (the harmonic contour of the Whitney pencil, bulk and "
       "boundary edges in one operator) read on both markings' edges, its periods "
       "periods_a (|A| x rank) and periods_b, and the matrix M with P_B = M P_A "
@@ -1415,7 +1407,7 @@ assertion. Every pairing is the transpose.)doc")
                     "The band's BandCertificate: node count, idempotency, rank, gap, resolvent bound.")
       .def_readonly("obstruction", &MultiCobordism::RestrictionRead::obstruction);
   py::class_<MultiCobordism::TwoBodyRead>(m, "TwoBodyRead",
-      "The reading of the bulk between two attached input frames (#941): the frame transfer "
+      "The reading of the bulk between two attached input frames: the frame transfer "
       "T_AB (operator reading), vec(T_AB) (Choi-decomposed state reading), its Schmidt spectrum "
       "and rank, the reversal residual, the fit residual for two inputs (NaN for the four-input "
       "paired diagnostic), and the input blocks' fiber residuals.")
@@ -1425,7 +1417,7 @@ assertion. Every pairing is the transpose.)doc")
                     "True when `transfer` was read in the blocks' frames (a marking by set_input_marking "
                     "or a frame by set_input_frame, on both), false when in identity frames on the cells.")
       .def_readonly("derived_frames", &MultiCobordism::TwoBodyRead::derivedFrames,
-                    "True when both frames were derived live from the blocks' markings (spec D3 as revised).")
+                    "True when both frames were derived live from the blocks' markings.")
       .def_readonly("input_states", &MultiCobordism::TwoBodyRead::inputStates,
                     "The state at every marked input block (InputStateRead, block order).")
       .def_readonly("choi_state", &MultiCobordism::TwoBodyRead::choiState)
@@ -1513,14 +1505,14 @@ assertion. Every pairing is the transpose.)doc")
                     &MultiCobordism::GeometricOperatorReadout::operatorMatrix);
   auto multiCobordismClass =
       py::class_<MultiCobordism, std::shared_ptr<MultiCobordism>>(m, "MultiCobordism",
-      "The fully-emergent MultiCobordism merge optimizer (#491): merge as a "
+      "The fully-emergent MultiCobordism merge optimizer: merge as a "
       "fully emergent optimization. From a bare host it grows the register by "
       "gated surgical moves under an explicitly selected Legacy, joint "
       "Regge-Hodge-stationarity, or mediated-correspondence objective at a "
       "USER-DEFINED degree k (degrees), reading holes "
       "dynamically off getBoundary. Two stages: run_stage1 (combinatorial), "
       "run_stage2 (geometric) -- or run(), which interleaves both updates in one "
-      "loop. An EMPTY output_targets list is supported (#555): "
+      "loop. An EMPTY output_targets list is supported: "
       "nothing is pinned downstream, r_u sums only the input blocks, and the "
       "whole's final state emerges (read after the fact).")
       .def(py::init<std::shared_ptr<Spacetime>,
@@ -1538,9 +1530,9 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("singular_value_ratio") = false,
            py::arg("einstein_hilbert") = true,
            py::arg("real_squared_lengths_only") = false)
-      // Explicit metric source. Without it the C++ default argument reads the
-      // process-wide HodgeLaplacian.defaultMetricSource() at CALL time (a
-      // pybind11 default would capture it at import).
+      // Explicit metric source: a pybind11 default would capture the
+      // process-wide HodgeLaplacian.defaultMetricSource() at import rather than
+      // reading it at call time.
       .def(py::init<std::shared_ptr<Spacetime>,
                     std::vector<std::vector<std::complex<double>>>,
                     std::vector<std::vector<std::complex<double>>>,
@@ -1714,7 +1706,7 @@ assertion. Every pairing is the transpose.)doc")
              }
              self.setTwoBodyCases(std::move(out));
            }, py::arg("cases"),
-           "Fit ONE bulk to several input pairs at once (#1017). Each case is "
+           "Fit ONE bulk to several input pairs at once. Each case is "
            "(boundary, chi[, choi_decomposed[, paired_direct_sum_target[, "
            "input_coefficients]]]), where boundary is a list of "
            "(source_id, target_id, squared_length) for the BOUNDARY edges and "
@@ -1766,10 +1758,9 @@ assertion. Every pairing is the transpose.)doc")
                   "refuse what they always refused.")
       .def_static("boundary_facets",
                   [](const Spacetime &spacetime) {
-                    // A list, not a set: the C++ side keeps a std::set for the
-                    // lookups the gate makes, but a Python set cannot hold an
-                    // unhashable list, so the order the set already carries
-                    // (ascending vertex tuples) is handed over as a sequence.
+                    // A list, not a set: a Python set cannot hold an
+                    // unhashable list, so the std::set's order (ascending
+                    // vertex tuples) is handed over as a sequence.
                     const auto facets = MultiCobordism::boundaryFacetsOf(spacetime);
                     return std::vector<std::vector<std::uint64_t>>(facets.begin(), facets.end());
                   },
@@ -1811,7 +1802,7 @@ assertion. Every pairing is the transpose.)doc")
              const auto g = self.fiberResidualGradientOn(self.spacetime(), fiber);
              return std::make_pair(g.lengths, g.phases);
            }, py::arg("fiber"),
-           "Analytic gradient of the fiber residual of `fiber` on the live complex (#947): (lengths, phases) "
+           "Analytic gradient of the fiber residual of `fiber` on the live complex: (lengths, phases) "
            "in EdgeList order, each entry (d/dRe, d/dIm) packed as a complex number; phases empty above degree 0.")
       .def("two_body_residual_gradient",
            [](const MultiCobordism &self) {
@@ -1820,14 +1811,14 @@ assertion. Every pairing is the transpose.)doc")
              const auto g = self.twoBodyResidualGradientOn(self.spacetime(), *self.twoBodyTarget());
              return std::make_pair(g.lengths, g.phases);
            }, "Legacy analytic gradient of the frame-transfer two-body residual on the live "
-              "complex (#947), independent of the selected readout. fiber_mode_ascent dispatches "
+              "complex, independent of the selected readout. fiber_mode_ascent dispatches "
               "the objective's selected readings.")
       .def("fiber_mode_ascent",
            [](const MultiCobordism &self) {
              py::gil_scoped_release release;
              const auto g = self.fiberModeAscent();
              return std::make_pair(g.lengths, g.phases);
-           }, "The analytic ascent of every fiber-mode term of r_U on the live complex (#947). "
+           }, "The analytic ascent of every fiber-mode term of r_U on the live complex. "
               "Refuses when a selected two-body reading has no analytic gradient.")
       .def("attach_input_fiber", &MultiCobordism::attachInputFiber, py::arg("index"), py::arg("fiber"),
            py::arg("cells"),
@@ -1873,10 +1864,10 @@ assertion. Every pairing is the transpose.)doc")
            "derive_frame of input block `index` on the live complex.")
       .def("input_state_residual", &MultiCobordism::inputStateResidual, py::arg("index"),
            py::call_guard<py::gil_scoped_release>(),
-           "The leak of the OUTPUT-state read at input block `index` (spec R1, S6): the leak of its "
+           "The leak of the OUTPUT-state read at input block `index`: the leak of its "
            "input coefficients, written on its edges through its live frame, in the zero mode of the "
            "ENTIRE cobordism at the whole's harmonic contour restricted to those edges; 1.0 when the "
-           "frame cannot be derived. Reported, not scored: r_U scores own_state_residual (spec D2).")
+           "frame cannot be derived. Reported, not scored: r_U scores own_state_residual.")
       .def("own_state_residual", &MultiCobordism::ownStateResidual, py::arg("index"),
            py::call_guard<py::gil_scoped_release>(),
            "The block residual of input block `index` (qubit cobordism spec D2): 1 - |<psi(tau_in)|psi(tau_hat)>|^2 "
@@ -1900,7 +1891,7 @@ assertion. Every pairing is the transpose.)doc")
                               &MultiCobordism::blockQubit),
            py::arg("index"), py::call_guard<py::gil_scoped_release>(),
            "The live surface of input block `index` read as the SimplicialQubit over its marking, in the "
-           "orientation with A . B = +1 (spec D2, S6): the object own_state_residual scores and the qubit "
+           "orientation with A . B = +1: the object own_state_residual scores and the qubit "
            "read reports, so the two cannot disagree.")
       .def("read_input_state", &MultiCobordism::readInputState, py::arg("index"),
            py::call_guard<py::gil_scoped_release>(),
@@ -1923,7 +1914,7 @@ assertion. Every pairing is the transpose.)doc")
            "pencil at `degree`: with M_k the pencil's Whitney mass matrix (CovariantChainHodge.Minv, "
            "PencilLayer.pencil(...).B) restricted to `cells` and B = Z.T @ M_k @ Z the frame's pairing, "
            "Z^vee = Z @ inv(B).T, so that Z^vee.T @ M_k @ Z == I (the BlockFrame contract; the "
-           "whitepaper's canonical left frame at U = 1). Read-only on the complex. Refuses by name a "
+           "canonical left frame at U = 1). Read-only on the complex. Refuses by name a "
            "null complex, a degree above its dimension, a frame without columns, a row count other than "
            "the cell count, a cell absent at that degree, and a singular pairing (an isotropic frame).")
       .def("input_frame_dual", &MultiCobordism::inputFrameDual, py::arg("index"), py::arg("images"),
@@ -2061,7 +2052,7 @@ assertion. Every pairing is the transpose.)doc")
                   "by dualComplexIsValid and refused by name.")
       .def_static("seed_collar", &MultiCobordism::seedCollar, py::arg("surface_a"), py::arg("surface_b"),
            py::arg("layers") = 1, py::arg("twist") = std::vector<std::uint64_t>{},
-           "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics (spec S3): "
+           "The SurfaceSeed of the COLLAR between two surfaces of identical combinatorics: "
            "T^2 x I over their shared triangulation (Spacetime.prismCells, `layers` product layers), "
            "layer 0 = surface A, last layer = surface B, the surfaces' lengths verbatim, the auto-wired "
            "length on every other edge, zero phases, gated once as a whole by dualComplexIsValid and "
@@ -2072,7 +2063,7 @@ assertion. Every pairing is the transpose.)doc")
            "inside the block) and its edges inside its vertex set, as sorted vertex tuples.")
       .def_static("block_surface_subcomplex", &MultiCobordism::blockSurfaceWithGeometry, py::arg("block"),
            py::arg("spacetime"),
-           "A surface block's OWN complex with the host's geometry (spec D2): block_surface's faces as "
+           "A surface block's OWN complex with the host's geometry: block_surface's faces as "
            "the top cells of a fresh (d-1)-dimensional Spacetime keeping the host's vertex ids, every "
            "edge with the host's current length and phase. Its Laplacian is the block's own Laplacian: "
            "the block's fiber residual is read in its zero mode and the residual's gradient is taken on "
@@ -2088,7 +2079,7 @@ assertion. Every pairing is the transpose.)doc")
            "ids as cycles of directed steps (u, v) with the same step convention as `monodromy`: "
            "one harmonic basis and every marking's periods from it. Read-only.")
       .def("set_input_fiber", &MultiCobordism::setInputFiber, py::arg("index"), py::arg("fiber"),
-           "Attach the fiber form of an input block's target (#916).")
+           "Attach the fiber form of an input block's target.")
       .def("set_output_fiber", &MultiCobordism::setOutputFiber, py::arg("index"), py::arg("fiber"))
       .def("input_fiber", [](const MultiCobordism &self, std::size_t i) { return self.inputFiber(i); },
            py::arg("index"))
@@ -2276,9 +2267,8 @@ assertion. Every pairing is the transpose.)doc")
            "union of the surface faces: the boundary of W is the surfaces. True by construction "
            "on a collar seed; false without surface inputs.")
       .def("seed_outputs", &MultiCobordism::seedOutputs, py::arg("seeds"))
-      // Long pure-C++ compute: release the GIL for the duration so a background thread can
-      // drive a pass (a single call, per the register-growth constraint) without blocking the
-      // main thread -- e.g. multicobordism_animation.py --live keeps its GUI responsive.
+      // Long pure-C++ compute: release the GIL so a background thread can drive
+      // a pass without blocking the main thread.
       .def_static("depth_schedule", &MultiCobordism::depthSchedule,
                   py::arg("max_lookahead"), py::arg("combinatorial_breadth"),
                   "The depth ladder one stage-1 update walks, in the order it "
@@ -2357,7 +2347,7 @@ assertion. Every pairing is the transpose.)doc")
       .def_property_readonly("should_propose_dispositions",
                              &MultiCobordism::shouldProposeDispositions,
            "Whether the stage-1 move draw also proposes CAUSAL DISPOSITIONS "
-           "(#613) -- a timelike cone-in and a disposition flip on an existing "
+           " -- a timelike cone-in and a disposition flip on an existing "
            "edge. Both are ordinary candidate moves: drawn at random, scored by "
            "deltaF, committed only when they lower F. Nothing prescribes causal "
            "structure; the objective decides whether it wants any.\n\n"
@@ -2453,8 +2443,8 @@ Right -- re-read after each drive call:
            py::arg("stage2_max_iters") = 10, py::arg("stage2_alpha0") = 0.05,
            py::arg("hole_placement_strategy") =
                MultiCobordism::HolePlacementStrategy::AdjacentHolesLast,
-           // Composes run_stage1/run_stage2 internally (C++ -> C++, so no nested guard); release
-           // the GIL here too so a background thread driving the build stays off the main thread.
+           // Composes run_stage1/run_stage2 internally (C++ -> C++, so no nested
+           // guard); release the GIL here too.
            py::call_guard<py::gil_scoped_release>(),
            "Apply one BuildAction to this node in place (GROW/EVOLVE = run_stage1 with "
            "grow_boundaries true/false; RELAX = run_stage2; CONE_OUT/CONE_IN = the directed "
@@ -2505,7 +2495,7 @@ Right -- re-read after each drive call:
            "Whether the edge between a and b is held fixed: true iff some ONE region "
            "contains both endpoints. An edge spanning two distinct regions is bulk.");
 
-  // === #776: modes, the enumerable objective, refinement, and the overlay ===
+  // === modes, the enumerable objective, refinement, and the overlay ===
   py::enum_<MultiCobordism::SimulationMode>(multiCobordismClass, "SimulationMode",
       "The three top-level simulation modes.")
       .value("EMERGENCE", MultiCobordism::SimulationMode::Emergence,
@@ -2647,9 +2637,8 @@ Right -- re-read after each drive call:
       "callable, since a bound callable would capture the node and smuggle "
       "back the reachability the former static objective_of denied.")
       .def(py::init<>())
-      // Every field is readable, and every one is data. A Python objective
-      // must be able to read what it scores; what it must NOT be able to read
-      // is an analysis product, and none is here to read.
+      // Every field is readable and every one is data; no analysis product is
+      // exposed here.
       .def_readwrite("spacetime", &ObjectiveContext::spacetime,
                      "The complex being scored.")
       .def_readwrite("region", &ObjectiveContext::region,
@@ -2799,7 +2788,7 @@ Right -- re-read after each drive call:
              std::shared_ptr<JointStationarityObjective>>(
       m, "JointStationarityObjective",
       "beta_R ||grad_z S_Regge||^2 + eta_H sum_k ||grad_z S_Hodge,k||^2 -- the "
-      "objective the whitepaper describes, and the only built-in that is not "
+      "objective this class describes, and the only built-in that is not "
       "target-conditioned.")
       .def(py::init<>());
 
@@ -2897,11 +2886,11 @@ Right -- re-read after each drive call:
            "Exact analytic dE/dz per edge in getEdgeList() order.")
       .def("carried_state_purity_defect",
            &MultiCobordism::carriedStatePurityDefect,
-           "The #780 purity defect ||Gamma^2 - Gamma||_F of the carried "
+           "The purity defect ||Gamma^2 - Gamma||_F of the carried "
            "covariance (NaN with no carried state).")
       .def("carried_state_purity_holds",
            &MultiCobordism::carriedStatePurityHolds, py::arg("tolerance") = 1e-9,
-           "Whether the #780 purity certificate HOLDS at the tolerance.")
+           "Whether the purity certificate HOLDS at the tolerance.")
       .def("set_mean_field_schedule", &MultiCobordism::setMeanFieldSchedule,
            py::arg("dt"), py::arg("steps"),
            "The checkpointed mean-field update schedule.")
@@ -2910,7 +2899,7 @@ Right -- re-read after each drive call:
       .def_property_readonly("mean_field_steps", &MultiCobordism::meanFieldSteps)
       .def("advance_carried_state", &MultiCobordism::advanceCarriedState,
            py::call_guard<py::gil_scoped_release>(),
-           "Advance the carried covariance through #780's meanFieldEvolve under "
+           "Advance the carried covariance through meanFieldEvolve under "
            "the SAME generator the energy term uses. Returns the worst purity "
            "defect measured across the steps.")
       .def_static("refinement_indicator_names",
@@ -2967,7 +2956,7 @@ Right -- re-read after each drive call:
                   "return the freshly written checkpoint. Raises on an unknown "
                   "schema_version.");
 
-  // === CobordismDAG (#491): chain emergent merges, output -> input ===
+  // === CobordismDAG: chain emergent merges, output -> input ===
   py::class_<CobordismDAG>(m, "CobordismDAG",
       "Chain emergent merges (MultiCobordism) into a DAG: the output of one "
       "cobordism is an input to the next (the proton_merge_sequence compose, "
@@ -2993,7 +2982,7 @@ Right -- re-read after each drive call:
       .def("residual", &CobordismDAG::residual, py::arg("node"))
       .def("set_fiber_piping", &CobordismDAG::setFiberPiping, py::arg("enabled"), py::arg("degree") = 1,
            py::arg("score_blocks_by_fiber") = false,
-           "Pipe each node's output fibers (#916) into the downstream input blocks the edges name.")
+           "Pipe each node's output fibers into the downstream input blocks the edges name.")
       .def("fiber_piping", &CobordismDAG::fiberPiping)
       .def("scores_blocks_by_fiber", &CobordismDAG::scoresBlocksByFiber)
       .def("set_input_attachment", &CobordismDAG::setInputAttachment, py::arg("node"), py::arg("slot"),
@@ -3009,7 +2998,7 @@ Right -- re-read after each drive call:
       .def("piped_input_count", &CobordismDAG::pipedInputCount, py::arg("node"))
       .def("__len__", &CobordismDAG::size);
 
-  // === Proton (#503): the canonical two-step MultiCobordism proton build ===
+  // === Proton: the canonical two-step MultiCobordism proton build ===
   auto protonClass = py::class_<Proton>(m, "Proton",
       R"doc(The canonical, footgun-free proton builder, composing MultiCobordism.
 
@@ -3089,9 +3078,9 @@ tickets.)doc");
       .def("diquark_residual", &Proton::diquarkResidual,
            "Step A's r_U (small => the diquark recombination converged).");
 
-  // === ProtonIngredients (#555): the emergent arm — nothing pinned downstream ===
+  // === ProtonIngredients: the emergent arm, nothing pinned downstream ===
   py::class_<ProtonIngredients>(m, "ProtonIngredients",
-      R"doc(The emergent arm of the proton build (#555). Proton is the canonical line
+      R"doc(The emergent arm of the proton build. Proton is the canonical line
 in the sand and is composed here unchanged; ProtonIngredients prepares the same
 ingredients through the same two-step drive EXCEPT that the final state is never
 pinned: step B's output-target list is EMPTY, so the objective is
@@ -3164,20 +3153,20 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
       .def("diquark_residual", &ProtonIngredients::diquarkResidual,
            "Step A's r_U — reported exactly as Proton reports it.");
 
-  // ----- Gated surgical cone-out/cone-in (topology change, #460) -----
+  // ----- Gated surgical cone-out/cone-in (topology change) -----
   py::class_<SurgicalCone>(m, "SurgicalCone",
-      R"doc(Gated surgical cone-out/cone-in: the topology-CHANGING move (#460, T3).
+      R"doc(Gated surgical cone-out/cone-in: the topology-CHANGING move.
 
-The genuine b_k-hole creator of the Emergent Color Topology epic (#457). Pachner
+The genuine b_k-hole creator. Pachner
 moves and the orientation-safe stellar refinement cone (T1/T2) are topology-
 PRESERVING; this is not. coneOut removes one top cell (its orphaned edges, then
 any isolated vertex) -- on a closed manifold this opens a manifold-with-boundary
 and, for a cell disjoint from an existing hole, raises b_{d-1} by 1 (on S^3, the
 color register's b_2). coneIn adds one top cell on a fresh vertex joined to d
 existing vertices, lowering b_{d-1} by 1 when it caps a hole. EVERY move is gated
-on ChainComplex.dualComplexIsValid (a valid manifold-with-boundary; the #429
-n>=4 recursive check) -- surgery is allowed BECAUSE it is gated; bypassing the
-gate is what broke the #353 weld. Rejected moves roll back bit-identically.
+on ChainComplex.dualComplexIsValid (a valid manifold-with-boundary; the
+n>=4 recursive check) -- surgery is allowed BECAUSE it is gated. Rejected
+moves roll back bit-identically.
 Accepted moves stack; rollback() undoes the last LIFO, restoring every edge
 length and phase so a round trip leaves the dual Regge action (Re AND Im)
 invariant.)doc")
@@ -3218,7 +3207,7 @@ invariant.)doc")
            "(ok, reason): the manifold-with-boundary verdict on the CURRENT "
            "complex -- the same gate coneOut / coneIn apply.");
 
-  // ----- Analytic-first kernel and cache contract (#764) -----
+  // ----- Analytic-first kernel and cache contract -----
 
   py::enum_<CertificateGrade>(m, "CertificateGrade",
       "How a result was obtained: algebraically exact (closed-form identity, "
@@ -3246,7 +3235,7 @@ invariant.)doc")
       .value("ComplexSymmetricPencil", CertificateRegime::ComplexSymmetricPencil);
 
   py::class_<Certificate>(m, "Certificate",
-      R"doc(Certification record attached to every analytic-first kernel result (#764).
+      R"doc(Certification record attached to every analytic-first kernel result.
 
 Grade (claim class) + domain + regime + measured relative residual, the
 conditioning of the computation, the dense-reference error where one was
@@ -3314,8 +3303,7 @@ meets this star; disjoint siblings survive.)doc")
       .def_property_readonly("empty", &TouchedStar::empty);
 
   py::class_<AnalyticCache>(m, "AnalyticCache",
-      R"doc(Revision- and touched-star-keyed cache for per-component analytic payloads
-(#764): Hodge blocks, component factorizations, spectral projectors,
+      R"doc(Revision- and touched-star-keyed cache for per-component analytic payloads: Hodge blocks, component factorizations, spectral projectors,
 transports, covariance blocks, Wick contraction plans.
 
 Entries are keyed by the order-independent component vertex-set fingerprint
@@ -3391,13 +3379,13 @@ the incremental path.)doc")
       .def_property_readonly("invalidations", &AnalyticCache::invalidations);
 
   py::class_<KuennethProduct>(m, "KuennethProduct",
-      R"doc(The exact Kronecker-sum/Kuenneth rule L_{AxB} = L_A (x) I + I (x) L_B (#764).
+      R"doc(The exact Kronecker-sum/Kuenneth rule L_{AxB} = L_A (x) I + I (x) L_B.
 
 Algebraically exact as a matrix identity; as a statement about a complex it
 holds only for an actual product cell structure with product weights, which
 productCertificate verifies at degree zero (a staircase SimplicialProduct is
 refused: holds() == False). The degree-zero operator there is the U(1)
-CONNECTION graph Laplacian connectionLaplacian, not the Hodge L_0 (#805). The
+CONNECTION graph Laplacian connectionLaplacian, not the Hodge L_0. The
 spectrum of the Kronecker sum is exactly the pairwise sums of the factor spectra
 -- no product eigensolve.)doc")
       .def_static("kroneckerSum", &KuennethProduct::kroneckerSum,
@@ -3420,7 +3408,7 @@ spectrum of the Kronecker sum is exactly the pairwise sums of the factor spectra
                   "Hodge L_0.");
 
   py::class_<OccupationSpectra>(m, "OccupationSpectra",
-      R"doc(Fermionic second quantization at the SPECTRUM/MATRIX level (#764): free
+      R"doc(Fermionic second quantization at the SPECTRUM/MATRIX level: free
 many-body spectra as occupation subset sums of a one-particle spectrum, the
 direct-sum identity at the spectrum level, and one-particle direct-sum /
 hopping-block assembly. Exact for any square one-particle operator (complex
@@ -3461,7 +3449,7 @@ the exterior-algebra track's, not built here.)doc")
 
   py::class_<LowRankUpdate> lowRankUpdate(m, "LowRankUpdate",
       R"doc(Structure-exact Woodbury / secular update helpers for genuinely low-rank
-local operator changes (#764). The base operator is LU-factored once (general
+local operator changes. The base operator is LU-factored once (general
 complex square; no Hermitian or positive-definite assumption); a registered
 change Delta = U W is solved through the Woodbury identity by factor solves
 only -- no explicit inverse. Results are exact GIVEN the verified premise that
@@ -3525,8 +3513,7 @@ rankOneEigenvalues is the secular rank-one HERMITIAN eigenvalue update
                   "trace identity + deflation bound). Hermitian domain only.");
 
   py::class_<DenseReference>(m, "DenseReference",
-      R"doc(Dense reference kernels used ONLY below a configurable dimension crossover
-(#764): on small fixtures they supply the independent answer a structured path
+      R"doc(Dense reference kernels used ONLY below a configurable dimension crossover: on small fixtures they supply the independent answer a structured path
 is compared against; at or above the crossover they refuse (throw) -- a dense
 global solve is the prohibited default at scale, never a silent fallback.
 solve is an LU factor solve (never an explicit inverse); spectrum honors a
@@ -3557,7 +3544,7 @@ sums and quasi-free Wick reads on crossover fixtures.)doc")
            "Dense-Fock oracle at the spectrum level: dense eigensolve + exact "
            "occupation subset sums for the N-particle sector.");
 
-  // ----- Recursive static/shifted response reduction (#768) -----
+  // ----- Recursive static/shifted response reduction -----
   py::enum_<FiberEmbeddingPolicy>(m, "FiberEmbeddingPolicy",
       "The declared labeled-sum Gram treatment: carry G exactly, certify "
       "||G - I|| <= epsilon, or quotient ker G and restate the ranks. Exactly "
@@ -3586,7 +3573,7 @@ sums and quasi-free Wick reads on crossover fixtures.)doc")
 
   py::class_<RecursiveQuotient> recursiveQuotient(m, "RecursiveQuotient",
       R"doc(Recursive static and shifted response reduction over a declared cell
-partition (#768). Static: the exact supported response
+partition. Static: the exact supported response
 L_eff = L_BB - L_BI L_II^+ L_IB by sparse/rank-revealing factor solves
 (minimization certificate in the positive self-adjoint regime, stationarity
 in the Hermitian-indefinite regime, certified block elimination with the
@@ -3601,7 +3588,7 @@ abstract labeled sum of retained fibers with embedding J and Gram G = J^dag W J
 (one declared policy per run), an operator-valued response network, and a
 cellular-sheaf realization emitted ONLY when restriction maps reproduce the
 blocks. Nested quotients carry lineage; per-component contributions reuse the
-#764 AnalyticCache so a published TouchedStar recomputes only the affected
+AnalyticCache so a published TouchedStar recomputes only the affected
 ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::Options>(recursiveQuotient, "Options",
@@ -3941,7 +3928,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "Build over a symmetric PENCIL (A~, M) on geometric images (flat "
                   "row-major both): every shifted elimination is taken on "
                   "P(lambda) = A~ - lambda M, and a child level carries the Gram "
-                  "T^T M T of its constraint modes (specification §7).")
+                  "T^T M T of its constraint modes.")
       .def("isPencil", &RecursiveQuotient::isPencil, "Whether this level is a pencil level.")
       .def("pencilMetric", &RecursiveQuotient::pencilMetric,
            "The pencil's metric M (base) or carried Gram (child), flat row-major; empty otherwise.")

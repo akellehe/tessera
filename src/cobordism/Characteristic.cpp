@@ -35,13 +35,13 @@ CharacteristicNumbers CharacteristicNumbers::of(const Spacetime &K, bool oriente
       // Non-orientable / no fundamental class: signature (hence p1) undefined.
     }
   }
-  // Stiefel–Whitney numbers are unoriented invariants — computed regardless of
-  // the `oriented` flag. A class genuinely needing a deferred higher Steenrod
-  // square (issue #65) leaves the family empty rather than failing the call.
+  // Stiefel–Whitney numbers are unoriented invariants, computed regardless of
+  // the `oriented` flag. A class needing a higher Steenrod square leaves the
+  // family empty rather than failing the call.
   try {
     out.stiefelWhitneyNumbers = cc.stiefelWhitneyNumbers();
   } catch (const std::exception &) {
-    // Higher cup-i square required (deferred) or not a closed manifold.
+    // Higher cup-i square required, or not a closed manifold.
   }
   return out;
 }

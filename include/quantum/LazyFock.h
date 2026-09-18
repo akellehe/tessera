@@ -1,25 +1,22 @@
-// Lazy graded Fock oracle and boundary carrier (issue #771, Wave 2 of the
-// recursive spectral-fiber program — the whitepaper section "Fock space as
-// an inductive limit of interactions").
+// Lazy graded Fock oracle and boundary carrier.
 //
 // ─── Role ────────────────────────────────────────────────────────────────
 //
 // The one-particle edge space is h = span{|e⟩} (one two-level mode per
-// edge, identified by modeId) and the global carrier is
-// the fermionic Fock space F_-(h) = Λ•h. This engine represents vectors of
-// finite stages of that carrier as an expression DAG evaluated lazily, so
-// generally entangled states are carried WITHOUT eagerly allocating 2^M
-// amplitudes and WITHOUT a product-state ontology: per-edge occupations
-// are derived marginals of the global state, never stored per-edge state
-// vectors. A stored product preparation is an optional boundary fixture
-// and is LABELED as such (`LazyFockEngine::boundaryProductFixture`).
+// edge, identified by modeId) and the global carrier is the fermionic Fock
+// space F_-(h) = Λ•h. This engine represents vectors of finite stages of
+// that carrier as a lazily evaluated expression DAG (directed acyclic
+// graph), so generally entangled states are carried without eagerly
+// allocating 2^M amplitudes and without a product-state ansatz: per-edge
+// occupations are derived marginals of the global state, never stored
+// per-edge state vectors. A stored product preparation is an optional
+// boundary fixture and is labeled as such
+// (`LazyFockEngine::boundaryProductFixture`).
 //
-// The quasi-free sector's PRIMARY representation is the covariance layer
-// (ticket #780): quadratic generators evolve Γ_ij =
-// ⟨a_j†a_i⟩, never a Fock vector. THIS engine is the dense/oracle
-// reference for that layer and the carrier for explicitly non-Gaussian
-// boundary data — it is never the production representation of the
-// quasi-free path, and nothing here enters the emergence objective.
+// CovarianceState is the primary representation of the quasi-free sector:
+// there, quadratic generators evolve Γ_ij = ⟨a_j†a_i⟩, never a Fock
+// vector. This engine is that layer's dense reference and the carrier for
+// explicitly non-Gaussian boundary data.
 //
 // ─── What lives here ─────────────────────────────────────────────────────
 //
@@ -44,30 +41,30 @@
 //       ε(b_A,b_B) = (−1)^{#{(i,j) ∈ occ(b_A)×occ(b_B) : i > j}}.
 //     This is the Koszul sign of sorting the concatenated wedge words and
 //     generalizes the sign-free A-before-B identification of
-//     FockDirectSum (#766); it is strictly associative, so different
-//     parenthesizations agree on the nose after graded associators.
+//     FockDirectSum; it is strictly associative, so different
+//     parenthesizations agree exactly after graded associators.
 //   • Operator locality: a polynomial in {a_i, a_i† : i ∈ S} acts on
 //     ⟨b| as a sum over its support columns with the two Koszul signs
-//     ε(b_S, b_R) ε(c_S, b_R) — exact for EVEN AND ODD operators, because
+//     ε(b_S, b_R) ε(c_S, b_R) — exact for even and odd operators, because
 //     the ε convention carries the entire Jordan-Wigner bookkeeping.
 //     Branchwise application below a graded tensor node is exact with no
-//     sibling twist when the support lies in the LEFT factor, and with
+//     sibling twist when the support lies in the left factor, and with
 //     the Koszul parity twist (−1)^{|O||ψ_left|} (a scalar on
 //     parity-definite left siblings) when an odd operator acts on the
-//     RIGHT factor.
+//     right factor.
 //   • Slater/wedge amplitudes: ⟨b| v_1∧…∧v_n⟩ = det[v_j(i)]_{i∈occ(b)}
 //     (the Slater determinant), ‖v_1∧…∧v_n‖² = det[⟨v_i,v_j⟩], and the
 //     normalized Slater covariance Γ = V(V†V)⁻¹V† — so a spectral
 //     projector P initializes a quasi-free reference with Γ_ef = P_ef
 //     exactly (`slaterFromProjector`, StructureExact given P² = P = P†).
 //   • dΓ(L) = Σ_ij L_ij a_i†a_j applied at the bit level through
-//     OccupationBitset::applyAnnihilation/applyCreation (#766) — the
-//     direct-sum identity dΓ(L_A⊕L_B) = dΓ(L_A)⊗̂1 + 1⊗̂dΓ(L_B) and the
+//     OccupationBitset::applyAnnihilation/applyCreation — the direct-sum
+//     identity dΓ(L_A⊕L_B) = dΓ(L_A)⊗̂1 + 1⊗̂dΓ(L_B) and the
 //     coupling-block hopping terms hold by construction and are
 //     cross-checked against FockDirectSum::dGammaBlock; free occupation
-//     subset-sum spectra DELEGATE to cobordism::OccupationSpectra (#764),
-//     never re-derived.
-//   • Vacuum embedding ι_M ψ = ψ ⊗̂ |0⟩: occupation keys are GLOBAL
+//     subset-sum spectra delegate to cobordism::OccupationSpectra, never
+//     re-derived.
+//   • Vacuum embedding ι_M ψ = ψ ⊗̂ |0⟩: occupation keys are global
 //     bitsets, so ι is the identity on every preexisting amplitude
 //     (ε with an empty right word is +1) — amplitude preservation is by
 //     construction and still verified through the API. The inductive
@@ -77,9 +74,9 @@
 //
 // ─── Laziness contract ───────────────────────────────────────────────────
 //
-// A graded tensor node is EXPANDED only when an applied operation's
+// A graded tensor node is expanded only when an applied operation's
 // support crosses its partition; an operation supported inside one branch
-// rewrites that branch and SHARES the untouched sibling node (verifiable
+// rewrites that branch and shares the untouched sibling node (verifiable
 // through node ids / content hashes; `expansionCount` counts crossings).
 // Exact subexpression expansions are memoized by content hash. Sector
 // direct sums route reads by the conserved occupation/parity functional,
@@ -91,26 +88,26 @@
 // Certification mode (the default) allows algebraically lossless rewrites
 // only: expansion, merging duplicate keys, dropping exact zeros. Every
 // scalar read carries the state's accumulated discarded norm — exactly
-// 0.0 in certification mode — and a cobordism::Certificate (#764; no new
-// certificate struct). The optional truncation mode drops amplitudes at
-// or below a stated threshold during materializations and accumulates an
-// upper bound D on ‖ψ_exact − ψ̃‖₂ (triangle inequality across drops,
-// operator-norm bounds across maps, norm-weighted sums across tensor
-// products), so every reported amplitude satisfies |value − exact| ≤ D.
-// There is NO silent singular-value truncation and no literal infinite
-// allocation: enumerations refuse beyond `maxExpansionTerms` and dense
-// exports beyond 2^kMaxDenseModes.
+// 0.0 in certification mode — and a cobordism::Certificate. The optional
+// truncation mode drops amplitudes at or below a stated threshold during
+// materializations and accumulates an upper bound D on
+// ‖ψ_exact − ψ̃‖₂ (triangle inequality across drops, operator-norm
+// bounds across maps, norm-weighted sums across tensor products), so every
+// reported amplitude satisfies |value − exact| ≤ D. Singular-value
+// truncation is never silent, and allocation is bounded: enumerations
+// refuse beyond `maxExpansionTerms` and dense exports beyond
+// 2^kMaxDenseModes.
 //
 // ─── Mode order and hashes ───────────────────────────────────────────────
 //
-// The mode order is the #766 compilation artifact: index i is position i
-// of EdgeModeRegistry::canonicalModeOrder (see `fromRegistry`); relabeling
+// The mode order is a compilation artifact: index i is position i of
+// EdgeModeRegistry::canonicalModeOrder (see `fromRegistry`); relabeling
 // applies OccupationBitset::permutationParity through `permuteModes`, and
 // physical amplitudes are invariant. Content hashes chain
 // mesh::Fingerprint::mix64 over the node's canonical byte content —
-// `Fingerprint::fingerprintOf` itself is an order-INdependent XOR set
+// `Fingerprint::fingerprintOf` itself is an order-independent XOR set
 // hash, the wrong shape for order-sensitive expression hashing, so only
-// the mixing primitive is reused (documented decision, no parallel mixer).
+// the mixing primitive is reused.
 
 #pragma once
 
@@ -160,11 +157,11 @@ enum class LazySectorKind {
 ///
 /// One immutable node of the lazy Fock expression DAG. Nodes are built
 /// only by LazyFockEngine, shared structurally (`shared_ptr`), and never
-/// mutated after construction — an applied operation produces a NEW node
+/// mutated after construction — an applied operation produces a new node
 /// tree that shares every untouched branch of the old one.
 ///
-/// Occupation keys are OccupationBitset (#766) over the ENGINE's full
-/// mode count — chunked, so arbitrary mode counts are supported — and
+/// Occupation keys are OccupationBitset over the engine's full mode count
+/// — chunked, so arbitrary mode counts are supported — and
 /// `modes()` is the sorted global mode subset the node may occupy (its
 /// support restriction, used for the laziness and disjointness rules).
 class LazyFockNode {
@@ -299,9 +296,8 @@ class LazyFockNode {
 /// F_-(h), the state's accumulated discarded-norm bound D (exactly 0.0 in
 /// certification mode; in truncation mode an upper bound on
 /// ‖ψ_exact − ψ̃‖₂ that every scalar read reports), and the optional
-/// boundary-fixture label (set ONLY by
-/// LazyFockEngine::boundaryProductFixture — a stored product preparation
-/// must be labeled as such).
+/// boundary-fixture label, set only by
+/// LazyFockEngine::boundaryProductFixture.
 class LazyFockState {
   public:
     LazyFockState() = default;
@@ -322,7 +318,7 @@ class LazyFockState {
     [[nodiscard]] std::vector<std::uint64_t> childNodeIds() const;
     /// Content hashes of the root's children, in order.
     [[nodiscard]] std::vector<std::uint64_t> childContentHashes() const;
-    /// Number of DISTINCT nodes in the DAG (sharing-aware, so a shared
+    /// Number of distinct nodes in the DAG (sharing-aware, so a shared
     /// subexpression counts once — the serialization also stores it once).
     [[nodiscard]] std::size_t nodeCount() const;
     /// Accumulated discarded-norm bound D (0.0 in certification mode).
@@ -357,25 +353,24 @@ class LazyFockState {
 
 /// A scalar read (amplitude, inner product, squared norm) together with
 /// the accumulated discarded-norm bound of the state(s) it was read from
-/// — REPORTED IN EVERY RESULT, exactly 0.0 in certification mode — and
-/// the #764 Certificate grading it: AlgebraicallyExact in certification
-/// mode, CertifiedNumerical with residual = the discarded-norm bound in
-/// truncation mode. The bound is ABSOLUTE (an ℓ² bound on the state
-/// error, hence on any single amplitude), a documented deviation from the
-/// Certificate default of relative residuals.
+/// (exactly 0.0 in certification mode) and the Certificate grading it:
+/// AlgebraicallyExact in certification mode, CertifiedNumerical with
+/// residual = the discarded-norm bound in truncation mode. The bound is
+/// absolute (an ℓ² bound on the state error, hence on any single
+/// amplitude), a deviation from the Certificate default of relative
+/// residuals.
 struct LazyScalarRead {
     /// The evaluated scalar.
     std::complex<double> value{0.0, 0.0};
     /// Accumulated discarded-norm bound of the inputs (0.0 = exact).
     double discardedNorm{0.0};
-    /// The #764 certification record for this read.
+    /// The certification record for this read.
     cobordism::Certificate certificate{};
 };
 
 /// The quasi-free/Slater reference initialized from a spectral projector
-/// (Γ_ef = ⟨a_f†a_e⟩ = P_ef). StructureExact: exact
-/// GIVEN the verified premise P² = P = P†, whose measured residual is on
-/// the certificate.
+/// (Γ_ef = ⟨a_f†a_e⟩ = P_ef). StructureExact: exact given the verified
+/// premise P² = P = P†, whose measured residual is on the certificate.
 struct LazySlaterReference {
     /// The Slater determinant state (a Wedge node of the projector's
     /// rank-many occupied orbitals).
@@ -399,12 +394,12 @@ struct LazyCovarianceRead {
     Eigen::MatrixXcd matrix{};
     /// Accumulated discarded-norm bound of the state read from.
     double discardedNorm{0.0};
-    /// The #764 certification record.
+    /// The certification record.
     cobordism::Certificate certificate{};
 };
 
-/// The inductive compatibility read for the vacuum
-/// embedding ι_M: ε_ι = ‖ι_M U_M − U_{M+1} ι_M‖ restricted to the active
+/// The inductive compatibility read for the vacuum embedding ι_M:
+/// ε_ι = ‖ι_M U_M − U_{M+1} ι_M‖ restricted to the active
 /// carried subspace (the span of the supplied orthonormal occupation
 /// basis states), computed as the top singular value of the
 /// column-stacked defect.
@@ -419,31 +414,27 @@ struct LazyCompatibilityRead {
 
 /// # LazyFockEngine
 ///
-/// The lazy graded Fock engine (ticket #771): builders,
-/// lazy operator application with the crossing-only expansion rule,
-/// scalar/covariance/spectrum reads, the exact-subexpression memo, the
-/// exact-certification / stated-truncation switch, and DAG serialization
-/// with content hashes.
+/// The lazy graded Fock engine: builders, lazy operator application with
+/// the crossing-only expansion rule, scalar/covariance/spectrum reads, the
+/// exact-subexpression memo, the exact-certification / stated-truncation
+/// switch, and DAG serialization with content hashes.
 ///
-/// One engine instance fixes the mode universe (the #766 compilation
-/// order: index i = position i of EdgeModeRegistry::canonicalModeOrder —
-/// see `fromRegistry`) and owns the memoization cache and counters. Not
+/// One engine instance fixes the mode universe (the compilation order:
+/// index i = position i of EdgeModeRegistry::canonicalModeOrder — see
+/// `fromRegistry`) and owns the memoization cache and counters. Not
 /// synchronized — same threading contract as the analytic caches
 /// (thread-private engines; a shared engine must be driven serially).
 ///
-/// Density-operator boundary sectors are carried VECTORIZED on a doubled
-/// mode register (ket modes ⊕ bra modes) through the same six node kinds
-/// — |ρ⟩⟩ = Σ ρ_ij |i⟩_ket ⊗̂ |j⟩_bra, with traces and occupation reads as
-/// inner products against the vectorized identity. The node list is
-/// exactly the six kinds above; no dedicated density node
-/// exists, and the arbitrary-mode-count carrier makes the doubled
+/// Density-operator boundary sectors are carried vectorized on a doubled
+/// mode register (ket modes ⊕ bra modes) through the same six node kinds:
+/// |ρ⟩⟩ = Σ ρ_ij |i⟩_ket ⊗̂ |j⟩_bra, with traces and occupation reads as
+/// inner products against the vectorized identity. There is no dedicated
+/// density node, and the arbitrary-mode-count carrier makes the doubled
 /// register free.
 ///
-/// Roles this engine explicitly does NOT play: it is not the production
-/// representation of the quasi-free path (that is the #780 covariance
-/// layer; this is its dense/oracle reference and the carrier for
-/// explicitly non-Gaussian boundary data), it never classifies particles,
-/// and nothing here enters the emergence objective.
+/// This engine is not the production representation of the quasi-free
+/// path: CovarianceState is, and this is its dense reference and the
+/// carrier for explicitly non-Gaussian boundary data.
 class LazyFockEngine {
   public:
     using Complex = std::complex<double>;
@@ -470,7 +461,7 @@ class LazyFockEngine {
 
     /// Engine whose mode universe is the registry's deterministic
     /// compilation order: engine mode i = canonicalModeOrder()[i]
-    /// (#766; relabeling maps through `permuteModes` with
+    /// (relabeling maps through `permuteModes` with
     /// EdgeModeRegistry::orderPermutation).
     [[nodiscard]] static LazyFockEngine fromRegistry(
         const EdgeModeRegistry& registry);
@@ -483,7 +474,7 @@ class LazyFockEngine {
     /// dim Λ•C^m = 2^m for a stage of `stageModeCount` ≤ 63 modes — the
     /// carrier-dimension identity on enumerable fixtures.
     /// @throws std::invalid_argument beyond 63 (the count itself would
-    ///         overflow; the ENGINE carries such stages lazily instead).
+    ///         overflow; the engine carries such stages lazily instead).
     [[nodiscard]] static std::uint64_t stageDimension(
         std::size_t stageModeCount);
 
@@ -491,8 +482,8 @@ class LazyFockEngine {
 
     /// Enter truncation mode: materializations drop amplitudes with
     /// |a| ≤ `threshold` and accumulate the discarded-norm bound;
-    /// `normTolerance` is the declared budget the CertifiedNumerical
-    /// read certificates hold against.
+    /// `normTolerance` is the declared budget the CertifiedNumerical read
+    /// certificates hold against.
     /// @throws std::invalid_argument for negative/non-finite inputs.
     void setTruncationThreshold(double threshold, double normTolerance);
 
@@ -560,17 +551,16 @@ class LazyFockEngine {
     /// projector: verifies P² = P = P† within `tolerance`
     /// (StructureExact premise), takes the rank-many occupied
     /// eigenvectors, and returns the Wedge state whose covariance is
-    /// EXACTLY Γ_ef = P_ef. Explicitly non-Gaussian sectors remain
-    /// representable beside it — this reference never forces the state
+    /// exactly Γ_ef = P_ef. Explicitly non-Gaussian sectors remain
+    /// representable beside it; this reference never forces the state
     /// quasi-free.
     /// @throws std::invalid_argument when P is not M'×M' over `modes`
-    ///         or the premise residual exceeds `tolerance` (fail loudly,
-    ///         never a silent non-projector "reference").
+    ///         or the premise residual exceeds `tolerance`.
     [[nodiscard]] LazySlaterReference slaterFromProjector(
         const std::vector<std::size_t>& modes,
         const Eigen::MatrixXcd& projector, double tolerance) const;
 
-    /// The graded tensor product a ⊗̂ b over DISJOINT mode sets (any
+    /// The graded tensor product a ⊗̂ b over disjoint mode sets (any
     /// interleaving in the global order — the ε sign rule in the header
     /// comment). Strictly associative: different parenthesizations of a
     /// multi-factor product agree amplitude-for-amplitude.
@@ -578,7 +568,7 @@ class LazyFockEngine {
     [[nodiscard]] LazyFockState gradedTensor(const LazyFockState& a,
                                              const LazyFockState& b) const;
 
-    /// A direct sum of states lying in DISTINCT definite sectors of the
+    /// A direct sum of states lying in distinct definite sectors of the
     /// conserved functional `kind` (total occupation or parity), over a
     /// common mode set. Reads route by sector (block sparsity).
     /// @throws std::invalid_argument when a child's sector is indefinite,
@@ -587,11 +577,10 @@ class LazyFockEngine {
         const std::vector<LazyFockState>& children,
         LazySectorKind kind) const;
 
-    /// The OPTIONAL LABELED product boundary fixture
-    /// ∏_i (α_i + β_i a_i†) Ω — the one sanctioned way to store a product
-    /// preparation. `label` must be non-empty; the
-    /// label travels on the state and through serialization. This is a
-    /// boundary FIXTURE, never the global-state ontology.
+    /// The optional labeled product boundary fixture
+    /// ∏_i (α_i + β_i a_i†) Ω — the only way to store a product
+    /// preparation. `label` must be non-empty and travels on the state and
+    /// through serialization.
     /// @throws std::invalid_argument on an empty label or shape errors.
     [[nodiscard]] LazyFockState boundaryProductFixture(
         const std::vector<std::size_t>& modes,
@@ -610,10 +599,10 @@ class LazyFockEngine {
 
     // ── lazy operator application ───────────────────────────────────────
 
-    /// Apply a local unitary/cobordism map given DENSE over the
+    /// Apply a local unitary/cobordism map given dense over the
     /// 2^{|support|} support Fock basis (support-local bit k = k-th
     /// support mode in ascending global order). Exact for even and odd
-    /// operators; descends graded tensor branches and expands ONLY on a
+    /// operators; descends graded tensor branches and expands only on a
     /// partition crossing.
     /// @throws std::invalid_argument on support/shape errors or support
     ///         beyond kMaxSupportModes.
@@ -633,7 +622,7 @@ class LazyFockEngine {
         const std::vector<Complex>& values) const;
 
     /// Apply a_mode† (an odd local map on one mode — the CAR sign
-    /// bookkeeping is exactly the #766 prefix-popcount rule).
+    /// bookkeeping is the OccupationBitset prefix-popcount rule).
     [[nodiscard]] LazyFockState applyCreation(const LazyFockState& state,
                                               std::size_t mode) const;
 
@@ -642,9 +631,9 @@ class LazyFockEngine {
                                                   std::size_t mode) const;
 
     /// Apply dΓ(L) = Σ_ij L_ij a_i†a_j for an |S|×|S| one-particle block
-    /// over `supportModes` — evaluated at the BIT level through
-    /// OccupationBitset creation/annihilation (#766), so the support may
-    /// be arbitrarily large (no 2^{|S|} operator is formed). Direct sums
+    /// over `supportModes` — evaluated at the bit level through
+    /// OccupationBitset creation/annihilation, so the support may be
+    /// arbitrarily large (no 2^{|S|} operator is formed). Direct sums
     /// become graded tensor products and coupling blocks become hopping
     /// terms by construction (cross-checked against
     /// FockDirectSum::dGammaBlock in the suite).
@@ -663,8 +652,8 @@ class LazyFockEngine {
     /// result corresponds to bit i, with
     /// OccupationBitset::permutationParity applied per term — physical
     /// amplitudes are invariant under relabeling once this parity is
-    /// applied (#766 EdgeModeRegistry::orderPermutation is the intended
-    /// source of `perm`).
+    /// applied (EdgeModeRegistry::orderPermutation is the intended source
+    /// of `perm`).
     [[nodiscard]] LazyFockState permuteModes(
         const LazyFockState& state,
         const std::vector<std::size_t>& perm) const;
@@ -692,7 +681,7 @@ class LazyFockEngine {
     /// SectorSum: sector-orthogonal sum).
     [[nodiscard]] LazyScalarRead normSquared(const LazyFockState& state) const;
 
-    /// Γ_ef = ⟨a_f†a_e⟩/‖ψ‖² over the FULL mode universe. Wedge states
+    /// Γ_ef = ⟨a_f†a_e⟩/‖ψ‖² over the full mode universe. Wedge states
     /// use the exact closed form Γ = V(V†V)⁻¹V† (so
     /// `slaterFromProjector(P).state` reads back Γ = P exactly);
     /// general states read through the sparse expansion.
@@ -703,20 +692,20 @@ class LazyFockEngine {
     /// n(b) = Σ_i b_i 2^i (the ExteriorAlgebra basis convention) — the
     /// crossover comparison export.
     /// @throws std::invalid_argument beyond kMaxDenseModes (a literal
-    ///         2^M allocation is out of scope by ticket).
+    ///         2^M allocation is out of scope).
     [[nodiscard]] Eigen::VectorXcd denseVector(
         const LazyFockState& state) const;
 
     /// The free N-particle spectrum of dΓ(L): eigenvalues of the
-    /// one-particle block, then occupation subset sums DELEGATED to
-    /// cobordism::OccupationSpectra (#764). CertifiedNumerical: residual
-    /// = the measured max eigen-residual ‖Lv−λv‖/max(1,‖L‖).
+    /// one-particle block, then occupation subset sums delegated to
+    /// cobordism::OccupationSpectra. CertifiedNumerical: residual = the
+    /// measured max eigen-residual ‖Lv−λv‖/max(1,‖L‖).
     [[nodiscard]] cobordism::CertifiedVector freeSpectrum(
         const Eigen::MatrixXcd& oneParticle, int particles) const;
 
-    /// Subset sums of an already-known one-particle spectrum (pure #764
-    /// delegation). AlgebraicallyExact: the residual is the measured
-    /// elementwise gap against the independent
+    /// Subset sums of an already-known one-particle spectrum (pure
+    /// OccupationSpectra delegation). AlgebraicallyExact: the residual is
+    /// the measured elementwise gap against the independent
     /// OccupationSpectra::directSumSubsetSums split evaluation.
     [[nodiscard]] cobordism::CertifiedVector freeSpectrumFromEigenvalues(
         const std::vector<Complex>& oneParticleSpectrum,
@@ -742,7 +731,7 @@ class LazyFockEngine {
     // ── memo / counters ─────────────────────────────────────────────────
 
     /// Times a graded tensor partition was expanded because an applied
-    /// operation crossed it (the ONLY sanctioned expansion trigger).
+    /// operation crossed it (the only expansion trigger).
     [[nodiscard]] std::uint64_t expansionCount() const noexcept {
         return expansionCount_;
     }
@@ -761,7 +750,7 @@ class LazyFockEngine {
 
     // ── serialization ───────────────────────────────────────────────────
 
-    /// Serialize the state's DAG as strict JSON WITHOUT flattening it:
+    /// Serialize the state's DAG as strict JSON without flattening it:
     /// nodes are listed once in topological order and referenced by
     /// index, so shared subexpressions stay shared; every node carries
     /// its content hash; amplitudes round-trip bit-exactly (17
@@ -770,7 +759,7 @@ class LazyFockEngine {
     [[nodiscard]] std::string serialize(const LazyFockState& state) const;
 
     /// Rebuild a state from `serialize` output: verifies the schema
-    /// name/version, the mode universe, and EVERY node's recomputed
+    /// name/version, the mode universe, and every node's recomputed
     /// content hash against the stored one (rejecting a tampered or
     /// drifted checkpoint), and reproduces expressions and amplitudes
     /// exactly.

@@ -1,15 +1,13 @@
 // Copyright (c) 2026 Twin Vector Labs LLC. All rights reserved.
 //
-// Shared CSR construction from a symmetric COO edge list. The two
-// callers — ``SparseGraph::fromCOO`` (binary, uint32 indices, int64
-// pointers) and ``EmergentGraph::buildFromCOO_`` (weighted, int
-// indices + pointers) — each previously inlined this prefix-sum +
-// cursor pass. The template here covers both via the (Idx, Ptr) /
-// (Idx, W, Ptr) type pairs.
+// Shared CSR construction from a symmetric COO edge list: one prefix-sum plus
+// cursor pass covering both callers, SparseGraph::fromCOO (binary, uint32
+// indices, int64 pointers) and EmergentGraph::buildFromCOO_ (weighted, int
+// indices and pointers), via the (Idx, Ptr) / (Idx, W, Ptr) type pairs.
 //
-// Contract: input ``rows``/``cols`` must already be the symmetric form
-// (each undirected edge listed twice). Out-of-range indices yield UB;
-// callers are expected to validate before calling.
+// Contract: input rows/cols must already be the symmetric form (each
+// undirected edge listed twice). Out-of-range indices are undefined
+// behaviour; callers validate before calling.
 
 #pragma once
 

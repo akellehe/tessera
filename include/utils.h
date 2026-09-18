@@ -14,12 +14,14 @@
 #include <cstdlib>
 #include <string>
 
+/// A uniform draw from [min, max), from a thread-local generator seeded once per thread.
 inline double random_uniform(double min = -1.0, double max = 1.0) {
   thread_local std::mt19937 gen{std::random_device{}()};
   std::uniform_real_distribution<double> dist(min, max);
   return dist(gen);
 }
 
+/// True if LC_ALL, LC_CTYPE or LANG names a UTF-8 encoding.
 inline bool envClaimsUTF8() {
   const char* vars[] = {"LC_ALL", "LC_CTYPE", "LANG"};
   for (auto v : vars) {
@@ -29,6 +31,7 @@ inline bool envClaimsUTF8() {
   return false;
 }
 
+/// True if the C library's current LC_CTYPE locale names a UTF-8 encoding.
 inline bool localClaimsUTF8() {
   const char* loc = std::setlocale(LC_CTYPE, "");
   return loc && std::strstr(loc, "UTF-8");
@@ -81,6 +84,7 @@ inline const std::unordered_map<std::string, std::string> greekLookup = {
   {"\\Phi", "Φ"}, {"\\Chi", "Χ"}, {"\\Psi", "Ψ"}, {"\\Omega", "Ω"}
 };
 
+/// `s` with each character replaced by its Unicode subscript, where one exists.
 inline std::string toSubscript(const std::string& s) {
   std::string sub;
   for (const char c : s) {
@@ -95,6 +99,8 @@ inline std::string toSubscript(const std::string& s) {
   return sub;
 }
 
+/// `s` with each LaTeX Greek-letter command replaced by the corresponding Unicode letter.
+/// Unrecognized backslash commands are left as they are.
 inline std::string greekToUtf8(const std::string& s) {
   std::string result;
   size_t pos = 0;
@@ -128,6 +134,7 @@ inline std::string greekToUtf8(const std::string& s) {
   return result;
 }
 
+/// `s` with each character replaced by its Unicode superscript, where one exists.
 inline std::string toSuperscript(const std::string& s) {
   std::string sup;
   for (const char c : s) {
@@ -142,6 +149,10 @@ inline std::string toSuperscript(const std::string& s) {
   return sup;
 }
 
+/// Render simple LaTeX as Unicode for terminal output: Greek letters, then `_x` / `_{...}`
+/// subscripts and `^x` / `^{...}` superscripts. The result is wrapped in the ANSI bold
+/// on/off sequences. Returns `s` unchanged unless both the environment and the C locale
+/// claim UTF-8.
 inline std::string latexToUtf8(const std::string& s) {
   if (!envClaimsUTF8() || !localClaimsUTF8()) return s;
 
@@ -226,12 +237,18 @@ inline std::string latexToUtf8(const std::string& s) {
   return "\x1b[1m" + processed + "\x1b[22m";
 }
 
+/// Debugging aid that tracks which containers hold each named element and logs every
+/// insertion and removal. The containers themselves stay owned by the caller; this class
+/// stores only names, so an element's entry can list the same container more than once if
+/// it was inserted more than once.
 template<typename KeyType, typename ElementType, typename ElementHash, typename ElementEq>
 class OwnershipManager {
   public:
 
-    std::unordered_map<std::string, std::vector<std::string>> references{}; // {element name, {container names}}.
+    /// Element name -> the names of the containers currently holding it.
+    std::unordered_map<std::string, std::vector<std::string>> references{};
 
+    /// Insert `element` under `key` into `container` and record the ownership.
     auto insert(
       std::string elementName,
       std::string containerName,
@@ -248,6 +265,7 @@ class OwnershipManager {
       return container.insert(key, element);
     }
 
+    /// Insert `element` into a set-shaped `container` and record the ownership.
     auto insert(
       std::string elementName,
       std::string containerName,
@@ -262,6 +280,7 @@ class OwnershipManager {
       return container.insert(element);
     }
 
+    /// Erase `key` from `container` and drop one recorded ownership entry.
     auto erase(
       std::string elementName,
       std::string containerName,
@@ -276,6 +295,7 @@ class OwnershipManager {
       return container.erase(key);
     }
 
+    /// Erase `element` from a set-shaped `container` and drop one recorded ownership entry.
     auto erase(
       std::string elementName,
       std::string containerName,
@@ -290,6 +310,7 @@ class OwnershipManager {
       return container.erase(element);
     }
 
+    /// Log every element that is still held, with its container names sorted.
     void showReferences() {
       for (auto &[elementName, containerNames] : references) {
         if (containerNames.empty()) continue;

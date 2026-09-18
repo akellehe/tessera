@@ -2,16 +2,16 @@
 orphan: true
 ---
 
-# Topology
-
 # Parity
 
-This method should be used when you have two simplices and you want to find some Vertices at which to join one
-Simplex to the other. Two sets of ordered vertices, \f$ \mathcal{V_i} \f$ and \f$ \mathcal{V_j} \f$ "have parity"
-when there is an ordered subset, \f$ V_i \f$ and \f$ V_j \f$ for which Vertex::getTime returns the same value
-for each corresponding element. More specifically;
+Use parity when you have two simplices and need vertices at which to join one to
+the other. Two ordered vertex sets $\mathcal{V}_i$ and $\mathcal{V}_j$ *have
+parity* when there are ordered subsets $V_i \subseteq \mathcal{V}_i$ and
+$V_j \subseteq \mathcal{V}_j$ such that `Vertex::getTime` returns the same value
+for every pair of corresponding elements. Formally, $V_i$ and $V_j$ have parity
+if and only if
 
-Two sets of vertices "have parity" iff
-  - They have the same cardinality, \f$ N \f$
-  - There exists an element \f$ v_m \memberof \f$ V_i \f$ for which there exists an an element
-    \f$ v_n \memberof V_j \f$ such that \f$ v_m::getTime() = v_n::getTime() \forall (m, n) s.t. m = n \f$.
+- they have the same cardinality $N$, and
+- for each index $m \in \{1, \dots, N\}$, the $m$-th element $v_m \in V_i$ and
+  the $m$-th element $w_m \in V_j$ satisfy
+  $v_m.\mathrm{getTime}() = w_m.\mathrm{getTime}()$.

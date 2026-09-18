@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "cobordism/MultiCobordism.h"
+#include "observables/ColorFiber.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
 #include "mesh/Simplex.h"
@@ -29,8 +30,11 @@ constexpr int kDim = 4;  // framework dimension; the seed is a single Δ⁴ simp
 }  // namespace
 
 std::complex<double> Proton::omega() {
-  // ω = exp(2πi/3); std::polar(1, θ) = cos θ + i sin θ = e^{iθ}.
-  return std::polar(1.0, 2.0 * std::acos(-1.0) / 3.0);
+  // The one cube root of unity in the codebase, from ColorFiber: the algebraic
+  // value (−1 + i√3)/2, never exp(2πi/3). Only the algebraic components make
+  // 1 + ω + ω̄ cancel exactly; exp(2πi/3) leaves 4.4e-16, and that residual
+  // lands in the colour-singlet targets this feeds.
+  return observables::ColorFiber::omega();
 }
 
 std::vector<std::complex<double>> Proton::singlet() {
@@ -56,18 +60,19 @@ Proton::Proton(std::uint64_t seed, int registerDegree, double gamma,
 }
 
 std::shared_ptr<Spacetime> Proton::buildMinimalSeed(bool balancedEdges) {
-  // A SINGLE Δ⁴ simplex (one pentatope, 5 vertices) — the most minimal seed there is.
-  // Nothing is pre-built: the proton's entire topology emerges from here via the trap
-  // door, and the metric is uniform (ℓ² = 1) so the geometry emerges from the
-  // relaxation too. Only the seed simplex and the target color states are imposed.
-  // The dimension-generic builder is `MultiCobordism::seedSimplex` (#940).
+  // A single Δ⁴ simplex (one pentatope, 5 vertices). Nothing is pre-built: the
+  // proton's whole topology emerges from here, and the metric is uniform
+  // (ℓ² = 1) so the geometry emerges from the relaxation. Only the seed simplex
+  // and the target color states are imposed. The dimension-generic builder is
+  // `MultiCobordism::seedSimplex`.
   return MultiCobordism::seedSimplex(kDim, balancedEdges);
 }
 
 std::shared_ptr<MultiCobordism> Proton::recombinationNode(std::uint64_t seed) const {
-  // Step A inputs: two neutral q-q̄ pairs (Σ = 0). Outputs: a colored diquark {1,ω} ⊔
-  // antidiquark {1,ω²} (2-vectors — NOT the singlet). Seeded on a fresh single-Δ⁴ seed,
-  // inputs at v0,v1 and outputs at v2,v3; NOT run (the caller drives it).
+  // Step A inputs: two neutral q-q̄ pairs (Σ = 0). Outputs: a colored diquark
+  // {1,ω} ⊔ antidiquark {1,ω²} — 2-vectors, not the singlet. Seeded on a fresh
+  // single-Δ⁴ seed, inputs at v0,v1 and outputs at v2,v3. Not run; the caller
+  // drives it.
   const complexd w = omega();
   const std::vector<std::vector<complexd>> pairs = {
       {complexd(1.0, 0.0), complexd(-1.0, 0.0), complexd(0.0, 0.0)},
@@ -75,10 +80,11 @@ std::shared_ptr<MultiCobordism> Proton::recombinationNode(std::uint64_t seed) co
   const std::vector<complexd> diquark = {complexd(1.0, 0.0), w};
   const std::vector<complexd> antidiquark = {complexd(1.0, 0.0), w * w};
   auto host = buildMinimalSeed(balancedEdges_);
-  // Capture the seed vertex IDS (not Vertex*) BEFORE constructing the node: with
-  // precone_ > 0 the ctor regrows spacetime_ into a fresh complex, destroying the
-  // original host's Vertex objects — but the seed ids persist through the rebuilds
-  // (build() preserves vertex ids), so the input/output anchors stay valid.
+  // Capture the seed vertex ids (not Vertex*) before constructing the node:
+  // with precone_ > 0 the constructor regrows spacetime_ into a fresh complex,
+  // destroying the original host's Vertex objects. The seed ids persist through
+  // the rebuilds (build() preserves vertex ids), so the input and output anchors
+  // stay valid.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -94,15 +100,16 @@ std::shared_ptr<MultiCobordism> Proton::recombinationNode(std::uint64_t seed) co
 }
 
 std::shared_ptr<MultiCobordism> Proton::formationNode(std::uint64_t seed) const {
-  // Step B inputs: the diquark {1,ω} + the third quark {ω²}. Output: the proton singlet,
-  // read off the WHOLE cobordism (no seedOutputs). Seeded on a fresh single-Δ⁴ seed,
-  // inputs at v0,v1; NOT run (the caller drives it).
+  // Step B inputs: the diquark {1,ω} plus the third quark {ω²}. Output: the
+  // proton singlet, read off the whole cobordism (no seedOutputs). Seeded on a
+  // fresh single-Δ⁴ seed, inputs at v0,v1. Not run; the caller drives it.
   const complexd w = omega();
   const std::vector<complexd> diquark = {complexd(1.0, 0.0), w};
   const std::vector<complexd> thirdQuark = {w * w};
   auto host = buildMinimalSeed(balancedEdges_);
-  // Capture the seed vertex IDS before constructing the node (see recombinationNode):
-  // precone_ > 0 regrows the complex in the ctor, but the seed ids persist.
+  // Capture the seed vertex ids before constructing the node (see
+  // recombinationNode): precone_ > 0 regrows the complex in the constructor, but
+  // the seed ids persist.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -118,20 +125,22 @@ std::shared_ptr<MultiCobordism> Proton::formationNode(std::uint64_t seed) const 
 }
 
 std::shared_ptr<MultiCobordism> Proton::directNode(std::uint64_t seed) const {
-  // One-step inputs: the three bare quarks {1}, {ω}, {ω²} AND their three
-  // anti-quarks — the elementwise conjugates {1}, {ω̄}, {ω̄²} (conjugation is the
-  // antiparticle convention here: the antidiquark {1, ω²} is exactly the conjugate
-  // of the diquark {1, ω}) — so the prepared content is three q-q̄ pairs, not three
-  // quarks from nothing. Output: the proton singlet, read off the WHOLE cobordism
-  // (no seedOutputs, as formationNode) — the anti-baryon partner is left to emerge
-  // unpinned. Seeded on a fresh single-Δ⁴ seed; NOT run (the caller drives it).
+  // One-step inputs: the three bare quarks {1}, {ω}, {ω²} and their three
+  // anti-quarks, the elementwise conjugates {1}, {ω̄}, {ω̄²} (conjugation is the
+  // antiparticle convention here: the antidiquark {1, ω²} is exactly the
+  // conjugate of the diquark {1, ω}), so the prepared content is three q-q̄
+  // pairs, not three quarks from nothing. Output: the proton singlet, read off
+  // the whole cobordism (no seedOutputs, as in formationNode); the anti-baryon
+  // partner is left to emerge unpinned. Seeded on a fresh single-Δ⁴ seed. Not
+  // run; the caller drives it.
   const complexd w = omega();
   const std::vector<std::vector<complexd>> quarksAndAntiquarks = {
       {complexd(1.0, 0.0)}, {w}, {w * w},
       {complexd(1.0, 0.0)}, {std::conj(w)}, {std::conj(w * w)}};
   auto host = buildMinimalSeed(balancedEdges_);
-  // Capture the seed vertex IDS before constructing the node (see recombinationNode):
-  // precone_ > 0 regrows the complex in the ctor, but the seed ids persist.
+  // Capture the seed vertex ids before constructing the node (see
+  // recombinationNode): precone_ > 0 regrows the complex in the constructor, but
+  // the seed ids persist.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -141,10 +150,11 @@ std::shared_ptr<MultiCobordism> Proton::directNode(std::uint64_t seed) const {
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
   node->setInputResidualWeight(inputResidualWeight_);
-  // Six blocks on a 5-vertex Δ⁴ seed: the anchors cycle. On the bare seed every
-  // block's region is the seed's full cell-neighbourhood regardless — the anchor
-  // only distinguishes one block from another — and the blocks differentiate as
-  // the gated growth takes each region where its own residual wants it.
+  // Six blocks on a 5-vertex Δ⁴ seed, so the anchors cycle. On the bare seed
+  // every block's region is the seed's full cell-neighbourhood anyway — the
+  // anchor only distinguishes one block from another — and the blocks
+  // differentiate as the gated growth takes each region where its own residual
+  // wants it.
   std::vector<std::uint64_t> inputSeedVertexIds;
   for (std::size_t blockIndex = 0; blockIndex < quarksAndAntiquarks.size();
        ++blockIndex)
@@ -167,10 +177,11 @@ void Proton::buildDirect(int maxRestarts, int initSteps, int evolveSteps,
     const std::uint64_t seed = baseSeed_ + static_cast<std::uint64_t>(attempt);
     auto node = directNode(seed);
     // The combined drive: every `run` iteration interleaves the stage-1 surgery
-    // update with the stage-2 geometric relaxation, so the optimizer takes whichever
-    // kind of progress helps at each point — an init pass growing the input regions
-    // until they carry, then an evolution pass with ∂W frozen. No separate
-    // relaxation pass: it is folded into every iteration.
+    // update with the stage-2 geometric relaxation, so the optimizer takes
+    // whichever kind of progress helps at each point — an initialization pass
+    // growing the input regions until they carry, then an evolution pass with ∂W
+    // frozen. The relaxation is folded into every iteration rather than run as a
+    // separate pass.
     node->run(initSteps, stage1CandidateMoves, /*growBoundaries=*/true, stage2Beta);
     if (shouldUseDirectedSurgery_)  // directed surgery: remove cells / cap facets
       (void)node->directedConeOut();
@@ -191,7 +202,7 @@ void Proton::buildDirect(int maxRestarts, int initSteps, int evolveSteps,
       converged_ = ok;
       convergedSeed_ = seed;
       spacetime_ = whole;
-      block_ = whole;  // the proton IS the whole cobordism (read off the whole)
+      block_ = whole;  // the proton is the whole cobordism (read off the whole)
       emergentHoles_ = std::move(holes);
       colorResidual_ = colorR;
       diquarkResidual_ = 0.0;  // no step A in the one-step build
@@ -208,11 +219,11 @@ void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
 
   const std::vector<complexd> protonSinglet = singlet();
 
-  // Drive one already-seeded node: an INITIALIZATION pass that grows the boundary
-  // regions until they carry (grow_boundaries=true), an EVOLUTION pass with ∂W frozen
-  // (grow_boundaries=false), then the geometric relaxation. (Node setup —
-  // seed, targets, seeding, input weight — lives in recombinationNode/formationNode, the
-  // same factories the animation drives.)
+  // Drive one already-seeded node: an initialization pass that grows the
+  // boundary regions until they carry (grow_boundaries=true), an evolution pass
+  // with ∂W frozen (grow_boundaries=false), then the geometric relaxation. Node
+  // setup — seed, targets, seeding, input weight — lives in
+  // recombinationNode/formationNode, the same factories the animation drives.
   const auto runNode = [&](MultiCobordism &node) {
     node.runStage1(initSteps, stage1CandidateMoves, /*growBoundaries=*/true);
     if (shouldUseDirectedSurgery_)  // directed surgery: remove cells / cap facets
@@ -235,7 +246,7 @@ void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
     runNode(*stepA);
     const double diquarkR = stepA->rU(stepA->spacetime());
 
-    // ---- Step B — formation: the proton, read off the WHOLE cobordism ----
+    // ---- Step B — formation: the proton, read off the whole cobordism ----
     auto stepB = formationNode(seedB);
     runNode(*stepB);
     auto whole = stepB->spacetime();
@@ -251,7 +262,7 @@ void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
       converged_ = ok;
       convergedSeed_ = seedA;
       spacetime_ = whole;
-      block_ = whole;  // the proton IS the whole cobordism (read off the whole)
+      block_ = whole;  // the proton is the whole cobordism (read off the whole)
       emergentHoles_ = std::move(holes);
       colorResidual_ = colorR;
       diquarkResidual_ = diquarkR;
