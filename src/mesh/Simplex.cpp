@@ -34,6 +34,77 @@ inline std::complex<double> principalSqrt(std::complex<double> z) {
     if (z.imag() == 0.0) z = {z.real(), 0.0};
     return std::sqrt(z);
 }
+
+/// The dihedral cosine and angle at a hinge, from a Cayley-Menger cofactor
+/// matrix.
+///
+/// `cofactors` is the n x n cofactor matrix of the (d+2) x (d+2) Cayley-Menger
+/// matrix, and `bi`, `bj` are the border offsets of the two vertices outside
+/// the hinge. The angle is
+///
+///     theta = acos(r),  r = -C_ij / (sqrt(C_ii) sqrt(C_jj))
+///
+/// with two separate principal roots rather than one root of the product: that
+/// single expression covers every causal regime, where folding the roots
+/// together would need sign flags and a crossing dispatch. Opposite-signed
+/// cofactors make the denominator pure imaginary and the principal
+/// acos(i y) = pi/2 - i asinh(y) reproduces Sorkin's quarter turn with no
+/// special case.
+///
+/// `ok` is false when the cofactors are unusable -- a degenerate denominator,
+/// or a cofactor matrix of the wrong size -- and the caller skips the hinge.
+///
+/// The value reads this in the canonical sorted-by-id frame and the derivatives
+/// in the raw stored order. The ratio is invariant under the permutation
+/// relating them, which tests/mesh/test_dihedral_frame_invariance_python.py
+/// asserts against a finite difference.
+struct DihedralCosine {
+    bool ok{false};
+    std::complex<double> r{};      ///< the cosine, with its branch pinned
+    std::complex<double> theta{};  ///< acos(r)
+    /// The three cofactors and their combined root, which the derivative
+    /// chains differentiate: d(denom) = denom (dCii/Cii + dCjj/Cjj) / 2.
+    std::complex<double> Cij{};
+    std::complex<double> Cii{};
+    std::complex<double> Cjj{};
+    std::complex<double> denom{};
+};
+
+inline DihedralCosine dihedralCosine(
+    const std::vector<std::complex<double>> &cofactors, int n, int bi, int bj) {
+    if (static_cast<int>(cofactors.size()) != n * n) return {};
+    const std::complex<double> Cij =
+        cofactors[static_cast<std::size_t>(bi) * n + bj];
+    const std::complex<double> Cii =
+        cofactors[static_cast<std::size_t>(bi) * n + bi];
+    const std::complex<double> Cjj =
+        cofactors[static_cast<std::size_t>(bj) * n + bj];
+    const std::complex<double> denom = principalSqrt(Cii) * principalSqrt(Cjj);
+    if (std::abs(denom) < 1e-300) return {};
+    std::complex<double> r = -Cij / denom;
+    // acos is cut on (-inf,-1] and [1,inf), so for a real ratio with |r| > 1 --
+    // the same-sign, boost wedge -- the sign of Im(theta) is decided by which
+    // side of the cut the argument sits on, i.e. by the sign of its zero
+    // imaginary part. Complex division would leave that to floating-point
+    // accident, so it is pinned to +0.0, the side acos(complex(r, 0.0)) takes.
+    // Boost orientation is not determined by edge lengths alone (a PT
+    // reflection flips it at identical l^2), so this is a convention, and a
+    // stated one rather than an emergent rounding. A derivative must sit on the
+    // same sheet as the value or it disagrees with a finite difference of it.
+    if (r.imag() == 0.0) r = {r.real(), 0.0};
+    return {true, r, std::acos(r), Cij, Cii, Cjj, denom};
+}
+
+/// B^-1 = adj(B)/det = cof^T/det. B is symmetric, so B^-1 is too.
+inline std::vector<std::complex<double>> inverseFromCofactors(
+    const std::vector<std::complex<double>> &cofactors, int n,
+    std::complex<double> det) {
+    std::vector<std::complex<double>> inverse(static_cast<std::size_t>(n) * n);
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            inverse[i * n + j] = cofactors[j * n + i] / det;
+    return inverse;
+}
 }  // namespace
 using namespace ::tessera::graph;
 using namespace ::tessera::spacetime;
@@ -921,21 +992,9 @@ std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     const int bi = canonicalPosition(cc.canonPos1, vertices[vi]->getId());
     const int bj = canonicalPosition(cc.canonPos1, vertices[vj]->getId());
     if (bi == 0 || bj == 0) return {0.0, 0.0};
-    const std::complex<double> Cij = cof[static_cast<std::size_t>(bi) * n + bj];
-    const std::complex<double> Cii = cof[static_cast<std::size_t>(bi) * n + bi];
-    const std::complex<double> Cjj = cof[static_cast<std::size_t>(bj) * n + bj];
-    const std::complex<double> denom = principalSqrt(Cii) * principalSqrt(Cjj);
-    if (std::abs(denom) < 1e-15) return {0.0, 0.0};
-    std::complex<double> r = -Cij / denom;
-    // acos is cut on (-inf,-1] and [1,inf), so for a real ratio with |r| > 1 (the
-    // same-sign, boost wedge) the sign of Im(theta) is decided by which side of the cut
-    // the argument sits on, i.e. by the sign of its zero imaginary part. Complex
-    // division would leave that to floating-point accident, so it is pinned here to
-    // +0.0, the side acos(complex(r, 0.0)) takes. Boost orientation is not determined by
-    // edge lengths alone (a PT reflection flips it at identical l^2), so this is a
-    // convention, and a stated one rather than an emergent rounding.
-    if (r.imag() == 0.0) r = {r.real(), 0.0};
-    return std::acos(r);
+    const DihedralCosine dihedral = dihedralCosine(cof, n, bi, bj);
+    if (!dihedral.ok) return {0.0, 0.0};
+    return dihedral.theta;
 }
 
 std::complex<double> Simplex::deficitAngle() const {
@@ -983,29 +1042,17 @@ Simplex::deficitAngleGradient() const {
         const std::complex<double> detB = tc.cmDet;
         if (std::abs(detB) < 1e-300) continue;
         const std::vector<std::complex<double>> &C = tc.cmCof;
-        if (static_cast<int>(C.size()) != n * n) continue;
-        // B^-1 = adj(B)/det = cof^T/det ; B symmetric => Binv symmetric.
-        std::vector<std::complex<double>> Binv(static_cast<std::size_t>(n) * n);
-        for (int i = 0; i < n; ++i)
-            for (int j = 0; j < n; ++j)
-                Binv[i * n + j] = C[j * n + i] / detB;
-
-        const cd Cij = C[bi * n + bj];
-        const cd Cii = C[bi * n + bi];
-        const cd Cjj = C[bj * n + bj];
-        // Same unified branch as dihedralAngle: two separate principal roots, one
-        // expression for every causal regime. Sign flags and a crossing/non-crossing
-        // dispatch would be artifacts of folding the product under one root.
-        const cd denom = principalSqrt(Cii) * principalSqrt(Cjj);
-        if (std::abs(denom) < 1e-300) continue;
-        cd r = -Cij / denom;
-        // Pin the branch side exactly as the value does: for a real ratio with |r| > 1
-        // the sign of Im(theta) is decided by the sign of the zero imaginary part, and
-        // the derivative sits on the same sheet as the value or it disagrees with a
-        // finite difference of it.
-        if (r.imag() == 0.0) r = {r.real(), 0.0};
-        const cd theta = std::acos(r);
-        const cd sinTheta = std::sin(theta);
+        const DihedralCosine dihedral = dihedralCosine(C, n, bi, bj);
+        if (!dihedral.ok) continue;
+        const std::vector<std::complex<double>> Binv =
+            inverseFromCofactors(C, n, detB);
+        const cd r = dihedral.r;
+        const cd theta = dihedral.theta;
+        const cd Cij = dihedral.Cij;
+        const cd Cii = dihedral.Cii;
+        const cd Cjj = dihedral.Cjj;
+        const cd denom = dihedral.denom;
+                const cd sinTheta = std::sin(theta);
         if (std::abs(sinTheta) < 1e-300) continue;       // flat/folded: skip
         const cd dthetaDr = cd(-1.0, 0.0) / sinTheta;
 
@@ -1074,28 +1121,19 @@ Simplex::deficitAngleHessian() const {
         const std::complex<double> detB = tc.cmDet;
         if (std::abs(detB) < 1e-300) continue;
         const std::vector<std::complex<double>> &C = tc.cmCof;
-        if (static_cast<int>(C.size()) != n * n) continue;
-        std::vector<std::complex<double>> Binv(static_cast<std::size_t>(n) * n);
-        for (int i = 0; i < n; ++i)
-            for (int j = 0; j < n; ++j)
-                Binv[i * n + j] = C[j * n + i] / detB;
-
-        const cd Cij = C[bi * n + bj];
-        const cd Cii = C[bi * n + bi];
-        const cd Cjj = C[bj * n + bj];
-        // One branch for every causal regime, as in the value and the gradient.
-        // theta = acos(r), r = -Cij/(sqrt(Cii)*sqrt(Cjj)), so
-        // dtheta/dr = -1/sin(theta) and d2theta/dr2 = -r/sin^3(theta).
-        const cd denom = principalSqrt(Cii) * principalSqrt(Cjj);
-        if (std::abs(denom) < 1e-300) continue;
-        cd r = -Cij / denom;
-        // Pin the branch side exactly as the value does: for a real ratio with |r| > 1
-        // the sign of Im(theta) is decided by the sign of the zero imaginary part, and
-        // the derivative sits on the same sheet as the value or it disagrees with a
-        // finite difference of it.
-        if (r.imag() == 0.0) r = {r.real(), 0.0};
-        const cd theta = std::acos(r);
-        const cd sinT = std::sin(theta);
+        const DihedralCosine dihedral = dihedralCosine(C, n, bi, bj);
+        if (!dihedral.ok) continue;
+        const std::vector<std::complex<double>> Binv =
+            inverseFromCofactors(C, n, detB);
+        // theta = acos(r) gives dtheta/dr = -1/sin(theta) and
+        // d2theta/dr2 = -r/sin^3(theta).
+        const cd r = dihedral.r;
+        const cd theta = dihedral.theta;
+        const cd Cij = dihedral.Cij;
+        const cd Cii = dihedral.Cii;
+        const cd Cjj = dihedral.Cjj;
+        const cd denom = dihedral.denom;
+                const cd sinT = std::sin(theta);
         if (std::abs(sinT) < 1e-300) continue;
         const cd dthetaDr = cd(-1.0, 0.0) / sinT;
         const cd d2thetaDr2 = -r / (sinT * sinT * sinT);

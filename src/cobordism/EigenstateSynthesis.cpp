@@ -1459,6 +1459,68 @@ double EigenstateSynthesis::periodGapForPeriods(
       targetPeriods);
 }
 
+EigenstateSynthesis::PeriodGradientContext
+EigenstateSynthesis::periodGradientContext() const {
+  using Eigen::Index;
+  using Eigen::MatrixXcd;
+  using Eigen::VectorXcd;
+  PeriodGradientContext ctx;
+  const ChainComplex cc = ChainComplex::fromSpacetime(*st_);
+  const std::size_t n1 = order_;
+  const Index N = static_cast<Index>(n1);
+  const std::vector<std::vector<std::uint64_t>> &cells1 = cellSimplices();
+  ctx.tris = cc.kSimplexVertices(2);
+  const std::size_t n2 = ctx.tris.size();
+  const std::vector<long> &d1flat = cc.boundaryMatrix(1);  // n0 x n1
+  const std::vector<long> &d2flat = cc.boundaryMatrix(2);  // n1 x n2
+  const std::size_t n0 = n1 == 0 ? 0 : d1flat.size() / n1;
+  ctx.n1 = n1;
+  ctx.n2 = n2;
+
+  const HodgeLaplacian hl(st_, HodgeLaplacian::defaultWeightConvention(),
+                          metricSource_);
+  const std::vector<cd> W1v = hl.weights(1);  // n1, signed complex
+  ctx.W2v = hl.weights(2);  // n2, signed complex
+  const std::vector<cd> &W2v = ctx.W2v;
+  const std::vector<cd> Lflat = hl.laplacian(1, /*metric=*/true);
+
+  ctx.M = MatrixXcd(N, N);
+  for (std::size_t i = 0; i < n1; ++i)
+    for (std::size_t j = 0; j < n1; ++j)
+      ctx.M(static_cast<Index>(i), static_cast<Index>(j)) = Lflat[i * n1 + j];
+  ctx.W1 = VectorXcd(N);
+  for (std::size_t i = 0; i < n1; ++i) ctx.W1[static_cast<Index>(i)] = W1v[i];
+  MatrixXcd d1m(static_cast<Index>(n0), N);
+  for (std::size_t v = 0; v < n0; ++v)
+    for (std::size_t c = 0; c < n1; ++c)
+      d1m(static_cast<Index>(v), static_cast<Index>(c)) =
+          static_cast<double>(d1flat[v * n1 + c]);
+  ctx.d2m = MatrixXcd(N, static_cast<Index>(n2));
+  for (std::size_t c = 0; c < n1; ++c)
+    for (std::size_t t = 0; t < n2; ++t)
+      ctx.d2m(static_cast<Index>(c), static_cast<Index>(t)) =
+          static_cast<double>(d2flat[c * n2 + t]);
+  ctx.K1 = d1m.transpose() * d1m;  // n1 x n1
+  VectorXcd W2inv(static_cast<Index>(n2));
+  for (std::size_t t = 0; t < n2; ++t)
+    W2inv[static_cast<Index>(t)] = 1.0 / W2v[t];
+  ctx.K2 = ctx.d2m * W2inv.asDiagonal() * ctx.d2m.transpose();  // n1 x n1
+
+  // ---- index maps: cell -> index, edge -> l^2, edge -> incident triangles ----
+  for (std::size_t i = 0; i < n1; ++i)
+    ctx.cidx1[PeriodGradientContext::key(cells1[i][0], cells1[i][1])] = i;
+  for (auto *e : edges_)
+    ctx.l2map[PeriodGradientContext::key(e->getSource()->getId(),
+                                         e->getTarget()->getId())] =
+        (e->getLength() * e->getLength());
+  for (std::size_t ti = 0; ti < n2; ++ti)
+    for (int i = 0; i < 3; ++i)
+      for (int j = i + 1; j < 3; ++j)
+        ctx.trisOf[PeriodGradientContext::key(ctx.tris[ti][i],
+                                              ctx.tris[ti][j])].push_back(ti);
+  return ctx;
+}
+
 std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
     const std::vector<EdgeLoop> &loops,
     const std::vector<cd> &targetPeriods) const {
@@ -1487,59 +1549,24 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
   static constexpr double kNullTol = 1e-7;
   const Index N = static_cast<Index>(n1);
 
-  // ---- chain complex, weights, and the metric Laplacian M = L1 ----
-  const ChainComplex cc = ChainComplex::fromSpacetime(*st_);
+  // The shared degree-1 setup: chain complex, M = L1, the boundary pieces and
+  // the index maps. Both edge-loop gradients build the same one.
+  const PeriodGradientContext ctx = periodGradientContext();
+  const auto &tris = ctx.tris;
+  const std::size_t n2 = ctx.n2;
+  const Eigen::MatrixXcd &M = ctx.M;
+  const Eigen::VectorXcd &W1 = ctx.W1;
+  const Eigen::MatrixXcd &d2m = ctx.d2m;
+  const Eigen::MatrixXcd &K1 = ctx.K1, &K2 = ctx.K2;
+  const std::vector<cd> &W2v = ctx.W2v;
   const std::vector<std::vector<std::uint64_t>> &cells1 = cellSimplices();
-  const auto tris = cc.kSimplexVertices(2);
-  const std::size_t n2 = tris.size();
-  const std::vector<long> &d1flat = cc.boundaryMatrix(1);  // n0 x n1
-  const std::vector<long> &d2flat = cc.boundaryMatrix(2);  // n1 x n2
-  const std::size_t n0 = d1flat.size() / n1;
-  const HodgeLaplacian hl(st_, HodgeLaplacian::defaultWeightConvention(), metricSource_);
-  const std::vector<cd> W1v = hl.weights(1);  // n1, signed complex
-  const std::vector<cd> W2v = hl.weights(2);  // n2, signed complex
-  const std::vector<cd> Lflat = hl.laplacian(1, /*metric=*/true);
-
-  MatrixXcd M(N, N);
-  for (std::size_t i = 0; i < n1; ++i)
-    for (std::size_t j = 0; j < n1; ++j)
-      M(static_cast<Index>(i), static_cast<Index>(j)) = Lflat[i * n1 + j];
-  VectorXcd W1(N);
-  for (std::size_t i = 0; i < n1; ++i) W1[static_cast<Index>(i)] = W1v[i];
-  MatrixXcd d1m(static_cast<Index>(n0), N);
-  for (std::size_t v = 0; v < n0; ++v)
-    for (std::size_t c = 0; c < n1; ++c)
-      d1m(static_cast<Index>(v), static_cast<Index>(c)) =
-          static_cast<double>(d1flat[v * n1 + c]);
-  MatrixXcd d2m(N, static_cast<Index>(n2));
-  for (std::size_t c = 0; c < n1; ++c)
-    for (std::size_t t = 0; t < n2; ++t)
-      d2m(static_cast<Index>(c), static_cast<Index>(t)) =
-          static_cast<double>(d2flat[c * n2 + t]);
-  const MatrixXcd K1 = d1m.transpose() * d1m;  // n1 x n1
-  VectorXcd W2inv(static_cast<Index>(n2));
-  for (std::size_t t = 0; t < n2; ++t) W2inv[static_cast<Index>(t)] = 1.0 / W2v[t];
-  const MatrixXcd K2 = d2m * W2inv.asDiagonal() * d2m.transpose();  // n1 x n1
-
-  // ---- index maps: cell -> index, edge -> l^2, edge -> incident triangles ----
-  auto key = [](std::uint64_t a, std::uint64_t b) {
-    return std::pair<std::uint64_t, std::uint64_t>(std::min(a, b), std::max(a, b));
+  const auto &cidx1 = ctx.cidx1;
+  const auto &trisOf = ctx.trisOf;
+  const auto key = [](std::uint64_t a, std::uint64_t b) {
+    return PeriodGradientContext::key(a, b);
   };
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> cidx1;
-  for (std::size_t i = 0; i < n1; ++i) cidx1[key(cells1[i][0], cells1[i][1])] = i;
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> l2map;
-  for (auto *e : edges_)
-    l2map[key(e->getSource()->getId(), e->getTarget()->getId())] =
-        (e->getLength() * e->getLength());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::vector<std::size_t>> trisOf;
-  for (std::size_t ti = 0; ti < n2; ++ti)
-    for (int i = 0; i < 3; ++i)
-      for (int j = i + 1; j < 3; ++j)
-        trisOf[key(tris[ti][i], tris[ti][j])].push_back(ti);
-  auto L2 = [&](std::uint64_t a, std::uint64_t b) -> cd {
-    if (a == b) return cd(0.0, 0.0);
-    auto it = l2map.find(key(a, b));
-    return it == l2map.end() ? cd(0.0, 0.0) : it->second;
+  const auto L2 = [&ctx](std::uint64_t a, std::uint64_t b) {
+    return ctx.l2(a, b);
   };
 
   // ---- Q (signed edge-loop covector) + each cycle's leak column ----
@@ -1639,7 +1666,10 @@ std::vector<double> EigenstateSynthesis::periodGradientOverLoops(
       colsB.push_back((-1.0 / (W1[j] * W1[j])) * K1.row(j).transpose());
       colsA.push_back(K2.col(j));
       colsB.push_back(ev);
-      for (std::size_t ti : trisOf[ek]) {
+      const auto trisIt = trisOf.find(ek);
+      for (std::size_t ti : (trisIt == trisOf.end()
+                                 ? std::vector<std::size_t>{}
+                                 : trisIt->second)) {
         const auto &t = tris[ti];
         Eigen::Matrix2cd G;
         for (int i = 0; i < 2; ++i)
@@ -2092,59 +2122,24 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
   static constexpr double kNullTol = 1e-7;
   const Index N = static_cast<Index>(n1);
 
-  // ---- chain complex, weights, and the metric Laplacian M = L1 ----
-  const ChainComplex cc = ChainComplex::fromSpacetime(*st_);
+  // The shared degree-1 setup: chain complex, M = L1, the boundary pieces and
+  // the index maps. Both edge-loop gradients build the same one.
+  const PeriodGradientContext ctx = periodGradientContext();
+  const auto &tris = ctx.tris;
+  const std::size_t n2 = ctx.n2;
+  const Eigen::MatrixXcd &M = ctx.M;
+  const Eigen::VectorXcd &W1 = ctx.W1;
+  const Eigen::MatrixXcd &d2m = ctx.d2m;
+  const Eigen::MatrixXcd &K1 = ctx.K1, &K2 = ctx.K2;
+  const std::vector<cd> &W2v = ctx.W2v;
   const std::vector<std::vector<std::uint64_t>> &cells1 = cellSimplices();
-  const auto tris = cc.kSimplexVertices(2);
-  const std::size_t n2 = tris.size();
-  const std::vector<long> &d1flat = cc.boundaryMatrix(1);  // n0 x n1
-  const std::vector<long> &d2flat = cc.boundaryMatrix(2);  // n1 x n2
-  const std::size_t n0 = d1flat.size() / n1;
-  const HodgeLaplacian hl(st_, HodgeLaplacian::defaultWeightConvention(), metricSource_);
-  const std::vector<cd> W1v = hl.weights(1);  // n1, signed complex
-  const std::vector<cd> W2v = hl.weights(2);  // n2, signed complex
-  const std::vector<cd> Lflat = hl.laplacian(1, /*metric=*/true);
-
-  MatrixXcd M(N, N);
-  for (std::size_t i = 0; i < n1; ++i)
-    for (std::size_t j = 0; j < n1; ++j)
-      M(static_cast<Index>(i), static_cast<Index>(j)) = Lflat[i * n1 + j];
-  VectorXcd W1(N);
-  for (std::size_t i = 0; i < n1; ++i) W1[static_cast<Index>(i)] = W1v[i];
-  MatrixXcd d1m(static_cast<Index>(n0), N);
-  for (std::size_t v = 0; v < n0; ++v)
-    for (std::size_t c = 0; c < n1; ++c)
-      d1m(static_cast<Index>(v), static_cast<Index>(c)) =
-          static_cast<double>(d1flat[v * n1 + c]);
-  MatrixXcd d2m(N, static_cast<Index>(n2));
-  for (std::size_t c = 0; c < n1; ++c)
-    for (std::size_t t = 0; t < n2; ++t)
-      d2m(static_cast<Index>(c), static_cast<Index>(t)) =
-          static_cast<double>(d2flat[c * n2 + t]);
-  const MatrixXcd K1 = d1m.transpose() * d1m;  // n1 x n1
-  VectorXcd W2inv(static_cast<Index>(n2));
-  for (std::size_t t = 0; t < n2; ++t) W2inv[static_cast<Index>(t)] = 1.0 / W2v[t];
-  const MatrixXcd K2 = d2m * W2inv.asDiagonal() * d2m.transpose();  // n1 x n1
-
-  // ---- index maps: cell -> index, edge -> l^2, edge -> incident triangles ----
-  auto key = [](std::uint64_t a, std::uint64_t b) {
-    return std::pair<std::uint64_t, std::uint64_t>(std::min(a, b), std::max(a, b));
+  const auto &cidx1 = ctx.cidx1;
+  const auto &trisOf = ctx.trisOf;
+  const auto key = [](std::uint64_t a, std::uint64_t b) {
+    return PeriodGradientContext::key(a, b);
   };
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> cidx1;
-  for (std::size_t i = 0; i < n1; ++i) cidx1[key(cells1[i][0], cells1[i][1])] = i;
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> l2map;
-  for (auto *e : edges_)
-    l2map[key(e->getSource()->getId(), e->getTarget()->getId())] =
-        (e->getLength() * e->getLength());
-  std::map<std::pair<std::uint64_t, std::uint64_t>, std::vector<std::size_t>> trisOf;
-  for (std::size_t ti = 0; ti < n2; ++ti)
-    for (int i = 0; i < 3; ++i)
-      for (int j = i + 1; j < 3; ++j)
-        trisOf[key(tris[ti][i], tris[ti][j])].push_back(ti);
-  auto L2 = [&](std::uint64_t a, std::uint64_t b) -> cd {
-    if (a == b) return cd(0.0, 0.0);
-    auto it = l2map.find(key(a, b));
-    return it == l2map.end() ? cd(0.0, 0.0) : it->second;
+  const auto L2 = [&ctx](std::uint64_t a, std::uint64_t b) {
+    return ctx.l2(a, b);
   };
 
   // ---- Q (signed edge-loop covector); the gap needs no leak column ----
@@ -2218,7 +2213,10 @@ std::vector<cd> EigenstateSynthesis::periodGapForLoopsGradient(
     colsB.push_back((-1.0 / (W1[j] * W1[j])) * K1.row(j).transpose());
     colsA.push_back(K2.col(j));
     colsB.push_back(ev);
-    for (std::size_t ti : trisOf[ek]) {
+    const auto trisIt = trisOf.find(ek);
+      for (std::size_t ti : (trisIt == trisOf.end()
+                                 ? std::vector<std::size_t>{}
+                                 : trisIt->second)) {
       const auto &t = tris[ti];
       Eigen::Matrix2cd G;
       for (int i = 0; i < 2; ++i)
