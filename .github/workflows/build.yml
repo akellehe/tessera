@@ -45,6 +45,23 @@ jobs:
       matrix:
         python-version: ["3.13"]
     env:
+      # Give the container its own tool cache.
+      #
+      # The runner's cache lives under _work/_tool, which is bind-mounted into
+      # the container as /__w/_tool, so host and container share it. They do not
+      # agree on OpenSSL: a self-hosted host may be a later Ubuntu than the
+      # image pinned below -- 3.5.5 against the container's 3.0.13 when this
+      # broke -- and a Python resolved from that shared cache in a host context
+      # has _ssl linked against the host's. Inside the container the extension
+      # will not load, `import ssl` fails, and pip loses HTTPS: every install
+      # dies at "No matching distribution found".
+      #
+      # This path is container-local rather than under /__w, so setup-python
+      # resolves a build made for the image. It costs a download per run, which
+      # is the price of the cache being correct. AGENT_TOOLSDIRECTORY is the
+      # documented knob for relocating the tool cache on self-hosted Ubuntu
+      # runners.
+      AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESSERA_CUDA: "0"
       # The runner box is shared (other self-hosted runners + interactive use);
       # cap build and math-library parallelism so concurrent matrix jobs stay
