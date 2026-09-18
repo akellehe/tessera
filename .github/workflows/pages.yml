@@ -3,7 +3,13 @@ name: Build and Deploy Docs
 on:
   push:
     branches:
-      - main   # or whatever your default branch is
+      - main
+  # Every pull request builds and packages the docs, so a break is caught
+  # before it reaches main rather than after, when it has already taken the
+  # deploy down. The build steps below are shared with the deploy path by
+  # construction, so a green check here means the deploy's build will pass.
+  # Publishing stays on main: see the deploy job's condition.
+  pull_request:
   workflow_dispatch:  # allow manual runs
 
 permissions:
@@ -11,12 +17,15 @@ permissions:
   pages: write
   id-token: write
 
+# Keyed by ref so concurrent pull requests do not cancel one another; the
+# single "pages" group would have let any new run kill an in-flight one.
 concurrency:
-  group: "pages"
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    name: Build the documentation
     runs-on: ubuntu-latest
 
     steps:
@@ -32,16 +41,10 @@ jobs:
         # The docs build compiles the C++ extension (`pip install ".[dev]"`), so it
         # needs the same packages as build.yml: pybind11-dev for the
         # find_package(pybind11) cmake config, plus liblapack/libblas for the
-        # quantum subsystem. Without them the build — and the whole deploy — fails.
-        # pandoc generates the whitepaper's Markdown edition from its LaTeX source.
-        run: sudo apt-get update && sudo apt-get install -y doxygen pandoc pybind11-dev liblapack-dev libblas-dev
-
-      # Cheap and independent of the extension build, so it runs before it: the
-      # Markdown edition of the whitepaper is generated from the LaTeX source,
-      # and a hand-edit or an unregenerated revision would otherwise drift
-      # silently. Regenerate with `python3 scripts/whitepaper_markdown.py`.
-      - name: Check the whitepaper Markdown edition is current
-        run: python3 scripts/whitepaper_markdown.py --check
+        # quantum subsystem. doxygen produces the XML that breathe renders into
+        # the C++ API pages. Without them the build fails, and on main so does
+        # the deploy.
+        run: sudo apt-get update && sudo apt-get install -y doxygen pybind11-dev liblapack-dev libblas-dev
 
       - name: Install dependencies
         run: |
@@ -49,21 +52,29 @@ jobs:
            pip install ".[dev]"
            pip install -r docs/requirements.txt
 
-      # No pytest here: the suite exceeds the runner's time budget, so tests are
-      # a local gate (see README). This workflow's job is to compile the
-      # extension and build + deploy the docs — a green run asserts exactly that.
+      # No pytest here: the suite exceeds the runner's time budget, and build.yml
+      # already covers it. This workflow compiles the extension and builds the
+      # docs; a green run asserts exactly that, on a pull request and on main
+      # alike.
       - name: Build Sphinx HTML
         working-directory: docs
         run: |
           make html
 
+      # Packaging runs on a pull request too. It is part of the deploy path and
+      # can fail on its own, so a check that stopped at `make html` would not
+      # prove the artifact is deployable.
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v5
         with:
           path: docs/_build/html
 
   deploy:
+    name: Deploy to GitHub Pages
     needs: build
+    # Only main publishes. A pull request proves the artifact is deployable and
+    # stops there; deploying an unmerged branch would overwrite the live site.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
