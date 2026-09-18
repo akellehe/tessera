@@ -7,6 +7,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <tuple>
 #include <utility>
@@ -638,6 +639,53 @@ class EigenstateSynthesis {
         bool electricOnly = true) const;
 
   private:
+    /// The degree-1 setup both edge-loop gradients build before they diverge.
+    ///
+    /// `periodGradientOverLoops` and `periodGapForLoopsGradient` score
+    /// different functionals -- the leaked state's non-harmonicity against the
+    /// period gap -- but reach them through the same first-order
+    /// eigenvector-perturbation setup. This is that setup: the chain complex,
+    /// the metric Laplacian M = L_1, the boundary matrices and the two
+    /// Laplacian pieces K1 and K2, and the index maps the per-edge low-rank dM
+    /// needs. It holds no gradient arithmetic, so lifting it leaves both
+    /// frozen expressions untouched.
+    struct PeriodGradientContext {
+      std::vector<std::vector<std::uint64_t>> tris;   ///< the 2-cells
+      std::size_t n1{0}, n2{0};                       ///< cell counts by degree
+      Eigen::MatrixXcd M;      ///< L_1 with the metric weights
+      Eigen::VectorXcd W1;     ///< signed complex weights on 1-cells
+      std::vector<std::complex<double>> W2v;  ///< signed weights on 2-cells
+      Eigen::MatrixXcd d2m;    ///< the n1 x n2 boundary matrix, as complex
+      Eigen::MatrixXcd K1;     ///< d1^T d1
+      Eigen::MatrixXcd K2;     ///< d2 W2^-1 d2^T
+      /// 1-cell (sorted endpoint pair) -> its operator index.
+      std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> cidx1;
+      /// 1-cell -> its squared length.
+      std::map<std::pair<std::uint64_t, std::uint64_t>,
+               std::complex<double>> l2map;
+      /// 1-cell -> the 2-cells carrying it.
+      std::map<std::pair<std::uint64_t, std::uint64_t>,
+               std::vector<std::size_t>> trisOf;
+
+      /// The canonical sorted key for an endpoint pair.
+      [[nodiscard]] static std::pair<std::uint64_t, std::uint64_t>
+      key(std::uint64_t a, std::uint64_t b) {
+        return {std::min(a, b), std::max(a, b)};
+      }
+
+      /// The squared length of the 1-cell on (a, b); zero when absent.
+      [[nodiscard]] std::complex<double> l2(std::uint64_t a,
+                                            std::uint64_t b) const {
+        if (a == b) return {0.0, 0.0};
+        const auto it = l2map.find(key(a, b));
+        return it == l2map.end() ? std::complex<double>(0.0, 0.0) : it->second;
+      }
+    };
+
+    /// Build the shared degree-1 setup. Callers have already refused a degree
+    /// other than one.
+    [[nodiscard]] PeriodGradientContext periodGradientContext() const;
+
     std::shared_ptr<Spacetime> st_;
     int k_{0};  // the Hodge degree of L_k that apply()/residual() score against
     // The Hodge Laplacian operator over the same complex. laplacian(k_)
