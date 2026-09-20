@@ -82,6 +82,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} SimplicialProduct.h
 ```
+```{doxygenfile} PeriodicKuhnGrid.h
+```
 ```{doxygenfile} SphereCircleProduct.h
 ```
 ```{doxygenfile} SimplexBoundarySphere.h

@@ -17,6 +17,7 @@
 #include "spacetime/topologies/RealProjectivePlane.h"
 #include "spacetime/topologies/RealProjectiveSpace.h"
 #include "spacetime/topologies/ComplexProjectivePlane.h"
+#include "spacetime/topologies/PeriodicKuhnGrid.h"
 #include "spacetime/topologies/SimplicialProduct.h"
 #include "spacetime/topologies/SphereCircleProduct.h"
 #include "spacetime/topologies/StellarSubdivision.h"
@@ -147,6 +148,54 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       .def("build", &SimplicialProduct::build, py::arg("spacetime"),
            py::arg("numSimplices") = 0,
            "Build the product complex (numSimplices ignored).");
+
+  py::class_<PeriodicKuhnGrid, Topology, std::shared_ptr<PeriodicKuhnGrid> >(
+      m, "PeriodicKuhnGrid",
+      R"doc(The Kuhn (staircase) triangulation of the three-torus on an N1 x N2 x N3 grid with
+the squared edge lengths of a flat metric. Vertex (i, j, l) has id i*N2*N3 + j*N3 + l;
+every grid cube is cut into six tetrahedra along its main diagonal, indices reduced
+modulo the divisions. Betti numbers (1, 3, 3, 1); every vertex has degree 14.
+
+The metric is given as the Gram matrix A_ab = a_a . a_b of the lattice vectors of the
+periodic cell; an edge with unwrapped integer displacement n has squared length
+n^T g n with g_ab = A_ab / (N_a N_b). A crystal momentum in reciprocal coordinates
+kappa is the flat U(1) connection with edge phase 2 pi sum_a kappa_a n_a / N_a, whose
+holonomy around the fundamental cycle of axis a is exp(2 pi i kappa_a).
+
+Reference: Kuhn, "Some combinatorial lemmas in topology", 1960.)doc")
+      .def(py::init<int, int, int, const PeriodicKuhnGrid::Gram &>(), py::arg("n1"),
+           py::arg("n2"), py::arg("n3"), py::arg("lattice_gram"))
+      .def_static("cubic", &PeriodicKuhnGrid::cubic, py::arg("n"), py::arg("a") = 1.0,
+           "The cubic cell of side a with n divisions per axis.")
+      .def("dimension", &PeriodicKuhnGrid::dimension)
+      .def("build", &PeriodicKuhnGrid::build, py::arg("spacetime"),
+           py::arg("numSimplices") = 0,
+           "Build the grid and set every edge length to sqrt(s_e) (numSimplices ignored).")
+      .def("divisions", &PeriodicKuhnGrid::divisions)
+      .def("latticeGram", &PeriodicKuhnGrid::latticeGram)
+      .def("stepMetric", &PeriodicKuhnGrid::stepMetric, "g_ab = A_ab / (N_a N_b).")
+      .def("vertexCount", &PeriodicKuhnGrid::vertexCount)
+      .def("vertexId", &PeriodicKuhnGrid::vertexId, py::arg("i"), py::arg("j"), py::arg("l"),
+           "The id of grid index (i, j, l), each index reduced modulo its division.")
+      .def("gridIndex", &PeriodicKuhnGrid::gridIndex, py::arg("id"))
+      .def("fractionalCoordinates", &PeriodicKuhnGrid::fractionalCoordinates, py::arg("id"),
+           "(i/N1, j/N2, l/N3): the vertex position in units of the lattice vectors.")
+      .def("cells", &PeriodicKuhnGrid::cells,
+           "The 6*N1*N2*N3 tetrahedra as sorted vertex-id tuples, sorted.")
+      .def("displacement", &PeriodicKuhnGrid::displacement, py::arg("x"), py::arg("y"),
+           "The unwrapped integer displacement of the directed edge x -> y.")
+      .def("squaredLength", &PeriodicKuhnGrid::squaredLength, py::arg("x"), py::arg("y"))
+      .def("squaredLengths", &PeriodicKuhnGrid::squaredLengths, py::arg("edges"),
+           "Squared lengths of the given vertex-id pairs, in the given order.")
+      .def("blochPhase", &PeriodicKuhnGrid::blochPhase, py::arg("x"), py::arg("y"),
+           py::arg("kappa"), "2 pi sum_a kappa_a n_a / N_a for the directed edge x -> y.")
+      .def("blochLinks", &PeriodicKuhnGrid::blochLinks, py::arg("edges"), py::arg("kappa"),
+           "exp(i blochPhase) per edge read from its first vertex to its second, in the "
+           "given order: the link list of chainhodge.Connection for kSimplexVertices(1).")
+      .def("fundamentalCycle", &PeriodicKuhnGrid::fundamentalCycle, py::arg("axis"),
+           py::arg("base") = 0,
+           "The closed walk of N_axis axis steps from base around the torus, as directed "
+           "steps (u, v).");
 
   py::class_<SphereCircleProduct, Topology,
              std::shared_ptr<SphereCircleProduct> >(m, "SphereCircleProduct",
