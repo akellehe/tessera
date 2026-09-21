@@ -353,6 +353,27 @@ def multiplet_splitting(levels, upper, lower):
     return float(levels[lower:].mean() - levels[:lower].mean())
 
 
+def moment_splitting(sextet, triplet):
+    """The distance between the quartet and the doublet of a p level from
+    second moments, free of a field of lower symmetry. On the six states of a
+    p level H = H_field (x) 1 + lambda L . S, and because the spin matrices
+    have no trace the cross term of tr H^2 vanishes:
+
+        sum_6 (E - mean)^2 = 2 sum_3 (e - mean)^2 + 3 lambda^2 ,
+
+    with E the six two-sheet levels and e the three one-sheet ones, whatever
+    H_field is. The splitting is 3 lambda / 2. With no field this is the
+    distance between the centres of the multiplets (`multiplet_splitting`),
+    and both tend to the same limit under refinement; this one is not moved
+    by the splitting that the mesh gives the one-sheet triplet."""
+    sextet, triplet = np.asarray(sextet, dtype=float), np.asarray(triplet, dtype=float)
+    if len(sextet) != 6 or len(triplet) not in (3, 6):
+        raise ValueError("six two-sheet levels and the three one-sheet levels they come from (or those, doubled)")
+    weight = 2.0 if len(triplet) == 3 else 1.0
+    excess = ((sextet - sextet.mean()) ** 2).sum() - weight * ((triplet - triplet.mean()) ** 2).sum()
+    return float(1.5 * np.sqrt(max(excess, 0.0) / 3.0))
+
+
 # ---------------------------------------------------------------- the pseudo-atom on two sheets
 
 def pseudo_atom_levels(pseudo, side, divisions, strength, count, sigma=None, spin_orbit=True):
@@ -437,8 +458,11 @@ def run_hartree_fock_two_sheets(mesh, bands, start, spin_orbit=True, tolerance=1
     every computed level and compressed, K = -xi xi^dagger, in an outer loop,
     the Hartree potential converged at fixed exchange in an inner one. The
     first entry of "history_levels" is the diagonalization of the two-sheet
-    pencil in the mean field of `start`, before any feedback. "energy" is the
-    electronic energy, as in the one-sheet loop."""
+    pencil in the mean field of `start`, before any feedback, and
+    "start_levels" are the levels of `start`, which that diagonalization
+    splits; "levels_without_block" are the levels of the converged pencil with
+    the block taken out. "energy" is the electronic energy, as in the one-sheet
+    loop."""
     from tessera.drivers.bands.abinitio import PulayMixer
     cell, crystal = mesh.cell, mesh.crystal
     n, filled_count, count = cell.size, crystal.electrons, 2 * bands
@@ -447,6 +471,7 @@ def run_hartree_fock_two_sheets(mesh, bands, start, spin_orbit=True, tolerance=1
     if np.asarray(start["vectors"]).shape[0] == n:
         start = doubled(start, bands)
     orbitals, values = np.asarray(start["vectors"])[:, :count], np.asarray(start["levels"])[:count]
+    start_levels = values.copy()
     core = spin_orbit_core([pseudo for pseudo, _ in crystal.ions])
     if not spin_orbit:
         core = np.zeros_like(core)
@@ -499,6 +524,10 @@ def run_hartree_fock_two_sheets(mesh, bands, start, spin_orbit=True, tolerance=1
             A, mesh.mass, P2, D2, count, float((mesh.ionic + hartree).min()) - 0.1)
         below = below and np.abs(certified_values - values).max() < 1e-7
         residual = max(residual, certified_residual)
+    # The levels of the converged pencil with the block taken out: what the block splits (`moment_splitting`).
+    D_without = D2.copy()
+    D_without[:rank, :rank] -= core
+    without = solve_two_sheets(A, mesh.mass, P2, D_without, count, float((mesh.ionic + hartree).min()) - 0.1)[0]
     # E = 1/2 sum over the filled sections of (h_aa + e_a), h the kinetic and ionic part with the spin-orbit block.
     filled = orbitals[:, :filled_count]
     ionic = (mesh.stiffness + cell.weighted_mass(mesh.ionic).dressed().real).tocsc()
@@ -507,7 +536,7 @@ def run_hartree_fock_two_sheets(mesh, bands, start, spin_orbit=True, tolerance=1
                        for s in range(2)) + np.einsum("ip,pq,iq->i", overlap, D_projectors, overlap.conj())
     energy = 0.5 * float(np.sum(one_particle.real + values[:filled_count]))
     return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
-            "energy": energy,
+            "energy": energy, "levels_without_block": without, "start_levels": start_levels,
             "history": history, "history_levels": history_levels, "converged": history[-1] < tolerance,
             "spacing": cell.spacing, "time_reversal_defect": time_reversal_defect(values),
             "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
@@ -557,9 +586,10 @@ def _checkpointed(path, compute, log):
             return start
         log(f"  continuing from {path.name}")
     result = dict(compute(start))
-    # The first diagonalization of a two-sheet loop is that of its first call.
-    first = result.pop("history_levels", [[]])[0]
-    result["first_levels"] = start["first_levels"] if start is not None and np.size(start["first_levels"]) else first
+    # The first diagonalization of a two-sheet loop, and the levels it splits, are those of its first call.
+    result["first_levels"] = result.pop("history_levels", [[]])[0]
+    if start is not None and np.size(start["first_levels"]):
+        result["first_levels"], result["start_levels"] = start["first_levels"], start["start_levels"]
     if path is not None:
         np.savez(path, **{key: np.asarray(value) for key, value in result.items()})
     return result
@@ -572,9 +602,11 @@ def gallium_arsenide_splitting(divisions, bands=24, a=None, approximations=None,
     pseudopotentials on meshes `divisions` of the conventional cell:
     Hartree-Fock on one sheet, then on two sheets with the spin-orbit block.
     The top of the valence band, a triplet on one sheet, is a quartet above a
-    doublet on two; the splitting is the distance between their centres
-    (`multiplet_splitting`), read after the first diagonalization of the
-    two-sheet pencil and at self-consistency, extrapolated over the meshes
+    doublet on two; the splitting is read as the distance between their centres
+    (`multiplet_splitting`) and from second moments (`moment_splitting`, which
+    the splitting that the mesh gives the triplet does not move), after the
+    first diagonalization of the two-sheet pencil and at self-consistency,
+    extrapolated over the meshes
     with `richardson` and reported against the measured one
     (`reference.GALLIUM_ARSENIDE`). `checkpoint` is a directory that holds the
     state of every loop, from which a later call continues; a call makes at
@@ -628,15 +660,21 @@ def gallium_arsenide_splitting(divisions, bands=24, a=None, approximations=None,
                     "sextet": (np.sort(np.asarray(double["levels"])[top]) * RYDBERG).tolist(),
                     "splitting_first_diagonalization": multiplet_splitting(np.asarray(first)[top], 4, 2) * RYDBERG,
                     "splitting": multiplet_splitting(np.asarray(double["levels"])[top], 4, 2) * RYDBERG,
+                    "moment_splitting_first_diagonalization":
+                        moment_splitting(np.asarray(first)[top], np.asarray(double["start_levels"])[top]) * RYDBERG,
+                    "moment_splitting": moment_splitting(np.asarray(double["levels"])[top],
+                                                         np.asarray(double["levels_without_block"])[top]) * RYDBERG,
                     "two_sheet_gap": float((double["levels"][2 * occupied] - double["levels"][2 * occupied - 1]) * RYDBERG)})
-        log(f"N={n:3d} splitting {row['splitting']:.4f} eV (first diagonalization "
-            f"{row['splitting_first_diagonalization']:.4f}), measured {GALLIUM_ARSENIDE.spin_orbit_splitting} eV")
+        log(f"N={n:3d} splitting: centres {row['splitting']:.4f} eV (first diagonalization "
+            f"{row['splitting_first_diagonalization']:.4f}), moments {row['moment_splitting']:.4f} eV (first "
+            f"{row['moment_splitting_first_diagonalization']:.4f}), measured {GALLIUM_ARSENIDE.spin_orbit_splitting} eV")
     result = {"runs": rows, "measured_splitting": GALLIUM_ARSENIDE.spin_orbit_splitting,
               "converged": all(row.get("two_sheets_converged", False) for row in rows)}
     done = [row for row in rows if "splitting" in row]
     if len(done) > 1:
         spacings = [row["spacing"] for row in done]
-        result["extrapolated"] = float(richardson(spacings, [row["splitting"] for row in done])[0])
+        result["extrapolated"] = {name: float(richardson(spacings, [row[name] for row in done])[0])
+                                  for name in ("splitting", "moment_splitting")}
         result["amplification"] = float(richardson_amplification(spacings))
     return result
 

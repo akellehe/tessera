@@ -110,6 +110,25 @@ def test_the_radial_levels_of_the_two_total_angular_momenta_bracket_the_scalar_o
     assert so.radial_levels(ion, 0, 0.5, 1, strength)[0] == pytest.approx(pp.radial_levels(ion, 0, 1, strength)[0])
 
 
+def test_the_second_moments_give_the_splitting_whatever_field_splits_the_triplet():
+    """H = H_field (x) 1 + lambda L . S on the six states of a p level: the
+    second-moment form returns 3 lambda / 2 for any H_field, the distance
+    between the centres of the upper four and the lower two only without one."""
+    rng = np.random.default_rng(2)
+    coupling = 0.2
+    for scale in (0.0, 0.05, 0.5):
+        field = rng.normal(size=(3, 3))
+        field = scale * (field + field.T)
+        triplet = np.linalg.eigvalsh(field)
+        sextet = np.linalg.eigvalsh(np.kron(np.eye(2), field) + coupling * so.l_dot_s(1))
+        assert so.moment_splitting(sextet, triplet) == pytest.approx(1.5 * coupling, abs=1e-12)
+        assert so.moment_splitting(sextet, np.repeat(triplet, 2)) == pytest.approx(1.5 * coupling, abs=1e-12)
+        centres = so.multiplet_splitting(sextet, 4, 2)
+        assert (abs(centres - 1.5 * coupling) < 1e-12) == (scale == 0.0)
+    with pytest.raises(ValueError):
+        so.moment_splitting(np.zeros(4), np.zeros(3))
+
+
 class TestTwoSheetPencil:
     def _mesh(self, n=6):
         crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_ion(), np.full(3, 0.5))])
@@ -163,6 +182,14 @@ def test_the_spin_orbit_splitting_of_the_pseudo_atom_on_the_mesh_tends_to_the_ra
     errors = np.abs(np.array(splittings) - target)
     assert errors[1] < 0.6 * errors[0] and errors[1] < 0.03 * target
     assert richardson(spacings, splittings)[0] == pytest.approx(target, rel=2e-3)
+    # The second-moment read, against the one-sheet triplet of the same mesh, tends to the same value.
+    moments = []
+    for n in (12, 16):
+        two = so.pseudo_atom_levels(ion, side, n, strength, 8)[0]
+        one = so.pseudo_atom_levels(ion, side, n, strength, 8, spin_orbit=False)[0]
+        moments.append(so.moment_splitting(two[2:8], one[2:8]))
+    assert abs(moments[1] - target) < abs(moments[0] - target) < 0.1 * target
+    assert richardson(spacings, moments)[0] == pytest.approx(target, rel=2e-2)
     # Without the block the six levels are the three of one sheet, twice.
     levels = so.pseudo_atom_levels(ion, side, 8, strength, 8, spin_orbit=False)[0]
     assert levels[0::2] == pytest.approx(levels[1::2], abs=1e-9)
@@ -222,6 +249,8 @@ class TestHartreeFockOnTwoSheets:
         assert two["levels"][0::2] == pytest.approx(run["levels"], abs=2e-5)
         assert two["levels"][1::2] == pytest.approx(run["levels"], abs=2e-5)
         assert two["energy"] == pytest.approx(run["energy"], abs=1e-4)
+        assert two["levels_without_block"] == pytest.approx(two["levels"], abs=1e-7)
+        assert two["start_levels"] == pytest.approx(np.repeat(run["levels"], 2))
 
     def test_with_the_block_the_state_stays_time_reversal_invariant_and_an_s_level_does_not_move(self, converged):
         mesh, run = converged
@@ -264,7 +293,8 @@ class TestTheGalliumArsenideDriver:
         def compute(start):
             calls.append(start)
             done = start is not None
-            return {"levels": np.arange(3.0) + len(calls), "converged": done, "history_levels": [np.full(3, float(len(calls)))]}
+            return {"levels": np.arange(3.0) + len(calls), "converged": done, "start_levels": np.full(3, -float(len(calls))),
+                    "history_levels": [np.full(3, float(len(calls)))]}
 
         path = tmp_path / "loop.npz"
         first = so._checkpointed(path, compute, lambda message: None)
@@ -272,5 +302,6 @@ class TestTheGalliumArsenideDriver:
         second = so._checkpointed(path, compute, lambda message: None)
         assert second["converged"] and calls[1]["levels"].tolist() == [1.0, 2.0, 3.0]
         assert np.asarray(second["first_levels"]).tolist() == [1.0, 1.0, 1.0]
+        assert np.asarray(second["start_levels"]).tolist() == [-1.0, -1.0, -1.0]
         third = so._checkpointed(path, compute, lambda message: None)                  # converged: read, not computed
         assert len(calls) == 2 and third["levels"].tolist() == [2.0, 3.0, 4.0]
