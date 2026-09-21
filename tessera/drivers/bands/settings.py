@@ -62,7 +62,13 @@ class Approximations:
     minimizes the energy (`acceleration`; 0 is the span of the computed bands
     alone). It changes the number of updates and the cost of each, by about
     (bands + history x filled)^2 Poisson solves, and leaves the converged state
-    where it is."""
+    where it is.
+
+    `projector_quadrature`: the Gauss points per direction of the collapsed
+    rule that loads the projector functions of the ions on every tetrahedron
+    (`loads.SimplexQuadrature`); n points integrate polynomials of degree
+    2 n - 1 exactly, 6 x 6 x 6 points per tetrahedron by default. 0 loads the
+    interpolant of the projector with the mass matrix in its place, M beta."""
     self_energy_order: int = 3
     zero_momentum_order: int = 3
     refinement_terms: int = 5
@@ -73,6 +79,7 @@ class Approximations:
     momenta: int = 1
     exchange_history: int = 5
     vertex_memory: float = 8.0
+    projector_quadrature: int = 6
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -90,6 +97,8 @@ class Approximations:
             raise ValueError("exchange_history is at least 0")
         if not self.vertex_memory > 0.0:
             raise ValueError("vertex_memory is positive")
+        if self.projector_quadrature < 0:
+            raise ValueError("projector_quadrature is a number of points per direction, or 0 for the interpolant")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -165,6 +174,9 @@ class Approximations:
                                 "accelerator (changes the cost of the loop, not the converged state)")
         group.add_argument("--vertex-memory", type=float, default=defaults.vertex_memory,
                            help="GiB the diagrams beyond the first order may hold at once; changes the time, not the numbers")
+        group.add_argument("--projector-quadrature", type=int, default=defaults.projector_quadrature,
+                           help="Gauss points per direction of the rule that loads the projectors on every "
+                                f"tetrahedron (default {defaults.projector_quadrature}; 0 loads the interpolant)")
 
     @classmethod
     def from_arguments(cls, args):

@@ -18,8 +18,9 @@ def test_ranges_and_defaults():
     assert (defaults.self_energy_order, defaults.zero_momentum_order) == (3, 3)
     assert defaults.refinements == (2, 3, 4, 6, 8) and defaults.images == (-2, -1, 0, 1, 2)
     assert Approximations(refinement_terms=1).refinements == (8,) and Approximations(lattice_images=1).images == (0,)
+    assert defaults.projector_quadrature == 6
     for bad in ({"self_energy_order": 0}, {"self_energy_order": 6}, {"zero_momentum_order": 6},
-                {"refinement_terms": 0}, {"lattice_images": 4}, {"frequency_nodes": 4}):
+                {"refinement_terms": 0}, {"lattice_images": 4}, {"frequency_nodes": 4}, {"projector_quadrature": -1}):
         with pytest.raises(ValueError):
             Approximations(**bad)
 
@@ -69,8 +70,8 @@ def test_the_flags_reach_the_run():
     Approximations.add_arguments(parser)
     parsed = Approximations.from_arguments(parser.parse_args(
         ["--self-energy-order", "1", "--zero-momentum-order", "1", "--refinement-terms", "3", "--lattice-images", "3",
-         "--frequency-nodes", "32"]))
-    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12, momenta=1)
+         "--frequency-nodes", "32", "--projector-quadrature", "4"]))
+    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12, momenta=1, projector_quadrature=4)
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     coarse, fine = abinitio.MeshCrystal(crystal, 6, approximations=parsed), abinitio.MeshCrystal(crystal, 6)
     assert coarse.approximations.images == (-1, 0, 1)
