@@ -243,6 +243,50 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
             "gap": extrapolated_centre[2] - mesh_top, "reference_gap": centre_reference[4] - top}
 
 
+def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
+    """One mesh of `ab_initio_gap` with the covariance sampled on a momentum
+    set: Hartree-Fock on the set, more bands at every momentum, and the
+    quasiparticle equation with the screened interaction of every momentum
+    transfer of the set (`momentum_set.SetScreening`), one shot and with the
+    levels fed back. The gap is read at the zone centre of the cell, between
+    the states that belong to the zone centre of the primitive cell."""
+    from tessera.drivers.bands import RYDBERG
+    from tessera.drivers.bands.momentum_set import SetScreening, uniform_set
+    started = time.time()
+    mean_field = mesh.run_hartree_fock_set(bands, uniform_set(approximations.momenta), log=log)
+    extended = mesh.extend_bands_set(mean_field, screening_bands, log=log)
+    half = n // 2
+    read = type("Read", (), {"kappa": (0.0, 0.0, 0.0), "vectors": np.asarray(extended["vectors"][0]).astype(complex)})
+    characters = translation_characters(mesh.cell, read, [(0, half, half), (half, 0, half), (half, half, 0)])
+    from_centre = characters.real.sum(axis=0) > 1.0
+    occupied = int(extended["occupied"])
+    valence = [int(i) for i in np.nonzero(from_centre)[0] if i < occupied][-3:]
+    conduction = [int(i) for i in np.nonzero(from_centre)[0] if i >= occupied][:1]
+    if not conduction:
+        raise ValueError("no conduction state of the primitive zone centre among the screening bands")
+    gap = lambda levels: float((np.mean(levels[conduction]) - np.mean(levels[valence])) * RYDBERG)
+    row = {"divisions": n, "momenta": approximations.momenta, "solved_momenta": len(mean_field["solved"]),
+           "hartree_fock": gap(np.asarray(extended["levels"][0])), "certified": bool(mean_field["certified"]),
+           "exchange_updates": len(mean_field["history"]), "zero_momentum_constant": mean_field["zero_momentum"],
+           "states": valence + conduction}
+    log(f"N={n}, {approximations.momenta}^3 momenta: Hartree-Fock gap {row['hartree_fock']:.3f} eV after "
+        f"{row['exchange_updates']} exchange updates ({time.time() - started:.0f} s)")
+    screened = SetScreening(mesh, extended, screening_bands)
+    row["dielectric_constant"] = screened.dielectric_constant
+    shifted = np.asarray(extended["levels"][0], dtype=float).copy()
+    for index in valence + conduction:
+        shifted[index] = screened.quasiparticle((0, index))[1]
+    row["g0w0"] = gap(shifted)
+    log(f"N={n}: g0w0 {row['g0w0']:.3f} eV ({time.time() - started:.0f} s)")
+    for name, update in (("gw0", False), ("evgw", True)):
+        levels, history = screened.self_consistent(update_screening=update, tolerance=1e-5, log=log)
+        row[name], row[name + "_residual"] = gap(levels[0]), float(history[-1])
+        log(f"N={n}: {name} {row[name]:.3f} eV ({time.time() - started:.0f} s)")
+        screened.solve()                                         # back to the screening of the mean field
+    row["seconds"] = time.time() - started
+    return row
+
+
 def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=200, approximations=None, a=None,
                   log=print):
     """The direct gap of gallium arsenide with the norm-conserving
@@ -273,13 +317,18 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
     lattice_constant = (GALLIUM_ARSENIDE.lattice_constant if a is None else a) / BOHR
     conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
     # Without and with the zero-momentum term is a distinction of the closed form at the zone centre only.
-    split = approximations.zero_momentum_order == 1 and approximations.self_energy_order == 1
+    split = approximations.zero_momentum_order == 1 and approximations.self_energy_order == 1 \
+        and approximations.momenta == 1
     names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw") if split \
         else ("hartree_fock", "g0w0", "gw0", "evgw")
     runs, spacings, previous = [], [], None
     for n in sorted(divisions):
         started = time.time()
         mesh = MeshCrystal(conventional, n, approximations=approximations)
+        if approximations.momenta > 1:
+            runs.append(_momentum_set_row(mesh, n, bands, screening_bands, approximations, log))
+            spacings.append(mesh.cell.spacing)
+            continue
         # Every mesh after the first starts from the converged orbitals of the one before it.
         start = mesh.prolonged(*previous) if previous else None
         mean_field = mesh.run_hartree_fock(bands, start=start, log=log)

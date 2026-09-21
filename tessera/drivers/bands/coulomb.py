@@ -214,17 +214,21 @@ class GridCoulombKernel:
             inverse.flat[0] = zero_momentum * self.size / self.strength
         return inverse
 
-    def potential_derivative(self, rho, axis):
+    def potential_derivative(self, rho, axis, kappa=None):
         """The derivative of `potential(rho, kappa, zero_momentum)` with respect
-        to the Cartesian component `axis` of the crystal momentum, at the zone
-        centre: the Fourier multiplier -strength a'(G) / a(G)^2 with the gradient
-        of the symbol in closed form, a'(k) = -sum_n A_0n dx_n sin(k . dx_n). The
-        entry at G = 0 is a constant of the momentum and has no derivative."""
+        to the Cartesian component `axis` of the crystal momentum: the Fourier
+        multiplier -strength a'(G + kappa) / a(G + kappa)^2 with the gradient of
+        the symbol in closed form, a'(k) = -sum_n A_0n dx_n sin(k . dx_n). At the
+        zone centre (`kappa = None`) the entry at G = 0 is a constant of the
+        momentum and has no derivative."""
         grid = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
+        if kappa is not None:
+            grid = grid + np.asarray(kappa, dtype=float)
         angle = 2.0 * np.pi * ((grid / np.array(self.shape)) @ self._offsets.T)
         displacement = (self._offsets / np.array(self.shape)) @ self._lattice
         gradient = -(np.sin(angle) @ (self._entries * displacement[:, axis])).reshape(self.shape)
-        multiplier = -gradient * self._inverse ** 2
+        inverse = self._inverse if kappa is None else self.inverse_symbol(kappa)
+        multiplier = -gradient * inverse ** 2
         rho = np.asarray(rho, dtype=complex)
         columns = rho.reshape(self.size, -1)
         field = columns.T.reshape((-1,) + self.shape)
@@ -304,72 +308,40 @@ class GridCoulombKernel:
 def pair_loads(cell, x, Y, kappa_y=None, kappa_x=None):
     """The loads int phi_c x y of the product of a section x of the crystal
     momentum `kappa_x` with every column of Y, sections of `kappa_y`
-    (`WhitneyMass.pairLoads` with the Bloch links of the two momenta; None is
+    (`chainhodge.PairLoads` with the Bloch links of the two momenta; None is
     the zone centre). For conj(psi') psi between the momenta k' and k pass
     x = conj(z'), kappa_x = -k', kappa_y = k: the load carries k - k'. With
-    kappa_x = None it is the dressed weighted mass matrix M_0^U[x] applied to Y."""
-    links = lambda kappa: cell.bloch_links(kappa)
-    Y = np.asarray(Y, dtype=complex)
-    columns = Y.reshape(cell.size, -1)
-    return np.asarray(ch.WhitneyMass.pairLoads(cell.complex, cell.squared_lengths, links(kappa_x), links(kappa_y),
-                                               np.asarray(x, dtype=complex), columns))
+    kappa_x = None it is the dressed weighted mass matrix M_0^U[x] applied to Y.
+    Real functions at the zone centre have real loads."""
+    columns = np.asarray(Y).reshape(cell.size, -1)
+    loads = cell.pair_loader.loads(cell.bloch_link_array(kappa_x), cell.bloch_link_array(kappa_y),
+                                   np.asarray(x, dtype=complex), columns.astype(complex, copy=False))
+    real = kappa_x is None and kappa_y is None and np.isrealobj(x) and np.isrealobj(columns)
+    return loads.real if real else loads
 
 
-class TripleIntegrals:
-    """The integrals of three piecewise-linear functions against the vertex
-    basis, per top simplex, vectorized over a complex.
-
-    On a top simplex of volume |T| the three-factor integral is
-    |T| mu_abc d! / (d + 3)! with mu_abc = 1 + delta_ab + delta_ac + delta_bc
-    + 2 delta_ab delta_bc, so for two functions x and y restricted to it,
-
-        sum_ab mu_abc x_a y_b = S_x S_y + sum_a x_a y_a + x_c S_y + S_x y_c + 2 x_c y_c .
-
-    `loads(x, Y)` returns, for every column y of Y, the load vector
-    int phi_c x y of the product: the vectorized form of
-    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`, for the
-    zone centre. Sections of a crystal momentum go through `pair_loads`.
-    """
-
-    def __init__(self, complex_, squared_lengths):
-        vertex_index = {int(cell[0]): i for i, cell in enumerate(complex_.kSimplexVertices(0))}
-        self.size = len(vertex_index)
-        self.tops = np.array([[vertex_index[int(v)] for v in cell] for cell in complex_.orientedTopSimplices()])
-        d = self.tops.shape[1] - 1
-        volumes = np.array(ch.WhitneyMass.certificate(complex_, list(squared_lengths)).volumes)
-        if np.abs(volumes.imag).max() == 0.0:
-            volumes = volumes.real                          # a real geometry keeps real loads real
-        self.weight = volumes * float(np.prod(np.arange(1, d + 1))) / float(np.prod(np.arange(1, d + 4)))
-        count = len(self.tops)
-        self.scatter = [sp.csr_matrix((np.ones(count), (self.tops[:, c], np.arange(count))),
-                                      shape=(self.size, count)) for c in range(d + 1)]
-
-    def loads(self, x, Y, block=48):
-        x = np.asarray(x)
-        Y = np.asarray(Y).reshape(self.size, -1)
-        if Y.shape[1] > block:                                # bound the per-simplex temporaries
-            return np.hstack([self.loads(x, Y[:, start:start + block], block) for start in range(0, Y.shape[1], block)])
-        local_x = x[self.tops]                                # (tops, d + 1)
-        local_y = Y[self.tops]                                # (tops, d + 1, columns)
-        sum_x, sum_y = local_x.sum(axis=1), local_y.sum(axis=1)
-        common = sum_x[:, None] * sum_y + np.einsum("ta,tan->tn", local_x, local_y)
-        total = np.zeros((self.size, Y.shape[1]), dtype=np.result_type(x, local_y, self.weight))
-        for c, scatter in enumerate(self.scatter):
-            term = common + local_x[:, c, None] * sum_y + sum_x[:, None] * local_y[:, c, :] \
-                + 2.0 * local_x[:, c, None] * local_y[:, c, :]
-            total += scatter @ (self.weight[:, None] * term)
-        return total
+def pair_loads_derivative(cell, x, Y, axis, kappa_y=None, kappa_x=None):
+    """The derivative of `pair_loads(cell, x, Y, kappa_y, kappa_x)` with respect
+    to the Cartesian component `axis` of the crystal momentum of Y
+    (`chainhodge.PairLoads.loadsPhaseDerivativeAlong` with the displacements of
+    the edges along that axis as weights)."""
+    columns = np.asarray(Y).reshape(cell.size, -1)
+    return cell.pair_loader.loadsPhaseDerivativeAlong(
+        cell.bloch_link_array(kappa_x), cell.bloch_link_array(kappa_y), np.asarray(x, dtype=complex),
+        columns.astype(complex, copy=False), np.ascontiguousarray(cell.edge_displacements[:, axis]))
 
 
 def pair_densities(complex_, squared_lengths, modes):
     """`T[:, m, n] = rho^{mn}`: the load vectors of conj(z_m) z_n for every pair
-    of the columns of `modes`, shape (vertices, modes, modes)."""
+    of the columns of `modes`, shape (vertices, modes, modes)
+    (`chainhodge.PairLoads` at the trivial connection)."""
     modes = np.asarray(modes, dtype=complex)
-    integrals = TripleIntegrals(complex_, squared_lengths)
+    loader = ch.PairLoads(complex_, list(squared_lengths))
+    trivial = np.ones(loader.numEdges, dtype=complex)
     count = modes.shape[1]
     T = np.empty((modes.shape[0], count, count), dtype=complex)
     for m in range(count):
-        T[:, m, :] = integrals.loads(modes[:, m].conj(), modes)
+        T[:, m, :] = loader.loads(trivial, trivial, modes[:, m].conj(), modes)
     return T
 
 

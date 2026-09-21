@@ -5,12 +5,14 @@ pseudo-atom on the mesh against the
 radial equation, the low-rank shift-invert solve with its inertia certificate,
 and a self-consistent crystal on the mesh against plane waves. Every fixture is
 synthetic, so no pseudopotential file is needed."""
+import functools
+
 import numpy as np
 import pytest
 import scipy.linalg
 from scipy.special import erf
 
-from tessera.drivers.bands import abinitio
+from tessera.drivers.bands import abinitio, coulomb
 from tessera.drivers.bands import pseudopotential as pp
 from tessera.drivers.bands.crystal import CrystalCell, richardson
 
@@ -301,7 +303,7 @@ def test_the_kinetic_eigenbasis_route_is_the_pole_exact_route():
     values, basis = scipy.linalg.eigh(mesh.stiffness.toarray(), mesh.mass.toarray())
     values, basis = values[1:], basis[:, 1:]                       # without the constant, where the kernel has no entry
     modes = extended["vectors"][:, :bands]
-    pairs = np.vstack([(basis.T @ mesh.triple.loads(modes[:, i], modes[:, occupied:])).T for i in range(occupied)])
+    pairs = np.vstack([(basis.T @ coulomb.pair_loads(mesh.cell, modes[:, i], modes[:, occupied:])).T for i in range(occupied)])
     kernel = abinitio.COULOMB_STRENGTH / values
     assert np.abs((pairs * kernel) @ pairs.T - coupling).max() < 1e-12
     head = [(np.imag(limit["charges"]), limit["entry"]) for limit in limits]      # real modes: the charges are i r
@@ -310,7 +312,7 @@ def test_the_kinetic_eigenbasis_route_is_the_pole_exact_route():
     for size in (8, 30, len(values)):
         route = screening.KineticBasisScreening(levels, occupied, pairs[:, :size], kernel[:size], head,
                                                 mesh.zero_momentum)
-        errors.append(max(abs(route.correlation(n, (basis[:, :size].T @ mesh.triple.loads(modes[:, n], modes)).T, w)
+        errors.append(max(abs(route.correlation(n, (basis[:, :size].T @ coulomb.pair_loads(mesh.cell, modes[:, n], modes)).T, w)
                               - rpa.correlation(n, w)[0]) for n in (0, 1) for w in frequencies))
     assert errors[2] < 1e-9 and errors[2] < errors[1] < errors[0], errors
 
@@ -383,14 +385,12 @@ def test_a_converged_run_on_a_coarse_mesh_starts_the_next_mesh():
     assert np.abs(scratch["levels"] - continued["levels"]).max() < 1e-5
 
 
-@pytest.mark.slow
-def test_the_quasiparticle_equation_on_a_momentum_set_is_that_of_the_supercell():
-    """The screened interaction at every momentum transfer of the set, pairs
-    running from k to k + q, and the self-energy summed over the transfers: on
-    the set {0, 1/2} of a cell they are the zone-centre calculation of the cell
-    doubled along that axis, state by state (the same states kept in both, up to
-    a gap of the spectrum)."""
-    from tessera.drivers.bands import screening
+@functools.lru_cache(maxsize=1)
+def _doubled_cell_and_its_momentum_set():
+    """A cell doubled along one axis at its zone centre, and the single cell on
+    the momentum set {0, 1/2} that is equivalent to it, both with more bands
+    than are filled and the same states kept in both (up to a gap of the
+    spectrum)."""
     atom = soft_atom()
     single = abinitio.Crystal(6.0 * np.eye(3), [(atom, np.full(3, 0.5))])
     double = abinitio.Crystal(np.diag([12.0, 6.0, 6.0]), [(atom, np.array([0.25, 0.5, 0.5])),
@@ -407,14 +407,37 @@ def test_the_quasiparticle_equation_on_a_momentum_set_is_that_of_the_supercell()
     threshold = 0.5 * (reference["levels"][cut] + reference["levels"][cut + 1])
     kept = [int(np.sum(levels < threshold)) for levels in extended["levels"]]
     assert sum(kept) == cut + 1
+    return supercell, reference, mesh, extended, cut, kept
+
+
+@pytest.mark.slow
+def test_the_quasiparticle_equation_on_a_momentum_set_is_that_of_the_supercell():
+    """The screened interaction at every momentum transfer of the set, pairs
+    running from k to k + q, and the self-energy summed over the transfers: on
+    the set {0, 1/2} of a cell they are the zone-centre calculation of the cell
+    doubled along that axis, state by state; first without the entry of the
+    kernel at zero transfer and G = 0, then with it (`RandomPhase.set_head` with
+    the closed-form charges of the doubled cell against the charges of the
+    pairs of zero transfer at both momenta of the set)."""
+    from tessera.drivers.bands import screening
+    supercell, reference, mesh, extended, cut, kept = _doubled_cell_and_its_momentum_set()
     levels, occupied, coupling, integrals = supercell.coulomb_integrals(reference, cut + 1)
     rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
     states = [(0, 0), (1, 0), (1, 1)]                                   # the three lowest modes of the supercell
+    produced = mesh.quasiparticle_set(extended, states, kept, head=False)
+    body = {}
+    for n, state in enumerate(states):
+        body[state] = rpa.quasiparticle(n)[0]
+        assert produced[state][0] == pytest.approx(levels[n], abs=1e-5)
+        assert produced[state][1] == pytest.approx(body[state], abs=1e-5)
+        assert abs(produced[state][1] - produced[state][0]) > 1e-3       # the correction being compared is not small
+    rpa.set_head(supercell.zero_momentum, supercell.vanishing_momentum_pairs(reference, coupling, cut + 1))
+    assert extended["zero_momentum"] == pytest.approx(supercell.zero_momentum, abs=1e-9)
     produced = mesh.quasiparticle_set(extended, states, kept)
     for n, state in enumerate(states):
-        assert produced[state][0] == pytest.approx(levels[n], abs=1e-5)
-        assert produced[state][1] == pytest.approx(rpa.quasiparticle(n)[0], abs=1e-5)
-        assert abs(produced[state][1] - produced[state][0]) > 1e-3       # the correction being compared is not small
+        with_head = rpa.quasiparticle(n)[0]
+        assert produced[state][1] == pytest.approx(with_head, abs=1e-5)
+        assert abs(with_head - body[state]) > 1e-3                       # the entry being compared is not small
 
 
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
@@ -499,3 +522,37 @@ def test_the_dielectric_response_at_vanishing_momentum_matches_plane_waves():
         values.append(rpa.independent_particle_dielectric_constant - 1.0)
     assert values[0] < values[1] < values[2] < reference
     assert richardson(spacings, values)[0] == pytest.approx(reference, rel=0.01)
+
+
+@pytest.mark.slow
+def test_a_momentum_set_is_solved_on_one_momentum_of_every_orbit_of_the_operations_the_mesh_keeps():
+    """Time reversal and the permutations of the axes carry the periodic Kuhn
+    grid onto itself; for a crystal that has them the sections at a momentum
+    are the images of those at another. Hartree-Fock on the 2 x 2 x 2 set with
+    four momenta solved is the one with all eight solved (an insulating cell:
+    in the 6 bohr cell of the other fixtures the filled band at the zone corner
+    lies above the empty one at the face centre, and Hartree-Fock with one
+    filled band per momentum breaks the symmetry). A crystal without the
+    permutations keeps time reversal only."""
+    from tessera.drivers.bands.momentum_set import SetSymmetry, uniform_set
+    atom = soft_atom()
+    mesh = abinitio.MeshCrystal(abinitio.Crystal(8.0 * np.eye(3), [(atom, np.full(3, 0.5))]), 6)
+    momenta = uniform_set(2)
+    orbits = SetSymmetry(mesh, momenta)
+    assert len(orbits.operations) == 12 and len(orbits.representatives) == 4
+    reduced = mesh.run_hartree_fock_set(2, momenta, tolerance=1e-8)
+    full = mesh.run_hartree_fock_set(2, momenta, tolerance=1e-8, symmetry=False)
+    assert reduced["converged"] and full["converged"]
+    assert reduced["solved"] == orbits.representatives and len(full["solved"]) == 8
+    for k in range(8):
+        assert np.abs(reduced["levels"][k] - full["levels"][k]).max() < 1e-10
+        # The filled section is the same line of the same pencil.
+        M = mesh.cell.pencil(momenta[k])[1]
+        assert abs(np.vdot(reduced["vectors"][k][:, 0], M @ full["vectors"][k][:, 0])) == pytest.approx(1.0, abs=1e-8)
+    extended = mesh.extend_bands_set(reduced, 4, tolerance=1e-8)
+    unreduced = mesh.extend_bands_set(full, 4, tolerance=1e-8)
+    assert max(np.abs(a - b).max() for a, b in zip(extended["levels"], unreduced["levels"])) < 1e-7
+    skew = abinitio.MeshCrystal(abinitio.Crystal(6.0 * np.eye(3), [(atom, np.array([0.5, 0.4, 0.3]))]), 6)
+    orbits = SetSymmetry(skew, uniform_set(3))
+    assert len(orbits.operations) == 2 and len(orbits.representatives) == 14
+    assert sorted({orbits.images[k][0] for k in range(27)}) == orbits.representatives
