@@ -106,7 +106,7 @@ class GridCoulombKernel:
         offsets = cell.index[row.indices].astype(float)
         offsets = np.where(offsets > np.array(self.shape) / 2.0, offsets - np.array(self.shape), offsets)
         self._offsets, self._entries = offsets, row.data.astype(float)
-        self._reciprocal, self._volume = cell.reciprocal, cell.volume
+        self._reciprocal, self._volume, self._lattice = cell.reciprocal, cell.volume, cell.lattice
         symbol = np.fft.fftn(stencil.reshape(self.shape)).real
         # Translation invariance, checked on a second row rather than assumed.
         probe = cell.grid.vertexId(1, 2, 3)
@@ -202,6 +202,35 @@ class GridCoulombKernel:
         if zero_momentum is not None:
             inverse.flat[0] = zero_momentum * self.size / self.strength
         return inverse
+
+    def potential_derivative(self, rho, axis):
+        """The derivative of `potential(rho, kappa, zero_momentum)` with respect
+        to the Cartesian component `axis` of the crystal momentum, at the zone
+        centre: the Fourier multiplier -strength a'(G) / a(G)^2 with the gradient
+        of the symbol in closed form, a'(k) = -sum_n A_0n dx_n sin(k . dx_n). The
+        entry at G = 0 is a constant of the momentum and has no derivative."""
+        grid = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
+        angle = 2.0 * np.pi * ((grid / np.array(self.shape)) @ self._offsets.T)
+        displacement = (self._offsets / np.array(self.shape)) @ self._lattice
+        gradient = -(np.sin(angle) @ (self._entries * displacement[:, axis])).reshape(self.shape)
+        multiplier = -gradient * self._inverse ** 2
+        rho = np.asarray(rho, dtype=complex)
+        columns = rho.reshape(self.size, -1)
+        field = columns.T.reshape((-1,) + self.shape)
+        solved = np.fft.ifftn(np.fft.fftn(field, axes=(1, 2, 3)) * multiplier, axes=(1, 2, 3))
+        return (self.strength * solved.reshape(-1, self.size).T).reshape(rho.shape)
+
+    def momentum_entry_limit(self, direction):
+        """The limit of `momentum_entry(kappa)` times q^2 as the momentum tends
+        to zero along the Cartesian `direction`: strength / (n q^ . H q^ / 2)
+        with H = -sum_n A_0n dx_n dx_n^T the Hessian of the symbol. Linear
+        functions are reproduced exactly by piecewise-linear elements, so
+        H / 2 = (V / n) 1 and the limit is strength / V."""
+        direction = np.asarray(direction, dtype=float)
+        direction = direction / np.linalg.norm(direction)
+        displacement = (self._offsets / np.array(self.shape)) @ self._lattice
+        hessian = -(displacement * self._entries[:, None]).T @ displacement
+        return self.strength / (self.size * 0.5 * float(direction @ hessian @ direction))
 
     def momentum_entry(self, kappa):
         """The energy of a normalized charge of crystal momentum `kappa` in the

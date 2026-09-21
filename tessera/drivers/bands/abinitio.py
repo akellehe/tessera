@@ -767,6 +767,10 @@ class MeshCrystal:
         that momentum; the Coulomb kernel they meet is the inverse of the
         stiffness matrix dressed by it.
 
+        This is the finite-momentum route to the response at vanishing
+        momentum, which `vanishing_momentum_pairs` gives in closed form; the two
+        agree at second order in the momentum.
+
         Returns the argument of `RandomPhase.set_head` for this momentum: the
         level differences e_a(q) - e_i(0), the coupling (ia|jb) without the
         G = 0 entry of the kernel, the charges (the G = 0 components of the
@@ -787,7 +791,72 @@ class MeshCrystal:
                 "entry": self.kernel.momentum_entry(kappa),
                 "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
 
-    def quasiparticle_levels(self, extended, states, momentum=(0.01, 0.0, 0.0), log=None):
+    def vanishing_momentum_pairs(self, extended, coupling, bands=None, axes=(0, 1, 2)):
+        """The limit of `momentum_pairs` as the momentum tends to zero along each
+        Cartesian axis in `axes`, in closed form. The pairs become those of the
+        zone centre (their level differences and their coupling `coupling`,
+        as in `coulomb_integrals`), and the charge of a pair per unit momentum
+        is the derivative of 1^T M_0^U[psi_i] z_a(q),
+
+            d_ia = 1^T (d M_0^U[psi_i]) z_a + psi_i^T (dH - e_a dM) z_a / (e_a - e_i) ,
+
+        the second term being first-order perturbation theory, which needs no
+        linear solve because the filled orbitals are eigenvectors. dH is the
+        derivative of the Hartree-Fock pencil with respect to a uniform change
+        of the link phases: entrywise for the stiffness matrix, the weighted
+        mass matrix of the local potential and the mass matrix
+        (`GridMatrix.momentum_derivative`), the product rule on the projector
+        loads, and for exchange
+
+            dK = - sum_j [ dL_j G L_j + L_j dG L_j + L_j G dL_j ] ,   L_j = M_0^U[psi_j] ,
+
+        with the derivative of the Coulomb kernel from the gradient of its
+        symbol (`GridCoulombKernel.potential_derivative`). Returns one argument
+        of `RandomPhase.set_head` per axis."""
+        cell = self.cell
+        occupied = int(extended["occupied"])
+        bands = len(extended["levels"]) if bands is None else int(bands)
+        levels = np.asarray(extended["levels"])[:bands]
+        filled = np.asarray(extended["vectors"])[:, :occupied]
+        empties = np.asarray(extended["vectors"])[:, occupied:bands]
+        local = cell.weighted_mass(extended["local_potential"])
+        weighted = [cell.weighted_mass(filled[:, j]) for j in range(occupied)]
+        plain = [w.dressed().real for w in weighted]
+        loads = [L @ empties for L in plain]                                    # L_j z_a
+        filled_loads = [L @ filled for L in plain]                              # L_j psi_i
+        filled_potentials = [self.kernel.potential(u, None, self.zero_momentum) for u in filled_loads]
+        gaps = (levels[None, occupied:] - levels[:occupied, None])
+        overlap, overlap_empty = filled.T @ self.P, empties.T @ self.P
+        out = []
+        for axis in axes:
+            dM = cell.mass.momentum_derivative(axis)
+            dA = cell.stiffness.momentum_derivative(axis) + local.momentum_derivative(axis)
+            current = filled.T @ (dA @ empties) - (filled.T @ (dM @ empties)) * levels[None, occupied:]
+            # The projector loads P_q = M_q (beta exp(-i q . (x - tau))).
+            shifted = np.zeros(self._beta.shape, dtype=complex)
+            for index, (_, position) in enumerate(self.crystal.ions):
+                columns = self._beta_ion == index
+                shifted[:, columns] = -1j * self._displacements(position)[:, axis, None] * self._beta[:, columns]
+            dP = dM @ self._beta + self.mass @ shifted
+            current = current + (filled.T @ dP) @ self.D @ overlap_empty.T + overlap @ self.D @ (dP.conj().T @ empties)
+            # Exchange.
+            direct = np.zeros((occupied, bands - occupied), dtype=complex)
+            for j in range(occupied):
+                dL = weighted[j].momentum_derivative(axis)
+                d_filled = dL @ filled
+                first = self.kernel.potential(d_filled, None, self.zero_momentum).conj().T @ loads[j]
+                second = self.kernel.potential_derivative(filled_loads[j], axis).conj().T @ loads[j]
+                third = filled_potentials[j].conj().T @ (dL @ empties)
+                current = current - (first + second + third)
+                direct[j] = np.asarray(dL.sum(axis=0)).ravel() @ empties       # 1^T dM_0^U[psi_j] z_a
+            charges = (direct + current / gaps).ravel()
+            direction = np.eye(3)[axis]
+            out.append({"gaps": gaps.ravel(), "coupling": np.asarray(coupling), "charges": charges,
+                        "entry": self.kernel.momentum_entry_limit(direction),
+                        "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]})
+        return out
+
+    def quasiparticle_levels(self, extended, states, log=None):
         """The one-shot GW correction on the Hartree-Fock levels of
         `extend_bands` for the modes listed in `states`, with the screened
         interaction of the direct random-phase approximation in the basis of
@@ -799,11 +868,10 @@ class MeshCrystal:
         as it drops that of exchange. The exchange part was restored in the mean
         field by the auxiliary-function constant on the filled bands. The
         correlation part is restored here by the same constant times the
-        inverse dielectric function at vanishing momentum, read from the pair
-        densities between the zone centre and the small momentum `momentum`
-        (`bands_at`, `momentum_pairs`, `RandomPhase.set_head`). The mesh and a
-        zinc-blende crystal share the threefold axis that permutes the cubic
-        axes, so one axis stands for the three.
+        inverse dielectric function at vanishing momentum, from the charges of
+        the pairs per unit momentum in closed form
+        (`vanishing_momentum_pairs`, `RandomPhase.set_head`), averaged over the
+        three Cartesian axes.
 
         Returns a dict: per state the Hartree-Fock level, the quasiparticle
         level without (`body`) and with (`quasiparticle`) the zero-momentum
@@ -830,8 +898,7 @@ class MeshCrystal:
         rpa = RandomPhase.from_pieces(energies, occupied, coupling, blocks)
         constant = self.zero_momentum
         out = {n: {"mean_field": float(energies[n]), "body": float(rpa.quasiparticle(n)[0])} for n in states}
-        head = self.momentum_pairs(extended, self.bands_at(extended, momentum, log=log))
-        dielectric = rpa.set_head(constant, [head])
+        dielectric = rpa.set_head(constant, self.vanishing_momentum_pairs(extended, coupling))
         for n in states:
             energy, weight = rpa.quasiparticle(n)
             defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)

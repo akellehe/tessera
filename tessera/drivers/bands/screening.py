@@ -95,13 +95,16 @@ class RandomPhase:
         """Restore the zero-momentum term of the screened interaction, which a
         Coulomb kernel of zero mean leaves out.
 
-        Each entry of `momenta` describes the particle-hole pairs of one small
-        momentum transfer q (`MeshCrystal.momentum_pairs`): their level
-        differences `gaps`, their Hermitian coupling `coupling` without the
-        G = 0 entry of the kernel, their `charges` (the G = 0 components of the
-        pair densities, of order q), and `entry`, the energy u of a normalized
-        charge in the G = 0 entry (of order 1 / q^2). `shifts`, one number per
-        mode, moves the level differences when the levels have been updated.
+        Each entry of `momenta` describes the particle-hole pairs of one
+        momentum transfer q: their level differences `gaps`, their Hermitian
+        coupling `coupling` without the G = 0 entry of the kernel, their
+        `charges` (the G = 0 components of the pair densities, of order q), and
+        `entry`, the energy u of a normalized charge in the G = 0 entry (of
+        order 1 / q^2). `MeshCrystal.vanishing_momentum_pairs` supplies the limit
+        q -> 0 in closed form (charges per unit momentum, and u q^2), along each
+        Cartesian axis; `MeshCrystal.momentum_pairs` a small finite momentum.
+        `shifts`, one number per mode, moves the level differences when the
+        levels have been updated.
 
         With the modes (W_s, X_s) of the random-phase problem of those pairs
         and the residues a_s = 2 u |sum_ia charge_ia (X + Y)^s_ia|^2, the

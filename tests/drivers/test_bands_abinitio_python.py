@@ -273,36 +273,53 @@ def test_the_zero_momentum_constant_of_the_mesh_kernel_tends_to_the_madelung_con
     assert errors[1] < 0.3 * errors[0] < 0.01 * target
 
 
+def test_the_closed_form_response_at_vanishing_momentum_is_the_limit_of_small_momenta():
+    """`vanishing_momentum_pairs` differentiates the pair charge with respect to
+    the momentum in closed form, exchange included; `bands_at` and
+    `momentum_pairs` solve the Hartree-Fock pencil at a small momentum. The
+    second converges to the first at second order, along every axis, for an ion
+    placed off the symmetric positions; and the entry of the kernel at G = 0
+    tends to strength / (V q^2) exactly."""
+    from tessera.drivers.bands import screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.array([0.4, 0.45, 0.55]))])
+    bands = 7
+    mesh = abinitio.MeshCrystal(crystal, 8)
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 4, tolerance=1e-9)
+    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    limits = mesh.vanishing_momentum_pairs(extended, coupling, bands)
+    for axis in (0, 2):
+        assert limits[axis]["entry"] == pytest.approx(abinitio.COULOMB_STRENGTH / crystal.volume, rel=1e-12)
+        exact = rpa.set_head(mesh.zero_momentum, [limits[axis]]) - 1.0
+        assert rpa.head_defect < 1e-12
+        errors = []
+        for delta in (0.02, 0.01):
+            kappa = tuple(delta if a == axis else 0.0 for a in range(3))
+            at_momentum = mesh.bands_at(extended, kappa, converge=bands, tolerance=1e-9)
+            errors.append(rpa.set_head(mesh.zero_momentum, [mesh.momentum_pairs(extended, at_momentum, bands)]) - 1.0 - exact)
+        assert abs(errors[0]) < 0.01 * exact and errors[0] / errors[1] == pytest.approx(4.0, rel=0.05)
+
+
 @pytest.mark.slow
 def test_the_dielectric_response_at_vanishing_momentum_matches_plane_waves():
-    """The response at vanishing momentum is read from pair densities between
-    the zone centre and a small momentum, Hartree-Fock sections on both sides:
-    the independent-particle dielectric constant converges to that of plane
-    waves, where the same overlaps are exact; the three cubic axes agree; and
-    halving the momentum changes nothing."""
+    """The independent-particle dielectric constant from the closed-form pair
+    charges converges to that of plane waves, where the overlaps between the
+    zone centre and a small momentum are exact."""
     from tessera.drivers.bands import screening
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     bands = 7                                   # closed at a gap, so every mesh and the plane waves hold the same states
     plane_waves = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0)
     reference = plane_waves.dielectric_constant(plane_waves.run_hartree_fock(bands, 6.0),
-                                                [0.01 * 2.0 * np.pi / 6.0, 0.0, 0.0]) - 1.0
+                                                [0.002 * 2.0 * np.pi / 6.0, 0.0, 0.0]) - 1.0
     spacings, values = [], []
     for n in (8, 12, 16):
         mesh = abinitio.MeshCrystal(crystal, n)
-        # Four more bands than the pairs use: the compression of exchange converges slowly on the highest.
         extended = mesh.extend_bands(mesh.run_hartree_fock(4), bands + 4)
         levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
         rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
-        read = []
-        for kappa in ([(0.01, 0.0, 0.0), (0.005, 0.0, 0.0), (0.0, 0.01, 0.0)] if n == 8 else [(0.01, 0.0, 0.0)]):
-            at_momentum = mesh.bands_at(extended, kappa, converge=bands)
-            assert at_momentum["converged"] and at_momentum["shift_below_spectrum"]
-            rpa.set_head(mesh.zero_momentum, [mesh.momentum_pairs(extended, at_momentum, bands)])
-            assert rpa.head_defect < 1e-10 and rpa.dielectric_constant < rpa.independent_particle_dielectric_constant
-            read.append(rpa.independent_particle_dielectric_constant - 1.0)
-        if n == 8:
-            assert read[1] == pytest.approx(read[0], rel=2e-3) and read[2] == pytest.approx(read[0], rel=1e-8)
+        rpa.set_head(mesh.zero_momentum, mesh.vanishing_momentum_pairs(extended, coupling, bands))
+        assert rpa.head_defect < 1e-10 and rpa.dielectric_constant < rpa.independent_particle_dielectric_constant
         spacings.append(mesh.cell.spacing)
-        values.append(read[0])
+        values.append(rpa.independent_particle_dielectric_constant - 1.0)
     assert values[0] < values[1] < values[2] < reference
     assert richardson(spacings, values)[0] == pytest.approx(reference, rel=0.01)

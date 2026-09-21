@@ -179,16 +179,30 @@ the inverse symbol of the stiffness matrix over every momentum, minus its sum
 over the wavevectors the cell supports. For the continuum kernel on a cubic cell
 that constant is `2 MADELUNG / L`, which the mesh constant tends to under
 refinement. For the screened interaction the term is the same constant times
-the inverse dielectric function at vanishing momentum. That function is read
-from pair densities between the zone centre and a small crystal momentum $q$:
-the Hartree-Fock pencil is solved at the flat connection of momentum $q$
-(`MeshCrystal.bands_at`), the pair densities $\bar\psi_i \psi_{a,q}$ are loaded
-with the link phases of that momentum (`TripleIntegrals.loads` with a
-`bloch_twist`, which is the dressed weighted mass matrix $M_0^U[\psi_i]$), and
-the Coulomb kernel they meet is the inverse of the stiffness matrix dressed by
-the same momentum (`MeshCrystal.momentum_pairs`, `RandomPhase.set_head`). On the
-energy shell the term lowers the gap by `c (1 - 1/eps)`, which is how screening
-closes a Hartree-Fock gap.
+the inverse dielectric function at vanishing momentum, which needs the charge
+of every particle-hole pair per unit momentum. That charge is the derivative of
+$1^T M_0^U[\psi_i]\, z_a(q)$ with respect to the momentum of the flat
+connection, and it is taken in closed form
+(`MeshCrystal.vanishing_momentum_pairs`): because the filled orbitals are
+eigenvectors, first-order perturbation theory needs no linear solve,
+
+$$ d_{ia} = 1^T (\partial M_0^U[\psi_i])\, z_a
+   + \frac{\psi_i^T (\partial H - \epsilon_a\, \partial M)\, z_a}{\epsilon_a - \epsilon_i} , $$
+
+with $\partial$ the derivative with respect to a uniform change of the link
+phases: entrywise for the stiffness, mass and weighted mass matrices
+(`GridMatrix.momentum_derivative`), the product rule on the projector loads, and
+for exchange the derivative of the dressed weighted mass matrices and of the
+Coulomb kernel, whose symbol has a closed-form gradient
+(`GridCoulombKernel.potential_derivative`). The entry of the kernel at $G = 0$
+tends to `strength / (V q^2)` exactly, because piecewise-linear elements
+reproduce linear functions. The same response from a small finite momentum
+(the Hartree-Fock pencil solved at the flat connection of momentum $q$ by
+`MeshCrystal.bands_at`, pair densities loaded with the link phases of that
+momentum by `momentum_pairs`) converges to the closed form at second order in
+$q$, and the test suite holds the two to each other. On the energy shell the
+term lowers the gap by `c (1 - 1/eps)`, which is how screening closes a
+Hartree-Fock gap.
 
 Whether a pseudopotential can be used is decided by `pseudopotential`'s
 screened, confined pseudo-atom, solved radially and on the mesh. A

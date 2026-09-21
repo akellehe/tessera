@@ -82,11 +82,20 @@ class GridMatrix:
             raise ValueError("a stored entry joins vertices that are not neighbours on the grid")
         self.row, self.col, self.data = coo.row, coo.col, coo.data.astype(complex)
         self.step = d / n
+        self.displacement = self.step @ cell.lattice            # Cartesian, from the row vertex to the column vertex
         self.shape = coo.shape
 
     def dressed(self, kappa=(0.0, 0.0, 0.0)):
         phase = np.exp(2j * np.pi * (self.step @ np.asarray(kappa, dtype=float)))
         return sp.csc_matrix((self.data * phase, (self.row, self.col)), shape=self.shape)
+
+    def momentum_derivative(self, axis):
+        """The derivative of `dressed` with respect to the Cartesian component
+        `axis` of the crystal momentum, at the zone centre: the entry (v, w)
+        times i (x_w - x_v). It is the derivative with respect to the link
+        phases contracted with the edge displacements, the current operator of
+        a uniform connection."""
+        return sp.csc_matrix((1j * self.data * self.displacement[:, axis], (self.row, self.col)), shape=self.shape)
 
 
 class CrystalCell:
