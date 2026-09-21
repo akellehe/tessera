@@ -217,3 +217,28 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
     assert lean["head_defect"] < 1e-10
     assert gap("quasiparticle") < gap("body")
     assert gap("body") - gap("quasiparticle") == pytest.approx(c * (1.0 - 1.0 / eps), rel=0.25)
+
+
+@pytest.mark.slow
+def test_the_dielectric_response_at_vanishing_momentum_matches_plane_waves():
+    """The dipoles of the particle-hole pairs come from the current operator of
+    the pencil; the independent-particle dielectric constant they give converges
+    to the plane-wave value computed with 2 (k + G) and the derivative of the
+    projectors."""
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    bands = 11
+    plane_waves = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0)
+    reference = plane_waves.dielectric_constant(plane_waves.run_hartree_fock(bands, 6.0)) - 1.0
+    spacings, values = [], []
+    for n in (8, 12, 16):
+        mesh = abinitio.MeshCrystal(crystal, n)
+        mean_field = mesh.run_hartree_fock(4)
+        levels, occupied, coupling, integrals, dipoles = mesh.coulomb_integrals(mesh.extend_bands(mean_field, bands))
+        from tessera.drivers.bands import screening
+        rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+        rpa.set_head(1.0, dipoles, crystal.volume, abinitio.COULOMB_STRENGTH)
+        assert rpa.head_defect < 1e-10 and rpa.dielectric_constant < rpa.independent_particle_dielectric_constant
+        spacings.append(mean_field["spacing"])
+        values.append(rpa.independent_particle_dielectric_constant - 1.0)
+    assert values[0] < values[1] < values[2] < 1.05 * reference
+    assert richardson(spacings, values)[0] == pytest.approx(reference, rel=0.15)
