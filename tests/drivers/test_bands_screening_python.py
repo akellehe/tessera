@@ -174,3 +174,23 @@ def test_real_modes_of_a_degenerate_shell():
     assert np.isrealobj(modes) and levels == pytest.approx(read.energies, abs=1e-8)
     assert np.abs(modes.T @ (M.real @ modes) - np.eye(7)).max() < 1e-10
     assert np.abs(A.real @ modes - (M.real @ modes) * levels).max() < 1e-7
+
+
+def test_the_one_shot_gap_runs_end_to_end_on_a_periodic_mesh():
+    """A model insulator (two electrons in a cosine potential, sampled at the
+    zone centre): pencil, real modes, pair densities, the finite-element Coulomb
+    kernel, the Roothaan loop and the random-phase self-energy in one pass, with
+    the quasiparticle gap settling as the screening basis grows."""
+    from tessera.drivers.bands import E2, potentials
+    cell = CrystalCell.cubic(4.0, 8)
+    potential = potentials.cosine_potential(cell, -6.0)
+    reads = [screening.one_shot_gap(cell, potential, 2, modes, 4 * np.pi * E2) for modes in (8, 15, 27)]
+    assert [r["modes"] for r in reads] == [9, 15, 28]          # closed at a gap, never inside a level
+    for read in reads:
+        assert read["certified"] and read["roothaan_residual"] < 1e-10
+        assert all(0.9 < weight < 1.0 for weight in read["renormalization"])
+        assert read["correlation_energy"] < 0.0 < read["quasiparticle_gap"]
+    gaps = [r["quasiparticle_gap"] for r in reads]
+    assert abs(gaps[2] - gaps[1]) < abs(gaps[1] - gaps[0])
+    with pytest.raises(ValueError, match="even"):
+        screening.one_shot_gap(cell, potential, 3, 8, 4 * np.pi * E2)

@@ -222,3 +222,53 @@ class GaugeResponse:
     def induced_stiffness(self, frequency=0.0):
         """D - Pi(w)."""
         return self.diamagnetic - self.paramagnetic(frequency)
+
+
+def one_shot_gap(cell, potential, electrons, modes, strength, tolerance=1e-10):
+    """Hartree-Fock and the one-shot quasiparticle gap of a closed-shell cell
+    sampled at the zone centre, end to end on the mesh.
+
+    The lowest `modes` levels of the pencil with `potential` are made real,
+    their pair densities and Coulomb integrals are formed with the
+    finite-element kernel of the cell (`strength` is 4 pi e^2 in the units of
+    the run), the Roothaan loop is run for `electrons` electrons on two sheets,
+    and the random-phase self-energy is evaluated on the Hartree-Fock levels.
+    The mode count is the basis of the screened interaction, the finite-element
+    analogue of a plane-wave cutoff for the dielectric matrix; the result
+    converges with it and the caller is expected to vary it.
+
+    Returns a dict with the one-particle, Hartree-Fock and quasiparticle gaps,
+    the renormalization factors, and the residuals every step was held to.
+    """
+    from tessera.drivers.bands import coulomb
+    if electrons % 2:
+        raise ValueError("one_shot_gap is closed shell: an even number of electrons")
+    occupied = electrons // 2
+    # A degenerate level cut in two does not span a real space, so the mode set
+    # is closed at the first gap at or above the requested count.
+    margin = 12
+    read = cell.solve((0.0, 0.0, 0.0), modes + margin, potential, tolerance=tolerance)
+    scale = max(1.0, np.abs(read.energies).max())
+    gaps = np.diff(read.energies) > 1e-6 * scale
+    closed = [c for c in range(modes, modes + margin) if gaps[c - 1]]
+    if not closed:
+        raise ValueError("no gap within the margin above the requested mode count")
+    modes = closed[0]
+    A, M = cell.pencil((0.0, 0.0, 0.0), potential)
+    levels, real = real_modes(A, M, read.vectors[:, :modes])
+    kernel = coulomb.CoulombKernel.of_cell(cell, strength)
+    T = coulomb.pair_densities(cell.complex, cell.squared_lengths, real)
+    both = coulomb.ModeInteraction(kernel, levels, T, sheets=2)
+    gamma, energy, iterations, residual = both.roothaan(electrons)
+    fock_levels, rotation = np.linalg.eigh(both.fock(gamma)[:modes, :modes].real)
+    orbitals = coulomb.ModeInteraction(kernel, fock_levels,
+                                       coulomb.pair_densities(cell.complex, cell.squared_lengths, real @ rotation))
+    rpa = RandomPhase(fock_levels, orbitals.W, occupied)
+    (top, weight_top), (bottom, weight_bottom) = rpa.quasiparticle(occupied - 1), rpa.quasiparticle(occupied)
+    return {"one_particle_gap": levels[occupied] - levels[occupied - 1],
+            "hartree_fock_gap": fock_levels[occupied] - fock_levels[occupied - 1],
+            "quasiparticle_gap": bottom - top,
+            "renormalization": (weight_top, weight_bottom),
+            "hartree_fock_energy": energy, "correlation_energy": rpa.correlation_energy(),
+            "modes": modes, "roothaan_residual": residual, "roothaan_iterations": iterations,
+            "solver_residual": read.residual, "certified": read.certified() and residual < 1e-8}
