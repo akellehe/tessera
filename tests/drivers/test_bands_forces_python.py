@@ -241,3 +241,34 @@ def test_the_phonon_run_is_reached_from_the_command_line(capsys):
     assert stop.value.code == 0
     text = capsys.readouterr().out
     assert "--displacements" in text and "--zero-momentum-order" in text and "Born effective charge" in text
+
+
+# ---------------------------------------------------------------- the polarization and the longitudinal mode
+
+def test_the_polarization_phase_follows_an_orbital():
+    """One filled orbital, a Gaussian: the phase along each reciprocal vector
+    is minus 2 pi times the fractional position of its centre, and moving the
+    centre winds the phase by the displacement."""
+    crystal = abinitio.Crystal(7.0 * np.eye(3), [(soft_ion(), np.full(3, 0.5))])
+    mesh = abinitio.MeshCrystal(crystal, 12, approximations=abinitio_settings(refinement_terms=1))
+    energy = forces.LatticeEnergy(mesh)
+
+    def phases(centre):
+        offset = mesh.cell.fractional - centre
+        offset -= np.rint(offset)
+        orbital = np.exp(-0.5 * ((offset @ mesh.cell.lattice) ** 2).sum(axis=1) / 0.8 ** 2)
+        return energy.polarization_phases({"vectors": (orbital / np.sqrt(orbital @ (mesh.mass @ orbital)))[:, None]})
+
+    centre = np.array([0.31, 0.47, 0.12])
+    assert phases(centre) == pytest.approx(-2.0 * np.pi * centre, abs=5e-3)
+    winding = phases(centre + np.array([0.01, 0.0, 0.0])) - phases(centre)
+    assert winding == pytest.approx([-2.0 * np.pi * 0.01, 0.0, 0.0], abs=1e-3)
+
+
+def test_the_longitudinal_force_constant():
+    # Z* = 2.2 and epsilon = 10.9 in the 304.6 cubic bohr of a pair of gallium arsenide: 8.02 THz becomes 8.74 THz.
+    extra = forces.longitudinal_force_constant(2.2, 10.9, 304.6)
+    assert extra == pytest.approx(8.0 * np.pi * 4.84 / (10.9 * 304.6))
+    reduced = 69.723 * 74.921595 / (69.723 + 74.921595)
+    transverse = (8.02 / forces.frequency_thz(1.0, reduced)) ** 2
+    assert forces.frequency_thz(transverse + extra, reduced) == pytest.approx(8.74, abs=0.01)
