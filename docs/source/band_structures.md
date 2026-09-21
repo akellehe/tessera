@@ -367,9 +367,19 @@ its slope; three directions give the force-constant matrix, whose eigenvalues
 are the three frequencies that a mesh of lower symmetry than the crystal
 splits. A periodic cell carries no macroscopic field, so the frequency is the
 transverse one. The longitudinal frequency adds
-$4 \pi e^2 Z^{*2} / (\epsilon_\infty \mu \Omega)$ to its square, and the Born
-effective charge $Z^*$, the derivative of the polarization with respect to the
-displacement, is not computed.
+$4 \pi e^2 Z^{*2} / (\epsilon_\infty \mu \Omega)$ to its square
+(`longitudinal_force_constant`), with $\Omega$ the volume and $\mu$ the reduced
+mass of a pair of ions, $\epsilon_\infty$ the electronic dielectric constant of
+the random-phase approximation at vanishing momentum (`RandomPhase.set_head`),
+and $Z^*$ the Born effective charge of the mode: the slope of the dipole of a
+pair in the displacement. The electronic part of the dipole is the phase of the
+many-body expectation of $e^{-i b \cdot X}$ on the filled orbitals, $b$ a
+reciprocal vector of the cell, the polarization of a cell sampled at its zone
+centre (`LatticeEnergy.polarization_phases`); the matrix it is the determinant
+of is the component of the pair densities at $b$. On the mesh the plane wave is
+interpolated between the vertices, and the effective charge of a rigid
+translation of all ions, which vanishes in the continuum, measures what that
+costs (-0.26 of 4 on a test crystal at a spacing of 0.9 bohr).
 
 ```
 python -m tessera.drivers.bands.gaas phonon --cation Ga.UPF --anion As.UPF \
@@ -380,7 +390,9 @@ runs this for gallium arsenide on every mesh and prints the frequencies next to
 the measured 8.02 THz (transverse) and 8.55 THz (longitudinal). With
 `--direction` the displacement is restricted to the given directions;
 `--displacements` (five or more) and `--amplitude` set the samples;
-`--skip-translation` leaves out the force constant of the rigid translation of
-all ions, which vanishes in the continuum and measures the dependence of the
-energy on the position of the ions within the mesh at the order the optical
-mode carries it. The approximation flags of the `ab-initio` subcommand apply.
+`--screening-bands` sets the bands of the dielectric constant (0 leaves the
+longitudinal frequency out); `--skip-translation` leaves out the force constant
+and the effective charge of the rigid translation of all ions, which vanish in
+the continuum and measure the dependence of the energy on the position of the
+ions within the mesh at the order the optical mode carries it. The
+approximation flags of the `ab-initio` subcommand apply.
