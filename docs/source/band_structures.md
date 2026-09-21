@@ -210,6 +210,17 @@ $q$, and the test suite holds the two to each other. On the energy shell the
 term lowers the gap by `c (1 - 1/eps)`, which is how screening closes a
 Hartree-Fock gap.
 
+`MeshCrystal.run_hartree_fock_set` samples the covariance on a momentum set, a
+uniform grid that contains the zone centre. The pencil at each momentum is
+dressed by the flat connection of that momentum; the exchange operator carries
+the momentum transfer $k - k'$ in its kernel, the inverse of the stiffness
+matrix dressed by the transfer, with pair densities loaded between the two
+momenta; and the zero-momentum constant is that of the set, which is the
+constant of the supercell the set is equivalent to. A cell doubled along an
+axis at its zone centre and the single cell sampled at 0 and 1/2 along that
+axis give the same Hartree-Fock levels, filled and empty, and the test suite
+holds them to each other.
+
 Whether a pseudopotential can be used is decided by `pseudopotential`'s
 screened, confined pseudo-atom, solved radially and on the mesh. A
 pseudopotential that keeps the gallium 3d shell in the valence is not resolved

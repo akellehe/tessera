@@ -129,7 +129,7 @@ class GridCoulombKernel:
         p = np.atleast_2d(np.asarray(wavevectors, dtype=float)) / np.array(self.shape)
         return np.real(np.exp(2j * np.pi * (p @ self._offsets.T)) @ self._entries)
 
-    def zero_momentum_constant(self, refinements=(2, 4, 8)):
+    def zero_momentum_constant(self, refinements=(2, 4, 8), transfers=None):
         """The term of the Coulomb kernel that a cell sampled at its zone centre
         leaves out at zero momentum transfer, for a normalized charge: the
         auxiliary-function correction of Gygi and Baldereschi, with the kernel's
@@ -151,7 +151,12 @@ class GridCoulombKernel:
         powers of the refinement from the third on, which the refinements
         remove. For the continuum
         kernel strength / (V q^2) on a simple cubic cell this constant is
-        strength * MADELUNG_SC / (4 pi L)."""
+        strength * MADELUNG_SC / (4 pi L).
+
+        `transfers` lists the momentum transfers of a momentum set (reciprocal
+        coordinates of the cell, the zero transfer included, each with the
+        weight 1 / len): the sampling then runs over G + q for every transfer,
+        which is the sampling of the supercell the set is equivalent to."""
         n, shape = self.size, np.array(self.shape)
         step = self._reciprocal                                  # p is in units of the wavevectors the cell supports
         spacing = (self._volume / n) ** (1.0 / 3.0)
@@ -176,10 +181,13 @@ class GridCoulombKernel:
         m = np.array(refinements, dtype=float)
         design = np.column_stack([np.ones_like(m), 1.0 / m ** 3, 1.0 / m ** 5][:len(m)])
         average = np.linalg.lstsq(design, np.array(means), rcond=None)[0][0] + 1.0 / (4.0 * np.pi ** 1.5 * np.sqrt(alpha))
-        coarse = self.symbol(np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"),
-                                      axis=-1).reshape(-1, 3))
-        regular = coarse > 1e-12 * np.abs(self._entries).max()
-        discrete = np.where(regular, 1.0 / np.where(regular, coarse, 1.0), 0.0).sum() / n
+        supported = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
+        transfers = np.zeros((1, 3)) if transfers is None else np.atleast_2d(np.asarray(transfers, dtype=float))
+        discrete = 0.0
+        for transfer in transfers:
+            coarse = self.symbol(supported + transfer)
+            regular = coarse > 1e-12 * np.abs(self._entries).max()
+            discrete += np.where(regular, 1.0 / np.where(regular, coarse, 1.0), 0.0).sum() / (n * len(transfers))
         return self.strength * (average - discrete)
 
     def inverse_symbol(self, kappa=None, zero_momentum=None):
@@ -279,7 +287,10 @@ class TripleIntegrals:
     `twist` (`bloch_twist`) the columns of Y are the cell-periodic parts of
     sections of crystal momentum kappa and the result is `M_0^U[x] y`, the
     weighted mass matrix dressed by the link phases of that momentum: the load
-    of a pair density that carries the momentum kappa.
+    of a pair density that carries the momentum kappa. `twist_x` dresses the
+    first factor in the same way: for conj(psi') psi between sections of the
+    momenta kappa' and kappa, pass x = conj(z'), `twist_x = conj(twist(kappa'))`
+    and `twist = twist(kappa)`; the load carries the momentum kappa - kappa'.
     """
 
     def __init__(self, complex_, squared_lengths):
@@ -295,13 +306,15 @@ class TripleIntegrals:
         self.scatter = [sp.csr_matrix((np.ones(count), (self.tops[:, c], np.arange(count))),
                                       shape=(self.size, count)) for c in range(d + 1)]
 
-    def loads(self, x, Y, twist=None, block=48):
+    def loads(self, x, Y, twist=None, block=48, twist_x=None):
         x = np.asarray(x)
         Y = np.asarray(Y).reshape(self.size, -1)
         if Y.shape[1] > block:                                # bound the per-simplex temporaries
-            return np.hstack([self.loads(x, Y[:, start:start + block], twist, block)
+            return np.hstack([self.loads(x, Y[:, start:start + block], twist, block, twist_x)
                               for start in range(0, Y.shape[1], block)])
         local_x = x[self.tops]                                # (tops, d + 1)
+        if twist_x is not None:
+            local_x = local_x * twist_x
         local_y = Y[self.tops]                                # (tops, d + 1, columns)
         if twist is not None:
             local_y = local_y * twist[:, :, None]             # carried to the first vertex of the simplex
@@ -313,6 +326,8 @@ class TripleIntegrals:
                 + 2.0 * local_x[:, c, None] * local_y[:, c, :]
             if twist is not None:
                 term = term * twist[:, c, None].conj()         # and back to the vertex the load belongs to
+            if twist_x is not None:
+                term = term * twist_x[:, c, None].conj()
             total += scatter @ (self.weight[:, None] * term)
         return total
 

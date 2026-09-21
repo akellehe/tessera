@@ -591,6 +591,7 @@ class MeshCrystal:
             potential = mixer.next(potential, self.effective_potential(new_density, load))
         return {"levels": values, "vectors": vectors, "residual": residual, "shift_below_spectrum": below,
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing,
+                "potential": potential,
                 "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
 
     # -- Hartree-Fock
@@ -661,6 +662,102 @@ class MeshCrystal:
                 break
         return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing,
+                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+
+    # -- Hartree-Fock on a momentum set
+
+    def run_hartree_fock_set(self, bands, momenta, tolerance=1e-5, mixing=0.3, max_outer=40, max_inner=30, log=None):
+        """Hartree-Fock with the covariance sampled on the momentum set
+        `momenta` (reciprocal coordinates of the cell): a uniform grid that
+        contains the zone centre, so that the differences of its members are
+        its members again. At each momentum the pencil is the one dressed by
+        the flat connection of that momentum. The exchange operator carries the
+        momentum transfer k - k' in its kernel,
+
+            (K_k z)(r) = -(1 / N_k) sum_{k' j} psi_jk'(r) int v_{k-k'}(r - r') conj(psi_jk'(r')) psi(r') dr' ,
+
+        with the pair densities loaded between the two momenta
+        (`TripleIntegrals.loads` with both twists) and the kernel the inverse of
+        the stiffness matrix dressed by the transfer; at zero transfer its entry
+        at G = 0 is the auxiliary-function constant of the set
+        (`GridCoulombKernel.zero_momentum_constant(transfers=momenta)`), which
+        is the constant of the supercell the set is equivalent to. The loops
+        are those of `run_hartree_fock`. Returns the levels and the
+        cell-periodic parts per momentum."""
+        cell, crystal = self.cell, self.crystal
+        occupied = crystal.electrons // 2
+        momenta = [tuple(float(x) for x in kappa) for kappa in momenta]
+        count = len(momenta)
+        triple, weights = self.triple, self.kernel.weights
+        constant = self.kernel.zero_momentum_constant(transfers=momenta)
+        twists = [coulomb.bloch_twist(cell, triple.tops, kappa) for kappa in momenta]
+        masses = [cell.pencil(kappa)[1] for kappa in momenta]
+        projectors = [self._projectors_at(kappa, M) for kappa, M in zip(momenta, masses)]
+        start = self.run(bands, log=log)
+
+        def pencil(k, hartree):
+            return cell.pencil(momenta[k], cell.weighted_mass(self.ionic + hartree))[0]
+
+        def load_of(orbitals):
+            total = np.zeros(cell.size)
+            for k in range(count):
+                for j in range(occupied):
+                    z = orbitals[k][:, j]
+                    total += 2.0 / count * triple.loads(z.conj(), z[:, None], twists[k], twist_x=twists[k].conj())[:, 0].real
+            return total
+
+        def exchange(k, orbitals):
+            W = np.zeros(orbitals[k].shape, dtype=complex)
+            for other in range(count):
+                transfer = tuple(a - b for a, b in zip(momenta[k], momenta[other]))
+                same = other == k
+                pair_twist = coulomb.bloch_twist(cell, triple.tops, transfer)
+                for j in range(occupied):
+                    z = orbitals[other][:, j]
+                    loads = triple.loads(z.conj(), orbitals[k], twists[k], twist_x=twists[other].conj())
+                    # The constant is the missing term of the whole sum over the set, which carries the weight 1 / N_k.
+                    potential = self.kernel.potential(loads, None if same else transfer, count * constant if same else None)
+                    W -= triple.loads(z, potential, pair_twist, twist_x=twists[other]) / count
+            return W
+
+        nodal = lambda orbitals: 2.0 / count * sum((np.abs(v[:, :occupied]) ** 2).sum(axis=1) for v in orbitals)
+        norm = lambda difference: np.sqrt(weights @ difference ** 2 / crystal.volume) * crystal.volume / crystal.electrons
+        hartree = self.kernel.potential(self.mass @ self.atomic_density()).real
+        orbitals, values = [], []
+        for k in range(count):                                       # the Hartree mean field of the zone centre starts every momentum
+            A = cell.pencil(momenta[k], cell.weighted_mass(start["potential"]))[0]
+            v, z, _, _ = solve_with_projectors(A, masses[k], projectors[k], self.D, bands, float(start["levels"][0]) - 1.0)
+            orbitals.append(z.astype(complex)); values.append(v)
+        history, density = [], nodal(orbitals)
+        residual, below = 0.0, True
+        for outer in range(max_outer):
+            terms = [self._compressed(exchange(k, orbitals), orbitals[k], projectors[k]) for k in range(count)]
+            mixer = PulayMixer(mixing)
+            hartree = self.kernel.potential(load_of(orbitals)).real
+            inner_tolerance = max(0.3 * tolerance, 0.3 * (history[-1] if history else 1e-2))
+            inner_density = density
+            for inner in range(max_inner):
+                produced, residual, below = [], 0.0, True
+                for k in range(count):
+                    values[k], z, r, b = solve_with_projectors(pencil(k, hartree), masses[k], *terms[k], bands,
+                                                               float(values[k][0]) - 1.0)
+                    produced.append(z.astype(complex)); residual = max(residual, r); below = below and b
+                out_density = nodal(produced)
+                inner_change = norm(out_density - inner_density)
+                inner_density = out_density
+                if inner_change < inner_tolerance:
+                    break
+                hartree = mixer.next(hartree, self.kernel.potential(load_of(produced)).real)
+            change = norm(out_density - density)
+            history.append(change)
+            if log:
+                log(f"  momentum set, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner)")
+            orbitals, density = produced, out_density
+            if change < tolerance:
+                break
+        return {"momenta": momenta, "levels": values, "vectors": orbitals, "residual": residual,
+                "shift_below_spectrum": below, "history": history, "converged": history[-1] < tolerance,
+                "zero_momentum": constant, "spacing": cell.spacing,
                 "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
 
     # -- more bands, and the one-shot quasiparticle correction

@@ -257,6 +257,27 @@ def test_exchange_at_zero_momentum_transfer_is_the_zone_centre_exchange():
     assert np.abs(near - orbitals.T @ centre).max() < 1e-5
 
 
+def test_hartree_fock_on_a_momentum_set_is_hartree_fock_of_the_supercell():
+    """A cell doubled along an axis and sampled at its zone centre is the single
+    cell sampled at 0 and 1/2 along that axis: the same vertices, the same
+    tetrahedra, the same filled determinant. The Hartree-Fock levels agree,
+    filled and empty, which holds the exchange kernel at a momentum transfer,
+    the pair loads between two momenta, and the zero-momentum constant of the
+    set (that of the supercell) to the zone-centre code."""
+    atom = soft_atom()
+    single = abinitio.Crystal(6.0 * np.eye(3), [(atom, np.full(3, 0.5))])
+    double = abinitio.Crystal(np.diag([12.0, 6.0, 6.0]), [(atom, np.array([0.25, 0.5, 0.5])),
+                                                           (atom, np.array([0.75, 0.5, 0.5]))])
+    supercell = abinitio.MeshCrystal(double, (12, 6, 6))
+    reference = supercell.run_hartree_fock(8, tolerance=1e-8)
+    mesh = abinitio.MeshCrystal(single, 6)
+    run = mesh.run_hartree_fock_set(4, [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0)], tolerance=1e-8)
+    assert reference["certified"] and run["certified"]
+    assert run["zero_momentum"] == pytest.approx(supercell.zero_momentum, abs=1e-6)
+    union = np.sort(np.concatenate(run["levels"]))
+    assert np.abs(reference["levels"][:4] - union[:4]).max() < 1e-5          # rydberg
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat
