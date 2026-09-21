@@ -271,3 +271,24 @@ def test_hartree_fock_at_the_zone_centre_and_at_a_finite_momentum_on_a_bisected_
         levels[name] = np.array([extended["levels"][0], at_x["levels"][0], at_x["levels"][1]])
     assert np.all(levels["bisected"] < levels["uniform"]) and np.all(levels["uniform"] < levels["coarse"])
     assert np.abs(levels["bisected"] - levels["uniform"]).max() < 0.02
+
+
+@pytest.mark.slow
+def test_the_quasiparticle_step_at_the_zone_centre_on_a_bisected_mesh():
+    """The random-phase screening with the closed-form head at vanishing
+    momentum (the phase derivative of the pencil along the true edge
+    displacements, the derivative of the sparse kernel) closes on a bisected
+    mesh as it does on the grid, and gives the correction of the grid."""
+    from tessera.drivers.bands.settings import Approximations
+    crystal = abinitio.Crystal(LATTICE, [(soft_atom(), np.full(3, 0.5))])
+    reads = {}
+    for name, n, options in (("uniform", 8, {}), ("bisected", 6, {"refinement": IonRefinement.of_crystal(crystal, [(2.4, 1)])})):
+        mesh = abinitio.MeshCrystal(crystal, n, approximations=Approximations(1, 1), **options)
+        extended = mesh.extend_bands(mesh.run_hartree_fock(4), 10)
+        reads[name] = mesh.quasiparticle_levels(extended, [0, 1])
+    uniform, bisected = reads["uniform"], reads["bisected"]
+    assert bisected["head_defect"] < 1e-10
+    assert bisected["dielectric_constant"] - 1.0 == pytest.approx(uniform["dielectric_constant"] - 1.0, rel=0.15)
+    for n in (0, 1):
+        shift = lambda read: read["states"][n]["quasiparticle"] - read["states"][n]["mean_field"]
+        assert shift(bisected) == pytest.approx(shift(uniform), abs=2e-3)
