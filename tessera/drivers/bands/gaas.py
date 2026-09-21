@@ -24,6 +24,7 @@ reference is a plane-wave diagonalization with the same form factors, so no
 external number enters.
 """
 import argparse
+import sys
 import json
 import time
 
@@ -147,6 +148,9 @@ def folded_levels(epm, divisions, tolerance=1e-10, log=print):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "ab-initio":
+        return main_ab_initio(argv[1:])
     parser = argparse.ArgumentParser(description="The direct gap of GaAs from the Cohen-Bergstresser "
                                      "empirical pseudopotential on three meshes of the conventional cell.")
     parser.add_argument("--divisions", type=int, nargs=3, default=(16, 24, 32))
@@ -171,10 +175,6 @@ def main(argv=None):
         with open(args.out, "w") as handle:
             json.dump(result, handle, indent=1, default=lambda x: x.tolist() if hasattr(x, "tolist") else x)
     return result
-
-
-if __name__ == "__main__":
-    main()
 
 
 # ---------------------------------------------------------------- ab initio
@@ -241,3 +241,118 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
             "boundary": extrapolated_boundary - mesh_top,
             "boundary_reference": boundary_reference[[0, 1, 2, 4, 5]] - top,
             "gap": extrapolated_centre[2] - mesh_top, "reference_gap": centre_reference[4] - top}
+
+
+def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=200, approximations=None, a=None,
+                  log=print):
+    """The direct gap of gallium arsenide with the norm-conserving
+    pseudopotentials `cation_upf` and `anion_upf`, on the meshes `divisions` of
+    the conventional cell at its zone centre: Hartree-Fock, the converged state
+    certified as a `CovarianceState`, then the quasiparticle equation with the
+    screened interaction of the particle-hole pairs, one shot (G0W0), with the
+    levels fed back into the propagator (GW0) and into the propagator and the
+    screening (evGW), each without and with the zero-momentum term. Values are
+    extrapolated over the meshes with `richardson` (one even order per mesh
+    beyond the first) and reported with `richardson_amplification` and the
+    measured gap (`reference.GALLIUM_ARSENIDE`), which is the arbiter.
+
+    `approximations` (`settings.Approximations`) carries every truncation made
+    for the sake of cost; an order that is not implemented is refused before
+    anything runs. The inputs that cannot be extended are the published ones: the
+    pseudopotential files fix the angular momenta of their projectors and carry
+    no spin-orbit data unless they say so."""
+    from tessera.drivers.bands import BOHR, RYDBERG, screening
+    from tessera.drivers.bands.abinitio import Crystal, MeshCrystal
+    from tessera.drivers.bands.crystal import richardson_amplification
+    from tessera.drivers.bands.pseudopotential import Pseudopotential
+    from tessera.drivers.bands.reference import GALLIUM_ARSENIDE
+    from tessera.drivers.bands.settings import Approximations
+    approximations = Approximations() if approximations is None else approximations
+    approximations.require_implemented()
+    cation, anion = Pseudopotential.from_upf(cation_upf), Pseudopotential.from_upf(anion_upf)
+    lattice_constant = (GALLIUM_ARSENIDE.lattice_constant if a is None else a) / BOHR
+    conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
+    names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw")
+    runs, spacings = [], []
+    for n in divisions:
+        started = time.time()
+        mesh = MeshCrystal(conventional, n, approximations=approximations)
+        mean_field = mesh.run_hartree_fock(bands, log=log)
+        extended = mesh.extend_bands(mean_field, screening_bands + 24, log=log)
+        certificate = mesh.covariance_certificate(extended, bands)
+        half = n // 2
+        read = type("Read", (), {"kappa": (0.0, 0.0, 0.0), "vectors": extended["vectors"].astype(complex)})
+        characters = translation_characters(mesh.cell, read, [(0, half, half), (half, 0, half), (half, half, 0)])
+        from_centre = (characters.real.sum(axis=0) > 1.0)[:screening_bands]
+        occupied = int(extended["occupied"])
+        valence = [int(i) for i in np.nonzero(from_centre)[0] if i < occupied][-3:]
+        conduction = [int(i) for i in np.nonzero(from_centre)[0] if i >= occupied][:1]
+        if not conduction:
+            raise ValueError("no conduction state of the primitive zone centre among the screening bands")
+        gap = lambda levels: float((np.mean(levels[conduction]) - np.mean(levels[valence])) * RYDBERG)
+        levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, screening_bands)
+        heads = mesh.vanishing_momentum_pairs(extended, coupling, screening_bands)
+        row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
+               "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum}
+        rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+        for name, with_head in (("g0w0_body", False), ("g0w0", True)):
+            if with_head:
+                row["dielectric_constant"] = float(rpa.set_head(mesh.zero_momentum, heads))
+                row["head_defect"] = rpa.head_defect
+            shifted = levels.copy()
+            for index in valence + conduction:
+                shifted[index] = rpa.quasiparticle(index)[0]
+            row[name] = gap(shifted)
+        for name, update, with_head in (("gw0_body", False, False), ("gw0", False, True),
+                                        ("evgw_body", True, False), ("evgw", True, True)):
+            produced, history, _ = screening.self_consistent_quasiparticles(
+                levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
+                update_screening=update, tolerance=1e-5)
+            row[name], row[name + "_residual"] = gap(produced), float(history[-1])
+        row["seconds"] = time.time() - started
+        log("N=%d: " % n + ", ".join(f"{name} {row[name]:.3f}" for name in names)
+            + f" eV; eps {row['dielectric_constant']:.3f}; {row['seconds']:.0f} s")
+        runs.append(row)
+        spacings.append(mesh.cell.spacing)
+    result = {"approximations": approximations.record(), "runs": runs, "measured_gap": GALLIUM_ARSENIDE.gap_gamma,
+              "certified": all(row["certified"] for row in runs)}
+    if len(runs) > 1:
+        result["extrapolated"] = {name: float(richardson(spacings, [row[name] for row in runs])[0]) for name in names}
+        result["amplification"] = richardson_amplification(spacings)
+    return result
+
+
+def main_ab_initio(argv=None):
+    from tessera.drivers.bands.settings import Approximations
+    parser = argparse.ArgumentParser(
+        prog="python -m tessera.drivers.bands.gaas ab-initio",
+        description="The direct gap of GaAs with norm-conserving pseudopotentials: Hartree-Fock and the "
+                    "quasiparticle equation on meshes of the conventional cell, extrapolated, against the measured "
+                    "gap. Published inputs cannot be extended: a pseudopotential file fixes the angular momenta of "
+                    "its projectors and carries spin-orbit data only if it says so; the empirical form factors of "
+                    "the other subcommand are three per series.")
+    parser.add_argument("--cation", required=True, help="the gallium pseudopotential (Unified Pseudopotential Format)")
+    parser.add_argument("--anion", required=True, help="the arsenic pseudopotential")
+    parser.add_argument("--divisions", type=int, nargs="+", default=(8, 12, 16, 20, 24, 32),
+                        help="mesh divisions of the conventional cell; every mesh beyond the first removes one even "
+                             "order of the mesh error")
+    parser.add_argument("--bands", type=int, default=24, help="bands of the self-consistent loop")
+    parser.add_argument("--screening-bands", type=int, default=200,
+                        help="bands of the screened interaction and the self-energy")
+    parser.add_argument("--lattice-constant", type=float, default=None, help="angstrom; the measured one by default")
+    parser.add_argument("--out", default=None, help="write the result as JSON")
+    Approximations.add_arguments(parser)
+    args = parser.parse_args(argv)
+    result = ab_initio_gap(args.cation, args.anion, args.divisions, args.bands, args.screening_bands,
+                           Approximations.from_arguments(args), args.lattice_constant)
+    if "extrapolated" in result:
+        print("extrapolated (eV):", {k: round(v, 3) for k, v in result["extrapolated"].items()},
+              "amplification", round(result["amplification"], 1), "measured", result["measured_gap"])
+    if args.out:
+        with open(args.out, "w") as handle:
+            json.dump(result, handle, indent=1, default=lambda x: x.tolist() if hasattr(x, "tolist") else x)
+    return result
+
+
+if __name__ == "__main__":
+    main()

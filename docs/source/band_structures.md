@@ -257,6 +257,40 @@ axis at its zone centre and the single cell sampled at 0 and 1/2 along that
 axis give the same Hartree-Fock levels, filled and empty, and the test suite
 holds them to each other.
 
+### Running the prediction
+
+```
+python -m tessera.drivers.bands.gaas ab-initio --cation Ga.UPF --anion As.UPF \
+    --divisions 8 12 16 20 24 32 --bands 24 --screening-bands 200 --out gaas.json
+```
+
+runs Hartree-Fock and the quasiparticle equation (one shot, with the levels fed
+back into the propagator, and into the propagator and the screening) on every
+mesh, certifies each converged state as a `CovarianceState`, extrapolates over
+the meshes and prints the result next to `richardson_amplification` and the
+measured gap, which is the arbiter. Every approximation made for the sake of
+cost is a flag (`settings.Approximations`), recorded in the output:
+
+| flag | what it truncates | range, default |
+|---|---|---|
+| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$ | 1 to 5, default 3; implemented: 1 |
+| `--zero-momentum-order` | terms of the expansion in the momentum transfer, about every sampled momentum, of the self-energy integrand over the part of momentum space the sampling leaves out; 1 is the value at vanishing momentum times the zero-momentum constant | 1 to 5, default 3; implemented: 1 |
+| `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
+| `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
+| `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
+| `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
+
+An order that is not implemented is refused by name before anything runs; it is
+never replaced by a lower one. Until the second and third terms of the two
+expansions exist, a run has to ask for `--self-energy-order 1
+--zero-momentum-order 1` explicitly.
+
+Published inputs cannot be extended, and no flag pretends otherwise. A
+pseudopotential file fixes the angular momenta of its projectors (the
+Bachelet-Hamann-Schlueter files stop at $l = 1$) and carries spin-orbit data only
+if it says so; the Cohen-Bergstresser form factors of the empirical subcommand
+are three per series.
+
 Whether a pseudopotential can be used is decided by `pseudopotential`'s
 screened, confined pseudo-atom, solved radially and on the mesh. A
 pseudopotential that keeps the gallium 3d shell in the valence is not resolved

@@ -427,7 +427,9 @@ def _real_span(A, M, P, D, vectors):
 class MeshCrystal:
     """The same calculation on the periodic mesh, at the zone centre."""
 
-    def __init__(self, crystal, divisions, width=1.2):
+    def __init__(self, crystal, divisions, width=1.2, approximations=None):
+        from tessera.drivers.bands.settings import Approximations
+        self.approximations = Approximations() if approximations is None else approximations
         self.crystal, self.width = crystal, float(width)
         self.cell = CrystalCell(crystal.lattice, divisions, kinetic_scale=1.0)
         cell = self.cell
@@ -436,7 +438,7 @@ class MeshCrystal:
         self.kernel = coulomb.GridCoulombKernel(cell, COULOMB_STRENGTH)
         # The zero-momentum term of the kernel that sampling the cell at its zone
         # centre leaves out, from the kernel's own symbol.
-        self.zero_momentum = self.kernel.zero_momentum_constant()
+        self.zero_momentum = self.kernel.zero_momentum_constant(self.approximations.refinements)
         self.ionic = self._ionic_potential()
         self.P, self.D = self._projectors()
 
@@ -451,7 +453,7 @@ class MeshCrystal:
         values = np.zeros(cell.size)
         # Short range: a direct sum over the nearest images (it decays like the Gaussian).
         for pseudo, position in crystal.ions:
-            for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
+            for image in itertools.product(self.approximations.images, repeat=3):
                 offset = (cell.fractional - position - np.asarray(image)) @ cell.lattice
                 radius = np.linalg.norm(offset, axis=1)
                 near = radius < 6.0 * self.width + 2.0
@@ -463,7 +465,7 @@ class MeshCrystal:
         charge = np.zeros(cell.size)
         for pseudo, position in crystal.ions:
             gaussian = np.zeros(cell.size)
-            for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
+            for image in itertools.product(self.approximations.images, repeat=3):
                 offset = (cell.fractional - position - np.asarray(image)) @ cell.lattice
                 gaussian += np.exp(-0.5 * (offset ** 2).sum(axis=1) / self.width ** 2)
             charge += pseudo.valence * gaussian / (weights @ gaussian)
@@ -547,7 +549,7 @@ class MeshCrystal:
     def atomic_density(self):
         values = np.zeros(self.cell.size)
         for pseudo, position in self.crystal.ions:
-            for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
+            for image in itertools.product(self.approximations.images, repeat=3):
                 offset = (self.cell.fractional - position - np.asarray(image)) @ self.cell.lattice
                 values += pseudo.density_at(np.linalg.norm(offset, axis=1))
         weights = self.kernel.weights
@@ -692,7 +694,7 @@ class MeshCrystal:
         momenta = [tuple(float(x) for x in kappa) for kappa in momenta]
         count = len(momenta)
         triple, weights = self.triple, self.kernel.weights
-        constant = self.kernel.zero_momentum_constant(transfers=momenta)
+        constant = self.kernel.zero_momentum_constant(self.approximations.refinements, transfers=momenta)
         twists = [coulomb.bloch_twist(cell, triple.tops, kappa) for kappa in momenta]
         masses = [cell.pencil(kappa)[1] for kappa in momenta]
         projectors = [self._projectors_at(kappa, M) for kappa, M in zip(momenta, masses)]
@@ -1002,6 +1004,7 @@ class MeshCrystal:
         term, the renormalization factor and the residual of the quasiparticle
         equation, all in rydberg."""
         from tessera.drivers.bands.screening import RandomPhase
+        self.approximations.require_implemented()
         cell = self.cell
         occupied = extended["occupied"]
         energies, orbitals = extended["levels"], extended["vectors"]
