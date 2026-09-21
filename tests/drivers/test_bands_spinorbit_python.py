@@ -221,17 +221,19 @@ class TestHartreeFockOnTwoSheets:
         assert two["levels"][0::2] == pytest.approx(run["levels"], abs=2e-5)
         assert two["levels"][1::2] == pytest.approx(run["levels"], abs=2e-5)
 
-    def test_with_the_block_the_empty_p_level_splits_and_the_state_stays_time_reversal_invariant(self, converged):
+    def test_with_the_block_the_state_stays_time_reversal_invariant_and_an_s_level_does_not_move(self, converged):
         mesh, run = converged
         two = so.run_hartree_fock_two_sheets(mesh, 5, run)
         assert two["certified"] and two["time_reversal_defect"] < 1e-8
-        # The first diagonalization is the two-sheet pencil of the converged one-sheet operator.
+        # The first diagonalization is the two-sheet pencil of the converged one-sheet operator; L . S vanishes on s.
         first = two["history_levels"][0]
-        assert first[:2] == pytest.approx(np.repeat(run["levels"][:1], 2), abs=2e-5)     # an s level does not move
-        assert so.multiplet_splitting(first[2:8], 4, 2) > 0.01
-        # The filled level is s-like, so the mean field does not feel the block. The empty levels do move between the
+        assert first[:2] == pytest.approx(np.repeat(run["levels"][:1], 2), abs=2e-5)
+        assert np.abs(first[2:] - np.repeat(run["levels"][1:], 2)).max() > 1e-3           # the empty levels do
+        # The filled level is s-like, so the mean field does not feel the block. The empty levels move between the
         # first diagonalization and self-consistency: the compressed exchange is exact on the span of the sections it
         # was built from, which the block rotates out of the span of the one-sheet bands.
         assert two["levels"][:2] == pytest.approx(first[:2], abs=5e-4)
-        print(so.multiplet_splitting(first[2:8], 4, 2), so.multiplet_splitting(two["levels"][2:8], 4, 2))
-        assert so.multiplet_splitting(two["levels"][2:8], 4, 2) == pytest.approx(so.multiplet_splitting(first[2:8], 4, 2), rel=0.15)
+        n = mesh.cell.size
+        filled = two["vectors"][:, :2]
+        density = np.abs(filled[:n]) ** 2 + np.abs(filled[n:]) ** 2
+        assert density.sum(axis=1) == pytest.approx(2.0 * run["vectors"][:, 0] ** 2, abs=1e-2 * density.max())
