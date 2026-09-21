@@ -975,18 +975,27 @@ class MeshCrystal:
                 "converged": at_momentum["converged"],
                 "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
 
-    def vertex(self, extended, bands=None):
+    def vertex(self, extended, bands=None, include=()):
         """The argument tuple of `RandomPhase.set_vertex` for
         `approximations.self_energy_order`: the `vertex_bands` modes nearest the
-        gap (half filled, half empty, among the lowest `bands`) and their
-        Coulomb integrals (pq|rs), with the entry of the kernel at G = 0 as in
-        exchange."""
+        gap (half filled, half empty, among the lowest `bands`; the modes in
+        `include` first, which in a folded cell need not be the nearest) and
+        their Coulomb integrals (pq|rs), with the entry of the kernel at G = 0
+        as in exchange."""
         settings = self.approximations
         occupied = int(extended["occupied"])
         bands = len(extended["levels"]) if bands is None else int(bands)
-        below = min(settings.vertex_bands // 2, occupied)
-        above = min(settings.vertex_bands - below, bands - occupied)
-        chosen = list(range(occupied - below, occupied + above))
+        chosen = sorted(int(n) for n in include)
+        nearest = sorted(range(bands), key=lambda m: (abs(m - occupied + 0.5), m))
+        half = settings.vertex_bands // 2
+        for m in nearest:                                             # fill up, keeping the two sides balanced
+            side = [c for c in chosen if (c < occupied) == (m < occupied)]
+            if m not in chosen and len(chosen) < settings.vertex_bands and len(side) < max(half, settings.vertex_bands - half):
+                chosen.append(m)
+        for m in nearest:                                             # a side that ran out leaves room for the other
+            if m not in chosen and len(chosen) < settings.vertex_bands:
+                chosen.append(m)
+        chosen = sorted(chosen)
         modes = np.asarray(extended["vectors"])[:, chosen]
         count = len(chosen)
         loads = np.hstack([self.triple.loads(modes[:, p], modes) for p in range(count)])           # pairs (p, q)

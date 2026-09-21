@@ -301,7 +301,7 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         heads = mesh.vanishing_momentum_pairs(extended, coupling, screening_bands)
         momentum_terms = mesh.momentum_terms(extended, range(screening_bands), screening_bands, log=log)
         # The diagrams beyond the first order go to the states that define the gap.
-        vertex = mesh.vertex(extended, screening_bands) + (states,)
+        vertex = mesh.vertex(extended, screening_bands, include=states) + (states,)
         if approximations.self_energy_order > 1 and not set(states) <= set(vertex[1]):
             raise ValueError("the states of the gap are not among the vertex bands; raise --vertex-bands")
         row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
