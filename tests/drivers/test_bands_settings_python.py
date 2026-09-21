@@ -36,9 +36,9 @@ def test_an_order_that_is_not_implemented_is_refused_by_name(monkeypatch):
         Approximations(self_energy_order=4).require_implemented()
     # On a momentum set the expansions exist at their first order, and the default orders are refused there.
     Approximations(1, 1, momenta=2).require_implemented()
-    Approximations(1, 5, momenta=2).require_implemented()
-    with pytest.raises(NotImplementedError, match="self_energy_order = 3 is not implemented on a momentum set"):
-        Approximations(momenta=2).require_implemented()
+    Approximations(3, 5, momenta=2).require_implemented()
+    with pytest.raises(NotImplementedError, match="self_energy_order = 4 is not implemented on a momentum set"):
+        Approximations(self_energy_order=4, momenta=2).require_implemented()
     with pytest.raises(ValueError):
         Approximations(momenta=0)
 

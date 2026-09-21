@@ -89,17 +89,23 @@ class SetScreening:
         if nodes and not head:
             raise ValueError("the offsets of the zero-momentum order need the zero-momentum term")
         self.entries, self.moved = [], []                        # moved: (offset, bands kept per moved momentum)
+        self.vertex_order, self._engines = 1, None
+        # The transfers of the set themselves: the body without offsets, the offset zero of an odd order, and
+        # the retarded lines of the diagrams beyond the first order (`set_vertex`), which builds them if nothing has.
+        self._on_set, self.on_set_entries = on_set, []
         if not nodes:
-            self.entries = [self._entry(1.0, c, np.zeros(3), on_set) for c in range(self.count)
-                            if not (head and c == self._zero_class())]
+            self.on_set_entries = [self._entry(1.0, c, np.zeros(3), on_set) for c in range(self.count)
+                                   if not (head and c == self._zero_class())]
+            self.entries = list(self.on_set_entries)
             self.effective_constant = self.constant
         else:
             size = np.array([len({round(float(kappa[axis]), 9) for kappa in self.momenta}) for axis in range(3)])
             small = [(offset, weight) for offset, weight in nodes if np.abs(offset * size).max() < 0.02]
             if small:                                            # the offset zero: the transfers of the set themselves
                 total = sum(weight for _, weight in small)
-                self.entries += [self._entry(total, c, np.zeros(3), on_set) for c in range(self.count)
-                                 if c != self._zero_class()]
+                self.on_set_entries = [self._entry(total, c, np.zeros(3), on_set) for c in range(self.count)
+                                       if c != self._zero_class()]
+                self.entries += self.on_set_entries
             for offset, weight in nodes:
                 found = mesh.bands_at_set(extended, offset, converge=self.bands, log=log)
                 kept = self.bands if threshold is None else [count_below(levels) for levels in found["levels"]]
@@ -166,7 +172,7 @@ class SetScreening:
                                  "levels fed back have closed a gap there")
             return gaps
 
-        for entry in self.entries:
+        for entry in self.entries + [entry for entry in self.on_set_entries if entry not in self.entries]:
             gaps = gaps_of(entry)
             omega, modes, _ = long_range_problem(gaps, entry["coupling"], np.zeros(len(gaps)), 0.0)
             entry["modes"] = [(omega, modes)]
@@ -192,13 +198,9 @@ class SetScreening:
         # Without offsets the pairs of zero transfer enter with the modes that carry the G = 0 entry.
         for entry in self.entries + ([self.head] if self.head is not None and not self.nodes else []):
             weight = entry["weight"]
-            k2, shift = self.partner(k, entry["class"])
             targets = entry["targets"]
+            k2, block = self._block(state, entry)
             top = targets["bands"][k2]
-            sections = mesh._shifted(np.asarray(targets["vectors"][k2])[:, :top], shift)
-            state_loads = coulomb.pair_loads(mesh.cell, z.conj(), sections, tuple(self.momenta[k] + entry["transfer"]),
-                                             tuple(-v for v in self.momenta[k]))
-            block = state_loads.conj().T @ entry["potentials"] / self.count
             moved = np.array([shifts[k2][m] if m < len(shifts[k2]) else shifts[k2][-1] for m in range(top)])
             poles_of = targets["levels"][k2][:top] + moved
             filled = (np.arange(top) < occupied)[:, None]
@@ -210,6 +212,139 @@ class SetScreening:
             terms.append((weights, levels[k][n] - omega if n < occupied else levels[k][n] + omega))
         return terms
 
+    def _block(self, state, entry):
+        """(partner momentum k2, the integrals (m k2, n k | pair) of the state
+        (k, n) with every kept section m of the partner momentum and every pair
+        of the entry)."""
+        k, n = state
+        mesh = self.mesh
+        z = np.asarray(self.extended["vectors"][k])[:, n]
+        k2, shift = self.partner(k, entry["class"])
+        targets = entry["targets"]
+        sections = mesh._shifted(np.asarray(targets["vectors"][k2])[:, :targets["bands"][k2]], shift)
+        state_loads = coulomb.pair_loads(mesh.cell, z.conj(), sections, tuple(self.momenta[k] + entry["transfer"]),
+                                         tuple(-v for v in self.momenta[k]))
+        return k2, state_loads.conj().T @ entry["potentials"] / self.count
+
+    # -- the diagrams beyond the first order
+
+    def set_vertex(self, order, vertex_bands, vertex_poles, states=()):
+        """Add the skeleton diagrams of the orders 2 .. `order` in the screened
+        interaction (`diagrams.SkeletonSelfEnergy`) for `states`, as
+        `RandomPhase.set_vertex` does at the zone centre. The internal lines run
+        over the `vertex_bands` states of the set nearest the gap (`states`
+        first), which are the modes of the supercell the set is equivalent to.
+        A mode of the screened interaction of momentum q couples a state at k to
+        one at k + q with a complex amplitude g; the engine takes bosons whose
+        couplings are Hermitian, so every mode enters as the two bosons
+        (g + g^dagger) / 2 and i (g - g^dagger) / 2 of its energy, whose
+        products sum to (g g^dagger + g^dagger g) / 2: the mode and its image
+        under time reversal, each counted half from either. The instantaneous
+        lines are the Coulomb integrals (pq|rs) of the chosen states with the
+        entry at zero transfer and G = 0 as in exchange."""
+        self.vertex_order, self.vertex_poles = int(order), int(vertex_poles)
+        self.vertex_states = [tuple(state) for state in states]
+        occupied = self.occupied
+        everything = [(k, n) for k in range(self.count) for n in range(self.bands[k])]
+        by_distance = lambda filled: sorted((st for st in everything if (st[1] < occupied) == filled),
+                                            key=lambda st: (-1.0 if filled else 1.0) * self.mean_field[st[0]][st[1]])
+        chosen, half = list(self.vertex_states), int(vertex_bands) // 2
+        for filled, room in ((True, max(half, int(vertex_bands) - half)), (False, max(half, int(vertex_bands) - half))):
+            for st in by_distance(filled):
+                side = [c for c in chosen if (c[1] < occupied) == filled]
+                if st not in chosen and len(chosen) < int(vertex_bands) and len(side) < room:
+                    chosen.append(st)
+        nearest = sorted(everything, key=lambda st: abs(self.mean_field[st[0]][st[1]] - 0.5 * (
+            self.mean_field[by_distance(True)[0][0]][by_distance(True)[0][1]]
+            + self.mean_field[by_distance(False)[0][0]][by_distance(False)[0][1]])))
+        for st in nearest:                                       # a side that ran out leaves room for the other
+            if st not in chosen and len(chosen) < int(vertex_bands):
+                chosen.append(st)
+        self.vertex = sorted(chosen, key=lambda st: (st[1] >= occupied, st))                # filled first
+        self._engines = None
+        if self.vertex_order > 1 and self.head is None:
+            raise ValueError("the diagrams beyond the first order need the zero-momentum term")
+        if self.vertex_order > 1 and not self.on_set_entries and self.count > 1:          # an even order has none yet
+            self.on_set_entries = [self._entry(0.0, c, np.zeros(3), self._on_set) for c in range(self.count)
+                                   if c != self._zero_class()]
+            self.solve()
+
+    def _interaction(self):
+        """(pq|rs) over the vertex states, 1 / N_k included."""
+        mesh, count, states = self.mesh, self.count, self.vertex
+        size = len(states)
+        loads = {}                                               # per transfer class: (p, q) and the load of conj(p) q
+        for p, (kp, np_) in enumerate(states):
+            zp = np.asarray(self.extended["vectors"][kp])[:, np_]
+            for c in range(count):
+                k2, shift = self.partner(kp, c)
+                members = [q for q, (kq, _) in enumerate(states) if kq == k2]
+                if not members:
+                    continue
+                sections = mesh._shifted(np.column_stack([np.asarray(self.extended["vectors"][k2])[:, states[q][1]]
+                                                          for q in members]), shift)
+                found = coulomb.pair_loads(mesh.cell, zp.conj(), sections, tuple(self.momenta[kp] + self.momenta[c]),
+                                           tuple(-v for v in self.momenta[kp]))
+                for column, q in enumerate(members):
+                    loads.setdefault(c, []).append((p, q, found[:, column]))
+        U = np.zeros((size,) * 4, dtype=complex)
+        zero = self._zero_class()
+        for c, entries in loads.items():
+            stack = np.column_stack([load for _, _, load in entries])
+            potentials = mesh.kernel.potential(stack, None if c == zero else tuple(self.momenta[c]),
+                                               count * self.constant if c == zero else None)
+            # (pq|rs) = <rho_qp | v | rho_rs>, the loads of conj(q) p and of conj(r) s carrying the same transfer.
+            values = stack.conj().T @ potentials / count
+            for row, (q, p, _) in enumerate(entries):
+                for column, (r, s_, _) in enumerate(entries):
+                    U[p, q, r, s_] = values[row, column]
+        return U
+
+    def _vertex(self, state, energy, levels):
+        """The diagrams beyond the first order for a state: (value, derivative)."""
+        from tessera.drivers.bands.diagrams import SkeletonSelfEnergy
+        if self.vertex_order < 2 or tuple(state) not in self.vertex_states:
+            return 0.0, 0.0
+        states, occupied = self.vertex, self.occupied
+        key = tuple(round(float(levels[k][n]), 12) for k, n in states)
+        if self._engines is None or self._engines[0] != key:
+            filled = sum(1 for _, n in states if n < occupied)
+            top = max(levels[k][n] for k, n in states if n < occupied)
+            bottom = min(levels[k][n] for k, n in states if n >= occupied)
+            chemical_potential = 0.5 * (top + bottom)
+            if not hasattr(self, "_vertex_interaction"):
+                self._vertex_interaction = self._interaction()
+            engines = []
+            for direction in range(len(self.directions)):
+                bosons, couplings = [], []
+                for entry in self.on_set_entries + [self.head]:
+                    omega, modes = entry["modes"][direction if entry is self.head else 0]
+                    g = np.zeros((len(omega), len(states), len(states)), dtype=complex)         # [s, out, in]
+                    for column, state_in in enumerate(states):
+                        k2, block = self._block(state_in, entry)
+                        amplitudes = np.sqrt(2.0) * (block @ modes)                              # [m, s]
+                        for row, (k_out, m) in enumerate(states):
+                            if k_out == k2:
+                                g[:, row, column] = amplitudes[m, :]
+                    bosons.append(omega)
+                    couplings.append(g)
+                bosons, g = np.concatenate(bosons), np.concatenate(couplings)
+                keep = np.argsort(-(np.abs(g) ** 2).sum(axis=(1, 2)), kind="stable")[:self.vertex_poles]
+                adjoint = np.conj(np.swapaxes(g[keep], 1, 2))
+                hermitian = np.concatenate([0.5 * (g[keep] + adjoint), 0.5j * (g[keep] - adjoint)])
+                xi = np.array([levels[k][n] for k, n in states]) - chemical_potential
+                engines.append(SkeletonSelfEnergy(xi, filled, np.concatenate([bosons[keep], bosons[keep]]), hermitian,
+                                                  self._vertex_interaction))
+            self._engines = (key, chemical_potential, engines)
+        _, chemical_potential, engines = self._engines
+        local = states.index(tuple(state))
+        value = derivative = 0.0
+        for engine in engines:
+            for order in range(2, self.vertex_order + 1):
+                v, d = engine.value_and_derivative(local, energy - chemical_potential, order)
+                value, derivative = value + v / len(engines), derivative + d / len(engines)
+        return value, derivative
+
     def quasiparticle(self, state, levels=None, start=None):
         """(mean-field level, quasiparticle level, renormalization) of a state:
         E = e + Sigma_c(E) by Newton's iteration, the propagator on `levels`."""
@@ -219,8 +354,9 @@ class SetScreening:
         level = float(self.mean_field[k][n])
         energy, slope = (level if start is None else float(start)), 0.0
         for _ in range(60):
-            value = sum(np.sum(w / (energy - p)) for w, p in terms)
-            slope = -sum(np.sum(w / (energy - p) ** 2) for w, p in terms)
+            vertex = self._vertex(state, energy, levels)
+            value = sum(np.sum(w / (energy - p)) for w, p in terms) + vertex[0]
+            slope = -sum(np.sum(w / (energy - p) ** 2) for w, p in terms) + vertex[1]
             step = (level + value - energy) / (1.0 - slope)
             energy += step
             if abs(step) < 1e-11:

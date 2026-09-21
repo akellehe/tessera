@@ -274,6 +274,9 @@ def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
     # The highest bands are solved for and left out: the compression of exchange converges slowly on them.
     screened = SetScreening(mesh, extended, screening_bands, nodes=set_nodes(approximations, extended["momenta"]), log=log)
     row["effective_zero_momentum_constant"] = screened.effective_constant
+    # The diagrams beyond the first order go to the states that define the gap.
+    screened.set_vertex(approximations.self_energy_order, approximations.vertex_bands, approximations.vertex_poles,
+                        [(0, index) for index in valence + conduction])
     row["dielectric_constant"] = screened.dielectric_constant
     shifted = np.asarray(extended["levels"][0], dtype=float).copy()
     for index in valence + conduction:

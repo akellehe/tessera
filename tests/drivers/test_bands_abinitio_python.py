@@ -478,6 +478,48 @@ def test_the_zero_momentum_order_on_a_momentum_set_is_that_of_the_supercell(orde
     assert plain.effective_constant == pytest.approx(average - sampled, abs=1e-8)
 
 
+@pytest.mark.slow
+def test_the_diagrams_beyond_the_first_order_on_a_momentum_set_are_those_of_the_supercell():
+    """The states of the set are the modes of the doubled cell, and a mode of
+    the screened interaction of momentum q, whose couplings are complex, enters
+    the engine as two bosons with Hermitian couplings. At first order the
+    engine then gives the self-energy the set computes in closed form, and
+    with the crossed diagram of second order the quasiparticle levels are
+    those of the doubled cell, state by state."""
+    from tessera.drivers.bands import screening
+    from tessera.drivers.bands.momentum_set import SetScreening
+    from tessera.drivers.bands.settings import Approximations
+    supercell, reference, mesh, extended, cut, kept = _doubled_cell_and_its_momentum_set()
+    states = [(0, 0), (1, 0), (1, 1)]
+    levels, occupied, coupling, integrals = supercell.coulomb_integrals(reference, cut + 1)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    rpa.set_head(supercell.zero_momentum, supercell.vanishing_momentum_pairs(reference, coupling, cut + 1))
+    first = [rpa.quasiparticle(n)[0] for n in range(3)]
+    saved = supercell.approximations
+    try:
+        supercell.approximations = Approximations(2, 1, vertex_bands=cut + 1, vertex_poles=len(rpa.excitations))
+        rpa.set_vertex(*supercell.vertex(reference, cut + 1), states=range(3))
+    finally:
+        supercell.approximations = saved
+    screened = SetScreening(mesh, extended, kept)
+    screened.set_vertex(2, cut + 1, len(rpa.excitations), states)
+    assert len(screened.vertex) == cut + 1
+    # First order through the engine against the closed form of the set, away from the poles.
+    screened._vertex(states[0], 0.0, screened.mean_field)
+    _, chemical_potential, engines = screened._engines
+    for state in states:
+        frequency = screened.mean_field[state[0]][state[1]] + 0.013
+        terms = screened._terms(state, screened.mean_field)[:-len(screened.residues)]
+        closed = sum(np.sum(w / (frequency - p)) for w, p in terms)
+        through = np.mean([engine.evaluate(screened.vertex.index(state), frequency - chemical_potential, 1)
+                           for engine in engines])
+        assert abs(through.imag) < 1e-10 and through.real == pytest.approx(closed, abs=1e-9)
+    for n, state in enumerate(states):
+        expected = rpa.quasiparticle(n)[0]
+        assert screened.quasiparticle(state)[1] == pytest.approx(expected, abs=2e-5)
+        assert abs(expected - first[n]) > 1e-4                          # the diagram being compared is not small
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat
