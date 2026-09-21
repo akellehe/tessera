@@ -132,7 +132,7 @@ class GridCoulombKernel:
         p = np.atleast_2d(np.asarray(wavevectors, dtype=float)) / np.array(self.shape)
         return np.real(np.exp(2j * np.pi * (p @ self._offsets.T)) @ self._entries)
 
-    def zero_momentum_constant(self, refinements=(2, 4, 8), transfers=None):
+    def zero_momentum_constant(self, refinements=(2, 3, 4, 6, 8), transfers=None):
         """The term of the Coulomb kernel that a cell sampled at its zone centre
         leaves out at zero momentum transfer, for a normalized charge: the
         auxiliary-function correction of Gygi and Baldereschi, with the kernel's
@@ -151,8 +151,8 @@ class GridCoulombKernel:
         and the average 1 / (4 pi^(3/2) sqrt(alpha)). The remainder 1 / a - g is
         bounded, with a jump at the origin only, so its mean on grids
         `refinements` times finer with the origin left out errs by odd inverse
-        powers of the refinement from the third on, which the refinements
-        remove. For the continuum
+        powers of the refinement from the third on; five refinements remove the
+        first four of them. For the continuum
         kernel strength / (V q^2) on a simple cubic cell this constant is
         strength * MADELUNG_SC / (4 pi L).
 
@@ -182,7 +182,7 @@ class GridCoulombKernel:
             means.append(sum(remainder(chunk).sum() for chunk in np.array_split(p, max(1, len(p) // 200000)))
                          / (n * m ** 3))
         m = np.array(refinements, dtype=float)
-        design = np.column_stack([np.ones_like(m), 1.0 / m ** 3, 1.0 / m ** 5][:len(m)])
+        design = np.column_stack([np.ones_like(m)] + [1.0 / m ** power for power in (3, 5, 7, 9)][:len(m) - 1])
         average = np.linalg.lstsq(design, np.array(means), rcond=None)[0][0] + 1.0 / (4.0 * np.pi ** 1.5 * np.sqrt(alpha))
         supported = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
         transfers = np.zeros((1, 3)) if transfers is None else np.atleast_2d(np.asarray(transfers, dtype=float))

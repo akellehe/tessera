@@ -55,7 +55,7 @@ def gaussian_well(cell, depth, width, center=(0.5, 0.5, 0.5)):
     """V(r) = -depth exp(-r^2 / 2 width^2) about the fractional `center`, summed
     over the nearest periodic images."""
     values = np.zeros(cell.size)
-    for image in itertools.product((-1, 0, 1), repeat=3):
+    for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
         offset = (cell.fractional - np.asarray(center) - np.asarray(image)) @ cell.lattice
         values -= depth * np.exp(-np.einsum("ij,ij->i", offset, offset) / (2.0 * width ** 2))
     return values

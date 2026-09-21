@@ -287,14 +287,28 @@ def solve_pencil(A, M, count, sigma, tolerance=1e-10, kappa=(0.0, 0.0, 0.0), **o
                     shift_below_spectrum=read.shiftBelowSpectrum, solves=read.solves)
 
 
-def richardson(spacings, values, orders=(2, 4)):
+def richardson_amplification(spacings, orders=None):
+    """The sum of the absolute weights with which `richardson` combines the
+    meshes: the factor by which it multiplies whatever in the values does not
+    follow the error model (a residual of the self-consistency, a mesh outside
+    the asymptotic regime). 5.6 for divisions 16, 24, 32 and two orders; 27 for
+    8, 12, 16, 20, 24, 32 and five."""
+    h = np.asarray(spacings, dtype=float)
+    orders = tuple(2 * (p + 1) for p in range(len(h) - 1)) if orders is None else orders
+    design = np.column_stack([np.ones_like(h)] + [h ** p for p in orders])
+    return float(np.abs(np.linalg.inv(design)[0]).sum())
+
+
+def richardson(spacings, values, orders=None):
     """Extrapolate `values` measured at mesh spacings `spacings` to zero spacing
     with the error model v(h) = v_0 + sum_p c_p h^p over the given `orders`.
-    Piecewise-linear elements on a uniform mesh have an even expansion, so three
-    meshes remove the h^2 and h^4 terms. `values` may be an array per mesh (one
-    column per band). Returns (extrapolated, leading coefficients)."""
+    Piecewise-linear elements on a uniform mesh have an even expansion, and by
+    default every mesh but one removes one even order: six meshes remove h^2 to
+    h^10. `values` may be an array per mesh (one column per band). Returns
+    (extrapolated, leading coefficients); see `richardson_amplification`."""
     h = np.asarray(spacings, dtype=float)
     values = np.asarray(values, dtype=float)
+    orders = tuple(2 * (p + 1) for p in range(len(h) - 1)) if orders is None else orders
     if len(h) != len(orders) + 1:
         raise ValueError("richardson needs exactly one more mesh than error orders")
     design = np.column_stack([np.ones_like(h)] + [h ** p for p in orders])

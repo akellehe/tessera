@@ -451,7 +451,7 @@ class MeshCrystal:
         values = np.zeros(cell.size)
         # Short range: a direct sum over the nearest images (it decays like the Gaussian).
         for pseudo, position in crystal.ions:
-            for image in itertools.product((-1, 0, 1), repeat=3):
+            for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
                 offset = (cell.fractional - position - np.asarray(image)) @ cell.lattice
                 radius = np.linalg.norm(offset, axis=1)
                 near = radius < 6.0 * self.width + 2.0
@@ -463,7 +463,7 @@ class MeshCrystal:
         charge = np.zeros(cell.size)
         for pseudo, position in crystal.ions:
             gaussian = np.zeros(cell.size)
-            for image in itertools.product((-1, 0, 1), repeat=3):
+            for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
                 offset = (cell.fractional - position - np.asarray(image)) @ cell.lattice
                 gaussian += np.exp(-0.5 * (offset ** 2).sum(axis=1) / self.width ** 2)
             charge += pseudo.valence * gaussian / (weights @ gaussian)
@@ -547,7 +547,7 @@ class MeshCrystal:
     def atomic_density(self):
         values = np.zeros(self.cell.size)
         for pseudo, position in self.crystal.ions:
-            for image in itertools.product((-1, 0, 1), repeat=3):
+            for image in itertools.product((-2, -1, 0, 1, 2), repeat=3):
                 offset = (self.cell.fractional - position - np.asarray(image)) @ self.cell.lattice
                 values += pseudo.density_at(np.linalg.norm(offset, axis=1))
         weights = self.kernel.weights

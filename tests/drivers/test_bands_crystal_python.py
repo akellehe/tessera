@@ -88,7 +88,11 @@ class TestFreeElectrons:
         assert np.abs(levels[-1] / exact - 1.0).max() > 5e-3
         assert np.abs(extrapolated / exact - 1.0).max() < 2e-4
         with pytest.raises(ValueError):
-            richardson([1.0, 0.5], [1.0, 2.0])
+            richardson([1.0, 0.5], [1.0, 2.0], orders=(2, 4))
+        from tessera.drivers.bands.crystal import richardson_amplification
+        # What the extrapolation multiplies anything outside its error model by.
+        assert richardson_amplification([1 / 16, 1 / 24, 1 / 32]) == pytest.approx(5.6, abs=0.1)
+        assert richardson_amplification([1 / n for n in (8, 12, 16, 20, 24, 32)]) == pytest.approx(26.6, abs=0.1)
 
 
 class TestDegreesAndGauge:

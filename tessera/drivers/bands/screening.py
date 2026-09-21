@@ -311,12 +311,15 @@ class KineticBasisScreening:
                      - sum_{m filled, e_m > w} F_m[e_m - w] + sum_{m empty, e_m < w} F_m[w - e_m] ,
 
     a_m = w - e_m, F_m(u) = G_m^T W_c(i u) G_m and F_m[x] the same at the real
-    frequency x. W_c(i u) is tabulated on `frequencies`, interpolated linearly
-    between them and continued as 1 / u^2 beyond the last, and the Lorentzian is
-    integrated against that interpolant in closed form, so a small a_m costs no
-    accuracy."""
+    frequency x. F_m is analytic and even in u and falls as 1 / u^2, so it is
+    represented by its Chebyshev interpolant of degree `nodes` - 1 in the
+    variable t = (u - s) / (u + s), s the smallest level difference, a series
+    that converges geometrically; nothing is linearized. With u = |a_m| tan(theta)
+    the Lorentzian becomes the measure d(theta), and the integral is taken by
+    Gauss-Legendre quadrature on two panels split where u = 3 s, so a small and
+    a large a_m cost no accuracy."""
 
-    def __init__(self, energies, occupied, pair_coefficients, kernel, head=None, constant=0.0, frequencies=None):
+    def __init__(self, energies, occupied, pair_coefficients, kernel, head=None, constant=0.0, nodes=64):
         self.energies, self.occupied = np.asarray(energies, dtype=float), int(occupied)
         count = len(self.energies)
         self.gaps = np.array([self.energies[a] - self.energies[i] for i in range(self.occupied)
@@ -324,10 +327,13 @@ class KineticBasisScreening:
         self.C = np.asarray(pair_coefficients, dtype=float)
         self.v = np.asarray(kernel, dtype=float)
         self.head, self.constant = head or [], float(constant)
-        scale = float(self.gaps.min())
-        self.frequencies = (scale * np.concatenate([[0.0], np.geomspace(0.02, 400.0, 95)])
-                            if frequencies is None else np.asarray(frequencies, dtype=float))
+        self.scale = float(self.gaps.min())
+        j = np.arange(nodes)
+        self._t = np.cos(np.pi * (2 * j + 1) / (2 * nodes))                         # Chebyshev points of the first kind
+        self._barycentric = (-1.0) ** j * np.sin(np.pi * (2 * j + 1) / (2 * nodes))
+        self.frequencies = self.scale * (1.0 + self._t) / (1.0 - self._t)
         self._table = [self._screened(u, imaginary=True) for u in self.frequencies]
+        self._theta, self._theta_weights = np.polynomial.legendre.leggauss(64)
 
     def _screened(self, x, imaginary):
         """(W_c on the basis, the intraband head term) at the frequency i x or x."""
@@ -349,19 +355,25 @@ class KineticBasisScreening:
             intraband += self.constant * (inverse[0, 0] - 1.0) / len(self.head)
         return W, intraband
 
-    @staticmethod
-    def _lorentzian(a, u, F):
-        """int_0^inf F(u) a / (a^2 + u^2) du for the piecewise-linear interpolant
-        of the rows of F on u, continued as F_last (u_last / u)^2; a > 0."""
-        slope = (F[:, 1:] - F[:, :-1]) / (u[1:] - u[:-1])
-        intercept = F[:, :-1] - slope * u[:-1]
-        angle = np.arctan(u[None, :] / a[:, None])
-        logs = 0.5 * a[:, None] * np.log((a[:, None] ** 2 + u[None, 1:] ** 2) / (a[:, None] ** 2 + u[None, :-1] ** 2))
-        body = (intercept * (angle[:, 1:] - angle[:, :-1]) + slope * logs).sum(axis=1)
-        ratio = a / u[-1]
-        tail = np.where(ratio < 1e-3, ratio / 3.0 - ratio ** 3 / 5.0,
-                        (1.0 - np.arctan(np.maximum(ratio, 1e-300)) / np.maximum(ratio, 1e-300)) / np.maximum(ratio, 1e-300))
-        return body + F[:, -1] * tail
+    def _lorentzian(self, a, F):
+        """int_0^inf F_m(u) a_m / (a_m^2 + u^2) du for a_m > 0, F given on the
+        Chebyshev frequencies (rows: m)."""
+        total = np.zeros(len(a))
+        split = np.arctan(3.0 * self.scale / a)
+        for lower, upper in ((np.zeros(len(a)), split), (split, np.full(len(a), 0.5 * np.pi))):
+            theta = 0.5 * (upper - lower)[:, None] * (self._theta[None, :] + 1.0) + lower[:, None]
+            u = a[:, None] * np.tan(theta)
+            t = (u - self.scale) / (u + self.scale)
+            difference = t[:, :, None] - self._t[None, None, :]
+            exact = np.abs(difference) < 1e-14
+            difference = np.where(exact, 1.0, difference)
+            terms = self._barycentric[None, None, :] / difference
+            values = np.einsum("mqj,mj->mq", terms, F) / terms.sum(axis=2)
+            hit = exact.any(axis=2)
+            if hit.any():
+                values[hit] = np.einsum("mqj,mj->mq", exact.astype(float), F)[hit]
+            total += 0.5 * (upper - lower) * (values @ self._theta_weights)
+        return total
 
     def correlation(self, n, coefficients, frequency):
         """Sigma^c_nn at the real frequency `frequency`; `coefficients[m]` are
@@ -373,7 +385,7 @@ class KineticBasisScreening:
             F[n, k] += intraband
         a = frequency - self.energies
         sign = np.where(a >= 0.0, 1.0, -1.0)                       # a = 0 is approached from above
-        value = -np.sum(sign * self._lorentzian(np.maximum(np.abs(a), 1e-12), self.frequencies, F)) / np.pi
+        value = -np.sum(sign * self._lorentzian(np.maximum(np.abs(a), 1e-12), F)) / np.pi
         for m, level in enumerate(self.energies):
             # a = 0 is approached from above, where an empty level has already been crossed.
             crossing = (m < self.occupied and level > frequency) or (m >= self.occupied and level <= frequency)
@@ -384,16 +396,18 @@ class KineticBasisScreening:
         return value
 
 
-    def quasiparticle(self, n, coefficients, iterations=50, tolerance=1e-9, step=1e-4):
-        """Solve E = e_n + Sigma^c_nn(E) by Newton's method, the derivative by a
-        central difference (the self-energy is smooth between the levels).
+    def quasiparticle(self, n, coefficients, iterations=50, tolerance=1e-9, step=2e-3):
+        """Solve E = e_n + Sigma^c_nn(E) by Newton's method to convergence (the
+        equation is not linearized), the derivative by the seven-point central
+        difference (the self-energy is smooth between the levels).
         Returns (E, renormalization factor Z at the solution)."""
         level = energy = self.energies[n]
         slope = 0.0
         for _ in range(iterations):
             value = self.correlation(n, coefficients, energy)
-            slope = (self.correlation(n, coefficients, energy + step)
-                     - self.correlation(n, coefficients, energy - step)) / (2.0 * step)
+            slope = sum(weight * (self.correlation(n, coefficients, energy + k * step)
+                                  - self.correlation(n, coefficients, energy - k * step))
+                        for k, weight in ((1, 0.75), (2, -0.15), (3, 1.0 / 60.0))) / step
             change = (level + value - energy) / (1.0 - slope)
             energy += change
             if abs(change) < tolerance:

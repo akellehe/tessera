@@ -311,7 +311,7 @@ def test_the_kinetic_eigenbasis_route_is_the_pole_exact_route():
                                                 mesh.zero_momentum)
         errors.append(max(abs(route.correlation(n, (basis[:, :size].T @ mesh.triple.loads(modes[:, n], modes)).T, w)
                               - rpa.correlation(n, w)[0]) for n in (0, 1) for w in frequencies))
-    assert errors[2] < 5e-5 and errors[2] < errors[1] < errors[0], errors
+    assert errors[2] < 1e-9 and errors[2] < errors[1] < errors[0], errors
 
 
 def test_quasiparticle_levels_agree_between_the_two_routes_with_a_sparse_kinetic_basis():
@@ -330,14 +330,14 @@ def test_quasiparticle_levels_agree_between_the_two_routes_with_a_sparse_kinetic
     head = [(np.imag(limit["charges"]), limit["entry"]) for limit in limits]
     reference = np.array([rpa.quasiparticle(n)[0] for n in (0, 1)])
     errors = []
-    for size in (6, 120):
+    for size in (30, 120, 360):
         values, basis = mesh.kinetic_basis(size)
         assert values[0] > 1e-6 and np.abs(basis.T @ (mesh.mass @ basis) - np.eye(size)).max() < 1e-8
         pairs, states = mesh.basis_coefficients(extended, basis, bands, (0, 1))
         route = screening.KineticBasisScreening(levels, occupied, pairs, abinitio.COULOMB_STRENGTH / values, head,
                                                 mesh.zero_momentum)
         errors.append(np.abs(np.array([route.quasiparticle(n, states[n])[0] for n in (0, 1)]) - reference).max())
-    assert errors[1] < errors[0] and errors[1] < 2e-4                   # rydberg
+    assert errors[2] < errors[1] < errors[0] and errors[2] < 2e-5, errors       # rydberg
 
 
 @pytest.mark.parametrize("kappa", [None, (0.2, -0.1, 0.35)])

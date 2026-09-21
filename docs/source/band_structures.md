@@ -164,13 +164,25 @@ on a cluster.
 `screening.KineticBasisScreening` is the second route to the same self-energy,
 and the one that scales to momentum sets: in the eigenbasis of the kinetic
 pencil the Coulomb kernel is diagonal, the dielectric matrix is inverted at
-imaginary frequencies, and the self-energy follows by contour deformation, the
-Lorentzian integrated in closed form against the interpolated interaction. The
+imaginary frequencies, and the self-energy follows by contour deformation. The
+interaction along the imaginary axis is carried by a Chebyshev series of degree
+63 in a mapped frequency (nothing is linearized), and the Lorentzian becomes the
+measure of a Gauss-Legendre quadrature. The
 response at vanishing momentum enters as one more basis function, which screens
 the rest of the interaction through the mixed entries of the dielectric matrix;
 `RandomPhase.set_head` does the same on the modes of the particle-hole pairs.
-With the whole basis the two routes agree at every frequency, and the test suite
-holds them to each other.
+With the whole basis the two routes agree at every frequency to 1e-11 Ry, and the
+test suite holds them to each other.
+
+No equation in these drivers is linearized: the quasiparticle equation is
+iterated to its root, the tick map is the full quadratic eigenproblem, and a
+series that is truncated keeps at least five terms (the refinement series of the
+zero-momentum constant, the lattice sums over images, the frequency series
+above). The mesh extrapolation `richardson` removes one even order per mesh
+beyond the first, five with six meshes; `richardson_amplification` is the factor
+by which it multiplies anything in the values that does not follow the error
+model (5.6 for divisions 16, 24, 32 with two orders; 27 for 8, 12, 16, 20, 24,
+32 with five), and is reported with every extrapolated number.
 
 ### Ab initio
 
