@@ -277,8 +277,9 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 
 | flag | what it truncates | range, default |
 |---|---|---|
-| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$, 2 adds the crossed diagram, 3 the six skeleton diagrams of third order (`diagrams`) | 1 to 5, default 3; implemented: 1 to 3 |
-| `--vertex-bands`, `--vertex-poles` | the modes nearest the gap on the internal lines of the diagrams beyond the first order, and the modes of the screened interaction kept in them; the cost of order $k$ grows as bands$^{2k-1}$ poles$^k$ | default 12 and 12 |
+| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$, 2 adds the crossed diagram, 3 the six skeleton diagrams of third order, 4 the 49 of fourth, 5 the 542 of fifth (`diagrams`) | 1 to 5, default 3; all implemented |
+| `--vertex-bands`, `--vertex-poles` | the modes nearest the gap on the internal lines of the diagrams beyond the first order, and the modes of the screened interaction kept in them; the cost of order $k$ grows as (bands/2)$^{2k-1}$ poles$^k$ | default 12 and 12 |
+| `--vertex-memory` | what the diagrams hold at once, in GiB, over all worker processes; it truncates nothing: a diagram too wide for it is evaluated one value at a time of the labels of some of its interaction lines | default 8 |
 | `--zero-momentum-order` | how the self-energy integrand is averaged over the momentum transfers the sampling leaves out: 1 is the closed form at vanishing momentum; k is a midpoint grid of k transfers per axis, the Hartree-Fock pencil solved at every node, the singular part averaged analytically and the bounded remainder by the grid | 1 to 5, default 3; all implemented |
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
@@ -286,14 +287,34 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
 An order that is not implemented is refused by name before anything runs; it is
-never replaced by a lower one (orders 4 and 5 of the expansion in the screened
-interaction are). The diagrams beyond $\Sigma = iGW$ are evaluated as sums over
-the orderings of their vertex times, in closed form on the poles of $W$, with
-the instantaneous part of $W$ as lines whose two vertices share a time; the
-test suite holds them to the closed form at first order, to the textbook
-second-order exchange, to the plain frequency integrals of their Feynman rules
-on the imaginary axis (the triangle loops included), and to the heavy-boson
-limit for instantaneous lines. On a cell of 6 bohr the correlation self-energy of the filled level
+never replaced by a lower one (every order of both expansions exists today). The
+diagrams beyond $\Sigma = iGW$ are evaluated as sums over the orderings of their
+vertex times, in closed form on the poles of $W$, with the instantaneous part of
+$W$ as lines whose two vertices share a time. `diagrams.skeleton_diagrams`
+enumerates them (1, 1, 6, 49, 542 at the orders 1 to 5), and the sum over the
+$V!$ orderings of $V$ vertices is taken as a recursion over the sets of vertices
+that have happened, $V\,2^{V-1}$ contractions, which is the same number term for
+term. The test suite holds the diagrams to the closed form at first order, to
+the textbook second-order exchange, to the plain frequency integrals of their
+Feynman rules on the imaginary axis (every diagram through fourth order, the
+fermion loops included), to the heavy-boson limit for instantaneous lines, the
+recursion to the plain sum over the orderings, and the rules as a whole to the
+exact diagonalization of electrons coupled to bosons: with the bare propagator
+on the lines, all 238 irreducible diagrams of fourth order and all 2732 of fifth
+(the skeletons among them) sum to the coefficient of that order of the exact
+self-energy to $10^{-11}$.
+
+What an order costs is set by the denominator that holds the most lines at once:
+$2k-1$ fermion lines and $k$ interaction lines at order $k$, which no
+factorization separates. Measured on four worker processes, one evaluation of
+the third order takes 3 s at 12 bands and 12 poles; the fourth 16 s at 6 and 6
+and 200 s at 8 and 8; the fifth 400 s at 4 and 4. The number of multiplications
+(`SkeletonSelfEnergy.work`) puts the fourth order at 12 and 12 near 13 hours on
+four processes at the rate measured at 8 and 8, and the fifth at 6 and 6 between
+5 and 20 hours, so a run at these orders lowers `--vertex-bands` and
+`--vertex-poles`, or takes that long; the choice is the caller's and is recorded
+with the result.
+On a cell of 6 bohr the correlation self-energy of the filled level
 goes from -0.032 Ry at zero-momentum order 1 to -0.052 and -0.061 Ry at orders 2
 and 3 (-0.071 Ry on a grid of 6): sampling the zone centre alone is a large
 approximation on a small cell.

@@ -11,7 +11,7 @@ replaced by a lower one.
 from dataclasses import asdict, dataclass
 
 # The orders of each expansion that exist in the code today.
-IMPLEMENTED = {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
+IMPLEMENTED = {"self_energy_order": (1, 2, 3, 4, 5), "zero_momentum_order": (1, 2, 3, 4, 5)}
 
 
 @dataclass(frozen=True)
@@ -19,10 +19,15 @@ class Approximations:
     """`self_energy_order`: the number of terms kept in the expansion of the
     self-energy in the screened interaction W (1 is Sigma = i G W; 1 to 5). The
     terms beyond the first are the skeleton diagrams of `diagrams`: one at
-    second order, six at third. Their cost grows as `vertex_bands` to the power
-    2 k - 1 times `vertex_poles` to the power k, so they are evaluated on the
-    `vertex_bands` modes nearest the gap and the `vertex_poles` modes of the
-    screened interaction that couple to them most strongly.
+    second order, six at third, 49 at fourth, 542 at fifth. An order k puts as
+    many as 2 k - 1 fermion lines and k lines of the screened interaction in
+    one energy denominator, so its cost grows as half of `vertex_bands` to the
+    power 2 k - 1 times `vertex_poles` to the power k, and the diagrams are
+    evaluated on the `vertex_bands` modes nearest the gap and the
+    `vertex_poles` modes of the screened interaction that couple to them most
+    strongly. `vertex_memory` is what the diagrams may hold at once, in GiB,
+    over all worker processes; it changes the time of a run and none of its
+    numbers (`diagrams.SkeletonSelfEnergy`).
 
     `zero_momentum_order`: how the self-energy integrand is averaged over the
     momentum transfers that sampling the zone centre leaves out. 1 is the closed
@@ -49,6 +54,7 @@ class Approximations:
     frequency_nodes: int = 64
     vertex_bands: int = 12
     vertex_poles: int = 12
+    vertex_memory: float = 8.0
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -60,6 +66,8 @@ class Approximations:
             raise ValueError("frequency_nodes is at least 5")
         if self.vertex_bands < 2 or self.vertex_poles < 1:
             raise ValueError("vertex_bands is at least 2 and vertex_poles at least 1")
+        if not self.vertex_memory > 0.0:
+            raise ValueError("vertex_memory is positive")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -126,8 +134,11 @@ class Approximations:
                            help="modes nearest the gap on the internal lines of the diagrams beyond the first order")
         group.add_argument("--vertex-poles", type=int, default=defaults.vertex_poles,
                            help="modes of the screened interaction kept in the diagrams beyond the first order")
+        group.add_argument("--vertex-memory", type=float, default=defaults.vertex_memory,
+                           help="GiB the diagrams beyond the first order may hold at once; changes the time, not the numbers")
 
     @classmethod
     def from_arguments(cls, args):
         return cls(args.self_energy_order, args.zero_momentum_order, args.refinement_terms, args.lattice_images,
-                   args.frequency_nodes, args.vertex_bands, args.vertex_poles)
+                   args.frequency_nodes, args.vertex_bands, args.vertex_poles,
+                   args.vertex_memory)

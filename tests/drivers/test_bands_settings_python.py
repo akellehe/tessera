@@ -24,11 +24,26 @@ def test_ranges_and_defaults():
             Approximations(**bad)
 
 
-def test_an_order_that_is_not_implemented_is_refused_by_name():
-    assert IMPLEMENTED == {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
+def test_an_order_that_is_not_implemented_is_refused_by_name(monkeypatch):
+    """Every order of both expansions exists (#1168 brought the fourth and the
+    fifth of the self-energy); the refusal stays for whatever is added next."""
+    assert IMPLEMENTED == {"self_energy_order": (1, 2, 3, 4, 5), "zero_momentum_order": (1, 2, 3, 4, 5)}
+    for order in (1, 2, 3, 4, 5):
+        Approximations(self_energy_order=order).require_implemented()
+    monkeypatch.setitem(IMPLEMENTED, "self_energy_order", (1, 2, 3))
     Approximations().require_implemented()
     with pytest.raises(NotImplementedError, match="self_energy_order = 4"):
         Approximations(self_energy_order=4).require_implemented()
+
+
+def test_the_memory_of_the_diagrams_is_a_flag():
+    parser = argparse.ArgumentParser()
+    Approximations.add_arguments(parser)
+    assert Approximations.from_arguments(parser.parse_args([])).vertex_memory == 8.0
+    parsed = Approximations.from_arguments(parser.parse_args(["--self-energy-order", "5", "--vertex-memory", "2.5"]))
+    assert (parsed.self_energy_order, parsed.vertex_memory) == (5, 2.5) and parsed.record()["vertex_memory"] == 2.5
+    with pytest.raises(ValueError):
+        Approximations(vertex_memory=0.0)
 
 
 def test_the_momentum_nodes_are_a_midpoint_grid_counted_once_per_time_reversed_pair():
@@ -82,21 +97,23 @@ def test_the_zone_average_of_the_self_energy_integrand_converges_with_the_grid()
     assert values[1] < 1.5 * values[0] and abs(values[2] - values[1]) < 0.5 * abs(values[1] - values[0])
 
 
+def _screened(approximations, bands=7):
+    from tessera.drivers.bands import screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    mesh = abinitio.MeshCrystal(crystal, 6, approximations=approximations)
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 3, tolerance=1e-9)
+    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+    return mesh, extended, levels, screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+
+
 def test_the_diagrams_beyond_the_first_order_enter_the_quasiparticle_equation():
     """With every mode and every pole kept, the first-order diagram of the
     evaluator is the self-energy `RandomPhase` already has, which holds the
     wiring (modes, couplings, chemical potential) to it; the second order then
     moves the quasiparticle levels, and the equation is still solved to its root."""
-    from tessera.drivers.bands import screening
-    from tessera.drivers.bands.diagrams import SkeletonSelfEnergy
-    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
-    mesh = abinitio.MeshCrystal(crystal, 6, approximations=Approximations(2, 1, vertex_bands=7, vertex_poles=6))
-    bands = 7
-    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 3, tolerance=1e-9)
-    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
-    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    mesh, extended, levels, rpa = _screened(Approximations(2, 1, vertex_bands=7, vertex_poles=6))
     first = [rpa.quasiparticle(n)[0] for n in (0, 1)]
-    order, chosen, interaction, poles = mesh.vertex(extended, bands)
+    order, chosen, interaction, poles = mesh.vertex(extended, 7)
     assert (order, chosen, poles) == (2, list(range(7)), 6) and interaction.shape == (7,) * 4
     assert np.abs(interaction - interaction.transpose(1, 0, 2, 3)).max() < 1e-12
     rpa.set_vertex(order, chosen, interaction, poles)
@@ -112,6 +129,24 @@ def test_the_diagrams_beyond_the_first_order_enter_the_quasiparticle_equation():
     assert max(abs(second[n][0] - first[n]) for n in (0, 1)) > 1e-4
 
 
+def test_the_fourth_order_enters_the_self_energy():
+    """`--self-energy-order` 4 through the run's own wiring: the diagrams that
+    `RandomPhase` adds are those of the orders 2 to k of the evaluator it built
+    (the loop over the orders is the same for 5), on 4 modes and 3 poles."""
+    mesh, extended, levels, rpa = _screened(Approximations(4, 1, vertex_bands=4, vertex_poles=3))
+    order, chosen, interaction, poles = mesh.vertex(extended, 7)
+    assert (order, len(chosen), poles) == (4, 4, 3)
+    rpa.set_vertex(order, chosen, interaction, poles)
+    w = 0.5 * (levels[0] + levels[1])
+    totals = []
+    for k in (3, 4):
+        rpa.vertex_order = k
+        totals.append(rpa._vertex(chosen[1], w, levels)[0])
+    _, chemical_potential, engines = rpa._vertex_engines
+    fourth = np.mean([engine.evaluate(1, w - chemical_potential, 4).real for engine in engines])
+    assert totals[1] - totals[0] == pytest.approx(fourth, abs=1e-9) and abs(fourth) > 1e-9
+
+
 def _files(tmp_path):
     atom = soft_atom()
     text = lambda values: " ".join(f"{v:.12e}" for v in values)
@@ -121,8 +156,9 @@ def _files(tmp_path):
     return str(path)
 
 
-def test_the_command_line_refuses_before_anything_runs(tmp_path):
+def test_the_command_line_refuses_before_anything_runs(tmp_path, monkeypatch):
     path = _files(tmp_path)
+    monkeypatch.setitem(IMPLEMENTED, "self_energy_order", (1, 2, 3))
     with pytest.raises(NotImplementedError, match="self_energy_order = 5"):
         gaas.main(["ab-initio", "--cation", path, "--anion", path, "--divisions", "6", "--self-energy-order", "5"])
 

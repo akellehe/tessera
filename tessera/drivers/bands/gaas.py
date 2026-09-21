@@ -263,12 +263,14 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
     no spin-orbit data unless they say so."""
     from tessera.drivers.bands import BOHR, RYDBERG, screening
     from tessera.drivers.bands.abinitio import Crystal, MeshCrystal
+    from tessera.drivers.bands import diagrams
     from tessera.drivers.bands.crystal import richardson_amplification
     from tessera.drivers.bands.pseudopotential import Pseudopotential
     from tessera.drivers.bands.reference import GALLIUM_ARSENIDE
     from tessera.drivers.bands.settings import Approximations
     approximations = Approximations() if approximations is None else approximations
     approximations.require_implemented()
+    diagrams.MEMORY = approximations.vertex_memory * 2 ** 30
     cation, anion = Pseudopotential.from_upf(cation_upf), Pseudopotential.from_upf(anion_upf)
     lattice_constant = (GALLIUM_ARSENIDE.lattice_constant if a is None else a) / BOHR
     conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
