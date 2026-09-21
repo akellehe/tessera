@@ -239,3 +239,38 @@ class TestHartreeFockOnTwoSheets:
         filled = two["vectors"][:, :2]
         density = np.abs(filled[:n]) ** 2 + np.abs(filled[n:]) ** 2
         assert density.sum(axis=1) == pytest.approx(2.0 * run["vectors"][:, 0] ** 2, abs=1e-2 * density.max())
+
+
+class TestTheGalliumArsenideDriver:
+    def test_the_one_sheet_run_is_certified_from_below_the_local_potential(self, converged):
+        mesh, run = converged
+        below, difference = so.certify_one_sheet(mesh, run, 5)
+        assert below and difference < 2e-5
+
+    def test_the_levels_of_the_primitive_zone_centre_are_told_from_the_folded_ones(self):
+        ion = soft_ion()
+        crystal = abinitio.Crystal.zinc_blende(8.0, ion, ion, conventional=True)
+        mesh = abinitio.MeshCrystal(crystal, 6)
+        run = mesh.run(8, max_iterations=1)
+        flags = so.zone_centre_flags(mesh, run["vectors"])
+        # The lowest level is the bonding s combination of the zone centre, and the three that follow are folded
+        # in from the three X points.
+        assert flags[0] and not flags[1:4].any()
+        assert so.zone_centre_flags(mesh, so.doubled(run)["vectors"]).tolist() == np.repeat(flags, 2).tolist()
+
+    def test_a_loop_is_continued_from_its_checkpoint_and_keeps_its_first_diagonalization(self, tmp_path):
+        calls = []
+
+        def compute(start):
+            calls.append(start)
+            done = start is not None
+            return {"levels": np.arange(3.0) + len(calls), "converged": done, "history_levels": [np.full(3, float(len(calls)))]}
+
+        path = tmp_path / "loop.npz"
+        first = so._checkpointed(path, compute, lambda message: None)
+        assert not first["converged"] and calls == [None]
+        second = so._checkpointed(path, compute, lambda message: None)
+        assert second["converged"] and calls[1]["levels"].tolist() == [1.0, 2.0, 3.0]
+        assert np.asarray(second["first_levels"]).tolist() == [1.0, 1.0, 1.0]
+        third = so._checkpointed(path, compute, lambda message: None)                  # converged: read, not computed
+        assert len(calls) == 2 and third["levels"].tolist() == [2.0, 3.0, 4.0]
