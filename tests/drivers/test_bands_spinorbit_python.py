@@ -221,6 +221,7 @@ class TestHartreeFockOnTwoSheets:
         assert two["certified"] and len(two["history"]) == 1
         assert two["levels"][0::2] == pytest.approx(run["levels"], abs=2e-5)
         assert two["levels"][1::2] == pytest.approx(run["levels"], abs=2e-5)
+        assert two["energy"] == pytest.approx(run["energy"], abs=1e-4)
 
     def test_with_the_block_the_state_stays_time_reversal_invariant_and_an_s_level_does_not_move(self, converged):
         mesh, run = converged

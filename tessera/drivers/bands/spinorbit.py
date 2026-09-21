@@ -437,7 +437,8 @@ def run_hartree_fock_two_sheets(mesh, bands, start, spin_orbit=True, tolerance=1
     every computed level and compressed, K = -xi xi^dagger, in an outer loop,
     the Hartree potential converged at fixed exchange in an inner one. The
     first entry of "history_levels" is the diagonalization of the two-sheet
-    pencil in the mean field of `start`, before any feedback."""
+    pencil in the mean field of `start`, before any feedback. "energy" is the
+    electronic energy, as in the one-sheet loop."""
     from tessera.drivers.bands.abinitio import PulayMixer
     cell, crystal = mesh.cell, mesh.crystal
     n, filled_count, count = cell.size, crystal.electrons, 2 * bands
@@ -498,7 +499,15 @@ def run_hartree_fock_two_sheets(mesh, bands, start, spin_orbit=True, tolerance=1
             A, mesh.mass, P2, D2, count, float((mesh.ionic + hartree).min()) - 0.1)
         below = below and np.abs(certified_values - values).max() < 1e-7
         residual = max(residual, certified_residual)
+    # E = 1/2 sum over the filled sections of (h_aa + e_a), h the kinetic and ionic part with the spin-orbit block.
+    filled = orbitals[:, :filled_count]
+    ionic = (mesh.stiffness + cell.weighted_mass(mesh.ionic).dressed().real).tocsc()
+    overlap = filled.conj().T @ projectors
+    one_particle = sum(np.einsum("vi,vi->i", filled[s * n:(s + 1) * n].conj(), ionic @ filled[s * n:(s + 1) * n])
+                       for s in range(2)) + np.einsum("ip,pq,iq->i", overlap, D_projectors, overlap.conj())
+    energy = 0.5 * float(np.sum(one_particle.real + values[:filled_count]))
     return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
+            "energy": energy,
             "history": history, "history_levels": history_levels, "converged": history[-1] < tolerance,
             "spacing": cell.spacing, "time_reversal_defect": time_reversal_defect(values),
             "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
