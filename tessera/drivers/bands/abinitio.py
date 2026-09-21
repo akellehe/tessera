@@ -694,6 +694,154 @@ class MeshCrystal:
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing, "energy": energy,
                 "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
 
+    # -- more bands and the quasiparticle equation on a momentum set
+
+    def _shifted(self, vectors, shift):
+        """The cell-periodic parts of the same sections written at the momentum
+        kappa + shift, `shift` a reciprocal vector of the cell (integers): the
+        lattice plane wave of `shift` moves from the link phases to the vertex
+        values, exactly."""
+        phase = np.exp(-2j * np.pi * (self.cell.index @ (np.asarray(shift, dtype=float) / np.array(self.cell.divisions))))
+        return np.asarray(vectors) * phase[:, None]
+
+    def _set_exchange(self, momenta, constant, filled, k, targets):
+        """K_k applied to `targets` (sections of momenta[k]) with the filled
+        sections `filled[k']` of every momentum of the set; see
+        `run_hartree_fock_set`."""
+        cell, triple, count = self.cell, self.triple, len(momenta)
+        twist_k = coulomb.bloch_twist(cell, triple.tops, momenta[k])
+        W = np.zeros(targets.shape, dtype=complex)
+        for other in range(count):
+            transfer = tuple(a - b for a, b in zip(momenta[k], momenta[other]))
+            same = other == k
+            twist_other = coulomb.bloch_twist(cell, triple.tops, momenta[other])
+            pair_twist = coulomb.bloch_twist(cell, triple.tops, transfer)
+            for j in range(filled[other].shape[1]):
+                z = filled[other][:, j]
+                loads = triple.loads(z.conj(), targets, twist_k, twist_x=twist_other.conj())
+                potential = self.kernel.potential(loads, None if same else transfer, count * constant if same else None)
+                W -= triple.loads(z, potential, pair_twist, twist_x=twist_other) / count
+        return W
+
+    def extend_bands_set(self, run, bands, tolerance=1e-5, max_iterations=10, log=None):
+        """Converge `bands` Hartree-Fock levels at every momentum of a converged
+        `run_hartree_fock_set`, the filled sections (and with them the Hartree
+        potential and the exchange operator) fixed, as `extend_bands` does at
+        the zone centre."""
+        cell = self.cell
+        occupied = self.crystal.electrons // 2
+        momenta, count = run["momenta"], len(run["momenta"])
+        filled = [np.asarray(v)[:, :occupied] for v in run["vectors"]]
+        load = np.zeros(cell.size)
+        for k in range(count):
+            twist = coulomb.bloch_twist(cell, self.triple.tops, momenta[k])
+            for j in range(occupied):
+                z = filled[k][:, j]
+                load += 2.0 / count * self.triple.loads(z.conj(), z[:, None], twist, twist_x=twist.conj())[:, 0].real
+        local = self.ionic + self.kernel.potential(load).real
+        levels, vectors, converged = [], [], True
+        for k in range(count):
+            A, M = cell.pencil(momenta[k], cell.weighted_mass(local))
+            projectors = self._projectors_at(momenta[k], M)
+            orbitals, values, previous = np.asarray(run["vectors"][k]).astype(complex), np.asarray(run["levels"][k]), None
+            for iteration in range(max_iterations):
+                W = self._set_exchange(momenta, run["zero_momentum"], filled, k, orbitals)
+                P, D = self._compressed(W, orbitals, projectors)
+                values, orbitals, _, _ = solve_with_projectors(A, M, P, D, bands, float(values[0]) - 1.0)
+                orbitals = orbitals.astype(complex)
+                change = np.inf if previous is None or len(previous) != len(values) else np.abs(values - previous).max()
+                previous = values
+                if log:
+                    log(f"  momentum {momenta[k]}, bands {bands}, compression {iteration}: {change:.2e} Ry")
+                if change < tolerance:
+                    break
+            converged = converged and change < tolerance
+            levels.append(values)
+            vectors.append(orbitals)
+        return {"momenta": momenta, "levels": levels, "vectors": vectors, "occupied": occupied,
+                "zero_momentum": run["zero_momentum"], "converged": bool(converged)}
+
+    def quasiparticle_set(self, extended, states, bands=None):
+        """The quasiparticle equation on a momentum set, for the states
+        (momentum index, band) in `states`: the screened interaction of the
+        random-phase approximation at every momentum transfer of the set, its
+        pairs running from a filled section at k to an empty one at k + q for
+        every k, and the self-energy of a state summed over the transfers,
+
+            Sigma_c(n k; w) = sum_q sum_m sum_t |w^t_{nk, m k+q}|^2 / (w - e_m(k + q) -+ W_t(q)) .
+
+        Orbitals are normalized in the cell, so every Coulomb integral carries
+        1 / N_k, the normalization in the supercell the set is equivalent to. A
+        sum k + q that leaves the first zone is brought back by a reciprocal
+        vector, moved into the vertex values (`_shifted`), so that every pair
+        of one transfer carries exactly that transfer. The entry of the kernel
+        at zero transfer and G = 0 is left out here (the term `RandomPhase`
+        restores with `set_head` at the zone centre).
+
+        `bands` is the number of bands kept, one number or one per momentum.
+        Returns {state: (mean-field level, quasiparticle level, renormalization)}."""
+        cell, triple = self.cell, self.triple
+        occupied = int(extended["occupied"])
+        momenta, count = [np.asarray(kappa, dtype=float) for kappa in extended["momenta"]], len(extended["momenta"])
+        bands = len(extended["levels"][0]) if bands is None else bands
+        bands = [int(bands)] * count if np.isscalar(bands) else [int(b) for b in bands]      # per momentum
+
+        def partner(k, c):
+            """(index of momenta[k] + momenta[c] in the set, the reciprocal vector that brings it back)."""
+            total = momenta[k] + momenta[c]
+            for index, kappa in enumerate(momenta):
+                shift = total - kappa
+                if np.abs(shift - np.rint(shift)).max() < 1e-9:
+                    return index, np.rint(shift)
+            raise ValueError("the momentum set is not closed under addition")
+
+        twist = lambda kappa: coulomb.bloch_twist(cell, triple.tops, kappa)
+        classes = []
+        for c in range(count):
+            loads, gaps = [], []
+            for k in range(count):
+                k2, shift = partner(k, c)
+                sections = self._shifted(np.asarray(extended["vectors"][k2])[:, occupied:bands[k2]], shift)
+                for i in range(occupied):
+                    z = np.asarray(extended["vectors"][k])[:, i]
+                    loads.append(triple.loads(z.conj(), sections, twist(momenta[k] + momenta[c]),
+                                              twist_x=twist(momenta[k]).conj()))
+                    gaps.append(np.asarray(extended["levels"][k2])[occupied:bands[k2]] - extended["levels"][k][i])
+            loads, gaps = np.hstack(loads), np.concatenate(gaps)
+            transfer = None if not np.any(momenta[c]) else tuple(momenta[c])
+            potentials = self.kernel.potential(loads, transfer)
+            coupling = loads.conj().T @ potentials / count
+            root = np.sqrt(gaps)
+            casida = np.diag(gaps ** 2) + 4.0 * root[:, None] * coupling * root[None, :]
+            squared, Z = np.linalg.eigh(0.5 * (casida + casida.conj().T))
+            omega = np.sqrt(squared)
+            classes.append((omega, (root[:, None] * Z) / np.sqrt(omega)[None, :], potentials))
+        out = {}
+        for k, n in states:
+            z = np.asarray(extended["vectors"][k])[:, n]
+            level = float(extended["levels"][k][n])
+            terms = []
+            for c, (omega, modes, potentials) in enumerate(classes):
+                k2, shift = partner(k, c)
+                sections = self._shifted(np.asarray(extended["vectors"][k2])[:, :bands[k2]], shift)
+                state_loads = triple.loads(z.conj(), sections, twist(momenta[k] + momenta[c]),
+                                           twist_x=twist(momenta[k]).conj())
+                weights = 2.0 * np.abs((state_loads.conj().T @ potentials / count) @ modes) ** 2      # bands x modes
+                levels = np.asarray(extended["levels"][k2])[:bands[k2]]
+                poles = np.where((np.arange(bands[k2]) < occupied)[:, None], levels[:, None] - omega[None, :],
+                                 levels[:, None] + omega[None, :])
+                terms.append((weights, poles))
+            energy = level
+            for _ in range(60):
+                value = sum(np.sum(w / (energy - p)) for w, p in terms)
+                slope = -sum(np.sum(w / (energy - p) ** 2) for w, p in terms)
+                step = (level + value - energy) / (1.0 - slope)
+                energy += step
+                if abs(step) < 1e-11:
+                    break
+            out[(k, n)] = (level, float(energy), float(1.0 / (1.0 - slope)))
+        return out
+
     def prolonged(self, coarse, run):
         """The start of `run_hartree_fock` on this mesh from a converged run on the
         coarser mesh `coarse` (a `MeshCrystal` of the same crystal): the orbitals
