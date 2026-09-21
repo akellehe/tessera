@@ -63,11 +63,37 @@ class Pseudopotential:
 
     # -- radial functions at arbitrary radii
 
+    def _spline(self, name, values):
+        """The cubic spline through a tabulated radial function. The energy of a
+        crystal is then twice differentiable in the position of an ion, which a
+        piecewise-linear interpolant does not give: its slope jumps at every
+        radius of the table, and the force on an ion jumps with it."""
+        from scipy.interpolate import CubicSpline
+        cache = self.__dict__.setdefault("_splines", {})
+        if name not in cache:
+            cache[name] = CubicSpline(self.r, values)
+        return cache[name]
+
+    def _tabulated(self, name, values, radius, derivative=0):
+        """The spline inside the table; below its first radius the first value
+        (slope zero), beyond its last radius zero."""
+        radius = np.asarray(radius, dtype=float)
+        inside = self._spline(name, values)(np.clip(radius, self.r[0], self.r[-1]), derivative)
+        if derivative:
+            return np.where((radius < self.r[0]) | (radius > self.r[-1]), 0.0, inside)
+        return np.where(radius > self.r[-1], 0.0, inside)
+
     def local_at(self, radius):
         """V_loc at `radius`, continued by its Coulomb tail beyond the mesh."""
         radius = np.asarray(radius, dtype=float)
-        inside = np.interp(radius, self.r, self.local)
+        inside = self._tabulated("local", self.local, radius)
         return np.where(radius > self.r[-1], -2.0 * self.valence / np.maximum(radius, 1e-30), inside)
+
+    def local_slope(self, radius):
+        """d/dr of `local_at`."""
+        radius = np.asarray(radius, dtype=float)
+        inside = self._tabulated("local", self.local, radius, 1)
+        return np.where(radius > self.r[-1], 2.0 * self.valence / np.maximum(radius, 1e-30) ** 2, inside)
 
     def short_range_at(self, radius, width):
         """V_loc + 2 Z erf(r / sqrt(2) width) / r: what is left of the local
@@ -80,18 +106,41 @@ class Pseudopotential:
                           2.0 * self.valence * np.sqrt(2.0 / np.pi) / width)
         return self.local_at(radius) + smooth
 
+    def short_range_slope(self, radius, width):
+        """d/dr of `short_range_at`. The derivative of erf(a r) / r is taken by
+        its series below a r = 1e-2, where its two terms cancel."""
+        from scipy.special import erf
+        radius = np.asarray(radius, dtype=float)
+        a = 1.0 / (np.sqrt(2.0) * width)
+        safe = np.maximum(radius, 1e-12)
+        x = a * safe
+        series = (2.0 * a ** 2 / np.sqrt(np.pi)) * x * (-2.0 / 3.0 + x ** 2 * (2.0 / 5.0 - x ** 2 * (
+            1.0 / 7.0 - x ** 2 * (1.0 / 27.0 - x ** 2 / 132.0))))
+        closed = (2.0 * a / np.sqrt(np.pi)) * np.exp(-x ** 2) / safe - erf(x) / safe ** 2
+        return self.local_slope(radius) + 2.0 * self.valence * np.where(x < 1e-2, series, closed)
+
+    def projector_origin(self, index):
+        """The limit of beta_index(r) / r^l at the origin, from the first mesh points."""
+        l, r_beta = self.projectors[index]
+        return np.polyfit(self.r[1:6], r_beta[1:6] / self.r[1:6] ** (l + 1), 2)[-1]
+
     def projector_at(self, index, radius):
-        """beta_index(r) (the file stores r beta)."""
+        """beta_index(r) (the file stores r beta). Inside the first interval of
+        the table it is its limiting form there, `projector_origin` times r^l."""
         radius = np.asarray(radius, dtype=float)
         l, r_beta = self.projectors[index]
-        value = np.interp(radius, self.r, r_beta, right=0.0) / np.maximum(radius, 1e-12)
-        if l == 0:
-            # beta is finite at the origin; take it from the first mesh points.
-            origin = np.polyfit(self.r[1:6], r_beta[1:6] / self.r[1:6], 2)[-1]
-            value = np.where(radius < self.r[1], origin, value)
-        else:
-            value = np.where(radius < 1e-10, 0.0, value)
-        return value
+        value = self._tabulated(f"projector {index}", r_beta, radius) / np.maximum(radius, 1e-12)
+        return np.where(radius < self.r[1], self.projector_origin(index) * radius ** l, value)
+
+    def projector_slope(self, index, radius):
+        """d/dr of `projector_at`."""
+        radius = np.asarray(radius, dtype=float)
+        l, r_beta = self.projectors[index]
+        safe = np.maximum(radius, 1e-12)
+        slope = self._tabulated(f"projector {index}", r_beta, radius, 1) / safe \
+            - self._tabulated(f"projector {index}", r_beta, radius) / safe ** 2
+        origin = l * self.projector_origin(index) * safe ** (l - 1) if l else np.zeros_like(radius)
+        return np.where(radius < self.r[1], origin, slope)
 
     def density_at(self, radius):
         """The atomic valence density rho(r)."""

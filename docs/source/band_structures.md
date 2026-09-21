@@ -113,6 +113,7 @@ with a known answer.
 | `coulomb` | the finite-element Coulomb kernel, Hartree–Fock on the covariance | the periodic Coulomb potential; exact diagonalization; the Wick engine; the electron-gas exchange energy |
 | `screening` | gauge response, polarizability, random-phase approximation, one-shot quasiparticle correction | the Ward identity; the exact discrete Lindhard sum; two routes to the correlation energy; the second-order self-energy |
 | `response` | the derivative of a band energy with respect to the squared edge lengths | Euler's identity; finite differences |
+| `forces` | the total energy of a crystal on the mesh, the forces on its ions, the optical phonon at the zone centre | the Ewald sum; central differences of the energy, at fixed and at converged orbitals; the second difference of the energy |
 | `gaas` | gallium arsenide with the empirical pseudopotential | plane waves with the same form factors |
 
 ### The fiber-edge route
@@ -321,3 +322,77 @@ by piecewise-linear elements at any mesh a workstation holds (the 3d level is
 22 eV too high at 32 divisions of a 5.64 angstrom cell and not in the asymptotic
 regime); three- and five-electron pseudopotentials for gallium and arsenic are
 (their 4s and 4p levels extrapolate to the radial values within 0.1 eV).
+
+### Forces and the optical phonon
+
+`forces.LatticeEnergy` is the Born-Oppenheimer energy of a `MeshCrystal`: the
+Hartree-Fock functional of the filled orbitals plus the energy of the ions
+among themselves, split as the ionic potential is. The Gaussian charges of the
+ions interact through the mesh Coulomb kernel, so that electrons and Gaussians
+meet in one quadratic form of the neutral charge of the cell, and what a point
+charge has beyond its Gaussian (the complementary error function of the
+separation, and the energy of a Gaussian with itself) is analytic. The kernel
+acts on the complement of the constants, and the uniform term of the Ewald sum
+that it leaves out is the uniform shift of the levels that the mesh leaves out
+as well, so in the continuum limit the sum is the total energy of the
+pseudopotential method; the test suite holds the ionic part to an independent
+Ewald sum, to which it converges at second order in the spacing.
+
+The force on an ion is the derivative of that energy. The Hartree-Fock
+functional is stationary in the orbitals, and neither the mass matrix nor the
+kernel depends on the ions, so the derivative is the explicit one (Hellmann and
+Feynman) of the three vertex functions an ion enters through: the short-range
+local potential, the normalized Gaussian charge (its normalization on the mesh
+included) and the projector functions, a radial function times a real solid
+harmonic. The tabulated radial functions are carried by cubic splines
+(`Pseudopotential.local_at`, `projector_at` and their slopes): with a
+piecewise-linear interpolant the force jumps whenever a vertex crosses a radius
+of the table, by 1e-3 Ry/bohr on the test crystals, which is the size of the
+restoring force of a phonon. The test suite holds the forces to central
+differences of the energy at fixed orbitals (5e-7 Ry/bohr) and with
+Hartree-Fock converged again at the displaced ions.
+
+The ions move relative to a fixed mesh, so the energy depends on where an ion
+sits within a mesh cell, and the forces of a crystal at rest do not sum to zero
+exactly. The plan's route, in which the ion cores are attached to vertices and
+the mesh deforms with them, makes `WhitneyMass.derivativeContraction` and
+`BandDerivative` the force and needs a Coulomb solve on a mesh whose vertices
+are not equivalent (`CoulombKernel`) together with its zero-momentum constant.
+
+`forces.optical_phonon` moves the two sublattices of a crystal against each
+other with the centre of mass at rest, converges Hartree-Fock again at five or
+more displacements, interpolates the restoring force by the polynomial through
+all of them (the anharmonic terms included) and reads the force constant off
+its slope; three directions give the force-constant matrix, whose eigenvalues
+are the three frequencies that a mesh of lower symmetry than the crystal
+splits. A periodic cell carries no macroscopic field, so the frequency is the
+transverse one. The longitudinal frequency adds
+$4 \pi e^2 Z^{*2} / (\epsilon_\infty \mu \Omega)$ to its square
+(`longitudinal_force_constant`), with $\Omega$ the volume and $\mu$ the reduced
+mass of a pair of ions, $\epsilon_\infty$ the electronic dielectric constant of
+the random-phase approximation at vanishing momentum (`RandomPhase.set_head`),
+and $Z^*$ the Born effective charge of the mode: the slope of the dipole of a
+pair in the displacement. The electronic part of the dipole is the phase of the
+many-body expectation of $e^{-i b \cdot X}$ on the filled orbitals, $b$ a
+reciprocal vector of the cell, the polarization of a cell sampled at its zone
+centre (`LatticeEnergy.polarization_phases`); the matrix it is the determinant
+of is the component of the pair densities at $b$. On the mesh the plane wave is
+interpolated between the vertices, and the effective charge of a rigid
+translation of all ions, which vanishes in the continuum, measures what that
+costs (-0.26 of 4 on a test crystal at a spacing of 0.9 bohr).
+
+```
+python -m tessera.drivers.bands.gaas phonon --cation Ga.UPF --anion As.UPF \
+    --divisions 8 12 16 20 24 32 --out phonon.json
+```
+
+runs this for gallium arsenide on every mesh and prints the frequencies next to
+the measured 8.02 THz (transverse) and 8.55 THz (longitudinal). With
+`--direction` the displacement is restricted to the given directions;
+`--displacements` (five or more) and `--amplitude` set the samples;
+`--screening-bands` sets the bands of the dielectric constant (0 leaves the
+longitudinal frequency out); `--skip-translation` leaves out the force constant
+and the effective charge of the rigid translation of all ions, which vanish in
+the continuum and measure the dependence of the energy on the position of the
+ions within the mesh at the order the optical mode carries it. The
+approximation flags of the `ab-initio` subcommand apply.
