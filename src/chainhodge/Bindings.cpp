@@ -516,6 +516,25 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
            "max_i |A z_i - lambda_i M z_i| / |(A - sigma M) z_i| and its conditioning the 1-norm "
            "condition estimate of A - sigma M. Zero block_size / max_basis_size select the "
            "automatic values.")
+      .def_static("lowestWithLowRank",
+           [](const SparseMatrix &A, const SparseMatrix &M, const Eigen::MatrixXcd &left,
+              const Eigen::MatrixXcd &core, int count, double sigma, double tolerance, int blockSize,
+              int maxBasisSize, int maxIterations, std::uint64_t seed) {
+             SparsePencilOptions options;
+             options.tolerance = tolerance;
+             options.blockSize = blockSize;
+             options.maxBasisSize = maxBasisSize;
+             options.maxIterations = maxIterations;
+             options.seed = seed;
+             return SparsePencilSolver::lowest(A, M, LowRankTerm{left, core}, count, sigma, options);
+           },
+           py::arg("A"), py::arg("M"), py::arg("left"), py::arg("core"), py::arg("count"), py::arg("sigma"),
+           py::arg("tolerance") = SparsePencilOptions{}.tolerance, py::arg("block_size") = 0,
+           py::arg("max_basis_size") = 0, py::arg("max_iterations") = SparsePencilOptions{}.maxIterations,
+           py::arg("seed") = SparsePencilOptions{}.seed,
+           "lowest for the pencil (A + P D P^dagger, M) with the low-rank term in factored form "
+           "(left = P, n x r; core = D, r x r Hermitian): Woodbury inside the shift-invert solve, and "
+           "the shift certified below the spectrum by inertia.")
       .def_static("effectiveBetti",
            [](const SparseMatrix &A, const SparseMatrix &M, double epsilon, double sigma,
               double tolerance, int initialCount, std::uint64_t seed) {

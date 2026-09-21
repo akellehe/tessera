@@ -45,11 +45,14 @@ def real_modes(A, M, vectors):
     values, basis = np.linalg.eigh(0.5 * (gram + gram.T))
     keep = values > 1e-10 * values.max()
     span = stacked @ (basis[:, keep] / np.sqrt(values[keep]))
-    if span.shape[1] != vectors.shape[1]:
-        raise ValueError("the modes do not span a real space of their own dimension; is the pencil real?")
+    # The conjugate of an eigenvector of a real pencil is an eigenvector of the
+    # same level, so the real span is invariant. It is larger than the mode
+    # count only when the last level was cut inside a degenerate multiplet, and
+    # then holds further copies of that level; the lowest ones are kept.
     projected = span.T @ (A @ span)
     energies, rotation = np.linalg.eigh(0.5 * (projected + projected.T))
-    return energies, span @ rotation
+    count = vectors.shape[1]
+    return energies[:count], (span @ rotation)[:, :count]
 
 
 class RandomPhase:

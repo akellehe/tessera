@@ -175,3 +175,61 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------- ab initio
+
+def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, bands=24, log=print):
+    """Gallium arsenide in the local density approximation with norm-conserving
+    pseudopotentials read from `cation_upf` and `anion_upf`, self-consistently
+    on three meshes of the conventional cell at its zone centre, extrapolated,
+    against plane waves with the same pseudopotentials at the equivalent
+    momenta (the primitive zone centre and the three X points).
+
+    Levels are returned in electron volts from the top of the valence band, for
+    the states of the primitive zone centre (the valence singlet, the valence
+    triplet, the conduction singlet) and of the X points (clusters of three
+    times the primitive multiplicities 1, 1, 2, 1, 1)."""
+    from tessera.drivers.bands import BOHR, RYDBERG
+    from tessera.drivers.bands.abinitio import Crystal, MeshCrystal, PlaneWaveCrystal
+    from tessera.drivers.bands.pseudopotential import Pseudopotential
+    cation, anion = Pseudopotential.from_upf(cation_upf), Pseudopotential.from_upf(anion_upf)
+    lattice_constant = a / BOHR
+
+    primitive = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=False)
+    unit = 2.0 * np.pi / lattice_constant
+    momenta = [np.zeros(3)] + [unit * np.eye(3)[axis] for axis in range(3)]
+    reference = PlaneWaveCrystal(primitive, momenta, [1, 1, 1, 1], cutoff).run(8)
+    centre_reference = reference["levels"][0] * RYDBERG
+    boundary_reference = reference["levels"][1] * RYDBERG
+    top = centre_reference[3]
+    log(f"plane waves: {reference['planes'][0]} waves, converged={reference['converged']}, "
+        f"gap {centre_reference[4] - top:.4f} eV")
+
+    conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
+    spacings, centre, boundary, certified, runs = [], [], [], True, []
+    for n in divisions:
+        started = time.time()
+        mesh = MeshCrystal(conventional, n)
+        run = mesh.run(bands)
+        levels = run["levels"] * RYDBERG
+        half = n // 2
+        read = type("Read", (), {"kappa": (0.0, 0.0, 0.0), "vectors": run["vectors"].astype(complex)})
+        characters = translation_characters(mesh.cell, read, [(0, half, half), (half, 0, half), (half, half, 0)])
+        from_centre = characters.real.sum(axis=0) > 1.0
+        centre.append(_cluster_means(levels[from_centre], (1, 3, 1)))
+        boundary.append(_cluster_means(levels[~from_centre], (3, 3, 6, 3, 3)))
+        spacings.append(mesh.cell.spacing)
+        certified = certified and run["certified"]
+        runs.append({"divisions": n, "levels": levels, "from_centre": from_centre, "iterations": len(run["history"]),
+                     "residual": run["residual"], "certified": run["certified"], "seconds": time.time() - started})
+        log(f"N={n:3d} gap={centre[-1][2] - centre[-1][1]:.4f} eV iterations={len(run['history'])} "
+            f"residual={run['residual']:.1e} certified={run['certified']} ({time.time() - started:.0f} s)")
+    extrapolated_centre = richardson(spacings, centre)[0]
+    extrapolated_boundary = richardson(spacings, boundary)[0]
+    mesh_top = extrapolated_centre[1]
+    return {"certified": certified, "runs": runs,
+            "centre": extrapolated_centre - mesh_top, "centre_reference": centre_reference[[0, 3, 4]] - top,
+            "boundary": extrapolated_boundary - mesh_top,
+            "boundary_reference": boundary_reference[[0, 1, 2, 4, 5]] - top,
+            "gap": extrapolated_centre[2] - mesh_top, "reference_gap": centre_reference[4] - top}
