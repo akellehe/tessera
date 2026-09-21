@@ -380,12 +380,14 @@ class SkeletonSelfEnergy:
             return ("" if leaves is None else _LETTERS[leaves]) + ("" if enters is None else _LETTERS[enters]), \
                 (None if leaves is None else bit[edges[leaves][1]], None if enters is None else bit[edges[enters][0]])
 
-        happenings = [None] * count                              # one coupling a time: a vertex, or both ends of an instantaneous line
+        # One coupling a time: a vertex, or both ends of an instantaneous line.
+        happenings = [None] * count
         for c, (u, v) in enumerate(chords):
             if kinds[c] == "dynamic":
                 for vertex in (u, v):
                     letters, far = ends(vertex)
-                    happenings[time[vertex]] = ("g", fixed.get(c), ("" if c in fixed else _LETTERS[len(edges) + c]) + letters, far)
+                    letters = ("" if c in fixed else _LETTERS[len(edges) + c]) + letters
+                    happenings[time[vertex]] = ("g", fixed.get(c), letters, far)
             else:
                 (first, far_first), (second, far_second) = ends(u), ends(v)
                 happenings[time[u]] = ("U", None, first + second, far_first + far_second)
@@ -424,7 +426,8 @@ class SkeletonSelfEnergy:
                         energy = energy + energies.reshape(shape)
                     energy = energy + sum(energies for letter, energies in cut if not letter)
                     spanned = bool(mask & bit[diagram.entry]) - bool(mask & bit[diagram.exit])
-                    total = total / (spanned * frequency - energy)               # the external line runs forward, backward or not at all
+                    # The external line runs forward through this interval, backward, or not at all.
+                    total = total / (spanned * frequency - energy)
                 current[mask] = total
             tensors = current
         return (-2.0) ** diagram.loops * tensors[full]

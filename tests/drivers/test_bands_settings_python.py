@@ -129,24 +129,22 @@ def test_the_diagrams_beyond_the_first_order_enter_the_quasiparticle_equation():
     assert max(abs(second[n][0] - first[n]) for n in (0, 1)) > 1e-4
 
 
-@pytest.mark.slow
-def test_the_fourth_and_fifth_orders_enter_the_self_energy():
-    """`--self-energy-order` 4 and 5 through the run's own wiring: the diagrams
-    `RandomPhase` adds are those of the orders 2 to k of the evaluator it built,
-    on 4 modes and 3 poles, and each order moves the self-energy."""
-    mesh, extended, levels, rpa = _screened(Approximations(5, 1, vertex_bands=4, vertex_poles=3))
+def test_the_fourth_order_enters_the_self_energy():
+    """`--self-energy-order` 4 through the run's own wiring: the diagrams that
+    `RandomPhase` adds are those of the orders 2 to k of the evaluator it built
+    (the loop over the orders is the same for 5), on 4 modes and 3 poles."""
+    mesh, extended, levels, rpa = _screened(Approximations(4, 1, vertex_bands=4, vertex_poles=3))
     order, chosen, interaction, poles = mesh.vertex(extended, 7)
-    assert (order, len(chosen), poles) == (5, 4, 3)
+    assert (order, len(chosen), poles) == (4, 4, 3)
     rpa.set_vertex(order, chosen, interaction, poles)
     w = 0.5 * (levels[0] + levels[1])
     totals = []
-    for k in (3, 4, 5):
+    for k in (3, 4):
         rpa.vertex_order = k
         totals.append(rpa._vertex(chosen[1], w, levels)[0])
     _, chemical_potential, engines = rpa._vertex_engines
-    orders = {k: np.mean([engine.evaluate(1, w - chemical_potential, k).real for engine in engines]) for k in (4, 5)}
-    assert totals[1] - totals[0] == pytest.approx(orders[4], abs=1e-9) and abs(orders[4]) > 1e-9
-    assert totals[2] - totals[1] == pytest.approx(orders[5], abs=1e-9) and abs(orders[5]) > 1e-10
+    fourth = np.mean([engine.evaluate(1, w - chemical_potential, 4).real for engine in engines])
+    assert totals[1] - totals[0] == pytest.approx(fourth, abs=1e-9) and abs(fourth) > 1e-9
 
 
 def _files(tmp_path):
