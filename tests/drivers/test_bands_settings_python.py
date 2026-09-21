@@ -24,11 +24,26 @@ def test_ranges_and_defaults():
             Approximations(**bad)
 
 
-def test_an_order_that_is_not_implemented_is_refused_by_name():
-    assert IMPLEMENTED == {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
+def test_an_order_that_is_not_implemented_is_refused_by_name(monkeypatch):
+    """Every order of both expansions exists (#1168 brought the fourth and the
+    fifth of the self-energy); the refusal stays for whatever is added next."""
+    assert IMPLEMENTED == {"self_energy_order": (1, 2, 3, 4, 5), "zero_momentum_order": (1, 2, 3, 4, 5)}
+    for order in (1, 2, 3, 4, 5):
+        Approximations(self_energy_order=order).require_implemented()
+    monkeypatch.setitem(IMPLEMENTED, "self_energy_order", (1, 2, 3))
     Approximations().require_implemented()
     with pytest.raises(NotImplementedError, match="self_energy_order = 4"):
         Approximations(self_energy_order=4).require_implemented()
+
+
+def test_the_memory_of_the_diagrams_is_a_flag():
+    parser = argparse.ArgumentParser()
+    Approximations.add_arguments(parser)
+    assert Approximations.from_arguments(parser.parse_args([])).vertex_memory == 8.0
+    parsed = Approximations.from_arguments(parser.parse_args(["--self-energy-order", "5", "--vertex-memory", "2.5"]))
+    assert (parsed.self_energy_order, parsed.vertex_memory) == (5, 2.5) and parsed.record()["vertex_memory"] == 2.5
+    with pytest.raises(ValueError):
+        Approximations(vertex_memory=0.0)
 
 
 def test_the_momentum_nodes_are_a_midpoint_grid_counted_once_per_time_reversed_pair():
@@ -121,8 +136,9 @@ def _files(tmp_path):
     return str(path)
 
 
-def test_the_command_line_refuses_before_anything_runs(tmp_path):
+def test_the_command_line_refuses_before_anything_runs(tmp_path, monkeypatch):
     path = _files(tmp_path)
+    monkeypatch.setitem(IMPLEMENTED, "self_energy_order", (1, 2, 3))
     with pytest.raises(NotImplementedError, match="self_energy_order = 5"):
         gaas.main(["ab-initio", "--cation", path, "--anion", path, "--divisions", "6", "--self-energy-order", "5"])
 
