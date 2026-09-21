@@ -243,6 +243,25 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
             "gap": extrapolated_centre[2] - mesh_top, "reference_gap": centre_reference[4] - top}
 
 
+def _fed_back(row, name, step, gap, log, label):
+    """Run one step of eigenvalue self-consistency, `step()` -> (levels, history),
+    into `row[name]`. When the levels fed back close a gap, or make the mean
+    field unstable in the random-phase approximation, the method has no
+    solution from this start: that is recorded as the result of the step
+    (`row[name]` None and the reason in `row[name + "_failure"]`), and the
+    other results of the run stand."""
+    try:
+        levels, history = step()
+    except ValueError as error:
+        if "not positive" not in str(error) and "unstable" not in str(error):
+            raise
+        row[name], row[name + "_failure"] = None, str(error)
+        log(f"{label}: {name} has no solution from this start: {error}")
+        return
+    row[name], row[name + "_residual"] = gap(levels), float(history[-1])
+    log(f"{label}: {name} {row[name]:.3f} eV")
+
+
 def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
     """One mesh of `ab_initio_gap` with the covariance sampled on a momentum
     set: Hartree-Fock on the set, more bands at every momentum, and the
@@ -284,9 +303,10 @@ def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
     row["g0w0"] = gap(shifted)
     log(f"N={n}: g0w0 {row['g0w0']:.3f} eV ({time.time() - started:.0f} s)")
     for name, update in (("gw0", False), ("evgw", True)):
-        levels, history = screened.self_consistent(update_screening=update, tolerance=1e-5, log=log)
-        row[name], row[name + "_residual"] = gap(levels[0]), float(history[-1])
-        log(f"N={n}: {name} {row[name]:.3f} eV ({time.time() - started:.0f} s)")
+        def step(update=update):
+            levels, history = screened.self_consistent(update_screening=update, tolerance=1e-5, log=log)
+            return levels[0], history
+        _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
         screened.solve()                                         # back to the screening of the mean field
     row["seconds"] = time.time() - started
     return row
@@ -381,20 +401,24 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
                                         ("evgw_body", True, False), ("evgw", True, True)):
             if name not in names:
                 continue
-            produced, history, _ = screening.self_consistent_quasiparticles(
-                levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
-                update_screening=update, tolerance=1e-5,
-                momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
-                vertex=vertex if with_head else None)
-            row[name], row[name + "_residual"] = gap(produced), float(history[-1])
-            log(f"N={n}: {name} {row[name]:.3f} eV ({time.time() - started:.0f} s)")
+            def step(update=update, with_head=with_head):
+                produced, history, _ = screening.self_consistent_quasiparticles(
+                    levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
+                    update_screening=update, tolerance=1e-5,
+                    momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
+                    vertex=vertex if with_head else None)
+                return produced, history
+            _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
         row["seconds"] = time.time() - started
         runs.append(row)
         spacings.append(mesh.cell.spacing)
     result = {"approximations": approximations.record(), "runs": runs, "measured_gap": GALLIUM_ARSENIDE.gap_gamma,
               "certified": all(row["certified"] for row in runs)}
     if len(runs) > 1:
-        result["extrapolated"] = {name: float(richardson(spacings, [row[name] for row in runs])[0]) for name in names}
+        # A method with no solution on some mesh is not extrapolated; its rows say why.
+        result["extrapolated"] = {name: float(richardson(spacings, [row[name] for row in runs])[0]) for name in names
+                                  if all(row.get(name) is not None for row in runs)}
+        result["not_extrapolated"] = sorted(set(names) - set(result["extrapolated"]))
         result["amplification"] = richardson_amplification(spacings)
     return result
 

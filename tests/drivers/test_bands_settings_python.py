@@ -166,4 +166,24 @@ def test_the_run_end_to_end_on_a_momentum_set(tmp_path):
     row = result["runs"][0]
     assert row["solved_momenta"] == 4 and row["dielectric_constant"] > 1.0
     assert row["g0w0"] < row["hartree_fock"]                                     # screening closes a Hartree-Fock gap
-    assert all(np.isfinite(row[name]) for name in ("g0w0", "gw0", "evgw"))
+    assert np.isfinite(row["gw0"])
+    # On this fixture evGW closes a gap between momenta of the set (its levels fed back into the screening pull an
+    # empty level below a filled one at the transfer (0, 0, 1/2)); the run records that and keeps its other results.
+    assert (row["evgw"] is not None and np.isfinite(row["evgw"])) or "not positive" in row["evgw_failure"]
+
+
+def test_a_method_without_a_solution_is_recorded_and_the_run_goes_on():
+    rows, lines = {}, []
+
+    def closes():
+        raise ValueError("a level difference at the transfer (0, 0, 0.5) is not positive: the levels fed back have "
+                         "closed a gap there")
+    gaas._fed_back(rows, "evgw", closes, lambda levels: 1.0, lines.append, "N=6")
+    assert rows["evgw"] is None and "not positive" in rows["evgw_failure"] and "no solution" in lines[0]
+    gaas._fed_back(rows, "gw0", lambda: (np.zeros(3), [1e-6]), lambda levels: 2.5, lines.append, "N=6")
+    assert rows["gw0"] == 2.5 and rows["gw0_residual"] == 1e-6
+
+    def broken():
+        raise ValueError("some other error")
+    with pytest.raises(ValueError, match="some other error"):
+        gaas._fed_back(rows, "g0w0", broken, lambda levels: 0.0, lines.append, "N=6")

@@ -517,6 +517,29 @@ def test_the_diagrams_beyond_the_first_order_on_a_momentum_set_are_those_of_the_
         assert abs(expected - first[n]) > 1e-4                          # the diagram being compared is not small
 
 
+@pytest.mark.slow
+def test_eigenvalue_self_consistency_on_a_momentum_set_is_that_of_the_supercell():
+    """The levels fed back into the propagator (GW0), and into the propagator
+    and the screening (evGW), with the zero-transfer entry: on the set {0, 1/2}
+    they are those of the doubled cell, every kept state."""
+    from tessera.drivers.bands import screening
+    from tessera.drivers.bands.momentum_set import SetScreening
+    supercell, reference, mesh, extended, cut, kept = _doubled_cell_and_its_momentum_set()
+    levels, occupied, coupling, integrals = supercell.coulomb_integrals(reference, cut + 1)
+    heads = supercell.vanishing_momentum_pairs(reference, coupling, cut + 1)
+    screened = SetScreening(mesh, extended, kept)
+    for update in (False, True):
+        expected, _, _ = screening.self_consistent_quasiparticles(
+            levels, occupied, coupling, integrals, head=(supercell.zero_momentum, heads), update_screening=update,
+            tolerance=1e-7)
+        produced, history = screened.self_consistent(update_screening=update, tolerance=1e-7)
+        screened.solve()
+        assert history[-1] < 1e-7
+        union = np.sort(np.concatenate(produced))
+        assert np.abs(union - np.sort(expected)).max() < 1e-5
+        assert np.abs(expected - levels).max() > 0.1                  # the corrections compared are not small
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat
