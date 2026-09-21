@@ -85,6 +85,62 @@ The reference is a plane-wave diagonalization with the same form factors
 (`ZincBlendeEPM.plane_wave_bands`), so the comparison tests the machinery and
 involves no external number.
 
+## A mesh graded toward the ions
+
+A level bound within a fraction of a bohr of an ion, such as the gallium $3d$
+shell, is beyond a uniform mesh: the error is second order in a spacing that the
+whole cell has to pay for. The geometry of the framework is one squared length
+per edge, so a graded mesh is the same objects with other lengths and, where
+vertices are added, another chain complex. `graded.GradedCell` is a
+`CrystalCell` built in two ways that combine:
+
+- `IonRefinement` bisects the Kuhn simplices within given radii of the ions
+  (`KuhnBisection`: the conforming bisection of Maubach and Traxler, in which
+  every simplex around an edge is brought to the state that cuts that edge
+  before it is cut). Three bisections halve every edge and return Kuhn
+  simplices of half the size, so shapes do not degenerate and no vertex hangs
+  inside a neighbour's face. The vertices of the grid keep their numbers.
+- `IonGrading` moves the vertices by a smooth periodic map that contracts a
+  ball about every ion. It adds no vertices, so it can only borrow them from
+  the shell around the core; it is refused when it folds the mesh
+  (`orientation_margin`) or would move an ion.
+
+```python
+from tessera.drivers.bands.graded import GradedCell, IonRefinement
+
+cell = GradedCell(lattice, 12, refinement=IonRefinement(ions, [(3.2, 1), (1.8, 2), (1.0, 3)]))
+cell.certify(kappa).holds()          # the same premises, measured on this mesh
+```
+
+A crystal momentum is the flat connection $U_{vw} = e^{i k \cdot dx_{vw}}$ on
+the true displacement of every edge, which is the connection on the grid steps
+in another gauge; the constant section is then the plane wave at the vertices
+wherever they are. On a well of width 0.35 in a cell of side 6 the uniform mesh
+of 4,096 vertices misses the lowest level by a third of its binding energy, the
+bisected mesh of 2,322 vertices by six per cent, and one more halving about the
+ion divides every error by four.
+
+What the uniform grid has in closed form through its translation invariance has
+a counterpart without it. `graded.GradedCoulombKernel` applies the inverse of
+the dressed stiffness matrix through a sparse factorization and names the
+entries of the kernel by what they are: the $G = 0$ component of a load is its
+total charge, the $G = 0$ entry of the kernel is the energy of the uniform
+normalized charge of that momentum, and the auxiliary function of the
+zero-momentum constant is the energy of a unit point load, averaged over every
+momentum with the singular part taken analytically as on the grid. On the Kuhn
+grid every method returns the value of `GridCoulombKernel`, the zero-momentum
+constant included (to $10^{-12}$ Ry in the test suite). Off the grid the
+constant depends on the vertex that carries the point load at second order in
+the spacing, and costs one factorization per momentum of its quadrature.
+`abinitio.MeshCrystal(crystal, divisions, grading=..., refinement=...)` runs the
+Hartree and Hartree-Fock mean fields on such a mesh, at the zone centre and at a
+finite momentum, and the quasiparticle step at the zone centre with its
+closed-form head. The prolongation between meshes, the closed-form kinetic
+modes of the kernel (`kinetic_modes`) and the square root of the mass matrix in
+`band_fibers` are still those of the uniform grid. A bisected mesh is
+assembled from its chain complex and squared lengths; it is not yet a `Topology`
+of the library, so it has no `Spacetime`.
+
 ## What the mesh does to symmetry
 
 Every cube of the grid is cut along the same body diagonal. The mesh keeps the
