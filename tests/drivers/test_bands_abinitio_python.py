@@ -199,8 +199,9 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
     the same quasiparticle levels, and the larger band set keeps the filled
     Hartree-Fock level where the smaller one put it."""
     from tessera.drivers.bands import coulomb, screening
+    from tessera.drivers.bands.settings import Approximations
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
-    mesh = abinitio.MeshCrystal(crystal, 8)
+    mesh = abinitio.MeshCrystal(crystal, 8, approximations=Approximations(1, 1))      # the orders that the full tensor has
     mean_field = mesh.run_hartree_fock(4)
     extended = mesh.extend_bands(mean_field, 10)
     assert mean_field["certified"] and extended["converged"] and extended["shift_below_spectrum"]
@@ -362,6 +363,24 @@ def test_the_kinetic_eigenbasis_of_the_grid_is_closed_form(kappa):
     energy = np.einsum("mi,m,mi->i", coefficients.conj(), kernel.strength / values, coefficients).real
     exact = np.einsum("vi,vi->i", load.conj(), kernel.potential(load, kappa)).real
     assert np.abs(energy - exact).max() < 1e-12 * np.abs(exact).max()
+
+
+def test_a_converged_run_on_a_coarse_mesh_starts_the_next_mesh():
+    """The orbitals of a coarse mesh are piecewise-linear functions; evaluated at
+    the vertices of a mesh of twice the divisions they are the same functions
+    (equal at the shared vertices, the same norm in the finer mass matrix), and
+    started from them the finer run reaches the levels of a run from scratch."""
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.array([0.4, 0.45, 0.55]))])
+    coarse, fine = abinitio.MeshCrystal(crystal, 6), abinitio.MeshCrystal(crystal, 12)
+    run = coarse.run_hartree_fock(4)
+    start = fine.prolonged(coarse, run)
+    shared = (fine.cell.index % 2 == 0).all(axis=1)
+    ids = (fine.cell.index[shared] // 2) @ np.array([36, 6, 1])
+    assert np.abs(start["vectors"][shared] - run["vectors"][ids]).max() < 1e-14
+    assert np.abs(np.diag(start["vectors"].T @ (fine.mass @ start["vectors"])) - 1.0).max() < 1e-10
+    scratch, continued = fine.run_hartree_fock(4), fine.run_hartree_fock(4, start=start)
+    assert continued["certified"] and len(continued["history"]) <= len(scratch["history"])
+    assert np.abs(scratch["levels"] - continued["levels"]).max() < 1e-5
 
 
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():

@@ -164,7 +164,7 @@ class RandomPhase:
             weights.append(constant * residues / len(momenta))
             inverse.append(1.0 - np.sum(2.0 * residues / omega))
             independent.append(entry * 4.0 * np.sum(np.abs(charges) ** 2 / gaps))
-        self.head_poles, self.head = np.concatenate(poles), np.concatenate(weights)
+        self.head_poles, self.head, self.head_constant = np.concatenate(poles), np.concatenate(weights), float(constant)
         self.long_range_modes, self._long_range_transition = long_range_modes, {}
         self.dielectric_constant = 1.0 + float(np.mean(static))
         # The two routes to the static inverse must agree: 1 / (1 + S) = 1 - sum_t 2 a~_t / W~_t.
@@ -174,6 +174,8 @@ class RandomPhase:
 
     def _solve(self, energies, occupied, coupling):
         self.head, self.long_range_modes, self._long_range_transition = None, [], {}
+        self.momentum_terms, self.head_constant = [], None
+        self.screening_shifts = self.propagator_shifts = None
         self.propagator = None        # the levels of G when they differ from those W was built from
         self.energies = np.asarray(energies, dtype=float)
         self.occupied = int(occupied)
@@ -222,6 +224,51 @@ class RandomPhase:
             raise ValueError("the exchange self-energy needs the full tensor of Coulomb integrals")
         return -sum(self.W[n, i, i, n] for i in range(self.occupied))
 
+    def set_momentum_terms(self, terms, weights, average):
+        """Average the self-energy integrand S_n(q; w) over the momentum
+        transfers that sampling the zone centre leaves out, instead of taking
+        its closed form at vanishing momentum. With A_0 the coefficient of the
+        zero-momentum term (from `set_head`) and F(q) the auxiliary function of
+        the zero-momentum constant (`GridCoulombKernel.auxiliary_function`),
+
+            Sigma_c = A_0 <F> + sum_i weight_i [ S_n(q_i; w) - A_0 F(q_i) ] :
+
+        the singular part is averaged analytically (`average` is <F>, the
+        zero-momentum constant plus F at the zone centre), and the remainder,
+        which is bounded and periodic, by the grid of `terms`
+        (`MeshCrystal.momentum_term`, `Approximations.momentum_nodes`) with the
+        `weights`. At every node the whole kernel of that momentum enters, so
+        nothing is split into a zero-momentum entry and a rest there."""
+        self.momentum_terms, self.momentum_weights, self.zone_average = list(terms), list(weights), float(average)
+        self._momentum_modes = {}
+
+    def _integrand(self, index, n, frequency):
+        """S_n(q; w) and its derivative at the momentum of `momentum_terms[index]`.
+        `screening_shifts` and `propagator_shifts` (one number per mode) move the
+        levels there with those of the zone centre when they have been updated."""
+        term = self.momentum_terms[index]
+        if index not in self._momentum_modes:
+            gaps = np.asarray(term["gaps"], dtype=float)
+            if self.screening_shifts is not None:
+                gaps = gaps + np.array([self.screening_shifts[a] - self.screening_shifts[i] for i, a in term["pairs"]])
+            root = np.sqrt(gaps)
+            casida = np.diag(gaps ** 2) + 4.0 * root[:, None] * np.asarray(term["coupling"]) * root[None, :]
+            squared, Z = np.linalg.eigh(0.5 * (casida + casida.conj().T))
+            omega = np.sqrt(squared)
+            self._momentum_modes[index] = (omega, (root[:, None] * Z) / np.sqrt(omega)[None, :], {})
+        omega, modes, transitions = self._momentum_modes[index]
+        if n not in transitions:
+            transitions[n] = 2.0 * np.abs(np.asarray(term["blocks"][n]) @ modes) ** 2        # |sqrt(2) (nm|s)|^2
+        value = derivative = 0.0
+        levels = np.asarray(term["levels"], dtype=float)
+        if self.propagator_shifts is not None:
+            levels = levels + np.asarray(self.propagator_shifts)[:len(levels)]
+        for m, level in enumerate(levels):
+            poles = level - omega if m < self.occupied else level + omega
+            value += np.sum(transitions[n][m] / (frequency - poles))
+            derivative -= np.sum(transitions[n][m] / (frequency - poles) ** 2)
+        return value, derivative
+
     def _transitions(self, n):
         """(excitations, transition amplitudes of mode n with every mode m) per
         set of modes: those of the problem without the G = 0 entry, or, once
@@ -245,12 +292,19 @@ class RandomPhase:
                 poles = level - excitations if m < self.occupied else level + excitations
                 value += np.sum(weights / (frequency - poles))
                 derivative -= np.sum(weights / (frequency - poles) ** 2)
+        head_value = head_derivative = 0.0
         if self.head is not None:
             level = levels[n]
             poles = level - self.head_poles if n < self.occupied else level + self.head_poles
-            value += np.sum(self.head / (frequency - poles))
-            derivative -= np.sum(self.head / (frequency - poles) ** 2)
-        return value, derivative
+            head_value = np.sum(self.head / (frequency - poles))
+            head_derivative = -np.sum(self.head / (frequency - poles) ** 2)
+        if self.momentum_terms:
+            coefficient = np.array([head_value, head_derivative]) / self.head_constant            # A_0 and its derivative
+            total = coefficient * self.zone_average
+            for index, (term, weight) in enumerate(zip(self.momentum_terms, self.momentum_weights)):
+                total = total + weight * (np.array(self._integrand(index, n, frequency)) - coefficient * term["auxiliary"])
+            return float(total[0]), float(total[1])
+        return value + head_value, derivative + head_derivative
 
     def second_order_correlation(self, n, frequency):
         """The direct second-order self-energy, the weak-coupling limit of
@@ -416,7 +470,7 @@ class KineticBasisScreening:
 
 
 def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, head=None, update_screening=True,
-                                    tolerance=1e-6, max_iterations=60, damping=0.7):
+                                    tolerance=1e-6, max_iterations=60, damping=0.7, momentum_terms=None):
     """Eigenvalue self-consistency on a Hartree-Fock starting point: the
     orbitals and their Coulomb integrals stay fixed, and the quasiparticle
     levels are fed back into the propagator (`update_screening=False`, the
@@ -426,7 +480,9 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
     the interaction screened with it is too weak and the one-shot gap too large;
     feeding the levels back into the screening is what closes it.
 
-    `integrals` must cover every mode. `head` is the pair (constant, momenta)
+    `integrals` must cover every mode, and so must the blocks of
+    `momentum_terms`, the argument tuple of `RandomPhase.set_momentum_terms`.
+    `head` is the pair (constant, momenta)
     of `RandomPhase.set_head`; the level differences at the small momenta move
     with the zone-centre levels of the same modes. Returns (levels, history of the largest change, the
     last RandomPhase)."""
@@ -438,6 +494,11 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
             rpa = RandomPhase.from_pieces(energies, occupied, coupling, integrals)
             if head is not None:
                 rpa.set_head(head[0], head[1], energies - mean_field)
+            if momentum_terms is not None:
+                rpa.set_momentum_terms(*momentum_terms)
+                rpa.screening_shifts = energies - mean_field
+        if momentum_terms is not None:
+            rpa.propagator_shifts = energies - mean_field
         rpa.propagator = energies
         produced = np.array([rpa.quasiparticle(n, reference=mean_field, start=energies[n])[0]
                              for n in range(len(energies))])

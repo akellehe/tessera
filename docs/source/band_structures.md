@@ -274,16 +274,29 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 | flag | what it truncates | range, default |
 |---|---|---|
 | `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$ | 1 to 5, default 3; implemented: 1 |
-| `--zero-momentum-order` | terms of the expansion in the momentum transfer, about every sampled momentum, of the self-energy integrand over the part of momentum space the sampling leaves out; 1 is the value at vanishing momentum times the zero-momentum constant | 1 to 5, default 3; implemented: 1 |
+| `--zero-momentum-order` | how the self-energy integrand is averaged over the momentum transfers the sampling leaves out: 1 is the closed form at vanishing momentum; k is a midpoint grid of k transfers per axis, the Hartree-Fock pencil solved at every node, the singular part averaged analytically and the bounded remainder by the grid | 1 to 5, default 3; all implemented |
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
 | `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
 An order that is not implemented is refused by name before anything runs; it is
-never replaced by a lower one. Until the second and third terms of the two
-expansions exist, a run has to ask for `--self-energy-order 1
---zero-momentum-order 1` explicitly.
+never replaced by a lower one. Until the second and third terms of the expansion
+in the screened interaction exist, a run has to ask for `--self-energy-order 1`
+explicitly. On a cell of 6 bohr the correlation self-energy of the filled level
+goes from -0.032 Ry at zero-momentum order 1 to -0.052 and -0.061 Ry at orders 2
+and 3 (-0.071 Ry on a grid of 6): sampling the zone centre alone is a large
+approximation on a small cell.
+
+Hartree-Fock has more than one stationary state, and a loop reaches the one its
+start leads to. The loop starts from the Hartree mean field when that has a
+self-consistent state and from one diagonalization in the potential of the
+atomic density when it does not (without exchange gallium arsenide is gapless to
+0.03 eV and its filling does not converge); every mesh after the first starts
+from the orbitals of the mesh before it, which are piecewise-linear functions
+and are evaluated exactly on the finer vertices (`MeshCrystal.prolonged`). The
+electronic energy of every run is recorded so that stationary states can be
+compared.
 
 Published inputs cannot be extended, and no flag pretends otherwise. A
 pseudopotential file fixes the angular momenta of its projectors (the

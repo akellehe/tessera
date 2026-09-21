@@ -534,11 +534,16 @@ class MeshCrystal:
             W -= produced
         return W
 
+    @staticmethod
+    def _compress(W, orbitals):
+        """xi with K = -xi xi^dagger on the span of `orbitals`, from W = K orbitals."""
+        overlap = orbitals.conj().T @ W
+        return W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.conj().T))).conj().T
+
     def _compressed(self, W, orbitals, projectors):
         """The low-rank term of the pencil: the projectors of the ions and the
         exchange operator compressed onto `orbitals`, K = -xi xi^dagger."""
-        overlap = orbitals.conj().T @ W
-        xi = W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.conj().T))).conj().T
+        xi = self._compress(W, orbitals)
         rank = projectors.shape[1]
         P = np.hstack([projectors, xi])
         D = np.zeros((P.shape[1], P.shape[1]))
@@ -601,7 +606,7 @@ class MeshCrystal:
 
     # -- Hartree-Fock
 
-    def run_hartree_fock(self, bands, tolerance=1e-5, mixing=0.3, max_outer=40, max_inner=30, log=None):
+    def run_hartree_fock(self, bands, tolerance=1e-5, mixing=0.3, max_outer=100, max_inner=30, start=None, log=None):
         """Hartree-Fock on the mesh at the zone centre, the mean field of the
         quartic Coulomb interaction: the Hartree potential of the density and the
         exchange operator
@@ -617,8 +622,9 @@ class MeshCrystal:
         exchange; it is restored on the filled bands by the auxiliary-function
         correction with the kernel's own symbol as the auxiliary function
         (`GridCoulombKernel.zero_momentum_constant`).
-        The Hartree run supplies the starting orbitals. The exchange
-        operator is rebuilt in an outer loop and the Hartree potential converged
+        The Hartree mean field supplies the starting orbitals when it
+        converges, one diagonalization in the potential of the atomic density
+        otherwise. The exchange operator is rebuilt in an outer loop and the Hartree potential converged
         at fixed exchange in an inner one, as in `PlaneWaveCrystal`.
 
         References: Lin, Journal of Chemical Theory and Computation 12, 2242
@@ -628,8 +634,21 @@ class MeshCrystal:
         occupied = crystal.electrons // 2
         integrals = self.triple
         weights = self.kernel.weights
-        start = self.run(bands, log=log)
-        orbitals, values = start["vectors"], start["levels"]
+        # The Hartree mean field starts the loop when it has a self-consistent state. Without exchange a
+        # semiconductor can be gapless (gallium arsenide is, to 0.03 eV), and the filling of a gapless spectrum
+        # does not converge; one diagonalization in the potential of the atomic density starts the loop then.
+        # Hartree-Fock has more than one stationary state, and which one a loop reaches depends on its start:
+        # the electronic energy is returned so that states can be compared, the lowest being the mean field.
+        # `start` (a dict with "vectors" and "levels": an earlier run, or `prolonged` from a coarser mesh)
+        # replaces both.
+        if start is None:
+            start = self.run(bands, log=log)
+            if not start["converged"]:
+                start = self.run(bands, max_iterations=1, log=log)
+        start = dict(start)
+        start.setdefault("residual", 0.0)
+        start.setdefault("shift_below_spectrum", True)
+        orbitals, values = np.asarray(start["vectors"])[:, :bands], np.asarray(start["levels"])[:bands]
 
         def load_of(vectors):
             filled = vectors[:, :occupied]
@@ -665,9 +684,42 @@ class MeshCrystal:
             orbitals, density = produced, out_density
             if change < tolerance:
                 break
+        # E = sum over the filled orbitals of (h_ii + e_i), h the kinetic and ionic part.
+        filled = orbitals[:, :occupied]
+        ionic = (self.stiffness + cell.weighted_mass(self.ionic).dressed().real).tocsc()
+        overlap = filled.T @ self.P
+        one_particle = np.einsum("vi,vi->i", filled, ionic @ filled) + np.einsum("ip,pq,iq->i", overlap, self.D, overlap)
+        energy = float(np.sum(one_particle + values[:occupied]))
         return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
-                "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing,
+                "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing, "energy": energy,
                 "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+
+    def prolonged(self, coarse, run):
+        """The start of `run_hartree_fock` on this mesh from a converged run on the
+        coarser mesh `coarse` (a `MeshCrystal` of the same crystal): the orbitals
+        as the piecewise-linear functions they are, evaluated at the vertices of
+        this mesh. In a Kuhn cube the simplex of a point is read off the order
+        of its fractional coordinates, and its barycentric weights are their
+        successive differences. When the divisions are multiples the coarse
+        functions lie in the fine space and nothing is lost."""
+        ratio = np.array(coarse.cell.divisions) / np.array(self.cell.divisions)
+        position = self.cell.index * ratio
+        base = np.floor(position + 1e-12).astype(int)
+        fraction = position - base
+        order = np.argsort(-fraction, axis=1, kind="stable")
+        sorted_fraction = np.take_along_axis(fraction, order, axis=1)
+        weights = np.column_stack([1.0 - sorted_fraction[:, 0], sorted_fraction[:, 0] - sorted_fraction[:, 1],
+                                   sorted_fraction[:, 1] - sorted_fraction[:, 2], sorted_fraction[:, 2]])
+        n = np.array(coarse.cell.divisions)
+        corner = base.copy()
+        vectors = np.zeros((self.cell.size, np.asarray(run["vectors"]).shape[1]))
+        for step in range(4):
+            wrapped = corner % n
+            ids = (wrapped[:, 0] * n[1] + wrapped[:, 1]) * n[2] + wrapped[:, 2]
+            vectors += weights[:, step, None] * np.asarray(run["vectors"]).real[ids]
+            if step < 3:
+                corner[np.arange(len(corner)), order[:, step]] += 1
+        return {"vectors": vectors, "levels": np.asarray(run["levels"])}
 
     # -- Hartree-Fock on a momentum set
 
@@ -893,6 +945,44 @@ class MeshCrystal:
                 "entry": self.kernel.momentum_entry(kappa),
                 "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
 
+    def momentum_term(self, extended, kappa, states, bands=None, buffer=8, log=None):
+        """Everything the self-energy integrand S_n(q; w) of the modes `states`
+        needs at the finite momentum transfer `kappa`: the Hartree-Fock levels
+        and sections there (`bands_at`), the particle-hole pairs between the
+        zone centre and that momentum with the whole Coulomb kernel of that
+        momentum (the entry at G = 0 included, which is finite), and per mode n
+        the integrals (n m_q | pair) over every section m_q. `RandomPhase`
+        evaluates S_n from it (`set_momentum_terms`). `buffer` extra bands are
+        solved for and left out, because the compression of exchange converges
+        slowly on the highest of a set."""
+        occupied = int(extended["occupied"])
+        bands = len(extended["levels"]) - buffer if bands is None else int(bands)
+        top = min(bands + buffer, len(extended["levels"]))
+        truncated = {"levels": np.asarray(extended["levels"])[:top], "vectors": np.asarray(extended["vectors"])[:, :top],
+                     "occupied": occupied, "local_potential": extended["local_potential"]}
+        at_momentum = self.bands_at(truncated, kappa, converge=bands, log=log)
+        sections = np.asarray(at_momentum["vectors"])[:, :bands]
+        modes = np.asarray(extended["vectors"])
+        twist = coulomb.bloch_twist(self.cell, self.triple.tops, kappa)
+        loads = [self.triple.loads(modes[:, i], sections[:, occupied:], twist) for i in range(occupied)]
+        potentials = np.hstack([self.kernel.potential(load, kappa) for load in loads])
+        coupling = np.hstack(loads).conj().T @ potentials
+        blocks = {n: self.triple.loads(modes[:, n], sections, twist).conj().T @ potentials for n in states}
+        levels = np.asarray(at_momentum["levels"])[:bands]
+        gaps = (levels[None, occupied:] - np.asarray(extended["levels"])[:occupied, None]).ravel()
+        return {"kappa": tuple(kappa), "levels": levels, "gaps": gaps, "coupling": coupling, "blocks": blocks,
+                "x": 1.0 / self.kernel.momentum_entry(kappa), "auxiliary": self.kernel.auxiliary_function(kappa),
+                "converged": at_momentum["converged"],
+                "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
+
+    def momentum_terms(self, extended, states, bands=None, log=None):
+        """The argument tuple of `RandomPhase.set_momentum_terms` for the
+        momentum transfers of `approximations.zero_momentum_order` (empty at
+        order 1, which leaves the closed form at vanishing momentum in place)."""
+        nodes = self.approximations.momentum_nodes
+        terms = [self.momentum_term(extended, kappa, states, bands, log=log) for kappa, _ in nodes]
+        return terms, [weight for _, weight in nodes], self.zero_momentum + self.kernel.auxiliary_function()
+
     def vanishing_momentum_pairs(self, extended, coupling, bands=None, directions=None):
         """The limit of `momentum_pairs` as the momentum tends to zero along each
         of `directions` (the three Cartesian axes by default), in closed form. The pairs become those of the
@@ -1026,6 +1116,7 @@ class MeshCrystal:
         constant = self.zero_momentum
         out = {n: {"mean_field": float(energies[n]), "body": float(rpa.quasiparticle(n)[0])} for n in states}
         dielectric = rpa.set_head(constant, self.vanishing_momentum_pairs(extended, coupling))
+        rpa.set_momentum_terms(*self.momentum_terms(extended, states, log=log))
         for n in states:
             energy, weight = rpa.quasiparticle(n)
             defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)

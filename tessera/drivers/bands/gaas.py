@@ -273,11 +273,15 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
     lattice_constant = (GALLIUM_ARSENIDE.lattice_constant if a is None else a) / BOHR
     conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
     names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw")
-    runs, spacings = [], []
-    for n in divisions:
+    runs, spacings, previous = [], [], None
+    for n in sorted(divisions):
         started = time.time()
         mesh = MeshCrystal(conventional, n, approximations=approximations)
-        mean_field = mesh.run_hartree_fock(bands, log=log)
+        # Every mesh after the first starts from the converged orbitals of the one before it.
+        start = mesh.prolonged(*previous) if previous else None
+        mean_field = mesh.run_hartree_fock(bands, start=start, log=log)
+        row_updates = len(mean_field["history"])
+        previous = (mesh, mean_field)
         extended = mesh.extend_bands(mean_field, screening_bands + 24, log=log)
         certificate = mesh.covariance_certificate(extended, bands)
         half = n // 2
@@ -292,13 +296,16 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         gap = lambda levels: float((np.mean(levels[conduction]) - np.mean(levels[valence])) * RYDBERG)
         levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, screening_bands)
         heads = mesh.vanishing_momentum_pairs(extended, coupling, screening_bands)
+        momentum_terms = mesh.momentum_terms(extended, range(screening_bands), screening_bands, log=log)
         row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
+               "exchange_updates": row_updates, "hartree_fock_energy": mean_field["energy"],
                "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum}
         rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
         for name, with_head in (("g0w0_body", False), ("g0w0", True)):
             if with_head:
                 row["dielectric_constant"] = float(rpa.set_head(mesh.zero_momentum, heads))
                 row["head_defect"] = rpa.head_defect
+                rpa.set_momentum_terms(*momentum_terms)
             shifted = levels.copy()
             for index in valence + conduction:
                 shifted[index] = rpa.quasiparticle(index)[0]
@@ -307,7 +314,8 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
                                         ("evgw_body", True, False), ("evgw", True, True)):
             produced, history, _ = screening.self_consistent_quasiparticles(
                 levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
-                update_screening=update, tolerance=1e-5)
+                update_screening=update, tolerance=1e-5,
+                momentum_terms=momentum_terms if with_head and momentum_terms[0] else None)
             row[name], row[name + "_residual"] = gap(produced), float(history[-1])
         row["seconds"] = time.time() - started
         log("N=%d: " % n + ", ".join(f"{name} {row[name]:.3f}" for name in names)

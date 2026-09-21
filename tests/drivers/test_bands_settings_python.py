@@ -25,12 +25,21 @@ def test_ranges_and_defaults():
 
 
 def test_an_order_that_is_not_implemented_is_refused_by_name():
-    assert IMPLEMENTED == {"self_energy_order": (1,), "zero_momentum_order": (1,)}
-    Approximations(self_energy_order=1, zero_momentum_order=1).require_implemented()
+    assert IMPLEMENTED == {"self_energy_order": (1,), "zero_momentum_order": (1, 2, 3, 4, 5)}
+    Approximations(self_energy_order=1).require_implemented()
     with pytest.raises(NotImplementedError, match="self_energy_order = 3"):
         Approximations().require_implemented()
-    with pytest.raises(NotImplementedError, match="zero_momentum_order = 2"):
-        Approximations(self_energy_order=1, zero_momentum_order=2).require_implemented()
+
+
+def test_the_momentum_nodes_are_a_midpoint_grid_counted_once_per_time_reversed_pair():
+    assert Approximations(1, 1).momentum_nodes == []
+    for order in (2, 3, 4, 5):
+        nodes = Approximations(1, order).momentum_nodes
+        assert sum(weight for _, weight in nodes) == pytest.approx(1.0)
+        assert all(max(abs(v) for v in kappa) < 0.5 for kappa, _ in nodes)
+        assert not any(tuple(-v + 0.0 for v in kappa) in dict(nodes) for kappa, _ in nodes)
+    assert len(Approximations(1, 2).momentum_nodes) == 4                  # (+-1/4)^3, a transfer and its opposite once
+    assert len(Approximations(1, 3).momentum_nodes) == 13 + 3            # 26 / 2, and zero transfer as three small ones
 
 
 def test_the_flags_reach_the_run():
@@ -45,6 +54,32 @@ def test_the_flags_reach_the_run():
     assert coarse.approximations.images == (-1, 0, 1)
     # Three terms of the refinement series against five: the same constant to the accuracy of the shorter series.
     assert coarse.zero_momentum == pytest.approx(fine.zero_momentum, abs=1e-5) and coarse.zero_momentum != fine.zero_momentum
+
+
+def test_the_zone_average_of_the_self_energy_integrand_converges_with_the_grid():
+    """Order 1 is the closed form at vanishing momentum; order k averages the
+    integrand over a midpoint grid of k momentum transfers per axis, the
+    singular part analytically. On a small cell the zone is large and order 1
+    is far off: the filled level's correlation self-energy goes from -0.032 Ry
+    to -0.056 and -0.064 Ry at orders 2 and 3 (-0.071 Ry at a grid of 6)."""
+    from tessera.drivers.bands import screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    values = []
+    for order in (1, 2, 3):
+        mesh = abinitio.MeshCrystal(crystal, 6, approximations=Approximations(1, order))
+        bands = 7
+        extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 8, tolerance=1e-9)
+        levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+        rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+        rpa.set_head(mesh.zero_momentum, mesh.vanishing_momentum_pairs(extended, coupling, bands))
+        terms = mesh.momentum_terms(extended, (0, 1), bands)
+        assert all(term["converged"] for term in terms[0])
+        rpa.set_momentum_terms(*terms)
+        values.append(rpa.correlation(0, 0.5 * (levels[0] + levels[1]))[0])
+    print(values)
+    assert values[0] == pytest.approx(-0.0320, abs=5e-4)
+    assert values[2] < values[1] < values[0] < 0.0
+    assert values[1] < 1.5 * values[0] and abs(values[2] - values[1]) < 0.5 * abs(values[1] - values[0])
 
 
 def _files(tmp_path):

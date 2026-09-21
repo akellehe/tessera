@@ -273,6 +273,13 @@ class GridCoulombKernel:
         transformed = np.fft.fftn(field, axes=(1, 2, 3)).reshape(-1, self.size).T
         return transformed[indices] / np.sqrt(self.size * mass)[:, None]
 
+    def auxiliary_function(self, kappa=None):
+        """F(q) = (strength / n) sum_G 1 / a(G + q), the smooth periodic
+        auxiliary function whose average over every momentum, minus this sum at
+        the sampled momenta, is `zero_momentum_constant`. At the zone centre
+        the entry at G = 0 is left out."""
+        return self.strength * float(self.inverse_symbol(kappa).sum()) / self.size
+
     def momentum_entry(self, kappa):
         """The energy of a normalized charge of crystal momentum `kappa` in the
         G = 0 entry of the kernel, strength / (n a(kappa)); strength / (V q^2)
