@@ -6,8 +6,12 @@ waves as the reference. Rydberg atomic units throughout (see `pseudopotential`).
 
 Both calculations solve the same problem. The ionic local potential is split
 as `V_loc = V_sr + V_lr`, with `V_lr` the potential of a Gaussian charge -Z of
-width `width` at every ion, whose divergent average cancels against the
-electrons and is dropped (its finite remainder 4 pi Z width^2 / Omega is kept).
+width `width` at every ion. On the mesh that charge is a source of the same
+Coulomb kernel the electrons interact through, which acts on the complement of
+the constants. In plane waves it is the Fourier series of the continuum kernel,
+whose divergent average cancels against the electrons and leaves the uniform
+remainder 4 pi Z width^2 / Omega (`PlaneWaveCrystal.alignment`), a shift of
+every level that the mesh does not carry.
 The Hartree potential has zero mean. Exchange is the nonlocal operator of the
 filled orbitals, compressed onto the computed bands. The nonlocal part of the pseudopotential is the
 separable sum over ions and projectors.
@@ -125,6 +129,7 @@ class PlaneWaveCrystal:
         self.G2 = (self.G ** 2).sum(axis=-1)
         self.integers = indices.astype(int)
         self._ion_tables()
+        self.alignment = sum(4.0 * np.pi * pseudo.valence * self.width ** 2 / crystal.volume for pseudo, _ in crystal.ions)
         self.bases = [self._basis(k) for k in self.kpoints]
 
     def _ion_tables(self):
@@ -451,20 +456,18 @@ class MeshCrystal:
                 radius = np.linalg.norm(offset, axis=1)
                 near = radius < 6.0 * self.width + 2.0
                 values[near] += pseudo.short_range_at(radius[near], self.width)
-        # Long range: the Fourier series of the Gaussian charges, which the
-        # vertices (a uniform grid) sample exactly through one inverse transform.
-        shape = cell.divisions
-        indices = np.stack(np.meshgrid(*[np.fft.fftfreq(n, 1.0 / n) for n in shape], indexing="ij"), axis=-1)
-        G = indices @ cell.reciprocal
-        G2 = (G ** 2).sum(axis=-1)
-        series = np.zeros(shape, dtype=complex)
+        # Long range: the Gaussian charge -Z of every ion is a source of the same Coulomb
+        # kernel the electrons interact through, the inverse of the stiffness matrix on the
+        # complement of the constants. The load of each ion carries its charge exactly.
+        weights = self.kernel.weights
+        charge = np.zeros(cell.size)
         for pseudo, position in crystal.ions:
-            structure = np.exp(-1j * (G @ (position @ cell.lattice)))
-            nonzero = G2 > 1e-12
-            form = np.where(nonzero, -COULOMB_STRENGTH * pseudo.valence * np.exp(-0.5 * self.width ** 2 * G2)
-                            / np.where(nonzero, G2, 1.0), 4.0 * np.pi * pseudo.valence * self.width ** 2)
-            series += structure * form / crystal.volume
-        return values + (np.fft.ifftn(series) * series.size).real.ravel()
+            gaussian = np.zeros(cell.size)
+            for image in itertools.product((-1, 0, 1), repeat=3):
+                offset = (cell.fractional - position - np.asarray(image)) @ cell.lattice
+                gaussian += np.exp(-0.5 * (offset ** 2).sum(axis=1) / self.width ** 2)
+            charge += pseudo.valence * gaussian / (weights @ gaussian)
+        return values - self.kernel.potential(self.mass @ charge).real
 
     def _projectors(self):
         columns, blocks = [], []

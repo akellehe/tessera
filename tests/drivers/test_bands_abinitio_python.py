@@ -149,7 +149,8 @@ def test_a_self_consistent_crystal_on_the_mesh_matches_plane_waves():
     Hartree mean field. The mesh levels extrapolate to the plane-wave levels."""
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     assert crystal.electrons == 2
-    reference = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run(4)
+    plane_waves = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0)
+    reference = plane_waves.run(4)
     assert reference["converged"]
     spacings, levels = [], []
     for n in (8, 12, 16):
@@ -158,7 +159,8 @@ def test_a_self_consistent_crystal_on_the_mesh_matches_plane_waves():
         spacings.append(run["spacing"])
         levels.append(run["levels"])
     levels = np.array(levels)
-    target = reference["levels"][0]
+    # The continuum kernel leaves a uniform remainder of the ionic charges that the mesh kernel does not carry.
+    target = reference["levels"][0] - plane_waves.alignment
     coarse_error = np.abs(levels[-1][:2] - target[:2]).max()
     extrapolated = richardson(spacings, levels)[0]
     assert coarse_error > 5e-3
@@ -174,7 +176,8 @@ def test_hartree_fock_on_the_mesh_matches_hartree_fock_in_plane_waves():
     as a low-rank term): the mesh levels extrapolate to the plane-wave levels,
     filled and empty."""
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
-    reference = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run_hartree_fock(4, 6.0)
+    plane_waves = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0)
+    reference = plane_waves.run_hartree_fock(4, 6.0)
     assert reference["converged"]
     spacings, levels = [], []
     for n in (8, 12, 16):
@@ -182,7 +185,7 @@ def test_hartree_fock_on_the_mesh_matches_hartree_fock_in_plane_waves():
         assert run["certified"], run
         spacings.append(run["spacing"])
         levels.append(run["levels"][:2])
-    target = reference["levels"][0][:2]
+    target = reference["levels"][0][:2] - plane_waves.alignment
     assert np.abs(np.array(levels[-1]) - target).max() > 1e-3
     assert np.abs(richardson(spacings, levels)[0] - target).max() < 1e-3           # rydberg
     # Exchange opens the gap well beyond that of the Hartree mean field.

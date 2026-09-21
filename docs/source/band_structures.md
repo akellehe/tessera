@@ -178,8 +178,14 @@ holds them to each other.
 Pseudopotential Format and `abinitio` runs a crystal self-consistently on the
 mesh and, as the reference, in plane waves with the same pseudopotentials,
 momenta and conventions. The local part of an ion is split into a short-range
-remainder, summed over images, and the potential of a Gaussian charge, given by
-its Fourier series on the vertex grid. The separable nonlocal part is a term
+remainder, summed over images, and the potential of a Gaussian charge, which on
+the mesh is a source of the same Coulomb kernel the electrons interact through
+(the continuum kernel of the plane-wave reference leaves a uniform remainder,
+`PlaneWaveCrystal.alignment`, that the mesh does not carry). Closed forms used
+anywhere in these drivers are closed forms of the framework's own matrices (the
+Fourier symbols of its stiffness and mass matrices, derivatives of its covariant
+assembly), each held to the framework's numerical route by a test; a continuum
+solution is never substituted for one. The separable nonlocal part is a term
 `P D P^T` of low rank in the left-hand matrix of the pencil, with `P = M beta`
 the load vectors of the projector functions; `SparsePencilSolver` applies it
 through the Woodbury identity and certifies the shift by inertia. Exchange is
