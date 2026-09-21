@@ -384,6 +384,23 @@ class KineticBasisScreening:
         return value
 
 
+    def quasiparticle(self, n, coefficients, iterations=50, tolerance=1e-9, step=1e-4):
+        """Solve E = e_n + Sigma^c_nn(E) by Newton's method, the derivative by a
+        central difference (the self-energy is smooth between the levels).
+        Returns (E, renormalization factor Z at the solution)."""
+        level = energy = self.energies[n]
+        slope = 0.0
+        for _ in range(iterations):
+            value = self.correlation(n, coefficients, energy)
+            slope = (self.correlation(n, coefficients, energy + step)
+                     - self.correlation(n, coefficients, energy - step)) / (2.0 * step)
+            change = (level + value - energy) / (1.0 - slope)
+            energy += change
+            if abs(change) < tolerance:
+                break
+        return energy, 1.0 / (1.0 - slope)
+
+
 def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, head=None, update_screening=True,
                                     tolerance=1e-6, max_iterations=60, damping=0.7):
     """Eigenvalue self-consistency on a Hartree-Fock starting point: the

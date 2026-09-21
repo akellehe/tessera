@@ -311,6 +311,32 @@ def test_the_kinetic_eigenbasis_route_is_the_pole_exact_route():
     assert errors[2] < 5e-5 and errors[2] < errors[1] < errors[0], errors
 
 
+def test_quasiparticle_levels_agree_between_the_two_routes_with_a_sparse_kinetic_basis():
+    """The production form of the second route: the kinetic basis from the
+    sparse solver, truncated, and the quasiparticle equation solved on it. The
+    levels converge to those of the pole-exact route."""
+    from tessera.drivers.bands import screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.array([0.4, 0.45, 0.55]))])
+    mesh = abinitio.MeshCrystal(crystal, 8)
+    bands = 7
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4), bands + 3)
+    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    limits = mesh.vanishing_momentum_pairs(extended, coupling, bands)
+    rpa.set_head(mesh.zero_momentum, limits)
+    head = [(np.imag(limit["charges"]), limit["entry"]) for limit in limits]
+    reference = np.array([rpa.quasiparticle(n)[0] for n in (0, 1)])
+    errors = []
+    for size in (6, 120):
+        values, basis = mesh.kinetic_basis(size)
+        assert values[0] > 1e-6 and np.abs(basis.T @ (mesh.mass @ basis) - np.eye(size)).max() < 1e-8
+        pairs, states = mesh.basis_coefficients(extended, basis, bands, (0, 1))
+        route = screening.KineticBasisScreening(levels, occupied, pairs, abinitio.COULOMB_STRENGTH / values, head,
+                                                mesh.zero_momentum)
+        errors.append(np.abs(np.array([route.quasiparticle(n, states[n])[0] for n in (0, 1)]) - reference).max())
+    assert errors[1] < errors[0] and errors[1] < 2e-4                   # rydberg
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat

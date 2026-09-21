@@ -957,6 +957,26 @@ class MeshCrystal:
                         "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]})
         return out
 
+    def kinetic_basis(self, count):
+        """The `count` lowest eigenpairs of the kinetic pencil above the
+        constant, as real M-orthonormal vectors: the basis in which the Coulomb
+        kernel is diagonal, strength / lambda (`KineticBasisScreening`). The
+        constant has the eigenvalue zero and carries no entry of the kernel."""
+        from tessera.drivers.bands.screening import real_modes
+        read = self.cell.solve(count=count + 1, sigma=-1.0)
+        values, vectors = real_modes(self.stiffness, self.mass, read.vectors)
+        return values[1:], vectors[:, 1:]
+
+    def basis_coefficients(self, extended, basis, bands=None, states=()):
+        """The coefficients B^T load in the basis `basis` of the pair densities
+        of the particle-hole pairs (filled index slow), and per mode n in
+        `states` those of psi_n psi_m for every mode m."""
+        occupied = int(extended["occupied"])
+        bands = len(extended["levels"]) if bands is None else int(bands)
+        modes = np.asarray(extended["vectors"])[:, :bands]
+        pairs = np.vstack([(basis.T @ self.triple.loads(modes[:, i], modes[:, occupied:])).T for i in range(occupied)])
+        return pairs, {n: (basis.T @ self.triple.loads(modes[:, n], modes)).T for n in states}
+
     def quasiparticle_levels(self, extended, states, log=None):
         """The one-shot GW correction on the Hartree-Fock levels of
         `extend_bands` for the modes listed in `states`, with the screened
