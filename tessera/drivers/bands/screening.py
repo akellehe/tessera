@@ -64,19 +64,40 @@ class RandomPhase:
     """
 
     def __init__(self, energies, W, occupied):
-        self.energies = np.asarray(energies, dtype=float)
         W = np.asarray(W)
         if np.abs(W.imag).max() > 1e-9 * max(1.0, np.abs(W.real).max()):
             raise ValueError("RandomPhase needs real modes (see real_modes)")
         self.W = W.real
+        count = len(energies)
+        rows = np.array([i for i in range(occupied) for _ in range(occupied, count)])
+        cols = np.array([a for _ in range(occupied) for a in range(occupied, count)])
+        coupling = self.W[rows[:, None], cols[:, None], rows[None, :], cols[None, :]]
+        self._solve(energies, occupied, coupling)
+        # w^s_mn = sqrt(2) sum_jb (mn|jb) (X + Y)^s_jb, for every pair of modes.
+        ph = self.W[:, :, rows, cols]
+        self.transition = np.sqrt(2.0) * np.einsum("mnp,ps->mns", ph, self.x_plus_y)
+
+    @classmethod
+    def from_pieces(cls, energies, occupied, coupling, integrals):
+        """Build from the Coulomb integrals that are actually needed, for a mode
+        count at which the full four-index tensor cannot be held: `coupling` is
+        (ia|jb) over the particle-hole pairs (filled index slow), and `integrals`
+        maps a mode n to the array (nm|jb) over every mode m (rows) and every
+        pair (columns). The self-energy is then available for those n."""
+        self = cls.__new__(cls)
+        self.W = None
+        self._solve(energies, occupied, np.asarray(coupling, dtype=float))
+        self.transition = {n: np.sqrt(2.0) * np.asarray(block, dtype=float) @ self.x_plus_y
+                           for n, block in integrals.items()}
+        return self
+
+    def _solve(self, energies, occupied, coupling):
+        self.energies = np.asarray(energies, dtype=float)
         self.occupied = int(occupied)
         count = len(self.energies)
         self.pairs = [(i, a) for i in range(self.occupied) for a in range(self.occupied, count)]
         self.gaps = np.array([self.energies[a] - self.energies[i] for i, a in self.pairs])
-        rows = np.array([i for i, _ in self.pairs])
-        cols = np.array([a for _, a in self.pairs])
-        # (ia|jb) over particle-hole pairs.
-        self.coupling = self.W[rows[:, None], cols[:, None], rows[None, :], cols[None, :]]
+        self.coupling = coupling
         root = np.sqrt(self.gaps)
         casida = np.diag(self.gaps ** 2) + 4.0 * root[:, None] * self.coupling * root[None, :]
         squared, Z = np.linalg.eigh(0.5 * (casida + casida.T))
@@ -84,9 +105,6 @@ class RandomPhase:
             raise ValueError("the mean field is unstable in the random-phase approximation")
         self.excitations = np.sqrt(squared)
         self.x_plus_y = (root[:, None] * Z) / np.sqrt(self.excitations)[None, :]
-        # w^s_mn = sqrt(2) sum_jb (mn|jb) (X + Y)^s_jb
-        ph = self.W[:, :, rows, cols]
-        self.transition = np.sqrt(2.0) * np.einsum("mnp,ps->mns", ph, self.x_plus_y)
 
     # -- energies
 
@@ -117,13 +135,15 @@ class RandomPhase:
 
     def exchange(self, n):
         """Sigma^x_nn = -sum_i (ni|in)."""
+        if self.W is None:
+            raise ValueError("the exchange self-energy needs the full tensor of Coulomb integrals")
         return -sum(self.W[n, i, i, n] for i in range(self.occupied))
 
     def correlation(self, n, frequency):
         """Sigma^c_nn at a real frequency (and its derivative)."""
         value = derivative = 0.0
         for m, level in enumerate(self.energies):
-            weights = self.transition[n, m, :] ** 2
+            weights = self.transition[n][m, :] ** 2
             poles = level - self.excitations if m < self.occupied else level + self.excitations
             value += np.sum(weights / (frequency - poles))
             derivative -= np.sum(weights / (frequency - poles) ** 2)
@@ -133,6 +153,8 @@ class RandomPhase:
         """The direct second-order self-energy, the weak-coupling limit of
         `correlation`: 2 sum_ia [sum_j (nj|ia)^2 / (w - e_j + gap_ia)
         + sum_b (nb|ia)^2 / (w - e_b - gap_ia)]."""
+        if self.W is None:
+            raise ValueError("the second-order self-energy needs the full tensor of Coulomb integrals")
         rows = np.array([i for i, _ in self.pairs])
         cols = np.array([a for _, a in self.pairs])
         value = 0.0

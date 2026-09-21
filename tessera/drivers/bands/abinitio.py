@@ -571,3 +571,96 @@ class MeshCrystal:
         return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing,
                 "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+
+    # -- more bands, and the one-shot quasiparticle correction
+
+    def extend_bands(self, mean_field, bands, tolerance=1e-5, max_iterations=10, log=None):
+        """Converge `bands` Hartree-Fock levels on top of a converged run of
+        `run_hartree_fock`. The filled orbitals, and with them the Hartree
+        potential and the exchange operator, are fixed; what is iterated is the
+        compression of exchange, which is exact only on the bands it was built
+        from and so has to be rebuilt on the larger set until the empty levels
+        stop moving."""
+        cell, crystal = self.cell, self.crystal
+        occupied = crystal.electrons // 2
+        side = float(np.linalg.norm(crystal.lattice[0]))
+        madelung = 2.0 * coulomb.MADELUNG_SC / side
+        integrals = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        filled = mean_field["vectors"][:, :occupied]
+        load = 2.0 * sum(integrals.loads(filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
+        hartree = self.kernel.potential(load).real
+        A = (self.stiffness + cell.weighted_mass(self.ionic + hartree).dressed().real).tocsc()
+        loaded = self.mass @ filled
+        rank = self.P.shape[1]
+        orbitals, values = mean_field["vectors"], mean_field["levels"]
+        previous = None
+        for iteration in range(max_iterations):
+            W = -madelung * loaded @ (loaded.T @ orbitals)
+            for j in range(occupied):
+                W -= integrals.loads(filled[:, j], self.kernel.potential(integrals.loads(filled[:, j], orbitals)).real)
+            overlap = orbitals.T @ W
+            xi = W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.T))).T
+            P = np.hstack([self.P, xi])
+            D = np.zeros((P.shape[1], P.shape[1]))
+            D[:rank, :rank] = self.D
+            D[rank:, rank:] = -np.eye(xi.shape[1])
+            values, orbitals, residual, below = solve_with_projectors(A, self.mass, P, D, bands,
+                                                                       float(values[0]) - 1.0)
+            change = np.inf if previous is None or len(previous) != len(values) else np.abs(values - previous).max()
+            if log:
+                log(f"  bands {bands}, compression {iteration}: largest level change {change:.2e} Ry")
+            previous = values
+            if change < tolerance:
+                break
+        return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
+                "converged": bool(change < tolerance), "occupied": occupied}
+
+    def quasiparticle_levels(self, extended, states, log=None):
+        """The one-shot GW correction on the Hartree-Fock levels of
+        `extend_bands` for the modes listed in `states`, with the screened
+        interaction of the direct random-phase approximation in the basis of
+        all particle-hole pairs of the computed bands.
+
+        The Coulomb integrals are formed with the Fourier kernel of the grid,
+        one Poisson solve per particle-hole pair. That kernel has zero mean,
+        which drops the zero-momentum term of the screened interaction exactly
+        as it drops that of exchange. The exchange part was restored in the mean
+        field by the probe-charge constant c = 2 MADELUNG / L on the filled
+        bands. The correlation part is, on the energy shell, +c (1 - 1/eps) / 2
+        on a filled level and -c (1 - 1/eps) / 2 on an empty one, with eps the
+        macroscopic dielectric constant; it needs the response at vanishing
+        momentum, which a cell sampled at its zone centre does not contain, so
+        it is returned as the constant `head_constant` for the caller to apply
+        with a stated eps rather than folded in silently.
+
+        Returns a dict: per state the Hartree-Fock level, the quasiparticle
+        level (without the zero-momentum correlation term), the renormalization
+        factor and the residual of the quasiparticle equation, all in rydberg."""
+        from tessera.drivers.bands.screening import RandomPhase
+        cell = self.cell
+        occupied = extended["occupied"]
+        energies, orbitals = extended["levels"], extended["vectors"]
+        empties = orbitals[:, occupied:]
+        integrals = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        potentials, loads = [], []
+        for i in range(occupied):
+            pair_loads = integrals.loads(orbitals[:, i], empties)
+            loads.append(pair_loads)
+            potentials.append(self.kernel.potential(pair_loads).real)
+        coupling = np.block([[loads[i].T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
+        blocks = {}
+        for n in states:
+            state_loads = integrals.loads(orbitals[:, n], orbitals)
+            blocks[n] = np.hstack([state_loads.T @ potentials[j] for j in range(occupied)])
+        if log:
+            log(f"  random phase: {coupling.shape[0]} particle-hole pairs")
+        rpa = RandomPhase.from_pieces(energies, occupied, coupling, blocks)
+        out = {}
+        for n in states:
+            energy, weight = rpa.quasiparticle(n)
+            defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)
+            out[n] = {"mean_field": float(energies[n]), "quasiparticle": float(energy),
+                      "renormalization": float(weight), "defect": float(defect)}
+        side = float(np.linalg.norm(self.crystal.lattice[0]))
+        return {"states": out, "correlation_energy": float(rpa.correlation_energy()),
+                "head_constant": 2.0 * coulomb.MADELUNG_SC / side, "pairs": coupling.shape[0]}

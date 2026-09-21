@@ -182,3 +182,33 @@ def test_hartree_fock_on_the_mesh_matches_hartree_fock_in_plane_waves():
     # Exchange without correlation opens the gap well beyond the local-density one.
     local_density = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run(4)["levels"][0]
     assert target[1] - target[0] > 1.3 * (local_density[1] - local_density[0])
+
+
+def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
+    """`quasiparticle_levels` forms only the Coulomb integrals it needs; on a
+    crystal small enough to hold the full four-index tensor the two routes give
+    the same quasiparticle levels, and the larger band set keeps the filled
+    Hartree-Fock level where the smaller one put it."""
+    from tessera.drivers.bands import coulomb, screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    mesh = abinitio.MeshCrystal(crystal, 8)
+    mean_field = mesh.run_hartree_fock(4)
+    extended = mesh.extend_bands(mean_field, 10)
+    assert mean_field["certified"] and extended["converged"] and extended["shift_below_spectrum"]
+    assert extended["levels"][0] == pytest.approx(mean_field["levels"][0], abs=1e-6)
+    assert extended["levels"][1] == pytest.approx(mean_field["levels"][1], abs=2e-4)
+
+    lean = mesh.quasiparticle_levels(extended, [0, 1])
+    T = coulomb.pair_densities(mesh.cell.complex, mesh.cell.squared_lengths, extended["vectors"])
+    full = screening.RandomPhase(extended["levels"], coulomb.ModeInteraction(mesh.kernel, extended["levels"], T).W, 1)
+    for n in (0, 1):
+        energy, weight = full.quasiparticle(n)
+        assert lean["states"][n]["quasiparticle"] == pytest.approx(energy, abs=1e-9)
+        assert lean["states"][n]["renormalization"] == pytest.approx(weight, abs=1e-9)
+        assert lean["states"][n]["defect"] < 1e-9 and 0.5 < weight < 1.0
+    assert lean["correlation_energy"] == pytest.approx(full.correlation_energy(), abs=1e-10)
+    assert lean["head_constant"] == pytest.approx(2.0 * coulomb.MADELUNG_SC / 6.0)
+    # Without the zero-momentum term the correlation part moves this gap by a few per cent only;
+    # the closing of a Hartree-Fock gap by screening is carried by that term, -c (1 - 1/eps).
+    gap = lambda key: lean["states"][1][key] - lean["states"][0][key]
+    assert abs(gap("quasiparticle") / gap("mean_field") - 1.0) < 0.05
