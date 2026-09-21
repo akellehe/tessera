@@ -1172,6 +1172,23 @@ class MeshCrystal:
         return {"levels": values, "vectors": orbitals, "kappa": tuple(kappa), "residual": residual,
                 "shift_below_spectrum": below, "converged": bool(change < tolerance), "occupied": occupied}
 
+    scratch = None                                               # a directory for arrays too large to hold at once
+
+    def _stored(self, array, name):
+        """`array`, or with `scratch` set a file-backed copy of it there: the
+        integrals of every mode at every momentum transfer of
+        `zero_momentum_order` take bands^2 x pairs x transfers numbers, which
+        changes where they live and nothing that is computed."""
+        if self.scratch is None:
+            return array
+        import os
+        os.makedirs(self.scratch, exist_ok=True)
+        stored = np.lib.format.open_memmap(os.path.join(self.scratch, name + ".npy"), mode="w+", dtype=array.dtype,
+                                           shape=array.shape)
+        stored[...] = array
+        stored.flush()
+        return np.load(os.path.join(self.scratch, name + ".npy"), mmap_mode="r")
+
     def momentum_pairs(self, extended, at_momentum, bands=None):
         """The particle-hole pairs of momentum transfer q: a filled orbital i of
         the zone centre and an empty section a of `bands_at` (filled index
@@ -1224,7 +1241,8 @@ class MeshCrystal:
         loads = [coulomb.pair_loads(self.cell, modes[:, i], sections[:, occupied:], kappa) for i in range(occupied)]
         potentials = np.hstack([self.kernel.potential(load, kappa) for load in loads])
         coupling = np.hstack(loads).conj().T @ potentials
-        blocks = {n: coulomb.pair_loads(self.cell, modes[:, n], sections, kappa).conj().T @ potentials for n in states}
+        blocks = {n: self._stored(coulomb.pair_loads(self.cell, modes[:, n], sections, kappa).conj().T @ potentials,
+                                  f"block_{'_'.join(f'{v:+.6f}' for v in kappa)}_{n}") for n in states}
         levels = np.asarray(at_momentum["levels"])[:bands]
         gaps = (levels[None, occupied:] - np.asarray(extended["levels"])[:occupied, None]).ravel()
         return {"kappa": tuple(kappa), "levels": levels, "gaps": gaps, "coupling": coupling, "blocks": blocks,

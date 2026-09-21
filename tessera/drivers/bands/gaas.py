@@ -293,7 +293,7 @@ def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
 
 
 def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=200, approximations=None, a=None,
-                  log=print):
+                  log=print, scratch=None, partial=None):
     """The direct gap of gallium arsenide with the norm-conserving
     pseudopotentials `cation_upf` and `anion_upf`, on the meshes `divisions` of
     the conventional cell at its zone centre: Hartree-Fock, the converged state
@@ -332,6 +332,9 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
     for n in sorted(divisions):
         started = time.time()
         mesh = MeshCrystal(conventional, n, approximations=approximations)
+        if scratch is not None:
+            import os
+            mesh.scratch = os.path.join(scratch, f"divisions_{n}")
         if approximations.momenta > 1:
             runs.append(_momentum_set_row(mesh, n, bands, screening_bands, approximations, log))
             spacings.append(mesh.cell.spacing)
@@ -394,6 +397,10 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         row["seconds"] = time.time() - started
         runs.append(row)
         spacings.append(mesh.cell.spacing)
+        if partial is not None:                                  # every finished mesh is on disk before the next starts
+            with open(partial, "w") as handle:
+                json.dump({"approximations": approximations.record(), "runs": runs}, handle, indent=1,
+                          default=lambda x: x.tolist() if hasattr(x, "tolist") else x)
     result = {"approximations": approximations.record(), "runs": runs, "measured_gap": GALLIUM_ARSENIDE.gap_gamma,
               "certified": all(row["certified"] for row in runs)}
     if len(runs) > 1:
@@ -421,10 +428,14 @@ def main_ab_initio(argv=None):
                         help="bands of the screened interaction and the self-energy")
     parser.add_argument("--lattice-constant", type=float, default=None, help="angstrom; the measured one by default")
     parser.add_argument("--out", default=None, help="write the result as JSON")
+    parser.add_argument("--scratch", default=None,
+                        help="a directory for the arrays too large to hold at once (the integrals of every mode at "
+                             "every momentum transfer of --zero-momentum-order); changes where they live, not the numbers")
     Approximations.add_arguments(parser)
     args = parser.parse_args(argv)
     result = ab_initio_gap(args.cation, args.anion, args.divisions, args.bands, args.screening_bands,
-                           Approximations.from_arguments(args), args.lattice_constant)
+                           Approximations.from_arguments(args), args.lattice_constant, scratch=args.scratch,
+                           partial=args.out + ".partial" if args.out else None)
     if "extrapolated" in result:
         print("extrapolated (eV):", {k: round(v, 3) for k, v in result["extrapolated"].items()},
               "amplification", round(result["amplification"], 1), "measured", result["measured_gap"])

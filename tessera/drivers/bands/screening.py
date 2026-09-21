@@ -275,6 +275,7 @@ class RandomPhase:
             self._momentum_modes[index] = (omega, (root[:, None] * Z) / np.sqrt(omega)[None, :], {})
         omega, modes, transitions = self._momentum_modes[index]
         if n not in transitions:
+            transitions.clear()                                  # one mode at a time: bands x modes numbers per transfer
             transitions[n] = 2.0 * np.abs(np.asarray(term["blocks"][n]) @ modes) ** 2        # |sqrt(2) (nm|s)|^2
         value = derivative = 0.0
         levels = np.asarray(term["levels"], dtype=float)
