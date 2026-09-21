@@ -250,3 +250,24 @@ def test_a_self_consistent_crystal_on_a_bisected_mesh_against_plane_waves():
     run = mesh.run(4)
     assert run["certified"] and run["converged"], run
     assert np.all(np.abs(run["levels"][:2] - target) < 0.6 * np.abs(uniform["levels"][:2] - target))
+
+
+@pytest.mark.slow
+def test_hartree_fock_at_the_zone_centre_and_at_a_finite_momentum_on_a_bisected_mesh():
+    """Exchange through the sparse kernel with its zero-momentum constant, the
+    pair loads with the links of the true displacements, and the projector loads
+    at the true positions: the levels at the zone centre and at X continue the
+    sequence of the uniform meshes toward lower energies."""
+    crystal = abinitio.Crystal(LATTICE, [(soft_atom(), np.full(3, 0.5))])
+    levels = {}
+    for name, n, options in (("coarse", 6, {}), ("uniform", 8, {}),
+                             ("bisected", 6, {"refinement": IonRefinement.of_crystal(crystal, [(2.4, 1)])})):
+        mesh = abinitio.MeshCrystal(crystal, n, **options)
+        run = mesh.run_hartree_fock(4)
+        assert run["certified"] and run["converged"], (name, run)
+        extended = mesh.extend_bands(run, 6)
+        at_x = mesh.bands_at(extended, (0.5, 0.0, 0.0))
+        assert at_x["converged"]
+        levels[name] = np.array([extended["levels"][0], at_x["levels"][0], at_x["levels"][1]])
+    assert np.all(levels["bisected"] < levels["uniform"]) and np.all(levels["uniform"] < levels["coarse"])
+    assert np.abs(levels["bisected"] - levels["uniform"]).max() < 0.02
