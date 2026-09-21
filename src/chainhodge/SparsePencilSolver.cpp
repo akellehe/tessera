@@ -185,10 +185,26 @@ struct Prepared {
   double hermitianDefectM{0.0};
   double conditioning{0.0};
   int conditioningSolves{0};
+  // The low-rank term P D P^dagger of the left-hand matrix, and what the
+  // Woodbury identity needs of it: B^{-1} P and (I + D P^dagger B^{-1} P)^{-1} D.
+  Dense P, D, solvedP, core;
+  bool shiftBelowSpectrum{false};
+
+  [[nodiscard]] Dense applyA(const Dense &Z) const {
+    Dense out = A * Z;
+    if (P.cols() > 0) out.noalias() += P * (D * (P.adjoint() * Z));
+    return out;
+  }
+
+  [[nodiscard]] Dense solve(const Dense &rhs) const {
+    Dense y = factor.solve(rhs);
+    if (P.cols() > 0) y.noalias() -= solvedP * (core * (P.adjoint() * y));
+    return y;
+  }
 
   Prepared(const SparseMatrix &A_, const SparseMatrix &M_, double sigma_,
-           const SparsePencilOptions &options)
-      : A(A_), M(M_), sigma(sigma_) {
+           const SparsePencilOptions &options, const LowRankTerm &term = {})
+      : A(A_), M(M_), sigma(sigma_), P(term.left), D(term.core) {
     const Eigen::Index n = A.rows();
     if (A.cols() != n || M.rows() != n || M.cols() != n)
       throw std::invalid_argument("SparsePencilSolver: A and M must be square of one size");
@@ -205,17 +221,52 @@ struct Prepared {
       if (massCholesky.info() != Eigen::Success)
         throw std::invalid_argument("SparsePencilSolver: M is not positive definite");
     }
+    if (P.cols() > 0) {
+      if (P.rows() != n || D.rows() != P.cols() || D.cols() != P.cols())
+        throw std::invalid_argument("SparsePencilSolver: the low-rank term must be n x r with an r x r core");
+      const double coreNorm = D.norm();
+      if ((D - D.adjoint()).norm() > options.hermitianTolerance * std::max(coreNorm, 1e-300))
+        throw std::invalid_argument("SparsePencilSolver: the core of the low-rank term is not Hermitian");
+    }
     B = A - Complex(sigma, 0.0) * M;
     B.makeCompressed();
     factor.compute(B);
     conditioning = oneNorm(B) * inverseOneNormEstimate(factor, n, conditioningSolves);
+    shiftBelowSpectrum = factor.positiveDefinite;
+    if (P.cols() > 0) {
+      const Eigen::Index r = P.cols();
+      solvedP = factor.solve(P);
+      const Dense gram = P.adjoint() * solvedP;                       // P^dagger B^{-1} P
+      const Eigen::FullPivLU<Dense> inner(Dense::Identity(r, r) + D * gram);
+      if (!inner.isInvertible())
+        throw std::runtime_error(
+            "SparsePencilSolver: A + P D P^dagger - sigma M is singular; the shift is an eigenvalue");
+      core = inner.solve(D);
+      // Inertia. With B positive definite, the block matrix [[B, P], [P^dagger, -D^{-1}]]
+      // has the inertia of B plus that of -(D^{-1} + P^dagger B^{-1} P), and also that
+      // of B + P D P^dagger plus that of -D^{-1}; so B + P D P^dagger is positive
+      // definite exactly when D^{-1} + P^dagger B^{-1} P has as many negative
+      // eigenvalues as D^{-1}. An invertible core is needed for the count.
+      if (shiftBelowSpectrum) {
+        const Eigen::FullPivLU<Dense> coreLU(D);
+        if (!coreLU.isInvertible()) {
+          shiftBelowSpectrum = false;
+        } else {
+          const Dense inverse = coreLU.inverse();
+          auto negatives = [](const Dense &X) {
+            const Eigen::SelfAdjointEigenSolver<Dense> es(0.5 * (X + X.adjoint()), Eigen::EigenvaluesOnly);
+            return (es.eigenvalues().array() < 0.0).count();
+          };
+          shiftBelowSpectrum = negatives(inverse + gram) == negatives(inverse);
+        }
+      }
+    }
   }
 };
 
 SparsePencilRead solvePrepared(const Prepared &prepared, int count, const SparsePencilOptions &options) {
   const SparseMatrix &A = prepared.A;
   const SparseMatrix &M = prepared.M;
-  const ShiftedFactorization &factor = prepared.factor;
   const double sigma = prepared.sigma;
   const Eigen::Index n = A.rows();
   if (count < 1 || count > n)
@@ -224,7 +275,7 @@ SparsePencilRead solvePrepared(const Prepared &prepared, int count, const Sparse
   SparsePencilRead read;
   read.hermitianDefectA = prepared.hermitianDefectA;
   read.hermitianDefectM = prepared.hermitianDefectM;
-  read.shiftBelowSpectrum = factor.positiveDefinite;
+  read.shiftBelowSpectrum = prepared.shiftBelowSpectrum;
   read.solves = prepared.conditioningSolves;
 
   int block = options.blockSize > 0 ? options.blockSize : count + std::max(2, count / 4);
@@ -251,7 +302,7 @@ SparsePencilRead solvePrepared(const Prepared &prepared, int count, const Sparse
   std::vector<double> residuals;
   for (; read.iterations < options.maxIterations;) {
     // Expand the newest block and complete the projected matrix with it.
-    const Dense W = factor.solve(M * V.middleCols(lastStart, lastSize));
+    const Dense W = prepared.solve(M * V.middleCols(lastStart, lastSize));
     read.solves += static_cast<int>(lastSize);
     ++read.iterations;
     const Dense H = V.leftCols(size).adjoint() * (M * W);
@@ -265,7 +316,7 @@ SparsePencilRead solvePrepared(const Prepared &prepared, int count, const Sparse
       throw std::runtime_error("SparsePencilSolver: the projected eigenproblem did not converge");
     selection = selectAboveShift(ritz, sigma, count);
     Z = V.leftCols(size) * selection.coefficients;
-    AZ = A * Z;
+    AZ = prepared.applyA(Z);
     MZ = M * Z;
     residuals = relativeResiduals(AZ, MZ, selection.lambda, sigma);
     const bool enough = static_cast<int>(selection.lambda.size()) == count;
@@ -360,6 +411,13 @@ SparsePencilRead SparsePencilSolver::lowest(const SparsePencil &pencil, int coun
 SparsePencilRead SparsePencilSolver::lowest(const SparseMatrix &A, const SparseMatrix &M, int count,
                                             double sigma, const SparsePencilOptions &options) {
   const Prepared prepared(A, M, sigma, options);
+  return solvePrepared(prepared, count, options);
+}
+
+SparsePencilRead SparsePencilSolver::lowest(const SparseMatrix &A, const SparseMatrix &M,
+                                            const LowRankTerm &term, int count, double sigma,
+                                            const SparsePencilOptions &options) {
+  const Prepared prepared(A, M, sigma, options, term);
   return solvePrepared(prepared, count, options);
 }
 

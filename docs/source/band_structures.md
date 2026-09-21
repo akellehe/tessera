@@ -8,17 +8,39 @@ finite elements on the mesh and $A$ is $\hbar^2/2m$ times their stiffness
 matrix plus the potential. Lengths are in angstrom and energies in electron
 volts.
 
+## What these calculations are
+
+The crystal, its potential and its two spin sheets are put in by hand: in the
+terms of the theory this is targeted synthesis, not emergence, and nothing here
+tests whether a geometry relaxes to a crystal. What is tested is the code path
+from the declared fields (a complex squared length and a connection on every
+edge, one mode per cell, second quantization) to a quasiparticle energy. The
+modes are carried at degree zero, which is the exact sector of the degree-one
+edge operator: the nonzero levels of the two agree, and the test suite holds
+them to each other.
+
+Every interaction is the Coulomb kernel obtained by eliminating the timelike
+connection, and every mean field is its Wick contraction (Hartree and exchange).
+A density functional is not an object of the theory and none is used.
+
+A calculation of a real material is held to experimentally determined values
+(`tessera.drivers.bands.reference`). A plane-wave calculation of the same model
+Hamiltonian is a consistency check of that model and does not arbitrate a
+discrepancy; fixtures with synthetic ions have no measured value and are
+consistency checks only.
+
 ## The pencil at a crystal momentum
 
 A crystal momentum $k$ is a flat U(1) connection on the mesh: the link of the
 edge from $v$ to $w$ is $e^{i k \cdot \Delta x_{vw}}$ with $\Delta x_{vw}$ the
 unwrapped displacement of the edge. Its curvature is 1 on every triangle and its
 holonomy around the fundamental cycle along the lattice vector $a_i$ is
-$e^{i k \cdot a_i}$. Because such a connection is a pure gauge on every
+$e^{i k \cdot a_i}$. `CrystalCell.pencil` assembles the pencil at that
+connection with `CovariantChainHodge.sparsePencil` and
+`dressedVertexPotential`. Because such a connection is a pure gauge on every
 tetrahedron, dressing the pencil by it multiplies the entry $(v, w)$ of both
-matrices by the link $U_{vw}$. `CrystalCell` assembles the matrices once and
-dresses them per momentum; `CrystalCell.certify` holds that form to the C++
-`CovariantChainHodge` and measures the premises the solver relies on
+matrices by the link $U_{vw}$; `CrystalCell.certify` holds that entrywise form
+to the assembly and measures the premises the solver relies on
 (allowable geometry, unimodular links, zero curvature, the prescribed holonomy,
 Hermitian matrices, a positive definite mass matrix).
 
@@ -112,18 +134,25 @@ has curvature on the vertical triangles, the electric field. The tick map of a
 stack of slabs solves a quadratic eigenproblem in the blocks of the slab's
 pencil, and as $\tau \to 0$ its decay rates $E$ obey
 
-$$ (A + m^2 W)\, u = E^2 D\, u , $$
+$$ (A + m^2 M)\, u = E^2 D\, u , $$
 
-with $D$ the lumped (diagonal) mass matrix, which is what the time stiffness of
-a staircase slab produces, and $W$ the matrix the mass term is added with. With
-the consistent mass matrix ($W = M$) the mismatch between $M$ and $D$ is
-multiplied by $m^2$, and the non-relativistic reduction $E \approx m + L/2m + V$
-requires the mesh to resolve the Compton wavelength, $m h \ll 1$, in addition to
-$L \ll m^2$. With the lumped mass term ($W = D$) the reduction holds at any mesh
-spacing. What remains between the fiber-edge route and the static route is then
-first order in the potential and closes with the mesh: on a connection with
-curvature the covariant operator transports through the base vertex of each
-cell, which samples the potential one mesh step away.
+with $M$ the Whitney mass matrix and $D$ the lumped (diagonal) mass matrix,
+which is what the time stiffness of a staircase slab produces. With a potential
+the baseline is the static relativistic problem
+
+$$ (A + m^2 M)\, u = D\, (E - V)^2\, u , $$
+
+a quadratic eigenproblem in $E$ in which nothing is expanded, neither in the
+potential nor in $1/m$ (`fiber.static_levels`). The lowest decay rate of the tick
+map closes on its lowest level at second order in the mesh spacing (a difference
+of 0.062, 0.029, 0.016, 0.010 on cells of 3 to 6 divisions at $m = 6$), and the
+response to the potential approaches the static one from below (0.74, 0.82,
+0.88, 0.91); neither depends on the tick. What remains at a finite mesh is the
+curvature of the connection: on the vertical triangles the covariant operator
+transports through the base vertex of each cell, which samples the potential one
+mesh step away. The non-relativistic reduction $E \approx m + L/2m + V$ is not
+used anywhere: it needs the mesh to resolve the Compton wavelength, and compared
+with it the same tick map appeared to over-respond by factors of 2 to 7.
 
 ### The quasiparticle correction
 
@@ -138,3 +167,153 @@ result must be converged in it. An ab initio calculation of a real crystal
 additionally needs ionic pseudopotentials and a set of crystal momenta, at a
 cost (one Poisson solve per pair of orbitals per pair of momenta) that belongs
 on a cluster.
+
+`screening.KineticBasisScreening` is the second route to the same self-energy,
+and the one that scales to momentum sets: in the eigenbasis of the kinetic
+pencil the Coulomb kernel is diagonal, the dielectric matrix is inverted at
+imaginary frequencies, and the self-energy follows by contour deformation. The
+interaction along the imaginary axis is carried by a Chebyshev series of degree
+63 in a mapped frequency (nothing is linearized), and the Lorentzian becomes the
+measure of a Gauss-Legendre quadrature. The
+response at vanishing momentum enters as one more basis function, which screens
+the rest of the interaction through the mixed entries of the dielectric matrix;
+`RandomPhase.set_head` does the same on the modes of the particle-hole pairs.
+With the whole basis the two routes agree at every frequency to 1e-11 Ry, and the
+test suite holds them to each other.
+
+No equation in these drivers is linearized: the quasiparticle equation is
+iterated to its root, the tick map is the full quadratic eigenproblem, and a
+series that is truncated keeps at least five terms (the refinement series of the
+zero-momentum constant, the lattice sums over images, the frequency series
+above). The mesh extrapolation `richardson` removes one even order per mesh
+beyond the first, five with six meshes; `richardson_amplification` is the factor
+by which it multiplies anything in the values that does not follow the error
+model (5.6 for divisions 16, 24, 32 with two orders; 27 for 8, 12, 16, 20, 24,
+32 with five), and is reported with every extrapolated number.
+
+### Ab initio
+
+`pseudopotential` reads norm-conserving pseudopotentials in the Unified
+Pseudopotential Format and `abinitio` runs a crystal self-consistently on the
+mesh and, as the reference, in plane waves with the same pseudopotentials,
+momenta and conventions. The local part of an ion is split into a short-range
+remainder, summed over images, and the potential of a Gaussian charge, which on
+the mesh is a source of the same Coulomb kernel the electrons interact through
+(the continuum kernel of the plane-wave reference leaves a uniform remainder,
+`PlaneWaveCrystal.alignment`, that the mesh does not carry). Closed forms used
+anywhere in these drivers are closed forms of the framework's own matrices (the
+Fourier symbols of its stiffness and mass matrices, derivatives of its covariant
+assembly), each held to the framework's numerical route by a test; a continuum
+solution is never substituted for one. The separable nonlocal part is a term
+`P D P^T` of low rank in the left-hand matrix of the pencil, with `P = M beta`
+the load vectors of the projector functions; `SparsePencilSolver` applies it
+through the Woodbury identity and certifies the shift by inertia. Exchange is
+compressed onto the computed bands and joins the same low-rank term. The
+Coulomb kernel of the grid is inverted exactly by Fourier transform, because the
+stiffness matrix commutes with the grid translations.
+
+A Coulomb kernel of zero mean leaves out the zero-momentum term of exchange and
+of the screened interaction, and both are restored by the auxiliary-function
+method of Gygi and Baldereschi with the kernel's own symbol as the auxiliary
+function. For exchange the term is the constant
+`GridCoulombKernel.zero_momentum_constant()` on the filled bands: the average of
+the inverse symbol of the stiffness matrix over every momentum, minus its sum
+over the wavevectors the cell supports. For the continuum kernel on a cubic cell
+that constant is `2 MADELUNG / L`, which the mesh constant tends to under
+refinement. For the screened interaction the term is the same constant times
+the inverse dielectric function at vanishing momentum, which needs the charge
+of every particle-hole pair per unit momentum. That charge is the derivative of
+$1^T M_0^U[\psi_i]\, z_a(q)$ with respect to the momentum of the flat
+connection, and it is taken in closed form
+(`MeshCrystal.vanishing_momentum_pairs`): because the filled orbitals are
+eigenvectors, first-order perturbation theory needs no linear solve,
+
+$$ d_{ia} = 1^T (\partial M_0^U[\psi_i])\, z_a
+   + \frac{\psi_i^T (\partial H - \epsilon_a\, \partial M)\, z_a}{\epsilon_a - \epsilon_i} , $$
+
+with $\partial$ the derivative with respect to a uniform change of the link
+phases: entrywise for the stiffness, mass and weighted mass matrices
+(`GridMatrix.momentum_derivative`), the product rule on the projector loads, and
+for exchange the derivative of the dressed weighted mass matrices and of the
+Coulomb kernel, whose symbol has a closed-form gradient
+(`GridCoulombKernel.potential_derivative`). The entry of the kernel at $G = 0$
+tends to `strength / (V q^2)` exactly, because piecewise-linear elements
+reproduce linear functions. The same response from a small finite momentum
+(the Hartree-Fock pencil solved at the flat connection of momentum $q$ by
+`MeshCrystal.bands_at`, pair densities loaded with the link phases of that
+momentum by `momentum_pairs`) converges to the closed form at second order in
+$q$, and the test suite holds the two to each other. On the energy shell the
+term lowers the gap by `c (1 - 1/eps)`, which is how screening closes a
+Hartree-Fock gap.
+
+`MeshCrystal.run_hartree_fock_set` samples the covariance on a momentum set, a
+uniform grid that contains the zone centre. The pencil at each momentum is
+dressed by the flat connection of that momentum; the exchange operator carries
+the momentum transfer $k - k'$ in its kernel, the inverse of the stiffness
+matrix dressed by the transfer, with pair densities loaded between the two
+momenta; and the zero-momentum constant is that of the set, which is the
+constant of the supercell the set is equivalent to. A cell doubled along an
+axis at its zone centre and the single cell sampled at 0 and 1/2 along that
+axis give the same Hartree-Fock levels, filled and empty, and the test suite
+holds them to each other.
+
+### Running the prediction
+
+```
+python -m tessera.drivers.bands.gaas ab-initio --cation Ga.UPF --anion As.UPF \
+    --divisions 8 12 16 20 24 32 --bands 24 --screening-bands 200 --out gaas.json
+```
+
+runs Hartree-Fock and the quasiparticle equation (one shot, with the levels fed
+back into the propagator, and into the propagator and the screening) on every
+mesh, certifies each converged state as a `CovarianceState`, extrapolates over
+the meshes and prints the result next to `richardson_amplification` and the
+measured gap, which is the arbiter. Every approximation made for the sake of
+cost is a flag (`settings.Approximations`), recorded in the output:
+
+| flag | what it truncates | range, default |
+|---|---|---|
+| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$, 2 adds the crossed diagram, 3 the six skeleton diagrams of third order (`diagrams`) | 1 to 5, default 3; implemented: 1 to 3 |
+| `--vertex-bands`, `--vertex-poles` | the modes nearest the gap on the internal lines of the diagrams beyond the first order, and the modes of the screened interaction kept in them; the cost of order $k$ grows as bands$^{2k-1}$ poles$^k$ | default 12 and 12 |
+| `--zero-momentum-order` | how the self-energy integrand is averaged over the momentum transfers the sampling leaves out: 1 is the closed form at vanishing momentum; k is a midpoint grid of k transfers per axis, the Hartree-Fock pencil solved at every node, the singular part averaged analytically and the bounded remainder by the grid | 1 to 5, default 3; all implemented |
+| `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
+| `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
+| `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
+| `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
+
+An order that is not implemented is refused by name before anything runs; it is
+never replaced by a lower one (orders 4 and 5 of the expansion in the screened
+interaction are). The diagrams beyond $\Sigma = iGW$ are evaluated as sums over
+the orderings of their vertex times, in closed form on the poles of $W$, with
+the instantaneous part of $W$ as lines whose two vertices share a time; the
+test suite holds them to the closed form at first order, to the textbook
+second-order exchange, to the plain frequency integrals of their Feynman rules
+on the imaginary axis (the triangle loops included), and to the heavy-boson
+limit for instantaneous lines. On a cell of 6 bohr the correlation self-energy of the filled level
+goes from -0.032 Ry at zero-momentum order 1 to -0.052 and -0.061 Ry at orders 2
+and 3 (-0.071 Ry on a grid of 6): sampling the zone centre alone is a large
+approximation on a small cell.
+
+Hartree-Fock has more than one stationary state, and a loop reaches the one its
+start leads to. The loop starts from the Hartree mean field when that has a
+self-consistent state and from one diagonalization in the potential of the
+atomic density when it does not (without exchange gallium arsenide is gapless to
+0.03 eV and its filling does not converge); every mesh after the first starts
+from the orbitals of the mesh before it, which are piecewise-linear functions
+and are evaluated exactly on the finer vertices (`MeshCrystal.prolonged`). The
+electronic energy of every run is recorded so that stationary states can be
+compared.
+
+Published inputs cannot be extended, and no flag pretends otherwise. A
+pseudopotential file fixes the angular momenta of its projectors (the
+Bachelet-Hamann-Schlueter files stop at $l = 1$) and carries spin-orbit data only
+if it says so; the Cohen-Bergstresser form factors of the empirical subcommand
+are three per series.
+
+Whether a pseudopotential can be used is decided by `pseudopotential`'s
+screened, confined pseudo-atom, solved radially and on the mesh. A
+pseudopotential that keeps the gallium 3d shell in the valence is not resolved
+by piecewise-linear elements at any mesh a workstation holds (the 3d level is
+22 eV too high at 32 divisions of a 5.64 angstrom cell and not in the asymptotic
+regime); three- and five-electron pseudopotentials for gallium and arsenic are
+(their 4s and 4p levels extrapolate to the radial values within 0.1 eV).

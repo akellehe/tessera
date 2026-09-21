@@ -32,7 +32,7 @@ class TestMathieu:
     @pytest.mark.parametrize("kappa,antiperiodic", [((0, 0, 0), False), ((0.5, 0.5, 0.5), True)])
     def test_band_edges_are_three_mathieu_values(self, kappa, antiperiodic):
         reference, extrapolated, levels = self._edges(kappa, antiperiodic)
-        # The band edge to the plan's 1e-3 after extrapolation, from meshes that
+        # The band edge to 1e-3 after extrapolation, from meshes that
         # are each off by several per cent.
         assert abs(levels[-1][0] / reference[0] - 1.0) > 0.03
         assert abs(extrapolated[0] / reference[0] - 1.0) < 1e-3

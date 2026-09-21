@@ -82,11 +82,20 @@ class GridMatrix:
             raise ValueError("a stored entry joins vertices that are not neighbours on the grid")
         self.row, self.col, self.data = coo.row, coo.col, coo.data.astype(complex)
         self.step = d / n
+        self.displacement = self.step @ cell.lattice            # Cartesian, from the row vertex to the column vertex
         self.shape = coo.shape
 
     def dressed(self, kappa=(0.0, 0.0, 0.0)):
         phase = np.exp(2j * np.pi * (self.step @ np.asarray(kappa, dtype=float)))
         return sp.csc_matrix((self.data * phase, (self.row, self.col)), shape=self.shape)
+
+    def momentum_derivative(self, axis):
+        """The derivative of `dressed` with respect to the Cartesian component
+        `axis` of the crystal momentum, at the zone centre: the entry (v, w)
+        times i (x_w - x_v). It is the derivative with respect to the link
+        phases contracted with the edge displacements, the current operator of
+        a uniform connection."""
+        return sp.csc_matrix((1j * self.data * self.displacement[:, axis], (self.row, self.col)), shape=self.shape)
 
 
 class CrystalCell:
@@ -144,18 +153,30 @@ class CrystalCell:
         # The interpolant lies between its vertex values, so the weighted form
         # is bounded below by this times the mass matrix.
         weighted.floor = float(values.real.min())
+        weighted.values = values
         return weighted
+
+    def covariant(self, kappa=(0.0, 0.0, 0.0)):
+        """The `CovariantChainHodge` of the cell at the flat connection whose
+        links are the Bloch phases of the crystal momentum `kappa`
+        (`PeriodicKuhnGrid.blochLinks`)."""
+        links = self.grid.blochLinks(self.edges, [float(x) for x in kappa])
+        return ch.CovariantChainHodge(self.base, ch.Connection(self.complex, links), 7, False)
 
     def pencil(self, kappa=(0.0, 0.0, 0.0), potential=None):
         """(A, M) at the crystal momentum `kappa` (reciprocal coordinates), in
-        energy units: `A = kinetic_scale * A0^U + M0^U[V]`. `potential` is
-        either vertex values or a `GridMatrix` from `weighted_mass`."""
-        A = self.kinetic_scale * self.stiffness.dressed(kappa)
-        M = self.mass.dressed(kappa)
+        energy units: `A = kinetic_scale * A0^U + M0^U[V]`, assembled by
+        `CovariantChainHodge.sparsePencil` and `dressedVertexPotential` at the
+        connection of `covariant(kappa)`. `potential` is either vertex values or
+        a `GridMatrix` from `weighted_mass`. (`GridMatrix.dressed` is the same
+        matrices by an entrywise rule, which `certify` holds to this assembly.)"""
+        cov = self.covariant(kappa)
+        assembled = cov.sparsePencil()
+        A = self.kinetic_scale * sp.csc_matrix(assembled.A)
         if potential is not None:
-            weighted = potential if isinstance(potential, GridMatrix) else self.weighted_mass(potential)
-            A = A + weighted.dressed(kappa)
-        return A.tocsc(), M
+            values = potential.values if isinstance(potential, GridMatrix) else np.asarray(potential).astype(complex)
+            A = A + sp.csc_matrix(cov.dressedVertexPotential(list(values)))
+        return A.tocsc(), sp.csc_matrix(assembled.M)
 
     def spacetime(self, kappa=(0.0, 0.0, 0.0)):
         """The cell as a `Spacetime` whose edges carry the declared fields: the
@@ -266,14 +287,28 @@ def solve_pencil(A, M, count, sigma, tolerance=1e-10, kappa=(0.0, 0.0, 0.0), **o
                     shift_below_spectrum=read.shiftBelowSpectrum, solves=read.solves)
 
 
-def richardson(spacings, values, orders=(2, 4)):
+def richardson_amplification(spacings, orders=None):
+    """The sum of the absolute weights with which `richardson` combines the
+    meshes: the factor by which it multiplies whatever in the values does not
+    follow the error model (a residual of the self-consistency, a mesh outside
+    the asymptotic regime). 5.6 for divisions 16, 24, 32 and two orders; 27 for
+    8, 12, 16, 20, 24, 32 and five."""
+    h = np.asarray(spacings, dtype=float)
+    orders = tuple(2 * (p + 1) for p in range(len(h) - 1)) if orders is None else orders
+    design = np.column_stack([np.ones_like(h)] + [h ** p for p in orders])
+    return float(np.abs(np.linalg.inv(design)[0]).sum())
+
+
+def richardson(spacings, values, orders=None):
     """Extrapolate `values` measured at mesh spacings `spacings` to zero spacing
     with the error model v(h) = v_0 + sum_p c_p h^p over the given `orders`.
-    Piecewise-linear elements on a uniform mesh have an even expansion, so three
-    meshes remove the h^2 and h^4 terms. `values` may be an array per mesh (one
-    column per band). Returns (extrapolated, leading coefficients)."""
+    Piecewise-linear elements on a uniform mesh have an even expansion, and by
+    default every mesh but one removes one even order: six meshes remove h^2 to
+    h^10. `values` may be an array per mesh (one column per band). Returns
+    (extrapolated, leading coefficients); see `richardson_amplification`."""
     h = np.asarray(spacings, dtype=float)
     values = np.asarray(values, dtype=float)
+    orders = tuple(2 * (p + 1) for p in range(len(h) - 1)) if orders is None else orders
     if len(h) != len(orders) + 1:
         raise ValueError("richardson needs exactly one more mesh than error orders")
     design = np.column_stack([np.ones_like(h)] + [h ** p for p in orders])
@@ -292,39 +327,121 @@ def k_path(points, segments=8):
     return [tuple(p) for p in path]
 
 
-def track_bands(cell, reads, overlap_threshold=0.5):
-    """Follow bands along a path of crystal momenta by overlap, not by ordering.
+def band_fibers(cell, read, degeneracy=1e-7):
+    """The bands of a `BandRead` as `observables.SpectralFiber` objects, one per
+    level, a degenerate level being one fiber of rank equal to its multiplicity
+    (levels closer than `degeneracy` times the spread of the read).
 
-    The eigenvectors of the dressed pencil are the cell-periodic parts of the
-    Bloch functions, so frames at neighbouring momenta live in one space and are
-    compared in the undressed mass matrix: `O = Z_k^dagger M_0 Z_k'`. Each band
-    at one momentum is continued to the band at the next with which it shares
-    the most weight (an optimal assignment on |O|^2, the squared cosines of the
-    principal angles between one-dimensional frames), so crossings are passed
-    through instead of being read as avoided.
+    The frame of a fiber is M_0^(1/2) Z on the vertices: the eigenvectors are
+    the cell-periodic parts of the Bloch functions, frames at different momenta
+    are compared in the undressed mass matrix, and the principal angles the
+    library measures with the plain inner product are then the angles in that
+    mass matrix. The mass matrix commutes with the grid translations, so its
+    square root is a Fourier multiplier. The band certificate carries what the
+    sparse solver certified. Returns (fibers, the band indices of each)."""
+    from tessera import observables
+    shape = cell.divisions
+    row = cell.mass.dressed().getrow(0)
+    stencil = np.zeros(cell.size)
+    stencil[row.indices] = row.data.real
+    root = np.sqrt(np.fft.fftn(stencil.reshape(shape)).real)
+    field = read.vectors.T.reshape((-1,) + shape)
+    frames = np.fft.ifftn(np.fft.fftn(field, axes=(1, 2, 3)) * root, axes=(1, 2, 3)).reshape(-1, cell.size).T
+    energies = np.asarray(read.energies)
+    spread = max(float(energies[-1] - energies[0]), 1.0)
+    groups = [[0]]
+    for b in range(1, len(energies)):
+        (groups[-1].append(b) if energies[b] - energies[b - 1] < degeneracy * spread else groups.append([b]))
+    split = lambda values, key: {key + "_re": [float(x) for x in np.real(values)],
+                                 key + "_im": [float(x) for x in np.imag(values)]}
+    cells = [[int(v)] for v in range(cell.size)]
+    fibers = []
+    for group in groups:
+        frame = frames[:, group]
+        certificate = {
+            "accepted": bool(read.certified()), "degree": 0, "rank": len(group), "self_adjoint": True,
+            "lower_gap": float("inf"), "upper_gap": float("inf"), "nearest_discarded_separation": float("inf"),
+            "frequency_lower": float(energies[group[0]]), "frequency_upper": float(energies[group[-1]]),
+            "eigen_residual": float(read.residual), "left_residual": float(read.residual),
+            "positive_signature": len(group), "negative_signature": 0, "isotropic": False, "left_frame_refusal": "",
+            **{key: float("nan") for key in (
+                "localization", "localization_support_fraction", "localization_excess", "projector_residual",
+                "gram_defect", "projector_norm", "frame_condition_number", "pairing_determinant_re",
+                "pairing_determinant_im", "pairing_condition", "pairing_scale", "metric_symmetry_defect")},
+            "certificate": {"conditioning": float(read.conditioning), "dense_reference_error": float("nan"),
+                            "domain": "band-window", "grade": "certified-numerical" if read.certified()
+                            else "heuristic-discovery", "regime": "positive-semidefinite",
+                            "residual": float(read.residual), "tolerance": 1e-9}}
+        record = {"schema_version": 2, "record_type": "spectral_fiber", "cells": cells, "rows": cell.size,
+                  "rank": len(group), "certificate": certificate,
+                  **split(energies[group].astype(complex), "eigenvalues"), **split(frame.ravel(), "right_frame"),
+                  **split(frame.ravel(), "left_frame"), **split(np.ones(cell.size, dtype=complex), "weights")}
+        fibers.append(observables.SpectralFiber.fromRecord(record))
+    return fibers, groups
+
+
+def track_bands(cell, reads, overlap_threshold=0.5):
+    """Follow bands along a path of crystal momenta by overlap, not by ordering,
+    with the overlap rule of `SpectralFiberTracker.matchFibers` (principal
+    angles of the frames on shared cells) on the fibers of `band_fibers`.
+
+    Between two neighbouring momenta every fiber is matched to its best partner
+    in both directions; fibers joined by a match form a group (a level that
+    splits or merges joins more than two), and within a group the band labels
+    are handed on in order of energy. A crossing puts the two bands in
+    different groups, so it is passed through instead of being read as avoided.
 
     Returns (tracked, weights): `tracked[p, b]` is the energy of band `b` (as
     labelled at the first momentum) at path point `p`, and `weights[p, b]` the
-    overlap weight it was continued with (1 at the first point). A weight below
-    `overlap_threshold` marks a band that left the computed window.
-    """
-    from scipy.optimize import linear_sum_assignment
-    mass = cell.mass.dressed()
+    overlap it was continued with (1 at the first point); a band with no
+    partner above `overlap_threshold`, or in a group that does not conserve the
+    number of bands, left the computed window and carries a weight of zero or
+    below."""
+    from tessera import observables
     count = reads[0].vectors.shape[1]
     tracked = np.empty((len(reads), count))
     weights = np.ones((len(reads), count))
-    order = np.arange(count)
     tracked[0] = reads[0].energies
+    labels = np.arange(count)                        # labels[i] = the label of band i at the previous point
+    previous, previous_groups = band_fibers(cell, reads[0])
     for p in range(1, len(reads)):
-        previous = reads[p - 1].vectors[:, order]
-        current = reads[p].vectors
-        # Each frame is orthonormal in its own dressed mass matrix; in the common
-        # undressed one the norms differ from 1 at the order of the step in k.
-        norm = lambda Z: np.einsum("ij,ij->j", Z.conj(), mass @ Z).real
-        overlap = np.abs(previous.conj().T @ (mass @ current)) ** 2 / np.outer(norm(previous), norm(current))
-        rows, cols = linear_sum_assignment(-overlap)
-        order = cols[np.argsort(rows)]
-        tracked[p] = reads[p].energies[order]
-        weights[p] = overlap[np.arange(count), order]
-    lost = weights < overlap_threshold
-    return tracked, np.where(lost, -weights, weights)
+        current, current_groups = band_fibers(cell, reads[p])
+        forward = observables.SpectralFiberTracker.matchFibers(previous, current, overlap_threshold)
+        backward = observables.SpectralFiberTracker.matchFibers(current, previous, overlap_threshold)
+        # The library normalizes the overlap by the larger rank; the share of the smaller
+        # subspace that lies in the larger one is what links a level to the parts it splits into.
+        def contained(match, a, b):
+            ranks = len(previous_groups[a]), len(current_groups[b])
+            return match.overlap.subspaceOverlap * max(ranks) / min(ranks)
+        links = {(m.fromIndex, m.toIndex): contained(m, m.fromIndex, m.toIndex) for m in forward}
+        for m in backward:
+            key = (m.toIndex, m.fromIndex)
+            links[key] = max(contained(m, *key), links.get(key, 0.0))
+        links = {key: weight for key, weight in links.items() if weight >= overlap_threshold}
+        # Connected groups of the bipartite match graph.
+        parent = list(range(len(previous) + len(current)))
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        for (a, b) in links:
+            parent[find(a)] = find(len(previous) + b)
+        new_labels = np.full(count, -1)
+        lost = np.ones(count, dtype=bool)
+        overlap_of = np.zeros(count)
+        for rootnode in {find(x) for x in range(len(parent))}:
+            sources = [i for a in range(len(previous)) if find(a) == rootnode for i in previous_groups[a]]
+            targets = [i for b in range(len(current)) if find(len(previous) + b) == rootnode for i in current_groups[b]]
+            weight = min((w for (a, b), w in links.items() if find(a) == rootnode), default=0.0)
+            for source, target in zip(sorted(sources), sorted(targets)):
+                new_labels[target] = labels[source]
+                overlap_of[target] = weight
+                lost[target] = len(sources) != len(targets) or weight < overlap_threshold
+        free = [label for label in range(count) if label not in set(new_labels[new_labels >= 0])]
+        for target in np.nonzero(new_labels < 0)[0]:
+            new_labels[target] = free.pop(0)
+        tracked[p, new_labels] = reads[p].energies
+        weights[p, new_labels] = np.where(lost, -overlap_of, overlap_of)
+        labels, previous, previous_groups = new_labels, current, current_groups
+    return tracked, weights

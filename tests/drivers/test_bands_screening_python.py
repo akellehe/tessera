@@ -160,6 +160,29 @@ class TestRandomPhaseAndQuasiparticles:
         gap = rpa.quasiparticle(2)[0] - rpa.quasiparticle(1)[0]
         assert 0.9 * (rpa.energies[2] - rpa.energies[1]) < gap < 1.1 * (rpa.energies[2] - rpa.energies[1])
 
+    def test_eigenvalue_self_consistency(self, system):
+        """One pass is the one-shot result; iterating converges; and feeding the
+        levels back into the screening as well moves the gap further than
+        feeding them into the propagator alone."""
+        rpa = system(8.0)
+        count = len(rpa.energies)
+        pairs = [(i, a) for i in range(2) for a in range(2, count)]
+        integrals = {n: np.array([[rpa.W[n, m, i, a] for (i, a) in pairs] for m in range(count)]) for n in range(count)}
+        one_shot = np.array([rpa.quasiparticle(n)[0] for n in range(count)])
+        first, _, _ = screening.self_consistent_quasiparticles(rpa.energies, 2, rpa.coupling, integrals,
+                                                                max_iterations=1, damping=1.0)
+        assert first == pytest.approx(one_shot, abs=1e-10)
+        gaps = {}
+        for update in (False, True):
+            levels, history, last = screening.self_consistent_quasiparticles(rpa.energies, 2, rpa.coupling, integrals,
+                                                                            update_screening=update)
+            assert history[-1] < 1e-6 and len(history) < 60
+            # At the fixed point every level solves its quasiparticle equation with the fed-back levels.
+            for n in range(count):
+                assert levels[n] == pytest.approx(rpa.energies[n] + last.correlation(n, levels[n])[0], abs=1e-5)
+            gaps[update] = levels[2] - levels[1]
+        assert gaps[True] != pytest.approx(gaps[False], abs=1e-6)
+
     def test_complex_modes_are_refused(self, system):
         rpa = system(2.0)
         with pytest.raises(ValueError, match="real modes"):

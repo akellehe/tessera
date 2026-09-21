@@ -42,6 +42,19 @@ struct SparsePencilOptions {
   std::uint64_t seed{20260920};
 };
 
+/// A Hermitian term of low rank added to the left-hand matrix of a pencil,
+/// \f$ A \to A + P D P^\dagger \f$ with \f$ P \f$ of size \f$ n \times r \f$ and
+/// \f$ D = D^\dagger \f$ of size \f$ r \times r \f$: a separable nonlocal
+/// potential \f$ \sum_{ij} |\beta_i\rangle D_{ij} \langle\beta_j| \f$, whose
+/// columns are the load vectors \f$ P = M \beta \f$ of its projector functions.
+/// It is never assembled; it is dense on the support of the projectors.
+struct LowRankTerm {
+  /// \f$ P \f$.
+  Eigen::MatrixXcd left{};
+  /// \f$ D \f$.
+  Eigen::MatrixXcd core{};
+};
+
 /// The result of `SparsePencilSolver::lowest`.
 struct SparsePencilRead {
   /// The eigenvalues, ascending, with their certificate: the residual is
@@ -152,6 +165,21 @@ class SparsePencilSolver {
   ///   conditioning reports it.
   [[nodiscard]] static SparsePencilRead lowest(const SparseMatrix &A, const SparseMatrix &M,
                                                int count, double sigma,
+                                               const SparsePencilOptions &options = {});
+  /// `lowest` for the pencil \f$ (A + P D P^\dagger, M) \f$ with the low-rank
+  /// term kept in factored form. The shift-invert solves use the Woodbury
+  /// identity on the one sparse factorization of \f$ B = A - \sigma M \f$,
+  /// \f$ (B + P D P^\dagger)^{-1} = B^{-1} - B^{-1} P\,(I + D P^\dagger B^{-1} P)^{-1} D\,
+  /// P^\dagger B^{-1} \f$. That the shift lies below the whole spectrum is
+  /// certified by inertia: with \f$ B \f$ positive definite (its Cholesky
+  /// factorization) and \f$ D \f$ invertible, \f$ B + P D P^\dagger \f$ is positive
+  /// definite exactly when \f$ D^{-1} + P^\dagger B^{-1} P \f$ has as many negative
+  /// eigenvalues as \f$ D^{-1} \f$. The conditioning on the certificate is that of
+  /// the sparse part.
+  /// @throws as `lowest`; std::invalid_argument for a term of the wrong shape or a
+  ///   core that is not Hermitian.
+  [[nodiscard]] static SparsePencilRead lowest(const SparseMatrix &A, const SparseMatrix &M,
+                                               const LowRankTerm &term, int count, double sigma,
                                                const SparsePencilOptions &options = {});
   /// The effective Betti number at scale \p epsilon: the rank of the spectral
   /// band of the pencil in \f$ [0, \epsilon] \f$,

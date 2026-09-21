@@ -46,12 +46,24 @@ def test_the_valence_width_extrapolates_to_the_plane_wave_value(epm):
     assert richardson(spacings, widths)[0] == pytest.approx(reference[3] - reference[0], abs=0.2)
 
 
+def test_the_measured_gap_follows_the_varshni_form():
+    from tessera.drivers.bands.reference import GALLIUM_ARSENIDE
+    assert GALLIUM_ARSENIDE.direct_gap() == 1.519
+    assert GALLIUM_ARSENIDE.direct_gap(300.0) == pytest.approx(1.4225, abs=5e-4)
+    assert GALLIUM_ARSENIDE.gap_l < GALLIUM_ARSENIDE.gap_x          # the L valleys lie below the X valleys
+
+
 @pytest.mark.slow
 def test_the_direct_gap_matches_plane_waves_to_twenty_millielectronvolts(epm):
     """The production run: 24, 32 and 40 divisions (up to 64,000 vertices),
-    about a quarter of an hour. Measured: 1.4188 eV against 1.4186 eV."""
+    about a quarter of an hour. Measured: 1.4188 eV against 1.4186 eV in plane
+    waves (the same model, a consistency check) and against the measured gap at
+    room temperature, 1.4225 eV, which the form factors were fitted to and
+    which is the arbiter."""
+    from tessera.drivers.bands.reference import GALLIUM_ARSENIDE
     result = gaas.direct_gap(epm, (24, 32, 40), log=lambda line: None)
     assert result["certified"]
+    assert result["gap"] == pytest.approx(GALLIUM_ARSENIDE.direct_gap(300.0), abs=0.020)
     assert result["gap"] == pytest.approx(result["reference_gap"], abs=0.020)
     assert result["valence_width"] == pytest.approx(result["reference_valence_width"], abs=0.020)
     gaps = [s["conduction_bottom"] - s["valence_top_mean"] for s in result["states"]]

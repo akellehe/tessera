@@ -35,16 +35,15 @@ time of a piecewise-linear function is constant on each top simplex and equal
 to the jump at the one vertex where the simplex changes level, so the time
 stiffness is `D / tau` with `D` the lumped (diagonal) mass matrix of the cell,
 while the mass term `m^2 M_0(W)` carries the consistent mass matrix `M`. As
-tau -> 0 the tick map therefore solves `(A + m^2 M) u = E^2 D u` exactly, and
-`M` differs from `D` by a term of relative size h^2 L on a mode of spatial
-level L. Multiplied by m^2 that is a change of the kinetic coefficient from
-1 / 2m to (1 - c m^2 h^2) / 2m: the reduction to the static Hamiltonian needs
-the mesh to resolve the Compton wavelength, m h << 1, on top of L << m^2. A
-cell of six divisions cannot meet both. `mass_term="lumped"` adds the mass term
-with the same lumping as the time stiffness, `m^2 D`, for which the tick map
-solves `(A + m^2 D) u = E^2 D u` and the reduction holds at any mesh spacing,
-against the static route with the lumped mass matrix; `"consistent"` is the
-literal `m^2 M_0(W)`.
+tau -> 0 the tick map therefore solves
+
+    (A + m^2 M) u = E^2 D u
+
+exactly (`klein_gordon_levels`), and that, not the continuum dispersion, is what
+the framework computes. `M` differs from `D` by a term of relative size h^2 L on
+a mode of spatial level L; multiplied by m^2 it changes the kinetic coefficient
+from 1 / 2m to (1 - c m^2 h^2) / 2m, so the reduction to the static Hamiltonian
+needs the mesh to resolve the Compton wavelength, m h << 1, on top of L << m^2.
 """
 import numpy as np
 import scipy.linalg
@@ -57,9 +56,7 @@ from tessera import cobordism as cob
 class HistorySlab:
     """One tick of the history of the periodic cell `cell` (a `CrystalCell`)."""
 
-    def __init__(self, cell, tau, potential=None, mass=1.0, mass_term="lumped"):
-        if mass_term not in ("lumped", "consistent"):
-            raise ValueError("mass_term is 'lumped' or 'consistent'")
+    def __init__(self, cell, tau, potential=None, mass=1.0):
         self.cell, self.tau, self.mass = cell, float(tau), float(mass)
         n = cell.size
         self.cells = tessera.Spacetime.prismCells(cell.grid.cells(), 1)
@@ -82,13 +79,7 @@ class HistorySlab:
         self.connection = ch.Connection(self.complex, links)
         self.operator = ch.CovariantChainHodge(self.base, self.connection, 7, False)
         pencil = self.operator.pencil(0)
-        if mass_term == "consistent":
-            weight = pencil.B
-        else:
-            # Row sums of the undressed mass matrix: the lumped mass, whose
-            # diagonal the connection does not dress.
-            weight = np.diag(np.asarray(self.base.Minv(0).sum(axis=1)).ravel())
-        F = pencil.A + self.mass ** 2 * weight
+        F = pencil.A + self.mass ** 2 * pencil.B
         self.blocks = (F[:n, :n], F[:n, n:], F[n:, :n], F[n:, n:])
 
     def tick_levels(self, count):
@@ -112,29 +103,36 @@ class HistorySlab:
         return max(abs(self.connection.curvature(*t) - 1.0) for t in self.complex.kSimplexVertices(2))
 
 
-def static_levels(cell, potential, mass, count, mass_term="lumped"):
-    """The lowest levels of the static route with the kinetic scale 1 / 2m,
-    L / 2m + V on the cell, with the lumped or the consistent mass matrix
-    (dense; the fixtures here are small)."""
-    A = cell.stiffness.dressed().toarray().real / (2.0 * mass)
-    M = cell.mass.dressed().toarray().real
-    if mass_term == "lumped":
-        M = np.diag(M.sum(axis=1))
-        if potential is not None:
-            A = A + M * np.asarray(potential, dtype=float)[:, None]
-    elif potential is not None:
-        A = A + cell.weighted_mass(potential).dressed().toarray().real
-    return scipy.linalg.eigh(A, M, eigvals_only=True)[:count]
+def static_levels(cell, potential, mass, count):
+    """The lowest positive levels of the static relativistic problem on the
+    cell,
 
+        (A + m^2 M) u = D (E - V)^2 u ,
 
-def klein_gordon_levels(cell, mass, count, mass_term="lumped"):
-    """sqrt of the levels of (A + m^2 W, D) with D the lumped mass matrix and W
-    the lumped or consistent one: the exact tau -> 0 limit of the free tick map."""
+    a quadratic eigenproblem in E: nothing is expanded in V or in 1 / m. M is
+    the Whitney mass matrix, and D the lumped one, which is what the time
+    stiffness of a staircase slab produces; the potential sits on the vertices
+    as it does on the vertical edges of the slab. Without a potential these are
+    the square roots of the levels of (A + m^2 M, D), the exact tau -> 0 limit
+    of the free tick map. Dense; the fixtures here are small."""
     A = cell.stiffness.dressed().toarray().real
     M = cell.mass.dressed().toarray().real
-    D = np.diag(M.sum(axis=1))
-    W = D if mass_term == "lumped" else M
-    return np.sqrt(scipy.linalg.eigh(A + mass ** 2 * W, D, eigvals_only=True))[:count]
+    D = M.sum(axis=1)
+    if potential is None:
+        return np.sqrt(scipy.linalg.eigh(A + mass ** 2 * M, np.diag(D), eigvals_only=True))[:count]
+    V = np.asarray(potential, dtype=float)
+    n = len(D)
+    constant = A + mass ** 2 * M - np.diag(D * V ** 2)
+    left = np.block([[np.zeros((n, n)), np.eye(n)], [-constant, -np.diag(2.0 * D * V)]])
+    right = np.block([[np.eye(n), np.zeros((n, n))], [np.zeros((n, n)), -np.diag(D)]])
+    levels = scipy.linalg.eigvals(left, right)
+    levels = levels[np.isfinite(levels)]
+    return np.sort(levels[levels.real > 0.0].real)[:count]
+
+
+def klein_gordon_levels(cell, mass, count):
+    """`static_levels` without a potential."""
+    return static_levels(cell, None, mass, count)
 
 
 def history_spacetime(cell, tau, potential=None, layers=1):
