@@ -315,15 +315,28 @@ The resolution test of `pseudopotential`, the screened and confined pseudo-atom,
 runs on two sheets (`pseudo_atom_levels`) against the radial equation with the
 coefficients $h + k \langle L \cdot S \rangle_j$ (`spinorbit.radial_levels`). A p
 level is a quartet above a doublet; the mesh, which keeps one threefold axis,
-splits the quartet further at the order of its error, a rank-two field that has
-no trace on either multiplet, so the distance between the centres of the two
-multiplets (`multiplet_splitting`) is moved at second order only. For the
-published arsenic potential in a cell of 9 bohr:
+splits the one-sheet triplet into a doublet and a singlet at the order of its
+error, a rank-two field that has no trace on either multiplet, so the distance
+between the centres of the upper four and the lower two levels
+(`multiplet_splitting`) is moved at second order in that field, which is no
+longer small once the field is comparable to the splitting. On the six states
+$H = H_{\text{field}} \otimes 1 + \lambda\, L \cdot S$, and because the spin matrices
+have no trace,
 
-| spacing (bohr) | 0.75 | 0.56 | 0.45 | 0.375 | 0.32 | radial |
-|---|---|---|---|---|---|---|
-| splitting of the p level (meV) | 579 | 481 | 491 | 501 | 507 | 514 |
-| s level (Ry) | -0.114 | -0.164 | -0.230 | -0.271 | -0.298 | -0.388 |
+$$
+\sum_{6} (E - \bar E)^2 = 2 \sum_{3} (e - \bar e)^2 + 3 \lambda^2
+$$
+
+for any field, with $E$ the two-sheet levels and $e$ the one-sheet ones;
+`moment_splitting` returns $3 \lambda / 2$ from it. Both reads tend to the
+same limit under refinement, and both are reported. For the published arsenic
+potential in a cell of 9 bohr:
+
+| spacing (bohr) | 1.125 | 0.75 | 0.56 | 0.45 | 0.375 | 0.32 | radial |
+|---|---|---|---|---|---|---|---|
+| splitting of the p level, centres (meV) | 1806 | 579 | 481 | 491 | 501 | 507 | 514 |
+| splitting of the p level, moments (meV) | 272 | 415 | 462 | | | | 514 |
+| s level (Ry) | -0.087 | -0.114 | -0.164 | -0.230 | -0.271 | -0.298 | -0.388 |
 
 The Gaussians of these potentials are 0.46 to 0.98 bohr wide, and
 piecewise-linear elements do not resolve them at these spacings: the s level is
@@ -337,8 +350,9 @@ python -m tessera.drivers.bands.spinorbit --divisions 12 16 20 24 --checkpoint s
 
 runs gallium arsenide on the conventional cell, one sheet and then two, and
 reports the splitting of the top of the valence band (a triplet on one sheet, a
-quartet above a doublet on two) after the first diagonalization and at
-self-consistency, on every mesh and extrapolated, against the measured 0.341 eV
+quartet above a doublet on two) by both reads, after the first diagonalization
+and at self-consistency, on every mesh and extrapolated, against the measured
+0.341 eV
 (`reference.GALLIUM_ARSENIDE`). The flags `--refinement-terms` and
 `--lattice-images` are those of the table below; `--checkpoint` keeps the state
 of every loop so that a later call continues it, and `--max-updates` bounds the
