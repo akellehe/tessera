@@ -37,10 +37,13 @@ def two_ions(second=(0.07, 0.13, 0.21)):
     return abinitio.Crystal(7.0 * np.eye(3), [(first, np.full(3, 0.5)), (soft_ion(2.0, 0.9, 1.0, -0.6), np.array(second))])
 
 
-@pytest.fixture(scope="module")
-def converged():
+@pytest.fixture(scope="module", params=[6, 0], ids=["projectors-by-quadrature", "projectors-interpolated"])
+def converged(request):
+    """The projector functions loaded by quadrature (the default) and by the
+    mass matrix on their vertex values: the forces differentiate either."""
+    from tessera.drivers.bands.settings import Approximations
     crystal = two_ions()
-    mesh = abinitio.MeshCrystal(crystal, 8)
+    mesh = abinitio.MeshCrystal(crystal, 8, approximations=Approximations(projector_quadrature=request.param))
     run = mesh.run_hartree_fock(6, tolerance=1e-9)
     assert run["converged"]
     return crystal, mesh, run

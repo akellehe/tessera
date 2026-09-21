@@ -73,6 +73,7 @@ import itertools
 import numpy as np
 from scipy.special import erfc
 
+from tessera.drivers.bands import coulomb
 from tessera.drivers.bands.abinitio import Crystal
 
 RYDBERG_JOULE = 2.1798723611035e-18
@@ -193,8 +194,8 @@ class LatticeEnergy:
         return np.asarray(run["vectors"])[:, :self.mesh.crystal.electrons // 2].real
 
     def density_load(self, filled):
-        loads = self.mesh.triple.loads
-        return 2.0 * sum(loads(filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(filled.shape[1]))
+        cell = self.mesh.cell
+        return 2.0 * sum(coulomb.pair_loads(cell, filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(filled.shape[1]))
 
     def electronic(self, run):
         """The Hartree-Fock functional of the filled orbitals of `run`. At a
@@ -226,7 +227,7 @@ class LatticeEnergy:
         References: Resta, Physical Review Letters 80, 1800 (1998);
         King-Smith & Vanderbilt, Physical Review B 47, 1651 (1993)."""
         mesh, filled = self.mesh, self._filled(run)
-        pairs = np.stack([mesh.triple.loads(filled[:, i], filled) for i in range(filled.shape[1])], axis=1)
+        pairs = np.stack([coulomb.pair_loads(mesh.cell, filled[:, i], filled) for i in range(filled.shape[1])], axis=1)
         phases = []
         for axis in range(3):
             wave = mesh._shifted(np.ones((mesh.cell.size, 1)), np.eye(3)[axis])[:, 0]
@@ -239,18 +240,44 @@ class LatticeEnergy:
         rho = self.density_load(filled)
         electrostatic = mesh.mass @ (mesh.kernel.potential(rho).real + self.long_range)
         overlap = filled.T @ mesh.P                                     # c_i, (filled, rank)
-        weighted = mesh.mass @ filled
         gradient = self._pair_gradients()
         for a, (pseudo, position) in enumerate(mesh.crystal.ions):
             gradient[a] += self.short_range_gradients[a] @ rho - self.charge_gradients[a] @ electrostatic
             columns = np.nonzero(mesh._beta_ion == a)[0]
+            contracted = overlap @ mesh.D[:, columns]                    # (D c_i) on the projectors of this ion
+            # d beta / dR = -grad beta, so dc_i/dR = -(load of grad beta)^T z_i, loaded as the projectors are.
+            loaded = self.projector_gradient_loads(a)                    # (vertices, projector, axis)
+            for column in range(len(columns)):
+                gradient[a] -= 4.0 * (loaded[:, column, :].T @ filled) @ contracted[:, column]
+        return -gradient
+
+    def projector_gradient_loads(self, a):
+        """The loads of the gradients of the projector functions of ion `a`,
+        (vertices, projector, Cartesian axis), by the rule that loads the
+        projectors themselves (`MeshCrystal._projectors`): the collapsed Gauss
+        rule of `projector_quadrature` points per direction on every
+        tetrahedron (`loads.SimplexQuadrature`), or with 0 the mass matrix on
+        the vertex values of the gradient. The energy is then differentiated as
+        the pencil holds it."""
+        mesh = self.mesh
+        pseudo, position = mesh.crystal.ions[a]
+        points = getattr(mesh.approximations, "projector_quadrature", 0)
+        if not pseudo.projectors:
+            return np.zeros((mesh.cell.size, 0, 3))
+        if not points:
             offset = mesh._displacements(position)
             functions = [g for i in range(len(pseudo.projectors)) for g in projector_gradients(pseudo, i, offset)]
-            contracted = overlap @ mesh.D[:, columns]                    # (D c_i) on the projectors of this ion
-            for column, function in enumerate(functions):
-                # d beta / dR = -grad; dc_i/dR = (d beta / dR)^T M z_i
-                gradient[a] -= 4.0 * (function.T @ weighted) @ contracted[:, column]
-        return -gradient
+            return np.stack([mesh.mass @ function for function in functions], axis=1)
+        from tessera.drivers.bands import loads
+
+        def gradients(offsets):
+            functions = [g for i in range(len(pseudo.projectors)) for g in projector_gradients(pseudo, i, offsets)]
+            return np.stack(functions, axis=1).reshape(len(offsets), -1)            # [row, (projector, axis)]
+        if not hasattr(self, "_rule"):
+            self._rule = loads.SimplexQuadrature(mesh.cell, points)
+        reach = max(loads.radial_reach(pseudo.r[1:], r_beta[1:] / pseudo.r[1:]) for _, r_beta in pseudo.projectors)
+        local = self._rule.loads(gradients, position, reach, mesh.approximations.images)
+        return local.assemble().real.reshape(mesh.cell.size, -1, 3)
 
 
 # ---------------------------------------------------------------- moving the ions
