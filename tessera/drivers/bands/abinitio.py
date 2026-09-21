@@ -705,12 +705,13 @@ class MeshCrystal:
         kappa = tuple(momenta[k]) if offset is None else tuple(a + b for a, b in zip(momenta[k], offset))
         for other in range(count):
             transfer = tuple(a - b for a, b in zip(kappa, momenta[other]))
-            same = other == k and offset is None
+            same = other == k                                    # the G = 0 entry there is the constant, at any offset
             minus = tuple(-v for v in momenta[other])
             for j in range(filled[other].shape[1]):
                 z = filled[other][:, j]
                 loads = coulomb.pair_loads(cell, z.conj(), targets, kappa, minus)
-                potential = self.kernel.potential(loads, None if same else transfer, count * constant if same else None)
+                potential = self.kernel.potential(loads, None if same and offset is None else transfer,
+                                                  count * constant if same else None)
                 W -= coulomb.pair_loads(cell, z, potential, transfer, momenta[other]) / count
         return W
 

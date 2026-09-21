@@ -251,10 +251,10 @@ def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
     levels fed back. The gap is read at the zone centre of the cell, between
     the states that belong to the zone centre of the primitive cell."""
     from tessera.drivers.bands import RYDBERG
-    from tessera.drivers.bands.momentum_set import SetScreening, uniform_set
+    from tessera.drivers.bands.momentum_set import SetScreening, set_nodes, uniform_set
     started = time.time()
     mean_field = mesh.run_hartree_fock_set(bands, uniform_set(approximations.momenta), log=log)
-    extended = mesh.extend_bands_set(mean_field, screening_bands, log=log)
+    extended = mesh.extend_bands_set(mean_field, screening_bands + 8, log=log)
     half = n // 2
     read = type("Read", (), {"kappa": (0.0, 0.0, 0.0), "vectors": np.asarray(extended["vectors"][0]).astype(complex)})
     characters = translation_characters(mesh.cell, read, [(0, half, half), (half, 0, half), (half, half, 0)])
@@ -271,7 +271,9 @@ def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
            "states": valence + conduction}
     log(f"N={n}, {approximations.momenta}^3 momenta: Hartree-Fock gap {row['hartree_fock']:.3f} eV after "
         f"{row['exchange_updates']} exchange updates ({time.time() - started:.0f} s)")
-    screened = SetScreening(mesh, extended, screening_bands)
+    # The highest bands are solved for and left out: the compression of exchange converges slowly on them.
+    screened = SetScreening(mesh, extended, screening_bands, nodes=set_nodes(approximations, extended["momenta"]), log=log)
+    row["effective_zero_momentum_constant"] = screened.effective_constant
     row["dielectric_constant"] = screened.dielectric_constant
     shifted = np.asarray(extended["levels"][0], dtype=float).copy()
     for index in valence + conduction:

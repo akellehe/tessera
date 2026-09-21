@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, fields
 # The orders of each expansion that exist in the code today.
 IMPLEMENTED = {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
 # The same on a momentum set of more than one momentum.
-IMPLEMENTED_ON_A_SET = {"self_energy_order": (1,), "zero_momentum_order": (1,)}
+IMPLEMENTED_ON_A_SET = {"self_energy_order": (1,), "zero_momentum_order": (1, 2, 3, 4, 5)}
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,9 @@ class Approximations:
     `momenta`: the momentum set on which the covariance is sampled, a uniform
     grid of `momenta` per axis of the cell through its zone centre
     (`momentum_set.uniform_set`); 1 is the zone centre alone. On a set the
-    expansions above exist at their first order only (`IMPLEMENTED_ON_A_SET`)."""
+    offsets of `zero_momentum_order` surround every transfer of the set
+    (`momentum_set.set_nodes`), and the self-energy exists at its first order
+    only (`IMPLEMENTED_ON_A_SET`)."""
     self_energy_order: int = 3
     zero_momentum_order: int = 3
     refinement_terms: int = 5

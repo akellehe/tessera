@@ -457,13 +457,14 @@ def test_the_zero_momentum_order_on_a_momentum_set_is_that_of_the_supercell(orde
     rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
     rpa.set_head(supercell.zero_momentum, supercell.vanishing_momentum_pairs(reference, coupling, cut + 1))
     first = [rpa.quasiparticle(n)[0] for n in range(3)]
-    terms = [supercell.momentum_term(reference, kappa, range(3), cut + 1) for kappa, _ in settings.momentum_nodes]
-    rpa.set_momentum_terms(terms, [weight for _, weight in settings.momentum_nodes],
-                           supercell.zero_momentum + supercell.kernel.auxiliary_function())
     threshold = 0.5 * (reference["levels"][cut] + reference["levels"][cut + 1])
     screened = SetScreening(mesh, extended, threshold=threshold, nodes=set_nodes(settings, extended["momenta"]))
-    for entry in screened.entries:                                       # the same states are kept at every moved momentum
-        assert sum(entry["targets"]["bands"]) == cut + 1
+    # The same states in both: at a moved momentum the levels below the cut are fewer than at the zone centre.
+    terms = [supercell.momentum_term(reference, kappa, range(3), sum(kept_there))
+             for (kappa, _), (_, kept_there) in zip(settings.momentum_nodes, screened.moved)]
+    assert all(term["converged"] for term in terms)
+    rpa.set_momentum_terms(terms, [weight for _, weight in settings.momentum_nodes],
+                           supercell.zero_momentum + supercell.kernel.auxiliary_function())
     for n, state in enumerate([(0, 0), (1, 0), (1, 1)]):
         expected = rpa.quasiparticle(n)[0]
         assert screened.quasiparticle(state)[1] == pytest.approx(expected, abs=2e-5)

@@ -88,7 +88,7 @@ class SetScreening:
         self.nodes = nodes = [(np.asarray(offset, dtype=float), float(weight)) for offset, weight in nodes]
         if nodes and not head:
             raise ValueError("the offsets of the zero-momentum order need the zero-momentum term")
-        self.entries = []
+        self.entries, self.moved = [], []                        # moved: (offset, bands kept per moved momentum)
         if not nodes:
             self.entries = [self._entry(1.0, c, np.zeros(3), on_set) for c in range(self.count)
                             if not (head and c == self._zero_class())]
@@ -106,6 +106,7 @@ class SetScreening:
                 moved = {"levels": [np.asarray(found["levels"][k], dtype=float)[:kept[k]] for k in range(self.count)],
                          "vectors": found["vectors"], "bands": kept, "on_set": False}
                 is_small = any(offset is other for other, _ in small)
+                self.moved.append((tuple(offset), kept))
                 self.entries += [self._entry(weight, c, offset, moved)
                                  for c in ([self._zero_class()] if is_small else range(self.count))]
             average = mesh.zero_momentum + mesh.kernel.auxiliary_function()                 # <F> over every momentum
