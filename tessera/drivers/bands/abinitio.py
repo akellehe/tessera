@@ -336,31 +336,41 @@ class PlaneWaveCrystal:
 
     def dielectric_constant(self, result, step=1e-4):
         """The independent-particle macroscopic dielectric constant of a
-        converged run, 1 + (8 pi / 3 V) sum_k w_k sum_ia 4 |r_ia|^2 / (e_a - e_i),
-        with r_ia = <a| dH_0/dk |i> / (e_i - e_a) from the current vertex of the
-        operator without exchange: 2 (k + G) for the kinetic part and the
-        derivative of the separable projectors, taken by central differences in
-        k. It is the plane-wave twin of `MeshCrystal.dipoles` on any momentum
-        set, which is how the sampling error of the mesh's zero-momentum term is
-        measured."""
+        converged Hartree-Fock run, 1 + (8 pi / 3 V) sum_k w_k sum_ia 4 |r_ia|^2 /
+        (e_a - e_i). The current vertex J = [H_0, r] is 2 (k + G) for the kinetic
+        part plus the derivative of the separable projectors (central
+        differences in k), and r follows from [H_0 + v, r] = J solved in the band
+        basis with the local-density exchange-correlation potential as the local
+        v, exactly as in `MeshCrystal.dipoles`, of which this is the plane-wave
+        twin on any momentum set."""
         crystal = self.crystal
         occupied = crystal.electrons // 2
+        density = np.zeros(self.shape)
+        for basis, weight, v in zip(self.bases, self.weights, result["vectors"]):
+            for u in self._waves(basis, v[:, :occupied]):
+                density += 2.0 * weight * np.abs(u) ** 2 / crystal.volume
+        auxiliary_g = self._effective(density)                  # ionic + Hartree + local exchange-correlation
         total = 0.0
         for k, weight, basis, levels, vectors in zip(self.kpoints, self.weights, self.bases,
                                                      result["levels"], result["vectors"]):
-            filled, empties = vectors[:, :occupied], vectors[:, occupied:]
+            keep = self._kept(k)
+            q = self.G.reshape(-1, 3)[keep] + k
+            auxiliary = vectors.conj().T @ (self._hamiltonian(basis, auxiliary_g) @ vectors)
+            h, rotation = np.linalg.eigh(0.5 * (auxiliary + auxiliary.conj().T))
+            difference = h[:, None] - h[None, :]
+            safe = np.abs(difference) > 1e-6 * max(1.0, np.abs(h).max())
             gaps = levels[occupied:][None, :] - levels[:occupied][:, None]          # filled x empty
-            q = self.G.reshape(-1, 3)[self._kept(k)] + k
             for alpha in range(3):
                 shift = np.zeros(3)
                 shift[alpha] = step
-                forward, backward = self._projectors_at(k + shift, self._kept(k)), self._projectors_at(k - shift, self._kept(k))
-                dP = (forward - backward) / (2.0 * step)
+                dP = (self._projectors_at(k + shift, keep) - self._projectors_at(k - shift, keep)) / (2.0 * step)
                 P, D = basis["P"], basis["D"]
-                kinetic = filled.conj().T @ ((2.0 * q[:, alpha])[:, None] * empties)
-                separable = (filled.conj().T @ dP) @ D @ (P.conj().T @ empties) \
-                    + (filled.conj().T @ P) @ D @ (dP.conj().T @ empties)
-                r = (kinetic + separable) / gaps
+                current = vectors.conj().T @ ((2.0 * q[:, alpha])[:, None] * vectors)
+                current += (vectors.conj().T @ dP) @ D @ (P.conj().T @ vectors) \
+                    + (vectors.conj().T @ P) @ D @ (dP.conj().T @ vectors)
+                rotated = rotation.conj().T @ current @ rotation
+                position = rotation @ np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0) @ rotation.conj().T
+                r = position[:occupied, occupied:]
                 total += weight * np.sum(np.abs(r) ** 2 / gaps)
         return 1.0 + COULOMB_STRENGTH / (3.0 * crystal.volume) * 4.0 * total
 
@@ -669,25 +679,46 @@ class MeshCrystal:
                 "local_potential": self.ionic + hartree}
 
     def dipoles(self, extended):
-        """r_ia for every particle-hole pair (filled index slow), from the
-        current operator: the derivative of the one-particle pencil with respect
-        to a uniform change of the link phases, phi_e -> phi_e + k . dx_e, which
-        multiplies the entry (v, w) of the stiffness, the weighted mass and the
-        mass matrix by i dx_vw, and the projector loads by -i (x - tau). With
-        first-order perturbation theory of the generalized eigenproblem,
+        """r_ia for every particle-hole pair (filled index slow).
 
-            r_ia = Im z_a^T (dA/dk - e_i dM/dk) z_i / (e_i - e_a) .
+        The current vertex is the derivative of the one-particle pencil with
+        respect to a uniform change of the link phases, phi_e -> phi_e + k . dx_e:
+        it multiplies the entry (v, w) of the stiffness, the weighted mass and
+        the mass matrix by i dx_vw, and the projector loads by -i (x - tau). In
+        operator terms it is J = [H_0, r] with H_0 the operator without
+        exchange, and because a local potential commutes with r,
 
-        The exchange operator enters the mean-field operator only through the
-        covariance and carries no link phase of its own, so it does not
-        contribute to this vertex; what its dependence on the state adds is a
-        vertex correction beyond the random-phase approximation."""
+            [H_0 + v, r] = J        for every local v.
+
+        The exchange operator is nonlocal and does not commute with r, so
+        dividing J by Hartree-Fock level differences would underestimate r by
+        the ratio of the local to the Hartree-Fock gap. Instead the identity is
+        solved in the basis of the computed bands with v chosen to keep H_0 + v
+        well gapped (the local-density exchange-correlation potential of the
+        Hartree-Fock density; any local v gives the same r in a complete basis):
+        H_0 + v is diagonalized in the band basis, r'_pq = J'_pq / (h_p - h_q)
+        there, and r is rotated back."""
         cell = self.cell
-        occupied = extended["occupied"]
-        energies, orbitals = extended["levels"], extended["vectors"]
-        empties, filled = orbitals[:, occupied:], orbitals[:, :occupied]
+        occupied = int(extended["occupied"])
+        energies, orbitals = np.asarray(extended["levels"]), np.asarray(extended["vectors"])
+        bands = orbitals.shape[1]
+        filled = orbitals[:, :occupied]
+        # The exchange operator on the bands, as in `extend_bands`, for H_0 = F - K.
+        side = float(np.linalg.norm(self.crystal.lattice[0]))
+        triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        loaded = self.mass @ filled
+        W = -coulomb.probe_charge_constant(side, "sc") * loaded @ (loaded.T @ orbitals)
+        for j in range(occupied):
+            W -= triple.loads(filled[:, j], self.kernel.potential(triple.loads(filled[:, j], orbitals)).real)
+        exchange = orbitals.T @ W
+        density = 2.0 * (filled ** 2).sum(axis=1)
+        local = cell.weighted_mass(lda_potential(density)).dressed().real
+        auxiliary = np.diag(energies) - 0.5 * (exchange + exchange.T) + orbitals.T @ (local @ orbitals)
+        levels, rotation = np.linalg.eigh(0.5 * (auxiliary + auxiliary.T))
+        difference = levels[:, None] - levels[None, :]
+        safe = np.abs(difference) > 1e-6 * max(1.0, np.abs(levels).max())
         weighted = cell.weighted_mass(extended["local_potential"])
-        out = np.zeros((occupied * empties.shape[1], 3))
+        out = np.zeros((occupied * (bands - occupied), 3))
         for alpha in range(3):
             def derivative(grid_matrix):
                 displacement = (grid_matrix.step * np.array(cell.divisions)) @ (cell.lattice / np.array(cell.divisions)[:, None])
@@ -695,8 +726,11 @@ class MeshCrystal:
                 return sp.csr_matrix((values, (grid_matrix.row, grid_matrix.col)), shape=grid_matrix.shape)
             dA = derivative(cell.stiffness) + derivative(weighted)          # times i
             dM = derivative(cell.mass)                                      # times i
-            local = empties.T @ (dA @ filled) - (empties.T @ (dM @ filled)) * energies[:occupied][None, :]
-            # Projectors: P_k[w] = P[w] exp(-i k . (x_w - tau)), so dP/dk = -i X P, column by column.
+            # J_mn = z_m^T (dA - e dM) z_n; with the pencil's levels on the right the two
+            # orderings differ by the antisymmetry that makes i J Hermitian, so symmetrize.
+            first = orbitals.T @ (dA @ orbitals)
+            second = orbitals.T @ (dM @ orbitals)
+            current = first - 0.5 * (second * energies[None, :] + energies[:, None] * second)
             shifted = np.zeros_like(self.P)
             column = 0
             for pseudo, position in self.crystal.ions:
@@ -704,11 +738,13 @@ class MeshCrystal:
                 width = sum(2 * l + 1 for l, _ in pseudo.projectors)
                 shifted[:, column:column + width] = offset[:, None] * self.P[:, column:column + width]
                 column += width
-            nonlocal_part = -(empties.T @ shifted) @ self.D @ (self.P.T @ filled) \
-                + (empties.T @ self.P) @ self.D @ (shifted.T @ filled)
-            element = (local + nonlocal_part).T                               # filled x empty, the coefficient of i
-            gaps = energies[:occupied][:, None] - energies[occupied:][None, :]
-            out[:, alpha] = (element / gaps).ravel()
+            overlap_shifted, overlap = orbitals.T @ shifted, orbitals.T @ self.P
+            current += -overlap_shifted @ self.D @ overlap.T + overlap @ self.D @ overlap_shifted.T
+            current = 0.5 * (current - current.T)                              # the coefficient of i is antisymmetric
+            rotated = rotation.T @ current @ rotation
+            position_rotated = np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0)
+            position_matrix = rotation @ position_rotated @ rotation.T
+            out[:, alpha] = position_matrix[:occupied, occupied:].ravel()
         return out
 
     def quasiparticle_levels(self, extended, states, log=None):
