@@ -28,13 +28,11 @@ SparseMatrix sparseBoundary(const cobordism::ChainComplex &K, int k) {
   const int cols = static_cast<int>(K.numSimplices(k));
   SparseMatrix B(rows, cols);
   if (k >= 1) {
-    const auto &flat = K.boundaryMatrix(k);
+    const auto &entries = K.boundaryEntries(k);
     std::vector<Eigen::Triplet<Complex>> trip;
-    for (int r = 0; r < rows; ++r)
-      for (int c = 0; c < cols; ++c) {
-        const long v = flat[static_cast<std::size_t>(r) * cols + c];
-        if (v != 0) trip.emplace_back(r, c, Complex(static_cast<double>(v), 0.0));
-      }
+    trip.reserve(entries.size());
+    for (const auto &e : entries)
+      trip.emplace_back(e.row, e.column, Complex(static_cast<double>(e.value), 0.0));
     B.setFromTriplets(trip.begin(), trip.end());
   }
   B.makeCompressed();

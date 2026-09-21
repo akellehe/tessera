@@ -6,6 +6,8 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,8 +59,30 @@ class ChainComplex {
     /// Euler characteristic χ = Σ_k (−1)^k |C_k|.
     [[nodiscard]] int eulerCharacteristic() const noexcept;
 
+    /// One nonzero entry of a boundary map: \f$ (\partial_k)_{\text{row},
+    /// \text{column}} = \text{value} \in \{-1, +1\} \f$.
+    struct BoundaryEntry {
+      int row{0};
+      int column{0};
+      int value{0};
+    };
+
+    /// The nonzero entries of ∂_k, grouped by column in ascending column order
+    /// (the \f$ k+1 \f$ facets of each \f$ k \f$-simplex). This is how the
+    /// boundary maps are stored, so it costs nothing at any complex size; it is
+    /// the accessor a sparse consumer reads. Empty for \f$ k \le 0 \f$ or
+    /// \f$ k \f$ above the top dimension.
+    [[nodiscard]] const std::vector<BoundaryEntry> &boundaryEntries(int k) const;
+
     /// The boundary matrix ∂_k (rows = |C_{k-1}|, cols = |C_k|), flat row-major.
     /// Entries in {−1, 0, +1}. ∂_0 is empty. Out-of-range k returns an empty matrix.
+    ///
+    /// The dense matrix is materialized from `boundaryEntries` on the first
+    /// request for a degree and cached, so a complex too large to hold
+    /// \f$ |C_{k-1}| \cdot |C_k| \f$ integers never allocates it unless a dense
+    /// read is asked for. The exact integer invariants (ranks, Betti numbers,
+    /// torsion, the fundamental class, the intersection form and the
+    /// Stiefel–Whitney numbers) are dense reads.
     [[nodiscard]] const std::vector<long> &boundaryMatrix(int k) const;
 
     /// Check ∂_{k-1} ∘ ∂_k = 0 for all k (the chain-complex axiom).
@@ -186,7 +210,15 @@ class ChainComplex {
   private:
     int dimension_{-1};
     std::vector<std::size_t> counts_{};                 // |C_k|
-    std::vector<std::vector<long>> boundary_{};         // boundary_[k] = ∂_k
+    std::vector<std::vector<BoundaryEntry>> entries_{}; // entries_[k] = nonzeros of ∂_k
+    // The dense ∂_k, built on demand. Copies of a complex share one cache: the
+    // entries are immutable after construction, so the dense images agree.
+    struct DenseCache {
+      std::mutex mutex;
+      std::vector<std::vector<long>> flat;
+      std::vector<char> built;
+    };
+    mutable std::shared_ptr<DenseCache> dense_{std::make_shared<DenseCache>()};
     // faceVerts_[k][j] = sorted vertex ids of the j-th k-simplex (column j of
     // ∂_{k+1} / row j of ∂_k).
     std::vector<std::vector<std::vector<std::uint64_t>>> faceVerts_{};
