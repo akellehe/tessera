@@ -133,10 +133,11 @@ constant included (to $10^{-12}$ Ry in the test suite). Off the grid the
 constant depends on the vertex that carries the point load at second order in
 the spacing, and costs one factorization per momentum of its quadrature.
 `abinitio.MeshCrystal(crystal, divisions, grading=..., refinement=...)` runs the
-Hartree and Hartree-Fock mean fields on such a mesh at the zone centre. The
-closed-form kinetic eigenbasis, the prolongation between meshes, the
-reciprocal-vector wraps of a momentum set and the square root of the mass matrix
-in `band_fibers` are still those of the uniform grid. A bisected mesh is
+Hartree and Hartree-Fock mean fields on such a mesh, at the zone centre and at a
+finite momentum, and the quasiparticle step at the zone centre with its
+closed-form head. The prolongation between meshes, the closed-form kinetic
+modes of the kernel (`kinetic_modes`) and the square root of the mass matrix in
+`band_fibers` are still those of the uniform grid. A bisected mesh is
 assembled from its chain complex and squared lengths; it is not yet a `Topology`
 of the library, so it has no `Spacetime`.
 
