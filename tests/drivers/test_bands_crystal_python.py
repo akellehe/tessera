@@ -103,3 +103,34 @@ class TestDegreesAndGauge:
         a = np.sort(np.array(cov.spectrum(0).eigenvalues).real)
         b = np.sort(np.array(moved.spectrum(0).eigenvalues).real)
         assert np.abs(a - b).max() < 1e-10 * a.max()
+
+
+class TestTracking:
+    def test_bands_are_followed_through_a_crossing(self):
+        """Free electrons from the zone centre toward X: the branch that starts
+        in the first shell with G = (-1, 0, 0) falls while the other five rise,
+        and sorted levels would read every crossing as avoided."""
+        from tessera.drivers.bands.crystal import track_bands
+        cell = CrystalCell.cubic(1.0, 6, kinetic_scale=1.0)
+        path = [(0.02 + 0.06 * step, 0.013, 0.007) for step in range(8)]     # generic: no exact degeneracy
+        reads = cell.bands(path, count=7)
+        tracked, weights = track_bands(cell, reads)
+        # Plane waves overlap by exactly 0 or 1. The five lowest branches stay in
+        # the window; a rising branch leaves it for a falling one from the next
+        # shell, and that hand-over is reported as a lost band, not followed.
+        assert np.all(weights[:, :5] > 0.999) and np.any(weights[:, 5:] <= 0.0)
+        frac = cell.fractional
+        mass = cell.mass.dressed()
+        for band in range(5):
+            # Each tracked band keeps one reciprocal vector: its weight on that plane wave stays near 1.
+            labels = []
+            for p, read in enumerate(reads):
+                index = int(np.argmin(np.abs(read.energies - tracked[p, band])))
+                best = max(((abs(np.vdot(np.exp(2j * np.pi * (frac @ np.array(g, dtype=float))),
+                                         mass @ read.vectors[:, index])) ** 2, g)
+                            for g in [(0, 0, 0), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]),
+                           key=lambda item: item[0])
+                labels.append(best[1])
+            assert len(set(labels)) == 1
+        sorted_levels = np.array([read.energies for read in reads])
+        assert not np.allclose(sorted_levels, tracked)             # the ordering did change along the path

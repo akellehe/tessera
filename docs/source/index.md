@@ -18,5 +18,6 @@ examples
 benchmarks
 causal_sets
 wilson_loops
+band_structures
 cpp_api
 ```

@@ -264,3 +264,41 @@ def k_path(points, segments=8):
         for step in range(1, segments + 1):
             path.append(start + (end - start) * step / segments)
     return [tuple(p) for p in path]
+
+
+def track_bands(cell, reads, overlap_threshold=0.5):
+    """Follow bands along a path of crystal momenta by overlap, not by ordering.
+
+    The eigenvectors of the dressed pencil are the cell-periodic parts of the
+    Bloch functions, so frames at neighbouring momenta live in one space and are
+    compared in the undressed mass matrix: `O = Z_k^dagger M_0 Z_k'`. Each band
+    at one momentum is continued to the band at the next with which it shares
+    the most weight (an optimal assignment on |O|^2, the squared cosines of the
+    principal angles between one-dimensional frames), so crossings are passed
+    through instead of being read as avoided.
+
+    Returns (tracked, weights): `tracked[p, b]` is the energy of band `b` (as
+    labelled at the first momentum) at path point `p`, and `weights[p, b]` the
+    overlap weight it was continued with (1 at the first point). A weight below
+    `overlap_threshold` marks a band that left the computed window.
+    """
+    from scipy.optimize import linear_sum_assignment
+    mass = cell.mass.dressed()
+    count = reads[0].vectors.shape[1]
+    tracked = np.empty((len(reads), count))
+    weights = np.ones((len(reads), count))
+    order = np.arange(count)
+    tracked[0] = reads[0].energies
+    for p in range(1, len(reads)):
+        previous = reads[p - 1].vectors[:, order]
+        current = reads[p].vectors
+        # Each frame is orthonormal in its own dressed mass matrix; in the common
+        # undressed one the norms differ from 1 at the order of the step in k.
+        norm = lambda Z: np.einsum("ij,ij->j", Z.conj(), mass @ Z).real
+        overlap = np.abs(previous.conj().T @ (mass @ current)) ** 2 / np.outer(norm(previous), norm(current))
+        rows, cols = linear_sum_assignment(-overlap)
+        order = cols[np.argsort(rows)]
+        tracked[p] = reads[p].energies[order]
+        weights[p] = overlap[np.arange(count), order]
+    lost = weights < overlap_threshold
+    return tracked, np.where(lost, -weights, weights)
