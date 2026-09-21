@@ -252,6 +252,9 @@ class RandomPhase:
             gaps = np.asarray(term["gaps"], dtype=float)
             if self.screening_shifts is not None:
                 gaps = gaps + np.array([self.screening_shifts[a] - self.screening_shifts[i] for i, a in term["pairs"]])
+            if gaps.min() <= 0.0:
+                raise ValueError(f"a level difference at the momentum {term['kappa']} is not positive: the levels "
+                                 "fed back have closed a gap there")
             root = np.sqrt(gaps)
             casida = np.diag(gaps ** 2) + 4.0 * root[:, None] * np.asarray(term["coupling"]) * root[None, :]
             squared, Z = np.linalg.eigh(0.5 * (casida + casida.conj().T))
