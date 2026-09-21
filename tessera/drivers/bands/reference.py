@@ -7,15 +7,17 @@ and does not arbitrate a discrepancy.
 
 References: Vurgaftman, Meyer & Ram-Mohan, Journal of Applied Physics 89, 5815
 (2001), Table I, for the band parameters and the lattice constant; Strauch &
-Dorner, Journal of Physics: Condensed Matter 2, 1457 (1990), for the phonons.
+Dorner, Journal of Physics: Condensed Matter 2, 1457 (1990), for the phonons;
+Meija et al., Pure and Applied Chemistry 88, 265 (2016), for the atomic weights.
 """
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Semiconductor:
-    """Energies in electron volts, lengths in angstrom, frequencies in terahertz.
-    Gaps are measured from the top of the valence band at zero temperature."""
+    """Energies in electron volts, lengths in angstrom, frequencies in terahertz,
+    masses in atomic mass units. Gaps are measured from the top of the valence
+    band at zero temperature."""
     name: str
     lattice_constant: float              # at 300 K
     gap_gamma: float
@@ -26,6 +28,8 @@ class Semiconductor:
     varshni_beta: float                  # K
     optical_phonon_transverse: float     # at the zone centre, 12 K
     optical_phonon_longitudinal: float
+    cation_mass: float
+    anion_mass: float
 
     def direct_gap(self, temperature=0.0):
         """E_g(T) = E_g(0) - alpha T^2 / (T + beta), the Varshni form."""
@@ -35,4 +39,5 @@ class Semiconductor:
 GALLIUM_ARSENIDE = Semiconductor(
     name="GaAs", lattice_constant=5.65325, gap_gamma=1.519, gap_x=1.981, gap_l=1.815,
     spin_orbit_splitting=0.341, varshni_alpha=0.5405e-3, varshni_beta=204.0,
-    optical_phonon_transverse=8.02, optical_phonon_longitudinal=8.55)
+    optical_phonon_transverse=8.02, optical_phonon_longitudinal=8.55,
+    cation_mass=69.723, anion_mass=74.921595)

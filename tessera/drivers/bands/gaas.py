@@ -151,6 +151,9 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] == "ab-initio":
         return main_ab_initio(argv[1:])
+    if argv and argv[0] == "phonon":
+        from tessera.drivers.bands import forces
+        return forces.main(argv[1:])
     parser = argparse.ArgumentParser(description="The direct gap of GaAs from the Cohen-Bergstresser "
                                      "empirical pseudopotential on three meshes of the conventional cell.")
     parser.add_argument("--divisions", type=int, nargs=3, default=(16, 24, 32))
