@@ -60,7 +60,11 @@ class CoulombKernel:
 
     @classmethod
     def of_cell(cls, cell, strength=4.0 * np.pi * E2):
-        """The kernel of a periodic cell, inverted by Fourier transform."""
+        """The kernel of a periodic cell: inverted by Fourier transform on the
+        Kuhn grid, by a sparse factorization on a graded mesh."""
+        if hasattr(cell, "entry_displacements"):
+            from tessera.drivers.bands.graded import GradedCoulombKernel
+            return GradedCoulombKernel(cell, strength)
         return GridCoulombKernel(cell, strength)
 
     def potential(self, rho):

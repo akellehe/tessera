@@ -427,15 +427,19 @@ def _real_span(A, M, P, D, vectors):
 class MeshCrystal:
     """The same calculation on the periodic mesh, at the zone centre."""
 
-    def __init__(self, crystal, divisions, width=1.2, approximations=None):
+    def __init__(self, crystal, divisions, width=1.2, approximations=None, grading=None, refinement=None):
         from tessera.drivers.bands.settings import Approximations
         self.approximations = Approximations() if approximations is None else approximations
         self.crystal, self.width = crystal, float(width)
-        self.cell = CrystalCell(crystal.lattice, divisions, kinetic_scale=1.0)
+        if grading is None and refinement is None:
+            self.cell = CrystalCell(crystal.lattice, divisions, kinetic_scale=1.0)
+        else:                                                    # a mesh graded toward the ions (`graded`)
+            from tessera.drivers.bands.graded import GradedCell
+            self.cell = GradedCell(crystal.lattice, divisions, grading, refinement, kinetic_scale=1.0)
         cell = self.cell
         self.stiffness = cell.stiffness.dressed().real.tocsc()
         self.mass = cell.mass.dressed().real.tocsc()
-        self.kernel = coulomb.GridCoulombKernel(cell, COULOMB_STRENGTH)
+        self.kernel = coulomb.CoulombKernel.of_cell(cell, COULOMB_STRENGTH)
         # The zero-momentum term of the kernel that sampling the cell at its zone
         # centre leaves out, from the kernel's own symbol.
         self.zero_momentum = self.kernel.zero_momentum_constant(self.approximations.refinements)
@@ -700,7 +704,7 @@ class MeshCrystal:
         kappa + shift, `shift` a reciprocal vector of the cell (integers): the
         lattice plane wave of `shift` moves from the link phases to the vertex
         values, exactly."""
-        phase = np.exp(-2j * np.pi * (self.cell.index @ (np.asarray(shift, dtype=float) / np.array(self.cell.divisions))))
+        phase = np.exp(-2j * np.pi * (self.cell.fractional @ np.asarray(shift, dtype=float)))    # at the true positions
         return np.asarray(vectors) * phase[:, None]
 
     def _set_exchange(self, momenta, constant, filled, k, targets):
