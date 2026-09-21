@@ -440,6 +440,40 @@ def test_the_quasiparticle_equation_on_a_momentum_set_is_that_of_the_supercell()
         assert abs(with_head - body[state]) > 1e-3                       # the entry being compared is not small
 
 
+@pytest.mark.slow
+@pytest.mark.parametrize("order", [2, 3])
+def test_the_zero_momentum_order_on_a_momentum_set_is_that_of_the_supercell(order):
+    """The offsets of `zero_momentum_order` k around every transfer of the set
+    {0, 1/2} are the midpoint grid of the doubled cell around its zone centre,
+    so the averaged self-energy integrand is the same, state by state; and at
+    order 1 the constant left to the zero-momentum term is the constant of the
+    set."""
+    from tessera.drivers.bands import screening
+    from tessera.drivers.bands.momentum_set import SetScreening, set_nodes
+    from tessera.drivers.bands.settings import Approximations
+    supercell, reference, mesh, extended, cut, kept = _doubled_cell_and_its_momentum_set()
+    settings = Approximations(1, order)
+    levels, occupied, coupling, integrals = supercell.coulomb_integrals(reference, cut + 1)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    rpa.set_head(supercell.zero_momentum, supercell.vanishing_momentum_pairs(reference, coupling, cut + 1))
+    first = [rpa.quasiparticle(n)[0] for n in range(3)]
+    terms = [supercell.momentum_term(reference, kappa, range(3), cut + 1) for kappa, _ in settings.momentum_nodes]
+    rpa.set_momentum_terms(terms, [weight for _, weight in settings.momentum_nodes],
+                           supercell.zero_momentum + supercell.kernel.auxiliary_function())
+    threshold = 0.5 * (reference["levels"][cut] + reference["levels"][cut + 1])
+    screened = SetScreening(mesh, extended, threshold=threshold, nodes=set_nodes(settings, extended["momenta"]))
+    for entry in screened.entries:                                       # the same states are kept at every moved momentum
+        assert sum(entry["targets"]["bands"]) == cut + 1
+    for n, state in enumerate([(0, 0), (1, 0), (1, 1)]):
+        expected = rpa.quasiparticle(n)[0]
+        assert screened.quasiparticle(state)[1] == pytest.approx(expected, abs=2e-5)
+        assert abs(expected - first[n]) > 1e-3                          # the order being compared is not small
+    plain = SetScreening(mesh, extended, kept)
+    average = mesh.zero_momentum + mesh.kernel.auxiliary_function()
+    sampled = (mesh.kernel.auxiliary_function() + mesh.kernel.auxiliary_function((0.5, 0.0, 0.0))) / 2.0
+    assert plain.effective_constant == pytest.approx(average - sampled, abs=1e-8)
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat

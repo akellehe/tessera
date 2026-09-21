@@ -695,19 +695,21 @@ class MeshCrystal:
         phase = np.exp(-2j * np.pi * (self.cell.index @ (np.asarray(shift, dtype=float) / np.array(self.cell.divisions))))
         return np.asarray(vectors) * phase[:, None]
 
-    def _set_exchange(self, momenta, constant, filled, k, targets):
-        """K_k applied to `targets` (sections of momenta[k]) with the filled
+    def _set_exchange(self, momenta, constant, filled, k, targets, offset=None):
+        """K_k applied to `targets` (sections of momenta[k], or of
+        momenta[k] + offset, a momentum outside the set) with the filled
         sections `filled[k']` of every momentum of the set; see
         `run_hartree_fock_set`."""
         cell, count = self.cell, len(momenta)
         W = np.zeros(targets.shape, dtype=complex)
+        kappa = tuple(momenta[k]) if offset is None else tuple(a + b for a, b in zip(momenta[k], offset))
         for other in range(count):
-            transfer = tuple(a - b for a, b in zip(momenta[k], momenta[other]))
-            same = other == k
+            transfer = tuple(a - b for a, b in zip(kappa, momenta[other]))
+            same = other == k and offset is None
             minus = tuple(-v for v in momenta[other])
             for j in range(filled[other].shape[1]):
                 z = filled[other][:, j]
-                loads = coulomb.pair_loads(cell, z.conj(), targets, momenta[k], minus)
+                loads = coulomb.pair_loads(cell, z.conj(), targets, kappa, minus)
                 potential = self.kernel.potential(loads, None if same else transfer, count * constant if same else None)
                 W -= coulomb.pair_loads(cell, z, potential, transfer, momenta[other]) / count
         return W
@@ -755,6 +757,40 @@ class MeshCrystal:
             levels, vectors = [levels[k] for k in range(count)], [vectors[k] for k in range(count)]
         return {"momenta": momenta, "levels": levels, "vectors": vectors, "occupied": occupied,
                 "zero_momentum": run["zero_momentum"], "local_potential": local, "converged": bool(converged)}
+
+    def bands_at_set(self, extended, offset, tolerance=1e-5, max_iterations=12, converge=None, log=None):
+        """`bands_at` on a momentum set: the Hartree-Fock levels and sections at
+        every momentum of the set moved by `offset` (reciprocal coordinates),
+        with the local potential and the filled sections of the set fixed. The
+        compression of exchange is rebuilt until the lowest `converge[k]` levels
+        stop moving. Returns levels and vectors per momentum of the set."""
+        cell = self.cell
+        occupied = int(extended["occupied"])
+        momenta, count = [tuple(float(v) for v in kappa) for kappa in extended["momenta"]], len(extended["momenta"])
+        filled = [np.asarray(v)[:, :occupied] for v in extended["vectors"]]
+        local = cell.weighted_mass(extended["local_potential"])
+        levels, vectors, converged = [], [], True
+        for k in range(count):
+            kappa = tuple(a + b for a, b in zip(momenta[k], offset))
+            A, M = cell.pencil(kappa, local)
+            projectors = self._projectors_at(kappa, M)
+            orbitals, values, previous = np.asarray(extended["vectors"][k]).astype(complex), np.asarray(extended["levels"][k]), None
+            for iteration in range(max_iterations):
+                W = self._set_exchange(momenta, extended["zero_momentum"], filled, k, orbitals, offset)
+                P, D = self._compressed(W, orbitals, projectors)
+                values, orbitals, _, _ = solve_with_projectors(A, M, P, D, len(values), float(values[0]) - 1.0)
+                orbitals = orbitals.astype(complex)
+                top = None if converge is None else converge[k]
+                change = np.inf if previous is None else np.abs(values - previous)[:top].max()
+                previous = values
+                if log:
+                    log(f"  momentum {kappa}, compression {iteration}: largest level change {change:.2e} Ry")
+                if change < tolerance:
+                    break
+            converged = converged and change < tolerance
+            levels.append(values)
+            vectors.append(orbitals)
+        return {"levels": levels, "vectors": vectors, "offset": tuple(offset), "converged": bool(converged)}
 
     def vanishing_momentum_charges_set(self, extended, bands):
         """The charges per unit momentum of the pairs of zero transfer on a
