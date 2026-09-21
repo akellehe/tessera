@@ -130,6 +130,39 @@ def static_levels(cell, potential, mass, count):
     return np.sort(levels[levels.real > 0.0].real)[:count]
 
 
+def tick_limit(cell, potential, mass, tau=1e-3):
+    """The exact limit of the tick map of `HistorySlab` as the tick tends to
+    zero, with the potential on the timelike edges: with T = exp(-tau E) the
+    quadratic eigenproblem F10 + (F00 + F11) T + F01 T^2 = 0 becomes
+
+        (S0 + E S1 + E^2 S2) u = 0 ,
+        S0 = lim (F00 + F01 + F10 + F11) / tau ,  S1 = lim (F10 - F01) ,  S2 = lim tau (F10 + F01) / 2 ,
+
+    the three limits taken on the slab's own blocks (their errors are even in
+    the tick, and one Richardson step over `tau` and `tau / 2` removes the
+    leading one). S2 is minus the lumped mass matrix D, S1 is 2 D V and S0 is
+    A + m^2 M - D V^2, each up to a symmetric term that vanishes for a constant
+    potential: the curvature of the connection on the vertical triangles, which
+    is what separates this limit from `static_levels` at a finite mesh. Returns
+    (S0, S1, S2)."""
+    def limits(step):
+        F00, F01, F10, F11 = [np.asarray(block) for block in HistorySlab(cell, step, potential, mass).blocks]
+        return (F00 + F01 + F10 + F11) / step, F10 - F01, 0.5 * step * (F10 + F01)
+    coarse, fine = limits(tau), limits(0.5 * tau)
+    return tuple(((4.0 * y - x) / 3.0).real for x, y in zip(coarse, fine))
+
+
+def tick_limit_levels(cell, potential, mass, count, tau=1e-3):
+    """The lowest positive levels of `tick_limit`."""
+    S0, S1, S2 = tick_limit(cell, potential, mass, tau)
+    n = len(S0)
+    left = np.block([[np.zeros((n, n)), np.eye(n)], [-S0, -S1]])
+    right = np.block([[np.eye(n), np.zeros((n, n))], [np.zeros((n, n)), S2]])
+    levels = scipy.linalg.eigvals(left, right)
+    levels = levels[np.isfinite(levels)]
+    return np.sort(levels[levels.real > 0.0].real)[:count]
+
+
 def klein_gordon_levels(cell, mass, count):
     """`static_levels` without a potential."""
     return static_levels(cell, None, mass, count)

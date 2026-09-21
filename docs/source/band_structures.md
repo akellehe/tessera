@@ -147,7 +147,11 @@ potential nor in $1/m$ (`fiber.static_levels`). The lowest decay rate of the tic
 map closes on its lowest level at second order in the mesh spacing (a difference
 of 0.062, 0.029, 0.016, 0.010 on cells of 3 to 6 divisions at $m = 6$), and the
 response to the potential approaches the static one from below (0.74, 0.82,
-0.88, 0.91); neither depends on the tick. What remains at a finite mesh is the
+0.88, 0.91); neither depends on the tick. The exact limit of the tick map with the potential is read off the slab's own
+blocks (`fiber.tick_limit`): $(S_0 + E S_1 + E^2 S_2)\,u = 0$ with $S_2 = -D$,
+$S_1 = 2DV$ and $S_0 = A + m^2 M - DV^2$, the last two up to a symmetric term that
+vanishes for a constant potential, and the decay rates converge to its levels at
+second order in the tick. What remains at a finite mesh is that term, the
 curvature of the connection: on the vertical triangles the covariant operator
 transports through the base vertex of each cell, which samples the potential one
 mesh step away. The non-relativistic reduction $E \approx m + L/2m + V$ is not
