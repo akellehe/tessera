@@ -99,6 +99,7 @@ def _meshes(crystal, n):
     return [abinitio.MeshCrystal(crystal, n, approximations=rule_of(points)) for points in (0, 6)]
 
 
+@pytest.mark.slow
 def test_the_projector_loads_tend_to_those_of_the_interpolant_and_are_stable_in_the_degree():
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(two_channel_atom(), np.array([0.37, 0.52, 0.45]))])
     differences = []
