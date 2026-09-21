@@ -69,6 +69,10 @@ class TestHartreeFock:
         assert residual < 1e-11
         state = quantum.CovarianceState.fromBandProjector(gamma)
         assert state.purityDefect() < 1e-10 and state.particleNumber().real == pytest.approx(3.0)
+        # The same state from its occupied Slater frame.
+        _, frame = np.linalg.eigh(gamma)
+        slater = quantum.CovarianceState.fromSlaterFrame(frame[:, -3:])
+        assert np.abs(slater.gamma() - gamma).max() < 1e-10 and slater.purityDefect() < 1e-10
 
         algebra = quantum.ExteriorAlgebra(8)
         H = interaction.fock_hamiltonian(algebra)

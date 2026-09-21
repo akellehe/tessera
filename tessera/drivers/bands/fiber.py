@@ -135,3 +135,69 @@ def klein_gordon_levels(cell, mass, count, mass_term="lumped"):
     D = np.diag(M.sum(axis=1))
     W = D if mass_term == "lumped" else M
     return np.sqrt(scipy.linalg.eigh(A + mass ** 2 * W, D, eigvals_only=True))[:count]
+
+
+def history_spacetime(cell, tau, potential=None, layers=1):
+    """The history K x [0, layers] as a `Spacetime` whose edges carry the
+    declared fields: the Euclidean squared lengths through `Edge.setLength` and
+    the potential as the non-compact part of the phase through `Edge.setPhase`.
+    The stored phase is the connection on the edge's own source-to-target
+    orientation, so an edge stored forward in time gets phi = -i tau V_e (link
+    exp(tau V_e), as in `HistorySlab`) and one stored backward gets +i tau V_e."""
+    n = cell.size
+    V = np.zeros(n) if potential is None else np.asarray(potential, dtype=float)
+    cells = tessera.Spacetime.prismCells(cell.grid.cells(), layers)
+    spacetime = tessera.Spacetime.fromVertexTuples(4, cells, 1.0, 0.0)
+    for edge in spacetime.getEdgeList().toVector():
+        x, y = edge.getSource().getId(), edge.getTarget().getId()
+        a, b = x % n, y % n
+        ticks = y // n - x // n
+        spatial = 0.0 if a == b else cell.grid.squaredLength(a, b)
+        edge.setLength(complex(np.sqrt(spatial + (tau * ticks) ** 2)))
+        edge.setPhase(-1j * tau * ticks * 0.5 * (V[a] + V[b]))
+    return spacetime
+
+
+def layered_response(cell, tau, potential, mass, layers=2):
+    """The boundary response of the history over `layers` ticks onto its first
+    and last levels, by the layer API: `PencilLayer.assemble` on the spacetime
+    of `history_spacetime`, and `PencilLayer.boundary_response` at
+    lambda = -m^2, which is the pencil A_0(W) + m^2 M_0(W) with the interior
+    levels eliminated. Returns (F, assembly residual, solve residual) with F in
+    blocks over (first level, last level)."""
+    n = cell.size
+    spacetime = history_spacetime(cell, tau, potential, layers)
+    assembled = cob.PencilLayer.assemble([spacetime])
+    outer = list(range(n)) + list(range(layers * n, (layers + 1) * n))
+    interface = cob.PencilLayer.cells_within(assembled, 0, outer)
+    result = cob.PencilLayer.boundary_response(assembled, 0, interface, -mass ** 2)
+    order = np.argsort([int(assembled.complex.kSimplexVertices(0)[i][0]) for i in result.interface])
+    F = np.asarray(result.response)[np.ix_(order, order)]
+    return F, cob.PencilLayer.assembly_residual(assembled, 0), result.solveResidual
+
+
+def fiber_edge_stiffness(cell, tau, fiber_phase):
+    """The stiffness of the connection on the history slab, evaluated on a
+    fiber-edge phase pattern: phi^T (d_2 M_2 d_2^T) phi, the squared norm of the
+    curvature d(phi) in the Whitney metric of W.
+
+    `fiber_phase` gives one phase per vertex, the integral of the timelike
+    component A_0 dt over the vertical edge above it. Every edge with a time
+    component carries the line integral of A_0 dt along it (the mean of its two
+    endpoint values, since A_0 is interpolated linearly), and spatial edges
+    carry nothing. The curvature of that pattern is grad(A_0) ^ dt, constant on
+    every top simplex, so the Whitney interpolation reproduces it exactly and
+
+        phi^T (d_2 M_2 d_2^T) phi = (1 / tau) fiber_phase^T A_0(K) fiber_phase ,
+
+    with A_0(K) = d_1 M_1 d_1^T the spatial stiffness matrix: the stiffness of
+    the timelike connection is the spatial stiffness up to the fiber measure,
+    which is why eliminating it leaves the Coulomb kernel A_0(K)^+."""
+    slab = HistorySlab(cell, tau)
+    n = cell.size
+    phase = np.asarray(fiber_phase, dtype=float)
+    pattern = np.array([0.5 * (phase[x % n] + phase[y % n]) if x // n != y // n else 0.0
+                        for x, y in slab.complex.kSimplexVertices(1)])
+    boundary = slab.base.boundary(2)
+    curvature = boundary.T @ pattern
+    return float((curvature @ (slab.base.Minv(2) @ curvature)).real)

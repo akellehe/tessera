@@ -74,3 +74,38 @@ def test_the_reduction_to_the_static_route_closes_under_refinement():
     assert 0.0 < fine < 0.45 * coarse
     assert _reduction_defect(3, 0.5) == pytest.approx(0.5 * coarse, rel=0.2)
     assert _reduction_defect(3, 1.0, mass=200.0) == pytest.approx(coarse, rel=0.1)
+
+
+def test_the_declared_fields_and_the_layer_api_give_the_same_slab(cell):
+    """The slab built from a `Spacetime` whose edges carry the squared lengths
+    and the phases, assembled and reduced by `PencilLayer`, is the slab of
+    `HistorySlab`; over two ticks its boundary response is the Schur complement
+    of two stacked slabs onto the outer levels."""
+    from tessera.drivers.bands.fiber import layered_response
+    V = pot.cosine_potential(cell, 0.4)
+    mass, tau = 40.0, 0.004
+    F00, F01, F10, F11 = HistorySlab(cell, tau, V, mass, mass_term="consistent").blocks
+    one, assembly_residual, _ = layered_response(cell, tau, V, mass, layers=1)
+    direct = np.block([[F00, F01], [F10, F11]])
+    assert assembly_residual < 1e-12
+    assert np.abs(one - direct).max() < 1e-10 * np.abs(direct).max()
+    two, _, solve_residual = layered_response(cell, tau, V, mass, layers=2)
+    inner = np.linalg.inv(F11 + F00)
+    schur = np.block([[F00 - F01 @ inner @ F10, -F01 @ inner @ F01],
+                      [-F10 @ inner @ F10, F11 - F10 @ inner @ F01]])
+    assert solve_residual < 1e-12
+    assert np.abs(two - schur).max() < 1e-10 * np.abs(schur).max()
+
+
+def test_the_stiffness_of_the_timelike_connection_is_the_spatial_stiffness(cell):
+    """Eliminating the fiber-edge phase at tree level leaves the Coulomb kernel
+    because its stiffness on the history is the spatial stiffness matrix, up to
+    the fiber measure 1 / tau, exactly."""
+    from tessera.drivers.bands.fiber import fiber_edge_stiffness
+    rng = np.random.default_rng(4)
+    stiffness = cell.stiffness.dressed().real
+    for tau in (0.05, 0.2):
+        phase = rng.normal(size=cell.size)
+        expected = phase @ (stiffness @ phase) / tau
+        assert fiber_edge_stiffness(cell, tau, phase) == pytest.approx(expected, rel=1e-10)
+    assert fiber_edge_stiffness(cell, 0.1, np.ones(cell.size)) == pytest.approx(0.0, abs=1e-10)   # pure gauge

@@ -157,6 +157,32 @@ class CrystalCell:
             A = A + weighted.dressed(kappa)
         return A.tocsc(), M
 
+    def spacetime(self, kappa=(0.0, 0.0, 0.0)):
+        """The cell as a `Spacetime` whose edges carry the declared fields: the
+        lengths set by `PeriodicKuhnGrid.build` (`Edge.setLength`) and the Bloch
+        phase of the crystal momentum on each edge's own source-to-target
+        orientation (`Edge.setPhase`)."""
+        signature = tessera.Signature(3, tessera.Lorentzian)
+        spacetime = tessera.Spacetime(tessera.Metric(True, signature), tessera.CDT, 1.0, 1.0,
+                                      tessera.PREFERRED, self.grid)
+        spacetime.build()
+        for edge in spacetime.getEdgeList().toVector():
+            edge.setPhase(self.grid.blochPhase(edge.getSource().getId(), edge.getTarget().getId(), list(kappa)))
+        return spacetime
+
+    def pencil_from_spacetime(self, kappa=(0.0, 0.0, 0.0)):
+        """(A, M) read back from the declared fields of `spacetime(kappa)` through
+        `WhitneyMass.complexOf`, `WhitneyMass.squaredLengthsOf` and
+        `Connection.fromSpacetime`: the route by which a relaxed geometry would
+        reach the solver. It equals `pencil(kappa)` without a potential."""
+        spacetime = self.spacetime(kappa)
+        K = ch.WhitneyMass.complexOf(spacetime)
+        lengths = ch.WhitneyMass.squaredLengthsOf(spacetime, K)
+        base = ch.ChainHodge(K, lengths, ch.Preset.L2, ch.Branch.Continuation, self.base.crossoverDimension())
+        cov = ch.CovariantChainHodge(base, ch.Connection.fromSpacetime(spacetime, K), 7, False)
+        pencil = cov.sparsePencil()
+        return self.kinetic_scale * sp.csc_matrix(pencil.A), sp.csc_matrix(pencil.M)
+
     def momentum(self, kappa):
         """The Cartesian crystal momentum k = sum_a kappa_a b_a (inverse angstrom)."""
         return np.asarray(kappa, dtype=float) @ self.reciprocal
