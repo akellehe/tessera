@@ -101,13 +101,67 @@ def direct_gap(epm, divisions, count=24, tolerance=1e-10, log=print):
             "certified": all(r["certified"] for r in reads)}
 
 
+def _cluster_means(levels, sizes):
+    out, start = [], 0
+    for size in sizes:
+        out.append(np.mean(levels[start:start + size]))
+        start += size
+    return np.array(out)
+
+
+def folded_levels(epm, divisions, tolerance=1e-10, log=print):
+    """The valence and lowest conduction levels at the three high-symmetry
+    points, extrapolated from three meshes, against plane waves.
+
+    The zone centre of the conventional cell carries the primitive zone centre
+    and the three X points; its corner momentum (1/2, 1/2, 1/2) carries the four
+    L points. A level of multiplicity g in the primitive cell appears as a
+    cluster of 3 g states (X) or 4 g states (L), which the mesh splits at the
+    order of its error, so each cluster is read as its mean. Energies are
+    returned relative to the top of the valence band."""
+    unit = 2.0 * np.pi / epm.a
+    centre_reads = [zone_centre_read(epm, n, 24, tolerance) for n in divisions]
+    spacings = [r["spacing"] for r in centre_reads]
+    centre = [_cluster_means(r["energies"][r["from_centre"]], (1, 3, 1)) for r in centre_reads]
+    boundary = [_cluster_means(r["energies"][~r["from_centre"]], (3, 3, 6, 3, 3)) for r in centre_reads]
+    corner, certified = [], all(r["certified"] for r in centre_reads)
+    for n in divisions:
+        cell = CrystalCell(epm.conventional_lattice(), n, kinetic_scale=epm.kinetic_scale)
+        read = cell.solve((0.5, 0.5, 0.5), 20, epm.potential(cell), tolerance=tolerance)
+        certified = certified and read.certified()
+        corner.append(_cluster_means(read.energies, (4, 4, 8, 4)))
+        log(f"N={n:3d} corner read residual={read.residual:.1e} certified={read.certified()}")
+    extrapolate = lambda values: richardson(spacings, values)[0]
+    top = extrapolate(centre)[1]
+    reference_centre = epm.plane_wave_bands((0.0, 0.0, 0.0), 5)
+    reference_top = reference_centre[3]
+    reference_x = epm.plane_wave_bands((unit, 0.0, 0.0), 6)
+    reference_l = epm.plane_wave_bands((0.5 * unit,) * 3, 5)
+    return {"certified": certified,
+            "centre": extrapolate(centre) - top,
+            "centre_reference": reference_centre[[0, 3, 4]] - reference_top,
+            "boundary": extrapolate(boundary) - top,
+            "boundary_reference": reference_x[[0, 1, 2, 4, 5]] - reference_top,
+            "corner": extrapolate(corner) - top,
+            "corner_reference": reference_l[[0, 1, 2, 4]] - reference_top}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="The direct gap of GaAs from the Cohen-Bergstresser "
                                      "empirical pseudopotential on three meshes of the conventional cell.")
     parser.add_argument("--divisions", type=int, nargs=3, default=(16, 24, 32))
     parser.add_argument("--count", type=int, default=24)
     parser.add_argument("--out", default=None, help="write the reads as JSON")
+    parser.add_argument("--points", action="store_true",
+                        help="the levels at the zone centre, X and L instead of the gap alone")
     args = parser.parse_args(argv)
+    if args.points:
+        table = folded_levels(ZincBlendeEPM.gallium_arsenide(), args.divisions)
+        for name in ("centre", "boundary", "corner"):
+            print(name, np.round(table[name], 4), "plane waves", np.round(table[name + "_reference"], 4),
+                  flush=True)
+        print("certified", table["certified"])
+        return table
     result = direct_gap(ZincBlendeEPM.gallium_arsenide(), args.divisions, args.count)
     print(f"extrapolated gap {result['gap']:.4f} eV, plane waves {result['reference_gap']:.4f} eV, "
           f"difference {1e3 * (result['gap'] - result['reference_gap']):+.1f} meV; "
