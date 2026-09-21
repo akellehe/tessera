@@ -271,7 +271,9 @@ class PlaneWaveCrystal:
         zero-momentum term that the momentum set leaves out is restored by the
         probe-charge correction -2 MADELUNG / supercell_side on the filled bands,
         `supercell_side` being the side of the cubic supercell the momentum set
-        is equivalent to.
+        is equivalent to, or a pair (side, "fcc") for a face-centred one (a
+        uniform grid of n^3 momenta of a face-centred crystal is the
+        face-centred supercell of conventional side n a).
 
         Two nested loops. The outer one rebuilds the exchange operator from the
         current orbitals; the inner one converges the Hartree potential at fixed
@@ -280,7 +282,8 @@ class PlaneWaveCrystal:
         crystal = self.crystal
         occupied = crystal.electrons // 2
         density = self.run(bands)["density"]
-        madelung = 2.0 * coulomb.MADELUNG_SC / supercell_side
+        madelung = (coulomb.probe_charge_constant(supercell_side, "sc") if np.isscalar(supercell_side)
+                    else coulomb.probe_charge_constant(*supercell_side))
         potential_g = self._effective(density)
         current = [scipy.linalg.eigh(self._hamiltonian(basis, potential_g), subset_by_index=[0, bands - 1])[1]
                    for basis in self.bases]

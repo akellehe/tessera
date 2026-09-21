@@ -291,6 +291,17 @@ class ModeInteraction:
 # The potential of a unit point charge at its own site in a simple cubic lattice
 # of side 1 with a neutralizing background is -MADELUNG_SC (in units of e^2 / L).
 MADELUNG_SC = 2.837297479
+# The same for a face-centred cubic lattice whose conventional cube has side 1.
+MADELUNG_FCC = 4.584862074
+
+
+def probe_charge_constant(side, lattice="sc", e2=2.0):
+    """e^2 MADELUNG / side: the integral of the Coulomb kernel over the cell of
+    momentum space that a finite momentum set leaves out at zero momentum
+    transfer, for the supercell the set is equivalent to (a simple cubic or a
+    face-centred cubic lattice of conventional side `side`). `e2` is the squared
+    charge in the units of the run (2 in rydberg atomic units)."""
+    return e2 * {"sc": MADELUNG_SC, "fcc": MADELUNG_FCC}[lattice] / side
 
 
 def closed_shell_momenta(max_squared):
