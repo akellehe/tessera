@@ -39,7 +39,7 @@ import scipy.sparse as sp
 from scipy.special import spherical_jn
 
 from tessera import chainhodge as ch
-from tessera.drivers.bands import coulomb
+from tessera.drivers.bands import acceleration, coulomb
 from tessera.drivers.bands.crystal import CrystalCell
 from tessera.drivers.bands.pseudopotential import real_harmonics
 
@@ -605,7 +605,8 @@ class MeshCrystal:
 
     # -- Hartree-Fock
 
-    def run_hartree_fock(self, bands, tolerance=1e-5, mixing=0.3, max_outer=100, max_inner=30, start=None, log=None):
+    def run_hartree_fock(self, bands, tolerance=1e-5, mixing=0.3, max_outer=100, max_inner=30, start=None, log=None,
+                         accelerate=True):
         """Hartree-Fock on the mesh at the zone centre, the mean field of the
         quartic Coulomb interaction: the Hartree potential of the density and the
         exchange operator
@@ -624,7 +625,15 @@ class MeshCrystal:
         The Hartree mean field supplies the starting orbitals when it
         converges, one diagonalization in the potential of the atomic density
         otherwise. The exchange operator is rebuilt in an outer loop and the Hartree potential converged
-        at fixed exchange in an inner one, as in `PlaneWaveCrystal`.
+        at fixed exchange in an inner one, as in `PlaneWaveCrystal`. Before each
+        rebuild the energy is minimized over the Slater frames of the span of
+        the computed bands (`acceleration`; `accelerate=False` is the plain
+        update, with the same fixed points). With it the run also returns
+        "energies", the energy of the state each exchange operator was built
+        from, and "lowest_curvature", the lowest eigenvalue of the second
+        variation of the energy on the last span: positive at a minimum,
+        negative at a saddle. "solves" counts the solves of the pencil, the
+        start included.
 
         References: Lin, Journal of Chemical Theory and Computation 12, 2242
         (2016), for the compression; Gygi & Baldereschi, Physical Review B 34,
@@ -640,10 +649,13 @@ class MeshCrystal:
         # the electronic energy is returned so that states can be compared, the lowest being the mean field.
         # `start` (a dict with "vectors" and "levels": an earlier run, or `prolonged` from a coarser mesh)
         # replaces both.
+        solves = 0                                                   # of the pencil, the unit of the run's cost
         if start is None:
             start = self.run(bands, log=log)
+            solves = len(start["history"])
             if not start["converged"]:
                 start = self.run(bands, max_iterations=1, log=log)
+                solves += 1
         start = dict(start)
         start.setdefault("residual", 0.0)
         start.setdefault("shift_below_spectrum", True)
@@ -657,12 +669,21 @@ class MeshCrystal:
         norm = lambda difference: np.sqrt(weights @ difference ** 2 / crystal.volume) * crystal.volume / crystal.electrons
         history, density = [], nodal(orbitals)
         residual, below = start["residual"], start["shift_below_spectrum"]
+        accelerator = acceleration.ExchangeAccelerator(self, occupied, self.approximations.exchange_history) \
+            if accelerate else None
         for outer in range(max_outer):
+            if accelerator is not None:
+                # The mean field of the span of the computed bands, minimized (`acceleration`): the filled sections
+                # are rotated inside the span before the exchange operator is built from them.
+                orbitals, W, load = accelerator.zone_centre(orbitals)
+                density = nodal(orbitals)
+            else:
+                W, load = self._exchange(orbitals[:, :occupied], orbitals), load_of(orbitals)
             # The exchange operator on every computed band, compressed: K = -xi xi^T.
-            P, D = self._compressed(self._exchange(orbitals[:, :occupied], orbitals), orbitals, self.P)
+            P, D = self._compressed(W, orbitals, self.P)
             # The Hartree potential converged at this exchange.
             mixer = PulayMixer(mixing)
-            hartree = self.kernel.potential(load_of(orbitals)).real
+            hartree = self.kernel.potential(load).real
             inner_tolerance = max(0.3 * tolerance, 0.3 * (history[-1] if history else 1e-2))
             inner_density = density
             for inner in range(max_inner):
@@ -677,9 +698,12 @@ class MeshCrystal:
                 hartree = mixer.next(hartree, self.kernel.potential(load_of(produced)).real)
             change = norm(out_density - density)
             history.append(change)
+            solves += inner + 1
             if log:
                 log(f"  mesh, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner) gap "
-                    f"{(values[occupied] - values[occupied - 1]) * 13.605693:.4f} eV")
+                    f"{(values[occupied] - values[occupied - 1]) * 13.605693:.4f} eV"
+                    + (f", energy {accelerator.reads[-1]['energy']:.8f} Ry after {accelerator.reads[-1]['steps']} steps "
+                       f"in the span" if accelerate else ""))
             orbitals, density = produced, out_density
             if change < tolerance:
                 break
@@ -691,7 +715,8 @@ class MeshCrystal:
         energy = float(np.sum(one_particle + values[:occupied]))
         return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing, "energy": energy,
-                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance), "solves": solves,
+                **({} if accelerator is None else accelerator.record())}
 
     # -- more bands and the quasiparticle equation on a momentum set
 
@@ -868,7 +893,8 @@ class MeshCrystal:
 
     # -- Hartree-Fock on a momentum set
 
-    def run_hartree_fock_set(self, bands, momenta, tolerance=1e-5, mixing=0.3, max_outer=40, max_inner=30, log=None):
+    def run_hartree_fock_set(self, bands, momenta, tolerance=1e-5, mixing=0.3, max_outer=40, max_inner=30, log=None,
+                             accelerate=True):
         """Hartree-Fock with the covariance sampled on the momentum set
         `momenta` (reciprocal coordinates of the cell): a uniform grid that
         contains the zone centre, so that the differences of its members are
@@ -884,8 +910,9 @@ class MeshCrystal:
         at G = 0 is the auxiliary-function constant of the set
         (`GridCoulombKernel.zero_momentum_constant(transfers=momenta)`), which
         is the constant of the supercell the set is equivalent to. The loops
-        are those of `run_hartree_fock`. Returns the levels and the
-        cell-periodic parts per momentum."""
+        and the accelerator are those of `run_hartree_fock`, the span being the
+        computed bands of every momentum and the energy that of one cell.
+        Returns the levels and the cell-periodic parts per momentum."""
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
         momenta = [tuple(float(x) for x in kappa) for kappa in momenta]
@@ -921,7 +948,12 @@ class MeshCrystal:
             orbitals.append(z.astype(complex)); values.append(v)
         history, density = [], nodal(orbitals)
         residual, below = 0.0, True
+        accelerator = acceleration.ExchangeAccelerator(self, occupied, self.approximations.exchange_history) \
+            if accelerate else None
         for outer in range(max_outer):
+            if accelerator is not None:                              # as in `run_hartree_fock`
+                orbitals = accelerator.momentum_set(momenta, constant, masses, projectors, orbitals)
+                density = nodal(orbitals)
             terms = [self._compressed(exchange(k, orbitals), orbitals[k], projectors[k]) for k in range(count)]
             mixer = PulayMixer(mixing)
             hartree = self.kernel.potential(load_of(orbitals)).real
@@ -942,14 +974,16 @@ class MeshCrystal:
             change = norm(out_density - density)
             history.append(change)
             if log:
-                log(f"  momentum set, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner)")
+                log(f"  momentum set, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner)"
+                    + (f", energy {accelerator.reads[-1]['energy']:.8f} Ry" if accelerate else ""))
             orbitals, density = produced, out_density
             if change < tolerance:
                 break
         return {"momenta": momenta, "levels": values, "vectors": orbitals, "residual": residual,
                 "shift_below_spectrum": below, "history": history, "converged": history[-1] < tolerance,
                 "zero_momentum": constant, "spacing": cell.spacing,
-                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance),
+                **({} if accelerator is None else accelerator.record())}
 
     # -- more bands, and the one-shot quasiparticle correction
 
