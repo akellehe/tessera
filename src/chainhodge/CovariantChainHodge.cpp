@@ -604,6 +604,71 @@ SparsePencil CovariantChainHodge::sparsePencil(int k) const {
   return out;
 }
 
+std::map<std::pair<std::uint64_t, std::uint64_t>, double> CovariantChainHodge::orientedWeights(
+    const std::vector<double> &edgeWeights) const {
+  const auto edges = base_->complex().kSimplexVertices(1);
+  if (edgeWeights.size() != edges.size())
+    throw std::invalid_argument("CovariantChainHodge: one weight per edge, in the canonical edge order");
+  std::map<std::pair<std::uint64_t, std::uint64_t>, double> oriented;
+  for (std::size_t e = 0; e < edges.size(); ++e) oriented[{edges[e][0], edges[e][1]}] = edgeWeights[e];
+  return oriented;
+}
+
+SparseMatrix CovariantChainHodge::phaseDerivativeAlong(
+    const SparseMatrix &dressedM, const std::vector<std::uint64_t> &baseRow,
+    const std::vector<std::uint64_t> &baseCol,
+    const std::map<std::pair<std::uint64_t, std::uint64_t>, double> &oriented, bool dual) {
+  SparseMatrix out(dressedM.rows(), dressedM.cols());
+  std::vector<Eigen::Triplet<Complex>> trip;
+  const Complex plus = dual ? Complex(0.0, -1.0) : Complex(0.0, 1.0);
+  for (int c = 0; c < dressedM.outerSize(); ++c)
+    for (SparseMatrix::InnerIterator it(dressedM, c); it; ++it) {
+      const std::uint64_t a = baseRow[static_cast<std::size_t>(it.row())];
+      const std::uint64_t b = baseCol[static_cast<std::size_t>(it.col())];
+      if (a == b) continue;
+      const auto forward = oriented.find({a, b});
+      if (forward != oriented.end()) {
+        trip.emplace_back(static_cast<int>(it.row()), static_cast<int>(it.col()), plus * forward->second * it.value());
+        continue;
+      }
+      const auto backward = oriented.find({b, a});
+      if (backward != oriented.end())
+        trip.emplace_back(static_cast<int>(it.row()), static_cast<int>(it.col()), -plus * backward->second * it.value());
+    }
+  out.setFromTriplets(trip.begin(), trip.end());
+  out.makeCompressed();
+  return out;
+}
+
+SparsePencil CovariantChainHodge::sparsePencilPhaseDerivativeAlong(const std::vector<double> &edgeWeights) const {
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::sparsePencilPhaseDerivativeAlong: Whitney preset only");
+  const auto oriented = orientedWeights(edgeWeights);
+  const auto &b0 = base_vertex_[0];
+  SparsePencil out;
+  out.degree = 0;
+  out.M = phaseDerivativeAlong(dressed_[0], b0, b0, oriented, false);
+  const int n = base_->size(0);
+  out.A = SparseMatrix(n, n);
+  if (dimension() >= 1) {
+    const auto &b1 = base_vertex_[1];
+    const SparseMatrix dB = phaseDerivativeAlong(twisted_[1], b0, b1, oriented, false);
+    const SparseMatrix dM = phaseDerivativeAlong(dressed_[1], b1, b1, oriented, false);
+    const SparseMatrix dBd = phaseDerivativeAlong(twistedDual_[1], b0, b1, oriented, true);
+    const SparseMatrix dualT = SparseMatrix(twistedDual_[1].transpose());
+    out.A = dB * dressed_[1] * dualT + twisted_[1] * dM * dualT
+            + twisted_[1] * dressed_[1] * SparseMatrix(dBd.transpose());
+  }
+  out.A.makeCompressed();
+  return out;
+}
+
+SparseMatrix CovariantChainHodge::dressedVertexPotentialPhaseDerivativeAlong(
+    const std::vector<Complex> &potential, const std::vector<double> &edgeWeights) const {
+  const auto &b0 = base_vertex_[0];
+  return phaseDerivativeAlong(dressedVertexPotential(potential), b0, b0, orientedWeights(edgeWeights), false);
+}
+
 SparseMatrix CovariantChainHodge::dressedVertexPotential(const std::vector<Complex> &potential) const {
   const auto &b0 = base_vertex_[0];
   return dress(WhitneyMass::assembleVertexPotential(base_->complex(), base_->squaredLengths(), potential,

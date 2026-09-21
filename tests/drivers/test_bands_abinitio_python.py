@@ -429,8 +429,7 @@ def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that
     x = rng.standard_normal(cell.size)
     Y = rng.standard_normal((cell.size, 3)) + 1j * rng.standard_normal((cell.size, 3))
     kappa = np.array([0.013, -0.2, 0.31])
-    triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
-    loads = triple.loads(x, Y, coulomb.bloch_twist(cell, triple.tops, kappa))
+    loads = coulomb.pair_loads(cell, x, Y, kappa)
     assert np.abs(loads - cell.weighted_mass(x).dressed(kappa) @ Y).max() < 1e-15
     kernel = coulomb.GridCoulombKernel(cell, 8.0 * np.pi)
     rho = Y[:, 0]

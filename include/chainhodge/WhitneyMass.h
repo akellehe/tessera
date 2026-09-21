@@ -296,6 +296,26 @@ class WhitneyMass {
   /// density takes \f$ X = \bar Y \f$, passed by the caller.
   /// \f$ \sum_c \rho_c = \mathrm{tr}(X^T M_0 Y) \f$.
   /// @throws std::invalid_argument on a shape mismatch.
+  /// The load vectors \f$ \int \phi_c\, x\, y \f$ of the product of two sections
+  /// that live on different connections: `x` on the connection with the links
+  /// \p linksX and every column of \p Y on the one with \p linksY (both in the
+  /// canonical edge order of `Connection::links`). On a top simplex the three
+  /// factors are carried to its first vertex along the edges, multiplied there
+  /// as piecewise-linear functions, and the load is carried back to the vertex
+  /// it belongs to; the product is a section of the product connection. With a
+  /// trivial \p linksX and the flat connection of a crystal momentum this is
+  /// `CovariantChainHodge::dressedVertexPotential` applied to \p Y; with two
+  /// crystal momenta it is the load of a pair density that carries their
+  /// difference.
+  /// @throws std::invalid_argument on a dimension mismatch.
+  [[nodiscard]] static Eigen::MatrixXcd pairLoads(const cobordism::ChainComplex &K,
+                                                  const SquaredLengths &s,
+                                                  const std::vector<Complex> &linksX,
+                                                  const std::vector<Complex> &linksY,
+                                                  const Eigen::VectorXcd &x,
+                                                  const Eigen::MatrixXcd &Y,
+                                                  Branch branch = Branch::Continuation);
+
   [[nodiscard]] static std::vector<Complex> vertexDensityContraction(
       const cobordism::ChainComplex &K, const SquaredLengths &s,
       const Eigen::MatrixXcd &X, const Eigen::MatrixXcd &Y,

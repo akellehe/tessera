@@ -129,6 +129,12 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            py::arg("branch") = Branch::Continuation,
            "M_0[V]: the mass matrix weighted by a function given by its vertex values (canonical "
            "C_0 order), sparse on the pattern of M_0. M_0[1] = M_0.")
+      .def_static("pairLoads", &WhitneyMass::pairLoads, py::arg("complex"), py::arg("squared_lengths"),
+           py::arg("links_x"), py::arg("links_y"), py::arg("x"), py::arg("Y"),
+           py::arg("branch") = Branch::Continuation,
+           "The loads int phi_c x y of the product of a section x of the connection links_x with every "
+           "column of Y, sections of links_y: the three factors carried to the first vertex of every top "
+           "simplex and the load carried back.")
       .def_static("vertexDensityContraction", &WhitneyMass::vertexDensityContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("X"), py::arg("Y"),
            py::arg("branch") = Branch::Continuation,
@@ -405,6 +411,13 @@ properties (i)-(vi) measured on every instance.)doc")
       .def("dressedVertexPotential", &CovariantChainHodge::dressedVertexPotential,
            py::arg("potential"),
            "M_0^U[V]: the potential-weighted mass matrix dressed by the connection like M_0.")
+      .def("sparsePencilPhaseDerivativeAlong", &CovariantChainHodge::sparsePencilPhaseDerivativeAlong,
+           py::arg("edge_weights"),
+           "The derivative of sparsePencil(0) along phi_e -> phi_e + t w_e (one weight per edge): the "
+           "current operator of a uniform connection when w_e = q . dx_e.")
+      .def("dressedVertexPotentialPhaseDerivativeAlong",
+           &CovariantChainHodge::dressedVertexPotentialPhaseDerivativeAlong, py::arg("potential"),
+           py::arg("edge_weights"), "The same derivative of dressedVertexPotential(potential).")
       .def("pencil", &CovariantChainHodge::pencil, py::arg("k"))
       .def("pencilAux", &CovariantChainHodge::pencilAux, py::arg("k"))
       .def("spectrum", &CovariantChainHodge::spectrum, py::arg("k"))

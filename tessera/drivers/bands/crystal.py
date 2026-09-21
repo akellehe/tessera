@@ -89,14 +89,6 @@ class GridMatrix:
         phase = np.exp(2j * np.pi * (self.step @ np.asarray(kappa, dtype=float)))
         return sp.csc_matrix((self.data * phase, (self.row, self.col)), shape=self.shape)
 
-    def momentum_derivative(self, axis):
-        """The derivative of `dressed` with respect to the Cartesian component
-        `axis` of the crystal momentum, at the zone centre: the entry (v, w)
-        times i (x_w - x_v). It is the derivative with respect to the link
-        phases contracted with the edge displacements, the current operator of
-        a uniform connection."""
-        return sp.csc_matrix((1j * self.data * self.displacement[:, axis], (self.row, self.col)), shape=self.shape)
-
 
 class CrystalCell:
     """A periodic cell with lattice vectors `lattice` (rows, angstrom) meshed
@@ -155,6 +147,26 @@ class CrystalCell:
         weighted.floor = float(values.real.min())
         weighted.values = values
         return weighted
+
+    def bloch_links(self, kappa=None):
+        """The links of the flat connection of the crystal momentum `kappa` (the
+        zone centre when None), in the canonical edge order; kept per momentum."""
+        key = (0.0, 0.0, 0.0) if kappa is None else tuple(float(v) for v in kappa)
+        if not hasattr(self, "_links"):
+            self._links = {}
+        if key not in self._links:
+            if len(self._links) > 64:
+                self._links.clear()
+            self._links[key] = self.grid.blochLinks(self.edges, list(key))
+        return self._links[key]
+
+    @property
+    def edge_displacements(self):
+        """The Cartesian displacement of every stored link, source to target."""
+        if not hasattr(self, "_edge_displacements"):
+            steps = np.array([self.grid.displacement(int(x), int(y)) for x, y in self.edges], dtype=float)
+            self._edge_displacements = (steps / np.array(self.divisions)) @ self.lattice
+        return self._edge_displacements
 
     def covariant(self, kappa=(0.0, 0.0, 0.0)):
         """The `CovariantChainHodge` of the cell at the flat connection whose
