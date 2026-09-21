@@ -15,6 +15,8 @@
 #include "chainhodge/RieszBand.h"
 #include "chainhodge/LorentzianFamily.h"
 #include "chainhodge/PencilSchur.h"
+#include "chainhodge/SparsePencil.h"
+#include "chainhodge/SparsePencilSolver.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/ChainComplex.h"
 #include "spacetime/Spacetime.h"
@@ -116,7 +118,22 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_static("derivativeContraction", &WhitneyMass::derivativeContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("X"), py::arg("Y"), py::arg("branch") = Branch::Continuation,
-           "Per-edge tr(X^T (dM_k/ds_e) Y) from the local blocks (transpose pairing).");
+           "Per-edge tr(X^T (dM_k/ds_e) Y) from the local blocks (transpose pairing).")
+      .def_static("vertexProductIntegral", &WhitneyMass::vertexProductIntegral,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("top_index"),
+           py::arg("vertices"), py::arg("branch") = Branch::Continuation,
+           "The integral over one top simplex of the product of the barycentric coordinate "
+           "functions of the listed vertex ids (with repetition): |T| d! prod_v m_v! / (d + m)!.")
+      .def_static("assembleVertexPotential", &WhitneyMass::assembleVertexPotential,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("potential"),
+           py::arg("branch") = Branch::Continuation,
+           "M_0[V]: the mass matrix weighted by a function given by its vertex values (canonical "
+           "C_0 order), sparse on the pattern of M_0. M_0[1] = M_0.")
+      .def_static("vertexDensityContraction", &WhitneyMass::vertexDensityContraction,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("X"), py::arg("Y"),
+           py::arg("branch") = Branch::Continuation,
+           "rho_c = d/dV_c tr(X^T M_0[V] Y) per vertex, from the local integrals without forming "
+           "the covariance (transpose pairing).");
   py::enum_<PencilVariable>(m, "PencilVariable",
       "Which vector a pencil eigenproblem A x = lambda B x is written in: geometric "
       "images (Whitney) or chains (Grassmann).")
@@ -379,6 +396,15 @@ properties (i)-(vi) measured on every instance.)doc")
       .def("covariantOperatorPhaseDerivative", &CovariantChainHodge::covariantOperatorPhaseDerivative,
            py::arg("k"), py::arg("edge_index"),
            "dh_k/dphi_e for the multiplicative link variation U_e = e^{i phi_e}, dense.")
+      .def("covariantOperatorPhaseHessian", &CovariantChainHodge::covariantOperatorPhaseHessian,
+           py::arg("k"), py::arg("edge_a"), py::arg("edge_b"),
+           "d^2 h_k / dphi_a dphi_b for the multiplicative link variations U_e = e^{i phi_e} at two "
+           "canonical edge indices, dense.")
+      .def("sparsePencil", &CovariantChainHodge::sparsePencil, py::arg("k") = 0,
+           "The sparse degree-zero pencil (d_1^U M_1^U (d_1^{U^-1})^T, M_0^U), available at any size.")
+      .def("dressedVertexPotential", &CovariantChainHodge::dressedVertexPotential,
+           py::arg("potential"),
+           "M_0^U[V]: the potential-weighted mass matrix dressed by the connection like M_0.")
       .def("pencil", &CovariantChainHodge::pencil, py::arg("k"))
       .def("pencilAux", &CovariantChainHodge::pencilAux, py::arg("k"))
       .def("spectrum", &CovariantChainHodge::spectrum, py::arg("k"))
@@ -405,6 +431,106 @@ properties (i)-(vi) measured on every instance.)doc")
       .def_static("leftFrame", &CovariantChainHodge::leftFrame, py::arg("band"), py::arg("dual_instance"),
            py::arg("isotropy_tolerance") = 1e-10,
            "G^{U^-1} Phi^vee B_C^{-T} from the band's dual frame and pairing; raises on an isotropic band.");
+  py::class_<SparsePencil>(m, "SparsePencil",
+      "A pencil A - lambda M with both matrices sparse (scipy CSC).")
+      .def(py::init([](int degree, const SparseMatrix &A, const SparseMatrix &M) {
+             SparsePencil p;
+             p.degree = degree;
+             p.A = A;
+             p.M = M;
+             return p;
+           }),
+           py::arg("degree"), py::arg("A"), py::arg("M"))
+      .def_readonly("degree", &SparsePencil::degree)
+      .def_readonly("A", &SparsePencil::A)
+      .def_readonly("M", &SparsePencil::M);
+
+  py::class_<SparsePencilComposition>(m, "SparsePencilComposition",
+      R"doc(Block assembly of two sparse pencils, acting on both matrices at once: the sparse
+counterpart of OccupationSpectra.directSum and hoppingBlock. A coupling enters the
+left-hand matrix only and is written in the pencil's variable, so a constant coupling
+Delta between two identical sheets is C = Delta * M.)doc")
+      .def_static("directSum", &SparsePencilComposition::directSum, py::arg("a"), py::arg("b"),
+           "(A_a + A_b, M_a + M_b) as block-diagonal direct sums, sheet a first.")
+      .def_static("hoppingBlock", &SparsePencilComposition::hoppingBlock, py::arg("a"), py::arg("b"),
+           py::arg("coupling"), py::arg("coupling_reverse") = SparseMatrix(),
+           "A = [[A_a, C], [C', A_b]] with M block diagonal; an empty reverse block selects "
+           "C' = C^dagger.");
+
+  py::class_<SparsePencilRead>(m, "SparsePencilRead",
+      "The lowest eigenpairs of a sparse Hermitian pencil with their certificate and the "
+      "solver's diagnostics.")
+      .def_readonly("eigenvalues", &SparsePencilRead::eigenvalues)
+      .def_readonly("vectors", &SparsePencilRead::vectors)
+      .def_readonly("residuals", &SparsePencilRead::residuals)
+      .def_readonly("orthonormalityDefect", &SparsePencilRead::orthonormalityDefect)
+      .def_readonly("hermitianDefectA", &SparsePencilRead::hermitianDefectA)
+      .def_readonly("hermitianDefectM", &SparsePencilRead::hermitianDefectM)
+      .def_readonly("shiftBelowSpectrum", &SparsePencilRead::shiftBelowSpectrum)
+      .def_readonly("converged", &SparsePencilRead::converged)
+      .def_readonly("blockSize", &SparsePencilRead::blockSize)
+      .def_readonly("iterations", &SparsePencilRead::iterations)
+      .def_readonly("restarts", &SparsePencilRead::restarts)
+      .def_readonly("solves", &SparsePencilRead::solves);
+
+  py::class_<EffectiveBettiRead>(m, "EffectiveBettiRead",
+      "The effective Betti number of a sparse pencil at a scale: the number of eigenvalues in the "
+      "window, the eigenvalues that bracket its edge, their gap, and the eigenpairs it was read from.")
+      .def_readonly("rank", &EffectiveBettiRead::rank)
+      .def_readonly("epsilon", &EffectiveBettiRead::epsilon)
+      .def_readonly("lastInside", &EffectiveBettiRead::lastInside)
+      .def_readonly("firstOutside", &EffectiveBettiRead::firstOutside)
+      .def_readonly("gap", &EffectiveBettiRead::gap)
+      .def_readonly("complete", &EffectiveBettiRead::complete)
+      .def_readonly("certified", &EffectiveBettiRead::certified)
+      .def_readonly("band", &EffectiveBettiRead::band);
+
+  py::class_<SparsePencilSolver>(m, "SparsePencilSolver",
+      R"doc(The lowest eigenpairs of a sparse Hermitian positive-definite pencil A z = lambda M z by
+block shift-invert Lanczos in the M inner product, with one sparse factorization of
+A - sigma M (Cholesky when positive definite, which certifies that sigma lies below the
+spectrum; LU otherwise). Hermiticity and the positivity of M are measured and refused by
+name when they fail.
+
+Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
+      .def_static("lowest",
+           [](const SparseMatrix &A, const SparseMatrix &M, int count, double sigma, double tolerance,
+              int blockSize, int maxBasisSize, int maxIterations, double hermitianTolerance,
+              std::uint64_t seed) {
+             SparsePencilOptions options;
+             options.tolerance = tolerance;
+             options.blockSize = blockSize;
+             options.maxBasisSize = maxBasisSize;
+             options.maxIterations = maxIterations;
+             options.hermitianTolerance = hermitianTolerance;
+             options.seed = seed;
+             return SparsePencilSolver::lowest(A, M, count, sigma, options);
+           },
+           py::arg("A"), py::arg("M"), py::arg("count"), py::arg("sigma"),
+           py::arg("tolerance") = SparsePencilOptions{}.tolerance,
+           py::arg("block_size") = 0, py::arg("max_basis_size") = 0,
+           py::arg("max_iterations") = SparsePencilOptions{}.maxIterations,
+           py::arg("hermitian_tolerance") = SparsePencilOptions{}.hermitianTolerance,
+           py::arg("seed") = SparsePencilOptions{}.seed,
+           "The count lowest eigenpairs above the shift sigma. The certificate's residual is "
+           "max_i |A z_i - lambda_i M z_i| / |(A - sigma M) z_i| and its conditioning the 1-norm "
+           "condition estimate of A - sigma M. Zero block_size / max_basis_size select the "
+           "automatic values.")
+      .def_static("effectiveBetti",
+           [](const SparseMatrix &A, const SparseMatrix &M, double epsilon, double sigma,
+              double tolerance, int initialCount, std::uint64_t seed) {
+             SparsePencilOptions options;
+             options.tolerance = tolerance;
+             options.seed = seed;
+             return SparsePencilSolver::effectiveBetti(A, M, epsilon, sigma, options, initialCount);
+           },
+           py::arg("A"), py::arg("M"), py::arg("epsilon"), py::arg("sigma"),
+           py::arg("tolerance") = SparsePencilOptions{}.tolerance, py::arg("initial_count") = 8,
+           py::arg("seed") = SparsePencilOptions{}.seed,
+           "The effective Betti number at scale epsilon: the rank of the pencil's spectral band in "
+           "[0, epsilon], a property of the declared operator and not of the incidence of the "
+           "complex. Certified by the first eigenvalue found outside the window and the gap it leaves.");
+
   py::class_<FaceBlock>(m, "FaceBlock",
       "One triangle's 3x3 face block over its three edges (canonical edge indices in "
       "local order (v0v1),(v0v2),(v1v2)), its numerical rank, and the preset.")

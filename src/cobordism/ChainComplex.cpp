@@ -93,19 +93,18 @@ ChainComplex ChainComplex::fromSpacetime(const Spacetime &K) {
   // Boundary ∂_k (rows = |C_{k-1}|, cols = |C_k|): each column is a k-simplex
   // and its nonzero rows are its facets. getFacets() is in canonical order —
   // facet i drops vertex i — so the coefficient is (-1)^i.
-  cc.boundary_.assign(n + 1, {});
+  cc.entries_.assign(n + 1, {});
   for (int k = 1; k <= n; ++k) {
-    const int rows = static_cast<int>(cc.counts_[k - 1]);
     const int cols = static_cast<int>(cc.counts_[k]);
-    std::vector<long> M(static_cast<std::size_t>(rows) * cols, 0);
+    auto &entries = cc.entries_[k];
+    entries.reserve(static_cast<std::size_t>(cols) * (k + 1));
     for (int j = 0; j < cols; ++j) {
       const auto &facets = faces[k][j]->getFacets();
       for (int i = 0; i < static_cast<int>(facets.size()); ++i) {
         const int r = index[k - 1].at(facets[i]->fingerprint.fingerprint());
-        M[static_cast<std::size_t>(r) * cols + j] = (i % 2 == 0) ? 1 : -1;
+        entries.push_back({r, j, (i % 2 == 0) ? 1 : -1});
       }
     }
-    cc.boundary_[k] = std::move(M);
   }
   return cc;
 }
@@ -153,12 +152,12 @@ ChainComplex ChainComplex::fromTopCells(
       index[static_cast<std::size_t>(k)][fk[static_cast<std::size_t>(j)]] = j;
   }
 
-  cc.boundary_.assign(static_cast<std::size_t>(n) + 1, {});
+  cc.entries_.assign(static_cast<std::size_t>(n) + 1, {});
   for (int k = 1; k <= n; ++k) {
-    const int rows = static_cast<int>(cc.counts_[static_cast<std::size_t>(k) - 1]);
     const int cols = static_cast<int>(cc.counts_[static_cast<std::size_t>(k)]);
-    std::vector<long> M(static_cast<std::size_t>(rows) * cols, 0);
     const auto &fk = cc.faceVerts_[static_cast<std::size_t>(k)];
+    auto &entries = cc.entries_[static_cast<std::size_t>(k)];
+    entries.reserve(static_cast<std::size_t>(cols) * (static_cast<std::size_t>(k) + 1));
     for (int j = 0; j < cols; ++j) {
       const Face &cell = fk[static_cast<std::size_t>(j)];
       for (int i = 0; i <= k; ++i) {
@@ -167,10 +166,9 @@ ChainComplex ChainComplex::fromTopCells(
         for (int p = 0; p <= k; ++p)
           if (p != i) facet.push_back(cell[static_cast<std::size_t>(p)]);
         const int r = index[static_cast<std::size_t>(k) - 1].at(facet);
-        M[static_cast<std::size_t>(r) * cols + j] = (i % 2 == 0) ? 1 : -1;
+        entries.push_back({r, j, (i % 2 == 0) ? 1 : -1});
       }
     }
-    cc.boundary_[static_cast<std::size_t>(k)] = std::move(M);
   }
   return cc;
 }
@@ -182,7 +180,7 @@ std::vector<std::vector<int>> ChainComplex::orientationSigns() const {
   for (int k = 1; k <= dimension_; ++k) {
     const std::size_t rows = counts_[static_cast<std::size_t>(k) - 1];
     const std::size_t cols = counts_[static_cast<std::size_t>(k)];
-    const auto &flat = boundary_[static_cast<std::size_t>(k)];
+    const auto &flat = boundaryMatrix(k);
     const auto &cells = faceVerts_[static_cast<std::size_t>(k)];
     std::map<Face, std::size_t> facetIndex;
     for (std::size_t r = 0; r < rows; ++r) facetIndex[faceVerts_[static_cast<std::size_t>(k) - 1][r]] = r;
@@ -229,40 +227,75 @@ int ChainComplex::eulerCharacteristic() const noexcept {
   return chi;
 }
 
+const std::vector<ChainComplex::BoundaryEntry> &ChainComplex::boundaryEntries(int k) const {
+  static const std::vector<BoundaryEntry> kEmpty{};
+  if (k < 0 || k > dimension_) return kEmpty;
+  return entries_[static_cast<std::size_t>(k)];
+}
+
 const std::vector<long> &ChainComplex::boundaryMatrix(int k) const {
   static const std::vector<long> kEmpty{};
   if (k < 0 || k > dimension_) return kEmpty;
-  return boundary_[static_cast<std::size_t>(k)];
+  const std::lock_guard<std::mutex> lock(dense_->mutex);
+  // Sized once, before any reference into it exists; every copy of a complex
+  // has the same dimension, so a shared cache is sized the same by all.
+  if (dense_->flat.empty()) {
+    dense_->flat.assign(static_cast<std::size_t>(dimension_) + 1, {});
+    dense_->built.assign(static_cast<std::size_t>(dimension_) + 1, 0);
+  }
+  auto &flat = dense_->flat[static_cast<std::size_t>(k)];
+  if (!dense_->built[static_cast<std::size_t>(k)]) {
+    if (k >= 1) {
+      const std::size_t rows = counts_[static_cast<std::size_t>(k) - 1];
+      const std::size_t cols = counts_[static_cast<std::size_t>(k)];
+      flat.assign(rows * cols, 0);
+      for (const auto &e : entries_[static_cast<std::size_t>(k)])
+        flat[static_cast<std::size_t>(e.row) * cols + static_cast<std::size_t>(e.column)] = e.value;
+    }
+    dense_->built[static_cast<std::size_t>(k)] = 1;
+  }
+  return flat;
 }
 
 bool ChainComplex::boundaryComposesToZero() const {
-  // ∂_{k-1} ∘ ∂_k = 0 : (|C_{k-2}| x |C_{k-1}|) · (|C_{k-1}| x |C_k|).
+  // ∂_{k-1} ∘ ∂_k = 0, column by column: the column of ∂_k for a k-simplex
+  // lists its facets, and each facet's column of ∂_{k-1} lists the ridges, so
+  // the composite's column is a signed sum over a handful of ridges.
   for (int k = 2; k <= dimension_; ++k) {
-    const int a = static_cast<int>(counts_[k - 2]);  // rows of ∂_{k-1}
-    const int b = static_cast<int>(counts_[k - 1]);  // shared dim
-    const int c = static_cast<int>(counts_[k]);      // cols of ∂_k
-    const auto &L = boundary_[static_cast<std::size_t>(k - 1)];
-    const auto &R = boundary_[static_cast<std::size_t>(k)];
-    for (int i = 0; i < a; ++i)
-      for (int j = 0; j < c; ++j) {
-        long acc = 0;
-        for (int m = 0; m < b; ++m)
-          acc += L[static_cast<std::size_t>(i) * b + m] * R[static_cast<std::size_t>(m) * c + j];
-        if (acc != 0) return false;
+    const auto &outer = entries_[static_cast<std::size_t>(k)];
+    const auto &inner = entries_[static_cast<std::size_t>(k) - 1];
+    // Entries are grouped by ascending column: start[c] .. start[c+1] is column c.
+    const std::size_t innerCols = counts_[static_cast<std::size_t>(k) - 1];
+    std::vector<std::size_t> start(innerCols + 1, 0);
+    for (const auto &e : inner) ++start[static_cast<std::size_t>(e.column) + 1];
+    for (std::size_t c = 0; c < innerCols; ++c) start[c + 1] += start[c];
+    std::map<int, long> column;
+    for (std::size_t begin = 0; begin < outer.size();) {
+      std::size_t end = begin;
+      while (end < outer.size() && outer[end].column == outer[begin].column) ++end;
+      column.clear();
+      for (std::size_t m = begin; m < end; ++m) {
+        const auto facet = static_cast<std::size_t>(outer[m].row);
+        for (std::size_t q = start[facet]; q < start[facet + 1]; ++q)
+          column[inner[q].row] += static_cast<long>(outer[m].value) * inner[q].value;
       }
+      for (const auto &entry : column)
+        if (entry.second != 0) return false;
+      begin = end;
+    }
   }
   return true;
 }
 
 int ChainComplex::rankOfBoundary(int k) const {
   if (k < 1 || k > dimension_) return 0;
-  return integerRank(boundary_[static_cast<std::size_t>(k)],
+  return integerRank(boundaryMatrix(k),
                      static_cast<int>(counts_[k - 1]), static_cast<int>(counts_[k]));
 }
 
 int ChainComplex::gf2RankOfBoundary(int k) const {
   if (k < 1 || k > dimension_) return 0;
-  const auto &M = boundary_[static_cast<std::size_t>(k)];
+  const auto &M = boundaryMatrix(k);
   std::vector<int> bits(M.size());
   for (std::size_t i = 0; i < M.size(); ++i) bits[i] = static_cast<int>(M[i] & 1);
   return gf2Rank(std::move(bits), static_cast<int>(counts_[k - 1]),
@@ -307,7 +340,7 @@ std::vector<int> ChainComplex::fundamentalClass() const {
   const int rows = static_cast<int>(counts_[static_cast<std::size_t>(d - 1)]);
   const int cols = static_cast<int>(counts_[static_cast<std::size_t>(d)]);
   Eigen::MatrixXd topBoundary(rows, cols);
-  const auto &flat = boundary_[static_cast<std::size_t>(d)];
+  const auto &flat = boundaryMatrix(d);
   for (int r = 0; r < rows; ++r)
     for (int c = 0; c < cols; ++c)
       topBoundary(r, c) =
@@ -368,7 +401,7 @@ std::vector<double> ChainComplex::intersectionForm() const {
 
   auto boundaryMatrixAsEigen = [&](int k, int rows, int cols) {
     Eigen::MatrixXd matrix(rows, cols);
-    const auto &flat = boundary_[static_cast<std::size_t>(k)];
+    const auto &flat = boundaryMatrix(k);
     for (int row = 0; row < rows; ++row)
       for (int col = 0; col < cols; ++col)
         matrix(row, col) =
@@ -482,7 +515,7 @@ std::vector<long> ChainComplex::torsion(int k) const {
   std::vector<long> out;
   if (k < 0 || k + 1 > dimension_) return out;  // torsion of H_k comes from ∂_{k+1}
   const int kk = k + 1;
-  auto snf = smithNormalForm(boundary_[static_cast<std::size_t>(kk)],
+  auto snf = smithNormalForm(boundaryMatrix(kk),
                              static_cast<int>(counts_[kk - 1]),
                              static_cast<int>(counts_[kk]));
   for (long d : snf.invariantFactors)
@@ -610,8 +643,12 @@ std::map<std::string, int> ChainComplex::stiefelWhitneyNumbers() const {
   };
 
   // Mod-2 boundary entry ∂_k[row][col] (k-simplex col -> its (k-1)-faces).
+  // The dense maps, fetched once: boundaryMatrix() takes the cache lock, which
+  // has no place inside the bit loops below.
+  std::vector<const std::vector<long> *> denseBoundary(static_cast<std::size_t>(n) + 1);
+  for (int k = 0; k <= n; ++k) denseBoundary[static_cast<std::size_t>(k)] = &boundaryMatrix(k);
   const auto boundaryBit = [&](int k, int row, int col) -> std::uint8_t {
-    const auto &flat = boundary_[static_cast<std::size_t>(k)];
+    const auto &flat = *denseBoundary[static_cast<std::size_t>(k)];
     const int cols = countAt(k);
     return static_cast<std::uint8_t>(
         std::abs(flat[static_cast<std::size_t>(row) * cols + col]) & 1);

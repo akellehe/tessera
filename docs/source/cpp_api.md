@@ -82,6 +82,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} SimplicialProduct.h
 ```
+```{doxygenfile} PeriodicKuhnGrid.h
+```
 ```{doxygenfile} SphereCircleProduct.h
 ```
 ```{doxygenfile} SimplexBoundarySphere.h
@@ -110,6 +112,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 
 ## Observables
 
+```{doxygenfile} EffectiveTopology.h
+```
 ```{doxygenfile} Observable.h
 ```
 ```{doxygenfile} VolumeProfile.h
@@ -241,6 +245,10 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} BandDerivative.h
 ```
 ```{doxygenfile} PencilSchur.h
+```
+```{doxygenfile} SparsePencil.h
+```
+```{doxygenfile} SparsePencilSolver.h
 ```
 
 ## Reinforcement learning

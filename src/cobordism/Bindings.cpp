@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <optional>
+#include <tuple>
 
 #include <pybind11/complex.h>
 #include <pybind11/eigen.h>
@@ -153,7 +154,20 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
       .def("fVector", &ChainComplex::fVector)
       .def("eulerCharacteristic", &ChainComplex::eulerCharacteristic)
       .def("boundaryMatrix", &ChainComplex::boundaryMatrix, py::arg("k"),
-           "Flat row-major ∂_k (rows=|C_{k-1}|, cols=|C_k|), entries in {-1,0,1}.")
+           "Flat row-major ∂_k (rows=|C_{k-1}|, cols=|C_k|), entries in {-1,0,1}. "
+           "Dense: materialized from boundaryEntries on the first request and cached.")
+      .def("boundaryEntries",
+           [](const ChainComplex &K, int k) {
+             std::vector<std::tuple<int, int, int>> out;
+             const auto &entries = K.boundaryEntries(k);
+             out.reserve(entries.size());
+             for (const auto &e : entries) out.emplace_back(e.row, e.column, e.value);
+             return out;
+           },
+           py::arg("k"),
+           "The nonzero entries of ∂_k as (row, column, value) with value in {-1, +1}, "
+           "grouped by ascending column. This is the stored form, available at any "
+           "complex size.")
       .def("boundaryComposesToZero", &ChainComplex::boundaryComposesToZero,
            "True iff ∂_{k-1}∘∂_k = 0 for all k.")
       .def_static(

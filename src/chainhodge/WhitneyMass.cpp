@@ -469,7 +469,15 @@ Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch,
       if (ambiguous != nullptr) *ambiguous = onSegment;
       sqrtDet = kontsevichSegal();
     } else {
-      sqrtDet = std::sqrt(std::abs(det1)) * std::exp(Complex(0.0, 0.5 * dtheta));
+      // The continuation decides which of the two square roots of det g is
+      // meant; the value is then that root itself. Building it from the
+      // tracked argument instead would carry the error of the polynomial
+      // roots (a multiple root is only accurate to a fractional power of the
+      // rounding level), which on real positive data shows up as a spurious
+      // imaginary part of the volume.
+      const Complex root = std::sqrt(det1);
+      const Complex tracked = std::exp(Complex(0.0, 0.5 * dtheta));
+      sqrtDet = (root * std::conj(tracked)).real() >= 0.0 ? root : -root;
     }
   }
   return sqrtDet / factorial(d);
@@ -665,6 +673,133 @@ std::vector<Complex> WhitneyMass::derivativeContraction(const cobordism::ChainCo
     }
   }
   return out;
+}
+
+namespace {
+
+// |T| d! prod_v m_v! / (d + m)! without the volume: the multiplicities of the
+// local vertices 0..d among the m factors.
+double productWeight(int d, const std::vector<int> &multiplicity) {
+  int m = 0;
+  double numerator = factorial(d);
+  for (int mv : multiplicity) {
+    m += mv;
+    numerator *= factorial(mv);
+  }
+  return numerator / factorial(d + m);
+}
+
+// The (d+1)^3 weights of the three-factor integral on one top simplex.
+std::vector<double> tripleWeights(int d) {
+  const int nv = d + 1;
+  std::vector<double> w(static_cast<std::size_t>(nv) * nv * nv);
+  std::vector<int> multiplicity(static_cast<std::size_t>(nv));
+  for (int a = 0; a < nv; ++a)
+    for (int b = 0; b < nv; ++b)
+      for (int c = 0; c < nv; ++c) {
+        std::fill(multiplicity.begin(), multiplicity.end(), 0);
+        ++multiplicity[static_cast<std::size_t>(a)];
+        ++multiplicity[static_cast<std::size_t>(b)];
+        ++multiplicity[static_cast<std::size_t>(c)];
+        w[(static_cast<std::size_t>(a) * nv + b) * nv + c] = productWeight(d, multiplicity);
+      }
+  return w;
+}
+
+Complex topVolume(const Cell &T, const SquaredLengths &s, const CellIndex &index, Branch branch) {
+  const TopSimplexContext ctx = topContext(T, s, index);
+  const LocalGeometry geo(static_cast<int>(T.size()) - 1, ctx.sLocal);
+  return WhitneyMass::volumeOnBranch(geo.gram, branch);
+}
+
+}  // namespace
+
+Complex WhitneyMass::vertexProductIntegral(const cobordism::ChainComplex &K, const SquaredLengths &s,
+                                           std::size_t topIndex,
+                                           const std::vector<std::uint64_t> &vertices, Branch branch) {
+  checkInputs(K, s, 0);
+  const auto tops = K.orientedTopSimplices();
+  if (topIndex >= tops.size())
+    throw std::invalid_argument("WhitneyMass::vertexProductIntegral: top simplex index out of range");
+  const Cell &T = tops[topIndex];
+  std::vector<int> multiplicity(T.size(), 0);
+  for (std::uint64_t v : vertices) {
+    const auto it = std::find(T.begin(), T.end(), v);
+    if (it == T.end())
+      throw std::invalid_argument("WhitneyMass::vertexProductIntegral: vertex " + std::to_string(v) +
+                                  " is not a vertex of the top simplex");
+    ++multiplicity[static_cast<std::size_t>(it - T.begin())];
+  }
+  const CellIndex index(K);
+  return topVolume(T, s, index, branch) * productWeight(static_cast<int>(T.size()) - 1, multiplicity);
+}
+
+SparseMatrix WhitneyMass::assembleVertexPotential(const cobordism::ChainComplex &K,
+                                                  const SquaredLengths &s,
+                                                  const std::vector<Complex> &potential, Branch branch) {
+  checkInputs(K, s, 0);
+  const int n = static_cast<int>(K.numSimplices(0));
+  if (static_cast<int>(potential.size()) != n)
+    throw std::invalid_argument("WhitneyMass::assembleVertexPotential: expected one value per vertex (" +
+                                std::to_string(n) + "), got " + std::to_string(potential.size()));
+  const CellIndex index(K);
+  const int d = K.dimension();
+  const int nv = d + 1;
+  const std::vector<double> weight = tripleWeights(d);
+  std::vector<Eigen::Triplet<Complex>> trip;
+  const auto tops = K.orientedTopSimplices();
+  trip.reserve(tops.size() * static_cast<std::size_t>(nv) * nv);
+  std::vector<int> local(static_cast<std::size_t>(nv));
+  for (const auto &T : tops) {
+    const Complex volume = topVolume(T, s, index, branch);
+    for (int a = 0; a < nv; ++a) local[static_cast<std::size_t>(a)] = index.cell(0, Cell{T[static_cast<std::size_t>(a)]});
+    for (int a = 0; a < nv; ++a)
+      for (int b = 0; b < nv; ++b) {
+        Complex sum(0.0, 0.0);
+        for (int c = 0; c < nv; ++c)
+          sum += potential[static_cast<std::size_t>(local[static_cast<std::size_t>(c)])] *
+                 weight[(static_cast<std::size_t>(a) * nv + b) * nv + c];
+        trip.emplace_back(local[static_cast<std::size_t>(a)], local[static_cast<std::size_t>(b)], volume * sum);
+      }
+  }
+  SparseMatrix M(n, n);
+  M.setFromTriplets(trip.begin(), trip.end());
+  M.makeCompressed();
+  return M;
+}
+
+std::vector<Complex> WhitneyMass::vertexDensityContraction(const cobordism::ChainComplex &K,
+                                                           const SquaredLengths &s,
+                                                           const Eigen::MatrixXcd &X,
+                                                           const Eigen::MatrixXcd &Y, Branch branch) {
+  checkInputs(K, s, 0);
+  const auto n = static_cast<Eigen::Index>(K.numSimplices(0));
+  if (X.rows() != n || Y.rows() != n || X.cols() != Y.cols())
+    throw std::invalid_argument(
+        "WhitneyMass::vertexDensityContraction: X and Y must be n_0 x m with the same m");
+  const CellIndex index(K);
+  const int d = K.dimension();
+  const int nv = d + 1;
+  const std::vector<double> weight = tripleWeights(d);
+  std::vector<Complex> rho(static_cast<std::size_t>(n), Complex(0.0, 0.0));
+  std::vector<int> local(static_cast<std::size_t>(nv));
+  Eigen::MatrixXcd pairing(nv, nv);
+  for (const auto &T : K.orientedTopSimplices()) {
+    const Complex volume = topVolume(T, s, index, branch);
+    for (int a = 0; a < nv; ++a) local[static_cast<std::size_t>(a)] = index.cell(0, Cell{T[static_cast<std::size_t>(a)]});
+    for (int a = 0; a < nv; ++a)
+      for (int b = 0; b < nv; ++b)
+        pairing(a, b) = (X.row(local[static_cast<std::size_t>(a)]).array() *
+                         Y.row(local[static_cast<std::size_t>(b)]).array()).sum();
+    for (int c = 0; c < nv; ++c) {
+      Complex sum(0.0, 0.0);
+      for (int a = 0; a < nv; ++a)
+        for (int b = 0; b < nv; ++b)
+          sum += pairing(a, b) * weight[(static_cast<std::size_t>(a) * nv + b) * nv + c];
+      rho[static_cast<std::size_t>(local[static_cast<std::size_t>(c)])] += volume * sum;
+    }
+  }
+  return rho;
 }
 
 }  // namespace tessera::chainhodge

@@ -246,6 +246,60 @@ class WhitneyMass {
       const cobordism::ChainComplex &K, const SquaredLengths &s, int k,
       const Eigen::MatrixXcd &X, const Eigen::MatrixXcd &Y,
       Branch branch = Branch::Continuation);
+
+  /// The integral over one top simplex of a product of barycentric coordinate
+  /// functions (the piecewise-linear vertex basis functions restricted to it),
+  /// \f[
+  ///   \int_T \prod_i \lambda_{v_i}\, d\mathrm{vol}
+  ///     = |T|\, \frac{d!\, \prod_v m_v!}{(d + m)!},
+  /// \f]
+  /// where \p vertices lists the \f$ m \f$ factors by vertex id with
+  /// repetition, \f$ m_v \f$ is the number of times vertex \f$ v \f$ occurs,
+  /// and \f$ |T| \f$ is the volume on the declared branch. Two factors give
+  /// the degree-zero block of `assemble`, \f$ |T|(1+\delta_{ab})/((d+1)(d+2)) \f$;
+  /// three give \f$ |T|\mu_{abc}\, d!/(d+3)! \f$ with \f$ \mu = 1, 2, 6 \f$
+  /// for three distinct vertices, one repeated pair and a triple; four give
+  /// \f$ |T|\mu_{abce}\, d!/(d+4)! \f$ with \f$ \mu = 1, 2, 4, 6, 24 \f$.
+  /// An empty list is the volume itself.
+  /// @param topIndex Index of \f$ T \f$ in `ChainComplex::orientedTopSimplices()`.
+  /// @throws std::invalid_argument when \p topIndex is out of range or a
+  ///   listed vertex is not a vertex of \f$ T \f$.
+  [[nodiscard]] static Complex vertexProductIntegral(
+      const cobordism::ChainComplex &K, const SquaredLengths &s, std::size_t topIndex,
+      const std::vector<std::uint64_t> &vertices, Branch branch = Branch::Continuation);
+
+  /// The mass matrix weighted by a function given by its vertex values,
+  /// \f[
+  ///   (M_0[V])_{ab} = \sum_{T \ni a, b}\ \sum_{c \in T} V_c
+  ///     \int_T \lambda_a \lambda_b \lambda_c\, d\mathrm{vol},
+  /// \f]
+  /// sparse on the pattern of \f$ M_0 \f$: the matrix of the bilinear form
+  /// \f$ \int V u w \f$ with \f$ V \f$ interpolated linearly on every top
+  /// simplex. A scalar potential enters the degree-zero pencil as
+  /// \f$ \tilde A_0 \to \tilde A_0 + M_0[V] \f$. \p potential has one entry
+  /// per vertex in the canonical \f$ C_0 \f$ order; \f$ M_0[1] = M_0 \f$.
+  /// @throws std::invalid_argument on a length mismatch.
+  [[nodiscard]] static SparseMatrix assembleVertexPotential(
+      const cobordism::ChainComplex &K, const SquaredLengths &s,
+      const std::vector<Complex> &potential, Branch branch = Branch::Continuation);
+
+  /// The vertex density of a pair of frames,
+  /// \f[
+  ///   \rho_c = \sum_n \sum_{T \ni c}\ \sum_{a, b \in T} X_{an} Y_{bn}
+  ///     \int_T \lambda_a \lambda_b \lambda_c\, d\mathrm{vol}
+  ///   = \frac{\partial}{\partial V_c}\, \mathrm{tr}\bigl(X^T M_0[V]\, Y\bigr),
+  /// \f]
+  /// one entry per vertex in the canonical \f$ C_0 \f$ order, without forming
+  /// the \f$ n_0 \times n_0 \f$ covariance \f$ \Gamma = Y X^T \f$. \p X and
+  /// \p Y are \f$ n_0 \times m \f$ nodal-value frames with the same
+  /// \f$ m \f$. The pairing is the transpose, never the conjugate: a Hermitian
+  /// density takes \f$ X = \bar Y \f$, passed by the caller.
+  /// \f$ \sum_c \rho_c = \mathrm{tr}(X^T M_0 Y) \f$.
+  /// @throws std::invalid_argument on a shape mismatch.
+  [[nodiscard]] static std::vector<Complex> vertexDensityContraction(
+      const cobordism::ChainComplex &K, const SquaredLengths &s,
+      const Eigen::MatrixXcd &X, const Eigen::MatrixXcd &Y,
+      Branch branch = Branch::Continuation);
 };
 
 }  // namespace tessera::chainhodge

@@ -23,6 +23,7 @@
 #include "simulations/ReggeSolver.h"
 #include "matter/MatterConfiguration.h"
 #include "mesh/SimplexFilter.h"
+#include "observables/EffectiveTopology.h"
 #include "observables/ModularityOptimizer.h"
 #include "observables/PersistentModularity.h"
 #include "observables/SpectralFiber.h"
@@ -148,6 +149,80 @@ void emitSelectionWarning(const RegisterContext &ctx) {
 // (i.e. `tessera.observables`). Called from src/bindings.cpp's
 // PYBIND11_MODULE entry point.
 void register_observables(py::module_ m) {
+  py::class_<EffectiveBettiNumber> effectiveBettiNumber(m, "EffectiveBettiNumber",
+      "The effective Betti number of one degree of a declared operator at a scale: the number of "
+      "eigenvalues with |lambda| <= epsilon, the moduli that bracket the window, their gap, and how "
+      "the count was obtained. rank is -1 when unmeasured and reason says why.");
+  py::enum_<EffectiveBettiNumber::Method>(effectiveBettiNumber, "Method")
+      .value("DenseSpectrum", EffectiveBettiNumber::Method::DenseSpectrum)
+      .value("SparsePencil", EffectiveBettiNumber::Method::SparsePencil)
+      .value("Unmeasured", EffectiveBettiNumber::Method::Unmeasured);
+  effectiveBettiNumber
+      .def_readonly("degree", &EffectiveBettiNumber::degree)
+      .def_readonly("rank", &EffectiveBettiNumber::rank)
+      .def_readonly("lastInside", &EffectiveBettiNumber::lastInside)
+      .def_readonly("firstOutside", &EffectiveBettiNumber::firstOutside)
+      .def_readonly("gap", &EffectiveBettiNumber::gap)
+      .def_readonly("method", &EffectiveBettiNumber::method)
+      .def_readonly("certified", &EffectiveBettiNumber::certified)
+      .def_readonly("reason", &EffectiveBettiNumber::reason);
+
+  py::class_<EffectiveTopology>(m, "EffectiveTopology",
+      R"doc(What a declared operator sees at a scale, as opposed to what the complex is. The actual
+topology of a complex is its incidence (ChainComplex.bettiNumbers, built by the
+spacetime Topology classes); the effective topology of an operator on it is
+beta_k^eff(epsilon) = rank P_[0, epsilon](h_k(s, U)), which depends on the squared
+lengths and the connection. A bottleneck gives two effective components on one
+incidence component; a torus with a connection of nontrivial holonomy keeps incidence
+Betti numbers (1, 3, 3, 1) while every effective Betti number is zero. This class
+never consults the incidence ranks.)doc")
+      .def_static("read", &EffectiveTopology::read, py::arg("operator"), py::arg("epsilon"),
+           py::arg("tolerance") = 1e-10,
+           "Read every degree at scale epsilon: the dense spectrum below the crossover, the sparse "
+           "pencil for degree zero above it, and unmeasured otherwise.")
+      .def("epsilon", &EffectiveTopology::epsilon)
+      .def("dimension", &EffectiveTopology::dimension)
+      .def("degrees", &EffectiveTopology::degrees)
+      .def("betti", &EffectiveTopology::betti,
+           "(beta_0^eff, ..., beta_d^eff), with -1 for an unmeasured degree.")
+      .def("certified", &EffectiveTopology::certified);
+
+  py::class_<EffectiveSignatureCertificate>(m, "EffectiveSignatureCertificate",
+      "The verdict of an effective signature on an effective read: required and measured Betti "
+      "numbers (-1 where nothing is required or measured), whether they match, whether the reads "
+      "were certified, and the smallest gap among the required degrees.")
+      .def_readonly("signature", &EffectiveSignatureCertificate::signature)
+      .def_readonly("epsilon", &EffectiveSignatureCertificate::epsilon)
+      .def_readonly("expected", &EffectiveSignatureCertificate::expected)
+      .def_readonly("measured", &EffectiveSignatureCertificate::measured)
+      .def_readonly("matches", &EffectiveSignatureCertificate::matches)
+      .def_readonly("certified", &EffectiveSignatureCertificate::certified)
+      .def_readonly("gap", &EffectiveSignatureCertificate::gap)
+      .def("holds", &EffectiveSignatureCertificate::holds);
+
+  py::class_<EffectiveSignature>(m, "EffectiveSignature",
+      "A named pattern of effective Betti numbers, recognized in an operator rather than built "
+      "into a complex: the effective counterpart of a spacetime Topology. The claim is one of "
+      "rank at a scale, not of homeomorphism type and not of incidence.")
+      .def("name", &EffectiveSignature::name)
+      .def("betti", &EffectiveSignature::betti)
+      .def("certify",
+           py::overload_cast<const EffectiveTopology &>(&EffectiveSignature::certify, py::const_),
+           py::arg("topology"))
+      .def("certify",
+           py::overload_cast<const chainhodge::CovariantChainHodge &, double, double>(&EffectiveSignature::certify,
+                                                                         py::const_),
+           py::arg("operator"), py::arg("epsilon"), py::arg("tolerance") = 1e-10);
+  py::class_<EffectiveTorus, EffectiveSignature>(m, "EffectiveTorus",
+      "The effective d-torus: beta_k^eff = binomial(d, k).")
+      .def(py::init<int>(), py::arg("dimension"));
+  py::class_<EffectiveSphere, EffectiveSignature>(m, "EffectiveSphere",
+      "The effective d-sphere: beta_0^eff = beta_d^eff = 1 and zero between.")
+      .def(py::init<int>(), py::arg("dimension"));
+  py::class_<EffectiveComponents, EffectiveSignature>(m, "EffectiveComponents",
+      "n effective components: beta_0^eff = n, with no requirement on the higher degrees.")
+      .def(py::init<int, int>(), py::arg("count"), py::arg("dimension"));
+
   // ========================================
   // SparseGraph (for modularity / spectral dimension)
   // ========================================
