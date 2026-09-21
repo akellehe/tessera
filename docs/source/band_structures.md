@@ -335,7 +335,7 @@ potential in a cell of 9 bohr:
 | spacing (bohr) | 1.125 | 0.75 | 0.56 | 0.45 | 0.375 | 0.32 | radial |
 |---|---|---|---|---|---|---|---|
 | splitting of the p level, centres (meV) | 1806 | 579 | 481 | 491 | 501 | 507 | 514 |
-| splitting of the p level, moments (meV) | 272 | 415 | 462 | | | | 514 |
+| splitting of the p level, moments (meV) | 272 | 415 | 462 | 487 | 499 | | 514 |
 | s level (Ry) | -0.087 | -0.114 | -0.164 | -0.230 | -0.271 | -0.298 | -0.388 |
 
 The Gaussians of these potentials are 0.46 to 0.98 bohr wide, and
