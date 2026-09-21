@@ -11,7 +11,7 @@ replaced by a lower one.
 from dataclasses import asdict, dataclass, fields
 
 # The orders of each expansion that exist in the code today.
-IMPLEMENTED = {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
+IMPLEMENTED = {"self_energy_order": (1, 2, 3, 4, 5), "zero_momentum_order": (1, 2, 3, 4, 5)}
 # The same on a momentum set of more than one momentum.
 IMPLEMENTED_ON_A_SET = {"self_energy_order": (1,), "zero_momentum_order": (1, 2, 3, 4, 5)}
 
@@ -21,10 +21,15 @@ class Approximations:
     """`self_energy_order`: the number of terms kept in the expansion of the
     self-energy in the screened interaction W (1 is Sigma = i G W; 1 to 5). The
     terms beyond the first are the skeleton diagrams of `diagrams`: one at
-    second order, six at third. Their cost grows as `vertex_bands` to the power
-    2 k - 1 times `vertex_poles` to the power k, so they are evaluated on the
-    `vertex_bands` modes nearest the gap and the `vertex_poles` modes of the
-    screened interaction that couple to them most strongly.
+    second order, six at third, 49 at fourth, 542 at fifth. An order k puts as
+    many as 2 k - 1 fermion lines and k lines of the screened interaction in
+    one energy denominator, so its cost grows as half of `vertex_bands` to the
+    power 2 k - 1 times `vertex_poles` to the power k, and the diagrams are
+    evaluated on the `vertex_bands` modes nearest the gap and the
+    `vertex_poles` modes of the screened interaction that couple to them most
+    strongly. `vertex_memory` is what the diagrams may hold at once, in GiB,
+    over all worker processes; it changes the time of a run and none of its
+    numbers (`diagrams.SkeletonSelfEnergy`).
 
     `zero_momentum_order`: how the self-energy integrand is averaged over the
     momentum transfers that sampling the zone centre leaves out. 1 is the closed
@@ -67,6 +72,7 @@ class Approximations:
     vertex_poles: int = 12
     momenta: int = 1
     exchange_history: int = 5
+    vertex_memory: float = 8.0
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -82,6 +88,8 @@ class Approximations:
             raise ValueError("momenta is at least 1")
         if self.exchange_history < 0:
             raise ValueError("exchange_history is at least 0")
+        if not self.vertex_memory > 0.0:
+            raise ValueError("vertex_memory is positive")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -155,6 +163,8 @@ class Approximations:
         group.add_argument("--exchange-history", type=int, default=defaults.exchange_history,
                            help="earlier exchange updates whose filled sections join the span of the Hartree-Fock "
                                 "accelerator (changes the cost of the loop, not the converged state)")
+        group.add_argument("--vertex-memory", type=float, default=defaults.vertex_memory,
+                           help="GiB the diagrams beyond the first order may hold at once; changes the time, not the numbers")
 
     @classmethod
     def from_arguments(cls, args):
