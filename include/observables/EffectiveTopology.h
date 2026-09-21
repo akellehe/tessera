@@ -26,6 +26,7 @@ struct EffectiveBettiNumber {
     Unmeasured,
   };
 
+  /// The chain degree \f$ k \f$.
   int degree{0};
   /// \f$ \beta_k^{\mathrm{eff}}(\epsilon) \f$: the number of eigenvalues with
   /// \f$ |\lambda| \le \epsilon \f$, with multiplicity; \f$ -1 \f$ when
@@ -38,6 +39,7 @@ struct EffectiveBettiNumber {
   /// `firstOutside / lastInside`: \f$ +\infty \f$ for an empty band or a band
   /// at zero, quiet NaN when nothing lies outside the window.
   double gap{std::numeric_limits<double>::quiet_NaN()};
+  /// How the count was obtained.
   Method method{Method::Unmeasured};
   /// Whether the count is certified: the dense pencil residual, or the sparse
   /// read's own certificate, met the tolerance.
@@ -81,13 +83,18 @@ struct EffectiveBettiNumber {
 class EffectiveTopology {
  public:
   /// Read every degree of \p cov at scale \p epsilon.
+  /// @param cov The covariant operator to read.
+  /// @param epsilon The scale: eigenvalues with \f$ |\lambda| \le \epsilon \f$
+  ///   are counted.
   /// @param tolerance The dense pencil residual, or the sparse certificate's
   ///   residual, a degree must meet to be certified.
   /// @throws std::invalid_argument when \p epsilon is not positive.
   [[nodiscard]] static EffectiveTopology read(const chainhodge::CovariantChainHodge &cov, double epsilon,
                                               double tolerance = 1e-10);
 
+  /// The scale the read was taken at.
   [[nodiscard]] double epsilon() const noexcept { return epsilon_; }
+  /// The dimension \f$ d \f$ of the complex.
   [[nodiscard]] int dimension() const noexcept { return static_cast<int>(degrees_.size()) - 1; }
   /// One read per degree, \f$ k = 0 \ldots d \f$.
   [[nodiscard]] const std::vector<EffectiveBettiNumber> &degrees() const noexcept { return degrees_; }
@@ -106,6 +113,7 @@ class EffectiveTopology {
 struct EffectiveSignatureCertificate {
   /// The signature's name, such as "effective 3-torus".
   std::string signature{};
+  /// The scale of the read that was judged.
   double epsilon{0.0};
   /// The Betti numbers the signature requires, \f$ -1 \f$ where it requires
   /// nothing.
@@ -120,6 +128,7 @@ struct EffectiveSignatureCertificate {
   /// bands stand from the rest of the spectrum.
   double gap{std::numeric_limits<double>::quiet_NaN()};
 
+  /// `matches` and `certified` together.
   [[nodiscard]] bool holds() const noexcept { return matches && certified; }
 };
 
@@ -139,6 +148,7 @@ struct EffectiveSignatureCertificate {
 class EffectiveSignature {
  public:
   virtual ~EffectiveSignature() = default;
+  /// The signature's name, as it appears on its certificates.
   [[nodiscard]] virtual std::string name() const = 0;
   /// The required \f$ (\beta_0, \ldots, \beta_d) \f$, \f$ -1 \f$ where nothing
   /// is required.
@@ -157,7 +167,9 @@ class EffectiveTorus : public EffectiveSignature {
  public:
   /// @throws std::invalid_argument for \f$ d < 1 \f$.
   explicit EffectiveTorus(int dimension);
+  /// See `EffectiveSignature::name`.
   [[nodiscard]] std::string name() const override;
+  /// See `EffectiveSignature::betti`.
   [[nodiscard]] std::vector<int> betti() const override;
 
  private:
@@ -170,7 +182,9 @@ class EffectiveSphere : public EffectiveSignature {
  public:
   /// @throws std::invalid_argument for \f$ d < 1 \f$.
   explicit EffectiveSphere(int dimension);
+  /// See `EffectiveSignature::name`.
   [[nodiscard]] std::string name() const override;
+  /// See `EffectiveSignature::betti`.
   [[nodiscard]] std::vector<int> betti() const override;
 
  private:
@@ -185,7 +199,9 @@ class EffectiveComponents : public EffectiveSignature {
  public:
   /// @throws std::invalid_argument for \f$ n < 0 \f$ or \f$ d < 0 \f$.
   EffectiveComponents(int count, int dimension);
+  /// See `EffectiveSignature::name`.
   [[nodiscard]] std::string name() const override;
+  /// See `EffectiveSignature::betti`.
   [[nodiscard]] std::vector<int> betti() const override;
 
  private:
