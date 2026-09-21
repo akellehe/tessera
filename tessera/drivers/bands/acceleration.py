@@ -366,13 +366,13 @@ class ExchangeAccelerator:
     def _finish(self, mean_field, frames, read):
         self.reads.append(read)
         self.last = (mean_field, frames)
+        self.frames = self.frames[len(self.frames) - self.history:] if self.history else []
 
     def zone_centre(self, orbitals):
         """The rotated span at the zone centre: (orbitals with the minimizing
         frame first, K[frame] applied to them, the load of the frame's density)."""
         mesh, cell = self.mesh, self.mesh.cell
-        span = extended_span(mesh.mass, orthonormal(mesh.mass, orbitals),
-                             self.frames[len(self.frames) - self.history:] if self.history else [])
+        span = extended_span(mesh.mass, orthonormal(mesh.mass, orbitals), self.frames)
         integrals = SpanIntegrals(mesh.kernel, mesh.triple, span)
         ionic = (mesh.stiffness + cell.weighted_mass(mesh.ionic).dressed().real).tocsc()
         mean_field = SpanMeanField([self._one_particle(ionic, mesh.P, span)],
@@ -388,8 +388,7 @@ class ExchangeAccelerator:
     def momentum_set(self, momenta, constant, masses, projectors, orbitals):
         """The rotated spans of a momentum set, the minimizing frames first."""
         mesh, cell, count = self.mesh, self.mesh.cell, len(momenta)
-        earlier = self.frames[len(self.frames) - self.history:] if self.history else []
-        spans = [extended_span(masses[k], orthonormal(masses[k], orbitals[k]), [frames[k] for frames in earlier])
+        spans = [extended_span(masses[k], orthonormal(masses[k], orbitals[k]), [frames[k] for frames in self.frames])
                  for k in range(count)]
         local = cell.weighted_mass(mesh.ionic)
         one_particle = [self._one_particle(cell.pencil(momenta[k], local)[0], projectors[k], spans[k])
