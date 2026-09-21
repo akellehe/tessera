@@ -369,7 +369,10 @@ class PlaneWaveCrystal:
                 current += (vectors.conj().T @ dP) @ D @ (P.conj().T @ vectors) \
                     + (vectors.conj().T @ P) @ D @ (dP.conj().T @ vectors)
                 rotated = rotation.conj().T @ current @ rotation
-                position = rotation @ np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0) @ rotation.conj().T
+                inner = np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0)
+                inner[:occupied, :occupied] = 0.0
+                inner[occupied:, occupied:] = 0.0
+                position = rotation @ inner @ rotation.conj().T
                 r = position[:occupied, occupied:]
                 total += weight * np.sum(np.abs(r) ** 2 / gaps)
         return 1.0 + COULOMB_STRENGTH / (3.0 * crystal.volume) * 4.0 * total
@@ -697,7 +700,11 @@ class MeshCrystal:
         well gapped (the local-density exchange-correlation potential of the
         Hartree-Fock density; any local v gives the same r in a complete basis):
         H_0 + v is diagonalized in the band basis, r'_pq = J'_pq / (h_p - h_q)
-        there, and r is rotated back."""
+        there between its filled and its empty levels, and r is rotated back.
+        Position elements inside the filled or inside the empty manifold are
+        left out: between levels that a mesh splits by its own error they are
+        arbitrarily large, and they reach a particle-hole pair only through the
+        small mismatch of the two filled subspaces."""
         cell = self.cell
         occupied = int(extended["occupied"])
         energies, orbitals = np.asarray(extended["levels"]), np.asarray(extended["vectors"])
@@ -743,6 +750,8 @@ class MeshCrystal:
             current = 0.5 * (current - current.T)                              # the coefficient of i is antisymmetric
             rotated = rotation.T @ current @ rotation
             position_rotated = np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0)
+            position_rotated[:occupied, :occupied] = 0.0
+            position_rotated[occupied:, occupied:] = 0.0
             position_matrix = rotation @ position_rotated @ rotation.T
             out[:, alpha] = position_matrix[:occupied, occupied:].ravel()
         return out
