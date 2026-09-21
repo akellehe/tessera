@@ -19,6 +19,7 @@
 
 #include "chainhodge/ChainHodge.h"
 #include "chainhodge/RieszBand.h"
+#include "chainhodge/SparsePencil.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/Certificate.h"
 #include "cobordism/ChainComplex.h"
@@ -290,6 +291,25 @@ class CovariantChainHodge {
   /// pair is that edge moves by \f$ \pm i \f$ times itself, in the metrics and in
   /// the twisted incidences alike. Below the crossover.
   [[nodiscard]] Eigen::MatrixXcd covariantOperatorPhaseDerivative(int k, std::size_t edgeIndex) const;
+  /// \f$ \partial^2 h_k(s,U)/\partial\varphi_a\,\partial\varphi_b \f$ for the
+  /// multiplicative variations \f$ U_e = e^{i\varphi_e} \f$ of the links at the
+  /// canonical edge indices \p edgeA and \p edgeB, dense: the second-order
+  /// product rule over the factors of \f$ h_k \f$. Every dressed entry
+  /// depends on a single link, through \f$ U_e \f$ or \f$ U_e^{-1} \f$, so
+  /// its second derivative is minus itself when both variations are that link
+  /// and zero otherwise; an inverse metric contributes
+  /// \f$ \partial_a\partial_b M^{-1} = M^{-1}\partial_a M M^{-1}\partial_b M M^{-1}
+  /// + M^{-1}\partial_b M M^{-1}\partial_a M M^{-1}
+  /// - M^{-1}\partial_a\partial_b M\, M^{-1} \f$. Symmetric in the two edges.
+  ///
+  /// Its expectation in the occupied modes is the diamagnetic term of the
+  /// connection's second-order response. Along a pure-gauge direction
+  /// \f$ \delta\varphi_{xy} = \chi_y - \chi_x \f$ the first and second
+  /// variations are the commutators \f$ i[h, X] \f$ and \f$ -[X,[X,h]] \f$
+  /// with \f$ X = \mathrm{diag}(\chi_{b(\sigma)}) \f$, which is the identity
+  /// the tests hold it to. Below the crossover.
+  [[nodiscard]] Eigen::MatrixXcd covariantOperatorPhaseHessian(int k, std::size_t edgeA,
+                                                               std::size_t edgeB) const;
   /// Populate the lazy derivative caches at degree \p k (the sparse metric
   /// factorizations and the dense derivative workspace) so that later `const`
   /// calls only read them.
@@ -311,6 +331,20 @@ class CovariantChainHodge {
   /// \f$ \partial M_k^U/\partial\varphi_e \f$ for \f$ U_e = e^{i\varphi_e} \f$: every
   /// dressed entry whose base-vertex pair is that edge times \f$ \pm i \f$.
   [[nodiscard]] SparseMatrix dressedPhaseDerivative(int k, std::size_t edgeIndex) const;
+  /// The sparse dressed pencil at degree zero,
+  /// \f$ \tilde A_0^U = \partial_1^U M_1^U (\partial_1^{U^{-1}})^T \f$ and
+  /// \f$ M_0^U \f$, available at any size: degree zero has no lower term, so
+  /// no inverse metric enters. At \f$ U = 1 \f$ these are the stiffness and
+  /// mass matrices of piecewise-linear finite elements. Equal entry by entry
+  /// to `pencil(0)` below the crossover.
+  /// @throws std::logic_error for \f$ k \ge 1 \f$, whose pencil contains
+  ///   \f$ (M_{k-1}^U)^{-1} \f$ and is not sparse, and under `GRASSMANN_ALL`.
+  [[nodiscard]] SparsePencil sparsePencil(int k = 0) const;
+  /// \f$ M_0^U[V] \f$: the potential-weighted mass matrix
+  /// (`WhitneyMass::assembleVertexPotential`) dressed by the connection like
+  /// \f$ M_0 \f$ itself, so that \f$ \tilde A_0^U + M_0^U[V] \f$ is the
+  /// pencil of the operator with the scalar potential \f$ V \f$ added.
+  [[nodiscard]] SparseMatrix dressedVertexPotential(const std::vector<Complex> &potential) const;
   /// The dense dressed pencil \f$ (\tilde A_k^U, M_k^U) \f$ on images (Whitney)
   /// or \f$ (A_k^U, G_k^U) \f$ on chains (Grassmann).
   [[nodiscard]] Pencil pencil(int k) const;
@@ -437,6 +471,13 @@ class CovariantChainHodge {
                                                     const std::vector<std::uint64_t> &baseRow,
                                                     const std::vector<std::uint64_t> &baseCol,
                                                     std::uint64_t x, std::uint64_t y, bool dual);
+  // Minus the entries of a dressed matrix whose base-vertex pair is the edge
+  // (x,y) in either order: the second phase derivative with respect to that
+  // link, the same for U and for U^{-1} since (+i)^2 = (-i)^2.
+  [[nodiscard]] static SparseMatrix phaseSecondDerivative(const SparseMatrix &dressedM,
+                                                          const std::vector<std::uint64_t> &baseRow,
+                                                          const std::vector<std::uint64_t> &baseCol,
+                                                          std::uint64_t x, std::uint64_t y);
   struct DerivativeWorkspace;
   mutable std::vector<std::shared_ptr<DerivativeWorkspace>> workspace_;
   // The projector, right frame, and projector certificates of one instance on

@@ -154,7 +154,7 @@ Pachner moves (add, remove, flip, iflip, shift).)doc")
       R"doc(The Kuhn (staircase) triangulation of the three-torus on an N1 x N2 x N3 grid with
 the squared edge lengths of a flat metric. Vertex (i, j, l) has id i*N2*N3 + j*N3 + l;
 every grid cube is cut into six tetrahedra along its main diagonal, indices reduced
-modulo the divisions. Betti numbers (1, 3, 3, 1); every vertex has degree 14.
+modulo the divisions. Incidence Betti numbers (1, 3, 3, 1); every vertex has degree 14.
 
 The metric is given as the Gram matrix A_ab = a_a . a_b of the lattice vectors of the
 periodic cell; an edge with unwrapped integer displacement n has squared length

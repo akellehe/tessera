@@ -33,7 +33,11 @@ class Spacetime;
 /// reduced modulo its \f$ N_a \f$. Adjacent cubes cut their shared face along
 /// the same diagonal, so the result is a consistent complex with
 /// \f$ 6 N_1 N_2 N_3 \f$ tetrahedra, \f$ 7 N_1 N_2 N_3 \f$ edges, every vertex
-/// of degree 14, and Betti numbers \f$ (1, 3, 3, 1) \f$.
+/// of degree 14, and incidence Betti numbers \f$ (1, 3, 3, 1) \f$. Those
+/// certify the mesh. They are not the harmonic content of an operator on it:
+/// that is the effective Betti number, the rank of the operator's spectral
+/// band near zero (`chainhodge::SparsePencilSolver::effectiveBetti`), and the
+/// covariant operator of a crystal momentum with nontrivial holonomy has none.
 ///
 /// Every edge is an integer vector \f$ n \f$ of the grid: a positive Kuhn edge
 /// has \f$ n \in \{0,1\}^3 \setminus \{0\} \f$ (the three axis steps
