@@ -106,6 +106,9 @@ class GridCoulombKernel:
         offsets = cell.index[row.indices].astype(float)
         offsets = np.where(offsets > np.array(self.shape) / 2.0, offsets - np.array(self.shape), offsets)
         self._offsets, self._entries = offsets, row.data.astype(float)
+        mass_row = sp.csr_matrix(cell.mass.dressed().real).getrow(0)
+        lookup = dict(zip(mass_row.indices.tolist(), mass_row.data.tolist()))
+        self._mass_entries = np.array([lookup.get(int(index), 0.0) for index in row.indices])
         self._reciprocal, self._volume, self._lattice = cell.reciprocal, cell.volume, cell.lattice
         symbol = np.fft.fftn(stencil.reshape(self.shape)).real
         # Translation invariance, checked on a second row rather than assumed.
@@ -239,6 +242,36 @@ class GridCoulombKernel:
         displacement = (self._offsets / np.array(self.shape)) @ self._lattice
         hessian = -(displacement * self._entries[:, None]).T @ displacement
         return self.strength / (self.size * 0.5 * float(direction @ hessian @ direction))
+
+    def kinetic_modes(self, count, kappa=None):
+        """The `count` lowest eigenpairs of the kinetic pencil dressed by the
+        crystal momentum `kappa`, in closed form. The stiffness and the mass
+        matrix commute with the grid translations, so the eigenvectors are the
+        lattice plane waves exp(2 pi i G . n / N) / sqrt(n m(G + kappa)) with the
+        eigenvalues a(G + kappa) / m(G + kappa), m being the symbol of the mass
+        matrix. At the zone centre the constant (G = 0, eigenvalue zero) is left
+        out. Returns (eigenvalues, the flat indices of the wavevectors in the
+        ordering of the discrete Fourier transform, the mass symbol there);
+        `mode_coefficients` projects loads on them."""
+        supported = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
+        shift = np.zeros(3) if kappa is None else np.asarray(kappa, dtype=float)
+        p = (supported + shift) / np.array(self.shape)
+        phase = np.exp(2j * np.pi * (p @ self._offsets.T))
+        stiffness, mass = np.real(phase @ self._entries), np.real(phase @ self._mass_entries)
+        values = stiffness / mass
+        order = np.argsort(values, kind="stable")
+        if kappa is None or not np.any(shift):
+            order = order[order != 0]
+        order = order[:count]
+        return values[order], order, mass[order]
+
+    def mode_coefficients(self, loads, indices, mass):
+        """B^dagger load for the plane-wave modes of `kinetic_modes` (rows: modes;
+        columns: the columns of `loads`)."""
+        loads = np.asarray(loads, dtype=complex).reshape(self.size, -1)
+        field = loads.T.reshape((-1,) + self.shape)
+        transformed = np.fft.fftn(field, axes=(1, 2, 3)).reshape(-1, self.size).T
+        return transformed[indices] / np.sqrt(self.size * mass)[:, None]
 
     def momentum_entry(self, kappa):
         """The energy of a normalized charge of crystal momentum `kappa` in the

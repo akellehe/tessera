@@ -337,6 +337,30 @@ def test_quasiparticle_levels_agree_between_the_two_routes_with_a_sparse_kinetic
     assert errors[1] < errors[0] and errors[1] < 2e-4                   # rydberg
 
 
+@pytest.mark.parametrize("kappa", [None, (0.2, -0.1, 0.35)])
+def test_the_kinetic_eigenbasis_of_the_grid_is_closed_form(kappa):
+    """On the periodic grid the kinetic pencil at any crystal momentum is
+    diagonal in lattice plane waves, with the eigenvalues a(G + k) / m(G + k)
+    from the symbols of the stiffness and mass matrices: the dense spectrum, and
+    the Coulomb energy of a load from its coefficients in those modes."""
+    from tessera.drivers.bands import coulomb
+    from tessera.drivers.bands.crystal import CrystalCell
+    cell = CrystalCell(np.array([[5.0, 0.3, 0.0], [0.0, 6.0, 0.2], [0.1, 0.0, 7.0]]), (4, 5, 3), kinetic_scale=1.0)
+    kernel = coulomb.GridCoulombKernel(cell, 8.0 * np.pi)
+    A, M = cell.pencil(kappa or (0.0, 0.0, 0.0))
+    dense = scipy.linalg.eigh(A.toarray(), M.toarray(), eigvals_only=True)
+    values, indices, mass = kernel.kinetic_modes(20, kappa)
+    assert np.abs(values - (dense[1:21] if kappa is None else dense[:20])).max() < 1e-12
+    rng = np.random.default_rng(0)
+    load = rng.standard_normal((cell.size, 2)) + 1j * rng.standard_normal((cell.size, 2))
+    load -= load.mean(axis=0) if kappa is None else 0.0           # the zone-centre kernel has no entry on the constant
+    values, indices, mass = kernel.kinetic_modes(cell.size, kappa)
+    coefficients = kernel.mode_coefficients(load, indices, mass)
+    energy = np.einsum("mi,m,mi->i", coefficients.conj(), kernel.strength / values, coefficients).real
+    exact = np.einsum("vi,vi->i", load.conj(), kernel.potential(load, kappa)).real
+    assert np.abs(energy - exact).max() < 1e-12 * np.abs(exact).max()
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat
