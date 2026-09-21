@@ -91,7 +91,36 @@ class RandomPhase:
                            for n, block in integrals.items()}
         return self
 
+    def set_head(self, constant, dipoles, volume, coulomb_strength):
+        """Restore the zero-momentum term of the screened interaction, which a
+        Coulomb kernel of zero mean leaves out.
+
+        At vanishing momentum the density of a particle-hole pair is i q . r_ia,
+        so the pair couples to the uniform connection through the current
+        operator, the derivative of the one-particle operator with respect to
+        the link phases contracted with the edge displacements; `dipoles` holds
+        r_ia (pairs x 3) obtained from it. The inverse dielectric function at
+        vanishing momentum then has the pole form
+        1 + sum_s 2 W_s a_s / (w^2 - W_s^2) with the direction-averaged residues
+
+            a_s = (coulomb_strength / 3 V) 2 |sum_ia (X + Y)^s_ia r_ia|^2 ,
+
+        and the missing term of the self-energy of a state is the intraband one,
+        `constant` * sum_s a_s / (w - e_n -+ W_s), `constant` being the integral
+        of the Coulomb kernel over the cell of momentum space that the sampling
+        leaves out (the probe-charge constant of the exchange correction).
+        Returns the macroscopic dielectric constant 1 / (1 - sum_s 2 a_s / W_s)."""
+        dipoles = np.asarray(dipoles, dtype=float)
+        mode_dipoles = self.x_plus_y.T @ dipoles                       # modes x 3
+        residues = coulomb_strength / (3.0 * volume) * 2.0 * (mode_dipoles ** 2).sum(axis=1)
+        self.head = constant * residues
+        self.dielectric_constant = 1.0 / (1.0 - np.sum(2.0 * residues / self.excitations))
+        independent = coulomb_strength / (3.0 * volume) * 4.0 * np.sum((dipoles ** 2).sum(axis=1) / self.gaps)
+        self.independent_particle_dielectric_constant = 1.0 + independent
+        return self.dielectric_constant
+
     def _solve(self, energies, occupied, coupling):
+        self.head = None
         self.energies = np.asarray(energies, dtype=float)
         self.occupied = int(occupied)
         count = len(self.energies)
@@ -144,6 +173,8 @@ class RandomPhase:
         value = derivative = 0.0
         for m, level in enumerate(self.energies):
             weights = self.transition[n][m, :] ** 2
+            if m == n and self.head is not None:
+                weights = weights + self.head
             poles = level - self.excitations if m < self.occupied else level + self.excitations
             value += np.sum(weights / (frequency - poles))
             derivative -= np.sum(weights / (frequency - poles) ** 2)

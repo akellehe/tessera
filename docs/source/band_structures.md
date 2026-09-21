@@ -8,6 +8,23 @@ finite elements on the mesh and $A$ is $\hbar^2/2m$ times their stiffness
 matrix plus the potential. Lengths are in angstrom and energies in electron
 volts.
 
+## What these calculations are
+
+The crystal, its potential and its two spin sheets are put in by hand: in the
+terms of the theory this is targeted synthesis, not emergence, and nothing here
+tests whether a geometry relaxes to a crystal. What is tested is the code path
+from the declared fields (a complex squared length and a connection on every
+edge, one mode per cell, second quantization) to a quasiparticle energy. The
+modes are carried at degree zero, which is the exact sector of the degree-one
+edge operator: the nonzero levels of the two agree, and the test suite holds
+them to each other.
+
+Every interaction is the Coulomb kernel obtained by eliminating the timelike
+connection, and every mean field is its Wick contraction (Hartree and exchange).
+A density functional is not an object of the theory; the local density
+approximation appears only as a labelled test of the ionic potentials against
+plane waves.
+
 ## The pencil at a crystal momentum
 
 A crystal momentum $k$ is a flat U(1) connection on the mesh: the link of the
@@ -138,3 +155,34 @@ result must be converged in it. An ab initio calculation of a real crystal
 additionally needs ionic pseudopotentials and a set of crystal momenta, at a
 cost (one Poisson solve per pair of orbitals per pair of momenta) that belongs
 on a cluster.
+
+### Ab initio
+
+`pseudopotential` reads norm-conserving pseudopotentials in the Unified
+Pseudopotential Format and `abinitio` runs a crystal self-consistently on the
+mesh and, as the reference, in plane waves with the same pseudopotentials,
+momenta and conventions. The local part of an ion is split into a short-range
+remainder, summed over images, and the potential of a Gaussian charge, given by
+its Fourier series on the vertex grid. The separable nonlocal part is a term
+`P D P^T` of low rank in the left-hand matrix of the pencil, with `P = M beta`
+the load vectors of the projector functions; `SparsePencilSolver` applies it
+through the Woodbury identity and certifies the shift by inertia. Exchange is
+compressed onto the computed bands and joins the same low-rank term. The
+Coulomb kernel of the grid is inverted exactly by Fourier transform, because the
+stiffness matrix commutes with the grid translations.
+
+A Coulomb kernel of zero mean leaves out the zero-momentum term of exchange and
+of the screened interaction. For exchange it is the probe-charge constant
+`c = 2 MADELUNG / L` on the filled bands. For the screened interaction it comes
+from the response at vanishing momentum, which the particle-hole pairs carry
+through the current operator (the derivative of the pencil with respect to a
+uniform change of the link phases); on the energy shell it lowers the gap by
+`c (1 - 1/eps)`, which is how screening closes a Hartree-Fock gap.
+
+Whether a pseudopotential can be used is decided by `pseudopotential`'s
+screened, confined pseudo-atom, solved radially and on the mesh. A
+pseudopotential that keeps the gallium 3d shell in the valence is not resolved
+by piecewise-linear elements at any mesh a workstation holds (the 3d level is
+22 eV too high at 32 divisions of a 5.64 angstrom cell and not in the asymptotic
+regime); three- and five-electron pseudopotentials for gallium and arsenic are
+(their 4s and 4p levels extrapolate to the radial values within 0.1 eV).

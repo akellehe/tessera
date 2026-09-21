@@ -162,7 +162,7 @@ def test_a_self_consistent_crystal_on_the_mesh_matches_plane_waves():
 
 @pytest.mark.slow
 def test_hartree_fock_on_the_mesh_matches_hartree_fock_in_plane_waves():
-    """The plan's mean field. Two independent implementations of the same
+    """The mean field of the Coulomb interaction. Two independent implementations of the same
     Hartree-Fock problem (exchange compressed onto the computed bands, the
     zero-momentum term restored by the probe-charge correction, the projector
     as a low-rank term): the mesh levels extrapolate to the plane-wave levels,
@@ -202,13 +202,16 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
     T = coulomb.pair_densities(mesh.cell.complex, mesh.cell.squared_lengths, extended["vectors"])
     full = screening.RandomPhase(extended["levels"], coulomb.ModeInteraction(mesh.kernel, extended["levels"], T).W, 1)
     for n in (0, 1):
-        energy, weight = full.quasiparticle(n)
-        assert lean["states"][n]["quasiparticle"] == pytest.approx(energy, abs=1e-9)
-        assert lean["states"][n]["renormalization"] == pytest.approx(weight, abs=1e-9)
-        assert lean["states"][n]["defect"] < 1e-9 and 0.5 < weight < 1.0
+        energy, _ = full.quasiparticle(n)
+        assert lean["states"][n]["body"] == pytest.approx(energy, abs=1e-9)
+        assert lean["states"][n]["defect"] < 1e-9 and 0.5 < lean["states"][n]["renormalization"] < 1.0
     assert lean["correlation_energy"] == pytest.approx(full.correlation_energy(), abs=1e-10)
     assert lean["head_constant"] == pytest.approx(2.0 * coulomb.MADELUNG_SC / 6.0)
-    # Without the zero-momentum term the correlation part moves this gap by a few per cent only;
-    # the closing of a Hartree-Fock gap by screening is carried by that term, -c (1 - 1/eps).
+    # Without the zero-momentum term the correlation part moves this gap by a few per cent only.
+    # Screening closes a Hartree-Fock gap through that term, by c (1 - 1/eps) on the energy shell.
     gap = lambda key: lean["states"][1][key] - lean["states"][0][key]
-    assert abs(gap("quasiparticle") / gap("mean_field") - 1.0) < 0.05
+    assert abs(gap("body") / gap("mean_field") - 1.0) < 0.05
+    eps, c = lean["dielectric_constant"], lean["head_constant"]
+    assert 1.0 < eps < lean["independent_particle_dielectric_constant"] + 1.0
+    assert gap("quasiparticle") < gap("body")
+    assert gap("body") - gap("quasiparticle") == pytest.approx(c * (1.0 - 1.0 / eps), rel=0.25)

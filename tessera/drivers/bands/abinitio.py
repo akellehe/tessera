@@ -613,7 +613,51 @@ class MeshCrystal:
             if change < tolerance:
                 break
         return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
-                "converged": bool(change < tolerance), "occupied": occupied}
+                "converged": bool(change < tolerance), "occupied": occupied,
+                "local_potential": self.ionic + hartree}
+
+    def dipoles(self, extended):
+        """r_ia for every particle-hole pair (filled index slow), from the
+        current operator: the derivative of the one-particle pencil with respect
+        to a uniform change of the link phases, phi_e -> phi_e + k . dx_e, which
+        multiplies the entry (v, w) of the stiffness, the weighted mass and the
+        mass matrix by i dx_vw, and the projector loads by -i (x - tau). With
+        first-order perturbation theory of the generalized eigenproblem,
+
+            r_ia = Im z_a^T (dA/dk - e_i dM/dk) z_i / (e_i - e_a) .
+
+        The exchange operator enters the mean-field operator only through the
+        covariance and carries no link phase of its own, so it does not
+        contribute to this vertex; what its dependence on the state adds is a
+        vertex correction beyond the random-phase approximation."""
+        cell = self.cell
+        occupied = extended["occupied"]
+        energies, orbitals = extended["levels"], extended["vectors"]
+        empties, filled = orbitals[:, occupied:], orbitals[:, :occupied]
+        weighted = cell.weighted_mass(extended["local_potential"])
+        out = np.zeros((occupied * empties.shape[1], 3))
+        for alpha in range(3):
+            def derivative(grid_matrix):
+                displacement = (grid_matrix.step * np.array(cell.divisions)) @ (cell.lattice / np.array(cell.divisions)[:, None])
+                values = grid_matrix.data.real * displacement[:, alpha]
+                return sp.csr_matrix((values, (grid_matrix.row, grid_matrix.col)), shape=grid_matrix.shape)
+            dA = derivative(cell.stiffness) + derivative(weighted)          # times i
+            dM = derivative(cell.mass)                                      # times i
+            local = empties.T @ (dA @ filled) - (empties.T @ (dM @ filled)) * energies[:occupied][None, :]
+            # Projectors: P_k[w] = P[w] exp(-i k . (x_w - tau)), so dP/dk = -i X P, column by column.
+            shifted = np.zeros_like(self.P)
+            column = 0
+            for pseudo, position in self.crystal.ions:
+                offset = self._displacements(position)[:, alpha]
+                width = sum(2 * l + 1 for l, _ in pseudo.projectors)
+                shifted[:, column:column + width] = offset[:, None] * self.P[:, column:column + width]
+                column += width
+            nonlocal_part = -(empties.T @ shifted) @ self.D @ (self.P.T @ filled) \
+                + (empties.T @ self.P) @ self.D @ (shifted.T @ filled)
+            element = (local + nonlocal_part).T                               # filled x empty, the coefficient of i
+            gaps = energies[:occupied][:, None] - energies[occupied:][None, :]
+            out[:, alpha] = (element / gaps).ravel()
+        return out
 
     def quasiparticle_levels(self, extended, states, log=None):
         """The one-shot GW correction on the Hartree-Fock levels of
@@ -626,16 +670,17 @@ class MeshCrystal:
         which drops the zero-momentum term of the screened interaction exactly
         as it drops that of exchange. The exchange part was restored in the mean
         field by the probe-charge constant c = 2 MADELUNG / L on the filled
-        bands. The correlation part is, on the energy shell, +c (1 - 1/eps) / 2
-        on a filled level and -c (1 - 1/eps) / 2 on an empty one, with eps the
-        macroscopic dielectric constant; it needs the response at vanishing
-        momentum, which a cell sampled at its zone centre does not contain, so
-        it is returned as the constant `head_constant` for the caller to apply
-        with a stated eps rather than folded in silently.
+        bands. The correlation part is restored here from the response at
+        vanishing momentum, which the particle-hole pairs carry through the
+        current operator (`dipoles`, `RandomPhase.set_head`); on the energy
+        shell it is +c (1 - 1/eps) / 2 on a filled level and -c (1 - 1/eps) / 2
+        on an empty one, with eps the macroscopic dielectric constant, which is
+        returned.
 
         Returns a dict: per state the Hartree-Fock level, the quasiparticle
-        level (without the zero-momentum correlation term), the renormalization
-        factor and the residual of the quasiparticle equation, all in rydberg."""
+        level without (`body`) and with (`quasiparticle`) the zero-momentum
+        term, the renormalization factor and the residual of the quasiparticle
+        equation, all in rydberg."""
         from tessera.drivers.bands.screening import RandomPhase
         cell = self.cell
         occupied = extended["occupied"]
@@ -655,12 +700,15 @@ class MeshCrystal:
         if log:
             log(f"  random phase: {coupling.shape[0]} particle-hole pairs")
         rpa = RandomPhase.from_pieces(energies, occupied, coupling, blocks)
-        out = {}
+        side = float(np.linalg.norm(self.crystal.lattice[0]))
+        constant = 2.0 * coulomb.MADELUNG_SC / side
+        out = {n: {"mean_field": float(energies[n]), "body": float(rpa.quasiparticle(n)[0])} for n in states}
+        dielectric = rpa.set_head(constant, self.dipoles(extended), self.crystal.volume, COULOMB_STRENGTH)
         for n in states:
             energy, weight = rpa.quasiparticle(n)
             defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)
-            out[n] = {"mean_field": float(energies[n]), "quasiparticle": float(energy),
-                      "renormalization": float(weight), "defect": float(defect)}
-        side = float(np.linalg.norm(self.crystal.lattice[0]))
-        return {"states": out, "correlation_energy": float(rpa.correlation_energy()),
-                "head_constant": 2.0 * coulomb.MADELUNG_SC / side, "pairs": coupling.shape[0]}
+            out[n].update({"quasiparticle": float(energy), "renormalization": float(weight), "defect": float(defect)})
+        return {"states": out, "correlation_energy": float(rpa.correlation_energy()), "head_constant": constant,
+                "dielectric_constant": float(dielectric),
+                "independent_particle_dielectric_constant": float(rpa.independent_particle_dielectric_constant),
+                "pairs": coupling.shape[0]}
