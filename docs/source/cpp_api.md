@@ -112,6 +112,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 
 ## Observables
 
+```{doxygenfile} EffectiveTopology.h
+```
 ```{doxygenfile} Observable.h
 ```
 ```{doxygenfile} VolumeProfile.h
