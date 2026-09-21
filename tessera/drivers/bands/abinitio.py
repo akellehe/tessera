@@ -791,9 +791,9 @@ class MeshCrystal:
                 "entry": self.kernel.momentum_entry(kappa),
                 "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
 
-    def vanishing_momentum_pairs(self, extended, coupling, bands=None, axes=(0, 1, 2)):
+    def vanishing_momentum_pairs(self, extended, coupling, bands=None, directions=None):
         """The limit of `momentum_pairs` as the momentum tends to zero along each
-        Cartesian axis in `axes`, in closed form. The pairs become those of the
+        of `directions` (the three Cartesian axes by default), in closed form. The pairs become those of the
         zone centre (their level differences and their coupling `coupling`,
         as in `coulomb_integrals`), and the charge of a pair per unit momentum
         is the derivative of 1^T M_0^U[psi_i] z_a(q),
@@ -811,8 +811,9 @@ class MeshCrystal:
             dK = - sum_j [ dL_j G L_j + L_j dG L_j + L_j G dL_j ] ,   L_j = M_0^U[psi_j] ,
 
         with the derivative of the Coulomb kernel from the gradient of its
-        symbol (`GridCoulombKernel.potential_derivative`). Returns one argument
-        of `RandomPhase.set_head` per axis."""
+        symbol (`GridCoulombKernel.potential_derivative`). The charge along a
+        direction is the contraction of the three Cartesian derivatives with
+        it. Returns one argument of `RandomPhase.set_head` per direction."""
         cell = self.cell
         occupied = int(extended["occupied"])
         bands = len(extended["levels"]) if bands is None else int(bands)
@@ -827,8 +828,8 @@ class MeshCrystal:
         filled_potentials = [self.kernel.potential(u, None, self.zero_momentum) for u in filled_loads]
         gaps = (levels[None, occupied:] - levels[:occupied, None])
         overlap, overlap_empty = filled.T @ self.P, empties.T @ self.P
-        out = []
-        for axis in axes:
+        derivatives = []
+        for axis in range(3):
             dM = cell.mass.momentum_derivative(axis)
             dA = cell.stiffness.momentum_derivative(axis) + local.momentum_derivative(axis)
             current = filled.T @ (dA @ empties) - (filled.T @ (dM @ empties)) * levels[None, occupied:]
@@ -849,9 +850,12 @@ class MeshCrystal:
                 third = filled_potentials[j].conj().T @ (dL @ empties)
                 current = current - (first + second + third)
                 direct[j] = np.asarray(dL.sum(axis=0)).ravel() @ empties       # 1^T dM_0^U[psi_j] z_a
-            charges = (direct + current / gaps).ravel()
-            direction = np.eye(3)[axis]
-            out.append({"gaps": gaps.ravel(), "coupling": np.asarray(coupling), "charges": charges,
+            derivatives.append((direct + current / gaps).ravel())
+        out = []
+        for direction in (np.eye(3) if directions is None else np.atleast_2d(np.asarray(directions, dtype=float))):
+            direction = direction / np.linalg.norm(direction)
+            out.append({"gaps": gaps.ravel(), "coupling": np.asarray(coupling),
+                        "charges": sum(direction[axis] * derivatives[axis] for axis in range(3)),
                         "entry": self.kernel.momentum_entry_limit(direction),
                         "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]})
         return out
