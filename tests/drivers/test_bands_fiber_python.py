@@ -3,8 +3,9 @@
 """Stage 2b of the band-structure drivers (#1159): a static potential as the
 phase of the timelike edges of the history complex. A constant potential is a
 pure gauge and shifts every decay rate of the tick map exactly; the free tick
-map converges at second order in the tick to a Klein-Gordon pencil; and the
-level shift a potential induces approaches the static route's under refinement."""
+map converges at second order in the tick to a Klein-Gordon pencil; and with a
+potential it closes at second order in the mesh on the static relativistic
+problem, in which nothing is expanded."""
 import numpy as np
 import pytest
 
@@ -50,21 +51,26 @@ def test_the_free_tick_map_converges_to_its_exact_limit_at_second_order(cell):
     assert limit[0] < 0.6 * mass
 
 
-def test_the_reduction_to_the_static_route_approaches_it_with_the_mesh():
-    """The level shift a potential induces, in the tick map and in the static
-    route with the kinetic scale 1 / 2m. On cells of three to six divisions the
-    tick map over-responds by a factor that falls toward one as the mesh is
-    refined."""
+def test_the_tick_map_closes_on_the_static_relativistic_problem_at_second_order():
+    """The baseline keeps everything: (A + m^2 M) u = D (E - V)^2 u, quadratic in
+    E, with no expansion in the potential or in 1 / m. The lowest decay rate of
+    the tick map approaches its lowest level like the square of the mesh
+    spacing, and the response to the potential approaches the static one from
+    below; neither depends on the tick."""
     mass, tau = 6.0, 0.002
-    ratios = []
+    differences, responses = [], []
     for divisions in (3, 4, 6):
         cell = CrystalCell.cubic(1.0, divisions, kinetic_scale=1.0)
         V = pot.cosine_potential(cell, 0.4)
         lowest = lambda potential: np.sort(HistorySlab(cell, tau, potential, mass).tick_levels(1).real)[0]
-        tick = lowest(V) - lowest(None)
-        static = static_levels(cell, V, mass, 1)[0] - static_levels(cell, None, mass, 1)[0]
-        ratios.append(tick / static)
-    assert ratios[0] > ratios[1] > ratios[2] > 1.0 and ratios[2] < 2.0
+        static, free = static_levels(cell, V, mass, 1)[0], static_levels(cell, None, mass, 1)[0]
+        differences.append(lowest(V) - static)
+        responses.append((lowest(V) - lowest(None)) / (static - free))
+    assert responses[0] < responses[1] < responses[2] < 1.0 and responses[2] > 0.9
+    assert differences[0] > differences[1] > differences[2] > 0.0
+    # Second order: the difference times the square of the divisions stays bounded and falls.
+    scaled = [d * n ** 2 for d, n in zip(differences, (3, 4, 6))]
+    assert scaled[2] < scaled[1] < scaled[0] < 0.6
 
 
 def test_the_declared_fields_and_the_layer_api_give_the_same_slab(cell):

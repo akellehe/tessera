@@ -137,15 +137,22 @@ pencil, and as $\tau \to 0$ its decay rates $E$ obey
 $$ (A + m^2 M)\, u = E^2 D\, u , $$
 
 with $M$ the Whitney mass matrix and $D$ the lumped (diagonal) mass matrix,
-which is what the time stiffness of a staircase slab produces. The mismatch
-between $M$ and $D$ is multiplied by $m^2$, so the non-relativistic reduction
-$E \approx m + L/2m + V$ requires the mesh to resolve the Compton wavelength,
-$m h \ll 1$, in addition to $L \ll m^2$. On cells of three to six divisions at
-$m = 6$ the level shift a potential induces in the tick map exceeds the static
-route's by a factor of 6.7, 3.3, 2.3 and 1.9, falling toward one as the mesh is
-refined: on a connection with curvature the covariant operator transports
-through the base vertex of each cell, which samples the potential one mesh step
-away.
+which is what the time stiffness of a staircase slab produces. With a potential
+the baseline is the static relativistic problem
+
+$$ (A + m^2 M)\, u = D\, (E - V)^2\, u , $$
+
+a quadratic eigenproblem in $E$ in which nothing is expanded, neither in the
+potential nor in $1/m$ (`fiber.static_levels`). The lowest decay rate of the tick
+map closes on its lowest level at second order in the mesh spacing (a difference
+of 0.062, 0.029, 0.016, 0.010 on cells of 3 to 6 divisions at $m = 6$), and the
+response to the potential approaches the static one from below (0.74, 0.82,
+0.88, 0.91); neither depends on the tick. What remains at a finite mesh is the
+curvature of the connection: on the vertical triangles the covariant operator
+transports through the base vertex of each cell, which samples the potential one
+mesh step away. The non-relativistic reduction $E \approx m + L/2m + V$ is not
+used anywhere: it needs the mesh to resolve the Compton wavelength, and compared
+with it the same tick map appeared to over-respond by factors of 2 to 7.
 
 ### The quasiparticle correction
 

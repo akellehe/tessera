@@ -104,21 +104,35 @@ class HistorySlab:
 
 
 def static_levels(cell, potential, mass, count):
-    """The lowest levels of the static route with the kinetic scale 1 / 2m,
-    L / 2m + V on the cell (dense; the fixtures here are small)."""
-    A = cell.stiffness.dressed().toarray().real / (2.0 * mass)
-    if potential is not None:
-        A = A + cell.weighted_mass(potential).dressed().toarray().real
-    return scipy.linalg.eigh(A, cell.mass.dressed().toarray().real, eigvals_only=True)[:count]
+    """The lowest positive levels of the static relativistic problem on the
+    cell,
+
+        (A + m^2 M) u = D (E - V)^2 u ,
+
+    a quadratic eigenproblem in E: nothing is expanded in V or in 1 / m. M is
+    the Whitney mass matrix, and D the lumped one, which is what the time
+    stiffness of a staircase slab produces; the potential sits on the vertices
+    as it does on the vertical edges of the slab. Without a potential these are
+    the square roots of the levels of (A + m^2 M, D), the exact tau -> 0 limit
+    of the free tick map. Dense; the fixtures here are small."""
+    A = cell.stiffness.dressed().toarray().real
+    M = cell.mass.dressed().toarray().real
+    D = M.sum(axis=1)
+    if potential is None:
+        return np.sqrt(scipy.linalg.eigh(A + mass ** 2 * M, np.diag(D), eigvals_only=True))[:count]
+    V = np.asarray(potential, dtype=float)
+    n = len(D)
+    constant = A + mass ** 2 * M - np.diag(D * V ** 2)
+    left = np.block([[np.zeros((n, n)), np.eye(n)], [-constant, -np.diag(2.0 * D * V)]])
+    right = np.block([[np.eye(n), np.zeros((n, n))], [np.zeros((n, n)), -np.diag(D)]])
+    levels = scipy.linalg.eigvals(left, right)
+    levels = levels[np.isfinite(levels)]
+    return np.sort(levels[levels.real > 0.0].real)[:count]
 
 
 def klein_gordon_levels(cell, mass, count):
-    """sqrt of the levels of (A + m^2 M, D), with M the consistent and D the
-    lumped mass matrix: the exact tau -> 0 limit of the free tick map."""
-    A = cell.stiffness.dressed().toarray().real
-    M = cell.mass.dressed().toarray().real
-    D = np.diag(M.sum(axis=1))
-    return np.sqrt(scipy.linalg.eigh(A + mass ** 2 * M, D, eigvals_only=True))[:count]
+    """`static_levels` without a potential."""
+    return static_levels(cell, None, mass, count)
 
 
 def history_spacetime(cell, tau, potential=None, layers=1):
