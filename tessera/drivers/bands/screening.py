@@ -175,7 +175,7 @@ class RandomPhase:
     def _solve(self, energies, occupied, coupling):
         self.head, self.long_range_modes, self._long_range_transition = None, [], {}
         self.momentum_terms, self.head_constant = [], None
-        self.vertex_order, self.vertex_bands, self._vertex_engines = 1, [], None
+        self.vertex_order, self.vertex_bands, self._vertex_engines, self.vertex_states = 1, [], None, set()
         self.screening_shifts = self.propagator_shifts = None
         self.propagator = None        # the levels of G when they differ from those W was built from
         self.energies = np.asarray(energies, dtype=float)
@@ -273,22 +273,26 @@ class RandomPhase:
             derivative -= np.sum(transitions[n][m] / (frequency - poles) ** 2)
         return value, derivative
 
-    def set_vertex(self, order, bands, interaction, poles):
+    def set_vertex(self, order, bands, interaction, poles, states=None):
         """Add the skeleton diagrams of the orders 2 .. `order` in the screened
         interaction (`diagrams.SkeletonSelfEnergy`) to `correlation`, for the
         modes in `bands`, which are also the modes on the internal lines.
         `interaction[p, q, r, s]` are the Coulomb integrals (pq|rs) over those
         modes, the instantaneous part of W; the retarded part is the `poles`
         random-phase modes that couple to them most strongly (every set of
-        modes that `correlation` averages over is used, and averaged)."""
+        modes that `correlation` averages over is used, and averaged). `states`
+        limits the modes that receive the diagrams (all of `bands` by default):
+        a self-consistent loop solves every mode at every iteration, and the
+        diagrams are what that costs."""
         self.vertex_order, self.vertex_bands = int(order), [int(b) for b in bands]
+        self.vertex_states = set(self.vertex_bands if states is None else [int(n) for n in states])
         self.vertex_interaction, self.vertex_poles = np.asarray(interaction), int(poles)
         self._vertex_engines = None
 
     def _vertex(self, n, frequency, levels):
         """The diagrams beyond the first order for mode n: (value, derivative)."""
         from tessera.drivers.bands.diagrams import SkeletonSelfEnergy
-        if self.vertex_order < 2 or n not in self.vertex_bands:
+        if self.vertex_order < 2 or n not in self.vertex_bands or n not in self.vertex_states:
             return 0.0, 0.0
         bands = self.vertex_bands
         key = tuple(np.round(levels[bands], 12))

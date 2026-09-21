@@ -272,7 +272,10 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
     cation, anion = Pseudopotential.from_upf(cation_upf), Pseudopotential.from_upf(anion_upf)
     lattice_constant = (GALLIUM_ARSENIDE.lattice_constant if a is None else a) / BOHR
     conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
-    names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw")
+    # Without and with the zero-momentum term is a distinction of the closed form at the zone centre only.
+    split = approximations.zero_momentum_order == 1 and approximations.self_energy_order == 1
+    names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw") if split \
+        else ("hartree_fock", "g0w0", "gw0", "evgw")
     runs, spacings, previous = [], [], None
     for n in sorted(divisions):
         started = time.time()
@@ -280,7 +283,6 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         # Every mesh after the first starts from the converged orbitals of the one before it.
         start = mesh.prolonged(*previous) if previous else None
         mean_field = mesh.run_hartree_fock(bands, start=start, log=log)
-        row_updates = len(mean_field["history"])
         previous = (mesh, mean_field)
         extended = mesh.extend_bands(mean_field, screening_bands + 24, log=log)
         certificate = mesh.covariance_certificate(extended, bands)
@@ -293,36 +295,46 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         conduction = [int(i) for i in np.nonzero(from_centre)[0] if i >= occupied][:1]
         if not conduction:
             raise ValueError("no conduction state of the primitive zone centre among the screening bands")
+        states = valence + conduction
         gap = lambda levels: float((np.mean(levels[conduction]) - np.mean(levels[valence])) * RYDBERG)
         levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, screening_bands)
         heads = mesh.vanishing_momentum_pairs(extended, coupling, screening_bands)
         momentum_terms = mesh.momentum_terms(extended, range(screening_bands), screening_bands, log=log)
-        vertex = mesh.vertex(extended, screening_bands)
+        # The diagrams beyond the first order go to the states that define the gap.
+        vertex = mesh.vertex(extended, screening_bands) + (states,)
+        if approximations.self_energy_order > 1 and not set(states) <= set(vertex[1]):
+            raise ValueError("the states of the gap are not among the vertex bands; raise --vertex-bands")
         row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
-               "exchange_updates": row_updates, "hartree_fock_energy": mean_field["energy"],
-               "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum}
+               "exchange_updates": len(mean_field["history"]), "hartree_fock_energy": mean_field["energy"],
+               "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum, "states": states}
+        log(f"N={n}: Hartree-Fock gap {row['hartree_fock']:.3f} eV after {row['exchange_updates']} exchange updates "
+            f"({time.time() - started:.0f} s)")
         rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
         for name, with_head in (("g0w0_body", False), ("g0w0", True)):
+            if name not in names:
+                continue
             if with_head:
                 row["dielectric_constant"] = float(rpa.set_head(mesh.zero_momentum, heads))
                 row["head_defect"] = rpa.head_defect
                 rpa.set_momentum_terms(*momentum_terms)
                 rpa.set_vertex(*vertex)
             shifted = levels.copy()
-            for index in valence + conduction:
+            for index in states:
                 shifted[index] = rpa.quasiparticle(index)[0]
             row[name] = gap(shifted)
+            log(f"N={n}: {name} {row[name]:.3f} eV ({time.time() - started:.0f} s)")
         for name, update, with_head in (("gw0_body", False, False), ("gw0", False, True),
                                         ("evgw_body", True, False), ("evgw", True, True)):
+            if name not in names:
+                continue
             produced, history, _ = screening.self_consistent_quasiparticles(
                 levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
                 update_screening=update, tolerance=1e-5,
                 momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
                 vertex=vertex if with_head else None)
             row[name], row[name + "_residual"] = gap(produced), float(history[-1])
+            log(f"N={n}: {name} {row[name]:.3f} eV ({time.time() - started:.0f} s)")
         row["seconds"] = time.time() - started
-        log("N=%d: " % n + ", ".join(f"{name} {row[name]:.3f}" for name in names)
-            + f" eV; eps {row['dielectric_constant']:.3f}; {row['seconds']:.0f} s")
         runs.append(row)
         spacings.append(mesh.cell.spacing)
     result = {"approximations": approximations.record(), "runs": runs, "measured_gap": GALLIUM_ARSENIDE.gap_gamma,
