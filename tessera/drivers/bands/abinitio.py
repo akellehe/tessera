@@ -230,6 +230,88 @@ class PlaneWaveCrystal:
                 "planes": [len(b["kinetic"]) for b in self.bases]}
 
 
+    # -- Hartree-Fock
+
+    def _waves(self, basis, vectors):
+        """The cell-periodic parts u(r) = sum_G c_G e^{i G . r} of the columns of `vectors`."""
+        idx = basis["indices"]
+        out = []
+        for b in range(vectors.shape[1]):
+            grid = np.zeros(self.shape, dtype=complex)
+            grid[idx[:, 0] % self.shape[0], idx[:, 1] % self.shape[1], idx[:, 2] % self.shape[2]] = vectors[:, b]
+            out.append(np.fft.ifftn(grid) * grid.size)
+        return out
+
+    def _exchange(self, k_index, waves, occupied, madelung):
+        """The exchange operator applied to every computed band at one momentum,
+        as plane-wave coefficients: W_i = K psi_i, with the divergent term of the
+        kernel dropped and replaced by the probe-charge term on the filled bands."""
+        basis = self.bases[k_index]
+        idx = basis["indices"]
+        omega = self.crystal.volume
+        columns = []
+        for u_i in waves[k_index]:
+            total = np.zeros(self.shape, dtype=complex)
+            for k_other, weight in enumerate(self.weights):
+                q = self.G + (self.kpoints[k_index] - self.kpoints[k_other])
+                q2 = (q ** 2).sum(axis=-1)
+                kernel = np.where(q2 > 1e-10, COULOMB_STRENGTH / np.where(q2 > 1e-10, q2, 1.0), 0.0)
+                for u_j in waves[k_other][:occupied]:
+                    pair = np.fft.fftn(np.conj(u_j) * u_i) / (u_i.size * omega)
+                    total -= weight * u_j * (np.fft.ifftn(kernel * pair) * u_i.size)
+            coefficients = np.fft.fftn(total) / total.size
+            columns.append(coefficients[idx[:, 0] % self.shape[0], idx[:, 1] % self.shape[1], idx[:, 2] % self.shape[2]])
+        return np.array(columns).T
+
+    def run_hartree_fock(self, bands, supercell_side, tolerance=1e-7, mixing=0.3, max_iterations=60, log=None):
+        """Hartree-Fock: the local-density run supplies the starting orbitals,
+        then the exchange operator replaces exchange and correlation. Exchange
+        is compressed onto the computed bands (it is exact on them), and the
+        zero-momentum term that the momentum set leaves out is restored by the
+        probe-charge correction -2 MADELUNG / supercell_side on the filled bands,
+        `supercell_side` being the side of the cubic supercell the momentum set
+        is equivalent to."""
+        crystal = self.crystal
+        occupied = crystal.electrons // 2
+        start = self.run(bands)
+        density = start["density"]
+        madelung = 2.0 * coulomb.MADELUNG_SC / supercell_side
+        potential_g = self._effective(density)
+        current = []
+        for basis in self.bases:
+            _, v = scipy.linalg.eigh(self._hamiltonian(basis, potential_g), subset_by_index=[0, bands - 1])
+            current.append(v)
+        history, mixer = [], PulayMixer(mixing)
+        for iteration in range(max_iterations):
+            waves = [self._waves(basis, v) for basis, v in zip(self.bases, current)]
+            density_g = np.fft.fftn(density) / density.size
+            hartree = np.where(self.G2 > 1e-12, COULOMB_STRENGTH * density_g / np.where(self.G2 > 1e-12, self.G2, 1.0), 0.0)
+            local_g = self.ionic + hartree
+            levels, produced, new_density = [], [], np.zeros(self.shape)
+            for k_index, (basis, weight) in enumerate(zip(self.bases, self.weights)):
+                psi = current[k_index]
+                W = self._exchange(k_index, waves, occupied, madelung)
+                W[:, :occupied] -= madelung * psi[:, :occupied]
+                overlap = psi.conj().T @ W
+                factor = np.linalg.cholesky(-0.5 * (overlap + overlap.conj().T))
+                xi = W @ np.linalg.inv(factor).conj().T
+                H = self._hamiltonian(basis, local_g) - xi @ xi.conj().T
+                values, v = scipy.linalg.eigh(H, subset_by_index=[0, bands - 1])
+                levels.append(values)
+                produced.append(v)
+                for u in self._waves(basis, v[:, :occupied]):
+                    new_density += 2.0 * weight * np.abs(u) ** 2 / crystal.volume
+            change = np.sqrt(np.mean((new_density - density) ** 2)) * crystal.volume / crystal.electrons
+            history.append(change)
+            if log:
+                log(f"  plane waves, iteration {iteration:2d}: density change {change:.2e}")
+            current = produced
+            if change < tolerance:
+                break
+            density = np.maximum(mixer.next(density, new_density), 1e-12)
+        return {"levels": levels, "history": history, "converged": history[-1] < tolerance}
+
+
 # ---------------------------------------------------------------- the mesh
 
 def solve_with_projectors(A, M, P, D, count, sigma, tolerance=1e-10):
@@ -272,7 +354,7 @@ class MeshCrystal:
         cell = self.cell
         self.stiffness = cell.stiffness.dressed().real.tocsc()
         self.mass = cell.mass.dressed().real.tocsc()
-        self.kernel = coulomb.CoulombKernel(self.stiffness, self.mass, COULOMB_STRENGTH)
+        self.kernel = coulomb.GridCoulombKernel(cell, COULOMB_STRENGTH)
         self.ionic = self._ionic_potential()
         self.P, self.D = self._projectors()
 
@@ -381,5 +463,76 @@ class MeshCrystal:
             density = new_density
             potential = mixer.next(potential, self.effective_potential(new_density, load))
         return {"levels": values, "vectors": vectors, "residual": residual, "shift_below_spectrum": below,
+                "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing,
+                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+
+    # -- Hartree-Fock
+
+    def run_hartree_fock(self, bands, tolerance=1e-6, mixing=0.3, max_iterations=60, log=None):
+        """Hartree-Fock on the mesh at the zone centre, the mean field of the
+        quartic Coulomb interaction: the Hartree potential of the density and the
+        exchange operator
+
+            (K psi)(r) = - sum_{j filled} psi_j(r) int psi_j(r') psi(r') v(r - r') dr' ,
+
+        both through the finite-element Coulomb kernel. Exchange is applied to
+        every computed band (one Poisson solve per pair with a filled band, the
+        product taken as a triple integral of piecewise-linear functions) and
+        compressed onto them, K = -xi xi^T, which is exact on the computed bands
+        and joins the pseudopotential's projectors in the low-rank term of the
+        pencil. The kernel has zero mean, which drops the zero-momentum term of
+        exchange; it is restored by the probe-charge correction
+        -2 MADELUNG / L on the filled bands (L the side of the cubic cell).
+        The local-density run supplies the starting orbitals.
+
+        References: Lin, Journal of Chemical Theory and Computation 12, 2242
+        (2016), for the compression; Gygi & Baldereschi, Physical Review B 34,
+        4405 (1986), for the zero-momentum term."""
+        cell, crystal = self.cell, self.crystal
+        occupied = crystal.electrons // 2
+        side = float(np.linalg.norm(crystal.lattice[0]))
+        if not np.allclose(crystal.lattice, side * np.eye(3)):
+            raise NotImplementedError("the probe-charge correction is implemented for a cubic cell")
+        madelung = 2.0 * coulomb.MADELUNG_SC / side
+        integrals = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        start = self.run(bands, log=log)
+        orbitals = start["vectors"]
+        values = start["levels"]
+        hartree = None
+        history, mixer = [], PulayMixer(mixing)
+        density = 2.0 * (orbitals[:, :occupied] ** 2).sum(axis=1)
+        for iteration in range(max_iterations):
+            filled = orbitals[:, :occupied]
+            load = 2.0 * sum(integrals.loads(filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
+            produced_hartree = self.kernel.potential(load).real
+            hartree = produced_hartree if hartree is None else mixer.next(hartree, produced_hartree)
+            W = np.zeros_like(orbitals)
+            for j in range(occupied):
+                pair_potential = self.kernel.potential(integrals.loads(filled[:, j], orbitals)).real
+                W -= integrals.loads(filled[:, j], pair_potential)
+            loaded = self.mass @ filled
+            W -= madelung * loaded @ (loaded.T @ orbitals)
+            overlap = orbitals.T @ W
+            factor = np.linalg.cholesky(-0.5 * (overlap + overlap.T))
+            xi = W @ np.linalg.inv(factor).T
+            P = np.hstack([self.P, xi])
+            rank = self.P.shape[1]
+            D = np.zeros((P.shape[1], P.shape[1]))
+            D[:rank, :rank] = self.D
+            D[rank:, rank:] = -np.eye(xi.shape[1])
+            A = (self.stiffness + cell.weighted_mass(self.ionic + hartree).dressed().real).tocsc()
+            values, orbitals, residual, below = solve_with_projectors(A, self.mass, P, D, bands,
+                                                                       float(values[0]) - 1.0)
+            new_density = 2.0 * (orbitals[:, :occupied] ** 2).sum(axis=1)
+            weights = self.kernel.weights
+            change = np.sqrt(weights @ (new_density - density) ** 2 / crystal.volume) * crystal.volume / crystal.electrons
+            density = new_density
+            history.append(change)
+            if log:
+                log(f"  mesh, iteration {iteration:2d}: density change {change:.2e} gap "
+                    f"{(values[occupied] - values[occupied - 1]) * 13.605693:.4f} eV")
+            if change < tolerance:
+                break
+        return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing,
                 "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}

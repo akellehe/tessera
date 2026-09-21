@@ -179,9 +179,16 @@ if __name__ == "__main__":
 
 # ---------------------------------------------------------------- ab initio
 
-def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, bands=24, log=print):
-    """Gallium arsenide in the local density approximation with norm-conserving
-    pseudopotentials read from `cation_upf` and `anion_upf`, self-consistently
+def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, bands=24, log=print,
+                     mean_field="hartree_fock"):
+    """Gallium arsenide with norm-conserving pseudopotentials read from
+    `cation_upf` and `anion_upf`, in the mean field `mean_field`:
+    "hartree_fock", the mean field of the Coulomb interaction (the Wick
+    contraction of the quartic into its direct and exchange parts), or
+    "local_density", in which a functional of the density stands in for exchange
+    and correlation. The second is not an object of the theory; it is kept as a
+    test of the ionic potentials and the Hartree kernel against plane waves at
+    a fraction of the cost. Either way the calculation runs self-consistently
     on three meshes of the conventional cell at its zone centre, extrapolated,
     against plane waves with the same pseudopotentials at the equivalent
     momenta (the primitive zone centre and the three X points).
@@ -199,19 +206,22 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
     primitive = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=False)
     unit = 2.0 * np.pi / lattice_constant
     momenta = [np.zeros(3)] + [unit * np.eye(3)[axis] for axis in range(3)]
-    reference = PlaneWaveCrystal(primitive, momenta, [1, 1, 1, 1], cutoff).run(8)
+    if mean_field not in ("hartree_fock", "local_density"):
+        raise ValueError("mean_field is 'hartree_fock' or 'local_density'")
+    plane_waves = PlaneWaveCrystal(primitive, momenta, [1, 1, 1, 1], cutoff)
+    reference = (plane_waves.run_hartree_fock(8, lattice_constant) if mean_field == "hartree_fock"
+                 else plane_waves.run(8))
     centre_reference = reference["levels"][0] * RYDBERG
     boundary_reference = reference["levels"][1] * RYDBERG
     top = centre_reference[3]
-    log(f"plane waves: {reference['planes'][0]} waves, converged={reference['converged']}, "
-        f"gap {centre_reference[4] - top:.4f} eV")
+    log(f"plane waves ({mean_field}): converged={reference['converged']}, gap {centre_reference[4] - top:.4f} eV")
 
     conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
     spacings, centre, boundary, certified, runs = [], [], [], True, []
     for n in divisions:
         started = time.time()
         mesh = MeshCrystal(conventional, n)
-        run = mesh.run(bands)
+        run = mesh.run_hartree_fock(bands, log=log) if mean_field == "hartree_fock" else mesh.run(bands)
         levels = run["levels"] * RYDBERG
         half = n // 2
         read = type("Read", (), {"kappa": (0.0, 0.0, 0.0), "vectors": run["vectors"].astype(complex)})

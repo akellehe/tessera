@@ -60,7 +60,8 @@ class CoulombKernel:
 
     @classmethod
     def of_cell(cls, cell, strength=4.0 * np.pi * E2):
-        return cls(cell.stiffness.dressed(), cell.mass.dressed(), strength)
+        """The kernel of a periodic cell, inverted by Fourier transform."""
+        return GridCoulombKernel(cell, strength)
 
     def potential(self, rho):
         """The zero-mean potential of the load vector(s) `rho` (columns), with
@@ -78,41 +79,105 @@ class CoulombKernel:
         return np.vdot(rho_a, self.potential(rho_b))
 
 
-def pair_densities(complex_, squared_lengths, modes):
-    """`T[:, m, n] = rho^{mn}`: the load vectors of conj(z_m) z_n for every pair
-    of the columns of `modes`, shape (vertices, modes, modes).
+class GridCoulombKernel:
+    """`CoulombKernel` on a `CrystalCell`, without a factorization.
+
+    Every vertex of the periodic Kuhn grid is equivalent, so the stiffness
+    matrix commutes with the grid translations and is diagonal on the lattice
+    plane waves: its symbol is the Fourier transform of one of its rows. The
+    pseudo-inverse divides by the symbol away from zero momentum and sets the
+    mean to zero, which is the same potential `CoulombKernel` returns (the
+    vertex weights are all equal here), exactly and in O(n log n).
+    """
+
+    def __init__(self, cell, strength=4.0 * np.pi * E2):
+        self.strength = float(strength)
+        self.shape = tuple(cell.divisions)
+        self.size = cell.size
+        stiffness = cell.stiffness.dressed().real.tocsr()
+        self.weights = np.asarray(cell.mass.dressed().real.sum(axis=1)).ravel()
+        self.volume = float(self.weights.sum())
+        if np.ptp(self.weights) > 1e-10 * self.weights.mean():
+            raise ValueError("the grid's vertices are not equivalent; use CoulombKernel")
+        row = stiffness.getrow(0)
+        stencil = np.zeros(self.size)
+        stencil[row.indices] = row.data
+        symbol = np.fft.fftn(stencil.reshape(self.shape)).real
+        # Translation invariance, checked on a second row rather than assumed.
+        probe = cell.grid.vertexId(1, 2, 3)
+        other = stiffness.getrow(probe)
+        moved = np.zeros(self.size)
+        moved[other.indices] = other.data
+        shifted = np.roll(moved.reshape(self.shape), (-1, -2, -3), axis=(0, 1, 2))
+        if np.abs(shifted - stencil.reshape(self.shape)).max() > 1e-10 * np.abs(stencil).max():
+            raise ValueError("the stiffness matrix is not translation invariant; use CoulombKernel")
+        self._inverse = np.where(symbol > 1e-12 * symbol.max(), 1.0 / np.where(symbol > 0.0, symbol, 1.0), 0.0)
+        self._inverse.flat[0] = 0.0
+
+    def potential(self, rho):
+        rho = np.asarray(rho, dtype=complex)
+        columns = rho.reshape(self.size, -1)
+        grid = columns.T.reshape((-1,) + self.shape)
+        solved = np.fft.ifftn(np.fft.fftn(grid, axes=(1, 2, 3)) * self._inverse, axes=(1, 2, 3))
+        return (self.strength * solved.reshape(-1, self.size).T).reshape(rho.shape)
+
+    def energy(self, rho_a, rho_b=None):
+        rho_b = rho_a if rho_b is None else rho_b
+        return np.vdot(rho_a, self.potential(rho_b))
+
+
+class TripleIntegrals:
+    """The integrals of three piecewise-linear functions against the vertex
+    basis, per top simplex, vectorized over a complex.
 
     On a top simplex of volume |T| the three-factor integral is
     |T| mu_abc d! / (d + 3)! with mu_abc = 1 + delta_ab + delta_ac + delta_bc
-    + 2 delta_ab delta_bc, so with x = conj(z_m) and y = z_n restricted to it,
+    + 2 delta_ab delta_bc, so for two functions x and y restricted to it,
 
-        sum_ab mu_abc x_a y_b = S_x S_y + sum_a x_a y_a + x_c S_y + S_x y_c + 2 x_c y_c ,
+        sum_ab mu_abc x_a y_b = S_x S_y + sum_a x_a y_a + x_c S_y + S_x y_c + 2 x_c y_c .
 
-    which is what is accumulated here for every pair at once. It is the
-    vectorized form of `WhitneyMass.vertexDensityContraction`.
+    `loads(x, Y)` returns, for every column y of Y, the load vector
+    int phi_c x y of the product: the vectorized form of
+    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`.
     """
+
+    def __init__(self, complex_, squared_lengths):
+        vertex_index = {int(cell[0]): i for i, cell in enumerate(complex_.kSimplexVertices(0))}
+        self.size = len(vertex_index)
+        self.tops = np.array([[vertex_index[int(v)] for v in cell] for cell in complex_.orientedTopSimplices()])
+        d = self.tops.shape[1] - 1
+        volumes = np.array(ch.WhitneyMass.certificate(complex_, list(squared_lengths)).volumes)
+        if np.abs(volumes.imag).max() == 0.0:
+            volumes = volumes.real                          # a real geometry keeps real loads real
+        self.weight = volumes * float(np.prod(np.arange(1, d + 1))) / float(np.prod(np.arange(1, d + 4)))
+        count = len(self.tops)
+        self.scatter = [sp.csr_matrix((np.ones(count), (self.tops[:, c], np.arange(count))),
+                                      shape=(self.size, count)) for c in range(d + 1)]
+
+    def loads(self, x, Y):
+        x = np.asarray(x)
+        Y = np.asarray(Y).reshape(self.size, -1)
+        local_x = x[self.tops]                                # (tops, d + 1)
+        local_y = Y[self.tops]                                # (tops, d + 1, columns)
+        sum_x, sum_y = local_x.sum(axis=1), local_y.sum(axis=1)
+        common = sum_x[:, None] * sum_y + np.einsum("ta,tan->tn", local_x, local_y)
+        total = np.zeros((self.size, Y.shape[1]), dtype=np.result_type(x, Y, self.weight))
+        for c, scatter in enumerate(self.scatter):
+            term = common + local_x[:, c, None] * sum_y + sum_x[:, None] * local_y[:, c, :] \
+                + 2.0 * local_x[:, c, None] * local_y[:, c, :]
+            total += scatter @ (self.weight[:, None] * term)
+        return total
+
+
+def pair_densities(complex_, squared_lengths, modes):
+    """`T[:, m, n] = rho^{mn}`: the load vectors of conj(z_m) z_n for every pair
+    of the columns of `modes`, shape (vertices, modes, modes)."""
     modes = np.asarray(modes, dtype=complex)
-    vertex_index = {int(cell[0]): i for i, cell in enumerate(complex_.kSimplexVertices(0))}
-    tops = np.array([[vertex_index[int(v)] for v in cell] for cell in complex_.orientedTopSimplices()])
-    d = tops.shape[1] - 1
-    volumes = np.array(ch.WhitneyMass.certificate(complex_, list(squared_lengths)).volumes)
-    weight = volumes * float(np.prod(np.arange(1, d + 1))) / float(np.prod(np.arange(1, d + 4)))
+    integrals = TripleIntegrals(complex_, squared_lengths)
     count = modes.shape[1]
-    local = modes[tops]                                   # (tops, d + 1, modes)
-    scatter = [sp.csr_matrix((np.ones(len(tops)), (tops[:, c], np.arange(len(tops)))),
-                             shape=(modes.shape[0], len(tops))) for c in range(d + 1)]
-    sum_y = local.sum(axis=1)                             # (tops, modes)
     T = np.empty((modes.shape[0], count, count), dtype=complex)
     for m in range(count):
-        x = local[:, :, m].conj()                         # (tops, d + 1)
-        sum_x = x.sum(axis=1)
-        common = sum_x[:, None] * sum_y + np.einsum("ta,tan->tn", x, local)
-        total = np.zeros((modes.shape[0], count), dtype=complex)
-        for c in range(d + 1):
-            term = common + x[:, c, None] * sum_y + sum_x[:, None] * local[:, c, :] \
-                + 2.0 * x[:, c, None] * local[:, c, :]
-            total += scatter[c] @ (weight[:, None] * term)
-        T[:, m, :] = total
+        T[:, m, :] = integrals.loads(modes[:, m].conj(), modes)
     return T
 
 

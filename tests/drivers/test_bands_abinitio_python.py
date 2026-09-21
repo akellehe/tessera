@@ -158,3 +158,27 @@ def test_a_self_consistent_crystal_on_the_mesh_matches_plane_waves():
     assert coarse_error > 5e-3
     assert np.abs(extrapolated[:2] - target[:2]).max() < 3e-3            # rydberg
     assert (extrapolated[1] - extrapolated[0]) == pytest.approx(target[1] - target[0], abs=3e-3)
+
+
+@pytest.mark.slow
+def test_hartree_fock_on_the_mesh_matches_hartree_fock_in_plane_waves():
+    """The plan's mean field. Two independent implementations of the same
+    Hartree-Fock problem (exchange compressed onto the computed bands, the
+    zero-momentum term restored by the probe-charge correction, the projector
+    as a low-rank term): the mesh levels extrapolate to the plane-wave levels,
+    filled and empty."""
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    reference = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run_hartree_fock(4, 6.0)
+    assert reference["converged"]
+    spacings, levels = [], []
+    for n in (8, 12, 16):
+        run = abinitio.MeshCrystal(crystal, n).run_hartree_fock(4)
+        assert run["certified"], run
+        spacings.append(run["spacing"])
+        levels.append(run["levels"][:2])
+    target = reference["levels"][0][:2]
+    assert np.abs(np.array(levels[-1]) - target).max() > 1e-3
+    assert np.abs(richardson(spacings, levels)[0] - target).max() < 1e-3           # rydberg
+    # Exchange without correlation opens the gap well beyond the local-density one.
+    local_density = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run(4)["levels"][0]
+    assert target[1] - target[0] > 1.3 * (local_density[1] - local_density[0])
