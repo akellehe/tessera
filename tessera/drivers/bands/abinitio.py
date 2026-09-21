@@ -953,7 +953,7 @@ class MeshCrystal:
             direction = direction / np.linalg.norm(direction)
             out.append({"gaps": gaps.ravel(), "coupling": np.asarray(coupling),
                         "charges": sum(direction[axis] * derivatives[axis] for axis in range(3)),
-                        "entry": self.kernel.momentum_entry_limit(direction),
+                        "entry": self.kernel.momentum_entry_limit(direction), "limit": True,
                         "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]})
         return out
 

@@ -278,6 +278,39 @@ def test_hartree_fock_on_a_momentum_set_is_hartree_fock_of_the_supercell():
     assert np.abs(reference["levels"][:4] - union[:4]).max() < 1e-5          # rydberg
 
 
+def test_the_kinetic_eigenbasis_route_is_the_pole_exact_route():
+    """Two routes to the correlation self-energy of the crystal, zero-momentum
+    term included: the random-phase modes of the particle-hole pairs (poles in
+    closed form), and the dielectric matrix in the eigenbasis of the kinetic
+    pencil, inverted at imaginary frequencies, with the self-energy by contour
+    deformation. With the whole basis they agree at every frequency, on and off
+    the levels; with a truncated basis the second converges to the first."""
+    from tessera.drivers.bands import screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.array([0.4, 0.45, 0.55]))])
+    mesh = abinitio.MeshCrystal(crystal, 6)
+    bands = 7
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 3, tolerance=1e-9)
+    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    limits = mesh.vanishing_momentum_pairs(extended, coupling, bands)
+    rpa.set_head(mesh.zero_momentum, limits)
+    values, basis = scipy.linalg.eigh(mesh.stiffness.toarray(), mesh.mass.toarray())
+    values, basis = values[1:], basis[:, 1:]                       # without the constant, where the kernel has no entry
+    modes = extended["vectors"][:, :bands]
+    pairs = np.vstack([(basis.T @ mesh.triple.loads(modes[:, i], modes[:, occupied:])).T for i in range(occupied)])
+    kernel = abinitio.COULOMB_STRENGTH / values
+    assert np.abs((pairs * kernel) @ pairs.T - coupling).max() < 1e-12
+    head = [(np.imag(limit["charges"]), limit["entry"]) for limit in limits]      # real modes: the charges are i r
+    frequencies = (levels[0] - 0.3, levels[0], 0.5 * (levels[0] + levels[1]), levels[1], levels[1] + 0.4)
+    errors = []
+    for size in (8, 30, len(values)):
+        route = screening.KineticBasisScreening(levels, occupied, pairs[:, :size], kernel[:size], head,
+                                                mesh.zero_momentum)
+        errors.append(max(abs(route.correlation(n, (basis[:, :size].T @ mesh.triple.loads(modes[:, n], modes)).T, w)
+                              - rpa.correlation(n, w)[0]) for n in (0, 1) for w in frequencies))
+    assert errors[2] < 5e-5 and errors[2] < errors[1] < errors[0], errors
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat

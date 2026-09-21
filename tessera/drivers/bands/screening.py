@@ -75,6 +75,7 @@ class RandomPhase:
         self._solve(energies, occupied, coupling)
         # w^s_mn = sqrt(2) sum_jb (mn|jb) (X + Y)^s_jb, for every pair of modes.
         ph = self.W[:, :, rows, cols]
+        self._blocks = {n: ph[n] for n in range(count)}
         self.transition = np.sqrt(2.0) * np.einsum("mnp,ps->mns", ph, self.x_plus_y)
 
     @classmethod
@@ -87,6 +88,7 @@ class RandomPhase:
         self = cls.__new__(cls)
         self.W = None
         self._solve(energies, occupied, np.asarray(coupling, dtype=float))
+        self._blocks = integrals
         self.transition = {n: np.sqrt(2.0) * np.asarray(block, dtype=float) @ self.x_plus_y
                            for n, block in integrals.items()}
         return self
@@ -117,12 +119,19 @@ class RandomPhase:
 
         and the missing term of the self-energy of a state is the intraband
         one, `constant` * sum_t a~_t / (w - e_n -+ W~_t), averaged over the
-        momenta given; `constant` is the integral of the Coulomb kernel over
+        momenta given. The same modes (W~_t, with the G = 0 entry in the
+        coupling) are the modes of the whole screened interaction at that
+        momentum, so the transitions of the other terms are rebuilt on them and
+        averaged over the momenta as well: the G = 0 entry screens the rest of
+        the interaction through the mixed entries of the dielectric matrix, and
+        at a single sampled momentum that carries full weight. The terms mixed
+        between G = 0 and the rest are odd in the momentum and average to zero.
+        `constant` is `constant` is the integral of the Coulomb kernel over
         the cell of momentum space that the sampling leaves out
         (`GridCoulombKernel.zero_momentum_constant`). On the energy shell it is
         +-constant (1 - 1/eps) / 2. Returns the macroscopic dielectric
         constant."""
-        poles, weights, inverse, static, independent = [], [], [], [], []
+        poles, weights, inverse, static, independent, long_range_modes = [], [], [], [], [], []
         solved = None                                  # the problem without the G = 0 entry, shared by the directions of one limit
         for momentum in momenta:
             gaps = np.asarray(momentum["gaps"], dtype=float)
@@ -150,10 +159,13 @@ class RandomPhase:
             amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ charges
             residues = entry * 2.0 * np.abs(amplitudes) ** 2
             poles.append(omega)
+            if momentum.get("limit", False):           # the pairs of a finite momentum are not those of the integrals
+                long_range_modes.append((omega, (root[:, None] * Z) / np.sqrt(omega)[None, :]))
             weights.append(constant * residues / len(momenta))
             inverse.append(1.0 - np.sum(2.0 * residues / omega))
             independent.append(entry * 4.0 * np.sum(np.abs(charges) ** 2 / gaps))
         self.head_poles, self.head = np.concatenate(poles), np.concatenate(weights)
+        self.long_range_modes, self._long_range_transition = long_range_modes, {}
         self.dielectric_constant = 1.0 + float(np.mean(static))
         # The two routes to the static inverse must agree: 1 / (1 + S) = 1 - sum_t 2 a~_t / W~_t.
         self.head_defect = float(max(abs(value - 1.0 / (1.0 + s)) for value, s in zip(inverse, static)))
@@ -161,7 +173,7 @@ class RandomPhase:
         return self.dielectric_constant
 
     def _solve(self, energies, occupied, coupling):
-        self.head = None
+        self.head, self.long_range_modes, self._long_range_transition = None, [], {}
         self.propagator = None        # the levels of G when they differ from those W was built from
         self.energies = np.asarray(energies, dtype=float)
         self.occupied = int(occupied)
@@ -210,19 +222,34 @@ class RandomPhase:
             raise ValueError("the exchange self-energy needs the full tensor of Coulomb integrals")
         return -sum(self.W[n, i, i, n] for i in range(self.occupied))
 
+    def _transitions(self, n):
+        """(excitations, transition amplitudes of mode n with every mode m) per
+        set of modes: those of the problem without the G = 0 entry, or, once
+        `set_head` has run, those with it along each momentum given."""
+        if not self.long_range_modes:
+            return [(self.excitations, self.transition[n])]
+        if n not in self._long_range_transition:
+            block = np.asarray(self._blocks[n])
+            self._long_range_transition[n] = [(omega, np.sqrt(2.0) * (block @ modes))
+                                              for omega, modes in self.long_range_modes]
+        return self._long_range_transition[n]
+
     def correlation(self, n, frequency):
         """Sigma^c_nn at a real frequency (and its derivative)."""
         value = derivative = 0.0
         levels = self.energies if self.propagator is None else self.propagator
-        for m, level in enumerate(levels):
-            weights = self.transition[n][m, :] ** 2
-            poles = level - self.excitations if m < self.occupied else level + self.excitations
-            value += np.sum(weights / (frequency - poles))
-            derivative -= np.sum(weights / (frequency - poles) ** 2)
-            if m == n and self.head is not None:
-                poles = level - self.head_poles if m < self.occupied else level + self.head_poles
-                value += np.sum(self.head / (frequency - poles))
-                derivative -= np.sum(self.head / (frequency - poles) ** 2)
+        sets = self._transitions(n)
+        for excitations, transition in sets:
+            for m, level in enumerate(levels):
+                weights = np.abs(transition[m, :]) ** 2 / len(sets)
+                poles = level - excitations if m < self.occupied else level + excitations
+                value += np.sum(weights / (frequency - poles))
+                derivative -= np.sum(weights / (frequency - poles) ** 2)
+        if self.head is not None:
+            level = levels[n]
+            poles = level - self.head_poles if n < self.occupied else level + self.head_poles
+            value += np.sum(self.head / (frequency - poles))
+            derivative -= np.sum(self.head / (frequency - poles) ** 2)
         return value, derivative
 
     def second_order_correlation(self, n, frequency):
@@ -256,6 +283,105 @@ class RandomPhase:
                 break
         _, derivative = self.correlation(n, energy)
         return energy, 1.0 / (1.0 - derivative)
+
+
+class KineticBasisScreening:
+    """The screened interaction as a matrix in the low-lying eigenbasis of the
+    kinetic pencil, and the correlation self-energy from it by contour
+    deformation: the second route to `RandomPhase`, and the one that scales to
+    momentum sets, because its size is the basis and not the number of
+    particle-hole pairs.
+
+    In the eigenbasis B of the kinetic pencil (A B = M B diag(lambda)) the
+    Coulomb kernel is diagonal, v_mu = strength / lambda_mu, so with the
+    coefficients C_p = B^T load_p of the pair densities
+
+        chi0(i u) = - sum_p C_p C_p^T 4 gap_p / (gap_p^2 + u^2) ,
+        W_c(i u) = v^(1/2) [ (1 - v^(1/2) chi0 v^(1/2))^-1 - 1 ] v^(1/2) .
+
+    `head` lists, per direction of vanishing momentum, the charges of the pairs
+    per unit momentum and the entry of the kernel (`vanishing_momentum_pairs`):
+    they enter as one more basis function, the G = 0 one. The rest of the matrix
+    is then screened through the mixed entries, the intraband term is
+    `constant` [(1 / eps)_00 - 1], and both are averaged over the directions.
+
+    The self-energy of mode n with the coefficients G_m = B^T load_nm is
+
+        Sigma_c(w) = sum_m { -(1 / pi) int_0^inf F_m(u) a_m / (a_m^2 + u^2) du }
+                     - sum_{m filled, e_m > w} F_m[e_m - w] + sum_{m empty, e_m < w} F_m[w - e_m] ,
+
+    a_m = w - e_m, F_m(u) = G_m^T W_c(i u) G_m and F_m[x] the same at the real
+    frequency x. W_c(i u) is tabulated on `frequencies`, interpolated linearly
+    between them and continued as 1 / u^2 beyond the last, and the Lorentzian is
+    integrated against that interpolant in closed form, so a small a_m costs no
+    accuracy."""
+
+    def __init__(self, energies, occupied, pair_coefficients, kernel, head=None, constant=0.0, frequencies=None):
+        self.energies, self.occupied = np.asarray(energies, dtype=float), int(occupied)
+        count = len(self.energies)
+        self.gaps = np.array([self.energies[a] - self.energies[i] for i in range(self.occupied)
+                              for a in range(self.occupied, count)])
+        self.C = np.asarray(pair_coefficients, dtype=float)
+        self.v = np.asarray(kernel, dtype=float)
+        self.head, self.constant = head or [], float(constant)
+        scale = float(self.gaps.min())
+        self.frequencies = (scale * np.concatenate([[0.0], np.geomspace(0.02, 400.0, 95)])
+                            if frequencies is None else np.asarray(frequencies, dtype=float))
+        self._table = [self._screened(u, imaginary=True) for u in self.frequencies]
+
+    def _screened(self, x, imaginary):
+        """(W_c on the basis, the intraband head term) at the frequency i x or x."""
+        weights = (-4.0 * self.gaps / (self.gaps ** 2 + x ** 2) if imaginary
+                   else 4.0 * self.gaps / (x ** 2 - self.gaps ** 2))
+        size = self.C.shape[1]
+        if not self.head:
+            root = np.sqrt(self.v)
+            S = root[:, None] * ((self.C.T * weights) @ self.C) * root[None, :]
+            inverse = np.linalg.inv(np.eye(size) - S)
+            return root[:, None] * (inverse - np.eye(size)) * root[None, :], 0.0
+        W, intraband = np.zeros((size, size)), 0.0
+        for charges, entry in self.head:
+            C = np.hstack([np.asarray(charges, dtype=float)[:, None], self.C])
+            root = np.sqrt(np.concatenate([[entry], self.v]))
+            S = root[:, None] * ((C.T * weights) @ C) * root[None, :]
+            inverse = np.linalg.inv(np.eye(size + 1) - S)
+            W += root[1:, None] * (inverse[1:, 1:] - np.eye(size)) * root[None, 1:] / len(self.head)
+            intraband += self.constant * (inverse[0, 0] - 1.0) / len(self.head)
+        return W, intraband
+
+    @staticmethod
+    def _lorentzian(a, u, F):
+        """int_0^inf F(u) a / (a^2 + u^2) du for the piecewise-linear interpolant
+        of the rows of F on u, continued as F_last (u_last / u)^2; a > 0."""
+        slope = (F[:, 1:] - F[:, :-1]) / (u[1:] - u[:-1])
+        intercept = F[:, :-1] - slope * u[:-1]
+        angle = np.arctan(u[None, :] / a[:, None])
+        logs = 0.5 * a[:, None] * np.log((a[:, None] ** 2 + u[None, 1:] ** 2) / (a[:, None] ** 2 + u[None, :-1] ** 2))
+        body = (intercept * (angle[:, 1:] - angle[:, :-1]) + slope * logs).sum(axis=1)
+        ratio = a / u[-1]
+        tail = np.where(ratio < 1e-3, ratio / 3.0 - ratio ** 3 / 5.0,
+                        (1.0 - np.arctan(np.maximum(ratio, 1e-300)) / np.maximum(ratio, 1e-300)) / np.maximum(ratio, 1e-300))
+        return body + F[:, -1] * tail
+
+    def correlation(self, n, coefficients, frequency):
+        """Sigma^c_nn at the real frequency `frequency`; `coefficients[m]` are
+        the coefficients of the load of psi_n psi_m in the basis."""
+        G = np.asarray(coefficients, dtype=float)
+        F = np.empty((len(self.energies), len(self.frequencies)))
+        for k, (W, intraband) in enumerate(self._table):
+            F[:, k] = np.einsum("mi,ij,mj->m", G, W, G)
+            F[n, k] += intraband
+        a = frequency - self.energies
+        sign = np.where(a >= 0.0, 1.0, -1.0)                       # a = 0 is approached from above
+        value = -np.sum(sign * self._lorentzian(np.maximum(np.abs(a), 1e-12), self.frequencies, F)) / np.pi
+        for m, level in enumerate(self.energies):
+            # a = 0 is approached from above, where an empty level has already been crossed.
+            crossing = (m < self.occupied and level > frequency) or (m >= self.occupied and level <= frequency)
+            if crossing:
+                W, intraband = self._screened(abs(level - frequency), imaginary=False)
+                element = G[m] @ W @ G[m] + (intraband if m == n else 0.0)
+                value += -element if m < self.occupied else element
+        return value
 
 
 def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, head=None, update_screening=True,

@@ -161,6 +161,17 @@ additionally needs ionic pseudopotentials and a set of crystal momenta, at a
 cost (one Poisson solve per pair of orbitals per pair of momenta) that belongs
 on a cluster.
 
+`screening.KineticBasisScreening` is the second route to the same self-energy,
+and the one that scales to momentum sets: in the eigenbasis of the kinetic
+pencil the Coulomb kernel is diagonal, the dielectric matrix is inverted at
+imaginary frequencies, and the self-energy follows by contour deformation, the
+Lorentzian integrated in closed form against the interpolated interaction. The
+response at vanishing momentum enters as one more basis function, which screens
+the rest of the interaction through the mixed entries of the dielectric matrix;
+`RandomPhase.set_head` does the same on the modes of the particle-hole pairs.
+With the whole basis the two routes agree at every frequency, and the test suite
+holds them to each other.
+
 ### Ab initio
 
 `pseudopotential` reads norm-conserving pseudopotentials in the Unified
