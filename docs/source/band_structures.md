@@ -273,7 +273,8 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 
 | flag | what it truncates | range, default |
 |---|---|---|
-| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$ | 1 to 5, default 3; implemented: 1 |
+| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$, 2 adds the crossed diagram, 3 the six skeleton diagrams of third order (`diagrams`) | 1 to 5, default 3; implemented: 1 to 3 |
+| `--vertex-bands`, `--vertex-poles` | the modes nearest the gap on the internal lines of the diagrams beyond the first order, and the modes of the screened interaction kept in them; the cost of order $k$ grows as bands$^{2k-1}$ poles$^k$ | default 12 and 12 |
 | `--zero-momentum-order` | how the self-energy integrand is averaged over the momentum transfers the sampling leaves out: 1 is the closed form at vanishing momentum; k is a midpoint grid of k transfers per axis, the Hartree-Fock pencil solved at every node, the singular part averaged analytically and the bounded remainder by the grid | 1 to 5, default 3; all implemented |
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
@@ -281,9 +282,14 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
 An order that is not implemented is refused by name before anything runs; it is
-never replaced by a lower one. Until the second and third terms of the expansion
-in the screened interaction exist, a run has to ask for `--self-energy-order 1`
-explicitly. On a cell of 6 bohr the correlation self-energy of the filled level
+never replaced by a lower one (orders 4 and 5 of the expansion in the screened
+interaction are). The diagrams beyond $\Sigma = iGW$ are evaluated as sums over
+the orderings of their vertex times, in closed form on the poles of $W$, with
+the instantaneous part of $W$ as lines whose two vertices share a time; the
+test suite holds them to the closed form at first order, to the textbook
+second-order exchange, to the plain frequency integrals of their Feynman rules
+on the imaginary axis (the triangle loops included), and to the heavy-boson
+limit for instantaneous lines. On a cell of 6 bohr the correlation self-energy of the filled level
 goes from -0.032 Ry at zero-momentum order 1 to -0.052 and -0.061 Ry at orders 2
 and 3 (-0.071 Ry on a grid of 6): sampling the zone centre alone is a large
 approximation on a small cell.

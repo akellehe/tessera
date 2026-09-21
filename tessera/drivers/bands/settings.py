@@ -11,13 +11,18 @@ replaced by a lower one.
 from dataclasses import asdict, dataclass
 
 # The orders of each expansion that exist in the code today.
-IMPLEMENTED = {"self_energy_order": (1,), "zero_momentum_order": (1, 2, 3, 4, 5)}
+IMPLEMENTED = {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
 
 
 @dataclass(frozen=True)
 class Approximations:
     """`self_energy_order`: the number of terms kept in the expansion of the
-    self-energy in the screened interaction W (1 is Sigma = i G W; 1 to 5).
+    self-energy in the screened interaction W (1 is Sigma = i G W; 1 to 5). The
+    terms beyond the first are the skeleton diagrams of `diagrams`: one at
+    second order, six at third. Their cost grows as `vertex_bands` to the power
+    2 k - 1 times `vertex_poles` to the power k, so they are evaluated on the
+    `vertex_bands` modes nearest the gap and the `vertex_poles` modes of the
+    screened interaction that couple to them most strongly.
 
     `zero_momentum_order`: how the self-energy integrand is averaged over the
     momentum transfers that sampling the zone centre leaves out. 1 is the closed
@@ -42,6 +47,8 @@ class Approximations:
     refinement_terms: int = 5
     lattice_images: int = 5
     frequency_nodes: int = 64
+    vertex_bands: int = 12
+    vertex_poles: int = 12
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -51,6 +58,8 @@ class Approximations:
             raise ValueError("lattice_images is odd and at least 1")
         if self.frequency_nodes < 5:
             raise ValueError("frequency_nodes is at least 5")
+        if self.vertex_bands < 2 or self.vertex_poles < 1:
+            raise ValueError("vertex_bands is at least 2 and vertex_poles at least 1")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -113,8 +122,12 @@ class Approximations:
                            help="periodic images per axis in the lattice sums (odd)")
         group.add_argument("--frequency-nodes", type=int, default=defaults.frequency_nodes,
                            help="terms of the Chebyshev series along the imaginary frequency axis")
+        group.add_argument("--vertex-bands", type=int, default=defaults.vertex_bands,
+                           help="modes nearest the gap on the internal lines of the diagrams beyond the first order")
+        group.add_argument("--vertex-poles", type=int, default=defaults.vertex_poles,
+                           help="modes of the screened interaction kept in the diagrams beyond the first order")
 
     @classmethod
     def from_arguments(cls, args):
         return cls(args.self_energy_order, args.zero_momentum_order, args.refinement_terms, args.lattice_images,
-                   args.frequency_nodes)
+                   args.frequency_nodes, args.vertex_bands, args.vertex_poles)

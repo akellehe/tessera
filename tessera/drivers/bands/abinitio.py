@@ -975,6 +975,25 @@ class MeshCrystal:
                 "converged": at_momentum["converged"],
                 "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
 
+    def vertex(self, extended, bands=None):
+        """The argument tuple of `RandomPhase.set_vertex` for
+        `approximations.self_energy_order`: the `vertex_bands` modes nearest the
+        gap (half filled, half empty, among the lowest `bands`) and their
+        Coulomb integrals (pq|rs), with the entry of the kernel at G = 0 as in
+        exchange."""
+        settings = self.approximations
+        occupied = int(extended["occupied"])
+        bands = len(extended["levels"]) if bands is None else int(bands)
+        below = min(settings.vertex_bands // 2, occupied)
+        above = min(settings.vertex_bands - below, bands - occupied)
+        chosen = list(range(occupied - below, occupied + above))
+        modes = np.asarray(extended["vectors"])[:, chosen]
+        count = len(chosen)
+        loads = np.hstack([self.triple.loads(modes[:, p], modes) for p in range(count)])           # pairs (p, q)
+        potentials = self.kernel.potential(loads, None, self.zero_momentum).real
+        interaction = (loads.T @ potentials).reshape(count, count, count, count)
+        return settings.self_energy_order, chosen, interaction, settings.vertex_poles
+
     def momentum_terms(self, extended, states, bands=None, log=None):
         """The argument tuple of `RandomPhase.set_momentum_terms` for the
         momentum transfers of `approximations.zero_momentum_order` (empty at
@@ -1107,7 +1126,8 @@ class MeshCrystal:
             potentials.append(self.kernel.potential(pair_loads).real)
         coupling = np.block([[loads[i].T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
         blocks = {}
-        for n in states:
+        vertex = self.vertex(extended)
+        for n in sorted(set(states) | (set(vertex[1]) if vertex[0] > 1 else set())):
             state_loads = integrals.loads(orbitals[:, n], orbitals)
             blocks[n] = np.hstack([state_loads.T @ potentials[j] for j in range(occupied)])
         if log:
@@ -1117,6 +1137,7 @@ class MeshCrystal:
         out = {n: {"mean_field": float(energies[n]), "body": float(rpa.quasiparticle(n)[0])} for n in states}
         dielectric = rpa.set_head(constant, self.vanishing_momentum_pairs(extended, coupling))
         rpa.set_momentum_terms(*self.momentum_terms(extended, states, log=log))
+        rpa.set_vertex(*vertex)
         for n in states:
             energy, weight = rpa.quasiparticle(n)
             defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)

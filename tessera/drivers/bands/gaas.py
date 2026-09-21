@@ -297,6 +297,7 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, screening_bands)
         heads = mesh.vanishing_momentum_pairs(extended, coupling, screening_bands)
         momentum_terms = mesh.momentum_terms(extended, range(screening_bands), screening_bands, log=log)
+        vertex = mesh.vertex(extended, screening_bands)
         row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
                "exchange_updates": row_updates, "hartree_fock_energy": mean_field["energy"],
                "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum}
@@ -306,6 +307,7 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
                 row["dielectric_constant"] = float(rpa.set_head(mesh.zero_momentum, heads))
                 row["head_defect"] = rpa.head_defect
                 rpa.set_momentum_terms(*momentum_terms)
+                rpa.set_vertex(*vertex)
             shifted = levels.copy()
             for index in valence + conduction:
                 shifted[index] = rpa.quasiparticle(index)[0]
@@ -315,7 +317,8 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
             produced, history, _ = screening.self_consistent_quasiparticles(
                 levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
                 update_screening=update, tolerance=1e-5,
-                momentum_terms=momentum_terms if with_head and momentum_terms[0] else None)
+                momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
+                vertex=vertex if with_head else None)
             row[name], row[name + "_residual"] = gap(produced), float(history[-1])
         row["seconds"] = time.time() - started
         log("N=%d: " % n + ", ".join(f"{name} {row[name]:.3f}" for name in names)

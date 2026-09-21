@@ -175,6 +175,7 @@ class RandomPhase:
     def _solve(self, energies, occupied, coupling):
         self.head, self.long_range_modes, self._long_range_transition = None, [], {}
         self.momentum_terms, self.head_constant = [], None
+        self.vertex_order, self.vertex_bands, self._vertex_engines = 1, [], None
         self.screening_shifts = self.propagator_shifts = None
         self.propagator = None        # the levels of G when they differ from those W was built from
         self.energies = np.asarray(energies, dtype=float)
@@ -269,6 +270,45 @@ class RandomPhase:
             derivative -= np.sum(transitions[n][m] / (frequency - poles) ** 2)
         return value, derivative
 
+    def set_vertex(self, order, bands, interaction, poles):
+        """Add the skeleton diagrams of the orders 2 .. `order` in the screened
+        interaction (`diagrams.SkeletonSelfEnergy`) to `correlation`, for the
+        modes in `bands`, which are also the modes on the internal lines.
+        `interaction[p, q, r, s]` are the Coulomb integrals (pq|rs) over those
+        modes, the instantaneous part of W; the retarded part is the `poles`
+        random-phase modes that couple to them most strongly (every set of
+        modes that `correlation` averages over is used, and averaged)."""
+        self.vertex_order, self.vertex_bands = int(order), [int(b) for b in bands]
+        self.vertex_interaction, self.vertex_poles = np.asarray(interaction), int(poles)
+        self._vertex_engines = None
+
+    def _vertex(self, n, frequency, levels):
+        """The diagrams beyond the first order for mode n: (value, derivative)."""
+        from tessera.drivers.bands.diagrams import SkeletonSelfEnergy
+        if self.vertex_order < 2 or n not in self.vertex_bands:
+            return 0.0, 0.0
+        bands = self.vertex_bands
+        key = tuple(np.round(levels[bands], 12))
+        if self._vertex_engines is None or self._vertex_engines[0] != key:
+            filled = sum(1 for b in bands if b < self.occupied)
+            chemical_potential = 0.5 * (levels[self.occupied - 1] + levels[self.occupied])
+            engines = []
+            for excitations, _ in self._transitions(bands[0]):
+                index = len(engines)
+                g = np.stack([self._transitions(p)[index][1][bands, :] for p in bands])          # [p, q, s]
+                keep = np.argsort(-(np.abs(g) ** 2).sum(axis=(0, 1)))[:self.vertex_poles]
+                engines.append(SkeletonSelfEnergy(levels[bands] - chemical_potential, filled, excitations[keep],
+                                                  np.moveaxis(g[:, :, keep], 2, 0), self.vertex_interaction))
+            self._vertex_engines = (key, chemical_potential, engines)
+        _, chemical_potential, engines = self._vertex_engines
+        local = bands.index(n)
+        value = derivative = 0.0
+        for engine in engines:
+            for order in range(2, self.vertex_order + 1):
+                v, d = engine.value_and_derivative(local, frequency - chemical_potential, order)
+                value, derivative = value + v / len(engines), derivative + d / len(engines)
+        return value, derivative
+
     def _transitions(self, n):
         """(excitations, transition amplitudes of mode n with every mode m) per
         set of modes: those of the problem without the G = 0 entry, or, once
@@ -303,7 +343,10 @@ class RandomPhase:
             total = coefficient * self.zone_average
             for index, (term, weight) in enumerate(zip(self.momentum_terms, self.momentum_weights)):
                 total = total + weight * (np.array(self._integrand(index, n, frequency)) - coefficient * term["auxiliary"])
-            return float(total[0]), float(total[1])
+            vertex = self._vertex(n, frequency, levels)
+            return float(total[0]) + vertex[0], float(total[1]) + vertex[1]
+        vertex = self._vertex(n, frequency, levels)
+        value, derivative = value + vertex[0], derivative + vertex[1]
         return value + head_value, derivative + head_derivative
 
     def second_order_correlation(self, n, frequency):
@@ -470,7 +513,7 @@ class KineticBasisScreening:
 
 
 def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, head=None, update_screening=True,
-                                    tolerance=1e-6, max_iterations=60, damping=0.7, momentum_terms=None):
+                                    tolerance=1e-6, max_iterations=60, damping=0.7, momentum_terms=None, vertex=None):
     """Eigenvalue self-consistency on a Hartree-Fock starting point: the
     orbitals and their Coulomb integrals stay fixed, and the quasiparticle
     levels are fed back into the propagator (`update_screening=False`, the
@@ -481,7 +524,8 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
     feeding the levels back into the screening is what closes it.
 
     `integrals` must cover every mode, and so must the blocks of
-    `momentum_terms`, the argument tuple of `RandomPhase.set_momentum_terms`.
+    `momentum_terms`, the argument tuple of `RandomPhase.set_momentum_terms`;
+    `vertex` is that of `RandomPhase.set_vertex`.
     `head` is the pair (constant, momenta)
     of `RandomPhase.set_head`; the level differences at the small momenta move
     with the zone-centre levels of the same modes. Returns (levels, history of the largest change, the
@@ -497,6 +541,8 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
             if momentum_terms is not None:
                 rpa.set_momentum_terms(*momentum_terms)
                 rpa.screening_shifts = energies - mean_field
+            if vertex is not None:
+                rpa.set_vertex(*vertex)
         if momentum_terms is not None:
             rpa.propagator_shifts = energies - mean_field
         rpa.propagator = energies

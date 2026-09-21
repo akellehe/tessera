@@ -25,10 +25,10 @@ def test_ranges_and_defaults():
 
 
 def test_an_order_that_is_not_implemented_is_refused_by_name():
-    assert IMPLEMENTED == {"self_energy_order": (1,), "zero_momentum_order": (1, 2, 3, 4, 5)}
-    Approximations(self_energy_order=1).require_implemented()
-    with pytest.raises(NotImplementedError, match="self_energy_order = 3"):
-        Approximations().require_implemented()
+    assert IMPLEMENTED == {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
+    Approximations().require_implemented()
+    with pytest.raises(NotImplementedError, match="self_energy_order = 4"):
+        Approximations(self_energy_order=4).require_implemented()
 
 
 def test_the_momentum_nodes_are_a_midpoint_grid_counted_once_per_time_reversed_pair():
@@ -48,7 +48,7 @@ def test_the_flags_reach_the_run():
     parsed = Approximations.from_arguments(parser.parse_args(
         ["--self-energy-order", "1", "--zero-momentum-order", "1", "--refinement-terms", "3", "--lattice-images", "3",
          "--frequency-nodes", "32"]))
-    assert parsed == Approximations(1, 1, 3, 3, 32)
+    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12)
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     coarse, fine = abinitio.MeshCrystal(crystal, 6, approximations=parsed), abinitio.MeshCrystal(crystal, 6)
     assert coarse.approximations.images == (-1, 0, 1)
@@ -82,6 +82,36 @@ def test_the_zone_average_of_the_self_energy_integrand_converges_with_the_grid()
     assert values[1] < 1.5 * values[0] and abs(values[2] - values[1]) < 0.5 * abs(values[1] - values[0])
 
 
+def test_the_diagrams_beyond_the_first_order_enter_the_quasiparticle_equation():
+    """With every mode and every pole kept, the first-order diagram of the
+    evaluator is the self-energy `RandomPhase` already has, which holds the
+    wiring (modes, couplings, chemical potential) to it; the second order then
+    moves the quasiparticle levels, and the equation is still solved to its root."""
+    from tessera.drivers.bands import screening
+    from tessera.drivers.bands.diagrams import SkeletonSelfEnergy
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    mesh = abinitio.MeshCrystal(crystal, 6, approximations=Approximations(2, 1, vertex_bands=7, vertex_poles=6))
+    bands = 7
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 3, tolerance=1e-9)
+    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    first = [rpa.quasiparticle(n)[0] for n in (0, 1)]
+    order, chosen, interaction, poles = mesh.vertex(extended, bands)
+    assert (order, chosen, poles) == (2, list(range(7)), 6) and interaction.shape == (7,) * 4
+    assert np.abs(interaction - interaction.transpose(1, 0, 2, 3)).max() < 1e-12
+    rpa.set_vertex(order, chosen, interaction, poles)
+    w = 0.5 * (levels[0] + levels[1])
+    rpa._vertex(0, w, levels)                                                # builds the evaluator
+    _, chemical_potential, engines = rpa._vertex_engines
+    rpa.vertex_order = 1
+    assert engines[0].evaluate(1, w - chemical_potential, 1).real == pytest.approx(rpa.correlation(1, w)[0], abs=1e-12)
+    rpa.vertex_order = 2
+    second = [rpa.quasiparticle(n) for n in (0, 1)]
+    for n, (energy, weight) in enumerate(second):
+        assert abs(levels[n] + rpa.correlation(n, energy)[0] - energy) < 1e-8 and 0.3 < weight < 1.2
+    assert max(abs(second[n][0] - first[n]) for n in (0, 1)) > 1e-4
+
+
 def _files(tmp_path):
     atom = soft_atom()
     text = lambda values: " ".join(f"{v:.12e}" for v in values)
@@ -93,8 +123,8 @@ def _files(tmp_path):
 
 def test_the_command_line_refuses_before_anything_runs(tmp_path):
     path = _files(tmp_path)
-    with pytest.raises(NotImplementedError, match="self_energy_order = 3"):
-        gaas.main(["ab-initio", "--cation", path, "--anion", path, "--divisions", "6"])
+    with pytest.raises(NotImplementedError, match="self_energy_order = 5"):
+        gaas.main(["ab-initio", "--cation", path, "--anion", path, "--divisions", "6", "--self-energy-order", "5"])
 
 
 @pytest.mark.slow
