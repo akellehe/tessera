@@ -402,6 +402,20 @@ class ModeInteraction:
         # and conj(rho^{nm}) = rho^{mn}, so W[mn, pq] = sum_v rho^{mn}_v (K rho^{pq})_v.
         self.W = (flat.T @ potentials).reshape(orbitals, orbitals, orbitals, orbitals)
 
+    @classmethod
+    def from_integrals(cls, kernel, one_particle, integrals, sheets=1, zero_momentum=0.0):
+        """The interaction from the one-particle matrix of the modes and their
+        Coulomb integrals `integrals[m, n, p, q] = (mn|pq)` already computed,
+        without the pair densities (`density_operator` and `fock_hamiltonian`
+        need those and are not available)."""
+        self = cls.__new__(cls)
+        self.kernel, self.zero_momentum, self.sheets = kernel, float(zero_momentum), int(sheets)
+        self.orbitals = len(one_particle)
+        self.size = self.orbitals * self.sheets
+        self.h = np.kron(np.eye(self.sheets), np.asarray(one_particle, dtype=complex))
+        self.T, self.W = None, np.asarray(integrals)
+        return self
+
     # -- one-particle matrices of the density at a vertex, with the sheets
 
     def density_operator(self, vertex):
