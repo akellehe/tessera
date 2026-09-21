@@ -61,6 +61,13 @@ class Pseudopotential:
                    r=numbers(root.find("PP_MESH/PP_R")), local=numbers(root.find("PP_LOCAL")),
                    projectors=projectors, D=D, density=numbers(root.find("PP_RHOATOM")))
 
+    @classmethod
+    def from_hgh(cls, element, density=None):
+        """The published relativistic pseudopotential of `element` with its
+        spin-orbit coefficients, as closed forms (`spinorbit.hgh`)."""
+        from tessera.drivers.bands.spinorbit import hgh
+        return hgh(element, density)
+
     # -- radial functions at arbitrary radii
 
     def local_at(self, radius):
