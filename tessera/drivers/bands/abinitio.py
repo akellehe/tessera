@@ -332,7 +332,56 @@ class PlaneWaveCrystal:
             current, density = produced, out_density
             if change < tolerance:
                 break
-        return {"levels": levels, "history": history, "converged": history[-1] < tolerance}
+        return {"levels": levels, "vectors": current, "history": history, "converged": history[-1] < tolerance}
+
+    def dielectric_constant(self, result, step=1e-4):
+        """The independent-particle macroscopic dielectric constant of a
+        converged run, 1 + (8 pi / 3 V) sum_k w_k sum_ia 4 |r_ia|^2 / (e_a - e_i),
+        with r_ia = <a| dH_0/dk |i> / (e_i - e_a) from the current vertex of the
+        operator without exchange: 2 (k + G) for the kinetic part and the
+        derivative of the separable projectors, taken by central differences in
+        k. It is the plane-wave twin of `MeshCrystal.dipoles` on any momentum
+        set, which is how the sampling error of the mesh's zero-momentum term is
+        measured."""
+        crystal = self.crystal
+        occupied = crystal.electrons // 2
+        total = 0.0
+        for k, weight, basis, levels, vectors in zip(self.kpoints, self.weights, self.bases,
+                                                     result["levels"], result["vectors"]):
+            filled, empties = vectors[:, :occupied], vectors[:, occupied:]
+            gaps = levels[occupied:][None, :] - levels[:occupied][:, None]          # filled x empty
+            q = self.G.reshape(-1, 3)[self._kept(k)] + k
+            for alpha in range(3):
+                shift = np.zeros(3)
+                shift[alpha] = step
+                forward, backward = self._projectors_at(k + shift, self._kept(k)), self._projectors_at(k - shift, self._kept(k))
+                dP = (forward - backward) / (2.0 * step)
+                P, D = basis["P"], basis["D"]
+                kinetic = filled.conj().T @ ((2.0 * q[:, alpha])[:, None] * empties)
+                separable = (filled.conj().T @ dP) @ D @ (P.conj().T @ empties) \
+                    + (filled.conj().T @ P) @ D @ (dP.conj().T @ empties)
+                r = (kinetic + separable) / gaps
+                total += weight * np.sum(np.abs(r) ** 2 / gaps)
+        return 1.0 + COULOMB_STRENGTH / (3.0 * crystal.volume) * 4.0 * total
+
+    def _kept(self, k):
+        q = self.G.reshape(-1, 3) + k
+        return np.nonzero((q ** 2).sum(axis=1) <= self.cutoff)[0]
+
+    def _projectors_at(self, k, keep):
+        """The separable projectors on the plane waves `keep` of the basis of a
+        nearby momentum, evaluated at the momentum `k`."""
+        crystal, omega = self.crystal, self.crystal.volume
+        q = self.G.reshape(-1, 3)[keep] + k
+        norm = np.linalg.norm(q, axis=1)
+        columns = []
+        for pseudo, position in crystal.ions:
+            structure = np.exp(-1j * (q @ (position @ crystal.lattice)))
+            for l, r_beta in pseudo.projectors:
+                radial = _radial_transform(pseudo, r_beta, norm, l, weight_r=1)
+                for harmonic in real_harmonics(l, q):
+                    columns.append((-1j) ** l * harmonic * radial * structure / np.sqrt(omega))
+        return np.array(columns).T
 
 
 # ---------------------------------------------------------------- the mesh
@@ -712,6 +761,32 @@ class MeshCrystal:
             defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)
             out[n].update({"quasiparticle": float(energy), "renormalization": float(weight), "defect": float(defect)})
         return {"states": out, "correlation_energy": float(rpa.correlation_energy()), "head_constant": constant,
-                "dielectric_constant": float(dielectric),
+                "dielectric_constant": float(dielectric), "head_defect": rpa.head_defect,
                 "independent_particle_dielectric_constant": float(rpa.independent_particle_dielectric_constant),
                 "pairs": coupling.shape[0]}
+
+    def coulomb_integrals(self, extended, bands=None):
+        """The Coulomb integrals of the lowest `bands` Hartree-Fock modes that
+        the random-phase and quasiparticle steps need, for every mode: the
+        particle-hole coupling (ia|jb) and, per mode n, (nm|jb) over every mode
+        m and every pair, with one Poisson solve per particle-hole pair. Also
+        the dipoles of the pairs. The lowest modes of a larger converged set are
+        the same Hartree-Fock modes, so a band-count study truncates one set.
+        Returns (levels, occupied, coupling, integrals, dipoles)."""
+        cell = self.cell
+        occupied = int(extended["occupied"])
+        bands = len(extended["levels"]) if bands is None else int(bands)
+        truncated = {"levels": np.asarray(extended["levels"])[:bands], "vectors": np.asarray(extended["vectors"])[:, :bands],
+                     "occupied": occupied, "local_potential": np.asarray(extended["local_potential"])}
+        energies, orbitals = truncated["levels"], truncated["vectors"]
+        empties = orbitals[:, occupied:]
+        triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        potentials, loads = [], []
+        for i in range(occupied):
+            pair_loads = triple.loads(orbitals[:, i], empties)
+            loads.append(pair_loads)
+            potentials.append(self.kernel.potential(pair_loads).real)
+        coupling = np.block([[loads[i].T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
+        stacked = np.hstack(potentials)                                   # vertices x pairs
+        integrals = {n: triple.loads(orbitals[:, n], orbitals).T @ stacked for n in range(bands)}
+        return energies, occupied, coupling, integrals, self.dipoles(truncated)

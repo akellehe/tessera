@@ -212,6 +212,8 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
     gap = lambda key: lean["states"][1][key] - lean["states"][0][key]
     assert abs(gap("body") / gap("mean_field") - 1.0) < 0.05
     eps, c = lean["dielectric_constant"], lean["head_constant"]
-    assert 1.0 < eps < lean["independent_particle_dielectric_constant"] + 1.0
+    # Local fields lower the dielectric constant below its independent-particle value.
+    assert 1.0 < eps < lean["independent_particle_dielectric_constant"]
+    assert lean["head_defect"] < 1e-10
     assert gap("quasiparticle") < gap("body")
     assert gap("body") - gap("quasiparticle") == pytest.approx(c * (1.0 - 1.0 / eps), rel=0.25)

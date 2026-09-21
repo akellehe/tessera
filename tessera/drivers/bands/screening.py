@@ -99,28 +99,55 @@ class RandomPhase:
         so the pair couples to the uniform connection through the current
         operator, the derivative of the one-particle operator with respect to
         the link phases contracted with the edge displacements; `dipoles` holds
-        r_ia (pairs x 3) obtained from it. The inverse dielectric function at
-        vanishing momentum then has the pole form
-        1 + sum_s 2 W_s a_s / (w^2 - W_s^2) with the direction-averaged residues
+        r_ia (pairs x 3) obtained from it.
 
-            a_s = (coulomb_strength / 3 V) 2 |sum_ia (X + Y)^s_ia r_ia|^2 ,
+        The modes solved for so far are those of the response without the
+        zero-momentum Coulomb term. With S = sum_s 2 a_s / W_s and the residues
+        a_s = (coulomb_strength / V) 2 (q . sum_ia (X + Y)^s_ia r_ia)^2 along a
+        direction q, the macroscopic dielectric constant is 1 + S. The inverse
+        dielectric function has other poles: those of the random-phase problem
+        with the long-range term (coulomb_strength / V) (q . r_ia)(q . r_jb)
+        added to the coupling, a rank-one change per direction. With its modes
+        (W~_t, a~_t),
 
-        and the missing term of the self-energy of a state is the intraband one,
-        `constant` * sum_s a_s / (w - e_n -+ W_s), `constant` being the integral
-        of the Coulomb kernel over the cell of momentum space that the sampling
-        leaves out (the probe-charge constant of the exchange correction).
-        Returns the macroscopic dielectric constant 1 / (1 - sum_s 2 a_s / W_s)."""
+            1 / eps(w) - 1 = sum_t 2 W~_t a~_t / (w^2 - W~_t^2) ,
+
+        and the missing term of the self-energy of a state is the intraband
+        one, `constant` * sum_t a~_t / (w - e_n -+ W~_t), averaged over the
+        three directions; `constant` is the integral of the Coulomb kernel over
+        the cell of momentum space that the sampling leaves out (the
+        probe-charge constant of the exchange correction). On the energy shell
+        it is +-constant (1 - 1/eps) / 2. Returns the macroscopic dielectric
+        constant."""
         dipoles = np.asarray(dipoles, dtype=float)
-        mode_dipoles = self.x_plus_y.T @ dipoles                       # modes x 3
-        residues = coulomb_strength / (3.0 * volume) * 2.0 * (mode_dipoles ** 2).sum(axis=1)
-        self.head = constant * residues
-        self.dielectric_constant = 1.0 / (1.0 - np.sum(2.0 * residues / self.excitations))
-        independent = coulomb_strength / (3.0 * volume) * 4.0 * np.sum((dipoles ** 2).sum(axis=1) / self.gaps)
+        scale = coulomb_strength / volume
+        root = np.sqrt(self.gaps)
+        static = 0.0
+        poles, weights, inverse = [], [], []
+        body = np.diag(self.gaps ** 2) + 4.0 * root[:, None] * self.coupling * root[None, :]
+        for alpha in range(3):
+            r = dipoles[:, alpha]
+            mode_dipoles = self.x_plus_y.T @ r
+            static += np.sum(2.0 * scale * 2.0 * mode_dipoles ** 2 / self.excitations) / 3.0
+            long_range = body + 4.0 * scale * np.outer(root * r, root * r)
+            squared, Z = np.linalg.eigh(0.5 * (long_range + long_range.T))
+            omega = np.sqrt(squared)
+            amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ r
+            residues = scale * 2.0 * amplitudes ** 2
+            poles.append(omega)
+            weights.append(constant * residues / 3.0)
+            inverse.append(1.0 - np.sum(2.0 * residues / omega))
+        self.head_poles, self.head = np.concatenate(poles), np.concatenate(weights)
+        self.dielectric_constant = 1.0 + static
+        # The two routes to the static inverse must agree: 1 / (1 + S) = 1 - sum_t 2 a~_t / W~_t.
+        self.head_defect = float(abs(np.mean(inverse) - 1.0 / self.dielectric_constant))
+        independent = scale * 4.0 * np.sum((dipoles ** 2).sum(axis=1) / self.gaps) / 3.0
         self.independent_particle_dielectric_constant = 1.0 + independent
         return self.dielectric_constant
 
     def _solve(self, energies, occupied, coupling):
         self.head = None
+        self.propagator = None        # the levels of G when they differ from those W was built from
         self.energies = np.asarray(energies, dtype=float)
         self.occupied = int(occupied)
         count = len(self.energies)
@@ -171,13 +198,16 @@ class RandomPhase:
     def correlation(self, n, frequency):
         """Sigma^c_nn at a real frequency (and its derivative)."""
         value = derivative = 0.0
-        for m, level in enumerate(self.energies):
+        levels = self.energies if self.propagator is None else self.propagator
+        for m, level in enumerate(levels):
             weights = self.transition[n][m, :] ** 2
-            if m == n and self.head is not None:
-                weights = weights + self.head
             poles = level - self.excitations if m < self.occupied else level + self.excitations
             value += np.sum(weights / (frequency - poles))
             derivative -= np.sum(weights / (frequency - poles) ** 2)
+            if m == n and self.head is not None:
+                poles = level - self.head_poles if m < self.occupied else level + self.head_poles
+                value += np.sum(self.head / (frequency - poles))
+                derivative -= np.sum(self.head / (frequency - poles) ** 2)
         return value, derivative
 
     def second_order_correlation(self, n, frequency):
@@ -195,12 +225,14 @@ class RandomPhase:
             value += np.sum(weights / (frequency - poles))
         return value
 
-    def quasiparticle(self, n, iterations=50, tolerance=1e-10):
+    def quasiparticle(self, n, iterations=50, tolerance=1e-10, reference=None, start=None):
         """Solve E = e_n + Sigma^c_nn(E) on a Hartree-Fock starting point (where
-        the exchange self-energy already sits in e_n) by Newton's method from
-        e_n. Returns (E, renormalization factor Z at the solution)."""
-        level = self.energies[n]
-        energy = level
+        the exchange self-energy already sits in e_n) by Newton's method.
+        `reference` supplies the Hartree-Fock levels when the levels this object
+        was built from are already quasiparticle levels, and `start` the first
+        iterate. Returns (E, renormalization factor Z at the solution)."""
+        level = self.energies[n] if reference is None else reference[n]
+        energy = level if start is None else start
         for _ in range(iterations):
             value, derivative = self.correlation(n, energy)
             step = (level + value - energy) / (1.0 - derivative)
@@ -209,6 +241,39 @@ class RandomPhase:
                 break
         _, derivative = self.correlation(n, energy)
         return energy, 1.0 / (1.0 - derivative)
+
+
+def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, head=None, update_screening=True,
+                                    tolerance=1e-6, max_iterations=60, damping=0.7):
+    """Eigenvalue self-consistency on a Hartree-Fock starting point: the
+    orbitals and their Coulomb integrals stay fixed, and the quasiparticle
+    levels are fed back into the propagator (`update_screening=False`, the
+    scheme usually written GW0: the screened interaction keeps the Hartree-Fock
+    levels) or into the propagator and the screened interaction both
+    (`update_screening=True`). A Hartree-Fock gap is several times too large, so
+    the interaction screened with it is too weak and the one-shot gap too large;
+    feeding the levels back into the screening is what closes it.
+
+    `integrals` must cover every mode. `head` is the argument tuple of
+    `RandomPhase.set_head`. Returns (levels, history of the largest change, the
+    last RandomPhase)."""
+    mean_field = np.asarray(mean_field, dtype=float)
+    energies = mean_field.copy()
+    history, rpa = [], None
+    for iteration in range(max_iterations):
+        if rpa is None or update_screening:
+            rpa = RandomPhase.from_pieces(energies, occupied, coupling, integrals)
+            if head is not None:
+                rpa.set_head(*head)
+        rpa.propagator = energies
+        produced = np.array([rpa.quasiparticle(n, reference=mean_field, start=energies[n])[0]
+                             for n in range(len(energies))])
+        change = float(np.abs(produced - energies).max())
+        history.append(change)
+        energies = (1.0 - damping) * energies + damping * produced
+        if change < tolerance:
+            break
+    return energies, history, rpa
 
 
 def static_polarizability(energies, T, occupied, probe):
