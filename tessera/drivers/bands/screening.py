@@ -123,15 +123,23 @@ class RandomPhase:
         +-constant (1 - 1/eps) / 2. Returns the macroscopic dielectric
         constant."""
         poles, weights, inverse, static, independent = [], [], [], [], []
+        solved = None                                  # the problem without the G = 0 entry, shared by the directions of one limit
         for momentum in momenta:
             gaps = np.asarray(momentum["gaps"], dtype=float)
             if shifts is not None:
                 shifts = np.asarray(shifts, dtype=float)
                 gaps = gaps + np.array([shifts[a] - shifts[i] for i, a in momentum["pairs"]])
             charges, entry = np.asarray(momentum["charges"]), float(momentum["entry"])
+            coupling = np.asarray(momentum["coupling"])
+            # A common phase of the charges drops out; real modes have charges i r, and the problem is then real.
+            charges = charges * np.exp(-1j * np.angle(charges[np.argmax(np.abs(charges))]))
+            if np.isrealobj(coupling) and np.abs(charges.imag).max() < 1e-12 * np.abs(charges).max():
+                charges = charges.real
             root = np.sqrt(gaps)
-            body = np.diag(gaps ** 2) + 4.0 * root[:, None] * np.asarray(momentum["coupling"]) * root[None, :]
-            squared, Z = np.linalg.eigh(0.5 * (body + body.conj().T))
+            body = np.diag(gaps ** 2) + 4.0 * root[:, None] * coupling * root[None, :]
+            if solved is None or solved[0] is not momentum["coupling"] or not np.array_equal(solved[1], gaps):
+                solved = (momentum["coupling"], gaps) + tuple(np.linalg.eigh(0.5 * (body + body.conj().T)))
+            squared, Z = solved[2], solved[3]
             omega = np.sqrt(squared)
             amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ charges
             static.append(np.sum(2.0 * entry * 2.0 * np.abs(amplitudes) ** 2 / omega))
