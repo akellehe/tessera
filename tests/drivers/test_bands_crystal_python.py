@@ -38,6 +38,16 @@ class TestCertificates:
         certificate = cell.certify(KAPPA)
         assert certificate.holds() and certificate.notes
 
+    @pytest.mark.parametrize("kappa", [(0.0, 0.0, 0.0), KAPPA])
+    def test_the_declared_fields_on_a_spacetime_give_the_same_pencil(self, kappa):
+        """Squared lengths through Edge.setLength and the momentum through
+        Edge.setPhase, read back by WhitneyMass and Connection.fromSpacetime."""
+        cell = CrystalCell(FCC, 3, kinetic_scale=2.5)
+        A, M = cell.pencil(kappa)
+        A_fields, M_fields = cell.pencil_from_spacetime(kappa)
+        assert abs(A - A_fields).max() < 1e-13 * abs(A).max()
+        assert abs(M - M_fields).max() < 1e-13 * abs(M).max()
+
     def test_a_matrix_off_the_grid_is_refused(self):
         cell = CrystalCell.cubic(1.0, 5, kinetic_scale=1.0)
         far = np.zeros((cell.size, cell.size))

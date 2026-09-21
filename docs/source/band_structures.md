@@ -96,8 +96,17 @@ with a known answer.
 ### The fiber-edge route
 
 On the history $K \times [0, 1]$ of a cell the timelike edges carry the
-Euclidean squared length $\tau^2$ and the non-compact part of the connection,
-$\operatorname{Im}\varphi_e = \tau V_e$. A constant potential is then a pure
+Euclidean squared length $\tau^2$ and the potential as the non-compact part of
+the connection. The library's link $U_{xy}$ carries a value at $y$ back to $x$,
+so propagation forward across a tick is multiplied by $U_{yx} = e^{-\tau V_e}$
+when the link read forward in time is $U_{xy} = e^{\tau V_e}$; the fields live
+on the edges of a `Spacetime` (`fiber.history_spacetime`), and the slab is
+assembled and reduced onto its outer levels by `PencilLayer`
+(`fiber.layered_response`). The stiffness of that timelike connection on the
+history, $\varphi^T \partial_2 M_2 \partial_2^T \varphi$ on a fiber-edge
+pattern, equals the spatial stiffness matrix up to the fiber measure $1/\tau$
+exactly (`fiber.fiber_edge_stiffness`), which is why eliminating it leaves the
+Coulomb kernel $\tilde A_0^+$ of the `coulomb` module. A constant potential is then a pure
 gauge and shifts every decay rate of the tick map by exactly $V$; a varying one
 has curvature on the vertical triangles, the electric field. The tick map of a
 stack of slabs solves a quadratic eigenproblem in the blocks of the slab's
