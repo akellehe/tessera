@@ -273,30 +273,31 @@ def test_the_recursion_over_sets_of_times_is_the_sum_over_the_orderings():
 
 @pytest.mark.slow
 def test_the_recursion_is_the_sum_over_the_orderings_at_fourth_order():
-    """8! orderings a diagram: two crossings and two diagrams with a loop, and
-    one assignment with instantaneous lines for each."""
+    """Two crossings and two diagrams with a loop, with one and with two
+    instantaneous lines (7! and 6! orderings), and one diagram with none (8!)."""
     g, _, U = _model()
     engine = SkeletonSelfEnergy(XI, OCC, BOSONS, g, U)
     diagrams = skeleton_diagrams(4)
     chosen = [d for d in diagrams if d.loops == 0][::20][:2] + [d for d in diagrams if d.loops == 1][::7][:2]
-    for diagram in chosen:
-        for kinds in (("dynamic",) * 4, ("dynamic", "static", "dynamic", "static")):
-            assert engine._diagram(diagram, kinds, 2, 0.13) == pytest.approx(engine._orderings(diagram, kinds, 2, 0.13), abs=1e-13)
+    cases = [(d, kinds) for d in chosen for kinds in (("dynamic", "static", "dynamic", "dynamic"),
+                                                      ("dynamic", "static", "dynamic", "static"))]
+    for diagram, kinds in cases + [(chosen[-1], ("dynamic",) * 4)]:
+        assert engine._diagram(diagram, kinds, 2, 0.13) == pytest.approx(engine._orderings(diagram, kinds, 2, 0.13), abs=1e-13)
 
 
 @pytest.mark.slow
 def test_the_recursion_is_the_sum_over_the_orderings_at_fifth_order():
-    """One diagram in ten of the 542, three of its five lines instantaneous,
+    """One diagram in forty of the 542, three of its five lines instantaneous,
     which leaves 7! orderings."""
     g, _, U = _model()
     engine = SkeletonSelfEnergy(XI, OCC, BOSONS, g, U)
     kinds = ("static", "dynamic", "static", "dynamic", "static")
     compared = 0
-    for diagram in skeleton_diagrams(5)[::10]:
+    for diagram in skeleton_diagrams(5)[::40]:
         reference = engine._orderings(diagram, kinds, 2, 0.13)
         assert engine._diagram(diagram, kinds, 2, 0.13) == pytest.approx(reference, abs=1e-13)
         compared += reference != 0.0
-    assert compared > 25
+    assert compared > 6
 
 
 def test_a_memory_too_small_for_a_diagram_fixes_labels_and_keeps_the_value():

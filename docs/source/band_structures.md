@@ -310,9 +310,10 @@ factorization separates. Measured on four worker processes, one evaluation of
 the third order takes 3 s at 12 bands and 12 poles; the fourth 16 s at 6 and 6
 and 200 s at 8 and 8; the fifth 400 s at 4 and 4. The number of multiplications
 (`SkeletonSelfEnergy.work`) puts the fourth order at 12 and 12 near 13 hours on
-four processes and the fifth at 6 and 6 near 5 hours, so a run at these orders
-lowers `--vertex-bands` and `--vertex-poles`, or takes that long; the choice is
-the caller's and is recorded with the result.
+four processes at the rate measured at 8 and 8, and the fifth at 6 and 6 between
+5 and 20 hours, so a run at these orders lowers `--vertex-bands` and
+`--vertex-poles`, or takes that long; the choice is the caller's and is recorded
+with the result.
 On a cell of 6 bohr the correlation self-energy of the filled level
 goes from -0.032 Ry at zero-momentum order 1 to -0.052 and -0.061 Ry at orders 2
 and 3 (-0.071 Ry on a grid of 6): sampling the zone centre alone is a large
