@@ -240,6 +240,23 @@ def test_the_converged_crystal_is_a_stationary_covariance_state():
     assert read["fock_defect"] < 1e-7 and read["stationarity_defect"] < 1e-7
 
 
+def test_exchange_at_zero_momentum_transfer_is_the_zone_centre_exchange():
+    """The contract a momentum set has to keep: the exchange operator with the
+    momentum transfer in its kernel, at zero transfer, is the zone-centre
+    operator, the entry at G = 0 included; and at a transfer q it is Hermitian
+    and continuous in q."""
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.array([0.4, 0.45, 0.55]))])
+    mesh = abinitio.MeshCrystal(crystal, 6)
+    run = mesh.run(4)
+    filled, orbitals = run["vectors"][:, :1], run["vectors"]
+    centre = mesh._exchange(filled, orbitals)
+    assert np.abs(mesh._exchange(filled, orbitals, (0.0, 0.0, 0.0)) - centre).max() < 1e-12
+    trial = orbitals.astype(complex)
+    near = trial.conj().T @ mesh._exchange(filled, trial, (1e-4, 0.0, 0.0))
+    assert np.abs(near - near.conj().T).max() < 1e-12
+    assert np.abs(near - orbitals.T @ centre).max() < 1e-5
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat

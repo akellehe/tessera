@@ -23,6 +23,12 @@ Every interaction is the Coulomb kernel obtained by eliminating the timelike
 connection, and every mean field is its Wick contraction (Hartree and exchange).
 A density functional is not an object of the theory and none is used.
 
+A calculation of a real material is held to experimentally determined values
+(`tessera.drivers.bands.reference`). A plane-wave calculation of the same model
+Hamiltonian is a consistency check of that model and does not arbitrate a
+discrepancy; fixtures with synthetic ions have no measured value and are
+consistency checks only.
+
 ## The pencil at a crystal momentum
 
 A crystal momentum $k$ is a flat U(1) connection on the mesh: the link of the
