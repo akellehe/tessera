@@ -50,7 +50,14 @@ class Approximations:
     (`momentum_set.uniform_set`); 1 is the zone centre alone. On a set the
     offsets of `zero_momentum_order` surround every transfer of the set
     (`momentum_set.set_nodes`), and the self-energy exists at its first order
-    only (`IMPLEMENTED_ON_A_SET`)."""
+    only (`IMPLEMENTED_ON_A_SET`).
+
+    `exchange_history`: the number of earlier exchange updates of Hartree-Fock
+    whose filled sections join the span in which the accelerator of the update
+    minimizes the energy (`acceleration`; 0 is the span of the computed bands
+    alone). It changes the number of updates and the cost of each, by about
+    (bands + history x filled)^2 Poisson solves, and leaves the converged state
+    where it is."""
     self_energy_order: int = 3
     zero_momentum_order: int = 3
     refinement_terms: int = 5
@@ -59,6 +66,7 @@ class Approximations:
     vertex_bands: int = 12
     vertex_poles: int = 12
     momenta: int = 1
+    exchange_history: int = 5
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -72,6 +80,8 @@ class Approximations:
             raise ValueError("vertex_bands is at least 2 and vertex_poles at least 1")
         if self.momenta < 1:
             raise ValueError("momenta is at least 1")
+        if self.exchange_history < 0:
+            raise ValueError("exchange_history is at least 0")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -142,6 +152,9 @@ class Approximations:
         group.add_argument("--momenta", type=int, default=defaults.momenta,
                            help="momenta per axis of the set on which the covariance is sampled (1 is the zone centre; "
                                 f"on a set the orders implemented are {IMPLEMENTED_ON_A_SET})")
+        group.add_argument("--exchange-history", type=int, default=defaults.exchange_history,
+                           help="earlier exchange updates whose filled sections join the span of the Hartree-Fock "
+                                "accelerator (changes the cost of the loop, not the converged state)")
 
     @classmethod
     def from_arguments(cls, args):

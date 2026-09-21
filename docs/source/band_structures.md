@@ -316,6 +316,7 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
 | `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
+| `--exchange-history` | earlier exchange updates of Hartree-Fock whose filled sections join the span in which the accelerator of the update minimizes the energy; it changes the number of updates and the cost of each, and leaves the converged state where it is | at least 0, default 5 |
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
 An order that is not implemented is refused by name before anything runs; it is
@@ -340,6 +341,25 @@ from the orbitals of the mesh before it, which are piecewise-linear functions
 and are evaluated exactly on the finer vertices (`MeshCrystal.prolonged`). The
 electronic energy of every run is recorded so that stationary states can be
 compared.
+
+The exchange update replaces the exchange energy, which is concave in the
+covariance, by its tangent at the current state and minimizes the rest, so each
+update lowers the energy; near a saddle the descent is slow enough to hold the
+loop for tens of updates. Before each update the energy is therefore minimized
+over the Slater frames of the span of the bands just computed, joined by the
+filled sections of the last `--exchange-history` updates (`acceleration`). The
+Coulomb integrals of the span are computed once through the mesh's kernel, the
+state is a pure covariance on the modes of the span, the Fock operator is the
+Wick contraction of `ModeInteraction`, and the minimization is by Newton steps
+in a trust region, a step being kept only if the energy falls. Nothing is
+extrapolated, and a stationary state of the mesh is returned unchanged, so the
+fixed points are those of the plain update. A run records the energy of the
+state each exchange operator was built from, which never rises, and the lowest
+eigenvalue of the second variation of the energy on the last span: positive at
+a minimum, negative at a saddle. A crystal of eight soft ions on which the
+plain update stalls converges in six updates; gallium arsenide at 12 divisions
+converges from scratch in six, where the plain update is still leaving its
+saddle after a hundred.
 
 Published inputs cannot be extended, and no flag pretends otherwise. A
 pseudopotential file fixes the angular momenta of its projectors (the

@@ -55,7 +55,7 @@ def test_the_flags_reach_the_run():
     parsed = Approximations.from_arguments(parser.parse_args(
         ["--self-energy-order", "1", "--zero-momentum-order", "1", "--refinement-terms", "3", "--lattice-images", "3",
          "--frequency-nodes", "32"]))
-    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12, 1)
+    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12, momenta=1)
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     coarse, fine = abinitio.MeshCrystal(crystal, 6, approximations=parsed), abinitio.MeshCrystal(crystal, 6)
     assert coarse.approximations.images == (-1, 0, 1)
@@ -141,11 +141,11 @@ def test_the_run_end_to_end_on_synthetic_ions(tmp_path):
                         "--screening-bands", "24", "--lattice-constant", "5.0", "--self-energy-order", "1",
                         "--zero-momentum-order", "1"])
     assert result["approximations"] == Approximations(1, 1).record()
-    # Eight soft ions are a fixture of the plumbing only: the exchange update of `run_hartree_fock` is a plain
-    # fixed-point iteration, which contracts by a few per cent a step on this crystal (gallium arsenide with
-    # published pseudopotentials converges in some twenty), so convergence is reported and not asserted here.
-    assert isinstance(result["certified"], bool)
+    # The plain exchange update contracts by a few per cent a step on these eight soft ions and stalls; with the
+    # accelerator of the update (`acceleration`) every mesh converges, to a minimum of the energy on its span.
+    assert result["certified"] is True
     for row in result["runs"]:
+        assert row["exchange_updates"] <= 12 and row["hartree_fock_lowest_curvature"] > 0.0
         assert row["covariance"]["purity_defect"] < 1e-10
         assert row["covariance"]["particles"] == pytest.approx(16.0, abs=1e-9)
         assert row["head_defect"] < 1e-10 and row["dielectric_constant"] > 1.0

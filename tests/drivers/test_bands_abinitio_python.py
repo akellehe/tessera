@@ -371,7 +371,9 @@ def test_a_converged_run_on_a_coarse_mesh_starts_the_next_mesh():
     """The orbitals of a coarse mesh are piecewise-linear functions; evaluated at
     the vertices of a mesh of twice the divisions they are the same functions
     (equal at the shared vertices, the same norm in the finer mass matrix), and
-    started from them the finer run reaches the levels of a run from scratch."""
+    started from them the finer run reaches the levels and the energy of a run
+    from scratch in fewer solves of the pencil, the Hartree loop that a run from
+    scratch starts with being what it saves."""
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.array([0.4, 0.45, 0.55]))])
     coarse, fine = abinitio.MeshCrystal(crystal, 6), abinitio.MeshCrystal(crystal, 12)
     run = coarse.run_hartree_fock(4)
@@ -381,8 +383,9 @@ def test_a_converged_run_on_a_coarse_mesh_starts_the_next_mesh():
     assert np.abs(start["vectors"][shared] - run["vectors"][ids]).max() < 1e-14
     assert np.abs(np.diag(start["vectors"].T @ (fine.mass @ start["vectors"])) - 1.0).max() < 1e-10
     scratch, continued = fine.run_hartree_fock(4), fine.run_hartree_fock(4, start=start)
-    assert continued["certified"] and len(continued["history"]) <= len(scratch["history"])
+    assert continued["certified"] and continued["solves"] < scratch["solves"]
     assert np.abs(scratch["levels"] - continued["levels"]).max() < 1e-5
+    assert continued["energy"] == pytest.approx(scratch["energy"], abs=1e-6)
 
 
 @functools.lru_cache(maxsize=1)

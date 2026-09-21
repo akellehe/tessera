@@ -357,6 +357,7 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
             raise ValueError("the states of the gap are not among the vertex bands; raise --vertex-bands")
         row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
                "exchange_updates": len(mean_field["history"]), "hartree_fock_energy": mean_field["energy"],
+               "hartree_fock_lowest_curvature": mean_field["lowest_curvature"],
                "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum, "states": states}
         log(f"N={n}: Hartree-Fock gap {row['hartree_fock']:.3f} eV after {row['exchange_updates']} exchange updates "
             f"({time.time() - started:.0f} s)")
