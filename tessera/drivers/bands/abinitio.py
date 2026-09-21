@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""A self-consistent crystal in the local density approximation with
+"""A self-consistent crystal in the mean field of the Coulomb interaction with
 norm-conserving pseudopotentials, twice: on the periodic mesh, and in plane
 waves as the reference. Rydberg atomic units throughout (see `pseudopotential`).
 
@@ -8,8 +8,8 @@ Both calculations solve the same problem. The ionic local potential is split
 as `V_loc = V_sr + V_lr`, with `V_lr` the potential of a Gaussian charge -Z of
 width `width` at every ion, whose divergent average cancels against the
 electrons and is dropped (its finite remainder 4 pi Z width^2 / Omega is kept).
-The Hartree potential has zero mean. Exchange and correlation are evaluated
-pointwise on the density. The nonlocal part of the pseudopotential is the
+The Hartree potential has zero mean. Exchange is the nonlocal operator of the
+filled orbitals, compressed onto the computed bands. The nonlocal part of the pseudopotential is the
 separable sum over ions and projectors.
 
 On the mesh the potentials enter the pencil as weighted mass matrices of their
@@ -37,7 +37,7 @@ from scipy.special import spherical_jn
 from tessera import chainhodge as ch
 from tessera.drivers.bands import coulomb
 from tessera.drivers.bands.crystal import CrystalCell
-from tessera.drivers.bands.pseudopotential import lda_potential, real_harmonics
+from tessera.drivers.bands.pseudopotential import real_harmonics
 
 COULOMB_STRENGTH = 8.0 * np.pi        # 4 pi e^2 with e^2 = 2 Ry bohr
 
@@ -195,13 +195,13 @@ class PlaneWaveCrystal:
     def _effective(self, density_r):
         density_g = np.fft.fftn(density_r) / density_r.size
         hartree = np.where(self.G2 > 1e-12, COULOMB_STRENGTH * density_g / np.where(self.G2 > 1e-12, self.G2, 1.0), 0.0)
-        exchange_correlation = np.fft.fftn(lda_potential(density_r)) / density_r.size
-        return self.ionic + hartree + exchange_correlation
+        return self.ionic + hartree
 
     def run(self, bands, tolerance=1e-8, mixing=0.3, max_iterations=80):
-        """Iterate to self-consistency. Returns a dict with the levels per
-        crystal momentum (Ry), the density on the grid, and the history of the
-        density residual."""
+        """The Hartree mean field, the direct Wick contraction alone, iterated to
+        self-consistency: the starting point of `run_hartree_fock`. Returns a
+        dict with the levels per crystal momentum (Ry), the density on the grid,
+        and the history of the density residual."""
         crystal = self.crystal
         occupied = crystal.electrons // 2
         density = np.maximum(np.fft.ifftn(self.atomic_density).real * self.atomic_density.size, 1e-12)
@@ -242,20 +242,25 @@ class PlaneWaveCrystal:
             out.append(np.fft.ifftn(grid) * grid.size)
         return out
 
-    def _exchange(self, k_index, waves, occupied, madelung):
-        """The exchange operator applied to every computed band at one momentum,
-        as plane-wave coefficients: W_i = K psi_i, with the divergent term of the
-        kernel dropped and replaced by the probe-charge term on the filled bands."""
-        basis = self.bases[k_index]
+    def _exchange(self, k, basis, targets, waves, occupied, madelung):
+        """The exchange operator applied to the cell-periodic parts `targets`
+        of sections of momentum `k`, as plane-wave coefficients on `basis`, with
+        the filled bands `waves` of the momentum set. The kernel carries the
+        momentum transfer; its divergent entry (no transfer within the set) is
+        replaced by the probe-charge term, at the momenta of the set and
+        continuously away from them."""
         idx = basis["indices"]
         omega = self.crystal.volume
         columns = []
-        for u_i in waves[k_index]:
+        for u_i in targets:
             total = np.zeros(self.shape, dtype=complex)
             for k_other, weight in enumerate(self.weights):
-                q = self.G + (self.kpoints[k_index] - self.kpoints[k_other])
+                q = self.G + (k - self.kpoints[k_other])
                 q2 = (q ** 2).sum(axis=-1)
-                kernel = np.where(q2 > 1e-10, COULOMB_STRENGTH / np.where(q2 > 1e-10, q2, 1.0), 0.0)
+                kernel = COULOMB_STRENGTH / np.maximum(q2, 1e-300)
+                nearest = np.unravel_index(np.argmin(q2), q2.shape)
+                if q2[nearest] < 1e-2 * (self.reciprocal ** 2).sum(axis=1).min():
+                    kernel[nearest] = madelung * omega / weight
                 for u_j in waves[k_other][:occupied]:
                     pair = np.fft.fftn(np.conj(u_j) * u_i) / (u_i.size * omega)
                     total -= weight * u_j * (np.fft.ifftn(kernel * pair) * u_i.size)
@@ -263,10 +268,14 @@ class PlaneWaveCrystal:
             columns.append(coefficients[idx[:, 0] % self.shape[0], idx[:, 1] % self.shape[1], idx[:, 2] % self.shape[2]])
         return np.array(columns).T
 
+    def _probe_constant(self, supercell_side):
+        return (coulomb.probe_charge_constant(supercell_side, "sc") if np.isscalar(supercell_side)
+                else coulomb.probe_charge_constant(*supercell_side))
+
     def run_hartree_fock(self, bands, supercell_side, tolerance=1e-6, mixing=0.3, max_outer=40, max_inner=30,
                          log=None):
-        """Hartree-Fock: the local-density run supplies the starting orbitals,
-        then the exchange operator replaces exchange and correlation. Exchange
+        """Hartree-Fock: the Hartree run supplies the starting orbitals, then
+        the exchange operator is added. Exchange
         is compressed onto the computed bands (it is exact on them), and the
         zero-momentum term that the momentum set leaves out is restored by the
         probe-charge correction -2 MADELUNG / supercell_side on the filled bands,
@@ -282,8 +291,7 @@ class PlaneWaveCrystal:
         crystal = self.crystal
         occupied = crystal.electrons // 2
         density = self.run(bands)["density"]
-        madelung = (coulomb.probe_charge_constant(supercell_side, "sc") if np.isscalar(supercell_side)
-                    else coulomb.probe_charge_constant(*supercell_side))
+        madelung = self._probe_constant(supercell_side)
         potential_g = self._effective(density)
         current = [scipy.linalg.eigh(self._hamiltonian(basis, potential_g), subset_by_index=[0, bands - 1])[1]
                    for basis in self.bases]
@@ -305,8 +313,8 @@ class PlaneWaveCrystal:
             waves = [self._waves(basis, v) for basis, v in zip(self.bases, current)]
             compressed = []
             for k_index, psi in enumerate(current):
-                W = self._exchange(k_index, waves, occupied, madelung)
-                W[:, :occupied] -= madelung * psi[:, :occupied]
+                W = self._exchange(self.kpoints[k_index], self.bases[k_index], waves[k_index], waves, occupied,
+                                   madelung)
                 overlap = psi.conj().T @ W
                 factor = np.linalg.cholesky(-0.5 * (overlap + overlap.conj().T))
                 compressed.append(W @ np.linalg.inv(factor).conj().T)
@@ -332,69 +340,48 @@ class PlaneWaveCrystal:
             current, density = produced, out_density
             if change < tolerance:
                 break
-        return {"levels": levels, "vectors": current, "history": history, "converged": history[-1] < tolerance}
+        return {"levels": levels, "vectors": current, "history": history, "converged": history[-1] < tolerance,
+                "local": self.ionic + hartree_of(density), "madelung": madelung}
 
-    def dielectric_constant(self, result, step=1e-4):
+    def dielectric_constant(self, result, shift, tolerance=1e-8, max_iterations=20):
         """The independent-particle macroscopic dielectric constant of a
-        converged Hartree-Fock run, 1 + (8 pi / 3 V) sum_k w_k sum_ia 4 |r_ia|^2 /
-        (e_a - e_i). The current vertex J = [H_0, r] is 2 (k + G) for the kinetic
-        part plus the derivative of the separable projectors (central
-        differences in k), and r follows from [H_0 + v, r] = J solved in the band
-        basis with the local-density exchange-correlation potential as the local
-        v, exactly as in `MeshCrystal.dipoles`, of which this is the plane-wave
-        twin on any momentum set."""
+        converged Hartree-Fock run along the small momentum `shift`,
+
+            1 + (8 pi / V q^2) sum_k w_k sum_ia 4 |<u_ik | u_a,k+q>|^2 / (e_a(k + q) - e_i(k)) ,
+
+        with the Hartree-Fock sections at k + q solved for in the potential and
+        with the filled bands of the run; the overlaps of cell-periodic parts
+        are exact in plane waves. The twin of `MeshCrystal.bands_at` and
+        `momentum_pairs` on any momentum set."""
         crystal = self.crystal
         occupied = crystal.electrons // 2
-        density = np.zeros(self.shape)
-        for basis, weight, v in zip(self.bases, self.weights, result["vectors"]):
-            for u in self._waves(basis, v[:, :occupied]):
-                density += 2.0 * weight * np.abs(u) ** 2 / crystal.volume
-        auxiliary_g = self._effective(density)                  # ionic + Hartree + local exchange-correlation
+        shift = np.asarray(shift, dtype=float)
+        waves = [self._waves(basis, v) for basis, v in zip(self.bases, result["vectors"])]
         total = 0.0
         for k, weight, basis, levels, vectors in zip(self.kpoints, self.weights, self.bases,
                                                      result["levels"], result["vectors"]):
-            keep = self._kept(k)
-            q = self.G.reshape(-1, 3)[keep] + k
-            auxiliary = vectors.conj().T @ (self._hamiltonian(basis, auxiliary_g) @ vectors)
-            h, rotation = np.linalg.eigh(0.5 * (auxiliary + auxiliary.conj().T))
-            difference = h[:, None] - h[None, :]
-            safe = np.abs(difference) > 1e-6 * max(1.0, np.abs(h).max())
-            gaps = levels[occupied:][None, :] - levels[:occupied][:, None]          # filled x empty
-            for alpha in range(3):
-                shift = np.zeros(3)
-                shift[alpha] = step
-                dP = (self._projectors_at(k + shift, keep) - self._projectors_at(k - shift, keep)) / (2.0 * step)
-                P, D = basis["P"], basis["D"]
-                current = vectors.conj().T @ ((2.0 * q[:, alpha])[:, None] * vectors)
-                current += (vectors.conj().T @ dP) @ D @ (P.conj().T @ vectors) \
-                    + (vectors.conj().T @ P) @ D @ (dP.conj().T @ vectors)
-                rotated = rotation.conj().T @ current @ rotation
-                inner = np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0)
-                inner[:occupied, :occupied] = 0.0
-                inner[occupied:, occupied:] = 0.0
-                position = rotation @ inner @ rotation.conj().T
-                r = position[:occupied, occupied:]
-                total += weight * np.sum(np.abs(r) ** 2 / gaps)
-        return 1.0 + COULOMB_STRENGTH / (3.0 * crystal.volume) * 4.0 * total
-
-    def _kept(self, k):
-        q = self.G.reshape(-1, 3) + k
-        return np.nonzero((q ** 2).sum(axis=1) <= self.cutoff)[0]
-
-    def _projectors_at(self, k, keep):
-        """The separable projectors on the plane waves `keep` of the basis of a
-        nearby momentum, evaluated at the momentum `k`."""
-        crystal, omega = self.crystal, self.crystal.volume
-        q = self.G.reshape(-1, 3)[keep] + k
-        norm = np.linalg.norm(q, axis=1)
-        columns = []
-        for pseudo, position in crystal.ions:
-            structure = np.exp(-1j * (q @ (position @ crystal.lattice)))
-            for l, r_beta in pseudo.projectors:
-                radial = _radial_transform(pseudo, r_beta, norm, l, weight_r=1)
-                for harmonic in real_harmonics(l, q):
-                    columns.append((-1j) ** l * harmonic * radial * structure / np.sqrt(omega))
-        return np.array(columns).T
+            shifted = self._basis(k + shift)
+            local = self._hamiltonian(shifted, result["local"])
+            # The sections of the run, on the plane waves the two bases share, start the compression.
+            position = {tuple(index): row for row, index in enumerate(basis["indices"])}
+            rows = np.array([position.get(tuple(index), -1) for index in shifted["indices"]])
+            current = np.where(rows[:, None] >= 0, vectors[np.maximum(rows, 0)], 0.0)
+            previous = None
+            for _ in range(max_iterations):
+                W = self._exchange(k + shift, shifted, self._waves(shifted, current), waves, occupied,
+                                   result["madelung"])
+                overlap = current.conj().T @ W
+                xi = W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.conj().T))).conj().T
+                values, current = scipy.linalg.eigh(local - xi @ xi.conj().T, subset_by_index=[0, vectors.shape[1] - 1])
+                if previous is not None and np.abs(values - previous).max() < tolerance:
+                    break
+                previous = values
+            padded = np.zeros((len(basis["indices"]), current.shape[1]), dtype=complex)
+            padded[rows[rows >= 0]] = current[rows >= 0]
+            overlaps = vectors[:, :occupied].conj().T @ padded[:, occupied:]              # filled x empty
+            gaps = values[occupied:][None, :] - levels[:occupied][:, None]
+            total += weight * np.sum(np.abs(overlaps) ** 2 / gaps)
+        return 1.0 + COULOMB_STRENGTH / (crystal.volume * (shift ** 2).sum()) * 4.0 * total
 
 
 # ---------------------------------------------------------------- the mesh
@@ -405,7 +392,9 @@ def solve_with_projectors(A, M, P, D, count, sigma, tolerance=1e-10):
     (`SparsePencilSolver.lowestWithLowRank`): Woodbury inside the shift-invert
     solve, every copy of a degenerate level returned, and the shift certified
     below the whole spectrum by inertia. Returns (values, vectors, residual,
-    below) with real vectors for a real pencil."""
+    below) with real vectors for a real pencil: the residual of the returned
+    pairs and the inertia certificate are reported separately, and a caller
+    holds each to its own threshold."""
     read = ch.SparsePencilSolver.lowestWithLowRank(
         sp.csc_matrix(A, dtype=complex), sp.csc_matrix(M, dtype=complex),
         np.asarray(P, dtype=complex), np.asarray(D, dtype=complex), count, sigma, tolerance=tolerance)
@@ -414,7 +403,7 @@ def solve_with_projectors(A, M, P, D, count, sigma, tolerance=1e-10):
     if np.isrealobj(A.data if sp.issparse(A) else A) and np.isrealobj(P):
         vectors = _real_span(A, M, P, D, vectors)
     certificate = read.eigenvalues.certificate
-    return values, vectors, certificate.residual, bool(read.shiftBelowSpectrum and certificate.holds())
+    return values, vectors, certificate.residual, bool(read.shiftBelowSpectrum)
 
 
 def _real_span(A, M, P, D, vectors):
@@ -440,6 +429,9 @@ class MeshCrystal:
         self.stiffness = cell.stiffness.dressed().real.tocsc()
         self.mass = cell.mass.dressed().real.tocsc()
         self.kernel = coulomb.GridCoulombKernel(cell, COULOMB_STRENGTH)
+        # The zero-momentum term of the kernel that sampling the cell at its zone
+        # centre leaves out, from the kernel's own symbol.
+        self.zero_momentum = self.kernel.zero_momentum_constant()
         self.ionic = self._ionic_potential()
         self.P, self.D = self._projectors()
 
@@ -485,6 +477,9 @@ class MeshCrystal:
                     columns.append(radial * harmonic)
                     blocks.append((id(pseudo), len(columns) - 1))
         beta = np.array(columns).T
+        self._beta = beta
+        self._beta_ion = np.concatenate([np.full(sum(2 * l + 1 for l, _ in pseudo.projectors), index)
+                                         for index, (pseudo, _) in enumerate(self.crystal.ions)]).astype(int)
         rank = beta.shape[1]
         D = np.zeros((rank, rank))
         position = 0
@@ -500,6 +495,52 @@ class MeshCrystal:
                             D[start_i + m, start_j + m] = pseudo.D[i, j]
         return self.mass @ beta, D
 
+    def _projectors_at(self, kappa, mass):
+        """The projector loads at the crystal momentum `kappa`. A separable
+        term sum_R |beta_R> D <beta_R| acts on the cell-periodic part of a
+        section of momentum k through beta(r - tau) exp(-i k . (r - tau)) summed
+        over images, loaded with the mass matrix dressed by the same momentum."""
+        k = self.cell.momentum(kappa)
+        dressed = self._beta.astype(complex)
+        for index, (_, position) in enumerate(self.crystal.ions):
+            phase = np.exp(-1j * (self._displacements(position) @ k))
+            columns = self._beta_ion == index
+            dressed[:, columns] *= phase[:, None]
+        return mass @ dressed
+
+    @property
+    def triple(self):
+        if not hasattr(self, "_triple"):
+            self._triple = coulomb.TripleIntegrals(self.cell.complex, self.cell.squared_lengths)
+        return self._triple
+
+    def _exchange(self, filled, orbitals, kappa=None):
+        """K applied to the columns of `orbitals`, sections of crystal momentum
+        `kappa` (the zone centre when None), with the filled zone-centre
+        orbitals `filled`: one Poisson solve per pair, at the momentum the pair
+        density carries, the entry of the kernel at G = 0 being the
+        auxiliary-function constant (`GridCoulombKernel.inverse_symbol`)."""
+        triple = self.triple
+        twist = None if kappa is None else coulomb.bloch_twist(self.cell, triple.tops, kappa)
+        W = np.zeros(orbitals.shape, dtype=float if kappa is None else complex)
+        for j in range(filled.shape[1]):
+            pair = self.kernel.potential(triple.loads(filled[:, j], orbitals, twist), kappa, self.zero_momentum)
+            produced = triple.loads(filled[:, j], pair if kappa is not None else pair.real, twist)
+            W -= produced
+        return W
+
+    def _compressed(self, W, orbitals, projectors):
+        """The low-rank term of the pencil: the projectors of the ions and the
+        exchange operator compressed onto `orbitals`, K = -xi xi^dagger."""
+        overlap = orbitals.conj().T @ W
+        xi = W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.conj().T))).conj().T
+        rank = projectors.shape[1]
+        P = np.hstack([projectors, xi])
+        D = np.zeros((P.shape[1], P.shape[1]))
+        D[:rank, :rank] = self.D
+        D[rank:, rank:] = -np.eye(xi.shape[1])
+        return P, D
+
     def atomic_density(self):
         values = np.zeros(self.cell.size)
         for pseudo, position in self.crystal.ions:
@@ -510,16 +551,17 @@ class MeshCrystal:
         return values * self.crystal.electrons / (weights @ values)
 
     def effective_potential(self, nodal_density, load=None):
-        """V_ion + V_H + V_xc at the vertices. The Hartree potential is solved
-        for the load vector of the density: the exact one of the occupied
-        orbitals when given, the interpolated one otherwise."""
+        """V_ion + V_H at the vertices. The Hartree potential is solved for the
+        load vector of the density: the exact one of the occupied orbitals when
+        given, the interpolated one otherwise."""
         load = self.mass @ nodal_density if load is None else load
-        return self.ionic + self.kernel.potential(load).real + lda_potential(nodal_density)
+        return self.ionic + self.kernel.potential(load).real
 
     def run(self, bands, tolerance=1e-7, mixing=0.3, max_iterations=60, log=None):
-        """Iterate to self-consistency at the zone centre. Returns a dict with
-        the levels (Ry), the certificates of the last solve, and the history of
-        the density residual."""
+        """The Hartree mean field, the direct Wick contraction alone, iterated to
+        self-consistency at the zone centre: the starting point of
+        `run_hartree_fock`. Returns a dict with the levels (Ry), the
+        certificates of the last solve, and the history of the density residual."""
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
         weights = self.kernel.weights
@@ -566,9 +608,10 @@ class MeshCrystal:
         compressed onto them, K = -xi xi^T, which is exact on the computed bands
         and joins the pseudopotential's projectors in the low-rank term of the
         pencil. The kernel has zero mean, which drops the zero-momentum term of
-        exchange; it is restored by the probe-charge correction
-        -2 MADELUNG / L on the filled bands (L the side of the cubic cell).
-        The local-density run supplies the starting orbitals. The exchange
+        exchange; it is restored on the filled bands by the auxiliary-function
+        correction with the kernel's own symbol as the auxiliary function
+        (`GridCoulombKernel.zero_momentum_constant`).
+        The Hartree run supplies the starting orbitals. The exchange
         operator is rebuilt in an outer loop and the Hartree potential converged
         at fixed exchange in an inner one, as in `PlaneWaveCrystal`.
 
@@ -577,15 +620,10 @@ class MeshCrystal:
         4405 (1986), for the zero-momentum term."""
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
-        side = float(np.linalg.norm(crystal.lattice[0]))
-        if not np.allclose(crystal.lattice, side * np.eye(3)):
-            raise NotImplementedError("the probe-charge correction is implemented for a cubic cell")
-        madelung = 2.0 * coulomb.MADELUNG_SC / side
-        integrals = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        integrals = self.triple
         weights = self.kernel.weights
         start = self.run(bands, log=log)
         orbitals, values = start["vectors"], start["levels"]
-        rank = self.P.shape[1]
 
         def load_of(vectors):
             filled = vectors[:, :occupied]
@@ -597,19 +635,7 @@ class MeshCrystal:
         residual, below = start["residual"], start["shift_below_spectrum"]
         for outer in range(max_outer):
             # The exchange operator on every computed band, compressed: K = -xi xi^T.
-            filled = orbitals[:, :occupied]
-            W = np.zeros_like(orbitals)
-            for j in range(occupied):
-                pair_potential = self.kernel.potential(integrals.loads(filled[:, j], orbitals)).real
-                W -= integrals.loads(filled[:, j], pair_potential)
-            loaded = self.mass @ filled
-            W -= madelung * loaded @ (loaded.T @ orbitals)
-            overlap = orbitals.T @ W
-            xi = W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.T))).T
-            P = np.hstack([self.P, xi])
-            D = np.zeros((P.shape[1], P.shape[1]))
-            D[:rank, :rank] = self.D
-            D[rank:, rank:] = -np.eye(xi.shape[1])
+            P, D = self._compressed(self._exchange(orbitals[:, :occupied], orbitals), orbitals, self.P)
             # The Hartree potential converged at this exchange.
             mixer = PulayMixer(mixing)
             hartree = self.kernel.potential(load_of(orbitals)).real
@@ -648,27 +674,15 @@ class MeshCrystal:
         stop moving."""
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
-        side = float(np.linalg.norm(crystal.lattice[0]))
-        madelung = 2.0 * coulomb.MADELUNG_SC / side
-        integrals = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        integrals = self.triple
         filled = mean_field["vectors"][:, :occupied]
         load = 2.0 * sum(integrals.loads(filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
         hartree = self.kernel.potential(load).real
         A = (self.stiffness + cell.weighted_mass(self.ionic + hartree).dressed().real).tocsc()
-        loaded = self.mass @ filled
-        rank = self.P.shape[1]
         orbitals, values = mean_field["vectors"], mean_field["levels"]
         previous = None
         for iteration in range(max_iterations):
-            W = -madelung * loaded @ (loaded.T @ orbitals)
-            for j in range(occupied):
-                W -= integrals.loads(filled[:, j], self.kernel.potential(integrals.loads(filled[:, j], orbitals)).real)
-            overlap = orbitals.T @ W
-            xi = W @ np.linalg.inv(np.linalg.cholesky(-0.5 * (overlap + overlap.T))).T
-            P = np.hstack([self.P, xi])
-            D = np.zeros((P.shape[1], P.shape[1]))
-            D[:rank, :rank] = self.D
-            D[rank:, rank:] = -np.eye(xi.shape[1])
+            P, D = self._compressed(self._exchange(filled, orbitals), orbitals, self.P)
             values, orbitals, residual, below = solve_with_projectors(A, self.mass, P, D, bands,
                                                                        float(values[0]) - 1.0)
             change = np.inf if previous is None or len(previous) != len(values) else np.abs(values - previous).max()
@@ -681,82 +695,99 @@ class MeshCrystal:
                 "converged": bool(change < tolerance), "occupied": occupied,
                 "local_potential": self.ionic + hartree}
 
-    def dipoles(self, extended):
-        """r_ia for every particle-hole pair (filled index slow).
-
-        The current vertex is the derivative of the one-particle pencil with
-        respect to a uniform change of the link phases, phi_e -> phi_e + k . dx_e:
-        it multiplies the entry (v, w) of the stiffness, the weighted mass and
-        the mass matrix by i dx_vw, and the projector loads by -i (x - tau). In
-        operator terms it is J = [H_0, r] with H_0 the operator without
-        exchange, and because a local potential commutes with r,
-
-            [H_0 + v, r] = J        for every local v.
-
-        The exchange operator is nonlocal and does not commute with r, so
-        dividing J by Hartree-Fock level differences would underestimate r by
-        the ratio of the local to the Hartree-Fock gap. Instead the identity is
-        solved in the basis of the computed bands with v chosen to keep H_0 + v
-        well gapped (the local-density exchange-correlation potential of the
-        Hartree-Fock density; any local v gives the same r in a complete basis):
-        H_0 + v is diagonalized in the band basis, r'_pq = J'_pq / (h_p - h_q)
-        there between its filled and its empty levels, and r is rotated back.
-        Position elements inside the filled or inside the empty manifold are
-        left out: between levels that a mesh splits by its own error they are
-        arbitrarily large, and they reach a particle-hole pair only through the
-        small mismatch of the two filled subspaces."""
+    def covariance_certificate(self, extended, bands, step=0.05, steps=20):
+        """The converged state as a `CovarianceState` on the lowest `bands`
+        Hartree-Fock modes with two sheets, and the Fock operator rebuilt there
+        as the Wick contraction of the Coulomb kernel (`ModeInteraction`), a
+        second route to the one the pencil was solved with. Returns the purity
+        defect and the particle number of the state, the largest entry of
+        F(Gamma) - diag(levels), which holds the two routes to each other on
+        the span of those modes, and the largest change of Gamma under
+        `meanFieldEvolve`, which vanishes at a fixed point."""
+        from tessera import quantum
         cell = self.cell
         occupied = int(extended["occupied"])
-        energies, orbitals = np.asarray(extended["levels"]), np.asarray(extended["vectors"])
-        bands = orbitals.shape[1]
-        filled = orbitals[:, :occupied]
-        # The exchange operator on the bands, as in `extend_bands`, for H_0 = F - K.
-        side = float(np.linalg.norm(self.crystal.lattice[0]))
-        triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
-        loaded = self.mass @ filled
-        W = -coulomb.probe_charge_constant(side, "sc") * loaded @ (loaded.T @ orbitals)
-        for j in range(occupied):
-            W -= triple.loads(filled[:, j], self.kernel.potential(triple.loads(filled[:, j], orbitals)).real)
-        exchange = orbitals.T @ W
-        density = 2.0 * (filled ** 2).sum(axis=1)
-        local = cell.weighted_mass(lda_potential(density)).dressed().real
-        auxiliary = np.diag(energies) - 0.5 * (exchange + exchange.T) + orbitals.T @ (local @ orbitals)
-        levels, rotation = np.linalg.eigh(0.5 * (auxiliary + auxiliary.T))
-        difference = levels[:, None] - levels[None, :]
-        safe = np.abs(difference) > 1e-6 * max(1.0, np.abs(levels).max())
-        weighted = cell.weighted_mass(extended["local_potential"])
-        out = np.zeros((occupied * (bands - occupied), 3))
-        for alpha in range(3):
-            def derivative(grid_matrix):
-                displacement = (grid_matrix.step * np.array(cell.divisions)) @ (cell.lattice / np.array(cell.divisions)[:, None])
-                values = grid_matrix.data.real * displacement[:, alpha]
-                return sp.csr_matrix((values, (grid_matrix.row, grid_matrix.col)), shape=grid_matrix.shape)
-            dA = derivative(cell.stiffness) + derivative(weighted)          # times i
-            dM = derivative(cell.mass)                                      # times i
-            # J_mn = z_m^T (dA - e dM) z_n; with the pencil's levels on the right the two
-            # orderings differ by the antisymmetry that makes i J Hermitian, so symmetrize.
-            first = orbitals.T @ (dA @ orbitals)
-            second = orbitals.T @ (dM @ orbitals)
-            current = first - 0.5 * (second * energies[None, :] + energies[:, None] * second)
-            shifted = np.zeros_like(self.P)
-            column = 0
-            for pseudo, position in self.crystal.ions:
-                offset = self._displacements(position)[:, alpha]
-                width = sum(2 * l + 1 for l, _ in pseudo.projectors)
-                shifted[:, column:column + width] = offset[:, None] * self.P[:, column:column + width]
-                column += width
-            overlap_shifted, overlap = orbitals.T @ shifted, orbitals.T @ self.P
-            current += -overlap_shifted @ self.D @ overlap.T + overlap @ self.D @ overlap_shifted.T
-            current = 0.5 * (current - current.T)                              # the coefficient of i is antisymmetric
-            rotated = rotation.T @ current @ rotation
-            position_rotated = np.where(safe, rotated / np.where(safe, difference, 1.0), 0.0)
-            position_rotated[:occupied, :occupied] = 0.0
-            position_rotated[occupied:, occupied:] = 0.0
-            position_matrix = rotation @ position_rotated @ rotation.T
-            out[:, alpha] = position_matrix[:occupied, occupied:].ravel()
-        return out
+        modes = np.asarray(extended["vectors"])[:, :bands]
+        levels = np.asarray(extended["levels"])[:bands]
+        ionic = (self.stiffness + cell.weighted_mass(self.ionic).dressed().real).tocsc()
+        overlap = modes.T @ self.P
+        one_particle = modes.T @ (ionic @ modes) + overlap @ self.D @ overlap.T
+        T = coulomb.pair_densities(cell.complex, cell.squared_lengths, modes)
+        interaction = coulomb.ModeInteraction(self.kernel, levels, T, sheets=2, zero_momentum=self.zero_momentum)
+        interaction.h = np.kron(np.eye(2), one_particle).astype(complex)
+        frame = np.zeros((2 * bands, 2 * occupied), dtype=complex)
+        for sheet in range(2):
+            frame[sheet * bands + np.arange(occupied), sheet * occupied + np.arange(occupied)] = 1.0
+        state = quantum.CovarianceState.fromSlaterFrame(frame)
+        gamma = np.array(state.gamma())
+        fock = interaction.fock(gamma)
+        state.meanFieldEvolve(lambda g: interaction.fock(g), step, steps)
+        return {"purity_defect": float(state.purityDefect()), "particles": float(state.particleNumber().real),
+                "fock_defect": float(np.abs(fock - np.kron(np.eye(2), np.diag(levels))).max()),
+                "stationarity_defect": float(np.abs(np.array(state.gamma()) - gamma).max()),
+                "energy": float(interaction.energy(gamma).real)}
 
-    def quasiparticle_levels(self, extended, states, log=None):
+    def bands_at(self, extended, kappa, tolerance=1e-5, max_iterations=12, exchange=True, converge=None, log=None):
+        """The Hartree-Fock levels and the cell-periodic parts of their sections
+        at the crystal momentum `kappa` (reciprocal coordinates of the cell), as
+        many as `extended` holds: the pencil dressed by the flat connection of
+        that momentum, with the Hartree potential and the filled orbitals of the
+        zone centre. The exchange operator carries the momentum transfer in its
+        kernel and, as in `extend_bands`, its compression is rebuilt until the
+        levels stop moving; `converge` limits that test to the lowest levels
+        (the compression converges slowly on the highest of a set, which a
+        caller then leaves out of the pairs). `exchange=False` is for the
+        levels of `run`, the Hartree mean field."""
+        cell = self.cell
+        occupied = int(extended["occupied"])
+        filled = np.asarray(extended["vectors"])[:, :occupied]
+        bands = len(extended["levels"])
+        A, M = cell.pencil(kappa, cell.weighted_mass(extended["local_potential"]))
+        projectors = self._projectors_at(kappa, M)
+        orbitals, values = np.asarray(extended["vectors"]).astype(complex), np.asarray(extended["levels"])
+        previous = None
+        for iteration in range(max_iterations):
+            P, D = (self._compressed(self._exchange(filled, orbitals, kappa), orbitals, projectors) if exchange
+                    else (projectors, self.D))
+            values, orbitals, residual, below = solve_with_projectors(A, M, P, D, bands, float(values[0]) - 1.0)
+            change = np.inf if previous is None else np.abs(values - previous)[:converge].max()
+            if log:
+                log(f"  momentum {tuple(kappa)}, compression {iteration}: largest level change {change:.2e} Ry")
+            previous = values
+            if change < tolerance:
+                break
+        return {"levels": values, "vectors": orbitals, "kappa": tuple(kappa), "residual": residual,
+                "shift_below_spectrum": below, "converged": bool(change < tolerance), "occupied": occupied}
+
+    def momentum_pairs(self, extended, at_momentum, bands=None):
+        """The particle-hole pairs of momentum transfer q: a filled orbital i of
+        the zone centre and an empty section a of `bands_at` (filled index
+        slow). Their pair densities conj(psi_i) psi_{a, q} carry the momentum q
+        and are loaded as piecewise-linear integrals with the link phases of
+        that momentum; the Coulomb kernel they meet is the inverse of the
+        stiffness matrix dressed by it.
+
+        Returns the argument of `RandomPhase.set_head` for this momentum: the
+        level differences e_a(q) - e_i(0), the coupling (ia|jb) without the
+        G = 0 entry of the kernel, the charges (the G = 0 components of the
+        loads), the energy of a normalized charge in that entry, and the modes
+        the pairs are made of."""
+        occupied = int(extended["occupied"])
+        bands = len(extended["levels"]) if bands is None else int(bands)
+        kappa = at_momentum["kappa"]
+        filled = np.asarray(extended["vectors"])[:, :occupied]
+        empties = np.asarray(at_momentum["vectors"])[:, occupied:bands]
+        twist = coulomb.bloch_twist(self.cell, self.triple.tops, kappa)
+        loads = [self.triple.loads(filled[:, i], empties, twist) for i in range(occupied)]
+        potentials = [self.kernel.potential(load, kappa, 0.0) for load in loads]
+        coupling = np.block([[loads[i].conj().T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
+        gaps = (np.asarray(at_momentum["levels"])[None, occupied:bands]
+                - np.asarray(extended["levels"])[:occupied, None]).ravel()
+        return {"gaps": gaps, "coupling": coupling, "charges": np.concatenate([load.sum(axis=0) for load in loads]),
+                "entry": self.kernel.momentum_entry(kappa),
+                "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
+
+    def quasiparticle_levels(self, extended, states, momentum=(0.01, 0.0, 0.0), log=None):
         """The one-shot GW correction on the Hartree-Fock levels of
         `extend_bands` for the modes listed in `states`, with the screened
         interaction of the direct random-phase approximation in the basis of
@@ -766,13 +797,13 @@ class MeshCrystal:
         one Poisson solve per particle-hole pair. That kernel has zero mean,
         which drops the zero-momentum term of the screened interaction exactly
         as it drops that of exchange. The exchange part was restored in the mean
-        field by the probe-charge constant c = 2 MADELUNG / L on the filled
-        bands. The correlation part is restored here from the response at
-        vanishing momentum, which the particle-hole pairs carry through the
-        current operator (`dipoles`, `RandomPhase.set_head`); on the energy
-        shell it is +c (1 - 1/eps) / 2 on a filled level and -c (1 - 1/eps) / 2
-        on an empty one, with eps the macroscopic dielectric constant, which is
-        returned.
+        field by the auxiliary-function constant on the filled bands. The
+        correlation part is restored here by the same constant times the
+        inverse dielectric function at vanishing momentum, read from the pair
+        densities between the zone centre and the small momentum `momentum`
+        (`bands_at`, `momentum_pairs`, `RandomPhase.set_head`). The mesh and a
+        zinc-blende crystal share the threefold axis that permutes the cubic
+        axes, so one axis stands for the three.
 
         Returns a dict: per state the Hartree-Fock level, the quasiparticle
         level without (`body`) and with (`quasiparticle`) the zero-momentum
@@ -783,7 +814,7 @@ class MeshCrystal:
         occupied = extended["occupied"]
         energies, orbitals = extended["levels"], extended["vectors"]
         empties = orbitals[:, occupied:]
-        integrals = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        integrals = self.triple
         potentials, loads = [], []
         for i in range(occupied):
             pair_loads = integrals.loads(orbitals[:, i], empties)
@@ -797,10 +828,10 @@ class MeshCrystal:
         if log:
             log(f"  random phase: {coupling.shape[0]} particle-hole pairs")
         rpa = RandomPhase.from_pieces(energies, occupied, coupling, blocks)
-        side = float(np.linalg.norm(self.crystal.lattice[0]))
-        constant = 2.0 * coulomb.MADELUNG_SC / side
+        constant = self.zero_momentum
         out = {n: {"mean_field": float(energies[n]), "body": float(rpa.quasiparticle(n)[0])} for n in states}
-        dielectric = rpa.set_head(constant, self.dipoles(extended), self.crystal.volume, COULOMB_STRENGTH)
+        head = self.momentum_pairs(extended, self.bands_at(extended, momentum, log=log))
+        dielectric = rpa.set_head(constant, [head])
         for n in states:
             energy, weight = rpa.quasiparticle(n)
             defect = abs(energies[n] + rpa.correlation(n, energy)[0] - energy)
@@ -814,10 +845,10 @@ class MeshCrystal:
         """The Coulomb integrals of the lowest `bands` Hartree-Fock modes that
         the random-phase and quasiparticle steps need, for every mode: the
         particle-hole coupling (ia|jb) and, per mode n, (nm|jb) over every mode
-        m and every pair, with one Poisson solve per particle-hole pair. Also
-        the dipoles of the pairs. The lowest modes of a larger converged set are
-        the same Hartree-Fock modes, so a band-count study truncates one set.
-        Returns (levels, occupied, coupling, integrals, dipoles)."""
+        m and every pair, with one Poisson solve per particle-hole pair. The
+        lowest modes of a larger converged set are the same Hartree-Fock modes,
+        so a band-count study truncates one set.
+        Returns (levels, occupied, coupling, integrals)."""
         cell = self.cell
         occupied = int(extended["occupied"])
         bands = len(extended["levels"]) if bands is None else int(bands)
@@ -825,7 +856,7 @@ class MeshCrystal:
                      "occupied": occupied, "local_potential": np.asarray(extended["local_potential"])}
         energies, orbitals = truncated["levels"], truncated["vectors"]
         empties = orbitals[:, occupied:]
-        triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+        triple = self.triple
         potentials, loads = [], []
         for i in range(occupied):
             pair_loads = triple.loads(orbitals[:, i], empties)
@@ -834,4 +865,4 @@ class MeshCrystal:
         coupling = np.block([[loads[i].T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
         stacked = np.hstack(potentials)                                   # vertices x pairs
         integrals = {n: triple.loads(orbitals[:, n], orbitals).T @ stacked for n in range(bands)}
-        return energies, occupied, coupling, integrals, self.dipoles(truncated)
+        return energies, occupied, coupling, integrals

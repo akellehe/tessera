@@ -91,58 +91,62 @@ class RandomPhase:
                            for n, block in integrals.items()}
         return self
 
-    def set_head(self, constant, dipoles, volume, coulomb_strength):
+    def set_head(self, constant, momenta, shifts=None):
         """Restore the zero-momentum term of the screened interaction, which a
         Coulomb kernel of zero mean leaves out.
 
-        At vanishing momentum the density of a particle-hole pair is i q . r_ia,
-        so the pair couples to the uniform connection through the current
-        operator, the derivative of the one-particle operator with respect to
-        the link phases contracted with the edge displacements; `dipoles` holds
-        r_ia (pairs x 3) obtained from it.
+        Each entry of `momenta` describes the particle-hole pairs of one small
+        momentum transfer q (`MeshCrystal.momentum_pairs`): their level
+        differences `gaps`, their Hermitian coupling `coupling` without the
+        G = 0 entry of the kernel, their `charges` (the G = 0 components of the
+        pair densities, of order q), and `entry`, the energy u of a normalized
+        charge in the G = 0 entry (of order 1 / q^2). `shifts`, one number per
+        mode, moves the level differences when the levels have been updated.
 
-        The modes solved for so far are those of the response without the
-        zero-momentum Coulomb term. With S = sum_s 2 a_s / W_s and the residues
-        a_s = (coulomb_strength / V) 2 (q . sum_ia (X + Y)^s_ia r_ia)^2 along a
-        direction q, the macroscopic dielectric constant is 1 + S. The inverse
-        dielectric function has other poles: those of the random-phase problem
-        with the long-range term (coulomb_strength / V) (q . r_ia)(q . r_jb)
-        added to the coupling, a rank-one change per direction. With its modes
-        (W~_t, a~_t),
+        With the modes (W_s, X_s) of the random-phase problem of those pairs
+        and the residues a_s = 2 u |sum_ia charge_ia (X + Y)^s_ia|^2, the
+        macroscopic dielectric constant along q is 1 + S, S = sum_s 2 a_s / W_s.
+        The inverse dielectric function has other poles: those of the problem
+        with the G = 0 entry u conj(charge_ia) charge_jb added to the coupling,
+        a rank-one change. With its modes (W~_t, a~_t),
 
             1 / eps(w) - 1 = sum_t 2 W~_t a~_t / (w^2 - W~_t^2) ,
 
         and the missing term of the self-energy of a state is the intraband
         one, `constant` * sum_t a~_t / (w - e_n -+ W~_t), averaged over the
-        three directions; `constant` is the integral of the Coulomb kernel over
-        the cell of momentum space that the sampling leaves out (the
-        probe-charge constant of the exchange correction). On the energy shell
-        it is +-constant (1 - 1/eps) / 2. Returns the macroscopic dielectric
+        momenta given; `constant` is the integral of the Coulomb kernel over
+        the cell of momentum space that the sampling leaves out
+        (`GridCoulombKernel.zero_momentum_constant`). On the energy shell it is
+        +-constant (1 - 1/eps) / 2. Returns the macroscopic dielectric
         constant."""
-        dipoles = np.asarray(dipoles, dtype=float)
-        scale = coulomb_strength / volume
-        root = np.sqrt(self.gaps)
-        static = 0.0
-        poles, weights, inverse = [], [], []
-        body = np.diag(self.gaps ** 2) + 4.0 * root[:, None] * self.coupling * root[None, :]
-        for alpha in range(3):
-            r = dipoles[:, alpha]
-            mode_dipoles = self.x_plus_y.T @ r
-            static += np.sum(2.0 * scale * 2.0 * mode_dipoles ** 2 / self.excitations) / 3.0
-            long_range = body + 4.0 * scale * np.outer(root * r, root * r)
-            squared, Z = np.linalg.eigh(0.5 * (long_range + long_range.T))
+        poles, weights, inverse, static, independent = [], [], [], [], []
+        for momentum in momenta:
+            gaps = np.asarray(momentum["gaps"], dtype=float)
+            if shifts is not None:
+                shifts = np.asarray(shifts, dtype=float)
+                gaps = gaps + np.array([shifts[a] - shifts[i] for i, a in momentum["pairs"]])
+            charges, entry = np.asarray(momentum["charges"]), float(momentum["entry"])
+            root = np.sqrt(gaps)
+            body = np.diag(gaps ** 2) + 4.0 * root[:, None] * np.asarray(momentum["coupling"]) * root[None, :]
+            squared, Z = np.linalg.eigh(0.5 * (body + body.conj().T))
             omega = np.sqrt(squared)
-            amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ r
-            residues = scale * 2.0 * amplitudes ** 2
+            amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ charges
+            static.append(np.sum(2.0 * entry * 2.0 * np.abs(amplitudes) ** 2 / omega))
+            loaded = root * charges.conj()
+            long_range = body + 4.0 * entry * np.outer(loaded, loaded.conj())
+            squared, Z = np.linalg.eigh(0.5 * (long_range + long_range.conj().T))
+            omega = np.sqrt(squared)
+            amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ charges
+            residues = entry * 2.0 * np.abs(amplitudes) ** 2
             poles.append(omega)
-            weights.append(constant * residues / 3.0)
+            weights.append(constant * residues / len(momenta))
             inverse.append(1.0 - np.sum(2.0 * residues / omega))
+            independent.append(entry * 4.0 * np.sum(np.abs(charges) ** 2 / gaps))
         self.head_poles, self.head = np.concatenate(poles), np.concatenate(weights)
-        self.dielectric_constant = 1.0 + static
+        self.dielectric_constant = 1.0 + float(np.mean(static))
         # The two routes to the static inverse must agree: 1 / (1 + S) = 1 - sum_t 2 a~_t / W~_t.
-        self.head_defect = float(abs(np.mean(inverse) - 1.0 / self.dielectric_constant))
-        independent = scale * 4.0 * np.sum((dipoles ** 2).sum(axis=1) / self.gaps) / 3.0
-        self.independent_particle_dielectric_constant = 1.0 + independent
+        self.head_defect = float(max(abs(value - 1.0 / (1.0 + s)) for value, s in zip(inverse, static)))
+        self.independent_particle_dielectric_constant = 1.0 + float(np.mean(independent))
         return self.dielectric_constant
 
     def _solve(self, energies, occupied, coupling):
@@ -254,8 +258,9 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
     the interaction screened with it is too weak and the one-shot gap too large;
     feeding the levels back into the screening is what closes it.
 
-    `integrals` must cover every mode. `head` is the argument tuple of
-    `RandomPhase.set_head`. Returns (levels, history of the largest change, the
+    `integrals` must cover every mode. `head` is the pair (constant, momenta)
+    of `RandomPhase.set_head`; the level differences at the small momenta move
+    with the zone-centre levels of the same modes. Returns (levels, history of the largest change, the
     last RandomPhase)."""
     mean_field = np.asarray(mean_field, dtype=float)
     energies = mean_field.copy()
@@ -264,7 +269,7 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
         if rpa is None or update_screening:
             rpa = RandomPhase.from_pieces(energies, occupied, coupling, integrals)
             if head is not None:
-                rpa.set_head(*head)
+                rpa.set_head(head[0], head[1], energies - mean_field)
         rpa.propagator = energies
         produced = np.array([rpa.quasiparticle(n, reference=mean_field, start=energies[n])[0]
                              for n in range(len(energies))])

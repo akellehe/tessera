@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The ab initio drivers (#1161): the pseudopotential reader, the local-density
-exchange and correlation, the screened pseudo-atom on the mesh against the
+"""The ab initio drivers (#1161): the pseudopotential reader, the screened
+pseudo-atom on the mesh against the
 radial equation, the low-rank shift-invert solve with its inertia certificate,
 and a self-consistent crystal on the mesh against plane waves. Every fixture is
 synthetic, so no pseudopotential file is needed."""
@@ -60,21 +60,6 @@ class TestReader:
         assert atom.density_at(np.array([0.0]))[0] == pytest.approx(2.0 * (1.0 / (np.pi * 1.69)) ** 1.5, rel=1e-3)
 
 
-class TestExchangeCorrelation:
-    def test_the_potential_is_the_derivative_of_the_energy(self):
-        for density in (1e-3, 0.02, 0.2387, 0.24, 3.0):          # both branches of the correlation fit
-            step = 1e-6 * density
-            energy = lambda n: n * pp.lda_energy_density(n)
-            numerical = (energy(density + step) - energy(density - step)) / (2 * step)
-            assert pp.lda_potential(density) == pytest.approx(numerical, rel=1e-6)
-
-    def test_exchange_at_unit_wigner_seitz_radius(self):
-        density = 3.0 / (4.0 * np.pi)
-        # e_x = -0.9163 Ry / r_s; e_c(r_s = 1) = -0.1423 / (1 + 1.0529 + 0.3334) hartree.
-        expected = -0.91633 + 2.0 * (-0.1423 / 2.3863)
-        assert pp.lda_energy_density(density) == pytest.approx(expected, rel=1e-4)
-
-
 def test_real_harmonics_are_orthonormal():
     nodes, weights = np.polynomial.legendre.leggauss(24)
     phi = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
@@ -111,6 +96,27 @@ class TestLowRankSolve:
         assert values == pytest.approx(reference, abs=1e-9) and residual < 1e-9 and below
         assert np.abs(vectors.T @ (mesh.mass @ vectors) - np.eye(5)).max() < 1e-9
 
+    def test_the_shifted_operator_is_the_library_low_rank_update_below_the_crossover(self):
+        """The shift-invert operator of the sparse solve, B + P D P^T with
+        B = A - sigma M, is `cobordism.LowRankUpdate` on the dense base: the
+        factors span the whole change, and its certified Woodbury solve of
+        (lambda - sigma) M z returns the eigenvector z of the sparse solve."""
+        import tessera
+        mesh = self._pencil()
+        sigma = -8.0
+        A = (mesh.stiffness + mesh.cell.weighted_mass(mesh.ionic).dressed().real).tocsc()
+        values, vectors, _, _ = abinitio.solve_with_projectors(A, mesh.mass, mesh.P, mesh.D, 3, sigma)
+        base = (A - sigma * mesh.mass).toarray().astype(complex)
+        n = base.shape[0]
+        update = tessera.cobordism.LowRankUpdate(list(base.ravel()), n)
+        left, right = (mesh.P @ mesh.D).astype(complex), mesh.P.T.astype(complex)
+        update.setUpdate(list(left.ravel()), list(right.ravel()), left.shape[1])
+        assert update.spansAffectedChange(list((base + left @ right).ravel()))
+        for b in range(3):
+            solved = update.solve(list(((values[b] - sigma) * (mesh.mass @ vectors[:, b])).astype(complex)))
+            assert solved.certificate.holds()
+            assert np.abs(np.array(solved.values) - vectors[:, b]).max() < 1e-8
+
     def test_the_inertia_certificate_fails_for_a_shift_inside_the_spectrum(self):
         mesh = self._pencil()
         A = (mesh.stiffness + mesh.cell.weighted_mass(mesh.ionic).dressed().real).tocsc()
@@ -139,8 +145,8 @@ def test_pulay_mixing_converges_where_plain_mixing_diverges():
 
 def test_a_self_consistent_crystal_on_the_mesh_matches_plane_waves():
     """One soft two-electron ion in a simple cubic cell at the zone centre: the
-    same ionic potential, Hartree kernel convention and exchange-correlation in
-    both codes. The mesh levels extrapolate to the plane-wave levels."""
+    same ionic potential and Hartree kernel convention in both codes, in the
+    Hartree mean field. The mesh levels extrapolate to the plane-wave levels."""
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     assert crystal.electrons == 2
     reference = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run(4)
@@ -179,9 +185,9 @@ def test_hartree_fock_on_the_mesh_matches_hartree_fock_in_plane_waves():
     target = reference["levels"][0][:2]
     assert np.abs(np.array(levels[-1]) - target).max() > 1e-3
     assert np.abs(richardson(spacings, levels)[0] - target).max() < 1e-3           # rydberg
-    # Exchange without correlation opens the gap well beyond the local-density one.
-    local_density = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run(4)["levels"][0]
-    assert target[1] - target[0] > 1.3 * (local_density[1] - local_density[0])
+    # Exchange opens the gap well beyond that of the Hartree mean field.
+    hartree = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0).run(4)["levels"][0]
+    assert target[1] - target[0] > 1.3 * (hartree[1] - hartree[0])
 
 
 def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
@@ -206,7 +212,9 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
         assert lean["states"][n]["body"] == pytest.approx(energy, abs=1e-9)
         assert lean["states"][n]["defect"] < 1e-9 and 0.5 < lean["states"][n]["renormalization"] < 1.0
     assert lean["correlation_energy"] == pytest.approx(full.correlation_energy(), abs=1e-10)
-    assert lean["head_constant"] == pytest.approx(2.0 * coulomb.MADELUNG_SC / 6.0)
+    # The zero-momentum constant is the kernel's own; the continuum kernel's is 2 MADELUNG / L.
+    assert lean["head_constant"] == pytest.approx(mesh.kernel.zero_momentum_constant())
+    assert lean["head_constant"] == pytest.approx(2.0 * coulomb.MADELUNG_SC / 6.0, rel=5e-3)
     # Without the zero-momentum term the correlation part moves this gap by a few per cent only.
     # Screening closes a Hartree-Fock gap through that term, by c (1 - 1/eps) on the energy shell.
     gap = lambda key: lean["states"][1][key] - lean["states"][0][key]
@@ -219,26 +227,82 @@ def test_the_crystal_quasiparticle_step_agrees_with_the_full_tensor_route():
     assert gap("body") - gap("quasiparticle") == pytest.approx(c * (1.0 - 1.0 / eps), rel=0.25)
 
 
+def test_the_converged_crystal_is_a_stationary_covariance_state():
+    """The Hartree-Fock state of the crystal as a `CovarianceState` on its own
+    modes: pure, with the right particle number, and stationary under
+    `meanFieldEvolve` with the Fock operator rebuilt as the Wick contraction of
+    the Coulomb kernel, which reproduces the levels the pencil was solved with."""
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    mesh = abinitio.MeshCrystal(crystal, 8)
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-8), 8, tolerance=1e-8)
+    read = mesh.covariance_certificate(extended, 8)
+    assert read["purity_defect"] < 1e-12 and read["particles"] == pytest.approx(2.0, abs=1e-12)
+    assert read["fock_defect"] < 1e-7 and read["stationarity_defect"] < 1e-7
+
+
+def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
+    """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
+    kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat
+    connection of that momentum, applied to the cell-periodic part; and the
+    Coulomb kernel at that momentum inverts the dressed stiffness matrix."""
+    from tessera.drivers.bands import coulomb
+    from tessera.drivers.bands.crystal import CrystalCell
+    cell = CrystalCell(np.array([[1.0, 0.1, 0.0], [0.0, 1.1, 0.05], [0.02, 0.0, 0.9]]), (4, 5, 3), kinetic_scale=1.0)
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal(cell.size)
+    Y = rng.standard_normal((cell.size, 3)) + 1j * rng.standard_normal((cell.size, 3))
+    kappa = np.array([0.013, -0.2, 0.31])
+    triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
+    loads = triple.loads(x, Y, coulomb.bloch_twist(cell, triple.tops, kappa))
+    assert np.abs(loads - cell.weighted_mass(x).dressed(kappa) @ Y).max() < 1e-15
+    kernel = coulomb.GridCoulombKernel(cell, 8.0 * np.pi)
+    rho = Y[:, 0]
+    assert np.abs(cell.stiffness.dressed(kappa) @ kernel.potential(rho, kappa) / kernel.strength - rho).max() < 1e-12
+    # The entry at G = 0 tends to strength / (V q^2).
+    small = np.array([1e-3, 0.0, 0.0])
+    continuum = kernel.strength / (cell.volume * (cell.momentum(small) ** 2).sum())
+    assert kernel.momentum_entry(small) == pytest.approx(continuum, rel=1e-5)
+
+
+def test_the_zero_momentum_constant_of_the_mesh_kernel_tends_to_the_madelung_constant():
+    from tessera.drivers.bands import coulomb
+    from tessera.drivers.bands.crystal import CrystalCell
+    side, target = 6.0, 2.0 * coulomb.MADELUNG_SC / 6.0
+    errors = [abs(coulomb.GridCoulombKernel(CrystalCell.cubic(side, n, kinetic_scale=1.0), 8.0 * np.pi)
+                  .zero_momentum_constant() - target) for n in (6, 12)]
+    assert errors[1] < 0.3 * errors[0] < 0.01 * target
+
+
 @pytest.mark.slow
 def test_the_dielectric_response_at_vanishing_momentum_matches_plane_waves():
-    """The dipoles of the particle-hole pairs come from the current operator of
-    the pencil; the independent-particle dielectric constant they give converges
-    to the plane-wave value computed with 2 (k + G) and the derivative of the
-    projectors."""
+    """The response at vanishing momentum is read from pair densities between
+    the zone centre and a small momentum, Hartree-Fock sections on both sides:
+    the independent-particle dielectric constant converges to that of plane
+    waves, where the same overlaps are exact; the three cubic axes agree; and
+    halving the momentum changes nothing."""
+    from tessera.drivers.bands import screening
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
-    bands = 11
+    bands = 7                                   # closed at a gap, so every mesh and the plane waves hold the same states
     plane_waves = abinitio.PlaneWaveCrystal(crystal, [np.zeros(3)], [1.0], cutoff=16.0)
-    reference = plane_waves.dielectric_constant(plane_waves.run_hartree_fock(bands, 6.0)) - 1.0
+    reference = plane_waves.dielectric_constant(plane_waves.run_hartree_fock(bands, 6.0),
+                                                [0.01 * 2.0 * np.pi / 6.0, 0.0, 0.0]) - 1.0
     spacings, values = [], []
     for n in (8, 12, 16):
         mesh = abinitio.MeshCrystal(crystal, n)
-        mean_field = mesh.run_hartree_fock(4)
-        levels, occupied, coupling, integrals, dipoles = mesh.coulomb_integrals(mesh.extend_bands(mean_field, bands))
-        from tessera.drivers.bands import screening
+        # Four more bands than the pairs use: the compression of exchange converges slowly on the highest.
+        extended = mesh.extend_bands(mesh.run_hartree_fock(4), bands + 4)
+        levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
         rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
-        rpa.set_head(1.0, dipoles, crystal.volume, abinitio.COULOMB_STRENGTH)
-        assert rpa.head_defect < 1e-10 and rpa.dielectric_constant < rpa.independent_particle_dielectric_constant
-        spacings.append(mean_field["spacing"])
-        values.append(rpa.independent_particle_dielectric_constant - 1.0)
-    assert values[0] < values[1] < values[2] < 1.05 * reference
-    assert richardson(spacings, values)[0] == pytest.approx(reference, rel=0.15)
+        read = []
+        for kappa in ([(0.01, 0.0, 0.0), (0.005, 0.0, 0.0), (0.0, 0.01, 0.0)] if n == 8 else [(0.01, 0.0, 0.0)]):
+            at_momentum = mesh.bands_at(extended, kappa, converge=bands)
+            assert at_momentum["converged"] and at_momentum["shift_below_spectrum"]
+            rpa.set_head(mesh.zero_momentum, [mesh.momentum_pairs(extended, at_momentum, bands)])
+            assert rpa.head_defect < 1e-10 and rpa.dielectric_constant < rpa.independent_particle_dielectric_constant
+            read.append(rpa.independent_particle_dielectric_constant - 1.0)
+        if n == 8:
+            assert read[1] == pytest.approx(read[0], rel=2e-3) and read[2] == pytest.approx(read[0], rel=1e-8)
+        spacings.append(mesh.cell.spacing)
+        values.append(read[0])
+    assert values[0] < values[1] < values[2] < reference
+    assert richardson(spacings, values)[0] == pytest.approx(reference, rel=0.01)

@@ -35,7 +35,7 @@ from tessera.drivers.bands.potentials import ZincBlendeEPM
 
 def translation_characters(cell, read, shifts):
     """<z | M T z> per eigenvector and per grid translation in `shifts`."""
-    mass = cell.mass.dressed(read.kappa)
+    mass = cell.pencil(read.kappa)[1]
     n = np.array(cell.divisions)
     n2, n3 = cell.divisions[1], cell.divisions[2]
     characters = []
@@ -185,10 +185,8 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
     `cation_upf` and `anion_upf`, in the mean field `mean_field`:
     "hartree_fock", the mean field of the Coulomb interaction (the Wick
     contraction of the quartic into its direct and exchange parts), or
-    "local_density", in which a functional of the density stands in for exchange
-    and correlation. The second is not an object of the theory; it is kept as a
-    test of the ionic potentials and the Hartree kernel against plane waves at
-    a fraction of the cost. Either way the calculation runs self-consistently
+    "hartree", the direct part alone, which tests the ionic potentials and the
+    Hartree kernel against plane waves at a fraction of the cost. Either way the calculation runs self-consistently
     on three meshes of the conventional cell at its zone centre, extrapolated,
     against plane waves with the same pseudopotentials at the equivalent
     momenta (the primitive zone centre and the three X points).
@@ -206,8 +204,8 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
     primitive = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=False)
     unit = 2.0 * np.pi / lattice_constant
     momenta = [np.zeros(3)] + [unit * np.eye(3)[axis] for axis in range(3)]
-    if mean_field not in ("hartree_fock", "local_density"):
-        raise ValueError("mean_field is 'hartree_fock' or 'local_density'")
+    if mean_field not in ("hartree_fock", "hartree"):
+        raise ValueError("mean_field is 'hartree_fock' or 'hartree'")
     plane_waves = PlaneWaveCrystal(primitive, momenta, [1, 1, 1, 1], cutoff)
     reference = (plane_waves.run_hartree_fock(8, lattice_constant) if mean_field == "hartree_fock"
                  else plane_waves.run(8))

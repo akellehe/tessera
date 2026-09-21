@@ -102,6 +102,11 @@ class GridCoulombKernel:
         row = stiffness.getrow(0)
         stencil = np.zeros(self.size)
         stencil[row.indices] = row.data
+        # The row as unwrapped grid offsets and entries, for the symbol in closed form.
+        offsets = cell.index[row.indices].astype(float)
+        offsets = np.where(offsets > np.array(self.shape) / 2.0, offsets - np.array(self.shape), offsets)
+        self._offsets, self._entries = offsets, row.data.astype(float)
+        self._reciprocal, self._volume = cell.reciprocal, cell.volume
         symbol = np.fft.fftn(stencil.reshape(self.shape)).real
         # Translation invariance, checked on a second row rather than assumed.
         probe = cell.grid.vertexId(1, 2, 3)
@@ -114,16 +119,119 @@ class GridCoulombKernel:
         self._inverse = np.where(symbol > 1e-12 * symbol.max(), 1.0 / np.where(symbol > 0.0, symbol, 1.0), 0.0)
         self._inverse.flat[0] = 0.0
 
-    def potential(self, rho):
+    def symbol(self, wavevectors):
+        """The symbol of the stiffness matrix at the wavevectors `p` (rows, in
+        units of the grid's reciprocal steps, so integers are the wavevectors the
+        cell supports): a(p) = sum_n A_{0 n} exp(2 pi i p . n / N), a closed form
+        in the entries of one row. A lattice plane wave of wavevector p is an
+        eigenvector of the stiffness matrix dressed by the momentum p - round(p),
+        with this eigenvalue."""
+        p = np.atleast_2d(np.asarray(wavevectors, dtype=float)) / np.array(self.shape)
+        return np.real(np.exp(2j * np.pi * (p @ self._offsets.T)) @ self._entries)
+
+    def zero_momentum_constant(self, refinements=(2, 4, 8)):
+        """The term of the Coulomb kernel that a cell sampled at its zone centre
+        leaves out at zero momentum transfer, for a normalized charge: the
+        auxiliary-function correction of Gygi and Baldereschi, with the kernel's
+        own symbol as the auxiliary function,
+
+            c = strength * [ <1 / a(p)>_p  -  (1 / n) sum_{G != 0} 1 / a(G) ] ,
+
+        the average of the inverse symbol over every wavevector of the mesh (the
+        momentum-space integral a denser and denser momentum set converges to)
+        minus its sampling on the wavevectors the cell supports.
+
+        The average is an integral of a function with the singularity
+        (n / V) / k^2 at the origin. That part is taken analytically: the
+        periodized function g(k) = (n / V) sum_K exp(-alpha |k + K|^2) / |k + K|^2
+        over the reciprocal lattice of the vertex grid has the same singularity
+        and the average 1 / (4 pi^(3/2) sqrt(alpha)). The remainder 1 / a - g is
+        bounded, with a jump at the origin only, so its mean on grids
+        `refinements` times finer with the origin left out errs by odd inverse
+        powers of the refinement from the third on, which the refinements
+        remove. For the continuum
+        kernel strength / (V q^2) on a simple cubic cell this constant is
+        strength * MADELUNG_SC / (4 pi L)."""
+        n, shape = self.size, np.array(self.shape)
+        step = self._reciprocal                                  # p is in units of the wavevectors the cell supports
+        spacing = (self._volume / n) ** (1.0 / 3.0)
+        alpha = 0.25 * spacing ** 2
+        images = np.stack(np.meshgrid(*[np.arange(-2, 3)] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * shape
+
+        def remainder(p):
+            symbol = self.symbol(p)
+            singular = np.zeros(len(p))
+            for image in images:
+                k2 = (((p + image) @ step) ** 2).sum(axis=1)
+                singular += np.where(k2 > 0.0, np.exp(-alpha * k2) / np.where(k2 > 0.0, k2, 1.0), 0.0)
+            regular = symbol > 1e-12 * np.abs(self._entries).max()
+            return np.where(regular, 1.0 / np.where(regular, symbol, 1.0) - (n / self._volume) * singular, 0.0)
+
+        means = []
+        for m in refinements:
+            axes = [np.arange(N * m) / m for N in self.shape]
+            p = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
+            means.append(sum(remainder(chunk).sum() for chunk in np.array_split(p, max(1, len(p) // 200000)))
+                         / (n * m ** 3))
+        m = np.array(refinements, dtype=float)
+        design = np.column_stack([np.ones_like(m), 1.0 / m ** 3, 1.0 / m ** 5][:len(m)])
+        average = np.linalg.lstsq(design, np.array(means), rcond=None)[0][0] + 1.0 / (4.0 * np.pi ** 1.5 * np.sqrt(alpha))
+        coarse = self.symbol(np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"),
+                                      axis=-1).reshape(-1, 3))
+        regular = coarse > 1e-12 * np.abs(self._entries).max()
+        discrete = np.where(regular, 1.0 / np.where(regular, coarse, 1.0), 0.0).sum() / n
+        return self.strength * (average - discrete)
+
+    def inverse_symbol(self, kappa=None, zero_momentum=None):
+        """1 / a(G + kappa) on the wavevectors G the cell supports, in the
+        ordering of the discrete Fourier transform: the Coulomb kernel on
+        charges of crystal momentum `kappa` (reciprocal coordinates of the
+        cell), the inverse of the stiffness matrix dressed by that momentum.
+
+        At `kappa = None` the entry at G = 0 is zero: the inverse on the
+        complement of the constants. `zero_momentum` replaces the entry at
+        G = 0, at any momentum, by the value that gives a normalized charge the
+        energy `zero_momentum`; with `zero_momentum_constant()` this is the
+        auxiliary-function treatment of that entry, which is continuous in the
+        momentum."""
+        if kappa is None:
+            inverse = self._inverse.copy()
+        else:
+            grid = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
+            inverse = (1.0 / self.symbol(grid + np.asarray(kappa, dtype=float))).reshape(self.shape)
+        if zero_momentum is not None:
+            inverse.flat[0] = zero_momentum * self.size / self.strength
+        return inverse
+
+    def momentum_entry(self, kappa):
+        """The energy of a normalized charge of crystal momentum `kappa` in the
+        G = 0 entry of the kernel, strength / (n a(kappa)); strength / (V q^2)
+        in the continuum."""
+        return self.strength / (self.size * float(self.symbol(np.asarray(kappa, dtype=float))[0]))
+
+    def potential(self, rho, kappa=None, zero_momentum=None):
+        """The potential of the load vectors `rho` (columns), at the crystal
+        momentum `kappa` when given; see `inverse_symbol`."""
         rho = np.asarray(rho, dtype=complex)
         columns = rho.reshape(self.size, -1)
         grid = columns.T.reshape((-1,) + self.shape)
-        solved = np.fft.ifftn(np.fft.fftn(grid, axes=(1, 2, 3)) * self._inverse, axes=(1, 2, 3))
+        inverse = self._inverse if kappa is None and zero_momentum is None else self.inverse_symbol(kappa, zero_momentum)
+        solved = np.fft.ifftn(np.fft.fftn(grid, axes=(1, 2, 3)) * inverse, axes=(1, 2, 3))
         return (self.strength * solved.reshape(-1, self.size).T).reshape(rho.shape)
 
     def energy(self, rho_a, rho_b=None):
         rho_b = rho_a if rho_b is None else rho_b
         return np.vdot(rho_a, self.potential(rho_b))
+
+
+def bloch_twist(cell, tops, kappa):
+    """exp(2 pi i kappa . d) for the grid displacement d of every vertex of
+    every top simplex from the simplex's first vertex: the link phases of the
+    crystal momentum `kappa`, per simplex, for `TripleIntegrals.loads`."""
+    n = np.array(cell.divisions)
+    d = (cell.index[tops] - cell.index[tops[:, :1]]) % n
+    d = np.where(d == n - 1, -1, d)
+    return np.exp(2j * np.pi * ((d / n) @ np.asarray(kappa, dtype=float)))
 
 
 class TripleIntegrals:
@@ -138,7 +246,11 @@ class TripleIntegrals:
 
     `loads(x, Y)` returns, for every column y of Y, the load vector
     int phi_c x y of the product: the vectorized form of
-    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`.
+    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`. With a
+    `twist` (`bloch_twist`) the columns of Y are the cell-periodic parts of
+    sections of crystal momentum kappa and the result is `M_0^U[x] y`, the
+    weighted mass matrix dressed by the link phases of that momentum: the load
+    of a pair density that carries the momentum kappa.
     """
 
     def __init__(self, complex_, squared_lengths):
@@ -154,17 +266,24 @@ class TripleIntegrals:
         self.scatter = [sp.csr_matrix((np.ones(count), (self.tops[:, c], np.arange(count))),
                                       shape=(self.size, count)) for c in range(d + 1)]
 
-    def loads(self, x, Y):
+    def loads(self, x, Y, twist=None, block=48):
         x = np.asarray(x)
         Y = np.asarray(Y).reshape(self.size, -1)
+        if Y.shape[1] > block:                                # bound the per-simplex temporaries
+            return np.hstack([self.loads(x, Y[:, start:start + block], twist, block)
+                              for start in range(0, Y.shape[1], block)])
         local_x = x[self.tops]                                # (tops, d + 1)
         local_y = Y[self.tops]                                # (tops, d + 1, columns)
+        if twist is not None:
+            local_y = local_y * twist[:, :, None]             # carried to the first vertex of the simplex
         sum_x, sum_y = local_x.sum(axis=1), local_y.sum(axis=1)
         common = sum_x[:, None] * sum_y + np.einsum("ta,tan->tn", local_x, local_y)
-        total = np.zeros((self.size, Y.shape[1]), dtype=np.result_type(x, Y, self.weight))
+        total = np.zeros((self.size, Y.shape[1]), dtype=np.result_type(x, local_y, self.weight))
         for c, scatter in enumerate(self.scatter):
             term = common + local_x[:, c, None] * sum_y + sum_x[:, None] * local_y[:, c, :] \
                 + 2.0 * local_x[:, c, None] * local_y[:, c, :]
+            if twist is not None:
+                term = term * twist[:, c, None].conj()         # and back to the vertex the load belongs to
             total += scatter @ (self.weight[:, None] * term)
         return total
 
@@ -188,11 +307,16 @@ class ModeInteraction:
     `energies` are the one-particle levels of the modes, `T` their pair
     densities, and `sheets` the number of identical spin copies (1 or 2): with
     two sheets the mode list is doubled, sheet by sheet, and the pair density
-    is diagonal in the sheet.
+    is diagonal in the sheet. `zero_momentum` is the entry of the kernel at zero
+    momentum transfer when the kernel itself has zero mean
+    (`GridCoulombKernel.zero_momentum_constant`): the pair density of modes m
+    and p has the charge <m|p> there, so the term is -c Gamma in exchange, and
+    in the direct part it cancels against the ions of a neutral cell.
     """
 
-    def __init__(self, kernel, energies, T, sheets=1):
+    def __init__(self, kernel, energies, T, sheets=1, zero_momentum=0.0):
         self.kernel = kernel
+        self.zero_momentum = float(zero_momentum)
         self.sheets = int(sheets)
         orbitals = len(energies)
         self.orbitals = orbitals
@@ -227,7 +351,8 @@ class ModeInteraction:
             F[a * n:(a + 1) * n, a * n:(a + 1) * n] += hartree
             for b in range(self.sheets):
                 # -(T_v Gamma T_w)[m, n] K_vw = -sum_pq W[mp, qn] Gamma_ab[p, q]
-                F[a * n:(a + 1) * n, b * n:(b + 1) * n] -= np.einsum("mpqn,pq->mn", self.W, blocks[a][b])
+                F[a * n:(a + 1) * n, b * n:(b + 1) * n] -= np.einsum("mpqn,pq->mn", self.W, blocks[a][b]) \
+                    + self.zero_momentum * blocks[a][b]
         return F
 
     def energy(self, gamma):

@@ -1,8 +1,8 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""Norm-conserving pseudopotentials in the Unified Pseudopotential Format, the
-local-density exchange and correlation, and the screened pseudo-atom as the
-test that a pseudopotential is resolved by a mesh.
+"""Norm-conserving pseudopotentials in the Unified Pseudopotential Format, and
+the screened pseudo-atom as the test that a pseudopotential is resolved by a
+mesh.
 
 This module and `abinitio` work in Rydberg atomic units: lengths in bohr,
 energies in rydberg, the kinetic operator is minus the Laplacian
@@ -20,8 +20,7 @@ r beta(r) and 4 pi r^2 rho(r) on a radial mesh.
 
 References: Hamann, Schlueter & Chiang, Physical Review Letters 43, 1494 (1979),
 for norm conservation; Kleinman & Bylander, Physical Review Letters 48, 1425
-(1982), for the separable form; Perdew & Zunger, Physical Review B 23, 5048
-(1981), for the exchange and correlation used here.
+(1982), for the separable form.
 """
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
@@ -102,33 +101,6 @@ class Pseudopotential:
         return np.where(radius < self.r[2], origin, shell / (4.0 * np.pi * np.maximum(radius, 1e-12) ** 2))
 
 
-def lda_potential(density):
-    """The exchange-correlation potential of the local density approximation in
-    the Perdew-Zunger parametrization, unpolarized, in rydberg."""
-    n = np.maximum(np.asarray(density, dtype=float), 1e-30)
-    rs = (3.0 / (4.0 * np.pi * n)) ** (1.0 / 3.0)
-    exchange = -2.0 * (3.0 * n / np.pi) ** (1.0 / 3.0)
-    gamma, beta1, beta2 = -0.1423, 1.0529, 0.3334
-    a, b, c, d = 0.0311, -0.048, 0.0020, -0.0116
-    root = np.sqrt(rs)
-    low = gamma / (1.0 + beta1 * root + beta2 * rs)
-    low = low * (1.0 + 7.0 / 6.0 * beta1 * root + 4.0 / 3.0 * beta2 * rs) / (1.0 + beta1 * root + beta2 * rs)
-    high = a * np.log(rs) + (b - a / 3.0) + 2.0 / 3.0 * c * rs * np.log(rs) + (2.0 * d - c) / 3.0 * rs
-    return exchange + 2.0 * np.where(rs >= 1.0, low, high)
-
-
-def lda_energy_density(density):
-    """The exchange-correlation energy per electron, in rydberg."""
-    n = np.maximum(np.asarray(density, dtype=float), 1e-30)
-    rs = (3.0 / (4.0 * np.pi * n)) ** (1.0 / 3.0)
-    exchange = -1.5 * (3.0 * n / np.pi) ** (1.0 / 3.0)
-    gamma, beta1, beta2 = -0.1423, 1.0529, 0.3334
-    a, b, c, d = 0.0311, -0.048, 0.0020, -0.0116
-    low = gamma / (1.0 + beta1 * np.sqrt(rs) + beta2 * rs)
-    high = a * np.log(rs) + b + c * rs * np.log(rs) + d * rs
-    return exchange + 2.0 * np.where(rs >= 1.0, low, high)
-
-
 # ---------------------------------------------------------------- the screened, confined pseudo-atom
 
 def confinement(radius, strength):
@@ -137,15 +109,15 @@ def confinement(radius, strength):
 
 
 def screened_potential(pseudo, radius, strength):
-    """V_loc + V_H[rho_atom] + V_xc[rho_atom] + confinement at `radius`: the
-    potential of the neutral pseudo-atom frozen at its atomic density."""
+    """V_loc + V_H[rho_atom] + confinement at `radius`: the Hartree potential of
+    the neutral pseudo-atom frozen at its atomic density."""
     grid = np.arange(0.005, 40.0, 0.005)
     shell = np.interp(grid, pseudo.r, pseudo.density, right=0.0)
     step = grid[1] - grid[0]
     inside = np.cumsum(shell) * step
     outside = np.cumsum((shell / grid)[::-1])[::-1] * step
     hartree = 2.0 * (inside / grid + outside - shell / grid * step)
-    total = pseudo.local_at(grid) + hartree + lda_potential(pseudo.density_at(grid))
+    total = pseudo.local_at(grid) + hartree
     return np.interp(radius, grid, total) + confinement(radius, strength)
 
 

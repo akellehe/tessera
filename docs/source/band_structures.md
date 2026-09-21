@@ -21,9 +21,7 @@ them to each other.
 
 Every interaction is the Coulomb kernel obtained by eliminating the timelike
 connection, and every mean field is its Wick contraction (Hartree and exchange).
-A density functional is not an object of the theory; the local density
-approximation appears only as a labelled test of the ionic potentials against
-plane waves.
+A density functional is not an object of the theory and none is used.
 
 ## The pencil at a crystal momentum
 
@@ -31,11 +29,12 @@ A crystal momentum $k$ is a flat U(1) connection on the mesh: the link of the
 edge from $v$ to $w$ is $e^{i k \cdot \Delta x_{vw}}$ with $\Delta x_{vw}$ the
 unwrapped displacement of the edge. Its curvature is 1 on every triangle and its
 holonomy around the fundamental cycle along the lattice vector $a_i$ is
-$e^{i k \cdot a_i}$. Because such a connection is a pure gauge on every
+$e^{i k \cdot a_i}$. `CrystalCell.pencil` assembles the pencil at that
+connection with `CovariantChainHodge.sparsePencil` and
+`dressedVertexPotential`. Because such a connection is a pure gauge on every
 tetrahedron, dressing the pencil by it multiplies the entry $(v, w)$ of both
-matrices by the link $U_{vw}$. `CrystalCell` assembles the matrices once and
-dresses them per momentum; `CrystalCell.certify` holds that form to the C++
-`CovariantChainHodge` and measures the premises the solver relies on
+matrices by the link $U_{vw}$; `CrystalCell.certify` holds that entrywise form
+to the assembly and measures the premises the solver relies on
 (allowable geometry, unimodular links, zero curvature, the prescribed holonomy,
 Hermitian matrices, a positive definite mass matrix).
 
@@ -129,18 +128,18 @@ has curvature on the vertical triangles, the electric field. The tick map of a
 stack of slabs solves a quadratic eigenproblem in the blocks of the slab's
 pencil, and as $\tau \to 0$ its decay rates $E$ obey
 
-$$ (A + m^2 W)\, u = E^2 D\, u , $$
+$$ (A + m^2 M)\, u = E^2 D\, u , $$
 
-with $D$ the lumped (diagonal) mass matrix, which is what the time stiffness of
-a staircase slab produces, and $W$ the matrix the mass term is added with. With
-the consistent mass matrix ($W = M$) the mismatch between $M$ and $D$ is
-multiplied by $m^2$, and the non-relativistic reduction $E \approx m + L/2m + V$
-requires the mesh to resolve the Compton wavelength, $m h \ll 1$, in addition to
-$L \ll m^2$. With the lumped mass term ($W = D$) the reduction holds at any mesh
-spacing. What remains between the fiber-edge route and the static route is then
-first order in the potential and closes with the mesh: on a connection with
-curvature the covariant operator transports through the base vertex of each
-cell, which samples the potential one mesh step away.
+with $M$ the Whitney mass matrix and $D$ the lumped (diagonal) mass matrix,
+which is what the time stiffness of a staircase slab produces. The mismatch
+between $M$ and $D$ is multiplied by $m^2$, so the non-relativistic reduction
+$E \approx m + L/2m + V$ requires the mesh to resolve the Compton wavelength,
+$m h \ll 1$, in addition to $L \ll m^2$. On cells of three to six divisions at
+$m = 6$ the level shift a potential induces in the tick map exceeds the static
+route's by a factor of 6.7, 3.3, 2.3 and 1.9, falling toward one as the mesh is
+refined: on a connection with curvature the covariant operator transports
+through the base vertex of each cell, which samples the potential one mesh step
+away.
 
 ### The quasiparticle correction
 
@@ -172,12 +171,24 @@ Coulomb kernel of the grid is inverted exactly by Fourier transform, because the
 stiffness matrix commutes with the grid translations.
 
 A Coulomb kernel of zero mean leaves out the zero-momentum term of exchange and
-of the screened interaction. For exchange it is the probe-charge constant
-`c = 2 MADELUNG / L` on the filled bands. For the screened interaction it comes
-from the response at vanishing momentum, which the particle-hole pairs carry
-through the current operator (the derivative of the pencil with respect to a
-uniform change of the link phases); on the energy shell it lowers the gap by
-`c (1 - 1/eps)`, which is how screening closes a Hartree-Fock gap.
+of the screened interaction, and both are restored by the auxiliary-function
+method of Gygi and Baldereschi with the kernel's own symbol as the auxiliary
+function. For exchange the term is the constant
+`GridCoulombKernel.zero_momentum_constant()` on the filled bands: the average of
+the inverse symbol of the stiffness matrix over every momentum, minus its sum
+over the wavevectors the cell supports. For the continuum kernel on a cubic cell
+that constant is `2 MADELUNG / L`, which the mesh constant tends to under
+refinement. For the screened interaction the term is the same constant times
+the inverse dielectric function at vanishing momentum. That function is read
+from pair densities between the zone centre and a small crystal momentum $q$:
+the Hartree-Fock pencil is solved at the flat connection of momentum $q$
+(`MeshCrystal.bands_at`), the pair densities $\bar\psi_i \psi_{a,q}$ are loaded
+with the link phases of that momentum (`TripleIntegrals.loads` with a
+`bloch_twist`, which is the dressed weighted mass matrix $M_0^U[\psi_i]$), and
+the Coulomb kernel they meet is the inverse of the stiffness matrix dressed by
+the same momentum (`MeshCrystal.momentum_pairs`, `RandomPhase.set_head`). On the
+energy shell the term lowers the gap by `c (1 - 1/eps)`, which is how screening
+closes a Hartree-Fock gap.
 
 Whether a pseudopotential can be used is decided by `pseudopotential`'s
 screened, confined pseudo-atom, solved radially and on the mesh. A

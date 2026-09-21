@@ -144,18 +144,30 @@ class CrystalCell:
         # The interpolant lies between its vertex values, so the weighted form
         # is bounded below by this times the mass matrix.
         weighted.floor = float(values.real.min())
+        weighted.values = values
         return weighted
+
+    def covariant(self, kappa=(0.0, 0.0, 0.0)):
+        """The `CovariantChainHodge` of the cell at the flat connection whose
+        links are the Bloch phases of the crystal momentum `kappa`
+        (`PeriodicKuhnGrid.blochLinks`)."""
+        links = self.grid.blochLinks(self.edges, [float(x) for x in kappa])
+        return ch.CovariantChainHodge(self.base, ch.Connection(self.complex, links), 7, False)
 
     def pencil(self, kappa=(0.0, 0.0, 0.0), potential=None):
         """(A, M) at the crystal momentum `kappa` (reciprocal coordinates), in
-        energy units: `A = kinetic_scale * A0^U + M0^U[V]`. `potential` is
-        either vertex values or a `GridMatrix` from `weighted_mass`."""
-        A = self.kinetic_scale * self.stiffness.dressed(kappa)
-        M = self.mass.dressed(kappa)
+        energy units: `A = kinetic_scale * A0^U + M0^U[V]`, assembled by
+        `CovariantChainHodge.sparsePencil` and `dressedVertexPotential` at the
+        connection of `covariant(kappa)`. `potential` is either vertex values or
+        a `GridMatrix` from `weighted_mass`. (`GridMatrix.dressed` is the same
+        matrices by an entrywise rule, which `certify` holds to this assembly.)"""
+        cov = self.covariant(kappa)
+        assembled = cov.sparsePencil()
+        A = self.kinetic_scale * sp.csc_matrix(assembled.A)
         if potential is not None:
-            weighted = potential if isinstance(potential, GridMatrix) else self.weighted_mass(potential)
-            A = A + weighted.dressed(kappa)
-        return A.tocsc(), M
+            values = potential.values if isinstance(potential, GridMatrix) else np.asarray(potential).astype(complex)
+            A = A + sp.csc_matrix(cov.dressedVertexPotential(list(values)))
+        return A.tocsc(), sp.csc_matrix(assembled.M)
 
     def spacetime(self, kappa=(0.0, 0.0, 0.0)):
         """The cell as a `Spacetime` whose edges carry the declared fields: the
