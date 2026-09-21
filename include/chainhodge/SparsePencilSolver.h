@@ -58,8 +58,9 @@ struct SparsePencilRead {
   std::vector<double> residuals{};
   /// \f$ \max_{ij} |(Z^\dagger M Z - I)_{ij}| \f$.
   double orthonormalityDefect{std::numeric_limits<double>::quiet_NaN()};
-  /// \f$ \|A - A^\dagger\|_F / \|A\|_F \f$ and the same for \f$ M \f$.
+  /// \f$ \|A - A^\dagger\|_F / \|A\|_F \f$.
   double hermitianDefectA{std::numeric_limits<double>::quiet_NaN()};
+  /// \f$ \|M - M^\dagger\|_F / \|M\|_F \f$.
   double hermitianDefectM{std::numeric_limits<double>::quiet_NaN()};
   /// True when \f$ A - \sigma M \f$ admitted a Cholesky factorization, i.e.
   /// \f$ \sigma \f$ lies below every eigenvalue of the pencil. The returned
@@ -68,8 +69,11 @@ struct SparsePencilRead {
   bool shiftBelowSpectrum{false};
   /// Whether every requested pair met the tolerance.
   bool converged{false};
+  /// The block width used.
   int blockSize{0};
+  /// Block expansions performed.
   int iterations{0};
+  /// Thick restarts performed.
   int restarts{0};
   /// Solves with the factorized \f$ A - \sigma M \f$ (one per block column
   /// per expansion, plus the condition estimate's).
@@ -82,10 +86,11 @@ struct EffectiveBettiRead {
   /// \f$ \beta^{\mathrm{eff}}(\epsilon) \f$: the number of eigenvalues in
   /// \f$ (\sigma, \epsilon] \f$, counted with multiplicity.
   int rank{0};
+  /// The scale \f$ \epsilon \f$ the count was taken at.
   double epsilon{0.0};
-  /// The largest eigenvalue inside the window and the smallest outside it;
-  /// quiet NaN when there is none.
+  /// The largest eigenvalue inside the window; quiet NaN when it is empty.
   double lastInside{std::numeric_limits<double>::quiet_NaN()};
+  /// The smallest eigenvalue found outside the window; quiet NaN when none was.
   double firstOutside{std::numeric_limits<double>::quiet_NaN()};
   /// `firstOutside / lastInside`, the separation of the enclosed band from
   /// the rest of the spectrum: \f$ +\infty \f$ when the band is empty or lies

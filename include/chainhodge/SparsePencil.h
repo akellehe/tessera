@@ -17,8 +17,11 @@ namespace tessera::chainhodge {
 /// \f$ M_0^U \f$ (`CovariantChainHodge::sparsePencil`): at \f$ U = 1 \f$ these
 /// are the stiffness and mass matrices of piecewise-linear finite elements.
 struct SparsePencil {
+  /// The chain degree the pencil belongs to.
   int degree{0};
+  /// The left-hand matrix (the stiffness matrix at degree zero).
   SparseMatrix A{};
+  /// The right-hand matrix (the mass matrix at degree zero).
   SparseMatrix M{};
 };
 

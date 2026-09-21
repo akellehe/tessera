@@ -72,10 +72,12 @@ class Spacetime;
 /// Research and Development 4, 1960, for the triangulation of the cube.
 class PeriodicKuhnGrid : public Topology {
   public:
+    /// A cell as its vertex ids.
     using Cell = std::vector<std::uint64_t>;
     /// A closed walk as directed steps \f$ (u \to v) \f$, the convention of
     /// `chainhodge::Connection::holonomy`.
     using Walk = std::vector<std::pair<std::uint64_t, std::uint64_t>>;
+    /// A real symmetric \f$ 3 \times 3 \f$ matrix, row by row.
     using Gram = std::array<std::array<double, 3>, 3>;
 
     /// @param n1,n2,n3 Grid divisions per axis, each \f$ \ge 3 \f$.
@@ -95,10 +97,13 @@ class PeriodicKuhnGrid : public Topology {
     /// \f$ \sqrt{s_e} \f$ (real and positive). `numSimplices` is ignored.
     void build(Spacetime *spacetime, int numSimplices) override;
 
+    /// \f$ (N_1, N_2, N_3) \f$.
     [[nodiscard]] const std::array<int, 3> &divisions() const noexcept { return n_; }
+    /// \f$ A_{ab} = a_a \cdot a_b \f$, as given.
     [[nodiscard]] const Gram &latticeGram() const noexcept { return gram_; }
     /// \f$ g_{ab} = A_{ab} / (N_a N_b) \f$.
     [[nodiscard]] Gram stepMetric() const;
+    /// \f$ N_1 N_2 N_3 \f$.
     [[nodiscard]] std::size_t vertexCount() const noexcept;
 
     /// The id of grid index \f$ (i, j, l) \f$, each index reduced modulo its
