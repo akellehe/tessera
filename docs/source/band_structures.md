@@ -110,6 +110,7 @@ with a known answer.
 | `potentials` | cosine potential, Gaussian well, nonlocal projector, empirical pseudopotential | Mathieu characteristic values; the radial equation; dense solves; plane waves |
 | `fiber` | a static potential as the phase of the timelike edges of the history complex | its Klein–Gordon limit; the static route |
 | `spin` | two sheets, spin–orbit coupling as the attachment block | the quartet and doublet of $L \cdot S$ |
+| `spinorbit` | two sheets in the ab initio run: relativistic separable pseudopotentials, Hartree–Fock on two-component sections | the radial equation of each total angular momentum; dense solves; the one-sheet loop; the measured splitting |
 | `coulomb` | the finite-element Coulomb kernel, Hartree–Fock on the covariance | the periodic Coulomb potential; exact diagonalization; the Wick engine; the electron-gas exchange energy |
 | `screening` | gauge response, polarizability, random-phase approximation, one-shot quasiparticle correction | the Ward identity; the exact discrete Lindhard sum; two routes to the correlation energy; the second-order self-energy |
 | `response` | the derivative of a band energy with respect to the squared edge lengths | Euler's identity; finite differences |
@@ -260,6 +261,88 @@ constant of the supercell the set is equivalent to. A cell doubled along an
 axis at its zone centre and the single cell sampled at 0 and 1/2 along that
 axis give the same Hartree-Fock levels, filled and empty, and the test suite
 holds them to each other.
+
+### Two sheets in the ab initio run
+
+`spinorbit` carries spin in the ab initio run as two sheets and the spin-orbit
+coupling as the attachment block between them. Its input is the relativistic
+separable pseudopotential of Hartwigsen, Goedecker and Hutter (Physical Review
+B 58, 3641, 1998), a closed form: an error-function local part and Gaussian
+projectors with two coefficient matrices per angular momentum $l$, $h^l$ for
+the average over the two total angular momenta $j = l \pm 1/2$ and $k^l$ for
+their difference,
+
+$$
+V_{nl} = \sum_{l} \sum_{ij} \sum_{m} \lvert p^l_i Y_{lm} \rangle h^l_{ij} \langle p^l_j Y_{lm} \rvert
+       + \sum_{l \ge 1} \sum_{ij} \sum_{ms, m's'} \lvert p^l_i Y_{lm} s \rangle k^l_{ij}
+         (L \cdot S)_{ms, m's'} \langle p^l_j Y_{lm'} s' \rvert .
+$$
+
+`HGH_TABLE` holds the rows of the paper's Table I for gallium (three electrons)
+and arsenic (five) as printed; an element that is not held is refused, and one
+is added by copying its rows. The paper gives no valence density; the one used
+to start a loop and to screen the pseudo-atom is the spherical Hartree density
+of the pseudo-atom, and no converged number depends on it. The matrices of $L$
+on the real harmonics of `pseudopotential.real_harmonics` are exact
+(`angular_momentum` applies $-i\, r \times \nabla$ to the harmonic polynomials),
+and $L \cdot S$ has the eigenvalues $l/2$ and $-(l+1)/2$ of the two total
+angular momenta.
+
+The two-sheet pencil is the direct sum of the one-sheet pencil with itself
+(`SparsePencilComposition.directSum`), and the separable part is one low-rank
+term on the projector loads of both sheets, with the complex Hermitian core
+$1 \otimes h + k \otimes L \cdot S$ (`spin_orbit_core`, `two_sheet_term`).
+`SparsePencilSolver` diagonalizes the whole pencil (`solve_two_sheets`), so the
+coupling is carried to all orders, and every level is a Kramers doublet
+(`time_reversal_defect`). `run_hartree_fock_two_sheets` iterates Hartree-Fock on
+the two-component sections: the density sums both sheets, and the exchange
+operator couples them through the off-diagonal spin blocks of the density
+matrix. Its first diagonalization is the two-sheet pencil of the converged
+one-sheet operator with the projectors and the compressed exchange doubled per
+sheet; the later ones matter because the compressed exchange is exact only on
+the span of the sections it was built from, which the block rotates out of the
+span of the one-sheet bands.
+
+The inertia certificate of `SparsePencilSolver` with a low-rank term needs
+$A - \sigma M$ positive definite. The strongly repulsive projectors of these
+pseudopotentials leave levels of the local part below the lowest level of the
+whole operator, so a shift just below the lowest level is not certified; the
+converged pencil is solved once more from below the minimum of the local
+potential, where the certificate applies (`certify_one_sheet`, and the same at
+the end of the two-sheet loop).
+
+The resolution test of `pseudopotential`, the screened and confined pseudo-atom,
+runs on two sheets (`pseudo_atom_levels`) against the radial equation with the
+coefficients $h + k \langle L \cdot S \rangle_j$ (`spinorbit.radial_levels`). A p
+level is a quartet above a doublet; the mesh, which keeps one threefold axis,
+splits the quartet further at the order of its error, a rank-two field that has
+no trace on either multiplet, so the distance between the centres of the two
+multiplets (`multiplet_splitting`) is moved at second order only. For the
+published arsenic potential in a cell of 9 bohr:
+
+| spacing (bohr) | 0.75 | 0.56 | 0.45 | 0.375 | 0.32 | radial |
+|---|---|---|---|---|---|---|
+| splitting of the p level (meV) | 579 | 481 | 491 | 501 | 507 | 514 |
+| s level (Ry) | -0.114 | -0.164 | -0.230 | -0.271 | -0.298 | -0.388 |
+
+The Gaussians of these potentials are 0.46 to 0.98 bohr wide, and
+piecewise-linear elements do not resolve them at these spacings: the s level is
+1.2 eV high at 0.32 bohr and closes more slowly than the second order of a
+resolved potential, while the spin-orbit splitting, a ratio of matrix elements
+on one projector channel, is within 2 % there.
+
+```
+python -m tessera.drivers.bands.spinorbit --divisions 12 16 20 24 --checkpoint state/ --out splitting.json
+```
+
+runs gallium arsenide on the conventional cell, one sheet and then two, and
+reports the splitting of the top of the valence band (a triplet on one sheet, a
+quartet above a doublet on two) after the first diagonalization and at
+self-consistency, on every mesh and extrapolated, against the measured 0.341 eV
+(`reference.GALLIUM_ARSENIDE`). The flags `--refinement-terms` and
+`--lattice-images` are those of the table below; `--checkpoint` keeps the state
+of every loop so that a later call continues it, and `--max-updates` bounds the
+exchange updates of one call.
 
 ### Running the prediction
 

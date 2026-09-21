@@ -31,6 +31,7 @@ class TestPublishedForm:
     def test_the_table_holds_the_published_rows_in_rydberg(self):
         gallium, arsenic = so.hgh("Ga", gaussian_density(3.0)), so.hgh("As", gaussian_density(5.0))
         assert (gallium.valence, arsenic.valence) == (3.0, 5.0)
+        assert pp.Pseudopotential.from_hgh("As", gaussian_density(5.0)).K == pytest.approx(arsenic.K)
         assert [l for l, _ in arsenic.projectors] == [0, 0, 0, 1, 1, 2]
         assert arsenic.D[0, 0] == pytest.approx(2.0 * 4.560761) and arsenic.K[3, 3] == pytest.approx(2.0 * 0.052466)
         assert gallium.K[4, 4] == pytest.approx(2.0 * -0.000873) and gallium.K[5, 5] == pytest.approx(2.0 * 0.001486)
