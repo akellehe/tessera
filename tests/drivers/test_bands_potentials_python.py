@@ -79,8 +79,10 @@ class TestNonlocalProjector:
         cell = CrystalCell.cubic(6.0, 4, kinetic_scale=1.0)
         A, M = (x.toarray() for x in cell.pencil((0, 0, 0), pot.gaussian_well(cell, 3.0, 1.5)))
         rng = np.random.default_rng(7)
-        beta = M @ rng.normal(size=(cell.size, 2))
-        D = np.diag([-2.0, 1.5])
+        functions = rng.normal(size=(cell.size, 2))
+        functions /= np.sqrt(np.einsum("ij,ij->j", functions, M.real @ functions))
+        beta = M @ functions                      # M-normalized projector functions
+        D = np.diag([-2.0, 1.5])                  # so the lowest level stays above sigma
         sigma = -6.0
         base, explicit = A - sigma * M, A - sigma * M + beta @ D @ beta.T
         n = cell.size
@@ -89,7 +91,7 @@ class TestNonlocalProjector:
         assert update.updateRank == 2 and update.spansAffectedChange(list(explicit.ravel()))
 
         vector = M @ rng.normal(size=n)
-        for _ in range(40):
+        for _ in range(80):
             solved = update.solve(list(vector.astype(complex)))
             assert solved.certificate.holds()
             assert solved.certificate.grade == cob.CertificateGrade.StructureExact
