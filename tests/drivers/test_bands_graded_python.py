@@ -123,6 +123,16 @@ class TestBisection:
         assert 0.0 < both.solve(KAPPA, 2).energies[0] - k2 < 2.0 * uniform
 
 
+def test_a_reciprocal_vector_moves_from_the_links_to_the_vertex_values_at_the_true_positions():
+    """The pencil at kappa + G is the pencil at kappa in the gauge exp(-i G . x) at the
+    true positions of the vertices, which is how `MeshCrystal._shifted` wraps a momentum set."""
+    cell = GradedCell(LATTICE, 4, IonGrading(CENTRE, 2.5, 1.5), IonRefinement(CENTRE, [(1.6, 1)]), kinetic_scale=1.0)
+    shift = np.array([1.0, 0.0, -1.0])
+    gauge = sp.diags(np.exp(-2j * np.pi * (cell.fractional @ shift)))
+    for plain, wrapped in zip(cell.pencil(KAPPA), cell.pencil(tuple(np.array(KAPPA) + shift))):
+        assert abs(gauge @ plain @ gauge.conj() - wrapped).max() < 1e-12
+
+
 def test_localized_levels_converge_at_second_order_where_the_uniform_mesh_fails():
     """A well of width 0.35 in a cell of side 6, with levels 1s, 1p, 2s and 1d:
     the uniform mesh of 4096 vertices is off by a third of the binding energy,

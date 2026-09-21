@@ -704,7 +704,7 @@ class MeshCrystal:
         kappa + shift, `shift` a reciprocal vector of the cell (integers): the
         lattice plane wave of `shift` moves from the link phases to the vertex
         values, exactly."""
-        phase = np.exp(-2j * np.pi * (self.cell.index @ (np.asarray(shift, dtype=float) / np.array(self.cell.divisions))))
+        phase = np.exp(-2j * np.pi * (self.cell.fractional @ np.asarray(shift, dtype=float)))    # at the true positions
         return np.asarray(vectors) * phase[:, None]
 
     def _set_exchange(self, momenta, constant, filled, k, targets):
