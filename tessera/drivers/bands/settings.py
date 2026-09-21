@@ -41,7 +41,13 @@ class Approximations:
 
     `frequency_nodes`: the number of terms of the Chebyshev series that carries
     the screened interaction along the imaginary axis in
-    `KineticBasisScreening` (at least 5)."""
+    `KineticBasisScreening` (at least 5).
+
+    `projector_quadrature`: the Gauss points per direction of the collapsed
+    rule that loads the projector functions of the ions on every tetrahedron
+    (`loads.SimplexQuadrature`); n points integrate polynomials of degree
+    2 n - 1 exactly, 6 x 6 x 6 points per tetrahedron by default. 0 loads the
+    interpolant of the projector with the mass matrix in its place, M beta."""
     self_energy_order: int = 3
     zero_momentum_order: int = 3
     refinement_terms: int = 5
@@ -49,6 +55,7 @@ class Approximations:
     frequency_nodes: int = 64
     vertex_bands: int = 12
     vertex_poles: int = 12
+    projector_quadrature: int = 6
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -60,6 +67,8 @@ class Approximations:
             raise ValueError("frequency_nodes is at least 5")
         if self.vertex_bands < 2 or self.vertex_poles < 1:
             raise ValueError("vertex_bands is at least 2 and vertex_poles at least 1")
+        if self.projector_quadrature < 0:
+            raise ValueError("projector_quadrature is a number of points per direction, or 0 for the interpolant")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -126,8 +135,12 @@ class Approximations:
                            help="modes nearest the gap on the internal lines of the diagrams beyond the first order")
         group.add_argument("--vertex-poles", type=int, default=defaults.vertex_poles,
                            help="modes of the screened interaction kept in the diagrams beyond the first order")
+        group.add_argument("--projector-quadrature", type=int, default=defaults.projector_quadrature,
+                           help="Gauss points per direction of the rule that loads the projectors on every "
+                                f"tetrahedron (default {defaults.projector_quadrature}; 0 loads the interpolant)")
 
     @classmethod
     def from_arguments(cls, args):
         return cls(args.self_energy_order, args.zero_momentum_order, args.refinement_terms, args.lattice_images,
-                   args.frequency_nodes, args.vertex_bands, args.vertex_poles)
+                   args.frequency_nodes, args.vertex_bands, args.vertex_poles,
+                   projector_quadrature=args.projector_quadrature)

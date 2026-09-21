@@ -498,14 +498,53 @@ class MeshCrystal:
                     if l == l2 and pseudo.D[i, j] != 0.0:
                         for m in range(2 * l + 1):
                             D[start_i + m, start_j + m] = pseudo.D[i, j]
-        return self.mass @ beta, D
+        if self.approximations.projector_quadrature == 0:
+            return self.mass @ beta, D
+        self._loads = self._projector_loads()
+        return np.hstack([local.assemble() for local in self._loads]), D
+
+    def _projector_loads(self):
+        """The loads int beta(r - tau) lambda_v(r) dr of every ion's projector
+        functions by quadrature on the tetrahedra (`loads.SimplexQuadrature`), the
+        radial tables read as `Pseudopotential.projector_at` reads them, summed
+        over the images of the ion within the reach of each table."""
+        from tessera.drivers.bands import loads
+        rule = loads.SimplexQuadrature(self.cell, self.approximations.projector_quadrature)
+        out = []
+        for pseudo, position in self.crystal.ions:
+            def functions(offsets, pseudo=pseudo):
+                radius = np.linalg.norm(offsets, axis=1)
+                return np.array([pseudo.projector_at(i, radius) * harmonic
+                                 for i, (l, _) in enumerate(pseudo.projectors)
+                                 for harmonic in real_harmonics(l, offsets)]).T
+            if not pseudo.projectors:
+                out.append(loads.LocalLoads(self.cell.size, np.zeros(0, dtype=int), np.zeros((0, 3)), np.zeros((0, 0))))
+                continue
+            reach = max(loads.radial_reach(pseudo.r[1:], r_beta[1:] / pseudo.r[1:]) for _, r_beta in pseudo.projectors)
+            out.append(rule.loads(functions, position, reach, self.approximations.images))
+        return out
+
+    def _projector_derivative(self, axis, mass_derivative):
+        """The derivative of the projector loads with respect to the Cartesian
+        component `axis` of the crystal momentum, at the zone centre."""
+        if self.approximations.projector_quadrature:
+            return np.hstack([local.derivative(axis) for local in self._loads])
+        shifted = np.zeros(self._beta.shape, dtype=complex)                     # P_q = M_q (beta exp(-i q . (x - tau)))
+        for index, (_, position) in enumerate(self.crystal.ions):
+            columns = self._beta_ion == index
+            shifted[:, columns] = -1j * self._displacements(position)[:, axis, None] * self._beta[:, columns]
+        return mass_derivative @ self._beta + self.mass @ shifted
 
     def _projectors_at(self, kappa, mass):
         """The projector loads at the crystal momentum `kappa`. A separable
         term sum_R |beta_R> D <beta_R| acts on the cell-periodic part of a
         section of momentum k through beta(r - tau) exp(-i k . (r - tau)) summed
-        over images, loaded with the mass matrix dressed by the same momentum."""
+        over images: by quadrature the load of every image carries the phase of
+        its displacement to the vertex (`loads.LocalLoads.assemble`); the
+        interpolant is loaded with the mass matrix dressed by the same momentum."""
         k = self.cell.momentum(kappa)
+        if self.approximations.projector_quadrature:
+            return np.hstack([local.assemble(k) for local in self._loads])
         dressed = self._beta.astype(complex)
         for index, (_, position) in enumerate(self.crystal.ions):
             phase = np.exp(-1j * (self._displacements(position) @ k))
@@ -1190,12 +1229,7 @@ class MeshCrystal:
             dA = cell.kinetic_scale * sp.csc_matrix(pencil.A) + sp.csc_matrix(
                 covariant.dressedVertexPotentialPhaseDerivativeAlong(list(local.values), weights))
             current = filled.T @ (dA @ empties) - (filled.T @ (dM @ empties)) * levels[None, occupied:]
-            # The projector loads P_q = M_q (beta exp(-i q . (x - tau))).
-            shifted = np.zeros(self._beta.shape, dtype=complex)
-            for index, (_, position) in enumerate(self.crystal.ions):
-                columns = self._beta_ion == index
-                shifted[:, columns] = -1j * self._displacements(position)[:, axis, None] * self._beta[:, columns]
-            dP = dM @ self._beta + self.mass @ shifted
+            dP = self._projector_derivative(axis, dM)
             current = current + (filled.T @ dP) @ self.D @ overlap_empty.T + overlap @ self.D @ (dP.conj().T @ empties)
             # Exchange.
             direct = np.zeros((occupied, bands - occupied), dtype=complex)

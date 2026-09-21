@@ -209,9 +209,19 @@ anywhere in these drivers are closed forms of the framework's own matrices (the
 Fourier symbols of its stiffness and mass matrices, derivatives of its covariant
 assembly), each held to the framework's numerical route by a test; a continuum
 solution is never substituted for one. The separable nonlocal part is a term
-`P D P^T` of low rank in the left-hand matrix of the pencil, with `P = M beta`
-the load vectors of the projector functions; `SparsePencilSolver` applies it
-through the Woodbury identity and certifies the shift by inertia. Exchange is
+`P D P^T` of low rank in the left-hand matrix of the pencil, with `P` the load
+vectors of the projector functions, $P_v = \int \beta(x)\,\lambda_v(x)\,dx$
+against the vertex function $\lambda_v$. The radial functions are tabulated, so
+the loads have no closed form: they are taken by a collapsed Gauss rule on every
+tetrahedron (`loads.SimplexQuadrature`, exact for polynomials of degree $2n-1$
+with $n$ points per direction, held to the library's mass matrix and triple
+integrals by a test), summed over the images of each ion within the reach of
+its table. At a crystal momentum the load of every image carries the Bloch
+phase of its displacement to the vertex. `M beta`, the mass matrix on the
+vertex values of the projector, is the load of the projector's interpolant and
+remains available (`--projector-quadrature 0`); the local potential is
+interpolated at the vertices, as the plan has it. `SparsePencilSolver` applies
+the term through the Woodbury identity and certifies the shift by inertia. Exchange is
 compressed onto the computed bands and joins the same low-rank term. The
 Coulomb kernel of the grid is inverted exactly by Fourier transform, because the
 stiffness matrix commutes with the grid translations.
@@ -237,7 +247,8 @@ $$ d_{ia} = 1^T (\partial M_0^U[\psi_i])\, z_a
 
 with $\partial$ the derivative with respect to a uniform change of the link
 phases: entrywise for the stiffness, mass and weighted mass matrices
-(`GridMatrix.momentum_derivative`), the product rule on the projector loads, and
+(`GridMatrix.momentum_derivative`), the derivative of the Bloch phases of the
+projector loads (`loads.LocalLoads.derivative`), and
 for exchange the derivative of the dressed weighted mass matrices and of the
 Coulomb kernel, whose symbol has a closed-form gradient
 (`GridCoulombKernel.potential_derivative`). The entry of the kernel at $G = 0$
@@ -282,6 +293,7 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 | `--zero-momentum-order` | how the self-energy integrand is averaged over the momentum transfers the sampling leaves out: 1 is the closed form at vanishing momentum; k is a midpoint grid of k transfers per axis, the Hartree-Fock pencil solved at every node, the singular part averaged analytically and the bounded remainder by the grid | 1 to 5, default 3; all implemented |
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
+| `--projector-quadrature` | Gauss points per direction of the rule that loads the projector functions on every tetrahedron; 0 loads the interpolant of the projector with the mass matrix | at least 1 (or 0), default 6 |
 | `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
