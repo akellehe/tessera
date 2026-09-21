@@ -63,9 +63,8 @@ def test_the_rule_reproduces_the_mass_matrix_and_the_triple_integrals_of_the_lib
     rng = np.random.default_rng(3)
     x, y = rng.normal(size=cell.size), rng.normal(size=cell.size)
     assert np.abs(rule.integrate(rule.at_points(x)[:, :, None])[:, 0] - cell.mass.dressed().real @ x).max() < 1e-13
-    triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
     product = (rule.at_points(x) * rule.at_points(y))[:, :, None]
-    assert np.abs(rule.integrate(product)[:, 0] - triple.loads(x, y)[:, 0]).max() < 1e-13
+    assert np.abs(rule.integrate(product)[:, 0] - coulomb.pair_loads(cell, x, y)[:, 0]).max() < 1e-13
 
 
 def test_the_simplices_are_laid_out_by_the_displacements_of_the_grid():
