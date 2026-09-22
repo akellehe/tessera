@@ -172,11 +172,30 @@ class TestHodgeLaplacianMovesWithU:
             e.setLength(cmath.sqrt(s0))
             assert grad[index].real == pytest.approx((up - down) / (2 * step), rel=1e-4, abs=1e-8)
 
-    def test_the_entropy_directional_derivative_refuses_by_name(self):
+    @pytest.mark.parametrize("mode", [cob.HodgeEntropyPhaseMode.IncludeComplexPhase,
+                                      cob.HodgeEntropyPhaseMode.IgnoreComplexPhase])
+    def test_the_entropy_directional_derivative_is_taken_of_the_default_operator(self, mode):
+        """d/dt of the default entropy gradient at z + t v (the Hessian-vector
+        product the joint-stationarity direction descends along) against
+        central differences of the gradient itself."""
         st = _spacetime()
-        direction = [0.0] * len(st.getEdgeList().toVector())
-        with pytest.raises(RuntimeError, match="not implemented"):
-            HL(st).spectralEntropyGradientDirectionalDerivative(1, direction)
+        _twist(st)
+        k = 1
+        edges = st.getEdgeList().toVector()
+        rng = np.random.default_rng(23)
+        v = rng.normal(size=len(edges)) + 1j * rng.normal(size=len(edges))
+        got = np.asarray(HL(st).spectralEntropyGradientDirectionalDerivative(k, list(v), mode), dtype=complex)
+        s0 = [e.getLength() ** 2 for e in edges]
+        step = 1e-6
+
+        def gradient_at(t):
+            for e, s, ve in zip(edges, s0, v):
+                e.setLength(cmath.sqrt(s + t * ve))
+            return np.asarray(HL(st).spectralEntropyGradient(k, mode), dtype=complex)
+
+        fd = (gradient_at(step) - gradient_at(-step)) / (2 * step)
+        gradient_at(0.0)
+        np.testing.assert_allclose(got, fd, atol=1e-5 * max(1.0, np.abs(fd).max()))
 
 
 class TestTrackerMovesWithU:

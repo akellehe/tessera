@@ -317,9 +317,11 @@ class HodgeLaplacian {
     /// for a real parameter \f$ t \f$, so both \f$ z \f$ and \f$ \bar z \f$
     /// move. Returns an all-zero vector for an empty or identically-zero
     /// operator.
+    /// Taken of the operator of this instance's metric source: under
+    /// `WhitneyPencil` the second derivative of \f$ L_z \f$ in the squared
+    /// lengths comes from `chainhodge::CovariantChainHodge::lengthDirection`
+    /// and `covariantOperatorSecondDerivative`.
     /// @throws std::runtime_error if `direction.size()` is not the edge count.
-    /// @throws std::logic_error under `WhitneyPencil`: the second derivative
-    ///   of the Whitney operator in the squared lengths is not implemented.
     [[nodiscard]] std::vector<std::complex<double>>
     spectralEntropyGradientDirectionalDerivative(
         int k, const std::vector<std::complex<double>> &direction,

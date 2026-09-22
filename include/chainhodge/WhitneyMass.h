@@ -236,6 +236,28 @@ class WhitneyMass {
       const cobordism::ChainComplex &K, const SquaredLengths &s, int k,
       std::size_t edgeIndex, Branch branch = Branch::Continuation);
 
+  /// The directional derivative \f$ D_v M_k = \sum_e v_e\,\partial M_k/\partial s_e \f$
+  /// along the squared-length direction \p direction (one entry per edge, in
+  /// canonical order), on \f$ M_k \f$'s pattern.
+  /// @throws std::invalid_argument when \p direction is not one entry per edge.
+  [[nodiscard]] static SparseMatrix assembleDirectionalDerivative(
+      const cobordism::ChainComplex &K, const SquaredLengths &s, int k,
+      const std::vector<Complex> &direction, Branch branch = Branch::Continuation);
+
+  /// The second derivatives along one direction:
+  /// \f$ D_v\,\partial M_k/\partial s_e = \sum_f v_f\,\partial^2 M_k/\partial s_e\partial s_f \f$
+  /// for every edge \f$ e \f$ (entry \f$ e \f$ of the result, canonical order).
+  /// Per top simplex \f$ T \f$ the block is \f$ k!^2 \sum \pm|T|\,\delta\,\lambda\,
+  /// \det\Gamma_{ce} \f$ with \f$ \Gamma \f$ built from \f$ g_T^{-1} \f$ and
+  /// \f$ g_T \f$ linear in the squared lengths, so the second derivative follows
+  /// from \f$ \partial g^{-1} = -g^{-1}\,\partial g\,g^{-1} \f$,
+  /// \f$ \partial|T| = \tfrac12|T|\,\mathrm{tr}(g^{-1}\partial g) \f$ and the
+  /// multilinearity of the determinant in its rows.
+  /// @throws std::invalid_argument when \p direction is not one entry per edge.
+  [[nodiscard]] static std::vector<SparseMatrix> assembleSecondDerivatives(
+      const cobordism::ChainComplex &K, const SquaredLengths &s, int k,
+      const std::vector<Complex> &direction, Branch branch = Branch::Continuation);
+
   /// The per-edge contractions \f$ c_e = \mathrm{tr}\bigl(X^T\,
   /// (\partial M_k/\partial s_e)\,Y\bigr) \f$ for every edge, from the local
   /// blocks without forming any derivative matrix — the quantity a gradient of
