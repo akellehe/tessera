@@ -897,6 +897,42 @@ class RecursiveQuotient {
         const std::vector<double> &gammas, int restarts = 4,
         std::uint64_t baseSeed = 0);
 
+    /// The window partition above, with the persistence of each carried
+    /// component reported beside it.
+    struct ResolvedPartitionRead {
+      /// The partition, exactly what the window form of `persistentPartition`
+      /// returns: ascending index sets covering every coordinate once.
+      std::vector<std::vector<int>> components{};
+      /// The window the scan ran over, in scan order.
+      std::vector<double> resolutions{};
+      /// The resolution the carried supports were read at, which is the first
+      /// of the window.
+      double selectedResolution{std::numeric_limits<double>::quiet_NaN()};
+      /// How many resolutions of the window each carried component stood at,
+      /// in component order. A component carried by a persistence track stood
+      /// at all of them; a coordinate no such track claimed comes back as a
+      /// singleton and is reported with a persistence of one.
+      std::vector<double> componentPersistence{};
+      /// The weakest adjacent-resolution support overlap over the carried
+      /// components' tracks: how firmly the window's communities were followed
+      /// from one resolution to the next. NaN for a window of one resolution,
+      /// where no adjacent slice exists to overlap with, and for a partition
+      /// carried by no track at all.
+      double worstOverlap{std::numeric_limits<double>::quiet_NaN()};
+    };
+
+    /// The window form of `persistentPartition`, with the persistence of every
+    /// carried component reported beside the partition. It is the same scan,
+    /// the same rule and the same result; a recursion that records why a level
+    /// was partitioned as it was reads this form instead.
+    /// @param overlapThreshold The support overlap two components of adjacent
+    ///   resolutions must share to be followed as one community.
+    /// @throws as the window form of `persistentPartition`.
+    [[nodiscard]] static ResolvedPartitionRead persistentPartitionOverResolutions(
+        const std::vector<std::complex<double>> &op, int dim,
+        const std::vector<double> &gammas, int restarts = 4,
+        std::uint64_t baseSeed = 0, double overlapThreshold = 0.5);
+
     /// `persistentPartition` of this level's reduced operator: the partition
     /// \f$ P_\ell \f$ to hand straight to `nextLevel`, as
     /// `child = parent.nextLevel(parent.childPersistentPartition())`.
@@ -949,8 +985,20 @@ class RecursiveQuotient {
     /// reduced coordinates, which include any resonant modes retained at
     /// \f$ \lambda \f$ and so need not match the static reduction's; use
     /// `persistentPartition(feshbach(...).response, ...)` to discover them.
-    /// @throws std::invalid_argument when `windowLower > windowUpper` or the
-    ///   partition does not cover the pencil's coordinates.
+    ///
+    /// A level produced by this step carries the pencil **evaluated** at one
+    /// spectral parameter, which is a matrix and not a function of
+    /// \f$ \lambda \f$. Eliminating it again at the same \f$ \lambda \f$ is
+    /// the supported block elimination with no further shift, because the
+    /// parameter is already inside the matrix, and that is what this call does
+    /// on such a level; a second \f$ \lambda \f$ cannot be read off it at all
+    /// and is refused. The recursion driven as a function of \f$ \lambda \f$,
+    /// which re-derives the whole chain from the microscopic pencil at every
+    /// point, is `LevelRecursion`.
+    /// @throws std::invalid_argument when `windowLower > windowUpper`, when the
+    ///   partition does not cover the pencil's coordinates, or when this level
+    ///   is itself an evaluated pencil and a different \f$ \lambda \f$ is
+    ///   asked for.
     [[nodiscard]] RecursiveQuotient nextLevelAtLambda(
         const std::vector<std::vector<int>> &components,
         std::complex<double> lambda, double windowLower, double windowUpper,

@@ -2059,13 +2059,13 @@ observables::PersistentModularity magnitudeGraphOf(
 // claimed at most once and every unclaimed coordinate its own component: the
 // partition handed to `nextLevel` must cover every index exactly once.
 std::vector<std::vector<int>> partitionOf(
-    const std::vector<const observables::ComponentRead *> &components,
-    int dim) {
+    const std::vector<const observables::ComponentRead *> &components, int dim,
+    std::vector<int> *origin = nullptr) {
   std::vector<std::vector<int>> partition;
   std::vector<bool> claimed(static_cast<std::size_t>(dim), false);
-  for (const observables::ComponentRead *component : components) {
+  for (std::size_t source = 0; source < components.size(); ++source) {
     std::vector<int> members;
-    for (const std::uint64_t cell : component->support) {
+    for (const std::uint64_t cell : components[source]->support) {
       const int index = static_cast<int>(cell);
       if (index < 0 || index >= dim) continue;
       if (claimed[static_cast<std::size_t>(index)]) continue;
@@ -2075,10 +2075,16 @@ std::vector<std::vector<int>> partitionOf(
     if (!members.empty()) {
       std::sort(members.begin(), members.end());
       partition.push_back(std::move(members));
+      // Which discovered community the entry came from, for a caller that
+      // reports why it was carried; an appended singleton came from none.
+      if (origin != nullptr) origin->push_back(static_cast<int>(source));
     }
   }
   for (int i = 0; i < dim; ++i)
-    if (!claimed[static_cast<std::size_t>(i)]) partition.push_back({i});
+    if (!claimed[static_cast<std::size_t>(i)]) {
+      partition.push_back({i});
+      if (origin != nullptr) origin->push_back(-1);
+    }
   return partition;
 }
 
@@ -2109,6 +2115,14 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
 std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
     const std::vector<cd> &op, int dim, const std::vector<double> &gammas,
     int restarts, std::uint64_t baseSeed) {
+  return persistentPartitionOverResolutions(op, dim, gammas, restarts, baseSeed)
+      .components;
+}
+
+RecursiveQuotient::ResolvedPartitionRead
+RecursiveQuotient::persistentPartitionOverResolutions(
+    const std::vector<cd> &op, int dim, const std::vector<double> &gammas,
+    int restarts, std::uint64_t baseSeed, double overlapThreshold) {
   if (dim < 0 || op.size() != static_cast<std::size_t>(dim) *
                                  static_cast<std::size_t>(dim))
     throw std::invalid_argument(
@@ -2118,15 +2132,23 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
         "persistentPartition: the resolution window has no resolution in it");
   if (restarts <= 0)
     throw std::invalid_argument("persistentPartition: restarts must be > 0");
-  if (dim == 0) return {};
+  ResolvedPartitionRead read;
+  read.resolutions = gammas;
+  read.selectedResolution = gammas.front();
+  if (dim == 0) return read;
 
   observables::PersistentModularityConfig config;
   config.resolutions = gammas;
   config.restarts = restarts;
   config.baseSeed = baseSeed;
+  config.overlapThreshold = overlapThreshold;
   const observables::ScanReport report =
       magnitudeGraphOf(op, dim).scanResolutions(config);
-  if (report.slices.empty()) return partitionOf({}, dim);
+  if (report.slices.empty()) {
+    read.components = partitionOf({}, dim);
+    read.componentPersistence.assign(read.components.size(), 1.0);
+    return read;
+  }
 
   // A track whose first and last slices are the ends of the window is a
   // community that stood at every resolution of it. Its member at the first
@@ -2134,14 +2156,33 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
   const std::vector<observables::ComponentRead> &first =
       report.slices.front().components;
   std::vector<const observables::ComponentRead *> persistent;
+  std::vector<double> overlaps;
   for (const observables::PersistenceTrack &track : report.tracks) {
     if (track.firstSlice != 0 || track.lastSlice + 1 != report.slices.size())
       continue;
     if (track.memberIndices.empty()) continue;
     const std::size_t at = track.memberIndices.front();
-    if (at < first.size()) persistent.push_back(&first[at]);
+    if (at >= first.size()) continue;
+    persistent.push_back(&first[at]);
+    overlaps.push_back(track.minAdjacentOverlap);
   }
-  return partitionOf(persistent, dim);
+  std::vector<int> origin;
+  read.components = partitionOf(persistent, dim, &origin);
+  const auto window = static_cast<double>(gammas.size());
+  for (const int source : origin) {
+    if (source < 0) {
+      read.componentPersistence.push_back(1.0);
+      continue;
+    }
+    read.componentPersistence.push_back(window);
+    if (gammas.size() > 1) {
+      const double overlap = overlaps[static_cast<std::size_t>(source)];
+      read.worstOverlap = std::isfinite(read.worstOverlap)
+                              ? std::min(read.worstOverlap, overlap)
+                              : overlap;
+    }
+  }
+  return read;
 }
 
 std::vector<std::vector<int>> RecursiveQuotient::childPersistentPartition(
@@ -2521,6 +2562,32 @@ RecursiveQuotient RecursiveQuotient::nextLevelAtLambda(
   // R_{l+1}(lambda) = Feshbach_{P_l}(R_l(lambda)): the child's operator is the
   // exact energy-dependent response at the declared lambda, not the static
   // complement, which does not preserve the nonzero spectrum.
+  //
+  // On a level whose own operator is already an evaluated pencil, the spectral
+  // parameter sits inside that operator, so the response step is the supported
+  // block elimination with no further shift; subtracting lambda a second time
+  // would place the child at a different point of the pencil than the one it
+  // claims. That level can only be eliminated at the lambda it was evaluated
+  // at; re-evaluating the chain at another one is what `LevelRecursion`
+  // carries the whole lineage for.
+  if (windowLower > windowUpper)
+    throw std::invalid_argument(
+        "nextLevelAtLambda: the declared band window is empty; its lower edge "
+        "is above its upper edge");
+  if (levelProvenance_.origin == LevelOrigin::BandPencil) {
+    if (lambda != levelProvenance_.lambda)
+      throw std::invalid_argument(
+          "nextLevelAtLambda: this level is the response pencil evaluated at "
+          "one spectral parameter, and a second one cannot be read off it; "
+          "drive the recursion with LevelRecursion, which re-derives the whole "
+          "chain at every lambda");
+    RecursiveQuotient child = nextLevel(components, options);
+    child.levelProvenance_.origin = LevelOrigin::BandPencil;
+    child.levelProvenance_.lambda = lambda;
+    child.levelProvenance_.windowLower = windowLower;
+    child.levelProvenance_.windowUpper = windowUpper;
+    return child;
+  }
   const FeshbachRead response = feshbach(lambda, windowLower, windowUpper);
   RecursiveQuotient child =
       pencil_ ? pencilChildOver(response.response, response.coordinates,
