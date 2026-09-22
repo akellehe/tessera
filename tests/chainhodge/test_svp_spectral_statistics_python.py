@@ -126,7 +126,9 @@ class TestS2Signature:
         read = hodge.harmonicChains(1)
         phase = 1j if preset == "L2" else 1.0
         metric = (hodge.Minv(1) if preset == "L2" else hodge.chainMetricSparse(1)).toarray()
-        # G_1 = M_1^{-1} under L2, so the inertia of M_1/i is that of G_1 i.
+        # Under L2, M_1 = i R and G_1 = M_1^{-1} = -i R^{-1}; R and R^{-1} have
+        # the same inertia, so the signature read from M_1/i is the signature
+        # of G_1/(-i), which is what the plan calls the signature of G_1.
         chains = svp.real_basis(read.chains)
         images = svp.real_basis(read.images)
         gram = images.T @ metric @ images if preset == "L2" else chains.T @ metric @ chains
