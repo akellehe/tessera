@@ -1898,12 +1898,21 @@ it never builds, solves, or materializes anything.)doc")
       .def_readonly("sigma", &PairLoopFlavor::JointRead::sigma)
       .def_readonly("r_u", &PairLoopFlavor::JointRead::rU)
       .def_readonly("w", &PairLoopFlavor::JointRead::w)
-      .def_readonly("q", &PairLoopFlavor::JointRead::q)
+      .def_readonly("hole_intensity", &PairLoopFlavor::JointRead::holeIntensity,
+                    "Per-hole boundary intensity: the squared Hodge norm of "
+                    "the carried representative over the hole's boundary "
+                    "facets. A norm of the representative and nothing else -- "
+                    "not the charge of any current, and no Kahler-Dirac "
+                    "operator exists here to give it that reading.")
       .def_readonly("loop_w", &PairLoopFlavor::JointRead::loopW)
-      .def_readonly("loop_q", &PairLoopFlavor::JointRead::loopQ)
+      .def_readonly("loop_intensity", &PairLoopFlavor::JointRead::loopIntensity,
+                    "Per-pair-loop boundary intensity: the same squared Hodge "
+                    "norm over the union of the two holes' boundary facets.")
       .def_readonly("dual_residual", &PairLoopFlavor::JointRead::dualResidual);
   py::class_<PairLoopFlavor::Verdict>(m, "PairLoopVerdict")
-      .def_readonly("odd_loop", &PairLoopFlavor::Verdict::oddLoop)
+      .def_readonly("odd_loop", &PairLoopFlavor::Verdict::oddLoop,
+                    "The pair loop whose boundary intensity sits farthest "
+                    "from the mean of the other two.")
       .def_readonly("dual_hole", &PairLoopFlavor::Verdict::dualHole)
       .def_readonly("rho", &PairLoopFlavor::Verdict::rho)
       .def_readonly("multiplicity_2_1", &PairLoopFlavor::Verdict::multiplicity21)
@@ -1921,7 +1930,8 @@ it never builds, solves, or materializes anything.)doc")
       .def("joint_read", &PairLoopFlavor::jointRead, py::arg("ctx"))
       .def("evaluate_criteria", &PairLoopFlavor::evaluateCriteria,
            py::arg("read"))
-      .def_static("odd_one_out", &PairLoopFlavor::oddOneOut, py::arg("loop_q"))
+      .def_static("odd_one_out", &PairLoopFlavor::oddOneOut,
+                  py::arg("loop_intensity"))
       .def_static("complement_hole", &PairLoopFlavor::complementHole,
                   py::arg("pair"));
   m.attr("PairLoopFlavor").attr("RHO_MAX") = PairLoopFlavor::RHO_MAX;

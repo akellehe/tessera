@@ -200,11 +200,13 @@ _EXPORTS = (
     # expression-DAG engine over the #766 primitives — lazy graded tensor
     # products with crossing-only expansion, sector direct sums, Slater
     # wedges with the exact projector covariance, bit-level dGamma, the
-    # vacuum embedding + inductive compatibility read, exact certification
-    # / stated truncation, and content-hashed DAG checkpoints.
+    # vacuum embedding with the inductive compatibility read of one stage
+    # pair and the inductive limit read over a whole refinement sequence,
+    # exact certification / stated truncation, and content-hashed DAG
+    # checkpoints.
     "LazyNodeKind", "LazySectorKind", "LazyFockState", "LazyScalarRead",
     "LazySlaterReference", "LazyCovarianceRead", "LazyCompatibilityRead",
-    "LazyFockEngine",
+    "FockRefinementStage", "LazyInductiveLimitRead", "LazyFockEngine",
 
     # Quasi-free covariance layer: the number-conserving
     # covariance state Gamma_ij = <a_j+ a_i> with exact Wick contraction of

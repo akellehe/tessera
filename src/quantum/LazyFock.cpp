@@ -2128,6 +2128,47 @@ LazyCompatibilityRead LazyFockEngine::inductiveCompatibility(
     return out;
 }
 
+LazyInductiveLimitRead LazyFockEngine::inductiveLimit(
+    const std::vector<FockRefinementStage>& stages,
+    const std::vector<std::vector<std::size_t>>& activeBasis) const {
+    if (stages.size() < 2)
+        throw std::invalid_argument(
+            "LazyFockEngine::inductiveLimit: a refinement sequence is at "
+            "least two stages; one pair of stages measures one defect and "
+            "establishes no limit");
+    LazyInductiveLimitRead out;
+    double residual = 0.0;
+    for (std::size_t k = 0; k + 1 < stages.size(); ++k) {
+        const LazyCompatibilityRead step = inductiveCompatibility(
+            stages[k].modes, stages[k + 1].modes, stages[k].support,
+            stages[k].map, stages[k + 1].support, stages[k + 1].map,
+            activeBasis);
+        residual = std::max(residual, step.certificate.residual);
+        out.defects.push_back(step.epsilon);
+        out.activeDimension = step.activeDimension;
+        out.steps.push_back(step);
+    }
+    out.lastDefect = out.defects.back();
+    out.falls = out.defects.size() > 1;
+    for (std::size_t k = 0; k + 1 < out.defects.size(); ++k) {
+        const double before = out.defects[k];
+        const double after = out.defects[k + 1];
+        // A vanishing predecessor has already reached compatibility; the
+        // sequence goes on falling only if its successor vanishes too.
+        const double ratio =
+            before > 0.0 ? after / before
+            : after > 0.0 ? std::numeric_limits<double>::infinity()
+                          : 0.0;
+        out.largestRatio = std::max(out.largestRatio, ratio);
+        out.falls = out.falls && after < before;
+    }
+    out.certificate = cobordism::Certificate::certifiedNumerical(
+        cobordism::CertificateDomain::Static,
+        cobordism::CertificateRegime::PositiveSemidefinite, residual,
+        cobordism::Certificate::kUnmeasured, 1e-10);
+    return out;
+}
+
 // ── serialization ────────────────────────────────────────────────────────
 
 std::string LazyFockEngine::serialize(const LazyFockState& state) const {

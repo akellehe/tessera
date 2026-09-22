@@ -1996,6 +1996,39 @@ epsilon = ||iota_M U_M - U_{M+1} iota_M|| on the active carried subspace
                       &LazyCompatibilityRead::activeDimension)
         .def_readonly("certificate", &LazyCompatibilityRead::certificate);
 
+    py::class_<FockRefinementStage>(m, "FockRefinementStage",
+        R"doc(One stage M of a refinement sequence: the modes H_M it carries, the
+support of the map V_M on them, and V_M dense over the 2^|support| support Fock
+basis. The stages are nested, because the step from one to the next is the vacuum
+embedding, which adds modes and changes no amplitude.)doc")
+        .def(py::init<>())
+        .def(py::init([](std::vector<std::size_t> modes,
+                         std::vector<std::size_t> support,
+                         Eigen::MatrixXcd map) {
+                 return FockRefinementStage{std::move(modes),
+                                            std::move(support),
+                                            std::move(map)};
+             }),
+             py::arg("modes"), py::arg("support"), py::arg("map"))
+        .def_readwrite("modes", &FockRefinementStage::modes)
+        .def_readwrite("support", &FockRefinementStage::support)
+        .def_readwrite("map", &FockRefinementStage::map);
+
+    py::class_<LazyInductiveLimitRead>(m, "LazyInductiveLimitRead",
+        R"doc(The inductive limit read over a refinement sequence: one compatibility
+defect per adjacent pair of stages, all on one active carried subspace, the last
+defect, the worst step-to-step ratio, and whether the sequence falls. The
+whitepaper's consistency condition ||iota_M V_M - V_{M+1} iota_M|| -> 0 is a
+statement about a sequence, which one pair of stages cannot establish.)doc")
+        .def_readonly("defects", &LazyInductiveLimitRead::defects)
+        .def_readonly("steps", &LazyInductiveLimitRead::steps)
+        .def_readonly("lastDefect", &LazyInductiveLimitRead::lastDefect)
+        .def_readonly("largestRatio", &LazyInductiveLimitRead::largestRatio)
+        .def_readonly("falls", &LazyInductiveLimitRead::falls)
+        .def_readonly("activeDimension",
+                      &LazyInductiveLimitRead::activeDimension)
+        .def_readonly("certificate", &LazyInductiveLimitRead::certificate);
+
     py::class_<LazyFockEngine>(m, "LazyFockEngine",
         R"doc(The lazy graded Fock oracle and boundary carrier.
 
@@ -2135,6 +2168,15 @@ explicitly non-Gaussian boundary data.)doc")
              py::arg("extendedOp"), py::arg("activeBasis"),
              "epsilon = ||iota U_M - U_{M+1} iota|| on the active carried "
              "subspace.")
+        .def("inductiveLimit", &LazyFockEngine::inductiveLimit,
+             py::arg("stages"), py::arg("activeBasis"),
+             "The inductive limit read over a refinement sequence: one "
+             "compatibility defect per adjacent pair of stages, all on the "
+             "same active carried subspace, with the defect sequence and "
+             "whether it falls. The active basis states must lie inside the "
+             "first stage's modes, so that one and the same subspace is "
+             "carried through every embedding and the defects are "
+             "commensurable.")
         .def("expansionCount", &LazyFockEngine::expansionCount,
              "Partition crossings that forced a tensor expansion.")
         .def("memoHits", &LazyFockEngine::memoHits)
