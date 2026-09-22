@@ -4078,8 +4078,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Craig-Bampton retained-mode basis + reduced (K, M) pencil over "
            "the declared window (certified approximation: the certificate "
            "holds against the caller-declared residual_tolerance; negative "
-           "selects the strict Options.tolerance). Refuses the non-normal "
-           "regime and indefinite chain metrics.")
+           "selects the strict Options.tolerance). It runs in every regime: "
+           "the adjoint pairing against the positive diagonal chain metric in "
+           "the two Hermitian regimes, the transpose pairing against the "
+           "level's own metric in the non-normal and complex-symmetric-pencil "
+           "ones, where a level's frequency is the real part of its "
+           "eigenvalue. An indefinite chain metric is refused in a Hermitian "
+           "regime, a singular interior or reduced metric in a bilinear one.")
       .def("labeledFiberSum", &RecursiveQuotient::labeledFiberSum,
            "The abstract labeled sum of retained fibers with embedding J and "
            "Gram G = J^dag W J under the run's declared policy.")
