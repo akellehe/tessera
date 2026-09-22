@@ -3863,16 +3863,24 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::LabeledFiberSumRead>(recursiveQuotient,
       "LabeledFiberSumRead",
-      "The abstract labeled sum of retained fibers: embedding J into the "
-      "chain space, Gram G = J^dag W J, the declared policy, gram defect, "
-      "kernel nullity, and nominal vs effective ranks. Adjacent fibers may "
-      "overlap on shared interface cells; a direct sum is never asserted.")
+      "The abstract labeled sum of retained fibers: embedding J (= Y) into "
+      "the chain space, the explicit left embedding Y~ when the bands carry "
+      "their left Riesz frames, the overlap Gram (G = Y~^T Y against the "
+      "left embedding, else J^dag W J on an operator level and J^T M J on a "
+      "pencil level), the declared policy, gram defect, kernel nullity, and "
+      "nominal vs effective ranks. Adjacent fibers may overlap on shared "
+      "interface cells; a direct sum is never asserted.")
       .def_readonly("summandComponents",
                     &RecursiveQuotient::LabeledFiberSumRead::summandComponents)
       .def_readonly("summandRanks",
                     &RecursiveQuotient::LabeledFiberSumRead::summandRanks)
       .def_readonly("embedding",
                     &RecursiveQuotient::LabeledFiberSumRead::embedding)
+      .def_readonly("leftEmbedding",
+                    &RecursiveQuotient::LabeledFiberSumRead::leftEmbedding,
+                    "The explicit left embedding Y~ (flat, fineDim x "
+                    "totalRank), fixed before the overlap test; empty when "
+                    "the level's metric dual is the left embedding.")
       .def_readonly("gram", &RecursiveQuotient::LabeledFiberSumRead::gram)
       .def_readonly("policy", &RecursiveQuotient::LabeledFiberSumRead::policy)
       .def_readonly("gramDefect",
@@ -3885,6 +3893,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::LabeledFiberSumRead::effectiveRank)
       .def_readonly("quotientBasis",
                     &RecursiveQuotient::LabeledFiberSumRead::quotientBasis)
+      .def_readonly("leftQuotientBasis",
+                    &RecursiveQuotient::LabeledFiberSumRead::leftQuotientBasis,
+                    "The left partner L_q of quotientBasis R_q: the quotient "
+                    "of a one-particle matrix is L_q^T X R_q.")
       .def_readonly(
           "fromCertifiedBands",
           &RecursiveQuotient::LabeledFiberSumRead::fromCertifiedBands)
@@ -3903,11 +3915,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "CertifiedBand",
       "One certified isolated band handed to certifiedFiberSum as the summand "
       "E_v of the master recursion: its right frame over this level's fine "
-      "coordinates, its rank, its isolation gaps and frequency window, "
-      "whether its producing configuration accepted it, and its certificate.")
+      "coordinates, optionally its local left Riesz frame (Phi~^T Phi = I, "
+      "the left embedding of the overlap certificate), its rank, its "
+      "isolation gaps and frequency window, whether its producing "
+      "configuration accepted it, and its certificate.")
       .def(py::init<>())
       .def_readwrite("component", &RecursiveQuotient::CertifiedBand::component)
       .def_readwrite("frame", &RecursiveQuotient::CertifiedBand::frame)
+      .def_readwrite("leftFrame", &RecursiveQuotient::CertifiedBand::leftFrame,
+                     "The band's local left Riesz frame Phi~ (flat, "
+                     "dimension x rank), paired with frame by the plain "
+                     "transpose; empty: the level's metric dual stands in.")
       .def_readwrite("rank", &RecursiveQuotient::CertifiedBand::rank)
       .def_readwrite("lowerGap", &RecursiveQuotient::CertifiedBand::lowerGap)
       .def_readwrite("upperGap", &RecursiveQuotient::CertifiedBand::upperGap)
@@ -3968,8 +3986,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::FockStageRead>(recursiveQuotient,
       "FockStageRead",
-      "The Fock stage over a labeled sum: the one-particle compression "
-      "h = J^dag W L J, the Gram on the same basis, the pencil spectrum, "
+      "The Fock stage over a labeled sum: the one-particle compression in "
+      "the pairing its Gram was built in (h = Y~^T L Y, J^T A~ J on a pencil "
+      "level, J^dag W L J on an operator level; named by `pairing`), the "
+      "Gram on the same basis, the pencil spectrum, "
       "2^M as fockDimension, and the exact free many-body spectrum as "
       "occupation subset sums. The 2^M space is never materialized and the "
       "spectrum refuses past the declared term budget.")
@@ -3980,6 +4000,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("oneParticle",
                     &RecursiveQuotient::FockStageRead::oneParticle)
       .def_readonly("gram", &RecursiveQuotient::FockStageRead::gram)
+      .def_readonly("pairing", &RecursiveQuotient::FockStageRead::pairing,
+                    "The one pairing h and G were compressed in: "
+                    "'metric-hermitian', 'metric-transpose' or "
+                    "'left-embedding'.")
       .def_readonly("oneParticleSpectrum",
                     &RecursiveQuotient::FockStageRead::oneParticleSpectrum)
       .def_readonly("fockDimension",

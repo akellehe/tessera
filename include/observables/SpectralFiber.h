@@ -212,6 +212,11 @@ struct SpectralBandCertificate {
   bool isotropic = false;
   std::string leftFrameRefusal{};
   double metricSymmetryDefect = std::numeric_limits<double>::quiet_NaN();
+  /// Whether the fiber's stored left frame is the transpose dual
+  /// \f$ \tilde\Phi \f$ itself (the chain-level pencil path, whichever
+  /// regime its verification reached), rather than Psi normalized by
+  /// Psi^dagger W Phi = I. `SpectralFiber::dualFrame` reads it.
+  bool bilinearLeftFrame = false;
   /// The band's frequency window [min Re(lambda), max Re(lambda)], the window
   /// handed to the response API (see :class:`SpectralBandWindow`).
   double frequencyLower = std::numeric_limits<double>::quiet_NaN();
@@ -262,13 +267,18 @@ struct FiberOverlapRead {
 /// right and left frames, the band projector, the eigenvalues, and the
 /// :class:`SpectralBandCertificate`.
 ///
-/// The band is represented by its projector `P = Phi Psi^dagger W` with
-/// `Psi^dagger W Phi = I`. Individual eigenvectors are a gauge choice and do
-/// not determine an identity or a downstream observable. On the self-adjoint
-/// path `Psi = Phi` (a W-orthonormal frame, `J = I`); in the Krein-normalizable
-/// signed regime `Psi = Phi J` with `Phi^dagger W Phi = J = diag(I_p, -I_q)`;
-/// on the biorthogonal, non-normal path `Phi` and `Psi` are matched right and
-/// left subspace bases.
+/// The band is represented by its projector `P = Phi Phi~^T`, with `Phi~` the
+/// algebraic (transpose) dual of the right frame, `Phi~^T Phi = I`
+/// (`dualFrame()`): the one pairing of the complex-bilinear formulation, the
+/// same in every regime. The solvers normalize their own left frame: on the
+/// chain-level pencil path it is `Phi~` itself; elsewhere it is `Psi` with
+/// `Psi^dagger W Phi = I`, and `Phi~ = W conj(Psi)`, so `P = Phi Psi^dagger W`.
+/// Individual eigenvectors are a gauge choice and do not determine an identity
+/// or a downstream observable. On the self-adjoint path `Psi = Phi` (a
+/// W-orthonormal frame, `J = I`); in the Krein-normalizable signed regime
+/// `Psi = Phi J` with `Phi^dagger W Phi = J = diag(I_p, -I_q)`; on the
+/// biorthogonal, non-normal path `Phi` and `Psi` are matched right and left
+/// subspace bases.
 ///
 /// Instances are immutable value objects produced by
 /// :class:`SpectralFiberTracker` (or rehydrated by `fromRecord`).
@@ -293,10 +303,23 @@ class SpectralFiber {
 
     /// Right frame Phi (cells x rank).
     [[nodiscard]] Eigen::MatrixXcd rightFrame() const { return right_; }
-    /// Left frame Psi (cells x rank), normalized to Psi^dagger W Phi = I.
+    /// Left frame as produced by the regime's solver (cells x rank): Psi
+    /// with Psi^dagger W Phi = I on the self-adjoint, Krein and non-normal
+    /// paths; the canonical bilinear left frame Phi~ itself on the chain-level
+    /// pencil path. `dualFrame()` is the one pairing across regimes.
     [[nodiscard]] Eigen::MatrixXcd leftFrame() const { return left_; }
-    /// The band projector P = Phi Psi^dagger W (cells x cells), assembled
-    /// on demand from the stored frames.
+    /// The algebraic (transpose) dual of the right frame, cells x rank:
+    /// \f$ \tilde\Phi \f$ with \f$ \tilde\Phi^T \Phi = I \f$ — the pairing
+    /// of the complex-bilinear formulation, the same in every regime. On the
+    /// pencil path it is the stored left frame; on the other paths it is
+    /// \f$ W \bar\Psi \f$, since \f$ (W\bar\Psi)^T \Phi = \Psi^\dagger W
+    /// \Phi \f$. A refused left frame (isotropic band) reads as zero columns.
+    /// `quantum::CovarianceState::fromBiorthogonalFrames(rightFrame(),
+    /// dualFrame())` is the band's biorthogonal Slater covariance.
+    [[nodiscard]] Eigen::MatrixXcd dualFrame() const;
+    /// The band projector \f$ P = \Phi \tilde\Phi^T \f$ (cells x cells) in
+    /// the transpose pairing, assembled on demand from the stored frames; it
+    /// equals \f$ \Phi \Psi^\dagger W \f$ off the pencil path.
     [[nodiscard]] Eigen::MatrixXcd projector() const;
     /// The diagonal inner-product weights W restricted to the band's cells:
     /// the metric the Gram and signature certificates are measured in.

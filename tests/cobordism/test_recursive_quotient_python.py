@@ -2060,6 +2060,264 @@ class TestFockStage(unittest.TestCase):
         self.assertTrue(stage.spectrumMaterialized)
         self.assertEqual(len(stage.fockSpectrum), 8)
 
+    def test_operator_level_pairs_by_the_metric_adjoint(self):
+        quotient = self._quotient()
+        stage = quotient.fockStage(self._disjoint_sum(quotient))
+        self.assertEqual(stage.pairing, "metric-hermitian")
+
+
+def _complex_symmetric(n, seed, scale=1.0):
+    rng = np.random.default_rng(seed)
+    a = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
+    return scale * (a + a.T) / 2
+
+
+def _sorted_complex(values):
+    return sorted((complex(z) for z in values), key=lambda z: (z.real, z.imag))
+
+
+def _unit_band(dim, component, columns, left=None):
+    band = cob.RecursiveQuotient.CertifiedBand()
+    band.component = component
+    frame = np.zeros((dim, len(columns)), dtype=complex)
+    for position, index in enumerate(columns):
+        frame[index, position] = 1.0
+    band.frame = _flat(frame)
+    if left is not None:
+        band.leftFrame = _flat(left)
+    band.rank = len(columns)
+    band.accepted = True
+    return band
+
+
+def _frame_band(component, right, left=None):
+    band = cob.RecursiveQuotient.CertifiedBand()
+    band.component = component
+    band.frame = _flat(right)
+    if left is not None:
+        band.leftFrame = _flat(left)
+    band.rank = right.shape[1]
+    band.accepted = True
+    return band
+
+
+class TestFockStageOnePairing(unittest.TestCase):
+    """#1186: fockStage compresses h in exactly the pairing its Gram was built
+    in. A pencil level pairs bilinearly, G = J^T M J and h = J^T A~ J; before
+    this, h = J^dagger A~ J was set against G = J^T M J."""
+
+    N = 4
+
+    def _pencil(self):
+        a = _complex_symmetric(self.N, seed=71)
+        m = np.eye(self.N) + _complex_symmetric(self.N, seed=72, scale=0.2)
+        quotient = cob.RecursiveQuotient.overPencil(
+            _flat(a), _flat(m), self.N, [[0, 1], [2, 3]])
+        self.assertEqual(quotient.regime,
+                         cob.CertificateRegime.ComplexSymmetricPencil)
+        return quotient, a, m
+
+    def _complex_bands(self):
+        # Complex frames: with a real embedding J^dagger = J^T and the two
+        # pairings could not be told apart.
+        rng = np.random.default_rng(75)
+        frames = rng.normal(size=(self.N, self.N)) + \
+            1j * rng.normal(size=(self.N, self.N))
+        return [_frame_band(0, frames[:, :2]), _frame_band(1, frames[:, 2:])]
+
+    def test_pencil_level_compresses_by_the_transpose(self):
+        quotient, a, m = self._pencil()
+        summary = quotient.certifiedFiberSum(self._complex_bands())
+        j = _mat(summary.embedding, self.N, self.N)
+        self.assertGreater(np.abs(j.imag).max(), 0.1)
+        np.testing.assert_allclose(_mat(summary.gram, self.N), j.T @ m @ j,
+                                   rtol=0, atol=MACHINE)
+        stage = quotient.fockStage(summary)
+        self.assertEqual(stage.pairing, "metric-transpose")
+        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+                                   j.T @ a @ j, rtol=0, atol=MACHINE)
+
+    def test_pencil_spectrum_is_the_generalized_spectrum(self):
+        # J spans the whole level, so the compressed pencil (J^T A~ J,
+        # J^T M J) has exactly the generalized eigenvalues of (A~, M).
+        quotient, a, m = self._pencil()
+        summary = quotient.certifiedFiberSum(self._complex_bands())
+        stage = quotient.fockStage(summary)
+        expected = _sorted_complex(np.linalg.eigvals(np.linalg.solve(m, a)))
+        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+                                   expected, rtol=0, atol=1e-10)
+        # The mixed pairing it replaces gives a different spectrum: the fix is
+        # not cosmetic on a complex pencil.
+        j = _mat(summary.embedding, self.N, self.N)
+        mixed = _sorted_complex(np.linalg.eigvals(
+            np.linalg.solve(j.T @ m @ j, j.conj().T @ a @ j)))
+        self.assertGreater(
+            max(abs(x - y) for x, y in zip(mixed, expected)), 1e-3)
+
+    def test_pencil_quotient_uses_the_left_partner(self):
+        options = cob.RecursiveQuotient.Options()
+        options.embeddingPolicy = cob.FiberEmbeddingPolicy.QuotientKernel
+        a = _complex_symmetric(self.N, seed=73)
+        m = np.eye(self.N) + _complex_symmetric(self.N, seed=74, scale=0.2)
+        quotient = cob.RecursiveQuotient.overPencil(
+            _flat(a), _flat(m), self.N, [[0, 1], [2, 3]], options)
+        summary = quotient.certifiedFiberSum(
+            [_unit_band(self.N, 0, [0, 1]), _unit_band(self.N, 1, [1, 2, 3])])
+        self.assertEqual(summary.effectiveRank, 4)
+        stage = quotient.fockStage(summary)
+        self.assertEqual(stage.modes, 4)
+        # The overcounted direction leaves the basis and the quotient pencil
+        # keeps the generalized spectrum of (A~, M).
+        expected = _sorted_complex(np.linalg.eigvals(np.linalg.solve(m, a)))
+        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+                                   expected, rtol=0, atol=1e-9)
+        left = _mat(summary.leftQuotientBasis, 5, 4)
+        right = _mat(summary.quotientBasis, 5, 4)
+        gram = _mat(summary.gram, 5)
+        np.testing.assert_allclose(_mat(stage.gram, 4), left.T @ gram @ right,
+                                   rtol=0, atol=MACHINE)
+
+
+class TestOverlapCertificateLeftEmbedding(unittest.TestCase):
+    """Whitepaper Section 6: G_C = Y~^T Y against a left embedding assembled
+    from the bands' local left Riesz frames and fixed before the test. The
+    defect Delta G = G - I is the exact complex amplitude error."""
+
+    N = 4
+
+    def _operator(self, seed=81):
+        # A non-normal operator with a known eigen-decomposition L = V D V^-1.
+        rng = np.random.default_rng(seed)
+        v = np.eye(self.N) + 0.4 * (rng.normal(size=(self.N, self.N)) +
+                                    1j * rng.normal(size=(self.N, self.N)))
+        d = np.diag([1.0 + 0.5j, 2.0 - 0.3j, 4.0 + 0.1j, 7.0 - 1.0j])
+        return v @ d @ np.linalg.inv(v), v, np.diag(d)
+
+    def _quotient(self, op, policy=None):
+        options = cob.RecursiveQuotient.Options()
+        if policy is not None:
+            options.embeddingPolicy = policy
+        return cob.RecursiveQuotient.overMatrix(
+            _flat(op), self.N, [], [[0, 1], [2, 3]], options)
+
+    def test_exact_left_riesz_frames_certify_g_equals_identity(self):
+        op, v, lam = self._operator()
+        v_left = np.linalg.inv(v).T          # V~^T V = I: the left Riesz frames
+        quotient = self._quotient(op)
+        summary = quotient.certifiedFiberSum(
+            [_frame_band(0, v[:, :2], v_left[:, :2]),
+             _frame_band(1, v[:, 2:], v_left[:, 2:])])
+        np.testing.assert_array_equal(_mat(summary.embedding, self.N), v)
+        np.testing.assert_array_equal(_mat(summary.leftEmbedding, self.N),
+                                      v_left)
+        np.testing.assert_allclose(_mat(summary.gram, self.N), np.eye(self.N),
+                                   rtol=0, atol=1e-12)
+        self.assertLess(summary.gramDefect, 1e-12)
+        stage = quotient.fockStage(summary)
+        self.assertEqual(stage.pairing, "left-embedding")
+        # h = Y~^T L Y is the diagonal of the band eigenvalues.
+        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+                                   np.diag(lam), rtol=0, atol=1e-11)
+        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+                                   _sorted_complex(lam), rtol=0, atol=1e-11)
+
+    def test_local_left_frames_report_the_overlap_defect(self):
+        # Each band's left frame is dual to its own band only; the bands
+        # overlap on cell 1, so G = Y~^T Y carries a nonzero off-diagonal
+        # block, reported rather than forced to I by a global dual.
+        rng = np.random.default_rng(82)
+        y_a = rng.normal(size=(self.N, 2)) + 1j * rng.normal(size=(self.N, 2))
+        y_a[3, :] = 0.0
+        y_b = rng.normal(size=(self.N, 2)) + 1j * rng.normal(size=(self.N, 2))
+        y_b[0, :] = 0.0
+        raw_a = rng.normal(size=(self.N, 2)) + 1j * rng.normal(size=(self.N, 2))
+        raw_b = rng.normal(size=(self.N, 2)) + 1j * rng.normal(size=(self.N, 2))
+        left_a = raw_a @ np.linalg.inv(y_a.T @ raw_a)
+        left_b = raw_b @ np.linalg.inv(y_b.T @ raw_b)
+        op, _, _ = self._operator()
+        quotient = self._quotient(op)
+        summary = quotient.certifiedFiberSum(
+            [_frame_band(0, y_a, left_a), _frame_band(1, y_b, left_b)])
+        y = np.hstack([y_a, y_b])
+        y_left = np.hstack([left_a, left_b])
+        gram = _mat(summary.gram, self.N)
+        np.testing.assert_allclose(gram, y_left.T @ y, rtol=0, atol=MACHINE)
+        # Each band pairs with itself exactly ...
+        np.testing.assert_allclose(gram[:2, :2], np.eye(2), atol=1e-12)
+        np.testing.assert_allclose(gram[2:, 2:], np.eye(2), atol=1e-12)
+        # ... and the cross overlap is the certificate.
+        delta = gram - np.eye(self.N)
+        self.assertGreater(summary.gramDefect, 0.1)
+        self.assertAlmostEqual(summary.gramDefect,
+                               np.linalg.norm(delta, 2), places=10)
+        # The exact complex amplitude error and its numerical bound.
+        a_t = rng.normal(size=self.N) + 1j * rng.normal(size=self.N)
+        b = rng.normal(size=self.N) + 1j * rng.normal(size=self.N)
+        error = a_t @ gram @ b - a_t @ b
+        self.assertLess(abs(error - a_t @ delta @ b), 1e-12)
+        self.assertLessEqual(
+            abs(error), np.linalg.norm(a_t) * summary.gramDefect *
+            np.linalg.norm(b) * (1 + 1e-12))
+        stage = quotient.fockStage(summary)
+        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+                                   y_left.T @ op @ y, rtol=0, atol=1e-11)
+
+    def test_pencil_level_left_frames_pair_against_m_inverse_a(self):
+        # On a pencil level (A~ z = lambda M z) the level's operator is
+        # M^-1 A~, and the band left frames Z~ = Z^-T give h = diag(lambda).
+        a = _complex_symmetric(self.N, seed=83)
+        m = np.eye(self.N) + _complex_symmetric(self.N, seed=84, scale=0.2)
+        lam, z = np.linalg.eig(np.linalg.solve(m, a))
+        z_left = np.linalg.inv(z).T
+        quotient = cob.RecursiveQuotient.overPencil(
+            _flat(a), _flat(m), self.N, [[0, 1], [2, 3]])
+        summary = quotient.certifiedFiberSum(
+            [_frame_band(0, z[:, :2], z_left[:, :2]),
+             _frame_band(1, z[:, 2:], z_left[:, 2:])])
+        np.testing.assert_allclose(_mat(summary.gram, self.N), np.eye(self.N),
+                                   atol=1e-11)
+        stage = quotient.fockStage(summary)
+        self.assertEqual(stage.pairing, "left-embedding")
+        np.testing.assert_allclose(_mat(stage.oneParticle, self.N),
+                                   np.diag(lam), rtol=0, atol=1e-10)
+
+    def test_left_embedding_is_all_or_none(self):
+        op, v, _ = self._operator()
+        v_left = np.linalg.inv(v).T
+        quotient = self._quotient(op)
+        with self.assertRaises(ValueError):
+            quotient.certifiedFiberSum(
+                [_frame_band(0, v[:, :2], v_left[:, :2]),
+                 _frame_band(1, v[:, 2:])])
+        band = _frame_band(0, v[:, :2], v_left[:, :1])   # wrong left shape
+        with self.assertRaises(ValueError):
+            quotient.certifiedFiberSum([band])
+
+    def test_without_left_frames_the_metric_dual_stands_in(self):
+        op, v, _ = self._operator()
+        summary = self._quotient(op).certifiedFiberSum(
+            [_frame_band(0, v[:, :2]), _frame_band(1, v[:, 2:])])
+        self.assertEqual(len(summary.leftEmbedding), 0)
+        j = _mat(summary.embedding, self.N)
+        np.testing.assert_allclose(_mat(summary.gram, self.N), j.conj().T @ j,
+                                   rtol=0, atol=MACHINE)
+
+    def test_quotient_of_an_overcounted_left_embedding(self):
+        # A repeated direction: the right radical of G is one-dimensional,
+        # and the quotient keeps the operator's spectrum on the rest.
+        op, v, lam = self._operator()
+        v_left = np.linalg.inv(v).T
+        quotient = self._quotient(op, cob.FiberEmbeddingPolicy.QuotientKernel)
+        summary = quotient.certifiedFiberSum(
+            [_frame_band(0, v[:, :3], v_left[:, :3]),
+             _frame_band(1, v[:, 2:], v_left[:, 2:])])
+        self.assertEqual(summary.nominalRank, 5)
+        self.assertEqual(summary.effectiveRank, 4)
+        stage = quotient.fockStage(summary)
+        self.assertEqual(stage.modes, 4)
+        np.testing.assert_allclose(_sorted_complex(stage.oneParticleSpectrum),
+                                   _sorted_complex(lam), rtol=0, atol=1e-10)
+
 
 class TestPersistentPartitionAtEveryScale(unittest.TestCase):
     """P_l = PersistentPartition(R_l), applied at every scale rather than at

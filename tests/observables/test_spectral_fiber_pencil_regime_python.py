@@ -113,6 +113,58 @@ class TestTrackerOnThePencil:
         assert back.certificate().pairingCondition == pytest.approx(cert.pairingCondition)
         assert "complex-symmetric pencil" in cert.describe()
 
+    @pytest.mark.parametrize("eps", [0.1, 0.0])
+    def test_the_bilinear_left_frame_is_the_transpose_dual(self, eps):
+        # #1186: on the pencil path the stored left frame IS Phi~, so the one
+        # pairing reads it without conjugation, and the pair is the band's
+        # biorthogonal Slater covariance Gamma = Phi Phi~^T.
+        from tessera.quantum import CovarianceState
+        st, K = _lorentzian_torus_spacetime(eps)
+        cfg = obs.SpectralFiberConfig()
+        cfg.degrees = [1]
+        cfg.maxLocalizationExcess = 1.0
+        support = [int(v[0]) for v in K.kSimplexVertices(0)]
+        read = obs.SpectralFiberTracker(st, cfg, Whitney).enumerateBands(support, 1)
+        paired = 0
+        for fiber in read.fibers:
+            cert = fiber.certificate()
+            assert cert.bilinearLeftFrame
+            dual = np.asarray(fiber.dualFrame())
+            np.testing.assert_array_equal(dual, np.asarray(fiber.leftFrame()))
+            if cert.isotropic:
+                continue
+            paired += 1
+            phi = np.asarray(fiber.rightFrame())
+            np.testing.assert_allclose(dual.T @ phi, np.eye(fiber.rank()), atol=1e-8)
+            state = CovarianceState.fromBiorthogonalFrames(phi, dual)
+            np.testing.assert_allclose(np.asarray(state.gamma()),
+                                       np.asarray(fiber.projector()), atol=1e-13)
+            assert state.dualityDefect() == pytest.approx(cert.gramDefect, abs=1e-12)
+        assert paired >= 1
+        # A record written before the flag existed falls back on the regime.
+        rec = read.fibers[0].toRecord()
+        del rec["certificate"]["bilinear_left_frame"]
+        back = obs.SpectralFiber.fromRecord(rec)
+        assert back.certificate().bilinearLeftFrame
+
+    def test_fiber_transport_pairs_the_bilinear_frame_without_conjugation(self):
+        # The self-transport of a pencil band through the identity transfer
+        # is its own pairing, Phi~^T Phi = I; the conjugate Phi~^dagger Phi is
+        # not (the complex frame makes the two differ).
+        st, K = _lorentzian_torus_spacetime(0.1)
+        cfg = obs.SpectralFiberConfig()
+        cfg.degrees = [1]
+        cfg.maxLocalizationExcess = 1.0
+        support = [int(v[0]) for v in K.kSimplexVertices(0)]
+        read = obs.SpectralFiberTracker(st, cfg, Whitney).enumerateBands(support, 1)
+        fiber = next(f for f in read.fibers if not f.certificate().isotropic)
+        n = len(fiber.cellVertices())
+        transport = obs.FiberConnection().transport(fiber, fiber, np.eye(n, dtype=complex))
+        raw = np.asarray(transport.rawMap)
+        np.testing.assert_allclose(raw, np.eye(fiber.rank()), atol=1e-8)
+        phi, dual = np.asarray(fiber.rightFrame()), np.asarray(fiber.dualFrame())
+        assert np.abs(dual.conj().T @ phi - np.eye(fiber.rank())).max() > 1e-6
+
     def test_diagonal_source_is_unchanged(self):
         st, K = _lorentzian_torus_spacetime(0.0)
         cfg = obs.SpectralFiberConfig()

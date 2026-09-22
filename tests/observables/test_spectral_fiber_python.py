@@ -505,6 +505,80 @@ class TestRegimes(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# one pairing across regimes: the transpose dual of the right frame (#1186)
+# --------------------------------------------------------------------------- #
+class TestTransposeDualFrame(unittest.TestCase):
+    """dualFrame() is Phi~ with Phi~^T Phi = I in every regime, the projector
+    is Phi Phi~^T, and the pair is the band's biorthogonal Slater
+    covariance."""
+
+    def _reads(self):
+        positive = _tracker(_triangle()).enumerateBands([0, 1, 2], 0)
+        krein = _tracker(_triangle(alpha=2.0), **ANY_LOCALIZATION) \
+            .enumerateBands([0, 1, 2], 1)
+        cfg = obs.SpectralFiberConfig()
+        cfg.maxLocalizationExcess = 1.0
+        non_normal = obs.SpectralFiberTracker(
+            _triangle(alpha=1.0), cfg,
+            cob.HodgeWeightConvention.Content).enumerateBands([0, 1, 2], 1)
+        self.assertEqual(positive.regime,
+                         cob.CertificateRegime.PositiveSemidefinite)
+        self.assertEqual(krein.regime,
+                         cob.CertificateRegime.HermitianIndefinite)
+        self.assertEqual(non_normal.regime, cob.CertificateRegime.NonNormal)
+        return positive, krein, non_normal
+
+    def test_dual_frame_pairs_to_the_identity_by_the_transpose(self):
+        for read in self._reads():
+            for f in read.fibers:
+                phi = np.asarray(f.rightFrame())
+                dual = np.asarray(f.dualFrame())
+                self.assertFalse(f.certificate().bilinearLeftFrame)
+                np.testing.assert_allclose(dual.T @ phi, np.eye(f.rank()),
+                                           rtol=0, atol=1e-10)
+                # Off the pencil path Phi~ = W conj(Psi): the transpose of
+                # Psi^dagger W, the solver's own normalization.
+                psi = np.asarray(f.leftFrame())
+                w = np.asarray(f.weightDiagonal())
+                np.testing.assert_allclose(dual, w[:, None] * psi.conj(),
+                                           rtol=0, atol=1e-15)
+
+    def test_projector_is_the_transpose_product_and_unchanged(self):
+        for read in self._reads():
+            for f in read.fibers:
+                phi = np.asarray(f.rightFrame())
+                psi = np.asarray(f.leftFrame())
+                w = np.diag(np.asarray(f.weightDiagonal()))
+                p = np.asarray(f.projector())
+                np.testing.assert_allclose(
+                    p, phi @ np.asarray(f.dualFrame()).T, rtol=0, atol=1e-14)
+                np.testing.assert_allclose(p, phi @ psi.conj().T @ w,
+                                           rtol=0, atol=1e-13)
+
+    def test_frames_give_the_bands_biorthogonal_covariance(self):
+        from tessera.quantum import CovarianceDual, CovarianceState
+        for read in self._reads():
+            for f in read.fibers:
+                state = CovarianceState.fromBiorthogonalFrames(
+                    np.asarray(f.rightFrame()), np.asarray(f.dualFrame()))
+                self.assertEqual(state.dual(), CovarianceDual.Transpose)
+                np.testing.assert_allclose(np.asarray(state.gamma()),
+                                           np.asarray(f.projector()),
+                                           rtol=0, atol=1e-13)
+                self.assertLess(state.dualityDefect(), 1e-9)
+                self.assertLess(state.purityDefect(), 1e-9)
+                self.assertLess(abs(state.particleNumber() - f.rank()), 1e-9)
+
+    def test_record_keeps_the_frame_convention(self):
+        _, _, non_normal = self._reads()
+        f = non_normal.fibers[0]
+        back = obs.SpectralFiber.fromRecord(f.toRecord())
+        self.assertFalse(back.certificate().bilinearLeftFrame)
+        np.testing.assert_array_equal(np.asarray(back.dualFrame()),
+                                      np.asarray(f.dualFrame()))
+
+
+# --------------------------------------------------------------------------- #
 # the relative gap rule: closure, straddling, truncation — negative controls
 # --------------------------------------------------------------------------- #
 class TestGapRule(unittest.TestCase):

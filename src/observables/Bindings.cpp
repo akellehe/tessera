@@ -942,6 +942,10 @@ quantities are NaN, never zero.)doc")
       .def_readonly("leftFrameRefusal", &SpectralBandCertificate::leftFrameRefusal)
       .def_readonly("metricSymmetryDefect", &SpectralBandCertificate::metricSymmetryDefect,
                     "The regime's verification residual, M L = (M L)^T.")
+      .def_readonly("bilinearLeftFrame", &SpectralBandCertificate::bilinearLeftFrame,
+                    "Whether the stored left frame is the transpose dual Phi~ "
+                    "itself (the chain-level pencil path) rather than Psi with "
+                    "Psi^dagger W Phi = I.")
       .def_readonly("frequencyLower",
                     &SpectralBandCertificate::frequencyLower)
       .def_readonly("frequencyUpper",
@@ -962,9 +966,10 @@ quantities are NaN, never zero.)doc")
 
   py::class_<SpectralFiber>(m, "SpectralFiber",
       R"doc(One whole isolated spectral band of a component-restricted Hodge
-operator: right/left frames, band projector
-P = Phi Psi^dagger W with Psi^dagger W Phi = I, eigenvalues, and the
-SpectralBandCertificate.  The band is represented by its projector;
+operator: right/left frames, the transpose dual Phi~ (Phi~^T Phi = I, the
+one pairing across regimes), band projector P = Phi Phi~^T (= Phi Psi^dagger
+W off the pencil path), eigenvalues, and the SpectralBandCertificate.  The
+band is represented by its projector;
 individual eigenvectors are a gauge choice and never determine an identity
 or a downstream observable.)doc")
       .def("degree", &SpectralFiber::degree)
@@ -973,9 +978,15 @@ or a downstream observable.)doc")
       .def("rightFrame", &SpectralFiber::rightFrame,
            "Right frame Phi (cells x rank).")
       .def("leftFrame", &SpectralFiber::leftFrame,
-           "Left frame Psi (cells x rank), Psi^dagger W Phi = I.")
+           "Left frame as the regime's solver produced it: Psi with "
+           "Psi^dagger W Phi = I, or Phi~ itself on the pencil path.")
+      .def("dualFrame", &SpectralFiber::dualFrame,
+           R"doc(The algebraic (transpose) dual Phi~ of the right frame,
+Phi~^T Phi = I, in every regime: the stored left frame on the pencil path and
+W conj(Psi) elsewhere. CovarianceState.fromBiorthogonalFrames(rightFrame(),
+dualFrame()) is the band's biorthogonal Slater covariance.)doc")
       .def("projector", &SpectralFiber::projector,
-           "The band projector P = Phi Psi^dagger W (cells x cells).")
+           "The band projector P = Phi Phi~^T (cells x cells).")
       .def("weightDiagonal", &SpectralFiber::weightDiagonal,
            "Diagonal inner-product weights W restricted to the band's "
            "cells.")

@@ -724,13 +724,16 @@ FiberTransportRead FiberConnection::deriveTransport(
   const bool nonNormal = read.regime == CertificateRegime::NonNormal ||
                          read.regime == CertificateRegime::ComplexSymmetricPencil;
 
-  // Overlap: M = Phi_A^dagger W_A T Phi_B in the self-adjoint regimes,
-  // M = Psi_A^dagger W_A T Phi_B on the biorthogonal path.
-  const Eigen::MatrixXcd leftFrame =
-      nonNormal ? to.leftFrame() : to.rightFrame();
-  const Eigen::MatrixXcd m = leftFrame.adjoint() *
-                             to.weightDiagonal().asDiagonal() * transfer *
-                             from.rightFrame();
+  // Overlap: M = Phi_A^dagger W_A T Phi_B in the self-adjoint regimes; on the
+  // biorthogonal path the transpose dual, M = Phi~_A^T T Phi_B, which is
+  // Psi_A^dagger W_A T Phi_B off the pencil path and pairs by the bilinear
+  // left frame itself (never its conjugate) on it.
+  const Eigen::MatrixXcd m =
+      nonNormal ? Eigen::MatrixXcd(to.dualFrame().transpose() * transfer *
+                                   from.rightFrame())
+                : Eigen::MatrixXcd(to.rightFrame().adjoint() *
+                                   to.weightDiagonal().asDiagonal() *
+                                   transfer * from.rightFrame());
   read.rawMap = m;
 
   // Pre-normalization diagnostics: rank, singular values, conditioning.
