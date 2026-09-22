@@ -28,12 +28,27 @@ namespace tessera::cobordism {
 ///   truncation of order \f$ 10^{-16} \f$ and the derivative is exact to
 ///   rounding. This is the default, and it is the mode that makes holomorphy
 ///   pay.
-/// * `CentralDifference` — the two-node rule
-///   \f$ (F(v+\rho)-F(v-\rho))/(2\rho) \f$, which is the \f$ m=2 \f$ case of the
-///   same contour and carries an \f$ O(\rho^{2}) \f$ truncation. It is offered
-///   as an explicit, declared economy for a system whose residual is expensive
-///   to evaluate; it is never selected on a caller's behalf.
-enum class HolomorphicJacobianMode { ContourDerivative, CentralDifference };
+///   The rule reads one branch of the residual over the whole circle, so it is
+///   the right rule exactly when the residual is analytic on the whole disc.
+/// * `RealAxisDifference` — the two-node rule
+///   \f$ (F(v+\rho)-F(v-\rho))/(2\rho) \f$ with both nodes placed exactly on
+///   the real axis. For a residual that is analytic on the disc this is the
+///   \f$ m=2 \f$ case of the same contour and carries an
+///   \f$ O(\rho^{2}) \f$ truncation, so a caller declaring it usually declares
+///   a smaller radius with it.
+///
+///   Its purpose is a residual that is analytic on each side of a cut along the
+///   real axis but not across it. The dual Lorentzian Regge action's exact
+///   gradient is such a residual: the deficit angle is taken on the principal
+///   branch with no Riemann-sheet label carried, so an arbitrarily small
+///   positive imaginary part in a squared length shifts a hinge's deficit by
+///   \f$ 2\pi \f$ and its contribution to the gradient by \f$ 2\pi \f$ times
+///   the hinge's dual volume. A contour around a real configuration crosses
+///   that cut and reads two sheets; two nodes on the axis stay on one. Both
+///   nodes are constructed as exact real numbers rather than as
+///   \f$ \rho\,e^{i\pi n} \f$, whose sine is not exactly zero in binary
+///   floating point and would put one node on the far side of the cut.
+enum class HolomorphicJacobianMode { ContourDerivative, RealAxisDifference };
 
 /// # HolomorphicRelaxationDeclaration
 ///

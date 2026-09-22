@@ -73,6 +73,14 @@ def _mean_field(**overrides):
     geometry.relax_multipliers = False
     geometry.maximum_iterations = overrides.pop("geometry_iterations", 12)
     geometry.tolerance = 1e-12
+    # The geometric term of these solves is the dual Regge action, whose exact
+    # gradient is analytic on each side of the real axis in the squared lengths
+    # and not across it: the deficit angle is taken on the principal branch, so
+    # an arbitrarily small positive imaginary part shifts a hinge's deficit by
+    # 2 pi. A contour around a real configuration reads two sheets; the
+    # real-axis rule stays on one.
+    geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
+    geometry.contour_radius = 1e-5
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.occupied_modes = 1
     declaration.maximum_iterations = 12

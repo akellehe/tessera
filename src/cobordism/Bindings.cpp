@@ -4358,14 +4358,21 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "The four declared terms, in the order value sums them.");
 
   py::enum_<HolomorphicJacobianMode>(m, "HolomorphicJacobianMode",
-      "How the Jacobian of the stationarity system is formed. "
+      "How the Jacobian of the stationarity system is formed.\n\n"
       "ContourDerivative is the Cauchy derivative on a small circle, which for "
-      "a holomorphic residual converges geometrically in the node count and is "
-      "exact to rounding at the default eight nodes; CentralDifference is the "
-      "two-node rule, offered as an explicit declared economy and never "
-      "selected on a caller's behalf.")
+      "a residual analytic on the whole disc converges geometrically in the "
+      "node count and is exact to rounding at the default eight nodes.\n\n"
+      "RealAxisDifference is the two-node rule with both nodes placed exactly "
+      "on the real axis. It is the rule for a residual analytic on each side of "
+      "a cut along the real axis but not across it, which is what the dual "
+      "Regge action's exact gradient is: the deficit angle is taken on the "
+      "principal branch with no Riemann-sheet label, so an arbitrarily small "
+      "positive imaginary part in a squared length shifts a hinge's deficit by "
+      "2 pi. Its truncation is O(radius^2), so a caller declaring it usually "
+      "declares a smaller radius with it.")
       .value("ContourDerivative", HolomorphicJacobianMode::ContourDerivative)
-      .value("CentralDifference", HolomorphicJacobianMode::CentralDifference);
+      .value("RealAxisDifference",
+             HolomorphicJacobianMode::RealAxisDifference);
 
   py::class_<HolomorphicRelaxationDeclaration>(
       m, "HolomorphicRelaxationDeclaration",

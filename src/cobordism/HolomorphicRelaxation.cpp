@@ -186,10 +186,18 @@ void multiplyLink(const JointAction &action, std::size_t edgeIndex,
 std::vector<std::pair<complexd, complexd>> derivativeRule(
     const HolomorphicRelaxationDeclaration &declaration, double radius) {
   std::vector<std::pair<complexd, complexd>> rule;
-  const std::size_t nodes =
-      declaration.jacobianMode == HolomorphicJacobianMode::CentralDifference
-          ? 2
-          : declaration.contourNodes;
+  if (declaration.jacobianMode == HolomorphicJacobianMode::RealAxisDifference) {
+    // Both nodes as exact real numbers. Writing them as rho * exp(i pi n)
+    // instead would give the second one an imaginary part of about
+    // 1e-16 * rho, which is enough to land it on the far side of a cut that
+    // runs along the real axis and to read a different branch there.
+    rule.emplace_back(complexd{radius, 0.0},
+                      complexd{1.0 / (2.0 * radius), 0.0});
+    rule.emplace_back(complexd{-radius, 0.0},
+                      complexd{-1.0 / (2.0 * radius), 0.0});
+    return rule;
+  }
+  const std::size_t nodes = declaration.contourNodes;
   rule.reserve(nodes);
   for (std::size_t node = 0; node < nodes; ++node) {
     const double angle =

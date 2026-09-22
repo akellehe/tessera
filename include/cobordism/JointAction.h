@@ -74,6 +74,17 @@ struct JointActionDeclaration {
   /// \f$ \kappa = 8\pi G \f$ sets this to \f$ 1/\kappa \f$. The coefficient is
   /// declared here rather than derived, because the units in which the carried
   /// state's bilinear density is measured are the caller's to fix.
+  ///
+  /// A nonzero weight carries one constraint into any solve of the stationarity
+  /// equations. The dual Regge action's exact gradient is analytic on each side
+  /// of the real axis in the squared lengths and not across it: the deficit
+  /// angle is taken on the principal branch and carries no Riemann-sheet label,
+  /// so an arbitrarily small positive imaginary part in \f$ z_e \f$ shifts a
+  /// hinge's deficit by \f$ 2\pi \f$ and its contribution to the gradient by
+  /// \f$ 2\pi \f$ times the hinge's dual volume. A Jacobian taken on a contour
+  /// around a real configuration therefore reads two sheets, and
+  /// `HolomorphicJacobianMode::RealAxisDifference` is the rule to declare with
+  /// this term.
   double gravitationalWeight = 1.0;
 
   /// \f$ w_H \f$, the coefficient multiplying the face-holonomy term
