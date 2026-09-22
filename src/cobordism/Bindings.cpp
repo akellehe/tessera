@@ -3882,9 +3882,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::CraigBamptonRead>(recursiveQuotient,
       "CraigBamptonRead",
-      "Craig-Bampton/AMLS retained-mode surrogate: declared window, retained "
+      "Craig-Bampton/AMLS retained-mode surrogate: the declared window disc "
+      "(centre, radius) and retention radius with their real extents, retained "
       "fixed-interface modes per component, basis, reduced (stiffness, mass) "
-      "pencil, discarded-mode gap, and fine-space eigenresiduals.")
+      "pencil, discarded-mode gap, the claimed spectrum inside the disc, and "
+      "fine-space eigenresiduals.")
+      .def_readonly("windowCentre",
+                    &RecursiveQuotient::CraigBamptonRead::windowCentre)
+      .def_readonly("windowRadius",
+                    &RecursiveQuotient::CraigBamptonRead::windowRadius)
+      .def_readonly("retentionRadius",
+                    &RecursiveQuotient::CraigBamptonRead::retentionRadius)
       .def_readonly("windowLower",
                     &RecursiveQuotient::CraigBamptonRead::windowLower)
       .def_readonly("windowUpper",
@@ -3900,6 +3908,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::CraigBamptonRead::reducedMass)
       .def_readonly("discardedModeGap",
                     &RecursiveQuotient::CraigBamptonRead::discardedModeGap)
+      .def_readonly("windowSpectrum",
+                    &RecursiveQuotient::CraigBamptonRead::windowSpectrum)
       .def_readonly("windowEigenvalues",
                     &RecursiveQuotient::CraigBamptonRead::windowEigenvalues)
       .def_readonly("eigenResiduals",
@@ -3979,6 +3989,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &RecursiveQuotient::CertifiedBand::frequencyLower)
       .def_readwrite("frequencyUpper",
                      &RecursiveQuotient::CertifiedBand::frequencyUpper)
+      .def_readwrite("windowCentre",
+                     &RecursiveQuotient::CertifiedBand::windowCentre,
+                     "Centre of the band's window disc in the complex plane (NaN when the "
+                     "band was declared by its real extent alone).")
+      .def_readwrite("windowRadius",
+                     &RecursiveQuotient::CertifiedBand::windowRadius,
+                     "Radius of the band's window disc (NaN when declared by real extent alone).")
       .def_readwrite("accepted", &RecursiveQuotient::CertifiedBand::accepted)
       .def_readwrite("certificate",
                      &RecursiveQuotient::CertifiedBand::certificate);
@@ -3998,6 +4015,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyLower)
       .def_readonly("frequencyUpper",
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyUpper)
+      .def_readonly("windowCentre",
+                    &RecursiveQuotient::CertifiedFiberSummand::windowCentre)
+      .def_readonly("windowRadius",
+                    &RecursiveQuotient::CertifiedFiberSummand::windowRadius)
       .def_readonly("accepted",
                     &RecursiveQuotient::CertifiedFiberSummand::accepted)
       .def_readonly("certificate",
@@ -4209,19 +4230,31 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Algebraic multiplicity from the unwrapped det-phase windings "
            "(response + interior, reported separately), geometric from "
            "dim ker F_B(lambda); node count doubles until stable.")
-      .def("craigBampton", &RecursiveQuotient::craigBampton,
+      .def("craigBampton",
+           py::overload_cast<double, double, double, double>(
+               &RecursiveQuotient::craigBampton, py::const_),
            py::arg("window_lower"), py::arg("window_upper"),
            py::arg("mode_cutoff"), py::arg("residual_tolerance") = -1.0,
-           "Craig-Bampton retained-mode basis + reduced (K, M) pencil over "
-           "the declared window (certified approximation: the certificate "
-           "holds against the caller-declared residual_tolerance; negative "
-           "selects the strict Options.tolerance). It runs in every regime: "
-           "the adjoint pairing against the positive diagonal chain metric in "
-           "the two Hermitian regimes, the transpose pairing against the "
-           "level's own metric in the non-normal and complex-symmetric-pencil "
-           "ones, where a level's frequency is the real part of its "
-           "eigenvalue. An indefinite chain metric is refused in a Hermitian "
-           "regime, a singular interior or reduced metric in a bilinear one.")
+           "Craig-Bampton retained-mode basis + reduced (K, M) pencil declared by a "
+           "real window: [a, b] is the disc with centre (a+b)/2 and radius (b-a)/2, "
+           "and mode_cutoff is the retention disc's real upper edge, so the retention "
+           "radius is mode_cutoff - (a+b)/2. Certified approximation: the certificate "
+           "holds against the caller-declared residual_tolerance; negative selects the "
+           "strict Options.tolerance. It runs in every regime: the adjoint pairing "
+           "against the positive diagonal chain metric in the two Hermitian regimes, "
+           "the transpose pairing against the level's own metric in the non-normal and "
+           "complex-symmetric-pencil ones. An indefinite chain metric is refused in a "
+           "Hermitian regime, a singular interior or reduced metric in a bilinear one.")
+      .def("craigBampton",
+           py::overload_cast<std::complex<double>, double, double, double>(
+               &RecursiveQuotient::craigBampton, py::const_),
+           py::arg("window_centre"), py::arg("window_radius"),
+           py::arg("retention_radius"), py::arg("residual_tolerance") = -1.0,
+           "The same surrogate over a declared window disc |theta - centre| <= radius "
+           "in the complex spectral plane: a fixed-interface mode is retained when its "
+           "eigenvalue is within retention_radius of the centre and a reduced "
+           "eigenvalue is claimed when it lies in the disc, by complex distance in "
+           "every regime. retention_radius must cover window_radius.")
       .def("labeledFiberSum", &RecursiveQuotient::labeledFiberSum,
            "The abstract labeled sum of retained fibers with embedding J and "
            "Gram G = J^dag W J under the run's declared policy.")

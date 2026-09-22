@@ -448,13 +448,18 @@ class PencilSchur {
   [[nodiscard]] static CongruenceResult craigBampton(const Eigen::MatrixXcd &A,
                                                      const Eigen::MatrixXcd &M,
                                                      const Eigen::MatrixXcd &T);
-  /// The certified Craig–Bampton / AMLS surrogate of \f$ (A, M) \f$ over the
-  /// window disc \f$ |\theta - \f$ \p windowCentre \f$ | \le \f$
-  /// \p windowRadius, retaining the fixed-interface modes within
-  /// \p retentionRadius of the centre, with the interface constraint modes
-  /// taken at \p shift. Every claimed eigenvalue is held to the exact Feshbach
-  /// map and the inequality that holds it is verified numerically
-  /// (see `SurrogateResult`).
+  /// The certified Craig–Bampton / AMLS surrogate of \f$ (A, M) \f$ over a
+  /// declared window disc. The rule is the disc, in every regime: the window is
+  /// the closed disc \f$ |\theta - c| \le \rho \f$ in the complex spectral
+  /// plane with centre \f$ c \f$ = \p windowCentre and radius \f$ \rho \f$ =
+  /// \p windowRadius, a fixed-interface mode is retained exactly when its
+  /// eigenvalue lies within \p retentionRadius of the centre, and a reduced
+  /// eigenvalue is claimed exactly when it lies in the window — by distance in
+  /// the complex plane, never by real part alone, because the spectrum of a
+  /// non-normal or complex symmetric pencil is complex and only a disc encloses
+  /// it. The interface constraint modes are taken at \p shift. Every claimed
+  /// eigenvalue is held to the exact Feshbach map and the inequality that holds
+  /// it is verified numerically (see `SurrogateResult`).
   ///
   /// The surrogate runs in every pencil regime: nothing in it forms an adjoint
   /// or assumes a definite form, so the non-normal and the complex symmetric
