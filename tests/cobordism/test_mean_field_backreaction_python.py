@@ -204,13 +204,26 @@ class TheOccupationProjectorTest(unittest.TestCase):
         self.assertAlmostEqual(abs(action.matter_term() - sum(ordered[:3])),
                                0.0, delta=1e-8)
 
-    def test_the_two_occupation_orders_differ_on_a_complex_spectrum(self):
-        """The order is a declared choice, and it is one that matters."""
+    def test_each_occupation_order_sorts_by_what_it_names(self):
+        """The declared order is honoured, and it reorders one spectrum.
+
+        Both orders present the same multiset of eigenvalues — the spectrum does
+        not depend on how it is read — and each presents it sorted by the
+        quantity its name gives. The two agree whenever every eigenvalue has a
+        real part large beside its imaginary one, which is the Hermitian-like
+        regime, and part company where it does not.
+        """
         spacetime = sphere3(squared=_metric, phase=_flux)
         action = cob.JointAction(spacetime, _declaration())
         by_real = action.ordered_carrier_eigenvalues(True)
         by_modulus = action.ordered_carrier_eigenvalues(False)
-        self.assertNotEqual(by_real, by_modulus)
+
+        self.assertEqual([value.real for value in by_real],
+                         sorted(value.real for value in by_real))
+        self.assertEqual([abs(value) for value in by_modulus],
+                         sorted(abs(value) for value in by_modulus))
+        key = lambda value: (value.real, value.imag)  # noqa: E731
+        self.assertEqual(sorted(by_real, key=key), sorted(by_modulus, key=key))
 
     def test_more_occupied_modes_than_cells_is_refused(self):
         spacetime = sphere3()
