@@ -453,13 +453,14 @@ class CovariantChainHodge {
   /// @param probeCount columns of the probe block; must be positive.
   /// @param seed the deterministic seed of the probe block, so that two reads
   ///   of one instance are the same read.
+  /// @param report when non-null, receives the "contour-band" cost: the wall
+  ///   time of the whole read, and the memory and fill-in of one node's
+  ///   factorization, which stand for every node's because the bordered system
+  ///   has one pattern at every shift.
   /// @throws std::logic_error under `GRASSMANN_ALL`; std::invalid_argument on a
   ///   non-positive probe count or a malformed contour; std::runtime_error when
   ///   the probe block is too narrow for the band or when the dual connection's
   ///   band has a different rank on the same contour.
-  /// @param report when non-null, receives the "contour-band" cost of the whole
-  ///   read: its wall time, the memory of the last node's factors, and their
-  ///   fill-in.
   [[nodiscard]] Band sparseBand(int k, const Contour &contour, int probeCount,
                                 double kappa = 10.0, double isotropyTolerance = 1e-10,
                                 std::uint64_t seed = 20260922,
