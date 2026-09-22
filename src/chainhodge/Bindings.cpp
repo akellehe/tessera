@@ -50,6 +50,16 @@ protocol rotation epsilon (NaN until set).)doc")
       .def_readonly("margins", &InstanceCertificate::margins)
       .def_readonly("volumes", &InstanceCertificate::volumes)
       .def_readonly("gramDeterminants", &InstanceCertificate::gramDeterminants)
+      .def_readonly("volumeWindings", &InstanceCertificate::volumeWindings,
+          "The Riemann-sheet label of each volume root: the signed number of "
+          "turns det g_T makes about zero along the continuation that fixed it, "
+          "so volumes[t] is (-1)**volumeWindings[t] times the principal root "
+          "over d!. Carried because the root, not the squared volume, is where "
+          "the branch is: two instances with the same gramDeterminants and "
+          "different volumeWindings are on different sheets of the same "
+          "geometry, and only the label says so. Zero throughout on the "
+          "Kontsevich-Segal branch, which declares its sheet eigenvalue by "
+          "eigenvalue rather than along a path.")
       .def_readonly("continuationAmbiguous", &InstanceCertificate::continuationAmbiguous)
       .def_readonly("ambiguousTopSimplices", &InstanceCertificate::ambiguousTopSimplices)
       .def_readwrite("epsilon", &InstanceCertificate::epsilon);
@@ -105,6 +115,37 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            },
            py::arg("gram"), py::arg("branch") = Branch::Continuation,
            "(sqrt(det g)/d!, ambiguous) for one Gram matrix on the declared branch.")
+      .def_static("volumeWindingOnBranch",
+           [](const Eigen::MatrixXcd &gram, Branch branch) {
+             bool ambiguous = false;
+             int winding = 0;
+             WhitneyMass::volumeOnBranch(gram, branch, &ambiguous, &winding);
+             return winding;
+           },
+           py::arg("gram"), py::arg("branch") = Branch::Continuation,
+           "The Riemann-sheet label of the root volumeOnBranch takes: the signed "
+           "number of turns det g makes about zero along the continuation from "
+           "the unit Euclidean reference, so that the volume is (-1)**winding "
+           "times the principal root over d!. Zero on the Kontsevich-Segal "
+           "branch, which declares its sheet eigenvalue by eigenvalue rather "
+           "than along a path.")
+      .def_static("volumeContinuedFrom",
+           [](const Eigen::MatrixXcd &gramFrom, int windingFrom,
+              const Eigen::MatrixXcd &gramTo) {
+             bool ambiguous = false;
+             int windingTo = 0;
+             const Complex v = WhitneyMass::volumeContinuedFrom(
+                 gramFrom, windingFrom, gramTo, &windingTo, &ambiguous);
+             return py::make_tuple(v, ambiguous, windingTo);
+           },
+           py::arg("gram_from"), py::arg("winding_from"), py::arg("gram_to"),
+           "(sqrt(det g_to)/d!, ambiguous, winding) continued from a declared "
+           "previous geometry and its sheet instead of from the fixed Euclidean "
+           "reference. Starting from the geometry an instance actually came "
+           "from is what makes a family of instances one continued state rather "
+           "than a sequence of independent principal-value choices: the sheet "
+           "composes along the path, so a loop of squared lengths about a zero "
+           "of det g returns the winding one higher and the volume negated.")
       .def_static("marginOf", &WhitneyMass::marginOf, py::arg("gram"),
            "pi - sum_i |arg lambda_i(g)| for one Gram matrix.")
       .def_static("topSimplexBlocks", &WhitneyMass::topSimplexBlocks,

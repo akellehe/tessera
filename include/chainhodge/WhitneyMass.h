@@ -75,6 +75,16 @@ struct InstanceCertificate {
   std::vector<Complex> volumes{};
   /// \f$ \det g_T \f$ per top simplex.
   std::vector<Complex> gramDeterminants{};
+  /// The Riemann-sheet label of each volume root: the signed number of turns
+  /// \f$ \det g_T \f$ makes about zero along the continuation that fixed it, so
+  /// that `volumes[t]` is \f$ (-1)^{\rm windings[t]} \f$ times the principal
+  /// root over \f$ d! \f$. Carried because the root, not the squared volume, is
+  /// where the branch is: two instances with the same
+  /// `gramDeterminants` and different `volumeWindings` are on different sheets
+  /// of the same geometry, and only the label says so. Zero throughout on
+  /// `Branch::KontsevichSegal`, which declares its sheet eigenvalue by
+  /// eigenvalue rather than along a path.
+  std::vector<int> volumeWindings{};
   /// True when `Branch::Continuation` met a root of \f$ \det g_T(t) \f$ on the
   /// reference segment for some top simplex (listed in
   /// `ambiguousTopSimplices`); those volumes carry the Kontsevich–Segal value.
@@ -216,9 +226,39 @@ class WhitneyMass {
   /// \f$ \sqrt{\det g}/d! \f$ for one Gram matrix on the declared branch.
   /// \p ambiguous (optional) is set when `Branch::Continuation` met a root on
   /// the reference segment and the Kontsevich–Segal value was used instead.
+  /// \p winding (optional) receives the Riemann-sheet label of the root that
+  /// was taken: the signed number of turns \f$ \det g \f$ makes about zero along
+  /// the continuation, so that the value is \f$ (-1)^{\rm winding} \f$ times the
+  /// principal root. Zero on the Kontsevich–Segal branch, which declares its
+  /// sheet eigenvalue by eigenvalue rather than by a path.
   [[nodiscard]] static Complex volumeOnBranch(const Eigen::MatrixXcd &gram,
                                               Branch branch,
-                                              bool *ambiguous = nullptr);
+                                              bool *ambiguous = nullptr,
+                                              int *winding = nullptr);
+
+  /// \f$ \sqrt{\det g}/d! \f$ continued from a declared previous geometry and
+  /// its sheet, instead of from the fixed Euclidean reference.
+  ///
+  /// `Branch::Continuation` continues along the straight segment
+  /// \f$ g(t) = (1-t) g_{\rm from} + t\, g_{\rm to} \f$, tracking the argument of
+  /// the degree-\f$ d \f$ polynomial \f$ \det g(t) \f$ through its roots exactly
+  /// as the reference continuation does. Starting from the geometry an instance
+  /// actually came from, rather than from the unit Euclidean simplex every time,
+  /// is what makes a family of instances one continued state instead of a
+  /// sequence of independent principal-value choices: the sheet composes along
+  /// the path, so a loop of squared lengths about a zero of \f$ \det g \f$
+  /// returns \p windingTo one higher than \p windingFrom and the volume negated.
+  ///
+  /// \p windingTo (optional) receives the continued sheet label, and
+  /// \p ambiguous (optional) is set when a root of \f$ \det g(t) \f$ lies on the
+  /// segment itself, where there is no continuation to take; the value is then
+  /// the one the declared sheet gives at \p gramTo, and the caller decides
+  /// whether to refine the path.
+  [[nodiscard]] static Complex volumeContinuedFrom(const Eigen::MatrixXcd &gramFrom,
+                                                   int windingFrom,
+                                                   const Eigen::MatrixXcd &gramTo,
+                                                   int *windingTo = nullptr,
+                                                   bool *ambiguous = nullptr);
 
   /// \f$ \pi - \sum_i |\arg\lambda_i(g)| \f$ for one Gram matrix.
   [[nodiscard]] static double marginOf(const Eigen::MatrixXcd &gram);
