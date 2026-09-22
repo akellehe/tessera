@@ -5,11 +5,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <set>
 #include <stdexcept>
+#include <utility>
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
 #include <Eigen/Jacobi>
+
+#include "cobordism/ChainComplex.h"
 
 namespace tessera::observables {
 
@@ -283,6 +288,120 @@ void splitBand(const CovariantChainHodge &cov, int k, const Eigen::MatrixXcd &Q,
   out.closure = largestSingularValue(out.exactFrame - Q * (Q.adjoint() * out.exactFrame));
 }
 
+// A consistent orientation of a set of top cells: the coefficients
+// eps_t = +-1, over all n_d cells and zero off the set, that make the two
+// incidences of every face the set shares cancel, eps_t d_{f,t} + eps_u d_{f,u}
+// = 0. Each connected piece of the set is seeded at +1. `reason` is non-empty,
+// and the coefficients are zero, when no such choice exists: the set is not
+// orientable, and it has no enclosing surface to coorient.
+struct RegionOrientation {
+  Eigen::VectorXcd coefficients{};
+  std::string reason{};
+};
+
+RegionOrientation orientCells(const cobordism::ChainComplex &K, int d, const std::vector<std::size_t> &cells) {
+  RegionOrientation out;
+  const std::size_t total = K.numSimplices(d);
+  out.coefficients = Eigen::VectorXcd::Zero(static_cast<Eigen::Index>(total));
+  std::vector<int> position(total, -1);
+  for (std::size_t i = 0; i < cells.size(); ++i) position[cells[i]] = static_cast<int>(i);
+  // The incidences of each member cell, and the members incident to each face.
+  std::vector<std::vector<std::pair<int, int>>> incidences(cells.size());  // (face row, +-1)
+  std::map<int, std::vector<std::pair<std::size_t, int>>> byFace;          // face row -> (member, +-1)
+  for (const auto &entry : K.boundaryEntries(d)) {
+    const int member = position[static_cast<std::size_t>(entry.column)];
+    if (member < 0) continue;
+    incidences[static_cast<std::size_t>(member)].emplace_back(entry.row, entry.value);
+    byFace[entry.row].emplace_back(static_cast<std::size_t>(member), entry.value);
+  }
+  std::vector<int> sign(cells.size(), 0);
+  for (std::size_t seed = 0; seed < cells.size(); ++seed) {
+    if (sign[seed] != 0) continue;
+    sign[seed] = 1;
+    std::vector<std::size_t> frontier{seed};
+    while (!frontier.empty()) {
+      const std::size_t here = frontier.back();
+      frontier.pop_back();
+      for (const auto &[row, value] : incidences[here])
+        for (const auto &[there, otherValue] : byFace[row]) {
+          if (there == here) continue;
+          const int wanted = -sign[here] * value * otherValue;
+          if (sign[there] == 0) {
+            sign[there] = wanted;
+            frontier.push_back(there);
+          } else if (sign[there] != wanted) {
+            out.coefficients.setZero();
+            out.reason = "the region's cells admit no consistent orientation, so its enclosing surface "
+                         "has no coorientation";
+            return out;
+          }
+        }
+    }
+  }
+  for (std::size_t i = 0; i < cells.size(); ++i)
+    out.coefficients(static_cast<Eigen::Index>(cells[i])) = Complex(sign[i], 0.0);
+  return out;
+}
+
+// The cells of degree k all of whose vertices lie in `region`, by canonical index.
+std::vector<std::size_t> cellsInside(const cobordism::ChainComplex &K, int k,
+                                     const std::set<std::uint64_t> &region) {
+  std::vector<std::size_t> out;
+  const auto cells = K.kSimplexVertices(k);
+  for (std::size_t j = 0; j < cells.size(); ++j) {
+    bool inside = true;
+    for (const std::uint64_t vertex : cells[j]) inside = inside && region.count(vertex) > 0;
+    if (inside) out.push_back(j);
+  }
+  return out;
+}
+
+// The principal submatrix of a dense matrix on `indices`.
+Eigen::MatrixXcd submatrix(const Eigen::MatrixXcd &X, const std::vector<std::size_t> &indices) {
+  const auto r = static_cast<Eigen::Index>(indices.size());
+  Eigen::MatrixXcd out(r, r);
+  for (Eigen::Index i = 0; i < r; ++i)
+    for (Eigen::Index j = 0; j < r; ++j)
+      out(i, j) = X(static_cast<Eigen::Index>(indices[static_cast<std::size_t>(i)]),
+                    static_cast<Eigen::Index>(indices[static_cast<std::size_t>(j)]));
+  return out;
+}
+
+// The principal submatrix of a sparse matrix on `indices`, taken without
+// densifying the whole matrix.
+Eigen::MatrixXcd submatrix(const SparseMatrix &X, const std::vector<std::size_t> &indices) {
+  const auto r = static_cast<Eigen::Index>(indices.size());
+  std::map<Eigen::Index, Eigen::Index> position;
+  for (Eigen::Index i = 0; i < r; ++i)
+    position[static_cast<Eigen::Index>(indices[static_cast<std::size_t>(i)])] = i;
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(r, r);
+  for (int j = 0; j < X.outerSize(); ++j)
+    for (SparseMatrix::InnerIterator it(X, j); it; ++it) {
+      const auto row = position.find(it.row());
+      const auto column = position.find(it.col());
+      if (row != position.end() && column != position.end()) out(row->second, column->second) = it.value();
+    }
+  return out;
+}
+
+// The moduli of the eigenvalues of a restricted pencil, ascending: the
+// Dirichlet problem of a region at one degree. Empty when the region holds no
+// cell of the degree.
+std::vector<double> pencilSpectrum(const Eigen::MatrixXcd &Ar, const Eigen::MatrixXcd &Br) {
+  const Eigen::Index r = Ar.rows();
+  if (r == 0) return {};
+  const Eigen::MatrixXcd C = Br.fullPivLu().solve(Ar);
+  Eigen::ComplexSchur<Eigen::MatrixXcd> schur(C, false);
+  if (schur.info() != Eigen::Success)
+    throw std::runtime_error("EffectiveTopology::antiCluster: the Schur decomposition of the region's "
+                             "restricted pencil did not converge");
+  std::vector<double> out;
+  out.reserve(static_cast<std::size_t>(r));
+  for (Eigen::Index i = 0; i < r; ++i) out.push_back(std::abs(schur.matrixT()(i, i)));
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
 }  // namespace
 
 std::vector<EffectiveTopology> EffectiveTopology::readScales(const CovariantChainHodge &cov,
@@ -431,6 +550,165 @@ EffectiveComponentPartition EffectiveTopology::components(const CovariantChainHo
   }
   for (auto &component : out.components) std::sort(component.support.begin(), component.support.end());
   out.certified = out.band.certified;
+  return out;
+}
+
+AntiClusterCertificate EffectiveTopology::antiCluster(const CovariantChainHodge &cov,
+                                                      const std::vector<std::uint64_t> &regionVertices,
+                                                      double epsilon, const AntiClusterOptions &options) {
+  checkScale(epsilon, options.minimumGap, "EffectiveTopology::antiCluster");
+  const int d = cov.dimension();
+  if (d != 3)
+    throw std::invalid_argument("EffectiveTopology::antiCluster: an effective void is enclosed by a "
+                                "near-cycle of L_2 on a complex of dimension three, and this complex has "
+                                "dimension " +
+                                std::to_string(d));
+  checkDegree(cov, options.interiorDegree, "EffectiveTopology::antiCluster");
+  const cobordism::ChainComplex &K = cov.base().complex();
+  const auto faceCount = static_cast<Eigen::Index>(K.numSimplices(d - 1));
+  if (options.coorientationReference.size() != 0 && options.coorientationReference.size() != faceCount)
+    throw std::invalid_argument("EffectiveTopology::antiCluster: the coorientation reference is a chain of "
+                                "degree " +
+                                std::to_string(d - 1) + ", of length " + std::to_string(faceCount) +
+                                ", and one of length " + std::to_string(options.coorientationReference.size()) +
+                                " was supplied");
+  std::set<std::uint64_t> present;
+  for (const auto &vertex : K.kSimplexVertices(0)) present.insert(vertex.front());
+  for (const std::uint64_t vertex : regionVertices)
+    if (present.count(vertex) == 0)
+      throw std::invalid_argument("EffectiveTopology::antiCluster: the region names vertex " +
+                                  std::to_string(vertex) + ", which the complex does not have");
+  const std::set<std::uint64_t> region(regionVertices.begin(), regionVertices.end());
+
+  AntiClusterCertificate out;
+  out.region.assign(region.begin(), region.end());
+  out.minimumVoidContent = options.minimumVoidContent;
+  out.interiorDegree = options.interiorDegree;
+  out.interiorCells = cellsInside(K, d, region);
+
+  // The enclosing surface: the faces the region contains that two of its own
+  // cells do not share. A region declared around a cavity has no cells, so
+  // every face it contains is on its enclosing surface.
+  std::map<int, int> interiorCofaces;
+  {
+    std::vector<char> isInterior(K.numSimplices(d), 0);
+    for (const std::size_t cell : out.interiorCells) isInterior[cell] = 1;
+    for (const auto &entry : K.boundaryEntries(d))
+      if (isInterior[static_cast<std::size_t>(entry.column)]) ++interiorCofaces[entry.row];
+  }
+  for (const std::size_t face : cellsInside(K, d - 1, region)) {
+    const auto shared = interiorCofaces.find(static_cast<int>(face));
+    if (shared == interiorCofaces.end() || shared->second != 2) out.surface.push_back(face);
+  }
+
+  // The enclosing surface as a chain, cooriented out of the region. The
+  // region's own cells carry it where it has any; where it has none, the
+  // region is a cavity and its enclosing surface is the part of the complex's
+  // own boundary that its faces carry, taken with the sign that points out of
+  // the cavity rather than out of the material.
+  const bool cavity = out.interiorCells.empty();
+  std::vector<std::size_t> carrier = out.interiorCells;
+  if (cavity) {
+    carrier.resize(K.numSimplices(d));
+    for (std::size_t i = 0; i < carrier.size(); ++i) carrier[i] = i;
+  }
+  const RegionOrientation orientation = orientCells(K, d, carrier);
+  if (!orientation.reason.empty()) {
+    out.reason = orientation.reason;
+    return out;
+  }
+  out.enclosingSurface = cov.twistedBoundary(d) * orientation.coefficients;
+  if (cavity) {
+    Eigen::VectorXcd wall = Eigen::VectorXcd::Zero(faceCount);
+    for (const std::size_t face : out.surface)
+      wall(static_cast<Eigen::Index>(face)) = -out.enclosingSurface(static_cast<Eigen::Index>(face));
+    out.enclosingSurface = wall;
+  }
+  const double surfaceNorm = out.enclosingSurface.norm();
+  if (!(surfaceNorm > 0.0)) {
+    out.reason = "the region has no enclosing surface: no face of the complex lies inside it that its own "
+                 "cells do not share";
+    return out;
+  }
+  const Eigen::VectorXcd normalized = out.enclosingSurface / surfaceNorm;
+  out.cycleResidual = (cov.twistedBoundary(d - 1) * normalized).norm();
+
+  // The first clause: the enclosing surface is a certified coexact near-cycle
+  // of L_2. Its share of itself inside the band's coexact part is the measure,
+  // since a boundary reaches that subspace only through a void it encloses.
+  const EffectiveHodgeSplit voidBand = split(cov, d - 1, epsilon, options.tolerance, options.minimumGap);
+  out.band = voidBand.band;
+  out.voids = voidBand.coexact;
+  if (voidBand.band.method == EffectiveBettiNumber::Method::Unmeasured) {
+    out.reason = voidBand.reason;
+    return out;
+  }
+  out.voidContent =
+      voidBand.coexactFrame.cols() == 0 ? 0.0 : (voidBand.coexactFrame.adjoint() * normalized).norm();
+
+  // The second clause: the interior spectrum is nearly empty.
+  const int k = options.interiorDegree;
+  const std::vector<std::size_t> interior = cellsInside(K, k, region);
+  if (k == 0) {
+    try {
+      const SparsePencil pencil = cov.sparsePencil(0);
+      out.interiorSpectrum = pencilSpectrum(submatrix(pencil.A, interior), submatrix(pencil.M, interior));
+    } catch (const std::logic_error &refusal) {
+      // The Grassmann preset has no sparse degree-zero pencil to restrict.
+      out.reason = refusal.what();
+      return out;
+    }
+  } else if (cov.base().size(k) < cov.base().crossoverDimension()) {
+    const Pencil pencil = cov.pencil(k);
+    out.interiorSpectrum = pencilSpectrum(submatrix(pencil.A, interior), submatrix(pencil.B, interior));
+  } else {
+    out.reason = unmeasuredAboveCrossover(k).reason;
+    return out;
+  }
+  out.interiorRank = static_cast<int>(std::upper_bound(out.interiorSpectrum.begin(), out.interiorSpectrum.end(),
+                                                       epsilon) -
+                                      out.interiorSpectrum.begin());
+  if (!out.interiorSpectrum.empty()) out.interiorFloor = out.interiorSpectrum.front();
+  out.interiorEmpty = out.interiorRank == 0;
+
+  // The third clause: the enclosing coorientation is inward.
+  if (options.coorientationReference.size() == faceCount) {
+    out.coorientationSource = CoorientationSource::Reference;
+    const double referenceNorm = options.coorientationReference.norm();
+    if (!(referenceNorm > 0.0)) {
+      out.reason = "the coorientation reference is the zero chain and carries no direction";
+      return out;
+    }
+    out.coorientationOverlap = options.coorientationReference.dot(normalized).real() / referenceNorm;
+    if (out.coorientationOverlap < -options.coorientationTolerance)
+      out.coorientation = EnclosingCoorientation::Inward;
+    else if (out.coorientationOverlap > options.coorientationTolerance)
+      out.coorientation = EnclosingCoorientation::Outward;
+  } else {
+    out.coorientationSource = CoorientationSource::InteriorSpectrum;
+    out.coorientation =
+        out.interiorEmpty ? EnclosingCoorientation::Inward : EnclosingCoorientation::Outward;
+  }
+
+  out.certified = voidBand.band.certified && out.voidContent >= out.minimumVoidContent &&
+                  out.cycleResidual <= options.tolerance && out.interiorEmpty &&
+                  out.coorientation == EnclosingCoorientation::Inward;
+  if (out.certified) return out;
+  std::string failures;
+  const auto note = [&failures](const char *what) {
+    if (!failures.empty()) failures += "; ";
+    failures += what;
+  };
+  if (!voidBand.band.certified) note("the degree-two band is not certified by its residual and its gap");
+  if (!(out.voidContent >= out.minimumVoidContent))
+    note("the enclosing surface keeps less of itself in the certified coexact part of the degree-two band "
+         "than the declared minimum, so it is not a coexact near-cycle of L_2");
+  if (!(out.cycleResidual <= options.tolerance)) note("the enclosing surface is not closed");
+  if (!out.interiorEmpty) note("the region holds modes of the operator at the scale, so its interior "
+                               "spectrum is not nearly empty");
+  if (out.coorientation != EnclosingCoorientation::Inward)
+    note("the enclosing coorientation is not inward");
+  out.reason = failures;
   return out;
 }
 

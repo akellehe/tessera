@@ -209,6 +209,68 @@ are the coexact part. Frames are orthonormal bases of chains.)doc")
       .def_readonly("certified", &EffectiveComponentPartition::certified)
       .def_readonly("reason", &EffectiveComponentPartition::reason);
 
+  py::enum_<EnclosingCoorientation>(m, "EnclosingCoorientation",
+      "Which way the enclosing surface of a region is cooriented: Inward from the material into the "
+      "region (a bubble, what an anti-cluster requires), Outward from the region into the material (a "
+      "blob), or Undeclared when a supplied reference is orthogonal to the enclosing surface.")
+      .value("Inward", EnclosingCoorientation::Inward)
+      .value("Outward", EnclosingCoorientation::Outward)
+      .value("Undeclared", EnclosingCoorientation::Undeclared);
+
+  py::enum_<CoorientationSource>(m, "CoorientationSource",
+      "Where a coorientation was read from: Reference, a chain the caller supplied carrying a "
+      "coorientation established independently, such as the cooriented cut of a lineage; or "
+      "InteriorSpectrum, which reads the coorientation as inward exactly when the enclosed side is the "
+      "one the operator's band does not reach, because with no reference the enclosing surface carries "
+      "no direction of its own (the band fixes a complex near-cycle only up to a nonzero complex "
+      "scale).")
+      .value("Reference", CoorientationSource::Reference)
+      .value("InteriorSpectrum", CoorientationSource::InteriorSpectrum);
+
+  py::class_<AntiClusterOptions>(m, "AntiClusterOptions",
+      "What the anti-cluster certificate is allowed to assume beyond the operator, the region and the "
+      "scale: the band's tolerance and minimum gap, the share of the enclosing surface required in the "
+      "certified coexact part of the degree-two band, the degree whose restriction to the region is "
+      "the interior spectrum, and an optional coorientation reference chain with the modulus below "
+      "which it reads no direction.")
+      .def(py::init<>())
+      .def_readwrite("tolerance", &AntiClusterOptions::tolerance)
+      .def_readwrite("minimumGap", &AntiClusterOptions::minimumGap)
+      .def_readwrite("minimumVoidContent", &AntiClusterOptions::minimumVoidContent)
+      .def_readwrite("interiorDegree", &AntiClusterOptions::interiorDegree)
+      .def_readwrite("coorientationReference", &AntiClusterOptions::coorientationReference)
+      .def_readwrite("coorientationTolerance", &AntiClusterOptions::coorientationTolerance);
+
+  py::class_<AntiClusterCertificate>(m, "AntiClusterCertificate",
+      R"doc(The whitepaper's proposed identification of an anti-cluster with an effective void,
+evaluated on one declared region: a region whose enclosing surface is a certified coexact
+near-cycle of L_2, whose interior spectrum is nearly empty, and whose enclosing
+coorientation is inward. The region's cells and its enclosing surface come from the
+declared vertices; voidContent is the share of the normalized enclosing surface that lies
+in the certified coexact part of the degree-two band; interiorSpectrum is the operator
+restricted to the region, and interiorRank counts how much of it lies inside the window. A
+region declared around a cavity has no cells of its own, since the cavity's cells are not
+in the complex.)doc")
+      .def_readonly("region", &AntiClusterCertificate::region)
+      .def_readonly("interiorCells", &AntiClusterCertificate::interiorCells)
+      .def_readonly("surface", &AntiClusterCertificate::surface)
+      .def_readonly("enclosingSurface", &AntiClusterCertificate::enclosingSurface)
+      .def_readonly("band", &AntiClusterCertificate::band)
+      .def_readonly("voids", &AntiClusterCertificate::voids)
+      .def_readonly("voidContent", &AntiClusterCertificate::voidContent)
+      .def_readonly("minimumVoidContent", &AntiClusterCertificate::minimumVoidContent)
+      .def_readonly("cycleResidual", &AntiClusterCertificate::cycleResidual)
+      .def_readonly("interiorDegree", &AntiClusterCertificate::interiorDegree)
+      .def_readonly("interiorSpectrum", &AntiClusterCertificate::interiorSpectrum)
+      .def_readonly("interiorRank", &AntiClusterCertificate::interiorRank)
+      .def_readonly("interiorFloor", &AntiClusterCertificate::interiorFloor)
+      .def_readonly("interiorEmpty", &AntiClusterCertificate::interiorEmpty)
+      .def_readonly("coorientation", &AntiClusterCertificate::coorientation)
+      .def_readonly("coorientationSource", &AntiClusterCertificate::coorientationSource)
+      .def_readonly("coorientationOverlap", &AntiClusterCertificate::coorientationOverlap)
+      .def_readonly("certified", &AntiClusterCertificate::certified)
+      .def_readonly("reason", &AntiClusterCertificate::reason);
+
   py::class_<EffectiveTopology> effectiveTopology(m, "EffectiveTopology",
       R"doc(What a declared operator sees at a scale, as opposed to what the complex is. The actual
 topology of a complex is its incidence (ChainComplex.bettiNumbers, built by the
@@ -237,6 +299,14 @@ consults the incidence ranks.)doc");
            py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
            "The effective components at scale epsilon: the supports of the degree-zero band, from the "
            "committors that the column-pivoted QR of the band recovers.")
+      .def_static("antiCluster", &EffectiveTopology::antiCluster, py::arg("operator"),
+           py::arg("region_vertices"), py::arg("epsilon"), py::arg("options") = AntiClusterOptions{},
+           "The anti-cluster certificate on a region declared by its vertices: the whitepaper's "
+           "proposal that an anti-cluster is an effective void, evaluated clause by clause. The region "
+           "supplies its cells and its enclosing surface, the surface's share of the certified coexact "
+           "part of the degree-two band says whether it is a near-cycle of L_2, the operator restricted "
+           "to the region is the interior spectrum, and the coorientation comes from a supplied "
+           "reference chain or from that spectrum.")
       .def("epsilon", &EffectiveTopology::epsilon)
       .def("dimension", &EffectiveTopology::dimension)
       .def("degrees", &EffectiveTopology::degrees)
@@ -4155,6 +4225,21 @@ always None.)doc")
                   py::arg("record"),
                   "Rehydrate; rejects an unknown schema_version.");
 
+  py::class_<ClusterSupportProposal> clusterSupportProposal(m, "ClusterSupportProposal",
+      R"doc(One proposed cluster support and the proposers that offered it: the support as
+level-0 cell ids, whether Newman-Girvan modularity proposed it, whether the degree-zero
+band of the covariant operator proposed it, each proposer's index into its own input
+list (NO_PROPOSER when it did not propose this support), and the largest Jaccard index
+between this support and any support the other proposer offered.)doc");
+  clusterSupportProposal.attr("NO_PROPOSER") = ClusterSupportProposal::kNoProposer;
+  clusterSupportProposal
+      .def_readonly("support", &ClusterSupportProposal::support)
+      .def_readonly("modularity", &ClusterSupportProposal::modularity)
+      .def_readonly("band", &ClusterSupportProposal::band)
+      .def_readonly("modularityIndex", &ClusterSupportProposal::modularityIndex)
+      .def_readonly("bandIndex", &ClusterSupportProposal::bandIndex)
+      .def_readonly("crossProposerOverlap", &ClusterSupportProposal::crossProposerOverlap);
+
   py::class_<ParticleClusters>(m, "ParticleClusters",
       R"doc(The quark/antiquark classifier over persistent modular
 spectral components.  Composes the upstream certificates (persistence,
@@ -4233,6 +4318,17 @@ evidence.)doc")
                   py::arg("overlap_threshold") = 0.5,
                   "Track candidates across scale/time by their color "
                   "bands (matchFibers delegation).")
+      .def_static("proposeSupports", &ParticleClusters::proposeSupports,
+                  py::arg("modularity_components"), py::arg("band_components"),
+                  "The cluster supports both proposers offer, merged: "
+                  "Newman-Girvan modularity on the combinatorial "
+                  "one-skeleton, which does not see the complex Hodge "
+                  "weights, and the degree-zero band of the covariant "
+                  "operator, which is nothing but those weights. Two "
+                  "supports are one proposal when their cell-id sets are "
+                  "equal; the modularity components come first in input "
+                  "order, then every band component none of them matched. "
+                  "Both proposers only propose, and neither may veto.")
       // ---- even sectors ------------------------------------------
       .def("octetBilinearRead", &ParticleClusters::octetBilinearRead,
            py::arg("state"), py::arg("color_modes"),
