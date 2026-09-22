@@ -4,6 +4,7 @@
 refusal of an order that is not implemented, their way from the command line
 into a run, and the run itself end to end on synthetic pseudopotential files."""
 import argparse
+import os
 
 import numpy as np
 import pytest
@@ -224,3 +225,46 @@ def test_a_method_without_a_solution_is_recorded_and_the_run_goes_on():
         raise ValueError("some other error")
     with pytest.raises(ValueError, match="some other error"):
         gaas._fed_back(rows, "g0w0", broken, lambda levels: 0.0, lines.append, "N=6")
+
+
+def test_the_tables_of_transitions_change_where_the_numbers_live_and_not_the_numbers(tmp_path):
+    """The momentum terms' transition amplitudes are kept for a whole loop,
+    batched, and summed without a loop over the sections: against the plain
+    per-section sums of the formula, and eigenvalue self-consistency with the
+    tables on disk equal to the one without them."""
+    from tessera.drivers.bands import screening
+    crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
+    mesh = abinitio.MeshCrystal(crystal, 6, approximations=Approximations(1, 2))
+    bands = 7
+    extended = mesh.extend_bands(mesh.run_hartree_fock(4, tolerance=1e-9), bands + 8, tolerance=1e-9)
+    levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, bands)
+    heads = mesh.vanishing_momentum_pairs(extended, coupling, bands)
+    terms = mesh.momentum_terms(extended, range(bands), bands)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    rpa.set_head(mesh.zero_momentum, heads)
+    rpa.set_momentum_terms(*terms, scratch=str(tmp_path))
+    rpa.prefetch = True
+    frequency = 0.5 * (levels[0] + levels[1])
+    for n in (0, 3):
+        for index, term in enumerate(rpa.momentum_terms):
+            value, derivative = rpa._integrand(index, n, frequency)
+            omega, modes, _ = rpa._momentum_modes[index]
+            weights = 2.0 * np.abs(np.asarray(term["blocks"][n]) @ modes) ** 2
+            expected = expected_derivative = 0.0
+            for m, level in enumerate(np.asarray(term["levels"])):
+                poles = level - omega if m < occupied else level + omega
+                expected += np.sum(weights[m] / (frequency - poles))
+                expected_derivative -= np.sum(weights[m] / (frequency - poles) ** 2)
+            assert value == pytest.approx(expected, rel=1e-12, abs=1e-15)
+            assert derivative == pytest.approx(expected_derivative, rel=1e-12, abs=1e-15)
+    assert any(name.endswith(".npy") for name in os.listdir(tmp_path / "transitions"))
+    kept, _, _ = screening.self_consistent_quasiparticles(levels, occupied, coupling, integrals,
+                                                          head=(mesh.zero_momentum, heads), update_screening=True,
+                                                          tolerance=1e-8, momentum_terms=terms,
+                                                          scratch=str(tmp_path))
+    plain, _, _ = screening.self_consistent_quasiparticles(levels, occupied, coupling, integrals,
+                                                           head=(mesh.zero_momentum, heads), update_screening=True,
+                                                           tolerance=1e-8, momentum_terms=terms)
+    assert np.abs(kept - plain).max() < 1e-12
+    # One screened interaction's tables at a time stay on disk.
+    assert len({name.split("_")[0] for name in os.listdir(tmp_path / "transitions")}) == 1

@@ -27,6 +27,8 @@ Reference: Hybertsen & Louie, "Electron correlation in semiconductors and
 insulators: band gaps and quasiparticle energies", Physical Review B 34, 5390
 (1986), for the quasiparticle equation.
 """
+import os
+
 import numpy as np
 import scipy.linalg
 
@@ -238,7 +240,9 @@ class RandomPhase:
             raise ValueError("the exchange self-energy needs the full tensor of Coulomb integrals")
         return -sum(self.W[n, i, i, n] for i in range(self.occupied))
 
-    def set_momentum_terms(self, terms, weights, average):
+    _generation = 0                                              # of the tables of transitions on disk
+
+    def set_momentum_terms(self, terms, weights, average, scratch=None):
         """Average the self-energy integrand S_n(q; w) over the momentum
         transfers that sampling the zone centre leaves out, instead of taking
         its closed form at vanishing momentum. With A_0 the coefficient of the
@@ -252,9 +256,14 @@ class RandomPhase:
         which is bounded and periodic, by the grid of `terms`
         (`MeshCrystal.momentum_term`, `Approximations.momentum_nodes`) with the
         `weights`. At every node the whole kernel of that momentum enters, so
-        nothing is split into a zero-momentum entry and a rest there."""
+        nothing is split into a zero-momentum entry and a rest there.
+
+        The transition amplitudes of every mode at every node are kept for as
+        long as the screened interaction is (`_transition_table`), under
+        `scratch` when it is given, because they take bands x modes numbers per
+        mode and node; that changes where they live and not what they are."""
         self.momentum_terms, self.momentum_weights, self.zone_average = list(terms), list(weights), float(average)
-        self._momentum_modes = {}
+        self._momentum_modes, self._transition_scratch, self.prefetch = {}, scratch, False
 
     def _integrand(self, index, n, frequency):
         """S_n(q; w) and its derivative at the momentum of `momentum_terms[index]`.
@@ -272,20 +281,57 @@ class RandomPhase:
             casida = np.diag(gaps ** 2) + 4.0 * root[:, None] * np.asarray(term["coupling"]) * root[None, :]
             squared, Z = np.linalg.eigh(0.5 * (casida + casida.conj().T))
             omega = np.sqrt(squared)
-            self._momentum_modes[index] = (omega, (root[:, None] * Z) / np.sqrt(omega)[None, :], {})
-        omega, modes, transitions = self._momentum_modes[index]
-        if n not in transitions:
-            transitions.clear()                                  # one mode at a time: bands x modes numbers per transfer
-            transitions[n] = 2.0 * np.abs(np.asarray(term["blocks"][n]) @ modes) ** 2        # |sqrt(2) (nm|s)|^2
-        value = derivative = 0.0
+            self._momentum_modes[index] = (omega, (root[:, None] * Z) / np.sqrt(omega)[None, :], None)
+        omega, modes, _ = self._momentum_modes[index]
+        weights = self._transitions_at(index, n)                  # |sqrt(2) (nm|s)|^2, bands x modes
         levels = np.asarray(term["levels"], dtype=float)
         if self.propagator_shifts is not None:
             levels = levels + np.asarray(self.propagator_shifts)[:len(levels)]
-        for m, level in enumerate(levels):
-            poles = level - omega if m < self.occupied else level + omega
-            value += np.sum(transitions[n][m] / (frequency - poles))
-            derivative -= np.sum(transitions[n][m] / (frequency - poles) ** 2)
-        return value, derivative
+        filled = (np.arange(len(levels)) < self.occupied)[:, None]
+        poles = np.where(filled, levels[:, None] - omega[None, :], levels[:, None] + omega[None, :])
+        inverse = 1.0 / (frequency - poles)
+        return float(np.sum(weights * inverse)), float(-np.sum(weights * inverse ** 2))
+
+    def _transitions_at(self, index, n):
+        """|sqrt(2) (n m | s)|^2 of the mode n with every section m at the node
+        `index` and every mode s of the screened interaction there. They stay
+        fixed while the screened interaction does, so they are computed once:
+        one mode at a time, or, with `prefetch` (a loop that asks for every
+        mode), every mode of the node in batched matrix products."""
+        omega, modes, table = self._momentum_modes[index]
+        term = self.momentum_terms[index]
+        if table is None:
+            states = sorted(term["blocks"])
+            first = np.asarray(term["blocks"][states[0]])
+            shape = (len(states), first.shape[0], modes.shape[1])
+            if self._transition_scratch is None:
+                store = np.empty(shape)
+            else:
+                directory = os.path.join(self._transition_scratch, "transitions")
+                os.makedirs(directory, exist_ok=True)
+                if getattr(self, "_table_generation", None) is None:
+                    RandomPhase._generation += 1                  # a new screened interaction: the old tables go
+                    self._table_generation = RandomPhase._generation
+                    for name in os.listdir(directory):
+                        if not name.startswith(f"g{self._table_generation}_"):
+                            os.remove(os.path.join(directory, name))
+                store = np.lib.format.open_memmap(os.path.join(directory, f"g{self._table_generation}_{index}.npy"),
+                                                  mode="w+", dtype=float, shape=shape)
+            table = (store, {state: row for row, state in enumerate(states)}, np.zeros(len(states), dtype=bool))
+            self._momentum_modes[index] = (omega, modes, table)
+        store, rows, done = table
+        row = rows[n]
+        if not done[row]:
+            pending = [r for r in range(len(done)) if not done[r]] if self.prefetch else [row]
+            states = sorted(rows, key=rows.get)
+            bands = store.shape[1]
+            batch = max(1, (1 << 24) // max(1, bands * modes.shape[0]))
+            for start in range(0, len(pending), batch):
+                chunk = pending[start:start + batch]
+                stacked = np.concatenate([np.asarray(term["blocks"][states[r]]) for r in chunk])
+                store[chunk] = (2.0 * np.abs(stacked @ modes) ** 2).reshape(len(chunk), bands, -1)
+                done[chunk] = True
+        return store[row]
 
     def set_vertex(self, order, bands, interaction, poles, states=None):
         """Add the skeleton diagrams of the orders 2 .. `order` in the screened
@@ -347,12 +393,13 @@ class RandomPhase:
         value = derivative = 0.0
         levels = self.energies if self.propagator is None else self.propagator
         sets = self._transitions(n)
+        filled = (np.arange(len(levels)) < self.occupied)[:, None]
         for excitations, transition in sets:
-            for m, level in enumerate(levels):
-                weights = np.abs(transition[m, :]) ** 2 / len(sets)
-                poles = level - excitations if m < self.occupied else level + excitations
-                value += np.sum(weights / (frequency - poles))
-                derivative -= np.sum(weights / (frequency - poles) ** 2)
+            weights = np.abs(transition[:len(levels), :]) ** 2 / len(sets)                     # levels x modes
+            poles = np.where(filled, levels[:, None] - excitations[None, :], levels[:, None] + excitations[None, :])
+            inverse = 1.0 / (frequency - poles)
+            value += np.sum(weights * inverse)
+            derivative -= np.sum(weights * inverse ** 2)
         head_value = head_derivative = 0.0
         if self.head is not None:
             level = levels[n]
@@ -534,7 +581,8 @@ class KineticBasisScreening:
 
 
 def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, head=None, update_screening=True,
-                                    tolerance=1e-6, max_iterations=60, damping=0.7, momentum_terms=None, vertex=None):
+                                    tolerance=1e-6, max_iterations=60, damping=0.7, momentum_terms=None, vertex=None,
+                                    scratch=None, log=None):
     """Eigenvalue self-consistency on a Hartree-Fock starting point: the
     orbitals and their Coulomb integrals stay fixed, and the quasiparticle
     levels are fed back into the propagator (`update_screening=False`, the
@@ -560,8 +608,9 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
             if head is not None:
                 rpa.set_head(head[0], head[1], energies - mean_field)
             if momentum_terms is not None:
-                rpa.set_momentum_terms(*momentum_terms)
+                rpa.set_momentum_terms(*momentum_terms, scratch=scratch)
                 rpa.screening_shifts = energies - mean_field
+                rpa.prefetch = True                              # every mode is solved at every iteration
             if vertex is not None:
                 rpa.set_vertex(*vertex)
         if momentum_terms is not None:
@@ -571,6 +620,8 @@ def self_consistent_quasiparticles(mean_field, occupied, coupling, integrals, he
                              for n in range(len(energies))])
         change = float(np.abs(produced - energies).max())
         history.append(change)
+        if log:
+            log(f"  quasiparticle update {iteration:2d}: largest change {change:.2e} Ry")
         energies = (1.0 - damping) * energies + damping * produced
         if change < tolerance:
             break

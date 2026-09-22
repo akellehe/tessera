@@ -415,7 +415,7 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
                     levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
                     update_screening=update, tolerance=1e-5,
                     momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
-                    vertex=vertex if with_head else None)
+                    vertex=vertex if with_head else None, scratch=mesh.scratch, log=log)
                 return produced, history
             _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
         row["seconds"] = time.time() - started
