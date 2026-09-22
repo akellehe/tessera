@@ -224,6 +224,12 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} RecursiveQuotient.h
 ```
+```{doxygenfile} LevelRecursion.h
+```
+```{doxygenfile} MappingCylinder.h
+```
+```{doxygenfile} DressedFluctuation.h
+```
 ```{doxygenfile} PencilLayer.h
 ```
 ```{doxygenfile} LevenbergMarquardt.h
