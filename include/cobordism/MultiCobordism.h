@@ -413,9 +413,8 @@ class MultiCobordism {
                      HodgeLaplacian::defaultMetricSource());
 
   /// Where every Hodge operator this node scores, relaxes and reads takes its
-  /// metric from, the recursive analysis pass (`runRecursiveAnalysis`: its
-  /// `SpectralFiberTracker`, `RecursiveQuotient` and fiber transports)
-  /// included. Defaults to the process-wide
+  /// metric from, the operators of the post-hoc analysis pass
+  /// (`runRecursiveAnalysis`) included. Defaults to the process-wide
   /// `HodgeLaplacian::defaultMetricSource()` read at construction, the
   /// chain-level Whitney pencil unless changed, so that the node, the static
   /// readouts, the observables and checkpoint replay agree. Under
