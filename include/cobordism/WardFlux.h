@@ -201,6 +201,11 @@ struct IntrinsicResponseConfig {
   /// evaluated; at or below it the sample sits on a pole and the value is
   /// reported as unavailable rather than as a large finite number.
   double poleTolerance = 1e-12;
+  /// Quadrature nodes of the Riesz contour each band's residue is read on. The
+  /// trapezoid rule on a circle is spectrally accurate for a function
+  /// holomorphic in an annulus around it, which the resolvent form is once the
+  /// contour separates the band from every other band.
+  int contourNodes = 64;
 };
 
 /// # IntrinsicResponseRead
@@ -260,7 +265,7 @@ struct IntrinsicResponseRead {
   std::vector<std::complex<double>> slope{};
 
   /// Named failures: "empty-cut", "singular-slice-operator",
-  /// "sample-on-a-pole".
+  /// "bands-not-separated", "sample-on-a-pole".
   std::vector<std::string> failedCertificates{};
 };
 

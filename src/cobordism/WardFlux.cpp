@@ -443,6 +443,15 @@ IntrinsicResponseRead WardFlux::intrinsicResponse(
       if (other != band)
         nearest =
             std::min(nearest, std::abs(read.poles[other] - read.poles[band]));
+    // The contour sits between the band's own extent and the nearest other
+    // band, so it encloses this band whole and no part of any other. A band
+    // whose extent reaches the next band cannot be enclosed alone, and its
+    // residue is refused rather than read on a contour that straddles two.
+    if (!(nearest > spread)) {
+      nameFailure(read.failedCertificates, "bands-not-separated");
+      read.residues.push_back(complexd{kNaN, kNaN});
+      continue;
+    }
     double radius = 0.0;
     if (std::isfinite(nearest)) {
       radius = spread + 0.25 * (nearest - spread);
@@ -454,33 +463,33 @@ IntrinsicResponseRead WardFlux::intrinsicResponse(
     }
     if (!(radius > 0.0)) radius = 1.0;
 
-    const int nodes = 64;
     complexd integral{0.0, 0.0};
-    bool solved = true;
-    for (int node = 0; node < nodes; ++node) {
+    bool resolved = true;
+    for (int node = 0; node < cfg.contourNodes; ++node) {
       const double angle = kTwoPi * (static_cast<double>(node) + 0.5) /
-                           static_cast<double>(nodes);
+                           static_cast<double>(cfg.contourNodes);
       const complexd offset =
           radius * complexd{std::cos(angle), std::sin(angle)};
       const complexd point = read.poles[band] + offset;
-      Eigen::MatrixXcd shifted =
+      const Eigen::MatrixXcd shifted =
           point * Eigen::MatrixXcd::Identity(order, order) - slice;
-      Eigen::PartialPivLU<Eigen::MatrixXcd> lu(shifted);
-      const Eigen::VectorXcd solved_vector = lu.solve(rhoRight);
-      if (!solved_vector.allFinite()) {
-        solved = false;
+      const Eigen::PartialPivLU<Eigen::MatrixXcd> lu(shifted);
+      const Eigen::VectorXcd column = lu.solve(rhoRight);
+      if (!column.allFinite()) {
+        resolved = false;
         break;
       }
       // (1/2 pi i) * integral of f(s) ds with ds = i * offset * dtheta and
       // dtheta = 2 pi / nodes reduces to the average of f(s) * offset.
-      integral += (rhoLeft.transpose() * solved_vector)(0, 0) * offset;
+      integral += (rhoLeft.transpose() * column)(0, 0) * offset;
     }
-    if (!solved) {
+    if (!resolved) {
       nameFailure(read.failedCertificates, "singular-slice-operator");
       read.residues.push_back(complexd{kNaN, kNaN});
       continue;
     }
-    const complexd residue = integral / static_cast<double>(nodes);
+    const complexd residue =
+        integral / static_cast<double>(cfg.contourNodes);
     read.residues.push_back(-residue);
   }
 

@@ -4858,7 +4858,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "share one Riesz projector.")
       .def_readwrite("pole_tolerance", &IntrinsicResponseConfig::poleTolerance,
                      "A sample this close to a pole is reported unavailable "
-                     "rather than as a large finite number.");
+                     "rather than as a large finite number.")
+      .def_readwrite("contour_nodes", &IntrinsicResponseConfig::contourNodes,
+                     "Quadrature nodes of the Riesz contour each band's "
+                     "residue is read on.");
 
   py::class_<IntrinsicResponseRead>(m, "IntrinsicResponseRead",
       "The intrinsic spectral response Upsilon_Q(lambda) of Section 13.5, "
