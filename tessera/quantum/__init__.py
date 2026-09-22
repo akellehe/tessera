@@ -210,8 +210,11 @@ _EXPORTS = (
     # covariance state Gamma_ij = <a_j+ a_i> with exact Wick contraction of
     # every polynomial certificate, exact one-particle propagation, the
     # certificates-blind mean-field loop, cached Wick reads, and
-    # checkpoint serialization of Gamma.
-    "CovarianceState", "WickCertificateRead", "MeanFieldStepRead",
+    # checkpoint serialization of Gamma. CovarianceDual names the pairing:
+    # the Hermitian adjoint (a certified *-structure) or the transpose (the
+    # biorthogonal Slater covariance Gamma = Phi Phi~^T of a left/right pair).
+    "CovarianceState", "CovarianceDual", "WickCertificateRead",
+    "MeanFieldStepRead",
     # KI + QuantumSimplex (Van Raamsdonk-metric simplex factory)
     "QuantumSimplex", "QuantumSimplexPosition", "QuantumVertex",
     "createQuantumVertex",
