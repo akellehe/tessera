@@ -1892,6 +1892,126 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
   return partition;
 }
 
+RecursiveQuotient::ResolvedPartitionRead
+RecursiveQuotient::persistentPartitionOverResolutions(
+    const std::vector<cd> &op, int dim, const std::vector<double> &resolutions,
+    int restarts, std::uint64_t baseSeed, double overlapThreshold) {
+  if (dim < 0 || op.size() != static_cast<std::size_t>(dim) *
+                                 static_cast<std::size_t>(dim))
+    throw std::invalid_argument(
+        "persistentPartitionOverResolutions: flat size does not match "
+        "dimension");
+  if (restarts <= 0)
+    throw std::invalid_argument(
+        "persistentPartitionOverResolutions: restarts must be > 0");
+  if (resolutions.empty())
+    throw std::invalid_argument(
+        "persistentPartitionOverResolutions: the sweep must name at least one "
+        "resolution");
+  ResolvedPartitionRead read;
+  read.resolutions = resolutions;
+  if (dim == 0) {
+    read.selectedResolution = resolutions.front();
+    return read;
+  }
+
+  // The same similarity graph `persistentPartition` builds: the symmetrized
+  // off-diagonal magnitude, with the diagonal never entering and every
+  // coordinate declared a node.
+  std::vector<std::uint64_t> src;
+  std::vector<std::uint64_t> tgt;
+  std::vector<double> weight;
+  for (int i = 0; i < dim; ++i)
+    for (int j = i + 1; j < dim; ++j) {
+      const double w = std::abs(op[static_cast<std::size_t>(i) * dim + j]) +
+                       std::abs(op[static_cast<std::size_t>(j) * dim + i]);
+      if (w <= 0.0) continue;
+      src.push_back(static_cast<std::uint64_t>(i));
+      tgt.push_back(static_cast<std::uint64_t>(j));
+      weight.push_back(w);
+    }
+  std::vector<std::uint64_t> isolated(static_cast<std::size_t>(dim));
+  for (int i = 0; i < dim; ++i)
+    isolated[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(i);
+
+  const observables::PersistentModularity modularity =
+      observables::PersistentModularity::fromWeightedEdges(src, tgt, weight,
+                                                           isolated);
+  observables::PersistentModularityConfig config;
+  config.restarts = restarts;
+  config.baseSeed = baseSeed;
+  config.resolutions = resolutions;
+  config.overlapThreshold = overlapThreshold;
+  const observables::ScanReport report = modularity.scanResolutions(config);
+  if (report.slices.empty()) {
+    read.selectedResolution = resolutions.front();
+    for (int i = 0; i < dim; ++i) read.components.push_back({i});
+    read.componentPersistence.assign(read.components.size(), 1.0);
+    return read;
+  }
+
+  // The persistence track a component of a slice belongs to, by identity.
+  const auto trackOf = [&report](const observables::ComponentId &id)
+      -> const observables::PersistenceTrack * {
+    for (const observables::PersistenceTrack &track : report.tracks)
+      for (const observables::ComponentId &member : track.members)
+        if (member == id) return &track;
+    return nullptr;
+  };
+  const auto trackLength = [](const observables::PersistenceTrack *track) {
+    return track == nullptr
+               ? 1.0
+               : static_cast<double>(track->lastSlice - track->firstSlice + 1);
+  };
+
+  std::size_t chosen = 0;
+  double bestMeanTrack = -1.0;
+  for (std::size_t index = 0; index < report.slices.size(); ++index) {
+    const observables::ResolutionSlice &candidate = report.slices[index];
+    if (candidate.components.empty()) continue;
+    double total = 0.0;
+    for (const observables::ComponentRead &component : candidate.components)
+      total += trackLength(trackOf(component.id));
+    const double mean = total / static_cast<double>(candidate.components.size());
+    if (mean > bestMeanTrack) {
+      bestMeanTrack = mean;
+      chosen = index;
+    }
+  }
+
+  const observables::ResolutionSlice &slice = report.slices[chosen];
+  read.selectedResolution = slice.gamma;
+  std::vector<bool> claimed(static_cast<std::size_t>(dim), false);
+  for (const observables::ComponentRead &component : slice.components) {
+    std::vector<int> members;
+    for (const std::uint64_t cell : component.support) {
+      const int index = static_cast<int>(cell);
+      if (index < 0 || index >= dim) continue;
+      if (claimed[static_cast<std::size_t>(index)]) continue;
+      claimed[static_cast<std::size_t>(index)] = true;
+      members.push_back(index);
+    }
+    if (members.empty()) continue;
+    std::sort(members.begin(), members.end());
+    read.components.push_back(std::move(members));
+    const observables::PersistenceTrack *track = trackOf(component.id);
+    read.componentPersistence.push_back(trackLength(track));
+    if (track != nullptr && report.slices.size() > 1)
+      read.worstOverlap =
+          std::isfinite(read.worstOverlap)
+              ? std::min(read.worstOverlap, track->minAdjacentOverlap)
+              : track->minAdjacentOverlap;
+  }
+  // A coordinate no discovered community claimed becomes its own component;
+  // the partition must cover every index.
+  for (int i = 0; i < dim; ++i)
+    if (!claimed[static_cast<std::size_t>(i)]) {
+      read.components.push_back({i});
+      read.componentPersistence.push_back(1.0);
+    }
+  return read;
+}
+
 std::vector<std::vector<int>> RecursiveQuotient::childPersistentPartition(
     double gamma, int restarts, std::uint64_t baseSeed) const {
   const StaticReductionRead &reduction = staticReduction();
@@ -2260,6 +2380,32 @@ RecursiveQuotient RecursiveQuotient::nextLevelAtLambda(
   // R_{l+1}(lambda) = Feshbach_{P_l}(R_l(lambda)): the child's operator is the
   // exact energy-dependent response at the declared lambda, not the static
   // complement, which does not preserve the nonzero spectrum.
+  //
+  // On a level whose own operator is already an evaluated pencil, the spectral
+  // parameter sits inside that operator, so the response step is the supported
+  // block elimination with no further shift; subtracting lambda a second time
+  // would place the child at a different point of the pencil than the one it
+  // claims. That level can only be eliminated at the lambda it was evaluated
+  // at; re-evaluating the chain at another one is what `LevelRecursion`
+  // carries the whole lineage for.
+  if (windowLower > windowUpper)
+    throw std::invalid_argument(
+        "nextLevelAtLambda: the declared band window is empty; its lower edge "
+        "is above its upper edge");
+  if (levelProvenance_.origin == LevelOrigin::BandPencil) {
+    if (lambda != levelProvenance_.lambda)
+      throw std::invalid_argument(
+          "nextLevelAtLambda: this level is the response pencil evaluated at "
+          "one spectral parameter, and a second one cannot be read off it; "
+          "drive the recursion with LevelRecursion, which re-derives the whole "
+          "chain at every lambda");
+    RecursiveQuotient child = nextLevel(components, options);
+    child.levelProvenance_.origin = LevelOrigin::BandPencil;
+    child.levelProvenance_.lambda = lambda;
+    child.levelProvenance_.windowLower = windowLower;
+    child.levelProvenance_.windowUpper = windowUpper;
+    return child;
+  }
   const FeshbachRead response = feshbach(lambda, windowLower, windowUpper);
   RecursiveQuotient child =
       pencil_ ? pencilChildOver(response.response, response.coordinates,

@@ -772,6 +772,48 @@ class RecursiveQuotient {
         const std::vector<std::complex<double>> &op, int dim,
         double gamma = 1.0, int restarts = 4, std::uint64_t baseSeed = 0);
 
+    /// The partition carried out of a sweep over several modularity
+    /// resolutions, with the persistence of each carried component.
+    struct ResolvedPartitionRead {
+      /// The partition carried forward, in the same form
+      /// `persistentPartition` returns: ascending index sets covering every
+      /// coordinate exactly once.
+      std::vector<std::vector<int>> components{};
+      /// The resolutions the sweep ran over, in scan order.
+      std::vector<double> resolutions{};
+      /// The resolution the carried partition came from.
+      double selectedResolution{std::numeric_limits<double>::quiet_NaN()};
+      /// How many adjacent resolutions each carried component survived, in
+      /// component order. One means the component exists at the selected
+      /// resolution and at no neighbour of it; a coordinate that no discovered
+      /// community claimed becomes its own component and is reported with a
+      /// persistence of one.
+      std::vector<double> componentPersistence{};
+      /// The weakest adjacent-resolution support overlap over the carried
+      /// components' persistence tracks. NaN when the sweep has one resolution,
+      /// where no adjacent slice exists to overlap with.
+      double worstOverlap{std::numeric_limits<double>::quiet_NaN()};
+    };
+
+    /// \f$ P = \mathrm{PersistentPartition}(\RN) \f$ over a declared sweep of
+    /// modularity resolutions rather than at one of them.
+    ///
+    /// The sweep runs `PersistentModularity::scanResolutions`, which discovers
+    /// one partition per resolution and matches the components of adjacent
+    /// resolutions into persistence tracks by support overlap. The partition
+    /// carried forward is the one whose components have the longest mean track,
+    /// with the earliest resolution winning a tie: the components that survive
+    /// the most neighbouring resolutions are the ones the level is built on,
+    /// which is what makes the partition a persistence statement rather than
+    /// the output of a single modularity optimization. A sweep of one
+    /// resolution reproduces `persistentPartition` at that resolution exactly.
+    /// @throws std::invalid_argument on a malformed operator size, an empty
+    ///   resolution list, or a non-positive restart count.
+    [[nodiscard]] static ResolvedPartitionRead persistentPartitionOverResolutions(
+        const std::vector<std::complex<double>> &op, int dim,
+        const std::vector<double> &resolutions, int restarts = 4,
+        std::uint64_t baseSeed = 0, double overlapThreshold = 0.5);
+
     /// `persistentPartition` of this level's reduced operator: the partition
     /// \f$ P_\ell \f$ to hand straight to `nextLevel`, as
     /// `child = parent.nextLevel(parent.childPersistentPartition())`.
@@ -817,8 +859,20 @@ class RecursiveQuotient {
     /// reduced coordinates, which include any resonant modes retained at
     /// \f$ \lambda \f$ and so need not match the static reduction's; use
     /// `persistentPartition(feshbach(...).response, ...)` to discover them.
-    /// @throws std::invalid_argument when `windowLower > windowUpper` or the
-    ///   partition does not cover the pencil's coordinates.
+    ///
+    /// A level produced by this step carries the pencil **evaluated** at one
+    /// spectral parameter, which is a matrix and not a function of
+    /// \f$ \lambda \f$. Eliminating it again at the same \f$ \lambda \f$ is
+    /// the supported block elimination with no further shift, because the
+    /// parameter is already inside the matrix, and that is what this call does
+    /// on such a level; a second \f$ \lambda \f$ cannot be read off it at all
+    /// and is refused. The recursion driven as a function of \f$ \lambda \f$,
+    /// which re-derives the whole chain from the microscopic pencil at every
+    /// point, is `LevelRecursion`.
+    /// @throws std::invalid_argument when `windowLower > windowUpper`, when the
+    ///   partition does not cover the pencil's coordinates, or when this level
+    ///   is itself an evaluated pencil and a different \f$ \lambda \f$ is
+    ///   asked for.
     [[nodiscard]] RecursiveQuotient nextLevelAtLambda(
         const std::vector<std::vector<int>> &components,
         std::complex<double> lambda, double windowLower, double windowUpper,
