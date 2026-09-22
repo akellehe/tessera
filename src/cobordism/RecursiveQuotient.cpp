@@ -1404,6 +1404,22 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
   if (modeCutoff < windowUpper)
     throw std::invalid_argument(
         "RecursiveQuotient: modeCutoff must cover the window upper edge");
+  // The interval [a, b] is the disc whose diameter it is, and the cutoff is the
+  // retention disc's real upper edge.
+  const double centre = 0.5 * (windowLower + windowUpper);
+  return craigBampton(cd(centre, 0.0), 0.5 * (windowUpper - windowLower),
+                      modeCutoff - centre, residualTolerance);
+}
+
+RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
+    cd windowCentre, double windowRadius, double retentionRadius,
+    double residualTolerance) const {
+  if (!(windowRadius >= 0.0))
+    throw std::invalid_argument("RecursiveQuotient: the window radius must be non-negative");
+  if (!(retentionRadius >= windowRadius))
+    throw std::invalid_argument(
+        "RecursiveQuotient: the retention radius must cover the window radius (a mode "
+        "inside the window is never discarded)");
   // The regime decides the pairing, not whether the surrogate exists. In the
   // two Hermitian regimes the pairing is the adjoint against the positive
   // diagonal chain metric W, which is what a self-adjoint eigensolver needs; in
@@ -1435,10 +1451,18 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
 
   const int kept = static_cast<int>(interfaceIndices_.size());
   CraigBamptonRead read;
-  read.windowLower = windowLower;
-  read.windowUpper = windowUpper;
-  read.modeCutoff = modeCutoff;
+  read.windowCentre = windowCentre;
+  read.windowRadius = windowRadius;
+  read.retentionRadius = retentionRadius;
+  read.windowLower = windowCentre.real() - windowRadius;
+  read.windowUpper = windowCentre.real() + windowRadius;
+  read.modeCutoff = windowCentre.real() + retentionRadius;
   read.discardedModeGap = kInf;
+  // Retention and claim are decided by distance from the centre in the complex
+  // plane, in every regime; on a real spectrum that is the interval.
+  const auto retained = [&](const cd &theta) { return std::abs(theta - windowCentre) <= retentionRadius; };
+  const auto claimed = [&](const cd &theta) { return std::abs(theta - windowCentre) <= windowRadius; };
+  const auto separation = [&](const cd &theta) { return std::abs(theta - windowCentre) - windowRadius; };
 
   struct ComponentModes {
     Eigen::MatrixXcd vectors;  // interiorDim x retained (W-orthonormal)
@@ -1468,10 +1492,7 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     ComponentModes &modes = componentModes[static_cast<std::size_t>(component)];
     if (bilinear) {
       // The interior pencil (L_II, W_II) solved by a general complex
-      // eigensolver: no adjoint is formed and no order is assumed. The
-      // frequency of a complex level is its real part, the convention every
-      // band window in this subsystem is stated in (CertifiedBand's
-      // [min Re, max Re]).
+      // eigensolver: no adjoint is formed and no order is assumed.
       Eigen::MatrixXcd metricBlock = Eigen::MatrixXcd::Zero(m, m);
       for (int outer = 0; outer < metric.outerSize(); ++outer)
         for (Eigen::SparseMatrix<cd>::InnerIterator it(metric, outer); it; ++it) {
@@ -1500,11 +1521,10 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
       });
       std::vector<int> keep;
       for (const int index : order) {
-        if (values(index).real() <= modeCutoff)
+        if (retained(values(index)))
           keep.push_back(index);
         else
-          read.discardedModeGap =
-              std::min(read.discardedModeGap, values(index).real() - windowUpper);
+          read.discardedModeGap = std::min(read.discardedModeGap, separation(values(index)));
       }
       modes.retained = static_cast<int>(keep.size());
       modes.vectors = Eigen::MatrixXcd(m, modes.retained);
@@ -1530,17 +1550,19 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
         throw std::runtime_error(
             "RecursiveQuotient: fixed-interface eigensolve failed");
       const auto &values = eigensolver.eigenvalues();
-      int retained = 0;
-      for (Eigen::Index i = 0; i < values.size(); ++i)
-        if (values(i) <= modeCutoff) ++retained;
-      if (retained < m)
-        read.discardedModeGap =
-            std::min(read.discardedModeGap, values(retained) - windowUpper);
-      modes.retained = retained;
-      modes.vectors = Eigen::MatrixXcd(m, retained);
-      for (int t = 0; t < retained; ++t)
+      std::vector<int> keep;
+      for (Eigen::Index i = 0; i < values.size(); ++i) {
+        const cd theta(values(i), 0.0);
+        if (retained(theta))
+          keep.push_back(static_cast<int>(i));
+        else
+          read.discardedModeGap = std::min(read.discardedModeGap, separation(theta));
+      }
+      modes.retained = static_cast<int>(keep.size());
+      modes.vectors = Eigen::MatrixXcd(m, modes.retained);
+      for (int t = 0; t < modes.retained; ++t)
         for (int i = 0; i < m; ++i)
-          modes.vectors(i, t) = eigensolver.eigenvectors()(i, t) / sqrtW(i);
+          modes.vectors(i, t) = eigensolver.eigenvectors()(i, keep[static_cast<std::size_t>(t)]) / sqrtW(i);
     }
     totalModes += modes.retained;
     read.retainedModes.push_back(modes.retained);
@@ -1601,9 +1623,17 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     if (reduced.info() != Eigen::Success)
       throw std::runtime_error("RecursiveQuotient: reduced eigensolve failed");
     const double scale = std::max(opNorm_, 1e-300);
-    for (Eigen::Index i = 0; i < reduced.eigenvalues().size(); ++i) {
+    std::vector<int> claimedOrder;
+    for (Eigen::Index i = 0; i < reduced.eigenvalues().size(); ++i)
+      if (claimed(reduced.eigenvalues()(i))) claimedOrder.push_back(static_cast<int>(i));
+    std::sort(claimedOrder.begin(), claimedOrder.end(), [&](int a, int b) {
+      const cd x = reduced.eigenvalues()(a), y = reduced.eigenvalues()(b);
+      if (x.real() != y.real()) return x.real() < y.real();
+      return x.imag() < y.imag();
+    });
+    for (const int i : claimedOrder) {
       const cd value = reduced.eigenvalues()(i);
-      if (value.real() < windowLower || value.real() > windowUpper) continue;
+      read.windowSpectrum.push_back(value);
       read.windowEigenvalues.push_back(value.real());
       const Eigen::VectorXcd fine = basis * reduced.eigenvectors().col(i);
       const double norm = std::max(fine.norm(), 1e-300);
@@ -1624,7 +1654,8 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     const double scale = std::max(opNorm_, 1e-300);
     for (Eigen::Index i = 0; i < pencil.eigenvalues().size(); ++i) {
       const double value = pencil.eigenvalues()(i);
-      if (value < windowLower || value > windowUpper) continue;
+      if (!claimed(cd(value, 0.0))) continue;
+      read.windowSpectrum.push_back(cd(value, 0.0));
       read.windowEigenvalues.push_back(value);
       const Eigen::VectorXcd fine = basis * pencil.eigenvectors().col(i);
       const double norm = std::max(fine.norm(), 1e-300);
@@ -1865,6 +1896,14 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
     summand.upperGap = band.upperGap;
     summand.frequencyLower = band.frequencyLower;
     summand.frequencyUpper = band.frequencyUpper;
+    if (std::isfinite(band.windowRadius) && std::isfinite(band.windowCentre.real()) &&
+        std::isfinite(band.windowCentre.imag())) {
+      summand.windowCentre = band.windowCentre;
+      summand.windowRadius = band.windowRadius;
+    } else if (std::isfinite(band.frequencyLower) && std::isfinite(band.frequencyUpper)) {
+      summand.windowCentre = cd(0.5 * (band.frequencyLower + band.frequencyUpper), 0.0);
+      summand.windowRadius = 0.5 * (band.frequencyUpper - band.frequencyLower);
+    }
     summand.accepted = band.accepted;
     summand.certificate = band.certificate;
     summandCertificates.push_back(summand);

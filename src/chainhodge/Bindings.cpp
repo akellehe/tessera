@@ -836,7 +836,10 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
            "the trivial-holonomy harmonic band, 0 on a band of other eigenvalues.");
   py::class_<FeshbachResult>(m, "FeshbachResult",
       "One Feshbach complement F_B(lambda) = P_BB - P_BI P_II^{-1} P_IB of a symmetric pencil "
-      "P = A - lambda M, with det P = det P_II det F_B and the constraint modes T = [I_B; -P_II^{-1} P_IB].")
+      "P = A - lambda M, with det P = det P_II det F_B and the constraint modes T = [I_B; -P_II^{-1} P_IB]. "
+      "At an interior resonance the inverse is the Drazin inverse P_II^D = (P_II + Pi0)^{-1} (I - Pi0) "
+      "built on the Riesz projector Pi0 onto the generalized eigenspace of the eigenvalues inside the "
+      "resonance disc; nullProjector is Pi0 and rangeProjector is I - Pi0, both oblique.")
       .def_readonly("lambda_", &FeshbachResult::lambda)
       .def_readonly("interface", &FeshbachResult::interface)
       .def_readonly("interior", &FeshbachResult::interior)
@@ -853,14 +856,18 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
       .def_readonly("solveResidual", &FeshbachResult::solveResidual)
       .def_readonly("interiorSingular", &FeshbachResult::interiorSingular)
+      .def_readonly("resonanceRadius", &FeshbachResult::resonanceRadius)
+      .def_readonly("resonanceEnclosure", &FeshbachResult::resonanceEnclosure)
+      .def_readonly("resonanceSeparation", &FeshbachResult::resonanceSeparation)
       .def_readonly("interiorRank", &FeshbachResult::interiorRank)
-      .def_readonly("interiorRankThreshold", &FeshbachResult::interiorRankThreshold)
-      .def_readonly("interiorSingularGap", &FeshbachResult::interiorSingularGap)
-      .def_readonly("interiorNullSpace", &FeshbachResult::interiorNullSpace)
-      .def_readonly("interiorLeftNullSpace", &FeshbachResult::interiorLeftNullSpace)
+      .def_readonly("interiorInverse", &FeshbachResult::interiorInverse)
+      .def_readonly("resonantSpace", &FeshbachResult::resonantSpace)
+      .def_readonly("resonantLeftSpace", &FeshbachResult::resonantLeftSpace)
       .def_readonly("resonantModes", &FeshbachResult::resonantModes)
       .def_readonly("rangeProjector", &FeshbachResult::rangeProjector)
       .def_readonly("nullProjector", &FeshbachResult::nullProjector)
+      .def_readonly("projectorIdempotency", &FeshbachResult::projectorIdempotency)
+      .def_readonly("projectorTrace", &FeshbachResult::projectorTrace)
       .def_readonly("compatibilityResidual", &FeshbachResult::compatibilityResidual)
       .def_readonly("compatible", &FeshbachResult::compatible)
       .def_readonly("independenceResidual", &FeshbachResult::independenceResidual)
@@ -934,11 +941,14 @@ is the transpose.)doc")
       .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
            "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
-           py::arg("interface"), py::arg("rank_tolerance") = 1e-12,
-           "The Feshbach complement at lambda with the interior block's range and null projectors "
-           "and, at an interior resonance, the generalized inverse, the compatibility and "
-           "independence residuals, the retained resonant modes, the resonant reduction and the "
-           "residual of lifting its null vectors back to null vectors of the pencil.")
+           py::arg("interface"), py::arg("rank_tolerance") = 1e-12, py::arg("resonance_radius") = 1e-12,
+           "The Feshbach complement at lambda with the interior block's Riesz projectors and, at an "
+           "interior resonance -- an eigenvalue of P_II inside the disc about zero of radius "
+           "resonance_radius times its spectral radius -- the Drazin inverse, the compatibility and "
+           "independence residuals, the retained resonant modes (a basis of the generalized "
+           "eigenspace), the resonant reduction and the two residuals that certify it. "
+           "rank_tolerance governs only the rank of the reduction's null space and the two "
+           "verdict thresholds.")
       .def_static("sparseFeshbach",
            [](const SparseMatrix &A, const SparseMatrix &M, std::complex<double> lambda,
               const std::vector<int> &interface, double solveTolerance) {
