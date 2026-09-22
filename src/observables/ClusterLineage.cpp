@@ -40,6 +40,17 @@ void addReason(std::vector<std::string> &into, const std::string &name) {
   if (std::find(into.begin(), into.end(), name) == into.end()) into.push_back(name);
 }
 
+/// One signed integer written as a fixed-width offset decimal, so that the
+/// lexicographic order of the strings is the numeric order of the integers
+/// they encode. The offset is \f$ 2^{31} \f$, which brings every `int` into
+/// \f$ [0, 2^{32}-1] \f$ and so into ten decimal digits.
+std::string offsetDecimal(int value) {
+  const std::int64_t shifted =
+      static_cast<std::int64_t>(value) + static_cast<std::int64_t>(2147483648LL);
+  std::string digits = std::to_string(shifted);
+  return std::string(10 - digits.size(), '0') + digits;
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------------
@@ -486,6 +497,23 @@ TotalLineageRead ClusterLineage::totals(const InteractionCobordism &W, const Coo
   }
   out.baryonNumber = static_cast<double>(out.fermionNumber) / 3.0;
   return out;
+}
+
+std::string ClusterLineage::orderKey(const LineageNumberRead &read) {
+  if (!read.failedCertificates.empty()) {
+    std::string reasons;
+    for (const auto &reason : read.failedCertificates) {
+      if (!reasons.empty()) reasons += ", ";
+      reasons += reason;
+    }
+    throw std::invalid_argument(
+        "ClusterLineage::orderKey: the reading of lineage '" + read.clusterId +
+        "' is not certified (" + reasons +
+        "), so its lineage number is not independent of the cut and cannot fix "
+        "a compilation order that every cut agrees on.");
+  }
+  return "lineage:" + offsetDecimal(read.number) +
+         ":fermion:" + offsetDecimal(read.fermionNumber) + ":" + read.clusterId;
 }
 
 }  // namespace tessera::observables

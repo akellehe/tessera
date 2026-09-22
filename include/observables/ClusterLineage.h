@@ -420,6 +420,36 @@ class ClusterLineage {
   [[nodiscard]] static TotalLineageRead totals(const InteractionCobordism &W,
                                                const CoorientedCut &cut,
                                                const std::vector<Lineage> &lineages);
+
+  // ---- the compilation order ----
+
+  /// The deterministic compilation-order key of one cluster's oriented
+  /// lineage.
+  ///
+  /// Writing the exterior algebra as an ordered tensor product, or writing its
+  /// creation operators in Jordan-Wigner form, needs a chosen order of the
+  /// one-particle modes. The order is fixed by oriented component lineage: the
+  /// modes a cluster carries are ordered together, and the clusters are
+  /// ordered by the oriented integers of their histories. This function turns
+  /// one such history into the string key that
+  /// `quantum::EdgeModeRegistry::canonicalModeOrder` sorts on, so that the
+  /// primary key of the mode order is a physical, relabelling-invariant
+  /// integer rather than a vertex id.
+  ///
+  /// Sorting the keys lexicographically orders the clusters by ascending
+  /// lineage number \f$ N_Q \f$, then by ascending fermion number
+  /// \f$ n_Q \f$, then by cluster name. The two integers are written as
+  /// fixed-width offset decimals, so that the lexicographic order of the
+  /// strings is exactly the numeric order of the integers they encode, with
+  /// negative lineage numbers — the anti-clusters — ordered before the
+  /// positive ones.
+  ///
+  /// @throws std::invalid_argument when the reading carries a failed
+  ///   certificate. A cut that does not separate, or a lineage that is not a
+  ///   relative cycle, has no cut-independent lineage number, and ordering the
+  ///   modes by a number that a different cut would change would make the
+  ///   compilation order depend on the cut.
+  [[nodiscard]] static std::string orderKey(const LineageNumberRead &read);
 };
 
 }  // namespace tessera::observables
