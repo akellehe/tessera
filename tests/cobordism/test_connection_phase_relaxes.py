@@ -39,9 +39,11 @@ are exactly `|lambda|^2 = sigma^2`. So the two definitions agree in the
 Hermitian limit and separate only where the operator stops being normal, and
 both halves of that are asserted below.
 
-And `laplacian(k)` must stay blind. Making the geometric operator see `phi`
-would be the error the two-field split exists to prevent, so its bitwise
-invariance is re-asserted here alongside the new dependence.
+The diagonal-weight `laplacian(k)` stays blind to `phi`, and its bitwise
+invariance is re-asserted here alongside the new dependence. The default
+metric source is the Whitney pencil with its connection, whose operator is the
+covariant `h_k(z, U)` of whitepaper Section 3.2: it moves with the flux and
+only a gauge transformation leaves its spectrum fixed.
 """
 
 import cmath
@@ -54,6 +56,7 @@ import tessera as T
 
 cob = T.cobordism
 MC = cob.MultiCobordism
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 MODE = cob.HodgeEntropyPhaseMode.IncludeComplexPhase
 
 
@@ -124,21 +127,48 @@ class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
             flat, fluxed, places=9,
             msg="the connection entropy must SEE the connection")
 
-    def test_every_hodge_laplacian_stays_bitwise_blind_to_the_phase(self):
-        # The trap this whole design avoids. If a phase ever reaches the metric
-        # weight, the geometry becomes gauge-variant and the derived form of
-        # L_k is destroyed. Assert equality, not closeness.
+    def test_every_diagonal_hodge_laplacian_stays_bitwise_blind_to_the_phase(self):
+        # If a phase ever reached the diagonal metric weight, the geometry would
+        # become gauge-variant and the derived form of L_k would be destroyed.
+        # Assert equality, not closeness.
+        def diagonal(spacetime):
+            return cob.HodgeLaplacian(
+                spacetime, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
+
         spacetime = _host()
         _flatten(spacetime)
-        before = {k: cob.HodgeLaplacian(spacetime).laplacian(k, True)
-                  for k in (0, 1, 2)}
+        before = {k: diagonal(spacetime).laplacian(k, True) for k in (0, 1, 2)}
         _set_flux(spacetime)
         for k in (0, 1, 2):
             with self.subTest(degree=k):
                 self.assertEqual(
-                    list(cob.HodgeLaplacian(spacetime).laplacian(k, True)),
+                    list(diagonal(spacetime).laplacian(k, True)),
                     list(before[k]),
                     "laplacian(%d) must be built from the lengths alone" % k)
+
+    def test_the_default_covariant_operator_sees_the_flux_and_not_a_gauge(self):
+        # The default Whitney operator is h_k(z, U): a flux moves its spectrum,
+        # a gauge transformation is a similarity and leaves it where it was.
+        def spectrum(spacetime, k):
+            return np.sort_complex(np.asarray(
+                cob.HodgeLaplacian(spacetime).eigenvalues(k), dtype=complex))
+
+        spacetime = _host()
+        _flatten(spacetime)
+        flat = {k: spectrum(spacetime, k) for k in (0, 1)}
+        _gauge(spacetime, _chi(spacetime))
+        for k in (0, 1):
+            with self.subTest(degree=k, move="gauge"):
+                np.testing.assert_allclose(
+                    spectrum(spacetime, k), flat[k],
+                    atol=1e-8 * max(1.0, np.abs(flat[k]).max()))
+        _flatten(spacetime)
+        _set_flux(spacetime)
+        for k in (0, 1):
+            with self.subTest(degree=k, move="flux"):
+                moved = spectrum(spacetime, k)
+                self.assertGreater(np.abs(moved - flat[k]).max(),
+                                   1e-6 * max(1.0, np.abs(flat[k]).max()))
 
     def test_the_phase_gradient_is_nonzero_under_flux(self):
         spacetime = _host()
