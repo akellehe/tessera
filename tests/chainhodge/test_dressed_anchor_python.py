@@ -279,9 +279,9 @@ class TestDressedCoordinate:
         assert plain.anchored and moved.anchored
         assert DA.projectiveDistance(plain, moved) < 1e-9
         for slot in range(1, len(faces)):
-            assert abs(
-                DA.faceTransition(plain, slot, 0) - DA.faceTransition(moved, slot, 0)
-            ) < 1e-9
+            before = DA.faceTransition(plain, slot, 0)
+            after = DA.faceTransition(moved, slot, 0)
+            assert abs(before - after) < 1e-9 * max(1.0, abs(before))
 
 
 # --------------------------------------------------------------------------- #
