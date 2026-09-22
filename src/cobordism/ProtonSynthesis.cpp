@@ -81,9 +81,10 @@ void ProtonSynthesis::requireSynthesisMode(const MultiCobordism &node) {
   if (mode == MultiCobordism::SimulationMode::Emergence)
     label += " (" + MultiCobordism::submodeName(node.emergenceSubmode()) + ")";
   throw std::invalid_argument(
-      "ProtonSynthesis: the proton synthesis pins the {1, omega, omega^2} "
-      "singlet target and runs only in the labelled controlled-synthesis mode "
-      "(SimulationMode::Synthesis); this node is in " + label + " mode");
+      "ProtonSynthesis: the proton synthesis pins colour targets (the diquark "
+      "pair and the {1, omega, omega^2} singlet) and runs only in the labelled "
+      "controlled-synthesis mode (SimulationMode::Synthesis); this node is in " +
+      label + " mode");
 }
 
 void ProtonSynthesis::driveNode(MultiCobordism &node, const NodeDrive &schedule) {
