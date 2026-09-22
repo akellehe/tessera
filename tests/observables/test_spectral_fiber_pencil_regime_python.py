@@ -14,7 +14,7 @@ import tessera
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
 from tessera import observables as obs
-from tests.chainhodge._fixtures import conformal_torus, edges, torus33, torus33_causal_types
+from tests.chainhodge._fixtures import conformal_torus, edges, torus33, torus33_timelike_parts
 
 Regime = cob.CertificateRegime
 Pencil = Regime.ComplexSymmetricPencil
@@ -37,7 +37,7 @@ def _spacetime_from(K, s):
 
 def _lorentzian_torus_spacetime(eps):
     K, s = torus33()
-    s_eps = ch.LorentzianFamily.rotate(s, torus33_causal_types(K), eps)
+    s_eps = ch.LorentzianFamily.rotate(s, torus33_timelike_parts(K), eps)
     return _spacetime_from(K, s_eps), K
 
 
