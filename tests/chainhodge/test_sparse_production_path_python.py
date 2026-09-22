@@ -288,7 +288,7 @@ class TestSparseFeshbach:
         A, M = sp.csc_matrix(pencil.A), sp.csc_matrix(pencil.M)
         interface = sorted(range(0, A.shape[0], 3))
         lam = complex(0.23, -0.07)
-        result, cost = PS.sparseFeshbach(A, M, lam, interface, 1e-12)
+        result, cost = PS.sparseFeshbach(A, M, lam, interface)
         dense = PS.feshbach(A.toarray(), M.toarray(), lam, interface, 1e-12)
         scale = np.abs(np.array(dense.response)).max()
         assert np.abs(np.array(result.response) - np.array(dense.response)).max() < 1e-8 * scale

@@ -350,10 +350,14 @@ class PencilSchur {
   /// The projectors, the generalized inverse and the resonant reduction are not
   /// available here: they rest on a singular value decomposition of the
   /// interior block, which is dense. An interior resonance is therefore
-  /// detected — the sparse factorization of \f$ P_{II} \f$ fails, or its
-  /// determinant is below \p rankTolerance times the largest modulus on its
-  /// diagonal — and refused by name, with the dense reading named as the one
-  /// that resolves it.
+  /// detected and refused by name, with the dense reading named as the one that
+  /// resolves it. A sparse LU reveals no rank, and a determinant is no measure
+  /// of singularity at this size; the scale-free quantity the factorization
+  /// does offer is the residual of the solve it was asked for, and a block that
+  /// cannot solve its own interface load to \p solveTolerance is a resonance.
+  /// @param solveTolerance the declared relative residual
+  ///   \f$ \|P_{II}X - P_{IB}\| / \|P_{IB}\| \f$ above which the interior
+  ///   block is taken to be numerically singular at this shift.
   /// @param report when non-null, receives the cost of the interior
   ///   factorization: its wall time, the memory of its factors and their
   ///   fill-in.
@@ -363,7 +367,7 @@ class PencilSchur {
   [[nodiscard]] static FeshbachResult sparseFeshbach(const SparseMatrix &A, const SparseMatrix &M,
                                                      Complex lambda,
                                                      const std::vector<int> &interface,
-                                                     double rankTolerance = 1e-12,
+                                                     double solveTolerance = 1e-8,
                                                      SparseCostReport *report = nullptr);
   /// The congruence \f$ (T^TAT,\ T^TMT) \f$ of an explicit reduction basis
   /// \p T, with the symmetry defects of the reduced pair and the inverse

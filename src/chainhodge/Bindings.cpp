@@ -806,13 +806,13 @@ is the transpose.)doc")
            "residual of lifting its null vectors back to null vectors of the pencil.")
       .def_static("sparseFeshbach",
            [](const SparseMatrix &A, const SparseMatrix &M, std::complex<double> lambda,
-              const std::vector<int> &interface, double rankTolerance) {
+              const std::vector<int> &interface, double solveTolerance) {
              SparseCostReport report;
              FeshbachResult result =
-                 PencilSchur::sparseFeshbach(A, M, lambda, interface, rankTolerance, &report);
+                 PencilSchur::sparseFeshbach(A, M, lambda, interface, solveTolerance, &report);
              return std::make_pair(std::move(result), report); },
            py::arg("A"), py::arg("M"), py::arg("lambda_"), py::arg("interface"),
-           py::arg("rank_tolerance") = 1e-12,
+           py::arg("solve_tolerance") = 1e-8,
            "(result, cost): the same complement on the sparse production path, the interior block "
            "factorized by sparse LU and no n x n matrix formed. An interior resonance is refused "
            "by name; the dense feshbach resolves it.")

@@ -237,7 +237,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
 
 FeshbachResult PencilSchur::sparseFeshbach(const SparseMatrix &A, const SparseMatrix &M,
                                            Complex lambda, const std::vector<int> &interface,
-                                           double rankTolerance, SparseCostReport *report) {
+                                           double solveTolerance, SparseCostReport *report) {
   const int n = static_cast<int>(A.rows());
   if (A.cols() != n || M.rows() != n || M.cols() != n)
     throw std::invalid_argument(
@@ -307,19 +307,6 @@ FeshbachResult PencilSchur::sparseFeshbach(const SparseMatrix &A, const SparseMa
         "the resonant reduction rest on a singular value decomposition, so read the resonance "
         "with the dense PencilSchur::feshbach");
   out.interiorDeterminant = lu.determinant();
-  // A sparse LU reveals no rank; the determinant against the largest modulus on
-  // the diagonal of U is the margin it does offer, and a resonance is refused
-  // rather than silently reduced through a nearly singular factorization.
-  double diagonalMax = 0.0;
-  for (int col = 0; col < PII.outerSize(); ++col)
-    for (SparseMatrix::InnerIterator it(PII, col); it; ++it)
-      if (it.row() == it.col()) diagonalMax = std::max(diagonalMax, std::abs(it.value()));
-  if (std::abs(out.interiorDeterminant) <= rankTolerance * std::max(diagonalMax, kTiny))
-    throw std::runtime_error(
-        "PencilSchur::sparseFeshbach: the interior block is numerically singular at this shift "
-        "(|det P_II| = " + std::to_string(std::abs(out.interiorDeterminant)) +
-        "), an interior resonance; read it with the dense PencilSchur::feshbach, which carries "
-        "the generalized inverse, the projectors and the resonant reduction");
   const Eigen::MatrixXcd X = lu.solve(PIB);  // P_II^{-1} P_IB
   if (report)
     *report = meter.finish(static_cast<long long>(PII.rows()),
@@ -327,6 +314,18 @@ FeshbachResult PencilSchur::sparseFeshbach(const SparseMatrix &A, const SparseMa
                            static_cast<long long>(lu.nnzL() + lu.nnzU()),
                            static_cast<long long>(nb));
   out.solveResidual = (PII * X - PIB).norm() / std::max(PIB.norm(), kTiny);
+  // A sparse LU reveals no rank, and a determinant is no measure of singularity
+  // at this size: the scale-free quantity the factorization does offer is the
+  // residual of the solve it was asked for, and a block that cannot solve its
+  // own interface load is a resonance.
+  if (!(out.solveResidual <= solveTolerance))
+    throw std::runtime_error(
+        "PencilSchur::sparseFeshbach: the interior solve at this shift has relative residual " +
+        std::to_string(out.solveResidual) + ", above the declared " +
+        std::to_string(solveTolerance) +
+        ": the interior block is numerically singular here, an interior resonance. Read it with "
+        "the dense PencilSchur::feshbach, which carries the generalized inverse, its range and "
+        "null projectors, and the resonant reduction");
   out.response = PBB - PBI * X;
   out.responseDeterminant = out.response.fullPivLu().determinant();
   out.constraintModes = Eigen::MatrixXcd::Zero(n, nb);
