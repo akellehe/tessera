@@ -298,6 +298,42 @@ class JointAction {
   /// between derivatives and selects no branch of the logarithm.
   [[nodiscard]] std::vector<std::complex<double>> linkStationarity() const;
 
+  /// The Hellmann-Feynman force \f$ \operatorname{tr}(\Gamma\,\partial h/\partial z_e) \f$
+  /// of Section 7, one entry per edge in `getEdgeList()` order.
+  ///
+  /// This is the carried state's whole contribution to the length stationarity
+  /// equation, carrying neither the coefficient \f$ w_M \f$ nor the geometric
+  /// terms, so a reader can see the two sides the stationary point balances
+  /// separately: at a stationary point
+  /// \f$ w_R\,\partial S_{\rm Regge}/\partial z_e
+  ///     + w_M\operatorname{tr}(\Gamma\,\partial h/\partial z_e)=0 \f$
+  /// edge by edge.
+  ///
+  /// The metric Hodge operator is homogeneous of degree \f$ -1 \f$ in the
+  /// squared lengths, so this force obeys the Euler identity
+  /// \f$ \sum_e z_e\operatorname{tr}(\Gamma\,\partial h/\partial z_e)
+  ///     = -\operatorname{tr}(\Gamma h) \f$
+  /// exactly. For a covariance that projects onto occupied modes the right-hand
+  /// side is minus the sum of their eigenvalues, which is the whitepaper's
+  /// statement that the length-weighted force of an occupied mode is dilating.
+  [[nodiscard]] std::vector<std::complex<double>> hellmannFeynmanLengthForce()
+      const;
+
+  /// The connection force \f$ \operatorname{tr}(\Gamma\,U_e\,\partial h/\partial U_e) \f$,
+  /// the link counterpart of `hellmannFeynmanLengthForce`, on each edge's stored
+  /// orientation. It is identically zero when the carrier operator is blind to
+  /// the connection, which is the case under the `DiagonalWeights` metric
+  /// source.
+  [[nodiscard]] std::vector<std::complex<double>> hellmannFeynmanLinkForce()
+      const;
+
+  /// The per-cell occupations \f$ n_c=\Gamma_{cc} \f$, in the canonical
+  /// \f$ k \f$-cell order: the derived readout the whitepaper names, complex in
+  /// general because \f$ \Gamma \f$ is a complex bilinear covariance and only a
+  /// compatible \f$ * \f$-structure would make a matrix element a probability.
+  /// Empty when no covariance is declared.
+  [[nodiscard]] std::vector<std::complex<double>> occupationNumbers() const;
+
   /// The Ward current \f$ j_{xy}=U_{xy}\,\partial S/\partial U_{xy} \f$ of
   /// Section 13.4, which is `linkStationarity` under its other name.
   [[nodiscard]] std::vector<std::complex<double>> wardCurrent() const {
