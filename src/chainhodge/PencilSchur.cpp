@@ -5,12 +5,73 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <set>
 #include <stdexcept>
 
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 namespace tessera::chainhodge {
+
+namespace {
+
+constexpr double kTiny = 1e-300;
+
+/// The rank of \p X at the relative threshold \p relative (a singular value at
+/// or below \p relative times the largest one is zero), with the left and right
+/// singular vectors, the threshold that decided it, and the singular gap
+/// \f$ \varsigma_r/\varsigma_{r+1} \f$.
+struct RankRead {
+  int rank{0};
+  double threshold{0.0};
+  double gap{std::numeric_limits<double>::infinity()};
+  Eigen::MatrixXcd U{};
+  Eigen::MatrixXcd V{};
+  Eigen::VectorXd values{};
+};
+
+RankRead rankRead(const Eigen::MatrixXcd &X, double relative) {
+  RankRead out;
+  if (X.rows() == 0 || X.cols() == 0) return out;
+  Eigen::JacobiSVD<Eigen::MatrixXcd> svd(X, Eigen::ComputeFullU | Eigen::ComputeFullV);
+  out.values = svd.singularValues();
+  out.U = svd.matrixU();
+  out.V = svd.matrixV();
+  out.threshold = relative * out.values(0);
+  for (int i = 0; i < out.values.size(); ++i)
+    if (out.values(i) > out.threshold) ++out.rank;
+  if (out.rank >= 1 && out.rank < out.values.size() && out.values(out.rank) > 0.0)
+    out.gap = out.values(out.rank - 1) / out.values(out.rank);
+  return out;
+}
+
+/// The Moore–Penrose pseudoinverse implied by a `RankRead`:
+/// \f$ X^{\#} = V_r\Sigma_r^{-1}U_r^H \f$ over the kept singular triplets. This
+/// is the declared supported generalized inverse of the whitepaper's block
+/// elimination; it is reflexive (\f$ X^{\#}XX^{\#} = X^{\#} \f$) and satisfies
+/// \f$ XX^{\#}X = X \f$, which is all the elimination uses.
+Eigen::MatrixXcd pseudoInverse(const RankRead &read) {
+  const int r = read.rank;
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(read.V.rows(), read.U.rows());
+  for (int i = 0; i < r; ++i)
+    out += (1.0 / read.values(i)) * read.V.col(i) * read.U.col(i).adjoint();
+  return out;
+}
+
+/// Ascending order of a complex spectrum by \f$ (\mathrm{Re},\mathrm{Im}) \f$,
+/// the order every spectrum in this subsystem is reported in.
+std::vector<int> spectralOrder(const Eigen::VectorXcd &values) {
+  std::vector<int> order(static_cast<std::size_t>(values.size()));
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(), [&](int a, int b) {
+    if (values(a).real() != values(b).real()) return values(a).real() < values(b).real();
+    return values(a).imag() < values(b).imag();
+  });
+  return order;
+}
+
+}  // namespace
 
 FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
                                      Complex lambda, const std::vector<int> &interface,
@@ -42,34 +103,114 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   for (int i = 0; i < ni; ++i)
     for (int j = 0; j < ni; ++j) PII(i, j) = P(out.interior[static_cast<std::size_t>(i)], out.interior[static_cast<std::size_t>(j)]);
   out.pencilDeterminant = P.fullPivLu().determinant();
+  out.interiorRank = ni;
+  // The embedding of an interior-coordinate block into the full coordinates,
+  // used for the constraint modes and for the retained resonant modes alike.
+  const auto embedInterior = [&](const Eigen::MatrixXcd &block) {
+    Eigen::MatrixXcd full = Eigen::MatrixXcd::Zero(n, block.cols());
+    for (int j = 0; j < static_cast<int>(block.cols()); ++j)
+      for (int i = 0; i < ni; ++i)
+        full(out.interior[static_cast<std::size_t>(i)], j) = block(i, j);
+    return full;
+  };
   if (ni == 0) {
     out.response = PBB;
     out.interiorDeterminant = Complex(1.0, 0.0);
     out.responseDeterminant = PBB.fullPivLu().determinant();
     out.constraintModes = Eigen::MatrixXcd::Identity(n, nb);
     out.solveResidual = 0.0;
+    out.rangeProjector = Eigen::MatrixXcd::Zero(0, 0);
+    out.nullProjector = Eigen::MatrixXcd::Zero(0, 0);
   } else {
     Eigen::FullPivLU<Eigen::MatrixXcd> lu(PII);
     lu.setThreshold(rankTolerance);
     out.interiorDeterminant = lu.determinant();
-    if (!lu.isInvertible()) {
-      out.interiorSingular = true;
-      out.determinantResidual = std::numeric_limits<double>::quiet_NaN();
+    if (lu.isInvertible()) {
+      const Eigen::MatrixXcd X = lu.solve(PIB);  // P_II^{-1} P_IB
+      out.solveResidual = (PII * X - PIB).norm() / std::max(PIB.norm(), kTiny);
+      out.response = PBB - PBI * X;
+      out.responseDeterminant = out.response.fullPivLu().determinant();
+      out.constraintModes = embedInterior(Eigen::MatrixXcd(-X));
+      for (int j = 0; j < nb; ++j)
+        out.constraintModes(out.interface[static_cast<std::size_t>(j)], j) = Complex(1.0, 0.0);
+      // An invertible interior block has full range and no kernel: the
+      // projectors are the identity and zero, and no singular value decomposition
+      // is taken to say so.
+      out.rangeProjector = Eigen::MatrixXcd::Identity(ni, ni);
+      out.nullProjector = Eigen::MatrixXcd::Zero(ni, ni);
+      out.interiorNullSpace = Eigen::MatrixXcd(ni, 0);
+      out.interiorLeftNullSpace = Eigen::MatrixXcd(ni, 0);
+      out.resonantModes = Eigen::MatrixXcd(n, 0);
+      const Complex product = out.interiorDeterminant * out.responseDeterminant;
+      out.determinantResidual = std::abs(out.pencilDeterminant - product) /
+                                std::max(std::abs(out.pencilDeterminant), kTiny);
       return out;
     }
-    const Eigen::MatrixXcd X = lu.solve(PIB);  // P_II^{-1} P_IB
-    out.solveResidual = (PII * X - PIB).norm() / std::max(PIB.norm(), 1e-300);
+    // --- interior resonance: the generalized inverse and its projectors ---
+    out.interiorSingular = true;
+    const RankRead read = rankRead(PII, rankTolerance);
+    const int r = read.rank;
+    const int q = ni - r;
+    out.interiorRank = r;
+    out.interiorRankThreshold = read.threshold;
+    out.interiorSingularGap = read.gap;
+    const Eigen::MatrixXcd pinv = pseudoInverse(read);
+    // ker P_II is spanned by the trailing right singular vectors; the left null
+    // space in the transpose pairing is the conjugate of the trailing left
+    // singular vectors, because y^T P_II = 0 iff P_II^H \bar y = 0.
+    out.interiorNullSpace = read.V.rightCols(q);
+    out.interiorLeftNullSpace = read.U.rightCols(q).conjugate();
+    out.rangeProjector = PII * pinv;
+    out.nullProjector = Eigen::MatrixXcd::Identity(ni, ni) - pinv * PII;
+    const double scaleIB = std::max(PIB.norm(), kTiny);
+    const double scaleBI = std::max(PBI.norm(), kTiny);
+    const Eigen::MatrixXcd leftTest = out.interiorLeftNullSpace.transpose() * PIB;  // N_L^T P_IB
+    out.compatibilityResidual = leftTest.norm() / scaleIB;
+    out.compatible = out.compatibilityResidual <= rankTolerance;
+    const Eigen::MatrixXcd coupling = PBI * out.interiorNullSpace;  // P_BI N
+    out.independenceResidual = coupling.norm() / scaleBI;
+    out.responseIndependent = out.independenceResidual <= rankTolerance;
+    const Eigen::MatrixXcd X = pinv * PIB;  // P_II^# P_IB
+    // P_II X = Pi_R P_IB, so this residual is the compatibility residual: the
+    // interior equation is solvable exactly on the range of P_II.
+    out.solveResidual = (PII * X - PIB).norm() / scaleIB;
     out.response = PBB - PBI * X;
     out.responseDeterminant = out.response.fullPivLu().determinant();
-    out.constraintModes = Eigen::MatrixXcd::Zero(n, nb);
-    for (int j = 0; j < nb; ++j) {
+    out.constraintModes = embedInterior(Eigen::MatrixXcd(-X));
+    for (int j = 0; j < nb; ++j)
       out.constraintModes(out.interface[static_cast<std::size_t>(j)], j) = Complex(1.0, 0.0);
-      for (int i = 0; i < ni; ++i) out.constraintModes(out.interior[static_cast<std::size_t>(i)], j) = -X(i, j);
+    out.resonantModes = embedInterior(out.interiorNullSpace);
+    // The resonant reduction over (x_B, c): the eliminated interface equation
+    // above the compatibility constraint.
+    out.resonantResponse = Eigen::MatrixXcd::Zero(nb + q, nb + q);
+    out.resonantResponse.topLeftCorner(nb, nb) = out.response;
+    out.resonantResponse.topRightCorner(nb, q) = coupling;
+    out.resonantResponse.bottomLeftCorner(q, nb) = leftTest;
+    // The determinant factorization det P = det P_II det F_B has no content
+    // here: det P_II is zero at the resonance.
+    out.determinantResidual = std::numeric_limits<double>::quiet_NaN();
+    // The certificate: lift every null vector of the resonant reduction back to
+    // the fine coordinates and measure how far it is from a null vector of the
+    // pencil itself.
+    const RankRead hat = rankRead(out.resonantResponse, rankTolerance);
+    const int nullity = static_cast<int>(out.resonantResponse.cols()) - hat.rank;
+    if (nullity > 0) {
+      const double scaleP = std::max(P.norm(), kTiny);
+      double worst = 0.0;
+      for (int j = 0; j < nullity; ++j) {
+        const Eigen::VectorXcd y = hat.V.col(hat.rank + j);
+        const Eigen::VectorXcd x =
+            out.constraintModes * y.head(nb) + out.resonantModes * y.tail(q);
+        const double norm = std::max(x.norm(), kTiny);
+        worst = std::max(worst, (P * x).norm() / (scaleP * norm));
+      }
+      out.liftResidual = worst;
     }
+    return out;
   }
   const Complex product = out.interiorDeterminant * out.responseDeterminant;
   out.determinantResidual = std::abs(out.pencilDeterminant - product) /
-                            std::max(std::abs(out.pencilDeterminant), 1e-300);
+                            std::max(std::abs(out.pencilDeterminant), kTiny);
   return out;
 }
 
@@ -80,6 +221,199 @@ CongruenceResult PencilSchur::craigBampton(const Eigen::MatrixXcd &A, const Eige
   CongruenceResult out;
   out.A = T.transpose() * A * T;
   out.M = T.transpose() * M * T;
+  if (out.A.size() > 0)
+    out.symmetryDefect = (out.A.transpose() - out.A).norm() / std::max(out.A.norm(), kTiny);
+  if (out.M.size() > 0)
+    out.metricSymmetryDefect = (out.M.transpose() - out.M).norm() / std::max(out.M.norm(), kTiny);
+  if (T.size() > 0) {
+    Eigen::JacobiSVD<Eigen::MatrixXcd> svd(T);
+    const Eigen::VectorXd sv = svd.singularValues();
+    out.basisConditionInverse = (sv(0) > 0.0) ? sv(sv.size() - 1) / sv(0) : 0.0;
+  }
+  return out;
+}
+
+SurrogateResult PencilSchur::craigBampton(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
+                                          const std::vector<int> &interface, Complex windowCentre,
+                                          double windowRadius, double retentionRadius,
+                                          Complex shift, double tolerance, double rankTolerance) {
+  const int n = static_cast<int>(A.rows());
+  if (A.cols() != n || M.rows() != n || M.cols() != n)
+    throw std::invalid_argument("PencilSchur::craigBampton: A and M must be square of the same size");
+  if (!(windowRadius >= 0.0))
+    throw std::invalid_argument("PencilSchur::craigBampton: the window radius must be non-negative");
+  if (!(retentionRadius >= windowRadius))
+    throw std::invalid_argument(
+        "PencilSchur::craigBampton: the retention radius must cover the window radius (a mode "
+        "inside the window may never be discarded)");
+  SurrogateResult out;
+  out.shift = shift;
+  out.windowCentre = windowCentre;
+  out.windowRadius = windowRadius;
+  out.retentionRadius = retentionRadius;
+  out.tolerance = tolerance;
+
+  // The interface constraint modes at the declared shift, through the exact
+  // Feshbach reduction: T = [I_B; -P_II(shift)^{-1} P_IB(shift)], or its
+  // generalized-inverse form when the shift is an interior resonance.
+  const FeshbachResult constraint = feshbach(A, M, shift, interface, rankTolerance);
+  out.interface = constraint.interface;
+  out.interior = constraint.interior;
+  const int nb = static_cast<int>(out.interface.size());
+  const int ni = static_cast<int>(out.interior.size());
+
+  // The fixed-interface modes: the spectrum of the interior pencil (A_II, M_II).
+  Eigen::MatrixXcd AII(ni, ni), MII(ni, ni);
+  for (int i = 0; i < ni; ++i)
+    for (int j = 0; j < ni; ++j) {
+      AII(i, j) = A(out.interior[static_cast<std::size_t>(i)], out.interior[static_cast<std::size_t>(j)]);
+      MII(i, j) = M(out.interior[static_cast<std::size_t>(i)], out.interior[static_cast<std::size_t>(j)]);
+    }
+  Eigen::MatrixXcd retained(ni, 0);
+  if (ni > 0) {
+    Eigen::FullPivLU<Eigen::MatrixXcd> metricLu(MII);
+    metricLu.setThreshold(rankTolerance);
+    if (!metricLu.isInvertible())
+      throw std::runtime_error(
+          "PencilSchur::craigBampton: the interior chain metric M_II is singular, so the "
+          "fixed-interface pencil (A_II, M_II) has no spectrum to retain modes from");
+    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> interiorSolver(metricLu.solve(AII), true);
+    if (interiorSolver.info() != Eigen::Success)
+      throw std::runtime_error(
+          "PencilSchur::craigBampton: the fixed-interface eigensolve did not converge");
+    const Eigen::VectorXcd values = interiorSolver.eigenvalues();
+    const std::vector<int> order = spectralOrder(values);
+    std::vector<int> keep;
+    for (const int index : order) {
+      out.interiorEigenvalues.push_back(values(index));
+      const double distance = std::abs(values(index) - windowCentre);
+      if (distance <= retentionRadius)
+        keep.push_back(index);
+      else
+        out.discardedModeSeparation = std::min(out.discardedModeSeparation, distance - windowRadius);
+    }
+    out.retainedModes = static_cast<int>(keep.size());
+    retained = Eigen::MatrixXcd(ni, out.retainedModes);
+    for (int t = 0; t < out.retainedModes; ++t) {
+      Eigen::VectorXcd v = interiorSolver.eigenvectors().col(keep[static_cast<std::size_t>(t)]);
+      v /= std::max(v.norm(), kTiny);
+      retained.col(t) = v;
+    }
+  }
+
+  // V = [T | [0; U]] and the congruence (V^T A V, V^T M V).
+  out.basis = Eigen::MatrixXcd::Zero(n, nb + out.retainedModes);
+  out.basis.leftCols(nb) = constraint.constraintModes;
+  for (int t = 0; t < out.retainedModes; ++t)
+    for (int i = 0; i < ni; ++i)
+      out.basis(out.interior[static_cast<std::size_t>(i)], nb + t) = retained(i, t);
+  out.reduced = craigBampton(A, M, out.basis);
+
+  const int reducedDim = static_cast<int>(out.basis.cols());
+  if (reducedDim > 0) {
+    Eigen::FullPivLU<Eigen::MatrixXcd> reducedLu(out.reduced.M);
+    reducedLu.setThreshold(rankTolerance);
+    if (!reducedLu.isInvertible())
+      throw std::runtime_error(
+          "PencilSchur::craigBampton: the reduced chain metric V^T M V is singular, so the "
+          "reduction basis is degenerate and its spectrum is not the surrogate spectrum; widen "
+          "the retention radius or move the shift off the interior spectrum");
+    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> reducedSolver(reducedLu.solve(out.reduced.A), true);
+    if (reducedSolver.info() != Eigen::Success)
+      throw std::runtime_error("PencilSchur::craigBampton: the reduced eigensolve did not converge");
+    const Eigen::VectorXcd values = reducedSolver.eigenvalues();
+    const std::vector<int> order = spectralOrder(values);
+    out.vectors = Eigen::MatrixXcd(reducedDim, reducedDim);
+    for (int i = 0; i < reducedDim; ++i) {
+      const int index = order[static_cast<std::size_t>(i)];
+      out.eigenvalues.push_back(values(index));
+      Eigen::VectorXcd y = reducedSolver.eigenvectors().col(index);
+      y /= std::max(y.norm(), kTiny);
+      out.vectors.col(i) = y;
+    }
+  }
+
+  // Hold every claimed eigenvalue to the exact Feshbach map.
+  const double scaleA = std::max(A.norm(), kTiny);
+  double worstBound = 0.0;
+  bool everyPairHolds = true;
+  for (int i = 0; i < static_cast<int>(out.eigenvalues.size()); ++i) {
+    const Complex theta = out.eigenvalues[static_cast<std::size_t>(i)];
+    if (std::abs(theta - windowCentre) > windowRadius) continue;
+    out.windowIndices.push_back(i);
+    const Eigen::VectorXcd x = out.basis * out.vectors.col(i);
+    const Eigen::MatrixXcd P = A - theta * M;
+    const Eigen::VectorXcd residualVector = P * x;
+    out.residuals.push_back(residualVector.norm() / (scaleA * std::max(x.norm(), kTiny)));
+    Eigen::VectorXcd xB(nb);
+    for (int j = 0; j < nb; ++j) xB(j) = x(out.interface[static_cast<std::size_t>(j)]);
+    const FeshbachResult exact = feshbach(A, M, theta, interface, rankTolerance);
+    out.resonantAtEigenvalue.push_back(exact.interiorSingular);
+    const double scaleB = std::max(xB.norm(), kTiny);
+    if (!exact.interiorSingular) {
+      const double scaleF = std::max(exact.response.norm(), kTiny);
+      const double defect = (exact.response * xB).norm() / (scaleF * scaleB);
+      // ||P_BI P_II^{-1}|| from the transposed solve, so that the interior
+      // block is factorized once per column block and never inverted.
+      Eigen::MatrixXcd PII(ni, ni), PBI(nb, ni);
+      for (int a = 0; a < ni; ++a)
+        for (int b = 0; b < ni; ++b)
+          PII(a, b) = P(out.interior[static_cast<std::size_t>(a)], out.interior[static_cast<std::size_t>(b)]);
+      for (int a = 0; a < nb; ++a)
+        for (int b = 0; b < ni; ++b)
+          PBI(a, b) = P(out.interface[static_cast<std::size_t>(a)], out.interior[static_cast<std::size_t>(b)]);
+      double amplification = 0.0;
+      if (ni > 0) {
+        const Eigen::MatrixXcd W = PII.transpose().fullPivLu().solve(PBI.transpose());
+        Eigen::JacobiSVD<Eigen::MatrixXcd> wsvd(W);
+        amplification = wsvd.singularValues()(0);
+      }
+      const double bound = (1.0 + amplification) * residualVector.norm() / (scaleF * scaleB);
+      out.feshbachDefects.push_back(defect);
+      out.feshbachBounds.push_back(bound);
+      // The inequality is exact; the comparison allows for round-off in the
+      // norms that enter both sides.
+      const bool holds = defect <= bound * (1.0 + 1e-6) + kTiny;
+      out.feshbachHolds.push_back(holds);
+      everyPairHolds = everyPairHolds && holds;
+      worstBound = std::max(worstBound, bound);
+    } else {
+      // At an interior resonance F_B is replaced by the resonant reduction, in
+      // whose coordinates the claimed pair is (x_B, N^H x_I).
+      Eigen::VectorXcd xI(ni);
+      for (int j = 0; j < ni; ++j) xI(j) = x(out.interior[static_cast<std::size_t>(j)]);
+      Eigen::VectorXcd coordinates(exact.resonantResponse.cols());
+      coordinates.head(nb) = xB;
+      if (exact.resonantResponse.cols() > nb)
+        coordinates.tail(exact.resonantResponse.cols() - nb) =
+            exact.interiorNullSpace.adjoint() * xI;
+      const double scaleF = std::max(exact.resonantResponse.norm(), kTiny);
+      const double defect = (exact.resonantResponse * coordinates).norm() /
+                            (scaleF * std::max(coordinates.norm(), kTiny));
+      out.feshbachDefects.push_back(defect);
+      out.feshbachBounds.push_back(std::numeric_limits<double>::quiet_NaN());
+      out.feshbachHolds.push_back(defect <= tolerance);
+      everyPairHolds = everyPairHolds && (defect <= tolerance);
+    }
+  }
+  const bool separated = out.discardedModeSeparation > 0.0;
+  const bool bounded = worstBound <= tolerance;
+  out.certified = everyPairHolds && separated && bounded;
+  if (!out.certified) {
+    if (!separated)
+      out.refusal =
+          "a discarded fixed-interface mode lies inside the declared window (separation " +
+          std::to_string(out.discardedModeSeparation) +
+          "); widen the retention radius until every mode of the window is retained";
+    else if (!bounded)
+      out.refusal = "the certified Feshbach bound " + std::to_string(worstBound) +
+                    " exceeds the declared tolerance " + std::to_string(tolerance) +
+                    "; the surrogate spectrum is not held to the exact map this closely";
+    else
+      out.refusal =
+          "a claimed eigenvalue's Feshbach defect exceeds the bound its own residual certifies; "
+          "the reduced eigenpair and the fine residual disagree";
+  }
   return out;
 }
 
