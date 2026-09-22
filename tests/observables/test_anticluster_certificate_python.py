@@ -148,9 +148,12 @@ class TestTheAntiClusterCertificate:
         assert against.coorientation == obs.EnclosingCoorientation.Inward
         assert against.certified
         # A reference orthogonal to the enclosing surface reads no direction.
-        options.coorientationReference = np.zeros_like(outward)
-        options.coorientationReference[int(np.argmin(np.abs(outward)))] = 1.0
-        assert np.abs(np.vdot(options.coorientationReference, outward)) < 1e-12
+        # It sits on a face the surface does not reach, so the two are exactly
+        # orthogonal rather than nearly so.
+        elsewhere = np.zeros_like(outward)
+        elsewhere[int(np.argmin(np.abs(outward)))] = 1.0
+        assert np.abs(np.vdot(elsewhere, outward)) == 0.0
+        options.coorientationReference = elsewhere
         orthogonal = obs.EffectiveTopology.antiCluster(cov, cavity_corners(), VOID_SCALE, options)
         assert orthogonal.coorientation == obs.EnclosingCoorientation.Undeclared
         assert not orthogonal.certified
