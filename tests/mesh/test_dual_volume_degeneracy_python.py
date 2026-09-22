@@ -1,19 +1,18 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The dual-volume derivatives stay finite where the geometry is not singular.
+"""The dual-volume derivatives stay finite where two circumcentres coincide.
 
-The circumcentric dual is built from square roots of circumradius differences,
-the distances between successive circumcentres. Differentiating divides by those
-roots, so the expression diverges where a difference vanishes -- but only where
-the difference also *moves*. A difference is pinned at zero along every direction
-whose edge the facet does not carry, and that is most directions; there the root
-is identically zero and so is its derivative.
+The circumcentric dual is built from the heights between successive
+circumcentres, written as roots of circumradius differences. Differentiated
+through the root, the chain rule divides by it, and on a four-dimensional
+Lorentzian complex at N_4 ~ 10,500 that produced 36 non-finite gradient entries
+and 1,166 non-finite Hessian entries from 14 hinges out of 27,457.
 
-Evaluating the quotient without taking the zero numerator first turns those
-directions into ``(1/0) * 0``, which is NaN, and one NaN contaminates every edge
-the hinge contributes to. On a four-dimensional Lorentzian complex at
-N_4 ~ 10,500 that produced 36 non-finite gradient entries and 1,166 non-finite
-Hessian entries from 14 hinges out of 27,457.
+The difference factors as lambda_v^2 det G_coface / det G_face, so each height
+is lambda_v sqrt(det G_coface / det G_face), smooth where the circumcentres
+coincide (lambda_v = 0); the derivatives are now taken in that form (#1209,
+where the Kuhn tori of ``tests/test_regge_kuhn_torus_derivatives.py`` show the
+same defect on a fixture that needs no sweeping).
 """
 
 import unittest
@@ -83,23 +82,14 @@ class TestDualVolumeDegeneracy(unittest.TestCase):
             if values.size:
                 self.assertTrue(np.isfinite(values).all())
 
-    def test_the_predicate_names_every_hinge_whose_hessian_diverges(self):
-        """A caller has to be able to find the responsible geometry.
-
-        The second derivative genuinely does not exist where a circumradius
-        difference vanishes and moves: the square root has infinite slope at the
-        origin. Those entries stay non-finite, so the predicate is the way to
-        identify which hinges they came from without hunting for the NaN.
-        """
-        diverging = []
+    def test_every_per_hinge_dual_volume_hessian_is_finite(self):
+        """The heights are smooth where circumcentres coincide, so the second
+        derivative exists there too, at the flagged hinges as elsewhere."""
         for hinge in self.hinges:
             values = np.asarray(list(hinge.dualVolumeHessian().values()),
                                 dtype=complex)
-            if values.size and not np.isfinite(values).all():
-                diverging.append(hinge)
-        flagged = {id(h) for h in self.hinges if h.dualGeometryIsDegenerate()}
-        missed = [h for h in diverging if id(h) not in flagged]
-        self.assertEqual(missed, [])
+            if values.size:
+                self.assertTrue(np.isfinite(values).all())
 
     def test_the_deficit_angle_hessian_is_finite(self):
         for hinge in self.hinges:

@@ -202,7 +202,7 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} CobordismDAG.h
 ```
-```{doxygenfile} Proton.h
+```{doxygenfile} ProtonSynthesis.h
 ```
 ```{doxygenfile} ProtonIngredients.h
 ```
@@ -253,6 +253,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} SparsePencil.h
 ```
 ```{doxygenfile} SparsePencilSolver.h
+```
+```{doxygenfile} SparseRank.h
 ```
 
 ## Reinforcement learning

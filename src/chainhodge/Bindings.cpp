@@ -18,6 +18,7 @@
 #include "chainhodge/PencilSchur.h"
 #include "chainhodge/SparsePencil.h"
 #include "chainhodge/SparsePencilSolver.h"
+#include "chainhodge/SparseRank.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/ChainComplex.h"
 #include "spacetime/Spacetime.h"
@@ -51,6 +52,16 @@ protocol rotation epsilon (NaN until set).)doc")
       .def_readonly("margins", &InstanceCertificate::margins)
       .def_readonly("volumes", &InstanceCertificate::volumes)
       .def_readonly("gramDeterminants", &InstanceCertificate::gramDeterminants)
+      .def_readonly("volumeWindings", &InstanceCertificate::volumeWindings,
+          "The Riemann-sheet label of each volume root: the signed number of "
+          "turns det g_T makes about zero along the continuation that fixed it, "
+          "so volumes[t] is (-1)**volumeWindings[t] times the principal root "
+          "over d!. Carried because the root, not the squared volume, is where "
+          "the branch is: two instances with the same gramDeterminants and "
+          "different volumeWindings are on different sheets of the same "
+          "geometry, and only the label says so. Zero throughout on the "
+          "Kontsevich-Segal branch, which declares its sheet eigenvalue by "
+          "eigenvalue rather than along a path.")
       .def_readonly("continuationAmbiguous", &InstanceCertificate::continuationAmbiguous)
       .def_readonly("ambiguousTopSimplices", &InstanceCertificate::ambiguousTopSimplices)
       .def_readwrite("epsilon", &InstanceCertificate::epsilon);
@@ -106,6 +117,37 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            },
            py::arg("gram"), py::arg("branch") = Branch::Continuation,
            "(sqrt(det g)/d!, ambiguous) for one Gram matrix on the declared branch.")
+      .def_static("volumeWindingOnBranch",
+           [](const Eigen::MatrixXcd &gram, Branch branch) {
+             bool ambiguous = false;
+             int winding = 0;
+             WhitneyMass::volumeOnBranch(gram, branch, &ambiguous, &winding);
+             return winding;
+           },
+           py::arg("gram"), py::arg("branch") = Branch::Continuation,
+           "The Riemann-sheet label of the root volumeOnBranch takes: the signed "
+           "number of turns det g makes about zero along the continuation from "
+           "the unit Euclidean reference, so that the volume is (-1)**winding "
+           "times the principal root over d!. Zero on the Kontsevich-Segal "
+           "branch, which declares its sheet eigenvalue by eigenvalue rather "
+           "than along a path.")
+      .def_static("volumeContinuedFrom",
+           [](const Eigen::MatrixXcd &gramFrom, int windingFrom,
+              const Eigen::MatrixXcd &gramTo) {
+             bool ambiguous = false;
+             int windingTo = 0;
+             const Complex v = WhitneyMass::volumeContinuedFrom(
+                 gramFrom, windingFrom, gramTo, &windingTo, &ambiguous);
+             return py::make_tuple(v, ambiguous, windingTo);
+           },
+           py::arg("gram_from"), py::arg("winding_from"), py::arg("gram_to"),
+           "(sqrt(det g_to)/d!, ambiguous, winding) continued from a declared "
+           "previous geometry and its sheet instead of from the fixed Euclidean "
+           "reference. Starting from the geometry an instance actually came "
+           "from is what makes a family of instances one continued state rather "
+           "than a sequence of independent principal-value choices: the sheet "
+           "composes along the path, so a loop of squared lengths about a zero "
+           "of det g returns the winding one higher and the volume negated.")
       .def_static("marginOf", &WhitneyMass::marginOf, py::arg("gram"),
            "pi - sum_i |arg lambda_i(g)| for one Gram matrix.")
       .def_static("topSimplexBlocks", &WhitneyMass::topSimplexBlocks,
@@ -116,6 +158,16 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("edge_index"),
            py::arg("branch") = Branch::Continuation,
            "dM_k/ds_e for the edge at the given canonical index, sparse.")
+      .def_static("assembleDirectionalDerivative", &WhitneyMass::assembleDirectionalDerivative,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
+           py::arg("branch") = Branch::Continuation,
+           "D_v M_k = sum_e v_e dM_k/ds_e along a squared-length direction (one entry per edge, "
+           "canonical order), sparse.")
+      .def_static("assembleSecondDerivatives", &WhitneyMass::assembleSecondDerivatives,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
+           py::arg("branch") = Branch::Continuation,
+           "D_v dM_k/ds_e for every edge e along a squared-length direction v, a list indexed by "
+           "canonical edge, sparse.")
       .def_static("derivativeContraction", &WhitneyMass::derivativeContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("X"), py::arg("Y"), py::arg("branch") = Branch::Continuation,
@@ -147,6 +199,44 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("A", &Pencil::A)
       .def_readonly("B", &Pencil::B);
 
+  py::class_<SingularSplit>(m, "SingularSplit",
+      "The singular values on either side of one rank split: sigmaAt = sigma_at, "
+      "sigmaNext = sigma_{at+1}, their gap, the numerical rank and its tolerance.")
+      .def_readonly("at", &SingularSplit::at)
+      .def_readonly("rank", &SingularSplit::rank)
+      .def_readonly("tolerance", &SingularSplit::tolerance)
+      .def_readonly("largest", &SingularSplit::largest)
+      .def_readonly("sigmaAt", &SingularSplit::sigmaAt)
+      .def_readonly("sigmaNext", &SingularSplit::sigmaNext)
+      .def_readonly("gap", &SingularSplit::gap)
+      .def_readonly("dense", &SingularSplit::dense);
+
+  py::class_<SparseKernel>(m, "SparseKernel",
+      "The kernel of a sparse matrix (orthonormal basis) with the split at its numerical rank.")
+      .def_readonly("split", &SparseKernel::split)
+      .def_readonly("basis", &SparseKernel::basis);
+
+  py::class_<SparseRank>(m, "SparseRank",
+      R"doc(Numerical ranks of sparse matrices with the singular values on either side of
+the decision, without forming a dense matrix of the size of the problem: kernel(A)
+by a thresholded sparse QR of A (the kernel by back-substitution, the last kept
+singular value by inverse subspace iteration on the triangular factor, the first
+discarded one as ||A N||); congruence(C, X, inverse, rho) for P = C^T X^{+-1} C with
+C an integer matrix of exact rank rho, reduced to the rho x rho matrix W X^{+-1} W^T
+by a sparse QR of C^T.
+
+Reference: Foster & Davis, "Algorithm 933: Reliable calculation of numerical rank,
+null space bases, pseudoinverse solutions, and basic solutions using SuiteSparseQR",
+ACM TOMS 40 (2013).)doc")
+      .def_static("kernel", &SparseRank::kernel, py::arg("A"), py::arg("kappa") = 10.0,
+           "The kernel of sparse A with the split at its numerical rank.")
+      .def_static("congruence", &SparseRank::congruence, py::arg("C"), py::arg("X"),
+           py::arg("inverse"), py::arg("structural_rank"), py::arg("kappa") = 10.0,
+           "The split of P = C^T X C (or C^T X^{-1} C) at the exact rank of C.")
+      .def_static("fromSingularValues", &SparseRank::fromSingularValues, py::arg("singular_values"),
+           py::arg("rows"), py::arg("cols"), py::arg("kappa") = 10.0, py::arg("at") = -1,
+           "A dense SVD's singular values as a split (at the numerical rank when at < 0).");
+
   py::class_<HarmonicRead>(m, "HarmonicRead",
       "Harmonic chains H_k, their geometric images, and the kernel's rank certificate.")
       .def_readonly("degree", &HarmonicRead::degree)
@@ -156,6 +246,9 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("rank", &HarmonicRead::rank)
       .def_readonly("tolerance", &HarmonicRead::tolerance)
       .def_readonly("gap", &HarmonicRead::gap)
+      .def_readonly("largestSingular", &HarmonicRead::largestSingular)
+      .def_readonly("lastKept", &HarmonicRead::lastKept)
+      .def_readonly("firstDiscarded", &HarmonicRead::firstDiscarded)
       .def_readonly("dense", &HarmonicRead::dense);
 
   py::class_<RankReport>(m, "RankReport",
@@ -167,6 +260,10 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
         return std::vector<int>(r.expected.begin(), r.expected.end()); })
       .def_property_readonly("holds", [](const RankReport &r) {
         return std::vector<bool>(r.holds.begin(), r.holds.end()); })
+      .def_property_readonly("splits", [](const RankReport &r) {
+        return std::vector<SingularSplit>(r.splits.begin(), r.splits.end()); },
+        "Per condition, the singular values at and beyond its exact rank.")
+      .def_readonly("dense", &RankReport::dense)
       .def_readonly("decompositionHolds", &RankReport::decompositionHolds)
       .def_readonly("kernelIsHarmonic", &RankReport::kernelIsHarmonic)
       .def_readonly("kappa", &RankReport::kappa);
@@ -215,15 +312,11 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def("geometricImage", &ChainHodge::geometricImage, py::arg("k"), py::arg("H"), "G_k H.")
       .def("harmonicGram", &ChainHodge::harmonicGram, py::arg("read"), "Phi^T G_k Phi = Z^T M_k Z.")
       .def("rankConditions", &ChainHodge::rankConditions, py::arg("k"), py::arg("kappa") = 10.0,
-           "The rank conditions (R1)-(R4) at degree k.")
+           py::arg("force_sparse") = false,
+           "The rank conditions (R1)-(R4) at degree k, each with the singular values at and "
+           "beyond its exact rank; sparse at or above the crossover.")
       .def("betti", &ChainHodge::betti, "Betti numbers over Q, exact.")
       .def("spectrum", &ChainHodge::spectrum, py::arg("k"), "Dense spectrum of the degree-k pencil.");
-  py::enum_<CausalType>(m, "CausalType",
-      "Declared causal type of an edge (an input, never inferred from a squared length).")
-      .value("Spacelike", CausalType::Spacelike)
-      .value("Timelike", CausalType::Timelike)
-      .value("Null", CausalType::Null);
-
   py::class_<LorentzianRead>(m, "LorentzianRead",
       "One member of the epsilon family: allowability, margin, the harmonic read with its "
       "gap, and the dense spectrum when requested.")
@@ -244,27 +337,36 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def_readonly("label", &LorentzianExtrapolation::label);
 
   py::class_<LorentzianFamily>(m, "LorentzianFamily",
-      R"doc(The Lorentzian protocol: the family s_e(epsilon) with the timelike squared
-lengths rotated by e^{-2 i epsilon} at reported epsilon > 0; reads at epsilon = 0
-exist only inside a family and carry their gap; extrapolation to epsilon -> 0 is a
-separate, labeled step.
+      R"doc(The Lorentzian protocol (integration specification, Requirement 2): the family
+s_e(epsilon) with the timelike part of every squared length rotated by e^{-2 i epsilon},
+at reported epsilon > 0; reads at epsilon = 0 exist only inside a family and carry their
+gap; extrapolation to epsilon -> 0 is a separate, labeled step.
+
+Every squared length s_e is declared with its timelike part tau_e, the contribution of
+the edge's temporal displacement (-e^{2 phi} dt^2 for a metric e^{2 phi}(-dt^2 + dx^2));
+the family is s_e(epsilon) = (s_e - tau_e) + e^{-2 i epsilon} tau_e. The split is an
+input and is never inferred from s_e.
 
 Reference: Kontsevich & Segal, "Wick rotation and the positivity of energy in quantum
 field theory", arXiv:2105.10161.)doc")
       .def_static("rotate", &LorentzianFamily::rotate, py::arg("squared_lengths"),
-           py::arg("causal_types"), py::arg("epsilon"),
-           "Timelike entries times e^{-2 i epsilon}; others unchanged.")
+           py::arg("timelike_parts"), py::arg("epsilon"),
+           "s_e + (e^{-2 i epsilon} - 1) tau_e: every timelike part rotated, the spacelike "
+           "part s_e - tau_e unchanged. Raises ValueError on mismatched lengths, a "
+           "non-finite timelike part, or epsilon < 0.")
       .def_static("instance", &LorentzianFamily::instance, py::arg("complex"),
-           py::arg("squared_lengths"), py::arg("causal_types"), py::arg("epsilon"),
+           py::arg("squared_lengths"), py::arg("timelike_parts"), py::arg("epsilon"),
            py::arg("preset") = Preset::L2, py::arg("branch") = Branch::Continuation,
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
            "The ChainHodge at epsilon, with epsilon on its certificate.")
       .def_static("sweep", &LorentzianFamily::sweep, py::arg("complex"), py::arg("squared_lengths"),
-           py::arg("causal_types"), py::arg("epsilons"), py::arg("degree"),
+           py::arg("timelike_parts"), py::arg("epsilons"), py::arg("degree"),
            py::arg("preset") = Preset::L2, py::arg("branch") = Branch::Continuation,
            py::arg("kappa") = 10.0, py::arg("with_spectrum") = false,
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
-           "Reads at every epsilon of the family at one degree.")
+           "Reads at every epsilon of the family at one degree. Raises ValueError when "
+           "no epsilon > 0 is given (a read at epsilon = 0 is never reported alone) or "
+           "any epsilon is negative.")
       .def_static("extrapolateToZero", &LorentzianFamily::extrapolateToZero, py::arg("epsilons"),
            py::arg("values"), py::arg("order") = 2,
            "Labeled polynomial extrapolation of reads at epsilon > 0 to epsilon -> 0.");
@@ -297,8 +399,8 @@ normalized or conjugated.)doc")
       .def("isUnitary", &Connection::isUnitary, py::arg("tolerance") = 1e-12);
 
   py::class_<CovarianceCertificate>(m, "CovarianceCertificate",
-      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance; "
-      "NaN means unmeasured.")
+      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance, "
+      "measured and asserted on construction at tolerance 10 n eps cond; NaN means unmeasured.")
       .def_readonly("transposeMetric", &CovarianceCertificate::transposeMetric)
       .def_readonly("transposePencil", &CovarianceCertificate::transposePencil)
       .def_readonly("covarianceMetric", &CovarianceCertificate::covarianceMetric)
@@ -307,6 +409,15 @@ normalized or conjugated.)doc")
       .def_readonly("pairingInvariance", &CovarianceCertificate::pairingInvariance)
       .def_readonly("trivialReduction", &CovarianceCertificate::trivialReduction)
       .def_readonly("pureGaugeIsospectrality", &CovarianceCertificate::pureGaugeIsospectrality)
+      .def_readonly("trivialReductionProbe", &CovarianceCertificate::trivialReductionProbe)
+      .def_readonly("transposePencilProbe", &CovarianceCertificate::transposePencilProbe)
+      .def_readonly("transposeOperatorProbe", &CovarianceCertificate::transposeOperatorProbe)
+      .def_readonly("covariancePencilProbe", &CovarianceCertificate::covariancePencilProbe)
+      .def_readonly("covarianceOperatorProbe", &CovarianceCertificate::covarianceOperatorProbe)
+      .def_readonly("pureGaugeSimilarityProbe", &CovarianceCertificate::pureGaugeSimilarityProbe)
+      .def_readonly("conditionEstimate", &CovarianceCertificate::conditionEstimate)
+      .def_readonly("tolerance", &CovarianceCertificate::tolerance)
+      .def_readonly("holds", &CovarianceCertificate::holds)
       .def_readonly("gaugeSeed", &CovarianceCertificate::gaugeSeed)
       .def_readonly("checkedDegree", &CovarianceCertificate::checkedDegree);
 
@@ -394,6 +505,19 @@ properties (i)-(vi) measured on every instance.)doc")
              return Eigen::MatrixXcd(self.dressedPhaseDerivative(k, e)); }, py::arg("k"), py::arg("edge_index"))
       .def("covariantOperatorDerivative", &CovariantChainHodge::covariantOperatorDerivative,
            py::arg("k"), py::arg("edge_index"), "dh_k/ds_e for the canonical edge index, dense.")
+      .def("covariantOperatorDirectionalDerivative",
+           [](const CovariantChainHodge &self, int k, const std::vector<std::complex<double>> &direction) {
+             return self.lengthDirection(k, direction).operatorDirectional;
+           },
+           py::arg("k"), py::arg("direction"),
+           "D_v h_k along a squared-length direction v (one entry per edge, canonical order), dense.")
+      .def("covariantOperatorSecondDerivative",
+           [](const CovariantChainHodge &self, int k, std::size_t e,
+              const std::vector<std::complex<double>> &direction) {
+             return self.covariantOperatorSecondDerivative(self.lengthDirection(k, direction), e);
+           },
+           py::arg("k"), py::arg("edge_index"), py::arg("direction"),
+           "D_v dh_k/ds_e for the canonical edge index along a squared-length direction v, dense.")
       .def("covariantOperatorPhaseDerivative", &CovariantChainHodge::covariantOperatorPhaseDerivative,
            py::arg("k"), py::arg("edge_index"),
            "dh_k/dphi_e for the multiplicative link variation U_e = e^{i phi_e}, dense.")
@@ -652,6 +776,11 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("responseDeterminant", &FeshbachResult::responseDeterminant)
       .def_readonly("pencilDeterminant", &FeshbachResult::pencilDeterminant)
       .def_readonly("determinantResidual", &FeshbachResult::determinantResidual)
+      .def_readonly("pencilLogDeterminant", &FeshbachResult::pencilLogDeterminant)
+      .def_readonly("interiorLogDeterminant", &FeshbachResult::interiorLogDeterminant)
+      .def_readonly("responseLogDeterminant", &FeshbachResult::responseLogDeterminant)
+      .def_readonly("logModulusResidual", &FeshbachResult::logModulusResidual)
+      .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
       .def_readonly("solveResidual", &FeshbachResult::solveResidual)
       .def_readonly("interiorSingular", &FeshbachResult::interiorSingular);
 
@@ -683,6 +812,8 @@ images: the Feshbach complement with its determinant factorization, the Craig-Ba
 congruence, the restriction of pencil and chain metric to retained fibers, and the
 transfer between fibers with the reversal identity asserted at runtime. Every pairing
 is the transpose.)doc")
+      .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
+           "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
            py::arg("interface"), py::arg("rank_tolerance") = 1e-12)
       .def_static("craigBampton", &PencilSchur::craigBampton, py::arg("A"), py::arg("M"), py::arg("T"))

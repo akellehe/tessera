@@ -692,7 +692,7 @@ class EigenstateSynthesis {
     // reassembles L_k from the live edges/volumes on each call, so perturbing
     // the edge squared-lengths and re-querying reflects the perturbation (the
     // matrix path leaves the eigendecomposition cache untouched).
-    HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::DiagonalWeights};
+    HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::WhitneyPencil};
     HodgeLaplacian laplacian_;
     std::size_t order_{0};  // N = operator dimension (|V| at k=0, else |C_k|)
     // The sorted vertex-id tuple of each psi component, in operator order: the

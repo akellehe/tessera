@@ -24,6 +24,23 @@ import tessera
 cob = tessera.cobordism
 
 
+# Every closed form in this module is the DIAGONAL-weight operator's:
+# L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k of
+# HodgeWeightConvention. The process default metric source is the chain-level
+# Whitney pencil (#1185), whose operator is the covariant h_k(s, U) on
+# geometric images, so this module names the diagonal source at every operator
+# it builds. The default's own properties are pinned in
+# tests/cobordism/test_whitney_default_metric_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _hodge(spacetime, weights=None, source=DIAGONAL):
+    """The diagonal-weight Hodge operator this module's anchors are taken of."""
+    if weights is None:
+        weights = cob.HodgeLaplacian.defaultWeightConvention()
+    return cob.HodgeLaplacian(spacetime, weights, source)
+
+
 def _graph(num_vertices, edges, vertex_ids=None):
     """Spacetime holding an explicit weighted graph. `edges` is a list of
     (src, tgt, squared_length, phase) with src/tgt indexing into
@@ -122,9 +139,9 @@ class TestProductCertificate(unittest.TestCase):
 
         # Acceptance: the product-complex spectrum matches the pairwise
         # one-particle sums — no product eigensolve.
-        spec_a = cob.HodgeLaplacian(a).eigenvalues(0)
-        spec_b = cob.HodgeLaplacian(b).eigenvalues(0)
-        spec_product = cob.HodgeLaplacian(product).eigenvalues(0)
+        spec_a = _hodge(a).eigenvalues(0)
+        spec_b = _hodge(b).eigenvalues(0)
+        spec_product = _hodge(product).eigenvalues(0)
         pairwise = cob.KuennethProduct.pairwiseSpectrum(spec_a, spec_b)
         np.testing.assert_allclose(np.sort(np.real(spec_product)),
                                    np.sort(np.real(pairwise)),

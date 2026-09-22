@@ -25,8 +25,16 @@ namespace tessera::observables {
 ///      three independent per-hole extractions. The per-hole weight is
 ///      \f$ w_h = \sigma_h \oint_h \psi \f$ over the five
 ///      \f$ (-1)^j \f$-signed tetrahedral facets of the removed 4-cell, and the
-///      per-hole Dirac-Kähler charge is
-///      \f$ q_h = \sum_{c \in \partial h} W_c |\psi_c|^2 \f$.
+///      per-hole boundary intensity is the squared Hodge norm of the carried
+///      representative over those facets,
+///      \f$ I_h = \sum_{c \in \partial h} W_c |\psi_c|^2 \f$, with
+///      \f$ W_c \f$ the Hodge metric weight of the cell
+///      (`RegisterContext::hodgeWeights`). It is a norm of the representative
+///      on the hole's boundary and nothing else: it is not the charge of any
+///      current, and no Kähler-Dirac operator exists in this tree to give it
+///      that reading (the whitepaper's Section 12.1 separates the occupation
+///      exterior algebra from the inhomogeneous cochain space a Kähler-Dirac
+///      field lives on).
 ///   2. Pair loops \f$ \gamma_{ij} \f$ are homologous to `[i]+[j]`, so their
 ///      period is `w_i + w_j` — arithmetic on the per-hole weights, with no new
 ///      geometry. The singlet gives the duality
@@ -58,15 +66,21 @@ class PairLoopFlavor : public RegisterObservable {
       std::vector<int> sigma;                    ///< induced-orientation signs
       double rU = 0.0;                           ///< residualForPeriods of the pin
       std::vector<std::complex<double>> w;       ///< oriented per-hole weights
-      std::vector<double> q;                     ///< per-hole Dirac-Kähler charges
+      /// Per-hole boundary intensity \f$ I_h \f$: the squared Hodge norm of
+      /// the carried representative over the hole's boundary facets.
+      std::vector<double> holeIntensity;
       std::vector<std::complex<double>> loopW;   ///< pair-loop periods (w_i+w_j)
-      std::vector<double> loopQ;                 ///< pair-loop charges
+      /// Per-pair-loop boundary intensity: the same squared Hodge norm over
+      /// the union of the two holes' boundary facets.
+      std::vector<double> loopIntensity;
       std::vector<double> dualResidual;          ///< |w_i+w_j+w_k| per loop
     };
 
     /// The pre-registered criteria on a finished joint read.
     struct Verdict {
-      std::pair<int, int> oddLoop;               ///< the charge-odd pair loop
+      /// The pair loop whose boundary intensity sits farthest from the mean
+      /// of the other two.
+      std::pair<int, int> oddLoop;
       int dualHole = 0;                          ///< its complementary hole
       double rho = 0.0;
       bool multiplicity21 = false;
@@ -84,9 +98,9 @@ class PairLoopFlavor : public RegisterObservable {
     [[nodiscard]] std::string recordKey() const override {
       return std::string(kRecordKey);
     }
-    /// The clustering ratio `rho` divides two small charge differences, which
-    /// amplifies eigensolver roundoff to around 1e-13. One tolerance covers
-    /// every leaf; raw residuals are reported alongside.
+    /// The clustering ratio `rho` divides two small intensity differences,
+    /// which amplifies eigensolver roundoff to around 1e-13. One tolerance
+    /// covers every leaf; raw residuals are reported alongside.
     [[nodiscard]] double gateTol() const override { return 1e-9; }
     [[nodiscard]] int minHoles() const override { return 3; }
     [[nodiscard]] int requiredDimensions() const override { return 4; }
@@ -97,10 +111,11 @@ class PairLoopFlavor : public RegisterObservable {
     /// The verdict on a finished joint read.
     [[nodiscard]] Verdict evaluateCriteria(const JointRead &read) const;
 
-    /// (odd loop index, rho): the loop whose charge sits farthest from the mean
-    /// of the other two, and rho = |spread of the other two| / |that separation|.
+    /// (odd loop index, rho): the loop whose boundary intensity sits farthest
+    /// from the mean of the other two, and rho = |spread of the other two| /
+    /// |that separation|.
     [[nodiscard]] static std::pair<int, double> oddOneOut(
-        const std::vector<double> &loopQ);
+        const std::vector<double> &loopIntensity);
     /// The hole index dual to the pair loop `γ_ij`: the third index (`3-i-j`).
     [[nodiscard]] static int complementHole(const std::pair<int, int> &pair) {
       return 3 - pair.first - pair.second;

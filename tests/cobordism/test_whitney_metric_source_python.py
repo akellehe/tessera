@@ -2,7 +2,7 @@
 # All rights reserved.
 """MultiCobordism on the chain-level Whitney pencil (#910): the HodgeLaplacian
 metric source, its operator and analytic derivatives against the chainhodge
-objects, the legacy path unchanged, the register residual's Euler identity
+objects, the default path being the pencil, the register residual's Euler identity
 under the pencil, and the Kontsevich-Segal admissibility of the configuration
 space."""
 import cmath
@@ -40,24 +40,24 @@ def _flat(v, n):
 class TestDefaults:
     def test_one_process_wide_knob_read_at_call_time(self):
         """Every operator follows HodgeLaplacian.defaultMetricSource() at
-        construction (read at call time, never captured at import), and an
-        explicit metric_source overrides it."""
-        assert HL.defaultMetricSource() == Diagonal
+        construction (read at call time, never captured at import), which is
+        the Whitney pencil (#1185), and an explicit metric_source overrides it."""
+        assert HL.defaultMetricSource() == Whitney
         st = tessera.Spacetime.fromVertexTuples(2, TWO_COMPLEX, 1.0, 0.0)
-        assert HL(st).metricSource() == Diagonal
-        assert MC(st, [], [], [1]).metricSource() == Diagonal
-        assert MC(st, [], [], [1], metric_source=Whitney).metricSource() == Whitney
-        assert cob.EigenstateSynthesis(st, 1).metricSource() == Diagonal
-        assert cob.EigenstateSynthesis(st, 1, Whitney).metricSource() == Whitney
-        HL.setDefaultMetricSource(Whitney)
+        assert HL(st).metricSource() == Whitney
+        assert MC(st, [], [], [1]).metricSource() == Whitney
+        assert MC(st, [], [], [1], metric_source=Diagonal).metricSource() == Diagonal
+        assert cob.EigenstateSynthesis(st, 1).metricSource() == Whitney
+        assert cob.EigenstateSynthesis(st, 1, Diagonal).metricSource() == Diagonal
+        HL.setDefaultMetricSource(Diagonal)
         try:
-            assert HL(st).metricSource() == Whitney
-            assert MC(st, [], [], [1]).metricSource() == Whitney
-            assert cob.EigenstateSynthesis(st, 1).metricSource() == Whitney
-            assert MC(st, [], [], [1], metric_source=Diagonal).metricSource() == Diagonal
+            assert HL(st).metricSource() == Diagonal
+            assert MC(st, [], [], [1]).metricSource() == Diagonal
+            assert cob.EigenstateSynthesis(st, 1).metricSource() == Diagonal
+            assert MC(st, [], [], [1], metric_source=Whitney).metricSource() == Whitney
         finally:
-            HL.setDefaultMetricSource(Diagonal)
-        assert MC(st, [], [], [1]).metricSource() == Diagonal
+            HL.setDefaultMetricSource(Whitney)
+        assert MC(st, [], [], [1]).metricSource() == Whitney
 
 
 class TestOperatorEqualsChainHodge:
@@ -95,11 +95,11 @@ class TestOperatorEqualsChainHodge:
         b = HL(st, HL.defaultWeightConvention(), Diagonal).laplacian(1, False)
         np.testing.assert_allclose(a, b, atol=0)
 
-    def test_legacy_path_bit_identical(self):
+    def test_default_path_is_the_pencil_bit_identical(self):
         rng = np.random.default_rng(7)
         st = _spacetime(TWO_COMPLEX, 2, rng, phases=True)
         default = HL(st).laplacian(1, True)
-        explicit = HL(st, HL.defaultWeightConvention(), Diagonal).laplacian(1, True)
+        explicit = HL(st, HL.defaultWeightConvention(), Whitney).laplacian(1, True)
         assert list(default) == list(explicit)
 
 
@@ -150,7 +150,7 @@ class TestAnalyticDerivatives:
     def test_diagonal_path_has_no_phase_gradient_above_degree_zero(self):
         rng = np.random.default_rng(17)
         st = _spacetime(TWO_COMPLEX, 2, rng, phases=True)
-        hl = HL(st)
+        hl = HL(st, HL.defaultWeightConvention(), Diagonal)
         e = st.getEdgeList().toVector()[0]
         g = hl.laplacianPhaseGradient(1, e.getSource().getId(), e.getTarget().getId())
         assert np.max(np.abs(g)) == 0.0
@@ -231,7 +231,7 @@ class TestStoredOrientations:
         every identity (scaling, gauge) survives the conjugation."""
         BA = MC.BuildAction
         HP = MC.HolePlacementStrategy
-        node = cob.Proton(seed=0).formation_node(1)
+        node = cob.ProtonSynthesis(seed=0).formation_node(1)
         node.build_step(BA.GROW, max_steps=25, n_candidate_moves=6)
         node.directed_cone_out(HP.ADJACENT_HOLES_LAST)
         st = node.st

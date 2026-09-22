@@ -162,6 +162,7 @@ Record bandCertificateToRecord(const SpectralBandCertificate &c) {
   m["isotropic"] = Record(c.isotropic);
   m["left_frame_refusal"] = Record(c.leftFrameRefusal);
   m["metric_symmetry_defect"] = Record(c.metricSymmetryDefect);
+  m["bilinear_left_frame"] = Record(c.bilinearLeftFrame);
   m["accepted"] = Record(c.accepted);
   m["certificate"] = certificateToRecord(c.certificate);
   return Record(std::move(m));
@@ -203,6 +204,12 @@ SpectralBandCertificate bandCertificateFromRecord(const Record &record) {
   c.metricSymmetryDefect = optionalDouble(m, "metric_symmetry_defect");
   c.accepted = m.at("accepted").asBool();
   c.certificate = certificateFromRecord(m.at("certificate"));
+  // Records written before the flag existed stored the bilinear left frame
+  // exactly on the complex-symmetric pencil regime.
+  c.bilinearLeftFrame =
+      m.count("bilinear_left_frame")
+          ? m.at("bilinear_left_frame").asBool()
+          : c.certificate.regime() == CertificateRegime::ComplexSymmetricPencil;
   return c;
 }
 
@@ -385,16 +392,22 @@ SpectralFiber::SpectralFiber(std::vector<std::vector<std::uint64_t>> cells,
       right_(std::move(rightFrame)), left_(std::move(leftFrame)),
       weights_(std::move(weights)), certificate_(std::move(certificate)) {}
 
+Eigen::MatrixXcd SpectralFiber::dualFrame() const {
+  // The chain-level pencil path stores the canonical bilinear left frame
+  // Phi~ itself (the weight diagonal is the identity placeholder there), in
+  // either verified regime.
+  if (certificate_.bilinearLeftFrame) return left_;
+  // Elsewhere the solver's normalization is Psi^dagger W Phi = I, and
+  // (W conj(Psi))^T Phi = Psi^dagger W Phi: the transpose dual is W conj(Psi).
+  if (left_.size() == 0) return left_;
+  return weights_.asDiagonal() * left_.conjugate();
+}
+
 Eigen::MatrixXcd SpectralFiber::projector() const {
   if (right_.rows() == 0 || right_.cols() == 0)
     return Eigen::MatrixXcd::Zero(right_.rows(), right_.rows());
-  // The chain-level pencil regime pairs bilinearly: the Riesz projector is
-  // Phi Phi~^T (no conjugate, no diagonal metric); the left frame stored is
-  // Phi~ itself and the weight diagonal is the identity placeholder.
-  if (certificate_.certificate.regime() ==
-      CertificateRegime::ComplexSymmetricPencil)
-    return right_ * left_.transpose();
-  return right_ * (left_.adjoint() * weights_.asDiagonal());
+  // One pairing in every regime: the Riesz projector is Phi Phi~^T.
+  return right_ * dualFrame().transpose();
 }
 
 std::complex<double> SpectralFiber::bandCenter() const {
@@ -568,16 +581,21 @@ struct SpectralFiberTracker::RestrictedOperator {
 SpectralFiberTracker::SpectralFiberTracker(
     std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
     cobordism::HodgeLaplacian::WeightConvention weights)
-    : st_(std::move(st)), cfg_(std::move(cfg)), weights_(weights) {
-  if (!st_)
-    throw std::invalid_argument("SpectralFiberTracker: null spacetime");
-}
+    : SpectralFiberTracker(std::move(st), std::move(cfg), weights,
+                           cobordism::HodgeLaplacian::defaultMetricSource()) {}
 
 SpectralFiberTracker::SpectralFiberTracker(
     std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
     cobordism::HodgeLaplacian::MetricSource source)
-    : st_(std::move(st)), cfg_(std::move(cfg)),
-      weights_(cobordism::HodgeLaplacian::defaultWeightConvention()),
+    : SpectralFiberTracker(std::move(st), std::move(cfg),
+                           cobordism::HodgeLaplacian::defaultWeightConvention(),
+                           source) {}
+
+SpectralFiberTracker::SpectralFiberTracker(
+    std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source)
+    : st_(std::move(st)), cfg_(std::move(cfg)), weights_(weights),
       metricSource_(source) {
   if (!st_)
     throw std::invalid_argument("SpectralFiberTracker: null spacetime");
@@ -704,7 +722,8 @@ SpectralFiberTracker::assembleRestricted(
   // read-only) to the cells fully inside the support.
   const cobordism::ChainComplex cc =
       cobordism::ChainComplex::fromSpacetime(*st_);
-  const cobordism::HodgeLaplacian hodge(st_, weights_);
+  const cobordism::HodgeLaplacian hodge(
+      st_, weights_, cobordism::HodgeLaplacian::MetricSource::DiagonalWeights);
   const auto insideIndices =
       [&](int k) -> std::pair<std::vector<std::size_t>,
                               std::vector<std::vector<std::uint64_t>>> {
@@ -1233,6 +1252,7 @@ void SpectralFiberTracker::solvePencilBands(const RestrictedOperator &op,
     cert.pairingScale = band.certificate.pairingScale;
     cert.isotropic = !band.certificate.leftFrameAvailable;
     cert.leftFrameRefusal = band.certificate.leftFrameRefusal;
+    cert.bilinearLeftFrame = true;  // Psi below is Phi~ itself
     cert.positiveSignature = 0;  // no inertia in the bilinear regime
     cert.negativeSignature = 0;
     Eigen::MatrixXcd Phi = band.frame;

@@ -412,6 +412,59 @@ struct LazyCompatibilityRead {
     cobordism::Certificate certificate{};
 };
 
+/// One stage \f$ M \f$ of a refinement sequence
+/// (`LazyFockEngine::inductiveLimit`): the modes the stage carries and the
+/// map \f$ V_M \f$ on them.
+///
+/// The stages of a refinement sequence are nested — each stage's modes are a
+/// subset of the next stage's — because the step from one to the next is the
+/// vacuum embedding \f$ \iota_M(\psi) = \psi \mathbin{\hat\otimes} |0\rangle \f$,
+/// which adds modes and changes no amplitude.
+struct FockRefinementStage {
+    /// The modes of \f$ \mathcal H_M \f$, ascending.
+    std::vector<std::size_t> modes;
+    /// The support of \f$ V_M \f$, a subset of `modes`.
+    std::vector<std::size_t> support;
+    /// \f$ V_M \f$, dense over the \f$ 2^{|support|} \f$ support Fock basis
+    /// (the convention of `applyLocalMapDense`).
+    Eigen::MatrixXcd map;
+};
+
+/// The inductive limit read over a refinement sequence
+/// (`LazyFockEngine::inductiveLimit`).
+///
+/// The infinite Fock space is the direct limit
+/// \f$ \mathcal F = \varinjlim(\mathcal H_M, \iota_M) \f$, and consistency of
+/// the maps carried along it requires
+/// \f$ \|\iota_M V_M - V_{M+1}\iota_M\| \to 0 \f$ over a refinement sequence.
+/// That is a numerical certificate on a measured sequence, not a property any
+/// single pair of stages can show: this read measures one defect per adjacent
+/// pair, on one and the same active carried subspace, and reports the whole
+/// sequence together with whether it falls.
+struct LazyInductiveLimitRead {
+    /// \f$ \varepsilon_\iota \f$ per adjacent pair of stages, in stage order:
+    /// one fewer entry than there are stages.
+    std::vector<double> defects;
+    /// The full read of each adjacent pair, in the same order.
+    std::vector<LazyCompatibilityRead> steps;
+    /// The last defect of the sequence: how far the maps stand from
+    /// compatible at the finest stage measured.
+    double lastDefect{0.0};
+    /// \f$ \max_k \varepsilon_{k+1}/\varepsilon_k \f$ over the sequence, with
+    /// a vanishing predecessor giving \f$ +\infty \f$ unless its successor
+    /// vanishes too: the worst step-to-step ratio, below one exactly when
+    /// every step falls.
+    double largestRatio{0.0};
+    /// Every defect is strictly below its predecessor: the sequence falls.
+    /// A sequence of one pair has nothing to fall against and reads false.
+    bool falls{false};
+    /// Dimension of the active carried subspace, the same at every step.
+    std::size_t activeDimension{0};
+    /// CertifiedNumerical record carrying the worst measured SVD residual of
+    /// the steps.
+    cobordism::Certificate certificate{};
+};
+
 /// # LazyFockEngine
 ///
 /// The lazy graded Fock engine: builders, lazy operator application with
@@ -726,6 +779,27 @@ class LazyFockEngine {
         const Eigen::MatrixXcd& stageOp,
         const std::vector<std::size_t>& extendedSupport,
         const Eigen::MatrixXcd& extendedOp,
+        const std::vector<std::vector<std::size_t>>& activeBasis) const;
+
+    /// The inductive limit read over a whole refinement sequence: one
+    /// `inductiveCompatibility` per adjacent pair of `stages`, all on the same
+    /// active carried subspace, with the defect sequence and whether it falls
+    /// (see `LazyInductiveLimitRead`).
+    ///
+    /// The whitepaper's consistency condition,
+    /// \f$ \|\iota_M V_M - V_{M+1}\iota_M\| \to 0 \f$, is a statement about a
+    /// sequence. One pair of stages can only give one number, which no more
+    /// establishes a limit than one term establishes a series; this is the
+    /// entry point that measures the sequence.
+    ///
+    /// `activeBasis` lists the occupation states spanning the carried subspace
+    /// the comparison is made on. They must lie inside the FIRST stage's
+    /// modes, so that one and the same subspace is carried through every
+    /// embedding of the sequence and the defects are commensurable.
+    /// @throws std::invalid_argument for fewer than two stages, for stages
+    ///         that are not nested, and as `inductiveCompatibility`.
+    [[nodiscard]] LazyInductiveLimitRead inductiveLimit(
+        const std::vector<FockRefinementStage>& stages,
         const std::vector<std::vector<std::size_t>>& activeBasis) const;
 
     // ── memo / counters ─────────────────────────────────────────────────

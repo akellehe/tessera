@@ -26,6 +26,9 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/SVD>
 
+#include "chainhodge/ChainHodge.h"
+#include "chainhodge/CovariantChainHodge.h"
+#include "chainhodge/WhitneyMass.h"
 #include "cobordism/AnalyticCache.h"
 #include "cobordism/ChainComplex.h"
 #include "mesh/Fingerprint.h"
@@ -165,6 +168,15 @@ std::int64_t chainedParameter(int degree, int convention,
   for (const std::uint64_t k : keysInOrder)
     h = mesh::Fingerprint::mix64(h ^ k);
   return static_cast<std::int64_t>(h);
+}
+
+/// The operator a spacetime transfer is read from, folded into a cache
+/// parameter: the weight convention under diagonal weights, one tag for the
+/// Whitney pencil (which reads no weight convention).
+int operatorTag(cobordism::HodgeLaplacian::WeightConvention weights,
+                cobordism::HodgeLaplacian::MetricSource source) {
+  if (source == cobordism::HodgeLaplacian::MetricSource::WhitneyPencil) return 16;
+  return static_cast<int>(weights);
 }
 
 /// NaN-ignoring running max (std::fmax semantics) for certificate rollups.
@@ -504,7 +516,8 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
     const std::shared_ptr<Spacetime> &st, int degree,
     const std::vector<std::vector<std::uint64_t>> &toCells,
     const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
-    cobordism::HodgeLaplacian::WeightConvention weights) {
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source) {
   if (st == nullptr)
     throw std::invalid_argument("FiberConnection::chainTransfer: null spacetime");
   if (degree < 0)
@@ -513,7 +526,25 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
   // Canonical whole-complex cell order: sorted vertex ids at degree 0, the
   // ChainComplex column order at degree >= 1 (the laplacian(k) alignment).
   std::vector<std::vector<std::uint64_t>> cells;
-  if (degree == 0) {
+  // The operator the block is read from, row-major over `cells`.
+  Eigen::MatrixXcd whole;
+  const bool pencil =
+      degree >= 1 && source == cobordism::HodgeLaplacian::MetricSource::WhitneyPencil;
+  if (pencil) {
+    // The whole complex's covariant operator h_k(s, U) on chains, in the
+    // reference orientation (ascending vertex id): the operator, basis and
+    // orientation the tracker's Whitney bands are frames of.
+    const cobordism::ChainComplex K = chainhodge::WhitneyMass::complexOf(*st);
+    if (degree <= K.dimension()) {
+      const chainhodge::ChainHodge base(
+          K, chainhodge::WhitneyMass::squaredLengthsOf(*st, K), chainhodge::Preset::L2,
+          chainhodge::Branch::Continuation, std::numeric_limits<int>::max());
+      const chainhodge::CovariantChainHodge covariant(
+          base, chainhodge::Connection::fromSpacetime(*st, K), 7, /*measureCertificate=*/false);
+      cells = K.kSimplexVertices(degree);
+      whole = covariant.covariantOperator(degree);
+    }
+  } else if (degree == 0) {
     std::vector<std::uint64_t> ids;
     for (const auto &v : st->getVertexList()->toVector()) {
       if (v == nullptr) continue;
@@ -555,15 +586,25 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
     return it->second;
   };
 
-  const cobordism::HodgeLaplacian hodge(st, weights);
-  // Degree 0 reads the U(1) connection Laplacian D - A, not the Hodge L_0:
-  // the degree-zero entry is the oriented U(1) link value -l^2 e^{i phase},
-  // matching the Wilson-loop convention this transport is compared against.
-  // L_0 = d_1 W_1^-1 d_1^T carries no link phase; its off-diagonal is
-  // -1/W_1(e).
-  const std::vector<cd> flat =
-      degree == 0 ? hodge.connectionLaplacian() : hodge.laplacian(degree);
-  if (flat.size() != n * n)
+  if (!pencil) {
+    const cobordism::HodgeLaplacian hodge(
+        st, weights, cobordism::HodgeLaplacian::MetricSource::DiagonalWeights);
+    // Degree 0 reads the U(1) connection Laplacian D - A, not the Hodge L_0:
+    // the degree-zero entry is the oriented U(1) link value -l^2 e^{i phase},
+    // matching the Wilson-loop convention this transport is compared against.
+    // L_0 = d_1 W_1^-1 d_1^T carries no link phase; its off-diagonal is
+    // -1/W_1(e).
+    const std::vector<cd> flat =
+        degree == 0 ? hodge.connectionLaplacian() : hodge.laplacian(degree);
+    if (flat.size() != n * n)
+      throw std::invalid_argument(
+          "FiberConnection::chainTransfer: operator/cell count mismatch");
+    whole.resize(static_cast<Eigen::Index>(n), static_cast<Eigen::Index>(n));
+    for (std::size_t i = 0; i < n; ++i)
+      for (std::size_t j = 0; j < n; ++j)
+        whole(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) = flat[i * n + j];
+  }
+  if (whole.rows() != static_cast<Eigen::Index>(n))
     throw std::invalid_argument(
         "FiberConnection::chainTransfer: operator/cell count mismatch");
 
@@ -578,7 +619,7 @@ Eigen::MatrixXcd FiberConnection::chainTransfer(
   for (std::size_t r = 0; r < rows.size(); ++r)
     for (std::size_t c = 0; c < cols.size(); ++c)
       block(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) =
-          flat[rows[r] * n + cols[c]];
+          whole(static_cast<Eigen::Index>(rows[r]), static_cast<Eigen::Index>(cols[c]));
   return block;
 }
 
@@ -683,13 +724,16 @@ FiberTransportRead FiberConnection::deriveTransport(
   const bool nonNormal = read.regime == CertificateRegime::NonNormal ||
                          read.regime == CertificateRegime::ComplexSymmetricPencil;
 
-  // Overlap: M = Phi_A^dagger W_A T Phi_B in the self-adjoint regimes,
-  // M = Psi_A^dagger W_A T Phi_B on the biorthogonal path.
-  const Eigen::MatrixXcd leftFrame =
-      nonNormal ? to.leftFrame() : to.rightFrame();
-  const Eigen::MatrixXcd m = leftFrame.adjoint() *
-                             to.weightDiagonal().asDiagonal() * transfer *
-                             from.rightFrame();
+  // Overlap: M = Phi_A^dagger W_A T Phi_B in the self-adjoint regimes; on the
+  // biorthogonal path the transpose dual, M = Phi~_A^T T Phi_B, which is
+  // Psi_A^dagger W_A T Phi_B off the pencil path and pairs by the bilinear
+  // left frame itself (never its conjugate) on it.
+  const Eigen::MatrixXcd m =
+      nonNormal ? Eigen::MatrixXcd(to.dualFrame().transpose() * transfer *
+                                   from.rightFrame())
+                : Eigen::MatrixXcd(to.rightFrame().adjoint() *
+                                   to.weightDiagonal().asDiagonal() *
+                                   transfer * from.rightFrame());
   read.rawMap = m;
 
   // Pre-normalization diagnostics: rank, singular values, conditioning.
@@ -822,31 +866,33 @@ FiberTransportRead FiberConnection::deriveTransport(
 FiberTransportRead FiberConnection::transportOnSpacetime(
     const std::shared_ptr<Spacetime> &st, const SpectralFiber &to,
     const SpectralFiber &from,
-    cobordism::HodgeLaplacian::WeightConvention weights) const {
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source) const {
   if (to.degree() != from.degree())
     throw std::invalid_argument(
         "FiberConnection::transportOnSpacetime: degree mismatch");
   const Eigen::MatrixXcd transfer = chainTransfer(
-      st, to.degree(), to.cellVertices(), from.cellVertices(), weights);
+      st, to.degree(), to.cellVertices(), from.cellVertices(), weights, source);
   return deriveTransport(to, from, transfer);
 }
 
 FiberTransportRead FiberConnection::transportOnSpacetimeCached(
     cobordism::AnalyticCache &cache, const std::shared_ptr<Spacetime> &st,
     const SpectralFiber &to, const SpectralFiber &from,
-    cobordism::HodgeLaplacian::WeightConvention weights) const {
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source) const {
   const std::vector<std::uint64_t> ids = unionVertexIds({&to, &from});
   // The band fingerprints join the component keys here: every band of one
   // component restricts to the same cells, so component keys alone collide
   // across a component pair's bands and the cache would serve one band's
   // transport for all of them.
   const std::int64_t parameter =
-      chainedParameter(to.degree(), static_cast<int>(weights),
+      chainedParameter(to.degree(), operatorTag(weights, source),
                        {fiberKey(to), bandFingerprint(to), fiberKey(from),
                         bandFingerprint(from)});
   if (const auto payload = cache.fetch(ids, kTransportCacheKind, parameter))
     return *std::static_pointer_cast<FiberTransportRead>(payload);
-  FiberTransportRead read = transportOnSpacetime(st, to, from, weights);
+  FiberTransportRead read = transportOnSpacetime(st, to, from, weights, source);
   cache.store(ids, kTransportCacheKind, parameter,
               std::make_shared<FiberTransportRead>(read), read.certificate);
   return read;
@@ -954,7 +1000,8 @@ WilsonHolonomyRead FiberConnection::holonomy(
 WilsonHolonomyRead FiberConnection::holonomyOnSpacetime(
     const std::shared_ptr<Spacetime> &st,
     const std::vector<SpectralFiber> &fibers,
-    cobordism::HodgeLaplacian::WeightConvention weights) const {
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source) const {
   if (fibers.size() < 2)
     throw std::invalid_argument(
         "FiberConnection::holonomyOnSpacetime: need at least two fibers");
@@ -962,14 +1009,15 @@ WilsonHolonomyRead FiberConnection::holonomyOnSpacetime(
   links.reserve(fibers.size());
   for (std::size_t i = 0; i < fibers.size(); ++i)
     links.push_back(transportOnSpacetime(
-        st, fibers[i], fibers[(i + 1) % fibers.size()], weights));
+        st, fibers[i], fibers[(i + 1) % fibers.size()], weights, source));
   return holonomy(links);
 }
 
 WilsonHolonomyRead FiberConnection::holonomyOnSpacetimeCached(
     cobordism::AnalyticCache &cache, const std::shared_ptr<Spacetime> &st,
     const std::vector<SpectralFiber> &fibers,
-    cobordism::HodgeLaplacian::WeightConvention weights) const {
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source) const {
   if (fibers.size() < 2)
     throw std::invalid_argument(
         "FiberConnection::holonomyOnSpacetimeCached: need at least two fibers");
@@ -987,14 +1035,14 @@ WilsonHolonomyRead FiberConnection::holonomyOnSpacetimeCached(
   }
   const std::vector<std::uint64_t> ids = unionVertexIds(pointers);
   const std::int64_t parameter = chainedParameter(
-      fibers.front().degree(), static_cast<int>(weights), orderedKeys);
+      fibers.front().degree(), operatorTag(weights, source), orderedKeys);
   if (const auto payload = cache.fetch(ids, kHolonomyCacheKind, parameter))
     return *std::static_pointer_cast<WilsonHolonomyRead>(payload);
   std::vector<FiberTransportRead> links;
   links.reserve(fibers.size());
   for (std::size_t i = 0; i < fibers.size(); ++i)
     links.push_back(transportOnSpacetimeCached(
-        cache, st, fibers[i], fibers[(i + 1) % fibers.size()], weights));
+        cache, st, fibers[i], fibers[(i + 1) % fibers.size()], weights, source));
   WilsonHolonomyRead read = holonomy(links);
   cache.store(ids, kHolonomyCacheKind, parameter,
               std::make_shared<WilsonHolonomyRead>(read), read.certificate);
