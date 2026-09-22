@@ -34,6 +34,12 @@ namespace tessera::observables { class SimplicialQubit; }
 namespace tessera::cobordism {
 using ::tessera::spacetime::Spacetime;
 
+/// The cobordism frames the analysis overlay retains: one entry per completed
+/// pass, oldest first, each holding that pass's components and their candidate
+/// bands and anchors. Defined in `src/cobordism/RecursiveFiberSimulation.cpp`
+/// and held here by pointer, so this header keeps its small include list.
+struct AnalysisFrameHistory;
+
 /// # MultiCobordism
 ///
 /// Emergent-merge optimizer: the merge as an optimization with no prescribed
@@ -2486,6 +2492,32 @@ class MultiCobordism {
     std::vector<int> degrees{1};
     /// The modularity resolution sequence scanned per pass.
     std::vector<double> resolutions{1.0};
+    /// How many cobordism frames the overlay retains. One analysis pass is one
+    /// frame, so the retained frames are the last \p frameHistory passes, each
+    /// keeping its components, its candidate bands and their anchors. The
+    /// candidate's lifetime, its smallest adjacent-frame overlap, its
+    /// per-frame band and anchor families and its lifetime transports are
+    /// measured across them; with `frameHistory` 1 there is no history, the
+    /// pass sees a single frame, and the lifetime certificates fail by name
+    /// rather than passing vacuously. The default 4 clears the classifier's
+    /// two-frame stability floor with room to lose a frame.
+    /// @throws std::invalid_argument (from `setAnalysisConfig`) below 1.
+    int frameHistory = 4;
+    /// How the determinant line of a lifetime transport family is closed.
+    ///
+    ///  - `"none"` (the default): the family is an open cobordism segment with
+    ///    no declared closure. Its phase is reported and the winding is left
+    ///    unknown — an open path has no integer winding, and inventing one
+    ///    would be a measurement nobody made.
+    ///  - `"closed-family"`: the caller declares the candidate's world tube
+    ///    closed, so the family is read cyclically (the closing step returns to
+    ///    the first sample) and `FiberConnection::closedFamilyWinding` supplies
+    ///    the winding. It is a declaration about the run, like a causal type,
+    ///    and it is recorded on every read it produces.
+    ///
+    /// @throws std::invalid_argument (from `setAnalysisConfig`) on any other
+    ///   value: an unrecognized closure is refused, never silently ignored.
+    std::string lifetimeWindingClosure{"none"};
     /// Build the lazy Fock expression. For oracle and explicit non-Gaussian
     /// boundary data only, never the quasi-free production representation.
     bool fockOracle = false;
@@ -3182,6 +3214,11 @@ class MultiCobordism {
   std::shared_ptr<void> analysisCache_{};
   /// The spacetime `analysisCache_` is bound to (identity comparison only).
   std::weak_ptr<Spacetime> analysisCacheBinding_{};
+  /// The retained cobordism frames of the overlay (`AnalysisConfig::
+  /// frameHistory`): what makes a lifetime, an adjacent-frame overlap and a
+  /// lifetime transport family measurable rather than assumed. Null until the
+  /// first pass.
+  std::shared_ptr<AnalysisFrameHistory> analysisFrames_{};
   /// The last pass's checkpoint document.
   std::string checkpointJson_{};
 

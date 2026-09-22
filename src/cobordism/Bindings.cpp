@@ -2850,6 +2850,19 @@ Right -- re-read after each drive call:
       .def_readwrite("cadence", &MultiCobordism::AnalysisConfig::cadence)
       .def_readwrite("degrees", &MultiCobordism::AnalysisConfig::degrees)
       .def_readwrite("resolutions", &MultiCobordism::AnalysisConfig::resolutions)
+      .def_readwrite("frame_history",
+                     &MultiCobordism::AnalysisConfig::frameHistory,
+                     "Cobordism frames the overlay retains (one pass is one "
+                     "frame): what makes a candidate's lifetime, its "
+                     "adjacent-frame overlap, its per-frame band and anchor "
+                     "families and its lifetime transports measurable rather "
+                     "than assumed. 1 means no history.")
+      .def_readwrite("lifetime_winding_closure",
+                     &MultiCobordism::AnalysisConfig::lifetimeWindingClosure,
+                     "\"none\" (an open cobordism segment: the phase is "
+                     "reported and the winding stays unknown) or "
+                     "\"closed-family\" (the caller DECLARES the world tube "
+                     "closed and the winding is read cyclically).")
       .def_readwrite("fock_oracle", &MultiCobordism::AnalysisConfig::fockOracle)
       .def_readwrite("cold_caches", &MultiCobordism::AnalysisConfig::coldCaches);
 
