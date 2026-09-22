@@ -115,21 +115,35 @@
 //     electric flux is the sum of the three certified Gauss-consistent
 //     constituent fluxes (2/3 + 2/3 − 1/3 = +1 for a proton).  No u/d label
 //     is inserted.
-//   • Sharp total-space spin: ⟨J²⟩ = Σ_α ⟨dΓ(J_α)²⟩ and
-//     Var(J²) = ⟨(J²)²⟩ − ⟨J²⟩², both exact finite Wick sums on the
-//     covariance (`CovarianceState::wickSpinSquaredExpectation` /
-//     `wickSpinSquaredVariance`) — the total-space operator, not a product
-//     of per-hole or per-edge spinors.  A candidate carried as an explicit
-//     composite state instead supplies `ExchangeHolonomy::totalJSquared`,
-//     which certifies ⟨J²⟩ and leaves Var(J²) unknown: expectation alone is
-//     not a sharp-spin certificate.
-//   • The reference-normalized 2π character is the `rotationCharacter` read
-//     (channel `PhysicalRotation`), required at characterSign = −1.  The
-//     SO(d) → Spin(d) lift is required only when the caller declares a
-//     continuum spin claim.  The particle-exchange channel reports only:
-//     `exchangeCharacter` and the doubly cancelled spin-statistics ratio
-//     χ̂(exchange)·χ̂(2π)^{-1} travel on the read but gate nothing.  A read
-//     tagged with the wrong channel is refused.
+//   • Total-space spin expectation: ⟨J²⟩ = Σ_α ⟨dΓ(J_α)²⟩, an exact finite
+//     Wick sum on the covariance
+//     (`CovarianceState::wickSpinSquaredExpectation`) — the total-space
+//     operator, not a product of per-hole or per-edge spinors.  A candidate
+//     carried as an explicit composite state instead supplies
+//     `ExchangeHolonomy::totalJSquared`.  Expectation alone is not a
+//     sharp-spin certificate.
+//   • Sharp total-space spin: the two eigen-equations
+//     (J² − ¾I)|Ψ_R⟩ = 0 and ⟨Ψ_L|(J² − ¾I) = 0 on the bounded
+//     superposition of determinants (`SharpSpin::read`).  In a complex
+//     bilinear theory ⟨J²⟩ = ¾ is only a matrix-element identity, and even a
+//     vanishing complex variance can result from isotropic cancellation
+//     without a sharp eigenstate, so Var(J²)
+//     (`CovarianceState::wickSpinSquaredVariance`) is reported beside the
+//     two residual norms and supplies the obstruction verdict's premise,
+//     but it does not certify sharpness.
+//   • Half-integer spin: an odd monopole number of the U(1) part of U
+//     through the cluster's bounding cut, and a cohomologically nontrivial
+//     cocycle of the rotation group's projective action D_k(g)
+//     (`MonopoleSupport::spinRead`).  A rigid rotation cannot supply a
+//     spinor sign — the one-particle operator depends on the embedding only
+//     through squared lengths and connection values, both invariant under a
+//     rigid motion — so the 2π character travels on the read as
+//     `rotationCharacter` and gates nothing.  The SO(d) → Spin(d) lift is
+//     required only when the caller declares a continuum spin claim.  The
+//     particle-exchange channel likewise reports only: `exchangeCharacter`
+//     and the doubly cancelled spin-statistics ratio χ̂(exchange)·χ̂(2π)^{-1}
+//     travel on the read but gate nothing.  A read tagged with the wrong
+//     channel is refused.
 //   • Verdicts: "no-baryon" when a structural gate fails; "certified-proton"
 //     when every certificate holds; "quasi-free-sharp-spin-obstruction" when
 //     the only failure is `sharp-spin`, the candidate's own Var(J²) was
@@ -212,6 +226,7 @@
 #include "observables/ColorFiber.h"
 #include "observables/CrossingReadouts.h"
 #include "observables/ExchangeHolonomy.h"
+#include "observables/MonopoleSpin.h"
 #include "observables/FiberConnection.h"
 #include "observables/PersistentModularity.h"
 #include "observables/Record.h"
@@ -315,8 +330,10 @@ struct ParticleClustersConfig {
   double colorFluxTolerance = 1e-9;
   /// |⟨J²⟩ − 3/4| cap of the total-space spin expectation.
   double spinExpectationTolerance = 1e-9;
-  /// |Var(J²)| cap of the sharp-spin certificate, the quantity separating
-  /// a proton certificate from an accidental expectation value.
+  /// |Var(J²)| cap the reported complex variance is graded against. The
+  /// sharp-spin certificate is the pair of eigen-equations, not this cap;
+  /// the cap decides only whether the variance alone would have accepted
+  /// the state and whether the covariance-only class was swept below it.
   double spinVarianceTolerance = 1e-9;
   /// Minimum fraction of a constituent's level-0 support that must lie
   /// inside a candidate supercomponent (1.0 = full containment).
@@ -1218,7 +1235,24 @@ struct BaryonCandidateEvidence {
   /// The Berry-cancelled physical-rotation character of the closed
   /// total-space 2π cluster-frame cycle against its matched co-moving
   /// non-rotating reference (`ExchangeHolonomy::rotationCharacter`).
+  /// Report-only: a rigid rotation leaves every band constant, so this
+  /// character is +1 along any rigid cycle and a −1 can arise only from a
+  /// loop in (z, U) that deforms the complex and encloses a point where the
+  /// band ceases to be isolated.  That is a monodromy test of the
+  /// determinant line, not a rotation, so it is recorded and gates nothing.
+  /// Half-integer spin is certified instead by `monopoleSpin` below.
   HolonomyCharacterRead rotation{};
+  /// The odd-monopole spin evidence of the cluster's bounding cut
+  /// (`MonopoleSupport::spinRead`): the monopole number of the U(1) part of
+  /// the connection through the cut, the cocycle of the rotation group's
+  /// projective action D_k(g), and the j = 1/2 doublet it protects.  Absent
+  /// evidence fails `odd-monopole` and `projective-cocycle` by name.
+  std::optional<MonopoleSpinRead> monopoleSpin{};
+  /// The two sharp-spin eigen-equations (`SharpSpin::read`) on the bounded
+  /// superposition of determinants selected by the isolating interaction —
+  /// the sharp-spin certificate.  Absent evidence fails `sharp-spin` by
+  /// name; it is never inferred from the expectation or from the variance.
+  std::optional<SharpSpinRead> sharpSpinEigen{};
   /// The Berry-cancelled particle-exchange character
   /// (`ExchangeHolonomy::exchangeCharacter`), when the caller ran the
   /// exchange experiment.  Report-only: it gates nothing and only fills
@@ -1237,8 +1271,11 @@ struct BaryonCandidateEvidence {
   /// (`CovarianceState::wickSpinSquaredExpectation`).
   quantum::WickCertificateRead spinSquaredRead{};
   /// The Var(J²) of the carried quasi-free state
-  /// (`CovarianceState::wickSpinSquaredVariance`) — the sharp-spin
-  /// certificate.
+  /// (`CovarianceState::wickSpinSquaredVariance`).  Report-only: in a
+  /// complex bilinear theory a vanishing complex variance can come from
+  /// isotropic cancellation on a state that is not an eigenstate, so it
+  /// fills `BaryonRead::totalJ2Variance` and supplies the obstruction
+  /// verdict's premise, but the sharp-spin certificate is `sharpSpinEigen`.
   quantum::WickCertificateRead spinVarianceRead{};
   /// The accepted covariance-only class: the Var(J²) read of every
   /// quasi-free candidate the obstruction verdict quantifies over,
@@ -1288,8 +1325,8 @@ struct BaryonCandidateEvidence {
 /// the proton-certificate gates "color-singlet", "color-flux-zero",
 /// "baryon-flux-unit", "composite-parity-odd", "flavor-uud",
 /// "electric-flux-unit", "spin-expectation", "sharp-spin",
-/// "rotation-character", "spin-lift", "finite-radius", "profile-stability",
-/// "crossing-readouts".
+/// "odd-monopole", "projective-cocycle", "spin-lift", "finite-radius",
+/// "profile-stability", "crossing-readouts".
 struct BaryonRead {
   /// The three constituents' label-free identities, in evidence order.
   std::array<ComponentId, 3> quarks{};
@@ -1316,8 +1353,12 @@ struct BaryonRead {
   /// zero, and never inferred from the expectation.
   std::optional<double> totalJ2Variance{};
   /// The Berry-cancelled 2π character; empty when the rotation read did
-  /// not certify.
+  /// not certify.  Report-only.
   std::optional<std::complex<double>> rotationCharacter{};
+  /// The monopole number of the U(1) part of the connection through the
+  /// cluster's bounding cut; empty when the monopole read is missing or its
+  /// certificate does not hold.
+  std::optional<int> monopoleNumber{};
   /// "no-baryon", "baryon-candidate", "certified-proton", or
   /// "quasi-free-sharp-spin-obstruction".
   std::string classification{"no-baryon"};
@@ -1360,9 +1401,29 @@ struct BaryonRead {
   /// demanded, and, when demanded, whether it was accepted.
   bool spinLiftApplicable = false;
   bool spinLiftAccepted = false;
-  /// Whether the sharp-spin certificate (certified Var(J²) within
-  /// `spinVarianceTolerance`) held.
+  /// Whether the monopole number through the bounding cut is odd.
+  bool oddMonopole = false;
+  /// Whether the cocycle of the rotation group's projective action is
+  /// cohomologically nontrivial, so that the modes carry spinor
+  /// representations of the double cover and every symmetry-protected band
+  /// has even rank.
+  bool projectiveCocycleNontrivial = false;
+  /// ‖(J² − ¾I)|Ψ_R⟩‖ and ‖⟨Ψ_L|(J² − ¾I)‖, each relative to the norm of
+  /// its state (NaN when the eigen read is missing): the coordinate norms
+  /// the whitepaper reports as numerical certificates of the two
+  /// eigen-equations.
+  double sharpSpinRightResidual = std::numeric_limits<double>::quiet_NaN();
+  double sharpSpinLeftResidual = std::numeric_limits<double>::quiet_NaN();
+  /// Whether the sharp-spin certificate held: BOTH eigen-equations
+  /// (J² − ¾I)|Ψ_R⟩ = 0 and ⟨Ψ_L|(J² − ¾I) = 0 satisfied on the supplied
+  /// superposition of determinants.
   bool sharpSpin = false;
+  /// Whether the complex variance alone would have accepted the state —
+  /// the expectation at ¾ with a vanishing Var(J²).  Report-only, and the
+  /// quantity that makes a `sharp-spin` failure legible: when it is true
+  /// and `sharpSpin` is false, the variance was cancelled isotropically on
+  /// a state that is not an eigenstate.
+  bool varianceWouldAccept = false;
   /// Whether the accepted covariance-only class was swept (every class
   /// variance read supplied and certified) — the premise the obstruction
   /// verdict quantifies over.
@@ -1596,9 +1657,10 @@ class ParticleClusters {
     /// certificate: the two structural gates, the color volume and Gram
     /// determinant with the wedge built once, the net-color-flux
     /// diagnostic, the summed certified winding and graded parity, the
-    /// constituent flavor and charge reads, the 2π character and (when a
-    /// continuum spin claim is declared) the spin lift, the sharp
-    /// total-space spin certificate, and the refinement-window scale reads.
+    /// constituent flavor and charge reads, the odd monopole number and
+    /// projective cocycle of the bounding cut, the two sharp-spin
+    /// eigen-equations, (when a continuum spin claim is declared) the spin
+    /// lift, and the refinement-window scale reads.
     /// Returns "no-baryon", "baryon-candidate", "certified-proton", or
     /// "quasi-free-sharp-spin-obstruction" with every failed or unknown
     /// certificate named.  Never throws.

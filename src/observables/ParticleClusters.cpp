@@ -2131,6 +2131,12 @@ Record BaryonRead::toRecord() const {
   m["spin_statistics_ratio_im"] =
       spinStatisticsRatio.has_value() ? Record(spinStatisticsRatio->imag())
                                       : Record();
+  m["monopole_number"] = optionalInt(monopoleNumber);
+  m["odd_monopole"] = Record(oddMonopole);
+  m["projective_cocycle_nontrivial"] = Record(projectiveCocycleNontrivial);
+  m["sharp_spin_right_residual"] = Record(sharpSpinRightResidual);
+  m["sharp_spin_left_residual"] = Record(sharpSpinLeftResidual);
+  m["variance_would_accept"] = Record(varianceWouldAccept);
   m["spin_lift_applicable"] = Record(spinLiftApplicable);
   m["spin_lift_accepted"] = Record(spinLiftAccepted);
   m["sharp_spin"] = Record(sharpSpin);
@@ -2204,6 +2210,13 @@ BaryonRead BaryonRead::fromRecord(const Record &record) {
     if (!re.isNull() && !im.isNull())
       read.spinStatisticsRatio = cd(re.asDouble(), im.asDouble());
   }
+  read.monopoleNumber = optionalIntFrom(m.at("monopole_number"));
+  read.oddMonopole = m.at("odd_monopole").asBool();
+  read.projectiveCocycleNontrivial =
+      m.at("projective_cocycle_nontrivial").asBool();
+  read.sharpSpinRightResidual = m.at("sharp_spin_right_residual").asDouble();
+  read.sharpSpinLeftResidual = m.at("sharp_spin_left_residual").asDouble();
+  read.varianceWouldAccept = m.at("variance_would_accept").asBool();
   read.spinLiftApplicable = m.at("spin_lift_applicable").asBool();
   read.spinLiftAccepted = m.at("spin_lift_accepted").asBool();
   read.sharpSpin = m.at("sharp_spin").asBool();
@@ -2595,7 +2608,7 @@ BaryonRead ParticleClusters::classifyBaryon(
 
   std::vector<std::string> failed;
   int passed = 0;
-  constexpr int kGates = 15;
+  constexpr int kGates = 16;
 
   // ── structural gates (a failure of either is "no baryon") ────────────
 
@@ -2696,18 +2709,29 @@ BaryonRead ParticleClusters::classifyBaryon(
                          cfg_.spinExpectationTolerance,
                  "spin-expectation", failed);
 
-  // 10. sharp spin: Var(J²) ≈ 0, evaluated by exact Wick contraction on the
-  //     covariance.  The expectation alone is not a sharp-spin certificate;
-  //     an absent variance is unknown, not zero.
+  // 10. sharp spin: BOTH eigen-equations (J² − ¾I)|Ψ_R⟩ = 0 and
+  //     ⟨Ψ_L|(J² − ¾I) = 0 on the bounded superposition of determinants.
+  //     The complex variance is read alongside them and reported, because a
+  //     vanishing complex variance can come from isotropic cancellation on a
+  //     state that is not an eigenstate; an absent eigen read is unknown, not
+  //     sharp, and an absent variance is unknown, not zero.
   if (evidence.spinVarianceRead.certificate.holds())
     read.totalJ2Variance = evidence.spinVarianceRead.value.real();
-  read.sharpSpin =
-      read.totalJ2Variance.has_value() &&
-      std::abs(*read.totalJ2Variance) <= cfg_.spinVarianceTolerance;
+  if (evidence.sharpSpinEigen.has_value()) {
+    read.sharpSpinRightResidual = evidence.sharpSpinEigen->rightResidual;
+    read.sharpSpinLeftResidual = evidence.sharpSpinEigen->leftResidual;
+    read.varianceWouldAccept = evidence.sharpSpinEigen->varianceWouldAccept;
+    read.sharpSpin = evidence.sharpSpinEigen->sharp &&
+                     evidence.sharpSpinEigen->certificate.holds();
+  }
   passed += gate(read.sharpSpin, "sharp-spin", failed);
 
-  // 11. the reference-normalized physical 2π character: channel
-  //     PhysicalRotation, certified, and equal to −1.
+  // 11. half-integer spin from the connection's topological charge: an odd
+  //     monopole number of the U(1) part of U through the cluster's bounding
+  //     cut, and a cohomologically nontrivial cocycle of the rotation group's
+  //     projective action.  The 2π character is recorded here and gates
+  //     nothing: a rigid rotation leaves every band constant, so it is +1
+  //     along any rigid cycle whatever the spin.
   const HolonomyCharacterRead &rotation = evidence.rotation;
   const bool rotationCertified =
       rotation.certificate.holds() &&
@@ -2716,8 +2740,19 @@ BaryonRead ParticleClusters::classifyBaryon(
     read.rotationCharacter = rotation.character;
     read.rotationCharacterSign = rotation.characterSign;
   }
-  passed += gate(rotationCertified && rotation.characterSign == -1,
-                 "rotation-character", failed);
+  const bool monopoleCertified = evidence.monopoleSpin.has_value() &&
+                                 evidence.monopoleSpin->certificate.holds();
+  if (monopoleCertified) {
+    read.monopoleNumber = evidence.monopoleSpin->monopole.monopoleNumber;
+    read.oddMonopole = evidence.monopoleSpin->monopole.odd &&
+                       evidence.monopoleSpin->monopole.bundle;
+    read.projectiveCocycleNontrivial =
+        evidence.monopoleSpin->cocycle.nontrivial;
+  }
+  passed += gate(monopoleCertified && read.oddMonopole, "odd-monopole",
+                 failed);
+  passed += gate(monopoleCertified && read.projectiveCocycleNontrivial,
+                 "projective-cocycle", failed);
 
   //     The particle-exchange channel is report-only: the exchange character
   //     and the doubly cancelled spin-statistics ratio
@@ -2828,9 +2863,12 @@ BaryonRead ParticleClusters::classifyBaryon(
     consumed.consume(quark.certificate);
   consumed.consume(evidence.binding.certificate);
   consumed.consume(evidence.colorFlux.certificate);
-  consumed.consume(evidence.rotation.certificate);
   consumed.consume(evidence.spinSquaredRead.certificate);
   consumed.consume(evidence.spinVarianceRead.certificate);
+  if (evidence.monopoleSpin.has_value())
+    consumed.consume(evidence.monopoleSpin->certificate);
+  if (evidence.sharpSpinEigen.has_value())
+    consumed.consume(evidence.sharpSpinEigen->certificate);
   consumed.consume(scale.certificate);
   if (evidence.spinLift.has_value())
     consumed.consume(evidence.spinLift->certificate);

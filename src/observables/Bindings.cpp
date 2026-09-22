@@ -3158,8 +3158,9 @@ reported, and the whole configuration is echoed on every read
                      "expectation.")
       .def_readwrite("spinVarianceTolerance",
                      &ParticleClustersConfig::spinVarianceTolerance,
-                     "|Var(J^2)| cap of the sharp-spin certificate "
-                     "value.")
+                     "|Var(J^2)| cap the reported complex variance is "
+                     "graded against; the sharp-spin certificate is the "
+                     "pair of eigen-equations, not this cap.")
       .def_readwrite("minSupportContainment",
                      &ParticleClustersConfig::minSupportContainment,
                      "Minimum fraction of a constituent's level-0 "
@@ -3889,7 +3890,24 @@ mass-radius samples.)doc")
                      "independent net-color-flux diagnostic.")
       .def_readwrite("rotation", &BaryonCandidateEvidence::rotation,
                      "PhysicalRotation character of the closed 2pi "
-                     "total-space cluster-frame cycle.")
+                     "total-space cluster-frame cycle.  Report-only: a "
+                     "rigid rotation leaves every band constant, so this "
+                     "character is +1 along any rigid cycle whatever the "
+                     "spin, and it gates nothing.")
+      .def_readwrite("monopoleSpin", &BaryonCandidateEvidence::monopoleSpin,
+                     "MonopoleSupport.spinRead of the cluster's bounding "
+                     "cut: the monopole number of the U(1) part of the "
+                     "connection, the cocycle of the rotation group's "
+                     "projective action, and the j = 1/2 doublet it "
+                     "protects.  None fails 'odd-monopole' and "
+                     "'projective-cocycle' by name.")
+      .def_readwrite("sharpSpinEigen",
+                     &BaryonCandidateEvidence::sharpSpinEigen,
+                     "SharpSpin.read of the two eigen-equations on the "
+                     "bounded superposition of determinants -- the "
+                     "sharp-spin certificate.  None fails 'sharp-spin' by "
+                     "name; it is never inferred from the expectation or "
+                     "from the variance.")
       .def_readwrite("exchange", &BaryonCandidateEvidence::exchange,
                      "The particle-exchange character, when the "
                      "exchange experiment was run.  Report-only: the "
@@ -3907,7 +3925,11 @@ mass-radius samples.)doc")
                      "quasi-free state.")
       .def_readwrite("spinVarianceRead",
                      &BaryonCandidateEvidence::spinVarianceRead,
-                     "wickSpinSquaredVariance -- the sharp-spin "
+                     "wickSpinSquaredVariance.  Report-only: a vanishing "
+                     "complex variance can come from isotropic "
+                     "cancellation on a state that is not an eigenstate, "
+                     "so it fills totalJ2Variance and supplies the "
+                     "obstruction premise, but sharpSpinEigen is the "
                      "certificate.")
       .def_readwrite("classVarianceReads",
                      &BaryonCandidateEvidence::classVarianceReads,
@@ -3949,8 +3971,8 @@ failure of either is "no-baryon"): "constituent-quarks",
 "bound-supercomponent"; then the proton gates: "color-singlet",
 "color-flux-zero", "baryon-flux-unit", "composite-parity-odd",
 "flavor-uud", "electric-flux-unit", "spin-expectation", "sharp-spin",
-"rotation-character", "spin-lift", "finite-radius", "profile-stability",
-"crossing-readouts".
+"odd-monopole", "projective-cocycle", "spin-lift", "finite-radius",
+"profile-stability", "crossing-readouts".
 
 Unknown values are None/NaN/0-sign, never zero-filled; physicalMass is
 always None.)doc")
@@ -3980,6 +4002,10 @@ always None.)doc")
                     "never inferred from the expectation.")
       .def_readonly("rotationCharacter", &BaryonRead::rotationCharacter,
                     "The Berry-cancelled 2pi character; None = "
+                    "uncertified.  Report-only.")
+      .def_readonly("monopoleNumber", &BaryonRead::monopoleNumber,
+                    "The monopole number of the U(1) part of the "
+                    "connection through the bounding cut; None = "
                     "uncertified.")
       .def_readonly("classification", &BaryonRead::classification)
       .def_readonly("persistence", &BaryonRead::persistence)
@@ -4010,7 +4036,31 @@ always None.)doc")
                     "both channels certified.  Report-only.")
       .def_readonly("spinLiftApplicable", &BaryonRead::spinLiftApplicable)
       .def_readonly("spinLiftAccepted", &BaryonRead::spinLiftAccepted)
-      .def_readonly("sharpSpin", &BaryonRead::sharpSpin)
+      .def_readonly("oddMonopole", &BaryonRead::oddMonopole,
+                    "Whether the monopole number through the bounding cut "
+                    "is odd.")
+      .def_readonly("projectiveCocycleNontrivial",
+                    &BaryonRead::projectiveCocycleNontrivial,
+                    "Whether the cocycle of the rotation group's "
+                    "projective action is cohomologically nontrivial, so "
+                    "the modes carry spinor representations of the double "
+                    "cover.")
+      .def_readonly("sharpSpinRightResidual",
+                    &BaryonRead::sharpSpinRightResidual,
+                    "||(J^2 - 3/4 I)|Psi_R>|| relative to the state norm; "
+                    "NaN = no eigen read.")
+      .def_readonly("sharpSpinLeftResidual",
+                    &BaryonRead::sharpSpinLeftResidual,
+                    "||<Psi_L|(J^2 - 3/4 I)|| relative to the state norm; "
+                    "NaN = no eigen read.")
+      .def_readonly("varianceWouldAccept", &BaryonRead::varianceWouldAccept,
+                    "Whether the complex variance alone would have "
+                    "accepted the state.  Report-only: true here with "
+                    "sharpSpin false means the variance was cancelled "
+                    "isotropically on a state that is not an eigenstate.")
+      .def_readonly("sharpSpin", &BaryonRead::sharpSpin,
+                    "Whether BOTH eigen-equations held on the supplied "
+                    "superposition of determinants.")
       .def_readonly("quasiFreeClassSwept",
                     &BaryonRead::quasiFreeClassSwept,
                     "Whether the accepted covariance-only class was swept "
