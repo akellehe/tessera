@@ -460,7 +460,9 @@ std::vector<complexd> JointAction::linkStationarity() const {
       holonomyLinkDerivative(workspace, declaration_.holonomyWeight);
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const long long canonical = workspace.canonicalOfEdge[edgeIndex];
-    if (canonical < 0) continue;
+    if (canonical < 0 ||
+        static_cast<std::size_t>(canonical) >= holonomyPart.size())
+      continue;
     stationarity[edgeIndex] +=
         workspace.storedSign[edgeIndex] *
         holonomyPart[static_cast<std::size_t>(canonical)];
@@ -553,7 +555,8 @@ std::vector<complexd> JointAction::wardCurrentDivergence() const {
   std::vector<complexd> canonical(workspace.links.size(), complexd{0.0, 0.0});
   for (std::size_t edgeIndex = 0; edgeIndex < stored.size(); ++edgeIndex) {
     const long long index = workspace.canonicalOfEdge[edgeIndex];
-    if (index < 0) continue;
+    if (index < 0 || static_cast<std::size_t>(index) >= canonical.size())
+      continue;
     canonical[static_cast<std::size_t>(index)] =
         workspace.storedSign[edgeIndex] * stored[edgeIndex];
   }
