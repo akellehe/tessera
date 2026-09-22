@@ -190,9 +190,29 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
     // The determinant factorization det P = det P_II det F_B has no content
     // here: det P_II is zero at the resonance.
     out.determinantResidual = std::numeric_limits<double>::quiet_NaN();
-    // The certificate: lift every null vector of the resonant reduction back to
-    // the fine coordinates and measure how far it is from a null vector of the
-    // pencil itself.
+    // The certificate of the reduction as a whole: the pencil applied to the
+    // retained fibers is read off the reduction alone,
+    //   P W = E_B Fhat[top] + E_I conj(N_L) Fhat[bottom],
+    // which holds column by column and not only on the null space.
+    {
+      Eigen::MatrixXcd W(n, nb + q);
+      W.leftCols(nb) = out.constraintModes;
+      W.rightCols(q) = out.resonantModes;
+      const Eigen::MatrixXcd applied = P * W;
+      const Eigen::MatrixXcd interiorPart =
+          out.interiorLeftNullSpace.conjugate() * out.resonantResponse.bottomRows(q);
+      Eigen::MatrixXcd predicted = Eigen::MatrixXcd::Zero(n, nb + q);
+      for (int j = 0; j < nb; ++j)
+        predicted.row(out.interface[static_cast<std::size_t>(j)]) =
+            out.resonantResponse.row(j);
+      for (int i = 0; i < ni; ++i)
+        predicted.row(out.interior[static_cast<std::size_t>(i)]) = interiorPart.row(i);
+      out.reductionResidual =
+          (applied - predicted).norm() / std::max(P.norm() * W.norm(), kTiny);
+    }
+    // The certificate of its null space: lift every null vector of the resonant
+    // reduction back to the fine coordinates and measure how far it is from a
+    // null vector of the pencil itself.
     const RankRead hat = rankRead(out.resonantResponse, rankTolerance);
     const int nullity = static_cast<int>(out.resonantResponse.cols()) - hat.rank;
     if (nullity > 0) {

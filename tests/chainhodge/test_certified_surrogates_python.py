@@ -121,10 +121,38 @@ class TestResonantFeshbach:
         assert np.abs(NL.T @ PII).max() < 1e-7 * scale
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
-    def test_resonant_reduction_lifts_to_the_pencil(self, fixture):
-        """The certificate of the resonant reduction: every null vector of
-        Fhat(lambda) lifts to a null vector of P(lambda). The residual is
-        measured, not asserted."""
+    def test_the_resonant_reduction_reproduces_the_pencil_on_every_fiber(self, fixture):
+        """The reduction is exact on every retained coordinate, not only on its
+        null space: with W = [T | Z] the retained fibers,
+
+            P(lambda) W = E_B Fhat[top] + E_I conj(N_L) Fhat[bottom],
+
+        so the pencil applied to a retained fiber is read off Fhat alone. The
+        identity is recomputed here from the blocks."""
+        K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
+                   else _non_normal_pencil())
+        interface = sorted(_split_interface(K, 4))
+        values, interior = _interior_spectrum(A, M, interface)
+        lam = complex(values[0])
+        F = PS.feshbach(A, M, lam, interface, 1e-8)
+        nb = len(interface)
+        q = F.interiorNullSpace.shape[1]
+        assert F.resonantResponse.shape == (nb + q, nb + q)
+        P = A - lam * M
+        W = np.hstack([np.array(F.constraintModes), np.array(F.resonantModes)])
+        Fhat = np.array(F.resonantResponse)
+        predicted = np.zeros_like(W)
+        predicted[interface, :] = Fhat[:nb, :]
+        predicted[interior, :] = np.array(F.interiorLeftNullSpace).conj() @ Fhat[nb:, :]
+        residual = (np.linalg.norm(P @ W - predicted)
+                    / (np.linalg.norm(P) * np.linalg.norm(W)))
+        assert residual < 1e-10
+        assert abs(residual - F.reductionResidual) < 1e-12
+
+    @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
+    def test_resonant_reduction_lifts_its_null_vectors_to_the_pencil(self, fixture):
+        """Every null vector of Fhat(lambda) lifts to a null vector of
+        P(lambda). The residual is measured, not asserted."""
         K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
                    else _non_normal_pencil())
         interface = _split_interface(K, 4)
@@ -132,10 +160,6 @@ class TestResonantFeshbach:
         lam = complex(values[0])
         F = PS.feshbach(A, M, lam, interface, 1e-8)
         nb = len(interface)
-        q = F.interiorNullSpace.shape[1]
-        assert F.resonantResponse.shape == (nb + q, nb + q)
-        # Take the reduction's own null space and lift it by hand, so that the
-        # certificate is reproduced rather than read back.
         Fhat = np.array(F.resonantResponse)
         u, sv, vh = np.linalg.svd(Fhat)
         nullity = int(np.sum(sv <= 1e-8 * sv[0]))
@@ -148,6 +172,10 @@ class TestResonantFeshbach:
             assert np.linalg.norm(P @ x) <= 1e-7 * scaleP * np.linalg.norm(x)
         if nullity > 0:
             assert np.isfinite(F.liftResidual) and F.liftResidual < 1e-7
+        else:
+            # There is no null vector to lift, and the read says so rather than
+            # reporting a zero it did not measure.
+            assert np.isnan(F.liftResidual)
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_compatibility_and_independence_are_measured(self, fixture):

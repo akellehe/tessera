@@ -121,6 +121,21 @@ struct FeshbachResult {
   /// the compatibility constraint. Empty away from a resonance, where
   /// `response` is the whole reduction.
   Eigen::MatrixXcd resonantResponse{};
+  /// The numerical certificate of the resonant reduction as a whole, measured
+  /// on every retained coordinate rather than only on the null space. With
+  /// \f$ W = [\,T \mid Z\,] \f$ the retained fibers — the constraint modes
+  /// beside the resonant modes — the reduction is exact in the sense that
+  /// \f[
+  ///   P(\lambda)\,W = E_B\,\hat F(\lambda)_{[1..|B|]}
+  ///                 + E_I\,\overline{N_L}\,\hat F(\lambda)_{[|B|+1..]},
+  /// \f]
+  /// where \f$ E_B \f$ and \f$ E_I \f$ inject the interface and interior
+  /// coordinates and \f$ \overline{N_L} \f$ is the conjugate of
+  /// `interiorLeftNullSpace` (a basis of \f$ \ker P_{II}^H \f$, the complement
+  /// of \f$ \operatorname{ran}P_{II} \f$). Every column of the pencil applied
+  /// to a retained fiber is therefore read off \f$ \hat F(\lambda) \f$ alone,
+  /// and this is the relative Frobenius residual of that identity.
+  double reductionResidual{std::numeric_limits<double>::quiet_NaN()};
   /// The numerical certificate of the resonant reduction: every null vector
   /// \f$ (x_B, c) \f$ of \f$ \hat F(\lambda) \f$ lifts to the null vector
   /// \f$ x = [x_B;\ -P_{II}^{\#}P_{IB}x_B + Nc] \f$ of \f$ P(\lambda) \f$, and

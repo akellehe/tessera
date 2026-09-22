@@ -733,6 +733,7 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("independenceResidual", &FeshbachResult::independenceResidual)
       .def_readonly("responseIndependent", &FeshbachResult::responseIndependent)
       .def_readonly("resonantResponse", &FeshbachResult::resonantResponse)
+      .def_readonly("reductionResidual", &FeshbachResult::reductionResidual)
       .def_readonly("liftResidual", &FeshbachResult::liftResidual);
 
   py::class_<CongruenceResult>(m, "CongruenceResult",
