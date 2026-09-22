@@ -7,8 +7,9 @@ Two things are held here. First, the Feshbach complement at an interior
 resonance: the declared supported generalized inverse replaces the inverse only
 after the compatibility condition has been measured, the range and null
 projectors of the interior block are recorded, the resonant interior modes are
-retained as explicit fiber coordinates, and every null vector of the resonant
-reduction lifts to a null vector of the pencil itself. Second, the
+retained as explicit fiber coordinates, the pencil applied to any retained
+fiber is read off the reduction alone, and every null vector of the reduction
+lifts to a null vector of the pencil itself. Second, the
 Craig-Bampton/AMLS surrogate: its spectrum is held to the exact Feshbach map by
 an inequality that is measured on every pair it claims, on a complex symmetric
 fixture (the trivial connection, where the transpose identities make the pencil
@@ -28,7 +29,7 @@ import pytest
 
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
-from tests.chainhodge._fixtures import torus33, torus_cells
+from tests.chainhodge._fixtures import torus_cells
 
 PS = ch.PencilSchur
 KS = ch.Branch.KontsevichSegal
