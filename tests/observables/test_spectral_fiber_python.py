@@ -510,7 +510,20 @@ class TestRegimes(unittest.TestCase):
 class TestTransposeDualFrame(unittest.TestCase):
     """dualFrame() is Phi~ with Phi~^T Phi = I in every regime, the projector
     is Phi Phi~^T, and the pair is the band's biorthogonal Slater
-    covariance."""
+    covariance.
+
+    Its subject is the diagonal-weights regimes (positive, Krein, non-normal),
+    so it pins that metric source for its own trackers whatever the
+    process-wide default is; the pencil path is covered in
+    test_spectral_fiber_pencil_regime_python.py."""
+
+    def setUp(self):
+        self._previous_source = cob.HodgeLaplacian.defaultMetricSource()
+        cob.HodgeLaplacian.setDefaultMetricSource(
+            cob.HodgeMetricSource.DiagonalWeights)
+
+    def tearDown(self):
+        cob.HodgeLaplacian.setDefaultMetricSource(self._previous_source)
 
     def _reads(self):
         positive = _tracker(_triangle()).enumerateBands([0, 1, 2], 0)
