@@ -52,6 +52,18 @@ struct FeshbachResult {
   /// NaN at an interior resonance, where the factorization has no content
   /// (both sides vanish).
   double determinantResidual{std::numeric_limits<double>::quiet_NaN()};
+  /// The complex logarithms of the three determinants from their LU factors,
+  /// \f$ \log|\det| + i\arg\det \f$ with the argument in \f$ (-\pi, \pi] \f$:
+  /// finite where the determinants themselves over- or underflow.
+  Complex pencilLogDeterminant{0.0, 0.0};
+  Complex interiorLogDeterminant{0.0, 0.0};
+  Complex responseLogDeterminant{0.0, 0.0};
+  /// The Schur determinant identity on the log scale, real and imaginary parts
+  /// separately: \f$ |\mathrm{Re}(\log\det P - \log\det P_{II} - \log\det F_B)| \f$
+  /// and the distance of the imaginary part to the nearest multiple of
+  /// \f$ 2\pi \f$.
+  double logModulusResidual{std::numeric_limits<double>::quiet_NaN()};
+  double logPhaseResidual{std::numeric_limits<double>::quiet_NaN()};
   /// Relative residual of the interior solve.
   double solveResidual{std::numeric_limits<double>::quiet_NaN()};
   /// True when \f$ P_{II} \f$ was singular at the shift: an interior
@@ -328,6 +340,11 @@ struct TransferResult {
 /// (`CovariantChainHodge::regimeCertificate`), never a branch.
 class PencilSchur {
  public:
+  /// \f$ \log\det A = \log|\det A| + i\arg\det A \f$ from a partial-pivoting LU
+  /// (the sum of the logarithms of the pivots and the permutation's sign), the
+  /// argument reduced to \f$ (-\pi, \pi] \f$; \f$ -\infty \f$ for a singular
+  /// \f$ A \f$ and \f$ 0 \f$ for an empty one.
+  [[nodiscard]] static Complex logDeterminant(const Eigen::MatrixXcd &A);
   /// The Feshbach complement at \p lambda over the kept coordinates
   /// \p interface, with the projectors of the interior block and, at an
   /// interior resonance, the generalized inverse, the compatibility and

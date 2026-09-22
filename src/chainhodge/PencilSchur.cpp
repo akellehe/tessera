@@ -72,7 +72,40 @@ std::vector<int> spectralOrder(const Eigen::VectorXcd &values) {
   return order;
 }
 
+/// The Schur determinant identity on the log scale, filled in once the three
+/// log determinants are known: the real part of
+/// \f$ \log\det P - \log\det P_{II} - \log\det F_B \f$ and the distance of
+/// its imaginary part to the nearest multiple of \f$ 2\pi \f$.
+void finishLogResiduals(FeshbachResult &out) {
+  constexpr double kTwoPi = 6.28318530717958647692;
+  out.responseLogDeterminant = PencilSchur::logDeterminant(out.response);
+  const Complex defect =
+      out.pencilLogDeterminant - out.interiorLogDeterminant - out.responseLogDeterminant;
+  out.logModulusResidual = std::abs(defect.real());
+  out.logPhaseResidual = std::abs(std::remainder(defect.imag(), kTwoPi));
+}
+
 }  // namespace
+
+Complex PencilSchur::logDeterminant(const Eigen::MatrixXcd &A) {
+  if (A.rows() != A.cols())
+    throw std::invalid_argument("PencilSchur::logDeterminant: the matrix must be square");
+  if (A.rows() == 0) return Complex(0.0, 0.0);
+  constexpr double kPi = 3.14159265358979323846;
+  const Eigen::PartialPivLU<Eigen::MatrixXcd> lu(A);
+  const Eigen::MatrixXcd &LU = lu.matrixLU();
+  double modulus = 0.0, phase = 0.0;
+  for (Eigen::Index i = 0; i < LU.rows(); ++i) {
+    const Complex z = LU(i, i);
+    if (z == Complex(0.0, 0.0)) return Complex(-std::numeric_limits<double>::infinity(), 0.0);
+    modulus += std::log(std::abs(z));
+    phase += std::arg(z);
+  }
+  if (lu.permutationP().determinant() < 0) phase += kPi;
+  phase = std::remainder(phase, 2.0 * kPi);
+  if (phase <= -kPi) phase += 2.0 * kPi;
+  return Complex(modulus, phase);
+}
 
 FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
                                      Complex lambda, const std::vector<int> &interface,
@@ -104,6 +137,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   for (int i = 0; i < ni; ++i)
     for (int j = 0; j < ni; ++j) PII(i, j) = P(out.interior[static_cast<std::size_t>(i)], out.interior[static_cast<std::size_t>(j)]);
   out.pencilDeterminant = P.fullPivLu().determinant();
+  out.pencilLogDeterminant = logDeterminant(P);
   out.interiorRank = ni;
   // The embedding of an interior-coordinate block into the full coordinates,
   // used for the constraint modes and for the retained resonant modes alike.
@@ -117,6 +151,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   if (ni == 0) {
     out.response = PBB;
     out.interiorDeterminant = Complex(1.0, 0.0);
+    out.interiorLogDeterminant = Complex(0.0, 0.0);
     out.responseDeterminant = PBB.fullPivLu().determinant();
     out.constraintModes = Eigen::MatrixXcd::Identity(n, nb);
     out.solveResidual = 0.0;
@@ -126,6 +161,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
     Eigen::FullPivLU<Eigen::MatrixXcd> lu(PII);
     lu.setThreshold(rankTolerance);
     out.interiorDeterminant = lu.determinant();
+    out.interiorLogDeterminant = logDeterminant(PII);
     if (lu.isInvertible()) {
       const Eigen::MatrixXcd X = lu.solve(PIB);  // P_II^{-1} P_IB
       out.solveResidual = (PII * X - PIB).norm() / std::max(PIB.norm(), kTiny);
@@ -145,6 +181,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
       const Complex product = out.interiorDeterminant * out.responseDeterminant;
       out.determinantResidual = std::abs(out.pencilDeterminant - product) /
                                 std::max(std::abs(out.pencilDeterminant), kTiny);
+      finishLogResiduals(out);
       return out;
     }
     // --- interior resonance: the generalized inverse and its projectors ---
@@ -232,6 +269,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   const Complex product = out.interiorDeterminant * out.responseDeterminant;
   out.determinantResidual = std::abs(out.pencilDeterminant - product) /
                             std::max(std::abs(out.pencilDeterminant), kTiny);
+  finishLogResiduals(out);
   return out;
 }
 
@@ -338,6 +376,8 @@ FeshbachResult PencilSchur::sparseFeshbach(const SparseMatrix &A, const SparseMa
   // of P, so the factorization residual is not measured on this path.
   out.pencilDeterminant = out.interiorDeterminant * out.responseDeterminant;
   out.determinantResidual = std::numeric_limits<double>::quiet_NaN();
+  // The log-scale identity is not measured on the sparse path either: it needs
+  // the determinant of P itself, which is never factorized here.
   return out;
 }
 

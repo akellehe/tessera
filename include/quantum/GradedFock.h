@@ -34,8 +34,9 @@
 //   • Graded Leibniz: d(a⊗b) = da⊗b + (−1)^{deg a} a⊗db, hence d∘d = 0 and
 //     Δ_{A⊗B} = Δ_A⊗1 + 1⊗Δ_B blockwise (Künneth at the Hodge level).
 //   • dΓ(L_A ⊕ L_B) = dΓ(L_A)⊗1 + 1⊗dΓ(L_B) under the direct-sum
-//     identification; coupling blocks become hopping terms
-//     Σ_{i∈A, j∈B} C_ij a_i†a_j + h.c.
+//     identification; the two directed coupling blocks become hopping terms
+//     Σ_{i∈A, j∈B} (C_AB)_ij a_i†a_j + Σ_{i∈B, j∈A} (C_BA)_ij a_i†a_j, with
+//     no Hermitian-conjugate relation between C_AB and C_BA assumed.
 //
 // ─── Mode order is a compilation artifact ────────────────────────────────
 //
@@ -453,11 +454,18 @@ class GradedTensorComplex {
 ///   • joint CAR generators satisfy `creation(i in A) = liftLeft(a_i†)`,
 ///     `creation(j in B) = liftRight(a_j†, odd)`, i.e. direct sums become
 ///     graded tensor products;
-///   • \f$ d\Gamma\big(\begin{smallmatrix}L_A & C\\ C^\dagger &
+///   • \f$ d\Gamma\big(\begin{smallmatrix}L_A & C_{AB}\\ C_{BA} &
 ///     L_B\end{smallmatrix}\big) = d\Gamma(L_A)\otimes 1 + 1\otimes
-///     d\Gamma(L_B) + \sum_{i\in A,\,j\in B}\big(C_{ij}\,a_i^\dagger a_j +
-///     \overline{C_{ij}}\, a_j^\dagger a_i\big) \f$ — coupling blocks become
-///     hopping terms;
+///     d\Gamma(L_B) + \sum_{i\in A,\,j\in B}(C_{AB})_{ij}\,
+///     \varepsilon_{A,i}\,\iota^{j}_{B} + \sum_{i\in B,\,j\in A}
+///     (C_{BA})_{ij}\,\varepsilon_{B,i}\,\iota^{j}_{A} \f$ — the two
+///     directed coupling blocks become hopping terms (\f$ \varepsilon \f$ is
+///     exterior creation \f$ a^\dagger \f$, \f$ \iota \f$ the contraction
+///     \f$ a \f$ by the dual mode). No Hermitian-conjugate relation between
+///     \f$ C_{AB} \f$ and \f$ C_{BA} \f$ is assumed; the three-block form
+///     with \f$ C_{BA} = C^\dagger \f$ is the special case of a certified
+///     ∗-structure, and a caller reports that relation only after certifying
+///     one;
 ///   • the graded swap \f$ S(x\otimes y) = (-1)^{|x||y|}\, y\otimes x \f$
 ///     exchanges the factors with odd/odd sign −1 and +1 on every other
 ///     elementary parity combination.
@@ -510,9 +518,21 @@ class FockDirectSum {
     [[nodiscard]] SparseOp gradedSwapMatrix() const;
 
     /// Assemble the block one-particle matrix
-    /// \f$ L = \begin{pmatrix} L_A & C \\ C^\dagger & L_B \end{pmatrix} \f$
+    /// \f$ L = \begin{pmatrix} L_A & C_{AB} \\ C_{BA} & L_B \end{pmatrix} \f$
     /// on \f$ h_A \oplus h_B \f$ from an \f$ M_A\times M_A \f$ block, an
-    /// \f$ M_B\times M_B \f$ block and an \f$ M_A\times M_B \f$ coupling.
+    /// \f$ M_B\times M_B \f$ block and the two directed couplings:
+    /// \f$ C_{AB} \f$ (\f$ M_A\times M_B \f$, hopping B → A) and
+    /// \f$ C_{BA} \f$ (\f$ M_B\times M_A \f$, hopping A → B). Each is placed
+    /// as given; no relation between them is assumed or imposed.
+    /// @throws std::invalid_argument on shape mismatches.
+    [[nodiscard]] static Eigen::MatrixXcd assembleBlockOneParticle(
+        const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
+        const Eigen::MatrixXcd& couplingAB, const Eigen::MatrixXcd& couplingBA);
+
+    /// The special case of a certified ∗-structure:
+    /// \f$ L = \begin{pmatrix} L_A & C \\ C^\dagger & L_B \end{pmatrix} \f$,
+    /// i.e. the directed form with \f$ C_{BA} = C^\dagger \f$ supplied by the
+    /// caller's certificate, not by this functor.
     /// @throws std::invalid_argument on shape mismatches.
     [[nodiscard]] static Eigen::MatrixXcd assembleBlockOneParticle(
         const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
@@ -520,7 +540,15 @@ class FockDirectSum {
 
     /// \f$ d\Gamma \f$ of the assembled block one-particle operator on the
     /// joint Fock space — direct sums become graded tensor products and the
-    /// coupling block becomes the hopping term (see class docs).
+    /// two directed coupling blocks become the hopping terms (see class
+    /// docs). The result is non-Hermitian whenever the blocks are.
+    [[nodiscard]] SparseOp dGammaBlock(const Eigen::MatrixXcd& blockA,
+                                       const Eigen::MatrixXcd& blockB,
+                                       const Eigen::MatrixXcd& couplingAB,
+                                       const Eigen::MatrixXcd& couplingBA) const;
+
+    /// \f$ d\Gamma \f$ of the ∗-structure special case
+    /// \f$ \begin{pmatrix} L_A & C \\ C^\dagger & L_B \end{pmatrix} \f$.
     [[nodiscard]] SparseOp dGammaBlock(const Eigen::MatrixXcd& blockA,
                                        const Eigen::MatrixXcd& blockB,
                                        const Eigen::MatrixXcd& coupling) const;

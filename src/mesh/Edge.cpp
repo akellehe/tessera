@@ -4,6 +4,7 @@
 #include "mesh/Fingerprint.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeKey.h"
+#include "mesh/RiemannSheet.h"
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "utils.h"
@@ -63,9 +64,51 @@ class Simplex;
       return length_;
     }
 
+    namespace {
+    /// An angle folded back into (-pi, pi]. The declared argument folded this way
+    /// is what a causal bucket is a function of: the two roots +/-l of one l^2
+    /// share a causal character, so the declared sheet cannot move the bucket. It
+    /// fixes only which lip of the cut a timelike edge sits on, and that is
+    /// exactly what `declaredSquaredArgument` keeps and this fold discards.
+    [[nodiscard]] inline double foldToPi(double angle) noexcept {
+      const double twoPi = 2.0 * std::numbers::pi;
+      double folded = std::fmod(angle + std::numbers::pi, twoPi);
+      if (folded <= 0.0) folded += twoPi;
+      return folded - std::numbers::pi;
+    }
+    }  // namespace
+
     [[nodiscard]] double Edge::squaredArgument() const noexcept {
       const auto l = getLength();
-      return std::arg(l * l);  // in (-pi, pi]
+      return principalArgument(l * l);  // in (-pi, pi]
+    }
+
+    [[nodiscard]] double Edge::declaredSquaredArgument() const noexcept {
+      return squaredArgument() +
+             2.0 * std::numbers::pi * static_cast<double>(squaredWinding_);
+    }
+
+    [[nodiscard]] int Edge::squaredSheet() const noexcept {
+      const int parity = squaredWinding_ % 2;
+      return (parity < 0) ? parity + 2 : parity;
+    }
+
+    void Edge::continueLength(std::complex<double> l) noexcept {
+      // The declared argument of l^2 is twice the continued argument of l, which
+      // is the invariant that keeps the declaration and the stored root one
+      // statement rather than two: the stored l is always the root on the sheet
+      // the winding names. The step is the turn of l, wrapped, so a step may
+      // turn l by anything short of a half turn -- and l^2 by anything short of
+      // a full one.
+      const double previous = 0.5 * declaredSquaredArgument();
+      const double step =
+          foldToPi(principalArgument(l) - principalArgument(length_));
+      const double continued = previous + step;
+      length_ = l;
+      squaredWinding_ = static_cast<int>(
+          std::llround((2.0 * continued - squaredArgument()) /
+                       (2.0 * std::numbers::pi)));
+      ++lengthRevision_;
     }
 
     [[nodiscard]] double Edge::lorentzianMagnitude() const noexcept {
@@ -83,24 +126,28 @@ class Simplex;
     }
 
     [[nodiscard]] bool Edge::isSpacelike() const noexcept {
-      // arg(l^2) ~ 0: l^2 real positive. |arg| folds the (-pi, pi] range so each
-      // test below is one comparison against a single definite argument.
+      // The declared argument ~ 0 (mod 2 pi): l^2 real positive. |arg| folds the
+      // (-pi, pi] range so each test below is one comparison against a single
+      // definite argument. Reading the declaration rather than re-deriving
+      // arg(l^2) is what makes the bucket a function of the transported state
+      // and not of where the principal cut happens to fall.
       if (isDegenerate()) return false;
-      return std::abs(squaredArgument()) <= kCausalAngularEpsilon;
+      return std::abs(foldToPi(declaredSquaredArgument())) <= kCausalAngularEpsilon;
     }
 
     [[nodiscard]] bool Edge::isTimelike() const noexcept {
-      // arg(l^2) ~ +/- pi: l^2 real negative.
+      // The declared argument ~ +/- pi: l^2 real negative.
       if (isDegenerate()) return false;
-      return std::abs(std::abs(squaredArgument()) - std::numbers::pi)
+      return std::abs(std::abs(foldToPi(declaredSquaredArgument())) - std::numbers::pi)
              <= kCausalAngularEpsilon;
     }
 
     [[nodiscard]] bool Edge::isNull() const noexcept {
-      // arg(l^2) ~ +/- pi/2: l^2 purely imaginary and nonzero -- the light cone,
-      // reached non-trivially at Re(l) == Im(l) != 0. Not the same as degenerate.
+      // The declared argument ~ +/- pi/2: l^2 purely imaginary and nonzero -- the
+      // light cone, reached non-trivially at Re(l) == Im(l) != 0. Not the same as
+      // degenerate.
       if (isDegenerate()) return false;
-      return std::abs(std::abs(squaredArgument()) - 0.5 * std::numbers::pi)
+      return std::abs(std::abs(foldToPi(declaredSquaredArgument())) - 0.5 * std::numbers::pi)
              <= kCausalAngularEpsilon;
     }
 

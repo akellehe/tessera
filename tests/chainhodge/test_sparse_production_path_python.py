@@ -138,14 +138,22 @@ class TestStackedMatrixAndNullSpace:
         assert _principal_angle(kernel, vh[rank:].conj().T) < 1e-6
 
     def test_sparse_null_space_reports_its_cost(self):
+        """The kernel's numerics belong to `SparseRank`, which does not publish
+        the stored entries of its factors, so the read reports the wall time and
+        the process memory it did measure and quiet NaN for the fill-in and
+        factor memory it did not."""
         K, base, cov = _instance()
         read = ch.ChainHodge.sparseNullSpace(sp.csc_matrix(base.stackedMatrix(1)), 10.0)
         cost = read.cost
         assert cost.operation == "stacked-qr"
-        assert cost.systemNonZeros > 0 and cost.factorNonZeros > 0
-        assert cost.fillIn > 0.0 and np.isfinite(cost.fillIn)
+        assert cost.degree == -1
+        assert cost.systemNonZeros > 0
         assert cost.wallSeconds >= 0.0
-        assert cost.factorMegabytes > 0.0
+        assert cost.factorNonZeros == 0
+        assert np.isnan(cost.fillIn) and np.isnan(cost.factorMegabytes)
+        # The rank certificate of the read comes through on the split.
+        assert read.split.rank == read.rank
+        assert read.split.largest > 0.0
 
     @pytest.mark.parametrize("dressed", [False, True])
     def test_sparse_harmonic_chains_agree_with_the_dense_reading(self, dressed):
@@ -352,10 +360,12 @@ class TestScalingReports:
             for name in ("lu", "qr"):
                 cost = row[name]
                 assert cost.systemNonZeros > 0
-                assert cost.factorNonZeros > 0
-                assert np.isfinite(cost.fillIn) and cost.fillIn > 0.0
                 assert cost.wallSeconds >= 0.0
-                assert cost.factorMegabytes > 0.0
+            # Fill-in and factor memory are the bordered factorization's: it is
+            # the one this subsystem owns and the dominant cost of the path.
+            assert row["lu"].factorNonZeros > 0
+            assert np.isfinite(row["lu"].fillIn) and row["lu"].fillIn > 0.0
+            assert row["lu"].factorMegabytes > 0.0
         # The cell counts grow, and so do the systems: the reports are read
         # against n_1, which is the plan's abscissa.
         assert [r["n1"] for r in rows] == sorted(r["n1"] for r in rows)
@@ -379,11 +389,9 @@ class TestScalingReports:
     def test_the_memory_of_the_factors_is_the_entries_they_store(self):
         """`factorMegabytes` is computed from `factorNonZeros`, so the two agree
         exactly: it is a count, not an estimate."""
-        row = self._row(6)
-        for name in ("lu", "qr"):
-            cost = row[name]
-            bytes_per_entry = cost.factorMegabytes * 1024.0 * 1024.0 / cost.factorNonZeros
-            assert 16.0 <= bytes_per_entry <= 32.0
+        cost = self._row(6)["lu"]
+        bytes_per_entry = cost.factorMegabytes * 1024.0 * 1024.0 / cost.factorNonZeros
+        assert 16.0 <= bytes_per_entry <= 32.0
 
     def test_the_resident_memory_of_an_operation_is_reported(self):
         """On a platform that publishes it, the change in the process's resident

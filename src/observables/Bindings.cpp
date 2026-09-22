@@ -48,11 +48,13 @@
 #include "observables/ObservableGates.h"
 #include "observables/DualVolumeSigns.h"
 #include "observables/ColorFiber.h"
+#include "observables/SheetedColor.h"
+#include "observables/MonopoleSpin.h"
 #include "observables/CrossingReadouts.h"
 #include "observables/ExchangeHolonomy.h"
 #include "observables/FiberConnection.h"
 #include "observables/ParticleClusters.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 #include "spacetime/Spacetime.h"
 #include "ForceLayout.h"
 #include "mesh/VertexList.h"
@@ -152,7 +154,9 @@ void register_observables(py::module_ m) {
   py::class_<EffectiveBettiNumber> effectiveBettiNumber(m, "EffectiveBettiNumber",
       "The effective Betti number of one degree of a declared operator at a scale: the number of "
       "eigenvalues with |lambda| <= epsilon, the moduli that bracket the window, their gap, and how "
-      "the count was obtained. rank is -1 when unmeasured and reason says why.");
+      "the count was obtained. rank is -1 when unmeasured and reason says why. A count is certified "
+      "when it is converged (its residual met the tolerance) and separated (gap >= minimumGap); a "
+      "window that cuts through the spectrum returns its count uncertified.");
   py::enum_<EffectiveBettiNumber::Method>(effectiveBettiNumber, "Method")
       .value("DenseSpectrum", EffectiveBettiNumber::Method::DenseSpectrum)
       .value("SparsePencil", EffectiveBettiNumber::Method::SparsePencil)
@@ -163,23 +167,148 @@ void register_observables(py::module_ m) {
       .def_readonly("lastInside", &EffectiveBettiNumber::lastInside)
       .def_readonly("firstOutside", &EffectiveBettiNumber::firstOutside)
       .def_readonly("gap", &EffectiveBettiNumber::gap)
+      .def_readonly("minimumGap", &EffectiveBettiNumber::minimumGap)
       .def_readonly("method", &EffectiveBettiNumber::method)
+      .def_readonly("converged", &EffectiveBettiNumber::converged)
+      .def_readonly("separated", &EffectiveBettiNumber::separated)
       .def_readonly("certified", &EffectiveBettiNumber::certified)
       .def_readonly("reason", &EffectiveBettiNumber::reason);
 
-  py::class_<EffectiveTopology>(m, "EffectiveTopology",
+  py::class_<EffectiveHodgeSplit>(m, "EffectiveHodgeSplit",
+      R"doc(The exact/coexact split of one degree's effective band. The exact part is d_k^# of the
+degree k-1 band (at k = 1 the bridge flows of the effective components); the coexact part
+is the band's null space under the boundary, the near-cycles, which include the harmonic
+chains. The effective holes (k = 1) and the effective voids (k = 2 in three dimensions)
+are the coexact part. Frames are orthonormal bases of chains.)doc")
+      .def_readonly("band", &EffectiveHodgeSplit::band)
+      .def_readonly("exact", &EffectiveHodgeSplit::exact)
+      .def_readonly("coexact", &EffectiveHodgeSplit::coexact)
+      .def_readonly("exactFrame", &EffectiveHodgeSplit::exactFrame)
+      .def_readonly("coexactFrame", &EffectiveHodgeSplit::coexactFrame)
+      .def_readonly("boundarySingularValues", &EffectiveHodgeSplit::boundarySingularValues)
+      .def_readonly("rankTolerance", &EffectiveHodgeSplit::rankTolerance)
+      .def_readonly("splitGap", &EffectiveHodgeSplit::splitGap)
+      .def_readonly("closure", &EffectiveHodgeSplit::closure)
+      .def_readonly("frameResidual", &EffectiveHodgeSplit::frameResidual)
+      .def_readonly("certified", &EffectiveHodgeSplit::certified)
+      .def_readonly("reason", &EffectiveHodgeSplit::reason);
+
+  py::class_<EffectiveComponentSupport>(m, "EffectiveComponentSupport",
+      "One effective component: its pivot vertex, the vertex ids assigned to it, and its committor "
+      "on every vertex in the canonical vertex order (one at its pivot, zero at the other pivots).")
+      .def_readonly("pivot", &EffectiveComponentSupport::pivot)
+      .def_readonly("support", &EffectiveComponentSupport::support)
+      .def_readonly("committor", &EffectiveComponentSupport::committor);
+
+  py::class_<EffectiveComponentPartition>(m, "EffectiveComponentPartition",
+      "The effective components read from the degree-zero band: the band's count and gap (which "
+      "certifies each support's isolation), one support per direction of the band, the "
+      "conditioning of the pivot rows, and the partition-of-unity defect of the committors.")
+      .def_readonly("band", &EffectiveComponentPartition::band)
+      .def_readonly("components", &EffectiveComponentPartition::components)
+      .def_readonly("pivotConditioning", &EffectiveComponentPartition::pivotConditioning)
+      .def_readonly("partitionDefect", &EffectiveComponentPartition::partitionDefect)
+      .def_readonly("certified", &EffectiveComponentPartition::certified)
+      .def_readonly("reason", &EffectiveComponentPartition::reason);
+
+  py::enum_<EnclosingCoorientation>(m, "EnclosingCoorientation",
+      "Which way the enclosing surface of a region is cooriented: Inward from the material into the "
+      "region (a bubble, what an anti-cluster requires), Outward from the region into the material (a "
+      "blob), or Undeclared when a supplied reference is orthogonal to the enclosing surface.")
+      .value("Inward", EnclosingCoorientation::Inward)
+      .value("Outward", EnclosingCoorientation::Outward)
+      .value("Undeclared", EnclosingCoorientation::Undeclared);
+
+  py::enum_<CoorientationSource>(m, "CoorientationSource",
+      "Where a coorientation was read from: Reference, a chain the caller supplied carrying a "
+      "coorientation established independently, such as the cooriented cut of a lineage; or "
+      "InteriorSpectrum, which reads the coorientation as inward exactly when the enclosed side is the "
+      "one the operator's band does not reach, because with no reference the enclosing surface carries "
+      "no direction of its own (the band fixes a complex near-cycle only up to a nonzero complex "
+      "scale).")
+      .value("Reference", CoorientationSource::Reference)
+      .value("InteriorSpectrum", CoorientationSource::InteriorSpectrum);
+
+  py::class_<AntiClusterOptions>(m, "AntiClusterOptions",
+      "What the anti-cluster certificate is allowed to assume beyond the operator, the region and the "
+      "scale: the band's tolerance and minimum gap, the share of the enclosing surface required in the "
+      "certified coexact part of the degree-two band, the degree whose restriction to the region is "
+      "the interior spectrum, and an optional coorientation reference chain with the modulus below "
+      "which it reads no direction.")
+      .def(py::init<>())
+      .def_readwrite("tolerance", &AntiClusterOptions::tolerance)
+      .def_readwrite("minimumGap", &AntiClusterOptions::minimumGap)
+      .def_readwrite("minimumVoidContent", &AntiClusterOptions::minimumVoidContent)
+      .def_readwrite("interiorDegree", &AntiClusterOptions::interiorDegree)
+      .def_readwrite("coorientationReference", &AntiClusterOptions::coorientationReference)
+      .def_readwrite("coorientationTolerance", &AntiClusterOptions::coorientationTolerance);
+
+  py::class_<AntiClusterCertificate>(m, "AntiClusterCertificate",
+      R"doc(The whitepaper's proposed identification of an anti-cluster with an effective void,
+evaluated on one declared region: a region whose enclosing surface is a certified coexact
+near-cycle of L_2, whose interior spectrum is nearly empty, and whose enclosing
+coorientation is inward. The region's cells and its enclosing surface come from the
+declared vertices; voidContent is the share of the normalized enclosing surface that lies
+in the certified coexact part of the degree-two band; interiorSpectrum is the operator
+restricted to the region, and interiorRank counts how much of it lies inside the window. A
+region declared around a cavity has no cells of its own, since the cavity's cells are not
+in the complex.)doc")
+      .def_readonly("region", &AntiClusterCertificate::region)
+      .def_readonly("interiorCells", &AntiClusterCertificate::interiorCells)
+      .def_readonly("surface", &AntiClusterCertificate::surface)
+      .def_readonly("enclosingSurface", &AntiClusterCertificate::enclosingSurface)
+      .def_readonly("band", &AntiClusterCertificate::band)
+      .def_readonly("voids", &AntiClusterCertificate::voids)
+      .def_readonly("voidContent", &AntiClusterCertificate::voidContent)
+      .def_readonly("minimumVoidContent", &AntiClusterCertificate::minimumVoidContent)
+      .def_readonly("cycleResidual", &AntiClusterCertificate::cycleResidual)
+      .def_readonly("interiorDegree", &AntiClusterCertificate::interiorDegree)
+      .def_readonly("interiorSpectrum", &AntiClusterCertificate::interiorSpectrum)
+      .def_readonly("interiorRank", &AntiClusterCertificate::interiorRank)
+      .def_readonly("interiorFloor", &AntiClusterCertificate::interiorFloor)
+      .def_readonly("interiorEmpty", &AntiClusterCertificate::interiorEmpty)
+      .def_readonly("coorientation", &AntiClusterCertificate::coorientation)
+      .def_readonly("coorientationSource", &AntiClusterCertificate::coorientationSource)
+      .def_readonly("coorientationOverlap", &AntiClusterCertificate::coorientationOverlap)
+      .def_readonly("certified", &AntiClusterCertificate::certified)
+      .def_readonly("reason", &AntiClusterCertificate::reason);
+
+  py::class_<EffectiveTopology> effectiveTopology(m, "EffectiveTopology",
       R"doc(What a declared operator sees at a scale, as opposed to what the complex is. The actual
 topology of a complex is its incidence (ChainComplex.bettiNumbers, built by the
 spacetime Topology classes); the effective topology of an operator on it is
 beta_k^eff(epsilon) = rank P_[0, epsilon](h_k(s, U)), which depends on the squared
-lengths and the connection. A bottleneck gives two effective components on one
-incidence component; a torus with a connection of nontrivial holonomy keeps incidence
-Betti numbers (1, 3, 3, 1) while every effective Betti number is zero. This class
-never consults the incidence ranks.)doc")
+lengths and the connection, certified by the gap between the enclosed band and the rest
+of the spectrum. A bottleneck gives two effective components on one incidence
+component; a torus with a connection of nontrivial holonomy keeps incidence Betti
+numbers (1, 3, 3, 1) while every effective Betti number is zero. This class never
+consults the incidence ranks.)doc");
+  effectiveTopology.attr("DEFAULT_MINIMUM_GAP") = kDefaultMinimumGap;
+  effectiveTopology
       .def_static("read", &EffectiveTopology::read, py::arg("operator"), py::arg("epsilon"),
-           py::arg("tolerance") = 1e-10,
-           "Read every degree at scale epsilon: the dense spectrum below the crossover, the sparse "
-           "pencil for degree zero above it, and unmeasured otherwise.")
+           py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
+           "Read every degree at scale epsilon: the dense Schur form below the crossover, the sparse "
+           "pencil for degree zero above it, and unmeasured otherwise. A degree is certified when its "
+           "residual meets the tolerance and its gap reaches minimum_gap.")
+      .def_static("split", &EffectiveTopology::split, py::arg("operator"), py::arg("degree"),
+           py::arg("epsilon"), py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
+           "The exact/coexact split of the degree's band at scale epsilon.")
+      .def_static("voids", &EffectiveTopology::voids, py::arg("operator"), py::arg("epsilon"),
+           py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
+           "The effective voids of a three-dimensional complex: the coexact part of the degree-two "
+           "band (split(operator, 2, epsilon)), whose coexact count is the number of voids.")
+      .def_static("components", &EffectiveTopology::components, py::arg("operator"), py::arg("epsilon"),
+           py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
+           "The effective components at scale epsilon: the supports of the degree-zero band, from the "
+           "committors that the column-pivoted QR of the band recovers.")
+      .def_static("antiCluster", &EffectiveTopology::antiCluster, py::arg("operator"),
+           py::arg("region_vertices"), py::arg("epsilon"), py::arg("options") = AntiClusterOptions{},
+           "The anti-cluster certificate on a region declared by its vertices: the whitepaper's "
+           "proposal that an anti-cluster is an effective void, evaluated clause by clause. The region "
+           "supplies its cells and its enclosing surface, the surface's share of the certified coexact "
+           "part of the degree-two band says whether it is a near-cycle of L_2, the operator restricted "
+           "to the region is the interior spectrum, and the coorientation comes from a supplied "
+           "reference chain or from that spectrum.")
       .def("epsilon", &EffectiveTopology::epsilon)
       .def("dimension", &EffectiveTopology::dimension)
       .def("degrees", &EffectiveTopology::degrees)
@@ -187,12 +316,43 @@ never consults the incidence ranks.)doc")
            "(beta_0^eff, ..., beta_d^eff), with -1 for an unmeasured degree.")
       .def("certified", &EffectiveTopology::certified);
 
+  py::class_<EffectivePlateau>(m, "EffectivePlateau",
+      "A run of consecutive reads over which one degree keeps one certified count: the degree, the "
+      "count, the indices and scales of the run's ends, and the smallest gap over it.")
+      .def_readonly("degree", &EffectivePlateau::degree)
+      .def_readonly("rank", &EffectivePlateau::rank)
+      .def_readonly("first", &EffectivePlateau::first)
+      .def_readonly("last", &EffectivePlateau::last)
+      .def_readonly("firstEpsilon", &EffectivePlateau::firstEpsilon)
+      .def_readonly("lastEpsilon", &EffectivePlateau::lastEpsilon)
+      .def_readonly("gap", &EffectivePlateau::gap)
+      .def("length", &EffectivePlateau::length);
+
+  py::class_<EffectivePersistence>(m, "EffectivePersistence",
+      R"doc(An effective count that persists across a stated range of scales: a sequence of effective
+reads (one operator swept over epsilon, or a refinement or relaxation sequence read at one
+scale) and, per degree, the runs of consecutive certified reads that share one count. A
+degree persists when the whole sequence is one such run.)doc")
+      .def(py::init<std::vector<EffectiveTopology>>(), py::arg("reads"))
+      .def_static("sweep", &EffectivePersistence::sweep, py::arg("operator"), py::arg("epsilons"),
+           py::arg("tolerance") = 1e-10, py::arg("minimum_gap") = kDefaultMinimumGap,
+           "Read the operator at every scale of the sweep, in the order given.")
+      .def("reads", &EffectivePersistence::reads)
+      .def("dimension", &EffectivePersistence::dimension)
+      .def("plateaus", &EffectivePersistence::plateaus, py::arg("degree"))
+      .def("persistentRank", &EffectivePersistence::persistentRank, py::arg("degree"),
+           "The count that persists at the degree across every read, -1 when none does.")
+      .def("betti", &EffectivePersistence::betti)
+      .def("certified", &EffectivePersistence::certified);
+
   py::class_<EffectiveSignatureCertificate>(m, "EffectiveSignatureCertificate",
-      "The verdict of an effective signature on an effective read: required and measured Betti "
-      "numbers (-1 where nothing is required or measured), whether they match, whether the reads "
-      "were certified, and the smallest gap among the required degrees.")
+      "The verdict of an effective signature on an effective read or a persistence range: required "
+      "and measured Betti numbers (-1 where nothing is required, measured or persistent), whether "
+      "they match, whether the reads were certified at every scale covered, the scales, and the "
+      "smallest gap among the required degrees.")
       .def_readonly("signature", &EffectiveSignatureCertificate::signature)
       .def_readonly("epsilon", &EffectiveSignatureCertificate::epsilon)
+      .def_readonly("scales", &EffectiveSignatureCertificate::scales)
       .def_readonly("expected", &EffectiveSignatureCertificate::expected)
       .def_readonly("measured", &EffectiveSignatureCertificate::measured)
       .def_readonly("matches", &EffectiveSignatureCertificate::matches)
@@ -210,9 +370,13 @@ never consults the incidence ranks.)doc")
            py::overload_cast<const EffectiveTopology &>(&EffectiveSignature::certify, py::const_),
            py::arg("topology"))
       .def("certify",
-           py::overload_cast<const chainhodge::CovariantChainHodge &, double, double>(&EffectiveSignature::certify,
-                                                                         py::const_),
-           py::arg("operator"), py::arg("epsilon"), py::arg("tolerance") = 1e-10);
+           py::overload_cast<const EffectivePersistence &>(&EffectiveSignature::certify, py::const_),
+           py::arg("persistence"))
+      .def("certify",
+           py::overload_cast<const chainhodge::CovariantChainHodge &, double, double, double>(
+               &EffectiveSignature::certify, py::const_),
+           py::arg("operator"), py::arg("epsilon"), py::arg("tolerance") = 1e-10,
+           py::arg("minimum_gap") = kDefaultMinimumGap);
   py::class_<EffectiveTorus, EffectiveSignature>(m, "EffectiveTorus",
       "The effective d-torus: beta_k^eff = binomial(d, k).")
       .def(py::init<int>(), py::arg("dimension"));
@@ -942,6 +1106,10 @@ quantities are NaN, never zero.)doc")
       .def_readonly("leftFrameRefusal", &SpectralBandCertificate::leftFrameRefusal)
       .def_readonly("metricSymmetryDefect", &SpectralBandCertificate::metricSymmetryDefect,
                     "The regime's verification residual, M L = (M L)^T.")
+      .def_readonly("bilinearLeftFrame", &SpectralBandCertificate::bilinearLeftFrame,
+                    "Whether the stored left frame is the transpose dual Phi~ "
+                    "itself (the chain-level pencil path) rather than Psi with "
+                    "Psi^dagger W Phi = I.")
       .def_readonly("frequencyLower",
                     &SpectralBandCertificate::frequencyLower)
       .def_readonly("frequencyUpper",
@@ -962,9 +1130,10 @@ quantities are NaN, never zero.)doc")
 
   py::class_<SpectralFiber>(m, "SpectralFiber",
       R"doc(One whole isolated spectral band of a component-restricted Hodge
-operator: right/left frames, band projector
-P = Phi Psi^dagger W with Psi^dagger W Phi = I, eigenvalues, and the
-SpectralBandCertificate.  The band is represented by its projector;
+operator: right/left frames, the transpose dual Phi~ (Phi~^T Phi = I, the
+one pairing across regimes), band projector P = Phi Phi~^T (= Phi Psi^dagger
+W off the pencil path), eigenvalues, and the SpectralBandCertificate.  The
+band is represented by its projector;
 individual eigenvectors are a gauge choice and never determine an identity
 or a downstream observable.)doc")
       .def("degree", &SpectralFiber::degree)
@@ -973,9 +1142,15 @@ or a downstream observable.)doc")
       .def("rightFrame", &SpectralFiber::rightFrame,
            "Right frame Phi (cells x rank).")
       .def("leftFrame", &SpectralFiber::leftFrame,
-           "Left frame Psi (cells x rank), Psi^dagger W Phi = I.")
+           "Left frame as the regime's solver produced it: Psi with "
+           "Psi^dagger W Phi = I, or Phi~ itself on the pencil path.")
+      .def("dualFrame", &SpectralFiber::dualFrame,
+           R"doc(The algebraic (transpose) dual Phi~ of the right frame,
+Phi~^T Phi = I, in every regime: the stored left frame on the pencil path and
+W conj(Psi) elsewhere. CovarianceState.fromBiorthogonalFrames(rightFrame(),
+dualFrame()) is the band's biorthogonal Slater covariance.)doc")
       .def("projector", &SpectralFiber::projector,
-           "The band projector P = Phi Psi^dagger W (cells x cells).")
+           "The band projector P = Phi Phi~^T (cells x cells).")
       .def("weightDiagonal", &SpectralFiber::weightDiagonal,
            "Diagonal inner-product weights W restricted to the band's "
            "cells.")
@@ -1061,10 +1236,15 @@ or a downstream observable.)doc")
       R"doc(Extraction and tracking of whole isolated localized Hodge bands
 on persistent components.
 
-For a component support S the tracker assembles the weighted Hodge operator
-of the full induced subcomplex on S, using the same boundary maps, canonical
-cell order and diagonal inner-product weights as the whole-complex
-HodgeLaplacian, so support = all vertices reproduces
+For a component support S the tracker assembles the Hodge operator of the full
+induced subcomplex on S under its metric source (the process-wide
+HodgeLaplacian.defaultMetricSource() unless named).  Under the default
+WhitneyPencil every degree k >= 1 is the covariant operator h_k(s, U) of the
+subcomplex's own chain-level Whitney pencil, read in the complex-symmetric
+pencil regime with Riesz bands and bilinear pairing certificates.  Under
+DiagonalWeights it uses the same boundary maps, canonical cell order and
+diagonal inner-product weights as the whole-complex HodgeLaplacian, so
+support = all vertices reproduces a DiagonalWeights
 HodgeLaplacian.laplacian(k) entry for entry.  Regimes are verified, never
 assumed: positive -> self-adjoint solves (exact dense below the crossover,
 deterministic sparse block shift-invert at or above it); real signed
@@ -1087,7 +1267,8 @@ nothing here enters any emergence objective.)doc")
            "chain-level Whitney pencil in the complex-symmetric-pencil regime.")
       .def(py::init([](std::shared_ptr<Spacetime> st,
                        const SpectralFiberConfig &cfg,
-                       const py::object &weights) {
+                       const py::object &weights,
+                       const py::object &metricSource) {
              const auto convention =
                  weights.is_none()
                      ? tessera::cobordism::HodgeLaplacian::
@@ -1095,13 +1276,21 @@ nothing here enters any emergence objective.)doc")
                      : weights
                            .cast<tessera::cobordism::HodgeLaplacian::
                                      WeightConvention>();
-             return SpectralFiberTracker(std::move(st), cfg, convention);
+             const auto source =
+                 metricSource.is_none()
+                     ? tessera::cobordism::HodgeLaplacian::defaultMetricSource()
+                     : metricSource.cast<tessera::cobordism::HodgeLaplacian::MetricSource>();
+             return SpectralFiberTracker(std::move(st), cfg, convention, source);
            }),
            py::arg("spacetime"), py::arg("config") = SpectralFiberConfig{},
            py::arg("weights") = py::none(),
+           py::arg("metric_source") = py::none(),
            "Bind to the spacetime to read; weights=None follows the "
-           "process-wide HodgeLaplacian.defaultWeightConvention() at call "
-           "time.")
+           "process-wide HodgeLaplacian.defaultWeightConvention() and "
+           "metric_source=None the process-wide "
+           "HodgeLaplacian.defaultMetricSource() (the Whitney pencil unless "
+           "changed), both at call time. The weight convention is read only "
+           "under DiagonalWeights.")
       .def("metricSource", &SpectralFiberTracker::metricSource,
            "Where this tracker's operators take their metric from.")
       .def("config", &SpectralFiberTracker::config,
@@ -1723,8 +1912,8 @@ population-averaged Wilson value at that scale.
       R"doc(The loader / transform layer outside the pure readers: loads a
 saved combinatorial and metric description back into a live,
 skeleton-complete Spacetime, and produces a relabeled copy for the relabel
-gate. Never builds a spacetime of its own and never re-runs the emergent
-dynamics (those live in Proton / ProtonIngredients / MultiCobordism); it
+gate. Never builds a spacetime of its own and never re-runs the dynamics
+(those live in ProtonSynthesis / ProtonIngredients / MultiCobordism); it
 reads a recorded geometry back through ``Spacetime.fromVertexTuples``, completing
 the facet skeleton with ``materializeFacets``.)doc")
       .def_static("load", &LiveComplex::load, py::arg("cells"),
@@ -1757,7 +1946,7 @@ it never builds, solves, or materializes anything.)doc")
              return ctx;
            }),
            py::arg("spacetime"), py::arg("count") = 3, py::arg("degree") = 3,
-           py::arg("target") = ::tessera::cobordism::Proton::singlet())
+           py::arg("target") = ::tessera::cobordism::ProtonSynthesis::singlet())
       .def(py::init([](std::shared_ptr<Spacetime> st,
                        std::vector<std::vector<std::uint64_t>> holes, int count,
                        int degree, std::vector<std::complex<double>> target) {
@@ -1898,12 +2087,21 @@ it never builds, solves, or materializes anything.)doc")
       .def_readonly("sigma", &PairLoopFlavor::JointRead::sigma)
       .def_readonly("r_u", &PairLoopFlavor::JointRead::rU)
       .def_readonly("w", &PairLoopFlavor::JointRead::w)
-      .def_readonly("q", &PairLoopFlavor::JointRead::q)
+      .def_readonly("hole_intensity", &PairLoopFlavor::JointRead::holeIntensity,
+                    "Per-hole boundary intensity: the squared Hodge norm of "
+                    "the carried representative over the hole's boundary "
+                    "facets. A norm of the representative and nothing else -- "
+                    "not the charge of any current, and no Kahler-Dirac "
+                    "operator exists here to give it that reading.")
       .def_readonly("loop_w", &PairLoopFlavor::JointRead::loopW)
-      .def_readonly("loop_q", &PairLoopFlavor::JointRead::loopQ)
+      .def_readonly("loop_intensity", &PairLoopFlavor::JointRead::loopIntensity,
+                    "Per-pair-loop boundary intensity: the same squared Hodge "
+                    "norm over the union of the two holes' boundary facets.")
       .def_readonly("dual_residual", &PairLoopFlavor::JointRead::dualResidual);
   py::class_<PairLoopFlavor::Verdict>(m, "PairLoopVerdict")
-      .def_readonly("odd_loop", &PairLoopFlavor::Verdict::oddLoop)
+      .def_readonly("odd_loop", &PairLoopFlavor::Verdict::oddLoop,
+                    "The pair loop whose boundary intensity sits farthest "
+                    "from the mean of the other two.")
       .def_readonly("dual_hole", &PairLoopFlavor::Verdict::dualHole)
       .def_readonly("rho", &PairLoopFlavor::Verdict::rho)
       .def_readonly("multiplicity_2_1", &PairLoopFlavor::Verdict::multiplicity21)
@@ -1921,7 +2119,8 @@ it never builds, solves, or materializes anything.)doc")
       .def("joint_read", &PairLoopFlavor::jointRead, py::arg("ctx"))
       .def("evaluate_criteria", &PairLoopFlavor::evaluateCriteria,
            py::arg("read"))
-      .def_static("odd_one_out", &PairLoopFlavor::oddOneOut, py::arg("loop_q"))
+      .def_static("odd_one_out", &PairLoopFlavor::oddOneOut,
+                  py::arg("loop_intensity"))
       .def_static("complement_hole", &PairLoopFlavor::complementHole,
                   py::arg("pair"));
   m.attr("PairLoopFlavor").attr("RHO_MAX") = PairLoopFlavor::RHO_MAX;
@@ -2032,6 +2231,419 @@ Changes no geometry and enforces nothing.)doc")
       .def("compute", &DualVolumeSigns::compute, py::arg("spacetime"),
            "Fraction of audited, non-degenerate simplices whose star ratio is "
            "negative. Zero means the diagonal star is positive everywhere.");
+
+  // ==========================================================================
+  // SheetedColor (#1195): colour as sheet multiplicity.  The k-sheeted
+  // support, the exterior algebra of the sheet space, the attachment matrix
+  // of the connecting simplices, and the transported determinant-wedge
+  // singlet amplitude.  Pure reads over caller-supplied data; nothing enters
+  // the emergence objective.
+  // ==========================================================================
+  py::class_<SheetIsomorphismRead>(m, "SheetIsomorphismRead",
+      R"doc(The certificate that k supports really are k sheets of one base
+complex: the measured disagreement between corresponding cells of different
+sheets, kept separate for the geometry (the stored complex squared lengths)
+and for the declared connection, because the two fail for different physical
+reasons.)doc")
+      .def(py::init<>())
+      .def_readonly("sheet_count", &SheetIsomorphismRead::sheetCount)
+      .def_readonly("base_cell_count", &SheetIsomorphismRead::baseCellCount)
+      .def_readonly("squared_length_residual",
+                    &SheetIsomorphismRead::squaredLengthResidual,
+                    "max over cells and sheet pairs of the squared-length "
+                    "disagreement.")
+      .def_readonly("connection_residual",
+                    &SheetIsomorphismRead::connectionResidual,
+                    "max over cells and sheet pairs of the connection-value "
+                    "disagreement.")
+      .def_readonly("isomorphic", &SheetIsomorphismRead::isomorphic)
+      .def_readonly("certificate", &SheetIsomorphismRead::certificate,
+                    "AlgebraicallyExact / Static, grading the larger of the "
+                    "two residuals against the declared tolerance.");
+
+  py::class_<SheetSector>(m, "SheetSector",
+      R"doc(One occupation sector of the exterior algebra of the sheet space:
+its occupation number N, its dimension binomial(k, N), its fermion parity
+(-1)^N, and the complex representation it carries, named for three sheets as
+the whitepaper names it.)doc")
+      .def(py::init<>())
+      .def_readonly("occupation", &SheetSector::occupation)
+      .def_readonly("dimension", &SheetSector::dimension)
+      .def_readonly("fermion_parity", &SheetSector::fermionParity)
+      .def_readonly("representation", &SheetSector::representation);
+
+  py::class_<SheetedSupport>(m, "SheetedSupport",
+      R"doc(A cluster support carried as k isomorphic copies -- sheets -- of
+one base complex.  A sheet is more cells and nothing else: each edge still
+carries its complex squared length, its connection value and one two-level
+mode.  The class certifies that the copies agree, lifts a base operator h to
+the free sheeted operator h (x) I_k, lifts a base Riesz band to the
+colour-spin fibre E-bar (x) C^k, and builds the two commuting actions
+I (x) g (sheet relabeling) and D (x) I_k (a base symmetry).  A sheeted mode
+is stored at the flat index base * k + sheet.)doc")
+      .def(py::init<std::size_t, std::size_t>(), py::arg("sheetCount"),
+           py::arg("baseCellCount"))
+      .def_property_readonly("sheet_count", &SheetedSupport::sheetCount)
+      .def_property_readonly("base_cell_count",
+                             &SheetedSupport::baseCellCount)
+      .def_property_readonly("cell_count", &SheetedSupport::cellCount)
+      .def("modeIndex", &SheetedSupport::modeIndex, py::arg("baseCell"),
+           py::arg("sheet"),
+           "The flat index base * k + sheet of one sheeted cell.")
+      .def("certifyIsomorphism", &SheetedSupport::certifyIsomorphism,
+           py::arg("sheetSquaredLengths"), py::arg("sheetConnections"),
+           py::arg("tolerance") = 1e-12,
+           "Certify that the per-sheet squared lengths and connection values "
+           "agree across the sheets.  Empty connection vectors declare a "
+           "support with no connection values to compare.")
+      .def("freeOperator", &SheetedSupport::freeOperator,
+           py::arg("baseOperator"),
+           "The free sheeted operator h (x) I_k.")
+      .def("liftBand", &SheetedSupport::liftBand, py::arg("baseBand"),
+           "The colour-spin fibre E-bar (x) C^k of a base Riesz band.")
+      .def("sheetFrameOperator", &SheetedSupport::sheetFrameOperator,
+           py::arg("g"), "The sheet relabeling I (x) g.")
+      .def("baseSymmetryOperator", &SheetedSupport::baseSymmetryOperator,
+           py::arg("baseAction"), "A base symmetry action D (x) I_k.")
+      .def("sheetCommutatorResidual",
+           &SheetedSupport::sheetCommutatorResidual, py::arg("baseOperator"),
+           py::arg("g"),
+           "||[A (x) I_k, I (x) g]||_max -- zero up to rounding for every "
+           "base operator and every frame.");
+
+  py::class_<SheetFock>(m, "SheetFock",
+      R"doc(The exterior algebra Lambda^bullet E of the sheet space E = C^k of
+ONE base mode.  For three sheets the sectors are the scalar vacuum, the
+fundamental E, the determinant-twisted dual det E (x) E-dual and the
+determinant line, with fermion parities even, odd, even, odd.  The sector
+projectors and canonical anticommutation-relation matrices are delegated to
+tessera.quantum.ExteriorAlgebra, and at three sheets they agree with
+ColorFiber's exactly.)doc")
+      .def(py::init<std::size_t>(), py::arg("sheetCount"))
+      .def_property_readonly("sheet_count", &SheetFock::sheetCount)
+      .def_property_readonly("dimension", &SheetFock::dimension)
+      .def("sectors", &SheetFock::sectors,
+           "The k + 1 occupation sectors in ascending occupation order.")
+      .def("sectorProjector", &SheetFock::sectorProjector,
+           py::arg("occupation"))
+      .def("exteriorCreation", &SheetFock::exteriorCreation, py::arg("sheet"))
+      .def("contraction", &SheetFock::contraction, py::arg("sheet"))
+      .def("sheetBilinear", &SheetFock::sheetBilinear, py::arg("i"),
+           py::arg("j"),
+           "The gl(E) bilinear E^i_j = epsilon_i iota^j.")
+      .def("commutatorResidual", &SheetFock::commutatorResidual,
+           "The worst deviation over the whole gl(k, C) commutator table.")
+      .def("sectorAgreementResidual", &SheetFock::sectorAgreementResidual,
+           "The worst deviation from ColorFiber's sector projectors "
+           "(three sheets only).");
+
+  py::class_<ConnectingSimplex>(m, "ConnectingSimplex",
+      R"doc(One connecting simplex between two sheeted supports: the sheet of
+A and the sheet of B it is attached to, and the weight it contributes to that
+entry of the attachment matrix.  The default gluing rule attaches sheet to
+sheet, making the attachment matrix diagonal and a lone interaction
+colour-abelian; a cross-sheet attachment is the nonabelian part of the colour
+transport.)doc")
+      .def(py::init([](std::size_t sheetA, std::size_t sheetB,
+                       std::complex<double> weight) {
+             return ConnectingSimplex{sheetA, sheetB, weight};
+           }),
+           py::arg("sheetA"), py::arg("sheetB"),
+           py::arg("weight") = std::complex<double>(1.0, 0.0))
+      .def_readwrite("sheet_a", &ConnectingSimplex::sheetA)
+      .def_readwrite("sheet_b", &ConnectingSimplex::sheetB)
+      .def_readwrite("weight", &ConnectingSimplex::weight);
+
+  py::class_<AttachmentRead>(m, "AttachmentRead",
+      R"doc(The attachment matrix S_AB and the data that decide whether it is
+usable as a colour transport: its determinant (canonical, never normalized or
+cube-rooted), its conditioning, its smallest singular value -- the distance to
+the rank-dropping configuration the determinant winding encircles -- and
+whether every connecting simplex joined like-indexed sheets.)doc")
+      .def(py::init<>())
+      .def_readonly("matrix", &AttachmentRead::matrix)
+      .def_readonly("determinant", &AttachmentRead::determinant)
+      .def_readonly("conditioning", &AttachmentRead::conditioning)
+      .def_readonly("min_singular_value", &AttachmentRead::minSingularValue)
+      .def_readonly("sheet_diagonal", &AttachmentRead::sheetDiagonal)
+      .def_readonly("simplex_count", &AttachmentRead::simplexCount)
+      .def_readonly("certificate", &AttachmentRead::certificate);
+
+  py::class_<HolonomyInvariants>(m, "HolonomyInvariants",
+      R"doc(The conjugacy-invariant data of a closed colour holonomy: the
+ordered product around the sequence, its power traces tr H^j, the
+characteristic polynomial they determine through the Newton identities (in
+ascending powers of lambda) and its determinant.)doc")
+      .def(py::init<>())
+      .def_readonly("holonomy", &HolonomyInvariants::holonomy)
+      .def_readonly("power_traces", &HolonomyInvariants::powerTraces)
+      .def_readonly("characteristic_polynomial",
+                    &HolonomyInvariants::characteristicPolynomial)
+      .def_readonly("determinant", &HolonomyInvariants::determinant)
+      .def_readonly("link_count", &HolonomyInvariants::linkCount);
+
+  py::class_<SheetAttachment>(m, "SheetAttachment",
+      R"doc(The colour transport of the sheet convention: the attachment
+matrix S_AB reconstructed from the connecting simplices, its frame law
+S_AB -> g_A^-1 S_AB g_B, the factorized coupling block C-bar_AB (x) S_AB, the
+composition of transport along a declared path and the closed holonomy.  The
+retained datum is the GL(k, C) element with its determinant line: no polar
+factor is taken and no cube root of the determinant is chosen.)doc")
+      .def_static("attachmentMatrix", &SheetAttachment::attachmentMatrix,
+                  py::arg("sheetCount"), py::arg("simplices"),
+                  py::arg("fullRankTolerance") = 1e-12)
+      .def_static("frameChanged", &SheetAttachment::frameChanged,
+                  py::arg("attachment"), py::arg("frameA"), py::arg("frameB"),
+                  "S_AB -> g_A^-1 S_AB g_B.")
+      .def_static("couplingBlock", &SheetAttachment::couplingBlock,
+                  py::arg("baseCoupling"), py::arg("attachment"),
+                  "C_AB = C-bar_AB (x) S_AB.")
+      .def_static("compose", &SheetAttachment::compose, py::arg("path"),
+                  py::arg("sheetCount") = std::size_t{0},
+                  "The path transport, first factor applied first.")
+      .def_static("holonomy", &SheetAttachment::holonomy, py::arg("links"));
+
+  py::class_<ColorSingletRead>(m, "ColorSingletRead",
+      R"doc(The common-frame colour amplitude and the data around it.  Nothing
+is normalized: the physical singlet condition is a nonzero, refinement-stable,
+covariantly trivial determinant wedge, so the reported content is the complex
+amplitude and whether it vanishes, not a modulus square driven to one.)doc")
+      .def(py::init<>())
+      .def_readonly("amplitude", &ColorSingletRead::amplitude,
+                    "S_ABC = Omega_p(c-hat_A ^ c-hat_B ^ c-hat_C).")
+      .def_readonly("transported_wedge", &ColorSingletRead::transportedWedge,
+                    "det of the transported representatives, before the "
+                    "determinant-line trivialization is applied.")
+      .def_readonly("transported_columns",
+                    &ColorSingletRead::transportedColumns)
+      .def_readonly("magnitude", &ColorSingletRead::magnitude)
+      .def_readonly("nonvanishing", &ColorSingletRead::nonvanishing)
+      .def_readonly("min_singular_value",
+                    &ColorSingletRead::minSingularValue)
+      .def_readonly("certificate", &ColorSingletRead::certificate);
+
+  py::class_<ColorSinglet>(m, "ColorSinglet",
+      R"doc(The singlet readout of the sheet convention: the three colour
+representatives are transported to a common base cluster p and wedged, and the
+dual determinant trivialization Omega_p is applied.  Invariant under all local
+frame changes when Omega_p transforms dually, which frameCovarianceResidual
+measures rather than asserts.)doc")
+      .def_static("amplitude", &ColorSinglet::amplitude,
+                  py::arg("trivialization"), py::arg("transports"),
+                  py::arg("colors"), py::arg("tolerance") = 1e-12)
+      .def_static("frameCovarianceResidual",
+                  &ColorSinglet::frameCovarianceResidual,
+                  py::arg("trivialization"), py::arg("transports"),
+                  py::arg("colors"), py::arg("baseFrame"), py::arg("frames"),
+                  "|S_ABC(frame-changed) - S_ABC(original)|.");
+
+  // ==========================================================================
+  // MonopoleSpin (#1196): spin from an odd Dirac monopole.  The monopole
+  // number through a closed cut, the projective representation D_k(g) with
+  // its cocycle, the spinor bands it protects, and the sharp-spin
+  // eigen-equations on a superposition of determinants.
+  // ==========================================================================
+  py::class_<MonopoleNumberRead>(m, "MonopoleNumberRead",
+      R"doc(The monopole number of the connection through a closed cut, read
+from the outward face holonomies.  Each face contributes the principal
+argument of its holonomy, so a face carrying more than half a turn is not
+resolved; integrality_residual measures how far the total sits from an integer
+multiple of 2 pi, and a total that is not such a multiple is not a bundle at
+all.)doc")
+      .def(py::init<>())
+      .def_readonly("face_holonomies", &MonopoleNumberRead::faceHolonomies)
+      .def_readonly("face_fluxes", &MonopoleNumberRead::faceFluxes)
+      .def_readonly("total_flux", &MonopoleNumberRead::totalFlux)
+      .def_readonly("monopole_number", &MonopoleNumberRead::monopoleNumber)
+      .def_readonly("integrality_residual",
+                    &MonopoleNumberRead::integralityResidual)
+      .def_readonly("bundle", &MonopoleNumberRead::bundle)
+      .def_readonly("odd", &MonopoleNumberRead::odd,
+                    "Whether the monopole number is odd -- the condition "
+                    "under which the projective class is nontrivial.")
+      .def_readonly("branch_margin", &MonopoleNumberRead::branchMargin,
+                    "min over faces of (pi - |face flux|).")
+      .def_readonly("on_branch_cut", &MonopoleNumberRead::onBranchCut,
+                    "Whether some face flux reached the ends of the "
+                    "principal interval, where the reported integer rests "
+                    "on the stated convention.")
+      .def_readonly("unit_modulus_residual",
+                    &MonopoleNumberRead::unitModulusResidual)
+      .def_readonly("certificate", &MonopoleNumberRead::certificate);
+
+  py::class_<GaugeCompensationRead>(m, "GaugeCompensationRead",
+      R"doc(The compensating gauge transformation u_g of one rotation,
+normalized to one at the spanning tree's root, and the residual that decides
+whether the configuration really is symmetric up to gauge.)doc")
+      .def(py::init<>())
+      .def_readonly("gauge", &GaugeCompensationRead::gauge)
+      .def_readonly("residual", &GaugeCompensationRead::residual)
+      .def_readonly("symmetric", &GaugeCompensationRead::symmetric);
+
+  py::class_<CocycleRead>(m, "CocycleRead",
+      R"doc(The cocycle varpi of the projective representation and its
+cohomology class.  The class is nontrivial exactly when some COMMUTING pair
+has a commutator phase varpi(g,h)/varpi(h,g) different from one, that phase
+being invariant under every rescaling of the compensating gauges.  On an
+odd-monopole tetrahedral support it is -1, the quaternion relation of the
+binary tetrahedral group.)doc")
+      .def(py::init<>())
+      .def_readonly("group_order", &CocycleRead::groupOrder)
+      .def_readonly("scalar_residual", &CocycleRead::scalarResidual)
+      .def_readonly("values", &CocycleRead::values)
+      .def_readonly("max_commutator_deviation",
+                    &CocycleRead::maxCommutatorDeviation)
+      .def_readonly("commutator_phase", &CocycleRead::commutatorPhase)
+      .def_readonly("commutator_pair", &CocycleRead::commutatorPair)
+      .def_readonly("nontrivial", &CocycleRead::nontrivial)
+      .def_readonly("certificate", &CocycleRead::certificate);
+
+  py::class_<SpinorBandRead>(m, "SpinorBandRead",
+      R"doc(One symmetry-protected band of a rotation-invariant operator: its
+eigenvalue and rank, the measured invariance under the projective action, the
+irreducibility score (exactly one for an irreducible projective
+representation with this cocycle), the distance from the coexact sector, and
+whether it is a spinor doublet.)doc")
+      .def(py::init<>())
+      .def_readonly("eigenvalue", &SpinorBandRead::eigenvalue)
+      .def_readonly("dimension", &SpinorBandRead::dimension)
+      .def_readonly("invariance_residual",
+                    &SpinorBandRead::invarianceResidual)
+      .def_readonly("irreducibility_score",
+                    &SpinorBandRead::irreducibilityScore)
+      .def_readonly("coexact_residual", &SpinorBandRead::coexactResidual)
+      .def_readonly("spinor_doublet", &SpinorBandRead::spinorDoublet)
+      .def_readonly("coexact", &SpinorBandRead::coexact);
+
+  py::class_<MonopoleSpinRead>(m, "MonopoleSpinRead",
+      R"doc(What a classifier needs from an odd-monopole support in one
+record: the monopole number of the bounding cut, the cocycle of the rotation
+group's projective action, the symmetry-protected bands of the
+rotation-averaged edge Laplacian, and the j = 1/2 doublet among them -- the
+rank-two, invariant, irreducible, spinorial band lying in the coexact
+sector.)doc")
+      .def(py::init<>())
+      .def_readonly("monopole", &MonopoleSpinRead::monopole)
+      .def_readonly("cocycle", &MonopoleSpinRead::cocycle)
+      .def_readonly("bands", &MonopoleSpinRead::bands)
+      .def_readonly("doublet_index", &MonopoleSpinRead::doubletIndex)
+      .def_readonly("half_integer_doublet",
+                    &MonopoleSpinRead::halfIntegerDoublet)
+      .def_readonly("certificate", &MonopoleSpinRead::certificate);
+
+  py::class_<MonopoleSupport>(m, "MonopoleSupport",
+      R"doc(A symmetric cluster bounded by a closed cut, carried as its
+vertices, its oriented edges (smaller vertex first), its outward-oriented
+faces and one U(1) connection value per edge.  It reads the monopole number
+from the outward face holonomies, builds the twisted coboundary and
+Laplacians, solves for the compensating gauge transformation of each rotation,
+assembles D_0(g) and D_1(g), measures the cocycle and decides its class, and
+reads the symmetry-protected bands of a rotation-invariant operator.)doc")
+      .def(py::init<std::size_t,
+                    std::vector<std::array<std::size_t, 2>>,
+                    std::vector<std::array<std::size_t, 3>>,
+                    std::vector<std::complex<double>>>(),
+           py::arg("vertexCount"), py::arg("edges"), py::arg("faces"),
+           py::arg("connection"))
+      .def_static("tetrahedron", &MonopoleSupport::tetrahedron,
+                  py::arg("monopoleNumber"),
+                  "The tetrahedron with the symmetric monopole connection "
+                  "whose every outward face holonomy is exp(2 pi i mu / 4).")
+      .def_static("tetrahedralRotations",
+                  &MonopoleSupport::tetrahedralRotations,
+                  "The twelve rotations of the tetrahedron (T = A_4), the "
+                  "identity first.")
+      .def_static("u1Part", &MonopoleSupport::u1Part, py::arg("connection"),
+                  "U_e / |U_e| -- the explicit way to bring an unrestricted "
+                  "connection into this kernel's domain.")
+      .def_property_readonly("vertex_count", &MonopoleSupport::vertexCount)
+      .def_property_readonly("edges", &MonopoleSupport::edges)
+      .def_property_readonly("faces", &MonopoleSupport::faces)
+      .def_property_readonly("connection", &MonopoleSupport::connection)
+      .def("transport", &MonopoleSupport::transport, py::arg("x"),
+           py::arg("y"))
+      .def("monopoleNumber", &MonopoleSupport::monopoleNumber,
+           py::arg("tolerance") = 1e-9)
+      .def("twistedCoboundary", &MonopoleSupport::twistedCoboundary)
+      .def("twistedFaceCoboundary",
+           &MonopoleSupport::twistedFaceCoboundary)
+      .def("vertexLaplacian", &MonopoleSupport::vertexLaplacian)
+      .def("edgeLaplacian", &MonopoleSupport::edgeLaplacian)
+      .def("coexactProjector", &MonopoleSupport::coexactProjector,
+           py::arg("tolerance") = 1e-9)
+      .def("gaugeCompensation", &MonopoleSupport::gaugeCompensation,
+           py::arg("rotation"), py::arg("tolerance") = 1e-9)
+      .def("vertexRepresentation", &MonopoleSupport::vertexRepresentation,
+           py::arg("rotation"), "D_0(g) on vertex cochains.")
+      .def("edgeRepresentation", &MonopoleSupport::edgeRepresentation,
+           py::arg("rotation"), "D_1(g) on edge cochains.")
+      .def("intertwiningResidual", &MonopoleSupport::intertwiningResidual,
+           py::arg("rotation"),
+           "||delta_0^U D_0(g) - D_1(g) delta_0^U||_max.")
+      .def("cocycle", &MonopoleSupport::cocycle, py::arg("group"),
+           py::arg("cochainDegree") = 1, py::arg("tolerance") = 1e-9)
+      .def("rotationAveragedEdgeOperator",
+           &MonopoleSupport::rotationAveragedEdgeOperator,
+           py::arg("edgeOperator"), py::arg("group"))
+      .def("spinorBands", &MonopoleSupport::spinorBands,
+           py::arg("operatorMatrix"), py::arg("group"),
+           py::arg("nontrivialClass"),
+           py::arg("degeneracyTolerance") = 1e-7,
+           py::arg("tolerance") = 1e-9)
+      .def("spinRead", &MonopoleSupport::spinRead, py::arg("group"),
+           py::arg("degeneracyTolerance") = 1e-7,
+           py::arg("tolerance") = 1e-9,
+           "The whole spin read: monopole number, cocycle, bands and the "
+           "j = 1/2 doublet among them.");
+
+  py::class_<SharpSpinRead>(m, "SharpSpinRead",
+      R"doc(The sharpness read of a total-space spin: the right and left
+eigen-equation residuals, the verdict they decide, and the biorthogonal
+expectation and complex variance that the whitepaper calls insufficient on
+their own.  variance_would_accept is true when the variance test alone would
+have called the state sharp; when it is true and sharp is false, the variance
+test has been decided wrongly by isotropic cancellation.)doc")
+      .def(py::init<>())
+      .def_readonly("target_eigenvalue", &SharpSpinRead::targetEigenvalue)
+      .def_readonly("right_residual", &SharpSpinRead::rightResidual)
+      .def_readonly("left_residual", &SharpSpinRead::leftResidual)
+      .def_readonly("sharp", &SharpSpinRead::sharp)
+      .def_readonly("expectation", &SharpSpinRead::expectation)
+      .def_readonly("variance", &SharpSpinRead::variance)
+      .def_readonly("variance_would_accept",
+                    &SharpSpinRead::varianceWouldAccept)
+      .def_readonly("determinant_count", &SharpSpinRead::determinantCount)
+      .def_readonly("certificate", &SharpSpinRead::certificate);
+
+  py::class_<SharpSpin>(m, "SharpSpin",
+      R"doc(The sharp total-space spin readout: the two eigen-equations
+(J^2 - 3/4 I)|Psi_R> = 0 and <Psi_L|(J^2 - 3/4 I) = 0 on the bounded
+superposition of determinants selected by the isolating interaction.  J^2 is
+polynomial in the exterior generators, so its action is applied mode-pair by
+mode-pair; the dense Fock matrix is materialized only for fixtures and only
+below the declared mode limit.)doc")
+      .def_property_readonly_static("kMaxDenseModes",
+          [](py::object) { return SharpSpin::kMaxDenseModes; })
+      .def_static("determinant", &SharpSpin::determinant,
+                  py::arg("occupiedModes"), py::arg("modeCount"))
+      .def_static("determinantSuperposition",
+                  &SharpSpin::determinantSuperposition,
+                  py::arg("occupations"), py::arg("amplitudes"),
+                  py::arg("modeCount"))
+      .def_static("applyTotalSpinSquared", &SharpSpin::applyTotalSpinSquared,
+                  py::arg("spinMatrices"), py::arg("state"))
+      .def_static("totalSpinSquaredMatrix",
+                  &SharpSpin::totalSpinSquaredMatrix,
+                  py::arg("spinMatrices"))
+      .def_static("read", &SharpSpin::read, py::arg("spinMatrices"),
+                  py::arg("rightState"), py::arg("leftState"),
+                  py::arg("targetEigenvalue") = 0.75,
+                  py::arg("tolerance") = 1e-9)
+      .def_static("doubletSpinMatrices", &SharpSpin::doubletSpinMatrices,
+                  py::arg("carrierCount"),
+                  "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
+                  "spin-one-half carriers, mode 2c + s being spin state s of "
+                  "carrier c.");
 
   // ==========================================================================
   // ColorFiber / ColorAnchor: the exact three-edge SU(3) color kernel
@@ -2934,20 +3546,25 @@ certificate, never sampled independently.)doc")
                      const std::vector<std::vector<std::uint64_t>> &toCells,
                      const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
                      std::optional<cobordism::HodgeLaplacian::WeightConvention>
-                         weights) {
+                         weights,
+                     std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
                     return FiberConnection::chainTransfer(
                         st, degree, toCells, fromVertexTuples,
                         weights.value_or(cobordism::HodgeLaplacian::
-                                             defaultWeightConvention()));
+                                             defaultWeightConvention()),
+                        source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
                   },
                   py::arg("st"), py::arg("degree"), py::arg("to_cells"),
                   py::arg("from_cells"), py::arg("weights") = py::none(),
+                  py::arg("metric_source") = py::none(),
                   "The chain transfer T_AB induced by the connecting "
                   "simplices: the off-diagonal block L_k[cells(to), "
-                  "cells(from)] of the whole-complex weighted Hodge "
-                  "operator, cells matched by sorted vertex-id tuple.  "
-                  "weights = None follows the process-wide "
-                  "HodgeWeightConvention at call time.")
+                  "cells(from)] of the whole-complex Hodge operator, cells "
+                  "matched by sorted vertex-id tuple.  Under WhitneyPencil "
+                  "(degree >= 1) the operator is h_k(s, U) on chains in the "
+                  "reference orientation, the basis of the tracker's Whitney "
+                  "bands.  weights = None and metric_source = None follow the "
+                  "process-wide defaults at call time.")
       .def_static("responseTransfer", &FiberConnection::responseTransfer,
                   py::arg("network"), py::arg("to_component"),
                   py::arg("from_component"),
@@ -2969,28 +3586,33 @@ certificate, never sampled independently.)doc")
       .def("transportOnSpacetime",
            [](const FiberConnection &self, const std::shared_ptr<Spacetime> &st,
               const SpectralFiber &to, const SpectralFiber &from,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.transportOnSpacetime(
                  st, to, from,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("st"), py::arg("to_fiber"), py::arg("from_fiber"),
-           py::arg("weights") = py::none(),
+           py::arg("weights") = py::none(), py::arg("metric_source") = py::none(),
            "Derive the transport on a spacetime: assembles the chain "
            "transfer from the Hodge operator, then transport().")
       .def("transportOnSpacetimeCached",
            [](const FiberConnection &self, cobordism::AnalyticCache &cache,
               const std::shared_ptr<Spacetime> &st, const SpectralFiber &to,
               const SpectralFiber &from,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.transportOnSpacetimeCached(
                  cache, st, to, from,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("cache"), py::arg("st"), py::arg("to_fiber"),
            py::arg("from_fiber"), py::arg("weights") = py::none(),
+           py::arg("metric_source") = py::none(),
            "transportOnSpacetime through the AnalyticCache contract "
            "(key: the union of the two fibers' cell-vertex sets; cached "
            "equals cold).")
@@ -3001,27 +3623,32 @@ certificate, never sampled independently.)doc")
       .def("holonomyOnSpacetime",
            [](const FiberConnection &self, const std::shared_ptr<Spacetime> &st,
               const std::vector<SpectralFiber> &fibers,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.holonomyOnSpacetime(
                  st, fibers,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("st"), py::arg("fibers"), py::arg("weights") = py::none(),
+           py::arg("metric_source") = py::none(),
            "Wilson loop over an ordered cycle of fibers: links "
            "fibers[i] <- fibers[i+1] (wrapping), then the product.")
       .def("holonomyOnSpacetimeCached",
            [](const FiberConnection &self, cobordism::AnalyticCache &cache,
               const std::shared_ptr<Spacetime> &st,
               const std::vector<SpectralFiber> &fibers,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.holonomyOnSpacetimeCached(
                  cache, st, fibers,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("cache"), py::arg("st"), py::arg("fibers"),
-           py::arg("weights") = py::none(),
+           py::arg("weights") = py::none(), py::arg("metric_source") = py::none(),
            "holonomyOnSpacetime through the AnalyticCache: per-link caching "
            "plus the loop product keyed by all participating fibers, so a "
            "published TouchedStar invalidates only the loops touching the "
@@ -3156,8 +3783,9 @@ reported, and the whole configuration is echoed on every read
                      "expectation.")
       .def_readwrite("spinVarianceTolerance",
                      &ParticleClustersConfig::spinVarianceTolerance,
-                     "|Var(J^2)| cap of the sharp-spin certificate "
-                     "value.")
+                     "|Var(J^2)| cap the reported complex variance is "
+                     "graded against; the sharp-spin certificate is the "
+                     "pair of eigen-equations, not this cap.")
       .def_readwrite("minSupportContainment",
                      &ParticleClustersConfig::minSupportContainment,
                      "Minimum fraction of a constituent's level-0 "
@@ -3887,7 +4515,24 @@ mass-radius samples.)doc")
                      "independent net-color-flux diagnostic.")
       .def_readwrite("rotation", &BaryonCandidateEvidence::rotation,
                      "PhysicalRotation character of the closed 2pi "
-                     "total-space cluster-frame cycle.")
+                     "total-space cluster-frame cycle.  Report-only: a "
+                     "rigid rotation leaves every band constant, so this "
+                     "character is +1 along any rigid cycle whatever the "
+                     "spin, and it gates nothing.")
+      .def_readwrite("monopoleSpin", &BaryonCandidateEvidence::monopoleSpin,
+                     "MonopoleSupport.spinRead of the cluster's bounding "
+                     "cut: the monopole number of the U(1) part of the "
+                     "connection, the cocycle of the rotation group's "
+                     "projective action, and the j = 1/2 doublet it "
+                     "protects.  None fails 'odd-monopole' and "
+                     "'projective-cocycle' by name.")
+      .def_readwrite("sharpSpinEigen",
+                     &BaryonCandidateEvidence::sharpSpinEigen,
+                     "SharpSpin.read of the two eigen-equations on the "
+                     "bounded superposition of determinants -- the "
+                     "sharp-spin certificate.  None fails 'sharp-spin' by "
+                     "name; it is never inferred from the expectation or "
+                     "from the variance.")
       .def_readwrite("exchange", &BaryonCandidateEvidence::exchange,
                      "The particle-exchange character, when the "
                      "exchange experiment was run.  Report-only: the "
@@ -3905,7 +4550,11 @@ mass-radius samples.)doc")
                      "quasi-free state.")
       .def_readwrite("spinVarianceRead",
                      &BaryonCandidateEvidence::spinVarianceRead,
-                     "wickSpinSquaredVariance -- the sharp-spin "
+                     "wickSpinSquaredVariance.  Report-only: a vanishing "
+                     "complex variance can come from isotropic "
+                     "cancellation on a state that is not an eigenstate, "
+                     "so it fills totalJ2Variance and supplies the "
+                     "obstruction premise, but sharpSpinEigen is the "
                      "certificate.")
       .def_readwrite("classVarianceReads",
                      &BaryonCandidateEvidence::classVarianceReads,
@@ -3947,8 +4596,8 @@ failure of either is "no-baryon"): "constituent-quarks",
 "bound-supercomponent"; then the proton gates: "color-singlet",
 "color-flux-zero", "baryon-flux-unit", "composite-parity-odd",
 "flavor-uud", "electric-flux-unit", "spin-expectation", "sharp-spin",
-"rotation-character", "spin-lift", "finite-radius", "profile-stability",
-"crossing-readouts".
+"odd-monopole", "projective-cocycle", "spin-lift", "finite-radius",
+"profile-stability", "crossing-readouts".
 
 Unknown values are None/NaN/0-sign, never zero-filled; physicalMass is
 always None.)doc")
@@ -3978,6 +4627,10 @@ always None.)doc")
                     "never inferred from the expectation.")
       .def_readonly("rotationCharacter", &BaryonRead::rotationCharacter,
                     "The Berry-cancelled 2pi character; None = "
+                    "uncertified.  Report-only.")
+      .def_readonly("monopoleNumber", &BaryonRead::monopoleNumber,
+                    "The monopole number of the U(1) part of the "
+                    "connection through the bounding cut; None = "
                     "uncertified.")
       .def_readonly("classification", &BaryonRead::classification)
       .def_readonly("persistence", &BaryonRead::persistence)
@@ -4008,7 +4661,31 @@ always None.)doc")
                     "both channels certified.  Report-only.")
       .def_readonly("spinLiftApplicable", &BaryonRead::spinLiftApplicable)
       .def_readonly("spinLiftAccepted", &BaryonRead::spinLiftAccepted)
-      .def_readonly("sharpSpin", &BaryonRead::sharpSpin)
+      .def_readonly("oddMonopole", &BaryonRead::oddMonopole,
+                    "Whether the monopole number through the bounding cut "
+                    "is odd.")
+      .def_readonly("projectiveCocycleNontrivial",
+                    &BaryonRead::projectiveCocycleNontrivial,
+                    "Whether the cocycle of the rotation group's "
+                    "projective action is cohomologically nontrivial, so "
+                    "the modes carry spinor representations of the double "
+                    "cover.")
+      .def_readonly("sharpSpinRightResidual",
+                    &BaryonRead::sharpSpinRightResidual,
+                    "||(J^2 - 3/4 I)|Psi_R>|| relative to the state norm; "
+                    "NaN = no eigen read.")
+      .def_readonly("sharpSpinLeftResidual",
+                    &BaryonRead::sharpSpinLeftResidual,
+                    "||<Psi_L|(J^2 - 3/4 I)|| relative to the state norm; "
+                    "NaN = no eigen read.")
+      .def_readonly("varianceWouldAccept", &BaryonRead::varianceWouldAccept,
+                    "Whether the complex variance alone would have "
+                    "accepted the state.  Report-only: true here with "
+                    "sharpSpin false means the variance was cancelled "
+                    "isotropically on a state that is not an eigenstate.")
+      .def_readonly("sharpSpin", &BaryonRead::sharpSpin,
+                    "Whether BOTH eigen-equations held on the supplied "
+                    "superposition of determinants.")
       .def_readonly("quasiFreeClassSwept",
                     &BaryonRead::quasiFreeClassSwept,
                     "Whether the accepted covariance-only class was swept "
@@ -4062,6 +4739,21 @@ always None.)doc")
                   },
                   py::arg("record"),
                   "Rehydrate; rejects an unknown schema_version.");
+
+  py::class_<ClusterSupportProposal> clusterSupportProposal(m, "ClusterSupportProposal",
+      R"doc(One proposed cluster support and the proposers that offered it: the support as
+level-0 cell ids, whether Newman-Girvan modularity proposed it, whether the degree-zero
+band of the covariant operator proposed it, each proposer's index into its own input
+list (NO_PROPOSER when it did not propose this support), and the largest Jaccard index
+between this support and any support the other proposer offered.)doc");
+  clusterSupportProposal.attr("NO_PROPOSER") = ClusterSupportProposal::kNoProposer;
+  clusterSupportProposal
+      .def_readonly("support", &ClusterSupportProposal::support)
+      .def_readonly("modularity", &ClusterSupportProposal::modularity)
+      .def_readonly("band", &ClusterSupportProposal::band)
+      .def_readonly("modularityIndex", &ClusterSupportProposal::modularityIndex)
+      .def_readonly("bandIndex", &ClusterSupportProposal::bandIndex)
+      .def_readonly("crossProposerOverlap", &ClusterSupportProposal::crossProposerOverlap);
 
   py::class_<ParticleClusters>(m, "ParticleClusters",
       R"doc(The quark/antiquark classifier over persistent modular
@@ -4141,6 +4833,17 @@ evidence.)doc")
                   py::arg("overlap_threshold") = 0.5,
                   "Track candidates across scale/time by their color "
                   "bands (matchFibers delegation).")
+      .def_static("proposeSupports", &ParticleClusters::proposeSupports,
+                  py::arg("modularity_components"), py::arg("band_components"),
+                  "The cluster supports both proposers offer, merged: "
+                  "Newman-Girvan modularity on the combinatorial "
+                  "one-skeleton, which does not see the complex Hodge "
+                  "weights, and the degree-zero band of the covariant "
+                  "operator, which is nothing but those weights. Two "
+                  "supports are one proposal when their cell-id sets are "
+                  "equal; the modularity components come first in input "
+                  "order, then every band component none of them matched. "
+                  "Both proposers only propose, and neither may veto.")
       // ---- even sectors ------------------------------------------
       .def("octetBilinearRead", &ParticleClusters::octetBilinearRead,
            py::arg("state"), py::arg("color_modes"),

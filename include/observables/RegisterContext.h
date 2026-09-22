@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "cobordism/EigenstateSynthesis.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::graph {}
@@ -42,10 +42,10 @@ class InteriorHinges;  // the shared 4D hinge-selection core (InteriorHinges.h)
 /// `cobordism::ChainComplex`.
 ///
 ///   * A reader, not a builder. The context reads an already-built, relaxed
-///     spacetime: a `Proton::block()`, a `ProtonIngredients` state, a relaxed
+///     spacetime: a `ProtonSynthesis::block()`, a `ProtonIngredients` state, a relaxed
 ///     `MultiCobordism` complex, or a dump the loader already rehydrated into a
 ///     live complex. It never builds, solves or materializes anything; the
-///     emergent build lives in Proton, ProtonIngredients and MultiCobordism. The
+///     builds live in ProtonSynthesis, ProtonIngredients and MultiCobordism. The
 ///     facet/coface skeleton that the `dualVolume()` and `deficitAngle()` reads
 ///     walk must already be present on the live complex, as it is on every built
 ///     state. Completing a bare `Spacetime::fromVertexTuples` skeleton — for dump
@@ -92,7 +92,7 @@ class RegisterContext {
     ///   emergent holes), an empty complex, or `count < 0` / `degree < 0`.
     explicit RegisterContext(
         std::shared_ptr<Spacetime> spacetime, int count = 3, int degree = 3,
-        std::vector<std::complex<double>> target = cobordism::Proton::singlet());
+        std::vector<std::complex<double>> target = cobordism::ProtonSynthesis::singlet());
 
     /// Build the context with an explicit hole selection, such as a build's own
     /// census or the relabel gate's matched images. Validated with the same count

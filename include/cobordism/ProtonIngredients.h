@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 
 namespace tessera::spacetime { class Spacetime; }
 
@@ -20,24 +20,29 @@ class MultiCobordism;  // returned (seeded, not run) by the node factories below
 
 /// # ProtonIngredients
 ///
-/// The emergent arm of the proton build. `Proton` is composed here unchanged
-/// and supplies the same ingredients through the same two-step drive, except
-/// that the final state is never pinned: step B's `outputTargets` is empty, so
-/// the objective is
+/// The ingredients arm of the proton experiment, whose final state is not
+/// pinned. `ProtonSynthesis` is composed here unchanged and supplies the same
+/// ingredients through the same two-step drive, except that the final state is
+/// never pinned: step B's `outputTargets` is empty, so the objective is
 ///
 ///   `F = ‖∇S_Regge‖² + Γ·Σᵢ r_U(inputᵢ)`
 ///
 /// and whatever the whole cobordism comes to carry is read afterwards rather
-/// than driven. Exactly one variable differs from `Proton::build()` — the
-/// singlet output target — so the two classes form an A/B experiment.
+/// than driven. Exactly one variable differs from `ProtonSynthesis::build()` —
+/// the singlet output target — so the two classes form an A/B experiment.
 ///
-///   * Step A — recombination: `Proton::recombinationNode`, delegated to a
-///     composed `Proton` configured identically: two neutral q-q̄ pairs
-///     `{1,-1,0}` ⊔ `{1,0,-1}` → a diquark `{1,ω}` ⊔ antidiquark `{1,ω²}`.
-///   * Step B — formation with nothing pinned: the same ideal diquark `{1,ω}`
-///     plus third quark `{ω²}` inputs on the same single-Δ⁴ seed as
-///     `Proton::formationNode`, but with an empty output-target list, so no
-///     singlet enters the drive.
+///   * Step A — recombination: `ProtonSynthesis::recombinationNode`, delegated
+///     to a composed `ProtonSynthesis` configured identically: two neutral q-q̄
+///     pairs `{1,-1,0}` ⊔ `{1,0,-1}` → a diquark `{1,ω}` ⊔ antidiquark
+///     `{1,ω²}`. It pins those two outputs, so it is a controlled-synthesis
+///     node: it runs in `SimulationMode::Synthesis` through
+///     `ProtonSynthesis::driveNode`.
+///   * Step B — formation with no output pinned: the same ideal diquark
+///     `{1,ω}` plus third quark `{ω²}` inputs on the same single-Δ⁴ seed as
+///     `ProtonSynthesis::formationNode`, but with an empty output-target list,
+///     so no singlet enters the drive. It runs in the node's default mode,
+///     `SimulationMode::Emergence` with the strict sub-mode, through the same
+///     schedule (`ProtonSynthesis::NodeDrive::run`).
 ///
 /// The seed stays uniform and all-spacelike (`ℓ² = +1`) by design: at
 /// initialization no time has passed, and causal structure — which marks
@@ -55,20 +60,21 @@ class MultiCobordism;  // returned (seeded, not run) by the node factories below
 ///
 /// Everything physical is a post-hoc observable: `emergentHoles()`, the final
 /// objective, the inputs-only residual, and `singletResidual()` — the singlet
-/// `r_state` of `Proton::singlet()` against the whole, reported as a diagnostic
-/// so the emergent result is comparable to the canonical build's carried
+/// `r_state` of `ProtonSynthesis::singlet()` against the whole, reported as a
+/// diagnostic so the unpinned result is comparable to the synthesis's carried
 /// level.
 class ProtonIngredients {
  public:
-  /// Configure an emergent-arm build. The knobs and their defaults are
-  /// `Proton`'s, so the two arms differ only in what is pinned; see
-  /// `Proton::Proton` for their meaning.
+  /// Configure an ingredients-arm build. The knobs and their defaults are
+  /// `ProtonSynthesis`'s, so the two arms differ only in what is pinned; see
+  /// `ProtonSynthesis::ProtonSynthesis` for their meaning.
   explicit ProtonIngredients(std::uint64_t seed = 0, int registerDegree = 3,
                              double gamma = 50.0, double inputWeight = 20.0,
                              int precone = 0, bool shouldUseDirectedSurgery = false);
 
-  /// Build the emergent arm: run step A then step B with `Proton::build()`'s
-  /// drive (initialization pass with `grow_boundaries=true`, evolution pass
+  /// Build the ingredients arm: run step A then step B with
+  /// `ProtonSynthesis::build()`'s drive (initialization pass with
+  /// `grow_boundaries=true`, evolution pass
   /// with ∂W frozen, optional directed cone probes, then `runStage2`),
   /// restarting across seeds until an attempt is stationary and persistent.
   /// When `maxRestarts` is exhausted the lowest-final-`F` attempt is kept and
@@ -81,13 +87,14 @@ class ProtonIngredients {
              double stage2Beta = 1.0, int stage2MaxIters = 10,
              double persistRelTol = 0.05);
 
-  /// Step A verbatim: `Proton::recombinationNode` on the composed canonical
-  /// `Proton` — the same seeded, not-yet-run 2→2 node `Proton::build()` drives.
+  /// Step A verbatim: `ProtonSynthesis::recombinationNode` on the composed
+  /// `ProtonSynthesis` — the same seeded, not-yet-run 2→2 node, in
+  /// `SimulationMode::Synthesis`, that `ProtonSynthesis::build()` drives.
   [[nodiscard]] std::shared_ptr<MultiCobordism> recombinationNode(std::uint64_t seed) const;
   /// Step B with nothing pinned: the same single-Δ⁴ seed and ideal diquark
-  /// `{1,ω}` plus third quark `{ω²}` inputs as `Proton::formationNode`, but
-  /// `outputTargets = {}`, so the final state emerges and is read off the whole
-  /// afterwards.
+  /// `{1,ω}` plus third quark `{ω²}` inputs as `ProtonSynthesis::formationNode`,
+  /// but `outputTargets = {}`, so the final state is not driven and is read off
+  /// the whole afterwards.
   [[nodiscard]] std::shared_ptr<MultiCobordism> formationNode(std::uint64_t seed) const;
   /// The joint inputs-only node: one `MultiCobordism` whose inputs are the
   /// three Z₃-symmetric neutral q-q̄ pairs `{1,−1,0} ⊔ {0,1,−1} ⊔ {−1,0,1}`
@@ -112,42 +119,42 @@ class ProtonIngredients {
   [[nodiscard]] bool persistent();
   /// The base seed of the kept attempt. Triggers `build()`.
   [[nodiscard]] std::uint64_t seed();
-  /// The full relaxed emergent step-B complex. Triggers `build()`.
+  /// The full relaxed step-B complex. Triggers `build()`.
   [[nodiscard]] std::shared_ptr<Spacetime> spacetime();
-  /// The emergent object is the whole step-B cobordism; provided for API parity
-  /// with `Proton::block()`. Triggers `build()`.
+  /// The object read off is the whole step-B cobordism; provided for API parity
+  /// with `ProtonSynthesis::block()`. Triggers `build()`.
   [[nodiscard]] std::shared_ptr<Spacetime> block();
   /// The emergent `(k+2)`-vertex holes on the whole — a topological observable,
   /// not a gate; any count, including zero. Triggers `build()`.
   [[nodiscard]] std::vector<std::vector<std::uint64_t>> emergentHoles();
   /// Diagnostic only: the relabeling-invariant singlet `r_state` of
-  /// `Proton::singlet()` against the whole's `L_k` harmonic, reported so the
-  /// emergent result is comparable to the canonical build's carried level
+  /// `ProtonSynthesis::singlet()` against the whole's `L_k` harmonic, reported
+  /// so the unpinned result is comparable to the synthesis's carried level
   /// (`≈0` there). It never steers or gates this build. Triggers `build()`.
   [[nodiscard]] double singletResidual();
   /// Step B's inputs-only realizability residual `r_U` — the whole matter term
-  /// of the emergent arm's objective. Triggers `build()`.
+  /// of the ingredients arm's objective. Triggers `build()`.
   [[nodiscard]] double inputResidual();
   /// The kept attempt's final objective `F`. Triggers `build()`.
   [[nodiscard]] double finalObjective();
-  /// Step A's `r_U`, reported exactly as `Proton` reports it. Triggers
+  /// Step A's `r_U`, reported exactly as `ProtonSynthesis` reports it. Triggers
   /// `build()`.
   [[nodiscard]] double diquarkResidual();
 
  private:
   /// Lazily run `build()` with default parameters on first accessor use.
   void ensureBuilt();
-  /// The same minimal seed as `Proton`: a single Δ⁴ simplex with the uniform
-  /// all-spacelike metric (`ℓ² = +1`; see the class note on why no causal
-  /// structure is initialized). Mirrors `Proton::buildMinimalSeed`, which is
-  /// private there.
+  /// The same minimal seed as `ProtonSynthesis`: a single Δ⁴ simplex with the
+  /// uniform all-spacelike metric (`ℓ² = +1`; see the class note on why no
+  /// causal structure is initialized). Mirrors
+  /// `ProtonSynthesis::buildMinimalSeed`, which is private there.
   [[nodiscard]] static std::shared_ptr<Spacetime> buildMinimalSeed();
 
   // ---- configuration ----
-  /// The canonical arm, composed unchanged: supplies step A's node verbatim and
+  /// The synthesis arm, composed unchanged: supplies step A's node verbatim and
   /// the configuration contract (seed, degree, Γ, input weight, precone,
   /// directed surgery).
-  Proton proton_;
+  ProtonSynthesis proton_;
   std::uint64_t baseSeed_;
   int registerDegree_;
   double gamma_;

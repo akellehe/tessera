@@ -7,18 +7,18 @@
 #include <vector>
 
 #include "cobordism/MultiCobordism.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 #include "spacetime/Spacetime.h"
 
 namespace tessera::observables {
 using ::tessera::cobordism::MultiCobordism;
-using ::tessera::cobordism::Proton;
+using ::tessera::cobordism::ProtonSynthesis;
 
 namespace {
 
 std::vector<std::complex<double>> conjugateSinglet() {
   std::vector<std::complex<double>> conj;
-  for (const auto &c : Proton::singlet()) conj.push_back(std::conj(c));
+  for (const auto &c : ProtonSynthesis::singlet()) conj.push_back(std::conj(c));
   return conj;
 }
 
@@ -26,7 +26,7 @@ std::vector<std::complex<double>> conjugateSinglet() {
 
 double SingletResidual::computeHeadline(const RegisterContext &ctx) const {
   return MultiCobordism::residualOfTargetStateAgainstHarmonic(
-      ctx.spacetime(), ctx.degree(), Proton::singlet());
+      ctx.spacetime(), ctx.degree(), ProtonSynthesis::singlet());
 }
 
 double SingletResidual::conjugateResidual(const RegisterContext &ctx) const {
@@ -35,7 +35,7 @@ double SingletResidual::conjugateResidual(const RegisterContext &ctx) const {
 }
 
 Record SingletResidual::record(const RegisterContext &ctx) const {
-  const std::vector<std::complex<double>> singlet = Proton::singlet();
+  const std::vector<std::complex<double>> singlet = ProtonSynthesis::singlet();
   Record::Map m;
   m["singlet_residual"] = MultiCobordism::residualOfTargetStateAgainstHarmonic(
       ctx.spacetime(), ctx.degree(), singlet);
