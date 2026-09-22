@@ -29,6 +29,13 @@ def test_an_order_that_is_not_implemented_is_refused_by_name():
     Approximations().require_implemented()
     with pytest.raises(NotImplementedError, match="self_energy_order = 4"):
         Approximations(self_energy_order=4).require_implemented()
+    # On a momentum set the expansions exist at their first order, and the default orders are refused there.
+    Approximations(1, 1, momenta=2).require_implemented()
+    Approximations(3, 5, momenta=2).require_implemented()
+    with pytest.raises(NotImplementedError, match="self_energy_order = 4 is not implemented on a momentum set"):
+        Approximations(self_energy_order=4, momenta=2).require_implemented()
+    with pytest.raises(ValueError):
+        Approximations(momenta=0)
 
 
 def test_the_momentum_nodes_are_a_midpoint_grid_counted_once_per_time_reversed_pair():
@@ -48,7 +55,7 @@ def test_the_flags_reach_the_run():
     parsed = Approximations.from_arguments(parser.parse_args(
         ["--self-energy-order", "1", "--zero-momentum-order", "1", "--refinement-terms", "3", "--lattice-images", "3",
          "--frequency-nodes", "32"]))
-    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12)
+    assert parsed == Approximations(1, 1, 3, 3, 32, 12, 12, 1)
     crystal = abinitio.Crystal(6.0 * np.eye(3), [(soft_atom(), np.full(3, 0.5))])
     coarse, fine = abinitio.MeshCrystal(crystal, 6, approximations=parsed), abinitio.MeshCrystal(crystal, 6)
     assert coarse.approximations.images == (-1, 0, 1)
@@ -144,3 +151,39 @@ def test_the_run_end_to_end_on_synthetic_ions(tmp_path):
         assert row["head_defect"] < 1e-10 and row["dielectric_constant"] > 1.0
         assert row["g0w0"] < row["g0w0_body"] < row["hartree_fock"]            # screening closes a Hartree-Fock gap
     assert set(result["extrapolated"]) >= {"hartree_fock", "g0w0", "gw0", "evgw"} and result["amplification"] > 1.0
+
+
+@pytest.mark.slow
+def test_the_run_end_to_end_on_a_momentum_set(tmp_path):
+    """`--momenta 2`: Hartree-Fock on the 2 x 2 x 2 set with one momentum of
+    every orbit solved, and the quasiparticle equation with the screened
+    interaction of every transfer of the set, the zero-transfer entry included."""
+    path = _files(tmp_path)
+    result = gaas.main(["ab-initio", "--cation", path, "--anion", path, "--divisions", "6", "--bands", "18",
+                        "--screening-bands", "20", "--lattice-constant", "5.0", "--self-energy-order", "1",
+                        "--zero-momentum-order", "1", "--momenta", "2"])
+    assert result["approximations"]["momenta"] == 2
+    row = result["runs"][0]
+    assert row["solved_momenta"] == 4 and row["dielectric_constant"] > 1.0
+    assert row["g0w0"] < row["hartree_fock"]                                     # screening closes a Hartree-Fock gap
+    assert np.isfinite(row["gw0"])
+    # On this fixture evGW closes a gap between momenta of the set (its levels fed back into the screening pull an
+    # empty level below a filled one at the transfer (0, 0, 1/2)); the run records that and keeps its other results.
+    assert (row["evgw"] is not None and np.isfinite(row["evgw"])) or "not positive" in row["evgw_failure"]
+
+
+def test_a_method_without_a_solution_is_recorded_and_the_run_goes_on():
+    rows, lines = {}, []
+
+    def closes():
+        raise ValueError("a level difference at the transfer (0, 0, 0.5) is not positive: the levels fed back have "
+                         "closed a gap there")
+    gaas._fed_back(rows, "evgw", closes, lambda levels: 1.0, lines.append, lambda: "N=6")
+    assert rows["evgw"] is None and "not positive" in rows["evgw_failure"] and "no solution" in lines[0]
+    gaas._fed_back(rows, "gw0", lambda: (np.zeros(3), [1e-6]), lambda levels: 2.5, lines.append, lambda: "N=6")
+    assert rows["gw0"] == 2.5 and rows["gw0_residual"] == 1e-6
+
+    def broken():
+        raise ValueError("some other error")
+    with pytest.raises(ValueError, match="some other error"):
+        gaas._fed_back(rows, "g0w0", broken, lambda levels: 0.0, lines.append, lambda: "N=6")

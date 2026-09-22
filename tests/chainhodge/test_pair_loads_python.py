@@ -81,3 +81,55 @@ def test_the_phase_derivative_along_the_edge_displacements_is_the_momentum_deriv
     assert abs(sp.csc_matrix(derivative.A) + weighted - dA).max() < 1e-7 * abs(A_plus).max()
     with pytest.raises(ValueError):
         cov.sparsePencilPhaseDerivativeAlong(weights[:-1])
+
+
+def test_the_loader_of_a_complex_gives_the_pair_loads_of_every_call(cell):
+    """`PairLoads` keeps the volumes and the edges of the top simplices; its
+    loads are those of `WhitneyMass.pairLoads`, also for enough columns that
+    the simplices are spread over threads, and repeat bit for bit."""
+    rng = np.random.default_rng(5)
+    loader = ch.PairLoads(cell.complex, cell.squared_lengths)
+    assert (loader.numVertices, loader.numEdges) == (cell.size, len(cell.edges))
+    k1, k2 = (0.5, 0.0, 0.0), (0.2, -0.3, 0.1)
+    for columns in (1, 3, 700):
+        x = rng.standard_normal(cell.size) + 1j * rng.standard_normal(cell.size)
+        Y = rng.standard_normal((cell.size, columns)) + 1j * rng.standard_normal((cell.size, columns))
+        reference = np.asarray(ch.WhitneyMass.pairLoads(cell.complex, cell.squared_lengths, _links(cell, k1),
+                                                        _links(cell, k2), x, Y))
+        loads = loader.loads(np.array(_links(cell, k1)), np.array(_links(cell, k2)), x, Y)
+        assert np.abs(loads - reference).max() < 1e-13 * np.abs(reference).max()
+        assert np.array_equal(loads, loader.loads(np.array(_links(cell, k1)), np.array(_links(cell, k2)), x, Y))
+    with pytest.raises(ValueError):
+        loader.loads(np.array(_links(cell, k1))[:-1], np.array(_links(cell, k2)), x, Y)
+    with pytest.raises(ValueError):
+        loader.loadsPhaseDerivativeAlong(np.array(_links(cell, k1)), np.array(_links(cell, k2)), x, Y, np.zeros(3))
+
+
+def test_the_phase_derivative_of_the_pair_loads_is_their_derivative_along_the_links(cell):
+    """Along arbitrary edge weights it is the central difference of the loads
+    with the links of Y multiplied by exp(+-i t w_e); along the displacements
+    of the edges it is the derivative with respect to the crystal momentum of
+    Y; and with a trivial first connection it is
+    `dressedVertexPotentialPhaseDerivativeAlong` applied to Y."""
+    rng = np.random.default_rng(6)
+    loader = ch.PairLoads(cell.complex, cell.squared_lengths)
+    x = rng.standard_normal(cell.size) + 1j * rng.standard_normal(cell.size)
+    Y = rng.standard_normal((cell.size, 4)) + 1j * rng.standard_normal((cell.size, 4))
+    k1, k2 = (0.5, 0.0, 0.25), (0.2, -0.3, 0.1)
+    links_x, links_y = np.array(_links(cell, k1)), np.array(_links(cell, k2))
+    weights, step = rng.standard_normal(len(cell.edges)), 1e-5
+    derivative = loader.loadsPhaseDerivativeAlong(links_x, links_y, x, Y, weights)
+    difference = (loader.loads(links_x, links_y * np.exp(1j * step * weights), x, Y)
+                  - loader.loads(links_x, links_y * np.exp(-1j * step * weights), x, Y)) / (2.0 * step)
+    assert np.abs(derivative - difference).max() < 1e-8 * np.abs(derivative).max()
+    axis = 2
+    displacements = np.ascontiguousarray(cell.edge_displacements[:, axis])
+    derivative = loader.loadsPhaseDerivativeAlong(links_x, links_y, x, Y, displacements)
+    shift = np.linalg.solve(cell.reciprocal.T, np.eye(3)[axis] * step)            # reciprocal coordinates of dk
+    difference = (loader.loads(links_x, np.array(_links(cell, np.array(k2) + shift)), x, Y)
+                  - loader.loads(links_x, np.array(_links(cell, np.array(k2) - shift)), x, Y)) / (2.0 * step)
+    assert np.abs(derivative - difference).max() < 1e-8 * np.abs(derivative).max()
+    trivial = np.array(_links(cell, (0.0, 0.0, 0.0)))
+    reference = sp.csc_matrix(cell.covariant(k2).dressedVertexPotentialPhaseDerivativeAlong(
+        list(x), [float(w) for w in displacements])) @ Y
+    assert np.abs(loader.loadsPhaseDerivativeAlong(trivial, links_y, x, Y, displacements) - reference).max() < 1e-13
