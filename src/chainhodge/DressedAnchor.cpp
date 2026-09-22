@@ -11,6 +11,8 @@
 #include <string>
 #include <utility>
 
+#include <Eigen/LU>
+
 namespace tessera::chainhodge {
 
 namespace {
