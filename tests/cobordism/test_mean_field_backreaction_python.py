@@ -42,7 +42,7 @@ import tessera as T
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _joint_action_hosts import (  # noqa: E402
-    kuhn_ball, kuhn_interior_vertices, sphere3)
+    kuhn_ball, kuhn_interior_vertices, sphere3, tetrahedron)
 
 cob = T.cobordism
 
@@ -332,6 +332,90 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         reread = np.array(
             solver.action.occupation_projector(2, True), dtype=complex)
         self.assertLess(np.max(np.abs(final - reread)), 1e-9)
+
+
+class TheSection7TetrahedronSplitTest(unittest.TestCase):
+    """Section 7's single-edge split of the degree-one bands, reproduced.
+
+    Section 7 records that within a symmetry multiplet the Hellmann-Feynman
+    force is anisotropic, and quotes the derivatives a single-edge perturbation
+    splits the two degree-one bands of the regular tetrahedron with: the exact
+    band by ``{-lambda/8, 0, +lambda/16}``, the coexact band by
+    ``{-lambda/16, -lambda/32, +lambda/32}``, and the band trace by
+    ``-lambda/16`` per edge in both. Each number is asserted here.
+
+    A split is an eigenvalue of the band-restricted operator derivative
+    ``PhiTilde^T (dh/dz_e) Phi``, and a band trace is ``tr(Gamma dh/dz_e)`` for
+    that band's projector, so what is measured is the force the backreaction
+    acts with and not a proxy for it. One occupied mode lengthens the edges it
+    lives on and shortens others, which is what a split of mixed sign says.
+
+    The scale is load-bearing rather than incidental. The metric Hodge operator
+    is homogeneous of degree -1 in the squared lengths, so ``dlambda/dz`` is
+    homogeneous of degree -2 and the ratio ``(dlambda/dz)/lambda`` of degree -1.
+    The quoted ratios therefore hold at one squared edge length only, and that
+    length is 8 — the regular tetrahedron on alternating corners of a cube of
+    side two, whose edge is ``2 sqrt(2)``. The metric source is load-bearing
+    too: the diagonal weights split the exact band by ``{-lambda/2, 0, 0}``
+    instead, so these numbers pin the Whitney operator.
+    """
+
+    SQUARED_EDGE_LENGTH = 8.0
+
+    def _bands(self):
+        """The two degree-one bands, their frames, and one edge's derivative."""
+        spacetime = tetrahedron(
+            squared=lambda index: self.SQUARED_EDGE_LENGTH)
+        action = cob.JointAction(spacetime, _declaration())
+        carrier = _matrix(action.carrier_operator())
+        values, frame = np.linalg.eig(carrier)
+        order = np.argsort(values.real)
+        values, frame = values[order], frame[:, order]
+        dual = np.linalg.inv(frame)
+        hodge = cob.HodgeLaplacian(spacetime,
+                                   cob.HodgeWeightConvention.SquaredContent,
+                                   cob.HodgeMetricSource.WhitneyPencil)
+        probe = spacetime.getEdgeList().toVector()[0]
+        derivative = _matrix(hodge.laplacianGradient(
+            1, probe.getSource().getId(), probe.getTarget().getId()))
+        return spacetime, values, frame, dual, derivative
+
+    def test_the_bands_are_two_triplets(self):
+        _, values, _, _, _ = self._bands()
+        for value in values[:3]:
+            self.assertAlmostEqual(value.real, 5.0, places=8)
+            self.assertAlmostEqual(value.imag, 0.0, places=8)
+        for value in values[3:]:
+            self.assertAlmostEqual(value.real, 10.0, places=8)
+            self.assertAlmostEqual(value.imag, 0.0, places=8)
+
+    def test_the_single_edge_split_matches_section_seven(self):
+        _, values, frame, dual, derivative = self._bands()
+        expected = {0: (-1.0 / 8.0, 0.0, 1.0 / 16.0),
+                    3: (-1.0 / 16.0, -1.0 / 32.0, 1.0 / 32.0)}
+        for first, ratios in expected.items():
+            band = list(range(first, first + 3))
+            eigenvalue = values[first].real
+            block = dual[band, :] @ derivative @ frame[:, band]
+            splits = np.sort(np.linalg.eigvals(block).real) / eigenvalue
+            for measured, quoted in zip(splits, ratios):
+                self.assertAlmostEqual(measured, quoted, places=8)
+
+    def test_the_band_trace_is_a_uniform_dilation(self):
+        spacetime, values, frame, dual, _ = self._bands()
+        for first in (0, 3):
+            band = list(range(first, first + 3))
+            eigenvalue = values[first].real
+            projector = frame[:, band] @ dual[band, :]
+            declaration = _declaration(matter_weight=1.0)
+            declaration.covariance = [complex(value) for value
+                                      in projector.reshape(-1)]
+            force = cob.JointAction(
+                spacetime, declaration).hellmann_feynman_length_force()
+            for component in force:
+                self.assertAlmostEqual(component.real / eigenvalue,
+                                       -1.0 / 16.0, places=8)
+                self.assertAlmostEqual(component.imag, 0.0, places=8)
 
 
 class TheKuhnBallCarriesTheSection7SetupTest(unittest.TestCase):
