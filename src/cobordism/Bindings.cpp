@@ -147,6 +147,9 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
            "Per-degree +/-1 signs relating stored cell orientations to the reference (ascending id) orientation.")
       .def_static("fromTopCells", &ChainComplex::fromTopCells, py::arg("top_cells"),
            "Build from top cells (vertex-id tuples) alone, oriented by ascending vertex id; no geometry.")
+      .def_static("fromCells", &ChainComplex::fromCells, py::arg("cells"),
+           "Build from declared cells (vertex-id tuples) of any dimensions, oriented by ascending "
+           "vertex id; the complex need not be pure.")
       .def_static("fromSpacetime", &ChainComplex::fromSpacetime, py::arg("spacetime"),
                   "Build the chain complex from a triangulation (a Spacetime).")
       .def("dimension", &ChainComplex::dimension)

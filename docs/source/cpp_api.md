@@ -148,6 +148,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} CrossingReadouts.h
 ```
+```{doxygenfile} ClusterLineage.h
+```
 
 ### Emergent-proton observables
 

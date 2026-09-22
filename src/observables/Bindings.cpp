@@ -52,6 +52,7 @@
 #include "observables/ExchangeHolonomy.h"
 #include "observables/FiberConnection.h"
 #include "observables/ParticleClusters.h"
+#include "observables/ClusterLineage.h"
 #include "cobordism/Proton.h"
 #include "spacetime/Spacetime.h"
 #include "ForceLayout.h"
@@ -4574,4 +4575,134 @@ evidence.)doc")
                   py::arg("st"), py::arg("support"),
                   "Whether the induced one-skeleton on the support is "
                   "connected, and in how many pieces.");
+
+  // ---- the lineage number on the mapping cylinder with a cooriented cut ----
+
+  py::class_<LevelComplex>(m, "LevelComplex",
+      "One level of an interaction history: the declared cells of K_l in the "
+      "level's own vertex numbering, and the level's vertex count.")
+      .def(py::init<>())
+      .def(py::init([](std::vector<std::vector<std::uint64_t>> cells, std::size_t vertices) {
+             LevelComplex level;
+             level.cells = std::move(cells);
+             level.vertices = vertices;
+             return level;
+           }),
+           py::arg("cells"), py::arg("vertices"))
+      .def_readwrite("cells", &LevelComplex::cells)
+      .def_readwrite("vertices", &LevelComplex::vertices);
+
+  py::class_<InteractionCobordism>(m, "InteractionCobordism",
+      "The interaction cobordism W: the mapping cylinder of the reduction map "
+      "from each level onto the next level's response vertices, with the next "
+      "level's cells attached on the outgoing end, concatenated over the "
+      "history's steps.")
+      .def_readonly("complex", &InteractionCobordism::complex)
+      .def_readonly("cells", &InteractionCobordism::cells)
+      .def_readonly("vertexOffsets", &InteractionCobordism::vertexOffsets)
+      .def_readonly("levels", &InteractionCobordism::levels)
+      .def_readonly("levelOf", &InteractionCobordism::levelOf)
+      .def_readonly("responseOf", &InteractionCobordism::responseOf)
+      .def_readonly("edges", &InteractionCobordism::edges)
+      .def("incomingVertices", &InteractionCobordism::incomingVertices,
+           "The vertices of the incoming boundary: every vertex of level 0.")
+      .def("outgoingVertices", &InteractionCobordism::outgoingVertices,
+           "The vertices of the outgoing boundary: every vertex of the last level.")
+      .def("edgeIndex", &InteractionCobordism::edgeIndex, py::arg("a"), py::arg("b"),
+           "The canonical C_1(W) index of the edge on the two vertices, or -1 when the pair is "
+           "not an edge of W.")
+      .def("fiberEdges", &InteractionCobordism::fiberEdges,
+           "The canonical C_1(W) indices of the fiber edges, the only timelike edges of W.")
+      .def("toRecord", [](const InteractionCobordism &self) {
+             return recordToPython(self.toRecord());
+           });
+
+  py::class_<CoorientedCut>(m, "CoorientedCut",
+      "A cooriented separating cut Sigma, carried by the 0-cochain that is 0 on "
+      "the incoming side and 1 on the outgoing side. Sigma is the "
+      "codimension-one cycle dual to that cochain's coboundary, closed because "
+      "a coboundary is a cocycle and separating because every edge with "
+      "endpoints on opposite sides is a crossing edge.")
+      .def_readonly("side", &CoorientedCut::side)
+      .def_readonly("crossingEdges", &CoorientedCut::crossingEdges)
+      .def_readonly("crossingSigns", &CoorientedCut::crossingSigns)
+      .def_readonly("separates", &CoorientedCut::separates)
+      .def_readonly("failedCertificates", &CoorientedCut::failedCertificates)
+      .def("toRecord",
+           [](const CoorientedCut &self) { return recordToPython(self.toRecord()); });
+
+  py::class_<Lineage>(m, "Lineage",
+      "An oriented cluster lineage: an integral one-chain of W relative to its "
+      "boundary, one coefficient per 1-simplex of W, together with the fermion "
+      "number n_Q the lineage carries.")
+      .def_readonly("clusterId", &Lineage::clusterId)
+      .def_readonly("coefficients", &Lineage::coefficients)
+      .def_readwrite("fermionNumber", &Lineage::fermionNumber)
+      .def("toRecord", [](const Lineage &self) { return recordToPython(self.toRecord()); });
+
+  py::class_<LineageNumberRead>(m, "LineageNumberRead",
+      "The reading of one lineage against one cut: N_Q, whether the cut "
+      "separates, whether the lineage is a relative cycle, and the interior "
+      "vertices at which it has a source.")
+      .def_readonly("clusterId", &LineageNumberRead::clusterId)
+      .def_readonly("number", &LineageNumberRead::number)
+      .def_readonly("fermionNumber", &LineageNumberRead::fermionNumber)
+      .def_readonly("relativeCycle", &LineageNumberRead::relativeCycle)
+      .def_readonly("interiorSources", &LineageNumberRead::interiorSources)
+      .def_readonly("cutSeparates", &LineageNumberRead::cutSeparates)
+      .def_readonly("failedCertificates", &LineageNumberRead::failedCertificates)
+      .def("toRecord",
+           [](const LineageNumberRead &self) { return recordToPython(self.toRecord()); });
+
+  py::class_<TotalLineageRead>(m, "TotalLineageRead",
+      "The reading of a collection of lineages against one cut: "
+      "N_q = sum_Q n_Q c_Q . Sigma and B = N_q / 3, the factor 1/3 being an "
+      "explicit physical calibration and not a topological theorem.")
+      .def_readonly("fermionNumber", &TotalLineageRead::fermionNumber)
+      .def_readonly("baryonNumber", &TotalLineageRead::baryonNumber)
+      .def_readonly("perLineage", &TotalLineageRead::perLineage)
+      .def_readonly("failedCertificates", &TotalLineageRead::failedCertificates)
+      .def("toRecord",
+           [](const TotalLineageRead &self) { return recordToPython(self.toRecord()); });
+
+  py::class_<ClusterLineage>(m, "ClusterLineage",
+      "The oriented integer of a cluster's history: N_Q = c_Q . Sigma, the "
+      "simplicial intersection pairing of an integral one-chain with a "
+      "cooriented cut on the interaction cobordism. No sign is taken from a "
+      "spectral coordinate, from the connection, from an eigenvalue or from a "
+      "density, and no level set of a real part is used.")
+      .def_static("history", &ClusterLineage::history, py::arg("levels"), py::arg("reductions"),
+                  "The concatenated interaction cobordism of a history of levels.")
+      .def_static("mappingCylinder", &ClusterLineage::mappingCylinder, py::arg("incoming"),
+                  py::arg("reduction"), py::arg("outgoing"),
+                  "One interaction step's cobordism.")
+      .def_static("levelCut", &ClusterLineage::levelCut, py::arg("W"), py::arg("after_level"),
+                  "The cut placed between one level and the next.")
+      .def_static("cutFromSides", &ClusterLineage::cutFromSides, py::arg("W"), py::arg("side"),
+                  "The cut carried by a declared side per vertex, validated.")
+      .def_static("fromFiberPath", &ClusterLineage::fromFiberPath, py::arg("W"),
+                  py::arg("start_vertex"), py::arg("fermion_number") = 1,
+                  py::arg("cluster_id") = std::string{},
+                  "The lineage through the fiber edges out of one starting vertex.")
+      .def_static("fromTrackedSupports", &ClusterLineage::fromTrackedSupports, py::arg("W"),
+                  py::arg("first_level"), py::arg("supports"), py::arg("fermion_number") = 1,
+                  py::arg("cluster_id") = std::string{},
+                  "The lineage of a cluster whose support is tracked across levels.")
+      .def_static("fromVertexPath", &ClusterLineage::fromVertexPath, py::arg("W"), py::arg("path"),
+                  py::arg("fermion_number") = 1, py::arg("cluster_id") = std::string{},
+                  "The lineage along a declared vertex path of W.")
+      .def_static("reversed", &ClusterLineage::reversed, py::arg("lineage"),
+                  "The same cluster history traversed in the opposite direction.")
+      .def_static("pairSurfaceBoundary", &ClusterLineage::pairSurfaceBoundary, py::arg("W"),
+                  py::arg("surface"), py::arg("fermion_number") = 1,
+                  py::arg("cluster_id") = std::string{},
+                  "The boundary of an oriented pair surface, as a lineage.")
+      .def_static("relativeBoundary", &ClusterLineage::relativeBoundary, py::arg("W"),
+                  py::arg("lineage"), "The lineage's boundary, one integer per vertex of W.")
+      .def_static("intersectionNumber", &ClusterLineage::intersectionNumber, py::arg("W"),
+                  py::arg("cut"), py::arg("lineage"), "N_Q = c_Q . Sigma, the bare integer.")
+      .def_static("read", &ClusterLineage::read, py::arg("W"), py::arg("cut"), py::arg("lineage"),
+                  "N_Q with its certificates.")
+      .def_static("totals", &ClusterLineage::totals, py::arg("W"), py::arg("cut"),
+                  py::arg("lineages"), "N_q and B over a collection of lineages.");
 }
