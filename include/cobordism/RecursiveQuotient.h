@@ -714,16 +714,36 @@ class RecursiveQuotient {
 
     /// Craig--Bampton retained-mode basis over the declared window: retain
     /// per-component fixed-interface modes with eigenvalue <= `modeCutoff`
-    /// (must be >= `windowUpper`). Hermitian regimes with a positive chain
-    /// metric only. `residualTolerance` is the declared acceptance residual
-    /// the certificate holds against; negative selects the strict
-    /// `Options::tolerance`, under which a truncated surrogate reports
-    /// `holds() == false` while still carrying its window, gap and
-    /// residuals.
-    /// @throws std::invalid_argument in the non-normal regime, on an
-    ///   indefinite metric, a bad window, or `modeCutoff < windowUpper`;
-    ///   std::length_error when a component's interior block is at or above
-    ///   the dense crossover.
+    /// (must be >= `windowUpper`). `residualTolerance` is the declared
+    /// acceptance residual the certificate holds against; negative selects the
+    /// strict `Options::tolerance`, under which a truncated surrogate reports
+    /// `holds() == false` while still carrying its window, gap and residuals.
+    ///
+    /// The surrogate exists in every regime; what the regime decides is the
+    /// pairing. In `PositiveSemidefinite` and `HermitianIndefinite` the pairing
+    /// is the adjoint against the positive diagonal chain metric \f$ W \f$, the
+    /// fixed-interface modes come from a self-adjoint eigensolver on
+    /// \f$ W^{1/2}LW^{-1/2} \f$, and the reduced pair
+    /// \f$ (V^\dagger WLV,\ V^\dagger WV) \f$ is solved as a Hermitian
+    /// generalized eigenproblem. In `NonNormal` and `ComplexSymmetricPencil`
+    /// the pairing is the transpose against the level's own metric — the
+    /// carried Gram \f$ \mathcal G \f$ on a pencil level, the diagonal weights
+    /// otherwise — the fixed-interface modes come from a general complex
+    /// eigensolver on the interior pencil \f$ (L_{II}, W_{II}) \f$, and the
+    /// reduced pair \f$ (V^TWLV,\ V^TWV) \f$ is solved the same way. No adjoint
+    /// is formed and no definiteness is assumed on that path; a complex level's
+    /// frequency is the real part of its eigenvalue, which is the convention
+    /// every band window here is stated in (`CertifiedBand`'s [min Re, max Re]).
+    ///
+    /// This is a certified approximation and never an exact spectral identity:
+    /// the error is controlled by the residuals of the retained pairs and by
+    /// `discardedModeGap`, both of which the read carries. The pencil-level
+    /// counterpart that holds a surrogate spectrum to the exact Feshbach map is
+    /// `chainhodge::PencilSchur::craigBampton`.
+    /// @throws std::invalid_argument on an indefinite metric in a Hermitian
+    ///   regime, a singular interior or reduced chain metric in a bilinear one,
+    ///   a bad window, or `modeCutoff < windowUpper`; std::length_error when a
+    ///   component's interior block is at or above the dense crossover.
     [[nodiscard]] CraigBamptonRead craigBampton(
         double windowLower, double windowUpper, double modeCutoff,
         double residualTolerance = -1.0) const;

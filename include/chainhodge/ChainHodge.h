@@ -5,6 +5,7 @@
 #define TESSERA_CHAINHODGE_CHAINHODGE_H
 
 #include <array>
+#include <chrono>
 #include <complex>
 #include <cstddef>
 #include <limits>
@@ -57,6 +58,110 @@ struct HarmonicRead {
   /// Whether the dense SVD (true) or the sparse rank-revealing QR (false)
   /// computed the kernel.
   bool dense{true};
+};
+
+/// # SparseCostReport
+///
+/// What one operation of the sparse production path cost, as the scaling
+/// verification plan's P series asks for it: wall time, memory and fill-in
+/// against the number of cells. Every field is measured on the operation that
+/// produced the report; nothing is estimated from a model.
+///
+/// *Fill-in* is the ratio of the stored entries of the factorization to the
+/// stored entries of the matrix that was factorized. It is one when the factors
+/// are as sparse as the matrix and grows with the ordering's failure to avoid
+/// new nonzeros; it is the quantity that decides whether a nominally sparse
+/// path is a sparse path at all.
+///
+/// *Memory* is reported twice, for two different questions.
+/// `factorMegabytes` is the memory the factors themselves occupy, computed
+/// exactly from their stored entries: one complex scalar and one storage index
+/// per entry. It is deterministic and comparable across machines.
+/// `residentMegabytes` is the change in the process's resident set size across
+/// the operation, read from the operating system; it includes the allocator's
+/// own behaviour and every temporary the operation made, and it is quiet NaN
+/// where the operating system does not publish it.
+struct SparseCostReport {
+  /// What was measured: "bordered-lu", "stacked-qr", "contour-band" or
+  /// "pencil-apply".
+  std::string operation{};
+  int degree{0};
+  /// \f$ n_k \f$, the number of cells of the degree the operation ran at.
+  int dimension{0};
+  /// Rows and stored entries of the matrix the factorization was taken of.
+  long long systemRows{0};
+  long long systemNonZeros{0};
+  /// Stored entries of the factors: \f$ \mathrm{nnz}(L) + \mathrm{nnz}(U) \f$
+  /// for an LU, \f$ \mathrm{nnz}(R) \f$ for a QR. Zero when the operation took
+  /// no factorization.
+  long long factorNonZeros{0};
+  /// `factorNonZeros / systemNonZeros`; quiet NaN when nothing was factorized.
+  double fillIn{std::numeric_limits<double>::quiet_NaN()};
+  /// Wall-clock seconds of the whole operation, factorization and solves.
+  double wallSeconds{0.0};
+  /// Memory of the factors, from `factorNonZeros`; quiet NaN when nothing was
+  /// factorized.
+  double factorMegabytes{std::numeric_limits<double>::quiet_NaN()};
+  /// Change in the process's resident set size across the operation; quiet NaN
+  /// where the operating system does not publish it.
+  double residentMegabytes{std::numeric_limits<double>::quiet_NaN()};
+  /// Right-hand sides the factorization was applied to.
+  long long rightHandSides{0};
+};
+
+/// # SparseCostMeter
+///
+/// A running measurement of one operation of the sparse production path.
+/// Construct it immediately before the work, call `finish` immediately after
+/// with the sizes the work involved, and the returned `SparseCostReport`
+/// carries the elapsed wall time, the change in resident memory, and the
+/// fill-in and factor memory derived from those sizes. It measures; it never
+/// decides anything.
+class SparseCostMeter {
+ public:
+  /// Start the clock for \p operation at degree \p degree and dimension
+  /// \f$ n_k \f$ = \p dimension.
+  SparseCostMeter(std::string operation, int degree, int dimension);
+  /// Stop the clock and return the report.
+  /// @param systemRows rows of the matrix that was factorized.
+  /// @param systemNonZeros its stored entries.
+  /// @param factorNonZeros stored entries of the factors; zero when the
+  ///   operation took no factorization, in which case the fill-in and factor
+  ///   memory are quiet NaN.
+  /// @param rightHandSides right-hand sides the factorization was applied to.
+  [[nodiscard]] SparseCostReport finish(long long systemRows, long long systemNonZeros,
+                                        long long factorNonZeros,
+                                        long long rightHandSides) const;
+  /// The process's resident set size in megabytes, or quiet NaN where the
+  /// operating system does not publish it.
+  [[nodiscard]] static double residentMegabytes();
+
+ private:
+  std::string operation_;
+  int degree_;
+  int dimension_;
+  double startResident_;
+  std::chrono::steady_clock::time_point start_;
+};
+
+/// Two sparse blocks stacked one above the other into a single sparse matrix
+/// of \p columns columns, without either block being densified. An empty block
+/// (zero rows) contributes nothing.
+/// @throws std::invalid_argument when a non-empty block does not have
+///   \p columns columns.
+[[nodiscard]] SparseMatrix stackSparse(const SparseMatrix &top, const SparseMatrix &bottom,
+                                       int columns);
+
+/// The null space of a sparse matrix by rank-revealing sparse QR, with the rank
+/// and the threshold that decided it, and what the computation cost.
+struct SparseKernelRead {
+  /// An orthonormal basis of \f$ \ker S \f$ (\f$ n \times (n - r) \f$).
+  Eigen::MatrixXcd kernel{};
+  /// Numerical rank \f$ r \f$ of \f$ S \f$ and the pivot threshold that decided
+  /// it.
+  int rank{0};
+  double tolerance{0.0};
+  SparseCostReport cost{};
 };
 
 /// The rank conditions (R1)–(R4) at one degree, measured numerically against
@@ -190,8 +295,34 @@ class ChainHodge {
   /// \f$ M_k c = G_k^{-1} c \f$: sparse product (Whitney) or solve (Grassmann).
   [[nodiscard]] Eigen::MatrixXcd applyMinv(int k, const Eigen::MatrixXcd &c) const;
 
+  /// The pencil operator applied to the columns of \p Z: \f$ \tilde A_k Z \f$
+  /// (Whitney) or \f$ A_k Z \f$ (Grassmann), by sparse products and sparse
+  /// solves with \f$ M_{k-1} \f$ (Whitney) or \f$ G_{k+1} \f$ (Grassmann). The
+  /// dense operator is never formed, so this is the production path's pencil
+  /// and it is defined at every size, at and above the crossover included.
+  /// @throws std::invalid_argument when \p Z does not have \f$ n_k \f$ rows.
+  [[nodiscard]] Eigen::MatrixXcd applyPencilOperator(int k, const Eigen::MatrixXcd &Z) const;
+  /// The sparse stacked cochain matrix of degree \p k whose kernel is the
+  /// harmonic space: \f$ S = [\partial_{k+1}^T;\ \partial_k M_k] \f$ (Whitney)
+  /// or \f$ [\partial_k;\ \partial_{k+1}^T G_k] \f$ (Grassmann). It is
+  /// assembled from the sparse boundary maps and the sparse metric alone and is
+  /// never densified on the production path.
+  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
+  /// The null space of a sparse matrix by rank-revealing sparse QR of
+  /// \f$ S^H \f$ (so that \f$ \ker S = (\operatorname{ran} S^H)^{\perp} \f$),
+  /// at the pivot threshold
+  /// \f$ \kappa\,\max(m,n)\,\epsilon_m\,\max_c\|S_{\cdot c}\| \f$. Neither
+  /// \f$ S \f$ nor the orthogonal factor \f$ Q \f$ is formed densely: the
+  /// kernel is \f$ Q \f$ applied to the trailing unit vectors, which is
+  /// \f$ n \times (n - r) \f$ and no larger.
+  /// @param report when non-null, receives the operation's cost.
+  /// @throws std::runtime_error when the sparse QR fails, by name.
+  [[nodiscard]] static SparseKernelRead sparseNullSpace(const SparseMatrix &S, double kappa,
+                                                        SparseCostReport *report = nullptr);
   /// The dense pencil at degree \p k: \f$ (\tilde A_k, M_k) \f$ on images
   /// (Whitney) or \f$ (A_k, G_k) \f$ on chains (Grassmann), formed by solves.
+  /// The dense form is a reference for the sparse production path, not the
+  /// production path itself; `applyPencilOperator` is.
   /// @throws std::length_error at or above the crossover.
   [[nodiscard]] Pencil pencil(int k) const;
   /// \f$ \tilde A_k = M_k A_k M_k \f$ (Whitney), dense, formed by solves with
@@ -250,7 +381,6 @@ class ChainHodge {
   void requireDense(int n, const char *what) const;
   [[nodiscard]] const Factorization &factorization(int k) const;
   [[nodiscard]] Eigen::MatrixXcd solveSparse(int k, const Eigen::MatrixXcd &rhs) const;
-  [[nodiscard]] Eigen::MatrixXcd stackedMatrix(int k) const;
 };
 
 }  // namespace tessera::chainhodge

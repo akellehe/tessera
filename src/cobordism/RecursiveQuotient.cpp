@@ -1379,26 +1379,33 @@ RecursiveQuotient::MultiplicityRead RecursiveQuotient::multiplicity(
 RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     double windowLower, double windowUpper, double modeCutoff,
     double residualTolerance) const {
-  if (regime_ == CertificateRegime::NonNormal)
-    throw std::invalid_argument(
-        "RecursiveQuotient: Craig-Bampton refuses the non-normal regime (a "
-        "self-adjoint solver is never applied to a non-self-adjoint "
-        "operator); use the exact Feshbach pencil instead");
-  if (regime_ == CertificateRegime::ComplexSymmetricPencil)
-    throw std::invalid_argument(
-        "RecursiveQuotient: Craig-Bampton refuses the complex-symmetric-pencil "
-        "regime (the Hermitian AMLS read has no bilinear form); use the exact "
-        "Feshbach pencil or the pencil congruence (T^T A T, T^T M T)");
   if (windowLower > windowUpper)
     throw std::invalid_argument("RecursiveQuotient: windowLower > windowUpper");
   if (modeCutoff < windowUpper)
     throw std::invalid_argument(
         "RecursiveQuotient: modeCutoff must cover the window upper edge");
-  for (int i = 0; i < dim_; ++i)
-    if (!(weights_(i).real() > 0.0) ||
-        std::abs(weights_(i).imag()) > options_.tolerance)
-      throw std::invalid_argument(
-          "RecursiveQuotient: Craig-Bampton needs a positive chain metric");
+  // The regime decides the pairing, not whether the surrogate exists. In the
+  // two Hermitian regimes the pairing is the adjoint against the positive
+  // diagonal chain metric W, which is what a self-adjoint eigensolver needs; in
+  // the non-normal and complex-symmetric-pencil regimes it is the transpose
+  // against the level's own metric -- the carried Gram on a pencil level, the
+  // diagonal weights otherwise -- and the eigenproblems are solved by a general
+  // complex eigensolver, which assumes nothing about the spectrum.
+  const bool bilinear = regime_ == CertificateRegime::NonNormal ||
+                        regime_ == CertificateRegime::ComplexSymmetricPencil;
+  if (!bilinear)
+    for (int i = 0; i < dim_; ++i)
+      if (!(weights_(i).real() > 0.0) ||
+          std::abs(weights_(i).imag()) > options_.tolerance)
+        throw std::invalid_argument(
+            "RecursiveQuotient: Craig-Bampton in a Hermitian regime needs a positive chain "
+            "metric; a signed or complex metric is the non-normal regime, whose surrogate uses "
+            "the transpose pairing");
+  // The metric the reduced pencil is written against.
+  const Eigen::SparseMatrix<cd> metric =
+      (bilinear && pencil_) ? pencilMetric_
+                            : Eigen::SparseMatrix<cd>(
+                                  Eigen::MatrixXcd(weights_.asDiagonal()).sparseView());
 
   const int kept = static_cast<int>(interfaceIndices_.size());
   CraigBamptonRead read;
@@ -1432,36 +1439,85 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
         const int col = interiorPos[static_cast<std::size_t>(it.col())];
         if (row >= 0 && col >= 0) block(row, col) = it.value();
       }
-    // W-similarity: W^{1/2} L W^{-1/2} is Hermitian for a W-self-adjoint L.
-    Eigen::VectorXd sqrtW(m);
-    for (int i = 0; i < m; ++i)
-      sqrtW(i) = std::sqrt(
-          weights_(interior[static_cast<std::size_t>(i)]).real());
-    Eigen::MatrixXcd symmetric = block;
-    for (int i = 0; i < m; ++i)
-      for (int j = 0; j < m; ++j)
-        symmetric(i, j) *= sqrtW(i) / sqrtW(j);
-    const Eigen::MatrixXcd hermitized =
-        0.5 * (symmetric + symmetric.adjoint());
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> eigensolver(hermitized);
-    if (eigensolver.info() != Eigen::Success)
-      throw std::runtime_error(
-          "RecursiveQuotient: fixed-interface eigensolve failed");
-    const auto &values = eigensolver.eigenvalues();
-    int retained = 0;
-    for (Eigen::Index i = 0; i < values.size(); ++i)
-      if (values(i) <= modeCutoff) ++retained;
-    if (retained < m)
-      read.discardedModeGap =
-          std::min(read.discardedModeGap, values(retained) - windowUpper);
     ComponentModes &modes = componentModes[static_cast<std::size_t>(component)];
-    modes.retained = retained;
-    modes.vectors = Eigen::MatrixXcd(m, retained);
-    for (int t = 0; t < retained; ++t)
+    if (bilinear) {
+      // The interior pencil (L_II, W_II) solved by a general complex
+      // eigensolver: no adjoint is formed and no order is assumed. The
+      // frequency of a complex level is its real part, the convention every
+      // band window in this subsystem is stated in (CertifiedBand's
+      // [min Re, max Re]).
+      Eigen::MatrixXcd metricBlock = Eigen::MatrixXcd::Zero(m, m);
+      for (int outer = 0; outer < metric.outerSize(); ++outer)
+        for (Eigen::SparseMatrix<cd>::InnerIterator it(metric, outer); it; ++it) {
+          const int row = interiorPos[static_cast<std::size_t>(it.row())];
+          const int col = interiorPos[static_cast<std::size_t>(it.col())];
+          if (row >= 0 && col >= 0) metricBlock(row, col) = it.value();
+        }
+      Eigen::FullPivLU<Eigen::MatrixXcd> metricLu(metricBlock);
+      metricLu.setThreshold(options_.rankTolerance);
+      if (!metricLu.isInvertible())
+        throw std::invalid_argument(
+            "RecursiveQuotient: Craig-Bampton found the interior chain metric singular on "
+            "component " + std::to_string(component) +
+            ", so its fixed-interface pencil has no spectrum to retain modes from");
+      Eigen::ComplexEigenSolver<Eigen::MatrixXcd> eigensolver(metricLu.solve(block), true);
+      if (eigensolver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "RecursiveQuotient: fixed-interface eigensolve failed");
+      const Eigen::VectorXcd values = eigensolver.eigenvalues();
+      std::vector<int> order(static_cast<std::size_t>(values.size()));
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](int a, int b) {
+        if (values(a).real() != values(b).real())
+          return values(a).real() < values(b).real();
+        return values(a).imag() < values(b).imag();
+      });
+      std::vector<int> keep;
+      for (const int index : order) {
+        if (values(index).real() <= modeCutoff)
+          keep.push_back(index);
+        else
+          read.discardedModeGap =
+              std::min(read.discardedModeGap, values(index).real() - windowUpper);
+      }
+      modes.retained = static_cast<int>(keep.size());
+      modes.vectors = Eigen::MatrixXcd(m, modes.retained);
+      for (int t = 0; t < modes.retained; ++t) {
+        Eigen::VectorXcd v = eigensolver.eigenvectors().col(keep[static_cast<std::size_t>(t)]);
+        v /= std::max(v.norm(), 1e-300);
+        modes.vectors.col(t) = v;
+      }
+    } else {
+      // W-similarity: W^{1/2} L W^{-1/2} is Hermitian for a W-self-adjoint L.
+      Eigen::VectorXd sqrtW(m);
       for (int i = 0; i < m; ++i)
-        modes.vectors(i, t) = eigensolver.eigenvectors()(i, t) / sqrtW(i);
-    totalModes += retained;
-    read.retainedModes.push_back(retained);
+        sqrtW(i) = std::sqrt(
+            weights_(interior[static_cast<std::size_t>(i)]).real());
+      Eigen::MatrixXcd symmetric = block;
+      for (int i = 0; i < m; ++i)
+        for (int j = 0; j < m; ++j)
+          symmetric(i, j) *= sqrtW(i) / sqrtW(j);
+      const Eigen::MatrixXcd hermitized =
+          0.5 * (symmetric + symmetric.adjoint());
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> eigensolver(hermitized);
+      if (eigensolver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "RecursiveQuotient: fixed-interface eigensolve failed");
+      const auto &values = eigensolver.eigenvalues();
+      int retained = 0;
+      for (Eigen::Index i = 0; i < values.size(); ++i)
+        if (values(i) <= modeCutoff) ++retained;
+      if (retained < m)
+        read.discardedModeGap =
+            std::min(read.discardedModeGap, values(retained) - windowUpper);
+      modes.retained = retained;
+      modes.vectors = Eigen::MatrixXcd(m, retained);
+      for (int t = 0; t < retained; ++t)
+        for (int i = 0; i < m; ++i)
+          modes.vectors(i, t) = eigensolver.eigenvectors()(i, t) / sqrtW(i);
+    }
+    totalModes += modes.retained;
+    read.retainedModes.push_back(modes.retained);
   }
 
   const int reducedDim = kept + totalModes;
@@ -1491,16 +1547,47 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
             modes.vectors(i, t);
   }
 
-  const Eigen::MatrixXcd weightedBasis = weights_.asDiagonal() * basis;
+  // The congruence: the transpose pairing in the bilinear regimes, the adjoint
+  // against the positive metric in the Hermitian ones.
+  const Eigen::MatrixXcd weightedBasis = metric * basis;
+  const Eigen::MatrixXcd operatorBasis =
+      bilinear ? Eigen::MatrixXcd(op_ * basis)
+               : Eigen::MatrixXcd(weights_.asDiagonal() * (op_ * basis));
   const Eigen::MatrixXcd stiffness =
-      basis.adjoint() * (weights_.asDiagonal() * (op_ * basis));
-  const Eigen::MatrixXcd mass = basis.adjoint() * weightedBasis;
+      bilinear ? Eigen::MatrixXcd(basis.transpose() * operatorBasis)
+               : Eigen::MatrixXcd(basis.adjoint() * operatorBasis);
+  const Eigen::MatrixXcd mass = bilinear
+                                    ? Eigen::MatrixXcd(basis.transpose() * weightedBasis)
+                                    : Eigen::MatrixXcd(basis.adjoint() * weightedBasis);
   read.basis = toFlat(basis);
   read.reducedStiffness = toFlat(stiffness);
   read.reducedMass = toFlat(mass);
 
   double worstResidual = 0.0;
-  if (reducedDim > 0) {
+  if (reducedDim > 0 && bilinear) {
+    Eigen::FullPivLU<Eigen::MatrixXcd> massLu(mass);
+    massLu.setThreshold(options_.rankTolerance);
+    if (!massLu.isInvertible())
+      throw std::invalid_argument(
+          "RecursiveQuotient: Craig-Bampton found the reduced chain metric V^T W V singular, so "
+          "the reduction basis is degenerate and its spectrum is not the surrogate spectrum");
+    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> reduced(massLu.solve(stiffness), true);
+    if (reduced.info() != Eigen::Success)
+      throw std::runtime_error("RecursiveQuotient: reduced eigensolve failed");
+    const double scale = std::max(opNorm_, 1e-300);
+    for (Eigen::Index i = 0; i < reduced.eigenvalues().size(); ++i) {
+      const cd value = reduced.eigenvalues()(i);
+      if (value.real() < windowLower || value.real() > windowUpper) continue;
+      read.windowEigenvalues.push_back(value.real());
+      const Eigen::VectorXcd fine = basis * reduced.eigenvectors().col(i);
+      const double norm = std::max(fine.norm(), 1e-300);
+      const double residual =
+          (Eigen::VectorXcd(op_ * fine) - value * Eigen::VectorXcd(metric * fine)).norm() /
+          (scale * norm);
+      read.eigenResiduals.push_back(residual);
+      worstResidual = std::max(worstResidual, residual);
+    }
+  } else if (reducedDim > 0) {
     const Eigen::MatrixXcd stiffnessHermitized =
         0.5 * (stiffness + stiffness.adjoint());
     const Eigen::MatrixXcd massHermitized = 0.5 * (mass + mass.adjoint());

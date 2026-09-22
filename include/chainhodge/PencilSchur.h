@@ -11,7 +11,9 @@
 #include <vector>
 
 #include <Eigen/Core>
+#include <Eigen/SparseCore>
 
+#include "chainhodge/ChainHodge.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/ChainComplex.h"
 
@@ -320,6 +322,31 @@ class PencilSchur {
                                                const Eigen::MatrixXcd &M, Complex lambda,
                                                const std::vector<int> &interface,
                                                double rankTolerance = 1e-12);
+  /// The same Feshbach complement on the sparse production path: \f$ A \f$ and
+  /// \f$ M \f$ are sparse, the interior block is factorized by sparse LU, and
+  /// the only dense object formed is the \f$ n \times |B| \f$ block of
+  /// constraint modes and the \f$ |B| \times |B| \f$ response. No
+  /// \f$ n \times n \f$ matrix appears, so this is defined at and above the
+  /// crossover where the dense reading refuses.
+  ///
+  /// The projectors, the generalized inverse and the resonant reduction are not
+  /// available here: they rest on a singular value decomposition of the
+  /// interior block, which is dense. An interior resonance is therefore
+  /// detected — the sparse factorization of \f$ P_{II} \f$ fails, or its
+  /// determinant is below \p rankTolerance times the largest modulus on its
+  /// diagonal — and refused by name, with the dense reading named as the one
+  /// that resolves it.
+  /// @param report when non-null, receives the cost of the interior
+  ///   factorization: its wall time, the memory of its factors and their
+  ///   fill-in.
+  /// @throws std::invalid_argument when \p A and \p M are not square of the
+  ///   same size or an interface index is out of range; std::runtime_error at
+  ///   an interior resonance.
+  [[nodiscard]] static FeshbachResult sparseFeshbach(const SparseMatrix &A, const SparseMatrix &M,
+                                                     Complex lambda,
+                                                     const std::vector<int> &interface,
+                                                     double rankTolerance = 1e-12,
+                                                     SparseCostReport *report = nullptr);
   /// The congruence \f$ (T^TAT,\ T^TMT) \f$ of an explicit reduction basis
   /// \p T, with the symmetry defects of the reduced pair and the inverse
   /// condition number of the basis.

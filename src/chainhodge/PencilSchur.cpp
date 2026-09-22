@@ -11,6 +11,7 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
+#include <Eigen/SparseLU>
 
 namespace tessera::chainhodge {
 
@@ -211,6 +212,113 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   const Complex product = out.interiorDeterminant * out.responseDeterminant;
   out.determinantResidual = std::abs(out.pencilDeterminant - product) /
                             std::max(std::abs(out.pencilDeterminant), kTiny);
+  return out;
+}
+
+FeshbachResult PencilSchur::sparseFeshbach(const SparseMatrix &A, const SparseMatrix &M,
+                                           Complex lambda, const std::vector<int> &interface,
+                                           double rankTolerance, SparseCostReport *report) {
+  const int n = static_cast<int>(A.rows());
+  if (A.cols() != n || M.rows() != n || M.cols() != n)
+    throw std::invalid_argument(
+        "PencilSchur::sparseFeshbach: A and M must be square of the same size");
+  FeshbachResult out;
+  out.lambda = lambda;
+  std::set<int> kept;
+  for (const int b : interface) {
+    if (b < 0 || b >= n)
+      throw std::invalid_argument("PencilSchur::sparseFeshbach: interface index out of range");
+    kept.insert(b);
+  }
+  out.interface.assign(kept.begin(), kept.end());
+  std::vector<int> position(static_cast<std::size_t>(n), -1);
+  for (int i = 0; i < n; ++i)
+    if (kept.find(i) == kept.end()) {
+      position[static_cast<std::size_t>(i)] = static_cast<int>(out.interior.size());
+      out.interior.push_back(i);
+    }
+  const int nb = static_cast<int>(out.interface.size());
+  const int ni = static_cast<int>(out.interior.size());
+  std::vector<int> interfacePosition(static_cast<std::size_t>(n), -1);
+  for (int j = 0; j < nb; ++j)
+    interfacePosition[static_cast<std::size_t>(out.interface[static_cast<std::size_t>(j)])] = j;
+  const SparseMatrix P = SparseMatrix(A - lambda * M);
+  // The four blocks, gathered from the stored entries alone: nothing of size
+  // n x n is ever formed.
+  std::vector<Eigen::Triplet<Complex>> interiorTrip;
+  Eigen::MatrixXcd PBB = Eigen::MatrixXcd::Zero(nb, nb);
+  Eigen::MatrixXcd PBI = Eigen::MatrixXcd::Zero(nb, ni);
+  Eigen::MatrixXcd PIB = Eigen::MatrixXcd::Zero(ni, nb);
+  for (int col = 0; col < P.outerSize(); ++col)
+    for (SparseMatrix::InnerIterator it(P, col); it; ++it) {
+      const int r = static_cast<int>(it.row());
+      const int c = static_cast<int>(it.col());
+      const int rb = interfacePosition[static_cast<std::size_t>(r)];
+      const int cb = interfacePosition[static_cast<std::size_t>(c)];
+      const int ri = position[static_cast<std::size_t>(r)];
+      const int ci = position[static_cast<std::size_t>(c)];
+      if (rb >= 0 && cb >= 0) PBB(rb, cb) = it.value();
+      else if (rb >= 0) PBI(rb, ci) = it.value();
+      else if (cb >= 0) PIB(ri, cb) = it.value();
+      else interiorTrip.emplace_back(ri, ci, it.value());
+    }
+  out.interiorRank = ni;
+  out.rangeProjector = Eigen::MatrixXcd::Identity(ni, ni);
+  out.nullProjector = Eigen::MatrixXcd::Zero(ni, ni);
+  out.interiorNullSpace = Eigen::MatrixXcd(ni, 0);
+  out.interiorLeftNullSpace = Eigen::MatrixXcd(ni, 0);
+  out.resonantModes = Eigen::MatrixXcd(n, 0);
+  if (ni == 0) {
+    out.response = PBB;
+    out.interiorDeterminant = Complex(1.0, 0.0);
+    out.constraintModes = Eigen::MatrixXcd::Identity(n, nb);
+    out.solveResidual = 0.0;
+    return out;
+  }
+  SparseMatrix PII(ni, ni);
+  PII.setFromTriplets(interiorTrip.begin(), interiorTrip.end());
+  PII.makeCompressed();
+  const SparseCostMeter meter("bordered-lu", 0, n);
+  Eigen::SparseLU<SparseMatrix> lu(PII);
+  if (lu.info() != Eigen::Success)
+    throw std::runtime_error(
+        "PencilSchur::sparseFeshbach: the sparse factorization of the interior block failed at "
+        "this shift, which is an interior resonance; the generalized inverse, its projectors and "
+        "the resonant reduction rest on a singular value decomposition, so read the resonance "
+        "with the dense PencilSchur::feshbach");
+  out.interiorDeterminant = lu.determinant();
+  // A sparse LU reveals no rank; the determinant against the largest modulus on
+  // the diagonal of U is the margin it does offer, and a resonance is refused
+  // rather than silently reduced through a nearly singular factorization.
+  double diagonalMax = 0.0;
+  for (int col = 0; col < PII.outerSize(); ++col)
+    for (SparseMatrix::InnerIterator it(PII, col); it; ++it)
+      if (it.row() == it.col()) diagonalMax = std::max(diagonalMax, std::abs(it.value()));
+  if (std::abs(out.interiorDeterminant) <= rankTolerance * std::max(diagonalMax, kTiny))
+    throw std::runtime_error(
+        "PencilSchur::sparseFeshbach: the interior block is numerically singular at this shift "
+        "(|det P_II| = " + std::to_string(std::abs(out.interiorDeterminant)) +
+        "), an interior resonance; read it with the dense PencilSchur::feshbach, which carries "
+        "the generalized inverse, the projectors and the resonant reduction");
+  const Eigen::MatrixXcd X = lu.solve(PIB);  // P_II^{-1} P_IB
+  if (report)
+    *report = meter.finish(static_cast<long long>(PII.rows()),
+                           static_cast<long long>(PII.nonZeros()),
+                           static_cast<long long>(lu.nnzL() + lu.nnzU()),
+                           static_cast<long long>(nb));
+  out.solveResidual = (PII * X - PIB).norm() / std::max(PIB.norm(), kTiny);
+  out.response = PBB - PBI * X;
+  out.responseDeterminant = out.response.fullPivLu().determinant();
+  out.constraintModes = Eigen::MatrixXcd::Zero(n, nb);
+  for (int j = 0; j < nb; ++j) {
+    out.constraintModes(out.interface[static_cast<std::size_t>(j)], j) = Complex(1.0, 0.0);
+    for (int i = 0; i < ni; ++i)
+      out.constraintModes(out.interior[static_cast<std::size_t>(i)], j) = -X(i, j);
+  }
+  // det P is the product of the two factors; it is not formed from a dense LU
+  // of P, so the factorization residual is not measured on this path.
+  out.pencilDeterminant = out.interiorDeterminant * out.responseDeterminant;
+  out.determinantResidual = std::numeric_limits<double>::quiet_NaN();
   return out;
 }
 

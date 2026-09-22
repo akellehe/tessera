@@ -277,6 +277,45 @@ class CovariantChainHodge {
   [[nodiscard]] Eigen::MatrixXcd applyMinv(int k, const Eigen::MatrixXcd &c) const;
   /// \f$ h_k(s,U)\,c \f$ via solves; never formed densely here.
   [[nodiscard]] Eigen::MatrixXcd applyH(int k, const Eigen::MatrixXcd &c) const;
+  /// \f$ \tilde A_k^U Z \f$ applied to the columns of \p Z by sparse products
+  /// and one sparse factorization of \f$ M_{k-1}^U \f$. This is the production
+  /// path's pencil operator: the dense \f$ \tilde A_k^U \f$ is never formed, so
+  /// it is defined at every size, at and above the crossover included.
+  /// @throws std::logic_error under `GRASSMANN_ALL`, whose pencil is written on
+  ///   chains; std::invalid_argument when \p Z does not have \f$ n_k \f$ rows.
+  [[nodiscard]] Eigen::MatrixXcd applyPencilOperator(int k, const Eigen::MatrixXcd &Z) const;
+  /// The sparse bordered system of the shifted pencil at \p zeta,
+  /// \f[
+  ///   \begin{pmatrix} \zeta M_k^U - \partial_{k+1}^U M_{k+1}^U(\partial_{k+1}^{U^{-1}})^T &
+  ///     -M_k^U(\partial_k^{U^{-1}})^T \\ -\partial_k^U M_k^U & M_{k-1}^U \end{pmatrix},
+  /// \f]
+  /// whose Schur complement onto the first block is
+  /// \f$ \zeta M_k^U - \tilde A_k^U \f$. It is \f$ (n_k + n_{k-1}) \f$ square at
+  /// \f$ k \ge 1 \f$ and \f$ n_k \f$ square at \f$ k = 0 \f$, where there is no
+  /// lower degree to border with. One sparse LU of it is the whole shifted
+  /// solve, and its fill-in is the fill-in of the production path.
+  /// @throws std::logic_error under `GRASSMANN_ALL`.
+  [[nodiscard]] SparseMatrix borderedSystem(int k, Complex zeta) const;
+  /// \f$ (\zeta M_k^U - \tilde A_k^U)^{-1} B \f$ through one sparse LU of
+  /// `borderedSystem`, the production path's shifted solve: the dense
+  /// \f$ \tilde A_k^U \f$ is never formed and the solve is defined at every
+  /// size, at and above the crossover included. `resolvent` is this followed by
+  /// \f$ M_k^U \f$.
+  /// @param report when non-null, receives the "bordered-lu" cost of the
+  ///   factorization and its solves — the wall time, the memory of the factors,
+  ///   and their fill-in against the bordered system.
+  /// @throws std::logic_error under `GRASSMANN_ALL`; std::invalid_argument when
+  ///   \p B does not have \f$ n_k \f$ rows; std::runtime_error when the
+  ///   bordered system is singular at \p zeta, which is when \p zeta is an
+  ///   eigenvalue of the pencil.
+  [[nodiscard]] Eigen::MatrixXcd shiftedSolve(int k, Complex zeta, const Eigen::MatrixXcd &B,
+                                              SparseCostReport *report = nullptr) const;
+  /// The sparse stacked cochain matrix \f$ S^U = [(\partial_{k+1}^{U^{-1}})^T;\
+  /// \partial_k^U M_k^U] \f$ whose kernel is \f$ G_k^U H_k \f$: the dressed
+  /// form of `ChainHodge::stackedMatrix`, assembled from the dressed sparse
+  /// blocks and never densified.
+  /// @throws std::logic_error under `GRASSMANN_ALL`.
+  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
   /// The dense \f$ h_k(s,U) \f$ (below the crossover).
   [[nodiscard]] Eigen::MatrixXcd covariantOperator(int k) const;
   /// \f$ \partial h_k(s,U)/\partial s_e \f$ for the edge at canonical index
@@ -379,6 +418,52 @@ class CovariantChainHodge {
   /// and the certificates. Dense in \f$ n_k \f$: below the crossover only.
   [[nodiscard]] Band band(int k, const Contour &contour, double kappa = 10.0,
                           double isotropyTolerance = 1e-10) const;
+
+  /// # The band on the sparse production path
+  ///
+  /// The same Riesz band as `band`, read without ever forming the
+  /// \f$ n_k \times n_k \f$ projector, so that it is defined at and above the
+  /// crossover where `band` refuses.
+  ///
+  /// The contour quadrature is applied to a block of \p probeCount random
+  /// probe vectors \f$ \Omega \f$ rather than to the identity:
+  /// \f$ Y = P_C(U)\,\Omega \f$ costs one sparse factorization of
+  /// `borderedSystem` per node and \p probeCount solves against it, where the
+  /// dense reading costs \f$ n_k \f$ solves and an \f$ n_k \times n_k \f$
+  /// singular value decomposition. Because \f$ P_C \f$ is a projector of rank
+  /// \f$ r \f$, \f$ \operatorname{ran}(P_C\Omega) = \operatorname{ran}P_C \f$
+  /// for every \f$ \Omega \f$ whose restriction to the band is of full rank,
+  /// which a random block of at least \f$ r \f$ columns is with probability
+  /// one; the band is then exactly the band the dense reading finds. This is a
+  /// declared choice of probe block, not a truncation, and it is reported: the
+  /// probe count is on the certificate's contour description, the rank and the
+  /// singular gap of \f$ Y \f$ say whether the block was wide enough, and the
+  /// idempotency \f$ \|P_CY - Y\| / \|Y\| \f$ is measured by a second
+  /// quadrature pass over \f$ Y \f$ rather than asserted.
+  ///
+  /// Too narrow a probe block is a refusal, not a silently smaller band: when
+  /// the rank of \f$ Y \f$ equals \p probeCount the block may have cut the band
+  /// off, and the read refuses by name so that the caller widens it.
+  ///
+  /// `BandCertificate::resolventMax` is quiet NaN here — the spectral norm of a
+  /// resolvent that is never formed cannot be measured — and
+  /// `BandCertificate::resolventProbeMax` carries what the probe block does
+  /// see, \f$ \max_j \|R_j\Omega\|_2 / \|\Omega\|_2 \f$, a lower bound on it.
+  /// Every other certificate is the one `band` reports.
+  /// @param probeCount columns of the probe block; must be positive.
+  /// @param seed the deterministic seed of the probe block, so that two reads
+  ///   of one instance are the same read.
+  /// @throws std::logic_error under `GRASSMANN_ALL`; std::invalid_argument on a
+  ///   non-positive probe count or a malformed contour; std::runtime_error when
+  ///   the probe block is too narrow for the band or when the dual connection's
+  ///   band has a different rank on the same contour.
+  /// @param report when non-null, receives the "contour-band" cost of the whole
+  ///   read: its wall time, the memory of the last node's factors, and their
+  ///   fill-in.
+  [[nodiscard]] Band sparseBand(int k, const Contour &contour, int probeCount,
+                                double kappa = 10.0, double isotropyTolerance = 1e-10,
+                                std::uint64_t seed = 20260922,
+                                SparseCostReport *report = nullptr) const;
 
   /// # The harmonic band without a contour
   ///
@@ -488,9 +573,14 @@ class CovariantChainHodge {
     BandCertificate certificate;
   };
   [[nodiscard]] ProjectorRead projectorOnContour(int k, const Contour &contour, double kappa) const;
-  /// \f$ S^U = [(\partial_{k+1}^{U^{-1}})^T;\ \partial_k^U M_k^U] \f$, the
-  /// dressed stacked matrix whose kernel is \f$ G_k^U H_k \f$.
-  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
+  // The same read taken on a probe block: the projector is left empty and the
+  // frame comes from the range of P_C applied to `probeCount` random columns.
+  // `nodeReport`, when non-null, receives the cost of the first node's
+  // factorization, which stands for every node's (the bordered system has one
+  // pattern at every shift).
+  [[nodiscard]] ProjectorRead probeRangeOnContour(int k, const Contour &contour, int probeCount,
+                                                  double kappa, std::uint64_t seed,
+                                                  SparseCostReport *nodeReport = nullptr) const;
   /// Everything a band carries beyond its two frames: \f$ B_C \f$, the
   /// isotropy verdict, the left frame, \f$ J \f$, \f$ \Gamma \f$ and the
   /// residual certificates. Shared by `band` and `harmonicBand` so the two

@@ -983,58 +983,109 @@ Contour Contour::circle(Complex center, double radius, int nodeCount) {
   return c;
 }
 
-Eigen::MatrixXcd CovariantChainHodge::resolvent(int k, Complex zeta, const Eigen::MatrixXcd &c) const {
+Eigen::MatrixXcd CovariantChainHodge::applyPencilOperator(int k, const Eigen::MatrixXcd &Z) const {
   if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
   if (preset() != Preset::L2)
-    throw std::logic_error("CovariantChainHodge::resolvent: the pencil resolvent is the Whitney preset's");
+    throw std::logic_error("CovariantChainHodge::applyPencilOperator: the auxiliary pencil operator "
+                           "A~_k^U is the Whitney preset's; the GRASSMANN_ALL pencil is on chains");
   const int d = dimension();
   const int n = base_->size(k);
-  if (c.rows() != n) throw std::invalid_argument("CovariantChainHodge::resolvent: right-hand side has the wrong height");
+  if (Z.rows() != n)
+    throw std::invalid_argument("CovariantChainHodge::applyPencilOperator: the operand has " +
+                                std::to_string(Z.rows()) + " rows, expected " + std::to_string(n));
   const SparseMatrix &Mk = dressed_[static_cast<std::size_t>(k)];
-  // Upper block: ζ M_k − ∂_{k+1}^U M_{k+1}^U (∂_{k+1}^{U^{-1}})^T (sparse).
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(n, Z.cols());
+  if (Z.cols() == 0) return out;
+  // A~_k^U = M_k^U (d_k^{U^-1})^T (M_{k-1}^U)^{-1} d_k^U M_k^U
+  //        + d_{k+1}^U M_{k+1}^U (d_{k+1}^{U^-1})^T
+  if (k >= 1) {
+    const SparseMatrix &Bk = twisted_[static_cast<std::size_t>(k)];
+    const SparseMatrix BkDualT = SparseMatrix(twistedDual_[static_cast<std::size_t>(k)].transpose());
+    const Eigen::MatrixXcd W = Bk * Eigen::MatrixXcd(Mk * Z);
+    const Eigen::MatrixXcd Y = solveDressed(k - 1, W);
+    out += Mk * Eigen::MatrixXcd(BkDualT * Y);
+  }
+  if (k < d) {
+    const SparseMatrix &C = twisted_[static_cast<std::size_t>(k) + 1];
+    const SparseMatrix DT = SparseMatrix(twistedDual_[static_cast<std::size_t>(k) + 1].transpose());
+    const Eigen::MatrixXcd W = DT * Z;
+    out += C * Eigen::MatrixXcd(dressed_[static_cast<std::size_t>(k) + 1] * W);
+  }
+  return out;
+}
+
+SparseMatrix CovariantChainHodge::borderedSystem(int k, Complex zeta) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::borderedSystem: the bordered shifted pencil is the "
+                           "Whitney preset's");
+  const int d = dimension();
+  const int n = base_->size(k);
+  const SparseMatrix &Mk = dressed_[static_cast<std::size_t>(k)];
+  // Upper block: zeta M_k - d_{k+1}^U M_{k+1}^U (d_{k+1}^{U^{-1}})^T (sparse).
   SparseMatrix upper = zeta * Mk;
   if (k < d) {
     const SparseMatrix &C = twisted_[static_cast<std::size_t>(k) + 1];
     const SparseMatrix DT = SparseMatrix(twistedDual_[static_cast<std::size_t>(k) + 1].transpose());
     upper = upper - SparseMatrix(C * dressed_[static_cast<std::size_t>(k) + 1] * DT);
   }
-  Eigen::MatrixXcd z;
-  if (k >= 1) {
-    const int m = base_->size(k - 1);
-    const SparseMatrix Tlo = SparseMatrix(Mk * SparseMatrix(twistedDual_[static_cast<std::size_t>(k)].transpose()));  // n x m
-    const SparseMatrix Slo = SparseMatrix(twisted_[static_cast<std::size_t>(k)] * Mk);                                // m x n
-    const SparseMatrix &Mlo = dressed_[static_cast<std::size_t>(k) - 1];
-    // Bordered system [[upper, -Tlo], [-Slo, Mlo]] [z; w] = [c; 0].
-    std::vector<Eigen::Triplet<Complex>> trip;
-    trip.reserve(static_cast<std::size_t>(upper.nonZeros() + Tlo.nonZeros() + Slo.nonZeros() + Mlo.nonZeros()));
-    auto scatter = [&](const SparseMatrix &A, int r0, int c0, Complex scale) {
-      for (int col = 0; col < A.outerSize(); ++col)
-        for (SparseMatrix::InnerIterator it(A, col); it; ++it)
-          trip.emplace_back(r0 + static_cast<int>(it.row()), c0 + static_cast<int>(it.col()), scale * it.value());
-    };
-    scatter(upper, 0, 0, Complex(1.0, 0.0));
-    scatter(Tlo, 0, n, Complex(-1.0, 0.0));
-    scatter(Slo, n, 0, Complex(-1.0, 0.0));
-    scatter(Mlo, n, n, Complex(1.0, 0.0));
-    SparseMatrix bordered(n + m, n + m);
-    bordered.setFromTriplets(trip.begin(), trip.end());
-    bordered.makeCompressed();
-    Eigen::SparseLU<SparseMatrix> lu(bordered);
-    if (lu.info() != Eigen::Success)
-      throw std::runtime_error("CovariantChainHodge::resolvent: the bordered pencil system is singular at this zeta");
-    Eigen::MatrixXcd rhs = Eigen::MatrixXcd::Zero(n + m, c.cols());
-    rhs.topRows(n) = c;
-    const Eigen::MatrixXcd sol = lu.solve(rhs);
-    z = sol.topRows(n);
-  } else {
-    upper.makeCompressed();
-    Eigen::SparseLU<SparseMatrix> lu(upper);
-    if (lu.info() != Eigen::Success)
-      throw std::runtime_error("CovariantChainHodge::resolvent: the pencil system is singular at this zeta");
-    z = lu.solve(c);
-  }
-  // (ζI − h)^{-1} c = M_k^U (ζ M_k^U − Ã_k^U)^{-1} c
-  return Mk * z;
+  upper.makeCompressed();
+  // At degree zero there is no lower degree to border with: the shifted pencil
+  // is the upper block itself.
+  if (k == 0) return upper;
+  const int m = base_->size(k - 1);
+  const SparseMatrix Tlo = SparseMatrix(Mk * SparseMatrix(twistedDual_[static_cast<std::size_t>(k)].transpose()));  // n x m
+  const SparseMatrix Slo = SparseMatrix(twisted_[static_cast<std::size_t>(k)] * Mk);                                // m x n
+  const SparseMatrix &Mlo = dressed_[static_cast<std::size_t>(k) - 1];
+  // [[upper, -Tlo], [-Slo, Mlo]], whose Schur complement is zeta M_k - A~_k^U.
+  std::vector<Eigen::Triplet<Complex>> trip;
+  trip.reserve(static_cast<std::size_t>(upper.nonZeros() + Tlo.nonZeros() + Slo.nonZeros() + Mlo.nonZeros()));
+  auto scatter = [&](const SparseMatrix &A, int r0, int c0, Complex scale) {
+    for (int col = 0; col < A.outerSize(); ++col)
+      for (SparseMatrix::InnerIterator it(A, col); it; ++it)
+        trip.emplace_back(r0 + static_cast<int>(it.row()), c0 + static_cast<int>(it.col()), scale * it.value());
+  };
+  scatter(upper, 0, 0, Complex(1.0, 0.0));
+  scatter(Tlo, 0, n, Complex(-1.0, 0.0));
+  scatter(Slo, n, 0, Complex(-1.0, 0.0));
+  scatter(Mlo, n, n, Complex(1.0, 0.0));
+  SparseMatrix bordered(n + m, n + m);
+  bordered.setFromTriplets(trip.begin(), trip.end());
+  bordered.makeCompressed();
+  return bordered;
+}
+
+Eigen::MatrixXcd CovariantChainHodge::shiftedSolve(int k, Complex zeta, const Eigen::MatrixXcd &B,
+                                                   SparseCostReport *report) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::shiftedSolve: the shifted pencil solve is the "
+                           "Whitney preset's");
+  const int n = base_->size(k);
+  if (B.rows() != n)
+    throw std::invalid_argument("CovariantChainHodge::shiftedSolve: the right-hand side has " +
+                                std::to_string(B.rows()) + " rows, expected " + std::to_string(n));
+  const SparseCostMeter meter("bordered-lu", k, n);
+  const SparseMatrix bordered = borderedSystem(k, zeta);
+  Eigen::SparseLU<SparseMatrix> lu(bordered);
+  if (lu.info() != Eigen::Success)
+    throw std::runtime_error("CovariantChainHodge::shiftedSolve: the bordered pencil system is "
+                             "singular at this zeta");
+  Eigen::MatrixXcd rhs = Eigen::MatrixXcd::Zero(bordered.rows(), B.cols());
+  rhs.topRows(n) = B;
+  const Eigen::MatrixXcd sol = lu.solve(rhs);
+  if (report)
+    *report = meter.finish(static_cast<long long>(bordered.rows()),
+                           static_cast<long long>(bordered.nonZeros()),
+                           static_cast<long long>(lu.nnzL() + lu.nnzU()),
+                           static_cast<long long>(B.cols()));
+  return sol.topRows(n);
+}
+
+Eigen::MatrixXcd CovariantChainHodge::resolvent(int k, Complex zeta, const Eigen::MatrixXcd &c) const {
+  // (zeta I - h)^{-1} c = M_k^U (zeta M_k^U - A~_k^U)^{-1} c
+  const Eigen::MatrixXcd z = shiftedSolve(k, zeta, c);
+  return dressed_[static_cast<std::size_t>(k)] * z;
 }
 
 CovariantChainHodge::ProjectorRead CovariantChainHodge::projectorOnContour(int k, const Contour &contour,
@@ -1107,6 +1158,102 @@ Band CovariantChainHodge::band(int k, const Contour &contour, double kappa, doub
   return band;
 }
 
+CovariantChainHodge::ProjectorRead CovariantChainHodge::probeRangeOnContour(
+    int k, const Contour &contour, int probeCount, double kappa, std::uint64_t seed,
+    SparseCostReport *nodeReport) const {
+  if (contour.nodes.size() != contour.weights.size() || contour.nodes.empty())
+    throw std::invalid_argument("CovariantChainHodge::sparseBand: a contour needs matching nodes and weights");
+  if (probeCount <= 0)
+    throw std::invalid_argument("CovariantChainHodge::sparseBand: the probe block needs at least one column");
+  const int n = base_->size(k);
+  const int m = std::min(probeCount, n);
+  ProjectorRead read;
+  // A deterministic complex Gaussian probe block: two reads of one instance are
+  // one read.
+  std::mt19937_64 rng(seed);
+  std::normal_distribution<double> nd(0.0, 1.0);
+  Eigen::MatrixXcd probe(n, m);
+  for (int j = 0; j < m; ++j)
+    for (int i = 0; i < n; ++i) probe(i, j) = Complex(nd(rng), nd(rng));
+  const double probeScale = std::max(probe.norm(), 1e-300);
+  // Y = P_C Omega: one sparse factorization of the bordered system per node.
+  const SparseMatrix &Mk = dressed_[static_cast<std::size_t>(k)];
+  Eigen::MatrixXcd Y = Eigen::MatrixXcd::Zero(n, m);
+  double resolventProbeMax = 0.0;
+  for (std::size_t j = 0; j < contour.nodes.size(); ++j) {
+    const Eigen::MatrixXcd R =
+        Mk * Eigen::MatrixXcd(shiftedSolve(k, contour.nodes[j], probe,
+                                           (j == 0) ? nodeReport : nullptr));
+    Y += contour.weights[j] * R;
+    resolventProbeMax = std::max(resolventProbeMax, R.norm() / probeScale);
+  }
+  // Idempotency on the probe block: a second quadrature pass over Y, so that
+  // ||P_C Y - Y|| / ||Y|| is measured rather than asserted.
+  Eigen::MatrixXcd PY = Eigen::MatrixXcd::Zero(n, m);
+  for (std::size_t j = 0; j < contour.nodes.size(); ++j)
+    PY += contour.weights[j] * resolvent(k, contour.nodes[j], Y);
+  const double normY = Y.norm();
+  read.certificate.contour = contour.description + " probes=" + std::to_string(m);
+  read.certificate.nodeCount = static_cast<int>(contour.nodes.size());
+  read.certificate.resolventProbeMax = resolventProbeMax;
+  read.certificate.idempotency = normY > 0.0 ? (PY - Y).norm() / normY : (PY - Y).norm();
+  Eigen::BDCSVD<Eigen::MatrixXcd> svd(Y, Eigen::ComputeThinU);
+  const Eigen::VectorXd sv = svd.singularValues();
+  const double tol = (sv.size() > 0) ? kappa * static_cast<double>(n) *
+                                           std::numeric_limits<double>::epsilon() * sv(0)
+                                     : 0.0;
+  int r = 0;
+  for (int i = 0; i < sv.size(); ++i)
+    if (sv(i) > tol) ++r;
+  read.certificate.rank = r;
+  read.certificate.rankTolerance = tol;
+  read.certificate.singularGap = (r >= 1 && r < sv.size() && sv(r) > 0.0)
+                                     ? sv(r - 1) / sv(r)
+                                     : std::numeric_limits<double>::infinity();
+  if (r == m && m < n)
+    throw std::runtime_error(
+        "CovariantChainHodge::sparseBand: the probe block of " + std::to_string(m) +
+        " columns came back with full rank, so it may have cut the band off; widen it past the "
+        "band's rank and read again");
+  read.frame = svd.matrixU().leftCols(r);
+  return read;
+}
+
+Band CovariantChainHodge::sparseBand(int k, const Contour &contour, int probeCount, double kappa,
+                                     double isotropyTolerance, std::uint64_t seed,
+                                     SparseCostReport *report) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  if (preset() != Preset::L2)
+    throw std::logic_error("CovariantChainHodge::sparseBand: Riesz bands on the pencil are the "
+                           "Whitney preset's");
+  const SparseCostMeter meter("contour-band", k, base_->size(k));
+  Band band;
+  band.degree = k;
+  band.contour = contour;
+  SparseCostReport node;
+  ProjectorRead right = probeRangeOnContour(k, contour, probeCount, kappa, seed, &node);
+  band.frame = std::move(right.frame);
+  band.certificate = right.certificate;
+  const int r = static_cast<int>(band.frame.cols());
+  // The same contour and the same probe block for the dual connection U^{-1}.
+  const CovariantChainHodge dualInstance = dual();
+  const ProjectorRead left = dualInstance.probeRangeOnContour(k, contour, probeCount, kappa, seed);
+  if (static_cast<int>(left.frame.cols()) != r)
+    throw std::runtime_error("CovariantChainHodge::sparseBand: the dual connection's band has a different rank (" +
+                             std::to_string(left.frame.cols()) + " vs " + std::to_string(r) +
+                             ") on the same contour");
+  band.dualFrame = left.frame;
+  band.images = applyG(k, band.frame);
+  // The contour's own scale, as in `band`: the largest node modulus.
+  double rho = 0.0;
+  for (const auto &zeta : contour.nodes) rho = std::max(rho, std::abs(zeta));
+  completeBand(band, dualInstance, rho, isotropyTolerance);
+  if (report)
+    *report = meter.finish(node.systemRows, node.systemNonZeros, node.factorNonZeros,
+                           static_cast<long long>(band.frame.cols()));
+  return band;
+}
+
 void CovariantChainHodge::completeBand(Band &band, const CovariantChainHodge &dualInstance,
                                        double spectralScale, double isotropyTolerance) const {
   const int k = band.degree;
@@ -1166,20 +1313,7 @@ SparseMatrix CovariantChainHodge::stackedMatrix(int k) const {
   if (k < d) top = SparseMatrix(twistedDual_[static_cast<std::size_t>(k) + 1].transpose());
   if (k >= 1)
     bottom = SparseMatrix(twisted_[static_cast<std::size_t>(k)] * dressed_[static_cast<std::size_t>(k)]);
-  const int rows = static_cast<int>(top.rows() + bottom.rows());
-  std::vector<Eigen::Triplet<Complex>> trip;
-  trip.reserve(static_cast<std::size_t>(top.nonZeros() + bottom.nonZeros()));
-  auto scatter = [&](const SparseMatrix &A, int r0) {
-    for (int col = 0; col < A.outerSize(); ++col)
-      for (SparseMatrix::InnerIterator it(A, col); it; ++it)
-        trip.emplace_back(r0 + static_cast<int>(it.row()), static_cast<int>(it.col()), it.value());
-  };
-  scatter(top, 0);
-  scatter(bottom, static_cast<int>(top.rows()));
-  SparseMatrix S(rows, n);
-  S.setFromTriplets(trip.begin(), trip.end());
-  S.makeCompressed();
-  return S;
+  return stackSparse(top, bottom, n);
 }
 
 HarmonicRead CovariantChainHodge::harmonicChains(int k, double kappa, bool forceSparse) const {
@@ -1217,24 +1351,12 @@ HarmonicRead CovariantChainHodge::harmonicChains(int k, double kappa, bool force
                    ? sv(r - 1) / sv(r)
                    : std::numeric_limits<double>::infinity();
   } else {
-    SparseMatrix ST = SparseMatrix(S.adjoint());  // ker S = range(S^H)^perp
-    ST.makeCompressed();
-    const Eigen::MatrixXcd Sd(S);
-    double colNorm = 0.0;
-    for (int c = 0; c < Sd.cols(); ++c) colNorm = std::max(colNorm, Sd.col(c).norm());
-    const double tol = kappa * static_cast<double>(std::max(S.rows(), S.cols()))
-                       * std::numeric_limits<double>::epsilon() * colNorm;
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
-    qr.setPivotThreshold(tol);
-    qr.compute(ST);
-    if (qr.info() != Eigen::Success)
-      throw std::runtime_error("CovariantChainHodge::harmonicChains: sparse QR of S^U failed");
-    const int r = static_cast<int>(qr.rank());
-    read.rank = r;
-    read.tolerance = tol;
+    // The production path: neither S^U nor the orthogonal factor is densified.
+    const SparseKernelRead sparse = ChainHodge::sparseNullSpace(S, kappa);
+    read.rank = sparse.rank;
+    read.tolerance = sparse.tolerance;
     read.gap = std::numeric_limits<double>::quiet_NaN();  // the sparse path measures none
-    const Eigen::MatrixXcd Q = Eigen::MatrixXcd(qr.matrixQ());
-    kernel = Q.rightCols(n - r);
+    kernel = sparse.kernel;
   }
   read.nullity = static_cast<int>(kernel.cols());
   // For the Whitney preset the kernel vectors are the geometric images: the
