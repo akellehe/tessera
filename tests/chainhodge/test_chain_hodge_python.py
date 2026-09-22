@@ -207,7 +207,13 @@ class TestSparseKernelPath:
         assert dense.dense and not sparse.dense
         assert dense.nullity == sparse.nullity == 2
         assert np.max(_angles_deg(dense.images, sparse.images)) < 1e-8
-        assert math.isnan(sparse.gap)
+        # Both paths measure the gap (#1204): the last kept singular value
+        # agrees, the first discarded one sits at rounding level in both.
+        assert sparse.rank == dense.rank
+        assert sparse.lastKept == pytest.approx(dense.lastKept, rel=1e-8)
+        assert sparse.largestSingular == pytest.approx(dense.largestSingular, rel=1e-8)
+        assert sparse.firstDiscarded < 1e-12 * sparse.largestSingular
+        assert sparse.gap > 1e10 and dense.gap > 1e10
 
     def test_crossover_refuses_dense(self):
         K, s = torus33()
