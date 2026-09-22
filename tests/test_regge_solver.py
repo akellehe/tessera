@@ -120,21 +120,22 @@ class TestMatterConfiguration(unittest.TestCase):
         self.assertTrue(cmath.isfinite(S))
 
 
-class TestHingeArea(unittest.TestCase):
-    def test_hinge_area_positive(self):
+class TestHingeContent(unittest.TestCase):
+    def test_hinge_content_is_real_or_imaginary(self):
         st = _make_spacetime(20)
         # Creating a ReggeSolver registers hinges (triangles) via getFacets()
         matter = tessera.MatterConfiguration()
         tessera.ReggeSolver(st, matter)
         for s in st.getSimplices():
             if len(s.getVertices()) == 3 and len(s.getEdges()) >= 3:
-                area = tessera.ReggeSolver.hingeArea(s)
-                # Complex Heron area. On real signed l^2 the radicand is real,
-                # so the area is either real (spacelike triangle) or purely
-                # imaginary (timelike) — never generic complex. Assert that
-                # invariant instead of positivity.
-                self.assertTrue(cmath.isfinite(area))
-                self.assertAlmostEqual(min(abs(area.real), abs(area.imag)),
+                content = tessera.ReggeSolver.hingeContent(s)
+                # The content of a triangular hinge is its complex area. On
+                # real signed l^2 the Gram determinant is real, so the content
+                # is either real (spacelike triangle) or purely imaginary
+                # (timelike) — never generic complex. Assert that invariant
+                # instead of positivity.
+                self.assertTrue(cmath.isfinite(content))
+                self.assertAlmostEqual(min(abs(content.real), abs(content.imag)),
                                        0.0, places=9)
                 return
         self.skipTest("No triangle found")
