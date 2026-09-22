@@ -71,11 +71,11 @@ def _mean_field(**overrides):
     geometry.relax_lengths = True
     geometry.relax_links = False
     geometry.relax_multipliers = False
-    geometry.maximum_iterations = 20
+    geometry.maximum_iterations = overrides.pop("geometry_iterations", 12)
     geometry.tolerance = 1e-12
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.occupied_modes = 1
-    declaration.maximum_iterations = 20
+    declaration.maximum_iterations = 12
     declaration.tolerance = 1e-9
     declaration.geometry = geometry
     for name, value in overrides.items():
@@ -282,7 +282,8 @@ class TheSelfConsistentPairTest(unittest.TestCase):
             spacetime, _declaration(gravitational_weight=0.05,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2, maximum_iterations=4))
+            action, _mean_field(occupied_modes=2, maximum_iterations=3,
+                                geometry_iterations=3))
         report = solver.solve()
         self.assertGreater(len(report.steps), 0)
         for step in report.steps:
@@ -305,7 +306,8 @@ class TheSelfConsistentPairTest(unittest.TestCase):
             spacetime, _declaration(gravitational_weight=0.05,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2, maximum_iterations=3))
+            action, _mean_field(occupied_modes=2, maximum_iterations=2,
+                                geometry_iterations=3))
         report = solver.solve()
 
         final = np.array(report.covariance, dtype=complex)
