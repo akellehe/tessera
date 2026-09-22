@@ -200,7 +200,6 @@ class TestG2FlatCylinder:
                       "(sign_e l_e) <= 1e-8 degrees")
         assert max(record["boundary_circle_angles_deg"]) <= 1e-8
 
-
     @pytest.mark.parametrize("lorentz", [False, True])
     def test_grassmann_angles_are_reported_and_do_not_decrease(self, lorentz, svp_records):
         """The plan's GRASSMANN_ALL column of the G2 table, reported: O(1)
