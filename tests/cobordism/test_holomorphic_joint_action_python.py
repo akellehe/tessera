@@ -207,6 +207,28 @@ class TheFaceHolonomyIsBranchFreeTest(unittest.TestCase):
 class TheConnectionStiffnessIsTheUpLaplacianTest(unittest.TestCase):
     """The second variation of the holonomy term, on the tetrahedron."""
 
+    @staticmethod
+    def _canonical_index_and_sign(spacetime, complex_):
+        """Each mesh edge's canonical cell index and its stored sign.
+
+        Every per-edge vector of the action is in the mesh's own edge order and
+        carries the equation on the edge's STORED source-to-target orientation,
+        while the boundary map's incidences are in the canonical degree-one cell
+        order and on the ascending-vertex-id orientation. Both the permutation
+        and the sign that relate the two are read here, so the comparison below
+        is against the same matrix in the same basis.
+        """
+        index_of = {tuple(cell): position for position, cell
+                    in enumerate(complex_.kSimplexVertices(1))}
+        indices = []
+        signs = []
+        for edge in spacetime.getEdgeList().toVector():
+            source = int(edge.getSource().getId())
+            target = int(edge.getTarget().getId())
+            indices.append(index_of[tuple(sorted((source, target)))])
+            signs.append(1.0 if source < target else -1.0)
+        return indices, signs
+
     def test_the_connection_block_is_minus_beta_times_the_up_laplacian(self):
         beta = 1.3
         spacetime = tetrahedron()
@@ -222,7 +244,12 @@ class TheConnectionStiffnessIsTheUpLaplacianTest(unittest.TestCase):
             complex_.numSimplices(1), complex_.numSimplices(2))
         up_laplacian = boundary @ boundary.T
 
-        self.assertLess(np.max(np.abs(jacobian + beta * up_laplacian)), 1e-8)
+        indices, signs = self._canonical_index_and_sign(spacetime, complex_)
+        expected = np.array(
+            [[-beta * signs[row] * signs[column]
+              * up_laplacian[indices[row], indices[column]]
+              for column in range(order)] for row in range(order)])
+        self.assertLess(np.max(np.abs(jacobian - expected)), 1e-8)
 
         eigenvalues = np.sort(np.linalg.eigvalsh(-jacobian.real))
         self.assertLess(abs(eigenvalues[0]), 1e-8)
