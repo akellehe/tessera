@@ -910,7 +910,10 @@ class AnimationFrame:
         report = modularity.scanResolutions(settings)
         if not report.slices:
             return Absent("modularity returned no resolution slice")
-        analysis = window.index(config["resolution"])
+        # The slice at the analysis resolution: the window is a set of
+        # multipliers of it, so one slice sits at the multiplier one.
+        analysis = min(range(len(window)),
+                       key=lambda i: abs(window[i] - config["resolution"]))
         self.slice = report.slices[analysis]
         offered = list(self.slice.components)
         # A track covering every slice of the window is a community that
