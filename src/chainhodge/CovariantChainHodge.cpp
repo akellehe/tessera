@@ -1279,48 +1279,28 @@ HarmonicRead CovariantChainHodge::harmonicChains(int k, double kappa, bool force
   read.dense = dense;
   const SparseMatrix S = stackedMatrix(k);
   Eigen::MatrixXcd kernel;
+  SingularSplit split;
   if (S.rows() == 0) {
     kernel = Eigen::MatrixXcd::Identity(n, n);
-    read.rank = 0;
-    read.tolerance = 0.0;
-    read.gap = std::numeric_limits<double>::infinity();
+    split.dense = dense;
   } else if (dense) {
     // The same tolerance policy as ChainHodge::harmonicChains, on the dressed
     // matrix: kappa * max(m, n) * eps * sigma_max.
     const Eigen::MatrixXcd Sd(S);
     Eigen::JacobiSVD<Eigen::MatrixXcd> svd(Sd, Eigen::ComputeFullV);
-    const Eigen::VectorXd sv = svd.singularValues();
-    const double tol = kappa * static_cast<double>(std::max(Sd.rows(), Sd.cols()))
-                       * std::numeric_limits<double>::epsilon() * sv(0);
-    int r = 0;
-    for (int i = 0; i < sv.size(); ++i)
-      if (sv(i) > tol) ++r;
-    read.rank = r;
-    read.tolerance = tol;
-    kernel = svd.matrixV().rightCols(n - r);
-    read.gap = (r < sv.size() && sv(r) > 0.0 && r >= 1)
-                   ? sv(r - 1) / sv(r)
-                   : std::numeric_limits<double>::infinity();
+    split = SparseRank::fromSingularValues(svd.singularValues(), Sd.rows(), Sd.cols(), kappa);
+    kernel = svd.matrixV().rightCols(n - split.rank);
   } else {
-    SparseMatrix ST = SparseMatrix(S.adjoint());  // ker S = range(S^H)^perp
-    ST.makeCompressed();
-    const Eigen::MatrixXcd Sd(S);
-    double colNorm = 0.0;
-    for (int c = 0; c < Sd.cols(); ++c) colNorm = std::max(colNorm, Sd.col(c).norm());
-    const double tol = kappa * static_cast<double>(std::max(S.rows(), S.cols()))
-                       * std::numeric_limits<double>::epsilon() * colNorm;
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
-    qr.setPivotThreshold(tol);
-    qr.compute(ST);
-    if (qr.info() != Eigen::Success)
-      throw std::runtime_error("CovariantChainHodge::harmonicChains: sparse QR of S^U failed");
-    const int r = static_cast<int>(qr.rank());
-    read.rank = r;
-    read.tolerance = tol;
-    read.gap = std::numeric_limits<double>::quiet_NaN();  // the sparse path measures none
-    const Eigen::MatrixXcd Q = Eigen::MatrixXcd(qr.matrixQ());
-    kernel = Q.rightCols(n - r);
+    SparseKernel sk = SparseRank::kernel(S, kappa);
+    split = sk.split;
+    kernel = std::move(sk.basis);
   }
+  read.rank = split.rank;
+  read.tolerance = split.tolerance;
+  read.gap = split.gap;
+  read.largestSingular = split.largest;
+  read.lastKept = split.sigmaAt;
+  read.firstDiscarded = split.sigmaNext;
   read.nullity = static_cast<int>(kernel.cols());
   // For the Whitney preset the kernel vectors are the geometric images: the
   // chains are H_k = M_k^U ker S^U, and G_k^U H_k = ker S^U back again.
