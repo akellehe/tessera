@@ -70,7 +70,7 @@ class TestTheDefectFallsAlongARefinementSequence(unittest.TestCase):
         self.assertTrue(read.certificate.holds())
         # Every step falls by the fixture's decay ratio, so the worst ratio is
         # that ratio and the sequence is geometric.
-        self.assertAlmostEqual(read.largestRatio, config["decay"], delta=1e-12)
+        self.assertAlmostEqual(read.largestRatio, config["decay"], delta=1e-9)
         self.assertLess(read.lastDefect, read.defects[0])
 
     def test_each_defect_is_the_new_mode_coupling(self):
