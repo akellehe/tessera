@@ -631,7 +631,8 @@ AntiClusterCertificate EffectiveTopology::antiCluster(const CovariantChainHodge 
     return out;
   }
   const Eigen::VectorXcd normalized = out.enclosingSurface / surfaceNorm;
-  out.cycleResidual = (cov.twistedBoundary(d - 1) * normalized).norm();
+  const Eigen::VectorXcd closure = cov.twistedBoundary(d - 1) * normalized;
+  out.cycleResidual = closure.norm();
 
   // The first clause: the enclosing surface is a certified coexact near-cycle
   // of L_2. Its share of itself inside the band's coexact part is the measure,
@@ -643,8 +644,12 @@ AntiClusterCertificate EffectiveTopology::antiCluster(const CovariantChainHodge 
     out.reason = voidBand.reason;
     return out;
   }
-  out.voidContent =
-      voidBand.coexactFrame.cols() == 0 ? 0.0 : (voidBand.coexactFrame.adjoint() * normalized).norm();
+  if (voidBand.coexactFrame.cols() == 0) {
+    out.voidContent = 0.0;
+  } else {
+    const Eigen::VectorXcd inBand = voidBand.coexactFrame.adjoint() * normalized;
+    out.voidContent = inBand.norm();
+  }
 
   // The second clause: the interior spectrum is nearly empty.
   const int k = options.interiorDegree;
