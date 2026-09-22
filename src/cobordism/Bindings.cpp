@@ -4118,7 +4118,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "the pencil spectrum, and the exact free many-body spectrum as "
            "occupation subset sums (refusing past max_terms).")
       .def_static("persistentPartition",
-                  &RecursiveQuotient::persistentPartition, py::arg("op"),
+                  py::overload_cast<const std::vector<std::complex<double>> &,
+                                    int, double, int, std::uint64_t>(
+                      &RecursiveQuotient::persistentPartition),
+                  py::arg("op"),
                   py::arg("dim"), py::arg("gamma") = 1.0,
                   py::arg("restarts") = 4, py::arg("base_seed") = 0,
                   "P = PersistentPartition(R): partition a response "
@@ -4126,12 +4129,35 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "symmetrized off-diagonal magnitude graph. Covers every "
                   "index exactly once; isolated coordinates come back as "
                   "singletons.")
+      .def_static("persistentPartition",
+                  py::overload_cast<const std::vector<std::complex<double>> &,
+                                    int, const std::vector<double> &, int,
+                                    std::uint64_t>(
+                      &RecursiveQuotient::persistentPartition),
+                  py::arg("op"), py::arg("dim"), py::arg("gammas"),
+                  py::arg("restarts") = 4, py::arg("base_seed") = 0,
+                  "persistentPartition over a declared window of "
+                  "resolutions: the resolution parameter is a free knob of "
+                  "the proposer, so only the components whose persistence "
+                  "track covers the whole window are kept, each proposing "
+                  "its support at the first resolution of the window. Every "
+                  "coordinate no such component claimed comes back as a "
+                  "singleton.")
       .def("childPersistentPartition",
-           &RecursiveQuotient::childPersistentPartition,
+           py::overload_cast<double, int, std::uint64_t>(
+               &RecursiveQuotient::childPersistentPartition, py::const_),
            py::arg("gamma") = 1.0, py::arg("restarts") = 4,
            py::arg("base_seed") = 0,
            "persistentPartition of this level's reduced operator — the "
            "partition P_l to hand straight to nextLevel.")
+      .def("childPersistentPartition",
+           py::overload_cast<const std::vector<double> &, int, std::uint64_t>(
+               &RecursiveQuotient::childPersistentPartition, py::const_),
+           py::arg("gammas"), py::arg("restarts") = 4,
+           py::arg("base_seed") = 0,
+           "childPersistentPartition over a declared window of resolutions: "
+           "the components of this level's reduced operator that persist "
+           "across the whole window.")
       .def("nextLevelAtLambda",
            py::overload_cast<const std::vector<std::vector<int>> &,
                              std::complex<double>, double, double,

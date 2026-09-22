@@ -772,11 +772,41 @@ class RecursiveQuotient {
         const std::vector<std::complex<double>> &op, int dim,
         double gamma = 1.0, int restarts = 4, std::uint64_t baseSeed = 0);
 
+    /// `persistentPartition` over a declared window of resolutions rather than
+    /// at one.
+    ///
+    /// The resolution parameter \f$ \gamma \f$ is a free knob of the proposer,
+    /// and modularity is subject to the resolution limit, so a community that
+    /// stands at one value of \f$ \gamma \f$ and nowhere else states nothing
+    /// about the operator. This form scans `gammas` in the order given,
+    /// follows each community across adjacent resolutions by support overlap,
+    /// and keeps only the components whose persistence track covers the whole
+    /// window, taking each track's member at the FIRST resolution of the
+    /// window as the support it proposes. Every coordinate no such component
+    /// claimed comes back as a singleton, so the result still covers every
+    /// index exactly once and is still a partition to hand to `nextLevel`.
+    ///
+    /// A window of one resolution is the single-resolution form, since a track
+    /// over one slice covers its window.
+    /// @throws std::invalid_argument on a malformed operator size, an empty
+    ///   window, or a non-positive restart count.
+    [[nodiscard]] static std::vector<std::vector<int>> persistentPartition(
+        const std::vector<std::complex<double>> &op, int dim,
+        const std::vector<double> &gammas, int restarts = 4,
+        std::uint64_t baseSeed = 0);
+
     /// `persistentPartition` of this level's reduced operator: the partition
     /// \f$ P_\ell \f$ to hand straight to `nextLevel`, as
     /// `child = parent.nextLevel(parent.childPersistentPartition())`.
     [[nodiscard]] std::vector<std::vector<int>> childPersistentPartition(
         double gamma = 1.0, int restarts = 4, std::uint64_t baseSeed = 0) const;
+
+    /// `childPersistentPartition` over a declared window of resolutions: the
+    /// components of this level's reduced operator that persist across the
+    /// whole window (see the window form of `persistentPartition`).
+    [[nodiscard]] std::vector<std::vector<int>> childPersistentPartition(
+        const std::vector<double> &gammas, int restarts = 4,
+        std::uint64_t baseSeed = 0) const;
 
     /// The composable amplitude budget of the `CertifiedNearIsometry`
     /// policy: two embeddings with Gram defects \f$ \varepsilon_A,
