@@ -40,7 +40,7 @@ PYBIND11_MODULE(_tessera_rl, m) {
 #endif
   );
 
-  // ---- The environment: a harness driving MultiCobordism and Proton ----
+  // ---- The environment: a harness driving MultiCobordism and ProtonSynthesis ----
   py::enum_<Move>(m, "Move", "The discrete macro-moves the policy chooses among.")
       .value("GROW", Move::Grow)
       .value("EVOLVE", Move::Evolve)

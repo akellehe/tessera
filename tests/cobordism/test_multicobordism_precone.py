@@ -4,7 +4,7 @@
 before optimization.
 
 `precone` is a constructor argument on the C++ `MultiCobordism` (the source of truth),
-threaded through `Proton` (which builds the animation's nodes from a single Δ⁴ seed) and
+threaded through `ProtonSynthesis` (which builds the animation's nodes from a single Δ⁴ seed) and
 surfaced as `--precone` on the animation. Each pre-cone adds one top cell on a fresh apex
 over a facet and is accepted only through the same `dualComplexValid` gate stage 1 uses, so
 the pre-growth stays a valid manifold-with-boundary — nothing is inserted by fiat. It is the
@@ -23,7 +23,7 @@ _DIM = 4
 def _single_delta4():
     """A single Δ⁴ simplex (one pentatope: 5 vertices, 1 top cell, Betti [1,0,0,0,0], a
     contractible 4-ball) with a uniform ℓ²=1 metric — the same minimal emergent seed
-    `Proton.buildMinimalSeed` grows the proton out of."""
+    `ProtonSynthesis.buildMinimalSeed` grows the proton out of."""
     sig = tessera.Signature(_DIM, tessera.Lorentzian)
     st = tessera.Spacetime(tessera.Metric(True, sig), tessera.CDT, 1.0, 1.0,
                            tessera.PREFERRED, tessera.SolidSimplex(_DIM))
@@ -89,14 +89,14 @@ class PreconeMultiCobordismTest(unittest.TestCase):
 
 
 class PreconeThroughProtonTest(unittest.TestCase):
-    """`precone` threaded through `Proton` into both node factories — the path the
+    """`precone` threaded through `ProtonSynthesis` into both node factories — the path the
     animation drives. Also guards the id-capture fix: with precone>0 the ctor regrows the
     complex, so the factories must anchor `seed_inputs`/`seed_outputs` by vertex id (stable
     across the rebuild), not by a stale Vertex handle."""
 
     def test_recombination_node_precone_grows_and_seeds(self):
-        bare = cob.Proton(seed=3, precone=0).recombination_node(3)
-        grown = cob.Proton(seed=3, precone=8).recombination_node(3)
+        bare = cob.ProtonSynthesis(seed=3, precone=0).recombination_node(3)
+        grown = cob.ProtonSynthesis(seed=3, precone=8).recombination_node(3)
         self.assertEqual(_n_cells(bare.st), 1)              # bare single-Δ⁴ seed
         self.assertGreater(_n_cells(grown.st), 1)           # pre-grown
         self.assertTrue(_is_manifold(grown.st))
@@ -108,8 +108,8 @@ class PreconeThroughProtonTest(unittest.TestCase):
             self.assertTrue(list(block.vertices))
 
     def test_formation_node_precone_grows_and_seeds(self):
-        bare = cob.Proton(seed=5, precone=0).formation_node(6)
-        grown = cob.Proton(seed=5, precone=8).formation_node(6)
+        bare = cob.ProtonSynthesis(seed=5, precone=0).formation_node(6)
+        grown = cob.ProtonSynthesis(seed=5, precone=8).formation_node(6)
         self.assertEqual(_n_cells(bare.st), 1)
         self.assertGreater(_n_cells(grown.st), 1)
         self.assertTrue(_is_manifold(grown.st))

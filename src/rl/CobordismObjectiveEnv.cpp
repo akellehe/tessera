@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "cobordism/MultiCobordism.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 #include "mesh/EdgeList.h"
 #include "mesh/VertexList.h"
 #include "spacetime/Spacetime.h"
@@ -179,7 +179,7 @@ StepResult CobordismObjectiveEnv::step(Move move, std::array<float, kParamDim> p
 NodeFactory formationNodeFactory(int registerDegree, double gamma, double inputWeight) {
   return [registerDegree, gamma, inputWeight](std::uint64_t seed)
              -> std::shared_ptr<MultiCobordism> {
-    cob::Proton proton(seed, registerDegree, gamma, inputWeight);
+    cob::ProtonSynthesis proton(seed, registerDegree, gamma, inputWeight);
     return proton.formationNode(seed);
   };
 }
@@ -187,7 +187,7 @@ NodeFactory formationNodeFactory(int registerDegree, double gamma, double inputW
 NodeFactory recombinationNodeFactory(int registerDegree, double gamma, double inputWeight) {
   return [registerDegree, gamma, inputWeight](std::uint64_t seed)
              -> std::shared_ptr<MultiCobordism> {
-    cob::Proton proton(seed, registerDegree, gamma, inputWeight);
+    cob::ProtonSynthesis proton(seed, registerDegree, gamma, inputWeight);
     return proton.recombinationNode(seed);
   };
 }
@@ -195,7 +195,7 @@ NodeFactory recombinationNodeFactory(int registerDegree, double gamma, double in
 CobordismObjectiveEnv makeFormationEnv(EnvConfig config, double inputWeight) {
   return CobordismObjectiveEnv(
       formationNodeFactory(config.registerDegree, config.gamma, inputWeight),
-      cob::Proton::singlet(), config);
+      cob::ProtonSynthesis::singlet(), config);
 }
 
 CobordismObjectiveEnv makeRecombinationEnv(EnvConfig config, double inputWeight) {

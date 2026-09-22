@@ -50,6 +50,11 @@ struct ObjectiveTerms {
   /// \f$\beta_E E_{\rm carried}(\Gamma,g)\f$ — the one permitted state
   /// channel, exactly 0.0 outside the certificates-blind mean-field sub-mode.
   double carriedStateEnergy = 0.0;
+  /// \f$\beta_M\sum_k\operatorname{Re}S_{M,k}\f$ — the spectral-moment stiffness
+  /// of the geometric action about its carrier
+  /// (`HodgeLaplacian::spectralMomentStiffness`), exactly 0.0 when its weight is
+  /// zero, the default.
+  double momentStiffness = 0.0;
 };
 
 /// # ObjectiveContext
@@ -157,6 +162,20 @@ struct ObjectiveContext {
   /// \f$E_{\rm carried}(\Gamma,g)\f$, likewise a precomputed number. Exactly
   /// zero where the weight is zero.
   double carriedStateEnergy = 0.0;
+
+  /// \f$\beta_M\f$, the weight of the spectral-moment stiffness of the geometric
+  /// action (whitepaper Section 7), a configured real. Zero by default, which
+  /// leaves every objective as it was.
+  double momentStiffnessWeight = 0.0;
+  /// The degrees \f$ k \f$ whose Hodge operators' local moments are held.
+  std::vector<int> momentStiffnessDegrees;
+  /// \f$\beta_j\f$, \f$ j=1,\dots,m \f$: the configured weights of the moment
+  /// orders.
+  std::vector<double> momentStiffnessCoefficients;
+  /// The carrier's local moments, one flat \f$ |C_k|\times m \f$ array per
+  /// degree (`HodgeLaplacian::localSpectralMoments`): geometry, precomputed by the
+  /// engine when the stiffness is declared.
+  std::vector<std::vector<std::complex<double>>> momentStiffnessReference;
 
   /// The names of every field above, in declaration order — the firewall list a
   /// structural test asserts against, as `objectiveTermNames` does for the
@@ -317,6 +336,7 @@ class ObjectiveTermName {
   static constexpr const char *kRegisterResidual = "register_residual";
   static constexpr const char *kActionMagnitude = "action_magnitude";
   static constexpr const char *kCarriedStateEnergy = "carried_state_energy";
+  static constexpr const char *kMomentStiffness = "moment_stiffness";
 };
 
 /// # CobordismObjective

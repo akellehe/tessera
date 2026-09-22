@@ -4,6 +4,8 @@
 #include "quantum/CovarianceState.h"
 
 #include <Eigen/Eigenvalues>
+#include <Eigen/LU>
+#include <unsupported/Eigen/MatrixFunctions>
 
 #include <algorithm>
 #include <array>
@@ -27,6 +29,9 @@ using observables::Record;
 
 constexpr int kSchemaVersion = 1;
 constexpr const char* kRecordType = "covariance-state";
+constexpr const char* kDualHermitian = "hermitian-adjoint";
+constexpr const char* kDualTranspose = "transpose";
+constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 
 /// Regime-verification tolerance of the Wick-read certificates (the regime
 /// is verified, never assumed).
@@ -118,6 +123,35 @@ CovarianceState CovarianceState::fromSlaterFrame(
     return CovarianceState(u * u.adjoint());
 }
 
+CovarianceState CovarianceState::fromBiorthogonalFrames(
+    const Eigen::MatrixXcd& rightFrame, const Eigen::MatrixXcd& leftFrame) {
+    if (rightFrame.rows() == 0)
+        throw std::invalid_argument(
+            "CovarianceState: the biorthogonal frames have no mode rows");
+    if (leftFrame.rows() != rightFrame.rows() ||
+        leftFrame.cols() != rightFrame.cols())
+        throw std::invalid_argument(
+            "CovarianceState: the left frame must have the right frame's shape "
+            "(M modes x N occupied duals)");
+    CovarianceState state(
+        Eigen::MatrixXcd::Zero(rightFrame.rows(), rightFrame.rows()));
+    state.dual_ = CovarianceDual::Transpose;
+    state.right_ = rightFrame;
+    state.left_ = leftFrame;
+    state.rebuildFromFrames();
+    return state;
+}
+
+void CovarianceState::rebuildFromFrames() {
+    // Γ = ΦΦ̃ᵀ: the transpose pairing, no conjugation anywhere. No occupied
+    // duals is the vacuum.
+    if (right_.cols() == 0)
+        gamma_ = Eigen::MatrixXcd::Zero(right_.rows(), right_.rows());
+    else
+        gamma_ = right_ * left_.transpose();
+    invalidateDefects();
+}
+
 // ─── Nambu shape ──────────────────────────────────────────────────────────
 
 Eigen::MatrixXcd CovarianceState::pairing() const {
@@ -182,17 +216,40 @@ double CovarianceState::occupationSpectrumDefect() const {
     return spectrumDefect_;
 }
 
+double CovarianceState::dualityDefect() const {
+    if (dual_ != CovarianceDual::Transpose) return kNaN;
+    if (dualityDefect_ < 0.0) {
+        const Eigen::Index n = right_.cols();
+        dualityDefect_ =
+            n == 0 ? 0.0
+                   : (left_.transpose() * right_ -
+                      Eigen::MatrixXcd::Identity(n, n))
+                         .norm();
+    }
+    return dualityDefect_;
+}
+
+double CovarianceState::premiseDefect() const {
+    return dual_ == CovarianceDual::Transpose ? dualityDefect()
+                                              : hermiticityDefect();
+}
+
+cobordism::CertificateRegime CovarianceState::verifiedRegime() const {
+    // Verified on Γ, never assumed from the dual: a Transpose pair that
+    // happens to be Hermitian (Φ̃ = Φ̄ orthonormal) reads PositiveSemidefinite.
+    if (hermiticityDefect() <= kRegimeTolerance)
+        return occupationSpectrumDefect() <= kRegimeTolerance
+                   ? cobordism::CertificateRegime::PositiveSemidefinite
+                   : cobordism::CertificateRegime::HermitianIndefinite;
+    return cobordism::CertificateRegime::NonNormal;
+}
+
 cobordism::Certificate CovarianceState::purityCertificate(
     double tolerance) const {
-    const double herm = hermiticityDefect();
-    const double residual = std::max(purityDefect(), herm);
-    cobordism::CertificateRegime regime = cobordism::CertificateRegime::NonNormal;
-    if (herm <= kRegimeTolerance)
-        regime = occupationSpectrumDefect() <= kRegimeTolerance
-                     ? cobordism::CertificateRegime::PositiveSemidefinite
-                     : cobordism::CertificateRegime::HermitianIndefinite;
+    const double residual = std::max(purityDefect(), premiseDefect());
     return cobordism::Certificate::algebraicallyExact(
-        cobordism::CertificateDomain::Static, regime, residual, tolerance);
+        cobordism::CertificateDomain::Static, verifiedRegime(), residual,
+        tolerance);
 }
 
 std::uint64_t CovarianceState::matrixFingerprint(const Eigen::MatrixXcd& m,
@@ -220,6 +277,7 @@ void CovarianceState::invalidateDefects() noexcept {
     hermiticityDefect_ = -1.0;
     purityDefect_ = -1.0;
     spectrumDefect_ = -1.0;
+    dualityDefect_ = -1.0;
 }
 
 // ─── propagation ──────────────────────────────────────────────────────────
@@ -245,11 +303,31 @@ Eigen::MatrixXcd CovarianceState::propagator(const Eigen::MatrixXcd& h,
            es.eigenvectors().adjoint();
 }
 
+Eigen::MatrixXcd CovarianceState::complexPropagator(const Eigen::MatrixXcd& h,
+                                                    double dt) {
+    if (h.rows() != h.cols())
+        throw std::invalid_argument(
+            "CovarianceState: the generator must be square");
+    // e^{−ih·dt} by Padé scaling and squaring: no eigendecomposition (a
+    // defective h is fine) and no h† anywhere.
+    const Eigen::MatrixXcd exponent = cd(0.0, -dt) * h;
+    return exponent.exp();
+}
+
 void CovarianceState::evolve(const Eigen::MatrixXcd& h, double dt,
                              double hermitianTolerance) {
     if (h.rows() != gamma_.rows() || h.cols() != gamma_.cols())
         throw std::invalid_argument(
             "CovarianceState: generator shape does not match the mode count");
+    if (dual_ == CovarianceDual::Transpose) {
+        // iΦ̇ = hΦ and −iΦ̃̇ᵀ = Φ̃ᵀh: Φ ← e^{−ih·dt}Φ, Φ̃ᵀ ← Φ̃ᵀe^{+ih·dt}.
+        // Each exponential is taken directly, so the right frame never sees
+        // an inverse and the left frame never sees h†.
+        right_ = complexPropagator(h, dt) * right_;
+        left_ = complexPropagator(h, -dt).transpose() * left_;
+        rebuildFromFrames();
+        return;
+    }
     applyTransport(propagator(h, dt, hermitianTolerance));
 }
 
@@ -257,6 +335,19 @@ void CovarianceState::applyTransport(const Eigen::MatrixXcd& transport) {
     if (transport.rows() != gamma_.rows() || transport.cols() != gamma_.cols())
         throw std::invalid_argument(
             "CovarianceState: transport shape does not match the mode count");
+    if (dual_ == CovarianceDual::Transpose) {
+        // Right frame by U, left frame by the contragredient U⁻ᵀ, so that
+        // Φ̃ᵀΦ is invariant and Γ ← U Γ U⁻¹.
+        const Eigen::FullPivLU<Eigen::MatrixXcd> lu(transport);
+        if (!lu.isInvertible())
+            throw std::invalid_argument(
+                "CovarianceState: a transport of the transpose-dual path must "
+                "be invertible (the left frame moves by its contragredient)");
+        right_ = transport * right_;
+        left_ = lu.inverse().transpose() * left_;
+        rebuildFromFrames();
+        return;
+    }
     gamma_ = transport * gamma_ * transport.adjoint();
     invalidateDefects();
 }
@@ -290,19 +381,19 @@ std::vector<MeanFieldStepRead> CovarianceState::meanFieldEvolve(
         read.hermiticityDefect = hermiticityDefect();
         read.purityDefect = purityDefect();
         read.occupationSpectrumDefect = occupationSpectrumDefect();
-        const double gaussianity =
-            purePath ? read.purityDefect : read.occupationSpectrumDefect;
+        read.dualityDefect = dualityDefect();
+        // Hermitian-adjoint path: the Hermiticity of h and Γ is the premise.
+        // Transpose path: the pairing Φ̃ᵀΦ = I is the premise and a complex
+        // h is the norm; its Hermiticity defect is reported, not graded.
         const double residual =
-            std::max({read.generatorHermiticityDefect, read.hermiticityDefect,
-                      gaussianity});
-        cobordism::CertificateRegime regime =
-            cobordism::CertificateRegime::NonNormal;
-        if (read.hermiticityDefect <= kRegimeTolerance)
-            regime = read.occupationSpectrumDefect <= kRegimeTolerance
-                         ? cobordism::CertificateRegime::PositiveSemidefinite
-                         : cobordism::CertificateRegime::HermitianIndefinite;
+            dual_ == CovarianceDual::Transpose
+                ? std::max(read.purityDefect, read.dualityDefect)
+                : std::max({read.generatorHermiticityDefect,
+                            read.hermiticityDefect,
+                            purePath ? read.purityDefect
+                                     : read.occupationSpectrumDefect});
         read.certificate = cobordism::Certificate::algebraicallyExact(
-            cobordism::CertificateDomain::Static, regime, residual,
+            cobordism::CertificateDomain::Static, verifiedRegime(), residual,
             purityTolerance);
         reads.push_back(std::move(read));
     }
@@ -318,16 +409,17 @@ WickCertificateRead CovarianceState::makeRead(Complex value,
     read.value = value;
     read.polynomialId = std::move(polynomialId);
     read.covarianceHash = covarianceHash();
-    const double herm = hermiticityDefect();
-    read.residual =
-        realByConstruction ? std::max(herm, std::abs(value.imag())) : herm;
-    cobordism::CertificateRegime regime = cobordism::CertificateRegime::NonNormal;
-    if (herm <= kRegimeTolerance)
-        regime = occupationSpectrumDefect() <= kRegimeTolerance
-                     ? cobordism::CertificateRegime::PositiveSemidefinite
-                     : cobordism::CertificateRegime::HermitianIndefinite;
+    if (dual_ == CovarianceDual::Transpose) {
+        // A transition amplitude ⟨Ξ_L|···|Ξ_R⟩ is complex: its imaginary part
+        // is signal, not leakage. The premise is the dual pairing.
+        read.residual = dualityDefect();
+    } else {
+        const double herm = hermiticityDefect();
+        read.residual =
+            realByConstruction ? std::max(herm, std::abs(value.imag())) : herm;
+    }
     read.certificate = cobordism::Certificate::algebraicallyExact(
-        cobordism::CertificateDomain::Static, regime, read.residual,
+        cobordism::CertificateDomain::Static, verifiedRegime(), read.residual,
         kReadTolerance);
     return read;
 }
@@ -428,6 +520,30 @@ WickCertificateRead CovarianceState::wickGramDeterminant(
     // ⟨a†(v_1)···a†(v_p) a(w_p)···a(w_1)⟩ = det(W† Γ V).
     const Eigen::MatrixXcd m =
         annihilatorFrame.adjoint() * gamma_ * creatorFrame;
+    return makeRead(m.determinant(), false, std::move(id));
+}
+
+WickCertificateRead CovarianceState::wickTransposeGramDeterminant(
+    const Eigen::MatrixXcd& creatorFrame,
+    const Eigen::MatrixXcd& annihilatorFrame) const {
+    if (creatorFrame.rows() != gamma_.rows() ||
+        annihilatorFrame.rows() != gamma_.rows())
+        throw std::invalid_argument(
+            "CovarianceState: smeared frames must have one row per mode");
+    std::uint64_t fp = matrixFingerprint(creatorFrame, 0x3c6ef372fe94f82bull);
+    fp = matrixFingerprint(annihilatorFrame, fp);
+    char hex[17];
+    std::snprintf(hex, sizeof(hex), "%016llx",
+                  static_cast<unsigned long long>(fp));
+    std::string id = "transpose-gram-determinant[p=" +
+                     std::to_string(creatorFrame.cols()) + "," + hex + "]";
+    if (creatorFrame.cols() != annihilatorFrame.cols())
+        return makeRead(cd(0.0, 0.0), false, std::move(id));
+    if (creatorFrame.cols() == 0)
+        return makeRead(cd(1.0, 0.0), false, std::move(id));
+    // ⟨a†(v_1)···a†(v_p) ã(w_p)···ã(w_1)⟩ = det(Wᵀ Γ V), ã(w) = Σ w_i a_i.
+    const Eigen::MatrixXcd m =
+        annihilatorFrame.transpose() * gamma_ * creatorFrame;
     return makeRead(m.determinant(), false, std::move(id));
 }
 
@@ -626,6 +742,14 @@ Record CovarianceState::toRecord() const {
     m["mode_count"] = Record(static_cast<std::int64_t>(modeCount()));
     m["number_conserving"] = Record(numberConserving());
     Record::splitComplex(m, "gamma", matrixToFlat(gamma_));
+    m["dual"] = Record(dual_ == CovarianceDual::Transpose ? kDualTranspose
+                                                           : kDualHermitian);
+    if (dual_ == CovarianceDual::Transpose) {
+        m["frame_columns"] = Record(static_cast<std::int64_t>(right_.cols()));
+        Record::splitComplex(m, "right_frame", matrixToFlat(right_));
+        Record::splitComplex(m, "left_frame", matrixToFlat(left_));
+        m["duality_defect"] = Record(dualityDefect());
+    }
     // Informational channels — recomputed (never trusted) on load.
     m["hermiticity_defect"] = Record(hermiticityDefect());
     m["purity_defect"] = Record(purityDefect());
@@ -658,7 +782,34 @@ CovarianceState CovarianceState::fromRecord(const Record& record) {
         for (std::size_t c = 0; c < modes; ++c)
             gamma(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) =
                 flat[r * modes + c];
-    return CovarianceState(std::move(gamma));
+    const auto dual = m.find("dual");
+    const std::string dualName =
+        dual == m.end() ? std::string(kDualHermitian) : dual->second.asString();
+    if (dualName == kDualHermitian) return CovarianceState(std::move(gamma));
+    if (dualName != kDualTranspose)
+        throw std::invalid_argument("CovarianceState: unknown dual '" +
+                                    dualName + "'");
+    const auto columns =
+        static_cast<std::size_t>(m.at("frame_columns").asInt());
+    const std::vector<cd> rightFlat = complexListFromRecord(m, "right_frame");
+    const std::vector<cd> leftFlat = complexListFromRecord(m, "left_frame");
+    if (rightFlat.size() != modes * columns ||
+        leftFlat.size() != modes * columns)
+        throw std::invalid_argument(
+            "CovarianceState: frame payload size mismatch");
+    Eigen::MatrixXcd right(static_cast<Eigen::Index>(modes),
+                           static_cast<Eigen::Index>(columns));
+    Eigen::MatrixXcd left(static_cast<Eigen::Index>(modes),
+                          static_cast<Eigen::Index>(columns));
+    for (std::size_t r = 0; r < modes; ++r)
+        for (std::size_t c = 0; c < columns; ++c) {
+            right(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) =
+                rightFlat[r * columns + c];
+            left(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) =
+                leftFlat[r * columns + c];
+        }
+    // Γ is rebuilt from the frames exactly as every evolution step builds it.
+    return fromBiorthogonalFrames(right, left);
 }
 
 }  // namespace tessera::quantum

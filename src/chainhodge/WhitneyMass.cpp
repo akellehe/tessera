@@ -18,6 +18,7 @@
 #include "cobordism/ChainComplex.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
+#include "mesh/RiemannSheet.h"
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "spacetime/Spacetime.h"
@@ -310,6 +311,125 @@ LocalBlock localWhitneyBlock(const LocalGeometry &geo, int k, Branch branch, boo
   return out;
 }
 
+// The mixed second derivative of det[A] along two variations a and b of the
+// entries, with ab the mixed variation: by multilinearity in the rows,
+// sum_p det[row p <- ab] + sum_{p != q} det[row p <- a, row q <- b].
+Complex minorDetSecond(const Eigen::MatrixXcd &Gamma, const Eigen::MatrixXcd &dA,
+                       const Eigen::MatrixXcd &dB, const Eigen::MatrixXcd &dAB,
+                       const std::vector<int> &c, const std::vector<int> &e) {
+  const int k = static_cast<int>(c.size());
+  if (k == 0) return Complex(0.0, 0.0);
+  Eigen::MatrixXcd A(k, k), a(k, k), b(k, k), ab(k, k);
+  for (int p = 0; p < k; ++p)
+    for (int q = 0; q < k; ++q) {
+      const auto r = c[static_cast<std::size_t>(p)];
+      const auto s = e[static_cast<std::size_t>(q)];
+      A(p, q) = Gamma(r, s);
+      a(p, q) = dA(r, s);
+      b(p, q) = dB(r, s);
+      ab(p, q) = dAB(r, s);
+    }
+  Complex total = 0.0;
+  for (int p = 0; p < k; ++p) {
+    Eigen::MatrixXcd B = A;
+    B.row(p) = ab.row(p);
+    total += B.determinant();
+    for (int q = 0; q < k; ++q) {
+      if (q == p) continue;
+      Eigen::MatrixXcd C = A;
+      C.row(p) = a.row(p);
+      C.row(q) = b.row(q);
+      total += C.determinant();
+    }
+  }
+  return total;
+}
+
+// The derivatives of one top simplex's local Whitney block along the local
+// squared-length direction vLocal: the directional derivative D_v B and, per
+// local edge m, D_v dB/ds_m.
+struct LocalSecond {
+  Eigen::MatrixXcd directional;
+  std::vector<Eigen::MatrixXcd> second;  // per local edge
+  std::vector<std::vector<int>> faces;
+};
+
+LocalSecond localWhitneySecond(const LocalGeometry &geo, int k, Branch branch,
+                               const std::vector<Complex> &vLocal) {
+  const int d = geo.d;
+  LocalSecond out;
+  out.faces = subsets(d, k);
+  const int nf = static_cast<int>(out.faces.size());
+  const Eigen::MatrixXcd ginv = geo.gram.inverse();
+  const Eigen::MatrixXcd Gamma = extendGamma(ginv);
+  const Complex vol = WhitneyMass::volumeOnBranch(geo.gram, branch, nullptr);
+  const double kfac2 = factorial(k) * factorial(k);
+  const double lam = 1.0 / static_cast<double>((d + 1) * (d + 2));
+
+  // The direction's variations: g is linear in s, so D_v g = sum_m v_m dg_m.
+  Eigen::MatrixXcd dgV = Eigen::MatrixXcd::Zero(d, d);
+  for (std::size_t m = 0; m < geo.localEdges.size(); ++m) dgV += vLocal[m] * geo.dGram[m];
+  const Eigen::MatrixXcd ginvDgV = ginv * dgV;
+  const Eigen::MatrixXcd dginvV = -ginvDgV * ginv;
+  const Eigen::MatrixXcd dGammaV = extendGamma(dginvV);
+  const Complex dvolV = 0.5 * vol * ginvDgV.trace();
+
+  // sum over the (i, j) expansion of one entry with a per-minor functional.
+  auto expand = [&](const std::vector<int> &sig, const std::vector<int> &tau, const auto &term) {
+    Complex acc = 0.0;
+    for (int i = 0; i <= k; ++i) {
+      const std::vector<int> c = without(sig, i);
+      for (int j = 0; j <= k; ++j) {
+        const std::vector<int> e = without(tau, j);
+        const double sign = ((i + j) % 2 == 0) ? 1.0 : -1.0;
+        const double delta = (sig[static_cast<std::size_t>(i)] == tau[static_cast<std::size_t>(j)]) ? 2.0 : 1.0;
+        acc += sign * delta * lam * term(c, e);
+      }
+    }
+    return kfac2 * acc;
+  };
+
+  out.directional = Eigen::MatrixXcd::Zero(nf, nf);
+  for (int p = 0; p < nf; ++p)
+    for (int q = p; q < nf; ++q) {
+      const Complex v = expand(out.faces[static_cast<std::size_t>(p)], out.faces[static_cast<std::size_t>(q)],
+                               [&](const std::vector<int> &c, const std::vector<int> &e) {
+                                 return dvolV * minorDet(Gamma, c, e) +
+                                        vol * minorDetDerivative(Gamma, dGammaV, c, e);
+                               });
+      out.directional(p, q) = v;
+      out.directional(q, p) = v;
+    }
+
+  out.second.resize(geo.localEdges.size());
+  for (std::size_t m = 0; m < geo.localEdges.size(); ++m) {
+    const Eigen::MatrixXcd &dg = geo.dGram[m];
+    const Eigen::MatrixXcd ginvDg = ginv * dg;
+    const Eigen::MatrixXcd dginv = -ginvDg * ginv;
+    const Eigen::MatrixXcd dGamma = extendGamma(dginv);
+    const Complex dvol = 0.5 * vol * ginvDg.trace();
+    // D_v of -g^-1 dg g^-1 and of 1/2 |T| tr(g^-1 dg).
+    const Eigen::MatrixXcd dginvVm = ginvDgV * ginvDg * ginv + ginvDg * ginvDgV * ginv;
+    const Eigen::MatrixXcd dGammaVm = extendGamma(dginvVm);
+    const Complex dvolVm = 0.5 * dvolV * ginvDg.trace() + 0.5 * vol * (dginvV * dg).trace();
+    Eigen::MatrixXcd block = Eigen::MatrixXcd::Zero(nf, nf);
+    for (int p = 0; p < nf; ++p)
+      for (int q = p; q < nf; ++q) {
+        const Complex v = expand(
+            out.faces[static_cast<std::size_t>(p)], out.faces[static_cast<std::size_t>(q)],
+            [&](const std::vector<int> &c, const std::vector<int> &e) {
+              return dvolVm * minorDet(Gamma, c, e) + dvol * minorDetDerivative(Gamma, dGammaV, c, e) +
+                     dvolV * minorDetDerivative(Gamma, dGamma, c, e) +
+                     vol * minorDetSecond(Gamma, dGamma, dGammaV, dGammaVm, c, e);
+            });
+        block(p, q) = v;
+        block(q, p) = v;
+      }
+    out.second[m] = std::move(block);
+  }
+  return out;
+}
+
 // Gather one top simplex's local squared lengths, cell indices, and edge indices.
 struct TopSimplexContext {
   Cell verts;
@@ -430,9 +550,61 @@ SquaredLengths WhitneyMass::squaredLengthsOf(const spacetime::Spacetime &st,
   return s;
 }
 
-Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch, bool *ambiguous) {
+namespace {
+
+/// The sheet label of the root of det g at the far end of the straight segment
+/// from \a gramFrom (declared on sheet \a windingFrom) to \a gramTo: the signed
+/// number of turns det g(t) makes about zero along it, added to the sheet the
+/// segment started on. Sets \a onSegment when a root of det g(t) lies on the
+/// segment itself, where there is no continuation to take.
+///
+/// The label is rounded out of the tracked argument rather than the value being
+/// built from it. The tracked argument carries the error of the polynomial roots
+/// -- a multiple root is only accurate to a fractional power of the rounding
+/// level -- which on real positive data would show up as a spurious imaginary
+/// part of the volume. Rounding to an integer discards that error entirely, and
+/// fails only where the tracked argument is a full half turn out, which is the
+/// condition that would have flipped the sign test it replaces.
+struct SegmentContinuation {
+  /// True when the segment carried an argument that could be tracked. False
+  /// both when a root sits on the segment and when the determinant is constant
+  /// along it, which are different facts: the first is an ambiguity and the
+  /// second is a segment with nothing to continue.
+  bool tracked{false};
+  bool onSegment{false};
+  int winding{0};
+};
+
+SegmentContinuation segmentWinding(const Eigen::MatrixXcd &gramFrom, int windingFrom,
+                                   const Eigen::MatrixXcd &gramTo) {
+  const std::vector<Complex> coef = gramSegmentPolynomial(gramFrom, gramTo);
+  const std::vector<Complex> roots = polynomialRoots(coef);
+  if (roots.empty()) {
+    // A degree-0 polynomial: det g(t) is constant along the segment, so it
+    // makes no turn and the declared sheet stands unchanged.
+    return {false, false, windingFrom};
+  }
+  double dtheta = 0.0;
+  for (const auto &r : roots) {
+    const double tol = 1e-12 * (1.0 + std::abs(r));
+    if (std::abs(r.imag()) <= tol && r.real() >= -tol && r.real() <= 1.0 + tol)
+      return {false, true, windingFrom};
+    dtheta += principalArg(Complex(1.0, 0.0) - r) - principalArg(-r);
+  }
+  const double from = principalArg(gramFrom.determinant()) +
+                      2.0 * kPi * static_cast<double>(windingFrom);
+  const double to = principalArg(gramTo.determinant());
+  return {true, false,
+          static_cast<int>(std::llround((from + dtheta - to) / (2.0 * kPi)))};
+}
+
+}  // namespace
+
+Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch,
+                                    bool *ambiguous, int *winding) {
   const int d = static_cast<int>(gram.rows());
   if (ambiguous != nullptr) *ambiguous = false;
+  if (winding != nullptr) *winding = 0;
   if (d == 0) return Complex(1.0, 0.0);
 
   auto kontsevichSegal = [&]() -> Complex {
@@ -446,41 +618,46 @@ Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch,
   if (branch == Branch::KontsevichSegal) {
     sqrtDet = kontsevichSegal();
   } else {
-    // Unit Euclidean reference simplex: g_ref = 1/2 (1 + delta_ij).
+    // Unit Euclidean reference simplex: g_ref = 1/2 (1 + delta_ij), declared on
+    // the principal sheet, its determinant being real positive.
     Eigen::MatrixXcd gref = Eigen::MatrixXcd::Constant(d, d, Complex(0.5, 0.0));
     for (int i = 0; i < d; ++i) gref(i, i) = 1.0;
-    const std::vector<Complex> coef = gramSegmentPolynomial(gref, gram);
-    const std::vector<Complex> roots = polynomialRoots(coef);
-    bool onSegment = false;
-    double dtheta = 0.0;
-    for (const auto &r : roots) {
-      const double tol = 1e-12 * (1.0 + std::abs(r));
-      if (std::abs(r.imag()) <= tol && r.real() >= -tol && r.real() <= 1.0 + tol) {
-        onSegment = true;
-        break;
-      }
-      dtheta += principalArg(Complex(1.0, 0.0) - r) - principalArg(-r);
-    }
-    const Complex det1 = gram.determinant();
-    if (onSegment || roots.empty()) {
-      // A root on the reference segment (or a degree-0 polynomial, i.e. a
-      // degenerate reference) leaves no continuous continuation: report and
-      // take the Kontsevich-Segal value.
-      if (ambiguous != nullptr) *ambiguous = onSegment;
+    const SegmentContinuation continuation = segmentWinding(gref, 0, gram);
+    if (!continuation.tracked) {
+      // A root on the reference segment (or a determinant constant along it,
+      // i.e. a geometry that is the reference) leaves no continuation to take:
+      // report the ambiguity and fall back to the Kontsevich-Segal value.
+      if (ambiguous != nullptr) *ambiguous = continuation.onSegment;
       sqrtDet = kontsevichSegal();
     } else {
       // The continuation decides which of the two square roots of det g is
-      // meant; the value is then that root itself. Building it from the
-      // tracked argument instead would carry the error of the polynomial
-      // roots (a multiple root is only accurate to a fractional power of the
-      // rounding level), which on real positive data shows up as a spurious
-      // imaginary part of the volume.
-      const Complex root = std::sqrt(det1);
-      const Complex tracked = std::exp(Complex(0.0, 0.5 * dtheta));
-      sqrtDet = (root * std::conj(tracked)).real() >= 0.0 ? root : -root;
+      // meant, and the sheet label is that decision made explicit: the value is
+      // the principal root carrying the label's sign, so that a caller can tell
+      // a volume from its negative on one and the same geometry.
+      if (winding != nullptr) *winding = continuation.winding;
+      sqrtDet = mesh::SheetedSqrt(gram.determinant(), continuation.winding).value();
     }
   }
   return sqrtDet / factorial(d);
+}
+
+Complex WhitneyMass::volumeContinuedFrom(const Eigen::MatrixXcd &gramFrom,
+                                         int windingFrom,
+                                         const Eigen::MatrixXcd &gramTo,
+                                         int *windingTo, bool *ambiguous) {
+  const int d = static_cast<int>(gramTo.rows());
+  if (ambiguous != nullptr) *ambiguous = false;
+  if (windingTo != nullptr) *windingTo = windingFrom;
+  if (d == 0) return Complex(1.0, 0.0);
+  if (gramFrom.rows() != gramTo.rows() || gramFrom.cols() != gramTo.cols())
+    throw std::invalid_argument(
+        "WhitneyMass::volumeContinuedFrom: the two Gram matrices differ in size");
+  const SegmentContinuation continuation =
+      segmentWinding(gramFrom, windingFrom, gramTo);
+  if (ambiguous != nullptr) *ambiguous = continuation.onSegment;
+  if (windingTo != nullptr) *windingTo = continuation.winding;
+  return mesh::SheetedSqrt(gramTo.determinant(), continuation.winding).value() /
+         factorial(d);
 }
 
 double WhitneyMass::marginOf(const Eigen::MatrixXcd &gram) {
@@ -604,16 +781,19 @@ InstanceCertificate WhitneyMass::certificate(const cobordism::ChainComplex &K,
   cert.margins.reserve(tops.size());
   cert.volumes.reserve(tops.size());
   cert.gramDeterminants.reserve(tops.size());
+  cert.volumeWindings.reserve(tops.size());
   double minMargin = std::numeric_limits<double>::infinity();
   for (std::size_t t = 0; t < tops.size(); ++t) {
     const TopSimplexContext ctx = topContext(tops[t], s, index);
     const LocalGeometry geo(d, ctx.sLocal);
     const double m = marginOf(geo.gram);
     bool amb = false;
-    const Complex vol = volumeOnBranch(geo.gram, branch, &amb);
+    int w = 0;
+    const Complex vol = volumeOnBranch(geo.gram, branch, &amb, &w);
     cert.margins.push_back(m);
     cert.volumes.push_back(vol);
     cert.gramDeterminants.push_back(geo.gram.determinant());
+    cert.volumeWindings.push_back(w);
     if (amb) {
       cert.continuationAmbiguous = true;
       cert.ambiguousTopSimplices.push_back(t);
@@ -647,6 +827,76 @@ SparseMatrix WhitneyMass::assembleDerivative(const cobordism::ChainComplex &K,
   D.setFromTriplets(trip.begin(), trip.end());
   D.makeCompressed();
   return D;
+}
+
+SparseMatrix WhitneyMass::assembleDirectionalDerivative(const cobordism::ChainComplex &K,
+                                                        const SquaredLengths &s, int k,
+                                                        const std::vector<Complex> &direction,
+                                                        Branch branch) {
+  checkInputs(K, s, k);
+  if (direction.size() != K.numSimplices(1))
+    throw std::invalid_argument("WhitneyMass::assembleDirectionalDerivative: expected one direction entry per edge");
+  const int n = static_cast<int>(K.numSimplices(k));
+  std::vector<Eigen::Triplet<Complex>> trip;
+  for (const auto &b : topSimplexBlocks(K, s, k, branch, true)) {
+    const int nf = static_cast<int>(b.cellIndices.size());
+    Eigen::MatrixXcd local = Eigen::MatrixXcd::Zero(nf, nf);
+    for (std::size_t m = 0; m < b.edgeIndices.size(); ++m)
+      local += direction[static_cast<std::size_t>(b.edgeIndices[m])] * b.derivative[m];
+    for (int p = 0; p < nf; ++p)
+      for (int q = 0; q < nf; ++q)
+        trip.emplace_back(b.cellIndices[static_cast<std::size_t>(p)],
+                          b.cellIndices[static_cast<std::size_t>(q)], local(p, q));
+  }
+  SparseMatrix D(n, n);
+  D.setFromTriplets(trip.begin(), trip.end());
+  D.makeCompressed();
+  return D;
+}
+
+std::vector<SparseMatrix> WhitneyMass::assembleSecondDerivatives(const cobordism::ChainComplex &K,
+                                                                 const SquaredLengths &s, int k,
+                                                                 const std::vector<Complex> &direction,
+                                                                 Branch branch) {
+  checkInputs(K, s, k);
+  const std::size_t edgeCount = K.numSimplices(1);
+  if (direction.size() != edgeCount)
+    throw std::invalid_argument("WhitneyMass::assembleSecondDerivatives: expected one direction entry per edge");
+  const int n = static_cast<int>(K.numSimplices(k));
+  const CellIndex index(K);
+  std::vector<std::vector<Eigen::Triplet<Complex>>> trip(edgeCount);
+  for (const auto &top : K.orientedTopSimplices()) {
+    const TopSimplexContext ctx = topContext(top, s, index);
+    std::vector<Complex> vLocal(ctx.edgeIndices.size());
+    bool moves = false;
+    for (std::size_t m = 0; m < ctx.edgeIndices.size(); ++m) {
+      vLocal[m] = direction[static_cast<std::size_t>(ctx.edgeIndices[m])];
+      moves = moves || vLocal[m] != Complex(0.0, 0.0);
+    }
+    // A direction that leaves this simplex's lengths alone leaves its block's
+    // derivatives alone: the block depends on its own edges only.
+    if (!moves) continue;
+    const LocalGeometry geo(static_cast<int>(top.size()) - 1, ctx.sLocal);
+    const LocalSecond local = localWhitneySecond(geo, k, branch, vLocal);
+    const std::vector<int> cells = faceIndices(top, local.faces, k, index);
+    const int nf = static_cast<int>(cells.size());
+    for (std::size_t m = 0; m < ctx.edgeIndices.size(); ++m) {
+      auto &out = trip[static_cast<std::size_t>(ctx.edgeIndices[m])];
+      for (int p = 0; p < nf; ++p)
+        for (int q = 0; q < nf; ++q)
+          out.emplace_back(cells[static_cast<std::size_t>(p)], cells[static_cast<std::size_t>(q)],
+                           local.second[m](p, q));
+    }
+  }
+  std::vector<SparseMatrix> out;
+  out.reserve(edgeCount);
+  for (std::size_t e = 0; e < edgeCount; ++e) {
+    SparseMatrix D(n, n);
+    D.setFromTriplets(trip[e].begin(), trip[e].end());
+    D.makeCompressed();
+    out.push_back(std::move(D));
+  }
+  return out;
 }
 
 std::vector<Complex> WhitneyMass::derivativeContraction(const cobordism::ChainComplex &K,

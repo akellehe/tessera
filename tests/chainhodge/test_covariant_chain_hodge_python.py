@@ -79,9 +79,41 @@ class TestConnection:
                 assert u == pytest.approx(cmath.exp(-1j * phases[(y, x)]), rel=1e-14)
 
 
+PROBES = ("transposeMetric", "transposePencilProbe", "transposeOperatorProbe", "covarianceMetric",
+          "covariancePencilProbe", "covarianceOperatorProbe", "curvature", "pureGaugeSimilarityProbe",
+          "pairingInvariance")
+
+
+def _assert_proposition_3(cov, K, trivial=False):
+    """Proposition 3 (i)-(vi) as asserted on construction: every residual
+    measured, finite, and within the certificate's tolerance 10 n eps cond."""
+    cert = cov.certificate()
+    assert cert.holds
+    n = max(K.numSimplices(k) for k in range(K.dimension() + 1))
+    assert cert.tolerance == pytest.approx(10 * n * np.finfo(float).eps * cert.conditionEstimate, rel=1e-12)
+    for name in PROBES:
+        value = getattr(cert, name)
+        assert np.isfinite(value) and value <= cert.tolerance, (name, value, cert.tolerance)
+    if trivial:
+        assert cert.trivialReductionProbe <= cert.tolerance
+    else:
+        assert np.isnan(cert.trivialReductionProbe)
+
+
+def _assert_harmonic_dimension(base):
+    """Step 2 of the numerical program on the instance: dim H_1 = b_1 and (R1)-(R4)."""
+    betti = base.betti()
+    for k in range(base.dimension() + 1):
+        assert base.harmonicChains(k).nullity == betti[k]
+        assert base.rankConditions(k).kernelIsHarmonic
+
+
 class TestProposition51:
     """T1-T4 (§14): random complex s and U on the torus N = 4, 6, 8
-    (n_1 = 48, 108, 192) and on the small 2-complex."""
+    (n_1 = 48, 108, 192) and on the small 2-complex, at the tolerances §14
+    states: covariance <= 7.1e-14, transpose identity <= 2.4e-14, curvature
+    formula (iv) to 5e-16, pure-gauge isospectrality to 2e-13 (F_B symmetry,
+    <= 8.0e-12, is in test_pencil_schur_python.py)."""
 
     @pytest.mark.parametrize("N", [4, 6, 8])
     def test_exact_properties_random_complex(self, N):
@@ -91,18 +123,41 @@ class TestProposition51:
         assert K.numSimplices(1) == 3 * N * N
         s = _random_complex_lengths(K, rng)
         base = ch.ChainHodge(K, s, ch.Preset.L2, ch.Branch.KontsevichSegal)
+        _assert_harmonic_dimension(base)
         U = ch.Connection(K, _random_links(K, rng))
         cov = ch.CovariantChainHodge(base, U)
+        _assert_proposition_3(cov, K)
         cert = cov.certificate()
         assert cert.transposeMetric <= 2.4e-14
         assert cert.covarianceMetric <= 7.1e-14
-        assert cert.curvature <= 5e-16 * 10  # (iv) at round-off on the scale of U_rp(F_t - 1)
-        assert cert.pairingInvariance <= 1e-12
+        assert cert.curvature <= 5e-16  # (iv) at round-off on the scale of U_rp(F_t - 1)
         full = cov.verify(1)
-        assert full.transposePencil <= 2.4e-14 * 10
-        assert full.covariancePencil <= 7.1e-14 * 10
-        assert full.pureGaugeIsospectrality <= 2e-13 * 10
+        assert full.transposePencil <= 2.4e-14
+        assert full.covariancePencil <= 7.1e-14
+        assert full.pureGaugeIsospectrality <= 2e-13
         assert np.isnan(full.trivialReduction)  # U is not trivial here
+
+    @pytest.mark.parametrize("cells", [TWO_COMPLEX, [[0, 1, 2, 3], [1, 2, 3, 4]], "torus33"])
+    @pytest.mark.parametrize("seed", [1, 2])
+    def test_every_instance_asserts_proposition_3(self, cells, seed):
+        """Every construction measures and asserts (i)-(vi) at every degree;
+        a trivial connection also reduces to L_k (i). An instance built
+        without its certificate carries none."""
+        rng = np.random.default_rng(seed)
+        if cells == "torus33":
+            from tests.chainhodge._fixtures import torus33
+            K, s = torus33()
+        else:
+            K = cob.ChainComplex.fromTopCells(cells)
+            s = _random_complex_lengths(K, rng)
+        base = ch.ChainHodge(K, s, ch.Preset.L2, ch.Branch.KontsevichSegal)
+        _assert_harmonic_dimension(base)
+        _assert_proposition_3(ch.CovariantChainHodge(base, ch.Connection(K, _random_links(K, rng))), K)
+        _assert_proposition_3(ch.CovariantChainHodge(base, ch.Connection.trivial(K)), K, trivial=True)
+        grassmann = ch.ChainHodge(K, s, ch.Preset.GRASSMANN_ALL)
+        _assert_proposition_3(ch.CovariantChainHodge(grassmann, ch.Connection(K, _random_links(K, rng))), K)
+        bare = ch.CovariantChainHodge(base, ch.Connection(K, _random_links(K, rng)), 7, False)
+        assert not bare.certificate().holds and np.isnan(bare.certificate().tolerance)
 
     def test_trivial_connection_reduces_to_l1(self):
         rng = np.random.default_rng(5)
