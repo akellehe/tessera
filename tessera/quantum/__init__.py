@@ -193,9 +193,11 @@ _EXPORTS = (
     # bitsets with the prefix-popcount sign rule, the CAR operator layer,
     # the graded chain/tensor differential, the Fock direct-sum functor and
     # dGamma, and the edge-mode registry with its deterministic compilation
-    # order and relabeling parity.
+    # order, its assignment of that order's primary key from the oriented
+    # component lineage, and its relabeling parity.
     "OccupationBitset", "ExteriorAlgebra", "GradedTensorComplex",
     "FockDirectSum", "EdgeModeRecord", "EdgeModeRegistry",
+    "LineageAssignment",
     # Lazy graded Fock oracle and boundary carrier: the
     # expression-DAG engine over the #766 primitives — lazy graded tensor
     # products with crossing-only expansion, sector direct sums, Slater

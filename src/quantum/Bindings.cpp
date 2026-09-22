@@ -1864,6 +1864,24 @@ is a derived marginal of the global state, not a stored product state.)doc")
         .def_readonly("modeId", &EdgeModeRecord::modeId)
         .def_readonly("lineageKey", &EdgeModeRecord::lineageKey);
 
+    py::class_<LineageAssignment>(m, "LineageAssignment",
+        R"doc(One cluster's claim on a set of vertices, for the assignment of
+the compilation order's primary key.
+
+A mode belongs to the cluster whose support contains both endpoints of its
+edge. The key itself is produced by the component hierarchy -- for an oriented
+cluster lineage read against a cooriented cut it is
+observables.ClusterLineage.orderKey, whose lexicographic order is the numeric
+order of the lineage numbers -- and this structure only says which vertices
+carry it.)doc")
+        .def(py::init([](std::vector<std::uint64_t> vertices,
+                         std::string lineageKey) {
+                 return LineageAssignment{std::move(vertices),
+                                          std::move(lineageKey)};
+             }), py::arg("vertices"), py::arg("lineageKey"))
+        .def_readwrite("vertices", &LineageAssignment::vertices)
+        .def_readwrite("lineageKey", &LineageAssignment::lineageKey);
+
     py::class_<EdgeModeRegistry>(m, "EdgeModeRegistry",
         R"doc(Edge-mode basis bookkeeping + the deterministic compilation order.
 
@@ -1871,7 +1889,16 @@ canonicalModeOrder sorts modes by (lineageKey, min vertex, max vertex):
 oriented component lineage first, the unordered vertex pair as the
 deterministic tie-break. The order is a compilation artifact of the
 order-independent abstract exterior algebra — no Kasteleyn orientation is
-required. A vertex relabeling rebuilds the order; orderPermutation +
+required.
+
+The primary key is the physical one: assignLineageKeys gives each mode the
+compilation-order key of the cluster whose support contains both of its
+endpoints, and for an oriented cluster lineage that key is
+observables.ClusterLineage.orderKey, whose lexicographic order is the numeric
+order of the lineage numbers. The modes one cluster carries are therefore
+compiled together and the clusters follow relabelling-invariant integers, not
+the order in which cells happen to be stored; the vertex pair only breaks ties
+inside one cluster. A vertex relabeling rebuilds the order; orderPermutation +
 OccupationBitset.permutationParity / ExteriorAlgebra.modePermutationMatrixCOO
 give the exact parity map under which all physical amplitudes are
 invariant.
@@ -1891,17 +1918,48 @@ The carrier is F(h_K) with h_K = span{|e> : e in K1}; any per-band carrier is
 a derived view of these per-edge modes. Each edge is registered on its stored
 source -> target direction with orientationSign +1, so canonicalOrientationSign
 reports how that orientation sits against the canonical min -> max direction.
-Every mode gets lineageKey, reducing the canonical order to the deterministic
-endpoint sort.
+Every mode gets lineageKey, which places the whole complex in one lineage and
+reduces the canonical order to the deterministic endpoint sort;
+assignLineageKeys then replaces that placeholder with the oriented component
+lineage.
 
 Reads incidence only -- never a length, never a connection phase.
 
 Raises:
     ValueError: on a self-loop or a duplicated unordered vertex pair.)doc")
+        .def_static("fromSpacetimeWithLineages",
+             &EdgeModeRegistry::fromSpacetimeWithLineages,
+             py::arg("spacetime"), py::arg("assignments"),
+             py::arg("unassignedKey") = "~unassigned",
+             R"doc(fromSpacetime followed by assignLineageKeys: register one
+mode per edge and give each one the compilation-order key of the cluster whose
+support contains both of its endpoints.
+
+unassignedKey is the key every mode keeps that no cluster claims. It sorts
+after every key observables.ClusterLineage.orderKey produces, because those
+begin with "lineage:" and the default begins with a tilde, so the modes no
+cluster carries are compiled last and never interleave with a cluster's own.
+
+Raises:
+    ValueError: on a malformed spacetime, or when two assignments both claim
+        one mode.)doc")
         .def("addEdge", &EdgeModeRegistry::addEdge, py::arg("vertexA"),
              py::arg("vertexB"), py::arg("orientationSign"),
              py::arg("lineageKey"),
              "Register an edge mode; returns the assigned modeId.")
+        .def("setLineageKey", &EdgeModeRegistry::setLineageKey,
+             py::arg("modeId"), py::arg("lineageKey"),
+             "Replace one mode's oriented component lineage key; its "
+             "incidence and orientation are untouched.")
+        .def("assignLineageKeys", &EdgeModeRegistry::assignLineageKeys,
+             py::arg("assignments"),
+             R"doc(Give every mode the compilation-order key of the cluster
+whose support contains both of its endpoints, and return how many modes were
+assigned. A mode no assignment claims keeps the key it was registered with.
+
+Raises:
+    ValueError: when two assignments both contain both endpoints of one mode,
+        which leaves that mode's position in the order undetermined.)doc")
         .def("modeCount", &EdgeModeRegistry::modeCount)
         .def("record", &EdgeModeRegistry::record, py::arg("modeId"),
              py::return_value_policy::copy)

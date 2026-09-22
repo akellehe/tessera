@@ -49,6 +49,7 @@
 #include "observables/DualVolumeSigns.h"
 #include "observables/ColorFiber.h"
 #include "observables/SheetedColor.h"
+#include "observables/ComplexTransport.h"
 #include "observables/MonopoleSpin.h"
 #include "observables/CrossingReadouts.h"
 #include "observables/ExchangeHolonomy.h"
@@ -2439,6 +2440,233 @@ measures rather than asserts.)doc")
                   "|S_ABC(frame-changed) - S_ABC(original)|.");
 
   // ==========================================================================
+  // ComplexTransport (#1199): the complex fibre transport of matched Riesz
+  // frames.  The general-linear map M_AB = Phi~_A^T T_AB Phi_B retained
+  // unprojected, the leakage ||(I - P_A) T_AB P_B|| measured before the
+  // restriction to the bands, the reversal by transposition, the Kato parallel
+  // transport of an isolated band, and the exchange character
+  // chi_F = det(H_ex H_ref^-1) with its modulus reported rather than required.
+  // ==========================================================================
+  py::class_<ComplexTransportConfig>(m, "ComplexTransportConfig",
+      R"doc(Threshold configuration of the complex-transport reads.  A
+threshold selects which reads are certified, never which value is reported:
+a failed threshold yields an uncertified read carrying the same numbers.)doc")
+      .def(py::init<>())
+      .def_readwrite("rankTolerance", &ComplexTransportConfig::rankTolerance)
+      .def_readwrite("leakageTolerance",
+                     &ComplexTransportConfig::leakageTolerance,
+                     "Cap on the RELATIVE leakage leak_AB / ||T_AB P_B||_2.")
+      .def_readwrite("conditionNumberCap",
+                     &ComplexTransportConfig::conditionNumberCap)
+      .def_readwrite("isolationFloor", &ComplexTransportConfig::isolationFloor)
+      .def_readwrite("requireCertifiedFibers",
+                     &ComplexTransportConfig::requireCertifiedFibers)
+      .def_readwrite("certificateTolerance",
+                     &ComplexTransportConfig::certificateTolerance);
+
+  py::class_<GeneralLinearTransportRead>(m, "GeneralLinearTransportRead",
+      R"doc(One complex fibre transport A <- B, reported unprojected: the map
+M_AB in GL(r, C), its determinant, its singular data and conditioning, the
+leakage measured on the transfer before the restriction to the bands, the
+endpoint resolvent bounds and the endpoints' left and right frame residuals.
+No polar factor, compact real form or determinant root is taken anywhere.)doc")
+      .def(py::init<>())
+      .def_readonly("degree", &GeneralLinearTransportRead::degree)
+      .def_readonly("rank", &GeneralLinearTransportRead::rank)
+      .def_readonly("map", &GeneralLinearTransportRead::map,
+                    "M_AB = Phi~_A^T T_AB Phi_B, unprojected.")
+      .def_readonly("determinant", &GeneralLinearTransportRead::determinant)
+      .def_readonly("singularValues",
+                    &GeneralLinearTransportRead::singularValues)
+      .def_readonly("numericalRank",
+                    &GeneralLinearTransportRead::numericalRank)
+      .def_readonly("conditionNumber",
+                    &GeneralLinearTransportRead::conditionNumber)
+      .def_readonly("minSingularValue",
+                    &GeneralLinearTransportRead::minSingularValue)
+      .def_readonly("leakage", &GeneralLinearTransportRead::leakage,
+                    "||(I - P_A) T_AB P_B||_2.")
+      .def_readonly("relativeLeakage",
+                    &GeneralLinearTransportRead::relativeLeakage)
+      .def_readonly("toIsolation", &GeneralLinearTransportRead::toIsolation)
+      .def_readonly("fromIsolation",
+                    &GeneralLinearTransportRead::fromIsolation)
+      .def_readonly("toResolventBound",
+                    &GeneralLinearTransportRead::toResolventBound)
+      .def_readonly("fromResolventBound",
+                    &GeneralLinearTransportRead::fromResolventBound)
+      .def_readonly("toRightFrameResidual",
+                    &GeneralLinearTransportRead::toRightFrameResidual)
+      .def_readonly("toLeftFrameResidual",
+                    &GeneralLinearTransportRead::toLeftFrameResidual)
+      .def_readonly("fromRightFrameResidual",
+                    &GeneralLinearTransportRead::fromRightFrameResidual)
+      .def_readonly("fromLeftFrameResidual",
+                    &GeneralLinearTransportRead::fromLeftFrameResidual)
+      .def_readonly("toProjectorNorm",
+                    &GeneralLinearTransportRead::toProjectorNorm)
+      .def_readonly("fromProjectorNorm",
+                    &GeneralLinearTransportRead::fromProjectorNorm)
+      .def_readonly("regime", &GeneralLinearTransportRead::regime)
+      .def_readonly("invertible", &GeneralLinearTransportRead::invertible)
+      .def_readonly("accepted", &GeneralLinearTransportRead::accepted)
+      .def_readonly("rejectionReason",
+                    &GeneralLinearTransportRead::rejectionReason)
+      .def_readonly("certificate", &GeneralLinearTransportRead::certificate)
+      .def("describe", &GeneralLinearTransportRead::describe);
+
+  py::enum_<KatoScheme>(m, "KatoScheme",
+      R"doc(Which step carries the band from one sampled Riesz projector to the
+next, and what that step is exact for.  Naming the scheme is required rather
+than inferred, so that no approximation is ever applied silently.)doc")
+      .value("DirectRotation", KatoScheme::DirectRotation,
+             "The direct rotation: the exact solution of the Kato equation "
+             "along the geodesic joining the two projectors, for orthogonal "
+             "projectors closer than one in operator norm.")
+      .value("Intertwiner", KatoScheme::Intertwiner,
+             "R = P1 P0 + (I - P1)(I - P0): exact intertwining for any pair "
+             "of idempotents, orthogonal or oblique, and unnormalized.")
+      .value("ExponentialGenerator", KatoScheme::ExponentialGenerator,
+             "exp([P1, P0]): the Kato equation's own exponential step, whose "
+             "intertwining residual is third order in the step and is "
+             "reported.");
+
+  py::class_<KatoTransportRead>(m, "KatoTransportRead",
+      R"doc(The parallel transport of an isolated band along a sampled path of
+Riesz projectors: the composed transport, the per-step transports, and the
+residuals that certify them -- the intertwining residual K_t P_t = P_{t+1} K_t,
+the idempotency of the supplied projectors, the rank held along the path and
+the coarseness of the sampling.)doc")
+      .def(py::init<>())
+      .def_readonly("transport", &KatoTransportRead::transport)
+      .def_readonly("stepTransports", &KatoTransportRead::stepTransports)
+      .def_readonly("scheme", &KatoTransportRead::scheme)
+      .def_readonly("steps", &KatoTransportRead::steps)
+      .def_readonly("dimension", &KatoTransportRead::dimension)
+      .def_readonly("rank", &KatoTransportRead::rank)
+      .def_readonly("rankDefect", &KatoTransportRead::rankDefect)
+      .def_readonly("idempotencyResidual",
+                    &KatoTransportRead::idempotencyResidual)
+      .def_readonly("intertwiningResidual",
+                    &KatoTransportRead::intertwiningResidual)
+      .def_readonly("composedIntertwiningResidual",
+                    &KatoTransportRead::composedIntertwiningResidual)
+      .def_readonly("maxProjectorStep", &KatoTransportRead::maxProjectorStep)
+      .def_readonly("complete", &KatoTransportRead::complete)
+      .def_readonly("invalidReason", &KatoTransportRead::invalidReason)
+      .def_readonly("certificate", &KatoTransportRead::certificate);
+
+  py::class_<ExchangeCharacterRead>(m, "ExchangeCharacterRead",
+      R"doc(chi_F = det(H_ex H_ref^-1), the interferometric exchange character
+of a general-linear exchange holonomy against a matched non-exchanging
+reference holonomy.  The complex number is the whole result: its modulus is
+reported because a reader wants to see it, not because anything is required of
+it, and no phase angle, component sign or unit-modulus projection is taken.)doc")
+      .def(py::init<>())
+      .def_readonly("character", &ExchangeCharacterRead::character)
+      .def_readonly("determinantRatio",
+                    &ExchangeCharacterRead::determinantRatio)
+      .def_readonly("routeAgreementResidual",
+                    &ExchangeCharacterRead::routeAgreementResidual)
+      .def_readonly("exchangeDeterminant",
+                    &ExchangeCharacterRead::exchangeDeterminant)
+      .def_readonly("referenceDeterminant",
+                    &ExchangeCharacterRead::referenceDeterminant)
+      .def_readonly("modulus", &ExchangeCharacterRead::modulus,
+                    "|chi_F|, reported and never required.")
+      .def_readonly("distanceToMinusOne",
+                    &ExchangeCharacterRead::distanceToMinusOne)
+      .def_readonly("distanceToPlusOne",
+                    &ExchangeCharacterRead::distanceToPlusOne)
+      .def_readonly("rank", &ExchangeCharacterRead::rank)
+      .def_readonly("referenceConditionNumber",
+                    &ExchangeCharacterRead::referenceConditionNumber)
+      .def_readonly("pathLeakage", &ExchangeCharacterRead::pathLeakage)
+      .def_readonly("referenceInvertible",
+                    &ExchangeCharacterRead::referenceInvertible)
+      .def_readonly("certificate", &ExchangeCharacterRead::certificate);
+
+  py::class_<ComplexTransport>(m, "ComplexTransport",
+      R"doc(The complex fibre transport of matched Riesz frames: the
+general-linear map M_AB, its leakage certificate, its reversal by
+transposition, the Kato parallel transport of an isolated band, and the
+exchange character of two general-linear holonomies.
+
+The retained observable is the complex matrix itself.  Under independent frame
+changes at the two ends it transforms as M_AB -> g_A^-1 M_AB g_B, so a closed
+holonomy transforms by conjugation and its power traces, characteristic
+polynomial, determinant and conjugacy class are frame-free.  That covariance is
+the reason nothing is normalized: a polar factor, a determinant root or a
+modulus is a choice of representative and destroys either the determinant
+transport or the frame law.)doc")
+      .def_static("fiberMap", &ComplexTransport::fiberMap,
+                  py::arg("dualFrameTo"), py::arg("transfer"),
+                  py::arg("rightFrameFrom"),
+                  "M_AB = Phi~_A^T T_AB Phi_B, the bilinear pairing.")
+      .def_static("leakage", &ComplexTransport::leakage,
+                  py::arg("projectorTo"), py::arg("transfer"),
+                  py::arg("projectorFrom"),
+                  "||(I - P_A) T_AB P_B||_2, measured before the restriction "
+                  "to the bands.")
+      .def_static("transport", &ComplexTransport::transport,
+                  py::arg("to_fiber"), py::arg("from_fiber"),
+                  py::arg("transfer"),
+                  py::arg("config") = ComplexTransportConfig{},
+                  "The complete transport A <- B of a transfer between two "
+                  "bands.")
+      .def_static("frameChanged", &ComplexTransport::frameChanged,
+                  py::arg("map"), py::arg("frameTo"), py::arg("frameFrom"),
+                  "M_AB -> g_A^-1 M_AB g_B.")
+      .def_static("reversedTransfer", &ComplexTransport::reversedTransfer,
+                  py::arg("transfer"),
+                  "T_BA = T_AB^T, the transposition reversal of a "
+                  "hopping-defined transfer.")
+      .def_static("dualTransport", &ComplexTransport::dualTransport,
+                  py::arg("map"),
+                  "M^v_AB = M_AB^-T, the branch-free dual transport of an "
+                  "anti-cluster, whose determinant is (det M_AB)^-1.")
+      .def_static("compose", &ComplexTransport::compose, py::arg("path"),
+                  py::arg("rank") = std::size_t{0},
+                  "The path transport, first factor applied first.")
+      .def_static("holonomy", &ComplexTransport::holonomy, py::arg("links"),
+                  "The closed holonomy and its conjugacy invariants.")
+      .def_static("katoGenerator", &ComplexTransport::katoGenerator,
+                  py::arg("projectorRate"), py::arg("projector"),
+                  "[P', P], the right-hand side of the Kato equation.")
+      .def_static("katoStep", &ComplexTransport::katoStep,
+                  py::arg("fromProjector"), py::arg("toProjector"),
+                  py::arg("scheme") = KatoScheme::DirectRotation,
+                  "One Kato step between two sampled projectors.")
+      .def_static("katoTransport", &ComplexTransport::katoTransport,
+                  py::arg("projectors"),
+                  py::arg("scheme") = KatoScheme::DirectRotation,
+                  py::arg("config") = ComplexTransportConfig{},
+                  "The Kato parallel transport of an isolated band along a "
+                  "sampled path of Riesz projectors.")
+      .def_static("katoTransportOnFibers",
+                  &ComplexTransport::katoTransportOnFibers, py::arg("loop"),
+                  py::arg("scheme") = KatoScheme::DirectRotation,
+                  py::arg("config") = ComplexTransportConfig{},
+                  "The same, with the projectors read from a path of bands "
+                  "that all carry the same cells.")
+      .def_static("bandTransport", &ComplexTransport::bandTransport,
+                  py::arg("transport"), py::arg("dualFrameEnd"),
+                  py::arg("rightFrameStart"),
+                  "k = Phi~_end^T K Phi_start, the general-linear link a "
+                  "Kato-transported band contributes to a holonomy.")
+      .def_static("exchangeCharacter", &ComplexTransport::exchangeCharacter,
+                  py::arg("exchangeHolonomy"), py::arg("referenceHolonomy"),
+                  py::arg("pathLeakage"),
+                  py::arg("config") = ComplexTransportConfig{},
+                  "chi_F = det(H_ex H_ref^-1).")
+      .def_static("exchangeCharacterOfPaths",
+                  &ComplexTransport::exchangeCharacterOfPaths,
+                  py::arg("exchangePath"), py::arg("referencePath"),
+                  py::arg("pathLeakage"),
+                  py::arg("config") = ComplexTransportConfig{},
+                  "chi_F of the two paths' composed holonomies.");
+
+  // ==========================================================================
   // MonopoleSpin (#1196): spin from an odd Dirac monopole.  The monopole
   // number through a closed cut, the projective representation D_k(g) with
   // its cocycle, the spinor bands it protects, and the sharp-spin
@@ -3086,21 +3314,60 @@ sign.)doc")
       .def_readonly("ranksMatched", &HolonomyCharacterRead::ranksMatched)
       .def_readonly("certificate", &HolonomyCharacterRead::certificate);
 
+  py::class_<ClusterOccupancy>(m, "ClusterOccupancy",
+      R"doc(The occupancy declaration of one tracked cluster block: how many
+one-particle modes of the block's fibre the state occupies, and how many
+sheets the block's support carries.  The exchange statistic is occupation
+parity, so the occupation is the number that enters it; the sheet count
+decides whether the rank-parity cross-check applies at all, because a
+sheeted fibre has even rank and exchanging whole frames of even rank gives
++1 whatever the occupations are.)doc")
+      .def(py::init([](std::size_t occupation, std::size_t sheetCount) {
+             return ClusterOccupancy{occupation, sheetCount};
+           }),
+           py::arg("occupation") = std::size_t{1},
+           py::arg("sheetCount") = std::size_t{1})
+      .def_readwrite("occupation", &ClusterOccupancy::occupation)
+      .def_readwrite("sheet_count", &ClusterOccupancy::sheetCount);
+
   py::class_<BlockPermutationRead>(m, "BlockPermutationRead",
       R"doc(The structural exchange channel: the permutation of persistent
 localized blocks around the loop (matching delegated to
 SpectralFiberTracker.matchFibers), its exact parities through the exterior
-grading (modeParity = the graded exchange statistic; blockParity = the
-block-label sign; compositeParity = the optional composite-level sign),
-and the residual in-block motion after reference cancellation.  Parities
-are exact integers given the verified matching premise; a failed premise
-(gap closure, rank change, ambiguous matching) yields an uncertified read
-with no parities.)doc")
+grading, and the residual in-block motion after reference cancellation.
+
+occupationParity is the exchange statistic: the graded sign the exterior
+Fock functor attaches to the reordering, computed from the declared
+occupations.  rankParity is the independent odd-rank determinant
+cross-check computed the same way from the fibre ranks; it is retired, and
+reported as 0 with rankParityRetired set, on a sheeted support, and it is
+never multiplied into the statistic.  blockParity is the block-label sign
+and compositeParity the optional composite-level sign.
+
+Parities are exact integers given the verified matching premise; a failed
+premise (gap closure, rank change, ambiguous matching) yields an
+uncertified read with no parities.)doc")
       .def_readonly("blockPermutation",
                     &BlockPermutationRead::blockPermutation)
       .def_readonly("blockRanks", &BlockPermutationRead::blockRanks)
+      .def_readonly("blockOccupations",
+                    &BlockPermutationRead::blockOccupations)
+      .def_readonly("blockSheetCounts",
+                    &BlockPermutationRead::blockSheetCounts)
       .def_readonly("blockParity", &BlockPermutationRead::blockParity)
-      .def_readonly("modeParity", &BlockPermutationRead::modeParity)
+      .def_readonly("occupationParity",
+                    &BlockPermutationRead::occupationParity,
+                    "The exchange statistic: the graded sign of the "
+                    "reordering read off the declared occupations.")
+      .def_readonly("rankParity", &BlockPermutationRead::rankParity,
+                    "The odd-rank determinant cross-check, reported "
+                    "independently and never multiplied into the statistic.")
+      .def_readonly("rankParityRetired",
+                    &BlockPermutationRead::rankParityRetired,
+                    "Whether the cross-check was retired, as it is on a "
+                    "sheeted support.")
+      .def_readonly("rankParityAgrees",
+                    &BlockPermutationRead::rankParityAgrees)
       .def_readonly("compositePermutation",
                     &BlockPermutationRead::compositePermutation)
       .def_readonly("compositeParity",
@@ -3204,10 +3471,20 @@ reads, and nothing here may enter any emergence objective.)doc")
                       std::vector<std::vector<SpectralFiber>>{},
                   py::arg("composites") =
                       std::vector<std::vector<std::size_t>>{},
+                  py::arg("occupancies") = std::vector<ClusterOccupancy>{},
                   py::arg("config") = ExchangeHolonomyConfig{},
                   "Structural block tracking around the loop: permutation, "
-                  "exact graded parities, reference-cancelled in-block "
-                  "residual.")
+                  "the exchange statistic from the declared occupations, the "
+                  "rank-parity cross-check, and the reference-cancelled "
+                  "in-block residual.  An empty occupancy list declares one "
+                  "occupied mode on an unsheeted support for every block.")
+      .def_static("frameExchangeDeterminant",
+                  &ExchangeHolonomy::frameExchangeDeterminant,
+                  py::arg("rankA"), py::arg("rankB"),
+                  "det pi_AB = (-1)^{r_A r_B}, the determinant of exchanging "
+                  "two complete fibre frames.  Exact as an identity about "
+                  "frames; promoting it to particle statistics is the "
+                  "hypothesis the construction does not adopt.")
       .def_static("spinorDimension", &ExchangeHolonomy::spinorDimension,
                   py::arg("d"))
       .def_static("gamma", &ExchangeHolonomy::gamma, py::arg("a"),
@@ -5414,5 +5691,13 @@ evidence.)doc")
       .def_static("read", &ClusterLineage::read, py::arg("W"), py::arg("cut"), py::arg("lineage"),
                   "N_Q with its certificates.")
       .def_static("totals", &ClusterLineage::totals, py::arg("W"), py::arg("cut"),
-                  py::arg("lineages"), "N_q and B over a collection of lineages.");
+                  py::arg("lineages"), "N_q and B over a collection of lineages.")
+      .def_static("orderKey", &ClusterLineage::orderKey, py::arg("read"),
+                  "The deterministic compilation-order key of one cluster's "
+                  "oriented lineage, which quantum.EdgeModeRegistry sorts the "
+                  "one-particle modes on.  Lexicographic order on the keys is "
+                  "the numeric order of (N_Q, n_Q, clusterId).  An "
+                  "uncertified reading raises ValueError, because a lineage "
+                  "number another cut would change cannot fix a compilation "
+                  "order.");
 }
