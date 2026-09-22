@@ -72,7 +72,11 @@ struct SparseKernel {
 /// one is bounded by \f$ \varsigma_{r+1} \le \|A N\|_2 \f$ for the orthonormal
 /// kernel basis \f$ N \f$ (Courant–Fischer), which is the measured value.
 /// The threshold is the dense policy's, \f$ \kappa\,\max(m,n)\,\epsilon_m\,\varsigma_1 \f$,
-/// with \f$ \varsigma_1 \f$ from block power iteration.
+/// with \f$ \varsigma_1 \f$ from block power iteration. The QR is thresholded on
+/// the norm of what remains of each column, not strongly rank-revealing: a
+/// singular value within a small factor of the tolerance can be counted on the
+/// other side than a dense SVD would count it. The split reports it either way
+/// (a kept value near the tolerance shows as a small gap).
 ///
 /// `congruence` reads a matrix of the form \f$ P = C^T X C \f$ or
 /// \f$ P = C^T X^{-1} C \f$ with \f$ C \f$ an integer matrix of known exact

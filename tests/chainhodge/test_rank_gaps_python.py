@@ -44,14 +44,29 @@ def curved_torus(N, epsilon=0.0, lorentz=True, amp=0.3, jitter=0.15, seed=0, Lt=
         return amp * np.sin(2 * np.pi * p[0] / Lt) * np.cos(2 * np.pi * p[1] / Lx)
 
     rot = np.exp(-2j * epsilon)
-    s, W = [], []
+    s, W, tau = [], [], []
     for (a, b) in edges(K):
         d = coords[b] - coords[a]
         d -= period * np.round(d / period)
         q = (d[1] ** 2 - rot * d[0] ** 2) if lorentz else (d[1] ** 2 + d[0] ** 2)
-        s.append(complex(np.exp(2 * phi(coords[a] + 0.5 * d)) * q))
+        weight = np.exp(2 * phi(coords[a] + 0.5 * d))
+        s.append(complex(weight * q))
+        tau.append(complex(-weight * d[0] ** 2) if lorentz else 0j)
         W.append(d.copy())
+    curved_torus.timelike_parts = tau
     return K, s, np.array(W, dtype=complex)
+
+
+def _sweep(K, s, tau, epsilons):
+    """LorentzianFamily.sweep with the declaration the build expects: the
+    timelike part of every squared length (#1207), or, before #1207, a
+    declared causal type per edge (timelike where the edge has a timelike
+    part and its squared length is negative)."""
+    if hasattr(ch, "CausalType"):
+        types = [ch.CausalType.Timelike if (t != 0 and v.real < 0) else ch.CausalType.Spacelike
+                 for v, t in zip(s, tau)]
+        return ch.LorentzianFamily.sweep(K, s, types, epsilons, 1, ch.Preset.L2, KS)
+    return ch.LorentzianFamily.sweep(K, s, tau, epsilons, 1, ch.Preset.L2, KS)
 
 
 def _stacked(hodge):
@@ -172,8 +187,7 @@ class TestAboveTheCrossover:
         """The epsilon = 0 member of a family above the crossover carries its
         gap (Requirement 2); before #1204 it was NaN there."""
         K, s, _ = curved_torus(14, 0.0)                       # 588 edges
-        types = [ch.CausalType.Timelike if v.real < 0 else ch.CausalType.Spacelike for v in s]
-        reads = ch.LorentzianFamily.sweep(K, s, types, [0.0, 0.1], 1, ch.Preset.L2, KS)
+        reads = _sweep(K, s, curved_torus.timelike_parts, [0.0, 0.1])
         assert [r.epsilon for r in reads] == [0.0, 0.1]
         for r in reads:
             assert not r.harmonic.dense and r.harmonic.nullity == 2

@@ -50,11 +50,14 @@ def _random_symmetric(n, seed, density=0.2):
 class TestKernel:
     def test_planted_split_is_read_on_both_sides(self):
         """sigma_r = 1e-6 is kept, sigma_{r+1} = 5e-14 is discarded (below the
-        tolerance 10 * 60 * eps ~ 1.3e-13): the sparse read reproduces both,
-        the second through ||A N|| on the computed kernel."""
+        tolerance 1000 * 60 * eps ~ 1.3e-11): the sparse read reproduces both,
+        the second through ||A N|| on the computed kernel. (The threshold QR
+        is not strongly rank-revealing: a value within a small factor of the
+        tolerance can be counted differently from the dense SVD, which is why
+        the planted scales are separated here.)"""
         values = list(np.geomspace(1.0, 1e-6, 50)) + [5e-14, 3e-15]
         A, sv = _planted(60, 55, values, seed=3)
-        read = ch.SparseRank.kernel(A)
+        read = ch.SparseRank.kernel(A, 1000.0)
         split = read.split
         assert not split.dense
         assert split.rank == 50 == split.at
