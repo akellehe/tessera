@@ -507,7 +507,12 @@ class Simplex {
     /// between c(σ_k) and c(σ_{k+1}); signs follow the circumcenter's
     /// barycentric coordinate at the opposite vertex. Signature-aware: a
     /// timelike height contributes signed content (sign·√|h²|), matching
-    /// ``volume()``. Negative content is meaningful, not an error.
+    /// ``volume()``. Negative content is meaningful, not an error. Each height
+    /// h = ±√(R²_{σ_{k+1}} − R²_{σ_k}) is evaluated in the equal product form
+    /// λ_v·√(det G_{σ_{k+1}} / det G_{σ_k}) (λ_v the barycentric coordinate of
+    /// c(σ_{k+1}) at its vertex outside σ_k), which keeps full precision where
+    /// the two circumcentres coincide and the difference of squared radii would
+    /// cancel to rounding noise.
     [[nodiscard]] std::complex<double> dualVolume() const;
 
     /// Exact analytic gradient of this hinge's ``dualVolume`` with respect to the

@@ -1351,17 +1351,18 @@ double oppositeVertexSign(const ::tessera::mesh::Simplex* cf,
     return (bary[static_cast<std::size_t>(oppIdx)].real() < 0.0) ? -1.0 : 1.0;
 }
 
+// The signed circumcentric height from c(s) to c(cf), s a facet of cf (defined with
+// its derivatives below, at circumcentricHeight).
+std::complex<double> circumcentricHeightValue(const ::tessera::mesh::Simplex* cf,
+                                              const ::tessera::mesh::Simplex* s);
+
 // Recursive signed circumcentric dual content of `s` in an n-complex.
 std::complex<double> dualVolRec(const ::tessera::mesh::Simplex* s, int n) {
     const int k = static_cast<int>(s->size()) - 1;
     if (k >= n) return {1.0, 0.0};  // top cell: dual is a point (content 1)
-    const std::complex<double> rk2 = s->circumradiusSquared();
     std::complex<double> acc{0.0, 0.0};
-    for (const auto& cf : s->getCofaces()) {
-        const std::complex<double> h =
-            oppositeVertexSign(cf, s) * principalSqrt(cf->circumradiusSquared() - rk2);
-        acc += h * dualVolRec(cf, n);
-    }
+    for (const auto& cf : s->getCofaces())
+        acc += circumcentricHeightValue(cf, s) * dualVolRec(cf, n);
     return acc / static_cast<double>(n - k);
 }
 
@@ -1734,17 +1735,20 @@ namespace {
 ///     y = lambda_v * q.
 /// For real squared lengths of either signature sigma is identically +1.
 ///
-/// This is the same function, not a different height: the value is unchanged.
-/// What changes is the derivative. Differentiated through the root of the
-/// difference, the chain rule divides by sqrt(R^2_cf - R^2_s), which vanishes
-/// wherever the two circumcentres coincide (lambda_v = 0: a right angle opposite
-/// the hinge, as in every Kuhn tetrahedron of a cubic lattice). The radicand is
-/// then stationary to first order in every direction, so the quotient is 0/0 and
-/// evaluates to NaN, inf or a spurious zero, although the height itself is
-/// smooth there with derivative sigma * q * d(lambda_v). The product form has
-/// no such quotient: lambda_v is rational in the squared lengths with
-/// denominator det G_cf, and q is the root of a ratio of Gram determinants that
-/// stays away from zero on nondegenerate cells.
+/// This is the same function, not a different height. What changes is how it
+/// is evaluated and differentiated near coincident circumcentres (lambda_v = 0:
+/// a right angle opposite the face, as in every Kuhn tetrahedron of a cubic
+/// lattice). There the difference R^2_cf - R^2_s cancels to rounding noise of
+/// order 1e-16 R^2, whose root puts an error of order 1e-8 R into the height;
+/// and differentiated through that root, the chain rule divides by
+/// sqrt(R^2_cf - R^2_s), whose radicand is stationary to first order in every
+/// direction, so the quotient is 0/0 and evaluates to NaN, inf or a spurious
+/// zero, although the height is smooth there with derivative
+/// sigma * q * d(lambda_v). The product form has neither defect: lambda_v is
+/// rational in the squared lengths with denominator det G_cf, and q is the
+/// root of a ratio of Gram determinants that stays away from zero on
+/// nondegenerate cells. The dual volume, its gradient and its Hessian all read
+/// the heights from here.
 ///
 /// With P_e = G^-1 dG_e and beta = G_cf^-1 (diag G_cf / 2) (so lambda is beta
 /// with lambda_0 = 1 - sum beta), and G linear in the squared lengths:
@@ -1756,8 +1760,10 @@ namespace {
 /// A singular Gram matrix (a cell of zero content) has no circumcentre and no
 /// such factorization. There the height and its derivatives are taken, as
 /// before, from the circumradius difference.
+enum class HeightOrder { Value, Gradient, Hessian };
+
 struct CircumcentricHeight {
-    /// The edges of `cf`, as sorted vertex-id pairs.
+    /// The edges of `cf`, as sorted vertex-id pairs (empty for HeightOrder::Value).
     std::vector<std::pair<std::uint64_t, std::uint64_t>> edges;
     /// The signed height.
     std::complex<double> value{0.0, 0.0};
@@ -1769,22 +1775,25 @@ struct CircumcentricHeight {
 
 [[nodiscard]] CircumcentricHeight circumcentricHeight(const Simplex *cf,
                                                       const Simplex *s,
-                                                      bool withHessian) {
+                                                      HeightOrder order) {
     using cd = std::complex<double>;
     CircumcentricHeight out;
     const auto &cv = cf->getVertices();
     const auto &sv = s->getVertices();
     const int m = static_cast<int>(cv.size()) - 1;   // dimension of cf
     const int ms = static_cast<int>(sv.size()) - 1;  // dimension of s (m - 1)
+    const bool withGradient = order != HeightOrder::Value;
+    const bool withHessian = order == HeightOrder::Hessian;
 
     std::vector<std::pair<int, int>> local;          // cf-local vertex pairs
-    for (int p = 0; p <= m; ++p)
-        for (int q = p + 1; q <= m; ++q) {
-            local.emplace_back(p, q);
-            const std::uint64_t a = cv[static_cast<std::size_t>(p)]->getId();
-            const std::uint64_t b = cv[static_cast<std::size_t>(q)]->getId();
-            out.edges.emplace_back(std::min(a, b), std::max(a, b));
-        }
+    if (withGradient)
+        for (int p = 0; p <= m; ++p)
+            for (int q = p + 1; q <= m; ++q) {
+                local.emplace_back(p, q);
+                const std::uint64_t a = cv[static_cast<std::size_t>(p)]->getId();
+                const std::uint64_t b = cv[static_cast<std::size_t>(q)]->getId();
+                out.edges.emplace_back(std::min(a, b), std::max(a, b));
+            }
     const std::size_t nE = local.size();
     out.gradient.assign(nE, cd{0.0, 0.0});
     if (withHessian) out.hessian.assign(nE * nE, cd{0.0, 0.0});
@@ -1819,7 +1828,7 @@ struct CircumcentricHeight {
         if (gs.gram.size() != msz * msz || gs.gramCof.size() != msz * msz ||
             std::abs(detS) < 1e-300) {
             singular = true;
-        } else {
+        } else if (withGradient) {
             ginvS.resize(msz * msz);
             for (std::size_t i = 0; i < msz; ++i)
                 for (std::size_t j = 0; j < msz; ++j)
@@ -1833,6 +1842,7 @@ struct CircumcentricHeight {
         const cd x = cf->circumradiusSquared() - s->circumradiusSquared();
         const cd root = principalSqrt(x);
         out.value = sgn * root;
+        if (!withGradient) return out;
         std::vector<cd> dx(nE);
         for (std::size_t e = 0; e < nE; ++e) {
             const auto &[a, b] = out.edges[e];
@@ -1853,14 +1863,16 @@ struct CircumcentricHeight {
         return out;
     }
 
-    // G_cf^-1 = cof^T / det, and beta = G_cf^-1 (diag G_cf / 2).
-    std::vector<cd> ginv(mm * mm), halfDiag(mm), beta(mm, cd{0.0, 0.0});
-    for (std::size_t i = 0; i < mm; ++i)
-        for (std::size_t j = 0; j < mm; ++j)
-            ginv[i * mm + j] = gcf.gramCof[j * mm + i] / detCf;
+    // beta = G_cf^-1 (diag G_cf / 2), with G_cf^-1 = cof^T / det, accumulated as
+    // circumFromGramCore does so that the barycentric coordinates agree with
+    // circumcenterBarycentric() bit for bit.
+    std::vector<cd> halfDiag(mm), beta(mm, cd{0.0, 0.0});
     for (std::size_t i = 0; i < mm; ++i) halfDiag[i] = 0.5 * gcf.gram[i * mm + i];
-    for (std::size_t i = 0; i < mm; ++i)
-        for (std::size_t j = 0; j < mm; ++j) beta[i] += ginv[i * mm + j] * halfDiag[j];
+    for (std::size_t i = 0; i < mm; ++i) {
+        cd acc{0.0, 0.0};
+        for (std::size_t j = 0; j < mm; ++j) acc += gcf.gramCof[j * mm + i] * halfDiag[j];
+        beta[i] = acc / detCf;
+    }
     const auto lambdaOf = [&](const std::vector<cd> &b) -> cd {
         if (opp > 0) return b[static_cast<std::size_t>(opp) - 1];
         cd sum{0.0, 0.0};
@@ -1884,6 +1896,12 @@ struct CircumcentricHeight {
                                 ? 1.0 : -1.0;
     const double sigma = sgn * rootSign;
     out.value = sigma * y;
+    if (!withGradient) return out;
+
+    std::vector<cd> ginv(mm * mm);
+    for (std::size_t i = 0; i < mm; ++i)
+        for (std::size_t j = 0; j < mm; ++j)
+            ginv[i * mm + j] = gcf.gramCof[j * mm + i] / detCf;
 
     // Per edge: P_e on cf and on s, d beta_e, d lambda_e, d log q_e.
     std::vector<std::vector<cd>> Pcf(nE), Ps(nE), dBeta(nE);
@@ -1975,6 +1993,10 @@ struct CircumcentricHeight {
     return out;
 }
 
+std::complex<double> circumcentricHeightValue(const Simplex *cf, const Simplex *s) {
+    return circumcentricHeight(cf, s, HeightOrder::Value).value;
+}
+
 } // namespace
 
 bool Simplex::dualGeometryIsDegenerate() const {
@@ -2011,11 +2033,11 @@ Simplex::dualVolumeGradient() const {
     std::map<EK, cd> dV;
     std::set<EK> edges;                   // the star: every edge of every top
     for (const auto& cf : getCofaces()) {
-        const CircumcentricHeight h1 = circumcentricHeight(cf, this, false);
+        const CircumcentricHeight h1 = circumcentricHeight(cf, this, HeightOrder::Gradient);
         cd S{0.0, 0.0};
         std::map<EK, cd> dS;
         for (const auto& tp : cf->getCofaces()) {
-            const CircumcentricHeight h2 = circumcentricHeight(tp, cf, false);
+            const CircumcentricHeight h2 = circumcentricHeight(tp, cf, HeightOrder::Gradient);
             S += h2.value;
             for (std::size_t i = 0; i < h2.edges.size(); ++i) {
                 dS[h2.edges[i]] += h2.gradient[i];
@@ -2074,11 +2096,11 @@ Simplex::dualVolumeHessian() const {
     const double inv = 1.0 / (static_cast<double>(n - k) * (n - k - 1));
     std::vector<cd> d2V(nE * nE, cd{0.0, 0.0});
     for (const auto& cf : getCofaces()) {
-        const CircumcentricHeight h1 = circumcentricHeight(cf, this, true);
+        const CircumcentricHeight h1 = circumcentricHeight(cf, this, HeightOrder::Hessian);
         cd S{0.0, 0.0};
         std::vector<cd> dS(nE, cd{0.0, 0.0}), d2S(nE * nE, cd{0.0, 0.0});
         for (const auto& tp : cf->getCofaces()) {
-            const CircumcentricHeight h2 = circumcentricHeight(tp, cf, true);
+            const CircumcentricHeight h2 = circumcentricHeight(tp, cf, HeightOrder::Hessian);
             const auto at = slots(h2);
             const std::size_t m2 = h2.edges.size();
             S += h2.value;
