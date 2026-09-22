@@ -17,6 +17,7 @@
 #include "chainhodge/PencilSchur.h"
 #include "chainhodge/SparsePencil.h"
 #include "chainhodge/SparsePencilSolver.h"
+#include "chainhodge/SparseRank.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/ChainComplex.h"
 #include "spacetime/Spacetime.h"
@@ -146,6 +147,44 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("A", &Pencil::A)
       .def_readonly("B", &Pencil::B);
 
+  py::class_<SingularSplit>(m, "SingularSplit",
+      "The singular values on either side of one rank split: sigmaAt = sigma_at, "
+      "sigmaNext = sigma_{at+1}, their gap, the numerical rank and its tolerance.")
+      .def_readonly("at", &SingularSplit::at)
+      .def_readonly("rank", &SingularSplit::rank)
+      .def_readonly("tolerance", &SingularSplit::tolerance)
+      .def_readonly("largest", &SingularSplit::largest)
+      .def_readonly("sigmaAt", &SingularSplit::sigmaAt)
+      .def_readonly("sigmaNext", &SingularSplit::sigmaNext)
+      .def_readonly("gap", &SingularSplit::gap)
+      .def_readonly("dense", &SingularSplit::dense);
+
+  py::class_<SparseKernel>(m, "SparseKernel",
+      "The kernel of a sparse matrix (orthonormal basis) with the split at its numerical rank.")
+      .def_readonly("split", &SparseKernel::split)
+      .def_readonly("basis", &SparseKernel::basis);
+
+  py::class_<SparseRank>(m, "SparseRank",
+      R"doc(Numerical ranks of sparse matrices with the singular values on either side of
+the decision, without forming a dense matrix of the size of the problem: kernel(A)
+by a thresholded sparse QR of A (the kernel by back-substitution, the last kept
+singular value by inverse subspace iteration on the triangular factor, the first
+discarded one as ||A N||); congruence(C, X, inverse, rho) for P = C^T X^{+-1} C with
+C an integer matrix of exact rank rho, reduced to the rho x rho matrix W X^{+-1} W^T
+by a sparse QR of C^T.
+
+Reference: Foster & Davis, "Algorithm 933: Reliable calculation of numerical rank,
+null space bases, pseudoinverse solutions, and basic solutions using SuiteSparseQR",
+ACM TOMS 40 (2013).)doc")
+      .def_static("kernel", &SparseRank::kernel, py::arg("A"), py::arg("kappa") = 10.0,
+           "The kernel of sparse A with the split at its numerical rank.")
+      .def_static("congruence", &SparseRank::congruence, py::arg("C"), py::arg("X"),
+           py::arg("inverse"), py::arg("structural_rank"), py::arg("kappa") = 10.0,
+           "The split of P = C^T X C (or C^T X^{-1} C) at the exact rank of C.")
+      .def_static("fromSingularValues", &SparseRank::fromSingularValues, py::arg("singular_values"),
+           py::arg("rows"), py::arg("cols"), py::arg("kappa") = 10.0, py::arg("at") = -1,
+           "A dense SVD's singular values as a split (at the numerical rank when at < 0).");
+
   py::class_<HarmonicRead>(m, "HarmonicRead",
       "Harmonic chains H_k, their geometric images, and the kernel's rank certificate.")
       .def_readonly("degree", &HarmonicRead::degree)
@@ -155,6 +194,9 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("rank", &HarmonicRead::rank)
       .def_readonly("tolerance", &HarmonicRead::tolerance)
       .def_readonly("gap", &HarmonicRead::gap)
+      .def_readonly("largestSingular", &HarmonicRead::largestSingular)
+      .def_readonly("lastKept", &HarmonicRead::lastKept)
+      .def_readonly("firstDiscarded", &HarmonicRead::firstDiscarded)
       .def_readonly("dense", &HarmonicRead::dense);
 
   py::class_<RankReport>(m, "RankReport",
@@ -166,6 +208,10 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
         return std::vector<int>(r.expected.begin(), r.expected.end()); })
       .def_property_readonly("holds", [](const RankReport &r) {
         return std::vector<bool>(r.holds.begin(), r.holds.end()); })
+      .def_property_readonly("splits", [](const RankReport &r) {
+        return std::vector<SingularSplit>(r.splits.begin(), r.splits.end()); },
+        "Per condition, the singular values at and beyond its exact rank.")
+      .def_readonly("dense", &RankReport::dense)
       .def_readonly("decompositionHolds", &RankReport::decompositionHolds)
       .def_readonly("kernelIsHarmonic", &RankReport::kernelIsHarmonic)
       .def_readonly("kappa", &RankReport::kappa);
@@ -214,7 +260,9 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def("geometricImage", &ChainHodge::geometricImage, py::arg("k"), py::arg("H"), "G_k H.")
       .def("harmonicGram", &ChainHodge::harmonicGram, py::arg("read"), "Phi^T G_k Phi = Z^T M_k Z.")
       .def("rankConditions", &ChainHodge::rankConditions, py::arg("k"), py::arg("kappa") = 10.0,
-           "The rank conditions (R1)-(R4) at degree k.")
+           py::arg("force_sparse") = false,
+           "The rank conditions (R1)-(R4) at degree k, each with the singular values at and "
+           "beyond its exact rank; sparse at or above the crossover.")
       .def("betti", &ChainHodge::betti, "Betti numbers over Q, exact.")
       .def("spectrum", &ChainHodge::spectrum, py::arg("k"), "Dense spectrum of the degree-k pencil.");
   py::enum_<CausalType>(m, "CausalType",

@@ -412,8 +412,8 @@ class CovariantChainHodge {
   /// \f$ U \f$ and \f$ U^{-1} \f$ is refused by name, exactly as `band`
   /// refuses a dual band of a different rank on the same contour.
   ///
-  /// \p forceSparse takes the sparse rank-revealing QR below the crossover
-  /// too (the gap goes unmeasured there, as in `ChainHodge::harmonicChains`).
+  /// \p forceSparse takes the sparse path of `SparseRank::kernel` below the
+  /// crossover too; it measures the gap as the dense SVD does.
   [[nodiscard]] HarmonicRead harmonicChains(int k, double kappa = 10.0,
                                             bool forceSparse = false) const;
   /// The \f$ \lambda = 0 \f$ band from `harmonicChains`, carrying everything
