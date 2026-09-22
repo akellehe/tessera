@@ -754,7 +754,12 @@ that changes the topology declares a new continuation after the move.)doc")
       .def("action", &ReggeContinuation::action,
            "S = sum_h |h|*eps_h on the declared sheets: the Regge action continued "
            "along the path walked so far. Continuous along any path the sampling "
-           "resolves, including one that crosses a principal cut.")
+           "resolves, including one that crosses a principal cut. The primal "
+           "form, with |h| the hinge's own content -- in four dimensions the "
+           "hinge area, equal to ReggeSolver.reggeAction. The circumcentric dual "
+           "form ReggeSolver.dualReggeAction weights each hinge by the dual "
+           "content instead, which is built from a further family of roots (the "
+           "circumcentric heights), and those carry no labels here.")
       .def("principalAction", &ReggeContinuation::principalAction,
            "The same sum with every root and inverse cosine taken principal -- the "
            "sheet-blind value, carried so a caller can see the jump the "

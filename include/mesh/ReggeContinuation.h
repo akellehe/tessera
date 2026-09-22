@@ -126,6 +126,15 @@ class ReggeContinuation {
   /// \f$ S = \sum_h |h|\,\varepsilon_h \f$ on the declared sheets: the Regge action
   /// continued along the path walked so far. Continuous along any path the
   /// sampling resolves, including one that crosses a principal cut.
+  ///
+  /// The primal form, with \f$ |h| \f$ the hinge's own content — in four
+  /// dimensions the hinge area, equal to `simulations::ReggeSolver::reggeAction`.
+  /// The circumcentric dual form `ReggeSolver::dualReggeAction` weights each
+  /// hinge by \f$ |{\star}h| \f$ instead, which is built from a further family of
+  /// roots (the circumcentric heights \f$ \lambda_v \sqrt{\det G_{\rm coface} /
+  /// \det G_{\rm face}} \f$), and those carry no labels here: continuing the dual
+  /// action means declaring a sheet per height as well, which this class does not
+  /// do.
   [[nodiscard]] std::complex<double> action() const;
 
   /// The same sum with every root and inverse cosine taken principal — the
