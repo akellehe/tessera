@@ -2143,7 +2143,7 @@ LazyInductiveLimitRead LazyFockEngine::inductiveLimit(
             stages[k].modes, stages[k + 1].modes, stages[k].support,
             stages[k].map, stages[k + 1].support, stages[k + 1].map,
             activeBasis);
-        residual = std::max(residual, step.certificate.residual);
+        residual = std::max(residual, step.certificate.residual());
         out.defects.push_back(step.epsilon);
         out.activeDimension = step.activeDimension;
         out.steps.push_back(step);
