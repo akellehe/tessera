@@ -159,6 +159,162 @@ struct EffectiveComponentPartition {
   std::string reason{};
 };
 
+/// The share of a region's enclosing surface that must lie in the certified
+/// coexact part of the degree-two band before the surface counts as a coexact
+/// near-cycle of \f$ L_2 \f$: the enclosing surface, normalized, must keep at
+/// least this much of itself inside that subspace
+/// (`AntiClusterCertificate::voidContent`). The whitepaper requires the
+/// enclosing surface to be a certified coexact near-cycle and fixes no number;
+/// this is a declared policy, recorded on every certificate as
+/// `AntiClusterCertificate::minimumVoidContent`.
+inline constexpr double kDefaultMinimumVoidContent = 0.1;
+
+/// Which way the enclosing surface of a region is cooriented, as the
+/// whitepaper's anti-cluster identification requires it to be read
+/// (`AntiClusterCertificate::coorientation`).
+enum class EnclosingCoorientation {
+  /// The coorientation points from the material into the region: the region is
+  /// a bubble, which is what the whitepaper requires of an anti-cluster.
+  Inward,
+  /// The coorientation points from the region out into the material: the
+  /// region is a blob, an ordinary cluster.
+  Outward,
+  /// Neither: the supplied reference is orthogonal to the enclosing surface,
+  /// so no direction is read.
+  Undeclared,
+};
+
+/// Where `AntiClusterCertificate::coorientation` was read from.
+enum class CoorientationSource {
+  /// From a reference chain the caller supplied, such as the cooriented cut of
+  /// a lineage: the coorientation is inward when the reference and the
+  /// region's outward enclosing surface point in opposite directions.
+  Reference,
+  /// From the interior spectrum. With no reference chain the enclosing surface
+  /// carries no direction of its own, because the band fixes a complex
+  /// near-cycle only up to a nonzero complex scale, and the coorientation is
+  /// then read as inward exactly when the enclosed side is the one the
+  /// operator's band does not reach.
+  InteriorSpectrum,
+};
+
+/// The whitepaper's proposed identification of an anti-cluster with an
+/// effective void, evaluated on one declared region
+/// (`EffectiveTopology::antiCluster`).
+///
+/// The proposal (Section 10, and falsifier 9) is that an anti-cluster is "a
+/// region whose enclosing surface is a certified coexact near-cycle of
+/// \f$ L_2 \f$ (of \f$ L_1 \f$ on the dual), whose interior spectrum is nearly
+/// empty, and whose enclosing coorientation is inward". Each of those three
+/// clauses is one group of fields below, measured on the region the caller
+/// declares by its vertices: the enclosing surface, and how much of it lies in
+/// the certified coexact part of the degree-two band; the spectrum of the
+/// operator restricted to the region; and the coorientation of the enclosing
+/// surface.
+///
+/// A bubble and a blob differ in the last two. A bubble encloses a side the
+/// operator's band does not reach, and its surface is cooriented into that
+/// side; a blob encloses the band itself, and its surface is cooriented out of
+/// it. The certificate holds for a bubble alone.
+struct AntiClusterCertificate {
+  /// The declared region, as vertex ids, ascending and deduplicated.
+  std::vector<std::uint64_t> region{};
+  /// The \f$ d \f$-cells of the region: those all of whose vertices lie in
+  /// `region`, by canonical index. A region declared around a cavity has none,
+  /// since the cavity's cells are not in the complex.
+  std::vector<std::size_t> interiorCells{};
+  /// The enclosing surface: the \f$ (d-1) \f$-cells all of whose vertices lie
+  /// in `region` that are not shared by two of `interiorCells`, by canonical
+  /// index.
+  std::vector<std::size_t> surface{};
+  /// The enclosing surface as a chain, cooriented out of the region:
+  /// \f$ \partial_d^U \f$ of the region's cells when it has any, and otherwise
+  /// the part of the complex's own boundary that the region's faces carry.
+  /// Indexed like \f$ C_{d-1} \f$, and zero off `surface`.
+  Eigen::VectorXcd enclosingSurface{};
+  /// The degree-two band the void is read from, with its gap and its
+  /// certificate.
+  EffectiveBettiNumber band{};
+  /// The number of effective voids at the scale: the dimension of the coexact
+  /// part of the degree-two band (`EffectiveTopology::voids`), \f$ -1 \f$ when
+  /// unmeasured.
+  int voids{-1};
+  /// \f$ \|P\hat\sigma\|_2 \in [0, 1] \f$ for the normalized enclosing surface
+  /// \f$ \hat\sigma \f$ and the orthogonal projector \f$ P \f$ onto the
+  /// certified coexact part of the degree-two band: how much of the enclosing
+  /// surface is a coexact near-cycle of \f$ L_2 \f$. The enclosing surface of
+  /// a region of cells is a boundary, and a boundary reaches the coexact
+  /// near-kernel only through a void it encloses, so a region that encloses
+  /// nothing reads zero here.
+  double voidContent{std::numeric_limits<double>::quiet_NaN()};
+  /// The share required of `voidContent`.
+  double minimumVoidContent{kDefaultMinimumVoidContent};
+  /// \f$ \|\partial_{d-1}^U\hat\sigma\|_2 \f$: the enclosing surface is
+  /// closed. Zero in exact arithmetic for a flat connection, since
+  /// \f$ \partial\partial = 0 \f$; a curved connection breaks it.
+  double cycleResidual{std::numeric_limits<double>::quiet_NaN()};
+  /// The degree the interior spectrum was read at.
+  int interiorDegree{0};
+  /// The moduli of the eigenvalues of the operator restricted to the region,
+  /// ascending: the pencil of `interiorDegree` on the cells of that degree all
+  /// of whose vertices lie in `region`, which is the Dirichlet problem of the
+  /// region. Empty when the region carries no cell of that degree.
+  std::vector<double> interiorSpectrum{};
+  /// How many of `interiorSpectrum` lie inside the window
+  /// \f$ |\lambda| \le \epsilon \f$: the number of the operator's own modes
+  /// the region holds, \f$ -1 \f$ when unmeasured.
+  int interiorRank{-1};
+  /// The smallest modulus of `interiorSpectrum`: how far the region's own
+  /// spectrum stands above zero. Quiet NaN when the region carries no cell of
+  /// the degree.
+  double interiorFloor{std::numeric_limits<double>::quiet_NaN()};
+  /// `interiorRank` is zero: the region holds none of the operator's modes at
+  /// the scale, which is what "nearly empty" asks of a bubble.
+  bool interiorEmpty{false};
+  /// The coorientation of the enclosing surface.
+  EnclosingCoorientation coorientation{EnclosingCoorientation::Undeclared};
+  /// Where the coorientation was read from.
+  CoorientationSource coorientationSource{CoorientationSource::InteriorSpectrum};
+  /// \f$ \mathrm{Re}\,\langle\hat r, \hat\sigma\rangle \f$ for a supplied
+  /// reference chain \f$ r \f$ and the normalized enclosing surface: negative
+  /// for an inward coorientation. Quiet NaN when no reference was supplied.
+  double coorientationOverlap{std::numeric_limits<double>::quiet_NaN()};
+  /// The band is certified, the enclosing surface is closed within the
+  /// tolerance and keeps at least `minimumVoidContent` of itself in the
+  /// certified coexact part of the degree-two band, the interior spectrum is
+  /// empty at the scale, and the coorientation is inward.
+  bool certified{false};
+  /// Why the certificate is unmeasured or does not hold; empty when it holds.
+  std::string reason{};
+};
+
+/// What `EffectiveTopology::antiCluster` is allowed to assume, beyond the
+/// operator, the region and the scale.
+struct AntiClusterOptions {
+  /// The dense residual, or the sparse certificate's residual, the degree-two
+  /// band must meet to be converged, and the tolerance the enclosing surface's
+  /// cycle residual must meet.
+  double tolerance{1e-10};
+  /// The gap the degree-two band must reach to be separated.
+  double minimumGap{kDefaultMinimumGap};
+  /// The share of the enclosing surface required in the certified coexact part
+  /// of the degree-two band.
+  double minimumVoidContent{kDefaultMinimumVoidContent};
+  /// The degree whose restriction to the region is the interior spectrum.
+  /// Degree zero, the default, is the degree whose band carries the effective
+  /// components, so a region that holds one of the operator's degree-zero
+  /// modes is a cluster rather than a void.
+  int interiorDegree{0};
+  /// A chain of degree \f$ d - 1 \f$ carrying a coorientation the caller has
+  /// established independently, such as the cooriented cut of a lineage. When
+  /// it is empty the coorientation is read from the interior spectrum instead;
+  /// see `CoorientationSource`.
+  Eigen::VectorXcd coorientationReference{};
+  /// The modulus below which an overlap with `coorientationReference` reads no
+  /// direction at all and the coorientation is `Undeclared`.
+  double coorientationTolerance{1e-12};
+};
+
 /// # EffectiveTopology
 ///
 /// What a declared operator sees at a scale, as opposed to what the complex is.
@@ -270,6 +426,37 @@ class EffectiveTopology {
   [[nodiscard]] static EffectiveComponentPartition components(const chainhodge::CovariantChainHodge &cov,
                                                               double epsilon, double tolerance = 1e-10,
                                                               double minimumGap = kDefaultMinimumGap);
+
+  /// The anti-cluster certificate on the region \p regionVertices at scale
+  /// \p epsilon: the whitepaper's proposal that an anti-cluster is an
+  /// effective void, evaluated clause by clause (see
+  /// `AntiClusterCertificate`).
+  ///
+  /// The region is declared by its vertices, which is how every other support
+  /// in this subsystem travels — the support of an effective component, of a
+  /// modularity community, of a lineage. From the vertices the read takes the
+  /// region's cells (those the vertices contain), its enclosing surface (the
+  /// faces the vertices contain that two of those cells do not share) and that
+  /// surface as a chain cooriented out of the region. It then measures how
+  /// much of the enclosing surface lies in the certified coexact part of the
+  /// degree-two band, the spectrum of the operator restricted to the region,
+  /// and the coorientation.
+  ///
+  /// A region declared around a cavity contains no cells, because the cavity's
+  /// cells are not in the complex; its enclosing surface is the part of the
+  /// complex's own boundary that its faces carry. A region declared on a block
+  /// of cells contains those cells and its enclosing surface is their
+  /// boundary, which is exact and therefore reaches the coexact near-kernel
+  /// only through a void it encloses.
+  /// @throws std::invalid_argument when the complex is not of dimension three,
+  ///   when the region names a vertex the complex does not have, when
+  ///   `AntiClusterOptions::interiorDegree` is outside \f$ [0, d] \f$, when
+  ///   `AntiClusterOptions::coorientationReference` is neither empty nor as
+  ///   long as \f$ C_{d-1} \f$, and as `read`.
+  [[nodiscard]] static AntiClusterCertificate antiCluster(const chainhodge::CovariantChainHodge &cov,
+                                                          const std::vector<std::uint64_t> &regionVertices,
+                                                          double epsilon,
+                                                          const AntiClusterOptions &options = {});
 
   /// The scale the read was taken at.
   [[nodiscard]] double epsilon() const noexcept { return epsilon_; }

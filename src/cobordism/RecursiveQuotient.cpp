@@ -1932,21 +1932,15 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
   return read;
 }
 
-std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
-    const std::vector<cd> &op, int dim, double gamma, int restarts,
-    std::uint64_t baseSeed) {
-  if (dim < 0 || op.size() != static_cast<std::size_t>(dim) *
-                                 static_cast<std::size_t>(dim))
-    throw std::invalid_argument(
-        "persistentPartition: flat size does not match dimension");
-  if (restarts <= 0)
-    throw std::invalid_argument("persistentPartition: restarts must be > 0");
-  if (dim == 0) return {};
+namespace {
 
-  // The similarity graph of a response network: the symmetrized off-diagonal
-  // magnitude w_ij = |R_ij| + |R_ji|. The diagonal never enters; the magnitude
-  // is taken because modularity needs a nonnegative weight and the operator is
-  // complex.
+// The similarity graph of a response network: the symmetrized off-diagonal
+// magnitude w_ij = |R_ij| + |R_ji|. The diagonal never enters; the magnitude
+// is taken because modularity needs a nonnegative weight and the operator is
+// complex. Every coordinate is declared a node, so an uncoupled coordinate
+// still appears in the partition.
+observables::PersistentModularity magnitudeGraphOf(
+    const std::vector<cd> &op, int dim) {
   std::vector<std::uint64_t> src;
   std::vector<std::uint64_t> tgt;
   std::vector<double> weight;
@@ -1961,25 +1955,24 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
       weight.push_back(w);
     }
   }
-  // Every coordinate is declared a node, so an uncoupled coordinate still
-  // appears in the partition.
   std::vector<std::uint64_t> isolated(static_cast<std::size_t>(dim));
   for (int i = 0; i < dim; ++i)
     isolated[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(i);
+  return observables::PersistentModularity::fromWeightedEdges(src, tgt, weight,
+                                                              isolated);
+}
 
-  const observables::PersistentModularity modularity =
-      observables::PersistentModularity::fromWeightedEdges(src, tgt, weight,
-                                                           isolated);
-  observables::PersistentModularityConfig config;
-  config.restarts = restarts;
-  config.baseSeed = baseSeed;
-  const observables::ResolutionSlice slice = modularity.discover(gamma, config);
-
+// The supports of `components`, as coordinate lists, with every coordinate
+// claimed at most once and every unclaimed coordinate its own component: the
+// partition handed to `nextLevel` must cover every index exactly once.
+std::vector<std::vector<int>> partitionOf(
+    const std::vector<const observables::ComponentRead *> &components,
+    int dim) {
   std::vector<std::vector<int>> partition;
   std::vector<bool> claimed(static_cast<std::size_t>(dim), false);
-  for (const observables::ComponentRead &component : slice.components) {
+  for (const observables::ComponentRead *component : components) {
     std::vector<int> members;
-    for (const std::uint64_t cell : component.support) {
+    for (const std::uint64_t cell : component->support) {
       const int index = static_cast<int>(cell);
       if (index < 0 || index >= dim) continue;
       if (claimed[static_cast<std::size_t>(index)]) continue;
@@ -1991,11 +1984,71 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
       partition.push_back(std::move(members));
     }
   }
-  // A coordinate no discovered community claimed becomes its own component;
-  // the partition handed to `nextLevel` must cover every index.
   for (int i = 0; i < dim; ++i)
     if (!claimed[static_cast<std::size_t>(i)]) partition.push_back({i});
   return partition;
+}
+
+}  // namespace
+
+std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
+    const std::vector<cd> &op, int dim, double gamma, int restarts,
+    std::uint64_t baseSeed) {
+  if (dim < 0 || op.size() != static_cast<std::size_t>(dim) *
+                                 static_cast<std::size_t>(dim))
+    throw std::invalid_argument(
+        "persistentPartition: flat size does not match dimension");
+  if (restarts <= 0)
+    throw std::invalid_argument("persistentPartition: restarts must be > 0");
+  if (dim == 0) return {};
+
+  observables::PersistentModularityConfig config;
+  config.restarts = restarts;
+  config.baseSeed = baseSeed;
+  const observables::ResolutionSlice slice =
+      magnitudeGraphOf(op, dim).discover(gamma, config);
+  std::vector<const observables::ComponentRead *> discovered;
+  for (const observables::ComponentRead &component : slice.components)
+    discovered.push_back(&component);
+  return partitionOf(discovered, dim);
+}
+
+std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
+    const std::vector<cd> &op, int dim, const std::vector<double> &gammas,
+    int restarts, std::uint64_t baseSeed) {
+  if (dim < 0 || op.size() != static_cast<std::size_t>(dim) *
+                                 static_cast<std::size_t>(dim))
+    throw std::invalid_argument(
+        "persistentPartition: flat size does not match dimension");
+  if (gammas.empty())
+    throw std::invalid_argument(
+        "persistentPartition: the resolution window has no resolution in it");
+  if (restarts <= 0)
+    throw std::invalid_argument("persistentPartition: restarts must be > 0");
+  if (dim == 0) return {};
+
+  observables::PersistentModularityConfig config;
+  config.resolutions = gammas;
+  config.restarts = restarts;
+  config.baseSeed = baseSeed;
+  const observables::ScanReport report =
+      magnitudeGraphOf(op, dim).scanResolutions(config);
+  if (report.slices.empty()) return partitionOf({}, dim);
+
+  // A track whose first and last slices are the ends of the window is a
+  // community that stood at every resolution of it. Its member at the first
+  // resolution is the support it proposes.
+  const std::vector<observables::ComponentRead> &first =
+      report.slices.front().components;
+  std::vector<const observables::ComponentRead *> persistent;
+  for (const observables::PersistenceTrack &track : report.tracks) {
+    if (track.firstSlice != 0 || track.lastSlice + 1 != report.slices.size())
+      continue;
+    if (track.memberIndices.empty()) continue;
+    const std::size_t at = track.memberIndices.front();
+    if (at < first.size()) persistent.push_back(&first[at]);
+  }
+  return partitionOf(persistent, dim);
 }
 
 std::vector<std::vector<int>> RecursiveQuotient::childPersistentPartition(
@@ -2004,6 +2057,15 @@ std::vector<std::vector<int>> RecursiveQuotient::childPersistentPartition(
   return persistentPartition(reduction.effectiveOperator,
                              static_cast<int>(reduction.coordinates.size()),
                              gamma, restarts, baseSeed);
+}
+
+std::vector<std::vector<int>> RecursiveQuotient::childPersistentPartition(
+    const std::vector<double> &gammas, int restarts,
+    std::uint64_t baseSeed) const {
+  const StaticReductionRead &reduction = staticReduction();
+  return persistentPartition(reduction.effectiveOperator,
+                             static_cast<int>(reduction.coordinates.size()),
+                             gammas, restarts, baseSeed);
 }
 
 RecursiveQuotient::ResponseNetworkRead RecursiveQuotient::responseNetwork()

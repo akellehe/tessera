@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <iterator>
 #include <map>
 #include <set>
 #include <sstream>
@@ -1258,6 +1259,88 @@ std::vector<FiberMatchRead> ParticleClusters::trackCandidates(
     toBands.push_back(evidence.colorBand);
   return SpectralFiberTracker::matchFibers(fromBands, toBands,
                                            overlapThreshold);
+}
+
+// ---------------------------------------------------------------------------
+// proposing cluster supports: modularity and the degree-zero band
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A support as an ascending, deduplicated set of cell ids.
+std::vector<std::uint64_t> canonicalSupport(
+    const std::vector<std::uint64_t> &support) {
+  std::vector<std::uint64_t> out(support);
+  std::sort(out.begin(), out.end());
+  out.erase(std::unique(out.begin(), out.end()), out.end());
+  return out;
+}
+
+// |A n B| / |A u B| for two ascending, deduplicated sets; 0 for two empty
+// sets, which share nothing to agree on.
+double jaccard(const std::vector<std::uint64_t> &a,
+               const std::vector<std::uint64_t> &b) {
+  if (a.empty() || b.empty()) return 0.0;
+  std::vector<std::uint64_t> shared;
+  std::set_intersection(a.begin(), a.end(), b.begin(), b.end(),
+                        std::back_inserter(shared));
+  const std::size_t united = a.size() + b.size() - shared.size();
+  return static_cast<double>(shared.size()) / static_cast<double>(united);
+}
+
+}  // namespace
+
+std::vector<ClusterSupportProposal> ParticleClusters::proposeSupports(
+    const std::vector<ComponentRead> &modularityComponents,
+    const EffectiveComponentPartition &bandComponents) {
+  std::vector<std::vector<std::uint64_t>> fromModularity;
+  std::vector<std::size_t> modularityIndices;
+  for (std::size_t i = 0; i < modularityComponents.size(); ++i) {
+    std::vector<std::uint64_t> support =
+        canonicalSupport(modularityComponents[i].support);
+    if (support.empty()) continue;
+    fromModularity.push_back(std::move(support));
+    modularityIndices.push_back(i);
+  }
+  std::vector<std::vector<std::uint64_t>> fromBand;
+  std::vector<std::size_t> bandIndices;
+  for (std::size_t i = 0; i < bandComponents.components.size(); ++i) {
+    std::vector<std::uint64_t> support =
+        canonicalSupport(bandComponents.components[i].support);
+    if (support.empty()) continue;
+    fromBand.push_back(std::move(support));
+    bandIndices.push_back(i);
+  }
+
+  std::vector<ClusterSupportProposal> proposals;
+  std::vector<bool> bandMatched(fromBand.size(), false);
+  for (std::size_t i = 0; i < fromModularity.size(); ++i) {
+    ClusterSupportProposal proposal;
+    proposal.support = fromModularity[i];
+    proposal.modularity = true;
+    proposal.modularityIndex = modularityIndices[i];
+    for (std::size_t j = 0; j < fromBand.size(); ++j) {
+      proposal.crossProposerOverlap = std::max(
+          proposal.crossProposerOverlap, jaccard(proposal.support, fromBand[j]));
+      if (proposal.band || fromBand[j] != proposal.support) continue;
+      proposal.band = true;
+      proposal.bandIndex = bandIndices[j];
+      bandMatched[j] = true;
+    }
+    proposals.push_back(std::move(proposal));
+  }
+  for (std::size_t j = 0; j < fromBand.size(); ++j) {
+    if (bandMatched[j]) continue;
+    ClusterSupportProposal proposal;
+    proposal.support = fromBand[j];
+    proposal.band = true;
+    proposal.bandIndex = bandIndices[j];
+    for (const std::vector<std::uint64_t> &other : fromModularity)
+      proposal.crossProposerOverlap =
+          std::max(proposal.crossProposerOverlap, jaccard(proposal.support, other));
+    proposals.push_back(std::move(proposal));
+  }
+  return proposals;
 }
 
 // ===========================================================================

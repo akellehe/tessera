@@ -2401,6 +2401,51 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
             sorted(i for part in partition for i in part),
             list(range(len(parent.staticReduction().coordinates))))
 
+    def test_a_window_of_resolutions_keeps_what_persists_across_it(self):
+        """The resolution parameter is a free knob of the proposer, so the
+        window form keeps only the components whose persistence track covers
+        every resolution in it. Two uncoupled blocks are one such component
+        each at any resolution, so the window and the single resolution agree
+        on them."""
+        flat = _flat(self._two_blocks())
+        window = cob.RecursiveQuotient.persistentPartition(
+            flat, 6, [0.5, 1.0, 2.0])
+        self.assertEqual(sorted(sorted(part) for part in window),
+                         [[0, 1, 2], [3, 4, 5]])
+        self.assertEqual(sorted(i for part in window for i in part),
+                         list(range(6)))
+
+    def test_a_window_of_one_resolution_is_the_single_resolution_form(self):
+        flat = _flat(self._two_blocks())
+        one = cob.RecursiveQuotient.persistentPartition(flat, 6, [1.0], 4, 7)
+        single = cob.RecursiveQuotient.persistentPartition(flat, 6, 1.0, 4, 7)
+        self.assertEqual([sorted(p) for p in one], [sorted(p) for p in single])
+
+    def test_a_coordinate_no_persistent_component_claims_is_its_own(self):
+        """Every coordinate is covered whatever persists: the partition handed
+        to nextLevel must be a partition."""
+        operator = np.pad(self._two_blocks(), ((0, 1), (0, 1)))
+        operator[6, 6] = 4.0  # diagonal only: coupled to nothing
+        window = cob.RecursiveQuotient.persistentPartition(
+            _flat(operator), 7, [0.5, 1.0, 2.0])
+        self.assertIn([6], [sorted(part) for part in window])
+        self.assertEqual(sorted(i for part in window for i in part),
+                         list(range(7)))
+
+    def test_the_child_partition_takes_a_window_too(self):
+        parent = cob.RecursiveQuotient.overMatrix(
+            _flat(self._two_blocks()), 6, [], [[0, 1, 2], [3, 4, 5]])
+        partition = parent.childPersistentPartition([0.5, 1.0, 2.0])
+        self.assertEqual(
+            sorted(i for part in partition for i in part),
+            list(range(len(parent.staticReduction().coordinates))))
+        self.assertEqual(parent.nextLevel(partition).level, 1)
+
+    def test_an_empty_resolution_window_is_refused(self):
+        with self.assertRaises(ValueError):
+            cob.RecursiveQuotient.persistentPartition(
+                _flat(self._two_blocks()), 6, [])
+
     def test_malformed_arguments_are_refused(self):
         with self.assertRaises(ValueError):
             cob.RecursiveQuotient.persistentPartition([1 + 0j], 3)

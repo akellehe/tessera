@@ -225,6 +225,7 @@
 #include "cobordism/Certificate.h"
 #include "observables/ColorFiber.h"
 #include "observables/CrossingReadouts.h"
+#include "observables/EffectiveTopology.h"
 #include "observables/ExchangeHolonomy.h"
 #include "observables/MonopoleSpin.h"
 #include "observables/FiberConnection.h"
@@ -1485,6 +1486,43 @@ struct BaryonRead {
   [[nodiscard]] static BaryonRead fromRecord(const Record &record);
 };
 
+/// One proposed cluster support and the proposers that offered it
+/// (`ParticleClusters::proposeSupports`).
+///
+/// A support is a set of level-0 cell ids on which the acceptance
+/// certificates are then evaluated.  Two proposers offer supports:
+/// Newman–Girvan modularity on the combinatorial one-skeleton, which does not
+/// see the complex Hodge weights, and the degree-zero band of the covariant
+/// operator, which is nothing but those weights
+/// (`EffectiveTopology::components`).  A proposal carries which of the two
+/// offered it, so a support the metric finds and modularity never proposes is
+/// visible as such rather than silently absent.
+struct ClusterSupportProposal {
+  /// The value of `modularityIndex` or `bandIndex` when that proposer did not
+  /// offer this support.
+  static constexpr std::size_t kNoProposer = static_cast<std::size_t>(-1);
+
+  /// The proposed support: level-0 cell ids, ascending and deduplicated.
+  std::vector<std::uint64_t> support;
+  /// Newman–Girvan modularity proposed this support.
+  bool modularity = false;
+  /// The degree-zero band of the covariant operator proposed this support.
+  bool band = false;
+  /// The index of the modularity component that proposed it, in the input
+  /// order of `proposeSupports`; `kNoProposer` when modularity did not.
+  std::size_t modularityIndex = kNoProposer;
+  /// The index of the effective component that proposed it, in the input
+  /// order of `proposeSupports`; `kNoProposer` when the band did not.
+  std::size_t bandIndex = kNoProposer;
+  /// The largest Jaccard index \f$ |A \cap B| / |A \cup B| \f$ between this
+  /// support and any support the other proposer offered: one when both
+  /// proposers offered exactly this set, zero when the other proposer offered
+  /// nothing that overlaps it.  A near-agreement reads as a value just below
+  /// one, and is reported rather than merged, because the two proposers are
+  /// independent and their supports are not interchangeable.
+  double crossProposerOverlap = 0.0;
+};
+
 /// # ParticleClusters
 ///
 /// The quark/antiquark classifier over persistent modular spectral
@@ -1749,6 +1787,39 @@ class ParticleClusters {
                      std::size_t shells);
 
     // ── candidate tracking across scale/time ────────────────────────────
+
+    // ── proposing cluster supports ──────────────────────────────────────
+
+    /// The cluster supports both proposers offer, merged.
+    ///
+    /// Newman–Girvan modularity on the combinatorial one-skeleton is a
+    /// heuristic proposal generator that does not see the complex Hodge
+    /// weights and is subject to the modularity resolution limit.  Because
+    /// that proposer is metric-blind while acceptance is metric-aware,
+    /// supports the metric would find but modularity never proposes would
+    /// never be tested at all.  The degree-zero band of the covariant
+    /// operator is the weight-aware second proposer: its supports are the
+    /// committors of the metastable decomposition the operator itself sees
+    /// (`EffectiveTopology::components`), so they are proposed from the
+    /// squared lengths and the connection and from nothing else.
+    ///
+    /// Both proposers only propose.  Neither may veto: a support offered by
+    /// one and not the other is a proposal like any other, and acceptance
+    /// stays conditioned on the independent separation, localization,
+    /// leakage, persistence and refinement certificates.
+    ///
+    /// Two supports are one proposal when their cell-id sets are equal.  The
+    /// result lists the modularity components in their input order first,
+    /// then every band component no modularity component matched, in its
+    /// input order; every proposal carries the proposers that offered it and
+    /// its largest Jaccard overlap with the other proposer's supports.  An
+    /// empty support is dropped, since there is nothing on it to certify.
+    ///
+    /// Read-only and pure: it consumes two caller-produced reads, calls no
+    /// solver and touches no spacetime.
+    [[nodiscard]] static std::vector<ClusterSupportProposal> proposeSupports(
+        const std::vector<ComponentRead> &modularityComponents,
+        const EffectiveComponentPartition &bandComponents);
 
     /// Track candidates across frames by their color bands, delegating to
     /// `SpectralFiberTracker::matchFibers` on the evidence bands with an
