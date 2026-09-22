@@ -526,7 +526,8 @@ std::vector<complexd> MultiCobordism::carriedStateGenerator(
   if (!anyPresent) return generator;
 
   const auto laplacian =
-      HodgeLaplacian(spacetime).laplacian(carriedStateDegree_, /*metric=*/true);
+      HodgeLaplacian(spacetime, HodgeLaplacian::defaultWeightConvention(), metricSource_)
+          .laplacian(carriedStateDegree_, /*metric=*/true);
   const std::size_t cellCount = cells.size();
   if (laplacian.size() != cellCount * cellCount) return generator;
   // h_S is the Hermitian part (L + L†)/2 of L_k restricted to the carried
@@ -599,7 +600,7 @@ std::vector<complexd> MultiCobordism::carriedStateEnergyGradient(
       row[modeIndex] = static_cast<long long>(found->second);
   }
 
-  const HodgeLaplacian hodge(spacetime);
+  const HodgeLaplacian hodge(spacetime, HodgeLaplacian::defaultWeightConvention(), metricSource_);
   for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
     const auto *edge = edges[edgeIndex];
     if (edge == nullptr || edge->getSource() == nullptr ||
@@ -988,7 +989,7 @@ void MultiCobordism::runRecursiveAnalysisOn(
   fiberConfig.degrees = analysisConfig_.degrees.empty()
                             ? std::vector<int>{1}
                             : analysisConfig_.degrees;
-  const SpectralFiberTracker tracker(spacetime, fiberConfig);
+  const SpectralFiberTracker tracker(spacetime, fiberConfig, metricSource_);
   std::vector<ComponentBandRead> bandReads;
   // `ComponentBandRead` carries the component's support, not its label-free
   // identity, so the owning component index travels beside each read.
@@ -1011,7 +1012,8 @@ void MultiCobordism::runRecursiveAnalysisOn(
     for (const int degree : fiberConfig.degrees) {
       try {
         const auto quotient = RecursiveQuotient::overVertexSupports(
-            spacetime, degree, supports, RecursiveQuotient::Options(), cache);
+            spacetime, degree, supports, RecursiveQuotient::Options(), cache,
+            metricSource_);
         staticCertificates.emplace_back(
             static_cast<std::size_t>(degree),
             quotient.staticReduction().certificate);
@@ -1065,8 +1067,9 @@ void MultiCobordism::runRecursiveAnalysisOn(
       try {
         transports.push_back(
             {b, a,
-             connection.transportOnSpacetimeCached(*cache, spacetime, toFiber,
-                                                   fromFiber)});
+             connection.transportOnSpacetimeCached(
+                 *cache, spacetime, toFiber, fromFiber,
+                 HodgeLaplacian::defaultWeightConvention(), metricSource_)});
       } catch (const std::exception &) {
         // A shape the transfer refuses is an unknown link, not a fault.
       }

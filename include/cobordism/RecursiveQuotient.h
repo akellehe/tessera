@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "cobordism/Certificate.h"
+#include "cobordism/HodgeLaplacian.h"
 
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::spacetime { class Spacetime; }
@@ -139,8 +140,13 @@ enum class RetainedCoordinateKind {
 ///    \f$ \ell^2 \f$). Certified block elimination with the left-kernel
 ///    compatibility check; no variational claim.
 ///
-/// The spacetime path takes `HodgeLaplacian::laplacian(degree)` as built, with
-/// metric `HodgeLaplacian::weights(degree)` (the identity at degree zero).
+/// The spacetime path pairs the operator and its metric from one metric
+/// source (`overCells`). Under the default `WhitneyPencil` the level is the
+/// pencil \f$ (\tilde A_k^U, M_k^U) \f$ of `HodgeLaplacian::pencil`, regime
+/// `ComplexSymmetricPencil` when both matrices are complex symmetric (a
+/// trivial connection) and `NonNormal` otherwise; under `DiagonalWeights` it takes `HodgeLaplacian::laplacian(degree)` with
+/// metric `HodgeLaplacian::weights(degree)` (the identity at degree zero) and
+/// the regimes below.
 ///
 /// ## Partitions
 ///
@@ -615,22 +621,41 @@ class RecursiveQuotient {
     /// as explicit k-cell sets (each cell a vertex-id tuple, matched by vertex
     /// set). An `AnalyticCache` bound to the same spacetime enables
     /// per-component reuse across accepted moves.
+    ///
+    /// The operator and its metric come from one source, `metricSource`,
+    /// which defaults to the process-wide
+    /// `HodgeLaplacian::defaultMetricSource()`. Under `WhitneyPencil` (the
+    /// default) the level is a pencil level over the dressed Whitney pencil
+    /// $ (	ilde A_k^U, M_k^U) $ of `HodgeLaplacian::pencil`, exactly as
+    /// `overPencil` builds one, so the reduction moves with the connection
+    /// $ U $. Under `DiagonalWeights` it is an operator level over
+    /// `HodgeLaplacian::laplacian(degree)` with the diagonal metric
+    /// `HodgeLaplacian::weights(degree)`.
     /// @throws std::invalid_argument on an unknown cell or uncovered cells.
     [[nodiscard]] static RecursiveQuotient overCells(
         std::shared_ptr<Spacetime> st, int degree,
         const std::vector<std::vector<std::vector<std::uint64_t>>> &componentCells,
         const Options &options = Options(),
-        std::shared_ptr<AnalyticCache> cache = nullptr);
+        std::shared_ptr<AnalyticCache> cache = nullptr,
+        HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
 
     /// Build over a spacetime's Hodge operator at `degree`, components given
     /// as vertex supports: a k-cell belongs to a component when all its
     /// vertices lie in the support. Cells claimed by no support are gathered
-    /// into one residual component appended after the supplied ones.
+    /// into one residual component appended after the supplied ones. The
+    /// operator and metric are those of `overCells` under `metricSource`.
     [[nodiscard]] static RecursiveQuotient overVertexSupports(
         std::shared_ptr<Spacetime> st, int degree,
         const std::vector<std::vector<std::uint64_t>> &componentVertexSupports,
         const Options &options = Options(),
-        std::shared_ptr<AnalyticCache> cache = nullptr);
+        std::shared_ptr<AnalyticCache> cache = nullptr,
+        HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
+
+    /// The metric source of a spacetime-backed level (see `overCells`);
+    /// `std::nullopt` on the matrix and pencil paths and on child levels.
+    [[nodiscard]] std::optional<HodgeLaplacian::MetricSource> metricSource() const noexcept {
+      return metricSource_;
+    }
 
     /// Fine dimension (number of k-cells / coordinates at this level).
     [[nodiscard]] int dimension() const noexcept { return dim_; }
@@ -942,6 +967,8 @@ class RecursiveQuotient {
     std::uint64_t partitionFingerprint_{0};            // cache-kind qualifier
     std::shared_ptr<Spacetime> st_{};
     std::shared_ptr<AnalyticCache> cache_{};
+    // spacetime path: the one source of the operator and its metric
+    std::optional<HodgeLaplacian::MetricSource> metricSource_{};
     // spacetime path extras: per-cell vertex tuples + integer boundary maps
     std::vector<std::vector<std::uint64_t>> cellVertices_{};
     bool hasBoundary_{false};

@@ -1061,10 +1061,15 @@ or a downstream observable.)doc")
       R"doc(Extraction and tracking of whole isolated localized Hodge bands
 on persistent components.
 
-For a component support S the tracker assembles the weighted Hodge operator
-of the full induced subcomplex on S, using the same boundary maps, canonical
-cell order and diagonal inner-product weights as the whole-complex
-HodgeLaplacian, so support = all vertices reproduces
+For a component support S the tracker assembles the Hodge operator of the full
+induced subcomplex on S under its metric source (the process-wide
+HodgeLaplacian.defaultMetricSource() unless named).  Under the default
+WhitneyPencil every degree k >= 1 is the covariant operator h_k(s, U) of the
+subcomplex's own chain-level Whitney pencil, read in the complex-symmetric
+pencil regime with Riesz bands and bilinear pairing certificates.  Under
+DiagonalWeights it uses the same boundary maps, canonical cell order and
+diagonal inner-product weights as the whole-complex HodgeLaplacian, so
+support = all vertices reproduces a DiagonalWeights
 HodgeLaplacian.laplacian(k) entry for entry.  Regimes are verified, never
 assumed: positive -> self-adjoint solves (exact dense below the crossover,
 deterministic sparse block shift-invert at or above it); real signed
@@ -1087,7 +1092,8 @@ nothing here enters any emergence objective.)doc")
            "chain-level Whitney pencil in the complex-symmetric-pencil regime.")
       .def(py::init([](std::shared_ptr<Spacetime> st,
                        const SpectralFiberConfig &cfg,
-                       const py::object &weights) {
+                       const py::object &weights,
+                       const py::object &metricSource) {
              const auto convention =
                  weights.is_none()
                      ? tessera::cobordism::HodgeLaplacian::
@@ -1095,13 +1101,21 @@ nothing here enters any emergence objective.)doc")
                      : weights
                            .cast<tessera::cobordism::HodgeLaplacian::
                                      WeightConvention>();
-             return SpectralFiberTracker(std::move(st), cfg, convention);
+             const auto source =
+                 metricSource.is_none()
+                     ? tessera::cobordism::HodgeLaplacian::defaultMetricSource()
+                     : metricSource.cast<tessera::cobordism::HodgeLaplacian::MetricSource>();
+             return SpectralFiberTracker(std::move(st), cfg, convention, source);
            }),
            py::arg("spacetime"), py::arg("config") = SpectralFiberConfig{},
            py::arg("weights") = py::none(),
+           py::arg("metric_source") = py::none(),
            "Bind to the spacetime to read; weights=None follows the "
-           "process-wide HodgeLaplacian.defaultWeightConvention() at call "
-           "time.")
+           "process-wide HodgeLaplacian.defaultWeightConvention() and "
+           "metric_source=None the process-wide "
+           "HodgeLaplacian.defaultMetricSource() (the Whitney pencil unless "
+           "changed), both at call time. The weight convention is read only "
+           "under DiagonalWeights.")
       .def("metricSource", &SpectralFiberTracker::metricSource,
            "Where this tracker's operators take their metric from.")
       .def("config", &SpectralFiberTracker::config,
@@ -2934,20 +2948,25 @@ certificate, never sampled independently.)doc")
                      const std::vector<std::vector<std::uint64_t>> &toCells,
                      const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
                      std::optional<cobordism::HodgeLaplacian::WeightConvention>
-                         weights) {
+                         weights,
+                     std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
                     return FiberConnection::chainTransfer(
                         st, degree, toCells, fromVertexTuples,
                         weights.value_or(cobordism::HodgeLaplacian::
-                                             defaultWeightConvention()));
+                                             defaultWeightConvention()),
+                        source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
                   },
                   py::arg("st"), py::arg("degree"), py::arg("to_cells"),
                   py::arg("from_cells"), py::arg("weights") = py::none(),
+                  py::arg("metric_source") = py::none(),
                   "The chain transfer T_AB induced by the connecting "
                   "simplices: the off-diagonal block L_k[cells(to), "
-                  "cells(from)] of the whole-complex weighted Hodge "
-                  "operator, cells matched by sorted vertex-id tuple.  "
-                  "weights = None follows the process-wide "
-                  "HodgeWeightConvention at call time.")
+                  "cells(from)] of the whole-complex Hodge operator, cells "
+                  "matched by sorted vertex-id tuple.  Under WhitneyPencil "
+                  "(degree >= 1) the operator is h_k(s, U) on chains in the "
+                  "reference orientation, the basis of the tracker's Whitney "
+                  "bands.  weights = None and metric_source = None follow the "
+                  "process-wide defaults at call time.")
       .def_static("responseTransfer", &FiberConnection::responseTransfer,
                   py::arg("network"), py::arg("to_component"),
                   py::arg("from_component"),
@@ -2969,28 +2988,33 @@ certificate, never sampled independently.)doc")
       .def("transportOnSpacetime",
            [](const FiberConnection &self, const std::shared_ptr<Spacetime> &st,
               const SpectralFiber &to, const SpectralFiber &from,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.transportOnSpacetime(
                  st, to, from,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("st"), py::arg("to_fiber"), py::arg("from_fiber"),
-           py::arg("weights") = py::none(),
+           py::arg("weights") = py::none(), py::arg("metric_source") = py::none(),
            "Derive the transport on a spacetime: assembles the chain "
            "transfer from the Hodge operator, then transport().")
       .def("transportOnSpacetimeCached",
            [](const FiberConnection &self, cobordism::AnalyticCache &cache,
               const std::shared_ptr<Spacetime> &st, const SpectralFiber &to,
               const SpectralFiber &from,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.transportOnSpacetimeCached(
                  cache, st, to, from,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("cache"), py::arg("st"), py::arg("to_fiber"),
            py::arg("from_fiber"), py::arg("weights") = py::none(),
+           py::arg("metric_source") = py::none(),
            "transportOnSpacetime through the AnalyticCache contract "
            "(key: the union of the two fibers' cell-vertex sets; cached "
            "equals cold).")
@@ -3001,27 +3025,32 @@ certificate, never sampled independently.)doc")
       .def("holonomyOnSpacetime",
            [](const FiberConnection &self, const std::shared_ptr<Spacetime> &st,
               const std::vector<SpectralFiber> &fibers,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.holonomyOnSpacetime(
                  st, fibers,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("st"), py::arg("fibers"), py::arg("weights") = py::none(),
+           py::arg("metric_source") = py::none(),
            "Wilson loop over an ordered cycle of fibers: links "
            "fibers[i] <- fibers[i+1] (wrapping), then the product.")
       .def("holonomyOnSpacetimeCached",
            [](const FiberConnection &self, cobordism::AnalyticCache &cache,
               const std::shared_ptr<Spacetime> &st,
               const std::vector<SpectralFiber> &fibers,
-              std::optional<cobordism::HodgeLaplacian::WeightConvention> w) {
+              std::optional<cobordism::HodgeLaplacian::WeightConvention> w,
+              std::optional<cobordism::HodgeLaplacian::MetricSource> source) {
              return self.holonomyOnSpacetimeCached(
                  cache, st, fibers,
                  w.value_or(
-                     cobordism::HodgeLaplacian::defaultWeightConvention()));
+                     cobordism::HodgeLaplacian::defaultWeightConvention()),
+                 source.value_or(cobordism::HodgeLaplacian::defaultMetricSource()));
            },
            py::arg("cache"), py::arg("st"), py::arg("fibers"),
-           py::arg("weights") = py::none(),
+           py::arg("weights") = py::none(), py::arg("metric_source") = py::none(),
            "holonomyOnSpacetime through the AnalyticCache: per-link caching "
            "plus the loop product keyed by all participating fibers, so a "
            "published TouchedStar invalidates only the loops touching the "

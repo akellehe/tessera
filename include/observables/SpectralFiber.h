@@ -411,9 +411,17 @@ struct ComponentBandRead {
 ///
 /// ## The restricted operator
 ///
-/// For a component support `S` (vertex ids) the tracker assembles the weighted
-/// Hodge Laplacian of the full induced subcomplex on `S` — every simplex all of
-/// whose vertices lie in `S` — in the canonical ChainComplex cell order, with
+/// For a component support `S` (vertex ids) the tracker assembles an operator
+/// of the full induced subcomplex on `S` — every simplex all of whose vertices
+/// lie in `S` — under its metric source, which is the process-wide
+/// `HodgeLaplacian::defaultMetricSource()` unless named. Under the default
+/// `WhitneyPencil` every degree \f$ k \ge 1 \f$ is the covariant operator
+/// \f$ h_k(s,U) \f$ of the induced subcomplex's own chain-level Whitney pencil
+/// (see the metric-source constructor), so the bands move with the connection
+/// \f$ U \f$.
+///
+/// Under `DiagonalWeights` it is the weighted Hodge Laplacian in the canonical
+/// ChainComplex cell order, with
 /// the same diagonal inner-product weights \f$ W_k \f$ the whole-complex
 /// `HodgeLaplacian` uses, including the degenerate-cell +1 fallback and the
 /// `WeightConvention`:
@@ -426,7 +434,8 @@ struct ComponentBandRead {
 /// where \f$ d^S \f$ restricts the integer boundary maps to the cells inside
 /// `S`. When `S` is the whole vertex set this is the whole-complex operator: on
 /// the signed and complex-weight paths it equals `HodgeLaplacian::laplacian(k)`
-/// entry for entry, pinned by the spectral resolution
+/// of a `DiagonalWeights` operator entry for entry, pinned by the spectral
+/// resolution
 /// \f$ \sum_{\mathrm{bands}} \Phi \Lambda \Psi^\dagger W = L \f$. On the
 /// verified positive path the solved object is the symmetric W-orthonormal
 /// similarity \f$ B_k^T B_k + B_{k+1} B_{k+1}^T \f$ with the same spectrum,
@@ -483,8 +492,10 @@ class SpectralFiberTracker {
     static constexpr const char *kCacheKind = "spectral-fiber";
 
     /// Bind to the spacetime to read (kept alive by the `shared_ptr`), a
-    /// configuration, and the Hodge weight convention, defaulting to
-    /// `HodgeLaplacian::defaultWeightConvention()`.
+    /// configuration, and the Hodge weight convention of the diagonal weights,
+    /// defaulting to `HodgeLaplacian::defaultWeightConvention()`. The metric
+    /// source is the process-wide `HodgeLaplacian::defaultMetricSource()`,
+    /// read here, which is the Whitney pencil unless changed.
     explicit SpectralFiberTracker(
         std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg = {},
         cobordism::HodgeLaplacian::WeightConvention weights =
@@ -499,9 +510,17 @@ class SpectralFiberTracker {
     /// the Riesz projector of a circular contour drawn around the gap-rule
     /// group, with right frame `Phi`, canonical left frame `Phi~`, and the
     /// bilinear pairing certificates `pairingDeterminant`, `pairingCondition`,
-    /// `pairingScale` and `isotropic`. Degree 0 keeps the U(1) connection
-    /// operator under either source.
+    /// `pairingScale` and `isotropic`. Under `DiagonalWeights` every degree
+    /// \f$ k \ge 1 \f$ is read on the diagonal weights of
+    /// `HodgeLaplacian::defaultWeightConvention()`. Degree 0 keeps the U(1)
+    /// connection operator under either source.
     SpectralFiberTracker(std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+                         cobordism::HodgeLaplacian::MetricSource source);
+
+    /// Bind with an explicit weight convention and metric source; the weight
+    /// convention is read only under `DiagonalWeights`.
+    SpectralFiberTracker(std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+                         cobordism::HodgeLaplacian::WeightConvention weights,
                          cobordism::HodgeLaplacian::MetricSource source);
 
     [[nodiscard]] cobordism::HodgeLaplacian::MetricSource metricSource() const noexcept {
@@ -561,7 +580,7 @@ class SpectralFiberTracker {
     cobordism::HodgeLaplacian::WeightConvention weights_{
         cobordism::HodgeLaplacian::WeightConvention::SquaredContent};
     cobordism::HodgeLaplacian::MetricSource metricSource_{
-        cobordism::HodgeLaplacian::MetricSource::DiagonalWeights};
+        cobordism::HodgeLaplacian::MetricSource::WhitneyPencil};
 
     [[nodiscard]] RestrictedOperator assembleRestricted(
         const std::vector<std::uint64_t> &support, int degree) const;

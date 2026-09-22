@@ -179,7 +179,8 @@ RecursiveQuotient RecursiveQuotient::overMatrix(
 RecursiveQuotient RecursiveQuotient::overCells(
     std::shared_ptr<Spacetime> st, int degree,
     const std::vector<std::vector<std::vector<std::uint64_t>>> &componentCells,
-    const Options &options, std::shared_ptr<AnalyticCache> cache) {
+    const Options &options, std::shared_ptr<AnalyticCache> cache,
+    HodgeLaplacian::MetricSource metricSource) {
   if (!st) throw std::invalid_argument("RecursiveQuotient: null spacetime");
   if (degree < 0) throw std::invalid_argument("RecursiveQuotient: degree < 0");
 
@@ -187,9 +188,10 @@ RecursiveQuotient RecursiveQuotient::overCells(
   quotient.st_ = st;
   quotient.cache_ = std::move(cache);
   quotient.degree_ = degree;
+  quotient.metricSource_ = metricSource;
 
   const ChainComplex cc = ChainComplex::fromSpacetime(*st);
-  HodgeLaplacian hodge(st);
+  const HodgeLaplacian hodge(st, HodgeLaplacian::defaultWeightConvention(), metricSource);
 
   // Canonical cell order: the ChainComplex column order (sorted vertex-id
   // tuples), which L_k is indexed over. A vertex carried by no simplex is not
@@ -246,6 +248,20 @@ RecursiveQuotient RecursiveQuotient::overCells(
   quotient.boundaryK1_ = cc.boundaryMatrix(degree + 1);
   quotient.boundaryK1Cols_ = static_cast<int>(cc.numSimplices(degree + 1));
 
+  if (metricSource == HodgeLaplacian::MetricSource::WhitneyPencil) {
+    // The operator and its metric from one assembly of the dressed Whitney
+    // pencil: every elimination is taken on P(lambda) = A~ - lambda M.
+    HodgeLaplacian::MetricPencil pencil = hodge.pencil(degree);
+    if (pencil.dimension != dim)
+      throw std::logic_error("RecursiveQuotient: the Whitney pencil and the chain complex disagree "
+                             "on the cell count at degree " + std::to_string(degree));
+    quotient.pencil_ = true;
+    const Eigen::MatrixXcd denseM = toMatrix(pencil.metric, dim, dim, "RecursiveQuotient pencil metric");
+    quotient.pencilMetric_ = denseM.sparseView();
+    quotient.pencilMetric_.makeCompressed();
+    quotient.initMatrix(pencil.op, dim, {}, indexComponents, resolved);
+    return quotient;
+  }
   // W_k for every degree, degree zero included (there W_0 = I).
   quotient.initMatrix(hodge.laplacian(degree), dim, hodge.weights(degree),
                       indexComponents, resolved);
@@ -255,7 +271,8 @@ RecursiveQuotient RecursiveQuotient::overCells(
 RecursiveQuotient RecursiveQuotient::overVertexSupports(
     std::shared_ptr<Spacetime> st, int degree,
     const std::vector<std::vector<std::uint64_t>> &componentVertexSupports,
-    const Options &options, std::shared_ptr<AnalyticCache> cache) {
+    const Options &options, std::shared_ptr<AnalyticCache> cache,
+    HodgeLaplacian::MetricSource metricSource) {
   if (!st) throw std::invalid_argument("RecursiveQuotient: null spacetime");
   const ChainComplex cc = ChainComplex::fromSpacetime(*st);
   // The same canonical ChainComplex column order overCells uses.
@@ -287,7 +304,7 @@ RecursiveQuotient RecursiveQuotient::overVertexSupports(
   }
   if (!residual.empty()) componentCells.push_back(std::move(residual));
   return overCells(std::move(st), degree, componentCells, options,
-                   std::move(cache));
+                   std::move(cache), metricSource);
 }
 
 // --------------------------------------------------------------------------
@@ -393,6 +410,9 @@ void RecursiveQuotient::classify() {
     for (const int index : interior)
       fingerprint = mix(fingerprint, static_cast<std::uint64_t>(index) + 3);
   }
+  // A pencil level solves a different interior problem (A~ - lambda M) than an
+  // operator level over the same cells, so the two never share a cache entry.
+  if (pencil_) fingerprint = mix(fingerprint, 0x70656e63696cULL);
   partitionFingerprint_ = fingerprint;
 }
 
@@ -2399,15 +2419,29 @@ void RecursiveQuotient::invalidate() {
   solves_.clear();
   shifted_.clear();
   if (st_) {
-    HodgeLaplacian hodge(st_);
-    const std::vector<cd> flat = hodge.laplacian(degree_);
-    const Eigen::MatrixXcd dense = toMatrix(flat, dim_, dim_, "laplacian");
-    op_ = dense.sparseView();
-    op_.makeCompressed();
-    opNorm_ = dense.norm();
-    const std::vector<cd> weights = hodge.weights(degree_);
-    for (int i = 0; i < dim_ && i < static_cast<int>(weights.size()); ++i)
-      weights_(i) = weights[static_cast<std::size_t>(i)];
+    // Re-read from the source the level was built on, operator and metric
+    // together.
+    const HodgeLaplacian::MetricSource source =
+        metricSource_.value_or(HodgeLaplacian::MetricSource::DiagonalWeights);
+    const HodgeLaplacian hodge(st_, HodgeLaplacian::defaultWeightConvention(), source);
+    if (source == HodgeLaplacian::MetricSource::WhitneyPencil) {
+      const HodgeLaplacian::MetricPencil pencil = hodge.pencil(degree_);
+      const Eigen::MatrixXcd dense = toMatrix(pencil.op, dim_, dim_, "pencil operator");
+      op_ = dense.sparseView();
+      op_.makeCompressed();
+      opNorm_ = dense.norm();
+      pencilMetric_ = toMatrix(pencil.metric, dim_, dim_, "pencil metric").sparseView();
+      pencilMetric_.makeCompressed();
+    } else {
+      const std::vector<cd> flat = hodge.laplacian(degree_);
+      const Eigen::MatrixXcd dense = toMatrix(flat, dim_, dim_, "laplacian");
+      op_ = dense.sparseView();
+      op_.makeCompressed();
+      opNorm_ = dense.norm();
+      const std::vector<cd> weights = hodge.weights(degree_);
+      for (int i = 0; i < dim_ && i < static_cast<int>(weights.size()); ++i)
+        weights_(i) = weights[static_cast<std::size_t>(i)];
+    }
     detectRegime();
   }
 }

@@ -797,7 +797,7 @@ HodgeLaplacian::WeightConvention HodgeLaplacian::defaultWeightConvention_ =
     HodgeLaplacian::WeightConvention::SquaredContent;
 
 HodgeLaplacian::MetricSource HodgeLaplacian::defaultMetricSource_ =
-    HodgeLaplacian::MetricSource::DiagonalWeights;
+    HodgeLaplacian::MetricSource::WhitneyPencil;
 
 /// The Whitney pencil of the current geometry: chain complex, dressed operator
 /// and orientation signs, rebuilt whenever the structural revision or any edge's
@@ -817,6 +817,20 @@ struct HodgeLaplacian::WhitneyState {
     if (k < 0 || k >= static_cast<int>(signs.size()) || ref.rows() == 0) return ref;
     const Eigen::VectorXd &d = signs[static_cast<std::size_t>(k)];
     return d.asDiagonal() * ref * d.asDiagonal();
+  }
+  /// \f$ \partial L_z/\partial s_e \f$ in the stored basis for the edge at
+  /// canonical index `edge`, given \f$ h = h_k(s,U) \f$ and
+  /// \f$ L_z = (M^U)^{-1} h M^U \f$ in the reference basis:
+  /// \f$ \partial L_z = (M^U)^{-1}[-\partial M^U L_z + \partial h\,M^U + h\,\partial M^U] \f$.
+  /// Thread-safe once `op->warmDerivatives(k)` has run.
+  [[nodiscard]] Eigen::MatrixXcd lengthDerivative(int k, std::size_t edge, const Eigen::MatrixXcd &h,
+                                                  const Eigen::MatrixXcd &Lz) const {
+    const chainhodge::SparseMatrix &M = op->dressed(k);
+    const chainhodge::SparseMatrix dM = op->dressedDerivative(k, edge);
+    const Eigen::MatrixXcd dh = op->covariantOperatorDerivative(k, edge);
+    const Eigen::MatrixXcd inner =
+        -Eigen::MatrixXcd(dM * Lz) + Eigen::MatrixXcd(dh * M) + Eigen::MatrixXcd(h * dM);
+    return toStored(k, op->applyG(k, inner));
   }
 };
 
@@ -1084,12 +1098,8 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianGradient(
     }
     // d L_z = M^{-1} [ -dM L_z + dh M + h dM ] with L_z = M^{-1} h M.
     const Eigen::MatrixXcd h = w.op->covariantOperator(k);
-    const chainhodge::SparseMatrix &M = w.op->dressed(k);
-    const Eigen::MatrixXcd Lz = w.op->applyG(k, Eigen::MatrixXcd(h * M));
-    const chainhodge::SparseMatrix dM = w.op->dressedDerivative(k, it->second);
-    const Eigen::MatrixXcd dh = w.op->covariantOperatorDerivative(k, it->second);
-    const Eigen::MatrixXcd inner = -Eigen::MatrixXcd(dM * Lz) + Eigen::MatrixXcd(dh * M) + Eigen::MatrixXcd(h * dM);
-    dL = w.toStored(k, w.op->applyG(k, inner));
+    const Eigen::MatrixXcd Lz = w.op->applyG(k, Eigen::MatrixXcd(h * w.op->dressed(k)));
+    dL = w.lengthDerivative(k, it->second, h, Lz);
   } else {
     const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
     dL = workspace.gradient(ea, eb);
@@ -1128,6 +1138,33 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianPhaseGradient(
   for (int i = 0; i < nk; ++i)
     for (int j = 0; j < nk; ++j)
       out[static_cast<std::size_t>(i) * nk + j] = dL(i, j);
+  return out;
+}
+
+HodgeLaplacian::MetricPencil HodgeLaplacian::pencil(int k) const {
+  requireNonNegativeDegree(k);
+  if (metricSource_ != MetricSource::WhitneyPencil)
+    throw std::logic_error(
+        "HodgeLaplacian::pencil: the pencil is the Whitney metric source's; this operator "
+        "uses DiagonalWeights, whose metric is weights(k)");
+  MetricPencil out;
+  if (!st_) return out;
+  const WhitneyState &w = whitneyState();
+  if (k > w.complex.dimension()) return out;
+  // One assembly of the dressed pencil supplies both matrices, so the operator
+  // and its metric cannot come from different geometries or connections.
+  const chainhodge::Pencil P = w.op->pencil(k);
+  const Eigen::MatrixXcd A = w.toStored(k, P.A);
+  const Eigen::MatrixXcd M = w.toStored(k, P.B);
+  const int nk = static_cast<int>(A.rows());
+  out.dimension = nk;
+  out.op.resize(static_cast<std::size_t>(nk) * nk);
+  out.metric.resize(static_cast<std::size_t>(nk) * nk);
+  for (int i = 0; i < nk; ++i)
+    for (int j = 0; j < nk; ++j) {
+      out.op[static_cast<std::size_t>(i) * nk + j] = A(i, j);
+      out.metric[static_cast<std::size_t>(i) * nk + j] = M(i, j);
+    }
   return out;
 }
 
@@ -1225,11 +1262,38 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralEntropyGradient(
   std::vector<cd> gradient(edges.size(), cd{0.0, 0.0});
   if (!st_)
     return gradient;
-  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
-  const SpectralEntropyData data =
-      spectralEntropyData(workspace.laplacian(), phaseMode);
+  // The derivative is taken of the operator the entropy is taken of: the
+  // Whitney operator on geometric images, with its analytic dL_z/ds_e, under
+  // WhitneyPencil; the diagonal-weight workspace otherwise. Both are
+  // holomorphic in z = l^2.
+  const bool whitney = metricSource_ == MetricSource::WhitneyPencil;
+  std::unique_ptr<const LaplacianDerivativeWorkspace> workspace;
+  const WhitneyState *pencilState = nullptr;
+  Eigen::MatrixXcd covariant;  // h_k(s,U), reference basis
+  Eigen::MatrixXcd imageOperator;  // L_z = (M^U)^{-1} h M^U, reference basis
+  Eigen::MatrixXcd operatorStored;
+  if (whitney) {
+    pencilState = &whitneyState();
+    if (k <= pencilState->complex.dimension()) {
+      covariant = pencilState->op->covariantOperator(k);
+      imageOperator = pencilState->op->applyG(k, Eigen::MatrixXcd(covariant * pencilState->op->dressed(k)));
+      // The per-edge derivatives below run in parallel on the shared pencil.
+      pencilState->op->warmDerivatives(k);
+    }
+    operatorStored = pencilState->toStored(k, imageOperator);
+  } else {
+    workspace = std::make_unique<const LaplacianDerivativeWorkspace>(*st_, k, weightConvention_);
+    operatorStored = workspace->laplacian();
+  }
+  const SpectralEntropyData data = spectralEntropyData(operatorStored, phaseMode);
   if (data.laplacian.size() == 0 || data.zeroOperator) return gradient;
   const Eigen::Index n = data.laplacian.rows();
+  const auto derivativeOf = [&](std::uint64_t a, std::uint64_t b) -> Eigen::MatrixXcd {
+    if (!whitney) return workspace->gradient(a, b);
+    const auto it = pencilState->edgeIndex.find(edgeKeyOf(a, b));
+    if (it == pencilState->edgeIndex.end()) return Eigen::MatrixXcd::Zero(n, n);
+    return pencilState->lengthDerivative(k, it->second, covariant, imageOperator);
+  };
 
   Eigen::MatrixXcd fullPhaseLeft;
   Eigen::MatrixXd magnitudeDerivative;
@@ -1250,8 +1314,8 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralEntropyGradient(
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const Eigen::MatrixXcd derivative = workspace.gradient(
-        edge->getSource()->getId(), edge->getTarget()->getId());
+    const Eigen::MatrixXcd derivative =
+        derivativeOf(edge->getSource()->getId(), edge->getTarget()->getId());
 
     if (phaseMode == EntropyPhaseMode::IncludeComplexPhase) {
       // dS = 2 Re Tr(C L^dagger dL), so in the h = S_x - i S_y convention
@@ -1294,6 +1358,14 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
   std::vector<cd> velocityOfGradient(edges.size(), cd{0.0, 0.0});
   if (!st_)
     return velocityOfGradient;
+  // The product rule below needs the second derivative of the operator in the
+  // squared lengths, which exists for the diagonal weights only. Refused by
+  // name rather than taken of a different operator than the entropy.
+  if (metricSource_ == MetricSource::WhitneyPencil)
+    throw std::logic_error(
+        "HodgeLaplacian::spectralEntropyGradientDirectionalDerivative: the second derivative "
+        "of the Whitney operator in the squared lengths is not implemented; build the operator "
+        "with MetricSource::DiagonalWeights for this directional derivative");
 
   // The direction, keyed the way the simplices key their own gradients.
   std::map<std::pair<std::uint64_t, std::uint64_t>, cd> keyedDirection;

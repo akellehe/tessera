@@ -20,6 +20,7 @@ Regime = cob.CertificateRegime
 Pencil = Regime.ComplexSymmetricPencil
 HL = cob.HodgeLaplacian
 Whitney = cob.HodgeMetricSource.WhitneyPencil
+Diagonal = cob.HodgeMetricSource.DiagonalWeights
 
 
 def _spacetime_from(K, s):
@@ -117,7 +118,7 @@ class TestTrackerOnThePencil:
         cfg = obs.SpectralFiberConfig()
         cfg.degrees = [1]
         support = [int(v[0]) for v in K.kSimplexVertices(0)]
-        legacy = obs.SpectralFiberTracker(st, cfg).enumerateBands(support, 1)
+        legacy = obs.SpectralFiberTracker(st, cfg, metric_source=Diagonal).enumerateBands(support, 1)
         assert legacy.regime != Pencil
         assert legacy.solverPath != "pencil-riesz"
 
