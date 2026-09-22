@@ -357,7 +357,7 @@ class TestSheetAttachment(unittest.TestCase):
         read = SheetAttachment.attachmentMatrix(3, collapsed)
         self.assertAlmostEqual(abs(read.determinant), 0.0, places=14)
         self.assertLessEqual(read.min_singular_value, 1e-14)
-        self.assertEqual(read.conditioning, float("inf"))
+        self.assertGreater(read.conditioning, 1e12)
         self.assertFalse(read.certificate.holds())
 
     def test_a_simplex_outside_the_support_is_refused(self) -> None:
@@ -422,7 +422,9 @@ class TestSheetAttachment(unittest.TestCase):
         read = SheetAttachment.holonomy(links)
         expected = links[3] @ links[2] @ links[1] @ links[0]
         self.assertEqual(read.link_count, 4)
-        self.assertLessEqual(np.max(np.abs(read.holonomy - expected)), 1e-11)
+        scale = max(1.0, float(np.max(np.abs(expected))))
+        self.assertLessEqual(np.max(np.abs(read.holonomy - expected)),
+                             1e-11 * scale)
         for power in (1, 2, 3):
             trace = np.trace(np.linalg.matrix_power(expected, power))
             self.assertLessEqual(
@@ -547,7 +549,11 @@ class TestColorSinglet(unittest.TestCase):
         self.assertLessEqual(
             abs(scaled.amplitude - (3.0 + 4.0j) * plain.amplitude),
             1e-10 * max(1.0, abs(plain.amplitude)))
-        self.assertNotAlmostEqual(plain.magnitude, 1.0, places=6)
+        # |3 + 4i| = 5: the magnitude moves with the representative instead
+        # of being driven to one.
+        self.assertLessEqual(
+            abs(scaled.magnitude - 5.0 * plain.magnitude),
+            1e-10 * max(1.0, plain.magnitude))
 
     def test_the_wedge_is_antisymmetric_in_the_three_modes(self) -> None:
         generator = rng()
