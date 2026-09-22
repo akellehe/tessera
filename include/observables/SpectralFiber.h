@@ -107,6 +107,36 @@ struct SpectralFiberConfig {
   /// isotropic, i.e. an exceptional point with no left frame.
   int contourNodes = 64;
   double isotropyTolerance = 1e-10;
+  /// Certification cap on the contour resolvent bound
+  /// (`SpectralBandCertificate::resolventBound`), the quantity that makes
+  /// "a controlled resolvent separating the band from the discarded modes"
+  /// a measurement. Enforced wherever a contour was drawn, i.e. on the
+  /// chain-level pencil path; an unmeasured NaN fails it there. The default is
+  /// the `projectorNormCap` order of magnitude, so it rejects a contour whose
+  /// resolvent has blown up without rejecting an ordinarily oblique band.
+  double resolventBoundCap = 1e8;
+  /// Certification floor on the Kontsevich–Segal allowability margin
+  /// \f$ \min_T (\pi - \sum_i |\arg \lambda_i(g_T)|) \f$ of the instance the
+  /// band was read on (`SpectralBandCertificate::allowabilityMargin`).
+  /// Enforced wherever the margin is measured, i.e. on the chain-level pencil
+  /// path, where the band must lie on the allowable side of the
+  /// Kontsevich–Segal boundary. The default 0 asks for a strictly positive
+  /// margin: a real Lorentzian instance sits exactly on the boundary with
+  /// margin 0 and is therefore never certified on its own, which is the
+  /// whitepaper's rule that a result at \f$ \varepsilon_L = 0 \f$ is reported
+  /// only alongside its gap certificate and never alone.
+  double minAllowabilityMargin = 0.0;
+  /// The declared Lorentzian-protocol rotation \f$ \varepsilon_L \f$ the
+  /// complex handed to the tracker was computed at: the caller rotated the
+  /// timelike squared lengths by \f$ e^{-2i\varepsilon_L} \f$ through
+  /// `chainhodge::LorentzianFamily::rotate` before building the spacetime this
+  /// tracker reads. Like `chainhodge::CausalType` it is a declaration, never
+  /// inferred from a squared length. Quiet NaN (the default) means the complex
+  /// was not declared Lorentzian, and the rotation is then reported as
+  /// unmeasured rather than as zero. When it is declared, acceptance requires
+  /// \f$ \varepsilon_L > 0 \f$: the band is selected on the
+  /// Kontsevich–Segal allowable side at a reported positive rotation.
+  double lorentzianEpsilon = std::numeric_limits<double>::quiet_NaN();
 };
 
 /// # SpectralBandCertificate
@@ -212,6 +242,45 @@ struct SpectralBandCertificate {
   bool isotropic = false;
   std::string leftFrameRefusal{};
   double metricSymmetryDefect = std::numeric_limits<double>::quiet_NaN();
+  /// The contour certificate. A band selected by a closed contour
+  /// \f$ \gamma_C \f$ in the complex spectral plane carries the contour it was
+  /// selected by, since the exact Riesz projector
+  /// \f$ P_C = \frac{1}{2\pi i}\oint_{\gamma_C}(\zeta I - h_C)^{-1} d\zeta \f$
+  /// is a statement about that contour and about nothing else. `contour` is
+  /// the human-readable description ("circle c=…, r=…, N=…"), empty when the
+  /// band was grouped by the sort-and-gap rule with no contour drawn, and the
+  /// geometry is repeated in `contourCenter` and `contourRadius` so a consumer
+  /// need not parse the text.
+  std::string contour{};
+  int contourNodeCount = 0;
+  std::complex<double> contourCenter{std::numeric_limits<double>::quiet_NaN(),
+                                     std::numeric_limits<double>::quiet_NaN()};
+  double contourRadius = std::numeric_limits<double>::quiet_NaN();
+  /// \f$ \max_j \|(\zeta_j I - h_C)^{-1}\|_2 \f$ over the contour's quadrature
+  /// nodes: the measured resolvent growth on \f$ \gamma_C \f$.
+  double resolventMax = std::numeric_limits<double>::quiet_NaN();
+  /// The resolvent bound the acceptance conjunct "a controlled resolvent
+  /// separating it from the discarded modes" is gated on: the Riesz estimate
+  /// \f$ \|P_C\| \le \frac{|\gamma_C|}{2\pi}\max_{\zeta\in\gamma_C}
+  /// \|(\zeta I - h_C)^{-1}\|_2 \f$, which for the circular contour of radius
+  /// \f$ r \f$ is \f$ r \cdot \f$ `resolventMax`. It is an upper bound on the
+  /// projector norm computed from the contour alone, so it certifies the band
+  /// selection rather than re-reporting the projector: a contour that runs too
+  /// close to a discarded eigenvalue has a large bound even when the assembled
+  /// projector looks tame. `SpectralFiberConfig::resolventBoundCap` caps it.
+  double resolventBound = std::numeric_limits<double>::quiet_NaN();
+  /// The Kontsevich–Segal allowability of the instance the band was read on
+  /// and its margin \f$ \min_T (\pi - \sum_i |\arg\lambda_i(g_T)|) \f$
+  /// (`chainhodge::InstanceCertificate`), measured on the chain-level pencil
+  /// path and quiet NaN elsewhere. A Euclidean instance has margin
+  /// \f$ \pi \f$; a real Lorentzian one sits on the boundary with margin 0.
+  bool allowable = false;
+  double allowabilityMargin = std::numeric_limits<double>::quiet_NaN();
+  /// The declared Lorentzian-protocol rotation \f$ \varepsilon_L \f$ the band
+  /// was read at (`SpectralFiberConfig::lorentzianEpsilon`), copied onto every
+  /// band so a read never travels without the rotation it was taken at. Quiet
+  /// NaN when the complex was not declared Lorentzian.
+  double lorentzianEpsilon = std::numeric_limits<double>::quiet_NaN();
   /// The band's frequency window [min Re(lambda), max Re(lambda)], the window
   /// handed to the response API (see :class:`SpectralBandWindow`).
   double frequencyLower = std::numeric_limits<double>::quiet_NaN();
@@ -223,7 +292,10 @@ struct SpectralBandCertificate {
   bool selfAdjoint = false;
   /// Whether the band met every certification threshold of the producing
   /// `SpectralFiberConfig`: isolation on `nearestDiscardedSeparation`,
-  /// localization, residuals, Gram defect and projector conditioning. When
+  /// localization, residuals, Gram defect and projector conditioning, plus —
+  /// wherever a contour was drawn — the contour resolvent bound and the
+  /// Kontsevich–Segal allowability margin, at a positive declared
+  /// \f$ \varepsilon_L \f$ when the complex was declared Lorentzian. When
   /// false the band is still reported, as an uncertified read.
   bool accepted = false;
   /// The graded claim: domain `BandWindow`, regime as verified, grade
