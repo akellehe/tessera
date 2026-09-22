@@ -102,10 +102,11 @@ class Stage2UnclampedTest(unittest.TestCase):
     def setUpClass(cls):
         cls.w = cmath.exp(2j * math.pi / 3)
 
-    def _node(self, host, seed=3):
+    def _node(self, host, seed=3, **source):
         w = self.w
         opt = cob.MultiCobordism(host, [[1, w, w * w], [1, w * w, w]],
-                                 [[1, w, w * w]], degrees=[3], gamma=1.0, seed=seed)
+                                 [[1, w, w * w]], degrees=[3], gamma=1.0, seed=seed,
+                                 **source)
         opt.seed_inputs([v.getId() for v in host.getVertexList().toVector()][:2])
         return opt
 
@@ -123,12 +124,19 @@ class Stage2UnclampedTest(unittest.TestCase):
         # floor band. The retired clamp rewrote ALL of them to exactly a pin value on
         # the FIRST accepted sweep; unclamped descent may move them, but never to a
         # pin. Requires an accepted step (len(trace) >= 2) to be meaningful.
+        #
+        # The unbounded configuration space is the diagonal weights': the
+        # seeded edges put this host on the boundary of the Kontsevich-Segal
+        # allowable domain (margin exactly 0), and the Whitney pencil's
+        # configuration space is that domain's closure, so there stage 2
+        # refuses every trial off the boundary and accepts no step. The
+        # diagonal source is named so the clamp's absence stays witnessed.
         host = _closed_s4(n_refine=8, seed=3)
         edges = host.getEdgeList().toVector()
         edges[5].setLength(cmath.sqrt(complex(complex(-0.8, 0.0))))    # timelike
         edges[7].setLength(cmath.sqrt(complex(complex(25.0, 0.0))))    # beyond the old cap
         edges[9].setLength(cmath.sqrt(complex(complex(0.01, 0.0))))    # inside the old floor band
-        opt = self._node(host)
+        opt = self._node(host, metric_source=cob.HodgeMetricSource.DiagonalWeights)
         trace = opt.run_stage2(beta=1.0, max_iters=3, alpha0=0.05, tolerance=1e-9)
         self.assertTrue(all(math.isfinite(f) for f in trace))
         self.assertGreaterEqual(len(trace), 2, "no accepted step — vacuous run")
