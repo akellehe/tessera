@@ -2707,10 +2707,14 @@ def _crossing_band(cell):
             e.setPhase(0.0)
         # Subject: the crossing conjunct, not localization.  The 3-cycle is
         # vertex-transitive, so every band carries localization excess
-        # exactly 1; declare the permissive analysis cap.
+        # exactly 1; declare the permissive analysis cap.  A positive band's
+        # Krein signature is the diagonal weights' certificate (the Whitney
+        # pencil's bands carry the bilinear pairing and no inertia), so the
+        # diagonal source is named.
         band_cfg = obs.SpectralFiberConfig()
         band_cfg.maxLocalizationExcess = 1.0
-        tracker = obs.SpectralFiberTracker(st, band_cfg)
+        tracker = obs.SpectralFiberTracker(
+            st, band_cfg, metric_source=cob.HodgeMetricSource.DiagonalWeights)
         for fiber in tracker.enumerateBands([0, 1, 2], 1).fibers:
             cert = fiber.certificate()
             if (fiber.rank() == 1 and cert.accepted
