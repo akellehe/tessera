@@ -1218,7 +1218,7 @@ class MultiCobordism {
   /// (\f$ |\ell^2| = 1 \f$; balanced wiring gives \f$ \ell=\sqrt{1/2}(1+i) \f$),
   /// Lorentzian signature, and the causal dynamical triangulations (CDT) type
   /// and preferred foliation. This is the seed every host grows from;
-  /// `Proton::buildMinimalSeed` is this at dimension 4.
+  /// `ProtonSynthesis::buildMinimalSeed` is this at dimension 4.
   ///
   /// Reference: Ambjorn, Jurkiewicz and Loll, "Dynamically Triangulating
   /// Lorentzian Quantum Gravity", arXiv:hep-th/0105267.

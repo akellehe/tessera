@@ -601,7 +601,7 @@ if(_torch_probe EQUAL 0 AND _torch_cmake_prefix)
 endif()
 if(Torch_FOUND)
     message(STATUS "Building RL subsystem (libtorch ${Torch_VERSION}).")
-    # tessera_rl: the RL harness (env, PPO, training) — it DRIVES MultiCobordism + Proton
+    # tessera_rl: the RL harness (env, PPO, training) — it DRIVES MultiCobordism + ProtonSynthesis
     # (the source of truth) and never reimplements construction. Its own static lib, kept out
     # of the torch-free tessera_core (rl/ is excluded from TESSERA_CORE_SOURCES above),
     # mirroring tessera_quantum.

@@ -231,7 +231,7 @@ class TestStoredOrientations:
         every identity (scaling, gauge) survives the conjugation."""
         BA = MC.BuildAction
         HP = MC.HolePlacementStrategy
-        node = cob.Proton(seed=0).formation_node(1)
+        node = cob.ProtonSynthesis(seed=0).formation_node(1)
         node.build_step(BA.GROW, max_steps=25, n_candidate_moves=6)
         node.directed_cone_out(HP.ADJACENT_HOLES_LAST)
         st = node.st
