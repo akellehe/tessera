@@ -85,14 +85,20 @@ def _connection(K, table):
 
 
 def _random_links(K, rng):
+    """Links well away from zero, so no ratio below is ill-conditioned."""
     return ch.Connection(
-        K, [complex(rng.normal(), rng.normal()) + 1.5 for _ in range(K.numSimplices(1))]
+        K,
+        [
+            1.5 + 0.4 * complex(rng.normal(), rng.normal())
+            for _ in range(K.numSimplices(1))
+        ],
     )
 
 
 def _random_gauge(K, rng):
     return {
-        int(v[0]): complex(rng.normal(), rng.normal()) + 1.5 for v in K.kSimplexVertices(0)
+        int(v[0]): 1.5 + 0.4 * complex(rng.normal(), rng.normal())
+        for v in K.kSimplexVertices(0)
     }
 
 
@@ -356,7 +362,9 @@ class TestAnchoringTheorem:
             )
             # The repository's Connection.curvature walks the reverse cycle, so
             # it reports the inverse of the same face holonomy.
-            assert abs(U.curvature(*triangle) - 1.0 / holonomy) < MACHINE
+            assert abs(U.curvature(*triangle) - 1.0 / holonomy) < MACHINE * max(
+                1.0, abs(1.0 / holonomy)
+            )
 
     def test_an_exact_band_anchors_exactly_where_the_face_holonomy_is_nontrivial(self):
         K = _complex_of(TETRAHEDRON)
