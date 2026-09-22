@@ -328,7 +328,8 @@ SparseKernelRead ChainHodge::sparseNullSpace(const SparseMatrix &S, double kappa
                                              SparseCostReport *report) {
   SparseKernelRead read;
   const int n = static_cast<int>(S.cols());
-  const SparseCostMeter meter("stacked-qr", 0, n);
+  // A matrix carries no degree, so the report says so rather than naming one.
+  const SparseCostMeter meter("stacked-qr", -1, n);
   SparseMatrix ST = SparseMatrix(S.adjoint());  // ker S = range(S^H)^perp
   ST.makeCompressed();
   // The column norms of S come from its stored entries: S is never densified.

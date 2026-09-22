@@ -85,8 +85,10 @@ struct SparseCostReport {
   /// What was measured: "bordered-lu", "stacked-qr", "contour-band" or
   /// "pencil-apply".
   std::string operation{};
+  /// The chain degree the operation ran at, or \f$ -1 \f$ when it was handed a
+  /// matrix rather than a degree (`ChainHodge::sparseNullSpace`).
   int degree{0};
-  /// \f$ n_k \f$, the number of cells of the degree the operation ran at.
+  /// \f$ n_k \f$, the number of cells the operation's coordinates run over.
   int dimension{0};
   /// Rows and stored entries of the matrix the factorization was taken of.
   long long systemRows{0};
