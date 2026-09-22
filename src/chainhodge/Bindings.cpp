@@ -296,8 +296,8 @@ normalized or conjugated.)doc")
       .def("isUnitary", &Connection::isUnitary, py::arg("tolerance") = 1e-12);
 
   py::class_<CovarianceCertificate>(m, "CovarianceCertificate",
-      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance; "
-      "NaN means unmeasured.")
+      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance, "
+      "measured and asserted on construction at tolerance 10 n eps cond; NaN means unmeasured.")
       .def_readonly("transposeMetric", &CovarianceCertificate::transposeMetric)
       .def_readonly("transposePencil", &CovarianceCertificate::transposePencil)
       .def_readonly("covarianceMetric", &CovarianceCertificate::covarianceMetric)
@@ -306,6 +306,15 @@ normalized or conjugated.)doc")
       .def_readonly("pairingInvariance", &CovarianceCertificate::pairingInvariance)
       .def_readonly("trivialReduction", &CovarianceCertificate::trivialReduction)
       .def_readonly("pureGaugeIsospectrality", &CovarianceCertificate::pureGaugeIsospectrality)
+      .def_readonly("trivialReductionProbe", &CovarianceCertificate::trivialReductionProbe)
+      .def_readonly("transposePencilProbe", &CovarianceCertificate::transposePencilProbe)
+      .def_readonly("transposeOperatorProbe", &CovarianceCertificate::transposeOperatorProbe)
+      .def_readonly("covariancePencilProbe", &CovarianceCertificate::covariancePencilProbe)
+      .def_readonly("covarianceOperatorProbe", &CovarianceCertificate::covarianceOperatorProbe)
+      .def_readonly("pureGaugeSimilarityProbe", &CovarianceCertificate::pureGaugeSimilarityProbe)
+      .def_readonly("conditionEstimate", &CovarianceCertificate::conditionEstimate)
+      .def_readonly("tolerance", &CovarianceCertificate::tolerance)
+      .def_readonly("holds", &CovarianceCertificate::holds)
       .def_readonly("gaugeSeed", &CovarianceCertificate::gaugeSeed)
       .def_readonly("checkedDegree", &CovarianceCertificate::checkedDegree);
 

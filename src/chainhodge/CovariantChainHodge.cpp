@@ -4,6 +4,7 @@
 #include "chainhodge/CovariantChainHodge.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -694,7 +695,35 @@ Eigen::MatrixXcd CovariantChainHodge::applyH(int k, const Eigen::MatrixXcd &c) c
     return out;
   }
   // Grassmann: h = G^{-1} A on chains, A = (∂^{U^{-1}})^T G_{k-1} ∂^U + G_k ∂_{k+1}^U G_{k+1}^{-1} (∂_{k+1}^{U^{-1}})^T G_k
-  return solveDressed(k, pencil(k).A * c);
+  return solveDressed(k, applyPencil(k, c));
+}
+
+Eigen::MatrixXcd CovariantChainHodge::applyPencil(int k, const Eigen::MatrixXcd &x) const {
+  const int d = dimension();
+  const SparseMatrix &Mk = dressed_[static_cast<std::size_t>(k)];
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(x.rows(), x.cols());
+  if (preset() == Preset::L2) {
+    if (k >= 1) {
+      // M_k^U (∂_k^{U^{-1}})^T (M_{k-1}^U)^{-1} ∂_k^U M_k^U x
+      const Eigen::MatrixXcd y = solveDressed(k - 1, Eigen::MatrixXcd(twisted_[static_cast<std::size_t>(k)] * (Mk * x)));
+      out += Mk * (SparseMatrix(twistedDual_[static_cast<std::size_t>(k)].transpose()) * y);
+    }
+    if (k < d)
+      out += twisted_[static_cast<std::size_t>(k) + 1] *
+             (dressed_[static_cast<std::size_t>(k) + 1] *
+              (SparseMatrix(twistedDual_[static_cast<std::size_t>(k) + 1].transpose()) * x));
+    return out;
+  }
+  if (k >= 1)
+    out += SparseMatrix(twistedDual_[static_cast<std::size_t>(k)].transpose()) *
+           (dressed_[static_cast<std::size_t>(k) - 1] * (twisted_[static_cast<std::size_t>(k)] * x));
+  if (k < d) {
+    // G_k^U ∂_{k+1}^U (G_{k+1}^U)^{-1} (∂_{k+1}^{U^{-1}})^T G_k^U x
+    const Eigen::MatrixXcd y = solveDressed(
+        k + 1, Eigen::MatrixXcd(SparseMatrix(twistedDual_[static_cast<std::size_t>(k) + 1].transpose()) * (Mk * x)));
+    out += Mk * (twisted_[static_cast<std::size_t>(k) + 1] * y);
+  }
+  return out;
 }
 
 Eigen::MatrixXcd CovariantChainHodge::covariantOperator(int k) const {
@@ -842,9 +871,109 @@ std::map<std::uint64_t, Complex> randomGauge(const cobordism::ChainComplex &K, s
 
 }  // namespace
 
+namespace {
+
+Eigen::MatrixXcd randomProbe(Eigen::Index n, Eigen::Index cols, std::mt19937_64 &rng) {
+  std::normal_distribution<double> nd(0.0, 1.0);
+  Eigen::MatrixXcd X(n, cols);
+  for (Eigen::Index j = 0; j < cols; ++j)
+    for (Eigen::Index i = 0; i < n; ++i) X(i, j) = Complex(nd(rng), nd(rng));
+  return X;
+}
+
+double relative(const Eigen::MatrixXcd &a, const Eigen::MatrixXcd &b, double scale) {
+  const double diff = (a - b).norm();
+  return scale > 0.0 ? diff / scale : diff;
+}
+
+// cond_2 of a sparse matrix from its LU: sigma_max by power iteration on
+// X^H X, sigma_min by inverse iteration on (X^H X)^{-1} = X^{-1} X^{-H}.
+double conditionEstimate(const SparseMatrix &X, Eigen::SparseLU<SparseMatrix> &lu, std::mt19937_64 &rng) {
+  const Eigen::Index n = X.rows();
+  if (n == 0) return 1.0;
+  constexpr int kIterations = 60;
+  Eigen::VectorXcd v = randomProbe(n, 1, rng).col(0).normalized();
+  double big = 0.0;
+  for (int it = 0; it < kIterations; ++it) {
+    Eigen::VectorXcd w = X.adjoint() * (X * v);
+    const double next = std::sqrt(w.norm());
+    if (next == 0.0) return std::numeric_limits<double>::infinity();
+    v = w.normalized();
+    if (std::abs(next - big) <= 1e-6 * next) { big = next; break; }
+    big = next;
+  }
+  v = randomProbe(n, 1, rng).col(0).normalized();
+  double inv = 0.0;
+  for (int it = 0; it < kIterations; ++it) {
+    const Eigen::VectorXcd y = lu.adjoint().solve(v);
+    const Eigen::VectorXcd w = lu.solve(y);
+    const double next = std::sqrt(w.norm());
+    if (!std::isfinite(next)) return std::numeric_limits<double>::infinity();
+    v = w.normalized();
+    if (std::abs(next - inv) <= 1e-6 * next) { inv = next; break; }
+    inv = next;
+  }
+  return big * inv;
+}
+
+// L_k x of the undressed ChainHodge through its public sparse objects: the
+// operator h_k(s, 1) must reduce to (Proposition 3 (i)).
+Eigen::MatrixXcd baseOperator(const ChainHodge &b, int k, const Eigen::MatrixXcd &x) {
+  const int d = b.dimension();
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(x.rows(), x.cols());
+  if (b.preset() == Preset::L2) {
+    if (k >= 1) {
+      const SparseMatrix &B = b.boundary(k);
+      out += b.Minv(k) * (SparseMatrix(B.transpose()) * b.applyG(k - 1, Eigen::MatrixXcd(B * x)));
+    }
+    if (k < d) {
+      const SparseMatrix &B = b.boundary(k + 1);
+      out += B * (b.Minv(k + 1) * (SparseMatrix(B.transpose()) * b.applyG(k, x)));
+    }
+    return out;
+  }
+  // Grassmann: L = G_k^{-1} A with A = ∂_k^T G_{k-1} ∂_k + G_k ∂_{k+1} G_{k+1}^{-1} ∂_{k+1}^T G_k.
+  if (k >= 1) {
+    const SparseMatrix &B = b.boundary(k);
+    out += SparseMatrix(B.transpose()) * b.applyG(k - 1, Eigen::MatrixXcd(B * x));
+  }
+  if (k < d) {
+    const SparseMatrix &B = b.boundary(k + 1);
+    out += b.applyG(k, Eigen::MatrixXcd(B * b.applyMinv(k + 1, Eigen::MatrixXcd(SparseMatrix(B.transpose()) *
+                                                                                 b.applyG(k, x)))));
+  }
+  return b.applyMinv(k, out);
+}
+
+std::string format(double v) {
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%.3e", v);
+  return buf;
+}
+
+}  // namespace
+
 void CovariantChainHodge::measureSparseIdentities(std::uint64_t seed) {
   cert_.gaugeSeed = seed;
   const int d = dimension();
+  std::mt19937_64 rng(seed ^ 0x5bd1e995ULL);
+  constexpr Eigen::Index kProbes = 2;
+
+  // The tolerance: kappa n eps_m cond, the scaling verification plan's policy,
+  // with cond the largest condition number of the dressed sparse metrics.
+  double cond = 1.0;
+  int nmax = 0;
+  for (int k = 0; k <= d; ++k) {
+    const int n = base_->size(k);
+    nmax = std::max(nmax, n);
+    if (n == 0) continue;
+    (void)solveDressed(k, Eigen::MatrixXcd(n, 0));  // factorizes, or throws for a singular metric
+    cond = std::max(cond, conditionEstimate(dressed_[static_cast<std::size_t>(k)],
+                                            factor_[static_cast<std::size_t>(k)]->lu, rng));
+  }
+  cert_.conditionEstimate = cond;
+  cert_.tolerance = 10.0 * static_cast<double>(std::max(nmax, 1)) * std::numeric_limits<double>::epsilon() * cond;
+
   // (ii) (M_k^U)^T = M_k^{U^{-1}}
   double worst = 0.0;
   for (int k = 0; k <= d; ++k)
@@ -856,8 +985,6 @@ void CovariantChainHodge::measureSparseIdentities(std::uint64_t seed) {
   const Connection Ug = U_.gauge(g);
   worst = 0.0;
   double worstPairing = 0.0;
-  std::mt19937_64 rng(seed ^ 0x5bd1e995ULL);
-  std::normal_distribution<double> nd(0.0, 1.0);
   for (int k = 0; k <= d; ++k) {
     const auto &bk = base_vertex_[static_cast<std::size_t>(k)];
     const SparseMatrix &sparse = (preset() == Preset::L2) ? base_->Minv(k) : base_->chainMetricSparse(k);
@@ -868,25 +995,24 @@ void CovariantChainHodge::measureSparseIdentities(std::uint64_t seed) {
     // (vi): c~^T G^U c with c~ -> ρ^{-1} c~, c -> ρ c, G^{U^g} in place of G^U.
     const int n = static_cast<int>(bk.size());
     if (n == 0) continue;
-    Eigen::VectorXcd ct(n), c(n);
-    for (int i = 0; i < n; ++i) {
-      ct(i) = Complex(nd(rng), nd(rng));
-      c(i) = Complex(nd(rng), nd(rng));
-    }
-    const CovariantChainHodge *self = this;
-    const Eigen::MatrixXcd Gc = self->applyG(k, c);
+    const Eigen::VectorXcd ct = randomProbe(n, 1, rng).col(0);
+    const Eigen::VectorXcd c = randomProbe(n, 1, rng).col(0);
+    const Eigen::MatrixXcd Gc = applyG(k, c);
     const Complex before = (ct.transpose() * Gc)(0, 0);
     // G^{U^g} (ρ c) = (ρ G^U ρ^{-1}) ρ c = ρ G^U c  ⇒ (ρ^{-1} c~)^T ρ G^U c = c~^T G^U c
     Eigen::MatrixXcd GcG;
     if (preset() == Preset::L2) {
       Eigen::SparseLU<SparseMatrix> lu(dressedG);
-      if (lu.info() != Eigen::Success) continue;
+      if (lu.info() != Eigen::Success)
+        throw std::runtime_error("CovariantChainHodge: Proposition 3 (vi) cannot be measured at degree " +
+                                 std::to_string(k) + ": the gauged metric M_k^{U^g} is singular");
       GcG = lu.solve(Eigen::MatrixXcd(r.asDiagonal() * c));
     } else {
       GcG = dressedG * (r.asDiagonal() * c);
     }
     const Complex after = ((r.cwiseInverse().asDiagonal() * ct).transpose() * GcG)(0, 0);
-    worstPairing = std::max(worstPairing, std::abs(after - before) / (std::abs(before) + 1.0));
+    const double scale = ct.norm() * Gc.norm();
+    worstPairing = std::max(worstPairing, scale > 0.0 ? std::abs(after - before) / scale : std::abs(after - before));
   }
   cert_.covarianceMetric = worst;
   cert_.pairingInvariance = worstPairing;
@@ -914,6 +1040,76 @@ void CovariantChainHodge::measureSparseIdentities(std::uint64_t seed) {
   } else {
     cert_.curvature = 0.0;
   }
+
+  // The operator and pencil identities on probe vectors, at every degree,
+  // against instances built without a certificate of their own.
+  bool trivial = true;
+  for (const auto &u : U_.links())
+    if (u != Complex(1.0, 0.0)) { trivial = false; break; }
+  const CovariantChainHodge dualI(*base_, Uinv_, seed, false);
+  const CovariantChainHodge gaugedI(*base_, Ug, seed, false);
+  const Connection one = Connection::trivial(base_->complex());
+  const CovariantChainHodge oneI(*base_, one, seed, false);
+  const CovariantChainHodge pureI(*base_, one.gauge(g), seed, false);
+  const auto op = [](const CovariantChainHodge &c, int k, const Eigen::MatrixXcd &x) {
+    return c.preset() == Preset::L2 ? c.applyH(k, x) : c.solveDressed(k, c.applyPencil(k, x));
+  };
+  double tPencil = 0.0, tOp = 0.0, cPencil = 0.0, cOp = 0.0, pure = 0.0, reduction = 0.0;
+  for (int k = 0; k <= d; ++k) {
+    const int n = base_->size(k);
+    if (n == 0) continue;
+    const Eigen::MatrixXcd X = randomProbe(n, kProbes, rng);
+    const Eigen::MatrixXcd Y = randomProbe(n, kProbes, rng);
+    // (ii) pencil: y^T A^U x = x^T A^{U^{-1}} y.
+    const Eigen::MatrixXcd AX = applyPencil(k, X);
+    const Eigen::MatrixXcd AdY = dualI.applyPencil(k, Y);
+    tPencil = std::max(tPencil, relative(Y.transpose() * AX, (X.transpose() * AdY).transpose(), Y.norm() * AX.norm()));
+    // (ii) operator: y^T h^T x = (h y)^T x against y^T G' h' G'^{-1} x.
+    const Eigen::MatrixXcd hY = op(*this, k, Y);
+    const Eigen::MatrixXcd RX = dualI.applyG(k, op(dualI, k, dualI.applyMinv(k, X)));
+    tOp = std::max(tOp, relative(hY.transpose() * X, Y.transpose() * RX, hY.norm() * X.norm()));
+    // (iii): A^{U^g} ρ x = ρ A^U x and h(s,U^g) ρ x = ρ h(s,U) x.
+    const Eigen::VectorXcd r = rho(k, g);
+    const Eigen::MatrixXcd rX = r.asDiagonal() * X;
+    const Eigen::MatrixXcd rAX = r.asDiagonal() * AX;
+    cPencil = std::max(cPencil, relative(gaugedI.applyPencil(k, rX), rAX, rAX.norm()));
+    const Eigen::MatrixXcd rhX = r.asDiagonal() * op(*this, k, X);
+    cOp = std::max(cOp, relative(op(gaugedI, k, rX), rhX, rhX.norm()));
+    // (v): h(s,1^g) ρ x = ρ L x, with L from the undressed ChainHodge.
+    const Eigen::MatrixXcd LX = baseOperator(*base_, k, X);
+    const Eigen::MatrixXcd rLX = r.asDiagonal() * LX;
+    pure = std::max(pure, relative(op(pureI, k, rX), rLX, rLX.norm()));
+    // (i): h(s,1) = L, on this instance when U = 1 and on the trivial one always.
+    const Eigen::MatrixXcd hOne = trivial ? op(*this, k, X) : op(oneI, k, X);
+    reduction = std::max(reduction, relative(hOne, LX, LX.norm()));
+  }
+  cert_.transposePencilProbe = tPencil;
+  cert_.transposeOperatorProbe = tOp;
+  cert_.covariancePencilProbe = cPencil;
+  cert_.covarianceOperatorProbe = cOp;
+  cert_.pureGaugeSimilarityProbe = pure;
+  cert_.trivialReductionProbe = trivial ? reduction : std::numeric_limits<double>::quiet_NaN();
+
+  // Assert every measured property on this instance.
+  const std::pair<double, const char *> measured[] = {
+      {cert_.transposeMetric, "(ii) (M_k^U)^T = M_k^{U^-1}"},
+      {cert_.transposePencilProbe, "(ii) (A_k^U)^T = A_k^{U^-1}"},
+      {cert_.transposeOperatorProbe, "(ii) h^T = G^{U^-1} h(s,U^-1) (G^{U^-1})^-1"},
+      {cert_.covarianceMetric, "(iii) M_k^{U^g} = rho M_k^U rho^-1"},
+      {cert_.covariancePencilProbe, "(iii) A_k^{U^g} = rho A_k^U rho^-1"},
+      {cert_.covarianceOperatorProbe, "(iii) h(s,U^g) = rho h(s,U) rho^-1"},
+      {cert_.curvature, "(iv) d_1^U d_2^U t = U_rp (F_t - 1)[r]"},
+      {cert_.pureGaugeSimilarityProbe, "(v) h(s,1^g) = rho L rho^-1"},
+      {cert_.pairingInvariance, "(vi) invariance of c~^T G^U c"},
+      {reduction, "(i) h(s,1) = L"},
+  };
+  for (const auto &[value, what] : measured)
+    if (!(value <= cert_.tolerance))
+      throw std::runtime_error(std::string("CovariantChainHodge: Proposition 3 ") + what +
+                               " fails on this instance: residual " + format(value) +
+                               " exceeds the tolerance " + format(cert_.tolerance) +
+                               " (10 n eps cond, cond = " + format(cond) + ")");
+  cert_.holds = true;
 }
 
 CovarianceCertificate CovariantChainHodge::verify(int k) const {
