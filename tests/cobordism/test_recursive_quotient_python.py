@@ -40,6 +40,28 @@ import tessera
 
 cob = tessera.cobordism
 
+# Every reference in this module is the DIAGONAL-weight operator's: the
+# hand-solved fixtures, the numpy pinv-Schur and Feshbach references built from
+# HodgeLaplacian.laplacian(k) with its diagonal weights, and the regimes those
+# weights produce (positive semidefinite, Hermitian indefinite, non-normal).
+# The process default metric source is the chain-level Whitney pencil (#1185),
+# under which a spacetime level is a PENCIL level over (A~_k^U, M_k^U) with the
+# complex-symmetric pencil regime, so every spacetime-backed level here names
+# the diagonal source. The default pencil level is pinned in
+# tests/cobordism/test_whitney_default_metric_python.py, and the matrix-path
+# pencil levels in tests/chainhodge/test_pencil_schur_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _over_cells(*args, **kwargs):
+    kwargs.setdefault("metric_source", DIAGONAL)
+    return _over_cells(*args, **kwargs)
+
+
+def _over_vertex_supports(*args, **kwargs):
+    kwargs.setdefault("metric_source", DIAGONAL)
+    return _over_vertex_supports(*args, **kwargs)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _causal_specimen import load_dump, rebuild_spacetime  # noqa: E402
 
@@ -263,7 +285,7 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
         # Laplacian), reduced over explicit cell sets.
         st = build_graph([(0, 1, 1.0, 0.0), (1, 2, 1.0, 0.0),
                              (0, 2, 1.0, 0.0)])
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[0]], [[1]]])
         self.assertEqual(q.regime, cob.CertificateRegime.PositiveSemidefinite)
         E, read = reduction_matrix(q)
@@ -292,7 +314,7 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
 
     def test_degree_one_classification_and_certificate(self):
         st = self._strip()
-        q = cob.RecursiveQuotient.overVertexSupports(
+        q = _over_vertex_supports(
             st, 1, [self.SUPPORT_A, self.SUPPORT_B])
         self.assertEqual(q.dimension, 13)
         self.assertEqual(q.componentCount, 3)  # two supports + residual
@@ -310,7 +332,7 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
         st = self._strip()
         hodge = cob.HodgeLaplacian(st)
         L = _mat(hodge.laplacian(1), 13)
-        q = cob.RecursiveQuotient.overVertexSupports(
+        q = _over_vertex_supports(
             st, 1, [self.SUPPORT_A, self.SUPPORT_B])
         kept = list(q.interfaceIndices)
         interior = sorted(set(range(13)) - set(kept))
@@ -358,7 +380,7 @@ class TestHarmonicRetention(unittest.TestCase):
 
     def test_interior_harmonic_mode_is_retained_in_the_fiber(self):
         st = self._two_triangles()
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0,
             [[[0], [1], [2]], [[10], [11], [12]]])
         E, read = reduction_matrix(q)
@@ -381,7 +403,7 @@ class TestHarmonicRetention(unittest.TestCase):
 
     def test_integer_and_numerical_nullities_agree(self):
         st = self._two_triangles()
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[10], [11], [12]]])
         for component in range(2):
             read = q.interiorNullspace(component)
@@ -393,7 +415,7 @@ class TestHarmonicRetention(unittest.TestCase):
 
     def test_labeled_sum_retains_the_harmonic_fiber_coordinate(self):
         st = self._two_triangles()
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[10], [11], [12]]])
         sum_read = q.labeledFiberSum()
         self.assertEqual(list(sum_read.summandComponents), [0, 1])
@@ -887,7 +909,7 @@ class TestSelectedRetention(unittest.TestCase):
         st = build_graph([(0, 1, 2.0, 0.0), (1, 2, 3.0, 0.0)])
         options = cob.RecursiveQuotient.Options()
         options.selectedInteriorCells = [[1]]
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[0]], [[2]]], options)
         self.assertEqual(list(q.interfaceIndices), [0, 1, 2])
         _, read = reduction_matrix(q)
@@ -1054,8 +1076,8 @@ class TestRelabeling(unittest.TestCase):
             [(id_map[s], id_map[t], w, p) for s, t, w, p in edges])
         cells_a = [[[0], [1], [2], [3]], [[1]], [[2]], [[3]]]
         cells_b = [[[id_map[v[0]]] for v in comp] for comp in cells_a]
-        q_a = cob.RecursiveQuotient.overCells(st_a, 0, cells_a)
-        q_b = cob.RecursiveQuotient.overCells(st_b, 0, cells_b)
+        q_a = _over_cells(st_a, 0, cells_a)
+        q_b = _over_cells(st_b, 0, cells_b)
         E_a, read_a = reduction_matrix(q_a)
         E_b, read_b = reduction_matrix(q_b)
         # Map kept cells through provenance (cell ids), then compare.
@@ -1076,9 +1098,9 @@ class TestRelabeling(unittest.TestCase):
         # shuffling the support lists) yields the identical reduction.
         st = tessera.Spacetime.fromVertexTuples(2, [[0, 1, 2], [1, 2, 3]], 1.0, 0.0)
         st.materializeFacets()
-        forward = cob.RecursiveQuotient.overCells(
+        forward = _over_cells(
             st, 1, [[[0, 1], [0, 2], [1, 2]], [[1, 3], [2, 3]]])
-        reversed_cells = cob.RecursiveQuotient.overCells(
+        reversed_cells = _over_cells(
             st, 1, [[[2, 1], [2, 0], [1, 0]], [[3, 2], [3, 1]]])
         E_f, _ = reduction_matrix(forward)
         E_r, _ = reduction_matrix(reversed_cells)
@@ -1139,7 +1161,7 @@ class TestCacheIncremental(unittest.TestCase):
         st = self._spacetime()
         cache = cob.AnalyticCache(st)
         cells = self.A_CELLS[0] + self.B_CELLS[0]
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [self.A_CELLS[0], self.B_CELLS[0]],
             cob.RecursiveQuotient.Options(), cache)
         q.staticReduction()
@@ -1164,7 +1186,7 @@ class TestCacheIncremental(unittest.TestCase):
         self.assertEqual(cache.size, 2)
 
         # Cached == cold: a fresh cacheless quotient on the mutated complex.
-        cold = cob.RecursiveQuotient.overCells(
+        cold = _over_cells(
             st, 0, [self.A_CELLS[0], self.B_CELLS[0]])
         E_cold, _ = reduction_matrix(cold)
         np.testing.assert_allclose(E_incremental, E_cold, rtol=0, atol=0)
@@ -1182,7 +1204,7 @@ class TestCacheIncremental(unittest.TestCase):
         st = chain(1.0)
         cache = cob.AnalyticCache(st)
         cells = [[[0], [1]], [[2], [3]]]
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, cells, cob.RecursiveQuotient.Options(), cache)
         child = q.nextLevel([[0, 1]])
         E_child_before, _ = reduction_matrix(child)
@@ -1204,7 +1226,7 @@ class TestCacheIncremental(unittest.TestCase):
         child_after = q.nextLevel([[0, 1]])
         E_child_after, _ = reduction_matrix(child_after)
 
-        cold = cob.RecursiveQuotient.overCells(st, 0, cells)
+        cold = _over_cells(st, 0, cells)
         E_parent_cold, _ = reduction_matrix(cold)
         cold_child = cold.nextLevel([[0, 1]])
         E_cold, _ = reduction_matrix(cold_child)
@@ -1225,21 +1247,21 @@ class TestCachePartitionSafety(unittest.TestCase):
         cache = cob.AnalyticCache(st)
         cells = [[[0], [1], [2]], [[0]], [[2]]]
 
-        plain = cob.RecursiveQuotient.overCells(
+        plain = _over_cells(
             st, 0, cells, cob.RecursiveQuotient.Options(), cache)
         E_plain, _ = reduction_matrix(plain)
 
         options = cob.RecursiveQuotient.Options()
         options.selectedInteriorCells = [[1]]
-        selected = cob.RecursiveQuotient.overCells(st, 0, cells, options,
+        selected = _over_cells(st, 0, cells, options,
                                                    cache)
         E_selected, _ = reduction_matrix(selected)
 
-        cold = cob.RecursiveQuotient.overCells(st, 0, cells, options)
+        cold = _over_cells(st, 0, cells, options)
         E_cold, _ = reduction_matrix(cold)
         np.testing.assert_allclose(E_selected, E_cold, rtol=0, atol=0)
         # And the plain quotient still matches ITS cacheless clone.
-        cold_plain = cob.RecursiveQuotient.overCells(st, 0, cells)
+        cold_plain = _over_cells(st, 0, cells)
         E_cold_plain, _ = reduction_matrix(cold_plain)
         np.testing.assert_allclose(E_plain, E_cold_plain, rtol=0, atol=0)
         self.assertEqual(E_plain.shape, (2, 2))
@@ -1320,7 +1342,7 @@ class TestDiscoveredPartitions(unittest.TestCase):
         supports = sorted(tuple(sorted(c.support)) for c in slice_read.components)
         self.assertEqual(supports, [(0, 1, 2, 3), (10, 11, 12, 13)])
 
-        q = cob.RecursiveQuotient.overVertexSupports(
+        q = _over_vertex_supports(
             st, 0, [list(s) for s in supports])
         # Interface = the two bridge endpoints; interiors = the clique bulks.
         self.assertEqual(len(q.interfaceIndices), 2)
@@ -1340,7 +1362,7 @@ class TestDiscoveredPartitions(unittest.TestCase):
 
     def test_unclaimed_cells_form_a_residual_component(self):
         st = build_graph([(0, 1, 1.0, 0.0), (1, 2, 1.0, 0.0)])
-        q = cob.RecursiveQuotient.overVertexSupports(st, 0, [[0, 1]])
+        q = _over_vertex_supports(st, 0, [[0, 1]])
         self.assertEqual(q.componentCount, 2)  # the given one + residual
         cert = q.verifyStatic()
         self.assertTrue(cert.holds())
@@ -1363,7 +1385,7 @@ class TestCausalSpecimen(unittest.TestCase):
         cls.supports = [ids[:half + 1], ids[half:]]  # overlapping halves
 
     def _quotient(self):
-        return cob.RecursiveQuotient.overVertexSupports(
+        return _over_vertex_supports(
             self.st, 1, self.supports)
 
     def test_regime_is_hermitian_indefinite(self):
@@ -1397,7 +1419,7 @@ class TestCausalSpecimen(unittest.TestCase):
         st = rebuild_spacetime(load_dump(14001000))
         edge = st.getEdgeList().toVector()[0]
         edge.setLength(cmath.sqrt(complex(1.3, 0.4)))
-        q = cob.RecursiveQuotient.overVertexSupports(st, 1, self.supports)
+        q = _over_vertex_supports(st, 1, self.supports)
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
         read = q.staticReduction()
         self.assertTrue(read.certificate.holds(), read.certificate.describe())
@@ -1420,7 +1442,7 @@ class TestValidation(unittest.TestCase):
     def test_unknown_cell_is_refused(self):
         st = build_graph([(0, 1, 1.0, 0.0)])
         with self.assertRaises(ValueError):
-            cob.RecursiveQuotient.overCells(st, 0, [[[7]]])
+            _over_cells(st, 0, [[[7]]])
 
     def test_weight_length_mismatch_is_refused(self):
         with self.assertRaises(ValueError):
@@ -1485,7 +1507,7 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
         # convention would give a different matrix here. alpha = 2 keeps the
         # single-cell interior block L_0[2,2] = 1 - 1/alpha^2 invertible.
         st = _timelike_triangle(2.0)
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[0]], [[1]]])
         self.assertEqual(q.dimension, 3)
         E, read = reduction_matrix(q)
@@ -1507,7 +1529,7 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
         st = _timelike_triangle(1.0)
         L0 = _derived_zero_laplacian(st)
         self.assertAlmostEqual(abs(L0[2, 2]), 0.0, delta=1e-15)
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[0]], [[1]]])
         E, read = reduction_matrix(q)
         self.assertEqual(E.shape, (3, 3))               # 2 kept + 1 harmonic
@@ -1518,14 +1540,14 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
 
     def test_regime_is_measured_not_asserted(self):
         # Positive weights: the LDLT check certifies PSD.
-        psd = cob.RecursiveQuotient.overCells(
+        psd = _over_cells(
             _spacelike_triangle(), 0, [[[0], [1], [2]], [[0]], [[1]]])
         self.assertEqual(psd.regime, cob.CertificateRegime.PositiveSemidefinite)
 
         # One timelike edge: L_0 has spec {0, 3, 1 - 2/alpha^2}, negative below
         # alpha = sqrt(2). Nothing here may claim PSD.
         for alpha in (1.0, 1.2):
-            indefinite = cob.RecursiveQuotient.overCells(
+            indefinite = _over_cells(
                 _timelike_triangle(alpha), 0, [[[0], [1], [2]], [[0]], [[1]]])
             with self.subTest(alpha=alpha):
                 self.assertEqual(indefinite.regime,
@@ -1536,12 +1558,12 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
                             _timelike_triangle(alpha)).real)), -1e-3)
 
         # A complex squared length: WL loses Hermiticity outright.
-        non_normal = cob.RecursiveQuotient.overCells(
+        non_normal = _over_cells(
             _complex_triangle(), 0, [[[0], [1], [2]], [[0]], [[1]]])
         self.assertEqual(non_normal.regime, cob.CertificateRegime.NonNormal)
 
     def test_timelike_reduction_certificate_reports_the_measured_regime(self):
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             _timelike_triangle(1.2), 0, [[[0], [1], [2]], [[0]], [[1]]])
         read = q.staticReduction()
         self.assertEqual(read.certificate.regime,
@@ -1559,7 +1581,7 @@ class TestDegreeZeroDerivedOperator(unittest.TestCase):
                                 (1.6, cob.CertificateRegime.PositiveSemidefinite),
                                 (3.0, cob.CertificateRegime.PositiveSemidefinite)):
             with self.subTest(alpha=alpha):
-                q = cob.RecursiveQuotient.overCells(
+                q = _over_cells(
                     _timelike_triangle(alpha), 0,
                     [[[0], [1], [2]], [[0]], [[1]]])
                 self.assertEqual(q.regime, expected)
@@ -1579,7 +1601,7 @@ class TestDegreeZeroNullityDiscrepancy(unittest.TestCase):
     @staticmethod
     def _fully_interior(st):
         ids = sorted(v.getId() for v in st.getVertexList().toVector())
-        return cob.RecursiveQuotient.overCells(st, 0, [[[i] for i in ids]])
+        return _over_cells(st, 0, [[[i] for i in ids]])
 
     def test_agreement_is_recorded_as_zero(self):
         q = self._fully_interior(_spacelike_triangle())
@@ -1625,7 +1647,7 @@ class TestDegreeZeroNullityDiscrepancy(unittest.TestCase):
         st = build_graph([(0, 1, 1.0, 0.0), (1, 2, 1.0, 0.0), (0, 2, 1.0, 0.0),
                           (10, 11, 1.0, 0.0), (11, 12, 1.0, 0.0),
                           (10, 12, -0.25, 0.0)])
-        q = cob.RecursiveQuotient.overCells(
+        q = _over_cells(
             st, 0, [[[0], [1], [2]], [[10], [11], [12]]])
         for component in range(2):
             with self.subTest(component=component):
@@ -2400,7 +2422,7 @@ class TestRecursionOnRealGeometry(unittest.TestCase):
         cls.supports = [ids[:half + 1], ids[half:]]
 
     def _level_zero(self):
-        return cob.RecursiveQuotient.overVertexSupports(
+        return _over_vertex_supports(
             self.st, 1, self.supports)
 
     def test_two_static_levels_with_discovered_partitions(self):
