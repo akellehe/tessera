@@ -2343,6 +2343,23 @@ class MultiCobordism {
     return carriedCovariance_;
   }
 
+  /// Declare the spectral-moment stiffness of the geometric action about the
+  /// current geometry, the carrier (`HodgeLaplacian::spectralMomentStiffness`):
+  /// the local spectral moments of orders \f$ 1,\dots,m \f$ at each of
+  /// `degrees` are recorded now as the reference, and every objective gains
+  /// \f$ \beta_M\sum_k\operatorname{Re}S_{M,k} \f$. `weight` 0 removes it.
+  /// @throws std::invalid_argument for a negative or non-finite weight, a
+  ///   negative coefficient, or no coefficients with a nonzero weight.
+  void setMomentStiffness(double weight, const std::vector<int> &degrees,
+                          const std::vector<double> &coefficients);
+  [[nodiscard]] double momentStiffnessWeight() const noexcept { return momentStiffnessWeight_; }
+  [[nodiscard]] const std::vector<int> &momentStiffnessDegrees() const noexcept {
+    return momentStiffnessDegrees_;
+  }
+  [[nodiscard]] const std::vector<double> &momentStiffnessCoefficients() const noexcept {
+    return momentStiffnessCoefficients_;
+  }
+
   /// The mean-field coefficient \f$ \beta_E \f$, checkpointed. Default 0.
   void setCarriedStateEnergyWeight(double weight);
   /// The mean-field coefficient \f$ \beta_E \f$.
@@ -3149,6 +3166,12 @@ class MultiCobordism {
   std::vector<std::complex<double>> carriedCovariance_{};
   int carriedStateDegree_{1};
   double carriedStateEnergyWeight_{0.0};
+  // The spectral-moment stiffness: its weight, degrees, order weights, and the
+  // carrier's local moments recorded when it was declared.
+  double momentStiffnessWeight_{0.0};
+  std::vector<int> momentStiffnessDegrees_;
+  std::vector<double> momentStiffnessCoefficients_;
+  std::vector<std::vector<std::complex<double>>> momentStiffnessReference_;
   double meanFieldStepSize_{0.0};
   int meanFieldSteps_{0};
   /// Thresholds for `refinementDecisionOf`, all zero. The indicator struct's

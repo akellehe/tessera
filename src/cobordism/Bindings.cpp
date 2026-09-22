@@ -529,6 +529,22 @@ ChainComplex omits.)doc")
            "dS/dA on the fixed-rank stratum. S is invariant under complex "
            "rescaling of z, so h is homogeneous of degree -1 and the exact "
            "Euler check is: direction = z reproduces -h.")
+      .def("localSpectralMoments", &HodgeLaplacian::localSpectralMoments, py::arg("k"), py::arg("orders"),
+           "The local spectral moments mu_j(x) = (L_k^j)_xx, j = 1..orders, flat row-major |C_k| x orders: the "
+           "local parts of the power sums tr(L_k^j), holomorphic in z. L_k is the one spectralEntropy uses.")
+      .def("spectralMomentStiffness", &HodgeLaplacian::spectralMomentStiffness, py::arg("k"),
+           py::arg("reference"), py::arg("coefficients"),
+           "S_M = 1/2 sum_j beta_j sum_x (mu_j(x) - mu_j^0(x))^2 about the carrier whose localSpectralMoments(k, m) "
+           "are `reference`, beta_j = coefficients[j-1]: extensive, zero with its gradient at the carrier, and with "
+           "the Hessian sum_j beta_j sum_x grad mu_j grad mu_j^T there. Holomorphic in z.")
+      .def("spectralMomentStiffnessGradient", &HodgeLaplacian::spectralMomentStiffnessGradient, py::arg("k"),
+           py::arg("reference"), py::arg("coefficients"),
+           "dS_M/dz_e in EdgeList order, the holomorphic derivative; for Re S_M it is also the h of "
+           "spectralEntropyGradient.")
+      .def("spectralMomentStiffnessHessianProduct", &HodgeLaplacian::spectralMomentStiffnessHessianProduct,
+           py::arg("k"), py::arg("reference"), py::arg("coefficients"), py::arg("direction"),
+           "EXACT Hessian-vector product sum_f d^2 S_M / dz_e dz_f v_f in EdgeList order: the product rule on "
+           "the moments and the exact second derivative of L_k along v.")
       .def("isHermitian", &HodgeLaplacian::isHermitian, py::arg("tol") = 1e-12,
            "True iff ||L - L^dagger|| <= tol (Frobenius) for the U(1) CONNECTION "
            "Laplacian. True by construction; it says nothing about L_0, which is "
@@ -2552,7 +2568,9 @@ Right -- re-read after each drive call:
       .def_readwrite("action_magnitude",
                      &MultiCobordism::ObjectiveTerms::actionMagnitude)
       .def_readwrite("carried_state_energy",
-                     &MultiCobordism::ObjectiveTerms::carriedStateEnergy);
+                     &MultiCobordism::ObjectiveTerms::carriedStateEnergy)
+      .def_readwrite("moment_stiffness",
+                     &MultiCobordism::ObjectiveTerms::momentStiffness);
 
   py::class_<MultiCobordism::ObjectiveContribution>(multiCobordismClass,
       "ObjectiveContribution",
@@ -2642,7 +2660,9 @@ Right -- re-read after each drive call:
       .def_readonly_static("ACTION_MAGNITUDE",
                            &ObjectiveTermName::kActionMagnitude)
       .def_readonly_static("CARRIED_STATE_ENERGY",
-                           &ObjectiveTermName::kCarriedStateEnergy);
+                           &ObjectiveTermName::kCarriedStateEnergy)
+      .def_readonly_static("MOMENT_STIFFNESS",
+                           &ObjectiveTermName::kMomentStiffness);
 
   py::class_<ObjectiveContext>(m, "ObjectiveContext",
       "The COMPLETE set of inputs an objective may read -- the no-feedback "
@@ -2711,6 +2731,14 @@ Right -- re-read after each drive call:
       .def_readwrite("carried_state_energy",
                      &ObjectiveContext::carriedStateEnergy,
                      "E_carried(Gamma, g), likewise a precomputed number.")
+      .def_readwrite("moment_stiffness_weight", &ObjectiveContext::momentStiffnessWeight,
+                     "beta_M, the weight of the spectral-moment stiffness of the geometric action. Zero by default.")
+      .def_readwrite("moment_stiffness_degrees", &ObjectiveContext::momentStiffnessDegrees,
+                     "The degrees k whose Hodge operators' local moments are held.")
+      .def_readwrite("moment_stiffness_coefficients", &ObjectiveContext::momentStiffnessCoefficients,
+                     "beta_j, j = 1..m, the weights of the moment orders.")
+      .def_readwrite("moment_stiffness_reference", &ObjectiveContext::momentStiffnessReference,
+                     "The carrier's local moments, one flat |C_k| x m array per degree.")
       .def_static("input_names", &ObjectiveContext::inputNames,
                   "Every field of the context, in declaration order -- the "
                   "firewall list a structural test asserts against.");
@@ -2892,6 +2920,14 @@ Right -- re-read after each drive call:
            "CERTIFICATES_BLIND_MEAN_FIELD emergence sub-mode.")
       .def_property_readonly("carried_state_energy_weight",
                              &MultiCobordism::carriedStateEnergyWeight)
+      .def("set_moment_stiffness", &MultiCobordism::setMomentStiffness, py::arg("weight"),
+           py::arg("degrees"), py::arg("coefficients"),
+           "Declare the spectral-moment stiffness of the geometric action about the CURRENT geometry, the "
+           "carrier: its local spectral moments at `degrees` are recorded as the reference, and the objective "
+           "gains beta_M sum_k Re S_M,k (HodgeLaplacian.spectralMomentStiffness). Weight 0 removes it.")
+      .def_property_readonly("moment_stiffness_weight", &MultiCobordism::momentStiffnessWeight)
+      .def_property_readonly("moment_stiffness_degrees", &MultiCobordism::momentStiffnessDegrees)
+      .def_property_readonly("moment_stiffness_coefficients", &MultiCobordism::momentStiffnessCoefficients)
       .def("carried_state_energy", &MultiCobordism::carriedStateEnergy, py::arg("st"),
            "E_carried(Gamma, g) = Re tr(Gamma_S h_S(g)) with h_S the Hermitian "
            "part of the metric Hodge operator at the carried degree, restricted "

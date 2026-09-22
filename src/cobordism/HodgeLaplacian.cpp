@@ -1430,6 +1430,192 @@ double HodgeLaplacian::spectralEntropyGradientNorm(
   return normSquared;
 }
 
+// ---------------------------------------------------------------- spectral moments
+
+namespace {
+
+/// L^0 .. L^m, dense.
+std::vector<Eigen::MatrixXcd> powersUpTo(const Eigen::MatrixXcd &L, int m) {
+  std::vector<Eigen::MatrixXcd> powers;
+  powers.reserve(static_cast<std::size_t>(m) + 1);
+  powers.push_back(Eigen::MatrixXcd::Identity(L.rows(), L.cols()));
+  for (int j = 1; j <= m; ++j) powers.push_back(powers.back() * L);
+  return powers;
+}
+
+/// d/dt of L^0 .. L^m along Ldot: (L^j)' = sum_{a+b=j-1} L^a Ldot L^b.
+std::vector<Eigen::MatrixXcd> powerVelocities(const std::vector<Eigen::MatrixXcd> &powers,
+                                              const Eigen::MatrixXcd &velocity) {
+  const Eigen::Index n = velocity.rows();
+  std::vector<Eigen::MatrixXcd> out(powers.size(), Eigen::MatrixXcd::Zero(n, n));
+  for (std::size_t j = 1; j < powers.size(); ++j)
+    for (std::size_t a = 0; a < j; ++a) out[j].noalias() += powers[a] * velocity * powers[j - 1 - a];
+  return out;
+}
+
+/// The (row, order) array of the reference, checked against |C_k| x m.
+Eigen::MatrixXcd referenceMatrix(const std::vector<cd> &reference, Eigen::Index n, std::size_t m,
+                                 const char *where) {
+  if (reference.size() != static_cast<std::size_t>(n) * m)
+    throw std::invalid_argument(std::string(where) + ": the reference has " + std::to_string(reference.size()) +
+                                " entries, expected |C_k| x m = " + std::to_string(n) + " x " + std::to_string(m));
+  Eigen::MatrixXcd out(n, static_cast<Eigen::Index>(m));
+  for (Eigen::Index x = 0; x < n; ++x)
+    for (std::size_t j = 0; j < m; ++j) out(x, static_cast<Eigen::Index>(j)) = reference[static_cast<std::size_t>(x) * m + j];
+  return out;
+}
+
+/// G = sum_j beta_j sum_{a+b=j-1} L^b diag(w_j) L^a, so that
+/// sum_j beta_j sum_x w_j(x) d mu_j(x) = sum_{pq} G_qp dL_pq for any dL.
+Eigen::MatrixXcd momentContraction(const std::vector<Eigen::MatrixXcd> &powers, const Eigen::MatrixXcd &weights,
+                                   const std::vector<double> &coefficients) {
+  const Eigen::Index n = weights.rows();
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(n, n);
+  for (std::size_t j = 1; j <= coefficients.size(); ++j) {
+    if (coefficients[j - 1] == 0.0) continue;
+    const Eigen::VectorXcd w = weights.col(static_cast<Eigen::Index>(j - 1));
+    for (std::size_t a = 0; a < j; ++a)
+      out.noalias() += coefficients[j - 1] * (powers[j - 1 - a] * w.asDiagonal() * powers[a]);
+  }
+  return out;
+}
+
+std::vector<EdgePtr> edgesOf(const std::shared_ptr<Spacetime> &st) {
+  return st && st->getEdgeList() ? st->getEdgeList()->toVector() : std::vector<EdgePtr>{};
+}
+
+}  // namespace
+
+std::vector<std::complex<double>> HodgeLaplacian::localSpectralMoments(int k, int orders) const {
+  requireNonNegativeDegree(k);
+  if (orders < 1) throw std::invalid_argument("HodgeLaplacian::localSpectralMoments: at least one order");
+  if (!st_) return {};
+  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
+  const Eigen::MatrixXcd L = workspace.laplacian();
+  const auto powers = powersUpTo(L, orders);
+  const auto m = static_cast<std::size_t>(orders);
+  std::vector<cd> out(static_cast<std::size_t>(L.rows()) * m);
+  for (Eigen::Index x = 0; x < L.rows(); ++x)
+    for (std::size_t j = 1; j <= m; ++j) out[static_cast<std::size_t>(x) * m + j - 1] = powers[j](x, x);
+  return out;
+}
+
+std::complex<double> HodgeLaplacian::spectralMomentStiffness(int k, const std::vector<cd> &reference,
+                                                              const std::vector<double> &coefficients) const {
+  requireNonNegativeDegree(k);
+  if (!st_ || coefficients.empty()) return {0.0, 0.0};
+  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
+  const Eigen::MatrixXcd L = workspace.laplacian();
+  const auto powers = powersUpTo(L, static_cast<int>(coefficients.size()));
+  const Eigen::MatrixXcd carrier =
+      referenceMatrix(reference, L.rows(), coefficients.size(), "HodgeLaplacian::spectralMomentStiffness");
+  cd value{0.0, 0.0};
+  for (std::size_t j = 1; j <= coefficients.size(); ++j)
+    for (Eigen::Index x = 0; x < L.rows(); ++x) {
+      const cd deviation = powers[j](x, x) - carrier(x, static_cast<Eigen::Index>(j - 1));
+      value += 0.5 * coefficients[j - 1] * deviation * deviation;
+    }
+  return value;
+}
+
+std::vector<std::complex<double>> HodgeLaplacian::spectralMomentStiffnessGradient(
+    int k, const std::vector<cd> &reference, const std::vector<double> &coefficients) const {
+  requireNonNegativeDegree(k);
+  const auto edges = edgesOf(st_);
+  std::vector<cd> gradient(edges.size(), cd{0.0, 0.0});
+  if (!st_ || coefficients.empty()) return gradient;
+  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
+  const Eigen::MatrixXcd L = workspace.laplacian();
+  const Eigen::Index n = L.rows();
+  const auto powers = powersUpTo(L, static_cast<int>(coefficients.size()));
+  const Eigen::MatrixXcd carrier =
+      referenceMatrix(reference, n, coefficients.size(), "HodgeLaplacian::spectralMomentStiffnessGradient");
+  // dS = sum_j beta_j sum_x (mu_j - mu_j^0) d mu_j = sum_pq G_qp dL_pq.
+  Eigen::MatrixXcd deviation(n, static_cast<Eigen::Index>(coefficients.size()));
+  for (std::size_t j = 1; j <= coefficients.size(); ++j)
+    deviation.col(static_cast<Eigen::Index>(j - 1)) =
+        powers[j].diagonal() - carrier.col(static_cast<Eigen::Index>(j - 1));
+  const Eigen::MatrixXcd contraction = momentContraction(powers, deviation, coefficients).transpose();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+  for (std::int64_t e = 0; e < static_cast<std::int64_t>(edges.size()); ++e) {
+    const auto *edge = edges[static_cast<std::size_t>(e)];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+    const Eigen::MatrixXcd dL = workspace.gradient(edge->getSource()->getId(), edge->getTarget()->getId());
+    gradient[static_cast<std::size_t>(e)] = (contraction.array() * dL.array()).sum();
+  }
+  return gradient;
+}
+
+std::vector<std::complex<double>> HodgeLaplacian::spectralMomentStiffnessHessianProduct(
+    int k, const std::vector<cd> &reference, const std::vector<double> &coefficients,
+    const std::vector<cd> &direction) const {
+  requireNonNegativeDegree(k);
+  const auto edges = edgesOf(st_);
+  if (direction.size() != edges.size())
+    throw std::runtime_error("HodgeLaplacian::spectralMomentStiffnessHessianProduct: direction has " +
+                             std::to_string(direction.size()) + " entries, expected " + std::to_string(edges.size()));
+  std::vector<cd> product(edges.size(), cd{0.0, 0.0});
+  if (!st_ || coefficients.empty()) return product;
+  std::map<EdgeKey, cd> keyedDirection;
+  for (std::size_t e = 0; e < edges.size(); ++e) {
+    const auto *edge = edges[e];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+    const std::uint64_t a = edge->getSource()->getId(), b = edge->getTarget()->getId();
+    keyedDirection[{std::min(a, b), std::max(a, b)}] += direction[e];
+  }
+  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
+  const Eigen::MatrixXcd L = workspace.laplacian();
+  const Eigen::Index n = L.rows();
+  const std::size_t m = coefficients.size();
+  const auto powers = powersUpTo(L, static_cast<int>(m));
+  const Eigen::MatrixXcd carrier =
+      referenceMatrix(reference, n, m, "HodgeLaplacian::spectralMomentStiffnessHessianProduct");
+  // Ldot = sum_f v_f dL/dz_f, and the velocities of the powers and of the moments along it.
+  Eigen::MatrixXcd velocity = Eigen::MatrixXcd::Zero(n, n);
+  for (std::size_t e = 0; e < edges.size(); ++e) {
+    const auto *edge = edges[e];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr ||
+        direction[e] == cd{0.0, 0.0})
+      continue;
+    velocity.noalias() += direction[e] * workspace.gradient(edge->getSource()->getId(), edge->getTarget()->getId());
+  }
+  const auto powerDots = powerVelocities(powers, velocity);
+  Eigen::MatrixXcd deviation(n, static_cast<Eigen::Index>(m)), deviationDot(n, static_cast<Eigen::Index>(m));
+  for (std::size_t j = 1; j <= m; ++j) {
+    deviation.col(static_cast<Eigen::Index>(j - 1)) = powers[j].diagonal() - carrier.col(static_cast<Eigen::Index>(j - 1));
+    deviationDot.col(static_cast<Eigen::Index>(j - 1)) = powerDots[j].diagonal();
+  }
+  // d/dt of G = sum_j beta_j sum_{a+b=j-1} L^b W_j L^a: the moments' velocity in W, and the powers' velocities.
+  Eigen::MatrixXcd contractionDot = momentContraction(powers, deviationDot, coefficients);
+  for (std::size_t j = 1; j <= m; ++j) {
+    if (coefficients[j - 1] == 0.0) continue;
+    const Eigen::VectorXcd w = deviation.col(static_cast<Eigen::Index>(j - 1));
+    for (std::size_t a = 0; a < j; ++a) {
+      const std::size_t b = j - 1 - a;
+      contractionDot.noalias() += coefficients[j - 1] * (powerDots[b] * w.asDiagonal() * powers[a]);
+      contractionDot.noalias() += coefficients[j - 1] * (powers[b] * w.asDiagonal() * powerDots[a]);
+    }
+  }
+  const Eigen::MatrixXcd contraction = momentContraction(powers, deviation, coefficients).transpose();
+  const Eigen::MatrixXcd contractionDotT = contractionDot.transpose();
+  const auto directionData = workspace.directionData(keyedDirection);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+  for (std::int64_t e = 0; e < static_cast<std::int64_t>(edges.size()); ++e) {
+    const auto *edge = edges[static_cast<std::size_t>(e)];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+    const std::uint64_t source = edge->getSource()->getId(), target = edge->getTarget()->getId();
+    const Eigen::MatrixXcd dL = workspace.gradient(source, target);
+    const Eigen::MatrixXcd dLdot = workspace.gradientDirectionalDerivative(source, target, directionData);
+    product[static_cast<std::size_t>(e)] =
+        (contractionDotT.array() * dL.array()).sum() + (contraction.array() * dLdot.array()).sum();
+  }
+  return product;
+}
+
 const HodgeLaplacian::SpectrumCache &HodgeLaplacian::ensureSpectrum(
     int k, bool metric) const {
   // Key is (k, metric, weight convention); the map is shared across instances

@@ -1538,6 +1538,10 @@ ObjectiveContext MultiCobordism::objectiveContextFor(
   context.connectionEntropyWeight = connectionEntropyWeight_;
   context.gamma = gamma_;
   context.carriedStateEnergyWeight = carriedStateEnergyWeight_;
+  context.momentStiffnessWeight = momentStiffnessWeight_;
+  context.momentStiffnessDegrees = momentStiffnessDegrees_;
+  context.momentStiffnessCoefficients = momentStiffnessCoefficients_;
+  context.momentStiffnessReference = momentStiffnessReference_;
   context.einsteinHilbert = einsteinHilbert_;
   context.fiberResiduals = useFiberResiduals_;
   context.hodgeEntropyPhaseMode = hodgeEntropyPhaseMode_;
@@ -1549,6 +1553,33 @@ ObjectiveContext MultiCobordism::objectiveContextFor(
   if (spacetime && carriedStateEnergyWeight_ != 0.0)
     context.carriedStateEnergy = carriedStateEnergy(spacetime);
   return context;
+}
+
+void MultiCobordism::setMomentStiffness(double weight, const std::vector<int> &degrees,
+                                        const std::vector<double> &coefficients) {
+  if (!std::isfinite(weight) || weight < 0.0)
+    throw std::invalid_argument("MultiCobordism: moment stiffness weight must be finite and non-negative");
+  for (const double coefficient : coefficients)
+    if (!std::isfinite(coefficient) || coefficient < 0.0)
+      throw std::invalid_argument("MultiCobordism: moment stiffness coefficients must be finite and non-negative");
+  momentStiffnessReference_.clear();
+  if (weight == 0.0) {
+    momentStiffnessWeight_ = 0.0;
+    momentStiffnessDegrees_.clear();
+    momentStiffnessCoefficients_.clear();
+    return;
+  }
+  if (coefficients.empty() || degrees.empty())
+    throw std::invalid_argument("MultiCobordism: a moment stiffness needs at least one degree and one order");
+  if (!spacetime_)
+    throw std::logic_error("MultiCobordism: the moment stiffness is declared about an existing geometry");
+  // The carrier is the geometry as it is now; its local moments are the reference.
+  const HodgeLaplacian hodge(spacetime_);
+  for (const int degree : degrees)
+    momentStiffnessReference_.push_back(hodge.localSpectralMoments(degree, static_cast<int>(coefficients.size())));
+  momentStiffnessWeight_ = weight;
+  momentStiffnessDegrees_ = degrees;
+  momentStiffnessCoefficients_ = coefficients;
 }
 
 void MultiCobordism::setHodgeEntropyWeight(double weight) {

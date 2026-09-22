@@ -284,6 +284,55 @@ class HodgeLaplacian {
         EntropyPhaseMode phaseMode =
             EntropyPhaseMode::IncludeComplexPhase) const;
 
+    /// The local spectral moments of the Hodge operator,
+    /// \f[ \mu_j(x)=\bigl(L_k^{\,j}\bigr)_{xx},\qquad j=1,\dots,m, \f]
+    /// one per \f$ k \f$-cell \f$ x \f$ in the canonical column order and per
+    /// order, as a flat row-major \f$ |C_k|\times m \f$ array. They are the
+    /// local parts of the power sums \f$ p_j=\operatorname{tr}L_k^{\,j}
+    /// =\sum_x\mu_j(x) \f$: holomorphic in the complex squared lengths, defined
+    /// for a non-normal operator, and needing neither eigenvalues nor a real
+    /// projection. \f$ L_k \f$ is the one `spectralEntropy` uses.
+    /// @throws std::invalid_argument for \f$ m<1 \f$.
+    [[nodiscard]] std::vector<std::complex<double>> localSpectralMoments(
+        int k, int orders) const;
+
+    /// The spectral-moment stiffness of the geometric action about a carrier,
+    /// \f[ S_M(z)=\tfrac12\sum_{j=1}^{m}\beta_j\sum_x
+    ///     \bigl(\mu_j(x;z)-\mu_j(x;z_0)\bigr)^2, \f]
+    /// with \f$ \beta_j \f$ = `coefficients[j-1]` and \f$ \mu_j(x;z_0) \f$ =
+    /// `reference`, the `localSpectralMoments(k, m)` of the carrier. It is a sum
+    /// of local terms, so it is extensive in the size of the complex; it
+    /// vanishes with its gradient at the carrier, which therefore stays
+    /// stationary; and its Hessian there is
+    /// \f$ \sum_j\beta_j\sum_x\nabla\mu_j(x)\,\nabla\mu_j(x)^{T} \f$,
+    /// positive semidefinite for non-negative \f$ \beta_j \f$. Holomorphic in
+    /// \f$ z \f$ (no conjugation), like the whitepaper's power sums.
+    /// @throws std::invalid_argument when `reference` is not
+    ///   \f$ |C_k|\times m \f$.
+    [[nodiscard]] std::complex<double> spectralMomentStiffness(
+        int k, const std::vector<std::complex<double>> &reference,
+        const std::vector<double> &coefficients) const;
+
+    /// \f$ \partial S_M/\partial z_e \f$ in `EdgeList` order, the holomorphic
+    /// derivative. For a real-valued use of \f$ \operatorname{Re} S_M \f$ it is
+    /// also the \f$ h_e=\partial/\partial\operatorname{Re}z_e
+    /// -i\,\partial/\partial\operatorname{Im}z_e \f$ of `spectralEntropyGradient`.
+    [[nodiscard]] std::vector<std::complex<double>>
+    spectralMomentStiffnessGradient(
+        int k, const std::vector<std::complex<double>> &reference,
+        const std::vector<double> &coefficients) const;
+
+    /// The exact Hessian-vector product
+    /// \f$ \sum_f \partial^2 S_M/\partial z_e\partial z_f\,v_f \f$ in
+    /// `EdgeList` order: the product rule on the moments, with the exact second
+    /// derivative of \f$ L_k \f$ contracted against \f$ v \f$.
+    /// @throws std::runtime_error if `direction.size()` is not the edge count.
+    [[nodiscard]] std::vector<std::complex<double>>
+    spectralMomentStiffnessHessianProduct(
+        int k, const std::vector<std::complex<double>> &reference,
+        const std::vector<double> &coefficients,
+        const std::vector<std::complex<double>> &direction) const;
+
     /// Entropy of the normalized squared eigenvalue moduli of the
     /// **\f$\mathbb{C}^{*}\f$ connection** Laplacian:
     /// \f[ p_i=\frac{|\lambda_i|^{2}}{\sum_j|\lambda_j|^{2}},\qquad
