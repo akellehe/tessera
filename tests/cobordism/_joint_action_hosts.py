@@ -99,8 +99,34 @@ def kuhn_interior_vertices(divisions):
     return interior
 
 
-def kuhn_ball(divisions=2, squared=lambda index: 1.0,
+def kuhn_grid_position(identifier, divisions):
+    """The grid triple ``(i, j, l)`` of a ``kuhn_cells`` vertex id."""
+    side = divisions + 1
+    return (identifier // (side * side), (identifier // side) % side,
+            identifier % side)
+
+
+def kuhn_ball(divisions=2, scale=lambda index, squared: squared,
               phase=lambda index: 0.0):
-    """A Kuhn-triangulated cube, which is a triangulated ball."""
+    """A Kuhn-triangulated cube, which is a triangulated ball.
+
+    The geometry is the flat one of the grid the triangulation was cut from: an
+    edge's squared length is the squared grid displacement of its endpoints, so
+    axis edges carry 1, face diagonals 2 and the body diagonal 3. That matters
+    rather than being a nicety — a uniform squared length on all three edge
+    families is not realizable by any embedding, and the simplices it produces
+    are degenerate, so every quantity built from a Cayley-Menger determinant
+    would be read off a geometry that does not exist.
+
+    ``scale`` is applied to that squared length, with the edge index and the
+    flat value, so a caller can perturb the flat metric deterministically.
+    """
     spacetime = T.Spacetime.fromVertexTuples(3, kuhn_cells(divisions), 1.0, 0.0)
-    return _apply_geometry(spacetime, squared, phase)
+    for index, edge in enumerate(spacetime.getEdgeList().toVector()):
+        source = kuhn_grid_position(int(edge.getSource().getId()), divisions)
+        target = kuhn_grid_position(int(edge.getTarget().getId()), divisions)
+        squared = sum((left - right) ** 2
+                      for left, right in zip(source, target))
+        edge.setLength(cmath.sqrt(complex(scale(index, squared))))
+        edge.setPhase(complex(phase(index)))
+    return spacetime

@@ -326,8 +326,8 @@ class TheKuhnBallCarriesTheSection7SetupTest(unittest.TestCase):
         self.assertEqual(len(kuhn_interior_vertices(2)), 1)
         self.assertEqual(len(kuhn_interior_vertices(3)), 8)
 
-    def test_the_occupied_mode_lives_on_the_interior(self):
-        """The lowest degree-one mode is supported away from the boundary."""
+    def test_the_occupation_readout_sums_to_the_filled_mode_count(self):
+        """``n_c = Gamma_cc`` sums to the trace of the projector, which is 1."""
         spacetime = kuhn_ball(divisions=3)
         seed = cob.JointAction(
             spacetime,
@@ -338,6 +338,8 @@ class TheKuhnBallCarriesTheSection7SetupTest(unittest.TestCase):
         declaration.covariance = seed.occupation_projector(1, True)
         action = cob.JointAction(spacetime, declaration)
         occupations = np.array(action.occupation_numbers(), dtype=complex)
+        cells = cob.ChainComplex.fromSpacetime(spacetime).numSimplices(1)
+        self.assertEqual(len(occupations), cells)
         self.assertAlmostEqual(abs(occupations.sum() - 1.0), 0.0, places=8)
         self.assertGreater(np.max(np.abs(occupations)), 0.0)
 

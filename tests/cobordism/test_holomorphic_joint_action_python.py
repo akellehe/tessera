@@ -368,8 +368,8 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
     def _constrained(self, spacetime, target):
         declaration = _declaration(matter_weight=1.0)
         order = cob.ChainComplex.fromSpacetime(spacetime).numSimplices(1)
-        identity = np.eye(order, dtype=complex).reshape(-1).tolist()
-        declaration.covariance = identity
+        declaration.covariance = [complex(value) for value
+                                  in np.eye(order, dtype=complex).reshape(-1)]
         declaration.moment_constraints = [
             cob.SpectralMomentConstraint(1, target, 0j)]
         return cob.JointAction(spacetime, declaration)
