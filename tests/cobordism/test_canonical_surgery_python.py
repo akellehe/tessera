@@ -3,10 +3,10 @@
 """The canonical directed surgery lives on MultiCobordism (#549).
 
 `build_step` (the policy hook) and the directed cone-out/cone-in probes — the unit a
-search policy (Proton's build, a greedy driver, or the RL agent) composes — are methods
-of the *engine* (`MultiCobordism`), not of `Proton`. The consolidation removed the
-`Proton` duplicate; `Proton` keeps only the `should_use_directed_surgery` flag and calls
-the engine. These tests pin the API surface, the consolidation, the probes' `rU`-monotone
+search policy (ProtonSynthesis's build, a greedy driver, or the RL agent) composes —
+are methods of the *engine* (`MultiCobordism`), not of `ProtonSynthesis`. The
+consolidation removed the `ProtonSynthesis` duplicate; `ProtonSynthesis` keeps only
+the `should_use_directed_surgery` flag and calls the engine. These tests pin the API surface, the consolidation, the probes' `rU`-monotone
 invariant (they only ever commit moves that lower `rU`), and an end-to-end converged
 proton driven through the canonical directed path.
 """
@@ -22,7 +22,7 @@ cob = tessera.cobordism
 
 
 class CanonicalSurgeryApiTest(unittest.TestCase):
-    """Fast: the canonical surgery API lives on MultiCobordism, not Proton."""
+    """Fast: the canonical surgery API lives on MultiCobordism, not ProtonSynthesis."""
 
     def test_multicobordism_exposes_buildstep_and_probes(self):
         for name in ("build_step", "directed_cone_out", "directed_cone_in"):
@@ -40,12 +40,12 @@ class CanonicalSurgeryApiTest(unittest.TestCase):
             self.assertTrue(hasattr(hp, name), f"HolePlacementStrategy.{name} missing")
 
     def test_proton_surgery_api_was_consolidated_away(self):
-        # The directed surgery + buildStep moved DOWN to the engine; Proton only drives it.
+        # The directed surgery + buildStep moved DOWN to the engine; ProtonSynthesis only drives it.
         for name in ("BuildAction", "HolePlacementStrategy", "build_step",
                      "directed_cone_out", "directed_cone_in"):
             self.assertFalse(
-                hasattr(cob.Proton, name),
-                f"Proton.{name} should be gone (canonical home is MultiCobordism)")
+                hasattr(cob.ProtonSynthesis, name),
+                f"ProtonSynthesis.{name} should be gone (canonical home is MultiCobordism)")
 
     def test_the_target_conditioned_pinned_accessor_is_gone(self):
         # `pinnedBoundaryVertices` derived a pinned set from the boundary blocks and
@@ -67,7 +67,7 @@ class DirectedProbeInvariantTest(unittest.TestCase):
     def test_probes_are_ru_monotone_and_build_step_dispatches(self):
         BA = cob.MultiCobordism.BuildAction
         HP = cob.MultiCobordism.HolePlacementStrategy
-        node = cob.Proton(seed=0).formation_node(1)   # a seeded single-Δ⁴ node
+        node = cob.ProtonSynthesis(seed=0).formation_node(1)   # a seeded single-Δ⁴ node
         # A small grow keeps the eigensolve-heavy probe scans cheap; the invariant holds
         # at any size.
         node.build_step(BA.GROW, max_steps=25, n_candidate_moves=6)
@@ -94,7 +94,7 @@ class DirectedProbeInvariantTest(unittest.TestCase):
 
 @pytest.mark.slow
 class DirectedSurgeryProtonBuildTest(unittest.TestCase):
-    """Slow: a full two-step Proton build driven through the canonical directed-surgery
+    """Slow: a full two-step ProtonSynthesis build driven through the canonical directed-surgery
     path (`should_use_directed_surgery=True`) converges — the whole formation cobordism
     carries the singlet on at least three emergent holes.
 
@@ -111,7 +111,7 @@ class DirectedSurgeryProtonBuildTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.p = cob.Proton(seed=0, should_use_directed_surgery=True)
+        cls.p = cob.ProtonSynthesis(seed=0, should_use_directed_surgery=True)
         cls.p.build(max_restarts=3, init_steps=180, evolve_steps=60,
                     stage2_max_iters=10, color_tolerance=0.5, min_emergent_holes=3)
 

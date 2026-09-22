@@ -52,7 +52,7 @@
 #include "observables/ExchangeHolonomy.h"
 #include "observables/FiberConnection.h"
 #include "observables/ParticleClusters.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 #include "spacetime/Spacetime.h"
 #include "ForceLayout.h"
 #include "mesh/VertexList.h"
@@ -1723,8 +1723,8 @@ population-averaged Wilson value at that scale.
       R"doc(The loader / transform layer outside the pure readers: loads a
 saved combinatorial and metric description back into a live,
 skeleton-complete Spacetime, and produces a relabeled copy for the relabel
-gate. Never builds a spacetime of its own and never re-runs the emergent
-dynamics (those live in Proton / ProtonIngredients / MultiCobordism); it
+gate. Never builds a spacetime of its own and never re-runs the dynamics
+(those live in ProtonSynthesis / ProtonIngredients / MultiCobordism); it
 reads a recorded geometry back through ``Spacetime.fromVertexTuples``, completing
 the facet skeleton with ``materializeFacets``.)doc")
       .def_static("load", &LiveComplex::load, py::arg("cells"),
@@ -1757,7 +1757,7 @@ it never builds, solves, or materializes anything.)doc")
              return ctx;
            }),
            py::arg("spacetime"), py::arg("count") = 3, py::arg("degree") = 3,
-           py::arg("target") = ::tessera::cobordism::Proton::singlet())
+           py::arg("target") = ::tessera::cobordism::ProtonSynthesis::singlet())
       .def(py::init([](std::shared_ptr<Spacetime> st,
                        std::vector<std::vector<std::uint64_t>> holes, int count,
                        int degree, std::vector<std::complex<double>> target) {

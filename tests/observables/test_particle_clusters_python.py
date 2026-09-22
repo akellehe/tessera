@@ -3253,7 +3253,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ctx = obs.RegisterContext(self._boundary_delta5(), 0, 3,
-                                      cob.Proton.singlet())
+                                      cob.ProtonSynthesis.singlet())
         sample = obs.ParticleClusters.scaleProfileSample(ctx)
         self.assertAlmostEqual(sample.radius, volume ** 0.25, places=12)
         self.assertAlmostEqual(sample.radiusCrossCheck, volume ** 0.25,
@@ -3267,7 +3267,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ctx = obs.RegisterContext(self._boundary_delta5(), 0, 3,
-                                      cob.Proton.singlet())
+                                      cob.ProtonSynthesis.singlet())
         sample = obs.ParticleClusters.scaleProfileSample(ctx)
         read = obs.ParticleClusters().scaleProfile([sample, sample])
         self.assertTrue(read.radiusFinite)
@@ -3289,7 +3289,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
         # the dropped pentatope {0..4} is the hole seeding the BFS
         # shells: one shell carrying the whole curvature weight.
         ctx = obs.RegisterContext(self._star_of_apex(), [[0, 1, 2, 3, 4]], 1,
-                                  3, cob.Proton.singlet())
+                                  3, cob.ProtonSynthesis.singlet())
         sample = obs.ParticleClusters.scaleProfileSample(ctx)
         self.assertEqual(sample.radialWeightProfile, [1.0])
         deficit = 2.0 * math.pi - 3.0 * math.acos(0.25)
@@ -3328,7 +3328,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
     def test_sample_is_read_only_on_the_context(self):
         st = self._star_of_apex()
         ctx = obs.RegisterContext(st, [[0, 1, 2, 3, 4]], 1, 3,
-                                  cob.Proton.singlet())
+                                  cob.ProtonSynthesis.singlet())
         before = (len(st.getTopSimplices()), len(st.getSimplices()))
         a = obs.ParticleClusters.scaleProfileSample(ctx)
         b = obs.ParticleClusters.scaleProfileSample(ctx)

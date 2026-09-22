@@ -31,7 +31,7 @@
 #include "cobordism/MultiCobordism.h"
 #include "observables/SimplicialQubit.h"
 #include "cobordism/PencilLayer.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 #include "cobordism/ProtonIngredients.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "cobordism/IntegerLinalg.h"
@@ -2436,7 +2436,7 @@ Right -- re-read after each drive call:
       .value("PERIODS", MultiCobordism::WholePairing::Periods)
       .value("GRAM", MultiCobordism::WholePairing::Gram);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
-      "One canonical solve action a search policy (Proton's build restart loop, a greedy "
+      "One canonical solve action a search policy (ProtonSynthesis's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "
       "being re-implemented by each consumer.")
       .value("GROW", MultiCobordism::BuildAction::Grow)
@@ -3013,21 +3013,31 @@ Right -- re-read after each drive call:
       .def("piped_input_count", &CobordismDAG::pipedInputCount, py::arg("node"))
       .def("__len__", &CobordismDAG::size);
 
-  // === Proton: the canonical two-step MultiCobordism proton build ===
-  auto protonClass = py::class_<Proton>(m, "Proton",
-      R"doc(The canonical, footgun-free proton builder, composing MultiCobordism.
+  // === ProtonSynthesis: the labelled controlled synthesis of a proton ===
+  auto protonClass = py::class_<ProtonSynthesis>(m, "ProtonSynthesis",
+      R"doc(Controlled synthesis of a proton, composing MultiCobordism.
 
-A proton is THREE quarks in a colorless bound state, so it is built in TWO steps
-(a single merge would be physically invalid). omega = exp(2*pi*i/3).
+This is a labelled controlled-synthesis experiment, not emergence: it pins the
+colour singlet {1, w, w*w} (w = (-1 + i*sqrt(3))/2, the primitive cube root of
+unity) as an output target and accepts an attempt only if the whole cobordism
+carries that singlet on at least min_emergent_holes holes. Targets are
+permitted only in explicitly labelled controlled synthesis, so every node this
+class builds is in MultiCobordism.SimulationMode.SYNTHESIS (recorded on a
+checkpoint as "synthesis"), and drive_node, build() and build_direct() refuse,
+with ValueError, a node in any other mode, including either emergence
+sub-mode. The emergence protocol pins no target.
+
+A proton is THREE quarks in a colourless bound state, so it is synthesized in
+TWO steps (a single merge would be physically invalid).
   * Step A (recombination, one 2->2 node): two neutral q-qbar pairs {1,-1,0},
-    {1,0,-1} -> a colored diquark {1,w} + antidiquark {1,w*w} (2-vectors).
+    {1,0,-1} -> a coloured diquark {1,w} + antidiquark {1,w*w} (2-vectors).
   * Step B (formation, a separate 2->1 node): the diquark {1,w} + the third
-    quark {w*w} -> the proton {1,w,w*w} (the 3-vector color singlet).
-build() builds the closed-S^4 hosts internally and restarts across distinct
-seeds until step B's proton block carries the singlet on >=3 emergent holes. The
-accessors lazily trigger build() on first use, so `Proton().block()` just works.
-Observable readers (charge/mass/radius/spin) read OFF block() in their own
-tickets.)doc");
+    quark {w*w} -> the proton {1,w,w*w} (the 3-vector colour singlet).
+build() grows each step from a single Delta^4 simplex seed and restarts across
+distinct seeds until step B's whole cobordism carries the singlet on >= 3
+holes. The accessors lazily trigger build() on first use, so
+`ProtonSynthesis().block()` just works. Observable readers
+(charge/mass/radius/spin) read OFF block().)doc");
   protonClass
       .def(py::init<std::uint64_t, int, double, double, int, bool, bool, bool,
                     bool, bool, bool>(),
@@ -3040,75 +3050,107 @@ tickets.)doc");
            py::arg("balanced_edges") = false,
            py::arg("singular_value_ratio") = false,
            py::arg("einstein_hilbert") = true)
-      .def_static("omega", &Proton::omega, "omega = exp(2*pi*i/3).")
-      .def_static("singlet", &Proton::singlet,
-                  "The proton color singlet {1, w, w*w}.")
-      .def("build", &Proton::build, py::arg("max_restarts") = 16,
+      .def_static("omega", &ProtonSynthesis::omega,
+                  "w = (-1 + i*sqrt(3))/2, the primitive cube root of unity.")
+      .def_static("singlet", &ProtonSynthesis::singlet,
+                  "The proton colour singlet {1, w, w*w}.")
+      .def("build", &ProtonSynthesis::build, py::arg("max_restarts") = 16,
            py::arg("init_steps") = 180,
            py::arg("evolve_steps") = 60, py::arg("stage1_candidate_moves") = 8,
            py::arg("stage2_beta") = 1.0,
            py::arg("stage2_max_iters") = 10, py::arg("color_tolerance") = 0.5,
            py::arg("min_emergent_holes") = 3,
            "Restart across seeds until the whole step-B cobordism carries the singlet "
-           "on >= min_emergent_holes emergent holes. Each step runs an init pass (grow the "
-           "boundary until it carries) then an evolution pass (boundary frozen).")
-      .def("recombination_node", &Proton::recombinationNode, py::arg("seed"),
-           "A fresh, seeded (not-yet-run) Step A node: two neutral q-qbar pairs -> a "
-           "diquark {1,w} + antidiquark {1,w*w}, on a single Delta^4 seed. Drive it with "
-           "run_stage1/run_stage2 -- the exact node build() uses for recombination.")
-      .def("formation_node", &Proton::formationNode, py::arg("seed"),
-           "A fresh, seeded (not-yet-run) Step B node: the diquark {1,w} + the third "
-           "quark {w*w} -> the proton singlet, on a single Delta^4 seed (output read off "
-           "the whole). Drive it with run_stage1/run_stage2.")
-      .def("direct_node", &Proton::directNode, py::arg("seed"),
-           "A fresh, seeded (not-yet-run) ONE-STEP node (6->1): the three bare quarks "
-           "{1}, {w}, {w*w} and their three anti-quarks (the elementwise conjugates -- "
-           "three q-qbar pairs) as inputs, and the proton singlet as the single output, "
-           "read off the WHOLE cobordism (the anti-baryon partner emerges unpinned), on "
-           "a single Delta^4 seed -- the experimental single-merge alternative to the "
-           "two-step build. Drive it with run().")
-      .def("build_direct", &Proton::buildDirect, py::arg("max_restarts") = 16,
+           "on >= min_emergent_holes holes. Each step runs an init pass (grow the "
+           "boundary until it carries) then an evolution pass (boundary frozen), in "
+           "SimulationMode.SYNTHESIS.")
+      .def("recombination_node", &ProtonSynthesis::recombinationNode, py::arg("seed"),
+           "A fresh, seeded (not-yet-run) Step A node in SimulationMode.SYNTHESIS: two "
+           "neutral q-qbar pairs -> a diquark {1,w} + antidiquark {1,w*w}, on a single "
+           "Delta^4 seed -- the exact node build() uses for recombination.")
+      .def("formation_node", &ProtonSynthesis::formationNode, py::arg("seed"),
+           "A fresh, seeded (not-yet-run) Step B node in SimulationMode.SYNTHESIS: the "
+           "diquark {1,w} + the third quark {w*w} -> the proton singlet, on a single "
+           "Delta^4 seed (output read off the whole).")
+      .def("direct_node", &ProtonSynthesis::directNode, py::arg("seed"),
+           "A fresh, seeded (not-yet-run) ONE-STEP node (6->1) in "
+           "SimulationMode.SYNTHESIS: the three bare quarks {1}, {w}, {w*w} and their "
+           "three anti-quarks (the elementwise conjugates -- three q-qbar pairs) as "
+           "inputs, and the proton singlet as the single output, read off the WHOLE "
+           "cobordism (the anti-baryon partner is not pinned), on a single Delta^4 "
+           "seed -- the experimental single-merge alternative to the two-step "
+           "synthesis. Drive it with run().")
+      .def_static("drive_node",
+           [](MultiCobordism &node, int initSteps, int evolveSteps,
+              int stage1CandidateMoves, double stage2Beta, int stage2MaxIters,
+              bool directedSurgery) {
+             ProtonSynthesis::driveNode(
+                 node, ProtonSynthesis::NodeDrive{initSteps, evolveSteps,
+                                                  stage1CandidateMoves,
+                                                  stage2Beta, stage2MaxIters,
+                                                  directedSurgery});
+           },
+           py::arg("node"), py::arg("init_steps") = 180,
+           py::arg("evolve_steps") = 60, py::arg("stage1_candidate_moves") = 8,
+           py::arg("stage2_beta") = 1.0, py::arg("stage2_max_iters") = 10,
+           py::arg("directed_surgery") = false,
+           "Drive one synthesis node through build()'s per-node schedule: an init "
+           "pass (grow the boundary), an optional directed cone-out, an evolution "
+           "pass (boundary frozen), an optional directed cone-in, then run_stage2. "
+           "Raises ValueError, before anything runs, when the node is not in "
+           "SimulationMode.SYNTHESIS.")
+      .def_static("require_synthesis_mode", &ProtonSynthesis::requireSynthesisMode,
+           py::arg("node"),
+           "Raise ValueError naming the node's mode unless it is "
+           "SimulationMode.SYNTHESIS: the synthesis pins targets, which are "
+           "permitted only in the labelled controlled-synthesis mode.")
+      .def("build_direct", &ProtonSynthesis::buildDirect, py::arg("max_restarts") = 16,
            py::arg("init_steps") = 180, py::arg("evolve_steps") = 60,
            py::arg("stage1_candidate_moves") = 8, py::arg("stage2_beta") = 1.0,
            py::arg("color_tolerance") = 0.5, py::arg("min_emergent_holes") = 3,
            py::call_guard<py::gil_scoped_release>(),
-           "EXPERIMENTAL one-step build: drive direct_node (three q-qbar pairs in, the "
-           "singlet out) with the combined run() drive -- stage-1 surgery and stage-2 "
-           "relaxation interleaved in one loop -- as an init pass then an evolution "
-           "pass, restarting across seeds. Populates the same accessors as build() "
-           "(diquark_residual stays 0 -- no step A). Shares build()'s once-only latch: "
-           "call it BEFORE any accessor triggers the lazy two-step build().")
-      .def("converged", &Proton::converged,
-           "True iff step B's proton block carries the singlet on enough emergent holes.")
-      .def("seed", &Proton::seed, "Base seed of the converged (or best) attempt.")
-      .def("spacetime", &Proton::spacetime,
-           "Step B's full relaxed closed-S^4 complex.")
-      .def("block", &Proton::block,
-           "Step B's proton sub-complex, with the relaxed metric copied in.")
-      .def("emergent_holes", &Proton::emergentHoles,
-           "The emergent holes on the proton block over which the singlet periods are "
-           "read (>=3 when converged). A topological observable, not a quark count.")
-      .def("color_residual", &Proton::colorResidual,
+           "EXPERIMENTAL one-step synthesis: drive direct_node (three q-qbar pairs in, "
+           "the singlet out) with the combined run() drive -- stage-1 surgery and "
+           "stage-2 relaxation interleaved in one loop -- as an init pass then an "
+           "evolution pass, restarting across seeds, in SimulationMode.SYNTHESIS. "
+           "Populates the same accessors as build() (diquark_residual stays 0 -- no "
+           "step A). Shares build()'s once-only latch: call it BEFORE any accessor "
+           "triggers the lazy two-step build().")
+      .def("converged", &ProtonSynthesis::converged,
+           "True iff step B's whole cobordism carries the singlet on enough holes.")
+      .def("seed", &ProtonSynthesis::seed,
+           "Base seed of the converged (or best) attempt.")
+      .def("spacetime", &ProtonSynthesis::spacetime,
+           "Step B's full relaxed complex, grown from the single Delta^4 seed.")
+      .def("block", &ProtonSynthesis::block,
+           "The synthesized proton: the relaxed step-B cobordism as a whole.")
+      .def("emergent_holes", &ProtonSynthesis::emergentHoles,
+           "The holes (MultiCobordism.emergent_holes) of the synthesized proton over "
+           "which the singlet periods are read (>=3 when converged). A topological "
+           "observable, not a quark count.")
+      .def("color_residual", &ProtonSynthesis::colorResidual,
            "Step B's proton singlet r_state (~0 => carried).")
-      .def("diquark_residual", &Proton::diquarkResidual,
+      .def("diquark_residual", &ProtonSynthesis::diquarkResidual,
            "Step A's r_U (small => the diquark recombination converged).");
 
-  // === ProtonIngredients: the emergent arm, nothing pinned downstream ===
+  // === ProtonIngredients: the ingredients arm, no output pinned ===
   py::class_<ProtonIngredients>(m, "ProtonIngredients",
-      R"doc(The emergent arm of the proton build. Proton is the canonical line
-in the sand and is composed here unchanged; ProtonIngredients prepares the same
+      R"doc(The ingredients arm of the proton experiment, whose final state is not
+pinned. ProtonSynthesis is composed here unchanged; ProtonIngredients prepares the same
 ingredients through the same two-step drive EXCEPT that the final state is never
 pinned: step B's output-target list is EMPTY, so the objective is
 F = ||grad S||^2 + gamma * sum_i r_U(input_i) and whatever the whole cobordism
 comes to carry is READ afterwards, never driven. Exactly one variable differs
-from Proton.build() (the singlet output target), so the two classes form a clean
-A/B experiment. The seed stays uniform and all-spacelike by design: at
-initialization no time has passed — causal structure marks sequences of events
-and may only emerge. Convergence carries no answer-shaped gate: an attempt
+from ProtonSynthesis.build() (the singlet output target), so the two classes form a
+clean A/B experiment. Step A is ProtonSynthesis.recombination_node, which pins the
+diquark and antidiquark outputs and so runs in SimulationMode.SYNTHESIS; step B
+pins no output and runs in the node's default mode, EMERGENCE (STRICT). The
+seed stays uniform and all-spacelike by design: at initialization no time has
+passed — causal structure marks sequences of events and may only emerge. Convergence carries no answer-shaped gate: an attempt
 converges iff it is STATIONARY (stage 2 stopped on its stationarity test) and
 PERSISTENT (a continued evolve+relax pass leaves holes, b_k, and F stable).
 Everything physical is a post-hoc observable, including the singlet residual —
-a diagnostic for comparing against the canonical build's carried level.)doc")
+a diagnostic for comparing against the synthesis's carried level.)doc")
       .def(py::init<std::uint64_t, int, double, double, int, bool>(),
            py::arg("seed") = 0, py::arg("register_degree") = 3,
            py::arg("gamma") = 50.0, py::arg("input_weight") = 20.0,
@@ -3120,13 +3162,14 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
            py::arg("persist_tolerance") = 0.05,
            "Restart across seeds until an attempt is stationary AND persistent (no "
            "color tolerance, no minimum hole count); otherwise keep the lowest-F "
-           "attempt. Same drive per node as Proton.build().")
+           "attempt. Same drive per node as ProtonSynthesis.build().")
       .def("recombination_node", &ProtonIngredients::recombinationNode,
            py::arg("seed"),
-           "Step A verbatim: the composed canonical Proton's recombination_node.")
+           "Step A verbatim: the composed ProtonSynthesis's recombination_node, in "
+           "SimulationMode.SYNTHESIS.")
       .def("formation_node", &ProtonIngredients::formationNode, py::arg("seed"),
            "Step B with nothing pinned: the same ideal diquark {1,w} + third quark "
-           "{w*w} inputs on the same single Delta^4 seed as Proton.formation_node, "
+           "{w*w} inputs on the same single Delta^4 seed as ProtonSynthesis.formation_node, "
            "but with an EMPTY output-target list — the final state emerges.")
       .def("joint_node", &ProtonIngredients::jointNode, py::arg("seed"),
            "The joint inputs-only node: ONE MultiCobordism whose inputs are the three "
@@ -3153,12 +3196,12 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
            "is the not-yet-driven complex.")
       .def("block", &ProtonIngredients::block,
            "The emergent object IS the whole step-B cobordism (parity with "
-           "Proton.block).")
+           "ProtonSynthesis.block).")
       .def("emergent_holes", &ProtonIngredients::emergentHoles,
            "The emergent holes on the whole — an observable, not a gate; "
            "may be any count, including zero.")
       .def("singlet_residual", &ProtonIngredients::singletResidual,
-           "DIAGNOSTIC only: the singlet r_state of Proton.singlet() against the "
+           "DIAGNOSTIC only: the singlet r_state of ProtonSynthesis.singlet() against the "
            "whole, read after the fact for comparison with the canonical build. It "
            "never steers or gates this build.")
       .def("input_residual", &ProtonIngredients::inputResidual,
@@ -3166,7 +3209,7 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
       .def("final_objective", &ProtonIngredients::finalObjective,
            "The kept attempt's final objective F.")
       .def("diquark_residual", &ProtonIngredients::diquarkResidual,
-           "Step A's r_U — reported exactly as Proton reports it.");
+           "Step A's r_U — reported exactly as ProtonSynthesis reports it.");
 
   // ----- Gated surgical cone-out/cone-in (topology change) -----
   py::class_<SurgicalCone>(m, "SurgicalCone",

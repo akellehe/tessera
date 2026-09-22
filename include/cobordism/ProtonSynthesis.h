@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
-#ifndef TESSERA_COBORDISM_PROTON_H
-#define TESSERA_COBORDISM_PROTON_H
+#ifndef TESSERA_COBORDISM_PROTON_SYNTHESIS_H
+#define TESSERA_COBORDISM_PROTON_SYNTHESIS_H
 
 #include <complex>
 #include <cstdint>
@@ -16,53 +16,65 @@ using ::tessera::spacetime::Spacetime;
 
 class MultiCobordism;  // returned (seeded, not run) by the node factories below
 
-/// # Proton
+/// # ProtonSynthesis
 ///
-/// Builder for the emergent proton, composing `MultiCobordism` without
-/// modifying it. A proton is three quarks in a colorless bound state, so it is
-/// built in two steps; a single `MultiCobordism` merge would be physically
-/// invalid.
+/// Controlled synthesis of a proton: a labelled
+/// `MultiCobordism::SimulationMode::Synthesis` experiment that composes
+/// `MultiCobordism` without modifying it. The synthesis pins colour targets —
+/// the output is driven toward the singlet `{1, ω, ω²}` — and accepts an
+/// attempt only if it carries that singlet on at least `minEmergentHoles`
+/// holes. A target of this kind is permitted only in explicitly labelled
+/// controlled synthesis, never in emergence mode, so every node this class
+/// builds is stamped `SimulationMode::Synthesis` (the mode recorded on a
+/// checkpoint as `"synthesis"`), and `driveNode`, `build()` and
+/// `buildDirect()` refuse a node in any other mode. The result is an existence
+/// and obstruction experiment, not a proton found by the emergence protocol,
+/// which pins no target.
+///
+/// A proton is three quarks in a colourless bound state, so the synthesis runs
+/// in two steps; a single `MultiCobordism` merge would be physically invalid.
 ///
 ///   * Step A — recombination, one co-optimized 2→2 node: two neutral q-q̄
 ///     pairs `{1,-1,0}` ⊔ `{1,0,-1}` → a diquark `{1,ω}` ⊔ an antidiquark
-///     `{1,ω²}`. A diquark is colored (an SU(3) `3̄`), so its target is a
+///     `{1,ω²}`. A diquark is coloured (an SU(3) `3̄`), so its target is a
 ///     2-vector rather than the singlet.
 ///   * Step B — formation, a separate 2→1 node: the diquark `{1,ω}` plus the
-///     third quark `{ω²}` → the proton `{1,ω,ω²}`, the colorless 3-vector
-///     color singlet. Target dimensions may differ between blocks; each
+///     third quark `{ω²}` → the proton `{1,ω,ω²}`, the colourless 3-vector
+///     colour singlet. Target dimensions may differ between blocks; each
 ///     boundary block's `r_state` is fitted against its own.
 ///
-/// Step B's output block is the proton at a point in time; its spatial slice,
-/// with the relaxed metric copied in, is what the observable readers of
-/// `block()` consume.
+/// Step B's output block is the synthesized proton at a point in time; its
+/// spatial slice, with the relaxed metric copied in, is what the observable
+/// readers of `block()` consume.
 ///
 /// `build()` grows each step from a single Δ⁴ simplex seed — one pentatope,
-/// with all further topology emerging through stage 1's F-lowering candidate
+/// with all further topology grown through stage 1's F-lowering candidate
 /// draw — runs A then B, and restarts across distinct seeds until step B's
 /// whole cobordism carries the singlet on at least `minEmergentHoles`
-/// (default 3) emergent holes. The two-step build converges less often than a
-/// single merge, hence the restarts. Carrying the singlet is the physical
+/// (default 3) holes. The two-step build converges less often than a single
+/// merge, hence the restarts. Carrying the singlet is the acceptance
 /// criterion; the hole count is a topological precondition of the period
 /// readout, not a quark count. The accessors run `build()` lazily on first
 /// use.
-class Proton {
+class ProtonSynthesis {
  public:
   /// ω, the primitive cube root of unity `(−1 + i√3)/2` — the unit
-  /// color-charge phase.
+  /// colour-charge phase.
   [[nodiscard]] static std::complex<double> omega();
-  /// The proton color singlet `{1, ω, ω²}`, the colorless 3-vector step B
+  /// The proton colour singlet `{1, ω, ω²}`, the colourless 3-vector step B
   /// drives the proton block to carry.
   [[nodiscard]] static std::vector<std::complex<double>> singlet();
 
-  /// Configure a proton build. The physics — the targets, the two-step
+  /// Configure a proton synthesis. The physics — the targets, the two-step
   /// structure, the single Δ⁴ simplex seed — is fixed; only the optimization
   /// knobs are exposed.
   ///   * `seed`           — base RNG seed; restart `i` uses A-seed `seed+2i`
   ///                        and B-seed `seed+2i+1`.
-  ///   * `registerDegree` — the color register degree `k` (3 on a 4-manifold,
-  ///                        where the register is `ker L_{d-1}`, a spectral
-  ///                        subspace). The periods are read over the emergent
-  ///                        holes, which are not the register.
+  ///   * `registerDegree` — the colour register degree `k` (3 on a
+  ///                        4-manifold, where the register is `ker L_{d-1}`, a
+  ///                        spectral subspace). The periods are read over the
+  ///                        holes of the grown complex, which are not the
+  ///                        register.
   ///   * `gamma`          — Γ in `F = ‖∇S_Regge‖² + Γ·r_U`, chosen so Γ·r_U
   ///                        sits on the same order as ‖∇S‖²; otherwise ∇S
   ///                        dominates and the register is never driven to
@@ -102,37 +114,41 @@ class Proton {
   ///                        optimizes `gamma * r_U` alone; see the
   ///                        `MultiCobordism` constructor for what that means
   ///                        for stage 2's descent direction.
-  explicit Proton(std::uint64_t seed = 0, int registerDegree = 3,
-                  double gamma = 50.0, double inputWeight = 20.0,
-                  int precone = 0, bool shouldUseDirectedSurgery = false,
-                  bool preconeTimelike = false, bool preconeAlternate = false,
-                  bool balancedEdges = false, bool singularValueRatio = false,
-                  bool einsteinHilbert = true);
+  explicit ProtonSynthesis(std::uint64_t seed = 0, int registerDegree = 3,
+                           double gamma = 50.0, double inputWeight = 20.0,
+                           int precone = 0, bool shouldUseDirectedSurgery = false,
+                           bool preconeTimelike = false,
+                           bool preconeAlternate = false,
+                           bool balancedEdges = false,
+                           bool singularValueRatio = false,
+                           bool einsteinHilbert = true);
 
-  /// Build the proton, restarting across seeds until step B's whole cobordism
-  /// carries the singlet on at least `minEmergentHoles` emergent holes. When
+  /// Run the synthesis, restarting across seeds until step B's whole
+  /// cobordism carries the singlet on at least `minEmergentHoles` holes. When
   /// `maxRestarts` is exhausted the best attempt is kept and `converged()` is
   /// false. Each step runs an initialization pass (`initSteps`,
   /// `grow_boundaries=true`, which establishes the carrying input regions),
   /// then an evolution pass (`evolveSteps`, `grow_boundaries=false`, ∂W
-  /// frozen), then `runStage2`. Idempotent.
+  /// frozen), then `runStage2`, all in `SimulationMode::Synthesis`.
+  /// Idempotent.
   void build(int maxRestarts = 16, int initSteps = 180,
              int evolveSteps = 60, int stage1CandidateMoves = 8,
              double stage2Beta = 1.0, int stage2MaxIters = 10,
              double colorTolerance = 0.5, int minEmergentHoles = 3);
 
-  /// One-step build: drive `directNode` — three q-q̄ pairs in, the singlet out,
-  /// in a single `MultiCobordism` — with `MultiCobordism::run`, which
+  /// One-step synthesis: drive `directNode` — three q-q̄ pairs in, the singlet
+  /// out, in a single `MultiCobordism` — with `MultiCobordism::run`, which
   /// interleaves the stage-1 surgery update and the stage-2 geometric
   /// relaxation in one loop: an initialization pass (`initSteps`,
   /// `grow_boundaries=true`) then an evolution pass (`evolveSteps`,
   /// `grow_boundaries=false`, ∂W frozen). Restart `i` uses seed `seed + i`;
   /// restarts run until the whole cobordism carries the singlet on at least
-  /// `minEmergentHoles` emergent holes, or until `maxRestarts` is exhausted,
-  /// keeping the best attempt. Populates the same accessors as `build()`, with
-  /// `diquarkResidual()` left at 0 because there is no step A. Idempotent, and
-  /// shares build state with `build()`: whichever runs first claims it, so call
-  /// this before any accessor triggers the lazy two-step `build()`.
+  /// `minEmergentHoles` holes, or until `maxRestarts` is exhausted, keeping
+  /// the best attempt. Populates the same accessors as `build()`, with
+  /// `diquarkResidual()` left at 0 because there is no step A. Runs in
+  /// `SimulationMode::Synthesis`. Idempotent, and shares build state with
+  /// `build()`: whichever runs first claims it, so call this before any
+  /// accessor triggers the lazy two-step `build()`.
   void buildDirect(int maxRestarts = 16, int initSteps = 180, int evolveSteps = 60,
                    int stage1CandidateMoves = 8, double stage2Beta = 1.0,
                    double colorTolerance = 0.5, int minEmergentHoles = 3);
@@ -140,42 +156,45 @@ class Proton {
   /// A fresh, seeded but not-yet-run step-A node (recombination, 2→2): two
   /// neutral q-q̄ pairs `{1,-1,0}` ⊔ `{1,0,-1}` → a diquark `{1,ω}` ⊔
   /// antidiquark `{1,ω²}`, on a single Δ⁴ seed (inputs at v0,v1; outputs at
-  /// v2,v3; input weight set). `build()` and the animation both drive this
-  /// setup via `runStage1`/`runStage2`.
+  /// v2,v3; input weight set), in `SimulationMode::Synthesis`. `build()`
+  /// drives this setup through `driveNode`.
   [[nodiscard]] std::shared_ptr<MultiCobordism> recombinationNode(std::uint64_t seed) const;
   /// A fresh, seeded but not-yet-run step-B node (formation, 2→1): the diquark
   /// `{1,ω}` plus the third quark `{ω²}` → the proton singlet `{1,ω,ω²}`, on a
-  /// single Δ⁴ seed. Inputs at v0,v1; the single output is read off the whole
-  /// cobordism, so there is no `seedOutputs`.
+  /// single Δ⁴ seed, in `SimulationMode::Synthesis`. Inputs at v0,v1; the
+  /// single output is read off the whole cobordism, so there is no
+  /// `seedOutputs`.
   [[nodiscard]] std::shared_ptr<MultiCobordism> formationNode(std::uint64_t seed) const;
-  /// A fresh, seeded but not-yet-run one-step node (6→1): the three bare quarks
-  /// `{1}`, `{ω}`, `{ω²}` and their three anti-quarks `{1}`, `{ω̄}`, `{ω̄²}` —
-  /// the elementwise conjugates, this construction's antiparticle convention,
-  /// under which antidiquark = conj(diquark) — as inputs on a single Δ⁴ seed,
-  /// so the prepared content is three q-q̄ pairs. The proton singlet `{1,ω,ω²}`
-  /// is the single output, read off the whole cobordism (no `seedOutputs`); the
-  /// anti-baryon partner is left to emerge unpinned. An experimental
-  /// single-merge alternative to the two-step build.
+  /// A fresh, seeded but not-yet-run one-step node (6→1) in
+  /// `SimulationMode::Synthesis`: the three bare quarks `{1}`, `{ω}`, `{ω²}`
+  /// and their three anti-quarks `{1}`, `{ω̄}`, `{ω̄²}` — the elementwise
+  /// conjugates, this construction's antiparticle convention, under which
+  /// antidiquark = conj(diquark) — as inputs on a single Δ⁴ seed, so the
+  /// prepared content is three q-q̄ pairs. The proton singlet `{1,ω,ω²}` is
+  /// the single output, read off the whole cobordism (no `seedOutputs`); the
+  /// anti-baryon partner is not pinned. An experimental single-merge
+  /// alternative to the two-step synthesis.
   [[nodiscard]] std::shared_ptr<MultiCobordism> directNode(std::uint64_t seed) const;
 
   /// True iff the whole step-B cobordism carries the singlet (`colorResidual()
-  /// < colorTolerance`) on at least `minEmergentHoles` emergent holes. Triggers
+  /// < colorTolerance`) on at least `minEmergentHoles` holes. Triggers
   /// `build()`.
   [[nodiscard]] bool converged();
   /// The base seed of the converged (or best) attempt. Triggers `build()`.
   [[nodiscard]] std::uint64_t seed();
-  /// The full relaxed emergent complex of step B (proton formation), grown from
-  /// the single Δ⁴ seed. Triggers `build()`.
+  /// The full relaxed complex of step B (proton formation), grown from the
+  /// single Δ⁴ seed. Triggers `build()`.
   [[nodiscard]] std::shared_ptr<Spacetime> spacetime();
-  /// The proton itself: the relaxed step-B cobordism as a whole. The single
-  /// output is the whole's harmonic — the inputs are held by their residual and
-  /// the bulk evolves to carry the singlet — so there is no sub-block. This is
-  /// what the observable readers consume. Triggers `build()`.
+  /// The synthesized proton: the relaxed step-B cobordism as a whole. The
+  /// single output is the whole's harmonic — the inputs are held by their
+  /// residual and the bulk is driven to carry the singlet — so there is no
+  /// sub-block. This is what the observable readers consume. Triggers
+  /// `build()`.
   [[nodiscard]] std::shared_ptr<Spacetime> block();
-  /// The emergent holes (`(k+2)`-vertex tuples) on the proton, over which the
-  /// singlet periods are read; at least `minEmergentHoles` of them when
-  /// converged. A topological observable of this construction, not a quark
-  /// count. Triggers `build()`.
+  /// The holes (`(k+2)`-vertex tuples, `MultiCobordism::emergentHoles`) of the
+  /// synthesized proton, over which the singlet periods are read; at least
+  /// `minEmergentHoles` of them when converged. A topological observable of
+  /// this construction, not a quark count. Triggers `build()`.
   [[nodiscard]] std::vector<std::vector<std::uint64_t>> emergentHoles();
   /// The proton singlet residual: the relabeling-invariant, zero-filled
   /// `r_state` of `singlet()` against the whole cobordism's `L_k` harmonic
@@ -198,11 +217,26 @@ class Proton {
     int stage2MaxIters{10};
     /// Remove cells and cap facets between the two stage-1 passes.
     bool directedSurgery{false};
+
+    /// Run this schedule on `node` without consulting its simulation mode.
+    /// The synthesis drives its nodes through `driveNode`, which checks the
+    /// mode first; `ProtonIngredients` runs its step B, which pins no output
+    /// target, through this directly, so both arms run the identical
+    /// schedule.
+    void run(MultiCobordism &node) const;
   };
 
-  /// Drive one node through `schedule`. Shared by the canonical arm and the
-  /// ingredients arm, which run the identical schedule.
+  /// Drive one synthesis node through `schedule`.
+  /// @throws std::invalid_argument when `node` is not in
+  ///         `SimulationMode::Synthesis` (in particular, in either emergence
+  ///         sub-mode); nothing runs in that case.
   static void driveNode(MultiCobordism &node, const NodeDrive &schedule);
+
+  /// Refuse a node that is not in `SimulationMode::Synthesis`: the synthesis
+  /// pins targets, and targets are permitted only in the labelled
+  /// controlled-synthesis mode.
+  /// @throws std::invalid_argument naming the node's mode otherwise.
+  static void requireSynthesisMode(const MultiCobordism &node);
 
  private:
   /// Lazily run `build()` with default parameters on first accessor use.
@@ -242,4 +276,4 @@ class Proton {
 
 }  // namespace tessera::cobordism
 
-#endif  // TESSERA_COBORDISM_PROTON_H
+#endif  // TESSERA_COBORDISM_PROTON_SYNTHESIS_H
