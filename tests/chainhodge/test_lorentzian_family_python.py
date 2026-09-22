@@ -111,7 +111,10 @@ class TestInstanceAndSweep:
         scale = np.max(np.abs(ev0))
         d = [_hausdorff(r.eigenvalues, ev0) / scale for r in reads[1:]]
         assert d[0] < d[1] < d[2]          # the spectrum moves continuously away from the boundary
-        assert d[0] < 0.1                  # measured 0.083 at epsilon = 0.01
+        # Measured 0.149 at epsilon = 0.01 for the specified family, which also
+        # rotates the timelike part of the diagonals (rotating only the vertical
+        # edges, as before #1207, moved it 0.083).
+        assert d[0] < 0.2
 
     def test_zero_epsilon_read_is_a_family_member_with_gap(self):
         K, s = torus33()
@@ -154,12 +157,14 @@ class TestExtrapolation:
     def test_extrapolated_eigenvalue_approaches_the_boundary_value(self):
         K, s = torus33()
         tau = torus33_timelike_parts(K)
-        epsilons = [0.005, 0.01, 0.015, 0.02]
+        epsilons = [0.0025, 0.005, 0.0075, 0.01]
         reads = LF.sweep(K, s, tau, epsilons, 1, ch.Preset.L2, KS, 10.0, True)
         # The trace of the pencil operator is analytic in epsilon (individual
         # eigenvalues cross and split, so a single one is not an extrapolation
-        # target); a quadratic through reads at epsilon <= 0.02 reaches the
-        # boundary value to well under a percent.
+        # target); a quadratic through reads at epsilon <= 0.01 reaches the
+        # boundary value to 4.4e-4 relative. The specified family rotates the
+        # diagonals too and its trace bends faster: through reads at
+        # epsilon <= 0.02 the quadratic misses by 3.3e-3.
         traces = [complex(np.sum(r.eigenvalues)) for r in reads]
         ex = LF.extrapolateToZero(epsilons, traces, 2)
         zero = LF.sweep(K, s, tau, [0.0] + epsilons, 1, ch.Preset.L2, KS, 10.0, True)[0]
