@@ -366,12 +366,13 @@ struct AttachmentRead {
     bool sheetDiagonal{true};
     /// How many connecting simplices were accumulated.
     std::size_t simplexCount{0};
-    /// The record grading the read: StructureExact and NonNormal, because
-    /// S_AB is an exact accumulation of the declared weights given the
+    /// The record grading the read. A full-rank attachment is StructureExact
+    /// and NonNormal at residual zero: the accumulation is exact given the
     /// verified premise that every connecting simplex named a sheet at each
-    /// end. The graded residual is the declared full-rank tolerance minus
-    /// `minSingularValue`, clamped below at zero, so a comfortably full-rank
-    /// attachment grades at residual zero and a singular one never holds.
+    /// end. An attachment whose smallest singular value did not clear the
+    /// declared tolerance carries the never-holding HeuristicDiscovery
+    /// grade instead, because it is not an element of GL(k, C) and no
+    /// transport it composes into is invertible.
     ::tessera::cobordism::Certificate certificate{};
 };
 
@@ -507,11 +508,13 @@ struct ColorSingletRead {
     /// the three colour rays are from a degenerate (coinciding) triple, which
     /// is the configuration that annihilates the wedge.
     double minSingularValue{0.0};
-    /// The record grading the read: AlgebraicallyExact and NonNormal, because
-    /// the amplitude is a determinant of supplied numbers and its only error
-    /// source is rounding. The graded residual is the declared tolerance
-    /// minus |S_ABC|, clamped below at zero, so a comfortably nonzero wedge
-    /// grades at residual zero and a vanishing one never holds.
+    /// The record grading the read. The amplitude is a determinant of
+    /// supplied numbers, so it is exact to rounding and a nonvanishing wedge
+    /// is AlgebraicallyExact and NonNormal at residual zero. What the
+    /// certificate grades is the nonvanishing premise itself: a wedge that
+    /// vanished at the declared tolerance carries the never-holding
+    /// HeuristicDiscovery grade, because the singlet condition the whitepaper
+    /// states is exactly that it does not vanish.
     ::tessera::cobordism::Certificate certificate{};
 };
 

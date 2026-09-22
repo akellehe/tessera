@@ -333,6 +333,10 @@ list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
 # ColorFiber (#767), so it compiles in tessera_quantum beside them.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
     "/src/observables/SheetedColor\\.cpp$")
+# MonopoleSpin (#1196) wedges its determinants with the quantum exterior
+# algebra (#766), so it follows the same route.
+list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
+    "/src/observables/MonopoleSpin\\.cpp$")
 # bindings.cpp is the pybind11 entry point — goes into _tessera, not tessera_core.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/bindings\\.cpp$")
 # Per-subsystem Bindings.cpp files also belong to _tessera, not tessera_core
@@ -532,6 +536,10 @@ list(APPEND TESSERA_QUANTUM_SOURCES
 # three-sheet sectors from ColorFiber (#767), so it compiles here.
 list(APPEND TESSERA_QUANTUM_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/SheetedColor.cpp")
+# MonopoleSpin (#1196) builds its determinants and its superpositions with the
+# quantum exterior algebra (#766), so it compiles here as well.
+list(APPEND TESSERA_QUANTUM_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/MonopoleSpin.cpp")
 # bindings.cpp uses pybind11 + Python.h and goes into _tessera, not the
 # pybind-free static lib.
 list(FILTER TESSERA_QUANTUM_SOURCES EXCLUDE REGEX "/src/quantum/Bindings\\.cpp$")

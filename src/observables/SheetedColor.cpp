@@ -40,12 +40,6 @@ Eigen::MatrixXcd identity(std::size_t size) {
                                     static_cast<Eigen::Index>(size));
 }
 
-/// The residual a "distance to a declared floor" certificate grades: how far
-/// `measured` falls short of `floor`, and zero when it does not fall short.
-double shortfall(double measured, double floor) {
-  return std::max(0.0, floor - measured);
-}
-
 void requirePositive(double tolerance, const char* what) {
   if (!(tolerance > 0.0)) {
     std::ostringstream message;
@@ -390,10 +384,18 @@ AttachmentRead SheetAttachment::attachmentMatrix(
   read.conditioning = read.minSingularValue > 0.0
                           ? maxSingular / read.minSingularValue
                           : std::numeric_limits<double>::infinity();
-  read.certificate = Certificate::structureExact(
-      CertificateDomain::Static, CertificateRegime::NonNormal,
-      shortfall(read.minSingularValue, fullRankTolerance), read.conditioning,
-      fullRankTolerance);
+  // The accumulation is exact given the verified premise that every
+  // connecting simplex named a sheet at each end, so a full-rank attachment
+  // is graded StructureExact at residual zero. A rank-dropping one certifies
+  // nothing: the frame law still applies to it, but it is not an element of
+  // GL(k, C) and no transport it composes into is invertible.
+  read.certificate =
+      read.minSingularValue > fullRankTolerance
+          ? Certificate::structureExact(CertificateDomain::Static,
+                                        CertificateRegime::NonNormal, 0.0,
+                                        read.conditioning, fullRankTolerance)
+          : Certificate::heuristicDiscovery(CertificateDomain::Static,
+                                            CertificateRegime::NonNormal);
   return read;
 }
 
@@ -561,9 +563,18 @@ ColorSingletRead ColorSinglet::amplitude(
   const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(read.transportedColumns);
   const Eigen::VectorXd singular = svd.singularValues();
   read.minSingularValue = singular.size() == 0 ? 0.0 : singular.minCoeff();
-  read.certificate = Certificate::algebraicallyExact(
-      CertificateDomain::Static, CertificateRegime::NonNormal,
-      shortfall(read.magnitude, tolerance), tolerance);
+  // The amplitude is a determinant of supplied numbers, so it is exact to
+  // rounding; what the certificate grades is the nonvanishing premise. A
+  // wedge that vanished at the declared tolerance certifies nothing, because
+  // the singlet condition the whitepaper states is exactly that it does not
+  // vanish.
+  read.certificate =
+      read.nonvanishing
+          ? Certificate::algebraicallyExact(CertificateDomain::Static,
+                                            CertificateRegime::NonNormal, 0.0,
+                                            tolerance)
+          : Certificate::heuristicDiscovery(CertificateDomain::Static,
+                                            CertificateRegime::NonNormal);
   return read;
 }
 
