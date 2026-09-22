@@ -58,9 +58,7 @@ import sys
 
 import numpy as np
 
-import tessera as T
-
-qu = T.quantum
+from tessera import quantum as qu
 
 #: Number of stages in the refinement sequence. Two stages measure one defect
 #: and establish nothing; the acceptance is that the defect FALLS, which needs
