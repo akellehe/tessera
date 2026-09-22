@@ -43,8 +43,10 @@ namespace tessera::chainhodge {
 class DeclaredPaths {
  public:
   /// The breadth-first path rule rooted at \p basePoint: the walk to each
-  /// vertex is a shortest path in the 1-skeleton, with ties broken by ascending
-  /// vertex id so that the rule is deterministic and reproducible. When
+  /// vertex is a shortest path in the 1-skeleton. The parent of a vertex is the
+  /// first vertex adjacent to it that the breadth-first scan dequeues, and each
+  /// vertex's neighbours are scanned in ascending vertex id, so the rule is
+  /// fixed by the vertex ids alone and is reproducible. When
   /// \p support is non-empty the walks stay inside it, which is how a cluster's
   /// own support declares its own paths; an empty \p support means the whole
   /// complex.
