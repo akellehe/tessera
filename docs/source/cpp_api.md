@@ -241,6 +241,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} FaceAnchor.h
 ```
+```{doxygenfile} DressedAnchor.h
+```
 ```{doxygenfile} RieszBand.h
 ```
 

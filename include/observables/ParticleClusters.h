@@ -208,6 +208,7 @@
 
 #include <Eigen/Core>
 
+#include "chainhodge/DressedAnchor.h"
 #include "cobordism/Certificate.h"
 #include "observables/ColorFiber.h"
 #include "observables/CrossingReadouts.h"
@@ -445,6 +446,17 @@ struct QuarkCandidateEvidence {
   /// their floors, over at least `minStabilityFrames` frames.  The measured
   /// across-frame spreads travel on the read as diagnostics.
   std::vector<AnchorProfile> anchorFrames{};
+  /// The anchor certificate of the candidate's base band by the dressed
+  /// coordinate (`chainhodge::DressedAnchor::profile`): the projective
+  /// profile of the exterior-power coordinates
+  /// \f$ \Delta_\tau = \det(\mathrm{res}_{\tau\to p}(U)\Phi_Q) \f$ over the
+  /// candidate's atlas of faces, together with its determinant-line
+  /// transitions and its verified connection-dressed covariance.  A supplied
+  /// read that refuses names the `dressed-anchor` certificate on the quark
+  /// read; an absent one leaves that channel unmeasured, which is a distinct
+  /// state from measured and refusing.  The channel is reported and does not
+  /// enter the verdict.
+  std::optional<chainhodge::DressedAnchorRead> dressedAnchor{};
   /// The candidate's lifetime transports (the world-tube family): every
   /// link must be accepted with leakage under the configured cap.
   std::vector<FiberTransportRead> lifetimeTransports{};

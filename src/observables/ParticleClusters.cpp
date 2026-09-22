@@ -745,6 +745,12 @@ QuarkRead ParticleClusters::classifyQuark(
     read.classification = "none";
   }
 
+  // The anchor certificate by the dressed coordinate, reported: a supplied
+  // profile that refuses names itself, and an absent one leaves the channel
+  // unmeasured rather than failed.  It does not enter the verdict.
+  if (evidence.dressedAnchor.has_value() && !evidence.dressedAnchor->anchored)
+    failed.emplace_back("dressed-anchor");
+
   // Flavor: only an emergent certified two-state subclass reports isospin.
   const bool flavorOk = evidence.flavor.has_value() &&
                         evidence.flavor->found &&

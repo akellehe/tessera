@@ -3262,6 +3262,12 @@ pass.)doc")
                      "The anchor profile at each cobordism frame; the "
                      "quark condition of a stable profile with "
                      "determinant-line coherence is decided here.")
+      .def_readwrite("dressedAnchor", &QuarkCandidateEvidence::dressedAnchor,
+                     "The Section 10 anchor certificate of the band by the "
+                     "dressed coordinate (chainhodge.DressedAnchor.profile). "
+                     "A supplied read that refuses names the 'dressed-anchor' "
+                     "certificate; an absent one leaves the channel "
+                     "unmeasured. Reported, never gating.")
       .def_readwrite("lifetimeTransports",
                      &QuarkCandidateEvidence::lifetimeTransports,
                      "World-tube transports (all must be accepted).")

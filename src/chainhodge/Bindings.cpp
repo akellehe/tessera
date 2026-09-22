@@ -12,6 +12,7 @@
 #include "chainhodge/CovariantChainHodge.h"
 #include "chainhodge/BandDerivative.h"
 #include "chainhodge/FaceAnchor.h"
+#include "chainhodge/DressedAnchor.h"
 #include "chainhodge/RieszBand.h"
 #include "chainhodge/LorentzianFamily.h"
 #include "chainhodge/PencilSchur.h"
@@ -700,4 +701,121 @@ is the transpose.)doc")
       .def_static("transfer", &PencilSchur::transfer, py::arg("AtildeU"), py::arg("AtildeUinv"),
            py::arg("ZA"), py::arg("ZAdual"), py::arg("ZB"), py::arg("ZBdual"),
            py::arg("tolerance") = 1e-8);
+
+  // ---- the anchor by the dressed coordinate ----
+
+  py::class_<DeclaredPaths>(m, "DeclaredPaths",
+      R"doc(The declared path rule of an anchor: one base vertex p and one walk in the
+1-skeleton from p to each vertex the rule reaches. The transport of a coefficient at v
+to p is the ordered product of the links along the walk, which telescopes under a vertex
+gauge to g_p^{-1} T_p(v) g_v. The same base vertex and the same rule are used for every
+face of the atlas.)doc")
+      .def_static("breadthFirst", &DeclaredPaths::breadthFirst, py::arg("complex"),
+           py::arg("base_point"), py::arg("support") = std::vector<std::uint64_t>{},
+           "Shortest walks from the base vertex, ties broken by ascending vertex id; an "
+           "empty support means the whole complex.")
+      .def_static("fromWalks", &DeclaredPaths::fromWalks, py::arg("complex"),
+           py::arg("base_point"), py::arg("walks"),
+           "A caller-declared rule: one vertex sequence per reached vertex, validated "
+           "against the complex's edges.")
+      .def_static("declaredTransports", &DeclaredPaths::declaredTransports, py::arg("base_point"),
+           py::arg("transports"),
+           "A transport table declared as bare numbers with no walk behind it. It does not "
+           "transform under a vertex gauge, so the anchor refuses it; it exists so that the "
+           "refusal is reachable.")
+      .def("basePoint", &DeclaredPaths::basePoint)
+      .def("derivedFromWalks", &DeclaredPaths::derivedFromWalks)
+      .def("reaches", &DeclaredPaths::reaches, py::arg("v"))
+      .def("walks", &DeclaredPaths::walks)
+      .def("transport", &DeclaredPaths::transport, py::arg("connection"), py::arg("v"),
+           "T_p(v), the transport of a coefficient at v to the base vertex.");
+
+  py::class_<FaceRestriction>(m, "FaceRestriction",
+      "One oriented triangle's dressed restriction: its three ordered boundary edges in the "
+      "cyclic order (v0v1), (v1v2), (v0v2), their incidence signs (+1, +1, -1), their base "
+      "vertices b(e) = min e, the transports of those base vertices to p, and the three "
+      "nonzero entries of res_{tau->p}(U).")
+      .def_readonly("faceIndex", &FaceRestriction::faceIndex)
+      .def_readonly("edgeIndices", &FaceRestriction::edgeIndices)
+      .def_readonly("incidenceSigns", &FaceRestriction::incidenceSigns)
+      .def_readonly("basePoints", &FaceRestriction::basePoints)
+      .def_readonly("transports", &FaceRestriction::transports)
+      .def_readonly("factors", &FaceRestriction::factors);
+
+  py::class_<DressedAnchorRead>(m, "DressedAnchorRead",
+      "The anchor certificate of one base band on one atlas of faces: the exterior-power "
+      "coordinates of every face, the invariant coordinates alpha_tau when attached, the "
+      "covariance and transition-cocycle residuals, and the named refusals.")
+      .def_readonly("basePoint", &DressedAnchorRead::basePoint)
+      .def_readonly("bandRank", &DressedAnchorRead::bandRank)
+      .def_readonly("faceIndices", &DressedAnchorRead::faceIndices)
+      .def_readonly("coordinates", &DressedAnchorRead::coordinates)
+      .def_readonly("invariantCoordinates", &DressedAnchorRead::invariantCoordinates)
+      .def_readonly("anchoringFaces", &DressedAnchorRead::anchoringFaces)
+      .def_readonly("coordinateScale", &DressedAnchorRead::coordinateScale)
+      .def_readonly("covarianceResidual", &DressedAnchorRead::covarianceResidual)
+      .def_readonly("transitionCocycleResidual", &DressedAnchorRead::transitionCocycleResidual)
+      .def_readonly("tolerance", &DressedAnchorRead::tolerance)
+      .def_readonly("anchored", &DressedAnchorRead::anchored)
+      .def_readonly("failedCertificates", &DressedAnchorRead::failedCertificates);
+
+  py::class_<DressedAnchor>(m, "DressedAnchor",
+      R"doc(The anchor of a base band to oriented two-simplices by the dressed coordinate:
+Delta_tau = det(res_{tau->p}(U) Phi_Q) for a rank-three band, its Lambda^r variant for a
+band of rank below three, the profile those coordinates form as a point of a projective
+space, and the determinant-line transition functions on overlaps. No modulus, square
+root, free face weight or real-valued score enters the physical definition. The anchor
+refuses rather than reporting a gauge-dependent raw restriction when the
+connection-dressed covariance cannot be verified, and refuses an identically zero
+profile, which is what an exact band at flat connection produces.)doc")
+      .def_static("faceRestriction", &DressedAnchor::faceRestriction, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"),
+           "The triangle's ordered boundary edges, incidence signs, base vertices and transports.")
+      .def_static("restriction", &DressedAnchor::restriction, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"),
+           "res_{tau->p}(U) as a dense 3 x n_1 matrix, for verifying the covariance law as "
+           "written.")
+      .def_static("restrictedFrame", &DressedAnchor::restrictedFrame, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+           "res_{tau->p}(U) Phi_Q, a 3 x r matrix, without forming any n_1-wide object.")
+      .def_static("twistedCoboundaryBlock", &DressedAnchor::twistedCoboundaryBlock,
+           py::arg("complex"), py::arg("connection"), py::arg("face_index"),
+           "The restriction to tau's three ordered boundary edges of the twisted coboundary "
+           "of a vertex potential; its determinant is F_tau - 1.")
+      .def_static("exteriorPower", &DressedAnchor::exteriorPower, py::arg("A"),
+           "Lambda^r of a 3 x r matrix: its maximal minors in lexicographic order of the row "
+           "subset.")
+      .def_static("dressedCoordinates", &DressedAnchor::dressedCoordinates, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+           "The Lambda^r coordinates of one face.")
+      .def_static("dressedCoordinate", &DressedAnchor::dressedCoordinate, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+           "Delta_tau for a rank-three band.")
+      .def_static("anchorableFaces", &DressedAnchor::anchorableFaces, py::arg("complex"),
+           py::arg("paths"), "The triangles every one of whose edge base vertices the rule reaches.")
+      .def_static("profile", &DressedAnchor::profile, py::arg("complex"), py::arg("connection"),
+           py::arg("paths"), py::arg("face_indices"), py::arg("Phi"),
+           py::arg("tolerance") = 1e-9, py::arg("gauge_seed") = 7,
+           "The anchor certificate of the band on the atlas.")
+      .def_static("withInvariantCoordinates", &DressedAnchor::withInvariantCoordinates,
+           py::arg("read"), py::arg("covariant"), py::arg("Z_dual"), py::arg("Z"),
+           "The same read with the invariant coordinates alpha_tau of its atlas attached.")
+      .def_static("covarianceResidual", &DressedAnchor::covarianceResidual, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_indices"), py::arg("gauge"),
+           "The residual of res(U^g) rho_1(g) = g_p^{-1} res(U) over the atlas.")
+      .def_static("verificationGauge", &DressedAnchor::verificationGauge, py::arg("complex"),
+           py::arg("seed"), "The deterministic verification gauge of a seed.")
+      .def_static("faceTransition", &DressedAnchor::faceTransition, py::arg("read"),
+           py::arg("face_slot"), py::arg("other_face_slot"), py::arg("coordinate") = 0,
+           "The determinant-line transition on the overlap of two face charts.")
+      .def_static("basePointTransition", &DressedAnchor::basePointTransition, py::arg("read"),
+           py::arg("other"), py::arg("face_slot"), py::arg("coordinate") = 0,
+           "The transition between the charts of two base vertices on one face.")
+      .def_static("transitionCocycleResidual", &DressedAnchor::transitionCocycleResidual,
+           py::arg("read"), py::arg("coordinate") = 0,
+           "The residual of t_ab t_bc = t_ac over the read's anchoring faces.")
+      .def_static("projectiveDistance", &DressedAnchor::projectiveDistance, py::arg("a"),
+           py::arg("b"),
+           "The chordal Fubini-Study distance between two profiles, a reported numerical "
+           "stability certificate and never part of a physical statement.");
 }
