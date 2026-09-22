@@ -12,6 +12,26 @@
 
 namespace tessera::chainhodge {
 
+Complex PencilSchur::logDeterminant(const Eigen::MatrixXcd &A) {
+  if (A.rows() != A.cols())
+    throw std::invalid_argument("PencilSchur::logDeterminant: the matrix must be square");
+  if (A.rows() == 0) return Complex(0.0, 0.0);
+  constexpr double kPi = 3.14159265358979323846;
+  const Eigen::PartialPivLU<Eigen::MatrixXcd> lu(A);
+  const Eigen::MatrixXcd &LU = lu.matrixLU();
+  double modulus = 0.0, phase = 0.0;
+  for (Eigen::Index i = 0; i < LU.rows(); ++i) {
+    const Complex z = LU(i, i);
+    if (z == Complex(0.0, 0.0)) return Complex(-std::numeric_limits<double>::infinity(), 0.0);
+    modulus += std::log(std::abs(z));
+    phase += std::arg(z);
+  }
+  if (lu.permutationP().determinant() < 0) phase += kPi;
+  phase = std::remainder(phase, 2.0 * kPi);
+  if (phase <= -kPi) phase += 2.0 * kPi;
+  return Complex(modulus, phase);
+}
+
 FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
                                      Complex lambda, const std::vector<int> &interface,
                                      double rankTolerance) {
@@ -42,9 +62,11 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   for (int i = 0; i < ni; ++i)
     for (int j = 0; j < ni; ++j) PII(i, j) = P(out.interior[static_cast<std::size_t>(i)], out.interior[static_cast<std::size_t>(j)]);
   out.pencilDeterminant = P.fullPivLu().determinant();
+  out.pencilLogDeterminant = logDeterminant(P);
   if (ni == 0) {
     out.response = PBB;
     out.interiorDeterminant = Complex(1.0, 0.0);
+    out.interiorLogDeterminant = Complex(0.0, 0.0);
     out.responseDeterminant = PBB.fullPivLu().determinant();
     out.constraintModes = Eigen::MatrixXcd::Identity(n, nb);
     out.solveResidual = 0.0;
@@ -52,6 +74,7 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
     Eigen::FullPivLU<Eigen::MatrixXcd> lu(PII);
     lu.setThreshold(rankTolerance);
     out.interiorDeterminant = lu.determinant();
+    out.interiorLogDeterminant = logDeterminant(PII);
     if (!lu.isInvertible()) {
       out.interiorSingular = true;
       out.determinantResidual = std::numeric_limits<double>::quiet_NaN();
@@ -70,6 +93,11 @@ FeshbachResult PencilSchur::feshbach(const Eigen::MatrixXcd &A, const Eigen::Mat
   const Complex product = out.interiorDeterminant * out.responseDeterminant;
   out.determinantResidual = std::abs(out.pencilDeterminant - product) /
                             std::max(std::abs(out.pencilDeterminant), 1e-300);
+  out.responseLogDeterminant = logDeterminant(out.response);
+  const Complex defect = out.pencilLogDeterminant - out.interiorLogDeterminant - out.responseLogDeterminant;
+  constexpr double kTwoPi = 6.28318530717958647692;
+  out.logModulusResidual = std::abs(defect.real());
+  out.logPhaseResidual = std::abs(std::remainder(defect.imag(), kTwoPi));
   return out;
 }
 

@@ -660,6 +660,11 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("responseDeterminant", &FeshbachResult::responseDeterminant)
       .def_readonly("pencilDeterminant", &FeshbachResult::pencilDeterminant)
       .def_readonly("determinantResidual", &FeshbachResult::determinantResidual)
+      .def_readonly("pencilLogDeterminant", &FeshbachResult::pencilLogDeterminant)
+      .def_readonly("interiorLogDeterminant", &FeshbachResult::interiorLogDeterminant)
+      .def_readonly("responseLogDeterminant", &FeshbachResult::responseLogDeterminant)
+      .def_readonly("logModulusResidual", &FeshbachResult::logModulusResidual)
+      .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
       .def_readonly("solveResidual", &FeshbachResult::solveResidual)
       .def_readonly("interiorSingular", &FeshbachResult::interiorSingular);
 
@@ -691,6 +696,8 @@ images: the Feshbach complement with its determinant factorization, the Craig-Ba
 congruence, the restriction of pencil and chain metric to retained fibers, and the
 transfer between fibers with the reversal identity asserted at runtime. Every pairing
 is the transpose.)doc")
+      .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
+           "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
            py::arg("interface"), py::arg("rank_tolerance") = 1e-12)
       .def_static("craigBampton", &PencilSchur::craigBampton, py::arg("A"), py::arg("M"), py::arg("T"))
