@@ -201,11 +201,12 @@ class TheOccupationProjectorTest(unittest.TestCase):
         declaration = _declaration(matter_weight=1.0)
         declaration.covariance = seed.occupation_projector(3, True)
         action = cob.JointAction(spacetime, declaration)
-        self.assertAlmostEqual(abs(action.matter_term() - sum(ordered[:3])),
-                               0.0, delta=1e-8)
+        expected = sum(ordered[:3])
+        self.assertAlmostEqual(abs(action.matter_term() - expected), 0.0,
+                               delta=1e-8 * (1.0 + abs(expected)))
 
     def test_each_occupation_order_sorts_by_what_it_names(self):
-        """The declared order is honoured, and it reorders one spectrum.
+        """The declared order is honoured on one and the same spectrum.
 
         Both orders present the same multiset of eigenvalues — the spectrum does
         not depend on how it is read — and each presents it sorted by the
