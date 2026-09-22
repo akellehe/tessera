@@ -2364,6 +2364,16 @@ class MultiCobordism {
   /// Depends only on \f$ \Gamma \f$ and the classical geometry. Exactly 0
   /// outside the `CertificatesBlindMeanField` sub-mode, with no carried state,
   /// or at weight zero.
+  ///
+  /// This is a real scalar the engine adds to its scalar objective, built from
+  /// the Hermitian part of the operator so that the covariance evolution of
+  /// `advanceCarriedState` stays unitary and therefore Gaussian-closed. The
+  /// complex bilinear density \f$ \operatorname{tr}(\Gamma\,h(z,U)) \f$ of
+  /// Section 7, with no adjoint and no real projection, together with its
+  /// complex force on both edge fields and the self-consistent
+  /// \f$ (z^{*},\Gamma^{*}) \f$ iteration that re-occupies the modes of
+  /// \f$ h \f$, are `cobordism::JointAction` and
+  /// `cobordism::SelfConsistentMeanField`.
   [[nodiscard]] double carriedStateEnergy(
       const std::shared_ptr<Spacetime> &spacetime) const;
 
@@ -2401,6 +2411,13 @@ class MultiCobordism {
   /// \f$ h(\Gamma,g)=\tfrac12(L_k+L_k^\dagger)|_S \f$, with the classical
   /// geometry closed over. The loop is Gaussian-closed by construction and the
   /// certificate measures that closure.
+  ///
+  /// The covariance is transported by this generator and is not re-occupied: a
+  /// state carried along a moving geometry keeps the modes it was given, which
+  /// is a different question from which modes of \f$ h(z) \f$ are filled at the
+  /// geometry it arrives on. The occupation of the current operator's modes,
+  /// and the fixed point of the two together, are
+  /// `cobordism::SelfConsistentMeanField`.
   /// \returns the worst purity defect across the steps; NaN with no carried
   ///   state.
   double advanceCarriedState();
