@@ -98,7 +98,11 @@ struct FeshbachResult {
   /// resonance, where the left null space is empty.
   double compatibilityResidual{0.0};
   /// Whether `compatibilityResidual` is at or below the declared rank
-  /// tolerance: the condition the inverse may be replaced under.
+  /// tolerance. When it is, every interface load is compatible and the
+  /// constraint row of `resonantResponse` is vacuous; when it is not, that row
+  /// is the restriction on \f$ x_B \f$ under which the interior equation is
+  /// solvable, which is where the condition is enforced. The condition is
+  /// therefore checked and carried, never used to refuse the reduction.
   bool compatible{true};
   /// The independence condition of the whitepaper,
   /// \f$ P_{BI}\ker P_{II} = 0 \f$, measured as \f$ \|P_{BI}N\| / \|P_{BI}\| \f$
