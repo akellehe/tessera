@@ -230,16 +230,21 @@ class TestS4FirstNonzeroEigenvalue:
             spectrum = hodge.spectrum(1)
             ev = np.array(spectrum.eigenvalues, dtype=complex)
             summary = svp.spectrum_summary(ev)
-            nonzero = np.sort(np.abs(ev[np.abs(ev) > 1e-9 * summary["max_abs"]]))
+            # The b_1 harmonic eigenvalues are the b_1 smallest moduli; the
+            # first nonzero one is the next, with no threshold in between (on
+            # a Lorentzian torus it falls towards the rounding level itself).
+            moduli = np.sort(np.abs(ev))
             record = svp_records.instance(
                 "S4", "F1", {"N": N, "jitter": 0.25, "seed": 1,
                              "signature": "lorentzian" if lorentz else "euclidean"},
                 hodge, read, started=started, spectrum_summary=summary,
-                first_nonzero_abs=float(nonzero[0]),
+                harmonic_abs=[float(v) for v in moduli[:read.nullity]],
+                first_nonzero_abs=float(moduli[read.nullity]),
                 continuum=self.CONTINUUM if not lorentz else None,
                 criterion="reported (no threshold)")
-            assert record["nullity"] == summary["zero"] == 2
-            values.append(float(nonzero[0]))
+            assert record["nullity"] == 2
+            assert max(record["harmonic_abs"]) < 1e-6 * record["first_nonzero_abs"]
+            values.append(record["first_nonzero_abs"])
         slope = float(np.polyfit(np.log(self.SIZES), np.log(values), 1)[0])
         svp_records.write(test="S4", family="F1", preset="L2",
                           params={"N": list(self.SIZES), "jitter": 0.25, "seed": 1,

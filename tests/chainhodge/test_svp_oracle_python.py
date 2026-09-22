@@ -118,11 +118,13 @@ def test_pencil_spectrum_and_harmonic_space_agree_with_the_dense_oracle(name, pr
     values = eig(A, B, right=False)
     spectrum = hodge.spectrum(1)
     scale = float(np.max(np.abs(np.array(spectrum.eigenvalues))))
+    chains = read.images if preset == "L2" else read.chains
     agreement = {
         "A": relative(pencil.A, A), "B": relative(pencil.B, B),
         "spectrum": hausdorff(spectrum.eigenvalues, values) / scale,
-        "harmonic_span_rad": float(np.max(np.radians(
-            svp.angles_deg(read.images if preset == "L2" else read.chains, kernel)))),
+        # b_1 = 0 on the 2-complex: there is no harmonic span to compare.
+        "harmonic_span_rad": float(np.max(np.radians(svp.angles_deg(chains, kernel))))
+                             if read.nullity else 0.0,
     }
     record = svp_records.instance(
         "X", name, {"instance": name, "signature": signature}, hodge, read, started=started,

@@ -377,6 +377,7 @@ class TestG4GeneratorSanity:
         assert difference <= 1e-12 and imaginary <= 1e-12
 
 
+@pytest.mark.slow
 class TestG5KontsevichSegalFamily:
     """G5: the plan's section 7 table. The curved torus with period ratio 2
     (with equal periods the lattice diagonals are near null), jitter 0.15, at

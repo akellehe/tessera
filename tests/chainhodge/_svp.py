@@ -56,6 +56,21 @@ def condition_number(hodge, k=1):
     return float(sv[0] / sv[-1])
 
 
+_BETTI = {}
+
+
+def betti_numbers(hodge):
+    """The Betti numbers of an instance, memoized on the combinatorics. They
+    come from exact integer ranks and cost 12 s on the largest mesh of the
+    plan's tables, where every row of a table is a different geometry on the
+    same complex."""
+    K = hodge.complex()
+    key = (K.dimension(), tuple(tuple(int(v) for v in t) for t in K.orientedTopSimplices()))
+    if key not in _BETTI:
+        _BETTI[key] = list(hodge.betti())
+    return list(_BETTI[key])
+
+
 def rank_report(hodge, k=1, limit=301):
     """The rank conditions (R1)-(R4) of an instance for its record, measured
     only up to `limit` cells: above that the measurement costs more than the
@@ -749,7 +764,7 @@ class Recorder:
         cond = condition_number(hodge, k)
         fields = {"test": test, "family": family, "params": params,
                   "preset": "L2" if hodge.preset() == ch.Preset.L2 else "GRASSMANN_ALL",
-                  "n0": n[0], "n1": n[1], "n2": n[2], "betti": list(hodge.betti()),
+                  "n0": n[0], "n1": n[1], "n2": n[2], "betti": betti_numbers(hodge),
                   "cond_G1": cond, "tau": tolerance(hodge.size(k), cond)}
         if read is not None:
             fields.update({"nullity": read.nullity, "gap": read.gap, "dense": read.dense})
