@@ -23,27 +23,55 @@ namespace tessera::chainhodge {
 /// residuals that certify it.
 ///
 /// Away from an interior resonance the complement is the exact
-/// \f$ F_B(\lambda) \f$ and `interiorSingular` is false. At an interior
-/// resonance (\f$ P_{II} \f$ singular at the shift) the inverse is replaced by
-/// the declared supported generalized inverse \f$ P_{II}^{\#} \f$ — the
-/// Moore–Penrose pseudoinverse taken from the singular value decomposition at
-/// the declared rank tolerance — only after the compatibility condition has
-/// been measured, and the resonant interior modes are retained explicitly as
-/// fiber coordinates rather than eliminated.
+/// \f$ F_B(\lambda) \f$ and `interiorSingular` is false. An interior
+/// resonance is declared spectrally: it is a shift at which the interior block
+/// \f$ P_{II} = A_{II} - \lambda M_{II} \f$ has eigenvalues inside the
+/// *resonance disc*, the closed disc about zero in its spectral plane whose
+/// radius is the declared `resonanceRadius` times the spectral radius of
+/// \f$ P_{II} \f$. There the inverse is replaced by the declared supported
+/// generalized inverse, which is the **Drazin inverse** at zero — Kato's reduced
+/// resolvent — built from the **Riesz projector** \f$ \Pi_0 \f$ of
+/// \f$ P_{II} \f$ onto the **generalized eigenspace** of the enclosed
+/// eigenvalues (the span of every eigenvector and every Jordan chain belonging
+/// to them):
+/// \f[
+///   \Pi_0 = \frac{1}{2\pi i}\oint_{|z| = R} (z - P_{II})^{-1}\,dz,\qquad
+///   P_{II}^{D} = (P_{II} + \Pi_0)^{-1}(I - \Pi_0).
+/// \f]
+/// \f$ \Pi_0 \f$ commutes with \f$ P_{II} \f$, and \f$ P_{II}^{D} \f$ is
+/// the inverse of \f$ P_{II} \f$ on the complementary invariant subspace
+/// \f$ \operatorname{ran}(I - \Pi_0) \f$ and zero on the generalized
+/// eigenspace, so that \f$ P_{II}P_{II}^{D} = P_{II}^{D}P_{II} = I - \Pi_0 \f$.
+/// Both projectors are oblique — they are spectral, not Hermitian-orthogonal —
+/// and the whole construction commutes with every similarity of the interior
+/// coordinates, which is the property a Hermitian-orthogonal choice lacks. The
+/// resonant interior modes are retained explicitly as fiber coordinates rather
+/// than eliminated, and the compatibility and independence conditions are
+/// measured on the projector rather than assumed.
+///
+/// The projector is computed from the complex Schur form of \f$ P_{II} \f$,
+/// reordered so that the enclosed eigenvalues lead, and a Sylvester solve for
+/// the coupling block; no eigenvector matrix is inverted, so a Jordan block
+/// among the enclosed eigenvalues costs nothing in accuracy. What a Jordan
+/// block does cost is the declaration: the computed eigenvalues of a Jordan
+/// block of size \f$ k \f$ scatter about their common value by
+/// \f$ O(\epsilon_m^{1/k}) \f$ of the norm, so a disc meant to enclose one must
+/// be declared at least that wide (about \f$ 10^{-8} \f$ for \f$ k = 2 \f$),
+/// and `resonanceEnclosure` and `resonanceSeparation` report whether it was.
 struct FeshbachResult {
   Complex lambda{0.0, 0.0};
   /// Interface (kept) and interior (eliminated) coordinates, ascending.
   std::vector<int> interface{};
   std::vector<int> interior{};
   /// \f$ F_B(\lambda) = P_{BB} - P_{BI} P_{II}^{-1} P_{IB} \f$, \f$ P = A - \lambda M \f$.
-  /// At an interior resonance the inverse is the generalized inverse
-  /// \f$ P_{II}^{\#} \f$ and this is the block of `resonantResponse` on the
+  /// At an interior resonance the inverse is the Drazin inverse
+  /// \f$ P_{II}^{D} \f$ and this is the block of `resonantResponse` on the
   /// interface coordinates alone.
   Eigen::MatrixXcd response{};
   /// The constraint modes \f$ T = [I_B;\ -P_{II}^{-1} P_{IB}] \f$ in the full
   /// coordinate order (\f$ n \times |B| \f$): the fibers the kept coordinates
   /// carry, whose congruence \f$ T^T M T \f$ is the inherited chain metric.
-  /// At an interior resonance the inverse is \f$ P_{II}^{\#} \f$.
+  /// At an interior resonance the inverse is \f$ P_{II}^{D} \f$.
   Eigen::MatrixXcd constraintModes{};
   Complex interiorDeterminant{0.0, 0.0};
   Complex responseDeterminant{0.0, 0.0};
@@ -72,42 +100,56 @@ struct FeshbachResult {
 
   // --- the generalized inverse, its projectors, and the resonant reduction ---
 
-  /// Numerical rank of \f$ P_{II} \f$ and the absolute singular-value threshold
-  /// that decided it, \f$ \text{rankTolerance}\cdot\varsigma_{\max}(P_{II}) \f$.
-  /// The singular value decomposition that measures them is taken only at a
-  /// resonance, where the generalized inverse needs it; away from one the
-  /// pivoted LU declares the block invertible and the rank is \f$ |I| \f$ with
-  /// threshold zero.
+  /// The absolute radius \f$ R \f$ of the resonance disc about zero in the
+  /// spectral plane of \f$ P_{II} \f$: the declared `resonanceRadius` times
+  /// the spectral radius of \f$ P_{II} \f$. Eigenvalues with \f$ |z| \le R \f$
+  /// are the resonant ones.
+  double resonanceRadius{0.0};
+  /// How deep inside the disc the enclosed eigenvalues sit,
+  /// \f$ \max_{\text{enclosed}} |z| / R \f$ (zero when none is enclosed), and
+  /// how far the nearest excluded eigenvalue sits outside it,
+  /// \f$ \min_{\text{excluded}} |z| / R \f$ (\f$ +\infty \f$ when none is
+  /// excluded). Together they are the margin the resonance was declared with:
+  /// an eigenvalue near the circle makes the declaration a close call, and the
+  /// two numbers say so.
+  double resonanceEnclosure{0.0};
+  double resonanceSeparation{std::numeric_limits<double>::infinity()};
+  /// \f$ |I| - q \f$ with \f$ q \f$ the number of enclosed eigenvalues counted
+  /// with algebraic multiplicity: the dimension of the complementary invariant
+  /// subspace on which \f$ P_{II} \f$ is inverted.
   int interiorRank{0};
-  double interiorRankThreshold{0.0};
-  /// \f$ \varsigma_r/\varsigma_{r+1} \f$ of \f$ P_{II} \f$: the last kept over
-  /// the first discarded singular value, the margin the resonance was declared
-  /// with. \f$ +\infty \f$ away from a resonance and when nothing was
-  /// discarded.
-  double interiorSingularGap{std::numeric_limits<double>::infinity()};
-  /// A basis of \f$ \ker P_{II} \f$ (\f$ |I| \times q \f$, orthonormal columns):
+  /// The declared generalized inverse \f$ P_{II}^{D} \f$ (\f$ |I| \times |I| \f$)
+  /// at a resonance; empty away from one, where the ordinary inverse is applied
+  /// by solves and never formed.
+  Eigen::MatrixXcd interiorInverse{};
+  /// A basis \f$ N \f$ of the generalized eigenspace \f$ \operatorname{ran}\Pi_0 \f$
+  /// (\f$ |I| \times q \f$, orthonormal columns: the leading Schur vectors):
   /// the resonant interior modes, empty away from a resonance.
-  Eigen::MatrixXcd interiorNullSpace{};
-  /// A basis of \f$ \ker P_{II}^T \f$ (\f$ |I| \times q \f$, orthonormal
-  /// columns): the left null space in the transpose pairing the theory uses.
-  Eigen::MatrixXcd interiorLeftNullSpace{};
+  Eigen::MatrixXcd resonantSpace{};
+  /// The basis \f$ N_L \f$ of \f$ \operatorname{ran}\Pi_0^T \f$ dual to
+  /// \f$ N \f$ in the transpose pairing, \f$ N_L^T N = I_q \f$, so that
+  /// \f$ \Pi_0 = N N_L^T \f$ (\f$ |I| \times q \f$).
+  Eigen::MatrixXcd resonantLeftSpace{};
   /// The resonant modes in the full coordinate order, \f$ [0;\ N] \f$
   /// (\f$ n \times q \f$): the fiber coordinates the retained interior modes
   /// carry, alongside `constraintModes`.
   Eigen::MatrixXcd resonantModes{};
-  /// \f$ \Pi_R = P_{II}P_{II}^{\#} \f$, the projector onto
-  /// \f$ \operatorname{ran} P_{II} \f$, and \f$ \Pi_N = I - P_{II}^{\#}P_{II} \f$,
-  /// the projector onto \f$ \ker P_{II} \f$. Both are recorded at every shift,
-  /// resonant or not (away from a resonance \f$ \Pi_R = I \f$, \f$ \Pi_N = 0 \f$).
+  /// The two Riesz projectors: `nullProjector` is \f$ \Pi_0 \f$, the spectral
+  /// projector onto the generalized eigenspace of the enclosed eigenvalues, and
+  /// `rangeProjector` is \f$ I - \Pi_0 \f$, the projector onto the invariant
+  /// subspace of the excluded ones. Both are recorded at every shift, resonant
+  /// or not (away from a resonance \f$ \Pi_0 = 0 \f$).
   Eigen::MatrixXcd rangeProjector{};
   Eigen::MatrixXcd nullProjector{};
-  /// The compatibility (solvability) condition of the whitepaper,
-  /// \f$ y^T P_{IB} x_B = 0 \f$ for every \f$ y \in \ker P_{II}^T \f$, measured
-  /// as \f$ \|N_L^T P_{IB}\| / \|P_{IB}\| \f$ with \f$ N_L \f$ the columns of
-  /// `interiorLeftNullSpace`. Zero exactly when \f$ P_{IB} \f$ maps the
-  /// interface into \f$ \operatorname{ran} P_{II} \f$, which is when the
-  /// interior equation is solvable for every interface load. Zero away from a
-  /// resonance, where the left null space is empty.
+  /// The projector's own certificates: \f$ \|\Pi_0^2 - \Pi_0\| / \|\Pi_0\| \f$
+  /// and \f$ \operatorname{tr}\Pi_0 \f$, which is \f$ q \f$ for a projector of
+  /// rank \f$ q \f$. Quiet NaN and zero away from a resonance.
+  double projectorIdempotency{std::numeric_limits<double>::quiet_NaN()};
+  Complex projectorTrace{0.0, 0.0};
+  /// The compatibility (solvability) condition, \f$ \Pi_0 P_{IB} x_B = 0 \f$:
+  /// the interior equation is solvable for an interface load exactly when the
+  /// load has no component in the generalized eigenspace. Measured as
+  /// \f$ \|\Pi_0 P_{IB}\| / \|P_{IB}\| \f$; zero away from a resonance.
   double compatibilityResidual{0.0};
   /// Whether `compatibilityResidual` is at or below the declared rank
   /// tolerance. When it is, every interface load is compatible and the
@@ -116,11 +158,10 @@ struct FeshbachResult {
   /// solvable, which is where the condition is enforced. The condition is
   /// therefore checked and carried, never used to refuse the reduction.
   bool compatible{true};
-  /// The independence condition of the whitepaper,
-  /// \f$ P_{BI}\ker P_{II} = 0 \f$, measured as \f$ \|P_{BI}N\| / \|P_{BI}\| \f$
-  /// with \f$ N \f$ the columns of `interiorNullSpace`. When it holds the
-  /// boundary response does not depend on which interior solution was chosen
-  /// and `response` alone is the reduction; otherwise the null modes are
+  /// The independence condition, \f$ P_{BI}\Pi_0 = 0 \f$, measured as
+  /// \f$ \|P_{BI}\Pi_0\| / \|P_{BI}\| \f$. When it holds the boundary
+  /// response does not depend on which interior solution was chosen and
+  /// `response` alone is the reduction; otherwise the resonant modes are
   /// carried as the extra coordinates of `resonantResponse`.
   double independenceResidual{0.0};
   bool responseIndependent{true};
@@ -129,13 +170,16 @@ struct FeshbachResult {
   /// amplitudes — as the square \f$ (|B|+q) \times (|B|+q) \f$ matrix
   /// \f[
   ///   \hat F(\lambda) = \begin{pmatrix}
-  ///     P_{BB} - P_{BI}P_{II}^{\#}P_{IB} & P_{BI}N \\
-  ///     N_L^T P_{IB} & 0 \end{pmatrix},
+  ///     P_{BB} - P_{BI}P_{II}^{D}P_{IB} & P_{BI}N \\
+  ///     N_L^T P_{IB} & N_L^T P_{II} N \end{pmatrix},
   /// \f]
   /// whose first block row is the interface equation after the interior has
-  /// been eliminated on \f$ \operatorname{ran} P_{II} \f$ and whose second is
-  /// the compatibility constraint. Empty away from a resonance, where
-  /// `response` is the whole reduction.
+  /// been eliminated on the complementary invariant subspace and whose second
+  /// is the interior equation compressed to the generalized eigenspace — the
+  /// compatibility constraint, with the \f$ q \times q \f$ block
+  /// \f$ N_L^T P_{II} N \f$ being \f$ P_{II} \f$ restricted to that space
+  /// (nilpotent at an exact resonance, and zero when it is semisimple). Empty
+  /// away from a resonance, where `response` is the whole reduction.
   Eigen::MatrixXcd resonantResponse{};
   /// The numerical certificate of the resonant reduction as a whole, measured
   /// on every retained coordinate rather than only on the null space. With
@@ -143,18 +187,18 @@ struct FeshbachResult {
   /// beside the resonant modes — the reduction is exact in the sense that
   /// \f[
   ///   P(\lambda)\,W = E_B\,\hat F(\lambda)_{[1..|B|]}
-  ///                 + E_I\,\overline{N_L}\,\hat F(\lambda)_{[|B|+1..]},
+  ///                 + E_I\,N\,\hat F(\lambda)_{[|B|+1..]},
   /// \f]
   /// where \f$ E_B \f$ and \f$ E_I \f$ inject the interface and interior
-  /// coordinates and \f$ \overline{N_L} \f$ is the conjugate of
-  /// `interiorLeftNullSpace` (a basis of \f$ \ker P_{II}^H \f$, the complement
-  /// of \f$ \operatorname{ran}P_{II} \f$). Every column of the pencil applied
-  /// to a retained fiber is therefore read off \f$ \hat F(\lambda) \f$ alone,
-  /// and this is the relative Frobenius residual of that identity.
+  /// coordinates and \f$ N \f$ is `resonantSpace`, the identity resting on
+  /// \f$ P_{II}P_{II}^{D} = I - \Pi_0 = I - NN_L^T \f$. Every column of the
+  /// pencil applied to a retained fiber is therefore read off
+  /// \f$ \hat F(\lambda) \f$ alone, and this is the relative Frobenius
+  /// residual of that identity.
   double reductionResidual{std::numeric_limits<double>::quiet_NaN()};
   /// The numerical certificate of the resonant reduction: every null vector
   /// \f$ (x_B, c) \f$ of \f$ \hat F(\lambda) \f$ lifts to the null vector
-  /// \f$ x = [x_B;\ -P_{II}^{\#}P_{IB}x_B + Nc] \f$ of \f$ P(\lambda) \f$, and
+  /// \f$ x = [x_B;\ -P_{II}^{D}P_{IB}x_B + Nc] \f$ of \f$ P(\lambda) \f$, and
   /// this is \f$ \max \|P x\| / (\|P\|\,\|x\|) \f$ over a basis of
   /// \f$ \ker\hat F(\lambda) \f$ taken at the declared rank tolerance. Quiet
   /// NaN away from a resonance and when \f$ \hat F(\lambda) \f$ is nonsingular
@@ -346,21 +390,28 @@ class PencilSchur {
   /// \f$ A \f$ and \f$ 0 \f$ for an empty one.
   [[nodiscard]] static Complex logDeterminant(const Eigen::MatrixXcd &A);
   /// The Feshbach complement at \p lambda over the kept coordinates
-  /// \p interface, with the projectors of the interior block and, at an
-  /// interior resonance, the generalized inverse, the compatibility and
-  /// independence residuals, the retained resonant modes, the resonant
-  /// reduction \f$ \hat F(\lambda) \f$ and the lift residual that certifies it
-  /// (see `FeshbachResult`).
-  /// @param rankTolerance relative singular-value threshold deciding the rank
-  ///   of \f$ P_{II} \f$: a singular value at or below
-  ///   \p rankTolerance \f$ \cdot\,\varsigma_{\max}(P_{II}) \f$ is zero, and
-  ///   \f$ \lambda \f$ is an interior resonance.
+  /// \p interface, with the Riesz projectors of the interior block and, at an
+  /// interior resonance, the Drazin inverse, the compatibility and independence
+  /// residuals, the retained resonant modes, the resonant reduction
+  /// \f$ \hat F(\lambda) \f$ and the two residuals that certify it (see
+  /// `FeshbachResult`).
+  ///
+  /// Two declarations enter, and they govern different things.
+  /// \p resonanceRadius governs the resonance: \f$ \lambda \f$ is an interior
+  /// resonance exactly when \f$ P_{II} \f$ has an eigenvalue in the closed disc
+  /// about zero of radius \p resonanceRadius times its spectral radius.
+  /// \p rankTolerance governs only two rank decisions downstream of that: the
+  /// rank of the resonant reduction \f$ \hat F(\lambda) \f$ whose null vectors
+  /// the lift certificate is taken over, and the thresholds the `compatible`
+  /// and `responseIndependent` verdicts are read at.
   /// @throws std::invalid_argument when \p A and \p M are not square of the
-  ///   same size or an interface index is out of range.
+  ///   same size, an interface index is out of range, or \p resonanceRadius is
+  ///   negative.
   [[nodiscard]] static FeshbachResult feshbach(const Eigen::MatrixXcd &A,
                                                const Eigen::MatrixXcd &M, Complex lambda,
                                                const std::vector<int> &interface,
-                                               double rankTolerance = 1e-12);
+                                               double rankTolerance = 1e-12,
+                                               double resonanceRadius = 1e-12);
   /// The same Feshbach complement on the sparse production path: \f$ A \f$ and
   /// \f$ M \f$ are sparse, the interior block is factorized by sparse LU, and
   /// the only dense object formed is the \f$ n \times |B| \f$ block of
@@ -368,11 +419,10 @@ class PencilSchur {
   /// \f$ n \times n \f$ matrix appears, so this is defined at and above the
   /// crossover where the dense reading refuses.
   ///
-  /// The projectors, the generalized inverse and the resonant reduction are not
-  /// available here: they rest on a singular value decomposition of the
-  /// interior block, which is dense. An interior resonance is therefore
-  /// detected and refused by name, with the dense reading named as the one that
-  /// resolves it. A sparse LU reveals no rank, and a determinant is no measure
+  /// The Riesz projectors, the Drazin inverse and the resonant reduction are
+  /// not available here: they rest on the Schur form of the interior block,
+  /// which is dense. An interior resonance is therefore detected and refused by
+  /// name, with the dense reading named as the one that resolves it. A sparse LU reveals no rank, and a determinant is no measure
   /// of singularity at this size; the scale-free quantity the factorization
   /// does offer is the residual of the solve it was asked for, and a block that
   /// cannot solve its own interface load to \p solveTolerance is a resonance.
@@ -412,7 +462,9 @@ class PencilSchur {
   /// it too.
   /// @param tolerance the declared acceptance tolerance: `certified` requires
   ///   every certified bound to be at or below it.
-  /// @param rankTolerance relative rank threshold, as `feshbach`.
+  /// @param rankTolerance relative rank threshold, as `feshbach`; the
+  ///   resonance declaration of every `feshbach` taken here is that function's
+  ///   default resonance radius.
   /// @throws std::invalid_argument when \p A and \p M are not square of the
   ///   same size, an interface index is out of range, or either radius is
   ///   negative; std::runtime_error when the interior metric \f$ M_{II} \f$ or the
