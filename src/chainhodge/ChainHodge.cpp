@@ -5,10 +5,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -17,9 +19,18 @@
 #include <Eigen/SparseLU>
 #include <Eigen/SparseQR>
 
+#if defined(__linux__)
+#include <unistd.h>
+#endif
+
 namespace tessera::chainhodge {
 
 namespace {
+
+// One stored entry of a sparse factor: the complex scalar plus its index.
+constexpr double kBytesPerStoredEntry =
+    static_cast<double>(sizeof(Complex) + sizeof(SparseMatrix::StorageIndex));
+constexpr double kBytesPerMegabyte = 1024.0 * 1024.0;
 
 SparseMatrix sparseBoundary(const cobordism::ChainComplex &K, int k) {
   const int rows = (k >= 1) ? static_cast<int>(K.numSimplices(k - 1)) : 0;
@@ -38,6 +49,71 @@ SparseMatrix sparseBoundary(const cobordism::ChainComplex &K, int k) {
 }
 
 }  // namespace
+
+SparseCostMeter::SparseCostMeter(std::string operation, int degree, int dimension)
+    : operation_(std::move(operation)), degree_(degree), dimension_(dimension),
+      startResident_(residentMegabytes()), start_(std::chrono::steady_clock::now()) {}
+
+double SparseCostMeter::residentMegabytes() {
+#if defined(__linux__)
+  std::ifstream statm("/proc/self/statm");
+  long long pages = 0;
+  long long resident = 0;
+  if (statm >> pages >> resident)
+    return static_cast<double>(resident) * static_cast<double>(::sysconf(_SC_PAGESIZE)) /
+           kBytesPerMegabyte;
+#endif
+  return std::numeric_limits<double>::quiet_NaN();
+}
+
+SparseCostReport SparseCostMeter::finish(long long systemRows, long long systemNonZeros,
+                                         long long factorNonZeros,
+                                         long long rightHandSides) const {
+  SparseCostReport report;
+  report.operation = operation_;
+  report.degree = degree_;
+  report.dimension = dimension_;
+  report.systemRows = systemRows;
+  report.systemNonZeros = systemNonZeros;
+  report.factorNonZeros = factorNonZeros;
+  report.rightHandSides = rightHandSides;
+  report.wallSeconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - start_).count();
+  const double endResident = residentMegabytes();
+  report.residentMegabytes = endResident - startResident_;
+  if (factorNonZeros > 0) {
+    report.factorMegabytes =
+        static_cast<double>(factorNonZeros) * kBytesPerStoredEntry / kBytesPerMegabyte;
+    if (systemNonZeros > 0)
+      report.fillIn = static_cast<double>(factorNonZeros) / static_cast<double>(systemNonZeros);
+  }
+  return report;
+}
+
+SparseMatrix stackSparse(const SparseMatrix &top, const SparseMatrix &bottom, int columns) {
+  if (top.rows() > 0 && static_cast<int>(top.cols()) != columns)
+    throw std::invalid_argument("stackSparse: the top block has " + std::to_string(top.cols()) +
+                                " columns, expected " + std::to_string(columns));
+  if (bottom.rows() > 0 && static_cast<int>(bottom.cols()) != columns)
+    throw std::invalid_argument("stackSparse: the bottom block has " +
+                                std::to_string(bottom.cols()) + " columns, expected " +
+                                std::to_string(columns));
+  const int rows = static_cast<int>(top.rows() + bottom.rows());
+  std::vector<Eigen::Triplet<Complex>> trip;
+  trip.reserve(static_cast<std::size_t>(top.nonZeros() + bottom.nonZeros()));
+  const auto scatter = [&](const SparseMatrix &A, int rowOffset) {
+    for (int col = 0; col < A.outerSize(); ++col)
+      for (SparseMatrix::InnerIterator it(A, col); it; ++it)
+        trip.emplace_back(rowOffset + static_cast<int>(it.row()), static_cast<int>(it.col()),
+                          it.value());
+  };
+  scatter(top, 0);
+  scatter(bottom, static_cast<int>(top.rows()));
+  SparseMatrix S(rows, columns);
+  S.setFromTriplets(trip.begin(), trip.end());
+  S.makeCompressed();
+  return S;
+}
 
 struct ChainHodge::Factorization {
   Eigen::SparseLU<SparseMatrix> lu;
@@ -210,6 +286,7 @@ Eigen::MatrixXcd ChainHodge::hodgeOperator(int k) const {
 }
 
 SparseMatrix ChainHodge::stackedMatrix(int k) const {
+  checkDegree(k);
   const int d = K_.dimension();
   const int n = size(k);
   const SparseMatrix &Mk = sparse_[static_cast<std::size_t>(k)];
@@ -221,21 +298,72 @@ SparseMatrix ChainHodge::stackedMatrix(int k) const {
   } else {
     // S = [∂_k ; ∂_{k+1}^T G_k]
     if (k >= 1) top = boundary_[static_cast<std::size_t>(k)];
-    if (k < d) bottom = SparseMatrix(SparseMatrix(boundary_[static_cast<std::size_t>(k) + 1].transpose()) * Mk);
+    if (k < d)
+      bottom = SparseMatrix(SparseMatrix(boundary_[static_cast<std::size_t>(k) + 1].transpose()) * Mk);
   }
-  std::vector<Eigen::Triplet<Complex>> trip;
-  trip.reserve(static_cast<std::size_t>(top.nonZeros() + bottom.nonZeros()));
-  auto scatter = [&](const SparseMatrix &A, int r0) {
-    for (int col = 0; col < A.outerSize(); ++col)
-      for (SparseMatrix::InnerIterator it(A, col); it; ++it)
-        trip.emplace_back(r0 + static_cast<int>(it.row()), static_cast<int>(it.col()), it.value());
-  };
-  scatter(top, 0);
-  scatter(bottom, static_cast<int>(top.rows()));
-  SparseMatrix S(top.rows() + bottom.rows(), n);
-  S.setFromTriplets(trip.begin(), trip.end());
-  S.makeCompressed();
-  return S;
+  return stackSparse(top, bottom, n);
+}
+
+SparseKernelRead ChainHodge::sparseNullSpace(const SparseMatrix &S, double kappa,
+                                             SparseCostReport *report) {
+  SparseKernelRead read;
+  // A matrix carries no degree, so the report says so rather than naming one.
+  const SparseCostMeter meter("stacked-qr", -1, static_cast<int>(S.cols()));
+  const SparseKernel kernel = SparseRank::kernel(S, kappa);
+  read.split = kernel.split;
+  read.rank = kernel.split.rank;
+  read.tolerance = kernel.split.tolerance;
+  read.kernel = kernel.basis;
+  // The factorization belongs to `SparseRank`, which does not publish the
+  // stored entries of its factors, so the factor count is zero here and the
+  // fill-in and factor memory derived from it are quiet NaN. The wall time and
+  // the process memory of the whole read are measured.
+  read.cost = meter.finish(static_cast<long long>(S.rows()),
+                           static_cast<long long>(S.nonZeros()), 0,
+                           static_cast<long long>(read.kernel.cols()));
+  if (report) *report = read.cost;
+  return read;
+}
+
+Eigen::MatrixXcd ChainHodge::applyPencilOperator(int k, const Eigen::MatrixXcd &Z) const {
+  checkDegree(k);
+  const int n = size(k);
+  if (Z.rows() != n)
+    throw std::invalid_argument("ChainHodge::applyPencilOperator: the operand has " +
+                                std::to_string(Z.rows()) + " rows, expected " + std::to_string(n));
+  const int d = K_.dimension();
+  const SparseMatrix &Mk = sparse_[static_cast<std::size_t>(k)];
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(n, Z.cols());
+  if (Z.cols() == 0) return out;
+  if (preset_ == Preset::L2) {
+    // Ã_k = M_k ∂_k^T M_{k-1}^{-1} ∂_k M_k + ∂_{k+1} M_{k+1} ∂_{k+1}^T
+    if (k >= 1) {
+      const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
+      const Eigen::MatrixXcd W = Bk * Eigen::MatrixXcd(Mk * Z);
+      const Eigen::MatrixXcd Y = solveSparse(k - 1, W);
+      out += Mk * Eigen::MatrixXcd(SparseMatrix(Bk.transpose()) * Y);
+    }
+    if (k < d) {
+      const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
+      const SparseMatrix &Mk1 = sparse_[static_cast<std::size_t>(k) + 1];
+      const Eigen::MatrixXcd W = SparseMatrix(Bk1.transpose()) * Z;
+      out += Bk1 * Eigen::MatrixXcd(Mk1 * W);
+    }
+  } else {
+    // A_k = ∂_k^T G_{k-1} ∂_k + G_k ∂_{k+1} G_{k+1}^{-1} ∂_{k+1}^T G_k
+    if (k >= 1) {
+      const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
+      const Eigen::MatrixXcd W = sparse_[static_cast<std::size_t>(k) - 1] * Eigen::MatrixXcd(Bk * Z);
+      out += SparseMatrix(Bk.transpose()) * W;
+    }
+    if (k < d) {
+      const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
+      const Eigen::MatrixXcd W = SparseMatrix(Bk1.transpose()) * Eigen::MatrixXcd(Mk * Z);
+      const Eigen::MatrixXcd Y = solveSparse(k + 1, W);
+      out += Mk * Eigen::MatrixXcd(Bk1 * Y);
+    }
+  }
+  return out;
 }
 
 HarmonicRead ChainHodge::harmonicChains(int k, double kappa, bool forceSparse) const {
@@ -257,6 +385,9 @@ HarmonicRead ChainHodge::harmonicChains(int k, double kappa, bool forceSparse) c
     split = SparseRank::fromSingularValues(svd.singularValues(), Sd.rows(), Sd.cols(), kappa);
     kernel = svd.matrixV().rightCols(n - split.rank);
   } else {
+    // The production path: neither S nor the orthogonal factor is densified,
+    // and the sparse read measures the singular values on either side of the
+    // rank decision rather than leaving the gap unmeasured.
     SparseKernel sk = SparseRank::kernel(S, kappa);
     split = sk.split;
     kernel = std::move(sk.basis);

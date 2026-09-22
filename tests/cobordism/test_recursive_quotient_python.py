@@ -1009,14 +1009,24 @@ class TestCraigBampton(unittest.TestCase):
         self.assertLess(err_finer, err_coarse)
         self.assertLess(max(finer.eigenResiduals), max(coarse.eigenResiduals))
 
-    def test_non_normal_regime_is_refused(self):
+    def test_non_normal_regime_takes_the_transpose_pairing(self):
+        """The regime decides the pairing, not whether the surrogate exists. A
+        non-normal level has no adjoint pairing to reduce against, so the
+        reduction uses the transpose against the level's own metric and a
+        general complex eigensolver; with nothing discarded the surrogate is the
+        level itself and its residuals say so."""
         L = np.array([[1.0, 0.5, 0.0],
                       [-0.2, 2.0, -1.0],
                       [0.0, -1.0, 1.0]])
         q = cob.RecursiveQuotient.overMatrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [2]])
-        with self.assertRaises(ValueError):
-            q.craigBampton(0.0, 0.5, 1.0)
+        self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
+        read = q.craigBampton(-10.0, 10.0, 1e6, 1e-6)
+        self.assertTrue(read.windowEigenvalues)
+        self.assertLess(max(read.eigenResiduals), 1e-6)
+        for value in read.windowEigenvalues:
+            self.assertLess(
+                float(np.min(np.abs(np.linalg.eigvals(L).real - value))), 1e-6)
 
     def test_indefinite_chain_metric_is_refused(self):
         H = np.array([[2.0, -1.0, 0.0],
