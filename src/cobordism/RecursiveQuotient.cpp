@@ -1577,11 +1577,17 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::labeledFiberSum()
 }
 
 RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::summarizeFiberSum(
-    const std::vector<Eigen::VectorXcd> &columns) const {
+    const std::vector<Eigen::VectorXcd> &columns,
+    const std::vector<Eigen::VectorXcd> &leftColumns) const {
   LabeledFiberSumRead read;
   read.policy = options_.embeddingPolicy;
 
   const int total = static_cast<int>(columns.size());
+  const bool explicitLeft = !leftColumns.empty();
+  if (explicitLeft && leftColumns.size() != columns.size())
+    throw std::invalid_argument(
+        "summarizeFiberSum: the left embedding must match the right one "
+        "column for column");
   // An empty labeled sum is legitimate: a single component covering every cell
   // keeps no interface cell, and an interior block with no kernel retains no
   // mode. It is trivially an exact isometry, reported rather than computed
@@ -1597,26 +1603,46 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::summarizeFiberSum(
     return read;
   }
   Eigen::MatrixXcd embedding(dim_, total);
-  for (int j = 0; j < total; ++j) {
-    Eigen::VectorXcd columnVector = columns[static_cast<std::size_t>(j)];
-    // |W|-unit normalization keeps the Gram scale-free; a W-null column is
-    // left raw and its Gram diagonal reports the null norm.
-    cd wNorm = cd(0.0, 0.0);
-    if (pencil_) {
-      // The complex bilinear pairing c^T M c: no conjugation.
-      wNorm = (columnVector.transpose() * (pencilMetric_ * columnVector))(0, 0);
-    } else {
-      for (int i = 0; i < dim_; ++i)
-        wNorm += std::conj(columnVector(i)) * weights_(i) * columnVector(i);
+  Eigen::MatrixXcd leftEmbedding;
+  if (explicitLeft) {
+    // The left embedding is fixed before the overlap test: the summands' own
+    // left Riesz frames, taken as given with their right partners (rescaling
+    // either would break the pairing each band already carries).
+    leftEmbedding.resize(dim_, total);
+    for (int j = 0; j < total; ++j) {
+      embedding.col(j) = columns[static_cast<std::size_t>(j)];
+      leftEmbedding.col(j) = leftColumns[static_cast<std::size_t>(j)];
     }
-    const double magnitude = std::sqrt(std::abs(wNorm));
-    if (magnitude > 1e-300) columnVector /= magnitude;
-    embedding.col(j) = columnVector;
+  } else {
+    for (int j = 0; j < total; ++j) {
+      Eigen::VectorXcd columnVector = columns[static_cast<std::size_t>(j)];
+      // |W|-unit normalization keeps the Gram scale-free; a W-null column is
+      // left raw and its Gram diagonal reports the null norm.
+      cd wNorm = cd(0.0, 0.0);
+      if (pencil_) {
+        // The complex bilinear pairing c^T M c: no conjugation.
+        wNorm = (columnVector.transpose() * (pencilMetric_ * columnVector))(0, 0);
+      } else {
+        for (int i = 0; i < dim_; ++i)
+          wNorm += std::conj(columnVector(i)) * weights_(i) * columnVector(i);
+      }
+      const double magnitude = std::sqrt(std::abs(wNorm));
+      if (magnitude > 1e-300) columnVector /= magnitude;
+      embedding.col(j) = columnVector;
+    }
   }
+  // G = Y~^T Y against an explicit left embedding; otherwise the level's
+  // metric pairing (bilinear J^T M J on a pencil level, J^dagger W J on an
+  // operator level — the Hermitian special case).
   const Eigen::MatrixXcd gram =
-      pencil_ ? Eigen::MatrixXcd(embedding.transpose() * (pencilMetric_ * embedding))
-              : Eigen::MatrixXcd(embedding.adjoint() * (weights_.asDiagonal() * embedding));
+      explicitLeft
+          ? Eigen::MatrixXcd(leftEmbedding.transpose() * embedding)
+          : pencil_
+                ? Eigen::MatrixXcd(embedding.transpose() * (pencilMetric_ * embedding))
+                : Eigen::MatrixXcd(embedding.adjoint() *
+                                   (weights_.asDiagonal() * embedding));
   read.embedding = toFlat(embedding);
+  if (explicitLeft) read.leftEmbedding = toFlat(leftEmbedding);
   read.gram = toFlat(gram);
   read.nominalRank = static_cast<std::size_t>(total);
 
@@ -1649,6 +1675,13 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::summarizeFiberSum(
     case FiberEmbeddingPolicy::QuotientKernel: {
       read.effectiveRank = static_cast<std::size_t>(rank);
       read.quotientBasis = toFlat(svd.matrixV().leftCols(rank));
+      // The left partner L_q of R_q = V_r, for L_q^T X R_q: conj(V_r) for the
+      // Hermitian metric Gram (L_q^T = V_r^dagger), conj(U_r) for a bilinear
+      // Gram, whose left radical is ker G^T (then L_q^T G R_q = Sigma_r).
+      read.leftQuotientBasis =
+          (explicitLeft || pencil_)
+              ? toFlat(svd.matrixU().leftCols(rank).conjugate())
+              : toFlat(svd.matrixV().leftCols(rank).conjugate());
       const double discarded =
           total - rank > 0 ? sigma(rank) / std::max(sigma(0), 1e-300) : 0.0;
       read.certificate = Certificate::certifiedNumerical(
@@ -1663,6 +1696,17 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::summarizeFiberSum(
 RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
     const std::vector<CertifiedBand> &bands) const {
   std::vector<Eigen::VectorXcd> columns;
+  std::vector<Eigen::VectorXcd> leftColumns;
+  // The left embedding is all-or-none: either every band carries its local
+  // left Riesz frame, or the level's metric dual stands in for all of them.
+  std::size_t bandsWithLeft = 0;
+  for (const CertifiedBand &band : bands)
+    if (!band.leftFrame.empty()) ++bandsWithLeft;
+  const bool explicitLeft = bandsWithLeft > 0;
+  if (explicitLeft && bandsWithLeft != bands.size())
+    throw std::invalid_argument(
+        "certifiedFiberSum: some bands carry a left frame and others do not; "
+        "the left embedding is fixed for every summand before the test");
   std::vector<int> summandComponents;
   std::vector<int> summandRanks;
   std::vector<CertifiedFiberSummand> summandCertificates;
@@ -1681,12 +1725,20 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
     if (band.frame.size() != expected)
       throw std::invalid_argument(
           "certifiedFiberSum: frame size does not match dimension x rank");
+    if (explicitLeft && band.leftFrame.size() != expected)
+      throw std::invalid_argument(
+          "certifiedFiberSum: left frame size does not match dimension x rank");
 
     const int rank = static_cast<int>(band.rank);
     if (rank > 0) {
       const Eigen::MatrixXcd frame =
           toMatrix(band.frame, dim_, rank, "certified band frame");
       for (int j = 0; j < rank; ++j) columns.push_back(frame.col(j));
+      if (explicitLeft) {
+        const Eigen::MatrixXcd left =
+            toMatrix(band.leftFrame, dim_, rank, "certified band left frame");
+        for (int j = 0; j < rank; ++j) leftColumns.push_back(left.col(j));
+      }
     }
 
     // Every supplied band is reported, rank-zero or uncertified included, so
@@ -1712,7 +1764,7 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
     }
   }
 
-  LabeledFiberSumRead read = summarizeFiberSum(columns);
+  LabeledFiberSumRead read = summarizeFiberSum(columns, leftColumns);
   read.summandComponents = std::move(summandComponents);
   read.summandRanks = std::move(summandRanks);
   read.summandCertificates = std::move(summandCertificates);
@@ -1734,6 +1786,9 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
   FockStageRead read;
   read.policy = sum.policy;
   read.gramDefect = sum.gramDefect;
+  read.pairing = !sum.leftEmbedding.empty() ? "left-embedding"
+                 : pencil_                  ? "metric-transpose"
+                                            : "metric-hermitian";
 
   const int total = static_cast<int>(sum.nominalRank);
   if (total == 0) {
@@ -1755,22 +1810,53 @@ RecursiveQuotient::FockStageRead RecursiveQuotient::fockStage(
   Eigen::MatrixXcd embedding =
       toMatrix(sum.embedding, dim_, total, "labeled sum embedding");
   Eigen::MatrixXcd gram = toMatrix(sum.gram, total, total, "labeled sum gram");
-  // h = J^dagger W L J: the one-particle operator compressed onto the labeled
-  // sum in the W-pairing L is self-adjoint against.
+  // One pairing throughout: h is compressed onto the labeled sum in exactly
+  // the pairing its Gram was built in.
   const Eigen::MatrixXcd dense = Eigen::MatrixXcd(op_);
-  Eigen::MatrixXcd oneParticle =
-      embedding.adjoint() * (weights_.asDiagonal() * (dense * embedding));
+  Eigen::MatrixXcd oneParticle;
+  if (!sum.leftEmbedding.empty()) {
+    // Explicit left embedding: G = Y~^T Y, h = Y~^T L Y with L the level's
+    // operator on its own coordinates — L itself on an operator level, and
+    // M^{-1} A~ on a pencil level (A~ z = lambda M z).
+    const Eigen::MatrixXcd left =
+        toMatrix(sum.leftEmbedding, dim_, total, "labeled sum left embedding");
+    Eigen::MatrixXcd applied = dense * embedding;
+    if (pencil_) {
+      Eigen::SparseLU<Eigen::SparseMatrix<cd>> metricSolver;
+      metricSolver.compute(pencilMetric_);
+      if (metricSolver.info() != Eigen::Success)
+        throw std::invalid_argument(
+            "fockStage: the pencil metric M is singular; the operator "
+            "M^{-1} A~ the left embedding pairs against does not exist");
+      applied = metricSolver.solve(applied).eval();
+    }
+    oneParticle = left.transpose() * applied;
+  } else if (pencil_) {
+    // Pencil level: G = J^T M J, h = J^T A~ J — the bilinear pencil (h, G).
+    oneParticle = embedding.transpose() * (dense * embedding);
+  } else {
+    // Operator level: G = J^dagger W J, h = J^dagger W L J — the W-pairing L
+    // is self-adjoint against (the Hermitian special case).
+    oneParticle =
+        embedding.adjoint() * (weights_.asDiagonal() * (dense * embedding));
+  }
 
-  // Under `QuotientKernel` the stage is built on the quotient by ker G, so the
-  // overcounted directions leave the basis.
+  // Under `QuotientKernel` the stage is built on the quotient by G's radicals,
+  // so the overcounted directions leave the basis: L_q^T (.) R_q of both h and
+  // G, in the same pairing.
   bool quotiented = false;
   if (sum.policy == FiberEmbeddingPolicy::QuotientKernel &&
       sum.effectiveRank < sum.nominalRank) {
     const int effective = static_cast<int>(sum.effectiveRank);
     const Eigen::MatrixXcd basis =
         toMatrix(sum.quotientBasis, total, effective, "quotient basis");
-    oneParticle = basis.adjoint() * oneParticle * basis;
-    gram = basis.adjoint() * gram * basis;
+    const Eigen::MatrixXcd leftBasis =
+        sum.leftQuotientBasis.empty()
+            ? Eigen::MatrixXcd(basis.conjugate())
+            : toMatrix(sum.leftQuotientBasis, total, effective,
+                       "left quotient basis");
+    oneParticle = leftBasis.transpose() * oneParticle * basis;
+    gram = leftBasis.transpose() * gram * basis;
     quotiented = true;
   }
 
