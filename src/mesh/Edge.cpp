@@ -64,6 +64,20 @@ class Simplex;
       return length_;
     }
 
+    namespace {
+    /// An angle folded back into (-pi, pi]. The declared argument folded this way
+    /// is what a causal bucket is a function of: the two roots +/-l of one l^2
+    /// share a causal character, so the declared sheet cannot move the bucket. It
+    /// fixes only which lip of the cut a timelike edge sits on, and that is
+    /// exactly what `declaredSquaredArgument` keeps and this fold discards.
+    [[nodiscard]] inline double foldToPi(double angle) noexcept {
+      const double twoPi = 2.0 * std::numbers::pi;
+      double folded = std::fmod(angle + std::numbers::pi, twoPi);
+      if (folded <= 0.0) folded += twoPi;
+      return folded - std::numbers::pi;
+    }
+    }  // namespace
+
     [[nodiscard]] double Edge::squaredArgument() const noexcept {
       const auto l = getLength();
       return principalArgument(l * l);  // in (-pi, pi]
@@ -80,30 +94,22 @@ class Simplex;
     }
 
     void Edge::continueLength(std::complex<double> l) noexcept {
-      // The sheet is carried by the squared length -- the quantity every
-      // downstream squared-volume formula is a function of. SheetedSqrt accrues
-      // the turn l^2 makes about its branch point on this step and reports the
-      // running monodromy.
-      SheetedSqrt root(getLength() * getLength(), squaredWinding_);
-      root.advance(l * l);
-      squaredWinding_ = root.winding();
+      // The declared argument of l^2 is twice the continued argument of l, which
+      // is the invariant that keeps the declaration and the stored root one
+      // statement rather than two: the stored l is always the root on the sheet
+      // the winding names. The step is the turn of l, wrapped, so a step may
+      // turn l by anything short of a half turn -- and l^2 by anything short of
+      // a full one.
+      const double previous = 0.5 * declaredSquaredArgument();
+      const double step =
+          foldToPi(principalArgument(l) - principalArgument(length_));
+      const double continued = previous + step;
       length_ = l;
+      squaredWinding_ = static_cast<int>(
+          std::llround((2.0 * continued - squaredArgument()) /
+                       (2.0 * std::numbers::pi)));
       ++lengthRevision_;
     }
-
-    namespace {
-    /// The declared argument folded back into (-pi, pi], which is what a causal
-    /// bucket is a function of: the two roots +/-l of one l^2 share a causal
-    /// character, so the declared sheet cannot move the bucket. It fixes only
-    /// which side of the cut a timelike edge sits on, and that is what
-    /// `declaredSquaredArgument` keeps and this fold discards.
-    [[nodiscard]] inline double foldToPi(double declared) noexcept {
-      const double twoPi = 2.0 * std::numbers::pi;
-      double folded = std::fmod(declared + std::numbers::pi, twoPi);
-      if (folded <= 0.0) folded += twoPi;
-      return folded - std::numbers::pi;
-    }
-    }  // namespace
 
     [[nodiscard]] double Edge::lorentzianMagnitude() const noexcept {
       // Re(l^2) = x^2 - t^2 for l = x + i t. Formed from the parts rather than as

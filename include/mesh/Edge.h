@@ -11,7 +11,9 @@
 // its definition. Vertex.h only forward-declares Edge, so this include is acyclic.
 #include "mesh/Vertex.h"
 
+#include <cmath>
 #include <complex>
+#include <numbers>
 #include <random>
 #include <memory>
 #include <stdexcept>
@@ -188,50 +190,61 @@ class Edge {
     /// # The declared sheet of an edge length
     ///
     /// \f$ l \mapsto l^2 \f$ is two-to-one and \f$ l^2 \mapsto l \f$ is therefore
-    /// branched over \f$ l^2 = 0 \f$. An edge that is transported through a family
-    /// of complex geometries carries which of the two roots it is, as the signed
+    /// branched over \f$ l^2 = 0 \f$. An edge transported through a family of
+    /// complex geometries carries which of the two roots it is, as the signed
     /// number of turns \f$ w \f$ its squared length has made about that branch
-    /// point. The declared argument of the squared length is then
-    /// \f[ \theta = \arg(l^2) + 2\pi w, \f]
-    /// an unbounded, continuous function along the path, and the causal predicates
-    /// below read \f$ \theta \f$ folded back into \f$ (-\pi, \pi] \f$ rather than
-    /// \f$ \arg(l^2) \f$ itself.
+    /// point. The declared argument of the squared length is
+    /// \f[ \theta = \arg(l^2) + 2\pi w = 2\,\alpha, \f]
+    /// with \f$ \alpha \f$ the continued argument of \f$ l \f$ itself. That second
+    /// equality is the invariant the class maintains, and it is what keeps the
+    /// declaration and the stored root one statement instead of two: the stored
+    /// \f$ l \f$ is always \f$ (-1)^w \sqrt{l^2} \f$, the root on the sheet
+    /// \f$ w \f$ names.
     ///
-    /// Folding gives the same five buckets, as it must: causal character is a
-    /// property of \f$ l^2 \f$ and the two roots \f$ \pm l \f$ share it. What the
-    /// declaration adds is the datum folding destroys — which side of the cut a
-    /// timelike edge was reached from, \f$ \theta = +\pi \f$ or \f$ \theta = -\pi \f$,
-    /// which is the \f$ \pm i\varepsilon \f$ prescription the Lorentzian
-    /// continuation of every squared-volume formula downstream must agree with, and
-    /// which of \f$ \pm l \f$ the edge is after a full turn. An edge that has never
-    /// been continued has \f$ w = 0 \f$ and every predicate answers exactly as it
-    /// did before the declaration existed.
+    /// The causal predicates below read \f$ \theta \f$ folded back into
+    /// \f$ (-\pi, \pi] \f$ rather than \f$ \arg(l^2) \f$ itself. Folding gives the
+    /// same five buckets, as it must: causal character is a property of
+    /// \f$ l^2 \f$ and the two roots \f$ \pm l \f$ share it. What the declaration
+    /// adds is the datum folding destroys — which lip of the cut a timelike edge
+    /// sits on, \f$ \theta = +\pi \f$ or \f$ \theta = -\pi \f$, which is the
+    /// \f$ \pm i\varepsilon \f$ prescription every squared-volume continuation
+    /// downstream has to agree with, and how many full turns the path made.
     ///
-    /// ``setLength`` re-declares from scratch (\f$ w = 0 \f$, the principal sheet);
-    /// ``continueLength`` moves the length and carries the sheet with it.
+    /// ``setLength`` re-declares: \f$ \alpha \f$ becomes the principal
+    /// \f$ \arg l \f$, so \f$ w \f$ becomes 0 for a length in the right half plane
+    /// and \f$ \pm 1 \f$ for one in the left, which is just the statement that
+    /// \f$ -1 \f$ is the second root of \f$ 1 \f$. ``continueLength`` moves the
+    /// length and carries \f$ \alpha \f$ with it.
 
     /// \f$ \arg(l^2) + 2\pi w \f$: the argument of \f$ l^2 \f$ on the declared
-    /// sheet. Unbounded — it is the continued quantity, not a principal value.
+    /// sheet, equal to twice the continued argument of \f$ l \f$. Unbounded — it is
+    /// the continued quantity, not a principal value.
     [[nodiscard]] double declaredSquaredArgument() const noexcept;
     /// The monodromy \f$ w \f$: signed turns of \f$ l^2 \f$ about \f$ 0 \f$ since
-    /// the length was last declared by ``setLength``.
+    /// the length was last declared by ``setLength``, offset by which root of its
+    /// own square that declaration was.
     [[nodiscard]] int squaredWinding() const noexcept { return squaredWinding_; }
     /// \f$ w \bmod 2 \in \{0, 1\} \f$: which of the two sheets of
-    /// \f$ \sqrt{l^2} \f$ the stored length sits on, relative to the sheet it was
-    /// declared on. Sheet 1 means the edge is \f$ -l \f$ where it was \f$ l \f$.
+    /// \f$ \sqrt{l^2} \f$ the stored length sits on. Sheet 0 is the principal root
+    /// of \f$ l^2 \f$, sheet 1 the other one.
     [[nodiscard]] int squaredSheet() const noexcept;
     /// Move the length to \a l while carrying the declared sheet: the turn
-    /// \f$ l^2 \f$ makes about the branch point on this step is added to \f$ w \f$.
+    /// \f$ l \f$ makes on this step is added to \f$ \alpha \f$, and \f$ w \f$
+    /// follows.
     ///
-    /// The step must turn \f$ l^2 \f$ by less than \f$ \pi \f$, since a rotation by
-    /// \f$ \pi + \delta \f$ and one by \f$ \delta - \pi \f$ leave the same endpoint;
-    /// a caller walking a loop samples it finely enough that consecutive squared
-    /// lengths subtend less than a half turn at the origin.
+    /// The step must turn \f$ l \f$ by less than \f$ \pi \f$ (equivalently
+    /// \f$ l^2 \f$ by less than a full turn), since a rotation by
+    /// \f$ \pi + \delta \f$ and one by \f$ \delta - \pi \f$ leave the same
+    /// endpoint; a caller walking a loop samples it finely enough for that, and
+    /// passes the length it continued to, not a root taken fresh.
     void continueLength(std::complex<double> l) noexcept;
-    /// Declare the current length to sit \a winding turns from the principal sheet,
-    /// without moving it. For a caller that knows the sheet from the problem rather
-    /// than from a path it walked.
-    void declareSquaredWinding(int winding) noexcept { squaredWinding_ = winding; }
+    /// Declare the current length to have made \a turns full turns about the
+    /// branch point, without moving it. For a caller that knows the winding from
+    /// the problem rather than from a path it walked. Full turns, because a half
+    /// turn would name a root the stored length is not.
+    void declareSquaredTurns(int turns) noexcept {
+      squaredWinding_ = rootWinding(length_) + 2 * turns;
+    }
 
     /// \f$ \mathrm{Re}(l^2) = x^2 - t^2 \f$, carried for consumers that want the
     /// interval itself. It does not decide the disposition on its own.
@@ -300,13 +313,15 @@ class Edge {
     /// value. That matters most in the ill-conditioned regime where the Cayley-Menger
     /// determinant approaches zero.
     ///
-    /// Declaring a length also declares its Riemann sheet to be the principal one:
-    /// the monodromy \f$ w \f$ resets to zero, because a jump to an unrelated
-    /// length is not a continuation and carrying a winding across it would assert
-    /// a path that was never walked. ``continueLength`` is the call that keeps it.
+    /// Declaring a length also re-declares its Riemann sheet: the continued
+    /// argument of \f$ l \f$ resets to the principal \f$ \arg l \f$ and the
+    /// monodromy to the turn that \f$ l \f$ already is, because a jump to an
+    /// unrelated length is not a continuation and carrying a winding across it
+    /// would assert a path that was never walked. ``continueLength`` is the call
+    /// that keeps the path.
     void setLength(std::complex<double> l) noexcept {
       length_ = l;
-      squaredWinding_ = 0;
+      squaredWinding_ = rootWinding(l);
       ++lengthRevision_;
     }
 
@@ -402,11 +417,28 @@ class Edge {
     /// stored.
     std::complex<double> length_{};
     /// The declared Riemann sheet of \f$ l = \sqrt{l^2} \f$: signed turns of
-    /// \f$ l^2 \f$ about its branch point since ``setLength`` last declared it.
-    /// Zero for an edge that has never been continued, which is why introducing
-    /// it leaves every causal predicate's answer unchanged. See
-    /// ``declaredSquaredArgument``.
+    /// \f$ l^2 \f$ about its branch point, maintained so that
+    /// \f$ \arg(l^2) + 2\pi w \f$ is twice the continued argument of \f$ l \f$.
+    /// Introducing it leaves every causal predicate's answer unchanged, because
+    /// they read that argument folded. See ``declaredSquaredArgument``.
     int squaredWinding_{0};
+
+    /// The winding that makes the declared argument of \f$ l^2 \f$ equal twice the
+    /// principal \f$ \arg l \f$: zero when \f$ l \f$ is the principal root of its
+    /// own square (the right half plane) and \f$ \pm 1 \f$ when it is the other
+    /// one. The value ``setLength`` declares.
+    [[nodiscard]] static int rootWinding(std::complex<double> l) noexcept {
+      const std::complex<double> squared = l * l;
+      const double argument =
+          (squared.imag() == 0.0)
+              ? std::arg(std::complex<double>(squared.real(), 0.0))
+              : std::arg(squared);
+      const double base =
+          (l.imag() == 0.0) ? std::arg(std::complex<double>(l.real(), 0.0))
+                            : std::arg(l);
+      return static_cast<int>(
+          std::llround((2.0 * base - argument) / (2.0 * std::numbers::pi)));
+    }
     /// Monotone ``setLength`` counter read by ``lengthRevision()``; see there.
     std::uint64_t lengthRevision_{0};
     /// Monotone ``setPhase`` counter read by ``phaseRevision()``; see there.

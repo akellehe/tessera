@@ -156,24 +156,25 @@ the C* connection.)doc")
            "was reached from, which is the +/-i*epsilon prescription every "
            "squared-volume continuation downstream has to agree with.")
       .def("squaredWinding", &Edge::squaredWinding,
-           "The monodromy w: signed turns of l^2 about 0 since setLength. Zero "
-           "for an edge that has never been continued.")
+           "The monodromy w: signed turns of l^2 about 0 since setLength, offset "
+           "by which root of its own square that declaration was.")
       .def("squaredSheet", &Edge::squaredSheet,
            "w mod 2 in {0, 1}: which of the two sheets of sqrt(l^2) the stored "
-           "length sits on, relative to the sheet it was declared on. Sheet 1 "
-           "means the edge is -l where it was l.")
+           "length sits on. Sheet 0 is the principal root of l^2, sheet 1 the "
+           "other one.")
       .def("continueLength", &Edge::continueLength, py::arg("length"),
-           "Move the length to l while carrying the declared sheet: the turn l^2 "
-           "makes about its branch point on this step is added to the winding. "
-           "The step must turn l^2 by less than pi, since a rotation by pi+delta "
-           "and one by delta-pi have the same endpoint; a caller walking a loop "
-           "samples it finely enough that consecutive squared lengths subtend "
-           "less than a half turn at the origin.")
-      .def("declareSquaredWinding", &Edge::declareSquaredWinding,
-           py::arg("winding"),
-           "Declare the current length to sit `winding` turns from the principal "
-           "sheet without moving it, for a caller that knows the sheet from the "
-           "problem rather than from a path it walked.")
+           "Move the length to l while carrying the declared sheet: the turn l "
+           "makes on this step is added to its continued argument, and the "
+           "winding follows. The step must turn l by less than pi (equivalently "
+           "l^2 by less than a full turn), since a rotation by pi+delta and one "
+           "by delta-pi have the same endpoint; a caller walking a loop samples "
+           "it finely enough for that, and passes the length it continued to, "
+           "not a root taken fresh.")
+      .def("declareSquaredTurns", &Edge::declareSquaredTurns, py::arg("turns"),
+           "Declare the current length to have made `turns` full turns about the "
+           "branch point without moving it, for a caller that knows the winding "
+           "from the problem rather than from a path it walked. Full turns, "
+           "because a half turn would name a root the stored length is not.")
       .def("lorentzianMagnitude", &Edge::lorentzianMagnitude,
            "Re(l^2) = x^2 - t^2 for l = x + i t. Carried for consumers that want "
            "the interval itself; it does not decide the disposition alone, since "
