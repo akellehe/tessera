@@ -403,11 +403,14 @@ class MonopoleSupport {
 
     /// The cocycle read of a rotation group supplied as vertex permutations.
     ///
-    /// The group must be closed under composition and contain the identity;
-    /// both are checked, because varpi is defined by comparing D(g) D(h) with
-    /// D(gh) and a missing product has no D(gh) to compare against.
-    /// @throws std::invalid_argument when the supplied set is not a group of
-    ///         rotations of this support, or the tolerance is not positive.
+    /// Closure under composition is checked, because varpi is defined by
+    /// comparing D(g) D(h) with D(gh) and a missing product has no D(gh) to
+    /// compare against. Closure is the whole condition here: a finite set of
+    /// permutations closed under composition is already a group, so the
+    /// identity and the inverses come with it.
+    /// @throws std::invalid_argument when the supplied set is not closed, a
+    ///         member is not a rotation of this support, the cochain degree
+    ///         is outside {0, 1}, or the tolerance is not positive.
     [[nodiscard]] CocycleRead cocycle(
         const std::vector<Permutation>& group, int cochainDegree = 1,
         double tolerance = 1e-9) const;
