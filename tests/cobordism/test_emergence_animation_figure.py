@@ -49,7 +49,20 @@ _CACHE = {}
 def _frames():
     if "frames" not in _CACHE:
         config = ea.build_config(size=HOST, steps=STEPS)
-        _CACHE["frames"] = ea.drive(config, progress=False).frames
+        # The figure needs a run whose complex moves. The neutral host is built
+        # outside the Kontsevich-Segal allowable domain (margin -4.91 at
+        # HOST = 4), so under the default Whitney metric every proposal is
+        # refused as a non-member of the configuration space and the drive
+        # commits nothing (#1185; the Lorentzian protocol that would put the
+        # host on the allowable side is not in the driver). The subject here is
+        # the figure, so the run is driven on the diagonal weights, whose
+        # configuration space is all of complex z.
+        previous = cob.HodgeLaplacian.defaultMetricSource()
+        cob.HodgeLaplacian.setDefaultMetricSource(cob.HodgeMetricSource.DiagonalWeights)
+        try:
+            _CACHE["frames"] = ea.drive(config, progress=False).frames
+        finally:
+            cob.HodgeLaplacian.setDefaultMetricSource(previous)
     return _CACHE["frames"]
 
 

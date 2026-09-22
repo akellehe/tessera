@@ -26,7 +26,7 @@ def _seed():
 
 
 def _node(seed=5):
-    return cob.Proton(seed=seed).direct_node(seed)
+    return cob.ProtonSynthesis(seed=seed).direct_node(seed)
 
 
 class RegionFingerprintTest(unittest.TestCase):

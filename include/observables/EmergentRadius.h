@@ -17,6 +17,18 @@ namespace tessera::observables {
 /// `InteriorHinges` core (via `RegisterContext::interiorHinges`) with
 /// `EmergentMass`.
 ///
+/// \f$ V_{\mathrm{dual}}^{1/4} \f$ is the geometric size of a relaxed interior:
+/// a real, positive, dimension-correct length read from dual volumes alone. It
+/// is not the spatial response of a bound cluster. That response is the complex
+/// squared-radius coefficient \f$ R_Q^2=-6\,dF_Q/d(q^2)|_{q^2=0} \f$ where a
+/// refinement regime supplies a complex Lorentzian momentum pairing, and the
+/// intrinsic spectral response \f$ \Upsilon_Q(\lambda) \f$ where one does not,
+/// which `cobordism::WardFlux::intrinsicResponse` reads as a coherent resolvent
+/// form of the complex Ward current together with its analytic slope. Those are
+/// complex numbers of which no square root and no real projection is taken, so
+/// neither is read from the length below and the length is never read as one of
+/// them.
+///
 ///   * headline (`compute`) = \f$ r_{\mathrm{dual}} = V_{\mathrm{dual}}^{1/4}
 ///     \f$, the dimension-correct dual-volume radius on a 4-complex;
 ///   * `radii()`: `V_dual` / `V_primal`, the primal cross-check `r_primal`, and

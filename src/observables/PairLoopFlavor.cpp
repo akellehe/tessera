@@ -49,15 +49,16 @@ std::vector<std::pair<std::size_t, int>> facetIndices(
 }  // namespace
 
 std::pair<int, double> PairLoopFlavor::oddOneOut(
-    const std::vector<double> &loopQ) {
+    const std::vector<double> &loopIntensity) {
   std::array<double, 3> separations{};
   for (int k = 0; k < 3; ++k) {
     std::array<double, 2> others{};
     int n = 0;
     for (int i = 0; i < 3; ++i) {
-      if (i != k) others[n++] = loopQ[i];
+      if (i != k) others[n++] = loopIntensity[i];
     }
-    separations[k] = std::fabs(loopQ[k] - (others[0] + others[1]) / 2.0);
+    separations[k] =
+        std::fabs(loopIntensity[k] - (others[0] + others[1]) / 2.0);
   }
   // Ties break to the first maximal index.
   int odd = 0;
@@ -67,7 +68,7 @@ std::pair<int, double> PairLoopFlavor::oddOneOut(
   std::array<double, 2> others{};
   int n = 0;
   for (int i = 0; i < 3; ++i) {
-    if (i != odd) others[n++] = loopQ[i];
+    if (i != odd) others[n++] = loopIntensity[i];
   }
   const double rho = separations[odd] > 0.0
                          ? std::fabs(others[0] - others[1]) / separations[odd]
@@ -105,16 +106,16 @@ PairLoopFlavor::JointRead PairLoopFlavor::jointRead(
   for (int h = 0; h < 3; ++h) facets[h] = facetIndices(cellIndex, holes[h]);
 
   read.w.resize(3);
-  read.q.resize(3);
+  read.holeIntensity.resize(3);
   for (int h = 0; h < 3; ++h) {
     std::complex<double> w(0.0, 0.0);
-    double q = 0.0;
+    double intensity = 0.0;
     for (const auto &cs : facets[h]) {
       w += static_cast<double>(cs.second) * psi[cs.first];
-      q += weights[cs.first] * std::norm(psi[cs.first]);
+      intensity += weights[cs.first] * std::norm(psi[cs.first]);
     }
     read.w[h] = static_cast<double>(sigma[h]) * w;
-    read.q[h] = q;
+    read.holeIntensity[h] = intensity;
   }
 
   for (const auto &pair : PAIR_LOOPS) {
@@ -124,9 +125,10 @@ PairLoopFlavor::JointRead PairLoopFlavor::jointRead(
     std::set<std::size_t> support;
     for (const auto &cs : facets[i]) support.insert(cs.first);
     for (const auto &cs : facets[j]) support.insert(cs.first);
-    double loopQ = 0.0;
-    for (std::size_t c : support) loopQ += weights[c] * std::norm(psi[c]);
-    read.loopQ.push_back(loopQ);
+    double loopIntensity = 0.0;
+    for (std::size_t c : support)
+      loopIntensity += weights[c] * std::norm(psi[c]);
+    read.loopIntensity.push_back(loopIntensity);
     const int k = complementHole(pair);
     read.dualResidual.push_back(std::abs(read.w[i] + read.w[j] + read.w[k]));
   }
@@ -135,7 +137,7 @@ PairLoopFlavor::JointRead PairLoopFlavor::jointRead(
 
 PairLoopFlavor::Verdict PairLoopFlavor::evaluateCriteria(
     const JointRead &read) const {
-  const auto [odd, rho] = oddOneOut(read.loopQ);
+  const auto [odd, rho] = oddOneOut(read.loopIntensity);
   Verdict verdict;
   verdict.oddLoop = PAIR_LOOPS[odd];
   verdict.dualHole = complementHole(PAIR_LOOPS[odd]);
@@ -169,10 +171,10 @@ Record PairLoopFlavor::record(const RegisterContext &ctx) const {
   std::vector<std::complex<double>> loopWFixed;
   for (const auto &wi : read.loopW) loopWFixed.push_back(wi / phase0);
 
-  Record::List q;
-  for (double x : read.q) q.emplace_back(x);
-  Record::List loopQ;
-  for (double x : read.loopQ) loopQ.emplace_back(x);
+  Record::List holeIntensity;
+  for (double x : read.holeIntensity) holeIntensity.emplace_back(x);
+  Record::List loopIntensity;
+  for (double x : read.loopIntensity) loopIntensity.emplace_back(x);
   Record::List dualResidual;
   for (double x : read.dualResidual) dualResidual.emplace_back(x);
   Record::List pairLoops;
@@ -182,8 +184,8 @@ Record PairLoopFlavor::record(const RegisterContext &ctx) const {
 
   Record::Map m;
   m["r_u"] = read.rU;
-  m["q"] = std::move(q);
-  m["loop_q"] = std::move(loopQ);
+  m["hole_intensity"] = std::move(holeIntensity);
+  m["loop_intensity"] = std::move(loopIntensity);
   m["dual_residual"] = std::move(dualResidual);
   m["pair_loops"] = std::move(pairLoops);
   m["odd_loop"] = Record::List{verdict.oddLoop.first, verdict.oddLoop.second};

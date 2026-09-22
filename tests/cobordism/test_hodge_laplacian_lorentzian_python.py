@@ -43,6 +43,23 @@ import cmath
 
 cob = tessera.cobordism
 
+
+# Every closed form in this module is the DIAGONAL-weight operator's:
+# L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k of
+# HodgeWeightConvention. The process default metric source is the chain-level
+# Whitney pencil (#1185), whose operator is the covariant h_k(s, U) on
+# geometric images, so this module names the diagonal source at every operator
+# it builds. The default's own properties are pinned in
+# tests/cobordism/test_whitney_default_metric_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _hodge(spacetime, weights=None, source=DIAGONAL):
+    """The diagonal-weight Hodge operator this module's anchors are taken of."""
+    if weights is None:
+        weights = cob.HodgeLaplacian.defaultWeightConvention()
+    return cob.HodgeLaplacian(spacetime, weights, source)
+
 TOL = 1e-7  # near-kernel threshold (|lambda| < TOL counts as harmonic)
 
 
@@ -168,12 +185,12 @@ def _nk(st, k):
 
 def _lor_matrix(st, k, metric=True):
     nk = _nk(st, k)
-    flat = cob.HodgeLaplacian(st).laplacian(k, metric)
+    flat = _hodge(st).laplacian(k, metric)
     return np.array(flat, dtype=complex).reshape(nk, nk)
 
 
 def _lor_eigs(st, k, metric=True):
-    return np.array(cob.HodgeLaplacian(st).eigenvalues(k, metric),
+    return np.array(_hodge(st).eigenvalues(k, metric),
                     dtype=complex)
 
 
@@ -184,7 +201,7 @@ def _near_kernel_count(st, k, metric=True, tol=TOL):
 def _null_norms(st, k, metric=True, tol=1e-9):
     # Complex-typed; with the V^2 weights on real signed l^2 the indefinite norm
     # is REAL. Assert that (stronger than assuming) and hand back the real part.
-    norms = np.array(cob.HodgeLaplacian(st).nullNorms(k, tol, metric),
+    norms = np.array(_hodge(st).nullNorms(k, tol, metric),
                      dtype=complex)
     np.testing.assert_allclose(norms.imag, 0.0, atol=1e-9)
     return norms.real
@@ -236,7 +253,7 @@ class TestAllSpacelikeConsistency(unittest.TestCase):
 
     def test_all_spacelike_weights_are_real_positive(self):
         st = _torus()
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         for k in (1, 2):
             with self.subTest(k=k):
                 w = np.array(hl.weights(k), dtype=complex)
@@ -257,7 +274,7 @@ class TestLorentzianDAlembertian(unittest.TestCase):
         # real and NEGATIVE. There is no |volume| weighting to compare against —
         # that track was a Euclidean read and is gone (#641).
         st = _triangle_one_timelike(2.0)
-        w = np.array(cob.HodgeLaplacian(st).weights(1), dtype=complex)
+        w = np.array(_hodge(st).weights(1), dtype=complex)
         np.testing.assert_allclose(w.imag, 0.0, atol=1e-12)
         np.testing.assert_allclose(np.sort(w.real), [-4.0, 1.0, 1.0], atol=1e-12)
 
@@ -298,7 +315,7 @@ class TestLorentzianDAlembertian(unittest.TestCase):
 
     def test_harmonic_is_the_cycle_with_unit_magnitude_support(self):
         # The kernel mode is the 1-cycle: |h_i|^2 = 1/3 on every edge.
-        harmonics = (cob.HodgeLaplacian(_triangle_one_timelike(1.3))
+        harmonics = (_hodge(_triangle_one_timelike(1.3))
                      .harmonics(1, 1e-9))
         self.assertEqual(len(harmonics), 1)  # one harmonic, a degree-1 Cochain
         h = np.asarray(harmonics[0].coeffs())
@@ -373,7 +390,7 @@ class TestLorentzianBothTerms(unittest.TestCase):
         eigs = _lor_eigs(st, 1)
         self.assertTrue(_is_not_psd(eigs))                  # not PSD
         # near-kernel modes are well-defined and their null-norms line up 1:1
-        harmonics = cob.HodgeLaplacian(st).harmonics(1, TOL)
+        harmonics = _hodge(st).harmonics(1, TOL)
         norms = _null_norms(st, 1, tol=TOL)
         self.assertEqual(len(harmonics), len(norms))
 
@@ -416,7 +433,7 @@ class TestLorentzianBothTerms(unittest.TestCase):
 class TestLorentzianDegreeParameterization(unittest.TestCase):
 
     def test_negative_degree_raises(self):
-        hl = cob.HodgeLaplacian(_triangle_cycle())
+        hl = _hodge(_triangle_cycle())
         for call in (lambda: hl.eigenvalues(-1),
                      lambda: hl.eigenvectors(-1),
                      lambda: hl.harmonics(-1),
@@ -427,7 +444,7 @@ class TestLorentzianDegreeParameterization(unittest.TestCase):
                     call()
 
     def test_above_top_dimension_is_empty(self):
-        hl = cob.HodgeLaplacian(_triangle_cycle())  # S^1, top dim 1
+        hl = _hodge(_triangle_cycle())  # S^1, top dim 1
         for k in (2, 3):
             with self.subTest(k=k):
                 self.assertEqual(hl.eigenvalues(k), [])
@@ -465,7 +482,7 @@ class TestDegreeZeroLorentzian(unittest.TestCase):
         n0, n1 = cc.numSimplices(0), cc.numSimplices(1)
         d1 = np.array(cc.boundaryMatrix(1),
                       dtype=float).reshape(n0, n1).astype(complex)
-        w1 = (np.array(cob.HodgeLaplacian(st).weights(1), dtype=complex)
+        w1 = (np.array(_hodge(st).weights(1), dtype=complex)
               if metric else np.ones(n1, dtype=complex))
         return d1 @ np.diag(1.0 / w1) @ d1.conj().T
 

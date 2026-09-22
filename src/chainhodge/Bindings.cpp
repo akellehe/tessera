@@ -12,11 +12,13 @@
 #include "chainhodge/CovariantChainHodge.h"
 #include "chainhodge/BandDerivative.h"
 #include "chainhodge/FaceAnchor.h"
+#include "chainhodge/DressedAnchor.h"
 #include "chainhodge/RieszBand.h"
 #include "chainhodge/LorentzianFamily.h"
 #include "chainhodge/PencilSchur.h"
 #include "chainhodge/SparsePencil.h"
 #include "chainhodge/SparsePencilSolver.h"
+#include "chainhodge/SparseRank.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/ChainComplex.h"
 #include "spacetime/Spacetime.h"
@@ -50,6 +52,16 @@ protocol rotation epsilon (NaN until set).)doc")
       .def_readonly("margins", &InstanceCertificate::margins)
       .def_readonly("volumes", &InstanceCertificate::volumes)
       .def_readonly("gramDeterminants", &InstanceCertificate::gramDeterminants)
+      .def_readonly("volumeWindings", &InstanceCertificate::volumeWindings,
+          "The Riemann-sheet label of each volume root: the signed number of "
+          "turns det g_T makes about zero along the continuation that fixed it, "
+          "so volumes[t] is (-1)**volumeWindings[t] times the principal root "
+          "over d!. Carried because the root, not the squared volume, is where "
+          "the branch is: two instances with the same gramDeterminants and "
+          "different volumeWindings are on different sheets of the same "
+          "geometry, and only the label says so. Zero throughout on the "
+          "Kontsevich-Segal branch, which declares its sheet eigenvalue by "
+          "eigenvalue rather than along a path.")
       .def_readonly("continuationAmbiguous", &InstanceCertificate::continuationAmbiguous)
       .def_readonly("ambiguousTopSimplices", &InstanceCertificate::ambiguousTopSimplices)
       .def_readwrite("epsilon", &InstanceCertificate::epsilon);
@@ -105,6 +117,37 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            },
            py::arg("gram"), py::arg("branch") = Branch::Continuation,
            "(sqrt(det g)/d!, ambiguous) for one Gram matrix on the declared branch.")
+      .def_static("volumeWindingOnBranch",
+           [](const Eigen::MatrixXcd &gram, Branch branch) {
+             bool ambiguous = false;
+             int winding = 0;
+             WhitneyMass::volumeOnBranch(gram, branch, &ambiguous, &winding);
+             return winding;
+           },
+           py::arg("gram"), py::arg("branch") = Branch::Continuation,
+           "The Riemann-sheet label of the root volumeOnBranch takes: the signed "
+           "number of turns det g makes about zero along the continuation from "
+           "the unit Euclidean reference, so that the volume is (-1)**winding "
+           "times the principal root over d!. Zero on the Kontsevich-Segal "
+           "branch, which declares its sheet eigenvalue by eigenvalue rather "
+           "than along a path.")
+      .def_static("volumeContinuedFrom",
+           [](const Eigen::MatrixXcd &gramFrom, int windingFrom,
+              const Eigen::MatrixXcd &gramTo) {
+             bool ambiguous = false;
+             int windingTo = 0;
+             const Complex v = WhitneyMass::volumeContinuedFrom(
+                 gramFrom, windingFrom, gramTo, &windingTo, &ambiguous);
+             return py::make_tuple(v, ambiguous, windingTo);
+           },
+           py::arg("gram_from"), py::arg("winding_from"), py::arg("gram_to"),
+           "(sqrt(det g_to)/d!, ambiguous, winding) continued from a declared "
+           "previous geometry and its sheet instead of from the fixed Euclidean "
+           "reference. Starting from the geometry an instance actually came "
+           "from is what makes a family of instances one continued state rather "
+           "than a sequence of independent principal-value choices: the sheet "
+           "composes along the path, so a loop of squared lengths about a zero "
+           "of det g returns the winding one higher and the volume negated.")
       .def_static("marginOf", &WhitneyMass::marginOf, py::arg("gram"),
            "pi - sum_i |arg lambda_i(g)| for one Gram matrix.")
       .def_static("topSimplexBlocks", &WhitneyMass::topSimplexBlocks,
@@ -115,6 +158,16 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("edge_index"),
            py::arg("branch") = Branch::Continuation,
            "dM_k/ds_e for the edge at the given canonical index, sparse.")
+      .def_static("assembleDirectionalDerivative", &WhitneyMass::assembleDirectionalDerivative,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
+           py::arg("branch") = Branch::Continuation,
+           "D_v M_k = sum_e v_e dM_k/ds_e along a squared-length direction (one entry per edge, "
+           "canonical order), sparse.")
+      .def_static("assembleSecondDerivatives", &WhitneyMass::assembleSecondDerivatives,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
+           py::arg("branch") = Branch::Continuation,
+           "D_v dM_k/ds_e for every edge e along a squared-length direction v, a list indexed by "
+           "canonical edge, sparse.")
       .def_static("derivativeContraction", &WhitneyMass::derivativeContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("X"), py::arg("Y"), py::arg("branch") = Branch::Continuation,
@@ -146,6 +199,44 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("A", &Pencil::A)
       .def_readonly("B", &Pencil::B);
 
+  py::class_<SingularSplit>(m, "SingularSplit",
+      "The singular values on either side of one rank split: sigmaAt = sigma_at, "
+      "sigmaNext = sigma_{at+1}, their gap, the numerical rank and its tolerance.")
+      .def_readonly("at", &SingularSplit::at)
+      .def_readonly("rank", &SingularSplit::rank)
+      .def_readonly("tolerance", &SingularSplit::tolerance)
+      .def_readonly("largest", &SingularSplit::largest)
+      .def_readonly("sigmaAt", &SingularSplit::sigmaAt)
+      .def_readonly("sigmaNext", &SingularSplit::sigmaNext)
+      .def_readonly("gap", &SingularSplit::gap)
+      .def_readonly("dense", &SingularSplit::dense);
+
+  py::class_<SparseKernel>(m, "SparseKernel",
+      "The kernel of a sparse matrix (orthonormal basis) with the split at its numerical rank.")
+      .def_readonly("split", &SparseKernel::split)
+      .def_readonly("basis", &SparseKernel::basis);
+
+  py::class_<SparseRank>(m, "SparseRank",
+      R"doc(Numerical ranks of sparse matrices with the singular values on either side of
+the decision, without forming a dense matrix of the size of the problem: kernel(A)
+by a thresholded sparse QR of A (the kernel by back-substitution, the last kept
+singular value by inverse subspace iteration on the triangular factor, the first
+discarded one as ||A N||); congruence(C, X, inverse, rho) for P = C^T X^{+-1} C with
+C an integer matrix of exact rank rho, reduced to the rho x rho matrix W X^{+-1} W^T
+by a sparse QR of C^T.
+
+Reference: Foster & Davis, "Algorithm 933: Reliable calculation of numerical rank,
+null space bases, pseudoinverse solutions, and basic solutions using SuiteSparseQR",
+ACM TOMS 40 (2013).)doc")
+      .def_static("kernel", &SparseRank::kernel, py::arg("A"), py::arg("kappa") = 10.0,
+           "The kernel of sparse A with the split at its numerical rank.")
+      .def_static("congruence", &SparseRank::congruence, py::arg("C"), py::arg("X"),
+           py::arg("inverse"), py::arg("structural_rank"), py::arg("kappa") = 10.0,
+           "The split of P = C^T X C (or C^T X^{-1} C) at the exact rank of C.")
+      .def_static("fromSingularValues", &SparseRank::fromSingularValues, py::arg("singular_values"),
+           py::arg("rows"), py::arg("cols"), py::arg("kappa") = 10.0, py::arg("at") = -1,
+           "A dense SVD's singular values as a split (at the numerical rank when at < 0).");
+
   py::class_<HarmonicRead>(m, "HarmonicRead",
       "Harmonic chains H_k, their geometric images, and the kernel's rank certificate.")
       .def_readonly("degree", &HarmonicRead::degree)
@@ -155,7 +246,39 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .def_readonly("rank", &HarmonicRead::rank)
       .def_readonly("tolerance", &HarmonicRead::tolerance)
       .def_readonly("gap", &HarmonicRead::gap)
+      .def_readonly("largestSingular", &HarmonicRead::largestSingular)
+      .def_readonly("lastKept", &HarmonicRead::lastKept)
+      .def_readonly("firstDiscarded", &HarmonicRead::firstDiscarded)
       .def_readonly("dense", &HarmonicRead::dense);
+
+  py::class_<SparseCostReport>(m, "SparseCostReport",
+      "What one operation of the sparse production path cost: wall time, memory and fill-in, "
+      "measured on the operation itself. fillIn is the stored entries of the factors over those "
+      "of the matrix they factorize; factorMegabytes is the factors' own memory, computed from "
+      "their stored entries; residentMegabytes is the change in the process's resident set size "
+      "across the operation, NaN where the operating system does not publish it.")
+      .def_readonly("operation", &SparseCostReport::operation)
+      .def_readonly("degree", &SparseCostReport::degree)
+      .def_readonly("dimension", &SparseCostReport::dimension)
+      .def_readonly("systemRows", &SparseCostReport::systemRows)
+      .def_readonly("systemNonZeros", &SparseCostReport::systemNonZeros)
+      .def_readonly("factorNonZeros", &SparseCostReport::factorNonZeros)
+      .def_readonly("fillIn", &SparseCostReport::fillIn)
+      .def_readonly("wallSeconds", &SparseCostReport::wallSeconds)
+      .def_readonly("factorMegabytes", &SparseCostReport::factorMegabytes)
+      .def_readonly("residentMegabytes", &SparseCostReport::residentMegabytes)
+      .def_readonly("rightHandSides", &SparseCostReport::rightHandSides);
+
+  py::class_<SparseKernelRead>(m, "SparseKernelRead",
+      "The null space of a sparse matrix from SparseRank::kernel, with the singular values on "
+      "either side of the rank decision and the cost of the read. The factorization is "
+      "SparseRank's and does not publish its stored entries, so the cost's fill-in and factor "
+      "memory are NaN while its wall time and process memory are measured.")
+      .def_readonly("kernel", &SparseKernelRead::kernel)
+      .def_readonly("split", &SparseKernelRead::split)
+      .def_readonly("rank", &SparseKernelRead::rank)
+      .def_readonly("tolerance", &SparseKernelRead::tolerance)
+      .def_readonly("cost", &SparseKernelRead::cost);
 
   py::class_<RankReport>(m, "RankReport",
       "The rank conditions (R1)-(R4) at one degree.")
@@ -166,6 +289,10 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
         return std::vector<int>(r.expected.begin(), r.expected.end()); })
       .def_property_readonly("holds", [](const RankReport &r) {
         return std::vector<bool>(r.holds.begin(), r.holds.end()); })
+      .def_property_readonly("splits", [](const RankReport &r) {
+        return std::vector<SingularSplit>(r.splits.begin(), r.splits.end()); },
+        "Per condition, the singular values at and beyond its exact rank.")
+      .def_readonly("dense", &RankReport::dense)
       .def_readonly("decompositionHolds", &RankReport::decompositionHolds)
       .def_readonly("kernelIsHarmonic", &RankReport::kernelIsHarmonic)
       .def_readonly("kappa", &RankReport::kappa);
@@ -208,21 +335,28 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def("applyMinv", &ChainHodge::applyMinv, py::arg("k"), py::arg("c"), "M_k c.")
       .def("pencil", &ChainHodge::pencil, py::arg("k"), "The dense pencil at degree k.")
       .def("pencilAux", &ChainHodge::pencilAux, py::arg("k"), "A~_k = M_k A_k M_k (Whitney), dense.")
+      .def("applyPencilOperator", &ChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
+           "A~_k Z (Whitney) or A_k Z (Grassmann) by sparse products and sparse solves: the "
+           "production path's pencil operator, defined at any size.")
+      .def("stackedMatrix", [](const ChainHodge &c, int k) { return SparseMatrix(c.stackedMatrix(k)); },
+           py::arg("k"),
+           "The sparse stacked cochain matrix S of degree k, whose kernel is the harmonic space.")
+      .def_static("sparseNullSpace",
+           [](const SparseMatrix &S, double kappa) { return ChainHodge::sparseNullSpace(S, kappa); },
+           py::arg("S"), py::arg("kappa") = 10.0,
+           "ker S by rank-revealing sparse QR of S^H, with the rank, the threshold and the cost; "
+           "neither S nor the orthogonal factor is densified.")
       .def("hodgeOperator", &ChainHodge::hodgeOperator, py::arg("k"), "The dense L_k on chains.")
       .def("harmonicChains", &ChainHodge::harmonicChains, py::arg("k"), py::arg("kappa") = 10.0,
            py::arg("force_sparse") = false, "H_k = M_k ker S with the kernel's rank certificate.")
       .def("geometricImage", &ChainHodge::geometricImage, py::arg("k"), py::arg("H"), "G_k H.")
       .def("harmonicGram", &ChainHodge::harmonicGram, py::arg("read"), "Phi^T G_k Phi = Z^T M_k Z.")
       .def("rankConditions", &ChainHodge::rankConditions, py::arg("k"), py::arg("kappa") = 10.0,
-           "The rank conditions (R1)-(R4) at degree k.")
+           py::arg("force_sparse") = false,
+           "The rank conditions (R1)-(R4) at degree k, each with the singular values at and "
+           "beyond its exact rank; sparse at or above the crossover.")
       .def("betti", &ChainHodge::betti, "Betti numbers over Q, exact.")
       .def("spectrum", &ChainHodge::spectrum, py::arg("k"), "Dense spectrum of the degree-k pencil.");
-  py::enum_<CausalType>(m, "CausalType",
-      "Declared causal type of an edge (an input, never inferred from a squared length).")
-      .value("Spacelike", CausalType::Spacelike)
-      .value("Timelike", CausalType::Timelike)
-      .value("Null", CausalType::Null);
-
   py::class_<LorentzianRead>(m, "LorentzianRead",
       "One member of the epsilon family: allowability, margin, the harmonic read with its "
       "gap, and the dense spectrum when requested.")
@@ -243,27 +377,36 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def_readonly("label", &LorentzianExtrapolation::label);
 
   py::class_<LorentzianFamily>(m, "LorentzianFamily",
-      R"doc(The Lorentzian protocol: the family s_e(epsilon) with the timelike squared
-lengths rotated by e^{-2 i epsilon} at reported epsilon > 0; reads at epsilon = 0
-exist only inside a family and carry their gap; extrapolation to epsilon -> 0 is a
-separate, labeled step.
+      R"doc(The Lorentzian protocol (integration specification, Requirement 2): the family
+s_e(epsilon) with the timelike part of every squared length rotated by e^{-2 i epsilon},
+at reported epsilon > 0; reads at epsilon = 0 exist only inside a family and carry their
+gap; extrapolation to epsilon -> 0 is a separate, labeled step.
+
+Every squared length s_e is declared with its timelike part tau_e, the contribution of
+the edge's temporal displacement (-e^{2 phi} dt^2 for a metric e^{2 phi}(-dt^2 + dx^2));
+the family is s_e(epsilon) = (s_e - tau_e) + e^{-2 i epsilon} tau_e. The split is an
+input and is never inferred from s_e.
 
 Reference: Kontsevich & Segal, "Wick rotation and the positivity of energy in quantum
 field theory", arXiv:2105.10161.)doc")
       .def_static("rotate", &LorentzianFamily::rotate, py::arg("squared_lengths"),
-           py::arg("causal_types"), py::arg("epsilon"),
-           "Timelike entries times e^{-2 i epsilon}; others unchanged.")
+           py::arg("timelike_parts"), py::arg("epsilon"),
+           "s_e + (e^{-2 i epsilon} - 1) tau_e: every timelike part rotated, the spacelike "
+           "part s_e - tau_e unchanged. Raises ValueError on mismatched lengths, a "
+           "non-finite timelike part, or epsilon < 0.")
       .def_static("instance", &LorentzianFamily::instance, py::arg("complex"),
-           py::arg("squared_lengths"), py::arg("causal_types"), py::arg("epsilon"),
+           py::arg("squared_lengths"), py::arg("timelike_parts"), py::arg("epsilon"),
            py::arg("preset") = Preset::L2, py::arg("branch") = Branch::Continuation,
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
            "The ChainHodge at epsilon, with epsilon on its certificate.")
       .def_static("sweep", &LorentzianFamily::sweep, py::arg("complex"), py::arg("squared_lengths"),
-           py::arg("causal_types"), py::arg("epsilons"), py::arg("degree"),
+           py::arg("timelike_parts"), py::arg("epsilons"), py::arg("degree"),
            py::arg("preset") = Preset::L2, py::arg("branch") = Branch::Continuation,
            py::arg("kappa") = 10.0, py::arg("with_spectrum") = false,
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
-           "Reads at every epsilon of the family at one degree.")
+           "Reads at every epsilon of the family at one degree. Raises ValueError when "
+           "no epsilon > 0 is given (a read at epsilon = 0 is never reported alone) or "
+           "any epsilon is negative.")
       .def_static("extrapolateToZero", &LorentzianFamily::extrapolateToZero, py::arg("epsilons"),
            py::arg("values"), py::arg("order") = 2,
            "Labeled polynomial extrapolation of reads at epsilon > 0 to epsilon -> 0.");
@@ -296,8 +439,8 @@ normalized or conjugated.)doc")
       .def("isUnitary", &Connection::isUnitary, py::arg("tolerance") = 1e-12);
 
   py::class_<CovarianceCertificate>(m, "CovarianceCertificate",
-      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance; "
-      "NaN means unmeasured.")
+      "Residuals of the exact properties (i)-(vi) of CovariantChainHodge on an instance, "
+      "measured and asserted on construction at tolerance 10 n eps cond; NaN means unmeasured.")
       .def_readonly("transposeMetric", &CovarianceCertificate::transposeMetric)
       .def_readonly("transposePencil", &CovarianceCertificate::transposePencil)
       .def_readonly("covarianceMetric", &CovarianceCertificate::covarianceMetric)
@@ -306,6 +449,15 @@ normalized or conjugated.)doc")
       .def_readonly("pairingInvariance", &CovarianceCertificate::pairingInvariance)
       .def_readonly("trivialReduction", &CovarianceCertificate::trivialReduction)
       .def_readonly("pureGaugeIsospectrality", &CovarianceCertificate::pureGaugeIsospectrality)
+      .def_readonly("trivialReductionProbe", &CovarianceCertificate::trivialReductionProbe)
+      .def_readonly("transposePencilProbe", &CovarianceCertificate::transposePencilProbe)
+      .def_readonly("transposeOperatorProbe", &CovarianceCertificate::transposeOperatorProbe)
+      .def_readonly("covariancePencilProbe", &CovarianceCertificate::covariancePencilProbe)
+      .def_readonly("covarianceOperatorProbe", &CovarianceCertificate::covarianceOperatorProbe)
+      .def_readonly("pureGaugeSimilarityProbe", &CovarianceCertificate::pureGaugeSimilarityProbe)
+      .def_readonly("conditionEstimate", &CovarianceCertificate::conditionEstimate)
+      .def_readonly("tolerance", &CovarianceCertificate::tolerance)
+      .def_readonly("holds", &CovarianceCertificate::holds)
       .def_readonly("gaugeSeed", &CovarianceCertificate::gaugeSeed)
       .def_readonly("checkedDegree", &CovarianceCertificate::checkedDegree);
 
@@ -328,6 +480,7 @@ normalized or conjugated.)doc")
       .def_readonly("rankTolerance", &BandCertificate::rankTolerance)
       .def_readonly("singularGap", &BandCertificate::singularGap)
       .def_readonly("resolventMax", &BandCertificate::resolventMax)
+      .def_readonly("resolventProbeMax", &BandCertificate::resolventProbeMax)
       .def_readonly("detB", &BandCertificate::detB)
       .def_readonly("condB", &BandCertificate::condB)
       .def_readonly("pairingScale", &BandCertificate::pairingScale)
@@ -393,6 +546,19 @@ properties (i)-(vi) measured on every instance.)doc")
              return Eigen::MatrixXcd(self.dressedPhaseDerivative(k, e)); }, py::arg("k"), py::arg("edge_index"))
       .def("covariantOperatorDerivative", &CovariantChainHodge::covariantOperatorDerivative,
            py::arg("k"), py::arg("edge_index"), "dh_k/ds_e for the canonical edge index, dense.")
+      .def("covariantOperatorDirectionalDerivative",
+           [](const CovariantChainHodge &self, int k, const std::vector<std::complex<double>> &direction) {
+             return self.lengthDirection(k, direction).operatorDirectional;
+           },
+           py::arg("k"), py::arg("direction"),
+           "D_v h_k along a squared-length direction v (one entry per edge, canonical order), dense.")
+      .def("covariantOperatorSecondDerivative",
+           [](const CovariantChainHodge &self, int k, std::size_t e,
+              const std::vector<std::complex<double>> &direction) {
+             return self.covariantOperatorSecondDerivative(self.lengthDirection(k, direction), e);
+           },
+           py::arg("k"), py::arg("edge_index"), py::arg("direction"),
+           "D_v dh_k/ds_e for the canonical edge index along a squared-length direction v, dense.")
       .def("covariantOperatorPhaseDerivative", &CovariantChainHodge::covariantOperatorPhaseDerivative,
            py::arg("k"), py::arg("edge_index"),
            "dh_k/dphi_e for the multiplicative link variation U_e = e^{i phi_e}, dense.")
@@ -428,6 +594,35 @@ properties (i)-(vi) measured on every instance.)doc")
       .def("band", &CovariantChainHodge::band, py::arg("k"), py::arg("contour"), py::arg("kappa") = 10.0,
            py::arg("isotropy_tolerance") = 1e-10,
            "The Riesz band of the contour: P, Phi, Phi^vee, Z, B_C, Phi~, J, Gamma, certificates.")
+      .def("applyPencilOperator", &CovariantChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
+           "A~_k^U Z by sparse products and one sparse factorization of M_{k-1}^U: the production "
+           "path's pencil operator, which never forms the dense A~_k^U and is defined at any size.")
+      .def("borderedSystem",
+           [](const CovariantChainHodge &self, int k, std::complex<double> zeta) {
+             return self.borderedSystem(k, zeta); },
+           py::arg("k"), py::arg("zeta"),
+           "The sparse bordered system of the shifted pencil, whose Schur complement is "
+           "zeta M_k^U - A~_k^U.")
+      .def("shiftedSolve",
+           [](const CovariantChainHodge &self, int k, std::complex<double> zeta,
+              const Eigen::MatrixXcd &B) {
+             SparseCostReport report;
+             Eigen::MatrixXcd X = self.shiftedSolve(k, zeta, B, &report);
+             return std::make_pair(std::move(X), report); },
+           py::arg("k"), py::arg("zeta"), py::arg("B"),
+           "((zeta M_k^U - A~_k^U)^{-1} B, cost): the production path's shifted solve through one "
+           "sparse LU of the bordered system, with the factorization's cost report.")
+      .def("sparseBand",
+           [](const CovariantChainHodge &self, int k, const Contour &contour, int probeCount,
+              double kappa, double isotropyTolerance, std::uint64_t seed) {
+             SparseCostReport report;
+             Band band = self.sparseBand(k, contour, probeCount, kappa, isotropyTolerance, seed,
+                                         &report);
+             return std::make_pair(std::move(band), report); },
+           py::arg("k"), py::arg("contour"), py::arg("probe_count"), py::arg("kappa") = 10.0,
+           py::arg("isotropy_tolerance") = 1e-10, py::arg("seed") = std::uint64_t{20260922},
+           "(band, cost): the Riesz band of the contour read on the sparse production path, the "
+           "quadrature applied to a probe block so that the n x n projector is never formed.")
       .def_static("leftFrame", &CovariantChainHodge::leftFrame, py::arg("band"), py::arg("dual_instance"),
            py::arg("isotropy_tolerance") = 1e-10,
            "G^{U^-1} Phi^vee B_C^{-T} from the band's dual frame and pairing; raises on an isotropic band.");
@@ -651,12 +846,66 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("responseDeterminant", &FeshbachResult::responseDeterminant)
       .def_readonly("pencilDeterminant", &FeshbachResult::pencilDeterminant)
       .def_readonly("determinantResidual", &FeshbachResult::determinantResidual)
+      .def_readonly("pencilLogDeterminant", &FeshbachResult::pencilLogDeterminant)
+      .def_readonly("interiorLogDeterminant", &FeshbachResult::interiorLogDeterminant)
+      .def_readonly("responseLogDeterminant", &FeshbachResult::responseLogDeterminant)
+      .def_readonly("logModulusResidual", &FeshbachResult::logModulusResidual)
+      .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
       .def_readonly("solveResidual", &FeshbachResult::solveResidual)
-      .def_readonly("interiorSingular", &FeshbachResult::interiorSingular);
+      .def_readonly("interiorSingular", &FeshbachResult::interiorSingular)
+      .def_readonly("interiorRank", &FeshbachResult::interiorRank)
+      .def_readonly("interiorRankThreshold", &FeshbachResult::interiorRankThreshold)
+      .def_readonly("interiorSingularGap", &FeshbachResult::interiorSingularGap)
+      .def_readonly("interiorNullSpace", &FeshbachResult::interiorNullSpace)
+      .def_readonly("interiorLeftNullSpace", &FeshbachResult::interiorLeftNullSpace)
+      .def_readonly("resonantModes", &FeshbachResult::resonantModes)
+      .def_readonly("rangeProjector", &FeshbachResult::rangeProjector)
+      .def_readonly("nullProjector", &FeshbachResult::nullProjector)
+      .def_readonly("compatibilityResidual", &FeshbachResult::compatibilityResidual)
+      .def_readonly("compatible", &FeshbachResult::compatible)
+      .def_readonly("independenceResidual", &FeshbachResult::independenceResidual)
+      .def_readonly("responseIndependent", &FeshbachResult::responseIndependent)
+      .def_readonly("resonantResponse", &FeshbachResult::resonantResponse)
+      .def_readonly("reductionResidual", &FeshbachResult::reductionResidual)
+      .def_readonly("liftResidual", &FeshbachResult::liftResidual);
 
-  py::class_<CongruenceResult>(m, "CongruenceResult", "A congruence (T^T A T, T^T M T).")
+  py::class_<CongruenceResult>(m, "CongruenceResult",
+      "A congruence (T^T A T, T^T M T) with the symmetry defects of the reduced pair and the "
+      "inverse condition number of the basis.")
       .def_readonly("A", &CongruenceResult::A)
-      .def_readonly("M", &CongruenceResult::M);
+      .def_readonly("M", &CongruenceResult::M)
+      .def_readonly("symmetryDefect", &CongruenceResult::symmetryDefect)
+      .def_readonly("metricSymmetryDefect", &CongruenceResult::metricSymmetryDefect)
+      .def_readonly("basisConditionInverse", &CongruenceResult::basisConditionInverse);
+
+  py::class_<SurrogateResult>(m, "SurrogateResult",
+      "A certified Craig-Bampton/AMLS surrogate of a pencil over a window disc in the complex "
+      "spectral plane, with every claimed eigenvalue held to the exact Feshbach map: "
+      "feshbachDefects is ||F_B(theta) x_B|| / (||F_B|| ||x_B||) and feshbachBounds is "
+      "(1 + ||P_BI P_II^{-1}||) ||P(theta) x|| / (||F_B|| ||x_B||), the bound the defect is "
+      "measured against pair by pair.")
+      .def_readonly("interface", &SurrogateResult::interface)
+      .def_readonly("interior", &SurrogateResult::interior)
+      .def_readonly("shift", &SurrogateResult::shift)
+      .def_readonly("windowCentre", &SurrogateResult::windowCentre)
+      .def_readonly("windowRadius", &SurrogateResult::windowRadius)
+      .def_readonly("retentionRadius", &SurrogateResult::retentionRadius)
+      .def_readonly("basis", &SurrogateResult::basis)
+      .def_readonly("reduced", &SurrogateResult::reduced)
+      .def_readonly("interiorEigenvalues", &SurrogateResult::interiorEigenvalues)
+      .def_readonly("retainedModes", &SurrogateResult::retainedModes)
+      .def_readonly("discardedModeSeparation", &SurrogateResult::discardedModeSeparation)
+      .def_readonly("eigenvalues", &SurrogateResult::eigenvalues)
+      .def_readonly("vectors", &SurrogateResult::vectors)
+      .def_readonly("windowIndices", &SurrogateResult::windowIndices)
+      .def_readonly("residuals", &SurrogateResult::residuals)
+      .def_readonly("feshbachDefects", &SurrogateResult::feshbachDefects)
+      .def_readonly("feshbachBounds", &SurrogateResult::feshbachBounds)
+      .def_readonly("feshbachHolds", &SurrogateResult::feshbachHolds)
+      .def_readonly("resonantAtEigenvalue", &SurrogateResult::resonantAtEigenvalue)
+      .def_readonly("tolerance", &SurrogateResult::tolerance)
+      .def_readonly("certified", &SurrogateResult::certified)
+      .def_readonly("refusal", &SurrogateResult::refusal);
 
   py::class_<FiberRestriction>(m, "FiberRestriction",
       "The coarse pencil and chain metric restricted to retained fibers: (Z^T A~ Z, Z^T M Z).")
@@ -682,9 +931,44 @@ images: the Feshbach complement with its determinant factorization, the Craig-Ba
 congruence, the restriction of pencil and chain metric to retained fibers, and the
 transfer between fibers with the reversal identity asserted at runtime. Every pairing
 is the transpose.)doc")
+      .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
+           "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
-           py::arg("interface"), py::arg("rank_tolerance") = 1e-12)
-      .def_static("craigBampton", &PencilSchur::craigBampton, py::arg("A"), py::arg("M"), py::arg("T"))
+           py::arg("interface"), py::arg("rank_tolerance") = 1e-12,
+           "The Feshbach complement at lambda with the interior block's range and null projectors "
+           "and, at an interior resonance, the generalized inverse, the compatibility and "
+           "independence residuals, the retained resonant modes, the resonant reduction and the "
+           "residual of lifting its null vectors back to null vectors of the pencil.")
+      .def_static("sparseFeshbach",
+           [](const SparseMatrix &A, const SparseMatrix &M, std::complex<double> lambda,
+              const std::vector<int> &interface, double solveTolerance) {
+             SparseCostReport report;
+             FeshbachResult result =
+                 PencilSchur::sparseFeshbach(A, M, lambda, interface, solveTolerance, &report);
+             return std::make_pair(std::move(result), report); },
+           py::arg("A"), py::arg("M"), py::arg("lambda_"), py::arg("interface"),
+           py::arg("solve_tolerance") = 1e-8,
+           "(result, cost): the same complement on the sparse production path, the interior block "
+           "factorized by sparse LU and no n x n matrix formed. An interior resonance is refused "
+           "by name; the dense feshbach resolves it.")
+      .def_static("craigBampton",
+           py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
+                             const Eigen::MatrixXcd &>(&PencilSchur::craigBampton),
+           py::arg("A"), py::arg("M"), py::arg("T"),
+           "The congruence (T^T A T, T^T M T) of an explicit basis, with the symmetry defects of "
+           "the reduced pair and the inverse condition number of the basis.")
+      .def_static("craigBamptonSurrogate",
+           py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
+                             const std::vector<int> &, std::complex<double>, double, double,
+                             std::complex<double>, double, double>(&PencilSchur::craigBampton),
+           py::arg("A"), py::arg("M"), py::arg("interface"), py::arg("window_centre"),
+           py::arg("window_radius"), py::arg("retention_radius"),
+           py::arg("shift") = std::complex<double>(0.0, 0.0), py::arg("tolerance") = 1e-8,
+           py::arg("rank_tolerance") = 1e-12,
+           "The certified Craig-Bampton/AMLS surrogate over the window disc |theta - centre| <= "
+           "radius: interface constraint modes at the shift plus the fixed-interface modes of "
+           "(A_II, M_II) inside the retention radius, with every claimed eigenvalue held to the "
+           "exact Feshbach map. It runs in every pencil regime.")
       .def_static("restrictToFibers",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &, const Eigen::MatrixXcd &>(
                &PencilSchur::restrictToFibers),
@@ -700,4 +984,121 @@ is the transpose.)doc")
       .def_static("transfer", &PencilSchur::transfer, py::arg("AtildeU"), py::arg("AtildeUinv"),
            py::arg("ZA"), py::arg("ZAdual"), py::arg("ZB"), py::arg("ZBdual"),
            py::arg("tolerance") = 1e-8);
+
+  // ---- the anchor by the dressed coordinate ----
+
+  py::class_<DeclaredPaths>(m, "DeclaredPaths",
+      R"doc(The declared path rule of an anchor: one base vertex p and one walk in the
+1-skeleton from p to each vertex the rule reaches. The transport of a coefficient at v
+to p is the ordered product of the links along the walk, which telescopes under a vertex
+gauge to g_p^{-1} T_p(v) g_v. The same base vertex and the same rule are used for every
+face of the atlas.)doc")
+      .def_static("breadthFirst", &DeclaredPaths::breadthFirst, py::arg("complex"),
+           py::arg("base_point"), py::arg("support") = std::vector<std::uint64_t>{},
+           "Shortest walks from the base vertex, ties broken by ascending vertex id; an "
+           "empty support means the whole complex.")
+      .def_static("fromWalks", &DeclaredPaths::fromWalks, py::arg("complex"),
+           py::arg("base_point"), py::arg("walks"),
+           "A caller-declared rule: one vertex sequence per reached vertex, validated "
+           "against the complex's edges.")
+      .def_static("declaredTransports", &DeclaredPaths::declaredTransports, py::arg("base_point"),
+           py::arg("transports"),
+           "A transport table declared as bare numbers with no walk behind it. It does not "
+           "transform under a vertex gauge, so the anchor refuses it; it exists so that the "
+           "refusal is reachable.")
+      .def("basePoint", &DeclaredPaths::basePoint)
+      .def("derivedFromWalks", &DeclaredPaths::derivedFromWalks)
+      .def("reaches", &DeclaredPaths::reaches, py::arg("v"))
+      .def("walks", &DeclaredPaths::walks)
+      .def("transport", &DeclaredPaths::transport, py::arg("connection"), py::arg("v"),
+           "T_p(v), the transport of a coefficient at v to the base vertex.");
+
+  py::class_<FaceRestriction>(m, "FaceRestriction",
+      "One oriented triangle's dressed restriction: its three ordered boundary edges in the "
+      "cyclic order (v0v1), (v1v2), (v0v2), their incidence signs (+1, +1, -1), their base "
+      "vertices b(e) = min e, the transports of those base vertices to p, and the three "
+      "nonzero entries of res_{tau->p}(U).")
+      .def_readonly("faceIndex", &FaceRestriction::faceIndex)
+      .def_readonly("edgeIndices", &FaceRestriction::edgeIndices)
+      .def_readonly("incidenceSigns", &FaceRestriction::incidenceSigns)
+      .def_readonly("basePoints", &FaceRestriction::basePoints)
+      .def_readonly("transports", &FaceRestriction::transports)
+      .def_readonly("factors", &FaceRestriction::factors);
+
+  py::class_<DressedAnchorRead>(m, "DressedAnchorRead",
+      "The anchor certificate of one base band on one atlas of faces: the exterior-power "
+      "coordinates of every face, the invariant coordinates alpha_tau when attached, the "
+      "covariance and transition-cocycle residuals, and the named refusals.")
+      .def_readonly("basePoint", &DressedAnchorRead::basePoint)
+      .def_readonly("bandRank", &DressedAnchorRead::bandRank)
+      .def_readonly("faceIndices", &DressedAnchorRead::faceIndices)
+      .def_readonly("coordinates", &DressedAnchorRead::coordinates)
+      .def_readonly("invariantCoordinates", &DressedAnchorRead::invariantCoordinates)
+      .def_readonly("anchoringFaces", &DressedAnchorRead::anchoringFaces)
+      .def_readonly("coordinateScale", &DressedAnchorRead::coordinateScale)
+      .def_readonly("covarianceResidual", &DressedAnchorRead::covarianceResidual)
+      .def_readonly("transitionCocycleResidual", &DressedAnchorRead::transitionCocycleResidual)
+      .def_readonly("tolerance", &DressedAnchorRead::tolerance)
+      .def_readonly("anchored", &DressedAnchorRead::anchored)
+      .def_readonly("failedCertificates", &DressedAnchorRead::failedCertificates);
+
+  py::class_<DressedAnchor>(m, "DressedAnchor",
+      R"doc(The anchor of a base band to oriented two-simplices by the dressed coordinate:
+Delta_tau = det(res_{tau->p}(U) Phi_Q) for a rank-three band, its Lambda^r variant for a
+band of rank below three, the profile those coordinates form as a point of a projective
+space, and the determinant-line transition functions on overlaps. No modulus, square
+root, free face weight or real-valued score enters the physical definition. The anchor
+refuses rather than reporting a gauge-dependent raw restriction when the
+connection-dressed covariance cannot be verified, and refuses an identically zero
+profile, which is what an exact band at flat connection produces.)doc")
+      .def_static("faceRestriction", &DressedAnchor::faceRestriction, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"),
+           "The triangle's ordered boundary edges, incidence signs, base vertices and transports.")
+      .def_static("restriction", &DressedAnchor::restriction, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"),
+           "res_{tau->p}(U) as a dense 3 x n_1 matrix, for verifying the covariance law as "
+           "written.")
+      .def_static("restrictedFrame", &DressedAnchor::restrictedFrame, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+           "res_{tau->p}(U) Phi_Q, a 3 x r matrix, without forming any n_1-wide object.")
+      .def_static("twistedCoboundaryBlock", &DressedAnchor::twistedCoboundaryBlock,
+           py::arg("complex"), py::arg("connection"), py::arg("face_index"),
+           "The restriction to tau's three ordered boundary edges of the twisted coboundary "
+           "of a vertex potential; its determinant is F_tau - 1.")
+      .def_static("exteriorPower", &DressedAnchor::exteriorPower, py::arg("A"),
+           "Lambda^r of a 3 x r matrix: its maximal minors in lexicographic order of the row "
+           "subset.")
+      .def_static("dressedCoordinates", &DressedAnchor::dressedCoordinates, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+           "The Lambda^r coordinates of one face.")
+      .def_static("dressedCoordinate", &DressedAnchor::dressedCoordinate, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_index"), py::arg("Phi"),
+           "Delta_tau for a rank-three band.")
+      .def_static("anchorableFaces", &DressedAnchor::anchorableFaces, py::arg("complex"),
+           py::arg("paths"), "The triangles every one of whose edge base vertices the rule reaches.")
+      .def_static("profile", &DressedAnchor::profile, py::arg("complex"), py::arg("connection"),
+           py::arg("paths"), py::arg("face_indices"), py::arg("Phi"),
+           py::arg("tolerance") = 1e-9, py::arg("gauge_seed") = 7,
+           "The anchor certificate of the band on the atlas.")
+      .def_static("withInvariantCoordinates", &DressedAnchor::withInvariantCoordinates,
+           py::arg("read"), py::arg("covariant"), py::arg("Z_dual"), py::arg("Z"),
+           "The same read with the invariant coordinates alpha_tau of its atlas attached.")
+      .def_static("covarianceResidual", &DressedAnchor::covarianceResidual, py::arg("complex"),
+           py::arg("connection"), py::arg("paths"), py::arg("face_indices"), py::arg("gauge"),
+           "The residual of res(U^g) rho_1(g) = g_p^{-1} res(U) over the atlas.")
+      .def_static("verificationGauge", &DressedAnchor::verificationGauge, py::arg("complex"),
+           py::arg("seed"), "The deterministic verification gauge of a seed.")
+      .def_static("faceTransition", &DressedAnchor::faceTransition, py::arg("read"),
+           py::arg("face_slot"), py::arg("other_face_slot"), py::arg("coordinate") = 0,
+           "The determinant-line transition on the overlap of two face charts.")
+      .def_static("basePointTransition", &DressedAnchor::basePointTransition, py::arg("read"),
+           py::arg("other"), py::arg("face_slot"), py::arg("coordinate") = 0,
+           "The transition between the charts of two base vertices on one face.")
+      .def_static("transitionCocycleResidual", &DressedAnchor::transitionCocycleResidual,
+           py::arg("read"), py::arg("coordinate") = 0,
+           "The residual of t_ab t_bc = t_ac over the read's anchoring faces.")
+      .def_static("projectiveDistance", &DressedAnchor::projectiveDistance, py::arg("a"),
+           py::arg("b"),
+           "The chordal Fubini-Study distance between two profiles, a reported numerical "
+           "stability certificate and never part of a physical statement.");
 }

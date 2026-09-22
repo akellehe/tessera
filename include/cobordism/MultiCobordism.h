@@ -34,6 +34,12 @@ namespace tessera::observables { class SimplicialQubit; }
 namespace tessera::cobordism {
 using ::tessera::spacetime::Spacetime;
 
+/// The cobordism frames the analysis overlay retains: one entry per completed
+/// pass, oldest first, each holding that pass's components and their candidate
+/// bands and anchors. Defined in `src/cobordism/RecursiveFiberSimulation.cpp`
+/// and held here by pointer, so this header keeps its small include list.
+struct AnalysisFrameHistory;
+
 /// # MultiCobordism
 ///
 /// Emergent-merge optimizer: the merge as an optimization with no prescribed
@@ -413,14 +419,14 @@ class MultiCobordism {
                      HodgeLaplacian::defaultMetricSource());
 
   /// Where every Hodge operator this node scores, relaxes and reads takes its
-  /// metric from. Defaults to the process-wide
-  /// `HodgeLaplacian::defaultMetricSource()` read at construction, so that the
-  /// node, the static readouts, the observables and checkpoint replay agree; a
-  /// run on the chain-level Whitney pencil flips that default once at startup
-  /// (`HodgeLaplacian::setDefaultMetricSource(WhitneyPencil)`). Under
+  /// metric from, the operators of the post-hoc analysis pass
+  /// (`runRecursiveAnalysis`) included. Defaults to the process-wide
+  /// `HodgeLaplacian::defaultMetricSource()` read at construction, the
+  /// chain-level Whitney pencil unless changed, so that the node, the static
+  /// readouts, the observables and checkpoint replay agree. Under
   /// `WhitneyPencil` the operator is \f$ h_k(s,U) \f$ of the complex squared
   /// edge lengths and the edge-phase links, at every degree; `DiagonalWeights`
-  /// is the per-simplex diagonal metric.
+  /// is the per-simplex diagonal metric, selected by name.
   [[nodiscard]] HodgeLaplacian::MetricSource metricSource() const noexcept {
     return metricSource_;
   }
@@ -1217,7 +1223,7 @@ class MultiCobordism {
   /// (\f$ |\ell^2| = 1 \f$; balanced wiring gives \f$ \ell=\sqrt{1/2}(1+i) \f$),
   /// Lorentzian signature, and the causal dynamical triangulations (CDT) type
   /// and preferred foliation. This is the seed every host grows from;
-  /// `Proton::buildMinimalSeed` is this at dimension 4.
+  /// `ProtonSynthesis::buildMinimalSeed` is this at dimension 4.
   ///
   /// Reference: Ambjorn, Jurkiewicz and Loll, "Dynamically Triangulating
   /// Lorentzian Quantum Gravity", arXiv:hep-th/0105267.
@@ -2343,6 +2349,23 @@ class MultiCobordism {
     return carriedCovariance_;
   }
 
+  /// Declare the spectral-moment stiffness of the geometric action about the
+  /// current geometry, the carrier (`HodgeLaplacian::spectralMomentStiffness`):
+  /// the local spectral moments of orders \f$ 1,\dots,m \f$ at each of
+  /// `degrees` are recorded now as the reference, and every objective gains
+  /// \f$ \beta_M\sum_k\operatorname{Re}S_{M,k} \f$. `weight` 0 removes it.
+  /// @throws std::invalid_argument for a negative or non-finite weight, a
+  ///   negative coefficient, or no coefficients with a nonzero weight.
+  void setMomentStiffness(double weight, const std::vector<int> &degrees,
+                          const std::vector<double> &coefficients);
+  [[nodiscard]] double momentStiffnessWeight() const noexcept { return momentStiffnessWeight_; }
+  [[nodiscard]] const std::vector<int> &momentStiffnessDegrees() const noexcept {
+    return momentStiffnessDegrees_;
+  }
+  [[nodiscard]] const std::vector<double> &momentStiffnessCoefficients() const noexcept {
+    return momentStiffnessCoefficients_;
+  }
+
   /// The mean-field coefficient \f$ \beta_E \f$, checkpointed. Default 0.
   void setCarriedStateEnergyWeight(double weight);
   /// The mean-field coefficient \f$ \beta_E \f$.
@@ -2503,6 +2526,32 @@ class MultiCobordism {
     std::vector<int> degrees{1};
     /// The modularity resolution sequence scanned per pass.
     std::vector<double> resolutions{1.0};
+    /// How many cobordism frames the overlay retains. One analysis pass is one
+    /// frame, so the retained frames are the last \p frameHistory passes, each
+    /// keeping its components, its candidate bands and their anchors. The
+    /// candidate's lifetime, its smallest adjacent-frame overlap, its
+    /// per-frame band and anchor families and its lifetime transports are
+    /// measured across them; with `frameHistory` 1 there is no history, the
+    /// pass sees a single frame, and the lifetime certificates fail by name
+    /// rather than passing vacuously. The default 4 clears the classifier's
+    /// two-frame stability floor with room to lose a frame.
+    /// @throws std::invalid_argument (from `setAnalysisConfig`) below 1.
+    int frameHistory = 4;
+    /// How the determinant line of a lifetime transport family is closed.
+    ///
+    ///  - `"none"` (the default): the family is an open cobordism segment with
+    ///    no declared closure. Its phase is reported and the winding is left
+    ///    unknown — an open path has no integer winding, and inventing one
+    ///    would be a measurement nobody made.
+    ///  - `"closed-family"`: the caller declares the candidate's world tube
+    ///    closed, so the family is read cyclically (the closing step returns to
+    ///    the first sample) and `FiberConnection::closedFamilyWinding` supplies
+    ///    the winding. It is a declaration about the run, like a causal type,
+    ///    and it is recorded on every read it produces.
+    ///
+    /// @throws std::invalid_argument (from `setAnalysisConfig`) on any other
+    ///   value: an unrecognized closure is refused, never silently ignored.
+    std::string lifetimeWindingClosure{"none"};
     /// Build the lazy Fock expression. For oracle and explicit non-Gaussian
     /// boundary data only, never the quasi-free production representation.
     bool fockOracle = false;
@@ -2915,7 +2964,7 @@ class MultiCobordism {
   /// general complexified geometry.
   bool realSquaredLengthsOnly_{false};
   /// The metric source of every Hodge operator this node builds (see `metricSource()`).
-  HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::DiagonalWeights};
+  HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::WhitneyPencil};
   /// The injected functional, and the only record of what this node descends.
   /// Never null: the constructor installs `LegacyObjective`.
   std::shared_ptr<CobordismObjective> objectiveSpec_;
@@ -3166,6 +3215,12 @@ class MultiCobordism {
   std::vector<std::complex<double>> carriedCovariance_{};
   int carriedStateDegree_{1};
   double carriedStateEnergyWeight_{0.0};
+  // The spectral-moment stiffness: its weight, degrees, order weights, and the
+  // carrier's local moments recorded when it was declared.
+  double momentStiffnessWeight_{0.0};
+  std::vector<int> momentStiffnessDegrees_;
+  std::vector<double> momentStiffnessCoefficients_;
+  std::vector<std::vector<std::complex<double>>> momentStiffnessReference_;
   double meanFieldStepSize_{0.0};
   int meanFieldSteps_{0};
   /// Thresholds for `refinementDecisionOf`, all zero. The indicator struct's
@@ -3199,6 +3254,11 @@ class MultiCobordism {
   std::shared_ptr<void> analysisCache_{};
   /// The spacetime `analysisCache_` is bound to (identity comparison only).
   std::weak_ptr<Spacetime> analysisCacheBinding_{};
+  /// The retained cobordism frames of the overlay (`AnalysisConfig::
+  /// frameHistory`): what makes a lifetime, an adjacent-frame overlap and a
+  /// lifetime transport family measurable rather than assumed. Null until the
+  /// first pass.
+  std::shared_ptr<AnalysisFrameHistory> analysisFrames_{};
   /// The last pass's checkpoint document.
   std::string checkpointJson_{};
 

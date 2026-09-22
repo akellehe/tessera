@@ -161,9 +161,16 @@ class Connection {
 };
 
 /// The residuals of the exact properties (i)–(vi) of `CovariantChainHodge`,
-/// measured on an instance. Sparse identities are measured on construction;
-/// the dense ones ((i) and (v)) on demand below the crossover. Each residual is
-/// relative to the norm of the object it tests; quiet NaN means unmeasured.
+/// measured on an instance. On construction every property is measured at
+/// every degree without forming a dense matrix, and asserted: the metric
+/// identities entry by entry, the operator and pencil identities on random
+/// probe vectors through sparse solves, and (i) on the factors of
+/// \f$ h_k(s, 1) \f$. A residual above `tolerance` throws; so do an
+/// unmeasurable identity and a singular dressed metric. The dense forms
+/// (`transposePencil`, `covariancePencil`, `trivialReduction`,
+/// `pureGaugeIsospectrality`) are measured by `verify` below the crossover.
+/// Each residual is relative to the norm of the object it tests; quiet NaN
+/// means unmeasured (or, for (i), not applicable: \f$ U \ne 1 \f$).
 struct CovarianceCertificate {
   /// (ii) \f$ \|(M_k^U)^T - M_k^{U^{-1}}\| / \|M_k^U\| \f$, max over degrees.
   double transposeMetric{std::numeric_limits<double>::quiet_NaN()};
@@ -185,6 +192,35 @@ struct CovarianceCertificate {
   /// (v) pure-gauge isospectrality: Hausdorff distance between the spectra of
   /// \f$ h_k(s, 1^g) \f$ and \f$ L_k \f$ relative to the spectral radius (dense).
   double pureGaugeIsospectrality{std::numeric_limits<double>::quiet_NaN()};
+  /// (i) on every instance with \f$ U = 1 \f$: \f$ h_k(s,1) \f$ against \f$ L_k \f$ of the
+  /// undressed `ChainHodge` on probe vectors, max over degrees (NaN when
+  /// \f$ U \ne 1 \f$).
+  double trivialReductionProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (ii) on every instance: \f$ y^T A_k^U x - x^T A_k^{U^{-1}} y \f$ for the
+  /// pencil operator (\f$ \tilde A_k^U \f$ on images, \f$ A_k^U \f$ on chains) on
+  /// probe vectors, relative, max over degrees.
+  double transposePencilProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (ii) on every instance: \f$ h_k(s,U)^T = G_k^{U^{-1}}h_k(s,U^{-1})(G_k^{U^{-1}})^{-1} \f$
+  /// on probe vectors, relative, max over degrees.
+  double transposeOperatorProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (iii) on every instance: \f$ A_k^{U^g}\rho_k x = \rho_k A_k^U x \f$ on probe
+  /// vectors, relative, max over degrees.
+  double covariancePencilProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (iii) on every instance: \f$ h_k(s,U^g)\rho_k x = \rho_k h_k(s,U) x \f$.
+  double covarianceOperatorProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (v) on every instance: \f$ h_k(s,1^g)\rho_k x = \rho_k L_k x \f$, the
+  /// similarity that makes a pure gauge isospectral to \f$ L_k \f$.
+  double pureGaugeSimilarityProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// \f$ \max_k \mathrm{cond}_2(M_k^U) \f$ (of the dressed sparse object of the
+  /// preset), estimated by power and inverse iteration.
+  double conditionEstimate{std::numeric_limits<double>::quiet_NaN()};
+  /// The tolerance policy of the scaling verification plan,
+  /// \f$ \tau = \kappa\,n\,\epsilon_m\,\mathrm{cond} \f$ with \f$ \kappa = 10 \f$,
+  /// \f$ n = \max_k n_k \f$ and `conditionEstimate`.
+  double tolerance{std::numeric_limits<double>::quiet_NaN()};
+  /// Whether every measured residual is within `tolerance` (the constructor
+  /// throws otherwise, so a measured certificate always holds).
+  bool holds{false};
   std::uint64_t gaugeSeed{0};
   int checkedDegree{1};
 };
@@ -247,8 +283,12 @@ struct PencilRegimeCertificate {
 /// same rule and the pencil is written on chains, as in `ChainHodge`.
 class CovariantChainHodge {
  public:
-  /// Dress \p base by \p U. The certificate's sparse residuals are measured
-  /// here with a deterministic random gauge from \p gaugeSeed.
+  /// Dress \p base by \p U. When \p measureCertificate is set (the default)
+  /// Proposition 3 (i)–(vi) is measured here at every degree, with a
+  /// deterministic random gauge and probe vectors from \p gaugeSeed, and
+  /// asserted at the certificate's tolerance.
+  /// @throws std::runtime_error, naming the property and its residual, when a
+  ///   measured residual exceeds the tolerance or a dressed metric is singular.
   CovariantChainHodge(const ChainHodge &base, Connection U, std::uint64_t gaugeSeed = 7,
                       bool measureCertificate = true);
 
@@ -277,6 +317,45 @@ class CovariantChainHodge {
   [[nodiscard]] Eigen::MatrixXcd applyMinv(int k, const Eigen::MatrixXcd &c) const;
   /// \f$ h_k(s,U)\,c \f$ via solves; never formed densely here.
   [[nodiscard]] Eigen::MatrixXcd applyH(int k, const Eigen::MatrixXcd &c) const;
+  /// \f$ \tilde A_k^U Z \f$ applied to the columns of \p Z by sparse products
+  /// and one sparse factorization of \f$ M_{k-1}^U \f$. This is the production
+  /// path's pencil operator: the dense \f$ \tilde A_k^U \f$ is never formed, so
+  /// it is defined at every size, at and above the crossover included.
+  /// @throws std::logic_error under `GRASSMANN_ALL`, whose pencil is written on
+  ///   chains; std::invalid_argument when \p Z does not have \f$ n_k \f$ rows.
+  [[nodiscard]] Eigen::MatrixXcd applyPencilOperator(int k, const Eigen::MatrixXcd &Z) const;
+  /// The sparse bordered system of the shifted pencil at \p zeta,
+  /// \f[
+  ///   \begin{pmatrix} \zeta M_k^U - \partial_{k+1}^U M_{k+1}^U(\partial_{k+1}^{U^{-1}})^T &
+  ///     -M_k^U(\partial_k^{U^{-1}})^T \\ -\partial_k^U M_k^U & M_{k-1}^U \end{pmatrix},
+  /// \f]
+  /// whose Schur complement onto the first block is
+  /// \f$ \zeta M_k^U - \tilde A_k^U \f$. It is \f$ (n_k + n_{k-1}) \f$ square at
+  /// \f$ k \ge 1 \f$ and \f$ n_k \f$ square at \f$ k = 0 \f$, where there is no
+  /// lower degree to border with. One sparse LU of it is the whole shifted
+  /// solve, and its fill-in is the fill-in of the production path.
+  /// @throws std::logic_error under `GRASSMANN_ALL`.
+  [[nodiscard]] SparseMatrix borderedSystem(int k, Complex zeta) const;
+  /// \f$ (\zeta M_k^U - \tilde A_k^U)^{-1} B \f$ through one sparse LU of
+  /// `borderedSystem`, the production path's shifted solve: the dense
+  /// \f$ \tilde A_k^U \f$ is never formed and the solve is defined at every
+  /// size, at and above the crossover included. `resolvent` is this followed by
+  /// \f$ M_k^U \f$.
+  /// @param report when non-null, receives the "bordered-lu" cost of the
+  ///   factorization and its solves — the wall time, the memory of the factors,
+  ///   and their fill-in against the bordered system.
+  /// @throws std::logic_error under `GRASSMANN_ALL`; std::invalid_argument when
+  ///   \p B does not have \f$ n_k \f$ rows; std::runtime_error when the
+  ///   bordered system is singular at \p zeta, which is when \p zeta is an
+  ///   eigenvalue of the pencil.
+  [[nodiscard]] Eigen::MatrixXcd shiftedSolve(int k, Complex zeta, const Eigen::MatrixXcd &B,
+                                              SparseCostReport *report = nullptr) const;
+  /// The sparse stacked cochain matrix \f$ S^U = [(\partial_{k+1}^{U^{-1}})^T;\
+  /// \partial_k^U M_k^U] \f$ whose kernel is \f$ G_k^U H_k \f$: the dressed
+  /// form of `ChainHodge::stackedMatrix`, assembled from the dressed sparse
+  /// blocks and never densified.
+  /// @throws std::logic_error under `GRASSMANN_ALL`.
+  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
   /// The dense \f$ h_k(s,U) \f$ (below the crossover).
   [[nodiscard]] Eigen::MatrixXcd covariantOperator(int k) const;
   /// \f$ \partial h_k(s,U)/\partial s_e \f$ for the edge at canonical index
@@ -325,6 +404,36 @@ class CovariantChainHodge {
   /// the stack). Idempotent, and a no-op for a preset or a degree that has no
   /// dense derivative.
   void warmDerivatives(int k) const;
+  /// The pieces of one squared-length direction \f$ v \f$ that every second
+  /// derivative of \f$ h_k(s,U) \f$ along \f$ v \f$ shares, formed once by
+  /// `lengthDirection` and read by `covariantOperatorSecondDerivative`.
+  struct LengthDirection {
+    /// The degree \f$ k \f$ of \f$ h_k \f$.
+    int degree{0};
+    /// The direction, one entry per edge in canonical order.
+    std::vector<Complex> direction;
+    /// Dressed \f$ D_v M_j^U \f$ for \f$ j = k-1, k, k+1 \f$ (entry \f$ j-k+1 \f$;
+    /// empty outside \f$ [0, \dim] \f$).
+    std::vector<SparseMatrix> metricDirectional;
+    /// Dressed \f$ D_v\,\partial M_j^U/\partial s_e \f$, entry \f$ [j-k+1][e] \f$.
+    std::vector<std::vector<SparseMatrix>> metricSecond;
+    /// \f$ D_v h_k(s,U) \f$.
+    Eigen::MatrixXcd operatorDirectional;
+    /// \f$ (M_{k-1}^U)^{-1} D_v M_{k-1}^U (M_{k-1}^U)^{-1}\partial_k^U \f$ (lower term; empty at \f$ k = 0 \f$).
+    Eigen::MatrixXcd lowerSolved;
+    /// \f$ D_v M_k^U\,(M_k^U)^{-1} \f$.
+    Eigen::MatrixXcd metricTimesInverse;
+  };
+  /// Form the shared pieces of the squared-length direction \p direction (one
+  /// entry per edge, canonical order) at degree \p k. Whitney preset, below the
+  /// dense crossover.
+  [[nodiscard]] LengthDirection lengthDirection(int k, const std::vector<Complex> &direction) const;
+  /// \f$ D_v\,\partial h_k(s,U)/\partial s_e \f$ for the edge at canonical index
+  /// \p edgeIndex along the direction of \p v, dense: the second-order product
+  /// rule over the dressed metrics of \f$ h_k \f$, the twisted incidences being
+  /// independent of the lengths. Thread-safe once `warmDerivatives(k)` has run.
+  [[nodiscard]] Eigen::MatrixXcd covariantOperatorSecondDerivative(const LengthDirection &v,
+                                                                   std::size_t edgeIndex) const;
   /// \f$ \partial M_k^U/\partial s_e \f$: the dressed sparse metric derivative
   /// (the dressing is independent of \f$ s \f$).
   [[nodiscard]] SparseMatrix dressedDerivative(int k, std::size_t edgeIndex) const;
@@ -380,6 +489,53 @@ class CovariantChainHodge {
   [[nodiscard]] Band band(int k, const Contour &contour, double kappa = 10.0,
                           double isotropyTolerance = 1e-10) const;
 
+  /// # The band on the sparse production path
+  ///
+  /// The same Riesz band as `band`, read without ever forming the
+  /// \f$ n_k \times n_k \f$ projector, so that it is defined at and above the
+  /// crossover where `band` refuses.
+  ///
+  /// The contour quadrature is applied to a block of \p probeCount random
+  /// probe vectors \f$ \Omega \f$ rather than to the identity:
+  /// \f$ Y = P_C(U)\,\Omega \f$ costs one sparse factorization of
+  /// `borderedSystem` per node and \p probeCount solves against it, where the
+  /// dense reading costs \f$ n_k \f$ solves and an \f$ n_k \times n_k \f$
+  /// singular value decomposition. Because \f$ P_C \f$ is a projector of rank
+  /// \f$ r \f$, \f$ \operatorname{ran}(P_C\Omega) = \operatorname{ran}P_C \f$
+  /// for every \f$ \Omega \f$ whose restriction to the band is of full rank,
+  /// which a random block of at least \f$ r \f$ columns is with probability
+  /// one; the band is then exactly the band the dense reading finds. This is a
+  /// declared choice of probe block, not a truncation, and it is reported: the
+  /// probe count is on the certificate's contour description, the rank and the
+  /// singular gap of \f$ Y \f$ say whether the block was wide enough, and the
+  /// idempotency \f$ \|P_CY - Y\| / \|Y\| \f$ is measured by a second
+  /// quadrature pass over \f$ Y \f$ rather than asserted.
+  ///
+  /// Too narrow a probe block is a refusal, not a silently smaller band: when
+  /// the rank of \f$ Y \f$ equals \p probeCount the block may have cut the band
+  /// off, and the read refuses by name so that the caller widens it.
+  ///
+  /// `BandCertificate::resolventMax` is quiet NaN here — the spectral norm of a
+  /// resolvent that is never formed cannot be measured — and
+  /// `BandCertificate::resolventProbeMax` carries what the probe block does
+  /// see, \f$ \max_j \|R_j\Omega\|_2 / \|\Omega\|_2 \f$, a lower bound on it.
+  /// Every other certificate is the one `band` reports.
+  /// @param probeCount columns of the probe block; must be positive.
+  /// @param seed the deterministic seed of the probe block, so that two reads
+  ///   of one instance are the same read.
+  /// @param report when non-null, receives the "contour-band" cost: the wall
+  ///   time of the whole read, and the memory and fill-in of one node's
+  ///   factorization, which stand for every node's because the bordered system
+  ///   has one pattern at every shift.
+  /// @throws std::logic_error under `GRASSMANN_ALL`; std::invalid_argument on a
+  ///   non-positive probe count or a malformed contour; std::runtime_error when
+  ///   the probe block is too narrow for the band or when the dual connection's
+  ///   band has a different rank on the same contour.
+  [[nodiscard]] Band sparseBand(int k, const Contour &contour, int probeCount,
+                                double kappa = 10.0, double isotropyTolerance = 1e-10,
+                                std::uint64_t seed = 20260922,
+                                SparseCostReport *report = nullptr) const;
+
   /// # The harmonic band without a contour
   ///
   /// The \f$ \lambda = 0 \f$ band of the pencil, read as a null space rather
@@ -412,8 +568,8 @@ class CovariantChainHodge {
   /// \f$ U \f$ and \f$ U^{-1} \f$ is refused by name, exactly as `band`
   /// refuses a dual band of a different rank on the same contour.
   ///
-  /// \p forceSparse takes the sparse rank-revealing QR below the crossover
-  /// too (the gap goes unmeasured there, as in `ChainHodge::harmonicChains`).
+  /// \p forceSparse takes the sparse path of `SparseRank::kernel` below the
+  /// crossover too; it measures the gap as the dense SVD does.
   [[nodiscard]] HarmonicRead harmonicChains(int k, double kappa = 10.0,
                                             bool forceSparse = false) const;
   /// The \f$ \lambda = 0 \f$ band from `harmonicChains`, carrying everything
@@ -460,6 +616,9 @@ class CovariantChainHodge {
   mutable std::vector<std::shared_ptr<Factorization>> factor_;
   [[nodiscard]] Eigen::MatrixXcd solveDressed(int k, const Eigen::MatrixXcd &rhs) const;
   void measureSparseIdentities(std::uint64_t seed);
+  // The pencil operator applied without forming it: \tilde A_k^U x (Whitney,
+  // on images) or A_k^U x (Grassmann, on chains).
+  [[nodiscard]] Eigen::MatrixXcd applyPencil(int k, const Eigen::MatrixXcd &x) const;
   [[nodiscard]] static SparseMatrix dress(const SparseMatrix &M,
                                           const std::vector<std::uint64_t> &baseRow,
                                           const std::vector<std::uint64_t> &baseCol,
@@ -488,9 +647,14 @@ class CovariantChainHodge {
     BandCertificate certificate;
   };
   [[nodiscard]] ProjectorRead projectorOnContour(int k, const Contour &contour, double kappa) const;
-  /// \f$ S^U = [(\partial_{k+1}^{U^{-1}})^T;\ \partial_k^U M_k^U] \f$, the
-  /// dressed stacked matrix whose kernel is \f$ G_k^U H_k \f$.
-  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
+  // The same read taken on a probe block: the projector is left empty and the
+  // frame comes from the range of P_C applied to `probeCount` random columns.
+  // `nodeReport`, when non-null, receives the cost of the first node's
+  // factorization, which stands for every node's (the bordered system has one
+  // pattern at every shift).
+  [[nodiscard]] ProjectorRead probeRangeOnContour(int k, const Contour &contour, int probeCount,
+                                                  double kappa, std::uint64_t seed,
+                                                  SparseCostReport *nodeReport = nullptr) const;
   /// Everything a band carries beyond its two frames: \f$ B_C \f$, the
   /// isotropy verdict, the left frame, \f$ J \f$, \f$ \Gamma \f$ and the
   /// residual certificates. Shared by `band` and `harmonicBand` so the two

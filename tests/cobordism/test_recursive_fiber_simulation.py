@@ -165,11 +165,14 @@ class ObjectiveFirewallStructureTest(unittest.TestCase):
         # declared configuration -- and nothing reachable from it is a
         # component, fiber, transport, colour, charge, flavour, exchange, spin
         # certificate or verdict.
+        # `moment_stiffness` (#1183) is the spectral-moment stiffness of the
+        # geometric action about its carrier: a functional of the local
+        # moments of L_k, geometry and declared configuration, likewise.
         self.assertEqual(
             MC.objective_term_names(),
             ["regge_stationarity", "hodge_stationarity",
              "connection_stationarity", "register_residual",
-             "action_magnitude", "carried_state_energy"])
+             "action_magnitude", "carried_state_energy", "moment_stiffness"])
 
     def test_no_objective_term_names_a_derived_observable(self):
         for name in MC.objective_term_names():
