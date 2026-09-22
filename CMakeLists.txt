@@ -337,6 +337,11 @@ list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
 # algebra (#766), so it follows the same route.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
     "/src/observables/MonopoleSpin\\.cpp$")
+# ComplexTransport (#1199) composes its general-linear links with
+# SheetedColor's ordered product and holonomy invariants (#1195), which compile
+# in tessera_quantum, so it follows them there.
+list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
+    "/src/observables/ComplexTransport\\.cpp$")
 # bindings.cpp is the pybind11 entry point — goes into _tessera, not tessera_core.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/bindings\\.cpp$")
 # Per-subsystem Bindings.cpp files also belong to _tessera, not tessera_core
@@ -540,6 +545,11 @@ list(APPEND TESSERA_QUANTUM_SOURCES
 # quantum exterior algebra (#766), so it compiles here as well.
 list(APPEND TESSERA_QUANTUM_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/MonopoleSpin.cpp")
+# ComplexTransport (#1199) carries the complex fibre transport of matched Riesz
+# frames and composes its links with SheetedColor's ordered product and
+# holonomy invariants (#1195), so it compiles beside them.
+list(APPEND TESSERA_QUANTUM_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ComplexTransport.cpp")
 # bindings.cpp uses pybind11 + Python.h and goes into _tessera, not the
 # pybind-free static lib.
 list(FILTER TESSERA_QUANTUM_SOURCES EXCLUDE REGEX "/src/quantum/Bindings\\.cpp$")
