@@ -251,3 +251,73 @@ class TestRecursiveQuotientPencilLevels:
         n = P.A.shape[0]
         plain = cob.RecursiveQuotient.overMatrix(P.A.ravel().tolist(), n, [], [list(range(n))])
         assert not plain.isPencil() and plain.pencilMetric() == []
+
+
+class TestT9ReductionE5E6:
+    """§14 T9 with the scaling verification plan's E5 and E6: the Schur
+    determinant identity as log-determinants, real and imaginary parts
+    separately, for random interface sets and random shifts; F_B symmetric at
+    U = 1 (<= 8.0e-12, §14); the Craig-Bampton congruence symmetric at U = 1;
+    and the coarse pencil (J^T A_1 J, J^T G_1 J) = (Z^T A~ Z, Z^T M Z)
+    reproducing the fiber eigenvalues it retains."""
+
+    @pytest.mark.parametrize("N", [4, 6])
+    def test_e5_log_determinant_identity(self, N):
+        K, base, U, rng = _random_instance(N, 200 + N)
+        P1 = base.pencil(1)
+        PU = ch.CovariantChainHodge(base, U).pencil(1)
+        n = P1.A.shape[0]
+        for _ in range(4):
+            size = int(rng.integers(n // 6, n // 2))
+            interface = sorted(int(i) for i in rng.choice(n, size=size, replace=False))
+            lam = 3.0 * complex(rng.normal(), rng.normal())
+            for P in (P1, PU):
+                F = PS.feshbach(P.A, P.B, lam, interface)
+                assert not F.interiorSingular
+                sign, logabs = np.linalg.slogdet(P.A - lam * P.B)
+                assert F.pencilLogDeterminant.real == pytest.approx(logabs, abs=1e-10 * max(1.0, abs(logabs)))
+                phase = F.pencilLogDeterminant.imag - np.angle(sign)
+                assert abs(math.remainder(phase, 2.0 * math.pi)) < 1e-10
+                assert F.logModulusResidual < 1e-10 * max(1.0, abs(logabs))
+                assert F.logPhaseResidual < 1e-10
+            F1 = PS.feshbach(P1.A, P1.B, lam, interface)
+            assert np.abs(F1.response - F1.response.T).max() <= 8.0e-12 * np.abs(F1.response).max()
+
+    def test_log_determinant_conventions(self):
+        rng = np.random.default_rng(3)
+        A = rng.normal(size=(7, 7)) + 1j * rng.normal(size=(7, 7))
+        sign, logabs = np.linalg.slogdet(A)
+        ld = PS.logDeterminant(A)
+        assert ld.real == pytest.approx(logabs, abs=1e-13)
+        assert ld.imag == pytest.approx(np.angle(sign), abs=1e-13)
+        assert -math.pi < ld.imag <= math.pi
+        assert PS.logDeterminant(np.zeros((0, 0), dtype=complex)) == 0
+        assert PS.logDeterminant(np.zeros((3, 3), dtype=complex)).real == -math.inf
+
+    def test_e6_craig_bampton_congruence_is_symmetric_at_u_one(self):
+        K, base, U, rng = _random_instance(4, 301)
+        P = base.pencil(1)
+        n = P.A.shape[0]
+        T = rng.normal(size=(n, 9)) + 1j * rng.normal(size=(n, 9))
+        cb = PS.craigBampton(P.A, P.B, T)
+        assert np.abs(cb.A - cb.A.T).max() <= 1e-13 * np.abs(cb.A).max()
+        assert np.abs(cb.M - cb.M.T).max() <= 1e-13 * np.abs(cb.M).max()
+
+    @pytest.mark.parametrize("trivial", [True, False])
+    def test_e6_coarse_pencil_reproduces_the_retained_eigenvalues(self, trivial):
+        K, base, U, rng = _random_instance(4, 302)
+        cov = ch.CovariantChainHodge(base, ch.Connection.trivial(K) if trivial else U)
+        ev = np.array(cov.spectrum(1).eigenvalues)
+        seps = np.array([np.min(np.abs(np.delete(ev, i) - z)) for i, z in enumerate(ev)])
+        chosen = np.argsort(seps)[-2:]
+        fibers = []
+        for i in chosen:
+            band = cov.band(1, ch.Contour.circle(ev[i], 0.45 * seps[i], 64))
+            assert band.rank() == 1
+            fibers.append(band.images)
+        P = cov.pencil(1)
+        R = PS.restrictToFibers(P.A, P.B, fibers)
+        assert list(R.blockRanks) == [1, 1]
+        coarse = np.linalg.eigvals(np.linalg.solve(R.gram, R.A))
+        for i in chosen:
+            assert np.min(np.abs(coarse - ev[i])) <= 1e-9 * max(1.0, abs(ev[i]))

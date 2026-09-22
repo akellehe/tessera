@@ -161,9 +161,16 @@ class Connection {
 };
 
 /// The residuals of the exact properties (i)–(vi) of `CovariantChainHodge`,
-/// measured on an instance. Sparse identities are measured on construction;
-/// the dense ones ((i) and (v)) on demand below the crossover. Each residual is
-/// relative to the norm of the object it tests; quiet NaN means unmeasured.
+/// measured on an instance. On construction every property is measured at
+/// every degree without forming a dense matrix, and asserted: the metric
+/// identities entry by entry, the operator and pencil identities on random
+/// probe vectors through sparse solves, and (i) on the factors of
+/// \f$ h_k(s, 1) \f$. A residual above `tolerance` throws; so do an
+/// unmeasurable identity and a singular dressed metric. The dense forms
+/// (`transposePencil`, `covariancePencil`, `trivialReduction`,
+/// `pureGaugeIsospectrality`) are measured by `verify` below the crossover.
+/// Each residual is relative to the norm of the object it tests; quiet NaN
+/// means unmeasured (or, for (i), not applicable: \f$ U \ne 1 \f$).
 struct CovarianceCertificate {
   /// (ii) \f$ \|(M_k^U)^T - M_k^{U^{-1}}\| / \|M_k^U\| \f$, max over degrees.
   double transposeMetric{std::numeric_limits<double>::quiet_NaN()};
@@ -185,6 +192,35 @@ struct CovarianceCertificate {
   /// (v) pure-gauge isospectrality: Hausdorff distance between the spectra of
   /// \f$ h_k(s, 1^g) \f$ and \f$ L_k \f$ relative to the spectral radius (dense).
   double pureGaugeIsospectrality{std::numeric_limits<double>::quiet_NaN()};
+  /// (i) on every instance with \f$ U = 1 \f$: \f$ h_k(s,1) \f$ against \f$ L_k \f$ of the
+  /// undressed `ChainHodge` on probe vectors, max over degrees (NaN when
+  /// \f$ U \ne 1 \f$).
+  double trivialReductionProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (ii) on every instance: \f$ y^T A_k^U x - x^T A_k^{U^{-1}} y \f$ for the
+  /// pencil operator (\f$ \tilde A_k^U \f$ on images, \f$ A_k^U \f$ on chains) on
+  /// probe vectors, relative, max over degrees.
+  double transposePencilProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (ii) on every instance: \f$ h_k(s,U)^T = G_k^{U^{-1}}h_k(s,U^{-1})(G_k^{U^{-1}})^{-1} \f$
+  /// on probe vectors, relative, max over degrees.
+  double transposeOperatorProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (iii) on every instance: \f$ A_k^{U^g}\rho_k x = \rho_k A_k^U x \f$ on probe
+  /// vectors, relative, max over degrees.
+  double covariancePencilProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (iii) on every instance: \f$ h_k(s,U^g)\rho_k x = \rho_k h_k(s,U) x \f$.
+  double covarianceOperatorProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// (v) on every instance: \f$ h_k(s,1^g)\rho_k x = \rho_k L_k x \f$, the
+  /// similarity that makes a pure gauge isospectral to \f$ L_k \f$.
+  double pureGaugeSimilarityProbe{std::numeric_limits<double>::quiet_NaN()};
+  /// \f$ \max_k \mathrm{cond}_2(M_k^U) \f$ (of the dressed sparse object of the
+  /// preset), estimated by power and inverse iteration.
+  double conditionEstimate{std::numeric_limits<double>::quiet_NaN()};
+  /// The tolerance policy of the scaling verification plan,
+  /// \f$ \tau = \kappa\,n\,\epsilon_m\,\mathrm{cond} \f$ with \f$ \kappa = 10 \f$,
+  /// \f$ n = \max_k n_k \f$ and `conditionEstimate`.
+  double tolerance{std::numeric_limits<double>::quiet_NaN()};
+  /// Whether every measured residual is within `tolerance` (the constructor
+  /// throws otherwise, so a measured certificate always holds).
+  bool holds{false};
   std::uint64_t gaugeSeed{0};
   int checkedDegree{1};
 };
@@ -247,8 +283,12 @@ struct PencilRegimeCertificate {
 /// same rule and the pencil is written on chains, as in `ChainHodge`.
 class CovariantChainHodge {
  public:
-  /// Dress \p base by \p U. The certificate's sparse residuals are measured
-  /// here with a deterministic random gauge from \p gaugeSeed.
+  /// Dress \p base by \p U. When \p measureCertificate is set (the default)
+  /// Proposition 3 (i)–(vi) is measured here at every degree, with a
+  /// deterministic random gauge and probe vectors from \p gaugeSeed, and
+  /// asserted at the certificate's tolerance.
+  /// @throws std::runtime_error, naming the property and its residual, when a
+  ///   measured residual exceeds the tolerance or a dressed metric is singular.
   CovariantChainHodge(const ChainHodge &base, Connection U, std::uint64_t gaugeSeed = 7,
                       bool measureCertificate = true);
 
@@ -490,6 +530,9 @@ class CovariantChainHodge {
   mutable std::vector<std::shared_ptr<Factorization>> factor_;
   [[nodiscard]] Eigen::MatrixXcd solveDressed(int k, const Eigen::MatrixXcd &rhs) const;
   void measureSparseIdentities(std::uint64_t seed);
+  // The pencil operator applied without forming it: \tilde A_k^U x (Whitney,
+  // on images) or A_k^U x (Grassmann, on chains).
+  [[nodiscard]] Eigen::MatrixXcd applyPencil(int k, const Eigen::MatrixXcd &x) const;
   [[nodiscard]] static SparseMatrix dress(const SparseMatrix &M,
                                           const std::vector<std::uint64_t> &baseRow,
                                           const std::vector<std::uint64_t> &baseCol,
