@@ -152,15 +152,16 @@ class TestDenseAndSparsePathsAgree:
                     assert sp_.sigmaAt == pytest.approx(d.sigmaAt, rel=1e-8)
 
 
+@pytest.fixture(scope="module")
+def instance():
+    K, s, _ = curved_torus(16, 0.1)
+    return ch.ChainHodge(K, s, ch.Preset.L2, KS)
+
+
 class TestAboveTheCrossover:
     """N = 16: 768 edges, above the default crossover of 512 cells. The dense
     SVDs of the stacked matrix and the four products are formed here, in the
     test, as the oracle for the sparse path."""
-
-    @pytest.fixture(scope="class")
-    def instance(self):
-        K, s, _ = curved_torus(16, 0.1)
-        return ch.ChainHodge(K, s, ch.Preset.L2, KS)
 
     def test_rank_conditions_are_measured(self, instance):
         rep = instance.rankConditions(1)
@@ -215,6 +216,24 @@ def _slope(Ns, values):
     return float(np.polyfit(np.log(Ns), np.log(values), 1)[0])
 
 
+TREND_NS = (8, 12, 16, 24)
+
+
+@pytest.fixture(scope="module")
+def euclidean():
+    return _trend(TREND_NS, lorentz=False)
+
+
+@pytest.fixture(scope="module")
+def rotated():
+    return _trend(TREND_NS, epsilon=0.1)
+
+
+@pytest.fixture(scope="module")
+def real():
+    return _trend(TREND_NS, epsilon=0.0)
+
+
 class TestTrendWithN:
     """T2: (R1)-(R4) with their gaps and the smallest nonzero singular value
     against N = 8, 12 (dense) and 16, 24 (sparse). On the Euclidean torus and on
@@ -222,21 +241,15 @@ class TestTrendWithN:
     Euclidean-like gap at every N and the margin of the stacked matrix falls
     like a power of N. On the real Lorentzian torus (epsilon = 0) the margin
     falls markedly faster: the rank-condition failure set of Proposition 2
-    approached under refinement."""
+    approached under refinement. It is (R1), rank(d_2^T M_1^{-1} d_2) =
+    rank d_2, whose margin collapses: relative smallest required singular
+    value 1.0e-4, 2.1e-6, 1.8e-6, 6.3e-8 at N = 8, 12, 16, 24 (gap 8.6e13 down
+    to 7.4e8), against 2.2e-3 down to 1.9e-4 at epsilon = 0.1. The gaps of the
+    sparse path (N = 16, 24) sit one to two decades below the dense ones
+    because its first discarded singular value is measured as ||P N_C||, an
+    upper bound at the rounding level."""
 
-    Ns = (8, 12, 16, 24)
-
-    @pytest.fixture(scope="class")
-    def euclidean(self):
-        return _trend(self.Ns, lorentz=False)
-
-    @pytest.fixture(scope="class")
-    def rotated(self):
-        return _trend(self.Ns, epsilon=0.1)
-
-    @pytest.fixture(scope="class")
-    def real(self):
-        return _trend(self.Ns, epsilon=0.0)
+    Ns = TREND_NS
 
     @pytest.mark.parametrize("family", ["euclidean", "rotated", "real"])
     def test_every_size_reports_conditions_and_gaps(self, family, request):
@@ -259,3 +272,8 @@ class TestTrendWithN:
         s_real = [r["S"] for r in real]
         assert _slope(self.Ns, s_real) < _slope(self.Ns, s_rot) - 0.75
         assert s_real[-1] < 0.2 * s_rot[-1]
+        r1_rot = [r["R"][0] for r in rotated]
+        r1_real = [r["R"][0] for r in real]
+        assert _slope(self.Ns, r1_real) < _slope(self.Ns, r1_rot) - 2.0
+        assert r1_real[-1] < 1e-2 * r1_rot[-1]
+        assert real[-1]["R_gap"][0] < 1e-2 * rotated[-1]["R_gap"][0]
