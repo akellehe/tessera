@@ -361,6 +361,30 @@ class Simplex {
     [[nodiscard]] std::complex<double>
     dihedralAngle(SimplexPtr hinge) const;
 
+    /// The three canonical-frame Cayley-Menger cofactors a dihedral angle at a
+    /// hinge is built from, before any root or inverse cosine is taken.
+    struct DihedralCofactors {
+      /// False when the hinge is not a hinge of this cell, or the cofactor matrix
+      /// is unusable; the three values are then meaningless and the caller skips
+      /// the pair, exactly as ``dihedralAngle`` returns zero for it.
+      bool ok{false};
+      std::complex<double> Cij{};
+      std::complex<double> Cii{};
+      std::complex<double> Cjj{};
+    };
+
+    /// The cofactor triple \f$ (C_{ij}, C_{ii}, C_{jj}) \f$ at \a hinge, read in the
+    /// same canonical sorted-by-id frame ``dihedralAngle`` evaluates in and from
+    /// the same cache.
+    ///
+    /// These are the polynomial, single-valued data of the dihedral angle: every
+    /// branch the angle has enters afterwards, through the two square roots in
+    /// \f$ \cos\theta = -C_{ij} / (\sqrt{C_{ii}}\sqrt{C_{jj}}) \f$ and the inverse
+    /// cosine. A caller that carries Riemann-sheet labels along a path of
+    /// geometries needs the triple rather than the angle, because the labels
+    /// attach to those three operations and not to the cofactors.
+    [[nodiscard]] DihedralCofactors dihedralCofactors(SimplexPtr hinge) const;
+
     /// Complex Lorentzian deficit at this hinge: 2*pi minus the sum of
     /// ``dihedralAngle`` over the top simplices containing it. Real
     /// for an all-spacelike (Euclidean) neighbourhood (the ordinary angle

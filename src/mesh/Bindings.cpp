@@ -36,6 +36,8 @@
 #include "spacetime/Signature.h"
 #include "mesh/Vertex.h"
 #include "mesh/Edge.h"
+#include "mesh/ReggeContinuation.h"
+#include "mesh/RiemannSheet.h"
 #include "mesh/Simplex.h"
 #include "spacetime/Metric.h"
 #include "Renderer.h"
@@ -142,17 +144,51 @@ the C* connection.)doc")
            "classifies. 0 is spacelike, +/-pi/2 lightlike, +/-pi timelike, anything "
            "else mixed. Carried so a consumer can see where an edge sits rather "
            "than only which bucket it fell in.")
+      .def("declaredSquaredArgument", &Edge::declaredSquaredArgument,
+           "arg(l^2) + 2*pi*w on the declared Riemann sheet of l = sqrt(l^2), "
+           "where w is the signed number of turns l^2 has made about its branch "
+           "point since setLength last declared it. Unbounded: it is the "
+           "continued quantity, not a principal value. The causal predicates "
+           "read this folded back into (-pi, pi], so the sheet never moves an "
+           "edge between buckets -- the two roots +/-l of one l^2 share a causal "
+           "character. What it keeps is the datum folding destroys: whether a "
+           "timelike edge sits at +pi or at -pi, i.e. which side of the cut it "
+           "was reached from, which is the +/-i*epsilon prescription every "
+           "squared-volume continuation downstream has to agree with.")
+      .def("squaredWinding", &Edge::squaredWinding,
+           "The monodromy w: signed turns of l^2 about 0 since setLength, offset "
+           "by which root of its own square that declaration was.")
+      .def("squaredSheet", &Edge::squaredSheet,
+           "w mod 2 in {0, 1}: which of the two sheets of sqrt(l^2) the stored "
+           "length sits on. Sheet 0 is the principal root of l^2, sheet 1 the "
+           "other one.")
+      .def("continueLength", &Edge::continueLength, py::arg("length"),
+           "Move the length to l while carrying the declared sheet: the turn l "
+           "makes on this step is added to its continued argument, and the "
+           "winding follows. The step must turn l by less than pi (equivalently "
+           "l^2 by less than a full turn), since a rotation by pi+delta and one "
+           "by delta-pi have the same endpoint; a caller walking a loop samples "
+           "it finely enough for that, and passes the length it continued to, "
+           "not a root taken fresh.")
+      .def("declareSquaredTurns", &Edge::declareSquaredTurns, py::arg("turns"),
+           "Declare the current length to have made `turns` full turns about the "
+           "branch point without moving it, for a caller that knows the winding "
+           "from the problem rather than from a path it walked. Full turns, "
+           "because a half turn would name a root the stored length is not.")
       .def("lorentzianMagnitude", &Edge::lorentzianMagnitude,
            "Re(l^2) = x^2 - t^2 for l = x + i t. Carried for consumers that want "
            "the interval itself; it does not decide the disposition alone, since "
            "that would discard Im(l^2), which is nonzero precisely at the "
            "lightlike point.")
       .def("isTimelike", &Edge::isTimelike,
-           "Timelike iff arg(l^2) ~ +/-pi, i.e. l^2 real negative.")
+           "Timelike iff the declared argument of l^2 ~ +/-pi (mod 2*pi), i.e. "
+           "l^2 real negative.")
       .def("isSpacelike", &Edge::isSpacelike,
-           "Spacelike iff arg(l^2) ~ 0, i.e. l^2 real positive.")
+           "Spacelike iff the declared argument of l^2 ~ 0 (mod 2*pi), i.e. l^2 "
+           "real positive.")
       .def("isNull", &Edge::isNull,
-           "Null/lightlike iff arg(l^2) ~ +/-pi/2, i.e. l^2 purely imaginary and "
+           "Null/lightlike iff the declared argument of l^2 ~ +/-pi/2 (mod 2*pi), "
+           "i.e. l^2 purely imaginary and "
            "nonzero -- the light cone, reached non-trivially at Re(l) == Im(l) != 0. "
            "Distinct from isDegenerate(): a null edge is a physical lightlike ray.")
       .def("isMixed", &Edge::isMixed,
@@ -184,7 +220,10 @@ it at every degree. The default of 0 leaves an untwisted CDT edge unchanged.)doc
       .def("setLength", &Edge::setLength, py::arg("length"),
            "Set the complex edge length l: real = spacelike, imaginary = timelike, "
            "general complex off the real-Lorentzian locus. There is no squared "
-           "setter -- pass sqrt(l2) and choose the branch explicitly.")
+           "setter -- pass sqrt(l2) and choose the branch explicitly. Declaring a "
+           "length also declares its Riemann sheet to be the principal one (the "
+           "winding resets to zero), because a jump to an unrelated length is not "
+           "a continuation; continueLength is the call that keeps the sheet.")
       .def("setPhase", &Edge::setPhase, py::arg("phase"),
            "Set the complex C* connection phase carried by this edge: Re is "
            "the compact U(1) angle in radians, Im the non-compact log-scale. "
@@ -477,6 +516,20 @@ dualVolume().)doc")
            "boost regime, and pi/2 - i*asinh(.) for a wedge crossing the light "
            "cone (one facet direction spacelike, one timelike). Unclamped, so "
            "boosts survive. See Sorkin, arXiv:1908.10022.")
+      .def("dihedralCofactors",
+           [](const Simplex &self, SimplexPtr hinge) {
+             const auto c = self.dihedralCofactors(hinge);
+             return py::make_tuple(c.ok, c.Cij, c.Cii, c.Cjj);
+           },
+           py::arg("hinge"),
+           "The canonical-frame Cayley-Menger cofactor triple (ok, C_ij, C_ii, "
+           "C_jj) the dihedral angle at the hinge is built from, before any root "
+           "or inverse cosine is taken. These are the polynomial, single-valued "
+           "data of the angle: every branch it has enters afterwards, through the "
+           "two square roots in cos(theta) = -C_ij/(sqrt(C_ii)*sqrt(C_jj)) and the "
+           "inverse cosine. `ok` is False when the hinge is not a hinge of this "
+           "cell or the cofactor matrix is unusable, the case dihedralAngle "
+           "answers with zero.")
       .def("deficitAngle", &Simplex::deficitAngle,
            "Complex Lorentzian deficit 2π − Σ dihedralAngle over the "
            "top cells at this hinge; real for an all-spacelike neighbourhood, "
@@ -538,4 +591,191 @@ non-degeneracy rather than positive-definiteness: on a Lorentzian complex the
 determinant is signed and may be complex. A stricter alternative to the default
 ``AllSimplexFilter``.)doc")
       .def(py::init<>());
+
+  // ========================================
+  // Riemann-sheet labels
+  // ========================================
+  py::class_<SheetedSqrt>(m, "SheetedSqrt",
+      R"doc(A square root carried along a path of radicands with its Riemann sheet.
+
+sqrt has a two-sheeted Riemann surface branched over z = 0, so a value is not
+fixed by z alone: it is fixed by z and a declared sheet, held here as an integer
+winding w -- the signed number of turns the radicand has made about the origin
+since the root was declared. The declared argument is arg(z) + 2*pi*w and the
+value is (-1)**w times the principal root, so the sheet label w mod 2 is exactly
+the monodromy: one turn of the radicand around the branch point returns the root
+with the opposite sign.
+
+advance() continues the root to a new radicand. Each step must turn the radicand
+by less than half a turn -- no continuation can tell a rotation by pi+delta from
+one by delta-pi -- so a caller walking a loop samples it finely enough that
+consecutive radicands subtend less than pi at the origin, and checks lastStep()
+rather than assuming it.)doc")
+      .def(py::init<std::complex<double>>(), py::arg("radicand"),
+           "Declare the root at radicand on the principal sheet (w = 0).")
+      .def(py::init<std::complex<double>, int>(),
+           py::arg("radicand"), py::arg("winding"),
+           "Declare the root at radicand on the sheet `winding` turns from the "
+           "principal one.")
+      .def("advance", &SheetedSqrt::advance, py::arg("radicand"),
+           "Continue the root to a new radicand, updating the winding by the turn "
+           "the step makes about the origin.")
+      .def("radicand", &SheetedSqrt::radicand, "The radicand z.")
+      .def("value", &SheetedSqrt::value,
+           "(-1)**w * sqrt(z): the root on the declared sheet. Formed as a sign "
+           "times the principal root rather than from the accumulated argument, "
+           "which would carry the drift of every step taken to get here and show "
+           "up as a spurious imaginary part on real positive data.")
+      .def("declaredArgument", &SheetedSqrt::declaredArgument,
+           "arg(z) + 2*pi*w, the argument of the radicand on the declared sheet. "
+           "Unbounded: the continued quantity, not a principal value.")
+      .def("winding", &SheetedSqrt::winding,
+           "The accumulated monodromy w: signed turns of the radicand about the "
+           "branch point since the root was declared.")
+      .def("sheet", &SheetedSqrt::sheet,
+           "w mod 2 in {0, 1}: which of the two sheets of sqrt the value sits on. "
+           "Sheet 0 is the principal one.")
+      .def("isPrincipal", &SheetedSqrt::isPrincipal,
+           "True when the declared sheet is the principal one.")
+      .def("lastStep", &SheetedSqrt::lastStep,
+           "The turn about the origin, in radians, that the last advance() made. "
+           "A magnitude approaching pi means the path was sampled too coarsely "
+           "for the continuation to be trusted.")
+      .def("touchedBranchPoint", &SheetedSqrt::touchedBranchPoint,
+           "True when some step put the radicand exactly on the branch point, "
+           "where no argument exists and the sheet is held rather than continued.");
+
+  py::class_<SheetedAcos>(m, "SheetedAcos",
+      R"doc(An inverse cosine carried along a path of cosines with its Riemann sheet.
+
+arccos is branched over r = +/-1 and has a logarithmic branch point at infinity,
+so its Riemann surface has countably many sheets. A sheet is labelled by a pair
+(k, epsilon) with theta = 2*pi*k + epsilon*Arccos(r), Arccos the principal value.
+A loop around r = +1 flips epsilon and leaves k; a loop around r = -1 flips
+epsilon and shifts k -- the monodromy of the pair is the infinite dihedral group,
+and both components are carried.
+
+advance() continues the angle by taking, among the candidates on the sheets
+neighbouring the current one, the one nearest the current value. That is the
+continuation exactly when the path is sampled finely enough for the true
+continued value to be the nearest candidate, which lastStep() lets a caller
+check.)doc")
+      .def(py::init<std::complex<double>>(), py::arg("cosine"),
+           "Declare the angle at cosine on the principal sheet (k = 0, eps = +1).")
+      .def(py::init<std::complex<double>, int, int>(),
+           py::arg("cosine"), py::arg("branch_index"), py::arg("orientation"),
+           "Declare the angle at cosine on the sheet (k, epsilon).")
+      .def("advance", &SheetedAcos::advance, py::arg("cosine"),
+           "Continue the angle to a new cosine.")
+      .def("cosine", &SheetedAcos::cosine, "The cosine r.")
+      .def("value", &SheetedAcos::value,
+           "2*pi*k + epsilon*Arccos(r): the angle on the declared sheet.")
+      .def("branchIndex", &SheetedAcos::branchIndex,
+           "The integer k of the declared sheet: the logarithmic winding about "
+           "r = infinity.")
+      .def("orientation", &SheetedAcos::orientation,
+           "The sign epsilon of the declared sheet: which of the two arccosine "
+           "values +/-Arccos(r) the angle continues.")
+      .def("isPrincipal", &SheetedAcos::isPrincipal,
+           "True when the declared sheet is (0, +1), the principal one.")
+      .def("lastStep", &SheetedAcos::lastStep,
+           "The distance in the complex plane the angle moved on the last "
+           "advance().");
+
+  py::class_<ReggeContinuation>(m, "ReggeContinuation",
+      R"doc(The Riemann sheet of every root a complex Regge evaluation cannot avoid.
+
+A complex Regge action is a function of the complex squared edge lengths s_e.
+Written through squared volumes it is single-valued and polynomial; written as an
+action it is not, because three operations on the way from s to S are branched:
+the content of a cell sqrt(det G_T)/d!, branched where det G_T = 0; the two roots
+in the dihedral cosine -C_ij/(sqrt(C_ii)*sqrt(C_jj)), branched where a
+Cayley-Menger cofactor vanishes; and the inverse cosine, branched at cos(theta)
+= +/-1 and at infinity.
+
+At a single geometry each is given a principal value and the result is a number.
+Along a path -- a relaxation, a Lorentzian rotation, a continuation in a squared
+length -- the principal value is discontinuous wherever the path crosses a cut,
+and the action jumps at a place where nothing happened to the geometry. This
+class holds a declared sheet per root instead. advance() moves every label by
+continuity from the geometry the labels describe to the geometry the mesh now
+holds, and action() reads the action off the declared sheets. The labels are the
+monodromy: after a loop of squared lengths around a branch point the geometry is
+the one it started at and the labels are not, which is the statement that the
+root came back on the other sheet.
+
+The edge roots are not held here. An edge owns which of +/-sqrt(s_e) it is and
+carries that sheet itself through Edge.continueLength; this class carries the
+sheets of the quantities built from the edges. A step of a path is therefore:
+continueLength every edge that moves, then advance() this.
+
+Declared over a fixed triangulation: a Pachner move invalidates it, and a caller
+that changes the topology declares a new continuation after the move.)doc")
+      .def(py::init<std::shared_ptr<Spacetime>>(), py::arg("spacetime"),
+           "Declare every root of the spacetime's current geometry on its "
+           "principal sheet. The hinges are the (d-2)-faces with a top coface, so "
+           "they must already be materialized (constructing a ReggeSolver does "
+           "it). At this point the values reproduce the sheet-blind Simplex ones.")
+      .def("advance", &ReggeContinuation::advance,
+           "Continue every label from the geometry it describes to the geometry "
+           "the mesh now holds.")
+      .def("cells", &ReggeContinuation::cells,
+           "The top cells carrying labels, as sorted vertex-id tuples.")
+      .def("hinges", &ReggeContinuation::hinges,
+           "The hinges carrying labels: the (d-2)-faces with at least one top "
+           "coface, the same set the Regge action sums over.")
+      .def("volume", &ReggeContinuation::volume, py::arg("cell"),
+           "(-1)**w * sqrt(det G_T)/d!: the content of a top cell on its declared "
+           "sheet.")
+      .def("volumeSheet", &ReggeContinuation::volumeSheet, py::arg("cell"),
+           "w mod 2 for that content: 0 principal, 1 the other sheet.")
+      .def("volumeWinding", &ReggeContinuation::volumeWinding, py::arg("cell"),
+           "The accumulated monodromy w of det G_T about zero.")
+      .def("hingeContent", &ReggeContinuation::hingeContent, py::arg("hinge"),
+           "The content of a hinge on its declared sheet, and 1 for a hinge that "
+           "is a point, whose content is a count and carries no root.")
+      .def("hingeContentSheet", &ReggeContinuation::hingeContentSheet,
+           py::arg("hinge"), "w mod 2 for that content; 0 for a point hinge.")
+      .def("dihedralAngle", &ReggeContinuation::dihedralAngle,
+           py::arg("cell"), py::arg("hinge"),
+           "The dihedral angle at a hinge within a cell on its declared sheets: "
+           "both cofactor roots and the inverse cosine.")
+      .def("angleBranchIndex", &ReggeContinuation::angleBranchIndex,
+           py::arg("cell"), py::arg("hinge"),
+           "The integer k of the angle's declared arccosine sheet.")
+      .def("angleOrientation", &ReggeContinuation::angleOrientation,
+           py::arg("cell"), py::arg("hinge"),
+           "The sign epsilon of the angle's declared arccosine sheet.")
+      .def("angleCofactorSheets", &ReggeContinuation::angleCofactorSheets,
+           py::arg("cell"), py::arg("hinge"),
+           "The sheets of the two cofactor roots sqrt(C_ii), sqrt(C_jj) the "
+           "angle's cosine is divided by.")
+      .def("deficitAngle", &ReggeContinuation::deficitAngle, py::arg("hinge"),
+           "2*pi minus the sum of the dihedral angles at a hinge over its top "
+           "cells, every angle on its declared sheet.")
+      .def("action", &ReggeContinuation::action,
+           "S = sum_h |h|*eps_h on the declared sheets: the Regge action continued "
+           "along the path walked so far. Continuous along any path the sampling "
+           "resolves, including one that crosses a principal cut. The primal "
+           "form, with |h| the hinge's own content -- in four dimensions the "
+           "hinge area, equal to ReggeSolver.reggeAction. The circumcentric dual "
+           "form ReggeSolver.dualReggeAction weights each hinge by the dual "
+           "content instead, which is built from a further family of roots (the "
+           "circumcentric heights), and those carry no labels here.")
+      .def("principalAction", &ReggeContinuation::principalAction,
+           "The same sum with every root and inverse cosine taken principal -- the "
+           "sheet-blind value, carried so a caller can see the jump the "
+           "declaration removes rather than be told about it.")
+      .def("maxRadicandTurn", &ReggeContinuation::maxRadicandTurn,
+           "The largest turn, in radians, any radicand made about its branch point "
+           "on the last advance(). Approaching pi means the path was sampled too "
+           "coarsely for the continuation to be trusted.")
+      .def("maxAngleStep", &ReggeContinuation::maxAngleStep,
+           "The largest distance any angle moved in the complex plane on the last "
+           "advance().")
+      .def("touchedBranchPoint", &ReggeContinuation::touchedBranchPoint,
+           "True when some radicand landed exactly on its branch point, where the "
+           "sheet is held rather than continued because no continuation exists.")
+      .def("dimension", &ReggeContinuation::dimension,
+           "The spatial dimension the labels were declared in.");
 }

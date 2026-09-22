@@ -18,6 +18,7 @@
 #include "cobordism/ChainComplex.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
+#include "mesh/RiemannSheet.h"
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "spacetime/Spacetime.h"
@@ -549,9 +550,61 @@ SquaredLengths WhitneyMass::squaredLengthsOf(const spacetime::Spacetime &st,
   return s;
 }
 
-Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch, bool *ambiguous) {
+namespace {
+
+/// The sheet label of the root of det g at the far end of the straight segment
+/// from \a gramFrom (declared on sheet \a windingFrom) to \a gramTo: the signed
+/// number of turns det g(t) makes about zero along it, added to the sheet the
+/// segment started on. Sets \a onSegment when a root of det g(t) lies on the
+/// segment itself, where there is no continuation to take.
+///
+/// The label is rounded out of the tracked argument rather than the value being
+/// built from it. The tracked argument carries the error of the polynomial roots
+/// -- a multiple root is only accurate to a fractional power of the rounding
+/// level -- which on real positive data would show up as a spurious imaginary
+/// part of the volume. Rounding to an integer discards that error entirely, and
+/// fails only where the tracked argument is a full half turn out, which is the
+/// condition that would have flipped the sign test it replaces.
+struct SegmentContinuation {
+  /// True when the segment carried an argument that could be tracked. False
+  /// both when a root sits on the segment and when the determinant is constant
+  /// along it, which are different facts: the first is an ambiguity and the
+  /// second is a segment with nothing to continue.
+  bool tracked{false};
+  bool onSegment{false};
+  int winding{0};
+};
+
+SegmentContinuation segmentWinding(const Eigen::MatrixXcd &gramFrom, int windingFrom,
+                                   const Eigen::MatrixXcd &gramTo) {
+  const std::vector<Complex> coef = gramSegmentPolynomial(gramFrom, gramTo);
+  const std::vector<Complex> roots = polynomialRoots(coef);
+  if (roots.empty()) {
+    // A degree-0 polynomial: det g(t) is constant along the segment, so it
+    // makes no turn and the declared sheet stands unchanged.
+    return {false, false, windingFrom};
+  }
+  double dtheta = 0.0;
+  for (const auto &r : roots) {
+    const double tol = 1e-12 * (1.0 + std::abs(r));
+    if (std::abs(r.imag()) <= tol && r.real() >= -tol && r.real() <= 1.0 + tol)
+      return {false, true, windingFrom};
+    dtheta += principalArg(Complex(1.0, 0.0) - r) - principalArg(-r);
+  }
+  const double from = principalArg(gramFrom.determinant()) +
+                      2.0 * kPi * static_cast<double>(windingFrom);
+  const double to = principalArg(gramTo.determinant());
+  return {true, false,
+          static_cast<int>(std::llround((from + dtheta - to) / (2.0 * kPi)))};
+}
+
+}  // namespace
+
+Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch,
+                                    bool *ambiguous, int *winding) {
   const int d = static_cast<int>(gram.rows());
   if (ambiguous != nullptr) *ambiguous = false;
+  if (winding != nullptr) *winding = 0;
   if (d == 0) return Complex(1.0, 0.0);
 
   auto kontsevichSegal = [&]() -> Complex {
@@ -565,41 +618,46 @@ Complex WhitneyMass::volumeOnBranch(const Eigen::MatrixXcd &gram, Branch branch,
   if (branch == Branch::KontsevichSegal) {
     sqrtDet = kontsevichSegal();
   } else {
-    // Unit Euclidean reference simplex: g_ref = 1/2 (1 + delta_ij).
+    // Unit Euclidean reference simplex: g_ref = 1/2 (1 + delta_ij), declared on
+    // the principal sheet, its determinant being real positive.
     Eigen::MatrixXcd gref = Eigen::MatrixXcd::Constant(d, d, Complex(0.5, 0.0));
     for (int i = 0; i < d; ++i) gref(i, i) = 1.0;
-    const std::vector<Complex> coef = gramSegmentPolynomial(gref, gram);
-    const std::vector<Complex> roots = polynomialRoots(coef);
-    bool onSegment = false;
-    double dtheta = 0.0;
-    for (const auto &r : roots) {
-      const double tol = 1e-12 * (1.0 + std::abs(r));
-      if (std::abs(r.imag()) <= tol && r.real() >= -tol && r.real() <= 1.0 + tol) {
-        onSegment = true;
-        break;
-      }
-      dtheta += principalArg(Complex(1.0, 0.0) - r) - principalArg(-r);
-    }
-    const Complex det1 = gram.determinant();
-    if (onSegment || roots.empty()) {
-      // A root on the reference segment (or a degree-0 polynomial, i.e. a
-      // degenerate reference) leaves no continuous continuation: report and
-      // take the Kontsevich-Segal value.
-      if (ambiguous != nullptr) *ambiguous = onSegment;
+    const SegmentContinuation continuation = segmentWinding(gref, 0, gram);
+    if (!continuation.tracked) {
+      // A root on the reference segment (or a determinant constant along it,
+      // i.e. a geometry that is the reference) leaves no continuation to take:
+      // report the ambiguity and fall back to the Kontsevich-Segal value.
+      if (ambiguous != nullptr) *ambiguous = continuation.onSegment;
       sqrtDet = kontsevichSegal();
     } else {
       // The continuation decides which of the two square roots of det g is
-      // meant; the value is then that root itself. Building it from the
-      // tracked argument instead would carry the error of the polynomial
-      // roots (a multiple root is only accurate to a fractional power of the
-      // rounding level), which on real positive data shows up as a spurious
-      // imaginary part of the volume.
-      const Complex root = std::sqrt(det1);
-      const Complex tracked = std::exp(Complex(0.0, 0.5 * dtheta));
-      sqrtDet = (root * std::conj(tracked)).real() >= 0.0 ? root : -root;
+      // meant, and the sheet label is that decision made explicit: the value is
+      // the principal root carrying the label's sign, so that a caller can tell
+      // a volume from its negative on one and the same geometry.
+      if (winding != nullptr) *winding = continuation.winding;
+      sqrtDet = mesh::SheetedSqrt(gram.determinant(), continuation.winding).value();
     }
   }
   return sqrtDet / factorial(d);
+}
+
+Complex WhitneyMass::volumeContinuedFrom(const Eigen::MatrixXcd &gramFrom,
+                                         int windingFrom,
+                                         const Eigen::MatrixXcd &gramTo,
+                                         int *windingTo, bool *ambiguous) {
+  const int d = static_cast<int>(gramTo.rows());
+  if (ambiguous != nullptr) *ambiguous = false;
+  if (windingTo != nullptr) *windingTo = windingFrom;
+  if (d == 0) return Complex(1.0, 0.0);
+  if (gramFrom.rows() != gramTo.rows() || gramFrom.cols() != gramTo.cols())
+    throw std::invalid_argument(
+        "WhitneyMass::volumeContinuedFrom: the two Gram matrices differ in size");
+  const SegmentContinuation continuation =
+      segmentWinding(gramFrom, windingFrom, gramTo);
+  if (ambiguous != nullptr) *ambiguous = continuation.onSegment;
+  if (windingTo != nullptr) *windingTo = continuation.winding;
+  return mesh::SheetedSqrt(gramTo.determinant(), continuation.winding).value() /
+         factorial(d);
 }
 
 double WhitneyMass::marginOf(const Eigen::MatrixXcd &gram) {
@@ -723,16 +781,19 @@ InstanceCertificate WhitneyMass::certificate(const cobordism::ChainComplex &K,
   cert.margins.reserve(tops.size());
   cert.volumes.reserve(tops.size());
   cert.gramDeterminants.reserve(tops.size());
+  cert.volumeWindings.reserve(tops.size());
   double minMargin = std::numeric_limits<double>::infinity();
   for (std::size_t t = 0; t < tops.size(); ++t) {
     const TopSimplexContext ctx = topContext(tops[t], s, index);
     const LocalGeometry geo(d, ctx.sLocal);
     const double m = marginOf(geo.gram);
     bool amb = false;
-    const Complex vol = volumeOnBranch(geo.gram, branch, &amb);
+    int w = 0;
+    const Complex vol = volumeOnBranch(geo.gram, branch, &amb, &w);
     cert.margins.push_back(m);
     cert.volumes.push_back(vol);
     cert.gramDeterminants.push_back(geo.gram.determinant());
+    cert.volumeWindings.push_back(w);
     if (amb) {
       cert.continuationAmbiguous = true;
       cert.ambiguousTopSimplices.push_back(t);
