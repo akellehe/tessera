@@ -2,8 +2,11 @@
 # All rights reserved.
 """Chain Hodge pencil (#907): the specification's §14 values (T5a, T5b, T6, T7),
 the one-complex proposition of §9, the rank conditions of Prop. 4.2, the
-Grassmann preset against its dense oracle, the sparse kernel path, and the
-geometric-fidelity sweeps G1-G3, G5, G6 of the scaling verification plan."""
+Grassmann preset against its dense oracle, and the sparse kernel path.
+
+The scaling verification plan's geometric-fidelity sweeps G1-G6, which lived
+here, are in `test_svp_geometric_fidelity_python.py` (#1208), at the plan's own
+sizes and fixtures and with the plan's JSON records."""
 import math
 
 import numpy as np
@@ -12,8 +15,7 @@ from scipy.linalg import subspace_angles
 
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
-from tests.chainhodge._fixtures import (conformal_torus, flat_cylinder, flat_torus,
-                                        random_allowable, torus33)
+from tests.chainhodge._fixtures import flat_torus, random_allowable, torus33
 
 KS = ch.Branch.KontsevichSegal
 
@@ -216,58 +218,6 @@ class TestSparseKernelPath:
             hodge.pencil(1)
         read = hodge.harmonicChains(1)
         assert not read.dense and read.nullity == 2
-
-
-class TestGeometricFidelity:
-    """SVP G-suite on geometric images G_1 H_1 against the continuum harmonic
-    edge integrals: flat < 1e-8 degrees; curved Euclidean and allowable
-    complex at estimated order >= 1.5 (ratio of angles between N = 8 and
-    N = 12 at least 1.5^1.5); real Lorentzian curved: reported, no criterion."""
-
-    @pytest.mark.parametrize("lorentz", [False, True])
-    @pytest.mark.parametrize("N", [6, 8])
-    def test_g1_flat_jittered_torus(self, N, lorentz):
-        K, s, W = flat_torus(N, 0.25, lorentz, seed=1)
-        hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
-        read = hodge.harmonicChains(1)
-        assert read.nullity == 2
-        assert np.max(_angles_deg(read.images, W)) < 1e-8
-
-    @pytest.mark.parametrize("lorentz", [False, True])
-    @pytest.mark.parametrize("NL", [(6, 4), (8, 6)])
-    def test_g2_flat_cylinder(self, NL, lorentz):
-        N, L = NL
-        K, s, W = flat_cylinder(N, L, 0.25, lorentz, seed=2)
-        hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
-        read = hodge.harmonicChains(1)
-        assert read.nullity == 1
-        assert np.max(_angles_deg(read.images, W)) < 1e-8
-
-    @staticmethod
-    def _angle(N, amp, lorentz):
-        K, s, W = conformal_torus(N, amp, 0.15, lorentz, seed=1)
-        hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS, 2048)
-        read = hodge.harmonicChains(1)
-        assert read.nullity == 2
-        return float(np.max(_angles_deg(read.images, W))), read.gap
-
-    def test_g3_curved_euclidean_converges(self):
-        a8, _ = self._angle(8, 0.3, False)
-        a12, _ = self._angle(12, 0.3, False)
-        assert a8 < 5.0
-        assert a8 / a12 >= 1.5 ** 1.5
-
-    def test_g5_curved_allowable_complex_converges(self):
-        a8, _ = self._angle(8, 0.3 + 0.2j, False)
-        a12, _ = self._angle(12, 0.3 + 0.2j, False)
-        assert a8 < 5.0
-        assert a8 / a12 >= 1.5 ** 1.5
-
-    def test_g6_real_lorentzian_curved_is_reported(self):
-        a8, gap8 = self._angle(8, 0.3, True)
-        a12, gap12 = self._angle(12, 0.3, True)
-        assert math.isfinite(a8) and math.isfinite(a12)
-        assert gap8 > 1.0 and gap12 > 1.0
 
 
 class TestRandomAllowable:
