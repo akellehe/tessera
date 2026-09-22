@@ -732,7 +732,12 @@ class Recorder:
     as a line of `records.jsonl` under the session's directory: the pytest
     temporary directory, or `TESSERA_SVP_RECORDS` when that environment
     variable names one. Nothing is written into the repository, and pass/fail
-    is always derived by the test from the numbers in the record."""
+    is always derived by the test from the numbers in the record.
+
+    `time_s` is the wall time of the instance and `memory_MB` the process peak
+    resident set size when the record was written: one pytest process runs
+    every instance, so the memory field is a high-water mark of the session up
+    to that point rather than the instance's own footprint."""
 
     FIELDS = ("test", "family", "params", "preset", "n0", "n1", "n2", "betti", "nullity",
               "gap", "rank_conditions", "cond_G1", "tau", "residuals", "angles_deg",
