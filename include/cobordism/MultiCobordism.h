@@ -1042,9 +1042,10 @@ class MultiCobordism {
 
   /// Declare the weight on the connection-entropy stationarity term, the only
   /// term with a gradient in the connection phase. Zero by default, so a node
-  /// acquires phase dynamics only on request. Every \f$ L_k \f$ is blind to
-  /// \f$ \varphi \f$, so at zero weight the phase is a declared field that no
-  /// geometric update can move.
+  /// acquires phase dynamics only on request: the Hodge-entropy term sees
+  /// \f$ \varphi \f$ through \f$ h_k(z,U) \f$ but is differentiated in
+  /// \f$ z \f$ alone, so at zero weight the phase is a declared field that no
+  /// update moves.
   void setConnectionEntropyWeight(double weight);
   /// The connection-entropy stationarity weight.
   [[nodiscard]] double connectionEntropyWeight() const noexcept {

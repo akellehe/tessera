@@ -521,8 +521,9 @@ ChainComplex omits.)doc")
            "Eigenvalues survive the full similarity, so gauge invariance here "
            "is structural. The SQUARE is what makes it reduce to the Hodge "
            "term's own functional in the Hermitian limit, where |lambda|^2 = "
-           "sigma^2 are exactly the eigenvalues of A. This is the entropy that "
-           "can SEE the connection; every L_k is blind to phi.")
+           "sigma^2 are exactly the eigenvalues of A. The entropy of the 1-skeleton "
+           "operator; spectralEntropy of the default h_k(s, U) sees the connection "
+           "as well, at every degree.")
       .def("connectionSpectralEntropyPhaseGradient",
            &HodgeLaplacian::connectionSpectralEntropyPhaseGradient,
            "dS/dphi_e of connectionSpectralEntropy, EdgeList order, in the "
@@ -616,10 +617,11 @@ ChainComplex omits.)doc")
       // ----- indefinite W-norms of the near-kernel -----
       .def("nullNorms", &HodgeLaplacian::nullNorms,
            py::arg("k"), py::arg("tol") = 1e-9, py::arg("metric") = true,
-           "Indefinite W-norms <h,h>_W = sum_i W_{k,i} |h_i|^2 of the near-kernel "
-           "representatives, one per column of harmonics (same order). "
-           "A value ~0 flags a NULL (lightlike) harmonic; all positive on an "
-           "all-spacelike complex.");
+           "Indefinite norms of the near-kernel representatives in the metric that "
+           "produced them, one per column of harmonics (same order): h^dagger M_k^U h "
+           "with the dressed Whitney mass under WhitneyPencil, sum_i W_{k,i} |h_i|^2 "
+           "with the signed diagonal weights under DiagonalWeights. A value ~0 flags a "
+           "NULL (lightlike) harmonic; all positive on an all-spacelike complex.");
 
   // ----- eigenstate synthesis: residual + parameter access -----
   auto eigenstateSynthesis = py::class_<EigenstateSynthesis>(m, "EigenstateSynthesis",
@@ -2562,8 +2564,9 @@ Right -- re-read after each drive call:
       .def_readwrite("connection_stationarity",
                      &MultiCobordism::ObjectiveTerms::connectionStationarity,
                      "eta_C ||grad_phi S||^2 of the C* connection operator -- "
-                     "the ONLY term with a gradient in the connection phase. "
-                     "Every L_k is blind to phi, so without this the phase is "
+                     "the ONLY term with a gradient in the connection phase: the "
+                     "Hodge-entropy term sees phi through h_k(z, U) but is "
+                     "differentiated in z alone, so without this the phase is "
                      "a declared field no update can move.")
       .def_readwrite("register_residual",
                      &MultiCobordism::ObjectiveTerms::registerResidual)

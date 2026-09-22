@@ -177,10 +177,11 @@ angle in radians -- the only part with winding, so the only part that
 quantizes and the only part a Wilson loop reads. Im is the non-compact local
 scale and carries no quantum number.
 
-It twists the hopping of the Aharonov-Bohm operator
-(HodgeLaplacian.connectionLaplacian) and never rescales a metric weight: the
-geometric Hodge laplacian(k) is built from the lengths alone and is blind to
-it at every degree. The default of 0 leaves an untwisted CDT edge unchanged.)doc")
+It is the link U = exp(i phase) of the connection: it twists the hopping of
+the Aharonov-Bohm operator (HodgeLaplacian.connectionLaplacian) and dresses
+the Whitney pencil, so the default Hodge laplacian(k) is the covariant
+h_k(z, U) at every degree; the diagonal weights ignore it. The default of 0 is
+the trivial link.)doc")
       .def("setLength", &Edge::setLength, py::arg("length"),
            "Set the complex edge length l: real = spacelike, imaginary = timelike, "
            "general complex off the real-Lorentzian locus. There is no squared "

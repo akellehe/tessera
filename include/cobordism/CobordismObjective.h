@@ -40,7 +40,8 @@ struct ObjectiveTerms {
   double hodgeStationarity = 0.0;
   /// \f$\eta_C\|\nabla_\varphi S_{\mathbb{C}^{*}}\|^2\f$ — stationarity of the
   /// connection operator's entropy in the connection phase. The only term with
-  /// a \f$\varphi\f$ gradient: every \f$ L_k \f$ is blind to \f$\varphi\f$, so
+  /// a \f$\varphi\f$ gradient: the Hodge-entropy term sees \f$\varphi\f$
+  /// through \f$ h_k(z,U) \f$ but is differentiated in \f$ z \f$ alone, so
   /// without it \f$\varphi\f$ is a declared field that no update moves.
   double connectionStationarity = 0.0;
   /// \f$\gamma r_U\f$ — the target-conditioned register residual.

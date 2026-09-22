@@ -172,6 +172,21 @@ class TestHodgeLaplacianMovesWithU:
             e.setLength(cmath.sqrt(s0))
             assert grad[index].real == pytest.approx((up - down) / (2 * step), rel=1e-4, abs=1e-8)
 
+    def test_the_hodge_entropy_sees_the_holonomy_and_not_a_u1_gauge(self):
+        """S_k is a functional of the singular values of h_k(z, U): a U(1)
+        gauge transformation (a unitary similarity) leaves it, a flux moves
+        it. The action's entropy term therefore depends on U through its
+        holonomy, which is what makes the connection dynamical."""
+        st = _spacetime()
+        flat = [HL(st).spectralEntropy(k) for k in (0, 1, 2)]
+        _pure_gauge(st)  # real chi: a U(1) gauge transformation
+        gauged = [HL(st).spectralEntropy(k) for k in (0, 1, 2)]
+        np.testing.assert_allclose(gauged, flat, rtol=1e-9, atol=1e-12)
+        _twist(st)
+        fluxed = [HL(st).spectralEntropy(k) for k in (0, 1, 2)]
+        for k in (0, 1, 2):
+            assert abs(fluxed[k] - flat[k]) > 1e-4 * max(1.0, abs(flat[k]))
+
     @pytest.mark.parametrize("mode", [cob.HodgeEntropyPhaseMode.IncludeComplexPhase,
                                       cob.HodgeEntropyPhaseMode.IgnoreComplexPhase])
     def test_the_entropy_directional_derivative_is_taken_of_the_default_operator(self, mode):
@@ -196,6 +211,68 @@ class TestHodgeLaplacianMovesWithU:
         fd = (gradient_at(step) - gradient_at(-step)) / (2 * step)
         gradient_at(0.0)
         np.testing.assert_allclose(got, fd, atol=1e-5 * max(1.0, np.abs(fd).max()))
+
+
+class TestNullNormsInTheMetricThatProducedTheModes:
+    """nullNorms measures a near-kernel representative in the metric it was
+    computed in: under the Whitney pencil the representatives are eigenvectors
+    of (A~_k^U, M_k^U), so the norm is h^dagger M_k^U h with the dressed
+    Whitney mass; the diagonal weights keep sum_i W_{k,i} |h_i|^2."""
+
+    def test_whitney_norms_are_the_mass_quadratic_form(self):
+        st = _spacetime()
+        _twist(st)
+        hl = HL(st)
+        for k in (0, 1, 2):
+            harmonics = hl.harmonics(k, 1e-9)
+            norms = np.asarray(hl.nullNorms(k, 1e-9), dtype=complex)
+            assert len(norms) == len(harmonics)
+            if not harmonics:
+                continue
+            n = harmonics[0].size()
+            M = np.asarray(hl.pencil(k)[1], dtype=complex).reshape(n, n)
+            expected = [np.conj(h.coeffs()) @ M @ np.asarray(h.coeffs()) for h in harmonics]
+            np.testing.assert_allclose(norms, expected, atol=1e-12 * max(1.0, np.abs(M).max()))
+
+    def test_whitney_norms_are_positive_on_a_euclidean_complex(self):
+        st = _spacetime()
+        hl = HL(st)
+        for k in (0, 1, 2):
+            for value in hl.nullNorms(k, 1e-9):
+                assert value.real > 0.0 and abs(value.imag) < 1e-12 * value.real
+
+    def test_the_one_timelike_edge_triangle(self):
+        """On the 3-cycle with edge (1, 2) timelike, l = (1, 1, i alpha), the
+        Whitney mass is M_1 = diag(1/l_e) and the harmonic image is the vector
+        of signed lengths, so its unit-Euclidean representative z has
+        z^dagger M_1 z = (2 - i alpha)/(2 + alpha^2): 0.5420 - 0.3523 i at
+        alpha = 1.3. The imaginary part carries the timelike edge and never
+        cancels the real part, so no null direction opens at any alpha; under
+        the diagonal SquaredContent weights the same cycle's norm is
+        (2 - alpha^2)/3 = -0.1033 at alpha = 1.3 and crosses zero at sqrt 2."""
+        alpha = 1.3
+        st = tessera.Spacetime.fromVertexTuples(1, [[0, 1], [0, 2], [1, 2]], 1.0, 0.0)
+        for e in st.getEdgeList().toVector():
+            ends = {e.getSource().getId(), e.getTarget().getId()}
+            e.setLength(cmath.sqrt(complex(-(alpha ** 2))) if ends == {1, 2} else 1.0 + 0j)
+            e.setPhase(0.0)
+        norms = np.asarray(HL(st).nullNorms(1, 1e-9), dtype=complex)
+        assert len(norms) == 1
+        expected = (2.0 - 1j * alpha) / (2.0 + alpha ** 2)
+        np.testing.assert_allclose(norms[0], expected, atol=1e-9)
+        diagonal = np.asarray(HL(st, HL.defaultWeightConvention(), Diagonal).nullNorms(1, 1e-9),
+                              dtype=complex)
+        np.testing.assert_allclose(diagonal[0], (2.0 - alpha ** 2) / 3.0, atol=1e-9)
+
+    def test_the_combinatorial_operator_keeps_the_unit_weights(self):
+        st = _spacetime()
+        _twist(st)
+        hl = HL(st)
+        harmonics = hl.harmonics(1, 1e-9, False)
+        norms = np.asarray(hl.nullNorms(1, 1e-9, False), dtype=complex)
+        assert len(norms) == len(harmonics)
+        for value in norms:
+            assert value == pytest.approx(1.0)
 
 
 class TestTrackerMovesWithU:

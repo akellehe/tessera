@@ -1775,17 +1775,36 @@ std::vector<std::complex<double>> HodgeLaplacian::nullNorms(int k, double tol,
   const std::size_t N = static_cast<std::size_t>(sp.dim);
   if (N == 0) return {};
 
+  // The metric the representatives were computed in. Under the Whitney pencil
+  // (metric = true) they are eigenvectors of (A~_k^U, M_k^U), and only the
+  // quadratic form of that mass on them is a norm; the diagonal weights are
+  // the metric of every other path.
+  const bool pencil = metricSource_ == MetricSource::WhitneyPencil && metric;
+  Eigen::MatrixXcd mass;
+  if (pencil) {
+    const MetricPencil P = this->pencil(k);
+    if (static_cast<std::size_t>(P.dimension) != N)
+      throw std::runtime_error("HodgeLaplacian::nullNorms: the pencil and the spectrum disagree on "
+                               "the cell count at degree " + std::to_string(k));
+    mass = squareFromFlat(P.metric, "HodgeLaplacian::nullNorms");
+  }
   std::vector<cd> norms;
   for (std::size_t j = 0; j < N; ++j) {
     if (std::abs(sp.evals[j]) >= tol) continue;
-    // Indefinite W-norm <h,h>_W = sum_i W_{k,i} |h_i|^2 with signed W_k. W_k is
-    // complex once a Lorentzian cell's signed content is imaginary, so the norm
-    // is returned complex: its sign says whether the direction is spacelike- or
-    // timelike-dominated, and ~0 marks a null (lightlike) harmonic.
+    // Returned complex: a timelike cell's mass (Whitney) or signed content
+    // (diagonal) is imaginary or negative, so the sign of the form says which
+    // causal character dominates the direction, and ~0 marks a null
+    // (lightlike) harmonic.
     cd nrm{0.0, 0.0};
-    for (std::size_t i = 0; i < N; ++i) {
-      const cd hi = sp.evecs[i * N + j];
-      nrm += sp.wk[i] * std::norm(hi);  // std::norm = |hi|^2
+    if (pencil) {
+      Eigen::VectorXcd h(static_cast<Eigen::Index>(N));
+      for (std::size_t i = 0; i < N; ++i) h(static_cast<Eigen::Index>(i)) = sp.evecs[i * N + j];
+      nrm = (h.adjoint() * (mass * h))(0, 0);  // h^dagger M_k^U h
+    } else {
+      for (std::size_t i = 0; i < N; ++i) {
+        const cd hi = sp.evecs[i * N + j];
+        nrm += sp.wk[i] * std::norm(hi);  // sum_i W_{k,i} |h_i|^2
+      }
     }
     norms.push_back(nrm);
   }

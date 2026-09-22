@@ -1,14 +1,17 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""#853 — the connection phase is a dynamical field.
+"""The connection phase is a dynamical field.
 
-`phi` was declared in the ontology and moved by nothing: every `L_k` is
-certified blind to it, so the objective's gradient with respect to `phi` was
-identically zero. The term added here is built on the operator the connection
-actually acts on — the degree-zero Aharonov-Bohm operator, whose zero mode a
-nonzero flux lifts and which `ker L_0 = b_0` can never register.
+Every read of the pipeline is taken on the covariant operator `h_k(z, U)`, the
+Whitney pencil dressed by the connection `U = exp(i phi)`. Its spectrum is
+invariant under the gauge similarity, so the effective homology and every
+spectral gate are gauge-invariant, and the Hodge-entropy term of the action
+depends on `U` through its holonomy. The term with a gradient in `phi`, which
+is what moves the phase, is built on the degree-zero Aharonov-Bohm operator,
+whose zero mode a nonzero flux lifts.
 
-Two properties carry the design and each is asserted rather than argued.
+Two properties carry the connection term and each is asserted rather than
+argued.
 
 The term is read from the EIGENVALUES alone. A gauge transformation acts on the
 operator by the similarity `diag(g)^-1 (.) diag(g)`, which fixes eigenvalues for
@@ -39,11 +42,10 @@ are exactly `|lambda|^2 = sigma^2`. So the two definitions agree in the
 Hermitian limit and separate only where the operator stops being normal, and
 both halves of that are asserted below.
 
-The diagonal-weight `laplacian(k)` stays blind to `phi`, and its bitwise
-invariance is re-asserted here alongside the new dependence. The default
-metric source is the Whitney pencil with its connection, whose operator is the
-covariant `h_k(z, U)` of whitepaper Section 3.2: it moves with the flux and
-only a gauge transformation leaves its spectrum fixed.
+The diagonal-weight `laplacian(k)`, named by its metric source, is built from
+the squared lengths alone and its bitwise invariance under `phi` is asserted
+beside the dependence of the default `h_k(z, U)`, which moves with the flux
+and which only a gauge transformation leaves fixed.
 """
 
 import cmath

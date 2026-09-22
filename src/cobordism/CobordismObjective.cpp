@@ -295,9 +295,9 @@ ObjectiveTerms JointStationarityObjective::terms(
   terms.hodgeStationarity =
       hodgeTermFrom(context, hodgeContributions(context));
 
-  // The only term with a phi gradient: the Hodge-entropy terms are
-  // differentiated in z alone (and under DiagonalWeights every L_k is blind to
-  // the connection), so without it phi is a declared field no update can move.
+  // The only term with a phi gradient: the Hodge-entropy terms see phi through
+  // h_k(z, U) but are differentiated in z alone, so without it phi is a
+  // declared field no update can move.
   const auto edgeCount =
       context.spacetime && context.spacetime->getEdgeList()
           ? context.spacetime->getEdgeList()->toVector().size()
