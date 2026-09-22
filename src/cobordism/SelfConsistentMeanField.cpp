@@ -63,15 +63,24 @@ complexd occupiedEnergyOf(const std::vector<complexd> &covariance,
   return trace;
 }
 
-/// The Euclidean norm of the joint stationarity force in the two geometric
-/// fields: the length equations and the link equations, without the moment
-/// equations, which are constraints rather than forces.
-double forceNormOf(const JointAction &action) {
+/// The Euclidean norm of the joint stationarity force in the geometric fields
+/// the inner relaxation declares variable.
+///
+/// The moment equations are left out because they are constraints rather than
+/// forces, and a field the relaxation holds fixed is left out because its
+/// equation is not one the solve is asked to satisfy: requiring stationarity of
+/// a frozen coordinate would make every run report a fixed point it was never
+/// looking for, exactly as including a frozen coordinate's equation in the
+/// Newton system would overdetermine it.
+double forceNormOf(const JointAction &action,
+                   const HolomorphicRelaxationDeclaration &geometry) {
   double squared = 0.0;
-  for (const complexd &component : action.lengthStationarity())
-    squared += std::norm(component);
-  for (const complexd &component : action.linkStationarity())
-    squared += std::norm(component);
+  if (geometry.relaxLengths)
+    for (const complexd &component : action.lengthStationarity())
+      squared += std::norm(component);
+  if (geometry.relaxLinks)
+    for (const complexd &component : action.linkStationarity())
+      squared += std::norm(component);
   return std::sqrt(squared);
 }
 
@@ -139,7 +148,7 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
     // (3) The fixed-point measurements, taken with the covariance this step
     // produced: a geometry stationary for the previous covariance is not a
     // fixed point of the pair.
-    step.forceNorm = forceNormOf(action_);
+    step.forceNorm = forceNormOf(action_, declaration_.geometry);
     step.purityDefect = purityDefectOf(mixed);
     step.action = action_.value();
     step.occupiedEnergy = occupiedEnergyOf(mixed, action_.carrierOperator());

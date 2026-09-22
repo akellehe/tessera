@@ -45,9 +45,10 @@ struct SelfConsistentMeanFieldDeclaration {
   /// re-occupation — taken before the solve reports what it reached.
   std::size_t maximumIterations = 24;
 
-  /// The Euclidean norm of the stationarity force, and the Frobenius norm of
-  /// the change in the covariance, at or below which the pair
-  /// \f$ (z^{*},\Gamma^{*}) \f$ is declared self-consistent. Both conditions
+  /// The Euclidean norm of the stationarity force over the relaxed geometric
+  /// fields, and the Frobenius norm of the change in the covariance, at or
+  /// below which the pair \f$ (z^{*},\Gamma^{*}) \f$ is declared
+  /// self-consistent. Both conditions
   /// must hold: a geometry that is stationary for a covariance that is still
   /// moving is not a fixed point, and neither is a settled covariance on a
   /// geometry that still carries a force.
@@ -77,8 +78,10 @@ struct SelfConsistentMeanFieldDeclaration {
 struct SelfConsistentMeanFieldStep {
   /// The iteration index, counting from zero.
   std::size_t iteration = 0;
-  /// The Euclidean norm of the joint stationarity force after the geometry was
-  /// relaxed against the covariance this step started from.
+  /// The Euclidean norm of the joint stationarity force, over the geometric
+  /// fields the inner relaxation declares variable, measured with the
+  /// covariance this step produced. A field held fixed contributes nothing,
+  /// since its equation is not one the solve is asked to satisfy.
   double forceNorm = 0.0;
   /// \f$ \lVert\Gamma_{n+1}-\Gamma_n\rVert_F \f$, the movement of the
   /// covariance under re-occupation.
