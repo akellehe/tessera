@@ -2036,6 +2036,419 @@ Changes no geometry and enforces nothing.)doc")
            "negative. Zero means the diagonal star is positive everywhere.");
 
   // ==========================================================================
+  // SheetedColor (#1195): colour as sheet multiplicity.  The k-sheeted
+  // support, the exterior algebra of the sheet space, the attachment matrix
+  // of the connecting simplices, and the transported determinant-wedge
+  // singlet amplitude.  Pure reads over caller-supplied data; nothing enters
+  // the emergence objective.
+  // ==========================================================================
+  py::class_<SheetIsomorphismRead>(m, "SheetIsomorphismRead",
+      R"doc(The certificate that k supports really are k sheets of one base
+complex: the measured disagreement between corresponding cells of different
+sheets, kept separate for the geometry (the stored complex squared lengths)
+and for the declared connection, because the two fail for different physical
+reasons.)doc")
+      .def(py::init<>())
+      .def_readonly("sheet_count", &SheetIsomorphismRead::sheetCount)
+      .def_readonly("base_cell_count", &SheetIsomorphismRead::baseCellCount)
+      .def_readonly("squared_length_residual",
+                    &SheetIsomorphismRead::squaredLengthResidual,
+                    "max over cells and sheet pairs of the squared-length "
+                    "disagreement.")
+      .def_readonly("connection_residual",
+                    &SheetIsomorphismRead::connectionResidual,
+                    "max over cells and sheet pairs of the connection-value "
+                    "disagreement.")
+      .def_readonly("isomorphic", &SheetIsomorphismRead::isomorphic)
+      .def_readonly("certificate", &SheetIsomorphismRead::certificate,
+                    "AlgebraicallyExact / Static, grading the larger of the "
+                    "two residuals against the declared tolerance.");
+
+  py::class_<SheetSector>(m, "SheetSector",
+      R"doc(One occupation sector of the exterior algebra of the sheet space:
+its occupation number N, its dimension binomial(k, N), its fermion parity
+(-1)^N, and the complex representation it carries, named for three sheets as
+the whitepaper names it.)doc")
+      .def(py::init<>())
+      .def_readonly("occupation", &SheetSector::occupation)
+      .def_readonly("dimension", &SheetSector::dimension)
+      .def_readonly("fermion_parity", &SheetSector::fermionParity)
+      .def_readonly("representation", &SheetSector::representation);
+
+  py::class_<SheetedSupport>(m, "SheetedSupport",
+      R"doc(A cluster support carried as k isomorphic copies -- sheets -- of
+one base complex.  A sheet is more cells and nothing else: each edge still
+carries its complex squared length, its connection value and one two-level
+mode.  The class certifies that the copies agree, lifts a base operator h to
+the free sheeted operator h (x) I_k, lifts a base Riesz band to the
+colour-spin fibre E-bar (x) C^k, and builds the two commuting actions
+I (x) g (sheet relabeling) and D (x) I_k (a base symmetry).  A sheeted mode
+is stored at the flat index base * k + sheet.)doc")
+      .def(py::init<std::size_t, std::size_t>(), py::arg("sheetCount"),
+           py::arg("baseCellCount"))
+      .def_property_readonly("sheet_count", &SheetedSupport::sheetCount)
+      .def_property_readonly("base_cell_count",
+                             &SheetedSupport::baseCellCount)
+      .def_property_readonly("cell_count", &SheetedSupport::cellCount)
+      .def("modeIndex", &SheetedSupport::modeIndex, py::arg("baseCell"),
+           py::arg("sheet"),
+           "The flat index base * k + sheet of one sheeted cell.")
+      .def("certifyIsomorphism", &SheetedSupport::certifyIsomorphism,
+           py::arg("sheetSquaredLengths"), py::arg("sheetConnections"),
+           py::arg("tolerance") = 1e-12,
+           "Certify that the per-sheet squared lengths and connection values "
+           "agree across the sheets.  Empty connection vectors declare a "
+           "support with no connection values to compare.")
+      .def("freeOperator", &SheetedSupport::freeOperator,
+           py::arg("baseOperator"),
+           "The free sheeted operator h (x) I_k.")
+      .def("liftBand", &SheetedSupport::liftBand, py::arg("baseBand"),
+           "The colour-spin fibre E-bar (x) C^k of a base Riesz band.")
+      .def("sheetFrameOperator", &SheetedSupport::sheetFrameOperator,
+           py::arg("g"), "The sheet relabeling I (x) g.")
+      .def("baseSymmetryOperator", &SheetedSupport::baseSymmetryOperator,
+           py::arg("baseAction"), "A base symmetry action D (x) I_k.")
+      .def("sheetCommutatorResidual",
+           &SheetedSupport::sheetCommutatorResidual, py::arg("baseOperator"),
+           py::arg("g"),
+           "||[A (x) I_k, I (x) g]||_max -- zero up to rounding for every "
+           "base operator and every frame.");
+
+  py::class_<SheetFock>(m, "SheetFock",
+      R"doc(The exterior algebra Lambda^bullet E of the sheet space E = C^k of
+ONE base mode.  For three sheets the sectors are the scalar vacuum, the
+fundamental E, the determinant-twisted dual det E (x) E-dual and the
+determinant line, with fermion parities even, odd, even, odd.  The sector
+projectors and canonical anticommutation-relation matrices are delegated to
+tessera.quantum.ExteriorAlgebra, and at three sheets they agree with
+ColorFiber's exactly.)doc")
+      .def(py::init<std::size_t>(), py::arg("sheetCount"))
+      .def_property_readonly("sheet_count", &SheetFock::sheetCount)
+      .def_property_readonly("dimension", &SheetFock::dimension)
+      .def("sectors", &SheetFock::sectors,
+           "The k + 1 occupation sectors in ascending occupation order.")
+      .def("sectorProjector", &SheetFock::sectorProjector,
+           py::arg("occupation"))
+      .def("exteriorCreation", &SheetFock::exteriorCreation, py::arg("sheet"))
+      .def("contraction", &SheetFock::contraction, py::arg("sheet"))
+      .def("sheetBilinear", &SheetFock::sheetBilinear, py::arg("i"),
+           py::arg("j"),
+           "The gl(E) bilinear E^i_j = epsilon_i iota^j.")
+      .def("commutatorResidual", &SheetFock::commutatorResidual,
+           "The worst deviation over the whole gl(k, C) commutator table.")
+      .def("sectorAgreementResidual", &SheetFock::sectorAgreementResidual,
+           "The worst deviation from ColorFiber's sector projectors "
+           "(three sheets only).");
+
+  py::class_<ConnectingSimplex>(m, "ConnectingSimplex",
+      R"doc(One connecting simplex between two sheeted supports: the sheet of
+A and the sheet of B it is attached to, and the weight it contributes to that
+entry of the attachment matrix.  The default gluing rule attaches sheet to
+sheet, making the attachment matrix diagonal and a lone interaction
+colour-abelian; a cross-sheet attachment is the nonabelian part of the colour
+transport.)doc")
+      .def(py::init([](std::size_t sheetA, std::size_t sheetB,
+                       std::complex<double> weight) {
+             return ConnectingSimplex{sheetA, sheetB, weight};
+           }),
+           py::arg("sheetA"), py::arg("sheetB"),
+           py::arg("weight") = std::complex<double>(1.0, 0.0))
+      .def_readwrite("sheet_a", &ConnectingSimplex::sheetA)
+      .def_readwrite("sheet_b", &ConnectingSimplex::sheetB)
+      .def_readwrite("weight", &ConnectingSimplex::weight);
+
+  py::class_<AttachmentRead>(m, "AttachmentRead",
+      R"doc(The attachment matrix S_AB and the data that decide whether it is
+usable as a colour transport: its determinant (canonical, never normalized or
+cube-rooted), its conditioning, its smallest singular value -- the distance to
+the rank-dropping configuration the determinant winding encircles -- and
+whether every connecting simplex joined like-indexed sheets.)doc")
+      .def(py::init<>())
+      .def_readonly("matrix", &AttachmentRead::matrix)
+      .def_readonly("determinant", &AttachmentRead::determinant)
+      .def_readonly("conditioning", &AttachmentRead::conditioning)
+      .def_readonly("min_singular_value", &AttachmentRead::minSingularValue)
+      .def_readonly("sheet_diagonal", &AttachmentRead::sheetDiagonal)
+      .def_readonly("simplex_count", &AttachmentRead::simplexCount)
+      .def_readonly("certificate", &AttachmentRead::certificate);
+
+  py::class_<HolonomyInvariants>(m, "HolonomyInvariants",
+      R"doc(The conjugacy-invariant data of a closed colour holonomy: the
+ordered product around the sequence, its power traces tr H^j, the
+characteristic polynomial they determine through the Newton identities (in
+ascending powers of lambda) and its determinant.)doc")
+      .def(py::init<>())
+      .def_readonly("holonomy", &HolonomyInvariants::holonomy)
+      .def_readonly("power_traces", &HolonomyInvariants::powerTraces)
+      .def_readonly("characteristic_polynomial",
+                    &HolonomyInvariants::characteristicPolynomial)
+      .def_readonly("determinant", &HolonomyInvariants::determinant)
+      .def_readonly("link_count", &HolonomyInvariants::linkCount);
+
+  py::class_<SheetAttachment>(m, "SheetAttachment",
+      R"doc(The colour transport of the sheet convention: the attachment
+matrix S_AB reconstructed from the connecting simplices, its frame law
+S_AB -> g_A^-1 S_AB g_B, the factorized coupling block C-bar_AB (x) S_AB, the
+composition of transport along a declared path and the closed holonomy.  The
+retained datum is the GL(k, C) element with its determinant line: no polar
+factor is taken and no cube root of the determinant is chosen.)doc")
+      .def_static("attachmentMatrix", &SheetAttachment::attachmentMatrix,
+                  py::arg("sheetCount"), py::arg("simplices"),
+                  py::arg("fullRankTolerance") = 1e-12)
+      .def_static("frameChanged", &SheetAttachment::frameChanged,
+                  py::arg("attachment"), py::arg("frameA"), py::arg("frameB"),
+                  "S_AB -> g_A^-1 S_AB g_B.")
+      .def_static("couplingBlock", &SheetAttachment::couplingBlock,
+                  py::arg("baseCoupling"), py::arg("attachment"),
+                  "C_AB = C-bar_AB (x) S_AB.")
+      .def_static("compose", &SheetAttachment::compose, py::arg("path"),
+                  py::arg("sheetCount") = std::size_t{0},
+                  "The path transport, first factor applied first.")
+      .def_static("holonomy", &SheetAttachment::holonomy, py::arg("links"));
+
+  py::class_<ColorSingletRead>(m, "ColorSingletRead",
+      R"doc(The common-frame colour amplitude and the data around it.  Nothing
+is normalized: the physical singlet condition is a nonzero, refinement-stable,
+covariantly trivial determinant wedge, so the reported content is the complex
+amplitude and whether it vanishes, not a modulus square driven to one.)doc")
+      .def(py::init<>())
+      .def_readonly("amplitude", &ColorSingletRead::amplitude,
+                    "S_ABC = Omega_p(c-hat_A ^ c-hat_B ^ c-hat_C).")
+      .def_readonly("transported_wedge", &ColorSingletRead::transportedWedge,
+                    "det of the transported representatives, before the "
+                    "determinant-line trivialization is applied.")
+      .def_readonly("transported_columns",
+                    &ColorSingletRead::transportedColumns)
+      .def_readonly("magnitude", &ColorSingletRead::magnitude)
+      .def_readonly("nonvanishing", &ColorSingletRead::nonvanishing)
+      .def_readonly("min_singular_value",
+                    &ColorSingletRead::minSingularValue)
+      .def_readonly("certificate", &ColorSingletRead::certificate);
+
+  py::class_<ColorSinglet>(m, "ColorSinglet",
+      R"doc(The singlet readout of the sheet convention: the three colour
+representatives are transported to a common base cluster p and wedged, and the
+dual determinant trivialization Omega_p is applied.  Invariant under all local
+frame changes when Omega_p transforms dually, which frameCovarianceResidual
+measures rather than asserts.)doc")
+      .def_static("amplitude", &ColorSinglet::amplitude,
+                  py::arg("trivialization"), py::arg("transports"),
+                  py::arg("colors"), py::arg("tolerance") = 1e-12)
+      .def_static("frameCovarianceResidual",
+                  &ColorSinglet::frameCovarianceResidual,
+                  py::arg("trivialization"), py::arg("transports"),
+                  py::arg("colors"), py::arg("baseFrame"), py::arg("frames"),
+                  "|S_ABC(frame-changed) - S_ABC(original)|.");
+
+  // ==========================================================================
+  // MonopoleSpin (#1196): spin from an odd Dirac monopole.  The monopole
+  // number through a closed cut, the projective representation D_k(g) with
+  // its cocycle, the spinor bands it protects, and the sharp-spin
+  // eigen-equations on a superposition of determinants.
+  // ==========================================================================
+  py::class_<MonopoleNumberRead>(m, "MonopoleNumberRead",
+      R"doc(The monopole number of the connection through a closed cut, read
+from the outward face holonomies.  Each face contributes the principal
+argument of its holonomy, so a face carrying more than half a turn is not
+resolved; integrality_residual measures how far the total sits from an integer
+multiple of 2 pi, and a total that is not such a multiple is not a bundle at
+all.)doc")
+      .def(py::init<>())
+      .def_readonly("face_holonomies", &MonopoleNumberRead::faceHolonomies)
+      .def_readonly("face_fluxes", &MonopoleNumberRead::faceFluxes)
+      .def_readonly("total_flux", &MonopoleNumberRead::totalFlux)
+      .def_readonly("monopole_number", &MonopoleNumberRead::monopoleNumber)
+      .def_readonly("integrality_residual",
+                    &MonopoleNumberRead::integralityResidual)
+      .def_readonly("bundle", &MonopoleNumberRead::bundle)
+      .def_readonly("odd", &MonopoleNumberRead::odd,
+                    "Whether the monopole number is odd -- the condition "
+                    "under which the projective class is nontrivial.")
+      .def_readonly("branch_margin", &MonopoleNumberRead::branchMargin,
+                    "min over faces of (pi - |face flux|).")
+      .def_readonly("on_branch_cut", &MonopoleNumberRead::onBranchCut,
+                    "Whether some face flux reached the ends of the "
+                    "principal interval, where the reported integer rests "
+                    "on the stated convention.")
+      .def_readonly("unit_modulus_residual",
+                    &MonopoleNumberRead::unitModulusResidual)
+      .def_readonly("certificate", &MonopoleNumberRead::certificate);
+
+  py::class_<GaugeCompensationRead>(m, "GaugeCompensationRead",
+      R"doc(The compensating gauge transformation u_g of one rotation,
+normalized to one at the spanning tree's root, and the residual that decides
+whether the configuration really is symmetric up to gauge.)doc")
+      .def(py::init<>())
+      .def_readonly("gauge", &GaugeCompensationRead::gauge)
+      .def_readonly("residual", &GaugeCompensationRead::residual)
+      .def_readonly("symmetric", &GaugeCompensationRead::symmetric);
+
+  py::class_<CocycleRead>(m, "CocycleRead",
+      R"doc(The cocycle varpi of the projective representation and its
+cohomology class.  The class is nontrivial exactly when some COMMUTING pair
+has a commutator phase varpi(g,h)/varpi(h,g) different from one, that phase
+being invariant under every rescaling of the compensating gauges.  On an
+odd-monopole tetrahedral support it is -1, the quaternion relation of the
+binary tetrahedral group.)doc")
+      .def(py::init<>())
+      .def_readonly("group_order", &CocycleRead::groupOrder)
+      .def_readonly("scalar_residual", &CocycleRead::scalarResidual)
+      .def_readonly("values", &CocycleRead::values)
+      .def_readonly("max_commutator_deviation",
+                    &CocycleRead::maxCommutatorDeviation)
+      .def_readonly("commutator_phase", &CocycleRead::commutatorPhase)
+      .def_readonly("commutator_pair", &CocycleRead::commutatorPair)
+      .def_readonly("nontrivial", &CocycleRead::nontrivial)
+      .def_readonly("certificate", &CocycleRead::certificate);
+
+  py::class_<SpinorBandRead>(m, "SpinorBandRead",
+      R"doc(One symmetry-protected band of a rotation-invariant operator: its
+eigenvalue and rank, the measured invariance under the projective action, the
+irreducibility score (exactly one for an irreducible projective
+representation with this cocycle), the distance from the coexact sector, and
+whether it is a spinor doublet.)doc")
+      .def(py::init<>())
+      .def_readonly("eigenvalue", &SpinorBandRead::eigenvalue)
+      .def_readonly("dimension", &SpinorBandRead::dimension)
+      .def_readonly("invariance_residual",
+                    &SpinorBandRead::invarianceResidual)
+      .def_readonly("irreducibility_score",
+                    &SpinorBandRead::irreducibilityScore)
+      .def_readonly("coexact_residual", &SpinorBandRead::coexactResidual)
+      .def_readonly("spinor_doublet", &SpinorBandRead::spinorDoublet)
+      .def_readonly("coexact", &SpinorBandRead::coexact);
+
+  py::class_<MonopoleSpinRead>(m, "MonopoleSpinRead",
+      R"doc(What a classifier needs from an odd-monopole support in one
+record: the monopole number of the bounding cut, the cocycle of the rotation
+group's projective action, the symmetry-protected bands of the
+rotation-averaged edge Laplacian, and the j = 1/2 doublet among them -- the
+rank-two, invariant, irreducible, spinorial band lying in the coexact
+sector.)doc")
+      .def(py::init<>())
+      .def_readonly("monopole", &MonopoleSpinRead::monopole)
+      .def_readonly("cocycle", &MonopoleSpinRead::cocycle)
+      .def_readonly("bands", &MonopoleSpinRead::bands)
+      .def_readonly("doublet_index", &MonopoleSpinRead::doubletIndex)
+      .def_readonly("half_integer_doublet",
+                    &MonopoleSpinRead::halfIntegerDoublet)
+      .def_readonly("certificate", &MonopoleSpinRead::certificate);
+
+  py::class_<MonopoleSupport>(m, "MonopoleSupport",
+      R"doc(A symmetric cluster bounded by a closed cut, carried as its
+vertices, its oriented edges (smaller vertex first), its outward-oriented
+faces and one U(1) connection value per edge.  It reads the monopole number
+from the outward face holonomies, builds the twisted coboundary and
+Laplacians, solves for the compensating gauge transformation of each rotation,
+assembles D_0(g) and D_1(g), measures the cocycle and decides its class, and
+reads the symmetry-protected bands of a rotation-invariant operator.)doc")
+      .def(py::init<std::size_t,
+                    std::vector<std::array<std::size_t, 2>>,
+                    std::vector<std::array<std::size_t, 3>>,
+                    std::vector<std::complex<double>>>(),
+           py::arg("vertexCount"), py::arg("edges"), py::arg("faces"),
+           py::arg("connection"))
+      .def_static("tetrahedron", &MonopoleSupport::tetrahedron,
+                  py::arg("monopoleNumber"),
+                  "The tetrahedron with the symmetric monopole connection "
+                  "whose every outward face holonomy is exp(2 pi i mu / 4).")
+      .def_static("tetrahedralRotations",
+                  &MonopoleSupport::tetrahedralRotations,
+                  "The twelve rotations of the tetrahedron (T = A_4), the "
+                  "identity first.")
+      .def_static("u1Part", &MonopoleSupport::u1Part, py::arg("connection"),
+                  "U_e / |U_e| -- the explicit way to bring an unrestricted "
+                  "connection into this kernel's domain.")
+      .def_property_readonly("vertex_count", &MonopoleSupport::vertexCount)
+      .def_property_readonly("edges", &MonopoleSupport::edges)
+      .def_property_readonly("faces", &MonopoleSupport::faces)
+      .def_property_readonly("connection", &MonopoleSupport::connection)
+      .def("transport", &MonopoleSupport::transport, py::arg("x"),
+           py::arg("y"))
+      .def("monopoleNumber", &MonopoleSupport::monopoleNumber,
+           py::arg("tolerance") = 1e-9)
+      .def("twistedCoboundary", &MonopoleSupport::twistedCoboundary)
+      .def("twistedFaceCoboundary",
+           &MonopoleSupport::twistedFaceCoboundary)
+      .def("vertexLaplacian", &MonopoleSupport::vertexLaplacian)
+      .def("edgeLaplacian", &MonopoleSupport::edgeLaplacian)
+      .def("coexactProjector", &MonopoleSupport::coexactProjector,
+           py::arg("tolerance") = 1e-9)
+      .def("gaugeCompensation", &MonopoleSupport::gaugeCompensation,
+           py::arg("rotation"), py::arg("tolerance") = 1e-9)
+      .def("vertexRepresentation", &MonopoleSupport::vertexRepresentation,
+           py::arg("rotation"), "D_0(g) on vertex cochains.")
+      .def("edgeRepresentation", &MonopoleSupport::edgeRepresentation,
+           py::arg("rotation"), "D_1(g) on edge cochains.")
+      .def("intertwiningResidual", &MonopoleSupport::intertwiningResidual,
+           py::arg("rotation"),
+           "||delta_0^U D_0(g) - D_1(g) delta_0^U||_max.")
+      .def("cocycle", &MonopoleSupport::cocycle, py::arg("group"),
+           py::arg("cochainDegree") = 1, py::arg("tolerance") = 1e-9)
+      .def("rotationAveragedEdgeOperator",
+           &MonopoleSupport::rotationAveragedEdgeOperator,
+           py::arg("edgeOperator"), py::arg("group"))
+      .def("spinorBands", &MonopoleSupport::spinorBands,
+           py::arg("operatorMatrix"), py::arg("group"),
+           py::arg("nontrivialClass"),
+           py::arg("degeneracyTolerance") = 1e-7,
+           py::arg("tolerance") = 1e-9)
+      .def("spinRead", &MonopoleSupport::spinRead, py::arg("group"),
+           py::arg("degeneracyTolerance") = 1e-7,
+           py::arg("tolerance") = 1e-9,
+           "The whole spin read: monopole number, cocycle, bands and the "
+           "j = 1/2 doublet among them.");
+
+  py::class_<SharpSpinRead>(m, "SharpSpinRead",
+      R"doc(The sharpness read of a total-space spin: the right and left
+eigen-equation residuals, the verdict they decide, and the biorthogonal
+expectation and complex variance that the whitepaper calls insufficient on
+their own.  variance_would_accept is true when the variance test alone would
+have called the state sharp; when it is true and sharp is false, the variance
+test has been decided wrongly by isotropic cancellation.)doc")
+      .def(py::init<>())
+      .def_readonly("target_eigenvalue", &SharpSpinRead::targetEigenvalue)
+      .def_readonly("right_residual", &SharpSpinRead::rightResidual)
+      .def_readonly("left_residual", &SharpSpinRead::leftResidual)
+      .def_readonly("sharp", &SharpSpinRead::sharp)
+      .def_readonly("expectation", &SharpSpinRead::expectation)
+      .def_readonly("variance", &SharpSpinRead::variance)
+      .def_readonly("variance_would_accept",
+                    &SharpSpinRead::varianceWouldAccept)
+      .def_readonly("determinant_count", &SharpSpinRead::determinantCount)
+      .def_readonly("certificate", &SharpSpinRead::certificate);
+
+  py::class_<SharpSpin>(m, "SharpSpin",
+      R"doc(The sharp total-space spin readout: the two eigen-equations
+(J^2 - 3/4 I)|Psi_R> = 0 and <Psi_L|(J^2 - 3/4 I) = 0 on the bounded
+superposition of determinants selected by the isolating interaction.  J^2 is
+polynomial in the exterior generators, so its action is applied mode-pair by
+mode-pair; the dense Fock matrix is materialized only for fixtures and only
+below the declared mode limit.)doc")
+      .def_property_readonly_static("kMaxDenseModes",
+          [](py::object) { return SharpSpin::kMaxDenseModes; })
+      .def_static("determinant", &SharpSpin::determinant,
+                  py::arg("occupiedModes"), py::arg("modeCount"))
+      .def_static("determinantSuperposition",
+                  &SharpSpin::determinantSuperposition,
+                  py::arg("occupations"), py::arg("amplitudes"),
+                  py::arg("modeCount"))
+      .def_static("applyTotalSpinSquared", &SharpSpin::applyTotalSpinSquared,
+                  py::arg("spinMatrices"), py::arg("state"))
+      .def_static("totalSpinSquaredMatrix",
+                  &SharpSpin::totalSpinSquaredMatrix,
+                  py::arg("spinMatrices"))
+      .def_static("read", &SharpSpin::read, py::arg("spinMatrices"),
+                  py::arg("rightState"), py::arg("leftState"),
+                  py::arg("targetEigenvalue") = 0.75,
+                  py::arg("tolerance") = 1e-9)
+      .def_static("doubletSpinMatrices", &SharpSpin::doubletSpinMatrices,
+                  py::arg("carrierCount"),
+                  "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
+                  "spin-one-half carriers, mode 2c + s being spin state s of "
+                  "carrier c.");
+
+  // ==========================================================================
   // ColorFiber / ColorAnchor: the exact three-edge SU(3) color kernel
   // and the calibrated weighted oriented-triangle anchor.  Pure reads over
   // caller-supplied data; nothing enters the emergence objective.
@@ -4626,417 +5039,4 @@ evidence.)doc")
                   py::arg("st"), py::arg("support"),
                   "Whether the induced one-skeleton on the support is "
                   "connected, and in how many pieces.");
-
-  // ==========================================================================
-  // SheetedColor (#1195): colour as sheet multiplicity.  The k-sheeted
-  // support, the exterior algebra of the sheet space, the attachment matrix
-  // of the connecting simplices, and the transported determinant-wedge
-  // singlet amplitude.  Pure reads over caller-supplied data; nothing enters
-  // the emergence objective.
-  // ==========================================================================
-  py::class_<SheetIsomorphismRead>(m, "SheetIsomorphismRead",
-      R"doc(The certificate that k supports really are k sheets of one base
-complex: the measured disagreement between corresponding cells of different
-sheets, kept separate for the geometry (the stored complex squared lengths)
-and for the declared connection, because the two fail for different physical
-reasons.)doc")
-      .def(py::init<>())
-      .def_readonly("sheet_count", &SheetIsomorphismRead::sheetCount)
-      .def_readonly("base_cell_count", &SheetIsomorphismRead::baseCellCount)
-      .def_readonly("squared_length_residual",
-                    &SheetIsomorphismRead::squaredLengthResidual,
-                    "max over cells and sheet pairs of the squared-length "
-                    "disagreement.")
-      .def_readonly("connection_residual",
-                    &SheetIsomorphismRead::connectionResidual,
-                    "max over cells and sheet pairs of the connection-value "
-                    "disagreement.")
-      .def_readonly("isomorphic", &SheetIsomorphismRead::isomorphic)
-      .def_readonly("certificate", &SheetIsomorphismRead::certificate,
-                    "AlgebraicallyExact / Static, grading the larger of the "
-                    "two residuals against the declared tolerance.");
-
-  py::class_<SheetSector>(m, "SheetSector",
-      R"doc(One occupation sector of the exterior algebra of the sheet space:
-its occupation number N, its dimension binomial(k, N), its fermion parity
-(-1)^N, and the complex representation it carries, named for three sheets as
-the whitepaper names it.)doc")
-      .def(py::init<>())
-      .def_readonly("occupation", &SheetSector::occupation)
-      .def_readonly("dimension", &SheetSector::dimension)
-      .def_readonly("fermion_parity", &SheetSector::fermionParity)
-      .def_readonly("representation", &SheetSector::representation);
-
-  py::class_<SheetedSupport>(m, "SheetedSupport",
-      R"doc(A cluster support carried as k isomorphic copies -- sheets -- of
-one base complex.  A sheet is more cells and nothing else: each edge still
-carries its complex squared length, its connection value and one two-level
-mode.  The class certifies that the copies agree, lifts a base operator h to
-the free sheeted operator h (x) I_k, lifts a base Riesz band to the
-colour-spin fibre E-bar (x) C^k, and builds the two commuting actions
-I (x) g (sheet relabeling) and D (x) I_k (a base symmetry).  A sheeted mode
-is stored at the flat index base * k + sheet.)doc")
-      .def(py::init<std::size_t, std::size_t>(), py::arg("sheetCount"),
-           py::arg("baseCellCount"))
-      .def_property_readonly("sheet_count", &SheetedSupport::sheetCount)
-      .def_property_readonly("base_cell_count",
-                             &SheetedSupport::baseCellCount)
-      .def_property_readonly("cell_count", &SheetedSupport::cellCount)
-      .def("modeIndex", &SheetedSupport::modeIndex, py::arg("baseCell"),
-           py::arg("sheet"),
-           "The flat index base * k + sheet of one sheeted cell.")
-      .def("certifyIsomorphism", &SheetedSupport::certifyIsomorphism,
-           py::arg("sheetSquaredLengths"), py::arg("sheetConnections"),
-           py::arg("tolerance") = 1e-12,
-           "Certify that the per-sheet squared lengths and connection values "
-           "agree across the sheets.  Empty connection vectors declare a "
-           "support with no connection values to compare.")
-      .def("freeOperator", &SheetedSupport::freeOperator,
-           py::arg("baseOperator"),
-           "The free sheeted operator h (x) I_k.")
-      .def("liftBand", &SheetedSupport::liftBand, py::arg("baseBand"),
-           "The colour-spin fibre E-bar (x) C^k of a base Riesz band.")
-      .def("sheetFrameOperator", &SheetedSupport::sheetFrameOperator,
-           py::arg("g"), "The sheet relabeling I (x) g.")
-      .def("baseSymmetryOperator", &SheetedSupport::baseSymmetryOperator,
-           py::arg("baseAction"), "A base symmetry action D (x) I_k.")
-      .def("sheetCommutatorResidual",
-           &SheetedSupport::sheetCommutatorResidual, py::arg("baseOperator"),
-           py::arg("g"),
-           "||[A (x) I_k, I (x) g]||_max -- zero up to rounding for every "
-           "base operator and every frame.");
-
-  py::class_<SheetFock>(m, "SheetFock",
-      R"doc(The exterior algebra Lambda^bullet E of the sheet space E = C^k of
-ONE base mode.  For three sheets the sectors are the scalar vacuum, the
-fundamental E, the determinant-twisted dual det E (x) E-dual and the
-determinant line, with fermion parities even, odd, even, odd.  The sector
-projectors and canonical anticommutation-relation matrices are delegated to
-tessera.quantum.ExteriorAlgebra, and at three sheets they agree with
-ColorFiber's exactly.)doc")
-      .def(py::init<std::size_t>(), py::arg("sheetCount"))
-      .def_property_readonly("sheet_count", &SheetFock::sheetCount)
-      .def_property_readonly("dimension", &SheetFock::dimension)
-      .def("sectors", &SheetFock::sectors,
-           "The k + 1 occupation sectors in ascending occupation order.")
-      .def("sectorProjector", &SheetFock::sectorProjector,
-           py::arg("occupation"))
-      .def("exteriorCreation", &SheetFock::exteriorCreation, py::arg("sheet"))
-      .def("contraction", &SheetFock::contraction, py::arg("sheet"))
-      .def("sheetBilinear", &SheetFock::sheetBilinear, py::arg("i"),
-           py::arg("j"),
-           "The gl(E) bilinear E^i_j = epsilon_i iota^j.")
-      .def("commutatorResidual", &SheetFock::commutatorResidual,
-           "The worst deviation over the whole gl(k, C) commutator table.")
-      .def("sectorAgreementResidual", &SheetFock::sectorAgreementResidual,
-           "The worst deviation from ColorFiber's sector projectors "
-           "(three sheets only).");
-
-  py::class_<ConnectingSimplex>(m, "ConnectingSimplex",
-      R"doc(One connecting simplex between two sheeted supports: the sheet of
-A and the sheet of B it is attached to, and the weight it contributes to that
-entry of the attachment matrix.  The default gluing rule attaches sheet to
-sheet, making the attachment matrix diagonal and a lone interaction
-colour-abelian; a cross-sheet attachment is the nonabelian part of the colour
-transport.)doc")
-      .def(py::init([](std::size_t sheetA, std::size_t sheetB,
-                       std::complex<double> weight) {
-             return ConnectingSimplex{sheetA, sheetB, weight};
-           }),
-           py::arg("sheetA"), py::arg("sheetB"),
-           py::arg("weight") = std::complex<double>(1.0, 0.0))
-      .def_readwrite("sheet_a", &ConnectingSimplex::sheetA)
-      .def_readwrite("sheet_b", &ConnectingSimplex::sheetB)
-      .def_readwrite("weight", &ConnectingSimplex::weight);
-
-  py::class_<AttachmentRead>(m, "AttachmentRead",
-      R"doc(The attachment matrix S_AB and the data that decide whether it is
-usable as a colour transport: its determinant (canonical, never normalized or
-cube-rooted), its conditioning, its smallest singular value -- the distance to
-the rank-dropping configuration the determinant winding encircles -- and
-whether every connecting simplex joined like-indexed sheets.)doc")
-      .def(py::init<>())
-      .def_readonly("matrix", &AttachmentRead::matrix)
-      .def_readonly("determinant", &AttachmentRead::determinant)
-      .def_readonly("conditioning", &AttachmentRead::conditioning)
-      .def_readonly("min_singular_value", &AttachmentRead::minSingularValue)
-      .def_readonly("sheet_diagonal", &AttachmentRead::sheetDiagonal)
-      .def_readonly("simplex_count", &AttachmentRead::simplexCount)
-      .def_readonly("certificate", &AttachmentRead::certificate);
-
-  py::class_<HolonomyInvariants>(m, "HolonomyInvariants",
-      R"doc(The conjugacy-invariant data of a closed colour holonomy: the
-ordered product around the sequence, its power traces tr H^j, the
-characteristic polynomial they determine through the Newton identities (in
-ascending powers of lambda) and its determinant.)doc")
-      .def(py::init<>())
-      .def_readonly("holonomy", &HolonomyInvariants::holonomy)
-      .def_readonly("power_traces", &HolonomyInvariants::powerTraces)
-      .def_readonly("characteristic_polynomial",
-                    &HolonomyInvariants::characteristicPolynomial)
-      .def_readonly("determinant", &HolonomyInvariants::determinant)
-      .def_readonly("link_count", &HolonomyInvariants::linkCount);
-
-  py::class_<SheetAttachment>(m, "SheetAttachment",
-      R"doc(The colour transport of the sheet convention: the attachment
-matrix S_AB reconstructed from the connecting simplices, its frame law
-S_AB -> g_A^-1 S_AB g_B, the factorized coupling block C-bar_AB (x) S_AB, the
-composition of transport along a declared path and the closed holonomy.  The
-retained datum is the GL(k, C) element with its determinant line: no polar
-factor is taken and no cube root of the determinant is chosen.)doc")
-      .def_static("attachmentMatrix", &SheetAttachment::attachmentMatrix,
-                  py::arg("sheetCount"), py::arg("simplices"),
-                  py::arg("fullRankTolerance") = 1e-12)
-      .def_static("frameChanged", &SheetAttachment::frameChanged,
-                  py::arg("attachment"), py::arg("frameA"), py::arg("frameB"),
-                  "S_AB -> g_A^-1 S_AB g_B.")
-      .def_static("couplingBlock", &SheetAttachment::couplingBlock,
-                  py::arg("baseCoupling"), py::arg("attachment"),
-                  "C_AB = C-bar_AB (x) S_AB.")
-      .def_static("compose", &SheetAttachment::compose, py::arg("path"),
-                  py::arg("sheetCount") = std::size_t{0},
-                  "The path transport, first factor applied first.")
-      .def_static("holonomy", &SheetAttachment::holonomy, py::arg("links"));
-
-  py::class_<ColorSingletRead>(m, "ColorSingletRead",
-      R"doc(The common-frame colour amplitude and the data around it.  Nothing
-is normalized: the physical singlet condition is a nonzero, refinement-stable,
-covariantly trivial determinant wedge, so the reported content is the complex
-amplitude and whether it vanishes, not a modulus square driven to one.)doc")
-      .def(py::init<>())
-      .def_readonly("amplitude", &ColorSingletRead::amplitude,
-                    "S_ABC = Omega_p(c-hat_A ^ c-hat_B ^ c-hat_C).")
-      .def_readonly("transported_wedge", &ColorSingletRead::transportedWedge,
-                    "det of the transported representatives, before the "
-                    "determinant-line trivialization is applied.")
-      .def_readonly("transported_columns",
-                    &ColorSingletRead::transportedColumns)
-      .def_readonly("magnitude", &ColorSingletRead::magnitude)
-      .def_readonly("nonvanishing", &ColorSingletRead::nonvanishing)
-      .def_readonly("min_singular_value",
-                    &ColorSingletRead::minSingularValue)
-      .def_readonly("certificate", &ColorSingletRead::certificate);
-
-  py::class_<ColorSinglet>(m, "ColorSinglet",
-      R"doc(The singlet readout of the sheet convention: the three colour
-representatives are transported to a common base cluster p and wedged, and the
-dual determinant trivialization Omega_p is applied.  Invariant under all local
-frame changes when Omega_p transforms dually, which frameCovarianceResidual
-measures rather than asserts.)doc")
-      .def_static("amplitude", &ColorSinglet::amplitude,
-                  py::arg("trivialization"), py::arg("transports"),
-                  py::arg("colors"), py::arg("tolerance") = 1e-12)
-      .def_static("frameCovarianceResidual",
-                  &ColorSinglet::frameCovarianceResidual,
-                  py::arg("trivialization"), py::arg("transports"),
-                  py::arg("colors"), py::arg("baseFrame"), py::arg("frames"),
-                  "|S_ABC(frame-changed) - S_ABC(original)|.");
-
-  // ==========================================================================
-  // MonopoleSpin (#1196): spin from an odd Dirac monopole.  The monopole
-  // number through a closed cut, the projective representation D_k(g) with
-  // its cocycle, the spinor bands it protects, and the sharp-spin
-  // eigen-equations on a superposition of determinants.
-  // ==========================================================================
-  py::class_<MonopoleNumberRead>(m, "MonopoleNumberRead",
-      R"doc(The monopole number of the connection through a closed cut, read
-from the outward face holonomies.  Each face contributes the principal
-argument of its holonomy, so a face carrying more than half a turn is not
-resolved; integrality_residual measures how far the total sits from an integer
-multiple of 2 pi, and a total that is not such a multiple is not a bundle at
-all.)doc")
-      .def(py::init<>())
-      .def_readonly("face_holonomies", &MonopoleNumberRead::faceHolonomies)
-      .def_readonly("face_fluxes", &MonopoleNumberRead::faceFluxes)
-      .def_readonly("total_flux", &MonopoleNumberRead::totalFlux)
-      .def_readonly("monopole_number", &MonopoleNumberRead::monopoleNumber)
-      .def_readonly("integrality_residual",
-                    &MonopoleNumberRead::integralityResidual)
-      .def_readonly("bundle", &MonopoleNumberRead::bundle)
-      .def_readonly("odd", &MonopoleNumberRead::odd,
-                    "Whether the monopole number is odd -- the condition "
-                    "under which the projective class is nontrivial.")
-      .def_readonly("branch_margin", &MonopoleNumberRead::branchMargin,
-                    "min over faces of (pi - |face flux|).")
-      .def_readonly("on_branch_cut", &MonopoleNumberRead::onBranchCut,
-                    "Whether some face flux reached the ends of the "
-                    "principal interval, where the reported integer rests "
-                    "on the stated convention.")
-      .def_readonly("unit_modulus_residual",
-                    &MonopoleNumberRead::unitModulusResidual)
-      .def_readonly("certificate", &MonopoleNumberRead::certificate);
-
-  py::class_<GaugeCompensationRead>(m, "GaugeCompensationRead",
-      R"doc(The compensating gauge transformation u_g of one rotation,
-normalized to one at the spanning tree's root, and the residual that decides
-whether the configuration really is symmetric up to gauge.)doc")
-      .def(py::init<>())
-      .def_readonly("gauge", &GaugeCompensationRead::gauge)
-      .def_readonly("residual", &GaugeCompensationRead::residual)
-      .def_readonly("symmetric", &GaugeCompensationRead::symmetric);
-
-  py::class_<CocycleRead>(m, "CocycleRead",
-      R"doc(The cocycle varpi of the projective representation and its
-cohomology class.  The class is nontrivial exactly when some COMMUTING pair
-has a commutator phase varpi(g,h)/varpi(h,g) different from one, that phase
-being invariant under every rescaling of the compensating gauges.  On an
-odd-monopole tetrahedral support it is -1, the quaternion relation of the
-binary tetrahedral group.)doc")
-      .def(py::init<>())
-      .def_readonly("group_order", &CocycleRead::groupOrder)
-      .def_readonly("scalar_residual", &CocycleRead::scalarResidual)
-      .def_readonly("values", &CocycleRead::values)
-      .def_readonly("max_commutator_deviation",
-                    &CocycleRead::maxCommutatorDeviation)
-      .def_readonly("commutator_phase", &CocycleRead::commutatorPhase)
-      .def_readonly("commutator_pair", &CocycleRead::commutatorPair)
-      .def_readonly("nontrivial", &CocycleRead::nontrivial)
-      .def_readonly("certificate", &CocycleRead::certificate);
-
-  py::class_<SpinorBandRead>(m, "SpinorBandRead",
-      R"doc(One symmetry-protected band of a rotation-invariant operator: its
-eigenvalue and rank, the measured invariance under the projective action, the
-irreducibility score (exactly one for an irreducible projective
-representation with this cocycle), the distance from the coexact sector, and
-whether it is a spinor doublet.)doc")
-      .def(py::init<>())
-      .def_readonly("eigenvalue", &SpinorBandRead::eigenvalue)
-      .def_readonly("dimension", &SpinorBandRead::dimension)
-      .def_readonly("invariance_residual",
-                    &SpinorBandRead::invarianceResidual)
-      .def_readonly("irreducibility_score",
-                    &SpinorBandRead::irreducibilityScore)
-      .def_readonly("coexact_residual", &SpinorBandRead::coexactResidual)
-      .def_readonly("spinor_doublet", &SpinorBandRead::spinorDoublet)
-      .def_readonly("coexact", &SpinorBandRead::coexact);
-
-  py::class_<MonopoleSpinRead>(m, "MonopoleSpinRead",
-      R"doc(What a classifier needs from an odd-monopole support in one
-record: the monopole number of the bounding cut, the cocycle of the rotation
-group's projective action, the symmetry-protected bands of the
-rotation-averaged edge Laplacian, and the j = 1/2 doublet among them -- the
-rank-two, invariant, irreducible, spinorial band lying in the coexact
-sector.)doc")
-      .def(py::init<>())
-      .def_readonly("monopole", &MonopoleSpinRead::monopole)
-      .def_readonly("cocycle", &MonopoleSpinRead::cocycle)
-      .def_readonly("bands", &MonopoleSpinRead::bands)
-      .def_readonly("doublet_index", &MonopoleSpinRead::doubletIndex)
-      .def_readonly("half_integer_doublet",
-                    &MonopoleSpinRead::halfIntegerDoublet)
-      .def_readonly("certificate", &MonopoleSpinRead::certificate);
-
-  py::class_<MonopoleSupport>(m, "MonopoleSupport",
-      R"doc(A symmetric cluster bounded by a closed cut, carried as its
-vertices, its oriented edges (smaller vertex first), its outward-oriented
-faces and one U(1) connection value per edge.  It reads the monopole number
-from the outward face holonomies, builds the twisted coboundary and
-Laplacians, solves for the compensating gauge transformation of each rotation,
-assembles D_0(g) and D_1(g), measures the cocycle and decides its class, and
-reads the symmetry-protected bands of a rotation-invariant operator.)doc")
-      .def(py::init<std::size_t,
-                    std::vector<std::array<std::size_t, 2>>,
-                    std::vector<std::array<std::size_t, 3>>,
-                    std::vector<std::complex<double>>>(),
-           py::arg("vertexCount"), py::arg("edges"), py::arg("faces"),
-           py::arg("connection"))
-      .def_static("tetrahedron", &MonopoleSupport::tetrahedron,
-                  py::arg("monopoleNumber"),
-                  "The tetrahedron with the symmetric monopole connection "
-                  "whose every outward face holonomy is exp(2 pi i mu / 4).")
-      .def_static("tetrahedralRotations",
-                  &MonopoleSupport::tetrahedralRotations,
-                  "The twelve rotations of the tetrahedron (T = A_4), the "
-                  "identity first.")
-      .def_static("u1Part", &MonopoleSupport::u1Part, py::arg("connection"),
-                  "U_e / |U_e| -- the explicit way to bring an unrestricted "
-                  "connection into this kernel's domain.")
-      .def_property_readonly("vertex_count", &MonopoleSupport::vertexCount)
-      .def_property_readonly("edges", &MonopoleSupport::edges)
-      .def_property_readonly("faces", &MonopoleSupport::faces)
-      .def_property_readonly("connection", &MonopoleSupport::connection)
-      .def("transport", &MonopoleSupport::transport, py::arg("x"),
-           py::arg("y"))
-      .def("monopoleNumber", &MonopoleSupport::monopoleNumber,
-           py::arg("tolerance") = 1e-9)
-      .def("twistedCoboundary", &MonopoleSupport::twistedCoboundary)
-      .def("twistedFaceCoboundary",
-           &MonopoleSupport::twistedFaceCoboundary)
-      .def("vertexLaplacian", &MonopoleSupport::vertexLaplacian)
-      .def("edgeLaplacian", &MonopoleSupport::edgeLaplacian)
-      .def("coexactProjector", &MonopoleSupport::coexactProjector,
-           py::arg("tolerance") = 1e-9)
-      .def("gaugeCompensation", &MonopoleSupport::gaugeCompensation,
-           py::arg("rotation"), py::arg("tolerance") = 1e-9)
-      .def("vertexRepresentation", &MonopoleSupport::vertexRepresentation,
-           py::arg("rotation"), "D_0(g) on vertex cochains.")
-      .def("edgeRepresentation", &MonopoleSupport::edgeRepresentation,
-           py::arg("rotation"), "D_1(g) on edge cochains.")
-      .def("intertwiningResidual", &MonopoleSupport::intertwiningResidual,
-           py::arg("rotation"),
-           "||delta_0^U D_0(g) - D_1(g) delta_0^U||_max.")
-      .def("cocycle", &MonopoleSupport::cocycle, py::arg("group"),
-           py::arg("cochainDegree") = 1, py::arg("tolerance") = 1e-9)
-      .def("rotationAveragedEdgeOperator",
-           &MonopoleSupport::rotationAveragedEdgeOperator,
-           py::arg("edgeOperator"), py::arg("group"))
-      .def("spinorBands", &MonopoleSupport::spinorBands,
-           py::arg("operatorMatrix"), py::arg("group"),
-           py::arg("nontrivialClass"),
-           py::arg("degeneracyTolerance") = 1e-7,
-           py::arg("tolerance") = 1e-9)
-      .def("spinRead", &MonopoleSupport::spinRead, py::arg("group"),
-           py::arg("degeneracyTolerance") = 1e-7,
-           py::arg("tolerance") = 1e-9,
-           "The whole spin read: monopole number, cocycle, bands and the "
-           "j = 1/2 doublet among them.");
-
-  py::class_<SharpSpinRead>(m, "SharpSpinRead",
-      R"doc(The sharpness read of a total-space spin: the right and left
-eigen-equation residuals, the verdict they decide, and the biorthogonal
-expectation and complex variance that the whitepaper calls insufficient on
-their own.  variance_would_accept is true when the variance test alone would
-have called the state sharp; when it is true and sharp is false, the variance
-test has been decided wrongly by isotropic cancellation.)doc")
-      .def(py::init<>())
-      .def_readonly("target_eigenvalue", &SharpSpinRead::targetEigenvalue)
-      .def_readonly("right_residual", &SharpSpinRead::rightResidual)
-      .def_readonly("left_residual", &SharpSpinRead::leftResidual)
-      .def_readonly("sharp", &SharpSpinRead::sharp)
-      .def_readonly("expectation", &SharpSpinRead::expectation)
-      .def_readonly("variance", &SharpSpinRead::variance)
-      .def_readonly("variance_would_accept",
-                    &SharpSpinRead::varianceWouldAccept)
-      .def_readonly("determinant_count", &SharpSpinRead::determinantCount)
-      .def_readonly("certificate", &SharpSpinRead::certificate);
-
-  py::class_<SharpSpin>(m, "SharpSpin",
-      R"doc(The sharp total-space spin readout: the two eigen-equations
-(J^2 - 3/4 I)|Psi_R> = 0 and <Psi_L|(J^2 - 3/4 I) = 0 on the bounded
-superposition of determinants selected by the isolating interaction.  J^2 is
-polynomial in the exterior generators, so its action is applied mode-pair by
-mode-pair; the dense Fock matrix is materialized only for fixtures and only
-below the declared mode limit.)doc")
-      .def_property_readonly_static("kMaxDenseModes",
-          [](py::object) { return SharpSpin::kMaxDenseModes; })
-      .def_static("determinant", &SharpSpin::determinant,
-                  py::arg("occupiedModes"), py::arg("modeCount"))
-      .def_static("determinantSuperposition",
-                  &SharpSpin::determinantSuperposition,
-                  py::arg("occupations"), py::arg("amplitudes"),
-                  py::arg("modeCount"))
-      .def_static("applyTotalSpinSquared", &SharpSpin::applyTotalSpinSquared,
-                  py::arg("spinMatrices"), py::arg("state"))
-      .def_static("totalSpinSquaredMatrix",
-                  &SharpSpin::totalSpinSquaredMatrix,
-                  py::arg("spinMatrices"))
-      .def_static("read", &SharpSpin::read, py::arg("spinMatrices"),
-                  py::arg("rightState"), py::arg("leftState"),
-                  py::arg("targetEigenvalue") = 0.75,
-                  py::arg("tolerance") = 1e-9)
-      .def_static("doubletSpinMatrices", &SharpSpin::doubletSpinMatrices,
-                  py::arg("carrierCount"),
-                  "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
-                  "spin-one-half carriers, mode 2c + s being spin state s of "
-                  "carrier c.");
 }
