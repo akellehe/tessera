@@ -19,9 +19,9 @@ geometry and sheet, so the label composes along a path: walked around a zero of
 det g, it returns one higher and the volume negated.
 
 The fixture for the loop is the same tetrahedron the mesh-level acceptance test
-uses -- five unit squared lengths and a sixth on the circle of radius one about
-s = 3 -- so the two levels are walking the same loop around the same branch
-point.
+uses -- five unit squared lengths and a sixth on the circle of radius one half
+about s = 3, the zero of det g -- so the two levels walk the same loop around the
+same branch point.
 """
 
 from __future__ import annotations
@@ -50,7 +50,11 @@ def _gram(s):
 
 
 def _squared(phi):
-    return 3.0 - cmath.exp(1j * phi)
+    return 3.0 - 0.5 * cmath.exp(1j * phi)
+
+
+def _principal(gram):
+    return cmath.sqrt(np.linalg.det(gram)) / 6.0
 
 
 def test_the_determinant_of_the_fixture_is_the_one_the_loop_assumes():
@@ -112,9 +116,9 @@ def test_a_loop_about_the_zero_of_the_determinant_returns_the_other_sheet():
         gram = nxt
 
     assert winding == 1
-    principal, _ = WM.volumeOnBranch(gram, ch.Branch.Continuation)
-    assert principal == pytest.approx(math.sqrt(0.5) / 6.0)
-    assert volume == pytest.approx(-principal, abs=1e-12)
+    # Back at s = 5/2, where det g = 5/16.
+    assert _principal(gram) == pytest.approx(math.sqrt(5.0 / 16.0) / 6.0)
+    assert volume == pytest.approx(-_principal(gram), abs=1e-12)
 
 
 def test_two_loops_return_the_declared_sheet():
@@ -126,8 +130,7 @@ def test_two_loops_return_the_declared_sheet():
         volume, _, winding = WM.volumeContinuedFrom(gram, winding, nxt)
         gram = nxt
     assert winding == 2
-    principal, _ = WM.volumeOnBranch(gram, ch.Branch.Continuation)
-    assert volume == pytest.approx(principal, abs=1e-12)
+    assert volume == pytest.approx(_principal(gram), abs=1e-12)
 
 
 def test_a_loop_that_encloses_no_zero_moves_no_sheet():
@@ -148,16 +151,18 @@ def test_the_continued_volume_is_continuous_where_the_principal_one_jumps():
     winding = 0
     gram = _gram(_squared(0.0))
     continued = [WM.volumeContinuedFrom(gram, 0, gram)[0]]
-    principal = [WM.volumeOnBranch(gram, ch.Branch.Continuation)[0]]
+    principal = [_principal(gram)]
     for k in range(1, _STEPS + 1):
         nxt = _gram(_squared(2.0 * math.pi * k / _STEPS))
         volume, _, winding = WM.volumeContinuedFrom(gram, winding, nxt)
         continued.append(volume)
-        principal.append(cmath.sqrt(np.linalg.det(nxt)) / 6.0)
+        principal.append(_principal(nxt))
         gram = nxt
 
     continued_step = max(abs(b - a) for a, b in zip(continued, continued[1:]))
     principal_step = max(abs(b - a) for a, b in zip(principal, principal[1:]))
+    # The continued root traverses half a circle of radius about a tenth in 360
+    # steps; the principal one crosses the cut and flips across its diameter.
     assert continued_step < 0.01
-    assert principal_step > 0.2
+    assert principal_step > 0.15
     assert continued_step < 0.1 * principal_step

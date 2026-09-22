@@ -9,17 +9,24 @@ continuous.
 
 The fixture is one tetrahedron with five unit squared lengths and a sixth set to
 
-    s(phi) = 3 - exp(i*phi),   phi from 0 to 2*pi.
+    s(phi) = 3 - exp(i*phi)/2,   phi from 0 to 2*pi.
 
 Its Gram determinant is then det G = (s/4)(3 - s), whose zeros are at s = 0 and
-s = 3. The loop is the circle of radius one about s = 3, which encloses that zero
-and not the other and never brings s near zero, so
+s = 3. The loop is the circle of radius one half about s = 3, which encloses that
+zero and not the other, so
 
-    det G = (3 - exp(i*phi))/4 * exp(i*phi)
+    det G = (3 - exp(i*phi)/2)/4 * exp(i*phi)/2
 
 winds exactly once about the origin. The content of the cell is sqrt(det G)/3!,
 so one turn of the loop must return it negated -- the other sheet -- while the
 geometry returns to exactly where it began. That is the first clause.
+
+The radius is one half and not one because the two faces carrying the varying
+edge have squared area s(4 - s)/16, which vanishes at s = 4. A circle of radius
+one about s = 3 runs exactly through that point, where a cofactor root sits on
+its own branch point, the dihedral cosine diverges and there is no continuation
+to take -- a degenerate path rather than a loop around a branch point. At radius
+one half nothing but det G has a zero inside or on the circle.
 
 The second clause is about the action. The action is the hinge contents times the
 deficit angles, and the deficit angles are inverse cosines of ratios of square
@@ -51,9 +58,10 @@ pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tessera not built")
 _STEPS = 2000
 
 #: The centre and radius of the loop in the varying squared length: the circle
-#: about the zero of det G at s = 3.
+#: about the zero of det G at s = 3, small enough to keep the zero of the face
+#: areas at s = 4 off the path (see the module docstring).
 _CENTRE = 3.0
-_RADIUS = 1.0
+_RADIUS = 0.5
 
 
 def _spacetime(dim, topology):
@@ -163,10 +171,10 @@ def test_the_loop_returns_the_cell_content_on_the_other_sheet():
     assert largest_turn < 0.5 * math.pi
     assert not continuation.touchedBranchPoint()
 
-    # The geometry is exactly where it started.
+    # The geometry is exactly where it started: s = 5/2, det G = 5/32.
     tops = [s for s in st.getSimplices() if len(s.getVertices()) == 4]
     principal_volume = tops[0].volume()
-    assert abs(principal_volume - math.sqrt(0.5) / 6.0) < 1e-12
+    assert abs(principal_volume - math.sqrt(5.0 / 32.0) / 6.0) < 1e-12
 
     # The root is not.
     assert continuation.volumeWinding(cell) == 1
@@ -219,13 +227,14 @@ def test_the_continued_action_is_continuous_along_the_loop():
     principal_step = _largest_step(principal)
 
     # The action is continuous on the declared sheets: its largest step over
-    # 2000 is of the size the geometry moves in one of them, not of the size of
-    # the action itself.
-    assert declared_step < 0.05, f"continued action jumps by {declared_step}"
-    # Read at principal values the same path jumps, at parameter values where
-    # nothing happens to the geometry.
+    # 2000 is of the size the geometry moves in one of them -- about 3/2000,
+    # the total variation over the loop -- and not of the size of the action
+    # itself.
+    assert declared_step < 0.02, f"continued action jumps by {declared_step}"
+    # Read at principal values the same path jumps by of order ten, at
+    # parameter values where nothing happens to the geometry.
     assert principal_step > 1.0, f"principal action only moves {principal_step}"
-    assert declared_step < 0.02 * principal_step
+    assert declared_step < 0.01 * principal_step
 
 
 def test_the_continued_action_leaves_no_step_behind():
@@ -235,5 +244,7 @@ def test_the_continued_action_leaves_no_step_behind():
     _, _, declared, _, _ = _walk()
     steps = [abs(b - a) for a, b in zip(declared, declared[1:])]
     typical = sorted(steps)[len(steps) // 2]
-    assert max(steps) < 200.0 * typical, (
+    # The walk is nearly uniform, so the true ratio is under two; a single
+    # crossing left on a principal branch would put it in the thousands.
+    assert max(steps) < 20.0 * typical, (
         f"largest step {max(steps)} against a median of {typical}")
