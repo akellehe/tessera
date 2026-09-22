@@ -11,6 +11,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -892,14 +893,37 @@ std::vector<std::vector<std::uint64_t>> MultiCobordism::holesCarryingTheTarget(
   return emergentHoleTuples;
 }
 
+namespace {
+/// The operator of a metric source, totalized. A configuration extreme enough
+/// that the operator cannot be assembled at all -- an overflowed geometry makes
+/// the Whitney pencil's dressed metric singular, and its factorization refuses
+/// by name -- is as unusable as one whose entries leave double range, and the
+/// residual terms below evaluate both to their worst case rather than raising
+/// out of a line-search trial.
+std::optional<std::vector<complexd>> totalizedLaplacian(
+    const cobordism::HodgeLaplacian &laplacian, int degree) {
+  try {
+    return laplacian.laplacian(degree, /*metric=*/true);
+  } catch (const std::exception &) {
+    return std::nullopt;
+  }
+}
+}  // namespace
+
 Eigen::MatrixXcd MultiCobordism::holePeriodMatrix(
     const std::shared_ptr<Spacetime> &spacetime, int registerDegree,
     int degreeBettiNumber,
     const std::vector<std::vector<std::uint64_t>> &cycleHoles,
     std::size_t targetDimension, HodgeLaplacian::MetricSource metricSource) {
   EigenstateSynthesis eigenstateSynthesis(spacetime, registerDegree, metricSource);
-  const auto flattenedCyclePeriods =
-      eigenstateSynthesis.cyclePeriods(cycleHoles);  // rank x m, row-major
+  std::vector<complexd> flattenedCyclePeriods;  // rank x m, row-major
+  try {
+    flattenedCyclePeriods = eigenstateSynthesis.cyclePeriods(cycleHoles);
+  } catch (const std::exception &) {
+    // An operator this geometry cannot assemble carries no usable harmonic:
+    // the zero-column matrix below, which the caller reads as the full leak.
+    return Eigen::MatrixXcd::Zero(static_cast<int>(targetDimension), 0);
+  }
   const std::size_t holeCount = cycleHoles.size();
   // The row count of the flattened periods is the numeric harmonic-kernel
   // dimension the synthesizer computed (HodgeLaplacian::harmonicMatrix at its
@@ -1199,8 +1223,10 @@ double MultiCobordism::nearKernelResidual(
   // exploration; the semantics for reading them out are not implemented here.
   // Stage-1 surgery remains the other route to the same descent: a genuine
   // hole zeroes the same singular values exactly.
-  const std::vector<std::complex<double>> flat =
-      laplacian.laplacian(registerDegree, /*metric=*/true);
+  const std::optional<std::vector<std::complex<double>>> assembled =
+      totalizedLaplacian(laplacian, registerDegree);
+  if (!assembled) return std::numeric_limits<double>::infinity();
+  const std::vector<std::complex<double>> &flat = *assembled;
   const std::size_t n = static_cast<std::size_t>(
       std::llround(std::sqrt(static_cast<double>(flat.size()))));
   // No k-cells at all: every expected register is missing — the worst case on
@@ -1324,8 +1350,10 @@ double MultiCobordism::singularValueHalfSumRatio(
   // The same operator nearKernelResidual reads (metric, signed, generally
   // non-normal — see its comment); the two terms are alternatives for the one
   // whole-complex slot in rU, so they must see the same spectrum.
-  const std::vector<std::complex<double>> flat =
-      laplacian.laplacian(registerDegree, /*metric=*/true);
+  const std::optional<std::vector<std::complex<double>>> assembled =
+      totalizedLaplacian(laplacian, registerDegree);
+  if (!assembled) return std::numeric_limits<double>::infinity();
+  const std::vector<std::complex<double>> &flat = *assembled;
   const std::size_t n = static_cast<std::size_t>(
       std::llround(std::sqrt(static_cast<double>(flat.size()))));
   // No k-cells: the worst case on the [0, 1] scale. Returning the perfect 0

@@ -49,6 +49,23 @@ import cmath
 cob = tessera.cobordism
 
 
+# Every closed form in this module is the DIAGONAL-weight operator's:
+# L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k of
+# HodgeWeightConvention. The process default metric source is the chain-level
+# Whitney pencil (#1185), whose operator is the covariant h_k(s, U) on
+# geometric images, so this module names the diagonal source at every operator
+# it builds. The default's own properties are pinned in
+# tests/cobordism/test_whitney_default_metric_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _hodge(spacetime, weights=None, source=DIAGONAL):
+    """The diagonal-weight Hodge operator this module's anchors are taken of."""
+    if weights is None:
+        weights = cob.HodgeLaplacian.defaultWeightConvention()
+    return cob.HodgeLaplacian(spacetime, weights, source)
+
+
 # --------------------------------------------------------------------------- #
 # Fixture builders
 # --------------------------------------------------------------------------- #
@@ -215,7 +232,7 @@ def _np_metric_laplacian(st, k, metric=True):
     imaginary, so that form no longer exists (#641)."""
     cc = cob.ChainComplex.fromSpacetime(st)
     n = cc.dimension()
-    hl = cob.HodgeLaplacian(st)
+    hl = _hodge(st)
 
     def weight(kk):
         if not metric or kk == 0:
@@ -254,14 +271,14 @@ def _real_spectrum(evals):
 
 
 def _kernel_dim_from_eigenvalues(st, k, metric=True, tol=1e-7):
-    evals = np.array(cob.HodgeLaplacian(st).eigenvalues(k, metric))
+    evals = np.array(_hodge(st).eigenvalues(k, metric))
     return int(np.sum(np.abs(evals) < tol))
 
 
 def _harmonic_dim(st, k, metric=True, tol=1e-9):
     # harmonics() is one Cochain per basis vector of ker L_k, so its length is
     # the harmonic dimension (= b_k) directly.
-    return len(cob.HodgeLaplacian(st).harmonics(k, tol, metric))
+    return len(_hodge(st).harmonics(k, tol, metric))
 
 
 # --------------------------------------------------------------------------- #
@@ -271,7 +288,7 @@ class TestAssemblyAndSpectrum(unittest.TestCase):
 
     def _check_against_numpy(self, st):
         n, _ids, _idx, A, D, L = _np_connection_laplacian(st)
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         np.testing.assert_allclose(_matrix(hl.adjacency(), n), A, atol=1e-12)
         np.testing.assert_allclose(np.array(hl.degree()), D, atol=1e-12)
         np.testing.assert_allclose(_matrix(hl.connectionLaplacian(), n), L,
@@ -310,13 +327,13 @@ class TestAssemblyAndSpectrum(unittest.TestCase):
 
     def test_triangle_zero_phase_known_eigenvalues(self):
         # Equal-weight S^1 with no flux: L = 2I - A(K3) -> {0, 3, 3}.
-        hl = cob.HodgeLaplacian(_triangle())
+        hl = _hodge(_triangle())
         np.testing.assert_allclose(sorted(_real_spectrum(hl.eigenvalues())), [0.0, 3.0, 3.0],
                                    atol=1e-12)
 
     def test_path_known_eigenvalues(self):
         # Open path 0-1-2 Laplacian -> {0, 1, 3}.
-        hl = cob.HodgeLaplacian(_path())
+        hl = _hodge(_path())
         np.testing.assert_allclose(sorted(_real_spectrum(hl.eigenvalues())), [0.0, 1.0, 3.0],
                                    atol=1e-12)
 
@@ -329,7 +346,7 @@ class TestAssemblyAndSpectrum(unittest.TestCase):
         e.setLength(cmath.sqrt(complex(1.0)))
         e.setPhase(math.pi / 2.0)
         s, t = e.getSource().getId(), e.getTarget().getId()
-        A = _matrix(cob.HodgeLaplacian(st).adjacency(), st.getVertexCount())
+        A = _matrix(_hodge(st).adjacency(), st.getVertexCount())
         self.assertAlmostEqual(A[idx[s], idx[t]], 1j, places=12)
         self.assertAlmostEqual(A[idx[t], idx[s]], -1j, places=12)
 
@@ -353,14 +370,14 @@ class TestHermiticityUnitarity(unittest.TestCase):
         for name, st in self._fixtures_with_random_weights():
             with self.subTest(fixture=name):
                 n = st.getVertexCount()
-                L = _matrix(cob.HodgeLaplacian(st).connectionLaplacian(), n)
+                L = _matrix(_hodge(st).connectionLaplacian(), n)
                 self.assertLess(np.linalg.norm(L - L.conj().T), 1e-12)
-                self.assertTrue(cob.HodgeLaplacian(st).isHermitian(1e-12))
+                self.assertTrue(_hodge(st).isHermitian(1e-12))
 
     def test_time_evolution_is_unitary(self):
         for name, st in self._fixtures_with_random_weights():
             with self.subTest(fixture=name):
-                hl = cob.HodgeLaplacian(st)
+                hl = _hodge(st)
                 self.assertLess(hl.unitarityResidual(), 1e-12)
                 self.assertLess(hl.unitarityResidual(2.5), 1e-12)
 
@@ -385,14 +402,14 @@ class TestFluxSpectrum(unittest.TestCase):
     def test_flux_spectrum_matches_ring_formula(self):
         for phi in (0.0, math.pi / 3, math.pi / 2, 2 * math.pi / 3, math.pi, 1.234):
             with self.subTest(phi=phi):
-                hl = cob.HodgeLaplacian(self._triangle_with_flux(phi))
+                hl = _hodge(self._triangle_with_flux(phi))
                 np.testing.assert_allclose(
                     sorted(_real_spectrum(hl.connectionEigenvalues())),
                     self._ring_eigs(phi), atol=1e-12)
 
     def test_half_flux_quantum_gives_degenerate_pair(self):
         # Φ = π -> {1, 1, 4}; the spectral gap λ1 - λ0 collapses to 0.
-        hl = cob.HodgeLaplacian(self._triangle_with_flux(math.pi))
+        hl = _hodge(self._triangle_with_flux(math.pi))
         eigs = sorted(_real_spectrum(hl.connectionEigenvalues()))
         np.testing.assert_allclose(eigs, [1.0, 1.0, 4.0], atol=1e-12)
         self.assertAlmostEqual(eigs[1] - eigs[0], 0.0, places=12)
@@ -400,9 +417,9 @@ class TestFluxSpectrum(unittest.TestCase):
     def test_flux_lifts_the_connection_zero_mode(self):
         # No flux: one harmonic (the constant 0-cochain, b0 = 1). Any flux lifts
         # it, so the CONNECTION operator's harmonic dimension drops to 0.
-        hl0 = cob.HodgeLaplacian(_triangle())
+        hl0 = _hodge(_triangle())
         self.assertEqual(len(hl0.connectionHarmonics()), 1)
-        hlpi = cob.HodgeLaplacian(self._triangle_with_flux(math.pi))
+        hlpi = _hodge(self._triangle_with_flux(math.pi))
         self.assertEqual(len(hlpi.connectionHarmonics()), 0)
 
     def test_flux_never_lifts_the_derived_zero_mode(self):
@@ -412,7 +429,7 @@ class TestFluxSpectrum(unittest.TestCase):
         for phi in (0.0, math.pi / 3, math.pi, 1.234):
             with self.subTest(phi=phi):
                 st = self._triangle_with_flux(phi)
-                hl = cob.HodgeLaplacian(st)
+                hl = _hodge(st)
                 self.assertEqual(len(hl.harmonics(0)), 1)
                 L = np.array(hl.laplacian(0)).reshape(3, 3)
                 np.testing.assert_allclose(L @ np.ones(3), 0.0, atol=1e-15)
@@ -420,7 +437,7 @@ class TestFluxSpectrum(unittest.TestCase):
     def test_zero_mode_is_uniform(self):
         # The Φ=0 harmonic is the uniform vector (equal magnitudes on every vertex).
         n = 3
-        harmonics = cob.HodgeLaplacian(_triangle()).connectionHarmonics()
+        harmonics = _hodge(_triangle()).connectionHarmonics()
         self.assertEqual(len(harmonics), 1)  # one harmonic, a degree-0 Cochain
         h = harmonics[0]
         self.assertEqual(h.degree(), 0)
@@ -452,7 +469,7 @@ class TestGaugeInvariance(unittest.TestCase):
 
         ids, idx = _ordering(st)
         n = len(ids)
-        hl_old = cob.HodgeLaplacian(st)
+        hl_old = _hodge(st)
         evals_old = _real_spectrum(hl_old.connectionEigenvalues())
         V_old = _matrix(hl_old.connectionEigenvectors(), n)
 
@@ -464,7 +481,7 @@ class TestGaugeInvariance(unittest.TestCase):
         alpha = {vid: float(rng.uniform(-math.pi, math.pi)) for vid in ids}
         self._apply_gauge(st, alpha)
 
-        hl_new = cob.HodgeLaplacian(st)
+        hl_new = _hodge(st)
         evals_new = _real_spectrum(hl_new.connectionEigenvalues())
         V_new = _matrix(hl_new.connectionEigenvectors(), n)
 
@@ -492,12 +509,12 @@ class TestGaugeInvariance(unittest.TestCase):
         st = _path()
         ids, idx = _ordering(st)
         n = len(ids)
-        hl_old = cob.HodgeLaplacian(st)
+        hl_old = _hodge(st)
         V_old = _matrix(hl_old.connectionEigenvectors(), n)
 
         alpha = {vid: float(rng.uniform(-math.pi, math.pi)) for vid in ids}
         TestGaugeInvariance._apply_gauge(st, alpha)
-        hl_new = cob.HodgeLaplacian(st)
+        hl_new = _hodge(st)
         np.testing.assert_allclose(
             _real_spectrum(hl_new.connectionEigenvalues()),
             _real_spectrum(hl_old.connectionEigenvalues()), atol=1e-12)
@@ -527,7 +544,7 @@ class TestBettiCrossCheck(unittest.TestCase):
 class TestDegreeParameterization(unittest.TestCase):
 
     def test_negative_degree_raises(self):
-        hl = cob.HodgeLaplacian(_triangle())
+        hl = _hodge(_triangle())
         for call in (lambda: hl.laplacian(-1),
                      lambda: hl.eigenvalues(-1),
                      lambda: hl.eigenvectors(-2),
@@ -539,7 +556,7 @@ class TestDegreeParameterization(unittest.TestCase):
     def test_degree_above_top_dimension_is_empty(self):
         # The triangle is S^1 (top dimension 1): there are no 2- or 3-cells, so
         # L_k is the empty operator (no raise) and ker L_k is trivial.
-        hl = cob.HodgeLaplacian(_triangle())
+        hl = _hodge(_triangle())
         for k in (2, 3):
             with self.subTest(k=k):
                 self.assertEqual(hl.laplacian(k), [])
@@ -548,7 +565,7 @@ class TestDegreeParameterization(unittest.TestCase):
                 self.assertEqual(hl.harmonics(k), [])
 
     def test_k_zero_is_the_default(self):
-        hl = cob.HodgeLaplacian(_triangle())
+        hl = _hodge(_triangle())
         np.testing.assert_allclose(np.array(hl.eigenvalues()),
                                    np.array(hl.eigenvalues(0)), atol=1e-12)
 
@@ -559,7 +576,7 @@ class TestDegreeParameterization(unittest.TestCase):
         st = _testbed()
         for e in st.getEdgeList().toVector():
             e.setLength(cmath.sqrt(complex(4.0)))
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         n = cob.ChainComplex.fromSpacetime(st).numSimplices(0)
         metric = np.array(hl.laplacian(0, True)).reshape(n, n)
         combinatorial = np.array(hl.laplacian(0, False)).reshape(n, n)
@@ -586,7 +603,7 @@ class TestMetricHodgeAssembly(unittest.TestCase):
             for metric in (True, False):
                 with self.subTest(case=name, metric=metric):
                     nk = cob.ChainComplex.fromSpacetime(st).numSimplices(k)
-                    L_cpp = np.array(cob.HodgeLaplacian(st).laplacian(k, metric),
+                    L_cpp = np.array(_hodge(st).laplacian(k, metric),
                                      dtype=complex).reshape(nk, nk)
                     L_ref = _np_metric_laplacian(st, k, metric)
                     np.testing.assert_allclose(L_cpp, L_ref, atol=1e-10)
@@ -597,7 +614,7 @@ class TestMetricHodgeAssembly(unittest.TestCase):
             for metric in (True, False):
                 with self.subTest(case=name, metric=metric):
                     L_ref = _np_metric_laplacian(st, k, metric)
-                    evals = np.array(cob.HodgeLaplacian(st).eigenvalues(k, metric))
+                    evals = np.array(_hodge(st).eigenvalues(k, metric))
                     # The signed-weight operator is generally NOT self-adjoint, so
                     # eigvals (not eigvalsh) and no PSD claim. Both sides are
                     # sorted by (Re, Im) to compare set-wise.
@@ -619,7 +636,7 @@ class TestMetricHodgeAssembly(unittest.TestCase):
                 e.setPhase(0.0)
             with self.subTest(case=name):
                 nk = cob.ChainComplex.fromSpacetime(st).numSimplices(k)
-                L_cpp = np.array(cob.HodgeLaplacian(st).laplacian(k, True),
+                L_cpp = np.array(_hodge(st).laplacian(k, True),
                                  dtype=complex).reshape(nk, nk)
                 np.testing.assert_allclose(L_cpp, _np_metric_laplacian(st, k, True),
                                            atol=1e-10)
@@ -674,7 +691,7 @@ class TestMetricWeights(unittest.TestCase):
 
     def test_vertex_weights_are_unit(self):
         st = _testbed()
-        np.testing.assert_allclose(np.array(cob.HodgeLaplacian(st).weights(0)),
+        np.testing.assert_allclose(np.array(_hodge(st).weights(0)),
                                    np.ones(4), atol=1e-12)
 
     def test_edge_weights_are_squared_length_in_column_order(self):
@@ -688,13 +705,13 @@ class TestMetricWeights(unittest.TestCase):
             e.setPhase(0.0)
         order = sorted(lengths)  # (0,1),(0,2),(0,3),(1,2),(2,3)
         expected = [lengths[t] for t in order]
-        np.testing.assert_allclose(np.array(cob.HodgeLaplacian(st).weights(1)),
+        np.testing.assert_allclose(np.array(_hodge(st).weights(1)),
                                    expected, atol=1e-12)
 
     def test_weights_out_of_range_are_empty(self):
         st = _triangle()  # S^1, top dimension 1
-        self.assertEqual(cob.HodgeLaplacian(st).weights(-1), [])
-        self.assertEqual(cob.HodgeLaplacian(st).weights(5), [])
+        self.assertEqual(_hodge(st).weights(-1), [])
+        self.assertEqual(_hodge(st).weights(5), [])
 
 
 
@@ -713,7 +730,7 @@ def _np_derived_zero_laplacian(st, metric=True):
     if n1 == 0:
         return L
     d1 = np.array(cc.boundaryMatrix(1), dtype=float).reshape(n0, n1).astype(complex)
-    w1 = (np.array(cob.HodgeLaplacian(st).weights(1), dtype=complex)
+    w1 = (np.array(_hodge(st).weights(1), dtype=complex)
           if metric else np.ones(n1, dtype=complex))
     w0 = np.ones(n0, dtype=complex)                     # W_0 = I
     return d1 @ np.diag(1.0 / w1) @ d1.conj().T @ np.diag(w0)
@@ -762,7 +779,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
             n = cob.ChainComplex.fromSpacetime(st).numSimplices(0)
             for metric in (True, False):
                 with self.subTest(fixture=name, metric=metric):
-                    got = np.array(cob.HodgeLaplacian(st).laplacian(0, metric),
+                    got = np.array(_hodge(st).laplacian(0, metric),
                                    dtype=complex).reshape(n, n)
                     np.testing.assert_allclose(
                         got, _np_derived_zero_laplacian(st, metric), atol=1e-12)
@@ -772,7 +789,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
             st = build()
             n = cob.ChainComplex.fromSpacetime(st).numSimplices(0)
             with self.subTest(fixture=name):
-                L = np.array(cob.HodgeLaplacian(st).laplacian(0),
+                L = np.array(_hodge(st).laplacian(0),
                              dtype=complex).reshape(n, n)
                 ones = np.ones(n, dtype=complex)
                 # Row sums vanish identically: |L @ 1| is at rounding level
@@ -791,7 +808,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
             with self.subTest(fixture=name):
                 b0 = cob.ChainComplex.fromSpacetime(st).bettiNumbers()[0]
                 self.assertEqual(b0, expected)
-                self.assertEqual(len(cob.HodgeLaplacian(st).harmonics(0)), b0)
+                self.assertEqual(len(_hodge(st).harmonics(0)), b0)
 
     def test_timelike_cycle_closed_form_spectrum(self):
         # W_1 = diag(1, 1, -alpha^2) on 1-cells (0,1),(0,2),(1,2), so
@@ -802,7 +819,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
         for alpha in (0.5, 1.0, math.sqrt(2.0), 2.0, 3.0):
             with self.subTest(alpha=alpha):
                 st = _timelike_cycle(alpha)
-                evals = np.array(cob.HodgeLaplacian(st).eigenvalues(0),
+                evals = np.array(_hodge(st).eigenvalues(0),
                                  dtype=complex)
                 np.testing.assert_allclose(np.sort(evals.imag), 0.0, atol=1e-12)
                 np.testing.assert_allclose(
@@ -813,14 +830,14 @@ class TestDerivedDegreeZero(unittest.TestCase):
         # The honest regime statement: below the crossing the smallest
         # eigenvalue is strictly negative, so no PSD claim survives here.
         st = _timelike_cycle(1.0)
-        evals = np.array(cob.HodgeLaplacian(st).eigenvalues(0), dtype=complex)
+        evals = np.array(_hodge(st).eigenvalues(0), dtype=complex)
         self.assertLess(np.min(evals.real), -0.5)
 
     def test_complex_weight_makes_it_complex_symmetric_not_hermitian(self):
         # z = rho e^{i theta} on one edge: L_0 stays SYMMETRIC (the conductance
         # -1/z sits on both off-diagonals) but is no longer Hermitian.
         st = _complex_l2_cycle(1.7, 0.9)
-        L = np.array(cob.HodgeLaplacian(st).laplacian(0),
+        L = np.array(_hodge(st).laplacian(0),
                      dtype=complex).reshape(3, 3)
         np.testing.assert_allclose(L, L.T, atol=1e-14)
         self.assertGreater(np.linalg.norm(L - L.conj().T), 1e-2)
@@ -840,7 +857,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
             [c[(0, 1)] + c[(0, 2)], -c[(0, 1)], -c[(0, 2)]],
             [-c[(0, 1)], c[(0, 1)] + c[(1, 2)], -c[(1, 2)]],
             [-c[(0, 2)], -c[(1, 2)], c[(0, 2)] + c[(1, 2)]]], dtype=complex)
-        got = np.array(cob.HodgeLaplacian(st).laplacian(0),
+        got = np.array(_hodge(st).laplacian(0),
                        dtype=complex).reshape(3, 3)
         np.testing.assert_allclose(got, expected, atol=1e-13)
 
@@ -851,16 +868,16 @@ class TestDerivedDegreeZero(unittest.TestCase):
         # W_1 alone, so rephasing the edges cannot move it -- recorded here so
         # a change is noticed.
         st = _timelike_cycle(0.7)
-        before = np.array(cob.HodgeLaplacian(st).laplacian(0), dtype=complex)
+        before = np.array(_hodge(st).laplacian(0), dtype=complex)
         for e in st.getEdgeList().toVector():
             e.setPhase(0.83)
-        after = np.array(cob.HodgeLaplacian(st).laplacian(0), dtype=complex)
+        after = np.array(_hodge(st).laplacian(0), dtype=complex)
         np.testing.assert_allclose(after, before, atol=0.0, rtol=0.0)
         # The connection operator, by contrast, moves.
         self.assertGreater(
             np.linalg.norm(
-                np.array(cob.HodgeLaplacian(st).connectionLaplacian()) -
-                np.array(cob.HodgeLaplacian(_timelike_cycle(0.7))
+                np.array(_hodge(st).connectionLaplacian()) -
+                np.array(_hodge(_timelike_cycle(0.7))
                          .connectionLaplacian())), 1e-2)
 
     def test_relabeling_the_vertices_permutes_the_operator(self):
@@ -890,9 +907,9 @@ class TestDerivedDegreeZero(unittest.TestCase):
         cc_moved = cob.ChainComplex.fromSpacetime(moved).kSimplexVertices(0)
         # position in the moved operator of each original vertex
         order = [cc_moved.index([relabel[c[0]]]) for c in cc_plain]
-        A = np.array(cob.HodgeLaplacian(plain).laplacian(0),
+        A = np.array(_hodge(plain).laplacian(0),
                      dtype=complex).reshape(3, 3)
-        B = np.array(cob.HodgeLaplacian(moved).laplacian(0),
+        B = np.array(_hodge(moved).laplacian(0),
                      dtype=complex).reshape(3, 3)
         np.testing.assert_allclose(A, B[np.ix_(order, order)], atol=1e-13)
 
@@ -902,7 +919,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
         for name, build in self.FIXTURES:
             st = build()
             with self.subTest(fixture=name):
-                hl = cob.HodgeLaplacian(st)
+                hl = _hodge(st)
                 harmonics = hl.harmonics(0, 1e-9)
                 norms = hl.nullNorms(0, 1e-9)
                 self.assertEqual(len(norms), len(harmonics))
@@ -915,7 +932,7 @@ class TestDerivedDegreeZero(unittest.TestCase):
         # 0-cell and does not appear in L_0. The CONNECTION operator reads the
         # vertex set directly and does carry it.
         st = _from_simplices(3, [(0, 1)])          # vertex 2 is bare
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         self.assertEqual(cob.ChainComplex.fromSpacetime(st).numSimplices(0), 2)
         self.assertEqual(len(hl.laplacian(0)), 4)          # 2x2
         self.assertEqual(len(hl.connectionLaplacian()), 9)  # 3x3
@@ -953,7 +970,7 @@ class TestComplexConnectionPhase(unittest.TestCase):
     @staticmethod
     def _connection(st):
         ids, _ = _ordering(st)
-        return _matrix(cob.HodgeLaplacian(st).connectionLaplacian(), len(ids))
+        return _matrix(_hodge(st).connectionLaplacian(), len(ids))
 
     def test_phase_round_trips_as_a_complex_number(self):
         st = _triangle()
@@ -1090,12 +1107,12 @@ class TestComplexConnectionPhase(unittest.TestCase):
         # derived form, so the operator must not move at ANY degree.
         st = _torus()
         rng = np.random.default_rng(13)
-        before = {k: np.array(cob.HodgeLaplacian(st).laplacian(k), dtype=complex)
+        before = {k: np.array(_hodge(st).laplacian(k), dtype=complex)
                   for k in (0, 1, 2)}
         for e in st.getEdgeList().toVector():
             e.setPhase(complex(rng.normal(), rng.normal()))
         for k in (0, 1, 2):
-            after = np.array(cob.HodgeLaplacian(st).laplacian(k), dtype=complex)
+            after = np.array(_hodge(st).laplacian(k), dtype=complex)
             np.testing.assert_allclose(after, before[k], atol=0.0, rtol=0.0)
 
     def test_the_degree_matrix_is_phase_independent(self):
@@ -1103,11 +1120,11 @@ class TestComplexConnectionPhase(unittest.TestCase):
         # phase -- compact or not -- may reach it.
         st = _testbed()
         _set_uniform(st, 1.0, 0.0)
-        before = np.array(cob.HodgeLaplacian(st).degree())
+        before = np.array(_hodge(st).degree())
         for e in st.getEdgeList().toVector():
             e.setPhase(complex(0.9, -0.4))
         np.testing.assert_allclose(
-            np.array(cob.HodgeLaplacian(st).degree()), before,
+            np.array(_hodge(st).degree()), before,
             atol=0.0, rtol=0.0)
 
 
