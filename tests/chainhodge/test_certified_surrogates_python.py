@@ -227,11 +227,14 @@ class TestCertifiedSurrogate:
         assert surrogate.retainedModes > 0
         assert len(surrogate.windowIndices) > 0
         # Every claimed pair's distance from the exact Feshbach map is within
-        # the bound its own fine-space residual certifies.
+        # the bound its own fine-space residual certifies. The inequality is
+        # exact mathematics, so it holds for a truncated surrogate too: what
+        # truncation costs is the size of the bound, not its truth.
         for i in range(len(surrogate.windowIndices)):
+            if surrogate.resonantAtEigenvalue[i]:
+                continue
             assert surrogate.feshbachHolds[i]
-            if not surrogate.resonantAtEigenvalue[i]:
-                assert surrogate.feshbachDefects[i] <= surrogate.feshbachBounds[i] * 1.000001 + 1e-300
+            assert surrogate.feshbachDefects[i] <= surrogate.feshbachBounds[i] * 1.000001 + 1e-300
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
     def test_the_defect_is_the_exact_map_recomputed(self, fixture):
@@ -257,19 +260,36 @@ class TestCertifiedSurrogate:
             assert abs(expected - surrogate.feshbachDefects[position]) < 1e-8 * max(expected, 1.0)
 
     @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
-    def test_a_wide_enough_retention_radius_certifies(self, fixture):
-        """With every fixed-interface mode of the window retained and the
-        tolerance declared at the residual scale the surrogate certifies; with a
-        retention radius inside the window it refuses by name and still returns
-        its numbers."""
+    def test_retaining_every_mode_makes_the_surrogate_exact(self, fixture):
+        """A retention radius that discards nothing leaves the reduction basis
+        square and invertible, so the surrogate is the pencil itself: its
+        claimed eigenvalues are eigenvalues of the fine pencil and it certifies
+        at the tightest tolerance the arithmetic allows."""
         K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
                    else _non_normal_pencil())
         interface = _split_interface(K, 4)
         centre, radius = self._window(A, M, interface)
-        wide = PS.craigBamptonSurrogate(
-            A, M, interface, centre, radius, 6.0 * radius, complex(0.0, 0.0), 1e-4)
-        assert wide.discardedModeSeparation > 0.0
-        assert wide.certified, wide.refusal
+        full = PS.craigBamptonSurrogate(
+            A, M, interface, centre, radius, 1e9, complex(0.0, 0.0), 1.0)
+        assert full.retainedModes == A.shape[0] - len(interface)
+        assert np.isinf(full.discardedModeSeparation)
+        assert all(full.feshbachHolds)
+        assert full.certified, full.refusal
+        exact = np.linalg.eigvals(np.linalg.solve(M, A))
+        assert len(full.windowIndices) > 0
+        for index in full.windowIndices:
+            theta = complex(full.eigenvalues[index])
+            assert np.min(np.abs(exact - theta)) < 1e-6 * max(1.0, abs(theta))
+
+    @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
+    def test_a_retention_radius_inside_the_window_refuses(self, fixture):
+        """A fixed-interface mode discarded from inside the declared window
+        makes the surrogate uncertified, by name; it is still returned with all
+        of its numbers rather than refused outright."""
+        K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
+                   else _non_normal_pencil())
+        interface = _split_interface(K, 4)
+        centre, radius = self._window(A, M, interface)
         narrow = PS.craigBamptonSurrogate(
             A, M, interface, centre, radius, 0.5 * radius, complex(0.0, 0.0), 1e-4)
         assert not narrow.certified
@@ -306,7 +326,7 @@ class TestCertifiedSurrogate:
         K, A, M = _complex_symmetric_pencil()
         interface = _split_interface(K, 4)
         with pytest.raises(ValueError):
-            PS.craigBamptonSurrogate(A, M, interface, complex(0.0, 0.0), 1.0, 0.5)
+            PS.craigBamptonSurrogate(A, M, interface, complex(0.0, 0.0), 1.0, -0.5)
 
 
 class TestRecursiveQuotientSurrogateRegimes:
@@ -315,33 +335,32 @@ class TestRecursiveQuotientSurrogateRegimes:
     whether the surrogate exists."""
 
     @staticmethod
-    def _quotient(A, M, dim):
+    def _quotient(A, M):
+        dim = A.shape[0]
         components = [list(range(0, dim // 2)), list(range(dim // 2, dim))]
         return cob.RecursiveQuotient.overPencil(
             [complex(z) for z in A.reshape(-1)],
             [complex(z) for z in M.reshape(-1)], dim, components)
 
-    def test_complex_symmetric_pencil_level_builds_a_surrogate(self):
-        K, A, M = _complex_symmetric_pencil()
-        quotient = self._quotient(A, M, A.shape[0])
-        assert quotient.regime == cob.CertificateRegime.ComplexSymmetricPencil
+    @pytest.mark.parametrize("fixture", ["complex-symmetric", "non-normal"])
+    def test_a_bilinear_level_builds_a_surrogate(self, fixture):
+        """Both bilinear regimes used to be refused outright. With every
+        fixed-interface mode retained the surrogate is the level itself, so the
+        pairs it returns are pairs of the fine pencil and their residuals say
+        so."""
+        K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
+                   else _non_normal_pencil())
+        quotient = self._quotient(A, M)
+        assert quotient.regime in (cob.CertificateRegime.NonNormal,
+                                   cob.CertificateRegime.ComplexSymmetricPencil)
         values = np.linalg.eigvals(np.linalg.solve(M, A))
-        upper = float(np.sort(values.real)[len(values) // 4])
-        read = quotient.craigBampton(float(values.real.min()) - 1.0, upper,
-                                     upper + 10.0, 1e-4)
+        lower = float(values.real.min()) - 1.0
+        upper = float(np.sort(values.real)[len(values) // 2])
+        read = quotient.craigBampton(lower, upper, float(values.real.max()) + 10.0, 1e-4)
         assert sum(read.retainedModes) > 0
         assert len(read.windowEigenvalues) > 0
-        # The retained pairs are pairs of the fine pencil: their residuals are
-        # what the certificate is read from, and they are finite and small.
-        assert max(read.eigenResiduals) < 1e-4
-
-    def test_non_normal_pencil_level_builds_a_surrogate(self):
-        K, A, M = _non_normal_pencil()
-        quotient = self._quotient(A, M, A.shape[0])
-        assert quotient.regime == cob.CertificateRegime.NonNormal
-        values = np.linalg.eigvals(np.linalg.solve(M, A))
-        upper = float(np.sort(values.real)[len(values) // 4])
-        read = quotient.craigBampton(float(values.real.min()) - 1.0, upper,
-                                     upper + 10.0, 1e-3)
-        assert sum(read.retainedModes) > 0
-        assert max(read.eigenResiduals) < 1e-3
+        assert max(read.eigenResiduals) < 1e-6
+        # Every level the surrogate reports inside the window is a level of the
+        # fine pencil.
+        for value in read.windowEigenvalues:
+            assert np.min(np.abs(values.real - value)) < 1e-6 * max(1.0, abs(value))

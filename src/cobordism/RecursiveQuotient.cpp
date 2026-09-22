@@ -1401,11 +1401,17 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
             "RecursiveQuotient: Craig-Bampton in a Hermitian regime needs a positive chain "
             "metric; a signed or complex metric is the non-normal regime, whose surrogate uses "
             "the transpose pairing");
-  // The metric the reduced pencil is written against.
-  const Eigen::SparseMatrix<cd> metric =
-      (bilinear && pencil_) ? pencilMetric_
-                            : Eigen::SparseMatrix<cd>(
-                                  Eigen::MatrixXcd(weights_.asDiagonal()).sparseView());
+  // The metric the reduced pencil is written against: the carried Gram on a
+  // pencil level, the diagonal weights otherwise, held sparsely so that no
+  // dimension-square object is built to hold a diagonal.
+  const Eigen::SparseMatrix<cd> metric = [&] {
+    if (pencil_) return pencilMetric_;
+    Eigen::SparseMatrix<cd> diagonal(dim_, dim_);
+    diagonal.reserve(Eigen::VectorXi::Constant(dim_, 1));
+    for (int i = 0; i < dim_; ++i) diagonal.insert(i, i) = weights_(i);
+    diagonal.makeCompressed();
+    return diagonal;
+  }();
 
   const int kept = static_cast<int>(interfaceIndices_.size());
   CraigBamptonRead read;

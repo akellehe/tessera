@@ -350,10 +350,9 @@ SurrogateResult PencilSchur::craigBampton(const Eigen::MatrixXcd &A, const Eigen
     throw std::invalid_argument("PencilSchur::craigBampton: A and M must be square of the same size");
   if (!(windowRadius >= 0.0))
     throw std::invalid_argument("PencilSchur::craigBampton: the window radius must be non-negative");
-  if (!(retentionRadius >= windowRadius))
+  if (!(retentionRadius >= 0.0))
     throw std::invalid_argument(
-        "PencilSchur::craigBampton: the retention radius must cover the window radius (a mode "
-        "inside the window may never be discarded)");
+        "PencilSchur::craigBampton: the retention radius must be non-negative");
   SurrogateResult out;
   out.shift = shift;
   out.windowCentre = windowCentre;

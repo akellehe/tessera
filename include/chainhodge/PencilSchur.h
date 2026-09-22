@@ -171,7 +171,7 @@ struct CongruenceResult {
 /// complex spectrum and an interval on the real axis would not enclose it; the
 /// disc is the same object `Contour::circle` integrates over. A fixed-interface
 /// mode is retained when \f$ |\theta - c| \le \rho_{\text{cut}} \f$ for the
-/// declared retention radius \f$ \rho_{\text{cut}} \ge \rho \f$.
+/// declared retention radius \f$ \rho_{\text{cut}} \f$.
 ///
 /// The certificate is an inequality that holds exactly, verified numerically on
 /// every retained pair. For a surrogate pair \f$ (\theta, y) \f$ with fine
@@ -193,8 +193,11 @@ struct SurrogateResult {
   /// The shift \f$ \lambda_0 \f$ the interface constraint modes were taken at.
   Complex shift{0.0, 0.0};
   /// Centre \f$ c \f$ and radius \f$ \rho \f$ of the declared window disc, and
-  /// the retention radius \f$ \rho_{\text{cut}} \ge \rho \f$ of the
-  /// fixed-interface modes.
+  /// the retention radius \f$ \rho_{\text{cut}} \f$ of the fixed-interface
+  /// modes. A retention radius below \f$ \rho \f$ discards modes from inside
+  /// the window, which is allowed and reported — `discardedModeSeparation`
+  /// turns negative and the surrogate does not certify — rather than refused,
+  /// because the surrogate's numbers are worth reading either way.
   Complex windowCentre{0.0, 0.0};
   double windowRadius{0.0};
   double retentionRadius{0.0};
@@ -371,9 +374,8 @@ class PencilSchur {
   ///   every certified bound to be at or below it.
   /// @param rankTolerance relative rank threshold, as `feshbach`.
   /// @throws std::invalid_argument when \p A and \p M are not square of the
-  ///   same size, an interface index is out of range, \p windowRadius is
-  ///   negative, or \p retentionRadius is smaller than \p windowRadius;
-  ///   std::runtime_error when the interior metric \f$ M_{II} \f$ or the
+  ///   same size, an interface index is out of range, or either radius is
+  ///   negative; std::runtime_error when the interior metric \f$ M_{II} \f$ or the
   ///   reduced metric \f$ V^TMV \f$ is singular, by name, so that a meaningless
   ///   surrogate spectrum is never returned.
   [[nodiscard]] static SurrogateResult craigBampton(const Eigen::MatrixXcd &A,
