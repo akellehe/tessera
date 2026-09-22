@@ -919,10 +919,11 @@ class AnimationFrame:
         # A track covering every slice of the window is a community that
         # persisted across it; its member at the analysis slice is the one to
         # carry forward.
-        persistent = sorted({int(track.memberIndices[analysis - track.firstSlice])
+        persistent = sorted({int(track.memberIndices[analysis])
                              for track in report.tracks
                              if track.firstSlice == 0
-                             and track.lastSlice == len(window) - 1})
+                             and track.lastSlice == len(window) - 1
+                             and len(track.memberIndices) > analysis})
         self.components = [offered[i] for i in persistent if i < len(offered)]
         record = {"proposedByModularity": len(offered),
                   "persistedAcrossWindow": len(self.components),
