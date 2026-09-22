@@ -460,6 +460,16 @@ class CobordismObjective {
 /// stationary at the same metric. The only one of the three built-ins that is
 /// not target-conditioned.
 ///
+/// This is a scalar diagnostic that a descent minimizes: every term is the
+/// squared norm of the gradient of a real functional, so its minimum records
+/// how nearly two real functionals are simultaneously stationary and its value
+/// is a residual rather than an action. The holomorphic stationarity equations
+/// of the joint action \f$S(z,U,\Gamma)\f$ themselves — the complex equations
+/// \f$\partial S/\partial z=0\f$ and \f$U\,\partial S/\partial U=0\f$, with no
+/// real projection selected and no norm minimized in their place — are
+/// `JointAction` and are solved by `HolomorphicRelaxation`. The two answer
+/// different questions and neither stands in for the other.
+///
 /// The Hodge sum runs over `ObjectiveContext::hodgeDegrees`, resolved
 /// independently of the register degrees. Scoring more degrees shows more of the
 /// spectrum, not more of the topology: exact zero modes are omitted from the

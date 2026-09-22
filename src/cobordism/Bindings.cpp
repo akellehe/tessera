@@ -34,7 +34,10 @@
 #include "cobordism/ProtonSynthesis.h"
 #include "cobordism/ProtonIngredients.h"
 #include "cobordism/HodgeLaplacian.h"
+#include "cobordism/HolomorphicRelaxation.h"
 #include "cobordism/IntegerLinalg.h"
+#include "cobordism/JointAction.h"
+#include "cobordism/SelfConsistentMeanField.h"
 #include "cobordism/RecursiveQuotient.h"
 #include "cobordism/SurgicalCone.h"
 #include "cobordism/Spectrum.h"
@@ -4314,4 +4317,393 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Drop memoized results and re-read the operator values for the "
            "same cell complex (call after an accepted metric move).")
       .def_property_readonly("options", &RecursiveQuotient::options);
+
+  // ================================================================
+  // The holomorphic joint action S(z, U, Gamma) and its solves
+  // ================================================================
+
+  py::class_<SpectralMomentConstraint>(m, "SpectralMomentConstraint",
+      "One holomorphic spectral constraint of the targeted action S_spec: the "
+      "power sum p_j(h) = tr(h^j) of the complex edge-mode operator is "
+      "required to equal a prescribed complex number p_j*, imposed by an "
+      "independent complex Lagrange multiplier xi_j rather than by a penalty. "
+      "Stationarity in xi_j is the FULL complex equation p_j(h) - p_j* = 0, "
+      "both parts, with no residual norm minimized in its place. These target "
+      "terms belong to explicitly labelled controlled synthesis and are absent "
+      "in emergence mode.")
+      .def(py::init<>())
+      .def(py::init([](int order, std::complex<double> target,
+                       std::complex<double> multiplier) {
+             SpectralMomentConstraint constraint;
+             constraint.order = order;
+             constraint.target = target;
+             constraint.multiplier = multiplier;
+             return constraint;
+           }),
+           py::arg("order"), py::arg("target"),
+           py::arg("multiplier") = std::complex<double>{0.0, 0.0})
+      .def_readwrite("order", &SpectralMomentConstraint::order,
+                     "The moment index j >= 1, the power h is raised to. It is "
+                     "not a simplicial degree.")
+      .def_readwrite("target", &SpectralMomentConstraint::target,
+                     "p_j* = sum_a (lambda_a*)^j, the same power sum of the "
+                     "prescribed eigenvalue multiset.")
+      .def_readwrite("multiplier", &SpectralMomentConstraint::multiplier,
+                     "The complex Lagrange multiplier xi_j at the current "
+                     "point of a solve. A variable, not a configured weight.");
+
+  py::class_<JointActionDeclaration>(m, "JointActionDeclaration",
+      "Everything that fixes which action S(z, U, Gamma) a JointAction is: the "
+      "carrier degree, the three coefficients, the carried covariance, the "
+      "spectral constraints and the metric source. Plain data.")
+      .def(py::init<>())
+      .def_readwrite("carrier_degree", &JointActionDeclaration::carrierDegree,
+                     "The simplicial degree k of the one-particle carrier. The "
+                     "operator of the action is h = h_k(z, U) and Gamma is a "
+                     "matrix over the k-cells.")
+      .def_readwrite("gravitational_weight",
+                     &JointActionDeclaration::gravitationalWeight,
+                     "w_R, the coefficient on the dual Lorentzian Regge "
+                     "action. The whitepaper's Section 7 identification is "
+                     "1/(8 pi G) in lattice units, so a caller working in the "
+                     "backreaction coupling kappa = 8 pi G sets 1/kappa.")
+      .def_readwrite("holonomy_weight",
+                     &JointActionDeclaration::holonomyWeight,
+                     "w_H, the coefficient on the face-holonomy term. It is "
+                     "the parameter the whitepaper calls beta when it takes "
+                     "the bare connection stiffness in Wilson-plaquette form.")
+      .def_readwrite("matter_weight", &JointActionDeclaration::matterWeight,
+                     "w_M, the coefficient on tr(Gamma h(z, U)), the carried "
+                     "state's bilinear action density. Zero is strict "
+                     "emergence: the geometry is blind to the carried state.")
+      .def_readwrite("covariance", &JointActionDeclaration::covariance,
+                     "Gamma = Phi PhiTilde^T, flat row-major over the k-cells "
+                     "in canonical ChainComplex order. Complex bilinear: no "
+                     "adjoint is taken of it and it need not be Hermitian.")
+      .def_readwrite("moment_constraints",
+                     &JointActionDeclaration::momentConstraints,
+                     "The declared holomorphic spectral constraints. Empty in "
+                     "emergence mode.")
+      .def_readwrite("metric_source", &JointActionDeclaration::metricSource,
+                     "Where the carrier operator's metric comes from. "
+                     "WhitneyPencil is the whitepaper's W_k = M_k^-1 and gives "
+                     "the covariant h_k(z, U); under DiagonalWeights the "
+                     "operator is blind to U, so only the face-holonomy term "
+                     "then depends on the connection.");
+
+  py::class_<JointAction>(m, "JointAction",
+      "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
+      "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
+      "S = w_R S_Regge(z) + w_H S_hol(U) + w_M tr(Gamma h(z, U)) + sum_j xi_j "
+      "(p_j(h) - p_j*), with S_hol the branch-free plaquette sum over the "
+      "face holonomies F_tau = prod_e U_e^eps. The stationarity conditions are "
+      "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
+      "never the minimization of a selected real projection.\n\n"
+      "Every per-edge vector is in getEdgeList() order and every per-cell "
+      "quantity in canonical ChainComplex order. The link stationarity of an "
+      "edge is reported on its STORED source-to-target orientation, which is "
+      "the orientation the Ward current's sign convention refers to.")
+      .def(py::init<std::shared_ptr<Spacetime>, JointActionDeclaration>(),
+           py::arg("spacetime"), py::arg("declaration"))
+      .def_property_readonly("declaration", &JointAction::declaration,
+                             "The declaration this instance was built from.")
+      .def_property_readonly("spacetime", &JointAction::spacetime,
+                             "The complex the action is defined over.")
+      .def("set_multipliers", &JointAction::setMultipliers,
+           py::arg("multipliers"),
+           "Replace xi_j for every constraint, in declaration order. This is "
+           "how a solver advances the multipliers, which are variables of the "
+           "stationarity system rather than configuration.")
+      .def("multipliers", &JointAction::multipliers,
+           "The current xi_j, in declaration order.")
+      .def("carrier_operator", &JointAction::carrierOperator,
+           "h_k(z, U), flat row-major over the k-cells.")
+      .def("face_holonomies", &JointAction::faceHolonomies,
+           "F_tau per triangle, the ordered product of the links over the "
+           "incidences of the boundary map. No sum of phases and no logarithm "
+           "is formed.")
+      .def("power_sums", &JointAction::powerSums,
+           "p_j(h) = tr(h^j) for each declared constraint, by repeated "
+           "multiplication, so a defective operator needs no "
+           "eigendecomposition and no eigenvalue ordering.")
+      .def("moment_residuals", &JointAction::momentResiduals,
+           "p_j(h) - p_j* for each declared constraint: the exact complex "
+           "stationarity equation in xi_j.")
+      .def("regge_term", &JointAction::reggeTerm, "w_R S_Regge(z).")
+      .def("holonomy_term", &JointAction::holonomyTerm, "w_H S_hol(U).")
+      .def("matter_term", &JointAction::matterTerm,
+           "w_M tr(Gamma h(z, U)).")
+      .def("spectral_term", &JointAction::spectralTerm,
+           "sum_j xi_j (p_j(h) - p_j*).")
+      .def("value", &JointAction::value,
+           "S(z, U, Gamma), the sum of the four terms.")
+      .def("length_stationarity", &JointAction::lengthStationarity,
+           "dS/dz_e per edge, assembled from the framework's exact analytic "
+           "gradients. No finite difference and no discarded imaginary part.")
+      .def("link_stationarity", &JointAction::linkStationarity,
+           "U_e dS/dU_e per edge on its stored orientation, from the closed "
+           "form of the holonomy term and the identity U d/dU = -i d/dphi "
+           "applied to the exact analytic operator phase gradient.")
+      .def("ward_current", &JointAction::wardCurrent,
+           "j_xy = U_xy dS/dU_xy of Section 13.4, which is link_stationarity "
+           "under its other name. Odd under reversing an edge.")
+      .def("ward_current_divergence", &JointAction::wardCurrentDivergence,
+           "(d j)_x per vertex. It vanishes identically for every "
+           "gauge-invariant term; a fixed Gamma held while the connection "
+           "varies breaks the identity, and this measures by how much.")
+      .def("hellmann_feynman_length_force",
+           &JointAction::hellmannFeynmanLengthForce,
+           "tr(Gamma dh/dz_e) per edge, the carried state's whole "
+           "contribution to the length equation, without w_M and without the "
+           "geometric terms.")
+      .def("hellmann_feynman_link_force",
+           &JointAction::hellmannFeynmanLinkForce,
+           "tr(Gamma U_e dh/dU_e) per edge, the link counterpart. Identically "
+           "zero when the operator is blind to the connection.")
+      .def("occupation_numbers", &JointAction::occupationNumbers,
+           "n_c = Gamma_cc per k-cell, the derived readout. Complex in "
+           "general, because Gamma is a complex bilinear covariance.")
+      .def("stationarity_residual", &JointAction::stationarityResidual,
+           "The whole residual (dS/dz; U dS/dU; p_j - p_j*) in that block "
+           "order, the vector a holomorphic root find drives to zero.")
+      .def("stationarity_residual_norm",
+           &JointAction::stationarityResidualNorm,
+           "The Euclidean norm of stationarity_residual, a convergence "
+           "certificate rather than a functional minimized in place of the "
+           "equations.")
+      .def("moment_gradient", &JointAction::momentGradient, py::arg("index"),
+           "(dp_j/dz; U dp_j/dU) for one declared constraint, the exact "
+           "analytic Jacobian column its multiplier contributes.")
+      .def("edge_count", &JointAction::edgeCount)
+      .def("constraint_count", &JointAction::constraintCount)
+      .def("carrier_eigenvalues", &JointAction::carrierEigenvalues,
+           "The eigenvalues of h_k(z, U), unordered.")
+      .def("ordered_carrier_eigenvalues",
+           &JointAction::orderedCarrierEigenvalues,
+           py::arg("ascending_real_part") = true,
+           "The eigenvalues in the order occupation_projector fills them.")
+      .def("occupation_projector", &JointAction::occupationProjector,
+           py::arg("occupied"), py::arg("ascending_real_part") = true,
+           "The spectral (Riesz) projector onto the occupied modes: Gamma = V "
+           "diag(chi) V^-1, which is exactly Gamma = Phi PhiTilde^T for the "
+           "matched left/right frame pair. Idempotent by construction, with no "
+           "adjoint anywhere, and Hermitian only when h is normal.")
+      .def_static("term_names", &JointAction::termNames,
+                  "The four declared terms, in the order value sums them.");
+
+  py::enum_<HolomorphicJacobianMode>(m, "HolomorphicJacobianMode",
+      "How the Jacobian of the stationarity system is formed.\n\n"
+      "ContourDerivative is the Cauchy derivative on a small circle, which for "
+      "a residual analytic on the whole disc converges geometrically in the "
+      "node count and is exact to rounding at the default eight nodes.\n\n"
+      "RealAxisDifference is the two-node rule with both nodes placed exactly "
+      "on the real axis. It is the rule for a residual analytic on each side of "
+      "a cut along the real axis but not across it, which is what the dual "
+      "Regge action's exact gradient is: the deficit angle is taken on the "
+      "principal branch with no Riemann-sheet label, so an arbitrarily small "
+      "positive imaginary part in a squared length shifts a hinge's deficit by "
+      "2 pi. Its truncation is O(radius^2), so a caller declaring it usually "
+      "declares a smaller radius with it.")
+      .value("ContourDerivative", HolomorphicJacobianMode::ContourDerivative)
+      .value("RealAxisDifference",
+             HolomorphicJacobianMode::RealAxisDifference);
+
+  py::class_<HolomorphicRelaxationDeclaration>(
+      m, "HolomorphicRelaxationDeclaration",
+      "The numerical controls of a holomorphic Newton solve. None of them "
+      "changes which equations are solved.")
+      .def(py::init<>())
+      .def_readwrite("relax_lengths",
+                     &HolomorphicRelaxationDeclaration::relaxLengths,
+                     "Whether the squared lengths are variables. When false "
+                     "they are held and their equations are dropped, because "
+                     "requiring an equation of a frozen variable would "
+                     "overdetermine the system.")
+      .def_readwrite("relax_links",
+                     &HolomorphicRelaxationDeclaration::relaxLinks,
+                     "Whether the links are variables, under the same rule.")
+      .def_readwrite("relax_multipliers",
+                     &HolomorphicRelaxationDeclaration::relaxMultipliers,
+                     "Whether the multipliers are variables, under the same "
+                     "rule.")
+      .def_readwrite("maximum_iterations",
+                     &HolomorphicRelaxationDeclaration::maximumIterations)
+      .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
+                     "The residual norm at or below which the solve is "
+                     "declared converged.")
+      .def_readwrite("contour_nodes",
+                     &HolomorphicRelaxationDeclaration::contourNodes,
+                     "The number of nodes on the contour. At least five.")
+      .def_readwrite("contour_radius",
+                     &HolomorphicRelaxationDeclaration::contourRadius,
+                     "The contour radius, relative to the magnitude of the "
+                     "coordinate being differentiated and floored at one.")
+      .def_readwrite("maximum_dampings",
+                     &HolomorphicRelaxationDeclaration::maximumDampings,
+                     "The largest number of step halvings tried when a full "
+                     "Newton step does not reduce the residual norm.")
+      .def_readwrite("jacobian_mode",
+                     &HolomorphicRelaxationDeclaration::jacobianMode)
+      .def_readwrite("rank_tolerance",
+                     &HolomorphicRelaxationDeclaration::rankTolerance,
+                     "The relative threshold below which a singular value of "
+                     "the Jacobian counts as zero in the minimum-norm solve.");
+
+  py::class_<HolomorphicStep>(m, "HolomorphicStep",
+      "One Newton iteration, recorded so a run can be read back rather than "
+      "only its outcome.")
+      .def(py::init<>())
+      .def_readwrite("iteration", &HolomorphicStep::iteration)
+      .def_readwrite("residual_norm", &HolomorphicStep::residualNorm)
+      .def_readwrite("step_norm", &HolomorphicStep::stepNorm)
+      .def_readwrite("damping", &HolomorphicStep::damping,
+                     "One for a full Newton step, a negative power of two "
+                     "otherwise.")
+      .def_readwrite("jacobian_rank", &HolomorphicStep::jacobianRank,
+                     "Below the variable count whenever the connection is "
+                     "relaxed, because the action is gauge invariant.")
+      .def_readwrite("action", &HolomorphicStep::action);
+
+  py::class_<HolomorphicRelaxationReport>(m, "HolomorphicRelaxationReport",
+      "What a solve reached, and the trace of how it got there.")
+      .def(py::init<>())
+      .def_readwrite("steps", &HolomorphicRelaxationReport::steps)
+      .def_readwrite("converged", &HolomorphicRelaxationReport::converged)
+      .def_readwrite("initial_residual_norm",
+                     &HolomorphicRelaxationReport::initialResidualNorm)
+      .def_readwrite("residual_norm",
+                     &HolomorphicRelaxationReport::residualNorm)
+      .def_readwrite("action", &HolomorphicRelaxationReport::action)
+      .def_readwrite("multipliers", &HolomorphicRelaxationReport::multipliers)
+      .def_readwrite("moment_residuals",
+                     &HolomorphicRelaxationReport::momentResiduals);
+
+  py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
+      "A Newton root find on the holomorphic stationarity equations of a "
+      "JointAction: dS/dz = 0, U dS/dU = 0 and p_j(h) = p_j*.\n\n"
+      "It solves the equations themselves. It does not minimize the residual "
+      "norm, a real part, or any other real projection: the norm appears only "
+      "as the quantity the damping compares and as the convergence "
+      "certificate. The connection is updated MULTIPLICATIVELY, U -> U e^delta, "
+      "which on the stored phase is the exact increment phi -> phi - i delta "
+      "and selects no logarithm branch. A new squared length is written back "
+      "through the square root taken by continuation from the edge's current "
+      "length, so a relaxation path never jumps between the two sheets.\n\n"
+      "The Newton system is solved in the minimum-norm sense, because the "
+      "action is gauge invariant and its connection block is therefore "
+      "singular along every pure-gauge direction; the minimum-norm solution is "
+      "the one orthogonal to the gauge orbit.")
+      .def(py::init<JointAction, HolomorphicRelaxationDeclaration>(),
+           py::arg("action"), py::arg("declaration"))
+      .def("solve", &HolomorphicRelaxation::solve,
+           "Run the solve, writing the relaxed fields into the complex.")
+      .def_property_readonly("action", &HolomorphicRelaxation::action,
+                             "The action, carrying the multipliers as the "
+                             "solve left them.")
+      .def("jacobian", &HolomorphicRelaxation::jacobian,
+           "The Jacobian at the current point, flat row-major. Forming it "
+           "restores the complex exactly, so the geometry is unchanged.")
+      .def("equation_count", &HolomorphicRelaxation::equationCount)
+      .def("variable_count", &HolomorphicRelaxation::variableCount);
+
+  py::enum_<OccupationOrder>(m, "OccupationOrder",
+      "Which modes of the carrier operator the covariance projects onto. The "
+      "whitepaper names the filled modes 'the occupied modes' and fixes no "
+      "order for a genuinely complex spectrum, so the rule is declared and "
+      "recorded rather than assumed.")
+      .value("AscendingRealPart", OccupationOrder::AscendingRealPart)
+      .value("AscendingModulus", OccupationOrder::AscendingModulus);
+
+  py::class_<SelfConsistentMeanFieldDeclaration>(
+      m, "SelfConsistentMeanFieldDeclaration",
+      "The configuration of a self-consistent backreaction solve.")
+      .def(py::init<>())
+      .def_readwrite("occupied_modes",
+                     &SelfConsistentMeanFieldDeclaration::occupiedModes,
+                     "How many modes of the carrier operator are filled.")
+      .def_readwrite("occupation_order",
+                     &SelfConsistentMeanFieldDeclaration::occupationOrder,
+                     "Which modes those are.")
+      .def_readwrite("maximum_iterations",
+                     &SelfConsistentMeanFieldDeclaration::maximumIterations)
+      .def_readwrite("tolerance",
+                     &SelfConsistentMeanFieldDeclaration::tolerance,
+                     "Both the force norm and the covariance change must sit "
+                     "at or below this: a geometry stationary for a covariance "
+                     "that is still moving is not a fixed point, and neither "
+                     "is a settled covariance on a geometry that still carries "
+                     "a force.")
+      .def_readwrite("mixing", &SelfConsistentMeanFieldDeclaration::mixing,
+                     "The fraction of the new projector mixed in at each step. "
+                     "One is the plain re-occupation and the only value for "
+                     "which the covariance is a projector at every step.")
+      .def_readwrite("geometry",
+                     &SelfConsistentMeanFieldDeclaration::geometry,
+                     "The inner holomorphic relaxation that makes the geometry "
+                     "stationary against the current covariance.");
+
+  py::class_<SelfConsistentMeanFieldStep>(m, "SelfConsistentMeanFieldStep",
+      "One outer iteration of a self-consistent solve.")
+      .def(py::init<>())
+      .def_readwrite("iteration", &SelfConsistentMeanFieldStep::iteration)
+      .def_readwrite("force_norm", &SelfConsistentMeanFieldStep::forceNorm)
+      .def_readwrite("covariance_change",
+                     &SelfConsistentMeanFieldStep::covarianceChange)
+      .def_readwrite("purity_defect",
+                     &SelfConsistentMeanFieldStep::purityDefect,
+                     "||Gamma^2 - Gamma||_F, the Gaussianity certificate.")
+      .def_readwrite("action", &SelfConsistentMeanFieldStep::action)
+      .def_readwrite("occupied_energy",
+                     &SelfConsistentMeanFieldStep::occupiedEnergy,
+                     "tr(Gamma h), which for a spectral projector is the sum "
+                     "of the occupied eigenvalues.")
+      .def_readwrite("occupied_eigenvalues",
+                     &SelfConsistentMeanFieldStep::occupiedEigenvalues)
+      .def_readwrite("spectral_gap",
+                     &SelfConsistentMeanFieldStep::spectralGap,
+                     "The gap that isolates the occupied band.")
+      .def_readwrite("geometry_converged",
+                     &SelfConsistentMeanFieldStep::geometryConverged)
+      .def_readwrite("geometry_residual_norm",
+                     &SelfConsistentMeanFieldStep::geometryResidualNorm);
+
+  py::class_<SelfConsistentMeanFieldReport>(m, "SelfConsistentMeanFieldReport",
+      "What a self-consistent solve reached.")
+      .def(py::init<>())
+      .def_readwrite("steps", &SelfConsistentMeanFieldReport::steps)
+      .def_readwrite("converged", &SelfConsistentMeanFieldReport::converged)
+      .def_readwrite("force_norm", &SelfConsistentMeanFieldReport::forceNorm)
+      .def_readwrite("covariance_change",
+                     &SelfConsistentMeanFieldReport::covarianceChange)
+      .def_readwrite("purity_defect",
+                     &SelfConsistentMeanFieldReport::purityDefect)
+      .def_readwrite("covariance", &SelfConsistentMeanFieldReport::covariance)
+      .def_readwrite("occupied_eigenvalues",
+                     &SelfConsistentMeanFieldReport::occupiedEigenvalues)
+      .def_readwrite("occupied_energy",
+                     &SelfConsistentMeanFieldReport::occupiedEnergy)
+      .def_readwrite("spectral_gap",
+                     &SelfConsistentMeanFieldReport::spectralGap)
+      .def_readwrite("action", &SelfConsistentMeanFieldReport::action);
+
+  py::class_<SelfConsistentMeanField>(m, "SelfConsistentMeanField",
+      "The certificates-blind mean-field backreaction of Section 7, solved to "
+      "self-consistency.\n\n"
+      "The only channel from the state to the geometry is the bilinear action "
+      "density, so the force on an edge is tr(Gamma dh/dz_e) and the force on "
+      "a link is tr(Gamma U_e dh/dU_e); both are complex and neither is "
+      "projected onto a real part. The solve alternates making the geometry "
+      "stationary against the whole action at fixed Gamma with re-occupying "
+      "Gamma from the modes of h at the relaxed geometry. A fixed point is the "
+      "self-consistent polaron: Gamma* projects onto modes of h(z*) and the "
+      "state's force balances the geometric action edge by edge. It is a "
+      "stationary point of a complex action, not a minimum of a real one.")
+      .def(py::init<JointAction, SelfConsistentMeanFieldDeclaration>(),
+           py::arg("action"), py::arg("declaration"))
+      .def("solve", &SelfConsistentMeanField::solve,
+           "Run the solve, writing the relaxed geometry into the complex.")
+      .def_property_readonly("action", &SelfConsistentMeanField::action,
+                             "The action, carrying the covariance and the "
+                             "multipliers as the solve left them.");
+
 }
