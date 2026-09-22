@@ -61,15 +61,23 @@ def _declaration(**overrides):
 
 
 def _mean_field(**overrides):
+    """A mean-field declaration with the named fields overridden.
+
+    The inner relaxation is built as its own object and assigned whole, rather
+    than mutated through the outer declaration's member, so the configuration a
+    test asks for is the configuration the solve runs with.
+    """
+    geometry = cob.HolomorphicRelaxationDeclaration()
+    geometry.relax_lengths = True
+    geometry.relax_links = False
+    geometry.relax_multipliers = False
+    geometry.maximum_iterations = 20
+    geometry.tolerance = 1e-12
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.occupied_modes = 1
     declaration.maximum_iterations = 20
     declaration.tolerance = 1e-9
-    declaration.geometry.relax_lengths = True
-    declaration.geometry.relax_links = False
-    declaration.geometry.relax_multipliers = False
-    declaration.geometry.maximum_iterations = 20
-    declaration.geometry.tolerance = 1e-12
+    declaration.geometry = geometry
     for name, value in overrides.items():
         setattr(declaration, name, value)
     return declaration

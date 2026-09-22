@@ -80,6 +80,24 @@ StateSnapshot takeSnapshot(const JointAction &action) {
   return snapshot;
 }
 
+/// Put one edge's two fields back to the values the snapshot holds.
+///
+/// A Jacobian column moves exactly one coordinate, so only that coordinate has
+/// to be undone. Writing every edge back instead would bump every edge's
+/// revision counter and discard the operator caches keyed on them, which costs
+/// a full reassembly per contour node rather than per column.
+void restoreEdge(const JointAction &action, const StateSnapshot &snapshot,
+                 std::size_t edgeIndex) {
+  const auto &spacetime = action.spacetime();
+  if (!spacetime || !spacetime->getEdgeList()) return;
+  const auto edges = spacetime->getEdgeList()->toVector();
+  if (edgeIndex >= edges.size() || edges[edgeIndex] == nullptr) return;
+  if (edgeIndex < snapshot.lengths.size())
+    edges[edgeIndex]->setLength(snapshot.lengths[edgeIndex]);
+  if (edgeIndex < snapshot.phases.size())
+    edges[edgeIndex]->setPhase(snapshot.phases[edgeIndex]);
+}
+
 void restoreSnapshot(JointAction &action, const StateSnapshot &snapshot) {
   const auto &spacetime = action.spacetime();
   if (spacetime && spacetime->getEdgeList()) {
@@ -249,7 +267,7 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
         for (std::size_t row = 0; row < residual.size(); ++row)
           matrix(static_cast<Eigen::Index>(row), column) +=
               node.second * residual[row];
-        restoreSnapshot(working, snapshot);
+        restoreEdge(working, snapshot, edgeIndex);
       }
     }
   }
@@ -266,7 +284,7 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
         for (std::size_t row = 0; row < residual.size(); ++row)
           matrix(static_cast<Eigen::Index>(row), column) +=
               node.second * residual[row];
-        restoreSnapshot(working, snapshot);
+        restoreEdge(working, snapshot, edgeIndex);
       }
     }
   }

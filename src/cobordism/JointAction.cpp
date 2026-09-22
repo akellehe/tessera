@@ -74,6 +74,18 @@ complexd traceOfProduct(const Eigen::MatrixXcd &a, const Eigen::MatrixXcd &b) {
   return trace;
 }
 
+/// Whether a query needs the carrier operator assembled.
+///
+/// The operator enters only through the matter term and the spectral
+/// constraints, so an action of the Regge and face-holonomy terms alone never
+/// pays for the Whitney pencil. The test is on the declaration rather than on
+/// an assembled matrix, so the decision is made before the cost is incurred.
+bool carrierIsNeeded(const JointActionDeclaration &declaration) {
+  if (declaration.matterWeight != 0.0 && !declaration.covariance.empty())
+    return true;
+  return !declaration.momentConstraints.empty();
+}
+
 }  // namespace
 
 // ------------------------------------------------------------------ workspace
@@ -372,7 +384,7 @@ Eigen::MatrixXcd contractionMatrix(const JointActionDeclaration &declaration,
 std::vector<complexd> JointAction::lengthStationarity() const {
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
-                                  /*wantCarrier=*/true);
+                                  carrierIsNeeded(declaration_));
   const std::size_t edges = workspace.edges.size();
   std::vector<complexd> stationarity(edges, complexd{0.0, 0.0});
 
@@ -440,7 +452,7 @@ std::vector<complexd> holonomyLinkDerivative(const ActionWorkspace &workspace,
 std::vector<complexd> JointAction::linkStationarity() const {
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
-                                  /*wantCarrier=*/true);
+                                  carrierIsNeeded(declaration_));
   const std::size_t edges = workspace.edges.size();
   std::vector<complexd> stationarity(edges, complexd{0.0, 0.0});
 
