@@ -91,6 +91,11 @@ namespace {
 
 struct ActionWorkspace {
   ChainComplex complex;
+  /// The operator the carrier and every one of its derivatives is read from.
+  /// One instance per query rather than one per edge: the Whitney pencil's
+  /// factorizations are cached on the instance, so sharing it means the pencil
+  /// is assembled once for a whole per-edge sweep.
+  HodgeLaplacian hodge;
   /// The mesh's edges, in `getEdgeList()` order.
   std::vector<::tessera::mesh::Edge *> edges;
   /// For each mesh edge, its index among the canonical degree-one cells, or
@@ -122,7 +127,9 @@ ActionWorkspace::ActionWorkspace(const std::shared_ptr<Spacetime> &spacetime,
                                  int carrierDegree,
                                  HodgeLaplacian::MetricSource metricSource,
                                  bool wantCarrier)
-    : complex(ChainComplex::fromSpacetime(*spacetime)) {
+    : complex(ChainComplex::fromSpacetime(*spacetime)),
+      hodge(spacetime, HodgeLaplacian::defaultWeightConvention(),
+            metricSource) {
   if (spacetime->getEdgeList()) edges = spacetime->getEdgeList()->toVector();
 
   const auto canonicalEdges = complex.kSimplexVertices(1);
@@ -172,9 +179,6 @@ ActionWorkspace::ActionWorkspace(const std::shared_ptr<Spacetime> &spacetime,
       carrierDegree > complex.dimension())
     return;
   carrierOrder = complex.numSimplices(carrierDegree);
-  const HodgeLaplacian hodge(spacetime,
-                             HodgeLaplacian::defaultWeightConvention(),
-                             metricSource);
   const auto flat = hodge.laplacian(carrierDegree, /*metric=*/true);
   if (flat.size() != carrierOrder * carrierOrder) {
     carrierOrder = 0;
@@ -386,15 +390,12 @@ std::vector<complexd> JointAction::lengthStationarity() const {
   if (workspace.carrierOrder == 0 || contraction.isZero(0.0))
     return stationarity;
 
-  const HodgeLaplacian hodge(spacetime_,
-                             HodgeLaplacian::defaultWeightConvention(),
-                             declaration_.metricSource);
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const auto derivative = hodge.laplacianGradient(
+    const auto derivative = workspace.hodge.laplacianGradient(
         declaration_.carrierDegree, edge->getSource()->getId(),
         edge->getTarget()->getId());
     if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
@@ -458,15 +459,12 @@ std::vector<complexd> JointAction::linkStationarity() const {
   if (workspace.carrierOrder == 0 || contraction.isZero(0.0))
     return stationarity;
 
-  const HodgeLaplacian hodge(spacetime_,
-                             HodgeLaplacian::defaultWeightConvention(),
-                             declaration_.metricSource);
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const auto derivative = hodge.laplacianPhaseGradient(
+    const auto derivative = workspace.hodge.laplacianPhaseGradient(
         declaration_.carrierDegree, edge->getSource()->getId(),
         edge->getTarget()->getId());
     if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
@@ -596,9 +594,6 @@ std::vector<complexd> JointAction::momentGradient(std::size_t index) const {
     power = power * workspace.carrier;
   power = complexd{static_cast<double>(constraint.order), 0.0} * power;
 
-  const HodgeLaplacian hodge(spacetime_,
-                             HodgeLaplacian::defaultWeightConvention(),
-                             declaration_.metricSource);
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];
     if (edge == nullptr || edge->getSource() == nullptr ||
@@ -606,14 +601,14 @@ std::vector<complexd> JointAction::momentGradient(std::size_t index) const {
       continue;
     const std::uint64_t source = edge->getSource()->getId();
     const std::uint64_t target = edge->getTarget()->getId();
-    const auto lengthDerivative =
-        hodge.laplacianGradient(declaration_.carrierDegree, source, target);
+    const auto lengthDerivative = workspace.hodge.laplacianGradient(
+        declaration_.carrierDegree, source, target);
     if (lengthDerivative.size() ==
         workspace.carrierOrder * workspace.carrierOrder)
       gradient[edgeIndex] = traceOfProduct(
           power, toMatrix(lengthDerivative, workspace.carrierOrder));
-    const auto phaseDerivative =
-        hodge.laplacianPhaseGradient(declaration_.carrierDegree, source, target);
+    const auto phaseDerivative = workspace.hodge.laplacianPhaseGradient(
+        declaration_.carrierDegree, source, target);
     if (phaseDerivative.size() ==
         workspace.carrierOrder * workspace.carrierOrder)
       gradient[edges + edgeIndex] =
