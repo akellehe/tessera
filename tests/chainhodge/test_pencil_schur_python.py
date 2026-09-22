@@ -316,7 +316,7 @@ class TestT9ReductionE5E6:
             assert band.rank() == 1
             fibers.append(band.images)
         P = cov.pencil(1)
-        R = PS.restrictToFibers(P.A, P.B, fibers)
+        R = PS.restrictToFiberBlocks(P.A, P.B, fibers)
         assert list(R.blockRanks) == [1, 1]
         coarse = np.linalg.eigvals(np.linalg.solve(R.gram, R.A))
         for i in chosen:
