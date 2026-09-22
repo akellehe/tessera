@@ -134,7 +134,7 @@ class TestCovariantOperatorSecondDerivative:
         links = [complex(np.exp(1j * rng.normal())) for _ in range(n)]
         cov = self._covariant(K, s, links)
         unit = np.eye(n)
-        for e, f in [(0, 1), (2, 5), (3, 8)]:
+        for e, f in [(0, 1), (2, 5), (3, 7)]:
             a = cov.covariantOperatorSecondDerivative(1, e, list(unit[f]))
             b = cov.covariantOperatorSecondDerivative(1, f, list(unit[e]))
             np.testing.assert_allclose(a, b, atol=1e-11 * max(1.0, np.abs(a).max()))
