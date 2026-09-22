@@ -46,37 +46,38 @@ ProtonIngredients::ProtonIngredients(std::uint64_t seed, int registerDegree,
 
 std::shared_ptr<Spacetime> ProtonIngredients::buildMinimalSeed() {
   // One pentatope with uniform |l^2| = 1, from the dimension-generic builder
-  // the canonical arm also uses. The metric is all-spacelike by design: at
+  // the synthesis arm also uses. The metric is all-spacelike by design: at
   // initialization no time has passed, so no causal structure is put in by
   // hand and any causal content must emerge.
   //
   // Unbalanced wiring, which is what this arm has always built. Unlike
-  // Proton::buildMinimalSeed there is no parameter to select the balanced
+  // ProtonSynthesis::buildMinimalSeed there is no parameter to select the balanced
   // variant, because nothing composes this arm with balanced edges.
   return MultiCobordism::seedSimplex(kDim, /*balancedEdges=*/false);
 }
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::recombinationNode(
     std::uint64_t seed) const {
-  // Step A is the canonical arm's node, verbatim: the composed Proton defines
-  // the recombination setup.
+  // Step A is the synthesis arm's node, verbatim: the composed ProtonSynthesis
+  // defines the recombination setup and stamps it SimulationMode::Synthesis,
+  // because it pins the diquark and antidiquark outputs.
   return proton_.recombinationNode(seed);
 }
 
 std::shared_ptr<MultiCobordism> ProtonIngredients::formationNode(
     std::uint64_t seed) const {
   // Step B with nothing pinned: the same seed complex and the same ideal diquark
-  // {1,ω} plus third quark {ω²} inputs as Proton::formationNode, but with an
-  // empty output-target list, so the objective's matter term is the inputs'
+  // {1,ω} plus third quark {ω²} inputs as ProtonSynthesis::formationNode, but
+  // with an empty output-target list, so the objective's matter term is the inputs'
   // residuals alone and the whole's final state emerges. MultiCobordism supports
   // the empty list: with no output targets, rU sums only the input blocks.
-  const complexd w = Proton::omega();
+  const complexd w = ProtonSynthesis::omega();
   const std::vector<complexd> diquark = {complexd(1.0, 0.0), w};
   const std::vector<complexd> thirdQuark = {w * w};
   auto host = buildMinimalSeed();
   // Capture the seed vertex ids before constructing the node (see
-  // Proton::recombinationNode): precone_ > 0 regrows the complex in the
-  // constructor, but the seed ids persist.
+  // ProtonSynthesis::recombinationNode): precone_ > 0 regrows the complex in
+  // the constructor, but the seed ids persist.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -102,8 +103,8 @@ std::shared_ptr<MultiCobordism> ProtonIngredients::jointNode(
       {complexd(-1.0, 0.0), complexd(0.0, 0.0), complexd(1.0, 0.0)}};
   auto host = buildMinimalSeed();
   // Capture the seed vertex ids before constructing the node (see
-  // Proton::recombinationNode): precone_ > 0 regrows the complex in the
-  // constructor, but the seed ids persist.
+  // ProtonSynthesis::recombinationNode): precone_ > 0 regrows the complex in
+  // the constructor, but the seed ids persist.
   std::vector<std::uint64_t> seedVertexIds;
   for (const auto *vertex : host->getVertexList()->toVector())
     seedVertexIds.push_back(vertex->getId());
@@ -123,13 +124,14 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
   if (attempted_) return;
   attempted_ = true;
 
-  // The canonical arm's schedule, run through the same function it uses.
-  const Proton::NodeDrive schedule{initSteps, evolveSteps,
-                                   stage1CandidateMoves, stage2Beta,
-                                   stage2MaxIters, shouldUseDirectedSurgery_};
-  const auto runNode = [&](MultiCobordism &node) {
-    Proton::driveNode(node, schedule);
-  };
+  // The synthesis arm's schedule, run through the same function it uses. Step
+  // A is a synthesis node and goes through ProtonSynthesis::driveNode, which
+  // checks its mode; step B pins no output and runs the identical schedule
+  // directly.
+  const ProtonSynthesis::NodeDrive schedule{initSteps, evolveSteps,
+                                            stage1CandidateMoves, stage2Beta,
+                                            stage2MaxIters,
+                                            shouldUseDirectedSurgery_};
 
   // The answer-agnostic summary the persistence check compares: the emergent
   // hole count, b_k, and the objective. Not the singlet residual — no
@@ -152,12 +154,12 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
 
     // ---- Step A — recombination: best-effort; its r_U is reported, not gated. ----
     auto stepA = recombinationNode(seedA);
-    runNode(*stepA);
+    ProtonSynthesis::driveNode(*stepA, schedule);
     const double diquarkR = stepA->rU(stepA->spacetime());
 
-    // ---- Step B — formation with nothing pinned ----
+    // ---- Step B — formation with no output pinned ----
     auto stepB = formationNode(seedB);
-    runNode(*stepB);
+    schedule.run(*stepB);
 
     // Persistence: continued evolution (∂W frozen) plus relaxation must leave
     // the answer-agnostic summary stable. Up to kMaxPersistencePasses passes may
@@ -196,7 +198,7 @@ void ProtonIngredients::build(int maxRestarts, int initSteps, int evolveSteps,
       spacetime_ = whole;
       emergentHoles_ = MultiCobordism::emergentHoles(*whole, registerDegree_);
       singletResidual_ = MultiCobordism::residualOfTargetStateAgainstHarmonic(
-          whole, registerDegree_, Proton::singlet());  // diagnostic read, after the fact
+          whole, registerDegree_, ProtonSynthesis::singlet());  // diagnostic read, after the fact
       inputResidual_ = stepB->rU(whole);
       finalObjective_ = finalObjective;
       diquarkResidual_ = diquarkR;
@@ -236,7 +238,7 @@ std::shared_ptr<Spacetime> ProtonIngredients::spacetime() {
 
 std::shared_ptr<Spacetime> ProtonIngredients::block() {
   ensureBuilt();
-  return spacetime_;  // the emergent object IS the whole (parity with Proton::block)
+  return spacetime_;  // the emergent object IS the whole (parity with ProtonSynthesis::block)
 }
 
 std::vector<std::vector<std::uint64_t>> ProtonIngredients::emergentHoles() {

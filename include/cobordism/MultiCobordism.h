@@ -419,14 +419,14 @@ class MultiCobordism {
                      HodgeLaplacian::defaultMetricSource());
 
   /// Where every Hodge operator this node scores, relaxes and reads takes its
-  /// metric from. Defaults to the process-wide
-  /// `HodgeLaplacian::defaultMetricSource()` read at construction, so that the
-  /// node, the static readouts, the observables and checkpoint replay agree; a
-  /// run on the chain-level Whitney pencil flips that default once at startup
-  /// (`HodgeLaplacian::setDefaultMetricSource(WhitneyPencil)`). Under
+  /// metric from, the operators of the post-hoc analysis pass
+  /// (`runRecursiveAnalysis`) included. Defaults to the process-wide
+  /// `HodgeLaplacian::defaultMetricSource()` read at construction, the
+  /// chain-level Whitney pencil unless changed, so that the node, the static
+  /// readouts, the observables and checkpoint replay agree. Under
   /// `WhitneyPencil` the operator is \f$ h_k(s,U) \f$ of the complex squared
   /// edge lengths and the edge-phase links, at every degree; `DiagonalWeights`
-  /// is the per-simplex diagonal metric.
+  /// is the per-simplex diagonal metric, selected by name.
   [[nodiscard]] HodgeLaplacian::MetricSource metricSource() const noexcept {
     return metricSource_;
   }
@@ -1223,7 +1223,7 @@ class MultiCobordism {
   /// (\f$ |\ell^2| = 1 \f$; balanced wiring gives \f$ \ell=\sqrt{1/2}(1+i) \f$),
   /// Lorentzian signature, and the causal dynamical triangulations (CDT) type
   /// and preferred foliation. This is the seed every host grows from;
-  /// `Proton::buildMinimalSeed` is this at dimension 4.
+  /// `ProtonSynthesis::buildMinimalSeed` is this at dimension 4.
   ///
   /// Reference: Ambjorn, Jurkiewicz and Loll, "Dynamically Triangulating
   /// Lorentzian Quantum Gravity", arXiv:hep-th/0105267.
@@ -2349,6 +2349,23 @@ class MultiCobordism {
     return carriedCovariance_;
   }
 
+  /// Declare the spectral-moment stiffness of the geometric action about the
+  /// current geometry, the carrier (`HodgeLaplacian::spectralMomentStiffness`):
+  /// the local spectral moments of orders \f$ 1,\dots,m \f$ at each of
+  /// `degrees` are recorded now as the reference, and every objective gains
+  /// \f$ \beta_M\sum_k\operatorname{Re}S_{M,k} \f$. `weight` 0 removes it.
+  /// @throws std::invalid_argument for a negative or non-finite weight, a
+  ///   negative coefficient, or no coefficients with a nonzero weight.
+  void setMomentStiffness(double weight, const std::vector<int> &degrees,
+                          const std::vector<double> &coefficients);
+  [[nodiscard]] double momentStiffnessWeight() const noexcept { return momentStiffnessWeight_; }
+  [[nodiscard]] const std::vector<int> &momentStiffnessDegrees() const noexcept {
+    return momentStiffnessDegrees_;
+  }
+  [[nodiscard]] const std::vector<double> &momentStiffnessCoefficients() const noexcept {
+    return momentStiffnessCoefficients_;
+  }
+
   /// The mean-field coefficient \f$ \beta_E \f$, checkpointed. Default 0.
   void setCarriedStateEnergyWeight(double weight);
   /// The mean-field coefficient \f$ \beta_E \f$.
@@ -2370,6 +2387,16 @@ class MultiCobordism {
   /// Depends only on \f$ \Gamma \f$ and the classical geometry. Exactly 0
   /// outside the `CertificatesBlindMeanField` sub-mode, with no carried state,
   /// or at weight zero.
+  ///
+  /// This is a real scalar the engine adds to its scalar objective, built from
+  /// the Hermitian part of the operator so that the covariance evolution of
+  /// `advanceCarriedState` stays unitary and therefore Gaussian-closed. The
+  /// complex bilinear density \f$ \operatorname{tr}(\Gamma\,h(z,U)) \f$ of
+  /// Section 7, with no adjoint and no real projection, together with its
+  /// complex force on both edge fields and the self-consistent
+  /// \f$ (z^{*},\Gamma^{*}) \f$ iteration that re-occupies the modes of
+  /// \f$ h \f$, are `cobordism::JointAction` and
+  /// `cobordism::SelfConsistentMeanField`.
   [[nodiscard]] double carriedStateEnergy(
       const std::shared_ptr<Spacetime> &spacetime) const;
 
@@ -2407,6 +2434,13 @@ class MultiCobordism {
   /// \f$ h(\Gamma,g)=\tfrac12(L_k+L_k^\dagger)|_S \f$, with the classical
   /// geometry closed over. The loop is Gaussian-closed by construction and the
   /// certificate measures that closure.
+  ///
+  /// The covariance is transported by this generator and is not re-occupied: a
+  /// state carried along a moving geometry keeps the modes it was given, which
+  /// is a different question from which modes of \f$ h(z) \f$ are filled at the
+  /// geometry it arrives on. The occupation of the current operator's modes,
+  /// and the fixed point of the two together, are
+  /// `cobordism::SelfConsistentMeanField`.
   /// \returns the worst purity defect across the steps; NaN with no carried
   ///   state.
   double advanceCarriedState();
@@ -2930,7 +2964,7 @@ class MultiCobordism {
   /// general complexified geometry.
   bool realSquaredLengthsOnly_{false};
   /// The metric source of every Hodge operator this node builds (see `metricSource()`).
-  HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::DiagonalWeights};
+  HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::WhitneyPencil};
   /// The injected functional, and the only record of what this node descends.
   /// Never null: the constructor installs `LegacyObjective`.
   std::shared_ptr<CobordismObjective> objectiveSpec_;
@@ -3181,6 +3215,12 @@ class MultiCobordism {
   std::vector<std::complex<double>> carriedCovariance_{};
   int carriedStateDegree_{1};
   double carriedStateEnergyWeight_{0.0};
+  // The spectral-moment stiffness: its weight, degrees, order weights, and the
+  // carrier's local moments recorded when it was declared.
+  double momentStiffnessWeight_{0.0};
+  std::vector<int> momentStiffnessDegrees_;
+  std::vector<double> momentStiffnessCoefficients_;
+  std::vector<std::vector<std::complex<double>>> momentStiffnessReference_;
   double meanFieldStepSize_{0.0};
   int meanFieldSteps_{0};
   /// Thresholds for `refinementDecisionOf`, all zero. The indicator struct's

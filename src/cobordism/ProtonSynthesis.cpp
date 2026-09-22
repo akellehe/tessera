@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Twin Vector Labs LLC.
 // All rights reserved.
 
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 
 #include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "cobordism/MultiCobordism.h"
@@ -29,7 +31,7 @@ namespace {
 constexpr int kDim = 4;  // framework dimension; the seed is a single Δ⁴ simplex
 }  // namespace
 
-std::complex<double> Proton::omega() {
+std::complex<double> ProtonSynthesis::omega() {
   // The one cube root of unity in the codebase, from ColorFiber: the algebraic
   // value (−1 + i√3)/2, never exp(2πi/3). Only the algebraic components make
   // 1 + ω + ω̄ cancel exactly; exp(2πi/3) leaves 4.4e-16, and that residual
@@ -37,15 +39,17 @@ std::complex<double> Proton::omega() {
   return observables::ColorFiber::omega();
 }
 
-std::vector<std::complex<double>> Proton::singlet() {
+std::vector<std::complex<double>> ProtonSynthesis::singlet() {
   const complexd w = omega();
   return {complexd(1.0, 0.0), w, w * w};
 }
 
-Proton::Proton(std::uint64_t seed, int registerDegree, double gamma,
-               double inputWeight, int precone, bool shouldUseDirectedSurgery,
-               bool preconeTimelike, bool preconeAlternate, bool balancedEdges,
-               bool singularValueRatio, bool einsteinHilbert)
+ProtonSynthesis::ProtonSynthesis(std::uint64_t seed, int registerDegree,
+                                 double gamma, double inputWeight, int precone,
+                                 bool shouldUseDirectedSurgery,
+                                 bool preconeTimelike, bool preconeAlternate,
+                                 bool balancedEdges, bool singularValueRatio,
+                                 bool einsteinHilbert)
     : baseSeed_(seed),
       registerDegree_(registerDegree),
       gamma_(gamma),
@@ -59,27 +63,46 @@ Proton::Proton(std::uint64_t seed, int registerDegree, double gamma,
   einsteinHilbert_ = einsteinHilbert;
 }
 
-void Proton::driveNode(MultiCobordism &node, const NodeDrive &schedule) {
-  node.runStage1(schedule.initSteps, schedule.stage1CandidateMoves,
-                 /*growBoundaries=*/true);
-  if (schedule.directedSurgery) (void)node.directedConeOut();
-  node.runStage1(schedule.evolveSteps, schedule.stage1CandidateMoves,
-                 /*growBoundaries=*/false);
-  if (schedule.directedSurgery) (void)node.directedConeIn();
-  node.runStage2(schedule.stage2Beta, schedule.stage2MaxIters);
+void ProtonSynthesis::NodeDrive::run(MultiCobordism &node) const {
+  node.runStage1(initSteps, stage1CandidateMoves, /*growBoundaries=*/true);
+  if (directedSurgery) (void)node.directedConeOut();
+  node.runStage1(evolveSteps, stage1CandidateMoves, /*growBoundaries=*/false);
+  if (directedSurgery) (void)node.directedConeIn();
+  node.runStage2(stage2Beta, stage2MaxIters);
 }
 
-std::shared_ptr<Spacetime> Proton::buildMinimalSeed(bool balancedEdges) {
+void ProtonSynthesis::requireSynthesisMode(const MultiCobordism &node) {
+  // The synthesis pins colour targets. Targets are permitted only in the
+  // labelled controlled-synthesis mode; the emergence protocol pins none, so a
+  // targeted node may not run under the emergence label.
+  const auto mode = node.simulationMode();
+  if (mode == MultiCobordism::SimulationMode::Synthesis) return;
+  std::string label = MultiCobordism::modeName(mode);
+  if (mode == MultiCobordism::SimulationMode::Emergence)
+    label += " (" + MultiCobordism::submodeName(node.emergenceSubmode()) + ")";
+  throw std::invalid_argument(
+      "ProtonSynthesis: the proton synthesis pins colour targets (the diquark "
+      "pair and the {1, omega, omega^2} singlet) and runs only in the labelled "
+      "controlled-synthesis mode (SimulationMode::Synthesis); this node is in " +
+      label + " mode");
+}
+
+void ProtonSynthesis::driveNode(MultiCobordism &node, const NodeDrive &schedule) {
+  requireSynthesisMode(node);  // before anything runs
+  schedule.run(node);
+}
+
+std::shared_ptr<Spacetime> ProtonSynthesis::buildMinimalSeed(bool balancedEdges) {
   // A single Δ⁴ simplex (one pentatope, 5 vertices). Nothing is pre-built: the
-  // proton's whole topology emerges from here, and the metric is uniform
-  // (ℓ² = 1) so the geometry emerges from the relaxation. Only the seed simplex
-  // and the target color states are imposed. The dimension-generic builder is
+  // proton's whole topology is grown from here, and the metric is uniform
+  // (ℓ² = 1) so the geometry comes from the relaxation. Only the seed simplex
+  // and the target colour states are imposed. The dimension-generic builder is
   // `MultiCobordism::seedSimplex`.
   return MultiCobordism::seedSimplex(kDim, balancedEdges);
 }
 
-std::shared_ptr<MultiCobordism> Proton::recombinationNode(std::uint64_t seed) const {
-  // Step A inputs: two neutral q-q̄ pairs (Σ = 0). Outputs: a colored diquark
+std::shared_ptr<MultiCobordism> ProtonSynthesis::recombinationNode(std::uint64_t seed) const {
+  // Step A inputs: two neutral q-q̄ pairs (Σ = 0). Outputs: a coloured diquark
   // {1,ω} ⊔ antidiquark {1,ω²} — 2-vectors, not the singlet. Seeded on a fresh
   // single-Δ⁴ seed, inputs at v0,v1 and outputs at v2,v3. Not run; the caller
   // drives it.
@@ -103,13 +126,15 @@ std::shared_ptr<MultiCobordism> Proton::recombinationNode(std::uint64_t seed) co
       std::vector<int>{registerDegree_}, gamma_, seed, precone_,
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
+  // The label: this node pins targets, so it runs as controlled synthesis.
+  node->setSimulationMode(MultiCobordism::SimulationMode::Synthesis);
   node->setInputResidualWeight(inputResidualWeight_);
   node->seedInputs({seedVertexIds[0], seedVertexIds[1]});
   node->seedOutputs({seedVertexIds[2], seedVertexIds[3]});
   return node;
 }
 
-std::shared_ptr<MultiCobordism> Proton::formationNode(std::uint64_t seed) const {
+std::shared_ptr<MultiCobordism> ProtonSynthesis::formationNode(std::uint64_t seed) const {
   // Step B inputs: the diquark {1,ω} plus the third quark {ω²}. Output: the
   // proton singlet, read off the whole cobordism (no seedOutputs). Seeded on a
   // fresh single-Δ⁴ seed, inputs at v0,v1. Not run; the caller drives it.
@@ -129,19 +154,21 @@ std::shared_ptr<MultiCobordism> Proton::formationNode(std::uint64_t seed) const 
       std::vector<int>{registerDegree_}, gamma_, seed, precone_,
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
+  // The label: this node pins targets, so it runs as controlled synthesis.
+  node->setSimulationMode(MultiCobordism::SimulationMode::Synthesis);
   node->setInputResidualWeight(inputResidualWeight_);
   node->seedInputs({seedVertexIds[0], seedVertexIds[1]});
   return node;
 }
 
-std::shared_ptr<MultiCobordism> Proton::directNode(std::uint64_t seed) const {
+std::shared_ptr<MultiCobordism> ProtonSynthesis::directNode(std::uint64_t seed) const {
   // One-step inputs: the three bare quarks {1}, {ω}, {ω²} and their three
   // anti-quarks, the elementwise conjugates {1}, {ω̄}, {ω̄²} (conjugation is the
   // antiparticle convention here: the antidiquark {1, ω²} is exactly the
   // conjugate of the diquark {1, ω}), so the prepared content is three q-q̄
   // pairs, not three quarks from nothing. Output: the proton singlet, read off
   // the whole cobordism (no seedOutputs, as in formationNode); the anti-baryon
-  // partner is left to emerge unpinned. Seeded on a fresh single-Δ⁴ seed. Not
+  // partner is not pinned. Seeded on a fresh single-Δ⁴ seed. Not
   // run; the caller drives it.
   const complexd w = omega();
   const std::vector<std::vector<complexd>> quarksAndAntiquarks = {
@@ -159,6 +186,8 @@ std::shared_ptr<MultiCobordism> Proton::directNode(std::uint64_t seed) const {
       std::vector<int>{registerDegree_}, gamma_, seed, precone_,
       /*shouldProposeDispositions=*/true, preconeTimelike_, preconeAlternate_,
       balancedEdges_, singularValueRatio_, einsteinHilbert_);
+  // The label: this node pins targets, so it runs as controlled synthesis.
+  node->setSimulationMode(MultiCobordism::SimulationMode::Synthesis);
   node->setInputResidualWeight(inputResidualWeight_);
   // Six blocks on a 5-vertex Δ⁴ seed, so the anchors cycle. On the bare seed
   // every block's region is the seed's full cell-neighbourhood anyway — the
@@ -174,9 +203,10 @@ std::shared_ptr<MultiCobordism> Proton::directNode(std::uint64_t seed) const {
   return node;
 }
 
-void Proton::buildDirect(int maxRestarts, int initSteps, int evolveSteps,
-                         int stage1CandidateMoves, double stage2Beta,
-                         double colorTolerance, int minEmergentHoles) {
+void ProtonSynthesis::buildDirect(int maxRestarts, int initSteps,
+                                  int evolveSteps, int stage1CandidateMoves,
+                                  double stage2Beta, double colorTolerance,
+                                  int minEmergentHoles) {
   if (attempted_) return;
   attempted_ = true;
 
@@ -186,6 +216,7 @@ void Proton::buildDirect(int maxRestarts, int initSteps, int evolveSteps,
   for (int attempt = 0; attempt < maxRestarts; ++attempt) {
     const std::uint64_t seed = baseSeed_ + static_cast<std::uint64_t>(attempt);
     auto node = directNode(seed);
+    requireSynthesisMode(*node);  // `run` below bypasses driveNode
     // The combined drive: every `run` iteration interleaves the stage-1 surgery
     // update with the stage-2 geometric relaxation, so the optimizer takes
     // whichever kind of progress helps at each point — an initialization pass
@@ -217,13 +248,14 @@ void Proton::buildDirect(int maxRestarts, int initSteps, int evolveSteps,
       colorResidual_ = colorR;
       diquarkResidual_ = 0.0;  // no step A in the one-step build
     }
-    if (ok) return;  // a proton emerged — stop restarting
+    if (ok) return;  // the synthesis converged — stop restarting
   }
 }
 
-void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
-                   int stage1CandidateMoves, double stage2Beta,
-                   int stage2MaxIters, double colorTolerance, int minEmergentHoles) {
+void ProtonSynthesis::build(int maxRestarts, int initSteps, int evolveSteps,
+                            int stage1CandidateMoves, double stage2Beta,
+                            int stage2MaxIters, double colorTolerance,
+                            int minEmergentHoles) {
   if (attempted_) return;
   attempted_ = true;
 
@@ -233,7 +265,8 @@ void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
   // boundary regions until they carry (grow_boundaries=true), an evolution pass
   // with ∂W frozen (grow_boundaries=false), then the geometric relaxation. Node
   // setup — seed, targets, seeding, input weight — lives in
-  // recombinationNode/formationNode, the same factories the animation drives.
+  // recombinationNode/formationNode, which stamp each node
+  // SimulationMode::Synthesis; driveNode refuses any other mode.
   const NodeDrive schedule{initSteps, evolveSteps, stage1CandidateMoves,
                            stage2Beta, stage2MaxIters,
                            shouldUseDirectedSurgery_};
@@ -273,45 +306,45 @@ void Proton::build(int maxRestarts, int initSteps, int evolveSteps,
       colorResidual_ = colorR;
       diquarkResidual_ = diquarkR;
     }
-    if (ok) return;  // a proton emerged — stop restarting
+    if (ok) return;  // the synthesis converged — stop restarting
   }
 }
 
-void Proton::ensureBuilt() {
+void ProtonSynthesis::ensureBuilt() {
   if (!attempted_) build();
 }
 
-bool Proton::converged() {
+bool ProtonSynthesis::converged() {
   ensureBuilt();
   return converged_;
 }
 
-std::uint64_t Proton::seed() {
+std::uint64_t ProtonSynthesis::seed() {
   ensureBuilt();
   return convergedSeed_;
 }
 
-std::shared_ptr<Spacetime> Proton::spacetime() {
+std::shared_ptr<Spacetime> ProtonSynthesis::spacetime() {
   ensureBuilt();
   return spacetime_;
 }
 
-std::shared_ptr<Spacetime> Proton::block() {
+std::shared_ptr<Spacetime> ProtonSynthesis::block() {
   ensureBuilt();
   return block_;
 }
 
-std::vector<std::vector<std::uint64_t>> Proton::emergentHoles() {
+std::vector<std::vector<std::uint64_t>> ProtonSynthesis::emergentHoles() {
   ensureBuilt();
   return emergentHoles_;
 }
 
-double Proton::colorResidual() {
+double ProtonSynthesis::colorResidual() {
   ensureBuilt();
   return colorResidual_;
 }
 
-double Proton::diquarkResidual() {
+double ProtonSynthesis::diquarkResidual() {
   ensureBuilt();
   return diquarkResidual_;
 }

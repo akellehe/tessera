@@ -17,13 +17,6 @@
 
 namespace tessera::chainhodge {
 
-/// The declared causal type of an edge. This is an INPUT: it is never
-/// inferred from the real part, imaginary part, argument, or modulus of a
-/// squared length.
-enum class CausalType { Spacelike, Timelike, Null };
-/// One declared causal type per edge, in the canonical edge order.
-using CausalTypes = std::vector<CausalType>;
-
 /// One member of the \f$ \varepsilon \f$ family: the read of a Lorentzian
 /// instance at a reported rotation, carrying its allowability,
 /// margin, and the harmonic kernel's gap certificate. A read at
@@ -60,30 +53,47 @@ struct LorentzianExtrapolation {
 /// the timelike part of every squared length rotated by
 /// \f$ e^{-2i\varepsilon} \f$ — complex lengths on the allowable side of the
 /// Kontsevich–Segal boundary — at one or more reported
-/// \f$ \varepsilon > 0 \f$. Complex lengths are the \f$ i\varepsilon \f$, and
-/// spectral bands are selected on the complex plane. Results at
-/// \f$ \varepsilon = 0 \f$ are reported only alongside their gap certificate and
-/// never alone; extrapolation to \f$ \varepsilon \to 0 \f$ is a separate,
-/// labeled step. The instance certificate carries \f$ \varepsilon \f$.
+/// \f$ \varepsilon > 0 \f$ (integration specification, Requirement 2). Complex
+/// lengths are the \f$ i\varepsilon \f$, and spectral bands are selected on the
+/// complex plane. Results at \f$ \varepsilon = 0 \f$ are reported only alongside
+/// their gap certificate and never alone; extrapolation to
+/// \f$ \varepsilon \to 0 \f$ is a separate, labeled step. The instance
+/// certificate carries \f$ \varepsilon \f$.
 ///
-/// Every squared length carries a declared `CausalType`; `rotate` multiplies
-/// the timelike ones by \f$ e^{-2i\varepsilon} \f$ and leaves the others
-/// untouched. Null edges are not rotated. Nothing here classifies an edge.
+/// Every squared length is declared together with its timelike part
+/// \f$ \tau_e \f$, the contribution of the edge's temporal displacement: for a
+/// metric \f$ e^{2\varphi}(-dt^2 + dx^2) \f$ an edge with displacement
+/// \f$ (\Delta t_e, \Delta x_e) \f$ has
+/// \f$ s_e = e^{2\varphi}(\Delta x_e^2 - \Delta t_e^2) \f$ and
+/// \f$ \tau_e = -e^{2\varphi}\Delta t_e^2 \f$. The family rotates that part
+/// and keeps the spacelike remainder \f$ s_e - \tau_e \f$:
+/// \f$ s_e(\varepsilon) = (s_e - \tau_e) + e^{-2i\varepsilon}\tau_e \f$. An
+/// edge that is purely spacelike has \f$ \tau_e = 0 \f$ and does not move; a
+/// diagonal of a causal lattice, spacelike or null as a whole, still has its
+/// timelike part rotated. The split is an input: nothing here infers it from a
+/// squared length or classifies an edge.
 ///
 /// Reference: Kontsevich & Segal, "Wick rotation and the positivity of energy
 /// in quantum field theory", arXiv:2105.10161.
 class LorentzianFamily {
  public:
-  /// \f$ s_e(\varepsilon) \f$: timelike entries multiplied by
-  /// \f$ e^{-2i\varepsilon} \f$, spacelike and null entries unchanged.
-  /// @throws std::invalid_argument when \p types and \p s differ in length.
-  [[nodiscard]] static SquaredLengths rotate(const SquaredLengths &s, const CausalTypes &types,
+  /// \f$ s_e(\varepsilon) = s_e + (e^{-2i\varepsilon} - 1)\,\tau_e \f$: the
+  /// timelike part \f$ \tau_e \f$ of every squared length rotated by
+  /// \f$ e^{-2i\varepsilon} \f$, the spacelike part \f$ s_e - \tau_e \f$
+  /// unchanged. At \f$ \varepsilon = 0 \f$ it returns \p s exactly.
+  /// @throws std::invalid_argument when \p timelikeParts and \p s differ in
+  ///   length, when a timelike part is not finite, or when \p epsilon is
+  ///   negative or not finite (the family lies at \f$ \varepsilon \ge 0 \f$).
+  [[nodiscard]] static SquaredLengths rotate(const SquaredLengths &s,
+                                             const SquaredLengths &timelikeParts,
                                              double epsilon);
 
-  /// The instance at \f$ \varepsilon \f$: a `ChainHodge` over `rotate(s, types, epsilon)`
-  /// whose certificate records \f$ \varepsilon \f$.
+  /// The instance at \f$ \varepsilon \f$: a `ChainHodge` over
+  /// `rotate(s, timelikeParts, epsilon)` whose certificate records
+  /// \f$ \varepsilon \f$.
   [[nodiscard]] static ChainHodge instance(const cobordism::ChainComplex &K,
-                                           const SquaredLengths &s, const CausalTypes &types,
+                                           const SquaredLengths &s,
+                                           const SquaredLengths &timelikeParts,
                                            double epsilon, Preset preset = Preset::L2,
                                            Branch branch = Branch::Continuation,
                                            int crossoverDimension = ChainHodge::kDefaultCrossoverDimension);
@@ -93,10 +103,14 @@ class LorentzianFamily {
   /// \f$ \varepsilon = 0 \f$ member therefore carries its gap), plus the dense
   /// spectrum when \p withSpectrum is set and the instance is below the
   /// crossover.
+  /// @throws std::invalid_argument when \p epsilons holds no
+  ///   \f$ \varepsilon > 0 \f$ (a read at \f$ \varepsilon = 0 \f$ is never
+  ///   reported alone), or any negative or non-finite rotation.
   [[nodiscard]] static std::vector<LorentzianRead> sweep(
-      const cobordism::ChainComplex &K, const SquaredLengths &s, const CausalTypes &types,
-      const std::vector<double> &epsilons, int degree, Preset preset = Preset::L2,
-      Branch branch = Branch::Continuation, double kappa = 10.0, bool withSpectrum = false,
+      const cobordism::ChainComplex &K, const SquaredLengths &s,
+      const SquaredLengths &timelikeParts, const std::vector<double> &epsilons, int degree,
+      Preset preset = Preset::L2, Branch branch = Branch::Continuation, double kappa = 10.0,
+      bool withSpectrum = false,
       int crossoverDimension = ChainHodge::kDefaultCrossoverDimension);
 
   /// Least-squares polynomial of degree \f$ \min(\text{order}, n-1) \f$ in

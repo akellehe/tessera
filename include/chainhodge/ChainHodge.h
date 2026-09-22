@@ -15,6 +15,7 @@
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 
+#include "chainhodge/SparseRank.h"
 #include "chainhodge/WhitneyMass.h"
 #include "cobordism/ChainComplex.h"
 
@@ -51,9 +52,18 @@ struct HarmonicRead {
   int rank{0};
   double tolerance{0.0};
   /// \f$ \varsigma_r/\varsigma_{r+1} \f$: last kept over first discarded singular
-  /// value of \f$ S \f$ (\f$ +\infty \f$ when nothing was discarded; quiet NaN
-  /// when the sparse path measured no singular values).
+  /// value of \f$ S \f$ (\f$ +\infty \f$ when nothing was discarded). Both
+  /// paths measure it: the dense SVD directly, the sparse path by
+  /// `SparseRank::kernel`.
   double gap{std::numeric_limits<double>::infinity()};
+  /// \f$ \varsigma_1 \f$ of \f$ S \f$.
+  double largestSingular{0.0};
+  /// \f$ \varsigma_r \f$, the smallest singular value of \f$ S \f$ kept as
+  /// nonzero (\f$ +\infty \f$ when \f$ r = 0 \f$).
+  double lastKept{std::numeric_limits<double>::infinity()};
+  /// \f$ \varsigma_{r+1} \f$, the largest singular value of \f$ S \f$ read as
+  /// zero (\f$ 0 \f$ when none was discarded).
+  double firstDiscarded{0.0};
   /// Whether the dense SVD (true) or the sparse rank-revealing QR (false)
   /// computed the kernel.
   bool dense{true};
@@ -69,12 +79,22 @@ struct RankReport {
   /// (R1, R4) and \f$ \mathrm{rank}\,\partial_k \f$ (R2, R3).
   std::array<int, 4> expected{{0, 0, 0, 0}};
   std::array<bool, 4> holds{{false, false, false, false}};
+  /// The singular values of each product on either side of its exact rank
+  /// \f$ \rho \f$ = `expected`: `sigmaAt` is \f$ \varsigma_\rho \f$, the
+  /// smallest singular value the condition requires to be nonzero,
+  /// `sigmaNext` is \f$ \varsigma_{\rho+1} \f$, zero in exact arithmetic and
+  /// measured at its rounding level, and `gap` is their ratio. `rank` equals
+  /// `measured` and `tolerance` is the threshold that decided it.
+  std::array<SingularSplit, 4> splits{};
   /// (R1)–(R2): \f$ C_k = \mathrm{im}\,\partial_k^* \oplus \mathrm{im}\,\partial_{k+1}
   /// \oplus H_k \f$ and \f$ \dim H_k = b_k \f$.
   bool decompositionHolds{false};
   /// (R1)–(R4): \f$ \ker L_k = H_k \f$ with no Jordan block at zero.
   bool kernelIsHarmonic{false};
   double kappa{10.0};
+  /// Whether dense SVDs of the formed products (true) or `SparseRank::congruence`
+  /// (false) measured the ranks.
+  bool dense{true};
 };
 
 /// The dense spectrum of one degree's pencil.
@@ -139,8 +159,10 @@ struct SpectrumRead {
 /// names which vector an eigenproblem is written in.
 ///
 /// Dense objects (pencils, spectra, the dense SVD kernel) are formed only below
-/// the crossover dimension; above it the kernel is computed by sparse
-/// rank-revealing QR and dense requests refuse with `std::length_error`.
+/// the crossover dimension; above it the kernel and the rank conditions are
+/// measured by `SparseRank` (sparse QR, sparse LU and inverse iteration, with
+/// the singular values on either side of every rank decision), and dense
+/// requests refuse with `std::length_error`.
 /// The adjoint is the transpose throughout; no conjugation enters any operator.
 ///
 /// Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem
@@ -207,8 +229,9 @@ class ChainHodge {
   /// (Whitney) or \f$ \ker[\partial_k;\ \partial_{k+1}^T G_k] \f$ (Grassmann).
   /// Below the crossover the kernel is the dense SVD's with tolerance
   /// \f$ \kappa\,\max(m,n)\,\epsilon_m\,\varsigma_{\max} \f$; at or above it, or
-  /// when \p forceSparse is set, a sparse rank-revealing QR of \f$ S^T \f$
-  /// with the same threshold supplies it (gap unmeasured).
+  /// when \p forceSparse is set, `SparseRank::kernel` supplies it from a sparse
+  /// QR of \f$ S \f$ with the same threshold, and measures the gap
+  /// \f$ \varsigma_r/\varsigma_{r+1} \f$ too.
   [[nodiscard]] HarmonicRead harmonicChains(int k, double kappa = 10.0,
                                             bool forceSparse = false) const;
   /// \f$ G_k H \f$ (equals `applyG`).
@@ -219,9 +242,14 @@ class ChainHodge {
   [[nodiscard]] Eigen::MatrixXcd harmonicGram(const HarmonicRead &read) const;
 
   /// The rank conditions (R1)–(R4) at degree \p k with numerical ranks at
-  /// tolerance \f$ \kappa\,\max(m,n)\,\epsilon_m\,\varsigma_{\max} \f$.
-  /// @throws std::length_error at or above the crossover.
-  [[nodiscard]] RankReport rankConditions(int k, double kappa = 10.0) const;
+  /// tolerance \f$ \kappa\,\max(m,n)\,\epsilon_m\,\varsigma_{\max} \f$, each with
+  /// the singular values on either side of its exact rank. Below the
+  /// crossover the four products are formed densely and decomposed by SVD; at
+  /// or above it, or when \p forceSparse is set, `SparseRank::congruence`
+  /// measures them without forming them: every product is
+  /// \f$ C^T X^{\pm1} C \f$ with \f$ C \f$ a boundary map or its transpose and
+  /// \f$ X \f$ a sparse metric.
+  [[nodiscard]] RankReport rankConditions(int k, double kappa = 10.0, bool forceSparse = false) const;
 
   /// Betti numbers over \f$ \mathbb{Q} \f$, exact from the integer incidence
   /// maps, independent of \f$ s \f$.
@@ -250,7 +278,7 @@ class ChainHodge {
   void requireDense(int n, const char *what) const;
   [[nodiscard]] const Factorization &factorization(int k) const;
   [[nodiscard]] Eigen::MatrixXcd solveSparse(int k, const Eigen::MatrixXcd &rhs) const;
-  [[nodiscard]] Eigen::MatrixXcd stackedMatrix(int k) const;
+  [[nodiscard]] SparseMatrix stackedMatrix(int k) const;
 };
 
 }  // namespace tessera::chainhodge

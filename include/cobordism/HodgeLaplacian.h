@@ -28,7 +28,18 @@ using namespace ::tessera::spacetime;
 /// Jost, "Spectra of combinatorial Laplace operators on simplicial complexes",
 /// arXiv:1105.2712.
 ///
-/// ## Definition
+/// ## Metric source
+///
+/// The operator's metric is chosen by `MetricSource`. The default is the
+/// chain-level Whitney pencil (`WhitneyPencil`): the metric weights
+/// \f$ W_k = M_k^{-1} \f$ of the sparse Whitney mass matrices of the complex
+/// squared edge lengths, dressed by the connection \f$ U \f$ read from the
+/// edge phases, so that `laplacian(k)` is the covariant one-particle operator
+/// \f$ h_k(s,U) \f$ written on geometric images and moves with \f$ U \f$. The
+/// diagonal per-simplex weights described next (`DiagonalWeights`) remain
+/// available by name; their operator does not see \f$ U \f$.
+///
+/// ## Definition under diagonal weights
 ///
 /// From the oriented integer boundary maps \f$ \partial_k \f$ (`ChainComplex`),
 /// the diagonal metric weight \f$ W_k \f$ on \f$ k \f$-chains (`weights`, from
@@ -104,19 +115,21 @@ class HodgeLaplacian {
     /// arXiv:math/0508341.
     ///
     /// * `DiagonalWeights` — the diagonal per-simplex weights of
-    ///   `WeightConvention`. The default.
+    ///   `WeightConvention`. The operator ignores the connection.
     /// * `WhitneyPencil` — the chain-level Whitney Hodge pencil of
-    ///   `chainhodge::ChainHodge`: sparse inverse chain metrics \f$ M_k \f$ from
-    ///   the complex squared edge lengths, dressed at every degree by the
-    ///   \f$ \mathbb{C}^* \f$ links read from the edge phases
+    ///   `chainhodge::ChainHodge`, the default: sparse inverse chain metrics
+    ///   \f$ M_k \f$ from the complex squared edge lengths, dressed at every
+    ///   degree by the \f$ \mathbb{C}^* \f$ links read from the edge phases
     ///   (`chainhodge::Connection::fromSpacetime`). `laplacian(k)` is then the
     ///   dense operator on geometric images
-    ///   \f$ L_z = (M_k^U)^{-1} h_k(s,U) M_k^U \f$, whose kernel vectors are the
-    ///   images \f$ z = G_k h \f$. The pencil's reference orientation (ascending
-    ///   vertex id) is checked against `ChainComplex::fromSpacetime`'s boundary
-    ///   maps on every assembly and refused by name if they differ.
-    ///   `weights(k)` still returns the diagonal weights of the convention; the
-    ///   pencil's chain metric is not diagonal.
+    ///   \f$ L_z = (M_k^U)^{-1} h_k(s,U) M_k^U = (M_k^U)^{-1}\tilde A_k^U \f$,
+    ///   whose kernel vectors are the images \f$ z = G_k h \f$, and `pencil(k)`
+    ///   returns the pair \f$ (\tilde A_k^U, M_k^U) \f$ it is read from. The
+    ///   pencil's reference orientation (ascending vertex id) is checked against
+    ///   `ChainComplex::fromSpacetime`'s boundary maps on every assembly and
+    ///   refused by name if they differ. `weights(k)` still returns the
+    ///   diagonal weights of the convention; the pencil's chain metric is not
+    ///   diagonal.
     enum class MetricSource { DiagonalWeights, WhitneyPencil };
 
     /// Whether spectral-entropy diagnostics retain the complex entries of
@@ -140,7 +153,7 @@ class HodgeLaplacian {
                             MetricSource source = defaultMetricSource());
 
     /// The process-wide default `MetricSource`, read by the constructor's
-    /// default argument at the call site. `DiagonalWeights` unless changed.
+    /// default argument at the call site. `WhitneyPencil` unless changed.
     [[nodiscard]] static MetricSource defaultMetricSource() noexcept {
       return defaultMetricSource_;
     }
@@ -157,6 +170,26 @@ class HodgeLaplacian {
     /// Identically zero under `DiagonalWeights`.
     [[nodiscard]] std::vector<std::complex<double>> laplacianPhaseGradient(
         int k, std::uint64_t ea, std::uint64_t eb) const;
+
+    /// A Hodge operator paired with the metric of the same source, as flat
+    /// row-major \f$ |C_k|\times|C_k| \f$ arrays in the canonical cell order.
+    struct MetricPencil {
+      /// Under `WhitneyPencil`, \f$ \tilde A_k^U \f$ on geometric images.
+      std::vector<std::complex<double>> op{};
+      /// Under `WhitneyPencil`, the dressed Whitney mass matrix \f$ M_k^U \f$.
+      std::vector<std::complex<double>> metric{};
+      /// \f$ |C_k| \f$; 0 above the top dimension.
+      int dimension{0};
+    };
+
+    /// Whitney pencil only: the pencil \f$ (\tilde A_k^U, M_k^U) \f$ that
+    /// `laplacian(k)` is read from, \f$ L_z = (M_k^U)^{-1}\tilde A_k^U \f$, in
+    /// the same cell order and stored orientation. Both matrices come from one
+    /// assembly of the dressed pencil.
+    /// @throws std::logic_error under `DiagonalWeights`, whose metric is the
+    ///   diagonal `weights(k)`.
+    /// @throws std::runtime_error for \f$ k < 0 \f$.
+    [[nodiscard]] MetricPencil pencil(int k) const;
 
     /// The Kontsevich–Segal allowability margin
     /// \f$ \min_T (\pi - \sum_i |\arg\lambda_i(g_T)|) \f$ of the spacetime's
@@ -205,10 +238,11 @@ class HodgeLaplacian {
     [[nodiscard]] std::vector<std::complex<double>> connectionLaplacian() const;
 
     /// Laplacian \f$ L_k \f$ as a flat row-major \f$ |C_k|\times|C_k| \f$ matrix
-    /// of complex entries in the canonical `ChainComplex` column order,
-    /// assembled from the boundary maps and the signed weights. Generally
-    /// non-symmetric. `metric = false` selects unit weights, the combinatorial
-    /// Laplacian.
+    /// of complex entries in the canonical `ChainComplex` column order: the
+    /// Whitney operator on geometric images under `WhitneyPencil`, or the
+    /// operator of the boundary maps and the signed diagonal weights under
+    /// `DiagonalWeights`. Generally non-symmetric. `metric = false` selects
+    /// unit weights, the combinatorial Laplacian, under either source.
     /// @throws std::runtime_error for \f$ k < 0 \f$. Empty for \f$ k \f$ above
     ///   the top dimension.
     [[nodiscard]] std::vector<std::complex<double>> laplacian(int k = 0,
@@ -222,10 +256,13 @@ class HodgeLaplacian {
     /// or \f$ k \f$ above the top dimension.
     [[nodiscard]] std::vector<std::complex<double>> weights(int k) const;
 
-    /// Exact analytic gradient
+    /// Exact analytic gradient of the operator in one edge's squared length,
+    /// as a flat row-major \f$ |C_k|\times|C_k| \f$ matrix in the canonical
+    /// column order. Under `WhitneyPencil` it is
+    /// \f$ \partial L_z/\partial s_e = (M^U)^{-1}[-\partial M^U L_z
+    /// + \partial h\,M^U + h\,\partial M^U] \f$. Under `DiagonalWeights` it is
     /// \f$ \partial L_k^{\text{sym}} / \partial \ell^2_e \f$ of the symmetric
-    /// metric Hodge Laplacian in one edge's squared length, as a flat row-major
-    /// \f$ |C_k|\times|C_k| \f$ matrix in the canonical column order. With
+    /// metric Hodge Laplacian: with
     /// \f$ L_k = B_k^\top B_k + B_{k+1}B_{k+1}^\top \f$ and
     /// \f$ B_k=\mathrm{diag}(\sqrt{W_{k-1}})\,\partial_k\,\mathrm{diag}(1/\sqrt{W_k}) \f$,
     /// only \f$ W_j=|\!\operatorname{vol}| \f$ depends on \f$ \ell^2 \f$, and
@@ -259,7 +296,10 @@ class HodgeLaplacian {
     /// \f$ h_e=\partial S/\partial\operatorname{Re}z_e
     ///       -i\,\partial S/\partial\operatorname{Im}z_e \f$, so
     /// \f$ \overline h \f$ is the steepest-ascent displacement in the complex
-    /// \f$ z \f$ plane. Available at every degree \f$ k\ge0 \f$.
+    /// \f$ z \f$ plane. Available at every degree \f$ k\ge0 \f$, and taken of
+    /// the operator of this instance's metric source (the analytic
+    /// \f$ \partial L_z/\partial z_e \f$ of `laplacianGradient` under
+    /// `WhitneyPencil`).
     [[nodiscard]] std::vector<std::complex<double>> spectralEntropyGradient(
         int k, EntropyPhaseMode phaseMode =
                    EntropyPhaseMode::IncludeComplexPhase) const;
@@ -277,6 +317,10 @@ class HodgeLaplacian {
     /// for a real parameter \f$ t \f$, so both \f$ z \f$ and \f$ \bar z \f$
     /// move. Returns an all-zero vector for an empty or identically-zero
     /// operator.
+    /// Taken of the operator of this instance's metric source: under
+    /// `WhitneyPencil` the second derivative of \f$ L_z \f$ in the squared
+    /// lengths comes from `chainhodge::CovariantChainHodge::lengthDirection`
+    /// and `covariantOperatorSecondDerivative`.
     /// @throws std::runtime_error if `direction.size()` is not the edge count.
     [[nodiscard]] std::vector<std::complex<double>>
     spectralEntropyGradientDirectionalDerivative(
@@ -284,13 +328,63 @@ class HodgeLaplacian {
         EntropyPhaseMode phaseMode =
             EntropyPhaseMode::IncludeComplexPhase) const;
 
+    /// The local spectral moments of the Hodge operator,
+    /// \f[ \mu_j(x)=\bigl(L_k^{\,j}\bigr)_{xx},\qquad j=1,\dots,m, \f]
+    /// one per \f$ k \f$-cell \f$ x \f$ in the canonical column order and per
+    /// order, as a flat row-major \f$ |C_k|\times m \f$ array. They are the
+    /// local parts of the power sums \f$ p_j=\operatorname{tr}L_k^{\,j}
+    /// =\sum_x\mu_j(x) \f$: holomorphic in the complex squared lengths, defined
+    /// for a non-normal operator, and needing neither eigenvalues nor a real
+    /// projection. \f$ L_k \f$ is the one `spectralEntropy` uses.
+    /// @throws std::invalid_argument for \f$ m<1 \f$.
+    [[nodiscard]] std::vector<std::complex<double>> localSpectralMoments(
+        int k, int orders) const;
+
+    /// The spectral-moment stiffness of the geometric action about a carrier,
+    /// \f[ S_M(z)=\tfrac12\sum_{j=1}^{m}\beta_j\sum_x
+    ///     \bigl(\mu_j(x;z)-\mu_j(x;z_0)\bigr)^2, \f]
+    /// with \f$ \beta_j \f$ = `coefficients[j-1]` and \f$ \mu_j(x;z_0) \f$ =
+    /// `reference`, the `localSpectralMoments(k, m)` of the carrier. It is a sum
+    /// of local terms, so it is extensive in the size of the complex; it
+    /// vanishes with its gradient at the carrier, which therefore stays
+    /// stationary; and its Hessian there is
+    /// \f$ \sum_j\beta_j\sum_x\nabla\mu_j(x)\,\nabla\mu_j(x)^{T} \f$,
+    /// positive semidefinite for non-negative \f$ \beta_j \f$. Holomorphic in
+    /// \f$ z \f$ (no conjugation), like the whitepaper's power sums.
+    /// @throws std::invalid_argument when `reference` is not
+    ///   \f$ |C_k|\times m \f$.
+    [[nodiscard]] std::complex<double> spectralMomentStiffness(
+        int k, const std::vector<std::complex<double>> &reference,
+        const std::vector<double> &coefficients) const;
+
+    /// \f$ \partial S_M/\partial z_e \f$ in `EdgeList` order, the holomorphic
+    /// derivative. For a real-valued use of \f$ \operatorname{Re} S_M \f$ it is
+    /// also the \f$ h_e=\partial/\partial\operatorname{Re}z_e
+    /// -i\,\partial/\partial\operatorname{Im}z_e \f$ of `spectralEntropyGradient`.
+    [[nodiscard]] std::vector<std::complex<double>>
+    spectralMomentStiffnessGradient(
+        int k, const std::vector<std::complex<double>> &reference,
+        const std::vector<double> &coefficients) const;
+
+    /// The exact Hessian-vector product
+    /// \f$ \sum_f \partial^2 S_M/\partial z_e\partial z_f\,v_f \f$ in
+    /// `EdgeList` order: the product rule on the moments, with the exact second
+    /// derivative of \f$ L_k \f$ contracted against \f$ v \f$.
+    /// @throws std::runtime_error if `direction.size()` is not the edge count.
+    [[nodiscard]] std::vector<std::complex<double>>
+    spectralMomentStiffnessHessianProduct(
+        int k, const std::vector<std::complex<double>> &reference,
+        const std::vector<double> &coefficients,
+        const std::vector<std::complex<double>> &direction) const;
+
     /// Entropy of the normalized squared eigenvalue moduli of the
     /// **\f$\mathbb{C}^{*}\f$ connection** Laplacian:
     /// \f[ p_i=\frac{|\lambda_i|^{2}}{\sum_j|\lambda_j|^{2}},\qquad
     ///     S=-\sum_i p_i\log p_i. \f]
     ///
-    /// \f$ L_k \f$ is blind to \f$\varphi\f$ at every degree, so this is the
-    /// only entropy here that sees the connection. The weights are eigenvalue
+    /// Under `DiagonalWeights` \f$ L_k \f$ is blind to \f$\varphi\f$ at every
+    /// degree, and this is the only entropy here that sees the connection;
+    /// under `WhitneyPencil` `spectralEntropy` sees it too. The weights are eigenvalue
     /// moduli because eigenvalues, unlike singular values, survive the gauge
     /// similarity
     /// \f$ \operatorname{diag}(g)^{-1}(\cdot)\operatorname{diag}(g) \f$,
@@ -415,7 +509,7 @@ class HodgeLaplacian {
     std::shared_ptr<Spacetime> st_;
     WeightConvention weightConvention_{WeightConvention::SquaredContent};
     static WeightConvention defaultWeightConvention_;
-    MetricSource metricSource_{MetricSource::DiagonalWeights};
+    MetricSource metricSource_{MetricSource::WhitneyPencil};
     static MetricSource defaultMetricSource_;
     // Whitney pencil state (chain complex, squared lengths, connection, dressed
     // operator), built lazily and rebuilt when the geometry stamp moves.

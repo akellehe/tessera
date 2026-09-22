@@ -281,6 +281,11 @@ struct SpectralBandCertificate {
   /// band so a read never travels without the rotation it was taken at. Quiet
   /// NaN when the complex was not declared Lorentzian.
   double lorentzianEpsilon = std::numeric_limits<double>::quiet_NaN();
+  /// Whether the fiber's stored left frame is the transpose dual
+  /// \f$ \tilde\Phi \f$ itself (the chain-level pencil path, whichever
+  /// regime its verification reached), rather than Psi normalized by
+  /// Psi^dagger W Phi = I. `SpectralFiber::dualFrame` reads it.
+  bool bilinearLeftFrame = false;
   /// The band's frequency window [min Re(lambda), max Re(lambda)], the window
   /// handed to the response API (see :class:`SpectralBandWindow`).
   double frequencyLower = std::numeric_limits<double>::quiet_NaN();
@@ -334,13 +339,18 @@ struct FiberOverlapRead {
 /// right and left frames, the band projector, the eigenvalues, and the
 /// :class:`SpectralBandCertificate`.
 ///
-/// The band is represented by its projector `P = Phi Psi^dagger W` with
-/// `Psi^dagger W Phi = I`. Individual eigenvectors are a gauge choice and do
-/// not determine an identity or a downstream observable. On the self-adjoint
-/// path `Psi = Phi` (a W-orthonormal frame, `J = I`); in the Krein-normalizable
-/// signed regime `Psi = Phi J` with `Phi^dagger W Phi = J = diag(I_p, -I_q)`;
-/// on the biorthogonal, non-normal path `Phi` and `Psi` are matched right and
-/// left subspace bases.
+/// The band is represented by its projector `P = Phi Phi~^T`, with `Phi~` the
+/// algebraic (transpose) dual of the right frame, `Phi~^T Phi = I`
+/// (`dualFrame()`): the one pairing of the complex-bilinear formulation, the
+/// same in every regime. The solvers normalize their own left frame: on the
+/// chain-level pencil path it is `Phi~` itself; elsewhere it is `Psi` with
+/// `Psi^dagger W Phi = I`, and `Phi~ = W conj(Psi)`, so `P = Phi Psi^dagger W`.
+/// Individual eigenvectors are a gauge choice and do not determine an identity
+/// or a downstream observable. On the self-adjoint path `Psi = Phi` (a
+/// W-orthonormal frame, `J = I`); in the Krein-normalizable signed regime
+/// `Psi = Phi J` with `Phi^dagger W Phi = J = diag(I_p, -I_q)`; on the
+/// biorthogonal, non-normal path `Phi` and `Psi` are matched right and left
+/// subspace bases.
 ///
 /// Instances are immutable value objects produced by
 /// :class:`SpectralFiberTracker` (or rehydrated by `fromRecord`).
@@ -365,10 +375,23 @@ class SpectralFiber {
 
     /// Right frame Phi (cells x rank).
     [[nodiscard]] Eigen::MatrixXcd rightFrame() const { return right_; }
-    /// Left frame Psi (cells x rank), normalized to Psi^dagger W Phi = I.
+    /// Left frame as produced by the regime's solver (cells x rank): Psi
+    /// with Psi^dagger W Phi = I on the self-adjoint, Krein and non-normal
+    /// paths; the canonical bilinear left frame Phi~ itself on the chain-level
+    /// pencil path. `dualFrame()` is the one pairing across regimes.
     [[nodiscard]] Eigen::MatrixXcd leftFrame() const { return left_; }
-    /// The band projector P = Phi Psi^dagger W (cells x cells), assembled
-    /// on demand from the stored frames.
+    /// The algebraic (transpose) dual of the right frame, cells x rank:
+    /// \f$ \tilde\Phi \f$ with \f$ \tilde\Phi^T \Phi = I \f$ — the pairing
+    /// of the complex-bilinear formulation, the same in every regime. On the
+    /// pencil path it is the stored left frame; on the other paths it is
+    /// \f$ W \bar\Psi \f$, since \f$ (W\bar\Psi)^T \Phi = \Psi^\dagger W
+    /// \Phi \f$. A refused left frame (isotropic band) reads as zero columns.
+    /// `quantum::CovarianceState::fromBiorthogonalFrames(rightFrame(),
+    /// dualFrame())` is the band's biorthogonal Slater covariance.
+    [[nodiscard]] Eigen::MatrixXcd dualFrame() const;
+    /// The band projector \f$ P = \Phi \tilde\Phi^T \f$ (cells x cells) in
+    /// the transpose pairing, assembled on demand from the stored frames; it
+    /// equals \f$ \Phi \Psi^\dagger W \f$ off the pencil path.
     [[nodiscard]] Eigen::MatrixXcd projector() const;
     /// The diagonal inner-product weights W restricted to the band's cells:
     /// the metric the Gram and signature certificates are measured in.
@@ -483,9 +506,17 @@ struct ComponentBandRead {
 ///
 /// ## The restricted operator
 ///
-/// For a component support `S` (vertex ids) the tracker assembles the weighted
-/// Hodge Laplacian of the full induced subcomplex on `S` — every simplex all of
-/// whose vertices lie in `S` — in the canonical ChainComplex cell order, with
+/// For a component support `S` (vertex ids) the tracker assembles an operator
+/// of the full induced subcomplex on `S` — every simplex all of whose vertices
+/// lie in `S` — under its metric source, which is the process-wide
+/// `HodgeLaplacian::defaultMetricSource()` unless named. Under the default
+/// `WhitneyPencil` every degree \f$ k \ge 1 \f$ is the covariant operator
+/// \f$ h_k(s,U) \f$ of the induced subcomplex's own chain-level Whitney pencil
+/// (see the metric-source constructor), so the bands move with the connection
+/// \f$ U \f$.
+///
+/// Under `DiagonalWeights` it is the weighted Hodge Laplacian in the canonical
+/// ChainComplex cell order, with
 /// the same diagonal inner-product weights \f$ W_k \f$ the whole-complex
 /// `HodgeLaplacian` uses, including the degenerate-cell +1 fallback and the
 /// `WeightConvention`:
@@ -498,7 +529,8 @@ struct ComponentBandRead {
 /// where \f$ d^S \f$ restricts the integer boundary maps to the cells inside
 /// `S`. When `S` is the whole vertex set this is the whole-complex operator: on
 /// the signed and complex-weight paths it equals `HodgeLaplacian::laplacian(k)`
-/// entry for entry, pinned by the spectral resolution
+/// of a `DiagonalWeights` operator entry for entry, pinned by the spectral
+/// resolution
 /// \f$ \sum_{\mathrm{bands}} \Phi \Lambda \Psi^\dagger W = L \f$. On the
 /// verified positive path the solved object is the symmetric W-orthonormal
 /// similarity \f$ B_k^T B_k + B_{k+1} B_{k+1}^T \f$ with the same spectrum,
@@ -555,8 +587,10 @@ class SpectralFiberTracker {
     static constexpr const char *kCacheKind = "spectral-fiber";
 
     /// Bind to the spacetime to read (kept alive by the `shared_ptr`), a
-    /// configuration, and the Hodge weight convention, defaulting to
-    /// `HodgeLaplacian::defaultWeightConvention()`.
+    /// configuration, and the Hodge weight convention of the diagonal weights,
+    /// defaulting to `HodgeLaplacian::defaultWeightConvention()`. The metric
+    /// source is the process-wide `HodgeLaplacian::defaultMetricSource()`,
+    /// read here, which is the Whitney pencil unless changed.
     explicit SpectralFiberTracker(
         std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg = {},
         cobordism::HodgeLaplacian::WeightConvention weights =
@@ -571,9 +605,17 @@ class SpectralFiberTracker {
     /// the Riesz projector of a circular contour drawn around the gap-rule
     /// group, with right frame `Phi`, canonical left frame `Phi~`, and the
     /// bilinear pairing certificates `pairingDeterminant`, `pairingCondition`,
-    /// `pairingScale` and `isotropic`. Degree 0 keeps the U(1) connection
-    /// operator under either source.
+    /// `pairingScale` and `isotropic`. Under `DiagonalWeights` every degree
+    /// \f$ k \ge 1 \f$ is read on the diagonal weights of
+    /// `HodgeLaplacian::defaultWeightConvention()`. Degree 0 keeps the U(1)
+    /// connection operator under either source.
     SpectralFiberTracker(std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+                         cobordism::HodgeLaplacian::MetricSource source);
+
+    /// Bind with an explicit weight convention and metric source; the weight
+    /// convention is read only under `DiagonalWeights`.
+    SpectralFiberTracker(std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+                         cobordism::HodgeLaplacian::WeightConvention weights,
                          cobordism::HodgeLaplacian::MetricSource source);
 
     [[nodiscard]] cobordism::HodgeLaplacian::MetricSource metricSource() const noexcept {
@@ -633,7 +675,7 @@ class SpectralFiberTracker {
     cobordism::HodgeLaplacian::WeightConvention weights_{
         cobordism::HodgeLaplacian::WeightConvention::SquaredContent};
     cobordism::HodgeLaplacian::MetricSource metricSource_{
-        cobordism::HodgeLaplacian::MetricSource::DiagonalWeights};
+        cobordism::HodgeLaplacian::MetricSource::WhitneyPencil};
 
     [[nodiscard]] RestrictedOperator assembleRestricted(
         const std::vector<std::uint64_t> &support, int degree) const;

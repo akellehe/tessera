@@ -13,7 +13,7 @@ namespace tessera::observables {
 /// # SingletResidual
 ///
 /// Whole-complex singlet diagnostic: the relabeling-invariant singlet residual
-/// `r_state` of `Proton::singlet()` against the whole complex's \f$ L_k \f$
+/// `r_state` of `ProtonSynthesis::singlet()` against the whole complex's \f$ L_k \f$
 /// harmonic form (`≈ 0` means the singlet is carried), plus the hole/Betti
 /// census with the `holes_vs_b3_divergent` flag. Diagnostic only; it never
 /// steers the simulation.

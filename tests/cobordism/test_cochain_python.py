@@ -18,6 +18,12 @@ import tessera
 import cmath
 
 cob = tessera.cobordism
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _diagonal(st):
+    """The diagonal-weight operator, named: the closed forms below are its."""
+    return cob.HodgeLaplacian(st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
 
 
 # --------------------------------------------------------------------------- #
@@ -253,10 +259,13 @@ class TestHarmonicAnchors(unittest.TestCase):
 
     def test_flux_lifts_the_connection_zero_mode(self):
         # Any U(1) flux removes the CONNECTION operator's harmonic (magnetic
-        # frustration). dim ker L_0 stays b_0 = 1 -- L_0 has no link phase.
+        # frustration). Under the diagonal weights dim ker L_0 stays b_0 = 1 --
+        # that L_0 has no link phase. The default covariant h_0(s, U) carries
+        # the link, so the flux lifts its zero mode as well.
         st = _triangle(math.pi)
         self.assertEqual(len(cob.HodgeLaplacian(st).connectionHarmonics()), 0)
-        self.assertEqual(len(cob.HodgeLaplacian(st).harmonics(0)), 1)
+        self.assertEqual(len(_diagonal(st).harmonics(0)), 1)
+        self.assertEqual(len(cob.HodgeLaplacian(st).harmonics(0)), 0)
 
     def test_torus_first_homology_is_the_qubit(self):
         # T²: dim ker L_1 = b₁ = 2 — the qubit. Each harmonic is a 1-cochain.
@@ -284,7 +293,7 @@ class TestHarmonicAnchors(unittest.TestCase):
 class TestSpectrumCache(unittest.TestCase):
 
     def test_is_not_hermitian_and_eigenvalues_are_complex_typed(self):
-        sp = cob.HodgeLaplacian(_triangle_one_timelike(1.0)).spectrum(1)
+        sp = _diagonal(_triangle_one_timelike(1.0)).spectrum(1)
         self.assertFalse(sp.isHermitian())
         self.assertEqual(sp.eigenvalues().dtype, np.dtype("complex128"))
         # closed form {0, 3, 1 - 2/alpha} with alpha=1 -> {0, 3, -1}: indefinite.
@@ -292,12 +301,27 @@ class TestSpectrumCache(unittest.TestCase):
                                    atol=1e-7)
 
     def test_lorentzian_harmonic_is_the_unit_cycle(self):
-        # The near-kernel mode is the 1-cycle: |h_i|² = 1/3 on every edge.
-        harm = cob.HodgeLaplacian(_triangle_one_timelike(1.3)).harmonics(1)
+        # Under the diagonal weights the near-kernel mode is the 1-cycle itself:
+        # |h_i|² = 1/3 on every edge.
+        harm = _diagonal(_triangle_one_timelike(1.3)).harmonics(1)
         self.assertEqual(len(harm), 1)
         self.assertEqual(harm[0].degree(), 1)
         np.testing.assert_allclose(np.abs(np.asarray(harm[0].coeffs())) ** 2,
                                    np.full(3, 1.0 / 3.0), atol=1e-7)
+
+    def test_lorentzian_harmonic_image_is_the_signed_lengths(self):
+        # The default Whitney operator acts on geometric images, and the image
+        # of the unit cycle on a 1-complex is the vector of signed lengths
+        # (integration specification, Prop. 7): |z_i|² ∝ |l_i|² = (1, 1, alpha²).
+        alpha = 1.3
+        harm = cob.HodgeLaplacian(_triangle_one_timelike(alpha)).harmonics(1)
+        self.assertEqual(len(harm), 1)
+        self.assertEqual(harm[0].degree(), 1)
+        expected = np.array([1.0, 1.0, alpha ** 2]) / (2.0 + alpha ** 2)
+        got = np.abs(np.asarray(harm[0].coeffs())) ** 2
+        cells = [tuple(sorted(c)) for c in harm[0].simplices()]
+        order = [cells.index(c) for c in [(0, 1), (0, 2), (1, 2)]]
+        np.testing.assert_allclose(got[order] / got.sum(), expected, atol=1e-7)
 
     def test_all_spacelike_lorentzian_matches_hermitian_kernel(self):
         # All-spacelike: the signed path reproduces the Euclidean harmonic count.

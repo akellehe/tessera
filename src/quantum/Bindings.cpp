@@ -1776,8 +1776,9 @@ i_A + 2^M_A i_B, sign-free. Even operators lift as X x 1 and 1 x Y; odd
 right-factor operators acquire the parity twist (-1)^N_A x Y (the Koszul
 sign, i.e. the Jordan-Wigner string over A), making the joint CAR
 generators exactly the lifted factor generators — direct sums become
-graded tensor products, and coupling blocks of a one-particle operator
-become hopping terms. The
+graded tensor products, and the two directed coupling blocks C_AB and C_BA
+of a one-particle operator become hopping terms, with no Hermitian-conjugate
+relation between them assumed. The
 graded swap S(x b y) = (-1)^{|x||y|} y x x has odd/odd sign -1 and +1 on
 every other elementary parity combination. Operator arguments are dense;
 sparse results are COO tuples.)doc")
@@ -1811,18 +1812,44 @@ Jordan-Wigner parity twist that preserves the joint CAR). COO result.)doc")
 S(x b y) = (-1)^{|x||y|} y x x: odd/odd exchange is -1, every other
 elementary parity combination is +1. COO result.)doc")
         .def_static("assembleBlockOneParticle",
-             &FockDirectSum::assembleBlockOneParticle, py::arg("blockA"),
-             py::arg("blockB"), py::arg("coupling"),
-             "The block one-particle matrix [[L_A, C], [C+, L_B]] (dense).")
+             py::overload_cast<const Eigen::MatrixXcd&, const Eigen::MatrixXcd&,
+                               const Eigen::MatrixXcd&, const Eigen::MatrixXcd&>(
+                 &FockDirectSum::assembleBlockOneParticle),
+             py::arg("blockA"), py::arg("blockB"), py::arg("couplingAB"),
+             py::arg("couplingBA"),
+             R"doc(The block one-particle matrix [[L_A, C_AB], [C_BA, L_B]] (dense)
+from both directed couplings: C_AB (M_A x M_B, hopping B -> A) and C_BA
+(M_B x M_A, hopping A -> B), each placed as given. No Hermitian-conjugate
+relation between them is assumed.)doc")
+        .def_static("assembleBlockOneParticle",
+             py::overload_cast<const Eigen::MatrixXcd&, const Eigen::MatrixXcd&,
+                               const Eigen::MatrixXcd&>(
+                 &FockDirectSum::assembleBlockOneParticle),
+             py::arg("blockA"), py::arg("blockB"), py::arg("coupling"),
+             "The *-structure special case [[L_A, C], [C+, L_B]]: the "
+             "directed form with C_BA = C^dagger certified by the caller.")
+        .def("dGammaBlockCOO",
+             [](const FockDirectSum& f, const Eigen::MatrixXcd& blockA,
+                const Eigen::MatrixXcd& blockB,
+                const Eigen::MatrixXcd& couplingAB,
+                const Eigen::MatrixXcd& couplingBA) {
+                 return sparseOpToCoo(
+                     f.dGammaBlock(blockA, blockB, couplingAB, couplingBA));
+             }, py::arg("blockA"), py::arg("blockB"), py::arg("couplingAB"),
+             py::arg("couplingBA"),
+             R"doc(dGamma([[L_A, C_AB], [C_BA, L_B]]) on the joint Fock space:
+liftLeft(dGamma(L_A)) + liftRight(dGamma(L_B), even) plus the directed
+hopping terms sum_{i in A, j in B} (C_AB)_ij a_i^dagger a_j +
+sum_{i in B, j in A} (C_BA)_ij a_i^dagger a_j. No relation between the two
+blocks is assumed. COO result.)doc")
         .def("dGammaBlockCOO",
              [](const FockDirectSum& f, const Eigen::MatrixXcd& blockA,
                 const Eigen::MatrixXcd& blockB,
                 const Eigen::MatrixXcd& coupling) {
                  return sparseOpToCoo(f.dGammaBlock(blockA, blockB, coupling));
              }, py::arg("blockA"), py::arg("blockB"), py::arg("coupling"),
-             R"doc(dGamma([[L_A, C], [C+, L_B]]) on the joint Fock space: equals
-liftLeft(dGamma(L_A)) + liftRight(dGamma(L_B), even) plus the hopping
-terms sum_{i in A, j in B} C_ij a_i^dagger a_j + h.c. COO result.)doc");
+             R"doc(dGamma([[L_A, C], [C+, L_B]]): the *-structure special case of
+the directed form (C_BA = C^dagger, certified by the caller). COO result.)doc");
 
     py::class_<EdgeModeRecord>(m, "EdgeModeRecord",
         R"doc(One edge-mode record: oriented incidence + mode identity.
@@ -1996,6 +2023,39 @@ epsilon = ||iota_M U_M - U_{M+1} iota_M|| on the active carried subspace
                       &LazyCompatibilityRead::activeDimension)
         .def_readonly("certificate", &LazyCompatibilityRead::certificate);
 
+    py::class_<FockRefinementStage>(m, "FockRefinementStage",
+        R"doc(One stage M of a refinement sequence: the modes H_M it carries, the
+support of the map V_M on them, and V_M dense over the 2^|support| support Fock
+basis. The stages are nested, because the step from one to the next is the vacuum
+embedding, which adds modes and changes no amplitude.)doc")
+        .def(py::init<>())
+        .def(py::init([](std::vector<std::size_t> modes,
+                         std::vector<std::size_t> support,
+                         Eigen::MatrixXcd map) {
+                 return FockRefinementStage{std::move(modes),
+                                            std::move(support),
+                                            std::move(map)};
+             }),
+             py::arg("modes"), py::arg("support"), py::arg("map"))
+        .def_readwrite("modes", &FockRefinementStage::modes)
+        .def_readwrite("support", &FockRefinementStage::support)
+        .def_readwrite("map", &FockRefinementStage::map);
+
+    py::class_<LazyInductiveLimitRead>(m, "LazyInductiveLimitRead",
+        R"doc(The inductive limit read over a refinement sequence: one compatibility
+defect per adjacent pair of stages, all on one active carried subspace, the last
+defect, the worst step-to-step ratio, and whether the sequence falls. The
+whitepaper's consistency condition ||iota_M V_M - V_{M+1} iota_M|| -> 0 is a
+statement about a sequence, which one pair of stages cannot establish.)doc")
+        .def_readonly("defects", &LazyInductiveLimitRead::defects)
+        .def_readonly("steps", &LazyInductiveLimitRead::steps)
+        .def_readonly("lastDefect", &LazyInductiveLimitRead::lastDefect)
+        .def_readonly("largestRatio", &LazyInductiveLimitRead::largestRatio)
+        .def_readonly("falls", &LazyInductiveLimitRead::falls)
+        .def_readonly("activeDimension",
+                      &LazyInductiveLimitRead::activeDimension)
+        .def_readonly("certificate", &LazyInductiveLimitRead::certificate);
+
     py::class_<LazyFockEngine>(m, "LazyFockEngine",
         R"doc(The lazy graded Fock oracle and boundary carrier.
 
@@ -2135,6 +2195,15 @@ explicitly non-Gaussian boundary data.)doc")
              py::arg("extendedOp"), py::arg("activeBasis"),
              "epsilon = ||iota U_M - U_{M+1} iota|| on the active carried "
              "subspace.")
+        .def("inductiveLimit", &LazyFockEngine::inductiveLimit,
+             py::arg("stages"), py::arg("activeBasis"),
+             "The inductive limit read over a refinement sequence: one "
+             "compatibility defect per adjacent pair of stages, all on the "
+             "same active carried subspace, with the defect sequence and "
+             "whether it falls. The active basis states must lie inside the "
+             "first stage's modes, so that one and the same subspace is "
+             "carried through every embedding and the defects are "
+             "commensurable.")
         .def("expansionCount", &LazyFockEngine::expansionCount,
              "Partition crossings that forced a tensor expansion.")
         .def("memoHits", &LazyFockEngine::memoHits)
@@ -2178,7 +2247,22 @@ the measured generator/covariance Hermiticity defects, the purity defect
         .def_readonly("purityDefect", &MeanFieldStepRead::purityDefect)
         .def_readonly("occupationSpectrumDefect",
                       &MeanFieldStepRead::occupationSpectrumDefect)
+        .def_readonly("dualityDefect", &MeanFieldStepRead::dualityDefect,
+                      "Transpose path: ||Phi~^T Phi - I||_F after the step "
+                      "(NaN on the Hermitian-adjoint path).")
         .def_readonly("certificate", &MeanFieldStepRead::certificate);
+
+    py::enum_<CovarianceDual>(m, "CovarianceDual",
+        R"doc(The dual a CovarianceState is paired against.
+
+HermitianAdjoint: Gamma_ij = <Psi|a_j^dagger a_i|Psi> with the Hermitian
+adjoint of one state, the special case of a certified *-structure (Hermitian
+generator, U Gamma U^dagger transports). Transpose: Gamma = Phi Phi~^T over
+a matched right/left Slater pair with Phi~^T Phi = I, the biorthogonal
+Slater covariance of the complex-bilinear formulation; both frames are
+carried and evolve under any complex generator, with no h^dagger.)doc")
+        .value("HermitianAdjoint", CovarianceDual::HermitianAdjoint)
+        .value("Transpose", CovarianceDual::Transpose);
 
     py::class_<CovarianceState>(m, "CovarianceState",
         R"doc(The number-conserving quasi-free state, stored exactly as its
@@ -2218,6 +2302,28 @@ projector is adopted verbatim and its Hermiticity defect reported.)doc")
              R"doc(Pure Slater covariance Gamma = Phi (Phi+ Phi)^-1 Phi+ from an
 M x N frame of occupied one-particle orbitals (boundary-register state
 vectors enter as occupied columns; the frame need not be orthonormal).)doc")
+        .def_static("fromBiorthogonalFrames",
+             &CovarianceState::fromBiorthogonalFrames, py::arg("rightFrame"),
+             py::arg("leftFrame"),
+             R"doc(The biorthogonal Slater covariance Gamma = Phi Phi~^T of a
+matched right/left pair, paired by the transpose (Phi~^T Phi = I, no
+conjugation): |Xi_R> = phi_1 ^ ... ^ phi_N, <Xi_L| = phi~_1 ^ ... ^ phi~_N,
+Gamma_ij = <Xi_L|a_j^dagger a_i|Xi_R>. The state is on the Transpose dual
+and carries both frames; the pairing defect is measured (dualityDefect),
+never repaired. A SpectralFiber's rightFrame()/dualFrame() or a Riesz band's
+frame/leftFrame enter as they are.)doc")
+        .def("dual", &CovarianceState::dual,
+             "The dual the covariance is paired against (CovarianceDual).")
+        .def("rightFrame", &CovarianceState::rightFrame,
+             py::return_value_policy::copy,
+             "The right frame Phi of a Transpose state (0 x 0 otherwise).")
+        .def("leftFrame", &CovarianceState::leftFrame,
+             py::return_value_policy::copy,
+             "The left frame Phi~ of a Transpose state, Gamma = Phi Phi~^T "
+             "(0 x 0 otherwise).")
+        .def("dualityDefect", &CovarianceState::dualityDefect,
+             "||Phi~^T Phi - I||_F of a Transpose state — the premise of the "
+             "biorthogonal Wick theorem; NaN on the Hermitian-adjoint path.")
         .def("modeCount", &CovarianceState::modeCount)
         .def("gamma", &CovarianceState::gamma,
              py::return_value_policy::copy,
@@ -2258,19 +2364,29 @@ idempotent exactly when Gamma is.)doc")
         .def("evolve", &CovarianceState::evolve, py::arg("h"), py::arg("dt"),
              py::arg("hermitianTolerance") = 1e-9,
              R"doc(Gamma <- exp(-i h dt) Gamma exp(+i h dt): the exact solution of
-i dGamma/dt = [h, Gamma] (no step-size error; preserves Hermiticity,
-spectrum, and purity to round-off). Throws when h fails Hermiticity
-verification.)doc")
+i dGamma/dt = [h, Gamma] (no step-size error).
+
+Hermitian-adjoint path: h must be Hermitian (throws otherwise); Hermiticity,
+spectrum, and purity are preserved to round-off. Transpose path: h is any
+complex matrix (e.g. complex-symmetric) and no h^dagger is formed; the
+frames evolve by i dPhi/dt = h Phi and -i dPhi~^T/dt = Phi~^T h, i.e.
+Phi <- exp(-i h dt) Phi and Phi~ <- exp(+i h dt)^T Phi~, and Gamma is
+rebuilt as Phi Phi~^T; the pairing and Gamma^2 = Gamma are preserved.)doc")
         .def_static("propagator", &CovarianceState::propagator, py::arg("h"),
              py::arg("dt"), py::arg("hermitianTolerance") = 1e-9,
-             "The one-particle propagator exp(-i h dt) evolve conjugates "
+             "The Hermitian-path propagator exp(-i h dt) evolve conjugates "
              "by: evolve(h, dt) == applyTransport(propagator(h, dt)).")
+        .def_static("complexPropagator", &CovarianceState::complexPropagator,
+             py::arg("h"), py::arg("dt"),
+             "exp(-i h dt) for an arbitrary complex generator (Pade scaling "
+             "and squaring; no eigendecomposition, no h^dagger).")
         .def("applyTransport", &CovarianceState::applyTransport,
              py::arg("transport"),
-             R"doc(Gamma <- U Gamma U+ — conjugation by the one-particle transport
-of a cobordism step. A unitary U preserves Hermiticity, spectrum, and
-purity exactly; a leaky transport's effect shows up in the defect reads
-afterwards and is never repaired.)doc")
+             R"doc(Carry the state through the one-particle transport U of a
+cobordism step. Hermitian-adjoint path: Gamma <- U Gamma U^dagger (a leaky
+transport's effect shows up in the defect reads and is never repaired).
+Transpose path: Phi <- U Phi and Phi~ <- U^{-T} Phi~, so Gamma <- U Gamma
+U^{-1} and the pairing is preserved; a singular U is refused.)doc")
         .def("meanFieldEvolve", &CovarianceState::meanFieldEvolve,
              py::arg("hamiltonian"), py::arg("dt"), py::arg("steps"),
              py::arg("hermitianTolerance") = 1e-9,
@@ -2303,6 +2419,14 @@ give a repeated determinant row — an exact Pauli zero.)doc")
 <a+(v_1)...a+(v_p) a(w_p)...a(w_1)> = det(W+ Gamma V) with the
 ExteriorAlgebra smearing conventions (columns of V create, columns of W
 annihilate).)doc")
+        .def("wickTransposeGramDeterminant",
+             &CovarianceState::wickTransposeGramDeterminant,
+             py::arg("creatorFrame"), py::arg("annihilatorFrame"),
+             R"doc(The transpose-paired smeared Gram determinant
+<a+(v_1)...a+(v_p) a~(w_p)...a~(w_1)> = det(W^T Gamma V), with the
+annihilator smeared by the transpose pairing a~(w) = sum_i w_i a_i (linear,
+never conjugated). On a Transpose state it is the transition amplitude of
+the left/right pair.)doc")
         .def("wickColorWedgeSquared", &CovarianceState::wickColorWedgeSquared,
              py::arg("colorColumns"),
              R"doc(|S_ABC|^2 = det(C+ Gamma C) of three color columns. When Gamma

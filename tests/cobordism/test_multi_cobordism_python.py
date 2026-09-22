@@ -7,7 +7,7 @@ has been retired (the C++ engine is the source of truth), so the deterministic o
 (betti, emergent_holes, regge_action_gradient, r_state, objective) is now pinned to **golden
 constants** captured from the engine on a fixed host — a regression guard against C++ drift.
 The slow tests exercise the emergent two-stage run (the b₃ register grows), the canonical
-two-step Proton, and a CobordismDAG chaining merges output->input.
+two-step ProtonSynthesis, and a CobordismDAG chaining merges output->input.
 """
 import cmath
 import math
@@ -120,13 +120,13 @@ class MultiCobordismCxxTest(unittest.TestCase):
                             for i in range(len(t_stat) - 1)))
 
     def test_two_step_proton_via_canonical_class(self):
-        # The canonical two-step proton build goes through tessera.cobordism.Proton (Step A
+        # The canonical two-step proton build goes through tessera.cobordism.ProtonSynthesis (Step A
         # recombination -> a *colored* diquark, Step B formation -> the color singlet). A fast
         # smoke that both steps run end-to-end and expose the 3-vector proton singlet; the
         # thorough convergence test lives in tests/cobordism/test_proton_cpp_python.py.
-        Proton = cob.Proton
-        self.assertEqual(len(Proton.singlet()), 3)            # the proton is a 3-vector
-        p = Proton(seed=3)
+        ProtonSynthesis = cob.ProtonSynthesis
+        self.assertEqual(len(ProtonSynthesis.singlet()), 3)            # the proton is a 3-vector
+        p = ProtonSynthesis(seed=3)
         p.build(max_restarts=1, init_steps=8, evolve_steps=4,
                 stage1_candidate_moves=4, stage2_max_iters=6,
                 min_emergent_holes=1)

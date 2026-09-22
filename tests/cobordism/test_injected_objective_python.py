@@ -215,14 +215,21 @@ class FirewallTest(unittest.TestCase):
              "connection_entropy_weight", "gamma",
              "carried_state_energy_weight", "einstein_hilbert",
              "hodge_entropy_phase_mode", "register_residual",
-             "carried_state_energy"])
+             "carried_state_energy", "moment_stiffness_weight",
+             "moment_stiffness_degrees", "moment_stiffness_coefficients",
+             "moment_stiffness_reference"])
+        # The spectral-moment stiffness (#1183) adds a configured weight, the
+        # configured degrees and order weights, and the local spectral moments
+        # of the carrier -- geometry, computed from the edge lengths when the
+        # stiffness is declared. None of them is, or leads to, an analysis
+        # product.
 
     def test_the_declared_term_list_is_unchanged(self):
         self.assertEqual(
             cob.CobordismObjective.declared_term_names(),
             ["regge_stationarity", "hodge_stationarity",
              "connection_stationarity", "register_residual",
-             "action_magnitude", "carried_state_energy"])
+             "action_magnitude", "carried_state_energy", "moment_stiffness"])
         # The engine's own list is the same list, so a record stays comparable.
         self.assertEqual(cob.MultiCobordism.objective_term_names(),
                          cob.CobordismObjective.declared_term_names())
@@ -322,7 +329,8 @@ class NamedConstantsTest(unittest.TestCase):
              cob.ObjectiveTermName.CONNECTION_STATIONARITY,
              cob.ObjectiveTermName.REGISTER_RESIDUAL,
              cob.ObjectiveTermName.ACTION_MAGNITUDE,
-             cob.ObjectiveTermName.CARRIED_STATE_ENERGY])
+             cob.ObjectiveTermName.CARRIED_STATE_ENERGY,
+             cob.ObjectiveTermName.MOMENT_STIFFNESS])
 
 
 if __name__ == "__main__":

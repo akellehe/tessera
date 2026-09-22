@@ -25,79 +25,15 @@ def _random_allowable(K, rng, scale=0.05):
     return [complex(1.0 + scale * rng.normal(), scale * rng.normal()) for _ in range(n)]
 
 
-def _blade_dot(table, e, f):
-    """<u_e, u_f> for edge vectors u_(a,b) = x_b - x_a, by polarization."""
-    def S(a, b):
-        return 0.0 if a == b else table[(min(a, b), max(a, b))]
-    a, b = e
-    c, d = f
-    return 0.5 * (S(b, c) + S(a, d) - S(b, d) - S(a, c))
-
-
-def _grassmann_reference(K, s, k):
-    """Dense port of the specification oracle's metric(): multiplicity o blade pairing."""
-    table = dict(zip(_edges(K), s))
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
-    idx = {c: i for i, c in enumerate(cells)}
-    n = len(cells)
-    Gam = np.zeros((n, n), dtype=complex)
-    mult = np.zeros((n, n))
-    seen = set()
-
-    def blade(sig, tau):
-        if k == 0:
-            return 1.0 + 0j
-        A = np.array([[_blade_dot(table, (sig[0], sig[i]), (tau[0], tau[j]))
-                       for j in range(1, k + 1)] for i in range(1, k + 1)], dtype=complex)
-        return np.linalg.det(A) / (math.factorial(k) ** 2)
-
-    for kk in range(k, K.dimension() + 1):
-        for rho in K.kSimplexVertices(kk):
-            rho = tuple(int(v) for v in rho)
-            faces = list(itertools.combinations(rho, k + 1))
-            for a in faces:
-                for b in faces:
-                    i, j = idx[a], idx[b]
-                    mult[i, j] += 1.0
-                    if (i, j) not in seen:
-                        Gam[i, j] = blade(a, b)
-                        seen.add((i, j))
-    return mult * Gam
-
-
-def _whitney_reference_d2(K, s, k):
-    """Dense port of the specification oracle's whitney_mass() for d = 2, principal branch."""
-    table = dict(zip(_edges(K), s))
-    d = K.dimension()
-    assert d == 2
-    cells = [tuple(int(v) for v in c) for c in K.kSimplexVertices(k)]
-    idx = {c: i for i, c in enumerate(cells)}
-    n = len(cells)
-    M = np.zeros((n, n), dtype=complex)
-    for T in K.orientedTopSimplices():
-        T = tuple(int(v) for v in T)
-        g = np.array([[_blade_dot(table, (T[0], T[i]), (T[0], T[j])) for j in range(1, 3)]
-                      for i in range(1, 3)], dtype=complex)
-        vol = np.sqrt(np.linalg.det(g) + 0j) / 2.0
-        if k == 0:
-            for a in T:
-                for b in T:
-                    M[idx[(a,)], idx[(b,)]] += vol * (1 + (a == b)) / 12.0
-        elif k == 1:
-            ginv = np.linalg.inv(g)
-            Gam = np.zeros((3, 3), dtype=complex)
-            Gam[1:, 1:] = ginv
-            Gam[0, 1:] = -ginv.sum(axis=0)
-            Gam[1:, 0] = -ginv.sum(axis=1)
-            Gam[0, 0] = ginv.sum()
-            for (i, j) in itertools.combinations(range(3), 2):
-                for (kk, l) in itertools.combinations(range(3), 2):
-                    val = vol / 12.0 * ((1 + (i == kk)) * Gam[j, l] - (1 + (i == l)) * Gam[j, kk]
-                                        - (1 + (j == kk)) * Gam[i, l] + (1 + (j == l)) * Gam[i, kk])
-                    M[idx[(T[i], T[j])], idx[(T[kk], T[l])]] += val
-        else:
-            M[idx[T], idx[T]] = 1.0 / vol
-    return M
+# The dense oracles moved to `_svp` when they were generalized to every
+# dimension for the scaling verification plan's F7 families (#1208): the
+# Whitney reference is now the specification's closed form at any d (its d >= 3
+# values are tested in test_svp_three_dimensional_python.py), and both are
+# measured against the library at the plan's tolerance in
+# test_svp_oracle_python.py.
+from tests.chainhodge._svp import (blade_dot as _blade_dot,
+                                   grassmann_reference as _grassmann_reference,
+                                   whitney_reference as _whitney_reference)
 
 
 FIXTURES = {
@@ -300,12 +236,12 @@ class TestAllowability:
         K, s = _torus33()
         for k in range(3):
             M = WM.assemble(K, s, k, ch.Branch.KontsevichSegal).toarray()
-            np.testing.assert_allclose(M, _whitney_reference_d2(K, s, k), atol=1e-13)
+            np.testing.assert_allclose(M, _whitney_reference(K, s, k), atol=1e-13)
         K2 = cob.ChainComplex.fromTopCells(FIXTURES["2-complex"])
         s2 = _random_allowable(K2, rng, scale=0.3)
         for k in range(3):
             M = WM.assemble(K2, s2, k).toarray()
-            np.testing.assert_allclose(M, _whitney_reference_d2(K2, s2, k), atol=1e-13)
+            np.testing.assert_allclose(M, _whitney_reference(K2, s2, k), atol=1e-13)
 
     def test_errors(self):
         K = cob.ChainComplex.fromTopCells([[0, 1, 2]])

@@ -36,7 +36,10 @@ The panels, and the class that feeds each
                                        drawing, coloured by causal class
 3.  dual spatial curvature          -- `Re eps*|star|`, from timelike hinges
 4.  dual temporal curvature         -- `Im eps*|star|`, from spacelike hinges
-5.  persistent modular clusters     -- `PersistentModularity`
+5.  persistent modular clusters     -- `PersistentModularity` over a window
+                                       of resolutions, and the degree-zero
+                                       band of `EffectiveTopology` as the
+                                       weight-aware second proposer
 6.  fiber rank / gap / localization -- `SpectralFiber`, `SpectralFiberTracker`
 7.  anchor profile                  -- `ColorAnchor` (score, max term,
                                        participation ratio, phase dispersion)
@@ -96,6 +99,7 @@ import sys
 
 import tessera as T
 
+ch = T.chainhodge
 cob = T.cobordism
 obs = T.observables
 qu = T.quantum
@@ -218,6 +222,20 @@ DECLARED_ANALYSIS_DEGREES = (1,)
 DECLARED_FRAME_HISTORY = 4
 #: Modularity resolution the clusters are read at.
 DECLARED_RESOLUTION = 1.0
+#: Multipliers of the analysis resolution that the modularity scan covers,
+#: in scan order, with 1.0 among them. A modularity community is a proposal
+#: and the resolution parameter is a free knob of the proposer, so a community
+#: that appears at one value of it and nowhere else states nothing about the
+#: geometry. The driver reads the communities that persist across this whole
+#: window -- a resolution-scan persistence track covering every slice -- and
+#: reports the rest as proposals that did not persist.
+DECLARED_RESOLUTION_WINDOW = (0.5, 1.0, 2.0)
+#: The scale at which the degree-zero band of the covariant operator proposes
+#: its own cluster supports, beside modularity. Modularity runs on the
+#: combinatorial one-skeleton and does not see the complex Hodge weights; the
+#: band is nothing but those weights, so a support the metric separates and
+#: modularity never proposes is still offered to acceptance.
+DECLARED_BAND_SCALE = 1.0e-3
 #: Node seed and host seed.
 DECLARED_SEED = 7
 DECLARED_HOST_SEED = 3
@@ -890,50 +908,143 @@ class AnimationFrame:
     # ---- 3. persistent modular clusters -----------------------------
 
     def _read_clusters(self, spacetime, config):
+        """The cluster supports offered to acceptance, from both proposers.
+
+        Modularity is run over a WINDOW of resolutions rather than at one, and
+        only the communities whose persistence track covers every slice of that
+        window are carried forward: the resolution parameter is a free knob of
+        the proposer, so a community that stands at one value of it and nowhere
+        else says nothing about the geometry.
+
+        The degree-zero band of the covariant operator proposes beside it. That
+        proposer is weight-aware where modularity is not -- it reads the
+        squared lengths and the connection and nothing else -- so a support the
+        metric separates and the combinatorial one-skeleton does not show is
+        still put to the acceptance certificates. Neither proposer vetoes the
+        other; the panel records which offered each support.
+        """
+        self.components = []
+        self.supports = []
         modularity = obs.PersistentModularity.fromSpacetime(spacetime)
         settings = obs.PersistentModularityConfig()
-        settings.resolutions = [config["resolution"]]
+        window = [config["resolution"] * m for m in config["resolution_window"]]
+        settings.resolutions = window
         settings.baseSeed = config["seed"]
         report = modularity.scanResolutions(settings)
         if not report.slices:
-            self.components = []
             return Absent("modularity returned no resolution slice")
-        self.slice = report.slices[0]
-        self.components = list(self.slice.components)
-        if not self.components:
-            return Absent("no persistent cluster at the analysis resolution")
-        sizes = [len(list(c.support)) for c in self.components]
-        return {"count": len(self.components),
-                "sizes": sizes,
-                "resolution": config["resolution"],
-                "modularity": _finite(getattr(self.slice, "modularity", None))}
+        # The slice at the analysis resolution: the window is a set of
+        # multipliers of it, so one slice sits at the multiplier one.
+        analysis = min(range(len(window)),
+                       key=lambda i: abs(window[i] - config["resolution"]))
+        self.slice = report.slices[analysis]
+        offered = list(self.slice.components)
+        # A track covering every slice of the window is a community that
+        # persisted across it; its member at the analysis slice is the one to
+        # carry forward.
+        persistent = sorted({int(track.memberIndices[analysis])
+                             for track in report.tracks
+                             if track.firstSlice == 0
+                             and track.lastSlice == len(window) - 1
+                             and len(track.memberIndices) > analysis})
+        self.components = [offered[i] for i in persistent if i < len(offered)]
+        record = {"proposedByModularity": len(offered),
+                  "persistedAcrossWindow": len(self.components),
+                  "resolutions": window,
+                  "resolution": config["resolution"],
+                  "modularity": _finite(getattr(self.slice, "modularity", None))}
+        partition = self._read_band_supports(spacetime, config)
+        if partition is None:
+            # The band proposer is absent, not empty: every support carried
+            # forward is modularity's, and the panel says why the other
+            # proposer said nothing rather than reporting zero supports from it.
+            self.supports = [(list(c.support), c, "modularity")
+                             for c in self.components]
+            record["band"] = "unavailable: %s" % self.band_reason
+        else:
+            proposals = obs.ParticleClusters.proposeSupports(self.components,
+                                                             partition)
+            self.supports = [
+                (list(p.support),
+                 self.components[p.modularityIndex] if p.modularity else None,
+                 "+".join([n for n, offered_by in (("modularity", p.modularity),
+                                                   ("band", p.band)) if offered_by]))
+                for p in proposals]
+            record["bandScale"] = config["band_scale"]
+            record["bandCertified"] = bool(partition.certified)
+            if partition.reason:
+                record["bandReason"] = partition.reason
+            record["proposedByBandAlone"] = sum(
+                1 for p in proposals if p.band and not p.modularity)
+        record["count"] = len(self.supports)
+        record["sizes"] = [len(support) for support, _, _ in self.supports]
+        record["proposers"] = [proposers for _, _, proposers in self.supports]
+        if not self.supports:
+            return Absent("no cluster support persisted across the resolution "
+                          "window and the degree-zero band proposed none")
+        return record
+
+    def _read_band_supports(self, spacetime, config):
+        """The supports of the effective components: the degree-zero band of
+        the covariant operator of the accepted geometry, read at the declared
+        band scale. None when the operator cannot be built from this geometry,
+        with `self.band_reason` naming what was missing -- an absence, never a
+        partition of zero components."""
+        self.band_reason = ""
+        try:
+            K = ch.WhitneyMass.complexOf(spacetime)
+            lengths = ch.WhitneyMass.squaredLengthsOf(spacetime, K)
+            # The crossover is declared at one so that degree zero is read from
+            # the sparse pencil whatever the size of the complex: the supports
+            # are the only thing wanted here, and a dense Schur form of every
+            # degree, once per drawn frame, is work this panel does not need.
+            base = ch.ChainHodge(K, lengths, ch.Preset.L2, ch.Branch.Continuation, 1)
+            cov = ch.CovariantChainHodge(base, ch.Connection.fromSpacetime(spacetime, K),
+                                         7, False)
+            return obs.EffectiveTopology.components(cov, config["band_scale"])
+        except Exception as error:                        # noqa: BLE001
+            self.band_reason = str(error)
+            return None
 
     # ---- 4. fibers: rank, gap, localization -------------------------
 
     def _read_bands(self, spacetime, config):
         self.candidates = []
         self.candidate_components = []
-        # Position of each candidate's component within `self.components`, and
-        # how many candidate slots one component owns (one per analysis
-        # degree). Together they address the same component's candidate in an
-        # earlier frame, where only the component's position is known.
+        # How an earlier frame's candidate is addressed from this one. A frame
+        # track names a component by its POSITION in that frame's component
+        # list, so each candidate records the position of the component it was
+        # read on (-1 for a support only the band proposer offered, which no
+        # modularity track follows) and its degree slot, and `candidate_slots`
+        # maps a (position, slot) pair back to the candidate index.
         self.candidate_positions = []
+        self.candidate_slots = {}
         self.degree_count = max(1, len(list(config["degrees"])))
-        if not self.components:
+        position_of = {id(component): index
+                       for index, component in enumerate(self.components)}
+        if not self.supports:
             return Absent("no cluster to carry a band")
         settings = obs.SpectralFiberConfig()
         settings.degrees = list(config["degrees"])
         tracker = obs.SpectralFiberTracker(spacetime, settings)
         rows = []
-        for position, component in enumerate(self.components):
-            for degree in config["degrees"]:
+        for support, component, proposers in self.supports:
+            position = (-1 if component is None
+                        else position_of.get(id(component), -1))
+            for slot, degree in enumerate(config["degrees"]):
+                # A support the band proposed and modularity did not carries no
+                # modularity component; the slot stays empty rather than
+                # borrowing another support's identity.
                 self.candidate_components.append(component)
                 self.candidate_positions.append(position)
+                if position >= 0:
+                    self.candidate_slots[(position, slot)] = len(self.candidates)
                 try:
-                    read = tracker.enumerateBands(component.support, degree)
+                    read = tracker.enumerateBands(support, degree)
                 except Exception as error:                # noqa: BLE001
                     self.candidates.append(None)
                     rows.append({"accepted": False,
+                                 "proposers": proposers,
                                  "reason": "band enumeration failed: %s"
                                            % error})
                     continue
@@ -950,12 +1061,14 @@ class AnimationFrame:
                                               "failedCertificates"))
                     rows.append({"accepted": False,
                                  "offered": len(read.fibers),
+                                 "proposers": proposers,
                                  "reason": ", ".join(sorted(set(named)))
                                            or "no band met the certificate"})
                     continue
                 certificate = chosen.certificate()
                 rows.append({
                     "accepted": True,
+                    "proposers": proposers,
                     "degree": int(chosen.degree()),
                     "rank": int(chosen.rank()),
                     "lowerGap": _finite(certificate.lowerGap),
@@ -1026,9 +1139,10 @@ class AnimationFrame:
                 break
             frame = history[frame_index]
             member = int(list(track.memberIndices)[offset])
-            index = member * getattr(frame, "degree_count", 1) + slot
+            index = getattr(frame, "candidate_slots", {}).get((member, slot))
             candidates = getattr(frame, "candidates", [])
-            if index >= len(candidates) or candidates[index] is None:
+            if index is None or index >= len(candidates) \
+                    or candidates[index] is None:
                 break                    # the run ends where the candidate does
             run.append(candidates[index])
         run.reverse()
@@ -1114,7 +1228,10 @@ class AnimationFrame:
             evidence.colorBand = fiber
             components = getattr(self, "candidate_components",
                                  self.components)
-            if index < len(components):
+            # A support the degree-zero band proposed and modularity did not
+            # has no modularity identity to carry; the evidence goes without
+            # one rather than borrowing another candidate's.
+            if index < len(components) and components[index] is not None:
                 evidence.component = components[index].id
             state = self.states[index] if index < len(self.states) else None
             if state is not None:
@@ -1127,15 +1244,18 @@ class AnimationFrame:
             # candidate with no track was never followed: both quantities stay
             # unmeasured and the classifier names them, rather than a vacuous
             # lifetime of one standing in for a measurement.
-            position = (self.candidate_positions[index]
-                        if index < len(getattr(self, "candidate_positions", []))
-                        else None)
-            track = None if position is None else self._track_of(position)
+            positions = getattr(self, "candidate_positions", [])
+            position = positions[index] if index < len(positions) else -1
+            # A support only the band proposer offered carries no modularity
+            # component, so no frame track follows it: its lifetime is
+            # unmeasured and the classifier names it.
+            track = None if position < 0 else self._track_of(position)
             if track is not None:
                 evidence.frameLifetime = float(track.frames)
                 evidence.frameMinOverlap = float(track.minAdjacentOverlap)
-                family = self._band_family(
-                    track, index % max(1, getattr(self, "degree_count", 1)))
+                slot = next((s for (p, s), i
+                             in self.candidate_slots.items() if i == index), 0)
+                family = self._band_family(track, slot)
                 if family:
                     evidence.colorBandFrames = family
                 links = self._lifetime_transports(self.spacetime, family)
@@ -2865,6 +2985,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
                  backsteps=DECLARED_BACKSTEPS,
                  seed=DECLARED_SEED, host_seed=DECLARED_HOST_SEED,
                  resolution=DECLARED_RESOLUTION,
+                 band_scale=DECLARED_BAND_SCALE,
                  edge_disposition=DECLARED_EDGE_DISPOSITION,
                  stage1_iters=DECLARED_STAGE1_ITERS,
                  stage2_iters=DECLARED_STAGE2_ITERS,
@@ -2904,6 +3025,10 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
     if resolution <= 0.0:
         raise ValueError("resolution must be a positive finite number, got %r"
                          % resolution)
+    band_scale = _finite_value("band scale", band_scale)
+    if band_scale <= 0.0:
+        raise ValueError("band scale must be a positive finite number, got %r"
+                         % band_scale)
     if edge_disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
@@ -2913,6 +3038,8 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
         "size": size,
         "host_seed": host_seed,
         "resolution": resolution,
+        "resolution_window": list(DECLARED_RESOLUTION_WINDOW),
+        "band_scale": band_scale,
         "edge_disposition": edge_disposition,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
@@ -3004,7 +3131,17 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter)
     run.add_argument("--size", type=int, default=DECLARED_SIZE)
     run.add_argument("--host-seed", type=int, default=DECLARED_HOST_SEED)
-    run.add_argument("--resolution", type=float, default=DECLARED_RESOLUTION)
+    run.add_argument("--resolution", type=float, default=DECLARED_RESOLUTION,
+                     help="the modularity resolution the clusters are "
+                          "read at. The scan covers this value times "
+                          "each of %s, and only a community that "
+                          "persists across that whole window is carried "
+                          "forward." % (DECLARED_RESOLUTION_WINDOW,))
+    run.add_argument("--band-scale", type=float, default=DECLARED_BAND_SCALE,
+                     help="the scale at which the degree-zero band of "
+                          "the covariant operator proposes its own "
+                          "cluster supports, beside modularity: the "
+                          "window |lambda| <= this of that band.")
     run.add_argument("--edge-disposition", choices=list(EdgeDisposition.ALL),
                      default=DECLARED_EDGE_DISPOSITION,
                      help="causal character of the seed's edges: random, "
@@ -3184,6 +3321,7 @@ def main(argv=None):
         config = build_config(
             size=args.size, steps=args.steps, seed=args.seed,
             host_seed=args.host_seed, resolution=args.resolution,
+            band_scale=args.band_scale,
             edge_disposition=args.edge_disposition,
             stage1_iters=args.stage_one_iterations,
             stage2_iters=args.stage_two_iterations,

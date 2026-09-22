@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "cobordism/Certificate.h"
+#include "cobordism/HodgeLaplacian.h"
 
 // === tessera subsystem ns fwd-decls ===
 namespace tessera::spacetime { class Spacetime; }
@@ -112,8 +113,10 @@ enum class RetainedCoordinateKind {
 ///    Craig--Bampton/AMLS approximation over a declared window;
 ///    `labeledFiberSum` and `certifiedFiberSum` build the abstract labeled sum
 ///    \f$ \boxplus_v E_v \f$, with embedding \f$ J \f$ into the chain space
-///    and Gram \f$ G = J^\dagger W J \f$; `fockStage` the free many-body
-///    spectrum over that sum. Fibers may overlap on shared interface cells, so
+///    and Gram \f$ G = J^\dagger W J \f$ (\f$ J^T M J \f$ on a pencil level,
+///    \f$ \tilde Y^T Y \f$ against the bands' own left frames); `fockStage`
+///    the free many-body spectrum over that sum, compressed in the same
+///    pairing. Fibers may overlap on shared interface cells, so
 ///    an internal direct sum is never asserted: each run proceeds by one
 ///    declared `FiberEmbeddingPolicy`.
 ///  - **Recursion.**
@@ -139,8 +142,13 @@ enum class RetainedCoordinateKind {
 ///    \f$ \ell^2 \f$). Certified block elimination with the left-kernel
 ///    compatibility check; no variational claim.
 ///
-/// The spacetime path takes `HodgeLaplacian::laplacian(degree)` as built, with
-/// metric `HodgeLaplacian::weights(degree)` (the identity at degree zero).
+/// The spacetime path pairs the operator and its metric from one metric
+/// source (`overCells`). Under the default `WhitneyPencil` the level is the
+/// pencil \f$ (\tilde A_k^U, M_k^U) \f$ of `HodgeLaplacian::pencil`, regime
+/// `ComplexSymmetricPencil` when both matrices are complex symmetric (a
+/// trivial connection) and `NonNormal` otherwise; under `DiagonalWeights` it takes `HodgeLaplacian::laplacian(degree)` with
+/// metric `HodgeLaplacian::weights(degree)` (the identity at degree zero) and
+/// the regimes below.
 ///
 /// ## Partitions
 ///
@@ -242,6 +250,16 @@ class RecursiveQuotient {
       /// The band's right frame over this level's fine coordinates, flat
       /// row-major (`dimension()` x `rank`); its columns span the band.
       std::vector<std::complex<double>> frame{};
+      /// The band's local left Riesz frame \f$ \tilde\Phi \f$ over the same
+      /// coordinates, flat row-major (`dimension()` x `rank`), paired with
+      /// `frame` by the plain transpose (\f$ \tilde\Phi^T \Phi = I \f$ on
+      /// the band): `SpectralFiber::dualFrame()`, or a chain-level Riesz
+      /// band's `leftFrame` carried into this level's coordinates. It is
+      /// the left embedding, fixed before the overlap test and never
+      /// replaced by a global dual. Empty: the level's metric dual stands in
+      /// (see `certifiedFiberSum`). Either every band of a sum supplies one
+      /// or none does.
+      std::vector<std::complex<double>> leftFrame{};
       /// Band rank \f$ r_v \f$: the number of eigenvalues in the band.
       std::size_t rank{0};
       /// Distance to the nearest eigenvalue below the band. NaN when
@@ -454,10 +472,20 @@ class RecursiveQuotient {
       std::vector<int> summandComponents{};
       /// Nominal rank \f$ r_v \f$ of each summand.
       std::vector<int> summandRanks{};
-      /// The embedding \f$ J \f$ into the fine chain space, flat row-major
-      /// (fineDim x totalRank); columns are |W|-unit-normalized.
+      /// The embedding \f$ J \f$ (the right embedding \f$ Y \f$) into the
+      /// fine chain space, flat row-major (fineDim x totalRank). Columns are
+      /// |W|-unit-normalized when the metric dual is the left embedding, and
+      /// taken as given when an explicit left embedding is carried.
       std::vector<std::complex<double>> embedding{};
-      /// \f$ G = J^\dagger W J \f$, flat row-major (totalRank x totalRank).
+      /// The explicit left embedding \f$ \tilde Y \f$, flat row-major
+      /// (fineDim x totalRank), assembled from the summands' local left Riesz
+      /// frames and fixed before the overlap test. Empty when the level's
+      /// metric dual is the left embedding.
+      std::vector<std::complex<double>> leftEmbedding{};
+      /// The overlap matrix, flat row-major (totalRank x totalRank):
+      /// \f$ G = \tilde Y^T Y \f$ with an explicit left embedding;
+      /// otherwise the metric pairing, \f$ G = J^\dagger W J \f$ on an
+      /// operator level and \f$ G = J^T M J \f$ on a pencil level.
       std::vector<std::complex<double>> gram{};
       /// The declared policy this run proceeds by.
       FiberEmbeddingPolicy policy{FiberEmbeddingPolicy::CarryGramExactly};
@@ -472,9 +500,18 @@ class RecursiveQuotient {
       /// nominal for `CarryGramExactly`/`CertifiedNearIsometry`,
       /// \f$ \operatorname{rank} G \f$ for `QuotientKernel`.
       std::size_t effectiveRank{0};
-      /// Orthonormal basis of \f$ (\ker G)^\perp \f$, flat row-major
-      /// (totalRank x effectiveRank); populated under `QuotientKernel`.
+      /// Orthonormal basis of \f$ (\ker G)^\perp \f$, the complement of the
+      /// right radical, flat row-major (totalRank x effectiveRank); populated
+      /// under `QuotientKernel`.
       std::vector<std::complex<double>> quotientBasis{};
+      /// The left partner \f$ L_q \f$ of `quotientBasis` \f$ R_q \f$, same
+      /// shape, so that the quotient of any one-particle matrix is
+      /// \f$ L_q^T X R_q \f$ — one transpose pairing: \f$ \bar R_q \f$ for a
+      /// Hermitian (metric) Gram, and \f$ \bar U_r \f$ from the Gram's SVD
+      /// (the complement of the left radical) for a bilinear one, so that
+      /// \f$ L_q^T G R_q \f$ is nondegenerate. Populated under
+      /// `QuotientKernel`.
+      std::vector<std::complex<double>> leftQuotientBasis{};
       /// Whether the summands are certified isolated bands \f$ E_v \f$: false
       /// for `labeledFiberSum()`, true for `certifiedFiberSum()`.
       bool fromCertifiedBands{false};
@@ -502,13 +539,23 @@ class RecursiveQuotient {
       FiberEmbeddingPolicy policy{FiberEmbeddingPolicy::CarryGramExactly};
       /// \f$ \|G - I\| \f$ of the underlying labeled sum, carried through.
       double gramDefect{std::numeric_limits<double>::quiet_NaN()};
-      /// The one-particle operator \f$ h = J^\dagger W L J \f$ on the
-      /// labeled-sum basis, restricted to \f$ (\ker G)^\perp \f$ under
-      /// `QuotientKernel`; flat row-major (modes x modes).
+      /// The one-particle operator on the labeled-sum basis, compressed in
+      /// the same pairing as `gram`: \f$ h = \tilde Y^T \mathcal L Y \f$
+      /// with an explicit left embedding (\f$ \mathcal L = L \f$ on an
+      /// operator level, \f$ M^{-1}\tilde A \f$ on a pencil level);
+      /// otherwise \f$ h = J^\dagger W L J \f$ on an operator level and
+      /// \f$ h = J^T \tilde A J \f$ on a pencil level. Restricted to the
+      /// quotient \f$ L_q^T h R_q \f$ under `QuotientKernel`; flat row-major
+      /// (modes x modes).
       std::vector<std::complex<double>> oneParticle{};
       /// The Gram \f$ G \f$ on the same basis, so a `CarryGramExactly` run
       /// can pair \f$ h \f$ against it rather than assume orthonormality.
       std::vector<std::complex<double>> gram{};
+      /// The pairing both were compressed in: "metric-hermitian" (operator
+      /// level, \f$ J^\dagger W \f$), "metric-transpose" (pencil level,
+      /// \f$ J^T \f$ against \f$ M \f$), or "left-embedding" (explicit
+      /// \f$ \tilde Y^T \f$).
+      std::string pairing{};
       /// Eigenvalues of \f$ h \f$, ascending by (Re, Im).
       std::vector<std::complex<double>> oneParticleSpectrum{};
       /// \f$ \dim\Fock(\hh) = 2^M \f$ as a double; exact through 2^53, +inf
@@ -615,22 +662,41 @@ class RecursiveQuotient {
     /// as explicit k-cell sets (each cell a vertex-id tuple, matched by vertex
     /// set). An `AnalyticCache` bound to the same spacetime enables
     /// per-component reuse across accepted moves.
+    ///
+    /// The operator and its metric come from one source, `metricSource`,
+    /// which defaults to the process-wide
+    /// `HodgeLaplacian::defaultMetricSource()`. Under `WhitneyPencil` (the
+    /// default) the level is a pencil level over the dressed Whitney pencil
+    /// $ (	ilde A_k^U, M_k^U) $ of `HodgeLaplacian::pencil`, exactly as
+    /// `overPencil` builds one, so the reduction moves with the connection
+    /// $ U $. Under `DiagonalWeights` it is an operator level over
+    /// `HodgeLaplacian::laplacian(degree)` with the diagonal metric
+    /// `HodgeLaplacian::weights(degree)`.
     /// @throws std::invalid_argument on an unknown cell or uncovered cells.
     [[nodiscard]] static RecursiveQuotient overCells(
         std::shared_ptr<Spacetime> st, int degree,
         const std::vector<std::vector<std::vector<std::uint64_t>>> &componentCells,
         const Options &options = Options(),
-        std::shared_ptr<AnalyticCache> cache = nullptr);
+        std::shared_ptr<AnalyticCache> cache = nullptr,
+        HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
 
     /// Build over a spacetime's Hodge operator at `degree`, components given
     /// as vertex supports: a k-cell belongs to a component when all its
     /// vertices lie in the support. Cells claimed by no support are gathered
-    /// into one residual component appended after the supplied ones.
+    /// into one residual component appended after the supplied ones. The
+    /// operator and metric are those of `overCells` under `metricSource`.
     [[nodiscard]] static RecursiveQuotient overVertexSupports(
         std::shared_ptr<Spacetime> st, int degree,
         const std::vector<std::vector<std::uint64_t>> &componentVertexSupports,
         const Options &options = Options(),
-        std::shared_ptr<AnalyticCache> cache = nullptr);
+        std::shared_ptr<AnalyticCache> cache = nullptr,
+        HodgeLaplacian::MetricSource metricSource = HodgeLaplacian::defaultMetricSource());
+
+    /// The metric source of a spacetime-backed level (see `overCells`);
+    /// `std::nullopt` on the matrix and pencil paths and on child levels.
+    [[nodiscard]] std::optional<HodgeLaplacian::MetricSource> metricSource() const noexcept {
+      return metricSource_;
+    }
 
     /// Fine dimension (number of k-cells / coordinates at this level).
     [[nodiscard]] int dimension() const noexcept { return dim_; }
@@ -739,17 +805,33 @@ class RecursiveQuotient {
     /// Bands are summed in the order given; an uncertified band is summed and
     /// reported rather than dropped, and makes the sum's certificate fail to
     /// hold.
+    ///
+    /// When the bands carry their local left Riesz frames
+    /// (`CertifiedBand::leftFrame`), those assemble the left embedding
+    /// \f$ \tilde Y \f$, fixed before the test, and the overlap certificate is
+    /// \f$ G = \tilde Y^T Y \f$ with defect \f$ \Delta G = G - I \f$ — the
+    /// exact complex amplitude error \f$ \tilde a^T \Delta G\, b \f$. Frames
+    /// are then taken as given (no column normalization, which would break
+    /// their pairing). Without left frames the level's metric dual stands in.
     /// @throws std::invalid_argument on a frame whose size is not
-    ///   `dimension() * rank`, or a band naming an unknown component.
+    ///   `dimension() * rank`, a band naming an unknown component, or a sum
+    ///   in which some bands carry a left frame and others do not.
     [[nodiscard]] LabeledFiberSumRead certifiedFiberSum(
         const std::vector<CertifiedBand> &bands) const;
 
     /// The Fock stage \f$ \Fock(\boxplus_v E_v) \f$ over a labeled sum: the
-    /// one-particle compression \f$ h = J^\dagger W L J \f$, its spectrum, and
-    /// the free many-body spectrum of \f$ d\Gamma(h) \f$ as occupation subset
-    /// sums. `maxTerms` bounds the materialized many-body spectrum; beyond it
-    /// the read refuses (`spectrumMaterialized == false`) rather than
-    /// allocating \f$ 2^M \f$ entries.
+    /// one-particle compression, its spectrum, and the free many-body
+    /// spectrum of \f$ d\Gamma(h) \f$ as occupation subset sums. One pairing
+    /// throughout: \f$ h \f$ is compressed in exactly the pairing the sum's
+    /// Gram \f$ G \f$ was built in — \f$ \tilde Y^T \mathcal L Y \f$ against
+    /// \f$ G = \tilde Y^T Y \f$ with an explicit left embedding,
+    /// \f$ J^T \tilde A J \f$ against \f$ J^T M J \f$ on a pencil level, and
+    /// \f$ J^\dagger W L J \f$ against \f$ J^\dagger W J \f$ on an operator
+    /// level (the Hermitian special case) — and a quotient takes
+    /// \f$ L_q^T (\cdot) R_q \f$ of both. `maxTerms` bounds the materialized
+    /// many-body spectrum; beyond it the read refuses
+    /// (`spectrumMaterialized == false`) rather than allocating \f$ 2^M \f$
+    /// entries.
     /// @throws std::invalid_argument when the sum's embedding does not match
     ///   this level's dimension.
     [[nodiscard]] FockStageRead fockStage(
@@ -772,11 +854,41 @@ class RecursiveQuotient {
         const std::vector<std::complex<double>> &op, int dim,
         double gamma = 1.0, int restarts = 4, std::uint64_t baseSeed = 0);
 
+    /// `persistentPartition` over a declared window of resolutions rather than
+    /// at one.
+    ///
+    /// The resolution parameter \f$ \gamma \f$ is a free knob of the proposer,
+    /// and modularity is subject to the resolution limit, so a community that
+    /// stands at one value of \f$ \gamma \f$ and nowhere else states nothing
+    /// about the operator. This form scans `gammas` in the order given,
+    /// follows each community across adjacent resolutions by support overlap,
+    /// and keeps only the components whose persistence track covers the whole
+    /// window, taking each track's member at the FIRST resolution of the
+    /// window as the support it proposes. Every coordinate no such component
+    /// claimed comes back as a singleton, so the result still covers every
+    /// index exactly once and is still a partition to hand to `nextLevel`.
+    ///
+    /// A window of one resolution is the single-resolution form, since a track
+    /// over one slice covers its window.
+    /// @throws std::invalid_argument on a malformed operator size, an empty
+    ///   window, or a non-positive restart count.
+    [[nodiscard]] static std::vector<std::vector<int>> persistentPartition(
+        const std::vector<std::complex<double>> &op, int dim,
+        const std::vector<double> &gammas, int restarts = 4,
+        std::uint64_t baseSeed = 0);
+
     /// `persistentPartition` of this level's reduced operator: the partition
     /// \f$ P_\ell \f$ to hand straight to `nextLevel`, as
     /// `child = parent.nextLevel(parent.childPersistentPartition())`.
     [[nodiscard]] std::vector<std::vector<int>> childPersistentPartition(
         double gamma = 1.0, int restarts = 4, std::uint64_t baseSeed = 0) const;
+
+    /// `childPersistentPartition` over a declared window of resolutions: the
+    /// components of this level's reduced operator that persist across the
+    /// whole window (see the window form of `persistentPartition`).
+    [[nodiscard]] std::vector<std::vector<int>> childPersistentPartition(
+        const std::vector<double> &gammas, int restarts = 4,
+        std::uint64_t baseSeed = 0) const;
 
     /// The composable amplitude budget of the `CertifiedNearIsometry`
     /// policy: two embeddings with Gram defects \f$ \varepsilon_A,
@@ -916,8 +1028,10 @@ class RecursiveQuotient {
         const std::vector<RetainedCoordinate> &coordinates,
         const std::vector<std::shared_ptr<ComponentSolve>> &solves) const;
     // The Gram/policy treatment shared by both labeled-sum entry points.
+    // `leftColumns` is the explicit left embedding (empty: the metric dual).
     [[nodiscard]] LabeledFiberSumRead summarizeFiberSum(
-        const std::vector<Eigen::VectorXcd> &columns) const;
+        const std::vector<Eigen::VectorXcd> &columns,
+        const std::vector<Eigen::VectorXcd> &leftColumns = {}) const;
 
     // --- problem data (op_/weights_ refresh under invalidate()) ------------
     Eigen::SparseMatrix<std::complex<double>> op_{};
@@ -942,6 +1056,8 @@ class RecursiveQuotient {
     std::uint64_t partitionFingerprint_{0};            // cache-kind qualifier
     std::shared_ptr<Spacetime> st_{};
     std::shared_ptr<AnalyticCache> cache_{};
+    // spacetime path: the one source of the operator and its metric
+    std::optional<HodgeLaplacian::MetricSource> metricSource_{};
     // spacetime path extras: per-cell vertex tuples + integer boundary maps
     std::vector<std::vector<std::uint64_t>> cellVertices_{};
     bool hasBoundary_{false};
