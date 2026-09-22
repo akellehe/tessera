@@ -315,6 +315,11 @@ class TestScalingReports:
     fill-in against the number of cells, on the plan's F1 family (the jittered
     flat torus)."""
 
+    #: The mesh sizes the series is taken over. The largest is past the default
+    #: dense crossover of 512 edges, where the dense reading refuses outright,
+    #: so the series covers the range the production path exists for.
+    SIZES = (4, 6, 8, 12, 16)
+
     @staticmethod
     def _row(N):
         K, s, _ = flat_torus(N, jitter=0.25, seed=N)
@@ -326,7 +331,23 @@ class TestScalingReports:
         return {"N": N, "n1": n1, "lu": lu, "qr": qr}
 
     def test_time_memory_and_fill_in_against_the_number_of_cells(self):
-        rows = [self._row(N) for N in (4, 6, 8, 10)]
+        rows = [self._row(N) for N in self.SIZES]
+        # The P series itself, reported as the plan asks for it.
+        print("\nP: the sparse production path on F1 (jittered flat torus)")
+        print(f"{'N':>3} {'n_1':>6} {'operation':>11} {'nnz(sys)':>9} {'nnz(fac)':>9}"
+              f" {'fill-in':>8} {'MB':>8} {'s':>8}")
+        for row in rows:
+            for name in ("lu", "qr"):
+                cost = row[name]
+                print(f"{row['N']:>3} {row['n1']:>6} {cost.operation:>11}"
+                      f" {cost.systemNonZeros:>9} {cost.factorNonZeros:>9}"
+                      f" {cost.fillIn:>8.3f} {cost.factorMegabytes:>8.3f}"
+                      f" {cost.wallSeconds:>8.4f}")
+        # The largest mesh is past the default dense crossover, so the series
+        # reaches the sizes the dense reading cannot be taken at.
+        K, s, _ = flat_torus(4, jitter=0.0, seed=0)
+        default_crossover = ch.ChainHodge(K, s).crossoverDimension()
+        assert rows[-1]["n1"] > default_crossover
         for row in rows:
             for name in ("lu", "qr"):
                 cost = row[name]
@@ -340,16 +361,20 @@ class TestScalingReports:
         assert [r["n1"] for r in rows] == sorted(r["n1"] for r in rows)
         assert [r["lu"].systemNonZeros for r in rows] \
             == sorted(r["lu"].systemNonZeros for r in rows)
-        # The factors stay sparse: the stored entries of one bordered
-        # factorization are far below the dense n^2 of the system it factorizes,
-        # which is the whole claim of a sparse production path.
+        # The factors stay sparse: on the meshes large enough for the ordering
+        # to have room, the stored entries of one bordered factorization are
+        # far below the dense n^2 of the system it factorizes, which is the
+        # whole claim of a sparse production path.
         for row in rows:
-            dense_entries = row["lu"].systemRows ** 2
-            assert row["lu"].factorNonZeros < 0.5 * dense_entries
-        # Fill-in per unknown does not run away with the mesh: the largest mesh
-        # factorizes no worse per row than four times the smallest.
+            if row["lu"].systemRows < 200:
+                continue
+            assert row["lu"].factorNonZeros < 0.2 * row["lu"].systemRows ** 2
+        # Fill-in per unknown does not run away with the mesh. A dense
+        # factorization would store one entry per unknown per row, so its
+        # per-row count would grow with the system exactly as the system does --
+        # a factor of sixteen over this series. The sparse one is held to six.
         per_row = [r["lu"].factorNonZeros / r["lu"].systemRows for r in rows]
-        assert per_row[-1] <= 4.0 * per_row[0]
+        assert per_row[-1] <= 6.0 * per_row[0]
 
     def test_the_memory_of_the_factors_is_the_entries_they_store(self):
         """`factorMegabytes` is computed from `factorNonZeros`, so the two agree
