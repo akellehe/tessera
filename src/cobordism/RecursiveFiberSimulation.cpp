@@ -1511,6 +1511,13 @@ void MultiCobordism::runRecursiveAnalysisOn(
         {"transport_leakage_max", Json::number(read.transportLeakageMax)},
         {"persistence_lifetime", Json::number(read.persistenceLifetime)},
         {"frame_lifetime", Json::number(read.frameLifetime)},
+        // The other two multi-frame quantities the overlay now measures: the
+        // smallest adjacent-frame support overlap along the candidate's track,
+        // and how many frames its band stability was decided over. Both are
+        // null when the candidate was never followed across frames.
+        {"frame_min_overlap", Json::number(read.frameMinOverlap)},
+        {"stability_frames",
+         Json::integer(static_cast<long long>(read.stabilityFrames))},
         {"localization", Json::number(read.localization)},
         {"localization_support_fraction",
          Json::number(read.localizationSupportFraction)},

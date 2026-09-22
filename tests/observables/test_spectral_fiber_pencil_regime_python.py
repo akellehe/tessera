@@ -98,7 +98,17 @@ class TestTrackerOnThePencil:
         assert len(harmonic) == 1
         h = harmonic[0]
         cert = h.certificate()
-        assert h.rank() == 2 and cert.accepted and not cert.isotropic
+        assert h.rank() == 2 and not cert.isotropic
+        if eps > 0.0:
+            assert cert.accepted, cert.describe()
+        else:
+            # #1193: at eps_L = 0 the instance is real Lorentzian and sits
+            # exactly ON the Kontsevich-Segal boundary, margin zero. The band
+            # is still read, still reported and still certified-looking in
+            # every other measurement — and it is NOT accepted alone, which is
+            # the whitepaper's rule for a result at eps_L = 0.
+            assert not cert.allowable and cert.allowabilityMargin <= 0.0
+            assert not cert.accepted
         P = np.asarray(h.projector())
         assert np.linalg.norm(P @ P - P) < 1e-8 * max(1.0, np.linalg.norm(P))
         assert abs(cert.pairingDeterminant) > 1e-3

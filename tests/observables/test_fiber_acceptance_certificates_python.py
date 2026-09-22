@@ -152,20 +152,25 @@ class TestContourCertificate:
 
     def test_a_band_with_no_contour_claims_none(self):
         """The diagonal-weights path groups by the sort-and-gap rule and draws
-        no contour: it reports no contour and no resolvent, never a zero."""
+        no contour: it reports no contour and no resolvent, never a zero.
+
+        The metric source is NAMED here rather than defaulted, since the
+        default is the Whitney pencil and this read is about the other path.
+        """
         st, K = _euclidean_torus()
         support = [int(v[0]) for v in K.kSimplexVertices(0)]
-        read = obs.SpectralFiberTracker(st, _config()).enumerateBands(
-            support, 1)
+        read = obs.SpectralFiberTracker(
+            st, _config(),
+            cob.HodgeMetricSource.DiagonalWeights).enumerateBands(support, 1)
         assert read.solverPath != "pencil-riesz"
+        assert read.fibers
         for fiber in read.fibers:
             cert = fiber.certificate()
             assert cert.contour == ""
             assert cert.contourNodeCount == 0
             assert math.isnan(cert.resolventBound)
             assert math.isnan(cert.resolventMax)
-        assert any(f.certificate().accepted for f in read.fibers), (
-            "a band selected without a contour is not thereby uncertified")
+            assert math.isnan(cert.allowabilityMargin)
 
     def test_the_contour_certificate_round_trips(self):
         st, K = _euclidean_torus()
