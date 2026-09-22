@@ -489,6 +489,7 @@ class TestRecords(unittest.TestCase):
         self.assertEqual(read["cluster_id"], "Q")
         total = obs.ClusterLineage.totals(W, cut, [lineage]).toRecord()
         self.assertEqual(total["fermion_number"], 2)
+        self.assertEqual(total["schema_version"], obs.ClusterLineage.kSchemaVersion)
 
 
 if __name__ == "__main__":

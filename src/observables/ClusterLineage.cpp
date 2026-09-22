@@ -129,6 +129,7 @@ Record LineageNumberRead::toRecord() const {
 
 Record TotalLineageRead::toRecord() const {
   Record::Map map;
+  map["schema_version"] = Record(ClusterLineage::kSchemaVersion);
   map["fermion_number"] = Record(fermionNumber);
   map["baryon_number"] = Record(baryonNumber);
   Record::List per;

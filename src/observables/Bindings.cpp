@@ -4677,6 +4677,7 @@ evidence.)doc")
       "cooriented cut on the interaction cobordism. No sign is taken from a "
       "spectral coordinate, from the connection, from an eigenvalue or from a "
       "density, and no level set of a real part is used.")
+      .def_readonly_static("kSchemaVersion", &ClusterLineage::kSchemaVersion)
       .def_static("history", &ClusterLineage::history, py::arg("levels"), py::arg("reductions"),
                   "The concatenated interaction cobordism of a history of levels.")
       .def_static("mappingCylinder", &ClusterLineage::mappingCylinder, py::arg("incoming"),
