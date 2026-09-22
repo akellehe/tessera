@@ -165,26 +165,52 @@ def _rayleigh(spacetime, k, v):
     return float(np.real(v @ product)) / float(v @ v)
 
 
+def _directions(n, steps, midpoints, coordinates, spacetime):
+    q = 2.0 * np.pi / n
+    displacement = {vid: np.array([0.0, np.sin(q * c[0]), 0.0]) for vid, c in coordinates.items()}
+    return {
+        "uniform traceless": steps[:, 1] ** 2 - steps[:, 2] ** 2,
+        "traceless wave": np.cos(q * midpoints[:, 0]) * (steps[:, 1] ** 2 - steps[:, 2] ** 2),
+        "dilation": np.sum(steps ** 2, axis=1),
+        "vertex displacement": np.array([2.0 * d @ (displacement[e.getTarget().getId()]
+                                                    - displacement[e.getSource().getId()])
+                                         for e, d in zip(spacetime.getEdgeList().toVector(), steps)]),
+    }
+
+
 def test_the_stiffness_per_degree_of_freedom_does_not_fall_with_the_size_of_the_complex():
     """On flat periodic tori of n^3 vertices the Rayleigh quotient of the
-    stiffness along a uniform transverse-traceless deformation and along a
-    vertex displacement of the longest wavelength is independent of n (the
-    entropy's falls as 1/n^3, 7.7e-4 to 2.3e-4 from n = 4 to 6), and it is
-    positive along the displacement, where Regge has no stiffness at all."""
-    quotients = {"uniform": [], "displacement": []}
-    for n in (3, 4, 5):
+    degree-one stiffness is the same at every n, along a uniform traceless
+    strain, a traceless wave of the longest wavelength, a dilation and a vertex
+    displacement (measured 3.47e4, 3.0e4 and 2.84e4, 4.51e5, 9.8e4 and 9.9e4
+    at n = 3, 4, 5 with these coefficients), and positive along all four. The
+    entropy's falls as 1/n^3 (7.7e-4 to 2.3e-4 from n = 4 to 6). Regge has no
+    stiffness along the displacement and the uniform strain at all."""
+    quotients = {}
+    for n in (3, 4):
         spacetime, steps, midpoints, coordinates = torus(n)
-        uniform = steps[:, 1] ** 2 - steps[:, 2] ** 2
-        q = 2.0 * np.pi / n
-        displacement = {vid: np.array([0.0, np.sin(q * c[0]), 0.0]) for vid, c in coordinates.items()}
-        gauge = np.array([2.0 * d @ (displacement[e.getTarget().getId()] - displacement[e.getSource().getId()])
-                          for e, d in zip(spacetime.getEdgeList().toVector(), steps)])
-        quotients["uniform"].append(_rayleigh(spacetime, 0, uniform))
-        quotients["displacement"].append(_rayleigh(spacetime, 0, gauge))
-    uniform, gauge = np.array(quotients["uniform"]), np.array(quotients["displacement"])
-    assert np.all(uniform > 0.0) and np.all(gauge > 0.0)
-    assert uniform.max() / uniform.min() < 1.0 + 1e-8               # exactly extensive for a uniform deformation
-    assert gauge[-1] / gauge[0] > 0.5                               # (5/3)^3 = 4.6 would be a 1/N fall
+        for name, v in _directions(n, steps, midpoints, coordinates, spacetime).items():
+            quotients.setdefault(name, []).append(_rayleigh(spacetime, 1, v))
+    for name, values in quotients.items():
+        values = np.array(values)
+        assert np.all(values > 0.0), name
+        assert values.max() / values.min() < 1.1, name               # a 1/N fall would be (4/3)^3 = 2.4
+    assert quotients["uniform traceless"][0] == pytest.approx(quotients["uniform traceless"][1], rel=1e-8)
+
+
+def test_at_degree_zero_the_scalar_moments_leave_traceless_strains_free():
+    """The local moments of the degree-zero operator are scalars at vertices,
+    which a traceless strain of the symmetric lattice moves only at second
+    order: those strains are zero modes of the degree-zero stiffness, while a
+    dilation and a vertex displacement are stiffened. The degree-one
+    operator's cells are edges of different directions, which is why it
+    stiffens every direction."""
+    spacetime, steps, midpoints, coordinates = torus(3)
+    directions = _directions(3, steps, midpoints, coordinates, spacetime)
+    assert abs(_rayleigh(spacetime, 0, directions["uniform traceless"])) < 1e-20
+    assert abs(_rayleigh(spacetime, 0, directions["traceless wave"])) < 1e-20
+    assert _rayleigh(spacetime, 0, directions["dilation"]) > 1.0
+    assert _rayleigh(spacetime, 0, directions["vertex displacement"]) > 1.0
 
 
 def test_the_objectives_carry_the_stiffness_only_when_it_is_declared():
