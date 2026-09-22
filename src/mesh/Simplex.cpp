@@ -945,6 +945,33 @@ void Simplex::fillCMCanonSection(std::uint64_t key) const {
     geomCacheState_().cmCanonKey.store(key, std::memory_order_release);
 }
 
+Simplex::DihedralCofactors Simplex::dihedralCofactors(SimplexPtr hinge) const {
+    // The front half of dihedralAngle, shared rather than copied so that a
+    // sheet-carrying caller reads bit-for-bit the cofactors the angle is built
+    // from. dihedralAngle below says why the canonical frame is the one to read.
+    const int dPlus1 = static_cast<int>(vertices.size());
+    const auto hingeVerts = hinge->getVertices();
+    std::vector<int> opposite;
+    for (int k = 0; k < dPlus1; ++k) {
+        bool inHinge = false;
+        for (const auto &hv : hingeVerts)
+            if (hv->getId() == vertices[k]->getId()) { inHinge = true; break; }
+        if (!inHinge) opposite.push_back(k);
+    }
+    if (opposite.size() != 2) return {};
+    const int n = dPlus1 + 1;
+    const GeomCache &cc = cmCanonicalCache();
+    const auto &cof = cc.cmCanonCof;
+    if (static_cast<int>(cof.size()) != n * n) return {};
+    const int bi = canonicalPosition(cc.canonPos1, vertices[opposite[0]]->getId());
+    const int bj = canonicalPosition(cc.canonPos1, vertices[opposite[1]]->getId());
+    if (bi == 0 || bj == 0) return {};
+    return {true,
+            cof[static_cast<std::size_t>(bi) * n + bj],
+            cof[static_cast<std::size_t>(bi) * n + bi],
+            cof[static_cast<std::size_t>(bj) * n + bj]};
+}
+
 std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     const int dPlus1 = static_cast<int>(vertices.size());
     // The two vertices of this simplex not in the hinge.

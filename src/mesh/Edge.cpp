@@ -4,6 +4,7 @@
 #include "mesh/Fingerprint.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeKey.h"
+#include "mesh/RiemannSheet.h"
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "utils.h"
@@ -65,8 +66,44 @@ class Simplex;
 
     [[nodiscard]] double Edge::squaredArgument() const noexcept {
       const auto l = getLength();
-      return std::arg(l * l);  // in (-pi, pi]
+      return principalArgument(l * l);  // in (-pi, pi]
     }
+
+    [[nodiscard]] double Edge::declaredSquaredArgument() const noexcept {
+      return squaredArgument() +
+             2.0 * std::numbers::pi * static_cast<double>(squaredWinding_);
+    }
+
+    [[nodiscard]] int Edge::squaredSheet() const noexcept {
+      const int parity = squaredWinding_ % 2;
+      return (parity < 0) ? parity + 2 : parity;
+    }
+
+    void Edge::continueLength(std::complex<double> l) noexcept {
+      // The sheet is carried by the squared length -- the quantity every
+      // downstream squared-volume formula is a function of. SheetedSqrt accrues
+      // the turn l^2 makes about its branch point on this step and reports the
+      // running monodromy.
+      SheetedSqrt root(getLength() * getLength(), squaredWinding_);
+      root.advance(l * l);
+      squaredWinding_ = root.winding();
+      length_ = l;
+      ++lengthRevision_;
+    }
+
+    namespace {
+    /// The declared argument folded back into (-pi, pi], which is what a causal
+    /// bucket is a function of: the two roots +/-l of one l^2 share a causal
+    /// character, so the declared sheet cannot move the bucket. It fixes only
+    /// which side of the cut a timelike edge sits on, and that is what
+    /// `declaredSquaredArgument` keeps and this fold discards.
+    [[nodiscard]] inline double foldToPi(double declared) noexcept {
+      const double twoPi = 2.0 * std::numbers::pi;
+      double folded = std::fmod(declared + std::numbers::pi, twoPi);
+      if (folded <= 0.0) folded += twoPi;
+      return folded - std::numbers::pi;
+    }
+    }  // namespace
 
     [[nodiscard]] double Edge::lorentzianMagnitude() const noexcept {
       // Re(l^2) = x^2 - t^2 for l = x + i t. Formed from the parts rather than as
@@ -83,24 +120,28 @@ class Simplex;
     }
 
     [[nodiscard]] bool Edge::isSpacelike() const noexcept {
-      // arg(l^2) ~ 0: l^2 real positive. |arg| folds the (-pi, pi] range so each
-      // test below is one comparison against a single definite argument.
+      // The declared argument ~ 0 (mod 2 pi): l^2 real positive. |arg| folds the
+      // (-pi, pi] range so each test below is one comparison against a single
+      // definite argument. Reading the declaration rather than re-deriving
+      // arg(l^2) is what makes the bucket a function of the transported state
+      // and not of where the principal cut happens to fall.
       if (isDegenerate()) return false;
-      return std::abs(squaredArgument()) <= kCausalAngularEpsilon;
+      return std::abs(foldToPi(declaredSquaredArgument())) <= kCausalAngularEpsilon;
     }
 
     [[nodiscard]] bool Edge::isTimelike() const noexcept {
-      // arg(l^2) ~ +/- pi: l^2 real negative.
+      // The declared argument ~ +/- pi: l^2 real negative.
       if (isDegenerate()) return false;
-      return std::abs(std::abs(squaredArgument()) - std::numbers::pi)
+      return std::abs(std::abs(foldToPi(declaredSquaredArgument())) - std::numbers::pi)
              <= kCausalAngularEpsilon;
     }
 
     [[nodiscard]] bool Edge::isNull() const noexcept {
-      // arg(l^2) ~ +/- pi/2: l^2 purely imaginary and nonzero -- the light cone,
-      // reached non-trivially at Re(l) == Im(l) != 0. Not the same as degenerate.
+      // The declared argument ~ +/- pi/2: l^2 purely imaginary and nonzero -- the
+      // light cone, reached non-trivially at Re(l) == Im(l) != 0. Not the same as
+      // degenerate.
       if (isDegenerate()) return false;
-      return std::abs(std::abs(squaredArgument()) - 0.5 * std::numbers::pi)
+      return std::abs(std::abs(foldToPi(declaredSquaredArgument())) - 0.5 * std::numbers::pi)
              <= kCausalAngularEpsilon;
     }
 
