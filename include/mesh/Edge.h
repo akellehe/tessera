@@ -423,21 +423,24 @@ class Edge {
     /// they read that argument folded. See ``declaredSquaredArgument``.
     int squaredWinding_{0};
 
-    /// The winding that makes the declared argument of \f$ l^2 \f$ equal twice the
-    /// principal \f$ \arg l \f$: zero when \f$ l \f$ is the principal root of its
-    /// own square (the right half plane) and \f$ \pm 1 \f$ when it is the other
-    /// one. The value ``setLength`` declares.
+    /// The winding that makes the declared argument of \f$ l^2 \f$ equal twice
+    /// the principal \f$ \arg l \f$: zero when \f$ l \f$ is the principal root of
+    /// its own square and \f$ \pm 1 \f$ when it is the other one. The value
+    /// ``setLength`` declares.
+    ///
+    /// Written as the half-plane test it is, not as
+    /// \f$ (2\arg l - \arg l^2)/2\pi \f$, which is the same number for two
+    /// inverse tangents. \f$ \arg l \f$ lies in \f$ (-\pi/2, \pi/2] \f$ — where
+    /// doubling it stays inside the principal range and the winding is zero —
+    /// exactly on the closed right half plane with its negative imaginary axis
+    /// removed; on the rest of the plane doubling leaves the range by one turn,
+    /// upward in the third quadrant's reflection and downward below the real
+    /// axis. ``setLength`` runs once per edge per relaxation step, so the two
+    /// inverse tangents are worth removing.
     [[nodiscard]] static int rootWinding(std::complex<double> l) noexcept {
-      const std::complex<double> squared = l * l;
-      const double argument =
-          (squared.imag() == 0.0)
-              ? std::arg(std::complex<double>(squared.real(), 0.0))
-              : std::arg(squared);
-      const double base =
-          (l.imag() == 0.0) ? std::arg(std::complex<double>(l.real(), 0.0))
-                            : std::arg(l);
-      return static_cast<int>(
-          std::llround((2.0 * base - argument) / (2.0 * std::numbers::pi)));
+      if (l.real() > 0.0) return 0;
+      if (l.real() < 0.0) return (l.imag() < 0.0) ? -1 : 1;
+      return (l.imag() < 0.0) ? -1 : 0;
     }
     /// Monotone ``setLength`` counter read by ``lengthRevision()``; see there.
     std::uint64_t lengthRevision_{0};
