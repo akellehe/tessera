@@ -217,12 +217,6 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
            "The rank conditions (R1)-(R4) at degree k.")
       .def("betti", &ChainHodge::betti, "Betti numbers over Q, exact.")
       .def("spectrum", &ChainHodge::spectrum, py::arg("k"), "Dense spectrum of the degree-k pencil.");
-  py::enum_<CausalType>(m, "CausalType",
-      "Declared causal type of an edge (an input, never inferred from a squared length).")
-      .value("Spacelike", CausalType::Spacelike)
-      .value("Timelike", CausalType::Timelike)
-      .value("Null", CausalType::Null);
-
   py::class_<LorentzianRead>(m, "LorentzianRead",
       "One member of the epsilon family: allowability, margin, the harmonic read with its "
       "gap, and the dense spectrum when requested.")
@@ -243,27 +237,36 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def_readonly("label", &LorentzianExtrapolation::label);
 
   py::class_<LorentzianFamily>(m, "LorentzianFamily",
-      R"doc(The Lorentzian protocol: the family s_e(epsilon) with the timelike squared
-lengths rotated by e^{-2 i epsilon} at reported epsilon > 0; reads at epsilon = 0
-exist only inside a family and carry their gap; extrapolation to epsilon -> 0 is a
-separate, labeled step.
+      R"doc(The Lorentzian protocol (integration specification, Requirement 2): the family
+s_e(epsilon) with the timelike part of every squared length rotated by e^{-2 i epsilon},
+at reported epsilon > 0; reads at epsilon = 0 exist only inside a family and carry their
+gap; extrapolation to epsilon -> 0 is a separate, labeled step.
+
+Every squared length s_e is declared with its timelike part tau_e, the contribution of
+the edge's temporal displacement (-e^{2 phi} dt^2 for a metric e^{2 phi}(-dt^2 + dx^2));
+the family is s_e(epsilon) = (s_e - tau_e) + e^{-2 i epsilon} tau_e. The split is an
+input and is never inferred from s_e.
 
 Reference: Kontsevich & Segal, "Wick rotation and the positivity of energy in quantum
 field theory", arXiv:2105.10161.)doc")
       .def_static("rotate", &LorentzianFamily::rotate, py::arg("squared_lengths"),
-           py::arg("causal_types"), py::arg("epsilon"),
-           "Timelike entries times e^{-2 i epsilon}; others unchanged.")
+           py::arg("timelike_parts"), py::arg("epsilon"),
+           "s_e + (e^{-2 i epsilon} - 1) tau_e: every timelike part rotated, the spacelike "
+           "part s_e - tau_e unchanged. Raises ValueError on mismatched lengths, a "
+           "non-finite timelike part, or epsilon < 0.")
       .def_static("instance", &LorentzianFamily::instance, py::arg("complex"),
-           py::arg("squared_lengths"), py::arg("causal_types"), py::arg("epsilon"),
+           py::arg("squared_lengths"), py::arg("timelike_parts"), py::arg("epsilon"),
            py::arg("preset") = Preset::L2, py::arg("branch") = Branch::Continuation,
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
            "The ChainHodge at epsilon, with epsilon on its certificate.")
       .def_static("sweep", &LorentzianFamily::sweep, py::arg("complex"), py::arg("squared_lengths"),
-           py::arg("causal_types"), py::arg("epsilons"), py::arg("degree"),
+           py::arg("timelike_parts"), py::arg("epsilons"), py::arg("degree"),
            py::arg("preset") = Preset::L2, py::arg("branch") = Branch::Continuation,
            py::arg("kappa") = 10.0, py::arg("with_spectrum") = false,
            py::arg("crossover_dimension") = ChainHodge::kDefaultCrossoverDimension,
-           "Reads at every epsilon of the family at one degree.")
+           "Reads at every epsilon of the family at one degree. Raises ValueError when "
+           "no epsilon > 0 is given (a read at epsilon = 0 is never reported alone) or "
+           "any epsilon is negative.")
       .def_static("extrapolateToZero", &LorentzianFamily::extrapolateToZero, py::arg("epsilons"),
            py::arg("values"), py::arg("order") = 2,
            "Labeled polynomial extrapolation of reads at epsilon > 0 to epsilon -> 0.");

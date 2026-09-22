@@ -14,7 +14,7 @@ from scipy.optimize import minimize
 
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
-from tests.chainhodge._fixtures import (random_allowable, torus33, torus33_causal_types,
+from tests.chainhodge._fixtures import (random_allowable, torus33, torus33_timelike_parts,
                                         torus_cells)
 
 KS = ch.Branch.KontsevichSegal
@@ -240,8 +240,7 @@ class TestIsotropicBand:
 class TestLorentzianAtPositiveEpsilon:
     def test_rotated_torus_reports_det_and_cond(self):
         K, s = torus33()
-        types = torus33_causal_types(K)
-        s_eps = ch.LorentzianFamily.rotate(s, types, 0.1)
+        s_eps = ch.LorentzianFamily.rotate(s, torus33_timelike_parts(K), 0.1)
         base = ch.ChainHodge(K, s_eps, ch.Preset.L2, KS)
         assert base.certificate().allowable
         cov = ch.CovariantChainHodge(base, ch.Connection.trivial(K))
