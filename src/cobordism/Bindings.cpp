@@ -313,10 +313,11 @@ eigenvector Cochain).)doc")
 
   // ----- Hodge Laplacian: k=0 Hermitian graph, k>=1 metric Hodge -----
   py::enum_<HodgeLaplacian::MetricSource>(m, "HodgeMetricSource",
-      R"doc(Where a Hodge operator's metric comes from: DiagonalWeights (the historical
-per-simplex diagonal weights of HodgeWeightConvention, the process default) or
-WhitneyPencil (the chain-level Whitney Hodge pencil of tessera.chainhodge, dressed at
-every degree by the edge-phase links; MultiCobordism's default).)doc")
+      R"doc(Where a Hodge operator's metric comes from: WhitneyPencil (the chain-level
+Whitney Hodge pencil of tessera.chainhodge, W_k = M_k^-1 dressed at every degree by
+the edge-phase links, so the operator is h_k(s, U) and moves with the connection;
+the process default) or DiagonalWeights (the per-simplex diagonal weights of
+HodgeWeightConvention, whose operator ignores the connection).)doc")
       .value("DiagonalWeights", HodgeLaplacian::MetricSource::DiagonalWeights)
       .value("WhitneyPencil", HodgeLaplacian::MetricSource::WhitneyPencil);
 
@@ -352,7 +353,15 @@ not of signature; neither reintroduces a Euclidean path.)doc")
   py::class_<HodgeLaplacian>(m, "HodgeLaplacian",
       R"doc(Hodge Laplacian on a Spacetime, degree-parameterized by int k.
 
-ONE definition at every degree: with the integer boundary maps
+METRIC SOURCE. The metric is chosen by HodgeMetricSource, read from the
+process-wide defaultMetricSource() at construction unless named. The default,
+WhitneyPencil, is the chain-level Whitney pencil: W_k = M_k^-1 with M_k the sparse
+Whitney mass matrix of the complex squared lengths, dressed by the connection U of
+the edge phases. laplacian(k) is then the operator on geometric images
+L_z = (M_k^U)^-1 A~_k^U, similar to h_k(s, U), and pencil(k) returns the pair
+(A~_k^U, M_k^U). The DiagonalWeights operator described next ignores U.
+
+DIAGONAL WEIGHTS. ONE definition at every degree: with the integer boundary maps
 d_k (ChainComplex), the diagonal metric weight W_k (weights(k); W_0 = I) and the
 weighted adjoint d_k* = W_k^-1 d_k^dagger W_{k-1},
 
@@ -408,10 +417,19 @@ ChainComplex omits.)doc")
            py::arg("spacetime"), py::arg("weights"), py::arg("metric_source"),
            "Build with an explicit metric source (see HodgeMetricSource).")
       .def_static("defaultMetricSource", &HodgeLaplacian::defaultMetricSource,
-           "The process-wide default HodgeMetricSource (ships as DiagonalWeights).")
+           "The process-wide default HodgeMetricSource (ships as WhitneyPencil).")
       .def_static("setDefaultMetricSource", &HodgeLaplacian::setDefaultMetricSource,
            py::arg("source"), "Flip the process-wide default metric source ONCE at startup.")
       .def("metricSource", &HodgeLaplacian::metricSource, "This operator's metric source.")
+      .def("pencil",
+           [](const HodgeLaplacian &hodge, int k) {
+             HodgeLaplacian::MetricPencil pencil = hodge.pencil(k);
+             return py::make_tuple(std::move(pencil.op), std::move(pencil.metric));
+           },
+           py::arg("k"),
+           "Whitney pencil only: (A~_k^U, M_k^U), both flat row-major |C_k| x |C_k| in the "
+           "cell order and stored orientation of laplacian(k), which is M^-1 A~. Raises "
+           "under DiagonalWeights, whose metric is weights(k).")
       .def("laplacianPhaseGradient", &HodgeLaplacian::laplacianPhaseGradient,
            py::arg("k"), py::arg("ea"), py::arg("eb"),
            "Whitney pencil: the analytic dL_k/dphi_e of the link on edge (ea, eb), flat "
@@ -4038,37 +4056,50 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
           "overCells",
           [](std::shared_ptr<Spacetime> st, int degree,
              const std::vector<std::vector<std::vector<std::uint64_t>>> &cells,
-             const RecursiveQuotient::Options &options, AnalyticCache *cache) {
+             const RecursiveQuotient::Options &options, AnalyticCache *cache,
+             std::optional<HodgeLaplacian::MetricSource> source) {
             std::shared_ptr<AnalyticCache> held;
             if (cache) held = std::shared_ptr<AnalyticCache>(cache, [](AnalyticCache *) {});
-            return RecursiveQuotient::overCells(std::move(st), degree, cells,
-                                                options, std::move(held));
+            return RecursiveQuotient::overCells(
+                std::move(st), degree, cells, options, std::move(held),
+                source.value_or(HodgeLaplacian::defaultMetricSource()));
           },
           py::arg("spacetime"), py::arg("degree"), py::arg("component_cells"),
           py::arg("options") = RecursiveQuotient::Options(),
-          py::arg("cache") = nullptr,
+          py::arg("cache") = nullptr, py::arg("metric_source") = py::none(),
           // the non-owning cache pointer must outlive the quotient
           py::keep_alive<0, 5>(),
           "Build over the spacetime's Hodge operator at `degree` with "
           "components as explicit k-cell sets (vertex-id tuples, matched by "
           "vertex SET). An AnalyticCache bound to the same spacetime enables "
-          "per-component reuse across accepted moves.")
+          "per-component reuse across accepted moves. The operator and its "
+          "metric come from one metric_source (None: the process-wide "
+          "HodgeLaplacian.defaultMetricSource() at call time): WhitneyPencil "
+          "builds a pencil level over (A~_k^U, M_k^U) of HodgeLaplacian.pencil; "
+          "DiagonalWeights an operator level over laplacian(k) with weights(k).")
       .def_static(
           "overVertexSupports",
           [](std::shared_ptr<Spacetime> st, int degree,
              const std::vector<std::vector<std::uint64_t>> &supports,
-             const RecursiveQuotient::Options &options, AnalyticCache *cache) {
+             const RecursiveQuotient::Options &options, AnalyticCache *cache,
+             std::optional<HodgeLaplacian::MetricSource> source) {
             std::shared_ptr<AnalyticCache> held;
             if (cache) held = std::shared_ptr<AnalyticCache>(cache, [](AnalyticCache *) {});
             return RecursiveQuotient::overVertexSupports(
-                std::move(st), degree, supports, options, std::move(held));
+                std::move(st), degree, supports, options, std::move(held),
+                source.value_or(HodgeLaplacian::defaultMetricSource()));
           },
           py::arg("spacetime"), py::arg("degree"), py::arg("vertex_supports"),
           py::arg("options") = RecursiveQuotient::Options(),
-          py::arg("cache") = nullptr, py::keep_alive<0, 5>(),
+          py::arg("cache") = nullptr, py::arg("metric_source") = py::none(),
+          py::keep_alive<0, 5>(),
           "Build with components as vertex supports (the PersistentModularity "
           "convention): a k-cell belongs to a component when ALL its vertices "
-          "lie in the support; unclaimed cells form one residual component.")
+          "lie in the support; unclaimed cells form one residual component. "
+          "metric_source as in overCells.")
+      .def("metricSource", &RecursiveQuotient::metricSource,
+          "The metric source a spacetime-backed level was built on; None on the "
+          "matrix and pencil paths and on child levels.")
       .def_property_readonly("dimension", &RecursiveQuotient::dimension)
       .def_property_readonly("componentCount",
                              &RecursiveQuotient::componentCount)

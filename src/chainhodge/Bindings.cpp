@@ -115,6 +115,16 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("edge_index"),
            py::arg("branch") = Branch::Continuation,
            "dM_k/ds_e for the edge at the given canonical index, sparse.")
+      .def_static("assembleDirectionalDerivative", &WhitneyMass::assembleDirectionalDerivative,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
+           py::arg("branch") = Branch::Continuation,
+           "D_v M_k = sum_e v_e dM_k/ds_e along a squared-length direction (one entry per edge, "
+           "canonical order), sparse.")
+      .def_static("assembleSecondDerivatives", &WhitneyMass::assembleSecondDerivatives,
+           py::arg("complex"), py::arg("squared_lengths"), py::arg("k"), py::arg("direction"),
+           py::arg("branch") = Branch::Continuation,
+           "D_v dM_k/ds_e for every edge e along a squared-length direction v, a list indexed by "
+           "canonical edge, sparse.")
       .def_static("derivativeContraction", &WhitneyMass::derivativeContraction,
            py::arg("complex"), py::arg("squared_lengths"), py::arg("k"),
            py::arg("X"), py::arg("Y"), py::arg("branch") = Branch::Continuation,
@@ -393,6 +403,19 @@ properties (i)-(vi) measured on every instance.)doc")
              return Eigen::MatrixXcd(self.dressedPhaseDerivative(k, e)); }, py::arg("k"), py::arg("edge_index"))
       .def("covariantOperatorDerivative", &CovariantChainHodge::covariantOperatorDerivative,
            py::arg("k"), py::arg("edge_index"), "dh_k/ds_e for the canonical edge index, dense.")
+      .def("covariantOperatorDirectionalDerivative",
+           [](const CovariantChainHodge &self, int k, const std::vector<std::complex<double>> &direction) {
+             return self.lengthDirection(k, direction).operatorDirectional;
+           },
+           py::arg("k"), py::arg("direction"),
+           "D_v h_k along a squared-length direction v (one entry per edge, canonical order), dense.")
+      .def("covariantOperatorSecondDerivative",
+           [](const CovariantChainHodge &self, int k, std::size_t e,
+              const std::vector<std::complex<double>> &direction) {
+             return self.covariantOperatorSecondDerivative(self.lengthDirection(k, direction), e);
+           },
+           py::arg("k"), py::arg("edge_index"), py::arg("direction"),
+           "D_v dh_k/ds_e for the canonical edge index along a squared-length direction v, dense.")
       .def("covariantOperatorPhaseDerivative", &CovariantChainHodge::covariantOperatorPhaseDerivative,
            py::arg("k"), py::arg("edge_index"),
            "dh_k/dphi_e for the multiplicative link variation U_e = e^{i phi_e}, dense.")

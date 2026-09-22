@@ -310,6 +310,125 @@ LocalBlock localWhitneyBlock(const LocalGeometry &geo, int k, Branch branch, boo
   return out;
 }
 
+// The mixed second derivative of det[A] along two variations a and b of the
+// entries, with ab the mixed variation: by multilinearity in the rows,
+// sum_p det[row p <- ab] + sum_{p != q} det[row p <- a, row q <- b].
+Complex minorDetSecond(const Eigen::MatrixXcd &Gamma, const Eigen::MatrixXcd &dA,
+                       const Eigen::MatrixXcd &dB, const Eigen::MatrixXcd &dAB,
+                       const std::vector<int> &c, const std::vector<int> &e) {
+  const int k = static_cast<int>(c.size());
+  if (k == 0) return Complex(0.0, 0.0);
+  Eigen::MatrixXcd A(k, k), a(k, k), b(k, k), ab(k, k);
+  for (int p = 0; p < k; ++p)
+    for (int q = 0; q < k; ++q) {
+      const auto r = c[static_cast<std::size_t>(p)];
+      const auto s = e[static_cast<std::size_t>(q)];
+      A(p, q) = Gamma(r, s);
+      a(p, q) = dA(r, s);
+      b(p, q) = dB(r, s);
+      ab(p, q) = dAB(r, s);
+    }
+  Complex total = 0.0;
+  for (int p = 0; p < k; ++p) {
+    Eigen::MatrixXcd B = A;
+    B.row(p) = ab.row(p);
+    total += B.determinant();
+    for (int q = 0; q < k; ++q) {
+      if (q == p) continue;
+      Eigen::MatrixXcd C = A;
+      C.row(p) = a.row(p);
+      C.row(q) = b.row(q);
+      total += C.determinant();
+    }
+  }
+  return total;
+}
+
+// The derivatives of one top simplex's local Whitney block along the local
+// squared-length direction vLocal: the directional derivative D_v B and, per
+// local edge m, D_v dB/ds_m.
+struct LocalSecond {
+  Eigen::MatrixXcd directional;
+  std::vector<Eigen::MatrixXcd> second;  // per local edge
+  std::vector<std::vector<int>> faces;
+};
+
+LocalSecond localWhitneySecond(const LocalGeometry &geo, int k, Branch branch,
+                               const std::vector<Complex> &vLocal) {
+  const int d = geo.d;
+  LocalSecond out;
+  out.faces = subsets(d, k);
+  const int nf = static_cast<int>(out.faces.size());
+  const Eigen::MatrixXcd ginv = geo.gram.inverse();
+  const Eigen::MatrixXcd Gamma = extendGamma(ginv);
+  const Complex vol = WhitneyMass::volumeOnBranch(geo.gram, branch, nullptr);
+  const double kfac2 = factorial(k) * factorial(k);
+  const double lam = 1.0 / static_cast<double>((d + 1) * (d + 2));
+
+  // The direction's variations: g is linear in s, so D_v g = sum_m v_m dg_m.
+  Eigen::MatrixXcd dgV = Eigen::MatrixXcd::Zero(d, d);
+  for (std::size_t m = 0; m < geo.localEdges.size(); ++m) dgV += vLocal[m] * geo.dGram[m];
+  const Eigen::MatrixXcd ginvDgV = ginv * dgV;
+  const Eigen::MatrixXcd dginvV = -ginvDgV * ginv;
+  const Eigen::MatrixXcd dGammaV = extendGamma(dginvV);
+  const Complex dvolV = 0.5 * vol * ginvDgV.trace();
+
+  // sum over the (i, j) expansion of one entry with a per-minor functional.
+  auto expand = [&](const std::vector<int> &sig, const std::vector<int> &tau, const auto &term) {
+    Complex acc = 0.0;
+    for (int i = 0; i <= k; ++i) {
+      const std::vector<int> c = without(sig, i);
+      for (int j = 0; j <= k; ++j) {
+        const std::vector<int> e = without(tau, j);
+        const double sign = ((i + j) % 2 == 0) ? 1.0 : -1.0;
+        const double delta = (sig[static_cast<std::size_t>(i)] == tau[static_cast<std::size_t>(j)]) ? 2.0 : 1.0;
+        acc += sign * delta * lam * term(c, e);
+      }
+    }
+    return kfac2 * acc;
+  };
+
+  out.directional = Eigen::MatrixXcd::Zero(nf, nf);
+  for (int p = 0; p < nf; ++p)
+    for (int q = p; q < nf; ++q) {
+      const Complex v = expand(out.faces[static_cast<std::size_t>(p)], out.faces[static_cast<std::size_t>(q)],
+                               [&](const std::vector<int> &c, const std::vector<int> &e) {
+                                 return dvolV * minorDet(Gamma, c, e) +
+                                        vol * minorDetDerivative(Gamma, dGammaV, c, e);
+                               });
+      out.directional(p, q) = v;
+      out.directional(q, p) = v;
+    }
+
+  out.second.resize(geo.localEdges.size());
+  for (std::size_t m = 0; m < geo.localEdges.size(); ++m) {
+    const Eigen::MatrixXcd &dg = geo.dGram[m];
+    const Eigen::MatrixXcd ginvDg = ginv * dg;
+    const Eigen::MatrixXcd dginv = -ginvDg * ginv;
+    const Eigen::MatrixXcd dGamma = extendGamma(dginv);
+    const Complex dvol = 0.5 * vol * ginvDg.trace();
+    // D_v of -g^-1 dg g^-1 and of 1/2 |T| tr(g^-1 dg).
+    const Eigen::MatrixXcd dginvVm = ginvDgV * ginvDg * ginv + ginvDg * ginvDgV * ginv;
+    const Eigen::MatrixXcd dGammaVm = extendGamma(dginvVm);
+    const Complex dvolVm = 0.5 * dvolV * ginvDg.trace() + 0.5 * vol * (dginvV * dg).trace();
+    Eigen::MatrixXcd block = Eigen::MatrixXcd::Zero(nf, nf);
+    for (int p = 0; p < nf; ++p)
+      for (int q = p; q < nf; ++q) {
+        const Complex v = expand(
+            out.faces[static_cast<std::size_t>(p)], out.faces[static_cast<std::size_t>(q)],
+            [&](const std::vector<int> &c, const std::vector<int> &e) {
+              return dvolVm * minorDet(Gamma, c, e) + dvol * minorDetDerivative(Gamma, dGammaV, c, e) +
+                     dvolV * minorDetDerivative(Gamma, dGamma, c, e) +
+                     vol * minorDetSecond(Gamma, dGamma, dGammaV, dGammaVm, c, e);
+            });
+        block(p, q) = v;
+        block(q, p) = v;
+      }
+    out.second[m] = std::move(block);
+  }
+  return out;
+}
+
 // Gather one top simplex's local squared lengths, cell indices, and edge indices.
 struct TopSimplexContext {
   Cell verts;
@@ -647,6 +766,76 @@ SparseMatrix WhitneyMass::assembleDerivative(const cobordism::ChainComplex &K,
   D.setFromTriplets(trip.begin(), trip.end());
   D.makeCompressed();
   return D;
+}
+
+SparseMatrix WhitneyMass::assembleDirectionalDerivative(const cobordism::ChainComplex &K,
+                                                        const SquaredLengths &s, int k,
+                                                        const std::vector<Complex> &direction,
+                                                        Branch branch) {
+  checkInputs(K, s, k);
+  if (direction.size() != K.numSimplices(1))
+    throw std::invalid_argument("WhitneyMass::assembleDirectionalDerivative: expected one direction entry per edge");
+  const int n = static_cast<int>(K.numSimplices(k));
+  std::vector<Eigen::Triplet<Complex>> trip;
+  for (const auto &b : topSimplexBlocks(K, s, k, branch, true)) {
+    const int nf = static_cast<int>(b.cellIndices.size());
+    Eigen::MatrixXcd local = Eigen::MatrixXcd::Zero(nf, nf);
+    for (std::size_t m = 0; m < b.edgeIndices.size(); ++m)
+      local += direction[static_cast<std::size_t>(b.edgeIndices[m])] * b.derivative[m];
+    for (int p = 0; p < nf; ++p)
+      for (int q = 0; q < nf; ++q)
+        trip.emplace_back(b.cellIndices[static_cast<std::size_t>(p)],
+                          b.cellIndices[static_cast<std::size_t>(q)], local(p, q));
+  }
+  SparseMatrix D(n, n);
+  D.setFromTriplets(trip.begin(), trip.end());
+  D.makeCompressed();
+  return D;
+}
+
+std::vector<SparseMatrix> WhitneyMass::assembleSecondDerivatives(const cobordism::ChainComplex &K,
+                                                                 const SquaredLengths &s, int k,
+                                                                 const std::vector<Complex> &direction,
+                                                                 Branch branch) {
+  checkInputs(K, s, k);
+  const std::size_t edgeCount = K.numSimplices(1);
+  if (direction.size() != edgeCount)
+    throw std::invalid_argument("WhitneyMass::assembleSecondDerivatives: expected one direction entry per edge");
+  const int n = static_cast<int>(K.numSimplices(k));
+  const CellIndex index(K);
+  std::vector<std::vector<Eigen::Triplet<Complex>>> trip(edgeCount);
+  for (const auto &top : K.orientedTopSimplices()) {
+    const TopSimplexContext ctx = topContext(top, s, index);
+    std::vector<Complex> vLocal(ctx.edgeIndices.size());
+    bool moves = false;
+    for (std::size_t m = 0; m < ctx.edgeIndices.size(); ++m) {
+      vLocal[m] = direction[static_cast<std::size_t>(ctx.edgeIndices[m])];
+      moves = moves || vLocal[m] != Complex(0.0, 0.0);
+    }
+    // A direction that leaves this simplex's lengths alone leaves its block's
+    // derivatives alone: the block depends on its own edges only.
+    if (!moves) continue;
+    const LocalGeometry geo(static_cast<int>(top.size()) - 1, ctx.sLocal);
+    const LocalSecond local = localWhitneySecond(geo, k, branch, vLocal);
+    const std::vector<int> cells = faceIndices(top, local.faces, k, index);
+    const int nf = static_cast<int>(cells.size());
+    for (std::size_t m = 0; m < ctx.edgeIndices.size(); ++m) {
+      auto &out = trip[static_cast<std::size_t>(ctx.edgeIndices[m])];
+      for (int p = 0; p < nf; ++p)
+        for (int q = 0; q < nf; ++q)
+          out.emplace_back(cells[static_cast<std::size_t>(p)], cells[static_cast<std::size_t>(q)],
+                           local.second[m](p, q));
+    }
+  }
+  std::vector<SparseMatrix> out;
+  out.reserve(edgeCount);
+  for (std::size_t e = 0; e < edgeCount; ++e) {
+    SparseMatrix D(n, n);
+    D.setFromTriplets(trip[e].begin(), trip[e].end());
+    D.makeCompressed();
+    out.push_back(std::move(D));
+  }
+  return out;
 }
 
 std::vector<Complex> WhitneyMass::derivativeContraction(const cobordism::ChainComplex &K,

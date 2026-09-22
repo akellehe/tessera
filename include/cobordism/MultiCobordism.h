@@ -413,14 +413,15 @@ class MultiCobordism {
                      HodgeLaplacian::defaultMetricSource());
 
   /// Where every Hodge operator this node scores, relaxes and reads takes its
-  /// metric from. Defaults to the process-wide
-  /// `HodgeLaplacian::defaultMetricSource()` read at construction, so that the
-  /// node, the static readouts, the observables and checkpoint replay agree; a
-  /// run on the chain-level Whitney pencil flips that default once at startup
-  /// (`HodgeLaplacian::setDefaultMetricSource(WhitneyPencil)`). Under
+  /// metric from, the recursive analysis pass (`runRecursiveAnalysis`: its
+  /// `SpectralFiberTracker`, `RecursiveQuotient` and fiber transports)
+  /// included. Defaults to the process-wide
+  /// `HodgeLaplacian::defaultMetricSource()` read at construction, the
+  /// chain-level Whitney pencil unless changed, so that the node, the static
+  /// readouts, the observables and checkpoint replay agree. Under
   /// `WhitneyPencil` the operator is \f$ h_k(s,U) \f$ of the complex squared
   /// edge lengths and the edge-phase links, at every degree; `DiagonalWeights`
-  /// is the per-simplex diagonal metric.
+  /// is the per-simplex diagonal metric, selected by name.
   [[nodiscard]] HodgeLaplacian::MetricSource metricSource() const noexcept {
     return metricSource_;
   }
@@ -2915,7 +2916,7 @@ class MultiCobordism {
   /// general complexified geometry.
   bool realSquaredLengthsOnly_{false};
   /// The metric source of every Hodge operator this node builds (see `metricSource()`).
-  HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::DiagonalWeights};
+  HodgeLaplacian::MetricSource metricSource_{HodgeLaplacian::MetricSource::WhitneyPencil};
   /// The injected functional, and the only record of what this node descends.
   /// Never null: the constructor installs `LegacyObjective`.
   std::shared_ptr<CobordismObjective> objectiveSpec_;

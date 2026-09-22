@@ -325,6 +325,36 @@ class CovariantChainHodge {
   /// the stack). Idempotent, and a no-op for a preset or a degree that has no
   /// dense derivative.
   void warmDerivatives(int k) const;
+  /// The pieces of one squared-length direction \f$ v \f$ that every second
+  /// derivative of \f$ h_k(s,U) \f$ along \f$ v \f$ shares, formed once by
+  /// `lengthDirection` and read by `covariantOperatorSecondDerivative`.
+  struct LengthDirection {
+    /// The degree \f$ k \f$ of \f$ h_k \f$.
+    int degree{0};
+    /// The direction, one entry per edge in canonical order.
+    std::vector<Complex> direction;
+    /// Dressed \f$ D_v M_j^U \f$ for \f$ j = k-1, k, k+1 \f$ (entry \f$ j-k+1 \f$;
+    /// empty outside \f$ [0, \dim] \f$).
+    std::vector<SparseMatrix> metricDirectional;
+    /// Dressed \f$ D_v\,\partial M_j^U/\partial s_e \f$, entry \f$ [j-k+1][e] \f$.
+    std::vector<std::vector<SparseMatrix>> metricSecond;
+    /// \f$ D_v h_k(s,U) \f$.
+    Eigen::MatrixXcd operatorDirectional;
+    /// \f$ (M_{k-1}^U)^{-1} D_v M_{k-1}^U (M_{k-1}^U)^{-1}\partial_k^U \f$ (lower term; empty at \f$ k = 0 \f$).
+    Eigen::MatrixXcd lowerSolved;
+    /// \f$ D_v M_k^U\,(M_k^U)^{-1} \f$.
+    Eigen::MatrixXcd metricTimesInverse;
+  };
+  /// Form the shared pieces of the squared-length direction \p direction (one
+  /// entry per edge, canonical order) at degree \p k. Whitney preset, below the
+  /// dense crossover.
+  [[nodiscard]] LengthDirection lengthDirection(int k, const std::vector<Complex> &direction) const;
+  /// \f$ D_v\,\partial h_k(s,U)/\partial s_e \f$ for the edge at canonical index
+  /// \p edgeIndex along the direction of \p v, dense: the second-order product
+  /// rule over the dressed metrics of \f$ h_k \f$, the twisted incidences being
+  /// independent of the lengths. Thread-safe once `warmDerivatives(k)` has run.
+  [[nodiscard]] Eigen::MatrixXcd covariantOperatorSecondDerivative(const LengthDirection &v,
+                                                                   std::size_t edgeIndex) const;
   /// \f$ \partial M_k^U/\partial s_e \f$: the dressed sparse metric derivative
   /// (the dressing is independent of \f$ s \f$).
   [[nodiscard]] SparseMatrix dressedDerivative(int k, std::size_t edgeIndex) const;

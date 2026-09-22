@@ -568,16 +568,21 @@ struct SpectralFiberTracker::RestrictedOperator {
 SpectralFiberTracker::SpectralFiberTracker(
     std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
     cobordism::HodgeLaplacian::WeightConvention weights)
-    : st_(std::move(st)), cfg_(std::move(cfg)), weights_(weights) {
-  if (!st_)
-    throw std::invalid_argument("SpectralFiberTracker: null spacetime");
-}
+    : SpectralFiberTracker(std::move(st), std::move(cfg), weights,
+                           cobordism::HodgeLaplacian::defaultMetricSource()) {}
 
 SpectralFiberTracker::SpectralFiberTracker(
     std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
     cobordism::HodgeLaplacian::MetricSource source)
-    : st_(std::move(st)), cfg_(std::move(cfg)),
-      weights_(cobordism::HodgeLaplacian::defaultWeightConvention()),
+    : SpectralFiberTracker(std::move(st), std::move(cfg),
+                           cobordism::HodgeLaplacian::defaultWeightConvention(),
+                           source) {}
+
+SpectralFiberTracker::SpectralFiberTracker(
+    std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source)
+    : st_(std::move(st)), cfg_(std::move(cfg)), weights_(weights),
       metricSource_(source) {
   if (!st_)
     throw std::invalid_argument("SpectralFiberTracker: null spacetime");
@@ -704,7 +709,8 @@ SpectralFiberTracker::assembleRestricted(
   // read-only) to the cells fully inside the support.
   const cobordism::ChainComplex cc =
       cobordism::ChainComplex::fromSpacetime(*st_);
-  const cobordism::HodgeLaplacian hodge(st_, weights_);
+  const cobordism::HodgeLaplacian hodge(
+      st_, weights_, cobordism::HodgeLaplacian::MetricSource::DiagonalWeights);
   const auto insideIndices =
       [&](int k) -> std::pair<std::vector<std::size_t>,
                               std::vector<std::vector<std::uint64_t>>> {
