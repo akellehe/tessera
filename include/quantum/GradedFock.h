@@ -582,6 +582,23 @@ struct EdgeModeRecord {
     std::string lineageKey{};
 };
 
+/// One cluster's claim on a set of vertices, for the assignment of the
+/// compilation order's primary key.
+///
+/// A mode belongs to the cluster whose support contains both endpoints of its
+/// edge. The key itself is produced by the component hierarchy — for an
+/// oriented cluster lineage read against a cooriented cut it is
+/// `observables::ClusterLineage::orderKey`, whose lexicographic order is the
+/// numeric order of the lineage numbers — and this structure only says which
+/// vertices carry it.
+struct LineageAssignment {
+    /// The vertices of the cluster's support, in any order. A mode is assigned
+    /// this key exactly when both of its endpoints appear here.
+    std::vector<std::uint64_t> vertices{};
+    /// The compilation-order key of the cluster's oriented lineage.
+    std::string lineageKey{};
+};
+
 /// # EdgeModeRegistry
 ///
 /// The edge-mode basis bookkeeping for the exterior algebra: each edge
@@ -598,6 +615,15 @@ struct EdgeModeRecord {
 /// tie-break. The order is a compilation artifact of the order-independent
 /// abstract exterior algebra (no Kasteleyn orientation is required); it
 /// exists so that bitsets and matrices can be built reproducibly.
+///
+/// The primary key is the physical one. `assignLineageKeys` gives each mode
+/// the compilation-order key of the cluster whose support contains both of its
+/// endpoints, and for an oriented cluster lineage read against a cooriented cut
+/// that key is `observables::ClusterLineage::orderKey`, whose lexicographic
+/// order is the numeric order of the lineage numbers. The modes one cluster
+/// carries are therefore compiled together, and the clusters follow the order
+/// of relabelling-invariant integers rather than the order in which cells
+/// happen to be stored; the vertex pair only breaks ties inside one cluster.
 ///
 /// ## Relabeling parity
 ///
@@ -629,9 +655,11 @@ class EdgeModeRegistry {
     /// Each edge is registered on its own stored source → target direction with
     /// `orientationSign = +1`, so `canonicalOrientationSign` reports exactly how
     /// that stored orientation sits against the canonical min → max direction.
-    /// Every mode gets `lineageKey`, so the canonical order reduces to the
-    /// deterministic endpoint sort; a caller with genuine component lineage
-    /// assigns it afterwards. Edges with a missing endpoint are skipped. The
+    /// Every mode gets `lineageKey`, which places the whole complex in one
+    /// lineage and reduces the canonical order to the deterministic endpoint
+    /// sort; `assignLineageKeys` then replaces that placeholder with the
+    /// oriented component lineage, which is the order the exterior algebra is
+    /// actually compiled in. Edges with a missing endpoint are skipped. The
     /// registry stores incidence and lineage only — it never reads a length or a
     /// connection phase.
     ///
@@ -640,6 +668,23 @@ class EdgeModeRegistry {
     [[nodiscard]] static EdgeModeRegistry fromSpacetime(
         const ::tessera::spacetime::Spacetime& spacetime,
         std::string lineageKey = "K1");
+
+    /// `fromSpacetime` followed by `assignLineageKeys`: register one mode per
+    /// edge and give each one the compilation-order key of the cluster whose
+    /// support contains both of its endpoints.
+    ///
+    /// `unassignedKey` is the key every mode keeps that no cluster claims. It
+    /// sorts after every lineage key produced by
+    /// `observables::ClusterLineage::orderKey`, because those begin with
+    /// "lineage:" and the default begins with a tilde, so the modes no cluster
+    /// carries are compiled last and never interleave with a cluster's own.
+    ///
+    /// @throws std::invalid_argument on a malformed spacetime as
+    ///         `fromSpacetime`, or when two assignments both claim one mode.
+    [[nodiscard]] static EdgeModeRegistry fromSpacetimeWithLineages(
+        const ::tessera::spacetime::Spacetime& spacetime,
+        const std::vector<LineageAssignment>& assignments,
+        std::string unassignedKey = "~unassigned");
 
     /// Register the edge (vertexA → vertexB) with orientation sign ±1 and
     /// its oriented-component lineage key. Returns the assigned modeId
@@ -673,6 +718,29 @@ class EdgeModeRegistry {
     /// stored direction fixed. One-particle amplitudes attached to this mode
     /// flip sign; occupation observables are unchanged.
     void flipOrientation(std::uint64_t modeId);
+
+    /// Replace the oriented component lineage key of `modeId`. The mode's
+    /// incidence and orientation are untouched; only the primary key of the
+    /// compilation order changes.
+    /// @throws std::invalid_argument on an unknown modeId.
+    void setLineageKey(std::uint64_t modeId, std::string lineageKey);
+
+    /// Give every mode the compilation-order key of the cluster whose support
+    /// contains both of its endpoints, and return how many modes were
+    /// assigned.
+    ///
+    /// This is what makes the compilation order the whitepaper's order: the
+    /// primary key of `canonicalModeOrder` becomes the oriented component
+    /// lineage, so the modes one cluster carries are compiled together and the
+    /// clusters follow the order of their lineage numbers, which are
+    /// relabelling-invariant integers. A mode that no assignment claims keeps
+    /// the key it was registered with.
+    ///
+    /// @throws std::invalid_argument when two assignments both contain both
+    ///         endpoints of one mode, which leaves that mode's lineage
+    ///         ambiguous and its position in the order undetermined.
+    std::size_t assignLineageKeys(
+        const std::vector<LineageAssignment>& assignments);
 
     /// The orientation of `modeId` relative to the canonical
     /// (min-vertex → max-vertex) direction:

@@ -946,6 +946,61 @@ EdgeModeRegistry EdgeModeRegistry::fromSpacetime(
     return registry;
 }
 
+EdgeModeRegistry EdgeModeRegistry::fromSpacetimeWithLineages(
+    const ::tessera::spacetime::Spacetime& spacetime,
+    const std::vector<LineageAssignment>& assignments,
+    std::string unassignedKey) {
+    EdgeModeRegistry registry = fromSpacetime(spacetime, unassignedKey);
+    registry.assignLineageKeys(assignments);
+    return registry;
+}
+
+void EdgeModeRegistry::setLineageKey(std::uint64_t modeId,
+                                     std::string lineageKey) {
+    validateModeId(modeId);
+    records_[static_cast<std::size_t>(modeId)].lineageKey =
+        std::move(lineageKey);
+}
+
+std::size_t EdgeModeRegistry::assignLineageKeys(
+    const std::vector<LineageAssignment>& assignments) {
+    // One membership set per assignment, so that the containment test below is
+    // a hash lookup rather than a scan of the support.
+    std::vector<std::unordered_set<std::uint64_t>> supports;
+    supports.reserve(assignments.size());
+    for (const LineageAssignment& assignment : assignments) {
+        supports.emplace_back(assignment.vertices.begin(),
+                              assignment.vertices.end());
+    }
+    std::size_t assigned = 0;
+    for (EdgeModeRecord& record : records_) {
+        std::size_t owner = assignments.size();
+        for (std::size_t a = 0; a < assignments.size(); ++a) {
+            if (supports[a].count(record.vertexA) == 0 ||
+                supports[a].count(record.vertexB) == 0) {
+                continue;
+            }
+            if (owner != assignments.size()) {
+                throw std::invalid_argument(
+                    "EdgeModeRegistry::assignLineageKeys: the edge {" +
+                    std::to_string(std::min(record.vertexA, record.vertexB)) +
+                    ", " +
+                    std::to_string(std::max(record.vertexA, record.vertexB)) +
+                    "} lies in the supports of both lineage '" +
+                    assignments[owner].lineageKey + "' and lineage '" +
+                    assignments[a].lineageKey +
+                    "', which leaves its position in the compilation order "
+                    "undetermined");
+            }
+            owner = a;
+        }
+        if (owner == assignments.size()) continue;
+        record.lineageKey = assignments[owner].lineageKey;
+        ++assigned;
+    }
+    return assigned;
+}
+
 std::uint64_t EdgeModeRegistry::addEdge(std::uint64_t vertexA,
                                         std::uint64_t vertexB,
                                         int orientationSign,
