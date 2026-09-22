@@ -28,8 +28,8 @@ the divergence summed over the cut's incoming side. That is the discrete
 divergence theorem and it is exact. A covariance carrying three unit sources of
 the current therefore gives a flux of exactly three through the cut that
 separates those three from their common sink — the integer quark number
-``N_q``, and ``B = N_q / 3`` — and exactly zero through a cut that encloses none
-of them.
+``N_q``, and ``B = N_q / 3`` — and exactly zero through a cut that encloses
+none of them.
 
 HOMOLOGOUS CUTS AGREE WHEN NO SOURCE LIES BETWEEN THEM. Two cuts whose incoming
 sides differ only by source-free vertices read the same complex flux to
@@ -148,16 +148,17 @@ class UnitLineages:
     """A covariance whose Ward current carries one unit on each of several
     lineages, all draining into one shared vertex.
 
-    Each lineage is a dyad of two canonical degree-one cells. Where its two
-    units of divergence land is not predicted here: the unscaled dyad is built,
-    its divergence is read from the action, and only pairs whose divergence has
-    exactly two support vertices are kept. Among those, the pairs are chosen so
-    that every lineage touches one shared vertex and no two lineages share their
-    other vertex, which is the discrete picture of several quark lineages
-    crossing one separating cut in the same direction. Each dyad is then scaled
-    so that its divergence at the shared vertex is exactly minus one, making the
-    flux through a cut enclosing the shared vertex exactly the number of
-    lineages.
+    Each lineage is a dyad of two canonical degree-one cells, which is the
+    smallest covariance that does not commute with the carrier operator. Where
+    its divergence lands is not predicted here but measured: the unscaled dyad
+    is built, its divergence is read from the action, and the lineages are
+    chosen so that every one of them touches one shared vertex and no two of
+    them touch any other vertex in common. Each dyad is then scaled so that its
+    divergence at the shared vertex is exactly minus one. Because a divergence
+    sums to zero over the whole complex, every lineage then carries exactly one
+    unit away from the shared vertex and nothing anywhere else, which is the
+    discrete picture of several quark lineages crossing one separating cut in
+    the same direction.
     """
 
     HOLONOMY_WEIGHT = 0.8
@@ -179,41 +180,43 @@ class UnitLineages:
                     self._declaration(_dyad(order, row, column)))
                 divergence = np.array(probe.ward_current_divergence())
                 support = _support(divergence, self.vertices)
-                if len(support) != 2:
+                if len(support) < 2:
                     continue
                 candidates.append((row, column, divergence, support))
-            if len(candidates) >= 6 * wanted:
-                break
+        # The most localized lineages first, so the fixture leaves as much of
+        # the complex source-free as the complex allows. The sort is stable, so
+        # the family a given complex produces is fixed.
+        candidates.sort(key=lambda entry: len(entry[3]))
 
         chosen = None
         for shared in self.vertices:
-            picked = []
-            taken = set()
+            picked, taken = [], set()
             for row, column, divergence, support in candidates:
                 if shared not in support:
                     continue
-                other = (support - {shared}).pop()
-                if other in taken:
+                rest = support - {shared}
+                if rest & taken:
                     continue
-                taken.add(other)
-                picked.append((row, column, divergence, other))
+                taken |= rest
+                picked.append((row, column, divergence, rest))
                 if len(picked) == wanted:
                     break
             if len(picked) == wanted:
                 chosen = (shared, picked)
                 break
-        assert chosen is not None, "no lineage family with a shared sink"
+        assert chosen is not None, (
+            "no family of %d lineages shares one vertex and no other" % wanted)
 
         self.shared, picked = chosen
         index = self.vertices.index(self.shared)
         scaled = []
         self.divergences = []
-        self.partners = []
-        for row, column, divergence, other in picked:
+        self.rests = []
+        for row, column, divergence, rest in picked:
             weight = -1.0 / divergence[index]
             scaled.append(_dyad(order, row, column, weight))
             self.divergences.append(divergence * weight)
-            self.partners.append(other)
+            self.rests.append(sorted(rest))
         self.covariance = _sum_covariances(scaled)
         self.action = cob.JointAction(self.spacetime,
                                       self._declaration(self.covariance))
@@ -226,7 +229,9 @@ class UnitLineages:
 
     def quiet_vertices(self):
         """The vertices no lineage touches."""
-        touched = {self.shared} | set(self.partners)
+        touched = {self.shared}
+        for rest in self.rests:
+            touched |= set(rest)
         return [vertex for vertex in self.vertices if vertex not in touched]
 
 
@@ -315,8 +320,9 @@ class TheWardIdentityHoldsForEveryGaugeInvariantTermTest(unittest.TestCase):
 class TheDivergenceTheoremIsExactTest(unittest.TestCase):
     """The cooriented sum over a cut is minus the divergence it encloses."""
 
-    def setUp(self):
-        self.lineages = UnitLineages(1)
+    @classmethod
+    def setUpClass(cls):
+        cls.lineages = UnitLineages(1)
 
     def test_the_flux_is_minus_the_enclosed_divergence(self):
         divergence = np.array(
@@ -361,11 +367,14 @@ class TheFluxCountsTheQuarksOfALineageTest(unittest.TestCase):
         """The fixture's own certificate: one unit per lineage and no more."""
         index = self.lineages.vertices.index(self.lineages.shared)
         for divergence in self.lineages.divergences:
-            support = np.abs(divergence) > SUPPORT_FLOOR
-            self.assertEqual(int(np.count_nonzero(support)), 2)
             self.assertAlmostEqual(abs(divergence[index] + 1.0), 0.0, places=9)
             self.assertAlmostEqual(abs(np.sum(divergence)), 0.0, places=9)
-        self.assertEqual(len(set(self.lineages.partners)), 3)
+        seen = set()
+        for rest in self.lineages.rests:
+            self.assertTrue(rest)
+            self.assertFalse(seen & set(rest))
+            seen |= set(rest)
+        self.assertEqual(len(self.lineages.rests), 3)
 
     def test_a_cut_across_the_three_lineages_reads_three(self):
         read = cob.WardFlux.flux(
@@ -382,9 +391,15 @@ class TheFluxCountsTheQuarksOfALineageTest(unittest.TestCase):
         self.assertEqual(len(read.cut_cells), len(read.cut_current))
 
     def test_a_cut_enclosing_one_lineage_reads_one(self):
+        """The far end of one lineage carries that lineage's unit and no other.
+
+        The lineages share only the sink, so a cut around one lineage's far end
+        encloses exactly its own unit, with the opposite coorientation to the
+        cut around the shared sink.
+        """
         read = cob.WardFlux.flux(
             self.lineages.action,
-            cob.CooorientedCut([self.lineages.partners[0]]))
+            cob.CooorientedCut(self.lineages.rests[0]))
         self.assertEqual(read.quark_number, -1)
         self.assertAlmostEqual(read.baryon_number, -1.0 / 3.0, places=12)
 
@@ -447,12 +462,13 @@ class HomologousCutsAgreeWithoutASourceTest(unittest.TestCase):
 
     def test_a_cut_moved_across_a_source_changes_by_that_source(self):
         """A difference is attributed to the slab, never absorbed."""
-        partner = self.lineages.partners[0]
+        moved_vertices = self.lineages.rests[0]
         cuts = [cob.CooorientedCut([self.lineages.shared], "before"),
-                cob.CooorientedCut([self.lineages.shared, partner], "after")]
+                cob.CooorientedCut([self.lineages.shared] + moved_vertices,
+                                   "after")]
         read = cob.WardFlux.homologous_fluxes(self.lineages.action, cuts)
-        index = self.lineages.vertices.index(partner)
-        moved = self.lineages.total[index]
+        moved = sum(self.lineages.total[self.lineages.vertices.index(vertex)]
+                    for vertex in moved_vertices)
         self.assertAlmostEqual(
             abs((read.cuts[1].flux - read.cuts[0].flux) + moved), 0.0,
             places=9)

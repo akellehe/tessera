@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 
-"""#1200 — mass as the complex bound-state pole of the Feshbach response pencil.
+"""#1200 — mass as the complex bound-state pole of a Feshbach response pencil.
 
 Section 13.3 of the whitepaper says that mass is not defined by an incoherent
 sum of moduli. It is the simple isolated zero ``s_C`` of
@@ -17,7 +17,8 @@ of the interior block, with matching multiplicities. Both halves of that are
 checked against an independent eigendecomposition: a contour around a full
 eigenvalue the interior does not carry finds it, and a contour around an
 interior eigenvalue finds no zero and is refused by name, because the argument
-principle on a meromorphic function would otherwise cancel a zero against a pole.
+principle on a meromorphic function would otherwise cancel a zero against a
+pole.
 
 THE DERIVATIVES ARE ANALYTIC. ``F_C'(s)`` is the closed form that
 ``dP/ds = -M`` forces, and ``D_C'/D_C`` is the trace of ``F_C^-1 F_C'``. Neither
@@ -55,7 +56,8 @@ def _mixer(order):
     below have exactly the same conditioning on every machine and in every
     version of the numerical libraries.
     """
-    real = np.array([[((row * 7 + column * 3) % 5) - 2 for column in range(order)]
+    real = np.array([[((row * 7 + column * 3) % 5) - 2
+                      for column in range(order)]
                      for row in range(order)], dtype=float)
     imaginary = np.array([[((row * 2 + column * 5) % 3) - 1
                            for column in range(order)]
@@ -86,7 +88,8 @@ def _full_spectrum(operator, metric):
 
 
 class TheDeterminantFactorizationTest(unittest.TestCase):
-    """``det P = det P_II det F_C``, and ``determinant`` is that second factor."""
+    """``det P = det P_II det F_C``, and ``determinant`` is the second
+    factor."""
 
     def setUp(self):
         self.operator, self.metric = _pencil([-2.5, 0.5, 1.5, 3.0])
@@ -141,7 +144,7 @@ class TheAnalyticDerivativesTest(unittest.TestCase):
                                               self.interface, self.point)
         self.assertAlmostEqual(abs(measured - expected), 0.0, places=10)
 
-    def test_the_logarithmic_derivative_is_the_derivative_of_the_logarithm(self):
+    def test_the_log_derivative_is_the_derivative_of_the_logarithm(self):
         """``D'/D`` against a difference quotient of ``log D``."""
         step = 1e-5
         forward = BSP.determinant(self.operator, self.metric, self.interface,
