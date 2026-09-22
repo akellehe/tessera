@@ -98,9 +98,9 @@ class PairLoopFlavor : public RegisterObservable {
     [[nodiscard]] std::string recordKey() const override {
       return std::string(kRecordKey);
     }
-    /// The clustering ratio `rho` divides two small intensity differences, which
-    /// amplifies eigensolver roundoff to around 1e-13. One tolerance covers
-    /// every leaf; raw residuals are reported alongside.
+    /// The clustering ratio `rho` divides two small intensity differences,
+    /// which amplifies eigensolver roundoff to around 1e-13. One tolerance
+    /// covers every leaf; raw residuals are reported alongside.
     [[nodiscard]] double gateTol() const override { return 1e-9; }
     [[nodiscard]] int minHoles() const override { return 3; }
     [[nodiscard]] int requiredDimensions() const override { return 4; }
