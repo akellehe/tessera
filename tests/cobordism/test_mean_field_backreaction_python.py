@@ -242,10 +242,19 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         modes = cob.ChainComplex.fromSpacetime(reference).numSimplices(1)
         weight = self._balanced_weight(reference, modes)
 
-        spacetime = sphere3(squared=lambda index: 1.0 + 0.03 * ((index % 3) - 1))
+        spacetime = sphere3(squared=lambda index: 1.0 + 0.015 * ((index % 3) - 1))
         declaration = _declaration(gravitational_weight=weight,
                                    matter_weight=1.0)
         action = cob.JointAction(spacetime, declaration)
+        seeded = _declaration(gravitational_weight=weight, matter_weight=1.0)
+        seeded.covariance = cob.JointAction(
+            spacetime, _declaration()).occupation_projector(modes, True)
+        self.assertGreater(
+            max(abs(value) for value
+                in cob.JointAction(spacetime, seeded).length_stationarity()),
+            1e-6,
+            "the perturbed geometry must not already be stationary")
+
         solver = cob.SelfConsistentMeanField(
             action, _mean_field(occupied_modes=modes))
         report = solver.solve()
