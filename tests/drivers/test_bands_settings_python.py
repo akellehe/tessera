@@ -216,15 +216,15 @@ def test_a_method_without_a_solution_is_recorded_and_the_run_goes_on():
     def closes():
         raise ValueError("a level difference at the transfer (0, 0, 0.5) is not positive: the levels fed back have "
                          "closed a gap there")
-    gaas._fed_back(rows, "evgw", closes, lambda levels: 1.0, lines.append, "N=6")
+    gaas._fed_back(rows, "evgw", closes, lambda levels: 1.0, lines.append, lambda: "N=6")
     assert rows["evgw"] is None and "not positive" in rows["evgw_failure"] and "no solution" in lines[0]
-    gaas._fed_back(rows, "gw0", lambda: (np.zeros(3), [1e-6]), lambda levels: 2.5, lines.append, "N=6")
+    gaas._fed_back(rows, "gw0", lambda: (np.zeros(3), [1e-6]), lambda levels: 2.5, lines.append, lambda: "N=6")
     assert rows["gw0"] == 2.5 and rows["gw0_residual"] == 1e-6
 
     def broken():
         raise ValueError("some other error")
     with pytest.raises(ValueError, match="some other error"):
-        gaas._fed_back(rows, "g0w0", broken, lambda levels: 0.0, lines.append, "N=6")
+        gaas._fed_back(rows, "g0w0", broken, lambda levels: 0.0, lines.append, lambda: "N=6")
 
 
 def test_the_tables_of_transitions_change_where_the_numbers_live_and_not_the_numbers(tmp_path):

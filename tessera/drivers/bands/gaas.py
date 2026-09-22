@@ -247,6 +247,7 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
 
 
 def _fed_back(row, name, step, gap, log, label):
+    # `label` is called after the step, so a time in it is the time the step ended.
     """Run one step of eigenvalue self-consistency, `step()` -> (levels, history),
     into `row[name]`. When the levels fed back close a gap, or make the mean
     field unstable in the random-phase approximation, the method has no
@@ -259,10 +260,10 @@ def _fed_back(row, name, step, gap, log, label):
         if "not positive" not in str(error) and "unstable" not in str(error):
             raise
         row[name], row[name + "_failure"] = None, str(error)
-        log(f"{label}: {name} has no solution from this start: {error}")
+        log(f"{label()}: {name} has no solution from this start: {error}")
         return
     row[name], row[name + "_residual"] = gap(levels), float(history[-1])
-    log(f"{label}: {name} {row[name]:.3f} eV")
+    log(f"{label()}: {name} {row[name]:.3f} eV")
 
 
 def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
@@ -309,7 +310,7 @@ def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
         def step(update=update):
             levels, history = screened.self_consistent(update_screening=update, tolerance=1e-5, log=log)
             return levels[0], history
-        _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
+        _fed_back(row, name, step, gap, log, lambda: f"N={n} ({time.time() - started:.0f} s)")
         screened.solve()                                         # back to the screening of the mean field
     row["seconds"] = time.time() - started
     return row
@@ -417,7 +418,7 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
                     momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
                     vertex=vertex if with_head else None, scratch=mesh.scratch, log=log)
                 return produced, history
-            _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
+            _fed_back(row, name, step, gap, log, lambda: f"N={n} ({time.time() - started:.0f} s)")
         row["seconds"] = time.time() - started
         runs.append(row)
         spacings.append(mesh.cell.spacing)
