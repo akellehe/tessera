@@ -296,7 +296,7 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         """The loop stays inside the Gaussian class, and the step says so."""
         spacetime = sphere3(squared=lambda index: 1.0 + 0.02 * (index % 4))
         action = cob.JointAction(
-            spacetime, _declaration(gravitational_weight=0.05,
+            spacetime, _declaration(gravitational_weight=90.0,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
             action, _mean_field(occupied_modes=2, maximum_iterations=3,
@@ -320,7 +320,7 @@ class TheSelfConsistentPairTest(unittest.TestCase):
         initial = np.array(start.occupation_projector(2, True), dtype=complex)
 
         action = cob.JointAction(
-            spacetime, _declaration(gravitational_weight=0.05,
+            spacetime, _declaration(gravitational_weight=90.0,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
             action, _mean_field(occupied_modes=2, maximum_iterations=2,
