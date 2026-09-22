@@ -88,7 +88,8 @@ void readIntegerFlux(WardFluxRead &read, const WardFluxConfig &cfg) {
 }
 
 /// A flat row-major matrix lifted into Eigen.
-Eigen::MatrixXcd toMatrix(const std::vector<complexd> &flat, std::size_t order) {
+Eigen::MatrixXcd toMatrix(const std::vector<complexd> &flat,
+                          std::size_t order) {
   Eigen::MatrixXcd matrix(static_cast<Eigen::Index>(order),
                           static_cast<Eigen::Index>(order));
   for (std::size_t i = 0; i < order; ++i)
@@ -139,7 +140,8 @@ WardFluxRead WardFlux::flux(const JointAction &action,
                             const CooorientedCut &cut,
                             const WardFluxConfig &cfg) {
   if (!action.spacetime())
-    throw std::invalid_argument("WardFlux::flux: the action carries no spacetime");
+    throw std::invalid_argument(
+        "WardFlux::flux: the action carries no spacetime");
 
   const ChainComplex complex = ChainComplex::fromSpacetime(*action.spacetime());
   const CutGeometry geometry = cutGeometry(complex, cut);
@@ -257,8 +259,9 @@ WardHomologyRead WardFlux::homologousFluxes(
   double worstSlab = 0.0;
   for (std::size_t left = 0; left < read.cuts.size(); ++left) {
     for (std::size_t right = left + 1; right < read.cuts.size(); ++right) {
-      worstDeviation = std::max(
-          worstDeviation, std::abs(read.cuts[left].flux - read.cuts[right].flux));
+      worstDeviation =
+          std::max(worstDeviation,
+                   std::abs(read.cuts[left].flux - read.cuts[right].flux));
       double slab = 0.0;
       for (std::size_t index = 0; index < ids.size(); ++index) {
         const bool inLeft = sides[left].count(ids[index]) != 0;
@@ -287,8 +290,10 @@ WardFluxRead WardFlux::difference(const WardFluxRead &state,
 
   WardFluxRead read = state;
   read.flux = state.flux - matched.flux;
-  read.enclosedDivergence = state.enclosedDivergence - matched.enclosedDivergence;
-  read.divergenceTheoremResidual = std::abs(read.flux + read.enclosedDivergence);
+  read.enclosedDivergence =
+      state.enclosedDivergence - matched.enclosedDivergence;
+  read.divergenceTheoremResidual =
+      std::abs(read.flux + read.enclosedDivergence);
   read.cutCurrent.clear();
   read.cutCurrent.reserve(state.cutCurrent.size());
   for (std::size_t index = 0; index < state.cutCurrent.size(); ++index)
@@ -300,7 +305,8 @@ WardFluxRead WardFlux::difference(const WardFluxRead &state,
       matched.enclosedFermionNumber.has_value()) {
     read.enclosedFermionNumber =
         *state.enclosedFermionNumber - *matched.enclosedFermionNumber;
-    read.fermionNumberResidual = std::abs(read.flux - *read.enclosedFermionNumber);
+    read.fermionNumberResidual =
+        std::abs(read.flux - *read.enclosedFermionNumber);
   } else {
     read.enclosedFermionNumber.reset();
     read.fermionNumberResidual = kNaN;
@@ -340,8 +346,8 @@ IntrinsicResponseRead WardFlux::intrinsicResponse(
   Eigen::VectorXcd rhoRight(order);
   Eigen::VectorXcd rhoLeft(order);
   for (Eigen::Index index = 0; index < order; ++index) {
-    const auto cell =
-        static_cast<std::size_t>(geometry.cells[static_cast<std::size_t>(index)]);
+    const auto position = static_cast<std::size_t>(index);
+    const auto cell = static_cast<std::size_t>(geometry.cells[position]);
     const double sign = static_cast<double>(
         geometry.coorientation[static_cast<std::size_t>(index)]);
     rhoRight(index) =
@@ -430,11 +436,13 @@ IntrinsicResponseRead WardFlux::intrinsicResponse(
   for (std::size_t band = 0; band < read.poles.size(); ++band) {
     double spread = 0.0;
     for (const std::size_t index : bands[band])
-      spread = std::max(spread, std::abs(eigenvalues[index] - read.poles[band]));
+      spread =
+          std::max(spread, std::abs(eigenvalues[index] - read.poles[band]));
     double nearest = std::numeric_limits<double>::infinity();
     for (std::size_t other = 0; other < read.poles.size(); ++other)
       if (other != band)
-        nearest = std::min(nearest, std::abs(read.poles[other] - read.poles[band]));
+        nearest =
+            std::min(nearest, std::abs(read.poles[other] - read.poles[band]));
     double radius = 0.0;
     if (std::isfinite(nearest)) {
       radius = spread + 0.25 * (nearest - spread);
@@ -452,7 +460,8 @@ IntrinsicResponseRead WardFlux::intrinsicResponse(
     for (int node = 0; node < nodes; ++node) {
       const double angle = kTwoPi * (static_cast<double>(node) + 0.5) /
                            static_cast<double>(nodes);
-      const complexd offset = radius * complexd{std::cos(angle), std::sin(angle)};
+      const complexd offset =
+          radius * complexd{std::cos(angle), std::sin(angle)};
       const complexd point = read.poles[band] + offset;
       Eigen::MatrixXcd shifted =
           point * Eigen::MatrixXcd::Identity(order, order) - slice;

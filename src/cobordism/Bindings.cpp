@@ -16,6 +16,7 @@
 #include <pybind11/stl.h>
 
 #include "cobordism/AnalyticCache.h"
+#include "cobordism/BoundStatePole.h"
 #include "cobordism/Certificate.h"
 #include "cobordism/ChainComplex.h"
 #include "cobordism/Characteristic.h"
@@ -40,6 +41,7 @@
 #include "cobordism/SelfConsistentMeanField.h"
 #include "cobordism/RecursiveQuotient.h"
 #include "cobordism/SurgicalCone.h"
+#include "cobordism/WardFlux.h"
 #include "cobordism/Spectrum.h"
 #include "spacetime/Spacetime.h"  // complete type required by pybind (typeid)
 
@@ -4571,5 +4573,267 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_property_readonly("action", &SelfConsistentMeanField::action,
                              "The action, carrying the covariance and the "
                              "multipliers as the solve left them.");
+
+  // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
+
+  py::class_<CooorientedCut>(m, "CooorientedCut",
+      "A cooriented separating cut of Section 13.1, declared by the vertices "
+      "on its incoming side. The cut is the set of edges with exactly one "
+      "endpoint in that set, and an edge's coorientation is +1 when it leaves "
+      "the incoming side. Nothing here reads a vertex time, a Lorentzian "
+      "distance or a level-set ordering.")
+      .def(py::init<>())
+      .def(py::init([](std::vector<std::uint64_t> incomingSide,
+                       std::string label) {
+             CooorientedCut cut;
+             cut.incomingSide = std::move(incomingSide);
+             cut.label = std::move(label);
+             return cut;
+           }),
+           py::arg("incoming_side"), py::arg("label") = std::string())
+      .def_readwrite("incoming_side", &CooorientedCut::incomingSide,
+                     "Vertex identifiers on the incoming side of the cut.")
+      .def_readwrite("label", &CooorientedCut::label,
+                     "The caller's label for the cut.");
+
+  py::class_<WardFluxConfig>(m, "WardFluxConfig",
+      "Every threshold of the Ward-flux read.")
+      .def(py::init<>())
+      .def_readwrite("divergence_tolerance", &WardFluxConfig::divergenceTolerance,
+                     "|(d j)_x| at or below this is a vanishing divergence.")
+      .def_readwrite("integrality_tolerance",
+                     &WardFluxConfig::integralityTolerance,
+                     "|phi_j(Sigma) - n| at or below this lets the flux be "
+                     "read as the integer quark number N_q.")
+      .def_readwrite("imaginary_tolerance", &WardFluxConfig::imaginaryTolerance,
+                     "|Im phi_j(Sigma)| must be at or below this for the flux "
+                     "to be read as an integer.");
+
+  py::class_<WardFluxRead>(m, "WardFluxRead",
+      "The flux phi_j(Sigma) of the complex Ward current through one "
+      "cooriented cut, with every certificate Section 13.4 attaches to it.")
+      .def_readonly("label", &WardFluxRead::label)
+      .def_readonly("cut_cells", &WardFluxRead::cutCells,
+                    "The cut's edges as canonical degree-one cell indices.")
+      .def_readonly("coorientation", &WardFluxRead::coorientation,
+                    "The coorientation of each cut edge.")
+      .def_readonly("cut_current", &WardFluxRead::cutCurrent,
+                    "The Ward current on each cut edge.")
+      .def_readonly("flux", &WardFluxRead::flux,
+                    "phi_j(Sigma), the flux. Complex, never projected onto a "
+                    "real part.")
+      .def_readonly("enclosed_divergence", &WardFluxRead::enclosedDivergence,
+                    "The divergence summed over the incoming side, which the "
+                    "divergence theorem makes minus the flux.")
+      .def_readonly("divergence_theorem_residual",
+                    &WardFluxRead::divergenceTheoremResidual,
+                    "The residual of that identity.")
+      .def_readonly("bulk_divergence_max", &WardFluxRead::bulkDivergenceMax,
+                    "max |(d j)_x| over the vertices strictly inside the "
+                    "incoming side: the Ward identity, measured.")
+      .def_readonly("bulk_vertices", &WardFluxRead::bulkVertices)
+      .def_readonly("bulk_divergence_vertex",
+                    &WardFluxRead::bulkDivergenceVertex,
+                    "The vertex the bulk divergence was largest at.")
+      .def_readonly("enclosed_fermion_number",
+                    &WardFluxRead::enclosedFermionNumber,
+                    "The fermion number the declared covariance places on the "
+                    "carrier cells inside the cut.")
+      .def_readonly("enclosed_cells", &WardFluxRead::enclosedCells)
+      .def_readonly("fermion_number_residual",
+                    &WardFluxRead::fermionNumberResidual,
+                    "|flux - enclosed fermion number|.")
+      .def_readonly("quark_number", &WardFluxRead::quarkNumber,
+                    "N_q, when the flux is integral; None otherwise.")
+      .def_readonly("quark_number_defect", &WardFluxRead::quarkNumberDefect)
+      .def_readonly("baryon_number", &WardFluxRead::baryonNumber,
+                    "B(Sigma) = N_q / 3, the whitepaper's one explicit "
+                    "physical calibration.")
+      .def_readonly("separating", &WardFluxRead::separating)
+      .def_readonly("failed_certificates", &WardFluxRead::failedCertificates);
+
+  py::class_<WardHomologyRead>(m, "WardHomologyRead",
+      "Several cuts of one homology class read together.")
+      .def_readonly("cuts", &WardHomologyRead::cuts)
+      .def_readonly("max_flux_deviation", &WardHomologyRead::maxFluxDeviation,
+                    "The largest pairwise difference of the fluxes.")
+      .def_readonly("max_slab_divergence", &WardHomologyRead::maxSlabDivergence,
+                    "The divergence carried by the slabs between the cuts, "
+                    "which is the source content the invariance statement "
+                    "excludes.")
+      .def_readonly("invariant", &WardHomologyRead::invariant);
+
+  py::class_<IntrinsicResponseConfig>(m, "IntrinsicResponseConfig",
+      "The declared parameters of the intrinsic spectral response.")
+      .def(py::init<>())
+      .def_readwrite("left_current", &IntrinsicResponseConfig::leftCurrent,
+                     "The current the left restriction is cut from, in "
+                     "canonical degree-one cell order. Empty means the right "
+                     "current paired with itself through the transpose.")
+      .def_readwrite("degeneracy_tolerance",
+                     &IntrinsicResponseConfig::degeneracyTolerance,
+                     "Two eigenvalues this close are one degenerate band and "
+                     "share one Riesz projector.")
+      .def_readwrite("pole_tolerance", &IntrinsicResponseConfig::poleTolerance,
+                     "A sample this close to a pole is reported unavailable "
+                     "rather than as a large finite number.");
+
+  py::class_<IntrinsicResponseRead>(m, "IntrinsicResponseRead",
+      "The intrinsic spectral response Upsilon_Q(lambda) of Section 13.5, "
+      "read on one cooriented cut. lambda is an eigenvalue of the slice "
+      "operator and is never relabelled as a momentum transfer.")
+      .def_readonly("label", &IntrinsicResponseRead::label)
+      .def_readonly("slice_cells", &IntrinsicResponseRead::sliceCells)
+      .def_readonly("rho_right", &IntrinsicResponseRead::rhoRight,
+                    "The right restriction of the Ward current to the cut.")
+      .def_readonly("rho_left", &IntrinsicResponseRead::rhoLeft,
+                    "The left restriction.")
+      .def_readonly("slice_operator", &IntrinsicResponseRead::sliceOperator,
+                    "L_Sigma, flat row-major over the cut's cells.")
+      .def_readonly("poles", &IntrinsicResponseRead::poles,
+                    "The distinct eigenvalues of L_Sigma.")
+      .def_readonly("pole_multiplicity",
+                    &IntrinsicResponseRead::poleMultiplicity)
+      .def_readonly("residues", &IntrinsicResponseRead::residues,
+                    "The residue of Upsilon_Q at each pole, taken on a Riesz "
+                    "contour around the whole band.")
+      .def_readonly("samples", &IntrinsicResponseRead::samples)
+      .def_readonly("response", &IntrinsicResponseRead::response,
+                    "Upsilon_Q at each sample.")
+      .def_readonly("slope", &IntrinsicResponseRead::slope,
+                    "dUpsilon_Q/dlambda at each sample, taken exactly from the "
+                    "square of the resolvent.")
+      .def_readonly("failed_certificates",
+                    &IntrinsicResponseRead::failedCertificates);
+
+  py::class_<WardFlux>(m, "WardFlux",
+      "The flux of the complex Ward current through a cooriented cut "
+      "(Section 13.4) and the intrinsic spectral response it carries "
+      "(Section 13.5).\n\n"
+      "The current is the joint action's link stationarity vector, "
+      "j_xy = U_xy dS/dU_xy; nothing here re-derives it and nothing here "
+      "supplies a field of its own. The flux is not electric charge: every "
+      "edge mode carries charge one under the C* group, so the flux counts "
+      "fermions, and a flavor-dependent electric charge is not a gauge charge "
+      "of the declared fields and carries no Ward current.")
+      .def_static("flux", &WardFlux::flux, py::arg("action"), py::arg("cut"),
+                  py::arg("cfg") = WardFluxConfig{},
+                  "The flux of the action's Ward current through one cut.")
+      .def_static("homologous_fluxes", &WardFlux::homologousFluxes,
+                  py::arg("action"), py::arg("cuts"),
+                  py::arg("cfg") = WardFluxConfig{},
+                  "Several cuts read together, with the pairwise flux "
+                  "deviation and the divergence the slabs between them carry.")
+      .def_static("difference", &WardFlux::difference, py::arg("state"),
+                  py::arg("matched"), py::arg("cfg") = WardFluxConfig{},
+                  "The coherent background removal of Section 13.5: the "
+                  "complex difference of two flux reads on one cut, with no "
+                  "modulus taken on either side.")
+      .def_static("intrinsic_response", &WardFlux::intrinsicResponse,
+                  py::arg("action"), py::arg("cut"), py::arg("samples"),
+                  py::arg("cfg") = IntrinsicResponseConfig{},
+                  "Upsilon_Q on one cut, evaluated at the declared samples.");
+
+  // ── Section 13.3: mass is a complex bound-state pole ───────────────────
+
+  py::class_<BoundStatePoleConfig>(m, "BoundStatePoleConfig",
+      "Every declared parameter of the pole search.")
+      .def(py::init<>())
+      .def_readwrite("contour_nodes", &BoundStatePoleConfig::contourNodes)
+      .def_readwrite("refinement_nodes", &BoundStatePoleConfig::refinementNodes,
+                     "The second quadrature the refinement continuation is "
+                     "read at.")
+      .def_readwrite("max_zeros", &BoundStatePoleConfig::maxZeros)
+      .def_readwrite("max_newton_steps", &BoundStatePoleConfig::maxNewtonSteps)
+      .def_readwrite("newton_tolerance", &BoundStatePoleConfig::newtonTolerance)
+      .def_readwrite("zero_count_tolerance",
+                     &BoundStatePoleConfig::zeroCountTolerance)
+      .def_readwrite("local_radius_fraction",
+                     &BoundStatePoleConfig::localRadiusFraction)
+      .def_readwrite("rank_tolerance", &BoundStatePoleConfig::rankTolerance)
+      .def_readwrite("free_threshold", &BoundStatePoleConfig::freeThreshold,
+                     "The complex spectral value the binding shift is measured "
+                     "against. None leaves the binding shift unreported.");
+
+  py::class_<BoundStatePoleRead>(m, "BoundStatePoleRead",
+      "The zeros of D_C(s) = det F_C(s) inside one declared contour, with the "
+      "certificates Section 13.3 attaches to a bound-state pole.")
+      .def_readonly("centre", &BoundStatePoleRead::centre)
+      .def_readonly("radius", &BoundStatePoleRead::radius)
+      .def_readonly("nodes", &BoundStatePoleRead::nodes)
+      .def_readonly("zero_count", &BoundStatePoleRead::zeroCount,
+                    "The argument-principle count before it is rounded.")
+      .def_readonly("zeros", &BoundStatePoleRead::zeros,
+                    "The total algebraic multiplicity enclosed.")
+      .def_readonly("zero_count_defect", &BoundStatePoleRead::zeroCountDefect)
+      .def_readonly("interior_pole_count",
+                    &BoundStatePoleRead::interiorPoleCount,
+                    "The unretained interior poles the contour encloses, as "
+                    "the argument principle on det P_II produced them.")
+      .def_readonly("interior_poles_enclosed",
+                    &BoundStatePoleRead::interiorPolesEnclosed)
+      .def_readonly("poles", &BoundStatePoleRead::poles,
+                    "The distinct zeros s_C found inside the contour.")
+      .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity)
+      .def_readonly("determinant_at_pole",
+                    &BoundStatePoleRead::determinantAtPole, "D_C(s_C).")
+      .def_readonly("derivative_at_pole",
+                    &BoundStatePoleRead::derivativeAtPole, "D_C'(s_C).")
+      .def_readonly("simple", &BoundStatePoleRead::simple,
+                    "Whether the zero met the simple-isolated specification.")
+      .def_readonly("newton_step", &BoundStatePoleRead::newtonStep)
+      .def_readonly("separation", &BoundStatePoleRead::separation)
+      .def_readonly("residue", &BoundStatePoleRead::residue,
+                    "The residue of the supported resolvent at each zero, flat "
+                    "row-major over the interface coordinates.")
+      .def_readonly("residue_norm", &BoundStatePoleRead::residueNorm)
+      .def_readonly("residue_rank", &BoundStatePoleRead::residueRank)
+      .def_readonly("continued_pole", &BoundStatePoleRead::continuedPole,
+                    "Each zero recomputed at the refinement quadrature.")
+      .def_readonly("continuation_movement",
+                    &BoundStatePoleRead::continuationMovement)
+      .def_readonly("binding_shift", &BoundStatePoleRead::bindingShift,
+                    "s_C minus the declared free threshold.")
+      .def_readonly("interior_resonance",
+                    &BoundStatePoleRead::interiorResonance,
+                    "Whether an unretained interior pole sits on the contour, "
+                    "which is the domain Section 13.3 continues F_C on being "
+                    "left.")
+      .def_readonly("failed_certificates",
+                    &BoundStatePoleRead::failedCertificates);
+
+  py::class_<BoundStatePole>(m, "BoundStatePole",
+      "Mass as the complex bound-state pole of Section 13.3: the zeros of "
+      "D_C(s) = det F_C(s), with F_C the exact meromorphic Feshbach response "
+      "pencil of a persistent bound cluster, continued in the complex "
+      "spectral parameter s.\n\n"
+      "Mass is not defined here by an incoherent sum of moduli, and nothing "
+      "here converts s_C into a mass: the theory carries s_C and takes no "
+      "square root of it.")
+      .def_static("response", &BoundStatePole::response, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  py::arg("rank_tolerance") = 1e-12,
+                  "F_C(s), as the framework's own Schur complement supplies "
+                  "it.")
+      .def_static("determinant", &BoundStatePole::determinant, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  "D_C(s) = det F_C(s).")
+      .def_static("response_derivative", &BoundStatePole::responseDerivative,
+                  py::arg("A"), py::arg("M"), py::arg("interface"),
+                  py::arg("s"),
+                  "F_C'(s), the exact analytic derivative of the response.")
+      .def_static("logarithmic_derivative",
+                  &BoundStatePole::logarithmicDerivative, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  "D_C'(s) / D_C(s) = tr(F_C^-1 F_C').")
+      .def_static("poles", &BoundStatePole::poles, py::arg("A"), py::arg("M"),
+                  py::arg("interface"), py::arg("centre"), py::arg("radius"),
+                  py::arg("cfg") = BoundStatePoleConfig{},
+                  "The zeros of D_C inside the declared contour.")
+      .def_static("cluster_poles", &BoundStatePole::clusterPoles,
+                  py::arg("assembled"), py::arg("k"), py::arg("cluster_cells"),
+                  py::arg("centre"), py::arg("radius"),
+                  py::arg("cfg") = BoundStatePoleConfig{},
+                  "The same search on an assembled pencil's degree-k block.");
 
 }

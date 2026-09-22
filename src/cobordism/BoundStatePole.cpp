@@ -55,6 +55,11 @@ Partition partitionOf(int order, const std::vector<int> &interface,
 struct ResponseAtShift {
   Eigen::MatrixXcd response{};
   Eigen::MatrixXcd derivative{};
+  /// \f$ \frac{d}{ds}\log\det P_{II}(s)
+  ///     =-\operatorname{tr}(P_{II}^{-1}M_{II}) \f$,
+  /// whose contour integral counts the unretained interior poles of
+  /// \f$ F_C \f$ inside the contour. Zero when there is no interior.
+  complexd interiorLogDerivative{0.0, 0.0};
   bool interiorSingular{false};
 };
 
@@ -111,6 +116,7 @@ ResponseAtShift responseAtShift(const Eigen::MatrixXcd &A,
       transposed.solve(PBI.transpose()).transpose();   // P_BI P_II^{-1}
   out.response = PBB - PBI * X;
   out.derivative = -MBB + MBI * X + Z * MIB - Z * MII * X;
+  out.interiorLogDerivative = -lu.solve(MII).trace();
   return out;
 }
 
@@ -160,6 +166,9 @@ std::vector<ContourNode> circle(complexd centre, double radius, int nodes) {
 /// enclosed count.
 struct MomentRead {
   std::vector<complexd> moments{};
+  /// The unretained interior poles the contour encloses, as the argument
+  /// principle on \f$ \det P_{II} \f$ produced it.
+  complexd interiorPoles{0.0, 0.0};
   bool interiorSingular{false};
   bool usable{true};
 };
@@ -189,9 +198,11 @@ MomentRead momentsOn(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
       read.moments[p] += power * value * node.offset;
       power *= scaled;
     }
+    read.interiorPoles += shift.interiorLogDerivative * node.offset;
   }
   for (complexd &moment : read.moments)
     moment /= static_cast<double>(nodes);
+  read.interiorPoles /= static_cast<double>(nodes);
   return read;
 }
 
@@ -230,8 +241,8 @@ std::vector<complexd> zerosFromMoments(const std::vector<complexd> &moments,
   lu.setThreshold(rankTolerance);
   if (!lu.isInvertible()) return {};
   const Eigen::MatrixXcd companion = lu.solve(leadingShifted);
-  Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(companion,
-                                                     /*computeEigenvectors=*/false);
+  Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(
+      companion, /*computeEigenvectors=*/false);
   if (solver.info() != Eigen::Success) return {};
   std::vector<complexd> roots;
   roots.reserve(static_cast<std::size_t>(rank));
@@ -271,10 +282,9 @@ Eigen::MatrixXcd BoundStatePole::responseDerivative(
   return responseAtShift(A, M, partition, s, 1e-12).derivative;
 }
 
-complexd BoundStatePole::logarithmicDerivative(const Eigen::MatrixXcd &A,
-                                               const Eigen::MatrixXcd &M,
-                                               const std::vector<int> &interface,
-                                               complexd s) {
+complexd BoundStatePole::logarithmicDerivative(
+    const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
+    const std::vector<int> &interface, complexd s) {
   const auto order = static_cast<int>(A.rows());
   if (A.cols() != A.rows() || M.rows() != A.rows() || M.cols() != A.rows())
     throw std::invalid_argument(
@@ -325,6 +335,20 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
     read.zeroCountDefect = kNaN;
     return read;
   }
+  // The argument principle on a meromorphic function counts zeros minus
+  // poles, and D_C carries a pole at every interior eigenvalue. Section 13.3
+  // continues F_C on a domain that excludes unretained interior poles, so a
+  // contour that encloses one has left that domain and is refused rather than
+  // answered with a count the two contributions have already mixed.
+  read.interiorPoleCount = counted.interiorPoles;
+  const double interiorRounded = std::round(counted.interiorPoles.real());
+  read.interiorPolesEnclosed =
+      interiorRounded > 0.0 ? static_cast<std::size_t>(interiorRounded) : 0;
+  if (read.interiorPolesEnclosed > 0) {
+    nameFailure(read.failedCertificates, "interior-pole-enclosed");
+    return read;
+  }
+
   read.zeroCount = counted.moments[0];
   const double rounded = std::round(read.zeroCount.real());
   read.zeroCountDefect =
@@ -395,50 +419,31 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
     roots[index] = point;
   }
 
-  // 5. the reported quantities at each refined root.
+  // 5. the reported quantities at each refined root, read on one small
+  //    contour that encloses the root alone.
+  //
+  //    D_C and its derivative at the root are taken as Taylor coefficients of
+  //    the contour rather than as values at the point:
+  //    D_C(s_C) = (2 pi i)^-1 * contour integral of D_C(s)/(s - s_C) ds and
+  //    D_C'(s_C) = (2 pi i)^-1 * contour integral of D_C(s)/(s - s_C)^2 ds.
+  //    Both are exact identities for a function holomorphic on the disc, and
+  //    both are well conditioned, whereas D_C' evaluated as (D_C'/D_C) * D_C
+  //    at the root is the product of a pole and a zero and loses every digit.
+  //
+  //    The residue of the supported resolvent is the contour average of
+  //    F_C(s)^-1 on the same circle. A multiple root keeps its whole residue
+  //    matrix; nothing is reduced to a single number.
   read.poles = roots;
   read.multiplicity = multiplicity;
   read.newtonStep = lastStep;
-  for (std::size_t index = 0; index < roots.size(); ++index) {
-    const chainhodge::FeshbachResult at = chainhodge::PencilSchur::feshbach(
-        A, M, roots[index], partition.interface, cfg.rankTolerance);
-    read.determinantAtPole.push_back(
-        at.interiorSingular ? complexd{kNaN, kNaN} : at.responseDeterminant);
-
-    // D' = (D'/D) * D, from the logarithmic derivative and the determinant,
-    // so the derivative is the analytic one and not a difference quotient.
-    const ResponseAtShift shift =
-        responseAtShift(A, M, partition, roots[index], cfg.rankTolerance);
-    const complexd slope = logarithmicDerivativeOf(shift);
-    complexd derivative{kNaN, kNaN};
-    if (!at.interiorSingular && std::isfinite(slope.real()) &&
-        std::isfinite(slope.imag()))
-      derivative = slope * at.responseDeterminant;
-    read.derivativeAtPole.push_back(derivative);
-    read.simple.push_back(multiplicity[index] == 1 &&
-                          std::isfinite(derivative.real()) &&
-                          std::isfinite(derivative.imag()) &&
-                          std::abs(derivative) > 0.0);
-
-    double nearest = std::numeric_limits<double>::infinity();
-    for (std::size_t other = 0; other < roots.size(); ++other)
-      if (other != index)
-        nearest = std::min(nearest, std::abs(roots[other] - roots[index]));
-    read.separation.push_back(nearest);
-
-    if (cfg.freeThreshold.has_value())
-      read.bindingShift.push_back(roots[index] - *cfg.freeThreshold);
-  }
-
-  // 6. the residue of the supported resolvent, as a contour average of
-  //    F_C(s)^{-1} on a circle enclosing the root alone. A multiple root keeps
-  //    its whole residue matrix; nothing is reduced to a single number.
   const auto interfaceOrder =
       static_cast<Eigen::Index>(partition.interface.size());
   for (std::size_t index = 0; index < roots.size(); ++index) {
     const double local = localRadiusFor(index);
     Eigen::MatrixXcd accumulated =
         Eigen::MatrixXcd::Zero(interfaceOrder, interfaceOrder);
+    complexd valueAtRoot{0.0, 0.0};
+    complexd derivativeAtRoot{0.0, 0.0};
     bool usable = local > 0.0;
     if (usable) {
       const auto contour = circle(roots[index], local, cfg.contourNodes);
@@ -455,14 +460,23 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
           usable = false;
           break;
         }
+        const complexd determinantHere = lu.determinant();
+        valueAtRoot += determinantHere;
+        derivativeAtRoot += determinantHere / node.offset;
         accumulated += lu.solve(Eigen::MatrixXcd::Identity(
                             interfaceOrder, interfaceOrder)) *
                        node.offset;
       }
-      accumulated /= static_cast<double>(cfg.contourNodes);
     }
+
     std::vector<complexd> flat;
     if (usable) {
+      const auto nodes = static_cast<double>(cfg.contourNodes);
+      valueAtRoot /= nodes;
+      derivativeAtRoot /= nodes;
+      accumulated /= nodes;
+      read.determinantAtPole.push_back(valueAtRoot);
+      read.derivativeAtPole.push_back(derivativeAtRoot);
       flat.reserve(static_cast<std::size_t>(interfaceOrder * interfaceOrder));
       for (Eigen::Index row = 0; row < interfaceOrder; ++row)
         for (Eigen::Index column = 0; column < interfaceOrder; ++column)
@@ -478,10 +492,33 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
           ++rank;
       read.residueRank.push_back(rank);
     } else {
+      read.determinantAtPole.push_back(complexd{kNaN, kNaN});
+      read.derivativeAtPole.push_back(complexd{kNaN, kNaN});
       read.residueNorm.push_back(kNaN);
       read.residueRank.push_back(0);
     }
     read.residue.push_back(std::move(flat));
+
+    // The simple isolated zero of Section 13.3 is "D_C(s_C) = 0 and
+    // D_C'(s_C) != 0", which for a zero of a holomorphic function is exactly
+    // the statement that its algebraic multiplicity is one. The multiplicity
+    // is read by the argument principle, which needs no determinant evaluated
+    // where the determinant vanishes, and the Taylor derivative is reported
+    // beside it.
+    const complexd derivative = read.derivativeAtPole.back();
+    read.simple.push_back(multiplicity[index] == 1 &&
+                          std::isfinite(derivative.real()) &&
+                          std::isfinite(derivative.imag()) &&
+                          std::abs(derivative) > 0.0);
+
+    double nearest = std::numeric_limits<double>::infinity();
+    for (std::size_t other = 0; other < roots.size(); ++other)
+      if (other != index)
+        nearest = std::min(nearest, std::abs(roots[other] - roots[index]));
+    read.separation.push_back(nearest);
+
+    if (cfg.freeThreshold.has_value())
+      read.bindingShift.push_back(roots[index] - *cfg.freeThreshold);
   }
 
   // 7. the refinement continuation: the same search at a second node count,

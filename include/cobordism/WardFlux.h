@@ -125,15 +125,16 @@ struct WardFluxRead {
   std::optional<std::complex<double>> enclosedFermionNumber{};
   /// How many carrier cells lie wholly on the incoming side.
   std::size_t enclosedCells = 0;
-  /// \f$ |\varphi_j(\Sigma)-\sum_{\sigma\subset\Omega}\Gamma_{\sigma\sigma}| \f$,
-  /// the defect of the identity "the flux equals the enclosed fermion number".
+  /// \f$ |\varphi_j(\Sigma)-\sum_{\sigma\subset\Omega}\Gamma_{\sigma\sigma}|
+  /// \f$, the defect of the identity "the flux equals the enclosed fermion
+  /// number".
   /// NaN when no covariance is declared.
   double fermionNumberResidual = std::numeric_limits<double>::quiet_NaN();
 
-  /// \f$ N_q \f$: the integer nearest \f$ \operatorname{Re}\varphi_j(\Sigma) \f$,
-  /// present only when the flux is integral within `integralityTolerance` and
-  /// its imaginary part is within `imaginaryTolerance`. Empty means unknown,
-  /// never zero.
+  /// \f$ N_q \f$: the integer nearest
+  /// \f$ \operatorname{Re}\varphi_j(\Sigma) \f$, present only when the flux is
+  /// integral within `integralityTolerance` and its imaginary part is within
+  /// `imaginaryTolerance`. Empty means unknown, never zero.
   std::optional<long long> quarkNumber{};
   /// \f$ |\varphi_j(\Sigma)-N_q| \f$ against the nearest integer, reported
   /// whether or not the integer was accepted.
@@ -205,7 +206,8 @@ struct IntrinsicResponseConfig {
 /// # IntrinsicResponseRead
 ///
 /// The intrinsic spectral response
-/// \f$ \Upsilon_Q(\lambda)=\tilde\rho_L^{\mathsf T}(L_\Sigma-\lambda I)^{-1}\rho_R \f$
+/// \f$ \Upsilon_Q(\lambda)
+///   =\tilde\rho_L^{\mathsf T}(L_\Sigma-\lambda I)^{-1}\rho_R \f$
 /// of Section 13.5, read on one cooriented cut.
 ///
 /// It is not an electromagnetic form factor and it is not a structure factor:
@@ -240,8 +242,9 @@ struct IntrinsicResponseRead {
   /// \f$ \Upsilon_Q \f$ at each pole, parallel to `poles`, with \f$ P_a \f$
   /// the Riesz projector of the whole degenerate band. The sign is the one the
   /// definition forces: near \f$ \lambda_a \f$,
-  /// \f$ \Upsilon_Q(\lambda)\simeq \tilde\rho_L^{\mathsf T}P_a\rho_R/(\lambda_a-\lambda) \f$,
-  /// so the residue in \f$ \lambda \f$ is minus that number.
+  /// \f$ \Upsilon_Q(\lambda)\simeq
+  ///   \tilde\rho_L^{\mathsf T}P_a\rho_R/(\lambda_a-\lambda) \f$, so the
+  /// residue in \f$ \lambda \f$ is minus that number.
   std::vector<std::complex<double>> residues{};
 
   /// The sample points \f$ \lambda \f$ the response was evaluated at.
@@ -312,7 +315,8 @@ struct IntrinsicResponseRead {
 /// When stable translation generators have not emerged there is no momentum
 /// transfer and no form factor, and a slice eigenvalue is not relabelled as
 /// one. The response is instead
-/// \f$ \Upsilon_Q(\lambda)=\tilde\rho_L^{\mathsf T}(L_\Sigma-\lambda I)^{-1}\rho_R \f$
+/// \f$ \Upsilon_Q(\lambda)
+///   =\tilde\rho_L^{\mathsf T}(L_\Sigma-\lambda I)^{-1}\rho_R \f$
 /// with \f$ \rho_R \f$ and \f$ \tilde\rho_L \f$ the right and left
 /// restrictions of the current to the cut and \f$ L_\Sigma \f$ the slice
 /// operator. Its poles are the eigenvalues of \f$ L_\Sigma \f$, its residues
@@ -322,7 +326,8 @@ struct IntrinsicResponseRead {
 ///
 /// ## Background removal
 ///
-/// Section 13.5 forms \f$ \Delta O=O_{\rm state}-O_{\rm matched\ \partial_{\rm in}W} \f$
+/// Section 13.5 forms
+/// \f$ \Delta O=O_{\rm state}-O_{\rm matched\ \partial_{\rm in}W} \f$
 /// for every current and every response before any boundary probability, so
 /// that complex background and excitation terms may cancel. `difference`
 /// performs that subtraction coherently on two flux reads, and never on their

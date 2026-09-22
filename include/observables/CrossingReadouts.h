@@ -83,6 +83,14 @@
 // Massless content lies outside its domain: a null crossing is refused, not
 // counted at zero.
 //
+// `m_x` is not the bound-state mass. The mass of a persistent bound cluster is
+// the complex pole `s_C`, the simple isolated zero of `D_C(s) = det F_C(s)` for
+// the cluster's Feshbach response pencil, which `cobordism::BoundStatePole`
+// reads. That pole is a complex number carrying a binding shift below a
+// declared free threshold and a residue matrix; `m_x` is a positive sum of
+// moduli of crossing increments. Neither is derived from the other, and `m_x`
+// is never read in place of the pole.
+//
 // The crossing sign and the determinant-line winding must agree on every
 // certified tube. A tube on which they disagree is a defect signal, reported in
 // `BaryonCrossingRead::signDefects` and never silently resolved.
@@ -105,8 +113,13 @@
 //
 //     with `P_lambda` the eigenspace projectors of the slice Laplacian, so
 //     degeneracies are handled and no eigenvector phase enters: S is basis- and
-//     phase-invariant. The slice Laplacian is the discrete -grad^2, so lambda
-//     is the squared momentum transfer rather than an analogy for it. S is an
+//     phase-invariant. `lambda` is an eigenvalue of the slice Laplacian and
+//     nothing else. It is not a momentum transfer and not a momentum transfer
+//     squared: a momentum needs stable translation generators, which have not
+//     emerged here, and until they do a slice eigenvalue is not relabelled as
+//     one. The response a cut carries in that regime is the intrinsic spectral
+//     response `Upsilon_Q`, which `cobordism::WardFlux::intrinsicResponse`
+//     reads as a coherent resolvent form of the complex Ward current. S is an
 //     incoherent power, the analogue of a structure factor. It is not the
 //     electromagnetic form factor, because a squared overlap loses the sign and
 //     the relative phase of the coherent matrix element. For a neutral system
@@ -139,6 +152,13 @@
 // dual volume on one relaxed interior. These readouts are swept by a world tube
 // across a level set and are differences against M0; the two are not
 // interchangeable and neither is derived from the other.
+//
+// A third family is distinct from both: the complex world-tube response of a
+// bound cluster, which is `cobordism::BoundStatePole` for the mass pole and
+// `cobordism::WardFlux` for the Ward current, its flux through a cooriented
+// cut, and the intrinsic spectral response. Those read a stationary action and
+// a Feshbach response pencil rather than a crossing sum, and no readout here is
+// read as one of them.
 
 #include <array>
 #include <complex>
@@ -297,7 +317,9 @@ struct TubeCrossingRead {
 /// # CrossingMassRead
 ///
 /// The crossing-mass functional `m_x` on one level, as a difference against M0.
-/// Not a dimensionful physical mass while `calibrated` is false.
+/// Not a dimensionful physical mass while `calibrated` is false, and not the
+/// bound-state mass at all: that is the complex pole of `det F_C`, which
+/// `cobordism::BoundStatePole` reads.
 struct CrossingMassRead {
   /// The level `t`.
   double level = std::numeric_limits<double>::quiet_NaN();
@@ -354,7 +376,9 @@ struct BaryonCrossingRead {
 ///
 /// The spectral charge-power profile `S(lambda)` on one level: an incoherent
 /// power, the analogue of a structure factor, and never the electromagnetic
-/// form factor.
+/// form factor. `lambda` is an eigenvalue of the slice Laplacian and is not a
+/// momentum transfer; the coherent response of a cut is `Upsilon_Q`, read by
+/// `cobordism::WardFlux::intrinsicResponse`.
 struct ChargePowerProfileRead {
   /// The level `t`.
   double level = std::numeric_limits<double>::quiet_NaN();

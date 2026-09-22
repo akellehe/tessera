@@ -82,6 +82,13 @@ struct BoundStatePoleRead {
   /// \f$ |{\rm zeroCount}-{\rm zeros}| \f$.
   double zeroCountDefect = std::numeric_limits<double>::quiet_NaN();
 
+  /// \f$ (2\pi i)^{-1}\oint \frac{d}{ds}\log\det P_{II}\,ds \f$ as the
+  /// quadrature produced it: the unretained interior poles of \f$ F_C \f$
+  /// inside the contour.
+  std::complex<double> interiorPoleCount{0.0, 0.0};
+  /// The integer nearest `interiorPoleCount`, floored at zero.
+  std::size_t interiorPolesEnclosed = 0;
+
   /// The distinct zeros \f$ s_C \f$ found inside the contour, in the order the
   /// moment problem produced them. No ordering convention is imposed on them.
   std::vector<std::complex<double>> poles{};
@@ -90,12 +97,20 @@ struct BoundStatePoleRead {
   std::vector<std::size_t> multiplicity{};
   /// \f$ D_C(s_C) \f$ at the refined root, parallel to `poles`. The simple
   /// isolated zero of Section 13.3 is specified by this vanishing.
+  ///
+  /// It is read as the Taylor coefficient
+  /// \f$ (2\pi i)^{-1}\oint D_C(s)/(s-s_C)\,ds \f$ on the same small contour
+  /// the residue is taken on, rather than as \f$ D_C \f$ evaluated at a point
+  /// where the response is singular.
   std::vector<std::complex<double>> determinantAtPole{};
-  /// \f$ D_C'(s_C) \f$, parallel to `poles`. The second half of the
+  /// \f$ D_C'(s_C) \f$, parallel to `poles`, read as the Taylor coefficient
+  /// \f$ (2\pi i)^{-1}\oint D_C(s)/(s-s_C)^2\,ds \f$. The second half of the
   /// specification is that this does not vanish.
   std::vector<std::complex<double>> derivativeAtPole{};
-  /// Whether the zero met the simple-isolated specification: multiplicity one
-  /// and a nonvanishing derivative.
+  /// Whether the zero met the simple-isolated specification: algebraic
+  /// multiplicity one and a nonvanishing derivative. For a zero of a
+  /// holomorphic function those two are the same statement, and the
+  /// multiplicity is the one the argument principle counted.
   std::vector<bool> simple{};
   /// The last Newton step taken on each root, in absolute units: the
   /// convergence of the refinement.
@@ -135,8 +150,8 @@ struct BoundStatePoleRead {
   bool interiorResonance = false;
 
   /// Named failures: "empty-interface", "nonintegral-zero-count",
-  /// "too-many-zeros", "interior-resonance", "roots-not-separated",
-  /// "no-zero-enclosed".
+  /// "too-many-zeros", "interior-resonance", "interior-pole-enclosed",
+  /// "roots-not-separated", "no-zero-enclosed".
   std::vector<std::string> failedCertificates{};
 };
 
@@ -192,6 +207,13 @@ struct BoundStatePoleRead {
 /// and the zeros are recovered from those moments through the Hankel pencil
 /// \f$ (H_{<},H) \f$, \f$ H_{ij}=m_{i+j} \f$,
 /// \f$ (H_{<})_{ij}=m_{i+j+1} \f$, whose rank is the number of distinct zeros.
+/// \f$ D_C \f$ is meromorphic and not entire — it carries a pole at every
+/// eigenvalue of the interior block — so the contour is required to enclose
+/// none of those, which is the domain Section 13.3 continues \f$ F_C \f$ on.
+/// The enclosed interior poles are counted by the same argument principle
+/// applied to \f$ \det P_{II} \f$ and a contour that encloses one is refused
+/// by name, rather than answered with a count in which the zeros and the poles
+/// have already cancelled.
 /// Each zero is then refined by Newton on \f$ D_C \f$ through the logarithmic
 /// derivative, with the step scaled by the root's multiplicity so that a
 /// multiple root converges at the same rate as a simple one. Multiple roots
