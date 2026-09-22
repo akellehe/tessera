@@ -444,26 +444,28 @@ dualVolume().)doc")
            "an orphan stranded by a Pachner move). The hinges the Regge action "
            "sums over are exactly the (d-2)-faces for which this is true.")
       .def("dualGeometryIsDegenerate", &Simplex::dualGeometryIsDegenerate,
-           "Does this hinge's dual geometry sit where its derivatives can fail "
-           "to exist? The circumcentric dual is built from square roots of "
-           "circumradius differences -- the distances between successive "
-           "circumcentres -- and such a difference vanishes when two "
-           "circumcentres coincide, which real Lorentzian geometries do: two "
-           "cells can share a null circumsphere. The dual content stays finite "
-           "there because it only multiplies by those roots; its derivatives "
-           "divide by them, and sqrt has infinite slope at the origin, so a "
-           "derivative that moves the vanishing difference genuinely does not "
-           "exist. This is how to find the hinges responsible for a non-finite "
-           "entry in dualVolumeGradient or dualVolumeHessian. True means the "
-           "hinge is a candidate, not that a derivative diverged: a difference "
-           "that vanishes and stays vanishing contributes zero.")
+           "Do two successive circumcentres of this hinge's dual coincide? The "
+           "circumcentric dual is built from the heights between successive "
+           "circumcentres, +-sqrt(R^2_coface - R^2_face), and this is True when "
+           "one of those differences is exactly zero: the coface's circumcentre "
+           "lies in the face's hull, as at the right angles of every Kuhn "
+           "triangulation of a cubic lattice. The heights are smooth there -- "
+           "each equals lambda_v * sqrt(det G_coface / det G_face), lambda_v the "
+           "circumcentre's barycentric coordinate at the vertex outside the face "
+           "-- and dualVolumeGradient and dualVolumeHessian differentiate that "
+           "form, so both stay finite at such a hinge.")
       .def("dualVolumeGradient", &Simplex::dualVolumeGradient,
            "Exact analytic d(dualVolume)/d(l^2_e) for each surrounding edge, as a "
-           "dict {(v0,v1): complex}. Differentiates the DEC circumradius recursion "
-           "(R^2 = h^T G^-1 h). (n-2)-hinge case only.")
+           "dict {(v0,v1): complex}. Differentiates each circumcentric height of "
+           "the DEC recursion in the product form "
+           "lambda_v * sqrt(det G_coface / det G_face), which equals the "
+           "recursion's +-sqrt(R^2_coface - R^2_face) and stays smooth where the "
+           "two circumcentres coincide. (n-2)-hinge case only.")
       .def("dualVolumeHessian", &Simplex::dualVolumeHessian,
            "Exact analytic d^2(dualVolume)/d(l^2_e)d(l^2_f), as a dict "
-           "{((v0,v1),(v2,v3)): complex}; symmetric. (n-2)-hinge case only.")
+           "{((v0,v1),(v2,v3)): complex}; symmetric, and finite where "
+           "circumcentres coincide (see dualVolumeGradient). (n-2)-hinge case "
+           "only.")
       .def("hodgeStar", &Simplex::hodgeStar,
            "Diagonal Hodge-star ratio |*sigma|/|sigma| (dual over primal "
            "content), complex.")

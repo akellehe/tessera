@@ -507,52 +507,61 @@ class Simplex {
     /// between c(σ_k) and c(σ_{k+1}); signs follow the circumcenter's
     /// barycentric coordinate at the opposite vertex. Signature-aware: a
     /// timelike height contributes signed content (sign·√|h²|), matching
-    /// ``volume()``. Negative content is meaningful, not an error.
+    /// ``volume()``. Negative content is meaningful, not an error. Each height
+    /// h = ±√(R²_{σ_{k+1}} − R²_{σ_k}) is evaluated in the equal product form
+    /// λ_v·√(det G_{σ_{k+1}} / det G_{σ_k}) (λ_v the barycentric coordinate of
+    /// c(σ_{k+1}) at its vertex outside σ_k), which keeps full precision where
+    /// the two circumcentres coincide and the difference of squared radii would
+    /// cancel to rounding noise.
     [[nodiscard]] std::complex<double> dualVolume() const;
 
     /// Exact analytic gradient of this hinge's ``dualVolume`` with respect to the
     /// squared length of each surrounding edge:
     /// \f$ \partial |\!\star\!\sigma| / \partial \ell^2_e \f$. Differentiates the
-    /// DEC recursion through the circumradii, with
-    /// \f$ R^2 = h^\top G^{-1} h \f$ (h = ½ diag G) so
-    /// \f$ \partial R^2 = 2(\partial h)^\top\beta - \beta^\top(\partial G)\beta \f$,
-    /// \f$ \beta = G^{-1}h \f$ (the Gram matrix is linear in \f$ \ell^2 \f$).
-    /// Implemented for the \f$ (n-2) \f$-hinge case the Regge action needs (an
-    /// edge in 3D), the dual being the two-level edge→facet→top recursion. Keyed
-    /// by sorted vertex-id edge over the top cells touching the hinge. Returns an
-    /// empty map for other codimensions.
+    /// DEC recursion through its circumcentric heights. Each height, written in
+    /// the recursion as \f$ \pm\sqrt{R^2_{\mathrm{coface}} - R^2_{\mathrm{face}}} \f$,
+    /// is differentiated in the equal product form
+    /// \f$ \lambda_v \sqrt{\det G_{\mathrm{coface}} / \det G_{\mathrm{face}}} \f$,
+    /// with \f$ \lambda_v \f$ the barycentric coordinate of the coface's
+    /// circumcentre at its vertex outside the face. That form stays smooth where
+    /// the two circumcentres coincide (\f$ \lambda_v = 0 \f$, as at the right
+    /// angles of a Kuhn triangulation), where the chain rule through the root of
+    /// the difference divides zero by zero. Implemented for the
+    /// \f$ (n-2) \f$-hinge case the Regge action needs (an edge in 3D), the dual
+    /// being the two-level edge→facet→top recursion. Keyed by sorted vertex-id
+    /// edge over the top cells touching the hinge. Returns an empty map for other
+    /// codimensions.
     [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
     dualVolumeGradient() const;
 
-    /// Does this hinge's dual geometry sit on a point where its derivatives can
-    /// fail to exist?
+    /// Do two successive circumcentres of this hinge's dual coincide?
     ///
-    /// The circumcentric dual is built from square roots of circumradius
-    /// differences: \f$ \sqrt{R^2_{\text{facet}} - R^2_{\text{hinge}}} \f$ and
-    /// \f$ \sqrt{R^2_{\text{top}} - R^2_{\text{facet}}} \f$, the distances
-    /// between successive circumcentres. A difference vanishes when two
-    /// circumcentres coincide, which in Lorentzian signature happens for real
-    /// geometries -- two cells can share a null circumsphere.
+    /// The circumcentric dual is built from the heights between successive
+    /// circumcentres, \f$ \sqrt{R^2_{\mathrm{facet}} - R^2_{\mathrm{hinge}}} \f$ and
+    /// \f$ \sqrt{R^2_{\mathrm{top}} - R^2_{\mathrm{facet}}} \f$ up to sign, and this
+    /// predicate is true when one of those differences is exactly zero: the
+    /// coface's circumcentre lies in the face's hull. Every Kuhn triangulation
+    /// of a cubic lattice has such hinges (the circumcentre of a right triangle
+    /// is the midpoint of its hypotenuse).
     ///
-    /// The dual content stays finite there, because it only multiplies by those roots.
-    /// Its derivatives divide by them, and \f$ \sqrt{x} \f$ has infinite slope at the
-    /// origin, so a derivative that moves the vanishing difference does not exist.
-    /// ``dualVolumeGradient`` and ``dualVolumeHessian`` report non-finite entries in
-    /// exactly that case, and this predicate identifies the hinges responsible without
-    /// hunting for the NaN.
-    ///
-    /// True does not by itself mean a derivative diverged: a difference that vanishes
-    /// and stays vanishing under a given edge contributes zero, which both derivative
-    /// routines return. It means the hinge is a candidate.
+    /// The heights are smooth there: each equals
+    /// \f$ \lambda_v \sqrt{\det G_{\mathrm{coface}} / \det G_{\mathrm{face}}} \f$,
+    /// which ``dualVolumeGradient`` and ``dualVolumeHessian`` differentiate, so
+    /// both stay finite at such a hinge. Only a cell of zero content (a singular
+    /// Gram matrix), which has no circumcentre, still has its heights
+    /// differentiated through the root of the difference.
     [[nodiscard]] bool dualGeometryIsDegenerate() const;
 
     /// Exact analytic Hessian of this hinge's ``dualVolume``:
     /// \f$ \partial^2 |\!\star\!\sigma| / \partial \ell^2_e \partial \ell^2_f \f$.
     /// One derivative beyond ``dualVolumeGradient``: the DEC facet→top recursion
-    /// carried to second order through the circumradii (``d2CircumR2``, with
-    /// \f$ \partial_f\beta = G^{-1}(\partial_f h - \partial_f G\,\beta) \f$) and the
-    /// signed-sqrt heights (\f$ g''(x) = -\mathrm{sign}(x)/4|x|^{3/2} \f$). Keyed
-    /// by the (sorted) edge pair; symmetric.
+    /// carried to second order through the same product form of its heights,
+    /// with \f$ \partial_f\beta = G^{-1}(\partial_f h - \partial_f G\,\beta) \f$,
+    /// \f$ \partial_e\partial_f\beta = -G^{-1}(\partial_e G\,\partial_f\beta +
+    /// \partial_f G\,\partial_e\beta) \f$ and the second derivative of the
+    /// logarithm of a Gram determinant,
+    /// \f$ -\mathrm{tr}(G^{-1}\partial_f G\,G^{-1}\partial_e G) \f$. Finite where
+    /// circumcentres coincide. Keyed by the (sorted) edge pair; symmetric.
     [[nodiscard]] std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
                                      std::pair<std::uint64_t, std::uint64_t>>,
                            std::complex<double>>

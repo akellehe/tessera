@@ -170,7 +170,8 @@ class ReggeSolver {
     /// gradients ``Simplex::dualVolumeGradient`` and ``deficitAngleGradient``,
     /// with no finite differences. Complex: Re S and Im S together. Matches a
     /// central difference of ``dualReggeAction`` to machine precision, in one
-    /// pass rather than 2·|E| action evaluations.
+    /// pass rather than 2·|E| action evaluations. Finite where the circumcentres
+    /// of the dual coincide, as on a Kuhn torus (``Simplex::dualVolumeGradient``).
     [[nodiscard]] std::vector<std::complex<double>> actionGradientExact() const;
 
     /// Exact analytic Hessian ∂²S/∂ℓ²_e∂ℓ²_f of the dual Lorentzian Regge action,
@@ -178,7 +179,8 @@ class ReggeSolver {
     /// Σ_h [∂²|★h|·ε_h + ∂|★h|_e·∂ε_h_f + ∂|★h|_f·∂ε_h_e + |★h|·∂²ε_h], assembled
     /// from the per-hinge ``dualVolumeHessian`` / ``deficitAngleHessian`` and
     /// their gradients, with no finite differences. Supports exact Newton /
-    /// Gauss-Newton steps in the stationary-action relaxation.
+    /// Gauss-Newton steps in the stationary-action relaxation. Finite where the
+    /// circumcentres of the dual coincide, as on a Kuhn torus.
     [[nodiscard]] std::vector<std::vector<std::complex<double>>>
     actionHessianExact() const;
 
