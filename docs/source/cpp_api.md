@@ -151,6 +151,9 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} ClusterLineage.h
 ```
 
+```{doxygenfile} ComplexTransport.h
+```
+
 ### Emergent-proton observables
 
 ```{doxygenfile} Record.h
