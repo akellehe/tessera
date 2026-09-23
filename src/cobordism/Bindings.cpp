@@ -4486,6 +4486,76 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("Interior", ReggeHinges::Interior)
       .value("All", ReggeHinges::All);
 
+  py::enum_<HolonomyForm>(m, "HolonomyForm",
+      "Which function of the face holonomies the holonomy term of JointAction "
+      "is. Villain (the default) is the heat-kernel action in character form, "
+      "-beta_V sum_tau log W(F_tau) with W(F) = sum_m exp(-m^2/(2 beta)) F^m "
+      "and beta_V = beta / <m^2>_beta; Wilson is the plaquette form "
+      "beta sum_tau (1 - (F + 1/F)/2), the whitepaper's stand-in. Both have "
+      "the second variation beta L_1^up at trivial holonomy.")
+      .value("Villain", HolonomyForm::Villain)
+      .value("Wilson", HolonomyForm::Wilson);
+
+  py::class_<VillainSeries>(m, "VillainSeries",
+      "The truncated Laurent series W, F W' and (F d/dF)^2 W at one face "
+      "holonomy, the largest |m| kept, and certified bounds on the modulus of "
+      "each omitted tail.")
+      .def_readonly("value", &VillainSeries::value)
+      .def_readonly("first", &VillainSeries::first)
+      .def_readonly("second", &VillainSeries::second)
+      .def_readonly("term_count", &VillainSeries::termCount)
+      .def_readonly("value_tail", &VillainSeries::valueTail)
+      .def_readonly("first_tail", &VillainSeries::firstTail)
+      .def_readonly("second_tail", &VillainSeries::secondTail)
+      .def_readonly("magnitude", &VillainSeries::magnitude,
+                    "sum of |q^(m^2) F^m| over the kept terms: the rounding "
+                    "scale of W.");
+
+  py::class_<VillainCharacter>(m, "VillainCharacter",
+      "The Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of one face and "
+      "its potential phi(F) = -beta_V log W(F), beta_V = beta / <m^2>_beta, "
+      "which matches the Wilson form's curvature beta at trivial holonomy. "
+      "Derivatives use W'/W and W''/W only; the logarithm is the branch real "
+      "on the unit circle, continued radially.")
+      .def(py::init<double, double>(), py::arg("beta"),
+           py::arg("tolerance") = 1e-18)
+      .def_property_readonly("beta", &VillainCharacter::beta)
+      .def_property_readonly("tolerance", &VillainCharacter::tolerance)
+      .def_property_readonly("declared_term_count",
+                             &VillainCharacter::declaredTermCount,
+                             "M_0: the least m with exp(-m^2/(2 beta)) below "
+                             "the tolerance.")
+      .def_property_readonly("second_moment", &VillainCharacter::secondMoment,
+                             "<m^2>_beta at trivial holonomy.")
+      .def_property_readonly("matched_weight",
+                             &VillainCharacter::matchedWeight,
+                             "beta_V = beta / <m^2>_beta.")
+      .def("series", &VillainCharacter::series, py::arg("holonomy"))
+      .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"))
+      .def("potential", &VillainCharacter::potential, py::arg("holonomy"))
+      .def("first_derivative", &VillainCharacter::firstDerivative,
+           py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
+      .def("second_derivative", &VillainCharacter::secondDerivative,
+           py::arg("holonomy"), "(F d/dF)^2 phi.");
+
+  py::class_<HolonomyTruncation>(m, "HolonomyTruncation",
+      "The Villain truncation over every face at the current connection: the "
+      "declared tolerance and term count, the largest term count any face "
+      "needed, and the largest certified tail bounds relative to |W|. All "
+      "zero for the Wilson form.")
+      .def_readonly("form", &HolonomyTruncation::form)
+      .def_readonly("tolerance", &HolonomyTruncation::tolerance)
+      .def_readonly("declared_term_count",
+                    &HolonomyTruncation::declaredTermCount)
+      .def_readonly("maximum_term_count",
+                    &HolonomyTruncation::maximumTermCount)
+      .def_readonly("relative_value_tail",
+                    &HolonomyTruncation::relativeValueTail)
+      .def_readonly("relative_first_tail",
+                    &HolonomyTruncation::relativeFirstTail)
+      .def_readonly("relative_second_tail",
+                    &HolonomyTruncation::relativeSecondTail);
+
   py::class_<JointActionDeclaration>(m, "JointActionDeclaration",
       "Everything that fixes which action S(z, U, Gamma) a JointAction is: the "
       "carrier degree, the three coefficients, the carried covariance, the "
@@ -4521,9 +4591,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "order; required when stiffness_weight is nonzero.")
       .def_readwrite("holonomy_weight",
                      &JointActionDeclaration::holonomyWeight,
-                     "w_H, the coefficient on the face-holonomy term. It is "
-                     "the parameter the whitepaper calls beta when it takes "
-                     "the bare connection stiffness in Wilson-plaquette form.")
+                     "beta, the coupling of the face-holonomy term in the "
+                     "declared holonomy_form: the Wilson coefficient, or the "
+                     "Villain heat-kernel coupling (coefficient beta_V = "
+                     "beta / <m^2>_beta). Both give the bare stiffness "
+                     "beta L_1^up at trivial holonomy. Zero leaves the term "
+                     "out.")
+      .def_readwrite("holonomy_form", &JointActionDeclaration::holonomyForm,
+                     "Villain (default) or Wilson, the whitepaper's stand-in.")
+      .def_readwrite("villain_tolerance",
+                     &JointActionDeclaration::villainTolerance,
+                     "The relative tolerance below which a Villain coefficient "
+                     "exp(-m^2/(2 beta)) is left out of the series.")
       .def_readwrite("matter_weight", &JointActionDeclaration::matterWeight,
                      "w_M, the coefficient on tr(Gamma h(z, U)), the carried "
                      "state's bilinear action density. Zero is strict "
@@ -4547,8 +4626,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
       "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
       "S = w_R S_Regge(z) + w_S S_stiff(z) + w_H S_hol(U) + w_M tr(Gamma "
-      "h(z, U)) + sum_j xi_j (p_j(h) - p_j*), with S_hol the branch-free plaquette sum over the "
-      "face holonomies F_tau = prod_e U_e^eps. The stationarity conditions are "
+      "h(z, U)) + sum_j xi_j (p_j(h) - p_j*), with S_hol the branch-free sum of "
+      "the declared per-face potential (Villain by default, Wilson as the "
+      "stand-in) over the face holonomies F_tau = prod_e U_e^eps. The stationarity conditions are "
       "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
       "never the minimization of a selected real projection.\n\n"
       "Every per-edge vector is in getEdgeList() order and every per-cell "
@@ -4588,7 +4668,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("regge_hinge_count", &JointAction::reggeHingeCount,
            "The number of hinges the primal Regge sum runs over under the "
            "declared hinge rule.")
-      .def("holonomy_term", &JointAction::holonomyTerm, "w_H S_hol(U).")
+      .def("holonomy_term", &JointAction::holonomyTerm,
+           "S_hol(U) in the declared form, weight included. For the Villain "
+           "form it is the one quantity that needs log W, taken on the branch "
+           "real on the unit circle; it raises for a face holonomy at or "
+           "beyond a zero of W on the negative real axis.")
       .def("matter_term", &JointAction::matterTerm,
            "w_M tr(Gamma h(z, U)).")
       .def("spectral_term", &JointAction::spectralTerm,
@@ -4614,6 +4698,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "(d j)_x per vertex. It vanishes identically for every "
            "gauge-invariant term; a fixed Gamma held while the connection "
            "varies breaks the identity, and this measures by how much.")
+      .def("holonomy_hessian", &JointAction::holonomyHessian,
+           "sum_tau eps_tau,e eps_tau,e' (F d/dF)^2 phi(F_tau), flat |E| x |E| "
+           "in getEdgeList() order on stored orientations: the holonomy term's "
+           "exact contribution to the link block of the Jacobian in the "
+           "multiplicative coordinate U -> U e^delta. Minus it is the Hessian "
+           "in the real angles.")
+      .def("holonomy_truncation", &JointAction::holonomyTruncation,
+           "The Villain series truncation over the current face holonomies, "
+           "with certified relative tail bounds.")
       .def("hellmann_feynman_length_force",
            &JointAction::hellmannFeynmanLengthForce,
            "tr(Gamma dh/dz_e) per edge, the carried state's whole "

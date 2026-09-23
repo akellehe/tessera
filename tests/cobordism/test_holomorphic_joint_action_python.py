@@ -58,6 +58,9 @@ def _declaration(**overrides):
     # now that the primal form is the default.
     declaration.regge_form = cob.ReggeForm.Dual
     declaration.holonomy_weight = 0.0
+    # These suites assert the Wilson plaquette form's values (a zero term at
+    # trivial holonomy, the cosine current), so they declare it.
+    declaration.holonomy_form = cob.HolonomyForm.Wilson
     declaration.matter_weight = 0.0
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     for name, value in overrides.items():

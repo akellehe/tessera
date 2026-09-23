@@ -4,9 +4,11 @@
 #include "cobordism/JointAction.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <cmath>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -155,6 +157,197 @@ std::vector<::tessera::mesh::Simplex *> primalHinges(
 
 }  // namespace
 
+// ------------------------------------------------------------ the Villain form
+
+namespace {
+
+/// The largest term count the tail certification may raise \f$ M \f$ to.
+constexpr std::size_t kVillainTermCeiling = 100000;
+
+/// How far below the truncation bound \f$ |W| \f$ may fall before it is no
+/// longer certified nonzero: a value within this many tail bounds of zero is
+/// indistinguishable from a zero of the infinite series.
+constexpr double kVillainZeroMargin = 1e3;
+
+/// The largest distance from one of a ratio of consecutive \f$ W \f$ values
+/// that the radial continuation accepts, so the principal logarithm of every
+/// accepted ratio is the increment of the continued logarithm.
+constexpr double kVillainRatioBound = 0.25;
+
+/// The smallest step of the radial continuation, as a fraction of the path.
+constexpr double kVillainMinimumStep = 1e-12;
+
+}  // namespace
+
+VillainCharacter::VillainCharacter(double beta, double tolerance)
+    : beta_(beta), tolerance_(tolerance) {
+  if (!(beta > 0.0) || !std::isfinite(beta))
+    throw std::invalid_argument(
+        "VillainCharacter: the heat-kernel coupling beta must be positive and "
+        "finite; got " + std::to_string(beta));
+  if (!(tolerance > 0.0) || !(tolerance < 1.0))
+    throw std::invalid_argument(
+        "VillainCharacter: the relative coefficient tolerance must lie in "
+        "(0, 1); got " + std::to_string(tolerance));
+  q_ = std::exp(-1.0 / (2.0 * beta_));
+  // M_0: the least m >= 1 with exp(-m^2/(2 beta)) < tolerance.
+  declaredTerms_ = 1;
+  while (std::exp(-static_cast<double>(declaredTerms_ * declaredTerms_) /
+                  (2.0 * beta_)) >= tolerance_)
+    ++declaredTerms_;
+  const VillainSeries trivial = series(complexd{1.0, 0.0});
+  secondMoment_ = trivial.second.real() / trivial.value.real();
+}
+
+VillainSeries VillainCharacter::series(complexd holonomy) const {
+  const double modulus = std::abs(holonomy);
+  if (!(modulus > 0.0) || !std::isfinite(modulus))
+    throw std::invalid_argument(
+        "VillainCharacter::series: the face holonomy must be a finite nonzero "
+        "complex number");
+  const double r = std::max(modulus, 1.0 / modulus);
+
+  // Raise M from M_0 until every geometric tail ratio rho_k is at most 1/2.
+  std::size_t terms = declaredTerms_;
+  auto ratio = [&](std::size_t m, int k) {
+    const double grow = std::pow(static_cast<double>(m + 2) /
+                                     static_cast<double>(m + 1),
+                                 k);
+    return grow * std::pow(q_, static_cast<double>(2 * m + 3)) * r;
+  };
+  while (ratio(terms, 2) > 0.5) {
+    if (++terms > kVillainTermCeiling)
+      throw std::invalid_argument(
+          "VillainCharacter::series: no term count up to " +
+          std::to_string(kVillainTermCeiling) +
+          " certifies the tail at this holonomy");
+  }
+
+  VillainSeries out;
+  out.termCount = terms;
+  out.value = complexd{1.0, 0.0};
+  const complexd inverse = complexd{1.0, 0.0} / holonomy;
+  complexd up{1.0, 0.0};
+  complexd down{1.0, 0.0};
+  for (std::size_t m = 1; m <= terms; ++m) {
+    up *= holonomy;
+    down *= inverse;
+    const double md = static_cast<double>(m);
+    const double coefficient = std::exp(-md * md / (2.0 * beta_));
+    out.value += coefficient * (up + down);
+    out.magnitude += coefficient * (std::abs(up) + std::abs(down));
+    out.first += coefficient * md * (up - down);
+    out.second += coefficient * md * md * (up + down);
+  }
+
+  const double next = static_cast<double>(terms + 1);
+  const double leading = 2.0 * std::exp(-next * next / (2.0 * beta_) +
+                                        next * std::log(r));
+  out.valueTail = leading / (1.0 - ratio(terms, 0));
+  out.firstTail = leading * next / (1.0 - ratio(terms, 1));
+  out.secondTail = leading * next * next / (1.0 - ratio(terms, 2));
+  return out;
+}
+
+namespace {
+
+/// Whether a truncated value of \f$ W \f$ is certified nonzero: it exceeds, by
+/// the declared margin, its tail bound plus the rounding scale of the sum
+/// (machine epsilon times the sum of the moduli of the kept terms).
+bool certifiedNonzero(const VillainSeries &series) {
+  const double uncertainty =
+      series.valueTail +
+      std::numeric_limits<double>::epsilon() * series.magnitude;
+  return std::abs(series.value) > kVillainZeroMargin * uncertainty;
+}
+
+}  // namespace
+
+complexd VillainCharacter::logarithm(complexd holonomy) const {
+  const double modulus = std::abs(holonomy);
+  if (!(modulus > 0.0) || !std::isfinite(modulus))
+    throw std::invalid_argument(
+        "VillainCharacter::logarithm: the face holonomy must be a finite "
+        "nonzero complex number");
+  // The start of the radial path, on the unit circle, where W is real and
+  // positive: its principal logarithm is the real logarithm of a positive
+  // number, and it is the branch the continuation carries.
+  const complexd direction = holonomy / modulus;
+  const VillainSeries start = series(direction);
+  if (!(start.value.real() > 0.0) ||
+      std::abs(start.value.imag()) > 1e-12 * start.value.real())
+    throw std::logic_error(
+        "VillainCharacter::logarithm: W is not real and positive on the unit "
+        "circle, which contradicts its Poisson form");
+  complexd accumulated{std::log(start.value.real()), 0.0};
+  const double radial = std::log(modulus);
+  if (radial == 0.0) return accumulated;
+
+  auto at = [&](double t) {
+    const VillainSeries point = series(direction * std::exp(t * radial));
+    if (!certifiedNonzero(point))
+      throw std::domain_error(
+          "VillainCharacter::logarithm: W has a zero on the radial path to "
+          "this holonomy, so log W has no value on the branch real on the "
+          "unit circle there");
+    return point.value;
+  };
+
+  double t = 0.0;
+  double step = 0.125;
+  complexd previous = start.value;
+  while (t < 1.0) {
+    step = std::min(step, 1.0 - t);
+    const complexd middle = at(t + 0.5 * step);
+    const complexd end = at(t + step);
+    const complexd firstHalf = middle / previous;
+    const complexd secondHalf = end / middle;
+    if (std::abs(firstHalf - 1.0) > kVillainRatioBound ||
+        std::abs(secondHalf - 1.0) > kVillainRatioBound) {
+      step *= 0.5;
+      if (step < kVillainMinimumStep)
+        throw std::domain_error(
+            "VillainCharacter::logarithm: the radial continuation cannot "
+            "resolve W on the path to this holonomy");
+      continue;
+    }
+    accumulated += std::log(firstHalf) + std::log(secondHalf);
+    t += step;
+    previous = end;
+    step = std::min(2.0 * step, 0.125);
+  }
+  return accumulated;
+}
+
+complexd VillainCharacter::potential(complexd holonomy) const {
+  return -matchedWeight() * logarithm(holonomy);
+}
+
+namespace {
+
+VillainSeries certifiedSeries(const VillainCharacter &character,
+                              complexd holonomy) {
+  VillainSeries point = character.series(holonomy);
+  if (!certifiedNonzero(point))
+    throw std::domain_error(
+        "VillainCharacter: W is not certified nonzero at this holonomy, so the "
+        "potential's derivatives W'/W and W''/W are not defined there");
+  return point;
+}
+
+}  // namespace
+
+complexd VillainCharacter::firstDerivative(complexd holonomy) const {
+  const VillainSeries point = certifiedSeries(*this, holonomy);
+  return -matchedWeight() * point.first / point.value;
+}
+
+complexd VillainCharacter::secondDerivative(complexd holonomy) const {
+  const VillainSeries point = certifiedSeries(*this, holonomy);
+  const complexd mean = point.first / point.value;
+  return -matchedWeight() * (point.second / point.value - mean * mean);
+}
+
 // ------------------------------------------------------------------ workspace
 
 /// The geometry-derived quantities every stationarity query needs, assembled
@@ -268,6 +461,52 @@ ActionWorkspace::ActionWorkspace(const std::shared_ptr<Spacetime> &spacetime,
 
 }  // namespace
 
+namespace {
+
+/// The per-face potential of the declared holonomy form and its first two
+/// Maurer-Cartan derivatives, \f$ \phi \f$, \f$ D\phi \f$ and \f$ D^2\phi \f$
+/// with \f$ D=F\,d/dF \f$, the weight included. The Villain character is built
+/// once per query and shared by every face.
+class FacePotential {
+ public:
+  explicit FacePotential(const JointActionDeclaration &declaration)
+      : weight_(declaration.holonomyWeight) {
+    if (declaration.holonomyForm == HolonomyForm::Villain && weight_ > 0.0)
+      villain_.emplace(weight_, declaration.villainTolerance);
+  }
+
+  [[nodiscard]] bool active() const { return weight_ != 0.0; }
+
+  [[nodiscard]] complexd value(complexd holonomy) const {
+    if (!active()) return complexd{0.0, 0.0};
+    if (villain_) return villain_->potential(holonomy);
+    return weight_ * (complexd{1.0, 0.0} -
+                      0.5 * (holonomy + complexd{1.0, 0.0} / holonomy));
+  }
+
+  [[nodiscard]] complexd first(complexd holonomy) const {
+    if (!active()) return complexd{0.0, 0.0};
+    if (villain_) return villain_->firstDerivative(holonomy);
+    return -0.5 * weight_ * (holonomy - complexd{1.0, 0.0} / holonomy);
+  }
+
+  [[nodiscard]] complexd second(complexd holonomy) const {
+    if (!active()) return complexd{0.0, 0.0};
+    if (villain_) return villain_->secondDerivative(holonomy);
+    return -0.5 * weight_ * (holonomy + complexd{1.0, 0.0} / holonomy);
+  }
+
+  [[nodiscard]] const std::optional<VillainCharacter> &villain() const {
+    return villain_;
+  }
+
+ private:
+  double weight_;
+  std::optional<VillainCharacter> villain_;
+};
+
+}  // namespace
+
 // ------------------------------------------------------------------ the class
 
 JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
@@ -296,6 +535,18 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           "edge; got " +
           std::to_string(declaration_.referenceLengths.size()) + " for " +
           std::to_string(edges) + " edges");
+  }
+  if (declaration_.holonomyForm == HolonomyForm::Villain) {
+    if (declaration_.holonomyWeight < 0.0)
+      throw std::invalid_argument(
+          "JointAction: the Villain holonomy term's coupling beta is a "
+          "heat-kernel time and must be non-negative; got " +
+          std::to_string(declaration_.holonomyWeight));
+    if (!(declaration_.villainTolerance > 0.0) ||
+        !(declaration_.villainTolerance < 1.0))
+      throw std::invalid_argument(
+          "JointAction: the Villain coefficient tolerance must lie in (0, 1); "
+          "got " + std::to_string(declaration_.villainTolerance));
   }
   if (!declaration_.covariance.empty()) {
     const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
@@ -412,15 +663,15 @@ std::complex<double> JointAction::stiffnessTerm() const {
 }
 
 std::complex<double> JointAction::holonomyTerm() const {
-  if (declaration_.holonomyWeight == 0.0) return complexd{0.0, 0.0};
+  const FacePotential potential(declaration_);
+  if (!potential.active()) return complexd{0.0, 0.0};
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
                                   /*wantCarrier=*/false);
   complexd sum{0.0, 0.0};
   for (const complexd &holonomy : workspace.holonomies)
-    sum += complexd{1.0, 0.0} -
-           0.5 * (holonomy + complexd{1.0, 0.0} / holonomy);
-  return declaration_.holonomyWeight * sum;
+    sum += potential.value(holonomy);
+  return sum;
 }
 
 std::complex<double> JointAction::matterTerm() const {
@@ -568,27 +819,27 @@ namespace {
 
 /// The canonical Maurer-Cartan derivative of the face-holonomy term,
 /// \f$ U_e\,\partial S_{\rm hol}/\partial U_e
-///     = -\tfrac12\sum_\tau \epsilon_{\tau e}
-///       (\mathcal F_\tau-\mathcal F_\tau^{-1}) \f$,
+///     = \sum_\tau \epsilon_{\tau e}\,D\phi(\mathcal F_\tau) \f$,
 /// one entry per canonical degree-one cell.
 ///
 /// Exact in closed form: \f$ \mathcal F_\tau \f$ is a Laurent monomial in the
 /// links, so \f$ U_e\,\partial\mathcal F_\tau/\partial U_e
-/// = \epsilon_{\tau e}\mathcal F_\tau \f$ and
-/// \f$ U_e\,\partial\mathcal F_\tau^{-1}/\partial U_e
-/// = -\epsilon_{\tau e}\mathcal F_\tau^{-1} \f$.
+/// = \epsilon_{\tau e}\mathcal F_\tau \f$ and the chain rule gives
+/// \f$ U_e\,\partial\phi(\mathcal F_\tau)/\partial U_e
+/// = \epsilon_{\tau e}\,D\phi(\mathcal F_\tau) \f$.
 std::vector<complexd> holonomyLinkDerivative(const ActionWorkspace &workspace,
-                                             double weight) {
+                                             const FacePotential &potential) {
   std::vector<complexd> derivative(workspace.links.size(), complexd{0.0, 0.0});
-  if (weight == 0.0 || workspace.complex.dimension() < 2) return derivative;
+  if (!potential.active() || workspace.complex.dimension() < 2)
+    return derivative;
+  std::vector<complexd> perFace(workspace.holonomies.size());
+  for (std::size_t face = 0; face < perFace.size(); ++face)
+    perFace[face] = potential.first(workspace.holonomies[face]);
   for (const auto &entry : workspace.complex.boundaryEntries(2)) {
     const auto row = static_cast<std::size_t>(entry.row);
     const auto column = static_cast<std::size_t>(entry.column);
-    if (row >= derivative.size() || column >= workspace.holonomies.size())
-      continue;
-    const complexd holonomy = workspace.holonomies[column];
-    derivative[row] += -0.5 * weight * static_cast<double>(entry.value) *
-                       (holonomy - complexd{1.0, 0.0} / holonomy);
+    if (row >= derivative.size() || column >= perFace.size()) continue;
+    derivative[row] += static_cast<double>(entry.value) * perFace[column];
   }
   return derivative;
 }
@@ -603,7 +854,7 @@ std::vector<complexd> JointAction::linkStationarity() const {
   std::vector<complexd> stationarity(edges, complexd{0.0, 0.0});
 
   const auto holonomyPart =
-      holonomyLinkDerivative(workspace, declaration_.holonomyWeight);
+      holonomyLinkDerivative(workspace, FacePotential(declaration_));
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const long long canonical = workspace.canonicalOfEdge[edgeIndex];
     if (canonical < 0 ||
@@ -639,6 +890,76 @@ std::vector<complexd> JointAction::linkStationarity() const {
     stationarity[edgeIndex] += workspace.storedSign[edgeIndex] * canonicalPart;
   }
   return stationarity;
+}
+
+std::vector<complexd> JointAction::holonomyHessian() const {
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource,
+                                  /*wantCarrier=*/false);
+  const std::size_t edges = workspace.edges.size();
+  std::vector<complexd> hessian(edges * edges, complexd{0.0, 0.0});
+  const FacePotential potential(declaration_);
+  if (!potential.active() || workspace.complex.dimension() < 2) return hessian;
+
+  // Per face, the incidences (canonical edge, sign) of its boundary.
+  const std::size_t faces = workspace.holonomies.size();
+  std::vector<std::vector<std::pair<std::size_t, double>>> boundary(faces);
+  for (const auto &entry : workspace.complex.boundaryEntries(2)) {
+    const auto row = static_cast<std::size_t>(entry.row);
+    const auto column = static_cast<std::size_t>(entry.column);
+    if (row >= workspace.links.size() || column >= faces) continue;
+    boundary[column].emplace_back(row, static_cast<double>(entry.value));
+  }
+  const std::size_t cells = workspace.links.size();
+  std::vector<complexd> canonical(cells * cells, complexd{0.0, 0.0});
+  for (std::size_t face = 0; face < faces; ++face) {
+    const complexd curvature = potential.second(workspace.holonomies[face]);
+    for (const auto &[a, sa] : boundary[face])
+      for (const auto &[b, sb] : boundary[face])
+        canonical[a * cells + b] += sa * sb * curvature;
+  }
+  // U_stored = U_canonical^{s}, so U d/dU on the stored orientation is s times
+  // the canonical one, once per index.
+  for (std::size_t e = 0; e < edges; ++e) {
+    const long long ce = workspace.canonicalOfEdge[e];
+    if (ce < 0) continue;
+    for (std::size_t f = 0; f < edges; ++f) {
+      const long long cf = workspace.canonicalOfEdge[f];
+      if (cf < 0) continue;
+      hessian[e * edges + f] =
+          workspace.storedSign[e] * workspace.storedSign[f] *
+          canonical[static_cast<std::size_t>(ce) * cells +
+                    static_cast<std::size_t>(cf)];
+    }
+  }
+  return hessian;
+}
+
+HolonomyTruncation JointAction::holonomyTruncation() const {
+  HolonomyTruncation report;
+  report.form = declaration_.holonomyForm;
+  if (declaration_.holonomyForm != HolonomyForm::Villain) return report;
+  report.tolerance = declaration_.villainTolerance;
+  const FacePotential potential(declaration_);
+  if (!potential.villain()) return report;
+  const VillainCharacter &character = *potential.villain();
+  report.declaredTermCount = character.declaredTermCount();
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource,
+                                  /*wantCarrier=*/false);
+  for (const complexd &holonomy : workspace.holonomies) {
+    const VillainSeries point = character.series(holonomy);
+    const double scale = std::abs(point.value);
+    report.maximumTermCount = std::max(report.maximumTermCount,
+                                       point.termCount);
+    report.relativeValueTail =
+        std::max(report.relativeValueTail, point.valueTail / scale);
+    report.relativeFirstTail =
+        std::max(report.relativeFirstTail, point.firstTail / scale);
+    report.relativeSecondTail =
+        std::max(report.relativeSecondTail, point.secondTail / scale);
+  }
+  return report;
 }
 
 namespace {

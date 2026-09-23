@@ -25,12 +25,19 @@ the sheet convention (WP §8), attached sheet to sheet.
 One scan point
 --------------
 For each declared (kappa, beta), with kappa = 8 pi G in lattice units and beta
-the Wilson-plaquette coefficient, and for each content (the number of quarks in
-each of the three bands of the host), the driver
+the coupling of the face-holonomy term, and for each content (the number of
+quarks in each of the three bands of the host), the driver
 
 1. relaxes both edge fields under the joint action
-   S = (1/kappa) S_Regge(primal) + (1/kappa) (1/2) ||l - l0||^2 + beta S_hol
+   S = (1/kappa) S_Regge(primal) + (1/kappa) (1/2) ||l - l0||^2 + S_hol
        + tr(Gamma h_1)
+   whose holonomy term S_hol is declared by ``--holonomy``: the Villain form
+   -beta_V sum_tau log W(F_tau), W(F) = sum_m exp(-m^2/(2 beta)) F^m,
+   beta_V = beta / <m^2>_beta (the default, the paper's holonomy term), or the
+   Wilson form beta sum_tau (1 - cos Theta_tau) (the paper's stand-in). Both
+   have the bare connection stiffness beta L_1^up at trivial holonomy; at the
+   host's quarter-turn holonomies the Wilson stiffness vanishes and the
+   Villain stiffness does not;
    with certificates-blind mean-field backreaction to self-consistency
    (`HolomorphicRelaxation` inside `SelfConsistentMeanField`), the carried
    density being the content's band filling;
@@ -79,7 +86,7 @@ Running it
 
     python -m tessera.drivers.baryon_poles run \\
         --kappa 0.25 0.5 1 2 4 --beta 0.5 1 2 5 --json poles.json \\
-        --out poles.png [--live]
+        --out poles.png [--holonomy {villain,wilson}] [--live]
 
 ``--live`` draws each completed scan point while the scan runs, on an
 interactive matplotlib backend, with the computation on a worker thread and the
@@ -114,6 +121,12 @@ TARGET_MASS_SQUARED_RATIO = TARGET_MASS_RATIO ** 2
 #: stiffness dominating the bare one.
 DECLARED_KAPPAS = (0.25, 0.5, 1.0, 2.0, 4.0)
 DECLARED_BETAS = (0.5, 1.0, 2.0, 5.0)
+
+#: The declared holonomy term: the Villain form, the paper's holonomy term.
+DECLARED_HOLONOMY = "villain"
+#: The forms --holonomy accepts, and the library's name for each.
+HOLONOMY_FORMS = {"villain": cob.HolonomyForm.Villain,
+                  "wilson": cob.HolonomyForm.Wilson}
 
 #: The squared edge length of the regular tetrahedron (the paper's a^2 = 8).
 DECLARED_EDGE_SQUARED = 8.0
@@ -216,8 +229,10 @@ def sheet_squared_lengths(spacetime, sheet):
 
 
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
-                       matter_weight=1.0, reference_lengths=None):
-    """The joint action of the calculation (WP §7 line 256, line 282)."""
+                       matter_weight=1.0, reference_lengths=None,
+                       holonomy=DECLARED_HOLONOMY):
+    """The joint action of the calculation (WP §3, §7), with the holonomy term
+    in the declared form, ``"villain"`` or ``"wilson"``."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
@@ -232,6 +247,7 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
         [complex(edge.getLength())
          for edge in spacetime.getEdgeList().toVector()])
     declaration.holonomy_weight = beta
+    declaration.holonomy_form = HOLONOMY_FORMS[holonomy]
     declaration.matter_weight = matter_weight
     return declaration
 
@@ -574,7 +590,8 @@ def couplings_and_stiffness(spacetime, kappa, beta, config):
                                       config["regge_hinges"],
                                       matter_weight=0.0,
                                       reference_lengths=config[
-                                          "reference_lengths"]))
+                                          "reference_lengths"],
+                                      holonomy=config["holonomy"]))
     solve = cob.HolomorphicRelaxation(geometric, _hessian_declaration(config))
     count = solve.variable_count()
     hessian = np.asarray(solve.jacobian()).reshape(solve.equation_count(),
@@ -602,7 +619,8 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
         return cob.JointAction(spacetime, action_declaration(
             spacetime, kappa, beta, config["regge_hinges"],
             matter_weight=0.0,
-            reference_lengths=config["reference_lengths"]))
+            reference_lengths=config["reference_lengths"],
+            holonomy=config["holonomy"]))
 
     before = geometric_value()
     s0 = complex(before.value())
@@ -709,7 +727,8 @@ def relax_content(content, kappa, beta, config, actions):
     the carried density filling the bands of the T-averaged operator."""
     spacetime = build_host(config["edge_squared"])
     declaration = action_declaration(spacetime, kappa, beta,
-                                     config["regge_hinges"])
+                                     config["regge_hinges"],
+                                     holonomy=config["holonomy"])
     config.setdefault("reference_lengths",
                       list(declaration.reference_lengths))
     action = cob.JointAction(spacetime, declaration)
@@ -877,8 +896,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
     recursion = recursion_read(spacetime, config)
     quark = quark_conditions(spacetime, alignment, recursion,
                              averaged_residual, report)
+    truncation_read = action.holonomy_truncation()
     return {
         "content": list(content),
+        "holonomy": config["holonomy"],
         "carrier_content": carrier_content,
         "seconds": time.time() - started,
         "relaxation": {
@@ -898,6 +919,18 @@ def evaluate_content(content, kappa, beta, config, alignment):
                              spacetime.getEdgeList().toVector()],
             "face_holonomies": [complex(f) for f in
                                 action.face_holonomies()],
+            "holonomy_truncation": {
+                "tolerance": float(truncation_read.tolerance),
+                "declared_term_count": int(
+                    truncation_read.declared_term_count),
+                "maximum_term_count": int(truncation_read.maximum_term_count),
+                "relative_value_tail": float(
+                    truncation_read.relative_value_tail),
+                "relative_first_tail": float(
+                    truncation_read.relative_first_tail),
+                "relative_second_tail": float(
+                    truncation_read.relative_second_tail),
+            },
             "unit_circle_departure": max(dep for _, dep in supports),
             "symmetry_departure": float(compensation),
             "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
@@ -1065,7 +1098,8 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
         records.append(record)
         if on_content is not None:
             on_content(record)
-    return {"kappa": kappa, "beta": beta, "contents": records,
+    return {"kappa": kappa, "beta": beta, "holonomy": config["holonomy"],
+            "contents": records,
             "ratios": ratios(records), "pole_table": pole_table(records)}
 
 
@@ -1168,7 +1202,8 @@ def ratios(records):
 
 def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    edge_squared=DECLARED_EDGE_SQUARED,
-                   regge_hinges="interior", selected_contents=None):
+                   regge_hinges="interior", selected_contents=None,
+                   holonomy=DECLARED_HOLONOMY):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps."""
@@ -1179,6 +1214,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "betas": list(betas),
         "edge_squared": edge_squared,
         "regge_hinges": regge_hinges,
+        "holonomy": holonomy,
         "band_tolerance": DECLARED_BAND_TOLERANCE,
         "newton_iterations": 40,
         "newton_tolerance": 1e-11,
@@ -1525,8 +1561,13 @@ def build_parser():
                           % (DECLARED_KAPPAS,))
     run.add_argument("--beta", type=float, nargs="+",
                      default=list(DECLARED_BETAS),
-                     help="Wilson-plaquette beta values (default %s)"
+                     help="beta values of the holonomy term (default %s)"
                           % (DECLARED_BETAS,))
+    run.add_argument("--holonomy", choices=tuple(HOLONOMY_FORMS),
+                     default=DECLARED_HOLONOMY,
+                     help="the holonomy term: villain, the paper's "
+                          "heat-kernel form, or wilson, its plaquette "
+                          "stand-in (default %s)" % DECLARED_HOLONOMY)
     run.add_argument("--edge-squared", type=float,
                      default=DECLARED_EDGE_SQUARED,
                      help="squared edge length of the tetrahedron (default "
@@ -1552,7 +1593,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     config = default_config(args.kappa, args.beta, args.edge_squared,
-                            args.regge_hinges)
+                            args.regge_hinges, holonomy=args.holonomy)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file) if args.live

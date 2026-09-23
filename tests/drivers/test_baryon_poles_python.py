@@ -132,6 +132,38 @@ def test_the_covariant_operator_at_the_monopole_is_not_rotation_symmetric():
     assert worst / np.linalg.norm(h) > 0.1
 
 
+def test_the_holonomy_term_is_declared_villain_by_default():
+    assert bp.build_parser().parse_args(["run"]).holonomy == "villain"
+    assert bp.build_parser().parse_args(
+        ["run", "--holonomy", "wilson"]).holonomy == "wilson"
+    assert bp.default_config()["holonomy"] == "villain"
+    spacetime = bp.build_host()
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0)
+    assert declaration.holonomy_form == cob.HolonomyForm.Villain
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0, holonomy="wilson")
+    assert declaration.holonomy_form == cob.HolonomyForm.Wilson
+
+
+def test_the_host_connection_is_stiff_under_villain_and_not_under_wilson():
+    """Every face of the host carries F = +-i, where the Wilson curvature
+    beta cos(theta) vanishes: all 18 phase directions are flat. The Villain
+    curvature there is beta_V (<m^2>_i - <m>_i^2) per face, so the nine
+    coexact directions have stiffness 4 kappa(i) and the nine pure-gauge ones
+    zero."""
+    beta = 1.0
+    spacetime = bp.build_host()
+    wilson = np.array(cob.JointAction(spacetime, bp.action_declaration(
+        spacetime, 1.0, beta, holonomy="wilson")).holonomy_hessian())
+    assert np.max(np.abs(wilson)) < 1e-12
+    villain = np.array(cob.JointAction(spacetime, bp.action_declaration(
+        spacetime, 1.0, beta)).holonomy_hessian()).reshape(18, 18)
+    kappa = -cob.VillainCharacter(beta).second_derivative(1j).real
+    assert kappa == pytest.approx(0.9979584724666767, abs=1e-12)
+    values = np.sort(np.linalg.eigvalsh(-villain.real))
+    assert np.max(np.abs(values[:9])) < 1e-11
+    assert np.allclose(values[9:], 4.0 * kappa, atol=1e-11)
+
+
 # ------------------------------------------------------------------ ratios
 
 
