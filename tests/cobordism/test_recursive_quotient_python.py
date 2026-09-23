@@ -1099,7 +1099,7 @@ class TestCraigBampton(unittest.TestCase):
         # The retained fixed-interface eigenvalues, read off the basis columns.
         basis = np.array(read.basis)
         kept = []
-        for column in basis[:, len(q.interfaceIndices()):].T:
+        for column in basis[:, len(q.interfaceIndices):].T:
             support = np.flatnonzero(np.abs(column) > 1e-8)
             self.assertEqual(len(support), 1)
             kept.append(L[support[0], support[0]])
