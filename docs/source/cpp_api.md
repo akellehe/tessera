@@ -55,6 +55,12 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} ForwardDeclarations.h
 ```
 
+```{doxygenfile} ReggeContinuation.h
+```
+
+```{doxygenfile} RiemannSheet.h
+```
+
 ## Pachner moves
 
 ```{doxygenfile} PachnerMove.h
@@ -152,6 +158,10 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 
 ```{doxygenfile} ComplexTransport.h
+```{doxygenfile} SheetedColor.h
+```
+
+```{doxygenfile} MonopoleSpin.h
 ```
 
 ### Emergent-proton observables
@@ -227,9 +237,24 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} RecursiveQuotient.h
 ```
+```{doxygenfile} LevelRecursion.h
+```
+```{doxygenfile} MappingCylinder.h
+```
+```{doxygenfile} DressedFluctuation.h
+```
 ```{doxygenfile} PencilLayer.h
 ```
 ```{doxygenfile} LevenbergMarquardt.h
+```
+
+```{doxygenfile} JointAction.h
+```
+
+```{doxygenfile} HolomorphicRelaxation.h
+```
+
+```{doxygenfile} SelfConsistentMeanField.h
 ```
 
 ## Whitney-form Hodge Laplacian pencil

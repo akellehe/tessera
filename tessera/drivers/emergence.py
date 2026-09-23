@@ -88,6 +88,7 @@ as emergent.
 
 import argparse
 import cmath
+import inspect
 import itertools
 import json
 import math
@@ -209,6 +210,16 @@ DECLARED_REGISTER_DEGREES = (1,)
 DECLARED_HODGE_DEGREES = (0, 1, 2, 3)
 #: Post-hoc analysis degrees. Separate from the objective's domain.
 DECLARED_ANALYSIS_DEGREES = (1,)
+#: Cobordism frames the overlay retains.
+#:
+#: One engine unit is one cobordism frame, so the retained frames are the last
+#: `DECLARED_FRAME_HISTORY` units. A candidate's lifetime, its smallest
+#: adjacent-frame support overlap, its per-frame band family and its lifetime
+#: transports are all MEASURED across them; with one frame retained there is no
+#: history, every candidate has a one-frame track, and the persistence
+#: certificates fail by name rather than passing vacuously. Four clears the
+#: classifier's two-frame stability floor with room to lose a frame.
+DECLARED_FRAME_HISTORY = 4
 #: Modularity resolution the clusters are read at.
 DECLARED_RESOLUTION = 1.0
 #: Multipliers of the analysis resolution that the modularity scan covers,
@@ -679,14 +690,25 @@ class AnimationFrame:
     so a panel can always say what it is showing.
     """
 
-    CERTIFICATE_CHANNELS = ("clusters", "bands", "anchors", "transports",
-                            "statistics", "crossings", "spin", "verdict")
+    CERTIFICATE_CHANNELS = ("clusters", "bands", "tracks", "anchors",
+                            "transports", "statistics", "crossings", "spin",
+                            "verdict")
 
-    def __init__(self, node, spacetime, step, config, inputs=None):
+    def __init__(self, node, spacetime, step, config, inputs=None,
+                 previous=None):
         self.step = step
         self.config = config
         self.spacetime = spacetime
         self.inputs = None
+        # The preceding cobordism frames this read may measure a lifetime
+        # across, oldest first. One engine unit is one frame; the drive hands
+        # over the frames it has already published and this read keeps the
+        # most recent `frame_history - 1` of them, so the family this frame
+        # completes is exactly `frame_history` long.
+        depth = max(1, int(config.get("frame_history",
+                                      DECLARED_FRAME_HISTORY)))
+        earlier = list(previous or [])
+        self.previous_frames = earlier[-(depth - 1):] if depth > 1 else []
         self.objective = self._read_objective(node)
         self.layout = self._read_layout(spacetime)
         # Drawing-only, like `layout`: neither appears in `to_json`, so the
@@ -701,6 +723,7 @@ class AnimationFrame:
         reads."""
         self.clusters = self._read_clusters(spacetime, config)
         self.bands = self._read_bands(spacetime, config)
+        self.tracks = self._read_frame_tracks(spacetime)
         self.states = self._build_states()
         self.anchors = self._read_anchors()
         self.transports = self._read_transports(spacetime)
@@ -988,6 +1011,17 @@ class AnimationFrame:
     def _read_bands(self, spacetime, config):
         self.candidates = []
         self.candidate_components = []
+        # How an earlier frame's candidate is addressed from this one. A frame
+        # track names a component by its POSITION in that frame's component
+        # list, so each candidate records the position of the component it was
+        # read on (-1 for a support only the band proposer offered, which no
+        # modularity track follows) and its degree slot, and `candidate_slots`
+        # maps a (position, slot) pair back to the candidate index.
+        self.candidate_positions = []
+        self.candidate_slots = {}
+        self.degree_count = max(1, len(list(config["degrees"])))
+        position_of = {id(component): index
+                       for index, component in enumerate(self.components)}
         if not self.supports:
             return Absent("no cluster to carry a band")
         settings = obs.SpectralFiberConfig()
@@ -995,11 +1029,16 @@ class AnimationFrame:
         tracker = obs.SpectralFiberTracker(spacetime, settings)
         rows = []
         for support, component, proposers in self.supports:
-            for degree in config["degrees"]:
+            position = (-1 if component is None
+                        else position_of.get(id(component), -1))
+            for slot, degree in enumerate(config["degrees"]):
                 # A support the band proposed and modularity did not carries no
                 # modularity component; the slot stays empty rather than
                 # borrowing another support's identity.
                 self.candidate_components.append(component)
+                self.candidate_positions.append(position)
+                if position >= 0:
+                    self.candidate_slots[(position, slot)] = len(self.candidates)
                 try:
                     read = tracker.enumerateBands(support, degree)
                 except Exception as error:                # noqa: BLE001
@@ -1043,6 +1082,109 @@ class AnimationFrame:
             return Absent("no band read was attempted")
         return {"rows": rows,
                 "accepted": sum(1 for r in rows if r.get("accepted"))}
+
+    def _read_frame_tracks(self, spacetime):
+        """The component tracks across the retained cobordism frames.
+
+        `PersistentModularity.trackAcrossFrames` is the library's own supplier
+        of the two quantities the acceptance conjuncts consume -- the lifetime
+        in consecutive frames and the smallest adjacent-frame support overlap
+        -- so neither is computed here and neither is assumed. A run with no
+        retained frame has a one-frame track per component, which is a
+        measured fact about a single-frame read and not a lifetime.
+        """
+        self.frame_tracks = []
+        if not self.components:
+            return Absent("no cluster to follow across frames")
+        frames = [list(f.components) for f in self.previous_frames]
+        frames.append(list(self.components))
+        try:
+            modularity = obs.PersistentModularity.fromSpacetime(spacetime)
+            self.frame_tracks = list(modularity.trackAcrossFrames(frames, 0.5))
+        except Exception as error:                        # noqa: BLE001
+            return Absent("frame tracking failed: %s" % error)
+        if not self.frame_tracks:
+            return Absent("no component was followed across the frames")
+        lifetimes = [int(t.frames) for t in self.frame_tracks]
+        return {"frames": len(frames),
+                "tracks": len(self.frame_tracks),
+                "maxLifetime": max(lifetimes),
+                "minAdjacentOverlap": _finite(
+                    min(float(t.minAdjacentOverlap)
+                        for t in self.frame_tracks))}
+
+    def _track_of(self, position):
+        """The track this frame's component `position` sits at the end of."""
+        current = len(self.previous_frames)
+        for track in getattr(self, "frame_tracks", []):
+            indices = list(track.memberIndices)
+            if track.lastFrame == current and indices and \
+                    indices[-1] == position:
+                return track
+        return None
+
+    def _band_family(self, track, slot):
+        """The candidate's band at each frame of its tracked lifetime.
+
+        In frame order, and only the run of frames that reaches the current
+        one: a gap in the family is a gap in the evidence, and the stability
+        certificate is decided on CONSECUTIVE frames. `slot` is the candidate's
+        degree slot within its component.
+        """
+        history = list(self.previous_frames) + [self]
+        run = []
+        for offset in range(len(list(track.members)) - 1, -1, -1):
+            frame_index = int(track.firstFrame) + offset
+            if frame_index >= len(history):
+                break
+            frame = history[frame_index]
+            member = int(list(track.memberIndices)[offset])
+            index = getattr(frame, "candidate_slots", {}).get((member, slot))
+            candidates = getattr(frame, "candidates", [])
+            if index is None or index >= len(candidates) \
+                    or candidates[index] is None:
+                break                    # the run ends where the candidate does
+            run.append(candidates[index])
+        run.reverse()
+        return run
+
+    def _lifetime_transports(self, spacetime, family):
+        """The world-tube link between consecutive frames of `family`.
+
+        A link whose source cells no longer exist in the current complex is an
+        UNKNOWN link: it is left out of the family rather than reported as a
+        leakage nobody measured.
+        """
+        connection = obs.FiberConnection()
+        links = []
+        for index in range(1, len(family)):
+            try:
+                links.append(connection.transportOnSpacetime(
+                    spacetime, family[index], family[index - 1]))
+            except Exception:                             # noqa: BLE001
+                continue
+        return links
+
+    def _lifetime_winding(self, links, config):
+        """The determinant-line winding of the lifetime family.
+
+        With no declared closure the family is an open cobordism segment: its
+        phase is reported and the winding stays unknown, because an open path
+        has no integer winding and inventing one would be a measurement nobody
+        made. `"closed-family"` is the caller DECLARING the world tube closed.
+        """
+        if not links:
+            return None
+        connection = obs.FiberConnection()
+        closure = str(config.get("lifetime_winding_closure", "none"))
+        try:
+            if closure == "closed-family":
+                return connection.closedFamilyWinding(links)
+            spec = obs.WindingClosureSpec()
+            spec.mode = obs.WindingClosureSpec.Mode.NONE
+            return connection.openSegmentWinding(links, spec)
+        except Exception:                                 # noqa: BLE001
+            return None
 
     def _build_states(self):
         """The pure Slater covariance of each accepted band projector.
@@ -1095,11 +1237,33 @@ class AnimationFrame:
             if state is not None:
                 evidence.parityRead = state.wickParity()
                 evidence.occupationRead = state.wickTotalNumber()
-            # This overlay reads ONE cobordism frame, so the frame lifetime is
-            # one and its adjacent-frame overlap is vacuously one. Both are
-            # MEASURED facts about this read.
-            evidence.frameLifetime = 1.0
-            evidence.frameMinOverlap = 1.0
+            # The multi-frame evidence. The lifetime and the smallest
+            # adjacent-frame overlap come from the candidate's frame track, its
+            # band family from the retained frames, and its lifetime transports
+            # from the links between consecutive members of that family. A
+            # candidate with no track was never followed: both quantities stay
+            # unmeasured and the classifier names them, rather than a vacuous
+            # lifetime of one standing in for a measurement.
+            positions = getattr(self, "candidate_positions", [])
+            position = positions[index] if index < len(positions) else -1
+            # A support only the band proposer offered carries no modularity
+            # component, so no frame track follows it: its lifetime is
+            # unmeasured and the classifier names it.
+            track = None if position < 0 else self._track_of(position)
+            if track is not None:
+                evidence.frameLifetime = float(track.frames)
+                evidence.frameMinOverlap = float(track.minAdjacentOverlap)
+                slot = next((s for (p, s), i
+                             in self.candidate_slots.items() if i == index), 0)
+                family = self._band_family(track, slot)
+                if family:
+                    evidence.colorBandFrames = family
+                links = self._lifetime_transports(self.spacetime, family)
+                if links:
+                    evidence.lifetimeTransports = links
+                    winding = self._lifetime_winding(links, self.config)
+                    if winding is not None:
+                        evidence.winding = winding
             try:
                 read = classifier.classifyQuark(evidence)
             except Exception as error:                    # noqa: BLE001
@@ -1466,6 +1630,7 @@ class AnimationFrame:
             "objective": self.objective,
             "clusters": self.clusters,
             "bands": self.bands,
+            "tracks": self.tracks,
             "anchors": self.anchors,
             "transports": self.transports,
             "statistics": self.statistics,
@@ -1500,6 +1665,23 @@ def build_emergence_node(config):
     # M0 is held, not targeted. It remains part of the scored cobordism.
     node.declare_pinned_region(M0_REGION, set(boundary_vertices(host)))
     return node, None
+
+
+def _accepts_previous_frames(frame_factory):
+    """Whether a frame factory takes the frames published before it.
+
+    Decided by INSPECTING the callable rather than by calling it and catching
+    a TypeError, which would swallow a TypeError raised inside a factory that
+    does accept them.
+    """
+    try:
+        parameters = inspect.signature(frame_factory).parameters
+    except (TypeError, ValueError):
+        return False
+    if "previous" in parameters:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD
+               for p in parameters.values())
 
 
 def _drive(config, node_factory, frame_factory, reporter, *,
@@ -1555,7 +1737,21 @@ def _drive(config, node_factory, frame_factory, reporter, *,
     # committed move onward. Reading it would freeze every panel at the initial
     # geometry while the objective tracked something else entirely -- the two
     # diverge silently, with no error and no empty frame to give it away.
-    frames = [frame_factory(node, node.spacetime(), 0, config, inputs)]
+    # The frame factory is handed the frames already published, so each frame
+    # can measure a lifetime across them. A caller's own factory that does not
+    # take them still works and simply reads one frame, which is what every
+    # earlier build did.
+    accepts_previous = _accepts_previous_frames(frame_factory)
+
+    def make_frame(step_index):
+        if accepts_previous:
+            return frame_factory(node, node.spacetime(), step_index, config,
+                                 inputs, previous=frames)
+        return frame_factory(node, node.spacetime(), step_index, config,
+                             inputs)
+
+    frames = []
+    frames.append(make_frame(0))
     if progress:
         reporter(frames[-1])
     if on_frame is not None:
@@ -1590,8 +1786,7 @@ def _drive(config, node_factory, frame_factory, reporter, *,
         if stop_requested is not None and stop_requested():
             terminator = Terminator.CANCELLED
             break
-        frames.append(frame_factory(node, node.spacetime(), step, config,
-                                    inputs))
+        frames.append(make_frame(step))
         if progress:
             reporter(frames[-1])
         if on_frame is not None:
@@ -2849,6 +3044,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
         "degrees": list(DECLARED_ANALYSIS_DEGREES),
+        "frame_history": int(DECLARED_FRAME_HISTORY),
         "betti_degrees": list(DECLARED_BETTI_DEGREES),
         "inputs": "neutral",
     })

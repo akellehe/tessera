@@ -267,9 +267,20 @@ class RecursiveQuotient {
       double lowerGap{std::numeric_limits<double>::quiet_NaN()};
       /// Distance to the nearest eigenvalue above the band; NaN when unknown.
       double upperGap{std::numeric_limits<double>::quiet_NaN()};
-      /// The band's frequency window [min Re, max Re].
+      /// The band's real extent [min Re, max Re]: the projection of its
+      /// eigenvalues onto the real axis.
       double frequencyLower{std::numeric_limits<double>::quiet_NaN()};
       double frequencyUpper{std::numeric_limits<double>::quiet_NaN()};
+      /// The band's window disc: the closed disc \f$ |z - c| \le \rho \f$
+      /// in the complex spectral plane, with centre \f$ c \f$ and radius
+      /// \f$ \rho \f$, that the band was certified on. A band of a non-normal
+      /// or complex symmetric operator has a complex spectrum, and a disc is
+      /// the region that encloses it; the real extent alone does not. Quiet
+      /// NaN when the band was declared by its real extent only, in which case
+      /// `certifiedFiberSum` derives the disc whose diameter is that extent.
+      std::complex<double> windowCentre{std::numeric_limits<double>::quiet_NaN(),
+                                        std::numeric_limits<double>::quiet_NaN()};
+      double windowRadius{std::numeric_limits<double>::quiet_NaN()};
       /// Whether the band met its producing configuration's certification
       /// thresholds. An uncertified band is still summed, and makes the
       /// labeled sum's certificate fail to hold.
@@ -288,9 +299,15 @@ class RecursiveQuotient {
       double lowerGap{std::numeric_limits<double>::quiet_NaN()};
       /// Isolation gap above the band, from the producing band.
       double upperGap{std::numeric_limits<double>::quiet_NaN()};
-      /// The band's frequency window.
+      /// The band's real extent [min Re, max Re].
       double frequencyLower{std::numeric_limits<double>::quiet_NaN()};
       double frequencyUpper{std::numeric_limits<double>::quiet_NaN()};
+      /// The band's window disc, centre and radius (see `CertifiedBand`):
+      /// the band's own when it declared one, else the disc whose diameter is
+      /// its real extent.
+      std::complex<double> windowCentre{std::numeric_limits<double>::quiet_NaN(),
+                                        std::numeric_limits<double>::quiet_NaN()};
+      double windowRadius{std::numeric_limits<double>::quiet_NaN()};
       /// Whether the producing band was accepted.
       bool accepted{false};
       /// The producing band's certificate.
@@ -433,11 +450,24 @@ class RecursiveQuotient {
 
     /// Craig--Bampton / AMLS retained-mode surrogate over a declared window.
     struct CraigBamptonRead {
-      /// Declared frequency window, lower edge.
+      /// The declared window disc: the closed disc \f$ |\theta - c| \le \rho \f$
+      /// in the complex spectral plane with centre \f$ c \f$ and radius
+      /// \f$ \rho \f$. A reduced eigenvalue is claimed exactly when it lies in
+      /// it.
+      std::complex<double> windowCentre{0.0, 0.0};
+      double windowRadius{0.0};
+      /// The retention radius \f$ \rho_{\text{cut}} \ge \rho \f$: a
+      /// fixed-interface mode of a component is retained exactly when its
+      /// eigenvalue \f$ \theta \f$ has \f$ |\theta - c| \le \rho_{\text{cut}} \f$,
+      /// its distance from the centre in the complex plane.
+      double retentionRadius{0.0};
+      /// The real extent of the window disc, \f$ [\mathrm{Re}\,c - \rho,\
+      /// \mathrm{Re}\,c + \rho] \f$: its projection onto the real axis, which
+      /// is the window itself when the spectrum is real.
       double windowLower{0.0};
-      /// Declared frequency window, upper edge.
       double windowUpper{0.0};
-      /// Fixed-interface eigenvalue cutoff used for mode retention.
+      /// \f$ \mathrm{Re}\,c + \rho_{\text{cut}} \f$, the real extent of the
+      /// retention disc's upper edge.
       double modeCutoff{0.0};
       /// Retained fixed-interface mode count per component.
       std::vector<int> retainedModes{};
@@ -451,10 +481,16 @@ class RecursiveQuotient {
       /// positive definite. The reduced eigenproblem is
       /// \f$ K y = \lambda M y \f$.
       std::vector<std::complex<double>> reducedMass{};
-      /// Smallest discarded fixed-interface eigenvalue minus `windowUpper`;
-      /// +inf when nothing was discarded.
+      /// \f$ \min_{\text{discarded}} |\theta - c| - \rho \f$: how far the
+      /// nearest discarded fixed-interface eigenvalue sits outside the window
+      /// disc; +inf when nothing was discarded. For a real spectrum and a
+      /// discarded mode above the window this is the eigenvalue minus
+      /// `windowUpper`.
       double discardedModeGap{0.0};
-      /// Reduced eigenvalues inside the window, ascending.
+      /// The reduced eigenvalues inside the window disc, ascending by
+      /// \f$ (\mathrm{Re}, \mathrm{Im}) \f$, and their real parts in the same
+      /// order (the eigenvalues themselves when the spectrum is real).
+      std::vector<std::complex<double>> windowSpectrum{};
       std::vector<double> windowEigenvalues{};
       /// Fine-space relative eigenresiduals
       /// \f$ \|L V y - \lambda V y\| / (\|L\|\,\|V y\|) \f$, one per window
@@ -778,18 +814,61 @@ class RecursiveQuotient {
                                                 double radius,
                                                 int nodes = 64) const;
 
-    /// Craig--Bampton retained-mode basis over the declared window: retain
-    /// per-component fixed-interface modes with eigenvalue <= `modeCutoff`
-    /// (must be >= `windowUpper`). Hermitian regimes with a positive chain
-    /// metric only. `residualTolerance` is the declared acceptance residual
-    /// the certificate holds against; negative selects the strict
-    /// `Options::tolerance`, under which a truncated surrogate reports
-    /// `holds() == false` while still carrying its window, gap and
-    /// residuals.
-    /// @throws std::invalid_argument in the non-normal regime, on an
-    ///   indefinite metric, a bad window, or `modeCutoff < windowUpper`;
-    ///   std::length_error when a component's interior block is at or above
-    ///   the dense crossover.
+    /// Craig--Bampton retained-mode basis over a declared window disc. The
+    /// window is the closed disc \f$ |\theta - c| \le \rho \f$ in the complex
+    /// spectral plane with centre \p windowCentre and radius \p windowRadius;
+    /// a component's fixed-interface mode is retained exactly when its
+    /// eigenvalue lies within \p retentionRadius of the centre, and a reduced
+    /// eigenvalue is claimed exactly when it lies in the window. A disc,
+    /// because the spectrum of a non-normal or complex symmetric level is
+    /// complex and an interval on the real axis does not enclose it; the rule
+    /// is the same in every regime, and on a real spectrum it reads as the
+    /// interval \f$ [\mathrm{Re}\,c - \rho, \mathrm{Re}\,c + \rho] \f$.
+    /// `residualTolerance` is the declared acceptance residual the certificate
+    /// holds against; negative selects the strict `Options::tolerance`, under
+    /// which a truncated surrogate reports `holds() == false` while still
+    /// carrying its window, gap and residuals.
+    ///
+    /// The surrogate exists in every regime; what the regime decides is the
+    /// pairing. In `PositiveSemidefinite` and `HermitianIndefinite` the pairing
+    /// is the adjoint against the positive diagonal chain metric \f$ W \f$, the
+    /// fixed-interface modes come from a self-adjoint eigensolver on
+    /// \f$ W^{1/2}LW^{-1/2} \f$, and the reduced pair
+    /// \f$ (V^\dagger WLV,\ V^\dagger WV) \f$ is solved as a Hermitian
+    /// generalized eigenproblem. In `NonNormal` and `ComplexSymmetricPencil`
+    /// the pairing is the transpose against the level's own metric — the
+    /// carried Gram \f$ \mathcal G \f$ on a pencil level, the diagonal weights
+    /// otherwise — the fixed-interface modes come from a general complex
+    /// eigensolver on the interior pencil \f$ (L_{II}, W_{II}) \f$, and the
+    /// reduced pair \f$ (V^TWLV,\ V^TWV) \f$ is solved the same way. No adjoint
+    /// is formed and no definiteness is assumed on that path.
+    ///
+    /// This is a certified approximation and never an exact spectral identity:
+    /// the error is controlled by the residuals of the retained pairs and by
+    /// `discardedModeGap`, both of which the read carries. The pencil-level
+    /// counterpart that holds a surrogate spectrum to the exact Feshbach map is
+    /// `chainhodge::PencilSchur::craigBampton`.
+    /// @throws std::invalid_argument on an indefinite metric in a Hermitian
+    ///   regime, a singular interior or reduced chain metric in a bilinear one,
+    ///   a negative radius, or `retentionRadius < windowRadius` (a mode inside
+    ///   the window is never discarded); std::length_error when a component's
+    ///   interior block is at or above the dense crossover.
+    [[nodiscard]] CraigBamptonRead craigBampton(
+        std::complex<double> windowCentre, double windowRadius,
+        double retentionRadius, double residualTolerance = -1.0) const;
+
+    /// The same surrogate declared by a real window: the interval
+    /// \f$ [a, b] \f$ = [\p windowLower, \p windowUpper] is the disc with
+    /// centre \f$ (a+b)/2 \f$ and radius \f$ (b-a)/2 \f$, and \p modeCutoff
+    /// is the retention disc's real upper edge, so the retention radius is
+    /// \f$ \rho_{\text{cut}} = \text{modeCutoff} - (a+b)/2 \f$. On a real
+    /// spectrum a mode is therefore retained exactly when
+    /// \f$ a + b - \text{modeCutoff} \le \theta \le \text{modeCutoff} \f$,
+    /// which is every mode at or below the cutoff whenever no eigenvalue lies
+    /// below \f$ a + b - \text{modeCutoff} \f$ — the case of a positive
+    /// operator with a window that starts at or below its lowest eigenvalue.
+    /// @throws std::invalid_argument when `windowLower > windowUpper` or
+    ///   `modeCutoff < windowUpper`, and as the disc form otherwise.
     [[nodiscard]] CraigBamptonRead craigBampton(
         double windowLower, double windowUpper, double modeCutoff,
         double residualTolerance = -1.0) const;
@@ -877,6 +956,42 @@ class RecursiveQuotient {
         const std::vector<double> &gammas, int restarts = 4,
         std::uint64_t baseSeed = 0);
 
+    /// The window partition above, with the persistence of each carried
+    /// component reported beside it.
+    struct ResolvedPartitionRead {
+      /// The partition, exactly what the window form of `persistentPartition`
+      /// returns: ascending index sets covering every coordinate once.
+      std::vector<std::vector<int>> components{};
+      /// The window the scan ran over, in scan order.
+      std::vector<double> resolutions{};
+      /// The resolution the carried supports were read at, which is the first
+      /// of the window.
+      double selectedResolution{std::numeric_limits<double>::quiet_NaN()};
+      /// How many resolutions of the window each carried component stood at,
+      /// in component order. A component carried by a persistence track stood
+      /// at all of them; a coordinate no such track claimed comes back as a
+      /// singleton and is reported with a persistence of one.
+      std::vector<double> componentPersistence{};
+      /// The weakest adjacent-resolution support overlap over the carried
+      /// components' tracks: how firmly the window's communities were followed
+      /// from one resolution to the next. NaN for a window of one resolution,
+      /// where no adjacent slice exists to overlap with, and for a partition
+      /// carried by no track at all.
+      double worstOverlap{std::numeric_limits<double>::quiet_NaN()};
+    };
+
+    /// The window form of `persistentPartition`, with the persistence of every
+    /// carried component reported beside the partition. It is the same scan,
+    /// the same rule and the same result; a recursion that records why a level
+    /// was partitioned as it was reads this form instead.
+    /// @param overlapThreshold The support overlap two components of adjacent
+    ///   resolutions must share to be followed as one community.
+    /// @throws as the window form of `persistentPartition`.
+    [[nodiscard]] static ResolvedPartitionRead persistentPartitionOverResolutions(
+        const std::vector<std::complex<double>> &op, int dim,
+        const std::vector<double> &gammas, int restarts = 4,
+        std::uint64_t baseSeed = 0, double overlapThreshold = 0.5);
+
     /// `persistentPartition` of this level's reduced operator: the partition
     /// \f$ P_\ell \f$ to hand straight to `nextLevel`, as
     /// `child = parent.nextLevel(parent.childPersistentPartition())`.
@@ -929,8 +1044,20 @@ class RecursiveQuotient {
     /// reduced coordinates, which include any resonant modes retained at
     /// \f$ \lambda \f$ and so need not match the static reduction's; use
     /// `persistentPartition(feshbach(...).response, ...)` to discover them.
-    /// @throws std::invalid_argument when `windowLower > windowUpper` or the
-    ///   partition does not cover the pencil's coordinates.
+    ///
+    /// A level produced by this step carries the pencil **evaluated** at one
+    /// spectral parameter, which is a matrix and not a function of
+    /// \f$ \lambda \f$. Eliminating it again at the same \f$ \lambda \f$ is
+    /// the supported block elimination with no further shift, because the
+    /// parameter is already inside the matrix, and that is what this call does
+    /// on such a level; a second \f$ \lambda \f$ cannot be read off it at all
+    /// and is refused. The recursion driven as a function of \f$ \lambda \f$,
+    /// which re-derives the whole chain from the microscopic pencil at every
+    /// point, is `LevelRecursion`.
+    /// @throws std::invalid_argument when `windowLower > windowUpper`, when the
+    ///   partition does not cover the pencil's coordinates, or when this level
+    ///   is itself an evaluated pencil and a different \f$ \lambda \f$ is
+    ///   asked for.
     [[nodiscard]] RecursiveQuotient nextLevelAtLambda(
         const std::vector<std::vector<int>> &components,
         std::complex<double> lambda, double windowLower, double windowUpper,

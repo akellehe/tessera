@@ -19,6 +19,23 @@ namespace tessera::spacetime { class Spacetime; }
 namespace tessera::cobordism {
 using ::tessera::spacetime::Spacetime;
 
+/// # OccupationOrder
+///
+/// Which modes of the carrier operator a quasi-free state occupies.
+///
+/// The whitepaper calls the filled modes "the occupied modes" and fixes no
+/// order for a genuinely complex spectrum, where "lowest" is not defined by the
+/// eigenvalues alone. The rule is therefore declared by the caller and recorded
+/// with the run rather than assumed.
+///
+/// * `AscendingRealPart` — the modes of smallest real part, which is the
+///   lowest-energy reading and reduces to the usual one on a Hermitian
+///   specialization with real spectrum.
+/// * `AscendingModulus` — the modes of smallest modulus, which is the reading
+///   that orders by distance from the origin of the complex plane and is the
+///   one a resolvent contour around zero selects.
+enum class OccupationOrder { AscendingRealPart, AscendingModulus };
+
 /// # SpectralMomentConstraint
 ///
 /// One holomorphic spectral constraint of the targeted action
@@ -350,6 +367,21 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> wardCurrent() const {
     return linkStationarity();
   }
+
+  /// The Ward current on the canonical degree-one cells, in the canonical
+  /// `ChainComplex::kSimplexVertices(1)` order and on each cell's canonical
+  /// ascending-vertex orientation.
+  ///
+  /// `wardCurrent` reports the current on the mesh's stored edge orientation
+  /// and in `Spacetime::getEdgeList()` order, which is the order the rest of
+  /// the engine's per-edge quantities use. Every chain-level consumer — the
+  /// boundary map, a cut's coorientation, a restriction to a set of cells —
+  /// indexes cells canonically instead, and the current is odd under reversing
+  /// an edge, so the two differ by a reordering and a per-edge sign. This
+  /// method applies both. An edge of the mesh that the chain complex does not
+  /// carry contributes nothing, and a canonical cell no mesh edge matches
+  /// stays zero.
+  [[nodiscard]] std::vector<std::complex<double>> canonicalWardCurrent() const;
 
   /// The discrete divergence \f$ (\partial j)_x=\sum_e (\partial_1)_{xe}\,j_e \f$
   /// of the Ward current, one complex number per vertex in the canonical

@@ -1046,6 +1046,21 @@ no recomputation.)doc");
                      "Whitney pencil path: trapezoidal node count of each band's Riesz contour.")
       .def_readwrite("isotropyTolerance", &SpectralFiberConfig::isotropyTolerance,
                      "Whitney pencil path: relative tolerance declaring a band's pairing isotropic.")
+      .def_readwrite("resolventBoundCap", &SpectralFiberConfig::resolventBoundCap,
+                     "Cap on the contour resolvent bound r * max_j "
+                     "||(zeta_j I - h)^-1||_2 -- the 'controlled resolvent' "
+                     "acceptance conjunct, enforced wherever a contour is drawn.")
+      .def_readwrite("minAllowabilityMargin",
+                     &SpectralFiberConfig::minAllowabilityMargin,
+                     "Floor on the Kontsevich-Segal allowability margin of the "
+                     "instance the band was read on; the default 0 asks for a "
+                     "strictly positive margin.")
+      .def_readwrite("lorentzianEpsilon", &SpectralFiberConfig::lorentzianEpsilon,
+                     "The DECLARED Lorentzian-protocol rotation epsilon_L the "
+                     "complex was rotated by (chainhodge.LorentzianFamily.rotate) "
+                     "before it was handed to the tracker; NaN means the complex "
+                     "was not declared Lorentzian. Never inferred from a squared "
+                     "length. Acceptance requires epsilon_L > 0 where it is declared.")
       .def_readwrite("crossValidateDense",
                      &SpectralFiberConfig::crossValidateDense,
                      "Cross-check solves below the crossover against the "
@@ -1108,6 +1123,30 @@ quantities are NaN, never zero.)doc")
       .def_readonly("leftFrameRefusal", &SpectralBandCertificate::leftFrameRefusal)
       .def_readonly("metricSymmetryDefect", &SpectralBandCertificate::metricSymmetryDefect,
                     "The regime's verification residual, M L = (M L)^T.")
+      .def_readonly("contour", &SpectralBandCertificate::contour,
+                    "Description of the closed contour gamma_C the band's Riesz "
+                    "projector was computed on; empty when no contour was drawn.")
+      .def_readonly("contourNodeCount",
+                    &SpectralBandCertificate::contourNodeCount,
+                    "Quadrature node count of gamma_C (0 = no contour).")
+      .def_readonly("contourCenter", &SpectralBandCertificate::contourCenter)
+      .def_readonly("contourRadius", &SpectralBandCertificate::contourRadius)
+      .def_readonly("resolventMax", &SpectralBandCertificate::resolventMax,
+                    "max_j ||(zeta_j I - h_C)^-1||_2 over the contour nodes.")
+      .def_readonly("resolventBound", &SpectralBandCertificate::resolventBound,
+                    "The Riesz bound ||P_C|| <= (|gamma_C|/2 pi) max ||R||, i.e. "
+                    "radius * resolventMax -- the gated contour quantity.")
+      .def_readonly("allowable", &SpectralBandCertificate::allowable,
+                    "Kontsevich-Segal allowability of the instance the band was "
+                    "read on (every top simplex of strictly positive margin).")
+      .def_readonly("allowabilityMargin",
+                    &SpectralBandCertificate::allowabilityMargin,
+                    "min_T (pi - sum_i |arg lambda_i(g_T)|): pi for a Euclidean "
+                    "instance, 0 for a real Lorentzian one.")
+      .def_readonly("lorentzianEpsilon",
+                    &SpectralBandCertificate::lorentzianEpsilon,
+                    "The declared rotation epsilon_L the band was read at; NaN "
+                    "when the complex was not declared Lorentzian.")
       .def_readonly("bilinearLeftFrame", &SpectralBandCertificate::bilinearLeftFrame,
                     "Whether the stored left frame is the transpose dual Phi~ "
                     "itself (the chain-level pencil path) rather than Psi with "
@@ -5434,9 +5473,11 @@ evidence.)doc")
 
   // ── the register carried by a certified cluster ───────────────
   py::class_<RegisterConjunct>(m, "RegisterConjunct",
-      "The six fiber-acceptance conjuncts, named.  Reference "
-      "these constants rather than retyping the strings: a mis-spelled "
-      "literal produces a name no consumer matches.")
+      "The fiber-acceptance conjuncts, named.  Six in the whitepaper's list; "
+      "eight names here, because the contour conjunct is decided on three "
+      "distinct measurements (band gap, contour resolvent, Lorentzian "
+      "rotation).  Reference these constants rather than retyping the "
+      "strings: a mis-spelled literal produces a name no consumer matches.")
       .def_property_readonly_static("CLUSTER_SUPPORT",
           [](py::object) { return RegisterConjunct::kClusterSupport; })
       .def_property_readonly_static("LOCALIZED_PROJECTOR",
@@ -5448,7 +5489,11 @@ evidence.)doc")
       .def_property_readonly_static("FRAME_LIFETIME",
           [](py::object) { return RegisterConjunct::kFrameLifetime; })
       .def_property_readonly_static("TRANSPORT_LEAKAGE",
-          [](py::object) { return RegisterConjunct::kTransportLeakage; });
+          [](py::object) { return RegisterConjunct::kTransportLeakage; })
+      .def_property_readonly_static("CONTOUR_RESOLVENT",
+          [](py::object) { return RegisterConjunct::kContourResolvent; })
+      .def_property_readonly_static("LORENTZIAN_ROTATION",
+          [](py::object) { return RegisterConjunct::kLorentzianRotation; });
 
   py::class_<RegisterUnmeasured>(m, "RegisterUnmeasured",
       "Why a conjunct could not be decided, as distinct from being decided "
@@ -5465,7 +5510,13 @@ evidence.)doc")
       .def_property_readonly_static("NO_TRANSPORT",
           [](py::object) { return RegisterUnmeasured::kNoTransport; })
       .def_property_readonly_static("SUPPORT_UNREADABLE",
-          [](py::object) { return RegisterUnmeasured::kSupportUnreadable; });
+          [](py::object) { return RegisterUnmeasured::kSupportUnreadable; })
+      .def_property_readonly_static("NO_CONTOUR",
+          [](py::object) { return RegisterUnmeasured::kNoContour; })
+      .def_property_readonly_static("RESOLVENT_UNMEASURED",
+          [](py::object) { return RegisterUnmeasured::kResolventUnmeasured; })
+      .def_property_readonly_static("ROTATION_UNMEASURED",
+          [](py::object) { return RegisterUnmeasured::kRotationUnmeasured; });
 
   py::class_<ClusterRegisterConfig>(m, "ClusterRegisterConfig",
       "Thresholds the register is accepted under.  Analysis parameters "
@@ -5476,7 +5527,20 @@ evidence.)doc")
       .def_readwrite("minFrameLifetime",
                      &ClusterRegisterConfig::minFrameLifetime)
       .def_readwrite("maxTransportLeakage",
-                     &ClusterRegisterConfig::maxTransportLeakage);
+                     &ClusterRegisterConfig::maxTransportLeakage)
+      .def_readwrite("maxResolventBound",
+                     &ClusterRegisterConfig::maxResolventBound,
+                     "Cap on the Riesz resolvent bound of the contour the band "
+                     "was selected by; decided only where a contour was drawn.")
+      .def_readwrite("requireContour", &ClusterRegisterConfig::requireContour,
+                     "Require a closed complex-plane contour of the band; a "
+                     "band with none is then unmeasured, never failed.")
+      .def_readwrite("lorentzian", &ClusterRegisterConfig::lorentzian,
+                     "DECLARE the complex Lorentzian: the band must then carry "
+                     "a reported rotation epsilon_L > 0 on the allowable side. "
+                     "Never inferred from a squared length.")
+      .def_readwrite("minAllowabilityMargin",
+                     &ClusterRegisterConfig::minAllowabilityMargin);
 
   py::class_<RegisterRegimeReport>(m, "RegisterRegimeReport",
       "What is reported of the band's metric regime.  A negative signature "
@@ -5512,6 +5576,21 @@ evidence.)doc")
       .def_readonly("localizationExcess",
                     &ClusterRegisterRead::localizationExcess)
       .def_readonly("bandGap", &ClusterRegisterRead::bandGap)
+      .def_readonly("contour", &ClusterRegisterRead::contour,
+                    "The closed contour the band was selected by; empty when "
+                    "no contour was drawn.")
+      .def_readonly("contourNodeCount",
+                    &ClusterRegisterRead::contourNodeCount)
+      .def_readonly("resolventBound", &ClusterRegisterRead::resolventBound,
+                    "The Riesz resolvent bound on that contour -- the "
+                    "'controlled resolvent' measurement.")
+      .def_readonly("allowabilityMargin",
+                    &ClusterRegisterRead::allowabilityMargin,
+                    "Kontsevich-Segal allowability margin of the instance the "
+                    "band was read on.")
+      .def_readonly("lorentzianEpsilon",
+                    &ClusterRegisterRead::lorentzianEpsilon,
+                    "The reported rotation epsilon_L the band was read at.")
       .def_readonly("neighbourOverlap", &ClusterRegisterRead::neighbourOverlap)
       .def_readonly("frameLifetime", &ClusterRegisterRead::frameLifetime)
       .def_readonly("transportLeakage",

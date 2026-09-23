@@ -99,7 +99,17 @@ class TestTrackerOnThePencil:
         assert len(harmonic) == 1
         h = harmonic[0]
         cert = h.certificate()
-        assert h.rank() == 2 and cert.accepted and not cert.isotropic
+        assert h.rank() == 2 and not cert.isotropic
+        if eps > 0.0:
+            assert cert.accepted, cert.describe()
+        else:
+            # #1193: at eps_L = 0 the instance is real Lorentzian and sits
+            # exactly ON the Kontsevich-Segal boundary, margin zero. The band
+            # is still read, still reported and still certified-looking in
+            # every other measurement — and it is NOT accepted alone, which is
+            # the whitepaper's rule for a result at eps_L = 0.
+            assert not cert.allowable and cert.allowabilityMargin <= 0.0
+            assert not cert.accepted
         P = np.asarray(h.projector())
         assert np.linalg.norm(P @ P - P) < 1e-8 * max(1.0, np.linalg.norm(P))
         assert abs(cert.pairingDeterminant) > 1e-3
@@ -184,7 +194,7 @@ class TestTrackerOnThePencil:
 
 
 class TestRecursiveQuotientPencilLevels:
-    def test_pencil_level_names_the_regime_and_refuses_by_name(self):
+    def test_pencil_level_names_the_regime_and_reduces_in_it(self):
         K, s = torus33()
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, s), ch.Connection.trivial(K))
         P = cov.pencil(1)
@@ -194,8 +204,15 @@ class TestRecursiveQuotientPencilLevels:
         comp_b = [i for i in range(n) if i not in comp_a]
         q = cob.RecursiveQuotient.overPencil(A.flatten().tolist(), M.flatten().tolist(), n, [comp_a, comp_b])
         assert q.regime == Pencil
-        with pytest.raises(ValueError, match="complex-symmetric-pencil"):
-            q.craigBampton(0.0, 10.0, 20.0, 1e-8)
+        # The complex-symmetric pencil has no Hermitian form to reduce against,
+        # so the surrogate pairs with the transpose and the level's carried
+        # metric instead of refusing.
+        read = q.craigBampton(0.0, 10.0, 1e6, 1e-6)
+        assert read.windowEigenvalues
+        assert max(read.eigenResiduals) < 1e-6
+        exact = np.linalg.eigvals(np.linalg.solve(M, A)).real
+        for value in read.windowEigenvalues:
+            assert float(np.min(np.abs(exact - value))) < 1e-6 * max(1.0, abs(value))
         sheaf = q.sheafRealization()
         assert not sheaf.emitted
         assert sheaf.certificate.regime == Pencil

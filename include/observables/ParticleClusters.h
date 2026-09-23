@@ -361,6 +361,19 @@ struct ParticleClustersConfig {
 /// electric (timelike-leg) plaquettes when `electricOnly`.  Charge is
 /// certified only when the surfaces agree; an inconsistent or
 /// single-surface read reports an unknown flux.
+///
+/// The field strength is the caller's, so this read carries no Ward identity
+/// and is not the Ward current of the multiplicative connection.  That current
+/// is the link stationarity vector of the joint action,
+/// \f$ j_{xy}=U_{xy}\,\partial S/\partial U_{xy} \f$, and its flux through a
+/// cooriented cut is `cobordism::WardFlux`.  The two are not substitutes for
+/// each other in either direction, and they measure different things: the Ward
+/// flux counts fermions, because every edge mode carries charge one under the
+/// \f$ \mathbb{C}^{*} \f$ group, while electric charge in the declared field
+/// content is flavor dependent, is not a gauge charge and therefore carries no
+/// Ward current at all.  The whitepaper records that as a limit of the present
+/// field content rather than as a prediction, so the number below is a read of
+/// a supplied field and stays labelled as one.
 struct GaussFluxRead {
   /// The per-surface complex fluxes, in the nested-surface input order.
   std::vector<std::complex<double>> fluxes{};

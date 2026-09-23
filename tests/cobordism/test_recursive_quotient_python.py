@@ -55,12 +55,12 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 
 def _over_cells(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
-    return _over_cells(*args, **kwargs)
+    return cob.RecursiveQuotient.overCells(*args, **kwargs)
 
 
 def _over_vertex_supports(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
-    return _over_vertex_supports(*args, **kwargs)
+    return cob.RecursiveQuotient.overVertexSupports(*args, **kwargs)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _causal_specimen import load_dump, rebuild_spacetime  # noqa: E402
@@ -1009,14 +1009,24 @@ class TestCraigBampton(unittest.TestCase):
         self.assertLess(err_finer, err_coarse)
         self.assertLess(max(finer.eigenResiduals), max(coarse.eigenResiduals))
 
-    def test_non_normal_regime_is_refused(self):
+    def test_non_normal_regime_takes_the_transpose_pairing(self):
+        """The regime decides the pairing, not whether the surrogate exists. A
+        non-normal level has no adjoint pairing to reduce against, so the
+        reduction uses the transpose against the level's own metric and a
+        general complex eigensolver; with nothing discarded the surrogate is the
+        level itself and its residuals say so."""
         L = np.array([[1.0, 0.5, 0.0],
                       [-0.2, 2.0, -1.0],
                       [0.0, -1.0, 1.0]])
         q = cob.RecursiveQuotient.overMatrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [2]])
-        with self.assertRaises(ValueError):
-            q.craigBampton(0.0, 0.5, 1.0)
+        self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
+        read = q.craigBampton(-10.0, 10.0, 1e6, 1e-6)
+        self.assertTrue(read.windowEigenvalues)
+        self.assertLess(max(read.eigenResiduals), 1e-6)
+        for value in read.windowEigenvalues:
+            self.assertLess(
+                float(np.min(np.abs(np.linalg.eigvals(L).real - value))), 1e-6)
 
     def test_indefinite_chain_metric_is_refused(self):
         H = np.array([[2.0, -1.0, 0.0],
@@ -1035,6 +1045,72 @@ class TestCraigBampton(unittest.TestCase):
             q.craigBampton(1.0, 0.5, 2.0)
         with self.assertRaises(ValueError):
             q.craigBampton(0.0, 1.5, 1.0)  # cutoff below the window edge
+        with self.assertRaises(ValueError):
+            q.craigBampton(complex(0.5, 0.0), 0.5, 0.25)  # retention inside the window
+        with self.assertRaises(ValueError):
+            q.craigBampton(complex(0.5, 0.0), -0.5, 1.0)
+
+    def test_the_real_window_is_the_disc_whose_diameter_it_is(self):
+        """The two-real-number declaration maps the interval [a, b] to the disc
+        with centre (a + b)/2 and radius (b - a)/2 and the cutoff to the
+        retention radius cutoff - (a + b)/2, so on this Hermitian fixture the
+        retained set, the claimed spectrum and the basis are identical between
+        the two declarations, and every real-window caller is unchanged."""
+        _, q = self._fixture()
+        for (a, b, cutoff) in [(-1e-6, 0.5, 1.0), (-1e-6, 0.5, 3.0), (0.0, 1.0, 4.0)]:
+            real = q.craigBampton(a, b, cutoff)
+            centre = 0.5 * (a + b)
+            disc = q.craigBampton(complex(centre, 0.0), 0.5 * (b - a), cutoff - centre)
+            self.assertEqual(list(real.retainedModes), list(disc.retainedModes))
+            np.testing.assert_allclose(real.windowEigenvalues, disc.windowEigenvalues, rtol=0, atol=1e-12)
+            np.testing.assert_allclose(np.array(real.basis), np.array(disc.basis), rtol=0, atol=1e-12)
+            self.assertAlmostEqual(real.discardedModeGap, disc.discardedModeGap, places=12)
+            self.assertEqual(real.windowCentre, complex(centre, 0.0))
+            self.assertAlmostEqual(real.windowRadius, 0.5 * (b - a), places=15)
+            self.assertAlmostEqual(real.retentionRadius, cutoff - centre, places=15)
+            self.assertAlmostEqual(real.windowLower, a, places=15)
+            self.assertAlmostEqual(real.windowUpper, b, places=15)
+            self.assertAlmostEqual(real.modeCutoff, cutoff, places=15)
+            for value, z in zip(real.windowEigenvalues, real.windowSpectrum):
+                self.assertEqual(z, complex(value, 0.0))
+
+    def test_the_disc_retains_by_complex_distance_on_a_non_normal_level(self):
+        """On a non-normal level whose interior carries a lightly damped mode
+        (inside the disc, off the real axis) and a strongly damped one (real
+        part inside the disc's real extent, outside the disc), the disc keeps
+        the first and drops the second; the real-window declaration of the
+        same extent, being the same disc, agrees."""
+        centre, radius = complex(1.0, 0.0), 0.5
+        lightly, strongly = centre + 0.3j * radius, centre + 3.0j * radius
+        spectrum = [lightly, strongly, 1.2, 3.0, -2.0]
+        n = 2 + len(spectrum)
+        L = np.zeros((n, n), dtype=complex)
+        L[0, 0], L[1, 1], L[0, 1], L[1, 0] = 2.0, 2.5, 0.3, -0.2
+        for k, z in enumerate(spectrum):
+            L[2 + k, 2 + k] = z
+            L[0, 2 + k] = 0.05
+            L[2 + k, 1] = 0.05
+        # Cells 0 and 1 are claimed twice, so they are the interface; the rest
+        # are claimed once and couple only to cells of their own component,
+        # so they are its interior.
+        q = cob.RecursiveQuotient.overMatrix(_flat(L), n, [], [list(range(n)), [0], [1]])
+        self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
+        read = q.craigBampton(centre, radius, radius, 1e-6)
+        # The retained fixed-interface eigenvalues, read off the basis columns
+        # (the basis is flat row-major, fine dimension by reduced dimension).
+        basis = np.array(read.basis).reshape(n, -1)
+        kept = []
+        for column in basis[:, len(q.interfaceIndices):].T:
+            support = np.flatnonzero(np.abs(column) > 1e-8)
+            self.assertEqual(len(support), 1)
+            kept.append(L[support[0], support[0]])
+        self.assertEqual(sum(read.retainedModes), 2)
+        self.assertTrue(any(abs(z - lightly) < 1e-12 for z in kept))
+        self.assertTrue(any(abs(z - 1.2) < 1e-12 for z in kept))
+        self.assertTrue(all(abs(z - strongly) > 1e-6 for z in kept))
+        self.assertGreater(read.discardedModeGap, 0.0)
+        same = q.craigBampton(centre.real - radius, centre.real + radius, centre.real + radius)
+        self.assertEqual(list(same.retainedModes), list(read.retainedModes))
 
 
 # --------------------------------------------------------------------------

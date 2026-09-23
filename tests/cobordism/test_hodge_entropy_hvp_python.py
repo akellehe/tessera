@@ -231,15 +231,58 @@ class EntropyHessianAscentDirectionTest(unittest.TestCase):
 
 
 class EntropyHessianConnectionBlindnessTest(unittest.TestCase):
-    """The HVP must be exactly blind to the C* connection phase.
+    """The diagonal-weight HVP is exactly blind to the C* connection phase; the
+    default operator's is not.
 
-    `laplacian(k)` is built from the complex squared lengths alone and is
-    certified blind to `phi`; the connection twists a SEPARATE Aharonov-Bohm
-    operator. The entropy, its gradient and therefore this Hessian-vector
-    product are all functions of `laplacian(k)`, so an arbitrary complex phase
-    on every edge must leave them BITWISE unchanged. Anything less would mean
-    a phase-carrying path had leaked into the geometric operator.
+    The diagonal-weight `laplacian(k)` is built from the complex squared
+    lengths alone, so its entropy, gradient and Hessian-vector product are
+    BITWISE unchanged by an arbitrary complex phase on every edge. The default
+    operator is the covariant `h_k(z, U)` of the Whitney pencil, which sees the
+    connection at every degree: the same phase moves its entropy gradient and
+    Hessian-vector product, and the size of that move is recorded below.
     """
+
+    def test_the_default_operator_sees_the_phase(self):
+        spacetime = _jittered_pentatope_sphere()
+        edges = spacetime.getEdgeList().toVector()
+        squared = _squared_lengths(spacetime)
+        for edge in edges:
+            edge.setPhase(complex(0.0, 0.0))
+        baseline = {}
+        for name, mode in MODES:
+            for degree in (0, 1, 2):
+                hodge = cob.HodgeLaplacian(spacetime)
+                baseline[(name, degree)] = (
+                    hodge.spectralEntropy(degree, mode),
+                    hodge.spectralEntropyGradient(degree, mode),
+                    hodge.spectralEntropyGradientDirectionalDerivative(
+                        degree, squared, mode))
+        for index, edge in enumerate(edges):
+            edge.setPhase(complex(0.31 * (index % 5) - 0.6,
+                                  0.17 * (index % 3) - 0.2))
+        for name, mode in MODES:
+            for degree in (0, 1, 2):
+                with self.subTest(mode=name, degree=degree):
+                    hodge = cob.HodgeLaplacian(spacetime)
+                    entropy = hodge.spectralEntropy(degree, mode)
+                    gradient = hodge.spectralEntropyGradient(degree, mode)
+                    contracted = (
+                        hodge.spectralEntropyGradientDirectionalDerivative(
+                            degree, squared, mode))
+                    before_entropy, before_gradient, before_contracted = (
+                        baseline[(name, degree)])
+                    # The moves relative to the unphased values are asserted
+                    # above a floor well below the measured ones (recorded in
+                    # the pull request that inverted this assertion).
+                    self.assertGreater(
+                        abs(entropy - before_entropy) / max(abs(before_entropy), 1e-300),
+                        1e-4)
+                    self.assertGreater(
+                        _relative_sup(gradient, before_gradient, _scale_of(before_gradient)),
+                        1e-3)
+                    self.assertGreater(
+                        _relative_sup(contracted, before_contracted, _scale_of(before_contracted)),
+                        1e-3)
 
     def test_an_arbitrary_complex_phase_changes_nothing_bitwise(self):
         spacetime = _jittered_pentatope_sphere()

@@ -1399,33 +1399,75 @@ RecursiveQuotient::MultiplicityRead RecursiveQuotient::multiplicity(
 RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     double windowLower, double windowUpper, double modeCutoff,
     double residualTolerance) const {
-  if (regime_ == CertificateRegime::NonNormal)
-    throw std::invalid_argument(
-        "RecursiveQuotient: Craig-Bampton refuses the non-normal regime (a "
-        "self-adjoint solver is never applied to a non-self-adjoint "
-        "operator); use the exact Feshbach pencil instead");
-  if (regime_ == CertificateRegime::ComplexSymmetricPencil)
-    throw std::invalid_argument(
-        "RecursiveQuotient: Craig-Bampton refuses the complex-symmetric-pencil "
-        "regime (the Hermitian AMLS read has no bilinear form); use the exact "
-        "Feshbach pencil or the pencil congruence (T^T A T, T^T M T)");
   if (windowLower > windowUpper)
     throw std::invalid_argument("RecursiveQuotient: windowLower > windowUpper");
   if (modeCutoff < windowUpper)
     throw std::invalid_argument(
         "RecursiveQuotient: modeCutoff must cover the window upper edge");
-  for (int i = 0; i < dim_; ++i)
-    if (!(weights_(i).real() > 0.0) ||
-        std::abs(weights_(i).imag()) > options_.tolerance)
-      throw std::invalid_argument(
-          "RecursiveQuotient: Craig-Bampton needs a positive chain metric");
-
-  const int kept = static_cast<int>(interfaceIndices_.size());
-  CraigBamptonRead read;
+  // The interval [a, b] is the disc whose diameter it is, and the cutoff is the
+  // retention disc's real upper edge. The declared reals are recorded as
+  // declared, not re-derived from the disc through rounding.
+  const double centre = 0.5 * (windowLower + windowUpper);
+  CraigBamptonRead read = craigBampton(cd(centre, 0.0), 0.5 * (windowUpper - windowLower),
+                                       modeCutoff - centre, residualTolerance);
   read.windowLower = windowLower;
   read.windowUpper = windowUpper;
   read.modeCutoff = modeCutoff;
+  return read;
+}
+
+RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
+    cd windowCentre, double windowRadius, double retentionRadius,
+    double residualTolerance) const {
+  if (!(windowRadius >= 0.0))
+    throw std::invalid_argument("RecursiveQuotient: the window radius must be non-negative");
+  if (!(retentionRadius >= windowRadius))
+    throw std::invalid_argument(
+        "RecursiveQuotient: the retention radius must cover the window radius (a mode "
+        "inside the window is never discarded)");
+  // The regime decides the pairing, not whether the surrogate exists. In the
+  // two Hermitian regimes the pairing is the adjoint against the positive
+  // diagonal chain metric W, which is what a self-adjoint eigensolver needs; in
+  // the non-normal and complex-symmetric-pencil regimes it is the transpose
+  // against the level's own metric -- the carried Gram on a pencil level, the
+  // diagonal weights otherwise -- and the eigenproblems are solved by a general
+  // complex eigensolver, which assumes nothing about the spectrum.
+  const bool bilinear = regime_ == CertificateRegime::NonNormal ||
+                        regime_ == CertificateRegime::ComplexSymmetricPencil;
+  if (!bilinear)
+    for (int i = 0; i < dim_; ++i)
+      if (!(weights_(i).real() > 0.0) ||
+          std::abs(weights_(i).imag()) > options_.tolerance)
+        throw std::invalid_argument(
+            "RecursiveQuotient: Craig-Bampton in a Hermitian regime needs a positive chain "
+            "metric; a signed or complex metric is the non-normal regime, whose surrogate uses "
+            "the transpose pairing");
+  // The metric the reduced pencil is written against: on a bilinear pencil
+  // level the carried Gram, everywhere else the diagonal chain metric, held
+  // sparsely so that no dimension-square object is built to hold a diagonal.
+  const Eigen::SparseMatrix<cd> metric = [&] {
+    if (bilinear && pencil_) return pencilMetric_;
+    Eigen::SparseMatrix<cd> diagonal(dim_, dim_);
+    diagonal.reserve(Eigen::VectorXi::Constant(dim_, 1));
+    for (int i = 0; i < dim_; ++i) diagonal.insert(i, i) = weights_(i);
+    diagonal.makeCompressed();
+    return diagonal;
+  }();
+
+  const int kept = static_cast<int>(interfaceIndices_.size());
+  CraigBamptonRead read;
+  read.windowCentre = windowCentre;
+  read.windowRadius = windowRadius;
+  read.retentionRadius = retentionRadius;
+  read.windowLower = windowCentre.real() - windowRadius;
+  read.windowUpper = windowCentre.real() + windowRadius;
+  read.modeCutoff = windowCentre.real() + retentionRadius;
   read.discardedModeGap = kInf;
+  // Retention and claim are decided by distance from the centre in the complex
+  // plane, in every regime; on a real spectrum that is the interval.
+  const auto retained = [&](const cd &theta) { return std::abs(theta - windowCentre) <= retentionRadius; };
+  const auto claimed = [&](const cd &theta) { return std::abs(theta - windowCentre) <= windowRadius; };
+  const auto separation = [&](const cd &theta) { return std::abs(theta - windowCentre) - windowRadius; };
 
   struct ComponentModes {
     Eigen::MatrixXcd vectors;  // interiorDim x retained (W-orthonormal)
@@ -1452,36 +1494,83 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
         const int col = interiorPos[static_cast<std::size_t>(it.col())];
         if (row >= 0 && col >= 0) block(row, col) = it.value();
       }
-    // W-similarity: W^{1/2} L W^{-1/2} is Hermitian for a W-self-adjoint L.
-    Eigen::VectorXd sqrtW(m);
-    for (int i = 0; i < m; ++i)
-      sqrtW(i) = std::sqrt(
-          weights_(interior[static_cast<std::size_t>(i)]).real());
-    Eigen::MatrixXcd symmetric = block;
-    for (int i = 0; i < m; ++i)
-      for (int j = 0; j < m; ++j)
-        symmetric(i, j) *= sqrtW(i) / sqrtW(j);
-    const Eigen::MatrixXcd hermitized =
-        0.5 * (symmetric + symmetric.adjoint());
-    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> eigensolver(hermitized);
-    if (eigensolver.info() != Eigen::Success)
-      throw std::runtime_error(
-          "RecursiveQuotient: fixed-interface eigensolve failed");
-    const auto &values = eigensolver.eigenvalues();
-    int retained = 0;
-    for (Eigen::Index i = 0; i < values.size(); ++i)
-      if (values(i) <= modeCutoff) ++retained;
-    if (retained < m)
-      read.discardedModeGap =
-          std::min(read.discardedModeGap, values(retained) - windowUpper);
     ComponentModes &modes = componentModes[static_cast<std::size_t>(component)];
-    modes.retained = retained;
-    modes.vectors = Eigen::MatrixXcd(m, retained);
-    for (int t = 0; t < retained; ++t)
+    if (bilinear) {
+      // The interior pencil (L_II, W_II) solved by a general complex
+      // eigensolver: no adjoint is formed and no order is assumed.
+      Eigen::MatrixXcd metricBlock = Eigen::MatrixXcd::Zero(m, m);
+      for (int outer = 0; outer < metric.outerSize(); ++outer)
+        for (Eigen::SparseMatrix<cd>::InnerIterator it(metric, outer); it; ++it) {
+          const int row = interiorPos[static_cast<std::size_t>(it.row())];
+          const int col = interiorPos[static_cast<std::size_t>(it.col())];
+          if (row >= 0 && col >= 0) metricBlock(row, col) = it.value();
+        }
+      Eigen::FullPivLU<Eigen::MatrixXcd> metricLu(metricBlock);
+      metricLu.setThreshold(options_.rankTolerance);
+      if (!metricLu.isInvertible())
+        throw std::invalid_argument(
+            "RecursiveQuotient: Craig-Bampton found the interior chain metric singular on "
+            "component " + std::to_string(component) +
+            ", so its fixed-interface pencil has no spectrum to retain modes from");
+      Eigen::ComplexEigenSolver<Eigen::MatrixXcd> eigensolver(metricLu.solve(block), true);
+      if (eigensolver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "RecursiveQuotient: fixed-interface eigensolve failed");
+      const Eigen::VectorXcd values = eigensolver.eigenvalues();
+      std::vector<int> order(static_cast<std::size_t>(values.size()));
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](int a, int b) {
+        if (values(a).real() != values(b).real())
+          return values(a).real() < values(b).real();
+        return values(a).imag() < values(b).imag();
+      });
+      std::vector<int> keep;
+      for (const int index : order) {
+        if (retained(values(index)))
+          keep.push_back(index);
+        else
+          read.discardedModeGap = std::min(read.discardedModeGap, separation(values(index)));
+      }
+      modes.retained = static_cast<int>(keep.size());
+      modes.vectors = Eigen::MatrixXcd(m, modes.retained);
+      for (int t = 0; t < modes.retained; ++t) {
+        Eigen::VectorXcd v = eigensolver.eigenvectors().col(keep[static_cast<std::size_t>(t)]);
+        v /= std::max(v.norm(), 1e-300);
+        modes.vectors.col(t) = v;
+      }
+    } else {
+      // W-similarity: W^{1/2} L W^{-1/2} is Hermitian for a W-self-adjoint L.
+      Eigen::VectorXd sqrtW(m);
       for (int i = 0; i < m; ++i)
-        modes.vectors(i, t) = eigensolver.eigenvectors()(i, t) / sqrtW(i);
-    totalModes += retained;
-    read.retainedModes.push_back(retained);
+        sqrtW(i) = std::sqrt(
+            weights_(interior[static_cast<std::size_t>(i)]).real());
+      Eigen::MatrixXcd symmetric = block;
+      for (int i = 0; i < m; ++i)
+        for (int j = 0; j < m; ++j)
+          symmetric(i, j) *= sqrtW(i) / sqrtW(j);
+      const Eigen::MatrixXcd hermitized =
+          0.5 * (symmetric + symmetric.adjoint());
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXcd> eigensolver(hermitized);
+      if (eigensolver.info() != Eigen::Success)
+        throw std::runtime_error(
+            "RecursiveQuotient: fixed-interface eigensolve failed");
+      const auto &values = eigensolver.eigenvalues();
+      std::vector<int> keep;
+      for (Eigen::Index i = 0; i < values.size(); ++i) {
+        const cd theta(values(i), 0.0);
+        if (retained(theta))
+          keep.push_back(static_cast<int>(i));
+        else
+          read.discardedModeGap = std::min(read.discardedModeGap, separation(theta));
+      }
+      modes.retained = static_cast<int>(keep.size());
+      modes.vectors = Eigen::MatrixXcd(m, modes.retained);
+      for (int t = 0; t < modes.retained; ++t)
+        for (int i = 0; i < m; ++i)
+          modes.vectors(i, t) = eigensolver.eigenvectors()(i, keep[static_cast<std::size_t>(t)]) / sqrtW(i);
+    }
+    totalModes += modes.retained;
+    read.retainedModes.push_back(modes.retained);
   }
 
   const int reducedDim = kept + totalModes;
@@ -1511,16 +1600,55 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
             modes.vectors(i, t);
   }
 
-  const Eigen::MatrixXcd weightedBasis = weights_.asDiagonal() * basis;
+  // The congruence: the transpose pairing in the bilinear regimes, the adjoint
+  // against the positive metric in the Hermitian ones.
+  const Eigen::MatrixXcd weightedBasis = metric * basis;
+  const Eigen::MatrixXcd operatorBasis =
+      bilinear ? Eigen::MatrixXcd(op_ * basis)
+               : Eigen::MatrixXcd(weights_.asDiagonal() * (op_ * basis));
   const Eigen::MatrixXcd stiffness =
-      basis.adjoint() * (weights_.asDiagonal() * (op_ * basis));
-  const Eigen::MatrixXcd mass = basis.adjoint() * weightedBasis;
+      bilinear ? Eigen::MatrixXcd(basis.transpose() * operatorBasis)
+               : Eigen::MatrixXcd(basis.adjoint() * operatorBasis);
+  const Eigen::MatrixXcd mass = bilinear
+                                    ? Eigen::MatrixXcd(basis.transpose() * weightedBasis)
+                                    : Eigen::MatrixXcd(basis.adjoint() * weightedBasis);
   read.basis = toFlat(basis);
   read.reducedStiffness = toFlat(stiffness);
   read.reducedMass = toFlat(mass);
 
   double worstResidual = 0.0;
-  if (reducedDim > 0) {
+  if (reducedDim > 0 && bilinear) {
+    Eigen::FullPivLU<Eigen::MatrixXcd> massLu(mass);
+    massLu.setThreshold(options_.rankTolerance);
+    if (!massLu.isInvertible())
+      throw std::invalid_argument(
+          "RecursiveQuotient: Craig-Bampton found the reduced chain metric V^T W V singular, so "
+          "the reduction basis is degenerate and its spectrum is not the surrogate spectrum");
+    Eigen::ComplexEigenSolver<Eigen::MatrixXcd> reduced(massLu.solve(stiffness), true);
+    if (reduced.info() != Eigen::Success)
+      throw std::runtime_error("RecursiveQuotient: reduced eigensolve failed");
+    const double scale = std::max(opNorm_, 1e-300);
+    std::vector<int> claimedOrder;
+    for (Eigen::Index i = 0; i < reduced.eigenvalues().size(); ++i)
+      if (claimed(reduced.eigenvalues()(i))) claimedOrder.push_back(static_cast<int>(i));
+    std::sort(claimedOrder.begin(), claimedOrder.end(), [&](int a, int b) {
+      const cd x = reduced.eigenvalues()(a), y = reduced.eigenvalues()(b);
+      if (x.real() != y.real()) return x.real() < y.real();
+      return x.imag() < y.imag();
+    });
+    for (const int i : claimedOrder) {
+      const cd value = reduced.eigenvalues()(i);
+      read.windowSpectrum.push_back(value);
+      read.windowEigenvalues.push_back(value.real());
+      const Eigen::VectorXcd fine = basis * reduced.eigenvectors().col(i);
+      const double norm = std::max(fine.norm(), 1e-300);
+      const double residual =
+          (Eigen::VectorXcd(op_ * fine) - value * Eigen::VectorXcd(metric * fine)).norm() /
+          (scale * norm);
+      read.eigenResiduals.push_back(residual);
+      worstResidual = std::max(worstResidual, residual);
+    }
+  } else if (reducedDim > 0) {
     const Eigen::MatrixXcd stiffnessHermitized =
         0.5 * (stiffness + stiffness.adjoint());
     const Eigen::MatrixXcd massHermitized = 0.5 * (mass + mass.adjoint());
@@ -1531,7 +1659,8 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     const double scale = std::max(opNorm_, 1e-300);
     for (Eigen::Index i = 0; i < pencil.eigenvalues().size(); ++i) {
       const double value = pencil.eigenvalues()(i);
-      if (value < windowLower || value > windowUpper) continue;
+      if (!claimed(cd(value, 0.0))) continue;
+      read.windowSpectrum.push_back(cd(value, 0.0));
       read.windowEigenvalues.push_back(value);
       const Eigen::VectorXcd fine = basis * pencil.eigenvectors().col(i);
       const double norm = std::max(fine.norm(), 1e-300);
@@ -1772,6 +1901,14 @@ RecursiveQuotient::LabeledFiberSumRead RecursiveQuotient::certifiedFiberSum(
     summand.upperGap = band.upperGap;
     summand.frequencyLower = band.frequencyLower;
     summand.frequencyUpper = band.frequencyUpper;
+    if (std::isfinite(band.windowRadius) && std::isfinite(band.windowCentre.real()) &&
+        std::isfinite(band.windowCentre.imag())) {
+      summand.windowCentre = band.windowCentre;
+      summand.windowRadius = band.windowRadius;
+    } else if (std::isfinite(band.frequencyLower) && std::isfinite(band.frequencyUpper)) {
+      summand.windowCentre = cd(0.5 * (band.frequencyLower + band.frequencyUpper), 0.0);
+      summand.windowRadius = 0.5 * (band.frequencyUpper - band.frequencyLower);
+    }
     summand.accepted = band.accepted;
     summand.certificate = band.certificate;
     summandCertificates.push_back(summand);
@@ -1966,13 +2103,13 @@ observables::PersistentModularity magnitudeGraphOf(
 // claimed at most once and every unclaimed coordinate its own component: the
 // partition handed to `nextLevel` must cover every index exactly once.
 std::vector<std::vector<int>> partitionOf(
-    const std::vector<const observables::ComponentRead *> &components,
-    int dim) {
+    const std::vector<const observables::ComponentRead *> &components, int dim,
+    std::vector<int> *origin = nullptr) {
   std::vector<std::vector<int>> partition;
   std::vector<bool> claimed(static_cast<std::size_t>(dim), false);
-  for (const observables::ComponentRead *component : components) {
+  for (std::size_t source = 0; source < components.size(); ++source) {
     std::vector<int> members;
-    for (const std::uint64_t cell : component->support) {
+    for (const std::uint64_t cell : components[source]->support) {
       const int index = static_cast<int>(cell);
       if (index < 0 || index >= dim) continue;
       if (claimed[static_cast<std::size_t>(index)]) continue;
@@ -1982,10 +2119,16 @@ std::vector<std::vector<int>> partitionOf(
     if (!members.empty()) {
       std::sort(members.begin(), members.end());
       partition.push_back(std::move(members));
+      // Which discovered community the entry came from, for a caller that
+      // reports why it was carried; an appended singleton came from none.
+      if (origin != nullptr) origin->push_back(static_cast<int>(source));
     }
   }
   for (int i = 0; i < dim; ++i)
-    if (!claimed[static_cast<std::size_t>(i)]) partition.push_back({i});
+    if (!claimed[static_cast<std::size_t>(i)]) {
+      partition.push_back({i});
+      if (origin != nullptr) origin->push_back(-1);
+    }
   return partition;
 }
 
@@ -2016,6 +2159,14 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
 std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
     const std::vector<cd> &op, int dim, const std::vector<double> &gammas,
     int restarts, std::uint64_t baseSeed) {
+  return persistentPartitionOverResolutions(op, dim, gammas, restarts, baseSeed)
+      .components;
+}
+
+RecursiveQuotient::ResolvedPartitionRead
+RecursiveQuotient::persistentPartitionOverResolutions(
+    const std::vector<cd> &op, int dim, const std::vector<double> &gammas,
+    int restarts, std::uint64_t baseSeed, double overlapThreshold) {
   if (dim < 0 || op.size() != static_cast<std::size_t>(dim) *
                                  static_cast<std::size_t>(dim))
     throw std::invalid_argument(
@@ -2025,15 +2176,23 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
         "persistentPartition: the resolution window has no resolution in it");
   if (restarts <= 0)
     throw std::invalid_argument("persistentPartition: restarts must be > 0");
-  if (dim == 0) return {};
+  ResolvedPartitionRead read;
+  read.resolutions = gammas;
+  read.selectedResolution = gammas.front();
+  if (dim == 0) return read;
 
   observables::PersistentModularityConfig config;
   config.resolutions = gammas;
   config.restarts = restarts;
   config.baseSeed = baseSeed;
+  config.overlapThreshold = overlapThreshold;
   const observables::ScanReport report =
       magnitudeGraphOf(op, dim).scanResolutions(config);
-  if (report.slices.empty()) return partitionOf({}, dim);
+  if (report.slices.empty()) {
+    read.components = partitionOf({}, dim);
+    read.componentPersistence.assign(read.components.size(), 1.0);
+    return read;
+  }
 
   // A track whose first and last slices are the ends of the window is a
   // community that stood at every resolution of it. Its member at the first
@@ -2041,14 +2200,33 @@ std::vector<std::vector<int>> RecursiveQuotient::persistentPartition(
   const std::vector<observables::ComponentRead> &first =
       report.slices.front().components;
   std::vector<const observables::ComponentRead *> persistent;
+  std::vector<double> overlaps;
   for (const observables::PersistenceTrack &track : report.tracks) {
     if (track.firstSlice != 0 || track.lastSlice + 1 != report.slices.size())
       continue;
     if (track.memberIndices.empty()) continue;
     const std::size_t at = track.memberIndices.front();
-    if (at < first.size()) persistent.push_back(&first[at]);
+    if (at >= first.size()) continue;
+    persistent.push_back(&first[at]);
+    overlaps.push_back(track.minAdjacentOverlap);
   }
-  return partitionOf(persistent, dim);
+  std::vector<int> origin;
+  read.components = partitionOf(persistent, dim, &origin);
+  const auto window = static_cast<double>(gammas.size());
+  for (const int source : origin) {
+    if (source < 0) {
+      read.componentPersistence.push_back(1.0);
+      continue;
+    }
+    read.componentPersistence.push_back(window);
+    if (gammas.size() > 1) {
+      const double overlap = overlaps[static_cast<std::size_t>(source)];
+      read.worstOverlap = std::isfinite(read.worstOverlap)
+                              ? std::min(read.worstOverlap, overlap)
+                              : overlap;
+    }
+  }
+  return read;
 }
 
 std::vector<std::vector<int>> RecursiveQuotient::childPersistentPartition(
@@ -2428,6 +2606,32 @@ RecursiveQuotient RecursiveQuotient::nextLevelAtLambda(
   // R_{l+1}(lambda) = Feshbach_{P_l}(R_l(lambda)): the child's operator is the
   // exact energy-dependent response at the declared lambda, not the static
   // complement, which does not preserve the nonzero spectrum.
+  //
+  // On a level whose own operator is already an evaluated pencil, the spectral
+  // parameter sits inside that operator, so the response step is the supported
+  // block elimination with no further shift; subtracting lambda a second time
+  // would place the child at a different point of the pencil than the one it
+  // claims. That level can only be eliminated at the lambda it was evaluated
+  // at; re-evaluating the chain at another one is what `LevelRecursion`
+  // carries the whole lineage for.
+  if (windowLower > windowUpper)
+    throw std::invalid_argument(
+        "nextLevelAtLambda: the declared band window is empty; its lower edge "
+        "is above its upper edge");
+  if (levelProvenance_.origin == LevelOrigin::BandPencil) {
+    if (lambda != levelProvenance_.lambda)
+      throw std::invalid_argument(
+          "nextLevelAtLambda: this level is the response pencil evaluated at "
+          "one spectral parameter, and a second one cannot be read off it; "
+          "drive the recursion with LevelRecursion, which re-derives the whole "
+          "chain at every lambda");
+    RecursiveQuotient child = nextLevel(components, options);
+    child.levelProvenance_.origin = LevelOrigin::BandPencil;
+    child.levelProvenance_.lambda = lambda;
+    child.levelProvenance_.windowLower = windowLower;
+    child.levelProvenance_.windowUpper = windowUpper;
+    return child;
+  }
   const FeshbachRead response = feshbach(lambda, windowLower, windowUpper);
   RecursiveQuotient child =
       pencil_ ? pencilChildOver(response.response, response.coordinates,

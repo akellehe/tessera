@@ -13,23 +13,6 @@
 
 namespace tessera::cobordism {
 
-/// # OccupationOrder
-///
-/// Which modes of the carrier operator the covariance projects onto.
-///
-/// The whitepaper calls the filled modes "the occupied modes" and fixes no
-/// order for a genuinely complex spectrum, where "lowest" is not defined by the
-/// eigenvalues alone. The rule is therefore declared by the caller and recorded
-/// with the run rather than assumed.
-///
-/// * `AscendingRealPart` — the modes of smallest real part, which is the
-///   lowest-energy reading and reduces to the usual one on a Hermitian
-///   specialization with real spectrum.
-/// * `AscendingModulus` — the modes of smallest modulus, which is the reading
-///   that orders by distance from the origin of the complex plane and is the
-///   one a resolvent contour around zero selects.
-enum class OccupationOrder { AscendingRealPart, AscendingModulus };
-
 /// # SelfConsistentMeanFieldDeclaration
 ///
 /// The configuration of a self-consistent backreaction solve.

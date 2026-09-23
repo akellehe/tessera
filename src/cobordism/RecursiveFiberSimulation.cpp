@@ -822,6 +822,16 @@ void MultiCobordism::setAnalysisConfig(const AnalysisConfig &config) {
   if (config.cadence < 1)
     throw std::invalid_argument(
         "MultiCobordism::setAnalysisConfig: cadence must be at least one");
+  if (config.frameHistory < 1)
+    throw std::invalid_argument(
+        "MultiCobordism::setAnalysisConfig: frameHistory must be at least one "
+        "frame (one pass is one cobordism frame)");
+  if (config.lifetimeWindingClosure != "none" &&
+      config.lifetimeWindingClosure != "closed-family")
+    throw std::invalid_argument(
+        "MultiCobordism::setAnalysisConfig: lifetimeWindingClosure must be "
+        "\"none\" or \"closed-family\"; an unrecognized closure is refused "
+        "rather than silently ignored");
   analysisConfig_ = config;
 }
 
@@ -890,6 +900,29 @@ std::string MultiCobordism::rawComplexJson(
       {"edges", edgeText},
   });
 }
+
+/// One retained cobordism frame of the overlay: the pass's components and,
+/// per component, the candidate band the pass assembled its reads around,
+/// together with that band's anchor profile when the band carried one.
+///
+/// A frame keeps the fiber itself, not a summary of it: the lifetime
+/// transports and the across-frame subspace overlaps are computed from the
+/// frames, and a stored scalar could not supply either.
+struct AnalysisFrameHistory {
+  struct Candidate {
+    SpectralFiber fiber{};
+    ::tessera::observables::AnchorProfile anchor{};
+    bool hasAnchor = false;
+  };
+  struct Frame {
+    std::vector<ComponentRead> components{};
+    /// One entry per component of `components`, in the same order; absent when
+    /// the component carried no accepted band in that pass.
+    std::vector<std::optional<Candidate>> candidates{};
+  };
+  /// Oldest first; the last entry is the pass being analysed.
+  std::vector<Frame> frames{};
+};
 
 void MultiCobordism::runRecursiveAnalysisOn(
     const std::shared_ptr<Spacetime> &spacetime) {
@@ -1037,6 +1070,67 @@ void MultiCobordism::runRecursiveAnalysisOn(
         break;
       }
 
+  // ── the retained cobordism frames ────────────────────────────────────
+  //
+  // One analysis pass is one cobordism frame. The overlay keeps the last
+  // `frameHistory` of them — each pass's components and its candidate bands —
+  // so the lifetime of a candidate, its smallest adjacent-frame support
+  // overlap, its per-frame band and anchor families and its lifetime
+  // transports are MEASURED across frames rather than asserted from one. With
+  // `frameHistory` 1 nothing is retained, every candidate has a one-frame
+  // track, and the persistence certificates fail by name, which is a measured
+  // fact about a single-frame run and not a vacuous pass.
+  if (!analysisFrames_)
+    analysisFrames_ = std::make_shared<AnalysisFrameHistory>();
+  auto &history = *analysisFrames_;
+  {
+    AnalysisFrameHistory::Frame frame;
+    frame.components = components;
+    frame.candidates.assign(components.size(), std::nullopt);
+    for (std::size_t index = 0; index < bandReads.size(); ++index) {
+      if (candidateBand[index] < 0) continue;
+      const std::size_t componentIndex = bandComponent[index];
+      if (componentIndex >= frame.candidates.size()) continue;
+      if (frame.candidates[componentIndex].has_value()) continue;
+      AnalysisFrameHistory::Candidate candidate;
+      candidate.fiber =
+          bandReads[index].fibers[static_cast<std::size_t>(candidateBand[index])];
+      if (bandReads[index].degree == 1 && candidate.fiber.rank() == 3) {
+        candidate.anchor = BandAnchor::of(spacetime, candidate.fiber);
+        candidate.hasAnchor = true;
+      }
+      frame.candidates[componentIndex] = std::move(candidate);
+    }
+    history.frames.push_back(std::move(frame));
+  }
+  const auto retained =
+      static_cast<std::size_t>(std::max(1, analysisConfig_.frameHistory));
+  if (history.frames.size() > retained)
+    history.frames.erase(history.frames.begin(),
+                         history.frames.begin() +
+                             static_cast<std::ptrdiff_t>(history.frames.size() -
+                                                         retained));
+
+  // The frame tracks: the same emergent support followed through consecutive
+  // frames by support overlap, which is the library's own supplier of the
+  // lifetime and the adjacent-frame overlap.
+  std::vector<std::vector<ComponentRead>> frameComponents;
+  frameComponents.reserve(history.frames.size());
+  for (const auto &frame : history.frames)
+    frameComponents.push_back(frame.components);
+  const auto frameTracks = modularity.trackAcrossFrames(frameComponents);
+  const std::size_t currentFrame = history.frames.size() - 1;
+  // The track each current-frame component sits at the end of; null when the
+  // component was not tracked, which leaves its lifetime unmeasured.
+  std::vector<const ::tessera::observables::FrameTrack *> trackOfComponent(
+      components.size(), nullptr);
+  for (const auto &track : frameTracks) {
+    if (track.lastFrame != currentFrame || track.memberIndices.empty()) continue;
+    const std::size_t memberIndex = track.memberIndices.back();
+    if (memberIndex < trackOfComponent.size())
+      trackOfComponent[memberIndex] = &track;
+  }
+
   // Mutual transports: one derived link per ordered pair of candidate bands at
   // the same degree, the cross-component family the bound-supercomponent search
   // reads. Not every band against every band: a component's bands are
@@ -1045,8 +1139,7 @@ void MultiCobordism::runRecursiveAnalysisOn(
   // consumes.
   //
   // The lifetime family — the world-tube transports of one candidate across
-  // frames — is a different object. One analysis pass sees one frame, so it
-  // stays empty here and its certificate is named as missing.
+  // frames — is a different object, assembled below from the retained frames.
   const FiberConnection connection;
   struct TransportRecord {
     std::size_t fromRead = 0;
@@ -1166,8 +1259,7 @@ void MultiCobordism::runRecursiveAnalysisOn(
     evidence.colorBand = fiber;
     // The calibrated oriented-triangle anchor, when the band's cells carry a
     // triangle atlas. Missing evidence becomes a named failed certificate
-    // downstream. The lifetime transport family is left unsupplied: one pass is
-    // one frame.
+    // downstream.
     if (bandRead.degree == 1 && fiber.rank() == 3)
       evidence.anchor = BandAnchor::of(spacetime, fiber);
     if (bandStates[index].has_value()) {
@@ -1181,11 +1273,78 @@ void MultiCobordism::runRecursiveAnalysisOn(
               static_cast<double>(track.lastSlice - track.firstSlice + 1);
           evidence.persistenceMinOverlap = track.minAdjacentOverlap;
         }
-    // This driver reads one cobordism frame, so the frame lifetime is one and
-    // its adjacent-frame overlap is vacuously one. The persistence certificate
-    // fails because the candidate was seen in a single frame.
-    evidence.frameLifetime = 1.0;
-    evidence.frameMinOverlap = 1.0;
+    // ── the multi-frame evidence ──────────────────────────────────────
+    //
+    // The candidate's cobordism-frame lifetime and its smallest adjacent-frame
+    // support overlap come from the frame track; a component with no track was
+    // never followed and both stay unmeasured, which the classifier names.
+    const std::size_t componentIndex = bandComponent[index];
+    const auto *track = componentIndex < trackOfComponent.size()
+                            ? trackOfComponent[componentIndex]
+                            : nullptr;
+    if (track != nullptr) {
+      evidence.frameLifetime = static_cast<double>(track->frames());
+      evidence.frameMinOverlap = track->minAdjacentOverlap;
+      // The band and anchor families: the candidate's band at each frame of
+      // its tracked lifetime, in frame order. Only the run of frames that
+      // reaches the current one contributes — a gap in the family is a gap in
+      // the evidence, and the stability certificate is decided on consecutive
+      // frames. `colorBand` above is this run's last (current-frame) member.
+      std::vector<SpectralFiber> bandFrames;
+      std::vector<::tessera::observables::AnchorProfile> anchorFrames;
+      bool anchorRunComplete = true;
+      for (std::size_t position = track->members.size(); position-- > 0;) {
+        const std::size_t frameIndex = track->firstFrame + position;
+        if (frameIndex >= history.frames.size()) break;
+        const auto &frame = history.frames[frameIndex];
+        const std::size_t memberIndex = track->memberIndices[position];
+        if (memberIndex >= frame.candidates.size() ||
+            !frame.candidates[memberIndex].has_value())
+          break;  // the run ends where the candidate does
+        const auto &candidate = *frame.candidates[memberIndex];
+        bandFrames.push_back(candidate.fiber);
+        if (candidate.hasAnchor)
+          anchorFrames.push_back(candidate.anchor);
+        else
+          anchorRunComplete = false;
+      }
+      std::reverse(bandFrames.begin(), bandFrames.end());
+      std::reverse(anchorFrames.begin(), anchorFrames.end());
+      evidence.colorBandFrames = bandFrames;
+      if (anchorRunComplete) evidence.anchorFrames = std::move(anchorFrames);
+      // The lifetime transports: the world-tube link between consecutive
+      // frames of that run, derived on the current complex. A link whose
+      // source cells no longer exist is an unknown link, left out of the
+      // family rather than reported as a leakage nobody measured.
+      for (std::size_t position = 1; position < bandFrames.size(); ++position) {
+        try {
+          evidence.lifetimeTransports.push_back(
+              connection.transportOnSpacetime(spacetime, bandFrames[position],
+                                              bandFrames[position - 1]));
+        } catch (const std::exception &) {
+          // A shape or a cell the transfer refuses is an unknown link.
+        }
+      }
+      // The determinant-line winding of that family, under the run's declared
+      // closure. With no declared closure the family is an open cobordism
+      // segment: its phase is reported and the winding stays unknown.
+      if (!evidence.lifetimeTransports.empty()) {
+        try {
+          if (analysisConfig_.lifetimeWindingClosure == "closed-family") {
+            evidence.winding =
+                connection.closedFamilyWinding(evidence.lifetimeTransports);
+          } else {
+            ::tessera::observables::WindingClosureSpec closure;
+            closure.mode =
+                ::tessera::observables::WindingClosureSpec::Mode::None;
+            evidence.winding = connection.openSegmentWinding(
+                evidence.lifetimeTransports, closure);
+          }
+        } catch (const std::exception &) {
+          // A family the winding read refuses leaves the winding unknown.
+        }
+      }
+    }
     quarkReads.push_back(classifier.classifyQuarkCached(*cache, evidence));
     quarkBandRead.push_back(index);
   }
@@ -1355,6 +1514,13 @@ void MultiCobordism::runRecursiveAnalysisOn(
         {"transport_leakage_max", Json::number(read.transportLeakageMax)},
         {"persistence_lifetime", Json::number(read.persistenceLifetime)},
         {"frame_lifetime", Json::number(read.frameLifetime)},
+        // The other two multi-frame quantities the overlay now measures: the
+        // smallest adjacent-frame support overlap along the candidate's track,
+        // and how many frames its band stability was decided over. Both are
+        // null when the candidate was never followed across frames.
+        {"frame_min_overlap", Json::number(read.frameMinOverlap)},
+        {"stability_frames",
+         Json::integer(static_cast<long long>(read.stabilityFrames))},
         {"localization", Json::number(read.localization)},
         {"localization_support_fraction",
          Json::number(read.localizationSupportFraction)},

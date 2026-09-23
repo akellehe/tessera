@@ -60,15 +60,17 @@ _HOST_SEED = 3
 _NODE_SEED = 7
 
 
-def _node(seed=_NODE_SEED, refine=_REFINE, degrees=(1,)):
+def _node(seed=_NODE_SEED, refine=_REFINE, degrees=(1,), metric_source=None):
     """A JointStationarity node on the shared closed-S⁴ host.
 
     ``JointStationarity`` IS the design spec's base objective
     ``beta_R ||grad S_Regge||^2 + eta_H sum_k ||grad S_Hodge,k||^2`` — this
-    ticket reuses it rather than defining a second one.
+    ticket reuses it rather than defining a second one. ``metric_source``
+    names the Hodge metric source; None is the process default.
     """
     st = _closed_s4(refine, _HOST_SEED)
-    node = MC(st, [], [], list(degrees), 1.0, seed)
+    node = (MC(st, [], [], list(degrees), 1.0, seed) if metric_source is None
+            else MC(st, [], [], list(degrees), 1.0, seed, metric_source=metric_source))
     node.set_objective(cob.JointStationarityObjective())
     return node
 
@@ -1503,7 +1505,8 @@ class RelabelingInvarianceTest(unittest.TestCase):
         for edge in rebuilt.getEdgeList().toVector():
             a, b = edge.getSource().getId(), edge.getTarget().getId()
             edge.setLength(lengths[(min(a, b), max(a, b))])
-        rebuilt_node = MC(rebuilt, [], [], [1], 1.0, _NODE_SEED)
+        rebuilt_node = MC(rebuilt, [], [], [1], 1.0, _NODE_SEED,
+                          metric_source=node.metricSource())
         rebuilt_node.set_objective(cob.JointStationarityObjective())
         rebuilt_node.set_analysis_config(_overlay_config())
         rebuilt_node.run_recursive_analysis()
@@ -1556,7 +1559,16 @@ class RelabelingInvarianceTest(unittest.TestCase):
                       for c in doc["hierarchy"][0]["components"])
 
     def setUp(self):
-        self.node = _node()
+        # Named diagonal weights. On the default Whitney pencil the analysis
+        # pass's quark certificates "occupation-one" and "parity-odd" flip
+        # under a global relabeling of this host: the band frames of the
+        # complex-symmetric pencil are defined up to a complex change of basis
+        # within the band, and the covariance and transport reads pair them
+        # with the conjugate (Psi^dagger W Phi) rather than the bilinear
+        # transpose, so they are not invariant under that change. That pairing
+        # belongs to the bilinear-covariance ticket (#1186), not to this
+        # fixture, which asserts the invariance of the analysis pass.
+        self.node = _node(metric_source=cob.HodgeMetricSource.DiagonalWeights)
         self.node.set_analysis_config(_overlay_config())
         self.node.run_recursive_analysis()
         ids = sorted({v for cell in _cells(self.node) for v in cell})

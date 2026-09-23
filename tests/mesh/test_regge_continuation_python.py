@@ -171,10 +171,10 @@ def test_the_loop_returns_the_cell_content_on_the_other_sheet():
     assert largest_turn < 0.5 * math.pi
     assert not continuation.touchedBranchPoint()
 
-    # The geometry is exactly where it started: s = 5/2, det G = 5/32.
+    # The geometry is exactly where it started: s = 5/2, det G = (5/8)(1/2) = 5/16.
     tops = [s for s in st.getSimplices() if len(s.getVertices()) == 4]
     principal_volume = tops[0].volume()
-    assert abs(principal_volume - math.sqrt(5.0 / 32.0) / 6.0) < 1e-12
+    assert abs(principal_volume - math.sqrt(5.0 / 16.0) / 6.0) < 1e-12
 
     # The root is not.
     assert continuation.volumeWinding(cell) == 1

@@ -251,6 +251,35 @@ ACM TOMS 40 (2013).)doc")
       .def_readonly("firstDiscarded", &HarmonicRead::firstDiscarded)
       .def_readonly("dense", &HarmonicRead::dense);
 
+  py::class_<SparseCostReport>(m, "SparseCostReport",
+      "What one operation of the sparse production path cost: wall time, memory and fill-in, "
+      "measured on the operation itself. fillIn is the stored entries of the factors over those "
+      "of the matrix they factorize; factorMegabytes is the factors' own memory, computed from "
+      "their stored entries; residentMegabytes is the change in the process's resident set size "
+      "across the operation, NaN where the operating system does not publish it.")
+      .def_readonly("operation", &SparseCostReport::operation)
+      .def_readonly("degree", &SparseCostReport::degree)
+      .def_readonly("dimension", &SparseCostReport::dimension)
+      .def_readonly("systemRows", &SparseCostReport::systemRows)
+      .def_readonly("systemNonZeros", &SparseCostReport::systemNonZeros)
+      .def_readonly("factorNonZeros", &SparseCostReport::factorNonZeros)
+      .def_readonly("fillIn", &SparseCostReport::fillIn)
+      .def_readonly("wallSeconds", &SparseCostReport::wallSeconds)
+      .def_readonly("factorMegabytes", &SparseCostReport::factorMegabytes)
+      .def_readonly("residentMegabytes", &SparseCostReport::residentMegabytes)
+      .def_readonly("rightHandSides", &SparseCostReport::rightHandSides);
+
+  py::class_<SparseKernelRead>(m, "SparseKernelRead",
+      "The null space of a sparse matrix from SparseRank::kernel, with the singular values on "
+      "either side of the rank decision and the cost of the read. The factorization is "
+      "SparseRank's and does not publish its stored entries, so the cost's fill-in and factor "
+      "memory are NaN while its wall time and process memory are measured.")
+      .def_readonly("kernel", &SparseKernelRead::kernel)
+      .def_readonly("split", &SparseKernelRead::split)
+      .def_readonly("rank", &SparseKernelRead::rank)
+      .def_readonly("tolerance", &SparseKernelRead::tolerance)
+      .def_readonly("cost", &SparseKernelRead::cost);
+
   py::class_<RankReport>(m, "RankReport",
       "The rank conditions (R1)-(R4) at one degree.")
       .def_readonly("degree", &RankReport::degree)
@@ -306,6 +335,17 @@ Reference: Eckmann, "Harmonische Funktionen und Randwertaufgaben in einem Komple
       .def("applyMinv", &ChainHodge::applyMinv, py::arg("k"), py::arg("c"), "M_k c.")
       .def("pencil", &ChainHodge::pencil, py::arg("k"), "The dense pencil at degree k.")
       .def("pencilAux", &ChainHodge::pencilAux, py::arg("k"), "A~_k = M_k A_k M_k (Whitney), dense.")
+      .def("applyPencilOperator", &ChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
+           "A~_k Z (Whitney) or A_k Z (Grassmann) by sparse products and sparse solves: the "
+           "production path's pencil operator, defined at any size.")
+      .def("stackedMatrix", [](const ChainHodge &c, int k) { return SparseMatrix(c.stackedMatrix(k)); },
+           py::arg("k"),
+           "The sparse stacked cochain matrix S of degree k, whose kernel is the harmonic space.")
+      .def_static("sparseNullSpace",
+           [](const SparseMatrix &S, double kappa) { return ChainHodge::sparseNullSpace(S, kappa); },
+           py::arg("S"), py::arg("kappa") = 10.0,
+           "ker S by rank-revealing sparse QR of S^H, with the rank, the threshold and the cost; "
+           "neither S nor the orthogonal factor is densified.")
       .def("hodgeOperator", &ChainHodge::hodgeOperator, py::arg("k"), "The dense L_k on chains.")
       .def("harmonicChains", &ChainHodge::harmonicChains, py::arg("k"), py::arg("kappa") = 10.0,
            py::arg("force_sparse") = false, "H_k = M_k ker S with the kernel's rank certificate.")
@@ -440,6 +480,7 @@ normalized or conjugated.)doc")
       .def_readonly("rankTolerance", &BandCertificate::rankTolerance)
       .def_readonly("singularGap", &BandCertificate::singularGap)
       .def_readonly("resolventMax", &BandCertificate::resolventMax)
+      .def_readonly("resolventProbeMax", &BandCertificate::resolventProbeMax)
       .def_readonly("detB", &BandCertificate::detB)
       .def_readonly("condB", &BandCertificate::condB)
       .def_readonly("pairingScale", &BandCertificate::pairingScale)
@@ -553,6 +594,35 @@ properties (i)-(vi) measured on every instance.)doc")
       .def("band", &CovariantChainHodge::band, py::arg("k"), py::arg("contour"), py::arg("kappa") = 10.0,
            py::arg("isotropy_tolerance") = 1e-10,
            "The Riesz band of the contour: P, Phi, Phi^vee, Z, B_C, Phi~, J, Gamma, certificates.")
+      .def("applyPencilOperator", &CovariantChainHodge::applyPencilOperator, py::arg("k"), py::arg("Z"),
+           "A~_k^U Z by sparse products and one sparse factorization of M_{k-1}^U: the production "
+           "path's pencil operator, which never forms the dense A~_k^U and is defined at any size.")
+      .def("borderedSystem",
+           [](const CovariantChainHodge &self, int k, std::complex<double> zeta) {
+             return self.borderedSystem(k, zeta); },
+           py::arg("k"), py::arg("zeta"),
+           "The sparse bordered system of the shifted pencil, whose Schur complement is "
+           "zeta M_k^U - A~_k^U.")
+      .def("shiftedSolve",
+           [](const CovariantChainHodge &self, int k, std::complex<double> zeta,
+              const Eigen::MatrixXcd &B) {
+             SparseCostReport report;
+             Eigen::MatrixXcd X = self.shiftedSolve(k, zeta, B, &report);
+             return std::make_pair(std::move(X), report); },
+           py::arg("k"), py::arg("zeta"), py::arg("B"),
+           "((zeta M_k^U - A~_k^U)^{-1} B, cost): the production path's shifted solve through one "
+           "sparse LU of the bordered system, with the factorization's cost report.")
+      .def("sparseBand",
+           [](const CovariantChainHodge &self, int k, const Contour &contour, int probeCount,
+              double kappa, double isotropyTolerance, std::uint64_t seed) {
+             SparseCostReport report;
+             Band band = self.sparseBand(k, contour, probeCount, kappa, isotropyTolerance, seed,
+                                         &report);
+             return std::make_pair(std::move(band), report); },
+           py::arg("k"), py::arg("contour"), py::arg("probe_count"), py::arg("kappa") = 10.0,
+           py::arg("isotropy_tolerance") = 1e-10, py::arg("seed") = std::uint64_t{20260922},
+           "(band, cost): the Riesz band of the contour read on the sparse production path, the "
+           "quadrature applied to a probe block so that the n x n projector is never formed.")
       .def_static("leftFrame", &CovariantChainHodge::leftFrame, py::arg("band"), py::arg("dual_instance"),
            py::arg("isotropy_tolerance") = 1e-10,
            "G^{U^-1} Phi^vee B_C^{-T} from the band's dual frame and pairing; raises on an isotropic band.");
@@ -766,7 +836,10 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
            "the trivial-holonomy harmonic band, 0 on a band of other eigenvalues.");
   py::class_<FeshbachResult>(m, "FeshbachResult",
       "One Feshbach complement F_B(lambda) = P_BB - P_BI P_II^{-1} P_IB of a symmetric pencil "
-      "P = A - lambda M, with det P = det P_II det F_B and the constraint modes T = [I_B; -P_II^{-1} P_IB].")
+      "P = A - lambda M, with det P = det P_II det F_B and the constraint modes T = [I_B; -P_II^{-1} P_IB]. "
+      "At an interior resonance the inverse is the Drazin inverse P_II^D = (P_II + Pi0)^{-1} (I - Pi0) "
+      "built on the Riesz projector Pi0 onto the generalized eigenspace of the eigenvalues inside the "
+      "resonance disc; nullProjector is Pi0 and rangeProjector is I - Pi0, both oblique.")
       .def_readonly("lambda_", &FeshbachResult::lambda)
       .def_readonly("interface", &FeshbachResult::interface)
       .def_readonly("interior", &FeshbachResult::interior)
@@ -782,11 +855,64 @@ alpha_tau vanish identically. Transpose pairing throughout.)doc")
       .def_readonly("logModulusResidual", &FeshbachResult::logModulusResidual)
       .def_readonly("logPhaseResidual", &FeshbachResult::logPhaseResidual)
       .def_readonly("solveResidual", &FeshbachResult::solveResidual)
-      .def_readonly("interiorSingular", &FeshbachResult::interiorSingular);
+      .def_readonly("interiorSingular", &FeshbachResult::interiorSingular)
+      .def_readonly("resonanceRadius", &FeshbachResult::resonanceRadius)
+      .def_readonly("resonanceEnclosure", &FeshbachResult::resonanceEnclosure)
+      .def_readonly("resonanceSeparation", &FeshbachResult::resonanceSeparation)
+      .def_readonly("interiorRank", &FeshbachResult::interiorRank)
+      .def_readonly("interiorInverse", &FeshbachResult::interiorInverse)
+      .def_readonly("resonantSpace", &FeshbachResult::resonantSpace)
+      .def_readonly("resonantLeftSpace", &FeshbachResult::resonantLeftSpace)
+      .def_readonly("resonantModes", &FeshbachResult::resonantModes)
+      .def_readonly("rangeProjector", &FeshbachResult::rangeProjector)
+      .def_readonly("nullProjector", &FeshbachResult::nullProjector)
+      .def_readonly("projectorIdempotency", &FeshbachResult::projectorIdempotency)
+      .def_readonly("projectorTrace", &FeshbachResult::projectorTrace)
+      .def_readonly("compatibilityResidual", &FeshbachResult::compatibilityResidual)
+      .def_readonly("compatible", &FeshbachResult::compatible)
+      .def_readonly("independenceResidual", &FeshbachResult::independenceResidual)
+      .def_readonly("responseIndependent", &FeshbachResult::responseIndependent)
+      .def_readonly("resonantResponse", &FeshbachResult::resonantResponse)
+      .def_readonly("reductionResidual", &FeshbachResult::reductionResidual)
+      .def_readonly("liftResidual", &FeshbachResult::liftResidual);
 
-  py::class_<CongruenceResult>(m, "CongruenceResult", "A congruence (T^T A T, T^T M T).")
+  py::class_<CongruenceResult>(m, "CongruenceResult",
+      "A congruence (T^T A T, T^T M T) with the symmetry defects of the reduced pair and the "
+      "inverse condition number of the basis.")
       .def_readonly("A", &CongruenceResult::A)
-      .def_readonly("M", &CongruenceResult::M);
+      .def_readonly("M", &CongruenceResult::M)
+      .def_readonly("symmetryDefect", &CongruenceResult::symmetryDefect)
+      .def_readonly("metricSymmetryDefect", &CongruenceResult::metricSymmetryDefect)
+      .def_readonly("basisConditionInverse", &CongruenceResult::basisConditionInverse);
+
+  py::class_<SurrogateResult>(m, "SurrogateResult",
+      "A certified Craig-Bampton/AMLS surrogate of a pencil over a window disc in the complex "
+      "spectral plane, with every claimed eigenvalue held to the exact Feshbach map: "
+      "feshbachDefects is ||F_B(theta) x_B|| / (||F_B|| ||x_B||) and feshbachBounds is "
+      "(1 + ||P_BI P_II^{-1}||) ||P(theta) x|| / (||F_B|| ||x_B||), the bound the defect is "
+      "measured against pair by pair.")
+      .def_readonly("interface", &SurrogateResult::interface)
+      .def_readonly("interior", &SurrogateResult::interior)
+      .def_readonly("shift", &SurrogateResult::shift)
+      .def_readonly("windowCentre", &SurrogateResult::windowCentre)
+      .def_readonly("windowRadius", &SurrogateResult::windowRadius)
+      .def_readonly("retentionRadius", &SurrogateResult::retentionRadius)
+      .def_readonly("basis", &SurrogateResult::basis)
+      .def_readonly("reduced", &SurrogateResult::reduced)
+      .def_readonly("interiorEigenvalues", &SurrogateResult::interiorEigenvalues)
+      .def_readonly("retainedModes", &SurrogateResult::retainedModes)
+      .def_readonly("discardedModeSeparation", &SurrogateResult::discardedModeSeparation)
+      .def_readonly("eigenvalues", &SurrogateResult::eigenvalues)
+      .def_readonly("vectors", &SurrogateResult::vectors)
+      .def_readonly("windowIndices", &SurrogateResult::windowIndices)
+      .def_readonly("residuals", &SurrogateResult::residuals)
+      .def_readonly("feshbachDefects", &SurrogateResult::feshbachDefects)
+      .def_readonly("feshbachBounds", &SurrogateResult::feshbachBounds)
+      .def_readonly("feshbachHolds", &SurrogateResult::feshbachHolds)
+      .def_readonly("resonantAtEigenvalue", &SurrogateResult::resonantAtEigenvalue)
+      .def_readonly("tolerance", &SurrogateResult::tolerance)
+      .def_readonly("certified", &SurrogateResult::certified)
+      .def_readonly("refusal", &SurrogateResult::refusal);
 
   py::class_<FiberRestriction>(m, "FiberRestriction",
       "The coarse pencil and chain metric restricted to retained fibers: (Z^T A~ Z, Z^T M Z).")
@@ -815,8 +941,44 @@ is the transpose.)doc")
       .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
            "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
-           py::arg("interface"), py::arg("rank_tolerance") = 1e-12)
-      .def_static("craigBampton", &PencilSchur::craigBampton, py::arg("A"), py::arg("M"), py::arg("T"))
+           py::arg("interface"), py::arg("rank_tolerance") = 1e-12, py::arg("resonance_radius") = 1e-12,
+           "The Feshbach complement at lambda with the interior block's Riesz projectors and, at an "
+           "interior resonance -- an eigenvalue of P_II inside the disc about zero of radius "
+           "resonance_radius times its spectral radius -- the Drazin inverse, the compatibility and "
+           "independence residuals, the retained resonant modes (a basis of the generalized "
+           "eigenspace), the resonant reduction and the two residuals that certify it. "
+           "rank_tolerance governs only the rank of the reduction's null space and the two "
+           "verdict thresholds.")
+      .def_static("sparseFeshbach",
+           [](const SparseMatrix &A, const SparseMatrix &M, std::complex<double> lambda,
+              const std::vector<int> &interface, double solveTolerance) {
+             SparseCostReport report;
+             FeshbachResult result =
+                 PencilSchur::sparseFeshbach(A, M, lambda, interface, solveTolerance, &report);
+             return std::make_pair(std::move(result), report); },
+           py::arg("A"), py::arg("M"), py::arg("lambda_"), py::arg("interface"),
+           py::arg("solve_tolerance") = 1e-8,
+           "(result, cost): the same complement on the sparse production path, the interior block "
+           "factorized by sparse LU and no n x n matrix formed. An interior resonance is refused "
+           "by name; the dense feshbach resolves it.")
+      .def_static("craigBampton",
+           py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
+                             const Eigen::MatrixXcd &>(&PencilSchur::craigBampton),
+           py::arg("A"), py::arg("M"), py::arg("T"),
+           "The congruence (T^T A T, T^T M T) of an explicit basis, with the symmetry defects of "
+           "the reduced pair and the inverse condition number of the basis.")
+      .def_static("craigBamptonSurrogate",
+           py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &,
+                             const std::vector<int> &, std::complex<double>, double, double,
+                             std::complex<double>, double, double>(&PencilSchur::craigBampton),
+           py::arg("A"), py::arg("M"), py::arg("interface"), py::arg("window_centre"),
+           py::arg("window_radius"), py::arg("retention_radius"),
+           py::arg("shift") = std::complex<double>(0.0, 0.0), py::arg("tolerance") = 1e-8,
+           py::arg("rank_tolerance") = 1e-12,
+           "The certified Craig-Bampton/AMLS surrogate over the window disc |theta - centre| <= "
+           "radius: interface constraint modes at the shift plus the fixed-interface modes of "
+           "(A_II, M_II) inside the retention radius, with every claimed eigenvalue held to the "
+           "exact Feshbach map. It runs in every pencil regime.")
       .def_static("restrictToFibers",
            py::overload_cast<const Eigen::MatrixXcd &, const Eigen::MatrixXcd &, const Eigen::MatrixXcd &>(
                &PencilSchur::restrictToFibers),

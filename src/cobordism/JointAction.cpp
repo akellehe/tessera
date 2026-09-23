@@ -541,6 +541,23 @@ std::vector<complexd> JointAction::occupationNumbers() const {
   return occupations;
 }
 
+std::vector<complexd> JointAction::canonicalWardCurrent() const {
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource,
+                                  /*wantCarrier=*/false);
+  const auto stored = linkStationarity();
+  std::vector<complexd> canonical(workspace.complex.numSimplices(1),
+                                  complexd{0.0, 0.0});
+  for (std::size_t edgeIndex = 0; edgeIndex < stored.size(); ++edgeIndex) {
+    const long long index = workspace.canonicalOfEdge[edgeIndex];
+    if (index < 0 || static_cast<std::size_t>(index) >= canonical.size())
+      continue;
+    canonical[static_cast<std::size_t>(index)] =
+        workspace.storedSign[edgeIndex] * stored[edgeIndex];
+  }
+  return canonical;
+}
+
 std::vector<complexd> JointAction::wardCurrentDivergence() const {
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
@@ -551,15 +568,7 @@ std::vector<complexd> JointAction::wardCurrentDivergence() const {
 
   // The current on the canonical orientation, which is the orientation the
   // boundary map's incidences refer to.
-  const auto stored = linkStationarity();
-  std::vector<complexd> canonical(workspace.links.size(), complexd{0.0, 0.0});
-  for (std::size_t edgeIndex = 0; edgeIndex < stored.size(); ++edgeIndex) {
-    const long long index = workspace.canonicalOfEdge[edgeIndex];
-    if (index < 0 || static_cast<std::size_t>(index) >= canonical.size())
-      continue;
-    canonical[static_cast<std::size_t>(index)] =
-        workspace.storedSign[edgeIndex] * stored[edgeIndex];
-  }
+  const std::vector<complexd> canonical = canonicalWardCurrent();
 
   for (const auto &entry : workspace.complex.boundaryEntries(1)) {
     const auto row = static_cast<std::size_t>(entry.row);

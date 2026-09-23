@@ -16,11 +16,15 @@
 #include <pybind11/stl.h>
 
 #include "cobordism/AnalyticCache.h"
+#include "cobordism/BoundStatePole.h"
 #include "cobordism/Certificate.h"
 #include "cobordism/ChainComplex.h"
 #include "cobordism/Characteristic.h"
 #include "cobordism/DenseReference.h"
+#include "cobordism/DressedFluctuation.h"
 #include "cobordism/KuennethProduct.h"
+#include "cobordism/LevelRecursion.h"
+#include "cobordism/MappingCylinder.h"
 #include "cobordism/SpacetimeComposition.h"
 #include "cobordism/LowRankUpdate.h"
 #include "cobordism/OccupationSpectra.h"
@@ -40,6 +44,7 @@
 #include "cobordism/SelfConsistentMeanField.h"
 #include "cobordism/RecursiveQuotient.h"
 #include "cobordism/SurgicalCone.h"
+#include "cobordism/WardFlux.h"
 #include "cobordism/Spectrum.h"
 #include "spacetime/Spacetime.h"  // complete type required by pybind (typeid)
 
@@ -527,8 +532,9 @@ ChainComplex omits.)doc")
            "Eigenvalues survive the full similarity, so gauge invariance here "
            "is structural. The SQUARE is what makes it reduce to the Hodge "
            "term's own functional in the Hermitian limit, where |lambda|^2 = "
-           "sigma^2 are exactly the eigenvalues of A. This is the entropy that "
-           "can SEE the connection; every L_k is blind to phi.")
+           "sigma^2 are exactly the eigenvalues of A. The entropy of the 1-skeleton "
+           "operator; spectralEntropy of the default h_k(s, U) sees the connection "
+           "as well, at every degree.")
       .def("connectionSpectralEntropyPhaseGradient",
            &HodgeLaplacian::connectionSpectralEntropyPhaseGradient,
            "dS/dphi_e of connectionSpectralEntropy, EdgeList order, in the "
@@ -638,10 +644,11 @@ ChainComplex omits.)doc")
       // ----- indefinite W-norms of the near-kernel -----
       .def("nullNorms", &HodgeLaplacian::nullNorms,
            py::arg("k"), py::arg("tol") = 1e-9, py::arg("metric") = true,
-           "Indefinite W-norms <h,h>_W = sum_i W_{k,i} |h_i|^2 of the near-kernel "
-           "representatives, one per column of harmonics (same order). "
-           "A value ~0 flags a NULL (lightlike) harmonic; all positive on an "
-           "all-spacelike complex.");
+           "Indefinite norms of the near-kernel representatives in the metric that "
+           "produced them, one per column of harmonics (same order): h^dagger M_k^U h "
+           "with the dressed Whitney mass under WhitneyPencil, sum_i W_{k,i} |h_i|^2 "
+           "with the signed diagonal weights under DiagonalWeights. A value ~0 flags a "
+           "NULL (lightlike) harmonic; all positive on an all-spacelike complex.");
 
   // ----- eigenstate synthesis: residual + parameter access -----
   auto eigenstateSynthesis = py::class_<EigenstateSynthesis>(m, "EigenstateSynthesis",
@@ -2584,8 +2591,9 @@ Right -- re-read after each drive call:
       .def_readwrite("connection_stationarity",
                      &MultiCobordism::ObjectiveTerms::connectionStationarity,
                      "eta_C ||grad_phi S||^2 of the C* connection operator -- "
-                     "the ONLY term with a gradient in the connection phase. "
-                     "Every L_k is blind to phi, so without this the phase is "
+                     "the ONLY term with a gradient in the connection phase: the "
+                     "Hodge-entropy term sees phi through h_k(z, U) but is "
+                     "differentiated in z alone, so without this the phase is "
                      "a declared field no update can move.")
       .def_readwrite("register_residual",
                      &MultiCobordism::ObjectiveTerms::registerResidual)
@@ -2902,6 +2910,19 @@ Right -- re-read after each drive call:
       .def_readwrite("cadence", &MultiCobordism::AnalysisConfig::cadence)
       .def_readwrite("degrees", &MultiCobordism::AnalysisConfig::degrees)
       .def_readwrite("resolutions", &MultiCobordism::AnalysisConfig::resolutions)
+      .def_readwrite("frame_history",
+                     &MultiCobordism::AnalysisConfig::frameHistory,
+                     "Cobordism frames the overlay retains (one pass is one "
+                     "frame): what makes a candidate's lifetime, its "
+                     "adjacent-frame overlap, its per-frame band and anchor "
+                     "families and its lifetime transports measurable rather "
+                     "than assumed. 1 means no history.")
+      .def_readwrite("lifetime_winding_closure",
+                     &MultiCobordism::AnalysisConfig::lifetimeWindingClosure,
+                     "\"none\" (an open cobordism segment: the phase is "
+                     "reported and the winding stays unknown) or "
+                     "\"closed-family\" (the caller DECLARES the world tube "
+                     "closed and the winding is read cyclically).")
       .def_readwrite("fock_oracle", &MultiCobordism::AnalysisConfig::fockOracle)
       .def_readwrite("cold_caches", &MultiCobordism::AnalysisConfig::coldCaches);
 
@@ -3885,9 +3906,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::CraigBamptonRead>(recursiveQuotient,
       "CraigBamptonRead",
-      "Craig-Bampton/AMLS retained-mode surrogate: declared window, retained "
+      "Craig-Bampton/AMLS retained-mode surrogate: the declared window disc "
+      "(centre, radius) and retention radius with their real extents, retained "
       "fixed-interface modes per component, basis, reduced (stiffness, mass) "
-      "pencil, discarded-mode gap, and fine-space eigenresiduals.")
+      "pencil, discarded-mode gap, the claimed spectrum inside the disc, and "
+      "fine-space eigenresiduals.")
+      .def_readonly("windowCentre",
+                    &RecursiveQuotient::CraigBamptonRead::windowCentre)
+      .def_readonly("windowRadius",
+                    &RecursiveQuotient::CraigBamptonRead::windowRadius)
+      .def_readonly("retentionRadius",
+                    &RecursiveQuotient::CraigBamptonRead::retentionRadius)
       .def_readonly("windowLower",
                     &RecursiveQuotient::CraigBamptonRead::windowLower)
       .def_readonly("windowUpper",
@@ -3903,6 +3932,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::CraigBamptonRead::reducedMass)
       .def_readonly("discardedModeGap",
                     &RecursiveQuotient::CraigBamptonRead::discardedModeGap)
+      .def_readonly("windowSpectrum",
+                    &RecursiveQuotient::CraigBamptonRead::windowSpectrum)
       .def_readonly("windowEigenvalues",
                     &RecursiveQuotient::CraigBamptonRead::windowEigenvalues)
       .def_readonly("eigenResiduals",
@@ -3982,6 +4013,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &RecursiveQuotient::CertifiedBand::frequencyLower)
       .def_readwrite("frequencyUpper",
                      &RecursiveQuotient::CertifiedBand::frequencyUpper)
+      .def_readwrite("windowCentre",
+                     &RecursiveQuotient::CertifiedBand::windowCentre,
+                     "Centre of the band's window disc in the complex plane (NaN when the "
+                     "band was declared by its real extent alone).")
+      .def_readwrite("windowRadius",
+                     &RecursiveQuotient::CertifiedBand::windowRadius,
+                     "Radius of the band's window disc (NaN when declared by real extent alone).")
       .def_readwrite("accepted", &RecursiveQuotient::CertifiedBand::accepted)
       .def_readwrite("certificate",
                      &RecursiveQuotient::CertifiedBand::certificate);
@@ -4001,6 +4039,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyLower)
       .def_readonly("frequencyUpper",
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyUpper)
+      .def_readonly("windowCentre",
+                    &RecursiveQuotient::CertifiedFiberSummand::windowCentre)
+      .def_readonly("windowRadius",
+                    &RecursiveQuotient::CertifiedFiberSummand::windowRadius)
       .def_readonly("accepted",
                     &RecursiveQuotient::CertifiedFiberSummand::accepted)
       .def_readonly("certificate",
@@ -4086,6 +4128,24 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::ResponseNetworkRead::coverageResidual)
       .def_readonly("certificate",
                     &RecursiveQuotient::ResponseNetworkRead::certificate);
+
+  py::class_<RecursiveQuotient::ResolvedPartitionRead>(recursiveQuotient,
+      "ResolvedPartitionRead",
+      "The window form of persistentPartition, with the persistence of each "
+      "carried component reported beside the partition: how many resolutions "
+      "of the window it stood at, the resolution its support was read at, and "
+      "the weakest adjacent-resolution support overlap of its track.")
+      .def_readonly("components",
+                    &RecursiveQuotient::ResolvedPartitionRead::components)
+      .def_readonly("resolutions",
+                    &RecursiveQuotient::ResolvedPartitionRead::resolutions)
+      .def_readonly("selectedResolution",
+                    &RecursiveQuotient::ResolvedPartitionRead::selectedResolution)
+      .def_readonly(
+          "componentPersistence",
+          &RecursiveQuotient::ResolvedPartitionRead::componentPersistence)
+      .def_readonly("worstOverlap",
+                    &RecursiveQuotient::ResolvedPartitionRead::worstOverlap);
 
   py::class_<RecursiveQuotient::SheafRealizationRead>(recursiveQuotient,
       "SheafRealizationRead",
@@ -4212,14 +4272,31 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Algebraic multiplicity from the unwrapped det-phase windings "
            "(response + interior, reported separately), geometric from "
            "dim ker F_B(lambda); node count doubles until stable.")
-      .def("craigBampton", &RecursiveQuotient::craigBampton,
+      .def("craigBampton",
+           py::overload_cast<double, double, double, double>(
+               &RecursiveQuotient::craigBampton, py::const_),
            py::arg("window_lower"), py::arg("window_upper"),
            py::arg("mode_cutoff"), py::arg("residual_tolerance") = -1.0,
-           "Craig-Bampton retained-mode basis + reduced (K, M) pencil over "
-           "the declared window (certified approximation: the certificate "
-           "holds against the caller-declared residual_tolerance; negative "
-           "selects the strict Options.tolerance). Refuses the non-normal "
-           "regime and indefinite chain metrics.")
+           "Craig-Bampton retained-mode basis + reduced (K, M) pencil declared by a "
+           "real window: [a, b] is the disc with centre (a+b)/2 and radius (b-a)/2, "
+           "and mode_cutoff is the retention disc's real upper edge, so the retention "
+           "radius is mode_cutoff - (a+b)/2. Certified approximation: the certificate "
+           "holds against the caller-declared residual_tolerance; negative selects the "
+           "strict Options.tolerance. It runs in every regime: the adjoint pairing "
+           "against the positive diagonal chain metric in the two Hermitian regimes, "
+           "the transpose pairing against the level's own metric in the non-normal and "
+           "complex-symmetric-pencil ones. An indefinite chain metric is refused in a "
+           "Hermitian regime, a singular interior or reduced metric in a bilinear one.")
+      .def("craigBampton",
+           py::overload_cast<std::complex<double>, double, double, double>(
+               &RecursiveQuotient::craigBampton, py::const_),
+           py::arg("window_centre"), py::arg("window_radius"),
+           py::arg("retention_radius"), py::arg("residual_tolerance") = -1.0,
+           "The same surrogate over a declared window disc |theta - centre| <= radius "
+           "in the complex spectral plane: a fixed-interface mode is retained when its "
+           "eigenvalue is within retention_radius of the centre and a reduced "
+           "eigenvalue is claimed when it lies in the disc, by complex distance in "
+           "every regime. retention_radius must cover window_radius.")
       .def("labeledFiberSum", &RecursiveQuotient::labeledFiberSum,
            "The abstract labeled sum of retained fibers with embedding J and "
            "Gram G = J^dag W J under the run's declared policy.")
@@ -4283,6 +4360,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "its support at the first resolution of the window. Every "
                   "coordinate no such component claimed comes back as a "
                   "singleton.")
+      .def_static("persistentPartitionOverResolutions",
+                  &RecursiveQuotient::persistentPartitionOverResolutions,
+                  py::arg("op"), py::arg("dim"), py::arg("gammas"),
+                  py::arg("restarts") = 4, py::arg("base_seed") = 0,
+                  py::arg("overlap_threshold") = 0.5,
+                  "The window form of persistentPartition, with the "
+                  "persistence of every carried component reported beside the "
+                  "partition: the same scan, the same rule and the same "
+                  "result. A recursion that records why a level was "
+                  "partitioned as it was reads this form instead.")
       .def("childPersistentPartition",
            py::overload_cast<double, int, std::uint64_t>(
                &RecursiveQuotient::childPersistentPartition, py::const_),
@@ -4476,6 +4563,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("ward_current", &JointAction::wardCurrent,
            "j_xy = U_xy dS/dU_xy of Section 13.4, which is link_stationarity "
            "under its other name. Odd under reversing an edge.")
+      .def("canonical_ward_current", &JointAction::canonicalWardCurrent,
+           "The Ward current on the canonical degree-one cells, in the chain "
+           "complex's cell order and on each cell's ascending-vertex "
+           "orientation: ward_current reordered and re-signed to the indexing "
+           "every chain-level consumer of it uses.")
       .def("ward_current_divergence", &JointAction::wardCurrentDivergence,
            "(d j)_x per vertex. It vanishes identically for every "
            "gauge-invariant term; a fixed Gamma held while the connection "
@@ -4734,5 +4826,748 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_property_readonly("action", &SelfConsistentMeanField::action,
                              "The action, carrying the covariance and the "
                              "multipliers as the solve left them.");
+
+  // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
+
+  py::class_<CooorientedCut>(m, "CooorientedCut",
+      "A cooriented separating cut of Section 13.1, declared by the vertices "
+      "on its incoming side. The cut is the set of edges with exactly one "
+      "endpoint in that set, and an edge's coorientation is +1 when it leaves "
+      "the incoming side. Nothing here reads a vertex time, a Lorentzian "
+      "distance or a level-set ordering.")
+      .def(py::init<>())
+      .def(py::init([](std::vector<std::uint64_t> incomingSide,
+                       std::string label) {
+             CooorientedCut cut;
+             cut.incomingSide = std::move(incomingSide);
+             cut.label = std::move(label);
+             return cut;
+           }),
+           py::arg("incoming_side"), py::arg("label") = std::string())
+      .def_readwrite("incoming_side", &CooorientedCut::incomingSide,
+                     "Vertex identifiers on the incoming side of the cut.")
+      .def_readwrite("label", &CooorientedCut::label,
+                     "The caller's label for the cut.");
+
+  py::class_<WardFluxConfig>(m, "WardFluxConfig",
+      "Every threshold of the Ward-flux read.")
+      .def(py::init<>())
+      .def_readwrite("divergence_tolerance", &WardFluxConfig::divergenceTolerance,
+                     "|(d j)_x| at or below this is a vanishing divergence.")
+      .def_readwrite("integrality_tolerance",
+                     &WardFluxConfig::integralityTolerance,
+                     "|phi_j(Sigma) - n| at or below this lets the flux be "
+                     "read as the integer quark number N_q.")
+      .def_readwrite("imaginary_tolerance", &WardFluxConfig::imaginaryTolerance,
+                     "|Im phi_j(Sigma)| must be at or below this for the flux "
+                     "to be read as an integer.");
+
+  py::class_<WardFluxRead>(m, "WardFluxRead",
+      "The flux phi_j(Sigma) of the complex Ward current through one "
+      "cooriented cut, with every certificate Section 13.4 attaches to it.")
+      .def_readonly("label", &WardFluxRead::label)
+      .def_readonly("cut_cells", &WardFluxRead::cutCells,
+                    "The cut's edges as canonical degree-one cell indices.")
+      .def_readonly("coorientation", &WardFluxRead::coorientation,
+                    "The coorientation of each cut edge.")
+      .def_readonly("cut_current", &WardFluxRead::cutCurrent,
+                    "The Ward current on each cut edge.")
+      .def_readonly("flux", &WardFluxRead::flux,
+                    "phi_j(Sigma), the flux. Complex, never projected onto a "
+                    "real part.")
+      .def_readonly("enclosed_divergence", &WardFluxRead::enclosedDivergence,
+                    "The divergence summed over the incoming side, which the "
+                    "divergence theorem makes minus the flux.")
+      .def_readonly("divergence_theorem_residual",
+                    &WardFluxRead::divergenceTheoremResidual,
+                    "The residual of that identity.")
+      .def_readonly("bulk_divergence_max", &WardFluxRead::bulkDivergenceMax,
+                    "max |(d j)_x| over the vertices strictly inside the "
+                    "incoming side: the Ward identity, measured.")
+      .def_readonly("bulk_vertices", &WardFluxRead::bulkVertices)
+      .def_readonly("bulk_divergence_vertex",
+                    &WardFluxRead::bulkDivergenceVertex,
+                    "The vertex the bulk divergence was largest at.")
+      .def_readonly("enclosed_fermion_number",
+                    &WardFluxRead::enclosedFermionNumber,
+                    "The fermion number the declared covariance places on the "
+                    "carrier cells inside the cut.")
+      .def_readonly("enclosed_cells", &WardFluxRead::enclosedCells)
+      .def_readonly("fermion_number_residual",
+                    &WardFluxRead::fermionNumberResidual,
+                    "|flux - enclosed fermion number|.")
+      .def_readonly("quark_number", &WardFluxRead::quarkNumber,
+                    "N_q, when the flux is integral; None otherwise.")
+      .def_readonly("quark_number_defect", &WardFluxRead::quarkNumberDefect)
+      .def_readonly("baryon_number", &WardFluxRead::baryonNumber,
+                    "B(Sigma) = N_q / 3, the whitepaper's one explicit "
+                    "physical calibration.")
+      .def_readonly("separating", &WardFluxRead::separating)
+      .def_readonly("failed_certificates", &WardFluxRead::failedCertificates);
+
+  py::class_<WardHomologyRead>(m, "WardHomologyRead",
+      "Several cuts of one homology class read together.")
+      .def_readonly("cuts", &WardHomologyRead::cuts)
+      .def_readonly("max_flux_deviation", &WardHomologyRead::maxFluxDeviation,
+                    "The largest pairwise difference of the fluxes.")
+      .def_readonly("max_slab_divergence", &WardHomologyRead::maxSlabDivergence,
+                    "The divergence carried by the slabs between the cuts, "
+                    "which is the source content the invariance statement "
+                    "excludes.")
+      .def_readonly("invariant", &WardHomologyRead::invariant);
+
+  py::class_<IntrinsicResponseConfig>(m, "IntrinsicResponseConfig",
+      "The declared parameters of the intrinsic spectral response.")
+      .def(py::init<>())
+      .def_readwrite("left_current", &IntrinsicResponseConfig::leftCurrent,
+                     "The current the left restriction is cut from, in "
+                     "canonical degree-one cell order. Empty means the right "
+                     "current paired with itself through the transpose.")
+      .def_readwrite("degeneracy_tolerance",
+                     &IntrinsicResponseConfig::degeneracyTolerance,
+                     "Two eigenvalues this close are one degenerate band and "
+                     "share one Riesz projector.")
+      .def_readwrite("pole_tolerance", &IntrinsicResponseConfig::poleTolerance,
+                     "A sample this close to a pole is reported unavailable "
+                     "rather than as a large finite number.")
+      .def_readwrite("contour_nodes", &IntrinsicResponseConfig::contourNodes,
+                     "Quadrature nodes of the Riesz contour each band's "
+                     "residue is read on.");
+
+  py::class_<IntrinsicResponseRead>(m, "IntrinsicResponseRead",
+      "The intrinsic spectral response Upsilon_Q(lambda) of Section 13.5, "
+      "read on one cooriented cut. lambda is an eigenvalue of the slice "
+      "operator and is never relabelled as a momentum transfer.")
+      .def_readonly("label", &IntrinsicResponseRead::label)
+      .def_readonly("slice_cells", &IntrinsicResponseRead::sliceCells)
+      .def_readonly("rho_right", &IntrinsicResponseRead::rhoRight,
+                    "The right restriction of the Ward current to the cut.")
+      .def_readonly("rho_left", &IntrinsicResponseRead::rhoLeft,
+                    "The left restriction.")
+      .def_readonly("slice_operator", &IntrinsicResponseRead::sliceOperator,
+                    "L_Sigma, flat row-major over the cut's cells.")
+      .def_readonly("poles", &IntrinsicResponseRead::poles,
+                    "The distinct eigenvalues of L_Sigma.")
+      .def_readonly("pole_multiplicity",
+                    &IntrinsicResponseRead::poleMultiplicity)
+      .def_readonly("residues", &IntrinsicResponseRead::residues,
+                    "The residue of Upsilon_Q at each pole, taken on a Riesz "
+                    "contour around the whole band.")
+      .def_readonly("samples", &IntrinsicResponseRead::samples)
+      .def_readonly("response", &IntrinsicResponseRead::response,
+                    "Upsilon_Q at each sample.")
+      .def_readonly("slope", &IntrinsicResponseRead::slope,
+                    "dUpsilon_Q/dlambda at each sample, taken exactly from the "
+                    "square of the resolvent.")
+      .def_readonly("failed_certificates",
+                    &IntrinsicResponseRead::failedCertificates);
+
+  py::class_<WardFlux>(m, "WardFlux",
+      "The flux of the complex Ward current through a cooriented cut "
+      "(Section 13.4) and the intrinsic spectral response it carries "
+      "(Section 13.5).\n\n"
+      "The current is the joint action's link stationarity vector, "
+      "j_xy = U_xy dS/dU_xy; nothing here re-derives it and nothing here "
+      "supplies a field of its own. The flux is not electric charge: every "
+      "edge mode carries charge one under the C* group, so the flux counts "
+      "fermions, and a flavor-dependent electric charge is not a gauge charge "
+      "of the declared fields and carries no Ward current.")
+      .def_static("flux", &WardFlux::flux, py::arg("action"), py::arg("cut"),
+                  py::arg("cfg") = WardFluxConfig{},
+                  "The flux of the action's Ward current through one cut.")
+      .def_static("homologous_fluxes", &WardFlux::homologousFluxes,
+                  py::arg("action"), py::arg("cuts"),
+                  py::arg("cfg") = WardFluxConfig{},
+                  "Several cuts read together, with the pairwise flux "
+                  "deviation and the divergence the slabs between them carry.")
+      .def_static("difference", &WardFlux::difference, py::arg("state"),
+                  py::arg("matched"), py::arg("cfg") = WardFluxConfig{},
+                  "The coherent background removal of Section 13.5: the "
+                  "complex difference of two flux reads on one cut, with no "
+                  "modulus taken on either side.")
+      .def_static("intrinsic_response", &WardFlux::intrinsicResponse,
+                  py::arg("action"), py::arg("cut"), py::arg("samples"),
+                  py::arg("cfg") = IntrinsicResponseConfig{},
+                  "Upsilon_Q on one cut, evaluated at the declared samples.");
+
+  // ── Section 13.3: mass is a complex bound-state pole ───────────────────
+
+  py::class_<BoundStatePoleConfig>(m, "BoundStatePoleConfig",
+      "Every declared parameter of the pole search.")
+      .def(py::init<>())
+      .def_readwrite("contour_nodes", &BoundStatePoleConfig::contourNodes)
+      .def_readwrite("refinement_nodes", &BoundStatePoleConfig::refinementNodes,
+                     "The second quadrature the refinement continuation is "
+                     "read at.")
+      .def_readwrite("max_zeros", &BoundStatePoleConfig::maxZeros)
+      .def_readwrite("max_newton_steps", &BoundStatePoleConfig::maxNewtonSteps)
+      .def_readwrite("newton_tolerance", &BoundStatePoleConfig::newtonTolerance)
+      .def_readwrite("zero_count_tolerance",
+                     &BoundStatePoleConfig::zeroCountTolerance)
+      .def_readwrite("local_radius_fraction",
+                     &BoundStatePoleConfig::localRadiusFraction)
+      .def_readwrite("rank_tolerance", &BoundStatePoleConfig::rankTolerance)
+      .def_readwrite("free_threshold", &BoundStatePoleConfig::freeThreshold,
+                     "The complex spectral value the binding shift is measured "
+                     "against. None leaves the binding shift unreported.");
+
+  py::class_<BoundStatePoleRead>(m, "BoundStatePoleRead",
+      "The zeros of D_C(s) = det F_C(s) inside one declared contour, with the "
+      "certificates Section 13.3 attaches to a bound-state pole.")
+      .def_readonly("centre", &BoundStatePoleRead::centre)
+      .def_readonly("radius", &BoundStatePoleRead::radius)
+      .def_readonly("nodes", &BoundStatePoleRead::nodes)
+      .def_readonly("zero_count", &BoundStatePoleRead::zeroCount,
+                    "The argument-principle count before it is rounded.")
+      .def_readonly("zeros", &BoundStatePoleRead::zeros,
+                    "The total algebraic multiplicity enclosed.")
+      .def_readonly("zero_count_defect", &BoundStatePoleRead::zeroCountDefect)
+      .def_readonly("interior_pole_count",
+                    &BoundStatePoleRead::interiorPoleCount,
+                    "The unretained interior poles the contour encloses, as "
+                    "the argument principle on det P_II produced them.")
+      .def_readonly("interior_poles_enclosed",
+                    &BoundStatePoleRead::interiorPolesEnclosed)
+      .def_readonly("poles", &BoundStatePoleRead::poles,
+                    "The distinct zeros s_C found inside the contour.")
+      .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity)
+      .def_readonly("determinant_at_pole",
+                    &BoundStatePoleRead::determinantAtPole, "D_C(s_C).")
+      .def_readonly("derivative_at_pole",
+                    &BoundStatePoleRead::derivativeAtPole, "D_C'(s_C).")
+      .def_readonly("simple", &BoundStatePoleRead::simple,
+                    "Whether the zero met the simple-isolated specification.")
+      .def_readonly("newton_step", &BoundStatePoleRead::newtonStep)
+      .def_readonly("separation", &BoundStatePoleRead::separation)
+      .def_readonly("residue", &BoundStatePoleRead::residue,
+                    "The residue of the supported resolvent at each zero, flat "
+                    "row-major over the interface coordinates.")
+      .def_readonly("residue_norm", &BoundStatePoleRead::residueNorm)
+      .def_readonly("residue_rank", &BoundStatePoleRead::residueRank)
+      .def_readonly("continued_pole", &BoundStatePoleRead::continuedPole,
+                    "Each zero recomputed at the refinement quadrature.")
+      .def_readonly("continuation_movement",
+                    &BoundStatePoleRead::continuationMovement)
+      .def_readonly("binding_shift", &BoundStatePoleRead::bindingShift,
+                    "s_C minus the declared free threshold.")
+      .def_readonly("interior_resonance",
+                    &BoundStatePoleRead::interiorResonance,
+                    "Whether an unretained interior pole sits on the contour, "
+                    "which is the domain Section 13.3 continues F_C on being "
+                    "left.")
+      .def_readonly("failed_certificates",
+                    &BoundStatePoleRead::failedCertificates);
+
+  py::class_<BoundStatePole>(m, "BoundStatePole",
+      "Mass as the complex bound-state pole of Section 13.3: the zeros of "
+      "D_C(s) = det F_C(s), with F_C the exact meromorphic Feshbach response "
+      "pencil of a persistent bound cluster, continued in the complex "
+      "spectral parameter s.\n\n"
+      "Mass is not defined here by an incoherent sum of moduli, and nothing "
+      "here converts s_C into a mass: the theory carries s_C and takes no "
+      "square root of it.")
+      .def_static("response", &BoundStatePole::response, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  py::arg("rank_tolerance") = 1e-12,
+                  "F_C(s), as the framework's own Schur complement supplies "
+                  "it.")
+      .def_static("determinant", &BoundStatePole::determinant, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  "D_C(s) = det F_C(s).")
+      .def_static("response_derivative", &BoundStatePole::responseDerivative,
+                  py::arg("A"), py::arg("M"), py::arg("interface"),
+                  py::arg("s"),
+                  "F_C'(s), the exact analytic derivative of the response.")
+      .def_static("logarithmic_derivative",
+                  &BoundStatePole::logarithmicDerivative, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  "D_C'(s) / D_C(s) = tr(F_C^-1 F_C').")
+      .def_static("poles", &BoundStatePole::poles, py::arg("A"), py::arg("M"),
+                  py::arg("interface"), py::arg("centre"), py::arg("radius"),
+                  py::arg("cfg") = BoundStatePoleConfig{},
+                  "The zeros of D_C inside the declared contour.")
+      .def_static("cluster_poles", &BoundStatePole::clusterPoles,
+                  py::arg("assembled"), py::arg("k"), py::arg("cluster_cells"),
+                  py::arg("centre"), py::arg("radius"),
+                  py::arg("cfg") = BoundStatePoleConfig{},
+                  "The same search on an assembled pencil's degree-k block.");
+
+  py::class_<DressedFluctuationDeclaration>(m, "DressedFluctuationDeclaration",
+      "Everything that fixes which fluctuation problem a DressedFluctuation "
+      "is: the carrier h0, the couplings O_a = dh/df_a, the second "
+      "derivatives the diamagnetic term is built from, the bare stiffness A of "
+      "the fluctuation's own action, and the occupation rule. Plain data.")
+      .def(py::init<>())
+      .def_readwrite("carrier_dimension",
+                     &DressedFluctuationDeclaration::carrierDimension,
+                     "n, the dimension of the one-particle carrier space.")
+      .def_readwrite("carrier", &DressedFluctuationDeclaration::carrier,
+                     "h0, the carrier operator at the stationary "
+                     "configuration, flat row-major n by n. It is never "
+                     "symmetrized and no adjoint of it is taken.")
+      .def_readwrite("couplings", &DressedFluctuationDeclaration::couplings,
+                     "O_a = dh/df_a for each retained fluctuation, each flat "
+                     "row-major n by n. Their number is R.")
+      .def_readwrite("second_derivatives",
+                     &DressedFluctuationDeclaration::secondDerivatives,
+                     "d^2h/df_a df_b for the pairs a <= b in row-major "
+                     "upper-triangular order, each flat row-major n by n. "
+                     "Empty declares a carrier that depends on the "
+                     "fluctuations linearly, so the diamagnetic term is zero.")
+      .def_readwrite("bare_stiffness",
+                     &DressedFluctuationDeclaration::bareStiffness,
+                     "A, the bare stiffness of the fluctuation's own action, "
+                     "flat row-major R by R and complex symmetric. Empty "
+                     "declares a zero bare stiffness.")
+      .def_readwrite("occupied_modes",
+                     &DressedFluctuationDeclaration::occupiedModes,
+                     "How many modes of h0 the quasi-free state occupies.")
+      .def_readwrite("occupation_order",
+                     &DressedFluctuationDeclaration::occupationOrder,
+                     "Which modes those are.")
+      .def_readwrite("continuum_broadening",
+                     &DressedFluctuationDeclaration::continuumBroadening,
+                     "eta >= 0, a declared finite lifetime given to every "
+                     "particle-hole excitation, replacing each excitation "
+                     "energy by Delta - i eta. Zero is the whitepaper's "
+                     "formula exactly; a positive value is the one "
+                     "approximation of this class and is never applied unless "
+                     "asked for.")
+      .def_readwrite("tolerance", &DressedFluctuationDeclaration::tolerance,
+                     "The relative tolerance the certificates hold against.");
+
+  py::class_<CollectiveMode>(m, "CollectiveMode",
+      "One pole of the dressed fluctuation propagator A_eff(w)^-1: a frequency "
+      "at which the dressed stiffness is singular, with the fluctuation "
+      "direction that is soft there. These are the gauge quanta of Section 7.")
+      .def(py::init<>())
+      .def_readwrite("frequency", &CollectiveMode::frequency,
+                     "w, the frequency at which det A_eff(w) = 0. The dressed "
+                     "stiffness depends on w only through w^2, so the poles "
+                     "come in pairs and both members are reported.")
+      .def_readwrite("polarization", &CollectiveMode::polarization,
+                     "The unit null direction of A_eff(w), length R: the "
+                     "combination of retained fluctuations that is soft here.")
+      .def_readwrite("radiation_rate", &CollectiveMode::radiationRate,
+                     "Gamma = -2 Im w, the rate at which the mode's "
+                     "occupation relaxes into the particle-hole continuum. "
+                     "Zero for a real frequency, which is a mode that does not "
+                     "radiate.")
+      .def_readwrite("continuum_distance", &CollectiveMode::continuumDistance,
+                     "The distance from the nearest bare particle-hole "
+                     "excitation energy or its negative.")
+      .def_readwrite("inside_particle_hole_continuum",
+                     &CollectiveMode::insideParticleHoleContinuum,
+                     "Whether |Re w| lies between the smallest and the largest "
+                     "Re Delta: the mode is then degenerate with the "
+                     "particle-hole excitations rather than bound outside "
+                     "them.")
+      .def_readwrite("residual", &CollectiveMode::residual,
+                     "The relative residual of the null-vector equation this "
+                     "mode solves.")
+      .def_readwrite("certificate", &CollectiveMode::certificate);
+
+  py::class_<ManyBodySpaceRead>(m, "ManyBodySpaceRead",
+      "The effective action of the exact elimination, evaluated on the "
+      "N-particle space of a cluster. The basis is the ascending N-element "
+      "subsets of the fiber's modes in lexicographic order.")
+      .def(py::init<>())
+      .def_readwrite("particles", &ManyBodySpaceRead::particles)
+      .def_readwrite("fiber_rank", &ManyBodySpaceRead::fiberRank,
+                     "r, the rank of the cluster's fiber.")
+      .def_readwrite("dimension", &ManyBodySpaceRead::dimension,
+                     "r choose N, the order of every matrix below.")
+      .def_readwrite("basis", &ManyBodySpaceRead::basis,
+                     "The occupation basis: one ascending N-tuple of fiber "
+                     "mode indices per dimension, in lexicographic order.")
+      .def_readwrite("one_body", &ManyBodySpaceRead::oneBody,
+                     "psiTilde^T h0 psi on this space, flat row-major.")
+      .def_readwrite("quartic", &ManyBodySpaceRead::quartic,
+                     "-1/2 J^T A^-1 J on this space, flat row-major: the whole "
+                     "second term of the exact elimination.")
+      .def_readwrite("induced_one_body", &ManyBodySpaceRead::inducedOneBody,
+                     "The part of the quartic that is a one-body operator, "
+                     "-1/2 dGamma(sum_ab (A^-1)_ab O_a O_b), which reordering "
+                     "the product of two currents produces.")
+      .def_readwrite("normal_ordered_quartic",
+                     &ManyBodySpaceRead::normalOrderedQuartic,
+                     "The quartic minus its one-body part: the strictly "
+                     "quartic, normal-ordered interaction, which is the term "
+                     "that takes the state outside the Gaussian class.")
+      .def_readwrite("effective_action", &ManyBodySpaceRead::effectiveAction,
+                     "S_eff = psiTilde^T h0 psi - 1/2 J^T A^-1 J on this "
+                     "space, flat row-major.")
+      .def_readwrite("frame_pairing_defect",
+                     &ManyBodySpaceRead::framePairingDefect,
+                     "||PhiTilde^T Phi - I|| of the declared cluster frames.")
+      .def_readwrite("stiffness_asymmetry",
+                     &ManyBodySpaceRead::stiffnessAsymmetry,
+                     "||A - A^T||_F / ||A||_F of the bare stiffness.")
+      .def_readwrite("stiffness_conditioning",
+                     &ManyBodySpaceRead::stiffnessConditioning)
+      .def_readwrite("certificate", &ManyBodySpaceRead::certificate);
+
+  py::class_<DressedFluctuation>(m, "DressedFluctuation",
+      "The dressed fluctuation propagator of Section 7, its poles, and the "
+      "exact elimination of the fluctuation.\n\n"
+      "A retained fluctuation f in C^R of the geometry or of the connection "
+      "couples linearly to the fermion bilinear currents J_a = psiTilde^T O_a "
+      "psi with O_a = dh/df_a. In a quasi-free state its stiffness is dressed "
+      "to A_eff(w) = A + D - Pi(w), with D the diamagnetic term and Pi the "
+      "paramagnetic polarization. Every bracket is the complex bilinear one "
+      "taken between the left and right modes of h0, so no adjoint appears "
+      "anywhere and a non-normal carrier is carried as it stands. At w = 0 the "
+      "induced stiffness D - Pi(0) is the Hessian of the occupied energy and "
+      "vanishes on every pure-gauge direction, which is the Ward identity. The "
+      "poles of A_eff(w)^-1 are the collective modes the whitepaper names the "
+      "gauge quanta, and they are found exactly by a linear pencil rather than "
+      "by sampling w. Eliminating f at its saddle gives S_eff = psiTilde^T h0 "
+      "psi - 1/2 J^T A^-1 J, whose second term is evaluated on the "
+      "three-particle space of a cluster.")
+      .def(py::init<DressedFluctuationDeclaration>(), py::arg("declaration"))
+      .def_property_readonly("declaration", &DressedFluctuation::declaration,
+                             "The declaration this instance was built from.")
+      .def("carrier_dimension", &DressedFluctuation::carrierDimension)
+      .def("fluctuation_count", &DressedFluctuation::fluctuationCount,
+           "R, the number of retained fluctuations.")
+      .def("particle_hole_pair_count",
+           &DressedFluctuation::particleHolePairCount,
+           "P, the occupied mode count times the empty mode count.")
+      .def("carrier_eigenvalues", &DressedFluctuation::carrierEigenvalues,
+           "The eigenvalues of h0 in the declared occupation order, so the "
+           "first occupied_modes entries are the occupied ones.")
+      .def("particle_hole_energies", &DressedFluctuation::particleHoleEnergies,
+           "The bare excitation energies Delta = lambda_n - lambda_m, one per "
+           "pair of an occupied m with an empty n, occupied-major.")
+      .def("mode_currents", &DressedFluctuation::modeCurrents, py::arg("index"),
+           "V^-1 O_a V, the current matrix of one fluctuation in the carrier's "
+           "mode basis, flat row-major in the declared occupation order.")
+      .def("diamagnetic", &DressedFluctuation::diamagnetic,
+           "D, the diamagnetic term, flat row-major R by R.")
+      .def("paramagnetic", &DressedFluctuation::paramagnetic,
+           py::arg("frequency") = std::complex<double>{0.0, 0.0},
+           "Pi(w), the paramagnetic polarization, flat row-major R by R.")
+      .def("dressed_stiffness", &DressedFluctuation::dressedStiffness,
+           py::arg("frequency") = std::complex<double>{0.0, 0.0},
+           "A_eff(w) = A + D - Pi(w), flat row-major R by R.")
+      .def("induced_stiffness", &DressedFluctuation::inducedStiffness,
+           "D - Pi(0), the whole fermion contribution to the dressed "
+           "stiffness, which is the Hessian of the occupied energy.")
+      .def("ward_residual", &DressedFluctuation::wardResidual,
+           py::arg("gauge_direction"),
+           "||(D - Pi(0)) g|| / (||D - Pi(0)|| ||g||) on one declared "
+           "pure-gauge direction.")
+      .def("ward_certificate", &DressedFluctuation::wardCertificate,
+           py::arg("gauge_directions"),
+           "The Ward identity over the declared pure-gauge directions: the "
+           "induced stiffness vanishes on every one of them because the "
+           "carrier moves along one by a similarity transformation, which "
+           "leaves its eigenvalues where they were.")
+      .def("collective_modes", &DressedFluctuation::collectiveModes,
+           "The poles of A_eff(w)^-1, ascending by (Re w, Im w). A candidate "
+           "whose geometric component vanishes is an uncoupled particle-hole "
+           "excitation rather than a pole and is not reported.")
+      .def("effective_action", &DressedFluctuation::effectiveAction,
+           py::arg("cluster_frame"), py::arg("cluster_dual_frame"),
+           py::arg("particles") = std::size_t{3},
+           py::arg("dimension_cap") =
+               DressedFluctuation::kDefaultManyBodyDimensionCap,
+           "S_eff on the N-particle space of a cluster fiber. The frames are "
+           "the fiber's right frame (n by r) and its algebraic dual (r by n); "
+           "empty frames declare the whole carrier space.");
+
+  py::class_<MappingCylinderDeclaration>(m, "MappingCylinderDeclaration",
+      "The three pieces of data one tick of the recursion is built from: the "
+      "top cells of K^l, the reduction map on its vertices, and the top cells "
+      "of K^{l+1}. Plain data.")
+      .def(py::init<>())
+      .def_readwrite("incoming_top_cells",
+                     &MappingCylinderDeclaration::incomingTopCells,
+                     "The top cells of K^l, each a tuple of vertex "
+                     "identifiers. The list must be pure.")
+      .def_readwrite("reduction_map",
+                     &MappingCylinderDeclaration::reductionMap,
+                     "r: for every vertex of K^l, the response vertex of "
+                     "R^{l+1} it is carried to. Its identifiers must be "
+                     "disjoint from the incoming ones.")
+      .def_readwrite("outgoing_top_cells",
+                     &MappingCylinderDeclaration::outgoingTopCells,
+                     "The top cells of K^{l+1}, each a tuple of response "
+                     "vertices. The interactions of Section 6 supply these; "
+                     "the reduction supplies none of them.");
+
+  py::class_<MappingCylinderRead>(m, "MappingCylinderRead",
+      "The interaction cobordism W^l and the two complexes it runs between, "
+      "with the checks that identify its boundary.")
+      .def(py::init<>())
+      .def_readwrite("incoming_dimension",
+                     &MappingCylinderRead::incomingDimension)
+      .def_readwrite("cylinder_dimension",
+                     &MappingCylinderRead::cylinderDimension,
+                     "One more than the incoming dimension: the fibering "
+                     "direction is the extra simplex dimension and the only "
+                     "reason the cylinder has one.")
+      .def_readwrite("outgoing_dimension",
+                     &MappingCylinderRead::outgoingDimension)
+      .def_readwrite("incoming_vertices",
+                     &MappingCylinderRead::incomingVertices)
+      .def_readwrite("response_vertices",
+                     &MappingCylinderRead::responseVertices)
+      .def_readwrite("cylinder_top_cells",
+                     &MappingCylinderRead::cylinderTopCells,
+                     "The staircase simplices of the prism over each incoming "
+                     "top cell, with the degenerate ones dropped.")
+      .def_readwrite("fiber_edges", &MappingCylinderRead::fiberEdges,
+                     "The edges (v, r(v)), one per vertex of K^l. They are the "
+                     "only timelike edges of the history.")
+      .def_readwrite("cross_edges", &MappingCylinderRead::crossEdges,
+                     "Every edge of W^l with one endpoint at each end: the "
+                     "fiber edges plus the prism diagonals.")
+      .def_readwrite("image_top_cells", &MappingCylinderRead::imageTopCells,
+                     "The maximal image cells r(sigma): the image complex the "
+                     "outgoing end carries before K^{l+1} is attached.")
+      .def_readwrite("incoming_free_facets",
+                     &MappingCylinderRead::incomingFreeFacets)
+      .def_readwrite("outgoing_free_facets",
+                     &MappingCylinderRead::outgoingFreeFacets)
+      .def_readwrite("side_free_facets",
+                     &MappingCylinderRead::sideFreeFacets)
+      .def_readwrite("incoming_boundary_is_the_incoming_complex",
+                     &MappingCylinderRead::incomingBoundaryIsTheIncomingComplex)
+      .def_readwrite("outgoing_complex_contains_the_image",
+                     &MappingCylinderRead::outgoingComplexContainsTheImage)
+      .def_readwrite("has_no_side_wall", &MappingCylinderRead::hasNoSideWall)
+      .def_readwrite("boundary_is_the_disjoint_union",
+                     &MappingCylinderRead::boundaryIsTheDisjointUnion,
+                     "dW^l = K^l disjoint union K^{l+1}.")
+      .def_readwrite("boundary_residual",
+                     &MappingCylinderRead::boundaryResidual)
+      .def_readwrite("certificate", &MappingCylinderRead::certificate);
+
+  py::class_<MappingCylinder>(m, "MappingCylinder",
+      "The interaction cobordism W^l of Section 3: one tick of time, realized "
+      "as the mapping cylinder of the reduction map from K^l onto the vertex "
+      "set of R^{l+1}, with the cells of K^{l+1} attached on its outgoing "
+      "end.\n\n"
+      "The cylinder contains K^l, the fiber edges joining each certified "
+      "cluster's cells to its response vertex, and K^{l+1}, with dW^l = K^l "
+      "disjoint union K^{l+1}. Time is not a simplex dimension of any level; "
+      "it is the fourth simplex dimension of W^l only because W^l is built to "
+      "realize the fibering direction geometrically. The reduction determines "
+      "no incidence maps of its own, so K^{l+1} is declared rather than "
+      "derived and the class checks that the image of the reduction lands "
+      "inside it.")
+      .def(py::init<MappingCylinderDeclaration>(), py::arg("declaration"))
+      .def_property_readonly("declaration", &MappingCylinder::declaration)
+      .def("read", &MappingCylinder::read,
+           py::return_value_policy::reference_internal,
+           "The cylinder, its two ends and the boundary checks.");
+
+  py::enum_<RecursionBandSelection>(m, "RecursionBandSelection",
+      "How the closed contour of a response vertex is fixed. LowestModes "
+      "derives it from a declared band rank and the declared occupation "
+      "order, which is a rule for writing a contour down and never a "
+      "substitute for one; DeclaredContours takes a centre and a radius per "
+      "component and sorts nothing at all.")
+      .value("LowestModes", RecursionBandSelection::LowestModes)
+      .value("DeclaredContours", RecursionBandSelection::DeclaredContours);
+
+  py::class_<RecursionBandDeclaration>(m, "RecursionBandDeclaration",
+      "How every level's fibers are selected.")
+      .def(py::init<>())
+      .def_readwrite("selection", &RecursionBandDeclaration::selection)
+      .def_readwrite("band_rank", &RecursionBandDeclaration::bandRank,
+                     "r_v, the number of eigenvalues each contour encloses "
+                     "under LowestModes.")
+      .def_readwrite("order", &RecursionBandDeclaration::order)
+      .def_readwrite("contour_nodes", &RecursionBandDeclaration::contourNodes,
+                     "The quadrature nodes on each contour. The projector is "
+                     "the contour integral of the resolvent, evaluated by the "
+                     "trapezoidal rule on the circle.")
+      .def_readwrite("contour_centres",
+                     &RecursionBandDeclaration::contourCentres)
+      .def_readwrite("contour_radii", &RecursionBandDeclaration::contourRadii);
+
+  py::class_<LevelRecursionDeclaration>(m, "LevelRecursionDeclaration",
+      "Everything that fixes how a recursion is driven. None of it changes "
+      "which identities hold.")
+      .def(py::init<>())
+      .def_readwrite("resolutions", &LevelRecursionDeclaration::resolutions,
+                     "The modularity resolutions every level's partition is "
+                     "swept over, in scan order.")
+      .def_readwrite("modularity_restarts",
+                     &LevelRecursionDeclaration::modularityRestarts)
+      .def_readwrite("modularity_seed",
+                     &LevelRecursionDeclaration::modularitySeed)
+      .def_readwrite("persistence_overlap",
+                     &LevelRecursionDeclaration::persistenceOverlap)
+      .def_readwrite("reference_lambda",
+                     &LevelRecursionDeclaration::referenceLambda,
+                     "The spectral parameter each level's partition and fibers "
+                     "are read at. The partition and the fibers are declared "
+                     "structure of a level, not functions of lambda; the "
+                     "energy dependence is carried by response_pencil, which "
+                     "re-derives the whole chain at whatever lambda it is "
+                     "asked for.")
+      .def_readwrite("bands", &LevelRecursionDeclaration::bands)
+      .def_readwrite("tolerance", &LevelRecursionDeclaration::tolerance)
+      .def_readwrite("dense_crossover",
+                     &LevelRecursionDeclaration::denseCrossover);
+
+  py::class_<RecursionBandRead>(m, "RecursionBandRead",
+      "One certified fiber E_v = Ran P_v and the contour that produced it.")
+      .def(py::init<>())
+      .def_readwrite("component", &RecursionBandRead::component)
+      .def_readwrite("rank", &RecursionBandRead::rank)
+      .def_readwrite("contour_centre", &RecursionBandRead::contourCentre)
+      .def_readwrite("contour_radius", &RecursionBandRead::contourRadius)
+      .def_readwrite("contour_nodes", &RecursionBandRead::contourNodes)
+      .def_readwrite("eigenvalues", &RecursionBandRead::eigenvalues,
+                     "The eigenvalues of the component's block the contour "
+                     "encloses.")
+      .def_readwrite("isolation_gap", &RecursionBandRead::isolationGap,
+                     "The distance from the contour to the nearest eigenvalue "
+                     "of the block, inside or outside.")
+      .def_readwrite("projector_idempotency",
+                     &RecursionBandRead::projectorIdempotency)
+      .def_readwrite("pairing_defect", &RecursionBandRead::pairingDefect,
+                     "||PhiTilde^T Phi - I||, the bilinear pairing of the two "
+                     "frames.")
+      .def_readwrite("frame", &RecursionBandRead::frame,
+                     "Phi_v over the level's coordinates, flat row-major.")
+      .def_readwrite("left_frame", &RecursionBandRead::leftFrame,
+                     "PhiTilde_v^T, flat row-major.")
+      .def_readwrite("accepted", &RecursionBandRead::accepted)
+      .def_readwrite("certificate", &RecursionBandRead::certificate);
+
+  py::class_<LevelTransport>(m, "LevelTransport",
+      "One block M_vw = PhiTilde_v^T T_vw Phi_w: the level's coupling between "
+      "two response vertices, read in their own fibers.")
+      .def(py::init<>())
+      .def_readwrite("from_component", &LevelTransport::from)
+      .def_readwrite("to_component", &LevelTransport::to)
+      .def_readwrite("block", &LevelTransport::block);
+
+  py::class_<RecursionLevelRead>(m, "RecursionLevelRead",
+      "One turn of the whitepaper's box: the partition, the fibers, the "
+      "labeled sum and the response pencil of the level above.")
+      .def(py::init<>())
+      .def_readwrite("level", &RecursionLevelRead::level)
+      .def_readwrite("dimension", &RecursionLevelRead::dimension)
+      .def_readwrite("partition", &RecursionLevelRead::partition)
+      .def_readwrite("resolutions", &RecursionLevelRead::resolutions)
+      .def_readwrite("selected_resolution",
+                     &RecursionLevelRead::selectedResolution)
+      .def_readwrite("component_persistence",
+                     &RecursionLevelRead::componentPersistence)
+      .def_readwrite("worst_persistence_overlap",
+                     &RecursionLevelRead::worstPersistenceOverlap)
+      .def_readwrite("bands", &RecursionLevelRead::bands)
+      .def_readwrite("embedding", &RecursionLevelRead::embedding,
+                     "Y_{l+1}, the fibers' right frames side by side.")
+      .def_readwrite("dual_embedding", &RecursionLevelRead::dualEmbedding)
+      .def_readwrite("gram", &RecursionLevelRead::gram,
+                     "G_{l+1} = YTilde^T Y, the bilinear overlap of the "
+                     "labeled sum. An off-diagonal block is nonzero exactly "
+                     "when two fibers' supports meet, which is why the "
+                     "internal sum is never asserted to be direct.")
+      .def_readwrite("gram_defect", &RecursionLevelRead::gramDefect)
+      .def_readwrite("modes", &RecursionLevelRead::modes)
+      .def_readwrite("fiber_operator", &RecursionLevelRead::fiberOperator,
+                     "h^{l+1} = YTilde^T R_l(lambda_ref) Y.")
+      .def_readwrite("fiber_spectrum", &RecursionLevelRead::fiberSpectrum)
+      .def_readwrite("transports", &RecursionLevelRead::transports)
+      .def_readwrite("fock_stage_dimension",
+                     &RecursionLevelRead::fockStageDimension,
+                     "2^M, the Fock stage the level's one-particle space "
+                     "carries. The vector is never allocated.")
+      .def_readwrite("vacuum_embedded_modes",
+                     &RecursionLevelRead::vacuumEmbeddedModes,
+                     "The modes the interaction stage adds beyond the ones the "
+                     "reduction retained, which the state reaches by the "
+                     "vacuum embedding of Section 12.")
+      .def_readwrite("response_dimension",
+                     &RecursionLevelRead::responseDimension)
+      .def_readwrite("determinant_residual",
+                     &RecursionLevelRead::determinantResidual,
+                     "The determinant factorization that makes the step exact, "
+                     "measured at the reference lambda.")
+      .def_readwrite("reduction_certificate",
+                     &RecursionLevelRead::reductionCertificate)
+      .def_readwrite("certificate", &RecursionLevelRead::certificate);
+
+  py::class_<LevelRecursion>(m, "LevelRecursion",
+      "The master recursive construction of Section 15, driven level by level "
+      "with the energy dependence kept exact.\n\n"
+      "Every scale runs the whitepaper's box: the partition is discovered over "
+      "a declared sweep of modularity resolutions, each component's fiber is "
+      "the range of the Riesz projector of its own block over its own contour, "
+      "the next level's response pencil is the exact Feshbach map of the one "
+      "below, and the fibers are summed into the labeled sum with its bilinear "
+      "overlap carried exactly.\n\n"
+      "R_l is a function of lambda and never a matrix frozen at one value of "
+      "it: response_pencil re-derives the whole chain from the microscopic "
+      "pencil A - lambda M, applying each level's declared partition in turn "
+      "as a plain supported block elimination with no further shift, because "
+      "the spectral parameter is already inside the matrix being eliminated. "
+      "The step is exact by the determinant factorization det R_l = det(R_l)_II "
+      "det R_{l+1}, so every level's spectrum is reproduced from the level "
+      "below it. Nothing is linearized, and no square root, polar projection "
+      "or eigenvalue ordering enters the recursion.")
+      .def_static("overPencil", &LevelRecursion::overPencil, py::arg("pencil"),
+                  py::arg("metric"), py::arg("dimension"),
+                  py::arg("declaration"),
+                  "Build over an explicit pencil (A, M), flat row-major. An "
+                  "empty metric is the identity, so the microscopic pencil is "
+                  "A - lambda I.")
+      .def_static("overSpacetime", &LevelRecursion::overSpacetime,
+                  py::arg("spacetime"), py::arg("degree"),
+                  py::arg("metric_source"), py::arg("declaration"),
+                  "Build over a triangulation's Hodge operator at a degree, "
+                  "which at degree one is the whitepaper's microscopic "
+                  "edge-mode response pencil.")
+      .def_property_readonly("declaration", &LevelRecursion::declaration)
+      .def("base_dimension", &LevelRecursion::baseDimension)
+      .def("level_count", &LevelRecursion::levelCount,
+           "How many turns of the box have been taken.")
+      .def("advance", &LevelRecursion::advance, "Take one turn of the box.")
+      .def("advance_to", &LevelRecursion::advanceTo, py::arg("levels"),
+           "Take turns until level_count reaches the named number.")
+      .def("level", &LevelRecursion::level, py::arg("index"),
+           py::return_value_policy::reference_internal,
+           "One completed turn of the box.")
+      .def("component_of_coordinate", &LevelRecursion::componentOfCoordinate,
+           py::arg("index"),
+           "The component of P_l each coordinate of the level belongs to: the "
+           "reduction map, as a map on coordinates. It is the map "
+           "MappingCylinder builds W^l over when the level's coordinates are "
+           "the vertices of K^l.")
+      .def("response_pencil", &LevelRecursion::responsePencil,
+           py::arg("level"), py::arg("lambda_"),
+           "R_l(lambda), flat row-major: the exact energy-dependent response "
+           "pencil of the level, re-derived from the microscopic pencil at "
+           "this lambda.")
+      .def("response_dimension", &LevelRecursion::responseDimension,
+           py::arg("level"))
+      .def("response_determinant", &LevelRecursion::responseDeterminant,
+           py::arg("level"), py::arg("lambda_"),
+           "det R_l(lambda): the function whose zeros, together with the "
+           "interior determinants the chain eliminated, are the microscopic "
+           "spectrum.")
+      .def("interior_determinant", &LevelRecursion::interiorDeterminant,
+           py::arg("level"), py::arg("lambda_"),
+           "det (R_l(lambda))_II, the determinant of the interior block the "
+           "step from this level eliminates.")
+      .def("determinant_factorization_residual",
+           &LevelRecursion::determinantFactorizationResidual, py::arg("level"),
+           py::arg("lambda_"),
+           "The identity that makes the step exact, measured at a spectral "
+           "parameter of the caller's choosing.")
+      .def("record_vacuum_embedded_modes",
+           &LevelRecursion::recordVacuumEmbeddedModes, py::arg("index"),
+           py::arg("modes"),
+           "Record that the interaction stage attached new one-particle modes "
+           "to the level, which the carried state reaches by the vacuum "
+           "embedding. The reduction alone grows nothing.");
 
 }
