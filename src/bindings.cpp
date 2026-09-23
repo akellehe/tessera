@@ -50,6 +50,7 @@ void register_quantum(py::module_ m);
 void register_mesh(py::module_ m);
 void register_spacetime(py::module_ m);
 void register_observables(py::module_ m);
+void register_isospin_doublet(py::module_ m);
 void register_simulations(py::module_ m);
 void register_cobordism(py::module_ m);
 void register_chainhodge(py::module_ m);
@@ -109,6 +110,7 @@ References:
   register_mesh(m_mesh);
   register_spacetime(m_spacetime);
   register_observables(m_observables);
+  register_isospin_doublet(m_observables);
   register_simulations(m_simulations);
   register_cobordism(m_cobordism);
   register_chainhodge(m_chainhodge);
