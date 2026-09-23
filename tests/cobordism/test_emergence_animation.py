@@ -89,31 +89,19 @@ class DriveTest(unittest.TestCase):
         self.assertTrue(ea.boundary_vertices(host),
                         "the host must be a cobordism, not a closed complex")
 
-    def test_the_default_seed_carries_lorentzian_content(self):
-        """The Lorentzian content the original host lacked.
-
-        The first host initialized every length purely real and positive, so
-        the seed carried no imaginary part at all -- a programme Lorentzian in
-        every path starting from a complex that was not. Nothing CONSTRAINS
-        the geometry to stay real -- stage 2 rotates `z` freely and the engine
-        has disposition moves -- but the starting point had no causal content
-        to evolve from.
-
-        The default disposition is the foliation rotated at `DECLARED_EPSILON`,
-        so this asserts the property that survives the change of convention:
-        the seed is neither all real nor all one character. The per-setting
-        `l^2` values are pinned by `EdgeDispositionTest`.
-        """
+    def test_the_default_seed_is_a_euclidean_spatial_complex(self):
+        """The whitepaper's microscopic object is a spatial complex of
+        Euclidean signature; timelike edges exist only as the fiber edges of
+        an interaction cobordism. The default seed therefore carries no
+        timelike edge: every squared length is +1, and causal content may
+        only emerge. Nothing constrains the geometry to stay real -- stage 2
+        rotates `z` freely within the allowable domain."""
         host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)
-        lengths = [complex(edge.getLength())
+        squared = [complex(edge.getLength()) ** 2
                    for edge in host.getEdgeList().toVector()]
-        self.assertTrue(lengths)
-        self.assertTrue(any(abs(l.imag) > 1e-9 for l in lengths),
-                        "the seed is purely real: no causal content")
-        squared = [l ** 2 for l in lengths]
-        spread = max(abs(v - squared[0]) for v in squared)
-        self.assertGreater(spread, 1e-6,
-                           "every edge carries one causal character")
+        self.assertTrue(squared)
+        for value in squared:
+            self.assertAlmostEqual(value, 1.0, places=12)
 
     def test_the_objective_is_joint_stationarity_in_strict_emergence(self):
         host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)
@@ -537,11 +525,11 @@ class EdgeDispositionTest(unittest.TestCase):
             ea.build_config(edge_disposition="foliatd")
         self.assertIn("foliatd", str(caught.exception))
 
-    def test_the_default_is_the_rotated_foliation(self):
+    def test_the_default_is_spacelike(self):
         self.assertEqual(ea.DECLARED_EDGE_DISPOSITION,
-                         ea.EdgeDisposition.FOLIATED)
+                         ea.EdgeDisposition.SPACELIKE)
         self.assertEqual(ea.build_config()["edge_disposition"],
-                         ea.EdgeDisposition.FOLIATED)
+                         ea.EdgeDisposition.SPACELIKE)
         self.assertEqual(ea.DECLARED_EPSILON, 0.1)
         self.assertEqual(ea.build_config()["epsilon"], ea.DECLARED_EPSILON)
 
@@ -562,11 +550,15 @@ class InstanceCertificateTest(unittest.TestCase):
                                     epsilon=epsilon))
 
     def test_the_default_seed_is_allowable(self):
-        # Measured 0.12639772770108548 at size 4 and epsilon 0.1.
         self.assertAlmostEqual(
             cob.HodgeLaplacian.kontsevichSegalMargin(
                 ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)),
-            0.12639772770108548, places=9)
+            math.pi, places=9)
+
+    def test_the_rotated_foliation_is_allowable(self):
+        # Measured 0.12639772770108548 at size 4 and epsilon 0.1.
+        self.assertAlmostEqual(self._margin(ea.EdgeDisposition.FOLIATED),
+                               0.12639772770108548, places=9)
 
     def test_the_real_foliation_sits_on_the_boundary(self):
         self.assertAlmostEqual(
@@ -577,8 +569,7 @@ class InstanceCertificateTest(unittest.TestCase):
         """Measured, not repaired: the random seed is outside the domain
         (margin -4.91 at size 4) and declares nothing to rotate; the timelike
         seed is outside at every rotation (margin -3 pi + 8 epsilon); the
-        lightlike seed is outside (margin -pi); the spacelike seed is
-        Euclidean (margin pi)."""
+        lightlike seed is outside (margin -pi)."""
         self.assertAlmostEqual(self._margin(ea.EdgeDisposition.RANDOM),
                                -4.91252061568675, places=9)
         self.assertAlmostEqual(self._margin(ea.EdgeDisposition.TIMELIKE),
@@ -586,14 +577,14 @@ class InstanceCertificateTest(unittest.TestCase):
                                places=9)
         self.assertAlmostEqual(self._margin(ea.EdgeDisposition.LIGHTLIKE),
                                -math.pi, places=9)
-        self.assertAlmostEqual(self._margin(ea.EdgeDisposition.SPACELIKE),
-                               math.pi, places=9)
 
     def test_every_frame_records_its_certificate(self):
+        # The default spacelike seed declares no timelike part, so no
+        # rotation is recorded for it.
         for frame in _frames():
             with self.subTest(step=frame.step):
                 record = frame.to_json()["instance"]
-                self.assertEqual(record["epsilon"], ea.DECLARED_EPSILON)
+                self.assertIsNone(record["epsilon"])
                 self.assertEqual(
                     record["margin"],
                     cob.HodgeLaplacian.kontsevichSegalMargin(frame.spacetime))
@@ -601,6 +592,15 @@ class InstanceCertificateTest(unittest.TestCase):
                 # The configuration space of the default metric is the
                 # closure of the allowable domain, so a drive never leaves it.
                 self.assertGreaterEqual(record["margin"], -1e-12)
+
+    def test_a_rotated_seed_records_its_rotation(self):
+        config = ea.build_config(size=SMALL, steps=0,
+                                 edge_disposition=ea.EdgeDisposition.FOLIATED)
+        host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED,
+                                       ea.EdgeDisposition.FOLIATED)
+        record = ea.instance_certificate(host, config)
+        self.assertEqual(record["epsilon"], ea.DECLARED_EPSILON)
+        self.assertTrue(record["allowable"])
 
     def test_a_seed_that_declares_no_timelike_part_records_no_rotation(self):
         config = ea.build_config(size=SMALL, steps=0,

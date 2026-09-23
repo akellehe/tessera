@@ -76,12 +76,13 @@ Cap parallelism; this box may be shared::
 final frame alone. ``--json`` additionally writes the per-frame measurements,
 so a panel can be checked against a number.
 
-``--edge-disposition`` chooses the seed's causal character: ``foliated``
-(the default: a PRESCRIBED light cone -- timelike between hop layers of M0,
-spacelike within one), ``random`` (magnitude one with the real/imaginary split
-drawn per edge), ``spacelike`` (``l^2 = +1``), ``timelike`` (``l^2 = -1``), or
-``lightlike`` (``l^2 = i``). Only ``foliated`` prescribes a causal order; it is
-labelled as such wherever it is reported and is never presented as emergent.
+``--edge-disposition`` chooses the seed's causal character: ``spacelike``
+(the default, ``l^2 = +1``), ``random`` (magnitude one with the
+real/imaginary split drawn per edge), ``timelike`` (``l^2 = -1``),
+``lightlike`` (``l^2 = i``), or ``foliated`` (a PRESCRIBED light cone --
+timelike between hop layers of M0, spacelike within one). Only ``foliated``
+prescribes a causal order; it is labelled as such wherever it is reported and
+is never presented as emergent.
 
 The default metric is the Whitney pencil, whose configuration space is the
 closure of the Kontsevich-Segal allowable domain: the complex metrics whose
@@ -97,7 +98,8 @@ and ``timelike`` dispositions declare timelike parts; ``random`` and
 and are not Lorentzian instances. Every frame records whether its complex is
 allowable, its margin and the rotation (Requirement 1), so a seed outside the
 domain -- where every proposal is refused as a non-member and a drive commits
-nothing -- is visible in the record.
+nothing -- is visible in the record. The default spacelike seed is Euclidean,
+inside the domain at margin pi, and has no timelike part to rotate.
 
 """
 
@@ -305,16 +307,17 @@ class EdgeDisposition:
 
 #: The seed disposition when the caller names none.
 #:
-#: The foliation, because it is the only disposition whose seed can lie inside
-#: the Kontsevich-Segal allowable domain as a Lorentzian instance. Its real
-#: squared lengths put every top simplex on the boundary of the domain (margin
-#: 0), and the rotation of their timelike parts by `DECLARED_EPSILON` moves
-#: every one inside (margin 0.126 at size 4). The `random` seed lies outside
-#: the domain (margin -4.91 at size 4) and declares no timelike part to
-#: rotate; `timelike` and `lightlike` lie outside at every rotation (margins
-#: -3 pi + 8 epsilon and -pi). The foliation prescribes a causal order, and the
-#: figure says so on its face.
-DECLARED_EDGE_DISPOSITION = EdgeDisposition.FOLIATED
+#: Spacelike: the whitepaper's microscopic object is a spatial complex of
+#: Euclidean signature, and timelike edges exist only as the fiber edges of an
+#: interaction cobordism, so the seed carries no timelike edge and causal
+#: content may only emerge. Its Gram matrices are real positive definite, so it
+#: lies inside the Kontsevich-Segal allowable domain at margin pi and has no
+#: timelike part to rotate. For comparison at size 4: the foliated seed lies on
+#: the boundary of the domain (margin 0) and inside it once rotated (0.126 at
+#: `DECLARED_EPSILON`); the `random` seed lies outside (-4.91) and declares no
+#: timelike part; `timelike` and `lightlike` lie outside at every rotation
+#: (-3 pi + 8 epsilon and -pi).
+DECLARED_EDGE_DISPOSITION = EdgeDisposition.SPACELIKE
 #: The Lorentzian-protocol rotation `epsilon` of the seed (integration
 #: specification, Requirement 2): the timelike part `tau_e` of every squared
 #: length is rotated by `exp(-2 i epsilon)`, so
@@ -702,9 +705,10 @@ def build_cobordism_host(n_refine=DECLARED_SIZE, seed=DECLARED_HOST_SEED,
     `foliated` is the exception and is not neutral: it prescribes a causal
     order rather than letting one emerge, and is labelled as such.
 
-    The seed is the member at rotation `epsilon` of its Lorentzian family
-    (see `_seed_lengths`), which is what puts a foliated seed inside the
-    Kontsevich-Segal allowable domain of the default Whitney metric.
+    A seed that declares timelike parts is the member at rotation `epsilon`
+    of its Lorentzian family (see `_seed_lengths`), which is what puts a
+    foliated seed inside the Kontsevich-Segal allowable domain of the default
+    Whitney metric; the default spacelike seed is inside at margin pi.
     """
     st = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT,
                      1.0, 1.0, T.PREFERRED, T.SolidSimplex(4))
@@ -3289,8 +3293,8 @@ def build_parser():
     run.add_argument("--edge-disposition", choices=list(EdgeDisposition.ALL),
                      default=DECLARED_EDGE_DISPOSITION,
                      help="causal character of the seed's edges: "
-                          "foliated (the default), random, spacelike, "
-                          "timelike, or lightlike")
+                          "spacelike (the default), random, timelike, "
+                          "lightlike, or foliated")
     run.add_argument("--epsilon", type=float, default=DECLARED_EPSILON,
                      help="the rotation of the seed's Lorentzian family: "
                           "the timelike part of every squared length is "
