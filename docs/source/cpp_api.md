@@ -55,6 +55,12 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} ForwardDeclarations.h
 ```
 
+```{doxygenfile} ReggeContinuation.h
+```
+
+```{doxygenfile} RiemannSheet.h
+```
+
 ## Pachner moves
 
 ```{doxygenfile} PachnerMove.h
