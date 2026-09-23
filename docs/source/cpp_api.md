@@ -157,6 +157,12 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} ClusterLineage.h
 ```
 
+```{doxygenfile} SheetedColor.h
+```
+
+```{doxygenfile} MonopoleSpin.h
+```
+
 ### Emergent-proton observables
 
 ```{doxygenfile} Record.h
