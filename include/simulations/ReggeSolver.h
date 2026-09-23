@@ -45,9 +45,11 @@ using namespace ::tessera::quantum;
 ///
 /// The total action is:
 /// \f[
-///   S = \underbrace{\sum_h A_h\,\varepsilon_h}_{S_{\text{grav}}}
+///   S = \underbrace{\sum_h |h|\,\varepsilon_h}_{S_{\text{grav}}}
 ///     \underbrace{- M \sum_{e \in W} \sqrt{-\ell^2_e}}_{S_{\text{matter}}}
 /// \f]
+/// with \f$|h|\f$ the \f$(d\!-\!2)\f$-content of the hinge \f$h\f$ and
+/// \f$\varepsilon_h\f$ its deficit angle.
 /// (Timelike edges have \f$\ell^2 < 0\f$; spacelike edges have \f$\ell^2 > 0\f$.)
 ///
 /// ## Algorithm
@@ -78,12 +80,20 @@ class ReggeSolver {
     /// Deficit angle at a hinge: \f$\varepsilon_h = 2\pi - \sum_\sigma \theta_h^{(\sigma)}\f$.
     [[nodiscard]] std::complex<double> deficitAngle(SimplexPtr hinge) const;
 
-    /// Area of a triangular hinge (for the Regge action weighting).
-    [[nodiscard]] static std::complex<double> hingeArea(SimplexPtr hinge);
+    /// The \f$(d\!-\!2)\f$-content of a hinge, the weight of its deficit angle in
+    /// the primal Regge action: the length of an edge hinge on a
+    /// three-dimensional mesh, the area of a triangular hinge on a
+    /// four-dimensional one, the volume of a tetrahedral hinge on a
+    /// five-dimensional one. Evaluated as ``Simplex::volume``,
+    /// \f$\sqrt{\det G}/(d-2)!\f$ under the principal complex root of the signed
+    /// Gram determinant, so a timelike hinge's content is imaginary. There is no
+    /// Wick-rotated mode.
+    [[nodiscard]] static std::complex<double> hingeContent(SimplexPtr hinge);
 
-    /// Gravitational Regge action \f$S_{\text{grav}} = \sum_h A_h\,\varepsilon_h\f$,
-    /// with \f$A_h\f$ the signed Lorentzian hinge area and \f$\varepsilon_h\f$
-    /// the complex Lorentzian deficit angle.
+    /// Gravitational Regge action \f$S_{\text{grav}} = \sum_h |h|\,\varepsilon_h\f$,
+    /// with \f$|h|\f$ the signed Lorentzian \f$(d\!-\!2)\f$-content of the hinge
+    /// (``hingeContent``) and \f$\varepsilon_h\f$ the complex Lorentzian deficit
+    /// angle.
     [[nodiscard]] std::complex<double> reggeAction() const;
 
     /// Dual Lorentzian Regge action on \f$W^*\f$:
@@ -170,7 +180,8 @@ class ReggeSolver {
     /// gradients ``Simplex::dualVolumeGradient`` and ``deficitAngleGradient``,
     /// with no finite differences. Complex: Re S and Im S together. Matches a
     /// central difference of ``dualReggeAction`` to machine precision, in one
-    /// pass rather than 2·|E| action evaluations.
+    /// pass rather than 2·|E| action evaluations. Finite where the circumcentres
+    /// of the dual coincide, as on a Kuhn torus (``Simplex::dualVolumeGradient``).
     [[nodiscard]] std::vector<std::complex<double>> actionGradientExact() const;
 
     /// Exact analytic Hessian ∂²S/∂ℓ²_e∂ℓ²_f of the dual Lorentzian Regge action,
@@ -178,7 +189,8 @@ class ReggeSolver {
     /// Σ_h [∂²|★h|·ε_h + ∂|★h|_e·∂ε_h_f + ∂|★h|_f·∂ε_h_e + |★h|·∂²ε_h], assembled
     /// from the per-hinge ``dualVolumeHessian`` / ``deficitAngleHessian`` and
     /// their gradients, with no finite differences. Supports exact Newton /
-    /// Gauss-Newton steps in the stationary-action relaxation.
+    /// Gauss-Newton steps in the stationary-action relaxation. Finite where the
+    /// circumcentres of the dual coincide, as on a Kuhn torus.
     [[nodiscard]] std::vector<std::vector<std::complex<double>>>
     actionHessianExact() const;
 

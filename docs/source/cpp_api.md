@@ -55,6 +55,12 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} ForwardDeclarations.h
 ```
 
+```{doxygenfile} ReggeContinuation.h
+```
+
+```{doxygenfile} RiemannSheet.h
+```
+
 ## Pachner moves
 
 ```{doxygenfile} PachnerMove.h
@@ -148,6 +154,15 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} CrossingReadouts.h
 ```
+```{doxygenfile} ClusterLineage.h
+```
+
+```{doxygenfile} ComplexTransport.h
+```{doxygenfile} SheetedColor.h
+```
+
+```{doxygenfile} MonopoleSpin.h
+```
 
 ### Emergent-proton observables
 
@@ -200,7 +215,7 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} CobordismDAG.h
 ```
-```{doxygenfile} Proton.h
+```{doxygenfile} ProtonSynthesis.h
 ```
 ```{doxygenfile} ProtonIngredients.h
 ```
@@ -222,9 +237,28 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} RecursiveQuotient.h
 ```
+```{doxygenfile} LevelRecursion.h
+```
+```{doxygenfile} MappingCylinder.h
+```
+```{doxygenfile} DressedFluctuation.h
+```
 ```{doxygenfile} PencilLayer.h
 ```
 ```{doxygenfile} LevenbergMarquardt.h
+```
+
+```{doxygenfile} WardFlux.h
+```
+
+```{doxygenfile} BoundStatePole.h
+```{doxygenfile} JointAction.h
+```
+
+```{doxygenfile} HolomorphicRelaxation.h
+```
+
+```{doxygenfile} SelfConsistentMeanField.h
 ```
 
 ## Whitney-form Hodge Laplacian pencil
@@ -239,6 +273,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} FaceAnchor.h
 ```
+```{doxygenfile} DressedAnchor.h
+```
 ```{doxygenfile} RieszBand.h
 ```
 
@@ -249,6 +285,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} SparsePencil.h
 ```
 ```{doxygenfile} SparsePencilSolver.h
+```
+```{doxygenfile} SparseRank.h
 ```
 
 ## Reinforcement learning

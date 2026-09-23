@@ -90,14 +90,14 @@ class SingularValueHalfSumRatioTest(unittest.TestCase):
         self.assertNotEqual(ratio_node.r_u(st), default_node.r_u(st))
 
     def test_proton_forwards_the_flag(self):
-        # The keyword reaches Proton and each node it constructs. direct_node
+        # The keyword reaches ProtonSynthesis and each node it constructs. direct_node
         # seeds its six input blocks, so its r_U also carries the input-block
         # residuals — identical between the two modes (same seed, same
         # anchors). The whole-complex term is the only difference, and the
         # default mode's (singlet period leak + near-kernel, >= 3 before any
         # hole) always exceeds the ratio's [0, 1]: the two must disagree.
-        ratio_node = cob.Proton(seed=11, singular_value_ratio=True).direct_node(11)
-        default_node = cob.Proton(seed=11).direct_node(11)
+        ratio_node = cob.ProtonSynthesis(seed=11, singular_value_ratio=True).direct_node(11)
+        default_node = cob.ProtonSynthesis(seed=11).direct_node(11)
         st = _seed()
         self.assertGreater(default_node.r_u(st) - ratio_node.r_u(st), 1.0)
 

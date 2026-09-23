@@ -47,6 +47,25 @@ class ChainComplex {
     [[nodiscard]] static ChainComplex fromTopCells(
         const std::vector<std::vector<std::uint64_t>> &topCells);
 
+    /// Build the chain complex of a simplicial complex from a list of declared
+    /// cells of any dimensions, as vertex-id tuples (order within a cell is
+    /// irrelevant). The complex need not be pure: a cell of one dimension may
+    /// sit beside a cell of another, and a declared cell that is already a face
+    /// of another declared cell contributes nothing new. The face closure and
+    /// the orientation convention are those of `fromTopCells`, and cells come
+    /// out in the same canonical lexicographic order, so a chain vector built
+    /// here is interchangeable with one built there.
+    ///
+    /// An impure complex is what a cobordism with cells attached on one end
+    /// requires: the interaction cobordism of
+    /// `tessera::observables::ClusterLineage` carries the prisms over the
+    /// incoming level's cells beside the outgoing level's own cells, and the
+    /// latter are one dimension lower.
+    /// @throws std::invalid_argument on an empty cell or a degenerate cell (a
+    ///   repeated vertex).
+    [[nodiscard]] static ChainComplex fromCells(
+        const std::vector<std::vector<std::uint64_t>> &cells);
+
     /// Top dimension n (largest k with a k-simplex), or -1 if empty.
     [[nodiscard]] int dimension() const noexcept { return dimension_; }
 

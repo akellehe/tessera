@@ -508,8 +508,14 @@ class FiberConnection {
 
     /// The chain transfer T_AB induced by the connecting simplices: the
     /// off-diagonal block L_k[cells(to), cells(from)] of the whole-complex
-    /// weighted Hodge operator (see the file banner for the exact block
-    /// identity).  Cells are matched by sorted vertex-id tuple against the
+    /// Hodge operator of `source` (see the file banner for the exact block
+    /// identity).  Under `WhitneyPencil` (the process default) the operator at
+    /// degree \f$ k \ge 1 \f$ is the covariant \f$ h_k(s,U) \f$ on chains
+    /// in the reference orientation (ascending vertex id), the operator and
+    /// basis of `SpectralFiberTracker`'s Whitney bands; under `DiagonalWeights`
+    /// it is the diagonal-weight `HodgeLaplacian::laplacian(k)` of `weights`.
+    /// Degree 0 reads the U(1) connection Laplacian under either source.
+    /// Cells are matched by sorted vertex-id tuple against the
     /// canonical `ChainComplex` order — no vertex order is ever imposed.
     /// @throws std::invalid_argument for an unknown cell or negative
     ///   degree.
@@ -518,7 +524,9 @@ class FiberConnection {
         const std::vector<std::vector<std::uint64_t>> &toCells,
         const std::vector<std::vector<std::uint64_t>> &fromVertexTuples,
         cobordism::HodgeLaplacian::WeightConvention weights =
-            cobordism::HodgeLaplacian::defaultWeightConvention());
+            cobordism::HodgeLaplacian::defaultWeightConvention(),
+        cobordism::HodgeLaplacian::MetricSource source =
+            cobordism::HodgeLaplacian::defaultMetricSource());
 
     /// The effective response block of an existing response network: the edge
     /// block with rows `toComponent`'s stalk and columns `fromComponent`'s
@@ -557,7 +565,9 @@ class FiberConnection {
         const std::shared_ptr<Spacetime> &st, const SpectralFiber &to,
         const SpectralFiber &from,
         cobordism::HodgeLaplacian::WeightConvention weights =
-            cobordism::HodgeLaplacian::defaultWeightConvention()) const;
+            cobordism::HodgeLaplacian::defaultWeightConvention(),
+        cobordism::HodgeLaplacian::MetricSource source =
+            cobordism::HodgeLaplacian::defaultMetricSource()) const;
 
     /// `transportOnSpacetime` through the `AnalyticCache` contract: served
     /// while both fibers' cell-vertex stars are untouched, and otherwise
@@ -568,7 +578,9 @@ class FiberConnection {
         cobordism::AnalyticCache &cache, const std::shared_ptr<Spacetime> &st,
         const SpectralFiber &to, const SpectralFiber &from,
         cobordism::HodgeLaplacian::WeightConvention weights =
-            cobordism::HodgeLaplacian::defaultWeightConvention()) const;
+            cobordism::HodgeLaplacian::defaultWeightConvention(),
+        cobordism::HodgeLaplacian::MetricSource source =
+            cobordism::HodgeLaplacian::defaultMetricSource()) const;
 
     // ── Wilson observables ──────────────────────────────────────────────
 
@@ -592,7 +604,9 @@ class FiberConnection {
         const std::shared_ptr<Spacetime> &st,
         const std::vector<SpectralFiber> &fibers,
         cobordism::HodgeLaplacian::WeightConvention weights =
-            cobordism::HodgeLaplacian::defaultWeightConvention()) const;
+            cobordism::HodgeLaplacian::defaultWeightConvention(),
+        cobordism::HodgeLaplacian::MetricSource source =
+            cobordism::HodgeLaplacian::defaultMetricSource()) const;
 
     /// `holonomyOnSpacetime` through the `AnalyticCache`: each link via
     /// `transportOnSpacetimeCached`, and the loop product itself cached under
@@ -605,7 +619,9 @@ class FiberConnection {
         cobordism::AnalyticCache &cache, const std::shared_ptr<Spacetime> &st,
         const std::vector<SpectralFiber> &fibers,
         cobordism::HodgeLaplacian::WeightConvention weights =
-            cobordism::HodgeLaplacian::defaultWeightConvention()) const;
+            cobordism::HodgeLaplacian::defaultWeightConvention(),
+        cobordism::HodgeLaplacian::MetricSource source =
+            cobordism::HodgeLaplacian::defaultMetricSource()) const;
 
     // ── rank-three center structure ─────────────────────────────────────
 

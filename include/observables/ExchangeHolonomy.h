@@ -176,6 +176,28 @@ struct HolonomyCharacterRead {
   cobordism::Certificate certificate{};
 };
 
+/// The occupancy declaration of one tracked cluster block: how much of the
+/// block's fibre the many-body state actually occupies, and how the block's
+/// support is built.
+///
+/// The exchange statistic is occupation parity, so the number a block
+/// contributes to it is the number of occupied one-particle modes it carries,
+/// not the rank of its fibre. A quark is one occupied mode of a colour-spin
+/// fibre of rank six, and the two numbers give opposite signs.
+struct ClusterOccupancy {
+  /// n_b, the number of one-particle modes of this block's fibre that the
+  /// state occupies. It is the number that enters the graded interchange law
+  /// tau(a (x) b) = (-1)^{F_a F_b} b (x) a, so a quark or antiquark declares
+  /// one, a meson or a diquark two, and a baryon three.
+  std::size_t occupation = 1;
+  /// k, the number of sheets the block's support carries: one for an
+  /// unsheeted support and three for the adopted quark support. It is what
+  /// decides whether the rank-parity cross-check applies, because a sheeted
+  /// fibre has even rank and exchanging whole frames of even rank gives +1
+  /// whatever the occupations are.
+  std::size_t sheetCount = 1;
+};
+
 /// # BlockPermutationRead
 ///
 /// The structural channel of the exchange experiment: persistent-component
@@ -184,22 +206,62 @@ struct HolonomyCharacterRead {
 /// grading), and the residual in-block motion left after the matched reference
 /// loop is cancelled. Kept separate from the interferometric determinant
 /// channel.
+///
+/// ## Which parity is the statistic
+///
+/// `occupationParity` is the exchange statistic. It is the sign of the
+/// permutation the exchange induces on the OCCUPIED one-particle modes, which
+/// is the graded interchange law of the exterior Fock functor applied to the
+/// fermion numbers the clusters actually carry.
+///
+/// `rankParity` is the odd-rank determinant cross-check and is a separate,
+/// independent number: it is the determinant of exchanging the whole fibre
+/// frames, det pi_AB = (-1)^{r_A r_B}, which is exact as an identity about
+/// frames but is only a hypothesis about particle statistics. The two minus
+/// signs are never multiplied together, and `rankParityRetired` marks the case
+/// the whitepaper retires the cross-check in: a sheeted support, where the
+/// colour-spin fibre has even rank so the frame exchange gives +1 while the
+/// occupation parity of a single occupied mode is -1.
 struct BlockPermutationRead {
   /// blockPermutation[b] = index (in the t = 0 block list) the block at
   /// position b arrives at after one full loop.  Empty when uncertified.
   std::vector<std::size_t> blockPermutation{};
   /// The tracked blocks' ranks at t = 0.
   std::vector<std::size_t> blockRanks{};
+  /// The declared occupation n_b of each block, in block order: the number of
+  /// occupied one-particle modes the block carries.
+  std::vector<std::size_t> blockOccupations{};
+  /// The declared sheet count of each block's support, in block order.
+  std::vector<std::size_t> blockSheetCounts{};
   /// Sign of `blockPermutation` as a permutation of block labels: +1 or -1, 0
   /// when uncertified. A combinatorial datum, not the exchange statistic: a
   /// rank-1 to rank-2 block swap has blockParity -1 but graded sign +1.
   int blockParity = 0;
-  /// The exchange statistic: the sign of the induced mode permutation, with
-  /// blocks expanded to their `blockRanks` modes and in-block order carried.
-  /// Computed by `quantum::OccupationBitset::permutationParity` and equal to
-  /// the graded sign prod (-1)^{n_a n_b} over exchanged cluster pairs. +1 or
-  /// -1; 0 when uncertified.
-  int modeParity = 0;
+  /// The exchange statistic: the graded sign the exterior Fock functor's
+  /// interchange law attaches to the reordering, the product of
+  /// (-1)^{n_a n_b} over the inversions of `blockPermutation` — the pairs
+  /// a < b it sends to pi(a) > pi(b) — with n_b the block's declared
+  /// occupation. For blocks of equal occupation it is the parity of the
+  /// permutation induced on the occupied one-particle modes. +1 or -1; 0 when
+  /// uncertified.
+  int occupationParity = 0;
+  /// The odd-rank determinant cross-check: the same product over the same
+  /// inversions with the fibre ranks in place of the occupations, which is the
+  /// determinant of exchanging the whole fibre frames,
+  /// prod det pi_AB = prod (-1)^{r_a r_b}. Reported as an independent number
+  /// and never multiplied into `occupationParity`. +1 or -1; 0 when
+  /// uncertified or retired.
+  int rankParity = 0;
+  /// Whether the rank-parity cross-check was retired rather than reported: it
+  /// is retired when any block declares a sheeted support, where the fibre has
+  /// even rank and the frame exchange gives +1 whatever the occupations are.
+  /// `rankParity` is then 0.
+  bool rankParityRetired = false;
+  /// Whether the reported `rankParity` agrees with `occupationParity`. False
+  /// whenever the cross-check was retired or uncertified, and false when the
+  /// two genuinely disagree, which is the case the whitepaper's falsifiable
+  /// hypothesis fails in.
+  bool rankParityAgrees = false;
   /// Optional composite-level view (when `composites` was supplied):
   /// compositePermutation[c] = composite that composite c's blocks landed
   /// in; empty when no grouping was supplied or when the blocks of some
@@ -303,7 +365,11 @@ struct SpinLiftRead {
 ///     (`quantum::OccupationBitset::permutationParity`, the algebraic wedge
 ///     sign, an exact integer), and the residual in-block motion after
 ///     reference cancellation. The algebraic and dynamical channels are
-///     reported separately.
+///     reported separately. The statistic is the parity of the permutation
+///     induced on the OCCUPIED one-particle modes, declared per block by
+///     `ClusterOccupancy`; the parity of the fibre ranks is the independent
+///     odd-rank determinant cross-check and is reported beside it, retired on
+///     a sheeted support, and never multiplied into it.
 ///  4. The total-space spin holonomy cycle as the canonical physical rotation
 ///     path: the Euclidean gamma layer, spin generators
 ///     `Sigma_ab = [gamma_a, gamma_b]/4`, the closed-form plane rotation
@@ -335,7 +401,7 @@ struct SpinLiftRead {
 ///        they are exactly invariant; any bookkeeping parity is supplied by
 ///        `EdgeModeRegistry` or `OccupationBitset`, never by this class.
 ///  (iii) Particle exchange is `HolonomyChannel::ParticleExchange` plus the
-///        structural `modeParity`.
+///        structural `occupationParity`.
 ///  (iv)  Berry reference motion is the `referenceDeterminant` channel,
 ///        reported raw and cancelled, and never interpreted alone.
 ///  (v)   Physical rotation is `HolonomyChannel::PhysicalRotation`, with its
@@ -442,13 +508,42 @@ class ExchangeHolonomy {
     /// pass empty to skip (residual reported unmeasured).  `composites`
     /// optionally groups block indices into clusters for the composite-
     /// level permutation view (e.g. one odd block + one even 2-mode
-    /// composite). Parities are exact integers; everything else carries
-    /// residuals.
+    /// composite).
+    ///
+    /// `occupancies` declares, per block and in block order, how many
+    /// one-particle modes the state occupies there and how many sheets the
+    /// block's support carries. That declaration is what the exchange
+    /// statistic is computed from: the statistic is occupation parity, and the
+    /// rank of a block's fibre enters only the separately reported
+    /// cross-check. Passing an empty list declares the default cluster of the
+    /// construction — one occupied mode on an unsheeted support — for every
+    /// block, which is the quark, the antiquark and any other single occupied
+    /// mode.
+    ///
+    /// Parities are exact integers; everything else carries residuals.
+    /// @throws std::invalid_argument when `occupancies` is neither empty nor
+    ///   one entry per tracked block, when a declared occupation exceeds the
+    ///   block's rank — a state cannot occupy more modes than the fibre has —
+    ///   or when a declared sheet count is zero.
     [[nodiscard]] static BlockPermutationRead blockPermutation(
         const std::vector<std::vector<SpectralFiber>> &steps,
         const std::vector<std::vector<SpectralFiber>> &referenceSteps = {},
         const std::vector<std::vector<std::size_t>> &composites = {},
+        const std::vector<ClusterOccupancy> &occupancies = {},
         const ExchangeHolonomyConfig &cfg = {});
+
+    /// The determinant of exchanging two complete fibre frames of ranks
+    /// `rankA` and `rankB`: det pi_AB = (-1)^{r_A r_B}, the action of the
+    /// interchange on the orientation line of E_A (+) E_B.
+    ///
+    /// The identity is exact. Its physical use is not: promoting it to
+    /// particle statistics is the falsifiable hypothesis that cluster parity
+    /// is fibre rank modulo two, which the construction does not adopt. It is
+    /// offered as the independent cross-check that
+    /// `BlockPermutationRead::rankParity` reports, and it is never multiplied
+    /// into an occupation parity.
+    [[nodiscard]] static int frameExchangeDeterminant(std::size_t rankA,
+                                                      std::size_t rankB);
 
     // ---- the constructed total-space spin holonomy cycle ------------------
 

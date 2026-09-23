@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -25,10 +26,23 @@ using ::tessera::cobordism::regimeFromName;
 
 namespace {
 
-constexpr int kSchemaVersion = 1;
+// Schema 2 carries the contour certificate (`contour`, `contour_node_count`,
+// `resolvent_bound`) and the Kontsevich-Segal allowability of the instance the
+// band was read on (`allowability_margin`, `lorentzian_epsilon`), plus the
+// thresholds deciding them. Schema 1 remains readable: what it never measured
+// reads back as unmeasured, never as zero.
+constexpr int kSchemaVersion = 2;
+constexpr int kOldestReadableSchema = 1;
 
 /// Whether a value was measured; NaN means "not measured".
 bool measured(double value) { return !std::isnan(value); }
+
+/// A double leaf an older schema may not carry: absent reads back as NaN.
+double optionalDouble(const Record::Map &m, const char *key) {
+  const auto it = m.find(key);
+  return it == m.end() ? std::numeric_limits<double>::quiet_NaN()
+                       : it->second.asDouble();
+}
 
 Record stringsToRecord(const std::vector<std::string> &names) {
   Record::List list;
@@ -70,6 +84,9 @@ std::string ClusterRegisterRead::describe() const {
   std::ostringstream out;
   out << "register degree " << degree << " rank " << rank << " on "
       << support.size() << " vertices, regime " << regimeName(regime.regime);
+  if (!contour.empty())
+    out << ", contour " << contour << " (" << contourNodeCount
+        << " nodes, resolvent bound " << resolventBound << ")";
   out << (accepted ? " — ACCEPTED" : " — not accepted");
   if (!failedConjuncts.empty()) {
     out << "; failed:";
@@ -97,6 +114,11 @@ Record ClusterRegisterRead::toRecord() const {
   m["support_pieces"] = Record(static_cast<std::int64_t>(supportPieces));
   m["localization_excess"] = Record(localizationExcess);
   m["band_gap"] = Record(bandGap);
+  m["contour"] = Record(contour);
+  m["contour_node_count"] = Record(contourNodeCount);
+  m["resolvent_bound"] = Record(resolventBound);
+  m["allowability_margin"] = Record(allowabilityMargin);
+  m["lorentzian_epsilon"] = Record(lorentzianEpsilon);
   m["neighbour_overlap"] = Record(neighbourOverlap);
   m["frame_lifetime"] = Record(frameLifetime);
   m["transport_leakage"] = Record(transportLeakage);
@@ -122,6 +144,10 @@ Record ClusterRegisterRead::toRecord() const {
   t["min_frame_lifetime"] =
       Record(static_cast<std::int64_t>(thresholds.minFrameLifetime));
   t["max_transport_leakage"] = Record(thresholds.maxTransportLeakage);
+  t["max_resolvent_bound"] = Record(thresholds.maxResolventBound);
+  t["require_contour"] = Record(thresholds.requireContour);
+  t["lorentzian"] = Record(thresholds.lorentzian);
+  t["min_allowability_margin"] = Record(thresholds.minAllowabilityMargin);
   m["thresholds"] = Record(std::move(t));
 
   return Record(std::move(m));
@@ -130,7 +156,9 @@ Record ClusterRegisterRead::toRecord() const {
 ClusterRegisterRead ClusterRegisterRead::fromRecord(const Record &record) {
   const auto &m = record.asMap();
   const auto version = m.find("schema_version");
-  if (version == m.end() || version->second.asInt() != kSchemaVersion)
+  if (version == m.end() ||
+      version->second.asInt() < static_cast<std::int64_t>(kOldestReadableSchema) ||
+      version->second.asInt() > static_cast<std::int64_t>(kSchemaVersion))
     throw std::invalid_argument(
         "ClusterRegister: unknown schema_version (reader rejects unknown "
         "versions rather than guessing)");
@@ -151,6 +179,14 @@ ClusterRegisterRead ClusterRegisterRead::fromRecord(const Record &record) {
   read.supportPieces = static_cast<std::size_t>(m.at("support_pieces").asInt());
   read.localizationExcess = m.at("localization_excess").asDouble();
   read.bandGap = m.at("band_gap").asDouble();
+  // Schema 1 carries no contour certificate: absent stays unmeasured.
+  read.contour = m.count("contour") ? m.at("contour").asString() : std::string{};
+  read.contourNodeCount = m.count("contour_node_count")
+                              ? static_cast<int>(m.at("contour_node_count").asInt())
+                              : 0;
+  read.resolventBound = optionalDouble(m, "resolvent_bound");
+  read.allowabilityMargin = optionalDouble(m, "allowability_margin");
+  read.lorentzianEpsilon = optionalDouble(m, "lorentzian_epsilon");
   read.neighbourOverlap = m.at("neighbour_overlap").asDouble();
   read.frameLifetime = m.at("frame_lifetime").asDouble();
   read.transportLeakage = m.at("transport_leakage").asDouble();
@@ -179,6 +215,15 @@ ClusterRegisterRead ClusterRegisterRead::fromRecord(const Record &record) {
       static_cast<std::size_t>(t.at("min_frame_lifetime").asInt());
   read.thresholds.maxTransportLeakage =
       t.at("max_transport_leakage").asDouble();
+  if (t.count("max_resolvent_bound"))
+    read.thresholds.maxResolventBound = t.at("max_resolvent_bound").asDouble();
+  if (t.count("require_contour"))
+    read.thresholds.requireContour = t.at("require_contour").asBool();
+  if (t.count("lorentzian"))
+    read.thresholds.lorentzian = t.at("lorentzian").asBool();
+  if (t.count("min_allowability_margin"))
+    read.thresholds.minAllowabilityMargin =
+        t.at("min_allowability_margin").asDouble();
   return read;
 }
 
@@ -299,13 +344,46 @@ ClusterRegisterRead ClusterRegister::read(
       read.failedConjuncts.emplace_back(RegisterConjunct::kLocalizedProjector);
   }
 
-  // conjunct 3: a nonzero band gap separating it from discarded modes
+  // conjunct 3: a closed complex-plane contour with nonzero separation and a
+  // controlled resolvent separating the band from the discarded modes, taken
+  // at the reported rotation eps_L > 0 for a Lorentzian complex. Its three
+  // measurements are decided, and named, separately.
   read.bandGap = cert.nearestDiscardedSeparation;
+  read.contour = cert.contour;
+  read.contourNodeCount = cert.contourNodeCount;
+  read.resolventBound = cert.resolventBound;
+  read.allowabilityMargin = cert.allowabilityMargin;
+  read.lorentzianEpsilon = cert.lorentzianEpsilon;
   if (haveBand) {
     if (!measured(read.bandGap))
       read.unmeasured.emplace_back(RegisterUnmeasured::kBandGapUnknown);
     else if (read.bandGap <= 0.0)
       read.failedConjuncts.emplace_back(RegisterConjunct::kBandGap);
+
+    // The contour half. A band the detector grouped by the sort-and-gap rule
+    // carries no contour and claims none: it is unmeasured here only when a
+    // contour was required.
+    const bool contourDrawn = !cert.contour.empty() && cert.contourNodeCount > 0;
+    if (!contourDrawn) {
+      if (cfg_.requireContour)
+        read.unmeasured.emplace_back(RegisterUnmeasured::kNoContour);
+    } else if (!measured(read.resolventBound)) {
+      read.unmeasured.emplace_back(RegisterUnmeasured::kResolventUnmeasured);
+    } else if (!(read.resolventBound <= cfg_.maxResolventBound)) {
+      read.failedConjuncts.emplace_back(RegisterConjunct::kContourResolvent);
+    }
+
+    // The rotation half, decided only for a complex the caller declared
+    // Lorentzian. Nothing here infers the declaration from the band.
+    if (cfg_.lorentzian) {
+      if (!measured(read.lorentzianEpsilon) ||
+          !measured(read.allowabilityMargin)) {
+        read.unmeasured.emplace_back(RegisterUnmeasured::kRotationUnmeasured);
+      } else if (!(read.lorentzianEpsilon > 0.0) || !cert.allowable ||
+                 !(read.allowabilityMargin > cfg_.minAllowabilityMargin)) {
+        read.failedConjuncts.emplace_back(RegisterConjunct::kLorentzianRotation);
+      }
+    }
   }
 
   // conjuncts 4 and 5: neighbour overlap and cobordism-frame lifetime

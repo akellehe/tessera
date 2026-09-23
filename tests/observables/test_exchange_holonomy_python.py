@@ -422,7 +422,7 @@ class BlockPermutationTest(unittest.TestCase):
         read = EH.blockPermutation(steps, ref)
         self.assertEqual(list(read.blockPermutation), [1, 0])
         self.assertEqual(read.blockParity, -1)
-        self.assertEqual(read.modeParity, -1)
+        self.assertEqual(read.occupationParity, -1)
         self.assertEqual(list(read.blockRanks), [1, 1])
         self.assertTrue(read.certificate.holds())
         self.assertLess(read.residualInBlockMotion, MACHINE)
@@ -432,15 +432,15 @@ class BlockPermutationTest(unittest.TestCase):
         read = EH.blockPermutation(steps)
         self.assertEqual(list(read.blockPermutation), [0, 1])
         self.assertEqual(read.blockParity, +1)
-        self.assertEqual(read.modeParity, +1)
+        self.assertEqual(read.occupationParity, +1)
 
-    def test_odd_even_three_cycle_mode_parity_plus_one(self):
+    def test_odd_even_three_cycle_statistic_plus_one(self):
         """Odd cluster {0} + even composite {4, 8}: the mode three-cycle has
         parity +1 — the graded sign (-1)^{1*2} of the block swap."""
         steps = _block_steps([0, 4, 8], 12, self.STEPS, 4)
         read = EH.blockPermutation(steps, composites=[[0], [1, 2]])
         self.assertEqual(list(read.blockPermutation), [1, 2, 0])
-        self.assertEqual(read.modeParity, +1)
+        self.assertEqual(read.occupationParity, +1)
         self.assertEqual(read.blockParity, +1)  # a 3-cycle of labels
         # The composite's constituents scatter between territories, so the
         # composite-level view is honestly absent (never guessed)...
@@ -450,12 +450,22 @@ class BlockPermutationTest(unittest.TestCase):
         self.assertTrue(read.certificate.holds())
 
     def test_identical_even_composites_swap_parities(self):
+        """Two rank-two blocks exchanged, each carrying two occupied modes:
+        the statistic is the graded sign (-1)^{2*2} = +1 of the declared
+        occupations, and the rank-parity cross-check agrees because here the
+        occupations and the ranks coincide."""
         steps = _block_steps([0, 4], 8, self.STEPS, 4, ranks=[2, 2])
-        read = EH.blockPermutation(steps, composites=[[0], [1]])
+        two = obs.ClusterOccupancy(occupation=2, sheetCount=1)
+        read = EH.blockPermutation(steps, composites=[[0], [1]],
+                                   occupancies=[two, two])
         self.assertEqual(list(read.blockPermutation), [1, 0])
         self.assertEqual(list(read.blockRanks), [2, 2])
+        self.assertEqual(list(read.blockOccupations), [2, 2])
         self.assertEqual(read.blockParity, -1)     # block labels transpose
-        self.assertEqual(read.modeParity, +1)      # (-1)^{2*2}: the statistic
+        self.assertEqual(read.occupationParity, +1)  # (-1)^{2*2}: the statistic
+        self.assertEqual(read.rankParity, +1)        # the cross-check agrees
+        self.assertTrue(read.rankParityAgrees)
+        self.assertFalse(read.rankParityRetired)
         self.assertEqual(list(read.compositePermutation), [1, 0])
         self.assertEqual(read.compositeParity, -1)
         self.assertTrue(read.certificate.holds())
@@ -463,13 +473,13 @@ class BlockPermutationTest(unittest.TestCase):
     def test_missing_reference_reports_unmeasured_residual(self):
         read = EH.blockPermutation(_block_steps([0, 4], 8, self.STEPS, 4))
         self.assertTrue(math.isnan(read.residualInBlockMotion))
-        self.assertEqual(read.modeParity, -1)
+        self.assertEqual(read.occupationParity, -1)
 
     def test_exchanging_reference_is_rejected(self):
         steps = _block_steps([0, 4], 8, self.STEPS, 4)
         read = EH.blockPermutation(steps, steps)  # reference exchanges too
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.modeParity, 0)
+        self.assertEqual(read.occupationParity, 0)
 
     def test_residual_detects_uncancelled_in_block_motion(self):
         # The moving loop crosses per-cell metric phases the static
@@ -488,7 +498,7 @@ class BlockPermutationTest(unittest.TestCase):
                 for p in (0, 4)] for _ in range(steps)]
         read = EH.blockPermutation(loop, ref)
         self.assertTrue(read.certificate.holds())
-        self.assertEqual(read.modeParity, -1)
+        self.assertEqual(read.occupationParity, -1)
         self.assertGreater(read.residualInBlockMotion, 1e-3)
 
     def test_gap_closure_returns_uncertified_not_a_sign(self):
@@ -501,7 +511,7 @@ class BlockPermutationTest(unittest.TestCase):
                               accepted=False)
         read = EH.blockPermutation(broken)
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.modeParity, 0)
+        self.assertEqual(read.occupationParity, 0)
         self.assertEqual(read.blockParity, 0)
         self.assertEqual(list(read.blockPermutation), [])
         # the clean tracking, for contrast, certifies
@@ -516,7 +526,7 @@ class BlockPermutationTest(unittest.TestCase):
                           for p in (0, 4)])
         read = EH.blockPermutation(steps)
         self.assertFalse(read.certificate.holds())
-        self.assertEqual(read.modeParity, 0)
+        self.assertEqual(read.occupationParity, 0)
 
     def test_block_count_change_is_uncertified(self):
         steps = _block_steps([0, 4], 8, 4, 0)
@@ -628,7 +638,7 @@ class InvarianceTest(unittest.TestCase):
         read = EH.blockPermutation(relabeled)
         self.assertEqual(list(read.blockPermutation),
                          list(base.blockPermutation))
-        self.assertEqual(read.modeParity, base.modeParity)
+        self.assertEqual(read.occupationParity, base.occupationParity)
         self.assertEqual(read.blockParity, base.blockParity)
 
     def test_structural_parity_invariant_under_in_band_rotation(self):
@@ -649,7 +659,7 @@ class InvarianceTest(unittest.TestCase):
         read = EH.blockPermutation(rotated, ref)
         self.assertEqual(list(read.blockPermutation),
                          list(base.blockPermutation))
-        self.assertEqual(read.modeParity, base.modeParity)
+        self.assertEqual(read.occupationParity, base.occupationParity)
         self.assertLess(abs(read.residualInBlockMotion
                             - base.residualInBlockMotion), 1e-9)
 

@@ -719,6 +719,123 @@ class TestFockDirectSum(unittest.TestCase):
         np.testing.assert_allclose(dg @ n - n @ dg, 0 * dg, atol=1e-13)
 
 
+@unittest.skipUnless(HAVE_QUANTUM, "tessera built without the quantum subsystem")
+class TestDirectedCoupling(unittest.TestCase):
+    """Whitepaper Section 6: dGamma(C) = sum (C_AB)_ij eps_A,i iota^j_B +
+    sum (C_BA)_ij eps_B,i iota^j_A, with NO Hermitian-conjugate relation
+    between the two directed blocks assumed."""
+
+    M_A = 2
+    M_B = 3
+
+    def setUp(self) -> None:
+        self.f = FockDirectSum(self.M_A, self.M_B)
+        self.m = self.M_A + self.M_B
+        self.a_ops = [jw_annihilation(i, self.m) for i in range(self.m)]
+        rng = np.random.default_rng(47)
+
+        def cplx(*shape):
+            return rng.standard_normal(shape) + 1j * rng.standard_normal(shape)
+
+        # Complex-symmetric diagonal blocks and two INDEPENDENT couplings.
+        self.l_a = cplx(self.M_A, self.M_A)
+        self.l_a = self.l_a + self.l_a.T
+        self.l_b = cplx(self.M_B, self.M_B)
+        self.l_b = self.l_b + self.l_b.T
+        self.c_ab = cplx(self.M_A, self.M_B)
+        self.c_ba = cplx(self.M_B, self.M_A)
+
+    def test_assembly_places_both_directed_blocks_as_given(self) -> None:
+        full = np.asarray(FockDirectSum.assembleBlockOneParticle(
+            self.l_a, self.l_b, self.c_ab, self.c_ba))
+        a, b = self.M_A, self.M_B
+        np.testing.assert_array_equal(full[:a, :a], self.l_a)
+        np.testing.assert_array_equal(full[a:, a:], self.l_b)
+        np.testing.assert_array_equal(full[:a, a:], self.c_ab)
+        np.testing.assert_array_equal(full[a:, :a], self.c_ba)
+        # Nothing forces C_BA = C_AB^dagger.
+        self.assertGreater(np.abs(self.c_ba - self.c_ab.conj().T).max(), 0.1)
+
+    def test_directed_dgamma_matches_the_dense_reference(self) -> None:
+        got = dense(self.f.dGammaBlockCOO(
+            self.l_a, self.l_b, self.c_ab, self.c_ba))
+        a = self.M_A
+        adag = [op.conj().T for op in self.a_ops]
+        reference = sum(
+            self.l_a[i, j] * adag[i] @ self.a_ops[j]
+            for i in range(a) for j in range(a))
+        reference = reference + sum(
+            self.l_b[i, j] * adag[a + i] @ self.a_ops[a + j]
+            for i in range(self.M_B) for j in range(self.M_B))
+        # eps_A,i iota^j_B: hopping B -> A by C_AB ...
+        reference = reference + sum(
+            self.c_ab[i, j] * adag[i] @ self.a_ops[a + j]
+            for i in range(a) for j in range(self.M_B))
+        # ... and eps_B,i iota^j_A: hopping A -> B by C_BA, independently.
+        reference = reference + sum(
+            self.c_ba[i, j] * adag[a + i] @ self.a_ops[j]
+            for i in range(self.M_B) for j in range(a))
+        np.testing.assert_allclose(got, reference, rtol=0, atol=1e-12)
+        # Complex-symmetric blocks with independent couplings: dGamma is
+        # neither Hermitian nor forced to be.
+        self.assertGreater(np.abs(got - got.conj().T).max(), 0.1)
+
+    def test_one_directed_block_alone_hops_one_way(self) -> None:
+        zero_a = np.zeros((self.M_A, self.M_A), dtype=complex)
+        zero_b = np.zeros((self.M_B, self.M_B), dtype=complex)
+        only_ab = dense(self.f.dGammaBlockCOO(
+            zero_a, zero_b, self.c_ab,
+            np.zeros((self.M_B, self.M_A), dtype=complex)))
+        a = self.M_A
+        adag = [op.conj().T for op in self.a_ops]
+        reference = sum(
+            self.c_ab[i, j] * adag[i] @ self.a_ops[a + j]
+            for i in range(a) for j in range(self.M_B))
+        np.testing.assert_allclose(only_ab, reference, rtol=0, atol=1e-13)
+        # No hidden h.c.: every term raises N_A by exactly one, [N_A, X] = X,
+        # so the A -> B amplitudes are exactly absent.
+        n_a = sum(adag[i] @ self.a_ops[i] for i in range(a))
+        commutator = n_a @ only_ab - only_ab @ n_a
+        np.testing.assert_allclose(commutator, only_ab, rtol=0, atol=1e-13)
+
+    def test_star_structure_form_is_the_special_case(self) -> None:
+        c = self.c_ab
+        special = dense(self.f.dGammaBlockCOO(self.l_a, self.l_b, c))
+        general = dense(self.f.dGammaBlockCOO(
+            self.l_a, self.l_b, c, c.conj().T))
+        np.testing.assert_array_equal(special, general)
+        np.testing.assert_array_equal(
+            np.asarray(FockDirectSum.assembleBlockOneParticle(
+                self.l_a, self.l_b, c)),
+            np.asarray(FockDirectSum.assembleBlockOneParticle(
+                self.l_a, self.l_b, c, c.conj().T)))
+
+    def test_free_spectrum_is_the_subset_sums_of_the_complex_block(self) -> None:
+        full = np.asarray(FockDirectSum.assembleBlockOneParticle(
+            self.l_a, self.l_b, self.c_ab, self.c_ba))
+        one_particle = np.linalg.eigvals(full)
+        many_body = np.linalg.eigvals(dense(self.f.dGammaBlockCOO(
+            self.l_a, self.l_b, self.c_ab, self.c_ba)))
+        subset_sums = [
+            sum(one_particle[list(s)]) if s else 0j
+            for k in range(self.m + 1)
+            for s in itertools.combinations(range(self.m), k)
+        ]
+        # Match every many-body eigenvalue to a distinct subset sum.
+        remaining = list(subset_sums)
+        for z in many_body:
+            k = int(np.argmin([abs(z - w) for w in remaining]))
+            self.assertLess(abs(z - remaining[k]), 1e-9)
+            remaining.pop(k)
+
+    def test_directed_shapes_are_validated(self) -> None:
+        with self.assertRaises(ValueError):
+            FockDirectSum.assembleBlockOneParticle(
+                self.l_a, self.l_b, self.c_ab, self.c_ab)  # C_BA is M_B x M_A
+        with self.assertRaises(ValueError):
+            self.f.dGammaBlockCOO(self.l_a, self.l_b, self.c_ba, self.c_ba)
+
+
 # ─── pair creation ─────────────────────────────────────────────────────────
 
 @unittest.skipUnless(HAVE_QUANTUM, "tessera built without the quantum subsystem")

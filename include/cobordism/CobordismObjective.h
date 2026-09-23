@@ -40,7 +40,8 @@ struct ObjectiveTerms {
   double hodgeStationarity = 0.0;
   /// \f$\eta_C\|\nabla_\varphi S_{\mathbb{C}^{*}}\|^2\f$ — stationarity of the
   /// connection operator's entropy in the connection phase. The only term with
-  /// a \f$\varphi\f$ gradient: every \f$ L_k \f$ is blind to \f$\varphi\f$, so
+  /// a \f$\varphi\f$ gradient: the Hodge-entropy term sees \f$\varphi\f$
+  /// through \f$ h_k(z,U) \f$ but is differentiated in \f$ z \f$ alone, so
   /// without it \f$\varphi\f$ is a declared field that no update moves.
   double connectionStationarity = 0.0;
   /// \f$\gamma r_U\f$ — the target-conditioned register residual.
@@ -50,6 +51,11 @@ struct ObjectiveTerms {
   /// \f$\beta_E E_{\rm carried}(\Gamma,g)\f$ — the one permitted state
   /// channel, exactly 0.0 outside the certificates-blind mean-field sub-mode.
   double carriedStateEnergy = 0.0;
+  /// \f$\beta_M\sum_k\operatorname{Re}S_{M,k}\f$ — the spectral-moment stiffness
+  /// of the geometric action about its carrier
+  /// (`HodgeLaplacian::spectralMomentStiffness`), exactly 0.0 when its weight is
+  /// zero, the default.
+  double momentStiffness = 0.0;
 };
 
 /// # ObjectiveContext
@@ -157,6 +163,20 @@ struct ObjectiveContext {
   /// \f$E_{\rm carried}(\Gamma,g)\f$, likewise a precomputed number. Exactly
   /// zero where the weight is zero.
   double carriedStateEnergy = 0.0;
+
+  /// \f$\beta_M\f$, the weight of the spectral-moment stiffness of the geometric
+  /// action (whitepaper Section 7), a configured real. Zero by default, which
+  /// leaves every objective as it was.
+  double momentStiffnessWeight = 0.0;
+  /// The degrees \f$ k \f$ whose Hodge operators' local moments are held.
+  std::vector<int> momentStiffnessDegrees;
+  /// \f$\beta_j\f$, \f$ j=1,\dots,m \f$: the configured weights of the moment
+  /// orders.
+  std::vector<double> momentStiffnessCoefficients;
+  /// The carrier's local moments, one flat \f$ |C_k|\times m \f$ array per
+  /// degree (`HodgeLaplacian::localSpectralMoments`): geometry, precomputed by the
+  /// engine when the stiffness is declared.
+  std::vector<std::vector<std::complex<double>>> momentStiffnessReference;
 
   /// The names of every field above, in declaration order — the firewall list a
   /// structural test asserts against, as `objectiveTermNames` does for the
@@ -317,6 +337,7 @@ class ObjectiveTermName {
   static constexpr const char *kRegisterResidual = "register_residual";
   static constexpr const char *kActionMagnitude = "action_magnitude";
   static constexpr const char *kCarriedStateEnergy = "carried_state_energy";
+  static constexpr const char *kMomentStiffness = "moment_stiffness";
 };
 
 /// # CobordismObjective
@@ -439,6 +460,16 @@ class CobordismObjective {
 /// Hodge},k}\|^2\f$ — the Regge action and the Hodge spectral entropy
 /// stationary at the same metric. The only one of the three built-ins that is
 /// not target-conditioned.
+///
+/// This is a scalar diagnostic that a descent minimizes: every term is the
+/// squared norm of the gradient of a real functional, so its minimum records
+/// how nearly two real functionals are simultaneously stationary and its value
+/// is a residual rather than an action. The holomorphic stationarity equations
+/// of the joint action \f$S(z,U,\Gamma)\f$ themselves — the complex equations
+/// \f$\partial S/\partial z=0\f$ and \f$U\,\partial S/\partial U=0\f$, with no
+/// real projection selected and no norm minimized in their place — are
+/// `JointAction` and are solved by `HolomorphicRelaxation`. The two answer
+/// different questions and neither stands in for the other.
 ///
 /// The Hodge sum runs over `ObjectiveContext::hodgeDegrees`, resolved
 /// independently of the register degrees. Scoring more degrees shows more of the

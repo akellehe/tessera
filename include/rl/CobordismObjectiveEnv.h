@@ -3,12 +3,12 @@
 //
 // A Gym-style reinforcement-learning environment over the `MultiCobordism` objective search.
 //
-// This is a harness, not a builder: MultiCobordism and Proton are the source of truth for
+// This is a harness, not a builder: MultiCobordism and ProtonSynthesis are the source of truth for
 // proton construction, and this environment only drives them. Every macro-action is one
 // `MultiCobordism::buildStep`, plus the `directedConeOut`/`directedConeIn` probe when
 // `directedGrow` is set; the observation and reward only read published engine quantities
 // (r_U, reggeActionGradient, emergentHoles, r_state, Betti numbers). The fixed
-// `Proton.build()` schedule (init -> evolve -> relax) becomes the learning problem: the
+// `ProtonSynthesis.build()` schedule (init -> evolve -> relax) becomes the learning problem: the
 // agent chooses which macro-action to take, and with what parameters.
 
 #ifndef TESSERA_RL_COBORDISM_OBJECTIVE_ENV_H
@@ -135,8 +135,9 @@ class CobordismObjectiveEnv {
 
 /// `seed -> node` factories for the two setups: formation (2→1, the proton singlet carried by
 /// the whole cobordism) and recombination (2→2, a colored diquark ⊔ antidiquark, with no
-/// whole-cobordism target). Both build the node through `Proton`, so the agent drives the
-/// same setup `Proton.build()` does.
+/// whole-cobordism target). Both build the node through `ProtonSynthesis`, so the node runs in
+/// the labelled `SimulationMode::Synthesis` and the agent drives the same setup
+/// `ProtonSynthesis.build()` does.
 [[nodiscard]] NodeFactory formationNodeFactory(int registerDegree = 3, double gamma = 50.0,
                                                double inputWeight = 20.0);
 [[nodiscard]] NodeFactory recombinationNodeFactory(int registerDegree = 3, double gamma = 50.0,
@@ -144,7 +145,7 @@ class CobordismObjectiveEnv {
 
 /// Environment builders for the two setups. Formation carries the proton singlet on the whole
 /// cobordism; recombination has no whole-cobordism target, and succeeds as
-/// \f$ r_U \to 0 \f$. Both wire up the `Proton`-backed factory and target internally.
+/// \f$ r_U \to 0 \f$. Both wire up the `ProtonSynthesis`-backed factory and target internally.
 [[nodiscard]] CobordismObjectiveEnv makeFormationEnv(EnvConfig config, double inputWeight = 20.0);
 [[nodiscard]] CobordismObjectiveEnv makeRecombinationEnv(EnvConfig config,
                                                          double inputWeight = 20.0);

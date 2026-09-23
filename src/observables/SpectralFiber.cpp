@@ -63,7 +63,14 @@ constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 // (named `condition_number` in schema 1) and `frame_condition_number`.
 // Schema 1 remains readable: its projector norm is carried over verbatim and
 // quantities it never measured read back as NaN, never zero.
-constexpr int kSchemaVersion = 2;
+// Schema 3 adds the contour certificate — `contour`, `contour_node_count`,
+// `contour_center_re/_im`, `contour_radius`, `resolvent_max` and
+// `resolvent_bound` — the Kontsevich-Segal allowability of the instance the
+// band was read on (`allowable`, `allowability_margin`, `lorentzian_epsilon`),
+// and the bilinear-left-frame flag. Documents at schemas 1 and 2 read back with
+// an empty contour and NaN bounds: silence about a contour is not evidence that
+// one was drawn, and the flag falls back to the regime that implied it.
+constexpr int kSchemaVersion = 3;
 constexpr int kOldestReadableSchema = 1;
 
 // ---------------------------------------------------------------------------
@@ -162,6 +169,17 @@ Record bandCertificateToRecord(const SpectralBandCertificate &c) {
   m["isotropic"] = Record(c.isotropic);
   m["left_frame_refusal"] = Record(c.leftFrameRefusal);
   m["metric_symmetry_defect"] = Record(c.metricSymmetryDefect);
+  m["contour"] = Record(c.contour);
+  m["contour_node_count"] = Record(c.contourNodeCount);
+  m["contour_center_re"] = Record(c.contourCenter.real());
+  m["contour_center_im"] = Record(c.contourCenter.imag());
+  m["contour_radius"] = Record(c.contourRadius);
+  m["resolvent_max"] = Record(c.resolventMax);
+  m["resolvent_bound"] = Record(c.resolventBound);
+  m["allowable"] = Record(c.allowable);
+  m["allowability_margin"] = Record(c.allowabilityMargin);
+  m["lorentzian_epsilon"] = Record(c.lorentzianEpsilon);
+  m["bilinear_left_frame"] = Record(c.bilinearLeftFrame);
   m["accepted"] = Record(c.accepted);
   m["certificate"] = certificateToRecord(c.certificate);
   return Record(std::move(m));
@@ -201,8 +219,28 @@ SpectralBandCertificate bandCertificateFromRecord(const Record &record) {
   c.isotropic = m.count("isotropic") ? m.at("isotropic").asBool() : false;
   c.leftFrameRefusal = m.count("left_frame_refusal") ? m.at("left_frame_refusal").asString() : std::string{};
   c.metricSymmetryDefect = optionalDouble(m, "metric_symmetry_defect");
+  // Schemas written before the contour certificate carry no contour: absent
+  // stays unmeasured (an empty description and NaN bounds), never a zero that
+  // would claim a contour nobody drew.
+  c.contour = m.count("contour") ? m.at("contour").asString() : std::string{};
+  c.contourNodeCount =
+      m.count("contour_node_count") ? static_cast<int>(m.at("contour_node_count").asInt()) : 0;
+  c.contourCenter = cd(optionalDouble(m, "contour_center_re"),
+                       optionalDouble(m, "contour_center_im"));
+  c.contourRadius = optionalDouble(m, "contour_radius");
+  c.resolventMax = optionalDouble(m, "resolvent_max");
+  c.resolventBound = optionalDouble(m, "resolvent_bound");
+  c.allowable = m.count("allowable") ? m.at("allowable").asBool() : false;
+  c.allowabilityMargin = optionalDouble(m, "allowability_margin");
+  c.lorentzianEpsilon = optionalDouble(m, "lorentzian_epsilon");
   c.accepted = m.at("accepted").asBool();
   c.certificate = certificateFromRecord(m.at("certificate"));
+  // Records written before the flag existed stored the bilinear left frame
+  // exactly on the complex-symmetric pencil regime.
+  c.bilinearLeftFrame =
+      m.count("bilinear_left_frame")
+          ? m.at("bilinear_left_frame").asBool()
+          : c.certificate.regime() == CertificateRegime::ComplexSymmetricPencil;
   return c;
 }
 
@@ -368,6 +406,12 @@ std::string SpectralBandCertificate::describe() const {
         << ", cond B_C " << pairingCondition << ", pairing scale "
         << pairingScale << (isotropic ? ", ISOTROPIC (" + leftFrameRefusal + ")" : "")
         << ", metric symmetry defect " << metricSymmetryDefect;
+  if (!contour.empty())
+    out << "; contour " << contour << " (" << contourNodeCount
+        << " nodes), resolvent max " << resolventMax << ", resolvent bound "
+        << resolventBound << ", "
+        << (allowable ? "allowable" : "NOT allowable") << " with margin "
+        << allowabilityMargin << ", epsilon_L " << lorentzianEpsilon;
   return out.str();
 }
 
@@ -385,16 +429,22 @@ SpectralFiber::SpectralFiber(std::vector<std::vector<std::uint64_t>> cells,
       right_(std::move(rightFrame)), left_(std::move(leftFrame)),
       weights_(std::move(weights)), certificate_(std::move(certificate)) {}
 
+Eigen::MatrixXcd SpectralFiber::dualFrame() const {
+  // The chain-level pencil path stores the canonical bilinear left frame
+  // Phi~ itself (the weight diagonal is the identity placeholder there), in
+  // either verified regime.
+  if (certificate_.bilinearLeftFrame) return left_;
+  // Elsewhere the solver's normalization is Psi^dagger W Phi = I, and
+  // (W conj(Psi))^T Phi = Psi^dagger W Phi: the transpose dual is W conj(Psi).
+  if (left_.size() == 0) return left_;
+  return weights_.asDiagonal() * left_.conjugate();
+}
+
 Eigen::MatrixXcd SpectralFiber::projector() const {
   if (right_.rows() == 0 || right_.cols() == 0)
     return Eigen::MatrixXcd::Zero(right_.rows(), right_.rows());
-  // The chain-level pencil regime pairs bilinearly: the Riesz projector is
-  // Phi Phi~^T (no conjugate, no diagonal metric); the left frame stored is
-  // Phi~ itself and the weight diagonal is the identity placeholder.
-  if (certificate_.certificate.regime() ==
-      CertificateRegime::ComplexSymmetricPencil)
-    return right_ * left_.transpose();
-  return right_ * (left_.adjoint() * weights_.asDiagonal());
+  // One pairing in every regime: the Riesz projector is Phi Phi~^T.
+  return right_ * dualFrame().transpose();
 }
 
 std::complex<double> SpectralFiber::bandCenter() const {
@@ -561,6 +611,12 @@ struct SpectralFiberTracker::RestrictedOperator {
   // the regime's verification residual (M L = (M L)^T).
   std::shared_ptr<const chainhodge::CovariantChainHodge> pencil{};
   double metricSymmetryDefect = kNaN;
+  // Kontsevich-Segal allowability of the instance the pencil was built on
+  // (`chainhodge::InstanceCertificate`): whether every top simplex has a
+  // strictly positive margin, and the smallest margin. Measured on the pencil
+  // path only; NaN elsewhere, where no Whitney instance exists to be allowable.
+  bool allowable = false;
+  double allowabilityMargin = kNaN;
 
   [[nodiscard]] std::size_t dim() const { return cells.size(); }
 };
@@ -568,16 +624,21 @@ struct SpectralFiberTracker::RestrictedOperator {
 SpectralFiberTracker::SpectralFiberTracker(
     std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
     cobordism::HodgeLaplacian::WeightConvention weights)
-    : st_(std::move(st)), cfg_(std::move(cfg)), weights_(weights) {
-  if (!st_)
-    throw std::invalid_argument("SpectralFiberTracker: null spacetime");
-}
+    : SpectralFiberTracker(std::move(st), std::move(cfg), weights,
+                           cobordism::HodgeLaplacian::defaultMetricSource()) {}
 
 SpectralFiberTracker::SpectralFiberTracker(
     std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
     cobordism::HodgeLaplacian::MetricSource source)
-    : st_(std::move(st)), cfg_(std::move(cfg)),
-      weights_(cobordism::HodgeLaplacian::defaultWeightConvention()),
+    : SpectralFiberTracker(std::move(st), std::move(cfg),
+                           cobordism::HodgeLaplacian::defaultWeightConvention(),
+                           source) {}
+
+SpectralFiberTracker::SpectralFiberTracker(
+    std::shared_ptr<Spacetime> st, SpectralFiberConfig cfg,
+    cobordism::HodgeLaplacian::WeightConvention weights,
+    cobordism::HodgeLaplacian::MetricSource source)
+    : st_(std::move(st)), cfg_(std::move(cfg)), weights_(weights),
       metricSource_(source) {
   if (!st_)
     throw std::invalid_argument("SpectralFiberTracker: null spacetime");
@@ -683,7 +744,14 @@ SpectralFiberTracker::assembleRestricted(
     const chainhodge::Connection U = chainhodge::Connection::fromSpacetime(*st_, K);
     const chainhodge::ChainHodge base(K, s, chainhodge::Preset::L2,
                                       chainhodge::Branch::Continuation,
-                                      std::numeric_limits<int>::max());
+                                      std::numeric_limits<int>::max(),
+                                      cfg_.lorentzianEpsilon);
+    // The instance's Kontsevich-Segal certificate, measured from the squared
+    // lengths the spacetime supplied: every band read off this pencil carries
+    // it, since a band selected on a non-allowable instance is a band selected
+    // on the wrong side of the Kontsevich-Segal boundary.
+    op.allowable = base.certificate().allowable;
+    op.allowabilityMargin = base.certificate().margin;
     auto cov = std::make_shared<const chainhodge::CovariantChainHodge>(
         base, U, 7, /*measureCertificate=*/false);
     op.cells = K.kSimplexVertices(degree);
@@ -704,7 +772,8 @@ SpectralFiberTracker::assembleRestricted(
   // read-only) to the cells fully inside the support.
   const cobordism::ChainComplex cc =
       cobordism::ChainComplex::fromSpacetime(*st_);
-  const cobordism::HodgeLaplacian hodge(st_, weights_);
+  const cobordism::HodgeLaplacian hodge(
+      st_, weights_, cobordism::HodgeLaplacian::MetricSource::DiagonalWeights);
   const auto insideIndices =
       [&](int k) -> std::pair<std::vector<std::size_t>,
                               std::vector<std::vector<std::uint64_t>>> {
@@ -1225,6 +1294,19 @@ void SpectralFiberTracker::solvePencilBands(const RestrictedOperator &op,
         op.pencil->band(op.degree, contour, 10.0, cfg_.isotropyTolerance);
     const auto rank = static_cast<std::size_t>(band.rank());
     cert.rank = rank;
+    // The contour certificate: the contour the Riesz projector was computed on
+    // and the resolvent it was computed with. The bound is the Riesz estimate
+    // ||P_C|| <= (|gamma_C| / 2 pi) max_zeta ||(zeta I - h)^{-1}||, which for
+    // this circle of radius r is r * resolventMax.
+    cert.contour = contour.description;
+    cert.contourNodeCount = band.certificate.nodeCount;
+    cert.contourCenter = center;
+    cert.contourRadius = radius;
+    cert.resolventMax = band.certificate.resolventMax;
+    cert.resolventBound = radius * band.certificate.resolventMax;
+    cert.allowable = op.allowable;
+    cert.allowabilityMargin = op.allowabilityMargin;
+    cert.lorentzianEpsilon = cfg_.lorentzianEpsilon;
     cert.eigenResidual = band.certificate.rightResidual;
     cert.leftResidual = band.certificate.leftResidual;
     cert.projectorResidual = band.certificate.idempotency;
@@ -1233,6 +1315,7 @@ void SpectralFiberTracker::solvePencilBands(const RestrictedOperator &op,
     cert.pairingScale = band.certificate.pairingScale;
     cert.isotropic = !band.certificate.leftFrameAvailable;
     cert.leftFrameRefusal = band.certificate.leftFrameRefusal;
+    cert.bilinearLeftFrame = true;  // Psi below is Phi~ itself
     cert.positiveSignature = 0;  // no inertia in the bilinear regime
     cert.negativeSignature = 0;
     Eigen::MatrixXcd Phi = band.frame;
@@ -1286,10 +1369,26 @@ void SpectralFiberTracker::solvePencilBands(const RestrictedOperator &op,
                              cert.projectorResidual <= cfg_.residualTolerance;
     const bool localizedOk = std::isfinite(cert.localizationExcess) &&
                              cert.localizationExcess <= cfg_.maxLocalizationExcess;
+    // The contour conjunct: a closed contour with a controlled resolvent
+    // separating the band from the discarded modes. An unmeasured resolvent
+    // fails it — a contour whose resolvent was never measured has not been
+    // certified.
+    const bool resolventOk = std::isfinite(cert.resolventBound) &&
+                             cert.resolventBound <= cfg_.resolventBoundCap;
+    // The Kontsevich-Segal conjunct: the instance is on the allowable side with
+    // a strictly positive margin, and, when the complex was declared
+    // Lorentzian, the declared rotation is positive. A band read at
+    // epsilon_L = 0 on a declared Lorentzian complex is reported with its gap
+    // certificate, never certified alone.
+    const bool allowabilityOk =
+        cert.allowable && std::isfinite(cert.allowabilityMargin) &&
+        cert.allowabilityMargin > cfg_.minAllowabilityMargin &&
+        (!std::isfinite(cert.lorentzianEpsilon) || cert.lorentzianEpsilon > 0.0);
     cert.accepted = !cert.isotropic &&
                     separationOk(cert.nearestDiscardedSeparation) && localizedOk &&
                     residualsOk && cert.gramDefect <= cfg_.gramDefectTolerance &&
                     cert.projectorNorm <= cfg_.projectorNormCap &&
+                    resolventOk && allowabilityOk &&
                     rank == bandEigs.size();
     if (cert.accepted) {
       cert.certificate = Certificate::certifiedNumerical(

@@ -59,6 +59,31 @@
 //     assumption; mixed quasi-free states report the covariance-spectrum
 //     constraint dist(spec Γ, [0,1]) instead.
 //
+// ─── Two duals: the Hermitian adjoint and the transpose ──────────────────
+//
+//   The whitepaper (Section 7) pairs a right Slater state with an algebraic
+//   left dual, never with its Hermitian adjoint:
+//       |Ξ_R⟩ = φ_1 ∧ ··· ∧ φ_N,   ⟨Ξ_L| = φ̃_1 ∧ ··· ∧ φ̃_N,   Φ̃ᵀΦ = I_N,
+//   and the one-body datum is the biorthogonal Slater covariance
+//       Γ = ΦΦ̃ᵀ,   Γ_ij = ⟨Ξ_L|a_j† a_i|Ξ_R⟩,   Γ² = Γ,   tr Γ = N,
+//   an algebraic covariance, not a positive density matrix. Here ⟨Ξ_L| is the
+//   linear functional ⟨0|ã(φ̃_N)···ã(φ̃_1) with ã(w) = Σ_i w_i a_i (the
+//   contraction by the dual mode — linear, never conjugated), so
+//   ⟨Ξ_L|Ξ_R⟩ = det(Φ̃ᵀΦ) = 1. The two frames evolve, for any complex
+//   one-particle generator h (no h†, no scalar renormalization, no positive
+//   metric), by
+//       iΦ̇ = hΦ,   −iΦ̃̇ᵀ = Φ̃ᵀh,   hence   iΓ̇ = [h, Γ],
+//   i.e. Φ(t) = e^{−iht}Φ and Φ̃(t) = e^{+ihᵀt}Φ̃; the dual pairing Φ̃ᵀΦ and
+//   the idempotency Γ² = Γ are preserved exactly. The biorthogonal Wick
+//   theorem makes every Γ-indexed read above (occupations, parities, the
+//   Wick determinant, the bilinear moments) a transition amplitude of the
+//   pair; the transpose-smeared Gram determinant
+//       ⟨a†(v_1)···a†(v_p) ã(w_p)···ã(w_1)⟩ = det(Wᵀ Γ V)
+//   is the pairing's own smeared read. `CovarianceDual::Transpose` states
+//   carry both frames; `CovarianceDual::HermitianAdjoint` is the special case
+//   of a certified ∗-structure (Φ̃ᵀ = Φ†), where h must be Hermitian and a
+//   transport conjugates by U†.
+//
 // ─── No Fock vector on the quasi-free path ───────────────────────────────
 //
 // The production representation is the M×M covariance: every method here is
@@ -86,6 +111,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -98,6 +124,18 @@ class AnalyticCache;
 
 namespace tessera::quantum {
 
+/// The dual a `CovarianceState` is paired against.
+enum class CovarianceDual {
+    /// Γ_ij = ⟨Ψ|a_j† a_i|Ψ⟩ with the Hermitian adjoint of one state (pure
+    /// or mixed): the special case of a certified ∗-structure. The
+    /// generator must be Hermitian and a transport conjugates Γ by U†.
+    HermitianAdjoint,
+    /// Γ = ΦΦ̃ᵀ over a matched right/left Slater pair (Φ̃ᵀΦ = I): the
+    /// biorthogonal Slater covariance of the complex-bilinear formulation.
+    /// Both frames are carried; any complex generator evolves them.
+    Transpose,
+};
+
 /// One Wick-evaluated polynomial certificate: the value,
 /// the measured residual, the normal-ordered observable / contraction-plan
 /// identifier, the covariance fingerprint the value was read from, and the
@@ -108,9 +146,12 @@ struct WickCertificateRead {
     /// imaginary rounding leakage in `residual` — nothing is silently
     /// `.real()`-ed away.
     std::complex<double> value{0.0, 0.0};
-    /// Measured rounding/premise residual: the covariance Hermiticity defect,
-    /// maximized with the imaginary leakage |Im value| for observables that
-    /// are real by construction.
+    /// Measured rounding/premise residual. Hermitian-adjoint path: the
+    /// covariance Hermiticity defect, maximized with the imaginary leakage
+    /// |Im value| for observables that are real by construction. Transpose
+    /// path: the dual-pairing defect ‖Φ̃ᵀΦ − I‖_F, the premise of the
+    /// biorthogonal Wick theorem (transition amplitudes are complex, so no
+    /// imaginary part is a defect there).
     double residual{0.0};
     /// Identifies the normal-ordered observable and contraction plan (e.g.
     /// "parity", "occupation[3]", "spin-squared-variance[fp]"); matrix-
@@ -145,11 +186,17 @@ struct MeanFieldStepRead {
     double hermiticityDefect{0.0};
     double purityDefect{0.0};
     double occupationSpectrumDefect{0.0};
+    /// Transpose path: the dual-pairing defect ‖Φ̃ᵀΦ − I‖_F after the step.
+    /// Quiet NaN (unmeasured) on the Hermitian-adjoint path, which carries
+    /// no frames.
+    double dualityDefect{std::numeric_limits<double>::quiet_NaN()};
     /// The Gaussianity certificate of this iteration: AlgebraicallyExact /
-    /// Static (the conjugation is closed-form); residual = the pure-path
-    /// purity defect when the loop entered on a pure state (purity defect
-    /// within tolerance), else the mixed-path spectrum constraint — each
-    /// maximized with the Hermiticity defects above.
+    /// Static (the conjugation is closed-form). Hermitian-adjoint path:
+    /// residual = the pure-path purity defect when the loop entered on a
+    /// pure state (purity defect within tolerance), else the mixed-path
+    /// spectrum constraint — each maximized with the Hermiticity defects
+    /// above. Transpose path: residual = max(purity defect, duality defect);
+    /// the Hermiticity defects are reported and are not defects there.
     cobordism::Certificate certificate{};
 };
 
@@ -175,11 +222,22 @@ struct MeanFieldStepRead {
 /// exactly when Γ is. With F populated, parity-style determinant reads
 /// become Pfaffians.
 ///
+/// ## The two duals
+///
+/// A state built by `fromBiorthogonalFrames` is on the `Transpose` dual: it
+/// carries a right frame Φ and its algebraic left dual Φ̃ with Γ = ΦΦ̃ᵀ,
+/// evolves both frames under any complex generator (no h†), and reads
+/// transition amplitudes of the pair. Every other constructor is on the
+/// `HermitianAdjoint` dual — the special case of a certified ∗-structure —
+/// where the generator must be Hermitian. For a Hermitian h the two paths
+/// agree: the pair (Φ, Φ̄) of an orthonormal frame evolves to the same Γ.
+///
 /// ## Mutability and certificates
 ///
 /// `evolve` / `applyTransport` / `meanFieldEvolve` mutate Γ; every defect
-/// (`hermiticityDefect`, `purityDefect`, `occupationSpectrumDefect`) is
-/// measured on demand and cached per Γ revision. Wick reads carry a
+/// (`hermiticityDefect`, `purityDefect`, `occupationSpectrumDefect`,
+/// `dualityDefect`) is measured on demand and cached per Γ revision. Wick
+/// reads carry a
 /// `WickCertificateRead` with the verified regime; `covarianceHash()`
 /// fingerprints the exact double bit patterns of Γ, so replay and cache
 /// consistency are byte-exact statements.
@@ -224,11 +282,40 @@ class CovarianceState {
     [[nodiscard]] static CovarianceState fromSlaterFrame(
         const Eigen::MatrixXcd& orbitals, double rankTolerance = 1e-12);
 
+    /// The biorthogonal Slater covariance Γ = ΦΦ̃ᵀ of a matched right/left
+    /// pair: `rightFrame` Φ (M×N, the occupied right modes of |Ξ_R⟩) and
+    /// `leftFrame` Φ̃ (M×N, their algebraic duals in ⟨Ξ_L|), paired by the
+    /// transpose, Φ̃ᵀΦ = I_N. The state is on the `Transpose` dual and
+    /// carries both frames. The pairing is adopted verbatim: its defect
+    /// ‖Φ̃ᵀΦ − I‖_F is measured (`dualityDefect()`) and reported, never
+    /// repaired by a renormalization. N = 0 is the vacuum, Γ = 0.
+    /// A `SpectralFiber`'s `rightFrame()` and `dualFrame()`, or a chain-level
+    /// Riesz band's `frame` and `leftFrame`, enter here as they are.
+    /// @throws std::invalid_argument when the frames have no mode rows or
+    ///         their shapes differ.
+    [[nodiscard]] static CovarianceState fromBiorthogonalFrames(
+        const Eigen::MatrixXcd& rightFrame, const Eigen::MatrixXcd& leftFrame);
+
     // ── state data ───────────────────────────────────────────────────────
 
     /// Mode count M (Γ is M×M).
     [[nodiscard]] std::size_t modeCount() const noexcept {
         return static_cast<std::size_t>(gamma_.rows());
+    }
+
+    /// The dual the covariance is paired against (see `CovarianceDual`).
+    [[nodiscard]] CovarianceDual dual() const noexcept { return dual_; }
+
+    /// The right frame Φ (M×N) of a `Transpose` state; 0×0 on the
+    /// Hermitian-adjoint path, which carries no frames.
+    [[nodiscard]] const Eigen::MatrixXcd& rightFrame() const noexcept {
+        return right_;
+    }
+
+    /// The left frame Φ̃ (M×N) of a `Transpose` state, Γ = ΦΦ̃ᵀ; 0×0 on the
+    /// Hermitian-adjoint path.
+    [[nodiscard]] const Eigen::MatrixXcd& leftFrame() const noexcept {
+        return left_;
     }
 
     /// The covariance matrix Γ, \f$ \Gamma_{ij} = \langle a_j^\dagger a_i
@@ -279,10 +366,18 @@ class CovarianceState {
     /// covariance, pure or mixed.
     [[nodiscard]] double occupationSpectrumDefect() const;
 
+    /// The dual-pairing defect ‖Φ̃ᵀΦ − I_N‖_F of a `Transpose` state — the
+    /// premise of the biorthogonal Wick theorem, preserved exactly by the
+    /// two-frame evolution. Quiet NaN (unmeasured) on the Hermitian-adjoint
+    /// path.
+    [[nodiscard]] double dualityDefect() const;
+
     /// The purity certificate of the pure-Slater path:
     /// AlgebraicallyExact / Static with residual
-    /// max(purityDefect, hermiticityDefect) against `tolerance`, in the
-    /// verified regime. A mixed state does not hold() it.
+    /// max(purityDefect, hermiticityDefect) against `tolerance` on the
+    /// Hermitian-adjoint path and max(purityDefect, dualityDefect) on the
+    /// `Transpose` path, in the verified regime. A mixed state does not
+    /// hold() it.
     [[nodiscard]] cobordism::Certificate purityCertificate(
         double tolerance = 1e-9) const;
 
@@ -293,29 +388,57 @@ class CovarianceState {
 
     // ── propagation (both entry points) ─────────────────────────────────
 
-    /// Advance Γ by `dt` under the Hermitian one-particle generator h:
-    /// Γ ← e^{−ih·dt} Γ e^{+ih·dt}, the exact solution of iΓ̇ = [h, Γ]
-    /// (unitary conjugation through the eigendecomposition of h — no
-    /// step-size error; preserves Hermiticity, spectrum, and purity to
-    /// round-off).
-    /// @throws std::invalid_argument on a shape mismatch or when h fails
-    ///         Hermiticity: ‖h − h†‖_F > hermitianTolerance · max(1, ‖h‖_F).
+    /// Advance Γ by `dt` under the one-particle generator h, the exact
+    /// solution Γ ← e^{−ih·dt} Γ e^{+ih·dt} of iΓ̇ = [h, Γ] (no step-size
+    /// error).
+    ///
+    /// Hermitian-adjoint path: h must be Hermitian; unitary conjugation
+    /// through the eigendecomposition of h preserves Hermiticity, spectrum,
+    /// and purity to round-off.
+    ///
+    /// `Transpose` path: h is any complex matrix (non-Hermitian, e.g.
+    /// complex-symmetric; defective h is fine) and no h† is formed. The two
+    /// frames evolve by iΦ̇ = hΦ and −iΦ̃̇ᵀ = Φ̃ᵀh:
+    /// Φ ← e^{−ih·dt}Φ and Φ̃ ← (e^{+ih·dt})ᵀΦ̃, each exponential taken
+    /// directly (`complexPropagator`), and Γ ← ΦΦ̃ᵀ. The pairing Φ̃ᵀΦ and
+    /// Γ² = Γ are preserved to round-off; `hermitianTolerance` is unused.
+    /// @throws std::invalid_argument on a shape mismatch, or on the
+    ///         Hermitian-adjoint path when h fails Hermiticity:
+    ///         ‖h − h†‖_F > hermitianTolerance · max(1, ‖h‖_F).
     void evolve(const Eigen::MatrixXcd& h, double dt,
                 double hermitianTolerance = 1e-9);
 
-    /// The one-particle propagator e^{−ih·dt} `evolve` conjugates by —
-    /// exposed so the two entry points can be pinned equal in tests:
+    /// The one-particle propagator e^{−ih·dt} of the Hermitian-adjoint path
+    /// (eigendecomposition of a verified Hermitian h) — exposed so the two
+    /// entry points can be pinned equal in tests:
     /// evolve(h, dt) ≡ applyTransport(propagator(h, dt)).
-    /// @throws std::invalid_argument as `evolve`.
+    /// @throws std::invalid_argument as `evolve` on the Hermitian path.
     [[nodiscard]] static Eigen::MatrixXcd propagator(
         const Eigen::MatrixXcd& h, double dt,
         double hermitianTolerance = 1e-9);
 
-    /// Conjugate Γ by the one-particle transport of a cobordism step:
-    /// Γ ← U Γ U†. A unitary U preserves Hermiticity, spectrum, and purity
-    /// exactly; a leaky (non-unitary) transport's effect shows up in the
-    /// defect reads afterwards and is never repaired.
-    /// @throws std::invalid_argument on a shape mismatch.
+    /// The one-particle propagator e^{−ih·dt} of an arbitrary complex
+    /// generator h (Padé scaling and squaring; no eigendecomposition, so
+    /// a defective h is fine and no h† is formed). The `Transpose` path
+    /// evolves Φ by complexPropagator(h, dt) and Φ̃ by
+    /// complexPropagator(h, −dt)ᵀ.
+    /// @throws std::invalid_argument when h is not square.
+    [[nodiscard]] static Eigen::MatrixXcd complexPropagator(
+        const Eigen::MatrixXcd& h, double dt);
+
+    /// Carry the state through the one-particle transport U of a cobordism
+    /// step.
+    ///
+    /// Hermitian-adjoint path: Γ ← U Γ U†. A unitary U preserves
+    /// Hermiticity, spectrum, and purity exactly; a leaky (non-unitary)
+    /// transport's effect shows up in the defect reads afterwards and is
+    /// never repaired.
+    ///
+    /// `Transpose` path: the right frame moves by U and the left frame by
+    /// the contragredient, Φ ← UΦ and Φ̃ ← U⁻ᵀΦ̃, so Γ ← U Γ U⁻¹ and the
+    /// pairing Φ̃ᵀΦ is preserved (U⁻¹ from a full-pivot LU).
+    /// @throws std::invalid_argument on a shape mismatch, or on the
+    ///         `Transpose` path when U is singular (no contragredient).
     void applyTransport(const Eigen::MatrixXcd& transport);
 
     // ── mean-field self-consistency ─────────────────────────────────────
@@ -327,9 +450,13 @@ class CovarianceState {
     /// certificate. Generalized Hartree-Fock dynamics: nonlinear in Γ but
     /// Gaussian-closed — the certificate measures that closure every step.
     /// The pure/mixed certificate path is chosen once, on entry: pure when
-    /// purityDefect() ≤ `purityTolerance`.
+    /// purityDefect() ≤ `purityTolerance`. On the `Transpose` path the
+    /// callback may return any complex generator (the self-consistent
+    /// h(Γ) of a complex covariance is complex); both frames advance as in
+    /// `evolve` and the certificate is max(purity, duality) per step.
     /// @throws std::invalid_argument when the callback returns a wrongly
-    ///         shaped or non-Hermitian generator (as `evolve`).
+    ///         shaped generator, or on the Hermitian-adjoint path a
+    ///         non-Hermitian one (as `evolve`).
     [[nodiscard]] std::vector<MeanFieldStepRead> meanFieldEvolve(
         const std::function<Eigen::MatrixXcd(const Eigen::MatrixXcd&)>&
             hamiltonian,
@@ -372,6 +499,20 @@ class CovarianceState {
     /// Mismatched column counts are exactly zero (number conservation).
     /// @throws std::invalid_argument when a frame's rows ≠ modeCount().
     [[nodiscard]] WickCertificateRead wickGramDeterminant(
+        const Eigen::MatrixXcd& creatorFrame,
+        const Eigen::MatrixXcd& annihilatorFrame) const;
+
+    /// The transpose-paired smeared Gram determinant
+    /// ⟨a†(v_1)···a†(v_p) ã(w_p)···ã(w_1)⟩ = det(Wᵀ Γ V), with
+    /// a†(v) = Σ v_i a_i† and the annihilator smeared by the transpose
+    /// pairing, ã(w) = Σ w_i a_i (linear in w: the contraction by the dual
+    /// mode, never conjugated). Columns of V create, columns of W
+    /// annihilate. On a `Transpose` state it is the transition amplitude
+    /// ⟨Ξ_L|···|Ξ_R⟩; with W = C̃ and V = C a left/right colour triad it is
+    /// the complex determinant wedge det(C̃ᵀΓC). Mismatched column counts
+    /// are exactly zero (number conservation).
+    /// @throws std::invalid_argument when a frame's rows ≠ modeCount().
+    [[nodiscard]] WickCertificateRead wickTransposeGramDeterminant(
         const Eigen::MatrixXcd& creatorFrame,
         const Eigen::MatrixXcd& annihilatorFrame) const;
 
@@ -433,7 +574,10 @@ class CovarianceState {
 
     /// The JSON-able checkpoint Record of Γ (schema-versioned; complex
     /// leaves split `{name}_re` / `{name}_im`; the measured defects are
-    /// stored as informational channels and recomputed on load).
+    /// stored as informational channels and recomputed on load). The dual
+    /// is recorded as `dual` ("hermitian-adjoint" or "transpose"); a
+    /// `Transpose` state also stores both frames, and Γ is rebuilt from them
+    /// on load. A record without `dual` is on the Hermitian-adjoint path.
     [[nodiscard]] observables::Record toRecord() const;
 
     /// Rehydrate from `toRecord()` output. Rejects an unknown
@@ -455,12 +599,24 @@ class CovarianceState {
     [[nodiscard]] static std::uint64_t matrixFingerprint(
         const Eigen::MatrixXcd& m, std::uint64_t seed);
     void invalidateDefects() noexcept;
+    /// Γ ← ΦΦ̃ᵀ from the carried frames (`Transpose` path).
+    void rebuildFromFrames();
+    /// The premise residual of a read or certificate: the Hermiticity defect
+    /// (Hermitian-adjoint path) or the duality defect (`Transpose` path).
+    [[nodiscard]] double premiseDefect() const;
+    /// The regime verified on Γ (shared by every certificate).
+    [[nodiscard]] cobordism::CertificateRegime verifiedRegime() const;
 
     Eigen::MatrixXcd gamma_{};
+    CovarianceDual dual_{CovarianceDual::HermitianAdjoint};
+    // The frames of a `Transpose` state (0×0 otherwise).
+    Eigen::MatrixXcd right_{};
+    Eigen::MatrixXcd left_{};
     // Per-Γ-revision lazy defect caches (< 0 = not yet measured).
     mutable double hermiticityDefect_{-1.0};
     mutable double purityDefect_{-1.0};
     mutable double spectrumDefect_{-1.0};
+    mutable double dualityDefect_{-1.0};
 };
 
 }  // namespace tessera::quantum

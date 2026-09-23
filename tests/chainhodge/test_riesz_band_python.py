@@ -14,7 +14,7 @@ from scipy.optimize import minimize
 
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
-from tests.chainhodge._fixtures import (random_allowable, torus33, torus33_causal_types,
+from tests.chainhodge._fixtures import (random_allowable, torus33, torus33_timelike_parts,
                                         torus_cells)
 
 KS = ch.Branch.KontsevichSegal
@@ -240,8 +240,7 @@ class TestIsotropicBand:
 class TestLorentzianAtPositiveEpsilon:
     def test_rotated_torus_reports_det_and_cond(self):
         K, s = torus33()
-        types = torus33_causal_types(K)
-        s_eps = ch.LorentzianFamily.rotate(s, types, 0.1)
+        s_eps = ch.LorentzianFamily.rotate(s, torus33_timelike_parts(K), 0.1)
         base = ch.ChainHodge(K, s_eps, ch.Preset.L2, KS)
         assert base.certificate().allowable
         cov = ch.CovariantChainHodge(base, ch.Connection.trivial(K))
@@ -257,3 +256,57 @@ class TestLorentzianAtPositiveEpsilon:
         cov = ch.CovariantChainHodge(ch.ChainHodge(K, s, ch.Preset.GRASSMANN_ALL), ch.Connection.trivial(K))
         with pytest.raises(RuntimeError):
             cov.band(1, ch.Contour.circle(0.0, 2.0, 16))
+
+
+class TestNodeConvergenceE8:
+    """The scaling verification plan's E8: the Riesz projector converges in the
+    number of quadrature nodes. On a circle of radius r centred on an
+    eigenvalue whose nearest neighbour is at distance d, the trapezoidal rule
+    of `Contour.circle` integrates the resolvent with error of order (r/d)^n
+    for n nodes; the sum is formed here from the library's nodes, weights and
+    resolvent for node counts too small for `band`'s rank certificate, and
+    `band` itself is checked at a converged count. The transpose identity
+    P(U)^T = G^{U^-1} P(U^-1) (G^{U^-1})^{-1} holds at every node count, the
+    quadrature being the same for U and U^{-1}."""
+
+    RATIO = 0.45
+
+    @staticmethod
+    def _quadrature(cov, k, contour):
+        n = cov.base().size(k)
+        eye = np.eye(n, dtype=complex)
+        return sum(w * cov.resolvent(k, z, eye) for z, w in zip(contour.nodes, contour.weights))
+
+    def test_projector_error_decays_geometrically(self):
+        cells, _ = torus_cells(4)
+        K, rng, base, cov = _instance(cells, 104)
+        k = 1
+        z, sep = _isolated_eigenvalue(cov, k)
+        w, V = np.linalg.eig(cov.covariantOperator(k))
+        j = int(np.argmin(np.abs(w - z)))
+        exact = np.outer(V[:, j], np.linalg.inv(V)[j, :])
+        scale = np.abs(exact).max()
+        counts = (8, 12, 16, 20, 24)
+        errors = []
+        for nodes in counts:
+            P = self._quadrature(cov, k, ch.Contour.circle(z, self.RATIO * sep, nodes))
+            errors.append(np.abs(P - exact).max() / scale)
+        for (a, ea), (b, eb) in zip(zip(counts, errors), zip(counts[1:], errors[1:])):
+            assert eb < ea                                        # monotone
+            assert eb <= 10.0 * ea * self.RATIO ** (b - a)       # at least the predicted rate
+        assert errors[-1] < 1e-7
+        band = cov.band(k, ch.Contour.circle(z, self.RATIO * sep, 64))
+        assert band.rank() == 1 and band.certificate.idempotency < 1e-12
+        assert np.abs(band.projector - exact).max() <= 1e-10 * scale
+
+    @pytest.mark.parametrize("nodes", [8, 32])
+    def test_transpose_identity_at_every_node_count(self, nodes):
+        K, rng, base, cov = _instance(TWO_COMPLEX, 5)
+        k = 1
+        z, sep = _isolated_eigenvalue(cov, k)
+        contour = ch.Contour.circle(z, self.RATIO * sep, nodes)
+        dual = cov.dual()
+        P = self._quadrature(cov, k, contour)
+        Pd = self._quadrature(dual, k, contour)
+        rhs = dual.applyG(k, Pd @ dual.Minv(k).toarray())
+        np.testing.assert_allclose(P.T, rhs, atol=1e-10 * np.abs(P).max())

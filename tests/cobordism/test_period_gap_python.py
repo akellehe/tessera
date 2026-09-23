@@ -37,10 +37,21 @@ import cmath
 cob = tessera.cobordism
 
 
-def _substrate():
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _substrate(source=DIAGONAL):
     """A holed icosahedron (b1 register): st, es, hole-circles, period matrix P,
-    and the edge-cell list."""
-    st, es, holes, P = holed_surface(degree=1)
+    and the edge-cell list.
+
+    The contract pinned here is the diagonal-weight path's, named by its
+    source. On the default Whitney pencil the near-kernel representatives are
+    the geometric images z = G_1 h of the harmonic chains, which are closed
+    cochains (d_2^T z = 0): their periods over the hole cycles span the image
+    of H^1, a topological subspace, so a target in that span stays realizable
+    under every perturbation of the geometry and r_psi cannot see the
+    lengths at all (see TestWhitneyPeriodGapIsTopological)."""
+    st, es, holes, P = holed_surface(degree=1, metric_source=source)
     cells1 = [tuple(int(v) for v in c) for c in es.cellSimplices()]
     return st, es, holes, P, cells1
 
@@ -83,6 +94,29 @@ class PeriodGapValueTest(unittest.TestCase):
         target = [complex(z) for z in P[0]]
         self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
         self.assertLess(es.residualForPeriods(holes, target), 1e-12)
+
+
+class TestWhitneyPeriodGapIsTopological(unittest.TestCase):
+    """On the Whitney pencil the period gap is blind to the geometry.
+
+    The harmonic representatives are closed cochains whose periods span the
+    cohomology image, so the same perturbation that floors the diagonal
+    r_psi above 1e-6 leaves the Whitney r_psi at its rounding floor and its
+    gradient at zero (measured 3.2e-30 and 1.6e-15 on this substrate). r_psi
+    therefore carries no geometric content on the default operator."""
+
+    def test_the_gap_and_its_gradient_stay_at_zero_off_the_carrier(self):
+        st, es, holes, P, cells1 = _substrate(cob.HodgeMetricSource.WhitneyPencil)
+        target = [complex(z) for z in P[0]]
+        self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
+        _perturb(st, cells1, every=7, factor=1.3)
+        self.assertLess(es.periodGapForPeriods(holes, target), 1e-12)
+        g = np.asarray(es.periodGapForPeriodsGradient(holes, target), complex)
+        self.assertLess(float(np.linalg.norm(g)), 1e-9)
+        # the diagonal path floors on the same perturbation
+        st_d, es_d, holes_d, P_d, cells1_d = _substrate()
+        _perturb(st_d, cells1_d, every=7, factor=1.3)
+        self.assertGreater(es_d.periodGapForPeriods(holes_d, [complex(z) for z in P_d[0]]), 1e-6)
 
 
 class PeriodGapGradientTest(unittest.TestCase):

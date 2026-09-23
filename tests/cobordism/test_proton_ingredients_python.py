@@ -1,10 +1,12 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""ProtonIngredients — the emergent arm of the proton build (#555).
+"""ProtonIngredients — the ingredients arm of the proton experiment (#555).
 
-`Proton` is the canonical line in the sand; `ProtonIngredients` runs the same two-step
-drive except step B's output-target list is EMPTY — nothing is pinned downstream, the
-objective is `F = ‖∇S‖² + Γ·Σᵢ r_U(inputᵢ)`, and the final state is read after the fact.
+`ProtonSynthesis` is the labelled controlled synthesis; `ProtonIngredients` runs the
+same two-step drive except step B's output-target list is EMPTY — no output is pinned,
+the objective is `F = ‖∇S‖² + Γ·Σᵢ r_U(inputᵢ)`, and the final state is read after the
+fact. Step A is the synthesis's own recombination node, so it runs in
+`SimulationMode.SYNTHESIS`; step B keeps the node's default mode.
 
 These tests lock in (1) the engine regression that an empty `output_targets` list is a
 supported `MultiCobordism` shape whose `r_u` contains ONLY the input terms, (2) that the
@@ -67,11 +69,22 @@ class ProtonIngredientsNodesTest(unittest.TestCase):
     canonical formation node minus the singlet output target — exactly one delta."""
 
     def test_recombination_node_is_the_canonical_shape(self):
-        # Delegated to the composed Proton: 2 input blocks and 2 localized output
-        # blocks (diquark ⊔ antidiquark), exactly as Proton.recombination_node seeds it.
+        # Delegated to the composed ProtonSynthesis: 2 input blocks and 2 localized output
+        # blocks (diquark ⊔ antidiquark), exactly as ProtonSynthesis.recombination_node seeds it.
         node = cob.ProtonIngredients(seed=5).recombination_node(5)
         self.assertEqual(len(node.inputs), 2)
         self.assertEqual(len(node.outputs), 2)
+
+    def test_step_a_is_labelled_synthesis_and_step_b_keeps_the_default_mode(self):
+        # Step A pins the diquark and antidiquark outputs, so it carries the
+        # controlled-synthesis label; step B pins no output and is left in the
+        # node's default mode.
+        modes = cob.MultiCobordism.SimulationMode
+        ingredients = cob.ProtonIngredients(seed=5)
+        self.assertEqual(ingredients.recombination_node(5).simulation_mode,
+                         modes.SYNTHESIS)
+        self.assertEqual(ingredients.formation_node(6).simulation_mode,
+                         modes.EMERGENCE)
 
     def test_formation_node_pins_nothing_downstream(self):
         # The ingredients' step-B r_u is PURELY the weighted input terms (scales
@@ -112,7 +125,7 @@ class ProtonIngredientsNodesTest(unittest.TestCase):
         # ...while the CANONICAL formation node has the weight-independent whole-read
         # singlet term on top, so its r_u is strictly sublinear in the input weight.
         # This is the one variable the A/B experiment changes, asserted from both sides.
-        canonical_node = cob.Proton(seed=5).formation_node(6)
+        canonical_node = cob.ProtonSynthesis(seed=5).formation_node(6)
         canonical_node.set_input_residual_weight(1.0)
         r_at_weight_1 = canonical_node.r_u(canonical_node.st)
         canonical_node.set_input_residual_weight(2.0)
@@ -154,7 +167,7 @@ class ProtonIngredientsBuildTest(unittest.TestCase):
         self.assertTrue(squared, "emergent complex has no edges")
         self.assertTrue(any(abs(l - complex(1.0, 0.0)) > 1e-9 for l in squared),
                         "metric is unit — the relaxed geometry was lost")
-        # block() IS the whole (API parity with Proton.block()): same complex, not a carve.
+        # block() IS the whole (API parity with ProtonSynthesis.block()): same complex, not a carve.
         block = self.ingredients.block()
         self.assertIsNotNone(block)
         self.assertEqual(len(block.getTopSimplices()), len(whole.getTopSimplices()))

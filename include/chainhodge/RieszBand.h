@@ -53,8 +53,16 @@ struct BandCertificate {
   double rankTolerance{0.0};
   /// \f$ \sigma_r / \sigma_{r+1} \f$ of \f$ P \f$ (\f$ +\infty \f$ when nothing is discarded).
   double singularGap{std::numeric_limits<double>::infinity()};
-  /// \f$ \max_j \|(\zeta_j I - h)^{-1}\|_2 \f$ over the contour nodes.
+  /// \f$ \max_j \|(\zeta_j I - h)^{-1}\|_2 \f$ over the contour nodes. Quiet
+  /// NaN on the sparse production path, where the resolvent is applied to a
+  /// probe block and never formed, so its spectral norm is not measurable.
   double resolventMax{std::numeric_limits<double>::quiet_NaN()};
+  /// \f$ \max_j \|(\zeta_j I - h)^{-1}\Omega\|_2 / \|\Omega\|_2 \f$ over the
+  /// contour nodes and the probe block \f$ \Omega \f$ of the sparse production
+  /// path: what the block does see of the resolvent, and a lower bound on
+  /// `resolventMax`. Quiet NaN on the dense path, which measures the norm
+  /// itself.
+  double resolventProbeMax{std::numeric_limits<double>::quiet_NaN()};
   /// \f$ \det B_C \f$ and \f$ \operatorname{cond}_2 B_C \f$ of the pairing matrix.
   Complex detB{0.0, 0.0};
   double condB{std::numeric_limits<double>::quiet_NaN()};

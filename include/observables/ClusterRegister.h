@@ -15,7 +15,9 @@
 //
 //   - a persistent connected cluster support, however proposed;
 //   - a localized spectral projector with stable rank;
-//   - a nonzero band gap separating it from discarded modes;
+//   - a closed complex-plane contour with nonzero separation and a controlled
+//     resolvent separating it from discarded modes, taken at the reported
+//     rotation eps_L > 0 for a Lorentzian complex;
 //   - overlap with its predecessor and successor components;
 //   - lifetime across multiple cobordism frames; and
 //   - small external transport leakage.
@@ -61,7 +63,15 @@ namespace tessera::spacetime {
 
 namespace tessera::observables {
 
-/// The six fiber-acceptance conjuncts, named.
+/// The fiber-acceptance conjuncts, named.
+///
+/// Six in the whitepaper's list; eight names here, because the third of them —
+/// "a closed complex-plane contour with nonzero separation and a controlled
+/// resolvent separating it from discarded modes, taken at the reported
+/// rotation eps_L > 0 for a Lorentzian complex" — is decided on three distinct
+/// measurements (`kBandGap`, `kContourResolvent`, `kLorentzianRotation`), and
+/// a consumer that is told only "the third conjunct failed" cannot tell a
+/// closing gap from a blown-up quadrature from a read taken at eps_L = 0.
 ///
 /// Named constants rather than literals at each site: a conjunct name is
 /// written where it is decided and compared where it is consumed, and a
@@ -80,6 +90,21 @@ struct RegisterConjunct {
   /// Nonzero band gap separating the band from the discarded modes: its
   /// separation from the nearest discarded eigenvalue in the complex plane.
   static constexpr const char *kBandGap = "band-gap";
+  /// A controlled resolvent on the closed contour the band was selected by:
+  /// the Riesz bound `SpectralBandCertificate::resolventBound` within
+  /// `ClusterRegisterConfig::maxResolventBound`. The band gap says the
+  /// discarded modes are far from the band; this says the contour separating
+  /// them is one the Riesz projector is actually computable on. The two are
+  /// the halves of one whitepaper conjunct and are named separately so a
+  /// consumer can tell a closing gap from a blown-up quadrature.
+  static constexpr const char *kContourResolvent = "contour-resolvent";
+  /// For a complex declared Lorentzian (`ClusterRegisterConfig::lorentzian`):
+  /// the band was read at a reported rotation \f$ \varepsilon_L > 0 \f$ on the
+  /// Kontsevich–Segal allowable side, with an allowability margin above
+  /// `ClusterRegisterConfig::minAllowabilityMargin`. A read at
+  /// \f$ \varepsilon_L = 0 \f$ is reported with its gap certificate and never
+  /// accepted alone.
+  static constexpr const char *kLorentzianRotation = "lorentzian-rotation";
   /// Overlap with predecessor and successor components: the smallest
   /// adjacent-frame support overlap along the component's frame track.
   static constexpr const char *kNeighbourOverlap = "neighbour-overlap";
@@ -112,6 +137,17 @@ struct RegisterUnmeasured {
   /// No external transport was supplied, so leakage was never measured. Absence
   /// of transports is not evidence of small leakage.
   static constexpr const char *kNoTransport = "no-transport";
+  /// The band was not selected by a closed contour, so no contour certificate
+  /// exists to read. Named only when `ClusterRegisterConfig::requireContour`
+  /// demands one: a band grouped by the sort-and-gap rule reports no contour
+  /// and claims none.
+  static constexpr const char *kNoContour = "no-contour";
+  /// A contour was drawn but its resolvent bound is unknown, so the
+  /// "controlled resolvent" conjunct was never measured.
+  static constexpr const char *kResolventUnmeasured = "resolvent-unmeasured";
+  /// The complex was declared Lorentzian but the band carries no rotation or
+  /// no allowability margin, so the rotation conjunct was never measured.
+  static constexpr const char *kRotationUnmeasured = "lorentzian-rotation-unmeasured";
   /// The complex could not be read to decide support connectivity.
   static constexpr const char *kSupportUnreadable = "support-unreadable";
 };
@@ -127,6 +163,27 @@ struct ClusterRegisterConfig {
   std::size_t minFrameLifetime = 2;
   /// Cap on the largest external transport leakage.
   double maxTransportLeakage = 1e-6;
+  /// Cap on the Riesz resolvent bound of the contour the band was selected by
+  /// (`SpectralBandCertificate::resolventBound`). Decided only where a contour
+  /// was drawn; a band with no contour neither passes nor fails it.
+  double maxResolventBound = 1e8;
+  /// Whether a closed complex-plane contour is required of the band. False by
+  /// default, since a band grouped by the sort-and-gap rule on a self-adjoint
+  /// operator is selected without one and is not thereby uncertified; set it
+  /// when the reading is meant to be the whitepaper's contour selection, where
+  /// a band with no contour has not been selected the way the acceptance
+  /// conjunct asks for.
+  bool requireContour = false;
+  /// Whether the complex is declared Lorentzian. A declaration, like
+  /// `chainhodge::CausalType`: nothing here infers it from a squared length.
+  /// When set, the band must carry a reported rotation
+  /// \f$ \varepsilon_L > 0 \f$ and a Kontsevich–Segal allowability margin above
+  /// `minAllowabilityMargin`.
+  bool lorentzian = false;
+  /// Floor on that margin. The default 0 asks for a strictly positive margin,
+  /// so a real Lorentzian instance, which sits exactly on the Kontsevich–Segal
+  /// boundary, is never accepted on its own.
+  double minAllowabilityMargin = 0.0;
 };
 
 /// What is reported of the band's metric regime.
@@ -168,7 +225,7 @@ struct RegisterRegimeReport {
 
 /// # ClusterRegisterRead
 ///
-/// One register read: the cluster it is carried by, the fiber it is, the six
+/// One register read: the cluster it is carried by, the fiber it is, the
 /// conjuncts as measured, and the verdict.
 ///
 /// The fiber is `E_C = Ran Phi_C`, carried here as the band whose right frame
@@ -192,7 +249,7 @@ struct ClusterRegisterRead {
   /// The band carrying the fiber (its right frame is `Phi_C`).
   SpectralFiber band{};
 
-  // ── the six conjuncts, as measured ────────────────────────────────
+  // ── the conjuncts, as measured ────────────────────────────────────
   /// Whether the support is non-empty and its induced one-skeleton is
   /// connected.
   bool supportConnected = false;
@@ -203,6 +260,16 @@ struct ClusterRegisterRead {
   double localizationExcess = std::numeric_limits<double>::quiet_NaN();
   /// The band's separation from the nearest discarded eigenvalue.
   double bandGap = std::numeric_limits<double>::quiet_NaN();
+  /// The contour the band was selected by, as described by its certificate;
+  /// empty when no contour was drawn.
+  std::string contour{};
+  /// The Riesz resolvent bound on that contour, its node count, the
+  /// Kontsevich–Segal allowability margin of the instance, and the reported
+  /// rotation \f$ \varepsilon_L \f$. NaN where unmeasured.
+  double resolventBound = std::numeric_limits<double>::quiet_NaN();
+  int contourNodeCount = 0;
+  double allowabilityMargin = std::numeric_limits<double>::quiet_NaN();
+  double lorentzianEpsilon = std::numeric_limits<double>::quiet_NaN();
   /// Smallest adjacent-frame support overlap along the frame track.
   double neighbourOverlap = std::numeric_limits<double>::quiet_NaN();
   /// Consecutive cobordism frames the support was tracked through.
@@ -220,7 +287,7 @@ struct ClusterRegisterRead {
   /// is not evidence of failure, and neither is a zero.
   std::vector<std::string> unmeasured{};
 
-  /// Accepted exactly when all six conjuncts were measured and met, and the
+  /// Accepted exactly when every conjunct was measured and met, and the
   /// band's own certificate holds.
   bool accepted = false;
 
@@ -243,7 +310,7 @@ struct ClusterRegisterRead {
 ///
 /// Reads the recursive spectral fiber register: the fiber `E_C = Ran Phi_C` of
 /// an isolated localized band on a persistent cluster, accepted under the
-/// six-conjunct list.
+/// conjunct list of the file banner.
 ///
 /// Reference: Lim, "Hodge Laplacians on graphs", arXiv:1507.05379.
 ///

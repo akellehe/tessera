@@ -2297,8 +2297,9 @@ if __name__ == "__main__":
 BARYON_STRUCTURAL = ["constituent-quarks", "bound-supercomponent"]
 BARYON_PROTON = ["color-singlet", "color-flux-zero", "baryon-flux-unit",
                  "composite-parity-odd", "flavor-uud", "electric-flux-unit",
-                 "spin-expectation", "sharp-spin", "rotation-character",
-                 "spin-lift", "finite-radius", "profile-stability"]
+                 "spin-expectation", "sharp-spin", "odd-monopole",
+                 "projective-cocycle", "spin-lift", "finite-radius",
+                 "profile-stability"]
 BARYON_GATES = BARYON_STRUCTURAL + BARYON_PROTON
 
 _UD_CACHE = {}
@@ -2385,6 +2386,73 @@ def _delta_spin_reads():
     state = qm.CovarianceState.fromSlaterFrame(orbitals)
     return (state.wickSpinSquaredExpectation(*js),
             state.wickSpinSquaredVariance(*js))
+
+
+_MONOPOLE_CACHE = {}
+
+
+def _monopole_spin_read(monopole=1):
+    """The #1196 odd-monopole evidence: the tetrahedral cut carrying total
+    outward flux 2 pi mu, its projective rotation action D_k(g) and the
+    j = 1/2 doublet that action protects.  mu = 1 is the odd sector the
+    proton certificate demands; mu = 0 and mu = 2 are the even controls."""
+    if monopole not in _MONOPOLE_CACHE:
+        support = obs.MonopoleSupport.tetrahedron(monopole)
+        _MONOPOLE_CACHE[monopole] = support.spinRead(
+            obs.MonopoleSupport.tetrahedralRotations())
+    return _MONOPOLE_CACHE[monopole]
+
+
+_EIGEN_CACHE = {}
+
+
+def _sharp_spin_eigen(kind):
+    """The #1196 sharp-spin eigen read on a superposition of determinants.
+
+    'sharp'     -- one occupied mode of one spin-1/2 doublet: an exact
+                   J^2 = 3/4 eigenstate, so both eigen-equations hold.
+    'isotropic' -- a right state contaminated by a j = 3/2 component paired
+                   with a PURE left eigenvector: the biorthogonal
+                   expectation is exactly 3/4 and the complex variance
+                   exactly zero, so the variance criterion would accept it,
+                   while the right eigen-equation refuses it.  This is the
+                   case the whitepaper says a variance cannot decide.
+    'delta'     -- three aligned spins: an exact eigenstate, but at 15/4.
+    """
+    if kind in _EIGEN_CACHE:
+        return _EIGEN_CACHE[kind]
+    if kind == "sharp":
+        js = obs.SharpSpin.doubletSpinMatrices(1)
+        state = obs.SharpSpin.determinant([0], 2)
+        read = obs.SharpSpin.read(js, state, state.conj())
+    elif kind == "delta":
+        js = obs.SharpSpin.doubletSpinMatrices(3)
+        state = obs.SharpSpin.determinant([0, 2, 4], 6)
+        read = obs.SharpSpin.read(js, state, state.conj())
+    elif kind == "isotropic":
+        js = obs.SharpSpin.doubletSpinMatrices(3)
+        basis = np.column_stack([
+            obs.SharpSpin.determinant([a, 2 + b, 4 + c], 6)
+            for a in (0, 1) for b in (0, 1) for c in (0, 1)])
+        block = basis.conj().T @ obs.SharpSpin.totalSpinSquaredMatrix(js) \
+            @ basis
+        _values, vectors = np.linalg.eigh(block)
+        half = basis @ vectors[:, 0]
+        three_half = basis @ vectors[:, 7]
+        read = obs.SharpSpin.read(js, half + (0.4 + 0.3j) * three_half,
+                                  half.conj())
+    else:
+        raise ValueError("unknown sharp-spin eigen fixture %r" % (kind,))
+    _EIGEN_CACHE[kind] = read
+    return read
+
+
+# The eigen fixture each quasi-free spin fixture is paired with.  A mode with
+# no eigen fixture supplies no eigen read at all, so `sharp-spin` fails as
+# missing evidence rather than as a refuted claim.
+_SPIN_EIGEN_KIND = {"sharp": "sharp", "generic": "isotropic",
+                    "delta": "delta", "expectation-only": None,
+                    "none": None}
 
 
 _ROTATION_CACHE = {}
@@ -2611,7 +2679,8 @@ def _baryon_evidence(kinds=("u", "u", "d"), spin="sharp", rotation_turns=1,
                      color=None, flux=None, samples=None, binding=None,
                      continuum=False, spin_lift=None, class_variances=None,
                      dense_j2=None, quarks=None, exchange=None,
-                     crossing_mass=None, crossing_baryon=None):
+                     crossing_mass=None, crossing_baryon=None,
+                     monopole=1, spin_eigen="from-spin"):
     """A complete #775 three-cluster evidence bundle."""
     ev = obs.BaryonCandidateEvidence()
     _groups, _fine, coarse = _modular_hierarchy()
@@ -2637,6 +2706,12 @@ def _baryon_evidence(kinds=("u", "u", "d"), spin="sharp", rotation_turns=1,
         ev.spinLift = spin_lift
     if exchange is not None:
         ev.exchange = exchange
+    if monopole is not None:
+        ev.monopoleSpin = _monopole_spin_read(monopole)
+    eigen_kind = (_SPIN_EIGEN_KIND.get(spin) if spin_eigen == "from-spin"
+                  else spin_eigen)
+    if eigen_kind is not None:
+        ev.sharpSpinEigen = _sharp_spin_eigen(eigen_kind)
     if spin == "sharp":
         ev.spinSquaredRead, ev.spinVarianceRead = _sharp_spin_reads()
     elif spin == "generic":
@@ -2707,10 +2782,14 @@ def _crossing_band(cell):
             e.setPhase(0.0)
         # Subject: the crossing conjunct, not localization.  The 3-cycle is
         # vertex-transitive, so every band carries localization excess
-        # exactly 1; declare the permissive analysis cap.
+        # exactly 1; declare the permissive analysis cap.  A positive band's
+        # Krein signature is the diagonal weights' certificate (the Whitney
+        # pencil's bands carry the bilinear pairing and no inertia), so the
+        # diagonal source is named.
         band_cfg = obs.SpectralFiberConfig()
         band_cfg.maxLocalizationExcess = 1.0
-        tracker = obs.SpectralFiberTracker(st, band_cfg)
+        tracker = obs.SpectralFiberTracker(
+            st, band_cfg, metric_source=cob.HodgeMetricSource.DiagonalWeights)
         for fiber in tracker.enumerateBands([0, 1, 2], 1).fibers:
             cert = fiber.certificate()
             if (fiber.rank() == 1 and cert.accepted
@@ -3253,7 +3332,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ctx = obs.RegisterContext(self._boundary_delta5(), 0, 3,
-                                      cob.Proton.singlet())
+                                      cob.ProtonSynthesis.singlet())
         sample = obs.ParticleClusters.scaleProfileSample(ctx)
         self.assertAlmostEqual(sample.radius, volume ** 0.25, places=12)
         self.assertAlmostEqual(sample.radiusCrossCheck, volume ** 0.25,
@@ -3267,7 +3346,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ctx = obs.RegisterContext(self._boundary_delta5(), 0, 3,
-                                      cob.Proton.singlet())
+                                      cob.ProtonSynthesis.singlet())
         sample = obs.ParticleClusters.scaleProfileSample(ctx)
         read = obs.ParticleClusters().scaleProfile([sample, sample])
         self.assertTrue(read.radiusFinite)
@@ -3289,7 +3368,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
         # the dropped pentatope {0..4} is the hole seeding the BFS
         # shells: one shell carrying the whole curvature weight.
         ctx = obs.RegisterContext(self._star_of_apex(), [[0, 1, 2, 3, 4]], 1,
-                                  3, cob.Proton.singlet())
+                                  3, cob.ProtonSynthesis.singlet())
         sample = obs.ParticleClusters.scaleProfileSample(ctx)
         self.assertEqual(sample.radialWeightProfile, [1.0])
         deficit = 2.0 * math.pi - 3.0 * math.acos(0.25)
@@ -3328,7 +3407,7 @@ class TestScaleProfileFromTheExistingBattery(unittest.TestCase):
     def test_sample_is_read_only_on_the_context(self):
         st = self._star_of_apex()
         ctx = obs.RegisterContext(st, [[0, 1, 2, 3, 4]], 1, 3,
-                                  cob.Proton.singlet())
+                                  cob.ProtonSynthesis.singlet())
         before = (len(st.getTopSimplices()), len(st.getSimplices()))
         a = obs.ParticleClusters.scaleProfileSample(ctx)
         b = obs.ParticleClusters.scaleProfileSample(ctx)
@@ -3361,6 +3440,12 @@ class TestBaryonClassification(unittest.TestCase):
         self.assertAlmostEqual(read.totalJ2, 0.75, delta=1e-14)
         self.assertLess(abs(read.totalJ2Variance), 1e-13)
         self.assertTrue(read.sharpSpin)
+        self.assertLess(read.sharpSpinRightResidual, 1e-12)
+        self.assertLess(read.sharpSpinLeftResidual, 1e-12)
+        self.assertTrue(read.oddMonopole)
+        self.assertTrue(read.projectiveCocycleNontrivial)
+        self.assertEqual(read.monopoleNumber, 1)
+        # The 2pi character is recorded and gates nothing.
         self.assertEqual(read.rotationCharacterSign, -1)
         self.assertLess(abs(read.rotationCharacter + 1.0), 1e-12)
         self.assertEqual(read.exteriorParity, -1)
@@ -3371,14 +3456,26 @@ class TestBaryonClassification(unittest.TestCase):
                          cob.CertificateGrade.StructureExact)
 
     def test_delta_oracle_is_a_baryon_but_never_a_proton(self):
-        # J^2 = 15/4 with Var = 0: a SHARP spin that is simply not 3/4.
+        # J^2 = 15/4 with Var = 0: an exact eigenstate that is simply not at
+        # 3/4.  The proton certificate's eigen-equations are stated AT 3/4,
+        # so a Delta fails both the expectation row and the sharpness row;
+        # that it is sharp at its own eigenvalue is a separate statement and
+        # is checked below.
         read = self.pc.classifyBaryon(_baryon_evidence(spin="delta"))
         self.assertEqual(read.classification, "baryon-candidate")
         self.assertNotEqual(read.classification, "certified-proton")
         self.assertAlmostEqual(read.totalJ2, 15.0 / 4.0, delta=1e-13)
         self.assertLess(abs(read.totalJ2Variance), 1e-13)
-        self.assertTrue(read.sharpSpin)          # sharp, but at 15/4
-        self.assertEqual(read.failedCertificates, ["spin-expectation"])
+        self.assertFalse(read.sharpSpin)
+        self.assertEqual(sorted(read.failedCertificates),
+                         ["sharp-spin", "spin-expectation"])
+
+    def test_the_delta_state_is_sharp_at_its_own_eigenvalue(self):
+        js = obs.SharpSpin.doubletSpinMatrices(3)
+        state = obs.SharpSpin.determinant([0, 2, 4], 6)
+        at_own = obs.SharpSpin.read(js, state, state.conj(),
+                                    targetEigenvalue=15.0 / 4.0)
+        self.assertTrue(at_own.sharp)
 
     def test_delta_dense_772_oracle_is_a_baryon_but_never_a_proton(self):
         # the #772 dense total-space oracle: |uuu> -> 15/4 (the exact
@@ -3394,9 +3491,11 @@ class TestBaryonClassification(unittest.TestCase):
         self.assertIn("spin-expectation", read.failedCertificates)
         self.assertIn("sharp-spin", read.failedCertificates)
 
-    def test_dense_772_proton_eigenstate_still_needs_a_variance(self):
+    def test_dense_772_proton_expectation_still_needs_the_eigen_equations(
+            self):
         # 2|uud> - |udu> - |duu> -> 3/4 exactly, but a DENSE expectation
-        # supplies no variance: expectation alone is never a sharp spin.
+        # supplies no eigen-equation residuals: expectation alone is never a
+        # sharp spin.
         state = np.zeros(8, dtype=complex)
         state[0b001], state[0b010], state[0b100] = 2.0, -1.0, -1.0
         self.assertAlmostEqual(obs.ExchangeHolonomy.totalJSquared(state),
@@ -3410,8 +3509,8 @@ class TestBaryonClassification(unittest.TestCase):
         self.assertEqual(read.classification, "baryon-candidate")
 
     def test_generic_slater_expectation_without_sharp_variance(self):
-        # THE ticket's scientific point: <J^2> = 3/4 EXACTLY with
-        # Var = 15/16 > 0 is NOT a certified proton.
+        # <J^2> = 3/4 EXACTLY with Var = 15/16 > 0 is NOT a certified
+        # proton.
         read = self.pc.classifyBaryon(_baryon_evidence(spin="generic"))
         self.assertAlmostEqual(read.totalJ2, 0.75, delta=1e-13)
         self.assertAlmostEqual(read.totalJ2Variance, 15.0 / 16.0,
@@ -3420,6 +3519,18 @@ class TestBaryonClassification(unittest.TestCase):
         self.assertNotIn("spin-expectation", read.failedCertificates)
         self.assertIn("sharp-spin", read.failedCertificates)
         self.assertNotEqual(read.classification, "certified-proton")
+
+    def test_a_vanishing_variance_does_not_make_a_state_sharp(self):
+        """The case a variance cannot decide: the biorthogonal expectation
+        is exactly 3/4 and the complex variance exactly zero, so the
+        variance criterion accepts the state, while the right
+        eigen-equation refuses it outright."""
+        read = self.pc.classifyBaryon(_baryon_evidence(spin="generic"))
+        self.assertTrue(read.varianceWouldAccept)
+        self.assertFalse(read.sharpSpin)
+        self.assertGreater(read.sharpSpinRightResidual, 0.1)
+        self.assertLess(read.sharpSpinLeftResidual, 1e-12)
+        self.assertIn("sharp-spin", read.failedCertificates)
 
     def test_exact_eigenstate_passes_the_sharp_certificate(self):
         # the other half of the pair: an exact J^2 eigenstate has Var = 0.
@@ -3528,26 +3639,31 @@ class TestBaryonClassification(unittest.TestCase):
         self.assertEqual(read.exteriorParity, 0)
         self.assertIn("composite-parity-odd", read.failedCertificates)
 
-    def test_rotation_character_plus_one_fails(self):
-        # the 4pi cycle: chi_hat = +1, a vector-like cycle, not spin 1/2.
+    def test_the_two_pi_character_is_recorded_and_gates_nothing(self):
+        """A rigid rotation leaves every band constant, so the 2pi
+        character is +1 along any rigid cycle whatever the spin.  The 4pi
+        cycle gives +1 here, and the verdict does not move: the character
+        travels on the read and certifies nothing."""
         read = self.pc.classifyBaryon(_baryon_evidence(rotation_turns=2))
         self.assertEqual(read.rotationCharacterSign, +1)
-        self.assertIn("rotation-character", read.failedCertificates)
-        self.assertNotEqual(read.classification, "certified-proton")
+        self.assertEqual(read.classification, "certified-proton")
+        self.assertEqual(read.failedCertificates, [])
 
-    def test_exchange_channel_is_never_the_rotation_certificate(self):
+    def test_the_exchange_and_rotation_channels_stay_distinct(self):
         # the #772 channels are not interchangeable: an exchange-tagged
-        # character leaves the rotation certificate UNKNOWN.
+        # character leaves the rotation report UNKNOWN rather than being
+        # reinterpreted as a rotation.
         ev = _baryon_evidence()
         ev.rotation = _exchange_character()
         read = self.pc.classifyBaryon(ev)
         self.assertIsNone(read.rotationCharacter)
         self.assertEqual(read.rotationCharacterSign, 0)
-        self.assertIn("rotation-character", read.failedCertificates)
+        self.assertEqual(read.classification, "certified-proton")
 
     def test_uncertified_rotation_read_never_emits_a_sign(self):
         # a TIMING mismatch voids the cancellation premise: the #772 read is
-        # uncertified, so the certificate is unknown rather than a sign.
+        # uncertified, so the reported character is unknown rather than a
+        # sign.  It still gates nothing.
         EH = obs.ExchangeHolonomy
         frame0 = EH.transverseSpinorFrame(0, 1, 4)
         weights = np.ones(4, dtype=complex)
@@ -3561,7 +3677,36 @@ class TestBaryonClassification(unittest.TestCase):
         read = self.pc.classifyBaryon(ev)
         self.assertIsNone(read.rotationCharacter)
         self.assertEqual(read.rotationCharacterSign, 0)
-        self.assertIn("rotation-character", read.failedCertificates)
+        self.assertEqual(read.classification, "certified-proton")
+
+    def test_an_even_monopole_support_is_never_a_proton(self):
+        """Half-integer spin is a topological charge of the connection: at
+        even monopole number the projective class is trivial, no
+        symmetry-protected band is a spinor doublet, and both spin rows
+        fail."""
+        for monopole in (0, 2):
+            read = self.pc.classifyBaryon(
+                _baryon_evidence(monopole=monopole))
+            self.assertFalse(read.oddMonopole, msg=f"mu={monopole}")
+            self.assertFalse(read.projectiveCocycleNontrivial)
+            self.assertEqual(read.monopoleNumber, monopole)
+            self.assertEqual(sorted(read.failedCertificates),
+                             ["odd-monopole", "projective-cocycle"])
+            self.assertEqual(read.classification, "baryon-candidate")
+
+    def test_missing_monopole_evidence_is_named_never_assumed(self):
+        read = self.pc.classifyBaryon(_baryon_evidence(monopole=None))
+        self.assertIsNone(read.monopoleNumber)
+        self.assertFalse(read.oddMonopole)
+        self.assertFalse(read.projectiveCocycleNontrivial)
+        self.assertEqual(sorted(read.failedCertificates),
+                         ["odd-monopole", "projective-cocycle"])
+
+    def test_an_odd_monopole_support_carries_the_spinor_doublet(self):
+        read = _monopole_spin_read(1)
+        self.assertTrue(read.monopole.odd)
+        self.assertTrue(read.cocycle.nontrivial)
+        self.assertTrue(read.half_integer_doublet)
 
     def test_spin_lift_is_not_demanded_without_a_continuum_claim(self):
         read = self.pc.classifyBaryon(_baryon_evidence())
@@ -3622,21 +3767,25 @@ class TestBaryonClassification(unittest.TestCase):
         self.assertAlmostEqual(read.spectralMass, 2.25, delta=MACHINE)
 
     def test_confidence_is_the_passed_fraction(self):
-        # Fifteen gates since the world-tube crossing conjunct joined them;
-        # with no crossing evidence supplied that gate passes VACUOUSLY, so
-        # exactly one certificate (sharp-spin) fails here.
+        # Sixteen gates: the world-tube crossing conjunct, which passes
+        # VACUOUSLY with no crossing evidence supplied, and the two
+        # half-integer-spin rows.  Exactly one certificate (sharp-spin)
+        # fails here.
         read = self.pc.classifyBaryon(_baryon_evidence(spin="generic"))
-        self.assertAlmostEqual(read.confidence, 14.0 / 15.0, delta=MACHINE)
+        self.assertAlmostEqual(read.confidence, 15.0 / 16.0, delta=MACHINE)
         self.assertEqual(len(read.failedCertificates), 1)
 
     def test_thresholds_are_recorded(self):
         cfg = obs.ParticleClustersConfig()
-        cfg.spinVarianceTolerance = 2.0     # a class that tolerates anything
+        cfg.spinVarianceTolerance = 2.0     # a cap that tolerates anything
         read = obs.ParticleClusters(cfg).classifyBaryon(
             _baryon_evidence(spin="generic"))
         self.assertEqual(read.thresholds.spinVarianceTolerance, 2.0)
-        self.assertTrue(read.sharpSpin)
-        self.assertEqual(read.classification, "certified-proton")
+        # Widening the variance cap no longer buys a sharp spin: the
+        # certificate is the pair of eigen-equations, and the right one
+        # still fails on this state.
+        self.assertFalse(read.sharpSpin)
+        self.assertIn("sharp-spin", read.failedCertificates)
 
     def test_reported_identities_travel(self):
         read = self.pc.classifyBaryon(_baryon_evidence())
@@ -3813,6 +3962,15 @@ class TestBaryonInvarianceAndReplay(unittest.TestCase):
         self.assertEqual(back.totalJ2, read.totalJ2)
         self.assertEqual(back.totalJ2Variance, read.totalJ2Variance)
         self.assertEqual(back.rotationCharacter, read.rotationCharacter)
+        self.assertEqual(back.monopoleNumber, read.monopoleNumber)
+        self.assertEqual(back.oddMonopole, read.oddMonopole)
+        self.assertEqual(back.projectiveCocycleNontrivial,
+                         read.projectiveCocycleNontrivial)
+        self.assertEqual(back.sharpSpinRightResidual,
+                         read.sharpSpinRightResidual)
+        self.assertEqual(back.sharpSpinLeftResidual,
+                         read.sharpSpinLeftResidual)
+        self.assertEqual(back.varianceWouldAccept, read.varianceWouldAccept)
         self.assertEqual(back.flavorPattern, read.flavorPattern)
         self.assertEqual(back.confidence, read.confidence)
         self.assertEqual(back.failedCertificates, read.failedCertificates)
@@ -3827,7 +3985,7 @@ class TestBaryonInvarianceAndReplay(unittest.TestCase):
         EH = obs.ExchangeHolonomy
         frame0 = EH.transverseSpinorFrame(0, 1, 4)
         weights = np.ones(4, dtype=complex)
-        ev = _baryon_evidence(spin="none", quarks=[
+        ev = _baryon_evidence(spin="none", monopole=None, quarks=[
             self.pc.classifyQuark(_certified_evidence())] * 3)
         ev.rotation = EH.rotationCharacter(
             EH.loopHolonomy(EH.rotationLoopFrames(frame0, 0, 1, 4, 1, 16),
@@ -3837,13 +3995,15 @@ class TestBaryonInvarianceAndReplay(unittest.TestCase):
         record = read.toRecord()
         for key in ("total_j2", "total_j2_variance", "electric_flux",
                     "physical_mass", "rotation_character_re",
-                    "rotation_character_im", "total_isospin"):
+                    "rotation_character_im", "total_isospin",
+                    "monopole_number"):
             self.assertIsNone(record[key], key)
         back = obs.BaryonRead.fromRecord(record)
         self.assertIsNone(back.totalJ2)
         self.assertIsNone(back.totalJ2Variance)
         self.assertIsNone(back.physicalMass)
         self.assertIsNone(back.rotationCharacter)
+        self.assertIsNone(back.monopoleNumber)
 
     def test_from_record_rejects_unknown_schema(self):
         record = self.pc.classifyBaryon(_baryon_evidence()).toRecord()
@@ -4025,10 +4185,12 @@ class TestExchangeChannelReport(unittest.TestCase):
         read = self.pc.classifyBaryon(
             _baryon_evidence(rotation_turns=2,
                              exchange=_exchange_character()))
-        # the 4pi rotation IS certified, so the ratio is still reported
+        # the 4pi rotation IS certified, so the ratio is still reported --
+        # and, the 2pi character gating nothing, the verdict is untouched by
+        # its value.
         self.assertIsNotNone(read.spinStatisticsRatio)
         self.assertLess(abs(read.spinStatisticsRatio + 1.0), 1e-12)
-        self.assertIn("rotation-character", read.failedCertificates)
+        self.assertEqual(read.classification, "certified-proton")
 
     def test_exchange_channels_serialize(self):
         read = self.pc.classifyBaryon(
@@ -4217,12 +4379,12 @@ class TestClassifyBoundSupercomponents(unittest.TestCase):
         self.assertEqual(
             read.failedCertificates,
             ["color-singlet", "color-flux-zero", "spin-expectation",
-             "sharp-spin", "rotation-character", "finite-radius",
-             "profile-stability"])
-        # The fifteenth gate (crossing-readouts) is not applicable here -- no
-        # crossing evidence travels through classifyBoundSupercomponents --
-        # so it passes vacuously and does not appear among the failures.
-        self.assertEqual(read.confidence, 8.0 / 15.0)
+             "sharp-spin", "odd-monopole", "projective-cocycle",
+             "finite-radius", "profile-stability"])
+        # The crossing-readouts gate is not applicable here -- no crossing
+        # evidence travels through classifyBoundSupercomponents -- so it
+        # passes vacuously and does not appear among the failures.
+        self.assertEqual(read.confidence, 8.0 / 16.0)
 
     def test_the_constituent_derived_rows_hold_on_certified_legs(self):
         read = self.pc.classifyBoundSupercomponents(
@@ -4244,8 +4406,11 @@ class TestClassifyBoundSupercomponents(unittest.TestCase):
         self.assertIsNone(read.totalJ2)
         self.assertIsNone(read.totalJ2Variance)
         self.assertIsNone(read.rotationCharacter)
+        self.assertIsNone(read.monopoleNumber)
         self.assertIsNone(read.exchangeCharacter)
         self.assertIsNone(read.physicalMass)
+        self.assertTrue(math.isnan(read.sharpSpinRightResidual))
+        self.assertTrue(math.isnan(read.sharpSpinLeftResidual))
         self.assertTrue(math.isnan(read.classVarianceFloor))
         self.assertFalse(read.quasiFreeClassSwept)
         self.assertTrue(math.isnan(read.radius))
@@ -4307,6 +4472,7 @@ class TestClassifyBoundSupercomponents(unittest.TestCase):
         # Every UNSUPPLIED optional serializes as null, never as zero.
         for key in ("total_j2", "total_j2_variance", "physical_mass",
                     "rotation_character_re", "rotation_character_im",
+                    "monopole_number",
                     "exchange_character_re", "exchange_character_im",
                     "spin_statistics_ratio_re", "spin_statistics_ratio_im"):
             self.assertIsNone(record[key], f"{key} is not null")
@@ -4314,7 +4480,8 @@ class TestClassifyBoundSupercomponents(unittest.TestCase):
         for key in ("color_gram_determinant", "color_flux", "color_wedge_re",
                     "color_wedge_im", "class_variance_floor", "radius",
                     "radius_ratio", "spectral_mass", "profile_max_deviation",
-                    "transport_leakage_max"):
+                    "transport_leakage_max", "sharp_spin_right_residual",
+                    "sharp_spin_left_residual"):
             self.assertTrue(math.isnan(record[key]), f"{key} is not NaN")
         rehydrated = obs.BaryonRead.fromRecord(record)
         self.assertEqual(rehydrated.classification, read.classification)

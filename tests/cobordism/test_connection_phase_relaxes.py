@@ -1,14 +1,17 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""#853 — the connection phase is a dynamical field.
+"""The connection phase is a dynamical field.
 
-`phi` was declared in the ontology and moved by nothing: every `L_k` is
-certified blind to it, so the objective's gradient with respect to `phi` was
-identically zero. The term added here is built on the operator the connection
-actually acts on — the degree-zero Aharonov-Bohm operator, whose zero mode a
-nonzero flux lifts and which `ker L_0 = b_0` can never register.
+Every read of the pipeline is taken on the covariant operator `h_k(z, U)`, the
+Whitney pencil dressed by the connection `U = exp(i phi)`. Its spectrum is
+invariant under the gauge similarity, so the effective homology and every
+spectral gate are gauge-invariant, and the Hodge-entropy term of the action
+depends on `U` through its holonomy. The term with a gradient in `phi`, which
+is what moves the phase, is built on the degree-zero Aharonov-Bohm operator,
+whose zero mode a nonzero flux lifts.
 
-Two properties carry the design and each is asserted rather than argued.
+Two properties carry the connection term and each is asserted rather than
+argued.
 
 The term is read from the EIGENVALUES alone. A gauge transformation acts on the
 operator by the similarity `diag(g)^-1 (.) diag(g)`, which fixes eigenvalues for
@@ -39,9 +42,10 @@ are exactly `|lambda|^2 = sigma^2`. So the two definitions agree in the
 Hermitian limit and separate only where the operator stops being normal, and
 both halves of that are asserted below.
 
-And `laplacian(k)` must stay blind. Making the geometric operator see `phi`
-would be the error the two-field split exists to prevent, so its bitwise
-invariance is re-asserted here alongside the new dependence.
+The diagonal-weight `laplacian(k)`, named by its metric source, is built from
+the squared lengths alone and its bitwise invariance under `phi` is asserted
+beside the dependence of the default `h_k(z, U)`, which moves with the flux
+and which only a gauge transformation leaves fixed.
 """
 
 import cmath
@@ -54,6 +58,7 @@ import tessera as T
 
 cob = T.cobordism
 MC = cob.MultiCobordism
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 MODE = cob.HodgeEntropyPhaseMode.IncludeComplexPhase
 
 
@@ -124,21 +129,48 @@ class ConnectionEntropySeesThePhaseTest(unittest.TestCase):
             flat, fluxed, places=9,
             msg="the connection entropy must SEE the connection")
 
-    def test_every_hodge_laplacian_stays_bitwise_blind_to_the_phase(self):
-        # The trap this whole design avoids. If a phase ever reaches the metric
-        # weight, the geometry becomes gauge-variant and the derived form of
-        # L_k is destroyed. Assert equality, not closeness.
+    def test_every_diagonal_hodge_laplacian_stays_bitwise_blind_to_the_phase(self):
+        # If a phase ever reached the diagonal metric weight, the geometry would
+        # become gauge-variant and the derived form of L_k would be destroyed.
+        # Assert equality, not closeness.
+        def diagonal(spacetime):
+            return cob.HodgeLaplacian(
+                spacetime, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
+
         spacetime = _host()
         _flatten(spacetime)
-        before = {k: cob.HodgeLaplacian(spacetime).laplacian(k, True)
-                  for k in (0, 1, 2)}
+        before = {k: diagonal(spacetime).laplacian(k, True) for k in (0, 1, 2)}
         _set_flux(spacetime)
         for k in (0, 1, 2):
             with self.subTest(degree=k):
                 self.assertEqual(
-                    list(cob.HodgeLaplacian(spacetime).laplacian(k, True)),
+                    list(diagonal(spacetime).laplacian(k, True)),
                     list(before[k]),
                     "laplacian(%d) must be built from the lengths alone" % k)
+
+    def test_the_default_covariant_operator_sees_the_flux_and_not_a_gauge(self):
+        # The default Whitney operator is h_k(z, U): a flux moves its spectrum,
+        # a gauge transformation is a similarity and leaves it where it was.
+        def spectrum(spacetime, k):
+            return np.sort_complex(np.asarray(
+                cob.HodgeLaplacian(spacetime).eigenvalues(k), dtype=complex))
+
+        spacetime = _host()
+        _flatten(spacetime)
+        flat = {k: spectrum(spacetime, k) for k in (0, 1)}
+        _gauge(spacetime, _chi(spacetime))
+        for k in (0, 1):
+            with self.subTest(degree=k, move="gauge"):
+                np.testing.assert_allclose(
+                    spectrum(spacetime, k), flat[k],
+                    atol=1e-8 * max(1.0, np.abs(flat[k]).max()))
+        _flatten(spacetime)
+        _set_flux(spacetime)
+        for k in (0, 1):
+            with self.subTest(degree=k, move="flux"):
+                moved = spectrum(spacetime, k)
+                self.assertGreater(np.abs(moved - flat[k]).max(),
+                                   1e-6 * max(1.0, np.abs(flat[k]).max()))
 
     def test_the_phase_gradient_is_nonzero_under_flux(self):
         spacetime = _host()

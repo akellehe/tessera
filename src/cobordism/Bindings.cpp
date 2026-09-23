@@ -16,11 +16,15 @@
 #include <pybind11/stl.h>
 
 #include "cobordism/AnalyticCache.h"
+#include "cobordism/BoundStatePole.h"
 #include "cobordism/Certificate.h"
 #include "cobordism/ChainComplex.h"
 #include "cobordism/Characteristic.h"
 #include "cobordism/DenseReference.h"
+#include "cobordism/DressedFluctuation.h"
 #include "cobordism/KuennethProduct.h"
+#include "cobordism/LevelRecursion.h"
+#include "cobordism/MappingCylinder.h"
 #include "cobordism/SpacetimeComposition.h"
 #include "cobordism/LowRankUpdate.h"
 #include "cobordism/OccupationSpectra.h"
@@ -31,12 +35,16 @@
 #include "cobordism/MultiCobordism.h"
 #include "observables/SimplicialQubit.h"
 #include "cobordism/PencilLayer.h"
-#include "cobordism/Proton.h"
+#include "cobordism/ProtonSynthesis.h"
 #include "cobordism/ProtonIngredients.h"
 #include "cobordism/HodgeLaplacian.h"
+#include "cobordism/HolomorphicRelaxation.h"
 #include "cobordism/IntegerLinalg.h"
+#include "cobordism/JointAction.h"
+#include "cobordism/SelfConsistentMeanField.h"
 #include "cobordism/RecursiveQuotient.h"
 #include "cobordism/SurgicalCone.h"
+#include "cobordism/WardFlux.h"
 #include "cobordism/Spectrum.h"
 #include "spacetime/Spacetime.h"  // complete type required by pybind (typeid)
 
@@ -147,6 +155,9 @@ numbers (over ℚ and GF(2)), torsion coefficients, Euler characteristic, and th
            "Per-degree +/-1 signs relating stored cell orientations to the reference (ascending id) orientation.")
       .def_static("fromTopCells", &ChainComplex::fromTopCells, py::arg("top_cells"),
            "Build from top cells (vertex-id tuples) alone, oriented by ascending vertex id; no geometry.")
+      .def_static("fromCells", &ChainComplex::fromCells, py::arg("cells"),
+           "Build from declared cells (vertex-id tuples) of any dimensions, oriented by ascending "
+           "vertex id; the complex need not be pure.")
       .def_static("fromSpacetime", &ChainComplex::fromSpacetime, py::arg("spacetime"),
                   "Build the chain complex from a triangulation (a Spacetime).")
       .def("dimension", &ChainComplex::dimension)
@@ -313,10 +324,11 @@ eigenvector Cochain).)doc")
 
   // ----- Hodge Laplacian: k=0 Hermitian graph, k>=1 metric Hodge -----
   py::enum_<HodgeLaplacian::MetricSource>(m, "HodgeMetricSource",
-      R"doc(Where a Hodge operator's metric comes from: DiagonalWeights (the historical
-per-simplex diagonal weights of HodgeWeightConvention, the process default) or
-WhitneyPencil (the chain-level Whitney Hodge pencil of tessera.chainhodge, dressed at
-every degree by the edge-phase links; MultiCobordism's default).)doc")
+      R"doc(Where a Hodge operator's metric comes from: WhitneyPencil (the chain-level
+Whitney Hodge pencil of tessera.chainhodge, W_k = M_k^-1 dressed at every degree by
+the edge-phase links, so the operator is h_k(s, U) and moves with the connection;
+the process default) or DiagonalWeights (the per-simplex diagonal weights of
+HodgeWeightConvention, whose operator ignores the connection).)doc")
       .value("DiagonalWeights", HodgeLaplacian::MetricSource::DiagonalWeights)
       .value("WhitneyPencil", HodgeLaplacian::MetricSource::WhitneyPencil);
 
@@ -352,7 +364,15 @@ not of signature; neither reintroduces a Euclidean path.)doc")
   py::class_<HodgeLaplacian>(m, "HodgeLaplacian",
       R"doc(Hodge Laplacian on a Spacetime, degree-parameterized by int k.
 
-ONE definition at every degree: with the integer boundary maps
+METRIC SOURCE. The metric is chosen by HodgeMetricSource, read from the
+process-wide defaultMetricSource() at construction unless named. The default,
+WhitneyPencil, is the chain-level Whitney pencil: W_k = M_k^-1 with M_k the sparse
+Whitney mass matrix of the complex squared lengths, dressed by the connection U of
+the edge phases. laplacian(k) is then the operator on geometric images
+L_z = (M_k^U)^-1 A~_k^U, similar to h_k(s, U), and pencil(k) returns the pair
+(A~_k^U, M_k^U). The DiagonalWeights operator described next ignores U.
+
+DIAGONAL WEIGHTS. ONE definition at every degree: with the integer boundary maps
 d_k (ChainComplex), the diagonal metric weight W_k (weights(k); W_0 = I) and the
 weighted adjoint d_k* = W_k^-1 d_k^dagger W_{k-1},
 
@@ -408,10 +428,19 @@ ChainComplex omits.)doc")
            py::arg("spacetime"), py::arg("weights"), py::arg("metric_source"),
            "Build with an explicit metric source (see HodgeMetricSource).")
       .def_static("defaultMetricSource", &HodgeLaplacian::defaultMetricSource,
-           "The process-wide default HodgeMetricSource (ships as DiagonalWeights).")
+           "The process-wide default HodgeMetricSource (ships as WhitneyPencil).")
       .def_static("setDefaultMetricSource", &HodgeLaplacian::setDefaultMetricSource,
            py::arg("source"), "Flip the process-wide default metric source ONCE at startup.")
       .def("metricSource", &HodgeLaplacian::metricSource, "This operator's metric source.")
+      .def("pencil",
+           [](const HodgeLaplacian &hodge, int k) {
+             HodgeLaplacian::MetricPencil pencil = hodge.pencil(k);
+             return py::make_tuple(std::move(pencil.op), std::move(pencil.metric));
+           },
+           py::arg("k"),
+           "Whitney pencil only: (A~_k^U, M_k^U), both flat row-major |C_k| x |C_k| in the "
+           "cell order and stored orientation of laplacian(k), which is M^-1 A~. Raises "
+           "under DiagonalWeights, whose metric is weights(k).")
       .def("laplacianPhaseGradient", &HodgeLaplacian::laplacianPhaseGradient,
            py::arg("k"), py::arg("ea"), py::arg("eb"),
            "Whitney pencil: the analytic dL_k/dphi_e of the link on edge (ea, eb), flat "
@@ -503,8 +532,9 @@ ChainComplex omits.)doc")
            "Eigenvalues survive the full similarity, so gauge invariance here "
            "is structural. The SQUARE is what makes it reduce to the Hodge "
            "term's own functional in the Hermitian limit, where |lambda|^2 = "
-           "sigma^2 are exactly the eigenvalues of A. This is the entropy that "
-           "can SEE the connection; every L_k is blind to phi.")
+           "sigma^2 are exactly the eigenvalues of A. The entropy of the 1-skeleton "
+           "operator; spectralEntropy of the default h_k(s, U) sees the connection "
+           "as well, at every degree.")
       .def("connectionSpectralEntropyPhaseGradient",
            &HodgeLaplacian::connectionSpectralEntropyPhaseGradient,
            "dS/dphi_e of connectionSpectralEntropy, EdgeList order, in the "
@@ -529,6 +559,22 @@ ChainComplex omits.)doc")
            "dS/dA on the fixed-rank stratum. S is invariant under complex "
            "rescaling of z, so h is homogeneous of degree -1 and the exact "
            "Euler check is: direction = z reproduces -h.")
+      .def("localSpectralMoments", &HodgeLaplacian::localSpectralMoments, py::arg("k"), py::arg("orders"),
+           "The local spectral moments mu_j(x) = (L_k^j)_xx, j = 1..orders, flat row-major |C_k| x orders: the "
+           "local parts of the power sums tr(L_k^j), holomorphic in z. L_k is the one spectralEntropy uses.")
+      .def("spectralMomentStiffness", &HodgeLaplacian::spectralMomentStiffness, py::arg("k"),
+           py::arg("reference"), py::arg("coefficients"),
+           "S_M = 1/2 sum_j beta_j sum_x (mu_j(x) - mu_j^0(x))^2 about the carrier whose localSpectralMoments(k, m) "
+           "are `reference`, beta_j = coefficients[j-1]: extensive, zero with its gradient at the carrier, and with "
+           "the Hessian sum_j beta_j sum_x grad mu_j grad mu_j^T there. Holomorphic in z.")
+      .def("spectralMomentStiffnessGradient", &HodgeLaplacian::spectralMomentStiffnessGradient, py::arg("k"),
+           py::arg("reference"), py::arg("coefficients"),
+           "dS_M/dz_e in EdgeList order, the holomorphic derivative; for Re S_M it is also the h of "
+           "spectralEntropyGradient.")
+      .def("spectralMomentStiffnessHessianProduct", &HodgeLaplacian::spectralMomentStiffnessHessianProduct,
+           py::arg("k"), py::arg("reference"), py::arg("coefficients"), py::arg("direction"),
+           "EXACT Hessian-vector product sum_f d^2 S_M / dz_e dz_f v_f in EdgeList order: the product rule on "
+           "the moments and the exact second derivative of L_k along v.")
       .def("isHermitian", &HodgeLaplacian::isHermitian, py::arg("tol") = 1e-12,
            "True iff ||L - L^dagger|| <= tol (Frobenius) for the U(1) CONNECTION "
            "Laplacian. True by construction; it says nothing about L_0, which is "
@@ -598,10 +644,11 @@ ChainComplex omits.)doc")
       // ----- indefinite W-norms of the near-kernel -----
       .def("nullNorms", &HodgeLaplacian::nullNorms,
            py::arg("k"), py::arg("tol") = 1e-9, py::arg("metric") = true,
-           "Indefinite W-norms <h,h>_W = sum_i W_{k,i} |h_i|^2 of the near-kernel "
-           "representatives, one per column of harmonics (same order). "
-           "A value ~0 flags a NULL (lightlike) harmonic; all positive on an "
-           "all-spacelike complex.");
+           "Indefinite norms of the near-kernel representatives in the metric that "
+           "produced them, one per column of harmonics (same order): h^dagger M_k^U h "
+           "with the dressed Whitney mass under WhitneyPencil, sum_i W_{k,i} |h_i|^2 "
+           "with the signed diagonal weights under DiagonalWeights. A value ~0 flags a "
+           "NULL (lightlike) harmonic; all positive on an all-spacelike complex.");
 
   // ----- eigenstate synthesis: residual + parameter access -----
   auto eigenstateSynthesis = py::class_<EigenstateSynthesis>(m, "EigenstateSynthesis",
@@ -2436,7 +2483,7 @@ Right -- re-read after each drive call:
       .value("PERIODS", MultiCobordism::WholePairing::Periods)
       .value("GRAM", MultiCobordism::WholePairing::Gram);
   py::enum_<MultiCobordism::BuildAction>(multiCobordismClass, "BuildAction",
-      "One canonical solve action a search policy (Proton's build restart loop, a greedy "
+      "One canonical solve action a search policy (ProtonSynthesis's build restart loop, a greedy "
       "driver, or the RL agent) composes, so the solve runs through the engine rather than "
       "being re-implemented by each consumer.")
       .value("GROW", MultiCobordism::BuildAction::Grow)
@@ -2544,15 +2591,18 @@ Right -- re-read after each drive call:
       .def_readwrite("connection_stationarity",
                      &MultiCobordism::ObjectiveTerms::connectionStationarity,
                      "eta_C ||grad_phi S||^2 of the C* connection operator -- "
-                     "the ONLY term with a gradient in the connection phase. "
-                     "Every L_k is blind to phi, so without this the phase is "
+                     "the ONLY term with a gradient in the connection phase: the "
+                     "Hodge-entropy term sees phi through h_k(z, U) but is "
+                     "differentiated in z alone, so without this the phase is "
                      "a declared field no update can move.")
       .def_readwrite("register_residual",
                      &MultiCobordism::ObjectiveTerms::registerResidual)
       .def_readwrite("action_magnitude",
                      &MultiCobordism::ObjectiveTerms::actionMagnitude)
       .def_readwrite("carried_state_energy",
-                     &MultiCobordism::ObjectiveTerms::carriedStateEnergy);
+                     &MultiCobordism::ObjectiveTerms::carriedStateEnergy)
+      .def_readwrite("moment_stiffness",
+                     &MultiCobordism::ObjectiveTerms::momentStiffness);
 
   py::class_<MultiCobordism::ObjectiveContribution>(multiCobordismClass,
       "ObjectiveContribution",
@@ -2642,7 +2692,9 @@ Right -- re-read after each drive call:
       .def_readonly_static("ACTION_MAGNITUDE",
                            &ObjectiveTermName::kActionMagnitude)
       .def_readonly_static("CARRIED_STATE_ENERGY",
-                           &ObjectiveTermName::kCarriedStateEnergy);
+                           &ObjectiveTermName::kCarriedStateEnergy)
+      .def_readonly_static("MOMENT_STIFFNESS",
+                           &ObjectiveTermName::kMomentStiffness);
 
   py::class_<ObjectiveContext>(m, "ObjectiveContext",
       "The COMPLETE set of inputs an objective may read -- the no-feedback "
@@ -2711,6 +2763,14 @@ Right -- re-read after each drive call:
       .def_readwrite("carried_state_energy",
                      &ObjectiveContext::carriedStateEnergy,
                      "E_carried(Gamma, g), likewise a precomputed number.")
+      .def_readwrite("moment_stiffness_weight", &ObjectiveContext::momentStiffnessWeight,
+                     "beta_M, the weight of the spectral-moment stiffness of the geometric action. Zero by default.")
+      .def_readwrite("moment_stiffness_degrees", &ObjectiveContext::momentStiffnessDegrees,
+                     "The degrees k whose Hodge operators' local moments are held.")
+      .def_readwrite("moment_stiffness_coefficients", &ObjectiveContext::momentStiffnessCoefficients,
+                     "beta_j, j = 1..m, the weights of the moment orders.")
+      .def_readwrite("moment_stiffness_reference", &ObjectiveContext::momentStiffnessReference,
+                     "The carrier's local moments, one flat |C_k| x m array per degree.")
       .def_static("input_names", &ObjectiveContext::inputNames,
                   "Every field of the context, in declaration order -- the "
                   "firewall list a structural test asserts against.");
@@ -2850,6 +2910,19 @@ Right -- re-read after each drive call:
       .def_readwrite("cadence", &MultiCobordism::AnalysisConfig::cadence)
       .def_readwrite("degrees", &MultiCobordism::AnalysisConfig::degrees)
       .def_readwrite("resolutions", &MultiCobordism::AnalysisConfig::resolutions)
+      .def_readwrite("frame_history",
+                     &MultiCobordism::AnalysisConfig::frameHistory,
+                     "Cobordism frames the overlay retains (one pass is one "
+                     "frame): what makes a candidate's lifetime, its "
+                     "adjacent-frame overlap, its per-frame band and anchor "
+                     "families and its lifetime transports measurable rather "
+                     "than assumed. 1 means no history.")
+      .def_readwrite("lifetime_winding_closure",
+                     &MultiCobordism::AnalysisConfig::lifetimeWindingClosure,
+                     "\"none\" (an open cobordism segment: the phase is "
+                     "reported and the winding stays unknown) or "
+                     "\"closed-family\" (the caller DECLARES the world tube "
+                     "closed and the winding is read cyclically).")
       .def_readwrite("fock_oracle", &MultiCobordism::AnalysisConfig::fockOracle)
       .def_readwrite("cold_caches", &MultiCobordism::AnalysisConfig::coldCaches);
 
@@ -2892,6 +2965,14 @@ Right -- re-read after each drive call:
            "CERTIFICATES_BLIND_MEAN_FIELD emergence sub-mode.")
       .def_property_readonly("carried_state_energy_weight",
                              &MultiCobordism::carriedStateEnergyWeight)
+      .def("set_moment_stiffness", &MultiCobordism::setMomentStiffness, py::arg("weight"),
+           py::arg("degrees"), py::arg("coefficients"),
+           "Declare the spectral-moment stiffness of the geometric action about the CURRENT geometry, the "
+           "carrier: its local spectral moments at `degrees` are recorded as the reference, and the objective "
+           "gains beta_M sum_k Re S_M,k (HodgeLaplacian.spectralMomentStiffness). Weight 0 removes it.")
+      .def_property_readonly("moment_stiffness_weight", &MultiCobordism::momentStiffnessWeight)
+      .def_property_readonly("moment_stiffness_degrees", &MultiCobordism::momentStiffnessDegrees)
+      .def_property_readonly("moment_stiffness_coefficients", &MultiCobordism::momentStiffnessCoefficients)
       .def("carried_state_energy", &MultiCobordism::carriedStateEnergy, py::arg("st"),
            "E_carried(Gamma, g) = Re tr(Gamma_S h_S(g)) with h_S the Hermitian "
            "part of the metric Hodge operator at the carried degree, restricted "
@@ -3013,21 +3094,31 @@ Right -- re-read after each drive call:
       .def("piped_input_count", &CobordismDAG::pipedInputCount, py::arg("node"))
       .def("__len__", &CobordismDAG::size);
 
-  // === Proton: the canonical two-step MultiCobordism proton build ===
-  auto protonClass = py::class_<Proton>(m, "Proton",
-      R"doc(The canonical, footgun-free proton builder, composing MultiCobordism.
+  // === ProtonSynthesis: the labelled controlled synthesis of a proton ===
+  auto protonClass = py::class_<ProtonSynthesis>(m, "ProtonSynthesis",
+      R"doc(Controlled synthesis of a proton, composing MultiCobordism.
 
-A proton is THREE quarks in a colorless bound state, so it is built in TWO steps
-(a single merge would be physically invalid). omega = exp(2*pi*i/3).
+This is a labelled controlled-synthesis experiment, not emergence: it pins the
+colour singlet {1, w, w*w} (w = (-1 + i*sqrt(3))/2, the primitive cube root of
+unity) as an output target and accepts an attempt only if the whole cobordism
+carries that singlet on at least min_emergent_holes holes. Targets are
+permitted only in explicitly labelled controlled synthesis, so every node this
+class builds is in MultiCobordism.SimulationMode.SYNTHESIS (recorded on a
+checkpoint as "synthesis"), and drive_node, build() and build_direct() refuse,
+with ValueError, a node in any other mode, including either emergence
+sub-mode. The emergence protocol pins no target.
+
+A proton is THREE quarks in a colourless bound state, so it is synthesized in
+TWO steps (a single merge would be physically invalid).
   * Step A (recombination, one 2->2 node): two neutral q-qbar pairs {1,-1,0},
-    {1,0,-1} -> a colored diquark {1,w} + antidiquark {1,w*w} (2-vectors).
+    {1,0,-1} -> a coloured diquark {1,w} + antidiquark {1,w*w} (2-vectors).
   * Step B (formation, a separate 2->1 node): the diquark {1,w} + the third
-    quark {w*w} -> the proton {1,w,w*w} (the 3-vector color singlet).
-build() builds the closed-S^4 hosts internally and restarts across distinct
-seeds until step B's proton block carries the singlet on >=3 emergent holes. The
-accessors lazily trigger build() on first use, so `Proton().block()` just works.
-Observable readers (charge/mass/radius/spin) read OFF block() in their own
-tickets.)doc");
+    quark {w*w} -> the proton {1,w,w*w} (the 3-vector colour singlet).
+build() grows each step from a single Delta^4 simplex seed and restarts across
+distinct seeds until step B's whole cobordism carries the singlet on >= 3
+holes. The accessors lazily trigger build() on first use, so
+`ProtonSynthesis().block()` just works. Observable readers
+(charge/mass/radius/spin) read OFF block().)doc");
   protonClass
       .def(py::init<std::uint64_t, int, double, double, int, bool, bool, bool,
                     bool, bool, bool>(),
@@ -3040,75 +3131,107 @@ tickets.)doc");
            py::arg("balanced_edges") = false,
            py::arg("singular_value_ratio") = false,
            py::arg("einstein_hilbert") = true)
-      .def_static("omega", &Proton::omega, "omega = exp(2*pi*i/3).")
-      .def_static("singlet", &Proton::singlet,
-                  "The proton color singlet {1, w, w*w}.")
-      .def("build", &Proton::build, py::arg("max_restarts") = 16,
+      .def_static("omega", &ProtonSynthesis::omega,
+                  "w = (-1 + i*sqrt(3))/2, the primitive cube root of unity.")
+      .def_static("singlet", &ProtonSynthesis::singlet,
+                  "The proton colour singlet {1, w, w*w}.")
+      .def("build", &ProtonSynthesis::build, py::arg("max_restarts") = 16,
            py::arg("init_steps") = 180,
            py::arg("evolve_steps") = 60, py::arg("stage1_candidate_moves") = 8,
            py::arg("stage2_beta") = 1.0,
            py::arg("stage2_max_iters") = 10, py::arg("color_tolerance") = 0.5,
            py::arg("min_emergent_holes") = 3,
            "Restart across seeds until the whole step-B cobordism carries the singlet "
-           "on >= min_emergent_holes emergent holes. Each step runs an init pass (grow the "
-           "boundary until it carries) then an evolution pass (boundary frozen).")
-      .def("recombination_node", &Proton::recombinationNode, py::arg("seed"),
-           "A fresh, seeded (not-yet-run) Step A node: two neutral q-qbar pairs -> a "
-           "diquark {1,w} + antidiquark {1,w*w}, on a single Delta^4 seed. Drive it with "
-           "run_stage1/run_stage2 -- the exact node build() uses for recombination.")
-      .def("formation_node", &Proton::formationNode, py::arg("seed"),
-           "A fresh, seeded (not-yet-run) Step B node: the diquark {1,w} + the third "
-           "quark {w*w} -> the proton singlet, on a single Delta^4 seed (output read off "
-           "the whole). Drive it with run_stage1/run_stage2.")
-      .def("direct_node", &Proton::directNode, py::arg("seed"),
-           "A fresh, seeded (not-yet-run) ONE-STEP node (6->1): the three bare quarks "
-           "{1}, {w}, {w*w} and their three anti-quarks (the elementwise conjugates -- "
-           "three q-qbar pairs) as inputs, and the proton singlet as the single output, "
-           "read off the WHOLE cobordism (the anti-baryon partner emerges unpinned), on "
-           "a single Delta^4 seed -- the experimental single-merge alternative to the "
-           "two-step build. Drive it with run().")
-      .def("build_direct", &Proton::buildDirect, py::arg("max_restarts") = 16,
+           "on >= min_emergent_holes holes. Each step runs an init pass (grow the "
+           "boundary until it carries) then an evolution pass (boundary frozen), in "
+           "SimulationMode.SYNTHESIS.")
+      .def("recombination_node", &ProtonSynthesis::recombinationNode, py::arg("seed"),
+           "A fresh, seeded (not-yet-run) Step A node in SimulationMode.SYNTHESIS: two "
+           "neutral q-qbar pairs -> a diquark {1,w} + antidiquark {1,w*w}, on a single "
+           "Delta^4 seed -- the exact node build() uses for recombination.")
+      .def("formation_node", &ProtonSynthesis::formationNode, py::arg("seed"),
+           "A fresh, seeded (not-yet-run) Step B node in SimulationMode.SYNTHESIS: the "
+           "diquark {1,w} + the third quark {w*w} -> the proton singlet, on a single "
+           "Delta^4 seed (output read off the whole).")
+      .def("direct_node", &ProtonSynthesis::directNode, py::arg("seed"),
+           "A fresh, seeded (not-yet-run) ONE-STEP node (6->1) in "
+           "SimulationMode.SYNTHESIS: the three bare quarks {1}, {w}, {w*w} and their "
+           "three anti-quarks (the elementwise conjugates -- three q-qbar pairs) as "
+           "inputs, and the proton singlet as the single output, read off the WHOLE "
+           "cobordism (the anti-baryon partner is not pinned), on a single Delta^4 "
+           "seed -- the experimental single-merge alternative to the two-step "
+           "synthesis. Drive it with run().")
+      .def_static("drive_node",
+           [](MultiCobordism &node, int initSteps, int evolveSteps,
+              int stage1CandidateMoves, double stage2Beta, int stage2MaxIters,
+              bool directedSurgery) {
+             ProtonSynthesis::driveNode(
+                 node, ProtonSynthesis::NodeDrive{initSteps, evolveSteps,
+                                                  stage1CandidateMoves,
+                                                  stage2Beta, stage2MaxIters,
+                                                  directedSurgery});
+           },
+           py::arg("node"), py::arg("init_steps") = 180,
+           py::arg("evolve_steps") = 60, py::arg("stage1_candidate_moves") = 8,
+           py::arg("stage2_beta") = 1.0, py::arg("stage2_max_iters") = 10,
+           py::arg("directed_surgery") = false,
+           "Drive one synthesis node through build()'s per-node schedule: an init "
+           "pass (grow the boundary), an optional directed cone-out, an evolution "
+           "pass (boundary frozen), an optional directed cone-in, then run_stage2. "
+           "Raises ValueError, before anything runs, when the node is not in "
+           "SimulationMode.SYNTHESIS.")
+      .def_static("require_synthesis_mode", &ProtonSynthesis::requireSynthesisMode,
+           py::arg("node"),
+           "Raise ValueError naming the node's mode unless it is "
+           "SimulationMode.SYNTHESIS: the synthesis pins targets, which are "
+           "permitted only in the labelled controlled-synthesis mode.")
+      .def("build_direct", &ProtonSynthesis::buildDirect, py::arg("max_restarts") = 16,
            py::arg("init_steps") = 180, py::arg("evolve_steps") = 60,
            py::arg("stage1_candidate_moves") = 8, py::arg("stage2_beta") = 1.0,
            py::arg("color_tolerance") = 0.5, py::arg("min_emergent_holes") = 3,
            py::call_guard<py::gil_scoped_release>(),
-           "EXPERIMENTAL one-step build: drive direct_node (three q-qbar pairs in, the "
-           "singlet out) with the combined run() drive -- stage-1 surgery and stage-2 "
-           "relaxation interleaved in one loop -- as an init pass then an evolution "
-           "pass, restarting across seeds. Populates the same accessors as build() "
-           "(diquark_residual stays 0 -- no step A). Shares build()'s once-only latch: "
-           "call it BEFORE any accessor triggers the lazy two-step build().")
-      .def("converged", &Proton::converged,
-           "True iff step B's proton block carries the singlet on enough emergent holes.")
-      .def("seed", &Proton::seed, "Base seed of the converged (or best) attempt.")
-      .def("spacetime", &Proton::spacetime,
-           "Step B's full relaxed closed-S^4 complex.")
-      .def("block", &Proton::block,
-           "Step B's proton sub-complex, with the relaxed metric copied in.")
-      .def("emergent_holes", &Proton::emergentHoles,
-           "The emergent holes on the proton block over which the singlet periods are "
-           "read (>=3 when converged). A topological observable, not a quark count.")
-      .def("color_residual", &Proton::colorResidual,
+           "EXPERIMENTAL one-step synthesis: drive direct_node (three q-qbar pairs in, "
+           "the singlet out) with the combined run() drive -- stage-1 surgery and "
+           "stage-2 relaxation interleaved in one loop -- as an init pass then an "
+           "evolution pass, restarting across seeds, in SimulationMode.SYNTHESIS. "
+           "Populates the same accessors as build() (diquark_residual stays 0 -- no "
+           "step A). Shares build()'s once-only latch: call it BEFORE any accessor "
+           "triggers the lazy two-step build().")
+      .def("converged", &ProtonSynthesis::converged,
+           "True iff step B's whole cobordism carries the singlet on enough holes.")
+      .def("seed", &ProtonSynthesis::seed,
+           "Base seed of the converged (or best) attempt.")
+      .def("spacetime", &ProtonSynthesis::spacetime,
+           "Step B's full relaxed complex, grown from the single Delta^4 seed.")
+      .def("block", &ProtonSynthesis::block,
+           "The synthesized proton: the relaxed step-B cobordism as a whole.")
+      .def("emergent_holes", &ProtonSynthesis::emergentHoles,
+           "The holes (MultiCobordism.emergent_holes) of the synthesized proton over "
+           "which the singlet periods are read (>=3 when converged). A topological "
+           "observable, not a quark count.")
+      .def("color_residual", &ProtonSynthesis::colorResidual,
            "Step B's proton singlet r_state (~0 => carried).")
-      .def("diquark_residual", &Proton::diquarkResidual,
+      .def("diquark_residual", &ProtonSynthesis::diquarkResidual,
            "Step A's r_U (small => the diquark recombination converged).");
 
-  // === ProtonIngredients: the emergent arm, nothing pinned downstream ===
+  // === ProtonIngredients: the ingredients arm, no output pinned ===
   py::class_<ProtonIngredients>(m, "ProtonIngredients",
-      R"doc(The emergent arm of the proton build. Proton is the canonical line
-in the sand and is composed here unchanged; ProtonIngredients prepares the same
+      R"doc(The ingredients arm of the proton experiment, whose final state is not
+pinned. ProtonSynthesis is composed here unchanged; ProtonIngredients prepares the same
 ingredients through the same two-step drive EXCEPT that the final state is never
 pinned: step B's output-target list is EMPTY, so the objective is
 F = ||grad S||^2 + gamma * sum_i r_U(input_i) and whatever the whole cobordism
 comes to carry is READ afterwards, never driven. Exactly one variable differs
-from Proton.build() (the singlet output target), so the two classes form a clean
-A/B experiment. The seed stays uniform and all-spacelike by design: at
-initialization no time has passed — causal structure marks sequences of events
-and may only emerge. Convergence carries no answer-shaped gate: an attempt
+from ProtonSynthesis.build() (the singlet output target), so the two classes form a
+clean A/B experiment. Step A is ProtonSynthesis.recombination_node, which pins the
+diquark and antidiquark outputs and so runs in SimulationMode.SYNTHESIS; step B
+pins no output and runs in the node's default mode, EMERGENCE (STRICT). The
+seed stays uniform and all-spacelike by design: at initialization no time has
+passed — causal structure marks sequences of events and may only emerge. Convergence carries no answer-shaped gate: an attempt
 converges iff it is STATIONARY (stage 2 stopped on its stationarity test) and
 PERSISTENT (a continued evolve+relax pass leaves holes, b_k, and F stable).
 Everything physical is a post-hoc observable, including the singlet residual —
-a diagnostic for comparing against the canonical build's carried level.)doc")
+a diagnostic for comparing against the synthesis's carried level.)doc")
       .def(py::init<std::uint64_t, int, double, double, int, bool>(),
            py::arg("seed") = 0, py::arg("register_degree") = 3,
            py::arg("gamma") = 50.0, py::arg("input_weight") = 20.0,
@@ -3120,13 +3243,14 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
            py::arg("persist_tolerance") = 0.05,
            "Restart across seeds until an attempt is stationary AND persistent (no "
            "color tolerance, no minimum hole count); otherwise keep the lowest-F "
-           "attempt. Same drive per node as Proton.build().")
+           "attempt. Same drive per node as ProtonSynthesis.build().")
       .def("recombination_node", &ProtonIngredients::recombinationNode,
            py::arg("seed"),
-           "Step A verbatim: the composed canonical Proton's recombination_node.")
+           "Step A verbatim: the composed ProtonSynthesis's recombination_node, in "
+           "SimulationMode.SYNTHESIS.")
       .def("formation_node", &ProtonIngredients::formationNode, py::arg("seed"),
            "Step B with nothing pinned: the same ideal diquark {1,w} + third quark "
-           "{w*w} inputs on the same single Delta^4 seed as Proton.formation_node, "
+           "{w*w} inputs on the same single Delta^4 seed as ProtonSynthesis.formation_node, "
            "but with an EMPTY output-target list — the final state emerges.")
       .def("joint_node", &ProtonIngredients::jointNode, py::arg("seed"),
            "The joint inputs-only node: ONE MultiCobordism whose inputs are the three "
@@ -3153,12 +3277,12 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
            "is the not-yet-driven complex.")
       .def("block", &ProtonIngredients::block,
            "The emergent object IS the whole step-B cobordism (parity with "
-           "Proton.block).")
+           "ProtonSynthesis.block).")
       .def("emergent_holes", &ProtonIngredients::emergentHoles,
            "The emergent holes on the whole — an observable, not a gate; "
            "may be any count, including zero.")
       .def("singlet_residual", &ProtonIngredients::singletResidual,
-           "DIAGNOSTIC only: the singlet r_state of Proton.singlet() against the "
+           "DIAGNOSTIC only: the singlet r_state of ProtonSynthesis.singlet() against the "
            "whole, read after the fact for comparison with the canonical build. It "
            "never steers or gates this build.")
       .def("input_residual", &ProtonIngredients::inputResidual,
@@ -3166,7 +3290,7 @@ a diagnostic for comparing against the canonical build's carried level.)doc")
       .def("final_objective", &ProtonIngredients::finalObjective,
            "The kept attempt's final objective F.")
       .def("diquark_residual", &ProtonIngredients::diquarkResidual,
-           "Step A's r_U — reported exactly as Proton reports it.");
+           "Step A's r_U — reported exactly as ProtonSynthesis reports it.");
 
   // ----- Gated surgical cone-out/cone-in (topology change) -----
   py::class_<SurgicalCone>(m, "SurgicalCone",
@@ -3782,9 +3906,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::CraigBamptonRead>(recursiveQuotient,
       "CraigBamptonRead",
-      "Craig-Bampton/AMLS retained-mode surrogate: declared window, retained "
+      "Craig-Bampton/AMLS retained-mode surrogate: the declared window disc "
+      "(centre, radius) and retention radius with their real extents, retained "
       "fixed-interface modes per component, basis, reduced (stiffness, mass) "
-      "pencil, discarded-mode gap, and fine-space eigenresiduals.")
+      "pencil, discarded-mode gap, the claimed spectrum inside the disc, and "
+      "fine-space eigenresiduals.")
+      .def_readonly("windowCentre",
+                    &RecursiveQuotient::CraigBamptonRead::windowCentre)
+      .def_readonly("windowRadius",
+                    &RecursiveQuotient::CraigBamptonRead::windowRadius)
+      .def_readonly("retentionRadius",
+                    &RecursiveQuotient::CraigBamptonRead::retentionRadius)
       .def_readonly("windowLower",
                     &RecursiveQuotient::CraigBamptonRead::windowLower)
       .def_readonly("windowUpper",
@@ -3800,6 +3932,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::CraigBamptonRead::reducedMass)
       .def_readonly("discardedModeGap",
                     &RecursiveQuotient::CraigBamptonRead::discardedModeGap)
+      .def_readonly("windowSpectrum",
+                    &RecursiveQuotient::CraigBamptonRead::windowSpectrum)
       .def_readonly("windowEigenvalues",
                     &RecursiveQuotient::CraigBamptonRead::windowEigenvalues)
       .def_readonly("eigenResiduals",
@@ -3809,16 +3943,24 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::LabeledFiberSumRead>(recursiveQuotient,
       "LabeledFiberSumRead",
-      "The abstract labeled sum of retained fibers: embedding J into the "
-      "chain space, Gram G = J^dag W J, the declared policy, gram defect, "
-      "kernel nullity, and nominal vs effective ranks. Adjacent fibers may "
-      "overlap on shared interface cells; a direct sum is never asserted.")
+      "The abstract labeled sum of retained fibers: embedding J (= Y) into "
+      "the chain space, the explicit left embedding Y~ when the bands carry "
+      "their left Riesz frames, the overlap Gram (G = Y~^T Y against the "
+      "left embedding, else J^dag W J on an operator level and J^T M J on a "
+      "pencil level), the declared policy, gram defect, kernel nullity, and "
+      "nominal vs effective ranks. Adjacent fibers may overlap on shared "
+      "interface cells; a direct sum is never asserted.")
       .def_readonly("summandComponents",
                     &RecursiveQuotient::LabeledFiberSumRead::summandComponents)
       .def_readonly("summandRanks",
                     &RecursiveQuotient::LabeledFiberSumRead::summandRanks)
       .def_readonly("embedding",
                     &RecursiveQuotient::LabeledFiberSumRead::embedding)
+      .def_readonly("leftEmbedding",
+                    &RecursiveQuotient::LabeledFiberSumRead::leftEmbedding,
+                    "The explicit left embedding Y~ (flat, fineDim x "
+                    "totalRank), fixed before the overlap test; empty when "
+                    "the level's metric dual is the left embedding.")
       .def_readonly("gram", &RecursiveQuotient::LabeledFiberSumRead::gram)
       .def_readonly("policy", &RecursiveQuotient::LabeledFiberSumRead::policy)
       .def_readonly("gramDefect",
@@ -3831,6 +3973,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::LabeledFiberSumRead::effectiveRank)
       .def_readonly("quotientBasis",
                     &RecursiveQuotient::LabeledFiberSumRead::quotientBasis)
+      .def_readonly("leftQuotientBasis",
+                    &RecursiveQuotient::LabeledFiberSumRead::leftQuotientBasis,
+                    "The left partner L_q of quotientBasis R_q: the quotient "
+                    "of a one-particle matrix is L_q^T X R_q.")
       .def_readonly(
           "fromCertifiedBands",
           &RecursiveQuotient::LabeledFiberSumRead::fromCertifiedBands)
@@ -3849,11 +3995,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "CertifiedBand",
       "One certified isolated band handed to certifiedFiberSum as the summand "
       "E_v of the master recursion: its right frame over this level's fine "
-      "coordinates, its rank, its isolation gaps and frequency window, "
-      "whether its producing configuration accepted it, and its certificate.")
+      "coordinates, optionally its local left Riesz frame (Phi~^T Phi = I, "
+      "the left embedding of the overlap certificate), its rank, its "
+      "isolation gaps and frequency window, whether its producing "
+      "configuration accepted it, and its certificate.")
       .def(py::init<>())
       .def_readwrite("component", &RecursiveQuotient::CertifiedBand::component)
       .def_readwrite("frame", &RecursiveQuotient::CertifiedBand::frame)
+      .def_readwrite("leftFrame", &RecursiveQuotient::CertifiedBand::leftFrame,
+                     "The band's local left Riesz frame Phi~ (flat, "
+                     "dimension x rank), paired with frame by the plain "
+                     "transpose; empty: the level's metric dual stands in.")
       .def_readwrite("rank", &RecursiveQuotient::CertifiedBand::rank)
       .def_readwrite("lowerGap", &RecursiveQuotient::CertifiedBand::lowerGap)
       .def_readwrite("upperGap", &RecursiveQuotient::CertifiedBand::upperGap)
@@ -3861,6 +4013,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &RecursiveQuotient::CertifiedBand::frequencyLower)
       .def_readwrite("frequencyUpper",
                      &RecursiveQuotient::CertifiedBand::frequencyUpper)
+      .def_readwrite("windowCentre",
+                     &RecursiveQuotient::CertifiedBand::windowCentre,
+                     "Centre of the band's window disc in the complex plane (NaN when the "
+                     "band was declared by its real extent alone).")
+      .def_readwrite("windowRadius",
+                     &RecursiveQuotient::CertifiedBand::windowRadius,
+                     "Radius of the band's window disc (NaN when declared by real extent alone).")
       .def_readwrite("accepted", &RecursiveQuotient::CertifiedBand::accepted)
       .def_readwrite("certificate",
                      &RecursiveQuotient::CertifiedBand::certificate);
@@ -3880,6 +4039,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyLower)
       .def_readonly("frequencyUpper",
                     &RecursiveQuotient::CertifiedFiberSummand::frequencyUpper)
+      .def_readonly("windowCentre",
+                    &RecursiveQuotient::CertifiedFiberSummand::windowCentre)
+      .def_readonly("windowRadius",
+                    &RecursiveQuotient::CertifiedFiberSummand::windowRadius)
       .def_readonly("accepted",
                     &RecursiveQuotient::CertifiedFiberSummand::accepted)
       .def_readonly("certificate",
@@ -3914,8 +4077,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::FockStageRead>(recursiveQuotient,
       "FockStageRead",
-      "The Fock stage over a labeled sum: the one-particle compression "
-      "h = J^dag W L J, the Gram on the same basis, the pencil spectrum, "
+      "The Fock stage over a labeled sum: the one-particle compression in "
+      "the pairing its Gram was built in (h = Y~^T L Y, J^T A~ J on a pencil "
+      "level, J^dag W L J on an operator level; named by `pairing`), the "
+      "Gram on the same basis, the pencil spectrum, "
       "2^M as fockDimension, and the exact free many-body spectrum as "
       "occupation subset sums. The 2^M space is never materialized and the "
       "spectrum refuses past the declared term budget.")
@@ -3926,6 +4091,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("oneParticle",
                     &RecursiveQuotient::FockStageRead::oneParticle)
       .def_readonly("gram", &RecursiveQuotient::FockStageRead::gram)
+      .def_readonly("pairing", &RecursiveQuotient::FockStageRead::pairing,
+                    "The one pairing h and G were compressed in: "
+                    "'metric-hermitian', 'metric-transpose' or "
+                    "'left-embedding'.")
       .def_readonly("oneParticleSpectrum",
                     &RecursiveQuotient::FockStageRead::oneParticleSpectrum)
       .def_readonly("fockDimension",
@@ -3959,6 +4128,24 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &RecursiveQuotient::ResponseNetworkRead::coverageResidual)
       .def_readonly("certificate",
                     &RecursiveQuotient::ResponseNetworkRead::certificate);
+
+  py::class_<RecursiveQuotient::ResolvedPartitionRead>(recursiveQuotient,
+      "ResolvedPartitionRead",
+      "The window form of persistentPartition, with the persistence of each "
+      "carried component reported beside the partition: how many resolutions "
+      "of the window it stood at, the resolution its support was read at, and "
+      "the weakest adjacent-resolution support overlap of its track.")
+      .def_readonly("components",
+                    &RecursiveQuotient::ResolvedPartitionRead::components)
+      .def_readonly("resolutions",
+                    &RecursiveQuotient::ResolvedPartitionRead::resolutions)
+      .def_readonly("selectedResolution",
+                    &RecursiveQuotient::ResolvedPartitionRead::selectedResolution)
+      .def_readonly(
+          "componentPersistence",
+          &RecursiveQuotient::ResolvedPartitionRead::componentPersistence)
+      .def_readonly("worstOverlap",
+                    &RecursiveQuotient::ResolvedPartitionRead::worstOverlap);
 
   py::class_<RecursiveQuotient::SheafRealizationRead>(recursiveQuotient,
       "SheafRealizationRead",
@@ -4002,37 +4189,50 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
           "overCells",
           [](std::shared_ptr<Spacetime> st, int degree,
              const std::vector<std::vector<std::vector<std::uint64_t>>> &cells,
-             const RecursiveQuotient::Options &options, AnalyticCache *cache) {
+             const RecursiveQuotient::Options &options, AnalyticCache *cache,
+             std::optional<HodgeLaplacian::MetricSource> source) {
             std::shared_ptr<AnalyticCache> held;
             if (cache) held = std::shared_ptr<AnalyticCache>(cache, [](AnalyticCache *) {});
-            return RecursiveQuotient::overCells(std::move(st), degree, cells,
-                                                options, std::move(held));
+            return RecursiveQuotient::overCells(
+                std::move(st), degree, cells, options, std::move(held),
+                source.value_or(HodgeLaplacian::defaultMetricSource()));
           },
           py::arg("spacetime"), py::arg("degree"), py::arg("component_cells"),
           py::arg("options") = RecursiveQuotient::Options(),
-          py::arg("cache") = nullptr,
+          py::arg("cache") = nullptr, py::arg("metric_source") = py::none(),
           // the non-owning cache pointer must outlive the quotient
           py::keep_alive<0, 5>(),
           "Build over the spacetime's Hodge operator at `degree` with "
           "components as explicit k-cell sets (vertex-id tuples, matched by "
           "vertex SET). An AnalyticCache bound to the same spacetime enables "
-          "per-component reuse across accepted moves.")
+          "per-component reuse across accepted moves. The operator and its "
+          "metric come from one metric_source (None: the process-wide "
+          "HodgeLaplacian.defaultMetricSource() at call time): WhitneyPencil "
+          "builds a pencil level over (A~_k^U, M_k^U) of HodgeLaplacian.pencil; "
+          "DiagonalWeights an operator level over laplacian(k) with weights(k).")
       .def_static(
           "overVertexSupports",
           [](std::shared_ptr<Spacetime> st, int degree,
              const std::vector<std::vector<std::uint64_t>> &supports,
-             const RecursiveQuotient::Options &options, AnalyticCache *cache) {
+             const RecursiveQuotient::Options &options, AnalyticCache *cache,
+             std::optional<HodgeLaplacian::MetricSource> source) {
             std::shared_ptr<AnalyticCache> held;
             if (cache) held = std::shared_ptr<AnalyticCache>(cache, [](AnalyticCache *) {});
             return RecursiveQuotient::overVertexSupports(
-                std::move(st), degree, supports, options, std::move(held));
+                std::move(st), degree, supports, options, std::move(held),
+                source.value_or(HodgeLaplacian::defaultMetricSource()));
           },
           py::arg("spacetime"), py::arg("degree"), py::arg("vertex_supports"),
           py::arg("options") = RecursiveQuotient::Options(),
-          py::arg("cache") = nullptr, py::keep_alive<0, 5>(),
+          py::arg("cache") = nullptr, py::arg("metric_source") = py::none(),
+          py::keep_alive<0, 5>(),
           "Build with components as vertex supports (the PersistentModularity "
           "convention): a k-cell belongs to a component when ALL its vertices "
-          "lie in the support; unclaimed cells form one residual component.")
+          "lie in the support; unclaimed cells form one residual component. "
+          "metric_source as in overCells.")
+      .def("metricSource", &RecursiveQuotient::metricSource,
+          "The metric source a spacetime-backed level was built on; None on the "
+          "matrix and pencil paths and on child levels.")
       .def_property_readonly("dimension", &RecursiveQuotient::dimension)
       .def_property_readonly("componentCount",
                              &RecursiveQuotient::componentCount)
@@ -4072,14 +4272,31 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Algebraic multiplicity from the unwrapped det-phase windings "
            "(response + interior, reported separately), geometric from "
            "dim ker F_B(lambda); node count doubles until stable.")
-      .def("craigBampton", &RecursiveQuotient::craigBampton,
+      .def("craigBampton",
+           py::overload_cast<double, double, double, double>(
+               &RecursiveQuotient::craigBampton, py::const_),
            py::arg("window_lower"), py::arg("window_upper"),
            py::arg("mode_cutoff"), py::arg("residual_tolerance") = -1.0,
-           "Craig-Bampton retained-mode basis + reduced (K, M) pencil over "
-           "the declared window (certified approximation: the certificate "
-           "holds against the caller-declared residual_tolerance; negative "
-           "selects the strict Options.tolerance). Refuses the non-normal "
-           "regime and indefinite chain metrics.")
+           "Craig-Bampton retained-mode basis + reduced (K, M) pencil declared by a "
+           "real window: [a, b] is the disc with centre (a+b)/2 and radius (b-a)/2, "
+           "and mode_cutoff is the retention disc's real upper edge, so the retention "
+           "radius is mode_cutoff - (a+b)/2. Certified approximation: the certificate "
+           "holds against the caller-declared residual_tolerance; negative selects the "
+           "strict Options.tolerance. It runs in every regime: the adjoint pairing "
+           "against the positive diagonal chain metric in the two Hermitian regimes, "
+           "the transpose pairing against the level's own metric in the non-normal and "
+           "complex-symmetric-pencil ones. An indefinite chain metric is refused in a "
+           "Hermitian regime, a singular interior or reduced metric in a bilinear one.")
+      .def("craigBampton",
+           py::overload_cast<std::complex<double>, double, double, double>(
+               &RecursiveQuotient::craigBampton, py::const_),
+           py::arg("window_centre"), py::arg("window_radius"),
+           py::arg("retention_radius"), py::arg("residual_tolerance") = -1.0,
+           "The same surrogate over a declared window disc |theta - centre| <= radius "
+           "in the complex spectral plane: a fixed-interface mode is retained when its "
+           "eigenvalue is within retention_radius of the centre and a reduced "
+           "eigenvalue is claimed when it lies in the disc, by complex distance in "
+           "every regime. retention_radius must cover window_radius.")
       .def("labeledFiberSum", &RecursiveQuotient::labeledFiberSum,
            "The abstract labeled sum of retained fibers with embedding J and "
            "Gram G = J^dag W J under the run's declared policy.")
@@ -4118,7 +4335,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "the pencil spectrum, and the exact free many-body spectrum as "
            "occupation subset sums (refusing past max_terms).")
       .def_static("persistentPartition",
-                  &RecursiveQuotient::persistentPartition, py::arg("op"),
+                  py::overload_cast<const std::vector<std::complex<double>> &,
+                                    int, double, int, std::uint64_t>(
+                      &RecursiveQuotient::persistentPartition),
+                  py::arg("op"),
                   py::arg("dim"), py::arg("gamma") = 1.0,
                   py::arg("restarts") = 4, py::arg("base_seed") = 0,
                   "P = PersistentPartition(R): partition a response "
@@ -4126,12 +4346,45 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "symmetrized off-diagonal magnitude graph. Covers every "
                   "index exactly once; isolated coordinates come back as "
                   "singletons.")
+      .def_static("persistentPartition",
+                  py::overload_cast<const std::vector<std::complex<double>> &,
+                                    int, const std::vector<double> &, int,
+                                    std::uint64_t>(
+                      &RecursiveQuotient::persistentPartition),
+                  py::arg("op"), py::arg("dim"), py::arg("gammas"),
+                  py::arg("restarts") = 4, py::arg("base_seed") = 0,
+                  "persistentPartition over a declared window of "
+                  "resolutions: the resolution parameter is a free knob of "
+                  "the proposer, so only the components whose persistence "
+                  "track covers the whole window are kept, each proposing "
+                  "its support at the first resolution of the window. Every "
+                  "coordinate no such component claimed comes back as a "
+                  "singleton.")
+      .def_static("persistentPartitionOverResolutions",
+                  &RecursiveQuotient::persistentPartitionOverResolutions,
+                  py::arg("op"), py::arg("dim"), py::arg("gammas"),
+                  py::arg("restarts") = 4, py::arg("base_seed") = 0,
+                  py::arg("overlap_threshold") = 0.5,
+                  "The window form of persistentPartition, with the "
+                  "persistence of every carried component reported beside the "
+                  "partition: the same scan, the same rule and the same "
+                  "result. A recursion that records why a level was "
+                  "partitioned as it was reads this form instead.")
       .def("childPersistentPartition",
-           &RecursiveQuotient::childPersistentPartition,
+           py::overload_cast<double, int, std::uint64_t>(
+               &RecursiveQuotient::childPersistentPartition, py::const_),
            py::arg("gamma") = 1.0, py::arg("restarts") = 4,
            py::arg("base_seed") = 0,
            "persistentPartition of this level's reduced operator — the "
            "partition P_l to hand straight to nextLevel.")
+      .def("childPersistentPartition",
+           py::overload_cast<const std::vector<double> &, int, std::uint64_t>(
+               &RecursiveQuotient::childPersistentPartition, py::const_),
+           py::arg("gammas"), py::arg("restarts") = 4,
+           py::arg("base_seed") = 0,
+           "childPersistentPartition over a declared window of resolutions: "
+           "the components of this level's reduced operator that persist "
+           "across the whole window.")
       .def("nextLevelAtLambda",
            py::overload_cast<const std::vector<std::vector<int>> &,
                              std::complex<double>, double, double,
@@ -4180,4 +4433,1156 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Drop memoized results and re-read the operator values for the "
            "same cell complex (call after an accepted metric move).")
       .def_property_readonly("options", &RecursiveQuotient::options);
+
+  // ================================================================
+  // The holomorphic joint action S(z, U, Gamma) and its solves
+  // ================================================================
+
+  py::class_<SpectralMomentConstraint>(m, "SpectralMomentConstraint",
+      "One holomorphic spectral constraint of the targeted action S_spec: the "
+      "power sum p_j(h) = tr(h^j) of the complex edge-mode operator is "
+      "required to equal a prescribed complex number p_j*, imposed by an "
+      "independent complex Lagrange multiplier xi_j rather than by a penalty. "
+      "Stationarity in xi_j is the FULL complex equation p_j(h) - p_j* = 0, "
+      "both parts, with no residual norm minimized in its place. These target "
+      "terms belong to explicitly labelled controlled synthesis and are absent "
+      "in emergence mode.")
+      .def(py::init<>())
+      .def(py::init([](int order, std::complex<double> target,
+                       std::complex<double> multiplier) {
+             SpectralMomentConstraint constraint;
+             constraint.order = order;
+             constraint.target = target;
+             constraint.multiplier = multiplier;
+             return constraint;
+           }),
+           py::arg("order"), py::arg("target"),
+           py::arg("multiplier") = std::complex<double>{0.0, 0.0})
+      .def_readwrite("order", &SpectralMomentConstraint::order,
+                     "The moment index j >= 1, the power h is raised to. It is "
+                     "not a simplicial degree.")
+      .def_readwrite("target", &SpectralMomentConstraint::target,
+                     "p_j* = sum_a (lambda_a*)^j, the same power sum of the "
+                     "prescribed eigenvalue multiset.")
+      .def_readwrite("multiplier", &SpectralMomentConstraint::multiplier,
+                     "The complex Lagrange multiplier xi_j at the current "
+                     "point of a solve. A variable, not a configured weight.");
+
+  py::class_<JointActionDeclaration>(m, "JointActionDeclaration",
+      "Everything that fixes which action S(z, U, Gamma) a JointAction is: the "
+      "carrier degree, the three coefficients, the carried covariance, the "
+      "spectral constraints and the metric source. Plain data.")
+      .def(py::init<>())
+      .def_readwrite("carrier_degree", &JointActionDeclaration::carrierDegree,
+                     "The simplicial degree k of the one-particle carrier. The "
+                     "operator of the action is h = h_k(z, U) and Gamma is a "
+                     "matrix over the k-cells.")
+      .def_readwrite("gravitational_weight",
+                     &JointActionDeclaration::gravitationalWeight,
+                     "w_R, the coefficient on the dual Lorentzian Regge "
+                     "action. The whitepaper's Section 7 identification is "
+                     "1/(8 pi G) in lattice units, so a caller working in the "
+                     "backreaction coupling kappa = 8 pi G sets 1/kappa.")
+      .def_readwrite("holonomy_weight",
+                     &JointActionDeclaration::holonomyWeight,
+                     "w_H, the coefficient on the face-holonomy term. It is "
+                     "the parameter the whitepaper calls beta when it takes "
+                     "the bare connection stiffness in Wilson-plaquette form.")
+      .def_readwrite("matter_weight", &JointActionDeclaration::matterWeight,
+                     "w_M, the coefficient on tr(Gamma h(z, U)), the carried "
+                     "state's bilinear action density. Zero is strict "
+                     "emergence: the geometry is blind to the carried state.")
+      .def_readwrite("covariance", &JointActionDeclaration::covariance,
+                     "Gamma = Phi PhiTilde^T, flat row-major over the k-cells "
+                     "in canonical ChainComplex order. Complex bilinear: no "
+                     "adjoint is taken of it and it need not be Hermitian.")
+      .def_readwrite("moment_constraints",
+                     &JointActionDeclaration::momentConstraints,
+                     "The declared holomorphic spectral constraints. Empty in "
+                     "emergence mode.")
+      .def_readwrite("metric_source", &JointActionDeclaration::metricSource,
+                     "Where the carrier operator's metric comes from. "
+                     "WhitneyPencil is the whitepaper's W_k = M_k^-1 and gives "
+                     "the covariant h_k(z, U); under DiagonalWeights the "
+                     "operator is blind to U, so only the face-holonomy term "
+                     "then depends on the connection.");
+
+  py::class_<JointAction>(m, "JointAction",
+      "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
+      "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
+      "S = w_R S_Regge(z) + w_H S_hol(U) + w_M tr(Gamma h(z, U)) + sum_j xi_j "
+      "(p_j(h) - p_j*), with S_hol the branch-free plaquette sum over the "
+      "face holonomies F_tau = prod_e U_e^eps. The stationarity conditions are "
+      "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
+      "never the minimization of a selected real projection.\n\n"
+      "Every per-edge vector is in getEdgeList() order and every per-cell "
+      "quantity in canonical ChainComplex order. The link stationarity of an "
+      "edge is reported on its STORED source-to-target orientation, which is "
+      "the orientation the Ward current's sign convention refers to.")
+      .def(py::init<std::shared_ptr<Spacetime>, JointActionDeclaration>(),
+           py::arg("spacetime"), py::arg("declaration"))
+      .def_property_readonly("declaration", &JointAction::declaration,
+                             "The declaration this instance was built from.")
+      .def_property_readonly("spacetime", &JointAction::spacetime,
+                             "The complex the action is defined over.")
+      .def("set_multipliers", &JointAction::setMultipliers,
+           py::arg("multipliers"),
+           "Replace xi_j for every constraint, in declaration order. This is "
+           "how a solver advances the multipliers, which are variables of the "
+           "stationarity system rather than configuration.")
+      .def("multipliers", &JointAction::multipliers,
+           "The current xi_j, in declaration order.")
+      .def("carrier_operator", &JointAction::carrierOperator,
+           "h_k(z, U), flat row-major over the k-cells.")
+      .def("face_holonomies", &JointAction::faceHolonomies,
+           "F_tau per triangle, the ordered product of the links over the "
+           "incidences of the boundary map. No sum of phases and no logarithm "
+           "is formed.")
+      .def("power_sums", &JointAction::powerSums,
+           "p_j(h) = tr(h^j) for each declared constraint, by repeated "
+           "multiplication, so a defective operator needs no "
+           "eigendecomposition and no eigenvalue ordering.")
+      .def("moment_residuals", &JointAction::momentResiduals,
+           "p_j(h) - p_j* for each declared constraint: the exact complex "
+           "stationarity equation in xi_j.")
+      .def("regge_term", &JointAction::reggeTerm, "w_R S_Regge(z).")
+      .def("holonomy_term", &JointAction::holonomyTerm, "w_H S_hol(U).")
+      .def("matter_term", &JointAction::matterTerm,
+           "w_M tr(Gamma h(z, U)).")
+      .def("spectral_term", &JointAction::spectralTerm,
+           "sum_j xi_j (p_j(h) - p_j*).")
+      .def("value", &JointAction::value,
+           "S(z, U, Gamma), the sum of the four terms.")
+      .def("length_stationarity", &JointAction::lengthStationarity,
+           "dS/dz_e per edge, assembled from the framework's exact analytic "
+           "gradients. No finite difference and no discarded imaginary part.")
+      .def("link_stationarity", &JointAction::linkStationarity,
+           "U_e dS/dU_e per edge on its stored orientation, from the closed "
+           "form of the holonomy term and the identity U d/dU = -i d/dphi "
+           "applied to the exact analytic operator phase gradient.")
+      .def("ward_current", &JointAction::wardCurrent,
+           "j_xy = U_xy dS/dU_xy of Section 13.4, which is link_stationarity "
+           "under its other name. Odd under reversing an edge.")
+      .def("canonical_ward_current", &JointAction::canonicalWardCurrent,
+           "The Ward current on the canonical degree-one cells, in the chain "
+           "complex's cell order and on each cell's ascending-vertex "
+           "orientation: ward_current reordered and re-signed to the indexing "
+           "every chain-level consumer of it uses.")
+      .def("ward_current_divergence", &JointAction::wardCurrentDivergence,
+           "(d j)_x per vertex. It vanishes identically for every "
+           "gauge-invariant term; a fixed Gamma held while the connection "
+           "varies breaks the identity, and this measures by how much.")
+      .def("hellmann_feynman_length_force",
+           &JointAction::hellmannFeynmanLengthForce,
+           "tr(Gamma dh/dz_e) per edge, the carried state's whole "
+           "contribution to the length equation, without w_M and without the "
+           "geometric terms.")
+      .def("hellmann_feynman_link_force",
+           &JointAction::hellmannFeynmanLinkForce,
+           "tr(Gamma U_e dh/dU_e) per edge, the link counterpart. Identically "
+           "zero when the operator is blind to the connection.")
+      .def("occupation_numbers", &JointAction::occupationNumbers,
+           "n_c = Gamma_cc per k-cell, the derived readout. Complex in "
+           "general, because Gamma is a complex bilinear covariance.")
+      .def("stationarity_residual", &JointAction::stationarityResidual,
+           "The whole residual (dS/dz; U dS/dU; p_j - p_j*) in that block "
+           "order, the vector a holomorphic root find drives to zero.")
+      .def("stationarity_residual_norm",
+           &JointAction::stationarityResidualNorm,
+           "The Euclidean norm of stationarity_residual, a convergence "
+           "certificate rather than a functional minimized in place of the "
+           "equations.")
+      .def("moment_gradient", &JointAction::momentGradient, py::arg("index"),
+           "(dp_j/dz; U dp_j/dU) for one declared constraint, the exact "
+           "analytic Jacobian column its multiplier contributes.")
+      .def("edge_count", &JointAction::edgeCount)
+      .def("constraint_count", &JointAction::constraintCount)
+      .def("carrier_eigenvalues", &JointAction::carrierEigenvalues,
+           "The eigenvalues of h_k(z, U), unordered.")
+      .def("ordered_carrier_eigenvalues",
+           &JointAction::orderedCarrierEigenvalues,
+           py::arg("ascending_real_part") = true,
+           "The eigenvalues in the order occupation_projector fills them.")
+      .def("occupation_projector", &JointAction::occupationProjector,
+           py::arg("occupied"), py::arg("ascending_real_part") = true,
+           "The spectral (Riesz) projector onto the occupied modes: Gamma = V "
+           "diag(chi) V^-1, which is exactly Gamma = Phi PhiTilde^T for the "
+           "matched left/right frame pair. Idempotent by construction, with no "
+           "adjoint anywhere, and Hermitian only when h is normal.")
+      .def_static("term_names", &JointAction::termNames,
+                  "The four declared terms, in the order value sums them.");
+
+  py::enum_<HolomorphicJacobianMode>(m, "HolomorphicJacobianMode",
+      "How the Jacobian of the stationarity system is formed.\n\n"
+      "ContourDerivative is the Cauchy derivative on a small circle, which for "
+      "a residual analytic on the whole disc converges geometrically in the "
+      "node count and is exact to rounding at the default eight nodes.\n\n"
+      "RealAxisDifference is the two-node rule with both nodes placed exactly "
+      "on the real axis. It is the rule for a residual analytic on each side of "
+      "a cut along the real axis but not across it, which is what the dual "
+      "Regge action's exact gradient is: the deficit angle is taken on the "
+      "principal branch with no Riemann-sheet label, so an arbitrarily small "
+      "positive imaginary part in a squared length shifts a hinge's deficit by "
+      "2 pi. Its truncation is O(radius^2), so a caller declaring it usually "
+      "declares a smaller radius with it.")
+      .value("ContourDerivative", HolomorphicJacobianMode::ContourDerivative)
+      .value("RealAxisDifference",
+             HolomorphicJacobianMode::RealAxisDifference);
+
+  py::class_<HolomorphicRelaxationDeclaration>(
+      m, "HolomorphicRelaxationDeclaration",
+      "The numerical controls of a holomorphic Newton solve. None of them "
+      "changes which equations are solved.")
+      .def(py::init<>())
+      .def_readwrite("relax_lengths",
+                     &HolomorphicRelaxationDeclaration::relaxLengths,
+                     "Whether the squared lengths are variables. When false "
+                     "they are held and their equations are dropped, because "
+                     "requiring an equation of a frozen variable would "
+                     "overdetermine the system.")
+      .def_readwrite("relax_links",
+                     &HolomorphicRelaxationDeclaration::relaxLinks,
+                     "Whether the links are variables, under the same rule.")
+      .def_readwrite("relax_multipliers",
+                     &HolomorphicRelaxationDeclaration::relaxMultipliers,
+                     "Whether the multipliers are variables, under the same "
+                     "rule.")
+      .def_readwrite("maximum_iterations",
+                     &HolomorphicRelaxationDeclaration::maximumIterations)
+      .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
+                     "The residual norm at or below which the solve is "
+                     "declared converged.")
+      .def_readwrite("contour_nodes",
+                     &HolomorphicRelaxationDeclaration::contourNodes,
+                     "The number of nodes on the contour. At least five.")
+      .def_readwrite("contour_radius",
+                     &HolomorphicRelaxationDeclaration::contourRadius,
+                     "The contour radius, relative to the magnitude of the "
+                     "coordinate being differentiated and floored at one.")
+      .def_readwrite("maximum_dampings",
+                     &HolomorphicRelaxationDeclaration::maximumDampings,
+                     "The largest number of step halvings tried when a full "
+                     "Newton step does not reduce the residual norm.")
+      .def_readwrite("jacobian_mode",
+                     &HolomorphicRelaxationDeclaration::jacobianMode)
+      .def_readwrite("rank_tolerance",
+                     &HolomorphicRelaxationDeclaration::rankTolerance,
+                     "The relative threshold below which a singular value of "
+                     "the Jacobian counts as zero in the minimum-norm solve.");
+
+  py::class_<HolomorphicStep>(m, "HolomorphicStep",
+      "One Newton iteration, recorded so a run can be read back rather than "
+      "only its outcome.")
+      .def(py::init<>())
+      .def_readwrite("iteration", &HolomorphicStep::iteration)
+      .def_readwrite("residual_norm", &HolomorphicStep::residualNorm)
+      .def_readwrite("step_norm", &HolomorphicStep::stepNorm)
+      .def_readwrite("damping", &HolomorphicStep::damping,
+                     "One for a full Newton step, a negative power of two "
+                     "otherwise.")
+      .def_readwrite("jacobian_rank", &HolomorphicStep::jacobianRank,
+                     "Below the variable count whenever the connection is "
+                     "relaxed, because the action is gauge invariant.")
+      .def_readwrite("action", &HolomorphicStep::action);
+
+  py::class_<HolomorphicRelaxationReport>(m, "HolomorphicRelaxationReport",
+      "What a solve reached, and the trace of how it got there.")
+      .def(py::init<>())
+      .def_readwrite("steps", &HolomorphicRelaxationReport::steps)
+      .def_readwrite("converged", &HolomorphicRelaxationReport::converged)
+      .def_readwrite("initial_residual_norm",
+                     &HolomorphicRelaxationReport::initialResidualNorm)
+      .def_readwrite("residual_norm",
+                     &HolomorphicRelaxationReport::residualNorm)
+      .def_readwrite("action", &HolomorphicRelaxationReport::action)
+      .def_readwrite("multipliers", &HolomorphicRelaxationReport::multipliers)
+      .def_readwrite("moment_residuals",
+                     &HolomorphicRelaxationReport::momentResiduals);
+
+  py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
+      "A Newton root find on the holomorphic stationarity equations of a "
+      "JointAction: dS/dz = 0, U dS/dU = 0 and p_j(h) = p_j*.\n\n"
+      "It solves the equations themselves. It does not minimize the residual "
+      "norm, a real part, or any other real projection: the norm appears only "
+      "as the quantity the damping compares and as the convergence "
+      "certificate. The connection is updated MULTIPLICATIVELY, U -> U e^delta, "
+      "which on the stored phase is the exact increment phi -> phi - i delta "
+      "and selects no logarithm branch. A new squared length is written back "
+      "through the square root taken by continuation from the edge's current "
+      "length, so a relaxation path never jumps between the two sheets.\n\n"
+      "The Newton system is solved in the minimum-norm sense, because the "
+      "action is gauge invariant and its connection block is therefore "
+      "singular along every pure-gauge direction; the minimum-norm solution is "
+      "the one orthogonal to the gauge orbit.")
+      .def(py::init<JointAction, HolomorphicRelaxationDeclaration>(),
+           py::arg("action"), py::arg("declaration"))
+      .def("solve", &HolomorphicRelaxation::solve,
+           "Run the solve, writing the relaxed fields into the complex.")
+      .def_property_readonly("action", &HolomorphicRelaxation::action,
+                             "The action, carrying the multipliers as the "
+                             "solve left them.")
+      .def("jacobian", &HolomorphicRelaxation::jacobian,
+           "The Jacobian at the current point, flat row-major. Forming it "
+           "restores the complex exactly, so the geometry is unchanged.")
+      .def("equation_count", &HolomorphicRelaxation::equationCount)
+      .def("variable_count", &HolomorphicRelaxation::variableCount);
+
+  py::enum_<OccupationOrder>(m, "OccupationOrder",
+      "Which modes of the carrier operator the covariance projects onto. The "
+      "whitepaper names the filled modes 'the occupied modes' and fixes no "
+      "order for a genuinely complex spectrum, so the rule is declared and "
+      "recorded rather than assumed.")
+      .value("AscendingRealPart", OccupationOrder::AscendingRealPart)
+      .value("AscendingModulus", OccupationOrder::AscendingModulus);
+
+  py::class_<SelfConsistentMeanFieldDeclaration>(
+      m, "SelfConsistentMeanFieldDeclaration",
+      "The configuration of a self-consistent backreaction solve.")
+      .def(py::init<>())
+      .def_readwrite("occupied_modes",
+                     &SelfConsistentMeanFieldDeclaration::occupiedModes,
+                     "How many modes of the carrier operator are filled.")
+      .def_readwrite("occupation_order",
+                     &SelfConsistentMeanFieldDeclaration::occupationOrder,
+                     "Which modes those are.")
+      .def_readwrite("maximum_iterations",
+                     &SelfConsistentMeanFieldDeclaration::maximumIterations)
+      .def_readwrite("tolerance",
+                     &SelfConsistentMeanFieldDeclaration::tolerance,
+                     "Both the force norm and the covariance change must sit "
+                     "at or below this: a geometry stationary for a covariance "
+                     "that is still moving is not a fixed point, and neither "
+                     "is a settled covariance on a geometry that still carries "
+                     "a force.")
+      .def_readwrite("mixing", &SelfConsistentMeanFieldDeclaration::mixing,
+                     "The fraction of the new projector mixed in at each step. "
+                     "One is the plain re-occupation and the only value for "
+                     "which the covariance is a projector at every step.")
+      .def_readwrite("geometry",
+                     &SelfConsistentMeanFieldDeclaration::geometry,
+                     "The inner holomorphic relaxation that makes the geometry "
+                     "stationary against the current covariance.");
+
+  py::class_<SelfConsistentMeanFieldStep>(m, "SelfConsistentMeanFieldStep",
+      "One outer iteration of a self-consistent solve.")
+      .def(py::init<>())
+      .def_readwrite("iteration", &SelfConsistentMeanFieldStep::iteration)
+      .def_readwrite("force_norm", &SelfConsistentMeanFieldStep::forceNorm)
+      .def_readwrite("covariance_change",
+                     &SelfConsistentMeanFieldStep::covarianceChange)
+      .def_readwrite("purity_defect",
+                     &SelfConsistentMeanFieldStep::purityDefect,
+                     "||Gamma^2 - Gamma||_F, the Gaussianity certificate.")
+      .def_readwrite("action", &SelfConsistentMeanFieldStep::action)
+      .def_readwrite("occupied_energy",
+                     &SelfConsistentMeanFieldStep::occupiedEnergy,
+                     "tr(Gamma h), which for a spectral projector is the sum "
+                     "of the occupied eigenvalues.")
+      .def_readwrite("occupied_eigenvalues",
+                     &SelfConsistentMeanFieldStep::occupiedEigenvalues)
+      .def_readwrite("spectral_gap",
+                     &SelfConsistentMeanFieldStep::spectralGap,
+                     "The gap that isolates the occupied band.")
+      .def_readwrite("geometry_converged",
+                     &SelfConsistentMeanFieldStep::geometryConverged)
+      .def_readwrite("geometry_residual_norm",
+                     &SelfConsistentMeanFieldStep::geometryResidualNorm);
+
+  py::class_<SelfConsistentMeanFieldReport>(m, "SelfConsistentMeanFieldReport",
+      "What a self-consistent solve reached.")
+      .def(py::init<>())
+      .def_readwrite("steps", &SelfConsistentMeanFieldReport::steps)
+      .def_readwrite("converged", &SelfConsistentMeanFieldReport::converged)
+      .def_readwrite("force_norm", &SelfConsistentMeanFieldReport::forceNorm)
+      .def_readwrite("covariance_change",
+                     &SelfConsistentMeanFieldReport::covarianceChange)
+      .def_readwrite("purity_defect",
+                     &SelfConsistentMeanFieldReport::purityDefect)
+      .def_readwrite("covariance", &SelfConsistentMeanFieldReport::covariance)
+      .def_readwrite("occupied_eigenvalues",
+                     &SelfConsistentMeanFieldReport::occupiedEigenvalues)
+      .def_readwrite("occupied_energy",
+                     &SelfConsistentMeanFieldReport::occupiedEnergy)
+      .def_readwrite("spectral_gap",
+                     &SelfConsistentMeanFieldReport::spectralGap)
+      .def_readwrite("action", &SelfConsistentMeanFieldReport::action);
+
+  py::class_<SelfConsistentMeanField>(m, "SelfConsistentMeanField",
+      "The certificates-blind mean-field backreaction of Section 7, solved to "
+      "self-consistency.\n\n"
+      "The only channel from the state to the geometry is the bilinear action "
+      "density, so the force on an edge is tr(Gamma dh/dz_e) and the force on "
+      "a link is tr(Gamma U_e dh/dU_e); both are complex and neither is "
+      "projected onto a real part. The solve alternates making the geometry "
+      "stationary against the whole action at fixed Gamma with re-occupying "
+      "Gamma from the modes of h at the relaxed geometry. A fixed point is the "
+      "self-consistent polaron: Gamma* projects onto modes of h(z*) and the "
+      "state's force balances the geometric action edge by edge. It is a "
+      "stationary point of a complex action, not a minimum of a real one.")
+      .def(py::init<JointAction, SelfConsistentMeanFieldDeclaration>(),
+           py::arg("action"), py::arg("declaration"))
+      .def("solve", &SelfConsistentMeanField::solve,
+           "Run the solve, writing the relaxed geometry into the complex.")
+      .def_property_readonly("action", &SelfConsistentMeanField::action,
+                             "The action, carrying the covariance and the "
+                             "multipliers as the solve left them.");
+
+  // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
+
+  py::class_<WardFluxConfig>(m, "WardFluxConfig",
+      "Every threshold of the Ward-flux read.")
+      .def(py::init<>())
+      .def_readwrite("divergence_tolerance", &WardFluxConfig::divergenceTolerance,
+                     "|(d j)_x| at or below this is a vanishing divergence.")
+      .def_readwrite("integrality_tolerance",
+                     &WardFluxConfig::integralityTolerance,
+                     "|phi_j(Sigma) - n| at or below this lets the flux be "
+                     "read as the integer quark number N_q.")
+      .def_readwrite("imaginary_tolerance", &WardFluxConfig::imaginaryTolerance,
+                     "|Im phi_j(Sigma)| must be at or below this for the flux "
+                     "to be read as an integer.")
+      .def_readwrite("charge_tolerance", &WardFluxConfig::chargeTolerance,
+                     "|phi_j(Sigma) - Q_in| at or below this counts as the "
+                     "flux agreeing with the incoming boundary charge.");
+
+  py::class_<WardFluxRead>(m, "WardFluxRead",
+      "The flux phi_j(Sigma) of the complex Ward current through one "
+      "cooriented cut of the interaction cobordism W, with every certificate "
+      "Section 13.4 attaches to it.")
+      .def_readonly("crossing_edges", &WardFluxRead::crossingEdges,
+                    "The canonical C_1(W) indices of the edges the cut "
+                    "crosses.")
+      .def_readonly("crossing_signs", &WardFluxRead::crossingSigns,
+                    "The coorientation u(b) - u(a) of each crossing edge.")
+      .def_readonly("crossing_current", &WardFluxRead::crossingCurrent,
+                    "The Ward current on each crossing edge.")
+      .def_readonly("flux", &WardFluxRead::flux,
+                    "phi_j(Sigma) = <delta u, j>, the flux. Complex, never "
+                    "projected onto a real part.")
+      .def_readonly("incoming_side_divergence",
+                    &WardFluxRead::incomingSideDivergence,
+                    "The divergence summed over the cut's incoming side, "
+                    "which the divergence theorem makes minus the flux.")
+      .def_readonly("divergence_theorem_residual",
+                    &WardFluxRead::divergenceTheoremResidual,
+                    "The residual of that identity.")
+      .def_readonly("incoming_boundary_divergence",
+                    &WardFluxRead::incomingBoundaryDivergence,
+                    "Minus the divergence summed over the incoming boundary: "
+                    "the charge the current carries in through d_in W.")
+      .def_readonly("bulk_divergence_max", &WardFluxRead::bulkDivergenceMax,
+                    "max |(d j)_x| over the interior vertices of W: the Ward "
+                    "identity, measured. NaN when W has no interior vertex.")
+      .def_readonly("bulk_vertices", &WardFluxRead::bulkVertices)
+      .def_readonly("bulk_divergence_vertex",
+                    &WardFluxRead::bulkDivergenceVertex,
+                    "The interior vertex the divergence was largest at.")
+      .def_readonly("incoming_boundary_charge",
+                    &WardFluxRead::incomingBoundaryCharge,
+                    "Q_in: the fermion number the declared covariance places "
+                    "on the carrier cells of d_in W, read independently of the "
+                    "current. None when no covariance is declared.")
+      .def_readonly("incoming_boundary_cells",
+                    &WardFluxRead::incomingBoundaryCells)
+      .def_readonly("outgoing_boundary_charge",
+                    &WardFluxRead::outgoingBoundaryCharge,
+                    "Q_out: the same reading on d_out W.")
+      .def_readonly("outgoing_boundary_cells",
+                    &WardFluxRead::outgoingBoundaryCells)
+      .def_readonly("boundary_charge_residual",
+                    &WardFluxRead::boundaryChargeResidual,
+                    "|flux - Q_in|.")
+      .def_readonly("quark_number", &WardFluxRead::quarkNumber,
+                    "N_q, when the flux is integral; None otherwise.")
+      .def_readonly("quark_number_defect", &WardFluxRead::quarkNumberDefect)
+      .def_readonly("baryon_number", &WardFluxRead::baryonNumber,
+                    "B(Sigma) = N_q / 3, the whitepaper's one explicit "
+                    "physical calibration.")
+      .def_readonly("cut_separates", &WardFluxRead::cutSeparates)
+      .def_readonly("failed_certificates", &WardFluxRead::failedCertificates);
+
+  py::class_<WardSlabRead>(m, "WardSlabRead",
+      "Two cuts of one cobordism compared through the slab between them.")
+      .def_readonly("first", &WardSlabRead::first)
+      .def_readonly("second", &WardSlabRead::second)
+      .def_readonly("slab_vertices", &WardSlabRead::slabVertices,
+                    "The vertices on which the two cuts disagree.")
+      .def_readonly("flux_difference", &WardSlabRead::fluxDifference,
+                    "phi_j(u) - phi_j(u').")
+      .def_readonly("slab_divergence", &WardSlabRead::slabDivergence,
+                    "sum_x (u(x) - u'(x)) (d j)_x, the signed divergence the "
+                    "slab carries.")
+      .def_readonly("slab_identity_residual",
+                    &WardSlabRead::slabIdentityResidual,
+                    "The residual of the slab identity.");
+
+  py::class_<WardHomologyRead>(m, "WardHomologyRead",
+      "Several cuts of one cobordism read together.")
+      .def_readonly("cuts", &WardHomologyRead::cuts)
+      .def_readonly("slabs", &WardHomologyRead::slabs)
+      .def_readonly("max_flux_deviation", &WardHomologyRead::maxFluxDeviation,
+                    "The largest pairwise difference of the fluxes.")
+      .def_readonly("max_slab_divergence", &WardHomologyRead::maxSlabDivergence,
+                    "The divergence carried by the slabs between the cuts, "
+                    "which is the source content the invariance statement "
+                    "excludes.")
+      .def_readonly("invariant", &WardHomologyRead::invariant);
+
+  py::class_<IntrinsicResponseConfig>(m, "IntrinsicResponseConfig",
+      "The declared parameters of the intrinsic spectral response.")
+      .def(py::init<>())
+      .def_readwrite("left_current", &IntrinsicResponseConfig::leftCurrent,
+                     "The current the left restriction is cut from, in "
+                     "canonical degree-one cell order. Empty means the right "
+                     "current paired with itself through the transpose.")
+      .def_readwrite("degeneracy_tolerance",
+                     &IntrinsicResponseConfig::degeneracyTolerance,
+                     "Two eigenvalues this close are one degenerate band and "
+                     "share one Riesz projector.")
+      .def_readwrite("pole_tolerance", &IntrinsicResponseConfig::poleTolerance,
+                     "A sample this close to a pole is reported unavailable "
+                     "rather than as a large finite number.")
+      .def_readwrite("contour_nodes", &IntrinsicResponseConfig::contourNodes,
+                     "Quadrature nodes of the Riesz contour each band's "
+                     "residue is read on.");
+
+  py::class_<IntrinsicResponseRead>(m, "IntrinsicResponseRead",
+      "The intrinsic spectral response Upsilon_Q(lambda) of Section 13.5, "
+      "read on one cooriented cut. lambda is an eigenvalue of the slice "
+      "operator and is never relabelled as a momentum transfer.")
+      .def_readonly("slice_cells", &IntrinsicResponseRead::sliceCells)
+      .def_readonly("rho_right", &IntrinsicResponseRead::rhoRight,
+                    "The right restriction of the Ward current to the cut.")
+      .def_readonly("rho_left", &IntrinsicResponseRead::rhoLeft,
+                    "The left restriction.")
+      .def_readonly("slice_operator", &IntrinsicResponseRead::sliceOperator,
+                    "L_Sigma, flat row-major over the cut's cells.")
+      .def_readonly("poles", &IntrinsicResponseRead::poles,
+                    "The distinct eigenvalues of L_Sigma.")
+      .def_readonly("pole_multiplicity",
+                    &IntrinsicResponseRead::poleMultiplicity)
+      .def_readonly("residues", &IntrinsicResponseRead::residues,
+                    "The residue of Upsilon_Q at each pole, taken on a Riesz "
+                    "contour around the whole band.")
+      .def_readonly("samples", &IntrinsicResponseRead::samples)
+      .def_readonly("response", &IntrinsicResponseRead::response,
+                    "Upsilon_Q at each sample.")
+      .def_readonly("slope", &IntrinsicResponseRead::slope,
+                    "dUpsilon_Q/dlambda at each sample, taken exactly from the "
+                    "square of the resolvent.")
+      .def_readonly("failed_certificates",
+                    &IntrinsicResponseRead::failedCertificates);
+
+  py::class_<WardFlux>(m, "WardFlux",
+      "The flux of the complex Ward current through a cooriented cut of the "
+      "interaction cobordism W (Section 13.4) and the intrinsic spectral "
+      "response it carries (Section 13.5).\n\n"
+      "The current is the joint action's link stationarity vector, "
+      "j_xy = U_xy dS/dU_xy; nothing here re-derives it and nothing here "
+      "supplies a field of its own. The flux is not electric charge: every "
+      "edge mode carries charge one under the C* group, so the flux counts "
+      "fermions, and a flavor-dependent electric charge is not a gauge charge "
+      "of the declared fields and carries no Ward current.")
+      .def_static("flux", &WardFlux::flux, py::arg("action"),
+                  py::arg("cobordism"), py::arg("cut"),
+                  py::arg("cfg") = WardFluxConfig{},
+                  "The flux of the action's Ward current through one cut of "
+                  "the interaction cobordism W.")
+      .def_static("homologous_fluxes", &WardFlux::homologousFluxes,
+                  py::arg("action"), py::arg("cobordism"), py::arg("cuts"),
+                  py::arg("cfg") = WardFluxConfig{},
+                  "Several cuts of W read together, with the flux difference "
+                  "and the signed slab divergence of every pair.")
+      .def_static("difference", &WardFlux::difference, py::arg("state"),
+                  py::arg("matched"), py::arg("cfg") = WardFluxConfig{},
+                  "The coherent background removal of Section 13.5: the "
+                  "complex difference of two flux reads on one cut, with no "
+                  "modulus taken on either side.")
+      .def_static("intrinsic_response", &WardFlux::intrinsicResponse,
+                  py::arg("action"), py::arg("cobordism"), py::arg("cut"),
+                  py::arg("samples"),
+                  py::arg("cfg") = IntrinsicResponseConfig{},
+                  "Upsilon_Q on one cut of W, evaluated at the declared "
+                  "samples.");
+
+  // ── Section 13.3: mass is a complex bound-state pole ───────────────────
+
+  py::class_<BoundStatePoleConfig>(m, "BoundStatePoleConfig",
+      "Every declared parameter of the pole search.")
+      .def(py::init<>())
+      .def_readwrite("contour_nodes", &BoundStatePoleConfig::contourNodes)
+      .def_readwrite("refinement_nodes", &BoundStatePoleConfig::refinementNodes,
+                     "The second quadrature the refinement continuation is "
+                     "read at.")
+      .def_readwrite("max_zeros", &BoundStatePoleConfig::maxZeros)
+      .def_readwrite("max_newton_steps", &BoundStatePoleConfig::maxNewtonSteps)
+      .def_readwrite("newton_tolerance", &BoundStatePoleConfig::newtonTolerance)
+      .def_readwrite("zero_count_tolerance",
+                     &BoundStatePoleConfig::zeroCountTolerance)
+      .def_readwrite("local_radius_fraction",
+                     &BoundStatePoleConfig::localRadiusFraction)
+      .def_readwrite("rank_tolerance", &BoundStatePoleConfig::rankTolerance)
+      .def_readwrite("free_threshold", &BoundStatePoleConfig::freeThreshold,
+                     "The complex spectral value the binding shift is measured "
+                     "against. None leaves the binding shift unreported.");
+
+  py::class_<BoundStatePoleRead>(m, "BoundStatePoleRead",
+      "The zeros of D_C(s) = det F_C(s) inside one declared contour, with the "
+      "certificates Section 13.3 attaches to a bound-state pole.")
+      .def_readonly("centre", &BoundStatePoleRead::centre)
+      .def_readonly("radius", &BoundStatePoleRead::radius)
+      .def_readonly("nodes", &BoundStatePoleRead::nodes)
+      .def_readonly("zero_count", &BoundStatePoleRead::zeroCount,
+                    "The argument-principle count before it is rounded.")
+      .def_readonly("zeros", &BoundStatePoleRead::zeros,
+                    "The total algebraic multiplicity enclosed.")
+      .def_readonly("zero_count_defect", &BoundStatePoleRead::zeroCountDefect)
+      .def_readonly("interior_pole_count",
+                    &BoundStatePoleRead::interiorPoleCount,
+                    "The unretained interior poles the contour encloses, as "
+                    "the argument principle on det P_II produced them.")
+      .def_readonly("interior_poles_enclosed",
+                    &BoundStatePoleRead::interiorPolesEnclosed)
+      .def_readonly("poles", &BoundStatePoleRead::poles,
+                    "The distinct zeros s_C found inside the contour.")
+      .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity)
+      .def_readonly("determinant_at_pole",
+                    &BoundStatePoleRead::determinantAtPole, "D_C(s_C).")
+      .def_readonly("derivative_at_pole",
+                    &BoundStatePoleRead::derivativeAtPole, "D_C'(s_C).")
+      .def_readonly("simple", &BoundStatePoleRead::simple,
+                    "Whether the zero met the simple-isolated specification.")
+      .def_readonly("newton_step", &BoundStatePoleRead::newtonStep)
+      .def_readonly("separation", &BoundStatePoleRead::separation)
+      .def_readonly("residue", &BoundStatePoleRead::residue,
+                    "The residue of the supported resolvent at each zero, flat "
+                    "row-major over the interface coordinates.")
+      .def_readonly("residue_norm", &BoundStatePoleRead::residueNorm)
+      .def_readonly("residue_rank", &BoundStatePoleRead::residueRank)
+      .def_readonly("continued_pole", &BoundStatePoleRead::continuedPole,
+                    "Each zero recomputed at the refinement quadrature.")
+      .def_readonly("continuation_movement",
+                    &BoundStatePoleRead::continuationMovement)
+      .def_readonly("binding_shift", &BoundStatePoleRead::bindingShift,
+                    "s_C minus the declared free threshold.")
+      .def_readonly("interior_resonance",
+                    &BoundStatePoleRead::interiorResonance,
+                    "Whether an unretained interior pole sits on the contour, "
+                    "which is the domain Section 13.3 continues F_C on being "
+                    "left.")
+      .def_readonly("failed_certificates",
+                    &BoundStatePoleRead::failedCertificates);
+
+  py::class_<BoundStatePole>(m, "BoundStatePole",
+      "Mass as the complex bound-state pole of Section 13.3: the zeros of "
+      "D_C(s) = det F_C(s), with F_C the exact meromorphic Feshbach response "
+      "pencil of a persistent bound cluster, continued in the complex "
+      "spectral parameter s.\n\n"
+      "Mass is not defined here by an incoherent sum of moduli, and nothing "
+      "here converts s_C into a mass: the theory carries s_C and takes no "
+      "square root of it.")
+      .def_static("response", &BoundStatePole::response, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  py::arg("rank_tolerance") = 1e-12,
+                  "F_C(s), as the framework's own Schur complement supplies "
+                  "it.")
+      .def_static("determinant", &BoundStatePole::determinant, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  "D_C(s) = det F_C(s).")
+      .def_static("response_derivative", &BoundStatePole::responseDerivative,
+                  py::arg("A"), py::arg("M"), py::arg("interface"),
+                  py::arg("s"),
+                  "F_C'(s), the exact analytic derivative of the response.")
+      .def_static("logarithmic_derivative",
+                  &BoundStatePole::logarithmicDerivative, py::arg("A"),
+                  py::arg("M"), py::arg("interface"), py::arg("s"),
+                  "D_C'(s) / D_C(s) = tr(F_C^-1 F_C').")
+      .def_static("poles", &BoundStatePole::poles, py::arg("A"), py::arg("M"),
+                  py::arg("interface"), py::arg("centre"), py::arg("radius"),
+                  py::arg("cfg") = BoundStatePoleConfig{},
+                  "The zeros of D_C inside the declared contour.")
+      .def_static("cluster_poles", &BoundStatePole::clusterPoles,
+                  py::arg("assembled"), py::arg("k"), py::arg("cluster_cells"),
+                  py::arg("centre"), py::arg("radius"),
+                  py::arg("cfg") = BoundStatePoleConfig{},
+                  "The same search on an assembled pencil's degree-k block.");
+
+  py::class_<DressedFluctuationDeclaration>(m, "DressedFluctuationDeclaration",
+      "Everything that fixes which fluctuation problem a DressedFluctuation "
+      "is: the carrier h0, the couplings O_a = dh/df_a, the second "
+      "derivatives the diamagnetic term is built from, the bare stiffness A of "
+      "the fluctuation's own action, and the occupation rule. Plain data.")
+      .def(py::init<>())
+      .def_readwrite("carrier_dimension",
+                     &DressedFluctuationDeclaration::carrierDimension,
+                     "n, the dimension of the one-particle carrier space.")
+      .def_readwrite("carrier", &DressedFluctuationDeclaration::carrier,
+                     "h0, the carrier operator at the stationary "
+                     "configuration, flat row-major n by n. It is never "
+                     "symmetrized and no adjoint of it is taken.")
+      .def_readwrite("couplings", &DressedFluctuationDeclaration::couplings,
+                     "O_a = dh/df_a for each retained fluctuation, each flat "
+                     "row-major n by n. Their number is R.")
+      .def_readwrite("second_derivatives",
+                     &DressedFluctuationDeclaration::secondDerivatives,
+                     "d^2h/df_a df_b for the pairs a <= b in row-major "
+                     "upper-triangular order, each flat row-major n by n. "
+                     "Empty declares a carrier that depends on the "
+                     "fluctuations linearly, so the diamagnetic term is zero.")
+      .def_readwrite("bare_stiffness",
+                     &DressedFluctuationDeclaration::bareStiffness,
+                     "A, the bare stiffness of the fluctuation's own action, "
+                     "flat row-major R by R and complex symmetric. Empty "
+                     "declares a zero bare stiffness.")
+      .def_readwrite("occupied_modes",
+                     &DressedFluctuationDeclaration::occupiedModes,
+                     "How many modes of h0 the quasi-free state occupies.")
+      .def_readwrite("occupation_order",
+                     &DressedFluctuationDeclaration::occupationOrder,
+                     "Which modes those are.")
+      .def_readwrite("continuum_broadening",
+                     &DressedFluctuationDeclaration::continuumBroadening,
+                     "eta >= 0, a declared finite lifetime given to every "
+                     "particle-hole excitation, replacing each excitation "
+                     "energy by Delta - i eta. Zero is the whitepaper's "
+                     "formula exactly; a positive value is the one "
+                     "approximation of this class and is never applied unless "
+                     "asked for.")
+      .def_readwrite("tolerance", &DressedFluctuationDeclaration::tolerance,
+                     "The relative tolerance the certificates hold against.");
+
+  py::class_<CollectiveMode>(m, "CollectiveMode",
+      "One pole of the dressed fluctuation propagator A_eff(w)^-1: a frequency "
+      "at which the dressed stiffness is singular, with the fluctuation "
+      "direction that is soft there. These are the gauge quanta of Section 7.")
+      .def(py::init<>())
+      .def_readwrite("frequency", &CollectiveMode::frequency,
+                     "w, the frequency at which det A_eff(w) = 0. The dressed "
+                     "stiffness depends on w only through w^2, so the poles "
+                     "come in pairs and both members are reported.")
+      .def_readwrite("polarization", &CollectiveMode::polarization,
+                     "The unit null direction of A_eff(w), length R: the "
+                     "combination of retained fluctuations that is soft here.")
+      .def_readwrite("radiation_rate", &CollectiveMode::radiationRate,
+                     "Gamma = -2 Im w, the rate at which the mode's "
+                     "occupation relaxes into the particle-hole continuum. "
+                     "Zero for a real frequency, which is a mode that does not "
+                     "radiate.")
+      .def_readwrite("continuum_distance", &CollectiveMode::continuumDistance,
+                     "The distance from the nearest bare particle-hole "
+                     "excitation energy or its negative.")
+      .def_readwrite("inside_particle_hole_continuum",
+                     &CollectiveMode::insideParticleHoleContinuum,
+                     "Whether |Re w| lies between the smallest and the largest "
+                     "Re Delta: the mode is then degenerate with the "
+                     "particle-hole excitations rather than bound outside "
+                     "them.")
+      .def_readwrite("residual", &CollectiveMode::residual,
+                     "The relative residual of the null-vector equation this "
+                     "mode solves.")
+      .def_readwrite("certificate", &CollectiveMode::certificate);
+
+  py::class_<ManyBodySpaceRead>(m, "ManyBodySpaceRead",
+      "The effective action of the exact elimination, evaluated on the "
+      "N-particle space of a cluster. The basis is the ascending N-element "
+      "subsets of the fiber's modes in lexicographic order.")
+      .def(py::init<>())
+      .def_readwrite("particles", &ManyBodySpaceRead::particles)
+      .def_readwrite("fiber_rank", &ManyBodySpaceRead::fiberRank,
+                     "r, the rank of the cluster's fiber.")
+      .def_readwrite("dimension", &ManyBodySpaceRead::dimension,
+                     "r choose N, the order of every matrix below.")
+      .def_readwrite("basis", &ManyBodySpaceRead::basis,
+                     "The occupation basis: one ascending N-tuple of fiber "
+                     "mode indices per dimension, in lexicographic order.")
+      .def_readwrite("one_body", &ManyBodySpaceRead::oneBody,
+                     "psiTilde^T h0 psi on this space, flat row-major.")
+      .def_readwrite("quartic", &ManyBodySpaceRead::quartic,
+                     "-1/2 J^T A^-1 J on this space, flat row-major: the whole "
+                     "second term of the exact elimination.")
+      .def_readwrite("induced_one_body", &ManyBodySpaceRead::inducedOneBody,
+                     "The part of the quartic that is a one-body operator, "
+                     "-1/2 dGamma(sum_ab (A^-1)_ab O_a O_b), which reordering "
+                     "the product of two currents produces.")
+      .def_readwrite("normal_ordered_quartic",
+                     &ManyBodySpaceRead::normalOrderedQuartic,
+                     "The quartic minus its one-body part: the strictly "
+                     "quartic, normal-ordered interaction, which is the term "
+                     "that takes the state outside the Gaussian class.")
+      .def_readwrite("effective_action", &ManyBodySpaceRead::effectiveAction,
+                     "S_eff = psiTilde^T h0 psi - 1/2 J^T A^-1 J on this "
+                     "space, flat row-major.")
+      .def_readwrite("frame_pairing_defect",
+                     &ManyBodySpaceRead::framePairingDefect,
+                     "||PhiTilde^T Phi - I|| of the declared cluster frames.")
+      .def_readwrite("stiffness_asymmetry",
+                     &ManyBodySpaceRead::stiffnessAsymmetry,
+                     "||A - A^T||_F / ||A||_F of the bare stiffness.")
+      .def_readwrite("stiffness_conditioning",
+                     &ManyBodySpaceRead::stiffnessConditioning)
+      .def_readwrite("certificate", &ManyBodySpaceRead::certificate);
+
+  py::class_<DressedFluctuation>(m, "DressedFluctuation",
+      "The dressed fluctuation propagator of Section 7, its poles, and the "
+      "exact elimination of the fluctuation.\n\n"
+      "A retained fluctuation f in C^R of the geometry or of the connection "
+      "couples linearly to the fermion bilinear currents J_a = psiTilde^T O_a "
+      "psi with O_a = dh/df_a. In a quasi-free state its stiffness is dressed "
+      "to A_eff(w) = A + D - Pi(w), with D the diamagnetic term and Pi the "
+      "paramagnetic polarization. Every bracket is the complex bilinear one "
+      "taken between the left and right modes of h0, so no adjoint appears "
+      "anywhere and a non-normal carrier is carried as it stands. At w = 0 the "
+      "induced stiffness D - Pi(0) is the Hessian of the occupied energy and "
+      "vanishes on every pure-gauge direction, which is the Ward identity. The "
+      "poles of A_eff(w)^-1 are the collective modes the whitepaper names the "
+      "gauge quanta, and they are found exactly by a linear pencil rather than "
+      "by sampling w. Eliminating f at its saddle gives S_eff = psiTilde^T h0 "
+      "psi - 1/2 J^T A^-1 J, whose second term is evaluated on the "
+      "three-particle space of a cluster.")
+      .def(py::init<DressedFluctuationDeclaration>(), py::arg("declaration"))
+      .def_property_readonly("declaration", &DressedFluctuation::declaration,
+                             "The declaration this instance was built from.")
+      .def("carrier_dimension", &DressedFluctuation::carrierDimension)
+      .def("fluctuation_count", &DressedFluctuation::fluctuationCount,
+           "R, the number of retained fluctuations.")
+      .def("particle_hole_pair_count",
+           &DressedFluctuation::particleHolePairCount,
+           "P, the occupied mode count times the empty mode count.")
+      .def("carrier_eigenvalues", &DressedFluctuation::carrierEigenvalues,
+           "The eigenvalues of h0 in the declared occupation order, so the "
+           "first occupied_modes entries are the occupied ones.")
+      .def("particle_hole_energies", &DressedFluctuation::particleHoleEnergies,
+           "The bare excitation energies Delta = lambda_n - lambda_m, one per "
+           "pair of an occupied m with an empty n, occupied-major.")
+      .def("mode_currents", &DressedFluctuation::modeCurrents, py::arg("index"),
+           "V^-1 O_a V, the current matrix of one fluctuation in the carrier's "
+           "mode basis, flat row-major in the declared occupation order.")
+      .def("diamagnetic", &DressedFluctuation::diamagnetic,
+           "D, the diamagnetic term, flat row-major R by R.")
+      .def("paramagnetic", &DressedFluctuation::paramagnetic,
+           py::arg("frequency") = std::complex<double>{0.0, 0.0},
+           "Pi(w), the paramagnetic polarization, flat row-major R by R.")
+      .def("dressed_stiffness", &DressedFluctuation::dressedStiffness,
+           py::arg("frequency") = std::complex<double>{0.0, 0.0},
+           "A_eff(w) = A + D - Pi(w), flat row-major R by R.")
+      .def("induced_stiffness", &DressedFluctuation::inducedStiffness,
+           "D - Pi(0), the whole fermion contribution to the dressed "
+           "stiffness, which is the Hessian of the occupied energy.")
+      .def("ward_residual", &DressedFluctuation::wardResidual,
+           py::arg("gauge_direction"),
+           "||(D - Pi(0)) g|| / (||D - Pi(0)|| ||g||) on one declared "
+           "pure-gauge direction.")
+      .def("ward_certificate", &DressedFluctuation::wardCertificate,
+           py::arg("gauge_directions"),
+           "The Ward identity over the declared pure-gauge directions: the "
+           "induced stiffness vanishes on every one of them because the "
+           "carrier moves along one by a similarity transformation, which "
+           "leaves its eigenvalues where they were.")
+      .def("collective_modes", &DressedFluctuation::collectiveModes,
+           "The poles of A_eff(w)^-1, ascending by (Re w, Im w). A candidate "
+           "whose geometric component vanishes is an uncoupled particle-hole "
+           "excitation rather than a pole and is not reported.")
+      .def("effective_action", &DressedFluctuation::effectiveAction,
+           py::arg("cluster_frame"), py::arg("cluster_dual_frame"),
+           py::arg("particles") = std::size_t{3},
+           py::arg("dimension_cap") =
+               DressedFluctuation::kDefaultManyBodyDimensionCap,
+           "S_eff on the N-particle space of a cluster fiber. The frames are "
+           "the fiber's right frame (n by r) and its algebraic dual (r by n); "
+           "empty frames declare the whole carrier space.");
+
+  py::class_<MappingCylinderDeclaration>(m, "MappingCylinderDeclaration",
+      "The three pieces of data one tick of the recursion is built from: the "
+      "top cells of K^l, the reduction map on its vertices, and the top cells "
+      "of K^{l+1}. Plain data.")
+      .def(py::init<>())
+      .def_readwrite("incoming_top_cells",
+                     &MappingCylinderDeclaration::incomingTopCells,
+                     "The top cells of K^l, each a tuple of vertex "
+                     "identifiers. The list must be pure.")
+      .def_readwrite("reduction_map",
+                     &MappingCylinderDeclaration::reductionMap,
+                     "r: for every vertex of K^l, the response vertex of "
+                     "R^{l+1} it is carried to. Its identifiers must be "
+                     "disjoint from the incoming ones.")
+      .def_readwrite("outgoing_top_cells",
+                     &MappingCylinderDeclaration::outgoingTopCells,
+                     "The top cells of K^{l+1}, each a tuple of response "
+                     "vertices. The interactions of Section 6 supply these; "
+                     "the reduction supplies none of them.");
+
+  py::class_<MappingCylinderRead>(m, "MappingCylinderRead",
+      "The interaction cobordism W^l and the two complexes it runs between, "
+      "with the checks that identify its boundary.")
+      .def(py::init<>())
+      .def_readwrite("incoming_dimension",
+                     &MappingCylinderRead::incomingDimension)
+      .def_readwrite("cylinder_dimension",
+                     &MappingCylinderRead::cylinderDimension,
+                     "One more than the incoming dimension: the fibering "
+                     "direction is the extra simplex dimension and the only "
+                     "reason the cylinder has one.")
+      .def_readwrite("outgoing_dimension",
+                     &MappingCylinderRead::outgoingDimension)
+      .def_readwrite("incoming_vertices",
+                     &MappingCylinderRead::incomingVertices)
+      .def_readwrite("response_vertices",
+                     &MappingCylinderRead::responseVertices)
+      .def_readwrite("cylinder_top_cells",
+                     &MappingCylinderRead::cylinderTopCells,
+                     "The staircase simplices of the prism over each incoming "
+                     "top cell, with the degenerate ones dropped.")
+      .def_readwrite("fiber_edges", &MappingCylinderRead::fiberEdges,
+                     "The edges (v, r(v)), one per vertex of K^l. They are the "
+                     "only timelike edges of the history.")
+      .def_readwrite("cross_edges", &MappingCylinderRead::crossEdges,
+                     "Every edge of W^l with one endpoint at each end: the "
+                     "fiber edges plus the prism diagonals.")
+      .def_readwrite("image_top_cells", &MappingCylinderRead::imageTopCells,
+                     "The maximal image cells r(sigma): the image complex the "
+                     "outgoing end carries before K^{l+1} is attached.")
+      .def_readwrite("incoming_free_facets",
+                     &MappingCylinderRead::incomingFreeFacets)
+      .def_readwrite("outgoing_free_facets",
+                     &MappingCylinderRead::outgoingFreeFacets)
+      .def_readwrite("side_free_facets",
+                     &MappingCylinderRead::sideFreeFacets)
+      .def_readwrite("incoming_boundary_is_the_incoming_complex",
+                     &MappingCylinderRead::incomingBoundaryIsTheIncomingComplex)
+      .def_readwrite("outgoing_complex_contains_the_image",
+                     &MappingCylinderRead::outgoingComplexContainsTheImage)
+      .def_readwrite("has_no_side_wall", &MappingCylinderRead::hasNoSideWall)
+      .def_readwrite("boundary_is_the_disjoint_union",
+                     &MappingCylinderRead::boundaryIsTheDisjointUnion,
+                     "dW^l = K^l disjoint union K^{l+1}.")
+      .def_readwrite("boundary_residual",
+                     &MappingCylinderRead::boundaryResidual)
+      .def_readwrite("certificate", &MappingCylinderRead::certificate);
+
+  py::class_<MappingCylinder>(m, "MappingCylinder",
+      "The interaction cobordism W^l of Section 3: one tick of time, realized "
+      "as the mapping cylinder of the reduction map from K^l onto the vertex "
+      "set of R^{l+1}, with the cells of K^{l+1} attached on its outgoing "
+      "end.\n\n"
+      "The cylinder contains K^l, the fiber edges joining each certified "
+      "cluster's cells to its response vertex, and K^{l+1}, with dW^l = K^l "
+      "disjoint union K^{l+1}. Time is not a simplex dimension of any level; "
+      "it is the fourth simplex dimension of W^l only because W^l is built to "
+      "realize the fibering direction geometrically. The reduction determines "
+      "no incidence maps of its own, so K^{l+1} is declared rather than "
+      "derived and the class checks that the image of the reduction lands "
+      "inside it.")
+      .def(py::init<MappingCylinderDeclaration>(), py::arg("declaration"))
+      .def_property_readonly("declaration", &MappingCylinder::declaration)
+      .def("read", &MappingCylinder::read,
+           py::return_value_policy::reference_internal,
+           "The cylinder, its two ends and the boundary checks.");
+
+  py::enum_<RecursionBandSelection>(m, "RecursionBandSelection",
+      "How the closed contour of a response vertex is fixed. LowestModes "
+      "derives it from a declared band rank and the declared occupation "
+      "order, which is a rule for writing a contour down and never a "
+      "substitute for one; DeclaredContours takes a centre and a radius per "
+      "component and sorts nothing at all.")
+      .value("LowestModes", RecursionBandSelection::LowestModes)
+      .value("DeclaredContours", RecursionBandSelection::DeclaredContours);
+
+  py::class_<RecursionBandDeclaration>(m, "RecursionBandDeclaration",
+      "How every level's fibers are selected.")
+      .def(py::init<>())
+      .def_readwrite("selection", &RecursionBandDeclaration::selection)
+      .def_readwrite("band_rank", &RecursionBandDeclaration::bandRank,
+                     "r_v, the number of eigenvalues each contour encloses "
+                     "under LowestModes.")
+      .def_readwrite("order", &RecursionBandDeclaration::order)
+      .def_readwrite("contour_nodes", &RecursionBandDeclaration::contourNodes,
+                     "The quadrature nodes on each contour. The projector is "
+                     "the contour integral of the resolvent, evaluated by the "
+                     "trapezoidal rule on the circle.")
+      .def_readwrite("contour_centres",
+                     &RecursionBandDeclaration::contourCentres)
+      .def_readwrite("contour_radii", &RecursionBandDeclaration::contourRadii);
+
+  py::class_<LevelRecursionDeclaration>(m, "LevelRecursionDeclaration",
+      "Everything that fixes how a recursion is driven. None of it changes "
+      "which identities hold.")
+      .def(py::init<>())
+      .def_readwrite("resolutions", &LevelRecursionDeclaration::resolutions,
+                     "The modularity resolutions every level's partition is "
+                     "swept over, in scan order.")
+      .def_readwrite("modularity_restarts",
+                     &LevelRecursionDeclaration::modularityRestarts)
+      .def_readwrite("modularity_seed",
+                     &LevelRecursionDeclaration::modularitySeed)
+      .def_readwrite("persistence_overlap",
+                     &LevelRecursionDeclaration::persistenceOverlap)
+      .def_readwrite("reference_lambda",
+                     &LevelRecursionDeclaration::referenceLambda,
+                     "The spectral parameter each level's partition and fibers "
+                     "are read at. The partition and the fibers are declared "
+                     "structure of a level, not functions of lambda; the "
+                     "energy dependence is carried by response_pencil, which "
+                     "re-derives the whole chain at whatever lambda it is "
+                     "asked for.")
+      .def_readwrite("bands", &LevelRecursionDeclaration::bands)
+      .def_readwrite("tolerance", &LevelRecursionDeclaration::tolerance)
+      .def_readwrite("dense_crossover",
+                     &LevelRecursionDeclaration::denseCrossover);
+
+  py::class_<RecursionBandRead>(m, "RecursionBandRead",
+      "One certified fiber E_v = Ran P_v and the contour that produced it.")
+      .def(py::init<>())
+      .def_readwrite("component", &RecursionBandRead::component)
+      .def_readwrite("rank", &RecursionBandRead::rank)
+      .def_readwrite("contour_centre", &RecursionBandRead::contourCentre)
+      .def_readwrite("contour_radius", &RecursionBandRead::contourRadius)
+      .def_readwrite("contour_nodes", &RecursionBandRead::contourNodes)
+      .def_readwrite("eigenvalues", &RecursionBandRead::eigenvalues,
+                     "The eigenvalues of the component's block the contour "
+                     "encloses.")
+      .def_readwrite("isolation_gap", &RecursionBandRead::isolationGap,
+                     "The distance from the contour to the nearest eigenvalue "
+                     "of the block, inside or outside.")
+      .def_readwrite("projector_idempotency",
+                     &RecursionBandRead::projectorIdempotency)
+      .def_readwrite("pairing_defect", &RecursionBandRead::pairingDefect,
+                     "||PhiTilde^T Phi - I||, the bilinear pairing of the two "
+                     "frames.")
+      .def_readwrite("frame", &RecursionBandRead::frame,
+                     "Phi_v over the level's coordinates, flat row-major.")
+      .def_readwrite("left_frame", &RecursionBandRead::leftFrame,
+                     "PhiTilde_v^T, flat row-major.")
+      .def_readwrite("accepted", &RecursionBandRead::accepted)
+      .def_readwrite("certificate", &RecursionBandRead::certificate);
+
+  py::class_<LevelTransport>(m, "LevelTransport",
+      "One block M_vw = PhiTilde_v^T T_vw Phi_w: the level's coupling between "
+      "two response vertices, read in their own fibers.")
+      .def(py::init<>())
+      .def_readwrite("from_component", &LevelTransport::from)
+      .def_readwrite("to_component", &LevelTransport::to)
+      .def_readwrite("block", &LevelTransport::block);
+
+  py::class_<RecursionLevelRead>(m, "RecursionLevelRead",
+      "One turn of the whitepaper's box: the partition, the fibers, the "
+      "labeled sum and the response pencil of the level above.")
+      .def(py::init<>())
+      .def_readwrite("level", &RecursionLevelRead::level)
+      .def_readwrite("dimension", &RecursionLevelRead::dimension)
+      .def_readwrite("partition", &RecursionLevelRead::partition)
+      .def_readwrite("resolutions", &RecursionLevelRead::resolutions)
+      .def_readwrite("selected_resolution",
+                     &RecursionLevelRead::selectedResolution)
+      .def_readwrite("component_persistence",
+                     &RecursionLevelRead::componentPersistence)
+      .def_readwrite("worst_persistence_overlap",
+                     &RecursionLevelRead::worstPersistenceOverlap)
+      .def_readwrite("bands", &RecursionLevelRead::bands)
+      .def_readwrite("embedding", &RecursionLevelRead::embedding,
+                     "Y_{l+1}, the fibers' right frames side by side.")
+      .def_readwrite("dual_embedding", &RecursionLevelRead::dualEmbedding)
+      .def_readwrite("gram", &RecursionLevelRead::gram,
+                     "G_{l+1} = YTilde^T Y, the bilinear overlap of the "
+                     "labeled sum. An off-diagonal block is nonzero exactly "
+                     "when two fibers' supports meet, which is why the "
+                     "internal sum is never asserted to be direct.")
+      .def_readwrite("gram_defect", &RecursionLevelRead::gramDefect)
+      .def_readwrite("modes", &RecursionLevelRead::modes)
+      .def_readwrite("fiber_operator", &RecursionLevelRead::fiberOperator,
+                     "h^{l+1} = YTilde^T R_l(lambda_ref) Y.")
+      .def_readwrite("fiber_spectrum", &RecursionLevelRead::fiberSpectrum)
+      .def_readwrite("transports", &RecursionLevelRead::transports)
+      .def_readwrite("fock_stage_dimension",
+                     &RecursionLevelRead::fockStageDimension,
+                     "2^M, the Fock stage the level's one-particle space "
+                     "carries. The vector is never allocated.")
+      .def_readwrite("vacuum_embedded_modes",
+                     &RecursionLevelRead::vacuumEmbeddedModes,
+                     "The modes the interaction stage adds beyond the ones the "
+                     "reduction retained, which the state reaches by the "
+                     "vacuum embedding of Section 12.")
+      .def_readwrite("response_dimension",
+                     &RecursionLevelRead::responseDimension)
+      .def_readwrite("determinant_residual",
+                     &RecursionLevelRead::determinantResidual,
+                     "The determinant factorization that makes the step exact, "
+                     "measured at the reference lambda.")
+      .def_readwrite("reduction_certificate",
+                     &RecursionLevelRead::reductionCertificate)
+      .def_readwrite("certificate", &RecursionLevelRead::certificate);
+
+  py::class_<LevelRecursion>(m, "LevelRecursion",
+      "The master recursive construction of Section 15, driven level by level "
+      "with the energy dependence kept exact.\n\n"
+      "Every scale runs the whitepaper's box: the partition is discovered over "
+      "a declared sweep of modularity resolutions, each component's fiber is "
+      "the range of the Riesz projector of its own block over its own contour, "
+      "the next level's response pencil is the exact Feshbach map of the one "
+      "below, and the fibers are summed into the labeled sum with its bilinear "
+      "overlap carried exactly.\n\n"
+      "R_l is a function of lambda and never a matrix frozen at one value of "
+      "it: response_pencil re-derives the whole chain from the microscopic "
+      "pencil A - lambda M, applying each level's declared partition in turn "
+      "as a plain supported block elimination with no further shift, because "
+      "the spectral parameter is already inside the matrix being eliminated. "
+      "The step is exact by the determinant factorization det R_l = det(R_l)_II "
+      "det R_{l+1}, so every level's spectrum is reproduced from the level "
+      "below it. Nothing is linearized, and no square root, polar projection "
+      "or eigenvalue ordering enters the recursion.")
+      .def_static("overPencil", &LevelRecursion::overPencil, py::arg("pencil"),
+                  py::arg("metric"), py::arg("dimension"),
+                  py::arg("declaration"),
+                  "Build over an explicit pencil (A, M), flat row-major. An "
+                  "empty metric is the identity, so the microscopic pencil is "
+                  "A - lambda I.")
+      .def_static("overSpacetime", &LevelRecursion::overSpacetime,
+                  py::arg("spacetime"), py::arg("degree"),
+                  py::arg("metric_source"), py::arg("declaration"),
+                  "Build over a triangulation's Hodge operator at a degree, "
+                  "which at degree one is the whitepaper's microscopic "
+                  "edge-mode response pencil.")
+      .def_property_readonly("declaration", &LevelRecursion::declaration)
+      .def("base_dimension", &LevelRecursion::baseDimension)
+      .def("level_count", &LevelRecursion::levelCount,
+           "How many turns of the box have been taken.")
+      .def("advance", &LevelRecursion::advance, "Take one turn of the box.")
+      .def("advance_to", &LevelRecursion::advanceTo, py::arg("levels"),
+           "Take turns until level_count reaches the named number.")
+      .def("level", &LevelRecursion::level, py::arg("index"),
+           py::return_value_policy::reference_internal,
+           "One completed turn of the box.")
+      .def("component_of_coordinate", &LevelRecursion::componentOfCoordinate,
+           py::arg("index"),
+           "The component of P_l each coordinate of the level belongs to: the "
+           "reduction map, as a map on coordinates. It is the map "
+           "MappingCylinder builds W^l over when the level's coordinates are "
+           "the vertices of K^l.")
+      .def("response_pencil", &LevelRecursion::responsePencil,
+           py::arg("level"), py::arg("lambda_"),
+           "R_l(lambda), flat row-major: the exact energy-dependent response "
+           "pencil of the level, re-derived from the microscopic pencil at "
+           "this lambda.")
+      .def("response_dimension", &LevelRecursion::responseDimension,
+           py::arg("level"))
+      .def("response_determinant", &LevelRecursion::responseDeterminant,
+           py::arg("level"), py::arg("lambda_"),
+           "det R_l(lambda): the function whose zeros, together with the "
+           "interior determinants the chain eliminated, are the microscopic "
+           "spectrum.")
+      .def("interior_determinant", &LevelRecursion::interiorDeterminant,
+           py::arg("level"), py::arg("lambda_"),
+           "det (R_l(lambda))_II, the determinant of the interior block the "
+           "step from this level eliminates.")
+      .def("determinant_factorization_residual",
+           &LevelRecursion::determinantFactorizationResidual, py::arg("level"),
+           py::arg("lambda_"),
+           "The identity that makes the step exact, measured at a spectral "
+           "parameter of the caller's choosing.")
+      .def("record_vacuum_embedded_modes",
+           &LevelRecursion::recordVacuumEmbeddedModes, py::arg("index"),
+           py::arg("modes"),
+           "Record that the interaction stage attached new one-particle modes "
+           "to the level, which the carried state reaches by the vacuum "
+           "embedding. The reduction alone grows nothing.");
+
 }

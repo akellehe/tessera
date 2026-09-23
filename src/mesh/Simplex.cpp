@@ -945,6 +945,33 @@ void Simplex::fillCMCanonSection(std::uint64_t key) const {
     geomCacheState_().cmCanonKey.store(key, std::memory_order_release);
 }
 
+Simplex::DihedralCofactors Simplex::dihedralCofactors(SimplexPtr hinge) const {
+    // The front half of dihedralAngle, shared rather than copied so that a
+    // sheet-carrying caller reads bit-for-bit the cofactors the angle is built
+    // from. dihedralAngle below says why the canonical frame is the one to read.
+    const int dPlus1 = static_cast<int>(vertices.size());
+    const auto hingeVerts = hinge->getVertices();
+    std::vector<int> opposite;
+    for (int k = 0; k < dPlus1; ++k) {
+        bool inHinge = false;
+        for (const auto &hv : hingeVerts)
+            if (hv->getId() == vertices[k]->getId()) { inHinge = true; break; }
+        if (!inHinge) opposite.push_back(k);
+    }
+    if (opposite.size() != 2) return {};
+    const int n = dPlus1 + 1;
+    const GeomCache &cc = cmCanonicalCache();
+    const auto &cof = cc.cmCanonCof;
+    if (static_cast<int>(cof.size()) != n * n) return {};
+    const int bi = canonicalPosition(cc.canonPos1, vertices[opposite[0]]->getId());
+    const int bj = canonicalPosition(cc.canonPos1, vertices[opposite[1]]->getId());
+    if (bi == 0 || bj == 0) return {};
+    return {true,
+            cof[static_cast<std::size_t>(bi) * n + bj],
+            cof[static_cast<std::size_t>(bi) * n + bi],
+            cof[static_cast<std::size_t>(bj) * n + bj]};
+}
+
 std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     const int dPlus1 = static_cast<int>(vertices.size());
     // The two vertices of this simplex not in the hinge.
@@ -1351,17 +1378,18 @@ double oppositeVertexSign(const ::tessera::mesh::Simplex* cf,
     return (bary[static_cast<std::size_t>(oppIdx)].real() < 0.0) ? -1.0 : 1.0;
 }
 
+// The signed circumcentric height from c(s) to c(cf), s a facet of cf (defined with
+// its derivatives below, at circumcentricHeight).
+std::complex<double> circumcentricHeightValue(const ::tessera::mesh::Simplex* cf,
+                                              const ::tessera::mesh::Simplex* s);
+
 // Recursive signed circumcentric dual content of `s` in an n-complex.
 std::complex<double> dualVolRec(const ::tessera::mesh::Simplex* s, int n) {
     const int k = static_cast<int>(s->size()) - 1;
     if (k >= n) return {1.0, 0.0};  // top cell: dual is a point (content 1)
-    const std::complex<double> rk2 = s->circumradiusSquared();
     std::complex<double> acc{0.0, 0.0};
-    for (const auto& cf : s->getCofaces()) {
-        const std::complex<double> h =
-            oppositeVertexSign(cf, s) * principalSqrt(cf->circumradiusSquared() - rk2);
-        acc += h * dualVolRec(cf, n);
-    }
+    for (const auto& cf : s->getCofaces())
+        acc += circumcentricHeightValue(cf, s) * dualVolRec(cf, n);
     return acc / static_cast<double>(n - k);
 }
 
@@ -1693,19 +1721,10 @@ namespace {
 
 /// The chain rule through a square root: d/dt sqrt(x(t)) = x'(t) / (2 sqrt(x)).
 ///
-/// The circumcentric dual volume is built from roots of circumradius
-/// differences, and such a difference vanishes exactly whenever a facet's
-/// circumsphere coincides with its hinge's. sqrt has infinite slope at the
-/// origin, so the quotient genuinely diverges there -- but only when the
-/// radicand actually moves. It does not move along most directions: `x'` is the
-/// change in a circumradius difference under one edge's squared length, and an
-/// edge the facet does not carry leaves it exactly zero. Along such a direction
-/// the radicand is pinned at zero, so the root is identically zero and so is its
-/// derivative.
-///
-/// Evaluating the quotient as written turns that case into `(1/0) * 0`, which is
-/// NaN, and one NaN contaminates every edge the hinge contributes to. Taking the
-/// zero numerator first gives the value the limit actually has.
+/// Used only by the fallback of ``circumcentricHeight`` for a cell whose Gram
+/// matrix is singular, where the circumcentre is undefined and the height is
+/// read off the circumradius difference as before. An exactly zero numerator is
+/// taken first so that a pinned radicand gives zero rather than `(1/0) * 0`.
 [[nodiscard]] inline std::complex<double> rootChainRule(
         std::complex<double> radicandDerivative,
         std::complex<double> root) noexcept {
@@ -1715,14 +1734,294 @@ namespace {
 
 /// A product in which an exactly-zero factor wins.
 ///
-/// Used where a root that has vanished multiplies a derivative that may itself
-/// have diverged. The root being exactly zero pins the product to zero whenever
-/// the other factor is finite, which is the case here; written plainly the
-/// expression would be `0 * inf` and evaluate to NaN.
+/// Used where a height that has vanished multiplies a derivative that may have
+/// diverged in the singular-cell fallback: written plainly the product would be
+/// `0 * inf` and evaluate to NaN. For finite factors it is the plain product.
 [[nodiscard]] inline std::complex<double> productWithZeroAbsorbing(
         std::complex<double> a, std::complex<double> b) noexcept {
     if (isExactlyZero(a) || isExactlyZero(b)) return {0.0, 0.0};
     return a * b;
+}
+
+/// The signed circumcentric height from the circumcentre of a facet `s` to the
+/// circumcentre of its coface `cf`, with its derivatives in the squared lengths
+/// of the edges of `cf` (the height depends on no other edge).
+///
+/// The dual-volume recursion writes this height as
+///     h = sgn(Re lambda_v) * sqrt(R^2_cf - R^2_s),
+/// where v is the vertex of `cf` outside `s` and lambda_v the barycentric
+/// coordinate of the circumcentre c(cf) at v. The radicand factors exactly. The
+/// circumcentre c(cf) is equidistant from the vertices of `s`, so c(cf) - c(s)
+/// is orthogonal to `s`; writing v = p + n with p in the affine hull of `s` and
+/// n orthogonal to it gives c(cf) - c(s) = lambda_v n, hence
+///     R^2_cf - R^2_s = lambda_v^2 <n, n>,   <n, n> = det G_cf / det G_s,
+/// the second identity being the Schur complement of the Gram matrix of `cf` on
+/// that of `s`. So h = sigma * lambda_v * q with q = sqrt(det G_cf / det G_s),
+/// and sigma = +-1 the sign that makes this equal to the root above:
+///     sigma = sgn(Re lambda_v) * (+1 if principalSqrt(y^2) = y, else -1),
+///     y = lambda_v * q.
+/// For real squared lengths of either signature sigma is identically +1.
+///
+/// This is the same function, not a different height. What changes is how it
+/// is evaluated and differentiated near coincident circumcentres (lambda_v = 0:
+/// a right angle opposite the face, as in every Kuhn tetrahedron of a cubic
+/// lattice). There the difference R^2_cf - R^2_s cancels to rounding noise of
+/// order 1e-16 R^2, whose root puts an error of order 1e-8 R into the height;
+/// and differentiated through that root, the chain rule divides by
+/// sqrt(R^2_cf - R^2_s), whose radicand is stationary to first order in every
+/// direction, so the quotient is 0/0 and evaluates to NaN, inf or a spurious
+/// zero, although the height is smooth there with derivative
+/// sigma * q * d(lambda_v). The product form has neither defect: lambda_v is
+/// rational in the squared lengths with denominator det G_cf, and q is the
+/// root of a ratio of Gram determinants that stays away from zero on
+/// nondegenerate cells. The dual volume, its gradient and its Hessian all read
+/// the heights from here.
+///
+/// With P_e = G^-1 dG_e and beta = G_cf^-1 (diag G_cf / 2) (so lambda is beta
+/// with lambda_0 = 1 - sum beta), and G linear in the squared lengths:
+///     d beta_e     = G_cf^-1 dh_e - P_e beta,
+///     d2 beta_ef   = -(P_e d beta_f + P_f d beta_e),
+///     d log q_e    = (tr P_e[cf] - tr P_e[s]) / 2,
+///     d2 log q_ef  = (-tr(P_f P_e)[cf] + tr(P_f P_e)[s]) / 2.
+///
+/// A singular Gram matrix (a cell of zero content) has no circumcentre and no
+/// such factorization. There the height and its derivatives are taken, as
+/// before, from the circumradius difference.
+enum class HeightOrder { Value, Gradient, Hessian };
+
+struct CircumcentricHeight {
+    /// The edges of `cf`, as sorted vertex-id pairs (empty for HeightOrder::Value).
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> edges;
+    /// The signed height.
+    std::complex<double> value{0.0, 0.0};
+    /// d h / d l^2, one entry per edge of `edges`.
+    std::vector<std::complex<double>> gradient;
+    /// d2 h / d l^2 d l^2, edges x edges row-major; filled only on request.
+    std::vector<std::complex<double>> hessian;
+};
+
+[[nodiscard]] CircumcentricHeight circumcentricHeight(const Simplex *cf,
+                                                      const Simplex *s,
+                                                      HeightOrder order) {
+    using cd = std::complex<double>;
+    CircumcentricHeight out;
+    const auto &cv = cf->getVertices();
+    const auto &sv = s->getVertices();
+    const int m = static_cast<int>(cv.size()) - 1;   // dimension of cf
+    const int ms = static_cast<int>(sv.size()) - 1;  // dimension of s (m - 1)
+    const bool withGradient = order != HeightOrder::Value;
+    const bool withHessian = order == HeightOrder::Hessian;
+
+    std::vector<std::pair<int, int>> local;          // cf-local vertex pairs
+    if (withGradient)
+        for (int p = 0; p <= m; ++p)
+            for (int q = p + 1; q <= m; ++q) {
+                local.emplace_back(p, q);
+                const std::uint64_t a = cv[static_cast<std::size_t>(p)]->getId();
+                const std::uint64_t b = cv[static_cast<std::size_t>(q)]->getId();
+                out.edges.emplace_back(std::min(a, b), std::max(a, b));
+            }
+    const std::size_t nE = local.size();
+    out.gradient.assign(nE, cd{0.0, 0.0});
+    if (withHessian) out.hessian.assign(nE * nE, cd{0.0, 0.0});
+    if (m < 1 || ms != m - 1) return out;
+
+    // The vertex of cf outside s, and where each vertex of cf sits in s.
+    int opp = -1;
+    std::vector<int> inS(static_cast<std::size_t>(m) + 1, -1);
+    for (int i = 0; i <= m; ++i) {
+        for (int j = 0; j <= ms; ++j)
+            if (sv[static_cast<std::size_t>(j)]->getId() ==
+                cv[static_cast<std::size_t>(i)]->getId()) {
+                inS[static_cast<std::size_t>(i)] = j;
+                break;
+            }
+        if (inS[static_cast<std::size_t>(i)] < 0 && opp < 0) opp = i;
+    }
+    if (opp < 0) return out;
+
+    const Simplex::GeomCache &gcf = cf->gramCofCache();
+    const cd detCf = gcf.gramDet;
+    const std::size_t mm = static_cast<std::size_t>(m);
+    const std::size_t msz = static_cast<std::size_t>(ms);
+    bool singular = gcf.gram.size() != mm * mm || gcf.gramCof.size() != mm * mm ||
+                    std::abs(detCf) < 1e-300;
+    // A vertex (ms = 0) has the empty Gram matrix, of determinant one.
+    cd detS{1.0, 0.0};
+    std::vector<cd> ginvS;
+    if (!singular && ms >= 1) {
+        const Simplex::GeomCache &gs = s->gramCofCache();
+        detS = gs.gramDet;
+        if (gs.gram.size() != msz * msz || gs.gramCof.size() != msz * msz ||
+            std::abs(detS) < 1e-300) {
+            singular = true;
+        } else if (withGradient) {
+            ginvS.resize(msz * msz);
+            for (std::size_t i = 0; i < msz; ++i)
+                for (std::size_t j = 0; j < msz; ++j)
+                    ginvS[i * msz + j] = gs.gramCof[j * msz + i] / detS;
+        }
+    }
+
+    if (singular) {
+        // No circumcentre: the circumradius difference, as the recursion reads it.
+        const double sgn = oppositeVertexSign(cf, s);
+        const cd x = cf->circumradiusSquared() - s->circumradiusSquared();
+        const cd root = principalSqrt(x);
+        out.value = sgn * root;
+        if (!withGradient) return out;
+        std::vector<cd> dx(nE);
+        for (std::size_t e = 0; e < nE; ++e) {
+            const auto &[a, b] = out.edges[e];
+            dx[e] = dCircumR2(cf, a, b) - dCircumR2(s, a, b);
+            out.gradient[e] = sgn * rootChainRule(dx[e], root);
+        }
+        if (withHessian)
+            for (std::size_t e = 0; e < nE; ++e)
+                for (std::size_t f = 0; f < nE; ++f) {
+                    const auto &[a, b] = out.edges[e];
+                    const auto &[c, d] = out.edges[f];
+                    const cd d2x = d2CircumR2(cf, a, b, c, d) - d2CircumR2(s, a, b, c, d);
+                    cd second{0.0, 0.0};
+                    if (!isExactlyZero(dx[e]) && !isExactlyZero(dx[f]))
+                        second = -0.25 / (x * root) * dx[e] * dx[f];
+                    out.hessian[e * nE + f] = sgn * (second + rootChainRule(d2x, root));
+                }
+        return out;
+    }
+
+    // beta = G_cf^-1 (diag G_cf / 2), with G_cf^-1 = cof^T / det, accumulated as
+    // circumFromGramCore does so that the barycentric coordinates agree with
+    // circumcenterBarycentric() bit for bit.
+    std::vector<cd> halfDiag(mm), beta(mm, cd{0.0, 0.0});
+    for (std::size_t i = 0; i < mm; ++i) halfDiag[i] = 0.5 * gcf.gram[i * mm + i];
+    for (std::size_t i = 0; i < mm; ++i) {
+        cd acc{0.0, 0.0};
+        for (std::size_t j = 0; j < mm; ++j) acc += gcf.gramCof[j * mm + i] * halfDiag[j];
+        beta[i] = acc / detCf;
+    }
+    const auto lambdaOf = [&](const std::vector<cd> &b) -> cd {
+        if (opp > 0) return b[static_cast<std::size_t>(opp) - 1];
+        cd sum{0.0, 0.0};
+        for (const cd &bi : b) sum += bi;
+        return cd{1.0, 0.0} - sum;
+    };
+    // For the derivative of the constant 1 in lambda_0, differentiate the sum only.
+    const auto dLambdaOf = [&](const std::vector<cd> &db) -> cd {
+        if (opp > 0) return db[static_cast<std::size_t>(opp) - 1];
+        cd sum{0.0, 0.0};
+        for (const cd &bi : db) sum -= bi;
+        return sum;
+    };
+    const cd lambda = lambdaOf(beta);
+    const cd q = principalSqrt(detCf / detS);
+    const cd y = lambda * q;
+    // sigma = sgn(Re lambda) * (the sign with principalSqrt(y^2) = sign * y), both
+    // read off this lambda so that they agree bit for bit where lambda ~ 0.
+    const double sgn = (lambda.real() < 0.0) ? -1.0 : 1.0;
+    const double rootSign = (y.real() > 0.0 || (y.real() == 0.0 && y.imag() >= 0.0))
+                                ? 1.0 : -1.0;
+    const double sigma = sgn * rootSign;
+    out.value = sigma * y;
+    if (!withGradient) return out;
+
+    std::vector<cd> ginv(mm * mm);
+    for (std::size_t i = 0; i < mm; ++i)
+        for (std::size_t j = 0; j < mm; ++j)
+            ginv[i * mm + j] = gcf.gramCof[j * mm + i] / detCf;
+
+    // Per edge: P_e on cf and on s, d beta_e, d lambda_e, d log q_e.
+    std::vector<std::vector<cd>> Pcf(nE), Ps(nE), dBeta(nE);
+    std::vector<cd> dLambda(nE), dLogQ(nE);
+    const auto gramDerivative = [](int dim, int p, int q2, std::vector<cd> &dG) {
+        // G_ij = (l^2_{0,i+1} + l^2_{0,j+1} - l^2_{i+1,j+1}) / 2 in local indices.
+        const auto ind = [&](int x, int z) -> double {
+            return ((x == p && z == q2) || (x == q2 && z == p)) ? 1.0 : 0.0;
+        };
+        const std::size_t n = static_cast<std::size_t>(dim);
+        dG.assign(n * n, cd{0.0, 0.0});
+        for (int i = 0; i < dim; ++i)
+            for (int j = 0; j < dim; ++j)
+                dG[static_cast<std::size_t>(i) * n + static_cast<std::size_t>(j)] =
+                    0.5 * (ind(0, i + 1) + ind(0, j + 1) - ind(i + 1, j + 1));
+    };
+    const auto product = [](const std::vector<cd> &A, const std::vector<cd> &B,
+                            std::size_t n) {
+        std::vector<cd> C(n * n, cd{0.0, 0.0});
+        for (std::size_t i = 0; i < n; ++i)
+            for (std::size_t k = 0; k < n; ++k) {
+                const cd a = A[i * n + k];
+                if (isExactlyZero(a)) continue;
+                for (std::size_t j = 0; j < n; ++j) C[i * n + j] += a * B[k * n + j];
+            }
+        return C;
+    };
+    const auto trace = [](const std::vector<cd> &A, std::size_t n) {
+        cd t{0.0, 0.0};
+        for (std::size_t i = 0; i < n; ++i) t += A[i * n + i];
+        return t;
+    };
+    const auto traceOfProduct = [](const std::vector<cd> &A, const std::vector<cd> &B,
+                                   std::size_t n) {
+        cd t{0.0, 0.0};
+        for (std::size_t i = 0; i < n; ++i)
+            for (std::size_t j = 0; j < n; ++j) t += A[i * n + j] * B[j * n + i];
+        return t;
+    };
+    std::vector<cd> dG;
+    for (std::size_t e = 0; e < nE; ++e) {
+        const auto [p, pq] = local[e];
+        gramDerivative(m, p, pq, dG);
+        Pcf[e] = product(ginv, dG, mm);
+        std::vector<cd> db(mm, cd{0.0, 0.0});
+        for (std::size_t i = 0; i < mm; ++i) {
+            cd acc{0.0, 0.0};
+            for (std::size_t j = 0; j < mm; ++j) {
+                acc += ginv[i * mm + j] * (0.5 * dG[j * mm + j]);
+                acc -= Pcf[e][i * mm + j] * beta[j];
+            }
+            db[i] = acc;
+        }
+        dBeta[e] = std::move(db);
+        dLambda[e] = dLambdaOf(dBeta[e]);
+        cd traceS{0.0, 0.0};
+        const int ps = inS[static_cast<std::size_t>(p)];
+        const int qs = inS[static_cast<std::size_t>(pq)];
+        if (ms >= 1 && ps >= 0 && qs >= 0) {
+            gramDerivative(ms, ps, qs, dG);
+            Ps[e] = product(ginvS, dG, msz);
+            traceS = trace(Ps[e], msz);
+        }
+        dLogQ[e] = 0.5 * (trace(Pcf[e], mm) - traceS);
+        out.gradient[e] = sigma * (dLambda[e] * q + lambda * q * dLogQ[e]);
+    }
+    if (!withHessian) return out;
+
+    for (std::size_t e = 0; e < nE; ++e)
+        for (std::size_t f = e; f < nE; ++f) {
+            // d2 beta_ef = -(P_e d beta_f + P_f d beta_e).
+            std::vector<cd> d2b(mm, cd{0.0, 0.0});
+            for (std::size_t i = 0; i < mm; ++i)
+                for (std::size_t j = 0; j < mm; ++j)
+                    d2b[i] -= Pcf[e][i * mm + j] * dBeta[f][j] +
+                              Pcf[f][i * mm + j] * dBeta[e][j];
+            const cd d2Lambda = dLambdaOf(d2b);
+            cd d2LogQ = -0.5 * traceOfProduct(Pcf[f], Pcf[e], mm);
+            if (!Ps[e].empty() && !Ps[f].empty())
+                d2LogQ += 0.5 * traceOfProduct(Ps[f], Ps[e], msz);
+            // q'' = q (d log q_e d log q_f + d2 log q_ef).
+            const cd dQe = q * dLogQ[e], dQf = q * dLogQ[f];
+            const cd d2Q = q * (dLogQ[e] * dLogQ[f] + d2LogQ);
+            const cd value =
+                sigma * (d2Lambda * q + dLambda[e] * dQf + dLambda[f] * dQe + lambda * d2Q);
+            out.hessian[e * nE + f] = value;
+            out.hessian[f * nE + e] = value;
+        }
+    return out;
+}
+
+std::complex<double> circumcentricHeightValue(const Simplex *cf, const Simplex *s) {
+    return circumcentricHeight(cf, s, HeightOrder::Value).value;
 }
 
 } // namespace
@@ -1746,62 +2045,39 @@ bool Simplex::dualGeometryIsDegenerate() const {
 
 std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
 Simplex::dualVolumeGradient() const {
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>> grad;
+    using cd = std::complex<double>;
+    using EK = std::pair<std::uint64_t, std::uint64_t>;
+    std::map<EK, cd> grad;
     if (vertices.empty()) return grad;
     const int n = ambientTopDimension();
     const int k = static_cast<int>(size()) - 1;
     if (k != n - 2) return grad;          // the (n-2) hinge the Regge action needs
 
-    const std::complex<double> Rh2 = circumradiusSquared();
-    struct Facet {
-        const Simplex* cf; double sgn;
-        std::complex<double> R1; std::complex<double> inner;
-        std::vector<std::pair<const Simplex*,
-                              std::pair<double, std::complex<double>>>> tops;
-    };
-    std::vector<Facet> fs;
-    std::set<std::pair<std::uint64_t, std::uint64_t>> edges;
-    for (const auto& cf : getCofaces()) {
-        Facet f;
-        f.cf = cf; f.sgn = oppositeVertexSign(cf, this);
-        f.R1 = cf->circumradiusSquared(); f.inner = {0.0, 0.0};
-        for (const auto& tp : cf->getCofaces()) {
-            const double sgn2 = oppositeVertexSign(tp, cf);
-            const std::complex<double> R2 = tp->circumradiusSquared();
-            f.inner += sgn2 * principalSqrt(R2 - f.R1);
-            f.tops.push_back({tp, {sgn2, R2}});
-            const auto& tv = tp->getVertices();
-            for (std::size_t i = 0; i < tv.size(); ++i)
-                for (std::size_t j = i + 1; j < tv.size(); ++j) {
-                    const std::uint64_t a = tv[i]->getId(), b = tv[j]->getId();
-                    edges.insert({std::min(a, b), std::max(a, b)});
-                }
-        }
-        fs.push_back(std::move(f));
-    }
+    // |*h| = inv * sum_facets h1 * S,  S = sum_tops h2, with h1 the height from
+    // c(hinge) to c(facet) and h2 from c(facet) to c(top) (circumcentricHeight):
+    // d|*h| = inv * sum_facets (dh1 * S + h1 * dS).
     const double inv = 1.0 / (static_cast<double>(n - k) * (n - k - 1));
-    for (const auto& e : edges) {
-        const std::complex<double> dRh = dCircumR2(this, e.first, e.second);
-        std::complex<double> dV{0.0, 0.0};
-        for (const auto& f : fs) {
-            const std::complex<double> dR1 = dCircumR2(f.cf, e.first, e.second);
-            const std::complex<double> x1 = f.R1 - Rh2;
-            const std::complex<double> ss1 = principalSqrt(x1);
-            // d/dx sqrt(x) = 1/(2 sqrt(x)) on the principal branch. A regulated
-            // 1/(2 sqrt(|x| + eps)) is not needed once the root is complex.
-            std::complex<double> dinner{0.0, 0.0};
-            for (const auto& t : f.tops) {
-                const std::complex<double> R2 = t.second.second;
-                const double sgn2 = t.second.first;
-                const std::complex<double> dR2 = dCircumR2(t.first, e.first, e.second);
-                const std::complex<double> x2 = R2 - f.R1;
-                dinner += sgn2 * rootChainRule(dR2 - dR1, principalSqrt(x2));
+    std::map<EK, cd> dV;
+    std::set<EK> edges;                   // the star: every edge of every top
+    for (const auto& cf : getCofaces()) {
+        const CircumcentricHeight h1 = circumcentricHeight(cf, this, HeightOrder::Gradient);
+        cd S{0.0, 0.0};
+        std::map<EK, cd> dS;
+        for (const auto& tp : cf->getCofaces()) {
+            const CircumcentricHeight h2 = circumcentricHeight(tp, cf, HeightOrder::Gradient);
+            S += h2.value;
+            for (std::size_t i = 0; i < h2.edges.size(); ++i) {
+                dS[h2.edges[i]] += h2.gradient[i];
+                edges.insert(h2.edges[i]);
             }
-            dV += f.sgn * (productWithZeroAbsorbing(rootChainRule(dR1 - dRh, ss1),
-                                                    f.inner)
-                           + productWithZeroAbsorbing(ss1, dinner));
         }
-        grad[e] = dV * inv;
+        for (std::size_t i = 0; i < h1.edges.size(); ++i)
+            dV[h1.edges[i]] += productWithZeroAbsorbing(h1.gradient[i], S);
+        for (const auto& [e, d] : dS) dV[e] += productWithZeroAbsorbing(h1.value, d);
+    }
+    for (const auto& e : edges) {
+        const auto it = dV.find(e);
+        grad[e] = (it != dV.end() ? it->second : cd{0.0, 0.0}) * inv;
     }
     return grad;
 }
@@ -1810,97 +2086,82 @@ std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
                    std::pair<std::uint64_t, std::uint64_t>>,
          std::complex<double>>
 Simplex::dualVolumeHessian() const {
+    using cd = std::complex<double>;
     using EK = std::pair<std::uint64_t, std::uint64_t>;
-    std::map<std::pair<EK, EK>, std::complex<double>> hess;
+    std::map<std::pair<EK, EK>, cd> hess;
     if (vertices.empty()) return hess;
     const int n = ambientTopDimension();
     const int k = static_cast<int>(size()) - 1;
     if (k != n - 2) return hess;
 
-    const std::complex<double> Rh2 = circumradiusSquared();
-    struct Facet {
-        const Simplex* cf; double sgn; std::complex<double> R1;
-        std::vector<std::pair<const Simplex*,
-                              std::pair<double, std::complex<double>>>> tops;
-    };
-    std::vector<Facet> fs;
-    std::set<EK> edges;
-    for (const auto& cf : getCofaces()) {
-        Facet f; f.cf = cf; f.sgn = oppositeVertexSign(cf, this);
-        f.R1 = cf->circumradiusSquared();
+    // The star's edges, indexed, so the per-facet pieces assemble densely.
+    std::set<EK> edgeSet;
+    for (const auto& cf : getCofaces())
         for (const auto& tp : cf->getCofaces()) {
-            const double sgn2 = oppositeVertexSign(tp, cf);
-            f.tops.push_back({tp, {sgn2, tp->circumradiusSquared()}});
             const auto& tv = tp->getVertices();
             for (std::size_t i = 0; i < tv.size(); ++i)
                 for (std::size_t j = i + 1; j < tv.size(); ++j) {
                     const std::uint64_t a = tv[i]->getId(), b = tv[j]->getId();
-                    edges.insert({std::min(a, b), std::max(a, b)});
+                    edgeSet.insert({std::min(a, b), std::max(a, b)});
                 }
         }
-        fs.push_back(std::move(f));
-    }
+    const std::vector<EK> ev(edgeSet.begin(), edgeSet.end());
+    const std::size_t nE = ev.size();
+    std::map<EK, std::size_t> index;
+    for (std::size_t i = 0; i < nE; ++i) index.emplace(ev[i], i);
+    const auto slots = [&](const CircumcentricHeight& h) {
+        std::vector<std::ptrdiff_t> at(h.edges.size(), -1);
+        for (std::size_t i = 0; i < h.edges.size(); ++i) {
+            const auto it = index.find(h.edges[i]);
+            if (it != index.end()) at[i] = static_cast<std::ptrdiff_t>(it->second);
+        }
+        return at;
+    };
+
+    // d2|*h|_ef = inv * sum_facets (d2h1_ef S + dh1_e dS_f + dh1_f dS_e + h1 d2S_ef),
+    // each height smooth where circumcentres coincide (circumcentricHeight).
     const double inv = 1.0 / (static_cast<double>(n - k) * (n - k - 1));
-    // g(x) = sqrt(x) on the principal branch, so g'(x) = 1/(2 sqrt(x)) and
-    // g''(x) = -1/(4 x sqrt(x)). Both blow up where the radicand vanishes, which
-    // happens exactly when a facet's circumsphere coincides with its hinge's.
-    // As in the gradient, the radicand is pinned at zero along every direction
-    // whose edge the facet does not carry, so the chain rule's numerator is zero
-    // there and the term is zero; taking the numerator first is what keeps a
-    // vanishing radicand from turning the whole row into NaN.
-    auto firstOrder = [](std::complex<double> x, std::complex<double> dx) {
-        return rootChainRule(dx, principalSqrt(x));
-    };
-    auto secondOrder = [](std::complex<double> x, std::complex<double> dxe,
-                          std::complex<double> dxf) {
-        if (isExactlyZero(dxe) || isExactlyZero(dxf)) return std::complex<double>{0.0, 0.0};
-        return -0.25 / (x * principalSqrt(x)) * dxe * dxf;
-    };
-    const std::vector<EK> ev(edges.begin(), edges.end());
-    for (const auto& e : ev) {
-        const std::complex<double> dRh_e = dCircumR2(this, e.first, e.second);
-        for (const auto& f : ev) {
-            const std::complex<double> dRh_f = dCircumR2(this, f.first, f.second);
-            const std::complex<double> d2Rh =
-                d2CircumR2(this, e.first, e.second, f.first, f.second);
-            std::complex<double> dV2{0.0, 0.0};
-            for (const auto& fac : fs) {
-                const std::complex<double> dR1_e = dCircumR2(fac.cf, e.first, e.second);
-                const std::complex<double> dR1_f = dCircumR2(fac.cf, f.first, f.second);
-                const std::complex<double> d2R1 =
-                    d2CircumR2(fac.cf, e.first, e.second, f.first, f.second);
-                const std::complex<double> x1 = fac.R1 - Rh2;
-                const std::complex<double> ss1 = principalSqrt(x1);
-                const std::complex<double> dx1_e = dR1_e - dRh_e, dx1_f = dR1_f - dRh_f;
-                const std::complex<double> dss1_e = firstOrder(x1, dx1_e),
-                                           dss1_f = firstOrder(x1, dx1_f);
-                const std::complex<double> d2ss1 =
-                    secondOrder(x1, dx1_e, dx1_f) + firstOrder(x1, d2R1 - d2Rh);
-                std::complex<double> S{0.0,0.0}, dS_e{0.0,0.0}, dS_f{0.0,0.0}, d2S{0.0,0.0};
-                for (const auto& t : fac.tops) {
-                    const double sgn2 = t.second.first;
-                    const std::complex<double> R2 = t.second.second;
-                    const std::complex<double> dR2_e = dCircumR2(t.first, e.first, e.second);
-                    const std::complex<double> dR2_f = dCircumR2(t.first, f.first, f.second);
-                    const std::complex<double> d2R2 =
-                        d2CircumR2(t.first, e.first, e.second, f.first, f.second);
-                    const std::complex<double> x2 = R2 - fac.R1;
-                    const std::complex<double> dx2_e = dR2_e - dR1_e, dx2_f = dR2_f - dR1_f;
-                    S += sgn2 * principalSqrt(x2);
-                    dS_e += sgn2 * firstOrder(x2, dx2_e);
-                    dS_f += sgn2 * firstOrder(x2, dx2_f);
-                    d2S += sgn2 * (secondOrder(x2, dx2_e, dx2_f)
-                                   + firstOrder(x2, d2R2 - d2R1));
-                }
-                dV2 += fac.sgn
-                       * (productWithZeroAbsorbing(d2ss1, S)
-                          + productWithZeroAbsorbing(dss1_e, dS_f)
-                          + productWithZeroAbsorbing(dss1_f, dS_e)
-                          + productWithZeroAbsorbing(ss1, d2S));
+    std::vector<cd> d2V(nE * nE, cd{0.0, 0.0});
+    for (const auto& cf : getCofaces()) {
+        const CircumcentricHeight h1 = circumcentricHeight(cf, this, HeightOrder::Hessian);
+        cd S{0.0, 0.0};
+        std::vector<cd> dS(nE, cd{0.0, 0.0}), d2S(nE * nE, cd{0.0, 0.0});
+        for (const auto& tp : cf->getCofaces()) {
+            const CircumcentricHeight h2 = circumcentricHeight(tp, cf, HeightOrder::Hessian);
+            const auto at = slots(h2);
+            const std::size_t m2 = h2.edges.size();
+            S += h2.value;
+            for (std::size_t i = 0; i < m2; ++i) {
+                if (at[i] < 0) continue;
+                const auto a = static_cast<std::size_t>(at[i]);
+                dS[a] += h2.gradient[i];
+                for (std::size_t j = 0; j < m2; ++j)
+                    if (at[j] >= 0)
+                        d2S[a * nE + static_cast<std::size_t>(at[j])] +=
+                            h2.hessian[i * m2 + j];
             }
-            hess[{e, f}] = dV2 * inv;
         }
+        const auto at = slots(h1);
+        const std::size_t m1 = h1.edges.size();
+        std::vector<cd> g1(nE, cd{0.0, 0.0}), H1(nE * nE, cd{0.0, 0.0});
+        for (std::size_t i = 0; i < m1; ++i) {
+            if (at[i] < 0) continue;
+            const auto a = static_cast<std::size_t>(at[i]);
+            g1[a] = h1.gradient[i];
+            for (std::size_t j = 0; j < m1; ++j)
+                if (at[j] >= 0)
+                    H1[a * nE + static_cast<std::size_t>(at[j])] = h1.hessian[i * m1 + j];
+        }
+        for (std::size_t e = 0; e < nE; ++e)
+            for (std::size_t f = 0; f < nE; ++f)
+                d2V[e * nE + f] += productWithZeroAbsorbing(H1[e * nE + f], S)
+                                   + productWithZeroAbsorbing(g1[e], dS[f])
+                                   + productWithZeroAbsorbing(g1[f], dS[e])
+                                   + productWithZeroAbsorbing(h1.value, d2S[e * nE + f]);
     }
+    for (std::size_t e = 0; e < nE; ++e)
+        for (std::size_t f = 0; f < nE; ++f)
+            hess[{ev[e], ev[f]}] = d2V[e * nE + f] * inv;
     return hess;
 }
 

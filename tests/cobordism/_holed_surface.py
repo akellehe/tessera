@@ -34,11 +34,11 @@ _ICOSA_FACES = [
 _WINDOWS = [[0, 11, 5], [3, 2, 6], [9, 8, 1]]
 
 
-def holed_surface(degree=1, jitter=True):
+def holed_surface(degree=1, jitter=True, metric_source=None):
     """Return ``(st, es, holes, P)``: the holed icosahedron, an
-    ``EigenstateSynthesis`` at register ``degree``, the removed window triangles
-    (the hole-circles), and the carried period matrix of shape
-    ``(b_k, n_holes)``."""
+    ``EigenstateSynthesis`` at register ``degree`` (on ``metric_source``, the
+    process default when None), the removed window triangles (the
+    hole-circles), and the carried period matrix of shape ``(b_k, n_holes)``."""
     rm = {tuple(sorted(t)) for t in _WINDOWS}
     holed = [list(f) for f in _ICOSA_FACES if tuple(sorted(f)) not in rm]
     st = tessera.Spacetime.fromVertexTuples(2, holed, 1.0, 0.0)
@@ -46,7 +46,8 @@ def holed_surface(degree=1, jitter=True):
         for i, e in enumerate(st.getEdgeList().toVector()):
             e.setLength(cmath.sqrt(complex(1.0 + 0.013 * (i % 6))))
     st.materializeFacets()
-    es = cob.EigenstateSynthesis(st, degree)
+    es = (cob.EigenstateSynthesis(st, degree) if metric_source is None
+          else cob.EigenstateSynthesis(st, degree, metric_source))
     holes = [list(t) for t in _WINDOWS]
     periods = np.asarray(es.cyclePeriods(holes), complex)
     n = len(holes)
