@@ -4563,6 +4563,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("ward_current", &JointAction::wardCurrent,
            "j_xy = U_xy dS/dU_xy of Section 13.4, which is link_stationarity "
            "under its other name. Odd under reversing an edge.")
+      .def("canonical_ward_current", &JointAction::canonicalWardCurrent,
+           "The Ward current on the canonical degree-one cells, in the chain "
+           "complex's cell order and on each cell's ascending-vertex "
+           "orientation: ward_current reordered and re-signed to the indexing "
+           "every chain-level consumer of it uses.")
       .def("ward_current_divergence", &JointAction::wardCurrentDivergence,
            "(d j)_x per vertex. It vanishes identically for every "
            "gauge-invariant term; a fixed Gamma held while the connection "

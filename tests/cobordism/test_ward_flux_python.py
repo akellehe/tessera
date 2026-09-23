@@ -531,7 +531,10 @@ class TheBackgroundRemovalIsCoherentTest(unittest.TestCase):
             abs(removed.flux - (state.flux - matched.flux)), 0.0, places=12)
         self.assertLess(removed.divergence_theorem_residual, 1e-10)
         self.assertEqual(removed.label, "sigma")
-        self.assertEqual(removed.quark_number, 3)
+        # The matched reference carries no source, so the removal leaves the
+        # one lineage's unit in place.
+        self.assertEqual(matched.quark_number, 0)
+        self.assertEqual(removed.quark_number, 1)
 
     def test_a_difference_between_different_cuts_is_refused(self):
         spacetime = sphere3(squared=_metric, phase=_flux_phase)
