@@ -68,6 +68,18 @@ double zeroThreshold(const DressedAnchorRead &read) {
   return read.tolerance * (read.coordinateScale > 0.0 ? read.coordinateScale : 1.0);
 }
 
+/// Whether every coordinate of the read lies at or below its own numerical
+/// zero threshold: the profile is then no point of a projective space. This is
+/// the same judgement `profile` makes when it counts no anchoring face, so a
+/// rounding residue of the order of machine precision is zero here too.
+bool identicallyZero(const DressedAnchorRead &read) {
+  const double threshold = zeroThreshold(read);
+  for (const auto &face : read.coordinates)
+    for (const Complex &value : face)
+      if (std::abs(value) > threshold) return false;
+  return true;
+}
+
 void requireSameAtlas(const DressedAnchorRead &a, const DressedAnchorRead &b, const char *who) {
   if (a.faceIndices != b.faceIndices || a.bandRank != b.bandRank)
     throw std::invalid_argument(std::string(who) +
@@ -526,6 +538,9 @@ double DressedAnchor::transitionCocycleResidual(const DressedAnchorRead &read,
 
 double DressedAnchor::projectiveDistance(const DressedAnchorRead &a, const DressedAnchorRead &b) {
   requireSameAtlas(a, b, "DressedAnchor::projectiveDistance");
+  if (identicallyZero(a) || identicallyZero(b))
+    throw std::runtime_error("DressedAnchor::projectiveDistance: an identically zero profile is "
+                             "not a point of a projective space");
   Complex inner(0.0, 0.0);
   double normA = 0.0;
   double normB = 0.0;

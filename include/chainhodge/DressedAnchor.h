@@ -477,7 +477,9 @@ class DressedAnchor {
   /// nothing physical is derived from it; the exact statements are made with
   /// the transition ratios, which are conjugate-free.
   /// @throws std::invalid_argument when the two reads do not share an atlas or
-  ///   a rank, and std::runtime_error when either profile is identically zero.
+  ///   a rank, and std::runtime_error when either profile is identically zero
+  ///   at its own numerical zero threshold, the judgement under which
+  ///   `profile` counts no anchoring face.
   [[nodiscard]] static double projectiveDistance(const DressedAnchorRead &a,
                                                  const DressedAnchorRead &b);
 };
