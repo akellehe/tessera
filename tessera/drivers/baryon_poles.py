@@ -1347,9 +1347,14 @@ def drive_live(config, progress=False):
             "`pip install -e \".[live]\"`, or select another local GUI "
             "backend; otherwise drop --live and read the rendered --out. "
             "The drive is identical either way." % (backend, webagg))
+    # The window is shown once and then only repainted: raising it or pumping
+    # events through `plt.pause` (which calls `show`) would bring it to the
+    # front and take the keyboard focus on every frame.
+    matplotlib.rcParams["figure.raise_window"] = False
     if not plt.isinteractive():
         plt.ion()
     figure = plt.figure(figsize=(13, 6))
+    plt.show(block=False)
     ready = queue.Queue()
     published = {}
     outcome = {}
@@ -1377,13 +1382,13 @@ def drive_live(config, progress=False):
             try:
                 index = ready.get_nowait()
             except queue.Empty:
-                plt.pause(LIVE_POLL_INTERVAL)
+                figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
                 continue
             if index is None:
                 break
             draw_frame(figure, published["frames"], index)
             figure.canvas.draw_idle()
-            plt.pause(LIVE_POLL_INTERVAL)
+            figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
     except BaseException as error:
         main_error = error
         stop.set()
