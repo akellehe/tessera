@@ -51,6 +51,7 @@
 #include "observables/SheetedColor.h"
 #include "observables/ComplexTransport.h"
 #include "observables/MonopoleSpin.h"
+#include "observables/QuarkConditions.h"
 #include "observables/CrossingReadouts.h"
 #include "observables/ExchangeHolonomy.h"
 #include "observables/FiberConnection.h"
@@ -2883,6 +2884,67 @@ test has been decided wrongly by isotropic cancellation.)doc")
       .def_readonly("determinant_count", &SharpSpinRead::determinantCount)
       .def_readonly("certificate", &SharpSpinRead::certificate);
 
+  py::enum_<QuarkConditionStatus>(m, "QuarkConditionStatus",
+      "The outcome of one v16 quark condition: Passed (every required "
+      "certificate measured and held), Failed (some measured certificate did "
+      "not hold), NotEvaluable (none failed, but a required certificate was "
+      "not measured).")
+      .value("Passed", QuarkConditionStatus::Passed)
+      .value("Failed", QuarkConditionStatus::Failed)
+      .value("NotEvaluable", QuarkConditionStatus::NotEvaluable);
+
+  py::class_<QuarkConditionEvidence>(m, "QuarkConditionEvidence",
+      "One certificate offered as evidence for a quark condition: its name, "
+      "whether it held (None when not measured), and the measured value or the "
+      "reason it was not measured.")
+      .def(py::init([](std::string name, std::optional<bool> held,
+                       std::string detail) {
+             return QuarkConditionEvidence{std::move(name), held,
+                                           std::move(detail)};
+           }),
+           py::arg("name"), py::arg("held") = std::nullopt,
+           py::arg("detail") = std::string{})
+      .def_readwrite("name", &QuarkConditionEvidence::name)
+      .def_readwrite("held", &QuarkConditionEvidence::held)
+      .def_readwrite("detail", &QuarkConditionEvidence::detail);
+
+  py::class_<QuarkConditionRead>(m, "QuarkConditionRead",
+      "The read of one v16 quark condition.")
+      .def_readonly("number", &QuarkConditionRead::number)
+      .def_readonly("name", &QuarkConditionRead::name)
+      .def_readonly("statement", &QuarkConditionRead::statement)
+      .def_readonly("status", &QuarkConditionRead::status)
+      .def_readonly("evidence", &QuarkConditionRead::evidence)
+      .def_readonly("missing", &QuarkConditionRead::missing)
+      .def_readonly("failing", &QuarkConditionRead::failing);
+
+  py::class_<QuarkVerdict>(m, "QuarkVerdict",
+      "The v16 quark verdict over all seven Section 10 conditions.")
+      .def_readonly("conditions", &QuarkVerdict::conditions)
+      .def_readonly("certified", &QuarkVerdict::certified)
+      .def_readonly("failed", &QuarkVerdict::failed)
+      .def_readonly("not_evaluable", &QuarkVerdict::notEvaluable);
+
+  py::class_<QuarkConditions>(m, "QuarkConditions",
+      "The seven quark conditions of Section 10 of the whitepaper, v16, as a "
+      "verdict over caller-measured certificates. A condition fails when any "
+      "supplied certificate did not hold, passes when every required one was "
+      "supplied and held, and is otherwise not evaluable. It implements the "
+      "v16 reading (a per-sheet base band tensored with the sheet space, a "
+      "projective anchor, no flavour or charge condition), which "
+      "ParticleClusters.classifyQuark, the v15 reading, does not.")
+      .def_property_readonly_static("kConditionCount", [](py::object) {
+        return QuarkConditions::kConditionCount;
+      })
+      .def_static("condition_names", &QuarkConditions::conditionNames)
+      .def_static("statement", &QuarkConditions::statement, py::arg("number"))
+      .def_static("required_evidence", &QuarkConditions::requiredEvidence,
+                  py::arg("number"))
+      .def_static("evaluate_condition", &QuarkConditions::evaluateCondition,
+                  py::arg("number"), py::arg("evidence"))
+      .def_static("evaluate", &QuarkConditions::evaluate, py::arg("evidence"),
+                  "The verdict; evidence[i] is the list for condition i + 1.");
+
   py::class_<SharpSpin>(m, "SharpSpin",
       R"doc(The sharp total-space spin readout: the two eigen-equations
 (J^2 - 3/4 I)|Psi_R> = 0 and <Psi_L|(J^2 - 3/4 I) = 0 on the bounded
@@ -2892,6 +2954,8 @@ mode-pair; the dense Fock matrix is materialized only for fixtures and only
 below the declared mode limit.)doc")
       .def_property_readonly_static("kMaxDenseModes",
           [](py::object) { return SharpSpin::kMaxDenseModes; })
+      .def_property_readonly_static("kMaxStateModes",
+          [](py::object) { return SharpSpin::kMaxStateModes; })
       .def_static("determinant", &SharpSpin::determinant,
                   py::arg("occupiedModes"), py::arg("modeCount"))
       .def_static("determinantSuperposition",
