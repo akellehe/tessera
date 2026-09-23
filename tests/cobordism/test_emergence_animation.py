@@ -22,7 +22,9 @@ the correctness of the INSTRUMENT:
   reason.
 """
 
+import cmath
 import json
+import math
 import os
 import sys
 import tempfile
@@ -97,10 +99,10 @@ class DriveTest(unittest.TestCase):
         has disposition moves -- but the starting point had no causal content
         to evolve from.
 
-        The default disposition is `random`, so this asserts the property that
-        survives the change of convention: the seed is neither all real nor
-        all one character. The per-setting `l^2` values are pinned by
-        `EdgeDispositionTest`.
+        The default disposition is the foliation rotated at `DECLARED_EPSILON`,
+        so this asserts the property that survives the change of convention:
+        the seed is neither all real nor all one character. The per-setting
+        `l^2` values are pinned by `EdgeDispositionTest`.
         """
         host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)
         lengths = [complex(edge.getLength())
@@ -432,7 +434,9 @@ class EdgeDispositionTest(unittest.TestCase):
             self.assertAlmostEqual(value.imag, 0.0, places=12)
 
     def test_timelike_squares_to_minus_one_on_every_edge(self):
-        host = ea.build_cobordism_host(SMALL, 3, ea.EdgeDisposition.TIMELIKE)
+        # At rotation zero the seed is the real interval itself.
+        host = ea.build_cobordism_host(SMALL, 3, ea.EdgeDisposition.TIMELIKE,
+                                       epsilon=0.0)
         squared = _squared_lengths(host)
         self.assertTrue(squared, "the host has no edges to assert on")
         for value in squared:
@@ -453,7 +457,9 @@ class EdgeDispositionTest(unittest.TestCase):
                            "every edge drew the same l^2: not random")
 
     def test_foliated_is_plus_one_within_a_layer_and_minus_one_across(self):
-        host = ea.build_cobordism_host(SMALL, 3, ea.EdgeDisposition.FOLIATED)
+        # At rotation zero the seed is the real interval itself.
+        host = ea.build_cobordism_host(SMALL, 3, ea.EdgeDisposition.FOLIATED,
+                                       epsilon=0.0)
         layer = ea._hop_layers(host, ea.boundary_vertices(host))
         across, within = 0, 0
         for edge in host.getEdgeList().toVector():
@@ -469,6 +475,36 @@ class EdgeDispositionTest(unittest.TestCase):
         # Both branches must fire, or the assertions above are vacuous.
         self.assertGreater(across, 0, "no edge spans a hop layer")
         self.assertGreater(within, 0, "no edge lies within a hop layer")
+
+    def test_a_rotation_turns_only_the_timelike_part(self):
+        """At rotation epsilon an edge of one time step carries
+        `l^2 = -exp(-2 i epsilon)`, the timelike part rotated, and an edge
+        within a layer keeps `l^2 = +1`: its timelike part is zero."""
+        epsilon = 0.25
+        host = ea.build_cobordism_host(SMALL, 3, ea.EdgeDisposition.FOLIATED,
+                                       epsilon=epsilon)
+        layer = ea._hop_layers(host, ea.boundary_vertices(host))
+        rotated = -cmath.exp(-2j * epsilon)
+        across = 0
+        for edge in host.getEdgeList().toVector():
+            a, b = ea._edge_endpoints(edge)
+            value = complex(edge.getLength()) ** 2
+            expected = rotated if layer.get(a, 0) != layer.get(b, 0) else 1.0
+            across += layer.get(a, 0) != layer.get(b, 0)
+            self.assertAlmostEqual(value, expected, places=12)
+        self.assertGreater(across, 0, "no edge spans a hop layer")
+
+    def test_the_undeclared_dispositions_are_not_rotated(self):
+        """`random` and `lightlike` squared lengths are not real intervals, so
+        they declare no timelike part and a rotation leaves them alone."""
+        for disposition in (ea.EdgeDisposition.RANDOM,
+                            ea.EdgeDisposition.LIGHTLIKE):
+            with self.subTest(disposition=disposition):
+                self.assertEqual(
+                    _squared_lengths(ea.build_cobordism_host(
+                        SMALL, 3, disposition, epsilon=0.0)),
+                    _squared_lengths(ea.build_cobordism_host(
+                        SMALL, 3, disposition, epsilon=0.3)))
 
     def test_random_repeats_for_one_seed_and_differs_across_seeds(self):
         first = _squared_lengths(
@@ -501,11 +537,92 @@ class EdgeDispositionTest(unittest.TestCase):
             ea.build_config(edge_disposition="foliatd")
         self.assertIn("foliatd", str(caught.exception))
 
-    def test_the_default_is_random(self):
+    def test_the_default_is_the_rotated_foliation(self):
         self.assertEqual(ea.DECLARED_EDGE_DISPOSITION,
-                         ea.EdgeDisposition.RANDOM)
+                         ea.EdgeDisposition.FOLIATED)
         self.assertEqual(ea.build_config()["edge_disposition"],
-                         ea.EdgeDisposition.RANDOM)
+                         ea.EdgeDisposition.FOLIATED)
+        self.assertEqual(ea.DECLARED_EPSILON, 0.1)
+        self.assertEqual(ea.build_config()["epsilon"], ea.DECLARED_EPSILON)
+
+
+# ======================================================================
+# the instance certificate (integration specification, Requirements 1, 2)
+# ======================================================================
+
+
+class InstanceCertificateTest(unittest.TestCase):
+    """The seed lies inside the Kontsevich-Segal allowable domain, and every
+    frame records whether its complex is allowable, its margin and the
+    rotation epsilon."""
+
+    def _margin(self, disposition, epsilon=ea.DECLARED_EPSILON):
+        return cob.HodgeLaplacian.kontsevichSegalMargin(
+            ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED, disposition,
+                                    epsilon=epsilon))
+
+    def test_the_default_seed_is_allowable(self):
+        # Measured 0.12639772770108548 at size 4 and epsilon 0.1.
+        self.assertAlmostEqual(
+            cob.HodgeLaplacian.kontsevichSegalMargin(
+                ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED)),
+            0.12639772770108548, places=9)
+
+    def test_the_real_foliation_sits_on_the_boundary(self):
+        self.assertAlmostEqual(
+            self._margin(ea.EdgeDisposition.FOLIATED, epsilon=0.0), 0.0,
+            places=12)
+
+    def test_the_other_dispositions_are_measured_where_they_are(self):
+        """Measured, not repaired: the random seed is outside the domain
+        (margin -4.91 at size 4) and declares nothing to rotate; the timelike
+        seed is outside at every rotation (margin -3 pi + 8 epsilon); the
+        lightlike seed is outside (margin -pi); the spacelike seed is
+        Euclidean (margin pi)."""
+        self.assertAlmostEqual(self._margin(ea.EdgeDisposition.RANDOM),
+                               -4.91252061568675, places=9)
+        self.assertAlmostEqual(self._margin(ea.EdgeDisposition.TIMELIKE),
+                               -3.0 * math.pi + 8.0 * ea.DECLARED_EPSILON,
+                               places=9)
+        self.assertAlmostEqual(self._margin(ea.EdgeDisposition.LIGHTLIKE),
+                               -math.pi, places=9)
+        self.assertAlmostEqual(self._margin(ea.EdgeDisposition.SPACELIKE),
+                               math.pi, places=9)
+
+    def test_every_frame_records_its_certificate(self):
+        for frame in _frames():
+            with self.subTest(step=frame.step):
+                record = frame.to_json()["instance"]
+                self.assertEqual(record["epsilon"], ea.DECLARED_EPSILON)
+                self.assertEqual(
+                    record["margin"],
+                    cob.HodgeLaplacian.kontsevichSegalMargin(frame.spacetime))
+                self.assertEqual(record["allowable"], record["margin"] > 0.0)
+                # The configuration space of the default metric is the
+                # closure of the allowable domain, so a drive never leaves it.
+                self.assertGreaterEqual(record["margin"], -1e-12)
+
+    def test_a_seed_that_declares_no_timelike_part_records_no_rotation(self):
+        config = ea.build_config(size=SMALL, steps=0,
+                                 edge_disposition=ea.EdgeDisposition.RANDOM)
+        host = ea.build_cobordism_host(SMALL, ea.DECLARED_HOST_SEED,
+                                       ea.EdgeDisposition.RANDOM)
+        record = ea.instance_certificate(host, config)
+        self.assertIsNone(record["epsilon"])
+        self.assertFalse(record["allowable"])
+
+    def test_epsilon_must_be_positive_and_finite(self):
+        for bad in (0.0, -0.1, float("nan"), float("inf")):
+            with self.subTest(epsilon=bad):
+                with self.assertRaises(ValueError):
+                    ea.build_config(epsilon=bad)
+
+    def test_the_cli_carries_epsilon(self):
+        parser = ea.build_parser()
+        self.assertEqual(parser.parse_args(["run"]).epsilon,
+                         ea.DECLARED_EPSILON)
+        self.assertEqual(
+            parser.parse_args(["run", "--epsilon", "0.3"]).epsilon, 0.3)
 
     def test_the_cli_rejects_an_unknown_value(self):
         parser = ea.build_parser()

@@ -76,13 +76,28 @@ Cap parallelism; this box may be shared::
 final frame alone. ``--json`` additionally writes the per-frame measurements,
 so a panel can be checked against a number.
 
-``--edge-disposition`` chooses the seed's causal character: ``random`` (the
-default, magnitude one with the real/imaginary split drawn per edge),
-``spacelike`` (``l^2 = +1``), ``timelike`` (``l^2 = -1``), ``lightlike``
-(``l^2 = i``), or ``foliated`` (a PRESCRIBED light cone -- timelike between
-hop layers of M0, spacelike within one). Only ``foliated`` prescribes a causal
-order; it is labelled as such wherever it is reported and is never presented
-as emergent.
+``--edge-disposition`` chooses the seed's causal character: ``foliated``
+(the default: a PRESCRIBED light cone -- timelike between hop layers of M0,
+spacelike within one), ``random`` (magnitude one with the real/imaginary split
+drawn per edge), ``spacelike`` (``l^2 = +1``), ``timelike`` (``l^2 = -1``), or
+``lightlike`` (``l^2 = i``). Only ``foliated`` prescribes a causal order; it is
+labelled as such wherever it is reported and is never presented as emergent.
+
+The default metric is the Whitney pencil, whose configuration space is the
+closure of the Kontsevich-Segal allowable domain: the complex metrics whose
+Gram eigenvalues on every top simplex satisfy ``sum_i |arg lambda_i| < pi``.
+The allowability margin of an instance is ``pi - sum_i |arg lambda_i|``
+minimized over its top simplices. A real Lorentzian seed sits on the boundary
+of that domain (margin 0), so the host is built as a member of the Lorentzian
+family of the integration specification (Requirement 2): the timelike part of
+every squared length is rotated by ``exp(-2 i epsilon)`` at the reported
+rotation ``--epsilon`` (default ``DECLARED_EPSILON``). Only the ``foliated``
+and ``timelike`` dispositions declare timelike parts; ``random`` and
+``lightlike`` squared lengths are not real intervals, carry no timelike part,
+and are not Lorentzian instances. Every frame records whether its complex is
+allowable, its margin and the rotation (Requirement 1), so a seed outside the
+domain -- where every proposal is refused as a non-member and a drive commits
+nothing -- is visible in the record.
 
 """
 
@@ -268,7 +283,7 @@ class EdgeDisposition:
 
     #: Magnitude one, real/imaginary split uniformly at random per edge:
     #: `l = e^{i a}`, so `l^2 = e^{2 i a}` sweeps the unit circle. The only
-    #: setting that prescribes no causal structure, and the default.
+    #: setting that prescribes no causal structure.
     RANDOM = "random"
     #: `l = 1`, so `l^2 = +1` on every edge.
     SPACELIKE = "spacelike"
@@ -289,7 +304,27 @@ class EdgeDisposition:
 
 
 #: The seed disposition when the caller names none.
-DECLARED_EDGE_DISPOSITION = EdgeDisposition.RANDOM
+#:
+#: The foliation, because it is the only disposition whose seed can lie inside
+#: the Kontsevich-Segal allowable domain as a Lorentzian instance. Its real
+#: squared lengths put every top simplex on the boundary of the domain (margin
+#: 0), and the rotation of their timelike parts by `DECLARED_EPSILON` moves
+#: every one inside (margin 0.126 at size 4). The `random` seed lies outside
+#: the domain (margin -4.91 at size 4) and declares no timelike part to
+#: rotate; `timelike` and `lightlike` lie outside at every rotation (margins
+#: -3 pi + 8 epsilon and -pi). The foliation prescribes a causal order, and the
+#: figure says so on its face.
+DECLARED_EDGE_DISPOSITION = EdgeDisposition.FOLIATED
+#: The Lorentzian-protocol rotation `epsilon` of the seed (integration
+#: specification, Requirement 2): the timelike part `tau_e` of every squared
+#: length is rotated by `exp(-2 i epsilon)`, so
+#: `s_e(epsilon) = (s_e - tau_e) + exp(-2 i epsilon) tau_e`, through
+#: `chainhodge.LorentzianFamily.rotate`. It must be positive: a seed at
+#: `epsilon = 0` is a real Lorentzian metric on the boundary of the allowable
+#: domain, which the specification reports only alongside a gap certificate.
+#: One tenth is the smallest rotation of the specification's own
+#: verification of the family (its Finding 1 reads 0.1, 0.3 and 0.6).
+DECLARED_EPSILON = 0.1
 
 
 class Terminator:
@@ -528,8 +563,47 @@ def _hop_layers(spacetime, sources):
     return layer
 
 
-def _seed_lengths(spacetime, disposition, seed, edges=None):
-    """Write the seed length on every edge, per the chosen disposition.
+def _declares_timelike_parts(disposition):
+    """Whether a disposition's squared lengths are real Lorentzian intervals
+    with a declared timelike part, so that its seed is a Lorentzian instance.
+
+    `spacelike`, `timelike` and `foliated` write real intervals; the first has
+    no timelike part at all and is Euclidean. `random` and `lightlike` write
+    complex squared lengths that are not intervals `dx^2 - dt^2` of any edge,
+    so no timelike part is declared for them and no rotation applies.
+    """
+    return disposition in (EdgeDisposition.TIMELIKE, EdgeDisposition.FOLIATED)
+
+
+def _timelike_parts(spacetime, disposition, edges):
+    """The declared timelike part `tau_e` of every edge's squared length.
+
+    The timelike part of an edge is the contribution of its temporal
+    displacement: an edge of one time step and no spatial step has
+    `s_e = tau_e = -1`, and an edge within one time slice has `tau_e = 0`.
+    The time step is the hop layer from M0, the layering the temporal function
+    of the crossing readouts derives. Returns `None` for a disposition that
+    declares no timelike part (see `_declares_timelike_parts`).
+    """
+    if disposition == EdgeDisposition.TIMELIKE:
+        return [complex(-1.0, 0.0) for _ in edges]
+    if disposition == EdgeDisposition.FOLIATED:
+        layer = _hop_layers(spacetime, boundary_vertices(spacetime))
+        parts = []
+        for edge in edges:
+            a, b = _edge_endpoints(edge)
+            parts.append(complex(-1.0, 0.0)
+                         if layer.get(a, 0) != layer.get(b, 0)
+                         else complex(0.0, 0.0))
+        return parts
+    if disposition == EdgeDisposition.SPACELIKE:
+        return [complex(0.0, 0.0) for _ in edges]
+    return None
+
+
+def _seed_lengths(spacetime, disposition, seed, edges=None, epsilon=0.0):
+    """Write the seed length on every edge, per the chosen disposition, as the
+    member at rotation `epsilon` of its Lorentzian family.
 
     Every setting carries magnitude one, so the dispositions differ ONLY in
     `arg l` -- in causal character, never in scale. Reproducible from `seed`
@@ -542,12 +616,32 @@ def _seed_lengths(spacetime, disposition, seed, edges=None):
     would change the input states rather than the bulk. `FOLIATED` still reads
     its layering from the WHOLE spacetime, since a layering of a subset is not
     the same foliation.
+
+    `epsilon` is the rotation of the Lorentzian family (integration
+    specification, Requirement 2): for a disposition that declares timelike
+    parts (`_timelike_parts`) every squared length becomes
+    `s_e(epsilon) = (s_e - tau_e) + exp(-2 i epsilon) tau_e`, and the length
+    written is its principal square root, which is `l = i exp(-i epsilon)` on
+    an edge of one time step. Zero writes the real intervals themselves. A
+    disposition that declares no timelike part is written unrotated.
     """
     if disposition not in EdgeDisposition.ALL:
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
             % (disposition, ", ".join(EdgeDisposition.ALL)))
     edges = spacetime.getEdgeList().toVector() if edges is None else list(edges)
+    _write_disposition(spacetime, disposition, seed, edges)
+    parts = _timelike_parts(spacetime, disposition, edges)
+    if parts is None or epsilon == 0.0:
+        return
+    squared = [complex(edge.getLength()) ** 2 for edge in edges]
+    rotated = ch.LorentzianFamily.rotate(squared, parts, float(epsilon))
+    for edge, value in zip(edges, rotated):
+        edge.setLength(cmath.sqrt(complex(value)))
+
+
+def _write_disposition(spacetime, disposition, seed, edges):
+    """Write the unrotated seed length of `disposition` on `edges`."""
     if disposition == EdgeDisposition.SPACELIKE:
         for edge in edges:
             edge.setLength(complex(1.0, 0.0))            # l^2 = +1
@@ -582,7 +676,8 @@ def _seed_lengths(spacetime, disposition, seed, edges=None):
 
 
 def build_cobordism_host(n_refine=DECLARED_SIZE, seed=DECLARED_HOST_SEED,
-                         disposition=DECLARED_EDGE_DISPOSITION):
+                         disposition=DECLARED_EDGE_DISPOSITION,
+                         epsilon=DECLARED_EPSILON):
     """A single simplex, refined -- the canonical seed.
 
     The paper's crossing readouts live on a cobordism: `tau` is the Lorentzian
@@ -606,6 +701,10 @@ def build_cobordism_host(n_refine=DECLARED_SIZE, seed=DECLARED_HOST_SEED,
     target register. Whatever the run comes to carry is read afterwards.
     `foliated` is the exception and is not neutral: it prescribes a causal
     order rather than letting one emerge, and is labelled as such.
+
+    The seed is the member at rotation `epsilon` of its Lorentzian family
+    (see `_seed_lengths`), which is what puts a foliated seed inside the
+    Kontsevich-Segal allowable domain of the default Whitney metric.
     """
     st = T.Spacetime(T.Metric(True, T.Signature(4, T.Lorentzian)), T.CDT,
                      1.0, 1.0, T.PREFERRED, T.SolidSimplex(4))
@@ -619,8 +718,27 @@ def build_cobordism_host(n_refine=DECLARED_SIZE, seed=DECLARED_HOST_SEED,
             applied += 1
         if applied >= n_refine:
             break
-    _seed_lengths(st, disposition, seed)
+    _seed_lengths(st, disposition, seed, epsilon=epsilon)
     return st
+
+
+def instance_certificate(spacetime, config):
+    """The instance certificate of a complex (integration specification,
+    Requirement 1): whether every top simplex is Kontsevich-Segal allowable,
+    the minimal margin `pi - sum_i |arg lambda_i|` over the top simplices, and
+    the rotation `epsilon` of the Lorentzian family the seed was built at --
+    `None` when the seed's disposition declares no timelike part and the
+    complex is therefore not a Lorentzian instance.
+    """
+    margin = float(cob.HodgeLaplacian.kontsevichSegalMargin(spacetime))
+    disposition = config.get("edge_disposition")
+    epsilon = config.get("epsilon")
+    return {
+        "allowable": bool(margin > 0.0),
+        "margin": _finite(margin),
+        "epsilon": (float(epsilon) if epsilon is not None
+                    and _declares_timelike_parts(disposition) else None),
+    }
 
 
 # =====================================================================
@@ -710,6 +828,7 @@ class AnimationFrame:
         earlier = list(previous or [])
         self.previous_frames = earlier[-(depth - 1):] if depth > 1 else []
         self.objective = self._read_objective(node)
+        self.instance = instance_certificate(spacetime, config)
         self.layout = self._read_layout(spacetime)
         # Drawing-only, like `layout`: neither appears in `to_json`, so the
         # record is unchanged by anything the figure needs.
@@ -1628,6 +1747,7 @@ class AnimationFrame:
         document = {
             "step": self.step,
             "objective": self.objective,
+            "instance": self.instance,
             "clusters": self.clusters,
             "bands": self.bands,
             "tracks": self.tracks,
@@ -1653,7 +1773,8 @@ class EmergenceFrame(AnimationFrame):
 def build_emergence_node(config):
     """Build the neutral host and its unforced-emergence node."""
     host = build_cobordism_host(config["size"], config["host_seed"],
-                                config["edge_disposition"])
+                                config["edge_disposition"],
+                                config.get("epsilon", DECLARED_EPSILON))
     node = MC(host, [], [], list(config["register_degrees"]), 1.0,
               config["seed"])
     node.set_objective(cob.JointStationarityObjective())
@@ -1872,10 +1993,14 @@ def _report(frame):
     bands = ("absent" if isinstance(frame.bands, Absent)
              else frame.bands["accepted"])
     total = frame.objective.get("total")
+    instance = getattr(frame, "instance", None) or {}
+    margin = instance.get("margin")
     sys.stdout.write(
-        "[step %2d] objective %s | clusters %s | accepted bands %s | %s\n"
+        "[step %2d] objective %s | KS margin %s | clusters %s | "
+        "accepted bands %s | %s\n"
         % (frame.step,
            "n/a" if total is None else "%.6g" % total,
+           "n/a" if margin is None else "%.4g" % margin,
            clusters, bands, verdict))
     sys.stdout.flush()
 
@@ -2507,6 +2632,9 @@ def _suptitle(frame, last_step):
     seed_note = ("seed %s -- a PRESCRIBED foliation, not emergent"
                  % disposition if disposition == EdgeDisposition.FOLIATED
                  else "seed %s" % disposition)
+    epsilon = (getattr(frame, "instance", None) or {}).get("epsilon")
+    if epsilon is not None:
+        seed_note += ", rotated at epsilon %g" % epsilon
     return ("unforced Regge-Hodge emergence -- engine unit %d of %d -- %s "
             "(certificates read post-hoc, firewalled from the objective)"
             % (frame.step, last_step, seed_note))
@@ -2987,6 +3115,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
                  resolution=DECLARED_RESOLUTION,
                  band_scale=DECLARED_BAND_SCALE,
                  edge_disposition=DECLARED_EDGE_DISPOSITION,
+                 epsilon=DECLARED_EPSILON,
                  stage1_iters=DECLARED_STAGE1_ITERS,
                  stage2_iters=DECLARED_STAGE2_ITERS,
                  tolerance=DECLARED_TOLERANCE,
@@ -3033,6 +3162,12 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
         raise ValueError(
             "unknown edge disposition %r: expected one of %s"
             % (edge_disposition, ", ".join(EdgeDisposition.ALL)))
+    epsilon = _finite_value("epsilon", epsilon)
+    if epsilon <= 0.0:
+        raise ValueError(
+            "epsilon is the rotation of the seed's Lorentzian family and must "
+            "be positive: at zero a Lorentzian seed is a real metric on the "
+            "boundary of the allowable domain; got %r" % epsilon)
 
     config.update({
         "size": size,
@@ -3041,6 +3176,7 @@ def build_config(size=DECLARED_SIZE, steps=DECLARED_STEPS,
         "resolution_window": list(DECLARED_RESOLUTION_WINDOW),
         "band_scale": band_scale,
         "edge_disposition": edge_disposition,
+        "epsilon": epsilon,
         "register_degrees": list(DECLARED_REGISTER_DEGREES),
         "hodge_degrees": list(DECLARED_HODGE_DEGREES),
         "degrees": list(DECLARED_ANALYSIS_DEGREES),
@@ -3144,8 +3280,16 @@ def build_parser():
                           "window |lambda| <= this of that band.")
     run.add_argument("--edge-disposition", choices=list(EdgeDisposition.ALL),
                      default=DECLARED_EDGE_DISPOSITION,
-                     help="causal character of the seed's edges: random, "
-                          "spacelike, timelike, lightlike, or foliated")
+                     help="causal character of the seed's edges: "
+                          "foliated (the default), random, spacelike, "
+                          "timelike, or lightlike")
+    run.add_argument("--epsilon", type=float, default=DECLARED_EPSILON,
+                     help="the rotation of the seed's Lorentzian family: "
+                          "the timelike part of every squared length is "
+                          "rotated by exp(-2 i epsilon), which puts a "
+                          "foliated seed inside the Kontsevich-Segal "
+                          "allowable domain; must be positive (default %g)"
+                          % DECLARED_EPSILON)
     _add_common_run_arguments(
         run, "emergence_animation.gif",
         "also write the final complex here (schema 1: cells, edges as "
@@ -3323,6 +3467,7 @@ def main(argv=None):
             host_seed=args.host_seed, resolution=args.resolution,
             band_scale=args.band_scale,
             edge_disposition=args.edge_disposition,
+            epsilon=args.epsilon,
             stage1_iters=args.stage_one_iterations,
             stage2_iters=args.stage_two_iterations,
             tolerance=args.tolerance, patience=args.patience,
