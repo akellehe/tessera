@@ -185,7 +185,7 @@ class TheRecursionIsDrivenLevelByLevelTest(unittest.TestCase):
             flat, DIMENSION, 1.0, 4, 17)
         self.assertEqual([list(members) for members in swept.components],
                          [list(members) for members in single])
-        self.assertEqual(swept.selected_resolution, 1.0)
+        self.assertEqual(swept.selectedResolution, 1.0)
 
     def test_the_reduction_map_covers_every_coordinate(self):
         """componentOfCoordinate is the map MappingCylinder builds W^l over."""
