@@ -390,12 +390,16 @@ class TestResonantFeshbach:
         K, A, M = _non_normal_pencil()
         interface = _split_interface(K, 4)
         values, interior = _interior_spectrum(A, M, interface)
-        lam = complex(values[0])
+        # A shift a relative 1e-9 off an interior eigenvalue: the nearest
+        # eigenvalue of P_II then sits at about that fraction of the spectral
+        # radius, inside a disc declared at 1e-6 and outside one at 1e-12.
+        lam = complex(values[0]) * (1.0 + 1e-9)
         wide = PS.feshbach(A, M, lam, interface, 1e-10, 1e-6)
         assert wide.interiorSingular
         assert wide.resonanceEnclosure < 1.0 < wide.resonanceSeparation
-        narrow = PS.feshbach(A, M, lam, interface, 1e-10, 1e-15)
+        narrow = PS.feshbach(A, M, lam, interface, 1e-10, 1e-12)
         assert not narrow.interiorSingular
+        assert narrow.resonanceSeparation > 1.0
         with pytest.raises(ValueError):
             PS.feshbach(A, M, lam, interface, 1e-10, -1.0)
 
@@ -590,9 +594,17 @@ class TestRecursiveQuotientSurrogateRegimes:
     whether the surrogate exists."""
 
     @staticmethod
-    def _quotient(A, M):
+    def _quotient(K, A, M):
+        """One component claiming every coordinate, with each interface edge
+        claimed a second time by a singleton component: the interface edges are
+        then claimed twice and are the interface, and the rest are claimed once
+        and couple only to coordinates of the one component, so they are its
+        interior. Splitting the coordinates between two components would leave
+        no interior at all, because the auxiliary pencil couples every edge to
+        every edge through the inverse metric of the degree below."""
         dim = A.shape[0]
-        components = [list(range(0, dim // 2)), list(range(dim // 2, dim))]
+        interface = _split_interface(K, 4)
+        components = [list(range(dim))] + [[i] for i in interface]
         return cob.RecursiveQuotient.overPencil(
             [complex(z) for z in A.reshape(-1)],
             [complex(z) for z in M.reshape(-1)], dim, components)
@@ -605,7 +617,8 @@ class TestRecursiveQuotientSurrogateRegimes:
         so."""
         K, A, M = (_complex_symmetric_pencil() if fixture == "complex-symmetric"
                    else _non_normal_pencil())
-        quotient = self._quotient(A, M)
+        quotient = self._quotient(K, A, M)
+        assert len(quotient.interiorIndices(0)) > 0
         assert quotient.regime in (cob.CertificateRegime.NonNormal,
                                    cob.CertificateRegime.ComplexSymmetricPencil)
         values = np.linalg.eigvals(np.linalg.solve(M, A))

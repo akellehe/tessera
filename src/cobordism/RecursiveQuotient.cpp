@@ -1405,10 +1405,15 @@ RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
     throw std::invalid_argument(
         "RecursiveQuotient: modeCutoff must cover the window upper edge");
   // The interval [a, b] is the disc whose diameter it is, and the cutoff is the
-  // retention disc's real upper edge.
+  // retention disc's real upper edge. The declared reals are recorded as
+  // declared, not re-derived from the disc through rounding.
   const double centre = 0.5 * (windowLower + windowUpper);
-  return craigBampton(cd(centre, 0.0), 0.5 * (windowUpper - windowLower),
-                      modeCutoff - centre, residualTolerance);
+  CraigBamptonRead read = craigBampton(cd(centre, 0.0), 0.5 * (windowUpper - windowLower),
+                                       modeCutoff - centre, residualTolerance);
+  read.windowLower = windowLower;
+  read.windowUpper = windowUpper;
+  read.modeCutoff = modeCutoff;
+  return read;
 }
 
 RecursiveQuotient::CraigBamptonRead RecursiveQuotient::craigBampton(
