@@ -62,6 +62,12 @@ def _over_vertex_supports(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
     return cob.RecursiveQuotient.overVertexSupports(*args, **kwargs)
 
+
+def _hodge(st):
+    """The diagonal-weight operator the NumPy references of this module are
+    built from, the same operator the levels above reduce."""
+    return cob.HodgeLaplacian(st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _causal_specimen import load_dump, rebuild_spacetime  # noqa: E402
 
@@ -330,7 +336,7 @@ class TestSpacetimeHandFixtures(unittest.TestCase):
 
     def test_degree_one_matches_numpy_schur_on_the_hodge_operator(self):
         st = self._strip()
-        hodge = cob.HodgeLaplacian(st)
+        hodge = _hodge(st)
         L = _mat(hodge.laplacian(1), 13)
         q = _over_vertex_supports(
             st, 1, [self.SUPPORT_A, self.SUPPORT_B])
@@ -1427,7 +1433,7 @@ class TestDiscoveredPartitions(unittest.TestCase):
         cert = q.verifyStatic()
         self.assertTrue(cert.holds(), cert.describe())
         # Independent NumPy reference on the whole-graph Laplacian.
-        hodge = cob.HodgeLaplacian(st)
+        hodge = _hodge(st)
         ids = sorted(v.getId() for v in st.getVertexList().toVector())
         L = _mat(hodge.laplacian(0), len(ids))
         kept = list(q.interfaceIndices)
@@ -1550,7 +1556,7 @@ def _derived_zero_laplacian(st):
     cc = cob.ChainComplex.fromSpacetime(st)
     n0, n1 = cc.numSimplices(0), cc.numSimplices(1)
     d1 = np.array(cc.boundaryMatrix(1), dtype=float).reshape(n0, n1).astype(complex)
-    w1 = np.array(cob.HodgeLaplacian(st).weights(1), dtype=complex)
+    w1 = np.array(_hodge(st).weights(1), dtype=complex)
     return d1 @ np.diag(1.0 / w1) @ d1.conj().T
 
 

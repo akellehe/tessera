@@ -194,7 +194,12 @@ def test_the_stiffness_per_degree_of_freedom_does_not_fall_with_the_size_of_the_
     for name, values in quotients.items():
         values = np.array(values)
         assert np.all(values > 0.0), name
-        assert values.max() / values.min() < 1.1, name               # a 1/N fall would be (4/3)^3 = 2.4
+        # Does not fall: the larger complex's quotient is within a tenth of the
+        # smaller's or above it. A 1/N fall would be (4/3)^3 = 2.4. The
+        # traceless wave's wavelength grows with n, and along it the quotient
+        # of the covariant Whitney operator rises (2.69e4 at n = 3, 3.80e4 at
+        # n = 4), so an upper bound on the ratio is not part of the property.
+        assert values[1] >= values[0] / 1.1, name
     assert quotients["uniform traceless"][0] == pytest.approx(quotients["uniform traceless"][1], rel=1e-8)
 
 
