@@ -106,8 +106,9 @@ def test_a_patience_the_budget_cannot_reach_ends_on_the_budget():
 
 
 def test_an_improving_unit_leaves_no_stall_behind():
-    # A unit that improves needs a drive that can move; on the default seed,
-    # inside the allowable domain of the default Whitney metric, it does.
+    # A unit that improves needs a drive that can move; on the default
+    # spacelike seed, inside the allowable domain of the default Whitney
+    # metric at margin pi, it does.
     config = ea.build_config(size=SMALL, steps=2, tolerance=TRIVIAL,
                              patience=2)
     result = ea.drive(config, progress=False)
