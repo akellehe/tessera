@@ -84,6 +84,70 @@ double forceNormOf(const JointAction &action,
   return std::sqrt(squared);
 }
 
+/// The covariance the declared rule builds from the action's current carrier
+/// operator, and the band ranks it grouped the spectrum into (empty under the
+/// projector rule).
+///
+/// Under the band rule each band's projector is the difference of two prefix
+/// projectors that end on band boundaries, so it does not depend on how the
+/// eigensolver ordered the modes inside a degenerate band.
+std::pair<std::vector<complexd>, std::vector<std::size_t>> covarianceOf(
+    const JointAction &action,
+    const SelfConsistentMeanFieldDeclaration &declaration) {
+  const bool ascending =
+      declaration.occupationOrder == OccupationOrder::AscendingRealPart;
+  if (declaration.covarianceRule == CovarianceRule::OccupiedProjector)
+    return {action.occupationProjector(declaration.occupiedModes, ascending),
+            {}};
+
+  const auto ordered = action.orderedCarrierEigenvalues(ascending);
+  std::vector<std::size_t> starts;
+  for (std::size_t index = 0; index < ordered.size(); ++index) {
+    if (index == 0) {
+      starts.push_back(0);
+      continue;
+    }
+    const double scale = std::max(1.0, std::abs(ordered[index - 1]));
+    if (std::abs(ordered[index] - ordered[index - 1]) >
+        declaration.bandTolerance * scale)
+      starts.push_back(index);
+  }
+  std::vector<std::size_t> ranks;
+  for (std::size_t band = 0; band < starts.size(); ++band) {
+    const std::size_t end =
+        band + 1 < starts.size() ? starts[band + 1] : ordered.size();
+    ranks.push_back(end - starts[band]);
+  }
+  if (declaration.bandOccupations.size() > ranks.size())
+    throw std::invalid_argument(
+        "SelfConsistentMeanField: " +
+        std::to_string(declaration.bandOccupations.size()) +
+        " band occupations were declared but the spectrum groups into only " +
+        std::to_string(ranks.size()) + " bands");
+
+  const std::size_t order = ordered.size();
+  std::vector<complexd> covariance(order * order, complexd{0.0, 0.0});
+  std::vector<complexd> lower(order * order, complexd{0.0, 0.0});
+  for (std::size_t band = 0; band < declaration.bandOccupations.size();
+       ++band) {
+    const double occupation = declaration.bandOccupations[band];
+    const double rank = static_cast<double>(ranks[band]);
+    if (occupation > rank)
+      throw std::invalid_argument(
+          "SelfConsistentMeanField: band " + std::to_string(band) +
+          " has rank " + std::to_string(ranks[band]) +
+          " and cannot hold the declared occupation " +
+          std::to_string(occupation));
+    const std::size_t end = starts[band] + ranks[band];
+    const auto upper = action.occupationProjector(end, ascending);
+    if (occupation != 0.0)
+      for (std::size_t index = 0; index < covariance.size(); ++index)
+        covariance[index] += (occupation / rank) * (upper[index] - lower[index]);
+    lower = upper;
+  }
+  return {covariance, ranks};
+}
+
 }  // namespace
 
 SelfConsistentMeanField::SelfConsistentMeanField(
@@ -93,7 +157,24 @@ SelfConsistentMeanField::SelfConsistentMeanField(
     throw std::invalid_argument(
         "SelfConsistentMeanField: the mixing fraction lies in (0, 1]; a value "
         "outside it either freezes the covariance or overshoots the projector");
-  if (declaration_.occupiedModes == 0)
+  if (declaration_.covarianceRule == CovarianceRule::BandFilling) {
+    double total = 0.0;
+    for (const double occupation : declaration_.bandOccupations) {
+      if (!(occupation >= 0.0))
+        throw std::invalid_argument(
+            "SelfConsistentMeanField: a band occupation is a number of "
+            "particles and cannot be negative");
+      total += occupation;
+    }
+    if (!(total > 0.0))
+      throw std::invalid_argument(
+          "SelfConsistentMeanField: the band occupations are empty or sum to "
+          "zero, so the carried state's bilinear density is identically zero "
+          "and there is no backreaction to make self-consistent");
+    if (!(declaration_.bandTolerance >= 0.0))
+      throw std::invalid_argument(
+          "SelfConsistentMeanField: the band tolerance cannot be negative");
+  } else if (declaration_.occupiedModes == 0)
     throw std::invalid_argument(
         "SelfConsistentMeanField: no mode is declared occupied, so the carried "
         "state's bilinear density is identically zero and there is no "
@@ -109,8 +190,7 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
   // from the occupied modes of the operator at the geometry it was handed.
   if (action_.declaration().covariance.empty()) {
     JointActionDeclaration seeded = action_.declaration();
-    seeded.covariance =
-        action_.occupationProjector(declaration_.occupiedModes, ascending);
+    seeded.covariance = covarianceOf(action_, declaration_).first;
     action_ = JointAction(action_.spacetime(), std::move(seeded));
   }
 
@@ -132,8 +212,8 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
     // geometry. This is the half of the fixed point the engine's own carried
     // state never took: a covariance that is only transported forgets which
     // modes of the current operator it is supposed to fill.
-    const auto projector =
-        action_.occupationProjector(declaration_.occupiedModes, ascending);
+    const auto [projector, ranks] = covarianceOf(action_, declaration_);
+    step.bandRanks = ranks;
     const auto previous = action_.declaration().covariance;
     step.covarianceChange = frobeniusDistance(projector, previous);
 
@@ -154,16 +234,26 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
     step.occupiedEnergy = occupiedEnergyOf(mixed, action_.carrierOperator());
 
     const auto ordered = action_.orderedCarrierEigenvalues(ascending);
+    // The occupied span: the declared mode count, or under the band rule every
+    // mode up to the end of the last band with a nonzero occupation.
+    std::size_t occupiedSpan = declaration_.occupiedModes;
+    if (declaration_.covarianceRule == CovarianceRule::BandFilling) {
+      occupiedSpan = 0;
+      std::size_t end = 0;
+      for (std::size_t band = 0; band < declaration_.bandOccupations.size() &&
+                                 band < ranks.size();
+           ++band) {
+        end += ranks[band];
+        if (declaration_.bandOccupations[band] != 0.0) occupiedSpan = end;
+      }
+    }
     step.occupiedEigenvalues.assign(
         ordered.begin(),
-        ordered.begin() +
-            static_cast<std::ptrdiff_t>(
-                std::min(declaration_.occupiedModes, ordered.size())));
+        ordered.begin() + static_cast<std::ptrdiff_t>(
+                              std::min(occupiedSpan, ordered.size())));
     step.spectralGap =
-        declaration_.occupiedModes > 0 &&
-                declaration_.occupiedModes < ordered.size()
-            ? std::abs(ordered[declaration_.occupiedModes] -
-                       ordered[declaration_.occupiedModes - 1])
+        occupiedSpan > 0 && occupiedSpan < ordered.size()
+            ? std::abs(ordered[occupiedSpan] - ordered[occupiedSpan - 1])
             : std::numeric_limits<double>::quiet_NaN();
 
     report.steps.push_back(step);
@@ -174,6 +264,7 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
     report.occupiedEigenvalues = step.occupiedEigenvalues;
     report.occupiedEnergy = step.occupiedEnergy;
     report.spectralGap = step.spectralGap;
+    report.bandRanks = step.bandRanks;
     report.action = step.action;
 
     if (step.forceNorm <= declaration_.tolerance &&

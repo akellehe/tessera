@@ -13,6 +13,31 @@
 
 namespace tessera::cobordism {
 
+/// # CovarianceRule
+///
+/// How the carried covariance is rebuilt from the carrier operator at each
+/// outer iteration.
+///
+/// * `OccupiedProjector` — the spectral projector onto the first
+///   `occupiedModes` modes in the declared order: a Slater determinant, the
+///   quasi-free covariance of the Gaussian class.
+/// * `BandFilling` — the ordered spectrum is grouped into bands of degenerate
+///   eigenvalues (consecutive eigenvalues within `bandTolerance` of each other,
+///   relative to their size), and band \f$ b \f$ of rank \f$ r_b \f$ carries
+///   the declared occupation \f$ n_b \f$ spread evenly over it:
+///   \f[ \Gamma=\sum_b \frac{n_b}{r_b}\,P_b , \f]
+///   with \f$ P_b \f$ the band's spectral projector. This is the one-body
+///   density of a many-body state that places \f$ n_b \f$ particles in band
+///   \f$ b \f$ and is invariant under every symmetry that protects the bands:
+///   by Schur's lemma such a density is a multiple of the projector on each
+///   band that carries one irreducible representation, so the rule adds no
+///   choice beyond the occupation numbers. It is the density the whitepaper's
+///   certificates-blind backreaction reads a correlated state through, the
+///   bilinear density \f$ \operatorname{tr}(\Gamma h) \f$, and it is not
+///   idempotent when a band is partly filled; `purityDefect` reports by how
+///   much.
+enum class CovarianceRule { OccupiedProjector, BandFilling };
+
 /// # SelfConsistentMeanFieldDeclaration
 ///
 /// The configuration of a self-consistent backreaction solve.
@@ -23,6 +48,21 @@ struct SelfConsistentMeanFieldDeclaration {
 
   /// Which modes those are.
   OccupationOrder occupationOrder = OccupationOrder::AscendingRealPart;
+
+  /// How the covariance is rebuilt at each outer iteration. Under
+  /// `BandFilling` `occupiedModes` is not read.
+  CovarianceRule covarianceRule = CovarianceRule::OccupiedProjector;
+
+  /// \f$ n_b \f$, the occupation of each band in the declared order, for
+  /// `CovarianceRule::BandFilling`: entry \f$ b \f$ is the number of particles
+  /// the \f$ b \f$-th band holds, at most its rank. Bands past the end of the
+  /// vector are empty.
+  std::vector<double> bandOccupations;
+
+  /// The relative separation at or below which two consecutive ordered
+  /// eigenvalues belong to one band under `CovarianceRule::BandFilling`:
+  /// \f$ |\lambda_{i+1}-\lambda_i|\le\tau\max(1,|\lambda_i|) \f$.
+  double bandTolerance = 1e-8;
 
   /// The largest number of outer iterations — geometry relaxation followed by
   /// re-occupation — taken before the solve reports what it reached.
@@ -82,6 +122,10 @@ struct SelfConsistentMeanFieldStep {
   /// that isolates the occupied band. Quiet NaN when every mode is occupied or
   /// none is.
   double spectralGap = 0.0;
+  /// The ranks of the bands the ordered spectrum groups into under
+  /// `CovarianceRule::BandFilling`, in the declared order; empty under
+  /// `OccupiedProjector`.
+  std::vector<std::size_t> bandRanks;
   /// Whether the inner geometry relaxation reached its own tolerance.
   bool geometryConverged = false;
   /// The inner relaxation's residual norm when it stopped.
@@ -110,6 +154,8 @@ struct SelfConsistentMeanFieldReport {
   std::complex<double> occupiedEnergy{0.0, 0.0};
   /// The gap above the occupied band at \f$ z^{*} \f$.
   double spectralGap = 0.0;
+  /// The band ranks at \f$ z^{*} \f$ under `CovarianceRule::BandFilling`.
+  std::vector<std::size_t> bandRanks;
   /// The complex action at \f$ (z^{*},\Gamma^{*}) \f$.
   std::complex<double> action{0.0, 0.0};
 };
@@ -143,8 +189,10 @@ struct SelfConsistentMeanFieldReport {
 /// 1. with \f$ \Gamma \f$ held, the geometry is made stationary against the
 ///    whole joint action by `HolomorphicRelaxation`, so that
 ///    \f$ \partial S/\partial z=0 \f$ and \f$ U\,\partial S/\partial U=0 \f$;
-/// 2. with the geometry held, \f$ \Gamma \f$ is replaced by the spectral
-///    projector onto the occupied modes of \f$ h(z,U) \f$ at that geometry.
+/// 2. with the geometry held, \f$ \Gamma \f$ is rebuilt from the modes of
+///    \f$ h(z,U) \f$ at that geometry by the declared `CovarianceRule`: the
+///    spectral projector onto the occupied modes, or the band filling
+///    \f$ \sum_b (n_b/r_b)P_b \f$.
 ///
 /// A fixed point of the pair is the self-consistent polaron the whitepaper
 /// names: \f$ \Gamma^{*} \f$ is a projector onto modes of \f$ h(z^{*}) \f$, and
@@ -152,9 +200,11 @@ struct SelfConsistentMeanFieldReport {
 /// stationary point of a complex action rather than a minimum of a real one,
 /// and the report carries the residuals that certify it as such.
 ///
-/// The iteration stays inside the Gaussian class throughout: the covariance is
-/// idempotent at every step by construction, and `purityDefect` measures that
-/// closure rather than assuming it.
+/// Under `OccupiedProjector` the iteration stays inside the Gaussian class
+/// throughout: the covariance is idempotent at every step by construction, and
+/// `purityDefect` measures that closure rather than assuming it. Under
+/// `BandFilling` the covariance is the one-body density of a correlated state
+/// and `purityDefect` measures its distance from a projector.
 class SelfConsistentMeanField {
  public:
   /// Build a solve over an action.
@@ -165,9 +215,11 @@ class SelfConsistentMeanField {
   ///   uniform-seeded start. The complex the action refers to is the object the
   ///   solve writes.
   /// @param declaration The occupation rule and the convergence controls.
-  /// @throws std::invalid_argument when the mixing is outside \f$ (0,1] \f$, or
-  ///   when no mode is declared occupied, which leaves the matter term
-  ///   identically zero and the self-consistency empty.
+  /// @throws std::invalid_argument when the mixing is outside \f$ (0,1] \f$,
+  ///   when no mode is declared occupied (under `BandFilling`, when the band
+  ///   occupations are empty, negative, or sum to zero), which leaves the matter
+  ///   term identically zero and the self-consistency empty, or when the band
+  ///   tolerance is negative.
   SelfConsistentMeanField(JointAction action,
                           SelfConsistentMeanFieldDeclaration declaration);
 
