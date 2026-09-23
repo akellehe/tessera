@@ -1,0 +1,221 @@
+# Copyright (c) 2026 Twin Vector Labs LLC.
+# All rights reserved.
+
+"""The nucleon-to-Delta synthesis driver: every certificate it reports, on
+the three-sheeted unit-monopole tetrahedron, and its --live path.
+
+The live path is exercised with matplotlib stubbed, as the emergence driver's
+live tests do: a GUI cannot be opened in a test process, and the claims under
+test are the refusal of a file-only or WebAgg backend and the identity of the
+outputs with and without the flag.
+"""
+
+import json
+import time
+
+import numpy as np
+import pytest
+
+from tessera import cobordism as cob
+from tessera import observables as obs
+from tessera.drivers import baryon_poles as bp
+
+
+@pytest.fixture(scope="module")
+def alignment():
+    return bp.aligned_doublet_frame(bp.monopole_support(),
+                                    bp.rotation_group())
+
+
+# ------------------------------------------------------------------ host
+
+
+def test_the_host_carries_the_unit_monopole_on_every_sheet():
+    spacetime = bp.build_host()
+    for sheet in range(bp.SHEETS):
+        support, departure = bp.sheet_support(spacetime, sheet)
+        read = support.monopoleNumber()
+        assert read.monopole_number == 1 and read.odd and read.bundle
+        assert departure < 1e-14
+    faces = cob.JointAction(
+        spacetime, bp.action_declaration(spacetime, 1.0, 1.0)).face_holonomies()
+    # every face holonomy is a primitive fourth root of unity, +-i
+    assert np.max(np.abs(np.abs(np.asarray(faces)) - 1.0)) < 1e-14
+    assert np.max(np.abs(np.asarray(faces) ** 2 + 1.0)) < 1e-12
+
+
+def test_the_sheets_are_isomorphic():
+    spacetime = bp.build_host()
+    read = obs.SheetedSupport(3, 6).certifyIsomorphism(
+        [np.array(bp.sheet_squared_lengths(spacetime, t)) for t in range(3)],
+        [np.array(bp.sheet_links(spacetime, t)) for t in range(3)], 1e-12)
+    assert read.isomorphic
+
+
+def test_the_primal_regge_term_is_empty_on_the_host():
+    spacetime = bp.build_host()
+    action = cob.JointAction(spacetime,
+                             bp.action_declaration(spacetime, 1.0, 1.0))
+    assert action.regge_hinge_count() == 0
+    assert action.regge_term() == 0
+
+
+def test_the_monopole_spin_read(alignment):
+    read = alignment["spin_read"]
+    assert read.monopole.monopole_number == 1
+    assert read.cocycle.nontrivial
+    assert abs(read.cocycle.commutator_phase + 1.0) < 1e-12
+    assert read.half_integer_doublet
+    values = alignment["averaged_eigenvalues"]
+    expected = [4 - 2 / np.sqrt(3)] * 2 + [4.0] * 2 + [4 + 2 / np.sqrt(3)] * 2
+    assert np.allclose(values, expected, atol=1e-12)
+    # the genuine j = 1/2 doublet is the one at 4
+    assert alignment["reference_carrier"] == 1
+
+
+def test_the_doublets_are_aligned_to_one_su2_action(alignment):
+    assert alignment["intertwining_residual"] < 1e-10
+    frame = alignment["frame"]
+    assert np.linalg.cond(frame) < 1e6
+
+
+def test_the_one_per_doublet_sector_is_two_halves_and_a_three_halves():
+    states, _ = bp.singlet_states((1, 1, 1))
+    sectors, values = bp.spin_sectors(states)
+    assert sectors[bp.SPIN_HALF].shape[1] == 4
+    assert sectors[bp.SPIN_THREE_HALVES].shape[1] == 4
+
+
+def test_contents_carry_the_spins_they_can():
+    for content, half, three in (((3, 0, 0), 0, 4), ((2, 1, 0), 2, 4),
+                                 ((1, 1, 1), 4, 4)):
+        states, _ = bp.singlet_states(content)
+        sectors, _ = bp.spin_sectors(states)
+        assert sectors.get(bp.SPIN_HALF, np.zeros((0, 0))).shape[-1] == half
+        assert sectors[bp.SPIN_THREE_HALVES].shape[1] == three
+
+
+def test_every_singlet_state_is_a_colour_singlet():
+    states, _ = bp.singlet_states((2, 1, 0))
+    basis = bp.occupation_basis()
+    for k in range(states.shape[1]):
+        fock = bp.to_fock(states[:, k], basis)
+        residual = np.linalg.norm(bp.colour_casimir(fock)) / \
+            np.linalg.norm(fock)
+        assert residual < 1e-12
+
+
+def test_a_colour_nonsinglet_is_caught():
+    """Three quarks on one sheet are not a colour singlet."""
+    fock = np.asarray(obs.SharpSpin.determinant([0, 3, 6], 18))
+    assert np.linalg.norm(bp.colour_casimir(fock)) > 0.5
+
+
+def test_the_covariant_operator_at_the_monopole_is_not_rotation_symmetric():
+    """A measured property of the host, recorded because the calculation
+    rests on it: the Whitney covariant operator h_1(z, U) of the specification
+    (Definition 2, base-vertex twist b = min) at the unit-monopole connection
+    has six simple eigenvalues per sheet and does not commute with the
+    projective rotation action D_1(g); the three spinor doublets appear only in
+    the rotation-averaged operator (WP line 497, "the T-averaged twisted edge
+    Laplacian")."""
+    spacetime = bp.build_host()
+    action = cob.JointAction(spacetime,
+                             bp.action_declaration(spacetime, 1.0, 1.0))
+    h = bp.matrix(action.carrier_operator())[:6, :6]
+    values = np.sort(np.linalg.eigvals(h).real)
+    assert np.min(np.diff(values)) > 0.1
+    support = bp.monopole_support()
+    worst = max(np.linalg.norm(np.asarray(support.edgeRepresentation(g)) @ h
+                               - h @ np.asarray(support.edgeRepresentation(g)))
+                for g in bp.rotation_group())
+    assert worst / np.linalg.norm(h) > 0.1
+
+
+# ------------------------------------------------------------------ ratios
+
+
+def test_ratios_are_taken_on_the_lowest_poles():
+    def record(content, half, three):
+        sectors = {}
+        for key, value in ((str(bp.SPIN_HALF), half),
+                           (str(bp.SPIN_THREE_HALVES), three)):
+            if value is not None:
+                entry = {"lowest_pole": value}
+                sectors[key] = {"quasi_free": entry, "with_quartic": entry}
+        return {"content": content, "sectors": sectors}
+    out = bp.ratios([record([3, 0, 0], None, 9.0 + 0j),
+                     record([2, 1, 0], 10.0 + 0j, 10.0 + 0j),
+                     record([1, 1, 1], 12.0 + 0j, 12.0 + 0j)])
+    r = out["quasi_free"]
+    assert r["nucleon_content"] == [2, 1, 0]
+    assert r["delta_content"] == [3, 0, 0]
+    assert r["pole_ratio"] == pytest.approx(10.0 / 9.0)
+    assert r["target_mass_squared_ratio"] == pytest.approx(
+        (938.272 / 1232.0) ** 2)
+
+
+# -------------------------------------------------------------------- live
+
+
+class _Canvas:
+    def draw_idle(self):
+        pass
+
+
+class _Figure:
+    canvas = _Canvas()
+
+
+def _stub_matplotlib(monkeypatch, backend="qtagg"):
+    import matplotlib
+    import matplotlib.pyplot as plt
+    monkeypatch.setattr(matplotlib, "get_backend", lambda: backend)
+    monkeypatch.setattr(plt, "isinteractive", lambda: True)
+    monkeypatch.setattr(plt, "figure", lambda **kwargs: _Figure())
+    monkeypatch.setattr(plt, "close", lambda figure: None)
+    monkeypatch.setattr(plt, "pause", lambda interval: time.sleep(0.001))
+
+
+@pytest.mark.parametrize("backend", ["agg", "webagg"])
+def test_live_refuses_a_non_interactive_or_webagg_backend(monkeypatch,
+                                                          backend):
+    _stub_matplotlib(monkeypatch, backend)
+    with pytest.raises(RuntimeError, match="--live needs an interactive"):
+        bp.drive_live(bp.default_config([1.0], [1.0],
+                                        selected_contents=[(3, 0, 0)]))
+
+
+def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
+    """A deterministic stand-in for one scan point, so the live path is tested
+    without the relaxation's cost; the claim under test is that the live
+    worker runs the same `drive` and returns the same result."""
+    record = {"content": [3, 0, 0], "seconds": 0.0,
+              "sectors": {str(bp.SPIN_THREE_HALVES): {
+                  "quasi_free": {"lowest_pole": complex(kappa, beta)},
+                  "with_quartic": {"lowest_pole": complex(beta, kappa)}}}}
+    return {"kappa": kappa, "beta": beta, "contents": [record],
+            "ratios": bp.ratios([record])}
+
+
+def test_live_and_headless_outputs_are_identical(monkeypatch):
+    monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
+    config = bp.default_config([1.0, 2.0], [0.5], selected_contents=[(3, 0, 0)])
+    headless = bp.drive(dict(config))
+    _stub_matplotlib(monkeypatch)
+    drawn = []
+    monkeypatch.setattr(bp, "draw_frame",
+                        lambda figure, frames, index: drawn.append(index))
+    live = bp.drive_live(dict(config))
+    assert drawn == [0, 1]
+    assert json.dumps(bp._jsonable(live), sort_keys=True) == \
+        json.dumps(bp._jsonable(headless), sort_keys=True)
+
+
+def test_a_worker_error_reaches_the_main_thread(monkeypatch):
+    def exploding(*args, **kwargs):
+        raise ValueError("the scan point failed")
+    monkeypatch.setattr(bp, "scan_point", exploding)
+    _stub_matplotlib(monkeypatch)
+    with pytest.raises(ValueError, match="the scan point failed"):
+        bp.drive_live(bp.default_config([1.0], [1.0]))
