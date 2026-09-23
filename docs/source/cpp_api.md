@@ -227,6 +227,15 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} LevenbergMarquardt.h
 ```
 
+```{doxygenfile} JointAction.h
+```
+
+```{doxygenfile} HolomorphicRelaxation.h
+```
+
+```{doxygenfile} SelfConsistentMeanField.h
+```
+
 ## Whitney-form Hodge Laplacian pencil
 
 ```{doxygenfile} WhitneyMass.h
