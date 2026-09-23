@@ -1139,15 +1139,23 @@ class AnimationFrame:
         self.candidate_positions = []
         self.candidate_slots = {}
         self.degree_count = max(1, len(list(config["degrees"])))
+        components = getattr(self, "components", [])
         position_of = {id(component): index
-                       for index, component in enumerate(self.components)}
-        if not self.supports:
+                       for index, component in enumerate(components)}
+        # The supports come from both proposers when the cluster panel ran; a
+        # frame that carries only its modularity components reads its bands
+        # on those, each its own support.
+        supports = getattr(self, "supports", None)
+        if supports is None:
+            supports = [(list(component.support), component, "modularity")
+                        for component in components]
+        if not supports:
             return Absent("no cluster to carry a band")
         settings = obs.SpectralFiberConfig()
         settings.degrees = list(config["degrees"])
         tracker = obs.SpectralFiberTracker(spacetime, settings)
         rows = []
-        for support, component, proposers in self.supports:
+        for support, component, proposers in supports:
             position = (-1 if component is None
                         else position_of.get(id(component), -1))
             for slot, degree in enumerate(config["degrees"]):

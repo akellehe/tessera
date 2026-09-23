@@ -4829,26 +4829,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
 
-  py::class_<CooorientedCut>(m, "CooorientedCut",
-      "A cooriented separating cut of Section 13.1, declared by the vertices "
-      "on its incoming side. The cut is the set of edges with exactly one "
-      "endpoint in that set, and an edge's coorientation is +1 when it leaves "
-      "the incoming side. Nothing here reads a vertex time, a Lorentzian "
-      "distance or a level-set ordering.")
-      .def(py::init<>())
-      .def(py::init([](std::vector<std::uint64_t> incomingSide,
-                       std::string label) {
-             CooorientedCut cut;
-             cut.incomingSide = std::move(incomingSide);
-             cut.label = std::move(label);
-             return cut;
-           }),
-           py::arg("incoming_side"), py::arg("label") = std::string())
-      .def_readwrite("incoming_side", &CooorientedCut::incomingSide,
-                     "Vertex identifiers on the incoming side of the cut.")
-      .def_readwrite("label", &CooorientedCut::label,
-                     "The caller's label for the cut.");
-
   py::class_<WardFluxConfig>(m, "WardFluxConfig",
       "Every threshold of the Ward-flux read.")
       .def(py::init<>())
@@ -4860,54 +4840,86 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "read as the integer quark number N_q.")
       .def_readwrite("imaginary_tolerance", &WardFluxConfig::imaginaryTolerance,
                      "|Im phi_j(Sigma)| must be at or below this for the flux "
-                     "to be read as an integer.");
+                     "to be read as an integer.")
+      .def_readwrite("charge_tolerance", &WardFluxConfig::chargeTolerance,
+                     "|phi_j(Sigma) - Q_in| at or below this counts as the "
+                     "flux agreeing with the incoming boundary charge.");
 
   py::class_<WardFluxRead>(m, "WardFluxRead",
       "The flux phi_j(Sigma) of the complex Ward current through one "
-      "cooriented cut, with every certificate Section 13.4 attaches to it.")
-      .def_readonly("label", &WardFluxRead::label)
-      .def_readonly("cut_cells", &WardFluxRead::cutCells,
-                    "The cut's edges as canonical degree-one cell indices.")
-      .def_readonly("coorientation", &WardFluxRead::coorientation,
-                    "The coorientation of each cut edge.")
-      .def_readonly("cut_current", &WardFluxRead::cutCurrent,
-                    "The Ward current on each cut edge.")
+      "cooriented cut of the interaction cobordism W, with every certificate "
+      "Section 13.4 attaches to it.")
+      .def_readonly("crossing_edges", &WardFluxRead::crossingEdges,
+                    "The canonical C_1(W) indices of the edges the cut "
+                    "crosses.")
+      .def_readonly("crossing_signs", &WardFluxRead::crossingSigns,
+                    "The coorientation u(b) - u(a) of each crossing edge.")
+      .def_readonly("crossing_current", &WardFluxRead::crossingCurrent,
+                    "The Ward current on each crossing edge.")
       .def_readonly("flux", &WardFluxRead::flux,
-                    "phi_j(Sigma), the flux. Complex, never projected onto a "
-                    "real part.")
-      .def_readonly("enclosed_divergence", &WardFluxRead::enclosedDivergence,
-                    "The divergence summed over the incoming side, which the "
-                    "divergence theorem makes minus the flux.")
+                    "phi_j(Sigma) = <delta u, j>, the flux. Complex, never "
+                    "projected onto a real part.")
+      .def_readonly("incoming_side_divergence",
+                    &WardFluxRead::incomingSideDivergence,
+                    "The divergence summed over the cut's incoming side, "
+                    "which the divergence theorem makes minus the flux.")
       .def_readonly("divergence_theorem_residual",
                     &WardFluxRead::divergenceTheoremResidual,
                     "The residual of that identity.")
+      .def_readonly("incoming_boundary_divergence",
+                    &WardFluxRead::incomingBoundaryDivergence,
+                    "Minus the divergence summed over the incoming boundary: "
+                    "the charge the current carries in through d_in W.")
       .def_readonly("bulk_divergence_max", &WardFluxRead::bulkDivergenceMax,
-                    "max |(d j)_x| over the vertices strictly inside the "
-                    "incoming side: the Ward identity, measured.")
+                    "max |(d j)_x| over the interior vertices of W: the Ward "
+                    "identity, measured. NaN when W has no interior vertex.")
       .def_readonly("bulk_vertices", &WardFluxRead::bulkVertices)
       .def_readonly("bulk_divergence_vertex",
                     &WardFluxRead::bulkDivergenceVertex,
-                    "The vertex the bulk divergence was largest at.")
-      .def_readonly("enclosed_fermion_number",
-                    &WardFluxRead::enclosedFermionNumber,
-                    "The fermion number the declared covariance places on the "
-                    "carrier cells inside the cut.")
-      .def_readonly("enclosed_cells", &WardFluxRead::enclosedCells)
-      .def_readonly("fermion_number_residual",
-                    &WardFluxRead::fermionNumberResidual,
-                    "|flux - enclosed fermion number|.")
+                    "The interior vertex the divergence was largest at.")
+      .def_readonly("incoming_boundary_charge",
+                    &WardFluxRead::incomingBoundaryCharge,
+                    "Q_in: the fermion number the declared covariance places "
+                    "on the carrier cells of d_in W, read independently of the "
+                    "current. None when no covariance is declared.")
+      .def_readonly("incoming_boundary_cells",
+                    &WardFluxRead::incomingBoundaryCells)
+      .def_readonly("outgoing_boundary_charge",
+                    &WardFluxRead::outgoingBoundaryCharge,
+                    "Q_out: the same reading on d_out W.")
+      .def_readonly("outgoing_boundary_cells",
+                    &WardFluxRead::outgoingBoundaryCells)
+      .def_readonly("boundary_charge_residual",
+                    &WardFluxRead::boundaryChargeResidual,
+                    "|flux - Q_in|.")
       .def_readonly("quark_number", &WardFluxRead::quarkNumber,
                     "N_q, when the flux is integral; None otherwise.")
       .def_readonly("quark_number_defect", &WardFluxRead::quarkNumberDefect)
       .def_readonly("baryon_number", &WardFluxRead::baryonNumber,
                     "B(Sigma) = N_q / 3, the whitepaper's one explicit "
                     "physical calibration.")
-      .def_readonly("separating", &WardFluxRead::separating)
+      .def_readonly("cut_separates", &WardFluxRead::cutSeparates)
       .def_readonly("failed_certificates", &WardFluxRead::failedCertificates);
 
+  py::class_<WardSlabRead>(m, "WardSlabRead",
+      "Two cuts of one cobordism compared through the slab between them.")
+      .def_readonly("first", &WardSlabRead::first)
+      .def_readonly("second", &WardSlabRead::second)
+      .def_readonly("slab_vertices", &WardSlabRead::slabVertices,
+                    "The vertices on which the two cuts disagree.")
+      .def_readonly("flux_difference", &WardSlabRead::fluxDifference,
+                    "phi_j(u) - phi_j(u').")
+      .def_readonly("slab_divergence", &WardSlabRead::slabDivergence,
+                    "sum_x (u(x) - u'(x)) (d j)_x, the signed divergence the "
+                    "slab carries.")
+      .def_readonly("slab_identity_residual",
+                    &WardSlabRead::slabIdentityResidual,
+                    "The residual of the slab identity.");
+
   py::class_<WardHomologyRead>(m, "WardHomologyRead",
-      "Several cuts of one homology class read together.")
+      "Several cuts of one cobordism read together.")
       .def_readonly("cuts", &WardHomologyRead::cuts)
+      .def_readonly("slabs", &WardHomologyRead::slabs)
       .def_readonly("max_flux_deviation", &WardHomologyRead::maxFluxDeviation,
                     "The largest pairwise difference of the fluxes.")
       .def_readonly("max_slab_divergence", &WardHomologyRead::maxSlabDivergence,
@@ -4938,7 +4950,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "The intrinsic spectral response Upsilon_Q(lambda) of Section 13.5, "
       "read on one cooriented cut. lambda is an eigenvalue of the slice "
       "operator and is never relabelled as a momentum transfer.")
-      .def_readonly("label", &IntrinsicResponseRead::label)
       .def_readonly("slice_cells", &IntrinsicResponseRead::sliceCells)
       .def_readonly("rho_right", &IntrinsicResponseRead::rhoRight,
                     "The right restriction of the Ward current to the cut.")
@@ -4963,32 +4974,36 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &IntrinsicResponseRead::failedCertificates);
 
   py::class_<WardFlux>(m, "WardFlux",
-      "The flux of the complex Ward current through a cooriented cut "
-      "(Section 13.4) and the intrinsic spectral response it carries "
-      "(Section 13.5).\n\n"
+      "The flux of the complex Ward current through a cooriented cut of the "
+      "interaction cobordism W (Section 13.4) and the intrinsic spectral "
+      "response it carries (Section 13.5).\n\n"
       "The current is the joint action's link stationarity vector, "
       "j_xy = U_xy dS/dU_xy; nothing here re-derives it and nothing here "
       "supplies a field of its own. The flux is not electric charge: every "
       "edge mode carries charge one under the C* group, so the flux counts "
       "fermions, and a flavor-dependent electric charge is not a gauge charge "
       "of the declared fields and carries no Ward current.")
-      .def_static("flux", &WardFlux::flux, py::arg("action"), py::arg("cut"),
+      .def_static("flux", &WardFlux::flux, py::arg("action"),
+                  py::arg("cobordism"), py::arg("cut"),
                   py::arg("cfg") = WardFluxConfig{},
-                  "The flux of the action's Ward current through one cut.")
+                  "The flux of the action's Ward current through one cut of "
+                  "the interaction cobordism W.")
       .def_static("homologous_fluxes", &WardFlux::homologousFluxes,
-                  py::arg("action"), py::arg("cuts"),
+                  py::arg("action"), py::arg("cobordism"), py::arg("cuts"),
                   py::arg("cfg") = WardFluxConfig{},
-                  "Several cuts read together, with the pairwise flux "
-                  "deviation and the divergence the slabs between them carry.")
+                  "Several cuts of W read together, with the flux difference "
+                  "and the signed slab divergence of every pair.")
       .def_static("difference", &WardFlux::difference, py::arg("state"),
                   py::arg("matched"), py::arg("cfg") = WardFluxConfig{},
                   "The coherent background removal of Section 13.5: the "
                   "complex difference of two flux reads on one cut, with no "
                   "modulus taken on either side.")
       .def_static("intrinsic_response", &WardFlux::intrinsicResponse,
-                  py::arg("action"), py::arg("cut"), py::arg("samples"),
+                  py::arg("action"), py::arg("cobordism"), py::arg("cut"),
+                  py::arg("samples"),
                   py::arg("cfg") = IntrinsicResponseConfig{},
-                  "Upsilon_Q on one cut, evaluated at the declared samples.");
+                  "Upsilon_Q on one cut of W, evaluated at the declared "
+                  "samples.");
 
   // ── Section 13.3: mass is a complex bound-state pole ───────────────────
 

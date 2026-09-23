@@ -23,6 +23,8 @@ VOID_SCALE = 1e-6
 # The squared length of a weak link: a bottleneck of low conductance, which the
 # covariant operator sees and the combinatorial one-skeleton does not.
 WEAK = 1.0e6
+# The scale the arcs of `weighted_cycle` are read at; see its docstring.
+ARC_SCALE = 1.0e-4
 
 
 def cavity_corners(n=3):
@@ -38,7 +40,15 @@ def weighted_cycle(length=12, weak=(4, 11), bridge=WEAK):
     squared length except at the positions named by `weak`, which carry
     `bridge`. Every vertex has degree two, so the combinatorial one-skeleton is
     a uniform cycle with no community structure in it; the covariant operator
-    sees two effective components, the two arcs the weak links separate."""
+    sees two effective components, the two arcs the weak links separate.
+
+    The arcs are read at `ARC_SCALE`. A long edge is a weak link, but in the
+    Whitney metric its two endpoints also carry its length as mass, so beside
+    the constant and the arc-splitting mode (at about 1e-5 here) the degree-zero
+    spectrum holds one heavy-endpoint mode per arc (at about 1e-3) before the
+    arcs' own levels begin (from about 0.3). The scale sits between the split
+    and the heavy-endpoint modes, where the band is the two arcs and nothing
+    else."""
     cells = [[j, (j + 1) % length] for j in range(length)]
     K = cob.ChainComplex.fromTopCells(cells)
     edges = [tuple(e) for e in K.kSimplexVertices(1)]
@@ -272,7 +282,7 @@ class TestTheBandProposesSupports:
         degree-zero band proposes both arcs, and each carries the certified
         band that accepts it."""
         K, _, cov = weighted_cycle()
-        band = obs.EffectiveTopology.components(cov, 0.01)
+        band = obs.EffectiveTopology.components(cov, ARC_SCALE)
         assert band.band.rank == 2 and band.certified
         assert sorted(sorted(c.support) for c in band.components) == [[0, 1, 2, 3, 4],
                                                                       [5, 6, 7, 8, 9, 10, 11]]
