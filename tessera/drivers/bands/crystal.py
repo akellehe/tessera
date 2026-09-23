@@ -75,27 +75,28 @@ class GridMatrix:
 
     def __init__(self, cell, matrix):
         coo = sp.coo_matrix(matrix)
+        self.row, self.col, self.data = coo.row, coo.col, coo.data.astype(complex)
+        self.shape = coo.shape
+        self._reciprocal = None
+        if hasattr(cell, "entry_displacements"):                 # a mesh that is not the grid (`graded.GradedCell`)
+            self.step = None
+            self.displacement = cell.entry_displacements(coo.row, coo.col)
+            self._reciprocal = cell.reciprocal
+            return
         n = np.array(cell.divisions)
         d = (cell.index[coo.col] - cell.index[coo.row]) % n
         d = np.where(d == n - 1, -1, d)
         if np.any(np.abs(d) > 1):
             raise ValueError("a stored entry joins vertices that are not neighbours on the grid")
-        self.row, self.col, self.data = coo.row, coo.col, coo.data.astype(complex)
         self.step = d / n
         self.displacement = self.step @ cell.lattice            # Cartesian, from the row vertex to the column vertex
-        self.shape = coo.shape
 
     def dressed(self, kappa=(0.0, 0.0, 0.0)):
-        phase = np.exp(2j * np.pi * (self.step @ np.asarray(kappa, dtype=float)))
+        if self._reciprocal is None:
+            phase = np.exp(2j * np.pi * (self.step @ np.asarray(kappa, dtype=float)))
+        else:
+            phase = np.exp(1j * (self.displacement @ (np.asarray(kappa, dtype=float) @ self._reciprocal)))
         return sp.csc_matrix((self.data * phase, (self.row, self.col)), shape=self.shape)
-
-    def momentum_derivative(self, axis):
-        """The derivative of `dressed` with respect to the Cartesian component
-        `axis` of the crystal momentum, at the zone centre: the entry (v, w)
-        times i (x_w - x_v). It is the derivative with respect to the link
-        phases contracted with the edge displacements, the current operator of
-        a uniform connection."""
-        return sp.csc_matrix((1j * self.data * self.displacement[:, axis], (self.row, self.col)), shape=self.shape)
 
 
 class CrystalCell:
@@ -115,28 +116,47 @@ class CrystalCell:
         self.kinetic_scale = float(kinetic_scale)
         gram = self.lattice @ self.lattice.T
         self.grid = tessera.PeriodicKuhnGrid(*self.divisions, gram.tolist())
-        self.complex = cob.ChainComplex.fromTopCells(self.grid.cells())
+        self.volume = abs(np.linalg.det(self.lattice))
+        self.reciprocal = 2.0 * np.pi * np.linalg.inv(self.lattice).T   # rows b_a, b_a . a_c = 2 pi delta
+        self.complex = cob.ChainComplex.fromTopCells(self._top_cells())
         self.edges = self.complex.kSimplexVertices(1)
-        self.squared_lengths = self.grid.squaredLengths(self.edges)
+        self.fractional = self._vertex_fractional()
+        self.size = len(self.fractional)
+        self.positions = self.fractional @ self.lattice
+        self.squared_lengths = self._edge_squared_lengths()
         # The dense crossover is kept small: nothing here asks for a dense kernel.
         self.base = ch.ChainHodge(self.complex, self.squared_lengths, ch.Preset.L2,
                                   ch.Branch.Continuation, crossover)
         trivial = ch.CovariantChainHodge(self.base, ch.Connection.trivial(self.complex), 7, False)
         pencil = trivial.sparsePencil()
-        self.size = pencil.A.shape[0]
-        n2, n3 = self.divisions[1], self.divisions[2]
-        ids = np.arange(self.size)
-        self.index = np.column_stack([ids // (n2 * n3), (ids // n3) % n2, ids % n3])
-        self.fractional = self.index / np.array(self.divisions, dtype=float)
-        self.positions = self.fractional @ self.lattice
-        self.volume = abs(np.linalg.det(self.lattice))
-        self.reciprocal = 2.0 * np.pi * np.linalg.inv(self.lattice).T   # rows b_a, b_a . a_c = 2 pi delta
         self.stiffness = GridMatrix(self, pencil.A)
         self.mass = GridMatrix(self, pencil.M)
 
     @classmethod
     def cubic(cls, a, divisions, **kwargs):
         return cls(a * np.eye(3), divisions, **kwargs)
+
+    # The mesh, which `graded.GradedCell` replaces: its top simplices, where the vertices
+    # are, the squared length of every edge, the links of a crystal momentum, and a closed
+    # path of edges once around an axis.
+
+    def _top_cells(self):
+        return self.grid.cells()
+
+    def _vertex_fractional(self):
+        n2, n3 = self.divisions[1], self.divisions[2]
+        ids = np.arange(self.grid.vertexCount())
+        self.index = np.column_stack([ids // (n2 * n3), (ids // n3) % n2, ids % n3])
+        return self.index / np.array(self.divisions, dtype=float)
+
+    def _edge_squared_lengths(self):
+        return self.grid.squaredLengths(self.edges)
+
+    def _links_at(self, kappa):
+        return self.grid.blochLinks(self.edges, [float(x) for x in kappa])
+
+    def _fundamental_cycle(self, axis):
+        return self.grid.fundamentalCycle(axis)
 
     @property
     def spacing(self):
@@ -156,11 +176,49 @@ class CrystalCell:
         weighted.values = values
         return weighted
 
+    def bloch_links(self, kappa=None):
+        """The links of the flat connection of the crystal momentum `kappa` (the
+        zone centre when None), in the canonical edge order; kept per momentum."""
+        key = (0.0, 0.0, 0.0) if kappa is None else tuple(float(v) for v in kappa)
+        if not hasattr(self, "_links"):
+            self._links = {}
+        if key not in self._links:
+            if len(self._links) > 64:
+                self._links.clear()
+            self._links[key] = self._links_at(key)
+        return self._links[key]
+
+    def bloch_link_array(self, kappa=None):
+        """`bloch_links(kappa)` as an array, kept per momentum."""
+        key = (0.0, 0.0, 0.0) if kappa is None else tuple(float(v) for v in kappa)
+        if not hasattr(self, "_link_arrays"):
+            self._link_arrays = {}
+        if key not in self._link_arrays:
+            if len(self._link_arrays) > 64:
+                self._link_arrays.clear()
+            self._link_arrays[key] = np.asarray(self.bloch_links(kappa), dtype=complex)
+        return self._link_arrays[key]
+
+    @property
+    def pair_loader(self):
+        """`chainhodge.PairLoads` of the cell: the loads of products of sections."""
+        if not hasattr(self, "_pair_loader"):
+            self._pair_loader = ch.PairLoads(self.complex, self.squared_lengths)
+        return self._pair_loader
+
+    @property
+    def edge_displacements(self):
+        """The Cartesian displacement of every stored link, source to target."""
+        if not hasattr(self, "_edge_displacements"):
+            steps = np.array([self.grid.displacement(int(x), int(y)) for x, y in self.edges], dtype=float)
+            self._edge_displacements = (steps / np.array(self.divisions)) @ self.lattice
+        return self._edge_displacements
+
     def covariant(self, kappa=(0.0, 0.0, 0.0)):
         """The `CovariantChainHodge` of the cell at the flat connection whose
         links are the Bloch phases of the crystal momentum `kappa`
         (`PeriodicKuhnGrid.blochLinks`)."""
-        links = self.grid.blochLinks(self.edges, [float(x) for x in kappa])
+        links = self._links_at(kappa)
         return ch.CovariantChainHodge(self.base, ch.Connection(self.complex, links), 7, False)
 
     def pencil(self, kappa=(0.0, 0.0, 0.0), potential=None):
@@ -241,11 +299,11 @@ class CrystalCell:
     def certify(self, kappa=(0.0, 0.0, 0.0), compare_dressing=True):
         """Measure the premises of the Hermitian specialization at `kappa` on
         the C++ objects, and hold the entrywise dressing of `pencil` to them."""
-        links = self.grid.blochLinks(self.edges, list(kappa))
+        links = self._links_at(kappa)
         U = ch.Connection(self.complex, links)
         cov = ch.CovariantChainHodge(self.base, U, 7, False)
         curvature = max((abs(U.curvature(*t) - 1.0) for t in self.complex.kSimplexVertices(2)), default=0.0)
-        holonomy = max(abs(U.holonomy(self.grid.fundamentalCycle(a)) - np.exp(2j * np.pi * kappa[a]))
+        holonomy = max(abs(U.holonomy(self._fundamental_cycle(a)) - np.exp(2j * np.pi * kappa[a]))
                        for a in range(3))
         reference = cov.sparsePencil()
         A, M = sp.csc_matrix(reference.A), sp.csc_matrix(reference.M)

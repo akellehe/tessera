@@ -8,10 +8,12 @@ entry trades cost against a truncation, and a run records the values it used.
 A request for an order that is not implemented is refused by name. It is never
 replaced by a lower one.
 """
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 
 # The orders of each expansion that exist in the code today.
-IMPLEMENTED = {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
+IMPLEMENTED = {"self_energy_order": (1, 2, 3, 4, 5), "zero_momentum_order": (1, 2, 3, 4, 5)}
+# The same on a momentum set of more than one momentum.
+IMPLEMENTED_ON_A_SET = {"self_energy_order": (1, 2, 3), "zero_momentum_order": (1, 2, 3, 4, 5)}
 
 
 @dataclass(frozen=True)
@@ -19,10 +21,15 @@ class Approximations:
     """`self_energy_order`: the number of terms kept in the expansion of the
     self-energy in the screened interaction W (1 is Sigma = i G W; 1 to 5). The
     terms beyond the first are the skeleton diagrams of `diagrams`: one at
-    second order, six at third. Their cost grows as `vertex_bands` to the power
-    2 k - 1 times `vertex_poles` to the power k, so they are evaluated on the
-    `vertex_bands` modes nearest the gap and the `vertex_poles` modes of the
-    screened interaction that couple to them most strongly.
+    second order, six at third, 49 at fourth, 542 at fifth. An order k puts as
+    many as 2 k - 1 fermion lines and k lines of the screened interaction in
+    one energy denominator, so its cost grows as half of `vertex_bands` to the
+    power 2 k - 1 times `vertex_poles` to the power k, and the diagrams are
+    evaluated on the `vertex_bands` modes nearest the gap and the
+    `vertex_poles` modes of the screened interaction that couple to them most
+    strongly. `vertex_memory` is what the diagrams may hold at once, in GiB,
+    over all worker processes; it changes the time of a run and none of its
+    numbers (`diagrams.SkeletonSelfEnergy`).
 
     `zero_momentum_order`: how the self-energy integrand is averaged over the
     momentum transfers that sampling the zone centre leaves out. 1 is the closed
@@ -41,7 +48,27 @@ class Approximations:
 
     `frequency_nodes`: the number of terms of the Chebyshev series that carries
     the screened interaction along the imaginary axis in
-    `KineticBasisScreening` (at least 5)."""
+    `KineticBasisScreening` (at least 5).
+
+    `momenta`: the momentum set on which the covariance is sampled, a uniform
+    grid of `momenta` per axis of the cell through its zone centre
+    (`momentum_set.uniform_set`); 1 is the zone centre alone. On a set the
+    offsets of `zero_momentum_order` surround every transfer of the set
+    (`momentum_set.set_nodes`), and the diagrams beyond the first order run
+    over the states of the set nearest the gap (`SetScreening.set_vertex`).
+
+    `exchange_history`: the number of earlier exchange updates of Hartree-Fock
+    whose filled sections join the span in which the accelerator of the update
+    minimizes the energy (`acceleration`; 0 is the span of the computed bands
+    alone). It changes the number of updates and the cost of each, by about
+    (bands + history x filled)^2 Poisson solves, and leaves the converged state
+    where it is.
+
+    `projector_quadrature`: the Gauss points per direction of the collapsed
+    rule that loads the projector functions of the ions on every tetrahedron
+    (`loads.SimplexQuadrature`); n points integrate polynomials of degree
+    2 n - 1 exactly, 6 x 6 x 6 points per tetrahedron by default. 0 loads the
+    interpolant of the projector with the mass matrix in its place, M beta."""
     self_energy_order: int = 3
     zero_momentum_order: int = 3
     refinement_terms: int = 5
@@ -49,6 +76,10 @@ class Approximations:
     frequency_nodes: int = 64
     vertex_bands: int = 12
     vertex_poles: int = 12
+    momenta: int = 1
+    exchange_history: int = 5
+    vertex_memory: float = 8.0
+    projector_quadrature: int = 6
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -60,13 +91,22 @@ class Approximations:
             raise ValueError("frequency_nodes is at least 5")
         if self.vertex_bands < 2 or self.vertex_poles < 1:
             raise ValueError("vertex_bands is at least 2 and vertex_poles at least 1")
+        if self.momenta < 1:
+            raise ValueError("momenta is at least 1")
+        if self.exchange_history < 0:
+            raise ValueError("exchange_history is at least 0")
+        if not self.vertex_memory > 0.0:
+            raise ValueError("vertex_memory is positive")
+        if self.projector_quadrature < 0:
+            raise ValueError("projector_quadrature is a number of points per direction, or 0 for the interpolant")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
-        for name, available in IMPLEMENTED.items():
+        for name, available in (IMPLEMENTED if self.momenta == 1 else IMPLEMENTED_ON_A_SET).items():
             if getattr(self, name) not in available:
                 raise NotImplementedError(
-                    f"{name} = {getattr(self, name)} is not implemented (available: "
+                    f"{name} = {getattr(self, name)} is not implemented"
+                    f"{'' if self.momenta == 1 else ' on a momentum set'} (available: "
                     f"{', '.join(str(order) for order in available)}); it is not replaced by a lower order")
 
     @property
@@ -126,8 +166,18 @@ class Approximations:
                            help="modes nearest the gap on the internal lines of the diagrams beyond the first order")
         group.add_argument("--vertex-poles", type=int, default=defaults.vertex_poles,
                            help="modes of the screened interaction kept in the diagrams beyond the first order")
+        group.add_argument("--momenta", type=int, default=defaults.momenta,
+                           help="momenta per axis of the set on which the covariance is sampled (1 is the zone centre; "
+                                f"on a set the orders implemented are {IMPLEMENTED_ON_A_SET})")
+        group.add_argument("--exchange-history", type=int, default=defaults.exchange_history,
+                           help="earlier exchange updates whose filled sections join the span of the Hartree-Fock "
+                                "accelerator (changes the cost of the loop, not the converged state)")
+        group.add_argument("--vertex-memory", type=float, default=defaults.vertex_memory,
+                           help="GiB the diagrams beyond the first order may hold at once; changes the time, not the numbers")
+        group.add_argument("--projector-quadrature", type=int, default=defaults.projector_quadrature,
+                           help="Gauss points per direction of the rule that loads the projectors on every "
+                                f"tetrahedron (default {defaults.projector_quadrature}; 0 loads the interpolant)")
 
     @classmethod
     def from_arguments(cls, args):
-        return cls(args.self_energy_order, args.zero_momentum_order, args.refinement_terms, args.lattice_images,
-                   args.frequency_nodes, args.vertex_bands, args.vertex_poles)
+        return cls(**{field.name: getattr(args, field.name) for field in fields(cls)})

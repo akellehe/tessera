@@ -60,7 +60,11 @@ class CoulombKernel:
 
     @classmethod
     def of_cell(cls, cell, strength=4.0 * np.pi * E2):
-        """The kernel of a periodic cell, inverted by Fourier transform."""
+        """The kernel of a periodic cell: inverted by Fourier transform on the
+        Kuhn grid, by a sparse factorization on a graded mesh."""
+        if hasattr(cell, "entry_displacements"):
+            from tessera.drivers.bands.graded import GradedCoulombKernel
+            return GradedCoulombKernel(cell, strength)
         return GridCoulombKernel(cell, strength)
 
     def potential(self, rho):
@@ -214,17 +218,21 @@ class GridCoulombKernel:
             inverse.flat[0] = zero_momentum * self.size / self.strength
         return inverse
 
-    def potential_derivative(self, rho, axis):
+    def potential_derivative(self, rho, axis, kappa=None):
         """The derivative of `potential(rho, kappa, zero_momentum)` with respect
-        to the Cartesian component `axis` of the crystal momentum, at the zone
-        centre: the Fourier multiplier -strength a'(G) / a(G)^2 with the gradient
-        of the symbol in closed form, a'(k) = -sum_n A_0n dx_n sin(k . dx_n). The
-        entry at G = 0 is a constant of the momentum and has no derivative."""
+        to the Cartesian component `axis` of the crystal momentum: the Fourier
+        multiplier -strength a'(G + kappa) / a(G + kappa)^2 with the gradient of
+        the symbol in closed form, a'(k) = -sum_n A_0n dx_n sin(k . dx_n). At the
+        zone centre (`kappa = None`) the entry at G = 0 is a constant of the
+        momentum and has no derivative."""
         grid = np.stack(np.meshgrid(*[np.arange(N) for N in self.shape], indexing="ij"), axis=-1).reshape(-1, 3)
+        if kappa is not None:
+            grid = grid + np.asarray(kappa, dtype=float)
         angle = 2.0 * np.pi * ((grid / np.array(self.shape)) @ self._offsets.T)
         displacement = (self._offsets / np.array(self.shape)) @ self._lattice
         gradient = -(np.sin(angle) @ (self._entries * displacement[:, axis])).reshape(self.shape)
-        multiplier = -gradient * self._inverse ** 2
+        inverse = self._inverse if kappa is None else self.inverse_symbol(kappa)
+        multiplier = -gradient * inverse ** 2
         rho = np.asarray(rho, dtype=complex)
         columns = rho.reshape(self.size, -1)
         field = columns.T.reshape((-1,) + self.shape)
@@ -301,86 +309,43 @@ class GridCoulombKernel:
         return np.vdot(rho_a, self.potential(rho_b))
 
 
-def bloch_twist(cell, tops, kappa):
-    """exp(2 pi i kappa . d) for the grid displacement d of every vertex of
-    every top simplex from the simplex's first vertex: the link phases of the
-    crystal momentum `kappa`, per simplex, for `TripleIntegrals.loads`."""
-    n = np.array(cell.divisions)
-    d = (cell.index[tops] - cell.index[tops[:, :1]]) % n
-    d = np.where(d == n - 1, -1, d)
-    return np.exp(2j * np.pi * ((d / n) @ np.asarray(kappa, dtype=float)))
+def pair_loads(cell, x, Y, kappa_y=None, kappa_x=None):
+    """The loads int phi_c x y of the product of a section x of the crystal
+    momentum `kappa_x` with every column of Y, sections of `kappa_y`
+    (`chainhodge.PairLoads` with the Bloch links of the two momenta; None is
+    the zone centre). For conj(psi') psi between the momenta k' and k pass
+    x = conj(z'), kappa_x = -k', kappa_y = k: the load carries k - k'. With
+    kappa_x = None it is the dressed weighted mass matrix M_0^U[x] applied to Y.
+    Real functions at the zone centre have real loads."""
+    columns = np.asarray(Y).reshape(cell.size, -1)
+    loads = cell.pair_loader.loads(cell.bloch_link_array(kappa_x), cell.bloch_link_array(kappa_y),
+                                   np.asarray(x, dtype=complex), columns.astype(complex, copy=False))
+    real = kappa_x is None and kappa_y is None and np.isrealobj(x) and np.isrealobj(columns)
+    return loads.real if real else loads
 
 
-class TripleIntegrals:
-    """The integrals of three piecewise-linear functions against the vertex
-    basis, per top simplex, vectorized over a complex.
-
-    On a top simplex of volume |T| the three-factor integral is
-    |T| mu_abc d! / (d + 3)! with mu_abc = 1 + delta_ab + delta_ac + delta_bc
-    + 2 delta_ab delta_bc, so for two functions x and y restricted to it,
-
-        sum_ab mu_abc x_a y_b = S_x S_y + sum_a x_a y_a + x_c S_y + S_x y_c + 2 x_c y_c .
-
-    `loads(x, Y)` returns, for every column y of Y, the load vector
-    int phi_c x y of the product: the vectorized form of
-    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`. With a
-    `twist` (`bloch_twist`) the columns of Y are the cell-periodic parts of
-    sections of crystal momentum kappa and the result is `M_0^U[x] y`, the
-    weighted mass matrix dressed by the link phases of that momentum: the load
-    of a pair density that carries the momentum kappa. `twist_x` dresses the
-    first factor in the same way: for conj(psi') psi between sections of the
-    momenta kappa' and kappa, pass x = conj(z'), `twist_x = conj(twist(kappa'))`
-    and `twist = twist(kappa)`; the load carries the momentum kappa - kappa'.
-    """
-
-    def __init__(self, complex_, squared_lengths):
-        vertex_index = {int(cell[0]): i for i, cell in enumerate(complex_.kSimplexVertices(0))}
-        self.size = len(vertex_index)
-        self.tops = np.array([[vertex_index[int(v)] for v in cell] for cell in complex_.orientedTopSimplices()])
-        d = self.tops.shape[1] - 1
-        volumes = np.array(ch.WhitneyMass.certificate(complex_, list(squared_lengths)).volumes)
-        if np.abs(volumes.imag).max() == 0.0:
-            volumes = volumes.real                          # a real geometry keeps real loads real
-        self.weight = volumes * float(np.prod(np.arange(1, d + 1))) / float(np.prod(np.arange(1, d + 4)))
-        count = len(self.tops)
-        self.scatter = [sp.csr_matrix((np.ones(count), (self.tops[:, c], np.arange(count))),
-                                      shape=(self.size, count)) for c in range(d + 1)]
-
-    def loads(self, x, Y, twist=None, block=48, twist_x=None):
-        x = np.asarray(x)
-        Y = np.asarray(Y).reshape(self.size, -1)
-        if Y.shape[1] > block:                                # bound the per-simplex temporaries
-            return np.hstack([self.loads(x, Y[:, start:start + block], twist, block, twist_x)
-                              for start in range(0, Y.shape[1], block)])
-        local_x = x[self.tops]                                # (tops, d + 1)
-        if twist_x is not None:
-            local_x = local_x * twist_x
-        local_y = Y[self.tops]                                # (tops, d + 1, columns)
-        if twist is not None:
-            local_y = local_y * twist[:, :, None]             # carried to the first vertex of the simplex
-        sum_x, sum_y = local_x.sum(axis=1), local_y.sum(axis=1)
-        common = sum_x[:, None] * sum_y + np.einsum("ta,tan->tn", local_x, local_y)
-        total = np.zeros((self.size, Y.shape[1]), dtype=np.result_type(x, local_y, self.weight))
-        for c, scatter in enumerate(self.scatter):
-            term = common + local_x[:, c, None] * sum_y + sum_x[:, None] * local_y[:, c, :] \
-                + 2.0 * local_x[:, c, None] * local_y[:, c, :]
-            if twist is not None:
-                term = term * twist[:, c, None].conj()         # and back to the vertex the load belongs to
-            if twist_x is not None:
-                term = term * twist_x[:, c, None].conj()
-            total += scatter @ (self.weight[:, None] * term)
-        return total
+def pair_loads_derivative(cell, x, Y, axis, kappa_y=None, kappa_x=None):
+    """The derivative of `pair_loads(cell, x, Y, kappa_y, kappa_x)` with respect
+    to the Cartesian component `axis` of the crystal momentum of Y
+    (`chainhodge.PairLoads.loadsPhaseDerivativeAlong` with the displacements of
+    the edges along that axis as weights)."""
+    columns = np.asarray(Y).reshape(cell.size, -1)
+    return cell.pair_loader.loadsPhaseDerivativeAlong(
+        cell.bloch_link_array(kappa_x), cell.bloch_link_array(kappa_y), np.asarray(x, dtype=complex),
+        columns.astype(complex, copy=False), np.ascontiguousarray(cell.edge_displacements[:, axis]))
 
 
 def pair_densities(complex_, squared_lengths, modes):
     """`T[:, m, n] = rho^{mn}`: the load vectors of conj(z_m) z_n for every pair
-    of the columns of `modes`, shape (vertices, modes, modes)."""
+    of the columns of `modes`, shape (vertices, modes, modes)
+    (`chainhodge.PairLoads` at the trivial connection)."""
     modes = np.asarray(modes, dtype=complex)
-    integrals = TripleIntegrals(complex_, squared_lengths)
+    loader = ch.PairLoads(complex_, list(squared_lengths))
+    trivial = np.ones(loader.numEdges, dtype=complex)
     count = modes.shape[1]
     T = np.empty((modes.shape[0], count, count), dtype=complex)
     for m in range(count):
-        T[:, m, :] = integrals.loads(modes[:, m].conj(), modes)
+        T[:, m, :] = loader.loads(trivial, trivial, modes[:, m].conj(), modes)
     return T
 
 
@@ -412,6 +377,20 @@ class ModeInteraction:
         # (mn|pq) = rho^{nm dagger}... stored as W[mn, pq] = sum_v conj(rho^{nm}_v) (K rho^{pq})_v,
         # and conj(rho^{nm}) = rho^{mn}, so W[mn, pq] = sum_v rho^{mn}_v (K rho^{pq})_v.
         self.W = (flat.T @ potentials).reshape(orbitals, orbitals, orbitals, orbitals)
+
+    @classmethod
+    def from_integrals(cls, kernel, one_particle, integrals, sheets=1, zero_momentum=0.0):
+        """The interaction from the one-particle matrix of the modes and their
+        Coulomb integrals `integrals[m, n, p, q] = (mn|pq)` already computed,
+        without the pair densities (`density_operator` and `fock_hamiltonian`
+        need those and are not available)."""
+        self = cls.__new__(cls)
+        self.kernel, self.zero_momentum, self.sheets = kernel, float(zero_momentum), int(sheets)
+        self.orbitals = len(one_particle)
+        self.size = self.orbitals * self.sheets
+        self.h = np.kron(np.eye(self.sheets), np.asarray(one_particle, dtype=complex))
+        self.T, self.W = None, np.asarray(integrals)
+        return self
 
     # -- one-particle matrices of the density at a vertex, with the sheets
 

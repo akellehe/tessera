@@ -85,6 +85,62 @@ The reference is a plane-wave diagonalization with the same form factors
 (`ZincBlendeEPM.plane_wave_bands`), so the comparison tests the machinery and
 involves no external number.
 
+## A mesh graded toward the ions
+
+A level bound within a fraction of a bohr of an ion, such as the gallium $3d$
+shell, is beyond a uniform mesh: the error is second order in a spacing that the
+whole cell has to pay for. The geometry of the framework is one squared length
+per edge, so a graded mesh is the same objects with other lengths and, where
+vertices are added, another chain complex. `graded.GradedCell` is a
+`CrystalCell` built in two ways that combine:
+
+- `IonRefinement` bisects the Kuhn simplices within given radii of the ions
+  (`KuhnBisection`: the conforming bisection of Maubach and Traxler, in which
+  every simplex around an edge is brought to the state that cuts that edge
+  before it is cut). Three bisections halve every edge and return Kuhn
+  simplices of half the size, so shapes do not degenerate and no vertex hangs
+  inside a neighbour's face. The vertices of the grid keep their numbers.
+- `IonGrading` moves the vertices by a smooth periodic map that contracts a
+  ball about every ion. It adds no vertices, so it can only borrow them from
+  the shell around the core; it is refused when it folds the mesh
+  (`orientation_margin`) or would move an ion.
+
+```python
+from tessera.drivers.bands.graded import GradedCell, IonRefinement
+
+cell = GradedCell(lattice, 12, refinement=IonRefinement(ions, [(3.2, 1), (1.8, 2), (1.0, 3)]))
+cell.certify(kappa).holds()          # the same premises, measured on this mesh
+```
+
+A crystal momentum is the flat connection $U_{vw} = e^{i k \cdot dx_{vw}}$ on
+the true displacement of every edge, which is the connection on the grid steps
+in another gauge; the constant section is then the plane wave at the vertices
+wherever they are. On a well of width 0.35 in a cell of side 6 the uniform mesh
+of 4,096 vertices misses the lowest level by a third of its binding energy, the
+bisected mesh of 2,322 vertices by six per cent, and one more halving about the
+ion divides every error by four.
+
+What the uniform grid has in closed form through its translation invariance has
+a counterpart without it. `graded.GradedCoulombKernel` applies the inverse of
+the dressed stiffness matrix through a sparse factorization and names the
+entries of the kernel by what they are: the $G = 0$ component of a load is its
+total charge, the $G = 0$ entry of the kernel is the energy of the uniform
+normalized charge of that momentum, and the auxiliary function of the
+zero-momentum constant is the energy of a unit point load, averaged over every
+momentum with the singular part taken analytically as on the grid. On the Kuhn
+grid every method returns the value of `GridCoulombKernel`, the zero-momentum
+constant included (to $10^{-12}$ Ry in the test suite). Off the grid the
+constant depends on the vertex that carries the point load at second order in
+the spacing, and costs one factorization per momentum of its quadrature.
+`abinitio.MeshCrystal(crystal, divisions, grading=..., refinement=...)` runs the
+Hartree and Hartree-Fock mean fields on such a mesh, at the zone centre and at a
+finite momentum, and the quasiparticle step at the zone centre with its
+closed-form head. The prolongation between meshes, the closed-form kinetic
+modes of the kernel (`kinetic_modes`) and the square root of the mass matrix in
+`band_fibers` are still those of the uniform grid. A bisected mesh is
+assembled from its chain complex and squared lengths; it is not yet a `Topology`
+of the library, so it has no `Spacetime`.
+
 ## What the mesh does to symmetry
 
 Every cube of the grid is cut along the same body diagonal. The mesh keeps the
@@ -113,6 +169,7 @@ with a known answer.
 | `coulomb` | the finite-element Coulomb kernel, Hartree–Fock on the covariance | the periodic Coulomb potential; exact diagonalization; the Wick engine; the electron-gas exchange energy |
 | `screening` | gauge response, polarizability, random-phase approximation, one-shot quasiparticle correction | the Ward identity; the exact discrete Lindhard sum; two routes to the correlation energy; the second-order self-energy |
 | `response` | the derivative of a band energy with respect to the squared edge lengths | Euler's identity; finite differences |
+| `forces` | the total energy of a crystal on the mesh, the forces on its ions, the optical phonon at the zone centre | the Ewald sum; central differences of the energy, at fixed and at converged orbitals; the second difference of the energy |
 | `gaas` | gallium arsenide with the empirical pseudopotential | plane waves with the same form factors |
 
 ### The fiber-edge route
@@ -147,10 +204,46 @@ potential nor in $1/m$ (`fiber.static_levels`). The lowest decay rate of the tic
 map closes on its lowest level at second order in the mesh spacing (a difference
 of 0.062, 0.029, 0.016, 0.010 on cells of 3 to 6 divisions at $m = 6$), and the
 response to the potential approaches the static one from below (0.74, 0.82,
-0.88, 0.91); neither depends on the tick. What remains at a finite mesh is the
-curvature of the connection: on the vertical triangles the covariant operator
-transports through the base vertex of each cell, which samples the potential one
-mesh step away. The non-relativistic reduction $E \approx m + L/2m + V$ is not
+0.88, 0.91); neither depends on the tick. The exact limit of the tick map with
+the potential is a closed form (`fiber.tick_limit`),
+
+$$ (S_0 + E S_1 + E^2 S_2)\,u = 0 , \qquad S_2 = -D , \quad S_1 = 2DV + C_1 , \quad
+   S_0 = A + m^2 M - DV^2 + C_0 , $$
+
+and the decay rates of the tick map converge to its levels at second order in
+the tick. $C_0$ and $C_1$ are the curvature of the connection on the vertical
+triangles: the covariant operator transports through the base vertex of each
+cell, $b(\sigma) = \min \sigma$, which samples the potential one mesh step away.
+They are sums over the spatial simplices $T$ of $|T|$ times a block on the
+vertices of $T$ (`fiber.staircase_blocks`). With the vertices of $T$ in
+ascending id, $i = 0, \dots, d$ (the order in which the staircase of the slab
+climbs), $\Delta_a = V_a - V_i$ and $N = 4(d+1)(d+2)(d+3)$,
+
+$$ N\,(c_1)_{ii} = 4(2d+3-i) \sum_{a<i} \Delta_a , \qquad
+   N\,(c_1)_{ij} = -2 \Big[ \sum_{a<i} (V_a - V_j) + (d+3-i)(V_i - V_j) \Big] \quad (i<j) , $$
+
+$$ N\,(c_0)_{ii} = -V_i\,N (c_1)_{ii} - (2d+3-2i) \sum_{a<i} \Delta_a^2 - \Big( \sum_{a<i} \Delta_a \Big)^2 , \qquad
+   (c_0)_{ij} = -V_i\,(c_1)_{ij} \quad (i<j) , $$
+
+both symmetric. They are the first and the second order in the tick of the time
+part of the dressed stiffness $\partial_1^U M_1^U (\partial_1^{U^{-1}})^T$ on
+the $d+1$ simplices of a staircase prism. Only the time components of the
+gradients of the barycentric coordinates enter the Whitney mass matrix $M_1$
+there, and they are $\mp 1/\tau$ on the two ends of the one vertical edge of
+each simplex, so the blocks depend on the volume of $T$, on the potential at its
+vertices and on the order of their ids, and on nothing else of the geometry.
+Every entry is a sum of differences of the potential (the electric field through
+the vertical triangles) and vanishes for a constant one. The test suite holds
+the blocks to the expansion of $M_1$ with the transport convention in exact
+rational arithmetic for $d = 1, \dots, 4$, and the assembled limit to the blocks
+of the slab (`fiber.tick_limit_from_blocks`): reversing the tick transposes the
+pencil, so the symmetric parts of the blocks are even in the tick, and one
+Richardson step leaves a difference that falls like $\tau^4$, to $10^{-9}$ at
+$\tau = 0.02$ on cells of 3 to 6 divisions with a potential that is not a pure
+gauge. With the tick gone, the lowest level of the limit closes on the static
+relativistic problem at second order in the mesh (the difference times the
+square of the divisions is 0.56, 0.46, 0.39, 0.37, 0.35, 0.35 on cells of 3, 4,
+5, 6, 8, 10 divisions). The non-relativistic reduction $E \approx m + L/2m + V$ is not
 used anywhere: it needs the mesh to resolve the Compton wavelength, and compared
 with it the same tick map appeared to over-respond by factors of 2 to 7.
 
@@ -205,9 +298,19 @@ anywhere in these drivers are closed forms of the framework's own matrices (the
 Fourier symbols of its stiffness and mass matrices, derivatives of its covariant
 assembly), each held to the framework's numerical route by a test; a continuum
 solution is never substituted for one. The separable nonlocal part is a term
-`P D P^T` of low rank in the left-hand matrix of the pencil, with `P = M beta`
-the load vectors of the projector functions; `SparsePencilSolver` applies it
-through the Woodbury identity and certifies the shift by inertia. Exchange is
+`P D P^T` of low rank in the left-hand matrix of the pencil, with `P` the load
+vectors of the projector functions, $P_v = \int \beta(x)\,\lambda_v(x)\,dx$
+against the vertex function $\lambda_v$. The radial functions are tabulated, so
+the loads have no closed form: they are taken by a collapsed Gauss rule on every
+tetrahedron (`loads.SimplexQuadrature`, exact for polynomials of degree $2n-1$
+with $n$ points per direction, held to the library's mass matrix and triple
+integrals by a test), summed over the images of each ion within the reach of
+its table. At a crystal momentum the load of every image carries the Bloch
+phase of its displacement to the vertex. `M beta`, the mass matrix on the
+vertex values of the projector, is the load of the projector's interpolant and
+remains available (`--projector-quadrature 0`); the local potential is
+interpolated at the vertices, as the plan has it. `SparsePencilSolver` applies
+the term through the Woodbury identity and certifies the shift by inertia. Exchange is
 compressed onto the computed bands and joins the same low-rank term. The
 Coulomb kernel of the grid is inverted exactly by Fourier transform, because the
 stiffness matrix commutes with the grid translations.
@@ -233,7 +336,8 @@ $$ d_{ia} = 1^T (\partial M_0^U[\psi_i])\, z_a
 
 with $\partial$ the derivative with respect to a uniform change of the link
 phases: entrywise for the stiffness, mass and weighted mass matrices
-(`GridMatrix.momentum_derivative`), the product rule on the projector loads, and
+(`GridMatrix.momentum_derivative`), the derivative of the Bloch phases of the
+projector loads (`loads.LocalLoads.derivative`), and
 for exchange the derivative of the dressed weighted mass matrices and of the
 Coulomb kernel, whose symbol has a closed-form gradient
 (`GridCoulombKernel.potential_derivative`). The entry of the kernel at $G = 0$
@@ -273,23 +377,47 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 
 | flag | what it truncates | range, default |
 |---|---|---|
-| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$, 2 adds the crossed diagram, 3 the six skeleton diagrams of third order (`diagrams`) | 1 to 5, default 3; implemented: 1 to 3 |
-| `--vertex-bands`, `--vertex-poles` | the modes nearest the gap on the internal lines of the diagrams beyond the first order, and the modes of the screened interaction kept in them; the cost of order $k$ grows as bands$^{2k-1}$ poles$^k$ | default 12 and 12 |
+| `--self-energy-order` | terms of the expansion of the self-energy in the screened interaction $W$; 1 is $\Sigma = iGW$, 2 adds the crossed diagram, 3 the six skeleton diagrams of third order, 4 the 49 of fourth, 5 the 542 of fifth (`diagrams`) | 1 to 5, default 3; all implemented |
+| `--vertex-bands`, `--vertex-poles` | the modes nearest the gap on the internal lines of the diagrams beyond the first order, and the modes of the screened interaction kept in them; the cost of order $k$ grows as (bands/2)$^{2k-1}$ poles$^k$ | default 12 and 12 |
+| `--vertex-memory` | what the diagrams hold at once, in GiB, over all worker processes; it truncates nothing: a diagram too wide for it is evaluated one value at a time of the labels of some of its interaction lines | default 8 |
 | `--zero-momentum-order` | how the self-energy integrand is averaged over the momentum transfers the sampling leaves out: 1 is the closed form at vanishing momentum; k is a midpoint grid of k transfers per axis, the Hartree-Fock pencil solved at every node, the singular part averaged analytically and the bounded remainder by the grid | 1 to 5, default 3; all implemented |
+| `--momenta` | the momentum set on which the covariance is sampled, a uniform grid of that many crystal momenta per axis of the cell through its zone centre (`momentum_set`); Hartree-Fock is solved at one momentum of every orbit of time reversal and of the axis permutations the crystal has, the screened interaction is built at every momentum transfer of the set with the entry at zero transfer in closed form, and the offsets of `--zero-momentum-order` surround every transfer. A cell on a set is the supercell at its zone centre, and the test suite holds every step to that identity | at least 1, default 1 (the zone centre); on a set the diagrams beyond the first order run over the states of the set nearest the gap, a mode of the screened interaction of momentum $q$ entering as two bosons with Hermitian couplings |
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
+| `--projector-quadrature` | Gauss points per direction of the rule that loads the projector functions on every tetrahedron; 0 loads the interpolant of the projector with the mass matrix | at least 1 (or 0), default 6 |
 | `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
+| `--exchange-history` | earlier exchange updates of Hartree-Fock whose filled sections join the span in which the accelerator of the update minimizes the energy; it changes the number of updates and the cost of each, and leaves the converged state where it is | at least 0, default 5 |
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
 An order that is not implemented is refused by name before anything runs; it is
-never replaced by a lower one (orders 4 and 5 of the expansion in the screened
-interaction are). The diagrams beyond $\Sigma = iGW$ are evaluated as sums over
-the orderings of their vertex times, in closed form on the poles of $W$, with
-the instantaneous part of $W$ as lines whose two vertices share a time; the
-test suite holds them to the closed form at first order, to the textbook
-second-order exchange, to the plain frequency integrals of their Feynman rules
-on the imaginary axis (the triangle loops included), and to the heavy-boson
-limit for instantaneous lines. On a cell of 6 bohr the correlation self-energy of the filled level
+never replaced by a lower one (every order of both expansions exists today). The
+diagrams beyond $\Sigma = iGW$ are evaluated as sums over the orderings of their
+vertex times, in closed form on the poles of $W$, with the instantaneous part of
+$W$ as lines whose two vertices share a time. `diagrams.skeleton_diagrams`
+enumerates them (1, 1, 6, 49, 542 at the orders 1 to 5), and the sum over the
+$V!$ orderings of $V$ vertices is taken as a recursion over the sets of vertices
+that have happened, $V\,2^{V-1}$ contractions, which is the same number term for
+term. The test suite holds the diagrams to the closed form at first order, to
+the textbook second-order exchange, to the plain frequency integrals of their
+Feynman rules on the imaginary axis (every diagram through fourth order, the
+fermion loops included), to the heavy-boson limit for instantaneous lines, the
+recursion to the plain sum over the orderings, and the rules as a whole to the
+exact diagonalization of electrons coupled to bosons: with the bare propagator
+on the lines, all 238 irreducible diagrams of fourth order and all 2732 of fifth
+(the skeletons among them) sum to the coefficient of that order of the exact
+self-energy to $10^{-11}$.
+
+What an order costs is set by the denominator that holds the most lines at once:
+$2k-1$ fermion lines and $k$ interaction lines at order $k$, which no
+factorization separates. Measured on four worker processes, one evaluation of
+the third order takes 3 s at 12 bands and 12 poles; the fourth 16 s at 6 and 6
+and 200 s at 8 and 8; the fifth 400 s at 4 and 4. The number of multiplications
+(`SkeletonSelfEnergy.work`) puts the fourth order at 12 and 12 near 13 hours on
+four processes at the rate measured at 8 and 8, and the fifth at 6 and 6 between
+5 and 20 hours, so a run at these orders lowers `--vertex-bands` and
+`--vertex-poles`, or takes that long; the choice is the caller's and is recorded
+with the result.
+On a cell of 6 bohr the correlation self-energy of the filled level
 goes from -0.032 Ry at zero-momentum order 1 to -0.052 and -0.061 Ry at orders 2
 and 3 (-0.071 Ry on a grid of 6): sampling the zone centre alone is a large
 approximation on a small cell.
@@ -304,6 +432,25 @@ and are evaluated exactly on the finer vertices (`MeshCrystal.prolonged`). The
 electronic energy of every run is recorded so that stationary states can be
 compared.
 
+The exchange update replaces the exchange energy, which is concave in the
+covariance, by its tangent at the current state and minimizes the rest, so each
+update lowers the energy; near a saddle the descent is slow enough to hold the
+loop for tens of updates. Before each update the energy is therefore minimized
+over the Slater frames of the span of the bands just computed, joined by the
+filled sections of the last `--exchange-history` updates (`acceleration`). The
+Coulomb integrals of the span are computed once through the mesh's kernel, the
+state is a pure covariance on the modes of the span, the Fock operator is the
+Wick contraction of `ModeInteraction`, and the minimization is by Newton steps
+in a trust region, a step being kept only if the energy falls. Nothing is
+extrapolated, and a stationary state of the mesh is returned unchanged, so the
+fixed points are those of the plain update. A run records the energy of the
+state each exchange operator was built from, which never rises, and the lowest
+eigenvalue of the second variation of the energy on the last span: positive at
+a minimum, negative at a saddle. A crystal of eight soft ions on which the
+plain update stalls converges in six updates; gallium arsenide at 12 divisions
+converges from scratch in six, where the plain update is still leaving its
+saddle after a hundred.
+
 Published inputs cannot be extended, and no flag pretends otherwise. A
 pseudopotential file fixes the angular momenta of its projectors (the
 Bachelet-Hamann-Schlueter files stop at $l = 1$) and carries spin-orbit data only
@@ -317,3 +464,77 @@ by piecewise-linear elements at any mesh a workstation holds (the 3d level is
 22 eV too high at 32 divisions of a 5.64 angstrom cell and not in the asymptotic
 regime); three- and five-electron pseudopotentials for gallium and arsenic are
 (their 4s and 4p levels extrapolate to the radial values within 0.1 eV).
+
+### Forces and the optical phonon
+
+`forces.LatticeEnergy` is the Born-Oppenheimer energy of a `MeshCrystal`: the
+Hartree-Fock functional of the filled orbitals plus the energy of the ions
+among themselves, split as the ionic potential is. The Gaussian charges of the
+ions interact through the mesh Coulomb kernel, so that electrons and Gaussians
+meet in one quadratic form of the neutral charge of the cell, and what a point
+charge has beyond its Gaussian (the complementary error function of the
+separation, and the energy of a Gaussian with itself) is analytic. The kernel
+acts on the complement of the constants, and the uniform term of the Ewald sum
+that it leaves out is the uniform shift of the levels that the mesh leaves out
+as well, so in the continuum limit the sum is the total energy of the
+pseudopotential method; the test suite holds the ionic part to an independent
+Ewald sum, to which it converges at second order in the spacing.
+
+The force on an ion is the derivative of that energy. The Hartree-Fock
+functional is stationary in the orbitals, and neither the mass matrix nor the
+kernel depends on the ions, so the derivative is the explicit one (Hellmann and
+Feynman) of the three vertex functions an ion enters through: the short-range
+local potential, the normalized Gaussian charge (its normalization on the mesh
+included) and the projector functions, a radial function times a real solid
+harmonic. The tabulated radial functions are carried by cubic splines
+(`Pseudopotential.local_at`, `projector_at` and their slopes): with a
+piecewise-linear interpolant the force jumps whenever a vertex crosses a radius
+of the table, by 1e-3 Ry/bohr on the test crystals, which is the size of the
+restoring force of a phonon. The test suite holds the forces to central
+differences of the energy at fixed orbitals (5e-7 Ry/bohr) and with
+Hartree-Fock converged again at the displaced ions.
+
+The ions move relative to a fixed mesh, so the energy depends on where an ion
+sits within a mesh cell, and the forces of a crystal at rest do not sum to zero
+exactly. The plan's route, in which the ion cores are attached to vertices and
+the mesh deforms with them, makes `WhitneyMass.derivativeContraction` and
+`BandDerivative` the force and needs a Coulomb solve on a mesh whose vertices
+are not equivalent (`CoulombKernel`) together with its zero-momentum constant.
+
+`forces.optical_phonon` moves the two sublattices of a crystal against each
+other with the centre of mass at rest, converges Hartree-Fock again at five or
+more displacements, interpolates the restoring force by the polynomial through
+all of them (the anharmonic terms included) and reads the force constant off
+its slope; three directions give the force-constant matrix, whose eigenvalues
+are the three frequencies that a mesh of lower symmetry than the crystal
+splits. A periodic cell carries no macroscopic field, so the frequency is the
+transverse one. The longitudinal frequency adds
+$4 \pi e^2 Z^{*2} / (\epsilon_\infty \mu \Omega)$ to its square
+(`longitudinal_force_constant`), with $\Omega$ the volume and $\mu$ the reduced
+mass of a pair of ions, $\epsilon_\infty$ the electronic dielectric constant of
+the random-phase approximation at vanishing momentum (`RandomPhase.set_head`),
+and $Z^*$ the Born effective charge of the mode: the slope of the dipole of a
+pair in the displacement. The electronic part of the dipole is the phase of the
+many-body expectation of $e^{-i b \cdot X}$ on the filled orbitals, $b$ a
+reciprocal vector of the cell, the polarization of a cell sampled at its zone
+centre (`LatticeEnergy.polarization_phases`); the matrix it is the determinant
+of is the component of the pair densities at $b$. On the mesh the plane wave is
+interpolated between the vertices, and the effective charge of a rigid
+translation of all ions, which vanishes in the continuum, measures what that
+costs (-0.26 of 4 on a test crystal at a spacing of 0.9 bohr).
+
+```
+python -m tessera.drivers.bands.gaas phonon --cation Ga.UPF --anion As.UPF \
+    --divisions 8 12 16 20 24 32 --out phonon.json
+```
+
+runs this for gallium arsenide on every mesh and prints the frequencies next to
+the measured 8.02 THz (transverse) and 8.55 THz (longitudinal). With
+`--direction` the displacement is restricted to the given directions;
+`--displacements` (five or more) and `--amplitude` set the samples;
+`--screening-bands` sets the bands of the dielectric constant (0 leaves the
+longitudinal frequency out); `--skip-translation` leaves out the force constant
+and the effective charge of the rigid translation of all ions, which vanish in
+the continuum and measure the dependence of the energy on the position of the
+ions within the mesh at the order the optical mode carries it. The
+approximation flags of the `ab-initio` subcommand apply.

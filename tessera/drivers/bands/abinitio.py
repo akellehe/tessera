@@ -39,7 +39,7 @@ import scipy.sparse as sp
 from scipy.special import spherical_jn
 
 from tessera import chainhodge as ch
-from tessera.drivers.bands import coulomb
+from tessera.drivers.bands import acceleration, coulomb
 from tessera.drivers.bands.crystal import CrystalCell
 from tessera.drivers.bands.pseudopotential import real_harmonics
 
@@ -427,15 +427,19 @@ def _real_span(A, M, P, D, vectors):
 class MeshCrystal:
     """The same calculation on the periodic mesh, at the zone centre."""
 
-    def __init__(self, crystal, divisions, width=1.2, approximations=None):
+    def __init__(self, crystal, divisions, width=1.2, approximations=None, grading=None, refinement=None):
         from tessera.drivers.bands.settings import Approximations
         self.approximations = Approximations() if approximations is None else approximations
         self.crystal, self.width = crystal, float(width)
-        self.cell = CrystalCell(crystal.lattice, divisions, kinetic_scale=1.0)
+        if grading is None and refinement is None:
+            self.cell = CrystalCell(crystal.lattice, divisions, kinetic_scale=1.0)
+        else:                                                    # a mesh graded toward the ions (`graded`)
+            from tessera.drivers.bands.graded import GradedCell
+            self.cell = GradedCell(crystal.lattice, divisions, grading, refinement, kinetic_scale=1.0)
         cell = self.cell
         self.stiffness = cell.stiffness.dressed().real.tocsc()
         self.mass = cell.mass.dressed().real.tocsc()
-        self.kernel = coulomb.GridCoulombKernel(cell, COULOMB_STRENGTH)
+        self.kernel = coulomb.CoulombKernel.of_cell(cell, COULOMB_STRENGTH)
         # The zero-momentum term of the kernel that sampling the cell at its zone
         # centre leaves out, from the kernel's own symbol.
         self.zero_momentum = self.kernel.zero_momentum_constant(self.approximations.refinements)
@@ -498,14 +502,53 @@ class MeshCrystal:
                     if l == l2 and pseudo.D[i, j] != 0.0:
                         for m in range(2 * l + 1):
                             D[start_i + m, start_j + m] = pseudo.D[i, j]
-        return self.mass @ beta, D
+        if self.approximations.projector_quadrature == 0:
+            return self.mass @ beta, D
+        self._loads = self._projector_loads()
+        return np.hstack([local.assemble() for local in self._loads]), D
+
+    def _projector_loads(self):
+        """The loads int beta(r - tau) lambda_v(r) dr of every ion's projector
+        functions by quadrature on the tetrahedra (`loads.SimplexQuadrature`), the
+        radial tables read as `Pseudopotential.projector_at` reads them, summed
+        over the images of the ion within the reach of each table."""
+        from tessera.drivers.bands import loads
+        rule = loads.SimplexQuadrature(self.cell, self.approximations.projector_quadrature)
+        out = []
+        for pseudo, position in self.crystal.ions:
+            def functions(offsets, pseudo=pseudo):
+                radius = np.linalg.norm(offsets, axis=1)
+                return np.array([pseudo.projector_at(i, radius) * harmonic
+                                 for i, (l, _) in enumerate(pseudo.projectors)
+                                 for harmonic in real_harmonics(l, offsets)]).T
+            if not pseudo.projectors:
+                out.append(loads.LocalLoads(self.cell.size, np.zeros(0, dtype=int), np.zeros((0, 3)), np.zeros((0, 0))))
+                continue
+            reach = max(loads.radial_reach(pseudo.r[1:], r_beta[1:] / pseudo.r[1:]) for _, r_beta in pseudo.projectors)
+            out.append(rule.loads(functions, position, reach, self.approximations.images))
+        return out
+
+    def _projector_derivative(self, axis, mass_derivative):
+        """The derivative of the projector loads with respect to the Cartesian
+        component `axis` of the crystal momentum, at the zone centre."""
+        if self.approximations.projector_quadrature:
+            return np.hstack([local.derivative(axis) for local in self._loads])
+        shifted = np.zeros(self._beta.shape, dtype=complex)                     # P_q = M_q (beta exp(-i q . (x - tau)))
+        for index, (_, position) in enumerate(self.crystal.ions):
+            columns = self._beta_ion == index
+            shifted[:, columns] = -1j * self._displacements(position)[:, axis, None] * self._beta[:, columns]
+        return mass_derivative @ self._beta + self.mass @ shifted
 
     def _projectors_at(self, kappa, mass):
         """The projector loads at the crystal momentum `kappa`. A separable
         term sum_R |beta_R> D <beta_R| acts on the cell-periodic part of a
         section of momentum k through beta(r - tau) exp(-i k . (r - tau)) summed
-        over images, loaded with the mass matrix dressed by the same momentum."""
+        over images: by quadrature the load of every image carries the phase of
+        its displacement to the vertex (`loads.LocalLoads.assemble`); the
+        interpolant is loaded with the mass matrix dressed by the same momentum."""
         k = self.cell.momentum(kappa)
+        if self.approximations.projector_quadrature:
+            return np.hstack([local.assemble(k) for local in self._loads])
         dressed = self._beta.astype(complex)
         for index, (_, position) in enumerate(self.crystal.ions):
             phase = np.exp(-1j * (self._displacements(position) @ k))
@@ -513,25 +556,17 @@ class MeshCrystal:
             dressed[:, columns] *= phase[:, None]
         return mass @ dressed
 
-    @property
-    def triple(self):
-        if not hasattr(self, "_triple"):
-            self._triple = coulomb.TripleIntegrals(self.cell.complex, self.cell.squared_lengths)
-        return self._triple
-
     def _exchange(self, filled, orbitals, kappa=None):
         """K applied to the columns of `orbitals`, sections of crystal momentum
         `kappa` (the zone centre when None), with the filled zone-centre
         orbitals `filled`: one Poisson solve per pair, at the momentum the pair
         density carries, the entry of the kernel at G = 0 being the
         auxiliary-function constant (`GridCoulombKernel.inverse_symbol`)."""
-        triple = self.triple
-        twist = None if kappa is None else coulomb.bloch_twist(self.cell, triple.tops, kappa)
+        loads = lambda x, Y: coulomb.pair_loads(self.cell, x, Y, kappa)
         W = np.zeros(orbitals.shape, dtype=float if kappa is None else complex)
         for j in range(filled.shape[1]):
-            pair = self.kernel.potential(triple.loads(filled[:, j], orbitals, twist), kappa, self.zero_momentum)
-            produced = triple.loads(filled[:, j], pair if kappa is not None else pair.real, twist)
-            W -= produced
+            pair = self.kernel.potential(loads(filled[:, j], orbitals), kappa, self.zero_momentum)
+            W -= loads(filled[:, j], pair if kappa is not None else pair.real)
         return W
 
     @staticmethod
@@ -606,7 +641,8 @@ class MeshCrystal:
 
     # -- Hartree-Fock
 
-    def run_hartree_fock(self, bands, tolerance=1e-5, mixing=0.3, max_outer=100, max_inner=30, start=None, log=None):
+    def run_hartree_fock(self, bands, tolerance=1e-5, mixing=0.3, max_outer=100, max_inner=30, start=None, log=None,
+                         accelerate=True):
         """Hartree-Fock on the mesh at the zone centre, the mean field of the
         quartic Coulomb interaction: the Hartree potential of the density and the
         exchange operator
@@ -625,14 +661,21 @@ class MeshCrystal:
         The Hartree mean field supplies the starting orbitals when it
         converges, one diagonalization in the potential of the atomic density
         otherwise. The exchange operator is rebuilt in an outer loop and the Hartree potential converged
-        at fixed exchange in an inner one, as in `PlaneWaveCrystal`.
+        at fixed exchange in an inner one, as in `PlaneWaveCrystal`. Before each
+        rebuild the energy is minimized over the Slater frames of the span of
+        the computed bands (`acceleration`; `accelerate=False` is the plain
+        update, with the same fixed points). With it the run also returns
+        "energies", the energy of the state each exchange operator was built
+        from, and "lowest_curvature", the lowest eigenvalue of the second
+        variation of the energy on the last span: positive at a minimum,
+        negative at a saddle. "solves" counts the solves of the pencil, the
+        start included.
 
         References: Lin, Journal of Chemical Theory and Computation 12, 2242
         (2016), for the compression; Gygi & Baldereschi, Physical Review B 34,
         4405 (1986), for the zero-momentum term."""
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
-        integrals = self.triple
         weights = self.kernel.weights
         # The Hartree mean field starts the loop when it has a self-consistent state. Without exchange a
         # semiconductor can be gapless (gallium arsenide is, to 0.03 eV), and the filling of a gapless spectrum
@@ -641,10 +684,13 @@ class MeshCrystal:
         # the electronic energy is returned so that states can be compared, the lowest being the mean field.
         # `start` (a dict with "vectors" and "levels": an earlier run, or `prolonged` from a coarser mesh)
         # replaces both.
+        solves = 0                                                   # of the pencil, the unit of the run's cost
         if start is None:
             start = self.run(bands, log=log)
+            solves = len(start["history"])
             if not start["converged"]:
                 start = self.run(bands, max_iterations=1, log=log)
+                solves += 1
         start = dict(start)
         start.setdefault("residual", 0.0)
         start.setdefault("shift_below_spectrum", True)
@@ -652,18 +698,27 @@ class MeshCrystal:
 
         def load_of(vectors):
             filled = vectors[:, :occupied]
-            return 2.0 * sum(integrals.loads(filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
+            return 2.0 * sum(coulomb.pair_loads(self.cell, filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
 
         nodal = lambda vectors: 2.0 * (vectors[:, :occupied] ** 2).sum(axis=1)
         norm = lambda difference: np.sqrt(weights @ difference ** 2 / crystal.volume) * crystal.volume / crystal.electrons
         history, density = [], nodal(orbitals)
         residual, below = start["residual"], start["shift_below_spectrum"]
+        accelerator = acceleration.ExchangeAccelerator(self, occupied, self.approximations.exchange_history) \
+            if accelerate else None
         for outer in range(max_outer):
+            if accelerator is not None:
+                # The mean field of the span of the computed bands, minimized (`acceleration`): the filled sections
+                # are rotated inside the span before the exchange operator is built from them.
+                orbitals, W, load = accelerator.zone_centre(orbitals)
+                density = nodal(orbitals)
+            else:
+                W, load = self._exchange(orbitals[:, :occupied], orbitals), load_of(orbitals)
             # The exchange operator on every computed band, compressed: K = -xi xi^T.
-            P, D = self._compressed(self._exchange(orbitals[:, :occupied], orbitals), orbitals, self.P)
+            P, D = self._compressed(W, orbitals, self.P)
             # The Hartree potential converged at this exchange.
             mixer = PulayMixer(mixing)
-            hartree = self.kernel.potential(load_of(orbitals)).real
+            hartree = self.kernel.potential(load).real
             inner_tolerance = max(0.3 * tolerance, 0.3 * (history[-1] if history else 1e-2))
             inner_density = density
             for inner in range(max_inner):
@@ -678,9 +733,12 @@ class MeshCrystal:
                 hartree = mixer.next(hartree, self.kernel.potential(load_of(produced)).real)
             change = norm(out_density - density)
             history.append(change)
+            solves += inner + 1
             if log:
                 log(f"  mesh, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner) gap "
-                    f"{(values[occupied] - values[occupied - 1]) * 13.605693:.4f} eV")
+                    f"{(values[occupied] - values[occupied - 1]) * 13.605693:.4f} eV"
+                    + (f", energy {accelerator.reads[-1]['energy']:.8f} Ry after {accelerator.reads[-1]['steps']} steps "
+                       f"in the span" if accelerate else ""))
             orbitals, density = produced, out_density
             if change < tolerance:
                 break
@@ -692,7 +750,199 @@ class MeshCrystal:
         energy = float(np.sum(one_particle + values[:occupied]))
         return {"levels": values, "vectors": orbitals, "residual": residual, "shift_below_spectrum": below,
                 "history": history, "converged": history[-1] < tolerance, "spacing": cell.spacing, "energy": energy,
-                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance), "solves": solves,
+                **({} if accelerator is None else accelerator.record())}
+
+    # -- more bands and the quasiparticle equation on a momentum set
+
+    def _shifted(self, vectors, shift):
+        """The cell-periodic parts of the same sections written at the momentum
+        kappa + shift, `shift` a reciprocal vector of the cell (integers): the
+        lattice plane wave of `shift` moves from the link phases to the vertex
+        values, exactly."""
+        phase = np.exp(-2j * np.pi * (self.cell.fractional @ np.asarray(shift, dtype=float)))    # at the true positions
+        return np.asarray(vectors) * phase[:, None]
+
+    def _set_exchange(self, momenta, constant, filled, k, targets, offset=None):
+        """K_k applied to `targets` (sections of momenta[k], or of
+        momenta[k] + offset, a momentum outside the set) with the filled
+        sections `filled[k']` of every momentum of the set; see
+        `run_hartree_fock_set`."""
+        cell, count = self.cell, len(momenta)
+        W = np.zeros(targets.shape, dtype=complex)
+        kappa = tuple(momenta[k]) if offset is None else tuple(a + b for a, b in zip(momenta[k], offset))
+        for other in range(count):
+            transfer = tuple(a - b for a, b in zip(kappa, momenta[other]))
+            same = other == k                                    # the G = 0 entry there is the constant, at any offset
+            minus = tuple(-v for v in momenta[other])
+            for j in range(filled[other].shape[1]):
+                z = filled[other][:, j]
+                loads = coulomb.pair_loads(cell, z.conj(), targets, kappa, minus)
+                potential = self.kernel.potential(loads, None if same and offset is None else transfer,
+                                                  count * constant if same else None)
+                W -= coulomb.pair_loads(cell, z, potential, transfer, momenta[other]) / count
+        return W
+
+    def extend_bands_set(self, run, bands, tolerance=1e-5, max_iterations=10, log=None):
+        """Converge `bands` Hartree-Fock levels at every momentum of a converged
+        `run_hartree_fock_set`, the filled sections (and with them the Hartree
+        potential and the exchange operator) fixed, as `extend_bands` does at
+        the zone centre."""
+        cell = self.cell
+        occupied = self.crystal.electrons // 2
+        momenta, count = run["momenta"], len(run["momenta"])
+        filled = [np.asarray(v)[:, :occupied] for v in run["vectors"]]
+        load = np.zeros(cell.size)
+        for k in range(count):
+            minus = tuple(-v for v in momenta[k])
+            for j in range(occupied):
+                z = filled[k][:, j]
+                load += 2.0 / count * coulomb.pair_loads(cell, z.conj(), z[:, None], momenta[k], minus)[:, 0].real
+        local = self.ionic + self.kernel.potential(load).real
+        from tessera.drivers.bands.momentum_set import SetSymmetry
+        symmetry = bool(run.get("symmetry", False))
+        orbits = SetSymmetry(self, momenta if symmetry else [])
+        levels, vectors, converged = {}, {}, True
+        for k in (orbits.representatives if symmetry else range(count)):
+            A, M = cell.pencil(momenta[k], cell.weighted_mass(local))
+            projectors = self._projectors_at(momenta[k], M)
+            orbitals, values, previous = np.asarray(run["vectors"][k]).astype(complex), np.asarray(run["levels"][k]), None
+            for iteration in range(max_iterations):
+                W = self._set_exchange(momenta, run["zero_momentum"], filled, k, orbitals)
+                P, D = self._compressed(W, orbitals, projectors)
+                values, orbitals, _, _ = solve_with_projectors(A, M, P, D, bands, float(values[0]) - 1.0)
+                orbitals = orbitals.astype(complex)
+                change = np.inf if previous is None or len(previous) != len(values) else np.abs(values - previous).max()
+                previous = values
+                if log:
+                    log(f"  momentum {momenta[k]}, bands {bands}, compression {iteration}: {change:.2e} Ry")
+                if change < tolerance:
+                    break
+            converged = converged and change < tolerance
+            levels[k], vectors[k] = values, orbitals
+        if symmetry:
+            levels, vectors = [levels[orbits.images[k][0]] for k in range(count)], orbits.complete(vectors)
+        else:
+            levels, vectors = [levels[k] for k in range(count)], [vectors[k] for k in range(count)]
+        return {"momenta": momenta, "levels": levels, "vectors": vectors, "occupied": occupied,
+                "zero_momentum": run["zero_momentum"], "local_potential": local, "converged": bool(converged)}
+
+    def bands_at_set(self, extended, offset, tolerance=1e-5, max_iterations=12, converge=None, log=None):
+        """`bands_at` on a momentum set: the Hartree-Fock levels and sections at
+        every momentum of the set moved by `offset` (reciprocal coordinates),
+        with the local potential and the filled sections of the set fixed. The
+        compression of exchange is rebuilt until the lowest `converge[k]` levels
+        stop moving. Returns levels and vectors per momentum of the set."""
+        cell = self.cell
+        occupied = int(extended["occupied"])
+        momenta, count = [tuple(float(v) for v in kappa) for kappa in extended["momenta"]], len(extended["momenta"])
+        filled = [np.asarray(v)[:, :occupied] for v in extended["vectors"]]
+        local = cell.weighted_mass(extended["local_potential"])
+        levels, vectors, converged = [], [], True
+        for k in range(count):
+            kappa = tuple(a + b for a, b in zip(momenta[k], offset))
+            A, M = cell.pencil(kappa, local)
+            projectors = self._projectors_at(kappa, M)
+            orbitals, values, previous = np.asarray(extended["vectors"][k]).astype(complex), np.asarray(extended["levels"][k]), None
+            for iteration in range(max_iterations):
+                W = self._set_exchange(momenta, extended["zero_momentum"], filled, k, orbitals, offset)
+                P, D = self._compressed(W, orbitals, projectors)
+                values, orbitals, _, _ = solve_with_projectors(A, M, P, D, len(values), float(values[0]) - 1.0)
+                orbitals = orbitals.astype(complex)
+                top = None if converge is None else converge[k]
+                change = np.inf if previous is None else np.abs(values - previous)[:top].max()
+                previous = values
+                if log:
+                    log(f"  momentum {kappa}, compression {iteration}: largest level change {change:.2e} Ry")
+                if change < tolerance:
+                    break
+            converged = converged and change < tolerance
+            levels.append(values)
+            vectors.append(orbitals)
+        return {"levels": levels, "vectors": vectors, "offset": tuple(offset), "converged": bool(converged)}
+
+    def vanishing_momentum_charges_set(self, extended, bands):
+        """The charges per unit momentum of the pairs of zero transfer on a
+        momentum set, the pairs (i k) -> (a k) in the order momentum, filled,
+        empty, one array per Cartesian axis: `vanishing_momentum_pairs` with
+        complex sections at every momentum of the set,
+
+            d_ia(k) = 1^T (dL_k[conj z_ik]) z_ak + z_ik^dagger (dH_k - e_ak dM_k) z_ak / (e_ak - e_ik) ,
+
+        L_k[x] the pair loads onto the momentum k (`coulomb.pair_loads`) and d
+        the derivative with respect to that momentum
+        (`coulomb.pair_loads_derivative`, the pencil's
+        `sparsePencilPhaseDerivativeAlong`). The exchange operator of a set
+        changes through the loads onto k + q, through the loads back, their
+        adjoints, and through the kernel at the transfer k + q - k'
+        (`GridCoulombKernel.potential_derivative` at that transfer), for the
+        filled sections of every k' of the set."""
+        cell = self.cell
+        occupied = int(extended["occupied"])
+        momenta, count = [tuple(float(v) for v in kappa) for kappa in extended["momenta"]], len(extended["momenta"])
+        constant = float(extended["zero_momentum"])
+        local = cell.weighted_mass(extended["local_potential"])
+        minus = lambda kappa: tuple(-v for v in kappa)
+        derivatives = [[] for _ in range(3)]
+        for k, kappa in enumerate(momenta):
+            levels = np.asarray(extended["levels"][k])[:bands[k]]
+            filled = np.asarray(extended["vectors"][k])[:, :occupied]
+            empties = np.asarray(extended["vectors"][k])[:, occupied:bands[k]]
+            gaps = levels[None, occupied:] - levels[:occupied, None]
+            covariant = cell.covariant(kappa)
+            mass = cell.pencil(kappa)[1]
+            wave = cell.momentum(kappa)
+            quadrature = bool(self.approximations.projector_quadrature)
+            if not quadrature:
+                dressed = self._beta.astype(complex)
+                for index, (_, position) in enumerate(self.crystal.ions):
+                    dressed[:, self._beta_ion == index] *= np.exp(-1j * (self._displacements(position) @ wave))[:, None]
+            projectors = self._projectors_at(kappa, mass)
+            overlap, overlap_empty = filled.conj().T @ projectors, empties.conj().T @ projectors
+            for axis in range(3):
+                weights = [float(w) for w in cell.edge_displacements[:, axis]]
+                pencil = covariant.sparsePencilPhaseDerivativeAlong(weights)
+                dM = sp.csc_matrix(pencil.M)
+                dA = cell.kinetic_scale * sp.csc_matrix(pencil.A) + sp.csc_matrix(
+                    covariant.dressedVertexPotentialPhaseDerivativeAlong(list(local.values), weights))
+                current = filled.conj().T @ (dA @ empties) - (filled.conj().T @ (dM @ empties)) * levels[None, occupied:]
+                if quadrature:
+                    dP = np.hstack([load.derivative(axis, wave) for load in self._loads])
+                else:
+                    shifted = dressed.copy()
+                    for index, (_, position) in enumerate(self.crystal.ions):
+                        shifted[:, self._beta_ion == index] *= -1j * self._displacements(position)[:, axis, None]
+                    dP = dM @ dressed + mass @ shifted
+                current = current + (filled.conj().T @ dP) @ self.D @ overlap_empty.conj().T \
+                    + overlap @ self.D @ (dP.conj().T @ empties)
+                for other, kappa_other in enumerate(momenta):
+                    same = other == k
+                    transfer = None if same else tuple(a - b for a, b in zip(kappa, kappa_other))
+                    zero = count * constant if same else None
+                    for j in range(occupied):
+                        x = np.asarray(extended["vectors"][other])[:, j].conj()
+                        both = np.hstack([filled, empties])
+                        loads = coulomb.pair_loads(cell, x, both, kappa, minus(kappa_other))
+                        d_loads = coulomb.pair_loads_derivative(cell, x, both, axis, kappa, minus(kappa_other))
+                        potentials = self.kernel.potential(loads[:, :occupied], transfer, zero)
+                        first = self.kernel.potential(d_loads[:, :occupied], transfer, zero).conj().T @ loads[:, occupied:]
+                        second = self.kernel.potential_derivative(loads[:, :occupied], axis, transfer).conj().T \
+                            @ loads[:, occupied:]
+                        third = potentials.conj().T @ d_loads[:, occupied:]
+                        current = current - (first + second + third) / count
+                direct = np.array([coulomb.pair_loads_derivative(cell, filled[:, i].conj(), empties, axis, kappa,
+                                                                 minus(kappa)).sum(axis=0) for i in range(occupied)])
+                derivatives[axis].append((direct + current / gaps).ravel())
+        return [np.concatenate(parts) for parts in derivatives]
+
+    def quasiparticle_set(self, extended, states, bands=None, head=True, directions=None):
+        """The quasiparticle equation on a momentum set for the states
+        (momentum index, band) in `states`, one shot on the Hartree-Fock levels
+        of `extend_bands_set` (`momentum_set.SetScreening`, which also feeds the
+        levels back). Returns {state: (mean-field level, quasiparticle level,
+        renormalization)}."""
+        from tessera.drivers.bands.momentum_set import SetScreening
+        return SetScreening(self, extended, bands, head, directions).quasiparticles(states)
 
     def prolonged(self, coarse, run):
         """The start of `run_hartree_fock` on this mesh from a converged run on the
@@ -723,7 +973,8 @@ class MeshCrystal:
 
     # -- Hartree-Fock on a momentum set
 
-    def run_hartree_fock_set(self, bands, momenta, tolerance=1e-5, mixing=0.3, max_outer=40, max_inner=30, log=None):
+    def run_hartree_fock_set(self, bands, momenta, tolerance=1e-5, mixing=0.3, max_outer=40, max_inner=30, log=None,
+                             symmetry=True, accelerate=True):
         """Hartree-Fock with the covariance sampled on the momentum set
         `momenta` (reciprocal coordinates of the cell): a uniform grid that
         contains the zone centre, so that the differences of its members are
@@ -734,23 +985,32 @@ class MeshCrystal:
             (K_k z)(r) = -(1 / N_k) sum_{k' j} psi_jk'(r) int v_{k-k'}(r - r') conj(psi_jk'(r')) psi(r') dr' ,
 
         with the pair densities loaded between the two momenta
-        (`TripleIntegrals.loads` with both twists) and the kernel the inverse of
+        (`coulomb.pair_loads`, the library's `WhitneyMass.pairLoads`) and the kernel the inverse of
         the stiffness matrix dressed by the transfer; at zero transfer its entry
         at G = 0 is the auxiliary-function constant of the set
         (`GridCoulombKernel.zero_momentum_constant(transfers=momenta)`), which
         is the constant of the supercell the set is equivalent to. The loops
-        are those of `run_hartree_fock`. Returns the levels and the
-        cell-periodic parts per momentum."""
+        and the accelerator are those of `run_hartree_fock`, the span being the
+        computed bands of every momentum and the energy that of one cell. With
+        `symmetry` the pencil is solved at one momentum of every orbit of the
+        operations the mesh keeps (`momentum_set.SetSymmetry`: time reversal and
+        the permutations of the axes that the crystal has), and the sections of
+        the others are their images. Returns the levels and the cell-periodic
+        parts per momentum."""
+        from tessera.drivers.bands.momentum_set import SetSymmetry
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
         momenta = [tuple(float(x) for x in kappa) for kappa in momenta]
         count = len(momenta)
-        triple, weights = self.triple, self.kernel.weights
+        weights = self.kernel.weights
         constant = self.kernel.zero_momentum_constant(self.approximations.refinements, transfers=momenta)
-        twists = [coulomb.bloch_twist(cell, triple.tops, kappa) for kappa in momenta]
         masses = [cell.pencil(kappa)[1] for kappa in momenta]
         projectors = [self._projectors_at(kappa, M) for kappa, M in zip(momenta, masses)]
         start = self.run(bands, log=log)
+        orbits = SetSymmetry(self, momenta if symmetry else [])
+        solved = orbits.representatives if symmetry else list(range(count))
+        everywhere = lambda found: orbits.complete(found) if symmetry else [found[k] for k in range(count)]
+        levels_of = lambda found: [found[orbits.images[k][0]] if symmetry else found[k] for k in range(count)]
 
         def pencil(k, hartree):
             return cell.pencil(momenta[k], cell.weighted_mass(self.ionic + hartree))[0]
@@ -760,45 +1020,43 @@ class MeshCrystal:
             for k in range(count):
                 for j in range(occupied):
                     z = orbitals[k][:, j]
-                    total += 2.0 / count * triple.loads(z.conj(), z[:, None], twists[k], twist_x=twists[k].conj())[:, 0].real
+                    total += 2.0 / count * coulomb.pair_loads(cell, z.conj(), z[:, None], momenta[k],
+                                                              tuple(-v for v in momenta[k]))[:, 0].real
             return total
 
         def exchange(k, orbitals):
-            W = np.zeros(orbitals[k].shape, dtype=complex)
-            for other in range(count):
-                transfer = tuple(a - b for a, b in zip(momenta[k], momenta[other]))
-                same = other == k
-                pair_twist = coulomb.bloch_twist(cell, triple.tops, transfer)
-                for j in range(occupied):
-                    z = orbitals[other][:, j]
-                    loads = triple.loads(z.conj(), orbitals[k], twists[k], twist_x=twists[other].conj())
-                    # The constant is the missing term of the whole sum over the set, which carries the weight 1 / N_k.
-                    potential = self.kernel.potential(loads, None if same else transfer, count * constant if same else None)
-                    W -= triple.loads(z, potential, pair_twist, twist_x=twists[other]) / count
-            return W
+            return self._set_exchange(momenta, constant, [v[:, :occupied] for v in orbitals], k, orbitals[k])
 
         nodal = lambda orbitals: 2.0 / count * sum((np.abs(v[:, :occupied]) ** 2).sum(axis=1) for v in orbitals)
         norm = lambda difference: np.sqrt(weights @ difference ** 2 / crystal.volume) * crystal.volume / crystal.electrons
         hartree = self.kernel.potential(self.mass @ self.atomic_density()).real
-        orbitals, values = [], []
-        for k in range(count):                                       # the Hartree mean field of the zone centre starts every momentum
+        found, values = {}, {}
+        for k in solved:                                             # the Hartree mean field of the zone centre starts every momentum
             A = cell.pencil(momenta[k], cell.weighted_mass(start["potential"]))[0]
-            v, z, _, _ = solve_with_projectors(A, masses[k], projectors[k], self.D, bands, float(start["levels"][0]) - 1.0)
-            orbitals.append(z.astype(complex)); values.append(v)
+            values[k], z, _, _ = solve_with_projectors(A, masses[k], projectors[k], self.D, bands,
+                                                       float(start["levels"][0]) - 1.0)
+            found[k] = z.astype(complex)
+        orbitals = everywhere(found)
         history, density = [], nodal(orbitals)
         residual, below = 0.0, True
+        accelerator = acceleration.ExchangeAccelerator(self, occupied, self.approximations.exchange_history) \
+            if accelerate else None
         for outer in range(max_outer):
-            terms = [self._compressed(exchange(k, orbitals), orbitals[k], projectors[k]) for k in range(count)]
+            if accelerator is not None:                              # as in `run_hartree_fock`
+                orbitals = accelerator.momentum_set(momenta, constant, masses, projectors, orbitals)
+                density = nodal(orbitals)
+            terms = {k: self._compressed(exchange(k, orbitals), orbitals[k], projectors[k]) for k in solved}
             mixer = PulayMixer(mixing)
             hartree = self.kernel.potential(load_of(orbitals)).real
             inner_tolerance = max(0.3 * tolerance, 0.3 * (history[-1] if history else 1e-2))
             inner_density = density
             for inner in range(max_inner):
-                produced, residual, below = [], 0.0, True
-                for k in range(count):
+                found, residual, below = {}, 0.0, True
+                for k in solved:
                     values[k], z, r, b = solve_with_projectors(pencil(k, hartree), masses[k], *terms[k], bands,
                                                                float(values[k][0]) - 1.0)
-                    produced.append(z.astype(complex)); residual = max(residual, r); below = below and b
+                    found[k] = z.astype(complex); residual = max(residual, r); below = below and b
+                produced = everywhere(found)
                 out_density = nodal(produced)
                 inner_change = norm(out_density - inner_density)
                 inner_density = out_density
@@ -808,14 +1066,16 @@ class MeshCrystal:
             change = norm(out_density - density)
             history.append(change)
             if log:
-                log(f"  momentum set, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner)")
+                log(f"  momentum set, exchange update {outer:2d}: density change {change:.2e} ({inner + 1} inner)"
+                    + (f", energy {accelerator.reads[-1]['energy']:.8f} Ry" if accelerate else ""))
             orbitals, density = produced, out_density
             if change < tolerance:
                 break
-        return {"momenta": momenta, "levels": values, "vectors": orbitals, "residual": residual,
+        return {"momenta": momenta, "levels": levels_of(values), "vectors": orbitals, "residual": residual,
                 "shift_below_spectrum": below, "history": history, "converged": history[-1] < tolerance,
-                "zero_momentum": constant, "spacing": cell.spacing,
-                "certified": bool(below and residual < 1e-8 and history[-1] < tolerance)}
+                "zero_momentum": constant, "spacing": cell.spacing, "symmetry": bool(symmetry),
+                "solved": list(solved), "certified": bool(below and residual < 1e-8 and history[-1] < tolerance),
+                **({} if accelerator is None else accelerator.record())}
 
     # -- more bands, and the one-shot quasiparticle correction
 
@@ -828,9 +1088,8 @@ class MeshCrystal:
         stop moving."""
         cell, crystal = self.cell, self.crystal
         occupied = crystal.electrons // 2
-        integrals = self.triple
         filled = mean_field["vectors"][:, :occupied]
-        load = 2.0 * sum(integrals.loads(filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
+        load = 2.0 * sum(coulomb.pair_loads(self.cell, filled[:, j], filled[:, j:j + 1])[:, 0] for j in range(occupied))
         hartree = self.kernel.potential(load).real
         A = (self.stiffness + cell.weighted_mass(self.ionic + hartree).dressed().real).tocsc()
         orbitals, values = mean_field["vectors"], mean_field["levels"]
@@ -913,6 +1172,23 @@ class MeshCrystal:
         return {"levels": values, "vectors": orbitals, "kappa": tuple(kappa), "residual": residual,
                 "shift_below_spectrum": below, "converged": bool(change < tolerance), "occupied": occupied}
 
+    scratch = None                                               # a directory for arrays too large to hold at once
+
+    def _stored(self, array, name):
+        """`array`, or with `scratch` set a file-backed copy of it there: the
+        integrals of every mode at every momentum transfer of
+        `zero_momentum_order` take bands^2 x pairs x transfers numbers, which
+        changes where they live and nothing that is computed."""
+        if self.scratch is None:
+            return array
+        import os
+        os.makedirs(self.scratch, exist_ok=True)
+        stored = np.lib.format.open_memmap(os.path.join(self.scratch, name + ".npy"), mode="w+", dtype=array.dtype,
+                                           shape=array.shape)
+        stored[...] = array
+        stored.flush()
+        return np.load(os.path.join(self.scratch, name + ".npy"), mmap_mode="r")
+
     def momentum_pairs(self, extended, at_momentum, bands=None):
         """The particle-hole pairs of momentum transfer q: a filled orbital i of
         the zone centre and an empty section a of `bands_at` (filled index
@@ -935,8 +1211,7 @@ class MeshCrystal:
         kappa = at_momentum["kappa"]
         filled = np.asarray(extended["vectors"])[:, :occupied]
         empties = np.asarray(at_momentum["vectors"])[:, occupied:bands]
-        twist = coulomb.bloch_twist(self.cell, self.triple.tops, kappa)
-        loads = [self.triple.loads(filled[:, i], empties, twist) for i in range(occupied)]
+        loads = [coulomb.pair_loads(self.cell, filled[:, i], empties, kappa) for i in range(occupied)]
         potentials = [self.kernel.potential(load, kappa, 0.0) for load in loads]
         coupling = np.block([[loads[i].conj().T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
         gaps = (np.asarray(at_momentum["levels"])[None, occupied:bands]
@@ -963,11 +1238,11 @@ class MeshCrystal:
         at_momentum = self.bands_at(truncated, kappa, converge=bands, log=log)
         sections = np.asarray(at_momentum["vectors"])[:, :bands]
         modes = np.asarray(extended["vectors"])
-        twist = coulomb.bloch_twist(self.cell, self.triple.tops, kappa)
-        loads = [self.triple.loads(modes[:, i], sections[:, occupied:], twist) for i in range(occupied)]
+        loads = [coulomb.pair_loads(self.cell, modes[:, i], sections[:, occupied:], kappa) for i in range(occupied)]
         potentials = np.hstack([self.kernel.potential(load, kappa) for load in loads])
         coupling = np.hstack(loads).conj().T @ potentials
-        blocks = {n: self.triple.loads(modes[:, n], sections, twist).conj().T @ potentials for n in states}
+        blocks = {n: self._stored(coulomb.pair_loads(self.cell, modes[:, n], sections, kappa).conj().T @ potentials,
+                                  f"block_{'_'.join(f'{v:+.6f}' for v in kappa)}_{n}") for n in states}
         levels = np.asarray(at_momentum["levels"])[:bands]
         gaps = (levels[None, occupied:] - np.asarray(extended["levels"])[:occupied, None]).ravel()
         return {"kappa": tuple(kappa), "levels": levels, "gaps": gaps, "coupling": coupling, "blocks": blocks,
@@ -975,21 +1250,30 @@ class MeshCrystal:
                 "converged": at_momentum["converged"],
                 "pairs": [(i, a) for i in range(occupied) for a in range(occupied, bands)]}
 
-    def vertex(self, extended, bands=None):
+    def vertex(self, extended, bands=None, include=()):
         """The argument tuple of `RandomPhase.set_vertex` for
         `approximations.self_energy_order`: the `vertex_bands` modes nearest the
-        gap (half filled, half empty, among the lowest `bands`) and their
-        Coulomb integrals (pq|rs), with the entry of the kernel at G = 0 as in
-        exchange."""
+        gap (half filled, half empty, among the lowest `bands`; the modes in
+        `include` first, which in a folded cell need not be the nearest) and
+        their Coulomb integrals (pq|rs), with the entry of the kernel at G = 0
+        as in exchange."""
         settings = self.approximations
         occupied = int(extended["occupied"])
         bands = len(extended["levels"]) if bands is None else int(bands)
-        below = min(settings.vertex_bands // 2, occupied)
-        above = min(settings.vertex_bands - below, bands - occupied)
-        chosen = list(range(occupied - below, occupied + above))
+        chosen = sorted(int(n) for n in include)
+        nearest = sorted(range(bands), key=lambda m: (abs(m - occupied + 0.5), m))
+        half = settings.vertex_bands // 2
+        for m in nearest:                                             # fill up, keeping the two sides balanced
+            side = [c for c in chosen if (c < occupied) == (m < occupied)]
+            if m not in chosen and len(chosen) < settings.vertex_bands and len(side) < max(half, settings.vertex_bands - half):
+                chosen.append(m)
+        for m in nearest:                                             # a side that ran out leaves room for the other
+            if m not in chosen and len(chosen) < settings.vertex_bands:
+                chosen.append(m)
+        chosen = sorted(chosen)
         modes = np.asarray(extended["vectors"])[:, chosen]
         count = len(chosen)
-        loads = np.hstack([self.triple.loads(modes[:, p], modes) for p in range(count)])           # pairs (p, q)
+        loads = np.hstack([coulomb.pair_loads(self.cell, modes[:, p], modes) for p in range(count)])           # pairs (p, q)
         potentials = self.kernel.potential(loads, None, self.zero_momentum).real
         interaction = (loads.T @ potentials).reshape(count, count, count, count)
         return settings.self_energy_order, chosen, interaction, settings.vertex_poles
@@ -1016,7 +1300,8 @@ class MeshCrystal:
         derivative of the Hartree-Fock pencil with respect to a uniform change
         of the link phases: entrywise for the stiffness matrix, the weighted
         mass matrix of the local potential and the mass matrix
-        (`GridMatrix.momentum_derivative`), the product rule on the projector
+        (`CovariantChainHodge.sparsePencilPhaseDerivativeAlong` with the edge
+        displacements as weights), the product rule on the projector
         loads, and for exchange
 
             dK = - sum_j [ dL_j G L_j + L_j dG L_j + L_j G dL_j ] ,   L_j = M_0^U[psi_j] ,
@@ -1039,22 +1324,21 @@ class MeshCrystal:
         filled_potentials = [self.kernel.potential(u, None, self.zero_momentum) for u in filled_loads]
         gaps = (levels[None, occupied:] - levels[:occupied, None])
         overlap, overlap_empty = filled.T @ self.P, empties.T @ self.P
+        covariant = cell.covariant()
         derivatives = []
         for axis in range(3):
-            dM = cell.mass.momentum_derivative(axis)
-            dA = cell.stiffness.momentum_derivative(axis) + local.momentum_derivative(axis)
+            weights = [float(w) for w in cell.edge_displacements[:, axis]]
+            pencil = covariant.sparsePencilPhaseDerivativeAlong(weights)
+            dM = sp.csc_matrix(pencil.M)
+            dA = cell.kinetic_scale * sp.csc_matrix(pencil.A) + sp.csc_matrix(
+                covariant.dressedVertexPotentialPhaseDerivativeAlong(list(local.values), weights))
             current = filled.T @ (dA @ empties) - (filled.T @ (dM @ empties)) * levels[None, occupied:]
-            # The projector loads P_q = M_q (beta exp(-i q . (x - tau))).
-            shifted = np.zeros(self._beta.shape, dtype=complex)
-            for index, (_, position) in enumerate(self.crystal.ions):
-                columns = self._beta_ion == index
-                shifted[:, columns] = -1j * self._displacements(position)[:, axis, None] * self._beta[:, columns]
-            dP = dM @ self._beta + self.mass @ shifted
+            dP = self._projector_derivative(axis, dM)
             current = current + (filled.T @ dP) @ self.D @ overlap_empty.T + overlap @ self.D @ (dP.conj().T @ empties)
             # Exchange.
             direct = np.zeros((occupied, bands - occupied), dtype=complex)
             for j in range(occupied):
-                dL = weighted[j].momentum_derivative(axis)
+                dL = sp.csc_matrix(covariant.dressedVertexPotentialPhaseDerivativeAlong(list(weighted[j].values), weights))
                 d_filled = dL @ filled
                 first = self.kernel.potential(d_filled, None, self.zero_momentum).conj().T @ loads[j]
                 second = self.kernel.potential_derivative(filled_loads[j], axis).conj().T @ loads[j]
@@ -1088,8 +1372,8 @@ class MeshCrystal:
         occupied = int(extended["occupied"])
         bands = len(extended["levels"]) if bands is None else int(bands)
         modes = np.asarray(extended["vectors"])[:, :bands]
-        pairs = np.vstack([(basis.T @ self.triple.loads(modes[:, i], modes[:, occupied:])).T for i in range(occupied)])
-        return pairs, {n: (basis.T @ self.triple.loads(modes[:, n], modes)).T for n in states}
+        pairs = np.vstack([(basis.T @ coulomb.pair_loads(self.cell, modes[:, i], modes[:, occupied:])).T for i in range(occupied)])
+        return pairs, {n: (basis.T @ coulomb.pair_loads(self.cell, modes[:, n], modes)).T for n in states}
 
     def quasiparticle_levels(self, extended, states, log=None):
         """The one-shot GW correction on the Hartree-Fock levels of
@@ -1118,17 +1402,16 @@ class MeshCrystal:
         occupied = extended["occupied"]
         energies, orbitals = extended["levels"], extended["vectors"]
         empties = orbitals[:, occupied:]
-        integrals = self.triple
         potentials, loads = [], []
         for i in range(occupied):
-            pair_loads = integrals.loads(orbitals[:, i], empties)
+            pair_loads = coulomb.pair_loads(self.cell, orbitals[:, i], empties)
             loads.append(pair_loads)
             potentials.append(self.kernel.potential(pair_loads).real)
         coupling = np.block([[loads[i].T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
         blocks = {}
         vertex = self.vertex(extended)
         for n in sorted(set(states) | (set(vertex[1]) if vertex[0] > 1 else set())):
-            state_loads = integrals.loads(orbitals[:, n], orbitals)
+            state_loads = coulomb.pair_loads(self.cell, orbitals[:, n], orbitals)
             blocks[n] = np.hstack([state_loads.T @ potentials[j] for j in range(occupied)])
         if log:
             log(f"  random phase: {coupling.shape[0]} particle-hole pairs")
@@ -1162,13 +1445,12 @@ class MeshCrystal:
                      "occupied": occupied, "local_potential": np.asarray(extended["local_potential"])}
         energies, orbitals = truncated["levels"], truncated["vectors"]
         empties = orbitals[:, occupied:]
-        triple = self.triple
         potentials, loads = [], []
         for i in range(occupied):
-            pair_loads = triple.loads(orbitals[:, i], empties)
+            pair_loads = coulomb.pair_loads(self.cell, orbitals[:, i], empties)
             loads.append(pair_loads)
             potentials.append(self.kernel.potential(pair_loads).real)
         coupling = np.block([[loads[i].T @ potentials[j] for j in range(occupied)] for i in range(occupied)])
         stacked = np.hstack(potentials)                                   # vertices x pairs
-        integrals = {n: triple.loads(orbitals[:, n], orbitals).T @ stacked for n in range(bands)}
+        integrals = {n: coulomb.pair_loads(self.cell, orbitals[:, n], orbitals).T @ stacked for n in range(bands)}
         return energies, occupied, coupling, integrals

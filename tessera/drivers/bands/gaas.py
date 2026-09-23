@@ -151,6 +151,9 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] == "ab-initio":
         return main_ab_initio(argv[1:])
+    if argv and argv[0] == "phonon":
+        from tessera.drivers.bands import forces
+        return forces.main(argv[1:])
     parser = argparse.ArgumentParser(description="The direct gap of GaAs from the Cohen-Bergstresser "
                                      "empirical pseudopotential on three meshes of the conventional cell.")
     parser.add_argument("--divisions", type=int, nargs=3, default=(16, 24, 32))
@@ -243,8 +246,77 @@ def ab_initio_levels(cation_upf, anion_upf, divisions, a=5.64, cutoff=25.0, band
             "gap": extrapolated_centre[2] - mesh_top, "reference_gap": centre_reference[4] - top}
 
 
+def _fed_back(row, name, step, gap, log, label):
+    """Run one step of eigenvalue self-consistency, `step()` -> (levels, history),
+    into `row[name]`. When the levels fed back close a gap, or make the mean
+    field unstable in the random-phase approximation, the method has no
+    solution from this start: that is recorded as the result of the step
+    (`row[name]` None and the reason in `row[name + "_failure"]`), and the
+    other results of the run stand."""
+    try:
+        levels, history = step()
+    except ValueError as error:
+        if "not positive" not in str(error) and "unstable" not in str(error):
+            raise
+        row[name], row[name + "_failure"] = None, str(error)
+        log(f"{label}: {name} has no solution from this start: {error}")
+        return
+    row[name], row[name + "_residual"] = gap(levels), float(history[-1])
+    log(f"{label}: {name} {row[name]:.3f} eV")
+
+
+def _momentum_set_row(mesh, n, bands, screening_bands, approximations, log):
+    """One mesh of `ab_initio_gap` with the covariance sampled on a momentum
+    set: Hartree-Fock on the set, more bands at every momentum, and the
+    quasiparticle equation with the screened interaction of every momentum
+    transfer of the set (`momentum_set.SetScreening`), one shot and with the
+    levels fed back. The gap is read at the zone centre of the cell, between
+    the states that belong to the zone centre of the primitive cell."""
+    from tessera.drivers.bands import RYDBERG
+    from tessera.drivers.bands.momentum_set import SetScreening, set_nodes, uniform_set
+    started = time.time()
+    mean_field = mesh.run_hartree_fock_set(bands, uniform_set(approximations.momenta), log=log)
+    extended = mesh.extend_bands_set(mean_field, screening_bands + 8, log=log)
+    half = n // 2
+    read = type("Read", (), {"kappa": (0.0, 0.0, 0.0), "vectors": np.asarray(extended["vectors"][0]).astype(complex)})
+    characters = translation_characters(mesh.cell, read, [(0, half, half), (half, 0, half), (half, half, 0)])
+    from_centre = characters.real.sum(axis=0) > 1.0
+    occupied = int(extended["occupied"])
+    valence = [int(i) for i in np.nonzero(from_centre)[0] if i < occupied][-3:]
+    conduction = [int(i) for i in np.nonzero(from_centre)[0] if i >= occupied][:1]
+    if not conduction:
+        raise ValueError("no conduction state of the primitive zone centre among the screening bands")
+    gap = lambda levels: float((np.mean(levels[conduction]) - np.mean(levels[valence])) * RYDBERG)
+    row = {"divisions": n, "momenta": approximations.momenta, "solved_momenta": len(mean_field["solved"]),
+           "hartree_fock": gap(np.asarray(extended["levels"][0])), "certified": bool(mean_field["certified"]),
+           "exchange_updates": len(mean_field["history"]), "zero_momentum_constant": mean_field["zero_momentum"],
+           "states": valence + conduction}
+    log(f"N={n}, {approximations.momenta}^3 momenta: Hartree-Fock gap {row['hartree_fock']:.3f} eV after "
+        f"{row['exchange_updates']} exchange updates ({time.time() - started:.0f} s)")
+    # The highest bands are solved for and left out: the compression of exchange converges slowly on them.
+    screened = SetScreening(mesh, extended, screening_bands, nodes=set_nodes(approximations, extended["momenta"]), log=log)
+    row["effective_zero_momentum_constant"] = screened.effective_constant
+    # The diagrams beyond the first order go to the states that define the gap.
+    screened.set_vertex(approximations.self_energy_order, approximations.vertex_bands, approximations.vertex_poles,
+                        [(0, index) for index in valence + conduction])
+    row["dielectric_constant"] = screened.dielectric_constant
+    shifted = np.asarray(extended["levels"][0], dtype=float).copy()
+    for index in valence + conduction:
+        shifted[index] = screened.quasiparticle((0, index))[1]
+    row["g0w0"] = gap(shifted)
+    log(f"N={n}: g0w0 {row['g0w0']:.3f} eV ({time.time() - started:.0f} s)")
+    for name, update in (("gw0", False), ("evgw", True)):
+        def step(update=update):
+            levels, history = screened.self_consistent(update_screening=update, tolerance=1e-5, log=log)
+            return levels[0], history
+        _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
+        screened.solve()                                         # back to the screening of the mean field
+    row["seconds"] = time.time() - started
+    return row
+
+
 def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=200, approximations=None, a=None,
-                  log=print):
+                  log=print, scratch=None, partial=None):
     """The direct gap of gallium arsenide with the norm-conserving
     pseudopotentials `cation_upf` and `anion_upf`, on the meshes `divisions` of
     the conventional cell at its zone centre: Hartree-Fock, the converged state
@@ -263,24 +335,36 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
     no spin-orbit data unless they say so."""
     from tessera.drivers.bands import BOHR, RYDBERG, screening
     from tessera.drivers.bands.abinitio import Crystal, MeshCrystal
+    from tessera.drivers.bands import diagrams
     from tessera.drivers.bands.crystal import richardson_amplification
     from tessera.drivers.bands.pseudopotential import Pseudopotential
     from tessera.drivers.bands.reference import GALLIUM_ARSENIDE
     from tessera.drivers.bands.settings import Approximations
     approximations = Approximations() if approximations is None else approximations
     approximations.require_implemented()
+    diagrams.MEMORY = approximations.vertex_memory * 2 ** 30
     cation, anion = Pseudopotential.from_upf(cation_upf), Pseudopotential.from_upf(anion_upf)
     lattice_constant = (GALLIUM_ARSENIDE.lattice_constant if a is None else a) / BOHR
     conventional = Crystal.zinc_blende(lattice_constant, cation, anion, conventional=True)
-    names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw")
+    # Without and with the zero-momentum term is a distinction of the closed form at the zone centre only.
+    split = approximations.zero_momentum_order == 1 and approximations.self_energy_order == 1 \
+        and approximations.momenta == 1
+    names = ("hartree_fock", "g0w0_body", "g0w0", "gw0_body", "gw0", "evgw_body", "evgw") if split \
+        else ("hartree_fock", "g0w0", "gw0", "evgw")
     runs, spacings, previous = [], [], None
     for n in sorted(divisions):
         started = time.time()
         mesh = MeshCrystal(conventional, n, approximations=approximations)
+        if scratch is not None:
+            import os
+            mesh.scratch = os.path.join(scratch, f"divisions_{n}")
+        if approximations.momenta > 1:
+            runs.append(_momentum_set_row(mesh, n, bands, screening_bands, approximations, log))
+            spacings.append(mesh.cell.spacing)
+            continue
         # Every mesh after the first starts from the converged orbitals of the one before it.
         start = mesh.prolonged(*previous) if previous else None
         mean_field = mesh.run_hartree_fock(bands, start=start, log=log)
-        row_updates = len(mean_field["history"])
         previous = (mesh, mean_field)
         extended = mesh.extend_bands(mean_field, screening_bands + 24, log=log)
         certificate = mesh.covariance_certificate(extended, bands)
@@ -293,42 +377,61 @@ def ab_initio_gap(cation_upf, anion_upf, divisions, bands=24, screening_bands=20
         conduction = [int(i) for i in np.nonzero(from_centre)[0] if i >= occupied][:1]
         if not conduction:
             raise ValueError("no conduction state of the primitive zone centre among the screening bands")
+        states = valence + conduction
         gap = lambda levels: float((np.mean(levels[conduction]) - np.mean(levels[valence])) * RYDBERG)
         levels, occupied, coupling, integrals = mesh.coulomb_integrals(extended, screening_bands)
         heads = mesh.vanishing_momentum_pairs(extended, coupling, screening_bands)
         momentum_terms = mesh.momentum_terms(extended, range(screening_bands), screening_bands, log=log)
-        vertex = mesh.vertex(extended, screening_bands)
+        # The diagrams beyond the first order go to the states that define the gap.
+        vertex = mesh.vertex(extended, screening_bands, include=states) + (states,)
+        if approximations.self_energy_order > 1 and not set(states) <= set(vertex[1]):
+            raise ValueError("the states of the gap are not among the vertex bands; raise --vertex-bands")
         row = {"divisions": n, "hartree_fock": gap(levels), "certified": bool(mean_field["certified"]),
-               "exchange_updates": row_updates, "hartree_fock_energy": mean_field["energy"],
-               "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum}
+               "exchange_updates": len(mean_field["history"]), "hartree_fock_energy": mean_field["energy"],
+               "hartree_fock_lowest_curvature": mean_field["lowest_curvature"],
+               "covariance": certificate, "zero_momentum_constant": mesh.zero_momentum, "states": states}
+        log(f"N={n}: Hartree-Fock gap {row['hartree_fock']:.3f} eV after {row['exchange_updates']} exchange updates "
+            f"({time.time() - started:.0f} s)")
         rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
         for name, with_head in (("g0w0_body", False), ("g0w0", True)):
+            if name not in names:
+                continue
             if with_head:
                 row["dielectric_constant"] = float(rpa.set_head(mesh.zero_momentum, heads))
                 row["head_defect"] = rpa.head_defect
                 rpa.set_momentum_terms(*momentum_terms)
                 rpa.set_vertex(*vertex)
             shifted = levels.copy()
-            for index in valence + conduction:
+            for index in states:
                 shifted[index] = rpa.quasiparticle(index)[0]
             row[name] = gap(shifted)
+            log(f"N={n}: {name} {row[name]:.3f} eV ({time.time() - started:.0f} s)")
         for name, update, with_head in (("gw0_body", False, False), ("gw0", False, True),
                                         ("evgw_body", True, False), ("evgw", True, True)):
-            produced, history, _ = screening.self_consistent_quasiparticles(
-                levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
-                update_screening=update, tolerance=1e-5,
-                momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
-                vertex=vertex if with_head else None)
-            row[name], row[name + "_residual"] = gap(produced), float(history[-1])
+            if name not in names:
+                continue
+            def step(update=update, with_head=with_head):
+                produced, history, _ = screening.self_consistent_quasiparticles(
+                    levels, occupied, coupling, integrals, head=(mesh.zero_momentum, heads) if with_head else None,
+                    update_screening=update, tolerance=1e-5,
+                    momentum_terms=momentum_terms if with_head and momentum_terms[0] else None,
+                    vertex=vertex if with_head else None, scratch=mesh.scratch, log=log)
+                return produced, history
+            _fed_back(row, name, step, gap, log, f"N={n} ({time.time() - started:.0f} s)")
         row["seconds"] = time.time() - started
-        log("N=%d: " % n + ", ".join(f"{name} {row[name]:.3f}" for name in names)
-            + f" eV; eps {row['dielectric_constant']:.3f}; {row['seconds']:.0f} s")
         runs.append(row)
         spacings.append(mesh.cell.spacing)
+        if partial is not None:                                  # every finished mesh is on disk before the next starts
+            with open(partial, "w") as handle:
+                json.dump({"approximations": approximations.record(), "runs": runs}, handle, indent=1,
+                          default=lambda x: x.tolist() if hasattr(x, "tolist") else x)
     result = {"approximations": approximations.record(), "runs": runs, "measured_gap": GALLIUM_ARSENIDE.gap_gamma,
               "certified": all(row["certified"] for row in runs)}
     if len(runs) > 1:
-        result["extrapolated"] = {name: float(richardson(spacings, [row[name] for row in runs])[0]) for name in names}
+        # A method with no solution on some mesh is not extrapolated; its rows say why.
+        result["extrapolated"] = {name: float(richardson(spacings, [row[name] for row in runs])[0]) for name in names
+                                  if all(row.get(name) is not None for row in runs)}
+        result["not_extrapolated"] = sorted(set(names) - set(result["extrapolated"]))
         result["amplification"] = richardson_amplification(spacings)
     return result
 
@@ -352,10 +455,14 @@ def main_ab_initio(argv=None):
                         help="bands of the screened interaction and the self-energy")
     parser.add_argument("--lattice-constant", type=float, default=None, help="angstrom; the measured one by default")
     parser.add_argument("--out", default=None, help="write the result as JSON")
+    parser.add_argument("--scratch", default=None,
+                        help="a directory for the arrays too large to hold at once (the integrals of every mode at "
+                             "every momentum transfer of --zero-momentum-order); changes where they live, not the numbers")
     Approximations.add_arguments(parser)
     args = parser.parse_args(argv)
     result = ab_initio_gap(args.cation, args.anion, args.divisions, args.bands, args.screening_bands,
-                           Approximations.from_arguments(args), args.lattice_constant)
+                           Approximations.from_arguments(args), args.lattice_constant, scratch=args.scratch,
+                           partial=args.out + ".partial" if args.out else None)
     if "extrapolated" in result:
         print("extrapolated (eV):", {k: round(v, 3) for k, v in result["extrapolated"].items()},
               "amplification", round(result["amplification"], 1), "measured", result["measured_gap"])
