@@ -988,13 +988,20 @@ class AnimationFrame:
     def _read_bands(self, spacetime, config):
         self.candidates = []
         self.candidate_components = []
-        if not self.supports:
+        # The supports come from both proposers when the cluster panel ran; a
+        # frame that carries only its modularity components reads its bands
+        # on those, each its own support.
+        supports = getattr(self, "supports", None)
+        if supports is None:
+            supports = [(list(component.support), component, "modularity")
+                        for component in getattr(self, "components", [])]
+        if not supports:
             return Absent("no cluster to carry a band")
         settings = obs.SpectralFiberConfig()
         settings.degrees = list(config["degrees"])
         tracker = obs.SpectralFiberTracker(spacetime, settings)
         rows = []
-        for support, component, proposers in self.supports:
+        for support, component, proposers in supports:
             for degree in config["degrees"]:
                 # A support the band proposed and modularity did not carries no
                 # modularity component; the slot stays empty rather than
