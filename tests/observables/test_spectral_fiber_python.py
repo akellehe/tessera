@@ -1460,7 +1460,10 @@ class TestFrameConditionIsNotTheProjectorNorm(unittest.TestCase):
                         **ANY_LOCALIZATION).enumerateBands([0, 1, 2], 1)
         for f in read.fibers:
             rec = f.toRecord()
-            self.assertEqual(rec["schema_version"], 2)
+            # Schema 3 is the current writer: schema 2 added the two
+            # conditionings, and schema 3 the contour certificate and the
+            # instance's allowability, margin and Lorentzian rotation.
+            self.assertEqual(rec["schema_version"], 3)
             back = obs.SpectralFiber.fromRecord(rec).certificate()
             self.assertEqual(back.projectorNorm, f.certificate().projectorNorm)
             self.assertEqual(back.frameConditionNumber,
