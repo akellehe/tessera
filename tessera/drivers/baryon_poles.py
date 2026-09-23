@@ -1066,7 +1066,29 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
         if on_content is not None:
             on_content(record)
     return {"kappa": kappa, "beta": beta, "contents": records,
-            "ratios": ratios(records)}
+            "ratios": ratios(records), "pole_table": pole_table(records)}
+
+
+def pole_table(records):
+    """Per column (quasi-free, with the quartic) and per spin, every content's
+    lowest pole in ascending order of real part, so the content that supplies
+    the nucleon and the Delta pole, and any tie between spins inside one
+    content, can be read off the record."""
+    table = {}
+    for name in ("quasi_free", "with_quartic"):
+        table[name] = {}
+        for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
+            rows = []
+            for record in records:
+                entry = record["sectors"].get(j2)
+                if entry and entry[name]["lowest_pole"] is not None:
+                    rows.append({"content": record["content"],
+                                 "pole": entry[name]["lowest_pole"],
+                                 "restriction_to_2T":
+                                     entry.get("restriction_to_2T")})
+            rows.sort(key=lambda row: (row["pole"].real, row["pole"].imag))
+            table[name][j2] = rows
+    return table
 
 
 def _pair(s_n, s_d, extra):
@@ -1168,10 +1190,28 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
     }
 
 
-def drive(config, progress=False, on_frame=None, stop_requested=None):
+def points_path(json_path):
+    """The append-only JSON-lines file beside ``json_path`` that holds one
+    line per completed scan point (and a first line with the configuration
+    and the host), so a stopped run loses nothing."""
+    root, _ = os.path.splitext(os.fspath(json_path))
+    return root + ".points.jsonl"
+
+
+def _append_line(path, record):
+    with open(path, "a") as handle:
+        handle.write(json.dumps(_jsonable(record)) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def drive(config, progress=False, on_frame=None, stop_requested=None,
+          points_file=None):
     """The whole scan. `on_frame(frames, index)` is called after each scan
     point with the list of completed points; the computation is the same with
-    or without it."""
+    or without it. With `points_file`, the configuration and the host are
+    written as the first line and every scan point's full record is appended
+    as one JSON line the moment the point completes."""
     alignment = aligned_doublet_frame(monopole_support(), rotation_group())
     frames = []
     host = {
@@ -1180,6 +1220,10 @@ def drive(config, progress=False, on_frame=None, stop_requested=None):
         "reference_carrier": alignment["reference_carrier"],
         "intertwining_residual": alignment["intertwining_residual"],
     }
+    if points_file is not None:
+        with open(points_file, "w"):
+            pass
+        _append_line(points_file, {"config": config, "host": host})
     for kappa in config["kappas"]:
         for beta in config["betas"]:
             if stop_requested is not None and stop_requested():
@@ -1187,6 +1231,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None):
                         "points": frames, "stopped": True}
             point = scan_point(kappa, beta, config, alignment)
             frames.append(point)
+            if points_file is not None:
+                _append_line(points_file, point)
             if progress:
                 r = point["ratios"]
                 sys.stdout.write(
@@ -1323,10 +1369,14 @@ def _interactive_backends():
     return backends()
 
 
-def drive_live(config, progress=False):
+def drive_live(config, progress=False, points_file=None):
     """The same `drive`, on a worker thread, drawing each completed scan point
     on the main thread. Refuses a non-interactive backend and WebAgg by name,
-    as `tessera.drivers.emergence` does."""
+    as `tessera.drivers.emergence` does.
+
+    Closing the window does not stop the scan: the figure's close event
+    switches the run to headless, the main thread stops drawing and waits for
+    the worker, and every output is still written."""
     import queue
     import threading
 
@@ -1364,11 +1414,24 @@ def drive_live(config, progress=False):
         published["frames"] = frames
         ready.put(index)
 
+    closed = threading.Event()
+
+    def on_close(event):
+        if not closed.is_set():
+            closed.set()
+            sys.stdout.write(
+                "the live window was closed; the run continues headless and "
+                "still writes every output\n")
+            sys.stdout.flush()
+
+    figure.canvas.mpl_connect("close_event", on_close)
+
     def worker():
         try:
             outcome["result"] = drive(config, progress=progress,
                                       on_frame=publish,
-                                      stop_requested=stop.is_set)
+                                      stop_requested=stop.is_set,
+                                      points_file=points_file)
         except BaseException as exc:
             outcome["error"] = exc
         finally:
@@ -1378,13 +1441,15 @@ def drive_live(config, progress=False):
     thread.start()
     main_error = None
     try:
-        while True:
+        while not closed.is_set():
             try:
                 index = ready.get_nowait()
             except queue.Empty:
                 figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
                 continue
             if index is None:
+                break
+            if closed.is_set():
                 break
             draw_frame(figure, published["frames"], index)
             figure.canvas.draw_idle()
@@ -1393,8 +1458,11 @@ def drive_live(config, progress=False):
         main_error = error
         stop.set()
     finally:
+        # Headless from here: the worker is waited for, not stopped, unless the
+        # main thread itself failed or was interrupted.
         thread.join()
-        plt.close(figure)
+        if not closed.is_set():
+            plt.close(figure)
     if main_error is not None:
         raise main_error
     if "error" in outcome:
@@ -1466,7 +1534,10 @@ def build_parser():
     run.add_argument("--regge-hinges", choices=("interior", "all"),
                      default="interior",
                      help="hinges of the primal Regge sum (default interior)")
-    run.add_argument("--json", default=None, help="write every record here")
+    run.add_argument("--json", default=None,
+                     help="write every record here at the end; each scan "
+                          "point is also appended, as it completes, to the "
+                          "JSON-lines file beside it (<json stem>.points.jsonl)")
     run.add_argument("--out", default=None,
                      help="write the final frame as a PNG here")
     run.add_argument("--live", action="store_true",
@@ -1482,8 +1553,11 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     config = default_config(args.kappa, args.beta, args.edge_squared,
                             args.regge_hinges)
-    result = (drive_live(config, progress=not args.quiet) if args.live
-              else drive(config, progress=not args.quiet))
+    points_file = points_path(args.json) if args.json else None
+    result = (drive_live(config, progress=not args.quiet,
+                         points_file=points_file) if args.live
+              else drive(config, progress=not args.quiet,
+                         points_file=points_file))
     if args.json:
         with open(args.json, "w") as handle:
             json.dump(_jsonable(result), handle, indent=1)

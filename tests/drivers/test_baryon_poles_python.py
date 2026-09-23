@@ -209,20 +209,46 @@ def test_the_trialities_are_the_three_z3_characters(alignment):
 
 
 class _Canvas:
+    """Enough of a figure canvas for the live loop: repaints are counted, the
+    event loop sleeps briefly, and the close callback can be fired."""
+
+    def __init__(self):
+        self.draws = 0
+        self.callbacks = {}
+
     def draw_idle(self):
-        pass
+        self.draws += 1
+
+    def start_event_loop(self, interval):
+        time.sleep(0.001)
+
+    def mpl_connect(self, name, callback):
+        self.callbacks[name] = callback
+        return len(self.callbacks)
+
+    def close(self):
+        self.callbacks["close_event"](object())
 
 
 class _Figure:
-    canvas = _Canvas()
+    def __init__(self):
+        self.canvas = _Canvas()
 
 
-def _stub_matplotlib(monkeypatch, backend="qtagg"):
+def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None):
     import matplotlib
     import matplotlib.pyplot as plt
+
+    def figure(**kwargs):
+        made = _Figure()
+        if figures is not None:
+            figures.append(made)
+        return made
+
     monkeypatch.setattr(matplotlib, "get_backend", lambda: backend)
     monkeypatch.setattr(plt, "isinteractive", lambda: True)
-    monkeypatch.setattr(plt, "figure", lambda **kwargs: _Figure())
+    monkeypatch.setattr(plt, "figure", figure)
+    monkeypatch.setattr(plt, "show", lambda **kwargs: None)
     monkeypatch.setattr(plt, "close", lambda figure: None)
     monkeypatch.setattr(plt, "pause", lambda interval: time.sleep(0.001))
 
@@ -269,3 +295,69 @@ def test_a_worker_error_reaches_the_main_thread(monkeypatch):
     _stub_matplotlib(monkeypatch)
     with pytest.raises(ValueError, match="the scan point failed"):
         bp.drive_live(bp.default_config([1.0], [1.0]))
+
+
+def test_closing_the_window_switches_the_run_to_headless(monkeypatch,
+                                                         tmp_path, capsys):
+    """The window is closed after the first frame: the scan still runs to the
+    end, the result equals the headless one, nothing more is drawn, every
+    point reaches the JSON-lines file, and stdout says so."""
+    monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
+    config = bp.default_config([1.0, 2.0, 3.0], [0.5],
+                               selected_contents=[(3, 0, 0)])
+    headless = bp.drive(dict(config))
+    figures = []
+    _stub_matplotlib(monkeypatch, figures=figures)
+    drawn = []
+
+    def draw_then_close(figure, frames, index):
+        drawn.append(index)
+        figure.canvas.close()
+
+    monkeypatch.setattr(bp, "draw_frame", draw_then_close)
+    points = tmp_path / "run.points.jsonl"
+    live = bp.drive_live(dict(config), points_file=str(points))
+    assert drawn == [0]
+    assert len(live["points"]) == 3 and not live["stopped"]
+    assert json.dumps(bp._jsonable(live), sort_keys=True) == \
+        json.dumps(bp._jsonable(headless), sort_keys=True)
+    assert "continues headless" in capsys.readouterr().out
+    lines = points.read_text().splitlines()
+    assert len(lines) == 4
+    assert [json.loads(line)["kappa"] for line in lines[1:]] == [1.0, 2.0, 3.0]
+
+
+def test_each_point_is_written_as_it_completes(monkeypatch, tmp_path):
+    """A scan stopped after two points leaves both on disk."""
+    monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
+    config = bp.default_config([1.0, 2.0, 3.0], [0.5],
+                               selected_contents=[(3, 0, 0)])
+    points = tmp_path / "run.points.jsonl"
+    seen = []
+
+    def stop_after_two():
+        return len(seen) >= 2
+
+    bp.drive(dict(config), on_frame=lambda frames, index: seen.append(index),
+             stop_requested=stop_after_two, points_file=str(points))
+    lines = points.read_text().splitlines()
+    assert "config" in json.loads(lines[0])
+    assert [json.loads(line)["kappa"] for line in lines[1:]] == [1.0, 2.0]
+    assert bp.points_path("out/run.json") == "out/run.points.jsonl"
+
+
+def test_the_pole_table_names_the_content_of_each_lowest_pole():
+    half, three = str(bp.SPIN_HALF), str(bp.SPIN_THREE_HALVES)
+
+    def record(content, poles):
+        return {"content": content, "sectors": {
+            key: {"quasi_free": {"lowest_pole": value},
+                  "with_quartic": {"lowest_pole": value},
+                  "restriction_to_2T": ["2"]}
+            for key, value in poles.items()}}
+
+    table = bp.pole_table([record([2, 1, 0], {half: 5.0 + 0j, three: 5.0 + 0j}),
+                           record([3, 0, 0], {three: 4.0 + 0j})])
+    assert [row["content"] for row in table["quasi_free"][three]] == \
+        [[3, 0, 0], [2, 1, 0]]
+    assert table["with_quartic"][half][0]["content"] == [2, 1, 0]
