@@ -2546,9 +2546,10 @@ class MultiCobordism {
     ///    would be a measurement nobody made.
     ///  - `"closed-family"`: the caller declares the candidate's world tube
     ///    closed, so the family is read cyclically (the closing step returns to
-    ///    the first sample) and `FiberConnection::closedFamilyWinding` supplies
-    ///    the winding. It is a declaration about the run, like a causal type,
-    ///    and it is recorded on every read it produces.
+    ///    the first sample) and the closed-family determinant winding is the
+    ///    winding reported. It is a declaration about the run, like a causal
+    ///    type, and it is recorded on every read it produces. The overlay
+    ///    consumes that winding; nothing here computes it.
     ///
     /// @throws std::invalid_argument (from `setAnalysisConfig`) on any other
     ///   value: an unrecognized closure is refused, never silently ignored.
