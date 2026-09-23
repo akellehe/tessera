@@ -138,8 +138,10 @@ struct CollectiveMode {
   bool insideParticleHoleContinuum = false;
 
   /// \f$ \lVert A_{\rm eff}(\omega)x\rVert
-  ///    /(\lVert A_{\rm eff}(\omega)\rVert\,\lVert x\rVert) \f$: the measured
-  /// relative residual of the null-vector equation this mode solves.
+  ///    /\bigl((\lVert A+D\rVert+\lVert\Pi(\omega)\rVert)\,\lVert x\rVert\bigr) \f$:
+  /// the measured relative residual of the null-vector equation this mode
+  /// solves, taken against the size of the two terms that cancel at the pole
+  /// rather than against the dressed stiffness, which is what vanishes there.
   double residual = 0.0;
 
   /// The mode's certificate. The pole search is an exact algebraic
