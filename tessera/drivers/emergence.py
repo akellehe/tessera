@@ -1122,8 +1122,13 @@ class AnimationFrame:
                         for t in self.frame_tracks))}
 
     def _track_of(self, position):
-        """The track this frame's component `position` sits at the end of."""
-        current = len(self.previous_frames)
+        """The track this frame's component `position` sits at the end of.
+
+        A frame that carries no retained history -- one assembled from its
+        component and band reads alone -- has no frame track, so none is
+        found, as for a frame whose tracks are absent.
+        """
+        current = len(getattr(self, "previous_frames", []))
         for track in getattr(self, "frame_tracks", []):
             indices = list(track.memberIndices)
             if track.lastFrame == current and indices and \
