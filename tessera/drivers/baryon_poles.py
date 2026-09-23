@@ -81,6 +81,10 @@ Running it
         --kappa 0.25 0.5 1 2 4 --beta 0.5 1 2 5 --json poles.json \\
         --out poles.png [--live]
 
+``--isospin-doublet`` adds, to every content's record, the isospin-doublet
+observation of `tessera.drivers.isospin_doublet` on h_1 and on h-bar_1; every
+other output is unchanged.
+
 ``--live`` draws each completed scan point while the scan runs, on an
 interactive matplotlib backend, with the computation on a worker thread and the
 main thread servicing the GUI event loop; the outputs are identical with or
@@ -877,7 +881,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
     recursion = recursion_read(spacetime, config)
     quark = quark_conditions(spacetime, alignment, recursion,
                              averaged_residual, report)
-    return {
+    record = {
         "content": list(content),
         "carrier_content": carrier_content,
         "seconds": time.time() - started,
@@ -931,6 +935,15 @@ def evaluate_content(content, kappa, beta, config, alignment):
         "recursion": recursion,
         "quark_conditions": quark,
     }
+    if config.get("isospin_doublet"):
+        # The isospin-doublet observation (WP §10) on h_1 and its T-average,
+        # added only when requested so that the default record is unchanged.
+        from tessera.drivers import isospin_doublet
+        spinorial = bool(monopole_support().cocycle(rotation_group())
+                         .nontrivial)
+        record["isospin_doublet"] = isospin_doublet.observe_host(
+            carrier, actions, spinorial)
+    return record
 
 
 def recursion_read(spacetime, config):
@@ -1474,6 +1487,10 @@ def build_parser():
                           "runs; the outputs are identical. Needs an "
                           "interactive matplotlib backend (the 'live' extra, "
                           "PyQt6)")
+    run.add_argument("--isospin-doublet", action="store_true",
+                     help="add the isospin-doublet observation (WP §10, "
+                          "`IsospinDoublet`) to every content's record; the "
+                          "other outputs are unchanged")
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1482,6 +1499,8 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     config = default_config(args.kappa, args.beta, args.edge_squared,
                             args.regge_hinges)
+    if args.isospin_doublet:
+        config["isospin_doublet"] = True
     result = (drive_live(config, progress=not args.quiet) if args.live
               else drive(config, progress=not args.quiet))
     if args.json:
