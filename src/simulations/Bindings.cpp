@@ -244,7 +244,7 @@ tests to make them reproducible.)doc");
 
 Adjusts edge lengths so that the Regge equations (∂S/∂ℓ² = 0) are satisfied.
 The total action is S = S_grav + S_matter where:
-  S_grav = Σ_h A_h ε_h   (Regge gravitational action)
+  S_grav = Σ_h |h| ε_h   (Regge gravitational action: hinge content × deficit)
   S_matter = -M Σ √(-ℓ²)  (proper-time action along worldlines)
 
 Minimizes F = ||∇S||² to find stationary points of S (the discrete
@@ -257,11 +257,16 @@ Einstein equations).  F ≥ 0, and F = 0 at the solution.)doc")
       .def("deficitAngle", &ReggeSolver::deficitAngle,
            py::arg("hinge"),
            "Deficit angle at a hinge: 2π minus sum of dihedral angles.")
-      .def_static("hingeArea", &ReggeSolver::hingeArea,
+      .def_static("hingeContent", &ReggeSolver::hingeContent,
            py::arg("hinge"),
-           "Area of a triangular hinge (Heron's formula).")
+           "The (d-2)-content of a hinge, the weight of its deficit angle in the "
+           "primal Regge action: the length of an edge hinge on a 3-dimensional "
+           "mesh, the area of a triangular hinge on a 4-dimensional mesh, the "
+           "volume of a tetrahedral hinge on a 5-dimensional mesh "
+           "(Simplex.volume). Complex: a timelike hinge's content is imaginary.")
       .def("reggeAction", &ReggeSolver::reggeAction,
-           "Gravitational Regge action: S_grav = Σ_h A_h · ε_h.")
+           "Gravitational Regge action: S_grav = Σ_h |h| · ε_h, with |h| the "
+           "(d-2)-content of the hinge (hingeContent) and ε_h its deficit angle.")
       .def("dualReggeAction", &ReggeSolver::dualReggeAction,
            "Dual Lorentzian Regge action S_Regge(W*) = Σ_h |*h| · ε_h: each "
            "(d-2)-hinge's circumcentric dual content (Simplex.dualVolume) times "

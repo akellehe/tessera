@@ -98,9 +98,10 @@ class TestFeshbach:
         assert np.min(np.abs(reduced - lam)) > 1e-3 * abs(lam)
 
     def test_interior_resonance_is_reported(self):
-        """At an interior resonance the complement is not refused: the declared
-        generalized inverse replaces the inverse, the resonant interior modes
-        are retained explicitly, and the reduction carries its own certificate.
+        """At an interior resonance the complement is not refused: the Drazin
+        inverse replaces the inverse, the resonant interior modes -- a basis of
+        the generalized eigenspace -- are retained explicitly, and the reduction
+        carries its own certificates.
         """
         K, s = torus33()
         base = ch.ChainHodge(K, s, ch.Preset.L2, KS)
@@ -108,13 +109,14 @@ class TestFeshbach:
         interface = _split_interface(K, 3)
         interior = [i for i in range(P.A.shape[0]) if i not in interface]
         lam = np.linalg.eigvals(np.linalg.solve(P.B[np.ix_(interior, interior)], P.A[np.ix_(interior, interior)]))[0]
-        F = PS.feshbach(P.A, P.B, complex(lam), interface, 1e-8)
+        F = PS.feshbach(P.A, P.B, complex(lam), interface, 1e-10, 1e-8)
         assert F.interiorSingular
-        nb, q = len(interface), F.interiorNullSpace.shape[1]
+        nb, q = len(interface), F.resonantSpace.shape[1]
         assert q >= 1
         assert F.interiorRank == len(interior) - q
         assert F.response.shape == (nb, nb)
         assert F.resonantResponse.shape == (nb + q, nb + q)
+        assert F.interiorInverse.shape == (len(interior), len(interior))
 
 
 class TestRestrictionAndTransfer:

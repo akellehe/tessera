@@ -35,9 +35,15 @@ using namespace ::tessera::spacetime;
 /// \f$ W_k = M_k^{-1} \f$ of the sparse Whitney mass matrices of the complex
 /// squared edge lengths, dressed by the connection \f$ U \f$ read from the
 /// edge phases, so that `laplacian(k)` is the covariant one-particle operator
-/// \f$ h_k(s,U) \f$ written on geometric images and moves with \f$ U \f$. The
-/// diagonal per-simplex weights described next (`DiagonalWeights`) remain
-/// available by name; their operator does not see \f$ U \f$.
+/// \f$ h_k(s,U) \f$ written on geometric images and moves with \f$ U \f$.
+/// Every read of the pipeline is taken on this operator; there is no separate
+/// untwisted read. Its spectrum is invariant under the gauge similarity
+/// \f$ \rho_k(g)^{-1} h_k(s,U)\rho_k(g) \f$, so the effective homology and
+/// every spectral gate built on it are gauge-invariant, and the action's
+/// Hodge-entropy term (`spectralEntropy`) depends on \f$ U \f$ through its
+/// holonomy, which is what makes the connection dynamical. The diagonal
+/// per-simplex weights described next (`DiagonalWeights`) remain available by
+/// name; their operator does not see \f$ U \f$.
 ///
 /// ## Definition under diagonal weights
 ///
@@ -73,8 +79,9 @@ using namespace ::tessera::spacetime;
 /// negative or complex. `RecursiveQuotient::regime()` reports the verified
 /// `CertificateRegime`. \f$ \ker L_k \cong H_k \f$ degrades to a pseudo-Hodge
 /// decomposition: "harmonic" becomes the small-\f$ |\lambda| \f$ near-kernel,
-/// and a representative \f$ h \f$ may be **null**
-/// (\f$ \langle h,h\rangle_W = \sum_i W_{k,i}|h_i|^2 \approx 0 \f$, see
+/// and a representative \f$ h \f$ may be **null**: its norm in the metric
+/// that produced it vanishes (\f$ \sum_i W_{k,i}|h_i|^2 \approx 0 \f$ here,
+/// \f$ h^\dagger M_k^U h \approx 0 \f$ under the Whitney pencil; see
 /// `nullNorms`).
 ///
 /// ## The U(1) connection Laplacian
@@ -287,6 +294,15 @@ class HodgeLaplacian {
     /// \f$ |L_k| \f$ ablation. Empty and identically-zero operators have entropy
     /// zero. Exact zero modes are omitted, so the derivative is taken on the
     /// fixed-rank stratum.
+    ///
+    /// \f$ L_k \f$ is the operator of this instance's metric source. Under the
+    /// default `WhitneyPencil` it is the covariant \f$ h_k(s,U) \f$, so the
+    /// entropy sees the connection: \f$ S_k \f$ is a functional of the singular
+    /// values of \f$ L_k \f$, which the unitary (U(1)) part of the gauge
+    /// similarity preserves, so it depends on a U(1) connection through its
+    /// holonomy alone, and its stationarity term is what makes the connection
+    /// dynamical. Under `DiagonalWeights` \f$ L_k \f$ is built from the squared
+    /// lengths alone and the entropy is independent of \f$ \varphi \f$.
     [[nodiscard]] double spectralEntropy(
         int k, EntropyPhaseMode phaseMode =
                    EntropyPhaseMode::IncludeComplexPhase) const;
@@ -382,9 +398,9 @@ class HodgeLaplacian {
     /// \f[ p_i=\frac{|\lambda_i|^{2}}{\sum_j|\lambda_j|^{2}},\qquad
     ///     S=-\sum_i p_i\log p_i. \f]
     ///
-    /// Under `DiagonalWeights` \f$ L_k \f$ is blind to \f$\varphi\f$ at every
-    /// degree, and this is the only entropy here that sees the connection;
-    /// under `WhitneyPencil` `spectralEntropy` sees it too. The weights are eigenvalue
+    /// This is the entropy of the 1-skeleton operator; `spectralEntropy` of
+    /// the default \f$ h_k(s,U) \f$ sees the connection as well, at every
+    /// degree. The weights are eigenvalue
     /// moduli because eigenvalues, unlike singular values, survive the gauge
     /// similarity
     /// \f$ \operatorname{diag}(g)^{-1}(\cdot)\operatorname{diag}(g) \f$,
@@ -496,11 +512,22 @@ class HodgeLaplacian {
     [[nodiscard]] std::vector<std::complex<double>> harmonicMatrix(
         int k = 0, double tol = 1e-9, bool metric = true) const;
 
-    /// The indefinite norms \f$ \langle h,h\rangle_W = \sum_i W_{k,i}|h_i|^2 \f$
-    /// (signed \f$ W_k \f$) of the near-kernel representatives, one per column
-    /// of `harmonics(k, tol, metric)` and in the same order. A value
-    /// \f$ \approx 0 \f$ flags a **null** (lightlike) harmonic; all entries are
-    /// positive on an all-spacelike complex.
+    /// The indefinite norms of the near-kernel representatives in the metric
+    /// that produced them, one per column of `harmonics(k, tol, metric)` and
+    /// in the same order. Under `WhitneyPencil` the representatives are the
+    /// eigenvectors of the pencil \f$ (\tilde A_k^U, M_k^U) \f$ and the norm
+    /// is the quadratic form of the dressed Whitney mass on them,
+    /// \f$ h^\dagger M_k^U h \f$; under `DiagonalWeights` (and for
+    /// `metric = false`, whose weights are the identity) it is
+    /// \f$ \langle h,h\rangle_W = \sum_i W_{k,i}|h_i|^2 \f$ with the signed
+    /// diagonal \f$ W_k \f$. Either way the sign says which causal character
+    /// dominates the direction and a value \f$ \approx 0 \f$ flags a **null**
+    /// (lightlike) harmonic; all entries are positive on an all-spacelike
+    /// complex. Whether the Whitney form should be the bilinear
+    /// \f$ h^T M_k^U h \f$ instead is the open sesquilinear-pairing question;
+    /// on a real metric with the trivial connection \f$ M_k \f$ is real
+    /// symmetric and the two forms differ only by the conjugation of
+    /// \f$ h \f$, so they coincide on real representatives.
     /// @throws std::runtime_error for \f$ k < 0 \f$.
     [[nodiscard]] std::vector<std::complex<double>> nullNorms(
         int k, double tol = 1e-9, bool metric = true) const;
@@ -515,6 +542,9 @@ class HodgeLaplacian {
     // operator), built lazily and rebuilt when the geometry stamp moves.
     struct WhitneyState;
     mutable std::shared_ptr<WhitneyState> whitney_{};
+    // The operator of the metric source with its analytic derivatives in the
+    // squared lengths, shared by the entropy and spectral-moment functionals.
+    struct DerivativeSource;
     [[nodiscard]] const WhitneyState &whitneyState() const;
     [[nodiscard]] Eigen::MatrixXcd operatorMatrix(int k, bool metric) const;
 

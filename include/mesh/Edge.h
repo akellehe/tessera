@@ -111,11 +111,12 @@ class Edge {
     /// part that quantizes and the only part a Wilson loop reads. `Im` is the non-compact
     /// \f$\mathbb{R}^{+}\f$ local scale and carries no quantum number.
     ///
-    /// It twists the hopping term of the Aharonov-Bohm operator (`HodgeLaplacian::connectionLaplacian`)
-    /// and never rescales a metric weight: the geometric Hodge operator `laplacian(k)` is built
-    /// from `length_` alone and is blind to \f$\varphi\f$ at every degree. Writing \f$\varphi\f$
-    /// into the weight would make the metric gauge-variant and destroy the derived form of
-    /// \f$ L_k \f$. The default (`phase = 0`) leaves an untwisted CDT edge unchanged.
+    /// It is the link \f$ U = e^{i\varphi} \f$ of the connection: it twists the hopping term of
+    /// the Aharonov-Bohm operator (`HodgeLaplacian::connectionLaplacian`) and dresses the Whitney
+    /// pencil, so the default Hodge operator `laplacian(k)` is the covariant \f$ h_k(z,U) \f$ at
+    /// every degree; only its spectrum's gauge invariance, never a rescaled metric weight,
+    /// carries \f$\varphi\f$ into the geometry. The diagonal weights ignore it. The default
+    /// (`phase = 0`) is the trivial link.
     ///
     /// @return The \f$\mathbb{C}^{*}\f$ connection phase; `Re` in radians, `Im` the log-scale.
     [[nodiscard]] std::complex<double> getPhase() const noexcept;

@@ -59,12 +59,26 @@ def _walk(root, radicands):
     return values
 
 
-def _circle(centre, radius, turns=1, steps=_STEPS):
+def _circle(centre, radius, turns=1, steps=_STEPS, phase=0.0):
     """The points of ``turns`` counter-clockwise loops about ``centre``,
-    starting and ending at ``centre + radius`` and omitting the start."""
+    starting and ending at ``centre + radius * exp(i * phase)`` and omitting
+    the start.
+
+    The phase matters. A loop is only a test of monodromy if its closing point
+    is off every cut of the function being continued: on a cut the principal
+    value is discontinuous, so the label at the closing point would hang on the
+    sign of a rounding-level imaginary part. For the square root, whose cut is
+    the negative real axis, a loop about the origin may start at +1; for the
+    inverse cosine, cut on the real axis beyond +/-1, a loop about either branch
+    point must start above or below the axis, so the crossing falls mid-loop
+    and the closing point is off it."""
     n = steps * turns
-    return [centre + radius * cmath.exp(2j * math.pi * turns * k / n)
+    return [centre + radius * cmath.exp(1j * (phase + 2.0 * math.pi * turns * k / n))
             for k in range(1, n + 1)]
+
+
+#: Where the inverse-cosine loops start: the top of the circle, off the cut.
+_TOP = 0.5 * math.pi
 
 
 # --------------------------------------------------------------------------- #
@@ -118,11 +132,11 @@ def test_the_reverse_loop_carries_the_opposite_monodromy():
 def test_a_loop_that_encloses_nothing_changes_no_sheet():
     """Distance travelled is not monodromy: a large loop that does not enclose
     the branch point returns the principal root."""
-    root = tessera.SheetedSqrt(4.0 + 0.0j)
+    root = tessera.SheetedSqrt(6.0 + 0.0j)      # the circle's own start point
     _walk(root, _circle(5.0 + 0.0j, 1.0))
     assert root.winding() == 0
     assert root.sheet() == 0
-    assert abs(root.value() - cmath.sqrt(4.0)) <= _TOLERANCE
+    assert abs(root.value() - cmath.sqrt(6.0)) <= _TOLERANCE
 
 
 def test_the_continued_root_is_continuous_across_the_principal_cut():
@@ -187,9 +201,9 @@ def test_declared_angle_starts_principal():
 def test_a_loop_about_plus_one_reflects_the_angle():
     """The monodromy at cos(theta) = 1: theta goes to -theta, the sheet label
     (k, eps) to (0, -1)."""
-    start = 1.5 + 0.0j
+    start = 1.0 + 0.5j                       # top of the circle, off the cut
     angle = tessera.SheetedAcos(start)
-    for r in _circle(1.0 + 0.0j, 0.5):
+    for r in _circle(1.0 + 0.0j, 0.5, phase=_TOP):
         angle.advance(r)
     assert angle.orientation() == -1
     assert angle.branchIndex() == 0
@@ -200,9 +214,9 @@ def test_a_loop_about_minus_one_reflects_the_angle_about_pi():
     """The monodromy at cos(theta) = -1: theta goes to 2*pi - theta, the sheet
     label to (1, -1). The two finite branch points act differently, which is
     why the label is a pair and not a sign."""
-    start = -1.5 + 0.0j
+    start = -1.0 + 0.5j                      # top of the circle, off the cut
     angle = tessera.SheetedAcos(start)
-    for r in _circle(-1.0 + 0.0j, 0.5):
+    for r in _circle(-1.0 + 0.0j, 0.5, phase=_TOP):
         angle.advance(r)
     assert angle.orientation() == -1
     assert angle.branchIndex() == 1
@@ -211,27 +225,28 @@ def test_a_loop_about_minus_one_reflects_the_angle_about_pi():
 
 def test_each_finite_branch_point_has_an_involutive_monodromy():
     """Both loops taken twice return the principal sheet."""
-    for centre, start in ((1.0 + 0.0j, 1.5 + 0.0j), (-1.0 + 0.0j, -1.5 + 0.0j)):
+    for centre in (1.0 + 0.0j, -1.0 + 0.0j):
+        start = centre + 0.5j
         angle = tessera.SheetedAcos(start)
-        for r in _circle(centre, 0.5, turns=2):
+        for r in _circle(centre, 0.5, turns=2, phase=_TOP):
             angle.advance(r)
         assert angle.isPrincipal(), f"loop about {centre} is not involutive"
         assert abs(angle.value() - cmath.acos(start)) <= 1e-10
 
 
 def test_the_continued_angle_is_continuous_where_the_principal_one_jumps():
-    path = _circle(1.0 + 0.0j, 0.5)
-    angle = tessera.SheetedAcos(1.5 + 0.0j)
+    path = _circle(1.0 + 0.0j, 0.5, phase=_TOP)
+    angle = tessera.SheetedAcos(1.0 + 0.5j)
     declared = [angle.value()]
     for r in path:
         angle.advance(r)
         declared.append(angle.value())
-    principal = [cmath.acos(1.5 + 0.0j)] + [cmath.acos(r) for r in path]
+    principal = [cmath.acos(1.0 + 0.5j)] + [cmath.acos(r) for r in path]
 
     declared_jump = max(abs(b - a) for a, b in zip(declared, declared[1:]))
     principal_jump = max(abs(b - a) for a, b in zip(principal, principal[1:]))
     assert declared_jump < 0.05
-    # acos crosses its cut on the real axis either side of +1, where the
-    # principal value reflects through zero.
+    # Mid-loop the path crosses the cut at r = 3/2, where the principal value
+    # reflects from -i arccosh(3/2) to +i arccosh(3/2): a jump of about 1.9.
     assert principal_jump > 1.0
     assert declared_jump < 0.05 * principal_jump

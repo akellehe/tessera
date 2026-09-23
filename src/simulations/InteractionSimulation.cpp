@@ -338,9 +338,11 @@ const CellEdge kCellEdges[10] = {
     {1, 2, false},   // Y-X'    closure
 };
 
-// Sum of the hinge contributions A_h ε_h of a single (2,3) cell with the
-// given ten signed squared edge lengths. Built in a throwaway Spacetime
-// so a rejected Metropolis proposal never touches the live complex.
+// Sum of the hinge contributions |h| ε_h of a single (2,3) cell with the
+// given ten signed squared edge lengths: the content of each triangular
+// hinge (Simplex::volume, the same weight ReggeSolver::hingeContent uses)
+// times its deficit angle. Built in a throwaway Spacetime so a rejected
+// Metropolis proposal never touches the live complex.
 double cellHingeAction(const double edgeSq[10]) {
     auto metric = std::make_shared<Metric>(
         /*coordinateFree=*/true, Signature(4, SignatureType::Euclidean));
@@ -362,7 +364,7 @@ double cellHingeAction(const double edgeSq[10]) {
     for (SimplexPtr facet : cell->getFacets())
         for (SimplexPtr hinge : facet->getFacets())
             if (hinge->getVertices().size() == 3)
-                s += (hinge->area() * hinge->deficitAngle()).real();
+                s += (hinge->volume() * hinge->deficitAngle()).real();
     return s;
 }
 
@@ -970,7 +972,7 @@ bool InteractionSimulation::interact() {
         for (SimplexPtr hinge : facet->getFacets())
             if (hinge->getVertices().size() == 3)
                 hingeAction_[hinge] =
-                    (hinge->area() * hinge->deficitAngle()).real();
+                    (hinge->volume() * hinge->deficitAngle()).real();
 
     stateOf_[xp] = res.statePrimeX;
     stateOf_[ab] = res.stateAB;

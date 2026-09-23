@@ -396,14 +396,22 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
   const std::vector<complexd> candidateShifts{
       complexd{0.3719, 0.2341}, complexd{-0.6131, 0.4517},
       complexd{1.2837, -0.7193}, complexd{-1.9043, -1.1287}};
+  // A shift is accepted on the measured quality of its solve rather than on a
+  // pivot threshold: the pencil mixes the scale of the stiffness with that of
+  // the particle-hole energies, and a rank decision taken against its largest
+  // pivot refuses matrices the solve handles to rounding.
   Eigen::MatrixXcd resolvent;
   complexd shift{0.0, 0.0};
   bool shifted = false;
   for (const complexd &candidate : candidateShifts) {
     const complexd trial = candidate * scale;
-    const Eigen::FullPivLU<Eigen::MatrixXcd> factor(pencil - trial * mass);
-    if (!factor.isInvertible()) continue;
-    resolvent = factor.solve(mass);
+    const Eigen::MatrixXcd shiftedPencil = pencil - trial * mass;
+    const Eigen::PartialPivLU<Eigen::MatrixXcd> factor(shiftedPencil);
+    const Eigen::MatrixXcd solved = factor.solve(mass);
+    const double solveResidual =
+        (shiftedPencil * solved - mass).norm() / mass.norm();
+    if (!(solveResidual <= 1e-8)) continue;
+    resolvent = solved;
     shift = trial;
     shifted = true;
     break;
@@ -433,16 +441,21 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
       continue;
     geometric /= geometric.norm();
 
-    Eigen::MatrixXcd dressed;
+    // The residual is measured against the size of the two terms that cancel
+    // at a pole, the bare-plus-diamagnetic stiffness and the polarization,
+    // and not against the dressed stiffness itself, which is what vanishes
+    // there.
+    Eigen::MatrixXcd polarization;
     try {
-      dressed =
-          toMatrix(dressedStiffness(frequency), fluctuations_, fluctuations_);
+      polarization =
+          toMatrix(paramagnetic(frequency), fluctuations_, fluctuations_);
     } catch (const std::domain_error &) {
       continue;
     }
-    const double operatorNorm = dressed.norm();
-    if (operatorNorm == 0.0) continue;
-    const double residual = (dressed * geometric).norm() / operatorNorm;
+    const Eigen::MatrixXcd dressed = bare - polarization;
+    const double cancellationScale = bare.norm() + polarization.norm();
+    if (cancellationScale == 0.0) continue;
+    const double residual = (dressed * geometric).norm() / cancellationScale;
     if (!(residual <= declaration_.tolerance)) continue;
 
     CollectiveMode mode;

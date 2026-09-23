@@ -32,7 +32,7 @@ import pytest
 
 import tessera
 from tessera import chainhodge as ch
-from tests.chainhodge._fixtures import edges, torus33, torus33_causal_types
+from tests.chainhodge._fixtures import edges, torus33, torus33_timelike_parts
 
 obs = tessera.observables
 cob = tessera.cobordism
@@ -59,15 +59,17 @@ def _spacetime_from(K, s):
 
 
 def _lorentzian_torus(eps):
-    """The 3x3 torus with its timelike squared lengths rotated by e^{-2 i eps}.
+    """The 3x3 torus with the timelike part of every squared length rotated
+    by e^{-2 i eps}.
 
-    The causal types are DECLARED by the fixture (`torus33_causal_types`) and
-    the rotation is the library's own `LorentzianFamily.rotate`: nothing here
-    infers a causal type from a squared length.
+    The timelike parts are DECLARED by the fixture (`torus33_timelike_parts`:
+    a vertical or diagonal edge carries one time step, a horizontal edge none)
+    and the rotation is the library's own `LorentzianFamily.rotate`: nothing
+    here infers a timelike part from a squared length.
     """
     K, s = torus33()
     return _spacetime_from(K, ch.LorentzianFamily.rotate(
-        s, torus33_causal_types(K), eps)), K
+        s, torus33_timelike_parts(K), eps)), K
 
 
 def _euclidean_torus():

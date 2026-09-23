@@ -456,8 +456,12 @@ class ThePolesAreTheZerosOfTheDressedStiffnessTest(unittest.TestCase):
             np.eye(edges, dtype=complex) * 0.5, occupied=3))
         modes = fluctuation.collective_modes()
         frequencies = [mode.frequency for mode in modes]
+        # A pole of high multiplicity at zero comes back as a cluster whose
+        # spread is the root the multiplicity takes of rounding, so the partner
+        # is sought within that spread rather than to rounding itself.
         for frequency in frequencies:
-            self.assertTrue(any(abs(other + frequency) < 1e-7
+            self.assertTrue(any(abs(other + frequency)
+                                < 1e-5 * max(1.0, abs(frequency))
                                 for other in frequencies))
 
     def test_a_declared_broadening_gives_every_pole_a_radiation_rate(self):
