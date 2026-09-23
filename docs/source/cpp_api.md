@@ -229,6 +229,12 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} LevenbergMarquardt.h
 ```
 
+```{doxygenfile} WardFlux.h
+```
+
+```{doxygenfile} BoundStatePole.h
+```
+
 ## Whitney-form Hodge Laplacian pencil
 
 ```{doxygenfile} WhitneyMass.h
