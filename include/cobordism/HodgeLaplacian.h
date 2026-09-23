@@ -542,6 +542,9 @@ class HodgeLaplacian {
     // operator), built lazily and rebuilt when the geometry stamp moves.
     struct WhitneyState;
     mutable std::shared_ptr<WhitneyState> whitney_{};
+    // The operator of the metric source with its analytic derivatives in the
+    // squared lengths, shared by the entropy and spectral-moment functionals.
+    struct DerivativeSource;
     [[nodiscard]] const WhitneyState &whitneyState() const;
     [[nodiscard]] Eigen::MatrixXcd operatorMatrix(int k, bool metric) const;
 
