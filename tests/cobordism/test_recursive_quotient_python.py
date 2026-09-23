@@ -1096,8 +1096,9 @@ class TestCraigBampton(unittest.TestCase):
         q = cob.RecursiveQuotient.overMatrix(_flat(L), n, [], [list(range(n)), [0], [1]])
         self.assertEqual(q.regime, cob.CertificateRegime.NonNormal)
         read = q.craigBampton(centre, radius, radius, 1e-6)
-        # The retained fixed-interface eigenvalues, read off the basis columns.
-        basis = np.array(read.basis)
+        # The retained fixed-interface eigenvalues, read off the basis columns
+        # (the basis is flat row-major, fine dimension by reduced dimension).
+        basis = np.array(read.basis).reshape(n, -1)
         kept = []
         for column in basis[:, len(q.interfaceIndices):].T:
             support = np.flatnonzero(np.abs(column) > 1e-8)
