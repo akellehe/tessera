@@ -21,6 +21,7 @@ ASSERTS that the commit happened rather than tolerating either outcome.
 """
 
 import cmath
+import math
 import unittest
 
 import tessera as T
@@ -50,6 +51,16 @@ COMMITTING_REFINEMENTS = 4
 #: because the probe commits on a STRICT decrease -- a candidate sitting within
 #: an ULP of the base is one whose commit or refusal is immaterial either way.
 ROLLBACK_ULP_TOLERANCE = 1e-14
+
+
+def _rollback_tolerance(value):
+    """The absolute floor above, plus four ULPs of the value: the Whitney
+    pencil reads the objective through sparse factorizations whose rollback
+    reorders the assembly, and a joint scalar of 35.6 came back 2 ULPs
+    (1.4e-14) above itself on an uncommitted sweep, against the 1e-14 the
+    diagonal path needed. A candidate within a few ULPs of the base is one
+    whose commit or refusal is immaterial either way."""
+    return ROLLBACK_ULP_TOLERANCE + 4.0 * math.ulp(abs(value))
 
 
 def _small_sphere4():
@@ -335,11 +346,11 @@ class SurgeryNeverRaisesTheInjectedObjectiveTest(unittest.TestCase):
         for _ in range(4):
             committed += node.directed_cone_out()
             current = node.objective()
-            self.assertLessEqual(current, previous + ROLLBACK_ULP_TOLERANCE)
+            self.assertLessEqual(current, previous + _rollback_tolerance(previous))
             previous = current
             committed += node.directed_cone_in()
             current = node.objective()
-            self.assertLessEqual(current, previous + ROLLBACK_ULP_TOLERANCE)
+            self.assertLessEqual(current, previous + _rollback_tolerance(previous))
             previous = current
         # Non-vacuity: at least one surgery was actually committed over the
         # loop, so the monotonicity above was tested against real commits.

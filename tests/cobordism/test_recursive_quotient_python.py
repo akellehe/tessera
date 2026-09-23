@@ -55,12 +55,12 @@ DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
 
 def _over_cells(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
-    return _over_cells(*args, **kwargs)
+    return cob.RecursiveQuotient.overCells(*args, **kwargs)
 
 
 def _over_vertex_supports(*args, **kwargs):
     kwargs.setdefault("metric_source", DIAGONAL)
-    return _over_vertex_supports(*args, **kwargs)
+    return cob.RecursiveQuotient.overVertexSupports(*args, **kwargs)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _causal_specimen import load_dump, rebuild_spacetime  # noqa: E402
