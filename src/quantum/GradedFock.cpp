@@ -861,32 +861,51 @@ FockDirectSum::SparseOp FockDirectSum::gradedSwapMatrix() const {
 
 Eigen::MatrixXcd FockDirectSum::assembleBlockOneParticle(
     const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
-    const Eigen::MatrixXcd& coupling) {
+    const Eigen::MatrixXcd& couplingAB, const Eigen::MatrixXcd& couplingBA) {
     if (blockA.rows() != blockA.cols() || blockB.rows() != blockB.cols()) {
         throw std::invalid_argument(
             "FockDirectSum::assembleBlockOneParticle: diagonal blocks must "
             "be square");
     }
-    if (coupling.rows() != blockA.rows() || coupling.cols() != blockB.rows()) {
+    if (couplingAB.rows() != blockA.rows() ||
+        couplingAB.cols() != blockB.rows()) {
         throw std::invalid_argument(
-            "FockDirectSum::assembleBlockOneParticle: coupling is " +
-            std::to_string(coupling.rows()) + "x" +
-            std::to_string(coupling.cols()) + ", expected " +
+            "FockDirectSum::assembleBlockOneParticle: coupling C_AB is " +
+            std::to_string(couplingAB.rows()) + "x" +
+            std::to_string(couplingAB.cols()) + ", expected " +
             std::to_string(blockA.rows()) + "x" + std::to_string(blockB.rows()));
+    }
+    if (couplingBA.rows() != blockB.rows() ||
+        couplingBA.cols() != blockA.rows()) {
+        throw std::invalid_argument(
+            "FockDirectSum::assembleBlockOneParticle: coupling C_BA is " +
+            std::to_string(couplingBA.rows()) + "x" +
+            std::to_string(couplingBA.cols()) + ", expected " +
+            std::to_string(blockB.rows()) + "x" + std::to_string(blockA.rows()));
     }
     const Eigen::Index mA = blockA.rows();
     const Eigen::Index mB = blockB.rows();
     Eigen::MatrixXcd L = Eigen::MatrixXcd::Zero(mA + mB, mA + mB);
     L.topLeftCorner(mA, mA) = blockA;
     L.bottomRightCorner(mB, mB) = blockB;
-    L.topRightCorner(mA, mB) = coupling;
-    L.bottomLeftCorner(mB, mA) = coupling.adjoint();
+    // Both directed blocks as given: no C_BA = C_AB† is assumed.
+    L.topRightCorner(mA, mB) = couplingAB;
+    L.bottomLeftCorner(mB, mA) = couplingBA;
     return L;
+}
+
+Eigen::MatrixXcd FockDirectSum::assembleBlockOneParticle(
+    const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
+    const Eigen::MatrixXcd& coupling) {
+    // The ∗-structure special case: the caller certifies C_BA = C†.
+    return assembleBlockOneParticle(blockA, blockB, coupling,
+                                    Eigen::MatrixXcd(coupling.adjoint()));
 }
 
 FockDirectSum::SparseOp FockDirectSum::dGammaBlock(
     const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
-    const Eigen::MatrixXcd& coupling) const {
+    const Eigen::MatrixXcd& couplingAB,
+    const Eigen::MatrixXcd& couplingBA) const {
     if (static_cast<std::size_t>(blockA.rows()) != modesA_ ||
         static_cast<std::size_t>(blockB.rows()) != modesB_) {
         throw std::invalid_argument(
@@ -896,7 +915,14 @@ FockDirectSum::SparseOp FockDirectSum::dGammaBlock(
             std::to_string(modesA_) + " + " + std::to_string(modesB_));
     }
     return jointAlgebra().dGamma(
-        assembleBlockOneParticle(blockA, blockB, coupling));
+        assembleBlockOneParticle(blockA, blockB, couplingAB, couplingBA));
+}
+
+FockDirectSum::SparseOp FockDirectSum::dGammaBlock(
+    const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
+    const Eigen::MatrixXcd& coupling) const {
+    return dGammaBlock(blockA, blockB, coupling,
+                       Eigen::MatrixXcd(coupling.adjoint()));
 }
 
 // ─── EdgeModeRegistry ─────────────────────────────────────────────────────
@@ -918,6 +944,61 @@ EdgeModeRegistry EdgeModeRegistry::fromSpacetime(
         registry.addEdge(source->getId(), target->getId(), +1, lineageKey);
     }
     return registry;
+}
+
+EdgeModeRegistry EdgeModeRegistry::fromSpacetimeWithLineages(
+    const ::tessera::spacetime::Spacetime& spacetime,
+    const std::vector<LineageAssignment>& assignments,
+    std::string unassignedKey) {
+    EdgeModeRegistry registry = fromSpacetime(spacetime, unassignedKey);
+    registry.assignLineageKeys(assignments);
+    return registry;
+}
+
+void EdgeModeRegistry::setLineageKey(std::uint64_t modeId,
+                                     std::string lineageKey) {
+    validateModeId(modeId);
+    records_[static_cast<std::size_t>(modeId)].lineageKey =
+        std::move(lineageKey);
+}
+
+std::size_t EdgeModeRegistry::assignLineageKeys(
+    const std::vector<LineageAssignment>& assignments) {
+    // One membership set per assignment, so that the containment test below is
+    // a hash lookup rather than a scan of the support.
+    std::vector<std::unordered_set<std::uint64_t>> supports;
+    supports.reserve(assignments.size());
+    for (const LineageAssignment& assignment : assignments) {
+        supports.emplace_back(assignment.vertices.begin(),
+                              assignment.vertices.end());
+    }
+    std::size_t assigned = 0;
+    for (EdgeModeRecord& record : records_) {
+        std::size_t owner = assignments.size();
+        for (std::size_t a = 0; a < assignments.size(); ++a) {
+            if (supports[a].count(record.vertexA) == 0 ||
+                supports[a].count(record.vertexB) == 0) {
+                continue;
+            }
+            if (owner != assignments.size()) {
+                throw std::invalid_argument(
+                    "EdgeModeRegistry::assignLineageKeys: the edge {" +
+                    std::to_string(std::min(record.vertexA, record.vertexB)) +
+                    ", " +
+                    std::to_string(std::max(record.vertexA, record.vertexB)) +
+                    "} lies in the supports of both lineage '" +
+                    assignments[owner].lineageKey + "' and lineage '" +
+                    assignments[a].lineageKey +
+                    "', which leaves its position in the compilation order "
+                    "undetermined");
+            }
+            owner = a;
+        }
+        if (owner == assignments.size()) continue;
+        record.lineageKey = assignments[owner].lineageKey;
+        ++assigned;
+    }
+    return assigned;
 }
 
 std::uint64_t EdgeModeRegistry::addEdge(std::uint64_t vertexA,

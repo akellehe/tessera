@@ -67,6 +67,23 @@ def _real_spectrum(evals):
 
 
 cob = tessera.cobordism
+
+
+# Every closed form in this module is the DIAGONAL-weight operator's:
+# L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k of
+# HodgeWeightConvention. The process default metric source is the chain-level
+# Whitney pencil (#1185), whose operator is the covariant h_k(s, U) on
+# geometric images, so this module names the diagonal source at every operator
+# it builds. The default's own properties are pinned in
+# tests/cobordism/test_whitney_default_metric_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _hodge(spacetime, weights=None, source=DIAGONAL):
+    """The diagonal-weight Hodge operator this module's anchors are taken of."""
+    if weights is None:
+        weights = cob.HodgeLaplacian.defaultWeightConvention()
+    return cob.HodgeLaplacian(spacetime, weights, source)
 obs = tessera.observables
 
 PI = math.pi
@@ -269,7 +286,7 @@ class TestHodgeTheoremAllFixtures(unittest.TestCase):
     def test_kernel_dimension_equals_betti(self):
         for name, build, expected in FIXTURES:
             st = build()
-            hl = cob.HodgeLaplacian(st)
+            hl = _hodge(st)
             cc = cob.ChainComplex.fromSpacetime(st)
             betti = cc.bettiNumbers()
             with self.subTest(fixture=name):
@@ -292,7 +309,7 @@ class TestHodgeTheoremAllFixtures(unittest.TestCase):
         # cross-check tying the analytic kernel back to the combinatorial χ.
         for name, build, _ in FIXTURES:
             st = build()
-            hl = cob.HodgeLaplacian(st)
+            hl = _hodge(st)
             cc = cob.ChainComplex.fromSpacetime(st)
             with self.subTest(fixture=name):
                 kernel_chi = sum((-1) ** k * _kernel_dim(hl, k, True)
@@ -305,7 +322,7 @@ class TestHodgeTheoremAllFixtures(unittest.TestCase):
         for name, build in (("T^2", _t2), ("S^2", _s2), ("S^2xS^1", _s2_cross_s1),
                             ("T^3", _t3), ("RP^3", _rp3), ("CP^2", _cp2)):
             st = build()
-            hl = cob.HodgeLaplacian(st)
+            hl = _hodge(st)
             cc = cob.ChainComplex.fromSpacetime(st)
             with self.subTest(fixture=name):
                 self.assertEqual(_kernel_dim(hl, cc.dimension(), True), 1)
@@ -327,7 +344,7 @@ class TestGaugeInvariance(unittest.TestCase):
 
         ids, _ = _ordering(st)
         n = len(ids)
-        hl_old = cob.HodgeLaplacian(st)
+        hl_old = _hodge(st)
         evals_old = _real_spectrum(hl_old.connectionEigenvalues())
         V_old = _matrix(hl_old.connectionEigenvectors(), n)
         flux_old = [_cycle_flux(st, c) for c in cycles]
@@ -335,7 +352,7 @@ class TestGaugeInvariance(unittest.TestCase):
         alpha = {vid: float(rng.uniform(-PI, PI)) for vid in ids}
         _apply_gauge(st, alpha)
 
-        hl_new = cob.HodgeLaplacian(st)
+        hl_new = _hodge(st)
         evals_new = _real_spectrum(hl_new.connectionEigenvalues())
         V_new = _matrix(hl_new.connectionEigenvectors(), n)
 
@@ -387,7 +404,7 @@ class TestGaugeInvariance(unittest.TestCase):
         _edge(st, 0, 1).setPhase(PI)
         ids, _ = _ordering(st)
         n = len(ids)
-        hl_old = cob.HodgeLaplacian(st)
+        hl_old = _hodge(st)
         evals_old = _real_spectrum(hl_old.connectionEigenvalues())
         V_old = _matrix(hl_old.connectionEigenvectors(), n)
         # the degenerate low pair really is present
@@ -396,7 +413,7 @@ class TestGaugeInvariance(unittest.TestCase):
         rng = np.random.default_rng(7)
         alpha = {vid: float(rng.uniform(-PI, PI)) for vid in ids}
         _apply_gauge(st, alpha)
-        hl_new = cob.HodgeLaplacian(st)
+        hl_new = _hodge(st)
         np.testing.assert_allclose(
             _real_spectrum(hl_new.connectionEigenvalues()), evals_old,
             atol=1e-12)
@@ -421,7 +438,7 @@ class TestHermiticityUnitarity(unittest.TestCase):
                 e.setLength(cmath.sqrt(complex(float(rng.uniform(0.5, 2.0)))))
                 e.setPhase(float(rng.uniform(-PI, PI)))
             with self.subTest(fixture=name):
-                hl = cob.HodgeLaplacian(st)
+                hl = _hodge(st)
                 n = st.getVertexCount()
                 L = _matrix(hl.connectionLaplacian(), n)
                 self.assertLess(np.linalg.norm(L - L.conj().T), 1e-12)
@@ -438,7 +455,7 @@ class TestMetricVsCombinatorial(unittest.TestCase):
     def test_operators_differ_but_kernels_agree(self):
         for name, build, betti in FIXTURES:
             st = build()
-            hl = cob.HodgeLaplacian(st)
+            hl = _hodge(st)
             cc = cob.ChainComplex.fromSpacetime(st)
             with self.subTest(fixture=name):
                 for k in range(1, cc.dimension() + 1):
@@ -479,7 +496,7 @@ class TestFluxSpectrum(unittest.TestCase):
     def test_ring_formula_dense_sweep(self):
         for phi in np.linspace(-2.0 * PI, 2.0 * PI, 25):
             with self.subTest(phi=float(phi)):
-                hl = cob.HodgeLaplacian(self._triangle_total_flux(phi))
+                hl = _hodge(self._triangle_total_flux(phi))
                 np.testing.assert_allclose(
                     sorted(_real_spectrum(hl.connectionEigenvalues())),
                     self._ring(phi), atol=1e-12)
@@ -488,15 +505,15 @@ class TestFluxSpectrum(unittest.TestCase):
         # Concentrated vs. spread flux of the same total are gauge-equivalent.
         for phi in (PI / 3, PI / 2, 2 * PI / 3, 1.234):
             with self.subTest(phi=phi):
-                concentrated = sorted(_real_spectrum(cob.HodgeLaplacian(
+                concentrated = sorted(_real_spectrum(_hodge(
                     self._triangle_total_flux(phi)).connectionEigenvalues()))
-                spread = sorted(_real_spectrum(cob.HodgeLaplacian(
+                spread = sorted(_real_spectrum(_hodge(
                     self._triangle_total_flux(
                         phi, spread=True)).connectionEigenvalues()))
                 np.testing.assert_allclose(concentrated, spread, atol=1e-12)
 
     def test_half_quantum_collapses_gap_and_lifts_zero_mode(self):
-        hl = cob.HodgeLaplacian(self._triangle_total_flux(PI))
+        hl = _hodge(self._triangle_total_flux(PI))
         np.testing.assert_allclose(
             sorted(_real_spectrum(hl.connectionEigenvalues())),
             [1.0, 1.0, 4.0], atol=1e-12)
@@ -504,7 +521,7 @@ class TestFluxSpectrum(unittest.TestCase):
 
     def test_zero_mode_restored_at_full_flux_quantum(self):
         # Φ = 2π is gauge-equivalent to Φ = 0: spectrum {0, 3, 3}, zero mode back.
-        hl = cob.HodgeLaplacian(self._triangle_total_flux(2.0 * PI))
+        hl = _hodge(self._triangle_total_flux(2.0 * PI))
         np.testing.assert_allclose(
             sorted(_real_spectrum(hl.connectionEigenvalues())),
             [0.0, 3.0, 3.0], atol=1e-10)
@@ -512,11 +529,11 @@ class TestFluxSpectrum(unittest.TestCase):
 
     def test_harmonic_dimension_tracks_flux(self):
         # Zero (or full-quantum) flux: one harmonic; any intermediate flux: none.
-        self.assertEqual(len(cob.HodgeLaplacian(
+        self.assertEqual(len(_hodge(
             self._triangle_total_flux(0.0)).connectionHarmonics()), 1)
         for phi in (0.3, 1.0, PI / 2, 2.0):
             with self.subTest(phi=phi):
-                self.assertEqual(len(cob.HodgeLaplacian(
+                self.assertEqual(len(_hodge(
                     self._triangle_total_flux(phi)).connectionHarmonics()), 0)
 
     def test_derived_degree_zero_kernel_is_flux_blind(self):
@@ -526,7 +543,7 @@ class TestFluxSpectrum(unittest.TestCase):
         for phi in (0.0, 0.3, 1.0, PI / 2, PI, 2.0, 2.0 * PI):
             with self.subTest(phi=phi):
                 st = self._triangle_total_flux(phi)
-                hl = cob.HodgeLaplacian(st)
+                hl = _hodge(st)
                 self.assertEqual(len(hl.harmonics(0)), 1)
                 n = cob.ChainComplex.fromSpacetime(st).numSimplices(0)
                 L = np.array(hl.laplacian(0), dtype=complex).reshape(n, n)
@@ -553,7 +570,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
 
     def _null_norm(self, alpha):
         # Explicitly the k-content convention: the default is SquaredContent.
-        norms = np.array(cob.HodgeLaplacian(_triangle_one_timelike(alpha),
+        norms = np.array(_hodge(_triangle_one_timelike(alpha),
                                             cob.HodgeWeightConvention.Content)
                          .nullNorms(1, 1e-9), dtype=complex)
         self.assertEqual(len(norms), 1)  # the single 1-cycle harmonic
@@ -562,7 +579,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
     def _sorted_spectrum(self, alpha):
         # spec(L₁) = {0, 3, 1 − 2i/α} under the k-content convention, complex,
         # ordered by (Re, Im). The default is SquaredContent.
-        ev = np.array(cob.HodgeLaplacian(_triangle_one_timelike(alpha),
+        ev = np.array(_hodge(_triangle_one_timelike(alpha),
                                          cob.HodgeWeightConvention.Content)
                       .eigenvalues(1), dtype=complex)
         return sorted(ev, key=lambda z: (round(z.real, 9), round(z.imag, 9)))
@@ -620,7 +637,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         # for every α, where the real-signed convention gave 2 at α = 2.
         for alpha in (1.5, 2.0, 2.5):
             with self.subTest(alpha=alpha):
-                hl = cob.HodgeLaplacian(_triangle_one_timelike(alpha),
+                hl = _hodge(_triangle_one_timelike(alpha),
                                          cob.HodgeWeightConvention.Content)
                 n = int(np.sum(np.abs(np.array(
                     hl.eigenvalues(1), dtype=complex)) < 1e-6))
@@ -647,7 +664,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         sq = cob.HodgeWeightConvention.SquaredContent  # now the default
         for alpha in (0.5, 1.0, 1.5, 2.0, 3.0):
             with self.subTest(alpha=alpha):
-                hl = cob.HodgeLaplacian(_triangle_one_timelike(alpha), sq)
+                hl = _hodge(_triangle_one_timelike(alpha), sq)
                 norm = np.array(hl.nullNorms(1, 1e-9), dtype=complex)[0]
                 self.assertAlmostEqual(norm.imag, 0.0, places=9)
                 self.assertAlmostEqual(norm.real, (2.0 - alpha ** 2) / 3.0, places=6)
@@ -664,7 +681,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         sq = cob.HodgeWeightConvention.SquaredContent
         for alpha, expected in ((1.30, 1), (math.sqrt(2.0), 2), (1.55, 1)):
             with self.subTest(alpha=alpha):
-                ev = np.array(cob.HodgeLaplacian(_triangle_one_timelike(alpha), sq)
+                ev = np.array(_hodge(_triangle_one_timelike(alpha), sq)
                               .eigenvalues(1), dtype=complex)
                 self.assertEqual(int(np.sum(np.abs(ev) < 1e-6)), expected)
 
@@ -672,7 +689,7 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         # The kernel mode is the 1-cycle: |h_i|² = 1/3 on every edge, for any α.
         for alpha in (0.7, 1.3, 2.4):
             with self.subTest(alpha=alpha):
-                harmonics = (cob.HodgeLaplacian(_triangle_one_timelike(alpha))
+                harmonics = (_hodge(_triangle_one_timelike(alpha))
                              .harmonics(1, 1e-9))
                 self.assertEqual(len(harmonics), 1)
                 h = np.asarray(harmonics[0].coeffs())
@@ -685,10 +702,10 @@ class TestLorentzianNullNormCrossing(unittest.TestCase):
         # has |h_i|² = 1/3 each, so its norm is Σ W_i|h_i|² = 1 > 0 (definite),
         # the spectrum is the Euclidean {0, 3, 3}, and the kernel dim = b₁ = 1.
         st = _cycle()
-        norms = np.array(cob.HodgeLaplacian(st).nullNorms(1, 1e-9))
+        norms = np.array(_hodge(st).nullNorms(1, 1e-9))
         self.assertEqual(len(norms), 1)
         self.assertAlmostEqual(norms[0], 1.0, places=9)
-        eigs = np.sort(np.array(cob.HodgeLaplacian(st)
+        eigs = np.sort(np.array(_hodge(st)
                                 .eigenvalues(1), dtype=complex).real)
         np.testing.assert_allclose(eigs, [0.0, 3.0, 3.0], atol=1e-7)
 
@@ -705,7 +722,7 @@ class TestEdgeCases(unittest.TestCase):
         # nothing, so the DERIVED L_0 — indexed over 0-cells — is the EMPTY
         # operator here. Both are recorded so a change in either is noticed.
         st = _single_vertex()
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         np.testing.assert_allclose(
             _real_spectrum(hl.connectionEigenvalues()), [0.0], atol=1e-12)
         self.assertEqual(len(hl.connectionHarmonics()), 1)
@@ -720,13 +737,13 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_two_vertex_edge(self):
         st = _two_vertex_edge()
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         np.testing.assert_allclose(sorted(_real_spectrum(hl.eigenvalues())), [0.0, 2.0], atol=1e-12)
         self.assertAlmostEqual(obs.SpectralGap().compute(st), 2.0, places=12)
 
     def test_disconnected_kernel_is_component_count(self):
         st = _disconnected()
-        hl = cob.HodgeLaplacian(st)
+        hl = _hodge(st)
         cc = cob.ChainComplex.fromSpacetime(st)
         self.assertEqual(cc.bettiNumbers()[0], 2)
         self.assertEqual(_kernel_dim(hl, 0, True), 2)             # b₀ = 2 components
@@ -741,7 +758,7 @@ class TestEdgeCases(unittest.TestCase):
     def test_degree_above_top_dimension_is_empty(self):
         for name, build in (("cycle", _cycle), ("S^2", _s2), ("T^2", _t2)):
             st = build()
-            hl = cob.HodgeLaplacian(st)
+            hl = _hodge(st)
             top = cob.ChainComplex.fromSpacetime(st).dimension()
             with self.subTest(fixture=name):
                 for k in (top + 1, top + 2):
@@ -754,7 +771,7 @@ class TestEdgeCases(unittest.TestCase):
                     self.assertEqual(hl.nullNorms(k), [])
 
     def test_negative_degree_raises(self):
-        hl = cob.HodgeLaplacian(_cycle())
+        hl = _hodge(_cycle())
         for call in (lambda: hl.laplacian(-1),
                      lambda: hl.eigenvalues(-1),
                      lambda: hl.eigenvectors(-1),
@@ -779,7 +796,7 @@ class TestSpectralObservables(unittest.TestCase):
     def test_spectral_gap_matches_operator_across_fixtures(self):
         for name, build, _ in FIXTURES:
             st = build()
-            evals = sorted(_real_spectrum(cob.HodgeLaplacian(st).eigenvalues()))
+            evals = sorted(_real_spectrum(_hodge(st).eigenvalues()))
             with self.subTest(fixture=name):
                 self.assertAlmostEqual(obs.SpectralGap().compute(st),
                                        evals[1] - evals[0], places=10)

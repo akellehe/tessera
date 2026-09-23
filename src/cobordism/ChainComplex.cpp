@@ -111,31 +111,41 @@ ChainComplex ChainComplex::fromSpacetime(const Spacetime &K) {
 
 ChainComplex ChainComplex::fromTopCells(
     const std::vector<std::vector<std::uint64_t>> &topCells) {
-  ChainComplex cc;
-  if (topCells.empty()) return cc;
   std::size_t nv = 0;
   for (const auto &raw : topCells) nv = std::max(nv, raw.size());
-  if (nv == 0) return cc;
-  const int n = static_cast<int>(nv) - 1;
-  cc.dimension_ = n;
-
-  // Face closure: every subset of every (sorted) top cell, bucketed by
-  // dimension in a set so the order is lexicographic on sorted tuples.
-  std::vector<std::set<Face>> faces(static_cast<std::size_t>(n) + 1);
-  for (const auto &raw : topCells) {
+  for (const auto &raw : topCells)
     if (raw.size() != nv)
       throw std::invalid_argument(
           "ChainComplex::fromTopCells: every top cell must have the same number "
           "of vertices (pure complex)");
+  return fromCells(topCells);
+}
+
+ChainComplex ChainComplex::fromCells(const std::vector<std::vector<std::uint64_t>> &cells) {
+  ChainComplex cc;
+  if (cells.empty()) return cc;
+  std::size_t nv = 0;
+  for (const auto &raw : cells) nv = std::max(nv, raw.size());
+  if (nv == 0) return cc;
+  const int n = static_cast<int>(nv) - 1;
+  cc.dimension_ = n;
+
+  // Face closure: every subset of every (sorted) declared cell, bucketed by
+  // dimension in a set so the order is lexicographic on sorted tuples.
+  std::vector<std::set<Face>> faces(static_cast<std::size_t>(n) + 1);
+  for (const auto &raw : cells) {
+    if (raw.empty())
+      throw std::invalid_argument("ChainComplex::fromCells: a cell has no vertices");
     Face cell(raw);
     std::sort(cell.begin(), cell.end());
     if (std::adjacent_find(cell.begin(), cell.end()) != cell.end())
-      throw std::invalid_argument("ChainComplex::fromTopCells: a cell repeats a vertex");
-    // Enumerate subsets by bitmask over the (n+1) vertices.
-    const unsigned full = 1u << nv;
+      throw std::invalid_argument("ChainComplex::fromCells: a cell repeats a vertex");
+    // Enumerate subsets by bitmask over this cell's own vertices.
+    const std::size_t m = cell.size();
+    const unsigned full = 1u << m;
     for (unsigned mask = 1; mask < full; ++mask) {
       Face f;
-      for (std::size_t i = 0; i < nv; ++i)
+      for (std::size_t i = 0; i < m; ++i)
         if (mask & (1u << i)) f.push_back(cell[i]);
       faces[f.size() - 1].insert(std::move(f));
     }

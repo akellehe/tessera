@@ -2,8 +2,11 @@
 # All rights reserved.
 """Chain Hodge pencil (#907): the specification's §14 values (T5a, T5b, T6, T7),
 the one-complex proposition of §9, the rank conditions of Prop. 4.2, the
-Grassmann preset against its dense oracle, the sparse kernel path, and the
-geometric-fidelity sweeps G1-G3, G5, G6 of the scaling verification plan."""
+Grassmann preset against its dense oracle, and the sparse kernel path.
+
+The scaling verification plan's geometric-fidelity sweeps G1-G6, which lived
+here, are in `test_svp_geometric_fidelity_python.py` (#1208), at the plan's own
+sizes and fixtures and with the plan's JSON records."""
 import math
 
 import numpy as np
@@ -12,8 +15,7 @@ from scipy.linalg import subspace_angles
 
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
-from tests.chainhodge._fixtures import (conformal_torus, flat_cylinder, flat_torus,
-                                        random_allowable, torus33)
+from tests.chainhodge._fixtures import flat_torus, random_allowable, torus33
 
 KS = ch.Branch.KontsevichSegal
 
@@ -100,7 +102,40 @@ class TestOneComplexProposition:
         assert np.allclose(np.angle(read.images[0, 0] / read.chains[0, 0]), math.pi / 2, atol=1e-14)
 
 
+def _within_stated_digits(values, table):
+    """Each computed value against a table entry given to d decimals: equal to
+    half a unit in the last stated decimal. Integer entries are exact."""
+    for v, t in zip(np.sort(values), np.sort(_expand(table))):
+        text = repr(float(t))
+        decimals = len(text.split(".")[1]) if "." in text and not text.endswith(".0") else 0
+        bound = 0.5 * 10.0 ** (-decimals) if decimals else 1e-10 * max(1.0, abs(t))
+        assert abs(v - t) <= bound, (v, t)
+
+
+def _integral_cycles(K, n=3):
+    """The two generating 1-cycles of the n x n torus (integral homology basis):
+    the loop along j (horizontal edges) and the loop along i (vertical edges)."""
+    E = [tuple(int(v) for v in e) for e in K.kSimplexVertices(1)]
+    index = {e: i for i, e in enumerate(E)}
+
+    def vid(i, j):
+        return (i % n) * n + (j % n)
+
+    def cycle(path):
+        c = np.zeros(len(E))
+        for u, v in zip(path[:-1], path[1:]):
+            c[index[(min(u, v), max(u, v))]] += 1.0 if u < v else -1.0
+        return c
+
+    return np.column_stack([cycle([vid(0, j) for j in range(n + 1)]),
+                            cycle([vid(i, 0) for i in range(n + 1)])])
+
+
 class TestT6LorentzianTorus:
+    """§14 T6. The table's values are given to four decimals; the computed
+    spectrum matches every entry to half a unit in its last decimal, and the
+    entries the table rounds are exact numbers: -144/11, 144/29 and 240 -+
+    96 sqrt(7)."""
     TABLE = [(-13.9921, 2), (-13.0909, 2), (-12.0, 4), (-10.6274, 2), (-6.0, 2), (0.0, 2),
              (4.9655, 2), (6.0, 2), (48.0, 4), (92.9132, 2), (144.0, 1), (493.9921, 2)]
 
@@ -112,6 +147,7 @@ class TestT6LorentzianTorus:
         assert list(rep.expected) == [17, 8, 8, 17]
         assert rep.kernelIsHarmonic
         assert hodge.betti() == [1, 2, 1]
+        assert hodge.harmonicChains(1).nullity == 2
 
     def test_spectrum_table(self):
         K, s = torus33()
@@ -119,20 +155,33 @@ class TestT6LorentzianTorus:
         spec = hodge.spectrum(1)
         ev = np.array(spec.eigenvalues)
         assert np.max(np.abs(ev.imag)) < 3e-14 * np.max(np.abs(ev))
-        np.testing.assert_allclose(np.sort(ev.real), np.sort(_expand(self.TABLE)), atol=1e-3)
+        _within_stated_digits(ev.real, self.TABLE)
+        for exact in (-144.0 / 11.0, 144.0 / 29.0, 240.0 - 96.0 * math.sqrt(7.0), 240.0 + 96.0 * math.sqrt(7.0)):
+            assert np.min(np.abs(ev.real - exact)) < 1e-11 * max(1.0, abs(exact))
         assert spec.residual < 1e-12
 
     def test_harmonic_gram_and_signature(self):
-        """The harmonic Gram Z^T M_1 Z is non-isotropic, and with M_1 = i M_1^real
-        the real Gram Z^T M_1^real Z of a real orthonormal kernel basis has
-        signature (1, 1): one spacelike and one timelike harmonic cycle, so
-        det(Z^T M_1 Z) = -det(Z^T M_1^real Z) > 0.
+        """The harmonic Gram Phi^T G_1 Phi = Z^T M_1 Z is non-isotropic, and with
+        M_1 = i M_1^real the real Gram Z^T M_1^real Z of a real orthonormal
+        kernel basis has signature (1, 1): one spacelike and one timelike
+        harmonic cycle, so det(Z^T M_1 Z) = -det(Z^T M_1^real Z) > 0.
 
-        The specification quotes det = 0.211555 without stating the kernel
-        basis; the value depends on that normalization. With the kernel basis
-        orthonormal in image space (this implementation's convention) the
-        determinant is exactly 1/3, and with a chain-orthonormal basis it is
-        exactly 3; neither reproduces 0.211555, which is recorded on #907."""
+        The determinant of a Gram matrix is not an invariant of the space: a
+        change of basis Phi -> Phi A multiplies it by det(A)^2, so it has a
+        value only for a stated normalization. The specification quotes
+        det = 0.211555 without one. In the canonical normalizations it is:
+          * exactly 1 in the integral homology basis (the harmonic
+            representatives of the two generating cycles, canonical up to
+            GL(2, Z), whose det(A)^2 = 1), where the Gram is
+            diag(-i sqrt(2), i / sqrt(2)); the continuum flat-torus Hodge
+            theory gives the same values, which Whitney forms reproduce exactly
+            on a flat mesh (slice metric 1 and transverse -1/2 per lattice step,
+            area element i / sqrt(2) per cell);
+          * exactly 1/3 in a real orthonormal image basis (the kernel basis of
+            this implementation) and exactly 3 in a chain-orthonormal basis.
+        0.211555 is none of them; eigenvector bases as LAPACK returns them give
+        arbitrary values of this kind (0.31, 2.65, ...), so the quoted figure
+        is a basis-dependent number and not the code's to reproduce (#1206)."""
         K, s = torus33()
         hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
         read = hodge.harmonicChains(1)
@@ -141,6 +190,23 @@ class TestT6LorentzianTorus:
         gram = hodge.harmonicGram(read)
         assert np.linalg.matrix_rank(gram, tol=1e-12) == 2
         assert np.linalg.det(gram) == pytest.approx(1.0 / 3.0, abs=1e-12)
+        # chain-orthonormal: det = 3
+        Hn, _ = np.linalg.qr(read.chains)
+        Zc = hodge.applyG(1, Hn)
+        assert np.linalg.det(Zc.T @ hodge.Minv(1).toarray() @ Zc) == pytest.approx(3.0, abs=1e-11)
+        # integral homology basis: the harmonic representative h = gamma + d_2 c
+        # of each generating cycle, with d_2^T G_1 h = 0.
+        cycles = _integral_cycles(K)
+        B1 = hodge.boundary(1).toarray()
+        B2 = hodge.boundary(2).toarray()
+        assert np.abs(B1 @ cycles).max() == 0.0
+        G = lambda X: hodge.applyG(1, X.astype(complex))
+        c = np.linalg.lstsq(B2.T @ G(B2), -B2.T @ G(cycles), rcond=None)[0]
+        H = cycles + B2 @ c
+        assert np.abs(B1 @ H).max() < 1e-13 and np.abs(B2.T @ G(H)).max() < 1e-12
+        integral = H.T @ G(H)
+        np.testing.assert_allclose(integral, np.diag([-1j * math.sqrt(2.0), 1j / math.sqrt(2.0)]), atol=1e-12)
+        assert np.linalg.det(integral) == pytest.approx(1.0, abs=1e-12)
         M1 = hodge.Minv(1).toarray()
         Mreal = (M1 / 1j).real
         S = np.vstack([hodge.boundary(2).toarray().T.real, hodge.boundary(1).toarray().real @ Mreal])
@@ -159,6 +225,7 @@ class TestT6LorentzianTorus:
 
 
 class TestT7EuclideanTorus:
+    """§14 T7, each value to half a unit in its last stated decimal."""
     TABLE = [(0.0, 2), (5.671, 6), (8.0, 6), (16.0, 4), (24.0, 2), (31.2521, 6), (48.0, 1)]
 
     def test_spectrum_table(self):
@@ -166,9 +233,10 @@ class TestT7EuclideanTorus:
         hodge = ch.ChainHodge(K, s)
         ev = np.array(hodge.spectrum(1).eigenvalues)
         assert np.max(np.abs(ev.imag)) < 1e-12
-        np.testing.assert_allclose(np.sort(ev.real), np.sort(_expand(self.TABLE)), atol=1e-3)
+        _within_stated_digits(ev.real, self.TABLE)
         rep = hodge.rankConditions(1)
         assert rep.kernelIsHarmonic
+        assert hodge.harmonicChains(1).nullity == hodge.betti()[1] == 2
         assert hodge.certificate().allowable
 
 
@@ -207,7 +275,13 @@ class TestSparseKernelPath:
         assert dense.dense and not sparse.dense
         assert dense.nullity == sparse.nullity == 2
         assert np.max(_angles_deg(dense.images, sparse.images)) < 1e-8
-        assert math.isnan(sparse.gap)
+        # Both paths measure the gap (#1204): the last kept singular value
+        # agrees, the first discarded one sits at rounding level in both.
+        assert sparse.rank == dense.rank
+        assert sparse.lastKept == pytest.approx(dense.lastKept, rel=1e-8)
+        assert sparse.largestSingular == pytest.approx(dense.largestSingular, rel=1e-8)
+        assert sparse.firstDiscarded < 1e-12 * sparse.largestSingular
+        assert sparse.gap > 1e10 and dense.gap > 1e10
 
     def test_crossover_refuses_dense(self):
         K, s = torus33()
@@ -216,58 +290,6 @@ class TestSparseKernelPath:
             hodge.pencil(1)
         read = hodge.harmonicChains(1)
         assert not read.dense and read.nullity == 2
-
-
-class TestGeometricFidelity:
-    """SVP G-suite on geometric images G_1 H_1 against the continuum harmonic
-    edge integrals: flat < 1e-8 degrees; curved Euclidean and allowable
-    complex at estimated order >= 1.5 (ratio of angles between N = 8 and
-    N = 12 at least 1.5^1.5); real Lorentzian curved: reported, no criterion."""
-
-    @pytest.mark.parametrize("lorentz", [False, True])
-    @pytest.mark.parametrize("N", [6, 8])
-    def test_g1_flat_jittered_torus(self, N, lorentz):
-        K, s, W = flat_torus(N, 0.25, lorentz, seed=1)
-        hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
-        read = hodge.harmonicChains(1)
-        assert read.nullity == 2
-        assert np.max(_angles_deg(read.images, W)) < 1e-8
-
-    @pytest.mark.parametrize("lorentz", [False, True])
-    @pytest.mark.parametrize("NL", [(6, 4), (8, 6)])
-    def test_g2_flat_cylinder(self, NL, lorentz):
-        N, L = NL
-        K, s, W = flat_cylinder(N, L, 0.25, lorentz, seed=2)
-        hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS)
-        read = hodge.harmonicChains(1)
-        assert read.nullity == 1
-        assert np.max(_angles_deg(read.images, W)) < 1e-8
-
-    @staticmethod
-    def _angle(N, amp, lorentz):
-        K, s, W = conformal_torus(N, amp, 0.15, lorentz, seed=1)
-        hodge = ch.ChainHodge(K, s, ch.Preset.L2, KS, 2048)
-        read = hodge.harmonicChains(1)
-        assert read.nullity == 2
-        return float(np.max(_angles_deg(read.images, W))), read.gap
-
-    def test_g3_curved_euclidean_converges(self):
-        a8, _ = self._angle(8, 0.3, False)
-        a12, _ = self._angle(12, 0.3, False)
-        assert a8 < 5.0
-        assert a8 / a12 >= 1.5 ** 1.5
-
-    def test_g5_curved_allowable_complex_converges(self):
-        a8, _ = self._angle(8, 0.3 + 0.2j, False)
-        a12, _ = self._angle(12, 0.3 + 0.2j, False)
-        assert a8 < 5.0
-        assert a8 / a12 >= 1.5 ** 1.5
-
-    def test_g6_real_lorentzian_curved_is_reported(self):
-        a8, gap8 = self._angle(8, 0.3, True)
-        a12, gap12 = self._angle(12, 0.3, True)
-        assert math.isfinite(a8) and math.isfinite(a12)
-        assert gap8 > 1.0 and gap12 > 1.0
 
 
 class TestRandomAllowable:

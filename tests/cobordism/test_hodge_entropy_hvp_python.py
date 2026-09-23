@@ -32,6 +32,23 @@ import unittest
 import tessera as T
 from tessera import cobordism as cob
 
+
+# Every closed form in this module is the DIAGONAL-weight operator's:
+# L_k = W_k^-1 d_k^T W_{k-1} d_k + d_{k+1} W_{k+1}^-1 d_{k+1}^T W_k of
+# HodgeWeightConvention. The process default metric source is the chain-level
+# Whitney pencil (#1185), whose operator is the covariant h_k(s, U) on
+# geometric images, so this module names the diagonal source at every operator
+# it builds. The default's own properties are pinned in
+# tests/cobordism/test_whitney_default_metric_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
+
+def _hodge(spacetime, weights=None, source=DIAGONAL):
+    """The diagonal-weight Hodge operator this module's anchors are taken of."""
+    if weights is None:
+        weights = cob.HodgeLaplacian.defaultWeightConvention()
+    return cob.HodgeLaplacian(spacetime, weights, source)
+
 # The identity is closed form; the residual floor is the eigensolve's
 # conditioning, not a step size.
 EXACT = 1e-11
@@ -84,7 +101,7 @@ class EntropyHessianEulerIdentityTest(unittest.TestCase):
         for name, mode in MODES:
             for degree in (0, 1, 2):
                 with self.subTest(mode=name, degree=degree):
-                    hodge = cob.HodgeLaplacian(spacetime)
+                    hodge = _hodge(spacetime)
                     gradient = hodge.spectralEntropyGradient(degree, mode)
                     contracted = (
                         hodge.spectralEntropyGradientDirectionalDerivative(
@@ -100,7 +117,7 @@ class EntropyHessianEulerIdentityTest(unittest.TestCase):
         for name, mode in MODES:
             for degree in (0, 1):
                 with self.subTest(mode=name, degree=degree):
-                    hodge = cob.HodgeLaplacian(spacetime)
+                    hodge = _hodge(spacetime)
                     gradient = hodge.spectralEntropyGradient(degree, mode)
                     contracted = (
                         hodge.spectralEntropyGradientDirectionalDerivative(
@@ -116,7 +133,7 @@ class EntropyHessianEulerIdentityTest(unittest.TestCase):
         for scale in (0.25, 4.0):
             spacetime = _jittered_pentatope_sphere(scale)
             squared = _squared_lengths(spacetime)
-            hodge = cob.HodgeLaplacian(spacetime)
+            hodge = _hodge(spacetime)
             gradient = hodge.spectralEntropyGradient(1)
             contracted = hodge.spectralEntropyGradientDirectionalDerivative(
                 1, squared)
@@ -132,7 +149,7 @@ class EntropyHessianLinearityTest(unittest.TestCase):
 
     def test_additive_and_homogeneous_in_the_direction(self):
         spacetime = _jittered_pentatope_sphere()
-        hodge = cob.HodgeLaplacian(spacetime)
+        hodge = _hodge(spacetime)
         count = len(spacetime.getEdgeList().toVector())
         first = [complex(0.3 + 0.1 * (i % 3), -0.2 * (i % 2)) for i in range(count)]
         second = [complex(-0.17 * (i % 4), 0.29 + 0.04 * (i % 5))
@@ -152,7 +169,7 @@ class EntropyHessianLinearityTest(unittest.TestCase):
 
     def test_zero_direction_gives_zero(self):
         spacetime = _jittered_pentatope_sphere()
-        hodge = cob.HodgeLaplacian(spacetime)
+        hodge = _hodge(spacetime)
         count = len(spacetime.getEdgeList().toVector())
         contracted = hodge.spectralEntropyGradientDirectionalDerivative(
             1, [complex(0.0, 0.0)] * count)
@@ -165,7 +182,7 @@ class EntropyHessianShapeContractTest(unittest.TestCase):
 
     def test_wrong_direction_length_raises(self):
         spacetime = _jittered_pentatope_sphere()
-        hodge = cob.HodgeLaplacian(spacetime)
+        hodge = _hodge(spacetime)
         count = len(spacetime.getEdgeList().toVector())
         with self.assertRaises(RuntimeError):
             hodge.spectralEntropyGradientDirectionalDerivative(
@@ -176,14 +193,14 @@ class EntropyHessianShapeContractTest(unittest.TestCase):
 
     def test_negative_degree_raises(self):
         spacetime = _jittered_pentatope_sphere()
-        hodge = cob.HodgeLaplacian(spacetime)
+        hodge = _hodge(spacetime)
         squared = _squared_lengths(spacetime)
         with self.assertRaises(RuntimeError):
             hodge.spectralEntropyGradientDirectionalDerivative(-1, squared)
 
     def test_result_length_matches_the_gradient(self):
         spacetime = _jittered_pentatope_sphere()
-        hodge = cob.HodgeLaplacian(spacetime)
+        hodge = _hodge(spacetime)
         squared = _squared_lengths(spacetime)
         for degree in (0, 1, 2, 3):
             with self.subTest(degree=degree):
@@ -201,7 +218,7 @@ class EntropyHessianAscentDirectionTest(unittest.TestCase):
         for name, mode in MODES:
             for degree in (1, 2):
                 with self.subTest(mode=name, degree=degree):
-                    hodge = cob.HodgeLaplacian(spacetime)
+                    hodge = _hodge(spacetime)
                     gradient = hodge.spectralEntropyGradient(degree, mode)
                     ascent = [g.conjugate() for g in gradient]
                     contracted = (
@@ -214,15 +231,58 @@ class EntropyHessianAscentDirectionTest(unittest.TestCase):
 
 
 class EntropyHessianConnectionBlindnessTest(unittest.TestCase):
-    """The HVP must be exactly blind to the C* connection phase.
+    """The diagonal-weight HVP is exactly blind to the C* connection phase; the
+    default operator's is not.
 
-    `laplacian(k)` is built from the complex squared lengths alone and is
-    certified blind to `phi`; the connection twists a SEPARATE Aharonov-Bohm
-    operator. The entropy, its gradient and therefore this Hessian-vector
-    product are all functions of `laplacian(k)`, so an arbitrary complex phase
-    on every edge must leave them BITWISE unchanged. Anything less would mean
-    a phase-carrying path had leaked into the geometric operator.
+    The diagonal-weight `laplacian(k)` is built from the complex squared
+    lengths alone, so its entropy, gradient and Hessian-vector product are
+    BITWISE unchanged by an arbitrary complex phase on every edge. The default
+    operator is the covariant `h_k(z, U)` of the Whitney pencil, which sees the
+    connection at every degree: the same phase moves its entropy gradient and
+    Hessian-vector product, and the size of that move is recorded below.
     """
+
+    def test_the_default_operator_sees_the_phase(self):
+        spacetime = _jittered_pentatope_sphere()
+        edges = spacetime.getEdgeList().toVector()
+        squared = _squared_lengths(spacetime)
+        for edge in edges:
+            edge.setPhase(complex(0.0, 0.0))
+        baseline = {}
+        for name, mode in MODES:
+            for degree in (0, 1, 2):
+                hodge = cob.HodgeLaplacian(spacetime)
+                baseline[(name, degree)] = (
+                    hodge.spectralEntropy(degree, mode),
+                    hodge.spectralEntropyGradient(degree, mode),
+                    hodge.spectralEntropyGradientDirectionalDerivative(
+                        degree, squared, mode))
+        for index, edge in enumerate(edges):
+            edge.setPhase(complex(0.31 * (index % 5) - 0.6,
+                                  0.17 * (index % 3) - 0.2))
+        for name, mode in MODES:
+            for degree in (0, 1, 2):
+                with self.subTest(mode=name, degree=degree):
+                    hodge = cob.HodgeLaplacian(spacetime)
+                    entropy = hodge.spectralEntropy(degree, mode)
+                    gradient = hodge.spectralEntropyGradient(degree, mode)
+                    contracted = (
+                        hodge.spectralEntropyGradientDirectionalDerivative(
+                            degree, squared, mode))
+                    before_entropy, before_gradient, before_contracted = (
+                        baseline[(name, degree)])
+                    # The moves relative to the unphased values are asserted
+                    # above a floor well below the measured ones (recorded in
+                    # the pull request that inverted this assertion).
+                    self.assertGreater(
+                        abs(entropy - before_entropy) / max(abs(before_entropy), 1e-300),
+                        1e-4)
+                    self.assertGreater(
+                        _relative_sup(gradient, before_gradient, _scale_of(before_gradient)),
+                        1e-3)
+                    self.assertGreater(
+                        _relative_sup(contracted, before_contracted, _scale_of(before_contracted)),
+                        1e-3)
 
     def test_an_arbitrary_complex_phase_changes_nothing_bitwise(self):
         spacetime = _jittered_pentatope_sphere()
@@ -234,7 +294,7 @@ class EntropyHessianConnectionBlindnessTest(unittest.TestCase):
         baseline = {}
         for name, mode in MODES:
             for degree in (0, 1, 2):
-                hodge = cob.HodgeLaplacian(spacetime)
+                hodge = _hodge(spacetime)
                 baseline[(name, degree)] = (
                     hodge.spectralEntropyGradient(degree, mode),
                     hodge.spectralEntropyGradientDirectionalDerivative(
@@ -248,7 +308,7 @@ class EntropyHessianConnectionBlindnessTest(unittest.TestCase):
         for name, mode in MODES:
             for degree in (0, 1, 2):
                 with self.subTest(mode=name, degree=degree):
-                    hodge = cob.HodgeLaplacian(spacetime)
+                    hodge = _hodge(spacetime)
                     gradient = hodge.spectralEntropyGradient(degree, mode)
                     contracted = (
                         hodge.spectralEntropyGradientDirectionalDerivative(
@@ -267,7 +327,7 @@ class EntropyHessianConnectionBlindnessTest(unittest.TestCase):
         for name, mode in MODES:
             for degree in (0, 1, 2):
                 with self.subTest(mode=name, degree=degree):
-                    hodge = cob.HodgeLaplacian(spacetime)
+                    hodge = _hodge(spacetime)
                     gradient = hodge.spectralEntropyGradient(degree, mode)
                     contracted = (
                         hodge.spectralEntropyGradientDirectionalDerivative(
@@ -300,11 +360,11 @@ class EntropyHessianFiniteDifferenceCrossCheckTest(unittest.TestCase):
             for degree in (1, 2):
                 with self.subTest(mode=name, degree=degree):
                     set_squared(base)
-                    gradient = cob.HodgeLaplacian(
+                    gradient = _hodge(
                         spacetime).spectralEntropyGradient(degree, mode)
                     direction = [g.conjugate() for g in gradient]
                     set_squared(base)
-                    exact = cob.HodgeLaplacian(
+                    exact = _hodge(
                         spacetime).spectralEntropyGradientDirectionalDerivative(
                             degree, direction, mode)
 
@@ -313,10 +373,10 @@ class EntropyHessianFiniteDifferenceCrossCheckTest(unittest.TestCase):
                     step = (math.pow(2.220446049250313e-16, 1.0 / 3.0) *
                             max(base_norm, 1.0) / norm)
                     set_squared([b + step * d for b, d in zip(base, direction)])
-                    plus = cob.HodgeLaplacian(
+                    plus = _hodge(
                         spacetime).spectralEntropyGradient(degree, mode)
                     set_squared([b - step * d for b, d in zip(base, direction)])
-                    minus = cob.HodgeLaplacian(
+                    minus = _hodge(
                         spacetime).spectralEntropyGradient(degree, mode)
                     set_squared(base)
 

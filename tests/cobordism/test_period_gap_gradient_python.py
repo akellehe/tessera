@@ -29,6 +29,11 @@ import numpy as np
 import tessera
 
 cobordism = tessera.cobordism
+# r_psi's contract is the diagonal-weight path's, named by its source: on the
+# default Whitney pencil the harmonic representatives are closed cochains whose
+# periods span the cohomology image, so the period gap is blind to the geometry
+# (tests/cobordism/test_period_gap_python.py, TestWhitneyPeriodGapIsTopological).
+DIAGONAL = cobordism.HodgeMetricSource.DiagonalWeights
 
 _FIXTURE = os.path.join(os.path.dirname(__file__), "_b2_register.py")
 _spec = importlib.util.spec_from_file_location("_b2_register", _FIXTURE)
@@ -57,7 +62,7 @@ def _edgeSquaredLengths(spacetime):
 def _gapValue(spacetime, degree, holes, target):
     """The gap, computed OUTSIDE the gradient code: periods, least-squares fit,
     squared residual."""
-    synthesis = cobordism.EigenstateSynthesis(spacetime, degree)
+    synthesis = cobordism.EigenstateSynthesis(spacetime, degree, DIAGONAL)
     flat = np.array(synthesis.cyclePeriods(holes), complex)
     periodMatrix = flat.reshape(-1, len(holes)).T
     targetVector = np.array(target, complex)
@@ -75,7 +80,7 @@ class PeriodGapGradientDegreeTwoTest(unittest.TestCase):
         cls.spacetime, cls.holes = B2Register.build()
         cls.degree = 2
         cls.target = [complex(1.0, 0.0), complex(0.3, 0.6)][:len(cls.holes)]
-        cls.synthesis = cobordism.EigenstateSynthesis(cls.spacetime, cls.degree)
+        cls.synthesis = cobordism.EigenstateSynthesis(cls.spacetime, cls.degree, DIAGONAL)
         # COMPLEX now (#746): Re is the real-locus derivative these tests
         # certified before, so they keep asserting exactly what they did.
         cls.gradientComplex = np.array(
@@ -152,7 +157,7 @@ class ComplexGradientOffTheRealLocusTest(unittest.TestCase):
         cls.spacetime.materializeFacets()
         cls.pairs, cls.byPair = pairs, byPair
         cls.gradient = np.array(
-            cobordism.EigenstateSynthesis(cls.spacetime, cls.degree)
+            cobordism.EigenstateSynthesis(cls.spacetime, cls.degree, DIAGONAL)
             .periodGapForPeriodsGradient(cls.holes, cls.target), complex)
 
     def test_the_state_is_actually_off_the_locus(self):
@@ -211,7 +216,7 @@ class PeriodGapGradientRoutingTest(unittest.TestCase):
 
     def test_degree_zero_has_no_period_gap_core(self):
         spacetime, _synthesis, holes, periods = _hs.holed_surface(degree=1)
-        atDegreeZero = cobordism.EigenstateSynthesis(spacetime)
+        atDegreeZero = cobordism.EigenstateSynthesis(spacetime, 0, DIAGONAL)
         target = [complex(z) for z in periods[0]]
         with self.assertRaises(RuntimeError) as raised:
             atDegreeZero.periodGapForPeriodsGradient(holes, target)

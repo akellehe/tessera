@@ -5,10 +5,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -17,11 +19,18 @@
 #include <Eigen/SparseLU>
 #include <Eigen/SparseQR>
 
+#if defined(__linux__)
+#include <unistd.h>
+#endif
+
 namespace tessera::chainhodge {
 
 namespace {
 
-constexpr double kEps = std::numeric_limits<double>::epsilon();
+// One stored entry of a sparse factor: the complex scalar plus its index.
+constexpr double kBytesPerStoredEntry =
+    static_cast<double>(sizeof(Complex) + sizeof(SparseMatrix::StorageIndex));
+constexpr double kBytesPerMegabyte = 1024.0 * 1024.0;
 
 SparseMatrix sparseBoundary(const cobordism::ChainComplex &K, int k) {
   const int rows = (k >= 1) ? static_cast<int>(K.numSimplices(k - 1)) : 0;
@@ -39,25 +48,72 @@ SparseMatrix sparseBoundary(const cobordism::ChainComplex &K, int k) {
   return B;
 }
 
-// Numerical rank at tolerance kappa * max(m,n) * eps * sigma_max, and the
-// singular values (descending).
-std::pair<int, Eigen::VectorXd> numericalRank(const Eigen::MatrixXcd &A, double kappa,
-                                              double *toleranceOut = nullptr) {
-  if (A.rows() == 0 || A.cols() == 0) {
-    if (toleranceOut) *toleranceOut = 0.0;
-    return {0, Eigen::VectorXd()};
-  }
-  Eigen::JacobiSVD<Eigen::MatrixXcd> svd(A);
-  const Eigen::VectorXd sv = svd.singularValues();
-  const double tol = kappa * static_cast<double>(std::max(A.rows(), A.cols())) * kEps * sv(0);
-  if (toleranceOut) *toleranceOut = tol;
-  int r = 0;
-  for (int i = 0; i < sv.size(); ++i)
-    if (sv(i) > tol) ++r;
-  return {r, sv};
+}  // namespace
+
+SparseCostMeter::SparseCostMeter(std::string operation, int degree, int dimension)
+    : operation_(std::move(operation)), degree_(degree), dimension_(dimension),
+      startResident_(residentMegabytes()), start_(std::chrono::steady_clock::now()) {}
+
+double SparseCostMeter::residentMegabytes() {
+#if defined(__linux__)
+  std::ifstream statm("/proc/self/statm");
+  long long pages = 0;
+  long long resident = 0;
+  if (statm >> pages >> resident)
+    return static_cast<double>(resident) * static_cast<double>(::sysconf(_SC_PAGESIZE)) /
+           kBytesPerMegabyte;
+#endif
+  return std::numeric_limits<double>::quiet_NaN();
 }
 
-}  // namespace
+SparseCostReport SparseCostMeter::finish(long long systemRows, long long systemNonZeros,
+                                         long long factorNonZeros,
+                                         long long rightHandSides) const {
+  SparseCostReport report;
+  report.operation = operation_;
+  report.degree = degree_;
+  report.dimension = dimension_;
+  report.systemRows = systemRows;
+  report.systemNonZeros = systemNonZeros;
+  report.factorNonZeros = factorNonZeros;
+  report.rightHandSides = rightHandSides;
+  report.wallSeconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - start_).count();
+  const double endResident = residentMegabytes();
+  report.residentMegabytes = endResident - startResident_;
+  if (factorNonZeros > 0) {
+    report.factorMegabytes =
+        static_cast<double>(factorNonZeros) * kBytesPerStoredEntry / kBytesPerMegabyte;
+    if (systemNonZeros > 0)
+      report.fillIn = static_cast<double>(factorNonZeros) / static_cast<double>(systemNonZeros);
+  }
+  return report;
+}
+
+SparseMatrix stackSparse(const SparseMatrix &top, const SparseMatrix &bottom, int columns) {
+  if (top.rows() > 0 && static_cast<int>(top.cols()) != columns)
+    throw std::invalid_argument("stackSparse: the top block has " + std::to_string(top.cols()) +
+                                " columns, expected " + std::to_string(columns));
+  if (bottom.rows() > 0 && static_cast<int>(bottom.cols()) != columns)
+    throw std::invalid_argument("stackSparse: the bottom block has " +
+                                std::to_string(bottom.cols()) + " columns, expected " +
+                                std::to_string(columns));
+  const int rows = static_cast<int>(top.rows() + bottom.rows());
+  std::vector<Eigen::Triplet<Complex>> trip;
+  trip.reserve(static_cast<std::size_t>(top.nonZeros() + bottom.nonZeros()));
+  const auto scatter = [&](const SparseMatrix &A, int rowOffset) {
+    for (int col = 0; col < A.outerSize(); ++col)
+      for (SparseMatrix::InnerIterator it(A, col); it; ++it)
+        trip.emplace_back(rowOffset + static_cast<int>(it.row()), static_cast<int>(it.col()),
+                          it.value());
+  };
+  scatter(top, 0);
+  scatter(bottom, static_cast<int>(top.rows()));
+  SparseMatrix S(rows, columns);
+  S.setFromTriplets(trip.begin(), trip.end());
+  S.makeCompressed();
+  return S;
+}
 
 struct ChainHodge::Factorization {
   Eigen::SparseLU<SparseMatrix> lu;
@@ -229,24 +285,85 @@ Eigen::MatrixXcd ChainHodge::hodgeOperator(int k) const {
   return solveSparse(k, pencil(k).A);
 }
 
-Eigen::MatrixXcd ChainHodge::stackedMatrix(int k) const {
+SparseMatrix ChainHodge::stackedMatrix(int k) const {
+  checkDegree(k);
   const int d = K_.dimension();
   const int n = size(k);
   const SparseMatrix &Mk = sparse_[static_cast<std::size_t>(k)];
-  Eigen::MatrixXcd top, bottom;
+  SparseMatrix top, bottom;
   if (preset_ == Preset::L2) {
     // S = [∂_{k+1}^T ; ∂_k M_k]
-    if (k < d) top = Eigen::MatrixXcd(SparseMatrix(boundary_[static_cast<std::size_t>(k) + 1].transpose()));
-    if (k >= 1) bottom = Eigen::MatrixXcd(boundary_[static_cast<std::size_t>(k)] * Mk);
+    if (k < d) top = SparseMatrix(boundary_[static_cast<std::size_t>(k) + 1].transpose());
+    if (k >= 1) bottom = SparseMatrix(boundary_[static_cast<std::size_t>(k)] * Mk);
   } else {
     // S = [∂_k ; ∂_{k+1}^T G_k]
-    if (k >= 1) top = Eigen::MatrixXcd(boundary_[static_cast<std::size_t>(k)]);
-    if (k < d) bottom = Eigen::MatrixXcd(SparseMatrix(boundary_[static_cast<std::size_t>(k) + 1].transpose()) * Mk);
+    if (k >= 1) top = boundary_[static_cast<std::size_t>(k)];
+    if (k < d)
+      bottom = SparseMatrix(SparseMatrix(boundary_[static_cast<std::size_t>(k) + 1].transpose()) * Mk);
   }
-  Eigen::MatrixXcd S(top.rows() + bottom.rows(), n);
-  if (top.rows() > 0) S.topRows(top.rows()) = top;
-  if (bottom.rows() > 0) S.bottomRows(bottom.rows()) = bottom;
-  return S;
+  return stackSparse(top, bottom, n);
+}
+
+SparseKernelRead ChainHodge::sparseNullSpace(const SparseMatrix &S, double kappa,
+                                             SparseCostReport *report) {
+  SparseKernelRead read;
+  // A matrix carries no degree, so the report says so rather than naming one.
+  const SparseCostMeter meter("stacked-qr", -1, static_cast<int>(S.cols()));
+  const SparseKernel kernel = SparseRank::kernel(S, kappa);
+  read.split = kernel.split;
+  read.rank = kernel.split.rank;
+  read.tolerance = kernel.split.tolerance;
+  read.kernel = kernel.basis;
+  // The factorization belongs to `SparseRank`, which does not publish the
+  // stored entries of its factors, so the factor count is zero here and the
+  // fill-in and factor memory derived from it are quiet NaN. The wall time and
+  // the process memory of the whole read are measured.
+  read.cost = meter.finish(static_cast<long long>(S.rows()),
+                           static_cast<long long>(S.nonZeros()), 0,
+                           static_cast<long long>(read.kernel.cols()));
+  if (report) *report = read.cost;
+  return read;
+}
+
+Eigen::MatrixXcd ChainHodge::applyPencilOperator(int k, const Eigen::MatrixXcd &Z) const {
+  checkDegree(k);
+  const int n = size(k);
+  if (Z.rows() != n)
+    throw std::invalid_argument("ChainHodge::applyPencilOperator: the operand has " +
+                                std::to_string(Z.rows()) + " rows, expected " + std::to_string(n));
+  const int d = K_.dimension();
+  const SparseMatrix &Mk = sparse_[static_cast<std::size_t>(k)];
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(n, Z.cols());
+  if (Z.cols() == 0) return out;
+  if (preset_ == Preset::L2) {
+    // Ã_k = M_k ∂_k^T M_{k-1}^{-1} ∂_k M_k + ∂_{k+1} M_{k+1} ∂_{k+1}^T
+    if (k >= 1) {
+      const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
+      const Eigen::MatrixXcd W = Bk * Eigen::MatrixXcd(Mk * Z);
+      const Eigen::MatrixXcd Y = solveSparse(k - 1, W);
+      out += Mk * Eigen::MatrixXcd(SparseMatrix(Bk.transpose()) * Y);
+    }
+    if (k < d) {
+      const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
+      const SparseMatrix &Mk1 = sparse_[static_cast<std::size_t>(k) + 1];
+      const Eigen::MatrixXcd W = SparseMatrix(Bk1.transpose()) * Z;
+      out += Bk1 * Eigen::MatrixXcd(Mk1 * W);
+    }
+  } else {
+    // A_k = ∂_k^T G_{k-1} ∂_k + G_k ∂_{k+1} G_{k+1}^{-1} ∂_{k+1}^T G_k
+    if (k >= 1) {
+      const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
+      const Eigen::MatrixXcd W = sparse_[static_cast<std::size_t>(k) - 1] * Eigen::MatrixXcd(Bk * Z);
+      out += SparseMatrix(Bk.transpose()) * W;
+    }
+    if (k < d) {
+      const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
+      const Eigen::MatrixXcd W = SparseMatrix(Bk1.transpose()) * Eigen::MatrixXcd(Mk * Z);
+      const Eigen::MatrixXcd Y = solveSparse(k + 1, W);
+      out += Mk * Eigen::MatrixXcd(Bk1 * Y);
+    }
+  }
+  return out;
 }
 
 HarmonicRead ChainHodge::harmonicChains(int k, double kappa, bool forceSparse) const {
@@ -256,45 +373,31 @@ HarmonicRead ChainHodge::harmonicChains(int k, double kappa, bool forceSparse) c
   read.degree = k;
   const bool dense = !forceSparse && n < crossover_;
   read.dense = dense;
-  const Eigen::MatrixXcd S = stackedMatrix(k);
+  const SparseMatrix S = stackedMatrix(k);
   Eigen::MatrixXcd kernel;
+  SingularSplit split;
   if (S.rows() == 0) {
     kernel = Eigen::MatrixXcd::Identity(n, n);
-    read.rank = 0;
-    read.tolerance = 0.0;
-    read.gap = std::numeric_limits<double>::infinity();
+    split.dense = dense;
   } else if (dense) {
-    Eigen::JacobiSVD<Eigen::MatrixXcd> svd(S, Eigen::ComputeFullV);
-    const Eigen::VectorXd sv = svd.singularValues();
-    const double tol = kappa * static_cast<double>(std::max(S.rows(), S.cols())) * kEps * sv(0);
-    int r = 0;
-    for (int i = 0; i < sv.size(); ++i)
-      if (sv(i) > tol) ++r;
-    read.rank = r;
-    read.tolerance = tol;
-    kernel = svd.matrixV().rightCols(n - r);
-    if (r < sv.size() && sv(r) > 0.0)
-      read.gap = (r >= 1) ? sv(r - 1) / sv(r) : std::numeric_limits<double>::infinity();
-    else
-      read.gap = std::numeric_limits<double>::infinity();
+    const Eigen::MatrixXcd Sd(S);
+    Eigen::JacobiSVD<Eigen::MatrixXcd> svd(Sd, Eigen::ComputeFullV);
+    split = SparseRank::fromSingularValues(svd.singularValues(), Sd.rows(), Sd.cols(), kappa);
+    kernel = svd.matrixV().rightCols(n - split.rank);
   } else {
-    SparseMatrix ST = SparseMatrix(S.adjoint().sparseView());  // ker S = range(S^H)^perp
-    ST.makeCompressed();
-    double colNorm = 0.0;
-    for (int c = 0; c < S.cols(); ++c) colNorm = std::max(colNorm, S.col(c).norm());
-    const double tol = kappa * static_cast<double>(std::max(S.rows(), S.cols())) * kEps * colNorm;
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
-    qr.setPivotThreshold(tol);
-    qr.compute(ST);
-    if (qr.info() != Eigen::Success)
-      throw std::runtime_error("ChainHodge::harmonicChains: sparse QR failed");
-    const int r = static_cast<int>(qr.rank());
-    read.rank = r;
-    read.tolerance = tol;
-    Eigen::MatrixXcd Q = qr.matrixQ() * Eigen::MatrixXcd::Identity(n, n);
-    kernel = Q.rightCols(n - r);
-    read.gap = std::numeric_limits<double>::quiet_NaN();
+    // The production path: neither S nor the orthogonal factor is densified,
+    // and the sparse read measures the singular values on either side of the
+    // rank decision rather than leaving the gap unmeasured.
+    SparseKernel sk = SparseRank::kernel(S, kappa);
+    split = sk.split;
+    kernel = std::move(sk.basis);
   }
+  read.rank = split.rank;
+  read.tolerance = split.tolerance;
+  read.gap = split.gap;
+  read.largestSingular = split.largest;
+  read.lastKept = split.sigmaAt;
+  read.firstDiscarded = split.sigmaNext;
   read.nullity = static_cast<int>(kernel.cols());
   if (preset_ == Preset::L2) {
     read.images = kernel;                                      // z = ker S
@@ -315,49 +418,62 @@ Eigen::MatrixXcd ChainHodge::harmonicGram(const HarmonicRead &read) const {
   return read.chains.transpose() * read.images;
 }
 
-RankReport ChainHodge::rankConditions(int k, double kappa) const {
+RankReport ChainHodge::rankConditions(int k, double kappa, bool forceSparse) const {
   checkDegree(k);
   const int d = K_.dimension();
-  requireDense(size(k), "rankConditions");
   RankReport rep;
   rep.degree = k;
   rep.kappa = kappa;
+  rep.dense = !forceSparse && size(k) < crossover_;
   const int rankLower = (k >= 1) ? K_.rankOfBoundary(k) : 0;
   const int rankUpper = (k < d) ? K_.rankOfBoundary(k + 1) : 0;
   rep.expected = {{rankUpper, rankLower, rankLower, rankUpper}};
-  const SparseMatrix &Mk = sparse_[static_cast<std::size_t>(k)];
-  std::array<int, 4> m{{0, 0, 0, 0}};
-  if (preset_ == Preset::L2) {
-    if (k < d) {
-      const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
-      const SparseMatrix &Mk1 = sparse_[static_cast<std::size_t>(k) + 1];
-      const Eigen::MatrixXcd Z = solveSparse(k, Eigen::MatrixXcd(Bk1));
-      m[0] = numericalRank(Eigen::MatrixXcd(SparseMatrix(Bk1.transpose())) * Z, kappa).first;
-      m[3] = numericalRank(Eigen::MatrixXcd(Bk1 * Mk1 * SparseMatrix(Bk1.transpose())), kappa).first;
-    }
-    if (k >= 1) {
-      const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
-      m[1] = numericalRank(Eigen::MatrixXcd(Bk * Mk * SparseMatrix(Bk.transpose())), kappa).first;
-      const Eigen::MatrixXcd Y = solveSparse(k - 1, Eigen::MatrixXcd(Bk));
-      m[2] = numericalRank(Eigen::MatrixXcd(SparseMatrix(Bk.transpose())) * Y, kappa).first;
-    }
-  } else {
-    if (k < d) {
-      const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
-      m[0] = numericalRank(Eigen::MatrixXcd(SparseMatrix(Bk1.transpose()) * Mk * Bk1), kappa).first;
-      const Eigen::MatrixXcd Y = solveSparse(k + 1, Eigen::MatrixXcd(SparseMatrix(Bk1.transpose())));
-      m[3] = numericalRank(Eigen::MatrixXcd(Bk1) * Y, kappa).first;
-    }
-    if (k >= 1) {
-      const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
-      const SparseMatrix &Gk0 = sparse_[static_cast<std::size_t>(k) - 1];
-      const Eigen::MatrixXcd Y = solveSparse(k, Eigen::MatrixXcd(SparseMatrix(Bk.transpose())));
-      m[1] = numericalRank(Eigen::MatrixXcd(Bk) * Y, kappa).first;
-      m[2] = numericalRank(Eigen::MatrixXcd(SparseMatrix(Bk.transpose()) * Gk0 * Bk), kappa).first;
-    }
+  // Every product is P = C^T X^{+-1} C with C a boundary map or its transpose
+  // and X a sparse metric (M_k for L2, the chain metric G_k for GRASSMANN_ALL):
+  //   L2:        R1 d_{k+1}^T M_k^{-1} d_{k+1}   R2 d_k M_k d_k^T
+  //              R3 d_k^T M_{k-1}^{-1} d_k       R4 d_{k+1} M_{k+1} d_{k+1}^T
+  //   Grassmann: R1 d_{k+1}^T G_k d_{k+1}        R2 d_k G_k^{-1} d_k^T
+  //              R3 d_k^T G_{k-1} d_k            R4 d_{k+1} G_{k+1}^{-1} d_{k+1}^T
+  const bool l2 = preset_ == Preset::L2;
+  struct Product {
+    bool present{false};
+    SparseMatrix C{};
+    int metric{0};
+    bool inverse{false};
+  };
+  std::array<Product, 4> products{};
+  if (k < d) {
+    const SparseMatrix &Bk1 = boundary_[static_cast<std::size_t>(k) + 1];
+    products[0] = {true, Bk1, k, l2};
+    products[3] = {true, SparseMatrix(Bk1.transpose()), k + 1, !l2};
   }
-  rep.measured = m;
-  for (int i = 0; i < 4; ++i) rep.holds[static_cast<std::size_t>(i)] = (m[static_cast<std::size_t>(i)] == rep.expected[static_cast<std::size_t>(i)]);
+  if (k >= 1) {
+    const SparseMatrix &Bk = boundary_[static_cast<std::size_t>(k)];
+    products[1] = {true, SparseMatrix(Bk.transpose()), k, !l2};
+    products[2] = {true, Bk, k - 1, l2};
+  }
+  for (std::size_t i = 0; i < 4; ++i) {
+    SingularSplit split;
+    split.dense = rep.dense;
+    const Product &P = products[i];
+    if (P.present) {
+      const SparseMatrix &X = sparse_[static_cast<std::size_t>(P.metric)];
+      const int rho = rep.expected[i];
+      if (rep.dense) {
+        const Eigen::MatrixXcd XC = P.inverse ? solveSparse(P.metric, Eigen::MatrixXcd(P.C))
+                                              : Eigen::MatrixXcd(X * P.C);
+        const Eigen::MatrixXcd product = Eigen::MatrixXcd(SparseMatrix(P.C.transpose())) * XC;
+        Eigen::JacobiSVD<Eigen::MatrixXcd> svd(product);
+        split = SparseRank::fromSingularValues(svd.singularValues(), product.rows(), product.cols(),
+                                               kappa, rho);
+      } else {
+        split = SparseRank::congruence(P.C, X, P.inverse, rho, kappa);
+      }
+    }
+    rep.splits[i] = split;
+    rep.measured[i] = split.rank;
+  }
+  for (int i = 0; i < 4; ++i) rep.holds[static_cast<std::size_t>(i)] = (rep.measured[static_cast<std::size_t>(i)] == rep.expected[static_cast<std::size_t>(i)]);
   rep.decompositionHolds = rep.holds[0] && rep.holds[1];
   rep.kernelIsHarmonic = rep.decompositionHolds && rep.holds[2] && rep.holds[3];
   return rep;

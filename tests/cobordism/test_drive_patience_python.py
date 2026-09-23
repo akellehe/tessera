@@ -28,7 +28,11 @@ sys.path.insert(0, os.path.join(
         os.path.dirname(os.path.abspath(__file__)))),
     "examples", "cobordism"))
 
+import tessera as T
+
 from tessera.drivers import emergence as ea
+
+cob = T.cobordism
 
 #: A host small enough that a unit is cheap; the assertions here are about the
 #: loop's counting, not about any geometry it drives.
@@ -106,9 +110,22 @@ def test_a_patience_the_budget_cannot_reach_ends_on_the_budget():
 
 
 def test_an_improving_unit_leaves_no_stall_behind():
+    # A unit that improves needs a drive that can move. The neutral host is
+    # built outside the Kontsevich-Segal allowable domain (margin -4.91), so
+    # under the default Whitney metric every proposal is refused as a
+    # non-member of the configuration space, the objective stays at
+    # 4078.826226 for every unit and every unit stalls (#1185). The subject
+    # here is the loop's counting, so the drive runs on the diagonal weights,
+    # whose configuration space is all of complex z: there the objective goes
+    # 4223.42 -> 70.12 -> 69.28 and no unit stalls.
     config = ea.build_config(size=SMALL, steps=2, tolerance=TRIVIAL,
                              patience=2)
-    result = ea.drive(config, progress=False)
+    previous = cob.HodgeLaplacian.defaultMetricSource()
+    cob.HodgeLaplacian.setDefaultMetricSource(cob.HodgeMetricSource.DiagonalWeights)
+    try:
+        result = ea.drive(config, progress=False)
+    finally:
+        cob.HodgeLaplacian.setDefaultMetricSource(previous)
     assert result.terminator == ea.Terminator.STEPS
     assert result.stalls == 0
 

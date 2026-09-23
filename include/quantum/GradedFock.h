@@ -34,8 +34,9 @@
 //   • Graded Leibniz: d(a⊗b) = da⊗b + (−1)^{deg a} a⊗db, hence d∘d = 0 and
 //     Δ_{A⊗B} = Δ_A⊗1 + 1⊗Δ_B blockwise (Künneth at the Hodge level).
 //   • dΓ(L_A ⊕ L_B) = dΓ(L_A)⊗1 + 1⊗dΓ(L_B) under the direct-sum
-//     identification; coupling blocks become hopping terms
-//     Σ_{i∈A, j∈B} C_ij a_i†a_j + h.c.
+//     identification; the two directed coupling blocks become hopping terms
+//     Σ_{i∈A, j∈B} (C_AB)_ij a_i†a_j + Σ_{i∈B, j∈A} (C_BA)_ij a_i†a_j, with
+//     no Hermitian-conjugate relation between C_AB and C_BA assumed.
 //
 // ─── Mode order is a compilation artifact ────────────────────────────────
 //
@@ -453,11 +454,18 @@ class GradedTensorComplex {
 ///   • joint CAR generators satisfy `creation(i in A) = liftLeft(a_i†)`,
 ///     `creation(j in B) = liftRight(a_j†, odd)`, i.e. direct sums become
 ///     graded tensor products;
-///   • \f$ d\Gamma\big(\begin{smallmatrix}L_A & C\\ C^\dagger &
+///   • \f$ d\Gamma\big(\begin{smallmatrix}L_A & C_{AB}\\ C_{BA} &
 ///     L_B\end{smallmatrix}\big) = d\Gamma(L_A)\otimes 1 + 1\otimes
-///     d\Gamma(L_B) + \sum_{i\in A,\,j\in B}\big(C_{ij}\,a_i^\dagger a_j +
-///     \overline{C_{ij}}\, a_j^\dagger a_i\big) \f$ — coupling blocks become
-///     hopping terms;
+///     d\Gamma(L_B) + \sum_{i\in A,\,j\in B}(C_{AB})_{ij}\,
+///     \varepsilon_{A,i}\,\iota^{j}_{B} + \sum_{i\in B,\,j\in A}
+///     (C_{BA})_{ij}\,\varepsilon_{B,i}\,\iota^{j}_{A} \f$ — the two
+///     directed coupling blocks become hopping terms (\f$ \varepsilon \f$ is
+///     exterior creation \f$ a^\dagger \f$, \f$ \iota \f$ the contraction
+///     \f$ a \f$ by the dual mode). No Hermitian-conjugate relation between
+///     \f$ C_{AB} \f$ and \f$ C_{BA} \f$ is assumed; the three-block form
+///     with \f$ C_{BA} = C^\dagger \f$ is the special case of a certified
+///     ∗-structure, and a caller reports that relation only after certifying
+///     one;
 ///   • the graded swap \f$ S(x\otimes y) = (-1)^{|x||y|}\, y\otimes x \f$
 ///     exchanges the factors with odd/odd sign −1 and +1 on every other
 ///     elementary parity combination.
@@ -510,9 +518,21 @@ class FockDirectSum {
     [[nodiscard]] SparseOp gradedSwapMatrix() const;
 
     /// Assemble the block one-particle matrix
-    /// \f$ L = \begin{pmatrix} L_A & C \\ C^\dagger & L_B \end{pmatrix} \f$
+    /// \f$ L = \begin{pmatrix} L_A & C_{AB} \\ C_{BA} & L_B \end{pmatrix} \f$
     /// on \f$ h_A \oplus h_B \f$ from an \f$ M_A\times M_A \f$ block, an
-    /// \f$ M_B\times M_B \f$ block and an \f$ M_A\times M_B \f$ coupling.
+    /// \f$ M_B\times M_B \f$ block and the two directed couplings:
+    /// \f$ C_{AB} \f$ (\f$ M_A\times M_B \f$, hopping B → A) and
+    /// \f$ C_{BA} \f$ (\f$ M_B\times M_A \f$, hopping A → B). Each is placed
+    /// as given; no relation between them is assumed or imposed.
+    /// @throws std::invalid_argument on shape mismatches.
+    [[nodiscard]] static Eigen::MatrixXcd assembleBlockOneParticle(
+        const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
+        const Eigen::MatrixXcd& couplingAB, const Eigen::MatrixXcd& couplingBA);
+
+    /// The special case of a certified ∗-structure:
+    /// \f$ L = \begin{pmatrix} L_A & C \\ C^\dagger & L_B \end{pmatrix} \f$,
+    /// i.e. the directed form with \f$ C_{BA} = C^\dagger \f$ supplied by the
+    /// caller's certificate, not by this functor.
     /// @throws std::invalid_argument on shape mismatches.
     [[nodiscard]] static Eigen::MatrixXcd assembleBlockOneParticle(
         const Eigen::MatrixXcd& blockA, const Eigen::MatrixXcd& blockB,
@@ -520,7 +540,15 @@ class FockDirectSum {
 
     /// \f$ d\Gamma \f$ of the assembled block one-particle operator on the
     /// joint Fock space — direct sums become graded tensor products and the
-    /// coupling block becomes the hopping term (see class docs).
+    /// two directed coupling blocks become the hopping terms (see class
+    /// docs). The result is non-Hermitian whenever the blocks are.
+    [[nodiscard]] SparseOp dGammaBlock(const Eigen::MatrixXcd& blockA,
+                                       const Eigen::MatrixXcd& blockB,
+                                       const Eigen::MatrixXcd& couplingAB,
+                                       const Eigen::MatrixXcd& couplingBA) const;
+
+    /// \f$ d\Gamma \f$ of the ∗-structure special case
+    /// \f$ \begin{pmatrix} L_A & C \\ C^\dagger & L_B \end{pmatrix} \f$.
     [[nodiscard]] SparseOp dGammaBlock(const Eigen::MatrixXcd& blockA,
                                        const Eigen::MatrixXcd& blockB,
                                        const Eigen::MatrixXcd& coupling) const;
@@ -554,6 +582,23 @@ struct EdgeModeRecord {
     std::string lineageKey{};
 };
 
+/// One cluster's claim on a set of vertices, for the assignment of the
+/// compilation order's primary key.
+///
+/// A mode belongs to the cluster whose support contains both endpoints of its
+/// edge. The key itself is produced by the component hierarchy — for an
+/// oriented cluster lineage read against a cooriented cut it is
+/// `observables::ClusterLineage::orderKey`, whose lexicographic order is the
+/// numeric order of the lineage numbers — and this structure only says which
+/// vertices carry it.
+struct LineageAssignment {
+    /// The vertices of the cluster's support, in any order. A mode is assigned
+    /// this key exactly when both of its endpoints appear here.
+    std::vector<std::uint64_t> vertices{};
+    /// The compilation-order key of the cluster's oriented lineage.
+    std::string lineageKey{};
+};
+
 /// # EdgeModeRegistry
 ///
 /// The edge-mode basis bookkeeping for the exterior algebra: each edge
@@ -570,6 +615,15 @@ struct EdgeModeRecord {
 /// tie-break. The order is a compilation artifact of the order-independent
 /// abstract exterior algebra (no Kasteleyn orientation is required); it
 /// exists so that bitsets and matrices can be built reproducibly.
+///
+/// The primary key is the physical one. `assignLineageKeys` gives each mode
+/// the compilation-order key of the cluster whose support contains both of its
+/// endpoints, and for an oriented cluster lineage read against a cooriented cut
+/// that key is `observables::ClusterLineage::orderKey`, whose lexicographic
+/// order is the numeric order of the lineage numbers. The modes one cluster
+/// carries are therefore compiled together, and the clusters follow the order
+/// of relabelling-invariant integers rather than the order in which cells
+/// happen to be stored; the vertex pair only breaks ties inside one cluster.
 ///
 /// ## Relabeling parity
 ///
@@ -601,9 +655,11 @@ class EdgeModeRegistry {
     /// Each edge is registered on its own stored source → target direction with
     /// `orientationSign = +1`, so `canonicalOrientationSign` reports exactly how
     /// that stored orientation sits against the canonical min → max direction.
-    /// Every mode gets `lineageKey`, so the canonical order reduces to the
-    /// deterministic endpoint sort; a caller with genuine component lineage
-    /// assigns it afterwards. Edges with a missing endpoint are skipped. The
+    /// Every mode gets `lineageKey`, which places the whole complex in one
+    /// lineage and reduces the canonical order to the deterministic endpoint
+    /// sort; `assignLineageKeys` then replaces that placeholder with the
+    /// oriented component lineage, which is the order the exterior algebra is
+    /// actually compiled in. Edges with a missing endpoint are skipped. The
     /// registry stores incidence and lineage only — it never reads a length or a
     /// connection phase.
     ///
@@ -612,6 +668,23 @@ class EdgeModeRegistry {
     [[nodiscard]] static EdgeModeRegistry fromSpacetime(
         const ::tessera::spacetime::Spacetime& spacetime,
         std::string lineageKey = "K1");
+
+    /// `fromSpacetime` followed by `assignLineageKeys`: register one mode per
+    /// edge and give each one the compilation-order key of the cluster whose
+    /// support contains both of its endpoints.
+    ///
+    /// `unassignedKey` is the key every mode keeps that no cluster claims. It
+    /// sorts after every lineage key produced by
+    /// `observables::ClusterLineage::orderKey`, because those begin with
+    /// "lineage:" and the default begins with a tilde, so the modes no cluster
+    /// carries are compiled last and never interleave with a cluster's own.
+    ///
+    /// @throws std::invalid_argument on a malformed spacetime as
+    ///         `fromSpacetime`, or when two assignments both claim one mode.
+    [[nodiscard]] static EdgeModeRegistry fromSpacetimeWithLineages(
+        const ::tessera::spacetime::Spacetime& spacetime,
+        const std::vector<LineageAssignment>& assignments,
+        std::string unassignedKey = "~unassigned");
 
     /// Register the edge (vertexA → vertexB) with orientation sign ±1 and
     /// its oriented-component lineage key. Returns the assigned modeId
@@ -645,6 +718,29 @@ class EdgeModeRegistry {
     /// stored direction fixed. One-particle amplitudes attached to this mode
     /// flip sign; occupation observables are unchanged.
     void flipOrientation(std::uint64_t modeId);
+
+    /// Replace the oriented component lineage key of `modeId`. The mode's
+    /// incidence and orientation are untouched; only the primary key of the
+    /// compilation order changes.
+    /// @throws std::invalid_argument on an unknown modeId.
+    void setLineageKey(std::uint64_t modeId, std::string lineageKey);
+
+    /// Give every mode the compilation-order key of the cluster whose support
+    /// contains both of its endpoints, and return how many modes were
+    /// assigned.
+    ///
+    /// This is what makes the compilation order the whitepaper's order: the
+    /// primary key of `canonicalModeOrder` becomes the oriented component
+    /// lineage, so the modes one cluster carries are compiled together and the
+    /// clusters follow the order of their lineage numbers, which are
+    /// relabelling-invariant integers. A mode that no assignment claims keeps
+    /// the key it was registered with.
+    ///
+    /// @throws std::invalid_argument when two assignments both contain both
+    ///         endpoints of one mode, which leaves that mode's lineage
+    ///         ambiguous and its position in the order undetermined.
+    std::size_t assignLineageKeys(
+        const std::vector<LineageAssignment>& assignments);
 
     /// The orientation of `modeId` relative to the canonical
     /// (min-vertex → max-vertex) direction:

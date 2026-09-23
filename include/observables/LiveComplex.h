@@ -23,8 +23,9 @@ using namespace ::tessera::spacetime;
 /// Loader and transform layer sitting outside the read-only observables. It
 /// loads a saved combinatorial and metric description back into a live,
 /// skeleton-complete `Spacetime`, and produces a relabeled copy for the RELABEL
-/// gate. It never builds a spacetime of its own and never re-runs the emergent
-/// dynamics; those live in Proton, ProtonIngredients and MultiCobordism. A
+/// gate. It never builds a spacetime of its own and never re-runs the
+/// dynamics; those live in ProtonSynthesis, ProtonIngredients and
+/// MultiCobordism. A
 /// recorded geometry is read back only through `Spacetime::fromVertexTuples`:
 ///
 ///   * `Spacetime::fromVertexTuples` materializes only the top cells (\f$ \partial

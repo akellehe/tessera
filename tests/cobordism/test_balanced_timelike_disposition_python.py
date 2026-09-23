@@ -23,7 +23,7 @@ cobordism = tessera.cobordism
 
 def _cone(balanced, timelike):
     """Apex-edge squared lengths from one cone-in on a fresh node."""
-    node = cobordism.Proton(seed=3, precone=0,
+    node = cobordism.ProtonSynthesis(seed=3, precone=0,
                             balanced_edges=balanced).direct_node(3)
     spacetime = node.st
 

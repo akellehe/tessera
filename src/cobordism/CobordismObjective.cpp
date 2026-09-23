@@ -41,7 +41,11 @@ std::vector<std::string> ObjectiveContext::inputNames() {
           "einstein_hilbert",
           "hodge_entropy_phase_mode",
           "register_residual",
-          "carried_state_energy"};
+          "carried_state_energy",
+          "moment_stiffness_weight",
+          "moment_stiffness_degrees",
+          "moment_stiffness_coefficients",
+          "moment_stiffness_reference"};
 }
 
 // ---------------------------------------------------------------- base
@@ -51,7 +55,7 @@ double CobordismObjective::total(const ObjectiveTerms &terms) {
   // nothing but the declared terms.
   return terms.reggeStationarity + terms.hodgeStationarity +
          terms.connectionStationarity + terms.registerResidual +
-         terms.actionMagnitude + terms.carriedStateEnergy;
+         terms.actionMagnitude + terms.carriedStateEnergy + terms.momentStiffness;
 }
 
 std::vector<std::string> CobordismObjective::declaredTermNames() {
@@ -62,7 +66,8 @@ std::vector<std::string> CobordismObjective::declaredTermNames() {
           ObjectiveTermName::kConnectionStationarity,
           ObjectiveTermName::kRegisterResidual,
           ObjectiveTermName::kActionMagnitude,
-          ObjectiveTermName::kCarriedStateEnergy};
+          ObjectiveTermName::kCarriedStateEnergy,
+          ObjectiveTermName::kMomentStiffness};
 }
 
 namespace {
@@ -73,6 +78,22 @@ namespace {
 double carriedStateTerm(const ObjectiveContext &context) {
   if (context.carriedStateEnergyWeight == 0.0) return 0.0;
   return context.carriedStateEnergyWeight * context.carriedStateEnergy;
+}
+
+/// The spectral-moment stiffness about the carrier,
+/// beta_M sum_k Re S_{M,k}, summed over the declared degrees. Zero when its
+/// weight is zero or nothing is declared.
+double momentStiffnessTerm(const ObjectiveContext &context) {
+  if (context.momentStiffnessWeight == 0.0 || !context.spacetime) return 0.0;
+  if (context.momentStiffnessReference.size() != context.momentStiffnessDegrees.size())
+    throw std::invalid_argument("the moment stiffness needs one carrier reference per declared degree");
+  const HodgeLaplacian hodge(context.spacetime);
+  double total = 0.0;
+  for (std::size_t index = 0; index < context.momentStiffnessDegrees.size(); ++index)
+    total += hodge.spectralMomentStiffness(context.momentStiffnessDegrees[index],
+                                           context.momentStiffnessReference[index],
+                                           context.momentStiffnessCoefficients).real();
+  return context.momentStiffnessWeight * total;
 }
 
 /// A per-edge mask from the resolved scope. An empty mask means every edge, the
@@ -268,6 +289,24 @@ void addCarriedStateAscent(const ObjectiveDirectionContext &context,
     *baseline += scalar.carriedStateEnergyWeight * scalar.carriedStateEnergy;
 }
 
+/// The spectral-moment stiffness's exact contribution to the direction. For
+/// Re S_M the h of the other terms is the holomorphic gradient dS_M/dz, and the
+/// steepest-ascent displacement is its conjugate.
+void addMomentStiffnessAscent(const ObjectiveDirectionContext &context,
+                              Eigen::VectorXcd *ascent, double *baseline) {
+  const auto &scalar = context.scalar;
+  if (scalar.momentStiffnessWeight == 0.0 || !scalar.spacetime) return;
+  const HodgeLaplacian hodge(scalar.spacetime);
+  for (std::size_t index = 0; index < scalar.momentStiffnessDegrees.size(); ++index) {
+    const int degree = scalar.momentStiffnessDegrees[index];
+    const auto gradient = hodge.spectralMomentStiffnessGradient(
+        degree, scalar.momentStiffnessReference[index], scalar.momentStiffnessCoefficients);
+    for (std::size_t edgeIndex = 0; edgeIndex < context.edgeCount && edgeIndex < gradient.size(); ++edgeIndex)
+      (*ascent)(edgeIndex) += scalar.momentStiffnessWeight * std::conj(gradient[edgeIndex]);
+  }
+  if (baseline) *baseline += momentStiffnessTerm(scalar);
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- joint
@@ -288,6 +327,7 @@ ObjectiveTerms JointStationarityObjective::terms(
     return terms;
   }
   terms.carriedStateEnergy = carriedStateTerm(context);
+  terms.momentStiffness = momentStiffnessTerm(context);
   terms.reggeStationarity = reggeTerm(context);
 
   // Summed over the declared Hodge degrees, which are configured independently
@@ -295,8 +335,9 @@ ObjectiveTerms JointStationarityObjective::terms(
   terms.hodgeStationarity =
       hodgeTermFrom(context, hodgeContributions(context));
 
-  // The only term with a phi gradient. Every L_k is blind to the connection, so
-  // without it phi is a declared field that no update can move.
+  // The only term with a phi gradient: the Hodge-entropy terms see phi through
+  // h_k(z, U) but are differentiated in z alone, so without it phi is a
+  // declared field no update can move.
   const auto edgeCount =
       context.spacetime && context.spacetime->getEdgeList()
           ? context.spacetime->getEdgeList()->toVector().size()
@@ -388,6 +429,7 @@ ObjectiveDirection JointStationarityObjective::direction(
   }
 
   addCarriedStateAscent(context, &result.ascent, &baseline);
+  addMomentStiffnessAscent(context, &result.ascent, &baseline);
   // The connection term. Its gradient is with respect to phi, not z, so it
   // contributes to `phaseAscent` and never to `ascent`: the two fields move on
   // their own coordinates and are never mixed. `grad ||h||^2 = 2 conj(H) h`
@@ -428,6 +470,7 @@ ObjectiveTerms LegacyObjective::terms(const ObjectiveContext &context) const {
     return terms;
   }
   terms.carriedStateEnergy = carriedStateTerm(context);
+  terms.momentStiffness = momentStiffnessTerm(context);
   terms.reggeStationarity = reggeTerm(context);
   terms.registerResidual = registerResidualTerm(context, context.gamma);
   return terms;
@@ -458,6 +501,7 @@ ObjectiveDirection LegacyObjective::direction(
         scalar.spacetime, context.edgeCount, scalar.reggeWeight,
         scopeMask(scalar, context.edgeCount), nullptr);
   addCarriedStateAscent(context, &result.ascent, nullptr);
+  addMomentStiffnessAscent(context, &result.ascent, nullptr);
   return result;
 }
 
@@ -479,6 +523,7 @@ ObjectiveTerms MediatedCorrespondenceObjective::terms(
     return terms;
   }
   terms.carriedStateEnergy = carriedStateTerm(context);
+  terms.momentStiffness = momentStiffnessTerm(context);
   terms.actionMagnitude =
       context.einsteinHilbert && context.reggeWeight != 0.0
           ? context.reggeWeight *
@@ -513,6 +558,7 @@ ObjectiveDirection MediatedCorrespondenceObjective::direction(
     }
   }
   addCarriedStateAscent(context, &result.ascent, nullptr);
+  addMomentStiffnessAscent(context, &result.ascent, nullptr);
   return result;
 }
 

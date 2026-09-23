@@ -88,10 +88,16 @@ std::complex<double> ReggeSolver::deficitAngle(SimplexPtr hinge) const {
     return hinge->deficitAngle();
 }
 
-std::complex<double> ReggeSolver::hingeArea(SimplexPtr hinge) {
-    // The signed Lorentzian area: a timelike hinge's area is imaginary, not
-    // |l^2|-real. There is no Wick-rotated mode.
-    return hinge->area();
+std::complex<double> ReggeSolver::hingeContent(SimplexPtr hinge) {
+    // The (d-2)-content of the hinge: its length on a three-dimensional mesh,
+    // its area on a four-dimensional one, its volume on a five-dimensional one.
+    // Simplex::area() is Heron's formula on the first three edges, so it is the
+    // content only when the hinge is a triangle (d = 4); Simplex::volume() is
+    // sqrt(det G)/(d-2)! in every dimension and coincides with area() on a
+    // triangle, including the imaginary value of a timelike one (principal
+    // complex root of the signed Gram determinant; there is no Wick-rotated
+    // mode).
+    return hinge->volume();
 }
 
 // =====================================================================
@@ -132,7 +138,7 @@ std::vector<SimplexPtr> ReggeSolver::collectHinges() const {
 std::complex<double> ReggeSolver::reggeAction() const {
     std::complex<double> S{0.0, 0.0};
     for (const auto &h : collectHinges()) {
-        S += hingeArea(h) * h->deficitAngle();
+        S += hingeContent(h) * h->deficitAngle();
     }
     return S;
 }

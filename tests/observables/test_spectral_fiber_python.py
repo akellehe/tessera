@@ -46,6 +46,16 @@ import tessera
 obs = tessera.observables
 cob = tessera.cobordism
 
+# Every closed form and regime anchor in this module is the DIAGONAL-weight
+# operator's: the Krein inertia, the Content-convention non-normal spectra and
+# the exact spectra of the fixtures above are properties of
+# L_k = W_k^-1 d^T W d + d W^-1 d^T W. The process default metric source is the
+# chain-level Whitney pencil (#1185), whose degree >= 1 reads are the covariant
+# h_k(s, U) in the complex-symmetric pencil regime with no inertia, so this
+# module names the diagonal source at every tracker it builds. The pencil path
+# is covered by tests/observables/test_spectral_fiber_pencil_regime_python.py.
+DIAGONAL = cob.HodgeMetricSource.DiagonalWeights
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cobordism"))
 from _holed_surface import holed_surface  # noqa: E402
 
@@ -152,7 +162,7 @@ def _tracker(st, **cfg_kwargs):
     cfg = obs.SpectralFiberConfig()
     for k, v in cfg_kwargs.items():
         setattr(cfg, k, v)
-    return obs.SpectralFiberTracker(st, cfg)
+    return obs.SpectralFiberTracker(st, cfg, metric_source=DIAGONAL)
 
 
 # The #808 localization acceptance conjunct: a band certifies only when its
@@ -225,7 +235,7 @@ class TestExactSmallFixtures(unittest.TestCase):
         self.assertLessEqual(abs(c.frequencyUpper - 3.0), MACHINE)
         st2 = _triangle(alpha=1.0)
         tracker = obs.SpectralFiberTracker(
-            st2, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content)
+            st2, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
         read2 = tracker.enumerateBands([0, 1, 2], 1)
         complex_band = min(
             read2.fibers,
@@ -288,7 +298,8 @@ class TestExactSmallFixtures(unittest.TestCase):
         st = _triangle(alpha=2.0)
         read = _tracker(st).enumerateBands([0, 1, 2], 1)
         n = read.dimension
-        L_ref = np.array(cob.HodgeLaplacian(st).laplacian(1)).reshape(n, n)
+        L_ref = np.array(cob.HodgeLaplacian(
+            st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL).laplacian(1)).reshape(n, n)
         self.assertLessEqual(np.abs(_reconstruct(read) - L_ref).max(), 1e-10)
 
     def test_holed_surface_recovers_harmonic_rank_by_gap_rule(self):
@@ -320,7 +331,8 @@ class TestExactSmallFixtures(unittest.TestCase):
         self.assertLessEqual(np.abs(P @ P - P).max(), 1e-9)
         # The full covered spectrum agrees with the independent
         # HodgeLaplacian eigensolve of the same operator.
-        lam_ref = np.sort(np.array(cob.HodgeLaplacian(st).eigenvalues(1)).real)
+        lam_ref = np.sort(np.array(cob.HodgeLaplacian(
+            st, cob.HodgeLaplacian.defaultWeightConvention(), DIAGONAL).eigenvalues(1)).real)
         lam = np.sort(np.array(read.coveredEigenvalues).real)
         self.assertLessEqual(np.abs(lam - lam_ref).max(), 1e-10)
 
@@ -438,7 +450,7 @@ class TestRegimes(unittest.TestCase):
         cfg = obs.SpectralFiberConfig()
         cfg.maxLocalizationExcess = 1.0   # subject: the spectrum
         tracker = obs.SpectralFiberTracker(
-            st, cfg, cob.HodgeWeightConvention.Content)
+            st, cfg, cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
         read = tracker.enumerateBands([0, 1, 2], 1)
         self.assertEqual(read.regime, cob.CertificateRegime.NonNormal)
         self.assertEqual(read.solverPath, "dense-general")
@@ -473,11 +485,11 @@ class TestRegimes(unittest.TestCase):
         from scipy.linalg import eig
         st = _triangle(alpha=1.0)
         tracker = obs.SpectralFiberTracker(
-            st, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content)
+            st, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
         read = tracker.enumerateBands([0, 1, 2], 1)
         n = read.dimension
         L = np.array(
-            cob.HodgeLaplacian(st, cob.HodgeWeightConvention.Content)
+            cob.HodgeLaplacian(st, cob.HodgeWeightConvention.Content, DIAGONAL)
             .laplacian(1)).reshape(n, n)
         w, vl, vr = eig(L, left=True, right=True)
         for f in read.fibers:
@@ -495,13 +507,100 @@ class TestRegimes(unittest.TestCase):
         # NonNormal.
         st = _triangle(alpha=1.5)
         tracker = obs.SpectralFiberTracker(
-            st, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content)
+            st, obs.SpectralFiberConfig(), cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
         read = tracker.enumerateBands([0, 1, 2], 1)
         self.assertEqual(read.solverPath, "dense-general")
         self.assertEqual(read.solveCertificate.regime,
                          cob.CertificateRegime.NonNormal)
         for f in read.fibers:
             self.assertFalse(f.certificate().selfAdjoint)
+
+
+# --------------------------------------------------------------------------- #
+# one pairing across regimes: the transpose dual of the right frame (#1186)
+# --------------------------------------------------------------------------- #
+class TestTransposeDualFrame(unittest.TestCase):
+    """dualFrame() is Phi~ with Phi~^T Phi = I in every regime, the projector
+    is Phi Phi~^T, and the pair is the band's biorthogonal Slater
+    covariance.
+
+    Its subject is the diagonal-weights regimes (positive, Krein, non-normal),
+    so it pins that metric source for its own trackers whatever the
+    process-wide default is; the pencil path is covered in
+    test_spectral_fiber_pencil_regime_python.py."""
+
+    def setUp(self):
+        self._previous_source = cob.HodgeLaplacian.defaultMetricSource()
+        cob.HodgeLaplacian.setDefaultMetricSource(
+            cob.HodgeMetricSource.DiagonalWeights)
+
+    def tearDown(self):
+        cob.HodgeLaplacian.setDefaultMetricSource(self._previous_source)
+
+    def _reads(self):
+        positive = _tracker(_triangle()).enumerateBands([0, 1, 2], 0)
+        krein = _tracker(_triangle(alpha=2.0), **ANY_LOCALIZATION) \
+            .enumerateBands([0, 1, 2], 1)
+        cfg = obs.SpectralFiberConfig()
+        cfg.maxLocalizationExcess = 1.0
+        non_normal = obs.SpectralFiberTracker(
+            _triangle(alpha=1.0), cfg,
+            cob.HodgeWeightConvention.Content).enumerateBands([0, 1, 2], 1)
+        self.assertEqual(positive.regime,
+                         cob.CertificateRegime.PositiveSemidefinite)
+        self.assertEqual(krein.regime,
+                         cob.CertificateRegime.HermitianIndefinite)
+        self.assertEqual(non_normal.regime, cob.CertificateRegime.NonNormal)
+        return positive, krein, non_normal
+
+    def test_dual_frame_pairs_to_the_identity_by_the_transpose(self):
+        for read in self._reads():
+            for f in read.fibers:
+                phi = np.asarray(f.rightFrame())
+                dual = np.asarray(f.dualFrame())
+                self.assertFalse(f.certificate().bilinearLeftFrame)
+                np.testing.assert_allclose(dual.T @ phi, np.eye(f.rank()),
+                                           rtol=0, atol=1e-10)
+                # Off the pencil path Phi~ = W conj(Psi): the transpose of
+                # Psi^dagger W, the solver's own normalization.
+                psi = np.asarray(f.leftFrame())
+                w = np.asarray(f.weightDiagonal())
+                np.testing.assert_allclose(dual, w[:, None] * psi.conj(),
+                                           rtol=0, atol=1e-15)
+
+    def test_projector_is_the_transpose_product_and_unchanged(self):
+        for read in self._reads():
+            for f in read.fibers:
+                phi = np.asarray(f.rightFrame())
+                psi = np.asarray(f.leftFrame())
+                w = np.diag(np.asarray(f.weightDiagonal()))
+                p = np.asarray(f.projector())
+                np.testing.assert_allclose(
+                    p, phi @ np.asarray(f.dualFrame()).T, rtol=0, atol=1e-14)
+                np.testing.assert_allclose(p, phi @ psi.conj().T @ w,
+                                           rtol=0, atol=1e-13)
+
+    def test_frames_give_the_bands_biorthogonal_covariance(self):
+        from tessera.quantum import CovarianceDual, CovarianceState
+        for read in self._reads():
+            for f in read.fibers:
+                state = CovarianceState.fromBiorthogonalFrames(
+                    np.asarray(f.rightFrame()), np.asarray(f.dualFrame()))
+                self.assertEqual(state.dual(), CovarianceDual.Transpose)
+                np.testing.assert_allclose(np.asarray(state.gamma()),
+                                           np.asarray(f.projector()),
+                                           rtol=0, atol=1e-13)
+                self.assertLess(state.dualityDefect(), 1e-9)
+                self.assertLess(state.purityDefect(), 1e-9)
+                self.assertLess(abs(state.particleNumber() - f.rank()), 1e-9)
+
+    def test_record_keeps_the_frame_convention(self):
+        _, _, non_normal = self._reads()
+        f = non_normal.fibers[0]
+        back = obs.SpectralFiber.fromRecord(f.toRecord())
+        self.assertFalse(back.certificate().bilinearLeftFrame)
+        np.testing.assert_array_equal(np.asarray(back.dualFrame()),
+                                      np.asarray(f.dualFrame()))
 
 
 # --------------------------------------------------------------------------- #
@@ -1055,7 +1154,7 @@ class TestBandWindowsAndBoundaries(unittest.TestCase):
         s = pm.discover(1.0, obs.PersistentModularityConfig())
         cfg = obs.SpectralFiberConfig()
         cfg.degrees = [0, 1]
-        tr = obs.SpectralFiberTracker(st, cfg)
+        tr = obs.SpectralFiberTracker(st, cfg, metric_source=DIAGONAL)
         reads = tr.enumerateOnComponents(s.components)
         self.assertEqual(len(reads), 2 * 2)
         self.assertEqual([r.degree for r in reads], [0, 1, 0, 1])
@@ -1077,7 +1176,7 @@ class TestSerialization(unittest.TestCase):
         st = _triangle(alpha=1.0)
         out.append(obs.SpectralFiberTracker(
             st, obs.SpectralFiberConfig(),
-            cob.HodgeWeightConvention.Content).enumerateBands([0, 1, 2], 1))
+            cob.HodgeWeightConvention.Content, metric_source=DIAGONAL).enumerateBands([0, 1, 2], 1))
         return out
 
     def test_fiber_round_trip_every_regime(self):
@@ -1289,7 +1388,7 @@ class TestBandSeparationIsMeasuredInThePlane(unittest.TestCase):
         for k, v in cfg_kwargs.items():
             setattr(cfg, k, v)
         tracker = obs.SpectralFiberTracker(
-            _triangle(alpha=alpha), cfg, cob.HodgeWeightConvention.Content)
+            _triangle(alpha=alpha), cfg, cob.HodgeWeightConvention.Content, metric_source=DIAGONAL)
         return tracker.enumerateBands([0, 1, 2], 1)
 
     def test_nearest_eigenvalue_is_not_the_sort_adjacent_one(self):

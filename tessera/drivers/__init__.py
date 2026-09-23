@@ -10,6 +10,9 @@ API test suite imports them as a library: `emergence.build_config` and
 * `emergence` -- unforced emergence on a neutral complex.
 * `qubit`     -- the two-torus qubit cobordism experiment.
 * `harmonic`  -- harmonic state/operator correspondence measurement.
+* `fock`      -- the inductive limit of the Fock stages over a refinement
+                 sequence: the compatibility defect of the vacuum embedding,
+                 measured at every adjacent pair of a stated sequence.
 
 Each module keeps a `main()` entry point, so the thin command line wrappers
 kept outside this repository can call straight into it.

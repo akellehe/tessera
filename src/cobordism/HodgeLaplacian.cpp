@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -797,7 +799,7 @@ HodgeLaplacian::WeightConvention HodgeLaplacian::defaultWeightConvention_ =
     HodgeLaplacian::WeightConvention::SquaredContent;
 
 HodgeLaplacian::MetricSource HodgeLaplacian::defaultMetricSource_ =
-    HodgeLaplacian::MetricSource::DiagonalWeights;
+    HodgeLaplacian::MetricSource::WhitneyPencil;
 
 /// The Whitney pencil of the current geometry: chain complex, dressed operator
 /// and orientation signs, rebuilt whenever the structural revision or any edge's
@@ -818,6 +820,20 @@ struct HodgeLaplacian::WhitneyState {
     const Eigen::VectorXd &d = signs[static_cast<std::size_t>(k)];
     return d.asDiagonal() * ref * d.asDiagonal();
   }
+  /// \f$ \partial L_z/\partial s_e \f$ in the stored basis for the edge at
+  /// canonical index `edge`, given \f$ h = h_k(s,U) \f$ and
+  /// \f$ L_z = (M^U)^{-1} h M^U \f$ in the reference basis:
+  /// \f$ \partial L_z = (M^U)^{-1}[-\partial M^U L_z + \partial h\,M^U + h\,\partial M^U] \f$.
+  /// Thread-safe once `op->warmDerivatives(k)` has run.
+  [[nodiscard]] Eigen::MatrixXcd lengthDerivative(int k, std::size_t edge, const Eigen::MatrixXcd &h,
+                                                  const Eigen::MatrixXcd &Lz) const {
+    const chainhodge::SparseMatrix &M = op->dressed(k);
+    const chainhodge::SparseMatrix dM = op->dressedDerivative(k, edge);
+    const Eigen::MatrixXcd dh = op->covariantOperatorDerivative(k, edge);
+    const Eigen::MatrixXcd inner =
+        -Eigen::MatrixXcd(dM * Lz) + Eigen::MatrixXcd(dh * M) + Eigen::MatrixXcd(h * dM);
+    return toStored(k, op->applyG(k, inner));
+  }
 };
 
 namespace {
@@ -833,6 +849,127 @@ std::uint64_t edgeKeyOf(std::uint64_t a, std::uint64_t b) {
   return (a << 32) ^ b;
 }
 }  // namespace
+
+/// The operator of this instance's metric source in the stored basis, with its
+/// analytic first derivatives in the squared lengths and, once a direction is
+/// declared, their velocities along it. One object serves the spectral-entropy
+/// and spectral-moment functionals, so every derivative is taken of the
+/// operator the value is taken of: the diagonal-weight workspace under
+/// `DiagonalWeights`, the dressed Whitney pencil (with `WhitneyState`'s
+/// \f$ \partial L_z/\partial s_e \f$ and the pencil's second derivatives) under
+/// `WhitneyPencil`. Both operators are holomorphic in \f$ z = l^2 \f$.
+struct HodgeLaplacian::DerivativeSource {
+  DerivativeSource(const HodgeLaplacian &owner, int k)
+      : whitney_(owner.metricSource_ == MetricSource::WhitneyPencil), k_(k) {
+    if (whitney_) {
+      pencil_ = &owner.whitneyState();
+      if (k <= pencil_->complex.dimension()) {
+        const chainhodge::CovariantChainHodge &op = *pencil_->op;
+        covariant_ = op.covariantOperator(k);
+        image_ = op.applyG(k, Eigen::MatrixXcd(covariant_ * op.dressed(k)));
+        // The per-edge derivatives run in parallel on the shared pencil.
+        op.warmDerivatives(k);
+      }
+      L_ = pencil_->toStored(k, image_);
+    } else {
+      workspace_ = std::make_unique<const LaplacianDerivativeWorkspace>(*owner.st_, k, owner.weightConvention_);
+      L_ = workspace_->laplacian();
+    }
+    n_ = L_.rows();
+  }
+
+  [[nodiscard]] const Eigen::MatrixXcd &laplacian() const { return L_; }
+
+  /// \f$ \partial L/\partial z_e \f$ for the edge (a, b); zero for an edge the
+  /// complex does not carry.
+  [[nodiscard]] Eigen::MatrixXcd gradient(std::uint64_t a, std::uint64_t b) const {
+    if (!whitney_) return workspace_->gradient(a, b);
+    const auto it = pencil_->edgeIndex.find(edgeKeyOf(a, b));
+    if (it == pencil_->edgeIndex.end()) return Eigen::MatrixXcd::Zero(n_, n_);
+    return pencil_->lengthDerivative(k_, it->second, covariant_, image_);
+  }
+
+  /// Declare the squared-length direction \f$ v \f$ (keyed by sorted vertex
+  /// pair) along which `velocity` and `gradientVelocity` are taken.
+  void setDirection(const std::map<std::pair<std::uint64_t, std::uint64_t>, cd> &keyed) {
+    velocity_ = Eigen::MatrixXcd::Zero(n_, n_);
+    if (whitney_) {
+      if (k_ > pencil_->complex.dimension()) return;
+      const chainhodge::CovariantChainHodge &op = *pencil_->op;
+      std::vector<cd> canonical(pencil_->edges.size(), cd{0.0, 0.0});
+      for (const auto &[key, value] : keyed) {
+        const auto it = pencil_->edgeIndex.find(edgeKeyOf(key.first, key.second));
+        if (it != pencil_->edgeIndex.end()) canonical[it->second] += value;
+      }
+      direction_.emplace(op.lengthDirection(k_, canonical));
+      const chainhodge::SparseMatrix &M = op.dressed(k_);
+      const chainhodge::SparseMatrix &VM = direction_->metricDirectional[1];
+      covariantVelocity_ = direction_->operatorDirectional;
+      // V(L_z) = M^{-1}[V(h) M + h V(M) - V(M) L_z].
+      imageVelocity_ = op.applyG(k_, Eigen::MatrixXcd(covariantVelocity_ * M) + Eigen::MatrixXcd(covariant_ * VM) -
+                                         Eigen::MatrixXcd(VM * image_));
+      velocity_ = pencil_->toStored(k_, imageVelocity_);
+      return;
+    }
+    directionData_.emplace(workspace_->directionData(keyed));
+    for (const auto &[key, value] : keyed) {
+      if (value == cd{0.0, 0.0}) continue;
+      velocity_.noalias() += value * workspace_->gradient(key.first, key.second);
+    }
+  }
+
+  /// \f$ \dot L = \sum_f v_f\,\partial L/\partial z_f \f$ along the declared direction.
+  [[nodiscard]] const Eigen::MatrixXcd &velocity() const { return velocity_; }
+
+  /// \f$ \frac{d}{dt}\big|_0 \partial L/\partial z_e\,(z + t v) \f$ for the edge
+  /// (a, b) along the declared direction; `first` receives the derivative itself.
+  [[nodiscard]] Eigen::MatrixXcd gradientVelocity(std::uint64_t a, std::uint64_t b,
+                                                  Eigen::MatrixXcd &first) const {
+    if (!whitney_) {
+      first = workspace_->gradient(a, b);
+      return workspace_->gradientDirectionalDerivative(a, b, *directionData_);
+    }
+    const auto it = pencil_->edgeIndex.find(edgeKeyOf(a, b));
+    if (it == pencil_->edgeIndex.end()) {
+      first = Eigen::MatrixXcd::Zero(n_, n_);
+      return Eigen::MatrixXcd::Zero(n_, n_);
+    }
+    // With E = d/dz_e and V = D_v on L_z = M^{-1} h M:
+    //   M E(L) = E(h) M + h E(M) - E(M) L,
+    //   M V(E(L)) = VE(h) M + E(h) V(M) + V(h) E(M) + h VE(M) - VE(M) L - E(M) V(L) - V(M) E(L).
+    const chainhodge::CovariantChainHodge &op = *pencil_->op;
+    const std::size_t e = it->second;
+    const chainhodge::SparseMatrix &M = op.dressed(k_);
+    const chainhodge::SparseMatrix &VM = direction_->metricDirectional[1];
+    const chainhodge::SparseMatrix &SM = direction_->metricSecond[1][e];
+    const chainhodge::SparseMatrix EM = op.dressedDerivative(k_, e);
+    const Eigen::MatrixXcd Eh = op.covariantOperatorDerivative(k_, e);
+    const Eigen::MatrixXcd Sh = op.covariantOperatorSecondDerivative(*direction_, e);
+    const Eigen::MatrixXcd EL =
+        op.applyG(k_, Eigen::MatrixXcd(Eh * M) + Eigen::MatrixXcd(covariant_ * EM) - Eigen::MatrixXcd(EM * image_));
+    const Eigen::MatrixXcd SL = op.applyG(
+        k_, Eigen::MatrixXcd(Sh * M) + Eigen::MatrixXcd(Eh * VM) + Eigen::MatrixXcd(covariantVelocity_ * EM) +
+                Eigen::MatrixXcd(covariant_ * SM) - Eigen::MatrixXcd(SM * image_) -
+                Eigen::MatrixXcd(EM * imageVelocity_) - Eigen::MatrixXcd(VM * EL));
+    first = pencil_->toStored(k_, EL);
+    return pencil_->toStored(k_, SL);
+  }
+
+ private:
+  bool whitney_;
+  int k_;
+  Eigen::Index n_{0};
+  std::unique_ptr<const LaplacianDerivativeWorkspace> workspace_;
+  std::optional<LaplacianDerivativeWorkspace::DirectionData> directionData_;
+  const WhitneyState *pencil_{nullptr};
+  Eigen::MatrixXcd covariant_;          // h_k(s,U), reference basis
+  Eigen::MatrixXcd image_;              // L_z = (M^U)^{-1} h M^U, reference basis
+  std::optional<chainhodge::CovariantChainHodge::LengthDirection> direction_;
+  Eigen::MatrixXcd covariantVelocity_;  // V(h)
+  Eigen::MatrixXcd imageVelocity_;      // V(L_z), reference basis
+  Eigen::MatrixXcd L_;                  // stored basis
+  Eigen::MatrixXcd velocity_;           // stored basis
+};
 
 const HodgeLaplacian::WhitneyState &HodgeLaplacian::whitneyState() const {
   if (!st_) throw std::runtime_error("HodgeLaplacian: no spacetime bound");
@@ -1084,12 +1221,8 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianGradient(
     }
     // d L_z = M^{-1} [ -dM L_z + dh M + h dM ] with L_z = M^{-1} h M.
     const Eigen::MatrixXcd h = w.op->covariantOperator(k);
-    const chainhodge::SparseMatrix &M = w.op->dressed(k);
-    const Eigen::MatrixXcd Lz = w.op->applyG(k, Eigen::MatrixXcd(h * M));
-    const chainhodge::SparseMatrix dM = w.op->dressedDerivative(k, it->second);
-    const Eigen::MatrixXcd dh = w.op->covariantOperatorDerivative(k, it->second);
-    const Eigen::MatrixXcd inner = -Eigen::MatrixXcd(dM * Lz) + Eigen::MatrixXcd(dh * M) + Eigen::MatrixXcd(h * dM);
-    dL = w.toStored(k, w.op->applyG(k, inner));
+    const Eigen::MatrixXcd Lz = w.op->applyG(k, Eigen::MatrixXcd(h * w.op->dressed(k)));
+    dL = w.lengthDerivative(k, it->second, h, Lz);
   } else {
     const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
     dL = workspace.gradient(ea, eb);
@@ -1128,6 +1261,33 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianPhaseGradient(
   for (int i = 0; i < nk; ++i)
     for (int j = 0; j < nk; ++j)
       out[static_cast<std::size_t>(i) * nk + j] = dL(i, j);
+  return out;
+}
+
+HodgeLaplacian::MetricPencil HodgeLaplacian::pencil(int k) const {
+  requireNonNegativeDegree(k);
+  if (metricSource_ != MetricSource::WhitneyPencil)
+    throw std::logic_error(
+        "HodgeLaplacian::pencil: the pencil is the Whitney metric source's; this operator "
+        "uses DiagonalWeights, whose metric is weights(k)");
+  MetricPencil out;
+  if (!st_) return out;
+  const WhitneyState &w = whitneyState();
+  if (k > w.complex.dimension()) return out;
+  // One assembly of the dressed pencil supplies both matrices, so the operator
+  // and its metric cannot come from different geometries or connections.
+  const chainhodge::Pencil P = w.op->pencil(k);
+  const Eigen::MatrixXcd A = w.toStored(k, P.A);
+  const Eigen::MatrixXcd M = w.toStored(k, P.B);
+  const int nk = static_cast<int>(A.rows());
+  out.dimension = nk;
+  out.op.resize(static_cast<std::size_t>(nk) * nk);
+  out.metric.resize(static_cast<std::size_t>(nk) * nk);
+  for (int i = 0; i < nk; ++i)
+    for (int j = 0; j < nk; ++j) {
+      out.op[static_cast<std::size_t>(i) * nk + j] = A(i, j);
+      out.metric[static_cast<std::size_t>(i) * nk + j] = M(i, j);
+    }
   return out;
 }
 
@@ -1225,9 +1385,8 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralEntropyGradient(
   std::vector<cd> gradient(edges.size(), cd{0.0, 0.0});
   if (!st_)
     return gradient;
-  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
-  const SpectralEntropyData data =
-      spectralEntropyData(workspace.laplacian(), phaseMode);
+  const DerivativeSource derivatives(*this, k);
+  const SpectralEntropyData data = spectralEntropyData(derivatives.laplacian(), phaseMode);
   if (data.laplacian.size() == 0 || data.zeroOperator) return gradient;
   const Eigen::Index n = data.laplacian.rows();
 
@@ -1250,8 +1409,8 @@ std::vector<std::complex<double>> HodgeLaplacian::spectralEntropyGradient(
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const Eigen::MatrixXcd derivative = workspace.gradient(
-        edge->getSource()->getId(), edge->getTarget()->getId());
+    const Eigen::MatrixXcd derivative =
+        derivatives.gradient(edge->getSource()->getId(), edge->getTarget()->getId());
 
     if (phaseMode == EntropyPhaseMode::IncludeComplexPhase) {
       // dS = 2 Re Tr(C L^dagger dL), so in the h = S_x - i S_y convention
@@ -1294,7 +1453,6 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
   std::vector<cd> velocityOfGradient(edges.size(), cd{0.0, 0.0});
   if (!st_)
     return velocityOfGradient;
-
   // The direction, keyed the way the simplices key their own gradients.
   std::map<std::pair<std::uint64_t, std::uint64_t>, cd> keyedDirection;
   for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
@@ -1307,25 +1465,16 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
     keyedDirection[{std::min(a, b), std::max(a, b)}] += direction[edgeIndex];
   }
 
-  const LaplacianDerivativeWorkspace workspace(*st_, k, weightConvention_);
-  const SpectralEntropyData data =
-      spectralEntropyData(workspace.laplacian(), phaseMode);
+  // The operator of this instance's metric source, its per-edge derivative
+  // dL/dz_e, its velocity Ldot = sum_f v_f dL/dz_f and the velocity of each
+  // per-edge derivative along the direction.
+  DerivativeSource derivatives(*this, k);
+  const SpectralEntropyData data = spectralEntropyData(derivatives.laplacian(), phaseMode);
   if (data.laplacian.size() == 0 || data.zeroOperator)
     return velocityOfGradient;
   const Eigen::Index n = data.laplacian.rows();
-  const auto directionData = workspace.directionData(keyedDirection);
-
-  // Ldot = sum_f v_f dL/dz_f, one pass over the per-edge derivatives.
-  Eigen::MatrixXcd laplacianVelocity = Eigen::MatrixXcd::Zero(n, n);
-  for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
-    const auto *edge = edges[edgeIndex];
-    if (edge == nullptr || edge->getSource() == nullptr ||
-        edge->getTarget() == nullptr || direction[edgeIndex] == cd{0.0, 0.0})
-      continue;
-    laplacianVelocity.noalias() +=
-        direction[edgeIndex] * workspace.gradient(edge->getSource()->getId(),
-                                                  edge->getTarget()->getId());
-  }
+  derivatives.setDirection(keyedDirection);
+  const Eigen::MatrixXcd &laplacianVelocity = derivatives.velocity();
 
   Eigen::MatrixXcd fullPhaseLeft;
   Eigen::MatrixXcd fullPhaseLeftVelocity;
@@ -1389,9 +1538,9 @@ HodgeLaplacian::spectralEntropyGradientDirectionalDerivative(
       continue;
     const std::uint64_t source = edge->getSource()->getId();
     const std::uint64_t target = edge->getTarget()->getId();
-    const Eigen::MatrixXcd derivative = workspace.gradient(source, target);
+    Eigen::MatrixXcd derivative;
     const Eigen::MatrixXcd derivativeVelocity =
-        workspace.gradientDirectionalDerivative(source, target, directionData);
+        derivatives.gradientVelocity(source, target, derivative);
 
     if (phaseMode == EntropyPhaseMode::IncludeComplexPhase) {
       // d/dt [2 Tr(C L^dagger dL/dz_e)] by the product rule.
@@ -1428,6 +1577,183 @@ double HodgeLaplacian::spectralEntropyGradientNorm(
   for (const cd component : spectralEntropyGradient(k, phaseMode))
     normSquared += std::norm(component);
   return normSquared;
+}
+
+// ---------------------------------------------------------------- spectral moments
+
+namespace {
+
+/// L^0 .. L^m, dense.
+std::vector<Eigen::MatrixXcd> powersUpTo(const Eigen::MatrixXcd &L, int m) {
+  std::vector<Eigen::MatrixXcd> powers;
+  powers.reserve(static_cast<std::size_t>(m) + 1);
+  powers.push_back(Eigen::MatrixXcd::Identity(L.rows(), L.cols()));
+  for (int j = 1; j <= m; ++j) powers.push_back(powers.back() * L);
+  return powers;
+}
+
+/// d/dt of L^0 .. L^m along Ldot: (L^j)' = sum_{a+b=j-1} L^a Ldot L^b.
+std::vector<Eigen::MatrixXcd> powerVelocities(const std::vector<Eigen::MatrixXcd> &powers,
+                                              const Eigen::MatrixXcd &velocity) {
+  const Eigen::Index n = velocity.rows();
+  std::vector<Eigen::MatrixXcd> out(powers.size(), Eigen::MatrixXcd::Zero(n, n));
+  for (std::size_t j = 1; j < powers.size(); ++j)
+    for (std::size_t a = 0; a < j; ++a) out[j].noalias() += powers[a] * velocity * powers[j - 1 - a];
+  return out;
+}
+
+/// The (row, order) array of the reference, checked against |C_k| x m.
+Eigen::MatrixXcd referenceMatrix(const std::vector<cd> &reference, Eigen::Index n, std::size_t m,
+                                 const char *where) {
+  if (reference.size() != static_cast<std::size_t>(n) * m)
+    throw std::invalid_argument(std::string(where) + ": the reference has " + std::to_string(reference.size()) +
+                                " entries, expected |C_k| x m = " + std::to_string(n) + " x " + std::to_string(m));
+  Eigen::MatrixXcd out(n, static_cast<Eigen::Index>(m));
+  for (Eigen::Index x = 0; x < n; ++x)
+    for (std::size_t j = 0; j < m; ++j) out(x, static_cast<Eigen::Index>(j)) = reference[static_cast<std::size_t>(x) * m + j];
+  return out;
+}
+
+/// G = sum_j beta_j sum_{a+b=j-1} L^b diag(w_j) L^a, so that
+/// sum_j beta_j sum_x w_j(x) d mu_j(x) = sum_{pq} G_qp dL_pq for any dL.
+Eigen::MatrixXcd momentContraction(const std::vector<Eigen::MatrixXcd> &powers, const Eigen::MatrixXcd &weights,
+                                   const std::vector<double> &coefficients) {
+  const Eigen::Index n = weights.rows();
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(n, n);
+  for (std::size_t j = 1; j <= coefficients.size(); ++j) {
+    if (coefficients[j - 1] == 0.0) continue;
+    const Eigen::VectorXcd w = weights.col(static_cast<Eigen::Index>(j - 1));
+    for (std::size_t a = 0; a < j; ++a)
+      out.noalias() += coefficients[j - 1] * (powers[j - 1 - a] * w.asDiagonal() * powers[a]);
+  }
+  return out;
+}
+
+std::vector<EdgePtr> edgesOf(const std::shared_ptr<Spacetime> &st) {
+  return st && st->getEdgeList() ? st->getEdgeList()->toVector() : std::vector<EdgePtr>{};
+}
+
+}  // namespace
+
+std::vector<std::complex<double>> HodgeLaplacian::localSpectralMoments(int k, int orders) const {
+  requireNonNegativeDegree(k);
+  if (orders < 1) throw std::invalid_argument("HodgeLaplacian::localSpectralMoments: at least one order");
+  if (!st_) return {};
+  const Eigen::MatrixXcd L = operatorMatrix(k, /*metric=*/true);
+  const auto powers = powersUpTo(L, orders);
+  const auto m = static_cast<std::size_t>(orders);
+  std::vector<cd> out(static_cast<std::size_t>(L.rows()) * m);
+  for (Eigen::Index x = 0; x < L.rows(); ++x)
+    for (std::size_t j = 1; j <= m; ++j) out[static_cast<std::size_t>(x) * m + j - 1] = powers[j](x, x);
+  return out;
+}
+
+std::complex<double> HodgeLaplacian::spectralMomentStiffness(int k, const std::vector<cd> &reference,
+                                                              const std::vector<double> &coefficients) const {
+  requireNonNegativeDegree(k);
+  if (!st_ || coefficients.empty()) return {0.0, 0.0};
+  const Eigen::MatrixXcd L = operatorMatrix(k, /*metric=*/true);
+  const auto powers = powersUpTo(L, static_cast<int>(coefficients.size()));
+  const Eigen::MatrixXcd carrier =
+      referenceMatrix(reference, L.rows(), coefficients.size(), "HodgeLaplacian::spectralMomentStiffness");
+  cd value{0.0, 0.0};
+  for (std::size_t j = 1; j <= coefficients.size(); ++j)
+    for (Eigen::Index x = 0; x < L.rows(); ++x) {
+      const cd deviation = powers[j](x, x) - carrier(x, static_cast<Eigen::Index>(j - 1));
+      value += 0.5 * coefficients[j - 1] * deviation * deviation;
+    }
+  return value;
+}
+
+std::vector<std::complex<double>> HodgeLaplacian::spectralMomentStiffnessGradient(
+    int k, const std::vector<cd> &reference, const std::vector<double> &coefficients) const {
+  requireNonNegativeDegree(k);
+  const auto edges = edgesOf(st_);
+  std::vector<cd> gradient(edges.size(), cd{0.0, 0.0});
+  if (!st_ || coefficients.empty()) return gradient;
+  const DerivativeSource derivatives(*this, k);
+  const Eigen::MatrixXcd &L = derivatives.laplacian();
+  const Eigen::Index n = L.rows();
+  const auto powers = powersUpTo(L, static_cast<int>(coefficients.size()));
+  const Eigen::MatrixXcd carrier =
+      referenceMatrix(reference, n, coefficients.size(), "HodgeLaplacian::spectralMomentStiffnessGradient");
+  // dS = sum_j beta_j sum_x (mu_j - mu_j^0) d mu_j = sum_pq G_qp dL_pq.
+  Eigen::MatrixXcd deviation(n, static_cast<Eigen::Index>(coefficients.size()));
+  for (std::size_t j = 1; j <= coefficients.size(); ++j)
+    deviation.col(static_cast<Eigen::Index>(j - 1)) =
+        powers[j].diagonal() - carrier.col(static_cast<Eigen::Index>(j - 1));
+  const Eigen::MatrixXcd contraction = momentContraction(powers, deviation, coefficients).transpose();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+  for (std::int64_t e = 0; e < static_cast<std::int64_t>(edges.size()); ++e) {
+    const auto *edge = edges[static_cast<std::size_t>(e)];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+    const Eigen::MatrixXcd dL = derivatives.gradient(edge->getSource()->getId(), edge->getTarget()->getId());
+    gradient[static_cast<std::size_t>(e)] = (contraction.array() * dL.array()).sum();
+  }
+  return gradient;
+}
+
+std::vector<std::complex<double>> HodgeLaplacian::spectralMomentStiffnessHessianProduct(
+    int k, const std::vector<cd> &reference, const std::vector<double> &coefficients,
+    const std::vector<cd> &direction) const {
+  requireNonNegativeDegree(k);
+  const auto edges = edgesOf(st_);
+  if (direction.size() != edges.size())
+    throw std::runtime_error("HodgeLaplacian::spectralMomentStiffnessHessianProduct: direction has " +
+                             std::to_string(direction.size()) + " entries, expected " + std::to_string(edges.size()));
+  std::vector<cd> product(edges.size(), cd{0.0, 0.0});
+  if (!st_ || coefficients.empty()) return product;
+  std::map<EdgeKey, cd> keyedDirection;
+  for (std::size_t e = 0; e < edges.size(); ++e) {
+    const auto *edge = edges[e];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+    const std::uint64_t a = edge->getSource()->getId(), b = edge->getTarget()->getId();
+    keyedDirection[{std::min(a, b), std::max(a, b)}] += direction[e];
+  }
+  DerivativeSource derivatives(*this, k);
+  const Eigen::MatrixXcd &L = derivatives.laplacian();
+  const Eigen::Index n = L.rows();
+  const std::size_t m = coefficients.size();
+  const auto powers = powersUpTo(L, static_cast<int>(m));
+  const Eigen::MatrixXcd carrier =
+      referenceMatrix(reference, n, m, "HodgeLaplacian::spectralMomentStiffnessHessianProduct");
+  // Ldot = sum_f v_f dL/dz_f, and the velocities of the powers and of the moments along it.
+  derivatives.setDirection(keyedDirection);
+  const Eigen::MatrixXcd &velocity = derivatives.velocity();
+  const auto powerDots = powerVelocities(powers, velocity);
+  Eigen::MatrixXcd deviation(n, static_cast<Eigen::Index>(m)), deviationDot(n, static_cast<Eigen::Index>(m));
+  for (std::size_t j = 1; j <= m; ++j) {
+    deviation.col(static_cast<Eigen::Index>(j - 1)) = powers[j].diagonal() - carrier.col(static_cast<Eigen::Index>(j - 1));
+    deviationDot.col(static_cast<Eigen::Index>(j - 1)) = powerDots[j].diagonal();
+  }
+  // d/dt of G = sum_j beta_j sum_{a+b=j-1} L^b W_j L^a: the moments' velocity in W, and the powers' velocities.
+  Eigen::MatrixXcd contractionDot = momentContraction(powers, deviationDot, coefficients);
+  for (std::size_t j = 1; j <= m; ++j) {
+    if (coefficients[j - 1] == 0.0) continue;
+    const Eigen::VectorXcd w = deviation.col(static_cast<Eigen::Index>(j - 1));
+    for (std::size_t a = 0; a < j; ++a) {
+      const std::size_t b = j - 1 - a;
+      contractionDot.noalias() += coefficients[j - 1] * (powerDots[b] * w.asDiagonal() * powers[a]);
+      contractionDot.noalias() += coefficients[j - 1] * (powers[b] * w.asDiagonal() * powerDots[a]);
+    }
+  }
+  const Eigen::MatrixXcd contraction = momentContraction(powers, deviation, coefficients).transpose();
+  const Eigen::MatrixXcd contractionDotT = contractionDot.transpose();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (!omp_in_parallel())
+#endif
+  for (std::int64_t e = 0; e < static_cast<std::int64_t>(edges.size()); ++e) {
+    const auto *edge = edges[static_cast<std::size_t>(e)];
+    if (edge == nullptr || edge->getSource() == nullptr || edge->getTarget() == nullptr) continue;
+    const std::uint64_t source = edge->getSource()->getId(), target = edge->getTarget()->getId();
+    Eigen::MatrixXcd dL;
+    const Eigen::MatrixXcd dLdot = derivatives.gradientVelocity(source, target, dL);
+    product[static_cast<std::size_t>(e)] =
+        (contractionDotT.array() * dL.array()).sum() + (contraction.array() * dLdot.array()).sum();
+  }
+  return product;
 }
 
 const HodgeLaplacian::SpectrumCache &HodgeLaplacian::ensureSpectrum(
@@ -1634,17 +1960,36 @@ std::vector<std::complex<double>> HodgeLaplacian::nullNorms(int k, double tol,
   const std::size_t N = static_cast<std::size_t>(sp.dim);
   if (N == 0) return {};
 
+  // The metric the representatives were computed in. Under the Whitney pencil
+  // (metric = true) they are eigenvectors of (A~_k^U, M_k^U), and only the
+  // quadratic form of that mass on them is a norm; the diagonal weights are
+  // the metric of every other path.
+  const bool pencil = metricSource_ == MetricSource::WhitneyPencil && metric;
+  Eigen::MatrixXcd mass;
+  if (pencil) {
+    const MetricPencil P = this->pencil(k);
+    if (static_cast<std::size_t>(P.dimension) != N)
+      throw std::runtime_error("HodgeLaplacian::nullNorms: the pencil and the spectrum disagree on "
+                               "the cell count at degree " + std::to_string(k));
+    mass = squareFromFlat(P.metric, "HodgeLaplacian::nullNorms");
+  }
   std::vector<cd> norms;
   for (std::size_t j = 0; j < N; ++j) {
     if (std::abs(sp.evals[j]) >= tol) continue;
-    // Indefinite W-norm <h,h>_W = sum_i W_{k,i} |h_i|^2 with signed W_k. W_k is
-    // complex once a Lorentzian cell's signed content is imaginary, so the norm
-    // is returned complex: its sign says whether the direction is spacelike- or
-    // timelike-dominated, and ~0 marks a null (lightlike) harmonic.
+    // Returned complex: a timelike cell's mass (Whitney) or signed content
+    // (diagonal) is imaginary or negative, so the sign of the form says which
+    // causal character dominates the direction, and ~0 marks a null
+    // (lightlike) harmonic.
     cd nrm{0.0, 0.0};
-    for (std::size_t i = 0; i < N; ++i) {
-      const cd hi = sp.evecs[i * N + j];
-      nrm += sp.wk[i] * std::norm(hi);  // std::norm = |hi|^2
+    if (pencil) {
+      Eigen::VectorXcd h(static_cast<Eigen::Index>(N));
+      for (std::size_t i = 0; i < N; ++i) h(static_cast<Eigen::Index>(i)) = sp.evecs[i * N + j];
+      nrm = (h.adjoint() * (mass * h))(0, 0);  // h^dagger M_k^U h
+    } else {
+      for (std::size_t i = 0; i < N; ++i) {
+        const cd hi = sp.evecs[i * N + j];
+        nrm += sp.wk[i] * std::norm(hi);  // sum_i W_{k,i} |h_i|^2
+      }
     }
     norms.push_back(nrm);
   }

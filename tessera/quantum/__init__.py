@@ -193,25 +193,32 @@ _EXPORTS = (
     # bitsets with the prefix-popcount sign rule, the CAR operator layer,
     # the graded chain/tensor differential, the Fock direct-sum functor and
     # dGamma, and the edge-mode registry with its deterministic compilation
-    # order and relabeling parity.
+    # order, its assignment of that order's primary key from the oriented
+    # component lineage, and its relabeling parity.
     "OccupationBitset", "ExteriorAlgebra", "GradedTensorComplex",
     "FockDirectSum", "EdgeModeRecord", "EdgeModeRegistry",
+    "LineageAssignment",
     # Lazy graded Fock oracle and boundary carrier: the
     # expression-DAG engine over the #766 primitives — lazy graded tensor
     # products with crossing-only expansion, sector direct sums, Slater
     # wedges with the exact projector covariance, bit-level dGamma, the
-    # vacuum embedding + inductive compatibility read, exact certification
-    # / stated truncation, and content-hashed DAG checkpoints.
+    # vacuum embedding with the inductive compatibility read of one stage
+    # pair and the inductive limit read over a whole refinement sequence,
+    # exact certification / stated truncation, and content-hashed DAG
+    # checkpoints.
     "LazyNodeKind", "LazySectorKind", "LazyFockState", "LazyScalarRead",
     "LazySlaterReference", "LazyCovarianceRead", "LazyCompatibilityRead",
-    "LazyFockEngine",
+    "FockRefinementStage", "LazyInductiveLimitRead", "LazyFockEngine",
 
     # Quasi-free covariance layer: the number-conserving
     # covariance state Gamma_ij = <a_j+ a_i> with exact Wick contraction of
     # every polynomial certificate, exact one-particle propagation, the
     # certificates-blind mean-field loop, cached Wick reads, and
-    # checkpoint serialization of Gamma.
-    "CovarianceState", "WickCertificateRead", "MeanFieldStepRead",
+    # checkpoint serialization of Gamma. CovarianceDual names the pairing:
+    # the Hermitian adjoint (a certified *-structure) or the transpose (the
+    # biorthogonal Slater covariance Gamma = Phi Phi~^T of a left/right pair).
+    "CovarianceState", "CovarianceDual", "WickCertificateRead",
+    "MeanFieldStepRead",
     # KI + QuantumSimplex (Van Raamsdonk-metric simplex factory)
     "QuantumSimplex", "QuantumSimplexPosition", "QuantumVertex",
     "createQuantumVertex",

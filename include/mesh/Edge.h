@@ -11,7 +11,9 @@
 // its definition. Vertex.h only forward-declares Edge, so this include is acyclic.
 #include "mesh/Vertex.h"
 
+#include <cmath>
 #include <complex>
+#include <numbers>
 #include <random>
 #include <memory>
 #include <stdexcept>
@@ -109,11 +111,12 @@ class Edge {
     /// part that quantizes and the only part a Wilson loop reads. `Im` is the non-compact
     /// \f$\mathbb{R}^{+}\f$ local scale and carries no quantum number.
     ///
-    /// It twists the hopping term of the Aharonov-Bohm operator (`HodgeLaplacian::connectionLaplacian`)
-    /// and never rescales a metric weight: the geometric Hodge operator `laplacian(k)` is built
-    /// from `length_` alone and is blind to \f$\varphi\f$ at every degree. Writing \f$\varphi\f$
-    /// into the weight would make the metric gauge-variant and destroy the derived form of
-    /// \f$ L_k \f$. The default (`phase = 0`) leaves an untwisted CDT edge unchanged.
+    /// It is the link \f$ U = e^{i\varphi} \f$ of the connection: it twists the hopping term of
+    /// the Aharonov-Bohm operator (`HodgeLaplacian::connectionLaplacian`) and dresses the Whitney
+    /// pencil, so the default Hodge operator `laplacian(k)` is the covariant \f$ h_k(z,U) \f$ at
+    /// every degree; only its spectrum's gauge invariance, never a rescaled metric weight,
+    /// carries \f$\varphi\f$ into the geometry. The diagonal weights ignore it. The default
+    /// (`phase = 0`) is the trivial link.
     ///
     /// @return The \f$\mathbb{C}^{*}\f$ connection phase; `Re` in radians, `Im` the log-scale.
     [[nodiscard]] std::complex<double> getPhase() const noexcept;
@@ -181,10 +184,69 @@ class Edge {
     /// genuinely mixed edges into definite buckets.
     static constexpr double kCausalAngularEpsilon = 1e-9;
 
-    /// \f$ \arg(l^2) \in (-\pi, \pi] \f$ — the measured quantity every predicate
-    /// below classifies. Zero is spacelike, \f$ \pm\pi/2 \f$ lightlike, \f$ \pi \f$
-    /// timelike, anything else mixed.
+    /// \f$ \arg(l^2) \in (-\pi, \pi] \f$ — the principal argument of the stored
+    /// length, blind to the sheet the length was continued onto.
     [[nodiscard]] double squaredArgument() const noexcept;
+
+    /// # The declared sheet of an edge length
+    ///
+    /// \f$ l \mapsto l^2 \f$ is two-to-one and \f$ l^2 \mapsto l \f$ is therefore
+    /// branched over \f$ l^2 = 0 \f$. An edge transported through a family of
+    /// complex geometries carries which of the two roots it is, as the signed
+    /// number of turns \f$ w \f$ its squared length has made about that branch
+    /// point. The declared argument of the squared length is
+    /// \f[ \theta = \arg(l^2) + 2\pi w = 2\,\alpha, \f]
+    /// with \f$ \alpha \f$ the continued argument of \f$ l \f$ itself. That second
+    /// equality is the invariant the class maintains, and it is what keeps the
+    /// declaration and the stored root one statement instead of two: the stored
+    /// \f$ l \f$ is always \f$ (-1)^w \sqrt{l^2} \f$, the root on the sheet
+    /// \f$ w \f$ names.
+    ///
+    /// The causal predicates below read \f$ \theta \f$ folded back into
+    /// \f$ (-\pi, \pi] \f$ rather than \f$ \arg(l^2) \f$ itself. Folding gives the
+    /// same five buckets, as it must: causal character is a property of
+    /// \f$ l^2 \f$ and the two roots \f$ \pm l \f$ share it. What the declaration
+    /// adds is the datum folding destroys — which lip of the cut a timelike edge
+    /// sits on, \f$ \theta = +\pi \f$ or \f$ \theta = -\pi \f$, which is the
+    /// \f$ \pm i\varepsilon \f$ prescription every squared-volume continuation
+    /// downstream has to agree with, and how many full turns the path made.
+    ///
+    /// ``setLength`` re-declares: \f$ \alpha \f$ becomes the principal
+    /// \f$ \arg l \f$, so \f$ w \f$ becomes 0 for a length in the right half plane
+    /// and \f$ \pm 1 \f$ for one in the left, which is just the statement that
+    /// \f$ -1 \f$ is the second root of \f$ 1 \f$. ``continueLength`` moves the
+    /// length and carries \f$ \alpha \f$ with it.
+
+    /// \f$ \arg(l^2) + 2\pi w \f$: the argument of \f$ l^2 \f$ on the declared
+    /// sheet, equal to twice the continued argument of \f$ l \f$. Unbounded — it is
+    /// the continued quantity, not a principal value.
+    [[nodiscard]] double declaredSquaredArgument() const noexcept;
+    /// The monodromy \f$ w \f$: signed turns of \f$ l^2 \f$ about \f$ 0 \f$ since
+    /// the length was last declared by ``setLength``, offset by which root of its
+    /// own square that declaration was.
+    [[nodiscard]] int squaredWinding() const noexcept { return squaredWinding_; }
+    /// \f$ w \bmod 2 \in \{0, 1\} \f$: which of the two sheets of
+    /// \f$ \sqrt{l^2} \f$ the stored length sits on. Sheet 0 is the principal root
+    /// of \f$ l^2 \f$, sheet 1 the other one.
+    [[nodiscard]] int squaredSheet() const noexcept;
+    /// Move the length to \a l while carrying the declared sheet: the turn
+    /// \f$ l \f$ makes on this step is added to \f$ \alpha \f$, and \f$ w \f$
+    /// follows.
+    ///
+    /// The step must turn \f$ l \f$ by less than \f$ \pi \f$ (equivalently
+    /// \f$ l^2 \f$ by less than a full turn), since a rotation by
+    /// \f$ \pi + \delta \f$ and one by \f$ \delta - \pi \f$ leave the same
+    /// endpoint; a caller walking a loop samples it finely enough for that, and
+    /// passes the length it continued to, not a root taken fresh.
+    void continueLength(std::complex<double> l) noexcept;
+    /// Declare the current length to have made \a turns full turns about the
+    /// branch point, without moving it. For a caller that knows the winding from
+    /// the problem rather than from a path it walked. Full turns, because a half
+    /// turn would name a root the stored length is not.
+    void declareSquaredTurns(int turns) noexcept {
+      squaredWinding_ = rootWinding(length_) + 2 * turns;
+    }
+
     /// \f$ \mathrm{Re}(l^2) = x^2 - t^2 \f$, carried for consumers that want the
     /// interval itself. It does not decide the disposition on its own.
     [[nodiscard]] double lorentzianMagnitude() const noexcept;
@@ -251,8 +313,16 @@ class Edge {
     /// \f$\sqrt{\cdot}\f$, so consumers see \f$l^2 \pm 1\f$ ulp rather than the exact
     /// value. That matters most in the ill-conditioned regime where the Cayley-Menger
     /// determinant approaches zero.
+    ///
+    /// Declaring a length also re-declares its Riemann sheet: the continued
+    /// argument of \f$ l \f$ resets to the principal \f$ \arg l \f$ and the
+    /// monodromy to the turn that \f$ l \f$ already is, because a jump to an
+    /// unrelated length is not a continuation and carrying a winding across it
+    /// would assert a path that was never walked. ``continueLength`` is the call
+    /// that keeps the path.
     void setLength(std::complex<double> l) noexcept {
       length_ = l;
+      squaredWinding_ = rootWinding(l);
       ++lengthRevision_;
     }
 
@@ -347,6 +417,32 @@ class Edge {
     /// \f$ \arg(l^2) \f$. \f$l^2\f$ is derived by squaring at the point of use, never
     /// stored.
     std::complex<double> length_{};
+    /// The declared Riemann sheet of \f$ l = \sqrt{l^2} \f$: signed turns of
+    /// \f$ l^2 \f$ about its branch point, maintained so that
+    /// \f$ \arg(l^2) + 2\pi w \f$ is twice the continued argument of \f$ l \f$.
+    /// Introducing it leaves every causal predicate's answer unchanged, because
+    /// they read that argument folded. See ``declaredSquaredArgument``.
+    int squaredWinding_{0};
+
+    /// The winding that makes the declared argument of \f$ l^2 \f$ equal twice
+    /// the principal \f$ \arg l \f$: zero when \f$ l \f$ is the principal root of
+    /// its own square and \f$ \pm 1 \f$ when it is the other one. The value
+    /// ``setLength`` declares.
+    ///
+    /// Written as the half-plane test it is, not as
+    /// \f$ (2\arg l - \arg l^2)/2\pi \f$, which is the same number for two
+    /// inverse tangents. \f$ \arg l \f$ lies in \f$ (-\pi/2, \pi/2] \f$ — where
+    /// doubling it stays inside the principal range and the winding is zero —
+    /// exactly on the closed right half plane with its negative imaginary axis
+    /// removed; on the rest of the plane doubling leaves the range by one turn,
+    /// upward in the third quadrant's reflection and downward below the real
+    /// axis. ``setLength`` runs once per edge per relaxation step, so the two
+    /// inverse tangents are worth removing.
+    [[nodiscard]] static int rootWinding(std::complex<double> l) noexcept {
+      if (l.real() > 0.0) return 0;
+      if (l.real() < 0.0) return (l.imag() < 0.0) ? -1 : 1;
+      return (l.imag() < 0.0) ? -1 : 0;
+    }
     /// Monotone ``setLength`` counter read by ``lengthRevision()``; see there.
     std::uint64_t lengthRevision_{0};
     /// Monotone ``setPhase`` counter read by ``phaseRevision()``; see there.

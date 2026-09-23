@@ -411,10 +411,16 @@ int ExchangeHolonomy::permutationSign(
       .permutationParity(permutation);
 }
 
+int ExchangeHolonomy::frameExchangeDeterminant(std::size_t rankA,
+                                               std::size_t rankB) {
+  return ((rankA * rankB) % 2 == 0) ? +1 : -1;
+}
+
 BlockPermutationRead ExchangeHolonomy::blockPermutation(
     const std::vector<std::vector<SpectralFiber>> &steps,
     const std::vector<std::vector<SpectralFiber>> &referenceSteps,
     const std::vector<std::vector<std::size_t>> &composites,
+    const std::vector<ClusterOccupancy> &occupancies,
     const ExchangeHolonomyConfig &cfg) {
   BlockPermutationRead read;
   if (steps.empty() || steps.front().empty())
@@ -423,6 +429,33 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
 
   const std::size_t T = steps.size();
   const std::size_t B = steps.front().size();
+
+  // The declared occupancies, validated against the tracked blocks before
+  // anything is computed. An empty declaration is the default cluster of the
+  // construction: one occupied mode on an unsheeted support.
+  if (!occupancies.empty() && occupancies.size() != B)
+    throw std::invalid_argument(
+        "ExchangeHolonomy::blockPermutation: " +
+        std::to_string(occupancies.size()) +
+        " occupancy declarations were supplied for " + std::to_string(B) +
+        " tracked blocks; the exchange statistic needs one occupation per "
+        "block, or none at all to declare one occupied mode on an unsheeted "
+        "support for every block");
+  std::vector<ClusterOccupancy> declared =
+      occupancies.empty() ? std::vector<ClusterOccupancy>(B) : occupancies;
+  for (std::size_t b = 0; b < B; ++b) {
+    if (declared[b].sheetCount == 0)
+      throw std::invalid_argument(
+          "ExchangeHolonomy::blockPermutation: block " + std::to_string(b) +
+          " declares zero sheets; a support with no sheets carries no modes");
+    if (declared[b].occupation > steps.front()[b].rank())
+      throw std::invalid_argument(
+          "ExchangeHolonomy::blockPermutation: block " + std::to_string(b) +
+          " declares " + std::to_string(declared[b].occupation) +
+          " occupied modes on a fibre of rank " +
+          std::to_string(steps.front()[b].rank()) +
+          "; a state cannot occupy more modes than the fibre has");
+  }
 
   CertificateRegime regime = CertificateRegime::PositiveSemidefinite;
   bool premiseOk = true;
@@ -443,7 +476,9 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
     read.blockPermutation.clear();
     read.compositePermutation.clear();
     read.blockParity = 0;
-    read.modeParity = 0;
+    read.occupationParity = 0;
+    read.rankParity = 0;
+    read.rankParityAgrees = false;
     read.compositeParity = 0;
     read.residualInBlockMotion = kNaN;
     read.certificate = Certificate::heuristicDiscovery(
@@ -454,6 +489,16 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
 
   for (const SpectralFiber &f : steps.front())
     read.blockRanks.push_back(f.rank());
+  for (const ClusterOccupancy &occupancy : declared) {
+    read.blockOccupations.push_back(occupancy.occupation);
+    read.blockSheetCounts.push_back(occupancy.sheetCount);
+  }
+  // The cross-check is retired on a sheeted support, where the colour-spin
+  // fibre has even rank: exchanging whole frames then gives +1 whatever the
+  // occupations are, so the frame determinant is not a statement about the
+  // statistic and is not reported as one.
+  for (const ClusterOccupancy &occupancy : declared)
+    read.rankParityRetired = read.rankParityRetired || occupancy.sheetCount > 1;
 
   // Per-step block matching via SpectralFiberTracker::matchFibers. Every
   // match must be a certified continuation and the mapping a bijection.
@@ -506,19 +551,23 @@ BlockPermutationRead ExchangeHolonomy::blockPermutation(
   read.blockPermutation = pi;
   read.blockParity = permutationSign(pi);
 
-  // Mode-level parity (the exchange statistic): blocks expanded to their
-  // ranks, in-block order carried, giving the graded sign.
-  std::vector<std::size_t> offsets(B, 0);
-  std::size_t modeCount = 0;
-  for (std::size_t b = 0; b < B; ++b) {
-    offsets[b] = modeCount;
-    modeCount += read.blockRanks[b];
-  }
-  std::vector<std::size_t> modePerm(modeCount);
-  for (std::size_t b = 0; b < B; ++b)
-    for (std::size_t k = 0; k < read.blockRanks[b]; ++k)
-      modePerm[offsets[b] + k] = offsets[pi[b]] + k;
-  read.modeParity = permutationSign(modePerm);
+  // The exchange statistic and its cross-check. Both are the graded sign the
+  // exterior Fock functor's interchange law attaches to the reordering: the
+  // product of (-1)^{n_a n_b} over the inversions of the block permutation,
+  // the pairs a < b it sends to pi(a) > pi(b). The statistic counts the
+  // declared occupations, the cross-check counts the fibre ranks, and the two
+  // are never multiplied together.
+  const auto gradedSign = [&pi, B](const std::vector<std::size_t> &counts) {
+    int sign = +1;
+    for (std::size_t a = 0; a < B; ++a)
+      for (std::size_t b = a + 1; b < B; ++b)
+        if (pi[a] > pi[b] && (counts[a] * counts[b]) % 2 == 1) sign = -sign;
+    return sign;
+  };
+  read.occupationParity = gradedSign(read.blockOccupations);
+  read.rankParity = read.rankParityRetired ? 0 : gradedSign(read.blockRanks);
+  read.rankParityAgrees =
+      !read.rankParityRetired && read.rankParity == read.occupationParity;
 
   // Optional composite-level view.
   if (!composites.empty()) {

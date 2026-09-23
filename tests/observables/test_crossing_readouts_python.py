@@ -139,7 +139,12 @@ def _certified_rank_one_record(degree):
     # this situation; the conjunct itself is exercised there.
     cfg = obs.SpectralFiberConfig()
     cfg.maxLocalizationExcess = 1.0
-    tracker = obs.SpectralFiberTracker(st, cfg)
+    # A positive band with Krein signature (1, 0) is the diagonal weights'
+    # certificate: the default Whitney pencil reads degree >= 1 in the
+    # complex-symmetric pencil regime, whose bands carry the bilinear pairing
+    # and no inertia, so the diagonal source is named.
+    tracker = obs.SpectralFiberTracker(
+        st, cfg, metric_source=tessera.cobordism.HodgeMetricSource.DiagonalWeights)
     read = tracker.enumerateBands([0, 1, 2], degree)
     for fiber in read.fibers:
         cert = fiber.certificate()
