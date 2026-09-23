@@ -4468,6 +4468,24 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The complex Lagrange multiplier xi_j at the current "
                      "point of a solve. A variable, not a configured weight.");
 
+  py::enum_<ReggeForm>(m, "ReggeForm",
+      "Which discretization the Regge term of JointAction is. Primal is "
+      "Regge's own sum_h |h| eps_h (sum_e l_e eps_e in three dimensions), the "
+      "form the whitepaper's Section 7 computation takes the second variation "
+      "of; Dual is the circumcentric (Sorkin) sum_h |*h| eps_h.")
+      .value("Primal", ReggeForm::Primal)
+      .value("Dual", ReggeForm::Dual);
+
+  py::enum_<ReggeHinges>(m, "ReggeHinges",
+      "Which hinges the primal Regge sum runs over. Interior keeps only the "
+      "hinges whose link closes (every (d-1)-face through the hinge shared by "
+      "exactly two top cells), where deficit angles are defined; on a complex "
+      "with no interior hinge the primal term is zero. All keeps every hinge of "
+      "a top cell with the library's 2 pi - sum(theta) deficit at the boundary "
+      "too, the sum ReggeSolver.reggeAction evaluates.")
+      .value("Interior", ReggeHinges::Interior)
+      .value("All", ReggeHinges::All);
+
   py::class_<JointActionDeclaration>(m, "JointActionDeclaration",
       "Everything that fixes which action S(z, U, Gamma) a JointAction is: the "
       "carrier degree, the three coefficients, the carried covariance, the "
@@ -4479,10 +4497,28 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "matrix over the k-cells.")
       .def_readwrite("gravitational_weight",
                      &JointActionDeclaration::gravitationalWeight,
-                     "w_R, the coefficient on the dual Lorentzian Regge "
-                     "action. The whitepaper's Section 7 identification is "
-                     "1/(8 pi G) in lattice units, so a caller working in the "
-                     "backreaction coupling kappa = 8 pi G sets 1/kappa.")
+                     "w_R, the coefficient on the Regge action in the "
+                     "declared regge_form. The whitepaper's Section 7 "
+                     "identification is 1/(8 pi G) in lattice units, so a "
+                     "caller working in the backreaction coupling "
+                     "kappa = 8 pi G sets 1/kappa.")
+      .def_readwrite("regge_form", &JointActionDeclaration::reggeForm,
+                     "Which Regge discretization S_Regge is; Primal by "
+                     "default.")
+      .def_readwrite("regge_hinges", &JointActionDeclaration::reggeHinges,
+                     "Which hinges the primal sum runs over; Interior by "
+                     "default.")
+      .def_readwrite("stiffness_weight",
+                     &JointActionDeclaration::stiffnessWeight,
+                     "w_S, the coefficient of the linear length stiffness "
+                     "(1/2) sum_e (l_e - l0_e)^2 that the whitepaper's "
+                     "Section 7 stands in for the spectral-moment part of "
+                     "S_0, with kappa = 8 pi G; a caller sets 1/kappa. Zero "
+                     "leaves the term out.")
+      .def_readwrite("reference_lengths",
+                     &JointActionDeclaration::referenceLengths,
+                     "l0_e, one reference length per edge in getEdgeList() "
+                     "order; required when stiffness_weight is nonzero.")
       .def_readwrite("holonomy_weight",
                      &JointActionDeclaration::holonomyWeight,
                      "w_H, the coefficient on the face-holonomy term. It is "
@@ -4510,8 +4546,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
   py::class_<JointAction>(m, "JointAction",
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
       "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
-      "S = w_R S_Regge(z) + w_H S_hol(U) + w_M tr(Gamma h(z, U)) + sum_j xi_j "
-      "(p_j(h) - p_j*), with S_hol the branch-free plaquette sum over the "
+      "S = w_R S_Regge(z) + w_S S_stiff(z) + w_H S_hol(U) + w_M tr(Gamma "
+      "h(z, U)) + sum_j xi_j (p_j(h) - p_j*), with S_hol the branch-free plaquette sum over the "
       "face holonomies F_tau = prod_e U_e^eps. The stationarity conditions are "
       "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
       "never the minimization of a selected real projection.\n\n"
@@ -4545,14 +4581,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("moment_residuals", &JointAction::momentResiduals,
            "p_j(h) - p_j* for each declared constraint: the exact complex "
            "stationarity equation in xi_j.")
-      .def("regge_term", &JointAction::reggeTerm, "w_R S_Regge(z).")
+      .def("regge_term", &JointAction::reggeTerm,
+           "w_R S_Regge(z) in the declared form and hinge set.")
+      .def("stiffness_term", &JointAction::stiffnessTerm,
+           "w_S (1/2) sum_e (l_e - l0_e)^2.")
+      .def("regge_hinge_count", &JointAction::reggeHingeCount,
+           "The number of hinges the primal Regge sum runs over under the "
+           "declared hinge rule.")
       .def("holonomy_term", &JointAction::holonomyTerm, "w_H S_hol(U).")
       .def("matter_term", &JointAction::matterTerm,
            "w_M tr(Gamma h(z, U)).")
       .def("spectral_term", &JointAction::spectralTerm,
            "sum_j xi_j (p_j(h) - p_j*).")
       .def("value", &JointAction::value,
-           "S(z, U, Gamma), the sum of the four terms.")
+           "S(z, U, Gamma), the sum of the five terms.")
       .def("length_stationarity", &JointAction::lengthStationarity,
            "dS/dz_e per edge, assembled from the framework's exact analytic "
            "gradients. No finite difference and no discarded imaginary part.")
@@ -4610,7 +4652,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "matched left/right frame pair. Idempotent by construction, with no "
            "adjoint anywhere, and Hermitian only when h is normal.")
       .def_static("term_names", &JointAction::termNames,
-                  "The four declared terms, in the order value sums them.");
+                  "The five declared terms, in the order value sums them.");
 
   py::enum_<HolomorphicJacobianMode>(m, "HolomorphicJacobianMode",
       "How the Jacobian of the stationarity system is formed.\n\n"
@@ -4735,6 +4777,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("AscendingRealPart", OccupationOrder::AscendingRealPart)
       .value("AscendingModulus", OccupationOrder::AscendingModulus);
 
+  py::enum_<CovarianceRule>(m, "CovarianceRule",
+      "How SelfConsistentMeanField rebuilds the carried covariance. "
+      "OccupiedProjector is the spectral projector onto the declared number of "
+      "occupied modes, a Slater determinant. BandFilling groups the ordered "
+      "spectrum into degenerate bands and spreads a declared occupation n_b "
+      "evenly over band b, Gamma = sum_b (n_b / r_b) P_b: the one-body density "
+      "of a state invariant under the symmetry that protects the bands.")
+      .value("OccupiedProjector", CovarianceRule::OccupiedProjector)
+      .value("BandFilling", CovarianceRule::BandFilling);
+
   py::class_<SelfConsistentMeanFieldDeclaration>(
       m, "SelfConsistentMeanFieldDeclaration",
       "The configuration of a self-consistent backreaction solve.")
@@ -4745,6 +4797,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("occupation_order",
                      &SelfConsistentMeanFieldDeclaration::occupationOrder,
                      "Which modes those are.")
+      .def_readwrite("covariance_rule",
+                     &SelfConsistentMeanFieldDeclaration::covarianceRule,
+                     "How the covariance is rebuilt at each outer iteration: "
+                     "the occupied projector, or the band filling "
+                     "sum_b (n_b / r_b) P_b.")
+      .def_readwrite("band_occupations",
+                     &SelfConsistentMeanFieldDeclaration::bandOccupations,
+                     "n_b, the number of particles each band holds under the "
+                     "band-filling rule, in the declared order.")
+      .def_readwrite("band_tolerance",
+                     &SelfConsistentMeanFieldDeclaration::bandTolerance,
+                     "The relative separation at or below which consecutive "
+                     "ordered eigenvalues belong to one band.")
       .def_readwrite("maximum_iterations",
                      &SelfConsistentMeanFieldDeclaration::maximumIterations)
       .def_readwrite("tolerance",
@@ -4783,6 +4848,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("spectral_gap",
                      &SelfConsistentMeanFieldStep::spectralGap,
                      "The gap that isolates the occupied band.")
+      .def_readwrite("band_ranks", &SelfConsistentMeanFieldStep::bandRanks,
+                     "The band ranks under the band-filling rule.")
       .def_readwrite("geometry_converged",
                      &SelfConsistentMeanFieldStep::geometryConverged)
       .def_readwrite("geometry_residual_norm",
@@ -4805,6 +4872,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldReport::occupiedEnergy)
       .def_readwrite("spectral_gap",
                      &SelfConsistentMeanFieldReport::spectralGap)
+      .def_readwrite("band_ranks", &SelfConsistentMeanFieldReport::bandRanks)
       .def_readwrite("action", &SelfConsistentMeanFieldReport::action);
 
   py::class_<SelfConsistentMeanField>(m, "SelfConsistentMeanField",
@@ -4822,7 +4890,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def(py::init<JointAction, SelfConsistentMeanFieldDeclaration>(),
            py::arg("action"), py::arg("declaration"))
       .def("solve", &SelfConsistentMeanField::solve,
-           "Run the solve, writing the relaxed geometry into the complex.")
+           py::call_guard<py::gil_scoped_release>(),
+           "Run the solve, writing the relaxed geometry into the complex. The "
+           "interpreter lock is released for its duration, so a caller's "
+           "other threads (a live display) keep running.")
       .def_property_readonly("action", &SelfConsistentMeanField::action,
                              "The action, carrying the covariance and the "
                              "multipliers as the solve left them.");
