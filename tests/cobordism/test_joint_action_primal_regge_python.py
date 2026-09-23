@@ -192,6 +192,28 @@ class TestStiffness(unittest.TestCase):
         self.assertEqual(action.stiffness_term(), 0)
         self.assertLess(np.max(np.abs(action.length_stationarity())), 1e-16)
 
+    def test_the_hellmann_feynman_force_carries_no_stiffness(self):
+        """The force of the carried state is the matter term alone; the
+        stiffness belongs to the geometric side it is balanced against."""
+        spacetime = tetrahedron(squared=lambda i: 8.0 + 0.4 * i)
+        reference = [cmath.sqrt(8.0)] * 6
+        declaration = _declaration(stiffness_weight=0.7,
+                                   reference_lengths=reference,
+                                   matter_weight=1.0)
+        declaration.covariance = list((np.eye(6) / 2.0).reshape(-1))
+        with_stiffness = cob.JointAction(spacetime, declaration)
+        declaration.stiffness_weight = 0.0
+        without = cob.JointAction(spacetime, declaration)
+        force = np.array(with_stiffness.hellmann_feynman_length_force())
+        self.assertLess(np.max(np.abs(
+            force - np.array(without.length_stationarity()))), 1e-14)
+        stiffness = np.array(cob.JointAction(spacetime, _declaration(
+            stiffness_weight=0.7,
+            reference_lengths=reference)).length_stationarity())
+        self.assertLess(np.max(np.abs(
+            np.array(with_stiffness.length_stationarity()) - force
+            - stiffness)), 1e-14)
+
     def test_missing_reference_lengths_are_refused(self):
         spacetime = tetrahedron()
         with self.assertRaises(ValueError):

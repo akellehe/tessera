@@ -92,6 +92,31 @@ class TestBandFilling(unittest.TestCase):
             cob.SelfConsistentMeanField(action,
                                         _mean_field([1] * 7)).solve()
 
+    def test_bands_read_under_a_declared_symmetry(self):
+        """With the rotation action declared, the bands are those of the
+        T-averaged operator: three doublets times three sheets, rank six, and
+        the covariance commutes with every D_1(g)."""
+        _, action = _action()
+        actions = bp.rotation_action([bp.monopole_support()] * bp.SHEETS)
+        declaration = _mean_field([1, 1, 1])
+        declaration.band_symmetry = [list(d.reshape(-1)) for d in actions]
+        report = cob.SelfConsistentMeanField(action, declaration).solve()
+        self.assertEqual(list(report.band_ranks), [6, 6, 6])
+        gamma = bp.matrix(report.covariance)
+        self.assertLess(abs(np.trace(gamma) - 3.0), 1e-10)
+        for d in actions:
+            self.assertLess(np.max(np.abs(d @ gamma - gamma @ d)), 1e-10)
+        # one particle in each of the three bands, spread evenly: the identity
+        # over the 18 cells divided by six
+        self.assertLess(np.max(np.abs(gamma - np.eye(18) / 6.0)), 1e-10)
+
+    def test_a_malformed_symmetry_is_refused(self):
+        _, action = _action()
+        declaration = _mean_field([1])
+        declaration.band_symmetry = [[1.0, 0.0, 0.0, 1.0]]
+        with self.assertRaises(ValueError):
+            cob.SelfConsistentMeanField(action, declaration).solve()
+
     def test_the_projector_rule_is_unchanged(self):
         _, action = _action()
         declaration = _mean_field([1])

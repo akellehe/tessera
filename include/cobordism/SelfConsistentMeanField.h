@@ -21,7 +21,8 @@ namespace tessera::cobordism {
 /// * `OccupiedProjector` — the spectral projector onto the first
 ///   `occupiedModes` modes in the declared order: a Slater determinant, the
 ///   quasi-free covariance of the Gaussian class.
-/// * `BandFilling` — the ordered spectrum is grouped into bands of degenerate
+/// * `BandFilling` — the ordered spectrum (of \f$ h \f$, or of its group
+///   average under a declared `bandSymmetry`) is grouped into bands of degenerate
 ///   eigenvalues (consecutive eigenvalues within `bandTolerance` of each other,
 ///   relative to their size), and band \f$ b \f$ of rank \f$ r_b \f$ carries
 ///   the declared occupation \f$ n_b \f$ spread evenly over it:
@@ -63,6 +64,15 @@ struct SelfConsistentMeanFieldDeclaration {
   /// eigenvalues belong to one band under `CovarianceRule::BandFilling`:
   /// \f$ |\lambda_{i+1}-\lambda_i|\le\tau\max(1,|\lambda_i|) \f$.
   double bandTolerance = 1e-8;
+
+  /// The declared symmetry the band rule reads its bands under: the operators
+  /// \f$ D(g) \f$ of a finite group acting on the carrier's cells, each flat
+  /// row-major \f$ n\times n \f$. When present, the bands are those of the
+  /// group average \f$ \bar h=|G|^{-1}\sum_g D(g)^{-1}hD(g) \f$ rather than of
+  /// \f$ h \f$ itself, which is how the whitepaper reads the spin content of an
+  /// odd-monopole tetrahedron ("the T-averaged twisted edge Laplacian", WP
+  /// §11.1). Empty reads the bands of \f$ h \f$.
+  std::vector<std::vector<std::complex<double>>> bandSymmetry;
 
   /// The largest number of outer iterations — geometry relaxation followed by
   /// re-occupation — taken before the solve reports what it reached.

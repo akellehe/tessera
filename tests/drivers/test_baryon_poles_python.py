@@ -136,23 +136,73 @@ def test_the_covariant_operator_at_the_monopole_is_not_rotation_symmetric():
 
 
 def test_ratios_are_taken_on_the_lowest_poles():
-    def record(content, half, three):
-        sectors = {}
-        for key, value in ((str(bp.SPIN_HALF), half),
-                           (str(bp.SPIN_THREE_HALVES), three)):
-            if value is not None:
-                entry = {"lowest_pole": value}
-                sectors[key] = {"quasi_free": entry, "with_quartic": entry}
-        return {"content": content, "sectors": sectors}
-    out = bp.ratios([record([3, 0, 0], None, 9.0 + 0j),
-                     record([2, 1, 0], 10.0 + 0j, 10.0 + 0j),
-                     record([1, 1, 1], 12.0 + 0j, 12.0 + 0j)])
-    r = out["quasi_free"]
-    assert r["nucleon_content"] == [2, 1, 0]
-    assert r["delta_content"] == [3, 0, 0]
-    assert r["pole_ratio"] == pytest.approx(10.0 / 9.0)
-    assert r["target_mass_squared_ratio"] == pytest.approx(
+    def record(content, sectors):
+        out = {}
+        for key, (value, irreps) in sectors.items():
+            entry = {"lowest_pole": value}
+            out[key] = {"quasi_free": entry, "with_quartic": entry,
+                        "restriction_to_2T": irreps,
+                        "nucleon_reading": "2" in irreps,
+                        "delta_reading": sorted(irreps) == ["2'", "2''"]}
+        return {"content": content, "sectors": out}
+    half, three = str(bp.SPIN_HALF), str(bp.SPIN_THREE_HALVES)
+    out = bp.ratios([
+        record([3, 0, 0], {three: (9.0 + 0j, ["2'", "2''"])}),
+        record([2, 1, 0], {half: (10.0 + 0j, ["2'"]),
+                           three: (10.0 + 0j, ["2''", "2"])}),
+        record([1, 1, 1], {half: (12.0 + 0j, ["2"]),
+                           three: (12.0 + 0j, ["2'", "2''"])})])
+    by_spin = out["quasi_free"]["by_spin"]
+    assert by_spin["nucleon_content"] == [2, 1, 0]
+    assert by_spin["delta_content"] == [3, 0, 0]
+    assert by_spin["pole_ratio"] == pytest.approx(10.0 / 9.0)
+    assert by_spin["delta_is_a_delta_reading"]
+    assert not by_spin["delta_ambiguous_with_spin_half"]
+    assert by_spin["target_mass_squared_ratio"] == pytest.approx(
         (938.272 / 1232.0) ** 2)
+    by_reading = out["quasi_free"]["by_2T_reading"]
+    # the lowest pole with a 2 in its restriction is the spin-3/2 sector of
+    # (2, 1, 0): the tetrahedral ambiguity in action
+    assert by_reading["nucleon_content"] == [2, 1, 0]
+    assert by_reading["nucleon_spin_j_j_plus_1"] == pytest.approx(3.75)
+    assert by_reading["delta_content"] == [3, 0, 0]
+
+
+def test_the_restriction_to_the_binary_tetrahedral_group():
+    assert bp.restriction(bp.SPIN_HALF, 0) == ["2"]
+    assert bp.restriction(bp.SPIN_HALF, 1) == ["2'"]
+    assert bp.restriction(bp.SPIN_THREE_HALVES, 0) == ["2'", "2''"]
+    assert bp.restriction(bp.SPIN_THREE_HALVES, 1) == ["2''", "2"]
+
+
+def test_the_T_averaged_operator_carries_three_doublets(alignment):
+    """h-bar_1 = (1/|T|) sum_g D_1(g)^-1 h_1 D_1(g) (WP line 497) is block
+    scalar in the aligned doublet frame; applied to the library's
+    combinatorial twisted edge Laplacian it gives the paper's six
+    eigenvalues."""
+    support = bp.monopole_support()
+    actions = bp.rotation_action([support] * bp.SHEETS)
+    spacetime = bp.build_host()
+    h = bp.matrix(cob.JointAction(
+        spacetime, bp.action_declaration(spacetime, 1.0, 1.0)
+    ).carrier_operator())
+    averaged = bp.rotation_averaged(h, actions)
+    frame = bp._micro_frame([alignment] * bp.SHEETS)
+    energies, residual = bp._block_scalar(np.linalg.solve(frame,
+                                                          averaged @ frame))
+    assert residual < 1e-12
+    assert len({round(e.real, 9) for e in energies}) == 3
+    combinatorial = np.kron(np.eye(bp.SHEETS),
+                            np.asarray(support.edgeLaplacian()))
+    values = np.sort(np.linalg.eigvals(
+        bp.rotation_averaged(combinatorial, actions)).real)[::3]
+    expected = [4 - 2 / np.sqrt(3)] * 2 + [4.0] * 2 + [4 + 2 / np.sqrt(3)] * 2
+    assert np.allclose(values, expected, atol=1e-12)
+
+
+def test_the_trialities_are_the_three_z3_characters(alignment):
+    assert sorted(alignment["trialities"]) == [0, 1, 2]
+    assert alignment["trialities"][alignment["reference_carrier"]] == 0
 
 
 # -------------------------------------------------------------------- live

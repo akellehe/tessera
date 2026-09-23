@@ -653,6 +653,7 @@ JointActionDeclaration forceOnlyDeclaration(
   JointActionDeclaration forceOnly = declaration;
   forceOnly.gravitationalWeight = 0.0;
   forceOnly.holonomyWeight = 0.0;
+  forceOnly.stiffnessWeight = 0.0;
   forceOnly.matterWeight = 1.0;
   forceOnly.momentConstraints.clear();
   return forceOnly;

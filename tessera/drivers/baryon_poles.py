@@ -52,17 +52,26 @@ the mass-squared reading (the pole of a Laplace-type operator has the dimension
 of p^2, and the paper takes no square root of it), and the ratio of moduli and
 the ratio of real parts are reported beside it.
 
-What the host measures today
-----------------------------
+The operator the spin is read on
+-------------------------------
 The covariant operator h_1(z, U) of the specification (Definition 2) is not
-invariant under the projective rotation action D_1(g) at the monopole
-connection: its six eigenvalues per sheet are simple, and the three spinor
-doublets exist only in the rotation-averaged operator the whitepaper quotes
-(WP line 497). Every record therefore carries `symmetry_residual` (h_1 in the
-aligned doublet frame against a block-scalar operator) and, per spin sector,
-`compression_leakage`; while those are not small the spin sectors are not
-invariant and no nucleon or Delta pole is certified. Which operator carries the
-spin on this host is a question for the user, recorded in the design note.
+itself invariant under the projective rotation action D_1(g) at the monopole
+connection: its six eigenvalues per sheet are simple. The whitepaper reads the
+spin content on the T-averaged operator (WP §11.1 line 497: "The action on edge
+modes is canonical even where the twisted operator is not"; "the T-averaged
+twisted edge Laplacian"), h-bar_1 = (1/|T|) sum_g D_1(g)^{-1} h_1 D_1(g), with
+T = A_4 the rotation group of the tetrahedron. The driver does the same: the
+bands the carried density fills, the spin sectors and every pole are read on
+h-bar_1 (and, for the Section 7 quartic, on the eliminated three-particle
+operator averaged over the same diagonal action). The departure of h_1 itself
+from the symmetric form is reported beside every record as `symmetry_residual`.
+
+The same paragraph's caveat is carried with every Delta candidate: on the
+tetrahedron the j = 3/2 quartet restricts to 2' + 2'', so "spin-1/2 with
+triality" and "half of spin-3/2" are indistinguishable. A Delta reading is a
+degenerate 2' + 2'' pair of three-quark states and a nucleon reading is a 2;
+each sector reports its restriction, and the ratios are reported both by sharp
+spin and by 2T reading.
 
 Running it
 ----------
@@ -240,9 +249,14 @@ def relaxation_declaration(config):
     return geometry
 
 
-def mean_field_declaration(content, config):
-    """Band filling with the content's occupations (WP §7 line 250)."""
+def mean_field_declaration(content, config, band_symmetry=None):
+    """Band filling with the content's occupations (WP §7 line 250), the bands
+    read on the T-averaged operator when the rotation action is supplied
+    (WP §11.1 line 497)."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
+    if band_symmetry is not None:
+        declaration.band_symmetry = [list(np.asarray(d).reshape(-1))
+                                     for d in band_symmetry]
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = [float(n) for n in content]
     declaration.band_tolerance = config["band_tolerance"]
@@ -266,6 +280,29 @@ def matrix(flat):
 def rotation_group():
     """The twelve rotations of the tetrahedron, T = A_4."""
     return obs.MonopoleSupport.tetrahedralRotations()
+
+
+def rotation_action(supports):
+    """D_1(g) on the 18 microscopic edge cells, one 6 x 6 block per sheet from
+    that sheet's `MonopoleSupport.edgeRepresentation`, for the twelve
+    rotations of `rotation_group()`. The canonical cell order is sheet-major
+    and each sheet's edges are in the order of `MonopoleSupport.edges`."""
+    actions = []
+    for g in rotation_group():
+        d = np.zeros((SHEETS * BASE_EDGES, SHEETS * BASE_EDGES),
+                     dtype=complex)
+        for t, support in enumerate(supports):
+            sl = slice(t * BASE_EDGES, (t + 1) * BASE_EDGES)
+            d[sl, sl] = np.asarray(support.edgeRepresentation(g))
+        actions.append(d)
+    return actions
+
+
+def rotation_averaged(operator, actions):
+    """The T-averaged operator (1/|T|) sum_g D_1(g)^{-1} X D_1(g): the
+    operator the whitepaper reads the spin content on ("the T-averaged
+    twisted edge Laplacian", WP §11.1 line 497)."""
+    return sum(np.linalg.solve(d, operator @ d) for d in actions) / len(actions)
 
 
 def sheet_support(spacetime, sheet):
@@ -338,8 +375,25 @@ def aligned_doublet_frame(support, group):
             residual = max(residual, np.max(np.abs(
                 m @ intertwiner - chi * intertwiner @ r)))
         frame[:, 2 * c:2 * c + 2] = blocks[c] @ intertwiner
+    # The Z_3 = 2T/Q_8 label of each carrier: its character on a declared
+    # element of order three, the first three-cycle of `rotation_group()`,
+    # read as exp(2 pi i t / 3). Which of the two nontrivial characters is
+    # called 2' is the sheet-rotation convention of WP §8 (omega versus
+    # omega^2); the label is recorded, not derived.
+    three_cycle = next(k for k, g in enumerate(group)
+                       if sum(1 for x, y in enumerate(g) if x != y) == 3)
+    trialities = []
+    for c in range(3):
+        if c == reference:
+            trialities.append(0)
+            continue
+        r = actions[reference][three_cycle]
+        chi = np.trace(actions[c][three_cycle]) / np.trace(r)
+        trialities.append(int(round(np.angle(chi) / (2 * np.pi / 3))) % 3)
     return {
         "frame": frame,
+        "trialities": trialities,
+        "three_cycle": list(group[three_cycle]),
         "averaged_eigenvalues": [float(v) for v in values],
         "reference_carrier": reference,
         "intertwining_residual": float(residual),
@@ -610,59 +664,117 @@ def contents():
     return [c for c in itertools.product(range(4), repeat=3) if sum(c) == 3]
 
 
-def relax_content(content, kappa, beta, config):
-    """Steps 1-2 for one content: a fresh host relaxed to self-consistency."""
+IRREP_NAMES = ("2", "2'", "2''")
+
+
+def restriction(j2, triality):
+    """The 2T content of a three-quark spin sector of total triality tau.
+
+    The three doublets carry the Z_3 = 2T/Q_8 characters 0, 1, 2 (2, 2',
+    2''). A spin-1/2 multiplet of total triality tau restricts to the doublet
+    of label tau; a spin-3/2 multiplet restricts to 2' (x) chi^tau plus
+    2'' (x) chi^tau, the j = 3/2 quartet being 2' + 2'' on the tetrahedron
+    (WP §11.1 line 499). A tetrahedral support therefore cannot tell spin 1/2
+    with triality from half of spin 3/2."""
+    if abs(j2 - SPIN_HALF) < 1e-9:
+        return [IRREP_NAMES[triality % 3]]
+    return [IRREP_NAMES[(1 + triality) % 3], IRREP_NAMES[(2 + triality) % 3]]
+
+
+def third_exterior_power(one_particle, basis=None):
+    """Lambda^3 of a one-particle map in the occupation basis:
+    entry (I, J) is the 3 x 3 minor det(X[I, J]) of the ascending tuples I, J,
+    the coefficient of the wedge I in the image of the wedge J."""
+    index = np.array(basis if basis is not None else occupation_basis())
+    minors = one_particle[index[:, None, :, None], index[None, :, None, :]]
+    return np.linalg.det(minors)
+
+
+def rotation_averaged_many_body(operator, actions, frame, dual):
+    """The three-particle operator averaged over the diagonal rotation action,
+    (1/|T|) sum_g Lambda^3(D_g)^{-1} H Lambda^3(D_g), with D_g the rotation in
+    the fibre frame. For H = dGamma(X) this is dGamma of the T-averaged X, and
+    for the eliminated quartic it is the elimination with every coupling
+    rotated, so it is the T-average of WP line 497 applied to the whole
+    operator the poles are read on."""
+    total = np.zeros_like(operator)
+    for d in actions:
+        lifted = third_exterior_power(dual @ d @ frame)
+        total += np.linalg.solve(lifted, operator @ lifted)
+    return total / len(actions)
+
+
+def relax_content(content, kappa, beta, config, actions):
+    """Steps 1-2 for one content: a fresh host relaxed to self-consistency,
+    the carried density filling the bands of the T-averaged operator."""
     spacetime = build_host(config["edge_squared"])
     declaration = action_declaration(spacetime, kappa, beta,
                                      config["regge_hinges"])
     config.setdefault("reference_lengths",
                       list(declaration.reference_lengths))
     action = cob.JointAction(spacetime, declaration)
-    solve = cob.SelfConsistentMeanField(action,
-                                        mean_field_declaration(content,
-                                                               config))
+    solve = cob.SelfConsistentMeanField(
+        action, mean_field_declaration(content, config, actions))
     report = solve.solve()
     return spacetime, solve.action, report
+
+
+def _micro_frame(alignments):
+    """The aligned base frame of each sheet lifted to the microscopic cells;
+    column b * 3 + t is base mode b on sheet t."""
+    frame = np.zeros((SHEETS * BASE_EDGES, SHEETS * BASE_EDGES),
+                     dtype=complex)
+    for t, alignment in enumerate(alignments):
+        for b in range(BASE_EDGES):
+            frame[t * BASE_EDGES:(t + 1) * BASE_EDGES, b * SHEETS + t] = \
+                alignment["frame"][:, b]
+    return frame
+
+
+def _block_scalar(in_frame):
+    """The per-carrier energies of an operator in the aligned frame and its
+    relative departure from block-scalar form (one number per doublet times
+    the sheets)."""
+    energies = []
+    rest = in_frame.copy()
+    for c in range(3):
+        sl = slice(2 * c * SHEETS, 2 * (c + 1) * SHEETS)
+        energy = complex(np.trace(in_frame[sl, sl]) / (2 * SHEETS))
+        energies.append(energy)
+        rest[sl, sl] -= energy * np.eye(2 * SHEETS)
+    return energies, float(np.linalg.norm(rest) / np.linalg.norm(in_frame))
 
 
 def evaluate_content(content, kappa, beta, config, alignment):
     """One content at one scan point: relaxation, recursion, quark conditions,
     states, spin, operators and poles."""
     started = time.time()
-    spacetime, action, report = relax_content(content, kappa, beta, config)
+    declared_actions = rotation_action([monopole_support()] * SHEETS)
+    spacetime, action, report = relax_content(content, kappa, beta, config,
+                                              declared_actions)
     carrier = matrix(action.carrier_operator())
-    covariance = matrix(report.covariance)
 
-    # The microscopic frame: aligned base frame, lifted to each sheet in the
-    # canonical sheet-major cell order; mode b * 3 + t.
-    base = alignment["frame"]
-    frame = np.zeros((SHEETS * BASE_EDGES, SHEETS * BASE_EDGES),
-                     dtype=complex)
-    for t in range(SHEETS):
-        for b in range(BASE_EDGES):
-            frame[t * BASE_EDGES:(t + 1) * BASE_EDGES, b * SHEETS + t] = \
-                base[:, b]
+    # The spin is read with the canonical projective action D_1(g) of the
+    # declared host (the symmetric monopole configuration): the relaxation
+    # under h_1, which is not itself rotation-covariant, moves the fields off
+    # the symmetric configuration, and how far is reported below as the
+    # gauge-compensation residual of each rotation at the relaxed connection.
+    supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
+    compensation = max(
+        support.gaugeCompensation(g).residual
+        for support, _ in supports for g in rotation_group())
+    actions = declared_actions
+    alignments = [alignment] * SHEETS
+    frame = _micro_frame(alignments)
     dual = np.linalg.inv(frame)
-    in_frame = dual @ carrier @ frame
-    band_energies = [complex(np.trace(in_frame[2 * c * SHEETS:
-                                               2 * (c + 1) * SHEETS,
-                                               2 * c * SHEETS:
-                                               2 * (c + 1) * SHEETS])
-                             / (2 * SHEETS)) for c in range(3)]
-    off_block = in_frame.copy()
-    for c in range(3):
-        sl = slice(2 * c * SHEETS, 2 * (c + 1) * SHEETS)
-        off_block[sl, sl] -= band_energies[c] * np.eye(2 * SHEETS)
-    symmetry_residual = float(np.linalg.norm(off_block)
-                              / np.linalg.norm(in_frame))
+    averaged = rotation_averaged(carrier, actions)
+    band_energies, averaged_residual = _block_scalar(dual @ averaged @ frame)
+    _, covariant_residual = _block_scalar(dual @ carrier @ frame)
+    carrier_of_band = [int(c) for c in
+                       np.argsort([e.real for e in band_energies])]
+    trialities = alignments[0]["trialities"]
 
-    # The bands of h in ascending order are the carriers in the order of the
-    # averaged operator only if the two orders agree; the content is declared
-    # in the band order of h, so the carriers are relabelled by h's band
-    # energies.
-    carrier_of_band = list(np.argsort([e.real for e in band_energies]))
-
-    # the quartic's ingredients
+    # the quartic's ingredients, on h_1 itself
     couplings, hessian = couplings_and_stiffness(spacetime, kappa, beta,
                                                  config)
     expectation = np.asarray(action.hellmann_feynman_length_force())
@@ -672,29 +784,39 @@ def evaluate_content(content, kappa, beta, config, alignment):
     truncation = truncation_certificates(spacetime, kappa, beta, config,
                                          couplings, hessian, induced)
 
-    def many_body(carrier_matrix):
+    def many_body(carrier_matrix, coupling_matrices):
         declaration = cob.DressedFluctuationDeclaration()
         declaration.carrier_dimension = SHEETS * BASE_EDGES
         declaration.carrier = list(carrier_matrix.reshape(-1))
-        declaration.couplings = couplings
+        declaration.couplings = [list(o.reshape(-1))
+                                 for o in coupling_matrices]
         declaration.bare_stiffness = list(hessian.reshape(-1))
         declaration.occupied_modes = 3
         dressed = cob.DressedFluctuation(declaration)
         return dressed.effective_action(list(frame.reshape(-1)),
                                         list(dual.reshape(-1)), 3)
 
-    quasi_free_read = many_body(carrier)
+    coupling_matrices = [matrix(o) for o in couplings]
+    # quasi-free: dGamma of the T-averaged operator
+    quasi_free_read = many_body(averaged, coupling_matrices)
     dimension = int(quasi_free_read.dimension)
     quasi_free = np.asarray(quasi_free_read.one_body).reshape(dimension,
                                                                dimension)
-    quartic_read = many_body(carrier + shift)
-    with_quartic = (np.asarray(quartic_read.effective_action).reshape(
-        dimension, dimension) + constant * np.eye(dimension))
+    # with the quartic: the whole eliminated operator averaged over the
+    # diagonal rotation action, term by term (a rotated carrier and rotated
+    # couplings give the rotated many-body operator)
+    quartic_read = many_body(carrier + shift, coupling_matrices)
+    eliminated = np.asarray(quartic_read.effective_action).reshape(
+        dimension, dimension)
+    with_quartic = rotation_averaged_many_body(eliminated, actions, frame,
+                                               dual) + \
+        constant * np.eye(dimension)
 
     # states of the content, by carrier (the content is in band order)
     carrier_content = [0, 0, 0]
     for band, n in enumerate(content):
         carrier_content[carrier_of_band[band]] = n
+    triality = sum(n * t for n, t in zip(carrier_content, trialities)) % 3
     states, labels = singlet_states(carrier_content)
     sectors, j2_values = spin_sectors(states)
     basis = occupation_basis()
@@ -702,7 +824,18 @@ def evaluate_content(content, kappa, beta, config, alignment):
 
     sector_reads = {}
     for j2, sector in sectors.items():
-        entry = {"dimension": int(sector.shape[1])}
+        irreps = restriction(j2, triality)
+        entry = {
+            "dimension": int(sector.shape[1]),
+            "total_triality": int(triality),
+            "restriction_to_2T": irreps,
+            "nucleon_reading": "2" in irreps,
+            "delta_reading": sorted(irreps) == sorted(["2'", "2''"]),
+            "tetrahedral_ambiguity": (
+                "on a tetrahedral support spin 1/2 with triality and half of "
+                "spin 3/2 are indistinguishable (WP line 499): this sector "
+                "restricts to %s" % " + ".join(irreps)),
+        }
         for name, operator in (("quasi_free", quasi_free),
                                ("with_quartic", with_quartic)):
             block, leakage, read = sector_poles(operator, sector)
@@ -743,7 +876,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
 
     recursion = recursion_read(spacetime, config)
     quark = quark_conditions(spacetime, alignment, recursion,
-                             symmetry_residual, report)
+                             averaged_residual, report)
     return {
         "content": list(content),
         "carrier_content": carrier_content,
@@ -765,13 +898,25 @@ def evaluate_content(content, kappa, beta, config, alignment):
                              spacetime.getEdgeList().toVector()],
             "face_holonomies": [complex(f) for f in
                                 action.face_holonomies()],
+            "unit_circle_departure": max(dep for _, dep in supports),
+            "symmetry_departure": float(compensation),
+            "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
+                                 for sp, _ in supports],
             "occupied_energy": complex(report.occupied_energy),
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
         },
+        "covariant_spectrum": sorted(
+            [complex(v) for v in np.linalg.eigvals(carrier)],
+            key=lambda v: (v.real, v.imag)),
+        "averaged_spectrum": sorted(
+            [complex(v) for v in np.linalg.eigvals(averaged)],
+            key=lambda v: (v.real, v.imag)),
         "band_energies": band_energies,
-        "carrier_of_band": [int(c) for c in carrier_of_band],
-        "symmetry_residual": symmetry_residual,
+        "carrier_of_band": carrier_of_band,
+        "trialities": trialities,
+        "symmetry_residual": covariant_residual,
+        "averaged_symmetry_residual": averaged_residual,
         "j2_values": j2_values,
         "quartic": {
             "constant": complex(constant),
@@ -870,8 +1015,9 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
            "coexact residual %s" % (doublet.coexact_residual
                                     if doublet is not None else None)),
          E("fibre-lift", symmetry_residual < 1e-6,
-           "h_1 in the aligned frame is block-scalar on each doublet times "
-           "the sheets to relative residual %.3g" % symmetry_residual)],
+           "the T-averaged h_1 (WP line 497) in the aligned frame is "
+           "block-scalar on each doublet times the sheets to relative "
+           "residual %.3g" % symmetry_residual)],
         [E("anchor-profile-nonzero", None,
            "the dressed anchor atlas is not read by this driver"),
          E("anchor-covariance", None, "not read"),
@@ -923,34 +1069,78 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
             "ratios": ratios(records)}
 
 
+def _pair(s_n, s_d, extra):
+    out = {
+        "nucleon_pole": s_n, "delta_pole": s_d,
+        "pole_ratio": s_n / s_d,
+        "modulus_ratio": abs(s_n) / abs(s_d),
+        "real_part_ratio": s_n.real / s_d.real,
+        "target_mass_squared_ratio": TARGET_MASS_SQUARED_RATIO,
+        "target_mass_ratio": TARGET_MASS_RATIO,
+    }
+    out.update(extra)
+    return out
+
+
 def ratios(records):
-    """The nucleon pole (lowest spin-1/2) and the Delta pole (lowest
-    spin-3/2) over the contents, and their ratios against the target."""
+    """The nucleon and Delta poles over the contents, and their ratios against
+    the target, in two pairings.
+
+    * By spin: the lowest sharp spin-1/2 pole over the lowest sharp spin-3/2
+      pole. Each candidate carries its restriction to 2T, and the Delta
+      candidate the tetrahedral ambiguity: its sector is a Delta reading only
+      when it restricts to the degenerate pair 2' + 2''; a 2 in its
+      restriction is indistinguishable from spin 1/2 with triality.
+    * By 2T reading: the lowest pole whose sector restricts to a 2 (a nucleon
+      reading) over the lowest pole whose sector restricts to 2' + 2'' (a Delta
+      reading).
+    """
     out = {}
     for name in ("quasi_free", "with_quartic"):
-        best = {}
+        by_spin, nucleon_reading, delta_reading = {}, None, None
         for record in records:
             for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
                 entry = record["sectors"].get(j2)
                 if not entry or entry[name]["lowest_pole"] is None:
                     continue
                 pole = entry[name]["lowest_pole"]
-                if j2 not in best or pole.real < best[j2][0].real:
-                    best[j2] = (pole, record["content"])
-        if str(SPIN_HALF) not in best or str(SPIN_THREE_HALVES) not in best:
-            out[name] = None
-            continue
-        s_n, content_n = best[str(SPIN_HALF)]
-        s_d, content_d = best[str(SPIN_THREE_HALVES)]
-        out[name] = {
-            "nucleon_pole": s_n, "nucleon_content": content_n,
-            "delta_pole": s_d, "delta_content": content_d,
-            "pole_ratio": s_n / s_d,
-            "modulus_ratio": abs(s_n) / abs(s_d),
-            "real_part_ratio": s_n.real / s_d.real,
-            "target_mass_squared_ratio": TARGET_MASS_SQUARED_RATIO,
-            "target_mass_ratio": TARGET_MASS_RATIO,
-        }
+                candidate = (pole, record["content"], j2,
+                             entry.get("restriction_to_2T"))
+                if j2 not in by_spin or pole.real < by_spin[j2][0].real:
+                    by_spin[j2] = candidate
+                if entry.get("nucleon_reading") and (
+                        nucleon_reading is None
+                        or pole.real < nucleon_reading[0].real):
+                    nucleon_reading = candidate
+                if entry.get("delta_reading") and (
+                        delta_reading is None
+                        or pole.real < delta_reading[0].real):
+                    delta_reading = candidate
+        result = {}
+        if str(SPIN_HALF) in by_spin and str(SPIN_THREE_HALVES) in by_spin:
+            n = by_spin[str(SPIN_HALF)]
+            d = by_spin[str(SPIN_THREE_HALVES)]
+            restriction_d = d[3] or []
+            result["by_spin"] = _pair(n[0], d[0], {
+                "nucleon_content": n[1], "delta_content": d[1],
+                "nucleon_restriction": n[3], "delta_restriction": d[3],
+                "delta_is_a_delta_reading":
+                    sorted(restriction_d) == sorted(["2'", "2''"]),
+                "delta_ambiguous_with_spin_half": "2" in restriction_d,
+            })
+        else:
+            result["by_spin"] = None
+        if nucleon_reading is not None and delta_reading is not None:
+            result["by_2T_reading"] = _pair(
+                nucleon_reading[0], delta_reading[0], {
+                    "nucleon_content": nucleon_reading[1],
+                    "nucleon_spin_j_j_plus_1": float(nucleon_reading[2]),
+                    "delta_content": delta_reading[1],
+                    "delta_spin_j_j_plus_1": float(delta_reading[2]),
+                })
+        else:
+            result["by_2T_reading"] = None
+        out[name] = result
     return out
 
 
@@ -1001,8 +1191,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None):
                 r = point["ratios"]
                 sys.stdout.write(
                     "kappa=%g beta=%g  quasi-free %s  with quartic %s\n"
-                    % (kappa, beta, _ratio_text(r["quasi_free"]),
-                       _ratio_text(r["with_quartic"])))
+                    % (kappa, beta, _ratio_text(r["quasi_free"]["by_spin"]),
+                       _ratio_text(r["with_quartic"]["by_spin"])))
                 sys.stdout.flush()
             if on_frame is not None:
                 on_frame(frames, len(frames) - 1)
@@ -1083,8 +1273,8 @@ def draw_frame(figure, frames, index):
     labels = ["k=%g\nb=%g" % (p["kappa"], p["beta"]) for p in done]
     x = np.arange(len(done))
     for name in ("quasi_free", "with_quartic"):
-        values = [p["ratios"][name]["pole_ratio"].real
-                  if p["ratios"][name] else np.nan for p in done]
+        values = [p["ratios"][name]["by_spin"]["pole_ratio"].real
+                  if p["ratios"][name]["by_spin"] else np.nan for p in done]
         left.plot(x, values, marker="o", markersize=6, linewidth=2,
                   color=SERIES[name], label=SERIES_LABEL[name])
     left.axhline(TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, linewidth=1,
@@ -1226,19 +1416,26 @@ def summary(result):
                                          TARGET_MASS_SQUARED_RATIO)]
     for point in result["points"]:
         for name in ("quasi_free", "with_quartic"):
-            r = point["ratios"][name]
-            if r is None:
-                lines.append("kappa=%g beta=%g %s: no pole pair"
-                             % (point["kappa"], point["beta"], name))
-                continue
-            lines.append(
-                "kappa=%g beta=%g %-12s s_N=%s (content %s) s_D=%s (content "
-                "%s) s_N/s_D=%s |s_N|/|s_D|=%.6f Re/Re=%.6f"
-                % (point["kappa"], point["beta"], name,
-                   _complex_text(r["nucleon_pole"]), r["nucleon_content"],
-                   _complex_text(r["delta_pole"]), r["delta_content"],
-                   _complex_text(r["pole_ratio"]), r["modulus_ratio"],
-                   r["real_part_ratio"]))
+            for pairing in ("by_spin", "by_2T_reading"):
+                r = point["ratios"][name][pairing]
+                head = "kappa=%g beta=%g %-12s %-13s" % (
+                    point["kappa"], point["beta"], name, pairing)
+                if r is None:
+                    lines.append(head + " no pole pair")
+                    continue
+                note = ""
+                if pairing == "by_spin":
+                    note = " Delta restriction %s%s" % (
+                        "+".join(r["delta_restriction"] or []),
+                        " (ambiguous with spin 1/2)"
+                        if r["delta_ambiguous_with_spin_half"] else "")
+                lines.append(
+                    head + " s_N=%s (content %s) s_D=%s (content %s) "
+                    "s_N/s_D=%s |s_N|/|s_D|=%.6f Re/Re=%.6f%s"
+                    % (_complex_text(r["nucleon_pole"]), r["nucleon_content"],
+                       _complex_text(r["delta_pole"]), r["delta_content"],
+                       _complex_text(r["pole_ratio"]), r["modulus_ratio"],
+                       r["real_part_ratio"], note))
     return "\n".join(lines)
 
 

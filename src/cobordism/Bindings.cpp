@@ -4810,6 +4810,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldDeclaration::bandTolerance,
                      "The relative separation at or below which consecutive "
                      "ordered eigenvalues belong to one band.")
+      .def_readwrite("band_symmetry",
+                     &SelfConsistentMeanFieldDeclaration::bandSymmetry,
+                     "The operators D(g) of a declared finite symmetry, each "
+                     "flat row-major over the carrier's cells. When present "
+                     "the bands are read on the group average "
+                     "|G|^-1 sum_g D(g)^-1 h D(g) (the whitepaper's "
+                     "T-averaged operator, Section 11.1).")
       .def_readwrite("maximum_iterations",
                      &SelfConsistentMeanFieldDeclaration::maximumIterations)
       .def_readwrite("tolerance",
