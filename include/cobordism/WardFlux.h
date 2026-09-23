@@ -15,42 +15,9 @@
 #include <Eigen/Core>
 
 #include "cobordism/JointAction.h"
+#include "observables/ClusterLineage.h"
 
 namespace tessera::cobordism {
-
-/// # CooorientedCut
-///
-/// A cooriented separating cut \f$ \Sigma \f$ of Section 13.1 of the
-/// whitepaper, declared by the vertices that lie on its incoming side.
-///
-/// The cobordism supplies the cut: with the oriented boundary convention
-/// \f$ \partial W = \partial_{\rm in}W \sqcup \partial_{\rm out}W \f$, a
-/// separating slice is a cooriented closed codimension-one simplicial cut
-/// separating \f$ \partial_{\rm in}W \f$ from \f$ \partial_{\rm out}W \f$. On
-/// the 1-skeleton such a cut is fixed by the vertex set it leaves behind, so
-/// that is what is declared here: `incomingSide` is the set of vertex
-/// identifiers on the \f$ \partial_{\rm in}W \f$ side, and the cut is the set
-/// of edges with exactly one endpoint in it.
-///
-/// The coorientation is the one the cobordism induces and is carried on each
-/// cut edge as \f$ +1 \f$ when the edge leaves the incoming side (its lower
-/// vertex is inside and its upper vertex is outside) and \f$ -1 \f$ when it
-/// enters. Reversing the global cobordism orientation — declaring the
-/// complementary vertex set as the incoming side — reverses every cut edge's
-/// coorientation together and so reverses the flux, which is the sign rule the
-/// whitepaper states.
-///
-/// No Lorentzian distance, real projection or level-set ordering enters: the
-/// cut is a combinatorial object on the 1-skeleton and nothing here reads a
-/// vertex time or a temporal function.
-struct CooorientedCut {
-  /// Vertex identifiers on the incoming side of the cut. Order is irrelevant
-  /// and repeats are ignored.
-  std::vector<std::uint64_t> incomingSide{};
-  /// The caller's label for the cut, echoed on the read so several cuts of one
-  /// homology class can be told apart in a report.
-  std::string label{};
-};
 
 /// # WardFluxConfig
 ///
@@ -58,9 +25,9 @@ struct CooorientedCut {
 /// result carries the configuration that produced it.
 struct WardFluxConfig {
   /// \f$ |(\partial j)_x| \f$ at or below this counts as a vanishing
-  /// divergence when the bulk conservation certificate is judged. It is an
-  /// absolute number and is compared against the divergence measured at the
-  /// vertices strictly inside the incoming side.
+  /// divergence. It is an absolute number and is compared against the
+  /// divergence measured at the interior vertices of the cobordism, and
+  /// against the flux difference of two homologous cuts.
   double divergenceTolerance = 1e-9;
   /// \f$ |\varphi_j(\Sigma) - n| \f$ at or below this, for the nearest integer
   /// \f$ n \f$, lets the flux be reported as the integer quark number
@@ -71,65 +38,88 @@ struct WardFluxConfig {
   /// the flux to be read as an integer. The flux is a complex number by
   /// construction and its imaginary part is never discarded silently.
   double imaginaryTolerance = 1e-9;
+  /// \f$ |\varphi_j(\Sigma) - Q_{\rm in}| \f$ at or below this counts as the
+  /// flux agreeing with the charge the incoming state places on
+  /// \f$ \partial_{\rm in}W \f$. Above it the disagreement is named.
+  double chargeTolerance = 1e-6;
 };
 
 /// # WardFluxRead
 ///
 /// The flux \f$ \varphi_j(\Sigma)=\langle j,\Sigma\rangle \in \mathbb{C} \f$ of
-/// the complex Ward current through one cooriented cut, with every certificate
-/// the whitepaper attaches to it.
+/// the complex Ward current through one cooriented cut \f$ \Sigma \f$ of the
+/// interaction cobordism \f$ W \f$, with every certificate the whitepaper
+/// attaches to it.
+///
+/// Vocabulary used below. \f$ u \f$ is the cut's 0-cochain
+/// (`observables::CoorientedCut::side`): 0 on the incoming side, 1 on the
+/// outgoing side. \f$ \partial_{\rm in}W \f$ is the first level of the history
+/// and \f$ \partial_{\rm out}W \f$ its last level. An interior vertex is a
+/// vertex of \f$ W \f$ on neither. \f$ (\partial j)_x \f$ is the discrete
+/// divergence of the current at vertex \f$ x \f$, with the chain complex's
+/// boundary convention \f$ \partial[x<y]=[y]-[x] \f$.
 struct WardFluxRead {
-  /// The caller's label for the cut this read belongs to.
-  std::string label{};
-  /// The cut's edges as canonical degree-one cell indices, ascending.
-  std::vector<int> cutCells{};
-  /// The coorientation \f$ c_e \in \{+1,-1\} \f$ of each cut edge, parallel to
-  /// `cutCells`: \f$ +1 \f$ when the edge leaves the incoming side.
-  std::vector<int> coorientation{};
-  /// The Ward current \f$ j_e \f$ on each cut edge, on the canonical
-  /// ascending-vertex orientation and parallel to `cutCells`.
-  std::vector<std::complex<double>> cutCurrent{};
+  /// The canonical \f$ C_1(W) \f$ indices of the edges the cut crosses,
+  /// copied from `observables::CoorientedCut::crossingEdges`.
+  std::vector<int> crossingEdges{};
+  /// The coorientation \f$ c_e=u(b)-u(a)\in\{+1,-1\} \f$ of each crossing
+  /// edge \f$ e=(a<b) \f$, parallel to `crossingEdges`.
+  std::vector<int> crossingSigns{};
+  /// The Ward current \f$ j_e \f$ on each crossing edge, on the canonical
+  /// ascending-vertex orientation and parallel to `crossingEdges`.
+  std::vector<std::complex<double>> crossingCurrent{};
 
-  /// \f$ \varphi_j(\Sigma)=\sum_{e\in\Sigma} c_e\,j_e \f$, the flux. Complex,
-  /// and never projected onto a real part.
+  /// \f$ \varphi_j(\Sigma)=\langle j,\Sigma\rangle=\sum_{e}c_e\,j_e \f$ over
+  /// the crossing edges. Complex, and never projected onto a real part.
   std::complex<double> flux{0.0, 0.0};
 
-  /// \f$ \sum_{x\in\Omega}(\partial j)_x \f$ over the incoming side
-  /// \f$ \Omega \f$. With the chain complex's boundary convention
-  /// \f$ \partial[x<y]=[y]-[x] \f$ this is exactly \f$ -\varphi_j(\Sigma) \f$:
-  /// the discrete divergence theorem, which holds identically and is reported
-  /// so that the identity is measured rather than assumed.
-  std::complex<double> enclosedDivergence{0.0, 0.0};
-  /// \f$ |\varphi_j(\Sigma)+\sum_{x\in\Omega}(\partial j)_x| \f$, the residual
-  /// of that identity. Zero to rounding on every read.
+  /// \f$ \sum_{x:\,u(x)=0}(\partial j)_x \f$, the divergence summed over the
+  /// cut's incoming side. The discrete divergence theorem makes it exactly
+  /// \f$ -\varphi_j(\Sigma) \f$; it is reported so that the identity is
+  /// measured rather than assumed.
+  std::complex<double> incomingSideDivergence{0.0, 0.0};
+  /// \f$ |\varphi_j(\Sigma)+\sum_{u(x)=0}(\partial j)_x| \f$, the residual of
+  /// the divergence theorem. Zero to rounding on every read.
   double divergenceTheoremResidual = std::numeric_limits<double>::quiet_NaN();
 
-  /// \f$ \max_x |(\partial j)_x| \f$ over the vertices strictly inside the
-  /// incoming side, i.e. those the cut does not touch. This is the discrete
-  /// Ward identity \f$ \partial j=0 \f$ in the bulk, measured. NaN when the
-  /// incoming side has no strictly interior vertex.
+  /// \f$ -\sum_{x\in\partial_{\rm in}W}(\partial j)_x \f$: the charge the
+  /// current itself carries in through the incoming boundary. The flux equals
+  /// this number plus the divergence carried by the interior vertices on the
+  /// incoming side, so on a current with no bulk source the two agree.
+  std::complex<double> incomingBoundaryDivergence{0.0, 0.0};
+
+  /// \f$ \max_x |(\partial j)_x| \f$ over the interior vertices of \f$ W \f$:
+  /// the discrete Ward identity \f$ \partial j=0 \f$ in the bulk, measured.
+  /// NaN when \f$ W \f$ has no interior vertex, as a history of two levels
+  /// does not.
   double bulkDivergenceMax = std::numeric_limits<double>::quiet_NaN();
-  /// How many vertices `bulkDivergenceMax` was taken over.
+  /// How many interior vertices `bulkDivergenceMax` was taken over.
   std::size_t bulkVertices = 0;
-  /// The vertex identifier at which `bulkDivergenceMax` was attained; empty
-  /// when there is no strictly interior vertex. A source in the bulk is named
-  /// by its vertex rather than reported as an anonymous norm.
+  /// The vertex at which `bulkDivergenceMax` was attained; empty when there
+  /// is no interior vertex. A source in the bulk is named by its vertex rather
+  /// than reported as an anonymous norm.
   std::optional<std::uint64_t> bulkDivergenceVertex{};
 
-  /// \f$ \sum_{\sigma\subset\Omega}\Gamma_{\sigma\sigma} \f$, the fermion
-  /// number the declared covariance places on the carrier cells whose vertices
-  /// all lie on the incoming side. This is the number Section 13.4 states the
-  /// flux equals, computed independently of the current so that the statement
-  /// is a measurement and not a definition. Empty when the action declares no
-  /// covariance.
-  std::optional<std::complex<double>> enclosedFermionNumber{};
-  /// How many carrier cells lie wholly on the incoming side.
-  std::size_t enclosedCells = 0;
-  /// \f$ |\varphi_j(\Sigma)-\sum_{\sigma\subset\Omega}\Gamma_{\sigma\sigma}|
-  /// \f$, the defect of the identity "the flux equals the enclosed fermion
-  /// number".
-  /// NaN when no covariance is declared.
-  double fermionNumberResidual = std::numeric_limits<double>::quiet_NaN();
+  /// \f$ Q_{\rm in}=\sum_{\sigma\subset\partial_{\rm in}W}\Gamma_{\sigma\sigma}
+  /// \f$: the fermion number the declared covariance places on the carrier
+  /// cells lying wholly in the incoming boundary. This is the incoming
+  /// state's charge, read from the covariance and independently of the
+  /// current, so that the statement "the flux is the charge carried in
+  /// through \f$ \partial_{\rm in}W \f$" is a measurement and not a
+  /// definition. Empty when the action declares no covariance.
+  std::optional<std::complex<double>> incomingBoundaryCharge{};
+  /// How many carrier cells lie wholly in \f$ \partial_{\rm in}W \f$.
+  std::size_t incomingBoundaryCells = 0;
+  /// \f$ Q_{\rm out}=\sum_{\sigma\subset\partial_{\rm out}W}
+  /// \Gamma_{\sigma\sigma} \f$, the same reading on the outgoing boundary.
+  /// Empty when the action declares no covariance.
+  std::optional<std::complex<double>> outgoingBoundaryCharge{};
+  /// How many carrier cells lie wholly in \f$ \partial_{\rm out}W \f$.
+  std::size_t outgoingBoundaryCells = 0;
+  /// \f$ |\varphi_j(\Sigma)-Q_{\rm in}| \f$, the defect of the identity "the
+  /// flux equals the charge carried in through the incoming boundary". NaN
+  /// when no covariance is declared.
+  double boundaryChargeResidual = std::numeric_limits<double>::quiet_NaN();
 
   /// \f$ N_q \f$: the integer nearest
   /// \f$ \operatorname{Re}\varphi_j(\Sigma) \f$, present only when the flux is
@@ -144,33 +134,63 @@ struct WardFluxRead {
   /// exactly when `quarkNumber` is empty.
   std::optional<double> baryonNumber{};
 
-  /// Whether the declared vertex set is a separating cut: both sides nonempty
-  /// and each side connected in the 1-skeleton, so the cut is one closed
-  /// codimension-one slice rather than several.
-  bool separating = false;
-  /// Named failures: "empty-incoming-side", "empty-outgoing-side",
-  /// "disconnected-incoming-side", "disconnected-outgoing-side",
-  /// "empty-cut", "bulk-source", "nonintegral-flux", "complex-flux".
+  /// Whether the cut separates \f$ \partial_{\rm in}W \f$ from
+  /// \f$ \partial_{\rm out}W \f$, copied from
+  /// `observables::CoorientedCut::separates`.
+  bool cutSeparates = false;
+  /// Named failures: "cut-does-not-separate", "empty-cut",
+  /// "no-interior-vertex", "bulk-source", "flux-is-not-the-incoming-charge",
+  /// "nonintegral-flux", "complex-flux".
   std::vector<std::string> failedCertificates{};
+};
+
+/// # WardSlabRead
+///
+/// Two cuts of one homology class compared through the slab between them.
+///
+/// For cuts \f$ u \f$ and \f$ u' \f$ the divergence theorem gives exactly
+/// \f$ \varphi_j(u)-\varphi_j(u')=\sum_x\,(u(x)-u'(x))\,(\partial j)_x \f$:
+/// the flux difference is the signed divergence the slab carries. Two
+/// separating cuts agree on \f$ \partial W \f$, so the slab consists of
+/// interior vertices only and the difference vanishes on a current with no
+/// bulk source.
+struct WardSlabRead {
+  /// The position of the first cut in the list supplied.
+  std::size_t first = 0;
+  /// The position of the second cut in the list supplied.
+  std::size_t second = 0;
+  /// The vertices on which the two cuts disagree: the slab.
+  std::vector<std::uint64_t> slabVertices{};
+  /// \f$ \varphi_j(u)-\varphi_j(u') \f$.
+  std::complex<double> fluxDifference{0.0, 0.0};
+  /// \f$ \sum_x(u(x)-u'(x))(\partial j)_x \f$, the signed slab divergence.
+  std::complex<double> slabDivergence{0.0, 0.0};
+  /// \f$ |\varphi_j(u)-\varphi_j(u')-\sum_x(u(x)-u'(x))(\partial j)_x| \f$,
+  /// the residual of the slab identity. Zero to rounding.
+  double slabIdentityResidual = std::numeric_limits<double>::quiet_NaN();
 };
 
 /// # WardHomologyRead
 ///
-/// Several cuts of one homology class read together: the whitepaper's
-/// requirement that different homologous cuts give the same current flux
-/// whenever no source lies in the slab between them.
+/// Several cuts of one cobordism read together: the whitepaper's requirement
+/// that homologous cuts give the same current flux whenever no source lies in
+/// the slab between them.
 struct WardHomologyRead {
   /// One read per declared cut, in the order the cuts were supplied.
   std::vector<WardFluxRead> cuts{};
-  /// \f$ \max_{i,j}|\varphi_j(\Sigma_i)-\varphi_j(\Sigma_j)| \f$ over the
-  /// declared cuts. NaN for fewer than two cuts.
+  /// One comparison per unordered pair of cuts, in lexicographic order of the
+  /// pair.
+  std::vector<WardSlabRead> slabs{};
+  /// \f$ \max|\varphi_j(\Sigma_i)-\varphi_j(\Sigma_k)| \f$ over the pairs. NaN
+  /// for fewer than two cuts.
   double maxFluxDeviation = std::numeric_limits<double>::quiet_NaN();
-  /// \f$ \max_{i<j}\sum_{x\in\Omega_i\triangle\Omega_j}|(\partial j)_x| \f$:
-  /// the total divergence carried by the slabs between the cuts, which is the
+  /// \f$ \max\sum_{x\in{\rm slab}}|(\partial j)_x| \f$ over the pairs: the
   /// source content the invariance statement excludes. A nonzero deviation
-  /// with a nonzero slab divergence is a source, not a broken identity.
+  /// with a nonzero slab divergence is a source, not a broken identity. NaN
+  /// for fewer than two cuts.
   double maxSlabDivergence = std::numeric_limits<double>::quiet_NaN();
-  /// Whether every pair agreed to `divergenceTolerance`.
+  /// Whether every pair agreed to `divergenceTolerance`. False for fewer than
+  /// two cuts, since no comparison was made.
   bool invariant = false;
 };
 
@@ -219,10 +239,9 @@ struct IntrinsicResponseConfig {
 /// \f$ \lambda \f$ is an eigenvalue of the slice operator and is never
 /// relabelled as a momentum transfer or a momentum transfer squared.
 struct IntrinsicResponseRead {
-  /// The cut's label.
-  std::string label{};
-  /// The cut's edges as canonical degree-one cell indices, ascending. These
-  /// are the slice's coordinates: \f$ L_\Sigma \f$, \f$ \rho_R \f$ and
+  /// The cut's crossing edges as canonical \f$ C_1(W) \f$ indices, in the
+  /// order of `observables::CoorientedCut::crossingEdges`. These are the
+  /// slice's coordinates: \f$ L_\Sigma \f$, \f$ \rho_R \f$ and
   /// \f$ \tilde\rho_L \f$ are all indexed by them.
   std::vector<int> sliceCells{};
   /// \f$ \rho_R \f$: the Ward current restricted to the cut, on the canonical
@@ -233,7 +252,7 @@ struct IntrinsicResponseRead {
   /// `IntrinsicResponseConfig::leftCurrent`.
   std::vector<std::complex<double>> rhoLeft{};
   /// \f$ L_\Sigma \f$, the slice operator: the principal submatrix of the
-  /// degree-one metric Hodge operator \f$ h_1(z,U) \f$ on the cut's cells,
+  /// degree-one metric Hodge operator \f$ h_1(z,U) \f$ on the crossing edges,
   /// flat row-major. It is generally non-normal and is never symmetrized.
   std::vector<std::complex<double>> sliceOperator{};
 
@@ -271,43 +290,65 @@ struct IntrinsicResponseRead {
 
 /// # WardFlux
 ///
-/// The flux of the complex Ward current through a cooriented cut (Section
-/// 13.4) and the intrinsic spectral response it carries (Section 13.5).
+/// The flux of the complex Ward current through a cooriented cut of the
+/// interaction cobordism (Section 13.4) and the intrinsic spectral response
+/// that cut carries (Section 13.5).
 ///
-/// The current itself is the link stationarity vector of the joint action,
+/// ## The setting
+///
+/// Everything is read on the interaction cobordism \f$ W \f$ of a history of
+/// levels, `observables::InteractionCobordism`, with oriented boundary
+/// \f$ \partial W=\overline{\partial_{\rm in}W}\sqcup\partial_{\rm out}W \f$,
+/// and on the cooriented cuts \f$ \Sigma \f$ of `observables::CoorientedCut`
+/// that separate \f$ \partial_{\rm in}W \f$ from \f$ \partial_{\rm out}W \f$.
+/// These are the cuts a quark lineage \f$ c_Q \f$ is intersected with in
+/// `observables::ClusterLineage`, so the flux and the lineage number are read
+/// on the same cuts. The joint action must be declared over a triangulation
+/// of \f$ W \f$ itself: its chain complex must carry exactly the vertices and
+/// the edges of \f$ W \f$, and a read on any other complex is refused.
+///
+/// The current is the link stationarity vector of the joint action,
 /// \f$ j_{xy}=U_{xy}\,\partial S/\partial U_{xy} \f$, which `JointAction`
-/// supplies under both of its names. Nothing here re-derives it, and nothing
-/// here supplies a field of its own: the audited substitutes for this
-/// observable summed a caller-supplied field-strength cochain over a closed
-/// star, which is a different object with no Ward identity behind it.
+/// supplies as `canonicalWardCurrent`. Nothing here re-derives it and nothing
+/// here supplies a field of its own.
 ///
 /// ## The flux
 ///
-/// For a cut \f$ \Sigma \f$ with incoming side \f$ \Omega \f$,
+/// With \f$ u \f$ the cut's 0-cochain, \f$ \Sigma \f$ is dual to
+/// \f$ \delta u \f$ and
 /// \f[
-///   \varphi_j(\Sigma)=\langle j,\Sigma\rangle=\sum_{e\in\Sigma}c_e\,j_e ,
+///   \varphi_j(\Sigma)=\langle j,\Sigma\rangle=\langle\delta u, j\rangle
+///   =\sum_{e=(a<b)}j_e\,\bigl(u(b)-u(a)\bigr),
 /// \f]
-/// with \f$ c_e=+1 \f$ on an edge leaving \f$ \Omega \f$ and \f$ -1 \f$ on one
-/// entering it. Because the chain complex's boundary convention is
+/// the sum running over the crossing edges alone, each carrying its
+/// coorientation sign. Because the boundary convention is
 /// \f$ \partial[x<y]=[y]-[x] \f$, the discrete divergence theorem reads
-/// \f$ \varphi_j(\Sigma)=-\sum_{x\in\Omega}(\partial j)_x \f$, and both sides
-/// are reported.
+/// \f$ \varphi_j(\Sigma)=-\sum_{u(x)=0}(\partial j)_x \f$, and both sides are
+/// reported.
 ///
-/// The Ward identity \f$ \partial j=0 \f$ holds in the bulk: every
-/// gauge-invariant term of the action contributes nothing to the divergence at
-/// all, and the matter term contributes
-/// \f$ w_M\sum_{\sigma:\,v_0(\sigma)=x}[h,\Gamma]_{\sigma\sigma} \f$, which
-/// vanishes exactly when the declared covariance commutes with the carrier
-/// operator — which is what a spectral projector of \f$ h \f$ does. The bulk
-/// divergence is therefore measured on every read and named as a source when
-/// it does not vanish, rather than being asserted to be zero.
+/// ## The relative reading
 ///
-/// Section 13.4 states that the flux equals the fermion number enclosed by the
-/// cut, \f$ N_q \f$, three times baryon number. Both numbers are reported:
-/// the flux from the current, and the enclosed fermion number
-/// \f$ \sum_{\sigma\subset\Omega}\Gamma_{\sigma\sigma} \f$ from the covariance,
-/// together with their difference. The equality is a measurement of this
-/// framework, not a definition inside it.
+/// The whitepaper states \f$ \partial j=0 \f$ in the bulk on the matter
+/// equations of motion, so \f$ \varphi_j \f$ is unchanged between homologous
+/// cuts, and that the flux is the fermion number \f$ N_q \f$. On \f$ W \f$
+/// this is a relative statement: the incoming side of every separating cut
+/// consists of \f$ \partial_{\rm in}W \f$ and interior vertices, so
+/// \f[
+///   \varphi_j(\Sigma)=-\sum_{x\in\partial_{\rm in}W}(\partial j)_x
+///                     -\sum_{x\ {\rm interior},\,u(x)=0}(\partial j)_x ,
+/// \f]
+/// and with no bulk source the flux is the charge the current carries in
+/// through the incoming boundary. The read reports each piece: the flux; the
+/// divergence at every interior vertex, whose maximum is the Ward identity
+/// measured and is named as a source when it does not vanish; the charge the
+/// current brings in through \f$ \partial_{\rm in}W \f$; and, read
+/// independently from the declared covariance, the fermion number the
+/// incoming state places on \f$ \partial_{\rm in}W \f$,
+/// \f$ Q_{\rm in}=\sum_{\sigma\subset\partial_{\rm in}W}\Gamma_{\sigma\sigma}
+/// \f$, together with its difference from the flux. The equality of the flux
+/// with \f$ Q_{\rm in} \f$ is a measurement of this framework and not a
+/// definition inside it; when it fails the failure is named and the numbers
+/// are reported as they come out.
 ///
 /// The flux is not electric charge. Every edge mode carries charge one under
 /// the \f$ \mathbb{C}^{*} \f$ group, so the flux counts fermions; a
@@ -323,11 +364,11 @@ struct IntrinsicResponseRead {
 /// \f$ \Upsilon_Q(\lambda)
 ///   =\tilde\rho_L^{\mathsf T}(L_\Sigma-\lambda I)^{-1}\rho_R \f$
 /// with \f$ \rho_R \f$ and \f$ \tilde\rho_L \f$ the right and left
-/// restrictions of the current to the cut and \f$ L_\Sigma \f$ the slice
-/// operator. Its poles are the eigenvalues of \f$ L_\Sigma \f$, its residues
-/// are taken through Riesz projectors so a degenerate band is handled whole,
-/// and its slope in \f$ \lambda \f$ is the analytic second power of the
-/// resolvent rather than a finite difference.
+/// restrictions of the current to the cut's crossing edges and
+/// \f$ L_\Sigma \f$ the slice operator. Its poles are the eigenvalues of
+/// \f$ L_\Sigma \f$, its residues are taken through Riesz projectors so a
+/// degenerate band is handled whole, and its slope in \f$ \lambda \f$ is the
+/// analytic second power of the resolvent rather than a finite difference.
 ///
 /// ## Background removal
 ///
@@ -340,54 +381,66 @@ struct IntrinsicResponseRead {
 ///
 /// ## Boundaries
 ///
-/// Read-only: it reads an action and a declared cut, never calls a solver,
-/// never writes the geometry, and never enters an emergence objective. An
-/// unmeasured value is NaN or an empty optional with the reason named, never
-/// zero.
+/// Read-only: it reads an action, a cobordism and a declared cut, never calls
+/// a solver, never writes the geometry, and never enters an emergence
+/// objective. An unmeasured value is NaN or an empty optional with the reason
+/// named, never zero.
 class WardFlux {
  public:
-  /// The flux of the action's Ward current through one cut.
+  /// The flux of the action's Ward current through one cut of \f$ W \f$.
   ///
-  /// @param action The joint action whose link stationarity is the current.
-  /// @param cut The cooriented cut, declared by its incoming side.
+  /// @param action The joint action whose link stationarity is the current,
+  ///   declared over a triangulation of \f$ W \f$.
+  /// @param cobordism The interaction cobordism \f$ W \f$.
+  /// @param cut A cooriented cut of \f$ W \f$, from
+  ///   `observables::ClusterLineage::levelCut` or `cutFromSides`.
   /// @param cfg The declared thresholds.
-  /// @throws std::invalid_argument when the action carries no spacetime.
-  [[nodiscard]] static WardFluxRead flux(const JointAction &action,
-                                         const CooorientedCut &cut,
-                                         const WardFluxConfig &cfg = {});
+  /// @throws std::invalid_argument when the action carries no spacetime, when
+  ///   the action's complex does not carry exactly the vertices and edges of
+  ///   \f$ W \f$, or when the cut does not assign one side per vertex of
+  ///   \f$ W \f$.
+  [[nodiscard]] static WardFluxRead flux(
+      const JointAction &action,
+      const observables::InteractionCobordism &cobordism,
+      const observables::CoorientedCut &cut, const WardFluxConfig &cfg = {});
 
-  /// Several cuts read together, with the pairwise flux deviation and the
-  /// divergence carried by the slabs between them.
+  /// Several cuts of one cobordism read together, with the flux difference
+  /// and the signed slab divergence of every pair.
+  /// @throws std::invalid_argument under the same conditions as `flux`.
   [[nodiscard]] static WardHomologyRead homologousFluxes(
-      const JointAction &action, const std::vector<CooorientedCut> &cuts,
+      const JointAction &action,
+      const observables::InteractionCobordism &cobordism,
+      const std::vector<observables::CoorientedCut> &cuts,
       const WardFluxConfig &cfg = {});
 
   /// The coherent background removal
   /// \f$ \Delta\varphi=\varphi_{\rm state}-\varphi_{\rm matched} \f$ of two
-  /// flux reads: the complex difference of the fluxes and of the enclosed
-  /// fermion numbers, with no modulus taken on either side. The returned read
-  /// carries the state read's cut and certificates and the differenced
-  /// numbers.
+  /// flux reads: the complex difference of the fluxes, of the divergences and
+  /// of the boundary charges, with no modulus taken on either side. The
+  /// returned read carries the state read's cut and the differenced numbers.
   /// @throws std::invalid_argument when the two reads were taken on different
-  ///   cut cells, since a difference between different cuts is not a
+  ///   crossing edges, since a difference between different cuts is not a
   ///   background removal.
   [[nodiscard]] static WardFluxRead difference(const WardFluxRead &state,
                                                const WardFluxRead &matched,
                                                const WardFluxConfig &cfg = {});
 
-  /// The intrinsic spectral response \f$ \Upsilon_Q \f$ on one cut, evaluated
-  /// at the declared sample points.
+  /// The intrinsic spectral response \f$ \Upsilon_Q \f$ on one cut of
+  /// \f$ W \f$, evaluated at the declared sample points.
   ///
   /// @param action The joint action whose Ward current supplies the
-  ///   restrictions.
-  /// @param cut The cooriented cut.
+  ///   restrictions, declared over a triangulation of \f$ W \f$.
+  /// @param cobordism The interaction cobordism \f$ W \f$.
+  /// @param cut A cooriented cut of \f$ W \f$.
   /// @param samples The points \f$ \lambda \f$ at which \f$ \Upsilon_Q \f$ and
   ///   its slope are evaluated. May be empty, and then only the poles and
   ///   residues are produced.
   /// @param cfg The declared parameters.
-  /// @throws std::invalid_argument when the action carries no spacetime.
+  /// @throws std::invalid_argument under the same conditions as `flux`.
   [[nodiscard]] static IntrinsicResponseRead intrinsicResponse(
-      const JointAction &action, const CooorientedCut &cut,
+      const JointAction &action,
+      const observables::InteractionCobordism &cobordism,
+      const observables::CoorientedCut &cut,
       const std::vector<std::complex<double>> &samples,
       const IntrinsicResponseConfig &cfg = {});
 };
