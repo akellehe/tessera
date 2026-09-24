@@ -1353,8 +1353,11 @@ def recursion_read(spacetime, config):
         "pairing_defects": [float(b.pairing_defect) for b in level.bands],
         "gram_defect": float(level.gram_defect),
         "modes": int(level.modes),
+        # leakage is coupling between distinct components: the block M_vv of
+        # a component with itself is its own fiber operator, not a leak
         "transport_norms": [float(np.linalg.norm(np.asarray(t.block)))
-                            for t in level.transports],
+                            for t in level.transports
+                            if t.from_component != t.to_component],
         "fock_stage_dimension": float(level.fock_stage_dimension),
         "determinant_residual": float(level.determinant_residual),
         "certificate": level.certificate.describe(),
@@ -1395,7 +1398,8 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
            "a single level spans one cobordism frame"),
          E("external-leakage", all(n < DECLARED_CERTIFICATE_TOLERANCE
                                    for n in recursion["transport_norms"]),
-           "transport norms %s" % recursion["transport_norms"])],
+           "inter-component transport norms %s"
+           % recursion["transport_norms"])],
         [E("three-sheeted-support", True, "%d sheets" % SHEETS),
          E("sheet-isomorphism", bool(isomorphism.isomorphic),
            "length residual %.3g, connection residual %.3g"

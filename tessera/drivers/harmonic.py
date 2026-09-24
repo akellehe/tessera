@@ -220,3 +220,53 @@ def measure_geometry(node):
     }
     result["synthesis_interpretation"] = "historical selected-state objective; convergence is not whole-operator realization"
     return result
+
+
+def main(argv=None):
+    """Read the two-port whole relation of a qubit node as built, with no
+    target and no relaxation: `measure_geometry` on the node that
+    `qubit.build_qubit_node` seeds from the declared configuration. The
+    record is written as JSON on standard output with ``--json``, and as a
+    short text summary otherwise."""
+    import argparse
+    import json
+    import sys
+
+    from tessera.drivers import qubit
+
+    parser = argparse.ArgumentParser(
+        prog="tessera.drivers.harmonic",
+        description="Measure the harmonic state/operator correspondence of "
+                    "the qubit node's geometry: the whole relation between "
+                    "its two ports, read from the zero-frequency pencil.")
+    parser.add_argument("--grid", type=int, default=qubit.DECLARED_GRID,
+                        help="vertices per side of each flat torus "
+                             "(default %d)" % qubit.DECLARED_GRID)
+    parser.add_argument("--no-regge", action="store_true",
+                        help="build the node without the Regge term")
+    parser.add_argument("--json", action="store_true",
+                        help="write the record as JSON on standard output")
+    args = parser.parse_args(argv)
+    config = qubit.build_config(steps=0, grid=args.grid,
+                                regge=not args.no_regge)
+    node, _ = qubit.build_qubit_node(config)
+    record = measure_geometry(node)
+    if args.json:
+        json.dump(record, sys.stdout, indent=2, sort_keys=True,
+                  default=qubit._json_default)
+        sys.stdout.write("\n")
+        return 0
+    if "obstruction" in record:
+        print("obstruction: %s" % record["obstruction"])
+        return 0
+    for name, read in record["readouts"].items():
+        print("%-8s identifiable %s%s" % (
+            name, read.get("identifiable"),
+            "; " + read["obstruction"] if read.get("obstruction") else ""))
+    print("gate:    certified %s; %s" % (record["requested_gate"]["certified"],
+                                         record["requested_gate"]["obstruction"]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

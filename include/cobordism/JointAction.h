@@ -7,6 +7,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -107,6 +108,41 @@ enum class ReggeForm { Primal, Dual };
 /// The rule governs the primal form only; the dual form keeps the hinge set of
 /// `simulations::ReggeSolver::dualReggeAction`.
 enum class ReggeHinges { Interior, All };
+
+/// # ReggeBranch
+///
+/// Which Riemann sheet the primal Regge term and its derivatives are read on.
+///
+/// A dihedral angle is \f$ \arccos(-C_{ij}/(\sqrt{C_{ii}}\sqrt{C_{jj}})) \f$,
+/// with two cofactor roots and an inverse cosine, each branched. For a
+/// Euclidean tetrahedron both face cofactors \f$ C_{ii}, C_{jj} \f$ are negative
+/// real, which is the cut of the principal square root: a squared length with an
+/// imaginary part of \f$ 10^{-9} \f$ of either sign then puts each root on
+/// either side of the cut, the principal product flips sign, and the angle jumps
+/// from \f$ \theta \f$ to \f$ \pi-\theta \f$. The whitepaper's branch
+/// ledger (v17: "complex Regge roots carry a Riemann-sheet label and monodromy")
+/// and specification §4.2 ("for complex data the branch is fixed by
+/// continuation from a Euclidean reference") exclude that.
+///
+/// * `Continued` — every cofactor root, inverse cosine and hinge-content root
+///   carries a sheet continued from a Euclidean reference: the roots are
+///   declared on their principal sheets at the real projection
+///   \f$ \operatorname{Re} z^{(0)} \f$ of the declared starting geometry
+///   \f$ z^{(0)} \f$ (`JointActionDeclaration::reggeStartSquaredLengths`), with
+///   a real cosine pinned to the \f$ +0 \f$ side of its cuts, and continued
+///   along the straight segment to \f$ z^{(0)} \f$ and then along the straight
+///   segment from \f$ z^{(0)} \f$ to the geometry the mesh holds (`SheetedSqrt`,
+///   `SheetedAcos`). The term is then a single-valued holomorphic function of the
+///   squared lengths on every star-shaped neighbourhood of the starting geometry
+///   that avoids the branch points, and it equals the principal value on real
+///   input whose segment from the reference is trivial.
+/// * `Principal` — every root and inverse cosine principal, a real ratio pinned
+///   to the \f$ +0 \f$ side: the sheet-blind `mesh::Simplex::deficitAngle`.
+///   Kept for comparison; it is discontinuous across the cuts.
+///
+/// The rule governs the primal form only; the dual form keeps the principal
+/// branch of `simulations::ReggeSolver::dualReggeAction`.
+enum class ReggeBranch { Continued, Principal };
 
 /// # HolonomyForm
 ///
@@ -408,6 +444,16 @@ struct JointActionDeclaration {
 
   /// Which hinges the primal sum runs over. Interior by default.
   ReggeHinges reggeHinges = ReggeHinges::Interior;
+
+  /// Which sheet the primal Regge term is read on. Continued by default.
+  ReggeBranch reggeBranch = ReggeBranch::Continued;
+
+  /// \f$ z^{(0)}_e \f$, the starting geometry the `Continued` sheets are
+  /// continued from, one squared length per edge in `Spacetime::getEdgeList()`
+  /// order. Empty means the squared lengths the mesh holds when the
+  /// `JointAction` is constructed, which for a relaxation is the geometry it
+  /// starts from. Ignored under `ReggeBranch::Principal`.
+  std::vector<std::complex<double>> reggeStartSquaredLengths;
 
   /// \f$ w_S \f$, the coefficient of the linear length stiffness
   /// \f$ S_{\rm stiff}(z)=\tfrac12\sum_e(l_e-l_{0,e})^2 \f$, with
@@ -848,6 +894,21 @@ class JointAction {
   /// (a complex with no interior hinge under `ReggeHinges::Interior`).
   [[nodiscard]] std::size_t reggeHingeCount() const;
 
+  /// True when the Regge term is declared (nonzero weight, primal form) and
+  /// the complex has no hinge under the declared hinge rule, so that the term
+  /// and its gradient are identically zero for every geometry. This is a
+  /// property of the complex, not of its lengths: under `ReggeHinges::Interior`
+  /// it holds on a complex none of whose hinges has a closed link, such as a
+  /// flag complex in which every triangle lies in more than two tetrahedra.
+  [[nodiscard]] bool reggeStructurallyZero() const;
+
+  /// Under `ReggeBranch::Continued`, the number of dihedral angles of the
+  /// primal sum whose continued sheet differs from the principal one at the
+  /// current geometry: a nonzero count is the number of angles the principal
+  /// evaluation would have put on another sheet. Zero under
+  /// `ReggeBranch::Principal`.
+  [[nodiscard]] std::size_t reggeOffPrincipalAngles() const;
+
   /// The number of edges, which is the length of every per-edge vector here.
   [[nodiscard]] std::size_t edgeCount() const;
 
@@ -899,8 +960,17 @@ class JointAction {
   [[nodiscard]] static std::vector<std::string> termNames();
 
  private:
+  /// The declared sheets of the primal Regge sum at the current geometry: per
+  /// hinge, the sheets of its dihedral angles and the sign of its content root
+  /// relative to the principal one.
+  struct ReggeSheets;
+  [[nodiscard]] ReggeSheets reggeSheets() const;
+
   std::shared_ptr<Spacetime> spacetime_;
   JointActionDeclaration declaration_;
+  /// \f$ z^{(0)} \f$ keyed by the edge's sorted vertex ids.
+  std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+      reggeStart_;
 };
 
 }  // namespace tessera::cobordism

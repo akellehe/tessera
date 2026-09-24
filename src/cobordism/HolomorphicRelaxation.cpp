@@ -460,12 +460,15 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   std::vector<int> declaredNumbers;
   for (const auto &sector : declaration_.heldSectors)
     declaredNumbers.push_back(sector.monopoleNumber);
+  report.reggeHingeCount = action_.reggeHingeCount();
+  report.reggeStructurallyZero = action_.reggeStructurallyZero();
   report.initialResidualNorm =
       euclideanNorm(reducedResidual(action_, layout));
   report.residualNorm = report.initialResidualNorm;
   report.action = action_.value();
   report.multipliers = action_.multipliers();
   report.momentResiduals = action_.momentResiduals();
+  report.reggeOffPrincipalAngles = action_.reggeOffPrincipalAngles();
   if (layout.count == 0) {
     report.converged = report.residualNorm <= declaration_.tolerance;
     report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
@@ -609,6 +612,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   report.action = action_.value();
   report.multipliers = action_.multipliers();
   report.momentResiduals = action_.momentResiduals();
+  report.reggeOffPrincipalAngles = action_.reggeOffPrincipalAngles();
   return report;
 }
 

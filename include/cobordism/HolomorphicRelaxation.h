@@ -208,6 +208,18 @@ struct HolomorphicRelaxationReport {
   /// \f$ \max_f |\log|F_f|_{\rm end} - \log|F_f|_{\rm start}| \f$ over the
   /// held faces: the drift of the held moduli, zero to rounding.
   double heldModulusDrift = 0.0;
+  /// The number of hinges the primal Regge sum runs over
+  /// (`JointAction::reggeHingeCount`).
+  std::size_t reggeHingeCount = 0;
+  /// True when a declared primal Regge term has no hinge on this complex under
+  /// the declared hinge rule, so that it and its gradient were identically zero
+  /// throughout the solve (`JointAction::reggeStructurallyZero`). The solve
+  /// then relaxed the lengths without any Regge term.
+  bool reggeStructurallyZero = false;
+  /// The number of dihedral angles of the primal Regge sum whose continued
+  /// sheet differs from the principal one at the point the solve stopped at
+  /// (`JointAction::reggeOffPrincipalAngles`).
+  std::size_t reggeOffPrincipalAngles = 0;
 };
 
 /// # HolomorphicRelaxation

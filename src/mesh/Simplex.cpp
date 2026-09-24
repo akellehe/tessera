@@ -71,7 +71,8 @@ struct DihedralCosine {
 };
 
 inline DihedralCosine dihedralCosine(
-    const std::vector<std::complex<double>> &cofactors, int n, int bi, int bj) {
+    const std::vector<std::complex<double>> &cofactors, int n, int bi, int bj,
+    const Simplex::DihedralSheet &sheet = {}) {
     if (static_cast<int>(cofactors.size()) != n * n) return {};
     const std::complex<double> Cij =
         cofactors[static_cast<std::size_t>(bi) * n + bj];
@@ -79,7 +80,10 @@ inline DihedralCosine dihedralCosine(
         cofactors[static_cast<std::size_t>(bi) * n + bi];
     const std::complex<double> Cjj =
         cofactors[static_cast<std::size_t>(bj) * n + bj];
-    const std::complex<double> denom = principalSqrt(Cii) * principalSqrt(Cjj);
+    // The declared root product: the principal roots times the declared sign.
+    // On the principal sheet the sign is +1 and this is the sheet-blind value.
+    const std::complex<double> denom = static_cast<double>(sheet.rootSign) *
+                                       principalSqrt(Cii) * principalSqrt(Cjj);
     if (std::abs(denom) < 1e-300) return {};
     std::complex<double> r = -Cij / denom;
     // acos is cut on (-inf,-1] and [1,inf), so for a real ratio with |r| > 1 --
@@ -92,7 +96,12 @@ inline DihedralCosine dihedralCosine(
     // stated one rather than an emergent rounding. A derivative must sit on the
     // same sheet as the value or it disagrees with a finite difference of it.
     if (r.imag() == 0.0) r = {r.real(), 0.0};
-    return {true, r, std::acos(r), Cij, Cii, Cjj, denom};
+    // The declared sheet (k, epsilon) of the inverse cosine,
+    // theta = 2 pi k + epsilon Arccos(r); (0, +1) is the principal value.
+    const std::complex<double> theta =
+        2.0 * std::numbers::pi * static_cast<double>(sheet.branchIndex) +
+        static_cast<double>(sheet.orientation) * std::acos(r);
+    return {true, r, theta, Cij, Cii, Cjj, denom};
 }
 
 /// B^-1 = adj(B)/det = cof^T/det. B is symmetric, so B^-1 is too.
@@ -973,6 +982,11 @@ Simplex::DihedralCofactors Simplex::dihedralCofactors(SimplexPtr hinge) const {
 }
 
 std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
+    return dihedralAngle(hinge, DihedralSheet{});
+}
+
+std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge,
+                                            const DihedralSheet &sheet) const {
     const int dPlus1 = static_cast<int>(vertices.size());
     // The two vertices of this simplex not in the hinge.
     const auto hingeVerts = hinge->getVertices();
@@ -1019,12 +1033,16 @@ std::complex<double> Simplex::dihedralAngle(SimplexPtr hinge) const {
     const int bi = canonicalPosition(cc.canonPos1, vertices[vi]->getId());
     const int bj = canonicalPosition(cc.canonPos1, vertices[vj]->getId());
     if (bi == 0 || bj == 0) return {0.0, 0.0};
-    const DihedralCosine dihedral = dihedralCosine(cof, n, bi, bj);
+    const DihedralCosine dihedral = dihedralCosine(cof, n, bi, bj, sheet);
     if (!dihedral.ok) return {0.0, 0.0};
     return dihedral.theta;
 }
 
 std::complex<double> Simplex::deficitAngle() const {
+    return deficitAngle(DihedralSheets{});
+}
+
+std::complex<double> Simplex::deficitAngle(const DihedralSheets &sheets) const {
     using cd = std::complex<double>;
     const cd twoPi(2.0 * std::numbers::pi, 0.0);
     if (!spacetime || vertices.empty()) return twoPi;
@@ -1032,13 +1050,22 @@ std::complex<double> Simplex::deficitAngle() const {
         spacetime->getMetric()->getSignature()->getDimensions() + 1;
     (void)topSize;
     cd sum(0.0, 0.0);
-    for (auto *sigma : incidentTopCells())
-        sum += sigma->dihedralAngle(const_cast<Simplex *>(this));
+    for (auto *sigma : incidentTopCells()) {
+        const auto declared = sheets.find(sigma->topTuple());
+        sum += sigma->dihedralAngle(
+            const_cast<Simplex *>(this),
+            declared == sheets.end() ? DihedralSheet{} : declared->second);
+    }
     return twoPi - sum;
 }
 
 std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
 Simplex::deficitAngleGradient() const {
+    return deficitAngleGradient(DihedralSheets{});
+}
+
+std::map<std::pair<std::uint64_t, std::uint64_t>, std::complex<double>>
+Simplex::deficitAngleGradient(const DihedralSheets &sheets) const {
     using cd = std::complex<double>;
     std::map<std::pair<std::uint64_t, std::uint64_t>, cd> grad;
     if (!spacetime || vertices.empty()) return grad;
@@ -1069,7 +1096,10 @@ Simplex::deficitAngleGradient() const {
         const std::complex<double> detB = tc.cmDet;
         if (std::abs(detB) < 1e-300) continue;
         const std::vector<std::complex<double>> &C = tc.cmCof;
-        const DihedralCosine dihedral = dihedralCosine(C, n, bi, bj);
+        const auto declared = sheets.find(tau->topTuple());
+        const DihedralCosine dihedral = dihedralCosine(
+            C, n, bi, bj,
+            declared == sheets.end() ? DihedralSheet{} : declared->second);
         if (!dihedral.ok) continue;
         const std::vector<std::complex<double>> Binv =
             inverseFromCofactors(C, n, detB);
