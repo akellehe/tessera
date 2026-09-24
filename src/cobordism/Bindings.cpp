@@ -4776,6 +4776,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("RealAxisDifference",
              HolomorphicJacobianMode::RealAxisDifference);
 
+  py::class_<HeldMonopoleSector>(m, "HeldMonopoleSector",
+      "A declared cluster whose monopole sector is boundary data of a "
+      "relaxation: the outward-oriented faces of its bounding cut (three "
+      "vertex ids each) and its monopole number.")
+      .def(py::init<>())
+      .def_readwrite("faces", &HeldMonopoleSector::faces)
+      .def_readwrite("monopole_number", &HeldMonopoleSector::monopoleNumber);
+
   py::class_<HolomorphicRelaxationDeclaration>(
       m, "HolomorphicRelaxationDeclaration",
       "The numerical controls of a holomorphic Newton solve. None of them "
@@ -4816,6 +4824,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
                      "the Jacobian counts as zero in the minimum-norm solve.")
+      .def_readwrite("held_sectors",
+                     &HolomorphicRelaxationDeclaration::heldSectors,
+                     "Monopole sectors held as boundary data: the moduli of "
+                     "their cut faces' holonomies and their monopole numbers "
+                     "are kept, every other connection degree of freedom "
+                     "relaxes.")
       .def_readwrite("holonomy_zero_margin",
                      &HolomorphicRelaxationDeclaration::holonomyZeroMargin,
                      "The relative distance to a zero of the Villain weight W "
@@ -4840,6 +4854,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicStep::zeroGuardDampings,
                      "The halvings of this step the holonomy zero guard "
                      "forced.")
+      .def_readwrite("sector_guard_dampings",
+                     &HolomorphicStep::sectorGuardDampings,
+                     "The halvings of this step the held monopole sectors "
+                     "forced.")
       .def_readwrite("holonomy_zero_distance",
                      &HolomorphicStep::holonomyZeroDistance,
                      "The smallest relative distance of a face holonomy to a "
@@ -4861,7 +4879,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("zero_guard_damped_steps",
                      &HolomorphicRelaxationReport::zeroGuardDampedSteps,
                      "The iterations whose step the holonomy zero guard "
-                     "damped at least once.");
+                     "damped at least once.")
+      .def_readwrite("sector_guard_damped_steps",
+                     &HolomorphicRelaxationReport::sectorGuardDampedSteps)
+      .def_readwrite("sector_monopole_numbers",
+                     &HolomorphicRelaxationReport::sectorMonopoleNumbers)
+      .def_readwrite("held_modulus_drift",
+                     &HolomorphicRelaxationReport::heldModulusDrift);
 
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
       "A Newton root find on the holomorphic stationarity equations of a "

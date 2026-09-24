@@ -88,6 +88,10 @@ Running it
         --kappa 0.25 0.5 1 2 4 --beta 0.5 1 2 5 --json poles.json \\
         --out poles.png [--holonomy {villain,wilson}] [--live]
 
+``--isospin-doublet`` adds, to every content's record, the isospin-doublet
+observation of `tessera.drivers.isospin_doublet` on h_1 and on h-bar_1; every
+other output is unchanged.
+
 ``--live`` draws each completed scan point while the scan runs, on an
 interactive matplotlib backend, with the computation on a worker thread and the
 main thread servicing the GUI event loop; the outputs are identical with or
@@ -172,10 +176,16 @@ def monopole_support():
     return obs.MonopoleSupport.tetrahedron(DECLARED_MONOPOLE)
 
 
-def build_host(edge_squared=DECLARED_EDGE_SQUARED):
+def build_host(edge_squared=DECLARED_EDGE_SQUARED, cell=None):
     """The three-sheeted host: three disjoint regular tetrahedra, vertices
     4 t .. 4 t + 3 on sheet t, each carrying the monopole connection of
     `MonopoleSupport.tetrahedron(1)` on corresponding edges.
+
+    With ``cell``, a mapping with the six ``squared_lengths`` and the six
+    ``links`` U_e of one tetrahedron on the ascending orientation of its edges
+    in the order of `MonopoleSupport.edges`, every sheet carries that
+    tetrahedron's data instead: this is how `tessera.drivers.recursion` reads
+    a cell of a level as a three-sheeted host.
 
     The mesh stores the phase phi of U = exp(i phi) on each edge's stored
     orientation. The declared connection values have unit modulus, so their
@@ -187,13 +197,25 @@ def build_host(edge_squared=DECLARED_EDGE_SQUARED):
     spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
     support = monopole_support()
     length = cmath.sqrt(complex(edge_squared))
+    pairs = [tuple(e) for e in support.edges]
     for edge in spacetime.getEdgeList().toVector():
         source = int(edge.getSource().getId())
         target = int(edge.getTarget().getId())
         sheet = source // 4
-        link = support.transport(source - 4 * sheet, target - 4 * sheet)
-        edge.setLength(length)
-        edge.setPhase(complex(cmath.phase(link)))
+        if cell is None:
+            link = support.transport(source - 4 * sheet, target - 4 * sheet)
+            edge.setLength(length)
+            edge.setPhase(complex(cmath.phase(link)))
+            continue
+        a, b = source - 4 * sheet, target - 4 * sheet
+        m = pairs.index((min(a, b), max(a, b)))
+        link = complex(cell["links"][m])
+        if a > b:
+            link = 1.0 / link
+        edge.setLength(cmath.sqrt(complex(cell["squared_lengths"][m])))
+        # U = exp(i phi); the principal logarithm is a coordinate on the
+        # stored field and returns U exactly
+        edge.setPhase(complex(-1j * cmath.log(link)))
     return spacetime
 
 
@@ -278,6 +300,9 @@ def relaxation_declaration(config):
     geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     geometry.contour_radius = config["jacobian_radius"]
     geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
+    # the monopole sectors a caller holds as boundary data
+    # (`tessera.drivers.recursion`); none by default
+    geometry.held_sectors = list(config.get("held_sectors") or [])
     return geometry
 
 
@@ -1048,7 +1073,7 @@ def rotation_averaged_many_body(operator, actions, frame, dual):
 def relax_content(content, kappa, beta, config, actions):
     """Steps 1-2 for one content: a fresh host relaxed to self-consistency,
     the carried density filling the bands of the T-averaged operator."""
-    spacetime = build_host(config["edge_squared"])
+    spacetime = build_host(config["edge_squared"], config.get("host_cell"))
     declaration = action_declaration(spacetime, kappa, beta,
                                      config["regge_hinges"],
                                      holonomy=config["holonomy"])
@@ -1223,7 +1248,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
     quark = quark_conditions(spacetime, alignment, recursion,
                              averaged_residual, report)
     truncation_read = action.holonomy_truncation()
-    return {
+    record = {
         "content": list(content),
         "holonomy": config["holonomy"],
         "elimination": config["elimination"],
@@ -1294,6 +1319,15 @@ def evaluate_content(content, kappa, beta, config, alignment):
         "recursion": recursion,
         "quark_conditions": quark,
     }
+    if config.get("isospin_doublet"):
+        # The isospin-doublet observation (WP §10) on h_1 and its T-average,
+        # added only when requested so that the default record is unchanged.
+        from tessera.drivers import isospin_doublet
+        spinorial = bool(monopole_support().cocycle(rotation_group())
+                         .nontrivial)
+        record["isospin_doublet"] = isospin_doublet.observe_host(
+            carrier, actions, spinorial)
+    return record
 
 
 def recursion_read(spacetime, config):
@@ -1943,6 +1977,10 @@ def build_parser():
                           "runs; the outputs are identical. Needs an "
                           "interactive matplotlib backend (the 'live' extra, "
                           "PyQt6)")
+    run.add_argument("--isospin-doublet", action="store_true",
+                     help="add the isospin-doublet observation (WP §10, "
+                          "`IsospinDoublet`) to every content's record; the "
+                          "other outputs are unchanged")
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1952,6 +1990,8 @@ def main(argv=None):
     config = default_config(args.kappa, args.beta, args.edge_squared,
                             args.regge_hinges, holonomy=args.holonomy,
                             elimination=args.eliminate)
+    if args.isospin_doublet:
+        config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file) if args.live

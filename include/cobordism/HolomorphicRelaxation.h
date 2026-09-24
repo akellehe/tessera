@@ -4,7 +4,9 @@
 #ifndef TESSERA_COBORDISM_HOLOMORPHICRELAXATION_H
 #define TESSERA_COBORDISM_HOLOMORPHICRELAXATION_H
 
+#include <array>
 #include <complex>
+#include <cstdint>
 #include <cstddef>
 #include <vector>
 
@@ -49,6 +51,18 @@ namespace tessera::cobordism {
 ///   \f$ \rho\,e^{i\pi n} \f$, whose sine is not exactly zero in binary
 ///   floating point and would put one node on the far side of the cut.
 enum class HolomorphicJacobianMode { ContourDerivative, RealAxisDifference };
+
+/// # HeldMonopoleSector
+///
+/// One declared cluster whose monopole sector is boundary data of the solve:
+/// the outward-oriented faces of its bounding cut, each given by its three
+/// vertex ids in the order that orients it outward, and the declared monopole
+/// number \f$ \mu \f$, the sum of the principal arguments of the outward face
+/// holonomies over \f$ 2\pi \f$ (read on their \f$ U(1) \f$ parts).
+struct HeldMonopoleSector {
+  std::vector<std::array<std::uint64_t, 3>> faces;
+  int monopoleNumber = 0;
+};
 
 /// # HolomorphicRelaxationDeclaration
 ///
@@ -115,6 +129,18 @@ struct HolomorphicRelaxationDeclaration {
   /// posed on. This is step control only: the equations are unchanged. It has
   /// no effect under the Wilson form, whose potential has no singularity.
   double holonomyZeroMargin = 0.05;
+
+  /// The monopole sectors held as boundary data (controlled synthesis: odd
+  /// sectors are superselection data set by boundary or initial conditions,
+  /// WP §9). For every declared sector the solve keeps (i) the modulus of every
+  /// face holonomy on its cut, by removing from each link step the part of its
+  /// real (modulus) component that would change those moduli, so a holonomy
+  /// on the unit circle stays on it, and (ii) the monopole number, by halving
+  /// any trial step after which a sector reads a different number. The
+  /// arguments of the face holonomies and every other connection degree of
+  /// freedom relax freely. The declared numbers must be the ones the starting
+  /// configuration carries.
+  std::vector<HeldMonopoleSector> heldSectors;
 };
 
 /// # HolomorphicStep
@@ -146,6 +172,9 @@ struct HolomorphicStep {
   /// at the point the step was taken from; positive infinity when the declared
   /// holonomy term has no zero.
   double holonomyZeroDistance = 0.0;
+  /// How many of this iteration's step halvings the held monopole sectors
+  /// forced (a trial step that changed a declared monopole number).
+  std::size_t sectorGuardDampings = 0;
 };
 
 /// # HolomorphicRelaxationReport
@@ -170,6 +199,15 @@ struct HolomorphicRelaxationReport {
   /// The number of iterations whose step the holonomy zero guard damped at
   /// least once.
   std::size_t zeroGuardDampedSteps = 0;
+  /// The number of iterations whose step the held monopole sectors damped at
+  /// least once.
+  std::size_t sectorGuardDampedSteps = 0;
+  /// The monopole number of every declared sector at the point the solve
+  /// stopped, in declaration order.
+  std::vector<int> sectorMonopoleNumbers;
+  /// \f$ \max_f |\log|F_f|_{\rm end} - \log|F_f|_{\rm start}| \f$ over the
+  /// held faces: the drift of the held moduli, zero to rounding.
+  double heldModulusDrift = 0.0;
 };
 
 /// # HolomorphicRelaxation
