@@ -336,6 +336,32 @@ class TestCoreClassification(unittest.TestCase):
             self.assertNotIn(name, read.failedCertificates)
         self.assertTrue(read.certificate.holds())
 
+    def test_the_dressed_anchor_is_reported_and_never_gating(self):
+        """A supplied dressed-anchor read that refuses names the
+        'dressed-anchor' certificate without changing the classification; an
+        anchored one and an absent one name nothing."""
+        K = tessera.cobordism.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+        U = tessera.chainhodge.Connection(K, [1.0 + 0j] * 6)
+        paths = tessera.chainhodge.DeclaredPaths.breadthFirst(K, 0)
+        boundary = np.asarray(K.boundaryMatrix(2), dtype=float).reshape(6, 4)
+        coexact = tessera.chainhodge.DressedAnchor.profile(
+            K, U, paths, list(range(4)), boundary[:, :3].astype(complex))
+        exact = tessera.chainhodge.DressedAnchor.profile(
+            K, U, paths, list(range(4)),
+            np.asarray(K.boundaryMatrix(1), dtype=float).reshape(4, 6)
+            .T[:, :3].astype(complex))
+        self.assertTrue(coexact.anchored)
+        self.assertFalse(exact.anchored)
+        for read, named in ((None, False), (coexact, False), (exact, True)):
+            evidence = _certified_evidence(turns=1)
+            if read is not None:
+                evidence.dressedAnchor = read
+                self.assertIs(evidence.dressedAnchor.anchored, read.anchored)
+            verdict = self.pc.classifyQuark(evidence)
+            self.assertEqual(verdict.classification, "quark")
+            self.assertEqual("dressed-anchor" in verdict.failedCertificates,
+                             named)
+
     def test_certified_antiquark_is_the_orientation_reverse(self):
         read = self.pc.classifyQuark(_certified_evidence(turns=-1))
         self.assertEqual(read.classification, "antiquark")

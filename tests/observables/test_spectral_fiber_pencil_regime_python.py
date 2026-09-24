@@ -123,6 +123,38 @@ class TestTrackerOnThePencil:
         assert back.certificate().pairingCondition == pytest.approx(cert.pairingCondition)
         assert "complex-symmetric pencil" in cert.describe()
 
+    @pytest.mark.parametrize("field,value", [("resolventBoundCap", 1e-6),
+                                             ("minAllowabilityMargin", 10.0)])
+    def test_the_contour_thresholds_decide_acceptance(self, field, value):
+        """The harmonic band of the rotated torus is accepted under the default
+        thresholds; a cap on the contour resolvent bound below the band's own,
+        or a Kontsevich-Segal margin floor above the instance's, refuses it
+        while reporting the same band."""
+        st, K = _lorentzian_torus_spacetime(0.1)
+        support = [int(v[0]) for v in K.kSimplexVertices(0)]
+
+        def harmonic(cfg):
+            cfg.degrees = [1]
+            cfg.maxLocalizationExcess = 1.0
+            read = obs.SpectralFiberTracker(st, cfg, Whitney).enumerateBands(
+                support, 1)
+            (band,) = [f for f in read.fibers
+                       if all(abs(z) < 1e-8 for z in f.eigenvalues())]
+            return band.certificate()
+
+        default = obs.SpectralFiberConfig()
+        assert default.resolventBoundCap == pytest.approx(1e8)
+        assert default.minAllowabilityMargin == 0.0
+        accepted = harmonic(default)
+        assert accepted.accepted
+        assert accepted.resolventBound > value if field == "resolventBoundCap" \
+            else accepted.allowabilityMargin < value
+        strict = obs.SpectralFiberConfig()
+        setattr(strict, field, value)
+        refused = harmonic(strict)
+        assert not refused.accepted
+        assert refused.rank == accepted.rank
+
     @pytest.mark.parametrize("eps", [0.1, 0.0])
     def test_the_bilinear_left_frame_is_the_transpose_dual(self, eps):
         # #1186: on the pencil path the stored left frame IS Phi~, so the one
