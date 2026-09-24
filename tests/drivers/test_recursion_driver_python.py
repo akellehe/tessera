@@ -56,6 +56,104 @@ def test_the_interaction_graph_and_its_flag_complex():
     assert R.grown_cells(4, complete) == [(0, 1, 2, 3)]
 
 
+def _relaxed_base(count=2):
+    """A level-0 base relaxed with its monopole sectors held, and its
+    operators."""
+    config = R.default_config(tetrahedra=count)
+    cells, z, links, _ = R.level_zero(config)
+    spacetime, vertices = R.build_level(cells, z, links)
+    R.relax_level(spacetime, config, R.held_sectors(
+        cells, R.monopole_numbers(cells, links), vertices))
+    base_z, base_links = R.sheet_fields(spacetime, vertices)[0]
+    return config, cells, base_z, base_links
+
+
+def _grown_lengths(stage):
+    return {tuple(c["vertices"]): np.array(c["squared_lengths"])
+            for c in stage["reads"] if "failed" not in c}
+
+
+@pytest.mark.parametrize("unitary", [True, False])
+def test_grown_lengths_are_invariant_under_pure_gauge(unitary):
+    config, cells, z, links = _relaxed_base()
+    base = R.base_operator(cells, z, links)
+    partition = [list(p) for p in R.recursion_turn(base["operator"],
+                                                   config).partition]
+    reference = R.interaction_stage(base, partition, config)
+    assert _grown_lengths(reference)
+    rng = np.random.default_rng(3 if unitary else 4)
+    vertices = 1 + max(max(c) for c in cells)
+    theta = rng.normal(size=vertices) + (
+        0.0 if unitary else 0.3j * rng.normal(size=vertices))
+    g = np.exp(1j * theta)
+    gauged = {e: u * g[e[1]] / g[e[0]] for e, u in links.items()}
+    moved = R.interaction_stage(R.base_operator(cells, z, gauged), partition,
+                                config)
+    for key, value in _grown_lengths(reference).items():
+        np.testing.assert_allclose(_grown_lengths(moved)[key], value,
+                                   rtol=1e-8)
+
+
+def test_grown_lengths_are_invariant_under_frame_changes():
+    config, cells, z, links = _relaxed_base()
+    base = R.base_operator(cells, z, links)
+    partition = [list(p) for p in R.recursion_turn(base["operator"],
+                                                   config).partition]
+    stage = R.interaction_stage(base, partition, config)
+    rng = np.random.default_rng(5)
+    frames, duals = stage["frames"], stage["duals"]
+    changes = [rng.normal(size=(f.shape[1],) * 2)
+               + 1j * rng.normal(size=(f.shape[1],) * 2) for f in frames]
+    # det-1 changes of the frame and arbitrary changes of the dual, which the
+    # normalization undoes
+    changes = [x / np.linalg.det(x) ** (1.0 / x.shape[0]) for x in changes]
+    moved_frames = [f @ x for f, x in zip(frames, changes)]
+    moved_duals = [np.asarray(ch.GrownCellRule.normalizeDualFrame(
+        f, d @ (2.0 * np.eye(d.shape[1])))) for f, d in zip(moved_frames, duals)]
+    moved_transports = {
+        (v, w): np.linalg.solve(changes[v], block) @ changes[w]
+        for (v, w), block in stage["transports"].items()}
+    moved = R.inherited_pairing(moved_frames, moved_duals, moved_transports,
+                                base["covariant"])
+    np.testing.assert_allclose(moved, stage["pairing"], rtol=1e-8,
+                               atol=1e-12 * np.abs(stage["pairing"]).max())
+
+
+def test_the_rule_shift_on_the_monopole_host_and_at_pure_gauge():
+    config = R.default_config(tetrahedra=3)
+    cells, z, links, _ = R.level_zero(config)
+    curved = R.level_rule_shift(cells, z, links)
+    assert all(r["relative_shift"] > 1e-3 for r in curved)
+    flat = {e: 1.0 + 0.0j for e in links}
+    rng = np.random.default_rng(6)
+    g = np.exp(1j * (rng.normal(size=7) + 0.3j * rng.normal(size=7)))
+    pure = {e: u * g[e[1]] / g[e[0]] for e, u in flat.items()}
+    assert all(r["relative_shift"] < 1e-10 for r in R.level_rule_shift(
+        cells, z, pure))
+
+
+def test_held_sectors_keep_the_monopole_numbers_through_relaxation():
+    """On the fan of three the held relaxation stops at the sector boundary
+    unconverged, but it never leaves the sector; without the hold the same
+    relaxation converges in another sector."""
+    config = R.default_config(tetrahedra=3)
+    cells, z, links, _ = R.level_zero(config)
+    spacetime, vertices = R.build_level(cells, z, links)
+    declared = R.monopole_numbers(cells, links)
+    report = R.relax_level(spacetime, config, R.held_sectors(
+        cells, declared, vertices))
+    after = R.sheet_fields(spacetime, vertices)
+    for t in range(R.SHEETS):
+        assert R.monopole_numbers(cells, after[t][1]) == declared
+    assert report["sector_monopole_numbers"] == declared * R.SHEETS
+    assert report["held_modulus_drift"] < 1e-12
+    # without the hold the same relaxation leaves the sector
+    free, _ = R.build_level(cells, z, links)
+    R.relax_level(free, config)
+    assert R.monopole_numbers(cells, R.sheet_fields(free, vertices)[0][1]) \
+        != declared
+
+
 def test_the_grown_cell_rule_returns_level_zero():
     """Level zero as a level: the response vertices are the vertices of one
     tetrahedron, each fiber the exact chain of its vertex, the transports the
@@ -74,6 +172,7 @@ def test_the_grown_cell_rule_returns_level_zero():
     Y = block @ Z
     frames = [Y[:, [v]] for v in range(4)]
     images = [np.linalg.solve(block, f) for f in frames]
+    links = np.ones(6, dtype=complex)
     pairing = np.asarray(ch.GrownCellRule.determinantPairing(frames, images))
     links = np.exp(1j * rng.normal(size=6))
     transports = {}
@@ -97,12 +196,14 @@ def test_one_tick_on_the_host_grows_the_next_level(monkeypatch):
     reports is present, and the next level is a three-dimensional complex on
     the relabelled response vertices."""
     monkeypatch.setattr(R, "cell_reads", lambda cells, z, links, config: [])
-    config = R.default_config(tetrahedra=3)
+    config = R.default_config(tetrahedra=2)
     cells, z, links, _ = R.level_zero(config)
     record, following = R.tick(0, cells, z, links, config)
     assert record["relaxation"]["converged"]
-    assert record["level"]["declared_monopole_numbers"] == [1, 1, 1]
-    assert len(record["level"]["monopole_numbers"]) == 3
+    assert record["level"]["declared_monopole_numbers"] == [1, 1]
+    assert record["level"]["monopole_numbers"] == [1, 1]
+    assert record["relaxation"]["held_modulus_drift"] < 1e-12
+    assert max(record["fibers"]["projector_agreement_with_library"]) < 1e-8
     assert record["level"]["sheet_isomorphism_residual"] < 1e-10
     partition = record["partition"]
     covered = sorted(i for part in partition["partition"] for i in part)
@@ -259,7 +360,7 @@ def test_the_recursion_stops_at_a_level_with_no_grown_cell(monkeypatch):
 
 
 def test_a_refused_relaxation_stops_the_recursion_with_its_reason(monkeypatch):
-    def refuse(spacetime, config):
+    def refuse(spacetime, config, sectors=None):
         raise ValueError("VillainCharacter::logarithm: refused")
     monkeypatch.setattr(R, "relax_level", refuse)
     config = R.default_config(tetrahedra=2)

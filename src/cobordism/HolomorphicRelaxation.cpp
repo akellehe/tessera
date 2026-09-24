@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <string>
 #include <stdexcept>
 #include <utility>
 
@@ -211,6 +213,111 @@ std::vector<std::pair<complexd, complexd>> derivativeRule(
   return rule;
 }
 
+/// The held monopole sectors, resolved against the mesh: for every held face
+/// the stored edges it runs along with their orientation signs, the real
+/// coboundary rows of the held faces over the link increments, and the
+/// projector onto their row space.
+struct SectorGeometry {
+  /// Per sector, per face, the (edge index, sign) of its three sides: the face
+  /// holonomy is the product of \f$ U_e^{\rm sign} \f$.
+  std::vector<std::vector<std::array<std::pair<std::size_t, int>, 3>>> faces;
+  /// Projector onto the row space of the held faces' coboundary (edges by
+  /// edges, real): the part of a link increment's real component that changes
+  /// a held modulus.
+  Eigen::MatrixXd modulusProjector;
+  bool empty = true;
+};
+
+SectorGeometry resolveSectors(const JointAction &action,
+                              const std::vector<HeldMonopoleSector> &sectors) {
+  SectorGeometry geometry;
+  if (sectors.empty()) return geometry;
+  const auto &spacetime = action.spacetime();
+  if (!spacetime || !spacetime->getEdgeList())
+    throw std::invalid_argument(
+        "HolomorphicRelaxation: held monopole sectors need a mesh");
+  const auto edges = spacetime->getEdgeList()->toVector();
+  std::map<std::pair<std::uint64_t, std::uint64_t>, std::pair<std::size_t, int>> lookup;
+  for (std::size_t index = 0; index < edges.size(); ++index) {
+    if (edges[index] == nullptr) continue;
+    const auto a = edges[index]->getSource()->getId();
+    const auto b = edges[index]->getTarget()->getId();
+    lookup[{a, b}] = {index, 1};
+    lookup[{b, a}] = {index, -1};
+  }
+  std::vector<std::array<std::pair<std::size_t, int>, 3>> rows;
+  for (const auto &sector : sectors) {
+    geometry.faces.emplace_back();
+    for (const auto &face : sector.faces) {
+      std::array<std::pair<std::size_t, int>, 3> sides{};
+      for (int k = 0; k < 3; ++k) {
+        const auto found = lookup.find({face[k], face[(k + 1) % 3]});
+        if (found == lookup.end())
+          throw std::invalid_argument(
+              "HolomorphicRelaxation: a held face runs along an edge the mesh "
+              "does not have (" + std::to_string(face[k]) + ", " +
+              std::to_string(face[(k + 1) % 3]) + ")");
+        sides[k] = found->second;
+      }
+      geometry.faces.back().push_back(sides);
+      rows.push_back(sides);
+    }
+  }
+  Eigen::MatrixXd coboundary = Eigen::MatrixXd::Zero(
+      static_cast<Eigen::Index>(rows.size()),
+      static_cast<Eigen::Index>(edges.size()));
+  for (std::size_t r = 0; r < rows.size(); ++r)
+    for (const auto &side : rows[r])
+      coboundary(static_cast<Eigen::Index>(r),
+                 static_cast<Eigen::Index>(side.first)) += side.second;
+  const Eigen::JacobiSVD<Eigen::MatrixXd> svd(coboundary, Eigen::ComputeThinV);
+  const auto &values = svd.singularValues();
+  const double cut = values.size() > 0 ? 1e-10 * values(0) : 0.0;
+  Eigen::Index rank = 0;
+  while (rank < values.size() && values(rank) > cut) ++rank;
+  const Eigen::MatrixXd basis = svd.matrixV().leftCols(rank);
+  geometry.modulusProjector = basis * basis.transpose();
+  geometry.empty = false;
+  return geometry;
+}
+
+complexd faceHolonomy(const std::vector<::tessera::mesh::Edge *> &edges,
+                      const std::array<std::pair<std::size_t, int>, 3> &sides) {
+  complexd product{1.0, 0.0};
+  for (const auto &side : sides) {
+    const complexd link =
+        std::exp(complexd{0.0, 1.0} * edges[side.first]->getPhase());
+    product *= side.second > 0 ? link : 1.0 / link;
+  }
+  return product;
+}
+
+/// The monopole number of every held sector: the sum of the principal
+/// arguments of its outward face holonomies over \f$ 2\pi \f$.
+std::vector<int> sectorNumbers(const JointAction &action,
+                               const SectorGeometry &geometry) {
+  std::vector<int> numbers;
+  if (geometry.empty) return numbers;
+  const auto edges = action.spacetime()->getEdgeList()->toVector();
+  for (const auto &sector : geometry.faces) {
+    double total = 0.0;
+    for (const auto &sides : sector) total += std::arg(faceHolonomy(edges, sides));
+    numbers.push_back(static_cast<int>(std::lround(total / kTwoPi)));
+  }
+  return numbers;
+}
+
+std::vector<double> heldLogModuli(const JointAction &action,
+                                  const SectorGeometry &geometry) {
+  std::vector<double> moduli;
+  if (geometry.empty) return moduli;
+  const auto edges = action.spacetime()->getEdgeList()->toVector();
+  for (const auto &sector : geometry.faces)
+    for (const auto &sides : sector)
+      moduli.push_back(std::log(std::abs(faceHolonomy(edges, sides))));
+  return moduli;
+}
+
 }  // namespace
 
 HolomorphicRelaxation::HolomorphicRelaxation(
@@ -232,6 +339,19 @@ HolomorphicRelaxation::HolomorphicRelaxation(
     throw std::invalid_argument(
         "HolomorphicRelaxation: no field is declared relaxable, so the solve "
         "has no variables");
+  if (!declaration_.heldSectors.empty()) {
+    const SectorGeometry geometry =
+        resolveSectors(action_, declaration_.heldSectors);
+    const auto numbers = sectorNumbers(action_, geometry);
+    for (std::size_t index = 0; index < numbers.size(); ++index)
+      if (numbers[index] != declaration_.heldSectors[index].monopoleNumber)
+        throw std::invalid_argument(
+            "HolomorphicRelaxation: held sector " + std::to_string(index) +
+            " is declared with monopole number " +
+            std::to_string(declaration_.heldSectors[index].monopoleNumber) +
+            " but the starting configuration carries " +
+            std::to_string(numbers[index]));
+  }
 }
 
 std::size_t HolomorphicRelaxation::equationCount() const {
@@ -334,6 +454,12 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   const Layout layout(action_.edgeCount(), action_.constraintCount(),
                       declaration_);
   HolomorphicRelaxationReport report;
+  const SectorGeometry sectors =
+      resolveSectors(action_, declaration_.heldSectors);
+  const std::vector<double> startModuli = heldLogModuli(action_, sectors);
+  std::vector<int> declaredNumbers;
+  for (const auto &sector : declaration_.heldSectors)
+    declaredNumbers.push_back(sector.monopoleNumber);
   report.initialResidualNorm =
       euclideanNorm(reducedResidual(action_, layout));
   report.residualNorm = report.initialResidualNorm;
@@ -342,6 +468,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   report.momentResiduals = action_.momentResiduals();
   if (layout.count == 0) {
     report.converged = report.residualNorm <= declaration_.tolerance;
+    report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
     return report;
   }
 
@@ -374,7 +501,20 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     Eigen::CompleteOrthogonalDecomposition<Eigen::MatrixXcd> decomposition;
     decomposition.setThreshold(declaration_.rankTolerance);
     decomposition.compute(matrix);
-    const Eigen::VectorXcd step = decomposition.solve(target);
+    Eigen::VectorXcd step = decomposition.solve(target);
+
+    // Held sectors: remove from the link step the part of its real (modulus)
+    // component that would change the modulus of a held face holonomy.
+    if (layout.links && !sectors.empty) {
+      Eigen::VectorXd modulus(static_cast<Eigen::Index>(layout.edges));
+      for (std::size_t edgeIndex = 0; edgeIndex < layout.edges; ++edgeIndex)
+        modulus(static_cast<Eigen::Index>(edgeIndex)) =
+            step(static_cast<Eigen::Index>(layout.linkOffset + edgeIndex)).real();
+      const Eigen::VectorXd removed = sectors.modulusProjector * modulus;
+      for (std::size_t edgeIndex = 0; edgeIndex < layout.edges; ++edgeIndex)
+        step(static_cast<Eigen::Index>(layout.linkOffset + edgeIndex)) -=
+            complexd{removed(static_cast<Eigen::Index>(edgeIndex)), 0.0};
+    }
 
     HolomorphicStep record;
     record.iteration = iteration;
@@ -435,6 +575,11 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
                             layout.multiplierOffset + index));
         action_.setMultipliers(multipliers);
       }
+      if (!sectors.empty && sectorNumbers(action_, sectors) != declaredNumbers) {
+        ++record.sectorGuardDampings;
+        damping *= 0.5;
+        continue;
+      }
       const double trialNorm = euclideanNorm(reducedResidual(action_, layout));
       if (trialNorm < residualNorm) {
         accepted = true;
@@ -446,6 +591,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       damping *= 0.5;
     }
     if (record.zeroGuardDampings > 0) ++report.zeroGuardDampedSteps;
+    if (record.sectorGuardDampings > 0) ++report.sectorGuardDampedSteps;
     if (!accepted) {
       restoreSnapshot(action_, snapshot);
       report.steps.push_back(record);
@@ -455,6 +601,11 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   }
 
   report.converged = report.residualNorm <= declaration_.tolerance;
+  report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
+  const std::vector<double> endModuli = heldLogModuli(action_, sectors);
+  for (std::size_t index = 0; index < endModuli.size(); ++index)
+    report.heldModulusDrift = std::max(
+        report.heldModulusDrift, std::abs(endModuli[index] - startModuli[index]));
   report.action = action_.value();
   report.multipliers = action_.multipliers();
   report.momentResiduals = action_.momentResiduals();

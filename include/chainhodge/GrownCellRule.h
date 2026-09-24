@@ -161,6 +161,35 @@ class GrownCellRule {
   [[nodiscard]] static Eigen::MatrixXcd determinantPairing(
       const std::vector<Eigen::MatrixXcd> &frames, const std::vector<Eigen::MatrixXcd> &images);
 
+  /// The gauge-invariant inherited pairing of the grown-cell rule, the
+  /// face-anchor pattern of WP §10: the dual-connection frame of \f$ v \f$
+  /// paired with the image of the frame of \f$ w \f$ on the determinant line,
+  /// with the transport divided out,
+  /// \f[
+  ///   \hat{\mathfrak g}_{vv} = \det\bigl((Y^\vee_v)^{\mathsf T}G_1^UY_v\bigr),\qquad
+  ///   \hat{\mathfrak g}_{vw} = \frac{\det\bigl((Y^\vee_v)^{\mathsf T}G_1^UY_w\bigr)}
+  ///                                   {U_{vw}}\quad(v\ne w),
+  /// \f]
+  /// \p dualFrames holding \f$ Y^\vee_v \f$, \p images holding
+  /// \f$ G_1^U Y_w \f$ and \p connection the matrix of
+  /// \f$ U_{vw} = \det M_{vw} \f$ (its diagonal is not read). A microscopic
+  /// gauge transformation multiplies the numerator and \f$ U_{vw} \f$ by the
+  /// same factor. Entries between fibers of different rank are quiet NaN.
+  [[nodiscard]] static Eigen::MatrixXcd gaugeInvariantPairing(
+      const std::vector<Eigen::MatrixXcd> &dualFrames,
+      const std::vector<Eigen::MatrixXcd> &images, const Eigen::MatrixXcd &connection);
+
+  /// The dual-connection frame rescaled so that
+  /// \f$ \det((Y^\vee)^{\mathsf T}Y) = 1 \f$: the fiber's frame normalized to
+  /// determinant one against its dual-connection partner. The first column is
+  /// divided by the determinant, so no root is taken. With it, a change of
+  /// frame \f$ Y\mapsto Yg \f$ forces \f$ Y^\vee\mapsto Y^\vee h \f$ with
+  /// \f$ \det h\,\det g = 1 \f$, under which `gaugeInvariantPairing` is
+  /// invariant. Throws `std::invalid_argument` when the pairing is singular or
+  /// the shapes differ.
+  [[nodiscard]] static Eigen::MatrixXcd normalizeDualFrame(const Eigen::MatrixXcd &frame,
+                                                           const Eigen::MatrixXcd &dualFrame);
+
   /// \f$ U_{vw} = \det M_{vw} \f$ for a square transport block. Throws
   /// `std::invalid_argument` for a non-square or empty block: only common-rank
   /// links carry a connection.

@@ -20,6 +20,10 @@ The host
 The base complex is a fan of ``--tetrahedra`` tetrahedra around the edge
 (0, 1): tetrahedron k has vertices (0, 1, 2 + k, 3 + k), so consecutive
 tetrahedra share a face. Every edge has squared length ``--edge-squared``.
+The declared default is two tetrahedra: with every monopole sector held, the
+holonomy term of a fan of three or more tetrahedra has no stationary point
+inside the sector (the Newton solve stops at the sector boundary, unconverged,
+and says so), while the fan of two is stationary in it.
 Every tetrahedron carries a unit Dirac monopole (WP §11.1): the outward
 principal face angles theta_f, read in the outward orientation of
 `MonopoleSupport.tetrahedron(1)` on the tetrahedron's ascending vertices, are
@@ -40,7 +44,13 @@ At level l (a complex K_l of three sheets of a base complex):
    primal Regge + the paper's linear stiffness (1/kappa)(1/2)||l - l0||^2
    + the holonomy term (Villain by default, ``--holonomy``), in strict
    emergence (no carried density in the equations; WP §7), with l0 the
-   level's own lengths as the level was built;
+   level's own lengths as the level was built. The monopole sector is
+   boundary data (WP v17 §9): every tetrahedron of the level is a declared
+   cluster whose monopole number, read as built, is held, and the moduli of
+   the face holonomies on its bounding cut are held with it, so a holonomy on
+   the unit circle stays there; the arguments and every other connection
+   degree of freedom relax freely. The monopole numbers before and after the
+   relaxation are both recorded;
 2. the Section 15 box runs on the base: the partition of the covariant
    edge-mode operator h_1(z, U) of sheet 0 (`LevelRecursion`, the library's
    `PersistentPartition`, a modularity sweep over the declared resolutions),
@@ -53,8 +63,12 @@ At level l (a complex K_l of three sheets of a base complex):
    supports share a top simplex (the coupling block of the Whitney metric is
    nonzero; spec Prop. 7.1), and four that interact pairwise span a grown
    3-simplex (the flag complex of the interaction graph);
-4. the grown-cell rule (WP v17 §15): the inherited pairing on the
-   determinant line, g_vw = det(Y_v^T G_1^U Y_w), is read as |T| Gamma, so
+4. the grown-cell rule (WP v17 §15): each fiber Y_v of h_1(z, U) and the
+   fiber Y_v^vee of the same component of h_1(z, U^{-1}), selected by the
+   same rule, with the dual frame normalized to det((Y_v^vee)^T Y_v) = 1; the
+   gauge-invariant inherited pairing on the determinant line,
+   g_vv = det((Y_v^vee)^T G_1^U Y_v) and
+   g_vw = det((Y_v^vee)^T G_1^U Y_w) / det M_vw, is read as |T| Gamma, so
    C Gamma = g / 20; the block of C Gamma off v_0 is inverted to g/C,
    C = 14400 / det(g/C), and the squared lengths are the quadratic form of g
    on the edge vectors. The row-sum defect ||g 1|| / ||g|| of every grown cell
@@ -103,7 +117,7 @@ from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 
 #: Declared inputs, recorded with every run.
-DECLARED_TETRAHEDRA = 3
+DECLARED_TETRAHEDRA = 2
 DECLARED_EDGE_SQUARED = 8.0
 DECLARED_MONOPOLE = 1
 DECLARED_TICKS = 3
@@ -257,16 +271,35 @@ def monopole_numbers(cells, links):
 # ------------------------------------------------------------ relaxation
 
 
-def relax_level(spacetime, config):
+def held_sectors(cells, numbers, count, sheets=SHEETS):
+    """The monopole sectors held as boundary data during a relaxation: every
+    tetrahedron of every sheet, its bounding cut the four faces of
+    `MonopoleSupport.tetrahedron` in their outward orientation on its ascending
+    vertices, with its declared monopole number."""
+    sectors = []
+    for t in range(sheets):
+        for cell, number in zip(cells, numbers):
+            c = [v + t * count for v in sorted(cell)]
+            sector = cob.HeldMonopoleSector()
+            sector.faces = [[c[p], c[q], c[r]] for p, q, r in FIXTURE_FACES]
+            sector.monopole_number = int(number)
+            sectors.append(sector)
+    return sectors
+
+
+def relax_level(spacetime, config, sectors=None):
     """Step 1: both edge fields relax to holomorphic stationarity of the joint
-    action, strict emergence, with the level's lengths as built as l0."""
+    action, strict emergence, with the level's lengths as built as l0, and
+    with the declared monopole sectors held as boundary data."""
     declaration = bp.action_declaration(spacetime, config["kappa"],
                                         config["beta"],
                                         config["regge_hinges"],
                                         holonomy=config["holonomy"])
     action = cob.JointAction(spacetime, declaration)
+    held = dict(config)
+    held["held_sectors"] = list(sectors or [])
     relaxation = cob.HolomorphicRelaxation(action,
-                                           bp.relaxation_declaration(config))
+                                           bp.relaxation_declaration(held))
     started = time.time()
     report = relaxation.solve()
     return {
@@ -275,6 +308,9 @@ def relax_level(spacetime, config):
         "residual": float(report.residual_norm),
         "iterations": len(report.steps),
         "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
+        "sector_guard_damped_steps": int(report.sector_guard_damped_steps),
+        "sector_monopole_numbers": list(report.sector_monopole_numbers),
+        "held_modulus_drift": float(report.held_modulus_drift),
         "action": complex(report.action),
         "seconds": time.time() - started,
     }
@@ -292,11 +328,14 @@ def base_operator(cells, z, links):
     tops = [tuple(t) for t in complex_.kSimplexVertices(3)]
     squared = [complex(z[e]) for e in edges]
     connection = ch.Connection(complex_, [complex(links[e]) for e in edges])
-    covariant = ch.CovariantChainHodge(ch.ChainHodge(complex_, squared),
-                                       connection)
+    hodge = ch.ChainHodge(complex_, squared)
+    covariant = ch.CovariantChainHodge(hodge, connection)
+    dual = ch.CovariantChainHodge(hodge, connection.inverse())
     operator = np.asarray(covariant.covariantOperator(1))
+    dual_operator = np.asarray(dual.covariantOperator(1))
     return {"complex": complex_, "edges": edges, "tops": tops,
-            "covariant": covariant, "operator": operator}
+            "covariant": covariant, "operator": operator,
+            "dual_operator": dual_operator}
 
 
 def recursion_turn(operator, config):
@@ -315,28 +354,73 @@ def recursion_turn(operator, config):
     return recursion.level(0)
 
 
-def fiber_frames(level):
-    """The right frame Y_v of every fiber (level dimension by r_v) and the
-    offsets of the fibers in the labeled sum."""
-    n = int(level.dimension)
-    modes = int(level.modes)
-    embedding = np.asarray(level.embedding).reshape(n, modes)
-    frames, offsets, start = [], [], 0
-    for band in level.bands:
-        r = int(band.rank)
-        frames.append(embedding[:, start:start + r])
-        offsets.append((start, start + r))
-        start += r
-    return frames, offsets
+def riesz_band(block, rank, nodes):
+    """The band of a component block by the rule `LevelRecursion` declares as
+    `LowestModes`: the ``rank`` eigenvalues first in ascending real part are
+    enclosed by the circle about their mean whose radius sits halfway to the
+    nearest excluded eigenvalue; the projector is the contour integral by the
+    trapezoidal rule; the right frame is the leading left singular vectors of
+    the projector and the left frame its algebraic dual."""
+    values = np.linalg.eigvals(block)
+    ordered = sorted(values, key=lambda v: (v.real, v.imag))
+    r = min(rank, len(ordered))
+    centre = np.mean(ordered[:r])
+    inside = max(abs(v - centre) for v in ordered[:r])
+    rest = [abs(v - centre) for v in ordered[r:]]
+    radius = 0.5 * (inside + min(rest)) if rest else inside + max(1.0, inside)
+    n = block.shape[0]
+    projector = np.zeros((n, n), dtype=complex)
+    for k in range(nodes):
+        root = np.exp(2j * np.pi * k / nodes)
+        zeta = centre + radius * root
+        projector += (radius * root / nodes) * np.linalg.inv(
+            zeta * np.eye(n) - block)
+    left_singular, _, _ = np.linalg.svd(projector)
+    right = left_singular[:, :r]
+    left = np.linalg.solve(right.conj().T @ right, right.conj().T @ projector)
+    return {"frame": right, "left": left, "projector": projector,
+            "eigenvalues": list(ordered[:r]), "centre": complex(centre),
+            "radius": float(radius)}
 
 
-def transport_blocks(level, offsets):
-    """M_vw, the (v, w) block of the fiber operator (Hom(E_w, E_v))."""
-    modes = int(level.modes)
-    fiber = np.asarray(level.fiber_operator).reshape(modes, modes)
-    return {(v, w): fiber[offsets[v][0]:offsets[v][1],
-                          offsets[w][0]:offsets[w][1]]
-            for v in range(len(offsets)) for w in range(len(offsets))}
+def fibers_for_partition(operator, dual_operator, partition, rank, nodes):
+    """The fibers of every component for the connection U and for the dual
+    connection U^{-1}, embedded in the level's coordinates; each dual frame
+    normalized to determinant one against its fiber's frame,
+    det((Y_v^vee)^T Y_v) = 1."""
+    n = operator.shape[0]
+    frames, lefts, duals, reads = [], [], [], []
+    for part in partition:
+        index = list(part)
+        band = riesz_band(operator[np.ix_(index, index)], rank, nodes)
+        dual = riesz_band(dual_operator[np.ix_(index, index)], rank, nodes)
+        r = band["frame"].shape[1]
+        frame = np.zeros((n, r), dtype=complex)
+        left = np.zeros((r, n), dtype=complex)
+        dual_frame = np.zeros((n, dual["frame"].shape[1]), dtype=complex)
+        frame[index, :] = band["frame"]
+        left[:, index] = band["left"]
+        dual_frame[index, :] = dual["frame"]
+        if dual_frame.shape[1] == r:
+            dual_frame = np.asarray(
+                ch.GrownCellRule.normalizeDualFrame(frame, dual_frame))
+        frames.append(frame)
+        lefts.append(left)
+        duals.append(dual_frame)
+        mismatch = (max(abs(a - b) for a, b in zip(
+            sorted(band["eigenvalues"], key=lambda v: (v.real, v.imag)),
+            sorted(dual["eigenvalues"], key=lambda v: (v.real, v.imag))))
+            if len(dual["eigenvalues"]) == r else float("inf"))
+        reads.append({"projector": band["projector"],
+                      "eigenvalues": band["eigenvalues"],
+                      "dual_eigenvalue_mismatch": float(mismatch)})
+    return frames, lefts, duals, reads
+
+
+def transport_matrix(operator, frames, lefts):
+    """M_vw = Phi~_v^T h Phi_w for every pair, in the frames given."""
+    return {(v, w): lefts[v] @ operator @ frames[w]
+            for v in range(len(frames)) for w in range(len(frames))}
 
 
 def level_record(level):
@@ -388,10 +472,75 @@ def grown_cells(vertex_count, pairs):
             if all(p in pairs for p in itertools.combinations(q, 2))]
 
 
-def inherited_pairing(frames, covariant):
-    """g_vw = det(Y_v^T G_1^U Y_w) over all response vertices."""
+def inherited_pairing(frames, duals, transports, covariant):
+    """The gauge-invariant inherited pairing of the grown-cell rule: the
+    dual-connection frame of v paired with the image of the frame of w through
+    G_1^U on the determinant line, divided by U_vw = det M_vw off the
+    diagonal (`GrownCellRule.gaugeInvariantPairing`)."""
+    n = len(frames)
     images = [np.asarray(covariant.applyG(1, Y)) for Y in frames]
-    return np.asarray(ch.GrownCellRule.determinantPairing(frames, images))
+    connection = np.ones((n, n), dtype=complex)
+    for (v, w), block in transports.items():
+        if v != w:
+            connection[v, w] = (
+                complex(ch.GrownCellRule.transportConnection(block))
+                if block.shape[0] == block.shape[1] and block.size else
+                complex("nan"))
+    return np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
+        duals, images, connection))
+
+
+def level_rule_shift(cells, z, links):
+    """The grown-cell rule applied to a level's own tetrahedra as if they were
+    grown cells: on each tetrahedron alone, the vertex fibers are the exact
+    chains of the twisted coboundary, their dual-connection partners those of
+    the inverse connection, and the transports the edge links. The relative
+    shift of the rule's squared lengths from the tetrahedron's own is zero for
+    a pure-gauge connection; with face holonomies it is the curvature-induced
+    shift of the rule."""
+    fixture_edges = list(itertools.combinations(range(4), 2))
+    single = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    shifts = []
+    for cell in cells:
+        c = sorted(cell)
+        s_local = [complex(z[(c[i], c[j])]) for i, j in fixture_edges]
+        block = np.asarray(
+            ch.WhitneyMass.topSimplexBlocks(single, s_local, 1)[0].block)
+        U = {}
+        for (i, j) in fixture_edges:
+            U[(i, j)] = complex(links[(c[i], c[j])])
+            U[(j, i)] = 1.0 / U[(i, j)]
+        for v in range(4):
+            U[(v, v)] = 1.0
+
+        def dressed(link):
+            return np.array([[block[a, b] * link[(fixture_edges[a][0],
+                                                  fixture_edges[b][0])]
+                              for b in range(6)] for a in range(6)])
+
+        def coboundary(link):
+            out = np.zeros((6, 4), dtype=complex)
+            for a, (x, y) in enumerate(fixture_edges):
+                out[a, x], out[a, y] = -1.0, link[(x, y)]
+            return out
+
+        inverse = {k: 1.0 / u for k, u in U.items()}
+        forward = dressed(U)
+        frames = forward @ coboundary(U)
+        duals = dressed(inverse) @ coboundary(inverse)
+        images = np.linalg.solve(forward, frames)
+        connection = np.array([[U[(v, w)] for w in range(4)]
+                               for v in range(4)])
+        pairing = np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
+            [duals[:, [v]] for v in range(4)],
+            [images[:, [v]] for v in range(4)], connection))
+        read = ch.GrownCellRule.invertVertexPairing(pairing)
+        rule = np.array(read.squaredLengths)
+        shifts.append({"cell": c,
+                       "relative_shift": float(np.max(np.abs(
+                           rule / np.array(s_local) - 1.0))),
+                       "row_sum_defect": float(read.rowSumDefect)})
+    return shifts
 
 
 def grow(cells, pairing, transports):
@@ -459,6 +608,9 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
+        number = monopole_numbers([c], links)[0]
+        cell_config["held_sectors"] = held_sectors([[0, 1, 2, 3]], [number],
+                                                   4)
         point = bp.scan_point(config["kappa"], config["beta"], cell_config,
                               alignment)
         out.append({"cell": c, "host_cell": host_cell,
@@ -512,6 +664,25 @@ def _doublet_summary(record):
 # ------------------------------------------------------------------- a tick
 
 
+def interaction_stage(base, partition, config):
+    """Steps 3-4 for a given partition of the level's coordinates: the fibers
+    for U and U^{-1}, the transports, the interaction graph, the grown
+    3-simplices and the grown-cell rule on each."""
+    frames, lefts, duals, fibers = fibers_for_partition(
+        base["operator"], base["dual_operator"], partition,
+        config["band_rank"], config["contour_nodes"])
+    transports = transport_matrix(base["operator"], frames, lefts)
+    pairs = interaction_graph(partition, base["edges"], base["tops"])
+    grown = grown_cells(len(frames), pairs)
+    pairing = inherited_pairing(frames, duals, transports, base["covariant"])
+    reads, z, links, spread, groupoid = grow(grown, pairing, transports)
+    return {"frames": frames, "duals": duals, "fibers": fibers,
+            "transports": transports, "pairs": pairs, "pairing": pairing,
+            "reads": reads, "z": z, "links": links, "spread": spread,
+            "groupoid": groupoid}
+
+
+
 def tick(index, cells, z, links, config):
     """One tick on the level whose base is ``cells`` with fields ``z`` and
     ``links``. Returns the tick's record and the next level's base (or None
@@ -520,7 +691,8 @@ def tick(index, cells, z, links, config):
     spacetime, count = build_level(cells, z, links)
     declared_monopoles = monopole_numbers(cells, links)
     try:
-        relaxation = relax_level(spacetime, config)
+        relaxation = relax_level(
+            spacetime, config, held_sectors(cells, declared_monopoles, count))
     except ValueError as error:
         # a declared refusal of the library (a face holonomy outside the
         # domain of the holonomy term): the level has no stationary point to
@@ -567,14 +739,25 @@ def tick(index, cells, z, links, config):
         for t in range(1, SHEETS))
     base = base_operator(cells, base_z, base_links)
     level = recursion_turn(base["operator"], config)
-    frames, offsets = fiber_frames(level)
-    transports = transport_blocks(level, offsets)
-    pairs = interaction_graph(level.partition, base["edges"], base["tops"])
-    grown = grown_cells(len(frames), pairs)
-    pairing = inherited_pairing(frames, base["covariant"])
-    reads, next_z, next_links, spread, groupoid = grow(grown, pairing,
-                                                       transports)
+    stage = interaction_stage(base, [list(p) for p in level.partition],
+                              config)
+    frames, pairs = stage["frames"], stage["pairs"]
+    transports = stage["transports"]
+    reads, next_z, next_links = stage["reads"], stage["z"], stage["links"]
+    spread, groupoid = stage["spread"], stage["groupoid"]
     kept = [r for r in reads if "failed" not in r]
+    library_projectors = [
+        np.asarray(b.frame).reshape(-1, int(b.rank))
+        @ np.asarray(b.left_frame).reshape(int(b.rank), -1)
+        for b in level.bands]
+    projector_agreement = []
+    for part, fiber, library in zip(level.partition, stage["fibers"],
+                                    library_projectors):
+        index = list(part)
+        block = library[np.ix_(index, index)]
+        projector_agreement.append(float(
+            np.linalg.norm(fiber["projector"] - block)
+            / max(1.0, np.linalg.norm(block))))
     record = {
         "tick": index,
         "level": {
@@ -587,9 +770,15 @@ def tick(index, cells, z, links, config):
             "declared_monopole_numbers": declared_monopoles,
             "monopole_numbers": monopole_numbers(cells, base_links),
             "sheet_isomorphism_residual": float(isomorphism),
+            "rule_shift": level_rule_shift(cells, base_z, base_links),
         },
         "relaxation": relaxation,
         "partition": level_record(level),
+        "fibers": {
+            "projector_agreement_with_library": projector_agreement,
+            "dual_eigenvalue_mismatch": [
+                f["dual_eigenvalue_mismatch"] for f in stage["fibers"]],
+        },
         "interactions": sorted(pairs),
         "transport_norms": {"%d-%d" % p: float(np.linalg.norm(
             transports[p])) for p in sorted(pairs)},
@@ -603,6 +792,11 @@ def tick(index, cells, z, links, config):
     }
     record["reads"] = cell_reads(cells, base_z, base_links, config)
     record["summary"] = {
+        "monopole_numbers_before": declared_monopoles,
+        "monopole_numbers_after": monopole_numbers(cells, base_links),
+        "rule_shift_on_level": max(
+            (r["relative_shift"] for r in record["level"]["rule_shift"]),
+            default=None),
         "response_vertices": len(frames),
         "interactions": len(pairs),
         "grown_cells": len(kept),
@@ -665,7 +859,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
         "band_rank": band_rank,
         "contour_nodes": DECLARED_CONTOUR_NODES,
         "emergence": "strict",
-        "pairing": "det(Y_v^T G_1^U Y_w), read as |T| Gamma",
+        "pairing": ("det((Y_v^vee)^T G_1^U Y_w) / det M_vw off the diagonal, "
+                    "dual frames normalized to det((Y_v^vee)^T Y_v) = 1, "
+                    "read as |T| Gamma"),
+        "monopole_sectors": "held as boundary data during every relaxation",
         "edge_value": "mean over the grown cells containing the edge",
         "max_cells": max_cells,
     })
@@ -923,7 +1120,7 @@ def summary(result):
         lines.append(
             "tick %d: level with %d vertices, %d edges, %d tetrahedra per "
             "sheet; relaxation converged %s (residual %.3g); monopole "
-            "numbers %s as built, %s relaxed"
+            "numbers %s before relaxation, %s after"
             % (record["tick"], record["level"]["vertices"],
                record["level"]["edges"], record["level"]["tetrahedra"],
                record["relaxation"]["converged"],

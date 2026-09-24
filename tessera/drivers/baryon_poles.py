@@ -300,6 +300,9 @@ def relaxation_declaration(config):
     geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     geometry.contour_radius = config["jacobian_radius"]
     geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
+    # the monopole sectors a caller holds as boundary data
+    # (`tessera.drivers.recursion`); none by default
+    geometry.held_sectors = list(config.get("held_sectors") or [])
     return geometry
 
 

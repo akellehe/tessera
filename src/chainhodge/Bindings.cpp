@@ -818,6 +818,10 @@ U_vw = det M_vw of the fiber transport.)doc")
            py::arg("pairing"))
       .def_static("determinantPairing", &GrownCellRule::determinantPairing, py::arg("frames"),
            py::arg("images"))
+      .def_static("gaugeInvariantPairing", &GrownCellRule::gaugeInvariantPairing,
+           py::arg("dual_frames"), py::arg("images"), py::arg("connection"))
+      .def_static("normalizeDualFrame", &GrownCellRule::normalizeDualFrame, py::arg("frame"),
+           py::arg("dual_frame"))
       .def_static("transportConnection", &GrownCellRule::transportConnection,
            py::arg("transport"));
   py::class_<FaceAnchor>(m, "FaceAnchor",

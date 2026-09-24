@@ -223,6 +223,35 @@ Eigen::MatrixXcd GrownCellRule::determinantPairing(const std::vector<Eigen::Matr
   return out;
 }
 
+Eigen::MatrixXcd GrownCellRule::gaugeInvariantPairing(
+    const std::vector<Eigen::MatrixXcd> &dualFrames, const std::vector<Eigen::MatrixXcd> &images,
+    const Eigen::MatrixXcd &connection) {
+  const auto n = static_cast<Eigen::Index>(dualFrames.size());
+  if (images.size() != dualFrames.size() || connection.rows() != n || connection.cols() != n)
+    throw std::invalid_argument(
+        "GrownCellRule::gaugeInvariantPairing: one image per dual frame and an n x n "
+        "connection are required");
+  Eigen::MatrixXcd out = determinantPairing(dualFrames, images);
+  for (Eigen::Index v = 0; v < n; ++v)
+    for (Eigen::Index w = 0; w < n; ++w)
+      if (v != w) out(v, w) /= connection(v, w);
+  return out;
+}
+
+Eigen::MatrixXcd GrownCellRule::normalizeDualFrame(const Eigen::MatrixXcd &frame,
+                                                   const Eigen::MatrixXcd &dualFrame) {
+  if (frame.rows() != dualFrame.rows() || frame.cols() != dualFrame.cols() || frame.cols() == 0)
+    throw std::invalid_argument(
+        "GrownCellRule::normalizeDualFrame: the frame and its dual must have the same shape");
+  const Complex pairing = (dualFrame.transpose() * frame).determinant();
+  if (pairing == Complex(0.0, 0.0) || !std::isfinite(std::abs(pairing)))
+    throw std::invalid_argument(
+        "GrownCellRule::normalizeDualFrame: the frame and its dual pair singularly");
+  Eigen::MatrixXcd out = dualFrame;
+  out.col(0) /= pairing;
+  return out;
+}
+
 std::complex<double> GrownCellRule::transportConnection(const Eigen::MatrixXcd &transport) {
   if (transport.rows() == 0 || transport.rows() != transport.cols())
     throw std::invalid_argument(

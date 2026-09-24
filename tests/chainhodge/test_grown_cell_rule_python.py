@@ -232,3 +232,99 @@ def test_vertex_pairing_two_dimensions_and_refusals():
     bad[0, 1] = np.nan
     with pytest.raises(ValueError, match="undefined"):
         GCR.invertVertexPairing(bad)
+
+
+# ------------------------------------- the gauge-invariant pairing (§10 pattern)
+
+
+def _level_zero_invariant_pairing(s, links):
+    """The level-zero model with the dual-connection frames: the fiber of v is
+    the exact chain of delta^U e_v, its partner that of delta^{U^-1} e_v, and
+    the transport along an edge is the link."""
+    block, edges = _local_block(TETRAHEDRON, s)
+    pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+    U = {}
+    for m, (x, y) in enumerate(pairs):
+        U[(x, y)], U[(y, x)] = links[m], 1.0 / links[m]
+    for v in range(4):
+        U[(v, v)] = 1.0
+
+    def dressed(link):
+        return np.array([[block[a, c] * link[(pairs[a][0], pairs[c][0])]
+                          for c in range(6)] for a in range(6)])
+
+    def coboundary(link):
+        Z = np.zeros((6, 4), dtype=complex)
+        for a, (x, y) in enumerate(pairs):
+            Z[a, x], Z[a, y] = -1.0, link[(x, y)]
+        return Z
+
+    inverse = {k: 1.0 / u for k, u in U.items()}
+    Y = dressed(U) @ coboundary(U)
+    Yd = dressed(inverse) @ coboundary(inverse)
+    images = np.linalg.solve(dressed(U), Y)
+    connection = np.array([[U[(v, w)] for w in range(4)] for v in range(4)])
+    return np.asarray(GCR.gaugeInvariantPairing(
+        [Yd[:, [v]] for v in range(4)], [images[:, [v]] for v in range(4)],
+        connection))
+
+
+def _pure_gauge(rng, unitary):
+    theta = rng.normal(size=4) + (0.0 if unitary else 0.4j * rng.normal(size=4))
+    g = np.exp(1j * theta)
+    return [g[y] / g[x] for x, y in [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]]
+
+
+@pytest.mark.parametrize("unitary", [True, False])
+@pytest.mark.parametrize("name,s", list(_tetrahedra()))
+def test_invariant_pairing_returns_level_zero_at_any_pure_gauge(name, s, unitary):
+    rng = np.random.default_rng(21)
+    for _ in range(3):
+        inversion = GCR.invertVertexPairing(
+            _level_zero_invariant_pairing(s, _pure_gauge(rng, unitary)))
+        np.testing.assert_allclose(np.array(inversion.squaredLengths), np.array(s),
+                                   rtol=1e-10, atol=0.0)
+        assert inversion.rowSumDefect < 1e-12
+
+
+def test_invariant_pairing_is_gauge_invariant_with_curvature():
+    s = list(_tetrahedra())[0][1]
+    rng = np.random.default_rng(8)
+    links = np.exp(1j * rng.normal(size=6))
+    reference = GCR.invertVertexPairing(_level_zero_invariant_pairing(s, links))
+    for unitary in (True, False):
+        gauge = _pure_gauge(rng, unitary)
+        moved = GCR.invertVertexPairing(
+            _level_zero_invariant_pairing(s, list(np.array(links) * np.array(gauge))))
+        np.testing.assert_allclose(np.array(moved.squaredLengths),
+                                   np.array(reference.squaredLengths), rtol=1e-10)
+    shift = np.max(np.abs(np.array(reference.squaredLengths) / np.array(s) - 1.0))
+    assert shift > 1e-3   # the curvature-induced shift of the rule
+
+
+def test_normalized_dual_frames_make_the_pairing_frame_invariant():
+    rng = np.random.default_rng(13)
+    n, r = 12, 2
+    G = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
+    frames = [rng.normal(size=(n, r)) + 1j * rng.normal(size=(n, r)) for _ in range(4)]
+    duals = [rng.normal(size=(n, r)) + 1j * rng.normal(size=(n, r)) for _ in range(4)]
+    connection = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
+
+    def pairing(frames, duals, connection):
+        normalized = [np.asarray(GCR.normalizeDualFrame(Y, D)) for Y, D in zip(frames, duals)]
+        for Y, D in zip(frames, normalized):
+            np.testing.assert_allclose(np.linalg.det(D.T @ Y), 1.0, rtol=1e-12)
+        return np.asarray(GCR.gaugeInvariantPairing(normalized, [G @ Y for Y in frames],
+                                                    connection))
+
+    base = pairing(frames, duals, connection)
+    g = [rng.normal(size=(r, r)) + 1j * rng.normal(size=(r, r)) for _ in range(4)]
+    h = [rng.normal(size=(r, r)) + 1j * rng.normal(size=(r, r)) for _ in range(4)]
+    dets = np.array([np.linalg.det(x) for x in g])
+    # the connection det M_vw moves by det(g_v)^-1 det(g_w)
+    moved_connection = connection * np.outer(1.0 / dets, dets)
+    moved = pairing([Y @ x for Y, x in zip(frames, g)], [D @ y for D, y in zip(duals, h)],
+                    moved_connection)
+    np.testing.assert_allclose(moved, base, rtol=1e-9)
+    with pytest.raises(ValueError, match="same shape"):
+        GCR.normalizeDualFrame(frames[0], duals[0][:, :1])
