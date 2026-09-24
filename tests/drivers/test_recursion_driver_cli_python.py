@@ -112,12 +112,16 @@ def test_the_declared_config():
 
 @pytest.fixture(scope="module")
 def two_ticks(tmp_path_factory):
-    """`main` for two ticks with --json and --out, the reads stubbed."""
+    """`main` for two ticks with --json and --out, the reads stubbed. Every
+    component is accepted (--persistence-required 1), so that tick 0 grows
+    cells and the grown-cell path is written; with the declared default the
+    recursion stops at tick 0."""
     directory = tmp_path_factory.mktemp("recursion")
     original = R.cell_reads
     R.cell_reads = lambda cells, z, links, config: READ
     try:
-        result = R.main(["run", "--ticks", "2", "--json",
+        result = R.main(["run", "--ticks", "2", "--persistence-required", "1",
+                         "--json",
                          str(directory / "run.json"), "--out",
                          str(directory / "run.png"), "--quiet"])
     finally:
@@ -177,8 +181,13 @@ def test_main_passes_the_declared_options_to_every_tick(stub_reads):
 def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     R.main(["run", "--ticks", "1"])
     out = capsys.readouterr().out
-    assert out.startswith("tick 0: 5 response vertices, 10 interactions, 5 "
+    assert out.startswith("tick 0: 2 response vertices, 1 interactions, 0 "
                           "grown cells")
+    assert "  the Regge term is structurally zero on this level: it has 0 " \
+        "hinges under the interior hinge rule" in out
+    assert "  component 2 (edges 0-4) rejected: it persists over 1 of the 5 " \
+        "required resolutions" in out
+    assert "held bounding cut" in out
     assert "mode: controlled synthesis; host monopole numbers [1, 1]" in out
     assert "tick 0: level with 5 vertices, 9 edges, 2 tetrahedra per sheet" \
         in out
@@ -289,24 +298,36 @@ def test_a_band_of_the_whole_block_has_nothing_excluded():
     np.testing.assert_allclose(band["projector"], np.eye(2), atol=1e-12)
 
 
-def test_the_fibers_of_a_partition_have_unit_dual_determinant():
+def test_the_fibers_of_a_partition_are_supported_on_their_images():
+    """Each fiber's geometric image is zero off its component, its two images
+    pair to det((Z^vee)^T Z) = 3, and its left frame is the dual of its chain
+    frame."""
     config = R.default_config(tetrahedra=2)
     cells, z, links, _ = R.level_zero(config)
     base = R.base_operator(cells, z, links)
     partition = [list(p) for p in R.recursion_turn(base["operator"],
                                                    config).partition]
-    frames, lefts, duals, reads = R.fibers_for_partition(
-        base["operator"], base["dual_operator"], partition, 1, 64)
-    assert len(frames) == len(partition) == len(reads)
-    for frame, left, dual, part in zip(frames, lefts, duals, partition):
-        assert np.linalg.det(dual.T @ frame) == pytest.approx(1.0, abs=1e-10)
+    fibers = R.fibers_for_partition(base, partition, 1, 64)
+    assert len(fibers["frames"]) == len(partition) == len(fibers["reads"])
+    for image, dual_image, frame, left, part in zip(
+            fibers["images"], fibers["dual_images"], fibers["frames"],
+            fibers["lefts"], partition):
+        assert np.linalg.det(dual_image.T @ image) == pytest.approx(
+            R.IMAGE_PAIRING_UNIT, abs=1e-10)
         np.testing.assert_allclose(left @ frame, np.eye(frame.shape[1]),
                                    atol=1e-10)
-        outside = [i for i in range(frame.shape[0]) if i not in part]
-        assert np.all(frame[outside] == 0)
+        outside = [i for i in range(image.shape[0]) if i not in part]
+        assert np.all(image[outside] == 0) and np.all(left[:, outside] == 0)
+    reads = fibers["reads"]
     assert max(r["dual_eigenvalue_mismatch"] for r in reads) < 1e-8
-    transports = R.transport_matrix(base["operator"], frames, lefts)
-    assert len(transports) == len(frames) ** 2
+    transports = R.transport_matrix(base["pencil"], fibers["images"],
+                                    fibers["lefts"])
+    assert len(transports) == len(partition) ** 2
+    # the pencil form of the transfer is the chain form Y~^T h_1 Y
+    for (v, w), block in transports.items():
+        np.testing.assert_allclose(
+            fibers["lefts"][v] @ base["operator"] @ fibers["frames"][w],
+            block, rtol=1e-12, atol=1e-12 * np.abs(block).max())
 
 
 def test_the_level_record_is_consistent():
