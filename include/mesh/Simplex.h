@@ -385,11 +385,53 @@ class Simplex {
     /// attach to those three operations and not to the cofactors.
     [[nodiscard]] DihedralCofactors dihedralCofactors(SimplexPtr hinge) const;
 
+    /// # DihedralSheet
+    ///
+    /// The declared Riemann sheet of one dihedral angle
+    /// \f$ \theta = \arccos\bigl(-C_{ij}/(\sqrt{C_{ii}}\sqrt{C_{jj}})\bigr) \f$.
+    ///
+    /// The angle has three branched operations: the two cofactor roots and the
+    /// inverse cosine. Only the product of the two roots enters the cosine, so
+    /// the roots contribute one sign, `rootSign`: the declared product is
+    /// `rootSign` times the product of the two principal roots. The inverse
+    /// cosine contributes the pair \f$ (k, \varepsilon) \f$ of
+    /// `SheetedAcos`: the declared angle is
+    /// \f$ 2\pi k + \varepsilon\,\operatorname{Arccos} r \f$ with
+    /// \f$ \operatorname{Arccos} \f$ the principal value, a real ratio
+    /// pinned to the \f$ +0 \f$ side of its cuts as ``dihedralAngle`` pins it.
+    /// The default is the principal sheet, on which every sheeted method below
+    /// returns exactly what its sheet-blind namesake returns.
+    struct DihedralSheet {
+      /// \f$ \pm 1 \f$: the sign relating the declared
+      /// \f$ \sqrt{C_{ii}}\sqrt{C_{jj}} \f$ to the product of principal roots.
+      int rootSign{1};
+      /// \f$ k \f$, the logarithmic sheet of the inverse cosine.
+      int branchIndex{0};
+      /// \f$ \varepsilon = \pm 1 \f$, which of \f$ \pm\operatorname{Arccos} \f$
+      /// the angle continues.
+      int orientation{1};
+    };
+
+    /// The declared sheets of the dihedral angles at one hinge, keyed by the
+    /// sorted vertex ids of the top cell each angle lives in. A top cell the map
+    /// does not name is read on the principal sheet.
+    using DihedralSheets = std::map<std::vector<std::uint64_t>, DihedralSheet>;
+
+    /// ``dihedralAngle`` on the declared \a sheet instead of the principal one.
+    [[nodiscard]] std::complex<double>
+    dihedralAngle(SimplexPtr hinge, const DihedralSheet &sheet) const;
+
     /// Complex Lorentzian deficit at this hinge: 2*pi minus the sum of
     /// ``dihedralAngle`` over the top simplices containing it. Real
     /// for an all-spacelike (Euclidean) neighbourhood (the ordinary angle
     /// defect); complex when timelike cells contribute boosts.
     [[nodiscard]] std::complex<double> deficitAngle() const;
+
+    /// ``deficitAngle`` with every dihedral angle on its declared sheet in
+    /// \a sheets: \f$ 2\pi - \sum_\tau \theta_\tau \f$ over the same top
+    /// cells, each \f$ \theta_\tau \f$ read by the sheeted ``dihedralAngle``.
+    [[nodiscard]] std::complex<double>
+    deficitAngle(const DihedralSheets &sheets) const;
 
     /// Exact analytic gradient of this hinge's ``deficitAngle`` with
     /// respect to the squared length of each surrounding edge:
@@ -409,6 +451,16 @@ class Simplex {
     [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>,
                            std::complex<double>>
     deficitAngleGradient() const;
+
+    /// ``deficitAngleGradient`` with every dihedral angle on its declared sheet
+    /// in \a sheets: the derivative of the sheeted ``deficitAngle``. The chain
+    /// rule is the same on every sheet, because the declared root product is a
+    /// constant sign times the principal one and
+    /// \f$ d\theta/dr = -1/\sin\theta \f$ holds on every sheet of the
+    /// inverse cosine with \f$ \theta \f$ the declared value.
+    [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>,
+                           std::complex<double>>
+    deficitAngleGradient(const DihedralSheets &sheets) const;
 
     /// Exact analytic Hessian of this hinge's deficit angle:
     /// \f$ \partial^2 \varepsilon / \partial \ell^2_e \partial \ell^2_f \f$.

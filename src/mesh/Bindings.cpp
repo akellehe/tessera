@@ -509,7 +509,7 @@ dualVolume().)doc")
       .def("hodgeStar", &Simplex::hodgeStar,
            "Diagonal Hodge-star ratio |*sigma|/|sigma| (dual over primal "
            "content), complex.")
-      .def("dihedralAngle", &Simplex::dihedralAngle,
+      .def("dihedralAngle", py::overload_cast<SimplexPtr>(&Simplex::dihedralAngle, py::const_),
            py::arg("hinge"),
            "Complex Lorentzian (Sorkin) dihedral angle at the hinge, carrying the "
            "full m in {0,1,2} structure: real for an ordinary wedge, complex "
@@ -531,12 +531,12 @@ dualVolume().)doc")
            "inverse cosine. `ok` is False when the hinge is not a hinge of this "
            "cell or the cofactor matrix is unusable, the case dihedralAngle "
            "answers with zero.")
-      .def("deficitAngle", &Simplex::deficitAngle,
+      .def("deficitAngle", py::overload_cast<>(&Simplex::deficitAngle, py::const_),
            "Complex Lorentzian deficit 2π − Σ dihedralAngle over the "
            "top cells at this hinge; real for an all-spacelike neighbourhood, "
            "complex when timelike cells contribute boosts.")
       .def("deficitAngleGradient",
-           &Simplex::deficitAngleGradient,
+           py::overload_cast<>(&Simplex::deficitAngleGradient, py::const_),
            "Exact analytic d(deficit)/d(l^2_e) for each surrounding edge, as a "
            "dict {(v0,v1): complex}. Cofactor-derivative of the Cayley-Menger "
            "dihedral with the boost-safe sin(theta) branch; matches finite "

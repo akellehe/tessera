@@ -4486,6 +4486,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("Interior", ReggeHinges::Interior)
       .value("All", ReggeHinges::All);
 
+  py::enum_<ReggeBranch>(m, "ReggeBranch",
+      "Which Riemann sheet the primal Regge term and its derivatives are read "
+      "on. Continued (the default) declares every cofactor root, inverse "
+      "cosine and hinge-content root on its principal sheet at the real "
+      "projection of the starting geometry, the Euclidean reference of "
+      "specification section 4.2, and continues it along the straight segment "
+      "to the starting geometry and from there to the current one. Principal "
+      "takes every root principal, which is discontinuous where a Euclidean "
+      "face cofactor sits on the cut of the square root.")
+      .value("Continued", ReggeBranch::Continued)
+      .value("Principal", ReggeBranch::Principal);
+
   py::enum_<HolonomyForm>(m, "HolonomyForm",
       "Which function of the face holonomies the holonomy term of JointAction "
       "is. Villain (the default) is the heat-kernel action in character form, "
@@ -4582,6 +4594,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("regge_hinges", &JointActionDeclaration::reggeHinges,
                      "Which hinges the primal sum runs over; Interior by "
                      "default.")
+      .def_readwrite("regge_branch", &JointActionDeclaration::reggeBranch,
+                     "Which sheet the primal Regge term is read on; Continued "
+                     "by default.")
+      .def_readwrite("regge_start_squared_lengths",
+                     &JointActionDeclaration::reggeStartSquaredLengths,
+                     "The starting geometry the continued Regge sheets are "
+                     "continued from, one squared length per edge in "
+                     "getEdgeList() order; empty means the squared lengths "
+                     "the mesh holds when the JointAction is constructed.")
       .def_readwrite("stiffness_weight",
                      &JointActionDeclaration::stiffnessWeight,
                      "w_S, the coefficient of the linear length stiffness "
@@ -4672,6 +4693,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("regge_hinge_count", &JointAction::reggeHingeCount,
            "The number of hinges the primal Regge sum runs over under the "
            "declared hinge rule.")
+      .def("regge_structurally_zero", &JointAction::reggeStructurallyZero,
+           "True when a declared primal Regge term has no hinge on this "
+           "complex under the declared hinge rule, so the term and its "
+           "gradient are identically zero for every geometry.")
+      .def("regge_off_principal_angles", &JointAction::reggeOffPrincipalAngles,
+           "Under ReggeBranch.Continued, the number of dihedral angles whose "
+           "continued sheet differs from the principal one at the current "
+           "geometry.")
       .def("holonomy_term", &JointAction::holonomyTerm,
            "S_hol(U) in the declared form, weight included. For the Villain "
            "form it is the one quantity that needs log W, taken on the branch "
@@ -4885,7 +4914,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("sector_monopole_numbers",
                      &HolomorphicRelaxationReport::sectorMonopoleNumbers)
       .def_readwrite("held_modulus_drift",
-                     &HolomorphicRelaxationReport::heldModulusDrift);
+                     &HolomorphicRelaxationReport::heldModulusDrift)
+      .def_readwrite("regge_hinge_count",
+                     &HolomorphicRelaxationReport::reggeHingeCount,
+                     "The number of hinges the primal Regge sum runs over.")
+      .def_readwrite("regge_structurally_zero",
+                     &HolomorphicRelaxationReport::reggeStructurallyZero,
+                     "True when a declared primal Regge term has no hinge on "
+                     "this complex under the declared hinge rule, so it and "
+                     "its gradient were identically zero throughout the "
+                     "solve.")
+      .def_readwrite("regge_off_principal_angles",
+                     &HolomorphicRelaxationReport::reggeOffPrincipalAngles,
+                     "The number of dihedral angles whose continued sheet "
+                     "differs from the principal one at the end point.");
 
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
       "A Newton root find on the holomorphic stationarity equations of a "

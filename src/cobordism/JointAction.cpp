@@ -4,9 +4,11 @@
 #include "cobordism/JointAction.h"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <map>
 #include <cmath>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <set>
@@ -21,6 +23,7 @@
 #include "matter/MatterConfiguration.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
+#include "mesh/RiemannSheet.h"
 #include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "simulations/ReggeSolver.h"
@@ -605,6 +608,25 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           std::to_string(declaration_.carrierDegree) + "; got " +
           std::to_string(declaration_.covariance.size()) + " entries");
   }
+  if (declaration_.reggeBranch == ReggeBranch::Continued) {
+    const auto edges = spacetime_->getEdgeList()->toVector();
+    const auto &declared = declaration_.reggeStartSquaredLengths;
+    if (!declared.empty() && declared.size() != edges.size())
+      throw std::invalid_argument(
+          "JointAction: the continued Regge sheets need one starting squared "
+          "length per edge; got " + std::to_string(declared.size()) + " for " +
+          std::to_string(edges.size()) + " edges");
+    for (std::size_t index = 0; index < edges.size(); ++index) {
+      const auto *edge = edges[index];
+      if (edge == nullptr || edge->getSource() == nullptr ||
+          edge->getTarget() == nullptr)
+        continue;
+      const complexd length = edge->getLength();
+      reggeStart_[pairKey(edge->getSource()->getId(),
+                          edge->getTarget()->getId())] =
+          declared.empty() ? length * length : declared[index];
+    }
+  }
 }
 
 void JointAction::setMultipliers(const std::vector<complexd> &multipliers) {
@@ -679,19 +701,357 @@ std::vector<complexd> JointAction::momentResiduals() const {
   return residuals;
 }
 
+// ------------------------------------------------- the continued Regge sheets
+
+struct JointAction::ReggeSheets {
+  struct Hinge {
+    ::tessera::mesh::Simplex *hinge{nullptr};
+    /// The sheets of the hinge's dihedral angles, by top cell.
+    ::tessera::mesh::Simplex::DihedralSheets angles;
+    /// The sign relating the continued content root to `Simplex::volume`.
+    int contentSign{1};
+  };
+  std::vector<Hinge> hinges;
+  /// The number of dihedral angles whose declared sheet is not the principal
+  /// one.
+  std::size_t offPrincipal{0};
+};
+
+namespace {
+
+using ::tessera::mesh::principalArcCosine;
+using ::tessera::mesh::principalSquareRoot;
+using ::tessera::mesh::SheetedAcos;
+using ::tessera::mesh::SheetedSqrt;
+using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
+using SquaredLengthField = std::map<EdgeKey, complexd>;
+
+/// The largest turn about its branch point a root may make in one step of a
+/// walk, and the largest distance an angle may move. Both are well inside the
+/// half turn beyond which a continuation cannot tell two paths apart.
+constexpr double kMaximumRootTurn = std::numbers::pi / 4.0;
+constexpr double kMaximumAngleStep = 0.25;
+/// The shortest step a walk refines to before it accepts a step as it is.
+constexpr double kShortestStep = 1.0 / (1u << 30);
+
+/// A real cosine pinned to the +0 side of the inverse cosine's cuts, as
+/// `Simplex::dihedralAngle` pins it.
+complexd pinnedCosine(complexd Cij, complexd rootProduct) {
+  complexd r = -Cij / rootProduct;
+  if (r.imag() == 0.0) r = {r.real(), 0.0};
+  return r;
+}
+
+/// The squared length of \p key at parameter \p t on the straight segment from
+/// \p from to \p to.
+complexd along(const SquaredLengthField &from, const SquaredLengthField &to,
+               const EdgeKey &key, double t) {
+  const complexd a = from.at(key);
+  const complexd b = to.at(key);
+  return a + t * (b - a);
+}
+
+/// The Cayley-Menger matrix of the simplex on the sorted vertex ids \p ids at
+/// parameter \p t, in the canonical frame `Simplex::cayleyMengerCanonical` uses.
+std::vector<complexd> cayleyMenger(const std::vector<std::uint64_t> &ids,
+                                   const SquaredLengthField &from,
+                                   const SquaredLengthField &to, double t) {
+  const int m = static_cast<int>(ids.size());
+  const int n = m + 1;
+  std::vector<complexd> B(static_cast<std::size_t>(n) * n, complexd{0.0, 0.0});
+  for (int k = 1; k < n; ++k) {
+    B[static_cast<std::size_t>(k)] = 1.0;
+    B[static_cast<std::size_t>(k) * n] = 1.0;
+  }
+  for (int i = 0; i < m; ++i)
+    for (int j = i + 1; j < m; ++j) {
+      const complexd z = along(from, to, pairKey(ids[i], ids[j]), t);
+      B[static_cast<std::size_t>(i + 1) * n + (j + 1)] = z;
+      B[static_cast<std::size_t>(j + 1) * n + (i + 1)] = z;
+    }
+  return B;
+}
+
+/// The Gram determinant of the simplex on \p ids at parameter \p t, the
+/// radicand of its content root.
+complexd gramDeterminant(const std::vector<std::uint64_t> &ids,
+                         const SquaredLengthField &from,
+                         const SquaredLengthField &to, double t) {
+  const int d = static_cast<int>(ids.size()) - 1;
+  if (d < 1) return {1.0, 0.0};
+  auto z = [&](int a, int b) -> complexd {
+    return a == b ? complexd{0.0, 0.0}
+                  : along(from, to, pairKey(ids[a], ids[b]), t);
+  };
+  std::vector<complexd> G(static_cast<std::size_t>(d) * d);
+  for (int i = 0; i < d; ++i)
+    for (int j = 0; j < d; ++j)
+      G[static_cast<std::size_t>(i) * d + j] =
+          0.5 * (z(0, i + 1) + z(0, j + 1) - z(i + 1, j + 1));
+  return ::tessera::mesh::Simplex::determinant(G, d);
+}
+
+/// The roots and angles of one top cell carried along a path of geometries:
+/// the root of every diagonal Cayley-Menger cofactor (one per vertex, the
+/// content of the opposite face) and the inverse cosine of every requested
+/// vertex pair.
+struct CellWalk {
+  std::vector<std::uint64_t> ids;
+  /// Border offsets (1-based) of the vertex pairs whose angles are carried.
+  std::vector<std::pair<int, int>> pairs;
+  std::vector<SheetedSqrt> roots;
+  std::vector<SheetedAcos> angles;
+
+  /// Declare every root and angle on its principal sheet at \p cofactors.
+  void declare(const std::vector<complexd> &cofactors) {
+    const int n = static_cast<int>(ids.size()) + 1;
+    roots.clear();
+    angles.clear();
+    for (int p = 1; p < n; ++p)
+      roots.emplace_back(cofactors[static_cast<std::size_t>(p) * n + p]);
+    for (const auto &[i, j] : pairs)
+      angles.emplace_back(pinnedCosine(
+          cofactors[static_cast<std::size_t>(i) * n + j],
+          roots[static_cast<std::size_t>(i - 1)].value() *
+              roots[static_cast<std::size_t>(j - 1)].value()));
+  }
+
+  /// Advance every label to \p cofactors and return whether the step was
+  /// fine enough: every root turned by at most `kMaximumRootTurn` and every
+  /// angle moved by at most `kMaximumAngleStep`.
+  bool advance(const std::vector<complexd> &cofactors) {
+    const int n = static_cast<int>(ids.size()) + 1;
+    bool fine = true;
+    for (int p = 1; p < n; ++p) {
+      auto &root = roots[static_cast<std::size_t>(p - 1)];
+      root.advance(cofactors[static_cast<std::size_t>(p) * n + p]);
+      if (std::abs(root.lastStep()) > kMaximumRootTurn) fine = false;
+    }
+    for (std::size_t index = 0; index < pairs.size(); ++index) {
+      const auto [i, j] = pairs[index];
+      angles[index].advance(pinnedCosine(
+          cofactors[static_cast<std::size_t>(i) * n + j],
+          roots[static_cast<std::size_t>(i - 1)].value() *
+              roots[static_cast<std::size_t>(j - 1)].value()));
+      if (angles[index].lastStep() > kMaximumAngleStep) fine = false;
+    }
+    return fine;
+  }
+};
+
+/// The top cells containing \p hinge: the cells `Simplex::deficitAngle` sums
+/// over, found through the hinge's first vertex.
+std::vector<::tessera::mesh::Simplex *> topCellsAt(
+    const ::tessera::mesh::Simplex &hinge, int dimension) {
+  std::vector<::tessera::mesh::Simplex *> out;
+  const auto &vertices = hinge.getVertices();
+  if (vertices.empty()) return out;
+  std::set<std::vector<std::uint64_t>> seen;
+  for (const auto &cell : vertices.front()->getSimplices()) {
+    if (cell == nullptr ||
+        static_cast<int>(cell->size()) != dimension + 1)
+      continue;
+    bool containsAll = true;
+    for (const auto &vertex : vertices)
+      if (!cell->hasVertex(vertex)) {
+        containsAll = false;
+        break;
+      }
+    if (containsAll && seen.insert(sortedIds(*cell)).second)
+      out.push_back(cell);
+  }
+  return out;
+}
+
+/// Walk \p state along the straight segment from \p from to \p to, refining
+/// every step until it is fine enough, by bisection down to `kShortestStep`.
+/// \p advance takes the parameter and returns whether the step it made was
+/// fine; \p State is copied so that a refused step is undone.
+template <typename State, typename Advance>
+void walkSegment(State &state, Advance advance) {
+  double t = 0.0;
+  double step = 1.0;
+  while (t < 1.0) {
+    const double next = std::min(1.0, t + step);
+    State trial = state;
+    if (advance(trial, next) || step <= kShortestStep) {
+      state = std::move(trial);
+      t = next;
+      step = std::min(1.0, 2.0 * step);
+    } else {
+      step *= 0.5;
+    }
+  }
+}
+
+}  // namespace
+
+JointAction::ReggeSheets JointAction::reggeSheets() const {
+  using ::tessera::mesh::Simplex;
+  ReggeSheets out;
+  const auto hinges = primalHinges(spacetime_, declaration_.reggeHinges);
+  if (declaration_.reggeBranch == ReggeBranch::Principal) {
+    for (auto *hinge : hinges) out.hinges.push_back({hinge, {}, 1});
+    return out;
+  }
+
+  // The three geometries of the path: the Euclidean reference Re z0, the
+  // starting geometry z0 and the geometry the mesh holds now.
+  SquaredLengthField reference;
+  SquaredLengthField now;
+  for (const auto &[key, value] : reggeStart_)
+    reference[key] = complexd{value.real(), 0.0};
+  for (const auto *edge : spacetime_->getEdgeList()->toVector()) {
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    const complexd length = edge->getLength();
+    now[pairKey(edge->getSource()->getId(), edge->getTarget()->getId())] =
+        length * length;
+  }
+  for (const auto &[key, value] : now)
+    if (reggeStart_.find(key) == reggeStart_.end())
+      throw std::logic_error(
+          "JointAction: an edge of the mesh has no starting squared length for "
+          "the continued Regge sheets; the triangulation changed after the "
+          "action was constructed");
+  const SquaredLengthField &start = reggeStart_;
+  const int dimension =
+      spacetime_->getMetric()->getSignature()->getDimensions();
+  // The path: the Euclidean reference to the starting geometry, then the
+  // starting geometry to the current one.
+  const std::array<std::pair<const SquaredLengthField *,
+                             const SquaredLengthField *>, 2>
+      legs{{{&reference, &start}, {&start, &now}}};
+
+  // Which vertex pairs of which top cell carry an angle of the sum.
+  std::map<std::vector<std::uint64_t>, CellWalk> walks;
+  std::map<std::vector<std::uint64_t>, Simplex *> cellOf;
+  for (auto *hinge : hinges) {
+    const auto hingeIds = sortedIds(*hinge);
+    for (auto *cell : topCellsAt(*hinge, dimension)) {
+      const auto cellIds = sortedIds(*cell);
+      auto &walk = walks[cellIds];
+      walk.ids = cellIds;
+      cellOf[cellIds] = cell;
+      std::vector<int> opposite;
+      for (int k = 0; k < static_cast<int>(cellIds.size()); ++k)
+        if (!std::binary_search(hingeIds.begin(), hingeIds.end(), cellIds[k]))
+          opposite.push_back(k + 1);
+      if (opposite.size() == 2)
+        walk.pairs.emplace_back(opposite[0], opposite[1]);
+    }
+  }
+
+  // Continue every cell's roots and angles along the two segments.
+  std::map<std::pair<std::vector<std::uint64_t>, std::pair<int, int>>,
+           std::pair<complexd, complexd>>
+      continued;  // (root product, angle) per cell and vertex pair
+  for (auto &[cellIds, walk] : walks) {
+    const int n = static_cast<int>(cellIds.size()) + 1;
+    walk.declare(Simplex::cofactorMatrix(
+        cayleyMenger(cellIds, reference, reference, 0.0), n));
+    for (const auto &[from, to] : legs)
+      walkSegment(walk, [&, from = from, to = to](CellWalk &trial, double t) {
+        return trial.advance(Simplex::cofactorMatrix(
+            cayleyMenger(cellIds, *from, *to, t), n));
+      });
+    for (std::size_t index = 0; index < walk.pairs.size(); ++index) {
+      const auto [i, j] = walk.pairs[index];
+      continued[{cellIds, {i, j}}] = {
+          walk.roots[static_cast<std::size_t>(i - 1)].value() *
+              walk.roots[static_cast<std::size_t>(j - 1)].value(),
+          walk.angles[index].value()};
+    }
+  }
+
+  // Read each continued value as a sheet of the mesh's own cofactors, so the
+  // value and derivative the mesh evaluates are on the continued sheet exactly
+  // and the comparison does not depend on how the walk's last point rounds.
+  for (auto *hinge : hinges) {
+    ReggeSheets::Hinge entry;
+    entry.hinge = hinge;
+    const auto hingeIds = sortedIds(*hinge);
+    for (auto *cell : topCellsAt(*hinge, dimension)) {
+      const auto cellIds = sortedIds(*cell);
+      std::vector<int> opposite;
+      for (int k = 0; k < static_cast<int>(cellIds.size()); ++k)
+        if (!std::binary_search(hingeIds.begin(), hingeIds.end(), cellIds[k]))
+          opposite.push_back(k + 1);
+      if (opposite.size() != 2) continue;
+      const auto found = continued.find({cellIds, {opposite[0], opposite[1]}});
+      const auto cofactors = cell->dihedralCofactors(hinge);
+      if (found == continued.end() || !cofactors.ok) continue;
+      const auto &[product, angle] = found->second;
+      const complexd principal = principalSquareRoot(cofactors.Cii) *
+                                 principalSquareRoot(cofactors.Cjj);
+      Simplex::DihedralSheet sheet;
+      sheet.rootSign =
+          (std::conj(product) * principal).real() >= 0.0 ? 1 : -1;
+      const complexd arccosine = principalArcCosine(pinnedCosine(
+          cofactors.Cij, static_cast<double>(sheet.rootSign) * principal));
+      double best = std::numeric_limits<double>::infinity();
+      for (const int orientation : {1, -1}) {
+        const double turns = std::round(
+            (angle - static_cast<double>(orientation) * arccosine).real() /
+            (2.0 * std::numbers::pi));
+        const complexd candidate =
+            2.0 * std::numbers::pi * turns +
+            static_cast<double>(orientation) * arccosine;
+        if (std::abs(candidate - angle) < best) {
+          best = std::abs(candidate - angle);
+          sheet.orientation = orientation;
+          sheet.branchIndex = static_cast<int>(turns);
+        }
+      }
+      if (sheet.rootSign != 1 || sheet.branchIndex != 0 ||
+          sheet.orientation != 1)
+        ++out.offPrincipal;
+      entry.angles[cellIds] = sheet;
+    }
+    // The content root of the hinge, continued the same way.
+    if (hingeIds.size() >= 2) {
+      SheetedSqrt content(gramDeterminant(hingeIds, reference, reference, 0.0));
+      for (const auto &[from, to] : legs)
+        walkSegment(content, [&, from = from, to = to](SheetedSqrt &trial,
+                                                       double t) {
+          trial.advance(gramDeterminant(hingeIds, *from, *to, t));
+          return std::abs(trial.lastStep()) <= kMaximumRootTurn;
+        });
+      entry.contentSign =
+          (std::conj(content.value()) * hinge->volume()).real() >= 0.0 ? 1
+                                                                        : -1;
+    }
+    out.hinges.push_back(std::move(entry));
+  }
+  return out;
+}
+
 std::complex<double> JointAction::reggeTerm() const {
   if (declaration_.gravitationalWeight == 0.0) return complexd{0.0, 0.0};
   if (declaration_.reggeForm == ReggeForm::Dual)
     return declaration_.gravitationalWeight *
            ReggeSolver(spacetime_, MatterConfiguration()).dualReggeAction();
   complexd sum{0.0, 0.0};
-  for (auto *hinge : primalHinges(spacetime_, declaration_.reggeHinges))
-    sum += ReggeSolver::hingeContent(hinge) * hinge->deficitAngle();
+  for (const auto &entry : reggeSheets().hinges)
+    sum += static_cast<double>(entry.contentSign) *
+           ReggeSolver::hingeContent(entry.hinge) *
+           entry.hinge->deficitAngle(entry.angles);
   return declaration_.gravitationalWeight * sum;
 }
 
 std::size_t JointAction::reggeHingeCount() const {
   return primalHinges(spacetime_, declaration_.reggeHinges).size();
+}
+
+bool JointAction::reggeStructurallyZero() const {
+  return declaration_.gravitationalWeight != 0.0 &&
+         declaration_.reggeForm == ReggeForm::Primal && reggeHingeCount() == 0;
+}
+
+std::size_t JointAction::reggeOffPrincipalAngles() const {
+  if (declaration_.reggeForm != ReggeForm::Primal) return 0;
+  return reggeSheets().offPrincipal;
 }
 
 std::complex<double> JointAction::stiffnessTerm() const {
@@ -806,16 +1166,21 @@ std::vector<complexd> JointAction::lengthStationarity() const {
       indexOfEdge[pairKey(edge->getSource()->getId(),
                           edge->getTarget()->getId())] = edgeIndex;
     }
-    for (auto *hinge : primalHinges(spacetime_, declaration_.reggeHinges)) {
-      const complexd content = ReggeSolver::hingeContent(hinge);
-      const complexd deficit = hinge->deficitAngle();
+    // Every root and inverse cosine on its declared sheet (ReggeBranch): the
+    // content root through its sign, the angles through their sheets.
+    for (const auto &entry : reggeSheets().hinges) {
+      auto *hinge = entry.hinge;
+      const double sign = static_cast<double>(entry.contentSign);
+      const complexd content = sign * ReggeSolver::hingeContent(hinge);
+      const complexd deficit = hinge->deficitAngle(entry.angles);
       for (const auto &[key, derivative] : hinge->volumeGradient()) {
         const auto found = indexOfEdge.find(pairKey(key.first, key.second));
         if (found != indexOfEdge.end())
           stationarity[found->second] +=
-              declaration_.gravitationalWeight * derivative * deficit;
+              declaration_.gravitationalWeight * sign * derivative * deficit;
       }
-      for (const auto &[key, derivative] : hinge->deficitAngleGradient()) {
+      for (const auto &[key, derivative] :
+           hinge->deficitAngleGradient(entry.angles)) {
         const auto found = indexOfEdge.find(pairKey(key.first, key.second));
         if (found != indexOfEdge.end())
           stationarity[found->second] +=
