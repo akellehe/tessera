@@ -44,7 +44,9 @@ At level l (a complex K_l of three sheets of a base complex):
    primal Regge + the paper's linear stiffness (1/kappa)(1/2)||l - l0||^2
    + the holonomy term (Villain by default, ``--holonomy``), in strict
    emergence (no carried density in the equations; WP §7), with l0 the
-   level's own lengths as the level was built. The Regge term is read on
+   level's own lengths as the level was built. The three sheets are relaxed
+   as one shared base field (WP v17 §8): the solve's variables are the base
+   complex's squared lengths and links, written to every sheet. The Regge term is read on
    Riemann sheets continued from the real projection of the level's starting
    geometry (`ReggeBranch.Continued`). A level with no interior hinge has a
    Regge term that is zero by structure; the record and the progress line
@@ -101,9 +103,14 @@ At level l (a complex K_l of three sheets of a base complex):
 5. the reads, behind the certificate firewall: every tetrahedron of the base
    of K_l, read as a three-sheeted host of its own (``baryon_poles``), gives
    the v16 quark verdicts (`QuarkConditions`), the isospin-doublet reading
-   (`IsospinDoublet`) and the baryon poles, quasi-free and with the Section 7
-   quartic with the connection's phase fluctuations eliminated, for every
-   declared content.
+   (`IsospinDoublet`), the spin decomposition of the occupied modes on the
+   T-averaged operator, and the baryon poles, quasi-free and with the
+   Section 7 quartic with the connection's phase fluctuations eliminated, for
+   every declared content. A content names occupations of the bands of the
+   covariant operator h_1 in ascending order of real part, which on the
+   monopole host are one simple mode per sheet, not spin doublets
+   (``baryon_poles``, "What a content names"); the poles are read for every
+   doublet content of the T-averaged operator and labelled by it.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
 3-simplex, and says so.
@@ -369,10 +376,30 @@ def cut_sectors(faces, number, count, sheets=SHEETS):
     return sectors
 
 
-def relax_level(spacetime, config, sectors=None):
+def level_edge_classes(spacetime, count):
+    """The shared base field of a level built by `build_level` (WP v17 §8):
+    for every edge in `getEdgeList()` order, the index of its ascending base
+    edge among the level's base edges, and the orientation of its stored link
+    relative to the base edge (+1 when stored ascending, -1 otherwise)."""
+    keys, classes, orientations = {}, [], []
+    for edge in spacetime.getEdgeList().toVector():
+        a = int(edge.getSource().getId())
+        b = int(edge.getTarget().getId())
+        sheet = a // count
+        x, y = a - sheet * count, b - sheet * count
+        key = (min(x, y), max(x, y))
+        classes.append(keys.setdefault(key, len(keys)))
+        orientations.append(1 if x < y else -1)
+    return classes, orientations
+
+
+def relax_level(spacetime, config, sectors=None, count=None):
     """Step 1: both edge fields relax to holomorphic stationarity of the joint
     action, strict emergence, with the level's lengths as built as l0, and
-    with the declared monopole sectors held as boundary data."""
+    with the declared monopole sectors held as boundary data. With ``count``,
+    the base vertex count of a level built by `build_level`, the sheets are
+    relaxed as one shared base field (`level_edge_classes`), so they stay
+    identical exactly."""
     declaration = bp.action_declaration(spacetime, config["kappa"],
                                         config["beta"],
                                         config["regge_hinges"],
@@ -380,8 +407,12 @@ def relax_level(spacetime, config, sectors=None):
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
-    relaxation = cob.HolomorphicRelaxation(action,
-                                           bp.relaxation_declaration(held))
+    geometry = bp.relaxation_declaration(held)
+    if count is not None:
+        classes, orientations = level_edge_classes(spacetime, count)
+        geometry.edge_classes = classes
+        geometry.edge_class_orientations = orientations
+    relaxation = cob.HolomorphicRelaxation(action, geometry)
     started = time.time()
     report = relaxation.solve()
     return {
@@ -393,6 +424,10 @@ def relax_level(spacetime, config, sectors=None):
         "sector_guard_damped_steps": int(report.sector_guard_damped_steps),
         "sector_monopole_numbers": list(report.sector_monopole_numbers),
         "held_modulus_drift": float(report.held_modulus_drift),
+        "shared_sheet_geometry": count is not None,
+        "rank_tolerance": float(geometry.rank_tolerance),
+        "jacobian_ranks": [int(st.jacobian_rank) for st in report.steps],
+        "rank_gaps": [float(st.rank_gap) for st in report.steps],
         "regge_hinges": config["regge_hinges"],
         "regge_hinge_count": int(report.regge_hinge_count),
         "regge_structurally_zero": bool(report.regge_structurally_zero),
@@ -789,10 +824,13 @@ def _verdict_summary(record):
 
 
 def _lowest_poles(record):
+    """Per spin and column, the lowest pole of a content over its doublet
+    contents (`baryon_poles.lowest_poles`), without the doublet content."""
     out = {}
-    for key, entry in record.get("sectors", {}).items():
-        out[key] = {name: entry[name]["lowest_pole"]
-                    for name in ("quasi_free", "with_quartic")}
+    for name in ("quasi_free", "with_quartic"):
+        for key, best in bp.lowest_poles(record, name).items():
+            if best is not None:
+                out.setdefault(key, {})[name] = best[0]
     return out
 
 
@@ -892,7 +930,8 @@ def tick(index, cells, z, links, config):
     try:
         relaxation = relax_level(
             spacetime, config,
-            cut_sectors(cut, cut_before, count) if declared else [])
+            cut_sectors(cut, cut_before, count) if declared else [],
+            count=count)
     except ValueError as error:
         # a declared refusal of the library (a face holonomy outside the
         # domain of the holonomy term): the level has no stationary point to
@@ -1243,11 +1282,11 @@ def draw_frame(figure, frames, index):
         for record in cell["contents"]:
             labels.append("%s\n%s" % ("".join(map(str, cell["cell"])),
                                       "".join(map(str, record["content"]))))
+            lowest = bp.lowest_poles(record, "quasi_free")
             for store, key in ((half, str(bp.SPIN_HALF)),
                                (three, str(bp.SPIN_THREE_HALVES))):
-                entry = record.get("sectors", {}).get(key)
-                pole = entry["quasi_free"]["lowest_pole"] if entry else None
-                store.append(pole.real if pole is not None else np.nan)
+                best = lowest[key]
+                store.append(best[0].real if best is not None else np.nan)
     positions = np.arange(len(labels))
     right.plot(positions, half, "o", markersize=7, color="#1baf7a",
                label="spin 1/2")
@@ -1420,12 +1459,17 @@ def summary(result):
         for cell in record["reads"]:
             for c in cell["contents"]:
                 verdict = _verdict_summary(c)
+                spin = (c.get("spin_decomposition") or {}).get(
+                    "occupied_state")
                 lines.append(
-                    "    host cell %s content %s: %s; quark certified %s; "
-                    "lowest poles %s; quartic truncation %s"
+                    "    host cell %s content %s (quarks per band of h_1): "
+                    "%s; quark certified %s; quarks per doublet of h-bar_1 "
+                    "%s; lowest poles %s; quartic truncation %s"
                     % (cell["cell"], c["content"],
                        "failed: " + c["failed"] if "failed" in c else "read",
                        verdict["certified"] if verdict else None,
+                       {k: bp._complex_text(v) for k, v in spin.items()}
+                       if spin else None,
                        {k: {n: bp._complex_text(v) if v is not None else None
                             for n, v in d.items()}
                         for k, d in _lowest_poles(c).items()},

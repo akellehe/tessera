@@ -267,7 +267,7 @@ def test_a_grown_level_holds_nothing(monkeypatch):
     without one."""
     seen = []
 
-    def refuse(spacetime, config, sectors=None):
+    def refuse(spacetime, config, sectors=None, count=None):
         seen.append(list(sectors or []))
         raise ValueError("stop here")
     monkeypatch.setattr(R, "relax_level", refuse)
@@ -559,7 +559,7 @@ def test_the_recursion_stops_at_a_level_with_no_grown_cell(monkeypatch):
 
 
 def test_a_refused_relaxation_stops_the_recursion_with_its_reason(monkeypatch):
-    def refuse(spacetime, config, sectors=None):
+    def refuse(spacetime, config, sectors=None, count=None):
         raise ValueError("VillainCharacter::logarithm: refused")
     monkeypatch.setattr(R, "relax_level", refuse)
     config = R.default_config(tetrahedra=2)

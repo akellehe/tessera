@@ -37,7 +37,8 @@ def _record(content, poles):
                         "restriction_to_2T": irreps,
                         "nucleon_reading": "2" in irreps,
                         "delta_reading": sorted(irreps) == ["2'", "2''"]}
-    return {"content": list(content), "sectors": sectors}
+    return {"content": list(content), "doublet_reads": [
+        {"doublet_content": [1, 1, 1], "sectors": sectors}]}
 
 
 def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
