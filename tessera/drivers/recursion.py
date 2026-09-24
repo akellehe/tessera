@@ -913,12 +913,12 @@ def summary(result):
     lines = ["mode: controlled synthesis; host monopole numbers %s"
              % result["host"]["monopole_numbers"]]
     for record in result["ticks"]:
-        s = record["summary"]
-        p = record["partition"]
         if "failed" in record["relaxation"]:
             lines.append("tick %d: the relaxation was refused: %s"
                          % (record["tick"], record["relaxation"]["failed"]))
             continue
+        s = record["summary"]
+        p = record["partition"]
         lines.append(
             "tick %d: level with %d vertices, %d edges, %d tetrahedra per "
             "sheet; relaxation converged %s (residual %.3g); monopole "
