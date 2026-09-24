@@ -146,7 +146,7 @@ def _vertex_curvatures(verts, solver, t):
             if not all(round(hv.getTime()) == t for hv in sv):
                 continue
             eps = complex(solver.deficitAngle(s))
-            area = complex(tessera.ReggeSolver.hingeArea(s))
+            area = complex(tessera.ReggeSolver.hingeContent(s))
             total += eps * area
             count += 1
         if count > 0:
