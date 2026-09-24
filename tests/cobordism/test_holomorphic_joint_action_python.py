@@ -550,21 +550,33 @@ class TheRemainingReadsTest(unittest.TestCase):
 
     def test_a_larger_rank_threshold_drops_singular_directions(self):
         """The rank threshold decides which singular values of the Jacobian
-        count as zero in the minimum-norm solve: raised to one half, it drops
-        directions the default keeps."""
+        count as zero in the minimum-norm solve, relative to the largest: the
+        rank is the number of singular values above threshold times the
+        largest. On this sphere the six nonzero singular values lie between
+        0.70 and 1 of the largest and four are at rounding, so the default
+        keeps six and a threshold of 0.9 keeps three; the step record reports
+        the gap at the decision."""
         self.assertEqual(cob.HolomorphicRelaxationDeclaration().rank_tolerance,
                          1e-12)
-        ranks = []
-        for threshold in (1e-12, 0.5):
+        ranks, gaps = [], []
+        for threshold in (1e-12, 0.9):
             spacetime = sphere3(squared=_metric, phase=_flux)
             action = cob.JointAction(spacetime,
                                      _declaration(holonomy_weight=1.0))
-            report = cob.HolomorphicRelaxation(
+            relaxation = cob.HolomorphicRelaxation(
                 action, _relaxation(relax_links=True,
-                                    rank_tolerance=threshold)).solve()
-            ranks.append(report.steps[0].jacobian_rank)
-        self.assertLess(ranks[1], ranks[0])
-
+                                    rank_tolerance=threshold))
+            n = relaxation.variable_count()
+            singular = np.linalg.svd(np.asarray(relaxation.jacobian())
+                                     .reshape(n, n), compute_uv=False)
+            step = relaxation.solve().steps[0]
+            self.assertEqual(step.jacobian_rank,
+                             int(np.sum(singular > threshold * singular[0])))
+            ranks.append(step.jacobian_rank)
+            gaps.append(step.rank_gap)
+        self.assertEqual(ranks, [6, 3])
+        self.assertGreater(gaps[0], 1e14)
+        self.assertLess(gaps[1], 1.2)
 
 if __name__ == "__main__":
     unittest.main()

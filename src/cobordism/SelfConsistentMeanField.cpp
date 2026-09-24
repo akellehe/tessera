@@ -74,14 +74,38 @@ complexd occupiedEnergyOf(const std::vector<complexd> &covariance,
 /// a frozen coordinate would make every run report a fixed point it was never
 /// looking for, exactly as including a frozen coordinate's equation in the
 /// Newton system would overdetermine it.
+///
+/// Under declared edge classes the geometric fields are the shared
+/// coordinates, and the force on each is the sum of the forces on the edges
+/// that carry it (a link force taken on the class's orientation): the force
+/// the inner relaxation drives to zero.
 double forceNormOf(const JointAction &action,
                    const HolomorphicRelaxationDeclaration &geometry) {
+  auto classForces = [&](const std::vector<complexd> &forces, bool oriented) {
+    if (geometry.edgeClasses.empty()) return forces;
+    std::size_t count = 0;
+    for (const std::size_t index : geometry.edgeClasses)
+      count = std::max(count, index + 1);
+    std::vector<complexd> summed(count, complexd{0.0, 0.0});
+    for (std::size_t edge = 0;
+         edge < forces.size() && edge < geometry.edgeClasses.size(); ++edge) {
+      const int orientation =
+          oriented && !geometry.edgeClassOrientations.empty()
+              ? geometry.edgeClassOrientations[edge]
+              : 1;
+      summed[geometry.edgeClasses[edge]] +=
+          orientation > 0 ? forces[edge] : -forces[edge];
+    }
+    return summed;
+  };
   double squared = 0.0;
   if (geometry.relaxLengths)
-    for (const complexd &component : action.lengthStationarity())
+    for (const complexd &component :
+         classForces(action.lengthStationarity(), false))
       squared += std::norm(component);
   if (geometry.relaxLinks)
-    for (const complexd &component : action.linkStationarity())
+    for (const complexd &component :
+         classForces(action.linkStationarity(), true))
       squared += std::norm(component);
   return std::sqrt(squared);
 }

@@ -65,13 +65,17 @@ struct SelfConsistentMeanFieldDeclaration {
   /// \f$ |\lambda_{i+1}-\lambda_i|\le\tau\max(1,|\lambda_i|) \f$.
   double bandTolerance = 1e-8;
 
-  /// The declared symmetry the band rule reads its bands under: the operators
-  /// \f$ D(g) \f$ of a finite group acting on the carrier's cells, each flat
-  /// row-major \f$ n\times n \f$. When present, the bands are those of the
-  /// group average \f$ \bar h=|G|^{-1}\sum_g D(g)^{-1}hD(g) \f$ rather than of
-  /// \f$ h \f$ itself, which is how the whitepaper reads the spin content of an
-  /// odd-monopole tetrahedron ("the T-averaged twisted edge Laplacian", WP
-  /// §11.1). Empty reads the bands of \f$ h \f$.
+  /// The declared symmetry the band rule reads its bands under, if any: the
+  /// operators \f$ D(g) \f$ of a finite group acting on the carrier's cells,
+  /// each flat row-major \f$ n\times n \f$. When present, the bands are those
+  /// of the group average \f$ \bar h=|G|^{-1}\sum_g D(g)^{-1}hD(g) \f$ rather
+  /// than of \f$ h \f$ itself. Such a \f$ \Gamma \f$ does not commute with
+  /// \f$ h \f$ in general, so the matter term at fixed \f$ \Gamma \f$ is not
+  /// gauge invariant and the rule is not gauge covariant. Empty, the default,
+  /// reads the bands of \f$ h \f$: \f$ \Gamma \f$ is then a combination of
+  /// Riesz projectors of \f$ h \f$ and commutes with it, which is the
+  /// stationary pair of WP v17 §7 ("\f$ \Gamma^{*} \f$ a projector onto modes
+  /// of \f$ h(z^{*}) \f$").
   std::vector<std::vector<std::complex<double>>> bandSymmetry;
 
   /// The largest number of outer iterations — geometry relaxation followed by
@@ -114,7 +118,10 @@ struct SelfConsistentMeanFieldStep {
   /// The Euclidean norm of the joint stationarity force, over the geometric
   /// fields the inner relaxation declares variable, measured with the
   /// covariance this step produced. A field held fixed contributes nothing,
-  /// since its equation is not one the solve is asked to satisfy.
+  /// since its equation is not one the solve is asked to satisfy. Under
+  /// declared edge classes (`HolomorphicRelaxationDeclaration::edgeClasses`)
+  /// the fields are the shared coordinates and the force on each is the sum
+  /// over the edges that carry it.
   double forceNorm = 0.0;
   /// \f$ \lVert\Gamma_{n+1}-\Gamma_n\rVert_F \f$, the movement of the
   /// covariance under re-occupation.

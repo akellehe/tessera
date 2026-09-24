@@ -4852,7 +4852,21 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("rank_tolerance",
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
-                     "the Jacobian counts as zero in the minimum-norm solve.")
+                     "the Jacobian, over the largest, counts as zero in the "
+                     "minimum-norm solve.")
+      .def_readwrite("edge_classes",
+                     &HolomorphicRelaxationDeclaration::edgeClasses,
+                     "Coordinates shared by several edges, one class index per "
+                     "edge in getEdgeList() order (0 to K - 1, every index "
+                     "used); empty makes every edge its own coordinate. The "
+                     "edges of a class carry one squared length and one link, "
+                     "and the equation of a class is the sum of its edges' "
+                     "equations: a k-sheeted support relaxed as one base "
+                     "field (WP v17 §8).")
+      .def_readwrite("edge_class_orientations",
+                     &HolomorphicRelaxationDeclaration::edgeClassOrientations,
+                     "+1 when an edge's stored link is its class's link, -1 "
+                     "when it is the inverse; empty means +1 throughout.")
       .def_readwrite("held_sectors",
                      &HolomorphicRelaxationDeclaration::heldSectors,
                      "Monopole sectors held as boundary data: the moduli of "
@@ -4876,8 +4890,24 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "One for a full Newton step, a negative power of two "
                      "otherwise.")
       .def_readwrite("jacobian_rank", &HolomorphicStep::jacobianRank,
-                     "Below the variable count whenever the connection is "
-                     "relaxed, because the action is gauge invariant.")
+                     "The number of singular values above rank_tolerance "
+                     "times the largest. Below the variable count whenever the "
+                     "connection is relaxed, because the action is gauge "
+                     "invariant.")
+      .def_readwrite("rank_tolerance", &HolomorphicStep::rankTolerance,
+                     "The relative tolerance the rank was decided at.")
+      .def_readwrite("largest_singular_value",
+                     &HolomorphicStep::largestSingularValue)
+      .def_readwrite("smallest_retained_singular_value",
+                     &HolomorphicStep::smallestRetainedSingularValue,
+                     "The smallest singular value counted in the rank.")
+      .def_readwrite("largest_discarded_singular_value",
+                     &HolomorphicStep::largestDiscardedSingularValue,
+                     "The largest singular value counted as zero; 0 when "
+                     "none is.")
+      .def_readwrite("rank_gap", &HolomorphicStep::rankGap,
+                     "The smallest retained over the largest discarded "
+                     "singular value; inf when none is discarded.")
       .def_readwrite("action", &HolomorphicStep::action)
       .def_readwrite("zero_guard_dampings",
                      &HolomorphicStep::zeroGuardDampings,
@@ -4887,6 +4917,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicStep::sectorGuardDampings,
                      "The halvings of this step the held monopole sectors "
                      "forced.")
+      .def_readwrite("domain_guard_dampings",
+                     &HolomorphicStep::domainGuardDampings,
+                     "The halvings of this step forced by trial points at "
+                     "which the action refuses to evaluate or its residual "
+                     "is not finite.")
       .def_readwrite("holonomy_zero_distance",
                      &HolomorphicStep::holonomyZeroDistance,
                      "The smallest relative distance of a face holonomy to a "
@@ -5003,8 +5038,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The operators D(g) of a declared finite symmetry, each "
                      "flat row-major over the carrier's cells. When present "
                      "the bands are read on the group average "
-                     "|G|^-1 sum_g D(g)^-1 h D(g) (the whitepaper's "
-                     "T-averaged operator, Section 11.1).")
+                     "|G|^-1 sum_g D(g)^-1 h D(g), and Gamma then does not "
+                     "commute with h in general. Empty, the default, reads "
+                     "the bands of h itself, so Gamma commutes with h (WP v17 "
+                     "Section 7: Gamma* a projector onto modes of h(z*)).")
       .def_readwrite("maximum_iterations",
                      &SelfConsistentMeanFieldDeclaration::maximumIterations)
       .def_readwrite("tolerance",

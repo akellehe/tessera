@@ -116,8 +116,33 @@ struct HolomorphicRelaxationDeclaration {
       HolomorphicJacobianMode::ContourDerivative;
 
   /// The relative threshold below which a singular value of the Jacobian counts
-  /// as zero in the minimum-norm solve of the Newton system.
+  /// as zero in the minimum-norm solve of the Newton system: the rank is the
+  /// number of singular values \f$ \sigma_i>\tau\,\sigma_{\max} \f$, decided
+  /// on the singular values themselves and not on a pivoted-QR diagonal,
+  /// whose magnitudes only bracket them.
   double rankTolerance = 1e-12;
+
+  /// Coordinates shared by several edges. Empty (the default) makes every
+  /// edge its own coordinate. Otherwise entry \f$ e \f$, one per edge in
+  /// `getEdgeList()` order, is the index of the shared coordinate edge
+  /// \f$ e \f$ carries, the indices running over \f$ 0,\dots,K-1 \f$ with
+  /// every one used. The edges of one class carry one squared length and
+  /// one link (on the orientation `edgeClassOrientations` relates them to),
+  /// the solve's variables are one squared length and one link per class,
+  /// and the equation of a class is the sum of its edges' stationarity
+  /// equations, which is the derivative of the whole action along the shared
+  /// coordinate. This is how a \f$ k \f$-sheeted support is relaxed as one
+  /// base field (WP v17 §8, "Sheet convention (adopted)": equal squared
+  /// lengths and equal connection values on corresponding edges): every
+  /// member of a class is written the same value, so identical sheets stay
+  /// identical exactly. The members of a class must carry equal fields when
+  /// the solve starts.
+  std::vector<std::size_t> edgeClasses;
+
+  /// With `edgeClasses`, the orientation of each edge relative to its class:
+  /// \f$ +1 \f$ when the edge's stored link is the class's link, \f$ -1 \f$
+  /// when it is its inverse. Empty means \f$ +1 \f$ for every edge.
+  std::vector<int> edgeClassOrientations;
 
   /// The declared clearance of the face holonomies from the zeros of the
   /// Villain weight \f$ W \f$: a trial step whose multiplicative path brings
@@ -158,9 +183,24 @@ struct HolomorphicStep {
   /// The damping factor the accepted step carried: one for a full Newton step,
   /// and a negative power of two when the full step did not reduce the residual.
   double damping = 1.0;
-  /// The rank of the Jacobian at this point. It is below the variable count
-  /// whenever the connection is relaxed, because the action is gauge invariant.
+  /// The rank of the Jacobian at this point: the number of its singular
+  /// values above `rankTolerance` times the largest. It is below the variable
+  /// count whenever the connection is relaxed, because the action is gauge
+  /// invariant.
   std::size_t jacobianRank = 0;
+  /// The relative rank tolerance the rank was decided at.
+  double rankTolerance = 0.0;
+  /// The largest singular value of the Jacobian.
+  double largestSingularValue = 0.0;
+  /// The smallest singular value counted in the rank; NaN when the rank is
+  /// zero.
+  double smallestRetainedSingularValue = 0.0;
+  /// The largest singular value counted as zero; zero when none is.
+  double largestDiscardedSingularValue = 0.0;
+  /// The rank gap: the smallest retained over the largest discarded singular
+  /// value, positive infinity when none is discarded. A gap near one says the
+  /// rank decision is not separated from the spectrum's continuation.
+  double rankGap = 0.0;
   /// The complex action \f$ S(z,U,\Gamma) \f$ at the point the step was taken
   /// from.
   std::complex<double> action{0.0, 0.0};
@@ -175,6 +215,10 @@ struct HolomorphicStep {
   /// How many of this iteration's step halvings the held monopole sectors
   /// forced (a trial step that changed a declared monopole number).
   std::size_t sectorGuardDampings = 0;
+  /// How many of this iteration's step halvings a trial point outside the
+  /// action's domain forced: a point at which the action refuses to evaluate
+  /// (a link driven to zero or infinity) or its residual is not finite.
+  std::size_t domainGuardDampings = 0;
 };
 
 /// # HolomorphicRelaxationReport
@@ -268,6 +312,10 @@ struct HolomorphicRelaxationReport {
 /// \f$ \ell_e \f$, so a relaxation path never jumps between the two sheets of
 /// \f$ \ell\mapsto\ell^2 \f$ between consecutive iterations.
 ///
+/// With `HolomorphicRelaxationDeclaration::edgeClasses` the variables are
+/// shared coordinates, each written to every edge of its class, and each
+/// equation is the sum of the stationarity equations of its class's edges.
+///
 /// ## Why the Newton system is solved in the minimum-norm sense
 ///
 /// The action is gauge invariant, so its link stationarity vector is orthogonal
@@ -276,9 +324,11 @@ struct HolomorphicRelaxationReport {
 /// connected component. That is a property of the theory, not a defect of the
 /// discretization, and a solver that inverted the Jacobian would be inverting a
 /// singular matrix. The step is therefore the minimum-norm least-squares
-/// solution from a complete orthogonal decomposition, which is the unique
-/// solution orthogonal to the gauge orbit: the connection moves only in
-/// physical directions and the gauge is left where it was.
+/// solution from the singular value decomposition, with the singular values
+/// at or below `rankTolerance` times the largest counted as zero, which is the
+/// unique solution orthogonal to the numerical null space: the connection
+/// moves only in physical directions and the gauge is left where it was. The
+/// rank and the gap at the rank decision are recorded on every step.
 class HolomorphicRelaxation {
  public:
   /// Build a solve over an action.
@@ -289,8 +339,10 @@ class HolomorphicRelaxation {
   ///   solve writes.
   /// @param declaration The numerical controls of the root find.
   /// @throws std::invalid_argument when the declared contour node count is
-  ///   below five, when the contour radius is not positive, or when no field is
-  ///   declared relaxable.
+  ///   below five, when the contour radius is not positive, when no field is
+  ///   declared relaxable, or when declared edge classes do not cover the
+  ///   edges, skip a class index, carry an orientation other than plus or
+  ///   minus one, or start with unequal fields inside a class.
   HolomorphicRelaxation(JointAction action,
                         HolomorphicRelaxationDeclaration declaration);
 
@@ -303,7 +355,8 @@ class HolomorphicRelaxation {
   /// The Jacobian of the stationarity system at the current point, flat
   /// row-major, with the rows in the residual's block order and the columns in
   /// the variable order — the relaxed length coordinates, then the relaxed link
-  /// coordinates, then the relaxed multipliers. Exposed so that the derivative
+  /// coordinates, then the relaxed multipliers. Under declared edge classes a
+  /// length or link coordinate is one class, in class order. Exposed so that the derivative
   /// the solve steps along can be inspected and checked against an independent
   /// evaluation rather than only trusted.
   ///
