@@ -342,11 +342,17 @@ list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
 # in tessera_quantum, so it follows them there.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
     "/src/observables/ComplexTransport\\.cpp$")
+# IsospinDoublet transports its candidate bands with ComplexTransport (#1199),
+# so it follows it into tessera_quantum.
+list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
+    "/src/observables/IsospinDoublet\\.cpp$")
 # bindings.cpp is the pybind11 entry point — goes into _tessera, not tessera_core.
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/bindings\\.cpp$")
 # Per-subsystem Bindings.cpp files also belong to _tessera, not tessera_core
 # (they include pybind11 / Python.h).
 list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX "/src/[^/]+/Bindings\\.cpp$")
+list(FILTER TESSERA_CORE_SOURCES EXCLUDE REGEX
+    "/src/observables/IsospinDoubletBindings\\.cpp$")
 
 # Sources for the pybind11 module. The quantum bindings are always built.
 set(TESSERA_PYBIND_SOURCES
@@ -354,6 +360,7 @@ set(TESSERA_PYBIND_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mesh/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/spacetime/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/Bindings.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/IsospinDoubletBindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/simulations/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cobordism/Bindings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/chainhodge/Bindings.cpp"
@@ -550,6 +557,10 @@ list(APPEND TESSERA_QUANTUM_SOURCES
 # holonomy invariants (#1195), so it compiles beside them.
 list(APPEND TESSERA_QUANTUM_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/ComplexTransport.cpp")
+# IsospinDoublet transports its candidate bands with ComplexTransport, so it
+# compiles beside it.
+list(APPEND TESSERA_QUANTUM_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/observables/IsospinDoublet.cpp")
 # bindings.cpp uses pybind11 + Python.h and goes into _tessera, not the
 # pybind-free static lib.
 list(FILTER TESSERA_QUANTUM_SOURCES EXCLUDE REGEX "/src/quantum/Bindings\\.cpp$")
