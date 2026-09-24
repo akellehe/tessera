@@ -519,7 +519,34 @@ def tick(index, cells, z, links, config):
     started = time.time()
     spacetime, count = build_level(cells, z, links)
     declared_monopoles = monopole_numbers(cells, links)
-    relaxation = relax_level(spacetime, config)
+    try:
+        relaxation = relax_level(spacetime, config)
+    except ValueError as error:
+        # a declared refusal of the library (a face holonomy outside the
+        # domain of the holonomy term): the level has no stationary point to
+        # read, so the recursion stops here and says why
+        triangles = _sorted_simplices(cells, 3)
+        holonomies = [links[(a, b)] * links[(b, c)] / links[(a, c)]
+                      for a, b, c in triangles]
+        record = {
+            "tick": index,
+            "level": {
+                "vertices": 1 + max(max(c) for c in cells),
+                "cells": [sorted(c) for c in cells],
+                "squared_lengths": {"%d-%d" % e: v for e, v in z.items()},
+                "links": {"%d-%d" % e: v for e, v in links.items()},
+                "face_holonomies": holonomies,
+                "declared_monopole_numbers": declared_monopoles,
+            },
+            "relaxation": {"failed": str(error)},
+            "summary": {"response_vertices": 0, "interactions": 0,
+                        "grown_cells": 0, "failed_cells": 0,
+                        "row_sum_defects": []},
+            "reads": [],
+            "stopped": "the level's relaxation was refused: %s" % error,
+            "seconds": time.time() - started,
+        }
+        return record, None
     fields = sheet_fields(spacetime, count)
     base_z, base_links = fields[0]
     # the sheets are compared by their gauge-invariant data: squared lengths
@@ -888,6 +915,10 @@ def summary(result):
     for record in result["ticks"]:
         s = record["summary"]
         p = record["partition"]
+        if "failed" in record["relaxation"]:
+            lines.append("tick %d: the relaxation was refused: %s"
+                         % (record["tick"], record["relaxation"]["failed"]))
+            continue
         lines.append(
             "tick %d: level with %d vertices, %d edges, %d tetrahedra per "
             "sheet; relaxation converged %s (residual %.3g); monopole "

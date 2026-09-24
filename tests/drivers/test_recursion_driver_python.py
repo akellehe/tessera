@@ -256,3 +256,18 @@ def test_the_recursion_stops_at_a_level_with_no_grown_cell(monkeypatch):
     monkeypatch.setattr(R, "tick", last_tick)
     result = R.drive(R.default_config(ticks=5))
     assert len(result["ticks"]) == 1
+
+
+def test_a_refused_relaxation_stops_the_recursion_with_its_reason(monkeypatch):
+    def refuse(spacetime, config):
+        raise ValueError("VillainCharacter::logarithm: refused")
+    monkeypatch.setattr(R, "relax_level", refuse)
+    config = R.default_config(tetrahedra=2)
+    cells, z, links, _ = R.level_zero(config)
+    record, following = R.tick(0, cells, z, links, config)
+    assert following is None
+    assert "refused" in record["stopped"]
+    assert record["relaxation"]["failed"].startswith("VillainCharacter")
+    json.dumps(R._jsonable(record))
+    assert "refused" in R.summary({"host": {"monopole_numbers": []},
+                                   "ticks": [record]})
