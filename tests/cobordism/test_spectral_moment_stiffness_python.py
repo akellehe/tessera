@@ -241,6 +241,30 @@ def test_the_objectives_carry_the_stiffness_only_when_it_is_declared():
         assert cob.CobordismObjective.total(terms) >= terms.moment_stiffness
 
 
+def test_a_node_declares_the_stiffness_about_its_current_geometry():
+    """MultiCobordism.set_moment_stiffness records the current local moments
+    as the reference: the objective is unchanged at the carrier, gains
+    beta_M Re S_M once the geometry moves, and loses it again at weight 0."""
+    spacetime, _, _, _ = torus(3, jitter=0.05, seed=5)
+    node = cob.MultiCobordism(spacetime, [], [], degrees=[1], gamma=0.0,
+                              seed=11)
+    node.set_objective(cob.JointStationarityObjective())
+    reference = moments(spacetime, 0, len(COEFFICIENTS))
+    before = node.objective()
+    node.set_moment_stiffness(2.0, [0], COEFFICIENTS)
+    assert node.objective() == pytest.approx(before, rel=1e-12)
+    carrier = squared_lengths(spacetime)
+    set_squared_lengths(spacetime, carrier * (1.0 + 0.02 * np.random.default_rng(6)
+                                              .standard_normal(len(carrier))))
+    stiffened = node.objective()
+    value = cob.HodgeLaplacian(spacetime).spectralMomentStiffness(
+        0, list(reference), COEFFICIENTS)
+    assert value.real > 0.0
+    node.set_moment_stiffness(0.0, [0], COEFFICIENTS)
+    assert stiffened - node.objective() == pytest.approx(2.0 * value.real,
+                                                         rel=1e-10)
+
+
 def kuhn_ball(n=4):
     """The Kuhn triangulation of an n^3 block of unit cubes, with its boundary,
     the kind of ball the whitepaper's self-trapping computation uses."""
