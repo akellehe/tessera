@@ -72,6 +72,7 @@ def test_no_isospin_doublet_on_the_host(declared, operator):
     assert read["falsifier_10_unexplained_multiplicities"] == []
 
 
+@pytest.mark.slow
 def test_the_baryon_driver_adds_the_read_only_when_asked():
     alignment = bp.aligned_doublet_frame(bp.monopole_support(),
                                          bp.rotation_group())

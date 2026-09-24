@@ -124,11 +124,6 @@ def test_the_geometry_read_records_its_conventions(node):
     assert read["requested_gate"]["observed_input_dimension"] == 2
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the tessera.drivers package docstring states that each of its listed "
-    "modules (emergence, qubit, harmonic, fock) keeps a main() entry point "
-    "for the command-line wrappers outside the repository, but "
-    "tessera.drivers.harmonic defines no main()"))
 def test_every_listed_driver_module_keeps_a_main_entry_point():
     for name in ("emergence", "qubit", "harmonic", "fock"):
         module = importlib.import_module("tessera.drivers." + name)

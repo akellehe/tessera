@@ -411,13 +411,6 @@ def test_the_quark_verdict_names_the_seven_conditions(declared_verdict):
     assert declared_verdict["certified"] is False
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "baryon_poles.recursion_read reports the norms of every LevelTransport "
-    "of the level, including the diagonal blocks M_vv of each component with "
-    "itself (norm 37.05 on the declared host), and quark_conditions grades "
-    "'external-leakage' and 'base-transport-leakage' on those norms, so on "
-    "three disjoint sheets, where no component couples to another, both "
-    "certificates fail"))
 def test_disjoint_sheets_have_no_inter_component_leakage(declared_verdict):
     evidence = {e["name"]: e["held"]
                 for c in declared_verdict["conditions"]
