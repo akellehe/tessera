@@ -4,6 +4,7 @@
 (#914, specification §7, §11 step 5, §13, §14 T9 and the F_B symmetry of
 T1–T4), and RecursiveQuotient levels that carry a symmetric pencil with its
 Gram."""
+import cmath
 import math
 
 import numpy as np
@@ -304,6 +305,30 @@ class TestT9ReductionE5E6:
         assert -math.pi < ld.imag <= math.pi
         assert PS.logDeterminant(np.zeros((0, 0), dtype=complex)) == 0
         assert PS.logDeterminant(np.zeros((3, 3), dtype=complex)).real == -math.inf
+
+    def test_the_three_log_determinants_factor_the_pencil(self):
+        """log det P = log det P_II + log det F_B modulo 2 pi i, each term the
+        logarithm of the matching determinant, and the resonance disc radius
+        is the declared relative radius times the spectral radius of P_II,
+        reported whether or not the interior is singular."""
+        rng = np.random.default_rng(12)
+        x = rng.normal(size=(7, 7)) + 1j * rng.normal(size=(7, 7))
+        A = x + x.T
+        F = PS.feshbach(A, np.eye(7, dtype=complex), 0.4 - 0.1j, [0, 1, 2])
+        assert cmath.exp(F.interiorLogDeterminant) == pytest.approx(
+            F.interiorDeterminant, rel=1e-10)
+        assert cmath.exp(F.responseLogDeterminant) == pytest.approx(
+            F.responseDeterminant, rel=1e-10)
+        total = F.interiorLogDeterminant + F.responseLogDeterminant
+        assert total.real == pytest.approx(F.pencilLogDeterminant.real,
+                                           abs=1e-10)
+        assert abs(math.remainder(total.imag - F.pencilLogDeterminant.imag,
+                                  2.0 * math.pi)) < 1e-10
+        assert not F.interiorSingular
+        interior = (A - (0.4 - 0.1j) * np.eye(7))[3:, 3:]
+        spectral_radius = np.max(np.abs(np.linalg.eigvals(interior)))
+        assert F.resonanceRadius == pytest.approx(1e-12 * spectral_radius,
+                                                  rel=1e-8)
 
     def test_e6_craig_bampton_congruence_is_symmetric_at_u_one(self):
         K, base, U, rng = _random_instance(4, 301)
