@@ -71,6 +71,43 @@ struct SpectralMomentConstraint {
   std::complex<double> multiplier{0.0, 0.0};
 };
 
+/// # ReggeForm
+///
+/// Which discretization of the Einstein-Hilbert action the Regge term of
+/// `JointAction` is.
+///
+/// * `Primal` — Regge's own sum \f$ \sum_h |h|\,\varepsilon_h \f$ over the
+///   hinges \f$ h \f$, with \f$ |h| \f$ the \f$ (d-2) \f$-content of the hinge
+///   (`simulations::ReggeSolver::hingeContent`, the length of an edge on a
+///   three-dimensional complex) and \f$ \varepsilon_h \f$ its complex deficit
+///   angle. In three dimensions it is \f$ \sum_e l_e\,\varepsilon_e \f$, the
+///   form the whitepaper's Section 7 computation takes the second variation of.
+/// * `Dual` — the dual (Sorkin) form \f$ \sum_h |\!\star\! h|\,\varepsilon_h \f$,
+///   with the circumcentric dual volume of each hinge in place of its content
+///   (`simulations::ReggeSolver::dualReggeAction`).
+///
+/// The two are different functionals with different stationary points; the
+/// choice is declared with every action rather than implied.
+enum class ReggeForm { Primal, Dual };
+
+/// # ReggeHinges
+///
+/// Which hinges the primal Regge sum runs over.
+///
+/// * `Interior` — only the hinges whose link closes: a hinge every one of
+///   whose \f$ (d-1) \f$-faces is shared by exactly two top cells. Deficit
+///   angles are defined at interior hinges; this is the sum Regge wrote and the
+///   one the whitepaper's Section 7 computation evaluates ("the Regge Hessian
+///   ... on its interior hinges"). On a complex with no interior hinge the
+///   primal term is identically zero.
+/// * `All` — every hinge that is a face of some top cell, with the library's
+///   deficit \f$ 2\pi-\sum\theta \f$ at boundary hinges as well; this is the sum
+///   `simulations::ReggeSolver::reggeAction` evaluates.
+///
+/// The rule governs the primal form only; the dual form keeps the hinge set of
+/// `simulations::ReggeSolver::dualReggeAction`.
+enum class ReggeHinges { Interior, All };
+
 /// # JointActionDeclaration
 ///
 /// Everything that fixes which action \f$ S(z,U,\Gamma) \f$ a `JointAction`
@@ -83,8 +120,10 @@ struct JointActionDeclaration {
   /// the \f$ k \f$-cells of the complex.
   int carrierDegree = 1;
 
-  /// \f$ w_R \f$, the coefficient multiplying the dual Lorentzian Regge action
-  /// \f$ S_{\rm Regge}(z)=\sum_h|\!\star\!h|\,\varepsilon_h \f$.
+  /// \f$ w_R \f$, the coefficient multiplying the Regge action
+  /// \f$ S_{\rm Regge}(z) \f$ in the declared `reggeForm`: the primal
+  /// \f$ \sum_h|h|\,\varepsilon_h \f$ by default, or the dual
+  /// \f$ \sum_h|\!\star\!h|\,\varepsilon_h \f$.
   ///
   /// The whitepaper's Section 7 identification is \f$ w_R = 1/(8\pi G) \f$ in
   /// lattice units, so a caller working in terms of the backreaction coupling
@@ -103,6 +142,33 @@ struct JointActionDeclaration {
   /// `HolomorphicJacobianMode::RealAxisDifference` is the rule to declare with
   /// this term.
   double gravitationalWeight = 1.0;
+
+  /// Which Regge discretization \f$ S_{\rm Regge} \f$ is. Primal by default.
+  ReggeForm reggeForm = ReggeForm::Primal;
+
+  /// Which hinges the primal sum runs over. Interior by default.
+  ReggeHinges reggeHinges = ReggeHinges::Interior;
+
+  /// \f$ w_S \f$, the coefficient of the linear length stiffness
+  /// \f$ S_{\rm stiff}(z)=\tfrac12\sum_e(l_e-l_{0,e})^2 \f$, with
+  /// \f$ l_e \f$ the edge length the mesh stores (the root of
+  /// \f$ z_e \f$ on the branch the relaxation continues along) and
+  /// \f$ l_{0,e} \f$ the declared `referenceLengths`.
+  ///
+  /// This is the term the whitepaper's own Section 7 computations use in place
+  /// of the spectral-moment part of \f$ \mathcal S_0 \f$, which the paper
+  /// names but does not write: the energy
+  /// \f$ \lambda_0(l)+\tfrac{1}{2\varkappa}\lVert l-l_0\rVert^2 \f$ with the
+  /// backreaction coupling \f$ \varkappa \f$ identified as \f$ 8\pi G \f$ in
+  /// lattice units. A caller working in terms of \f$ \varkappa \f$ sets this
+  /// to \f$ 1/\varkappa \f$. It is a stand-in, labelled as the paper labels
+  /// it, and zero leaves it out.
+  double stiffnessWeight = 0.0;
+
+  /// \f$ l_{0,e} \f$, one reference length per edge in
+  /// `Spacetime::getEdgeList()` order. Required when `stiffnessWeight` is
+  /// nonzero; ignored otherwise.
+  std::vector<std::complex<double>> referenceLengths;
 
   /// \f$ w_H \f$, the coefficient multiplying the face-holonomy term
   /// \f$ S_{\rm hol}(U) \f$. It is the parameter the whitepaper calls
@@ -153,19 +219,25 @@ struct JointActionDeclaration {
 /// Reference: Wilson, "Confinement of quarks", Physical Review D 10, 2445
 /// (1974), for the plaquette form of the face-holonomy term.
 ///
-/// The action is the sum of four terms,
+/// The action is the sum of five terms,
 /// \f[
-///   S(z,U,\Gamma) = w_R\,S_{\rm Regge}(z) + w_H\,S_{\rm hol}(U)
+///   S(z,U,\Gamma) = w_R\,S_{\rm Regge}(z) + w_S\,S_{\rm stiff}(z)
+///                 + w_H\,S_{\rm hol}(U)
 ///                 + w_M\,S_{\rm matter}(z,U,\Gamma) + S_{\rm spec}(z,U;\xi),
 /// \f]
 /// in the two edge fields of the microscopic state — the complex squared length
 /// \f$ z_e=\ell_e^2 \f$ and the multiplicative connection
 /// \f$ U_e \in \mathbb{C}^{*} \f$ — and the carried covariance \f$ \Gamma \f$:
 ///
-/// * \f$ S_{\rm Regge}(z)=\sum_h |\!\star\! h|\,\varepsilon_h \f$ is the dual
-///   Lorentzian Regge action (`simulations::ReggeSolver::dualReggeAction`),
-///   a holomorphic function of the squared lengths and independent of
-///   \f$ U \f$.
+/// * \f$ S_{\rm Regge}(z) \f$ is the Regge action in the declared
+///   `ReggeForm`: the primal \f$ \sum_h |h|\,\varepsilon_h \f$ over the
+///   declared `ReggeHinges`, or the dual Lorentzian
+///   \f$ \sum_h |\!\star\! h|\,\varepsilon_h \f$
+///   (`simulations::ReggeSolver::dualReggeAction`). Either is a function of
+///   the squared lengths alone and independent of \f$ U \f$.
+/// * \f$ S_{\rm stiff}(z)=\tfrac12\sum_e(l_e-l_{0,e})^2 \f$ is the linear
+///   length stiffness the whitepaper's Section 7 stands in for the
+///   spectral-moment part of \f$ \mathcal S_0 \f$.
 /// * \f$ S_{\rm hol}(U)=\sum_\tau\bigl(1-\tfrac12(\mathcal F_\tau
 ///   +\mathcal F_\tau^{-1})\bigr) \f$ runs over the triangles \f$ \tau \f$ of
 ///   the complex, with the branch-free face holonomy
@@ -244,9 +316,10 @@ class JointAction {
   ///   coefficients, the carried covariance, the spectral constraints and the
   ///   metric source.
   /// @throws std::invalid_argument when \p spacetime is null, when the carrier
-  ///   degree is negative, when a declared moment order is below one, or when
+  ///   degree is negative, when a declared moment order is below one, when
   ///   the covariance is present and is not a square matrix over the
-  ///   \f$ k \f$-cells of the complex.
+  ///   \f$ k \f$-cells of the complex, or when the stiffness weight is nonzero
+  ///   and the reference lengths do not give one length per edge.
   JointAction(std::shared_ptr<Spacetime> spacetime,
               JointActionDeclaration declaration);
 
@@ -294,21 +367,27 @@ class JointAction {
   /// number whose vanishing is the constraint.
   [[nodiscard]] std::vector<std::complex<double>> momentResiduals() const;
 
-  /// \f$ w_R\,S_{\rm Regge}(z) \f$.
+  /// \f$ w_R\,S_{\rm Regge}(z) \f$ in the declared form and hinge set.
   [[nodiscard]] std::complex<double> reggeTerm() const;
+  /// \f$ w_S\,S_{\rm stiff}(z) \f$.
+  [[nodiscard]] std::complex<double> stiffnessTerm() const;
   /// \f$ w_H\,S_{\rm hol}(U) \f$.
   [[nodiscard]] std::complex<double> holonomyTerm() const;
   /// \f$ w_M\operatorname{tr}(\Gamma h(z,U)) \f$.
   [[nodiscard]] std::complex<double> matterTerm() const;
   /// \f$ \sum_j \xi_j\,(p_j(h)-p_j^{\star}) \f$.
   [[nodiscard]] std::complex<double> spectralTerm() const;
-  /// The whole action \f$ S(z,U,\Gamma) \f$, the sum of the four terms above.
+  /// The whole action \f$ S(z,U,\Gamma) \f$, the sum of the five terms above.
   [[nodiscard]] std::complex<double> value() const;
 
   /// \f$ \partial S/\partial z_e \f$ for every edge, in `getEdgeList()` order.
   ///
-  /// Assembled from the exact analytic gradients the framework supplies: the
-  /// Regge gradient `simulations::ReggeSolver::actionGradientExact` and the
+  /// Assembled from the exact analytic gradients the framework supplies: for
+  /// the primal Regge form the per-hinge product rule
+  /// \f$ \sum_h(\partial|h|\,\varepsilon_h+|h|\,\partial\varepsilon_h) \f$ from
+  /// `mesh::Simplex::volumeGradient` and `mesh::Simplex::deficitAngleGradient`,
+  /// for the dual form `simulations::ReggeSolver::actionGradientExact`, the
+  /// stiffness gradient \f$ w_S(l_e-l_{0,e})/(2l_e) \f$ in closed form, and the
   /// operator gradient `HodgeLaplacian::laplacianGradient`. No finite difference
   /// enters it, and no imaginary part is discarded: the returned number is the
   /// full complex derivative of a holomorphic function.
@@ -427,6 +506,11 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> momentGradient(
       std::size_t index) const;
 
+  /// The number of hinges the primal Regge sum runs over under the declared
+  /// hinge rule, reported so a caller can see when the primal term is empty
+  /// (a complex with no interior hinge under `ReggeHinges::Interior`).
+  [[nodiscard]] std::size_t reggeHingeCount() const;
+
   /// The number of edges, which is the length of every per-edge vector here.
   [[nodiscard]] std::size_t edgeCount() const;
 
@@ -473,8 +557,8 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> orderedCarrierEigenvalues(
       bool ascendingRealPart = true) const;
 
-  /// The names of the four declared terms, in the order `value` sums them:
-  /// `"regge"`, `"holonomy"`, `"matter"`, `"spectral"`.
+  /// The names of the five declared terms, in the order `value` sums them:
+  /// `"regge"`, `"stiffness"`, `"holonomy"`, `"matter"`, `"spectral"`.
   [[nodiscard]] static std::vector<std::string> termNames();
 
  private:

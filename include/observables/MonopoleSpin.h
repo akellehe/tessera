@@ -533,12 +533,21 @@ class SharpSpin {
     /// dense 2^M x 2^M operator. The applied form has no such limit.
     static constexpr std::size_t kMaxDenseModes = 16;
 
+    /// Largest mode count for which a Fock state vector (2^M entries) is
+    /// built by `determinant` and `determinantSuperposition`, and for which
+    /// `doubletSpinMatrices` builds its one-particle matrices. It is the
+    /// exterior algebra's own matrix-layer limit: a state vector is one column
+    /// of the space, not the dense operator, so it is affordable well past
+    /// `kMaxDenseModes`. Eighteen modes, the edge modes of a three-sheeted
+    /// tetrahedron, is a 2^18-entry vector.
+    static constexpr std::size_t kMaxStateModes = 24;
+
     /// The Slater determinant of the listed occupied modes as a Fock vector
     /// over `modeCount` modes: the modes are wedged in the listed order, so a
     /// reordering changes the vector by the permutation sign and nothing
     /// else.
     /// @throws std::invalid_argument on a repeated or out-of-range mode, or a
-    ///         mode count above `kMaxDenseModes`.
+    ///         mode count above `kMaxStateModes`.
     [[nodiscard]] static Eigen::VectorXcd determinant(
         const std::vector<std::size_t>& occupiedModes, std::size_t modeCount);
 
@@ -596,7 +605,7 @@ class SharpSpin {
     /// carrier c. On the tetrahedron the three carriers are the doublets
     /// 2, 2' and 2'' distinguished by the Z_3 = 2T / Q_8 character.
     /// @throws std::invalid_argument when `carrierCount` is zero or the
-    ///         resulting mode count exceeds `kMaxDenseModes`.
+    ///         resulting mode count exceeds `kMaxStateModes`.
     [[nodiscard]] static std::array<Eigen::MatrixXcd, 3> doubletSpinMatrices(
         std::size_t carrierCount);
 };

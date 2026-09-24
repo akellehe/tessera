@@ -7,6 +7,7 @@
 #include <map>
 #include <cmath>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -18,6 +19,7 @@
 #include "matter/MatterConfiguration.h"
 #include "mesh/Edge.h"
 #include "mesh/EdgeList.h"
+#include "mesh/Simplex.h"
 #include "mesh/Vertex.h"
 #include "simulations/ReggeSolver.h"
 #include "spacetime/Spacetime.h"
@@ -84,6 +86,71 @@ bool carrierIsNeeded(const JointActionDeclaration &declaration) {
   if (declaration.matterWeight != 0.0 && !declaration.covariance.empty())
     return true;
   return !declaration.momentConstraints.empty();
+}
+
+/// The sorted vertex ids of a mesh simplex, the key the chain complex and the
+/// mesh agree on.
+std::vector<std::uint64_t> sortedIds(const ::tessera::mesh::Simplex &simplex) {
+  std::vector<std::uint64_t> ids;
+  for (const auto &vertex : simplex.getVertices()) ids.push_back(vertex->getId());
+  std::sort(ids.begin(), ids.end());
+  return ids;
+}
+
+/// The hinges the primal Regge sum runs over under \p rule.
+///
+/// A hinge is a \f$ (d-2) \f$-simplex that is a face of at least one top cell,
+/// the set `simulations::ReggeSolver` collects. Under `ReggeHinges::Interior`
+/// it is kept only when its link closes: every \f$ (d-1) \f$-face containing
+/// it is shared by exactly two top cells. The coface counts are read from the
+/// chain complex's own boundary maps, so the test is pure incidence and uses no
+/// geometry.
+std::vector<::tessera::mesh::Simplex *> primalHinges(
+    const std::shared_ptr<Spacetime> &shared, ReggeHinges rule) {
+  // Constructing the solver materializes the facet lattice down to the
+  // hinges, which a freshly built complex does not hold.
+  const ReggeSolver materialized(shared, MatterConfiguration());
+  const Spacetime &spacetime = *shared;
+  const int d = spacetime.getMetric()->getSignature()->getDimensions();
+  std::vector<::tessera::mesh::Simplex *> hinges;
+  if (d < 2) return hinges;
+  for (auto *simplex : spacetime.getSimplices())
+    if (simplex != nullptr &&
+        static_cast<int>(simplex->size()) == d - 1 && simplex->hasTopCoface())
+      hinges.push_back(simplex);
+  if (rule == ReggeHinges::All) return hinges;
+
+  const ChainComplex complex = ChainComplex::fromSpacetime(spacetime);
+  if (complex.dimension() != d) return {};
+  // Top cofaces per (d-1)-face, from the entries of the top boundary map.
+  std::vector<int> topCofaces(complex.numSimplices(d - 1), 0);
+  for (const auto &entry : complex.boundaryEntries(d))
+    if (entry.row >= 0 &&
+        static_cast<std::size_t>(entry.row) < topCofaces.size())
+      ++topCofaces[static_cast<std::size_t>(entry.row)];
+  // A hinge is on the boundary when some (d-1)-face containing it has fewer
+  // or more than two top cofaces.
+  std::vector<int> facesOfHinge(complex.numSimplices(d - 2), 0);
+  std::vector<bool> closed(complex.numSimplices(d - 2), true);
+  for (const auto &entry : complex.boundaryEntries(d - 1)) {
+    const auto hinge = static_cast<std::size_t>(entry.row);
+    const auto face = static_cast<std::size_t>(entry.column);
+    if (hinge >= closed.size() || face >= topCofaces.size()) continue;
+    ++facesOfHinge[hinge];
+    if (topCofaces[face] != 2) closed[hinge] = false;
+  }
+  std::set<std::vector<std::uint64_t>> interior;
+  const auto hingeVertices = complex.kSimplexVertices(d - 2);
+  for (std::size_t index = 0; index < hingeVertices.size(); ++index)
+    if (closed[index] && facesOfHinge[index] > 0) {
+      auto key = hingeVertices[index];
+      std::sort(key.begin(), key.end());
+      interior.insert(std::move(key));
+    }
+  std::vector<::tessera::mesh::Simplex *> kept;
+  for (auto *hinge : hinges)
+    if (interior.count(sortedIds(*hinge)) > 0) kept.push_back(hinge);
+  return kept;
 }
 
 }  // namespace
@@ -221,6 +288,15 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           "JointAction: a spectral moment order is the power j >= 1 of "
           "p_j(h) = tr(h^j); got " +
           std::to_string(constraint.order));
+  if (declaration_.stiffnessWeight != 0.0) {
+    const std::size_t edges = edgeCount();
+    if (declaration_.referenceLengths.size() != edges)
+      throw std::invalid_argument(
+          "JointAction: the length stiffness needs one reference length per "
+          "edge; got " +
+          std::to_string(declaration_.referenceLengths.size()) + " for " +
+          std::to_string(edges) + " edges");
+  }
   if (!declaration_.covariance.empty()) {
     const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
     const std::size_t order =
@@ -262,7 +338,7 @@ std::size_t JointAction::edgeCount() const {
 }
 
 std::vector<std::string> JointAction::termNames() {
-  return {"regge", "holonomy", "matter", "spectral"};
+  return {"regge", "stiffness", "holonomy", "matter", "spectral"};
 }
 
 std::vector<complexd> JointAction::carrierOperator() const {
@@ -310,8 +386,29 @@ std::vector<complexd> JointAction::momentResiduals() const {
 
 std::complex<double> JointAction::reggeTerm() const {
   if (declaration_.gravitationalWeight == 0.0) return complexd{0.0, 0.0};
-  return declaration_.gravitationalWeight *
-         ReggeSolver(spacetime_, MatterConfiguration()).dualReggeAction();
+  if (declaration_.reggeForm == ReggeForm::Dual)
+    return declaration_.gravitationalWeight *
+           ReggeSolver(spacetime_, MatterConfiguration()).dualReggeAction();
+  complexd sum{0.0, 0.0};
+  for (auto *hinge : primalHinges(spacetime_, declaration_.reggeHinges))
+    sum += ReggeSolver::hingeContent(hinge) * hinge->deficitAngle();
+  return declaration_.gravitationalWeight * sum;
+}
+
+std::size_t JointAction::reggeHingeCount() const {
+  return primalHinges(spacetime_, declaration_.reggeHinges).size();
+}
+
+std::complex<double> JointAction::stiffnessTerm() const {
+  if (declaration_.stiffnessWeight == 0.0) return complexd{0.0, 0.0};
+  const auto edges = spacetime_->getEdgeList()->toVector();
+  complexd sum{0.0, 0.0};
+  for (std::size_t index = 0; index < edges.size(); ++index) {
+    const complexd stretch =
+        edges[index]->getLength() - declaration_.referenceLengths[index];
+    sum += 0.5 * stretch * stretch;
+  }
+  return declaration_.stiffnessWeight * sum;
 }
 
 std::complex<double> JointAction::holonomyTerm() const {
@@ -347,7 +444,8 @@ std::complex<double> JointAction::spectralTerm() const {
 }
 
 std::complex<double> JointAction::value() const {
-  return reggeTerm() + holonomyTerm() + matterTerm() + spectralTerm();
+  return reggeTerm() + stiffnessTerm() + holonomyTerm() + matterTerm() +
+         spectralTerm();
 }
 
 namespace {
@@ -388,13 +486,61 @@ std::vector<complexd> JointAction::lengthStationarity() const {
   const std::size_t edges = workspace.edges.size();
   std::vector<complexd> stationarity(edges, complexd{0.0, 0.0});
 
-  if (declaration_.gravitationalWeight != 0.0) {
+  if (declaration_.gravitationalWeight != 0.0 &&
+      declaration_.reggeForm == ReggeForm::Dual) {
     const auto reggeGradient =
         ReggeSolver(spacetime_, MatterConfiguration()).actionGradientExact();
     for (std::size_t edgeIndex = 0;
          edgeIndex < edges && edgeIndex < reggeGradient.size(); ++edgeIndex)
       stationarity[edgeIndex] +=
           declaration_.gravitationalWeight * reggeGradient[edgeIndex];
+  }
+
+  if (declaration_.gravitationalWeight != 0.0 &&
+      declaration_.reggeForm == ReggeForm::Primal) {
+    // d(sum_h |h| eps_h)/dz_e = sum_h (d|h|/dz_e eps_h + |h| d eps_h/dz_e),
+    // both factors from the per-hinge analytic gradients. No Schlaefli
+    // identity is invoked, because under the interior-hinge rule the sum over
+    // a cell's hinges is incomplete and that identity does not apply.
+    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfEdge;
+    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
+      const auto *edge = workspace.edges[edgeIndex];
+      if (edge == nullptr || edge->getSource() == nullptr ||
+          edge->getTarget() == nullptr)
+        continue;
+      indexOfEdge[pairKey(edge->getSource()->getId(),
+                          edge->getTarget()->getId())] = edgeIndex;
+    }
+    for (auto *hinge : primalHinges(spacetime_, declaration_.reggeHinges)) {
+      const complexd content = ReggeSolver::hingeContent(hinge);
+      const complexd deficit = hinge->deficitAngle();
+      for (const auto &[key, derivative] : hinge->volumeGradient()) {
+        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
+        if (found != indexOfEdge.end())
+          stationarity[found->second] +=
+              declaration_.gravitationalWeight * derivative * deficit;
+      }
+      for (const auto &[key, derivative] : hinge->deficitAngleGradient()) {
+        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
+        if (found != indexOfEdge.end())
+          stationarity[found->second] +=
+              declaration_.gravitationalWeight * content * derivative;
+      }
+    }
+  }
+
+  if (declaration_.stiffnessWeight != 0.0) {
+    // d/dz [ (l - l0)^2 / 2 ] = (l - l0) dl/dz with dl/dz = 1/(2l) on the
+    // branch the stored length already sits on.
+    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
+      const auto *edge = workspace.edges[edgeIndex];
+      if (edge == nullptr) continue;
+      const complexd length = edge->getLength();
+      stationarity[edgeIndex] +=
+          declaration_.stiffnessWeight *
+          (length - declaration_.referenceLengths[edgeIndex]) /
+          (2.0 * length);
+    }
   }
 
   const Eigen::MatrixXcd contraction = contractionMatrix(
@@ -507,6 +653,7 @@ JointActionDeclaration forceOnlyDeclaration(
   JointActionDeclaration forceOnly = declaration;
   forceOnly.gravitationalWeight = 0.0;
   forceOnly.holonomyWeight = 0.0;
+  forceOnly.stiffnessWeight = 0.0;
   forceOnly.matterWeight = 1.0;
   forceOnly.momentConstraints.clear();
   return forceOnly;

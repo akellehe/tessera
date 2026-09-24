@@ -52,6 +52,9 @@ def _declaration(**overrides):
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.gravitational_weight = 0.0
+    # These suites exercise the dual (Sorkin) Regge form, declared explicitly
+    # now that the primal form is the default.
+    declaration.regge_form = cob.ReggeForm.Dual
     declaration.holonomy_weight = 0.0
     declaration.matter_weight = 0.0
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil

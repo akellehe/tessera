@@ -54,6 +54,9 @@ def _declaration(**overrides):
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.gravitational_weight = 0.0
+    # These suites exercise the dual (Sorkin) Regge form, declared explicitly
+    # now that the primal form is the default.
+    declaration.regge_form = cob.ReggeForm.Dual
     declaration.holonomy_weight = 0.0
     declaration.matter_weight = 0.0
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
@@ -114,18 +117,20 @@ def _metric(index):
 
 
 class TheActionIsTheSumOfItsDeclaredTermsTest(unittest.TestCase):
-    """``value`` reads nothing but the four terms it names."""
+    """``value`` reads nothing but the five terms it names."""
 
-    def test_the_value_is_the_sum_of_the_four_terms(self):
+    def test_the_value_is_the_sum_of_the_five_terms(self):
         spacetime = sphere3(squared=_metric, phase=_flux)
         declaration = _declaration(gravitational_weight=0.6,
                                    holonomy_weight=1.3)
         action = cob.JointAction(spacetime, declaration)
-        total = (action.regge_term() + action.holonomy_term()
-                 + action.matter_term() + action.spectral_term())
+        total = (action.regge_term() + action.stiffness_term()
+                 + action.holonomy_term() + action.matter_term()
+                 + action.spectral_term())
         self.assertAlmostEqual(abs(action.value() - total), 0.0, places=12)
         self.assertEqual(cob.JointAction.term_names(),
-                         ["regge", "holonomy", "matter", "spectral"])
+                         ["regge", "stiffness", "holonomy", "matter",
+                          "spectral"])
 
     def test_the_action_is_genuinely_complex(self):
         """A complex metric gives a complex action, not a real one.

@@ -791,11 +791,11 @@ Eigen::VectorXcd applyDGamma(const Eigen::MatrixXcd& oneParticle,
 
 Eigen::VectorXcd SharpSpin::determinant(
     const std::vector<std::size_t>& occupiedModes, std::size_t modeCount) {
-  if (modeCount == 0 || modeCount > kMaxDenseModes) {
+  if (modeCount == 0 || modeCount > kMaxStateModes) {
     std::ostringstream message;
     message << "SharpSpin::determinant: the mode count must lie between one "
                "and "
-            << kMaxDenseModes << "; received " << modeCount << ".";
+            << kMaxStateModes << "; received " << modeCount << ".";
     throw std::invalid_argument(message.str());
   }
   const ::tessera::quantum::ExteriorAlgebra algebra(modeCount);
@@ -986,11 +986,11 @@ std::array<Eigen::MatrixXcd, 3> SharpSpin::doubletSpinMatrices(
         "is required.");
   }
   const std::size_t modeCount = 2 * carrierCount;
-  if (modeCount > kMaxDenseModes) {
+  if (modeCount > kMaxStateModes) {
     std::ostringstream message;
     message << "SharpSpin::doubletSpinMatrices: " << carrierCount
             << " carriers need " << modeCount << " modes, above the limit of "
-            << kMaxDenseModes << ".";
+            << kMaxStateModes << ".";
     throw std::invalid_argument(message.str());
   }
   Eigen::Matrix2cd sx;
