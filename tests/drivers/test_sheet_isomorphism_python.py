@@ -12,9 +12,8 @@ disjoint copies the sheet number is "conserved under relaxation".
 
 The per-cell read (`recursion.cell_reads` -> `baryon_poles.scan_point` ->
 `evaluate_content` -> `relax_content`) builds three disjoint copies of the cell
-(`baryon_poles.build_host`), each edge of each copy carrying its own z_e and
-U_e as the paper states, and relaxes all 36 coordinates with
-`SelfConsistentMeanField` around `HolomorphicRelaxation`. The certificate
+(`baryon_poles.build_host`) and relaxes them with `SelfConsistentMeanField`
+around `HolomorphicRelaxation`. The certificate
 (`SheetedSupport.certifyIsomorphism`) then compares the sheets' squared lengths
 and connection values. The tests below establish, on the run's own host cells
 (`_recursion_run_2026_09_23`):
@@ -23,18 +22,26 @@ and connection values. The tests below establish, on the run's own host cells
   exactly the injected disagreement;
 * the host is built exactly isomorphic, and the seeded covariance and the
   geometric Jacobian respect the sheet permutation;
-* the relaxation does not keep the sheets on the S_3-fixed locus: the
-  band-filling covariance enters the Newton Jacobian with a rounding-level
-  sheet asymmetry that the ill-conditioned solve amplifies, and on some
-  contents the complete-orthogonal-decomposition rank decision keeps the
-  near-null direction of two sheets and not of the third, so a single Newton
-  step separates the sheets' links by O(1);
-* the band rule reads its bands on the T-average under the declared projective
-  action, which is not gauge covariant, so once the sheets' links differ by a
-  gauge transformation the rank-6 colour bands split and the content's
-  occupations are assigned to different bands: this is the run's refusal
-  "band 2 has rank 2" and the start of the macroscopic separation that fails
-  the fibre lift.
+* the relaxation carries the sheets as one shared base field
+  (`baryon_poles.share_sheet_geometry`: six squared lengths and six links,
+  written to every sheet, each driven by the sum of its three edges'
+  equations), so identical sheets stay identical to the bit for every
+  content. Relaxed as 36 separate coordinates, rounding asymmetries amplified
+  by the ill-conditioned Newton step separated the sheets' links by O(1) in
+  one step;
+* the Newton solve decides its rank on the singular values relative to the
+  largest, at the driver's declared tolerance, and reports the rank and the
+  gap; a complete orthogonal decomposition deciding on its pivoted-QR
+  diagonal kept rank 35 where the numerical rank is 33;
+* under the user's ruling (a) the band-filling covariance is built from the
+  Riesz bands of h_1 itself (WP v17 §7 line 262: Gamma* a projector onto modes
+  of h(z*)), so it commutes with h_1, the Ward current of the seeded action is
+  divergence-free and the band rule is covariant under a gauge transformation
+  of one sheet. The bands of h_1 on the host are simple on each sheet, rank 3
+  over the three sheets; a content names occupations of them. Built from the
+  T-averaged operator instead, Gamma did not commute with h_1 (Ward
+  divergence 2.1 to 3.4) and a gauge transformation of one sheet split the
+  bands.
 """
 import cmath
 import math
@@ -136,8 +143,7 @@ def _seeded_action(cell, content):
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
     solve = cob.SelfConsistentMeanField(
-        action, bp.mean_field_declaration(content, config,
-                                          _declared_actions()))
+        action, bp.mean_field_declaration(content, config))
     solve.solve()
     return spacetime, solve.action, config
 
@@ -361,76 +367,109 @@ def test_the_geometric_jacobian_is_exactly_sheet_symmetric():
 
 
 @pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3), (1, 1, 1)])
-def test_the_seeded_covariance_fills_rank_six_colour_bands(content):
-    """On the exactly isomorphic host the T-averaged operator's bands are the
-    three doublets times the three sheets, rank 6 each (WP v17 §8: every band
-    E-bar of the base becomes E-bar (x) C^3), so every declared content fits,
-    and the band-filling covariance commutes with the sheet relabeling to
-    rounding (1e-15)."""
+def test_the_seeded_covariance_fills_rank_three_bands_of_h(content):
+    """On the exactly isomorphic host h_1 is h-bar_1-free: its six eigenvalues
+    per sheet are simple, so its bands over the three sheets have rank 3 each
+    (WP v17 §8: every band E-bar of the base becomes E-bar (x) C^3). Every
+    declared content fits, the band-filling covariance is a function of h_1
+    and commutes with it to rounding, it commutes with the sheet relabeling
+    to rounding (1e-14), and its trace is the three quarks."""
     config = _cell_config(FIRST_CELL, content, newton=0, mean_field=1)
-    spacetime, _, report = bp.relax_content(content, 1.0, 1.0, config,
-                                            _declared_actions())
-    assert list(report.band_ranks) == [6, 6, 6]
+    spacetime, action, report = bp.relax_content(content, 1.0, 1.0, config)
+    assert list(report.band_ranks) == [3] * 6
     gamma = np.asarray(report.covariance).reshape(18, 18)
+    h = bp.matrix(action.carrier_operator())
+    assert np.linalg.norm(gamma @ h - h @ gamma) < 1e-12 * np.linalg.norm(h)
     # the covariance is over the 18 edge cells in `getEdgeList()` order
     p = _sheet_permutation(spacetime)[:18, :18]
     assert np.max(np.abs(p @ gamma @ p.T - gamma)) < 1e-14
     assert np.trace(gamma).real == pytest.approx(3.0, abs=1e-12)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "HolomorphicRelaxation inside SelfConsistentMeanField does not keep a "
-    "three-sheeted support on the S_3-fixed locus: the band-filling "
-    "covariance enters the finite-difference Jacobian with a sheet asymmetry "
-    "of about 2e-12 (the geometric Jacobian's is exactly zero), and the "
-    "ill-conditioned minimum-norm solve amplifies it; one Newton step from "
-    "exactly identical sheets separates their squared lengths by 1.6e-9 on "
-    "content (2, 1, 0) and their links by 0.60 on content (0, 0, 3)"))
 @pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3)])
 def test_one_newton_step_keeps_the_sheets_identical(content):
     """WP v17 line 355: the shared geometry is a stationary sector of the
     sheet-permuting group and the sheet number is conserved under relaxation.
     From the run's first host cell, exactly isomorphic as built, one
-    mean-field iteration with one Newton step must leave the three sheets
-    identical to machine precision: squared lengths to 1e-13 of 8 and links
-    to 1e-13."""
+    mean-field iteration with one Newton step leaves the three sheets
+    identical to the bit."""
     config = _cell_config(FIRST_CELL, content, newton=1, mean_field=1)
-    spacetime, _, _ = bp.relax_content(content, 1.0, 1.0, config,
-                                       _declared_actions())
+    spacetime, _, _ = bp.relax_content(content, 1.0, 1.0, config)
     lengths, links = _sheets(spacetime)
-    assert _largest_gap(lengths) <= 8e-13
-    assert _largest_gap(links) <= 1e-13
+    assert _largest_gap(lengths) == 0.0
+    assert _largest_gap(links) == 0.0
 
 
-@pytest.mark.parametrize("content, xfail", [
-    ((2, 1, 0), False),
-    pytest.param((0, 0, 3), True, marks=pytest.mark.xfail(strict=True, reason=(
-        "HolomorphicRelaxation's minimum-norm step uses "
-        "Eigen::CompleteOrthogonalDecomposition with setThreshold(1e-12); its "
-        "rank decision, taken on the pivoted-QR diagonal, keeps two of the "
-        "three per-sheet near-null directions of the Jacobian (singular "
-        "values 5.9e-12 to 9.5e-12 against a largest singular value near "
-        "30) and reports rank 35 where the numerical rank at the same "
-        "relative threshold is 33, so the step moves two sheets along "
-        "directions the third does not follow")))])
-def test_the_newton_solve_uses_the_numerical_rank(content, xfail):
-    """The step of `HolomorphicRelaxation` is documented as the minimum-norm
-    least-squares solution with singular values below rank_tolerance (1e-12,
-    relative) counted as zero. On the seeded action of the run's first host
-    cell the Jacobian has exactly three near-null directions, one supported on
-    each sheet, below that threshold, so the rank the solve uses must be the
-    numerical rank 33, the same number for every content."""
+@pytest.mark.parametrize("cell", [FIRST_CELL, SECOND_CELL])
+@pytest.mark.parametrize("content", bp.contents())
+def test_the_relaxed_sheets_are_bit_identical_for_every_content(cell,
+                                                                content):
+    """Three Newton steps in each of two mean-field iterations, on both host
+    cells of the run and every content: the shared base field is written to
+    every sheet, so the squared lengths and links of the three sheets agree
+    to the bit and the certificate reports both residuals exactly zero."""
+    config = _cell_config(cell, content, newton=3, mean_field=2)
+    spacetime, _, _ = bp.relax_content(content, 1.0, 1.0, config)
+    lengths, links = _sheets(spacetime)
+    assert _largest_gap(lengths) == 0.0
+    assert _largest_gap(links) == 0.0
+    read = obs.SheetedSupport(3, 6).certifyIsomorphism(lengths, links, 1e-8)
+    assert read.squared_length_residual == 0.0
+    assert read.connection_residual == 0.0
+
+
+def test_the_shared_field_has_six_lengths_and_six_links():
+    """`baryon_poles.share_sheet_geometry` declares one class per base edge:
+    the relaxation has 12 variables, and every class holds one edge of each
+    sheet on the same orientation."""
+    config = _cell_config(FIRST_CELL, (2, 1, 0), newton=1, mean_field=0)
+    spacetime = bp.build_host(8.0, config["host_cell"])
+    classes, orientations = bp.sheet_edge_classes(spacetime)
+    records = bp.edge_records(spacetime)
+    for k in range(6):
+        members = [r for r, c in zip(records, classes) if c == k]
+        assert sorted(a // 4 for a, _ in members) == [0, 1, 2]
+    action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
+                                                              1.0))
+    relaxation = cob.HolomorphicRelaxation(
+        action, bp.share_sheet_geometry(bp.relaxation_declaration(config),
+                                        spacetime))
+    assert relaxation.variable_count() == 12
+    assert set(orientations) <= {1, -1}
+
+
+@pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3)])
+def test_the_newton_solve_uses_the_numerical_rank(content):
+    """The step of `HolomorphicRelaxation` is the minimum-norm least-squares
+    solution with singular values at or below rank_tolerance times the
+    largest counted as zero. The driver declares 1e-10
+    (`baryon_poles.DECLARED_RANK_TOLERANCE`), a factor fifty above the
+    rounding floor of its real-axis-difference Jacobian at radius 1e-4. On the
+    seeded action of the run's first host cell the 36-coordinate Jacobian has
+    exactly three near-null directions below that threshold, so the rank the
+    solve uses is the numerical rank 33 for both contents, and the step
+    record reports it with a gap of more than six decades between the
+    smallest retained and the largest discarded singular value."""
     spacetime, action, config = _seeded_action(FIRST_CELL, content)
     declaration = bp.relaxation_declaration(config)
     declaration.maximum_iterations = 1
+    assert declaration.rank_tolerance == bp.DECLARED_RANK_TOLERANCE == 1e-10
     relaxation = cob.HolomorphicRelaxation(action, declaration)
     n = relaxation.variable_count()
     jacobian = np.asarray(relaxation.jacobian()).reshape(n, n)
     singular = np.linalg.svd(jacobian, compute_uv=False)
-    numerical_rank = int(np.sum(singular > 1e-12 * singular[0]))
+    numerical_rank = int(np.sum(singular > 1e-10 * singular[0]))
     assert numerical_rank == 33
-    report = relaxation.solve()
-    assert report.steps[0].jacobian_rank == numerical_rank
+    step = relaxation.solve().steps[0]
+    assert step.jacobian_rank == numerical_rank
+    assert step.rank_tolerance == 1e-10
+    assert step.largest_singular_value == pytest.approx(singular[0],
+                                                        rel=1e-12)
+    assert step.smallest_retained_singular_value == pytest.approx(
+        singular[32], rel=1e-9)
+    assert step.largest_discarded_singular_value == pytest.approx(
+        singular[33], rel=1e-3)
+    assert step.rank_gap > 1e6
 
 
 def test_the_near_null_directions_are_one_per_sheet():
@@ -447,7 +486,7 @@ def test_the_near_null_directions_are_one_per_sheet():
     jacobian = np.asarray(relaxation.jacobian()).reshape(n, n)
     _, singular, vh = np.linalg.svd(jacobian)
     assert singular[-4] > 1e-6 * singular[0]
-    assert np.all(singular[-3:] < 1e-12 * singular[0])
+    assert np.all(singular[-3:] < bp.DECLARED_RANK_TOLERANCE * singular[0])
     records = bp.edge_records(spacetime)
     edges = len(records)
     supports = []
@@ -462,53 +501,50 @@ def test_the_near_null_directions_are_one_per_sheet():
     assert sorted(supports) == [0, 1, 2]
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError, reason=(
-    "reproduces the run's refusal of contents (0, 0, 3), (0, 3, 0), (3, 0, 0) "
-    "on host cell (0, 1, 2, 3): after the first Newton step separates the "
-    "sheets' links by a gauge transformation (0.60, face holonomies equal to "
-    "3.5e-9), the band rule's T-averaged operator is no longer degenerate "
-    "across the sheets, the rank-6 colour band splits into rank-2 bands and "
-    "SelfConsistentMeanField refuses 'band 2 has rank 2 and cannot hold the "
-    "declared occupation 3'"))
-def test_three_quarks_in_one_colour_band_survive_the_relaxation():
-    """A colour band of the sheeted support has rank 6 (a doublet times three
-    sheets, WP v17 §8), so three quarks in the highest band fit and stay
+def test_three_quarks_in_one_band_survive_the_relaxation():
+    """A band of h_1 on the sheeted host has rank 3 (one simple mode per sheet
+    times three sheets), so three quarks in the third band fit and stay
     fitting while the sheets stay identical; two Newton steps of one
-    mean-field iteration on the run's first host cell must complete with the
-    band ranks [6, 6, 6]."""
+    mean-field iteration on the run's first host cell complete with the band
+    ranks [3, 3, 3, 3, 3, 3]. (With the bands read on the T-averaged operator
+    and the sheets relaxed separately, this was the run's refusal "band 2 has
+    rank 2 and cannot hold the declared occupation 3".)"""
     config = _cell_config(FIRST_CELL, (0, 0, 3), newton=2, mean_field=1)
-    _, _, report = bp.relax_content((0, 0, 3), 1.0, 1.0, config,
-                                    _declared_actions())
-    assert list(report.band_ranks) == [6, 6, 6]
+    _, _, report = bp.relax_content((0, 0, 3), 1.0, 1.0, config)
+    assert list(report.band_ranks) == [3] * 6
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the band rule of SelfConsistentMeanField reads its bands on "
-    "(1/|T|) sum_g D(g)^-1 h D(g) with D the declared projective action of "
-    "the symmetric monopole connection; that average is not covariant under "
-    "a gauge transformation of the links, so gauge-transforming one sheet "
-    "(lengths and face holonomies unchanged) splits the rank-6 colour bands "
-    "into ranks [4, 2, 4, 2, 2, 4]; whether the band rule should be gauge "
-    "covariant is a ruling for the user"))
-def test_the_colour_bands_survive_a_gauge_transformation_of_one_sheet():
-    """A unit-modulus vertex gauge transformation (vertex 6, local vertex 2
-    of sheet 1, angle 0.3) leaves every squared length and every face
-    holonomy of the host unchanged; the spectrum of a gauge-covariant band
-    operator, and so the band ranks [6, 6, 6], must be unchanged."""
+def _seeded_band_read(gauge_angle):
     config = _cell_config(FIRST_CELL, (2, 1, 0), newton=0, mean_field=1)
     spacetime = bp.build_host(8.0, config["host_cell"])
-    _gauge_one_sheet(spacetime, 6, 0.3)
+    if gauge_angle:
+        _gauge_one_sheet(spacetime, 6, gauge_angle)
+    action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
+                                                              1.0))
+    solve = cob.SelfConsistentMeanField(
+        action, bp.mean_field_declaration((2, 1, 0), config))
+    return spacetime, solve.solve()
+
+
+def test_the_bands_survive_a_gauge_transformation_of_one_sheet():
+    """A unit-modulus vertex gauge transformation (vertex 6, local vertex 2
+    of sheet 1, angle 0.3) leaves every squared length and every face
+    holonomy of the host unchanged. The band rule reads the bands of h_1,
+    which the transformation conjugates, so the band ranks [3] * 6, the
+    occupied eigenvalues and the occupied energy tr(Gamma h_1) are unchanged
+    (to 1e-12)."""
+    spacetime, report = _seeded_band_read(0.3)
     lengths, links = _sheets(spacetime)
     assert _largest_gap(lengths) == 0.0
     holonomies = [_face_holonomies(u) for u in links]
     assert _largest_gap(holonomies) < 1e-15
-    action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
-                                                              1.0))
-    solve = cob.SelfConsistentMeanField(
-        action, bp.mean_field_declaration((2, 1, 0), config,
-                                          _declared_actions()))
-    report = solve.solve()
-    assert list(report.band_ranks) == [6, 6, 6]
+    _, reference = _seeded_band_read(0.0)
+    assert list(report.band_ranks) == list(reference.band_ranks) == [3] * 6
+    np.testing.assert_allclose(np.asarray(report.occupied_eigenvalues),
+                               np.asarray(reference.occupied_eigenvalues),
+                               atol=1e-12)
+    assert complex(report.occupied_energy) == pytest.approx(
+        complex(reference.occupied_energy), abs=1e-12)
 
 
 # ------------------------------------------------------------ fibre lift
@@ -577,35 +613,27 @@ def test_the_recorded_failures_are_four_gauge_only_and_eight_geometric():
 # ------------------------------------------- gauge invariance at fixed Gamma
 
 
-def test_uniform_filling_is_a_multiple_of_the_identity():
-    """Content (1, 1, 1) puts one quark in each rank-6 colour band, so the
-    band-filling covariance is sum_b (1/6) P_b = I_18 / 6 exactly (the three
-    band projectors sum to the identity); it commutes with every operator,
-    and the Ward current of the seeded action is divergence-free to 1e-14."""
+def test_uniform_filling_commutes_with_h():
+    """Content (1, 1, 1) puts one quark in each of the three lowest rank-3
+    bands of h_1, so the band-filling covariance is (1/3)(P_0 + P_1 + P_2):
+    a function of h_1, trace 3, commuting with h_1 to rounding, and the Ward
+    current of the seeded action is divergence-free to 1e-14."""
     _, action, _ = _seeded_action(FIRST_CELL, (1, 1, 1))
     gamma = np.asarray(action.declaration.covariance).reshape(18, 18)
-    assert np.max(np.abs(gamma - np.eye(18) / 6.0)) < 1e-14
+    h = bp.matrix(action.carrier_operator())
+    assert np.linalg.norm(gamma @ h - h @ gamma) < 1e-12 * np.linalg.norm(h)
+    assert np.trace(gamma).real == pytest.approx(3.0, abs=1e-12)
     assert np.max(np.abs(np.asarray(action.ward_current_divergence()))) \
         < 1e-14
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the band rule builds Gamma from the T-averaged operator h-bar, which is "
-    "not a function of h_1 on the monopole host, so Gamma does not commute "
-    "with h_1 and the matter term tr(Gamma h_1) held at fixed Gamma is not "
-    "gauge invariant: the Ward current of the seeded action has divergence "
-    "2.13 (content (2, 1, 0)) and 3.43 (content (0, 0, 3)); the pure-gauge "
-    "link directions are then not null directions of the Newton system, and "
-    "each step carries an O(1) gauge component (JointAction::"
-    "wardCurrentDivergence documents the identity; a ruling on the band rule "
-    "belongs to the user)"))
 @pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3)])
 def test_the_seeded_action_satisfies_the_ward_identity(content):
     """`JointAction.ward_current_divergence`: the divergence of
     j = U dS/dU vanishes for every gauge-invariant term, and for the matter
-    term when Gamma transforms with the operator, as a spectral projector of
-    h does. The per-cell relaxation of the run starts from the band-filling
-    Gamma; its Ward current must be divergence-free to 1e-12."""
+    term when Gamma transforms with the operator, as a function of h does.
+    The per-cell relaxation of the run starts from the band-filling Gamma of
+    h_1 (ruling (a)); its Ward current is divergence-free to 1e-12."""
     _, action, _ = _seeded_action(FIRST_CELL, content)
     assert np.max(np.abs(np.asarray(action.ward_current_divergence()))) \
         < 1e-12

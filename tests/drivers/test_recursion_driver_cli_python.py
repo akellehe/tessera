@@ -29,10 +29,12 @@ READ = [{
     "host_cell": {},
     "failed_contents": [[0, 3, 0]],
     "contents": [
-        {"content": [0, 3, 0], "failed": "band 1 has rank 2", "sectors": {}},
+        {"content": [0, 3, 0], "failed": "band 1 has rank 2",
+         "doublet_reads": []},
         {"content": [3, 0, 0],
-         "sectors": {THREE: {"quasi_free": {"lowest_pole": 4.0 + 0.5j},
-                             "with_quartic": {"lowest_pole": None}}},
+         "doublet_reads": [{"doublet_content": [0, 2, 1], "sectors": {
+             THREE: {"quasi_free": {"lowest_pole": 4.0 + 0.5j},
+                     "with_quartic": {"lowest_pole": None}}}}],
          "quark_conditions": {"certified": False, "conditions": [
              {"name": "persistent-cluster", "status": "Failed"}]},
          "isospin_doublet": {"covariant": {"status": "x", "found": False,
@@ -191,9 +193,10 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     assert "mode: controlled synthesis; host monopole numbers [1, 1]" in out
     assert "tick 0: level with 5 vertices, 9 edges, 2 tetrahedra per sheet" \
         in out
-    assert "host cell [0, 1, 2, 3] content [0, 3, 0]: failed: band 1 has " \
-        "rank 2" in out
-    assert "content [3, 0, 0]: read; quark certified False" in out
+    assert "host cell [0, 1, 2, 3] content [0, 3, 0] (quarks per band of " \
+        "h_1): failed: band 1 has rank 2" in out
+    assert "content [3, 0, 0] (quarks per band of h_1): read; quark " \
+        "certified False" in out
     R.main(["run", "--ticks", "1", "--quiet"])
     assert capsys.readouterr().out == ""
 

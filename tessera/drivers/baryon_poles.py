@@ -26,7 +26,8 @@ One scan point
 --------------
 For each declared (kappa, beta), with kappa = 8 pi G in lattice units and beta
 the coupling of the face-holonomy term, and for each content (the number of
-quarks in each of the three bands of the host), the driver
+quarks in each of the three lowest bands of the covariant operator h_1, see
+"What a content names" below), the driver
 
 1. relaxes both edge fields under the joint action
    S = (1/kappa) S_Regge(primal) + (1/kappa) (1/2) ||l - l0||^2 + S_hol
@@ -40,38 +41,65 @@ quarks in each of the three bands of the host), the driver
    Villain stiffness does not;
    with certificates-blind mean-field backreaction to self-consistency
    (`HolomorphicRelaxation` inside `SelfConsistentMeanField`), the carried
-   density being the content's band filling;
+   density being the content's band filling of h_1. The three sheets are
+   relaxed as one shared base field (WP v17 §8, "Sheet convention
+   (adopted)"): the solve's variables are the base tetrahedron's six squared
+   lengths and six links, written to every sheet, and the force on each is
+   the sum of the forces on the corresponding edges of the three sheets;
 2. runs one turn of the level recursion (`LevelRecursion`) and reads the fibre
    certificates;
 3. reads the seven v16 quark conditions by name (`QuarkConditions`);
-4. forms the colour-singlet three-quark states of the content, one quark per
-   sheet, sorted by total spin with `SharpSpin`;
-5. builds the three-particle operator, both quasi-free (dGamma(h_1)) and with
-   the paper's Section 7 geometric quartic about the self-consistent point
-   (`DressedFluctuation.effectiveAction`), and reads the pole of every
-   (content, spin) sector with `BoundStatePole`.
+4. reads the spin content of the occupied state on the T-averaged operator:
+   the overlap of each occupied band of h_1 with each doublet 2, 2', 2'' of
+   h-bar_1, and the number of quarks in each doublet;
+5. for every doublet content (n_2, n_2', n_2''), forms the colour-singlet
+   three-quark states, one quark per sheet, sorted by total spin with
+   `SharpSpin`;
+6. builds the three-particle operator, both quasi-free (dGamma(h-bar_1)) and
+   with the paper's Section 7 geometric quartic about the self-consistent
+   point (`DressedFluctuation.effectiveAction`), and reads the pole of every
+   (doublet content, spin) sector with `BoundStatePole`.
 
-The nucleon pole is the lowest spin-1/2 pole over the contents and the Delta
-pole the lowest spin-3/2 pole, "lowest" meaning smallest real part, which is the
-library's declared `OccupationOrder.AscendingRealPart`. The poles are complex
-and are reported as complex; the ratio s_N / s_Delta is compared with 0.5800,
-the mass-squared reading (the pole of a Laplace-type operator has the dimension
-of p^2, and the paper takes no square root of it), and the ratio of moduli and
-the ratio of real parts are reported beside it.
+The nucleon pole is the lowest spin-1/2 pole over the (content, doublet
+content) pairs and the Delta pole the lowest spin-3/2 pole, "lowest" meaning
+smallest real part, which is the library's declared
+`OccupationOrder.AscendingRealPart`. The poles are complex and are reported as
+complex; the ratio s_N / s_Delta is compared with 0.5800, the mass-squared
+reading (the pole of a Laplace-type operator has the dimension of p^2, and the
+paper takes no square root of it), and the ratio of moduli and the ratio of
+real parts are reported beside it.
 
-The operator the spin is read on
--------------------------------
-The covariant operator h_1(z, U) of the specification (Definition 2) is not
-itself invariant under the projective rotation action D_1(g) at the monopole
-connection: its six eigenvalues per sheet are simple. The whitepaper reads the
-spin content on the T-averaged operator (WP §11.1 line 497: "The action on edge
-modes is canonical even where the twisted operator is not"; "the T-averaged
-twisted edge Laplacian"), h-bar_1 = (1/|T|) sum_g D_1(g)^{-1} h_1 D_1(g), with
-T = A_4 the rotation group of the tetrahedron. The driver does the same: the
-bands the carried density fills, the spin sectors and every pole are read on
-h-bar_1 (and, for the Section 7 quartic, on the eliminated three-particle
-operator averaged over the same diagonal action). The departure of h_1 itself
-from the symmetric form is reported beside every record as `symmetry_residual`.
+Two operators: the covariance on h_1, the spin on h-bar_1
+---------------------------------------------------------
+The carried density is built from the covariant operator h_1(z, U) of the
+specification (Definition 2) itself: a stationary pair has "Gamma* a
+projector onto modes of h(z*)" (WP v17 §7 line 262), and a density built from
+the bands of h_1 commutes with h_1, so the matter term tr(Gamma h_1) at fixed
+Gamma is gauge invariant (its Ward current is divergence-free) and the rule is
+covariant under a gauge transformation of any sheet.
+
+h_1 is not itself invariant under the projective rotation action D_1(g) at the
+monopole connection: its six eigenvalues per sheet are simple. The whitepaper
+reads the spin content on the T-averaged operator (WP v17 §9 line 506: "The
+action on edge modes is canonical even where the twisted operator is not";
+"the T-averaged twisted edge Laplacian"), h-bar_1 = (1/|T|) sum_g D_1(g)^{-1}
+h_1 D_1(g), with T = A_4 the rotation group of the tetrahedron. The driver
+does the same: the spin decomposition of the occupied modes, the spin
+sectors and every pole are read on h-bar_1 (and, for the Section 7 quartic, on
+the eliminated three-particle operator averaged over the same diagonal
+action). The departure of h_1 itself from the symmetric form is reported
+beside every record as `symmetry_residual`.
+
+What a content names
+--------------------
+A content (n_0, n_1, n_2) places n_b quarks in band b of h_1, the bands being
+groups of degenerate eigenvalues in ascending order of real part. On the
+monopole host each band of h_1 is one simple mode per sheet, rank three, not a
+spin doublet, so a content names no doublet. The record carries, beside it,
+how the occupied bands decompose into the doublets of h-bar_1
+(``spin_decomposition``), and the pole sectors are read for every doublet
+content and labelled by it (``doublet_reads``); no mapping from a content to a
+doublet content is made.
 
 The same paragraph's caveat is carried with every Delta candidate: on the
 tetrahedron the j = 3/2 quartet restricts to 2' + 2'', so "spin-1/2 with
@@ -157,6 +185,13 @@ SHEETS = 3
 BASE_EDGES = 6
 #: Relative separation at or below which ordered eigenvalues form one band.
 DECLARED_BAND_TOLERANCE = 1e-8
+#: The relative singular-value threshold of the Newton solve's rank
+#: decision. The Jacobian is a two-node real-axis difference at relative
+#: radius 1e-4 (``jacobian_radius``), whose rounding error is of order
+#: epsilon / radius, about 2e-12, relative to its entries, so a singular value
+#: below about 1e-11 of the largest cannot be told from zero; the declared
+#: threshold sits a factor fifty above that floor.
+DECLARED_RANK_TOLERANCE = 1e-10
 #: Tolerances of the certificates this driver grades.
 DECLARED_CERTIFICATE_TOLERANCE = 1e-8
 
@@ -290,7 +325,9 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
 
 
 def relaxation_declaration(config):
-    """The inner holomorphic Newton solve."""
+    """The inner holomorphic Newton solve, over every edge of the complex as
+    its own coordinate. `relax_content` ties the sheets to one shared base
+    field on top of this (`share_sheet_geometry`)."""
     geometry = cob.HolomorphicRelaxationDeclaration()
     geometry.relax_lengths = True
     geometry.relax_links = True
@@ -299,6 +336,7 @@ def relaxation_declaration(config):
     geometry.tolerance = config["newton_tolerance"]
     geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     geometry.contour_radius = config["jacobian_radius"]
+    geometry.rank_tolerance = config["rank_tolerance"]
     geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
     # the monopole sectors a caller holds as boundary data
     # (`tessera.drivers.recursion`); none by default
@@ -306,21 +344,54 @@ def relaxation_declaration(config):
     return geometry
 
 
-def mean_field_declaration(content, config, band_symmetry=None):
-    """Band filling with the content's occupations (WP §7 line 250), the bands
-    read on the T-averaged operator when the rotation action is supplied
-    (WP §11.1 line 497)."""
+def sheet_edge_classes(spacetime):
+    """The shared base field of the sheeted host (WP v17 §8, "Sheet convention
+    (adopted)": equal squared lengths and equal connection values on
+    corresponding edges). For every edge in `getEdgeList()` order, the index
+    of its base edge in the order of `MonopoleSupport.edges`, and the sign
+    that relates its stored orientation to the base edge's ascending one:
+    +1 when the stored edge runs from the lower to the higher local vertex,
+    -1 otherwise. Corresponding edges of the three sheets carry one class."""
+    pairs = [tuple(e) for e in monopole_support().edges]
+    classes, orientations = [], []
+    for source, target in edge_records(spacetime):
+        a, b = source % 4, target % 4
+        classes.append(pairs.index((min(a, b), max(a, b))))
+        orientations.append(1 if a < b else -1)
+    return classes, orientations
+
+
+def share_sheet_geometry(geometry, spacetime):
+    """Declare the sheets' fields one shared base field in a relaxation
+    declaration: the solve's variables are the base complex's six squared
+    lengths and six links, written to every sheet, and the equation of each
+    is the sum of the corresponding edges' stationarity equations, i.e. the
+    derivative of the whole action, backreaction included, along the shared
+    coordinate. Identical sheets therefore stay identical exactly."""
+    classes, orientations = sheet_edge_classes(spacetime)
+    geometry.edge_classes = classes
+    geometry.edge_class_orientations = orientations
+    return geometry
+
+
+def mean_field_declaration(content, config, spacetime=None):
+    """Band filling with the content's occupations (WP v17 §7 line 250) on the
+    bands of the covariant operator h_1 itself (ruling (a): Gamma* is a
+    projector onto modes of h(z*), WP v17 §7 line 262), the bands taken in
+    ascending order of real part (`OccupationOrder.AscendingRealPart`). With
+    ``spacetime``, the inner relaxation carries the sheeted host's shared
+    base field (`share_sheet_geometry`)."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
-    if band_symmetry is not None:
-        declaration.band_symmetry = [list(np.asarray(d).reshape(-1))
-                                     for d in band_symmetry]
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = [float(n) for n in content]
     declaration.band_tolerance = config["band_tolerance"]
     declaration.occupation_order = cob.OccupationOrder.AscendingRealPart
     declaration.maximum_iterations = config["mean_field_iterations"]
     declaration.tolerance = config["mean_field_tolerance"]
-    declaration.geometry = relaxation_declaration(config)
+    geometry = relaxation_declaration(config)
+    if spacetime is not None:
+        share_sheet_geometry(geometry, spacetime)
+    declaration.geometry = geometry
     return declaration
 
 
@@ -1070,9 +1141,9 @@ def rotation_averaged_many_body(operator, actions, frame, dual):
     return total / len(actions)
 
 
-def relax_content(content, kappa, beta, config, actions):
-    """Steps 1-2 for one content: a fresh host relaxed to self-consistency,
-    the carried density filling the bands of the T-averaged operator."""
+def relax_content(content, kappa, beta, config):
+    """Steps 1-2 for one content: a fresh host relaxed to self-consistency as
+    one shared base field, the carried density filling the bands of h_1."""
     spacetime = build_host(config["edge_squared"], config.get("host_cell"))
     declaration = action_declaration(spacetime, kappa, beta,
                                      config["regge_hinges"],
@@ -1081,7 +1152,7 @@ def relax_content(content, kappa, beta, config, actions):
                       list(declaration.reference_lengths))
     action = cob.JointAction(spacetime, declaration)
     solve = cob.SelfConsistentMeanField(
-        action, mean_field_declaration(content, config, actions))
+        action, mean_field_declaration(content, config, spacetime))
     report = solve.solve()
     return spacetime, solve.action, report
 
@@ -1112,13 +1183,174 @@ def _block_scalar(in_frame):
     return energies, float(np.linalg.norm(rest) / np.linalg.norm(in_frame))
 
 
+#: What a content names under ruling (a), recorded with every content.
+CONTENT_MEANING = (
+    "n_b quarks in band b of the covariant operator h_1 (bands of degenerate "
+    "eigenvalues in ascending order of real part, "
+    "OccupationOrder.AscendingRealPart); the carried density is "
+    "Gamma = sum_b (n_b / r_b) P_b over the Riesz projectors P_b of h_1. On "
+    "the monopole host the bands of h_1 are simple on each sheet, so each "
+    "band is one mode per sheet (rank 3), not a spin doublet; how the "
+    "occupied bands decompose into the doublets 2, 2', 2'' of the T-averaged "
+    "operator is recorded as 'spin_decomposition'")
+
+
+def band_projectors(operator, tolerance):
+    """The bands of an operator as the band rule groups them: eigenvalues in
+    ascending order of real part, consecutive ones within ``tolerance``
+    relative to their size in one band, and each band's Riesz projector
+    V_b (V^-1)_b. Returns (eigenvalues, projector) per band."""
+    values, vectors = np.linalg.eig(operator)
+    order = sorted(range(len(values)), key=lambda k: values[k].real)
+    inverse = np.linalg.inv(vectors)
+    groups, current = [], [order[0]]
+    for previous, k in zip(order, order[1:]):
+        if abs(values[k] - values[previous]) > tolerance * max(
+                1.0, abs(values[previous])):
+            groups.append(current)
+            current = [k]
+        else:
+            current.append(k)
+    groups.append(current)
+    return [(values[g], vectors[:, g] @ inverse[g, :]) for g in groups]
+
+
+def doublet_projectors(frame, dual, trialities):
+    """The projector onto each doublet 2, 2', 2'' of the T-averaged operator,
+    times the sheets: the isotypic components of the declared projective
+    action D_1(g), read off the aligned frame (columns (2 c + s) * 3 + t of
+    carrier c), keyed by the doublet's Z_3 label."""
+    out = {}
+    for c, t in enumerate(trialities):
+        columns = [(2 * c + s) * SHEETS + sheet for s in range(2)
+                   for sheet in range(SHEETS)]
+        out[IRREP_NAMES[t]] = frame[:, columns] @ dual[columns, :]
+    return out
+
+
+def spin_decomposition(carrier, covariance, content, frame, dual, trialities,
+                       tolerance):
+    """The spin content of the occupied state, read on the T-averaged operator
+    (WP v17 §9 line 506) after the covariance was built from h_1 (ruling (a)).
+
+    * ``occupied_bands``: for every band b of h_1 the content occupies, its
+      rank r_b, its eigenvalues, and its overlap with each doublet d of
+      h-bar_1, tr(P_b Pbar_d) / r_b (complex, because P_b is a Riesz
+      projector of a non-normal operator; the three overlaps sum to one);
+    * ``occupied_state``: the number of quarks in each doublet,
+      tr(Gamma Pbar_d), which sums to the number of quarks;
+    * ``commutator``: ||[Gamma, h_1]|| / (||Gamma|| ||h_1||), zero to rounding
+      when Gamma is built from the bands of h_1."""
+    bands = band_projectors(carrier, tolerance)
+    doublets = doublet_projectors(frame, dual, trialities)
+    occupied = []
+    for b, n in enumerate(content):
+        if n == 0 or b >= len(bands):
+            continue
+        values, projector = bands[b]
+        rank = len(values)
+        occupied.append({
+            "band": b, "occupation": int(n), "rank": rank,
+            "eigenvalues": [complex(v) for v in values],
+            "overlap": {name: complex(np.trace(projector @ d) / rank)
+                        for name, d in doublets.items()},
+        })
+    commutator = covariance @ carrier - carrier @ covariance
+    return {
+        "band_ranks": [len(v) for v, _ in bands],
+        "occupied_bands": occupied,
+        "occupied_state": {name: complex(np.trace(covariance @ d))
+                           for name, d in doublets.items()},
+        "commutator": float(np.linalg.norm(commutator)
+                            / (np.linalg.norm(covariance)
+                               * np.linalg.norm(carrier))),
+    }
+
+
+_DOUBLET_SECTORS = {}
+
+
+def doublet_sectors(doublet_content, trialities):
+    """The colour-singlet, one-quark-per-sheet spin sectors of a doublet
+    content (n_2, n_2', n_2''): the carrier content in the aligned frame's
+    carrier order, the total triality, and the sectors by total spin. They
+    depend on the declared frame only, so they are formed once."""
+    carrier_of = {IRREP_NAMES[t]: c for c, t in enumerate(trialities)}
+    if sorted(carrier_of.values()) != [0, 1, 2]:
+        raise RuntimeError("the aligned frame's trialities %s are not the "
+                           "three Z_3 characters" % (trialities,))
+    carrier_content = [0, 0, 0]
+    for name, n in zip(IRREP_NAMES, doublet_content):
+        carrier_content[carrier_of[name]] = int(n)
+    key = tuple(carrier_content)
+    if key not in _DOUBLET_SECTORS:
+        states, _ = singlet_states(carrier_content)
+        _DOUBLET_SECTORS[key] = spin_sectors(states)[0]
+    triality = sum(n * t for n, t in zip(carrier_content, trialities)) % 3
+    return carrier_content, triality, _DOUBLET_SECTORS[key]
+
+
+def sector_entry(j2, triality, sector, operators):
+    """One spin sector's reads: its restriction to 2T, and for each named
+    many-body operator the poles of the compressed block, the lowest pole's
+    spin and colour certificates."""
+    basis = occupation_basis()
+    spins = edge_spin_matrices()
+    irreps = restriction(j2, triality)
+    entry = {
+        "dimension": int(sector.shape[1]),
+        "total_triality": int(triality),
+        "restriction_to_2T": irreps,
+        "nucleon_reading": "2" in irreps,
+        "delta_reading": sorted(irreps) == sorted(["2'", "2''"]),
+        "tetrahedral_ambiguity": (
+            "on a tetrahedral support spin 1/2 with triality and half of "
+            "spin 3/2 are indistinguishable (WP line 499): this sector "
+            "restricts to %s" % " + ".join(irreps)),
+    }
+    for name, operator in operators:
+        block, leakage, read = sector_poles(operator, sector)
+        poles = [complex(p) for p in read.poles]
+        lowest = min(poles, key=lambda p: (p.real, p.imag)) if poles else None
+        # the lowest pole's right and left eigenvectors, for the spin and
+        # colour certificates
+        values, right = np.linalg.eig(block)
+        k = int(np.argmin(np.abs(values - lowest))) if lowest is not None \
+            else 0
+        values_left, left = np.linalg.eig(block.T)
+        kl = int(np.argmin(np.abs(values_left - values[k])))
+        right_state = to_fock(sector @ right[:, k], basis)
+        left_state = to_fock(left_inverse(sector).T @ left[:, kl], basis)
+        spin = obs.SharpSpin.read(spins, right_state, left_state, j2,
+                                  DECLARED_CERTIFICATE_TOLERANCE)
+        casimir = np.linalg.norm(colour_casimir(right_state)) / \
+            np.linalg.norm(right_state)
+        entry[name] = {
+            "poles": poles,
+            "multiplicity": [int(m) for m in read.multiplicity],
+            "lowest_pole": lowest,
+            "failed_certificates": list(read.failed_certificates),
+            "zero_count_defect": float(read.zero_count_defect),
+            "continuation_movement": [float(x) for x in
+                                      read.continuation_movement],
+            "contour": [complex(read.centre), float(read.radius)],
+            "compression_leakage": leakage,
+            "sharp_spin": bool(spin.sharp),
+            "spin_right_residual": float(spin.right_residual),
+            "spin_left_residual": float(spin.left_residual),
+            "spin_expectation": complex(spin.expectation),
+            "determinant_count": int(spin.determinant_count),
+            "colour_casimir_residual": float(casimir),
+        }
+    return entry
+
+
 def evaluate_content(content, kappa, beta, config, alignment):
     """One content at one scan point: relaxation, recursion, quark conditions,
     states, spin, operators and poles."""
     started = time.time()
     declared_actions = rotation_action([monopole_support()] * SHEETS)
-    spacetime, action, report = relax_content(content, kappa, beta, config,
-                                              declared_actions)
+    spacetime, action, report = relax_content(content, kappa, beta, config)
     carrier = matrix(action.carrier_operator())
 
     # The spin is read with the canonical projective action D_1(g) of the
@@ -1137,9 +1369,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
     averaged = rotation_averaged(carrier, actions)
     band_energies, averaged_residual = _block_scalar(dual @ averaged @ frame)
     _, covariant_residual = _block_scalar(dual @ carrier @ frame)
-    carrier_of_band = [int(c) for c in
-                       np.argsort([e.real for e in band_energies])]
     trialities = alignments[0]["trialities"]
+    spin = spin_decomposition(carrier, matrix(action.declaration.covariance),
+                              content, frame, dual, trialities,
+                              config["band_tolerance"])
 
     # the quartic's ingredients, on h_1 itself: the retained fluctuations
     # (the squared lengths, and the link phases unless only the lengths are
@@ -1182,67 +1415,24 @@ def evaluate_content(content, kappa, beta, config, alignment):
                                                dual) + \
         constant * np.eye(dimension)
 
-    # states of the content, by carrier (the content is in band order)
-    carrier_content = [0, 0, 0]
-    for band, n in enumerate(content):
-        carrier_content[carrier_of_band[band]] = n
-    triality = sum(n * t for n, t in zip(carrier_content, trialities)) % 3
-    states, labels = singlet_states(carrier_content)
-    sectors, j2_values = spin_sectors(states)
-    basis = occupation_basis()
-    spins = edge_spin_matrices()
-
-    sector_reads = {}
-    for j2, sector in sectors.items():
-        irreps = restriction(j2, triality)
-        entry = {
-            "dimension": int(sector.shape[1]),
+    # the poles of the colour-singlet three-quark sectors of h-bar_1, for
+    # every doublet content (n_2, n_2', n_2''): a content of this driver names
+    # occupations of the bands of h_1, which are not doublets, so the sectors
+    # are read for every doublet content and labelled by it
+    doublet_reads = []
+    for doublet_content in contents():
+        sector_reads = {}
+        carrier_content, triality, sectors = doublet_sectors(doublet_content,
+                                                             trialities)
+        for j2, sector in sectors.items():
+            sector_reads[j2] = sector_entry(j2, triality, sector, (
+                ("quasi_free", quasi_free), ("with_quartic", with_quartic)))
+        doublet_reads.append({
+            "doublet_content": list(doublet_content),
+            "carrier_content": carrier_content,
             "total_triality": int(triality),
-            "restriction_to_2T": irreps,
-            "nucleon_reading": "2" in irreps,
-            "delta_reading": sorted(irreps) == sorted(["2'", "2''"]),
-            "tetrahedral_ambiguity": (
-                "on a tetrahedral support spin 1/2 with triality and half of "
-                "spin 3/2 are indistinguishable (WP line 499): this sector "
-                "restricts to %s" % " + ".join(irreps)),
-        }
-        for name, operator in (("quasi_free", quasi_free),
-                               ("with_quartic", with_quartic)):
-            block, leakage, read = sector_poles(operator, sector)
-            poles = [complex(p) for p in read.poles]
-            lowest = min(poles, key=lambda p: (p.real, p.imag)) \
-                if poles else None
-            # the lowest pole's right and left eigenvectors, for the spin
-            # and colour certificates
-            values, right = np.linalg.eig(block)
-            k = int(np.argmin(np.abs(values - lowest))) if lowest is not None \
-                else 0
-            values_left, left = np.linalg.eig(block.T)
-            kl = int(np.argmin(np.abs(values_left - values[k])))
-            right_state = to_fock(sector @ right[:, k], basis)
-            left_state = to_fock(left_inverse(sector).T @ left[:, kl], basis)
-            spin = obs.SharpSpin.read(spins, right_state, left_state, j2,
-                                      DECLARED_CERTIFICATE_TOLERANCE)
-            casimir = np.linalg.norm(colour_casimir(right_state)) / \
-                np.linalg.norm(right_state)
-            entry[name] = {
-                "poles": poles,
-                "multiplicity": [int(m) for m in read.multiplicity],
-                "lowest_pole": lowest,
-                "failed_certificates": list(read.failed_certificates),
-                "zero_count_defect": float(read.zero_count_defect),
-                "continuation_movement": [float(x) for x in
-                                          read.continuation_movement],
-                "contour": [complex(read.centre), float(read.radius)],
-                "compression_leakage": leakage,
-                "sharp_spin": bool(spin.sharp),
-                "spin_right_residual": float(spin.right_residual),
-                "spin_left_residual": float(spin.left_residual),
-                "spin_expectation": complex(spin.expectation),
-                "determinant_count": int(spin.determinant_count),
-                "colour_casimir_residual": float(casimir),
-            }
-        sector_reads[j2] = entry
+            "sectors": {str(k): v for k, v in sector_reads.items()},
+        })
 
     recursion = recursion_read(spacetime, config)
     quark = quark_conditions(spacetime, alignment, recursion,
@@ -1250,9 +1440,9 @@ def evaluate_content(content, kappa, beta, config, alignment):
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
+        "content_meaning": CONTENT_MEANING,
         "holonomy": config["holonomy"],
         "elimination": config["elimination"],
-        "carrier_content": carrier_content,
         "seconds": time.time() - started,
         "relaxation": {
             "converged": bool(report.converged),
@@ -1261,6 +1451,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "purity_defect": float(report.purity_defect),
             "spectral_gap": float(report.spectral_gap),
             "band_ranks": [int(r) for r in report.band_ranks],
+            "band_operator": "h_1 (the covariant operator itself)",
+            "shared_sheet_geometry": True,
             "iterations": len(report.steps),
             "action": complex(report.action),
             "terms": {name: complex(getattr(action, name + "_term")())
@@ -1290,6 +1482,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "occupied_energy": complex(report.occupied_energy),
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
+            "ward_current_divergence": float(np.max(np.abs(np.asarray(
+                action.ward_current_divergence())))),
             "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
             "holonomy_zero_distance": float(action.holonomy_zero_distance()),
         },
@@ -1300,11 +1494,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
             [complex(v) for v in np.linalg.eigvals(averaged)],
             key=lambda v: (v.real, v.imag)),
         "band_energies": band_energies,
-        "carrier_of_band": carrier_of_band,
         "trialities": trialities,
+        "spin_decomposition": spin,
         "symmetry_residual": covariant_residual,
         "averaged_symmetry_residual": averaged_residual,
-        "j2_values": j2_values,
         "quartic": {
             "constant": complex(constant),
             "stiffness_asymmetry": float(quartic_read.stiffness_asymmetry),
@@ -1315,7 +1508,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "truncation": truncation,
             "fluctuations": fluctuations["record"],
         },
-        "sectors": {str(k): v for k, v in sector_reads.items()},
+        "doublet_reads": doublet_reads,
         "recursion": recursion,
         "quark_conditions": quark,
     }
@@ -1473,7 +1666,7 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
             record = {"content": list(content),
                       "holonomy": config["holonomy"],
                       "elimination": config["elimination"],
-                      "failed": str(error), "sectors": {}}
+                      "failed": str(error), "doublet_reads": []}
         records.append(record)
         if on_content is not None:
             on_content(record)
@@ -1485,20 +1678,47 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
             "ratios": ratios(records), "pole_table": pole_table(records)}
 
 
+def sector_rows(records):
+    """Every (content, doublet content) pair of a list of content records,
+    with the doublet content's sectors: the rows the pole table and the
+    ratios are taken over."""
+    for record in records:
+        for read in record.get("doublet_reads", []):
+            yield record["content"], read["doublet_content"], read["sectors"]
+
+
+def lowest_poles(record, name):
+    """Per spin, the lowest pole of one content record over its doublet
+    contents in the named column ("quasi_free" or "with_quartic"), with the
+    doublet content that supplies it; None for a spin no sector carries."""
+    out = {}
+    for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
+        best = None
+        for _, doublet_content, sectors in sector_rows([record]):
+            entry = sectors.get(j2)
+            pole = entry[name]["lowest_pole"] if entry else None
+            if pole is not None and (best is None
+                                     or pole.real < best[0].real):
+                best = (pole, doublet_content)
+        out[j2] = best
+    return out
+
+
 def pole_table(records):
-    """Per column (quasi-free, with the quartic) and per spin, every content's
-    lowest pole in ascending order of real part, so the content that supplies
-    the nucleon and the Delta pole, and any tie between spins inside one
-    content, can be read off the record."""
+    """Per column (quasi-free, with the quartic) and per spin, the lowest
+    pole of every (content, doublet content) pair in ascending order of real
+    part, so the pair that supplies the nucleon and the Delta pole, and any
+    tie between spins inside one pair, can be read off the record."""
     table = {}
     for name in ("quasi_free", "with_quartic"):
         table[name] = {}
         for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
             rows = []
-            for record in records:
-                entry = record["sectors"].get(j2)
+            for content, doublet_content, sectors in sector_rows(records):
+                entry = sectors.get(j2)
                 if entry and entry[name]["lowest_pole"] is not None:
-                    rows.append({"content": record["content"],
+                    rows.append({"content": content,
+                                 "doublet_content": doublet_content,
                                  "pole": entry[name]["lowest_pole"],
                                  "restriction_to_2T":
                                      entry.get("restriction_to_2T")})
@@ -1521,8 +1741,8 @@ def _pair(s_n, s_d, extra):
 
 
 def ratios(records):
-    """The nucleon and Delta poles over the contents, and their ratios against
-    the target, in two pairings.
+    """The nucleon and Delta poles over every (content, doublet content)
+    pair, and their ratios against the target, in two pairings.
 
     * By spin: the lowest sharp spin-1/2 pole over the lowest sharp spin-3/2
       pole. Each candidate carries its restriction to 2T, and the Delta
@@ -1536,14 +1756,14 @@ def ratios(records):
     out = {}
     for name in ("quasi_free", "with_quartic"):
         by_spin, nucleon_reading, delta_reading = {}, None, None
-        for record in records:
+        for content, doublet_content, sectors in sector_rows(records):
             for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
-                entry = record["sectors"].get(j2)
+                entry = sectors.get(j2)
                 if not entry or entry[name]["lowest_pole"] is None:
                     continue
                 pole = entry[name]["lowest_pole"]
-                candidate = (pole, record["content"], j2,
-                             entry.get("restriction_to_2T"))
+                candidate = (pole, content, j2,
+                             entry.get("restriction_to_2T"), doublet_content)
                 if j2 not in by_spin or pole.real < by_spin[j2][0].real:
                     by_spin[j2] = candidate
                 if entry.get("nucleon_reading") and (
@@ -1561,6 +1781,8 @@ def ratios(records):
             restriction_d = d[3] or []
             result["by_spin"] = _pair(n[0], d[0], {
                 "nucleon_content": n[1], "delta_content": d[1],
+                "nucleon_doublet_content": n[4],
+                "delta_doublet_content": d[4],
                 "nucleon_restriction": n[3], "delta_restriction": d[3],
                 "delta_is_a_delta_reading":
                     sorted(restriction_d) == sorted(["2'", "2''"]),
@@ -1572,8 +1794,10 @@ def ratios(records):
             result["by_2T_reading"] = _pair(
                 nucleon_reading[0], delta_reading[0], {
                     "nucleon_content": nucleon_reading[1],
+                    "nucleon_doublet_content": nucleon_reading[4],
                     "nucleon_spin_j_j_plus_1": float(nucleon_reading[2]),
                     "delta_content": delta_reading[1],
+                    "delta_doublet_content": delta_reading[4],
                     "delta_spin_j_j_plus_1": float(delta_reading[2]),
                 })
         else:
@@ -1607,6 +1831,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "newton_iterations": 40,
         "newton_tolerance": 1e-11,
         "jacobian_radius": 1e-4,
+        "rank_tolerance": DECLARED_RANK_TOLERANCE,
         "mean_field_iterations": 40,
         "mean_field_tolerance": 1e-9,
         "target_mass_ratio": TARGET_MASS_RATIO,
@@ -1762,12 +1987,11 @@ def draw_frame(figure, frames, index):
     names, half, three = [], [], []
     for record in point["contents"]:
         names.append("".join(str(n) for n in record["content"]))
+        lowest = lowest_poles(record, "quasi_free")
         for store, key in ((half, str(SPIN_HALF)),
                            (three, str(SPIN_THREE_HALVES))):
-            entry = record["sectors"].get(key)
-            store.append(entry["quasi_free"]["lowest_pole"].real
-                         if entry and entry["quasi_free"]["lowest_pole"]
-                         is not None else np.nan)
+            store.append(lowest[key][0].real if lowest[key] is not None
+                         else np.nan)
     positions = np.arange(len(names))
     right.plot(positions, half, "o", markersize=8, color="#1baf7a",
                label="spin 1/2")
@@ -1775,7 +1999,8 @@ def draw_frame(figure, frames, index):
                label="spin 3/2", markerfacecolor="none", markeredgewidth=2)
     right.set_xticks(positions)
     right.set_xticklabels(names, fontsize=7)
-    right.set_xlabel("content (quarks per band, ascending band)", color=INK)
+    right.set_xlabel("content (quarks per band of h_1, ascending band)",
+                     color=INK)
     right.set_ylabel("Re s (quasi-free)", color=INK)
     right.set_title("poles at kappa=%g, beta=%g" % (point["kappa"],
                                                    point["beta"]),

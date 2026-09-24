@@ -277,7 +277,7 @@ def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
     def evaluate(content, kappa, beta, config, alignment):
         if tuple(content) == (0, 3, 0):
             raise ValueError("band 1 has rank 2")
-        return {"content": list(content), "sectors": {}}
+        return {"content": list(content), "doublet_reads": []}
     monkeypatch.setattr(bp, "evaluate_content", evaluate)
     config = bp.default_config([0.5], [0.5],
                                selected_contents=[(0, 3, 0), (1, 1, 1)])
@@ -299,7 +299,9 @@ def test_the_elimination_rule_is_declared_and_recorded():
 
 
 def test_ratios_are_taken_on_the_lowest_poles():
-    def record(content, sectors):
+    def record(content, sectors, doublet_content=(1, 1, 1)):
+        """A content record with one doublet read: a content names bands of
+        h_1, the sectors are read per doublet content of h-bar_1."""
         out = {}
         for key, (value, irreps) in sectors.items():
             entry = {"lowest_pole": value}
@@ -307,10 +309,11 @@ def test_ratios_are_taken_on_the_lowest_poles():
                         "restriction_to_2T": irreps,
                         "nucleon_reading": "2" in irreps,
                         "delta_reading": sorted(irreps) == ["2'", "2''"]}
-        return {"content": content, "sectors": out}
+        return {"content": content, "doublet_reads": [
+            {"doublet_content": list(doublet_content), "sectors": out}]}
     half, three = str(bp.SPIN_HALF), str(bp.SPIN_THREE_HALVES)
     out = bp.ratios([
-        record([3, 0, 0], {three: (9.0 + 0j, ["2'", "2''"])}),
+        record([3, 0, 0], {three: (9.0 + 0j, ["2'", "2''"])}, (0, 2, 1)),
         record([2, 1, 0], {half: (10.0 + 0j, ["2'"]),
                            three: (10.0 + 0j, ["2''", "2"])}),
         record([1, 1, 1], {half: (12.0 + 0j, ["2"]),
@@ -318,6 +321,8 @@ def test_ratios_are_taken_on_the_lowest_poles():
     by_spin = out["quasi_free"]["by_spin"]
     assert by_spin["nucleon_content"] == [2, 1, 0]
     assert by_spin["delta_content"] == [3, 0, 0]
+    assert by_spin["delta_doublet_content"] == [0, 2, 1]
+    assert by_spin["nucleon_doublet_content"] == [1, 1, 1]
     assert by_spin["pole_ratio"] == pytest.approx(10.0 / 9.0)
     assert by_spin["delta_is_a_delta_reading"]
     assert not by_spin["delta_ambiguous_with_spin_half"]
@@ -429,10 +434,11 @@ def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
     """A deterministic stand-in for one scan point, so the live path is tested
     without the relaxation's cost; the claim under test is that the live
     worker runs the same `drive` and returns the same result."""
-    record = {"content": [3, 0, 0], "seconds": 0.0,
-              "sectors": {str(bp.SPIN_THREE_HALVES): {
-                  "quasi_free": {"lowest_pole": complex(kappa, beta)},
-                  "with_quartic": {"lowest_pole": complex(beta, kappa)}}}}
+    record = {"content": [3, 0, 0], "seconds": 0.0, "doublet_reads": [{
+        "doublet_content": [0, 2, 1],
+        "sectors": {str(bp.SPIN_THREE_HALVES): {
+            "quasi_free": {"lowest_pole": complex(kappa, beta)},
+            "with_quartic": {"lowest_pole": complex(beta, kappa)}}}}]}
     return {"kappa": kappa, "beta": beta, "contents": [record],
             "ratios": bp.ratios([record])}
 
@@ -513,11 +519,12 @@ def test_the_pole_table_names_the_content_of_each_lowest_pole():
     half, three = str(bp.SPIN_HALF), str(bp.SPIN_THREE_HALVES)
 
     def record(content, poles):
-        return {"content": content, "sectors": {
-            key: {"quasi_free": {"lowest_pole": value},
-                  "with_quartic": {"lowest_pole": value},
-                  "restriction_to_2T": ["2"]}
-            for key, value in poles.items()}}
+        return {"content": content, "doublet_reads": [{
+            "doublet_content": [1, 1, 1], "sectors": {
+                key: {"quasi_free": {"lowest_pole": value},
+                      "with_quartic": {"lowest_pole": value},
+                      "restriction_to_2T": ["2"]}
+                for key, value in poles.items()}}]}
 
     table = bp.pole_table([record([2, 1, 0], {half: 5.0 + 0j, three: 5.0 + 0j}),
                            record([3, 0, 0], {three: 4.0 + 0j})])
