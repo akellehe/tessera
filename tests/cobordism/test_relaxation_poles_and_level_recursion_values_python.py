@@ -287,20 +287,8 @@ def test_an_enclosed_interior_pole_is_refused_by_name():
     assert list(read.poles) == []
 
 
-NEAR_DEGENERATE_DEFECT = pytest.mark.xfail(strict=True, reason=(
-    "BoundStatePole.poles refines a two-zero cluster of splitting 1e-5 to "
-    "1e-7 by Newton steps that leave the contour and converge to the "
-    "excluded eigenvalue 5: it reports one pole of multiplicity 2 at about "
-    "5.00 to 5.14 (outside the circle of radius 1 about 2), with "
-    "'continued_pole' 2 and no failed certificate"))
-
-
 @pytest.mark.parametrize("separation", [
-    1e-2, 1e-4,
-    pytest.param(1e-5, marks=NEAR_DEGENERATE_DEFECT),
-    pytest.param(1e-6, marks=NEAR_DEGENERATE_DEFECT),
-    pytest.param(1e-7, marks=NEAR_DEGENERATE_DEFECT),
-    1e-8, 1e-10])
+    1e-2, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-10])
 def test_a_near_degenerate_pair_is_read_inside_its_contour(separation):
     """diag(2, 2 + s, 5) inside the circle of radius 1 about 2 encloses
     exactly the two zeros 2 and 2 + s. Whatever the reader resolves, every
@@ -314,6 +302,22 @@ def test_a_near_degenerate_pair_is_read_inside_its_contour(separation):
     total = sum(m * p for m, p in zip(read.multiplicity, poles))
     assert sum(read.multiplicity) == 2
     assert total / 2 == pytest.approx(2 + separation / 2, abs=1e-6)
+    assert list(read.failed_certificates) == []
+
+
+@pytest.mark.parametrize("separation", [1e-5, 1e-6, 1e-7])
+def test_an_unresolved_pair_is_read_as_its_local_mean(separation):
+    """A pair split below the Hankel pencil's resolution is one moment-method
+    root; its small contour counts two zeros, and the reader reports one pole
+    of multiplicity 2 at the mean of the pair, 2 + s / 2, to 1e-12, read as
+    the first moment over the count on that contour, and runs no Newton step
+    on it (NaN)."""
+    read = _poles(np.diag([2, 2 + separation, 5]), np.eye(3), [0, 1, 2],
+                  2.0, 1.0)
+    assert list(read.multiplicity) == [2]
+    assert complex(read.poles[0]) == pytest.approx(2 + separation / 2,
+                                                   abs=1e-12)
+    assert math.isnan(read.newton_step[0])
 
 
 # ---------------------------------------------- the run's tick-0 recursion

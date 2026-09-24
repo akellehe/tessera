@@ -388,35 +388,111 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
     return cfg.localRadiusFraction * reference;
   };
 
-  std::vector<std::size_t> multiplicity(roots.size(), 1);
+  // 3. each root's multiplicity and local mean, on a small contour that
+  //    encloses it alone: the argument principle there gives the number of
+  //    zeros m_0 the disc holds and the first moment m_1, so m_1 / m_0 is the
+  //    mean of those zeros. Both are well-conditioned contour integrals, so
+  //    the local read does not inherit the ill-conditioning of the Hankel
+  //    pencil on a tight cluster.
+  std::vector<double> localRadius(roots.size(), 0.0);
+  for (std::size_t index = 0; index < roots.size(); ++index)
+    localRadius[index] = localRadiusFor(index);
+  std::vector<std::size_t> multiplicity(roots.size(), 0);
+  std::vector<complexd> localMean = roots;
   for (std::size_t index = 0; index < roots.size(); ++index) {
-    const double local = localRadiusFor(index);
+    const double local = localRadius[index];
     if (!(local > 0.0)) continue;
     const MomentRead around = momentsOn(A, M, partition, roots[index], local,
-                                        cfg.contourNodes, 0, cfg.rankTolerance);
+                                        cfg.contourNodes, 1, cfg.rankTolerance);
     if (!around.usable) continue;
     const double count = std::round(around.moments[0].real());
-    if (count >= 1.0) multiplicity[index] = static_cast<std::size_t>(count);
+    if (count < 1.0 ||
+        std::abs(around.moments[0] - complexd{count, 0.0}) >
+            cfg.zeroCountTolerance)
+      continue;
+    multiplicity[index] = static_cast<std::size_t>(count);
+    localMean[index] = roots[index] + local * around.moments[1] / count;
   }
 
-  // 4. Newton on D_C through the logarithmic derivative, with the step scaled
-  //    by the multiplicity so a multiple root converges like a simple one.
+  // 4. the refinement. A zero of multiplicity one is refined by Newton on
+  //    D_C through the logarithmic derivative, started at its local mean and
+  //    confined to its local disc: an iterate that leaves the disc has left
+  //    the region the argument principle certified to hold exactly one zero,
+  //    so the refinement is refused by name and the local mean is kept. A
+  //    zero of higher multiplicity is reported as the local mean of its
+  //    cluster, which is the zero itself when it is exactly multiple and the
+  //    centroid of the enclosed zeros when it is a cluster the quadrature
+  //    does not resolve; Newton is not run on it, because Newton with a
+  //    multiplicity-scaled step overshoots a split cluster.
   std::vector<double> lastStep(roots.size(), kNaN);
   for (std::size_t index = 0; index < roots.size(); ++index) {
-    complexd point = roots[index];
+    if (multiplicity[index] == 0) continue;
+    const complexd start = localMean[index];
+    roots[index] = start;
+    if (multiplicity[index] > 1) continue;
+    complexd point = start;
+    bool left = false;
     for (int step = 0; step < cfg.maxNewtonSteps; ++step) {
       const ResponseAtShift shift =
           responseAtShift(A, M, partition, point, cfg.rankTolerance);
       const complexd slope = logarithmicDerivativeOf(shift);
-      if (!std::isfinite(slope.real()) || !std::isfinite(slope.imag())) break;
+      if (!std::isfinite(slope.real()) || !std::isfinite(slope.imag())) {
+        // D_C'/D_C is not finite at a zero of D_C: the point is the zero to
+        // rounding, and the Newton step there is zero.
+        if (!shift.interiorSingular) lastStep[index] = 0.0;
+        break;
+      }
       if (std::abs(slope) == 0.0) break;
-      const complexd correction =
-          static_cast<double>(multiplicity[index]) / slope;
-      point -= correction;
+      const complexd correction = 1.0 / slope;
+      const complexd next = point - correction;
+      if (std::abs(next - start) >= localRadius[index]) {
+        left = true;
+        break;
+      }
+      point = next;
       lastStep[index] = std::abs(correction);
       if (lastStep[index] <= cfg.newtonTolerance * radius) break;
     }
+    if (left) {
+      nameFailure(read.failedCertificates, "newton-left-local-contour");
+      lastStep[index] = kNaN;
+      continue;
+    }
     roots[index] = point;
+  }
+
+  // The three reads must agree: every moment-method root must hold a zero on
+  // its own small contour, the local counts must add up to the
+  // argument-principle count on the declared contour, and every reported
+  // zero must lie inside that contour. A root that fails the first or the
+  // last is not reported; each disagreement is named.
+  {
+    std::vector<complexd> keptRoots;
+    std::vector<std::size_t> keptMultiplicity;
+    std::vector<double> keptStep;
+    std::vector<double> keptRadius;
+    std::size_t total = 0;
+    for (std::size_t index = 0; index < roots.size(); ++index) {
+      if (multiplicity[index] == 0) {
+        nameFailure(read.failedCertificates, "moment-root-without-zero");
+        continue;
+      }
+      total += multiplicity[index];
+      if (!(std::abs(roots[index] - centre) < radius)) {
+        nameFailure(read.failedCertificates, "pole-outside-contour");
+        continue;
+      }
+      keptRoots.push_back(roots[index]);
+      keptMultiplicity.push_back(multiplicity[index]);
+      keptStep.push_back(lastStep[index]);
+      keptRadius.push_back(localRadius[index]);
+    }
+    if (total != read.zeros)
+      nameFailure(read.failedCertificates, "multiplicity-count-mismatch");
+    roots = std::move(keptRoots);
+    multiplicity = std::move(keptMultiplicity);
+    lastStep = std::move(keptStep);
+    localRadius = std::move(keptRadius);
   }
 
   // 5. the reported quantities at each refined root, read on one small
@@ -439,7 +515,7 @@ BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
   const auto interfaceOrder =
       static_cast<Eigen::Index>(partition.interface.size());
   for (std::size_t index = 0; index < roots.size(); ++index) {
-    const double local = localRadiusFor(index);
+    const double local = localRadius[index];
     Eigen::MatrixXcd accumulated =
         Eigen::MatrixXcd::Zero(interfaceOrder, interfaceOrder);
     complexd valueAtRoot{0.0, 0.0};
