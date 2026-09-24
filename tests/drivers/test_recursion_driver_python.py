@@ -199,6 +199,7 @@ def test_one_tick_on_the_host_grows_the_next_level(monkeypatch):
     config = R.default_config(tetrahedra=2)
     cells, z, links, _ = R.level_zero(config)
     record, following = R.tick(0, cells, z, links, config)
+    assert record["tick"] == 0
     assert record["relaxation"]["converged"]
     assert record["level"]["declared_monopole_numbers"] == [1, 1]
     assert record["level"]["monopole_numbers"] == [1, 1]

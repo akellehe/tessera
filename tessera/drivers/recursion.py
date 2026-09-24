@@ -753,8 +753,8 @@ def tick(index, cells, z, links, config):
     projector_agreement = []
     for part, fiber, library in zip(level.partition, stage["fibers"],
                                     library_projectors):
-        index = list(part)
-        block = library[np.ix_(index, index)]
+        coordinates = list(part)
+        block = library[np.ix_(coordinates, coordinates)]
         projector_agreement.append(float(
             np.linalg.norm(fiber["projector"] - block)
             / max(1.0, np.linalg.norm(block))))
