@@ -513,6 +513,21 @@ class TheTruncationIsDeclaredAndBoundedTest(unittest.TestCase):
             cob.HolonomyForm.Wilson)).holonomy_truncation()
         self.assertEqual(wilson.maximum_term_count, 0)
 
+    def test_the_series_reports_how_many_terms_it_carried(self):
+        """Near the unit circle the series carries the declared terms; far
+        from it more, until its own tail is below the tolerance."""
+        character = cob.VillainCharacter(0.5)
+        near = character.series(1.1 + 0.05j)
+        self.assertEqual(near.term_count, character.declared_term_count)
+        far = character.series(293.8 - 124.8j)
+        self.assertGreater(far.term_count, character.declared_term_count)
+
+    def test_the_first_tail_is_reported_beside_the_others(self):
+        spacetime = sphere3(phase=_flux)
+        read = cob.JointAction(spacetime, _declaration()).holonomy_truncation()
+        self.assertGreaterEqual(read.relative_first_tail, 0.0)
+        self.assertLess(read.relative_first_tail, 1e-14)
+
     def test_the_declaration_is_validated(self):
         spacetime = sphere3()
         with self.assertRaises(ValueError):

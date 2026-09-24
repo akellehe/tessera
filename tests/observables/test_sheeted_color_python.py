@@ -582,5 +582,29 @@ class TestColorSinglet(unittest.TestCase):
                 [c[:2] for c in colors])
 
 
+class TestBaseSymmetryAndConnectingSimplices(unittest.TestCase):
+    """A base symmetry acts on the sheeted carrier as D (x) I_k, in the mode
+    order base * k + sheet, so it commutes with every sheet operator; a
+    connecting simplex records the two sheets it joins and its weight."""
+
+    def test_the_base_symmetry_is_lifted_by_the_identity_on_the_sheets(
+            self) -> None:
+        generator = rng()
+        support = SheetedSupport(3, 4)
+        action = invertible(generator, 4)
+        lifted = np.asarray(support.baseSymmetryOperator(action))
+        np.testing.assert_allclose(lifted, np.kron(action, np.eye(3)),
+                                   atol=1e-14)
+        sheet = np.kron(np.eye(4), invertible(generator, 3))
+        self.assertLess(np.abs(lifted @ sheet - sheet @ lifted).max(), 1e-12)
+
+    def test_a_connecting_simplex_records_its_sheets(self) -> None:
+        simplex = ConnectingSimplex(0, 2, 0.5 - 0.25j)
+        self.assertEqual((simplex.sheet_a, simplex.sheet_b), (0, 2))
+        self.assertEqual(simplex.weight, 0.5 - 0.25j)
+        simplex.sheet_b = 1
+        self.assertEqual(simplex.sheet_b, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

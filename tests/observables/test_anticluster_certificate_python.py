@@ -168,6 +168,24 @@ class TestTheAntiClusterCertificate:
         assert orthogonal.coorientation == obs.EnclosingCoorientation.Undeclared
         assert not orthogonal.certified
 
+    def test_the_coorientation_tolerance_is_declared(self):
+        """An overlap with the supplied reference whose modulus does not
+        exceed the declared tolerance reads no direction: the same reference
+        that reads outward at the default tolerance reads undeclared when the
+        tolerance is raised above its overlap of modulus one."""
+        _, cov = kuhn_block(3, hollow=True)
+        outward = np.array(obs.EffectiveTopology.antiCluster(
+            cov, cavity_corners(), VOID_SCALE).enclosingSurface)
+        options = obs.AntiClusterOptions()
+        assert options.coorientationTolerance == pytest.approx(1e-12)
+        options.coorientationReference = outward
+        options.coorientationTolerance = 2.0
+        read = obs.EffectiveTopology.antiCluster(cov, cavity_corners(),
+                                                 VOID_SCALE, options)
+        assert read.coorientationOverlap == pytest.approx(1.0, rel=1e-9)
+        assert read.coorientation == obs.EnclosingCoorientation.Undeclared
+        assert not read.certified
+
     def test_the_interior_degree_is_declared(self):
         """The interior spectrum is read at a declared degree. Degree zero, the
         default, is the degree whose band carries the effective components; the

@@ -483,5 +483,40 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
             cob.SelfConsistentMeanField(action, _mean_field(occupied_modes=0))
 
 
+class TheStepAndReportFieldsTest(unittest.TestCase):
+    """What each step and the report carry beside the convergence numbers:
+    the step index, the occupied energy as the sum of the occupied
+    eigenvalues, the spectral gap to the first empty mode, and the inner
+    geometry solve's own verdict."""
+
+    def test_every_step_reports_its_energy_gap_and_geometry(self):
+        spacetime = sphere3(squared=lambda index: 1.0 + 0.02 * (index % 4))
+        action = cob.JointAction(
+            spacetime, _declaration(gravitational_weight=90.0,
+                                    matter_weight=1.0))
+        solver = cob.SelfConsistentMeanField(
+            action, _mean_field(occupied_modes=2, maximum_iterations=3,
+                                geometry_iterations=3))
+        report = solver.solve()
+        self.assertEqual([step.iteration for step in report.steps],
+                         list(range(len(report.steps))))
+        for step in report.steps:
+            self.assertAlmostEqual(
+                abs(step.occupied_energy - sum(step.occupied_eigenvalues)),
+                0.0, delta=1e-10 * abs(step.occupied_energy))
+            self.assertGreater(step.spectral_gap, 0.0)
+            self.assertIsInstance(step.geometry_converged, bool)
+            self.assertGreaterEqual(step.geometry_residual_norm, 0.0)
+            # no holonomy term, so no zero of the Villain weight to guard
+            self.assertEqual(step.geometry_zero_guard_damped_steps, 0)
+        last = report.steps[-1]
+        self.assertEqual(report.occupied_energy, last.occupied_energy)
+        self.assertEqual(report.spectral_gap, last.spectral_gap)
+        values = sorted(solver.action.carrier_eigenvalues(),
+                        key=lambda v: (v.real, v.imag))
+        self.assertAlmostEqual(report.spectral_gap,
+                               abs(values[2] - values[1]), places=8)
+
+
 if __name__ == "__main__":
     unittest.main()

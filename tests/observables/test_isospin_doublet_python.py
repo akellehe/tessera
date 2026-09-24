@@ -409,5 +409,113 @@ class TestIsospinAndCharge(unittest.TestCase):
         self.assertLess(np.linalg.norm(flavour0 @ plus - plus), 1e-8)
 
 
+class TestTheReportedFields(unittest.TestCase):
+    """The fields of the band, candidate, transport and whole reads, and the
+    thresholds of `IsospinDoubletConfig`."""
+
+    def setUp(self):
+        self.base, self.actions, _ = monopole_base()
+        self.op, self.sheet_of, self.base_of = flavoured(self.base)
+        self.op1, _, _ = flavoured(
+            self.base + 0.05 * symmetric_deformation(self.actions))
+        self.symmetry = lifted(self.actions)
+
+    def declared(self, frames=None, resolutions=True):
+        return declaration(
+            frames or [self.op, self.op1], self.sheet_of, self.base_of,
+            self.symmetry, True,
+            [padded_resolution(self.op, self.sheet_of, self.base_of,
+                               self.symmetry)] if resolutions else [])
+
+    def test_the_config_defaults(self):
+        config = obs.IsospinDoubletConfig()
+        self.assertEqual(config.min_frames, 2)
+        self.assertEqual(config.contour_nodes, 64)
+        self.assertGreater(config.track_overlap_threshold, 0.0)
+        self.assertLess(config.track_overlap_threshold, 1.0)
+        self.assertGreater(config.condition_number_cap, 1.0)
+        for name in ("grouping_tolerance", "min_relative_gap",
+                     "projector_tolerance", "invariance_tolerance",
+                     "commutant_tolerance", "transport_leakage_tolerance",
+                     "intertwining_tolerance"):
+            self.assertGreater(getattr(config, name), 0.0, msg=name)
+
+    def test_more_required_frames_than_supplied_leave_the_conditions_open(
+            self):
+        config = obs.IsospinDoubletConfig()
+        config.min_frames = 3
+        read = obs.IsospinDoublet.observe(self.declared(), config)
+        self.assertEqual(status(read, 1), NotEvaluable)
+        self.assertEqual(status(read, 2), NotEvaluable)
+
+    def test_a_band_read_reports_its_content(self):
+        read = obs.IsospinDoublet.observe(self.declared())
+        band = read.frames[0].bands[0]
+        self.assertAlmostEqual(band.center, np.mean(band.eigenvalues),
+                               places=12)
+        self.assertAlmostEqual(band.contour_center, band.center, places=12)
+        self.assertEqual(list(band.irreducible_dimensions), [2])
+        self.assertTrue(band.symmetry_declared)
+        self.assertLess(band.sheet_invariance_residual, 1e-12)
+        self.assertLess(band.symmetry_invariance_residual, 1e-12)
+        self.assertTrue(read.multiplicity_refinement_measured)
+
+    def test_a_candidate_reports_its_track_and_its_transports(self):
+        read = obs.IsospinDoublet.observe(self.declared())
+        candidate = read.candidates[0]
+        self.assertEqual(candidate.band_index, candidate.tracked_bands[0])
+        self.assertAlmostEqual(candidate.min_track_overlap, 1.0, places=10)
+        self.assertEqual(list(candidate.resolution_found), [True])
+        np.testing.assert_allclose(candidate.resolution_overlap, [1.0],
+                                   atol=1e-10)
+        np.testing.assert_allclose(candidate.lifetime_singular_values, 1.0,
+                                   atol=1e-10)
+        (step,) = candidate.transports
+        self.assertEqual((step.from_frame, step.to_frame), (0, 1))
+
+    def test_without_a_resolution_refinement_is_unmeasured(self):
+        read = obs.IsospinDoublet.observe(self.declared(resolutions=False))
+        self.assertFalse(read.multiplicity_refinement_measured)
+        for candidate in read.candidates:
+            self.assertEqual(list(candidate.resolution_found), [])
+
+    def test_a_declared_transfer_leaves_the_flavour_structure_unmeasured(
+            self):
+        """A nonempty transfer declares a map between two cell sets, which
+        share no symmetry action, so the intertwining of the flavour factor is
+        not measured and coherent transport is not evaluable; the empty
+        default is the identity between frames of one cell set."""
+        size = self.op.shape[0]
+        frames = [self.op, (self.op1, np.eye(size, dtype=complex))]
+        read = obs.IsospinDoublet.observe(self.declared(frames))
+        self.assertEqual(status(read, 1), Passed)
+        self.assertEqual(status(read, 2), NotEvaluable)
+        self.assertEqual(read.candidates[0].conditions[1].missing,
+                         ["flavour-structure-preserved"])
+        self.assertEqual(obs.IsospinFrame("x", self.op).transfer_from_previous
+                         .shape, (0, 0))
+
+    def test_a_zero_transfer_breaks_the_track(self):
+        size = self.op.shape[0]
+        frames = [self.op, (self.op1, np.zeros((size, size), dtype=complex))]
+        read = obs.IsospinDoublet.observe(self.declared(frames))
+        self.assertEqual(status(read, 2), Failed)
+
+    def test_member_occupations_are_read_from_the_density(self):
+        charges = obs.IsospinDoublet.observe(self.declared()).candidates[0] \
+            .charges
+        plus, minus = [np.asarray(p) for p in charges.member_projectors]
+        self.assertEqual(list(charges.member_occupations), [])
+        values, vectors = np.linalg.eigh((plus + plus.conj().T) / 2)
+        up = vectors[:, np.argsort(values)[::-1][:2]]
+        values, vectors = np.linalg.eigh((minus + minus.conj().T) / 2)
+        down = vectors[:, np.argsort(values)[::-1][:1]]
+        d = self.declared()
+        d.three_quark_density = up @ up.conj().T + down @ down.conj().T
+        charges = obs.IsospinDoublet.observe(d).candidates[0].charges
+        np.testing.assert_allclose(charges.member_occupations, [2.0, 1.0],
+                                   atol=1e-8)
+
+
 if __name__ == "__main__":
     unittest.main()

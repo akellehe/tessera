@@ -267,6 +267,67 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
         for index in range(2):
             self.assertAlmostEqual(read.separation[index], 1.0, places=8)
 
+    def test_the_declared_defaults(self):
+        config = cob.BoundStatePoleConfig()
+        self.assertEqual(config.max_zeros, 16)
+        self.assertEqual(config.max_newton_steps, 64)
+        self.assertEqual(config.newton_tolerance, 1e-13)
+        self.assertEqual(config.zero_count_tolerance, 1e-3)
+        self.assertEqual(config.local_radius_fraction, 0.25)
+        self.assertEqual(config.rank_tolerance, 1e-10)
+        self.assertIsNone(config.free_threshold)
+
+    def test_the_count_and_the_continuation_are_reported(self):
+        read = BSP.poles(self.operator, self.metric, self.interface,
+                         complex(-2.5), 0.8, self._config())
+        self.assertLess(read.zero_count_defect, 1e-9)
+        self.assertAlmostEqual(read.zero_count_defect,
+                               abs(read.zero_count - read.zeros), places=15)
+        self.assertLess(abs(read.interior_pole_count), 1e-9)
+        self.assertFalse(read.interior_resonance)
+        self.assertEqual(len(read.continued_pole), 1)
+        self.assertLess(abs(read.continued_pole[0] - read.poles[0]), 1e-9)
+        self.assertAlmostEqual(read.continuation_movement[0],
+                               abs(read.continued_pole[0] - read.poles[0]),
+                               places=15)
+
+    def test_an_enclosed_interior_pole_is_counted(self):
+        pole = complex(self.interior[0])
+        read = BSP.poles(self.operator, self.metric, self.interface, pole,
+                         0.1, self._config())
+        self.assertLess(abs(read.interior_pole_count - 1.0), 1e-9)
+        self.assertEqual(read.interior_poles_enclosed, 1)
+
+    def test_the_newton_refinement_reports_its_last_step(self):
+        read = BSP.poles(self.operator, self.metric, self.interface,
+                         complex(1.0), 0.6, self._config())
+        self.assertEqual(len(read.newton_step), 2)
+        for step in read.newton_step:
+            self.assertTrue(math.isfinite(step))
+            self.assertLess(step, 1e-9)
+
+    def test_more_zeros_than_declared_are_refused_by_name(self):
+        read = BSP.poles(self.operator, self.metric, self.interface,
+                         complex(1.0), 0.6, self._config(max_zeros=1))
+        self.assertIn("too-many-zeros", read.failed_certificates)
+
+    def test_a_zero_count_tolerance_of_zero_refuses_any_rounding(self):
+        """The count is read as an integer only at or below the declared
+        tolerance; at zero, the quadrature's own rounding refuses it."""
+        read = BSP.poles(self.operator, self.metric, self.interface,
+                         complex(-2.5), 0.8,
+                         self._config(zero_count_tolerance=0.0))
+        self.assertGreater(read.zero_count_defect, 0.0)
+        self.assertIn("nonintegral-zero-count", read.failed_certificates)
+
+    def test_the_local_contour_fraction_does_not_change_a_simple_root(self):
+        for fraction in (0.1, 0.5):
+            read = BSP.poles(self.operator, self.metric, self.interface,
+                             complex(-2.5), 0.8,
+                             self._config(local_radius_fraction=fraction))
+            self.assertEqual(list(read.multiplicity), [1])
+            self.assertLess(abs(read.poles[0] + 2.5), 1e-9)
+
     def test_an_empty_interface_refuses(self):
         read = BSP.poles(self.operator, self.metric, [], complex(-2.5), 0.8,
                          self._config())

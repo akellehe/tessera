@@ -763,5 +763,98 @@ class TestExchangeCharacter(unittest.TestCase):
             CT.exchangeCharacterOfPaths([], [invertible(generator, 3)], 0.0)
 
 
+# ─── the reported fields and the thresholds ─────────────────────────────────
+
+class TestReportedFieldsAndThresholds(unittest.TestCase):
+    """Every number the reads report beside their verdicts, and the
+    thresholds of `ComplexTransportConfig` that grade them: a threshold
+    changes the verdict, never the numbers."""
+
+    G = np.array([[3.0, 1.0], [0.0, 2.0]], complex)
+
+    def test_the_transport_reports_its_conditioning_and_endpoints(self) -> None:
+        generator = rng()
+        destination, source, frame_to, frame_from = band_pair(generator)
+        read = CT.transport(destination, source,
+                            frame_to @ self.G @ frame_from.conj().T)
+        singular = np.linalg.svd(self.G, compute_uv=False)
+        self.assertAlmostEqual(read.conditionNumber,
+                               singular[0] / singular[-1], places=10)
+        # the synthetic fibres declare isolation one and orthonormal frames
+        self.assertAlmostEqual(read.fromIsolation, 1.0, places=12)
+        self.assertAlmostEqual(read.toIsolation, 1.0, places=12)
+        self.assertAlmostEqual(read.fromProjectorNorm, 1.0, places=10)
+        self.assertAlmostEqual(read.toProjectorNorm, 1.0, places=10)
+
+    def test_the_config_defaults_are_readable_and_writable(self) -> None:
+        config = obs.ComplexTransportConfig()
+        self.assertGreater(config.certificateTolerance, 0.0)
+        self.assertGreater(config.conditionNumberCap, 1.0)
+        self.assertGreaterEqual(config.isolationFloor, 0.0)
+        self.assertIsInstance(config.requireCertifiedFibers, bool)
+        config.conditionNumberCap = 7.5
+        self.assertEqual(config.conditionNumberCap, 7.5)
+
+    def test_a_condition_number_cap_below_the_map_refuses_it(self) -> None:
+        generator = rng()
+        destination, source, frame_to, frame_from = band_pair(generator)
+        transfer = frame_to @ self.G @ frame_from.conj().T
+        config = obs.ComplexTransportConfig()
+        config.conditionNumberCap = 1.01
+        read = CT.transport(destination, source, transfer, config)
+        self.assertFalse(read.accepted)
+        self.assertLess(np.abs(np.asarray(read.map) - self.G).max(), INVERSE)
+
+    def test_an_isolation_floor_above_the_bands_refuses_them(self) -> None:
+        generator = rng()
+        destination, source, frame_to, frame_from = band_pair(generator)
+        config = obs.ComplexTransportConfig()
+        config.isolationFloor = 2.0
+        read = CT.transport(destination, source,
+                            frame_to @ self.G @ frame_from.conj().T, config)
+        self.assertFalse(read.accepted)
+
+    def test_uncertified_fibres_pass_only_when_not_required(self) -> None:
+        generator = rng()
+        columns, _ = np.linalg.qr(random_complex(generator, 6, 4))
+        destination = fiber(columns[:, 2:], cells(6), accepted=False)
+        source = fiber(columns[:, :2], cells(6), accepted=False)
+        transfer = columns[:, 2:] @ self.G @ columns[:, :2].conj().T
+        config = obs.ComplexTransportConfig()
+        config.requireCertifiedFibers = True
+        self.assertFalse(CT.transport(destination, source, transfer,
+                                      config).accepted)
+        config.requireCertifiedFibers = False
+        self.assertTrue(CT.transport(destination, source, transfer,
+                                     config).accepted)
+
+    def test_the_kato_read_names_its_scheme(self) -> None:
+        generator = rng()
+        start = orthogonal_projector(generator, 5, 2)
+        direction = hermitian_direction(generator, 5)
+        path = [expm(1j * s * direction) @ start @ expm(-1j * s * direction)
+                for s in np.linspace(0.0, 0.2, 5)]
+        for scheme in (KatoScheme.DirectRotation, KatoScheme.Intertwiner,
+                       KatoScheme.ExponentialGenerator):
+            self.assertEqual(CT.katoTransport(path, scheme).scheme, scheme)
+
+    def test_the_exchange_read_reports_both_holonomies(self) -> None:
+        generator = rng()
+        within = np.zeros((6, 6), complex)
+        within[:3, :3] = invertible(generator, 3)
+        within[3:, 3:] = invertible(generator, 3)
+        exchange = block_swap(3) @ within
+        read = CT.exchangeCharacter(exchange, within, 2.5e-4)
+        self.assertLess(abs(read.exchangeDeterminant
+                            - np.linalg.det(exchange)),
+                        INVERSE * abs(np.linalg.det(exchange)))
+        self.assertLess(abs(read.referenceDeterminant
+                            - np.linalg.det(within)),
+                        INVERSE * abs(np.linalg.det(within)))
+        self.assertAlmostEqual(read.referenceConditionNumber,
+                               np.linalg.cond(within), places=6)
+        self.assertEqual(read.pathLeakage, 2.5e-4)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -681,5 +681,55 @@ class TestSharpSpin(unittest.TestCase):
         self.assertAlmostEqual(read.expectation.real, 3.75, places=12)
 
 
+class TestTheRemainingReads(unittest.TestCase):
+    """The face fluxes, the face coboundary, the vertex count, the worst
+    commutator deviation and the target of a spin read."""
+
+    def test_every_face_carries_a_quarter_of_the_total_flux(self) -> None:
+        for mu, flux in ((0, 0.0), (1, math.pi / 2), (-1, -math.pi / 2)):
+            read = MonopoleSupport.tetrahedron(mu).monopoleNumber()
+            np.testing.assert_allclose(read.face_fluxes, [flux] * 4,
+                                       atol=1e-12, err_msg=f"mu={mu}")
+            self.assertAlmostEqual(sum(read.face_fluxes), read.total_flux,
+                                   places=12)
+
+    def test_the_face_coboundary_completes_the_edge_laplacian(self) -> None:
+        """delta_1^U delta_0^U vanishes exactly on a flat connection and not
+        under flux, and the edge Laplacian is
+        delta_0 delta_0^dagger + delta_1^dagger delta_1."""
+        for mu in (0, 1, 2):
+            support = MonopoleSupport.tetrahedron(mu)
+            self.assertEqual(support.vertex_count, 4)
+            d0 = np.asarray(support.twistedCoboundary())
+            d1 = np.asarray(support.twistedFaceCoboundary())
+            self.assertEqual(d1.shape, (4, 6))
+            laplacian = d0 @ d0.conj().T + d1.conj().T @ d1
+            self.assertLessEqual(
+                np.max(np.abs(support.edgeLaplacian() - laplacian)), 1e-12)
+            curvature = np.linalg.norm(d1 @ d0)
+            if mu == 0:
+                self.assertLessEqual(curvature, 1e-14)
+            else:
+                self.assertGreater(curvature, 1.0)
+
+    def test_the_worst_commutator_deviation_is_two_at_odd_flux(self) -> None:
+        """|varpi(g,h)/varpi(h,g) - 1| is |-1 - 1| = 2 for the anticommuting
+        pair at odd flux and zero at even flux."""
+        group = MonopoleSupport.tetrahedralRotations()
+        for mu, deviation in ((0, 0.0), (1, 2.0), (2, 0.0)):
+            read = MonopoleSupport.tetrahedron(mu).cocycle(group, 1)
+            self.assertAlmostEqual(read.max_commutator_deviation, deviation,
+                                   places=12, msg=f"mu={mu}")
+
+    def test_the_spin_read_records_its_target(self) -> None:
+        matrices = SharpSpin.doubletSpinMatrices(3)
+        state = SharpSpin.determinant([0, 2, 4], 6)
+        for target in (0.75, 3.75):
+            read = SharpSpin.read(matrices, state, state.conj(), target)
+            self.assertEqual(read.target_eigenvalue, target)
+        self.assertTrue(SharpSpin.read(matrices, state, state.conj(),
+                                       3.75).sharp)
+
+
 if __name__ == "__main__":
     unittest.main()

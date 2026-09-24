@@ -364,6 +364,65 @@ class TheDivergenceTheoremIsExactTest(unittest.TestCase):
         self.assertGreater(read.max_slab_divergence, 1e-3)
         self.assertFalse(read.invariant)
 
+    def test_the_incoming_side_divergence_is_reported(self):
+        for cut in self.history.cuts:
+            read = cob.WardFlux.flux(self.sourced, self.history.W, cut)
+            self.assertAlmostEqual(
+                abs(read.flux + read.incoming_side_divergence), 0.0,
+                places=11)
+
+    def test_each_slab_reports_both_sides_of_its_identity(self):
+        fluxes = [cob.WardFlux.flux(self.sourced, self.history.W, cut).flux
+                  for cut in self.history.cuts]
+        read = cob.WardFlux.homologous_fluxes(self.sourced, self.history.W,
+                                              self.history.cuts)
+        for slab in read.slabs:
+            difference = fluxes[slab.first] - fluxes[slab.second]
+            self.assertAlmostEqual(abs(slab.flux_difference - difference),
+                                   0.0, places=12)
+            self.assertAlmostEqual(
+                abs(slab.flux_difference - slab.slab_divergence),
+                slab.slab_identity_residual, places=12)
+            self.assertGreater(abs(slab.slab_divergence), 1e-3)
+
+    def test_the_quark_number_defect_is_reported_without_an_integer(self):
+        """A complex, nonintegral flux claims no quark number, and its
+        distance to the nearest integer is still reported."""
+        read = cob.WardFlux.flux(self.sourced, self.history.W,
+                                 self.history.cuts[0])
+        self.assertIsNone(read.quark_number)
+        nearest = round(read.flux.real)
+        self.assertAlmostEqual(read.quark_number_defect,
+                               abs(read.flux - nearest), places=12)
+        self.assertIn("nonintegral-flux", read.failed_certificates)
+        self.assertIn("complex-flux", read.failed_certificates)
+
+    def test_the_tolerances_decide_the_claims_not_the_numbers(self):
+        """Opened far enough, the integrality, imaginary-part and charge
+        tolerances let the same flux be read as the integer nearest it and as
+        agreeing with the incoming charge; the divergence tolerance decides
+        whether homologous cuts count as agreeing."""
+        default = cob.WardFluxConfig()
+        self.assertEqual(default.divergence_tolerance, 1e-9)
+        self.assertEqual(default.integrality_tolerance, 1e-6)
+        self.assertEqual(default.imaginary_tolerance, 1e-9)
+        self.assertEqual(default.charge_tolerance, 1e-6)
+        opened = cob.WardFluxConfig()
+        opened.integrality_tolerance = 10.0
+        opened.imaginary_tolerance = 10.0
+        opened.charge_tolerance = 100.0
+        cut = self.history.cuts[0]
+        strict = cob.WardFlux.flux(self.sourced, self.history.W, cut)
+        loose = cob.WardFlux.flux(self.sourced, self.history.W, cut, opened)
+        self.assertEqual(loose.flux, strict.flux)
+        self.assertEqual(loose.quark_number, round(strict.flux.real))
+        for name in ("nonintegral-flux", "complex-flux",
+                     "flux-is-not-the-incoming-charge"):
+            self.assertNotIn(name, loose.failed_certificates)
+        opened.divergence_tolerance = 1e6
+        self.assertTrue(cob.WardFlux.homologous_fluxes(
+            self.sourced, self.history.W, self.history.cuts, opened).invariant)
+
     def test_a_sourced_current_is_named_a_bulk_source(self):
         read = cob.WardFlux.flux(self.sourced, self.history.W,
                                  self.history.cuts[0])
@@ -678,6 +737,25 @@ class TheIntrinsicSpectralResponseTest(unittest.TestCase):
         self.assertIn("sample-on-a-pole", read.failed_certificates)
         self.assertTrue(np.isnan(read.response[0].real))
         self.assertTrue(np.isnan(read.slope[0].real))
+
+    def test_the_pole_and_degeneracy_tolerances_are_declared(self):
+        """A pole tolerance wider than the whole spectrum puts every sample on
+        a pole; a degeneracy tolerance wider than the spectrum groups every
+        eigenvalue into one pole of full multiplicity."""
+        default = cob.IntrinsicResponseConfig()
+        self.assertEqual(default.degeneracy_tolerance, 1e-9)
+        self.assertEqual(default.pole_tolerance, 1e-12)
+        wide = cob.IntrinsicResponseConfig()
+        wide.pole_tolerance = 1e6
+        read = self._read([complex(0.3, 0.2)], wide)
+        self.assertIn("sample-on-a-pole", read.failed_certificates)
+        self.assertTrue(np.isnan(read.response[0].real))
+        grouped = cob.IntrinsicResponseConfig()
+        grouped.degeneracy_tolerance = 1e6
+        read = self._read([], grouped)
+        self.assertEqual(len(read.poles), 1)
+        self.assertEqual(list(read.pole_multiplicity),
+                         [len(read.slice_cells)])
 
     def test_the_restrictions_sum_to_the_flux(self):
         """The right restriction carries the cut's coorientation, so its sum is
