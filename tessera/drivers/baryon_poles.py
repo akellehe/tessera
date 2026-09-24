@@ -176,10 +176,16 @@ def monopole_support():
     return obs.MonopoleSupport.tetrahedron(DECLARED_MONOPOLE)
 
 
-def build_host(edge_squared=DECLARED_EDGE_SQUARED):
+def build_host(edge_squared=DECLARED_EDGE_SQUARED, cell=None):
     """The three-sheeted host: three disjoint regular tetrahedra, vertices
     4 t .. 4 t + 3 on sheet t, each carrying the monopole connection of
     `MonopoleSupport.tetrahedron(1)` on corresponding edges.
+
+    With ``cell``, a mapping with the six ``squared_lengths`` and the six
+    ``links`` U_e of one tetrahedron on the ascending orientation of its edges
+    in the order of `MonopoleSupport.edges`, every sheet carries that
+    tetrahedron's data instead: this is how `tessera.drivers.recursion` reads
+    a cell of a level as a three-sheeted host.
 
     The mesh stores the phase phi of U = exp(i phi) on each edge's stored
     orientation. The declared connection values have unit modulus, so their
@@ -191,13 +197,25 @@ def build_host(edge_squared=DECLARED_EDGE_SQUARED):
     spacetime = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
     support = monopole_support()
     length = cmath.sqrt(complex(edge_squared))
+    pairs = [tuple(e) for e in support.edges]
     for edge in spacetime.getEdgeList().toVector():
         source = int(edge.getSource().getId())
         target = int(edge.getTarget().getId())
         sheet = source // 4
-        link = support.transport(source - 4 * sheet, target - 4 * sheet)
-        edge.setLength(length)
-        edge.setPhase(complex(cmath.phase(link)))
+        if cell is None:
+            link = support.transport(source - 4 * sheet, target - 4 * sheet)
+            edge.setLength(length)
+            edge.setPhase(complex(cmath.phase(link)))
+            continue
+        a, b = source - 4 * sheet, target - 4 * sheet
+        m = pairs.index((min(a, b), max(a, b)))
+        link = complex(cell["links"][m])
+        if a > b:
+            link = 1.0 / link
+        edge.setLength(cmath.sqrt(complex(cell["squared_lengths"][m])))
+        # U = exp(i phi); the principal logarithm is a coordinate on the
+        # stored field and returns U exactly
+        edge.setPhase(complex(-1j * cmath.log(link)))
     return spacetime
 
 
@@ -1052,7 +1070,7 @@ def rotation_averaged_many_body(operator, actions, frame, dual):
 def relax_content(content, kappa, beta, config, actions):
     """Steps 1-2 for one content: a fresh host relaxed to self-consistency,
     the carried density filling the bands of the T-averaged operator."""
-    spacetime = build_host(config["edge_squared"])
+    spacetime = build_host(config["edge_squared"], config.get("host_cell"))
     declaration = action_declaration(spacetime, kappa, beta,
                                      config["regge_hinges"],
                                      holonomy=config["holonomy"])
