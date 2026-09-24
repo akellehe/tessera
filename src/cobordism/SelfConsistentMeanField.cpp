@@ -273,6 +273,8 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
     action_ = relaxation.action();
     step.geometryConverged = geometryReport.converged;
     step.geometryResidualNorm = geometryReport.residualNorm;
+    step.geometryZeroGuardDampedSteps = geometryReport.zeroGuardDampedSteps;
+    report.zeroGuardDampedSteps += geometryReport.zeroGuardDampedSteps;
 
     // (2) The covariance is re-occupied from the modes of h at the relaxed
     // geometry. This is the half of the fixed point the engine's own carried

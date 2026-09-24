@@ -104,6 +104,17 @@ struct HolomorphicRelaxationDeclaration {
   /// The relative threshold below which a singular value of the Jacobian counts
   /// as zero in the minimum-norm solve of the Newton system.
   double rankTolerance = 1e-12;
+
+  /// The declared clearance of the face holonomies from the zeros of the
+  /// Villain weight \f$ W \f$: a trial step whose multiplicative path brings
+  /// any face holonomy within this relative distance of a zero
+  /// (`JointAction::holonomyZeroClearance`, sampled at a quarter of this
+  /// spacing) is halved, as a step that does not reduce the residual is. The
+  /// potential \f$ -\beta_V\log W \f$ and its derivatives are singular at a
+  /// zero, so a step onto or past one leaves the domain the equations are
+  /// posed on. This is step control only: the equations are unchanged. It has
+  /// no effect under the Wilson form, whose potential has no singularity.
+  double holonomyZeroMargin = 0.05;
 };
 
 /// # HolomorphicStep
@@ -127,6 +138,14 @@ struct HolomorphicStep {
   /// The complex action \f$ S(z,U,\Gamma) \f$ at the point the step was taken
   /// from.
   std::complex<double> action{0.0, 0.0};
+  /// How many of this iteration's step halvings the holonomy zero guard forced
+  /// (`HolomorphicRelaxationDeclaration::holonomyZeroMargin`), as opposed to
+  /// the residual test.
+  std::size_t zeroGuardDampings = 0;
+  /// The smallest relative distance of a face holonomy to a zero of \f$ W \f$
+  /// at the point the step was taken from; positive infinity when the declared
+  /// holonomy term has no zero.
+  double holonomyZeroDistance = 0.0;
 };
 
 /// # HolomorphicRelaxationReport
@@ -148,6 +167,9 @@ struct HolomorphicRelaxationReport {
   std::vector<std::complex<double>> multipliers;
   /// \f$ p_j(h)-p_j^{\star} \f$ at the point the solve stopped at.
   std::vector<std::complex<double>> momentResiduals;
+  /// The number of iterations whose step the holonomy zero guard damped at
+  /// least once.
+  std::size_t zeroGuardDampedSteps = 0;
 };
 
 /// # HolomorphicRelaxation

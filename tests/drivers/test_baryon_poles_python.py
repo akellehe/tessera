@@ -132,6 +132,169 @@ def test_the_covariant_operator_at_the_monopole_is_not_rotation_symmetric():
     assert worst / np.linalg.norm(h) > 0.1
 
 
+def test_the_holonomy_term_is_declared_villain_by_default():
+    assert bp.build_parser().parse_args(["run"]).holonomy == "villain"
+    assert bp.build_parser().parse_args(
+        ["run", "--holonomy", "wilson"]).holonomy == "wilson"
+    assert bp.default_config()["holonomy"] == "villain"
+    spacetime = bp.build_host()
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0)
+    assert declaration.holonomy_form == cob.HolonomyForm.Villain
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0, holonomy="wilson")
+    assert declaration.holonomy_form == cob.HolonomyForm.Wilson
+
+
+def test_the_host_connection_is_stiff_under_villain_and_not_under_wilson():
+    """Every face of the host carries F = +-i, where the Wilson curvature
+    beta cos(theta) vanishes: all 18 phase directions are flat. The Villain
+    curvature there is beta_V (<m^2>_i - <m>_i^2) per face, so the nine
+    coexact directions have stiffness 4 kappa(i) and the nine pure-gauge ones
+    zero."""
+    beta = 1.0
+    spacetime = bp.build_host()
+    wilson = np.array(cob.JointAction(spacetime, bp.action_declaration(
+        spacetime, 1.0, beta, holonomy="wilson")).holonomy_hessian())
+    assert np.max(np.abs(wilson)) < 1e-12
+    villain = np.array(cob.JointAction(spacetime, bp.action_declaration(
+        spacetime, 1.0, beta)).holonomy_hessian()).reshape(18, 18)
+    kappa = -cob.VillainCharacter(beta).second_derivative(1j).real
+    assert kappa == pytest.approx(0.9979584724666767, abs=1e-12)
+    values = np.sort(np.linalg.eigvalsh(-villain.real))
+    assert np.max(np.abs(values[:9])) < 1e-11
+    assert np.allclose(values[9:], 4.0 * kappa, atol=1e-11)
+
+
+# --------------------------------------------- the Section 7 elimination
+
+
+def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases"):
+    """The unrelaxed host carrying the three lowest modes of h_1, and the
+    elimination of its fluctuations at kappa = 0.5."""
+    spacetime = bp.build_host()
+    config = bp.default_config([0.5], [beta], holonomy=holonomy,
+                               elimination=elimination)
+    bare = cob.JointAction(spacetime, bp.action_declaration(
+        spacetime, 0.5, beta, holonomy=holonomy))
+    config["reference_lengths"] = list(bare.declaration.reference_lengths)
+    declaration = bp.action_declaration(spacetime, 0.5, beta,
+                                        holonomy=holonomy)
+    declaration.covariance = bare.occupation_projector(3)
+    action = cob.JointAction(spacetime, declaration)
+    carrier = bp.matrix(action.carrier_operator())
+    return spacetime, action, carrier, bp.eliminate_fluctuations(
+        spacetime, action, carrier, 0.5, beta, config)
+
+
+@pytest.fixture(scope="module")
+def villain_problem():
+    return _host_problem(1.0)
+
+
+def test_the_drazin_inverse_projects_out_exactly_the_pure_gauge_phases(
+        villain_problem):
+    """With the Villain term the coexact phase block is nonsingular at the
+    host's F = +-i, so the null space of A is the nine pure-gauge directions
+    (twelve vertices less one per sheet) and nothing else; A^D is the Drazin
+    inverse, and the reduced coordinates rebuild it exactly."""
+    _, _, _, problem = villain_problem
+    drazin = problem["record"]["drazin"]
+    assert drazin["coordinates"] == 36
+    assert drazin["null_dimension"] == 9
+    assert drazin["eliminated_dimension"] == 27
+    assert drazin["gauge_dimension"] == 9
+    assert drazin["null_space_is_pure_gauge"]
+    assert drazin["gauge_projector_residual"] < 1e-12
+    assert drazin["projector_idempotency"] < 1e-12
+    assert drazin["drazin_identity_residual"] < 1e-12
+    assert drazin["reduction_residual"] < 1e-12
+    # the geometric action has no length-phase coupling with the matter term
+    # off: the cross block is measured, and it is zero
+    checks = problem["record"]["stiffness_checks"]
+    assert checks["cross_block_norm"] == 0.0
+    assert checks["phase_block_jacobian_departure"] < 1e-6
+    assert problem["record"]["expectation_force_check"] < 1e-12
+
+
+def test_the_ward_identity_holds_on_every_pure_gauge_direction(
+        villain_problem):
+    """(D - Pi(0)) g = 0 to rounding on each pure-gauge direction, while
+    Pi(0) g alone is of order one: the identity is a genuine cancellation
+    between the diamagnetic and the paramagnetic terms."""
+    _, _, _, problem = villain_problem
+    ward = problem["record"]["ward_identity"]
+    assert ward["directions"] == 9
+    assert ward["residual"] < 1e-12
+    assert ward["paramagnetic_alone"] > 1e-2
+
+
+def test_the_elimination_matches_a_dense_reference(villain_problem,
+                                                   alignment):
+    """-1/2 J^T A^D J on the three-particle space: the library's elimination in
+    the reduced coordinates against a dense assembly from A^D itself."""
+    _, _, carrier, problem = villain_problem
+    frame = bp._micro_frame([alignment] * bp.SHEETS)
+    dual = np.linalg.inv(frame)
+    declaration = cob.DressedFluctuationDeclaration()
+    declaration.carrier_dimension = 18
+    declaration.carrier = list(carrier.reshape(-1))
+    declaration.couplings = [list(o.reshape(-1))
+                             for o in problem["reduced_couplings"]]
+    declaration.bare_stiffness = list(
+        problem["reduced_stiffness"].reshape(-1))
+    declaration.occupied_modes = 3
+    read = cob.DressedFluctuation(declaration).effective_action(
+        list(frame.reshape(-1)), list(dual.reshape(-1)), 3)
+    dimension = int(read.dimension)
+    # the dense lift is in the library's three-particle basis
+    one_body = np.asarray(read.one_body).reshape(dimension, dimension)
+    assert np.abs(one_body - bp.second_quantized(dual @ carrier @ frame)
+                  ).max() < 1e-10 * np.abs(one_body).max()
+    quartic = np.asarray(read.quartic).reshape(dimension, dimension)
+    reference = bp.dense_quartic_reference(problem["couplings"],
+                                           problem["drazin"], frame, dual)
+    assert np.abs(quartic - reference).max() < 1e-9 * np.abs(reference).max()
+
+
+def test_under_wilson_every_phase_direction_is_null():
+    """At F = +-i the Wilson phase block vanishes, so the Drazin inverse
+    projects out all eighteen phase directions, the nine coexact ones
+    included, and the record says the null space is not pure gauge."""
+    _, _, _, problem = _host_problem(1.0, holonomy="wilson")
+    drazin = problem["record"]["drazin"]
+    assert drazin["null_dimension"] == 18
+    assert not drazin["null_space_is_pure_gauge"]
+
+
+def test_the_lengths_only_elimination_is_the_plain_inverse():
+    _, _, _, problem = _host_problem(1.0, elimination="lengths")
+    drazin = problem["record"]["drazin"]
+    assert drazin["coordinates"] == 18
+    assert drazin["null_dimension"] == 0
+    assert problem["record"]["ward_identity"] == {"directions": 0}
+
+
+def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
+    def evaluate(content, kappa, beta, config, alignment):
+        if tuple(content) == (0, 3, 0):
+            raise ValueError("band 1 has rank 2")
+        return {"content": list(content), "sectors": {}}
+    monkeypatch.setattr(bp, "evaluate_content", evaluate)
+    config = bp.default_config([0.5], [0.5],
+                               selected_contents=[(0, 3, 0), (1, 1, 1)])
+    point = bp.scan_point(0.5, 0.5, config, None)
+    assert point["failed_contents"] == [[0, 3, 0]]
+    assert point["contents"][0]["failed"] == "band 1 has rank 2"
+    assert point["contents"][1]["content"] == [1, 1, 1]
+
+
+def test_the_elimination_rule_is_declared_and_recorded():
+    assert bp.build_parser().parse_args(["run"]).eliminate == \
+        "lengths-and-phases"
+    assert bp.default_config()["elimination"] == "lengths-and-phases"
+    assert bp.build_parser().parse_args(
+        ["run", "--eliminate", "lengths"]).eliminate == "lengths"
+
+
 # ------------------------------------------------------------------ ratios
 
 
