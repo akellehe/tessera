@@ -40,6 +40,7 @@ transpose pairing of the two embeddings, the transports are its named blocks, an
 the Fock stage is reported as a dimension the recursion never allocates.
 """
 
+import math
 import unittest
 
 import numpy as np
@@ -449,6 +450,63 @@ class TheLabeledSumCarriesItsOverlapTest(unittest.TestCase):
         grown = recursion.level(0)
         self.assertEqual(grown.vacuum_embedded_modes, 3)
         self.assertAlmostEqual(grown.fock_stage_dimension, 2.0 ** (modes + 3))
+
+
+class TheRemainingReadsTest(unittest.TestCase):
+    """The base dimension, the response determinant, the persistence
+    overlaps, the fibers' contour centres and spectrum, and the construction
+    over a spacetime."""
+
+    def test_the_base_dimension_and_the_response_determinant(self):
+        _, recursion = _recursion(levels=1)
+        self.assertEqual(recursion.base_dimension(), DIMENSION)
+        for lambda_ in (0.13, 0.44 + 0.21j):
+            size = recursion.response_dimension(0)
+            pencil = _square(recursion.response_pencil(0, lambda_), size)
+            self.assertAlmostEqual(
+                abs(recursion.response_determinant(0, lambda_)
+                    - np.linalg.det(pencil)), 0.0,
+                delta=1e-10 * max(1.0, abs(np.linalg.det(pencil))))
+
+    def test_the_persistence_overlap_is_declared_and_its_worst_reported(self):
+        self.assertEqual(cob.LevelRecursionDeclaration().persistence_overlap,
+                         0.5)
+        _, recursion = _recursion(levels=1)
+        level = recursion.level(0)
+        self.assertGreaterEqual(level.worst_persistence_overlap, 0.5)
+        self.assertLessEqual(level.worst_persistence_overlap, 1.0)
+        _, single = _recursion(levels=1, resolutions=(1.0,))
+        self.assertTrue(math.isnan(single.level(0).worst_persistence_overlap))
+
+    def test_each_band_is_enclosed_by_its_contour(self):
+        _, recursion = _recursion(levels=1)
+        for band in recursion.level(0).bands:
+            for value in band.eigenvalues:
+                self.assertLess(abs(value - band.contour_centre),
+                                band.contour_radius)
+
+    def test_the_fiber_spectrum_is_that_of_the_fiber_operator(self):
+        _, recursion = _recursion(levels=1)
+        level = recursion.level(0)
+        operator = _square(level.fiber_operator, level.modes)
+        expected = sorted(np.linalg.eigvals(operator),
+                          key=lambda value: (value.real, value.imag))
+        np.testing.assert_allclose(level.fiber_spectrum, expected, atol=1e-9)
+
+    def test_the_recursion_over_a_spacetime_reads_its_edge_operator(self):
+        """Over a spacetime the base is the degree-one operator of the
+        declared metric source: one coordinate per edge."""
+        spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+        for edge in spacetime.getEdgeList().toVector():
+            edge.setLength(math.sqrt(8.0))
+        declaration = _declaration(resolutions=(1.0,), band_rank=1)
+        recursion = cob.LevelRecursion.overSpacetime(
+            spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
+        self.assertEqual(recursion.base_dimension(), 6)
+        recursion.advance()
+        level = recursion.level(0)
+        self.assertEqual(sorted(i for part in level.partition for i in part),
+                         list(range(6)))
 
 
 class TheDeclarationIsCheckedTest(unittest.TestCase):

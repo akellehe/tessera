@@ -645,3 +645,42 @@ class TestCertificateAndRefusals:
         # Vertex 4 is the largest id of every triangle that contains it, so it
         # is never a base vertex and every face stays anchorable.
         assert list(DA.anchorableFaces(K, paths)) == list(range(K.numSimplices(2)))
+
+
+# --------------------------------------------------------------------------- #
+# The per-face coordinates and the numerical scale
+# --------------------------------------------------------------------------- #
+class TestCoordinatesAndScale:
+    @pytest.mark.parametrize("columns", [(0, 1, 2), (0, 1)])
+    def test_the_per_face_coordinates_are_the_profile_entries(self, columns):
+        K = _complex_of(TETRAHEDRON)
+        rng = np.random.default_rng(41)
+        U = _random_links(K, rng)
+        paths = ch.DeclaredPaths.breadthFirst(K, 0)
+        Phi = _coexact_band(K, columns)
+        faces = list(range(K.numSimplices(2)))
+        read = DA.profile(K, U, paths, faces, Phi)
+        for face in faces:
+            single = np.asarray(DA.dressedCoordinates(K, U, paths, face, Phi))
+            assert len(single) == (1 if len(columns) == 3 else 3)
+            assert np.allclose(single, np.asarray(read.coordinates[face]),
+                               atol=MACHINE)
+        if len(columns) == 3:
+            assert abs(DA.dressedCoordinate(K, U, paths, 2, Phi)
+                       - read.coordinates[2][0]) < MACHINE
+
+    @pytest.mark.parametrize("columns", [(0, 1, 2), (0, 1)])
+    def test_the_coordinate_scale_is_homogeneous_of_the_band_rank(self, columns):
+        """The scale the zero threshold is taken against grows with the frame
+        as the coordinates do: by c^r when the frame is multiplied by c."""
+        K = _complex_of(TETRAHEDRON)
+        U = _trivial(K)
+        paths = ch.DeclaredPaths.breadthFirst(K, 0)
+        Phi = _coexact_band(K, columns)
+        faces = list(range(K.numSimplices(2)))
+        read = DA.profile(K, U, paths, faces, Phi)
+        doubled = DA.profile(K, U, paths, faces, 2.0 * Phi)
+        assert read.coordinateScale > 0.0
+        assert doubled.coordinateScale == pytest.approx(
+            2.0 ** len(columns) * read.coordinateScale, rel=1e-12)
+

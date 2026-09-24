@@ -2503,6 +2503,24 @@ class TestPersistentPartitionAtEveryScale(unittest.TestCase):
         single = cob.RecursiveQuotient.persistentPartition(flat, 6, 1.0, 4, 7)
         self.assertEqual([sorted(p) for p in one], [sorted(p) for p in single])
 
+    def test_the_window_read_reports_its_persistence(self):
+        """Two uncoupled blocks stand at every resolution of the window with
+        the same support, so each track covers the whole window and its
+        weakest adjacent overlap is one; a window of one resolution has no
+        adjacent slice, so the overlap is not a number."""
+        flat = _flat(self._two_blocks())
+        read = cob.RecursiveQuotient.persistentPartitionOverResolutions(
+            flat, 6, [0.5, 1.0, 2.0])
+        self.assertEqual(sorted(sorted(part) for part in read.components),
+                         [[0, 1, 2], [3, 4, 5]])
+        self.assertEqual(list(read.resolutions), [0.5, 1.0, 2.0])
+        self.assertIn(read.selectedResolution, [0.5, 1.0, 2.0])
+        self.assertEqual(list(read.componentPersistence), [3.0, 3.0])
+        self.assertAlmostEqual(read.worstOverlap, 1.0, places=12)
+        single = cob.RecursiveQuotient.persistentPartitionOverResolutions(
+            flat, 6, [1.0])
+        self.assertTrue(np.isnan(single.worstOverlap))
+
     def test_a_coordinate_no_persistent_component_claims_is_its_own(self):
         """Every coordinate is covered whatever persists: the partition handed
         to nextLevel must be a partition."""

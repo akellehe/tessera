@@ -471,5 +471,100 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
             cob.HolomorphicRelaxation(action, _relaxation())
 
 
+class TheRemainingReadsTest(unittest.TestCase):
+    """The reads of the action and of the solve that the tests above do not
+    assert: the constraint count and the multipliers, the residual norm, the
+    carrier eigenvalues, the two Jacobian rules, the rank threshold and the
+    per-step record."""
+
+    def test_the_multipliers_are_variables_of_the_action(self):
+        spacetime = sphere3(squared=_metric)
+        declaration = _declaration(matter_weight=1.0)
+        constraint = cob.SpectralMomentConstraint(2, 3.0 + 0j)
+        self.assertEqual(constraint.multiplier, 0j)
+        constraint.multiplier = 0.5 - 0.25j
+        declaration.moment_constraints = [constraint]
+        action = cob.JointAction(spacetime, declaration)
+        self.assertEqual(action.constraint_count(), 1)
+        self.assertEqual(list(action.multipliers()), [0.5 - 0.25j])
+        action.set_multipliers([2.0 + 1.0j])
+        self.assertEqual(list(action.multipliers()), [2.0 + 1.0j])
+        self.assertEqual(cob.JointAction(
+            spacetime, _declaration()).constraint_count(), 0)
+
+    def test_the_residual_norm_is_the_norm_of_the_residual(self):
+        spacetime = sphere3(squared=_metric, phase=_flux)
+        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
+        self.assertAlmostEqual(action.stationarity_residual_norm(),
+                               np.linalg.norm(action.stationarity_residual()),
+                               places=12)
+        self.assertGreater(action.stationarity_residual_norm(), 1.0)
+
+    def test_the_carrier_eigenvalues_are_those_of_the_carrier(self):
+        spacetime = sphere3(squared=_metric, phase=_flux)
+        action = cob.JointAction(spacetime, _declaration())
+        flat = np.array(action.carrier_operator())
+        order = int(round(len(flat) ** 0.5))
+        expected = np.sort_complex(np.linalg.eigvals(flat.reshape(order,
+                                                                  order)))
+        np.testing.assert_allclose(
+            np.sort_complex(np.array(action.carrier_eigenvalues())), expected,
+            atol=1e-10)
+
+    def test_the_contour_and_real_axis_jacobians_agree(self):
+        """The link block is analytic in the phases, so the Cauchy-contour
+        derivative (the default rule) and the real-axis difference read the
+        same Jacobian, up to the difference rule's own error."""
+        spacetime = sphere3(squared=_metric, phase=_flux)
+        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
+        self.assertEqual(cob.HolomorphicRelaxationDeclaration().jacobian_mode,
+                         cob.HolomorphicJacobianMode.ContourDerivative)
+        jacobians = []
+        for mode in (cob.HolomorphicJacobianMode.ContourDerivative,
+                     cob.HolomorphicJacobianMode.RealAxisDifference):
+            relaxation = cob.HolomorphicRelaxation(
+                action, _relaxation(relax_links=True, jacobian_mode=mode))
+            self.assertEqual(relaxation.equation_count(),
+                             relaxation.variable_count())
+            order = relaxation.variable_count()
+            jacobians.append(np.array(relaxation.jacobian()).reshape(order,
+                                                                     order))
+        scale = np.abs(jacobians[0]).max()
+        self.assertLess(np.abs(jacobians[0] - jacobians[1]).max(),
+                        1e-4 * scale)
+
+    def test_every_step_records_its_norm_and_its_dampings(self):
+        spacetime = sphere3(squared=_metric, phase=_flux)
+        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
+        initial = action.stationarity_residual_norm()
+        report = cob.HolomorphicRelaxation(
+            action, _relaxation(relax_links=True)).solve()
+        self.assertAlmostEqual(report.initial_residual_norm, initial,
+                               places=12)
+        self.assertLess(report.residual_norm, report.initial_residual_norm)
+        for step in report.steps:
+            self.assertGreater(step.step_norm, 0.0)
+            self.assertEqual(step.sector_guard_dampings, 0)
+        norms = [step.step_norm for step in report.steps]
+        self.assertLess(norms[-1], norms[0])
+
+    def test_a_larger_rank_threshold_drops_singular_directions(self):
+        """The rank threshold decides which singular values of the Jacobian
+        count as zero in the minimum-norm solve: raised to one half, it drops
+        directions the default keeps."""
+        self.assertEqual(cob.HolomorphicRelaxationDeclaration().rank_tolerance,
+                         1e-12)
+        ranks = []
+        for threshold in (1e-12, 0.5):
+            spacetime = sphere3(squared=_metric, phase=_flux)
+            action = cob.JointAction(spacetime,
+                                     _declaration(holonomy_weight=1.0))
+            report = cob.HolomorphicRelaxation(
+                action, _relaxation(relax_links=True,
+                                    rank_tolerance=threshold)).solve()
+            ranks.append(report.steps[0].jacobian_rank)
+        self.assertLess(ranks[1], ranks[0])
+
+
 if __name__ == "__main__":
     unittest.main()

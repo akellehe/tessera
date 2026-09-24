@@ -442,6 +442,18 @@ class TestRegisterContourConjunct(RegisterCase):
         self.assertIn(obs.RegisterConjunct.LORENTZIAN_ROTATION,
                       list(at_zero.failedConjuncts))
 
+    def test_the_allowability_margin_floor_is_declared(self):
+        """A Lorentzian read at a positive rotation is accepted only while its
+        Kontsevich-Segal margin clears the declared floor."""
+        band = _contour_fiber(epsilon=0.1, margin=0.7)
+        self.assertTrue(self.read(band=band, lorentzian=True,
+                                  minAllowabilityMargin=0.5).accepted)
+        raised = self.read(band=band, lorentzian=True,
+                           minAllowabilityMargin=1.0)
+        self.assertFalse(raised.accepted)
+        self.assertIn(obs.RegisterConjunct.LORENTZIAN_ROTATION,
+                      list(raised.failedConjuncts))
+
     def test_an_undeclared_rotation_on_a_lorentzian_complex_is_unmeasured(self):
         read = self.read(band=_contour_fiber(), lorentzian=True)
         self.assertFalse(read.accepted)

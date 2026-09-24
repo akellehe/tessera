@@ -196,6 +196,24 @@ def test_identification_with_curvature_reports_its_row_sum_defect():
     assert inversion.scaleDetermined
 
 
+def test_the_frame_invariant_ratios_of_the_inversion():
+    """g_vw^2 / (g_vv g_ww), the part of the pairing a change of fiber frames
+    does not move: one on the diagonal, and unchanged when the pairing is
+    rescaled by det g_v det g_w."""
+    s = list(_tetrahedra())[0][1]
+    pairing = _single_tetrahedron_pairing(s)
+    read = GCR.invertVertexPairing(pairing)
+    ratios = np.asarray(read.frameInvariantRatios)
+    np.testing.assert_allclose(
+        ratios, pairing ** 2 / np.outer(np.diag(pairing), np.diag(pairing)),
+        rtol=1e-12)
+    np.testing.assert_allclose(np.diag(ratios), 1.0, rtol=1e-14)
+    dets = np.array([2.0, 0.5j, -1.5, 3.0 + 1.0j])
+    moved = GCR.invertVertexPairing(pairing * np.outer(dets, dets))
+    np.testing.assert_allclose(np.asarray(moved.frameInvariantRatios), ratios,
+                               rtol=1e-10)
+
+
 def test_determinant_pairing_rank_two_and_frame_law():
     rng = np.random.default_rng(9)
     n = 10

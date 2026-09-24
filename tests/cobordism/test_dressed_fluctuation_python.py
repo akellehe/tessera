@@ -587,6 +587,90 @@ class TheQuarticIsTheExactEliminationTest(unittest.TestCase):
             fluctuation.effective_action([], [], 2, 1)
 
 
+class TheCountsAndTheModeBasisTest(unittest.TestCase):
+    """The counts, the carrier eigenvalues in the declared order, the bare
+    particle-hole energies, the current matrices in the mode basis, and where
+    a collective mode sits against the particle-hole continuum."""
+
+    def setUp(self):
+        self.carrier = np.diag([5.0, 0.0, 2.0]).astype(complex)
+        rng = np.random.default_rng(29)
+        self.couplings = []
+        for _ in range(2):
+            x = rng.normal(size=(3, 3))
+            self.couplings.append((x + x.T).astype(complex))
+        self.stiffness = np.diag([4.0, 6.0]).astype(complex)
+
+    def fluctuation(self, **fields):
+        declaration = _declaration(self.carrier, self.couplings,
+                                   stiffness=self.stiffness, occupied=1)
+        for name, value in fields.items():
+            setattr(declaration, name, value)
+        return cob.DressedFluctuation(declaration)
+
+    def test_the_counts(self):
+        fluctuation = self.fluctuation()
+        self.assertEqual(fluctuation.carrier_dimension(), 3)
+        self.assertEqual(fluctuation.fluctuation_count(), 2)
+        # one occupied mode times two empty ones
+        self.assertEqual(fluctuation.particle_hole_pair_count(), 2)
+
+    def test_the_eigenvalues_follow_the_declared_order(self):
+        fluctuation = self.fluctuation()
+        self.assertEqual(fluctuation.declaration.occupation_order,
+                         cob.OccupationOrder.AscendingRealPart)
+        np.testing.assert_allclose(fluctuation.carrier_eigenvalues(),
+                                   [0.0, 2.0, 5.0], atol=1e-12)
+        np.testing.assert_allclose(fluctuation.particle_hole_energies(),
+                                   [2.0, 5.0], atol=1e-12)
+        self.carrier = np.diag([-3.0, 1.0, 2.0]).astype(complex)
+        by_modulus = self.fluctuation(
+            occupation_order=cob.OccupationOrder.AscendingModulus)
+        np.testing.assert_allclose(by_modulus.carrier_eigenvalues(),
+                                   [1.0, 2.0, -3.0], atol=1e-12)
+        np.testing.assert_allclose(by_modulus.particle_hole_energies(),
+                                   [1.0, -4.0], atol=1e-12)
+
+    def test_the_mode_currents_are_the_couplings_in_the_mode_basis(self):
+        """For a diagonal carrier the modes are the coordinate vectors in the
+        declared order, so V^-1 O_a V is O_a with its rows and columns
+        permuted into that order."""
+        fluctuation = self.fluctuation()
+        order = [1, 2, 0]
+        for index, coupling in enumerate(self.couplings):
+            current = _square(fluctuation.mode_currents(index), 3)
+            np.testing.assert_allclose(current,
+                                       coupling[np.ix_(order, order)],
+                                       atol=1e-12)
+
+    def test_each_collective_mode_is_placed_against_the_continuum(self):
+        fluctuation = self.fluctuation()
+        energies = np.array(fluctuation.particle_hole_energies())
+        low, high = energies.real.min(), energies.real.max()
+        modes = fluctuation.collective_modes()
+        self.assertGreater(len(modes), 0)
+        for mode in modes:
+            distance = min(abs(mode.frequency - e) for e in
+                           list(energies) + list(-energies))
+            self.assertAlmostEqual(mode.continuum_distance, distance,
+                                   places=10)
+            self.assertEqual(mode.inside_particle_hole_continuum,
+                             bool(low <= abs(mode.frequency.real) <= high))
+
+    def test_the_elimination_reports_the_stiffness_it_inverted(self):
+        stiffness = np.array([[4.0, 1.0], [0.5, 6.0]], dtype=complex)
+        declaration = _declaration(self.carrier, self.couplings,
+                                   stiffness=stiffness, occupied=1)
+        read = cob.DressedFluctuation(declaration).effective_action([], [], 2)
+        self.assertAlmostEqual(
+            read.stiffness_asymmetry,
+            np.linalg.norm(stiffness - stiffness.T) / np.linalg.norm(stiffness),
+            places=12)
+        # the estimate is the Frobenius-norm condition number of A
+        self.assertAlmostEqual(read.stiffness_conditioning,
+                               np.linalg.cond(stiffness, "fro"), places=8)
+
+
 class TheDeclarationIsCheckedTest(unittest.TestCase):
     """Every malformed declaration is refused by name."""
 

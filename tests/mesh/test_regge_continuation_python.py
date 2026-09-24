@@ -248,3 +248,55 @@ def test_the_continued_action_leaves_no_step_behind():
     # crossing left on a principal branch would put it in the thousands.
     assert max(steps) < 20.0 * typical, (
         f"largest step {max(steps)} against a median of {typical}")
+
+
+# --------------------------------------------------------------------------- #
+# The labels and the step size the continuation reports
+# --------------------------------------------------------------------------- #
+def test_a_fresh_declaration_labels_every_root_principal():
+    """At the geometry it was declared at, every hinge content and every
+    cofactor root sits on its principal sheet, and no angle has moved."""
+    st, _, _ = _tetrahedron()
+    continuation = tessera.ReggeContinuation(st)
+    cell = _cell_key(st)
+    assert continuation.maxAngleStep() == 0.0
+    for hinge in continuation.hinges():
+        assert continuation.hingeContentSheet(hinge) == 0
+        assert tuple(continuation.angleCofactorSheets(cell, hinge)) == (0, 0)
+
+
+def test_the_largest_angle_step_is_the_largest_angle_movement():
+    st, edges, varying = _tetrahedron()
+    continuation = tessera.ReggeContinuation(st)
+    cell = _cell_key(st)
+    before = {tuple(h): continuation.dihedralAngle(cell, h)
+              for h in continuation.hinges()}
+    edges[varying].continueLength(cmath.sqrt(_squared(0.01)))
+    continuation.advance()
+    moved = max(abs(continuation.dihedralAngle(cell, list(h)) - angle)
+                for h, angle in before.items())
+    assert moved > 0.0
+    assert continuation.maxAngleStep() == pytest.approx(moved, rel=1e-12)
+
+
+def test_the_cofactors_give_the_cosine_of_the_dihedral_angle():
+    """cos(theta) = -C_ij / (sqrt(C_ii) sqrt(C_jj)) on the principal roots,
+    the single-valued data every branch of the angle is built from."""
+    st, _, _ = _tetrahedron()
+    top = [s for s in st.getSimplices() if len(s.getVertices()) == 4][0]
+    hinges = [s for s in st.getSimplices() if len(s.getVertices()) == 2]
+    assert len(hinges) == 6
+    for hinge in hinges:
+        ok, cij, cii, cjj = top.dihedralCofactors(hinge)
+        assert ok
+        expected = cmath.cos(top.dihedralAngle(hinge))
+        assert abs(-cij / (cmath.sqrt(cii) * cmath.sqrt(cjj)) - expected) \
+            < 1e-12
+
+
+def test_a_sheeted_inverse_cosine_reports_its_cosine():
+    angle = tessera.SheetedAcos(0.3 + 0.1j)
+    assert angle.cosine() == 0.3 + 0.1j
+    angle.advance(0.35 + 0.1j)
+    assert angle.cosine() == 0.35 + 0.1j
+    assert abs(angle.value() - cmath.acos(0.35 + 0.1j)) < 1e-14
