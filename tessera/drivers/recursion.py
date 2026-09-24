@@ -779,9 +779,10 @@ def draw_frame(figure, frames, index):
     left.set_title("the recursion per tick", color=INK, fontsize=10)
     left.legend(frameon=False, fontsize=8, labelcolor=INK, loc="upper left")
 
-    latest = done[-1]
+    read = [f for f in done if f.get("reads")]
+    latest = read[-1] if read else done[-1]
     labels, half, three = [], [], []
-    for cell in latest["reads"]:
+    for cell in latest.get("reads", []):
         for record in cell["contents"]:
             labels.append("%s\n%s" % ("".join(map(str, cell["cell"])),
                                       "".join(map(str, record["content"]))))
