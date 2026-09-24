@@ -4536,7 +4536,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("first_derivative", &VillainCharacter::firstDerivative,
            py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
       .def("second_derivative", &VillainCharacter::secondDerivative,
-           py::arg("holonomy"), "(F d/dF)^2 phi.");
+           py::arg("holonomy"), "(F d/dF)^2 phi.")
+      .def("zero_distance", &VillainCharacter::zeroDistance,
+           py::arg("holonomy"),
+           "min |F - F0| / min(|F|, |F0|) over the zeros "
+           "F0 = -exp(+-(2n-1)/(2 beta)) of W.");
 
   py::class_<HolonomyTruncation>(m, "HolonomyTruncation",
       "The Villain truncation over every face at the current connection: the "
@@ -4704,6 +4708,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "exact contribution to the link block of the Jacobian in the "
            "multiplicative coordinate U -> U e^delta. Minus it is the Hessian "
            "in the real angles.")
+      .def("holonomy_zero_distance", &JointAction::holonomyZeroDistance,
+           "The smallest relative distance of a face holonomy to a zero of "
+           "the Villain weight W; inf for the Wilson form.")
+      .def("holonomy_zero_clearance", &JointAction::holonomyZeroClearance,
+           py::arg("link_increments"), py::arg("spacing"),
+           "The smallest relative distance to a zero of W any face holonomy "
+           "comes to along U_e -> U_e exp(t delta_e), t in [0, 1], sampled at "
+           "the given Maurer-Cartan spacing.")
       .def("holonomy_truncation", &JointAction::holonomyTruncation,
            "The Villain series truncation over the current face holonomies, "
            "with certified relative tail bounds.")
@@ -4803,7 +4815,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("rank_tolerance",
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
-                     "the Jacobian counts as zero in the minimum-norm solve.");
+                     "the Jacobian counts as zero in the minimum-norm solve.")
+      .def_readwrite("holonomy_zero_margin",
+                     &HolomorphicRelaxationDeclaration::holonomyZeroMargin,
+                     "The relative distance to a zero of the Villain weight W "
+                     "that no face holonomy may come within along a trial "
+                     "step; a step that would is halved. Step control only.");
 
   py::class_<HolomorphicStep>(m, "HolomorphicStep",
       "One Newton iteration, recorded so a run can be read back rather than "
@@ -4818,7 +4835,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("jacobian_rank", &HolomorphicStep::jacobianRank,
                      "Below the variable count whenever the connection is "
                      "relaxed, because the action is gauge invariant.")
-      .def_readwrite("action", &HolomorphicStep::action);
+      .def_readwrite("action", &HolomorphicStep::action)
+      .def_readwrite("zero_guard_dampings",
+                     &HolomorphicStep::zeroGuardDampings,
+                     "The halvings of this step the holonomy zero guard "
+                     "forced.")
+      .def_readwrite("holonomy_zero_distance",
+                     &HolomorphicStep::holonomyZeroDistance,
+                     "The smallest relative distance of a face holonomy to a "
+                     "zero of W where the step started; inf without zeros.");
 
   py::class_<HolomorphicRelaxationReport>(m, "HolomorphicRelaxationReport",
       "What a solve reached, and the trace of how it got there.")
@@ -4832,7 +4857,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("action", &HolomorphicRelaxationReport::action)
       .def_readwrite("multipliers", &HolomorphicRelaxationReport::multipliers)
       .def_readwrite("moment_residuals",
-                     &HolomorphicRelaxationReport::momentResiduals);
+                     &HolomorphicRelaxationReport::momentResiduals)
+      .def_readwrite("zero_guard_damped_steps",
+                     &HolomorphicRelaxationReport::zeroGuardDampedSteps,
+                     "The iterations whose step the holonomy zero guard "
+                     "damped at least once.");
 
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
       "A Newton root find on the holomorphic stationarity equations of a "
@@ -4953,7 +4982,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("geometry_converged",
                      &SelfConsistentMeanFieldStep::geometryConverged)
       .def_readwrite("geometry_residual_norm",
-                     &SelfConsistentMeanFieldStep::geometryResidualNorm);
+                     &SelfConsistentMeanFieldStep::geometryResidualNorm)
+      .def_readwrite("geometry_zero_guard_damped_steps",
+                     &SelfConsistentMeanFieldStep::geometryZeroGuardDampedSteps);
 
   py::class_<SelfConsistentMeanFieldReport>(m, "SelfConsistentMeanFieldReport",
       "What a self-consistent solve reached.")
@@ -4973,7 +5004,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("spectral_gap",
                      &SelfConsistentMeanFieldReport::spectralGap)
       .def_readwrite("band_ranks", &SelfConsistentMeanFieldReport::bandRanks)
-      .def_readwrite("action", &SelfConsistentMeanFieldReport::action);
+      .def_readwrite("action", &SelfConsistentMeanFieldReport::action)
+      .def_readwrite("zero_guard_damped_steps",
+                     &SelfConsistentMeanFieldReport::zeroGuardDampedSteps,
+                     "Inner Newton steps the holonomy zero guard damped, over "
+                     "every outer iteration.");
 
   py::class_<SelfConsistentMeanField>(m, "SelfConsistentMeanField",
       "The certificates-blind mean-field backreaction of Section 7, solved to "

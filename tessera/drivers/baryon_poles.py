@@ -132,6 +132,21 @@ DECLARED_HOLONOMY = "villain"
 HOLONOMY_FORMS = {"villain": cob.HolonomyForm.Villain,
                   "wilson": cob.HolonomyForm.Wilson}
 
+#: Which fluctuations the Section 7 quartic eliminates: the squared lengths and
+#: the link phases (the pure-gauge phase directions, the null space of A, are
+#: projected out by the Drazin inverse), or the squared lengths alone.
+DECLARED_ELIMINATION = "lengths-and-phases"
+ELIMINATIONS = ("lengths-and-phases", "lengths")
+#: The resonance disc of the Drazin inverse, relative to the spectral radius of
+#: A: an eigenvalue of A inside it is a zero-stiffness direction.
+DECLARED_GAUGE_RESONANCE_RADIUS = 1e-10
+#: The Cauchy rule for the diamagnetic term along a pure-gauge direction.
+DECLARED_WARD_CONTOUR_RADIUS = 0.1
+DECLARED_WARD_CONTOUR_NODES = 8
+#: The relative distance to a zero of the Villain weight W that no face
+#: holonomy may come within along a Newton step (step control only).
+DECLARED_HOLONOMY_ZERO_MARGIN = 0.05
+
 #: The squared edge length of the regular tetrahedron (the paper's a^2 = 8).
 DECLARED_EDGE_SQUARED = 8.0
 #: The unit Dirac monopole.
@@ -266,6 +281,7 @@ def relaxation_declaration(config):
     geometry.tolerance = config["newton_tolerance"]
     geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     geometry.contour_radius = config["jacobian_radius"]
+    geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
     return geometry
 
 
@@ -578,77 +594,384 @@ def spin_sectors(states):
 # -------------------------------------------------------------- the solve
 
 
-def couplings_and_stiffness(spacetime, kappa, beta, config):
-    """O_a = dh_1/dz_a for the 18 squared lengths (getEdgeList order, via
-    `HodgeLaplacian.laplacianGradient`), and A, the Hessian of the geometric
-    part of the action in the same variables (`HolomorphicRelaxation.jacobian`
-    of the action with the matter term off and the links held)."""
-    hodge = cob.HodgeLaplacian(spacetime,
-                               cob.HodgeLaplacian.defaultWeightConvention(),
-                               cob.HodgeMetricSource.WhitneyPencil)
-    couplings = [list(hodge.laplacianGradient(1, a, b))
-                 for a, b in edge_records(spacetime)]
-    # the reference lengths are the host's declared ones, not the relaxed ones
-    geometric = cob.JointAction(
+def _geometric_action(spacetime, kappa, beta, config):
+    """The geometric part of the action (matter off), with the host's declared
+    reference lengths rather than the relaxed ones."""
+    return cob.JointAction(
         spacetime, action_declaration(spacetime, kappa, beta,
                                       config["regge_hinges"],
                                       matter_weight=0.0,
                                       reference_lengths=config[
                                           "reference_lengths"],
                                       holonomy=config["holonomy"]))
-    solve = cob.HolomorphicRelaxation(geometric, _hessian_declaration(config))
+
+
+def fluctuation_couplings(spacetime, phases):
+    """O_a = dh_1/df_a for the retained fluctuations, in the order: the 18
+    squared lengths z_e, then (when ``phases``) the 18 link phases phi_e of
+    U_e = exp(i phi_e) on each edge's stored orientation, both in
+    `getEdgeList()` order. `HodgeLaplacian.laplacianPhaseGradient` is the
+    derivative in the canonical (ascending) phase, so the stored one carries
+    the orientation sign."""
+    hodge = cob.HodgeLaplacian(spacetime,
+                               cob.HodgeLaplacian.defaultWeightConvention(),
+                               cob.HodgeMetricSource.WhitneyPencil)
+    records = edge_records(spacetime)
+    couplings = [matrix(hodge.laplacianGradient(1, a, b)) for a, b in records]
+    if phases:
+        couplings += [(1.0 if a < b else -1.0)
+                      * matrix(hodge.laplacianPhaseGradient(1, a, b))
+                      for a, b in records]
+    return couplings
+
+
+def gauge_directions(spacetime, phases):
+    """A basis of the pure-gauge directions in the fluctuation coordinates,
+    one per vertex but the last of each sheet: no length component, and delta phi_xy = chi_y - chi_x on each
+    stored edge (x, y), with chi the indicator of the vertex. None when the
+    phases are not retained."""
+    if not phases:
+        return None
+    records = edge_records(spacetime)
+    # one vertex of each sheet is left out: the indicators of a whole sheet
+    # sum to the constant, which moves no link, so the rest are a basis
+    vertices = sorted({v for pair in records for v in pair})
+    vertices = [v for v in vertices if v % 4 != 3]
+    edges = len(records)
+    directions = np.zeros((2 * edges, len(vertices)), dtype=complex)
+    for column, vertex in enumerate(vertices):
+        for row, (x, y) in enumerate(records):
+            directions[edges + row, column] = ((1.0 if y == vertex else 0.0)
+                                               - (1.0 if x == vertex else 0.0))
+    return directions
+
+
+def bare_stiffness(spacetime, kappa, beta, config, phases):
+    """A, the Hessian of the geometric part of the action in the retained
+    fluctuation coordinates (z_e; phi_e), and the checks on how it was read.
+
+    The length block is `HolomorphicRelaxation.jacobian` of the geometric
+    action with the matter term off. With the phases retained the relaxation
+    also relaxes the links, whose coordinate is the Maurer-Cartan increment
+    delta = i d(phi), so the cross blocks are i times the Jacobian's and the
+    phase block is minus its link block. The phase block is taken from the
+    exact analytic `JointAction.holonomy_hessian` (negated for the same
+    reason), whose pure-gauge null space is exact to rounding; the Jacobian's
+    link block is kept only as a check on it."""
+    geometric = _geometric_action(spacetime, kappa, beta, config)
+    declaration = relaxation_declaration(config)
+    declaration.relax_links = phases
+    solve = cob.HolomorphicRelaxation(geometric, declaration)
     count = solve.variable_count()
-    hessian = np.asarray(solve.jacobian()).reshape(solve.equation_count(),
-                                                   count)
-    return couplings, hessian
+    jacobian = np.asarray(solve.jacobian()).reshape(solve.equation_count(),
+                                                    count)
+    n = len(spacetime.getEdgeList().toVector())
+    if not phases:
+        return jacobian, {}
+    analytic = -np.asarray(geometric.holonomy_hessian()).reshape(n, n)
+    stiffness = np.zeros((2 * n, 2 * n), dtype=complex)
+    stiffness[:n, :n] = jacobian[:n, :n]
+    stiffness[:n, n:] = 1j * jacobian[:n, n:]
+    stiffness[n:, :n] = 1j * jacobian[n:, :n]
+    stiffness[n:, n:] = analytic
+    scale = max(np.abs(stiffness).max(), 1.0)
+    return stiffness, {
+        "cross_block_norm": float(np.linalg.norm(stiffness[:n, n:])),
+        "cross_block_asymmetry": float(
+            np.linalg.norm(stiffness[:n, n:] - stiffness[n:, :n].T) / scale),
+        "phase_block_jacobian_departure": float(
+            np.abs(-jacobian[n:, n:] - analytic).max() / scale),
+    }
 
 
-def _hessian_declaration(config):
-    geometry = relaxation_declaration(config)
-    geometry.relax_links = False
-    return geometry
+def drazin_elimination(stiffness, directions, radius):
+    """The generalized inverse the elimination uses: the Drazin inverse A^D of
+    A at zero, with the Riesz projector Pi_0 onto the generalized null space
+    (`chainhodge.PencilSchur.feshbach` with every coordinate interior and the
+    resonance disc of the declared relative radius about zero). A^D inverts A
+    on ran(I - Pi_0) and is zero on ran(Pi_0), so the zero-stiffness
+    pure-gauge directions contribute nothing and every other direction is
+    integrated out.
+
+    A is complex symmetric, so Pi_0^T = Pi_0 and ran(I - Pi_0) is orthogonal
+    to ran(Pi_0) in the transpose pairing. With R a basis of ran(I - Pi_0),
+    A^D = R (R^T A R)^{-1} R^T exactly: the fluctuation is carried in the
+    reduced coordinates f = R g, whose stiffness R^T A R is nonsingular, and
+    `DressedFluctuation` eliminates g. The identity is measured, not assumed.
+    """
+    size = stiffness.shape[0]
+    read = T.chainhodge.PencilSchur.feshbach(
+        stiffness, np.zeros_like(stiffness), 0j, [], 1e-12, radius)
+    record = {"coordinates": int(size),
+              "resonance_radius": float(read.resonanceRadius),
+              "resonance_enclosure": float(read.resonanceEnclosure),
+              "resonance_separation": float(read.resonanceSeparation)}
+    if not read.interiorSingular:
+        drazin = np.linalg.inv(stiffness)
+        basis = np.eye(size, dtype=complex)
+        null = np.zeros_like(stiffness)
+    else:
+        drazin = np.asarray(read.interiorInverse)
+        null = np.asarray(read.nullProjector)
+        left, _, _ = np.linalg.svd(np.asarray(read.rangeProjector))
+        basis = left[:, :int(read.interiorRank)]
+    reduced = basis.T @ stiffness @ basis
+    rebuilt = basis @ np.linalg.solve(reduced, basis.T)
+    record.update({
+        "null_dimension": int(size - basis.shape[1]),
+        "eliminated_dimension": int(basis.shape[1]),
+        "projector_idempotency": float(
+            np.linalg.norm(null @ null - null) / np.linalg.norm(null))
+        if null.any() else 0.0,
+        "drazin_identity_residual": float(
+            np.linalg.norm(stiffness @ drazin @ stiffness - stiffness)
+            / np.linalg.norm(stiffness)),
+        "reduction_residual": float(np.linalg.norm(rebuilt - drazin)
+                                    / np.linalg.norm(drazin)),
+        "reduced_conditioning": float(np.linalg.cond(reduced)),
+    })
+    if directions is not None:
+        # the pure-gauge directions lie in ran(Pi_0), and Pi_0 has no more
+        # rank than they span
+        gauge_rank = int(np.linalg.matrix_rank(directions))
+        record["gauge_dimension"] = gauge_rank
+        record["gauge_projector_residual"] = float(
+            np.linalg.norm(null @ directions - directions)
+            / np.linalg.norm(directions))
+        record["null_space_is_pure_gauge"] = bool(
+            record["null_dimension"] == gauge_rank
+            and record["gauge_projector_residual"] < 1e-8)
+    return drazin, basis, reduced, record
+
+
+def occupied_projector(carrier, occupied):
+    """The Riesz projector of the carrier onto its ``occupied`` modes of
+    smallest real part (`OccupationOrder.AscendingRealPart`)."""
+    values, vectors = np.linalg.eig(carrier)
+    order = sorted(range(len(values)),
+                   key=lambda k: (values[k].real, values[k].imag))[:occupied]
+    return vectors[:, order] @ np.linalg.inv(vectors)[order, :]
+
+
+def ward_read(spacetime, carrier, couplings, directions, config):
+    """The Ward identity of the retained fluctuations: (D - Pi(0)) g = 0 on
+    every pure-gauge direction g.
+
+    Pi(0) is `DressedFluctuation.paramagnetic(0)` of the carrier with the
+    declared couplings. D g is the diamagnetic term along g,
+    (D g)_a = tr(P_occ d_g O_a), with P_occ the occupied Riesz projector and
+    d_g O_a the derivative of the coupling O_a along the pure-gauge direction,
+    formed by the Cauchy rule on a circle of the declared radius in the
+    complex gauge parameter: the direction is a gauge transformation for
+    every complex value of the parameter, so O_a is entire along it and the
+    rule converges geometrically in the node count. The residual is
+    ||(D - Pi(0)) g|| / (||Pi(0)|| ||g||), maximized over the directions, and
+    ``paramagnetic_alone`` is the largest same ratio for Pi(0) g by itself,
+    the size the identity cancels. The
+    geometry is restored exactly afterwards."""
+    if directions is None:
+        return {"directions": 0}
+    n = carrier.shape[0]
+    declaration = cob.DressedFluctuationDeclaration()
+    declaration.carrier_dimension = n
+    declaration.carrier = list(carrier.reshape(-1))
+    declaration.couplings = [list(o.reshape(-1)) for o in couplings]
+    declaration.occupied_modes = 3
+    try:
+        paramagnetic = np.asarray(cob.DressedFluctuation(
+            declaration).paramagnetic(0j)).reshape(len(couplings),
+                                                   len(couplings))
+    except ValueError as error:
+        return {"directions": int(directions.shape[1]),
+                "unmeasured": str(error)}
+    projector = occupied_projector(carrier, 3)
+    edges = spacetime.getEdgeList().toVector()
+    saved = [complex(edge.getPhase()) for edge in edges]
+    radius = config["ward_contour_radius"]
+    nodes = config["ward_contour_nodes"]
+    residuals, paramagnetic_parts = [], []
+    try:
+        for column in range(directions.shape[1]):
+            g = directions[:, column]
+            shift = g[len(edges):]
+            derivative = [np.zeros((n, n), dtype=complex) for _ in couplings]
+            for k in range(nodes):
+                root = cmath.exp(2j * math.pi * k / nodes)
+                for edge, phase, step in zip(edges, saved, shift):
+                    edge.setPhase(phase + radius * root * step)
+                weight = root.conjugate() / (nodes * radius)
+                for a, o in enumerate(fluctuation_couplings(spacetime, True)):
+                    derivative[a] += weight * o
+            for edge, phase in zip(edges, saved):
+                edge.setPhase(phase)
+            diamagnetic = np.array([np.sum(projector * d.T)
+                                    for d in derivative])
+            polarization = paramagnetic @ g
+            scale = np.linalg.norm(paramagnetic) * np.linalg.norm(g)
+            residuals.append(float(np.linalg.norm(diamagnetic - polarization)
+                                   / scale))
+            paramagnetic_parts.append(float(np.linalg.norm(polarization)
+                                            / scale))
+    finally:
+        for edge, phase in zip(edges, saved):
+            edge.setPhase(phase)
+    return {"directions": int(directions.shape[1]),
+            "contour_radius": radius, "contour_nodes": nodes,
+            "residual": max(residuals),
+            "paramagnetic_alone": max(paramagnetic_parts)}
 
 
 def truncation_certificates(spacetime, kappa, beta, config, couplings,
-                            hessian, induced):
-    """The two remainders the exact elimination sets aside (WP §7 line 299),
-    measured along the induced displacement f* = -A^{-1}<J> in the squared
-    lengths: the cubic remainder of the geometric action relative to its
-    quadratic term, and the second-order remainder of h_1 relative to its
-    linear term. The geometry is restored exactly afterwards."""
+                            stiffness, induced):
+    """The two remainders the exact elimination sets aside (WP §7), measured
+    along the induced displacement f* = -A^D<J> in every retained coordinate
+    (the squared lengths, and the link phases when retained): the cubic
+    remainder of the geometric action relative to its quadratic term, and the
+    second-order remainder of h_1 relative to its linear term. The geometry is
+    restored exactly afterwards. The displaced action value needs log W of the
+    Villain term; a displacement that reaches a zero of W has no value there,
+    and the action remainder is then reported as unmeasured with the reason."""
     edges = spacetime.getEdgeList().toVector()
-    saved = [complex(edge.getLength()) for edge in edges]
+    n = len(edges)
+    saved_lengths = [complex(edge.getLength()) for edge in edges]
+    saved_phases = [complex(edge.getPhase()) for edge in edges]
+    phases = len(induced) == 2 * n
 
-    def geometric_value():
-        return cob.JointAction(spacetime, action_declaration(
-            spacetime, kappa, beta, config["regge_hinges"],
-            matter_weight=0.0,
-            reference_lengths=config["reference_lengths"],
-            holonomy=config["holonomy"]))
-
-    before = geometric_value()
+    before = _geometric_action(spacetime, kappa, beta, config)
     s0 = complex(before.value())
     gradient = np.asarray(before.length_stationarity())
+    if phases:
+        gradient = np.concatenate(
+            [gradient, 1j * np.asarray(before.link_stationarity())])
     h0 = matrix(before.carrier_operator())
-    for edge, length, df in zip(edges, saved, induced):
-        edge.setLength(cmath.sqrt(length * length + df))
-    after = geometric_value()
-    s1 = complex(after.value())
-    h1 = matrix(after.carrier_operator())
-    for edge, length in zip(edges, saved):
-        edge.setLength(length)
-    quadratic = 0.5 * induced @ hessian @ induced
-    linear_h = sum(f * matrix(o) for f, o in zip(induced, couplings))
-    cubic = s1 - s0 - gradient @ induced - quadratic
-    return {
+    s1, unmeasured = None, None
+    try:
+        for edge, length, df in zip(edges, saved_lengths, induced[:n]):
+            edge.setLength(cmath.sqrt(length * length + df))
+        if phases:
+            for edge, phase, dp in zip(edges, saved_phases, induced[n:]):
+                edge.setPhase(phase + dp)
+        after = _geometric_action(spacetime, kappa, beta, config)
+        h1 = matrix(after.carrier_operator())
+        try:
+            s1 = complex(after.value())
+        except ValueError as error:
+            unmeasured = str(error)
+    finally:
+        for edge, length, phase in zip(edges, saved_lengths, saved_phases):
+            edge.setLength(length)
+            edge.setPhase(phase)
+    quadratic = 0.5 * induced @ stiffness @ induced
+    linear_h = sum(f * o for f, o in zip(induced, couplings))
+    out = {
         "induced_displacement_norm": float(np.linalg.norm(induced)),
-        "action_cubic_remainder": complex(cubic),
+        "induced_length_norm": float(np.linalg.norm(induced[:n])),
+        "induced_phase_norm": float(np.linalg.norm(induced[n:]))
+        if phases else 0.0,
         "action_quadratic_term": complex(quadratic),
-        "action_relative_remainder":
-            float(abs(cubic) / abs(quadratic)) if quadratic != 0 else None,
         "operator_relative_remainder": float(
             np.linalg.norm(h1 - h0 - linear_h) / np.linalg.norm(linear_h))
         if np.linalg.norm(linear_h) > 0 else None,
+    }
+    if s1 is None:
+        out.update({"action_cubic_remainder": None,
+                    "action_relative_remainder": None,
+                    "action_unmeasured": unmeasured})
+    else:
+        cubic = s1 - s0 - gradient @ induced - quadratic
+        out.update({"action_cubic_remainder": complex(cubic),
+                    "action_relative_remainder":
+                        float(abs(cubic) / abs(quadratic))
+                        if quadratic != 0 else None})
+    return out
+
+
+def second_quantized(one_particle, basis=None):
+    """dGamma(X) on the three-particle space, in the occupation basis: the
+    linear coefficient of the exact cubic polynomial
+    t -> Lambda^3(I + t X) = I + t dGamma(X) + t^2 (...) + t^3 (...), read off
+    by the combination (8 f(1/2) - 8 f(-1/2) - f(1) + f(-1)) / 6."""
+    identity = np.eye(one_particle.shape[0], dtype=complex)
+
+    def f(t):
+        return third_exterior_power(identity + t * one_particle, basis)
+    return (8 * f(0.5) - 8 * f(-0.5) - f(1.0) + f(-1.0)) / 6.0
+
+
+def dense_quartic_reference(couplings, drazin, frame, dual):
+    """-1/2 sum_ab (A^D)_ab J_a J_b on the three-particle space of the fiber,
+    assembled densely from A^D itself rather than through the reduced
+    coordinates, with J_a = dGamma(Phi~^T O_a Phi). The sum over b is taken
+    inside dGamma, which is linear, so only two dense three-particle matrices
+    are held at a time."""
+    in_frame = [dual @ o @ frame for o in couplings]
+    total = None
+    for a, o in enumerate(in_frame):
+        weighted = sum(drazin[a, b] * in_frame[b]
+                       for b in range(len(in_frame)))
+        term = second_quantized(o) @ second_quantized(weighted)
+        total = term if total is None else total + term
+    return -0.5 * total
+
+
+def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
+    """Everything the exact elimination of Section 7 needs at the relaxed
+    point, and the record of what was eliminated and how it was certified.
+
+    The retained fluctuations are the 18 squared lengths and, under
+    ``lengths-and-phases``, the 18 link phases; A is the bare stiffness of the
+    geometric action in them, <J>_a = tr(Gamma O_a) the carried force, and the
+    elimination about the self-consistent point is
+    -1/2 (J - <J>)^T A^D (J - <J>): a one-body shift sum_a (A^D <J>)_a O_a, a
+    constant -1/2 <J>^T A^D <J>, and the quartic -1/2 J^T A^D J, the last
+    through the reduced coordinates of `drazin_elimination`."""
+    phases = config["elimination"] == "lengths-and-phases"
+    couplings = fluctuation_couplings(spacetime, phases)
+    stiffness, stiffness_checks = bare_stiffness(spacetime, kappa, beta,
+                                                 config, phases)
+    directions = gauge_directions(spacetime, phases)
+    drazin, basis, reduced, drazin_record = drazin_elimination(
+        stiffness, directions, config["gauge_resonance_radius"])
+    covariance = matrix(action.declaration.covariance)
+    expectation = np.array([np.sum(covariance * o.T) for o in couplings])
+    n = len(spacetime.getEdgeList().toVector())
+    force_check = float(np.linalg.norm(
+        expectation[:n] - np.asarray(action.hellmann_feynman_length_force())))
+    if phases:
+        force_check = max(force_check, float(np.linalg.norm(
+            expectation[n:]
+            - 1j * np.asarray(action.hellmann_feynman_link_force()))))
+    induced = -drazin @ expectation
+    record = {
+        "rule": config["elimination"],
+        "retained_coordinates": (
+            "18 squared lengths z_e, then 18 link phases phi_e on the stored "
+            "orientations, getEdgeList order" if phases
+            else "18 squared lengths z_e in getEdgeList order; links held"),
+        "generalized_inverse": (
+            "Drazin inverse of A at zero with the Riesz projector onto its "
+            "null space (PencilSchur.feshbach), applied through the reduced "
+            "coordinates f = R g, R a basis of ran(I - Pi_0)"),
+        "stiffness_checks": stiffness_checks,
+        "drazin": drazin_record,
+        "expectation_force_check": force_check,
+        "ward_identity": ward_read(spacetime, carrier, couplings, directions,
+                                   config),
+    }
+    return {
+        "couplings": couplings,
+        "stiffness": stiffness,
+        "drazin": drazin,
+        "reduced_stiffness": reduced,
+        "reduced_couplings": [sum(basis[a, k] * couplings[a]
+                                  for a in range(len(couplings)))
+                              for k in range(basis.shape[1])],
+        "induced": induced,
+        "shift": sum(-f * o for f, o in zip(induced, couplings)),
+        "constant": -0.5 * expectation @ drazin @ expectation,
+        "truncation": truncation_certificates(spacetime, kappa, beta, config,
+                                              couplings, stiffness, induced),
+        "record": record,
     }
 
 
@@ -797,15 +1120,16 @@ def evaluate_content(content, kappa, beta, config, alignment):
                        np.argsort([e.real for e in band_energies])]
     trialities = alignments[0]["trialities"]
 
-    # the quartic's ingredients, on h_1 itself
-    couplings, hessian = couplings_and_stiffness(spacetime, kappa, beta,
-                                                 config)
-    expectation = np.asarray(action.hellmann_feynman_length_force())
-    induced = -np.linalg.solve(hessian, expectation)
-    shift = sum(-f * matrix(o) for f, o in zip(induced, couplings))
-    constant = -0.5 * expectation @ np.linalg.solve(hessian, expectation)
-    truncation = truncation_certificates(spacetime, kappa, beta, config,
-                                         couplings, hessian, induced)
+    # the quartic's ingredients, on h_1 itself: the retained fluctuations
+    # (the squared lengths, and the link phases unless only the lengths are
+    # declared), their couplings O_a, the bare stiffness A of the geometric
+    # action and its Drazin inverse A^D
+    fluctuations = eliminate_fluctuations(spacetime, action, carrier, kappa,
+                                          beta, config)
+    couplings = fluctuations["couplings"]
+    shift = fluctuations["shift"]
+    constant = fluctuations["constant"]
+    truncation = fluctuations["truncation"]
 
     def many_body(carrier_matrix, coupling_matrices):
         declaration = cob.DressedFluctuationDeclaration()
@@ -813,13 +1137,15 @@ def evaluate_content(content, kappa, beta, config, alignment):
         declaration.carrier = list(carrier_matrix.reshape(-1))
         declaration.couplings = [list(o.reshape(-1))
                                  for o in coupling_matrices]
-        declaration.bare_stiffness = list(hessian.reshape(-1))
+        declaration.bare_stiffness = list(
+            fluctuations["reduced_stiffness"].reshape(-1))
         declaration.occupied_modes = 3
         dressed = cob.DressedFluctuation(declaration)
         return dressed.effective_action(list(frame.reshape(-1)),
                                         list(dual.reshape(-1)), 3)
 
-    coupling_matrices = [matrix(o) for o in couplings]
+    # the reduced coordinates f = R g carry the Drazin elimination
+    coupling_matrices = fluctuations["reduced_couplings"]
     # quasi-free: dGamma of the T-averaged operator
     quasi_free_read = many_body(averaged, coupling_matrices)
     dimension = int(quasi_free_read.dimension)
@@ -904,6 +1230,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
     record = {
         "content": list(content),
         "holonomy": config["holonomy"],
+        "elimination": config["elimination"],
         "carrier_content": carrier_content,
         "seconds": time.time() - started,
         "relaxation": {
@@ -942,6 +1269,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "occupied_energy": complex(report.occupied_energy),
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
+            "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
+            "holonomy_zero_distance": float(action.holonomy_zero_distance()),
         },
         "covariant_spectrum": sorted(
             [complex(v) for v in np.linalg.eigvals(carrier)],
@@ -963,6 +1292,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "frame_pairing_defect": float(quartic_read.frame_pairing_defect),
             "certificate": quartic_read.certificate.describe(),
             "truncation": truncation,
+            "fluctuations": fluctuations["record"],
         },
         "sectors": {str(k): v for k, v in sector_reads.items()},
         "recursion": recursion,
@@ -1107,11 +1437,25 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
     """Every content at one (kappa, beta), and the ratios."""
     records = []
     for content in config.get("contents") or contents():
-        record = evaluate_content(content, kappa, beta, config, alignment)
+        try:
+            record = evaluate_content(content, kappa, beta, config,
+                                      alignment)
+        except ValueError as error:
+            # a declared refusal of the library at this content (a band that
+            # cannot hold the occupation, a face holonomy outside the domain
+            # of the holonomy term): recorded with its reason, and the content
+            # supplies no pole
+            record = {"content": list(content),
+                      "holonomy": config["holonomy"],
+                      "elimination": config["elimination"],
+                      "failed": str(error), "sectors": {}}
         records.append(record)
         if on_content is not None:
             on_content(record)
     return {"kappa": kappa, "beta": beta, "holonomy": config["holonomy"],
+            "elimination": config["elimination"],
+            "failed_contents": [record["content"] for record in records
+                                if "failed" in record],
             "contents": records,
             "ratios": ratios(records), "pole_table": pole_table(records)}
 
@@ -1216,7 +1560,8 @@ def ratios(records):
 def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    edge_squared=DECLARED_EDGE_SQUARED,
                    regge_hinges="interior", selected_contents=None,
-                   holonomy=DECLARED_HOLONOMY):
+                   holonomy=DECLARED_HOLONOMY,
+                   elimination=DECLARED_ELIMINATION):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps."""
@@ -1228,6 +1573,11 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "edge_squared": edge_squared,
         "regge_hinges": regge_hinges,
         "holonomy": holonomy,
+        "elimination": elimination,
+        "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
+        "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
+        "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
+        "holonomy_zero_margin": DECLARED_HOLONOMY_ZERO_MARGIN,
         "band_tolerance": DECLARED_BAND_TOLERANCE,
         "newton_iterations": 40,
         "newton_tolerance": 1e-11,
@@ -1581,6 +1931,13 @@ def build_parser():
                      help="the holonomy term: villain, the paper's "
                           "heat-kernel form, or wilson, its plaquette "
                           "stand-in (default %s)" % DECLARED_HOLONOMY)
+    run.add_argument("--eliminate", choices=ELIMINATIONS,
+                     default=DECLARED_ELIMINATION,
+                     help="the fluctuations the Section 7 quartic eliminates: "
+                          "the squared lengths and the link phases (the "
+                          "pure-gauge phases projected out by the Drazin "
+                          "inverse), or the squared lengths alone (default "
+                          "%s)" % DECLARED_ELIMINATION)
     run.add_argument("--edge-squared", type=float,
                      default=DECLARED_EDGE_SQUARED,
                      help="squared edge length of the tetrahedron (default "
@@ -1610,7 +1967,8 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     config = default_config(args.kappa, args.beta, args.edge_squared,
-                            args.regge_hinges, holonomy=args.holonomy)
+                            args.regge_hinges, holonomy=args.holonomy,
+                            elimination=args.eliminate)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None

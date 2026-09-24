@@ -224,6 +224,9 @@ HolomorphicRelaxation::HolomorphicRelaxation(
   if (!(declaration_.contourRadius > 0.0))
     throw std::invalid_argument(
         "HolomorphicRelaxation: the contour radius must be positive");
+  if (!(declaration_.holonomyZeroMargin > 0.0))
+    throw std::invalid_argument(
+        "HolomorphicRelaxation: the holonomy zero margin must be positive");
   if (!declaration_.relaxLengths && !declaration_.relaxLinks &&
       !declaration_.relaxMultipliers)
     throw std::invalid_argument(
@@ -378,6 +381,18 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     record.residualNorm = residualNorm;
     record.jacobianRank = static_cast<std::size_t>(decomposition.rank());
     record.action = action_.value();
+    record.holonomyZeroDistance = action_.holonomyZeroDistance();
+
+    // The link part of the step, for the holonomy zero guard.
+    std::vector<complexd> linkStep;
+    if (layout.links) {
+      linkStep.resize(layout.edges);
+      for (std::size_t edgeIndex = 0; edgeIndex < layout.edges; ++edgeIndex)
+        linkStep[edgeIndex] =
+            step(static_cast<Eigen::Index>(layout.linkOffset + edgeIndex));
+    }
+    const bool guarded =
+        layout.links && std::isfinite(record.holonomyZeroDistance);
 
     const StateSnapshot snapshot = takeSnapshot(action_);
     double damping = 1.0;
@@ -385,6 +400,19 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     for (std::size_t attempt = 0; attempt <= declaration_.maximumDampings;
          ++attempt) {
       restoreSnapshot(action_, snapshot);
+      if (guarded) {
+        std::vector<complexd> increments(linkStep.size());
+        for (std::size_t edgeIndex = 0; edgeIndex < linkStep.size();
+             ++edgeIndex)
+          increments[edgeIndex] = damping * linkStep[edgeIndex];
+        const double clearance = action_.holonomyZeroClearance(
+            increments, 0.25 * declaration_.holonomyZeroMargin);
+        if (clearance < declaration_.holonomyZeroMargin) {
+          ++record.zeroGuardDampings;
+          damping *= 0.5;
+          continue;
+        }
+      }
       if (layout.lengths)
         for (std::size_t edgeIndex = 0; edgeIndex < layout.edges; ++edgeIndex) {
           const complexd length = snapshot.lengths[edgeIndex];
@@ -417,6 +445,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       }
       damping *= 0.5;
     }
+    if (record.zeroGuardDampings > 0) ++report.zeroGuardDampedSteps;
     if (!accepted) {
       restoreSnapshot(action_, snapshot);
       report.steps.push_back(record);

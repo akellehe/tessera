@@ -140,6 +140,9 @@ struct SelfConsistentMeanFieldStep {
   bool geometryConverged = false;
   /// The inner relaxation's residual norm when it stopped.
   double geometryResidualNorm = 0.0;
+  /// The number of inner Newton steps the holonomy zero guard damped
+  /// (`HolomorphicRelaxationReport::zeroGuardDampedSteps`).
+  std::size_t geometryZeroGuardDampedSteps = 0;
 };
 
 /// # SelfConsistentMeanFieldReport
@@ -168,6 +171,9 @@ struct SelfConsistentMeanFieldReport {
   std::vector<std::size_t> bandRanks;
   /// The complex action at \f$ (z^{*},\Gamma^{*}) \f$.
   std::complex<double> action{0.0, 0.0};
+  /// The inner Newton steps the holonomy zero guard damped, summed over every
+  /// outer iteration.
+  std::size_t zeroGuardDampedSteps = 0;
 };
 
 /// # SelfConsistentMeanField
