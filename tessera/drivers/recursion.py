@@ -667,7 +667,7 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
     if points_file is not None:
         with open(points_file, "w"):
             pass
-        bp._append_line(points_file, {"config": config, "host": host})
+        _append_line(points_file, {"config": config, "host": host})
     frames = []
     state = (cells, z, links)
     stopped = False
@@ -678,7 +678,7 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
         record, state = tick(index, *state, config)
         frames.append(record)
         if points_file is not None:
-            bp._append_line(points_file, record)
+            _append_line(points_file, record)
         if progress:
             s = record["summary"]
             sys.stdout.write(
@@ -698,7 +698,19 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
 
 
 def _jsonable(value):
+    """JSON-ready form of a record: arrays become nested lists, complex
+    numbers ``{"re", "im"}`` as in `baryon_poles`."""
+    if isinstance(value, np.ndarray):
+        return _jsonable(value.tolist())
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
     return bp._jsonable(value)
+
+
+def _append_line(path, record):
+    bp._append_line(path, _jsonable(record))
 
 
 # ---------------------------------------------------------------- live mode

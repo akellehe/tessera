@@ -112,6 +112,7 @@ def test_one_tick_on_the_host_grows_the_next_level(monkeypatch):
         math.isnan(partition["determinant_residual"])
     kept = [c for c in record["grown_cells"] if "failed" not in c]
     assert record["summary"]["grown_cells"] == len(kept)
+    json.dumps(R._jsonable(record))
     if following is None:
         assert "stopped" in record
         return
