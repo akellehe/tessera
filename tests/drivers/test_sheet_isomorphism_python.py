@@ -572,3 +572,40 @@ def test_the_recorded_failures_are_four_gauge_only_and_eight_geometric():
     assert all(row[2] < 3e-8 and row[3] > 0.8 and row[4]
                for row in gauge_only)
     assert all(row[2] >= 5e-4 and not row[4] for row in geometric)
+
+
+# ------------------------------------------- gauge invariance at fixed Gamma
+
+
+def test_uniform_filling_is_a_multiple_of_the_identity():
+    """Content (1, 1, 1) puts one quark in each rank-6 colour band, so the
+    band-filling covariance is sum_b (1/6) P_b = I_18 / 6 exactly (the three
+    band projectors sum to the identity); it commutes with every operator,
+    and the Ward current of the seeded action is divergence-free to 1e-14."""
+    _, action, _ = _seeded_action(FIRST_CELL, (1, 1, 1))
+    gamma = np.asarray(action.declaration.covariance).reshape(18, 18)
+    assert np.max(np.abs(gamma - np.eye(18) / 6.0)) < 1e-14
+    assert np.max(np.abs(np.asarray(action.ward_current_divergence()))) \
+        < 1e-14
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "the band rule builds Gamma from the T-averaged operator h-bar, which is "
+    "not a function of h_1 on the monopole host, so Gamma does not commute "
+    "with h_1 and the matter term tr(Gamma h_1) held at fixed Gamma is not "
+    "gauge invariant: the Ward current of the seeded action has divergence "
+    "2.13 (content (2, 1, 0)) and 3.43 (content (0, 0, 3)); the pure-gauge "
+    "link directions are then not null directions of the Newton system, and "
+    "each step carries an O(1) gauge component (JointAction::"
+    "wardCurrentDivergence documents the identity; a ruling on the band rule "
+    "belongs to the user)"))
+@pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3)])
+def test_the_seeded_action_satisfies_the_ward_identity(content):
+    """`JointAction.ward_current_divergence`: the divergence of
+    j = U dS/dU vanishes for every gauge-invariant term, and for the matter
+    term when Gamma transforms with the operator, as a spectral projector of
+    h does. The per-cell relaxation of the run starts from the band-filling
+    Gamma; its Ward current must be divergence-free to 1e-12."""
+    _, action, _ = _seeded_action(FIRST_CELL, content)
+    assert np.max(np.abs(np.asarray(action.ward_current_divergence()))) \
+        < 1e-12
