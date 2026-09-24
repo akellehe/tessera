@@ -49,20 +49,7 @@ _CACHE = {}
 def _frames():
     if "frames" not in _CACHE:
         config = ea.build_config(size=HOST, steps=STEPS)
-        # The figure needs a run whose complex moves. The neutral host is built
-        # outside the Kontsevich-Segal allowable domain (margin -4.91 at
-        # HOST = 4), so under the default Whitney metric every proposal is
-        # refused as a non-member of the configuration space and the drive
-        # commits nothing (#1185; the Lorentzian protocol that would put the
-        # host on the allowable side is not in the driver). The subject here is
-        # the figure, so the run is driven on the diagonal weights, whose
-        # configuration space is all of complex z.
-        previous = cob.HodgeLaplacian.defaultMetricSource()
-        cob.HodgeLaplacian.setDefaultMetricSource(cob.HodgeMetricSource.DiagonalWeights)
-        try:
-            _CACHE["frames"] = ea.drive(config, progress=False).frames
-        finally:
-            cob.HodgeLaplacian.setDefaultMetricSource(previous)
+        _CACHE["frames"] = ea.drive(config, progress=False).frames
     return _CACHE["frames"]
 
 
@@ -328,10 +315,13 @@ class CausalClassTest(unittest.TestCase):
             ea.EdgeDisposition.TIMELIKE: ea.CausalClass.TIMELIKE,
             ea.EdgeDisposition.LIGHTLIKE: ea.CausalClass.LIGHTLIKE,
         }
+        # At rotation zero, where each seed is its real interval: a rotated
+        # timelike edge carries arg(l^2) = -(pi - 2 epsilon), which the
+        # library's classifier reads as mixed.
         for disposition, causal in expected.items():
             with self.subTest(disposition=disposition):
                 host = ea.build_cobordism_host(HOST, ea.DECLARED_HOST_SEED,
-                                               disposition)
+                                               disposition, epsilon=0.0)
                 classes = {ea.causal_class(e)
                            for e in host.getEdgeList().toVector()}
                 self.assertEqual(classes, {causal})
@@ -354,7 +344,8 @@ class CausalClassTest(unittest.TestCase):
 
     def test_foliated_carries_both_definite_classes(self):
         host = ea.build_cobordism_host(HOST, ea.DECLARED_HOST_SEED,
-                                       ea.EdgeDisposition.FOLIATED)
+                                       ea.EdgeDisposition.FOLIATED,
+                                       epsilon=0.0)
         classes = {ea.causal_class(e) for e in host.getEdgeList().toVector()}
         self.assertIn(ea.CausalClass.SPACELIKE, classes)
         self.assertIn(ea.CausalClass.TIMELIKE, classes)
