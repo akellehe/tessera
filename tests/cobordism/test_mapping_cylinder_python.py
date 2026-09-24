@@ -154,6 +154,22 @@ class TheBoundaryIsTheDisjointUnionOfTheTwoEndsTest(unittest.TestCase):
         self.assertFalse(read.boundary_is_the_disjoint_union)
         self.assertGreater(read.boundary_residual, 0.0)
 
+    def test_the_side_wall_is_the_cylinder_over_the_boundary(self):
+        """A closed level has no side facets; over a single tetrahedron, whose
+        boundary is four triangles, every free facet of the cylinder that lies
+        on neither end is a side facet, and each side facet meets both ends."""
+        outgoing = [[vertex + 100 for vertex in cell] for cell in SPHERE3]
+        closed = cob.MappingCylinder(
+            _declaration(SPHERE3, _shift(range(5)), outgoing)).read()
+        self.assertEqual(list(closed.side_free_facets), [])
+        ball = cob.MappingCylinder(
+            _declaration(TETRAHEDRON, _shift(range(4)),
+                         [[100, 101, 102, 103]])).read()
+        self.assertGreater(len(ball.side_free_facets), 0)
+        for facet in ball.side_free_facets:
+            self.assertTrue(any(v < 100 for v in facet))
+            self.assertTrue(any(v >= 100 for v in facet))
+
     def test_an_image_the_outgoing_complex_does_not_carry_is_reported(self):
         """The interactions attach the cells of K^{l+1}; when they have not
         attached the image, the cylinder's outgoing end is not inside the next
