@@ -108,6 +108,20 @@ class ProtonSynthesisModeTest(unittest.TestCase):
         self.assertTrue(math.isfinite(node.objective()))
 
 
+class ProtonDirectBuildTest(unittest.TestCase):
+    """Fast: the experimental one-step synthesis on the smallest schedule
+    populates the same accessors as the two-step build, with no Step A."""
+
+    def test_the_direct_build_has_no_diquark_step(self):
+        synthesis = tessera.cobordism.ProtonSynthesis(seed=0)
+        synthesis.build_direct(max_restarts=1, init_steps=1, evolve_steps=1,
+                               stage1_candidate_moves=1)
+        self.assertEqual(synthesis.diquark_residual(), 0.0)
+        self.assertTrue(math.isfinite(synthesis.color_residual()))
+        self.assertIsInstance(synthesis.converged(), bool)
+        self.assertIsNotNone(synthesis.spacetime())
+
+
 @pytest.mark.slow
 class ProtonBuildTest(unittest.TestCase):
     """Slow: the real two-step synthesis (Step A recombination then Step B
