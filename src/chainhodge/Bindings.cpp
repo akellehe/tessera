@@ -794,12 +794,30 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
       .def_readonly("residual", &WhitneyLengthInversion::residual)
       .def_readonly("relativeResidual", &WhitneyLengthInversion::relativeResidual)
       .def_readonly("asymmetry", &WhitneyLengthInversion::asymmetry);
+  py::class_<GrownCellInversion>(m, "GrownCellInversion",
+      "The squared lengths of a grown simplex read from the inherited vertex pairing, with the "
+      "row-sum defect, the asymmetry and the frame-invariant ratios of the pairing.")
+      .def_readonly("dimension", &GrownCellInversion::dimension)
+      .def_readonly("scaledGradientGram", &GrownCellInversion::scaledGradientGram)
+      .def_readonly("scaledMetric", &GrownCellInversion::scaledMetric)
+      .def_readonly("scaleDetermined", &GrownCellInversion::scaleDetermined)
+      .def_readonly("scale", &GrownCellInversion::scale)
+      .def_readonly("volume", &GrownCellInversion::volume)
+      .def_readonly("squaredLengths", &GrownCellInversion::squaredLengths)
+      .def_readonly("scaledSquaredLengths", &GrownCellInversion::scaledSquaredLengths)
+      .def_readonly("rowSumDefect", &GrownCellInversion::rowSumDefect)
+      .def_readonly("asymmetry", &GrownCellInversion::asymmetry)
+      .def_readonly("frameInvariantRatios", &GrownCellInversion::frameInvariantRatios);
   py::class_<GrownCellRule>(m, "GrownCellRule",
       R"doc(The grown-cell rule: squared lengths by inverting the degree-1 Whitney mass
 (C = 14400/det(g/C) in three dimensions, undetermined in two), and the connection
 U_vw = det M_vw of the fiber transport.)doc")
       .def_static("whitneyBlock", &GrownCellRule::whitneyBlock, py::arg("scaled_gradient_gram"))
       .def_static("invertWhitneyBlock", &GrownCellRule::invertWhitneyBlock, py::arg("block"))
+      .def_static("invertVertexPairing", &GrownCellRule::invertVertexPairing,
+           py::arg("pairing"))
+      .def_static("determinantPairing", &GrownCellRule::determinantPairing, py::arg("frames"),
+           py::arg("images"))
       .def_static("transportConnection", &GrownCellRule::transportConnection,
            py::arg("transport"));
   py::class_<FaceAnchor>(m, "FaceAnchor",

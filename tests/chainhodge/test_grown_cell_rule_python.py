@@ -146,3 +146,89 @@ def test_phase_rule_is_the_full_determinant():
                                rtol=1e-12)
     with pytest.raises(ValueError, match="common-rank"):
         GCR.transportConnection(np.ones((2, 3), dtype=complex))
+
+
+# ------------------------------------------------ the identification (A)
+
+
+def _single_tetrahedron_pairing(s, links=None):
+    """The level-zero model of the identification on one tetrahedron: the
+    fiber of vertex v is the exact chain whose Whitney image is the twisted
+    coboundary delta^U e_v, paired as Y_v^T G_1^U Y_w with Y = M_1^U Z."""
+    block, edges = _local_block(TETRAHEDRON, s)
+    pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+    assert edges == list(range(6))
+    U = {}
+    for m, (x, y) in enumerate(pairs):
+        u = 1.0 if links is None else links[m]
+        U[(x, y)], U[(y, x)] = u, 1.0 / u
+    for v in range(4):
+        U[(v, v)] = 1.0
+    dressed = np.array([[block[a, c] * U[(pairs[a][0], pairs[c][0])]
+                         for c in range(6)] for a in range(6)])
+    Z = np.zeros((6, 4), dtype=complex)
+    for a, (x, y) in enumerate(pairs):
+        Z[a, x], Z[a, y] = -1.0, U[(x, y)]
+    Y = dressed @ Z
+    images = np.linalg.solve(dressed, Y)
+    frames = [Y[:, [v]] for v in range(4)]
+    return np.asarray(GCR.determinantPairing(frames, [images[:, [v]] for v in range(4)]))
+
+
+@pytest.mark.parametrize("name,s", list(_tetrahedra()))
+def test_identification_returns_level_zero_lengths(name, s):
+    pairing = _single_tetrahedron_pairing(s)
+    inversion = GCR.invertVertexPairing(pairing)
+    np.testing.assert_allclose(np.array(inversion.squaredLengths), np.array(s),
+                               rtol=1e-11, atol=0.0)
+    assert inversion.rowSumDefect < 1e-13
+    assert inversion.asymmetry < 1e-13
+    volume = WM.certificate(TETRAHEDRON, s).volumes[0]
+    np.testing.assert_allclose(inversion.volume, volume, rtol=1e-11)
+
+
+def test_identification_with_curvature_reports_its_row_sum_defect():
+    s = list(_tetrahedra())[0][1]
+    rng = np.random.default_rng(5)
+    links = list(np.exp(1j * rng.normal(size=6)))
+    inversion = GCR.invertVertexPairing(_single_tetrahedron_pairing(s, links))
+    assert inversion.rowSumDefect > 1e-3
+    assert inversion.scaleDetermined
+
+
+def test_determinant_pairing_rank_two_and_frame_law():
+    rng = np.random.default_rng(9)
+    n = 10
+    G = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
+    frames = [rng.normal(size=(n, 2)) + 1j * rng.normal(size=(n, 2)) for _ in range(3)]
+    images = [G @ Y for Y in frames]
+    pairing = np.asarray(GCR.determinantPairing(frames, images))
+    np.testing.assert_allclose(pairing[0, 2], np.linalg.det(frames[0].T @ G @ frames[2]),
+                               rtol=1e-12)
+    g = [rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2)) for _ in range(3)]
+    moved = [Y @ gv for Y, gv in zip(frames, g)]
+    moved_pairing = np.asarray(GCR.determinantPairing(moved, [G @ Y for Y in moved]))
+    dets = np.array([np.linalg.det(gv) for gv in g])
+    np.testing.assert_allclose(moved_pairing, np.outer(dets, dets) * pairing, rtol=1e-10)
+    ratios = lambda p: p ** 2 / np.outer(np.diag(p), np.diag(p))
+    np.testing.assert_allclose(ratios(moved_pairing), ratios(pairing), rtol=1e-9)
+    mixed = np.asarray(GCR.determinantPairing(
+        [frames[0], frames[1][:, :1]], [images[0], images[1][:, :1]]))
+    assert np.isnan(mixed[0, 1].real) and not np.isnan(mixed[1, 1].real)
+
+
+def test_vertex_pairing_two_dimensions_and_refusals():
+    s = [1.0 + 0.0j, 2.0 + 0.0j, 1.5 + 0.0j]
+    # a triangle's |T| Gamma from its Whitney block's C*Gamma (C = |T|/12)
+    inversion = GCR.invertWhitneyBlock(_local_block(TRIANGLE, s)[0])
+    pairing = 12.0 * np.asarray(inversion.scaledGradientGram)
+    read = GCR.invertVertexPairing(pairing)
+    assert not read.scaleDetermined and read.squaredLengths == []
+    ratio = np.array(read.scaledSquaredLengths) / np.array(s)
+    np.testing.assert_allclose(ratio, ratio[0], rtol=1e-12)
+    with pytest.raises(ValueError, match="3x3"):
+        GCR.invertVertexPairing(np.eye(5, dtype=complex))
+    bad = np.eye(4, dtype=complex)
+    bad[0, 1] = np.nan
+    with pytest.raises(ValueError, match="undefined"):
+        GCR.invertVertexPairing(bad)

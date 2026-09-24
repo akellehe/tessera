@@ -39,9 +39,10 @@ struct WhitneyLengthInversion {
   std::complex<double> scale{};
   /// \f$ |T| = (d+1)(d+2)\,C \f$; quiet NaN when the scale is undetermined.
   std::complex<double> volume{};
-  /// The squared edge lengths \f$ z_{0i} = g_{ii} \f$,
-  /// \f$ z_{ij} = g_{ii} + g_{jj} - 2g_{ij} \f$ in local edge order; empty when
-  /// the scale is undetermined.
+  /// The squared edge lengths, the quadratic form of \f$ g \f$ on the edge
+  /// vectors: \f$ z_{0i} = g_{ii} \f$,
+  /// \f$ z_{ij} = (e_j-e_i)^{\mathsf T}g(e_j-e_i) = g_{ii} + g_{jj} - g_{ij} - g_{ji} \f$,
+  /// in local edge order; empty when the scale is undetermined.
   std::vector<std::complex<double>> squaredLengths{};
   /// The same formulas applied to \f$ g/C \f$: the squared lengths divided by
   /// \f$ C \f$, defined at every dimension.
@@ -57,6 +58,43 @@ struct WhitneyLengthInversion {
   /// \f$ \|B - B^{\mathsf T}\|_F / \|B\|_F \f$ of the input block \f$ B \f$,
   /// which the fit (over the upper triangle) does not see.
   double asymmetry{0.0};
+};
+
+/// The squared lengths of a grown \f$ d \f$-simplex read from the inherited
+/// pairing \f$ \mathfrak g \f$ between its \f$ d+1 \f$ response vertices,
+/// with the pairing in the role of \f$ |T|\,\Gamma \f$, so that
+/// \f$ C\Gamma = \mathfrak g/((d+1)(d+2)) \f$.
+struct GrownCellInversion {
+  /// The simplex dimension \f$ d \f$ (the pairing is \f$ (d+1)\times(d+1) \f$).
+  int dimension{0};
+  /// \f$ C\Gamma = \mathfrak g/((d+1)(d+2)) \f$.
+  Eigen::MatrixXcd scaledGradientGram{};
+  /// \f$ g/C \f$, the inverse of the block of \f$ C\Gamma \f$ on
+  /// \f$ v_1,\dots,v_d \f$.
+  Eigen::MatrixXcd scaledMetric{};
+  /// True at \f$ d = 3 \f$; false at \f$ d = 2 \f$, where the scale is
+  /// undetermined.
+  bool scaleDetermined{false};
+  /// \f$ C = 14400/\det(g/C) \f$ at \f$ d = 3 \f$; quiet NaN otherwise.
+  std::complex<double> scale{};
+  /// \f$ |T| = (d+1)(d+2)\,C \f$; quiet NaN when the scale is undetermined.
+  std::complex<double> volume{};
+  /// The squared lengths in local edge order \f$ (0,1),(0,2),\dots \f$, as in
+  /// `WhitneyLengthInversion::squaredLengths`; empty when the scale is
+  /// undetermined.
+  std::vector<std::complex<double>> squaredLengths{};
+  /// The squared lengths divided by \f$ C \f$, defined at every dimension.
+  std::vector<std::complex<double>> scaledSquaredLengths{};
+  /// \f$ \lVert\mathfrak g\,\mathbf 1\rVert_2/\lVert\mathfrak g\rVert_F \f$:
+  /// barycentric gradients sum to zero, so this vanishes for the pairing of a
+  /// simplex and measures how far the grown cell is from a simplicial geometry.
+  double rowSumDefect{0.0};
+  /// \f$ \lVert\mathfrak g - \mathfrak g^{\mathsf T}\rVert_F/\lVert\mathfrak g\rVert_F \f$.
+  double asymmetry{0.0};
+  /// \f$ \mathfrak g_{vw}^2/(\mathfrak g_{vv}\mathfrak g_{ww}) \f$: the part
+  /// of the pairing that a change of fiber frames, which multiplies
+  /// \f$ \mathfrak g_{vw} \f$ by \f$ \det g_v\det g_w \f$, does not move.
+  Eigen::MatrixXcd frameInvariantRatios{};
 };
 
 /// # GrownCellRule
@@ -103,6 +141,25 @@ class GrownCellRule {
   /// supply), and when the block of \f$ C\Gamma \f$ on \f$ v_1,\dots,v_d \f$ is
   /// singular.
   [[nodiscard]] static WhitneyLengthInversion invertWhitneyBlock(const Eigen::MatrixXcd &block);
+
+  /// The grown-cell identification: each response vertex's fiber plays the
+  /// role of the barycentric gradient \f$ d\lambda_v \f$, so the inherited
+  /// pairing \p pairing between the \f$ d+1 \f$ vertices of a grown simplex is
+  /// read as \f$ |T|\,\Gamma \f$ and steps (ii)-(iv) of the length rule follow
+  /// with no fit. At level zero the pairing of the exact chains
+  /// \f$ \delta_0 e_v \f$ on one simplex is exactly \f$ |T|\,\Gamma \f$ and the
+  /// squared lengths are returned. Throws `std::invalid_argument` unless the
+  /// pairing is \f$ 3\times3 \f$ or \f$ 4\times4 \f$, and when the block on
+  /// \f$ v_1,\dots,v_d \f$ is singular.
+  [[nodiscard]] static GrownCellInversion invertVertexPairing(const Eigen::MatrixXcd &pairing);
+
+  /// The inherited pairing on the determinant line,
+  /// \f$ \mathfrak g_{vw} = \det\bigl(Y_v^{\mathsf T}\,Z_w\bigr) \f$, where
+  /// \p frames holds the fiber frames \f$ Y_v \f$ (chains, \f$ n\times r \f$)
+  /// and \p images the matching \f$ Z_w = G_1^U Y_w \f$. Entries between
+  /// fibers of different rank are undefined and returned as quiet NaN.
+  [[nodiscard]] static Eigen::MatrixXcd determinantPairing(
+      const std::vector<Eigen::MatrixXcd> &frames, const std::vector<Eigen::MatrixXcd> &images);
 
   /// \f$ U_{vw} = \det M_{vw} \f$ for a square transport block. Throws
   /// `std::invalid_argument` for a non-square or empty block: only common-rank

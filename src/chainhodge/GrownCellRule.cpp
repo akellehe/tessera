@@ -68,7 +68,7 @@ std::vector<Complex> lengthsFromMetric(const Eigen::MatrixXcd &g) {
       if (i == 0)
         z.push_back(g(j - 1, j - 1));
       else
-        z.push_back(g(i - 1, i - 1) + g(j - 1, j - 1) - 2.0 * g(i - 1, j - 1));
+        z.push_back(g(i - 1, i - 1) + g(j - 1, j - 1) - g(i - 1, j - 1) - g(j - 1, i - 1));
     }
   return z;
 }
@@ -149,6 +149,76 @@ WhitneyLengthInversion GrownCellRule::invertWhitneyBlock(const Eigen::MatrixXcd 
     out.scale = Complex(nan, nan);
     out.volume = Complex(nan, nan);
     out.scaleDetermined = false;
+  }
+  return out;
+}
+
+GrownCellInversion GrownCellRule::invertVertexPairing(const Eigen::MatrixXcd &pairing) {
+  const Eigen::Index n = pairing.rows();
+  if (pairing.cols() != n || (n != 3 && n != 4))
+    throw std::invalid_argument(
+        "GrownCellRule::invertVertexPairing: the pairing must be 3x3 (a triangle, scale "
+        "undetermined) or 4x4 (a tetrahedron)");
+  if (!pairing.allFinite())
+    throw std::invalid_argument(
+        "GrownCellRule::invertVertexPairing: the pairing has an undefined entry (fibers of "
+        "different rank)");
+  const int d = static_cast<int>(n) - 1;
+  GrownCellInversion out;
+  out.dimension = d;
+  const double norm = pairing.norm();
+  out.asymmetry = norm > 0.0 ? (pairing - pairing.transpose()).norm() / norm : 0.0;
+  out.rowSumDefect =
+      norm > 0.0 ? (pairing * Eigen::VectorXcd::Ones(n)).norm() / norm : 0.0;
+  out.frameInvariantRatios = Eigen::MatrixXcd(n, n);
+  for (Eigen::Index v = 0; v < n; ++v)
+    for (Eigen::Index w = 0; w < n; ++w)
+      out.frameInvariantRatios(v, w) =
+          pairing(v, w) * pairing(v, w) / (pairing(v, v) * pairing(w, w));
+  out.scaledGradientGram = pairing / static_cast<double>((d + 1) * (d + 2));
+
+  const Eigen::MatrixXcd reduced = out.scaledGradientGram.bottomRightCorner(d, d);
+  Eigen::FullPivLU<Eigen::MatrixXcd> lu(reduced);
+  if (!lu.isInvertible())
+    throw std::invalid_argument(
+        "GrownCellRule::invertVertexPairing: the block of C*Gamma on v_1..v_d is singular");
+  out.scaledMetric = lu.inverse();
+  out.scaledSquaredLengths = lengthsFromMetric(out.scaledMetric);
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  if (d == 3) {
+    const double factor = 6.0 * 4.0 * 5.0;
+    out.scale = factor * factor / out.scaledMetric.determinant();
+    out.scaleDetermined = true;
+    out.volume = 20.0 * out.scale;
+    out.squaredLengths = lengthsFromMetric(out.scale * out.scaledMetric);
+  } else {
+    out.scale = Complex(nan, nan);
+    out.volume = Complex(nan, nan);
+  }
+  return out;
+}
+
+Eigen::MatrixXcd GrownCellRule::determinantPairing(const std::vector<Eigen::MatrixXcd> &frames,
+                                                   const std::vector<Eigen::MatrixXcd> &images) {
+  if (frames.size() != images.size())
+    throw std::invalid_argument(
+        "GrownCellRule::determinantPairing: one image per frame is required");
+  const auto n = static_cast<Eigen::Index>(frames.size());
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  Eigen::MatrixXcd out(n, n);
+  for (Eigen::Index v = 0; v < n; ++v) {
+    const auto &Y = frames[static_cast<std::size_t>(v)];
+    for (Eigen::Index w = 0; w < n; ++w) {
+      const auto &Z = images[static_cast<std::size_t>(w)];
+      if (Y.rows() != Z.rows())
+        throw std::invalid_argument(
+            "GrownCellRule::determinantPairing: frames and images must share the carrier");
+      if (Y.cols() != Z.cols() || Y.cols() == 0) {
+        out(v, w) = Complex(nan, nan);
+        continue;
+      }
+      out(v, w) = (Y.transpose() * Z).determinant();
+    }
   }
   return out;
 }
