@@ -269,10 +269,14 @@ struct VillainSeries {
 /// The series keeps \f$ |m|\le M \f$, where \f$ M_0 \f$ is the least
 /// \f$ m\ge1 \f$ with \f$ e^{-m^2/(2\beta)} \f$ below the declared relative
 /// tolerance (relative to the \f$ m=0 \f$ coefficient, which is one), and
-/// \f$ M\ge M_0 \f$ is raised further only until the geometric tail ratios
-/// \f$ \rho_k \f$ of `VillainSeries` are at most \f$ \tfrac12 \f$ for the
-/// holonomy at hand, so the reported bounds hold. Every evaluation returns its
-/// bounds; nothing is truncated without them.
+/// \f$ M\ge M_0 \f$ is raised further, for the holonomy at hand, until the
+/// geometric tail ratios \f$ \rho_k \f$ of `VillainSeries` are at most
+/// \f$ \tfrac12 \f$ and each of the three tail bounds is below the same
+/// tolerance relative to the sum of the moduli of the kept terms of its own
+/// series. On the unit circle this is \f$ M_0 \f$; away from it the terms
+/// \f$ e^{-m^2/(2\beta)}r^m \f$, \f$ r=\max(|F|,|F|^{-1}) \f$, peak near
+/// \f$ m=\beta\log r \f$ and the count grows with them. Every evaluation
+/// returns its bounds; nothing is truncated without them.
 class VillainCharacter {
  public:
   /// @param beta The coupling \f$ \beta>0 \f$ of the heat kernel, the same
@@ -301,8 +305,7 @@ class VillainCharacter {
   /// The truncated series \f$ W \f$, \f$ DW \f$, \f$ D^2W \f$ at \p holonomy
   /// with their tail bounds.
   /// @throws std::invalid_argument when \p holonomy is zero or not finite, or
-  ///   when no term count up to \f$ 10^5 \f$ brings the tail ratios to
-  ///   \f$ \tfrac12 \f$.
+  ///   when no term count up to \f$ 10^5 \f$ meets the truncation rule.
   [[nodiscard]] VillainSeries series(std::complex<double> holonomy) const;
 
   /// \f$ \log W(F) \f$ on the branch real on the unit circle, by the radial
@@ -323,6 +326,16 @@ class VillainCharacter {
   /// @throws std::domain_error when \f$ W(F) \f$ is not certified nonzero.
   [[nodiscard]] std::complex<double> secondDerivative(
       std::complex<double> holonomy) const;
+
+  /// The relative distance from \p holonomy to the nearest zero of \f$ W \f$,
+  /// \f$ \min_{n\ge1,\pm}|F-F_{n,\pm}|/\min(|F|,|F_{n,\pm}|) \f$ over the
+  /// zeros \f$ F_{n,\pm}=-e^{\pm(2n-1)/(2\beta)} \f$. It is scale free, as
+  /// the zero set is: the zeros accumulate at \f$ 0 \f$ and \f$ \infty \f$,
+  /// so an absolute distance would say nothing about the ones near either
+  /// end, and dividing by the smaller modulus makes a zero far from \f$ F \f$
+  /// in modulus far in this distance too.
+  /// @throws std::invalid_argument when \p holonomy is zero or not finite.
+  [[nodiscard]] double zeroDistance(std::complex<double> holonomy) const;
 
  private:
   double beta_;
@@ -699,6 +712,35 @@ class JointAction {
   /// The truncation of the Villain series over the current face holonomies,
   /// with its certified relative tail bounds. All zero for the Wilson form.
   [[nodiscard]] HolonomyTruncation holonomyTruncation() const;
+
+  /// The smallest relative distance of any face holonomy
+  /// \f$ \mathcal F_\tau \f$ to a zero of \f$ W \f$
+  /// (`VillainCharacter::zeroDistance`). Positive infinity when the declared
+  /// term has no zero: the Wilson form, or a zero weight.
+  [[nodiscard]] double holonomyZeroDistance() const;
+
+  /// The smallest relative distance to a zero of \f$ W \f$ that any face
+  /// holonomy comes to along the multiplicative path
+  /// \f$ U_e\mapsto U_e\,e^{t\delta_e} \f$, \f$ t\in[0,1] \f$, from the
+  /// current connection.
+  ///
+  /// Along the path each face moves as
+  /// \f$ \mathcal F_\tau(t)=\mathcal F_\tau\,e^{t\Delta_\tau} \f$ with
+  /// \f$ \Delta_\tau=\sum_e\epsilon_{\tau e}\delta_e \f$, formed from the
+  /// increments without any logarithm. The distance is sampled at nodes spaced
+  /// by at most \p spacing in \f$ |t\Delta_\tau| \f$, the Maurer-Cartan
+  /// length of the path, both end points included, so a path that passes a
+  /// zero between nodes still reads a distance of order \p spacing there.
+  ///
+  /// @param linkIncrements \f$ \delta_e \f$ per edge, in `getEdgeList()` order
+  ///   and on the stored orientations, as `HolomorphicRelaxation` steps them.
+  /// @param spacing The largest node spacing, positive.
+  /// @return Positive infinity when the declared term has no zero.
+  /// @throws std::invalid_argument when the increment count is not the edge
+  ///   count or the spacing is not positive.
+  [[nodiscard]] double holonomyZeroClearance(
+      const std::vector<std::complex<double>> &linkIncrements,
+      double spacing) const;
 
   /// The Hellmann-Feynman force \f$ \operatorname{tr}(\Gamma\,\partial h/\partial z_e) \f$
   /// of Section 7, one entry per edge in `getEdgeList()` order.
