@@ -11,7 +11,7 @@ import pytest
 
 from tessera.drivers.bands import potentials as pot
 from tessera.drivers.bands.crystal import CrystalCell
-from tessera.drivers.bands.fiber import HistorySlab, klein_gordon_levels, static_levels
+from tessera.drivers.bands.fiber import HistorySlab, klein_gordon_levels, static_levels, tick_limit, tick_limit_levels
 
 
 @pytest.fixture(scope="module")
@@ -71,6 +71,28 @@ def test_the_tick_map_closes_on_the_static_relativistic_problem_at_second_order(
     # Second order: the difference times the square of the divisions stays bounded and falls.
     scaled = [d * n ** 2 for d, n in zip(differences, (3, 4, 6))]
     assert scaled[2] < scaled[1] < scaled[0] < 0.6
+
+
+def test_the_tick_map_with_a_potential_converges_to_its_exact_limit_at_second_order(cell):
+    """The limit is read off the slab's own blocks: S2 is minus the lumped mass
+    matrix, S1 and S0 are 2 D V and A + m^2 M - D V^2 up to the curvature terms,
+    which vanish for a constant potential; and the decay rates of the tick map
+    approach the levels of the limit like the square of the tick."""
+    mass = 6.0
+    V = pot.cosine_potential(cell, 0.4)
+    A, M = cell.stiffness.dressed().toarray().real, cell.mass.dressed().toarray().real
+    D = np.diag(M.sum(axis=1))
+    S0, S1, S2 = tick_limit(cell, V, mass)
+    assert np.abs(S2 + D).max() < 1e-5
+    curvature = np.abs(S1 - 2.0 * D @ np.diag(V)).max(), np.abs(S0 - (A + mass ** 2 * M - D @ np.diag(V ** 2))).max()
+    assert 1e-3 < curvature[0] < 0.05 and 1e-3 < curvature[1] < 0.05
+    flat = np.full(cell.size, 0.3)
+    F0, F1, _ = tick_limit(cell, flat, mass)
+    assert np.abs(F1 - 2.0 * D @ np.diag(flat)).max() < 1e-4                      # what is left is of the order of the tick
+    assert np.abs(F0 - (A + mass ** 2 * M - D @ np.diag(flat ** 2))).max() < 1e-4
+    limit = tick_limit_levels(cell, V, mass, 3)
+    errors = [np.abs(np.sort(HistorySlab(cell, tau, V, mass).tick_levels(3).real) - limit).max() for tau in (4e-3, 2e-3)]
+    assert errors[1] < 1e-4 and 3.5 < errors[0] / errors[1] < 4.5
 
 
 def test_the_declared_fields_and_the_layer_api_give_the_same_slab(cell):

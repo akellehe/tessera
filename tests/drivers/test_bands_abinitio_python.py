@@ -383,6 +383,40 @@ def test_a_converged_run_on_a_coarse_mesh_starts_the_next_mesh():
     assert np.abs(scratch["levels"] - continued["levels"]).max() < 1e-5
 
 
+@pytest.mark.slow
+def test_the_quasiparticle_equation_on_a_momentum_set_is_that_of_the_supercell():
+    """The screened interaction at every momentum transfer of the set, pairs
+    running from k to k + q, and the self-energy summed over the transfers: on
+    the set {0, 1/2} of a cell they are the zone-centre calculation of the cell
+    doubled along that axis, state by state (the same states kept in both, up to
+    a gap of the spectrum)."""
+    from tessera.drivers.bands import screening
+    atom = soft_atom()
+    single = abinitio.Crystal(6.0 * np.eye(3), [(atom, np.full(3, 0.5))])
+    double = abinitio.Crystal(np.diag([12.0, 6.0, 6.0]), [(atom, np.array([0.25, 0.5, 0.5])),
+                                                           (atom, np.array([0.75, 0.5, 0.5]))])
+    supercell = abinitio.MeshCrystal(double, (12, 6, 6))
+    reference = supercell.extend_bands(supercell.run_hartree_fock(8, tolerance=1e-8), 20, tolerance=1e-8)
+    mesh = abinitio.MeshCrystal(single, 6)
+    extended = mesh.extend_bands_set(mesh.run_hartree_fock_set(4, [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0)], tolerance=1e-8),
+                                     10, tolerance=1e-8)
+    assert extended["converged"]
+    union = np.sort(np.concatenate(extended["levels"]))
+    assert np.abs(union[:14] - reference["levels"][:14]).max() < 1e-5
+    cut = 5 + int(np.argmax(np.diff(reference["levels"][:16])[5:13]))
+    threshold = 0.5 * (reference["levels"][cut] + reference["levels"][cut + 1])
+    kept = [int(np.sum(levels < threshold)) for levels in extended["levels"]]
+    assert sum(kept) == cut + 1
+    levels, occupied, coupling, integrals = supercell.coulomb_integrals(reference, cut + 1)
+    rpa = screening.RandomPhase.from_pieces(levels, occupied, coupling, integrals)
+    states = [(0, 0), (1, 0), (1, 1)]                                   # the three lowest modes of the supercell
+    produced = mesh.quasiparticle_set(extended, states, kept)
+    for n, state in enumerate(states):
+        assert produced[state][0] == pytest.approx(levels[n], abs=1e-5)
+        assert produced[state][1] == pytest.approx(rpa.quasiparticle(n)[0], abs=1e-5)
+        assert abs(produced[state][1] - produced[state][0]) > 1e-3       # the correction being compared is not small
+
+
 def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that_momentum():
     """The load of conj(psi_i) psi_a for a section psi_a of crystal momentum
     kappa is the weighted mass matrix M_0^U[psi_i], dressed by the flat
@@ -395,8 +429,7 @@ def test_a_pair_density_of_small_momentum_is_loaded_with_the_link_phases_of_that
     x = rng.standard_normal(cell.size)
     Y = rng.standard_normal((cell.size, 3)) + 1j * rng.standard_normal((cell.size, 3))
     kappa = np.array([0.013, -0.2, 0.31])
-    triple = coulomb.TripleIntegrals(cell.complex, cell.squared_lengths)
-    loads = triple.loads(x, Y, coulomb.bloch_twist(cell, triple.tops, kappa))
+    loads = coulomb.pair_loads(cell, x, Y, kappa)
     assert np.abs(loads - cell.weighted_mass(x).dressed(kappa) @ Y).max() < 1e-15
     kernel = coulomb.GridCoulombKernel(cell, 8.0 * np.pi)
     rho = Y[:, 0]

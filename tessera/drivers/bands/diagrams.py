@@ -32,9 +32,42 @@ value on the imaginary axis, where the test suite holds every diagram to the
 plain frequency integrals of its Feynman rules.
 """
 import itertools
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
 import numpy as np
+
+_POOL = None
+
+
+def _pool():
+    """One pool of worker processes for the life of the interpreter: the terms of
+    a diagram are thousands of small independent contractions, whose cost is
+    the interpreter's and does not thread."""
+    global _POOL
+    import __main__
+    if not hasattr(__main__, "__file__"):
+        return None                                              # workers re-import the main module; without one, run serially
+    if _POOL is None:
+        import multiprocessing
+        # The workers start fresh and single-threaded: a threaded linear-algebra library in every one of them
+        # would oversubscribe the machine.
+        saved = {name: os.environ.get(name) for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")}
+        os.environ.update({name: "1" for name in saved})
+        try:
+            _POOL = ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1),
+                                        mp_context=multiprocessing.get_context("spawn"))
+            list(_POOL.map(abs, range(_POOL._max_workers)))      # start them while the environment is set
+        finally:
+            for name, value in saved.items():
+                os.environ.pop(name, None) if value is None else os.environ.__setitem__(name, value)
+    return _POOL
+
+
+def _task(arguments):
+    engine, diagram, kinds, n, frequency, part, parts = arguments
+    return engine._diagram(diagram, kinds, n, frequency, part, parts)
 
 
 @dataclass(frozen=True)
@@ -87,15 +120,23 @@ class SkeletonSelfEnergy:
         self.filled, self.empty = np.arange(self.occupied), np.arange(self.occupied, len(self.xi))
         self._paths = {}
 
-    def evaluate(self, n, frequency, order):
-        """The sum of the diagrams of `order` for the mode n at the (complex) frequency."""
-        total = 0.0
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state["_paths"] = {}                                     # found again in the worker
+        return state
+
+    def evaluate(self, n, frequency, order, parallel=None):
+        """The sum of the diagrams of `order` for the mode n at the (complex)
+        frequency. The third order is spread over worker processes by default."""
+        tasks = []
         for diagram in skeleton_diagrams(order):
             kinds = itertools.product(*[("dynamic", "static") if self.U is not None and order > 1 else ("dynamic",)
                                         for _ in diagram.chords])
             for kind in kinds:
-                total = total + self._diagram(diagram, kind, n, frequency)
-        return total
+                parts = 6 if order >= 3 and all(k == "dynamic" for k in kind) else 1          # even out the tasks
+                tasks += [(self, diagram, kind, n, frequency, part, parts) for part in range(parts)]
+        pool = _pool() if ((order >= 3) if parallel is None else parallel) else None
+        return sum(pool.map(_task, tasks)) if pool is not None else sum(_task(task) for task in tasks)
 
     def value_and_derivative(self, n, frequency, order, step=1e-6):
         """Sigma and d Sigma / dw at a real frequency from one complex evaluation:
@@ -105,7 +146,7 @@ class SkeletonSelfEnergy:
 
     # -- one diagram, one assignment of instantaneous and retarded lines
 
-    def _diagram(self, diagram, kinds, n, frequency):
+    def _diagram(self, diagram, kinds, n, frequency, part=0, parts=1):
         group = list(range(diagram.vertices))                    # instantaneous lines merge their two times
         for (u, v), kind in zip(diagram.chords, kinds):
             if kind == "static":
@@ -119,7 +160,9 @@ class SkeletonSelfEnergy:
         for e, (u, v) in enumerate(diagram.edges):
             outgoing[u], incoming[v] = e, e
         total = 0.0
-        for order in itertools.permutations(range(len(groups))):
+        for position, order in enumerate(itertools.permutations(range(len(groups)))):
+            if position % parts != part:
+                continue
             time = {vertex: order[groups.index(group[vertex])] for vertex in range(diagram.vertices)}
             if any(time[u] == time[v] for u, v in diagram.edges):
                 continue                                         # an equal-time line is a mean-field insertion

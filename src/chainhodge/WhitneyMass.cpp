@@ -1052,4 +1052,52 @@ std::vector<Complex> WhitneyMass::vertexDensityContraction(const cobordism::Chai
   return rho;
 }
 
+Eigen::MatrixXcd WhitneyMass::pairLoads(const cobordism::ChainComplex &K, const SquaredLengths &s,
+                                        const std::vector<Complex> &linksX,
+                                        const std::vector<Complex> &linksY, const Eigen::VectorXcd &x,
+                                        const Eigen::MatrixXcd &Y, Branch branch) {
+  checkInputs(K, s, 0);
+  const auto n = static_cast<Eigen::Index>(K.numSimplices(0));
+  const auto edges = static_cast<std::size_t>(K.numSimplices(1));
+  if (x.size() != n || Y.rows() != n)
+    throw std::invalid_argument("WhitneyMass::pairLoads: x must have n_0 entries and Y n_0 rows");
+  if (linksX.size() != edges || linksY.size() != edges)
+    throw std::invalid_argument("WhitneyMass::pairLoads: one link per edge, in the canonical edge order");
+  const CellIndex index(K);
+  const int d = K.dimension();
+  const int nv = d + 1;
+  const std::vector<double> weight = tripleWeights(d);
+  Eigen::MatrixXcd loads = Eigen::MatrixXcd::Zero(n, Y.cols());
+  std::vector<int> local(static_cast<std::size_t>(nv));
+  std::vector<Complex> carryX(static_cast<std::size_t>(nv)), carryY(static_cast<std::size_t>(nv));
+  // The link U_ba carries a value at a back to b: the stored link for b < a, its inverse otherwise.
+  const auto link = [&](const std::vector<Complex> &links, std::uint64_t b, std::uint64_t a) {
+    if (a == b) return Complex(1.0, 0.0);
+    const Complex u = links[static_cast<std::size_t>(index.cell(1, Cell{std::min(a, b), std::max(a, b)}))];
+    return b < a ? u : Complex(1.0, 0.0) / u;
+  };
+  Eigen::MatrixXcd carried(nv, Y.cols());
+  for (const auto &T : K.orientedTopSimplices()) {
+    const Complex volume = topVolume(T, s, index, branch);
+    for (int a = 0; a < nv; ++a) {
+      const auto ia = static_cast<std::size_t>(a);
+      local[ia] = index.cell(0, Cell{T[ia]});
+      carryX[ia] = link(linksX, T[0], T[ia]);
+      carryY[ia] = link(linksY, T[0], T[ia]);
+      carried.row(a) = carryY[ia] * Y.row(local[ia]);
+    }
+    for (int c = 0; c < nv; ++c) {
+      Eigen::RowVectorXcd sum = Eigen::RowVectorXcd::Zero(Y.cols());
+      for (int a = 0; a < nv; ++a) {
+        const Complex xa = carryX[static_cast<std::size_t>(a)] * x(local[static_cast<std::size_t>(a)]);
+        for (int b = 0; b < nv; ++b)
+          sum += (xa * weight[(static_cast<std::size_t>(a) * nv + b) * nv + c]) * carried.row(b);
+      }
+      const Complex back = Complex(1.0, 0.0) / (carryX[static_cast<std::size_t>(c)] * carryY[static_cast<std::size_t>(c)]);
+      loads.row(local[static_cast<std::size_t>(c)]) += (volume * back) * sum;
+    }
+  }
+  return loads;
+}
+
 }  // namespace tessera::chainhodge

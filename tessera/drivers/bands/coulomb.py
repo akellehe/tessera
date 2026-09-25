@@ -301,14 +301,18 @@ class GridCoulombKernel:
         return np.vdot(rho_a, self.potential(rho_b))
 
 
-def bloch_twist(cell, tops, kappa):
-    """exp(2 pi i kappa . d) for the grid displacement d of every vertex of
-    every top simplex from the simplex's first vertex: the link phases of the
-    crystal momentum `kappa`, per simplex, for `TripleIntegrals.loads`."""
-    n = np.array(cell.divisions)
-    d = (cell.index[tops] - cell.index[tops[:, :1]]) % n
-    d = np.where(d == n - 1, -1, d)
-    return np.exp(2j * np.pi * ((d / n) @ np.asarray(kappa, dtype=float)))
+def pair_loads(cell, x, Y, kappa_y=None, kappa_x=None):
+    """The loads int phi_c x y of the product of a section x of the crystal
+    momentum `kappa_x` with every column of Y, sections of `kappa_y`
+    (`WhitneyMass.pairLoads` with the Bloch links of the two momenta; None is
+    the zone centre). For conj(psi') psi between the momenta k' and k pass
+    x = conj(z'), kappa_x = -k', kappa_y = k: the load carries k - k'. With
+    kappa_x = None it is the dressed weighted mass matrix M_0^U[x] applied to Y."""
+    links = lambda kappa: cell.bloch_links(kappa)
+    Y = np.asarray(Y, dtype=complex)
+    columns = Y.reshape(cell.size, -1)
+    return np.asarray(ch.WhitneyMass.pairLoads(cell.complex, cell.squared_lengths, links(kappa_x), links(kappa_y),
+                                               np.asarray(x, dtype=complex), columns))
 
 
 class TripleIntegrals:
@@ -323,14 +327,8 @@ class TripleIntegrals:
 
     `loads(x, Y)` returns, for every column y of Y, the load vector
     int phi_c x y of the product: the vectorized form of
-    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`. With a
-    `twist` (`bloch_twist`) the columns of Y are the cell-periodic parts of
-    sections of crystal momentum kappa and the result is `M_0^U[x] y`, the
-    weighted mass matrix dressed by the link phases of that momentum: the load
-    of a pair density that carries the momentum kappa. `twist_x` dresses the
-    first factor in the same way: for conj(psi') psi between sections of the
-    momenta kappa' and kappa, pass x = conj(z'), `twist_x = conj(twist(kappa'))`
-    and `twist = twist(kappa)`; the load carries the momentum kappa - kappa'.
+    `WhitneyMass.vertexDensityContraction`, and equally of `M_0[x] y`, for the
+    zone centre. Sections of a crystal momentum go through `pair_loads`.
     """
 
     def __init__(self, complex_, squared_lengths):
@@ -346,28 +344,19 @@ class TripleIntegrals:
         self.scatter = [sp.csr_matrix((np.ones(count), (self.tops[:, c], np.arange(count))),
                                       shape=(self.size, count)) for c in range(d + 1)]
 
-    def loads(self, x, Y, twist=None, block=48, twist_x=None):
+    def loads(self, x, Y, block=48):
         x = np.asarray(x)
         Y = np.asarray(Y).reshape(self.size, -1)
         if Y.shape[1] > block:                                # bound the per-simplex temporaries
-            return np.hstack([self.loads(x, Y[:, start:start + block], twist, block, twist_x)
-                              for start in range(0, Y.shape[1], block)])
+            return np.hstack([self.loads(x, Y[:, start:start + block], block) for start in range(0, Y.shape[1], block)])
         local_x = x[self.tops]                                # (tops, d + 1)
-        if twist_x is not None:
-            local_x = local_x * twist_x
         local_y = Y[self.tops]                                # (tops, d + 1, columns)
-        if twist is not None:
-            local_y = local_y * twist[:, :, None]             # carried to the first vertex of the simplex
         sum_x, sum_y = local_x.sum(axis=1), local_y.sum(axis=1)
         common = sum_x[:, None] * sum_y + np.einsum("ta,tan->tn", local_x, local_y)
         total = np.zeros((self.size, Y.shape[1]), dtype=np.result_type(x, local_y, self.weight))
         for c, scatter in enumerate(self.scatter):
             term = common + local_x[:, c, None] * sum_y + sum_x[:, None] * local_y[:, c, :] \
                 + 2.0 * local_x[:, c, None] * local_y[:, c, :]
-            if twist is not None:
-                term = term * twist[:, c, None].conj()         # and back to the vertex the load belongs to
-            if twist_x is not None:
-                term = term * twist_x[:, c, None].conj()
             total += scatter @ (self.weight[:, None] * term)
         return total
 
