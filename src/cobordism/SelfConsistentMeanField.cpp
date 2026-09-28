@@ -219,9 +219,16 @@ double largestSquaredLengthOf(const JointAction &action) {
 
 /// The declared constraints of \p action with the pinned fiber moments
 /// installed: \f$ p_j(h_{\mathcal C})=p_j^{\star} \f$ for
-/// \f$ j=1,\ldots,m_{\rm c} \f$ on the fiber of \p read, from multipliers of
-/// zero, the targets declared or else the fiber's values at the action's
-/// point. Returns the fiber's rank.
+/// \f$ j=1,\ldots,m_{\rm c} \f$ on the fiber of \p read, the targets
+/// declared or else the fiber's values at the action's point. The multipliers
+/// start at the least-squares estimate there, the \f$ \xi \f$ that best
+/// balances the stationarity force on the relaxed coordinates,
+/// \f$ \min_\xi\lVert F+G^{\mathsf T}\xi\rVert \f$ with \f$ G \f$ the
+/// constraints' gradients (the first-order multiplier estimate of
+/// constrained root finding), in the minimum-norm sense when pinned power
+/// sums depend on one another. It is where the root find starts and changes
+/// no equation. The action must carry the covariance it will be solved with.
+/// Returns the fiber's rank.
 /// @throws std::invalid_argument when more moments are pinned than the fiber's
 ///   rank, when targets are declared for a different number of moments, or
 ///   when the action already declares constraints of its own.
@@ -280,6 +287,68 @@ std::size_t installFiberMoments(
             : declaration.fiberMomentTargets[index] /
                   std::pow(scale, static_cast<double>(index + 1));
   action = JointAction(action.spacetime(), std::move(pinned));
+
+  // The least-squares multipliers: the force with every multiplier zero and
+  // the constraints' gradients, both on the relaxed coordinates.
+  const HolomorphicRelaxationDeclaration &geometry = declaration.geometry;
+  std::vector<complexd> force;
+  if (geometry.relaxLengths)
+    for (const complexd &value :
+         classSum(action.lengthStationarity(), geometry, false))
+      force.push_back(value);
+  if (geometry.relaxLinks)
+    for (const complexd &value :
+         classSum(action.linkStationarity(), geometry, true))
+      force.push_back(value);
+  const auto rows = static_cast<Eigen::Index>(force.size());
+  const auto columns =
+      static_cast<Eigen::Index>(action.declaration().momentConstraints.size());
+  if (rows == 0 || columns == 0) return rank;
+  const std::size_t edges = action.edgeCount();
+  Eigen::MatrixXcd gradients(rows, columns);
+  for (Eigen::Index column = 0; column < columns; ++column) {
+    const std::vector<complexd> gradient =
+        action.momentGradient(static_cast<std::size_t>(column));
+    std::vector<complexd> entries;
+    if (geometry.relaxLengths)
+      for (const complexd &value : classSum(
+               std::vector<complexd>(
+                   gradient.begin(),
+                   gradient.begin() + static_cast<std::ptrdiff_t>(edges)),
+               geometry, false))
+        entries.push_back(value);
+    if (geometry.relaxLinks)
+      for (const complexd &value : classSum(
+               std::vector<complexd>(
+                   gradient.begin() + static_cast<std::ptrdiff_t>(edges),
+                   gradient.end()),
+               geometry, true))
+        entries.push_back(value);
+    for (Eigen::Index row = 0; row < rows; ++row)
+      gradients(row, column) = entries[static_cast<std::size_t>(row)];
+  }
+  Eigen::VectorXcd target(rows);
+  for (Eigen::Index row = 0; row < rows; ++row)
+    target(row) = -force[static_cast<std::size_t>(row)];
+  const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(
+      gradients, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  const Eigen::VectorXd &singular = svd.singularValues();
+  const double largest = singular.size() > 0 ? singular(0) : 0.0;
+  Eigen::Index kept = 0;
+  while (kept < singular.size() &&
+         singular(kept) > geometry.rankTolerance * largest)
+    ++kept;
+  Eigen::VectorXcd estimate = Eigen::VectorXcd::Zero(columns);
+  if (kept > 0) {
+    Eigen::VectorXcd coefficients =
+        svd.matrixU().leftCols(kept).adjoint() * target;
+    for (Eigen::Index k = 0; k < kept; ++k) coefficients(k) /= singular(k);
+    estimate = svd.matrixV().leftCols(kept) * coefficients;
+  }
+  std::vector<complexd> multipliers(static_cast<std::size_t>(columns));
+  for (Eigen::Index k = 0; k < columns; ++k)
+    multipliers[static_cast<std::size_t>(k)] = estimate(k);
+  action.setMultipliers(multipliers);
   return rank;
 }
 
@@ -340,7 +409,7 @@ SelfConsistentMeanFieldStep measure(
 complexd forceHessianOf(const JointAction &action,
                         const HolomorphicRelaxationDeclaration &probe,
                         const Eigen::MatrixXcd &jacobian,
-                        double &forceNorm) {
+                        double &forceNorm, double &hessianScale) {
   std::vector<complexd> force;
   std::vector<complexd> scale;
   if (probe.relaxLengths)
@@ -369,6 +438,7 @@ complexd forceHessianOf(const JointAction &action,
   const Eigen::MatrixXcd hessian =
       t.asDiagonal() * jacobian.topLeftCorner(geometric, geometric) *
       t.asDiagonal();
+  hessianScale = hessian.norm();
   Eigen::VectorXcd direction = t.asDiagonal() * f;
   const auto constraints =
       static_cast<Eigen::Index>(action.constraintCount());
@@ -453,8 +523,9 @@ void readJointJacobian(const JointAction &action,
                        ? singular(rank - 1) / singular(rank)
                        : (rank == 0 ? kNaN
                                     : std::numeric_limits<double>::infinity());
-  report.forceHessian = forceHessianOf(action, probe, jacobian,
-                                       report.hellmannFeynmanForceNorm);
+  report.forceHessian =
+      forceHessianOf(action, probe, jacobian, report.hellmannFeynmanForceNorm,
+                     report.forceHessianScale);
 }
 
 /// The report's summary of the point the solve stopped at, from its last
@@ -845,9 +916,9 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
   // of the fiber they make up are pinned there.
   const BandRead start = follower.read(bandOperatorFlat(action_, declaration_));
   follower.follow(start);
+  action_.setCovariance(start.covariance);
   report.fiberRank = installFiberMoments(action_, declaration_, start);
   const bool fiber = declaration_.fiberMoments > 0;
-  action_.setCovariance(start.covariance);
   std::vector<SelfConsistentMeanFieldStep> steps;
   steps.push_back(measure(0, action_, start, start.covariance, declared,
                           declaration_.geometry));
@@ -944,10 +1015,10 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveAlternation() {
   // rule's density there (the uniform-seeded start).
   const BandRead start = follower.read(bandOperatorFlat(action_, declaration_));
   follower.follow(start);
-  report.fiberRank = installFiberMoments(action_, declaration_, start);
-  const bool fiber = declaration_.fiberMoments > 0;
   if (action_.declaration().covariance.empty())
     action_.setCovariance(start.covariance);
+  report.fiberRank = installFiberMoments(action_, declaration_, start);
+  const bool fiber = declaration_.fiberMoments > 0;
   // the pinned moments' multipliers are unknowns of every inner solve
   HolomorphicRelaxationDeclaration inner = declaration_.geometry;
   if (fiber) inner.relaxMultipliers = true;

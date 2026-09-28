@@ -41,10 +41,14 @@ One tick
 At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
-   primal Regge + the paper's linear stiffness (1/kappa)(1/2)||l - l0||^2
-   + the holonomy term (Villain by default, ``--holonomy``), in strict
-   emergence (no carried density in the equations; WP §7), with l0 the
-   level's own lengths as the level was built. The three sheets are relaxed
+   primal Regge + the holonomy term (Villain by default, ``--holonomy``), in
+   strict emergence (no carried density in the equations; WP §7). The
+   spectral-moment part of S_0 is the holomorphic spectral constraint of
+   WP v17 §3.4, which belongs to controlled synthesis on an occupied fiber and
+   so enters only the per-cell reads below; the linear stand-in
+   (1/kappa)(1/2)||l - l0||^2, with l0 the level's own lengths as the level
+   was built, is available by name (``--stiffness linear-stand-in``) and off
+   by default. The three sheets are relaxed
    as one shared base field (WP v17 §8): the solve's variables are the base
    complex's squared lengths and links, written to every sheet. The Regge term is read on
    Riemann sheets continued from the real projection of the level's starting
@@ -420,10 +424,10 @@ def relax_level(spacetime, config, sectors=None, count=None):
     the base vertex count of a level built by `build_level`, the sheets are
     relaxed as one shared base field (`level_edge_classes`), so they stay
     identical exactly."""
-    declaration = bp.action_declaration(spacetime, config["kappa"],
-                                        config["beta"],
-                                        config["regge_hinges"],
-                                        holonomy=config["holonomy"])
+    declaration = bp.action_declaration(
+        spacetime, config["kappa"], config["beta"], config["regge_hinges"],
+        holonomy=config["holonomy"],
+        stiffness=config.get("stiffness", bp.DECLARED_STIFFNESS))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
@@ -824,7 +828,8 @@ def cell_reads(cells, z, links, config):
         # the mean-field solver the run declared (neither option changes an
         # equation)
         for key in ("mean_field_method", "band_selection",
-                    "length_runaway_ratio"):
+                    "length_runaway_ratio", "stiffness", "fiber_moments",
+                    "kappa_role"):
             if key in config:
                 cell_config[key] = config[key]
         number = monopole_numbers([c], links)[0]
@@ -1140,7 +1145,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    selected_contents=None, max_cells=None,
                    persistence_required=None,
                    mean_field_method=bp.DECLARED_MEAN_FIELD_METHOD,
-                   band_selection=bp.DECLARED_BAND_SELECTION):
+                   band_selection=bp.DECLARED_BAND_SELECTION,
+                   stiffness=bp.DECLARED_STIFFNESS,
+                   fiber_moments=bp.DECLARED_FIBER_MOMENTS):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1152,7 +1159,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                holonomy=holonomy, elimination=elimination,
                                selected_contents=selected_contents,
                                mean_field_method=mean_field_method,
-                               band_selection=band_selection)
+                               band_selection=band_selection,
+                               stiffness=stiffness,
+                               fiber_moments=fiber_moments)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1657,7 +1666,8 @@ def main(argv=None):
         if args.contents else None, max_cells=args.max_cells,
         persistence_required=args.persistence_required,
         mean_field_method=args.mean_field_method,
-        band_selection=args.band_selection)
+        band_selection=args.band_selection,
+        stiffness=args.stiffness, fiber_moments=args.fiber_moments)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file) if args.live

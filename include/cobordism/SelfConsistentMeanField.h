@@ -160,9 +160,11 @@ struct SelfConsistentMeanFieldDeclaration {
   /// \f$ h_{\mathcal C}=P_{\mathcal C}hP_{\mathcal C}|_{\operatorname{Ran}
   /// P_{\mathcal C}} \f$ (`JointActionDeclaration::momentProjector`). Their
   /// complex multipliers \f$ \xi_j \f$ are unknowns of the solve beside the
-  /// geometry, from zero, so the geometry declaration's multipliers are
-  /// relaxed whatever it says. Zero, the default, pins nothing. At most
-  /// \f$ r \f$: the paper takes \f$ j=1,\ldots,r \f$.
+  /// geometry, so the geometry declaration's multipliers are relaxed whatever
+  /// it says; they start at the least-squares estimate at the starting point,
+  /// the \f$ \xi \f$ that best balances the stationarity force there. Zero,
+  /// the default, pins nothing. At most \f$ r \f$: the paper takes
+  /// \f$ j=1,\ldots,r \f$.
   std::size_t fiberMoments = 0;
 
   /// The targets \f$ p_j^{\star} \f$ of the pinned power sums, one per
@@ -554,6 +556,11 @@ struct SelfConsistentMeanFieldReport {
   /// quotient is complex and is reported as it is. Quiet NaN when the force
   /// vanishes on that tangent space or the joint Jacobian is unread.
   std::complex<double> forceHessian{0.0, 0.0};
+  /// The scale of that Hessian, the Frobenius norm of the geometric block in
+  /// the coordinates \f$ (z,\theta) \f$: the quotient's imaginary part is
+  /// read against it, since the difference-rule Jacobian is accurate relative
+  /// to its entries and a quotient can be small by cancellation.
+  double forceHessianScale = 0.0;
   /// The largest \f$ |z_e| \f$ over the complex at the point the solve
   /// stopped at, over its value at the start.
   double largestLengthRatio = 1.0;

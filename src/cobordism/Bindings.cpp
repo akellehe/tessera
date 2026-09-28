@@ -5432,6 +5432,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "space, in the coordinates (z, theta), delta = i theta. "
                      "Real on the real slice, where its sign is the "
                      "condition's reading.")
+      .def_readwrite("force_hessian_scale",
+                     &SelfConsistentMeanFieldReport::forceHessianScale,
+                     "The Frobenius norm of that Hessian's geometric block in "
+                     "(z, theta), against which the quotient's imaginary part "
+                     "is read.")
       .def_readwrite("largest_length_ratio",
                      &SelfConsistentMeanFieldReport::largestLengthRatio,
                      "The largest |z_e| at the end over its value at the "

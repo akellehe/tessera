@@ -30,9 +30,20 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
 "What a content names" below), the driver
 
 1. relaxes both edge fields under the joint action
-   S = (1/kappa) S_Regge(primal) + (1/kappa) (1/2) ||l - l0||^2 + S_hol
-       + tr(Gamma h_1)
-   whose holonomy term S_hol is declared by ``--holonomy``: the Villain form
+   S = (1/kappa) S_Regge(primal) + S_hol + tr(Gamma h_1)
+       + sum_{j=1}^{m_c} xi_j (p_j(h_C) - p_j*)
+   whose last term is the spectral-moment part of S_0, the holomorphic
+   spectral constraints of WP v17 §3.4 on the occupied fiber: P_C is the
+   Riesz projector of the bands the content occupies (rank r),
+   h_C = P_C h_1 P_C on its range, p_j(h_C) = tr(h_C^j) its power sums, the
+   targets p_j* their values at the host (controlled synthesis pins the
+   carrier) and the xi_j independent complex multipliers solved for with the
+   geometry. m_c is declared by ``--fiber-moments`` (r, every moment of the
+   fiber, by default; 1 pins the trace alone). kappa = 8 pi G enters only
+   through the Regge weight; the linear stand-in (1/kappa) (1/2) ||l - l0||^2
+   for the spectral-moment part is available by name
+   (``--stiffness linear-stand-in``) and off by default. The holonomy term
+   S_hol is declared by ``--holonomy``: the Villain form
    -beta_V sum_tau log W(F_tau), W(F) = sum_m exp(-m^2/(2 beta)) F^m,
    beta_V = beta / <m^2>_beta (the default, the paper's holonomy term), or the
    Wilson form beta sum_tau (1 - cos Theta_tau) (the paper's stand-in). Both
@@ -249,6 +260,19 @@ MEAN_FIELD_METHODS = {"joint-newton": cob.SelfConsistentMethod.JointNewton,
 DECLARED_BAND_SELECTION = "continuation"
 BAND_SELECTIONS = {"continuation": cob.BandSelection.Continuation,
                    "sort-every-iterate": cob.BandSelection.SortEveryIterate}
+#: The length stiffness of the joint action. The spectral-moment part of S_0
+#: is the holomorphic spectral constraint of WP v17 §3.4 on the occupied
+#: fiber (``fiber_moments``); the linear stand-in (1/2 kappa^-1) ||l - l0||^2,
+#: which modelled it, stays available by name and is off by default. Without
+#: it kappa = 8 pi G enters only through the Regge weight 1/kappa.
+DECLARED_STIFFNESS = "none"
+STIFFNESS_FORMS = ("none", "linear-stand-in")
+#: m_c, the number of power sums p_j(h_C), j = 1..m_c, of the occupied fiber
+#: the mean-field solve pins at their values at the host (WP v17 §3.4: in
+#: controlled synthesis the constraints pin a carrier): "r", the fiber's rank
+#: (every moment of the fiber), or a count ("1" pins the trace alone, which
+#: removes the uniform dilation of the Euler identity; "0" pins nothing).
+DECLARED_FIBER_MOMENTS = "r"
 #: The growth of the largest squared length, over its value at the host, at
 #: which a Newton solve stops and reports that the lengths ran off. The linear
 #: stiffness stand-in's force on a squared length saturates at 1/(2 kappa), so
@@ -371,9 +395,18 @@ def sheet_squared_lengths(spacetime, sheet):
 
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                        matter_weight=1.0, reference_lengths=None,
-                       holonomy=DECLARED_HOLONOMY):
+                       holonomy=DECLARED_HOLONOMY,
+                       stiffness=DECLARED_STIFFNESS):
     """The joint action of the calculation (WP §3, §7), with the holonomy term
-    in the declared form, ``"villain"`` or ``"wilson"``."""
+    in the declared form, ``"villain"`` or ``"wilson"``, and the length
+    stiffness in the declared form: ``"none"`` (the default, kappa entering
+    only through the Regge weight 1/kappa) or ``"linear-stand-in"``, the
+    stand-in (1/2 kappa^-1) ||l - l0||^2 for the spectral-moment part of S_0,
+    which the mean-field solve imposes instead as the constraints of WP v17
+    §3.4 on the occupied fiber."""
+    if stiffness not in STIFFNESS_FORMS:
+        raise ValueError("the length stiffness is one of %s; got %r"
+                         % (STIFFNESS_FORMS, stiffness))
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
@@ -382,7 +415,9 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
     declaration.regge_hinges = (cob.ReggeHinges.Interior
                                 if regge_hinges == "interior"
                                 else cob.ReggeHinges.All)
-    declaration.stiffness_weight = 1.0 / kappa
+    declaration.stiffness_weight = (1.0 / kappa
+                                    if stiffness == "linear-stand-in"
+                                    else 0.0)
     declaration.reference_lengths = (
         list(reference_lengths) if reference_lengths is not None else
         [complex(edge.getLength())
@@ -445,6 +480,17 @@ def share_sheet_geometry(geometry, spacetime):
     return geometry
 
 
+def fiber_moment_count(declaration, action, setting):
+    """m_c for a declared setting: an integer as it is, or ``"r"``, the rank
+    of the occupied fiber, the sum of the ranks of the bands the content
+    occupies as the library's own band rule reads them at the action's point
+    (`BandFollower`)."""
+    if str(setting) != "r":
+        return int(setting)
+    read = cob.BandFollower(declaration).read(action.carrier_operator())
+    return int(sum(band.rank for band in read.bands))
+
+
 def mean_field_declaration(content, config, spacetime=None):
     """Band filling with the content's occupations (WP v17 §7 line 250) on the
     bands of the covariant operator h_1 itself (ruling (a): Gamma* is a
@@ -454,7 +500,9 @@ def mean_field_declaration(content, config, spacetime=None):
     continuation (``band_selection``, WP v17 line 151). The fixed point is
     solved by the declared ``mean_field_method``, Newton's method on the
     joint system by default. With ``spacetime``, the solve carries the
-    sheeted host's shared base field (`share_sheet_geometry`)."""
+    sheeted host's shared base field (`share_sheet_geometry`). The number of
+    the occupied fiber's power sums pinned is set by `relax_content`, which
+    has the host to read the fiber's rank on (`fiber_moment_count`)."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = [float(n) for n in content]
@@ -765,15 +813,16 @@ def spin_sectors(states):
 
 
 def _geometric_action(spacetime, kappa, beta, config):
-    """The geometric part of the action (matter off), with the host's declared
-    reference lengths rather than the relaxed ones."""
+    """The geometric part of the action (matter off), with the declared length
+    stiffness and the host's declared reference lengths rather than the
+    relaxed ones."""
     return cob.JointAction(
-        spacetime, action_declaration(spacetime, kappa, beta,
-                                      config["regge_hinges"],
-                                      matter_weight=0.0,
-                                      reference_lengths=config[
-                                          "reference_lengths"],
-                                      holonomy=config["holonomy"]))
+        spacetime, action_declaration(
+            spacetime, kappa, beta, config["regge_hinges"],
+            matter_weight=0.0,
+            reference_lengths=config["reference_lengths"],
+            holonomy=config["holonomy"],
+            stiffness=config.get("stiffness", DECLARED_STIFFNESS)))
 
 
 def fluctuation_couplings(spacetime, phases):
@@ -1227,16 +1276,21 @@ def rotation_averaged_many_body(operator, actions, frame, dual):
 
 def relax_content(content, kappa, beta, config):
     """Step 1 for one content: a fresh host relaxed to self-consistency as one
-    shared base field, the carried density filling the bands of h_1."""
+    shared base field, the carried density filling the bands of h_1, with the
+    declared number of the occupied fiber's power sums pinned at the host."""
     spacetime = build_host(config["edge_squared"], config.get("host_cell"))
-    declaration = action_declaration(spacetime, kappa, beta,
-                                     config["regge_hinges"],
-                                     holonomy=config["holonomy"])
+    declaration = action_declaration(
+        spacetime, kappa, beta, config["regge_hinges"],
+        holonomy=config["holonomy"],
+        stiffness=config.get("stiffness", DECLARED_STIFFNESS))
     config.setdefault("reference_lengths",
                       list(declaration.reference_lengths))
     action = cob.JointAction(spacetime, declaration)
-    solve = cob.SelfConsistentMeanField(
-        action, mean_field_declaration(content, config, spacetime))
+    mean_field = mean_field_declaration(content, config, spacetime)
+    mean_field.fiber_moments = fiber_moment_count(
+        mean_field, action,
+        config.get("fiber_moments", DECLARED_FIBER_MOMENTS))
+    solve = cob.SelfConsistentMeanField(action, mean_field)
     report = solve.solve()
     return spacetime, solve.action, report
 
@@ -1274,16 +1328,40 @@ def _band_record(band):
             "ambiguous": bool(band.ambiguous)}
 
 
+#: The imaginary part of the moment-constrained Hessian's quotient along the
+#: Hellmann-Feynman force, relative to the Hessian's own scale, below which
+#: the quotient is read as real: the difference-rule Jacobian at radius 1e-4
+#: is accurate to about 1e-8 of its entries.
+DECLARED_HESSIAN_REALITY = 1e-6
+
+
+def hessian_sign(value, scale):
+    """The sign of the moment-constrained Hessian along the Hellmann-Feynman
+    force as a word: "positive" or "negative" when the quotient is real to
+    ``DECLARED_HESSIAN_REALITY`` times the Hessian's scale (the real slice),
+    "complex" when it is not, and "unread" when it is not a number."""
+    value = complex(value)
+    if not (math.isfinite(value.real) and math.isfinite(value.imag)):
+        return "unread"
+    if abs(value.imag) > DECLARED_HESSIAN_REALITY * scale:
+        return "complex"
+    return "positive" if value.real > 0 else "negative"
+
+
 def relaxation_record(report):
     """What a mean-field solve reached and how, as every content record
     carries it: the method and band selection that ran, whether the fixed
     point was reached, why the solve stopped (by name, with its detail), the
     iterations, the final force, the joint Jacobian's rank and rank gap at the
     end point, the Kontsevich-Segal margin and the growth of the lengths
-    there, the occupied bands followed to the end point, and a per-iterate
-    trace of the force, the covariance change, every occupied band's overlap
-    and places in the ascending real-part order, any crossing, and the Newton
-    step taken from the iterate."""
+    there, the occupied bands followed to the end point, the pinned moments of
+    the occupied fiber (their number, targets, multipliers and residuals, in
+    the operator's own unit), the moment-constrained action's Hessian on the
+    range of the Hellmann-Feynman force with its sign (WP v17 line 265), and a
+    per-iterate trace of the force, the covariance change, the pinned
+    moments' residual and multipliers, every occupied band's overlap and
+    places in the ascending real-part order, any crossing, and the Newton step
+    taken from the iterate."""
     trace = []
     for step in report.steps:
         entry = {
@@ -1295,6 +1373,8 @@ def relaxation_record(report):
                                for b in step.bands],
             "band_crossing": bool(step.band_crossing),
             "band_isolation": float(step.band_isolation),
+            "moment_residual_norm": float(step.moment_residual_norm),
+            "multipliers": [complex(x) for x in step.multipliers],
             "stop_reason": cob.relaxation_stop_name(step.geometry_stop_reason),
         }
         if step.newton_iterated:
@@ -1349,6 +1429,18 @@ def relaxation_record(report):
         },
         "kontsevich_segal_margin": float(report.kontsevich_segal_margin),
         "largest_length_ratio": float(report.largest_length_ratio),
+        "fiber_rank": int(report.fiber_rank),
+        "fiber_moments": len(report.moment_targets),
+        "moment_scale": float(report.moment_scale),
+        "moment_targets": [complex(x) for x in report.moment_targets],
+        "multipliers": [complex(x) for x in report.multipliers],
+        "moment_residuals": [complex(x) for x in report.moment_residuals],
+        "hellmann_feynman_force_norm": float(
+            report.hellmann_feynman_force_norm),
+        "force_hessian": complex(report.force_hessian),
+        "force_hessian_scale": float(report.force_hessian_scale),
+        "force_hessian_sign": hessian_sign(report.force_hessian,
+                                           report.force_hessian_scale),
         "action": complex(report.action),
         "action_available": bool(report.action_available),
         "action_unavailable": report.action_unavailable,
@@ -1711,6 +1803,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
         "relaxation": dict(solve, **{
             "band_operator": "h_1 (the covariant operator itself)",
             "shared_sheet_geometry": True,
+            "stiffness": config.get("stiffness", DECLARED_STIFFNESS),
+            "kappa_role": config.get("kappa_role"),
             "terms": {name: _term(action, name)
                       for name in ("regge", "stiffness", "holonomy",
                                    "matter", "spectral")},
@@ -2257,6 +2351,24 @@ def relaxation_text(relaxation):
                  jacobian.get("size", 0), jacobian.get("rank_gap", math.nan),
                  relaxation["kontsevich_segal_margin"],
                  relaxation["largest_length_ratio"]))
+    if "force_hessian" in relaxation:
+        pinned = relaxation.get("fiber_moments", 0)
+        if pinned:
+            text += ("; %d of the occupied fiber's %d power sums pinned at "
+                     "the host (unit %.3g): multipliers %s, residuals %s" % (
+                         pinned, relaxation["fiber_rank"],
+                         relaxation["moment_scale"],
+                         "[%s]" % ", ".join(_complex_text(x) for x in
+                                            relaxation["multipliers"]),
+                         "[%s]" % ", ".join("%.2g" % abs(x) for x in
+                                            relaxation["moment_residuals"])))
+        else:
+            text += "; no power sum of the occupied fiber pinned"
+        text += ("; Hessian on the range of the Hellmann-Feynman force %s "
+                 "(%s), force %.3g" % (
+                     _complex_text(relaxation["force_hessian"]),
+                     relaxation["force_hessian_sign"],
+                     relaxation["hellmann_feynman_force_norm"]))
     bands = relaxation.get("bands") or []
     text += ("; bands by %s: %s; a band had crossed another at %d of %d "
              "iterates, lowest overlap %.3g") % (
@@ -2400,7 +2512,9 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    holonomy=DECLARED_HOLONOMY,
                    elimination=DECLARED_ELIMINATION,
                    mean_field_method=DECLARED_MEAN_FIELD_METHOD,
-                   band_selection=DECLARED_BAND_SELECTION):
+                   band_selection=DECLARED_BAND_SELECTION,
+                   stiffness=DECLARED_STIFFNESS,
+                   fiber_moments=DECLARED_FIBER_MOMENTS):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps."""
@@ -2426,6 +2540,15 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "mean_field_tolerance": 1e-9,
         "mean_field_method": mean_field_method,
         "band_selection": band_selection,
+        "stiffness": stiffness,
+        "fiber_moments": str(fiber_moments),
+        "kappa_role": (
+            "kappa = 8 pi G enters only through the Regge weight 1/kappa; "
+            "the length stiffness is the spectral-moment part of S_0, the "
+            "holomorphic spectral constraint of WP v17 §3.4 on the occupied "
+            "fiber" if stiffness == "none" else
+            "kappa = 8 pi G enters through the Regge weight 1/kappa and the "
+            "linear stiffness stand-in (1/2 kappa^-1) ||l - l0||^2"),
         "length_runaway_ratio": DECLARED_LENGTH_RUNAWAY_RATIO,
         "target_mass_ratio": TARGET_MASS_RATIO,
         "target_mass_squared_ratio": TARGET_MASS_SQUARED_RATIO,
@@ -2985,6 +3108,20 @@ def build_parser():
     return parser
 
 
+def _fiber_moments(text):
+    """``r`` or a non-negative integer, for --fiber-moments."""
+    if text == "r":
+        return text
+    try:
+        value = int(text)
+    except ValueError:
+        value = -1
+    if value < 0:
+        raise argparse.ArgumentTypeError(
+            "--fiber-moments is r or a non-negative integer; got %r" % text)
+    return str(value)
+
+
 def add_mean_field_arguments(parser):
     """The mean-field solver options both drivers accept. Neither changes an
     equation."""
@@ -3002,6 +3139,19 @@ def add_mean_field_arguments(parser):
                              "host, then followed by continuation, or "
                              "re-selected by sorting at every iterate "
                              "(default %s)" % DECLARED_BAND_SELECTION)
+    parser.add_argument("--stiffness", choices=STIFFNESS_FORMS,
+                        default=DECLARED_STIFFNESS,
+                        help="the length stiffness of the joint action: none "
+                             "(the spectral-moment part of S_0 is the "
+                             "fiber constraint of --fiber-moments), or the "
+                             "linear stand-in (1/2 kappa^-1) ||l - l0||^2 "
+                             "(default %s)" % DECLARED_STIFFNESS)
+    parser.add_argument("--fiber-moments", type=_fiber_moments,
+                        default=DECLARED_FIBER_MOMENTS,
+                        help="m_c, the power sums p_j(h_C), j = 1..m_c, of "
+                             "the occupied fiber pinned at the host (WP v17 "
+                             "§3.4): r, the fiber's rank, or a count "
+                             "(default %s)" % DECLARED_FIBER_MOMENTS)
 
 
 def main(argv=None):
@@ -3010,7 +3160,9 @@ def main(argv=None):
                             args.regge_hinges, holonomy=args.holonomy,
                             elimination=args.eliminate,
                             mean_field_method=args.mean_field_method,
-                            band_selection=args.band_selection)
+                            band_selection=args.band_selection,
+                            stiffness=args.stiffness,
+                            fiber_moments=args.fiber_moments)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None
