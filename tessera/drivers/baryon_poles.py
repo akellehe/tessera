@@ -57,17 +57,42 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    `SharpSpin`;
 6. builds the three-particle operator, both quasi-free (dGamma(h-bar_1)) and
    with the paper's Section 7 geometric quartic about the self-consistent
-   point (`DressedFluctuation.effectiveAction`), and reads the pole of every
-   (doublet content, spin) sector with `BoundStatePole`.
+   point (`DressedFluctuation.effectiveAction`), and reads the poles of every
+   (doublet content, spin) sector with `BoundStatePole`, each pole with its
+   own spin and colour certificates.
 
-The nucleon pole is the lowest spin-1/2 pole over the (content, doublet
-content) pairs and the Delta pole the lowest spin-3/2 pole, "lowest" meaning
-smallest real part, which is the library's declared
-`OccupationOrder.AscendingRealPart`. The poles are complex and are reported as
-complex; the ratio s_N / s_Delta is compared with 0.5800, the mass-squared
-reading (the pole of a Laplace-type operator has the dimension of p^2, and the
-paper takes no square root of it), and the ratio of moduli and the ratio of
-real parts are reported beside it.
+The report is per doublet content
+---------------------------------
+Every (content, doublet content) pair is reported on its own, and nothing is
+averaged over doublet contents or over contents:
+
+* the stdout summary of a scan point (`point_lines`) has one line per pair,
+  carrying both spins and both columns (quasi-free and with the quartic),
+  every pole with its multiplicity and its spin and colour certificates, and
+  each read's bound-state certificates and compression leakage;
+* the minima follow as separate, labelled "lowest over" summaries: per
+  content, the lowest pole of each spin and column over its doublet
+  contents, naming the doublet content it came from; and the lowest over
+  every pair, naming the content and the doublet content. Every pair whose
+  pole ties with a minimum (`DECLARED_TIE_TOLERANCE`) is named beside it;
+* the pole table (`pole_table`) has one row per pole of every pair, in
+  ascending order of real part, each row naming its content and doublet
+  content;
+* the live frame (`draw_frame`) draws every pole of every pair as its own
+  mark, labelled by its content and doublet content, and keeps the ratio as
+  a second panel beside a listing of the pairs each ratio compares.
+
+The nucleon pole of the ratio is the lowest spin-1/2 pole over every
+(content, doublet content) pair and the Delta pole the lowest spin-3/2 pole,
+"lowest" meaning smallest real part, which is the library's declared
+`OccupationOrder.AscendingRealPart`; the ratio names the two pairs it
+compares. The poles are complex and are reported as complex; the ratio
+s_N / s_Delta is compared with 0.5800, the mass-squared reading (the pole of a
+Laplace-type operator has the dimension of p^2, and the paper takes no square
+root of it), and the ratio of moduli and the ratio of real parts are reported
+beside it. The one average on the way to a pole is the T-average that defines
+h-bar_1 (WP v17 §9), which is the operator the poles are read on, not a way
+of reporting them.
 
 Two operators: the covariance on h_1, the spin on h-bar_1
 ---------------------------------------------------------
@@ -1290,10 +1315,38 @@ def doublet_sectors(doublet_content, trialities):
     return carrier_content, triality, _DOUBLET_SECTORS[key]
 
 
+def pole_certificates(target, j2, sector, dual, eigen, basis, spins):
+    """The spin and colour certificates of the eigenvector of a sector's
+    compressed block nearest ``target``: the right eigenvector and its left
+    partner lifted to Fock vectors, `SharpSpin.read` of the sector's
+    j(j+1) on them, and the relative residual of the colour Casimir on the
+    right one (zero for a colour singlet). ``eigen`` holds the right and the
+    left eigen-decompositions of the block, ``dual`` the sector's bilinear
+    left inverse."""
+    values, right, values_left, left = eigen
+    k = int(np.argmin(np.abs(values - target)))
+    kl = int(np.argmin(np.abs(values_left - values[k])))
+    right_state = to_fock(sector @ right[:, k], basis)
+    left_state = to_fock(dual.T @ left[:, kl], basis)
+    spin = obs.SharpSpin.read(spins, right_state, left_state, j2,
+                              DECLARED_CERTIFICATE_TOLERANCE)
+    casimir = np.linalg.norm(colour_casimir(right_state)) / \
+        np.linalg.norm(right_state)
+    return {
+        "sharp_spin": bool(spin.sharp),
+        "spin_right_residual": float(spin.right_residual),
+        "spin_left_residual": float(spin.left_residual),
+        "spin_expectation": complex(spin.expectation),
+        "determinant_count": int(spin.determinant_count),
+        "colour_casimir_residual": float(casimir),
+    }
+
+
 def sector_entry(j2, triality, sector, operators):
     """One spin sector's reads: its restriction to 2T, and for each named
-    many-body operator the poles of the compressed block, the lowest pole's
-    spin and colour certificates."""
+    many-body operator the poles of the compressed block, each pole's spin
+    and colour certificates (``pole_certificates``, parallel to ``poles``),
+    and the lowest pole's certificates repeated beside it."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     irreps = restriction(j2, triality)
@@ -1308,23 +1361,24 @@ def sector_entry(j2, triality, sector, operators):
             "spin 3/2 are indistinguishable (WP line 499): this sector "
             "restricts to %s" % " + ".join(irreps)),
     }
+    dual = left_inverse(sector)
     for name, operator in operators:
         block, leakage, read = sector_poles(operator, sector)
         poles = [complex(p) for p in read.poles]
         lowest = min(poles, key=lambda p: (p.real, p.imag)) if poles else None
-        # the lowest pole's right and left eigenvectors, for the spin and
-        # colour certificates
+        # every pole's right and left eigenvectors, for its spin and colour
+        # certificates
         values, right = np.linalg.eig(block)
-        k = int(np.argmin(np.abs(values - lowest))) if lowest is not None \
-            else 0
         values_left, left = np.linalg.eig(block.T)
-        kl = int(np.argmin(np.abs(values_left - values[k])))
-        right_state = to_fock(sector @ right[:, k], basis)
-        left_state = to_fock(left_inverse(sector).T @ left[:, kl], basis)
-        spin = obs.SharpSpin.read(spins, right_state, left_state, j2,
-                                  DECLARED_CERTIFICATE_TOLERANCE)
-        casimir = np.linalg.norm(colour_casimir(right_state)) / \
-            np.linalg.norm(right_state)
+        eigen = (values, right, values_left, left)
+        certificates = [pole_certificates(p, j2, sector, dual, eigen, basis,
+                                          spins) for p in poles]
+        # with no pole read, the certificates beside the lowest pole are
+        # those of the block's first eigenvector
+        lowest_certificates = (
+            certificates[poles.index(lowest)] if lowest is not None else
+            pole_certificates(values[0], j2, sector, dual, eigen, basis,
+                              spins))
         entry[name] = {
             "poles": poles,
             "multiplicity": [int(m) for m in read.multiplicity],
@@ -1335,13 +1389,9 @@ def sector_entry(j2, triality, sector, operators):
                                       read.continuation_movement],
             "contour": [complex(read.centre), float(read.radius)],
             "compression_leakage": leakage,
-            "sharp_spin": bool(spin.sharp),
-            "spin_right_residual": float(spin.right_residual),
-            "spin_left_residual": float(spin.left_residual),
-            "spin_expectation": complex(spin.expectation),
-            "determinant_count": int(spin.determinant_count),
-            "colour_casimir_residual": float(casimir),
+            "pole_certificates": certificates,
         }
+        entry[name].update(lowest_certificates)
     return entry
 
 
@@ -1678,52 +1728,155 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
             "ratios": ratios(records), "pole_table": pole_table(records)}
 
 
+# ------------------------------------------------------------- the report
+#
+# The report is per doublet content: every (content, doublet content) pair is
+# reported on its own, every pole of every sector is kept, and the minima are
+# separate, labelled summaries that name the pair each came from. Nothing here
+# averages over doublet contents or over contents.
+
+#: The two spin sectors, keyed by j(j + 1) as the records key them.
+SPINS = (str(SPIN_HALF), str(SPIN_THREE_HALVES))
+SPIN_NAMES = {str(SPIN_HALF): "1/2", str(SPIN_THREE_HALVES): "3/2"}
+#: The two operators every sector is read on: dGamma of the T-averaged h_1
+#: (quasi-free) and the same with the Section 7 quartic.
+COLUMNS = ("quasi_free", "with_quartic")
+COLUMN_NAMES = {"quasi_free": "quasi-free", "with_quartic": "with quartic"}
+#: Two poles whose real parts agree to this relative tolerance are tied for a
+#: minimum, and every tied pair is named beside the minimum.
+DECLARED_TIE_TOLERANCE = 1e-8
+
+
 def sector_rows(records):
     """Every (content, doublet content) pair of a list of content records,
-    with the doublet content's sectors: the rows the pole table and the
-    ratios are taken over."""
+    with the doublet content's sectors: the rows the pole table, the minima
+    and the ratios are taken over."""
     for record in records:
         for read in record.get("doublet_reads", []):
             yield record["content"], read["doublet_content"], read["sectors"]
 
 
-def lowest_poles(record, name):
-    """Per spin, the lowest pole of one content record over its doublet
-    contents in the named column ("quasi_free" or "with_quartic"), with the
-    doublet content that supplies it; None for a spin no sector carries."""
-    out = {}
-    for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
-        best = None
-        for _, doublet_content, sectors in sector_rows([record]):
-            entry = sectors.get(j2)
-            pole = entry[name]["lowest_pole"] if entry else None
-            if pole is not None and (best is None
-                                     or pole.real < best[0].real):
-                best = (pole, doublet_content)
-        out[j2] = best
+def _tied(a, b):
+    """Whether two poles tie in the ascending-real-part order."""
+    return abs(a.real - b.real) <= DECLARED_TIE_TOLERANCE * max(
+        1.0, abs(a), abs(b))
+
+
+def lowest_of(candidates):
+    """The candidate whose ``pole`` has the smallest real part, the library's
+    declared `OccupationOrder.AscendingRealPart` (the first such candidate in
+    the order given), as a copy that lists under ``tied`` every other
+    candidate whose pole's real part agrees with it to
+    `DECLARED_TIE_TOLERANCE`; None when there is no candidate."""
+    candidates = list(candidates)
+    best = None
+    for candidate in candidates:
+        if best is None or candidate["pole"].real < best["pole"].real:
+            best = candidate
+    if best is None:
+        return None
+    out = dict(best)
+    out["tied"] = [c for c in candidates
+                   if c is not best and _tied(c["pole"], best["pole"])]
     return out
 
 
+def pole_candidates(records, name, spins=SPINS, reading=None):
+    """The lowest pole of every (content, doublet content, spin) sector of the
+    records in the named column, one candidate per sector, labelled with its
+    content, doublet content, spin and restriction to 2T, in pair-major and
+    then spin order. With ``reading`` ("nucleon_reading" or "delta_reading"),
+    only the sectors the 2T reading names."""
+    out = []
+    for content, doublet_content, sectors in sector_rows(records):
+        for j2 in spins:
+            entry = sectors.get(j2)
+            if not entry or (reading is not None and not entry.get(reading)):
+                continue
+            pole = (entry.get(name) or {}).get("lowest_pole")
+            if pole is not None:
+                out.append({"pole": pole, "content": list(content),
+                            "doublet_content": list(doublet_content),
+                            "spin_j_j_plus_1": float(j2),
+                            "restriction_to_2T": entry.get(
+                                "restriction_to_2T")})
+    return out
+
+
+def lowest_poles(record, name):
+    """Per spin, the lowest pole of one content record over its doublet
+    contents in the named column ("quasi_free" or "with_quartic"), labelled
+    with the doublet content it came from and every tied doublet content
+    (`lowest_of`); None for a spin no sector carries."""
+    return {j2: lowest_of(pole_candidates([record], name, (j2,)))
+            for j2 in SPINS}
+
+
+def lowest_over_pairs(records, name):
+    """Per spin, the lowest pole over every (content, doublet content) pair of
+    the records in the named column, labelled with the pair it came from and
+    every tied pair (`lowest_of`); None for a spin no sector carries."""
+    return {j2: lowest_of(pole_candidates(records, name, (j2,)))
+            for j2 in SPINS}
+
+
+def pole_rows(records):
+    """Every pole of every (content, doublet content, spin, column) sector of
+    the records, one row per distinct pole, in the records' order. A row
+    names its content, doublet content, spin and column, and carries the
+    pole, its multiplicity, whether it is the lowest of its sector, the
+    sector's restriction to 2T, the pole's own spin and colour certificates,
+    and the sector read's bound-state certificates and compression leakage.
+    Nothing is dropped and nothing is combined."""
+    rows = []
+    for content, doublet_content, sectors in sector_rows(records):
+        for j2 in SPINS:
+            entry = sectors.get(j2)
+            if not entry:
+                continue
+            for name in COLUMNS:
+                read = entry.get(name) or {}
+                poles = read.get("poles") or []
+                multiplicity = read.get("multiplicity") or [None] * len(poles)
+                certificates = read.get("pole_certificates") or \
+                    [{}] * len(poles)
+                for pole, count, certificate in zip(poles, multiplicity,
+                                                    certificates):
+                    rows.append({
+                        "content": list(content),
+                        "doublet_content": list(doublet_content),
+                        "spin_j_j_plus_1": float(j2),
+                        "column": name,
+                        "pole": pole,
+                        "multiplicity": count,
+                        "lowest_in_sector": pole == read.get("lowest_pole"),
+                        "restriction_to_2T": entry.get("restriction_to_2T"),
+                        "sharp_spin": certificate.get("sharp_spin"),
+                        "colour_casimir_residual": certificate.get(
+                            "colour_casimir_residual"),
+                        "failed_certificates": list(
+                            read.get("failed_certificates") or []),
+                        "compression_leakage": read.get(
+                            "compression_leakage"),
+                    })
+    return rows
+
+
 def pole_table(records):
-    """Per column (quasi-free, with the quartic) and per spin, the lowest
-    pole of every (content, doublet content) pair in ascending order of real
-    part, so the pair that supplies the nucleon and the Delta pole, and any
-    tie between spins inside one pair, can be read off the record."""
+    """Per column (quasi-free, with the quartic) and per spin, every pole of
+    every (content, doublet content) pair (`pole_rows`) in ascending order of
+    real part, each row naming its content and doublet content, so the pair
+    that supplies any pole, and any tie between pairs or between spins inside
+    one pair, can be read off the record."""
+    rows = pole_rows(records)
     table = {}
-    for name in ("quasi_free", "with_quartic"):
+    for name in COLUMNS:
         table[name] = {}
-        for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
-            rows = []
-            for content, doublet_content, sectors in sector_rows(records):
-                entry = sectors.get(j2)
-                if entry and entry[name]["lowest_pole"] is not None:
-                    rows.append({"content": content,
-                                 "doublet_content": doublet_content,
-                                 "pole": entry[name]["lowest_pole"],
-                                 "restriction_to_2T":
-                                     entry.get("restriction_to_2T")})
-            rows.sort(key=lambda row: (row["pole"].real, row["pole"].imag))
-            table[name][j2] = rows
+        for j2 in SPINS:
+            picked = [row for row in rows if row["column"] == name
+                      and row["spin_j_j_plus_1"] == float(j2)]
+            picked.sort(key=lambda row: (row["pole"].real, row["pole"].imag))
+            table[name][j2] = picked
     return table
 
 
@@ -1740,9 +1893,16 @@ def _pair(s_n, s_d, extra):
     return out
 
 
+def _pair_labels(candidates):
+    """The (content, doublet content, spin) labels of tied candidates."""
+    return [{"content": c["content"], "doublet_content": c["doublet_content"],
+             "spin_j_j_plus_1": c["spin_j_j_plus_1"]} for c in candidates]
+
+
 def ratios(records):
     """The nucleon and Delta poles over every (content, doublet content)
-    pair, and their ratios against the target, in two pairings.
+    pair, and their ratios against the target, in two pairings. Each names
+    the two pairs it compares, and every pair tied with either pole.
 
     * By spin: the lowest sharp spin-1/2 pole over the lowest sharp spin-3/2
       pole. Each candidate carries its restriction to 2T, and the Delta
@@ -1754,56 +1914,215 @@ def ratios(records):
       reading).
     """
     out = {}
-    for name in ("quasi_free", "with_quartic"):
-        by_spin, nucleon_reading, delta_reading = {}, None, None
-        for content, doublet_content, sectors in sector_rows(records):
-            for j2 in (str(SPIN_HALF), str(SPIN_THREE_HALVES)):
-                entry = sectors.get(j2)
-                if not entry or entry[name]["lowest_pole"] is None:
-                    continue
-                pole = entry[name]["lowest_pole"]
-                candidate = (pole, content, j2,
-                             entry.get("restriction_to_2T"), doublet_content)
-                if j2 not in by_spin or pole.real < by_spin[j2][0].real:
-                    by_spin[j2] = candidate
-                if entry.get("nucleon_reading") and (
-                        nucleon_reading is None
-                        or pole.real < nucleon_reading[0].real):
-                    nucleon_reading = candidate
-                if entry.get("delta_reading") and (
-                        delta_reading is None
-                        or pole.real < delta_reading[0].real):
-                    delta_reading = candidate
+    for name in COLUMNS:
         result = {}
-        if str(SPIN_HALF) in by_spin and str(SPIN_THREE_HALVES) in by_spin:
-            n = by_spin[str(SPIN_HALF)]
-            d = by_spin[str(SPIN_THREE_HALVES)]
-            restriction_d = d[3] or []
-            result["by_spin"] = _pair(n[0], d[0], {
-                "nucleon_content": n[1], "delta_content": d[1],
-                "nucleon_doublet_content": n[4],
-                "delta_doublet_content": d[4],
-                "nucleon_restriction": n[3], "delta_restriction": d[3],
+        by_spin = lowest_over_pairs(records, name)
+        n, d = by_spin[str(SPIN_HALF)], by_spin[str(SPIN_THREE_HALVES)]
+        if n is not None and d is not None:
+            restriction_d = d["restriction_to_2T"] or []
+            result["by_spin"] = _pair(n["pole"], d["pole"], {
+                "nucleon_content": n["content"], "delta_content": d["content"],
+                "nucleon_doublet_content": n["doublet_content"],
+                "delta_doublet_content": d["doublet_content"],
+                "nucleon_restriction": n["restriction_to_2T"],
+                "delta_restriction": d["restriction_to_2T"],
+                "nucleon_tied_pairs": _pair_labels(n["tied"]),
+                "delta_tied_pairs": _pair_labels(d["tied"]),
                 "delta_is_a_delta_reading":
                     sorted(restriction_d) == sorted(["2'", "2''"]),
                 "delta_ambiguous_with_spin_half": "2" in restriction_d,
             })
         else:
             result["by_spin"] = None
-        if nucleon_reading is not None and delta_reading is not None:
-            result["by_2T_reading"] = _pair(
-                nucleon_reading[0], delta_reading[0], {
-                    "nucleon_content": nucleon_reading[1],
-                    "nucleon_doublet_content": nucleon_reading[4],
-                    "nucleon_spin_j_j_plus_1": float(nucleon_reading[2]),
-                    "delta_content": delta_reading[1],
-                    "delta_doublet_content": delta_reading[4],
-                    "delta_spin_j_j_plus_1": float(delta_reading[2]),
-                })
+        n = lowest_of(pole_candidates(records, name,
+                                      reading="nucleon_reading"))
+        d = lowest_of(pole_candidates(records, name, reading="delta_reading"))
+        if n is not None and d is not None:
+            result["by_2T_reading"] = _pair(n["pole"], d["pole"], {
+                "nucleon_content": n["content"],
+                "nucleon_doublet_content": n["doublet_content"],
+                "nucleon_spin_j_j_plus_1": n["spin_j_j_plus_1"],
+                "nucleon_tied_pairs": _pair_labels(n["tied"]),
+                "delta_content": d["content"],
+                "delta_doublet_content": d["doublet_content"],
+                "delta_spin_j_j_plus_1": d["spin_j_j_plus_1"],
+                "delta_tied_pairs": _pair_labels(d["tied"]),
+            })
         else:
             result["by_2T_reading"] = None
         out[name] = result
     return out
+
+
+# ----------------------------------------------------------- the report text
+
+
+def _measured(value, form="%.2g"):
+    return "unmeasured" if value is None else form % value
+
+
+def column_text(read):
+    """One column of one sector as text: every pole with its multiplicity and
+    its own spin and colour certificates, then whether the bound-state read
+    was certified (or the certificates it failed, by name) and the sector's
+    compression leakage."""
+    poles = read.get("poles") or []
+    multiplicity = read.get("multiplicity") or [None] * len(poles)
+    certificates = read.get("pole_certificates") or [{}] * len(poles)
+    parts = []
+    for pole, count, certificate in zip(poles, multiplicity, certificates):
+        sharp = certificate.get("sharp_spin")
+        spin = ("spin unmeasured" if sharp is None else
+                "spin sharp" if sharp else
+                "spin not sharp (residuals %s, %s)" % (
+                    _measured(certificate.get("spin_right_residual")),
+                    _measured(certificate.get("spin_left_residual"))))
+        parts.append("%s x%s [%s, colour %s]" % (
+            _complex_text(pole), "?" if count is None else count, spin,
+            _measured(certificate.get("colour_casimir_residual"))))
+    failed = read.get("failed_certificates") or []
+    return "%s {read %s, leakage %s}" % (
+        ", ".join(parts) if parts else "no pole",
+        "failed " + ", ".join(failed) if failed else "certified",
+        _measured(read.get("compression_leakage")))
+
+
+def pair_line(content, read, prefix=""):
+    """One (content, doublet content) pair as one line: both spins, and for
+    each both columns with every pole and its certificates (`column_text`).
+    A spin the doublet content carries no sector of says so."""
+    parts = []
+    for j2 in SPINS:
+        entry = read["sectors"].get(j2)
+        if not entry:
+            parts.append("spin %s: no sector" % SPIN_NAMES[j2])
+            continue
+        parts.append("spin %s (restricts to %s): %s" % (
+            SPIN_NAMES[j2], "+".join(entry.get("restriction_to_2T") or []),
+            "; ".join("%s %s" % (COLUMN_NAMES[name],
+                                 column_text(entry.get(name) or {}))
+                      for name in COLUMNS)))
+    triality = read.get("total_triality")
+    return "%scontent %s, doublet content %s%s | %s" % (
+        prefix, list(content), list(read["doublet_content"]),
+        "" if triality is None else " (triality %d)" % triality,
+        " | ".join(parts))
+
+
+def content_pair_lines(record, prefix=""):
+    """Every (content, doublet content) pair of one content record, one line
+    each (`pair_line`); a refused content is one line with its reason."""
+    if "failed" in record:
+        return ["%scontent %s: refused: %s" % (prefix, list(record["content"]),
+                                               record["failed"])]
+    reads = record.get("doublet_reads") or []
+    if not reads:
+        return ["%scontent %s: no doublet content was read"
+                % (prefix, list(record["content"]))]
+    return [pair_line(record["content"], read, prefix) for read in reads]
+
+
+def _lowest_text(best, name_content):
+    if best is None:
+        return "none"
+    label = ("content %s, doublet content %s" % (best["content"],
+                                                 best["doublet_content"])
+             if name_content else
+             "doublet content %s" % (best["doublet_content"],))
+    text = "%s from %s" % (_complex_text(best["pole"]), label)
+    if best.get("tied"):
+        text += " (tied to %g with %s)" % (DECLARED_TIE_TOLERANCE, "; ".join(
+            ("content %s, doublet content %s" % (c["content"],
+                                                 c["doublet_content"])
+             if name_content else "doublet content %s"
+             % (c["doublet_content"],)) for c in best["tied"]))
+    return text
+
+
+def lowest_lines(records, prefix=""):
+    """The labelled minima as text, after the per-pair lines, each line
+    starting "lowest over": per content, the lowest pole (smallest real part)
+    of each spin and column over its doublet contents, with the doublet
+    content it came from; then the lowest over every (content, doublet
+    content) pair, with the pair it came from. Ties are named."""
+    lines = []
+    for record in records:
+        if "failed" in record:
+            continue
+        per_column = {name: lowest_poles(record, name) for name in COLUMNS}
+        lines.append("%slowest over the doublet contents of content %s: %s"
+                     % (prefix, list(record["content"]), "; ".join(
+                         "spin %s %s %s" % (
+                             SPIN_NAMES[j2], COLUMN_NAMES[name],
+                             _lowest_text(per_column[name][j2], False))
+                         for j2 in SPINS for name in COLUMNS)))
+    per_column = {name: lowest_over_pairs(records, name) for name in COLUMNS}
+    lines.append("%slowest over every (content, doublet content) pair: %s" % (
+        prefix, "; ".join(
+            "spin %s %s %s" % (SPIN_NAMES[j2], COLUMN_NAMES[name],
+                               _lowest_text(per_column[name][j2], True))
+            for j2 in SPINS for name in COLUMNS)))
+    return lines
+
+
+def _tie_text(r, role):
+    tied = r.get(role + "_tied_pairs") or []
+    if not tied:
+        return ""
+    return "; s_%s tied with %s" % ("N" if role == "nucleon" else "D",
+                                    "; ".join(
+        "content %s, doublet content %s" % (t["content"], t["doublet_content"])
+        for t in tied))
+
+
+def ratio_lines(point_ratios, prefix=""):
+    """The ratios of a set of records as text, one line per column and
+    pairing, each naming the two (content, doublet content) pairs it
+    compares."""
+    lines = []
+    for name in COLUMNS:
+        for pairing in ("by_spin", "by_2T_reading"):
+            r = ((point_ratios or {}).get(name) or {}).get(pairing)
+            head = "%sratio %-12s %-13s" % (prefix, COLUMN_NAMES[name],
+                                            pairing)
+            if r is None:
+                lines.append(head + " no pole pair")
+                continue
+            note = ""
+            if pairing == "by_spin":
+                note = "; Delta restriction %s%s" % (
+                    "+".join(r["delta_restriction"] or []),
+                    " (ambiguous with spin 1/2)"
+                    if r["delta_ambiguous_with_spin_half"] else "")
+            lines.append(
+                head + " s_N=%s (content %s, doublet content %s) s_D=%s "
+                "(content %s, doublet content %s) s_N/s_D=%s "
+                "|s_N|/|s_D|=%.6f Re/Re=%.6f; "
+                "target (m_N/m_Delta)^2=%.4f%s%s%s"
+                % (_complex_text(r["nucleon_pole"]), r["nucleon_content"],
+                   r["nucleon_doublet_content"],
+                   _complex_text(r["delta_pole"]), r["delta_content"],
+                   r["delta_doublet_content"],
+                   _complex_text(r["pole_ratio"]), r["modulus_ratio"],
+                   r["real_part_ratio"], TARGET_MASS_SQUARED_RATIO, note,
+                   _tie_text(r, "nucleon"), _tie_text(r, "delta")))
+    return lines
+
+
+def point_lines(point):
+    """One scan point as text: every (content, doublet content) pair on its
+    own line, then the labelled minima, then the ratios with the pairs they
+    compare."""
+    records = point["contents"]
+    lines = ["kappa=%g beta=%g: %d contents, %d refused; one line per "
+             "(content, doublet content) pair, poles s with multiplicity x"
+             % (point["kappa"], point["beta"], len(records),
+                sum(1 for record in records if "failed" in record))]
+    for record in records:
+        lines += content_pair_lines(record, "  ")
+    lines += lowest_lines(records, "  ")
+    lines += ratio_lines(point.get("ratios"), "  ")
+    return lines
 
 
 def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
@@ -1883,11 +2202,7 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
             if points_file is not None:
                 _append_line(points_file, point)
             if progress:
-                r = point["ratios"]
-                sys.stdout.write(
-                    "kappa=%g beta=%g  quasi-free %s  with quartic %s\n"
-                    % (kappa, beta, _ratio_text(r["quasi_free"]["by_spin"]),
-                       _ratio_text(r["with_quartic"]["by_spin"])))
+                sys.stdout.write("\n".join(point_lines(point)) + "\n")
                 sys.stdout.flush()
             if on_frame is not None:
                 on_frame(frames, len(frames) - 1)
@@ -1912,13 +2227,6 @@ def _monopole_record(read):
                   for b in read.bands],
         "certificate": read.certificate.describe(),
     }
-
-
-def _ratio_text(ratio):
-    if ratio is None:
-        return "no pole pair"
-    return "s_N/s_D = %s (target %.4f)" % (_complex_text(ratio["pole_ratio"]),
-                                           TARGET_MASS_SQUARED_RATIO)
 
 
 def _complex_text(value):
@@ -1946,68 +2254,274 @@ def _jsonable(value):
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
 INK_MUTED = "#52514e"
+BASELINE = "#c3c2b7"
+GRID = "#e1e0d9"
 SERIES = {"quasi_free": "#2a78d6", "with_quartic": "#eb6834"}
-SERIES_LABEL = {"quasi_free": "quasi-free dGamma(h)",
+SERIES_LABEL = {"quasi_free": "quasi-free dGamma(h-bar_1)",
                 "with_quartic": "with the Section 7 quartic"}
+SERIES_MARKER = {"quasi_free": "o", "with_quartic": "D"}
+#: The marks of the two spins in the pole panels: colour, marker, fill, and
+#: the offset from the pair's slot, so that the two spins of one pair sit side
+#: by side rather than on top of each other.
+SPIN_STYLE = {
+    str(SPIN_HALF): {"color": "#1baf7a", "marker": "o", "filled": True,
+                     "offset": -0.2, "label": "spin 1/2"},
+    str(SPIN_THREE_HALVES): {"color": "#4a3aa7", "marker": "s",
+                             "filled": False, "offset": 0.2,
+                             "label": "spin 3/2"},
+}
+#: The empty slots between two groups of pairs in a pole panel.
+GROUP_GAP = 1.0
+#: The size of the live window and of the rendered frame, in inches.
+FIGURE_SIZE = (15, 10)
+#: The largest font size of the listing of the pairs each ratio compares; the
+#: listing is set smaller when its lines need it to fit the panel.
+LISTING_FONT_SIZE = 6.0
+
+
+def _digits(values):
+    """A content or a doublet content as its digits: [0, 2, 1] is 021."""
+    return "".join(str(int(v)) for v in values)
+
+
+def pole_marks(groups):
+    """The marks of the pole panels: one mark per distinct pole of every
+    (group, doublet content, spin, column) sector; nothing is combined.
+
+    ``groups`` is a list of (label, content record). A group occupies one
+    slot per doublet content its record read, in the record's order, and
+    groups are separated by `GROUP_GAP` empty slots; a refused content, which
+    reads no doublet content, occupies one slot labelled "refused". Returns
+    the marks (each with its position ``x``, its pair's slot offset by its
+    spin, the group label, the content, the doublet content, the spin, the
+    column, the pole and its multiplicity), the groups (label and first and
+    last slot) and the slots (position and doublet content label)."""
+    marks, spans, slots = [], [], []
+    x = 0.0
+    for label, record in groups:
+        start = x
+        reads = record.get("doublet_reads") or []
+        if not reads:
+            slots.append((x, "refused" if "failed" in record else "none"))
+            x += 1.0
+        for read in reads:
+            slots.append((x, _digits(read["doublet_content"])))
+            for j2 in SPINS:
+                entry = read["sectors"].get(j2)
+                if not entry:
+                    continue
+                for name in COLUMNS:
+                    column = entry.get(name) or {}
+                    poles = column.get("poles") or []
+                    multiplicity = column.get("multiplicity") or \
+                        [None] * len(poles)
+                    for pole, count in zip(poles, multiplicity):
+                        marks.append({
+                            "x": x + SPIN_STYLE[j2]["offset"], "slot": x,
+                            "group": label,
+                            "content": list(record["content"]),
+                            "doublet_content": list(read["doublet_content"]),
+                            "spin": j2, "column": name, "pole": pole,
+                            "multiplicity": count})
+            x += 1.0
+        spans.append({"label": label, "first": start, "last": x - 1.0})
+        x += GROUP_GAP
+    return marks, spans, slots
+
+
+def ratio_row(where, name, ratio):
+    """One by-spin ratio of a ratio panel, with the two (content, doublet
+    content) pairs it compares; ``ratio`` is None when there is no pole
+    pair."""
+    if ratio is None:
+        return {"where": where, "column": name, "ratio": None,
+                "nucleon": None, "delta": None}
+    return {"where": where, "column": name, "ratio": ratio["pole_ratio"],
+            "nucleon": {"content": list(ratio["nucleon_content"]),
+                        "doublet_content": list(
+                            ratio["nucleon_doublet_content"]),
+                        "pole": ratio["nucleon_pole"]},
+            "delta": {"content": list(ratio["delta_content"]),
+                      "doublet_content": list(ratio["delta_doublet_content"]),
+                      "pole": ratio["delta_pole"]}}
+
+
+def ratio_pair_text(row):
+    """The two pairs a ratio compares as a short label, each written
+    content|doublet content: N for the spin-1/2 pole, D for the spin-3/2
+    pole."""
+    if row["ratio"] is None:
+        return "no pole pair"
+    return "N %s|%s / D %s|%s" % (
+        _digits(row["nucleon"]["content"]),
+        _digits(row["nucleon"]["doublet_content"]),
+        _digits(row["delta"]["content"]),
+        _digits(row["delta"]["doublet_content"]))
+
+
+def frame_data(frames, index):
+    """What one frame draws, as data: every pole of every (content, doublet
+    content) pair of the latest scan point (`pole_marks`), and the by-spin
+    ratio of every completed scan point in both columns with the two pairs it
+    compares (`ratio_row`)."""
+    done = frames[:index + 1]
+    point = done[-1]
+    marks, spans, slots = pole_marks(
+        [(_digits(record["content"]), record)
+         for record in point["contents"]])
+    rows = []
+    for p in done:
+        where = "k=%g b=%g" % (p["kappa"], p["beta"])
+        for name in COLUMNS:
+            rows.append(ratio_row(where, name, p["ratios"][name]["by_spin"]))
+    return {"where": "kappa=%g, beta=%g" % (point["kappa"], point["beta"]),
+            "done": len(done), "marks": marks, "groups": spans,
+            "slots": slots, "ratios": rows}
+
+
+def style_axis(axis):
+    """The recessive chrome every panel shares."""
+    axis.set_facecolor(SURFACE)
+    for spine in ("top", "right"):
+        axis.spines[spine].set_visible(False)
+    for spine in ("left", "bottom"):
+        axis.spines[spine].set_color(BASELINE)
+    axis.tick_params(colors=INK_MUTED)
+
+
+def draw_pole_panel(axis, data, name, title, group_label):
+    """One pole panel: every pole of every pair in the named column as its
+    own mark at its pair's slot, spin 1/2 and spin 3/2 side by side, on a
+    symmetric logarithmic scale of Re s (the poles span several decades).
+    Below each slot is its doublet content (quarks in 2, 2', 2'' of
+    h-bar_1), and below each group its label (``group_label`` says what it
+    names)."""
+    style_axis(axis)
+    for j2 in SPINS:
+        style = SPIN_STYLE[j2]
+        picked = [m for m in data["marks"]
+                  if m["column"] == name and m["spin"] == j2]
+        axis.plot([m["x"] for m in picked], [m["pole"].real for m in picked],
+                  linestyle="none", marker=style["marker"], markersize=5,
+                  markeredgewidth=1.5, color=style["color"],
+                  markerfacecolor=style["color"] if style["filled"]
+                  else "none", label=style["label"])
+    axis.set_yscale("symlog", linthresh=1.0)
+    axis.axhline(0.0, color=BASELINE, linewidth=0.8)
+    for before, after in zip(data["groups"], data["groups"][1:]):
+        axis.axvline(0.5 * (before["last"] + after["first"]), color=GRID,
+                     linewidth=0.8)
+    if data["slots"]:
+        axis.set_xlim(data["slots"][0][0] - 0.8, data["slots"][-1][0] + 0.8)
+    # a group of one slot has its label where its slot is: both ticks stay
+    axis.xaxis.remove_overlapping_locs = False
+    axis.set_xticks([0.5 * (g["first"] + g["last"]) for g in data["groups"]])
+    axis.set_xticklabels([g["label"] for g in data["groups"]])
+    axis.set_xticks([position for position, _ in data["slots"]], minor=True)
+    axis.set_xticklabels([label for _, label in data["slots"]], minor=True)
+    axis.tick_params(axis="x", which="major", length=0, pad=20, labelsize=7,
+                     labelcolor=INK)
+    axis.tick_params(axis="x", which="minor", length=2, labelsize=5,
+                     labelrotation=90, labelcolor=INK_MUTED)
+    axis.set_xlabel("%s; below each slot, its doublet content (quarks in "
+                    "2, 2', 2'' of h-bar_1)" % group_label, color=INK,
+                    fontsize=8)
+    axis.set_ylabel("Re s (symmetric log)", color=INK, fontsize=8)
+    axis.set_title(title, color=INK, fontsize=9)
+    axis.legend(frameon=False, fontsize=7, labelcolor=INK, loc="best")
+
+
+def draw_ratio_panel(axis, rows, title):
+    """The by-spin ratio Re(s_N / s_Delta) in both columns at every place a
+    ratio was read (a scan point, or a host cell), one mark each, against the
+    target; the pairs each compares are listed beside it
+    (`draw_pairs_panel`)."""
+    style_axis(axis)
+    places = list(dict.fromkeys(row["where"] for row in rows))
+    position = {place: k for k, place in enumerate(places)}
+    for name in COLUMNS:
+        picked = [row for row in rows if row["column"] == name]
+        axis.plot([position[row["where"]] for row in picked],
+                  [row["ratio"].real if row["ratio"] is not None else np.nan
+                   for row in picked],
+                  linestyle="none", marker=SERIES_MARKER[name],
+                  markersize=7, color=SERIES[name], label=SERIES_LABEL[name])
+    axis.axhline(TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, linewidth=1,
+                 linestyle="--")
+    axis.text(0, TARGET_MASS_SQUARED_RATIO, " target (m_N/m_D)^2 = %.4f"
+              % TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, va="bottom",
+              fontsize=7)
+    axis.set_xticks(range(len(places)))
+    axis.set_xticklabels([place.replace(" ", "\n") for place in places],
+                         fontsize=6, rotation=90 if len(places) > 8 else 0)
+    axis.set_ylabel("Re(s_N / s_Delta)", color=INK, fontsize=8)
+    axis.set_title(title, color=INK, fontsize=9)
+    axis.legend(frameon=False, fontsize=7, labelcolor=INK)
+
+
+def draw_pairs_panel(axis, rows):
+    """The listing of the pairs every ratio of the ratio panel compares, in a
+    monospaced font: one line per place a ratio was read with both columns on
+    it, or one line per ratio when that lets the font be larger, set small
+    enough for every line to fit the panel (the full listing is also in the
+    stdout summary)."""
+    axis.axis("off")
+    places = list(dict.fromkeys(row["where"] for row in rows))
+
+    def entry(row):
+        return "%s %s = %s" % (
+            "quasi-free" if row["column"] == "quasi_free" else "quartic",
+            ratio_pair_text(row),
+            _complex_text(row["ratio"]) if row["ratio"] is not None else "-")
+
+    joined = ["%-13s %s" % (place, ";  ".join(
+        entry(row) for row in rows if row["where"] == place))
+        for place in places]
+    single = ["%-13s %s" % (row["where"], entry(row)) for row in rows]
+    head = ("each ratio compares the lowest spin-1/2 pole (N)\nwith the "
+            "lowest spin-3/2 pole (D) over every (content,\ndoublet content) "
+            "pair, written content|doublet content:")
+    axis.text(0.0, 1.0, head, va="top", ha="left", fontsize=7, color=INK,
+              transform=axis.transAxes)
+    position = axis.get_position()
+    height = (position.height * axis.figure.get_figheight() - 0.5) * 72.0
+    width = position.width * axis.figure.get_figwidth() * 72.0
+
+    def fitted(lines):
+        longest = max((len(line) for line in lines), default=1)
+        return min(LISTING_FONT_SIZE, height / (1.3 * max(1, len(lines))),
+                   width / (0.62 * longest))
+
+    lines = max((joined, single), key=fitted)
+    axis.text(0.0, 0.74, "\n".join(lines), va="top", ha="left",
+              fontsize=max(3.5, fitted(lines)), color=INK,
+              family="monospace", transform=axis.transAxes)
 
 
 def draw_frame(figure, frames, index):
-    """One frame: the pole ratio at every completed scan point against the
-    target, and the poles of the latest point by content and spin. Cheap:
-    two small axes and a few dozen marks."""
+    """One frame (`frame_data`): the poles of every (content, doublet
+    content) pair of the latest scan point, quasi-free and with the quartic,
+    each pole its own mark; below them the by-spin ratio over the scan
+    against the target, and the listing of the pairs each ratio compares."""
+    data = frame_data(frames, index)
     figure.clear()
     figure.patch.set_facecolor(SURFACE)
-    left = figure.add_subplot(1, 2, 1)
-    right = figure.add_subplot(1, 2, 2)
-    for axis in (left, right):
-        axis.set_facecolor(SURFACE)
-        for spine in ("top", "right"):
-            axis.spines[spine].set_visible(False)
-        axis.tick_params(colors=INK_MUTED)
-    done = frames[:index + 1]
-    labels = ["k=%g\nb=%g" % (p["kappa"], p["beta"]) for p in done]
-    x = np.arange(len(done))
-    for name in ("quasi_free", "with_quartic"):
-        values = [p["ratios"][name]["by_spin"]["pole_ratio"].real
-                  if p["ratios"][name]["by_spin"] else np.nan for p in done]
-        left.plot(x, values, marker="o", markersize=6, linewidth=2,
-                  color=SERIES[name], label=SERIES_LABEL[name])
-    left.axhline(TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, linewidth=1,
-                 linestyle="--")
-    left.text(0, TARGET_MASS_SQUARED_RATIO, " target (m_N/m_D)^2 = %.4f"
-              % TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, va="bottom",
-              fontsize=8)
-    left.set_xticks(x)
-    left.set_xticklabels(labels, fontsize=7)
-    left.set_ylabel("Re(s_N / s_Delta)", color=INK)
-    left.set_title("pole ratio over the scan", color=INK, fontsize=10)
-    left.legend(frameon=False, fontsize=8, labelcolor=INK)
-
-    point = done[-1]
-    names, half, three = [], [], []
-    for record in point["contents"]:
-        names.append("".join(str(n) for n in record["content"]))
-        lowest = lowest_poles(record, "quasi_free")
-        for store, key in ((half, str(SPIN_HALF)),
-                           (three, str(SPIN_THREE_HALVES))):
-            store.append(lowest[key][0].real if lowest[key] is not None
-                         else np.nan)
-    positions = np.arange(len(names))
-    right.plot(positions, half, "o", markersize=8, color="#1baf7a",
-               label="spin 1/2")
-    right.plot(positions, three, "s", markersize=8, color="#4a3aa7",
-               label="spin 3/2", markerfacecolor="none", markeredgewidth=2)
-    right.set_xticks(positions)
-    right.set_xticklabels(names, fontsize=7)
-    right.set_xlabel("content (quarks per band of h_1, ascending band)",
-                     color=INK)
-    right.set_ylabel("Re s (quasi-free)", color=INK)
-    right.set_title("poles at kappa=%g, beta=%g" % (point["kappa"],
-                                                   point["beta"]),
-                    color=INK, fontsize=10)
-    right.legend(frameon=False, fontsize=8, labelcolor=INK)
-    figure.suptitle("nucleon-to-Delta poles by controlled synthesis "
-                    "(%d of the scan done)" % len(done), color=INK)
+    grid = figure.add_gridspec(3, 2, height_ratios=(1.2, 1.2, 1.1),
+                               width_ratios=(1.0, 1.1))
+    quasi_free = figure.add_subplot(grid[0, :])
+    quartic = figure.add_subplot(grid[1, :])
+    ratio = figure.add_subplot(grid[2, 0])
+    pairs = figure.add_subplot(grid[2, 1])
+    for axis, name in ((quasi_free, "quasi_free"), (quartic, "with_quartic")):
+        draw_pole_panel(axis, data, name,
+                        "poles %s at %s: every (content, doublet content) "
+                        "pair" % (SERIES_LABEL[name], data["where"]),
+                        "content (quarks per band of h_1)")
+    draw_ratio_panel(ratio, data["ratios"], "by-spin ratio over the scan")
+    draw_pairs_panel(pairs, data["ratios"])
+    figure.suptitle("nucleon-to-Delta poles by controlled synthesis, "
+                    "reported per doublet content (%d of the scan done)"
+                    % data["done"], color=INK)
     figure.tight_layout()
 
 
@@ -2052,7 +2566,7 @@ def drive_live(config, progress=False, points_file=None):
     matplotlib.rcParams["figure.raise_window"] = False
     if not plt.isinteractive():
         plt.ion()
-    figure = plt.figure(figsize=(13, 6))
+    figure = plt.figure(figsize=FIGURE_SIZE)
     plt.show(block=False)
     ready = queue.Queue()
     published = {}
@@ -2124,7 +2638,7 @@ def render(result, path):
     import matplotlib
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
-    figure = plt.figure(figsize=(13, 6))
+    figure = plt.figure(figsize=FIGURE_SIZE)
     if result["points"]:
         draw_frame(figure, result["points"], len(result["points"]) - 1)
     figure.savefig(path, dpi=120, facecolor=SURFACE)
@@ -2132,32 +2646,14 @@ def render(result, path):
 
 
 def summary(result):
-    """The ratios of every scan point as text."""
+    """Every scan point as text (`point_lines`): one line per (content,
+    doublet content) pair with both spins and both columns, the labelled
+    minima, and the ratios with the pairs they compare."""
     lines = ["mode: controlled synthesis; target m_N/m_Delta = %.4f, "
              "(m_N/m_Delta)^2 = %.4f" % (TARGET_MASS_RATIO,
                                          TARGET_MASS_SQUARED_RATIO)]
     for point in result["points"]:
-        for name in ("quasi_free", "with_quartic"):
-            for pairing in ("by_spin", "by_2T_reading"):
-                r = point["ratios"][name][pairing]
-                head = "kappa=%g beta=%g %-12s %-13s" % (
-                    point["kappa"], point["beta"], name, pairing)
-                if r is None:
-                    lines.append(head + " no pole pair")
-                    continue
-                note = ""
-                if pairing == "by_spin":
-                    note = " Delta restriction %s%s" % (
-                        "+".join(r["delta_restriction"] or []),
-                        " (ambiguous with spin 1/2)"
-                        if r["delta_ambiguous_with_spin_half"] else "")
-                lines.append(
-                    head + " s_N=%s (content %s) s_D=%s (content %s) "
-                    "s_N/s_D=%s |s_N|/|s_D|=%.6f Re/Re=%.6f%s"
-                    % (_complex_text(r["nucleon_pole"]), r["nucleon_content"],
-                       _complex_text(r["delta_pole"]), r["delta_content"],
-                       _complex_text(r["pole_ratio"]), r["modulus_ratio"],
-                       r["real_part_ratio"], note))
+        lines += point_lines(point)
     return "\n".join(lines)
 
 

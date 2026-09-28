@@ -115,6 +115,20 @@ At level l (a complex K_l of three sheets of a base complex):
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
 3-simplex, and says so.
 
+The report is per doublet content
+---------------------------------
+Every (host cell, content, doublet content) read is reported on its own, and
+nothing is averaged over doublet contents or over contents
+(``baryon_poles``, "The report is per doublet content"): as each tick
+completes, and again in the final summary, stdout carries one line per
+(content, doublet content) pair of every host cell with both spins and both
+columns, every pole with its multiplicity and its certificates; then, per
+host cell, the labelled "lowest over" minima naming the doublet content (and
+the content) each came from, and the ratios naming the pairs they compare.
+The tick's ``summary.poles`` keeps every pair's poles beside the labelled
+minima, the cell's ``pole_table`` has one row per pole, and the live frame
+draws every pole of every pair as its own mark.
+
 Running it
 ----------
 ::
@@ -823,15 +837,34 @@ def _verdict_summary(record):
             "status": {c["name"]: c["status"] for c in quark["conditions"]}}
 
 
-def _lowest_poles(record):
-    """Per spin and column, the lowest pole of a content over its doublet
-    contents (`baryon_poles.lowest_poles`), without the doublet content."""
-    out = {}
-    for name in ("quasi_free", "with_quartic"):
-        for key, best in bp.lowest_poles(record, name).items():
-            if best is not None:
-                out.setdefault(key, {})[name] = best[0]
-    return out
+def _content_poles(record):
+    """The poles of one content record for the tick's summary: for every
+    doublet content, both spins and both columns with every pole, its
+    multiplicity and the read's failed certificates; and, separately
+    labelled, the lowest pole of each column and spin over the doublet
+    contents with the doublet content it came from and every tied one
+    (`baryon_poles.lowest_poles`)."""
+    pairs = []
+    for read in record.get("doublet_reads") or []:
+        sectors = {}
+        for j2 in bp.SPINS:
+            entry = read["sectors"].get(j2)
+            if not entry:
+                continue
+            sectors[j2] = {}
+            for name in bp.COLUMNS:
+                column = entry.get(name) or {}
+                sectors[j2][name] = {
+                    "poles": list(column.get("poles") or []),
+                    "multiplicity": list(column.get("multiplicity") or []),
+                    "failed_certificates": list(
+                        column.get("failed_certificates") or []),
+                }
+        pairs.append({"doublet_content": list(read["doublet_content"]),
+                      "sectors": sectors})
+    return {"per_doublet_content": pairs,
+            "lowest_over_doublet_contents": {
+                name: bp.lowest_poles(record, name) for name in bp.COLUMNS}}
 
 
 def _truncation_summary(record):
@@ -1056,11 +1089,10 @@ def tick(index, cells, z, links, config):
                            for cell in record["reads"]],
         "isospin_doublet": [[_doublet_summary(c) for c in cell["contents"]]
                             for cell in record["reads"]],
-        "lowest_poles": [[{"content": c["content"],
-                           "poles": _lowest_poles(c),
-                           "quartic_truncation": _truncation_summary(c)}
-                          for c in cell["contents"]]
-                         for cell in record["reads"]],
+        "poles": [[dict(_content_poles(c), content=c["content"],
+                        quartic_truncation=_truncation_summary(c))
+                   for c in cell["contents"]]
+                  for cell in record["reads"]],
     }
     record["seconds"] = time.time() - started
     if not kept:
@@ -1186,6 +1218,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
                    record["seconds"]))
             for line in _notices(record):
                 sys.stdout.write("  " + line + "\n")
+            for line in read_lines(record):
+                sys.stdout.write(line + "\n")
             sys.stdout.flush()
         if on_frame is not None:
             on_frame(frames, len(frames) - 1)
@@ -1243,64 +1277,88 @@ INK = bp.INK
 INK_MUTED = bp.INK_MUTED
 
 
+def frame_data(frames, index):
+    """What one frame draws, as data: the recursion's counts and the row-sum
+    defects of its grown cells per tick; every pole of every (host cell,
+    content, doublet content) of the latest tick that read cells
+    (`baryon_poles.pole_marks`, one group per host cell and content); and the
+    by-spin ratio of every read host cell in both columns with the two pairs
+    it compares (`baryon_poles.ratio_row`)."""
+    done = frames[:index + 1]
+    read = [f for f in done if f.get("reads")]
+    latest = read[-1] if read else done[-1]
+    cells = latest.get("reads") or []
+    marks, spans, slots = bp.pole_marks(
+        [("%s\n%s" % (bp._digits(cell["cell"]), bp._digits(record["content"])),
+          record) for cell in cells for record in cell["contents"]])
+    rows = []
+    for cell in cells:
+        where = "cell %s" % bp._digits(cell["cell"])
+        for name in bp.COLUMNS:
+            rows.append(bp.ratio_row(where, name, ((cell.get("ratios") or {})
+                                                   .get(name) or {})
+                                     .get("by_spin")))
+    return {"tick": latest["tick"], "done": len(done),
+            "counts": [{"tick": f["tick"],
+                        "response_vertices": f["summary"]["response_vertices"],
+                        "grown_cells": f["summary"]["grown_cells"],
+                        "row_sum_defects": list(
+                            f["summary"]["row_sum_defects"])} for f in done],
+            "marks": marks, "groups": spans, "slots": slots, "ratios": rows}
+
+
 def draw_frame(figure, frames, index):
-    """One frame: per tick, the counts of the recursion and the row-sum
-    defects of the grown cells; for the latest tick, the lowest quasi-free
-    spin-1/2 and spin-3/2 poles of every read cell and content."""
+    """One frame (`frame_data`): the poles of every (host cell, content,
+    doublet content) of the latest tick that read cells, quasi-free and with
+    the quartic, each pole its own mark; below them the recursion's counts
+    per tick, the row-sum defects of its grown cells, the by-spin ratio per
+    host cell against the target, and the listing of the pairs each ratio
+    compares."""
+    data = frame_data(frames, index)
     figure.clear()
     figure.patch.set_facecolor(SURFACE)
-    left = figure.add_subplot(1, 2, 1)
-    right = figure.add_subplot(1, 2, 2)
-    for axis in (left, right):
-        axis.set_facecolor(SURFACE)
-        for spine in ("top", "right"):
-            axis.spines[spine].set_visible(False)
-        axis.tick_params(colors=INK_MUTED)
-    done = frames[:index + 1]
-    x = np.arange(len(done))
+    grid = figure.add_gridspec(3, 4, height_ratios=(1.2, 1.2, 1.1),
+                               width_ratios=(1.0, 1.0, 1.1, 1.6))
+    quasi_free = figure.add_subplot(grid[0, :])
+    quartic = figure.add_subplot(grid[1, :])
+    counts = figure.add_subplot(grid[2, 0])
+    defects = figure.add_subplot(grid[2, 1])
+    ratio = figure.add_subplot(grid[2, 2])
+    pairs = figure.add_subplot(grid[2, 3])
+    for axis, name in ((quasi_free, "quasi_free"), (quartic, "with_quartic")):
+        bp.draw_pole_panel(axis, data, name,
+                           "poles %s at tick %d: every (host cell, content, "
+                           "doublet content)" % (bp.SERIES_LABEL[name],
+                                                 data["tick"]),
+                           "host cell and content (quarks per band of h_1)")
+    for axis in (counts, defects):
+        bp.style_axis(axis)
+    ticks = [row["tick"] for row in data["counts"]]
     for key, colour, label in (("response_vertices", "#2a78d6",
                                 "response vertices"),
                                ("grown_cells", "#eb6834", "grown cells")):
-        left.plot(x, [f["summary"][key] for f in done], marker="o",
-                  linewidth=2, color=colour, label=label)
-    twin = left.twinx()
-    for i, f in enumerate(done):
-        defects = f["summary"]["row_sum_defects"]
-        twin.plot([i] * len(defects), defects, "_", markersize=14,
-                  color="#1baf7a")
-    twin.set_ylabel("row-sum defect ||g 1|| / ||g||", color=INK_MUTED)
-    left.set_xticks(x)
-    left.set_xlabel("tick", color=INK)
-    left.set_ylabel("count", color=INK)
-    left.set_title("the recursion per tick", color=INK, fontsize=10)
-    left.legend(frameon=False, fontsize=8, labelcolor=INK, loc="upper left")
-
-    read = [f for f in done if f.get("reads")]
-    latest = read[-1] if read else done[-1]
-    labels, half, three = [], [], []
-    for cell in latest.get("reads", []):
-        for record in cell["contents"]:
-            labels.append("%s\n%s" % ("".join(map(str, cell["cell"])),
-                                      "".join(map(str, record["content"]))))
-            lowest = bp.lowest_poles(record, "quasi_free")
-            for store, key in ((half, str(bp.SPIN_HALF)),
-                               (three, str(bp.SPIN_THREE_HALVES))):
-                best = lowest[key]
-                store.append(best[0].real if best is not None else np.nan)
-    positions = np.arange(len(labels))
-    right.plot(positions, half, "o", markersize=7, color="#1baf7a",
-               label="spin 1/2")
-    right.plot(positions, three, "s", markersize=7, color="#4a3aa7",
-               markerfacecolor="none", markeredgewidth=2, label="spin 3/2")
-    right.set_xticks(positions)
-    right.set_xticklabels(labels, fontsize=6)
-    right.set_xlabel("cell and content", color=INK)
-    right.set_ylabel("Re s (quasi-free)", color=INK)
-    right.set_title("baryon poles at tick %d" % latest["tick"], color=INK,
-                    fontsize=10)
-    right.legend(frameon=False, fontsize=8, labelcolor=INK)
-    figure.suptitle("level recursion with the grown-cell rule (%d ticks "
-                    "done)" % len(done), color=INK)
+        counts.plot(ticks, [row[key] for row in data["counts"]], marker="o",
+                    linewidth=2, color=colour, label=label)
+    counts.set_xticks(ticks)
+    counts.set_xlabel("tick", color=INK, fontsize=8)
+    counts.set_ylabel("count", color=INK, fontsize=8)
+    counts.set_title("the recursion per tick", color=INK, fontsize=9)
+    counts.legend(frameon=False, fontsize=7, labelcolor=INK)
+    for row in data["counts"]:
+        defects.plot([row["tick"]] * len(row["row_sum_defects"]),
+                     row["row_sum_defects"], linestyle="none", marker="_",
+                     markersize=14, color="#1baf7a")
+    defects.set_xticks(ticks)
+    defects.set_xlabel("tick", color=INK, fontsize=8)
+    defects.set_ylabel("||g 1|| / ||g||", color=INK, fontsize=8)
+    defects.set_title("row-sum defect of each grown cell", color=INK,
+                      fontsize=9)
+    bp.draw_ratio_panel(ratio, data["ratios"],
+                        "by-spin ratio per host cell, tick %d" % data["tick"])
+    bp.draw_pairs_panel(pairs, data["ratios"])
+    figure.suptitle("level recursion with the grown-cell rule, reported per "
+                    "doublet content (%d ticks done)" % data["done"],
+                    color=INK)
     figure.tight_layout()
 
 
@@ -1331,7 +1389,7 @@ def drive_live(config, progress=False, points_file=None):
     matplotlib.rcParams["figure.raise_window"] = False
     if not plt.isinteractive():
         plt.ion()
-    figure = plt.figure(figsize=(13, 6))
+    figure = plt.figure(figsize=bp.FIGURE_SIZE)
     plt.show(block=False)
     ready = queue.Queue()
     published = {}
@@ -1398,7 +1456,7 @@ def render(result, path):
     import matplotlib
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
-    figure = plt.figure(figsize=(13, 6))
+    figure = plt.figure(figsize=bp.FIGURE_SIZE)
     if result["ticks"]:
         draw_frame(figure, result["ticks"], len(result["ticks"]) - 1)
     figure.savefig(path, dpi=120, facecolor=SURFACE)
@@ -1456,27 +1514,54 @@ def summary(result):
                 % (cell["vertices"], cell["row_sum_defect"],
                    cell["asymmetry"],
                    [bp._complex_text(v) for v in cell["squared_lengths"]]))
-        for cell in record["reads"]:
-            for c in cell["contents"]:
-                verdict = _verdict_summary(c)
-                spin = (c.get("spin_decomposition") or {}).get(
-                    "occupied_state")
-                lines.append(
-                    "    host cell %s content %s (quarks per band of h_1): "
-                    "%s; quark certified %s; quarks per doublet of h-bar_1 "
-                    "%s; lowest poles %s; quartic truncation %s"
-                    % (cell["cell"], c["content"],
-                       "failed: " + c["failed"] if "failed" in c else "read",
-                       verdict["certified"] if verdict else None,
-                       {k: bp._complex_text(v) for k, v in spin.items()}
-                       if spin else None,
-                       {k: {n: bp._complex_text(v) if v is not None else None
-                            for n, v in d.items()}
-                        for k, d in _lowest_poles(c).items()},
-                       _truncation_summary(c)))
+        lines += read_lines(record)
         if "stopped" in record:
             lines.append("  stopped: " + record["stopped"])
     return "\n".join(lines)
+
+
+def _content_line(cell, c):
+    """One content of one host cell: whether it was read, its mean-field
+    relaxation, its quark verdict, its quarks per doublet of h-bar_1 and its
+    quartic truncation certificates."""
+    head = "host cell %s content %s (quarks per band of h_1): " % (
+        cell["cell"], c["content"])
+    if "failed" in c:
+        return head + "failed: " + c["failed"]
+    verdict = _verdict_summary(c)
+    spin = (c.get("spin_decomposition") or {}).get("occupied_state")
+    relaxation = c.get("relaxation") or {}
+    mean_field = ("mean field converged %s (force norm %.3g after %d "
+                  "iterations)" % (relaxation["converged"],
+                                   relaxation["force_norm"],
+                                   relaxation["iterations"])
+                  if "converged" in relaxation else "mean field unrecorded")
+    return head + ("read; quark certified %s; %s; quarks per doublet of "
+                   "h-bar_1 %s; quartic truncation %s"
+                   % (verdict["certified"] if verdict else None, mean_field,
+                      {k: bp._complex_text(v) for k, v in spin.items()}
+                      if spin else None,
+                      _truncation_summary(c)))
+
+
+def read_lines(record):
+    """The per-cell reads of one tick as text. For every host cell: one line
+    per content (`_content_line`), each read content followed by one line per
+    (content, doublet content) pair with both spins and both columns
+    (`baryon_poles.pair_line`); then the cell's labelled "lowest over" minima
+    (`baryon_poles.lowest_lines`) and its ratios with the pairs they compare
+    (`baryon_poles.ratio_lines`)."""
+    lines = []
+    for cell in record.get("reads") or []:
+        prefix = "host cell %s " % (cell["cell"],)
+        for c in cell["contents"]:
+            lines.append("    " + _content_line(cell, c))
+            if "failed" not in c:
+                lines += ["      " + line
+                          for line in bp.content_pair_lines(c, prefix)]
+        lines += bp.lowest_lines(cell["contents"], "    " + prefix)
+        lines += bp.ratio_lines(cell.get("ratios"), "    " + prefix)
+    return lines
 
 
 def build_parser():
