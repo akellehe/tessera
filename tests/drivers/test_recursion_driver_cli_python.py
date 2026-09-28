@@ -247,6 +247,8 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     assert "content [3, 0, 0] (quarks per band of h_1): read; quark " \
         "certified False; mean field converged False (force norm 0.25 after " \
         "40 iterations)" in out
+    # every quark condition's status closes the content's line
+    assert "; quark conditions persistent-cluster Failed\n" in out
     # the tick's progress and the final summary both carry one line per
     # (content, doublet content) pair, then the labelled minima and ratios
     first = ("      host cell [0, 1, 2, 3] content [3, 0, 0], doublet "
