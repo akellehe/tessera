@@ -651,6 +651,24 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           std::to_string(declaration_.carrierDegree) + "; got " +
           std::to_string(declaration_.covariance.size()) + " entries");
   }
+  if (!(declaration_.momentScale > 0.0) ||
+      !std::isfinite(declaration_.momentScale))
+    throw std::invalid_argument(
+        "JointAction: the unit the power sums are measured in must be "
+        "positive and finite; got " + std::to_string(declaration_.momentScale));
+  if (!declaration_.momentProjector.empty()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    if (declaration_.momentProjector.size() != order * order)
+      throw std::invalid_argument(
+          "JointAction: the constraints' fiber projector is a square matrix "
+          "over the " + std::to_string(order) + " cells of degree " +
+          std::to_string(declaration_.carrierDegree) + "; got " +
+          std::to_string(declaration_.momentProjector.size()) + " entries");
+  }
   if (declaration_.reggeBranch == ReggeBranch::Continued) {
     const auto edges = spacetime_->getEdgeList()->toVector();
     const auto &declared = declaration_.reggeStartSquaredLengths;
@@ -702,6 +720,24 @@ void JointAction::setCovariance(std::vector<complexd> covariance) {
   declaration_.covariance = std::move(covariance);
 }
 
+void JointAction::setMomentProjector(std::vector<complexd> projector) {
+  if (!projector.empty() &&
+      projector.size() != declaration_.momentProjector.size()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    if (projector.size() != order * order)
+      throw std::invalid_argument(
+          "JointAction::setMomentProjector: the fiber projector is a square "
+          "matrix over the " + std::to_string(order) + " cells of degree " +
+          std::to_string(declaration_.carrierDegree) + "; got " +
+          std::to_string(projector.size()) + " entries");
+  }
+  declaration_.momentProjector = std::move(projector);
+}
+
 std::vector<complexd> JointAction::multipliers() const {
   std::vector<complexd> values;
   values.reserve(declaration_.momentConstraints.size());
@@ -733,12 +769,57 @@ std::vector<complexd> JointAction::faceHolonomies() const {
   return workspace.holonomies;
 }
 
+namespace {
+
+/// The operator the spectral constraints' power sums are taken of: the
+/// carrier \f$ h \f$, or its compression
+/// \f$ P_{\mathcal C}hP_{\mathcal C} \f$ to the declared fiber, whose
+/// nonzero spectrum is that of \f$ h_{\mathcal C} \f$ on
+/// \f$ \operatorname{Ran}P_{\mathcal C} \f$.
+Eigen::MatrixXcd constrainedOperator(const JointActionDeclaration &declaration,
+                                     const Eigen::MatrixXcd &carrier,
+                                     std::size_t order) {
+  const complexd unit{1.0 / declaration.momentScale, 0.0};
+  if (declaration.momentProjector.empty() || order == 0)
+    return unit * carrier;
+  const Eigen::MatrixXcd projector =
+      toMatrix(declaration.momentProjector, order);
+  return unit * (projector * carrier * projector);
+}
+
+/// The matrix the operator derivative is traced against in
+/// \f$ dp_j=\operatorname{tr}(X_j\,dh) \f$ for the power sums in the declared
+/// unit \f$ s \f$: \f$ (j/s)(h/s)^{j-1} \f$ by the cyclic identity, exact for
+/// every matrix including a defective one, or, for the declared fiber at fixed
+/// \f$ P_{\mathcal C} \f$,
+/// \f$ (j/s)P_{\mathcal C}(P_{\mathcal C}hP_{\mathcal C}/s)^{j-1}P_{\mathcal C} \f$.
+Eigen::MatrixXcd powerSumDerivative(const JointActionDeclaration &declaration,
+                                    const Eigen::MatrixXcd &carrier,
+                                    std::size_t order, int power) {
+  const auto size = static_cast<Eigen::Index>(order);
+  const Eigen::MatrixXcd constrained =
+      constrainedOperator(declaration, carrier, order);
+  Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(size, size);
+  for (int step = 1; step < power; ++step) result = result * constrained;
+  if (!declaration.momentProjector.empty()) {
+    const Eigen::MatrixXcd projector =
+        toMatrix(declaration.momentProjector, order);
+    result = projector * result * projector;
+  }
+  return complexd{static_cast<double>(power) / declaration.momentScale, 0.0} *
+         result;
+}
+
+}  // namespace
+
 std::vector<complexd> JointAction::powerSums() const {
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
                                   /*wantCarrier=*/true);
   std::vector<complexd> sums;
   sums.reserve(declaration_.momentConstraints.size());
+  const Eigen::MatrixXcd constrained = constrainedOperator(
+      declaration_, workspace.carrier, workspace.carrierOrder);
   for (const auto &constraint : declaration_.momentConstraints) {
     if (workspace.carrierOrder == 0) {
       sums.emplace_back(0.0, 0.0);
@@ -747,9 +828,9 @@ std::vector<complexd> JointAction::powerSums() const {
     // Repeated multiplication rather than an eigendecomposition: the power sum
     // is defined for a defective operator, and forming it this way needs no
     // eigenvalue ordering and no similarity to diagonal form.
-    Eigen::MatrixXcd power = workspace.carrier;
+    Eigen::MatrixXcd power = constrained;
     for (int step = 1; step < constraint.order; ++step)
-      power = power * workspace.carrier;
+      power = power * constrained;
     sums.push_back(power.trace());
   }
   return sums;
@@ -1180,7 +1261,9 @@ ReportedActionValue JointAction::reportedValue() const {
 namespace {
 
 /// The matrix every operator derivative is contracted against in the
-/// stationarity equations: \f$ A = w_M\Gamma + \sum_j \xi_j\,j\,h^{j-1} \f$.
+/// stationarity equations: \f$ A = w_M\Gamma + \sum_j \xi_j\,X_j \f$, with
+/// \f$ X_j=jh^{j-1} \f$, or its compression to the declared fiber
+/// (`powerSumDerivative`).
 ///
 /// Both the matter term and the spectral term are linear in \f$ h \f$'s
 /// derivative through a trace, so assembling their coefficient once turns the
@@ -1195,13 +1278,8 @@ Eigen::MatrixXcd contractionMatrix(const JointActionDeclaration &declaration,
     matrix += declaration.matterWeight * toMatrix(declaration.covariance, order);
   for (const auto &constraint : declaration.momentConstraints) {
     if (constraint.multiplier == complexd{0.0, 0.0}) continue;
-    // d tr(h^j) = j tr(h^{j-1} dh), the cyclic identity, exact for every
-    // matrix including a defective one.
-    Eigen::MatrixXcd power = Eigen::MatrixXcd::Identity(
-        static_cast<Eigen::Index>(order), static_cast<Eigen::Index>(order));
-    for (int step = 1; step < constraint.order; ++step) power = power * carrier;
     matrix += constraint.multiplier *
-              static_cast<double>(constraint.order) * power;
+              powerSumDerivative(declaration, carrier, order, constraint.order);
   }
   return matrix;
 }
@@ -1626,12 +1704,9 @@ std::vector<complexd> JointAction::momentGradient(std::size_t index) const {
   std::vector<complexd> gradient(2 * edges, complexd{0.0, 0.0});
   if (workspace.carrierOrder == 0) return gradient;
 
-  Eigen::MatrixXcd power = Eigen::MatrixXcd::Identity(
-      static_cast<Eigen::Index>(workspace.carrierOrder),
-      static_cast<Eigen::Index>(workspace.carrierOrder));
-  for (int step = 1; step < constraint.order; ++step)
-    power = power * workspace.carrier;
-  power = complexd{static_cast<double>(constraint.order), 0.0} * power;
+  const Eigen::MatrixXcd power =
+      powerSumDerivative(declaration_, workspace.carrier,
+                         workspace.carrierOrder, constraint.order);
 
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];

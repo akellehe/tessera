@@ -4651,6 +4651,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &JointActionDeclaration::momentConstraints,
                      "The declared holomorphic spectral constraints. Empty in "
                      "emergence mode.")
+      .def_readwrite("moment_scale", &JointActionDeclaration::momentScale,
+                     "s > 0, the unit the power sums are measured in: the "
+                     "constraints are p_j(h / s) (or of h_C / s), with "
+                     "targets and multipliers in that unit. The same "
+                     "constraints for every s; one by default.")
+      .def_readwrite("moment_projector",
+                     &JointActionDeclaration::momentProjector,
+                     "The Riesz projector P_C of the fiber the constraints are "
+                     "imposed on, flat row-major over the k-cells. Empty: the "
+                     "power sums of the whole carrier, tr(h^j). Declared: "
+                     "those of the compression h_C = P_C h P_C (WP v17 §3.4), "
+                     "tr((P_C h P_C)^j), differentiated at fixed P_C.")
       .def_readwrite("metric_source", &JointActionDeclaration::metricSource,
                      "Where the carrier operator's metric comes from. "
                      "WhitneyPencil is the whitepaper's W_k = M_k^-1 and gives "
@@ -4700,6 +4712,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "Replace the carried covariance Gamma (flat row-major over the "
            "k-cells). Nothing else of the declaration changes; the Riemann "
            "sheets of a continued Regge term stay those fixed at construction.")
+      .def("set_moment_projector", &JointAction::setMomentProjector,
+           py::arg("projector"),
+           "Replace the fiber the spectral constraints are imposed on, in "
+           "place, as set_covariance replaces Gamma.")
       .def("carrier_operator", &JointAction::carrierOperator,
            "h_k(z, U), flat row-major over the k-cells.")
       .def("face_holonomies", &JointAction::faceHolonomies,
@@ -5179,6 +5195,27 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("method", &SelfConsistentMeanFieldDeclaration::method,
                      "How the fixed point is solved for: JointNewton (the "
                      "default) or Alternation.")
+      .def_readwrite("fiber_moments",
+                     &SelfConsistentMeanFieldDeclaration::fiberMoments,
+                     "m_c, the number of power sums p_j(h_C), j = 1..m_c, of "
+                     "the occupied fiber (the occupied bands, followed and "
+                     "rebuilt as the covariance's are) pinned by the "
+                     "holomorphic spectral constraints of WP v17 §3.4, with "
+                     "their complex multipliers solved for beside the "
+                     "geometry. Zero (the default) pins nothing; at most the "
+                     "fiber's rank r.")
+      .def_readwrite("fiber_moment_targets",
+                     &SelfConsistentMeanFieldDeclaration::fiberMomentTargets,
+                     "The targets p_j*, one per pinned moment, in the "
+                     "operator's own unit; empty (the default) takes the "
+                     "fiber's own values at the starting point, which pins "
+                     "the carrier as declared.")
+      .def_readwrite("fiber_moment_scale",
+                     &SelfConsistentMeanFieldDeclaration::fiberMomentScale,
+                     "The unit s the pinned power sums are solved in, "
+                     "p_j(h_C / s) = p_j* s^-j (the same constraints, with "
+                     "commensurate gradients); zero (the default) takes the "
+                     "fiber's spectral radius at the starting point.")
       .def_readwrite("maximum_iterations",
                      &SelfConsistentMeanFieldDeclaration::maximumIterations,
                      "The largest number of iterations of the declared "
@@ -5281,6 +5318,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldStep::bandIsolation)
       .def_readwrite("band_crossing",
                      &SelfConsistentMeanFieldStep::bandCrossing)
+      .def_readwrite("multipliers", &SelfConsistentMeanFieldStep::multipliers,
+                     "The pinned fiber moments' multipliers xi_j, in the "
+                     "operator's own unit.")
+      .def_readwrite("moment_residual_norm",
+                     &SelfConsistentMeanFieldStep::momentResidualNorm,
+                     "The norm of the pinned constraints' residuals in the "
+                     "unit they are solved in; zero when none is pinned.")
       .def_readwrite("geometry_converged",
                      &SelfConsistentMeanFieldStep::geometryConverged)
       .def_readwrite("geometry_residual_norm",
@@ -5356,6 +5400,38 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("kontsevich_segal_margin",
                      &SelfConsistentMeanFieldReport::kontsevichSegalMargin,
                      "Positive on an allowable geometry, negative otherwise.")
+      .def_readwrite("fiber_rank", &SelfConsistentMeanFieldReport::fiberRank,
+                     "r, the rank of the occupied fiber where the bands were "
+                     "chosen.")
+      .def_readwrite("moment_scale",
+                     &SelfConsistentMeanFieldReport::momentScale,
+                     "The unit s the pinned power sums were solved in.")
+      .def_readwrite("moment_targets",
+                     &SelfConsistentMeanFieldReport::momentTargets,
+                     "The pinned fiber moments' targets p_j*, in the "
+                     "operator's own unit.")
+      .def_readwrite("multipliers", &SelfConsistentMeanFieldReport::multipliers,
+                     "The multipliers xi_j of xi_j (p_j(h_C) - p_j*) at the "
+                     "end point, in the operator's own unit.")
+      .def_readwrite("moment_residuals",
+                     &SelfConsistentMeanFieldReport::momentResiduals,
+                     "p_j(h_C) - p_j* at the end point, in the operator's own "
+                     "unit.")
+      .def_readwrite(
+          "hellmann_feynman_force_norm",
+          &SelfConsistentMeanFieldReport::hellmannFeynmanForceNorm,
+          "||tr(Gamma dh)|| on the relaxed geometric coordinates at the end "
+          "point, without the geometric terms and the constraints.")
+      .def_readwrite("force_hessian",
+                     &SelfConsistentMeanFieldReport::forceHessian,
+                     "The moment-constrained action's Hessian on the range of "
+                     "the Hellmann-Feynman force (WP v17 line 265): the "
+                     "Rayleigh quotient f^T H f / f^T f of the joint "
+                     "Jacobian's geometric block along the Hellmann-Feynman "
+                     "force projected onto the pinned constraints' tangent "
+                     "space, in the coordinates (z, theta), delta = i theta. "
+                     "Real on the real slice, where its sign is the "
+                     "condition's reading.")
       .def_readwrite("largest_length_ratio",
                      &SelfConsistentMeanFieldReport::largestLengthRatio,
                      "The largest |z_e| at the end over its value at the "

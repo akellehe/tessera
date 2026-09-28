@@ -77,21 +77,34 @@ enum class RelaxationStop {
 /// `RelaxationStop::SectorBoundary`.
 [[nodiscard]] std::string relaxationStopName(RelaxationStop reason);
 
+/// # RebuiltCarrierState
+///
+/// What a `CovarianceRebuild` sets on the action at one point: the carried
+/// covariance \f$ \Gamma \f$ and, when the solve imposes spectral constraints
+/// on a fiber, the fiber's Riesz projector
+/// (`JointActionDeclaration::momentProjector`), both flat row-major over the
+/// carrier's cells.
+struct RebuiltCarrierState {
+  std::vector<std::complex<double>> covariance;
+  /// Empty when the solve imposes no constraint on a fiber.
+  std::vector<std::complex<double>> momentProjector;
+};
+
 /// # CovarianceRebuild
 ///
 /// The rule by which a self-consistent solve rebuilds the carried covariance
-/// \f$ \Gamma \f$ from the carrier operator at every point it evaluates the
+/// \f$ \Gamma \f$ (and the constrained fiber's projector, when one is
+/// declared) from the carrier operator at every point it evaluates the
 /// residual at. With it `HolomorphicRelaxation` solves the self-consistent
 /// system \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$ instead of the
 /// stationarity at a fixed \f$ \Gamma \f$: every residual, every Jacobian
 /// column and every trial point reads \f$ \Gamma \f$ rebuilt there. The
 /// equations are the same; only \f$ \Gamma \f$ is no longer held.
 struct CovarianceRebuild {
-  /// \f$ \Gamma \f$ at the geometry the action currently refers to, flat
-  /// row-major over the carrier's cells. Called with the geometry moved to
-  /// each point the solve evaluates, and required to leave the geometry as
-  /// it found it.
-  std::function<std::vector<std::complex<double>>(const JointAction &)> at;
+  /// The state at the geometry the action currently refers to. Called with
+  /// the geometry moved to each point the solve evaluates, and required to
+  /// leave the geometry as it found it.
+  std::function<RebuiltCarrierState(const JointAction &)> at;
   /// Called once after every accepted step, with the action at the accepted
   /// point and \f$ \Gamma \f$ already rebuilt there, so a rule that follows
   /// the carrier's bands from point to point can move its reference.

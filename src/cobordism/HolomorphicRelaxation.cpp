@@ -136,9 +136,11 @@ struct StateSnapshot {
   std::vector<complexd> lengths;
   std::vector<complexd> phases;
   std::vector<complexd> multipliers;
-  /// The carried covariance, which a self-consistent solve rebuilds at every
-  /// point and so must restore with the geometry.
+  /// The carried covariance and the constrained fiber's projector, which a
+  /// self-consistent solve rebuilds at every point and so must restore with
+  /// the geometry.
   std::vector<complexd> covariance;
+  std::vector<complexd> momentProjector;
 };
 
 StateSnapshot takeSnapshot(const JointAction &action) {
@@ -154,6 +156,7 @@ StateSnapshot takeSnapshot(const JointAction &action) {
   }
   snapshot.multipliers = action.multipliers();
   snapshot.covariance = action.declaration().covariance;
+  snapshot.momentProjector = action.declaration().momentProjector;
   return snapshot;
 }
 
@@ -189,6 +192,18 @@ void restoreSnapshot(JointAction &action, const StateSnapshot &snapshot) {
   action.setMultipliers(snapshot.multipliers);
   if (action.declaration().covariance != snapshot.covariance)
     action.setCovariance(snapshot.covariance);
+  if (action.declaration().momentProjector != snapshot.momentProjector)
+    action.setMomentProjector(snapshot.momentProjector);
+}
+
+/// Set on \p target the state a declared rebuild gives at its current point:
+/// the covariance and, when the rebuild constrains a fiber, its projector.
+void applyRebuild(const CovarianceRebuild &rebuild, JointAction &target) {
+  if (!rebuild.at) return;
+  RebuiltCarrierState state = rebuild.at(target);
+  target.setCovariance(std::move(state.covariance));
+  if (!state.momentProjector.empty())
+    target.setMomentProjector(std::move(state.momentProjector));
 }
 
 /// The square root of a new squared length taken by continuation from the
@@ -679,7 +694,7 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
   // the carrier operator at the node first, so the column is the derivative
   // of the self-consistent force.
   auto evaluate = [&](JointAction &target) {
-    if (rebuild_.at) target.setCovariance(rebuild_.at(target));
+    applyRebuild(rebuild_, target);
     return reducedResidual(target, layout, classes);
   };
 
@@ -732,7 +747,16 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
 
   // The multiplier columns are exact and analytic: the action is linear in
   // every xi_j, so the column is the moment's own gradient, summed over each
-  // class, and the moment rows of it are zero.
+  // class, and the moment rows of it are zero. The moment rows' length and
+  // link entries are the derivatives of p_j, the same gradient, so they are
+  // taken from it too rather than from the difference quotients above: exact
+  // to rounding, they keep a pinned power sum that depends on others (as on
+  // a sheeted fiber, whose degenerate eigenvalues leave only as many
+  // independent power sums as distinct eigenvalues) exactly dependent, which
+  // the rank decision reads. Both are read at the point itself, with the
+  // covariance and the fiber the point carries rather than those a rebuild
+  // left at the last node.
+  restoreSnapshot(working, snapshot);
   if (layout.multipliers) {
     const std::size_t edgeCount = classes.edgeCount;
     for (std::size_t constraint = 0; constraint < layout.constraints;
@@ -748,12 +772,19 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
           linkPart += orientation > 0 ? gradient[edgeCount + edge]
                                       : -gradient[edgeCount + edge];
         }
-        if (layout.lengths)
+        const auto row = column;
+        if (layout.lengths) {
           matrix(static_cast<Eigen::Index>(layout.lengthOffset + index),
                  column) = lengthPart;
-        if (layout.links)
+          matrix(row, static_cast<Eigen::Index>(layout.lengthOffset + index)) =
+              lengthPart;
+        }
+        if (layout.links) {
           matrix(static_cast<Eigen::Index>(layout.linkOffset + index),
                  column) = linkPart;
+          matrix(row, static_cast<Eigen::Index>(layout.linkOffset + index)) =
+              linkPart;
+        }
       }
     }
   }
@@ -775,7 +806,7 @@ std::vector<complexd> HolomorphicRelaxation::residual() const {
   const Layout layout(classes.count(), action_.constraintCount(),
                       declaration_);
   JointAction working = action_;
-  if (rebuild_.at) working.setCovariance(rebuild_.at(working));
+  applyRebuild(rebuild_, working);
   return reducedResidual(working, layout, classes);
 }
 
@@ -794,7 +825,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   // The residual of the equations in scope at the action's current point,
   // with Gamma rebuilt there first when a rebuild is declared.
   auto evaluate = [&](JointAction &target) {
-    if (rebuild_.at) target.setCovariance(rebuild_.at(target));
+    applyRebuild(rebuild_, target);
     return reducedResidual(target, layout, classes);
   };
   auto recordAction = [](const JointAction &target, std::complex<double> &value,

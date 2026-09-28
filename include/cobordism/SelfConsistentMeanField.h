@@ -149,6 +149,36 @@ struct SelfConsistentMeanFieldDeclaration {
   /// (the default) or the alternation.
   SelfConsistentMethod method = SelfConsistentMethod::JointNewton;
 
+  /// \f$ m_{\rm c} \f$, the number of power sums of the occupied fiber the
+  /// solve pins: the holomorphic spectral constraints of WP v17 §3.4, which
+  /// controlled synthesis may impose to pin a carrier. The fiber is the
+  /// occupied bands (their Riesz projector \f$ P_{\mathcal C} \f$, of rank
+  /// \f$ r \f$ the sum of their ranks), chosen and followed as the
+  /// covariance's bands are and rebuilt with them at every point, and the
+  /// constraints are \f$ p_j(h_{\mathcal C})=p_j^{\star} \f$ for
+  /// \f$ j=1,\ldots,m_{\rm c} \f$ with
+  /// \f$ h_{\mathcal C}=P_{\mathcal C}hP_{\mathcal C}|_{\operatorname{Ran}
+  /// P_{\mathcal C}} \f$ (`JointActionDeclaration::momentProjector`). Their
+  /// complex multipliers \f$ \xi_j \f$ are unknowns of the solve beside the
+  /// geometry, from zero, so the geometry declaration's multipliers are
+  /// relaxed whatever it says. Zero, the default, pins nothing. At most
+  /// \f$ r \f$: the paper takes \f$ j=1,\ldots,r \f$.
+  std::size_t fiberMoments = 0;
+
+  /// The targets \f$ p_j^{\star} \f$ of the pinned power sums, one per
+  /// pinned moment, in the operator's own unit. Empty (the default) takes the
+  /// fiber's own values at the point the solve starts from, which pins the
+  /// carrier as it was declared.
+  std::vector<std::complex<double>> fiberMomentTargets;
+
+  /// The unit \f$ s \f$ the pinned power sums are solved in
+  /// (`JointActionDeclaration::momentScale`): the constraints are
+  /// \f$ p_j(h_{\mathcal C}/s)=p_j^{\star}s^{-j} \f$, the same constraints,
+  /// with gradients commensurate across \f$ j \f$. Zero (the default) takes
+  /// the fiber's spectral radius at the starting point. The report gives
+  /// targets, residuals and multipliers in the operator's own unit.
+  double fiberMomentScale = 0.0;
+
   /// The largest number of iterations of the declared method: Newton steps of
   /// the joint system, or outer iterations (geometry relaxation followed by
   /// re-occupation) of the alternation. Zero reads the starting point only.
@@ -370,6 +400,16 @@ struct SelfConsistentMeanFieldStep {
   double bandIsolation = 0.0;
   /// Whether an occupied band had crossed another at this iterate.
   bool bandCrossing = false;
+  /// The multipliers \f$ \xi_j \f$ of the pinned fiber moments at this
+  /// iterate, in order of \f$ j \f$, in the operator's own unit (of the
+  /// constraint \f$ \xi_j(p_j(h_{\mathcal C})-p_j^{\star}) \f$); empty when
+  /// none is pinned.
+  std::vector<std::complex<double>> multipliers;
+  /// The Euclidean norm of the pinned constraints' residuals at this iterate,
+  /// in the unit they are solved in (\f$ p_j(h_{\mathcal C}/s)-p_j^{\star}
+  /// s^{-j} \f$, the equations the solve drives to zero); zero when none is
+  /// pinned.
+  double momentResidualNorm = 0.0;
   /// Under `Alternation`, whether this iterate's inner geometry solve reached
   /// its tolerance. Under `JointNewton`, whether the joint residual at this
   /// iterate is at or below the joint solve's tolerance.
@@ -478,6 +518,42 @@ struct SelfConsistentMeanFieldReport {
   /// allowable and negative is not. Bands are read on the allowable side
   /// (WP v17 line 151).
   double kontsevichSegalMargin = 0.0;
+  /// \f$ r \f$, the rank of the occupied fiber (the sum of the occupied
+  /// bands' ranks) where the bands were chosen.
+  std::size_t fiberRank = 0;
+  /// The unit \f$ s \f$ the pinned power sums were solved in.
+  double momentScale = 1.0;
+  /// The targets \f$ p_j^{\star} \f$ of the pinned fiber moments, in order
+  /// of \f$ j \f$ and in the operator's own unit; empty when none is pinned.
+  std::vector<std::complex<double>> momentTargets;
+  /// The multipliers \f$ \xi_j \f$ of the constraints
+  /// \f$ \xi_j(p_j(h_{\mathcal C})-p_j^{\star}) \f$ at the point the solve
+  /// stopped at, in the operator's own unit (\f$ s^{-j} \f$ times the
+  /// multiplier solved for in the unit \f$ s \f$).
+  std::vector<std::complex<double>> multipliers;
+  /// \f$ p_j(h_{\mathcal C})-p_j^{\star} \f$ at the point the solve stopped
+  /// at, in the operator's own unit.
+  std::vector<std::complex<double>> momentResiduals;
+  /// The Euclidean norm of the Hellmann-Feynman force at the point the solve
+  /// stopped at: the carried state's own force
+  /// \f$ \operatorname{tr}(\Gamma\,\partial h) \f$ on the relaxed geometric
+  /// coordinates, without the geometric terms and without the constraints.
+  double hellmannFeynmanForceNorm = 0.0;
+  /// The moment-constrained action's Hessian on the range of the
+  /// Hellmann-Feynman force (the condition of WP v17 line 265: self-trapping
+  /// as a stationary point with an isolated band requires it positive): the
+  /// Rayleigh quotient \f$ f^{\mathsf T}Hf/f^{\mathsf T}f \f$ of the geometric
+  /// block \f$ H \f$ of the joint Jacobian at the point the solve stopped at
+  /// (the Hessian of the geometric action, the occupied energy and the pinned
+  /// moments' multiplier terms, the covariance and the fiber rebuilt at every
+  /// node) along the Hellmann-Feynman force \f$ f \f$ projected onto the
+  /// tangent space of the pinned constraints, both in the coordinates
+  /// \f$ (z,\theta) \f$ with \f$ \delta=i\theta \f$ for a link. On the real
+  /// slice (real squared lengths, unit-modulus face holonomies) the quotient
+  /// is real and its sign is the condition's reading; away from it the
+  /// quotient is complex and is reported as it is. Quiet NaN when the force
+  /// vanishes on that tangent space or the joint Jacobian is unread.
+  std::complex<double> forceHessian{0.0, 0.0};
   /// The largest \f$ |z_e| \f$ over the complex at the point the solve
   /// stopped at, over its value at the start.
   double largestLengthRatio = 1.0;

@@ -556,6 +556,38 @@ struct JointActionDeclaration {
   /// The declared holomorphic spectral constraints. Empty in emergence mode.
   std::vector<SpectralMomentConstraint> momentConstraints;
 
+  /// The fiber the spectral constraints are imposed on: the Riesz projector
+  /// \f$ P_{\mathcal C} \f$ of an isolated band, flat row-major over the
+  /// \f$ k \f$-cells in the canonical order. Empty (the default), the
+  /// constraints are the power sums of the whole carrier,
+  /// \f$ p_j(h)=\operatorname{tr}(h^j) \f$. Declared, they are the power sums
+  /// of the compressed operator
+  /// \f$ h_{\mathcal C}=P_{\mathcal C}hP_{\mathcal C}|_{\operatorname{Ran}
+  /// P_{\mathcal C}} \f$ of WP v17 §3.4,
+  /// \f[ p_j(h_{\mathcal C})=\operatorname{tr}\bigl((P_{\mathcal C}hP_{\mathcal C})^j\bigr), \f]
+  /// the \f$ j \f$-th power sum of the fiber's eigenvalues (the compression
+  /// acts as zero on \f$ \ker P_{\mathcal C} \f$). Their derivatives are
+  /// taken at fixed \f$ P_{\mathcal C} \f$,
+  /// \f$ dp_j=j\operatorname{tr}\bigl(P_{\mathcal C}(P_{\mathcal C}hP_{\mathcal C})^{j-1}P_{\mathcal C}\,dh\bigr) \f$,
+  /// which is the whole derivative when \f$ P_{\mathcal C} \f$ is a spectral
+  /// projector of \f$ h \f$: the projector's own variation is off-diagonal
+  /// between its range and its kernel and so contributes no trace against a
+  /// power of \f$ h \f$. A self-consistent solve rebuilds the projector at
+  /// every point, as it does \f$ \Gamma \f$.
+  std::vector<std::complex<double>> momentProjector;
+
+  /// \f$ s>0 \f$, the unit the power sums are measured in: the constraints
+  /// are \f$ p_j(h/s)=\operatorname{tr}((h/s)^j) \f$ (or of
+  /// \f$ h_{\mathcal C}/s \f$), with targets and multipliers in the same
+  /// unit. The constraint \f$ p_j(h/s)=p_j^{\star}s^{-j} \f$ is the
+  /// constraint \f$ p_j(h)=p_j^{\star} \f$, so the scale changes no solution
+  /// set; it keeps the constraints' gradients, which grow as
+  /// \f$ j|\lambda|^{j-1} \f$, commensurate with one another and with the
+  /// geometric equations when several moments are pinned. A multiplier in
+  /// this unit is \f$ s^j \f$ times the multiplier of the unscaled
+  /// constraint. One, the default, measures in the operator's own unit.
+  double momentScale = 1.0;
+
   /// Where the carrier operator's metric comes from.
   ///
   /// `WhitneyPencil` is the whitepaper's \f$ W_k = M_k^{-1} \f$ and gives the
@@ -723,6 +755,13 @@ class JointAction {
   ///   square matrix over the \f$ k \f$-cells of the complex.
   void setCovariance(std::vector<std::complex<double>> covariance);
 
+  /// Replace the fiber the spectral constraints are imposed on
+  /// (`JointActionDeclaration::momentProjector`), flat row-major over the
+  /// \f$ k \f$-cells, in place and for the same reason as `setCovariance`.
+  /// @throws std::invalid_argument when \p projector is neither empty nor a
+  ///   square matrix over the \f$ k \f$-cells of the complex.
+  void setMomentProjector(std::vector<std::complex<double>> projector);
+
   /// The carrier operator \f$ h_k(z,U) \f$, flat row-major over the
   /// \f$ k \f$-cells in the canonical order. Empty when the complex carries no
   /// cell of the declared degree.
@@ -736,8 +775,10 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> faceHolonomies() const;
 
   /// The power sums \f$ p_j(h)=\operatorname{tr}(h^j) \f$ of the declared
-  /// constraints, in declaration order. Computed from the operator by repeated
-  /// multiplication, so a defective or non-normal \f$ h \f$ needs no
+  /// constraints, in declaration order, or of the compressed operator
+  /// \f$ h_{\mathcal C} \f$ when a fiber is declared
+  /// (`JointActionDeclaration::momentProjector`). Computed from the operator by
+  /// repeated multiplication, so a defective or non-normal \f$ h \f$ needs no
   /// eigendecomposition and no eigenvalue ordering.
   [[nodiscard]] std::vector<std::complex<double>> powerSums() const;
 
@@ -941,7 +982,8 @@ class JointAction {
 
   /// \f$ \partial p_j(h)/\partial z_e \f$ and
   /// \f$ U_e\,\partial p_j(h)/\partial U_e \f$ for the \p index-th declared
-  /// constraint, concatenated in the same block order as
+  /// constraint (of \f$ h_{\mathcal C} \f$, at fixed \f$ P_{\mathcal C} \f$,
+  /// when a fiber is declared), concatenated in the same block order as
   /// `stationarityResidual`'s first two blocks, so the vector has length
   /// \f$ 2|E| \f$.
   ///
