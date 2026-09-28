@@ -515,19 +515,62 @@ def test_each_point_is_written_as_it_completes(monkeypatch, tmp_path):
     assert bp.points_path("out/run.json") == "out/run.points.jsonl"
 
 
-def test_the_pole_table_names_the_content_of_each_lowest_pole():
+def test_the_pole_table_keeps_every_pole_with_its_pair():
+    """One row per pole of every (content, doublet content) sector, not only
+    each sector's lowest, in ascending order of real part, each row naming its
+    content and doublet content."""
     half, three = str(bp.SPIN_HALF), str(bp.SPIN_THREE_HALVES)
 
-    def record(content, poles):
-        return {"content": content, "doublet_reads": [{
-            "doublet_content": [1, 1, 1], "sectors": {
-                key: {"quasi_free": {"lowest_pole": value},
-                      "with_quartic": {"lowest_pole": value},
-                      "restriction_to_2T": ["2"]}
-                for key, value in poles.items()}}]}
+    def column(values):
+        return {"poles": values, "multiplicity": [2] * len(values),
+                "lowest_pole": min(values, key=lambda p: p.real)}
 
-    table = bp.pole_table([record([2, 1, 0], {half: 5.0 + 0j, three: 5.0 + 0j}),
-                           record([3, 0, 0], {three: 4.0 + 0j})])
-    assert [row["content"] for row in table["quasi_free"][three]] == \
-        [[3, 0, 0], [2, 1, 0]]
-    assert table["with_quartic"][half][0]["content"] == [2, 1, 0]
+    def record(content, doublet_content, poles):
+        return {"content": content, "doublet_reads": [{
+            "doublet_content": doublet_content, "sectors": {
+                key: {"quasi_free": column(values),
+                      "with_quartic": column(values),
+                      "restriction_to_2T": ["2"]}
+                for key, values in poles.items()}}]}
+
+    table = bp.pole_table([
+        record([2, 1, 0], [1, 1, 1], {half: [7.0 + 0j, 5.0 + 0j],
+                                      three: [5.0 + 0j]}),
+        record([3, 0, 0], [0, 3, 0], {three: [6.0 + 0j, 4.0 + 0j]})])
+    rows = table["quasi_free"][three]
+    assert [(row["content"], row["doublet_content"], row["pole"],
+             row["lowest_in_sector"]) for row in rows] == [
+        ([3, 0, 0], [0, 3, 0], 4.0, True),
+        ([2, 1, 0], [1, 1, 1], 5.0, True),
+        ([3, 0, 0], [0, 3, 0], 6.0, False)]
+    assert [row["pole"] for row in table["with_quartic"][half]] == [5.0, 7.0]
+    assert all(row["spin_j_j_plus_1"] == bp.SPIN_HALF
+               for row in table["with_quartic"][half])
+
+
+def test_every_pole_of_a_sector_carries_its_own_certificates(alignment):
+    """An operator diagonal in the occupation basis with distinct entries
+    splits the four-dimensional spin-1/2 sector of the doublet content
+    (1, 1, 1) into distinct poles. Each pole is read with its own spin and
+    colour certificates, and the lowest pole's are repeated beside it. Every
+    vector of the sector is a colour singlet of sharp spin 1/2, so every
+    certificate holds."""
+    _, triality, sectors = bp.doublet_sectors([1, 1, 1],
+                                              alignment["trialities"])
+    sector = sectors[bp.SPIN_HALF]
+    assert sector.shape[1] == 4
+    rng = np.random.default_rng(7)
+    operator = np.diag(rng.uniform(1.0, 2.0, size=len(
+        bp.occupation_basis()))).astype(complex)
+    entry = bp.sector_entry(bp.SPIN_HALF, triality, sector,
+                            (("quasi_free", operator),))
+    read = entry["quasi_free"]
+    poles = read["poles"]
+    assert len(poles) >= 2
+    assert len(read["pole_certificates"]) == len(poles)
+    for certificate in read["pole_certificates"]:
+        assert certificate["sharp_spin"]
+        assert certificate["colour_casimir_residual"] < 1e-10
+    lowest = poles.index(read["lowest_pole"])
+    for key, value in read["pole_certificates"][lowest].items():
+        assert read[key] == value

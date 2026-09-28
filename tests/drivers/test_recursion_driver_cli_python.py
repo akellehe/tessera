@@ -9,7 +9,9 @@ declared content of every cell and takes minutes; every other step of a tick
 (the relaxation, the Section 15 box, the interaction stage and the grown-cell
 rule) is the real one. The claims under test are the parsing and its refusals
 by name, which outputs each flag writes, what the text summary and the drawn
-frame contain, and the closed-form behaviour of the band helpers.
+frame contain, and the closed-form behaviour of the band helpers. The stand-in
+read carries two doublet contents with different poles, so that the text, the
+tick's summary and the frame can be checked to report both.
 """
 import json
 
@@ -19,29 +21,63 @@ import pytest
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import recursion as R
 
+HALF = str(bp.SPIN_HALF)
 THREE = str(bp.SPIN_THREE_HALVES)
 
+
+def _column(poles, failed=()):
+    """One column of a sector as `baryon_poles.sector_entry` writes it."""
+    poles = [complex(p) for p in poles]
+    lowest = min(poles, key=lambda p: (p.real, p.imag)) if poles else None
+    return {"poles": poles, "multiplicity": [4] * len(poles),
+            "lowest_pole": lowest, "failed_certificates": list(failed),
+            "compression_leakage": 2e-16,
+            "pole_certificates": [{"sharp_spin": True,
+                                   "colour_casimir_residual": 0.0}
+                                  for _ in poles]}
+
+
+def _sector(j2, triality, quasi_free, with_quartic, failed=()):
+    irreps = bp.restriction(float(j2), triality)
+    return {"restriction_to_2T": irreps, "nucleon_reading": "2" in irreps,
+            "delta_reading": sorted(irreps) == ["2'", "2''"],
+            "quasi_free": _column(quasi_free),
+            "with_quartic": _column(with_quartic, failed)}
+
+
+#: The read content of the stand-in: two doublet contents with different
+#: poles. (0, 2, 1) has only a spin-3/2 sector, whose quasi-free pole 4+0.5i
+#: is the lowest spin-3/2 pole and whose quartic read found no pole; (1, 1, 1)
+#: has a spin-1/2 pole 6 and a spin-3/2 pole 5+0.25i, and the quartic poles
+#: -2 and -1.
+CONTENTS = [
+    {"content": [0, 3, 0], "failed": "band 1 has rank 2",
+     "doublet_reads": []},
+    {"content": [3, 0, 0],
+     "doublet_reads": [
+         {"doublet_content": [0, 2, 1], "total_triality": 1, "sectors": {
+             THREE: _sector(THREE, 1, [4.0 + 0.5j], [],
+                            failed=["no-zero-enclosed"])}},
+         {"doublet_content": [1, 1, 1], "total_triality": 0, "sectors": {
+             HALF: _sector(HALF, 0, [6.0], [-2.0]),
+             THREE: _sector(THREE, 0, [5.0 + 0.25j], [-1.0])}}],
+     "relaxation": {"converged": False, "force_norm": 0.25,
+                    "iterations": 40},
+     "quark_conditions": {"certified": False, "conditions": [
+         {"name": "persistent-cluster", "status": "Failed"}]},
+     "isospin_doublet": {"covariant": {"status": "x", "found": False,
+                                       "other": 1}},
+     "quartic": {"truncation": {"induced_displacement_norm": 0.1,
+                                "unrelated": 2.0}}}]
+
 #: A read of one cell, as `cell_reads` returns it: one content the library
-#: refused and one read content with a spin-3/2 pole, a quark verdict and the
-#: quartic's truncation certificates.
+#: refused and the read content above, with the cell's ratios and pole table.
 READ = [{
     "cell": [0, 1, 2, 3],
     "host_cell": {},
     "failed_contents": [[0, 3, 0]],
-    "contents": [
-        {"content": [0, 3, 0], "failed": "band 1 has rank 2",
-         "doublet_reads": []},
-        {"content": [3, 0, 0],
-         "doublet_reads": [{"doublet_content": [0, 2, 1], "sectors": {
-             THREE: {"quasi_free": {"lowest_pole": 4.0 + 0.5j},
-                     "with_quartic": {"lowest_pole": None}}}}],
-         "quark_conditions": {"certified": False, "conditions": [
-             {"name": "persistent-cluster", "status": "Failed"}]},
-         "isospin_doublet": {"covariant": {"status": "x", "found": False,
-                                           "other": 1}},
-         "quartic": {"truncation": {"induced_displacement_norm": 0.1,
-                                    "unrelated": 2.0}}}],
-    "ratios": {}, "pole_table": {}}]
+    "contents": CONTENTS,
+    "ratios": bp.ratios(CONTENTS), "pole_table": bp.pole_table(CONTENTS)}]
 
 
 @pytest.fixture
@@ -150,9 +186,22 @@ def test_main_writes_every_tick_to_the_json(two_ticks):
                 "status": {"persistent-cluster": "Failed"}}]]
     assert first["summary"]["isospin_doublet"][0][1] == {
         "covariant": {"status": "x", "found": False}}
-    truncation = first["summary"]["lowest_poles"][0][1]["quartic_truncation"]
+    poles = first["summary"]["poles"][0][1]
+    truncation = poles["quartic_truncation"]
     assert truncation["induced_displacement_norm"] == 0.1
     assert "unrelated" not in truncation
+    # every doublet content keeps its poles in the tick's summary
+    assert [p["doublet_content"] for p in poles["per_doublet_content"]] == \
+        [[0, 2, 1], [1, 1, 1]]
+    assert poles["per_doublet_content"][0]["sectors"][THREE]["quasi_free"][
+        "poles"] == [{"re": 4.0, "im": 0.5}]
+    assert poles["per_doublet_content"][1]["sectors"][HALF]["with_quartic"][
+        "poles"] == [{"re": -2.0, "im": 0.0}]
+    # and the minima over the doublet contents name the one they came from
+    lowest = poles["lowest_over_doublet_contents"]
+    assert lowest["quasi_free"][THREE]["doublet_content"] == [0, 2, 1]
+    assert lowest["with_quartic"][THREE]["doublet_content"] == [1, 1, 1]
+    assert lowest["quasi_free"][HALF]["doublet_content"] == [1, 1, 1]
     assert len(result["ticks"]) == 2
 
 
@@ -196,9 +245,81 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     assert "host cell [0, 1, 2, 3] content [0, 3, 0] (quarks per band of " \
         "h_1): failed: band 1 has rank 2" in out
     assert "content [3, 0, 0] (quarks per band of h_1): read; quark " \
-        "certified False" in out
+        "certified False; mean field converged False (force norm 0.25 after " \
+        "40 iterations)" in out
+    # the tick's progress and the final summary both carry one line per
+    # (content, doublet content) pair, then the labelled minima and ratios
+    first = ("      host cell [0, 1, 2, 3] content [3, 0, 0], doublet "
+             "content [0, 2, 1] (triality 1) | spin 1/2: no sector | spin 3/2 "
+             "(restricts to 2''+2): quasi-free 4+0.5i x4 [spin sharp, colour "
+             "0] {read certified, leakage 2e-16}; with quartic no pole {read "
+             "failed no-zero-enclosed, leakage 2e-16}")
+    second = ("      host cell [0, 1, 2, 3] content [3, 0, 0], doublet "
+              "content [1, 1, 1] (triality 0) | spin 1/2 (restricts to 2): "
+              "quasi-free 6+0i x4")
+    assert out.count(first + "\n") == 2
+    assert out.count(second) == 2
+    lowest = ("    host cell [0, 1, 2, 3] lowest over the doublet contents of "
+              "content [3, 0, 0]: spin 1/2 quasi-free 6+0i from doublet "
+              "content [1, 1, 1]; spin 1/2 with quartic -2+0i from doublet "
+              "content [1, 1, 1]; spin 3/2 quasi-free 4+0.5i from doublet "
+              "content [0, 2, 1]; spin 3/2 with quartic -1+0i from doublet "
+              "content [1, 1, 1]")
+    assert out.count(lowest + "\n") == 2
+    assert out.count("host cell [0, 1, 2, 3] lowest over every (content, "
+                     "doublet content) pair") == 2
+    assert out.count("s_N=6+0i (content [3, 0, 0], doublet content "
+                     "[1, 1, 1]) s_D=4+0.5i (content [3, 0, 0], doublet "
+                     "content [0, 2, 1])") == 2
     R.main(["run", "--ticks", "1", "--quiet"])
     assert capsys.readouterr().out == ""
+
+
+def _tick_with_reads():
+    return {"tick": 0, "reads": READ,
+            "summary": {"response_vertices": 2, "grown_cells": 0,
+                        "row_sum_defects": []}}
+
+
+def test_the_frame_data_carries_every_pole_of_every_doublet_content():
+    data = R.frame_data([_tick_with_reads()], 0)
+    marks = {(m["group"], tuple(m["doublet_content"]), m["spin"],
+              m["column"], m["pole"]) for m in data["marks"]}
+    group = "0123\n300"
+    assert marks == {
+        (group, (0, 2, 1), THREE, "quasi_free", 4.0 + 0.5j),
+        (group, (1, 1, 1), HALF, "quasi_free", 6.0 + 0j),
+        (group, (1, 1, 1), THREE, "quasi_free", 5.0 + 0.25j),
+        (group, (1, 1, 1), HALF, "with_quartic", -2.0 + 0j),
+        (group, (1, 1, 1), THREE, "with_quartic", -1.0 + 0j)}
+    # the refused content keeps a slot of its own, labelled as refused
+    assert data["slots"] == [(0.0, "refused"), (2.0, "021"), (3.0, "111")]
+    assert [g["label"] for g in data["groups"]] == ["0123\n030", group]
+    quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
+    assert [bp.ratio_pair_text(r) for r in quasi_free] == \
+        ["N 300|111 / D 300|021"]
+    assert data["counts"] == [{"tick": 0, "response_vertices": 2,
+                               "grown_cells": 0, "row_sum_defects": []}]
+
+
+def test_the_drawn_frame_has_one_mark_per_pole():
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+    figure = plt.figure(figsize=bp.FIGURE_SIZE)
+    try:
+        R.draw_frame(figure, [_tick_with_reads()], 0)
+        quasi_free, quartic = figure.axes[:2]
+        for axis, expected in ((quasi_free, [4.0, 5.0, 6.0]),
+                               (quartic, [-2.0, -1.0])):
+            drawn = sorted(float(y) for line in axis.get_lines()
+                           if line.get_label() in ("spin 1/2", "spin 3/2")
+                           for y in line.get_ydata())
+            assert drawn == expected
+        labels = [t.get_text() for t in quasi_free.get_xticklabels(minor=True)]
+        assert labels == ["refused", "021", "111"]
+    finally:
+        plt.close(figure)
 
 
 def test_main_live_refuses_a_file_backend_by_name(stub_reads, monkeypatch):
