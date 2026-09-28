@@ -4543,7 +4543,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                              &VillainCharacter::matchedWeight,
                              "beta_V = beta / <m^2>_beta.")
       .def("series", &VillainCharacter::series, py::arg("holonomy"))
-      .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"))
+      .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"),
+           "log W(F) on the branch real on the unit circle, continued "
+           "radially from F/|F|. The start on the unit circle is accepted when "
+           "|Im W| <= reality_margin() (tail bound + machine epsilon times the "
+           "sum of the moduli of the kept terms) and Re W exceeds the nonzero "
+           "margin times the same uncertainty; raises ValueError when W is "
+           "not certified nonzero on the path, its start included.")
+      .def_static("reality_margin", &VillainCharacter::realityMargin,
+                  "c_R, the declared multiple of the series' uncertainty (its "
+                  "tail bound plus its rounding scale) within which logarithm "
+                  "reads the imaginary part of W on the unit circle as "
+                  "rounding.")
       .def("potential", &VillainCharacter::potential, py::arg("holonomy"))
       .def("first_derivative", &VillainCharacter::firstDerivative,
            py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
@@ -4647,6 +4658,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "operator is blind to U, so only the face-holonomy term "
                      "then depends on the connection.");
 
+  py::class_<ReportedActionValue>(m, "ReportedActionValue",
+      "The joint action's value as a solver records it: the value when it can "
+      "be evaluated, and otherwise the reason it cannot, by name.")
+      .def(py::init<>())
+      .def_readonly("available", &ReportedActionValue::available)
+      .def_readonly("value", &ReportedActionValue::value,
+                    "S(z, U, Gamma); NaN in both parts when unavailable.")
+      .def_readonly("unavailable", &ReportedActionValue::unavailable,
+                    "Why the value is unavailable; empty when it is "
+                    "available.");
+
   py::class_<JointAction>(m, "JointAction",
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
       "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
@@ -4673,6 +4695,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "stationarity system rather than configuration.")
       .def("multipliers", &JointAction::multipliers,
            "The current xi_j, in declaration order.")
+      .def("set_covariance", &JointAction::setCovariance,
+           py::arg("covariance"),
+           "Replace the carried covariance Gamma (flat row-major over the "
+           "k-cells). Nothing else of the declaration changes; the Riemann "
+           "sheets of a continued Regge term stay those fixed at construction.")
       .def("carrier_operator", &JointAction::carrierOperator,
            "h_k(z, U), flat row-major over the k-cells.")
       .def("face_holonomies", &JointAction::faceHolonomies,
@@ -4712,6 +4739,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "sum_j xi_j (p_j(h) - p_j*).")
       .def("value", &JointAction::value,
            "S(z, U, Gamma), the sum of the five terms.")
+      .def("reported_value", &JointAction::reportedValue,
+           "The value as a solver reports it: available with the value, or "
+           "unavailable with the refusal's message (for example log W refused "
+           "at a face holonomy). Only the holonomy term needs log W, and a "
+           "solver reads the value only to report it.")
       .def("length_stationarity", &JointAction::lengthStationarity,
            "dS/dz_e per edge, assembled from the framework's exact analytic "
            "gradients. No finite difference and no discarded imaginary part.")

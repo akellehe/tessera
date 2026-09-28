@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <cmath>
+#include <cstdio>
 #include <numbers>
 #include <numeric>
 #include <optional>
@@ -172,6 +173,28 @@ constexpr std::size_t kVillainTermCeiling = 100000;
 /// indistinguishable from a zero of the infinite series.
 constexpr double kVillainZeroMargin = 1e3;
 
+/// \f$ c_R \f$: the multiple of the series' uncertainty (tail bound plus
+/// machine epsilon times the sum of the moduli of the kept terms) within which
+/// the imaginary part of \f$ W \f$ on the unit circle is rounding. The kept
+/// terms are formed by repeated multiplication, so the \f$ m \f$-th carries a
+/// relative rounding of order \f$ m\varepsilon \f$, and their sum adds one
+/// rounding per term: the imaginary part of the computed sum is bounded by a
+/// small multiple of \f$ M\varepsilon\sum|q^{m^2}F^m| \f$, with \f$ M \f$ the
+/// largest \f$ |m| \f$ kept. \f$ M \f$ stays below a few hundred for every
+/// coupling below \f$ 10^3 \f$ at the declared tolerances, so this margin
+/// leaves room above that bound, and it is the same multiple the nonzero test
+/// uses.
+constexpr double kVillainRealityMargin = 1e3;
+
+/// A number as text with three significant digits (printf's "%.3g"), for the
+/// messages of a refusal: `std::to_string` prints six fixed decimals and would
+/// show a rounding scale of 1e-15 as zero.
+std::string threeDigits(double value) {
+  char buffer[32];
+  std::snprintf(buffer, sizeof buffer, "%.3g", value);
+  return buffer;
+}
+
 /// The largest distance from one of a ratio of consecutive \f$ W \f$ values
 /// that the radial continuation accepts, so the principal logarithm of every
 /// accepted ratio is the increment of the continued logarithm.
@@ -293,14 +316,30 @@ complexd VillainCharacter::logarithm(complexd holonomy) const {
         "nonzero complex number");
   // The start of the radial path, on the unit circle, where W is real and
   // positive: its principal logarithm is the real logarithm of a positive
-  // number, and it is the branch the continuation carries.
+  // number, and it is the branch the continuation carries. The truncated sum
+  // is real there in exact arithmetic (its terms pair into cosines), so its
+  // computed imaginary part is compared with the series' own uncertainty, the
+  // tail bound plus the rounding scale, and not with W itself, which can be
+  // small beside the terms it is summed from.
   const complexd direction = holonomy / modulus;
   const VillainSeries start = series(direction);
-  if (!(start.value.real() > 0.0) ||
-      std::abs(start.value.imag()) > 1e-12 * start.value.real())
+  const double uncertainty =
+      start.valueTail +
+      std::numeric_limits<double>::epsilon() * start.magnitude;
+  if (std::abs(start.value.imag()) > kVillainRealityMargin * uncertainty)
     throw std::logic_error(
-        "VillainCharacter::logarithm: W is not real and positive on the unit "
-        "circle, which contradicts its Poisson form");
+        "VillainCharacter::logarithm: W on the unit circle has imaginary "
+        "part " + threeDigits(start.value.imag()) +
+        ", beyond the declared reality "
+        "margin " + threeDigits(kVillainRealityMargin) +
+        " times the series' uncertainty " + threeDigits(uncertainty) +
+        ", which contradicts its Poisson form");
+  if (!(start.value.real() > kVillainZeroMargin * uncertainty))
+    throw std::domain_error(
+        "VillainCharacter::logarithm: W on the unit circle at this argument, " +
+        threeDigits(start.value.real()) + ", is not resolved above " +
+        threeDigits(kVillainZeroMargin) + " times the series' uncertainty " +
+        threeDigits(uncertainty) + ", so log W has no certified value there");
   complexd accumulated{std::log(start.value.real()), 0.0};
   const double radial = std::log(modulus);
   if (radial == 0.0) return accumulated;
@@ -339,6 +378,10 @@ complexd VillainCharacter::logarithm(complexd holonomy) const {
     step = std::min(2.0 * step, 0.125);
   }
   return accumulated;
+}
+
+double VillainCharacter::realityMargin() noexcept {
+  return kVillainRealityMargin;
 }
 
 double VillainCharacter::zeroDistance(complexd holonomy) const {
@@ -639,6 +682,24 @@ void JointAction::setMultipliers(const std::vector<complexd> &multipliers) {
         " constraints");
   for (std::size_t index = 0; index < multipliers.size(); ++index)
     declaration_.momentConstraints[index].multiplier = multipliers[index];
+}
+
+void JointAction::setCovariance(std::vector<complexd> covariance) {
+  if (!covariance.empty() &&
+      covariance.size() != declaration_.covariance.size()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    if (covariance.size() != order * order)
+      throw std::invalid_argument(
+          "JointAction::setCovariance: the covariance is a square matrix over "
+          "the " + std::to_string(order) + " cells of degree " +
+          std::to_string(declaration_.carrierDegree) + "; got " +
+          std::to_string(covariance.size()) + " entries");
+  }
+  declaration_.covariance = std::move(covariance);
 }
 
 std::vector<complexd> JointAction::multipliers() const {
@@ -1101,6 +1162,19 @@ std::complex<double> JointAction::spectralTerm() const {
 std::complex<double> JointAction::value() const {
   return reggeTerm() + stiffnessTerm() + holonomyTerm() + matterTerm() +
          spectralTerm();
+}
+
+ReportedActionValue JointAction::reportedValue() const {
+  ReportedActionValue reported;
+  try {
+    reported.value = value();
+  } catch (const std::logic_error &refusal) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    reported.available = false;
+    reported.value = complexd{nan, nan};
+    reported.unavailable = refusal.what();
+  }
+  return reported;
 }
 
 namespace {

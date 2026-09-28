@@ -300,6 +300,25 @@ struct VillainSeries {
 /// multiple of its tail bound plus its rounding scale, which happens exactly
 /// when \f$ F \f$ is at or beyond a zero on the negative real axis.
 ///
+/// The start of the path is tested against the Poisson form, which makes
+/// \f$ W(\hat F) \f$ real and positive. The truncated sum is real there in
+/// exact arithmetic, because its terms pair as
+/// \f$ q^{m^2}(\hat F^m+\hat F^{-m})=2q^{m^2}\cos m\theta \f$, so a computed
+/// imaginary part is rounding. The test is therefore taken relative to the
+/// series' own uncertainty
+/// \f$ u=\text{(tail bound of } W)+\varepsilon\sum_{|m|\le M}|q^{m^2}\hat F^m| \f$,
+/// with \f$ \varepsilon \f$ the machine epsilon: the start is accepted when
+/// \f$ |\operatorname{Im}W|\le c_R\,u \f$, with the declared reality margin
+/// \f$ c_R \f$ (`realityMargin`), and when \f$ \operatorname{Re}W \f$ exceeds
+/// the nonzero margin times \f$ u \f$. A test relative to
+/// \f$ \operatorname{Re}W \f$ instead would refuse a real, positive \f$ W \f$
+/// whenever \f$ W \f$ is small beside the terms it is summed from: at
+/// \f$ \beta=5 \f$ and arguments beyond about \f$ 0.75\pi \f$, \f$ W \f$ is
+/// about \f$ 10^{-6} \f$ while the rounding scale is about \f$ 10^{-15} \f$. A
+/// start whose real part is not resolved above \f$ u \f$ throws
+/// `std::domain_error`, as a zero on the path does; an imaginary part beyond
+/// \f$ c_R\,u \f$ contradicts the Poisson form and throws `std::logic_error`.
+///
 /// ## Truncation
 ///
 /// The series keeps \f$ |m|\le M \f$, where \f$ M_0 \f$ is the least
@@ -347,9 +366,17 @@ class VillainCharacter {
   /// \f$ \log W(F) \f$ on the branch real on the unit circle, by the radial
   /// continuation described above.
   /// @throws std::domain_error when the path meets a point at which \f$ W \f$
-  ///   is not certified nonzero.
+  ///   is not certified nonzero, its start on the unit circle included.
+  /// @throws std::logic_error when the imaginary part of \f$ W \f$ at the
+  ///   start of the path exceeds `realityMargin` times the series'
+  ///   uncertainty there, which contradicts the Poisson form.
   [[nodiscard]] std::complex<double> logarithm(
       std::complex<double> holonomy) const;
+
+  /// \f$ c_R \f$, the declared multiple of the series' uncertainty (its tail
+  /// bound plus its rounding scale) within which `logarithm` reads the
+  /// imaginary part of \f$ W \f$ on the unit circle as rounding.
+  [[nodiscard]] static double realityMargin() noexcept;
 
   /// \f$ \phi(F)=-\beta_V\log W(F) \f$.
   [[nodiscard]] std::complex<double> potential(
@@ -402,6 +429,21 @@ struct HolonomyTruncation {
   double relativeFirstTail = 0.0;
   /// \f$ \max_\tau \text{(tail of } D^2W)/|W(\mathcal F_\tau)| \f$.
   double relativeSecondTail = 0.0;
+};
+
+/// # ReportedActionValue
+///
+/// The value of the joint action as a solver records it
+/// (`JointAction::reportedValue`): the value when it can be evaluated, and
+/// otherwise the reason it cannot, by name.
+struct ReportedActionValue {
+  /// Whether the value could be evaluated.
+  bool available = true;
+  /// \f$ S(z,U,\Gamma) \f$; a quiet NaN in both parts when unavailable.
+  std::complex<double> value{0.0, 0.0};
+  /// Why the value is unavailable (the refusal's own message); empty when it
+  /// is available.
+  std::string unavailable;
 };
 
 /// # JointActionDeclaration
@@ -671,6 +713,16 @@ class JointAction {
   /// The current multipliers \f$ \xi_j \f$, in declaration order.
   [[nodiscard]] std::vector<std::complex<double>> multipliers() const;
 
+  /// Replace the carried covariance \f$ \Gamma \f$, flat row-major over the
+  /// \f$ k \f$-cells. This is how a self-consistent solve rebuilds
+  /// \f$ \Gamma \f$ from the carrier operator at a new geometry. Nothing else
+  /// of the declaration changes: in particular the Riemann sheets of a
+  /// continued Regge term stay those fixed when the instance was built, as
+  /// they would not if a new instance were built at the new geometry.
+  /// @throws std::invalid_argument when \p covariance is neither empty nor a
+  ///   square matrix over the \f$ k \f$-cells of the complex.
+  void setCovariance(std::vector<std::complex<double>> covariance);
+
   /// The carrier operator \f$ h_k(z,U) \f$, flat row-major over the
   /// \f$ k \f$-cells in the canonical order. Empty when the complex carries no
   /// cell of the declared degree.
@@ -712,6 +764,17 @@ class JointAction {
   [[nodiscard]] std::complex<double> spectralTerm() const;
   /// The whole action \f$ S(z,U,\Gamma) \f$, the sum of the five terms above.
   [[nodiscard]] std::complex<double> value() const;
+
+  /// The whole action as a solver reports it: `value` when it can be
+  /// evaluated, and otherwise unavailable, with the reason by name. Only the
+  /// holonomy term needs \f$ \log W \f$, and a solver reads the value only to
+  /// report it (its steps and their acceptance use the stationarity residual
+  /// alone), so a refused logarithm makes this record unavailable instead of
+  /// ending the solve. A refusal is anything `value` throws as
+  /// `std::logic_error` (its `std::domain_error` for a zero of \f$ W \f$ on the
+  /// path of the logarithm, or an unresolved \f$ W \f$ on the unit circle,
+  /// included).
+  [[nodiscard]] ReportedActionValue reportedValue() const;
 
   /// \f$ \partial S/\partial z_e \f$ for every edge, in `getEdgeList()` order.
   ///
