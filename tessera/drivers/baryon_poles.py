@@ -2354,14 +2354,16 @@ def relaxation_text(relaxation):
     if "force_hessian" in relaxation:
         pinned = relaxation.get("fiber_moments", 0)
         if pinned:
+            relative = [abs(r) / abs(t) if abs(t) > 0 else abs(r)
+                        for r, t in zip(relaxation["moment_residuals"],
+                                        relaxation["moment_targets"])]
             text += ("; %d of the occupied fiber's %d power sums pinned at "
-                     "the host (unit %.3g): multipliers %s, residuals %s" % (
+                     "the host: multipliers %s, largest relative residual "
+                     "|p_j(h_C) - p_j*| / |p_j*| %.2g" % (
                          pinned, relaxation["fiber_rank"],
-                         relaxation["moment_scale"],
                          "[%s]" % ", ".join(_complex_text(x) for x in
                                             relaxation["multipliers"]),
-                         "[%s]" % ", ".join("%.2g" % abs(x) for x in
-                                            relaxation["moment_residuals"])))
+                         max(relative)))
         else:
             text += "; no power sum of the occupied fiber pinned"
         text += ("; Hessian on the range of the Hellmann-Feynman force %s "

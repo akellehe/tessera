@@ -113,6 +113,11 @@ def test_the_declared_defaults():
     assert args.regge_hinges == "interior"
     assert args.json is None and args.out is None
     assert not args.live and not args.quiet and not args.isospin_doublet
+    assert args.mean_field_method == "joint-newton"
+    assert args.band_selection == "continuation"
+    assert args.stiffness == "none" and args.fiber_moments == "r"
+    assert bp.build_parser().parse_args(
+        ["run", "--fiber-moments", "1"]).fiber_moments == "1"
 
 
 def test_lists_of_couplings_are_parsed():
@@ -126,6 +131,9 @@ def test_lists_of_couplings_are_parsed():
 @pytest.mark.parametrize("argv,name", [
     (["run", "--holonomy", "plaquette"], "--holonomy"),
     (["run", "--eliminate", "phases"], "--eliminate"),
+    (["run", "--stiffness", "quadratic"], "--stiffness"),
+    (["run", "--fiber-moments", "-1"], "--fiber-moments"),
+    (["run", "--fiber-moments", "all"], "--fiber-moments"),
     (["run", "--regge-hinges", "boundary"], "--regge-hinges"),
     (["run", "--kappa", "one"], "--kappa"),
     ([], "command"),
@@ -543,9 +551,19 @@ def test_the_declarations_carry_the_config():
                                         regge_hinges="all")
     assert declaration.regge_hinges == cob.ReggeHinges.All
     assert declaration.gravitational_weight == 0.5
-    assert declaration.stiffness_weight == 0.5
     assert declaration.holonomy_weight == 3.0
     assert declaration.regge_form == cob.ReggeForm.Primal
+    # the declared action has no stiffness stand-in: kappa = 8 pi G enters
+    # through the Regge weight alone, and the record says so
+    assert declaration.stiffness_weight == 0.0
+    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    assert config["kappa_role"].startswith(
+        "kappa = 8 pi G enters only through the Regge weight 1/kappa")
+    stand_in = bp.action_declaration(spacetime, 2.0, 3.0,
+                                     stiffness="linear-stand-in")
+    assert stand_in.stiffness_weight == 0.5
+    with pytest.raises(ValueError, match="the length stiffness is one of"):
+        bp.action_declaration(spacetime, 2.0, 3.0, stiffness="quadratic")
 
 
 def test_the_host_built_from_a_cell_carries_its_fields():

@@ -53,11 +53,14 @@ SECOND_CELL = (0, 1, 3, 4)
 
 def _config(cell, content, method="joint-newton",
             selection="continuation"):
-    """The configuration `recursion.cell_reads` hands `baryon_poles` for one
-    tick-0 host cell (kappa = beta = 1, the Villain term, the cell's four
-    faces held), with the declared solve method and band selection."""
+    """The configuration `recursion.cell_reads` handed `baryon_poles` for one
+    tick-0 host cell in the run the investigation studied (kappa = beta = 1,
+    the Villain term, the cell's four faces held, the linear stiffness
+    stand-in, no fiber moment pinned), with the declared solve method and
+    band selection."""
     config = bp.default_config(kappas=[1.0], betas=[1.0],
-                               selected_contents=[tuple(content)])
+                               selected_contents=[tuple(content)],
+                               stiffness="linear-stand-in", fiber_moments=0)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     config["mean_field_method"] = method
@@ -132,7 +135,8 @@ def test_the_fixed_point_satisfies_the_unchanged_equations():
     gamma = np.asarray(report.covariance).reshape(18, 18)
     declaration = bp.action_declaration(spacetime, 1.0, 1.0,
                                         reference_lengths=config[
-                                            "reference_lengths"])
+                                            "reference_lengths"],
+                                        stiffness=config["stiffness"])
     declaration.covariance = list(report.covariance)
     fresh = cob.JointAction(spacetime, declaration)
     h = bp.matrix(fresh.carrier_operator())
@@ -410,7 +414,8 @@ def _held_host_action(content, geometry_iterations=1):
     alternation's inner solve (the cell's faces held)."""
     config = _config(FIRST_CELL, content)
     spacetime = bp.build_host(config["edge_squared"], config["host_cell"])
-    declaration = bp.action_declaration(spacetime, 1.0, 1.0)
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0,
+                                        stiffness=config["stiffness"])
     action = cob.JointAction(spacetime, declaration)
     mean = bp.mean_field_declaration(content, config, spacetime)
     read = cob.BandFollower(mean).read(action.carrier_operator())

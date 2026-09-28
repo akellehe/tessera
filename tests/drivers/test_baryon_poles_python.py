@@ -167,17 +167,22 @@ def test_the_host_connection_is_stiff_under_villain_and_not_under_wilson():
 # --------------------------------------------- the Section 7 elimination
 
 
-def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases"):
+def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases",
+                  stiffness="linear-stand-in"):
     """The unrelaxed host carrying the three lowest modes of h_1, and the
-    elimination of its fluctuations at kappa = 0.5."""
+    elimination of its fluctuations at kappa = 0.5. The elimination is
+    exercised on the linear stiffness stand-in by default, whose length block
+    is nonsingular, so that the zero-stiffness directions are the phases'
+    alone."""
     spacetime = bp.build_host()
     config = bp.default_config([0.5], [beta], holonomy=holonomy,
-                               elimination=elimination)
+                               elimination=elimination, stiffness=stiffness)
     bare = cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 0.5, beta, holonomy=holonomy))
+        spacetime, 0.5, beta, holonomy=holonomy, stiffness=stiffness))
     config["reference_lengths"] = list(bare.declaration.reference_lengths)
     declaration = bp.action_declaration(spacetime, 0.5, beta,
-                                        holonomy=holonomy)
+                                        holonomy=holonomy,
+                                        stiffness=stiffness)
     declaration.covariance = bare.occupation_projector(3)
     action = cob.JointAction(spacetime, declaration)
     carrier = bp.matrix(action.carrier_operator())
@@ -271,6 +276,22 @@ def test_the_lengths_only_elimination_is_the_plain_inverse():
     assert drazin["coordinates"] == 18
     assert drazin["null_dimension"] == 0
     assert problem["record"]["ward_identity"] == {"directions": 0}
+
+
+def test_without_the_stand_in_the_lengths_carry_no_bare_stiffness():
+    """The declared action has no linear stand-in: its geometric part is the
+    Regge term, zero by structure on a lone tetrahedron (no interior hinge),
+    and the holonomy term, which does not see the lengths. So the eighteen
+    length directions join the nine pure-gauge phases in the null space of
+    the quartic's bare stiffness, the Drazin inverse integrates only the
+    coexact phases out, and the record says the null space is not pure
+    gauge."""
+    _, _, _, problem = _host_problem(1.0, stiffness="none")
+    drazin = problem["record"]["drazin"]
+    assert drazin["coordinates"] == 36
+    assert drazin["null_dimension"] == 27
+    assert drazin["eliminated_dimension"] == 9
+    assert not drazin["null_space_is_pure_gauge"]
 
 
 def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
@@ -590,7 +611,10 @@ def test_a_read_whose_lengths_ran_off_is_refused_by_name(alignment):
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
-    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)])
+    # the action of the run the investigation studied: the linear stiffness
+    # stand-in, no fiber moment pinned
+    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
+                               stiffness="linear-stand-in", fiber_moments=0)
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config, alignment)
@@ -620,3 +644,32 @@ def test_a_read_whose_lengths_ran_off_is_refused_by_name(alignment):
     assert bp.point_lines(point)[0] == (
         "kappa=1 beta=1: 1 contents, 1 refused; one line per (content, "
         "doublet content) pair, poles s with multiplicity x")
+
+
+def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
+    """The declared action has no stiffness stand-in, and the mean field pins
+    every power sum of the occupied fiber at the host (m_c = r). On
+    (0123, 030) of the recursion's tick-0 run the joint Newton converges with
+    the three pinned moments held, and the record carries the fiber's rank,
+    the multipliers, the residuals, the Hessian along the Hellmann-Feynman
+    force with its sign, and the role of kappa; the content's line prints
+    them."""
+    from tessera.drivers import recursion as R
+    from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)])
+    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    _, action, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    assert action.declaration.stiffness_weight == 0.0
+    solve = bp.relaxation_record(report)
+    assert solve["converged"] and solve["fiber_rank"] == 3
+    assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3
+    assert max(abs(r) / abs(t) for r, t in zip(
+        solve["moment_residuals"], solve["moment_targets"])) < 1e-9
+    assert solve["force_hessian_sign"] in ("positive", "negative")
+    text = bp.relaxation_text(solve)
+    assert "3 of the occupied fiber's 3 power sums pinned at the host" in text
+    assert "Hessian on the range of the Hellmann-Feynman force" in text
+    assert "(%s)" % solve["force_hessian_sign"] in text
