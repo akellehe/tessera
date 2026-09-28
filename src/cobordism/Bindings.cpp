@@ -4837,6 +4837,36 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("RealAxisDifference",
              HolomorphicJacobianMode::RealAxisDifference);
 
+  py::enum_<RelaxationStop>(m, "RelaxationStop",
+      "Why a solve stopped, reported by name. Converged; IterationBudget (the "
+      "declared iterations ran out); NoDescent (no damped step reduced the "
+      "residual); SectorBoundary (no stationary point in the declared "
+      "monopole sector: the smallest damped step changed a held monopole "
+      "number, a held face holonomy driven across -1); DomainBoundary (the "
+      "smallest damped step left the domain of the action); HolonomyZero (the "
+      "smallest damped step came within the declared margin of a zero of W); "
+      "HeldFloor (with held sectors, the residual is at its floor on the held "
+      "set: the constrained step cannot reduce it by more than the "
+      "tolerance); LengthRunaway (the squared lengths ran off beyond the "
+      "declared ratio); "
+      "NoProgress (an outer iteration of the alternation made no progress and "
+      "would only repeat); Continued (not a stop: a per-iterate trace entry "
+      "the solve stepped on from).")
+      .value("Converged", RelaxationStop::Converged)
+      .value("IterationBudget", RelaxationStop::IterationBudget)
+      .value("NoDescent", RelaxationStop::NoDescent)
+      .value("SectorBoundary", RelaxationStop::SectorBoundary)
+      .value("DomainBoundary", RelaxationStop::DomainBoundary)
+      .value("HolonomyZero", RelaxationStop::HolonomyZero)
+      .value("HeldFloor", RelaxationStop::HeldFloor)
+      .value("LengthRunaway", RelaxationStop::LengthRunaway)
+      .value("NoProgress", RelaxationStop::NoProgress)
+      .value("Continued", RelaxationStop::Continued);
+
+  m.def("relaxation_stop_name", &relaxationStopName, py::arg("reason"),
+        "The name a report prints for a stop reason, for example 'no "
+        "stationary point in the declared monopole sector'.");
+
   py::class_<HeldMonopoleSector>(m, "HeldMonopoleSector",
       "A declared cluster whose monopole sector is boundary data of a "
       "relaxation: the outward-oriented faces of its bounding cut (three "
@@ -4904,7 +4934,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "Monopole sectors held as boundary data: the moduli of "
                      "their cut faces' holonomies and their monopole numbers "
                      "are kept, every other connection degree of freedom "
-                     "relaxes.")
+                     "relaxes. The step is the constrained Newton step, the "
+                     "minimum-norm least-squares solution of the linearized "
+                     "equations over the tangent space of the held set.")
+      .def_readwrite("length_runaway_ratio",
+                     &HolomorphicRelaxationDeclaration::lengthRunawayRatio,
+                     "When an accepted step takes the largest |z_e| beyond "
+                     "this multiple of its starting value, the solve stops "
+                     "with RelaxationStop.LengthRunaway. Zero or inf disables "
+                     "it. A stop, not a change of the equations.")
       .def_readwrite("holonomy_zero_margin",
                      &HolomorphicRelaxationDeclaration::holonomyZeroMargin,
                      "The relative distance to a zero of the Villain weight W "
@@ -4957,7 +4995,28 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("holonomy_zero_distance",
                      &HolomorphicStep::holonomyZeroDistance,
                      "The smallest relative distance of a face holonomy to a "
-                     "zero of W where the step started; inf without zeros.");
+                     "zero of W where the step started; inf without zeros.")
+      .def_readwrite("residual_test_dampings",
+                     &HolomorphicStep::residualTestDampings,
+                     "The halvings of this step the residual test forced.")
+      .def_readwrite("accepted", &HolomorphicStep::accepted,
+                     "Whether a damped step was accepted; when not, damping "
+                     "and step_norm are zero and the solve stopped here.")
+      .def_readwrite("linear_residual", &HolomorphicStep::linearResidual,
+                     "||F + J d|| / ||F|| for the full Newton step d: what the "
+                     "linearized equations leave.")
+      .def_readwrite("constrained_step", &HolomorphicStep::constrainedStep,
+                     "Whether the step was solved on the tangent space of the "
+                     "held sectors.")
+      .def_readwrite("constrained_rank", &HolomorphicStep::constrainedRank,
+                     "The rank of the real least-squares system of a "
+                     "constrained step; zero otherwise.")
+      .def_readwrite("constrained_rank_gap",
+                     &HolomorphicStep::constrainedRankGap,
+                     "That system's rank gap; NaN for an unconstrained step.")
+      .def_readwrite("action_available", &HolomorphicStep::actionAvailable)
+      .def_readwrite("action_unavailable",
+                     &HolomorphicStep::actionUnavailable);
 
   py::class_<HolomorphicRelaxationReport>(m, "HolomorphicRelaxationReport",
       "What a solve reached, and the trace of how it got there.")
@@ -4994,7 +5053,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("regge_off_principal_angles",
                      &HolomorphicRelaxationReport::reggeOffPrincipalAngles,
                      "The number of dihedral angles whose continued sheet "
-                     "differs from the principal one at the end point.");
+                     "differs from the principal one at the end point.")
+      .def_readwrite("stop_reason", &HolomorphicRelaxationReport::stopReason,
+                     "Why the solve stopped (RelaxationStop).")
+      .def_readwrite("stop_detail", &HolomorphicRelaxationReport::stopDetail,
+                     "The stop reason in words, with the numbers that decided "
+                     "it.")
+      .def_readwrite("largest_length_ratio",
+                     &HolomorphicRelaxationReport::largestLengthRatio,
+                     "The largest |z_e| at the end over its value at the "
+                     "start.")
+      .def_readwrite("action_available",
+                     &HolomorphicRelaxationReport::actionAvailable)
+      .def_readwrite("action_unavailable",
+                     &HolomorphicRelaxationReport::actionUnavailable);
 
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
       "A Newton root find on the holomorphic stationarity equations of a "
@@ -5021,6 +5093,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("jacobian", &HolomorphicRelaxation::jacobian,
            "The Jacobian at the current point, flat row-major. Forming it "
            "restores the complex exactly, so the geometry is unchanged.")
+      .def("residual", &HolomorphicRelaxation::residual,
+           "The residual of the equations in scope at the current point, in "
+           "the block order of the Jacobian's rows.")
       .def("equation_count", &HolomorphicRelaxation::equationCount)
       .def("variable_count", &HolomorphicRelaxation::variableCount);
 
