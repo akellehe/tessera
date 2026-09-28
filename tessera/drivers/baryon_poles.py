@@ -40,12 +40,25 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    host's quarter-turn holonomies the Wilson stiffness vanishes and the
    Villain stiffness does not;
    with certificates-blind mean-field backreaction to self-consistency
-   (`HolomorphicRelaxation` inside `SelfConsistentMeanField`), the carried
-   density being the content's band filling of h_1. The three sheets are
-   relaxed as one shared base field (WP v17 §8, "Sheet convention
-   (adopted)"): the solve's variables are the base tetrahedron's six squared
-   lengths and six links, written to every sheet, and the force on each is
-   the sum of the forces on the corresponding edges of the three sheets;
+   (`SelfConsistentMeanField`), the carried density being the content's band
+   filling of h_1. The fixed point is solved by Newton's method on the joint
+   system (WP v17 lines 259 and 263), the covariance rebuilt at every point
+   (``--mean-field-method joint-newton``, the default; the alternation of a
+   geometry relaxation and a re-occupation is kept as the named fallback
+   ``alternation``). The content's bands are chosen at the host in ascending
+   order of real part and followed from there by continuation (WP v17 line
+   151; ``--band-selection sort-every-iterate`` re-sorts at every iterate
+   instead), and every iterate's band overlaps and any crossing are
+   recorded. The three sheets are relaxed as one shared base field (WP v17
+   §8, "Sheet convention (adopted)"): the solve's variables are the base
+   tetrahedron's six squared lengths and six links, written to every sheet,
+   and the force on each is the sum of the forces on the corresponding edges
+   of the three sheets. A solve that reaches no fixed point says why, by
+   name (for example, the iterations ran out, no damped step reduced the
+   residual, no stationary point in the declared monopole sector, or the
+   lengths ran off), and the poles are not read on a geometry whose lengths
+   ran off or that is not Kontsevich-Segal allowable: that read is refused by
+   name, with the margin;
 2. runs one turn of the level recursion (`LevelRecursion`) and reads the fibre
    certificates;
 3. reads the seven v16 quark conditions by name (`QuarkConditions`);
@@ -220,6 +233,37 @@ DECLARED_RANK_TOLERANCE = 1e-10
 #: Tolerances of the certificates this driver grades.
 DECLARED_CERTIFICATE_TOLERANCE = 1e-8
 
+#: How the mean field's fixed point is solved for (both solve the same
+#: equations, WP v17 lines 259 and 263): Newton's method on the joint system,
+#: the covariance rebuilt at every point (the default), or the alternation of
+#: a geometry relaxation at fixed covariance and a re-occupation, kept as a
+#: named fallback. The forms --mean-field-method accepts, and the library's
+#: name for each.
+DECLARED_MEAN_FIELD_METHOD = "joint-newton"
+MEAN_FIELD_METHODS = {"joint-newton": cob.SelfConsistentMethod.JointNewton,
+                      "alternation": cob.SelfConsistentMethod.Alternation}
+#: Where a content's bands are chosen: once, at the declared host, by the
+#: ascending real part, and then followed by continuation (WP v17 line 151: a
+#: band is selected by a contour, not by sorting real parts); or re-selected
+#: by sorting at every iterate, kept as a named option.
+DECLARED_BAND_SELECTION = "continuation"
+BAND_SELECTIONS = {"continuation": cob.BandSelection.Continuation,
+                   "sort-every-iterate": cob.BandSelection.SortEveryIterate}
+#: The growth of the largest squared length, over its value at the host, at
+#: which a Newton solve stops and reports that the lengths ran off. The linear
+#: stiffness stand-in's force on a squared length saturates at 1/(2 kappa), so
+#: the residual has a plateau at infinite length that the monotone residual
+#: test would otherwise accept (a stop, not a change of the equations).
+DECLARED_LENGTH_RUNAWAY_RATIO = 1e2
+#: The Kontsevich-Segal margin (radians) at or below which a geometry is not
+#: on the allowable side: min over tetrahedra of pi minus the sum of the
+#: moduli of the arguments of the metric's eigenvalues is pi on a Euclidean
+#: cell, zero on a real Lorentzian one and negative beyond. A margin within
+#: this of zero is the boundary to within the rounding of the arguments, where
+#: WP v17 line 151 reads a band only as the limit of an allowable family and
+#: never alone, so no pole is read there.
+DECLARED_ALLOWABILITY_TOLERANCE = 1e-8
+
 #: How often the --live main thread services the GUI event loop.
 LIVE_POLL_INTERVAL = 0.05
 
@@ -363,6 +407,8 @@ def relaxation_declaration(config):
     geometry.contour_radius = config["jacobian_radius"]
     geometry.rank_tolerance = config["rank_tolerance"]
     geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
+    geometry.length_runaway_ratio = config.get(
+        "length_runaway_ratio", DECLARED_LENGTH_RUNAWAY_RATIO)
     # the monopole sectors a caller holds as boundary data
     # (`tessera.drivers.recursion`); none by default
     geometry.held_sectors = list(config.get("held_sectors") or [])
@@ -402,15 +448,22 @@ def share_sheet_geometry(geometry, spacetime):
 def mean_field_declaration(content, config, spacetime=None):
     """Band filling with the content's occupations (WP v17 §7 line 250) on the
     bands of the covariant operator h_1 itself (ruling (a): Gamma* is a
-    projector onto modes of h(z*), WP v17 §7 line 262), the bands taken in
-    ascending order of real part (`OccupationOrder.AscendingRealPart`). With
-    ``spacetime``, the inner relaxation carries the sheeted host's shared
-    base field (`share_sheet_geometry`)."""
+    projector onto modes of h(z*), WP v17 §7 line 262), the bands chosen at
+    the host in ascending order of real part
+    (`OccupationOrder.AscendingRealPart`) and followed from there by
+    continuation (``band_selection``, WP v17 line 151). The fixed point is
+    solved by the declared ``mean_field_method``, Newton's method on the
+    joint system by default. With ``spacetime``, the solve carries the
+    sheeted host's shared base field (`share_sheet_geometry`)."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = [float(n) for n in content]
     declaration.band_tolerance = config["band_tolerance"]
     declaration.occupation_order = cob.OccupationOrder.AscendingRealPart
+    declaration.band_selection = BAND_SELECTIONS[
+        config.get("band_selection", DECLARED_BAND_SELECTION)]
+    declaration.method = MEAN_FIELD_METHODS[
+        config.get("mean_field_method", DECLARED_MEAN_FIELD_METHOD)]
     declaration.maximum_iterations = config["mean_field_iterations"]
     declaration.tolerance = config["mean_field_tolerance"]
     geometry = relaxation_declaration(config)
@@ -945,9 +998,11 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
     (the squared lengths, and the link phases when retained): the cubic
     remainder of the geometric action relative to its quadratic term, and the
     second-order remainder of h_1 relative to its linear term. The geometry is
-    restored exactly afterwards. The displaced action value needs log W of the
-    Villain term; a displacement that reaches a zero of W has no value there,
-    and the action remainder is then reported as unmeasured with the reason."""
+    restored exactly afterwards. The action value at either point needs log W
+    of the Villain term; where the logarithm is refused (a displacement that
+    reaches a zero of W, or a W not resolved above its rounding), the value
+    is unavailable, and the action remainder is then reported as unmeasured
+    with the reason."""
     edges = spacetime.getEdgeList().toVector()
     n = len(edges)
     saved_lengths = [complex(edge.getLength()) for edge in edges]
@@ -955,7 +1010,8 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
     phases = len(induced) == 2 * n
 
     before = _geometric_action(spacetime, kappa, beta, config)
-    s0 = complex(before.value())
+    reported = before.reported_value()
+    s0 = complex(reported.value) if reported.available else None
     gradient = np.asarray(before.length_stationarity())
     if phases:
         gradient = np.concatenate(
@@ -970,10 +1026,13 @@ def truncation_certificates(spacetime, kappa, beta, config, couplings,
                 edge.setPhase(phase + dp)
         after = _geometric_action(spacetime, kappa, beta, config)
         h1 = matrix(after.carrier_operator())
-        try:
-            s1 = complex(after.value())
-        except ValueError as error:
-            unmeasured = str(error)
+        if s0 is None:
+            unmeasured = reported.unavailable
+        else:
+            try:
+                s1 = complex(after.value())
+            except ValueError as error:
+                unmeasured = str(error)
     finally:
         for edge, length, phase in zip(edges, saved_lengths, saved_phases):
             edge.setLength(length)
@@ -1167,8 +1226,8 @@ def rotation_averaged_many_body(operator, actions, frame, dual):
 
 
 def relax_content(content, kappa, beta, config):
-    """Steps 1-2 for one content: a fresh host relaxed to self-consistency as
-    one shared base field, the carried density filling the bands of h_1."""
+    """Step 1 for one content: a fresh host relaxed to self-consistency as one
+    shared base field, the carried density filling the bands of h_1."""
     spacetime = build_host(config["edge_squared"], config.get("host_cell"))
     declaration = action_declaration(spacetime, kappa, beta,
                                      config["regge_hinges"],
@@ -1180,6 +1239,157 @@ def relax_content(content, kappa, beta, config):
         action, mean_field_declaration(content, config, spacetime))
     report = solve.solve()
     return spacetime, solve.action, report
+
+
+class ReadRefused(ValueError):
+    """A content's pole read refused by name on the geometry its mean-field
+    solve reached: ``name`` is the refusal ("the squared lengths ran off",
+    "not Kontsevich-Segal allowable"), the message says why with the numbers
+    that decided it, and ``relaxation`` is the solve's record
+    (`relaxation_record`)."""
+
+    def __init__(self, name, message, relaxation):
+        super().__init__(message)
+        self.name = name
+        self.relaxation = relaxation
+
+
+def _method_name(method):
+    return {v: k for k, v in MEAN_FIELD_METHODS.items()}[method]
+
+
+def _band_selection_name(selection):
+    return {v: k for k, v in BAND_SELECTIONS.items()}[selection]
+
+
+def _band_record(band):
+    return {"declared_index": int(band.declared_index),
+            "occupation": float(band.occupation),
+            "rank": int(band.rank),
+            "eigenvalues": [complex(v) for v in band.eigenvalues],
+            "positions": [int(p) for p in band.positions],
+            "declared_positions": [int(p) for p in band.declared_positions],
+            "overlap": complex(band.overlap),
+            "crossed": bool(band.crossed),
+            "ambiguous": bool(band.ambiguous)}
+
+
+def relaxation_record(report):
+    """What a mean-field solve reached and how, as every content record
+    carries it: the method and band selection that ran, whether the fixed
+    point was reached, why the solve stopped (by name, with its detail), the
+    iterations, the final force, the joint Jacobian's rank and rank gap at the
+    end point, the Kontsevich-Segal margin and the growth of the lengths
+    there, the occupied bands followed to the end point, and a per-iterate
+    trace of the force, the covariance change, every occupied band's overlap
+    and places in the ascending real-part order, any crossing, and the Newton
+    step taken from the iterate."""
+    trace = []
+    for step in report.steps:
+        entry = {
+            "iteration": int(step.iteration),
+            "force_norm": float(step.force_norm),
+            "covariance_change": float(step.covariance_change),
+            "band_overlaps": [complex(b.overlap) for b in step.bands],
+            "band_positions": [[int(p) for p in b.positions]
+                               for b in step.bands],
+            "band_crossing": bool(step.band_crossing),
+            "band_isolation": float(step.band_isolation),
+            "stop_reason": cob.relaxation_stop_name(step.geometry_stop_reason),
+        }
+        if step.newton_iterated:
+            newton = step.newton
+            entry["newton"] = {
+                "accepted": bool(newton.accepted),
+                "damping": float(newton.damping),
+                "step_norm": float(newton.step_norm),
+                "jacobian_rank": int(newton.jacobian_rank),
+                "rank_gap": float(newton.rank_gap),
+                "linear_residual": float(newton.linear_residual),
+                "constrained_step": bool(newton.constrained_step),
+                "constrained_rank": int(newton.constrained_rank),
+                "constrained_rank_gap": float(newton.constrained_rank_gap),
+                "residual_test_dampings": int(newton.residual_test_dampings),
+                "sector_guard_dampings": int(newton.sector_guard_dampings),
+                "domain_guard_dampings": int(newton.domain_guard_dampings),
+                "zero_guard_dampings": int(newton.zero_guard_dampings),
+            }
+        else:
+            entry["geometry_residual_norm"] = float(
+                step.geometry_residual_norm)
+            entry["geometry_converged"] = bool(step.geometry_converged)
+            if step.geometry_stop_detail:
+                entry["stop_detail"] = step.geometry_stop_detail
+        trace.append(entry)
+    return {
+        "method": _method_name(report.method),
+        "band_selection": _band_selection_name(report.band_selection),
+        "converged": bool(report.converged),
+        "stop_reason": cob.relaxation_stop_name(report.stop_reason),
+        "stop_detail": report.stop_detail,
+        "iterations": int(report.iterations),
+        "force_norm": float(report.force_norm),
+        "covariance_change": float(report.covariance_change),
+        "purity_defect": float(report.purity_defect),
+        "spectral_gap": float(report.spectral_gap),
+        "band_isolation": float(report.band_isolation),
+        "band_ranks": [int(r) for r in report.band_ranks],
+        "bands": [_band_record(b) for b in report.bands],
+        "band_crossing_iterates": int(report.band_crossing_iterates),
+        "lowest_band_overlap": float(report.lowest_band_overlap),
+        "joint_jacobian": {
+            "size": int(report.jacobian_size),
+            "rank": int(report.jacobian_rank),
+            "largest_singular_value": float(report.largest_singular_value),
+            "smallest_retained_singular_value": float(
+                report.smallest_retained_singular_value),
+            "largest_discarded_singular_value": float(
+                report.largest_discarded_singular_value),
+            "rank_gap": float(report.rank_gap),
+        },
+        "kontsevich_segal_margin": float(report.kontsevich_segal_margin),
+        "largest_length_ratio": float(report.largest_length_ratio),
+        "action": complex(report.action),
+        "action_available": bool(report.action_available),
+        "action_unavailable": report.action_unavailable,
+        "occupied_energy": complex(report.occupied_energy),
+        "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
+        "trace": trace,
+    }
+
+
+def read_refusal(report):
+    """The name and the message of the refusal of a pole read on the geometry
+    a mean-field solve reached, or None when the read may proceed. The read is
+    refused when the squared lengths ran off (the low eigenvalues there are
+    h_1 ~ 1/z at infinite length, not a bound state) and when the geometry is
+    not Kontsevich-Segal allowable (bands are read on the allowable side,
+    WP v17 line 151; a margin within ``DECLARED_ALLOWABILITY_TOLERANCE`` of
+    zero is the boundary). A solve that stopped for another reason is read,
+    and its record says why it stopped."""
+    if report.stop_reason == cob.RelaxationStop.LengthRunaway:
+        return ("the squared lengths ran off",
+                "the pole read is refused: the squared lengths ran off (%s)"
+                % report.stop_detail)
+    margin = float(report.kontsevich_segal_margin)
+    if not margin > DECLARED_ALLOWABILITY_TOLERANCE:
+        return ("not Kontsevich-Segal allowable",
+                "the pole read is refused: the geometry the mean-field "
+                "solve reached is not Kontsevich-Segal allowable (margin "
+                "%.3g, at or below the declared tolerance %.0e), and bands "
+                "are read on the allowable side (WP v17 line 151)"
+                % (margin, DECLARED_ALLOWABILITY_TOLERANCE))
+    return None
+
+
+def _term(action, name):
+    """One term of the joint action for the record, or its refusal by name:
+    only the holonomy term needs log W, and a refused logarithm makes that
+    reported value unavailable without ending the read."""
+    try:
+        return complex(getattr(action, name + "_term")())
+    except ValueError as error:
+        return {"unavailable": str(error)}
 
 
 def _micro_frame(alignments):
@@ -1401,6 +1611,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
     started = time.time()
     declared_actions = rotation_action([monopole_support()] * SHEETS)
     spacetime, action, report = relax_content(content, kappa, beta, config)
+    solve = relaxation_record(report)
+    refusal = read_refusal(report)
+    if refusal is not None:
+        raise ReadRefused(refusal[0], refusal[1], solve)
     carrier = matrix(action.carrier_operator())
 
     # The spin is read with the canonical projective action D_1(g) of the
@@ -1494,18 +1708,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
         "holonomy": config["holonomy"],
         "elimination": config["elimination"],
         "seconds": time.time() - started,
-        "relaxation": {
-            "converged": bool(report.converged),
-            "force_norm": float(report.force_norm),
-            "covariance_change": float(report.covariance_change),
-            "purity_defect": float(report.purity_defect),
-            "spectral_gap": float(report.spectral_gap),
-            "band_ranks": [int(r) for r in report.band_ranks],
+        "relaxation": dict(solve, **{
             "band_operator": "h_1 (the covariant operator itself)",
             "shared_sheet_geometry": True,
-            "iterations": len(report.steps),
-            "action": complex(report.action),
-            "terms": {name: complex(getattr(action, name + "_term")())
+            "terms": {name: _term(action, name)
                       for name in ("regge", "stiffness", "holonomy",
                                    "matter", "spectral")},
             "regge_hinge_count": int(action.regge_hinge_count()),
@@ -1529,14 +1735,12 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "symmetry_departure": float(compensation),
             "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
                                  for sp, _ in supports],
-            "occupied_energy": complex(report.occupied_energy),
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
             "ward_current_divergence": float(np.max(np.abs(np.asarray(
                 action.ward_current_divergence())))),
-            "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
             "holonomy_zero_distance": float(action.holonomy_zero_distance()),
-        },
+        }),
         "covariant_spectrum": sorted(
             [complex(v) for v in np.linalg.eigvals(carrier)],
             key=lambda v: (v.real, v.imag)),
@@ -1708,6 +1912,15 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
         try:
             record = evaluate_content(content, kappa, beta, config,
                                       alignment)
+        except ReadRefused as refusal:
+            # the pole read refused by name on the geometry the mean-field
+            # solve reached: recorded with its reason and the solve's record,
+            # and the content supplies no pole
+            record = {"content": list(content),
+                      "holonomy": config["holonomy"],
+                      "elimination": config["elimination"],
+                      "failed": str(refusal), "refusal": refusal.name,
+                      "relaxation": refusal.relaxation, "doublet_reads": []}
         except ValueError as error:
             # a declared refusal of the library at this content (a band that
             # cannot hold the occupation, a face holonomy outside the domain
@@ -2009,12 +2222,64 @@ def pair_line(content, read, prefix=""):
         " | ".join(parts))
 
 
+def _band_text(band):
+    places = band["positions"]
+    chosen = band["declared_positions"]
+    return ("band %d holds %g in rank %d at %s, places %s (chosen at %s)%s%s"
+            % (band["declared_index"], band["occupation"], band["rank"],
+               ", ".join(_complex_text(v) for v in band["eigenvalues"][:1]),
+               places, chosen, ", crossed" if band["crossed"] else "",
+               ", splits a degenerate group" if band.get("ambiguous") else ""))
+
+
+def relaxation_text(relaxation):
+    """One content's mean-field solve as text: whether it converged, its
+    force and iterations, and, where the record carries them, the method, why
+    it stopped (by name, with its detail), the joint Jacobian's rank and rank
+    gap at the end point, the Kontsevich-Segal margin and the growth of the
+    lengths there, and the occupied bands followed from the host with their
+    places in the ascending real-part order, the iterates at which a band had
+    crossed another and the lowest overlap of a band with its previous
+    projector."""
+    if not relaxation or "converged" not in relaxation:
+        return "mean field unrecorded"
+    text = "mean field converged %s (force norm %.3g after %d iterations)" % (
+        relaxation["converged"], relaxation["force_norm"],
+        relaxation["iterations"])
+    if "method" not in relaxation:
+        return text
+    jacobian = relaxation.get("joint_jacobian") or {}
+    text += ("; method %s, stopped: %s (%s); joint Jacobian rank %d of %d, "
+             "rank gap %.3g; Kontsevich-Segal margin %.3g; largest |z| %.3g "
+             "times the host's" % (
+                 relaxation["method"], relaxation["stop_reason"],
+                 relaxation["stop_detail"], jacobian.get("rank", 0),
+                 jacobian.get("size", 0), jacobian.get("rank_gap", math.nan),
+                 relaxation["kontsevich_segal_margin"],
+                 relaxation["largest_length_ratio"]))
+    bands = relaxation.get("bands") or []
+    text += ("; bands by %s: %s; a band had crossed another at %d of %d "
+             "iterates, lowest overlap %.3g") % (
+            relaxation["band_selection"],
+            "; ".join(_band_text(b) for b in bands) if bands else "none",
+            relaxation["band_crossing_iterates"],
+            len(relaxation.get("trace") or []),
+            relaxation["lowest_band_overlap"])
+    if not relaxation.get("action_available", True):
+        text += "; action unavailable: " + relaxation["action_unavailable"]
+    return text
+
+
 def content_pair_lines(record, prefix=""):
     """Every (content, doublet content) pair of one content record, one line
-    each (`pair_line`); a refused content is one line with its reason."""
+    each (`pair_line`); a refused content is one line with its reason and,
+    for a read refused after the mean-field solve, the solve's record."""
     if "failed" in record:
-        return ["%scontent %s: refused: %s" % (prefix, list(record["content"]),
-                                               record["failed"])]
+        line = "%scontent %s: refused: %s" % (prefix, list(record["content"]),
+                                              record["failed"])
+        if record.get("relaxation"):
+            line += "; " + relaxation_text(record["relaxation"])
+        return [line]
     reads = record.get("doublet_reads") or []
     if not reads:
         return ["%scontent %s: no doublet content was read"
@@ -2119,6 +2384,10 @@ def point_lines(point):
              % (point["kappa"], point["beta"], len(records),
                 sum(1 for record in records if "failed" in record))]
     for record in records:
+        if "failed" not in record:
+            lines.append("  content %s %s" % (
+                list(record["content"]),
+                relaxation_text(record.get("relaxation"))))
         lines += content_pair_lines(record, "  ")
     lines += lowest_lines(records, "  ")
     lines += ratio_lines(point.get("ratios"), "  ")
@@ -2129,7 +2398,9 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    edge_squared=DECLARED_EDGE_SQUARED,
                    regge_hinges="interior", selected_contents=None,
                    holonomy=DECLARED_HOLONOMY,
-                   elimination=DECLARED_ELIMINATION):
+                   elimination=DECLARED_ELIMINATION,
+                   mean_field_method=DECLARED_MEAN_FIELD_METHOD,
+                   band_selection=DECLARED_BAND_SELECTION):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps."""
@@ -2153,6 +2424,9 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "rank_tolerance": DECLARED_RANK_TOLERANCE,
         "mean_field_iterations": 40,
         "mean_field_tolerance": 1e-9,
+        "mean_field_method": mean_field_method,
+        "band_selection": band_selection,
+        "length_runaway_ratio": DECLARED_LENGTH_RUNAWAY_RATIO,
         "target_mass_ratio": TARGET_MASS_RATIO,
         "target_mass_squared_ratio": TARGET_MASS_SQUARED_RATIO,
     }
@@ -2706,15 +2980,37 @@ def build_parser():
                      help="add the isospin-doublet observation (WP §10, "
                           "`IsospinDoublet`) to every content's record; the "
                           "other outputs are unchanged")
+    add_mean_field_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
+
+
+def add_mean_field_arguments(parser):
+    """The mean-field solver options both drivers accept. Neither changes an
+    equation."""
+    parser.add_argument("--mean-field-method",
+                        choices=tuple(MEAN_FIELD_METHODS),
+                        default=DECLARED_MEAN_FIELD_METHOD,
+                        help="how the mean field's fixed point is solved: "
+                             "Newton's method on the joint system, or the "
+                             "alternation of a geometry relaxation and a "
+                             "re-occupation, kept as a named fallback "
+                             "(default %s)" % DECLARED_MEAN_FIELD_METHOD)
+    parser.add_argument("--band-selection", choices=tuple(BAND_SELECTIONS),
+                        default=DECLARED_BAND_SELECTION,
+                        help="where a content's bands are chosen: at the "
+                             "host, then followed by continuation, or "
+                             "re-selected by sorting at every iterate "
+                             "(default %s)" % DECLARED_BAND_SELECTION)
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
     config = default_config(args.kappa, args.beta, args.edge_squared,
                             args.regge_hinges, holonomy=args.holonomy,
-                            elimination=args.eliminate)
+                            elimination=args.eliminate,
+                            mean_field_method=args.mean_field_method,
+                            band_selection=args.band_selection)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None
