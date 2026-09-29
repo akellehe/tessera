@@ -147,14 +147,46 @@ potential nor in $1/m$ (`fiber.static_levels`). The lowest decay rate of the tic
 map closes on its lowest level at second order in the mesh spacing (a difference
 of 0.062, 0.029, 0.016, 0.010 on cells of 3 to 6 divisions at $m = 6$), and the
 response to the potential approaches the static one from below (0.74, 0.82,
-0.88, 0.91); neither depends on the tick. The exact limit of the tick map with the potential is read off the slab's own
-blocks (`fiber.tick_limit`): $(S_0 + E S_1 + E^2 S_2)\,u = 0$ with $S_2 = -D$,
-$S_1 = 2DV$ and $S_0 = A + m^2 M - DV^2$, the last two up to a symmetric term that
-vanishes for a constant potential, and the decay rates converge to its levels at
-second order in the tick. What remains at a finite mesh is that term, the
-curvature of the connection: on the vertical triangles the covariant operator
-transports through the base vertex of each cell, which samples the potential one
-mesh step away. The non-relativistic reduction $E \approx m + L/2m + V$ is not
+0.88, 0.91); neither depends on the tick. The exact limit of the tick map with
+the potential is a closed form (`fiber.tick_limit`),
+
+$$ (S_0 + E S_1 + E^2 S_2)\,u = 0 , \qquad S_2 = -D , \quad S_1 = 2DV + C_1 , \quad
+   S_0 = A + m^2 M - DV^2 + C_0 , $$
+
+and the decay rates of the tick map converge to its levels at second order in
+the tick. $C_0$ and $C_1$ are the curvature of the connection on the vertical
+triangles: the covariant operator transports through the base vertex of each
+cell, $b(\sigma) = \min \sigma$, which samples the potential one mesh step away.
+They are sums over the spatial simplices $T$ of $|T|$ times a block on the
+vertices of $T$ (`fiber.staircase_blocks`). With the vertices of $T$ in
+ascending id, $i = 0, \dots, d$ (the order in which the staircase of the slab
+climbs), $\Delta_a = V_a - V_i$ and $N = 4(d+1)(d+2)(d+3)$,
+
+$$ N\,(c_1)_{ii} = 4(2d+3-i) \sum_{a<i} \Delta_a , \qquad
+   N\,(c_1)_{ij} = -2 \Big[ \sum_{a<i} (V_a - V_j) + (d+3-i)(V_i - V_j) \Big] \quad (i<j) , $$
+
+$$ N\,(c_0)_{ii} = -V_i\,N (c_1)_{ii} - (2d+3-2i) \sum_{a<i} \Delta_a^2 - \Big( \sum_{a<i} \Delta_a \Big)^2 , \qquad
+   (c_0)_{ij} = -V_i\,(c_1)_{ij} \quad (i<j) , $$
+
+both symmetric. They are the first and the second order in the tick of the time
+part of the dressed stiffness $\partial_1^U M_1^U (\partial_1^{U^{-1}})^T$ on
+the $d+1$ simplices of a staircase prism. Only the time components of the
+gradients of the barycentric coordinates enter the Whitney mass matrix $M_1$
+there, and they are $\mp 1/\tau$ on the two ends of the one vertical edge of
+each simplex, so the blocks depend on the volume of $T$, on the potential at its
+vertices and on the order of their ids, and on nothing else of the geometry.
+Every entry is a sum of differences of the potential (the electric field through
+the vertical triangles) and vanishes for a constant one. The test suite holds
+the blocks to the expansion of $M_1$ with the transport convention in exact
+rational arithmetic for $d = 1, \dots, 4$, and the assembled limit to the blocks
+of the slab (`fiber.tick_limit_from_blocks`): reversing the tick transposes the
+pencil, so the symmetric parts of the blocks are even in the tick, and one
+Richardson step leaves a difference that falls like $\tau^4$, to $10^{-9}$ at
+$\tau = 0.02$ on cells of 3 to 6 divisions with a potential that is not a pure
+gauge. With the tick gone, the lowest level of the limit closes on the static
+relativistic problem at second order in the mesh (the difference times the
+square of the divisions is 0.56, 0.46, 0.39, 0.37, 0.35, 0.35 on cells of 3, 4,
+5, 6, 8, 10 divisions). The non-relativistic reduction $E \approx m + L/2m + V$ is not
 used anywhere: it needs the mesh to resolve the Compton wavelength, and compared
 with it the same tick map appeared to over-respond by factors of 2 to 7.
 
