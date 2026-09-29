@@ -43,7 +43,8 @@ SECOND_CELL = (0, 1, 3, 4)
 def _config(cell, content, fiber_moments):
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)],
-                               fiber_moments=fiber_moments)
+                               fiber_moments=fiber_moments,
+                               tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     return config

@@ -144,6 +144,20 @@ def test_the_declared_config():
     assert config["contour_nodes"] == R.DECLARED_CONTOUR_NODES
     assert config["max_cells"] == 1
     assert R.points_path("a/run.json") == "a/run.points.jsonl"
+    assert all(config[key] == bp.DECLARED_TOLERANCE == 1e-15
+               for key, _ in bp.TOLERANCES)
+    tight = R.default_config(ticks=2, tolerances={"rank_tolerance": 1e-10})
+    assert tight["rank_tolerance"] == 1e-10
+    assert tight["newton_tolerance"] == bp.DECLARED_TOLERANCE
+
+
+def test_every_tolerance_is_an_option_of_the_run():
+    args = R.build_parser().parse_args(
+        ["run", "--rank-tolerance", "1e-12", "--recursion-tolerance", "1e-9"])
+    tolerances = bp.tolerances_from(args)
+    assert tolerances["rank_tolerance"] == 1e-12
+    assert tolerances["recursion_tolerance"] == 1e-9
+    assert tolerances["certificate_tolerance"] == bp.DECLARED_TOLERANCE
 
 
 # ------------------------------------------------------------ main
