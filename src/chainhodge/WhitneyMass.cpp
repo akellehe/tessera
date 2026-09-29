@@ -12,6 +12,10 @@
 #include <unordered_map>
 #include <utility>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
 
@@ -806,48 +810,113 @@ Eigen::MatrixXcd WhitneyMass::pairLoads(const cobordism::ChainComplex &K, const 
                                         const std::vector<Complex> &linksX,
                                         const std::vector<Complex> &linksY, const Eigen::VectorXcd &x,
                                         const Eigen::MatrixXcd &Y, Branch branch) {
+  const Eigen::Map<const Eigen::VectorXcd> lx(linksX.data(), static_cast<Eigen::Index>(linksX.size()));
+  const Eigen::Map<const Eigen::VectorXcd> ly(linksY.data(), static_cast<Eigen::Index>(linksY.size()));
+  return PairLoads(K, s, branch).loads(lx, ly, x, Y);
+}
+
+PairLoads::PairLoads(const cobordism::ChainComplex &K, const SquaredLengths &s, Branch branch) {
   checkInputs(K, s, 0);
-  const auto n = static_cast<Eigen::Index>(K.numSimplices(0));
-  const auto edges = static_cast<std::size_t>(K.numSimplices(1));
-  if (x.size() != n || Y.rows() != n)
-    throw std::invalid_argument("WhitneyMass::pairLoads: x must have n_0 entries and Y n_0 rows");
-  if (linksX.size() != edges || linksY.size() != edges)
-    throw std::invalid_argument("WhitneyMass::pairLoads: one link per edge, in the canonical edge order");
   const CellIndex index(K);
   const int d = K.dimension();
-  const int nv = d + 1;
-  const std::vector<double> weight = tripleWeights(d);
-  Eigen::MatrixXcd loads = Eigen::MatrixXcd::Zero(n, Y.cols());
-  std::vector<int> local(static_cast<std::size_t>(nv));
-  std::vector<Complex> carryX(static_cast<std::size_t>(nv)), carryY(static_cast<std::size_t>(nv));
-  // The link U_ba carries a value at a back to b: the stored link for b < a, its inverse otherwise.
-  const auto link = [&](const std::vector<Complex> &links, std::uint64_t b, std::uint64_t a) {
-    if (a == b) return Complex(1.0, 0.0);
-    const Complex u = links[static_cast<std::size_t>(index.cell(1, Cell{std::min(a, b), std::max(a, b)}))];
-    return b < a ? u : Complex(1.0, 0.0) / u;
-  };
-  Eigen::MatrixXcd carried(nv, Y.cols());
-  for (const auto &T : K.orientedTopSimplices()) {
-    const Complex volume = topVolume(T, s, index, branch);
-    for (int a = 0; a < nv; ++a) {
-      const auto ia = static_cast<std::size_t>(a);
-      local[ia] = index.cell(0, Cell{T[ia]});
-      carryX[ia] = link(linksX, T[0], T[ia]);
-      carryY[ia] = link(linksY, T[0], T[ia]);
-      carried.row(a) = carryY[ia] * Y.row(local[ia]);
-    }
-    for (int c = 0; c < nv; ++c) {
-      Eigen::RowVectorXcd sum = Eigen::RowVectorXcd::Zero(Y.cols());
-      for (int a = 0; a < nv; ++a) {
-        const Complex xa = carryX[static_cast<std::size_t>(a)] * x(local[static_cast<std::size_t>(a)]);
-        for (int b = 0; b < nv; ++b)
-          sum += (xa * weight[(static_cast<std::size_t>(a) * nv + b) * nv + c]) * carried.row(b);
-      }
-      const Complex back = Complex(1.0, 0.0) / (carryX[static_cast<std::size_t>(c)] * carryY[static_cast<std::size_t>(c)]);
-      loads.row(local[static_cast<std::size_t>(c)]) += (volume * back) * sum;
+  nv_ = d + 1;
+  vertices_ = static_cast<Eigen::Index>(K.numSimplices(0));
+  edges_ = d >= 1 ? static_cast<Eigen::Index>(K.numSimplices(1)) : 0;
+  weight_ = tripleWeights(d);
+  const auto tops = K.orientedTopSimplices();
+  const auto nv = static_cast<std::size_t>(nv_);
+  local_.resize(tops.size() * nv);
+  edge_.assign(tops.size() * nv, -1);
+  forward_.assign(tops.size() * nv, 1);
+  volume_.resize(tops.size());
+  for (std::size_t t = 0; t < tops.size(); ++t) {
+    const Cell &T = tops[t];
+    volume_[t] = topVolume(T, s, index, branch);
+    for (std::size_t a = 0; a < nv; ++a) {
+      local_[t * nv + a] = index.cell(0, Cell{T[a]});
+      if (a == 0) continue;
+      edge_[t * nv + a] = index.cell(1, Cell{std::min(T[0], T[a]), std::max(T[0], T[a])});
+      forward_[t * nv + a] = T[0] < T[a] ? 1 : 0;
     }
   }
-  return loads;
+}
+
+Eigen::MatrixXcd PairLoads::loads(const Eigen::VectorXcd &linksX, const Eigen::VectorXcd &linksY,
+                                  const Eigen::VectorXcd &x, const Eigen::MatrixXcd &Y) const {
+  return contract(linksX, linksY, x, Y, nullptr);
+}
+
+Eigen::MatrixXcd PairLoads::loadsPhaseDerivativeAlong(const Eigen::VectorXcd &linksX,
+                                                      const Eigen::VectorXcd &linksY,
+                                                      const Eigen::VectorXcd &x, const Eigen::MatrixXcd &Y,
+                                                      const Eigen::VectorXd &edgeWeights) const {
+  if (edgeWeights.size() != edges_)
+    throw std::invalid_argument("PairLoads: one weight per edge, in the canonical edge order");
+  return contract(linksX, linksY, x, Y, &edgeWeights);
+}
+
+Eigen::MatrixXcd PairLoads::contract(const Eigen::VectorXcd &linksX, const Eigen::VectorXcd &linksY,
+                                     const Eigen::VectorXcd &x, const Eigen::MatrixXcd &Y,
+                                     const Eigen::VectorXd *edgeWeights) const {
+  if (x.size() != vertices_ || Y.rows() != vertices_)
+    throw std::invalid_argument("PairLoads: x must have n_0 entries and Y n_0 rows");
+  if (linksX.size() != edges_ || linksY.size() != edges_)
+    throw std::invalid_argument("PairLoads: one link per edge, in the canonical edge order");
+  using RowMatrix = Eigen::Matrix<Complex, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+  const RowMatrix rows = Y;                                  // one contiguous row per vertex
+  const Eigen::Index columns = Y.cols();
+  const auto nv = static_cast<std::size_t>(nv_);
+  const auto tops = static_cast<std::ptrdiff_t>(volume_.size());
+  RowMatrix out = RowMatrix::Zero(vertices_, columns);
+  // The work of one top simplex on the accumulator `sum`.
+  const auto simplex = [&](std::ptrdiff_t t, RowMatrix &sum, std::vector<Complex> &carryX,
+                           std::vector<Complex> &carryY, std::vector<double> &sigma) {
+    const std::size_t base = static_cast<std::size_t>(t) * nv;
+    carryX[0] = carryY[0] = Complex(1.0, 0.0);
+    sigma[0] = 0.0;
+    // The link carries a value at the vertex a back to the first vertex: the stored link when the edge runs
+    // from the first vertex to a, its inverse otherwise.
+    for (std::size_t a = 1; a < nv; ++a) {
+      const Eigen::Index e = edge_[base + a];
+      const bool forward = forward_[base + a] != 0;
+      carryX[a] = forward ? linksX(e) : Complex(1.0, 0.0) / linksX(e);
+      carryY[a] = forward ? linksY(e) : Complex(1.0, 0.0) / linksY(e);
+      if (edgeWeights) sigma[a] = forward ? (*edgeWeights)(e) : -(*edgeWeights)(e);
+    }
+    for (std::size_t c = 0; c < nv; ++c) {
+      const Complex back = volume_[static_cast<std::size_t>(t)] / (carryX[c] * carryY[c]);
+      auto target = sum.row(local_[base + c]);
+      for (std::size_t b = 0; b < nv; ++b) {
+        Complex factor(0.0, 0.0);
+        for (std::size_t a = 0; a < nv; ++a)
+          factor += weight_[(a * nv + b) * nv + c] * carryX[a] * x(local_[base + a]);
+        factor *= back * carryY[b];
+        if (edgeWeights) factor *= Complex(0.0, sigma[b] - sigma[c]);
+        target += factor * rows.row(local_[base + b]);
+      }
+    }
+  };
+#ifdef _OPENMP
+  // One accumulator per thread, added in the order of the threads so that a run repeats bit for bit.
+  const bool threaded = static_cast<double>(tops) * static_cast<double>(columns) > 2.0e5;
+  std::vector<RowMatrix> sums(static_cast<std::size_t>(threaded ? omp_get_max_threads() : 1));
+  #pragma omp parallel num_threads(static_cast<int>(sums.size()))
+  {
+    RowMatrix &sum = sums[static_cast<std::size_t>(omp_get_thread_num())];
+    sum = RowMatrix::Zero(vertices_, columns);
+    std::vector<Complex> carryX(nv), carryY(nv);
+    std::vector<double> sigma(nv, 0.0);
+    #pragma omp for schedule(static)
+    for (std::ptrdiff_t t = 0; t < tops; ++t) simplex(t, sum, carryX, carryY, sigma);
+  }
+  for (const RowMatrix &sum : sums)
+    if (sum.size() != 0) out += sum;
+#else
+  std::vector<Complex> carryX(nv), carryY(nv);
+  std::vector<double> sigma(nv, 0.0);
+  for (std::ptrdiff_t t = 0; t < tops; ++t) simplex(t, out, carryX, carryY, sigma);
+#endif
+  return out;
 }
 
 }  // namespace tessera::chainhodge

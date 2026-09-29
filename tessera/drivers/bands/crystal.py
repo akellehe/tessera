@@ -160,6 +160,24 @@ class CrystalCell:
             self._links[key] = self.grid.blochLinks(self.edges, list(key))
         return self._links[key]
 
+    def bloch_link_array(self, kappa=None):
+        """`bloch_links(kappa)` as an array, kept per momentum."""
+        key = (0.0, 0.0, 0.0) if kappa is None else tuple(float(v) for v in kappa)
+        if not hasattr(self, "_link_arrays"):
+            self._link_arrays = {}
+        if key not in self._link_arrays:
+            if len(self._link_arrays) > 64:
+                self._link_arrays.clear()
+            self._link_arrays[key] = np.asarray(self.bloch_links(kappa), dtype=complex)
+        return self._link_arrays[key]
+
+    @property
+    def pair_loader(self):
+        """`chainhodge.PairLoads` of the cell: the loads of products of sections."""
+        if not hasattr(self, "_pair_loader"):
+            self._pair_loader = ch.PairLoads(self.complex, self.squared_lengths)
+        return self._pair_loader
+
     @property
     def edge_displacements(self):
         """The Cartesian displacement of every stored link, source to target."""

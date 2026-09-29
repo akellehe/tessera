@@ -146,6 +146,23 @@ Reference: Whitney, "Geometric Integration Theory", 1957.)doc")
       .value("GeometricImage", PencilVariable::GeometricImage)
       .value("Chain", PencilVariable::Chain);
 
+  py::class_<PairLoads>(m, "PairLoads",
+                        "WhitneyMass.pairLoads for many calls on one complex: the volumes of the top simplices "
+                        "and the edges that carry a value to the first vertex of each are found once.")
+      .def(py::init<const ChainComplex &, const SquaredLengths &, Branch>(), py::arg("complex"),
+           py::arg("squared_lengths"), py::arg("branch") = Branch::Continuation)
+      .def("loads", &PairLoads::loads, py::arg("links_x"), py::arg("links_y"), py::arg("x"), py::arg("Y"),
+           py::call_guard<py::gil_scoped_release>(),
+           "The loads int phi_c x y of the product of a section x of the connection links_x with every column "
+           "of Y, sections of links_y.")
+      .def("loadsPhaseDerivativeAlong", &PairLoads::loadsPhaseDerivativeAlong, py::arg("links_x"),
+           py::arg("links_y"), py::arg("x"), py::arg("Y"), py::arg("edge_weights"),
+           py::call_guard<py::gil_scoped_release>(),
+           "The derivative of loads along the change U_e -> U_e exp(i t w_e) of the links of Y, one weight per "
+           "edge in the canonical edge order.")
+      .def_property_readonly("numVertices", &PairLoads::numVertices)
+      .def_property_readonly("numEdges", &PairLoads::numEdges);
+
   py::class_<Pencil>(m, "Pencil", "A complex symmetric pencil A - lambda B at one degree, dense.")
       .def_readonly("degree", &Pencil::degree)
       .def_readonly("variable", &Pencil::variable)
