@@ -763,6 +763,56 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
         assert read[key] == value
 
 
+# -------------------------------------------------------- the anchor atlas
+
+
+def test_the_anchor_atlas_of_the_declared_host(alignment):
+    """Quark condition 3 on the declared host (WP v18 Section 10): the
+    reference doublet, the coexact j = 1/2 doublet, anchors on every face of
+    every sheet, with the connection-dressed covariance and the transition
+    cocycle at machine precision and the invariant coordinates attached; on
+    the symmetric host its profile has one modulus on every face."""
+    anchor = bp.anchor_atlas_read(bp.build_host(), alignment)
+    assert anchor["anchored"] and anchor["anchoring_faces"] == 4
+    assert anchor["covariance_residual"] < 1e-12
+    assert anchor["transition_cocycle_residual"] < 1e-12
+    assert anchor["invariant_coordinates_attached"]
+    assert anchor["failed_certificates"] == []
+    assert anchor["faces"] == [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
+    assert len(anchor["sheets"]) == bp.SHEETS
+    for sheet in anchor["sheets"]:
+        assert len(sheet["coordinates"]) == 4
+        assert all(len(row) == 3 for row in sheet["coordinates"])
+        moduli = [abs(c) for row in sheet["coordinates"] for c in row]
+        assert max(moduli) - min(moduli) < 1e-9 and min(moduli) > 0.1
+        assert len(sheet["invariant_coordinates"]) == 4
+        assert all(abs(a) > 1.0 for a in sheet["invariant_coordinates"])
+    evidence = bp.anchor_evidence(anchor)
+    assert [e.name for e in evidence] == [
+        "anchor-profile-nonzero", "anchor-covariance", "anchor-transitions",
+        "anchor-stable-across-frames"]
+    assert [e.held for e in evidence] == [True, True, True, None]
+    assert bp.anchor_text(anchor).startswith(
+        "anchor atlas anchored (4 of 4 faces anchor on every sheet")
+
+
+def test_the_anchor_evidence_reads_a_refusal_and_an_absent_read():
+    refused = {"band": "the band", "faces": [[0, 1, 2]] * 4,
+               "tolerance": 1e-8, "anchored": False, "anchoring_faces": 0,
+               "covariance_residual": 0.5,
+               "transition_cocycle_residual": 0.0,
+               "invariant_coordinates_attached": False,
+               "failed_certificates": ["identically-zero-profile"],
+               "sheets": [{"anchoring_faces": 0}]}
+    evidence = bp.anchor_evidence(refused)
+    assert [e.held for e in evidence] == [False, False, False, None]
+    assert "identically-zero-profile" in evidence[0].detail
+    assert "not attached" in evidence[2].detail
+    assert bp.anchor_text(refused).startswith("anchor atlas refused")
+    assert [e.held for e in bp.anchor_evidence(None)] == [None] * 4
+    assert bp.anchor_text(None) == "anchor atlas unread"
+
+
 # ------------------------------------------- refusals after the mean field
 
 

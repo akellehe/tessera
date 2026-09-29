@@ -75,7 +75,11 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
 3. reads the seven v16 quark conditions by name (`QuarkConditions`);
 4. reads the spin content of the occupied state on the T-averaged operator:
    the overlap of each occupied band of h_1 with each doublet 2, 2', 2'' of
-   h-bar_1, and the number of quarks in each doublet;
+   h-bar_1, and the number of quarks in each doublet, and the anchor atlas of
+   the base band on the relaxed connection (`anchor_atlas_read`, quark
+   condition 3): its projective profile over the cell's faces, the
+   connection-dressed covariance, the determinant-line transitions and the
+   invariant coordinates;
 5. for every doublet content (n_2, n_2', n_2''), forms the colour-singlet
    three-quark states, one quark per sheet, sorted by the total spin of the
    constructed lift (`SharpSpin.read` under the aligned SU(2) action of item
@@ -198,6 +202,7 @@ import time
 import numpy as np
 
 import tessera as T
+from tessera import chainhodge as ch
 from tessera import cobordism as cob
 from tessera import observables as obs
 
@@ -1913,8 +1918,9 @@ def evaluate_content(content, kappa, beta, config, alignment):
         })
 
     recursion = recursion_read(spacetime, config)
+    anchor = anchor_atlas_read(spacetime, alignment)
     quark = quark_conditions(spacetime, alignment, recursion,
-                             averaged_residual, report)
+                             averaged_residual, report, anchor)
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -1981,6 +1987,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
         },
         "doublet_reads": doublet_reads,
         "recursion": recursion,
+        "anchor": anchor,
         "quark_conditions": quark,
     }
     if config.get("isospin_doublet"):
@@ -2029,11 +2036,159 @@ def recursion_read(spacetime, config):
     }
 
 
+#: The base vertex of the anchor atlas's path rule: breadth-first walks from
+#: the cell's lowest vertex, inside the cell.
+ANCHOR_BASE_POINT = 0
+
+
+def anchor_atlas_read(spacetime, alignment,
+                      tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The anchor atlas of the quark fiber's base band on the relaxed host,
+    quark condition 3 (WP v18 §10): the dressed anchor
+    (`chainhodge.DressedAnchor`) of the reference doublet of the aligned
+    frame, the j = 1/2 doublet of the odd-monopole support (rank 2), on every
+    sheet's relaxed connection over the atlas of the cell's four faces, with
+    the breadth-first path rule from `ANCHOR_BASE_POINT`.
+
+    Per sheet: the Lambda^2 coordinates of every face (the three maximal
+    minors of the restricted frame), the number of anchoring faces, the
+    connection-dressed covariance residual against the verification gauge,
+    the determinant-line transition cocycle residual, the named refusals,
+    and the invariant coordinates alpha_tau of the faces from the sheet's
+    Whitney chain Hodge operator and the band's geometric images
+    (`withInvariantCoordinates`), or why they were not attached. The summary
+    takes the worst sheet: the read is anchored only when every sheet
+    anchors, and carries the largest residuals."""
+    fixture = monopole_support()
+    complex_ = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
+    canonical = [tuple(int(v) for v in e)
+                 for e in complex_.kSimplexVertices(1)]
+    fixture_edges = [tuple(int(v) for v in e) for e in fixture.edges]
+    # the fixture's edge order carried to the complex's canonical one
+    order = [fixture_edges.index(e) for e in canonical]
+    faces = list(range(complex_.numSimplices(2)))
+    paths = ch.DeclaredPaths.breadthFirst(complex_, ANCHOR_BASE_POINT)
+    reference = int(alignment["reference_carrier"])
+    frame = np.asarray(alignment["frame"])[:, 2 * reference:
+                                           2 * reference + 2]
+    phi = frame[order, :]
+    sheets = []
+    for t in range(SHEETS):
+        links = [complex(u) for u in sheet_links(spacetime, t)]
+        squared = [complex(z) for z in sheet_squared_lengths(spacetime, t)]
+        connection = ch.Connection(complex_, [links[k] for k in order])
+        read = ch.DressedAnchor.profile(complex_, connection, paths, faces,
+                                        phi, tolerance)
+        unattached = None
+        try:
+            base = ch.ChainHodge(complex_, [squared[k] for k in order],
+                                 ch.Preset.L2)
+            covariant = ch.CovariantChainHodge(base, connection)
+            images = np.asarray(covariant.applyG(1, phi))
+            dual_images = np.asarray(covariant.dual().applyG(1, phi))
+            read = ch.DressedAnchor.withInvariantCoordinates(
+                read, covariant, dual_images, images)
+        except (ValueError, RuntimeError) as error:
+            unattached = str(error)
+        sheets.append({
+            "anchored": bool(read.anchored),
+            "anchoring_faces": int(read.anchoringFaces),
+            "coordinates": [[complex(c) for c in row]
+                            for row in read.coordinates],
+            "invariant_coordinates": [complex(a) for a in
+                                      read.invariantCoordinates],
+            "invariant_coordinates_unattached": unattached,
+            "coordinate_scale": float(read.coordinateScale),
+            "covariance_residual": float(read.covarianceResidual),
+            "transition_cocycle_residual": float(
+                read.transitionCocycleResidual),
+            "failed_certificates": list(read.failedCertificates),
+        })
+    return {
+        "band": ("the reference doublet of the aligned frame, the j = 1/2 "
+                 "doublet of the odd-monopole support, rank 2"),
+        "base_point": ANCHOR_BASE_POINT,
+        "path_rule": "breadth-first walks from the base point inside the "
+                     "cell",
+        "faces": [[int(v) for v in f] for f in complex_.kSimplexVertices(2)],
+        "tolerance": tolerance,
+        "anchored": all(s["anchored"] for s in sheets),
+        "anchoring_faces": min(s["anchoring_faces"] for s in sheets),
+        "covariance_residual": max(s["covariance_residual"] for s in sheets),
+        "transition_cocycle_residual": max(
+            s["transition_cocycle_residual"] for s in sheets),
+        "invariant_coordinates_attached": all(
+            s["invariant_coordinates_unattached"] is None for s in sheets),
+        "failed_certificates": sorted({f for s in sheets
+                                       for f in s["failed_certificates"]}),
+        "sheets": sheets,
+    }
+
+
+def anchor_evidence(anchor):
+    """The evidence of quark condition 3 from an anchor atlas read
+    (`anchor_atlas_read`): the profile is not identically zero, the
+    connection-dressed covariance holds, and the transition cocycle holds
+    over at least two anchoring faces, each against the read's tolerance;
+    stability across frames needs several cobordism frames and is not
+    measured at one level. Without a read, every item is unmeasured."""
+    E = obs.QuarkConditionEvidence
+    if not anchor:
+        return [E("anchor-profile-nonzero", None,
+                  "the anchor atlas was not read"),
+                E("anchor-covariance", None, "not read"),
+                E("anchor-transitions", None, "not read"),
+                E("anchor-stable-across-frames", None,
+                  "a single level spans one cobordism frame")]
+    tolerance = anchor["tolerance"]
+    faces = [s["anchoring_faces"] for s in anchor["sheets"]]
+    refused = ("; refused: " + ", ".join(anchor["failed_certificates"])
+               if anchor["failed_certificates"] else "")
+    return [
+        E("anchor-profile-nonzero", bool(anchor["anchored"]),
+          "%s; anchoring faces per sheet %s of %d%s"
+          % (anchor["band"], faces, len(anchor["faces"]), refused)),
+        E("anchor-covariance",
+          bool(anchor["covariance_residual"] <= tolerance),
+          "connection-dressed covariance residual %.3g against the "
+          "verification gauge (tolerance %.0e)"
+          % (anchor["covariance_residual"], tolerance)),
+        E("anchor-transitions",
+          bool(anchor["anchoring_faces"] >= 2
+               and anchor["transition_cocycle_residual"] <= tolerance),
+          "determinant-line transition cocycle residual %.3g over %d "
+          "anchoring faces%s"
+          % (anchor["transition_cocycle_residual"],
+             anchor["anchoring_faces"],
+             "" if anchor["invariant_coordinates_attached"]
+             else "; invariant coordinates not attached")),
+        E("anchor-stable-across-frames", None,
+          "a single level spans one cobordism frame"),
+    ]
+
+
+def anchor_text(anchor):
+    """One content's anchor atlas as text."""
+    if not anchor:
+        return "anchor atlas unread"
+    return ("anchor atlas %s (%d of %d faces anchor on every sheet, "
+            "covariance residual %.2g, transition cocycle residual %.2g%s%s)"
+            % ("anchored" if anchor["anchored"] else "refused",
+               anchor["anchoring_faces"], len(anchor["faces"]),
+               anchor["covariance_residual"],
+               anchor["transition_cocycle_residual"],
+               "" if anchor["invariant_coordinates_attached"]
+               else ", invariant coordinates not attached",
+               "; " + ", ".join(anchor["failed_certificates"])
+               if anchor["failed_certificates"] else ""))
+
+
 def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
-                     report):
+                     report, anchor=None):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
-    single-level synthesis measures. Anything that needs several cobordism
-    frames is left unmeasured and so reads "not evaluable"."""
+    single-level synthesis measures: condition 3 from the anchor atlas read
+    (`anchor_evidence`). Anything that needs several cobordism frames is
+    left unmeasured and so reads "not evaluable"."""
     E = obs.QuarkConditionEvidence
     spin = alignment["spin_read"]
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
@@ -2083,12 +2238,7 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
            "the T-averaged h_1 (WP line 497) in the aligned frame is "
            "block-scalar on each doublet times the sheets to relative "
            "residual %.3g" % symmetry_residual)],
-        [E("anchor-profile-nonzero", None,
-           "the dressed anchor atlas is not read by this driver"),
-         E("anchor-covariance", None, "not read"),
-         E("anchor-transitions", None, "not read"),
-         E("anchor-stable-across-frames", None,
-           "a single level spans one cobordism frame")],
+        anchor_evidence(anchor),
         [E("odd-occupation-parity", True,
            "one occupied mode of the fibre per quark: parity (-1)^1")],
         [E("color-transport-full-rank",
@@ -2633,9 +2783,11 @@ def point_lines(point):
                 sum(1 for record in records if "failed" in record))]
     for record in records:
         if "failed" not in record:
-            lines.append("  content %s %s" % (
+            lines.append("  content %s %s%s" % (
                 list(record["content"]),
-                relaxation_text(record.get("relaxation"))))
+                relaxation_text(record.get("relaxation")),
+                "; " + anchor_text(record["anchor"])
+                if "anchor" in record else ""))
         lines += content_pair_lines(record, "  ")
     lines += lowest_lines(records, "  ")
     lines += ratio_lines(point.get("ratios"), "  ")
