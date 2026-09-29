@@ -79,7 +79,9 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    the base band on the relaxed connection (`anchor_atlas_read`, quark
    condition 3): its projective profile over the cell's faces, the
    connection-dressed covariance, the determinant-line transitions and the
-   invariant coordinates;
+   invariant coordinates; and the spectral fingerprint of the fiber under the
+   declared vertex relabeling and the declared refinement of the cell
+   (`spectral_fingerprint_read`, quark condition 7);
 5. for every doublet content (n_2, n_2', n_2''), forms the colour-singlet
    three-quark states, one quark per sheet, sorted by the total spin of the
    constructed lift (`SharpSpin.read` under the aligned SU(2) action of item
@@ -1919,8 +1921,9 @@ def evaluate_content(content, kappa, beta, config, alignment):
 
     recursion = recursion_read(spacetime, config)
     anchor = anchor_atlas_read(spacetime, alignment)
+    fingerprint = spectral_fingerprint_read(spacetime, kappa, beta, config)
     quark = quark_conditions(spacetime, alignment, recursion,
-                             averaged_residual, report, anchor)
+                             averaged_residual, report, anchor, fingerprint)
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -1988,6 +1991,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
         "doublet_reads": doublet_reads,
         "recursion": recursion,
         "anchor": anchor,
+        "spectral_fingerprint": fingerprint,
         "quark_conditions": quark,
     }
     if config.get("isospin_doublet"):
@@ -2183,12 +2187,427 @@ def anchor_text(anchor):
                if anchor["failed_certificates"] else ""))
 
 
+#: The declared relabeling of quark condition 7: the transposition of the
+#: cell's two lowest vertices, an odd permutation that no rotation of the
+#: tetrahedron supplies, so that the check is of the code's independence of
+#: the labels and not of a symmetry.
+FINGERPRINT_RELABELING = (1, 0, 2, 3)
+#: The floor on the fiber's subspace overlap with its re-extraction on the
+#: refined cell (the cluster pipeline's minRefinementOverlap).
+DECLARED_REFINEMENT_OVERLAP = 0.9
+#: The local id of the centre vertex of a refined cell: above the four
+#: vertices, so that the base vertex b(e) = min e of every original edge, and
+#: with it the dressing of the operator on those edges, is unchanged.
+REFINED_CENTRE = 4
+#: The edges of a refined cell in the chain complex's canonical order.
+REFINED_EDGES = tuple(itertools.combinations(range(5), 2))
+#: The edges of a cell in the same order.
+PAIRS = tuple(itertools.combinations(range(4), 2))
+
+
+def centroid_squared_lengths(squared):
+    """|v_i - c|^2 for the centroid c of the flat tetrahedron with the six
+    squared edge lengths ``squared`` (the order of `MonopoleSupport.edges`):
+    (1/4) sum_j d_ij^2 - (1/16) sum_{j<k} d_jk^2, the identity for the
+    centroid of four points. On the regular tetrahedron of squared edge
+    length 8 every value is 3, the squared circumradius."""
+    d = {}
+    for (a, b), z in zip(PAIRS, squared):
+        d[(a, b)] = d[(b, a)] = complex(z)
+    total = sum(complex(z) for z in squared)
+    return [sum(d[(i, j)] for j in range(4) if j != i) / 4.0 - total / 16.0
+            for i in range(4)]
+
+
+def refined_host(spacetime):
+    """The relaxed host with every sheet's tetrahedron refined by one stellar
+    subdivision at its centroid: the declared refinement of quark condition
+    7. The centre of sheet t is vertex 4 SHEETS + t, above every other id, so
+    the base vertex b(e) = min e of every original edge is unchanged; the four
+    new edges carry the centroid's squared lengths of the flat cell
+    (`centroid_squared_lengths`) and the trivial link, so every boundary face
+    and its holonomy are unchanged and the interior faces carry the boundary
+    holonomies. Returns the spacetime and, per sheet, the ten squared lengths
+    and links in the order of `REFINED_EDGES`."""
+    cells, data = [], []
+    for t in range(SHEETS):
+        centre = 4 * SHEETS + t
+        for i in range(4):
+            cells.append([centre] + [4 * t + k for k in range(4) if k != i])
+        squared = sheet_squared_lengths(spacetime, t)
+        links = sheet_links(spacetime, t)
+        radii = centroid_squared_lengths(squared)
+        z, u = {}, {}
+        for (a, b), value, link in zip(PAIRS, squared, links):
+            z[(a, b)] = complex(value)
+            u[(a, b)] = complex(link)
+        for i in range(4):
+            z[(i, REFINED_CENTRE)] = radii[i]
+            u[(i, REFINED_CENTRE)] = 1.0 + 0j
+        data.append({"squared_lengths": [z[e] for e in REFINED_EDGES],
+                     "links": [u[e] for e in REFINED_EDGES]})
+    refined = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    for edge in refined.getEdgeList().toVector():
+        source = int(edge.getSource().getId())
+        target = int(edge.getTarget().getId())
+        if source >= 4 * SHEETS or target >= 4 * SHEETS:
+            t = (source if source >= 4 * SHEETS else target) - 4 * SHEETS
+        else:
+            t = source // 4
+        local = tuple(REFINED_CENTRE if v >= 4 * SHEETS else v - 4 * t
+                      for v in (source, target))
+        key = (min(local), max(local))
+        value = data[t]["squared_lengths"][REFINED_EDGES.index(key)]
+        link = data[t]["links"][REFINED_EDGES.index(key)]
+        if local[0] > local[1]:
+            link = 1.0 / link
+        edge.setLength(cmath.sqrt(value))
+        edge.setPhase(complex(-1j * cmath.log(link)))
+    return refined, data
+
+
+def refined_support(sheet_data):
+    """The `MonopoleSupport` of one refined sheet: five vertices, the ten
+    edges of `REFINED_EDGES`, the four boundary faces of the fixture in their
+    outward orientation (the bounding cut, which the subdivision leaves as it
+    was), and the U(1) part of the sheet's links."""
+    fixture = monopole_support()
+    return obs.MonopoleSupport(
+        5, [list(e) for e in REFINED_EDGES], [list(f) for f in fixture.faces],
+        obs.MonopoleSupport.u1Part([complex(u) for u in sheet_data["links"]]))
+
+
+def refined_rotation_group():
+    """The twelve rotations of the refined cell: those of the tetrahedron,
+    fixing the centre."""
+    return [list(g) + [REFINED_CENTRE] for g in rotation_group()]
+
+
+def relabeled_host(spacetime, permutation):
+    """The host with every sheet's vertices relabeled by ``permutation``."""
+    cells = [[4 * t + k for k in range(4)] for t in range(SHEETS)]
+    host = T.Spacetime.fromVertexTuples(3, cells, 1.0, 0.0)
+    data = []
+    for t in range(SHEETS):
+        z, u = {}, {}
+        for (a, b), value, link in zip(PAIRS,
+                                       sheet_squared_lengths(spacetime, t),
+                                       sheet_links(spacetime, t)):
+            image = (permutation[a], permutation[b])
+            key = (min(image), max(image))
+            z[key] = complex(value)
+            u[key] = (complex(link) if image[0] < image[1]
+                      else 1.0 / complex(link))
+        data.append((z, u))
+    for edge in host.getEdgeList().toVector():
+        source = int(edge.getSource().getId())
+        target = int(edge.getTarget().getId())
+        t = source // 4
+        a, b = source - 4 * t, target - 4 * t
+        z, u = data[t]
+        link = u[(min(a, b), max(a, b))]
+        if a > b:
+            link = 1.0 / link
+        edge.setLength(cmath.sqrt(z[(min(a, b), max(a, b))]))
+        edge.setPhase(complex(-1j * cmath.log(link)))
+    return host
+
+
+def conjugated_group(group, permutation):
+    """s g s^-1 for every g, as vertex permutations."""
+    inverse = [0] * len(permutation)
+    for x, y in enumerate(permutation):
+        inverse[y] = x
+    out = []
+    for g in group:
+        out.append([permutation[g[inverse[y]]]
+                    for y in range(len(permutation))])
+    return out
+
+
+def _bands_of(support, group, tolerance=1e-7):
+    """The bands of the rotation-averaged edge Laplacian of a support, as
+    orthonormal blocks in ascending order of eigenvalue."""
+    averaged = np.asarray(support.rotationAveragedEdgeOperator(
+        support.edgeLaplacian(), group))
+    values, vectors = np.linalg.eigh(averaged)
+    order = np.argsort(values)
+    values, vectors = values[order], vectors[:, order]
+    bands, start = [], 0
+    for k in range(1, len(values) + 1):
+        if k == len(values) or abs(values[k] - values[start]) > tolerance:
+            bands.append((float(values[start]), vectors[:, start:k]))
+            start = k
+    return bands
+
+
+def _subspace_overlap(a, b):
+    """(sum_i cos^2 theta_i) / max(rank a, rank b) over the principal angles
+    of two frames on the same cells: one exactly when their column spans
+    coincide (the reading of `SpectralFiber::overlap`)."""
+    qa, _ = np.linalg.qr(a)
+    qb, _ = np.linalg.qr(b)
+    cosines = np.linalg.svd(qa.conj().T @ qb, compute_uv=False)
+    return float(np.sum(cosines ** 2) / max(a.shape[1], b.shape[1]))
+
+
+def _carrier(host, kappa, beta, config):
+    """h_1 of a host under the run's declared action, as a matrix."""
+    declaration = action_declaration(
+        host, kappa, beta, config["regge_hinges"], holonomy=config["holonomy"],
+        stiffness=config.get("stiffness", DECLARED_STIFFNESS))
+    return matrix(cob.JointAction(host, declaration).carrier_operator())
+
+
+def _fiber_fingerprint(host, support, group, edges, kappa, beta, config):
+    """The label-free fingerprint of sheet 0 of a host: the spectrum of h_1,
+    the spectrum of its T-average, and the reference doublet (the coexact
+    rank-two spinorial band of the averaged combinatorial Laplacian, the
+    band the aligned frame's reference carrier is) with its energy on the
+    averaged h_1 and its weight on every edge."""
+    read = support.spinRead(group)
+    carrier = _carrier(host, kappa, beta, config)
+    block = carrier[:edges, :edges]
+    actions = [np.asarray(support.edgeRepresentation(g)) for g in group]
+    averaged = rotation_averaged(block, actions)
+    bands = _bands_of(support, group)
+    index = int(read.doublet_index)
+    doublet = bands[index][1] if index < len(bands) else None
+    out = {
+        "spectrum": sorted((complex(v) for v in np.linalg.eigvals(block)),
+                           key=lambda v: (v.real, v.imag)),
+        "averaged_spectrum": sorted(
+            (complex(v) for v in np.linalg.eigvals(averaged)),
+            key=lambda v: (v.real, v.imag)),
+        "monopole_number": int(read.monopole.monopole_number),
+        "doublet_found": (bool(read.half_integer_doublet)
+                          and doublet is not None and doublet.shape[1] == 2),
+    }
+    if out["doublet_found"]:
+        out["doublet_energy"] = complex(
+            np.trace(doublet.conj().T @ averaged @ doublet) / 2)
+        out["doublet_weights"] = [float(w.real) for w in
+                                  np.diag(doublet @ doublet.conj().T)]
+        out["doublet_frame"] = doublet
+        out["averaged"] = averaged
+        out["actions"] = actions
+    return out
+
+
+def spectral_fingerprint_read(spacetime, kappa, beta, config,
+                              tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+                              overlap_floor=DECLARED_REFINEMENT_OVERLAP):
+    """Quark condition 7 (WP v18 §10) on the relaxed host: the spectral
+    fingerprint of the fiber re-read under the declared relabeling and the
+    declared refinement, without re-solving the mean field. The sheets are
+    certified isomorphic (quark condition 2), so sheet 0 is read.
+
+    The fingerprint (`_fiber_fingerprint`) is the spectrum of h_1, the
+    spectrum of its T-average, and the reference doublet (the coexact
+    rank-two spinorial band of the averaged combinatorial edge Laplacian,
+    the band the aligned frame's reference carrier is) with its energy on
+    the averaged h_1 and the weight it places on every edge, which is
+    invariant under the gauge a relabeling induces through the dressing
+    convention b(e) = min e.
+
+    * Relabeling (`FINGERPRINT_RELABELING`): the host is rebuilt with its
+      vertices relabeled (`relabeled_host`), the rotations conjugated, and
+      the fingerprint re-read; the two spectra agree as multisets, and the
+      doublet's energy and edge weights agree on the matched edges, each to
+      ``tolerance``.
+    * Refinement (`refined_host`): h_1 is formed on the refined host at the
+      relaxed geometry and averaged with the refined support's projective
+      action; the doublet's type is re-extracted as the band of the averaged
+      operator, inside the isotypic component of that type in the refined
+      action (`SharpSpin.isotypicProjector`), whose column span overlaps the
+      original doublet most on the six shared edges, the refinement
+      continuation. The overlap must reach ``overlap_floor`` with the rank
+      preserved, and the refined support must carry a spinor doublet; the
+      energy shift is reported beside them."""
+    group = rotation_group()
+    support, _ = sheet_support(spacetime, 0)
+    original = _fiber_fingerprint(spacetime, support, group, BASE_EDGES,
+                                  kappa, beta, config)
+    result = {"sheet": 0, "spectrum": original["spectrum"],
+              "doublet_found": original["doublet_found"],
+              "tolerance": tolerance}
+    if not original["doublet_found"]:
+        unread = {"held": False, "unread": "no spinor doublet on the host"}
+        result["relabeling"] = dict(unread)
+        result["refinement"] = dict(unread)
+        return result
+    result["doublet_energy"] = original["doublet_energy"]
+    result["doublet_weights"] = original["doublet_weights"]
+    # --- relabeling
+    permutation = list(FINGERPRINT_RELABELING)
+    moved_host = relabeled_host(spacetime, permutation)
+    moved_support, _ = sheet_support(moved_host, 0)
+    moved = _fiber_fingerprint(moved_host, moved_support,
+                               conjugated_group(group, permutation),
+                               BASE_EDGES, kappa, beta, config)
+    scale = max(1.0, max(abs(v) for v in original["spectrum"]))
+    spectrum_shift = max(abs(a - b) for a, b in
+                         zip(original["spectrum"], moved["spectrum"])) / scale
+    averaged_shift = max(abs(a - b) for a, b in
+                         zip(original["averaged_spectrum"],
+                             moved["averaged_spectrum"])) / scale
+    relabeling = {"permutation": permutation,
+                  "spectrum_shift": float(spectrum_shift),
+                  "averaged_spectrum_shift": float(averaged_shift),
+                  "doublet_found": moved["doublet_found"],
+                  "monopole_number": moved["monopole_number"]}
+    if moved["doublet_found"]:
+        weight_shift = 0.0
+        for m, (a, b) in enumerate(PAIRS):
+            image = (permutation[a], permutation[b])
+            n = PAIRS.index((min(image), max(image)))
+            weight_shift = max(weight_shift, abs(
+                original["doublet_weights"][m] - moved["doublet_weights"][n]))
+        energy_shift = (abs(original["doublet_energy"]
+                            - moved["doublet_energy"])
+                        / max(1.0, abs(original["doublet_energy"])))
+        relabeling.update({"doublet_weight_shift": float(weight_shift),
+                           "doublet_energy_shift": float(energy_shift),
+                           "held": bool(spectrum_shift <= tolerance
+                                        and averaged_shift <= tolerance
+                                        and weight_shift <= tolerance
+                                        and energy_shift <= tolerance)})
+    else:
+        relabeling["held"] = False
+    result["relabeling"] = relabeling
+    # --- refinement
+    refined, sheet_data = refined_host(spacetime)
+    support_r = refined_support(sheet_data[0])
+    group_r = refined_rotation_group()
+    edges = len(REFINED_EDGES)
+    fine = _fiber_fingerprint(refined, support_r, group_r, edges, kappa, beta,
+                              config)
+    refinement = {"convention": ("one stellar subdivision of each sheet's "
+                                 "tetrahedron at the centroid of the flat "
+                                 "cell, the new edges at the centroid's "
+                                 "squared lengths with the trivial link; the "
+                                 "mean field is not re-solved"),
+                  "overlap_floor": overlap_floor,
+                  "doublet_found": fine["doublet_found"],
+                  "monopole_number": fine["monopole_number"],
+                  "refined_spectrum": fine["spectrum"]}
+    if fine["doublet_found"]:
+        block = fine["doublet_frame"]
+        maps, characters = [], []
+        for g, d in zip(group_r, fine["actions"]):
+            lifted = d / np.sqrt(np.linalg.det(block.conj().T @ d @ block))
+            for sign in (1.0, -1.0):
+                maps.append(sign * lifted)
+                characters.append(sign * complex(
+                    np.trace(block.conj().T @ lifted @ block)))
+        isotypic = np.asarray(obs.SharpSpin.isotypicProjector(
+            maps, characters, 2, 1))
+        values, vectors = np.linalg.eig(isotypic)
+        span = vectors[:, np.abs(values - 1.0) < 1e-6]
+        compressed = np.linalg.pinv(span) @ fine["averaged"] @ span
+        energies, mixing = np.linalg.eig(compressed)
+        candidates = span @ mixing
+        shared = [k for k, e in enumerate(REFINED_EDGES)
+                  if REFINED_CENTRE not in e]
+        original_frame = np.zeros((edges, 2), dtype=complex)
+        for m, k in enumerate(shared):
+            original_frame[k, :] = original["doublet_frame"][m, :]
+        distinct = []
+        for e in energies:
+            if not any(abs(e - f) < 1e-6 for f in distinct):
+                distinct.append(complex(e))
+        best = None
+        for energy in sorted(distinct, key=lambda v: (v.real, v.imag)):
+            picked = candidates[:, np.abs(energies - energy) < 1e-6]
+            overlap = _subspace_overlap(original_frame[shared, :],
+                                        picked[shared, :])
+            if best is None or overlap > best["overlap"]:
+                best = {"overlap": overlap, "energy": energy,
+                        "rank": int(picked.shape[1])}
+        refinement.update({
+            "isotypic_dimension": int(span.shape[1]),
+            "refined_bands": sorted(distinct, key=lambda v: (v.real, v.imag)),
+            "overlap": best["overlap"],
+            "refined_energy": best["energy"],
+            "refined_rank": best["rank"],
+            "energy_shift": float(
+                abs(best["energy"] - original["doublet_energy"])
+                / max(1.0, abs(original["doublet_energy"]))),
+            "held": bool(best["overlap"] >= overlap_floor
+                         and best["rank"] == 2)})
+    else:
+        refinement["held"] = False
+    result["refinement"] = refinement
+    return result
+
+
+
+def fingerprint_evidence(fingerprint):
+    """The evidence of quark condition 7 from a spectral fingerprint read
+    (`spectral_fingerprint_read`), or the two items unmeasured when there is
+    none."""
+    E = obs.QuarkConditionEvidence
+    if not fingerprint:
+        return [E("refinement-stability", None, "no refinement is run"),
+                E("relabeling-stability", None, "no relabeling is run")]
+    r = fingerprint["refinement"]
+    l = fingerprint["relabeling"]
+    if "overlap" in r:
+        refinement = ("the reference doublet re-extracted on the refined "
+                      "cell overlaps the original by %.4f on the shared "
+                      "edges (floor %g, rank %d), energy shift %.3g, "
+                      "isotypic dimension %d"
+                      % (r["overlap"], r["overlap_floor"], r["refined_rank"],
+                         r["energy_shift"], r["isotypic_dimension"]))
+    elif r.get("unread"):
+        refinement = r["unread"]
+    else:
+        refinement = "the refined support carries no spinor doublet"
+    if "doublet_weight_shift" in l:
+        relabeling = ("under the relabeling %s the spectra of h_1 and of its "
+                      "T-average shift by %.3g and %.3g (relative), the "
+                      "doublet's energy by %.3g and its edge weights by %.3g"
+                      % (l["permutation"], l["spectrum_shift"],
+                         l["averaged_spectrum_shift"],
+                         l["doublet_energy_shift"],
+                         l["doublet_weight_shift"]))
+    elif l.get("unread"):
+        relabeling = l["unread"]
+    else:
+        relabeling = "the relabeled host carries no spinor doublet"
+    return [E("refinement-stability", bool(r["held"]), refinement),
+            E("relabeling-stability", bool(l["held"]), relabeling)]
+
+
+def fingerprint_text(fingerprint):
+    """One content's spectral fingerprint reads as text."""
+    if not fingerprint:
+        return "spectral fingerprint unread"
+    r = fingerprint["refinement"]
+    l = fingerprint["relabeling"]
+    relabeling = ("stable" if l["held"] else "unstable")
+    if "doublet_weight_shift" in l:
+        relabeling += " (spectrum shift %.2g, doublet weight shift %.2g)" % (
+            l["spectrum_shift"], l["doublet_weight_shift"])
+    refinement = ("stable" if r["held"] else "unstable")
+    if "overlap" in r:
+        refinement += " (overlap %.4f, energy shift %.2g)" % (
+            r["overlap"], r["energy_shift"])
+    elif r.get("unread"):
+        refinement += " (%s)" % r["unread"]
+    else:
+        refinement += " (no spinor doublet on the refined support)"
+    return "spectral fingerprint: relabeling %s; refinement %s" % (
+        relabeling, refinement)
+
+
 def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
-                     report, anchor=None):
+                     report, anchor=None, fingerprint=None):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
-    (`anchor_evidence`). Anything that needs several cobordism frames is
-    left unmeasured and so reads "not evaluable"."""
+    (`anchor_evidence`) and condition 7 from the spectral fingerprint read
+    (`fingerprint_evidence`). Anything that needs several cobordism frames
+    is left unmeasured and so reads "not evaluable"."""
     E = obs.QuarkConditionEvidence
     spin = alignment["spin_read"]
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
@@ -2253,8 +2672,7 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
            "a single level has no lifetime")],
         [E("lineage-intersection", None,
            "a lineage needs a cobordism history")],
-        [E("refinement-stability", None, "no refinement is run"),
-         E("relabeling-stability", None, "no relabeling is run")],
+        fingerprint_evidence(fingerprint),
     ]
     verdict = obs.QuarkConditions.evaluate(evidence)
     return {
@@ -2783,11 +3201,13 @@ def point_lines(point):
                 sum(1 for record in records if "failed" in record))]
     for record in records:
         if "failed" not in record:
-            lines.append("  content %s %s%s" % (
+            lines.append("  content %s %s%s%s" % (
                 list(record["content"]),
                 relaxation_text(record.get("relaxation")),
                 "; " + anchor_text(record["anchor"])
-                if "anchor" in record else ""))
+                if "anchor" in record else "",
+                "; " + fingerprint_text(record["spectral_fingerprint"])
+                if "spectral_fingerprint" in record else ""))
         lines += content_pair_lines(record, "  ")
     lines += lowest_lines(records, "  ")
     lines += ratio_lines(point.get("ratios"), "  ")
