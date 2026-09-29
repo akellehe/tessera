@@ -290,6 +290,9 @@ DECLARED_ALLOWABILITY_TOLERANCE = 1e-8
 
 #: How often the --live main thread services the GUI event loop.
 LIVE_POLL_INTERVAL = 0.05
+# While no new frame is ready, the live window's status line (what is running
+# and for how long) is redrawn this often, in seconds.
+LIVE_STATUS_INTERVAL = 2.0
 
 SPIN_HALF = 0.75
 SPIN_THREE_HALVES = 3.75
@@ -2931,14 +2934,64 @@ def _interactive_backends():
     return backends()
 
 
-def drive_live(config, progress=False, points_file=None):
+
+def elapsed_text(seconds):
+    """Elapsed wall time as m:ss, or as h:mm:ss from one hour on."""
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return "%d:%02d:%02d" % (hours, minutes, secs)
+    return "%d:%02d" % (minutes, secs)
+
+
+def draw_status(figure, message):
+    """Show `message` in the live window: centred while the figure has no
+    frame yet, as one line along the bottom once it has. `draw_frame` clears
+    the figure, so the line is drawn again whenever it is missing."""
+    status = getattr(figure, "live_status", None)
+    if status is None or status not in figure.texts:
+        if figure.axes:
+            figure.live_status = figure.text(
+                0.5, 0.004, message, ha="center", va="bottom", fontsize=10,
+                color=INK_MUTED)
+        else:
+            figure.live_status = figure.text(
+                0.5, 0.5, message, ha="center", va="center", fontsize=14,
+                color=INK, wrap=True)
+    else:
+        status.set_text(message)
+    figure.canvas.draw_idle()
+
+
+def hold_live_window(message):
+    """Keep every open live window on screen, showing `message`, until the
+    user closes it. The CLI calls this after every output is written; it
+    returns at once, False, when no window is open (the user closed it
+    during the run)."""
+    import matplotlib.pyplot as plt
+    numbers = plt.get_fignums()
+    if not numbers:
+        return False
+    for number in numbers:
+        draw_status(plt.figure(number), message)
+    sys.stdout.write(message + "\n")
+    sys.stdout.flush()
+    plt.ioff()
+    plt.show()
+    return True
+
+
+def drive_live(config, progress=False, points_file=None, keep_open=False):
     """The same `drive`, on a worker thread, drawing each completed scan point
     on the main thread. Refuses a non-interactive backend and WebAgg by name,
-    as `tessera.drivers.emergence` does.
+    as `tessera.drivers.emergence` does. While a point is being computed the
+    window says which one and for how long.
 
     Closing the window does not stop the scan: the figure's close event
     switches the run to headless, the main thread stops drawing and waits for
-    the worker, and every output is still written."""
+    the worker, and every output is still written. When the scan ends the
+    figure is closed, or, with `keep_open`, left on screen with its final
+    frame for `hold_live_window` once the outputs are written."""
     import queue
     import threading
 
@@ -2977,10 +3030,15 @@ def drive_live(config, progress=False, points_file=None):
         ready.put(index)
 
     closed = threading.Event()
+    finished = threading.Event()
 
     def on_close(event):
-        if not closed.is_set():
-            closed.set()
+        # Only a close by the user while the scan runs is reported; the
+        # driver's own close at the end, and a close after the end, are not.
+        if closed.is_set():
+            return
+        closed.set()
+        if not finished.is_set():
             sys.stdout.write(
                 "the live window was closed; the run continues headless and "
                 "still writes every output\n")
@@ -3001,12 +3059,30 @@ def drive_live(config, progress=False, points_file=None):
 
     thread = threading.Thread(target=worker, name="baryon-poles")
     thread.start()
+    total = len(config["kappas"]) * len(config["betas"])
+
+    def running(done, seconds):
+        if done >= total:
+            return "the scan is finishing: %s" % elapsed_text(seconds)
+        kappa = config["kappas"][done // len(config["betas"])]
+        beta = config["betas"][done % len(config["betas"])]
+        return ("scan point %d of %d (kappa %g, beta %g) is running: %s "
+                "elapsed; its frame is drawn when the point completes"
+                % (done + 1, total, kappa, beta, elapsed_text(seconds)))
+
     main_error = None
+    done = 0
+    since = time.monotonic()
+    shown = None
     try:
         while not closed.is_set():
             try:
                 index = ready.get_nowait()
             except queue.Empty:
+                now = time.monotonic()
+                if shown is None or now - shown >= LIVE_STATUS_INTERVAL:
+                    draw_status(figure, running(done, now - since))
+                    shown = now
                 figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
                 continue
             if index is None:
@@ -3014,6 +3090,7 @@ def drive_live(config, progress=False, points_file=None):
             if closed.is_set():
                 break
             draw_frame(figure, published["frames"], index)
+            done, since, shown = index + 1, time.monotonic(), None
             figure.canvas.draw_idle()
             figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
     except BaseException as error:
@@ -3024,7 +3101,13 @@ def drive_live(config, progress=False, points_file=None):
         # main thread itself failed or was interrupted.
         thread.join()
         if not closed.is_set():
-            plt.close(figure)
+            finished.set()
+            if keep_open and main_error is None and "error" not in outcome:
+                draw_status(figure, "the scan is complete; writing the "
+                                    "outputs")
+                figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
+            else:
+                plt.close(figure)
     if main_error is not None:
         raise main_error
     if "error" in outcome:
@@ -3033,15 +3116,15 @@ def drive_live(config, progress=False, points_file=None):
 
 
 def render(result, path):
-    """The final frame as a PNG, on a file backend."""
-    import matplotlib
-    matplotlib.use("Agg", force=False)
-    import matplotlib.pyplot as plt
-    figure = plt.figure(figsize=FIGURE_SIZE)
+    """The final frame as a PNG, drawn on its own Agg canvas, so an open live
+    window and the session's backend are left as they are."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    figure = Figure(figsize=FIGURE_SIZE)
+    FigureCanvasAgg(figure)
     if result["points"]:
         draw_frame(figure, result["points"], len(result["points"]) - 1)
     figure.savefig(path, dpi=120, facecolor=SURFACE)
-    plt.close(figure)
 
 
 def summary(result):
@@ -3169,7 +3252,8 @@ def main(argv=None):
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
-                         points_file=points_file) if args.live
+                         points_file=points_file, keep_open=True)
+              if args.live
               else drive(config, progress=not args.quiet,
                          points_file=points_file))
     if args.json:
@@ -3179,6 +3263,9 @@ def main(argv=None):
         render(result, args.out)
     if not args.quiet:
         sys.stdout.write(summary(result) + "\n")
+    if args.live:
+        hold_live_window("the run is complete and every output is written; "
+                         "close this window to exit")
     return result
 
 

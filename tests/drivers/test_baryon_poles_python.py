@@ -419,14 +419,42 @@ class _Canvas:
         self.callbacks["close_event"](object())
 
 
+class _Text:
+    def __init__(self, message):
+        self.messages = [message]
+
+    def set_text(self, message):
+        self.messages.append(message)
+
+
 class _Figure:
+    """Enough of a figure for the live loop and its status line."""
+
     def __init__(self):
         self.canvas = _Canvas()
+        self.texts = []
+        self.axes = []
+
+    def text(self, x, y, message, **kwargs):
+        made = _Text(message)
+        self.texts.append(made)
+        return made
+
+    def messages(self):
+        return [m for text in self.texts for m in text.messages]
 
 
-def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None):
+def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None,
+                     closes=None):
+    """Stub pyplot for the live loop. `plt.close` fires the figure's close
+    event, as the Qt backend does, and is recorded in `closes`."""
     import matplotlib
     import matplotlib.pyplot as plt
+
+    def close(figure):
+        if closes is not None:
+            closes.append(figure)
+        figure.canvas.close()
 
     def figure(**kwargs):
         made = _Figure()
@@ -438,7 +466,7 @@ def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None):
     monkeypatch.setattr(plt, "isinteractive", lambda: True)
     monkeypatch.setattr(plt, "figure", figure)
     monkeypatch.setattr(plt, "show", lambda **kwargs: None)
-    monkeypatch.setattr(plt, "close", lambda figure: None)
+    monkeypatch.setattr(plt, "close", close)
     monkeypatch.setattr(plt, "pause", lambda interval: time.sleep(0.001))
 
 
@@ -476,6 +504,80 @@ def test_live_and_headless_outputs_are_identical(monkeypatch):
     assert drawn == [0, 1]
     assert json.dumps(bp._jsonable(live), sort_keys=True) == \
         json.dumps(bp._jsonable(headless), sort_keys=True)
+
+
+def test_the_window_says_which_scan_point_is_running(monkeypatch):
+    def slow_point(kappa, beta, config, alignment, on_content=None):
+        time.sleep(0.05)
+        return _cheap_scan_point(kappa, beta, config, alignment)
+
+    monkeypatch.setattr(bp, "scan_point", slow_point)
+    monkeypatch.setattr(bp, "draw_frame", lambda figure, frames, index: None)
+    figures = []
+    _stub_matplotlib(monkeypatch, figures=figures)
+    bp.drive_live(bp.default_config([1.0, 2.0], [0.5],
+                                    selected_contents=[(3, 0, 0)]))
+    messages = figures[0].messages()
+    assert any(m.startswith("scan point 1 of 2 (kappa 1, beta 0.5) is "
+                            "running: 0:00 elapsed") for m in messages)
+    assert any(m.startswith("scan point 2 of 2 (kappa 2, beta 0.5)")
+               for m in messages)
+
+
+def test_the_drivers_own_close_at_the_end_is_not_reported(monkeypatch,
+                                                          capsys):
+    monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
+    monkeypatch.setattr(bp, "draw_frame", lambda figure, frames, index: None)
+    closes = []
+    _stub_matplotlib(monkeypatch, closes=closes)
+    bp.drive_live(bp.default_config([1.0], [0.5],
+                                    selected_contents=[(3, 0, 0)]))
+    assert len(closes) == 1
+    assert "was closed" not in capsys.readouterr().out
+
+
+def test_keep_open_leaves_the_final_frame_on_screen(monkeypatch):
+    monkeypatch.setattr(bp, "scan_point", _cheap_scan_point)
+    monkeypatch.setattr(bp, "draw_frame", lambda figure, frames, index: None)
+    figures, closes = [], []
+    _stub_matplotlib(monkeypatch, figures=figures, closes=closes)
+    bp.drive_live(bp.default_config([1.0], [0.5],
+                                    selected_contents=[(3, 0, 0)]),
+                  keep_open=True)
+    assert closes == []
+    assert figures[0].messages()[-1] == \
+        "the scan is complete; writing the outputs"
+
+
+def test_the_status_line_is_centred_until_a_frame_is_drawn():
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    figure = Figure()
+    FigureCanvasAgg(figure)
+    bp.draw_status(figure, "tick 0 of 1 is running: 0:00 elapsed")
+    (centred,) = figure.texts
+    assert centred.get_position() == (0.5, 0.5)
+    bp.draw_status(figure, "tick 0 of 1 is running: 0:02 elapsed")
+    assert figure.texts == [centred]
+    assert centred.get_text().endswith("0:02 elapsed")
+    figure.add_subplot()
+    figure.clear()
+    figure.add_subplot()
+    bp.draw_status(figure, "tick 1 of 1 is running: 0:00 elapsed")
+    (bottom,) = figure.texts
+    assert bottom.get_position() == (0.5, 0.004)
+
+
+def test_elapsed_text():
+    assert bp.elapsed_text(0) == "0:00"
+    assert bp.elapsed_text(75.9) == "1:15"
+    assert bp.elapsed_text(3725) == "1:02:05"
+
+
+def test_holding_without_an_open_window_returns_at_once():
+    import matplotlib.pyplot as plt
+    plt.close("all")
+    assert bp.hold_live_window("close this window to exit") is False
 
 
 def test_a_worker_error_reaches_the_main_thread(monkeypatch):
