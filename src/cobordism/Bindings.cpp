@@ -4438,6 +4438,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
   // The holomorphic joint action S(z, U, Gamma) and its solves
   // ================================================================
 
+  py::enum_<SpectralConstraintForm>(
+      m, "SpectralConstraintForm",
+      "What one SpectralMomentConstraint pins. PowerSum: p_j(h) = tr(h^j) of "
+      "the carrier, or of its compression to the declared fiber. BandMean: "
+      "the mean eigenvalue lambda_b = tr(P_b h) / r_b of one band, P_b its "
+      "Riesz projector (moment_band_projectors) and r_b = tr P_b its rank, "
+      "the band's eigenvalue itself when the band is degenerate; its "
+      "derivative at fixed P_b is the Hellmann-Feynman tr(P_b dh) / r_b, the "
+      "whole derivative when P_b is a spectral projector of h.")
+      .value("PowerSum", SpectralConstraintForm::PowerSum)
+      .value("BandMean", SpectralConstraintForm::BandMean);
+
   py::class_<SpectralMomentConstraint>(m, "SpectralMomentConstraint",
       "One holomorphic spectral constraint of the targeted action S_spec: the "
       "power sum p_j(h) = tr(h^j) of the complex edge-mode operator is "
@@ -4458,12 +4470,21 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            }),
            py::arg("order"), py::arg("target"),
            py::arg("multiplier") = std::complex<double>{0.0, 0.0})
+      .def_readwrite("form", &SpectralMomentConstraint::form,
+                     "What the constraint pins: a power sum (the default) or "
+                     "a band mean.")
       .def_readwrite("order", &SpectralMomentConstraint::order,
-                     "The moment index j >= 1, the power h is raised to. It is "
-                     "not a simplicial degree.")
+                     "The moment index j >= 1 of a power sum, the power h is "
+                     "raised to. It is not a simplicial degree. Unused by a "
+                     "band mean.")
+      .def_readwrite("band", &SpectralMomentConstraint::band,
+                     "For a band mean, the index of the band's projector in "
+                     "the declaration's moment_band_projectors. Unused by a "
+                     "power sum.")
       .def_readwrite("target", &SpectralMomentConstraint::target,
                      "p_j* = sum_a (lambda_a*)^j, the same power sum of the "
-                     "prescribed eigenvalue multiset.")
+                     "prescribed eigenvalue multiset; or the band mean's "
+                     "lambda_b*.")
       .def_readwrite("multiplier", &SpectralMomentConstraint::multiplier,
                      "The complex Lagrange multiplier xi_j at the current "
                      "point of a solve. A variable, not a configured weight.");
@@ -4663,6 +4684,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "power sums of the whole carrier, tr(h^j). Declared: "
                      "those of the compression h_C = P_C h P_C (WP v17 §3.4), "
                      "tr((P_C h P_C)^j), differentiated at fixed P_C.")
+      .def_readwrite("moment_band_projectors",
+                     &JointActionDeclaration::momentBandProjectors,
+                     "The Riesz projectors P_b of the bands the BandMean "
+                     "constraints refer to (a constraint's band indexes this "
+                     "list), each flat row-major over the k-cells, "
+                     "differentiated at fixed P_b; a self-consistent solve "
+                     "rebuilds them at every point. The unit s applies: the "
+                     "constraint is lambda_b / s = lambda_b* / s.")
       .def_readwrite("metric_source", &JointActionDeclaration::metricSource,
                      "Where the carrier operator's metric comes from. "
                      "WhitneyPencil is the whitepaper's W_k = M_k^-1 and gives "
@@ -4716,19 +4745,29 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            py::arg("projector"),
            "Replace the fiber the spectral constraints are imposed on, in "
            "place, as set_covariance replaces Gamma.")
+      .def("set_moment_band_projectors", &JointAction::setMomentBandProjectors,
+           py::arg("projectors"),
+           "Replace the band projectors the BandMean constraints refer to, "
+           "one per declared entry, in place, as set_covariance replaces "
+           "Gamma.")
       .def("carrier_operator", &JointAction::carrierOperator,
            "h_k(z, U), flat row-major over the k-cells.")
       .def("face_holonomies", &JointAction::faceHolonomies,
            "F_tau per triangle, the ordered product of the links over the "
            "incidences of the boundary map. No sum of phases and no logarithm "
            "is formed.")
-      .def("power_sums", &JointAction::powerSums,
-           "p_j(h) = tr(h^j) for each declared constraint, by repeated "
+      .def("constraint_values", &JointAction::constraintValues,
+           "The value of each declared constraint in the declared unit: "
+           "p_j(h / s) = tr((h / s)^j) for a power sum, by repeated "
            "multiplication, so a defective operator needs no "
-           "eigendecomposition and no eigenvalue ordering.")
+           "eigendecomposition and no eigenvalue ordering; tr(P_b h) / "
+           "(r_b s) for a band mean.")
+      .def("power_sums", &JointAction::powerSums,
+           "constraint_values under the name of the power-sum form; a "
+           "band-mean constraint's entry is its band mean.")
       .def("moment_residuals", &JointAction::momentResiduals,
-           "p_j(h) - p_j* for each declared constraint: the exact complex "
-           "stationarity equation in xi_j.")
+           "Each declared constraint's value less its target: the exact "
+           "complex stationarity equation in xi_j.")
       .def("regge_term", &JointAction::reggeTerm,
            "w_R S_Regge(z) in the declared form and hinge set.")
       .def("stiffness_term", &JointAction::stiffnessTerm,
@@ -5155,6 +5194,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("JointNewton", SelfConsistentMethod::JointNewton)
       .value("Alternation", SelfConsistentMethod::Alternation);
 
+  py::enum_<FiberConstraintForm>(
+      m, "FiberConstraintForm",
+      "What the fiber constraints of a self-consistent solve pin. PowerSums: "
+      "p_j(h_C), j = 1..m_c, of the occupied fiber, the constraints of WP v17 "
+      "§3.4 as written. BandEigenvalues: the eigenvalue lambda_b = tr(P_b h) / "
+      "r_b of each occupied band, one constraint per band in the declared "
+      "order, the first m_c of them, each band's projector rebuilt at every "
+      "point; on a sheeted host the r power sums carry only as many "
+      "independent constraints as there are occupied bands, and this states "
+      "those constraints without the dependent rows.")
+      .value("PowerSums", FiberConstraintForm::PowerSums)
+      .value("BandEigenvalues", FiberConstraintForm::BandEigenvalues);
+
   py::class_<SelfConsistentMeanFieldDeclaration>(
       m, "SelfConsistentMeanFieldDeclaration",
       "The configuration of a self-consistent backreaction solve.")
@@ -5216,6 +5268,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "p_j(h_C / s) = p_j* s^-j (the same constraints, with "
                      "commensurate gradients); zero (the default) takes the "
                      "fiber's spectral radius at the starting point.")
+      .def_readwrite("fiber_constraint_form",
+                     &SelfConsistentMeanFieldDeclaration::fiberConstraintForm,
+                     "What the pinned constraints are: the fiber's power sums "
+                     "(the default) or its bands' eigenvalues, under which "
+                     "fiber_moments is the number of occupied bands pinned "
+                     "and fiber_moment_targets are their eigenvalues.")
       .def_readwrite("maximum_iterations",
                      &SelfConsistentMeanFieldDeclaration::maximumIterations,
                      "The largest number of iterations of the declared "
@@ -5405,7 +5463,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "chosen.")
       .def_readwrite("moment_scale",
                      &SelfConsistentMeanFieldReport::momentScale,
-                     "The unit s the pinned power sums were solved in.")
+                     "The unit s the pinned constraints were solved in.")
+      .def_readwrite("fiber_constraint_form",
+                     &SelfConsistentMeanFieldReport::fiberConstraintForm,
+                     "What was pinned: the fiber's power sums or its bands' "
+                     "eigenvalues.")
       .def_readwrite("moment_targets",
                      &SelfConsistentMeanFieldReport::momentTargets,
                      "The pinned fiber moments' targets p_j*, in the "

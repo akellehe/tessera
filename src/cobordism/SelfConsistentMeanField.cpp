@@ -196,12 +196,28 @@ std::vector<complexd> fiberProjectorOf(const BandRead &read) {
 }
 
 /// The state a rebuild sets at a point from the band read there: the
-/// covariance and, when fiber moments are pinned, the fiber's projector.
-RebuiltCarrierState rebuiltStateOf(const BandRead &read, bool fiber) {
+/// covariance and, when fiber constraints are pinned, the fiber's projector
+/// and, under `FiberConstraintForm::BandEigenvalues`, the projector of each
+/// pinned band.
+RebuiltCarrierState rebuiltStateOf(
+    const BandRead &read,
+    const SelfConsistentMeanFieldDeclaration &declaration) {
   RebuiltCarrierState state;
   state.covariance = read.covariance;
-  if (fiber) state.momentProjector = fiberProjectorOf(read);
+  if (declaration.fiberMoments == 0) return state;
+  state.momentProjector = fiberProjectorOf(read);
+  if (declaration.fiberConstraintForm == FiberConstraintForm::BandEigenvalues)
+    for (std::size_t band = 0;
+         band < read.bands.size() && band < declaration.fiberMoments; ++band)
+      state.bandProjectors.push_back(read.bands[band].projector);
   return state;
+}
+
+/// The power of the unit \f$ s \f$ a constraint's value carries: \f$ j \f$
+/// for a power sum, one for a band mean.
+int unitPower(const SpectralMomentConstraint &constraint) {
+  return constraint.form == SpectralConstraintForm::PowerSum ? constraint.order
+                                                             : 1;
 }
 
 /// The largest \f$ |z_e| \f$ over the edges of the complex.
@@ -217,9 +233,11 @@ double largestSquaredLengthOf(const JointAction &action) {
   return largest;
 }
 
-/// The declared constraints of \p action with the pinned fiber moments
+/// The declared constraints of \p action with the pinned fiber constraints
 /// installed: \f$ p_j(h_{\mathcal C})=p_j^{\star} \f$ for
-/// \f$ j=1,\ldots,m_{\rm c} \f$ on the fiber of \p read, the targets
+/// \f$ j=1,\ldots,m_{\rm c} \f$ on the fiber of \p read, or, under
+/// `FiberConstraintForm::BandEigenvalues`, \f$ \lambda_b=\lambda_b^{\star} \f$
+/// for the first \f$ m_{\rm c} \f$ occupied bands, the targets
 /// declared or else the fiber's values at the action's point. The multipliers
 /// start at the least-squares estimate there, the \f$ \xi \f$ that best
 /// balances the stationarity force on the relaxed coordinates,
@@ -238,7 +256,9 @@ std::size_t installFiberMoments(
   std::size_t rank = 0;
   for (const auto &band : read.bands) rank += band.rank;
   if (declaration.fiberMoments == 0) return rank;
-  if (declaration.fiberMoments > rank)
+  const bool eigenvalues =
+      declaration.fiberConstraintForm == FiberConstraintForm::BandEigenvalues;
+  if (!eigenvalues && declaration.fiberMoments > rank)
     throw std::invalid_argument(
         "SelfConsistentMeanField: " +
         std::to_string(declaration.fiberMoments) +
@@ -246,6 +266,12 @@ std::size_t installFiberMoments(
         "has rank " + std::to_string(rank) +
         "; its power sums j = 1 .. " + std::to_string(rank) +
         " are the ones WP v17 §3.4 pins");
+  if (eigenvalues && declaration.fiberMoments > read.bands.size())
+    throw std::invalid_argument(
+        "SelfConsistentMeanField: " +
+        std::to_string(declaration.fiberMoments) +
+        " band eigenvalues are declared pinned, but the content occupies " +
+        std::to_string(read.bands.size()) + " bands");
   if (!declaration.fiberMomentTargets.empty() &&
       declaration.fiberMomentTargets.size() != declaration.fiberMoments)
     throw std::invalid_argument(
@@ -270,22 +296,30 @@ std::size_t installFiberMoments(
     if (!(scale > 0.0)) scale = 1.0;
   }
   pinned.momentScale = scale;
-  for (std::size_t order = 1; order <= declaration.fiberMoments; ++order) {
+  for (std::size_t index = 0; index < declaration.fiberMoments; ++index) {
     SpectralMomentConstraint constraint;
-    constraint.order = static_cast<int>(order);
+    if (eigenvalues) {
+      constraint.form = SpectralConstraintForm::BandMean;
+      constraint.band = index;
+      pinned.momentBandProjectors.push_back(read.bands[index].projector);
+    } else {
+      constraint.order = static_cast<int>(index + 1);
+    }
     pinned.momentConstraints.push_back(constraint);
   }
-  // The targets: declared (in the operator's own unit, so divided by s^j),
-  // or the fiber's own power sums at this point, in the unit.
+  // The targets: declared (in the operator's own unit, so divided by s^j, or
+  // by s for a band eigenvalue), or the fiber's own values at this point, in
+  // the unit.
   JointAction measured(action.spacetime(), pinned);
-  const std::vector<complexd> values = measured.powerSums();
+  const std::vector<complexd> values = measured.constraintValues();
   for (std::size_t index = 0; index < pinned.momentConstraints.size();
        ++index)
     pinned.momentConstraints[index].target =
         declaration.fiberMomentTargets.empty()
             ? values[index]
             : declaration.fiberMomentTargets[index] /
-                  std::pow(scale, static_cast<double>(index + 1));
+                  std::pow(scale, static_cast<double>(unitPower(
+                                      pinned.momentConstraints[index])));
   action = JointAction(action.spacetime(), std::move(pinned));
 
   // The least-squares multipliers: the force with every multiplier zero and
@@ -359,7 +393,7 @@ std::vector<complexd> ownUnitMultipliers(const JointAction &action) {
   const double scale = action.declaration().momentScale;
   const auto &constraints = action.declaration().momentConstraints;
   for (std::size_t index = 0; index < values.size(); ++index)
-    values[index] /= std::pow(scale, constraints[index].order);
+    values[index] /= std::pow(scale, unitPower(constraints[index]));
   return values;
 }
 
@@ -497,9 +531,9 @@ void readJointJacobian(const JointAction &action,
   if (!probe.relaxLengths && !probe.relaxLinks && !probe.relaxMultipliers)
     return;
   CovarianceRebuild rebuild;
-  rebuild.at = [&follower, &declaration, fiber](const JointAction &point) {
+  rebuild.at = [&follower, &declaration](const JointAction &point) {
     return rebuiltStateOf(follower.read(bandOperatorFlat(point, declaration)),
-                          fiber);
+                          declaration);
   };
   const HolomorphicRelaxation relaxation(action, probe, rebuild);
   const std::size_t size = relaxation.variableCount();
@@ -565,7 +599,7 @@ void finishReport(SelfConsistentMeanFieldReport &report,
   const auto &constraints = action.declaration().momentConstraints;
   const std::vector<complexd> residuals = action.momentResiduals();
   for (std::size_t index = 0; index < constraints.size(); ++index) {
-    const double unit = std::pow(scale, constraints[index].order);
+    const double unit = std::pow(scale, unitPower(constraints[index]));
     report.momentTargets.push_back(constraints[index].target * unit);
     report.momentResiduals.push_back(residuals[index] * unit);
   }
@@ -918,6 +952,7 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
   follower.follow(start);
   action_.setCovariance(start.covariance);
   report.fiberRank = installFiberMoments(action_, declaration_, start);
+  report.fiberConstraintForm = declaration_.fiberConstraintForm;
   const bool fiber = declaration_.fiberMoments > 0;
   std::vector<SelfConsistentMeanFieldStep> steps;
   steps.push_back(measure(0, action_, start, start.covariance, declared,
@@ -935,9 +970,9 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
   // the pinned moments' multipliers are unknowns beside the geometry
   if (fiber) newton.relaxMultipliers = true;
   CovarianceRebuild rebuild;
-  rebuild.at = [&follower, this, fiber](const JointAction &point) {
+  rebuild.at = [&follower, this](const JointAction &point) {
     return rebuiltStateOf(
-        follower.read(bandOperatorFlat(point, declaration_)), fiber);
+        follower.read(bandOperatorFlat(point, declaration_)), declaration_);
   };
   rebuild.accepted = [&](const JointAction &point) {
     const BandRead read = follower.read(bandOperatorFlat(point, declaration_));
@@ -1018,6 +1053,7 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveAlternation() {
   if (action_.declaration().covariance.empty())
     action_.setCovariance(start.covariance);
   report.fiberRank = installFiberMoments(action_, declaration_, start);
+  report.fiberConstraintForm = declaration_.fiberConstraintForm;
   const bool fiber = declaration_.fiberMoments > 0;
   // the pinned moments' multipliers are unknowns of every inner solve
   HolomorphicRelaxationDeclaration inner = declaration_.geometry;
@@ -1043,8 +1079,12 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveAlternation() {
     const BandRead read =
         follower.read(bandOperatorFlat(action_, declaration_));
     follower.follow(read);
-    action_.setCovariance(read.covariance);
-    if (fiber) action_.setMomentProjector(fiberProjectorOf(read));
+    RebuiltCarrierState rebuilt = rebuiltStateOf(read, declaration_);
+    action_.setCovariance(std::move(rebuilt.covariance));
+    if (!rebuilt.momentProjector.empty())
+      action_.setMomentProjector(std::move(rebuilt.momentProjector));
+    if (!rebuilt.bandProjectors.empty())
+      action_.setMomentBandProjectors(std::move(rebuilt.bandProjectors));
 
     // (3) The fixed-point measurements, taken with the covariance this
     // iteration produced: a geometry stationary for the previous covariance

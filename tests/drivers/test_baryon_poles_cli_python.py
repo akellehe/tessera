@@ -118,8 +118,13 @@ def test_the_declared_defaults():
     assert args.mean_field_method == "joint-newton"
     assert args.band_selection == "continuation"
     assert args.stiffness == "none" and args.fiber_moments == "r"
+    assert args.fiber_pinning == "eigenvalues"
     assert bp.build_parser().parse_args(
         ["run", "--fiber-moments", "1"]).fiber_moments == "1"
+    assert bp.build_parser().parse_args(
+        ["run", "--fiber-moments", "bands"]).fiber_moments == "bands"
+    assert bp.build_parser().parse_args(
+        ["run", "--fiber-pinning", "power-sums"]).fiber_pinning == "power-sums"
     # every tolerance of the stack is an option, defaulting to 1e-15
     assert bp.DECLARED_TOLERANCE == 1e-15
     assert bp.tolerances_from(args) == {
@@ -160,6 +165,7 @@ def test_lists_of_couplings_are_parsed():
     (["run", "--stiffness", "quadratic"], "--stiffness"),
     (["run", "--fiber-moments", "-1"], "--fiber-moments"),
     (["run", "--fiber-moments", "all"], "--fiber-moments"),
+    (["run", "--fiber-pinning", "trace"], "--fiber-pinning"),
     (["run", "--rank-tolerance", "0"], "--rank-tolerance"),
     (["run", "--tie-tolerance", "tight"], "--tie-tolerance"),
     (["run", "--regge-hinges", "boundary"], "--regge-hinges"),

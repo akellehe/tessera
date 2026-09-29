@@ -38,8 +38,15 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    h_C = P_C h_1 P_C on its range, p_j(h_C) = tr(h_C^j) its power sums, the
    targets p_j* their values at the host (controlled synthesis pins the
    carrier) and the xi_j independent complex multipliers solved for with the
-   geometry. m_c is declared by ``--fiber-moments`` (r, every moment of the
-   fiber, by default; 1 pins the trace alone). kappa = 8 pi G enters only
+   geometry. By default (``--fiber-pinning eigenvalues``) the constraints are
+   stated as the eigenvalue of each occupied band, lambda_b = tr(P_b h_1)/r_b
+   with P_b the band's Riesz projector, one constraint per band: on the
+   sheeted host every occupied band is one eigenvalue repeated once per
+   sheet, so these are the independent constraints among the r power sums,
+   without the dependent rows. ``--fiber-pinning power-sums`` states them as
+   the power sums, m_c of them by ``--fiber-moments`` (r, every moment of the
+   fiber, by default; bands, one per occupied band; 1 pins the trace alone).
+   kappa = 8 pi G enters only
    through the Regge weight; the linear stand-in (1/kappa) (1/2) ||l - l0||^2
    for the spectral-moment part is available by name
    (``--stiffness linear-stand-in``) and off by default. The holonomy term
@@ -376,6 +383,16 @@ STIFFNESS_FORMS = ("none", "linear-stand-in")
 #: (every moment of the fiber), or a count ("1" pins the trace alone, which
 #: removes the uniform dilation of the Euler identity; "0" pins nothing).
 DECLARED_FIBER_MOMENTS = "r"
+#: What the fiber constraints pin (``fiber_pinning``): the eigenvalue of each
+#: occupied band, lambda_b = tr(P_b h_1) / r_b, one constraint per band
+#: (``"eigenvalues"``, the default; on the sheeted host every occupied band is
+#: one eigenvalue repeated once per sheet, so these are the independent
+#: constraints among the fiber's power sums), or the power sums p_j(h_C) of
+#: the fiber (``"power-sums"``, WP v17 §3.4 as written), as many as
+#: ``--fiber-moments`` says.
+DECLARED_FIBER_PINNING = "eigenvalues"
+FIBER_PINNINGS = {"eigenvalues": cob.FiberConstraintForm.BandEigenvalues,
+                  "power-sums": cob.FiberConstraintForm.PowerSums}
 #: The growth of the largest squared length, over its value at the host, at
 #: which a Newton solve stops and reports that the lengths ran off. The linear
 #: stiffness stand-in's force on a squared length saturates at 1/(2 kappa), so
@@ -588,12 +605,21 @@ def share_sheet_geometry(geometry, spacetime):
     return geometry
 
 
-def fiber_moment_count(declaration, action, setting):
-    """m_c for a declared setting: an integer as it is, or ``"r"``, the rank
-    of the occupied fiber, the sum of the ranks of the bands the content
+def fiber_moment_count(declaration, action, setting,
+                       pinning=DECLARED_FIBER_PINNING):
+    """m_c, the number of fiber constraints. Pinning the band eigenvalues
+    (``pinning`` "eigenvalues"), it is the number of bands the content
+    occupies, one constraint per band, whatever the setting. Pinning the
+    power sums, it is the declared setting: an integer as it is; ``"r"``, the
+    rank of the occupied fiber, the sum of the ranks of the bands the content
     occupies as the library's own band rule reads them at the action's point
-    (`BandFollower`)."""
-    if str(setting) != "r":
+    (`BandFollower`), the paper's j = 1..r; or ``"bands"``, the number of
+    occupied bands, as many power sums as the fiber has independent
+    constraints on a sheeted host."""
+    setting = str(setting)
+    if pinning == "eigenvalues" or setting == "bands":
+        return int(sum(1 for n in declaration.band_occupations if n > 0))
+    if setting != "r":
         return int(setting)
     read = cob.BandFollower(declaration).read(action.carrier_operator())
     return int(sum(band.rank for band in read.bands))
@@ -622,6 +648,8 @@ def mean_field_declaration(content, config, spacetime=None):
         config.get("mean_field_method", DECLARED_MEAN_FIELD_METHOD)]
     declaration.maximum_iterations = config["mean_field_iterations"]
     declaration.tolerance = config["mean_field_tolerance"]
+    declaration.fiber_constraint_form = FIBER_PINNINGS[
+        config.get("fiber_pinning", DECLARED_FIBER_PINNING)]
     geometry = relaxation_declaration(config)
     if spacetime is not None:
         share_sheet_geometry(geometry, spacetime)
@@ -1468,7 +1496,8 @@ def relax_content(content, kappa, beta, config):
     mean_field = mean_field_declaration(content, config, spacetime)
     mean_field.fiber_moments = fiber_moment_count(
         mean_field, action,
-        config.get("fiber_moments", DECLARED_FIBER_MOMENTS))
+        config.get("fiber_moments", DECLARED_FIBER_MOMENTS),
+        config.get("fiber_pinning", DECLARED_FIBER_PINNING))
     solve = cob.SelfConsistentMeanField(action, mean_field)
     report = solve.solve()
     return spacetime, solve.action, report
@@ -1610,6 +1639,8 @@ def relaxation_record(report):
         "largest_length_ratio": float(report.largest_length_ratio),
         "fiber_rank": int(report.fiber_rank),
         "fiber_moments": len(report.moment_targets),
+        "fiber_pinning": {form: name for name, form in FIBER_PINNINGS.items()}[
+            report.fiber_constraint_form],
         "moment_scale": float(report.moment_scale),
         "moment_targets": [complex(x) for x in report.moment_targets],
         "multipliers": [complex(x) for x in report.multipliers],
@@ -3176,15 +3207,23 @@ def relaxation_text(relaxation):
             relative = [abs(r) / abs(t) if abs(t) > 0 else abs(r)
                         for r, t in zip(relaxation["moment_residuals"],
                                         relaxation["moment_targets"])]
-            text += ("; %d of the occupied fiber's %d power sums pinned at "
-                     "the host: multipliers %s, largest relative residual "
-                     "|p_j(h_C) - p_j*| / |p_j*| %.2g" % (
-                         pinned, relaxation["fiber_rank"],
-                         "[%s]" % ", ".join(_complex_text(x) for x in
-                                            relaxation["multipliers"]),
-                         max(relative)))
+            multipliers = "[%s]" % ", ".join(
+                _complex_text(x) for x in relaxation["multipliers"])
+            if relaxation.get("fiber_pinning", "power-sums") == "eigenvalues":
+                text += ("; the eigenvalues of %d occupied bands (fiber rank "
+                         "%d) pinned at the host: multipliers %s, largest "
+                         "relative residual |lambda_b - lambda_b*| / "
+                         "|lambda_b*| %.2g" % (
+                             pinned, relaxation["fiber_rank"], multipliers,
+                             max(relative)))
+            else:
+                text += ("; %d of the occupied fiber's %d power sums pinned "
+                         "at the host: multipliers %s, largest relative "
+                         "residual |p_j(h_C) - p_j*| / |p_j*| %.2g" % (
+                             pinned, relaxation["fiber_rank"], multipliers,
+                             max(relative)))
         else:
-            text += "; no power sum of the occupied fiber pinned"
+            text += "; no constraint of the occupied fiber pinned"
         text += ("; Hessian on the range of the Hellmann-Feynman force %s "
                  "(%s), force %.3g" % (
                      _complex_text(relaxation["force_hessian"]),
@@ -3340,7 +3379,8 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    mean_field_method=DECLARED_MEAN_FIELD_METHOD,
                    band_selection=DECLARED_BAND_SELECTION,
                    stiffness=DECLARED_STIFFNESS,
-                   fiber_moments=DECLARED_FIBER_MOMENTS, tolerances=None):
+                   fiber_moments=DECLARED_FIBER_MOMENTS,
+                   fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
@@ -3366,6 +3406,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "band_selection": band_selection,
         "stiffness": stiffness,
         "fiber_moments": str(fiber_moments),
+        "fiber_pinning": fiber_pinning,
         "kappa_role": (
             "kappa = 8 pi G enters only through the Regge weight 1/kappa; "
             "the length stiffness is the spectral-moment part of S_0, the "
@@ -4213,8 +4254,8 @@ def tolerances_from(args):
 
 
 def _fiber_moments(text):
-    """``r`` or a non-negative integer, for --fiber-moments."""
-    if text == "r":
+    """``r``, ``bands`` or a non-negative integer, for --fiber-moments."""
+    if text in ("r", "bands"):
         return text
     try:
         value = int(text)
@@ -4222,7 +4263,8 @@ def _fiber_moments(text):
         value = -1
     if value < 0:
         raise argparse.ArgumentTypeError(
-            "--fiber-moments is r or a non-negative integer; got %r" % text)
+            "--fiber-moments is r, bands or a non-negative integer; got %r"
+            % text)
     return str(value)
 
 
@@ -4250,12 +4292,20 @@ def add_mean_field_arguments(parser):
                              "fiber constraint of --fiber-moments), or the "
                              "linear stand-in (1/2 kappa^-1) ||l - l0||^2 "
                              "(default %s)" % DECLARED_STIFFNESS)
+    parser.add_argument("--fiber-pinning", choices=tuple(FIBER_PINNINGS),
+                        default=DECLARED_FIBER_PINNING,
+                        help="what the fiber constraints pin at the host: "
+                             "eigenvalues, the eigenvalue of each occupied "
+                             "band, one constraint per band; or power-sums, "
+                             "the power sums p_j(h_C) of the occupied fiber "
+                             "(WP v17 §3.4), as many as --fiber-moments "
+                             "(default %s)" % DECLARED_FIBER_PINNING)
     parser.add_argument("--fiber-moments", type=_fiber_moments,
                         default=DECLARED_FIBER_MOMENTS,
-                        help="m_c, the power sums p_j(h_C), j = 1..m_c, of "
-                             "the occupied fiber pinned at the host (WP v17 "
-                             "§3.4): r, the fiber's rank, or a count "
-                             "(default %s)" % DECLARED_FIBER_MOMENTS)
+                        help="m_c under --fiber-pinning power-sums, the power "
+                             "sums p_j(h_C), j = 1..m_c, pinned: r, the "
+                             "fiber's rank; bands, one per occupied band; or "
+                             "a count (default %s)" % DECLARED_FIBER_MOMENTS)
 
 
 def main(argv=None):
@@ -4267,6 +4317,7 @@ def main(argv=None):
                             band_selection=args.band_selection,
                             stiffness=args.stiffness,
                             fiber_moments=args.fiber_moments,
+                            fiber_pinning=args.fiber_pinning,
                             tolerances=tolerances_from(args))
     if args.isospin_doublet:
         config["isospin_doublet"] = True

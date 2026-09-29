@@ -88,6 +88,10 @@ struct RebuiltCarrierState {
   std::vector<std::complex<double>> covariance;
   /// Empty when the solve imposes no constraint on a fiber.
   std::vector<std::complex<double>> momentProjector;
+  /// The band projectors of the solve's band-mean constraints
+  /// (`JointActionDeclaration::momentBandProjectors`), in the constraints'
+  /// order; empty when it imposes none.
+  std::vector<std::vector<std::complex<double>>> bandProjectors;
 };
 
 /// # CovarianceRebuild

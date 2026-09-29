@@ -611,12 +611,21 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
         "JointAction: the carrier degree is a simplicial degree and must be "
         "non-negative; got " +
         std::to_string(declaration_.carrierDegree));
-  for (const auto &constraint : declaration_.momentConstraints)
-    if (constraint.order < 1)
+  for (const auto &constraint : declaration_.momentConstraints) {
+    if (constraint.form == SpectralConstraintForm::PowerSum &&
+        constraint.order < 1)
       throw std::invalid_argument(
           "JointAction: a spectral moment order is the power j >= 1 of "
           "p_j(h) = tr(h^j); got " +
           std::to_string(constraint.order));
+    if (constraint.form == SpectralConstraintForm::BandMean &&
+        constraint.band >= declaration_.momentBandProjectors.size())
+      throw std::invalid_argument(
+          "JointAction: a band-mean constraint names band projector " +
+          std::to_string(constraint.band) + ", but " +
+          std::to_string(declaration_.momentBandProjectors.size()) +
+          " band projectors are declared");
+  }
   if (declaration_.stiffnessWeight != 0.0) {
     const std::size_t edges = edgeCount();
     if (declaration_.referenceLengths.size() != edges)
@@ -668,6 +677,20 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           "over the " + std::to_string(order) + " cells of degree " +
           std::to_string(declaration_.carrierDegree) + "; got " +
           std::to_string(declaration_.momentProjector.size()) + " entries");
+  }
+  if (!declaration_.momentBandProjectors.empty()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    for (const auto &projector : declaration_.momentBandProjectors)
+      if (projector.size() != order * order)
+        throw std::invalid_argument(
+            "JointAction: a band projector of the band-mean constraints is a "
+            "square matrix over the " + std::to_string(order) +
+            " cells of degree " + std::to_string(declaration_.carrierDegree) +
+            "; got " + std::to_string(projector.size()) + " entries");
   }
   if (declaration_.reggeBranch == ReggeBranch::Continued) {
     const auto edges = spacetime_->getEdgeList()->toVector();
@@ -736,6 +759,26 @@ void JointAction::setMomentProjector(std::vector<complexd> projector) {
           std::to_string(projector.size()) + " entries");
   }
   declaration_.momentProjector = std::move(projector);
+}
+
+void JointAction::setMomentBandProjectors(
+    std::vector<std::vector<complexd>> projectors) {
+  if (projectors.size() != declaration_.momentBandProjectors.size())
+    throw std::invalid_argument(
+        "JointAction::setMomentBandProjectors: one projector per declared "
+        "band is required; got " + std::to_string(projectors.size()) +
+        " for " + std::to_string(declaration_.momentBandProjectors.size()) +
+        " declared");
+  for (std::size_t index = 0; index < projectors.size(); ++index)
+    if (projectors[index].size() !=
+        declaration_.momentBandProjectors[index].size())
+      throw std::invalid_argument(
+          "JointAction::setMomentBandProjectors: band projector " +
+          std::to_string(index) + " has " +
+          std::to_string(projectors[index].size()) + " entries; " +
+          std::to_string(declaration_.momentBandProjectors[index].size()) +
+          " are declared");
+  declaration_.momentBandProjectors = std::move(projectors);
 }
 
 std::vector<complexd> JointAction::multipliers() const {
@@ -810,9 +853,30 @@ Eigen::MatrixXcd powerSumDerivative(const JointActionDeclaration &declaration,
          result;
 }
 
+/// The matrix the operator derivative is traced against for one declared
+/// constraint: `powerSumDerivative` for a power sum, or, for a band mean at
+/// fixed \f$ P_b \f$, \f$ P_b/(r_bs) \f$ with \f$ r_b=\operatorname{tr}P_b \f$
+/// (zero when the projector has no trace).
+Eigen::MatrixXcd constraintDerivative(
+    const JointActionDeclaration &declaration, const Eigen::MatrixXcd &carrier,
+    std::size_t order, const SpectralMomentConstraint &constraint) {
+  if (constraint.form == SpectralConstraintForm::PowerSum)
+    return powerSumDerivative(declaration, carrier, order, constraint.order);
+  const Eigen::MatrixXcd projector =
+      toMatrix(declaration.momentBandProjectors.at(constraint.band), order);
+  const complexd rank = projector.trace();
+  if (rank == complexd{0.0, 0.0})
+    return Eigen::MatrixXcd::Zero(projector.rows(), projector.cols());
+  return projector / (rank * declaration.momentScale);
+}
+
 }  // namespace
 
 std::vector<complexd> JointAction::powerSums() const {
+  return constraintValues();
+}
+
+std::vector<complexd> JointAction::constraintValues() const {
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
                                   /*wantCarrier=*/true);
@@ -823,6 +887,18 @@ std::vector<complexd> JointAction::powerSums() const {
   for (const auto &constraint : declaration_.momentConstraints) {
     if (workspace.carrierOrder == 0) {
       sums.emplace_back(0.0, 0.0);
+      continue;
+    }
+    if (constraint.form == SpectralConstraintForm::BandMean) {
+      // tr(P_b h) / (r_b s): the band's mean eigenvalue in the unit.
+      const Eigen::MatrixXcd projector = toMatrix(
+          declaration_.momentBandProjectors.at(constraint.band),
+          workspace.carrierOrder);
+      const complexd rank = projector.trace();
+      sums.push_back(rank == complexd{0.0, 0.0}
+                         ? complexd{0.0, 0.0}
+                         : traceOfProduct(projector, workspace.carrier) /
+                               (rank * declaration_.momentScale));
       continue;
     }
     // Repeated multiplication rather than an eigendecomposition: the power sum
@@ -1279,7 +1355,7 @@ Eigen::MatrixXcd contractionMatrix(const JointActionDeclaration &declaration,
   for (const auto &constraint : declaration.momentConstraints) {
     if (constraint.multiplier == complexd{0.0, 0.0}) continue;
     matrix += constraint.multiplier *
-              powerSumDerivative(declaration, carrier, order, constraint.order);
+              constraintDerivative(declaration, carrier, order, constraint);
   }
   return matrix;
 }
@@ -1704,9 +1780,8 @@ std::vector<complexd> JointAction::momentGradient(std::size_t index) const {
   std::vector<complexd> gradient(2 * edges, complexd{0.0, 0.0});
   if (workspace.carrierOrder == 0) return gradient;
 
-  const Eigen::MatrixXcd power =
-      powerSumDerivative(declaration_, workspace.carrier,
-                         workspace.carrierOrder, constraint.order);
+  const Eigen::MatrixXcd power = constraintDerivative(
+      declaration_, workspace.carrier, workspace.carrierOrder, constraint);
 
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];

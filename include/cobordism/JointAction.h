@@ -37,6 +37,26 @@ using ::tessera::spacetime::Spacetime;
 ///   one a resolvent contour around zero selects.
 enum class OccupationOrder { AscendingRealPart, AscendingModulus };
 
+/// # SpectralConstraintForm
+///
+/// What one `SpectralMomentConstraint` pins.
+enum class SpectralConstraintForm {
+  /// The power sum \f$ p_j(h)=\operatorname{tr}(h^j) \f$ of the carrier, or
+  /// of its compression to the declared fiber.
+  PowerSum,
+  /// The mean eigenvalue of one band,
+  /// \f$ \lambda_b=\operatorname{tr}(P_bh)/r_b \f$, with \f$ P_b \f$ the
+  /// band's Riesz projector (`JointActionDeclaration::momentBandProjectors`)
+  /// and \f$ r_b=\operatorname{tr}P_b \f$ its rank: the band's eigenvalue
+  /// itself when the band is degenerate, as every band of a sheeted host is.
+  /// Its derivative at fixed \f$ P_b \f$ is the Hellmann-Feynman form
+  /// \f$ d\lambda_b=\operatorname{tr}(P_b\,dh)/r_b \f$, the whole derivative
+  /// when \f$ P_b \f$ is a spectral projector of \f$ h \f$: the projector's
+  /// own variation is off-diagonal between its range and its kernel and so
+  /// contributes no trace against \f$ h \f$.
+  BandMean
+};
+
 /// # SpectralMomentConstraint
 ///
 /// One holomorphic spectral constraint of the targeted action
@@ -60,12 +80,18 @@ enum class OccupationOrder { AscendingRealPart, AscendingModulus };
 /// particle-specific observable is read after the stationary solve instead of
 /// being inserted as a target.
 struct SpectralMomentConstraint {
-  /// The moment index \f$ j \ge 1 \f$. It is the power the operator is raised
-  /// to in \f$ p_j(h)=\operatorname{tr}(h^j) \f$ and is not a simplicial
-  /// degree.
+  /// What the constraint pins: a power sum (the default) or a band mean.
+  SpectralConstraintForm form = SpectralConstraintForm::PowerSum;
+  /// The moment index \f$ j \ge 1 \f$ of a power sum. It is the power the
+  /// operator is raised to in \f$ p_j(h)=\operatorname{tr}(h^j) \f$ and is
+  /// not a simplicial degree. Unused by a band mean.
   int order = 1;
-  /// The target \f$ p_j^{\star}=\sum_a (\lambda_a^{\star})^j \f$, the same
-  /// power sum of the prescribed eigenvalue multiset.
+  /// For a band mean, the index of the band's projector in
+  /// `JointActionDeclaration::momentBandProjectors`. Unused by a power sum.
+  std::size_t band = 0;
+  /// The target: \f$ p_j^{\star}=\sum_a (\lambda_a^{\star})^j \f$, the same
+  /// power sum of the prescribed eigenvalue multiset, or the band mean's
+  /// \f$ \lambda_b^{\star} \f$.
   std::complex<double> target{0.0, 0.0};
   /// The complex Lagrange multiplier \f$ \xi_j \f$ at the current point of a
   /// solve.
@@ -588,6 +614,16 @@ struct JointActionDeclaration {
   /// constraint. One, the default, measures in the operator's own unit.
   double momentScale = 1.0;
 
+  /// The Riesz projectors \f$ P_b \f$ of the bands the `BandMean`
+  /// constraints refer to (`SpectralMomentConstraint::band` indexes this
+  /// list), each flat row-major over the \f$ k \f$-cells. Their derivatives
+  /// are taken at fixed \f$ P_b \f$, the whole derivative when \f$ P_b \f$
+  /// is a spectral projector of \f$ h \f$, as for `momentProjector`; a
+  /// self-consistent solve rebuilds them at every point. The unit \f$ s \f$
+  /// applies: the constraint is \f$ \lambda_b/s=\lambda_b^{\star}/s \f$,
+  /// and a multiplier in the unit is \f$ s \f$ times the unscaled one.
+  std::vector<std::vector<std::complex<double>>> momentBandProjectors;
+
   /// Where the carrier operator's metric comes from.
   ///
   /// `WhitneyPencil` is the whitepaper's \f$ W_k = M_k^{-1} \f$ and gives the
@@ -762,6 +798,14 @@ class JointAction {
   ///   square matrix over the \f$ k \f$-cells of the complex.
   void setMomentProjector(std::vector<std::complex<double>> projector);
 
+  /// Replace the band projectors the `BandMean` constraints refer to
+  /// (`JointActionDeclaration::momentBandProjectors`), in place and for the
+  /// same reason as `setCovariance`; one projector per declared entry.
+  /// @throws std::invalid_argument when the count differs from the declared
+  ///   one or an entry is not a square matrix over the \f$ k \f$-cells.
+  void setMomentBandProjectors(
+      std::vector<std::vector<std::complex<double>>> projectors);
+
   /// The carrier operator \f$ h_k(z,U) \f$, flat row-major over the
   /// \f$ k \f$-cells in the canonical order. Empty when the complex carries no
   /// cell of the declared degree.
@@ -774,15 +818,20 @@ class JointAction {
   /// dimension below two.
   [[nodiscard]] std::vector<std::complex<double>> faceHolonomies() const;
 
-  /// The power sums \f$ p_j(h)=\operatorname{tr}(h^j) \f$ of the declared
-  /// constraints, in declaration order, or of the compressed operator
-  /// \f$ h_{\mathcal C} \f$ when a fiber is declared
-  /// (`JointActionDeclaration::momentProjector`). Computed from the operator by
-  /// repeated multiplication, so a defective or non-normal \f$ h \f$ needs no
-  /// eigendecomposition and no eigenvalue ordering.
+  /// The value of each declared constraint in the declared unit, in
+  /// declaration order: the power sum \f$ p_j(h/s)=\operatorname{tr}((h/s)^j) \f$
+  /// (of the compressed operator \f$ h_{\mathcal C} \f$ when a fiber is
+  /// declared, `JointActionDeclaration::momentProjector`), computed by
+  /// repeated multiplication so a defective or non-normal \f$ h \f$ needs no
+  /// eigendecomposition and no eigenvalue ordering; or the band mean
+  /// \f$ \operatorname{tr}(P_bh)/(r_bs) \f$.
+  [[nodiscard]] std::vector<std::complex<double>> constraintValues() const;
+
+  /// `constraintValues` under the name of the power-sum form; a band-mean
+  /// constraint's entry is its band mean.
   [[nodiscard]] std::vector<std::complex<double>> powerSums() const;
 
-  /// \f$ p_j(h)-p_j^{\star} \f$ for each declared constraint, in declaration
+  /// Each declared constraint's value less its target, in declaration
   /// order: the exact stationarity equation in \f$ \xi_j \f$, as a complex
   /// number whose vanishing is the constraint.
   [[nodiscard]] std::vector<std::complex<double>> momentResiduals() const;
