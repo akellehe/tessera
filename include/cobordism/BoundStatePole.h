@@ -91,6 +91,13 @@ struct BoundStatePoleRead {
 
   /// The distinct zeros \f$ s_C \f$ found inside the contour, in the order the
   /// moment problem produced them. No ordering convention is imposed on them.
+  /// Every reported zero lies strictly inside the declared contour: a zero
+  /// the refinement would place outside it is not reported, and the read
+  /// names "pole-outside-contour". A zero of multiplicity above one is the
+  /// mean of the zeros its own small contour encloses (the first moment of
+  /// the argument principle there over the count), which is the zero itself
+  /// when it is exactly multiple and the centroid of a cluster the
+  /// quadrature does not resolve.
   std::vector<std::complex<double>> poles{};
   /// The algebraic multiplicity of each zero, read as the argument-principle
   /// count on a small contour around it. Parallel to `poles`.
@@ -113,7 +120,9 @@ struct BoundStatePoleRead {
   /// multiplicity is the one the argument principle counted.
   std::vector<bool> simple{};
   /// The last Newton step taken on each root, in absolute units: the
-  /// convergence of the refinement.
+  /// convergence of the refinement. NaN for a zero of multiplicity above
+  /// one, which is read as its local mean and not refined by Newton, and for
+  /// a simple zero whose Newton iterate left its small contour.
   std::vector<double> newtonStep{};
   /// The distance from each root to the nearest other root found inside the
   /// contour; infinite when it is the only one.
@@ -151,7 +160,16 @@ struct BoundStatePoleRead {
 
   /// Named failures: "empty-interface", "nonintegral-zero-count",
   /// "too-many-zeros", "interior-resonance", "interior-pole-enclosed",
-  /// "roots-not-separated", "no-zero-enclosed".
+  /// "roots-not-separated", "no-zero-enclosed", and the three agreement
+  /// certificates between the argument-principle count, the moment-method
+  /// roots and the refinement: "moment-root-without-zero" (a moment-method
+  /// root whose own small contour encloses no zero; it is not reported),
+  /// "multiplicity-count-mismatch" (the local multiplicities do not add up to
+  /// the count on the declared contour), "newton-left-local-contour" (the
+  /// Newton refinement of a simple zero left the small contour that
+  /// certified it; the zero is reported at its local mean), and
+  /// "pole-outside-contour" (a refined zero outside the declared contour; it
+  /// is not reported).
   std::vector<std::string> failedCertificates{};
 };
 
@@ -214,11 +232,17 @@ struct BoundStatePoleRead {
 /// applied to \f$ \det P_{II} \f$ and a contour that encloses one is refused
 /// by name, rather than answered with a count in which the zeros and the poles
 /// have already cancelled.
-/// Each zero is then refined by Newton on \f$ D_C \f$ through the logarithmic
-/// derivative, with the step scaled by the root's multiplicity so that a
-/// multiple root converges at the same rate as a simple one. Multiple roots
-/// are retained with their algebraic multiplicity and their residue matrix
-/// rather than split by an ordering convention.
+/// Each root is then read on a small contour that encloses it alone: the
+/// argument principle there gives its algebraic multiplicity and the mean of
+/// the zeros the small disc holds. A simple zero is refined by Newton on
+/// \f$ D_C \f$ through the logarithmic derivative, confined to its small
+/// disc; a multiple zero is reported as that local mean, because Newton on a
+/// cluster split below the quadrature's resolution overshoots it. Multiple
+/// roots are retained with their algebraic multiplicity and their residue
+/// matrix rather than split by an ordering convention. The count on the
+/// declared contour, the moment-method roots and the refinement are required
+/// to agree, and every reported zero to lie inside the declared contour;
+/// each disagreement is named in `failedCertificates`.
 ///
 /// Reference: Kravanja and Van Barel, "Computing the Zeros of Analytic
 /// Functions", Lecture Notes in Mathematics 1727, Springer (2000).

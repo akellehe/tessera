@@ -194,8 +194,7 @@ def declared_carrier(edge_squared=bp.DECLARED_EDGE_SQUARED):
 def relaxed_carrier(content, kappa, beta, config):
     """h_1(z, U) of the host relaxed to self-consistency for one content, as
     `baryon_poles.relax_content` does it."""
-    actions = bp.rotation_action([bp.monopole_support()] * bp.SHEETS)
-    _, action, report = bp.relax_content(content, kappa, beta, config, actions)
+    _, action, report = bp.relax_content(content, kappa, beta, config)
     return bp.matrix(action.carrier_operator()), report
 
 
