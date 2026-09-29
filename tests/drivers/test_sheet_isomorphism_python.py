@@ -68,7 +68,8 @@ def _cell_config(cell, content, newton, mean_field):
     host cell of the tick-0 level, with the iteration budgets reduced to the
     stated values (every other entry as in the run)."""
     config = bp.default_config(kappas=[1.0], betas=[1.0],
-                               selected_contents=[tuple(content)])
+                               selected_contents=[tuple(content)],
+                               tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     config["newton_iterations"] = newton
@@ -332,7 +333,8 @@ def test_the_level_zero_fields_are_the_recorded_ones():
     the run's recorded tick-0 links to 1e-15 and the squared length 8 on every
     edge, with monopole number 1 in each tetrahedron and 2 through the
     bounding cut, which is the six recorded outward faces."""
-    cells, z, links, connection = R.level_zero(R.default_config())
+    cells, z, links, connection = R.level_zero(
+        R.default_config(tolerances=RUN.TOLERANCES))
     assert cells == RUN.LEVEL_ZERO_CELLS
     assert connection["residual"] < 1e-14
     for edge, value in RUN.LEVEL_ZERO_LINKS.items():

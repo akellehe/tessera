@@ -117,7 +117,7 @@ def test_the_run_level_is_stationary_as_built():
     the declared monopole connection) relaxes in zero Newton iterations with
     the recorded residual 1.18e-14, the Regge term structurally zero and the
     held cut's monopole number 2 on every sheet (run.log)."""
-    config = R.default_config()
+    config = R.default_config(tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     spacetime, count = R.build_level(cells, z, links)
     cut = R.bounding_cut(cells)
@@ -140,7 +140,7 @@ def test_the_held_cut_is_kept_and_the_bulk_face_relaxes():
     while the bulk face (0, 1, 3) that the two tetrahedra share is not held
     and relaxes from e^{0.05 i} to 1; strict emergence (no carried density)
     keeps the three sheets identical to 1e-14."""
-    config = R.default_config()
+    config = R.default_config(tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     links = dict(links)
     links[(1, 3)] *= cmath.exp(0.05j)
@@ -167,7 +167,7 @@ def test_the_relaxation_refusals_are_named():
     action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0))
     with pytest.raises(ValueError, match="no field is declared relaxable"):
         cob.HolomorphicRelaxation(action, _solve(False, False))
-    config = R.default_config()
+    config = R.default_config(tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     level, count = R.build_level(cells, z, links)
     held = R.cut_sectors(R.bounding_cut(cells), 1, count)
@@ -186,7 +186,7 @@ def _band_filling(content, spacetime=None):
     spacetime = spacetime or _tetrahedron()
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
-    config = bp.default_config([1.0], [1.0])
+    config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
     # zero iterations read the band filling at the starting point, the
     # regular tetrahedron, under either solve method
     config["newton_iterations"] = 0
@@ -327,7 +327,7 @@ def test_an_unresolved_pair_is_read_as_its_local_mean(separation):
 
 @pytest.fixture(scope="module")
 def tick_zero():
-    config = R.default_config()
+    config = R.default_config(tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     spacetime, count = R.build_level(cells, z, links)
     R.relax_level(spacetime, config,
