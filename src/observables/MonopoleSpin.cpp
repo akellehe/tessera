@@ -1245,10 +1245,13 @@ IsotypicRead SharpSpin::isotypicRead(const Eigen::MatrixXcd& projector,
   read.type = type;
   read.rank = static_cast<std::size_t>(
       std::llround(std::max(0.0, projector.trace().real())));
-  const double scale = std::max(1.0, projector.norm());
-  read.idempotencyResidual = (projector * projector - projector).norm() / scale;
   const Eigen::VectorXcd rightImage = projector * rightState;
   read.rightResidual = (rightState - rightImage).norm() / rightNorm;
+  // The projector's idempotency, measured along the right state rather than
+  // on the whole matrix: one more matrix-vector product instead of a matrix
+  // square, which a read per pole cannot afford on an 816-dimensional sector.
+  read.idempotencyResidual =
+      (projector * rightImage - rightImage).norm() / rightNorm;
   // <Psi_L|(I - P) = 0 is the right equation for the transposed projector,
   // because the pairing is bilinear: (Psi_L^T P)^T = P^T Psi_L.
   const Eigen::VectorXcd leftImage = projector.transpose() * leftState;

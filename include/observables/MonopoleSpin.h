@@ -539,9 +539,11 @@ struct IsotypicRead {
     /// tr P rounded to the nearest integer: the dimension of the isotypic
     /// component of the sector the projector was formed on.
     std::size_t rank{0};
-    /// ||P^2 - P||_F / max(1, ||P||_F): the projector's idempotency,
-    /// measured. Zero to rounding when the maps form a representation and
-    /// the characters are those of one of its irreducible constituents.
+    /// ||P (P Psi_R) - P Psi_R|| / ||Psi_R||: the projector's idempotency
+    /// measured along the right state. Zero to rounding when the maps form a
+    /// representation and the characters are those of one of its
+    /// irreducible constituents; a matrix-wide measure is the caller's, on
+    /// the projector itself.
     double idempotencyResidual{std::numeric_limits<double>::quiet_NaN()};
     /// ||(I - P)|Psi_R>|| / ||Psi_R|| -- the right residual norm.
     double rightResidual{std::numeric_limits<double>::quiet_NaN()};
