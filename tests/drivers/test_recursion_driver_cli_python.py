@@ -297,9 +297,15 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content():
     # the refused content keeps a slot of its own, labelled as refused
     assert data["slots"] == [(0.0, "refused"), (2.0, "021"), (3.0, "111")]
     assert [g["label"] for g in data["groups"]] == ["0123\n030", group]
+    # each group carries the solve behind it: the library refused 030, and
+    # the solve of 300 did not converge in its 40 iterations
+    assert [g["solve"] for g in data["groups"]] == [
+        {"state": "refused", "reason": None, "iterations": None},
+        {"state": "not converged", "reason": None, "iterations": 40}]
     quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
     assert [bp.ratio_pair_text(r) for r in quasi_free] == \
         ["N 300|111 / D 300|021"]
+    assert [bp.unconverged_poles(r) for r in quasi_free] == [["N", "D"]]
     assert data["counts"] == [{"tick": 0, "response_vertices": 2,
                                "grown_cells": 0, "row_sum_defects": []}]
 
@@ -320,6 +326,9 @@ def test_the_drawn_frame_has_one_mark_per_pole():
             assert drawn == expected
         labels = [t.get_text() for t in quasi_free.get_xticklabels(minor=True)]
         assert labels == ["refused", "021", "111"]
+        # a callout over each group names its solve
+        assert [t.get_text() for t in quasi_free.texts] == [
+            "\u2717 refused", "\u2717 not converged\n40 iterations"]
     finally:
         plt.close(figure)
 

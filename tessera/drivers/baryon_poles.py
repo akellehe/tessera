@@ -2679,11 +2679,80 @@ FIGURE_SIZE = (15, 10)
 #: The largest font size of the listing of the pairs each ratio compares; the
 #: listing is set smaller when its lines need it to fit the panel.
 LISTING_FONT_SIZE = 6.0
+#: How a pole panel marks the mean-field solve behind each group of pairs
+#: (`solve_state`): the ink of the group's callout and label, the tint of the
+#: band behind its pairs, the callout's sign, and the legend's name for the
+#: band.
+SOLVE_STYLE = {
+    "converged": {"ink": "#1a7f37", "band": "#e2f2e7", "sign": "\u2713",
+                  "label": "mean-field solve converged"},
+    "not converged": {"ink": "#b3261e", "band": "#fbe6e3", "sign": "\u2717",
+                      "label": "mean-field solve not converged"},
+    "refused": {"ink": INK_MUTED, "band": "#ecebe6", "sign": "\u2717",
+                "label": "pole read refused"},
+}
+#: The short names, in a callout, of why a mean-field solve stopped
+#: (`cob.relaxation_stop_name`) and of the refusals of a pole read
+#: (`read_refusal`).
+STOP_SHORT = {
+    "the declared iterations ran out": "ran out",
+    "no damped step reduced the residual": "no descent",
+    "every damped step left the domain of the action": "left the domain",
+    "no stationary point in the declared monopole sector":
+        "left the sector",
+    "every damped step came within the declared margin of a zero of the "
+    "Villain weight": "Villain zero",
+    "the residual is at its floor on the held set": "held floor",
+    "the squared lengths ran off": "lengths ran off",
+    "an outer iteration made no progress": "no progress",
+    "not Kontsevich-Segal allowable": "not KS-allowable",
+}
+#: The largest font size of the callouts; they are set smaller, all to one
+#: size, when the narrowest group needs it.
+CALLOUT_FONT_SIZE = 7.0
 
 
 def _digits(values):
     """A content or a doublet content as its digits: [0, 2, 1] is 021."""
     return "".join(str(int(v)) for v in values)
+
+
+def solve_state(record):
+    """The mean-field solve behind one content record, as the plots mark it:
+    ``state`` is "refused" when the content's pole read was refused (it reads
+    no pole) and otherwise "converged" or "not converged" as the solve's
+    record says; ``reason`` is the short name (`STOP_SHORT`) of why an
+    unconverged solve stopped or why the read was refused, None when there is
+    none; ``iterations`` is the solve's iteration count, None when
+    unrecorded. None when the record carries neither a refusal nor a
+    solve."""
+    relaxation = record.get("relaxation") or {}
+    iterations = relaxation.get("iterations")
+    if "failed" in record:
+        name = record.get("refusal")
+        return {"state": "refused", "reason": STOP_SHORT.get(name, name),
+                "iterations": iterations}
+    if "converged" not in relaxation:
+        return None
+    if relaxation["converged"]:
+        return {"state": "converged", "reason": None,
+                "iterations": iterations}
+    stop = relaxation.get("stop_reason")
+    return {"state": "not converged", "reason": STOP_SHORT.get(stop, stop),
+            "iterations": iterations}
+
+
+def callout_lines(solve):
+    """The lines of one group's callout (`solve_state`): the sign and the
+    state, then why the solve stopped or the read was refused, then the
+    solve's iterations, each where known."""
+    lines = ["%s %s" % (SOLVE_STYLE[solve["state"]]["sign"], solve["state"])]
+    if solve["reason"]:
+        lines.append(solve["reason"])
+    if solve["iterations"] is not None:
+        count = int(solve["iterations"])
+        lines.append("%d iteration%s" % (count, "" if count == 1 else "s"))
+    return lines
 
 
 def pole_marks(groups):
@@ -2696,8 +2765,9 @@ def pole_marks(groups):
     reads no doublet content, occupies one slot labelled "refused". Returns
     the marks (each with its position ``x``, its pair's slot offset by its
     spin, the group label, the content, the doublet content, the spin, the
-    column, the pole and its multiplicity), the groups (label and first and
-    last slot) and the slots (position and doublet content label)."""
+    column, the pole and its multiplicity), the groups (label, first and
+    last slot, and the mean-field solve behind them, `solve_state`) and the
+    slots (position and doublet content label)."""
     marks, spans, slots = [], [], []
     x = 0.0
     for label, record in groups:
@@ -2726,26 +2796,64 @@ def pole_marks(groups):
                             "spin": j2, "column": name, "pole": pole,
                             "multiplicity": count})
             x += 1.0
-        spans.append({"label": label, "first": start, "last": x - 1.0})
+        spans.append({"label": label, "first": start, "last": x - 1.0,
+                      "solve": solve_state(record)})
         x += GROUP_GAP
     return marks, spans, slots
 
 
-def ratio_row(where, name, ratio):
+def ratio_row(where, name, ratio, solves=None):
     """One by-spin ratio of a ratio panel, with the two (content, doublet
-    content) pairs it compares; ``ratio`` is None when there is no pole
-    pair."""
+    content) pairs it compares and the mean-field solve behind each
+    (``solves`` maps a content, as a tuple, to its `solve_state`); ``ratio``
+    is None when there is no pole pair."""
     if ratio is None:
         return {"where": where, "column": name, "ratio": None,
                 "nucleon": None, "delta": None}
+    solves = solves or {}
     return {"where": where, "column": name, "ratio": ratio["pole_ratio"],
             "nucleon": {"content": list(ratio["nucleon_content"]),
                         "doublet_content": list(
                             ratio["nucleon_doublet_content"]),
-                        "pole": ratio["nucleon_pole"]},
+                        "pole": ratio["nucleon_pole"],
+                        "solve": solves.get(tuple(ratio["nucleon_content"]))},
             "delta": {"content": list(ratio["delta_content"]),
                       "doublet_content": list(ratio["delta_doublet_content"]),
-                      "pole": ratio["delta_pole"]}}
+                      "pole": ratio["delta_pole"],
+                      "solve": solves.get(tuple(ratio["delta_content"]))}}
+
+
+def content_solves(records):
+    """Every content record's mean-field solve (`solve_state`), keyed by its
+    content as a tuple, for `ratio_row`."""
+    return {tuple(record["content"]): solve_state(record)
+            for record in records}
+
+
+def unconverged_poles(row):
+    """The poles of a ratio row, N (the spin-1/2 pole) and D (the spin-3/2
+    pole), whose content's mean-field solve is recorded and did not
+    converge."""
+    if row["ratio"] is None:
+        return []
+    return [role for role, key in (("N", "nucleon"), ("D", "delta"))
+            if (row[key].get("solve") or {}).get("state", "converged")
+            != "converged"]
+
+
+def solve_tag(row):
+    """What a ratio's listing says of the solves behind its two poles:
+    "[both converged]" when both are recorded as converged, "[unconverged:
+    ...]" naming the poles whose solve did not converge, and nothing when
+    neither applies."""
+    if row["ratio"] is None:
+        return ""
+    unconverged = unconverged_poles(row)
+    if unconverged:
+        return " [unconverged: %s]" % ", ".join(unconverged)
+    if all(row[key].get("solve") for key in ("nucleon", "delta")):
+        return " [both converged]"
+    return ""
 
 
 def ratio_pair_text(row):
@@ -2765,7 +2873,7 @@ def frame_data(frames, index):
     """What one frame draws, as data: every pole of every (content, doublet
     content) pair of the latest scan point (`pole_marks`), and the by-spin
     ratio of every completed scan point in both columns with the two pairs it
-    compares (`ratio_row`)."""
+    compares and the mean-field solve behind each (`ratio_row`)."""
     done = frames[:index + 1]
     point = done[-1]
     marks, spans, slots = pole_marks(
@@ -2774,8 +2882,10 @@ def frame_data(frames, index):
     rows = []
     for p in done:
         where = "k=%g b=%g" % (p["kappa"], p["beta"])
+        solves = content_solves(p["contents"])
         for name in COLUMNS:
-            rows.append(ratio_row(where, name, p["ratios"][name]["by_spin"]))
+            rows.append(ratio_row(where, name, p["ratios"][name]["by_spin"],
+                                  solves))
     return {"where": "kappa=%g, beta=%g" % (point["kappa"], point["beta"]),
             "done": len(done), "marks": marks, "groups": spans,
             "slots": slots, "ratios": rows}
@@ -2797,8 +2907,23 @@ def draw_pole_panel(axis, data, name, title, group_label):
     symmetric logarithmic scale of Re s (the poles span several decades).
     Below each slot is its doublet content (quarks in 2, 2', 2'' of
     h-bar_1), and below each group its label (``group_label`` says what it
-    names)."""
+    names). Each group whose record carries a mean-field solve or a refusal
+    (`solve_state`) has a band behind its pairs and a callout above them in
+    its state's colour (`SOLVE_STYLE`): whether the solve converged, why it
+    stopped or the read was refused, and its iterations
+    (`callout_lines`)."""
     style_axis(axis)
+    named = set()
+    for group in data["groups"]:
+        solve = group.get("solve")
+        if solve is None:
+            continue
+        style = SOLVE_STYLE[solve["state"]]
+        axis.axvspan(group["first"] - 0.5, group["last"] + 0.5,
+                     facecolor=style["band"], edgecolor="none", zorder=0,
+                     label=style["label"] if solve["state"] not in named
+                     else "_nolegend_")
+        named.add(solve["state"])
     for j2 in SPINS:
         style = SPIN_STYLE[j2]
         picked = [m for m in data["marks"]
@@ -2829,7 +2954,28 @@ def draw_pole_panel(axis, data, name, title, group_label):
                     "2, 2', 2'' of h-bar_1)" % group_label, color=INK,
                     fontsize=8)
     axis.set_ylabel("Re s (symmetric log)", color=INK, fontsize=8)
-    axis.set_title(title, color=INK, fontsize=9)
+    left, right = axis.get_xlim()
+    per_slot = (axis.get_position().width * axis.figure.get_figwidth()
+                * 72.0 / (right - left))
+    callouts = [(label, group, callout_lines(group["solve"]))
+                for label, group in zip(axis.get_xticklabels(),
+                                        data["groups"])
+                if group.get("solve") is not None]
+    size = min([CALLOUT_FONT_SIZE] + [
+        (group["last"] - group["first"] + 0.9) * per_slot
+        / (0.55 * max(len(line) for line in lines))
+        for _, group, lines in callouts])
+    size = max(3.5, size)
+    tallest = 0.0
+    for label, group, lines in callouts:
+        style = SOLVE_STYLE[group["solve"]["state"]]
+        label.set_color(style["ink"])
+        axis.text(0.5 * (group["first"] + group["last"]), 1.01,
+                  "\n".join(lines), transform=axis.get_xaxis_transform(),
+                  ha="center", va="bottom", fontsize=size,
+                  color=style["ink"], linespacing=1.1)
+        tallest = max(tallest, 1.25 * size * len(lines))
+    axis.set_title(title, color=INK, fontsize=9, pad=6.0 + tallest)
     axis.legend(frameon=False, fontsize=7, labelcolor=INK, loc="best")
 
 
@@ -2837,17 +2983,33 @@ def draw_ratio_panel(axis, rows, title):
     """The by-spin ratio Re(s_N / s_Delta) in both columns at every place a
     ratio was read (a scan point, or a host cell), one mark each, against the
     target; the pairs each compares are listed beside it
-    (`draw_pairs_panel`)."""
+    (`draw_pairs_panel`). A ratio with a pole whose mean-field solve did not
+    converge (`unconverged_poles`) is drawn hollow."""
     style_axis(axis)
     places = list(dict.fromkeys(row["where"] for row in rows))
     position = {place: k for k, place in enumerate(places)}
+    hollow = False
     for name in COLUMNS:
         picked = [row for row in rows if row["column"] == name]
-        axis.plot([position[row["where"]] for row in picked],
-                  [row["ratio"].real if row["ratio"] is not None else np.nan
-                   for row in picked],
-                  linestyle="none", marker=SERIES_MARKER[name],
-                  markersize=7, color=SERIES[name], label=SERIES_LABEL[name])
+        for unconverged in (False, True):
+            chosen = [row for row in picked
+                      if bool(unconverged_poles(row)) == unconverged]
+            if unconverged and not chosen:
+                continue
+            hollow = hollow or unconverged
+            axis.plot([position[row["where"]] for row in chosen],
+                      [row["ratio"].real if row["ratio"] is not None
+                       else np.nan for row in chosen],
+                      linestyle="none", marker=SERIES_MARKER[name],
+                      markersize=7, markeredgewidth=1.5, color=SERIES[name],
+                      markerfacecolor="none" if unconverged else SERIES[name],
+                      label="_nolegend_" if unconverged
+                      else SERIES_LABEL[name])
+    if hollow:
+        axis.plot([], [], linestyle="none", marker="o", markersize=7,
+                  markeredgewidth=1.5, color=INK_MUTED,
+                  markerfacecolor="none",
+                  label="hollow: a pole's solve did not converge")
     axis.axhline(TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, linewidth=1,
                  linestyle="--")
     axis.text(0, TARGET_MASS_SQUARED_RATIO, " target (m_N/m_D)^2 = %.4f"
@@ -2866,15 +3028,17 @@ def draw_pairs_panel(axis, rows):
     monospaced font: one line per place a ratio was read with both columns on
     it, or one line per ratio when that lets the font be larger, set small
     enough for every line to fit the panel (the full listing is also in the
-    stdout summary)."""
+    stdout summary). Each ratio says which of its poles come from a
+    mean-field solve that did not converge (`solve_tag`)."""
     axis.axis("off")
     places = list(dict.fromkeys(row["where"] for row in rows))
 
     def entry(row):
-        return "%s %s = %s" % (
+        return "%s %s = %s%s" % (
             "quasi-free" if row["column"] == "quasi_free" else "quartic",
             ratio_pair_text(row),
-            _complex_text(row["ratio"]) if row["ratio"] is not None else "-")
+            _complex_text(row["ratio"]) if row["ratio"] is not None else "-",
+            solve_tag(row))
 
     joined = ["%-13s %s" % (place, ";  ".join(
         entry(row) for row in rows if row["where"] == place))
@@ -2882,7 +3046,8 @@ def draw_pairs_panel(axis, rows):
     single = ["%-13s %s" % (row["where"], entry(row)) for row in rows]
     head = ("each ratio compares the lowest spin-1/2 pole (N)\nwith the "
             "lowest spin-3/2 pole (D) over every (content,\ndoublet content) "
-            "pair, written content|doublet content:")
+            "pair, written content|doublet content;\n[unconverged: N] marks "
+            "a pole whose mean-field solve did not converge:")
     axis.text(0.0, 1.0, head, va="top", ha="left", fontsize=7, color=INK,
               transform=axis.transAxes)
     position = axis.get_position()

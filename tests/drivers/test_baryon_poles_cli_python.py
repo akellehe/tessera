@@ -377,7 +377,9 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content(point):
     # each doublet content has its own slot, labelled by its digits, and the
     # two spins of one pair sit on either side of it
     assert data["slots"] == [(0.0, "021"), (1.0, "111")]
-    assert data["groups"] == [{"label": "111", "first": 0.0, "last": 1.0}]
+    # the stand-in record carries no mean-field solve: no callout
+    assert data["groups"] == [{"label": "111", "first": 0.0, "last": 1.0,
+                               "solve": None}]
     assert sorted({round(m["x"] - m["slot"], 12) for m in data["marks"]}) \
         == [-0.2, 0.2]
     # the ratio rows name the pairs they compare
@@ -407,6 +409,125 @@ def test_the_drawn_frame_has_one_mark_per_pole(point):
             == ["021", "111"]
         listing = "\n".join(t.get_text() for t in pairs.texts)
         assert "N 111|021 / D 111|111" in listing
+    finally:
+        plt.close(figure)
+
+
+def _solved(record, **relaxation):
+    """The record with a mean-field solve record of the given fields."""
+    solved = dict(record)
+    solved["relaxation"] = dict(relaxation)
+    return solved
+
+
+def test_solve_state_reads_the_solve_or_the_refusal_of_each_record():
+    record = {"content": [1, 1, 1], "doublet_reads": []}
+    assert bp.solve_state(record) is None
+    assert bp.solve_state(_solved(record, converged=True, iterations=6,
+                                  stop_reason="converged")) == {
+        "state": "converged", "reason": None, "iterations": 6}
+    assert bp.solve_state(_solved(
+        record, converged=False, iterations=40,
+        stop_reason="the declared iterations ran out")) == {
+        "state": "not converged", "reason": "ran out", "iterations": 40}
+    # every stop reason the library names has a short name
+    for reason in dir(cob.RelaxationStop):
+        if reason[0].isupper() and reason not in ("Converged", "Continued"):
+            name = cob.relaxation_stop_name(getattr(cob.RelaxationStop,
+                                                    reason))
+            assert name in bp.STOP_SHORT, name
+    # a stop reason without a short name is shown whole
+    assert bp.solve_state(_solved(record, converged=False, iterations=2,
+                                  stop_reason="new reason"))["reason"] == \
+        "new reason"
+    # a refused read is marked refused whatever its solve reached
+    refused = _solved(record, converged=True, iterations=5)
+    refused.update(failed="the pole read is refused: ...",
+                   refusal="not Kontsevich-Segal allowable")
+    assert bp.solve_state(refused) == {
+        "state": "refused", "reason": "not KS-allowable", "iterations": 5}
+    assert bp.solve_state({"content": [0, 3, 0], "failed": "band 1 has "
+                           "rank 2", "doublet_reads": []}) == {
+        "state": "refused", "reason": None, "iterations": None}
+
+
+def test_callout_lines():
+    assert bp.callout_lines({"state": "converged", "reason": None,
+                             "iterations": 1}) == ["\u2713 converged",
+                                                   "1 iteration"]
+    assert bp.callout_lines({"state": "not converged", "reason": "ran out",
+                             "iterations": 40}) == [
+        "\u2717 not converged", "ran out", "40 iterations"]
+    assert bp.callout_lines({"state": "refused", "reason": None,
+                             "iterations": None}) == ["\u2717 refused"]
+
+
+def test_a_ratio_row_carries_the_solve_behind_each_pole():
+    ratio = {"pole_ratio": 0.5 + 0j, "nucleon_pole": 1.0, "delta_pole": 2.0,
+             "nucleon_content": [2, 1, 0],
+             "nucleon_doublet_content": [1, 1, 1],
+             "delta_content": [3, 0, 0], "delta_doublet_content": [0, 3, 0]}
+    converged = {"state": "converged", "reason": None, "iterations": 3}
+    stalled = {"state": "not converged", "reason": "no descent",
+               "iterations": 9}
+    row = bp.ratio_row("k=1 b=2", "quasi_free", ratio,
+                       {(2, 1, 0): converged, (3, 0, 0): stalled})
+    assert row["nucleon"]["solve"] == converged
+    assert row["delta"]["solve"] == stalled
+    assert bp.unconverged_poles(row) == ["D"]
+    assert bp.solve_tag(row) == " [unconverged: D]"
+    both = bp.ratio_row("k=1 b=2", "quasi_free", ratio,
+                        {(2, 1, 0): converged, (3, 0, 0): converged})
+    assert bp.unconverged_poles(both) == []
+    assert bp.solve_tag(both) == " [both converged]"
+    # without solve records the row is neither flagged nor tagged
+    bare = bp.ratio_row("k=1 b=2", "quasi_free", ratio)
+    assert bp.unconverged_poles(bare) == [] and bp.solve_tag(bare) == ""
+    assert bp.solve_tag(bp.ratio_row("k=1 b=2", "quasi_free", None)) == ""
+
+
+def test_the_drawn_frame_marks_each_content_by_its_solve(point):
+    """A content whose solve did not converge has a red band and a callout
+    naming why it stopped, its group label in the same ink, its ratios drawn
+    hollow and tagged in the listing."""
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+    point = dict(point)
+    point["contents"] = [_solved(
+        point["contents"][0], converged=False, iterations=40,
+        stop_reason="the declared iterations ran out")]
+    data = bp.frame_data([point], 0)
+    assert data["groups"][0]["solve"] == {
+        "state": "not converged", "reason": "ran out", "iterations": 40}
+    figure = plt.figure(figsize=bp.FIGURE_SIZE)
+    try:
+        bp.draw_frame(figure, [point], 0)
+        quasi_free, quartic, ratio, pairs = figure.axes
+        style = bp.SOLVE_STYLE["not converged"]
+        for axis in (quasi_free, quartic):
+            callouts = [t for t in axis.texts
+                        if t.get_text().startswith("\u2717")]
+            assert [t.get_text() for t in callouts] == [
+                "\u2717 not converged\nran out\n40 iterations"]
+            assert matplotlib.colors.same_color(callouts[0].get_color(),
+                                                style["ink"])
+            bands = [p for p in axis.patches
+                     if matplotlib.colors.same_color(p.get_facecolor(),
+                                                     style["band"])]
+            assert len(bands) == 1
+            assert "mean-field solve not converged" in [
+                t.get_text() for t in axis.get_legend().get_texts()]
+            assert matplotlib.colors.same_color(
+                axis.get_xticklabels()[0].get_color(), style["ink"])
+        hollow = [line for line in ratio.get_lines()
+                  if line.get_markerfacecolor() == "none"
+                  and len(line.get_xdata())]
+        assert len(hollow) == 2
+        assert "hollow: a pole's solve did not converge" in [
+            t.get_text() for t in ratio.get_legend().get_texts()]
+        listing = "\n".join(t.get_text() for t in pairs.texts)
+        assert listing.count("[unconverged: N, D]") == 2
     finally:
         plt.close(figure)
 
