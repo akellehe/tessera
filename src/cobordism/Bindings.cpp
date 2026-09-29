@@ -5475,11 +5475,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "|(d j)_x| at or below this is a vanishing divergence.")
       .def_readwrite("integrality_tolerance",
                      &WardFluxConfig::integralityTolerance,
-                     "|phi_j(Sigma) - n| at or below this lets the flux be "
-                     "read as the integer quark number N_q.")
+                     "|phi_j(Sigma) - phi_j^ref(Sigma) - n| at or below this "
+                     "lets the excess of the flux over the reference be read "
+                     "as the integer quark number N_q.")
       .def_readwrite("imaginary_tolerance", &WardFluxConfig::imaginaryTolerance,
-                     "|Im phi_j(Sigma)| must be at or below this for the flux "
-                     "to be read as an integer.")
+                     "|Im(phi_j(Sigma) - phi_j^ref(Sigma))| must be at or "
+                     "below this for the excess to be read as an integer.")
+      .def_readwrite("reference_flux", &WardFluxConfig::referenceFlux,
+                     "phi_j^ref(Sigma): the flux of the matched reference "
+                     "state on d_in W through the same cut. The quark number "
+                     "is the excess of the flux over it (WP v18 Section "
+                     "13.4). None, the default, is the empty reference, whose "
+                     "flux is zero.")
       .def_readwrite("charge_tolerance", &WardFluxConfig::chargeTolerance,
                      "|phi_j(Sigma) - Q_in| at or below this counts as the "
                      "flux agreeing with the incoming boundary charge.");
@@ -5496,8 +5503,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("crossing_current", &WardFluxRead::crossingCurrent,
                     "The Ward current on each crossing edge.")
       .def_readonly("flux", &WardFluxRead::flux,
-                    "phi_j(Sigma) = <delta u, j>, the flux. Complex, never "
-                    "projected onto a real part.")
+                    "phi_j(Sigma) = <delta u, j>, the flux: the fermion "
+                    "number enclosed by the cut, every occupied mode counted. "
+                    "Complex, never projected onto a real part.")
+      .def_readonly("reference_flux", &WardFluxRead::referenceFlux,
+                    "phi_j^ref(Sigma), the declared flux of the matched "
+                    "reference state through the same cut; zero for the "
+                    "empty reference.")
+      .def_readonly("reference_declared", &WardFluxRead::referenceDeclared,
+                    "Whether a reference flux was declared; False means the "
+                    "empty reference and excess_flux equals flux.")
+      .def_readonly("excess_flux", &WardFluxRead::excessFlux,
+                    "phi_j(Sigma) - phi_j^ref(Sigma): the coherent excess of "
+                    "the flux over the matched reference's, the quark number "
+                    "of WP v18 Section 13.4 as the complex number it is.")
       .def_readonly("incoming_side_divergence",
                     &WardFluxRead::incomingSideDivergence,
                     "The divergence summed over the cut's incoming side, "
@@ -5532,7 +5551,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     &WardFluxRead::boundaryChargeResidual,
                     "|flux - Q_in|.")
       .def_readonly("quark_number", &WardFluxRead::quarkNumber,
-                    "N_q, when the flux is integral; None otherwise.")
+                    "N_q, the integer reading of excess_flux when it is "
+                    "integral and real to the declared tolerances; None "
+                    "otherwise.")
       .def_readonly("quark_number_defect", &WardFluxRead::quarkNumberDefect)
       .def_readonly("baryon_number", &WardFluxRead::baryonNumber,
                     "B(Sigma) = N_q / 3, the whitepaper's one explicit "
