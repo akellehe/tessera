@@ -1387,10 +1387,14 @@ def draw_frame(figure, frames, index):
     figure.tight_layout()
 
 
-def drive_live(config, progress=False, points_file=None):
+def drive_live(config, progress=False, points_file=None, keep_open=False):
     """The same `drive` on a worker thread, drawing each completed tick on the
     main thread; the window is shown once, never raised, and pumped with
-    `canvas.start_event_loop`. Closing it switches the run to headless."""
+    `canvas.start_event_loop`. While a tick is being computed the window says
+    which one and for how long. Closing it switches the run to headless. When
+    the run ends the figure is closed, or, with `keep_open`, left on screen
+    with its final frame for `bp.hold_live_window` once the outputs are
+    written."""
     import queue
     import threading
 
@@ -1421,14 +1425,20 @@ def drive_live(config, progress=False, points_file=None):
     outcome = {}
     stop = threading.Event()
     closed = threading.Event()
+    finished = threading.Event()
 
     def publish(frames, index):
         published["frames"] = frames
         ready.put(index)
 
     def on_close(event):
-        if not closed.is_set():
-            closed.set()
+        # Only a close by the user while the run is in progress is reported;
+        # the driver's own close at the end, and a close after the end, are
+        # not.
+        if closed.is_set():
+            return
+        closed.set()
+        if not finished.is_set():
             sys.stdout.write(
                 "the live window was closed; the run continues headless and "
                 "still writes every output\n")
@@ -1449,17 +1459,32 @@ def drive_live(config, progress=False, points_file=None):
 
     thread = threading.Thread(target=worker, name="level-recursion")
     thread.start()
+    def running(done, seconds):
+        if done >= config["ticks"]:
+            return "the run is finishing: %s" % bp.elapsed_text(seconds)
+        return ("tick %d of %d is running: %s elapsed; its frame is drawn "
+                "when the tick completes"
+                % (done, config["ticks"], bp.elapsed_text(seconds)))
+
     main_error = None
+    done = 0
+    since = time.monotonic()
+    shown = None
     try:
         while not closed.is_set():
             try:
                 index = ready.get_nowait()
             except queue.Empty:
+                now = time.monotonic()
+                if shown is None or now - shown >= bp.LIVE_STATUS_INTERVAL:
+                    bp.draw_status(figure, running(done, now - since))
+                    shown = now
                 figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
                 continue
             if index is None or closed.is_set():
                 break
             draw_frame(figure, published["frames"], index)
+            done, since, shown = index + 1, time.monotonic(), None
             figure.canvas.draw_idle()
             figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
     except BaseException as error:
@@ -1468,7 +1493,13 @@ def drive_live(config, progress=False, points_file=None):
     finally:
         thread.join()
         if not closed.is_set():
-            plt.close(figure)
+            finished.set()
+            if keep_open and main_error is None and "error" not in outcome:
+                bp.draw_status(figure, "the run is complete; writing the "
+                                       "outputs")
+                figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
+            else:
+                plt.close(figure)
     if main_error is not None:
         raise main_error
     if "error" in outcome:
@@ -1477,15 +1508,15 @@ def drive_live(config, progress=False, points_file=None):
 
 
 def render(result, path):
-    """The final frame as a PNG, on a file backend."""
-    import matplotlib
-    matplotlib.use("Agg", force=False)
-    import matplotlib.pyplot as plt
-    figure = plt.figure(figsize=bp.FIGURE_SIZE)
+    """The final frame as a PNG, drawn on its own Agg canvas, so an open live
+    window and the session's backend are left as they are."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    figure = Figure(figsize=bp.FIGURE_SIZE)
+    FigureCanvasAgg(figure)
     if result["ticks"]:
         draw_frame(figure, result["ticks"], len(result["ticks"]) - 1)
     figure.savefig(path, dpi=120, facecolor=SURFACE)
-    plt.close(figure)
 
 
 def summary(result):
@@ -1670,7 +1701,8 @@ def main(argv=None):
         stiffness=args.stiffness, fiber_moments=args.fiber_moments)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
-                         points_file=points_file) if args.live
+                         points_file=points_file, keep_open=True)
+              if args.live
               else drive(config, progress=not args.quiet,
                          points_file=points_file))
     if args.json:
@@ -1680,6 +1712,9 @@ def main(argv=None):
         render(result, args.out)
     if not args.quiet:
         sys.stdout.write(summary(result) + "\n")
+    if args.live:
+        bp.hold_live_window("the run is complete and every output is "
+                            "written; close this window to exit")
     return result
 
 
