@@ -1013,4 +1013,256 @@ std::array<Eigen::MatrixXcd, 3> SharpSpin::doubletSpinMatrices(
   return out;
 }
 
+// ---- the isotypic read: the sharp spinor certificate of WP v18 ------------
+
+namespace {
+
+/// The determinant of the square block of \p matrix at rows \p rows and
+/// columns \p columns, by Gaussian elimination with partial pivoting on a
+/// caller-owned buffer, so that a minor costs no allocation.
+cd minorDeterminant(const Eigen::MatrixXcd& matrix,
+                    const std::vector<std::size_t>& rows,
+                    const std::vector<std::size_t>& columns,
+                    Eigen::MatrixXcd& buffer) {
+  const auto n = static_cast<Eigen::Index>(rows.size());
+  for (Eigen::Index r = 0; r < n; ++r)
+    for (Eigen::Index c = 0; c < n; ++c)
+      buffer(r, c) = matrix(static_cast<Eigen::Index>(rows[static_cast<std::size_t>(r)]),
+                            static_cast<Eigen::Index>(columns[static_cast<std::size_t>(c)]));
+  cd determinant(1.0, 0.0);
+  for (Eigen::Index k = 0; k < n; ++k) {
+    Eigen::Index pivot = k;
+    double largest = std::abs(buffer(k, k));
+    for (Eigen::Index r = k + 1; r < n; ++r) {
+      const double magnitude = std::abs(buffer(r, k));
+      if (magnitude > largest) {
+        largest = magnitude;
+        pivot = r;
+      }
+    }
+    if (largest == 0.0) return cd(0.0, 0.0);
+    if (pivot != k) {
+      buffer.row(pivot).swap(buffer.row(k));
+      determinant = -determinant;
+    }
+    determinant *= buffer(k, k);
+    for (Eigen::Index r = k + 1; r < n; ++r) {
+      const cd factor = buffer(r, k) / buffer(k, k);
+      if (factor == cd(0.0, 0.0)) continue;
+      for (Eigen::Index c = k + 1; c < n; ++c)
+        buffer(r, c) -= factor * buffer(k, c);
+    }
+  }
+  return determinant;
+}
+
+/// The Fock basis index of a pattern: mode i is bit i.
+std::size_t patternIndex(const std::vector<std::size_t>& pattern) {
+  std::size_t index = 0;
+  for (const std::size_t mode : pattern) index |= std::size_t{1} << mode;
+  return index;
+}
+
+}  // namespace
+
+std::vector<std::vector<std::size_t>> SharpSpin::sectorPatterns(
+    std::size_t modeCount, std::size_t particles) {
+  if (particles > modeCount) {
+    std::ostringstream message;
+    message << "SharpSpin::sectorPatterns: " << particles
+            << " particles do not fit in " << modeCount << " modes.";
+    throw std::invalid_argument(message.str());
+  }
+  // the number of patterns, C(M, n), guarded before anything is built
+  double count = 1.0;
+  for (std::size_t k = 1; k <= particles; ++k)
+    count = count * static_cast<double>(modeCount - particles + k) /
+            static_cast<double>(k);
+  if (count > static_cast<double>(kMaxSectorPatterns)) {
+    std::ostringstream message;
+    message << "SharpSpin::sectorPatterns: " << modeCount << " modes with "
+            << particles << " particles have about " << count
+            << " occupation patterns, above the limit of "
+            << kMaxSectorPatterns << " for the dense sector matrices.";
+    throw std::invalid_argument(message.str());
+  }
+  std::vector<std::vector<std::size_t>> patterns;
+  std::vector<std::size_t> current(particles);
+  for (std::size_t k = 0; k < particles; ++k) current[k] = k;
+  while (true) {
+    patterns.push_back(current);
+    if (particles == 0) break;
+    // the next combination in lexicographic order
+    std::size_t position = particles;
+    while (position > 0 &&
+           current[position - 1] == modeCount - particles + position - 1)
+      --position;
+    if (position == 0) break;
+    ++current[position - 1];
+    for (std::size_t k = position; k < particles; ++k)
+      current[k] = current[k - 1] + 1;
+  }
+  return patterns;
+}
+
+Eigen::MatrixXcd SharpSpin::exteriorPowerMatrix(
+    const Eigen::MatrixXcd& oneParticle, std::size_t particles) {
+  if (oneParticle.rows() != oneParticle.cols() || oneParticle.rows() <= 0) {
+    std::ostringstream message;
+    message << "SharpSpin::exteriorPowerMatrix: the one-particle map is "
+            << oneParticle.rows() << "x" << oneParticle.cols()
+            << "; a map of the mode space is square.";
+    throw std::invalid_argument(message.str());
+  }
+  const auto modeCount = static_cast<std::size_t>(oneParticle.rows());
+  const auto patterns = sectorPatterns(modeCount, particles);
+  const auto dimension = static_cast<Eigen::Index>(patterns.size());
+  Eigen::MatrixXcd out(dimension, dimension);
+  Eigen::MatrixXcd buffer(static_cast<Eigen::Index>(particles),
+                          static_cast<Eigen::Index>(particles));
+  for (Eigen::Index column = 0; column < dimension; ++column)
+    for (Eigen::Index row = 0; row < dimension; ++row)
+      out(row, column) = particles == 0
+                             ? cd(1.0, 0.0)
+                             : minorDeterminant(
+                                   oneParticle,
+                                   patterns[static_cast<std::size_t>(row)],
+                                   patterns[static_cast<std::size_t>(column)],
+                                   buffer);
+  return out;
+}
+
+Eigen::VectorXcd SharpSpin::sectorComponent(const Eigen::VectorXcd& state,
+                                            std::size_t particles) {
+  const std::size_t modeCount = modeCountOf(state.size());
+  if (modeCount == 0) {
+    std::ostringstream message;
+    message << "SharpSpin::sectorComponent: the state has dimension "
+            << state.size()
+            << ", which is not 2^M for any mode count M, so it is not a Fock "
+               "vector.";
+    throw std::invalid_argument(message.str());
+  }
+  const auto patterns = sectorPatterns(modeCount, particles);
+  Eigen::VectorXcd out(static_cast<Eigen::Index>(patterns.size()));
+  for (std::size_t k = 0; k < patterns.size(); ++k)
+    out(static_cast<Eigen::Index>(k)) =
+        state(static_cast<Eigen::Index>(patternIndex(patterns[k])));
+  return out;
+}
+
+Eigen::VectorXcd SharpSpin::fockVector(const Eigen::VectorXcd& sector,
+                                       std::size_t modeCount,
+                                       std::size_t particles) {
+  if (modeCount == 0 || modeCount > kMaxStateModes) {
+    std::ostringstream message;
+    message << "SharpSpin::fockVector: the mode count must lie between one "
+               "and "
+            << kMaxStateModes << "; received " << modeCount << ".";
+    throw std::invalid_argument(message.str());
+  }
+  const auto patterns = sectorPatterns(modeCount, particles);
+  if (static_cast<std::size_t>(sector.size()) != patterns.size()) {
+    std::ostringstream message;
+    message << "SharpSpin::fockVector: the sector vector has "
+            << sector.size() << " entries; the " << particles
+            << "-particle sector of " << modeCount << " modes has "
+            << patterns.size() << " patterns.";
+    throw std::invalid_argument(message.str());
+  }
+  Eigen::VectorXcd out = Eigen::VectorXcd::Zero(
+      static_cast<Eigen::Index>(std::size_t{1} << modeCount));
+  for (std::size_t k = 0; k < patterns.size(); ++k)
+    out(static_cast<Eigen::Index>(patternIndex(patterns[k]))) =
+        sector(static_cast<Eigen::Index>(k));
+  return out;
+}
+
+Eigen::MatrixXcd SharpSpin::isotypicProjector(
+    const std::vector<Eigen::MatrixXcd>& maps,
+    const std::vector<Complex>& characters, std::size_t dimension,
+    std::size_t particles) {
+  if (maps.empty()) {
+    throw std::invalid_argument(
+        "SharpSpin::isotypicProjector: the group has no elements.");
+  }
+  if (maps.size() != characters.size()) {
+    std::ostringstream message;
+    message << "SharpSpin::isotypicProjector: " << maps.size()
+            << " maps were supplied with " << characters.size()
+            << " character values; one value per element is needed.";
+    throw std::invalid_argument(message.str());
+  }
+  if (dimension == 0) {
+    throw std::invalid_argument(
+        "SharpSpin::isotypicProjector: the representation has dimension "
+        "zero.");
+  }
+  const Eigen::Index modes = maps.front().rows();
+  for (std::size_t g = 0; g < maps.size(); ++g) {
+    if (maps[g].rows() != modes || maps[g].cols() != modes) {
+      std::ostringstream message;
+      message << "SharpSpin::isotypicProjector: map " << g << " is "
+              << maps[g].rows() << "x" << maps[g].cols()
+              << "; every map must be " << modes << "x" << modes << ".";
+      throw std::invalid_argument(message.str());
+    }
+  }
+  Eigen::MatrixXcd out;
+  for (std::size_t g = 0; g < maps.size(); ++g) {
+    const Eigen::MatrixXcd term = exteriorPowerMatrix(maps[g], particles);
+    if (out.size() == 0) out = Eigen::MatrixXcd::Zero(term.rows(), term.cols());
+    out += std::conj(characters[g]) * term;
+  }
+  out *= static_cast<double>(dimension) / static_cast<double>(maps.size());
+  return out;
+}
+
+IsotypicRead SharpSpin::isotypicRead(const Eigen::MatrixXcd& projector,
+                                     const Eigen::VectorXcd& rightState,
+                                     const Eigen::VectorXcd& leftState,
+                                     const std::string& type,
+                                     double tolerance) {
+  requirePositive(tolerance, "SharpSpin::isotypicRead tolerance");
+  if (projector.rows() != projector.cols() ||
+      rightState.size() != projector.rows() ||
+      leftState.size() != projector.rows()) {
+    std::ostringstream message;
+    message << "SharpSpin::isotypicRead: the projector is " << projector.rows()
+            << "x" << projector.cols() << ", the right state has dimension "
+            << rightState.size() << " and the left state "
+            << leftState.size() << "; all three live in one sector.";
+    throw std::invalid_argument(message.str());
+  }
+  const double rightNorm = rightState.norm();
+  const double leftNorm = leftState.norm();
+  if (rightNorm == 0.0 || leftNorm == 0.0) {
+    throw std::invalid_argument(
+        "SharpSpin::isotypicRead: neither state may be the zero vector; a "
+        "zero vector satisfies every projector equation vacuously.");
+  }
+  IsotypicRead read;
+  read.type = type;
+  read.rank = static_cast<std::size_t>(
+      std::llround(std::max(0.0, projector.trace().real())));
+  const double scale = std::max(1.0, projector.norm());
+  read.idempotencyResidual = (projector * projector - projector).norm() / scale;
+  const Eigen::VectorXcd rightImage = projector * rightState;
+  read.rightResidual = (rightState - rightImage).norm() / rightNorm;
+  // <Psi_L|(I - P) = 0 is the right equation for the transposed projector,
+  // because the pairing is bilinear: (Psi_L^T P)^T = P^T Psi_L.
+  const Eigen::VectorXcd leftImage = projector.transpose() * leftState;
+  read.leftResidual = (leftState - leftImage).norm() / leftNorm;
+  read.sharp =
+      read.rightResidual <= tolerance && read.leftResidual <= tolerance;
+  const cd pairing = (leftState.transpose() * rightState)(0, 0);
+  if (std::abs(pairing) > 0.0)
+    read.weight = (leftState.transpose() * rightImage)(0, 0) / pairing;
+  const double residual = std::max(read.rightResidual, read.leftResidual);
+  read.certificate = Certificate::algebraicallyExact(
+      CertificateDomain::Static, CertificateRegime::NonNormal, residual,
+      tolerance);
+  return read;
+}
+
 }  // namespace tessera::observables

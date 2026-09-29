@@ -35,8 +35,10 @@ def _column(poles):
     multiplicity two and its own (passing) certificates, and the lowest pole
     with its certificates repeated beside it."""
     poles = [complex(p) for p in poles]
-    certificates = [{"sharp_spin": True, "spin_right_residual": 0.0,
-                     "spin_left_residual": 0.0,
+    certificates = [{"sharp_spinor": True, "spinor_right_residual": 0.0,
+                     "spinor_left_residual": 0.0, "spin_lift_sharp": True,
+                     "spin_lift_right_residual": 0.0,
+                     "spin_lift_left_residual": 0.0,
                      "colour_casimir_residual": 0.0} for _ in poles]
     lowest = min(poles, key=lambda p: (p.real, p.imag))
     column = {"poles": poles, "multiplicity": [2] * len(poles),
@@ -162,9 +164,12 @@ def test_main_writes_the_json_and_the_points_file(cheap, tmp_path):
         938.272 / 1232.0)
     assert "target_mass_squared_ratio" not in document["config"]
     # complex numbers are written as {"re", "im"}
-    pole = document["points"][0]["ratios"]["quasi_free"]["by_spin"][
-        "nucleon_pole"]
-    assert pole == {"re": 0.5, "im": 0.1}
+    # by 2T reading the nucleon pole is the spin-1/2 pole of (1, 1, 1),
+    # kappa + 2 + 0.1i, whose sector is the 2; the spin-1/2 sector of
+    # (0, 2, 1), kappa + 0.1i, restricts to 2' and is the lift's nucleon
+    ratios = document["points"][0]["ratios"]["quasi_free"]
+    assert ratios["by_2T_reading"]["nucleon_pole"] == {"re": 2.5, "im": 0.1}
+    assert ratios["by_spin_lift"]["nucleon_pole"] == {"re": 0.5, "im": 0.1}
     assert set(document["host"]) == {"monopole", "averaged_eigenvalues",
                                       "reference_carrier",
                                       "intertwining_residual"}
@@ -275,10 +280,13 @@ def test_the_summary_names_every_pairing(point):
     # the stand-in record carries no mean-field solve, and says so
     assert lines[2] == "  content [1, 1, 1] mean field unrecorded"
     ratio_lines = lines[7:]
-    assert "by_spin" in ratio_lines[0] and "by_2T_reading" in ratio_lines[1]
-    assert "Delta restriction 2'+2''" in ratio_lines[0]
+    # the 2T reading, the reading of WP v18, comes first; the spin of the
+    # lift beside it
+    assert "by_2T_reading" in ratio_lines[0]
+    assert "by_spin_lift" in ratio_lines[1]
+    assert "Delta restriction 2'+2''" in ratio_lines[1]
     empty = bp.summary({"points": [dict(point, ratios={
-        name: {"by_spin": None, "by_2T_reading": None}
+        name: {"by_2T_reading": None, "by_spin_lift": None}
         for name in ("quasi_free", "with_quartic")})]})
     assert empty.count("no pole pair") == 4
 
@@ -292,10 +300,11 @@ def test_the_summary_reports_every_doublet_content_on_its_own_line(point):
     first, second = lines[3], lines[4]
     assert first.startswith("  content [1, 1, 1], doublet content [0, 2, 1] "
                             "(triality 1) | spin 1/2 (restricts to 2'): ")
-    assert ("quasi-free 1+0.1i x2 [spin sharp, colour 0], 2+0i x2 "
-            "[spin sharp, colour 0] {read certified, leakage 1e-16}") in first
-    assert ("with quartic -99+0.1i x2 [spin sharp, colour 0], -98+0i x2 "
-            "[spin sharp, colour 0]") in first
+    assert ("quasi-free 1+0.1i x2 [spinor sharp, lift sharp, colour 0], "
+            "2+0i x2 [spinor sharp, lift sharp, colour 0] {read certified, "
+            "leakage 1e-16}") in first
+    assert ("with quartic -99+0.1i x2 [spinor sharp, lift sharp, colour 0], "
+            "-98+0i x2 [spinor sharp, lift sharp, colour 0]") in first
     assert "spin 3/2 (restricts to 2''+2): quasi-free 4+0.2i x2" in first
     assert second.startswith("  content [1, 1, 1], doublet content "
                              "[1, 1, 1] (triality 0) | spin 1/2 (restricts "
@@ -316,10 +325,22 @@ def test_the_minima_are_labelled_with_their_doublet_content(point):
         "  lowest over every (content, doublet content) pair: spin 1/2 "
         "quasi-free 1+0.1i from content [1, 1, 1], doublet content "
         "[0, 2, 1];")
-    by_spin = lines[7]
+    # by 2T reading: the lowest pole of a sector restricting to a 2 is the
+    # spin-1/2 pole of (1, 1, 1), whose sector is the 2 itself, since the
+    # spin-1/2 sector of (0, 2, 1) restricts to 2'; the Delta reading is the
+    # 2' + 2'' sector of (1, 1, 1)
+    by_reading = lines[7]
+    assert "by_2T_reading" in by_reading
+    assert ("s_N=3+0.1i (content [1, 1, 1], doublet content [1, 1, 1]) "
+            "s_D=3+0.2i (content [1, 1, 1], doublet content [1, 1, 1])") \
+        in by_reading
+    # by the spin of the lift: the lowest spin-1/2 pole over the lowest
+    # spin-3/2 pole
+    by_spin_lift = lines[8]
+    assert "by_spin_lift" in by_spin_lift
     assert ("s_N=1+0.1i (content [1, 1, 1], doublet content [0, 2, 1]) "
             "s_D=3+0.2i (content [1, 1, 1], doublet content [1, 1, 1])") \
-        in by_spin
+        in by_spin_lift
 
 
 def test_a_tie_for_a_minimum_names_every_tied_doublet_content():
@@ -338,7 +359,7 @@ def test_a_tie_for_a_minimum_names_every_tied_doublet_content():
             "(tied to 1e-08 with doublet content [1, 2, 0])") in text
     assert "spin 3/2 quasi-free none" in text
     out = bp.ratios([record])["quasi_free"]
-    assert out["by_spin"] is None
+    assert out["by_spin_lift"] is None and out["by_2T_reading"] is None
 
 
 def test_the_pole_table_keeps_every_pole_of_every_doublet_content(point):
@@ -351,7 +372,8 @@ def test_the_pole_table_keeps_every_pole_of_every_doublet_content(point):
                                  (2 + 0j, [0, 2, 1], False),
                                  (3 + 0.1j, [1, 1, 1], True)]
     assert all(row["content"] == [1, 1, 1] and row["multiplicity"] == 2
-               and row["sharp_spin"] and row["failed_certificates"] == []
+               and row["sharp_spinor"] and row["spin_lift_sharp"]
+               and row["failed_certificates"] == []
                for row in rows)
     assert [row["doublet_content"] for row in table["with_quartic"][THREE]] \
         == [[1, 1, 1], [0, 2, 1]]
@@ -386,8 +408,10 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content(point):
     # the ratio rows name the pairs they compare
     quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
     assert len(quasi_free) == 1
-    assert bp.ratio_pair_text(quasi_free[0]) == "N 111|021 / D 111|111"
-    assert quasi_free[0]["ratio"] == pytest.approx((1 + 0.1j) / (3 + 0.2j))
+    # the frame draws the ratio by 2T reading: the type-2 sector of
+    # (1, 1, 1) over its 2' + 2'' sector
+    assert bp.ratio_pair_text(quasi_free[0]) == "N 111|111 / D 111|111"
+    assert quasi_free[0]["ratio"] == pytest.approx((3 + 0.1j) / (3 + 0.2j))
 
 
 def test_the_drawn_frame_has_one_mark_per_pole(point):
@@ -409,7 +433,7 @@ def test_the_drawn_frame_has_one_mark_per_pole(point):
         assert [t.get_text() for t in quasi_free.get_xticklabels(minor=True)] \
             == ["021", "111"]
         listing = "\n".join(t.get_text() for t in pairs.texts)
-        assert "N 111|021 / D 111|111" in listing
+        assert "N 111|111 / D 111|111" in listing
     finally:
         plt.close(figure)
 

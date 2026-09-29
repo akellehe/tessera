@@ -1307,8 +1307,8 @@ def frame_data(frames, index):
     defects of its grown cells per tick; every pole of every (host cell,
     content, doublet content) of the latest tick that read cells
     (`baryon_poles.pole_marks`, one group per host cell and content); and the
-    by-spin ratio of every read host cell in both columns with the two pairs
-    it compares and the mean-field solve behind each
+    ratio by 2T reading of every read host cell in both columns with the two
+    pairs it compares and the mean-field solve behind each
     (`baryon_poles.ratio_row`)."""
     done = frames[:index + 1]
     read = [f for f in done if f.get("reads")]
@@ -1324,7 +1324,7 @@ def frame_data(frames, index):
         for name in bp.COLUMNS:
             rows.append(bp.ratio_row(where, name, ((cell.get("ratios") or {})
                                                    .get(name) or {})
-                                     .get("by_spin"), solves))
+                                     .get("by_2T_reading"), solves))
     return {"tick": latest["tick"], "done": len(done),
             "counts": [{"tick": f["tick"],
                         "response_vertices": f["summary"]["response_vertices"],
@@ -1338,8 +1338,8 @@ def draw_frame(figure, frames, index):
     """One frame (`frame_data`): the poles of every (host cell, content,
     doublet content) of the latest tick that read cells, quasi-free and with
     the quartic, each pole its own mark; below them the recursion's counts
-    per tick, the row-sum defects of its grown cells, the by-spin ratio per
-    host cell against the target, and the listing of the pairs each ratio
+    per tick, the row-sum defects of its grown cells, the ratio by 2T reading
+    per host cell against the target, and the listing of the pairs each ratio
     compares."""
     data = frame_data(frames, index)
     figure.clear()
@@ -1381,7 +1381,8 @@ def draw_frame(figure, frames, index):
     defects.set_title("row-sum defect of each grown cell", color=INK,
                       fontsize=9)
     bp.draw_ratio_panel(ratio, data["ratios"],
-                        "by-spin ratio per host cell, tick %d" % data["tick"])
+                        "ratio by 2T reading per host cell, tick %d"
+                        % data["tick"])
     bp.draw_pairs_panel(pairs, data["ratios"])
     figure.suptitle("level recursion with the grown-cell rule, reported per "
                     "doublet content (%d ticks done)" % data["done"],

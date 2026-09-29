@@ -32,7 +32,8 @@ def _column(poles, failed=()):
     return {"poles": poles, "multiplicity": [4] * len(poles),
             "lowest_pole": lowest, "failed_certificates": list(failed),
             "compression_leakage": 2e-16,
-            "pole_certificates": [{"sharp_spin": True,
+            "pole_certificates": [{"sharp_spinor": True,
+                                   "spin_lift_sharp": True,
                                    "colour_casimir_residual": 0.0}
                                   for _ in poles]}
 
@@ -253,9 +254,9 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     # (content, doublet content) pair, then the labelled minima and ratios
     first = ("      host cell [0, 1, 2, 3] content [3, 0, 0], doublet "
              "content [0, 2, 1] (triality 1) | spin 1/2: no sector | spin 3/2 "
-             "(restricts to 2''+2): quasi-free 4+0.5i x4 [spin sharp, colour "
-             "0] {read certified, leakage 2e-16}; with quartic no pole {read "
-             "failed no-zero-enclosed, leakage 2e-16}")
+             "(restricts to 2''+2): quasi-free 4+0.5i x4 [spinor sharp, lift "
+             "sharp, colour 0] {read certified, leakage 2e-16}; with quartic "
+             "no pole {read failed no-zero-enclosed, leakage 2e-16}")
     second = ("      host cell [0, 1, 2, 3] content [3, 0, 0], doublet "
               "content [1, 1, 1] (triality 0) | spin 1/2 (restricts to 2): "
               "quasi-free 6+0i x4")
@@ -303,8 +304,12 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content():
         {"state": "refused", "reason": None, "iterations": None},
         {"state": "not converged", "reason": None, "iterations": 40}]
     quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
+    # by 2T reading: the lowest pole of a sector restricting to a 2 is the
+    # spin-3/2 pole of doublet content (0, 2, 1), whose sector restricts to
+    # 2'' + 2 (the tetrahedral ambiguity), and the Delta reading is the
+    # 2' + 2'' sector of (1, 1, 1)
     assert [bp.ratio_pair_text(r) for r in quasi_free] == \
-        ["N 300|111 / D 300|021"]
+        ["N 300|021 / D 300|111"]
     assert [bp.unconverged_poles(r) for r in quasi_free] == [["N", "D"]]
     assert data["counts"] == [{"tick": 0, "response_vertices": 2,
                                "grown_cells": 0, "row_sum_defects": []}]

@@ -77,13 +77,18 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    the overlap of each occupied band of h_1 with each doublet 2, 2', 2'' of
    h-bar_1, and the number of quarks in each doublet;
 5. for every doublet content (n_2, n_2', n_2''), forms the colour-singlet
-   three-quark states, one quark per sheet, sorted by total spin with
-   `SharpSpin`;
+   three-quark states, one quark per sheet, sorted by the total spin of the
+   constructed lift (`SharpSpin.read` under the aligned SU(2) action of item
+   4) and labelled by the types of the binary tetrahedral group each sector
+   restricts to;
 6. builds the three-particle operator, both quasi-free (dGamma(h-bar_1)) and
    with the paper's Section 7 geometric quartic about the self-consistent
    point (`DressedFluctuation.effectiveAction`), and reads the poles of every
    (doublet content, spin) sector with `BoundStatePole`, each pole with its
-   own spin and colour certificates.
+   own spinor certificate, the isotypic projector equations of WP v18 §11.1
+   and §14 for the sector's 2T types (`SharpSpin.isotypicRead`), its
+   spin-lift read (the J^2 eigen-equations, `SharpSpin.read`) and its colour
+   certificate.
 
 The report is per doublet content
 ---------------------------------
@@ -106,11 +111,16 @@ averaged over doublet contents or over contents:
   mark, labelled by its content and doublet content, and keeps the ratio as
   a second panel beside a listing of the pairs each ratio compares.
 
-The nucleon pole of the ratio is the lowest spin-1/2 pole over every
-(content, doublet content) pair and the Delta pole the lowest spin-3/2 pole,
-"lowest" meaning smallest real part, which is the library's declared
-`OccupationOrder.AscendingRealPart`; the ratio names the two pairs it
-compares. The poles are complex and are reported as complex; the ratio
+The ratio is read by 2T type (WP v18 §11.1 and §14): the nucleon pole is
+the lowest pole over every (content, doublet content) pair whose sector
+restricts to a 2, and the Delta pole the lowest whose sector restricts to the
+degenerate pair 2' + 2'', "lowest" meaning smallest real part, which is the
+library's declared `OccupationOrder.AscendingRealPart`; the ratio names the
+two pairs it compares. The pairing by the total spin of the constructed lift,
+the lowest sharp spin-1/2 pole over the lowest sharp spin-3/2 pole, is
+reported beside it as the spin-lift reading, because the type fixes the
+representation of 2T and not the continuum spin value. The poles are complex
+and are reported as complex; the ratio
 s_N / s_Delta is compared with 0.7616 = m_N / m_Delta, the rest-energy reading
 of WP v18 §13.3 (under the first-order flow of §7 the pole of the spatial
 pencil is the complex frequency of the bound cluster, its energy at rest; the
@@ -155,8 +165,8 @@ The same paragraph's caveat is carried with every Delta candidate: on the
 tetrahedron the j = 3/2 quartet restricts to 2' + 2'', so "spin-1/2 with
 triality" and "half of spin-3/2" are indistinguishable. A Delta reading is a
 degenerate 2' + 2'' pair of three-quark states and a nucleon reading is a 2;
-each sector reports its restriction, and the ratios are reported both by sharp
-spin and by 2T reading.
+each sector reports its restriction, and the ratios are reported by 2T
+reading and, beside it, by the spin of the lift.
 
 Running it
 ----------
@@ -813,6 +823,65 @@ def spin_sectors(states):
         if picked:
             sectors[j2] = states @ vectors[:, picked]
     return sectors, [complex(v) for v in values]
+
+
+_ISOTYPIC = {}
+
+
+def lifted_rotation_maps(alignment, actions, frame, dual):
+    """The binary tetrahedral group on the 18 microscopic-frame modes, and the
+    character of each doublet on every element.
+
+    Each declared rotation's D_1(g) on the microscopic cells is carried to
+    the frame modes, dual @ D_1(g) @ frame, and scaled to determinant one on
+    the reference doublet (the coexact j = 1/2 doublet of `spinRead`, on
+    sheet 0). With both signs the 24 scaled maps form a linear representation
+    of the double cover 2T, on which the element covering the 2 pi rotation
+    acts as -1 (the cocycle of D_1(g) has the nontrivial class). The character
+    of the doublet with Z_3 label t on an element is the trace of the
+    element's block on that doublet, read on sheet 0. Returns the maps and
+    the characters keyed by doublet name."""
+    trialities = alignment["trialities"]
+    reference = int(alignment["reference_carrier"])
+    columns = {c: [(2 * c + s) * SHEETS for s in range(2)] for c in range(3)}
+    maps, characters = [], {IRREP_NAMES[t]: [] for t in trialities}
+    for d in actions:
+        in_frame = dual @ d @ frame
+        block = in_frame[np.ix_(columns[reference], columns[reference])]
+        lifted = in_frame / np.sqrt(np.linalg.det(block))
+        for sign in (1.0, -1.0):
+            maps.append(sign * lifted)
+            for c, t in enumerate(trialities):
+                characters[IRREP_NAMES[t]].append(sign * complex(np.trace(
+                    lifted[np.ix_(columns[c], columns[c])])))
+    return maps, characters
+
+
+def isotypic_projectors(alignment, actions, frame, dual):
+    """The isotypic projector of each doublet type 2, 2', 2'' of the binary
+    tetrahedral group on the three-particle sector of the 18 microscopic-frame
+    modes, over the occupation basis (`occupation_basis`):
+    P_rho = (2 / 24) sum over 2T of conj(chi_rho) Lambda^3 D
+    (`SharpSpin.isotypicProjector`, WP v18 §11.1). They depend on the declared
+    host and the aligned frame only, so they are formed once per alignment;
+    the record of each carries its rank and its idempotency residual."""
+    key = (id(alignment), tuple(alignment["trialities"]))
+    if key not in _ISOTYPIC:
+        maps, characters = lifted_rotation_maps(alignment, actions, frame,
+                                                dual)
+        projectors, record = {}, {}
+        for name, chi in characters.items():
+            projector = np.asarray(obs.SharpSpin.isotypicProjector(
+                maps, chi, 2, 3))
+            projectors[name] = projector
+            record[name] = {
+                "rank": int(round(np.trace(projector).real)),
+                "idempotency_residual": float(
+                    np.linalg.norm(projector @ projector - projector)
+                    / max(1.0, np.linalg.norm(projector))),
+            }
+        _ISOTYPIC[key] = (projectors, record)
+    return _ISOTYPIC[key]
 
 
 # -------------------------------------------------------------- the solve
@@ -1623,38 +1692,71 @@ def doublet_sectors(doublet_content, trialities):
     return carrier_content, triality, _DOUBLET_SECTORS[key]
 
 
-def pole_certificates(target, j2, sector, dual, eigen, basis, spins):
-    """The spin and colour certificates of the eigenvector of a sector's
-    compressed block nearest ``target``: the right eigenvector and its left
-    partner lifted to Fock vectors, `SharpSpin.read` of the sector's
-    j(j+1) on them, and the relative residual of the colour Casimir on the
-    right one (zero for a colour singlet). ``eigen`` holds the right and the
-    left eigen-decompositions of the block, ``dual`` the sector's bilinear
-    left inverse."""
+def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
+                      projector=None, spinor_type=None):
+    """The certificates of the eigenvector of a sector's compressed block
+    nearest ``target``: the right eigenvector and its left partner, as
+    vectors over the occupation basis and as Fock vectors.
+
+    * the spinor certificate of WP v18 §11.1 and §14: the isotypic projector
+      equations (I - P)|Psi_R> = 0 and <Psi_L|(I - P) = 0 with ``projector``
+      the projector onto the sector's 2T types (`SharpSpin.isotypicRead`),
+      named ``spinor_type``; unmeasured when no projector is supplied;
+    * the spin-lift read: `SharpSpin.read` of the sector's j(j+1) under the
+      constructed SU(2) action, which states the continuum spin value an
+      accepted lift supplies;
+    * the relative residual of the colour Casimir on the right vector (zero
+      for a colour singlet).
+
+    ``eigen`` holds the right and the left eigen-decompositions of the block,
+    ``dual`` the sector's bilinear left inverse."""
     values, right, values_left, left = eigen
     k = int(np.argmin(np.abs(values - target)))
     kl = int(np.argmin(np.abs(values_left - values[k])))
-    right_state = to_fock(sector @ right[:, k], basis)
-    left_state = to_fock(dual.T @ left[:, kl], basis)
+    right_sector = sector @ right[:, k]
+    left_sector = dual.T @ left[:, kl]
+    right_state = to_fock(right_sector, basis)
+    left_state = to_fock(left_sector, basis)
     spin = obs.SharpSpin.read(spins, right_state, left_state, j2,
                               DECLARED_CERTIFICATE_TOLERANCE)
     casimir = np.linalg.norm(colour_casimir(right_state)) / \
         np.linalg.norm(right_state)
-    return {
-        "sharp_spin": bool(spin.sharp),
-        "spin_right_residual": float(spin.right_residual),
-        "spin_left_residual": float(spin.left_residual),
-        "spin_expectation": complex(spin.expectation),
+    out = {
+        "sharp_spinor": None,
+        "spinor_type": spinor_type,
+        "spinor_right_residual": None,
+        "spinor_left_residual": None,
+        "spinor_weight": None,
+        "spin_lift_sharp": bool(spin.sharp),
+        "spin_lift_right_residual": float(spin.right_residual),
+        "spin_lift_left_residual": float(spin.left_residual),
+        "spin_lift_expectation": complex(spin.expectation),
         "determinant_count": int(spin.determinant_count),
         "colour_casimir_residual": float(casimir),
     }
+    if projector is not None:
+        spinor = obs.SharpSpin.isotypicRead(projector, right_sector,
+                                            left_sector, spinor_type or "",
+                                            DECLARED_CERTIFICATE_TOLERANCE)
+        out.update({
+            "sharp_spinor": bool(spinor.sharp),
+            "spinor_right_residual": float(spinor.right_residual),
+            "spinor_left_residual": float(spinor.left_residual),
+            "spinor_weight": complex(spinor.weight),
+        })
+    return out
 
 
-def sector_entry(j2, triality, sector, operators):
-    """One spin sector's reads: its restriction to 2T, and for each named
-    many-body operator the poles of the compressed block, each pole's spin
-    and colour certificates (``pole_certificates``, parallel to ``poles``),
-    and the lowest pole's certificates repeated beside it."""
+def sector_entry(j2, triality, sector, operators, projectors=None):
+    """One spin sector's reads: its restriction to 2T, the weight of each
+    isotypic type in it (``projectors``, `isotypic_projectors`: the trace of
+    the type's projector compressed to the sector over the sector's
+    dimension, which is one on the sector's own types and zero on the others
+    when the constructed lift agrees with the finite group), and for each
+    named many-body operator the poles of the compressed block, each pole's
+    spinor, spin-lift and colour certificates (``pole_certificates``,
+    parallel to ``poles``), and the lowest pole's certificates repeated
+    beside it."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     irreps = restriction(j2, triality)
@@ -1670,6 +1772,14 @@ def sector_entry(j2, triality, sector, operators):
             "restricts to %s" % " + ".join(irreps)),
     }
     dual = left_inverse(sector)
+    spinor_type = " + ".join(irreps)
+    projector = None
+    if projectors is not None:
+        projector = sum(projectors[name] for name in irreps)
+        entry["isotypic_weights"] = {
+            name: complex(np.trace(dual @ p @ sector) / sector.shape[1])
+            for name, p in projectors.items()}
+        entry["spinor_type"] = spinor_type
     for name, operator in operators:
         block, leakage, read = sector_poles(operator, sector)
         poles = [complex(p) for p in read.poles]
@@ -1680,13 +1790,14 @@ def sector_entry(j2, triality, sector, operators):
         values_left, left = np.linalg.eig(block.T)
         eigen = (values, right, values_left, left)
         certificates = [pole_certificates(p, j2, sector, dual, eigen, basis,
-                                          spins) for p in poles]
+                                          spins, projector, spinor_type)
+                        for p in poles]
         # with no pole read, the certificates beside the lowest pole are
         # those of the block's first eigenvector
         lowest_certificates = (
             certificates[poles.index(lowest)] if lowest is not None else
             pole_certificates(values[0], j2, sector, dual, eigen, basis,
-                              spins))
+                              spins, projector, spinor_type))
         entry[name] = {
             "poles": poles,
             "multiplicity": [int(m) for m in read.multiplicity],
@@ -1735,6 +1846,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
     spin = spin_decomposition(carrier, matrix(action.declaration.covariance),
                               content, frame, dual, trialities,
                               config["band_tolerance"])
+    # the isotypic projectors of the double cover on the three-particle
+    # sector, the spinor certificate's projectors (WP v18 §11.1, §14)
+    projectors, isotypic = isotypic_projectors(alignment, declared_actions,
+                                               frame, dual)
 
     # the quartic's ingredients, on h_1 itself: the retained fluctuations
     # (the squared lengths, and the link phases unless only the lengths are
@@ -1788,7 +1903,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
                                                              trialities)
         for j2, sector in sectors.items():
             sector_reads[j2] = sector_entry(j2, triality, sector, (
-                ("quasi_free", quasi_free), ("with_quartic", with_quartic)))
+                ("quasi_free", quasi_free), ("with_quartic", with_quartic)),
+                projectors)
         doublet_reads.append({
             "doublet_content": list(doublet_content),
             "carrier_content": carrier_content,
@@ -1850,6 +1966,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
         "band_energies": band_energies,
         "trialities": trialities,
         "spin_decomposition": spin,
+        "isotypic_projectors": isotypic,
         "symmetry_residual": covariant_residual,
         "averaged_symmetry_residual": averaged_residual,
         "quartic": {
@@ -2138,8 +2255,9 @@ def pole_rows(records):
     the records, one row per distinct pole, in the records' order. A row
     names its content, doublet content, spin and column, and carries the
     pole, its multiplicity, whether it is the lowest of its sector, the
-    sector's restriction to 2T, the pole's own spin and colour certificates,
-    and the sector read's bound-state certificates and compression leakage.
+    sector's restriction to 2T, the pole's own spinor, spin-lift and colour
+    certificates, and the sector read's bound-state certificates and
+    compression leakage.
     Nothing is dropped and nothing is combined."""
     rows = []
     for content, doublet_content, sectors in sector_rows(records):
@@ -2164,7 +2282,8 @@ def pole_rows(records):
                         "multiplicity": count,
                         "lowest_in_sector": pole == read.get("lowest_pole"),
                         "restriction_to_2T": entry.get("restriction_to_2T"),
-                        "sharp_spin": certificate.get("sharp_spin"),
+                        "sharp_spinor": certificate.get("sharp_spinor"),
+                        "spin_lift_sharp": certificate.get("spin_lift_sharp"),
                         "colour_casimir_residual": certificate.get(
                             "colour_casimir_residual"),
                         "failed_certificates": list(
@@ -2216,36 +2335,21 @@ def ratios(records):
     pair, and their ratios against the target, in two pairings. Each names
     the two pairs it compares, and every pair tied with either pole.
 
-    * By spin: the lowest sharp spin-1/2 pole over the lowest sharp spin-3/2
-      pole. Each candidate carries its restriction to 2T, and the Delta
-      candidate the tetrahedral ambiguity: its sector is a Delta reading only
-      when it restricts to the degenerate pair 2' + 2''; a 2 in its
-      restriction is indistinguishable from spin 1/2 with triality.
-    * By 2T reading: the lowest pole whose sector restricts to a 2 (a nucleon
-      reading) over the lowest pole whose sector restricts to 2' + 2'' (a Delta
-      reading).
+    * By 2T reading, the reading of WP v18 §11.1 and §14: the lowest pole
+      whose sector restricts to a 2 (a nucleon reading) over the lowest pole
+      whose sector restricts to 2' + 2'' (a Delta reading). The type is what
+      a finite cluster certifies; it fixes the representation of 2T and not
+      the continuum spin value.
+    * By the spin of the lift: the lowest sharp spin-1/2 pole over the lowest
+      sharp spin-3/2 pole under the constructed SU(2) action. Each candidate
+      carries its restriction to 2T, and the Delta candidate the tetrahedral
+      ambiguity: its sector is a Delta reading only when it restricts to the
+      degenerate pair 2' + 2''; a 2 in its restriction is indistinguishable
+      from spin 1/2 with triality.
     """
     out = {}
     for name in COLUMNS:
         result = {}
-        by_spin = lowest_over_pairs(records, name)
-        n, d = by_spin[str(SPIN_HALF)], by_spin[str(SPIN_THREE_HALVES)]
-        if n is not None and d is not None:
-            restriction_d = d["restriction_to_2T"] or []
-            result["by_spin"] = _pair(n["pole"], d["pole"], {
-                "nucleon_content": n["content"], "delta_content": d["content"],
-                "nucleon_doublet_content": n["doublet_content"],
-                "delta_doublet_content": d["doublet_content"],
-                "nucleon_restriction": n["restriction_to_2T"],
-                "delta_restriction": d["restriction_to_2T"],
-                "nucleon_tied_pairs": _pair_labels(n["tied"]),
-                "delta_tied_pairs": _pair_labels(d["tied"]),
-                "delta_is_a_delta_reading":
-                    sorted(restriction_d) == sorted(["2'", "2''"]),
-                "delta_ambiguous_with_spin_half": "2" in restriction_d,
-            })
-        else:
-            result["by_spin"] = None
         n = lowest_of(pole_candidates(records, name,
                                       reading="nucleon_reading"))
         d = lowest_of(pole_candidates(records, name, reading="delta_reading"))
@@ -2262,6 +2366,24 @@ def ratios(records):
             })
         else:
             result["by_2T_reading"] = None
+        by_spin = lowest_over_pairs(records, name)
+        n, d = by_spin[str(SPIN_HALF)], by_spin[str(SPIN_THREE_HALVES)]
+        if n is not None and d is not None:
+            restriction_d = d["restriction_to_2T"] or []
+            result["by_spin_lift"] = _pair(n["pole"], d["pole"], {
+                "nucleon_content": n["content"], "delta_content": d["content"],
+                "nucleon_doublet_content": n["doublet_content"],
+                "delta_doublet_content": d["doublet_content"],
+                "nucleon_restriction": n["restriction_to_2T"],
+                "delta_restriction": d["restriction_to_2T"],
+                "nucleon_tied_pairs": _pair_labels(n["tied"]),
+                "delta_tied_pairs": _pair_labels(d["tied"]),
+                "delta_is_a_delta_reading":
+                    sorted(restriction_d) == sorted(["2'", "2''"]),
+                "delta_ambiguous_with_spin_half": "2" in restriction_d,
+            })
+        else:
+            result["by_spin_lift"] = None
         out[name] = result
     return out
 
@@ -2275,7 +2397,8 @@ def _measured(value, form="%.2g"):
 
 def column_text(read):
     """One column of one sector as text: every pole with its multiplicity and
-    its own spin and colour certificates, then whether the bound-state read
+    its own spinor, spin-lift and colour certificates, then whether the
+    bound-state read
     was certified (or the certificates it failed, by name) and the sector's
     compression leakage."""
     poles = read.get("poles") or []
@@ -2283,15 +2406,21 @@ def column_text(read):
     certificates = read.get("pole_certificates") or [{}] * len(poles)
     parts = []
     for pole, count, certificate in zip(poles, multiplicity, certificates):
-        sharp = certificate.get("sharp_spin")
-        spin = ("spin unmeasured" if sharp is None else
-                "spin sharp" if sharp else
-                "spin not sharp (residuals %s, %s)" % (
-                    _measured(certificate.get("spin_right_residual")),
-                    _measured(certificate.get("spin_left_residual"))))
-        parts.append("%s x%s [%s, colour %s]" % (
-            _complex_text(pole), "?" if count is None else count, spin,
-            _measured(certificate.get("colour_casimir_residual"))))
+        sharp = certificate.get("sharp_spinor")
+        spinor = ("spinor unmeasured" if sharp is None else
+                  "spinor sharp" if sharp else
+                  "spinor not sharp (residuals %s, %s)" % (
+                      _measured(certificate.get("spinor_right_residual")),
+                      _measured(certificate.get("spinor_left_residual"))))
+        lifted = certificate.get("spin_lift_sharp")
+        lift = ("lift unmeasured" if lifted is None else
+                "lift sharp" if lifted else
+                "lift not sharp (residuals %s, %s)" % (
+                    _measured(certificate.get("spin_lift_right_residual")),
+                    _measured(certificate.get("spin_lift_left_residual"))))
+        parts.append("%s x%s [%s, %s, colour %s]" % (
+            _complex_text(pole), "?" if count is None else count, spinor,
+            lift, _measured(certificate.get("colour_casimir_residual"))))
     failed = read.get("failed_certificates") or []
     return "%s {read %s, leakage %s}" % (
         ", ".join(parts) if parts else "no pole",
@@ -2465,7 +2594,7 @@ def ratio_lines(point_ratios, prefix=""):
     compares."""
     lines = []
     for name in COLUMNS:
-        for pairing in ("by_spin", "by_2T_reading"):
+        for pairing in ("by_2T_reading", "by_spin_lift"):
             r = ((point_ratios or {}).get(name) or {}).get(pairing)
             head = "%sratio %-12s %-13s" % (prefix, COLUMN_NAMES[name],
                                             pairing)
@@ -2473,7 +2602,7 @@ def ratio_lines(point_ratios, prefix=""):
                 lines.append(head + " no pole pair")
                 continue
             note = ""
-            if pairing == "by_spin":
+            if pairing == "by_spin_lift":
                 note = "; Delta restriction %s%s" % (
                     "+".join(r["delta_restriction"] or []),
                     " (ambiguous with spin 1/2)"
@@ -2808,7 +2937,7 @@ def pole_marks(groups):
 
 
 def ratio_row(where, name, ratio, solves=None):
-    """One by-spin ratio of a ratio panel, with the two (content, doublet
+    """One ratio of a ratio panel, with the two (content, doublet
     content) pairs it compares and the mean-field solve behind each
     (``solves`` maps a content, as a tuple, to its `solve_state`); ``ratio``
     is None when there is no pole pair."""
@@ -2876,9 +3005,9 @@ def ratio_pair_text(row):
 
 def frame_data(frames, index):
     """What one frame draws, as data: every pole of every (content, doublet
-    content) pair of the latest scan point (`pole_marks`), and the by-spin
-    ratio of every completed scan point in both columns with the two pairs it
-    compares and the mean-field solve behind each (`ratio_row`)."""
+    content) pair of the latest scan point (`pole_marks`), and the ratio by
+    2T reading of every completed scan point in both columns with the two
+    pairs it compares and the mean-field solve behind each (`ratio_row`)."""
     done = frames[:index + 1]
     point = done[-1]
     marks, spans, slots = pole_marks(
@@ -2889,8 +3018,8 @@ def frame_data(frames, index):
         where = "k=%g b=%g" % (p["kappa"], p["beta"])
         solves = content_solves(p["contents"])
         for name in COLUMNS:
-            rows.append(ratio_row(where, name, p["ratios"][name]["by_spin"],
-                                  solves))
+            rows.append(ratio_row(where, name,
+                                  p["ratios"][name]["by_2T_reading"], solves))
     return {"where": "kappa=%g, beta=%g" % (point["kappa"], point["beta"]),
             "done": len(done), "marks": marks, "groups": spans,
             "slots": slots, "ratios": rows}
@@ -2985,8 +3114,9 @@ def draw_pole_panel(axis, data, name, title, group_label):
 
 
 def draw_ratio_panel(axis, rows, title):
-    """The by-spin ratio Re(s_N / s_Delta) in both columns at every place a
-    ratio was read (a scan point, or a host cell), one mark each, against the
+    """The ratio Re(s_N / s_Delta) by 2T reading in both columns at every
+    place a ratio was read (a scan point, or a host cell), one mark each,
+    against the
     target; the pairs each compares are listed beside it
     (`draw_pairs_panel`). A ratio with a pole whose mean-field solve did not
     converge (`unconverged_poles`) is drawn hollow."""
@@ -3048,10 +3178,11 @@ def draw_pairs_panel(axis, rows):
         entry(row) for row in rows if row["where"] == place))
         for place in places]
     single = ["%-13s %s" % (row["where"], entry(row)) for row in rows]
-    head = ("each ratio compares the lowest spin-1/2 pole (N)\nwith the "
-            "lowest spin-3/2 pole (D) over every (content,\ndoublet content) "
-            "pair, written content|doublet content;\n[unconverged: N] marks "
-            "a pole whose mean-field solve did not converge:")
+    head = ("each ratio compares the lowest pole of a sector of type 2 (N)"
+            "\nwith the lowest of a sector of type 2'+2'' (D) over every\n"
+            "(content, doublet content) pair, written content|doublet "
+            "content;\n[unconverged: N] marks a pole whose mean-field solve "
+            "did not converge:")
     axis.text(0.0, 1.0, head, va="top", ha="left", fontsize=7, color=INK,
               transform=axis.transAxes)
     position = axis.get_position()
@@ -3072,7 +3203,7 @@ def draw_pairs_panel(axis, rows):
 def draw_frame(figure, frames, index):
     """One frame (`frame_data`): the poles of every (content, doublet
     content) pair of the latest scan point, quasi-free and with the quartic,
-    each pole its own mark; below them the by-spin ratio over the scan
+    each pole its own mark; below them the ratio by 2T reading over the scan
     against the target, and the listing of the pairs each ratio compares."""
     data = frame_data(frames, index)
     figure.clear()
@@ -3088,7 +3219,8 @@ def draw_frame(figure, frames, index):
                         "poles %s at %s: every (content, doublet content) "
                         "pair" % (SERIES_LABEL[name], data["where"]),
                         "content (quarks per band of h_1)")
-    draw_ratio_panel(ratio, data["ratios"], "by-spin ratio over the scan")
+    draw_ratio_panel(ratio, data["ratios"],
+                     "ratio by 2T reading over the scan")
     draw_pairs_panel(pairs, data["ratios"])
     figure.suptitle("nucleon-to-Delta poles by controlled synthesis, "
                     "reported per doublet content (%d of the scan done)"
