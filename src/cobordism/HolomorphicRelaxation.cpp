@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <map>
 #include <string>
@@ -26,6 +27,14 @@ namespace {
 
 /// \f$ 2\pi \f$, the full turn the contour nodes are spread over.
 constexpr double kTwoPi = 6.28318530717958647692528676655900577;
+
+/// A number as text with three significant digits (printf's "%.3g"), for the
+/// stop details.
+std::string threeDigits(double value) {
+  char buffer[32];
+  std::snprintf(buffer, sizeof buffer, "%.3g", value);
+  return buffer;
+}
 
 /// Which blocks of the stationarity system are in scope, and where each starts
 /// in the reduced residual and variable vectors.
@@ -127,6 +136,11 @@ struct StateSnapshot {
   std::vector<complexd> lengths;
   std::vector<complexd> phases;
   std::vector<complexd> multipliers;
+  /// The carried covariance and the constrained fiber's projector, which a
+  /// self-consistent solve rebuilds at every point and so must restore with
+  /// the geometry.
+  std::vector<complexd> covariance;
+  std::vector<complexd> momentProjector;
 };
 
 StateSnapshot takeSnapshot(const JointAction &action) {
@@ -141,6 +155,8 @@ StateSnapshot takeSnapshot(const JointAction &action) {
     }
   }
   snapshot.multipliers = action.multipliers();
+  snapshot.covariance = action.declaration().covariance;
+  snapshot.momentProjector = action.declaration().momentProjector;
   return snapshot;
 }
 
@@ -174,6 +190,20 @@ void restoreSnapshot(JointAction &action, const StateSnapshot &snapshot) {
     }
   }
   action.setMultipliers(snapshot.multipliers);
+  if (action.declaration().covariance != snapshot.covariance)
+    action.setCovariance(snapshot.covariance);
+  if (action.declaration().momentProjector != snapshot.momentProjector)
+    action.setMomentProjector(snapshot.momentProjector);
+}
+
+/// Set on \p target the state a declared rebuild gives at its current point:
+/// the covariance and, when the rebuild constrains a fiber, its projector.
+void applyRebuild(const CovarianceRebuild &rebuild, JointAction &target) {
+  if (!rebuild.at) return;
+  RebuiltCarrierState state = rebuild.at(target);
+  target.setCovariance(std::move(state.covariance));
+  if (!state.momentProjector.empty())
+    target.setMomentProjector(std::move(state.momentProjector));
 }
 
 /// The square root of a new squared length taken by continuation from the
@@ -292,17 +322,17 @@ std::vector<std::pair<complexd, complexd>> derivativeRule(
 }
 
 /// The held monopole sectors, resolved against the mesh: for every held face
-/// the stored edges it runs along with their orientation signs, the real
-/// coboundary rows of the held faces over the link increments, and the
-/// projector onto their row space in the solve's link coordinates.
+/// the stored edges it runs along with their orientation signs, and the
+/// link-modulus directions that the held faces' real coboundary rows leave
+/// free, in the solve's link coordinates.
 struct SectorGeometry {
   /// Per sector, per face, the (edge index, sign) of its three sides: the face
   /// holonomy is the product of \f$ U_e^{\rm sign} \f$.
   std::vector<std::vector<std::array<std::pair<std::size_t, int>, 3>>> faces;
-  /// Projector onto the row space of the held faces' coboundary, pulled back
-  /// to the solve's link coordinates (coordinates by coordinates, real): the
-  /// part of a link increment's real component that changes a held modulus.
-  Eigen::MatrixXd modulusProjector;
+  /// An orthonormal basis (one column each) of the kernel of the held faces'
+  /// coboundary, pulled back to the solve's link coordinates: the real parts
+  /// of a link increment that change no held modulus.
+  Eigen::MatrixXd freeModuli;
   bool empty = true;
 };
 
@@ -360,13 +390,13 @@ SectorGeometry resolveSectors(const JointAction &action,
         expansion(static_cast<Eigen::Index>(edge),
                   static_cast<Eigen::Index>(index)) = orientation;
   coboundary = coboundary * expansion;
-  const Eigen::JacobiSVD<Eigen::MatrixXd> svd(coboundary, Eigen::ComputeThinV);
+  const Eigen::JacobiSVD<Eigen::MatrixXd> svd(coboundary, Eigen::ComputeFullV);
   const auto &values = svd.singularValues();
   const double cut = values.size() > 0 ? 1e-10 * values(0) : 0.0;
   Eigen::Index rank = 0;
   while (rank < values.size() && values(rank) > cut) ++rank;
-  const Eigen::MatrixXd basis = svd.matrixV().leftCols(rank);
-  geometry.modulusProjector = basis * basis.transpose();
+  geometry.freeModuli =
+      svd.matrixV().rightCols(svd.matrixV().cols() - rank);
   geometry.empty = false;
   return geometry;
 }
@@ -414,11 +444,167 @@ void restoreClass(const JointAction &action, const StateSnapshot &snapshot,
   for (const auto &member : members) restoreEdge(action, snapshot, member.first);
 }
 
+/// The largest \f$ |z_e| \f$ over the length coordinates, each read on the
+/// first edge of its class.
+double largestSquaredLength(const JointAction &action,
+                            const EdgeClasses &classes) {
+  const auto &spacetime = action.spacetime();
+  if (!spacetime || !spacetime->getEdgeList()) return 0.0;
+  const auto edges = spacetime->getEdgeList()->toVector();
+  double largest = 0.0;
+  for (const auto &members : classes.members) {
+    const std::size_t first = members.front().first;
+    if (first >= edges.size() || edges[first] == nullptr) continue;
+    const complexd length = edges[first]->getLength();
+    largest = std::max(largest, std::abs(length * length));
+  }
+  return largest;
+}
+
+/// The Newton step on the tangent space of the held set, and the rank
+/// decision it was solved with.
+struct ConstrainedStep {
+  Eigen::VectorXcd step;
+  std::size_t rank = 0;
+  double gap = std::numeric_limits<double>::infinity();
+};
+
+/// The minimum-norm least-squares solution of \f$ Jd=\text{target} \f$ over
+/// the steps that keep the held moduli.
+///
+/// A step \f$ d \f$ keeps them exactly when the real part of its link block
+/// lies in the kernel of the held faces' coboundary, so it is parametrized by
+/// real unknowns: the real and imaginary parts of every length and multiplier
+/// step, the imaginary part (the phase) of every link step, and the
+/// coefficients of the link step's real part on the orthonormal basis
+/// \f$ K \f$ of that kernel. The map from the unknowns to \f$ d \f$ is an
+/// isometry of the real inner product, so the minimum-norm unknowns give the
+/// minimum-norm step. The complex equations are split into their real and
+/// imaginary parts, and the real system is solved from its singular value
+/// decomposition in the minimum-norm sense.
+///
+/// Its rank is decided at the Jacobian's own rank boundary \p cut. For a
+/// unit \f$ y \f$, \f$ \lVert JBy\rVert\ge\sigma_{\min}(J) \f$, so every
+/// singular value of the real system below the Jacobian's smallest retained
+/// singular value comes from a direction of the held set that lies in the
+/// Jacobian's numerical null space, and there are at most twice its nullity
+/// of them. The gauge directions are such directions: they change no face
+/// holonomy, so they lie in the held set, and the Jacobian is singular along
+/// them. A difference-rule Jacobian's null vector sits off the exact gauge
+/// direction by its truncation error, so along the exact direction in the
+/// held set the real system reads a singular value of that size, about
+/// \f$ 10^{-9} \f$ of the largest at the declared radius, above the relative
+/// rank tolerance but far below the Jacobian's physical spectrum. Cutting at
+/// the Jacobian's rank boundary counts it as zero, as the Jacobian's own
+/// rank decision does.
+ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
+                                const Eigen::VectorXcd &target,
+                                const Layout &layout,
+                                const Eigen::MatrixXd &freeModuli,
+                                double cut) {
+  const Eigen::Index n = jacobian.rows();
+  const complexd one{1.0, 0.0};
+  const complexd imaginary{0.0, 1.0};
+  std::vector<Eigen::VectorXcd> basis;
+  auto unit = [&](std::size_t index, complexd value) {
+    Eigen::VectorXcd column = Eigen::VectorXcd::Zero(n);
+    column(static_cast<Eigen::Index>(index)) = value;
+    return column;
+  };
+  if (layout.lengths)
+    for (std::size_t index = 0; index < layout.edges; ++index) {
+      basis.push_back(unit(layout.lengthOffset + index, one));
+      basis.push_back(unit(layout.lengthOffset + index, imaginary));
+    }
+  if (layout.links) {
+    for (std::size_t index = 0; index < layout.edges; ++index)
+      basis.push_back(unit(layout.linkOffset + index, imaginary));
+    for (Eigen::Index k = 0; k < freeModuli.cols(); ++k) {
+      Eigen::VectorXcd column = Eigen::VectorXcd::Zero(n);
+      for (std::size_t index = 0; index < layout.edges; ++index)
+        column(static_cast<Eigen::Index>(layout.linkOffset + index)) =
+            complexd{freeModuli(static_cast<Eigen::Index>(index), k), 0.0};
+      basis.push_back(column);
+    }
+  }
+  if (layout.multipliers)
+    for (std::size_t index = 0; index < layout.constraints; ++index) {
+      basis.push_back(unit(layout.multiplierOffset + index, one));
+      basis.push_back(unit(layout.multiplierOffset + index, imaginary));
+    }
+
+  const auto unknowns = static_cast<Eigen::Index>(basis.size());
+  Eigen::MatrixXcd parametrization(n, unknowns);
+  for (Eigen::Index k = 0; k < unknowns; ++k)
+    parametrization.col(k) = basis[static_cast<std::size_t>(k)];
+  const Eigen::MatrixXcd image = jacobian * parametrization;
+  Eigen::MatrixXd system(2 * n, unknowns);
+  system.topRows(n) = image.real();
+  system.bottomRows(n) = image.imag();
+  Eigen::VectorXd right(2 * n);
+  right.head(n) = target.real();
+  right.tail(n) = target.imag();
+
+  const Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+      system, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  const Eigen::VectorXd &singular = svd.singularValues();
+  Eigen::Index rank = 0;
+  while (rank < singular.size() && singular(rank) > cut) ++rank;
+  Eigen::VectorXd unknown = Eigen::VectorXd::Zero(unknowns);
+  if (rank > 0) {
+    Eigen::VectorXd coefficients =
+        svd.matrixU().leftCols(rank).transpose() * right;
+    for (Eigen::Index k = 0; k < rank; ++k) coefficients(k) /= singular(k);
+    unknown = svd.matrixV().leftCols(rank) * coefficients;
+  }
+  ConstrainedStep out;
+  out.step = parametrization * unknown.cast<complexd>();
+  out.rank = static_cast<std::size_t>(rank);
+  if (rank > 0 && rank < singular.size())
+    out.gap = singular(rank - 1) / singular(rank);
+  else if (rank == 0)
+    out.gap = std::numeric_limits<double>::quiet_NaN();
+  return out;
+}
+
+/// What refused a trial step.
+enum class Refusal { None, ZeroGuard, SectorGuard, DomainGuard, ResidualTest };
+
 }  // namespace
 
+std::string relaxationStopName(RelaxationStop reason) {
+  switch (reason) {
+    case RelaxationStop::Converged:
+      return "converged";
+    case RelaxationStop::IterationBudget:
+      return "the declared iterations ran out";
+    case RelaxationStop::NoDescent:
+      return "no damped step reduced the residual";
+    case RelaxationStop::SectorBoundary:
+      return "no stationary point in the declared monopole sector";
+    case RelaxationStop::DomainBoundary:
+      return "every damped step left the domain of the action";
+    case RelaxationStop::HolonomyZero:
+      return "every damped step came within the declared margin of a zero "
+             "of the Villain weight";
+    case RelaxationStop::HeldFloor:
+      return "the residual is at its floor on the held set";
+    case RelaxationStop::LengthRunaway:
+      return "the squared lengths ran off";
+    case RelaxationStop::NoProgress:
+      return "an outer iteration made no progress";
+    case RelaxationStop::Continued:
+      return "continued";
+  }
+  return "unknown";
+}
+
 HolomorphicRelaxation::HolomorphicRelaxation(
-    JointAction action, HolomorphicRelaxationDeclaration declaration)
-    : action_(std::move(action)), declaration_(std::move(declaration)) {
+    JointAction action, HolomorphicRelaxationDeclaration declaration,
+    CovarianceRebuild rebuild)
+    : action_(std::move(action)),
+      declaration_(std::move(declaration)),
+      rebuild_(std::move(rebuild)) {
   if (declaration_.contourNodes < 5)
     throw std::invalid_argument(
         "HolomorphicRelaxation: the contour rule keeps at least five nodes; "
@@ -504,6 +690,13 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
   const auto edges = spacetime && spacetime->getEdgeList()
                          ? spacetime->getEdgeList()->toVector()
                          : std::vector<::tessera::mesh::Edge *>{};
+  // The residual at a node: with a declared rebuild, Gamma is rebuilt from
+  // the carrier operator at the node first, so the column is the derivative
+  // of the self-consistent force.
+  auto evaluate = [&](JointAction &target) {
+    applyRebuild(rebuild_, target);
+    return reducedResidual(target, layout, classes);
+  };
 
   // One column per relaxed coordinate. Each node of the contour moves that one
   // coordinate (every edge of its class), evaluates the whole reduced
@@ -523,7 +716,7 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
       for (const auto &node : derivativeRule(declaration_, radius)) {
         for (const auto &member : members)
           writeSquaredLength(working, member.first, squared + node.first);
-        const auto residual = reducedResidual(working, layout, classes);
+        const auto residual = evaluate(working);
         for (std::size_t row = 0; row < residual.size(); ++row)
           matrix(static_cast<Eigen::Index>(row), column) +=
               node.second * residual[row];
@@ -543,7 +736,7 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
         for (const auto &[edge, orientation] : members)
           multiplyLink(working, edge,
                        orientation > 0 ? node.first : -node.first);
-        const auto residual = reducedResidual(working, layout, classes);
+        const auto residual = evaluate(working);
         for (std::size_t row = 0; row < residual.size(); ++row)
           matrix(static_cast<Eigen::Index>(row), column) +=
               node.second * residual[row];
@@ -554,7 +747,16 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
 
   // The multiplier columns are exact and analytic: the action is linear in
   // every xi_j, so the column is the moment's own gradient, summed over each
-  // class, and the moment rows of it are zero.
+  // class, and the moment rows of it are zero. The moment rows' length and
+  // link entries are the derivatives of p_j, the same gradient, so they are
+  // taken from it too rather than from the difference quotients above: exact
+  // to rounding, they keep a pinned power sum that depends on others (as on
+  // a sheeted fiber, whose degenerate eigenvalues leave only as many
+  // independent power sums as distinct eigenvalues) exactly dependent, which
+  // the rank decision reads. Both are read at the point itself, with the
+  // covariance and the fiber the point carries rather than those a rebuild
+  // left at the last node.
+  restoreSnapshot(working, snapshot);
   if (layout.multipliers) {
     const std::size_t edgeCount = classes.edgeCount;
     for (std::size_t constraint = 0; constraint < layout.constraints;
@@ -570,12 +772,19 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
           linkPart += orientation > 0 ? gradient[edgeCount + edge]
                                       : -gradient[edgeCount + edge];
         }
-        if (layout.lengths)
+        const auto row = column;
+        if (layout.lengths) {
           matrix(static_cast<Eigen::Index>(layout.lengthOffset + index),
                  column) = lengthPart;
-        if (layout.links)
+          matrix(row, static_cast<Eigen::Index>(layout.lengthOffset + index)) =
+              lengthPart;
+        }
+        if (layout.links) {
           matrix(static_cast<Eigen::Index>(layout.linkOffset + index),
                  column) = linkPart;
+          matrix(row, static_cast<Eigen::Index>(layout.linkOffset + index)) =
+              linkPart;
+        }
       }
     }
   }
@@ -591,6 +800,16 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
   return flat;
 }
 
+std::vector<complexd> HolomorphicRelaxation::residual() const {
+  const EdgeClasses classes =
+      edgeClassesOf(action_.edgeCount(), declaration_);
+  const Layout layout(classes.count(), action_.constraintCount(),
+                      declaration_);
+  JointAction working = action_;
+  applyRebuild(rebuild_, working);
+  return reducedResidual(working, layout, classes);
+}
+
 HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   const EdgeClasses classes =
       edgeClassesOf(action_.edgeCount(), declaration_);
@@ -603,24 +822,47 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   std::vector<int> declaredNumbers;
   for (const auto &sector : declaration_.heldSectors)
     declaredNumbers.push_back(sector.monopoleNumber);
+  // The residual of the equations in scope at the action's current point,
+  // with Gamma rebuilt there first when a rebuild is declared.
+  auto evaluate = [&](JointAction &target) {
+    applyRebuild(rebuild_, target);
+    return reducedResidual(target, layout, classes);
+  };
+  auto recordAction = [](const JointAction &target, std::complex<double> &value,
+                         bool &available, std::string &unavailable) {
+    const ReportedActionValue reported = target.reportedValue();
+    value = reported.value;
+    available = reported.available;
+    unavailable = reported.unavailable;
+  };
+  const double startScale =
+      layout.lengths ? largestSquaredLength(action_, classes) : 0.0;
+  const bool runawayDeclared =
+      layout.lengths && std::isfinite(declaration_.lengthRunawayRatio) &&
+      declaration_.lengthRunawayRatio > 0.0 && startScale > 0.0;
   report.reggeHingeCount = action_.reggeHingeCount();
   report.reggeStructurallyZero = action_.reggeStructurallyZero();
-  report.initialResidualNorm =
-      euclideanNorm(reducedResidual(action_, layout, classes));
+  report.initialResidualNorm = euclideanNorm(evaluate(action_));
   report.residualNorm = report.initialResidualNorm;
-  report.action = action_.value();
+  recordAction(action_, report.action, report.actionAvailable,
+               report.actionUnavailable);
   report.multipliers = action_.multipliers();
   report.momentResiduals = action_.momentResiduals();
   report.reggeOffPrincipalAngles = action_.reggeOffPrincipalAngles();
   if (layout.count == 0) {
     report.converged = report.residualNorm <= declaration_.tolerance;
+    report.stopReason = report.converged ? RelaxationStop::Converged
+                                         : RelaxationStop::IterationBudget;
+    report.stopDetail = "the solve has no variables; the residual norm is " +
+                        threeDigits(report.residualNorm);
     report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
     return report;
   }
 
+  bool stopped = false;
   for (std::size_t iteration = 0; iteration < declaration_.maximumIterations;
        ++iteration) {
-    const auto residual = reducedResidual(action_, layout, classes);
+    const auto residual = evaluate(action_);
     const double residualNorm = euclideanNorm(residual);
     report.residualNorm = residualNorm;
     if (residualNorm <= declaration_.tolerance) {
@@ -628,7 +870,29 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       break;
     }
 
-    const auto flatJacobian = jacobian();
+    // A Jacobian node the action refuses to evaluate leaves no Newton step to
+    // take from this point; the solve stops there and says why.
+    std::vector<complexd> flatJacobian;
+    std::string jacobianRefusal;
+    try {
+      flatJacobian = jacobian();
+    } catch (const std::invalid_argument &refusal) {
+      jacobianRefusal = refusal.what();
+    } catch (const std::domain_error &refusal) {
+      jacobianRefusal = refusal.what();
+    } catch (const std::runtime_error &refusal) {
+      jacobianRefusal = refusal.what();
+    }
+    if (!jacobianRefusal.empty()) {
+      report.stopReason = RelaxationStop::DomainBoundary;
+      report.stopDetail =
+          "the Jacobian could not be formed at the point reached after " +
+          std::to_string(iteration) + " accepted steps (residual norm " +
+          threeDigits(residualNorm) + "): a node of its difference rule is "
+          "outside the domain of the action (" + jacobianRefusal + ")";
+      stopped = true;
+      break;
+    }
     Eigen::MatrixXcd matrix(static_cast<Eigen::Index>(layout.count),
                             static_cast<Eigen::Index>(layout.count));
     for (std::size_t row = 0; row < layout.count; ++row)
@@ -666,19 +930,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       step = svd.matrixV().leftCols(rank) * coefficients;
     }
 
-    // Held sectors: remove from the link step the part of its real (modulus)
-    // component that would change the modulus of a held face holonomy.
-    if (layout.links && !sectors.empty) {
-      Eigen::VectorXd modulus(static_cast<Eigen::Index>(layout.edges));
-      for (std::size_t index = 0; index < layout.edges; ++index)
-        modulus(static_cast<Eigen::Index>(index)) =
-            step(static_cast<Eigen::Index>(layout.linkOffset + index)).real();
-      const Eigen::VectorXd removed = sectors.modulusProjector * modulus;
-      for (std::size_t index = 0; index < layout.edges; ++index)
-        step(static_cast<Eigen::Index>(layout.linkOffset + index)) -=
-            complexd{removed(static_cast<Eigen::Index>(index)), 0.0};
-    }
-
     HolomorphicStep record;
     record.iteration = iteration;
     record.residualNorm = residualNorm;
@@ -693,7 +944,55 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
                          ? record.smallestRetainedSingularValue /
                                record.largestDiscardedSingularValue
                          : std::numeric_limits<double>::infinity();
-    record.action = action_.value();
+    record.constrainedRankGap = std::numeric_limits<double>::quiet_NaN();
+
+    // Held sectors: the step is the constrained Newton step, the minimum-norm
+    // least-squares solution of the linearized equations over the tangent
+    // space of the held set, so it keeps every held modulus exactly.
+    if (layout.links && !sectors.empty) {
+      // The Jacobian's rank boundary: the geometric mean of its smallest
+      // retained singular value and the larger of its largest discarded one
+      // and its cut, the midpoint of the gap its rank decision reads.
+      const double below =
+          std::max(rank < singular.size() ? singular(rank) : 0.0, cut);
+      const double boundary =
+          rank > 0 ? std::sqrt(singular(rank - 1) * below) : cut;
+      const ConstrainedStep held = constrainedStep(
+          matrix, target, layout, sectors.freeModuli, boundary);
+      step = held.step;
+      record.constrainedStep = true;
+      record.constrainedRank = held.rank;
+      record.constrainedRankGap = held.gap;
+    }
+    const double residualScale = target.norm();
+    const double floor = (matrix * step - target).norm();
+    record.linearResidual =
+        residualScale > 0.0 ? floor / residualScale : 0.0;
+    // A constrained step that cannot reduce the residual norm by more than
+    // the tolerance the solve is asked to meet leaves the solve at the floor
+    // of the held set: taking it would only move by rounding.
+    if (record.constrainedStep &&
+        residualNorm - floor <= declaration_.tolerance) {
+      record.accepted = false;
+      record.damping = 0.0;
+      record.stepNorm = 0.0;
+      recordAction(action_, record.action, record.actionAvailable,
+                   record.actionUnavailable);
+      record.holonomyZeroDistance = action_.holonomyZeroDistance();
+      report.steps.push_back(record);
+      report.stopReason = RelaxationStop::HeldFloor;
+      report.stopDetail =
+          "the residual norm " + threeDigits(residualNorm) + " after " +
+          std::to_string(iteration) +
+          " accepted steps is at its floor on the held set: the constrained "
+          "Newton step would leave " + threeDigits(floor) +
+          " of it, a reduction no larger than the tolerance " +
+          threeDigits(declaration_.tolerance);
+      stopped = true;
+      break;
+    }
+    recordAction(action_, record.action, record.actionAvailable,
+                 record.actionUnavailable);
     record.holonomyZeroDistance = action_.holonomyZeroDistance();
 
     // The link part of the step on every edge, for the holonomy zero guard.
@@ -713,8 +1012,12 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     const StateSnapshot snapshot = takeSnapshot(action_);
     double damping = 1.0;
     bool accepted = false;
+    std::size_t trials = 0;
+    Refusal lastRefusal = Refusal::None;
+    std::string lastDomainRefusal;
     for (std::size_t attempt = 0; attempt <= declaration_.maximumDampings;
          ++attempt) {
+      ++trials;
       restoreSnapshot(action_, snapshot);
       if (guarded) {
         std::vector<complexd> increments(linkStep.size());
@@ -725,6 +1028,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
             increments, 0.25 * declaration_.holonomyZeroMargin);
         if (clearance < declaration_.holonomyZeroMargin) {
           ++record.zeroGuardDampings;
+          lastRefusal = Refusal::ZeroGuard;
           damping *= 0.5;
           continue;
         }
@@ -761,53 +1065,157 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       }
       if (!sectors.empty && sectorNumbers(action_, sectors) != declaredNumbers) {
         ++record.sectorGuardDampings;
+        lastRefusal = Refusal::SectorGuard;
         damping *= 0.5;
         continue;
       }
       // A trial point the action refuses to evaluate (a link driven to zero
       // or to infinity by an overflowing multiplicative step, a face holonomy
-      // outside the domain of the holonomy term) has left the domain the
-      // equations are posed on; it is halved like a step that does not
-      // reduce the residual. The equations are unchanged.
+      // outside the domain of the holonomy term, a singular dressed metric,
+      // an operator a rebuild cannot read bands from) has left the domain the
+      // equations are posed on; it is halved like a step that does not reduce
+      // the residual. The equations are unchanged.
       double trialNorm = 0.0;
       try {
-        trialNorm = euclideanNorm(reducedResidual(action_, layout, classes));
-      } catch (const std::invalid_argument &) {
+        trialNorm = euclideanNorm(evaluate(action_));
+      } catch (const std::invalid_argument &refusal) {
         ++record.domainGuardDampings;
+        lastRefusal = Refusal::DomainGuard;
+        lastDomainRefusal = refusal.what();
+        damping *= 0.5;
+        continue;
+      } catch (const std::domain_error &refusal) {
+        ++record.domainGuardDampings;
+        lastRefusal = Refusal::DomainGuard;
+        lastDomainRefusal = refusal.what();
+        damping *= 0.5;
+        continue;
+      } catch (const std::runtime_error &refusal) {
+        ++record.domainGuardDampings;
+        lastRefusal = Refusal::DomainGuard;
+        lastDomainRefusal = refusal.what();
         damping *= 0.5;
         continue;
       }
       if (!std::isfinite(trialNorm)) {
         ++record.domainGuardDampings;
+        lastRefusal = Refusal::DomainGuard;
         damping *= 0.5;
         continue;
       }
       if (trialNorm < residualNorm) {
         accepted = true;
+        record.accepted = true;
         record.damping = damping;
         record.stepNorm = damping * step.norm();
         report.residualNorm = trialNorm;
         break;
       }
+      ++record.residualTestDampings;
+      lastRefusal = Refusal::ResidualTest;
       damping *= 0.5;
     }
     if (record.zeroGuardDampings > 0) ++report.zeroGuardDampedSteps;
     if (record.sectorGuardDampings > 0) ++report.sectorGuardDampedSteps;
     if (!accepted) {
       restoreSnapshot(action_, snapshot);
+      record.damping = 0.0;
+      record.stepNorm = 0.0;
       report.steps.push_back(record);
+      report.residualNorm = residualNorm;
+      // The smallest trial step says what blocks the Newton direction: an
+      // arbitrarily short step along it is refused for that reason.
+      const std::string smallest =
+          "the smallest trial step, 2^-" +
+          std::to_string(trials > 0 ? trials - 1 : 0) +
+          " of the Newton step";
+      const std::string counts =
+          " (of the " + std::to_string(trials) + " trial steps, the residual "
+          "test refused " + std::to_string(record.residualTestDampings) +
+          ", the sector guard " + std::to_string(record.sectorGuardDampings) +
+          ", the domain guard " + std::to_string(record.domainGuardDampings) +
+          " and the zero guard " + std::to_string(record.zeroGuardDampings) +
+          "; the residual norm is " + threeDigits(residualNorm) +
+          " after " + std::to_string(iteration) + " accepted steps)";
+      switch (lastRefusal) {
+        case Refusal::SectorGuard:
+          report.stopReason = RelaxationStop::SectorBoundary;
+          report.stopDetail =
+              "no stationary point in the declared monopole sector: " +
+              smallest + " changed a held monopole number, so the Newton "
+              "direction drives a held face holonomy across -1" + counts;
+          break;
+        case Refusal::DomainGuard:
+          report.stopReason = RelaxationStop::DomainBoundary;
+          report.stopDetail =
+              smallest + " reached a point at which the action refuses to "
+              "evaluate or its residual is not finite" +
+              (lastDomainRefusal.empty() ? std::string{}
+                                         : " (" + lastDomainRefusal + ")") +
+              counts;
+          break;
+        case Refusal::ZeroGuard:
+          report.stopReason = RelaxationStop::HolonomyZero;
+          report.stopDetail = smallest + " came within the declared margin " +
+                              threeDigits(declaration_.holonomyZeroMargin) +
+                              " of a zero of the Villain weight" + counts;
+          break;
+        case Refusal::ResidualTest:
+        case Refusal::None:
+          report.stopReason = RelaxationStop::NoDescent;
+          report.stopDetail = "no damped step reduced the residual norm: " +
+                              smallest + " did not reduce it" + counts;
+          break;
+      }
+      stopped = true;
       break;
     }
     report.steps.push_back(record);
+    if (rebuild_.accepted) rebuild_.accepted(action_);
+    if (runawayDeclared) {
+      const double ratio = largestSquaredLength(action_, classes) / startScale;
+      if (ratio > declaration_.lengthRunawayRatio) {
+        report.stopReason = RelaxationStop::LengthRunaway;
+        report.stopDetail =
+            "the squared lengths ran off: after " +
+            std::to_string(iteration + 1) +
+            " accepted steps the largest |z| is " + threeDigits(ratio) +
+            " times its value " + threeDigits(startScale) +
+            " at the start, beyond the declared ratio " +
+            threeDigits(declaration_.lengthRunawayRatio) +
+            "; the residual norm is " + threeDigits(report.residualNorm);
+        stopped = true;
+        break;
+      }
+    }
   }
 
   report.converged = report.residualNorm <= declaration_.tolerance;
+  if (report.converged) {
+    report.stopReason = RelaxationStop::Converged;
+    report.stopDetail = "the residual norm " +
+                        threeDigits(report.residualNorm) +
+                        " is at or below the tolerance " +
+                        threeDigits(declaration_.tolerance) + " after " +
+                        std::to_string(report.steps.size()) +
+                        " accepted steps";
+  } else if (!stopped) {
+    report.stopReason = RelaxationStop::IterationBudget;
+    report.stopDetail = "the declared " +
+                        std::to_string(declaration_.maximumIterations) +
+                        " iterations ran out at residual norm " +
+                        threeDigits(report.residualNorm);
+  }
+  if (layout.lengths && startScale > 0.0)
+    report.largestLengthRatio =
+        largestSquaredLength(action_, classes) / startScale;
   report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
   const std::vector<double> endModuli = heldLogModuli(action_, sectors);
   for (std::size_t index = 0; index < endModuli.size(); ++index)
     report.heldModulusDrift = std::max(
         report.heldModulusDrift, std::abs(endModuli[index] - startModuli[index]));
-  report.action = action_.value();
+  recordAction(action_, report.action, report.actionAvailable,
+               report.actionUnavailable);
   report.multipliers = action_.multipliers();
   report.momentResiduals = action_.momentResiduals();
   report.reggeOffPrincipalAngles = action_.reggeOffPrincipalAngles();

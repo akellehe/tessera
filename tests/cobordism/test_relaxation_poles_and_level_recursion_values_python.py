@@ -187,8 +187,10 @@ def _band_filling(content, spacetime=None):
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
     config = bp.default_config([1.0], [1.0])
+    # zero iterations read the band filling at the starting point, the
+    # regular tetrahedron, under either solve method
     config["newton_iterations"] = 0
-    config["mean_field_iterations"] = 1
+    config["mean_field_iterations"] = 0
     return action, cob.SelfConsistentMeanField(
         action, bp.mean_field_declaration(content, config))
 

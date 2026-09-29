@@ -167,17 +167,22 @@ def test_the_host_connection_is_stiff_under_villain_and_not_under_wilson():
 # --------------------------------------------- the Section 7 elimination
 
 
-def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases"):
+def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases",
+                  stiffness="linear-stand-in"):
     """The unrelaxed host carrying the three lowest modes of h_1, and the
-    elimination of its fluctuations at kappa = 0.5."""
+    elimination of its fluctuations at kappa = 0.5. The elimination is
+    exercised on the linear stiffness stand-in by default, whose length block
+    is nonsingular, so that the zero-stiffness directions are the phases'
+    alone."""
     spacetime = bp.build_host()
     config = bp.default_config([0.5], [beta], holonomy=holonomy,
-                               elimination=elimination)
+                               elimination=elimination, stiffness=stiffness)
     bare = cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 0.5, beta, holonomy=holonomy))
+        spacetime, 0.5, beta, holonomy=holonomy, stiffness=stiffness))
     config["reference_lengths"] = list(bare.declaration.reference_lengths)
     declaration = bp.action_declaration(spacetime, 0.5, beta,
-                                        holonomy=holonomy)
+                                        holonomy=holonomy,
+                                        stiffness=stiffness)
     declaration.covariance = bare.occupation_projector(3)
     action = cob.JointAction(spacetime, declaration)
     carrier = bp.matrix(action.carrier_operator())
@@ -271,6 +276,22 @@ def test_the_lengths_only_elimination_is_the_plain_inverse():
     assert drazin["coordinates"] == 18
     assert drazin["null_dimension"] == 0
     assert problem["record"]["ward_identity"] == {"directions": 0}
+
+
+def test_without_the_stand_in_the_lengths_carry_no_bare_stiffness():
+    """The declared action has no linear stand-in: its geometric part is the
+    Regge term, zero by structure on a lone tetrahedron (no interior hinge),
+    and the holonomy term, which does not see the lengths. So the eighteen
+    length directions join the nine pure-gauge phases in the null space of
+    the quartic's bare stiffness, the Drazin inverse integrates only the
+    coexact phases out, and the record says the null space is not pure
+    gauge."""
+    _, _, _, problem = _host_problem(1.0, stiffness="none")
+    drazin = problem["record"]["drazin"]
+    assert drazin["coordinates"] == 36
+    assert drazin["null_dimension"] == 27
+    assert drazin["eliminated_dimension"] == 9
+    assert not drazin["null_space_is_pure_gauge"]
 
 
 def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
@@ -515,19 +536,140 @@ def test_each_point_is_written_as_it_completes(monkeypatch, tmp_path):
     assert bp.points_path("out/run.json") == "out/run.points.jsonl"
 
 
-def test_the_pole_table_names_the_content_of_each_lowest_pole():
+def test_the_pole_table_keeps_every_pole_with_its_pair():
+    """One row per pole of every (content, doublet content) sector, not only
+    each sector's lowest, in ascending order of real part, each row naming its
+    content and doublet content."""
     half, three = str(bp.SPIN_HALF), str(bp.SPIN_THREE_HALVES)
 
-    def record(content, poles):
-        return {"content": content, "doublet_reads": [{
-            "doublet_content": [1, 1, 1], "sectors": {
-                key: {"quasi_free": {"lowest_pole": value},
-                      "with_quartic": {"lowest_pole": value},
-                      "restriction_to_2T": ["2"]}
-                for key, value in poles.items()}}]}
+    def column(values):
+        return {"poles": values, "multiplicity": [2] * len(values),
+                "lowest_pole": min(values, key=lambda p: p.real)}
 
-    table = bp.pole_table([record([2, 1, 0], {half: 5.0 + 0j, three: 5.0 + 0j}),
-                           record([3, 0, 0], {three: 4.0 + 0j})])
-    assert [row["content"] for row in table["quasi_free"][three]] == \
-        [[3, 0, 0], [2, 1, 0]]
-    assert table["with_quartic"][half][0]["content"] == [2, 1, 0]
+    def record(content, doublet_content, poles):
+        return {"content": content, "doublet_reads": [{
+            "doublet_content": doublet_content, "sectors": {
+                key: {"quasi_free": column(values),
+                      "with_quartic": column(values),
+                      "restriction_to_2T": ["2"]}
+                for key, values in poles.items()}}]}
+
+    table = bp.pole_table([
+        record([2, 1, 0], [1, 1, 1], {half: [7.0 + 0j, 5.0 + 0j],
+                                      three: [5.0 + 0j]}),
+        record([3, 0, 0], [0, 3, 0], {three: [6.0 + 0j, 4.0 + 0j]})])
+    rows = table["quasi_free"][three]
+    assert [(row["content"], row["doublet_content"], row["pole"],
+             row["lowest_in_sector"]) for row in rows] == [
+        ([3, 0, 0], [0, 3, 0], 4.0, True),
+        ([2, 1, 0], [1, 1, 1], 5.0, True),
+        ([3, 0, 0], [0, 3, 0], 6.0, False)]
+    assert [row["pole"] for row in table["with_quartic"][half]] == [5.0, 7.0]
+    assert all(row["spin_j_j_plus_1"] == bp.SPIN_HALF
+               for row in table["with_quartic"][half])
+
+
+def test_every_pole_of_a_sector_carries_its_own_certificates(alignment):
+    """An operator diagonal in the occupation basis with distinct entries
+    splits the four-dimensional spin-1/2 sector of the doublet content
+    (1, 1, 1) into distinct poles. Each pole is read with its own spin and
+    colour certificates, and the lowest pole's are repeated beside it. Every
+    vector of the sector is a colour singlet of sharp spin 1/2, so every
+    certificate holds."""
+    _, triality, sectors = bp.doublet_sectors([1, 1, 1],
+                                              alignment["trialities"])
+    sector = sectors[bp.SPIN_HALF]
+    assert sector.shape[1] == 4
+    rng = np.random.default_rng(7)
+    operator = np.diag(rng.uniform(1.0, 2.0, size=len(
+        bp.occupation_basis()))).astype(complex)
+    entry = bp.sector_entry(bp.SPIN_HALF, triality, sector,
+                            (("quasi_free", operator),))
+    read = entry["quasi_free"]
+    poles = read["poles"]
+    assert len(poles) >= 2
+    assert len(read["pole_certificates"]) == len(poles)
+    for certificate in read["pole_certificates"]:
+        assert certificate["sharp_spin"]
+        assert certificate["colour_casimir_residual"] < 1e-10
+    lowest = poles.index(read["lowest_pole"])
+    for key, value in read["pole_certificates"][lowest].items():
+        assert read[key] == value
+
+
+# ------------------------------------------- refusals after the mean field
+
+
+def test_a_read_whose_lengths_ran_off_is_refused_by_name(alignment):
+    """(0123, 201) of the recursion's tick-0 run: the content occupies the
+    host's negative band, whose force contracts the cell, and the joint
+    Newton follows it until the lengths run off. `scan_point` records the
+    content as refused by that name, with the solve's record (the method, the
+    band selection, the iterations, the force, why it stopped, every
+    iterate), and it supplies no pole; the report prints the refusal with
+    the solve on the content's line."""
+    from tessera.drivers import recursion as R
+    from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+    # the action of the run the investigation studied: the linear stiffness
+    # stand-in, no fiber moment pinned
+    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
+                               stiffness="linear-stand-in", fiber_moments=0)
+    config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    point = bp.scan_point(1.0, 1.0, config, alignment)
+    assert point["failed_contents"] == [[2, 0, 1]]
+    (record,) = point["contents"]
+    assert record["refusal"] == "the squared lengths ran off"
+    assert record["failed"].startswith(
+        "the pole read is refused: the squared lengths ran off")
+    assert record["doublet_reads"] == []
+    solve = record["relaxation"]
+    assert (solve["method"], solve["band_selection"]) == ("joint-newton",
+                                                          "continuation")
+    assert solve["converged"] is False
+    assert solve["stop_reason"] == "the squared lengths ran off"
+    assert solve["iterations"] == len(solve["trace"]) - 1
+    assert solve["largest_length_ratio"] > bp.DECLARED_LENGTH_RUNAWAY_RATIO
+    assert all("newton" in entry for entry in solve["trace"][:-1])
+    (line,) = bp.content_pair_lines(record, "  ")
+    assert line.startswith("  content [2, 0, 1]: refused: the pole read is "
+                           "refused: the squared lengths ran off")
+    assert "mean field converged False" in line
+    assert "method joint-newton, stopped: the squared lengths ran off" in line
+    text = R._content_line({"cell": [0, 1, 2, 3]}, record)
+    assert "failed: the pole read is refused: the squared lengths ran off" \
+        in text
+    assert "method joint-newton, stopped: the squared lengths ran off" in text
+    assert bp.point_lines(point)[0] == (
+        "kappa=1 beta=1: 1 contents, 1 refused; one line per (content, "
+        "doublet content) pair, poles s with multiplicity x")
+
+
+def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
+    """The declared action has no stiffness stand-in, and the mean field pins
+    every power sum of the occupied fiber at the host (m_c = r). On
+    (0123, 030) of the recursion's tick-0 run the joint Newton converges with
+    the three pinned moments held, and the record carries the fiber's rank,
+    the multipliers, the residuals, the Hessian along the Hellmann-Feynman
+    force with its sign, and the role of kappa; the content's line prints
+    them."""
+    from tessera.drivers import recursion as R
+    from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)])
+    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    _, action, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    assert action.declaration.stiffness_weight == 0.0
+    solve = bp.relaxation_record(report)
+    assert solve["converged"] and solve["fiber_rank"] == 3
+    assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3
+    assert max(abs(r) / abs(t) for r, t in zip(
+        solve["moment_residuals"], solve["moment_targets"])) < 1e-9
+    assert solve["force_hessian_sign"] in ("positive", "negative")
+    text = bp.relaxation_text(solve)
+    assert "3 of the occupied fiber's 3 power sums pinned at the host" in text
+    assert "Hessian on the range of the Hellmann-Feynman force" in text
+    assert "(%s)" % solve["force_hessian_sign"] in text

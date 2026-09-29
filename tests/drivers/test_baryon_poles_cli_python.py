@@ -10,6 +10,10 @@ refusals by name, which outputs each flag writes, and what those outputs
 contain. The helpers are exercised on inputs whose answer is known in closed
 form. The quark verdict is read on the declared (unrelaxed) host, where the
 three sheets are disjoint and so no component couples to another.
+
+The stand-in content carries two doublet contents with different poles, so
+that every output can be checked to report both: the summary text, the pole
+table, the frame data and the labelled minima.
 """
 import argparse
 import itertools
@@ -26,26 +30,58 @@ HALF = str(bp.SPIN_HALF)
 THREE = str(bp.SPIN_THREE_HALVES)
 
 
-def _record(content, poles):
-    """A content record with the given lowest pole for each spin, carrying
-    the restriction to 2T of a triality-zero sector."""
+def _column(poles):
+    """One column of a sector as `sector_entry` writes it: every pole with
+    multiplicity two and its own (passing) certificates, and the lowest pole
+    with its certificates repeated beside it."""
+    poles = [complex(p) for p in poles]
+    certificates = [{"sharp_spin": True, "spin_right_residual": 0.0,
+                     "spin_left_residual": 0.0,
+                     "colour_casimir_residual": 0.0} for _ in poles]
+    lowest = min(poles, key=lambda p: (p.real, p.imag))
+    column = {"poles": poles, "multiplicity": [2] * len(poles),
+              "lowest_pole": lowest, "failed_certificates": [],
+              "zero_count_defect": 0.0, "compression_leakage": 1e-16,
+              "pole_certificates": certificates}
+    column.update(certificates[poles.index(lowest)])
+    return column
+
+
+def _doublet_read(doublet_content, triality, poles):
+    """One doublet read: per spin, the quasi-free poles, and the same poles
+    less 100 with the quartic."""
     sectors = {}
-    for key, value in poles.items():
-        irreps = bp.restriction(float(key), 0)
-        entry = {"lowest_pole": value}
-        sectors[key] = {"quasi_free": entry, "with_quartic": entry,
-                        "restriction_to_2T": irreps,
+    for key, values in poles.items():
+        irreps = bp.restriction(float(key), triality)
+        sectors[key] = {"restriction_to_2T": irreps,
                         "nucleon_reading": "2" in irreps,
-                        "delta_reading": sorted(irreps) == ["2'", "2''"]}
+                        "delta_reading": sorted(irreps) == ["2'", "2''"],
+                        "quasi_free": _column(values),
+                        "with_quartic": _column([v - 100 for v in values])}
+    return {"doublet_content": list(doublet_content),
+            "total_triality": triality, "sectors": sectors}
+
+
+def _record(content, kappa=1.0, beta=2.0):
+    """A content with two doublet contents of different poles: in (0, 2, 1)
+    the spin-1/2 sector has two poles, kappa + 0.1i and kappa + 1, and the
+    spin-3/2 pole is kappa + beta + 1 + 0.2i; in (1, 1, 1) they are
+    kappa + 2 + 0.1i and kappa + beta + 0.2i. The lowest spin-1/2 pole
+    therefore comes from (0, 2, 1) and the lowest spin-3/2 pole from
+    (1, 1, 1)."""
     return {"content": list(content), "doublet_reads": [
-        {"doublet_content": [1, 1, 1], "sectors": sectors}]}
+        _doublet_read([0, 2, 1], 1, {
+            HALF: [complex(kappa, 0.1), complex(kappa + 1, 0)],
+            THREE: [complex(kappa + beta + 1, 0.2)]}),
+        _doublet_read([1, 1, 1], 0, {
+            HALF: [complex(kappa + 2, 0.1)],
+            THREE: [complex(kappa + beta, 0.2)]})]}
 
 
 def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
     """A deterministic stand-in for one scan point with both spins present,
     so every pairing of `ratios` has a pole pair."""
-    records = [_record([1, 1, 1], {HALF: complex(kappa, 0.1),
-                                   THREE: complex(kappa + beta, 0.2)})]
+    records = [_record([1, 1, 1], kappa, beta)]
     return {"kappa": kappa, "beta": beta, "holonomy": config["holonomy"],
             "elimination": config["elimination"], "failed_contents": [],
             "contents": records, "ratios": bp.ratios(records),
@@ -77,6 +113,11 @@ def test_the_declared_defaults():
     assert args.regge_hinges == "interior"
     assert args.json is None and args.out is None
     assert not args.live and not args.quiet and not args.isospin_doublet
+    assert args.mean_field_method == "joint-newton"
+    assert args.band_selection == "continuation"
+    assert args.stiffness == "none" and args.fiber_moments == "r"
+    assert bp.build_parser().parse_args(
+        ["run", "--fiber-moments", "1"]).fiber_moments == "1"
 
 
 def test_lists_of_couplings_are_parsed():
@@ -90,6 +131,9 @@ def test_lists_of_couplings_are_parsed():
 @pytest.mark.parametrize("argv,name", [
     (["run", "--holonomy", "plaquette"], "--holonomy"),
     (["run", "--eliminate", "phases"], "--eliminate"),
+    (["run", "--stiffness", "quadratic"], "--stiffness"),
+    (["run", "--fiber-moments", "-1"], "--fiber-moments"),
+    (["run", "--fiber-moments", "all"], "--fiber-moments"),
     (["run", "--regge-hinges", "boundary"], "--regge-hinges"),
     (["run", "--kappa", "one"], "--kappa"),
     ([], "command"),
@@ -163,10 +207,18 @@ def test_main_renders_the_final_frame(cheap, tmp_path):
 
 
 def test_progress_and_summary_are_printed_unless_quiet(cheap, capsys):
+    """The progress of each point and the final summary both carry every
+    (content, doublet content) pair, the labelled minima and the ratios."""
     bp.main(["run", "--kappa", "1", "--beta", "2"])
     out = capsys.readouterr().out
-    assert "kappa=1 beta=2  quasi-free s_N/s_D" in out
-    assert out.count("s_N/s_D") >= 4
+    assert out.count("kappa=1 beta=2: 1 contents, 0 refused") == 2
+    for pair in ("[0, 2, 1] (triality 1)", "[1, 1, 1] (triality 0)"):
+        assert out.count("\n  content [1, 1, 1], doublet content %s | spin"
+                         % pair) == 2
+    assert out.count("lowest over the doublet contents of content") == 2
+    assert out.count("lowest over every (content, doublet content) pair") \
+        == 2
+    assert out.count("s_N/s_D=") == 8
     assert "mode: controlled synthesis" in out
     assert "target m_N/m_Delta = 0.7616" in out
     bp.main(["run", "--kappa", "1", "--beta", "2", "--quiet"])
@@ -205,18 +257,154 @@ def test_a_stopped_drive_says_so():
 # ------------------------------------------------------------ the outputs
 
 
-def test_the_summary_names_every_pairing():
-    point = _cheap_scan_point(1.0, 2.0, bp.default_config([1.0], [2.0]),
-                              None)
-    text = bp.summary({"points": [point]})
-    lines = text.splitlines()
-    assert len(lines) == 1 + 4
-    assert "by_spin" in lines[1] and "by_2T_reading" in lines[2]
-    assert "Delta restriction 2'+2''" in lines[1]
+@pytest.fixture
+def point():
+    return _cheap_scan_point(1.0, 2.0, bp.default_config([1.0], [2.0]), None)
+
+
+def test_the_summary_names_every_pairing(point):
+    lines = bp.summary({"points": [point]}).splitlines()
+    # the mode, the point, the content's mean-field line, two pairs, two
+    # minima lines and four ratios
+    assert len(lines) == 1 + 1 + 1 + 2 + 2 + 4
+    # the stand-in record carries no mean-field solve, and says so
+    assert lines[2] == "  content [1, 1, 1] mean field unrecorded"
+    ratio_lines = lines[7:]
+    assert "by_spin" in ratio_lines[0] and "by_2T_reading" in ratio_lines[1]
+    assert "Delta restriction 2'+2''" in ratio_lines[0]
     empty = bp.summary({"points": [dict(point, ratios={
         name: {"by_spin": None, "by_2T_reading": None}
         for name in ("quasi_free", "with_quartic")})]})
     assert empty.count("no pole pair") == 4
+
+
+def test_the_summary_reports_every_doublet_content_on_its_own_line(point):
+    """One line per (content, doublet content) pair, both spins and both
+    columns on it, every pole with its multiplicity and certificates: the
+    two spin-1/2 poles of (0, 2, 1) are both there, and so are the poles of
+    (1, 1, 1), which no minimum picks for spin 1/2."""
+    lines = bp.summary({"points": [point]}).splitlines()
+    first, second = lines[3], lines[4]
+    assert first.startswith("  content [1, 1, 1], doublet content [0, 2, 1] "
+                            "(triality 1) | spin 1/2 (restricts to 2'): ")
+    assert ("quasi-free 1+0.1i x2 [spin sharp, colour 0], 2+0i x2 "
+            "[spin sharp, colour 0] {read certified, leakage 1e-16}") in first
+    assert ("with quartic -99+0.1i x2 [spin sharp, colour 0], -98+0i x2 "
+            "[spin sharp, colour 0]") in first
+    assert "spin 3/2 (restricts to 2''+2): quasi-free 4+0.2i x2" in first
+    assert second.startswith("  content [1, 1, 1], doublet content "
+                             "[1, 1, 1] (triality 0) | spin 1/2 (restricts "
+                             "to 2): quasi-free 3+0.1i x2")
+    assert "spin 3/2 (restricts to 2'+2''): quasi-free 3+0.2i x2" in second
+    assert "with quartic -97+0.2i x2" in second
+
+
+def test_the_minima_are_labelled_with_their_doublet_content(point):
+    lines = bp.summary({"points": [point]}).splitlines()
+    assert lines[5] == (
+        "  lowest over the doublet contents of content [1, 1, 1]: "
+        "spin 1/2 quasi-free 1+0.1i from doublet content [0, 2, 1]; "
+        "spin 1/2 with quartic -99+0.1i from doublet content [0, 2, 1]; "
+        "spin 3/2 quasi-free 3+0.2i from doublet content [1, 1, 1]; "
+        "spin 3/2 with quartic -97+0.2i from doublet content [1, 1, 1]")
+    assert lines[6].startswith(
+        "  lowest over every (content, doublet content) pair: spin 1/2 "
+        "quasi-free 1+0.1i from content [1, 1, 1], doublet content "
+        "[0, 2, 1];")
+    by_spin = lines[7]
+    assert ("s_N=1+0.1i (content [1, 1, 1], doublet content [0, 2, 1]) "
+            "s_D=3+0.2i (content [1, 1, 1], doublet content [1, 1, 1])") \
+        in by_spin
+
+
+def test_a_tie_for_a_minimum_names_every_tied_doublet_content():
+    """Two doublet contents whose lowest spin-1/2 poles share their real part
+    are both named: the first in the record's order as the minimum, the
+    other as tied with it."""
+    record = {"content": [2, 1, 0], "doublet_reads": [
+        _doublet_read([0, 2, 1], 1, {HALF: [5.0 + 0.5j]}),
+        _doublet_read([1, 2, 0], 2, {HALF: [5.0 - 0.5j]})]}
+    best = bp.lowest_poles(record, "quasi_free")[HALF]
+    assert best["doublet_content"] == [0, 2, 1]
+    assert [t["doublet_content"] for t in best["tied"]] == [[1, 2, 0]]
+    assert bp.lowest_poles(record, "quasi_free")[THREE] is None
+    text = bp.lowest_lines([record])[0]
+    assert ("spin 1/2 quasi-free 5+0.5i from doublet content [0, 2, 1] "
+            "(tied to 1e-08 with doublet content [1, 2, 0])") in text
+    assert "spin 3/2 quasi-free none" in text
+    out = bp.ratios([record])["quasi_free"]
+    assert out["by_spin"] is None
+
+
+def test_the_pole_table_keeps_every_pole_of_every_doublet_content(point):
+    """Every pole, not only each sector's lowest, in ascending order of real
+    part, with the doublet content on every row."""
+    table = point["pole_table"]
+    rows = table["quasi_free"][HALF]
+    assert [(row["pole"], row["doublet_content"], row["lowest_in_sector"])
+            for row in rows] == [(1 + 0.1j, [0, 2, 1], True),
+                                 (2 + 0j, [0, 2, 1], False),
+                                 (3 + 0.1j, [1, 1, 1], True)]
+    assert all(row["content"] == [1, 1, 1] and row["multiplicity"] == 2
+               and row["sharp_spin"] and row["failed_certificates"] == []
+               for row in rows)
+    assert [row["doublet_content"] for row in table["with_quartic"][THREE]] \
+        == [[1, 1, 1], [0, 2, 1]]
+    assert [row["pole"] for row in table["with_quartic"][THREE]] == \
+        [-97 + 0.2j, -96 + 0.2j]
+
+
+def test_the_frame_data_carries_every_pole_of_every_doublet_content(point):
+    data = bp.frame_data([point], 0)
+    marks = {(m["column"], m["spin"], tuple(m["doublet_content"]), m["pole"])
+             for m in data["marks"]}
+    assert marks == {
+        ("quasi_free", HALF, (0, 2, 1), 1 + 0.1j),
+        ("quasi_free", HALF, (0, 2, 1), 2 + 0j),
+        ("quasi_free", THREE, (0, 2, 1), 4 + 0.2j),
+        ("quasi_free", HALF, (1, 1, 1), 3 + 0.1j),
+        ("quasi_free", THREE, (1, 1, 1), 3 + 0.2j),
+        ("with_quartic", HALF, (0, 2, 1), -99 + 0.1j),
+        ("with_quartic", HALF, (0, 2, 1), -98 + 0j),
+        ("with_quartic", THREE, (0, 2, 1), -96 + 0.2j),
+        ("with_quartic", HALF, (1, 1, 1), -97 + 0.1j),
+        ("with_quartic", THREE, (1, 1, 1), -97 + 0.2j)}
+    assert len(data["marks"]) == 10
+    # each doublet content has its own slot, labelled by its digits, and the
+    # two spins of one pair sit on either side of it
+    assert data["slots"] == [(0.0, "021"), (1.0, "111")]
+    assert data["groups"] == [{"label": "111", "first": 0.0, "last": 1.0}]
+    assert sorted({round(m["x"] - m["slot"], 12) for m in data["marks"]}) \
+        == [-0.2, 0.2]
+    # the ratio rows name the pairs they compare
+    quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
+    assert len(quasi_free) == 1
+    assert bp.ratio_pair_text(quasi_free[0]) == "N 111|021 / D 111|111"
+    assert quasi_free[0]["ratio"] == pytest.approx((1 + 0.1j) / (3 + 0.2j))
+
+
+def test_the_drawn_frame_has_one_mark_per_pole(point):
+    """`draw_frame` draws what `frame_data` lists: every pole is one plotted
+    point of its column's panel."""
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+    figure = plt.figure(figsize=bp.FIGURE_SIZE)
+    try:
+        bp.draw_frame(figure, [point], 0)
+        quasi_free, quartic, ratio, pairs = figure.axes
+        drawn = sorted(float(y) for line in quasi_free.get_lines()
+                       if line.get_label() in ("spin 1/2", "spin 3/2")
+                       for y in line.get_ydata())
+        assert drawn == [1.0, 2.0, 3.0, 3.0, 4.0]
+        assert [t.get_text() for t in quasi_free.get_legend().get_texts()] \
+            == ["spin 1/2", "spin 3/2"]
+        assert [t.get_text() for t in quasi_free.get_xticklabels(minor=True)] \
+            == ["021", "111"]
+        listing = "\n".join(t.get_text() for t in pairs.texts)
+        assert "N 111|021 / D 111|111" in listing
+    finally:
+        plt.close(figure)
 
 
 def test_render_writes_an_empty_frame_for_an_empty_scan(tmp_path):
@@ -234,10 +422,13 @@ def test_jsonable_converts_complex_and_numpy_scalars():
     json.dumps(out)
 
 
-def test_the_ratio_text():
-    assert bp._ratio_text(None) == "no pole pair"
-    ratio = {"pole_ratio": 0.5 + 0.25j}
-    assert bp._ratio_text(ratio) == "s_N/s_D = 0.5+0.25i (target 0.5800)"
+def test_the_ratio_pair_text():
+    assert bp.ratio_pair_text({"ratio": None}) == "no pole pair"
+    row = bp.ratio_row("k=1 b=2", "quasi_free", {
+        "pole_ratio": 0.5 + 0.25j, "nucleon_pole": 1.0, "delta_pole": 2.0,
+        "nucleon_content": [2, 1, 0], "nucleon_doublet_content": [1, 1, 1],
+        "delta_content": [3, 0, 0], "delta_doublet_content": [0, 3, 0]})
+    assert bp.ratio_pair_text(row) == "N 210|111 / D 300|030"
 
 
 # ------------------------------------------------------------ helpers
@@ -360,9 +551,19 @@ def test_the_declarations_carry_the_config():
                                         regge_hinges="all")
     assert declaration.regge_hinges == cob.ReggeHinges.All
     assert declaration.gravitational_weight == 0.5
-    assert declaration.stiffness_weight == 0.5
     assert declaration.holonomy_weight == 3.0
     assert declaration.regge_form == cob.ReggeForm.Primal
+    # the declared action has no stiffness stand-in: kappa = 8 pi G enters
+    # through the Regge weight alone, and the record says so
+    assert declaration.stiffness_weight == 0.0
+    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    assert config["kappa_role"].startswith(
+        "kappa = 8 pi G enters only through the Regge weight 1/kappa")
+    stand_in = bp.action_declaration(spacetime, 2.0, 3.0,
+                                     stiffness="linear-stand-in")
+    assert stand_in.stiffness_weight == 0.5
+    with pytest.raises(ValueError, match="the length stiffness is one of"):
+        bp.action_declaration(spacetime, 2.0, 3.0, stiffness="quadratic")
 
 
 def test_the_host_built_from_a_cell_carries_its_fields():

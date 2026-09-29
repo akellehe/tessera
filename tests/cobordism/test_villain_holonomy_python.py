@@ -373,6 +373,122 @@ class TheLogarithmBranchTest(unittest.TestCase):
             character.first_derivative(complex(-q, 0.0))
 
 
+class TheLogarithmReadsTheSeriesOwnUncertaintyTest(unittest.TestCase):
+    """`logarithm` tests the start of its radial path, W on the unit circle,
+    against the series' own uncertainty u, its tail bound plus machine
+    epsilon times the sum of the moduli of the kept terms, with the declared
+    reality margin (#1259). A test relative to Re W instead refused a real,
+    positive W below about 1e-5: the imaginary part of the double-precision
+    sum is rounding of order epsilon times the terms, about 1e-15 at beta = 5,
+    not of order W. It ended every production solve at beta = 5 whose held
+    face holonomy passed about 0.75 pi, where W is about 1e-6. The action's
+    value, the one quantity that needs log W, is reported as unavailable by
+    name when the logarithm is refused, and a solve goes on."""
+
+    BETA = 5.0
+    #: The arguments over pi of held face holonomies at which the kappa, beta
+    #: scan's solves at beta = 5 were refused (probes 14 and 15 of the
+    #: investigation); W is 1.5e-6 to 3.9e-6 there.
+    REFUSED_ARGUMENTS = (-0.783656641, -0.759478396, 0.758148418)
+
+    @staticmethod
+    def _poisson(beta, theta):
+        """W on the unit circle from its Poisson form,
+        sqrt(2 pi beta) sum_n exp(-beta (theta - 2 pi n)^2 / 2), a sum of
+        positive terms with no cancellation."""
+        return math.sqrt(2.0 * math.pi * beta) * sum(
+            math.exp(-beta * (theta - 2.0 * math.pi * n) ** 2 / 2.0)
+            for n in range(-5, 6))
+
+    def test_the_reality_margin_is_declared(self):
+        self.assertEqual(cob.VillainCharacter.reality_margin(), 1e3)
+
+    def test_a_small_real_w_on_the_unit_circle_has_its_logarithm(self):
+        character = cob.VillainCharacter(self.BETA)
+        for over_pi in self.REFUSED_ARGUMENTS:
+            with self.subTest(argument_over_pi=over_pi):
+                theta = math.pi * over_pi
+                holonomy = cmath.exp(1j * theta)
+                w = self._poisson(self.BETA, theta)
+                self.assertLess(w, 5e-6)
+                series = character.series(holonomy)
+                rounding = np.finfo(float).eps * series.magnitude
+                # the imaginary part of the sum is rounding of the terms
+                self.assertLess(abs(series.value.imag), 10.0 * rounding)
+                logarithm = character.logarithm(holonomy)
+                self.assertEqual(logarithm.imag, 0.0)
+                # W itself is resolved to about rounding / W, 1e-9 here
+                self.assertAlmostEqual(logarithm.real, math.log(w),
+                                       delta=1e-7)
+
+    def test_minus_one_has_its_logarithm_while_resolved_and_is_refused_after(
+            self):
+        """At beta = 5, W(-1) is about 2e-10, a million times the series'
+        rounding scale, so its logarithm is read. At beta = 10 it is about
+        6e-21, below the rounding scale of about 2e-15, so the start of the
+        path is not resolved and the logarithm is refused by name."""
+        w = self._poisson(5.0, math.pi)
+        self.assertAlmostEqual(
+            cob.VillainCharacter(5.0).logarithm(-1.0 + 0j).real,
+            math.log(w), delta=1e-4)
+        with self.assertRaisesRegex(ValueError, "is not resolved above"):
+            cob.VillainCharacter(10.0).logarithm(-1.0 + 0j)
+
+    def test_the_continuation_starts_from_a_small_w(self):
+        """Off the unit circle along the rays of the refused faces, inside and
+        outside it: the radial continuation starts from W of about 1e-6 on
+        the circle and inverts W at the end of the path."""
+        character = cob.VillainCharacter(self.BETA)
+        for over_pi in self.REFUSED_ARGUMENTS:
+            for modulus in (0.5, 2.0):
+                with self.subTest(argument_over_pi=over_pi, modulus=modulus):
+                    holonomy = modulus * cmath.exp(1j * math.pi * over_pi)
+                    logarithm = character.logarithm(holonomy)
+                    series = character.series(holonomy).value
+                    self.assertLess(abs(cmath.exp(logarithm) - series),
+                                    1e-10 * abs(series))
+
+    def test_a_refused_logarithm_leaves_the_value_unavailable_not_the_solve(
+            self):
+        """A tetrahedron one of whose links is -1 has two face holonomies at
+        -1, where W at beta = 10 is below its own resolution. The action's
+        value is refused there and reported as unavailable, with the reason;
+        a solve of the squared lengths (whose equations do not need log W)
+        runs to its stationary point and reports its action as unavailable by
+        name at every step."""
+        spacetime = tetrahedron(squared=lambda index: 8.0,
+                                phase=lambda index: math.pi if index == 0
+                                else 0.0)
+        reference = [cmath.sqrt(8.5)] * 6
+        action = cob.JointAction(spacetime, _declaration(
+            beta=10.0, stiffness_weight=1.0, reference_lengths=reference))
+        faces = np.asarray(action.face_holonomies())
+        self.assertEqual(int(np.sum(np.abs(faces + 1.0) < 1e-12)), 2)
+        with self.assertRaisesRegex(ValueError, "is not resolved above"):
+            action.value()
+        reported = action.reported_value()
+        self.assertFalse(reported.available)
+        self.assertTrue(math.isnan(reported.value.real))
+        self.assertIn("is not resolved above", reported.unavailable)
+
+        declaration = cob.HolomorphicRelaxationDeclaration()
+        declaration.relax_lengths = True
+        declaration.relax_links = False
+        declaration.relax_multipliers = False
+        declaration.tolerance = 1e-12
+        report = cob.HolomorphicRelaxation(action, declaration).solve()
+        self.assertTrue(report.converged)
+        self.assertEqual(report.stop_reason, cob.RelaxationStop.Converged)
+        self.assertFalse(report.action_available)
+        self.assertIn("is not resolved above", report.action_unavailable)
+        self.assertGreater(len(report.steps), 0)
+        for step in report.steps:
+            self.assertFalse(step.action_available)
+        for edge in spacetime.getEdgeList().toVector():
+            self.assertAlmostEqual(abs(complex(edge.getLength())
+                                       - cmath.sqrt(8.5)), 0.0, places=10)
+
+
 class TheZeroGuardTest(unittest.TestCase):
     """Newton steps are kept a declared distance away from the zeros of W."""
 
