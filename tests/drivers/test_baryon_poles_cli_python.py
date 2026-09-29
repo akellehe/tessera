@@ -113,6 +113,11 @@ def test_the_declared_defaults():
     assert args.regge_hinges == "interior"
     assert args.json is None and args.out is None
     assert not args.live and not args.quiet and not args.isospin_doublet
+    assert args.mean_field_method == "joint-newton"
+    assert args.band_selection == "continuation"
+    assert args.stiffness == "none" and args.fiber_moments == "r"
+    assert bp.build_parser().parse_args(
+        ["run", "--fiber-moments", "1"]).fiber_moments == "1"
 
 
 def test_lists_of_couplings_are_parsed():
@@ -126,6 +131,9 @@ def test_lists_of_couplings_are_parsed():
 @pytest.mark.parametrize("argv,name", [
     (["run", "--holonomy", "plaquette"], "--holonomy"),
     (["run", "--eliminate", "phases"], "--eliminate"),
+    (["run", "--stiffness", "quadratic"], "--stiffness"),
+    (["run", "--fiber-moments", "-1"], "--fiber-moments"),
+    (["run", "--fiber-moments", "all"], "--fiber-moments"),
     (["run", "--regge-hinges", "boundary"], "--regge-hinges"),
     (["run", "--kappa", "one"], "--kappa"),
     ([], "command"),
@@ -256,9 +264,12 @@ def point():
 
 def test_the_summary_names_every_pairing(point):
     lines = bp.summary({"points": [point]}).splitlines()
-    # the mode, the point, two pairs, two minima lines and four ratios
-    assert len(lines) == 1 + 1 + 2 + 2 + 4
-    ratio_lines = lines[6:]
+    # the mode, the point, the content's mean-field line, two pairs, two
+    # minima lines and four ratios
+    assert len(lines) == 1 + 1 + 1 + 2 + 2 + 4
+    # the stand-in record carries no mean-field solve, and says so
+    assert lines[2] == "  content [1, 1, 1] mean field unrecorded"
+    ratio_lines = lines[7:]
     assert "by_spin" in ratio_lines[0] and "by_2T_reading" in ratio_lines[1]
     assert "Delta restriction 2'+2''" in ratio_lines[0]
     empty = bp.summary({"points": [dict(point, ratios={
@@ -273,7 +284,7 @@ def test_the_summary_reports_every_doublet_content_on_its_own_line(point):
     two spin-1/2 poles of (0, 2, 1) are both there, and so are the poles of
     (1, 1, 1), which no minimum picks for spin 1/2."""
     lines = bp.summary({"points": [point]}).splitlines()
-    first, second = lines[2], lines[3]
+    first, second = lines[3], lines[4]
     assert first.startswith("  content [1, 1, 1], doublet content [0, 2, 1] "
                             "(triality 1) | spin 1/2 (restricts to 2'): ")
     assert ("quasi-free 1+0.1i x2 [spin sharp, colour 0], 2+0i x2 "
@@ -290,17 +301,17 @@ def test_the_summary_reports_every_doublet_content_on_its_own_line(point):
 
 def test_the_minima_are_labelled_with_their_doublet_content(point):
     lines = bp.summary({"points": [point]}).splitlines()
-    assert lines[4] == (
+    assert lines[5] == (
         "  lowest over the doublet contents of content [1, 1, 1]: "
         "spin 1/2 quasi-free 1+0.1i from doublet content [0, 2, 1]; "
         "spin 1/2 with quartic -99+0.1i from doublet content [0, 2, 1]; "
         "spin 3/2 quasi-free 3+0.2i from doublet content [1, 1, 1]; "
         "spin 3/2 with quartic -97+0.2i from doublet content [1, 1, 1]")
-    assert lines[5].startswith(
+    assert lines[6].startswith(
         "  lowest over every (content, doublet content) pair: spin 1/2 "
         "quasi-free 1+0.1i from content [1, 1, 1], doublet content "
         "[0, 2, 1];")
-    by_spin = lines[6]
+    by_spin = lines[7]
     assert ("s_N=1+0.1i (content [1, 1, 1], doublet content [0, 2, 1]) "
             "s_D=3+0.2i (content [1, 1, 1], doublet content [1, 1, 1])") \
         in by_spin
@@ -540,9 +551,19 @@ def test_the_declarations_carry_the_config():
                                         regge_hinges="all")
     assert declaration.regge_hinges == cob.ReggeHinges.All
     assert declaration.gravitational_weight == 0.5
-    assert declaration.stiffness_weight == 0.5
     assert declaration.holonomy_weight == 3.0
     assert declaration.regge_form == cob.ReggeForm.Primal
+    # the declared action has no stiffness stand-in: kappa = 8 pi G enters
+    # through the Regge weight alone, and the record says so
+    assert declaration.stiffness_weight == 0.0
+    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    assert config["kappa_role"].startswith(
+        "kappa = 8 pi G enters only through the Regge weight 1/kappa")
+    stand_in = bp.action_declaration(spacetime, 2.0, 3.0,
+                                     stiffness="linear-stand-in")
+    assert stand_in.stiffness_weight == 0.5
+    with pytest.raises(ValueError, match="the length stiffness is one of"):
+        bp.action_declaration(spacetime, 2.0, 3.0, stiffness="quadratic")
 
 
 def test_the_host_built_from_a_cell_carries_its_fields():

@@ -41,10 +41,14 @@ One tick
 At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
-   primal Regge + the paper's linear stiffness (1/kappa)(1/2)||l - l0||^2
-   + the holonomy term (Villain by default, ``--holonomy``), in strict
-   emergence (no carried density in the equations; WP §7), with l0 the
-   level's own lengths as the level was built. The three sheets are relaxed
+   primal Regge + the holonomy term (Villain by default, ``--holonomy``), in
+   strict emergence (no carried density in the equations; WP §7). The
+   spectral-moment part of S_0 is the holomorphic spectral constraint of
+   WP v17 §3.4, which belongs to controlled synthesis on an occupied fiber and
+   so enters only the per-cell reads below; the linear stand-in
+   (1/kappa)(1/2)||l - l0||^2, with l0 the level's own lengths as the level
+   was built, is available by name (``--stiffness linear-stand-in``) and off
+   by default. The three sheets are relaxed
    as one shared base field (WP v17 §8): the solve's variables are the base
    complex's squared lengths and links, written to every sheet. The Regge term is read on
    Riemann sheets continued from the real projection of the level's starting
@@ -110,7 +114,13 @@ At level l (a complex K_l of three sheets of a base complex):
    covariant operator h_1 in ascending order of real part, which on the
    monopole host are one simple mode per sheet, not spin doublets
    (``baryon_poles``, "What a content names"); the poles are read for every
-   doublet content of the T-averaged operator and labelled by it.
+   doublet content of the T-averaged operator and labelled by it. Each
+   content's mean field is solved by Newton's method on the joint system,
+   its bands chosen at the host and followed by continuation
+   (``--mean-field-method``, ``--band-selection``); the solve's method,
+   iterations, final force, stop reason and joint-Jacobian rank gap are
+   reported with the content, and a read on a geometry whose lengths ran off
+   or that is not Kontsevich-Segal allowable is refused by name.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
 3-simplex, and says so.
@@ -414,10 +424,10 @@ def relax_level(spacetime, config, sectors=None, count=None):
     the base vertex count of a level built by `build_level`, the sheets are
     relaxed as one shared base field (`level_edge_classes`), so they stay
     identical exactly."""
-    declaration = bp.action_declaration(spacetime, config["kappa"],
-                                        config["beta"],
-                                        config["regge_hinges"],
-                                        holonomy=config["holonomy"])
+    declaration = bp.action_declaration(
+        spacetime, config["kappa"], config["beta"], config["regge_hinges"],
+        holonomy=config["holonomy"],
+        stiffness=config.get("stiffness", bp.DECLARED_STIFFNESS))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
@@ -815,6 +825,13 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
+        # the mean-field solver the run declared (neither option changes an
+        # equation)
+        for key in ("mean_field_method", "band_selection",
+                    "length_runaway_ratio", "stiffness", "fiber_moments",
+                    "kappa_role"):
+            if key in config:
+                cell_config[key] = config[key]
         number = monopole_numbers([c], links)[0]
         cell_config["held_sectors"] = (
             held_sectors([[0, 1, 2, 3]], [number], 4)
@@ -1126,7 +1143,11 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    holonomy=bp.DECLARED_HOLONOMY,
                    elimination=bp.DECLARED_ELIMINATION,
                    selected_contents=None, max_cells=None,
-                   persistence_required=None):
+                   persistence_required=None,
+                   mean_field_method=bp.DECLARED_MEAN_FIELD_METHOD,
+                   band_selection=bp.DECLARED_BAND_SELECTION,
+                   stiffness=bp.DECLARED_STIFFNESS,
+                   fiber_moments=bp.DECLARED_FIBER_MOMENTS):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1136,7 +1157,11 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                holonomy=holonomy, elimination=elimination,
-                               selected_contents=selected_contents)
+                               selected_contents=selected_contents,
+                               mean_field_method=mean_field_method,
+                               band_selection=band_selection,
+                               stiffness=stiffness,
+                               fiber_moments=fiber_moments)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1520,28 +1545,36 @@ def summary(result):
     return "\n".join(lines)
 
 
+def _conditions_text(record):
+    """The quark conditions of one content by number, name and status."""
+    quark = record.get("quark_conditions") or {}
+    return ", ".join(
+        " ".join(str(part) for part in (c.get("number"), c["name"],
+                                         c["status"]) if part is not None)
+        for c in quark.get("conditions") or [])
+
+
 def _content_line(cell, c):
-    """One content of one host cell: whether it was read, its mean-field
-    relaxation, its quark verdict, its quarks per doublet of h-bar_1 and its
-    quartic truncation certificates."""
+    """One content of one host cell: whether it was read (or why its read
+    was refused), its mean-field solve (`baryon_poles.relaxation_text`), its
+    quark verdict and every quark condition's status, its quarks per doublet
+    of h-bar_1 and its quartic truncation certificates."""
     head = "host cell %s content %s (quarks per band of h_1): " % (
         cell["cell"], c["content"])
     if "failed" in c:
-        return head + "failed: " + c["failed"]
+        line = head + "failed: " + c["failed"]
+        if c.get("relaxation"):
+            line += "; " + bp.relaxation_text(c["relaxation"])
+        return line
     verdict = _verdict_summary(c)
     spin = (c.get("spin_decomposition") or {}).get("occupied_state")
-    relaxation = c.get("relaxation") or {}
-    mean_field = ("mean field converged %s (force norm %.3g after %d "
-                  "iterations)" % (relaxation["converged"],
-                                   relaxation["force_norm"],
-                                   relaxation["iterations"])
-                  if "converged" in relaxation else "mean field unrecorded")
     return head + ("read; quark certified %s; %s; quarks per doublet of "
-                   "h-bar_1 %s; quartic truncation %s"
-                   % (verdict["certified"] if verdict else None, mean_field,
+                   "h-bar_1 %s; quartic truncation %s; quark conditions %s"
+                   % (verdict["certified"] if verdict else None,
+                      bp.relaxation_text(c.get("relaxation")),
                       {k: bp._complex_text(v) for k, v in spin.items()}
                       if spin else None,
-                      _truncation_summary(c)))
+                      _truncation_summary(c), _conditions_text(c)))
 
 
 def read_lines(record):
@@ -1617,6 +1650,7 @@ def build_parser():
     run.add_argument("--live", action="store_true",
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
+    bp.add_mean_field_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1630,7 +1664,10 @@ def main(argv=None):
         holonomy=args.holonomy, elimination=args.eliminate,
         selected_contents=[tuple(c) for c in args.contents]
         if args.contents else None, max_cells=args.max_cells,
-        persistence_required=args.persistence_required)
+        persistence_required=args.persistence_required,
+        mean_field_method=args.mean_field_method,
+        band_selection=args.band_selection,
+        stiffness=args.stiffness, fiber_moments=args.fiber_moments)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file) if args.live

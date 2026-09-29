@@ -300,6 +300,25 @@ struct VillainSeries {
 /// multiple of its tail bound plus its rounding scale, which happens exactly
 /// when \f$ F \f$ is at or beyond a zero on the negative real axis.
 ///
+/// The start of the path is tested against the Poisson form, which makes
+/// \f$ W(\hat F) \f$ real and positive. The truncated sum is real there in
+/// exact arithmetic, because its terms pair as
+/// \f$ q^{m^2}(\hat F^m+\hat F^{-m})=2q^{m^2}\cos m\theta \f$, so a computed
+/// imaginary part is rounding. The test is therefore taken relative to the
+/// series' own uncertainty
+/// \f$ u=\text{(tail bound of } W)+\varepsilon\sum_{|m|\le M}|q^{m^2}\hat F^m| \f$,
+/// with \f$ \varepsilon \f$ the machine epsilon: the start is accepted when
+/// \f$ |\operatorname{Im}W|\le c_R\,u \f$, with the declared reality margin
+/// \f$ c_R \f$ (`realityMargin`), and when \f$ \operatorname{Re}W \f$ exceeds
+/// the nonzero margin times \f$ u \f$. A test relative to
+/// \f$ \operatorname{Re}W \f$ instead would refuse a real, positive \f$ W \f$
+/// whenever \f$ W \f$ is small beside the terms it is summed from: at
+/// \f$ \beta=5 \f$ and arguments beyond about \f$ 0.75\pi \f$, \f$ W \f$ is
+/// about \f$ 10^{-6} \f$ while the rounding scale is about \f$ 10^{-15} \f$. A
+/// start whose real part is not resolved above \f$ u \f$ throws
+/// `std::domain_error`, as a zero on the path does; an imaginary part beyond
+/// \f$ c_R\,u \f$ contradicts the Poisson form and throws `std::logic_error`.
+///
 /// ## Truncation
 ///
 /// The series keeps \f$ |m|\le M \f$, where \f$ M_0 \f$ is the least
@@ -347,9 +366,17 @@ class VillainCharacter {
   /// \f$ \log W(F) \f$ on the branch real on the unit circle, by the radial
   /// continuation described above.
   /// @throws std::domain_error when the path meets a point at which \f$ W \f$
-  ///   is not certified nonzero.
+  ///   is not certified nonzero, its start on the unit circle included.
+  /// @throws std::logic_error when the imaginary part of \f$ W \f$ at the
+  ///   start of the path exceeds `realityMargin` times the series'
+  ///   uncertainty there, which contradicts the Poisson form.
   [[nodiscard]] std::complex<double> logarithm(
       std::complex<double> holonomy) const;
+
+  /// \f$ c_R \f$, the declared multiple of the series' uncertainty (its tail
+  /// bound plus its rounding scale) within which `logarithm` reads the
+  /// imaginary part of \f$ W \f$ on the unit circle as rounding.
+  [[nodiscard]] static double realityMargin() noexcept;
 
   /// \f$ \phi(F)=-\beta_V\log W(F) \f$.
   [[nodiscard]] std::complex<double> potential(
@@ -402,6 +429,21 @@ struct HolonomyTruncation {
   double relativeFirstTail = 0.0;
   /// \f$ \max_\tau \text{(tail of } D^2W)/|W(\mathcal F_\tau)| \f$.
   double relativeSecondTail = 0.0;
+};
+
+/// # ReportedActionValue
+///
+/// The value of the joint action as a solver records it
+/// (`JointAction::reportedValue`): the value when it can be evaluated, and
+/// otherwise the reason it cannot, by name.
+struct ReportedActionValue {
+  /// Whether the value could be evaluated.
+  bool available = true;
+  /// \f$ S(z,U,\Gamma) \f$; a quiet NaN in both parts when unavailable.
+  std::complex<double> value{0.0, 0.0};
+  /// Why the value is unavailable (the refusal's own message); empty when it
+  /// is available.
+  std::string unavailable;
 };
 
 /// # JointActionDeclaration
@@ -513,6 +555,38 @@ struct JointActionDeclaration {
 
   /// The declared holomorphic spectral constraints. Empty in emergence mode.
   std::vector<SpectralMomentConstraint> momentConstraints;
+
+  /// The fiber the spectral constraints are imposed on: the Riesz projector
+  /// \f$ P_{\mathcal C} \f$ of an isolated band, flat row-major over the
+  /// \f$ k \f$-cells in the canonical order. Empty (the default), the
+  /// constraints are the power sums of the whole carrier,
+  /// \f$ p_j(h)=\operatorname{tr}(h^j) \f$. Declared, they are the power sums
+  /// of the compressed operator
+  /// \f$ h_{\mathcal C}=P_{\mathcal C}hP_{\mathcal C}|_{\operatorname{Ran}
+  /// P_{\mathcal C}} \f$ of WP v17 §3.4,
+  /// \f[ p_j(h_{\mathcal C})=\operatorname{tr}\bigl((P_{\mathcal C}hP_{\mathcal C})^j\bigr), \f]
+  /// the \f$ j \f$-th power sum of the fiber's eigenvalues (the compression
+  /// acts as zero on \f$ \ker P_{\mathcal C} \f$). Their derivatives are
+  /// taken at fixed \f$ P_{\mathcal C} \f$,
+  /// \f$ dp_j=j\operatorname{tr}\bigl(P_{\mathcal C}(P_{\mathcal C}hP_{\mathcal C})^{j-1}P_{\mathcal C}\,dh\bigr) \f$,
+  /// which is the whole derivative when \f$ P_{\mathcal C} \f$ is a spectral
+  /// projector of \f$ h \f$: the projector's own variation is off-diagonal
+  /// between its range and its kernel and so contributes no trace against a
+  /// power of \f$ h \f$. A self-consistent solve rebuilds the projector at
+  /// every point, as it does \f$ \Gamma \f$.
+  std::vector<std::complex<double>> momentProjector;
+
+  /// \f$ s>0 \f$, the unit the power sums are measured in: the constraints
+  /// are \f$ p_j(h/s)=\operatorname{tr}((h/s)^j) \f$ (or of
+  /// \f$ h_{\mathcal C}/s \f$), with targets and multipliers in the same
+  /// unit. The constraint \f$ p_j(h/s)=p_j^{\star}s^{-j} \f$ is the
+  /// constraint \f$ p_j(h)=p_j^{\star} \f$, so the scale changes no solution
+  /// set; it keeps the constraints' gradients, which grow as
+  /// \f$ j|\lambda|^{j-1} \f$, commensurate with one another and with the
+  /// geometric equations when several moments are pinned. A multiplier in
+  /// this unit is \f$ s^j \f$ times the multiplier of the unscaled
+  /// constraint. One, the default, measures in the operator's own unit.
+  double momentScale = 1.0;
 
   /// Where the carrier operator's metric comes from.
   ///
@@ -671,6 +745,23 @@ class JointAction {
   /// The current multipliers \f$ \xi_j \f$, in declaration order.
   [[nodiscard]] std::vector<std::complex<double>> multipliers() const;
 
+  /// Replace the carried covariance \f$ \Gamma \f$, flat row-major over the
+  /// \f$ k \f$-cells. This is how a self-consistent solve rebuilds
+  /// \f$ \Gamma \f$ from the carrier operator at a new geometry. Nothing else
+  /// of the declaration changes: in particular the Riemann sheets of a
+  /// continued Regge term stay those fixed when the instance was built, as
+  /// they would not if a new instance were built at the new geometry.
+  /// @throws std::invalid_argument when \p covariance is neither empty nor a
+  ///   square matrix over the \f$ k \f$-cells of the complex.
+  void setCovariance(std::vector<std::complex<double>> covariance);
+
+  /// Replace the fiber the spectral constraints are imposed on
+  /// (`JointActionDeclaration::momentProjector`), flat row-major over the
+  /// \f$ k \f$-cells, in place and for the same reason as `setCovariance`.
+  /// @throws std::invalid_argument when \p projector is neither empty nor a
+  ///   square matrix over the \f$ k \f$-cells of the complex.
+  void setMomentProjector(std::vector<std::complex<double>> projector);
+
   /// The carrier operator \f$ h_k(z,U) \f$, flat row-major over the
   /// \f$ k \f$-cells in the canonical order. Empty when the complex carries no
   /// cell of the declared degree.
@@ -684,8 +775,10 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> faceHolonomies() const;
 
   /// The power sums \f$ p_j(h)=\operatorname{tr}(h^j) \f$ of the declared
-  /// constraints, in declaration order. Computed from the operator by repeated
-  /// multiplication, so a defective or non-normal \f$ h \f$ needs no
+  /// constraints, in declaration order, or of the compressed operator
+  /// \f$ h_{\mathcal C} \f$ when a fiber is declared
+  /// (`JointActionDeclaration::momentProjector`). Computed from the operator by
+  /// repeated multiplication, so a defective or non-normal \f$ h \f$ needs no
   /// eigendecomposition and no eigenvalue ordering.
   [[nodiscard]] std::vector<std::complex<double>> powerSums() const;
 
@@ -712,6 +805,17 @@ class JointAction {
   [[nodiscard]] std::complex<double> spectralTerm() const;
   /// The whole action \f$ S(z,U,\Gamma) \f$, the sum of the five terms above.
   [[nodiscard]] std::complex<double> value() const;
+
+  /// The whole action as a solver reports it: `value` when it can be
+  /// evaluated, and otherwise unavailable, with the reason by name. Only the
+  /// holonomy term needs \f$ \log W \f$, and a solver reads the value only to
+  /// report it (its steps and their acceptance use the stationarity residual
+  /// alone), so a refused logarithm makes this record unavailable instead of
+  /// ending the solve. A refusal is anything `value` throws as
+  /// `std::logic_error` (its `std::domain_error` for a zero of \f$ W \f$ on the
+  /// path of the logarithm, or an unresolved \f$ W \f$ on the unit circle,
+  /// included).
+  [[nodiscard]] ReportedActionValue reportedValue() const;
 
   /// \f$ \partial S/\partial z_e \f$ for every edge, in `getEdgeList()` order.
   ///
@@ -878,7 +982,8 @@ class JointAction {
 
   /// \f$ \partial p_j(h)/\partial z_e \f$ and
   /// \f$ U_e\,\partial p_j(h)/\partial U_e \f$ for the \p index-th declared
-  /// constraint, concatenated in the same block order as
+  /// constraint (of \f$ h_{\mathcal C} \f$, at fixed \f$ P_{\mathcal C} \f$,
+  /// when a fiber is declared), concatenated in the same block order as
   /// `stationarityResidual`'s first two blocks, so the vector has length
   /// \f$ 2|E| \f$.
   ///

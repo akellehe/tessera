@@ -373,8 +373,9 @@ def test_the_seeded_covariance_fills_rank_three_bands_of_h(content):
     (WP v17 §8: every band E-bar of the base becomes E-bar (x) C^3). Every
     declared content fits, the band-filling covariance is a function of h_1
     and commutes with it to rounding, it commutes with the sheet relabeling
-    to rounding (1e-14), and its trace is the three quarks."""
-    config = _cell_config(FIRST_CELL, content, newton=0, mean_field=1)
+    to rounding (1e-14), and its trace is the three quarks. Zero mean-field
+    iterations read the covariance seeded at the host."""
+    config = _cell_config(FIRST_CELL, content, newton=0, mean_field=0)
     spacetime, action, report = bp.relax_content(content, 1.0, 1.0, config)
     assert list(report.band_ranks) == [3] * 6
     gamma = np.asarray(report.covariance).reshape(18, 18)
@@ -515,7 +516,8 @@ def test_three_quarks_in_one_band_survive_the_relaxation():
 
 
 def _seeded_band_read(gauge_angle):
-    config = _cell_config(FIRST_CELL, (2, 1, 0), newton=0, mean_field=1)
+    # zero mean-field iterations read the band rule at the host itself
+    config = _cell_config(FIRST_CELL, (2, 1, 0), newton=0, mean_field=0)
     spacetime = bp.build_host(8.0, config["host_cell"])
     if gauge_angle:
         _gauge_one_sheet(spacetime, 6, gauge_angle)

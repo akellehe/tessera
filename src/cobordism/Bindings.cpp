@@ -4543,7 +4543,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                              &VillainCharacter::matchedWeight,
                              "beta_V = beta / <m^2>_beta.")
       .def("series", &VillainCharacter::series, py::arg("holonomy"))
-      .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"))
+      .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"),
+           "log W(F) on the branch real on the unit circle, continued "
+           "radially from F/|F|. The start on the unit circle is accepted when "
+           "|Im W| <= reality_margin() (tail bound + machine epsilon times the "
+           "sum of the moduli of the kept terms) and Re W exceeds the nonzero "
+           "margin times the same uncertainty; raises ValueError when W is "
+           "not certified nonzero on the path, its start included.")
+      .def_static("reality_margin", &VillainCharacter::realityMargin,
+                  "c_R, the declared multiple of the series' uncertainty (its "
+                  "tail bound plus its rounding scale) within which logarithm "
+                  "reads the imaginary part of W on the unit circle as "
+                  "rounding.")
       .def("potential", &VillainCharacter::potential, py::arg("holonomy"))
       .def("first_derivative", &VillainCharacter::firstDerivative,
            py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
@@ -4640,12 +4651,35 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &JointActionDeclaration::momentConstraints,
                      "The declared holomorphic spectral constraints. Empty in "
                      "emergence mode.")
+      .def_readwrite("moment_scale", &JointActionDeclaration::momentScale,
+                     "s > 0, the unit the power sums are measured in: the "
+                     "constraints are p_j(h / s) (or of h_C / s), with "
+                     "targets and multipliers in that unit. The same "
+                     "constraints for every s; one by default.")
+      .def_readwrite("moment_projector",
+                     &JointActionDeclaration::momentProjector,
+                     "The Riesz projector P_C of the fiber the constraints are "
+                     "imposed on, flat row-major over the k-cells. Empty: the "
+                     "power sums of the whole carrier, tr(h^j). Declared: "
+                     "those of the compression h_C = P_C h P_C (WP v17 §3.4), "
+                     "tr((P_C h P_C)^j), differentiated at fixed P_C.")
       .def_readwrite("metric_source", &JointActionDeclaration::metricSource,
                      "Where the carrier operator's metric comes from. "
                      "WhitneyPencil is the whitepaper's W_k = M_k^-1 and gives "
                      "the covariant h_k(z, U); under DiagonalWeights the "
                      "operator is blind to U, so only the face-holonomy term "
                      "then depends on the connection.");
+
+  py::class_<ReportedActionValue>(m, "ReportedActionValue",
+      "The joint action's value as a solver records it: the value when it can "
+      "be evaluated, and otherwise the reason it cannot, by name.")
+      .def(py::init<>())
+      .def_readonly("available", &ReportedActionValue::available)
+      .def_readonly("value", &ReportedActionValue::value,
+                    "S(z, U, Gamma); NaN in both parts when unavailable.")
+      .def_readonly("unavailable", &ReportedActionValue::unavailable,
+                    "Why the value is unavailable; empty when it is "
+                    "available.");
 
   py::class_<JointAction>(m, "JointAction",
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
@@ -4673,6 +4707,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "stationarity system rather than configuration.")
       .def("multipliers", &JointAction::multipliers,
            "The current xi_j, in declaration order.")
+      .def("set_covariance", &JointAction::setCovariance,
+           py::arg("covariance"),
+           "Replace the carried covariance Gamma (flat row-major over the "
+           "k-cells). Nothing else of the declaration changes; the Riemann "
+           "sheets of a continued Regge term stay those fixed at construction.")
+      .def("set_moment_projector", &JointAction::setMomentProjector,
+           py::arg("projector"),
+           "Replace the fiber the spectral constraints are imposed on, in "
+           "place, as set_covariance replaces Gamma.")
       .def("carrier_operator", &JointAction::carrierOperator,
            "h_k(z, U), flat row-major over the k-cells.")
       .def("face_holonomies", &JointAction::faceHolonomies,
@@ -4712,6 +4755,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "sum_j xi_j (p_j(h) - p_j*).")
       .def("value", &JointAction::value,
            "S(z, U, Gamma), the sum of the five terms.")
+      .def("reported_value", &JointAction::reportedValue,
+           "The value as a solver reports it: available with the value, or "
+           "unavailable with the refusal's message (for example log W refused "
+           "at a face holonomy). Only the holonomy term needs log W, and a "
+           "solver reads the value only to report it.")
       .def("length_stationarity", &JointAction::lengthStationarity,
            "dS/dz_e per edge, assembled from the framework's exact analytic "
            "gradients. No finite difference and no discarded imaginary part.")
@@ -4805,6 +4853,36 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("RealAxisDifference",
              HolomorphicJacobianMode::RealAxisDifference);
 
+  py::enum_<RelaxationStop>(m, "RelaxationStop",
+      "Why a solve stopped, reported by name. Converged; IterationBudget (the "
+      "declared iterations ran out); NoDescent (no damped step reduced the "
+      "residual); SectorBoundary (no stationary point in the declared "
+      "monopole sector: the smallest damped step changed a held monopole "
+      "number, a held face holonomy driven across -1); DomainBoundary (the "
+      "smallest damped step left the domain of the action); HolonomyZero (the "
+      "smallest damped step came within the declared margin of a zero of W); "
+      "HeldFloor (with held sectors, the residual is at its floor on the held "
+      "set: the constrained step cannot reduce it by more than the "
+      "tolerance); LengthRunaway (the squared lengths ran off beyond the "
+      "declared ratio); "
+      "NoProgress (an outer iteration of the alternation made no progress and "
+      "would only repeat); Continued (not a stop: a per-iterate trace entry "
+      "the solve stepped on from).")
+      .value("Converged", RelaxationStop::Converged)
+      .value("IterationBudget", RelaxationStop::IterationBudget)
+      .value("NoDescent", RelaxationStop::NoDescent)
+      .value("SectorBoundary", RelaxationStop::SectorBoundary)
+      .value("DomainBoundary", RelaxationStop::DomainBoundary)
+      .value("HolonomyZero", RelaxationStop::HolonomyZero)
+      .value("HeldFloor", RelaxationStop::HeldFloor)
+      .value("LengthRunaway", RelaxationStop::LengthRunaway)
+      .value("NoProgress", RelaxationStop::NoProgress)
+      .value("Continued", RelaxationStop::Continued);
+
+  m.def("relaxation_stop_name", &relaxationStopName, py::arg("reason"),
+        "The name a report prints for a stop reason, for example 'no "
+        "stationary point in the declared monopole sector'.");
+
   py::class_<HeldMonopoleSector>(m, "HeldMonopoleSector",
       "A declared cluster whose monopole sector is boundary data of a "
       "relaxation: the outward-oriented faces of its bounding cut (three "
@@ -4872,7 +4950,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "Monopole sectors held as boundary data: the moduli of "
                      "their cut faces' holonomies and their monopole numbers "
                      "are kept, every other connection degree of freedom "
-                     "relaxes.")
+                     "relaxes. The step is the constrained Newton step, the "
+                     "minimum-norm least-squares solution of the linearized "
+                     "equations over the tangent space of the held set.")
+      .def_readwrite("length_runaway_ratio",
+                     &HolomorphicRelaxationDeclaration::lengthRunawayRatio,
+                     "When an accepted step takes the largest |z_e| beyond "
+                     "this multiple of its starting value, the solve stops "
+                     "with RelaxationStop.LengthRunaway. Zero or inf disables "
+                     "it. A stop, not a change of the equations.")
       .def_readwrite("holonomy_zero_margin",
                      &HolomorphicRelaxationDeclaration::holonomyZeroMargin,
                      "The relative distance to a zero of the Villain weight W "
@@ -4925,7 +5011,28 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("holonomy_zero_distance",
                      &HolomorphicStep::holonomyZeroDistance,
                      "The smallest relative distance of a face holonomy to a "
-                     "zero of W where the step started; inf without zeros.");
+                     "zero of W where the step started; inf without zeros.")
+      .def_readwrite("residual_test_dampings",
+                     &HolomorphicStep::residualTestDampings,
+                     "The halvings of this step the residual test forced.")
+      .def_readwrite("accepted", &HolomorphicStep::accepted,
+                     "Whether a damped step was accepted; when not, damping "
+                     "and step_norm are zero and the solve stopped here.")
+      .def_readwrite("linear_residual", &HolomorphicStep::linearResidual,
+                     "||F + J d|| / ||F|| for the full Newton step d: what the "
+                     "linearized equations leave.")
+      .def_readwrite("constrained_step", &HolomorphicStep::constrainedStep,
+                     "Whether the step was solved on the tangent space of the "
+                     "held sectors.")
+      .def_readwrite("constrained_rank", &HolomorphicStep::constrainedRank,
+                     "The rank of the real least-squares system of a "
+                     "constrained step; zero otherwise.")
+      .def_readwrite("constrained_rank_gap",
+                     &HolomorphicStep::constrainedRankGap,
+                     "That system's rank gap; NaN for an unconstrained step.")
+      .def_readwrite("action_available", &HolomorphicStep::actionAvailable)
+      .def_readwrite("action_unavailable",
+                     &HolomorphicStep::actionUnavailable);
 
   py::class_<HolomorphicRelaxationReport>(m, "HolomorphicRelaxationReport",
       "What a solve reached, and the trace of how it got there.")
@@ -4962,7 +5069,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("regge_off_principal_angles",
                      &HolomorphicRelaxationReport::reggeOffPrincipalAngles,
                      "The number of dihedral angles whose continued sheet "
-                     "differs from the principal one at the end point.");
+                     "differs from the principal one at the end point.")
+      .def_readwrite("stop_reason", &HolomorphicRelaxationReport::stopReason,
+                     "Why the solve stopped (RelaxationStop).")
+      .def_readwrite("stop_detail", &HolomorphicRelaxationReport::stopDetail,
+                     "The stop reason in words, with the numbers that decided "
+                     "it.")
+      .def_readwrite("largest_length_ratio",
+                     &HolomorphicRelaxationReport::largestLengthRatio,
+                     "The largest |z_e| at the end over its value at the "
+                     "start.")
+      .def_readwrite("action_available",
+                     &HolomorphicRelaxationReport::actionAvailable)
+      .def_readwrite("action_unavailable",
+                     &HolomorphicRelaxationReport::actionUnavailable);
 
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
       "A Newton root find on the holomorphic stationarity equations of a "
@@ -4989,6 +5109,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("jacobian", &HolomorphicRelaxation::jacobian,
            "The Jacobian at the current point, flat row-major. Forming it "
            "restores the complex exactly, so the geometry is unchanged.")
+      .def("residual", &HolomorphicRelaxation::residual,
+           "The residual of the equations in scope at the current point, in "
+           "the block order of the Jacobian's rows.")
       .def("equation_count", &HolomorphicRelaxation::equationCount)
       .def("variable_count", &HolomorphicRelaxation::variableCount);
 
@@ -5001,14 +5124,36 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("AscendingModulus", OccupationOrder::AscendingModulus);
 
   py::enum_<CovarianceRule>(m, "CovarianceRule",
-      "How SelfConsistentMeanField rebuilds the carried covariance. "
+      "How SelfConsistentMeanField builds the carried covariance. "
       "OccupiedProjector is the spectral projector onto the declared number of "
       "occupied modes, a Slater determinant. BandFilling groups the ordered "
       "spectrum into degenerate bands and spreads a declared occupation n_b "
       "evenly over band b, Gamma = sum_b (n_b / r_b) P_b: the one-body density "
-      "of a state invariant under the symmetry that protects the bands.")
+      "of a state invariant under the symmetry that protects the bands. Which "
+      "bands carry the occupations is fixed by BandSelection.")
       .value("OccupiedProjector", CovarianceRule::OccupiedProjector)
       .value("BandFilling", CovarianceRule::BandFilling);
+
+  py::enum_<BandSelection>(m, "BandSelection",
+      "Where the occupied bands are chosen. Continuation (the default): once, "
+      "at the starting point, by the declared order, and then each band is "
+      "followed from point to point by maximal overlap with its previous "
+      "Riesz projector (WP v17 line 151: a band is selected by a contour, not "
+      "by sorting real parts), with every band's overlap and any crossing "
+      "reported. SortEveryIterate: re-selected at every point by the declared "
+      "order, so crossing bands exchange their occupations.")
+      .value("Continuation", BandSelection::Continuation)
+      .value("SortEveryIterate", BandSelection::SortEveryIterate);
+
+  py::enum_<SelfConsistentMethod>(m, "SelfConsistentMethod",
+      "How the fixed point of the pair (z, U; Gamma) is solved for; both "
+      "solve the same equations. JointNewton (the default): Newton's method on "
+      "F_sc(z, U) = F(z, U, Gamma(z, U)) = 0, the covariance rebuilt exactly "
+      "at every point and the Jacobian that of the self-consistent force. "
+      "Alternation: relax the geometry at fixed Gamma, then rebuild Gamma, and "
+      "repeat; kept as a named fallback.")
+      .value("JointNewton", SelfConsistentMethod::JointNewton)
+      .value("Alternation", SelfConsistentMethod::Alternation);
 
   py::class_<SelfConsistentMeanFieldDeclaration>(
       m, "SelfConsistentMeanFieldDeclaration",
@@ -5016,15 +5161,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def(py::init<>())
       .def_readwrite("occupied_modes",
                      &SelfConsistentMeanFieldDeclaration::occupiedModes,
-                     "How many modes of the carrier operator are filled.")
+                     "How many modes of the carrier operator are filled under "
+                     "the occupied-projector rule.")
       .def_readwrite("occupation_order",
                      &SelfConsistentMeanFieldDeclaration::occupationOrder,
-                     "Which modes those are.")
+                     "The order modes and bands are counted in where the "
+                     "bands are chosen.")
       .def_readwrite("covariance_rule",
                      &SelfConsistentMeanFieldDeclaration::covarianceRule,
-                     "How the covariance is rebuilt at each outer iteration: "
-                     "the occupied projector, or the band filling "
-                     "sum_b (n_b / r_b) P_b.")
+                     "How the covariance is built: the occupied projector, or "
+                     "the band filling sum_b (n_b / r_b) P_b.")
       .def_readwrite("band_occupations",
                      &SelfConsistentMeanFieldDeclaration::bandOccupations,
                      "n_b, the number of particles each band holds under the "
@@ -5042,26 +5188,103 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "commute with h in general. Empty, the default, reads "
                      "the bands of h itself, so Gamma commutes with h (WP v17 "
                      "Section 7: Gamma* a projector onto modes of h(z*)).")
+      .def_readwrite("band_selection",
+                     &SelfConsistentMeanFieldDeclaration::bandSelection,
+                     "Where the occupied bands are chosen: Continuation (the "
+                     "default) or SortEveryIterate.")
+      .def_readwrite("method", &SelfConsistentMeanFieldDeclaration::method,
+                     "How the fixed point is solved for: JointNewton (the "
+                     "default) or Alternation.")
+      .def_readwrite("fiber_moments",
+                     &SelfConsistentMeanFieldDeclaration::fiberMoments,
+                     "m_c, the number of power sums p_j(h_C), j = 1..m_c, of "
+                     "the occupied fiber (the occupied bands, followed and "
+                     "rebuilt as the covariance's are) pinned by the "
+                     "holomorphic spectral constraints of WP v17 §3.4, with "
+                     "their complex multipliers solved for beside the "
+                     "geometry. Zero (the default) pins nothing; at most the "
+                     "fiber's rank r.")
+      .def_readwrite("fiber_moment_targets",
+                     &SelfConsistentMeanFieldDeclaration::fiberMomentTargets,
+                     "The targets p_j*, one per pinned moment, in the "
+                     "operator's own unit; empty (the default) takes the "
+                     "fiber's own values at the starting point, which pins "
+                     "the carrier as declared.")
+      .def_readwrite("fiber_moment_scale",
+                     &SelfConsistentMeanFieldDeclaration::fiberMomentScale,
+                     "The unit s the pinned power sums are solved in, "
+                     "p_j(h_C / s) = p_j* s^-j (the same constraints, with "
+                     "commensurate gradients); zero (the default) takes the "
+                     "fiber's spectral radius at the starting point.")
       .def_readwrite("maximum_iterations",
-                     &SelfConsistentMeanFieldDeclaration::maximumIterations)
+                     &SelfConsistentMeanFieldDeclaration::maximumIterations,
+                     "The largest number of iterations of the declared "
+                     "method: Newton steps of the joint system, or outer "
+                     "iterations of the alternation. Zero reads the starting "
+                     "point only.")
       .def_readwrite("tolerance",
                      &SelfConsistentMeanFieldDeclaration::tolerance,
-                     "Both the force norm and the covariance change must sit "
-                     "at or below this: a geometry stationary for a covariance "
-                     "that is still moving is not a fixed point, and neither "
-                     "is a settled covariance on a geometry that still carries "
-                     "a force.")
-      .def_readwrite("mixing", &SelfConsistentMeanFieldDeclaration::mixing,
-                     "The fraction of the new projector mixed in at each step. "
-                     "One is the plain re-occupation and the only value for "
-                     "which the covariance is a projector at every step.")
+                     "The force norm at or below which the pair is "
+                     "self-consistent. Under the alternation the covariance "
+                     "change must also sit at or below it, since there the "
+                     "covariance lags the geometry by one iteration.")
       .def_readwrite("geometry",
                      &SelfConsistentMeanFieldDeclaration::geometry,
-                     "The inner holomorphic relaxation that makes the geometry "
-                     "stationary against the current covariance.");
+                     "The Newton solve of the geometry: under JointNewton the "
+                     "joint solve's step control (its maximum_iterations is "
+                     "not read), under Alternation the inner relaxation.");
+
+  py::class_<OccupiedBand>(m, "OccupiedBand",
+      "One occupied band at one point of a solve: where it was chosen, its "
+      "occupation and rank, its eigenvalues and places in the declared order "
+      "here, its overlap tr(P P_prev) / r with its projector at the previous "
+      "point, whether it crossed another band, and whether it splits a "
+      "degenerate group.")
+      .def(py::init<>())
+      .def_readonly("declared_index", &OccupiedBand::declaredIndex)
+      .def_readonly("occupation", &OccupiedBand::occupation)
+      .def_readonly("rank", &OccupiedBand::rank)
+      .def_readonly("eigenvalues", &OccupiedBand::eigenvalues)
+      .def_readonly("positions", &OccupiedBand::positions)
+      .def_readonly("declared_positions", &OccupiedBand::declaredPositions)
+      .def_readonly("overlap", &OccupiedBand::overlap)
+      .def_readonly("crossed", &OccupiedBand::crossed)
+      .def_readonly("ambiguous", &OccupiedBand::ambiguous)
+      .def_readonly("projector", &OccupiedBand::projector);
+
+  py::class_<BandRead>(m, "BandRead",
+      "What BandFollower.read builds from one operator: the covariance, the "
+      "band ranks and eigenvalues in the declared order, the occupied bands, "
+      "the occupied span and its gap in the declared order, the isolation of "
+      "the occupied bands, and whether any crossed.")
+      .def(py::init<>())
+      .def_readonly("covariance", &BandRead::covariance)
+      .def_readonly("ranks", &BandRead::ranks)
+      .def_readonly("ordered", &BandRead::ordered)
+      .def_readonly("bands", &BandRead::bands)
+      .def_readonly("occupied_eigenvalues", &BandRead::occupiedEigenvalues)
+      .def_readonly("spectral_gap", &BandRead::spectralGap)
+      .def_readonly("band_isolation", &BandRead::bandIsolation)
+      .def_readonly("crossing", &BandRead::crossing)
+      .def_readonly("lowest_overlap", &BandRead::lowestOverlap);
+
+  py::class_<BandFollower>(m, "BandFollower",
+      "The declared covariance rule with its band selection: read(h) builds "
+      "Gamma from an operator, choosing the occupied bands by the declared "
+      "order when no reference is set (or under SortEveryIterate) and "
+      "following them from the reference otherwise; follow(read) makes a "
+      "read's bands the reference.")
+      .def(py::init<const SelfConsistentMeanFieldDeclaration &>(),
+           py::arg("declaration"))
+      .def("read", &BandFollower::read, py::arg("operator"),
+           "The band read of a flat row-major operator.")
+      .def("follow", &BandFollower::follow, py::arg("read"),
+           "Make the read's bands the reference the next read follows.")
+      .def_property_readonly("following", &BandFollower::following);
 
   py::class_<SelfConsistentMeanFieldStep>(m, "SelfConsistentMeanFieldStep",
-      "One outer iteration of a self-consistent solve.")
+      "One iterate of a self-consistent solve; iterate zero is the starting "
+      "point.")
       .def(py::init<>())
       .def_readwrite("iteration", &SelfConsistentMeanFieldStep::iteration)
       .def_readwrite("force_norm", &SelfConsistentMeanFieldStep::forceNorm)
@@ -5071,29 +5294,65 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldStep::purityDefect,
                      "||Gamma^2 - Gamma||_F, the Gaussianity certificate.")
       .def_readwrite("action", &SelfConsistentMeanFieldStep::action)
+      .def_readwrite("action_available",
+                     &SelfConsistentMeanFieldStep::actionAvailable)
+      .def_readwrite("action_unavailable",
+                     &SelfConsistentMeanFieldStep::actionUnavailable)
       .def_readwrite("occupied_energy",
                      &SelfConsistentMeanFieldStep::occupiedEnergy,
                      "tr(Gamma h), which for a spectral projector is the sum "
                      "of the occupied eigenvalues.")
       .def_readwrite("occupied_eigenvalues",
-                     &SelfConsistentMeanFieldStep::occupiedEigenvalues)
+                     &SelfConsistentMeanFieldStep::occupiedEigenvalues,
+                     "The eigenvalues of the occupied span in the declared "
+                     "order.")
       .def_readwrite("spectral_gap",
                      &SelfConsistentMeanFieldStep::spectralGap,
-                     "The gap that isolates the occupied band.")
+                     "The gap at the end of the occupied span in the declared "
+                     "order.")
       .def_readwrite("band_ranks", &SelfConsistentMeanFieldStep::bandRanks,
                      "The band ranks under the band-filling rule.")
+      .def_readwrite("bands", &SelfConsistentMeanFieldStep::bands,
+                     "The occupied bands with their overlaps and crossings.")
+      .def_readwrite("band_isolation",
+                     &SelfConsistentMeanFieldStep::bandIsolation)
+      .def_readwrite("band_crossing",
+                     &SelfConsistentMeanFieldStep::bandCrossing)
+      .def_readwrite("multipliers", &SelfConsistentMeanFieldStep::multipliers,
+                     "The pinned fiber moments' multipliers xi_j, in the "
+                     "operator's own unit.")
+      .def_readwrite("moment_residual_norm",
+                     &SelfConsistentMeanFieldStep::momentResidualNorm,
+                     "The norm of the pinned constraints' residuals in the "
+                     "unit they are solved in; zero when none is pinned.")
       .def_readwrite("geometry_converged",
                      &SelfConsistentMeanFieldStep::geometryConverged)
       .def_readwrite("geometry_residual_norm",
                      &SelfConsistentMeanFieldStep::geometryResidualNorm)
       .def_readwrite("geometry_zero_guard_damped_steps",
-                     &SelfConsistentMeanFieldStep::geometryZeroGuardDampedSteps);
+                     &SelfConsistentMeanFieldStep::geometryZeroGuardDampedSteps)
+      .def_readwrite("geometry_stop_reason",
+                     &SelfConsistentMeanFieldStep::geometryStopReason)
+      .def_readwrite("geometry_stop_detail",
+                     &SelfConsistentMeanFieldStep::geometryStopDetail)
+      .def_readwrite("newton_iterated",
+                     &SelfConsistentMeanFieldStep::newtonIterated)
+      .def_readwrite("newton", &SelfConsistentMeanFieldStep::newton);
 
   py::class_<SelfConsistentMeanFieldReport>(m, "SelfConsistentMeanFieldReport",
-      "What a self-consistent solve reached.")
+      "What a self-consistent solve reached, which method and band selection "
+      "ran, and why it stopped.")
       .def(py::init<>())
+      .def_readwrite("method", &SelfConsistentMeanFieldReport::method)
+      .def_readwrite("band_selection",
+                     &SelfConsistentMeanFieldReport::bandSelection)
       .def_readwrite("steps", &SelfConsistentMeanFieldReport::steps)
+      .def_readwrite("iterations", &SelfConsistentMeanFieldReport::iterations,
+                     "Accepted Newton steps of the joint system, or outer "
+                     "iterations of the alternation.")
       .def_readwrite("converged", &SelfConsistentMeanFieldReport::converged)
+      .def_readwrite("stop_reason", &SelfConsistentMeanFieldReport::stopReason)
+      .def_readwrite("stop_detail", &SelfConsistentMeanFieldReport::stopDetail)
       .def_readwrite("force_norm", &SelfConsistentMeanFieldReport::forceNorm)
       .def_readwrite("covariance_change",
                      &SelfConsistentMeanFieldReport::covarianceChange)
@@ -5107,11 +5366,81 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("spectral_gap",
                      &SelfConsistentMeanFieldReport::spectralGap)
       .def_readwrite("band_ranks", &SelfConsistentMeanFieldReport::bandRanks)
+      .def_readwrite("bands", &SelfConsistentMeanFieldReport::bands)
+      .def_readwrite("band_isolation",
+                     &SelfConsistentMeanFieldReport::bandIsolation)
+      .def_readwrite("band_crossing_iterates",
+                     &SelfConsistentMeanFieldReport::bandCrossingIterates)
+      .def_readwrite("lowest_band_overlap",
+                     &SelfConsistentMeanFieldReport::lowestBandOverlap)
       .def_readwrite("action", &SelfConsistentMeanFieldReport::action)
+      .def_readwrite("action_available",
+                     &SelfConsistentMeanFieldReport::actionAvailable)
+      .def_readwrite("action_unavailable",
+                     &SelfConsistentMeanFieldReport::actionUnavailable)
       .def_readwrite("zero_guard_damped_steps",
                      &SelfConsistentMeanFieldReport::zeroGuardDampedSteps,
-                     "Inner Newton steps the holonomy zero guard damped, over "
-                     "every outer iteration.");
+                     "Newton steps the holonomy zero guard damped, over the "
+                     "whole solve.")
+      .def_readwrite("jacobian_size",
+                     &SelfConsistentMeanFieldReport::jacobianSize)
+      .def_readwrite("jacobian_rank",
+                     &SelfConsistentMeanFieldReport::jacobianRank,
+                     "The rank of the joint Jacobian at the end point.")
+      .def_readwrite("largest_singular_value",
+                     &SelfConsistentMeanFieldReport::largestSingularValue)
+      .def_readwrite(
+          "smallest_retained_singular_value",
+          &SelfConsistentMeanFieldReport::smallestRetainedSingularValue)
+      .def_readwrite(
+          "largest_discarded_singular_value",
+          &SelfConsistentMeanFieldReport::largestDiscardedSingularValue)
+      .def_readwrite("rank_gap", &SelfConsistentMeanFieldReport::rankGap,
+                     "The joint Jacobian's rank gap at the end point.")
+      .def_readwrite("kontsevich_segal_margin",
+                     &SelfConsistentMeanFieldReport::kontsevichSegalMargin,
+                     "Positive on an allowable geometry, negative otherwise.")
+      .def_readwrite("fiber_rank", &SelfConsistentMeanFieldReport::fiberRank,
+                     "r, the rank of the occupied fiber where the bands were "
+                     "chosen.")
+      .def_readwrite("moment_scale",
+                     &SelfConsistentMeanFieldReport::momentScale,
+                     "The unit s the pinned power sums were solved in.")
+      .def_readwrite("moment_targets",
+                     &SelfConsistentMeanFieldReport::momentTargets,
+                     "The pinned fiber moments' targets p_j*, in the "
+                     "operator's own unit.")
+      .def_readwrite("multipliers", &SelfConsistentMeanFieldReport::multipliers,
+                     "The multipliers xi_j of xi_j (p_j(h_C) - p_j*) at the "
+                     "end point, in the operator's own unit.")
+      .def_readwrite("moment_residuals",
+                     &SelfConsistentMeanFieldReport::momentResiduals,
+                     "p_j(h_C) - p_j* at the end point, in the operator's own "
+                     "unit.")
+      .def_readwrite(
+          "hellmann_feynman_force_norm",
+          &SelfConsistentMeanFieldReport::hellmannFeynmanForceNorm,
+          "||tr(Gamma dh)|| on the relaxed geometric coordinates at the end "
+          "point, without the geometric terms and the constraints.")
+      .def_readwrite("force_hessian",
+                     &SelfConsistentMeanFieldReport::forceHessian,
+                     "The moment-constrained action's Hessian on the range of "
+                     "the Hellmann-Feynman force (WP v17 line 265): the "
+                     "Rayleigh quotient f^T H f / f^T f of the joint "
+                     "Jacobian's geometric block along the Hellmann-Feynman "
+                     "force projected onto the pinned constraints' tangent "
+                     "space, in the coordinates (z, theta), delta = i theta. "
+                     "Real on the real slice, where its sign is the "
+                     "condition's reading.")
+      .def_readwrite("force_hessian_scale",
+                     &SelfConsistentMeanFieldReport::forceHessianScale,
+                     "The Frobenius norm of that Hessian's geometric block in "
+                     "(z, theta), against which the quotient's imaginary part "
+                     "is read.")
+      .def_readwrite("largest_length_ratio",
+                     &SelfConsistentMeanFieldReport::largestLengthRatio,
+                     "The largest |z_e| at the end over its value at the "
+                     "start.");
 
   py::class_<SelfConsistentMeanField>(m, "SelfConsistentMeanField",
       "The certificates-blind mean-field backreaction of Section 7, solved to "
@@ -5119,12 +5448,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "The only channel from the state to the geometry is the bilinear action "
       "density, so the force on an edge is tr(Gamma dh/dz_e) and the force on "
       "a link is tr(Gamma U_e dh/dU_e); both are complex and neither is "
-      "projected onto a real part. The solve alternates making the geometry "
-      "stationary against the whole action at fixed Gamma with re-occupying "
-      "Gamma from the modes of h at the relaxed geometry. A fixed point is the "
-      "self-consistent polaron: Gamma* projects onto modes of h(z*) and the "
-      "state's force balances the geometric action edge by edge. It is a "
-      "stationary point of a complex action, not a minimum of a real one.")
+      "projected onto a real part. A fixed point is the self-consistent "
+      "polaron: Gamma* is the declared rule's density of the modes of h(z*) "
+      "and the state's force balances the geometric action edge by edge. It "
+      "is a stationary point of a complex action, not a minimum of a real "
+      "one. The declared method (JointNewton by default, Alternation as a "
+      "named fallback) and band selection (Continuation by default) change no "
+      "equation. A solve that finds no fixed point reports why, by name.")
       .def(py::init<JointAction, SelfConsistentMeanFieldDeclaration>(),
            py::arg("action"), py::arg("declaration"))
       .def("solve", &SelfConsistentMeanField::solve,
