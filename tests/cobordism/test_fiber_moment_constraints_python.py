@@ -478,22 +478,28 @@ def test_more_bands_than_the_content_occupies_are_refused():
 
 
 def test_one_pinned_constraint_per_occupied_band():
-    """Pinning the eigenvalues, m_c is the number of bands the content
-    occupies whatever --fiber-moments says; pinning the power sums, "bands"
-    is that number too, "r" the fiber's rank and a count itself."""
+    """"r" is every occupied band's eigenvalue when the eigenvalues are
+    pinned and the fiber's rank of power sums when they are; "bands" is the
+    number of occupied bands under either; a count is itself, zero pinning
+    nothing."""
     config = bp.default_config([1.0], [1.0])
     spacetime = bp.build_host()
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime,
                                                               1.0, 1.0))
     for content, bands in (((0, 0, 3), 1), ((1, 0, 2), 2), ((1, 1, 1), 3)):
         declaration = bp.mean_field_declaration(content, config, spacetime)
-        for setting in ("r", "bands", "2"):
-            assert bp.fiber_moment_count(declaration, action, setting,
-                                         "eigenvalues") == bands
-        assert bp.fiber_moment_count(declaration, action, "bands",
-                                     "power-sums") == bands
-        assert bp.fiber_moment_count(declaration, action, "2",
-                                     "power-sums") == 2
+        for pinning in ("eigenvalues", "power-sums"):
+            assert bp.fiber_moment_count(declaration, action, "bands",
+                                         pinning) == bands
+            assert bp.fiber_moment_count(declaration, action, "1",
+                                         pinning) == 1
+            assert bp.fiber_moment_count(declaration, action, "0",
+                                         pinning) == 0
         assert bp.fiber_moment_count(declaration, action, "r",
-                                     "power-sums") == 3 * bands
+                                     "eigenvalues") == bands
+        read = cob.BandFollower(declaration).read(action.carrier_operator())
+        assert len(read.bands) == bands
+        assert bp.fiber_moment_count(declaration, action, "r",
+                                     "power-sums") == sum(
+                                         b.rank for b in read.bands)
     assert bp._fiber_moments("bands") == "bands"
