@@ -35,6 +35,33 @@ cob = T.cobordism
 _OLD_FLOOR = 0.05
 _OLD_CAP = 20.0
 
+#: The rotation epsilon of the Lorentzian family the seeded hosts are built at
+#: (integration specification, Requirement 2). A real Lorentzian seed sits on
+#: the boundary of the Kontsevich-Segal allowable domain, the set of complex
+#: metrics whose Gram eigenvalues on every top simplex satisfy
+#: sum_i |arg lambda_i| < pi; the default Whitney metric's configuration space
+#: is the closure of that domain.
+_EPSILON = 0.1
+
+
+def _seed_rotated(host, seeds, epsilon=_EPSILON):
+    """Write the squared length s of each seeded edge, with its declared
+    timelike part tau, as the member at rotation epsilon of its Lorentzian
+    family: s(epsilon) = (s - tau) + exp(-2 i epsilon) tau. `seeds` maps an
+    edge index to (s, tau); every other edge keeps its length and has no
+    timelike part. Returns the host's Kontsevich-Segal margin, the minimum
+    over top simplices of pi - sum_i |arg lambda_i|."""
+    edges = host.getEdgeList().toVector()
+    squared = [complex(e.getLength()) ** 2 for e in edges]
+    timelike = [0j] * len(edges)
+    for index, (value, part) in seeds.items():
+        squared[index] = complex(value)
+        timelike[index] = complex(part)
+    rotated = T.chainhodge.LorentzianFamily.rotate(squared, timelike, epsilon)
+    for edge, value in zip(edges, rotated):
+        edge.setLength(cmath.sqrt(complex(value)))
+    return cob.HodgeLaplacian.kontsevichSegalMargin(host)
+
 
 def _sphere4(jitter=True):
     """A minimal triangulated S⁴ (boundary of a 5-simplex), unit spacelike, lightly
@@ -120,26 +147,31 @@ class Stage2UnclampedTest(unittest.TestCase):
 
     def test_accepted_steps_never_pin_to_the_old_clamp(self):
         # Seed edges on the wrong side of every retired bound: timelike (the reader-
-        # verification allowance), beyond the old ±20 cap, and inside the old 0.05
-        # floor band. The retired clamp rewrote ALL of them to exactly a pin value on
-        # the FIRST accepted sweep; unclamped descent may move them, but never to a
-        # pin. Requires an accepted step (len(trace) >= 2) to be meaningful.
+        # verification allowance), timelike beyond the old -20 cap, and inside the
+        # old 0.05 floor band. The retired clamp rewrote ALL of them to exactly a pin
+        # value on the FIRST accepted sweep; unclamped descent may move them, but
+        # never to a pin. Requires an accepted step (len(trace) >= 2) to be
+        # meaningful.
         #
-        # The unbounded configuration space is the diagonal weights': the
-        # seeded edges put this host on the boundary of the Kontsevich-Segal
-        # allowable domain (margin exactly 0), and the Whitney pencil's
-        # configuration space is that domain's closure, so there stage 2
-        # refuses every trial off the boundary and accepts no step. The
-        # diagonal source is named so the clamp's absence stays witnessed.
+        # The two timelike edges are all timelike part and are rotated at
+        # _EPSILON, which puts the host inside the allowable domain (margin
+        # 0.00959; 0 unrotated). A spacelike edge beyond the +20 cap cannot be
+        # seeded there: at s = 25 among edges near 1 it breaks the triangle
+        # inequality, its twelve top simplices are Lorentzian with no declared
+        # timelike part, and they stay at margin 0 at every rotation.
         host = _closed_s4(n_refine=8, seed=3)
-        edges = host.getEdgeList().toVector()
-        edges[5].setLength(cmath.sqrt(complex(complex(-0.8, 0.0))))    # timelike
-        edges[7].setLength(cmath.sqrt(complex(complex(25.0, 0.0))))    # beyond the old cap
-        edges[9].setLength(cmath.sqrt(complex(complex(0.01, 0.0))))    # inside the old floor band
-        opt = self._node(host, metric_source=cob.HodgeMetricSource.DiagonalWeights)
+        margin = _seed_rotated(host, {5: (-0.8, -0.8),     # timelike
+                                      7: (-25.0, -25.0),   # beyond the old cap
+                                      9: (0.01, 0.0)})     # inside the old floor band
+        self.assertAlmostEqual(margin, 0.009592433696182567, places=9)
+        opt = self._node(host)
         trace = opt.run_stage2(beta=1.0, max_iters=3, alpha0=0.05, tolerance=1e-9)
         self.assertTrue(all(math.isfinite(f) for f in trace))
         self.assertGreaterEqual(len(trace), 2, "no accepted step — vacuous run")
+        # Measured on the default Whitney metric: three accepted steps,
+        # 1745.9421 -> 143.1963 -> 111.9970 -> 97.2480, ending inside the
+        # domain (margin 1.27e-4).
+        self.assertGreater(cob.HodgeLaplacian.kontsevichSegalMargin(opt.st), 0.0)
         for e in opt.st.getEdgeList().toVector():
             sq = complex(e.getLength()**2)
             self.assertTrue(cmath.isfinite(sq))
@@ -165,9 +197,10 @@ class Stage2UnclampedTest(unittest.TestCase):
         # A stage-2 run on a host carrying one hand-set timelike edge neither NaNs
         # nor collapses: finite F trace, every edge finite. Cone-side changes and
         # magnitudes and complex phases are dynamics; only the line search's
-        # variational acceptance decides (#589).
+        # variational acceptance decides (#589). The timelike edge is rotated
+        # at _EPSILON, inside the allowable domain (margin 0.154).
         host = _closed_s4(n_refine=8, seed=3)
-        host.getEdgeList().toVector()[5].setLength(cmath.sqrt(complex(complex(-0.8, 0.0))))
+        self.assertGreater(_seed_rotated(host, {5: (-0.8, -0.8)}), 0.0)
         opt = self._node(host)
         trace = opt.run_stage2(beta=1.0, max_iters=3, alpha0=0.05, tolerance=1e-9)
         self.assertTrue(all(math.isfinite(f) for f in trace))
