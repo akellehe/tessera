@@ -198,11 +198,14 @@ enum class CoorientationSource {
   InteriorSpectrum,
 };
 
-/// The whitepaper's proposed identification of an anti-cluster with an
-/// effective void, evaluated on one declared region
-/// (`EffectiveTopology::antiCluster`).
+/// The whitepaper's proposal that the support of a hole is an effective
+/// void, evaluated on one declared region (`EffectiveTopology::antiCluster`).
 ///
-/// The proposal (Section 10, and falsifier 9) is that an anti-cluster is "a
+/// An antiquark is a hole: a deficit of occupation in an occupied base band
+/// relative to the matched reference state, carrying the dual fiber on the
+/// reversed lineage (WP v18 Sections 5 and 10). Where that hole sits is a
+/// separate hypothesis from the deficit that defines it: the proposal
+/// (Section 10, and falsifier 9) is that the hole's support is "a
 /// region whose enclosing surface is a certified coexact near-cycle of
 /// \f$ L_2 \f$ (of \f$ L_1 \f$ on the dual), whose interior spectrum is nearly
 /// empty, and whose enclosing coorientation is inward". Each of those three
@@ -398,8 +401,10 @@ class EffectiveTopology {
   /// region (equivalently the near-kernel of \f$ L_1 \f$ on the dual
   /// complex). `split(cov, 2, ...)`, with `coexact` the number of voids.
   ///
-  /// The whitepaper proposes that an anti-cluster is an effective void; this
-  /// reads the void, and says nothing about its lineage.
+  /// The whitepaper proposes that the support of a hole, an antiquark's
+  /// occupation deficit relative to the matched reference, is an effective
+  /// void (WP v18 Section 10); this reads the void, and says nothing about
+  /// the deficit or its lineage.
   /// @throws std::invalid_argument when the complex is not of dimension
   ///   three, and as `read`.
   [[nodiscard]] static EffectiveHodgeSplit voids(const chainhodge::CovariantChainHodge &cov, double epsilon,
@@ -428,7 +433,8 @@ class EffectiveTopology {
                                                               double minimumGap = kDefaultMinimumGap);
 
   /// The anti-cluster certificate on the region \p regionVertices at scale
-  /// \p epsilon: the whitepaper's proposal that an anti-cluster is an
+  /// \p epsilon: the whitepaper's proposal that the support of a hole, an
+  /// antiquark's occupation deficit relative to the matched reference, is an
   /// effective void, evaluated clause by clause (see
   /// `AntiClusterCertificate`).
   ///

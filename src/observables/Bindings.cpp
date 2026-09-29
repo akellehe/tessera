@@ -247,7 +247,8 @@ are the coexact part. Frames are orthonormal bases of chains.)doc")
       .def_readwrite("coorientationTolerance", &AntiClusterOptions::coorientationTolerance);
 
   py::class_<AntiClusterCertificate>(m, "AntiClusterCertificate",
-      R"doc(The whitepaper's proposed identification of an anti-cluster with an effective void,
+      R"doc(The whitepaper's proposal that the support of a hole, an antiquark's occupation
+deficit relative to the matched reference (WP v18 Sections 5 and 10), is an effective void,
 evaluated on one declared region: a region whose enclosing surface is a certified coexact
 near-cycle of L_2, whose interior spectrum is nearly empty, and whose enclosing
 coorientation is inward. The region's cells and its enclosing surface come from the
@@ -307,7 +308,8 @@ consults the incidence ranks.)doc");
       .def_static("antiCluster", &EffectiveTopology::antiCluster, py::arg("operator"),
            py::arg("region_vertices"), py::arg("epsilon"), py::arg("options") = AntiClusterOptions{},
            "The anti-cluster certificate on a region declared by its vertices: the whitepaper's "
-           "proposal that an anti-cluster is an effective void, evaluated clause by clause. The region "
+           "proposal that the support of a hole, an antiquark's occupation deficit relative to the "
+           "matched reference, is an effective void, evaluated clause by clause. The region "
            "supplies its cells and its enclosing surface, the surface's share of the certified coexact "
            "part of the degree-two band says whether it is a near-cycle of L_2, the operator restricted "
            "to the region is the interior spectrum, and the coorientation comes from a supplied "
