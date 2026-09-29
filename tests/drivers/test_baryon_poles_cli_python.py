@@ -158,8 +158,9 @@ def test_main_writes_the_json_and_the_points_file(cheap, tmp_path):
     assert document["stopped"] is False
     assert document["config"]["kappas"] == [0.5, 1.0]
     assert document["config"]["holonomy"] == "villain"
-    assert document["config"]["target_mass_squared_ratio"] == pytest.approx(
-        (938.272 / 1232.0) ** 2)
+    assert document["config"]["target_mass_ratio"] == pytest.approx(
+        938.272 / 1232.0)
+    assert "target_mass_squared_ratio" not in document["config"]
     # complex numbers are written as {"re", "im"}
     pole = document["points"][0]["ratios"]["quasi_free"]["by_spin"][
         "nucleon_pole"]

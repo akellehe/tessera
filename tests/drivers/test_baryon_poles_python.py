@@ -347,8 +347,10 @@ def test_ratios_are_taken_on_the_lowest_poles():
     assert by_spin["pole_ratio"] == pytest.approx(10.0 / 9.0)
     assert by_spin["delta_is_a_delta_reading"]
     assert not by_spin["delta_ambiguous_with_spin_half"]
-    assert by_spin["target_mass_squared_ratio"] == pytest.approx(
-        (938.272 / 1232.0) ** 2)
+    # the pole is the rest energy (WP v18 §13.3): the target is the mass
+    # ratio itself
+    assert by_spin["target_mass_ratio"] == pytest.approx(938.272 / 1232.0)
+    assert "target_mass_squared_ratio" not in by_spin
     by_reading = out["quasi_free"]["by_2T_reading"]
     # the lowest pole with a 2 in its restriction is the spin-3/2 sector of
     # (2, 1, 0): the tetrahedral ambiguity in action
