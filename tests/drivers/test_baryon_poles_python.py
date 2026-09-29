@@ -813,6 +813,78 @@ def test_the_anchor_evidence_reads_a_refusal_and_an_absent_read():
     assert bp.anchor_text(None) == "anchor atlas unread"
 
 
+# ------------------------------------------------- the spectral fingerprint
+
+
+def test_the_centroid_lengths_of_the_regular_tetrahedron():
+    """On the regular tetrahedron of squared edge length 8 every vertex is at
+    squared distance 3 from the centroid, the squared circumradius."""
+    radii = bp.centroid_squared_lengths([8.0] * 6)
+    assert np.allclose(radii, [3.0] * 4)
+    # and on a stretched one the identity for four points holds
+    squared = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    total = sum(bp.centroid_squared_lengths(squared))
+    assert abs(total - sum(squared) / 4.0) < 1e-12
+
+
+def test_the_refined_host_keeps_the_boundary_and_its_monopole():
+    """The stellar subdivision of the declared host: fifteen vertices, thirty
+    edges and twelve tetrahedra; each sheet's boundary faces, their
+    holonomies and the unit monopole through them are unchanged, and the new
+    edges carry the centroid's lengths and the trivial link."""
+    refined, data = bp.refined_host(bp.build_host())
+    assert len(refined.getVertexList().toVector()) == 15
+    assert len(refined.getEdgeList().toVector()) == 30
+    assert len(data) == bp.SHEETS
+    for sheet in data:
+        assert len(sheet["squared_lengths"]) == 10
+        new = [k for k, e in enumerate(bp.REFINED_EDGES)
+               if bp.REFINED_CENTRE in e]
+        assert all(abs(sheet["squared_lengths"][k] - 3.0) < 1e-12
+                   for k in new)
+        assert all(abs(sheet["links"][k] - 1.0) < 1e-12 for k in new)
+        support = bp.refined_support(sheet)
+        read = support.monopoleNumber()
+        assert read.monopole_number == 1 and read.odd
+        spin = support.spinRead(bp.refined_rotation_group())
+        assert spin.cocycle.nontrivial and spin.half_integer_doublet
+
+
+def test_the_spectral_fingerprint_of_the_declared_host():
+    """Quark condition 7 on the declared host: under the declared odd
+    relabeling every spectrum, the doublet's energy and its edge weights are
+    unchanged to rounding, and under the declared refinement the doublet's
+    type is carried by a single rank-two band of the refined action whose
+    restriction to the shared edges is the original doublet; the energy
+    shift under refinement is reported, not gated."""
+    config = bp.default_config([1.0], [1.0])
+    read = bp.spectral_fingerprint_read(bp.build_host(), 1.0, 1.0, config)
+    assert read["doublet_found"] and read["sheet"] == 0
+    assert np.allclose(read["doublet_weights"], [1.0 / 3.0] * 6)
+    relabeling = read["relabeling"]
+    assert relabeling["permutation"] == [1, 0, 2, 3]
+    assert relabeling["held"]
+    assert relabeling["monopole_number"] == -1  # the orientation flips
+    for key in ("spectrum_shift", "averaged_spectrum_shift",
+                "doublet_weight_shift", "doublet_energy_shift"):
+        assert relabeling[key] < 1e-12
+    refinement = read["refinement"]
+    assert refinement["doublet_found"] and refinement["held"]
+    assert refinement["monopole_number"] == 1
+    assert refinement["isotypic_dimension"] == 2
+    assert refinement["refined_rank"] == 2
+    assert refinement["overlap"] > 1.0 - 1e-9
+    assert refinement["energy_shift"] > 0.0
+    evidence = bp.fingerprint_evidence(read)
+    assert [e.name for e in evidence] == ["refinement-stability",
+                                          "relabeling-stability"]
+    assert [e.held for e in evidence] == [True, True]
+    assert bp.fingerprint_text(read).startswith(
+        "spectral fingerprint: relabeling stable")
+    assert [e.held for e in bp.fingerprint_evidence(None)] == [None, None]
+    assert bp.fingerprint_text(None) == "spectral fingerprint unread"
+
+
 # ------------------------------------------- refusals after the mean field
 
 

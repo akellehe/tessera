@@ -1591,7 +1591,8 @@ def _conditions_text(record):
 def _content_line(cell, c):
     """One content of one host cell: whether it was read (or why its read
     was refused), its mean-field solve (`baryon_poles.relaxation_text`), its
-    anchor atlas (`baryon_poles.anchor_text`), its quark verdict and every
+    anchor atlas (`baryon_poles.anchor_text`), its spectral fingerprint
+    (`baryon_poles.fingerprint_text`), its quark verdict and every
     quark condition's status, its quarks per doublet of h-bar_1 and its
     quartic truncation certificates."""
     head = "host cell %s content %s (quarks per band of h_1): " % (
@@ -1607,8 +1608,10 @@ def _content_line(cell, c):
                    "h-bar_1 %s; quartic truncation %s; quark conditions %s"
                    % (verdict["certified"] if verdict else None,
                       bp.relaxation_text(c.get("relaxation")),
-                      bp.anchor_text(c["anchor"]) + "; "
-                      if "anchor" in c else "",
+                      (bp.anchor_text(c["anchor"]) + "; "
+                       if "anchor" in c else "")
+                      + (bp.fingerprint_text(c["spectral_fingerprint"])
+                         + "; " if "spectral_fingerprint" in c else ""),
                       {k: bp._complex_text(v) for k, v in spin.items()}
                       if spin else None,
                       _truncation_summary(c), _conditions_text(c)))
