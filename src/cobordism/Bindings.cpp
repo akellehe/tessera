@@ -1801,11 +1801,12 @@ assertion. Every pairing is the transpose.)doc")
            "residual when none are set.")
       .def_static("enumerate_move_specifications",
                   [](const std::shared_ptr<Spacetime> &spacetime,
-                     bool with_dispositions) {
+                     bool with_dispositions, bool with_surgery) {
                     return MultiCobordism::enumerateMoveSpecifications(
-                        spacetime, with_dispositions);
+                        spacetime, with_dispositions, with_surgery);
                   },
                   py::arg("spacetime"), py::arg("with_dispositions") = false,
+                  py::arg("with_surgery") = true,
                   "EVERY candidate move on `spacetime` as (kind, site) pairs, "
                   "rather than a sample of them. The random draw picks a KIND "
                   "uniformly and only then a site, so n draws is n/6 samples "
@@ -2406,6 +2407,16 @@ assertion. Every pairing is the transpose.)doc")
            "search at every breadth is exhaustive, which costs the move "
            "space raised to the breadth."
            )
+      .def_property("should_propose_surgery",
+                    &MultiCobordism::shouldProposeSurgery,
+                    &MultiCobordism::setShouldProposeSurgery,
+                    "Whether the stage-1 move draw and the exhaustive "
+                    "enumeration offer the surgical kinds (cone-out, cone-in, "
+                    "the timelike cone-in). False leaves the four Pachner "
+                    "kinds alone (and the disposition flip, when dispositions "
+                    "are proposed): the moves that keep the complex the "
+                    "manifold it is, with the boundary it has. True by "
+                    "default.")
       .def_property_readonly("should_propose_dispositions",
                              &MultiCobordism::shouldProposeDispositions,
            "Whether the stage-1 move draw also proposes CAUSAL DISPOSITIONS "

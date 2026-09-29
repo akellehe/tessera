@@ -104,7 +104,14 @@ At level l (a complex K_l of three sheets of a base complex):
    A cell is added only if the complex stays a manifold with boundary
    (`SurgicalCone.validate`); a cell that fails is recorded with the
    violation. An edge shared by several grown cells receives one value from
-   each; the level carries their mean and reports their spread;
+   each; the level carries their mean and reports their spread. The grown
+   base then takes the combinatorial moves of the growth step
+   (`pachner_stage`): a stage-1 search of `MultiCobordism` in unforced
+   emergence under the joint stationarity objective, the four Pachner kinds
+   alone (no cone-out, cone-in or disposition move), run as the emergence
+   driver runs its stage 1 (``--pachner-updates``, ``--pachner-candidates``,
+   ``--pachner-depth``, ``--pachner-seed``; zero updates run none); the
+   next level is built from the base that comes back;
 5. the reads, behind the certificate firewall: every tetrahedron of the base
    of K_l, read as a three-sheeted host of its own (``baryon_poles``), gives
    the v16 quark verdicts (`QuarkConditions`), the isospin-doublet reading
@@ -181,6 +188,23 @@ DECLARED_BETA = 1.0
 DECLARED_RESOLUTIONS = (1.0, 1.5, 2.0, 2.5, 3.0)
 DECLARED_BAND_RANK = 1
 DECLARED_CONTOUR_NODES = 64
+#: The combinatorial moves of the growth step (`pachner_stage`): how many
+#: stage-1 updates of `MultiCobordism` run on each grown level's base, how
+#: many candidate moves each update draws, how many moves deep the search goes
+#: when no single move lowers the objective, and the seed of the draw. They
+#: are the emergence driver's declared stage-1 unit
+#: (`emergence.DECLARED_STAGE1_ITERS`, `DECLARED_CANDIDATE_MOVES`,
+#: `DECLARED_COMBINATORIAL_DEPTH`), so the moves run as that driver runs them.
+#: Zero updates run no move.
+DECLARED_PACHNER_UPDATES = 1
+DECLARED_PACHNER_CANDIDATES = 6
+DECLARED_PACHNER_DEPTH = 1
+DECLARED_PACHNER_SEED = 0
+#: The degrees the joint stationarity objective is declared over on the base:
+#: the register degree and the Hodge degrees, the emergence driver's
+#: (`emergence.DECLARED_REGISTER_DEGREES`, `DECLARED_HODGE_DEGREES`).
+PACHNER_REGISTER_DEGREES = (1,)
+PACHNER_HODGE_DEGREES = (0, 1, 2, 3)
 #: The value of the coordinate pairing det((Z_v^vee)^T Z_v) of a fiber's two
 #: geometric images: the number of edges at a vertex of a 3-simplex, which is
 #: the pairing of the images of the level-0 vertex chains, so that a level-0
@@ -971,6 +995,78 @@ def persistent_components(level, edges, required):
     return accepted, rejected
 
 
+def pachner_stage(cells, z, links, config):
+    """The combinatorial moves of the growth step, on the next level's base:
+    a stage-1 search of `MultiCobordism` in unforced emergence under
+    `JointStationarityObjective` (the Regge action and the Hodge spectral
+    entropies stationary at one metric), restricted to the four Pachner
+    kinds: no cone-out, cone-in or disposition move, so the base stays the
+    manifold it is, with the boundary it has. It runs as the emergence
+    driver runs its stage 1: ``pachner_updates`` updates, each drawing
+    ``pachner_candidates`` candidate moves and committing the best that
+    lowers the objective, deepening to ``pachner_depth``-move sequences when
+    no single move does. The base is one sheet; the level is rebuilt from it
+    with every sheet identical. Returns the base after the committed moves,
+    its vertices relabeled 0..n-1 (``vertex_relabeling`` in the record), with
+    the stage's record; zero updates return the base as it is."""
+    updates = int(config.get("pachner_updates", 0))
+    candidates = int(config.get("pachner_candidates",
+                                DECLARED_PACHNER_CANDIDATES))
+    depth = int(config.get("pachner_depth", DECLARED_PACHNER_DEPTH))
+    seed = int(config.get("pachner_seed", DECLARED_PACHNER_SEED))
+    record = {
+        "updates": updates, "candidates": candidates, "depth": depth,
+        "seed": seed,
+        "moves": ("the four Pachner kinds; no cone-out, cone-in or "
+                  "disposition move"),
+        "objective": ("joint stationarity: the Regge action and the Hodge "
+                      "spectral entropies of degrees %s stationary at one "
+                      "metric" % (list(PACHNER_HODGE_DEGREES),)),
+        "before": {"vertices": 1 + max(max(c) for c in cells),
+                   "edges": len(z), "cells": len(cells)},
+    }
+    if updates <= 0:
+        record["after"] = dict(record["before"])
+        record["changed"] = False
+        return cells, z, links, record
+    spacetime, _ = build_level(cells, z, links, sheets=1)
+    MC = cob.MultiCobordism
+    node = MC(spacetime, [], [], list(PACHNER_REGISTER_DEGREES), 1.0, seed, 0,
+              False)
+    node.set_objective(cob.JointStationarityObjective())
+    node.set_hodge_degrees(list(PACHNER_HODGE_DEGREES))
+    node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
+                             MC.EmergenceSubmode.STRICT)
+    node.should_propose_surgery = False
+    record["objective_before"] = float(node.objective())
+    record["trace"] = [float(value) for value in node.run_stage1(
+        max_steps=updates, n_candidate_moves=candidates,
+        grow_boundaries=False, max_lookahead=depth, combinatorial_breadth=0)]
+    record["objective_after"] = float(node.objective())
+    moved = node.spacetime()
+    raw = [sorted(int(v.getId()) for v in cell.getVertices())
+           for cell in moved.getTopSimplices() if cell is not None]
+    used = sorted({v for c in raw for v in c})
+    relabel = {v: i for i, v in enumerate(used)}
+    cells_out = sorted([relabel[v] for v in c] for c in raw)
+    z_out, links_out = {}, {}
+    for edge in moved.getEdgeList().toVector():
+        x = relabel[int(edge.getSource().getId())]
+        y = relabel[int(edge.getTarget().getId())]
+        # the inverse of `build_level`'s writing of the fields
+        link = cmath.exp(1j * complex(edge.getPhase()))
+        if x > y:
+            link = 1.0 / link
+        key = (min(x, y), max(x, y))
+        z_out[key] = complex(edge.getLength()) ** 2
+        links_out[key] = link
+    record["vertex_relabeling"] = {str(v): relabel[v] for v in used}
+    record["after"] = {"vertices": len(used), "edges": len(z_out),
+                       "cells": len(cells_out)}
+    record["changed"] = cells_out != sorted(sorted(c) for c in cells)
+    return cells_out, z_out, links_out, record
+
+
 def tick(index, cells, z, links, config):
     """One tick on the level whose base is ``cells`` with fields ``z`` and
     ``links``. Returns the tick's record and the next level's base (or None
@@ -1136,6 +1232,17 @@ def tick(index, cells, z, links, config):
                   for (a, b) in next_z if (a, b) in kept_edges}
     z_out = {e: next_z[src] for e, src in next_edges.items()}
     links_out = {e: next_links[src] for e, src in next_edges.items()}
+    # the combinatorial moves on the grown base, before it is the next level
+    next_cells, z_out, links_out, record["pachner"] = pachner_stage(
+        next_cells, z_out, links_out, config)
+    record["summary"]["pachner"] = {
+        "updates": record["pachner"]["updates"],
+        "changed": record["pachner"]["changed"],
+        "cells": [record["pachner"]["before"]["cells"],
+                  record["pachner"]["after"]["cells"]],
+        "objective": [record["pachner"].get("objective_before"),
+                      record["pachner"].get("objective_after")],
+    }
     return record, (next_cells, z_out, links_out)
 
 
@@ -1156,7 +1263,11 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    band_selection=bp.DECLARED_BAND_SELECTION,
                    stiffness=bp.DECLARED_STIFFNESS,
                    fiber_moments=bp.DECLARED_FIBER_MOMENTS,
-                   fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None):
+                   fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
+                   pachner_updates=DECLARED_PACHNER_UPDATES,
+                   pachner_candidates=DECLARED_PACHNER_CANDIDATES,
+                   pachner_depth=DECLARED_PACHNER_DEPTH,
+                   pachner_seed=DECLARED_PACHNER_SEED):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1205,6 +1316,15 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                              "bulk and on every grown level"),
         "gluing": ("grown cells in ascending lexicographic order, each added "
                    "only if the complex stays a manifold with boundary"),
+        "pachner_updates": int(pachner_updates),
+        "pachner_candidates": int(pachner_candidates),
+        "pachner_depth": int(pachner_depth),
+        "pachner_seed": int(pachner_seed),
+        "pachner_moves": ("stage-1 updates of MultiCobordism on each grown "
+                          "level's base (one sheet) under the joint "
+                          "stationarity objective, the four Pachner kinds "
+                          "alone: no cone-out, cone-in or disposition move; "
+                          "zero updates run none"),
         "edge_value": "mean over the grown cells containing the edge",
         "max_cells": max_cells,
     })
@@ -1694,6 +1814,24 @@ def build_parser():
     run.add_argument("--max-cells", type=int, default=None,
                      help="read at most this many tetrahedra per tick as "
                           "hosts (a quick-check limit; default all)")
+    run.add_argument("--pachner-updates", type=int,
+                     default=DECLARED_PACHNER_UPDATES,
+                     help="stage-1 updates of the Pachner-move search on each "
+                          "grown level's base (the four Pachner kinds under "
+                          "the joint stationarity objective; no surgery); 0 "
+                          "runs none (default %d)" % DECLARED_PACHNER_UPDATES)
+    run.add_argument("--pachner-candidates", type=int,
+                     default=DECLARED_PACHNER_CANDIDATES,
+                     help="candidate moves drawn per update (default %d)"
+                          % DECLARED_PACHNER_CANDIDATES)
+    run.add_argument("--pachner-depth", type=int,
+                     default=DECLARED_PACHNER_DEPTH,
+                     help="how many moves deep the search goes when no single "
+                          "move lowers the objective (default %d)"
+                          % DECLARED_PACHNER_DEPTH)
+    run.add_argument("--pachner-seed", type=int, default=DECLARED_PACHNER_SEED,
+                     help="seed of the move draw (default %d)"
+                          % DECLARED_PACHNER_SEED)
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each tick is "
                           "also appended, as it completes, to "
@@ -1723,7 +1861,10 @@ def main(argv=None):
         band_selection=args.band_selection,
         stiffness=args.stiffness, fiber_moments=args.fiber_moments,
         fiber_pinning=args.fiber_pinning,
-        tolerances=bp.tolerances_from(args))
+        tolerances=bp.tolerances_from(args),
+        pachner_updates=args.pachner_updates,
+        pachner_candidates=args.pachner_candidates,
+        pachner_depth=args.pachner_depth, pachner_seed=args.pachner_seed)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)
