@@ -45,7 +45,8 @@ At level l (a complex K_l of three sheets of a base complex):
    strict emergence (no carried density in the equations; WP §7). The
    spectral-moment part of S_0 is the holomorphic spectral constraint of
    WP v17 §3.4, which belongs to controlled synthesis on an occupied fiber and
-   so enters only the per-cell reads below; the linear stand-in
+   so enters only the per-cell reads below (stated there as the eigenvalue of
+   each occupied band by default, ``--fiber-pinning``); the linear stand-in
    (1/kappa)(1/2)||l - l0||^2, with l0 the level's own lengths as the level
    was built, is available by name (``--stiffness linear-stand-in``) and off
    by default. The three sheets are relaxed
@@ -833,7 +834,8 @@ def cell_reads(cells, z, links, config):
         # changes an equation)
         for key in ("mean_field_method", "band_selection",
                     "length_runaway_ratio", "stiffness", "fiber_moments",
-                    "kappa_role") + tuple(key for key, _ in bp.TOLERANCES):
+                    "fiber_pinning", "kappa_role") + tuple(
+                        key for key, _ in bp.TOLERANCES):
             if key in config:
                 cell_config[key] = config[key]
         number = monopole_numbers([c], links)[0]
@@ -1153,7 +1155,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    mean_field_method=bp.DECLARED_MEAN_FIELD_METHOD,
                    band_selection=bp.DECLARED_BAND_SELECTION,
                    stiffness=bp.DECLARED_STIFFNESS,
-                   fiber_moments=bp.DECLARED_FIBER_MOMENTS, tolerances=None):
+                   fiber_moments=bp.DECLARED_FIBER_MOMENTS,
+                   fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1170,6 +1173,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                band_selection=band_selection,
                                stiffness=stiffness,
                                fiber_moments=fiber_moments,
+                               fiber_pinning=fiber_pinning,
                                tolerances=tolerances)
     config.update({
         "mode": "controlled synthesis",
@@ -1718,6 +1722,7 @@ def main(argv=None):
         mean_field_method=args.mean_field_method,
         band_selection=args.band_selection,
         stiffness=args.stiffness, fiber_moments=args.fiber_moments,
+        fiber_pinning=args.fiber_pinning,
         tolerances=bp.tolerances_from(args))
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,

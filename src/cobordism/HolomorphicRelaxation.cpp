@@ -141,6 +141,7 @@ struct StateSnapshot {
   /// the geometry.
   std::vector<complexd> covariance;
   std::vector<complexd> momentProjector;
+  std::vector<std::vector<complexd>> momentBandProjectors;
 };
 
 StateSnapshot takeSnapshot(const JointAction &action) {
@@ -157,6 +158,7 @@ StateSnapshot takeSnapshot(const JointAction &action) {
   snapshot.multipliers = action.multipliers();
   snapshot.covariance = action.declaration().covariance;
   snapshot.momentProjector = action.declaration().momentProjector;
+  snapshot.momentBandProjectors = action.declaration().momentBandProjectors;
   return snapshot;
 }
 
@@ -194,16 +196,22 @@ void restoreSnapshot(JointAction &action, const StateSnapshot &snapshot) {
     action.setCovariance(snapshot.covariance);
   if (action.declaration().momentProjector != snapshot.momentProjector)
     action.setMomentProjector(snapshot.momentProjector);
+  if (action.declaration().momentBandProjectors !=
+      snapshot.momentBandProjectors)
+    action.setMomentBandProjectors(snapshot.momentBandProjectors);
 }
 
 /// Set on \p target the state a declared rebuild gives at its current point:
-/// the covariance and, when the rebuild constrains a fiber, its projector.
+/// the covariance and, when the rebuild constrains a fiber, its projector
+/// and the projectors of the bands whose means are pinned.
 void applyRebuild(const CovarianceRebuild &rebuild, JointAction &target) {
   if (!rebuild.at) return;
   RebuiltCarrierState state = rebuild.at(target);
   target.setCovariance(std::move(state.covariance));
   if (!state.momentProjector.empty())
     target.setMomentProjector(std::move(state.momentProjector));
+  if (!state.bandProjectors.empty())
+    target.setMomentBandProjectors(std::move(state.bandProjectors));
 }
 
 /// The square root of a new squared length taken by continuation from the

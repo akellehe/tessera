@@ -956,6 +956,7 @@ def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
     config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)],
+                               fiber_pinning="power-sums",
                                tolerances=RUN.TOLERANCES)
     assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
@@ -964,6 +965,7 @@ def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
     assert action.declaration.stiffness_weight == 0.0
     solve = bp.relaxation_record(report)
     assert solve["converged"] and solve["fiber_rank"] == 3
+    assert solve["fiber_pinning"] == "power-sums"
     assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3
     assert max(abs(r) / abs(t) for r, t in zip(
         solve["moment_residuals"], solve["moment_targets"])) < 1e-9
@@ -972,3 +974,34 @@ def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
     assert "3 of the occupied fiber's 3 power sums pinned at the host" in text
     assert "Hessian on the range of the Hellmann-Feynman force" in text
     assert "(%s)" % solve["force_hessian_sign"] in text
+
+
+def test_the_declared_read_pins_the_eigenvalue_of_every_occupied_band():
+    """The declared pinning: the eigenvalue of each occupied band, one
+    constraint per band. (0123, 030) occupies one band of rank three, so one
+    eigenvalue is pinned with one multiplier; the joint Newton converges with
+    it held at the host's value, and the record and the content's line say
+    so."""
+    from tessera.drivers import recursion as R
+    from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)],
+                               tolerances=RUN.TOLERANCES)
+    assert config["fiber_pinning"] == bp.DECLARED_FIBER_PINNING == "eigenvalues"
+    config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    assert report.fiber_constraint_form == \
+        cob.FiberConstraintForm.BandEigenvalues
+    solve = bp.relaxation_record(report)
+    assert solve["converged"] and solve["fiber_rank"] == 3
+    assert solve["fiber_pinning"] == "eigenvalues"
+    assert solve["fiber_moments"] == 1 and len(solve["multipliers"]) == 1
+    (band,) = report.bands
+    assert solve["moment_targets"][0] == pytest.approx(band.eigenvalues[0],
+                                                        rel=1e-9)
+    assert abs(solve["moment_residuals"][0]) < 1e-9 * abs(
+        solve["moment_targets"][0])
+    text = bp.relaxation_text(solve)
+    assert ("the eigenvalues of 1 occupied bands (fiber rank 3) pinned at "
+            "the host") in text

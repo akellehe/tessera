@@ -40,10 +40,11 @@ FIRST_CELL = (0, 1, 2, 3)
 SECOND_CELL = (0, 1, 3, 4)
 
 
-def _config(cell, content, fiber_moments):
+def _config(cell, content, fiber_moments, fiber_pinning="power-sums"):
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)],
                                fiber_moments=fiber_moments,
+                               fiber_pinning=fiber_pinning,
                                tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
@@ -80,6 +81,24 @@ def _pinned(spacetime, projector, orders, scale=1.0):
 
 def _fiber(read):
     return sum(np.asarray(band.projector) for band in read.bands)
+
+
+def _band_pinned(spacetime, projectors, scale=1.0):
+    """The declared action with the mean eigenvalue of each band pinned
+    (`SpectralConstraintForm.BandMean`) in the unit ``scale`` (targets zero,
+    multipliers zero)."""
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0)
+    declaration.moment_band_projectors = [
+        list(np.asarray(p).reshape(-1)) for p in projectors]
+    declaration.moment_scale = scale
+    constraints = []
+    for band in range(len(projectors)):
+        constraint = cob.SpectralMomentConstraint()
+        constraint.form = cob.SpectralConstraintForm.BandMean
+        constraint.band = band
+        constraints.append(constraint)
+    declaration.moment_constraints = constraints
+    return cob.JointAction(spacetime, declaration)
 
 
 # ------------------------------------------------ the fiber's power sums
@@ -294,3 +313,187 @@ def test_more_moments_than_the_fiber_holds_are_refused():
     mean_field.fiber_moments = 4
     with pytest.raises(ValueError, match="the fiber has rank 3"):
         cob.SelfConsistentMeanField(action, mean_field).solve()
+
+
+# ------------------------------------------------ the bands' eigenvalues
+
+
+def test_the_band_mean_is_the_band_eigenvalue():
+    """A band-mean constraint's value is tr(P_b h_1) / (r_b s): on the host
+    of (0134, 111) the mean of each occupied band's three eigenvalues, in
+    the unit s. `power_sums` lists the same values under the power-sum
+    form's name."""
+    spacetime, _, _, read = _host(SECOND_CELL, (1, 1, 1))
+    for scale in (1.0, 19.371):
+        pinned = _band_pinned(spacetime, [b.projector for b in read.bands],
+                              scale)
+        expected = [np.mean(np.asarray(b.eigenvalues)) / scale
+                    for b in read.bands]
+        np.testing.assert_allclose(pinned.constraint_values(), expected,
+                                   rtol=1e-12, atol=1e-13)
+        assert list(pinned.power_sums()) == list(pinned.constraint_values())
+    # the first power sum of the fiber is the rank-weighted sum of the means
+    fiber = _pinned(spacetime, _fiber(read), [1])
+    pinned = _band_pinned(spacetime, [b.projector for b in read.bands])
+    assert complex(fiber.power_sums()[0]) == pytest.approx(
+        sum(b.rank * v for b, v in zip(read.bands,
+                                       pinned.constraint_values())),
+        rel=1e-12)
+
+
+def test_the_band_mean_gradient_is_the_whole_derivative():
+    """Away from the host, the analytic gradient of lambda_b, the
+    Hellmann-Feynman tr(P_b dh) / r_b at fixed P_b, equals central
+    differences of tr(P_b(x) h(x)) / r_b with every band's Riesz projector
+    rebuilt at every node, for the three occupied bands of (0134, 111) in
+    the twelve shared coordinates; and the rank-weighted sum of the three
+    gradients is the gradient of the fiber's first power sum."""
+    content = (1, 1, 1)
+    spacetime, _, mean_field, _ = _host(SECOND_CELL, content)
+    classes, orientations = bp.sheet_edge_classes(spacetime)
+    edges = spacetime.getEdgeList().toVector()
+    for edge, c, o in zip(edges, classes, orientations):
+        z = complex(edge.getLength()) ** 2 * (1.0 + 0.07 * (c - 2.5))
+        edge.setLength(cmath.sqrt(z))
+        edge.setPhase(complex(edge.getPhase()) + o * 0.05 * (c - 2))
+    follower = cob.BandFollower(mean_field)
+
+    def plain():
+        return cob.JointAction(spacetime,
+                               bp.action_declaration(spacetime, 1.0, 1.0))
+
+    def bands_at():
+        return follower.read(plain().carrier_operator()).bands
+
+    follower.follow(follower.read(plain().carrier_operator()))
+    bands = bands_at()
+    assert len(bands) == 3
+    pinned = _band_pinned(spacetime, [b.projector for b in bands], 3.0)
+    gradients = [np.asarray(pinned.moment_gradient(k)) for k in range(3)]
+    first = _pinned(spacetime, sum(np.asarray(b.projector) for b in bands),
+                    [1], 3.0)
+    np.testing.assert_allclose(
+        sum(b.rank * g for b, g in zip(bands, gradients)),
+        np.asarray(first.moment_gradient(0)), rtol=1e-10, atol=1e-13)
+    n = len(edges)
+    radius = 1e-5
+    worst = 0.0
+    for c in range(6):
+        members = [(i, o) for i, (cc, o) in enumerate(zip(classes,
+                                                          orientations))
+                   if cc == c]
+        saved = [(complex(edges[i].getLength()), complex(edges[i].getPhase()))
+                 for i, _ in members]
+        for kind in ("length", "link"):
+            values = []
+            for sign in (1.0, -1.0):
+                for (i, o), (length, phase) in zip(members, saved):
+                    if kind == "length":
+                        edges[i].setLength(
+                            cmath.sqrt(length * length + sign * radius))
+                    else:
+                        edges[i].setPhase(phase - 1j * o * sign * radius)
+                pinned.set_moment_band_projectors(
+                    [list(np.asarray(b.projector).reshape(-1))
+                     for b in bands_at()])
+                values.append(np.asarray(pinned.constraint_values()))
+                for (i, _), (length, phase) in zip(members, saved):
+                    edges[i].setLength(length)
+                    edges[i].setPhase(phase)
+            difference = (values[0] - values[1]) / (2.0 * radius)
+            if kind == "length":
+                exact = np.array([sum(g[i] for i, _ in members)
+                                  for g in gradients])
+            else:
+                exact = np.array([sum(o * g[n + i] for i, o in members)
+                                  for g in gradients])
+            worst = max(worst, float(np.max(np.abs(difference - exact)
+                                            / np.abs(exact))))
+    assert worst < 1e-7
+
+
+def test_pinning_the_band_eigenvalues_holds_the_host_of_0134_111():
+    """(0134, 111) with the eigenvalue of each of its three occupied bands
+    pinned (the drivers' declared pinning): three constraints in place of
+    the nine power sums, whose targets are the bands' eigenvalues. The
+    least-squares multipliers balance the host's whole stationarity force,
+    the solve stops there without a step, every pinned eigenvalue holds, and
+    the joint Jacobian's rank deficiency is the three gauge directions
+    alone."""
+    config = _config(SECOND_CELL, (1, 1, 1), "r", "eigenvalues")
+    spacetime, action, report = bp.relax_content((1, 1, 1), 1.0, 1.0, config)
+    assert report.fiber_constraint_form == \
+        cob.FiberConstraintForm.BandEigenvalues
+    assert report.converged and report.iterations == 0
+    assert report.force_norm < 1e-9
+    assert report.fiber_rank == 9 and len(report.multipliers) == 3
+    np.testing.assert_allclose(np.asarray(report.moment_targets).real,
+                               [-19.371, 0.313, 5.000], atol=1e-3)
+    assert max(abs(r) for r in report.moment_residuals) == 0.0
+    assert (report.jacobian_size, report.jacobian_rank) == (15, 12)
+    assert report.moment_scale == pytest.approx(19.371, abs=1e-3)
+    assert len(action.declaration.moment_band_projectors) == 3
+    record = bp.relaxation_record(report)
+    assert record["fiber_pinning"] == "eigenvalues"
+    assert record["fiber_moments"] == 3
+
+
+def test_a_full_band_pins_its_eigenvalue_with_a_multiplier_of_minus_three():
+    """(0123, 030) with its one band's eigenvalue pinned. The content fills
+    the band, so Gamma = P_b and the fiber terms of the action combine to
+    (3 + xi) lambda: the length equations then need xi = -3 in the
+    operator's own unit, in every unit the constraint is solved in. The
+    pinned eigenvalue holds and the geometry is Euclidean."""
+    _, _, _, read = _host(FIRST_CELL, (0, 3, 0))
+    (band,) = read.bands
+    pinned = band.eigenvalues[0]
+    for scale in (0.0, 1.0):
+        config = _config(FIRST_CELL, (0, 3, 0), "r", "eigenvalues")
+        spacetime = bp.build_host(config["edge_squared"],
+                                  config["host_cell"])
+        action = cob.JointAction(spacetime, bp.action_declaration(
+            spacetime, 1.0, 1.0))
+        mean_field = bp.mean_field_declaration((0, 3, 0), config, spacetime)
+        assert mean_field.fiber_constraint_form == \
+            cob.FiberConstraintForm.BandEigenvalues
+        mean_field.fiber_moments = 1
+        mean_field.fiber_moment_scale = scale
+        report = cob.SelfConsistentMeanField(action, mean_field).solve()
+        assert report.converged
+        assert report.stop_reason == cob.RelaxationStop.Converged
+        assert report.fiber_rank == 3 and len(report.multipliers) == 1
+        assert report.moment_targets[0] == pytest.approx(pinned, rel=1e-10)
+        assert abs(report.moment_residuals[0]) < 1e-9 * abs(pinned)
+        assert abs(report.multipliers[0] + 3.0) < 1e-8
+        assert report.kontsevich_segal_margin == pytest.approx(np.pi,
+                                                               abs=1e-6)
+
+
+def test_more_bands_than_the_content_occupies_are_refused():
+    spacetime, action, mean_field, _ = _host(FIRST_CELL, (0, 3, 0))
+    mean_field.fiber_constraint_form = cob.FiberConstraintForm.BandEigenvalues
+    mean_field.fiber_moments = 2
+    with pytest.raises(ValueError, match="occupies 1 bands"):
+        cob.SelfConsistentMeanField(action, mean_field).solve()
+
+
+def test_one_pinned_constraint_per_occupied_band():
+    """Pinning the eigenvalues, m_c is the number of bands the content
+    occupies whatever --fiber-moments says; pinning the power sums, "bands"
+    is that number too, "r" the fiber's rank and a count itself."""
+    config = bp.default_config([1.0], [1.0])
+    spacetime = bp.build_host()
+    action = cob.JointAction(spacetime, bp.action_declaration(spacetime,
+                                                              1.0, 1.0))
+    for content, bands in (((0, 0, 3), 1), ((1, 0, 2), 2), ((1, 1, 1), 3)):
+        declaration = bp.mean_field_declaration(content, config, spacetime)
+        for setting in ("r", "bands", "2"):
+            assert bp.fiber_moment_count(declaration, action, setting,
+                                         "eigenvalues") == bands
+        assert bp.fiber_moment_count(declaration, action, "bands",
+                                     "power-sums") == bands
+        assert bp.fiber_moment_count(declaration, action, "2",
+                                     "power-sums") == 2
+        assert bp.fiber_moment_count(declaration, action, "r",
+                                     "power-sums") == 3 * bands
+    assert bp._fiber_moments("bands") == "bands"

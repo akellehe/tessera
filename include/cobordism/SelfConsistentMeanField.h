@@ -101,6 +101,26 @@ enum class BandSelection { Continuation, SortEveryIterate };
 ///   iteration "is not a descent".
 enum class SelfConsistentMethod { JointNewton, Alternation };
 
+/// # FiberConstraintForm
+///
+/// What the fiber constraints of a self-consistent solve pin
+/// (`SelfConsistentMeanFieldDeclaration::fiberMoments`).
+enum class FiberConstraintForm {
+  /// The power sums \f$ p_j(h_{\mathcal C}) \f$, \f$ j=1,\ldots,m_{\rm c} \f$,
+  /// of the occupied fiber: the constraints of WP v17 §3.4 as written.
+  PowerSums,
+  /// The eigenvalue of each occupied band,
+  /// \f$ \lambda_b=\operatorname{tr}(P_bh)/r_b \f$
+  /// (`SpectralConstraintForm::BandMean`), one constraint per occupied band
+  /// in the declared order, the first \f$ m_{\rm c} \f$ of them. On a
+  /// sheeted host every occupied band is one eigenvalue repeated once per
+  /// sheet, so the \f$ r \f$ power sums carry only as many independent
+  /// constraints as there are occupied bands; pinning the eigenvalues states
+  /// those constraints without the dependent rows, and each band's projector
+  /// is rebuilt at every point as the fiber's is.
+  BandEigenvalues
+};
+
 /// # SelfConsistentMeanFieldDeclaration
 ///
 /// The configuration of a self-consistent backreaction solve.
@@ -164,7 +184,9 @@ struct SelfConsistentMeanFieldDeclaration {
   /// it says; they start at the least-squares estimate at the starting point,
   /// the \f$ \xi \f$ that best balances the stationarity force there. Zero,
   /// the default, pins nothing. At most \f$ r \f$: the paper takes
-  /// \f$ j=1,\ldots,r \f$.
+  /// \f$ j=1,\ldots,r \f$. Under `FiberConstraintForm::BandEigenvalues`
+  /// (`fiberConstraintForm`) it is instead the number of occupied bands
+  /// whose eigenvalue is pinned, in the declared order, at most all of them.
   std::size_t fiberMoments = 0;
 
   /// The targets \f$ p_j^{\star} \f$ of the pinned power sums, one per
@@ -180,6 +202,11 @@ struct SelfConsistentMeanFieldDeclaration {
   /// the fiber's spectral radius at the starting point. The report gives
   /// targets, residuals and multipliers in the operator's own unit.
   double fiberMomentScale = 0.0;
+
+  /// What the pinned constraints are: the fiber's power sums (the default)
+  /// or its bands' eigenvalues. `fiberMomentTargets` are then the
+  /// eigenvalues \f$ \lambda_b^{\star} \f$, one per pinned band.
+  FiberConstraintForm fiberConstraintForm = FiberConstraintForm::PowerSums;
 
   /// The largest number of iterations of the declared method: Newton steps of
   /// the joint system, or outer iterations (geometry relaxation followed by
@@ -523,10 +550,13 @@ struct SelfConsistentMeanFieldReport {
   /// \f$ r \f$, the rank of the occupied fiber (the sum of the occupied
   /// bands' ranks) where the bands were chosen.
   std::size_t fiberRank = 0;
-  /// The unit \f$ s \f$ the pinned power sums were solved in.
+  /// The unit \f$ s \f$ the pinned constraints were solved in.
   double momentScale = 1.0;
-  /// The targets \f$ p_j^{\star} \f$ of the pinned fiber moments, in order
-  /// of \f$ j \f$ and in the operator's own unit; empty when none is pinned.
+  /// What was pinned: the fiber's power sums or its bands' eigenvalues.
+  FiberConstraintForm fiberConstraintForm = FiberConstraintForm::PowerSums;
+  /// The targets of the pinned constraints, \f$ p_j^{\star} \f$ in order of
+  /// \f$ j \f$ or \f$ \lambda_b^{\star} \f$ in the declared band order, in
+  /// the operator's own unit; empty when none is pinned.
   std::vector<std::complex<double>> momentTargets;
   /// The multipliers \f$ \xi_j \f$ of the constraints
   /// \f$ \xi_j(p_j(h_{\mathcal C})-p_j^{\star}) \f$ at the point the solve
