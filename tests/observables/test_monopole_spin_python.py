@@ -731,5 +731,191 @@ class TestTheRemainingReads(unittest.TestCase):
                                        3.75).sharp)
 
 
+class TestIsotypicProjector(unittest.TestCase):
+    """The sharp spinor certificate of WP v18 (Sections 11.1 and 14): the
+    exterior power of a one-particle map on an n-particle sector, the
+    isotypic projector of the double cover built from it, and the projector
+    equations on a state. The representation is the unit-monopole
+    tetrahedron's own D_1(g), lifted to the binary tetrahedral group by the
+    determinant-one normalization on the coexact doublet."""
+
+    MODES = 6
+
+    @classmethod
+    def setUpClass(cls):
+        cls.support = MonopoleSupport.tetrahedron(1)
+        cls.group = MonopoleSupport.tetrahedralRotations()
+        cls.read = cls.support.spinRead(cls.group)
+        averaged = np.asarray(cls.support.rotationAveragedEdgeOperator(
+            cls.support.edgeLaplacian(), cls.group))
+        values, vectors = np.linalg.eigh(averaged)
+        order = np.argsort(values)
+        vectors = vectors[:, order]
+        # the three doublets 2, 2', 2'' as the eigenspaces of the averaged
+        # operator, in the order the spin read lists its bands
+        cls.blocks = [vectors[:, 2 * c:2 * c + 2] for c in range(3)]
+        cls.reference = int(cls.read.doublet_index)
+        # the lift: D(g) scaled to determinant one on the reference doublet,
+        # with both signs, is a linear representation of the double cover
+        cls.maps, cls.characters = [], {c: [] for c in range(3)}
+        for g in cls.group:
+            d = np.asarray(cls.support.edgeRepresentation(g))
+            block = cls.blocks[cls.reference]
+            scale = 1.0 / np.sqrt(np.linalg.det(block.conj().T @ d @ block))
+            lifted = scale * d
+            for sign in (1.0, -1.0):
+                cls.maps.append(sign * lifted)
+                for c in range(3):
+                    b = cls.blocks[c]
+                    cls.characters[c].append(
+                        sign * np.trace(b.conj().T @ lifted @ b))
+
+    def projector(self, carrier, particles):
+        return np.asarray(SharpSpin.isotypicProjector(
+            self.maps, self.characters[carrier], 2, particles))
+
+    def test_the_patterns_are_the_ascending_tuples_in_order(self) -> None:
+        patterns = SharpSpin.sectorPatterns(4, 2)
+        self.assertEqual([list(p) for p in patterns],
+                         [list(c) for c in itertools.combinations(range(4),
+                                                                   2)])
+        self.assertEqual(len(SharpSpin.sectorPatterns(18, 3)), 816)
+        with self.assertRaises(ValueError):
+            SharpSpin.sectorPatterns(3, 4)
+        with self.assertRaises(ValueError):
+            SharpSpin.sectorPatterns(24, 12)
+
+    def test_the_exterior_power_is_the_matrix_of_minors(self) -> None:
+        generator = np.random.default_rng(2026)
+        d = generator.normal(size=(5, 5)) + 1j * generator.normal(size=(5, 5))
+        power = np.asarray(SharpSpin.exteriorPowerMatrix(d, 2))
+        patterns = SharpSpin.sectorPatterns(5, 2)
+        for row, rows in enumerate(patterns):
+            for column, columns in enumerate(patterns):
+                minor = np.linalg.det(d[np.ix_(list(rows), list(columns))])
+                self.assertAlmostEqual(abs(power[row, column] - minor), 0.0,
+                                       places=12)
+        # multiplicative, the identity is the identity, and the top power is
+        # the determinant
+        e = generator.normal(size=(5, 5)) + 1j * generator.normal(size=(5, 5))
+        product = np.asarray(SharpSpin.exteriorPowerMatrix(d @ e, 3))
+        separate = np.asarray(SharpSpin.exteriorPowerMatrix(d, 3)) @ \
+            np.asarray(SharpSpin.exteriorPowerMatrix(e, 3))
+        self.assertLess(np.max(np.abs(product - separate)), 1e-10)
+        self.assertLess(np.max(np.abs(
+            np.asarray(SharpSpin.exteriorPowerMatrix(np.eye(5), 2))
+            - np.eye(10))), 0.0 + 1e-15)
+        top = np.asarray(SharpSpin.exteriorPowerMatrix(d, 5))
+        self.assertEqual(top.shape, (1, 1))
+        self.assertAlmostEqual(abs(top[0, 0] - np.linalg.det(d)), 0.0,
+                               places=10)
+        with self.assertRaises(ValueError):
+            SharpSpin.exteriorPowerMatrix(d[:, :3], 2)
+
+    def test_the_sector_basis_is_the_determinants_of_the_patterns(self):
+        patterns = SharpSpin.sectorPatterns(self.MODES, 3)
+        for k, pattern in enumerate(patterns):
+            unit = np.zeros(len(patterns), dtype=complex)
+            unit[k] = 1.0
+            fock = np.asarray(SharpSpin.fockVector(unit, self.MODES, 3))
+            expected = np.asarray(SharpSpin.determinant(list(pattern),
+                                                        self.MODES))
+            self.assertLess(np.max(np.abs(fock - expected)), 0.0 + 1e-15)
+            back = np.asarray(SharpSpin.sectorComponent(fock, 3))
+            self.assertLess(np.max(np.abs(back - unit)), 0.0 + 1e-15)
+        with self.assertRaises(ValueError):
+            SharpSpin.fockVector(np.ones(3, dtype=complex), self.MODES, 3)
+        with self.assertRaises(ValueError):
+            SharpSpin.sectorComponent(np.ones(48, dtype=complex), 3)
+
+    def test_the_lift_is_a_representation_of_the_double_cover(self) -> None:
+        # closure up to the two lifts: every product is one of the maps
+        for a in self.maps[:6]:
+            for b in self.maps[:6]:
+                product = a @ b
+                self.assertTrue(any(np.max(np.abs(product - m)) < 1e-9
+                                    for m in self.maps))
+        self.assertTrue(self.read.cocycle.nontrivial)
+
+    def test_the_one_particle_projectors_are_the_doublets(self) -> None:
+        """On one particle the isotypic projector of each doublet's character
+        is the orthogonal projector onto that doublet, and the three add up
+        to the identity."""
+        total = np.zeros((6, 6), dtype=complex)
+        for c in range(3):
+            p = self.projector(c, 1)
+            expected = self.blocks[c] @ self.blocks[c].conj().T
+            self.assertLess(np.max(np.abs(p - expected)), 1e-9)
+            total += p
+        self.assertLess(np.max(np.abs(total - np.eye(6))), 1e-9)
+
+    def test_an_even_particle_number_carries_no_spinor(self) -> None:
+        for c in range(3):
+            self.assertLess(np.max(np.abs(self.projector(c, 2))), 1e-9)
+
+    def test_the_three_particle_projectors_decompose_the_sector(self) -> None:
+        """On three particles the three projectors are idempotent, mutually
+        orthogonal, and their ranks add up to the sector's dimension: every
+        three-particle state of the tetrahedron is a spinor of the double
+        cover, of one of the three types."""
+        projectors = [self.projector(c, 3) for c in range(3)]
+        ranks = []
+        for p in projectors:
+            self.assertLess(np.max(np.abs(p @ p - p)), 1e-9)
+            ranks.append(int(round(np.trace(p).real)))
+        for p, q in itertools.combinations(projectors, 2):
+            self.assertLess(np.max(np.abs(p @ q)), 1e-9)
+        self.assertEqual(sum(ranks), 20)
+        self.assertTrue(all(r > 0 for r in ranks))
+
+    def test_the_read_certifies_a_state_of_one_type(self) -> None:
+        projectors = [self.projector(c, 3) for c in range(3)]
+        generator = np.random.default_rng(1196)
+        random = generator.normal(size=20) + 1j * generator.normal(size=20)
+        state = projectors[0] @ random
+        left = projectors[0].T @ random.conj()
+        read = SharpSpin.isotypicRead(projectors[0], state, left, "2")
+        self.assertEqual(read.type, "2")
+        self.assertTrue(read.sharp)
+        self.assertLess(read.right_residual, 1e-12)
+        self.assertLess(read.left_residual, 1e-12)
+        self.assertAlmostEqual(abs(read.weight - 1.0), 0.0, places=10)
+        self.assertEqual(read.rank, int(round(np.trace(projectors[0]).real)))
+        self.assertLess(read.idempotency_residual, 1e-12)
+        self.assertTrue(read.certificate.holds())
+        # the same state is not of another type, and the matrix element alone
+        # says so only through the weight
+        other = SharpSpin.isotypicRead(projectors[1], state, left, "2'")
+        self.assertFalse(other.sharp)
+        self.assertAlmostEqual(other.right_residual, 1.0, places=10)
+        self.assertLess(abs(other.weight), 1e-10)
+        # a sum of types certifies a state in either
+        pair = SharpSpin.isotypicRead(projectors[0] + projectors[1], state,
+                                      left, "2 + 2'")
+        self.assertTrue(pair.sharp)
+        self.assertEqual(pair.rank, read.rank
+                         + int(round(np.trace(projectors[1]).real)))
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicRead(projectors[0], np.zeros(20, dtype=complex),
+                                   left, "2")
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicRead(projectors[0], state, left, "2", 0.0)
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicRead(projectors[0][:10, :10], state, left, "2")
+
+    def test_the_projector_refuses_mismatched_declarations(self) -> None:
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicProjector([], [], 2, 1)
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicProjector(self.maps, self.characters[0][:3], 2,
+                                        1)
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicProjector(self.maps, self.characters[0], 0, 1)
+        with self.assertRaises(ValueError):
+            SharpSpin.isotypicProjector(
+                self.maps[:1] + [np.eye(5, dtype=complex)],
+                self.characters[0][:2], 2, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

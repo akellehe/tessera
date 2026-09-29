@@ -339,7 +339,7 @@ def test_ratios_are_taken_on_the_lowest_poles():
                            three: (10.0 + 0j, ["2''", "2"])}),
         record([1, 1, 1], {half: (12.0 + 0j, ["2"]),
                            three: (12.0 + 0j, ["2'", "2''"])})])
-    by_spin = out["quasi_free"]["by_spin"]
+    by_spin = out["quasi_free"]["by_spin_lift"]
     assert by_spin["nucleon_content"] == [2, 1, 0]
     assert by_spin["delta_content"] == [3, 0, 0]
     assert by_spin["delta_doublet_content"] == [0, 2, 1]
@@ -673,13 +673,65 @@ def test_the_pole_table_keeps_every_pole_with_its_pair():
                for row in table["with_quartic"][half])
 
 
-def test_every_pole_of_a_sector_carries_its_own_certificates(alignment):
+@pytest.fixture(scope="module")
+def projectors(alignment):
+    """The isotypic projectors of 2, 2', 2'' on the three-particle sector of
+    the declared host, as `evaluate_content` forms them."""
+    frame = bp._micro_frame([alignment] * bp.SHEETS)
+    return bp.isotypic_projectors(
+        alignment, bp.rotation_action([bp.monopole_support()] * bp.SHEETS),
+        frame, np.linalg.inv(frame))
+
+
+def test_the_isotypic_projectors_decompose_the_three_particle_sector(
+        projectors):
+    """The three projectors of the double cover's spinor types are
+    idempotent, orthogonal, and exhaust the 816-dimensional three-particle
+    sector of the 18 modes: three particles of the odd-monopole tetrahedron
+    are a spinor of one of the three types (WP v18 Section 11.1)."""
+    matrices, record = projectors
+    assert sorted(matrices) == sorted(bp.IRREP_NAMES)
+    total = sum(record[name]["rank"] for name in bp.IRREP_NAMES)
+    assert total == len(bp.occupation_basis()) == 816
+    for name in bp.IRREP_NAMES:
+        assert record[name]["idempotency_residual"] < 1e-9
+        assert record[name]["rank"] > 0
+    for a, b in (("2", "2'"), ("2'", "2''"), ("2", "2''")):
+        assert np.max(np.abs(matrices[a] @ matrices[b])) < 1e-9
+
+
+def test_the_lift_agrees_with_the_types(alignment, projectors):
+    """The spin sectors of the constructed lift are the isotypic components
+    the finite group names: for the doublet content (1, 1, 1) of total
+    triality zero, the spin-1/2 sector lies in the type 2 and the spin-3/2
+    sector in 2' + 2'', half in each."""
+    matrices, _ = projectors
+    _, triality, sectors = bp.doublet_sectors([1, 1, 1],
+                                              alignment["trialities"])
+    assert triality == 0
+    entry = bp.sector_entry(bp.SPIN_HALF, triality,
+                            sectors[bp.SPIN_HALF], (), matrices)
+    assert entry["spinor_type"] == "2"
+    weights = entry["isotypic_weights"]
+    assert abs(weights["2"] - 1.0) < 1e-9
+    assert abs(weights["2'"]) < 1e-9 and abs(weights["2''"]) < 1e-9
+    entry = bp.sector_entry(bp.SPIN_THREE_HALVES, triality,
+                            sectors[bp.SPIN_THREE_HALVES], (), matrices)
+    assert entry["spinor_type"] == "2' + 2''"
+    weights = entry["isotypic_weights"]
+    assert abs(weights["2"]) < 1e-9
+    assert abs(weights["2'"] - 0.5) < 1e-9 and abs(weights["2''"] - 0.5) < 1e-9
+
+
+def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
+                                                              projectors):
     """An operator diagonal in the occupation basis with distinct entries
     splits the four-dimensional spin-1/2 sector of the doublet content
-    (1, 1, 1) into distinct poles. Each pole is read with its own spin and
-    colour certificates, and the lowest pole's are repeated beside it. Every
-    vector of the sector is a colour singlet of sharp spin 1/2, so every
-    certificate holds."""
+    (1, 1, 1) into distinct poles. Each pole is read with its own spinor,
+    spin-lift and colour certificates, and the lowest pole's are repeated
+    beside it. Every vector of the sector is a colour singlet of type 2 and
+    of sharp spin 1/2 under the lift, so every certificate holds."""
+    matrices, _ = projectors
     _, triality, sectors = bp.doublet_sectors([1, 1, 1],
                                               alignment["trialities"])
     sector = sectors[bp.SPIN_HALF]
@@ -688,14 +740,24 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment):
     operator = np.diag(rng.uniform(1.0, 2.0, size=len(
         bp.occupation_basis()))).astype(complex)
     entry = bp.sector_entry(bp.SPIN_HALF, triality, sector,
-                            (("quasi_free", operator),))
+                            (("quasi_free", operator),), matrices)
     read = entry["quasi_free"]
     poles = read["poles"]
     assert len(poles) >= 2
     assert len(read["pole_certificates"]) == len(poles)
     for certificate in read["pole_certificates"]:
-        assert certificate["sharp_spin"]
+        assert certificate["sharp_spinor"]
+        assert certificate["spinor_type"] == "2"
+        assert certificate["spinor_right_residual"] < 1e-9
+        assert certificate["spinor_left_residual"] < 1e-9
+        assert abs(certificate["spinor_weight"] - 1.0) < 1e-9
+        assert certificate["spin_lift_sharp"]
         assert certificate["colour_casimir_residual"] < 1e-10
+    # without projectors the spinor certificate is unmeasured, not false
+    bare = bp.sector_entry(bp.SPIN_HALF, triality, sector,
+                           (("quasi_free", operator),))
+    assert bare["quasi_free"]["pole_certificates"][0]["sharp_spinor"] is None
+    assert bare["quasi_free"]["pole_certificates"][0]["spin_lift_sharp"]
     lowest = poles.index(read["lowest_pole"])
     for key, value in read["pole_certificates"][lowest].items():
         assert read[key] == value

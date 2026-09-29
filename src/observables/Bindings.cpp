@@ -2866,12 +2866,15 @@ reads the symmetry-protected bands of a rotation-invariant operator.)doc")
            "j = 1/2 doublet among them.");
 
   py::class_<SharpSpinRead>(m, "SharpSpinRead",
-      R"doc(The sharpness read of a total-space spin: the right and left
-eigen-equation residuals, the verdict they decide, and the biorthogonal
-expectation and complex variance that the whitepaper calls insufficient on
-their own.  variance_would_accept is true when the variance test alone would
-have called the state sharp; when it is true and sharp is false, the variance
-test has been decided wrongly by isotropic cancellation.)doc")
+      R"doc(The spin-lift read: the right and left J^2 eigen-equation residuals
+under a declared SU(2) action on the modes, the verdict they decide, and the
+biorthogonal expectation and complex variance that the whitepaper calls
+insufficient on their own.  A finite cluster has no J^2 of its own (WP v18
+Section 11.1); the sharp spinor certificate is IsotypicRead, and this read
+states the continuum value j an accepted spin lift supplies.
+variance_would_accept is true when the variance test alone would have called
+the state sharp; when it is true and sharp is false, the variance test has
+been decided wrongly by isotropic cancellation.)doc")
       .def(py::init<>())
       .def_readonly("target_eigenvalue", &SharpSpinRead::targetEigenvalue)
       .def_readonly("right_residual", &SharpSpinRead::rightResidual)
@@ -2945,10 +2948,30 @@ test has been decided wrongly by isotropic cancellation.)doc")
       .def_static("evaluate", &QuarkConditions::evaluate, py::arg("evidence"),
                   "The verdict; evidence[i] is the list for condition i + 1.");
 
+  py::class_<IsotypicRead>(m, "IsotypicRead",
+      R"doc(The sharpness read of a spinor readout against one isotypic
+component of the cluster's symmetry action (WP v18 Sections 11.1 and 14):
+the residuals of (I - P)|Psi_R> = 0 and <Psi_L|(I - P) = 0, the verdict they
+decide, the projector's rank and measured idempotency, and the bilinear
+weight <Psi_L|P|Psi_R> / <Psi_L|Psi_R>, which is only a matrix-element
+identity and gates nothing.)doc")
+      .def(py::init<>())
+      .def_readonly("type", &IsotypicRead::type)
+      .def_readonly("rank", &IsotypicRead::rank)
+      .def_readonly("idempotency_residual", &IsotypicRead::idempotencyResidual)
+      .def_readonly("right_residual", &IsotypicRead::rightResidual)
+      .def_readonly("left_residual", &IsotypicRead::leftResidual)
+      .def_readonly("sharp", &IsotypicRead::sharp)
+      .def_readonly("weight", &IsotypicRead::weight)
+      .def_readonly("certificate", &IsotypicRead::certificate);
+
   py::class_<SharpSpin>(m, "SharpSpin",
-      R"doc(The sharp total-space spin readout: the two eigen-equations
-(J^2 - 3/4 I)|Psi_R> = 0 and <Psi_L|(J^2 - 3/4 I) = 0 on the bounded
-superposition of determinants selected by the isolating interaction.  J^2 is
+      R"doc(The sharp spinor readout of WP v18 (Sections 11.1 and 14): the
+isotypic projector P_rho of the cluster's symmetry action on an n-particle
+sector and the projector equations (I - P_rho)|Psi_R> = 0 and
+<Psi_L|(I - P_rho) = 0 on the bounded superposition of determinants selected
+by the isolating interaction; beside it the spin-lift read, the J^2
+eigen-equations under a declared SU(2) action on the modes.  J^2 is
 polynomial in the exterior generators, so its action is applied mode-pair by
 mode-pair; the dense Fock matrix is materialized only for fixtures and only
 below the declared mode limit.)doc")
@@ -2975,7 +2998,36 @@ below the declared mode limit.)doc")
                   py::arg("carrierCount"),
                   "J_a = I (x) sigma_a / 2 on carrierCount distinguishable "
                   "spin-one-half carriers, mode 2c + s being spin state s of "
-                  "carrier c.");
+                  "carrier c.")
+      .def_property_readonly_static("kMaxSectorPatterns",
+          [](py::object) { return SharpSpin::kMaxSectorPatterns; })
+      .def_static("sectorPatterns", &SharpSpin::sectorPatterns,
+                  py::arg("modeCount"), py::arg("particles"),
+                  "The n-particle occupation patterns: ascending mode tuples "
+                  "in lexicographic order, the basis of the sector matrices.")
+      .def_static("exteriorPowerMatrix", &SharpSpin::exteriorPowerMatrix,
+                  py::arg("oneParticle"), py::arg("particles"),
+                  "Lambda^n D on the n-particle sector: entry (J, I) is the "
+                  "minor det D[J, I] over the sector patterns.")
+      .def_static("sectorComponent", &SharpSpin::sectorComponent,
+                  py::arg("state"), py::arg("particles"),
+                  "The n-particle component of a Fock vector over the sector "
+                  "patterns.")
+      .def_static("fockVector", &SharpSpin::fockVector, py::arg("sector"),
+                  py::arg("modeCount"), py::arg("particles"),
+                  "A vector over the sector patterns as a Fock vector.")
+      .def_static("isotypicProjector", &SharpSpin::isotypicProjector,
+                  py::arg("maps"), py::arg("characters"), py::arg("dimension"),
+                  py::arg("particles"),
+                  "P_rho = (dim rho / |G|) sum_g conj(chi_rho(g)) Lambda^n "
+                  "D(g) on the n-particle sector, from every element's "
+                  "one-particle map and rho's character on it.")
+      .def_static("isotypicRead", &SharpSpin::isotypicRead,
+                  py::arg("projector"), py::arg("rightState"),
+                  py::arg("leftState"), py::arg("type"),
+                  py::arg("tolerance") = 1e-9,
+                  "The sharp spinor certificate: (I - P)|Psi_R> = 0 and "
+                  "<Psi_L|(I - P) = 0 against the declared tolerance.");
 
   // ==========================================================================
   // ColorFiber / ColorAnchor: the exact three-edge SU(3) color kernel
