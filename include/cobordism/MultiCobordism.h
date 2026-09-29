@@ -700,8 +700,10 @@ class MultiCobordism {
   /// The Pachner kinds come back as the `*_at` kinds above; the cone and
   /// disposition kinds already name their sites and come back unchanged. Each
   /// returned spec is a candidate to score, not a promise that it applies.
+  /// \p withSurgery false leaves out the cone kinds (`shouldProposeSurgery`).
   [[nodiscard]] static std::vector<MoveSpec> enumerateMoveSpecifications(
-      const std::shared_ptr<Spacetime> &spacetime, bool withDispositions = false);
+      const std::shared_ptr<Spacetime> &spacetime, bool withDispositions = false,
+      bool withSurgery = true);
 
   /// A `kFlipDisposition` payload names one edge by its two endpoint vertex ids.
   static constexpr std::size_t kEdgeEndpointCount = 2;
@@ -739,6 +741,18 @@ class MultiCobordism {
   ///   hit \f$\det G = 0\f$.
   [[nodiscard]] bool shouldProposeDispositions() const {
     return shouldProposeDispositions_;
+  }
+
+  /// Whether the stage-1 move draw and the exhaustive enumeration offer the
+  /// surgical kinds: cone-out, cone-in and the timelike cone-in. Off, stage 1
+  /// walks the four Pachner kinds alone (and the disposition flip, when
+  /// dispositions are proposed): the moves that keep the complex the manifold
+  /// it is, with the boundary it has. Defaults to true.
+  [[nodiscard]] bool shouldProposeSurgery() const {
+    return shouldProposeSurgery_;
+  }
+  void setShouldProposeSurgery(bool shouldProposeSurgery) {
+    shouldProposeSurgery_ = shouldProposeSurgery;
   }
 
   // ---- module-level helpers (static) ----
@@ -3181,6 +3195,8 @@ class MultiCobordism {
   std::mt19937_64 randomNumberGenerator_;
   /// Whether the move draw offers the causal-disposition moves.
   bool shouldProposeDispositions_{true};
+  /// Whether the move draw and the enumeration offer the surgical kinds.
+  bool shouldProposeSurgery_{true};
   /// What the two-body target is scored against (`setReadoutModes`).
   std::vector<ReadoutMode> readoutModes_{ReadoutMode::Transfer};
   /// The state `ReadoutMode::Whole` scores against (`setOutputStateTarget`).
