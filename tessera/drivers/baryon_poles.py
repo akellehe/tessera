@@ -607,17 +607,18 @@ def share_sheet_geometry(geometry, spacetime):
 
 def fiber_moment_count(declaration, action, setting,
                        pinning=DECLARED_FIBER_PINNING):
-    """m_c, the number of fiber constraints. Pinning the band eigenvalues
-    (``pinning`` "eigenvalues"), it is the number of bands the content
-    occupies, one constraint per band, whatever the setting. Pinning the
-    power sums, it is the declared setting: an integer as it is; ``"r"``, the
-    rank of the occupied fiber, the sum of the ranks of the bands the content
-    occupies as the library's own band rule reads them at the action's point
-    (`BandFollower`), the paper's j = 1..r; or ``"bands"``, the number of
-    occupied bands, as many power sums as the fiber has independent
-    constraints on a sheeted host."""
+    """m_c, the number of fiber constraints for a declared setting: an
+    integer as it is (zero pins nothing); ``"bands"``, the number of bands
+    the content occupies; or ``"r"``, which pinning the band eigenvalues
+    (``pinning`` "eigenvalues") is every occupied band, one constraint per
+    band, and pinning the power sums is the rank of the occupied fiber, the
+    sum of the ranks of the bands the content occupies as the library's own
+    band rule reads them at the action's point (`BandFollower`), the paper's
+    j = 1..r. On a sheeted host every occupied band is one degenerate
+    eigenvalue, one per sheet, so ``"bands"`` power sums are as many as the
+    fiber has independent constraints."""
     setting = str(setting)
-    if pinning == "eigenvalues" or setting == "bands":
+    if setting == "bands" or (setting == "r" and pinning == "eigenvalues"):
         return int(sum(1 for n in declaration.band_occupations if n > 0))
     if setting != "r":
         return int(setting)
@@ -4302,10 +4303,12 @@ def add_mean_field_arguments(parser):
                              "(default %s)" % DECLARED_FIBER_PINNING)
     parser.add_argument("--fiber-moments", type=_fiber_moments,
                         default=DECLARED_FIBER_MOMENTS,
-                        help="m_c under --fiber-pinning power-sums, the power "
-                             "sums p_j(h_C), j = 1..m_c, pinned: r, the "
-                             "fiber's rank; bands, one per occupied band; or "
-                             "a count (default %s)" % DECLARED_FIBER_MOMENTS)
+                        help="m_c, the number of fiber constraints pinned at "
+                             "the host: r, every occupied band's eigenvalue "
+                             "or, pinning power sums, the fiber's rank of "
+                             "them; bands, one per occupied band; or a "
+                             "count, 0 pinning nothing (default %s)"
+                             % DECLARED_FIBER_MOMENTS)
 
 
 def main(argv=None):
