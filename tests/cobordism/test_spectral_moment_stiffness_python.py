@@ -180,10 +180,11 @@ def _directions(n, steps, midpoints, coordinates, spacetime):
 
 def test_the_stiffness_per_degree_of_freedom_does_not_fall_with_the_size_of_the_complex():
     """On flat periodic tori of n^3 vertices the Rayleigh quotient of the
-    degree-one stiffness is the same at every n, along a uniform traceless
+    degree-one stiffness does not fall with n, along a uniform traceless
     strain, a traceless wave of the longest wavelength, a dilation and a vertex
-    displacement (measured 3.47e4, 3.0e4 and 2.84e4, 4.51e5, 9.8e4 and 9.9e4
-    at n = 3, 4, 5 with these coefficients), and positive along all four. The
+    displacement (measured on the default Whitney operator at n = 3 and 4 with
+    these coefficients: 5.5238e4 and 5.5259e4, 2.69e4 and 3.80e4, 6.638e5 and
+    6.662e5, 3.24e4 and 3.84e4), and is positive along all four. The
     entropy's falls as 1/n^3 (7.7e-4 to 2.3e-4 from n = 4 to 6). Regge has no
     stiffness along the displacement and the uniform strain at all."""
     quotients = {}
@@ -200,7 +201,14 @@ def test_the_stiffness_per_degree_of_freedom_does_not_fall_with_the_size_of_the_
         # of the covariant Whitney operator rises (2.69e4 at n = 3, 3.80e4 at
         # n = 4), so an upper bound on the ratio is not part of the property.
         assert values[1] >= values[0] / 1.1, name
-    assert quotients["uniform traceless"][0] == pytest.approx(quotients["uniform traceless"][1], rel=1e-8)
+    # A uniform strain moves every cell alike, so the quotient per degree of
+    # freedom is the same at every n up to the periodic images of the inverse
+    # mass matrices M_0^-1 and M_1^-1, which are dense: their diagonals differ
+    # by up to 3.6e-3 between n = 3 and 4 and by up to 1.4e-4 between n = 4
+    # and 5, relative. The two quotients differ by
+    # 3.8e-4 (55238.0106 and 55258.8389); on the local diagonal operator they
+    # are equal to rounding (34722.0139 at both).
+    assert quotients["uniform traceless"][0] == pytest.approx(quotients["uniform traceless"][1], rel=1e-3)
 
 
 def test_at_degree_zero_the_scalar_moments_leave_traceless_strains_free():

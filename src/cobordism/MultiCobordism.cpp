@@ -2926,8 +2926,18 @@ double MultiCobordism::deltaF(
   // or action magnitudes, so its full scalar difference is the only valid
   // score. It costs more, but it prevents stage 1 from optimizing a surrogate
   // different from the objective it reports.
-  if (!compositeSupportsLocalizedDelta())
-    return objectiveFor(candidateSpacetime) - baseObjective;
+  if (!compositeSupportsLocalizedDelta()) {
+    // A candidate whose operator the metric source cannot assemble carries no
+    // objective value: under the Whitney pencil a geometry on the closure of
+    // the allowable domain can have a singular dressed metric, whose
+    // factorization refuses by name. It scores as the worst case, so it is
+    // never committed, exactly as a residual term evaluates such a geometry.
+    try {
+      return objectiveFor(candidateSpacetime) - baseObjective;
+    } catch (const std::runtime_error &) {
+      return std::numeric_limits<double>::infinity();
+    }
+  }
 
   std::set<std::vector<std::uint64_t>> candidateCellSet;
   for (const auto &topSimplex : candidateSpacetime->getTopSimplices())
@@ -3121,21 +3131,31 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     std::vector<double> deltas(static_cast<std::size_t>(distinctCount),
                                std::numeric_limits<double>::infinity());
     std::vector<Snapshot> snapshots(static_cast<std::size_t>(distinctCount));
+    std::exception_ptr pending = nullptr;
 #pragma omp parallel for schedule(dynamic)
     for (int candidateIndex = 0; candidateIndex < distinctCount;
          ++candidateIndex) {
-      auto candidateSpacetime = build(currentSnapshot);
-      if (!applyMoveSpecification(
-              candidateSpacetime,
-              specifications[static_cast<std::size_t>(candidateIndex)]))
-        continue;  // failed the gate: stays at +inf
-      const double objectiveDelta =
-          deltaF(candidateSpacetime, baseObjective, baseResidualU, baseCellSet);
-      deltas[static_cast<std::size_t>(candidateIndex)] = objectiveDelta;
-      if (objectiveDelta < -convergenceTolerance_)
-        snapshots[static_cast<std::size_t>(candidateIndex)] =
-            snapshotOf(*candidateSpacetime);
+      try {
+        auto candidateSpacetime = build(currentSnapshot);
+        if (!applyMoveSpecification(
+                candidateSpacetime,
+                specifications[static_cast<std::size_t>(candidateIndex)]))
+          continue;  // failed the gate: stays at +inf
+        const double objectiveDelta =
+            deltaF(candidateSpacetime, baseObjective, baseResidualU, baseCellSet);
+        deltas[static_cast<std::size_t>(candidateIndex)] = objectiveDelta;
+        if (objectiveDelta < -convergenceTolerance_)
+          snapshots[static_cast<std::size_t>(candidateIndex)] =
+              snapshotOf(*candidateSpacetime);
+      } catch (...) {
+        // An exception may not leave an OpenMP region: capture the first and
+        // rethrow after the join, so it reaches the caller instead of
+        // terminating the process.
+#pragma omp critical(tessera_stage1_candidate_eptr)
+        if (!pending) pending = std::current_exception();
+      }
     }
+    if (pending) std::rethrow_exception(pending);
     for (int candidateIndex = 0; candidateIndex < distinctCount;
          ++candidateIndex) {
       const double objectiveDelta =
@@ -3164,22 +3184,32 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     std::vector<double> deltas(static_cast<std::size_t>(firstMoveCount),
                                std::numeric_limits<double>::infinity());
     std::vector<Snapshot> snapshots(static_cast<std::size_t>(firstMoveCount));
+    std::exception_ptr pending = nullptr;
 #pragma omp parallel for schedule(dynamic)
     for (int candidateIndex = 0; candidateIndex < firstMoveCount;
          ++candidateIndex) {
-      auto candidateSpacetime = build(currentSnapshot);
-      if (!applyMoveSpecification(
-              candidateSpacetime,
-              firstMoves[static_cast<std::size_t>(candidateIndex)]))
-        continue;  // failed the gate: the whole subtree stays at +inf
-      auto reached =
-          bestComposition(snapshotOf(*candidateSpacetime), lookaheadDepth - 1,
-                          baseObjective, baseResidualU, baseCellSet);
-      deltas[static_cast<std::size_t>(candidateIndex)] = reached.first;
-      if (reached.first < -convergenceTolerance_)
-        snapshots[static_cast<std::size_t>(candidateIndex)] =
-            std::move(reached.second);
+      try {
+        auto candidateSpacetime = build(currentSnapshot);
+        if (!applyMoveSpecification(
+                candidateSpacetime,
+                firstMoves[static_cast<std::size_t>(candidateIndex)]))
+          continue;  // failed the gate: the whole subtree stays at +inf
+        auto reached =
+            bestComposition(snapshotOf(*candidateSpacetime), lookaheadDepth - 1,
+                            baseObjective, baseResidualU, baseCellSet);
+        deltas[static_cast<std::size_t>(candidateIndex)] = reached.first;
+        if (reached.first < -convergenceTolerance_)
+          snapshots[static_cast<std::size_t>(candidateIndex)] =
+              std::move(reached.second);
+      } catch (...) {
+        // An exception may not leave an OpenMP region: capture the first and
+        // rethrow after the join, so it reaches the caller instead of
+        // terminating the process.
+#pragma omp critical(tessera_stage1_candidate_eptr)
+        if (!pending) pending = std::current_exception();
+      }
     }
+    if (pending) std::rethrow_exception(pending);
     for (int candidateIndex = 0; candidateIndex < firstMoveCount;
          ++candidateIndex) {
       const double objectiveDelta =
