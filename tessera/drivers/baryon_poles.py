@@ -190,6 +190,11 @@ other output is unchanged.
 interactive matplotlib backend, with the computation on a worker thread and the
 main thread servicing the GUI event loop; the outputs are identical with or
 without it. A non-interactive backend, and WebAgg, are refused by name.
+
+Every tolerance of the stack is an option (``--rank-tolerance`` is tau, the
+Newton solve's rank decision; the others are listed by `TOLERANCES`), each
+defaulting to 1e-15 and each recorded in the configuration. None changes an
+equation.
 """
 
 import argparse
@@ -252,17 +257,95 @@ DECLARED_MONOPOLE = 1
 SHEETS = 3
 #: Base cells (edges) of one tetrahedron.
 BASE_EDGES = 6
+#: The declared value of every tolerance of the stack (`TOLERANCES`): each
+#: is its own option of both drivers (`add_tolerance_arguments`) and each
+#: defaults to this.
+DECLARED_TOLERANCE = 1e-15
 #: Relative separation at or below which ordered eigenvalues form one band.
-DECLARED_BAND_TOLERANCE = 1e-8
-#: The relative singular-value threshold of the Newton solve's rank
+DECLARED_BAND_TOLERANCE = DECLARED_TOLERANCE
+#: tau, the relative singular-value threshold of the Newton solve's rank
 #: decision. The Jacobian is a two-node real-axis difference at relative
 #: radius 1e-4 (``jacobian_radius``), whose rounding error is of order
 #: epsilon / radius, about 2e-12, relative to its entries, so a singular value
-#: below about 1e-11 of the largest cannot be told from zero; the declared
-#: threshold sits a factor fifty above that floor.
-DECLARED_RANK_TOLERANCE = 1e-10
+#: below about 1e-11 of the largest cannot be told from zero. The declared
+#: threshold sits below that floor: a singular value counts as zero only
+#: when it is below the rounding of the Jacobian itself, and a null direction
+#: of the Jacobian (a gauge direction, or a redundant constraint row) is
+#: inverted at its rounding size rather than left out of the step.
+DECLARED_RANK_TOLERANCE = DECLARED_TOLERANCE
 #: Tolerances of the certificates this driver grades.
-DECLARED_CERTIFICATE_TOLERANCE = 1e-8
+DECLARED_CERTIFICATE_TOLERANCE = DECLARED_TOLERANCE
+
+#: Every tolerance of the stack, by config key, with what it thresholds.
+#: `add_tolerance_arguments` offers each as ``--<key, with dashes>``,
+#: `default_config` records each, and the recursion driver carries each into
+#: every cell's config. None changes an equation.
+TOLERANCES = (
+    ("rank_tolerance",
+     "tau, the relative singular-value threshold of the Newton solve's rank "
+     "decision: a singular value of the Jacobian below this fraction of the "
+     "largest counts as zero in the minimum-norm step"),
+    ("newton_tolerance",
+     "the residual norm at or below which the holomorphic Newton solve of "
+     "the geometry is converged"),
+    ("mean_field_tolerance",
+     "the force norm at or below which the geometry and the covariance are "
+     "self-consistent"),
+    ("band_tolerance",
+     "the relative separation at or below which consecutive ordered "
+     "eigenvalues of the carrier form one band"),
+    ("certificate_tolerance",
+     "the tolerance every certificate graded here holds against: the spinor "
+     "and spin-lift reads, the sheet isomorphism, the transport leakage, "
+     "the anchor atlas and the spectral fingerprint"),
+    ("allowability_tolerance",
+     "the Kontsevich-Segal margin at or below which a relaxed geometry is "
+     "read as the boundary of allowability and its pole read refused"),
+    ("tie_tolerance",
+     "the relative separation of real parts within which two poles tie in "
+     "the ascending-real-part order"),
+    ("degeneracy_tolerance",
+     "the separation within which eigenvalues of the rotation-averaged edge "
+     "Laplacian form one band in the spin read and in the fingerprint"),
+    ("pole_newton_tolerance",
+     "the Newton step, relative to the contour radius, below which the pole "
+     "read's refinement of a root ends"),
+    ("pole_zero_count_tolerance",
+     "how far the pole read's argument-principle count may sit from an "
+     "integer before the read refuses"),
+    ("pole_rank_tolerance",
+     "the fraction of the largest singular value at or below which the pole "
+     "read's Hankel and residue ranks treat one as zero"),
+    ("fluctuation_tolerance",
+     "the relative tolerance of the dressed fluctuation's certificates, and "
+     "the size below which a collective mode's geometric component is zero"),
+    ("recursion_tolerance",
+     "the relative tolerance the level recursion's certificates hold "
+     "against"),
+    ("villain_tolerance",
+     "the relative size below which a coefficient of the Villain series is "
+     "left out"),
+)
+
+
+def declared_tolerance(config, key):
+    """The tolerance ``key`` (`TOLERANCES`) of a config, or the declared
+    value when the config leaves it out."""
+    return float((config or {}).get(key, DECLARED_TOLERANCE))
+
+
+def declared_tolerances(tolerances=None):
+    """Every tolerance of `TOLERANCES` at its declared value, with those of
+    ``tolerances`` (a mapping by key) in their place; a key outside
+    `TOLERANCES` is refused."""
+    out = {key: DECLARED_TOLERANCE for key, _ in TOLERANCES}
+    unknown = sorted(set(tolerances or {}) - set(out))
+    if unknown:
+        raise ValueError("unknown tolerances %s; the declared ones are %s"
+                         % (unknown, [key for key, _ in TOLERANCES]))
+    out.update({key: float(value)
+                for key, value in (tolerances or {}).items()})
+    return out
 
 #: How the mean field's fixed point is solved for (both solve the same
 #: equations, WP v17 lines 259 and 263): Newton's method on the joint system,
@@ -306,7 +389,7 @@ DECLARED_LENGTH_RUNAWAY_RATIO = 1e2
 #: this of zero is the boundary to within the rounding of the arguments, where
 #: WP v17 line 151 reads a band only as the limit of an allowable family and
 #: never alone, so no pole is read there.
-DECLARED_ALLOWABILITY_TOLERANCE = 1e-8
+DECLARED_ALLOWABILITY_TOLERANCE = DECLARED_TOLERANCE
 
 #: How often the --live main thread services the GUI event loop.
 LIVE_POLL_INTERVAL = 0.05
@@ -419,7 +502,8 @@ def sheet_squared_lengths(spacetime, sheet):
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                        matter_weight=1.0, reference_lengths=None,
                        holonomy=DECLARED_HOLONOMY,
-                       stiffness=DECLARED_STIFFNESS):
+                       stiffness=DECLARED_STIFFNESS,
+                       villain_tolerance=DECLARED_TOLERANCE):
     """The joint action of the calculation (WP §3, §7), with the holonomy term
     in the declared form, ``"villain"`` or ``"wilson"``, and the length
     stiffness in the declared form: ``"none"`` (the default, kappa entering
@@ -447,6 +531,7 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
          for edge in spacetime.getEdgeList().toVector()])
     declaration.holonomy_weight = beta
     declaration.holonomy_form = HOLONOMY_FORMS[holonomy]
+    declaration.villain_tolerance = villain_tolerance
     declaration.matter_weight = matter_weight
     return declaration
 
@@ -595,7 +680,9 @@ def sheet_support(spacetime, sheet):
     return support, departure
 
 
-def aligned_doublet_frame(support, group):
+def aligned_doublet_frame(support, group,
+                          degeneracy_tolerance=DECLARED_TOLERANCE,
+                          tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The edge basis in which the three doublets 2, 2', 2'' carry one common
     SU(2) action, each up to its own Z_3 character.
 
@@ -614,7 +701,7 @@ def aligned_doublet_frame(support, group):
     eigenvalue of the averaged operator, ascending, which is the reading the
     `spinRead` bands are listed in.
     """
-    read = support.spinRead(group)
+    read = support.spinRead(group, degeneracy_tolerance, tolerance)
     averaged = support.rotationAveragedEdgeOperator(support.edgeLaplacian(),
                                                     group)
     values, vectors = np.linalg.eigh(np.asarray(averaged))
@@ -904,6 +991,7 @@ def _geometric_action(spacetime, kappa, beta, config):
             matter_weight=0.0,
             reference_lengths=config["reference_lengths"],
             holonomy=config["holonomy"],
+            villain_tolerance=declared_tolerance(config, "villain_tolerance"),
             stiffness=config.get("stiffness", DECLARED_STIFFNESS)))
 
 
@@ -1078,6 +1166,7 @@ def ward_read(spacetime, carrier, couplings, directions, config):
     declaration.carrier = list(carrier.reshape(-1))
     declaration.couplings = [list(o.reshape(-1)) for o in couplings]
     declaration.occupied_modes = 3
+    declaration.tolerance = declared_tolerance(config, "fluctuation_tolerance")
     try:
         paramagnetic = np.asarray(cob.DressedFluctuation(
             declaration).paramagnetic(0j)).reshape(len(couplings),
@@ -1296,18 +1385,25 @@ def contour_of(block):
     return complex(centre), float(radius)
 
 
-def sector_poles(operator, sector_states):
-    """The compressed operator of a sector, its leakage, and its poles."""
+def sector_poles(operator, sector_states, config=None):
+    """The compressed operator of a sector, its leakage, and its poles, read
+    at the config's pole tolerances (`TOLERANCES`)."""
     dual = left_inverse(sector_states)
     image = operator @ sector_states
     block = dual @ image
     leakage = np.linalg.norm(image - sector_states @ block) / max(
         np.linalg.norm(image), 1e-300)
     centre, radius = contour_of(block)
-    config = cob.BoundStatePoleConfig()
+    pole_config = cob.BoundStatePoleConfig()
+    pole_config.newton_tolerance = declared_tolerance(
+        config, "pole_newton_tolerance")
+    pole_config.zero_count_tolerance = declared_tolerance(
+        config, "pole_zero_count_tolerance")
+    pole_config.rank_tolerance = declared_tolerance(
+        config, "pole_rank_tolerance")
     read = cob.BoundStatePole.poles(block, np.eye(block.shape[0]),
                                     list(range(block.shape[0])), centre,
-                                    radius, config)
+                                    radius, pole_config)
     return block, float(leakage), read
 
 
@@ -1364,7 +1460,8 @@ def relax_content(content, kappa, beta, config):
     declaration = action_declaration(
         spacetime, kappa, beta, config["regge_hinges"],
         holonomy=config["holonomy"],
-        stiffness=config.get("stiffness", DECLARED_STIFFNESS))
+        stiffness=config.get("stiffness", DECLARED_STIFFNESS),
+        villain_tolerance=declared_tolerance(config, "villain_tolerance"))
     config.setdefault("reference_lengths",
                       list(declaration.reference_lengths))
     action = cob.JointAction(spacetime, declaration)
@@ -1532,27 +1629,27 @@ def relaxation_record(report):
     }
 
 
-def read_refusal(report):
+def read_refusal(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
     """The name and the message of the refusal of a pole read on the geometry
     a mean-field solve reached, or None when the read may proceed. The read is
     refused when the squared lengths ran off (the low eigenvalues there are
     h_1 ~ 1/z at infinite length, not a bound state) and when the geometry is
     not Kontsevich-Segal allowable (bands are read on the allowable side,
-    WP v17 line 151; a margin within ``DECLARED_ALLOWABILITY_TOLERANCE`` of
-    zero is the boundary). A solve that stopped for another reason is read,
+    WP v17 line 151; a margin within ``tolerance`` of zero is the
+    boundary). A solve that stopped for another reason is read,
     and its record says why it stopped."""
     if report.stop_reason == cob.RelaxationStop.LengthRunaway:
         return ("the squared lengths ran off",
                 "the pole read is refused: the squared lengths ran off (%s)"
                 % report.stop_detail)
     margin = float(report.kontsevich_segal_margin)
-    if not margin > DECLARED_ALLOWABILITY_TOLERANCE:
+    if not margin > tolerance:
         return ("not Kontsevich-Segal allowable",
                 "the pole read is refused: the geometry the mean-field "
                 "solve reached is not Kontsevich-Segal allowable (margin "
                 "%.3g, at or below the declared tolerance %.0e), and bands "
                 "are read on the allowable side (WP v17 line 151)"
-                % (margin, DECLARED_ALLOWABILITY_TOLERANCE))
+                % (margin, tolerance))
     return None
 
 
@@ -1700,7 +1797,8 @@ def doublet_sectors(doublet_content, trialities):
 
 
 def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
-                      projector=None, spinor_type=None):
+                      projector=None, spinor_type=None,
+                      tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The certificates of the eigenvector of a sector's compressed block
     nearest ``target``: the right eigenvector and its left partner, as
     vectors over the occupation basis and as Fock vectors.
@@ -1724,8 +1822,7 @@ def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
     left_sector = dual.T @ left[:, kl]
     right_state = to_fock(right_sector, basis)
     left_state = to_fock(left_sector, basis)
-    spin = obs.SharpSpin.read(spins, right_state, left_state, j2,
-                              DECLARED_CERTIFICATE_TOLERANCE)
+    spin = obs.SharpSpin.read(spins, right_state, left_state, j2, tolerance)
     casimir = np.linalg.norm(colour_casimir(right_state)) / \
         np.linalg.norm(right_state)
     out = {
@@ -1744,7 +1841,7 @@ def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
     if projector is not None:
         spinor = obs.SharpSpin.isotypicRead(projector, right_sector,
                                             left_sector, spinor_type or "",
-                                            DECLARED_CERTIFICATE_TOLERANCE)
+                                            tolerance)
         out.update({
             "sharp_spinor": bool(spinor.sharp),
             "spinor_right_residual": float(spinor.right_residual),
@@ -1754,7 +1851,8 @@ def pole_certificates(target, j2, sector, dual, eigen, basis, spins,
     return out
 
 
-def sector_entry(j2, triality, sector, operators, projectors=None):
+def sector_entry(j2, triality, sector, operators, projectors=None,
+                 config=None):
     """One spin sector's reads: its restriction to 2T, the weight of each
     isotypic type in it (``projectors``, `isotypic_projectors`: the trace of
     the type's projector compressed to the sector over the sector's
@@ -1763,10 +1861,12 @@ def sector_entry(j2, triality, sector, operators, projectors=None):
     named many-body operator the poles of the compressed block, each pole's
     spinor, spin-lift and colour certificates (``pole_certificates``,
     parallel to ``poles``), and the lowest pole's certificates repeated
-    beside it."""
+    beside it. The poles and the certificates are read at the config's
+    tolerances (`TOLERANCES`)."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     irreps = restriction(j2, triality)
+    certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
     entry = {
         "dimension": int(sector.shape[1]),
         "total_triality": int(triality),
@@ -1788,7 +1888,7 @@ def sector_entry(j2, triality, sector, operators, projectors=None):
             for name, p in projectors.items()}
         entry["spinor_type"] = spinor_type
     for name, operator in operators:
-        block, leakage, read = sector_poles(operator, sector)
+        block, leakage, read = sector_poles(operator, sector, config)
         poles = [complex(p) for p in read.poles]
         lowest = min(poles, key=lambda p: (p.real, p.imag)) if poles else None
         # every pole's right and left eigenvectors, for its spin and colour
@@ -1797,14 +1897,16 @@ def sector_entry(j2, triality, sector, operators, projectors=None):
         values_left, left = np.linalg.eig(block.T)
         eigen = (values, right, values_left, left)
         certificates = [pole_certificates(p, j2, sector, dual, eigen, basis,
-                                          spins, projector, spinor_type)
+                                          spins, projector, spinor_type,
+                                          certificate_tolerance)
                         for p in poles]
         # with no pole read, the certificates beside the lowest pole are
         # those of the block's first eigenvector
         lowest_certificates = (
             certificates[poles.index(lowest)] if lowest is not None else
             pole_certificates(values[0], j2, sector, dual, eigen, basis,
-                              spins, projector, spinor_type))
+                              spins, projector, spinor_type,
+                              certificate_tolerance))
         entry[name] = {
             "poles": poles,
             "multiplicity": [int(m) for m in read.multiplicity],
@@ -1828,7 +1930,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
     declared_actions = rotation_action([monopole_support()] * SHEETS)
     spacetime, action, report = relax_content(content, kappa, beta, config)
     solve = relaxation_record(report)
-    refusal = read_refusal(report)
+    refusal = read_refusal(report,
+                           declared_tolerance(config, "allowability_tolerance"))
     if refusal is not None:
         raise ReadRefused(refusal[0], refusal[1], solve)
     carrier = matrix(action.carrier_operator())
@@ -1878,6 +1981,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
         declaration.bare_stiffness = list(
             fluctuations["reduced_stiffness"].reshape(-1))
         declaration.occupied_modes = 3
+        declaration.tolerance = declared_tolerance(config,
+                                                   "fluctuation_tolerance")
         dressed = cob.DressedFluctuation(declaration)
         return dressed.effective_action(list(frame.reshape(-1)),
                                         list(dual.reshape(-1)), 3)
@@ -1911,7 +2016,7 @@ def evaluate_content(content, kappa, beta, config, alignment):
         for j2, sector in sectors.items():
             sector_reads[j2] = sector_entry(j2, triality, sector, (
                 ("quasi_free", quasi_free), ("with_quartic", with_quartic)),
-                projectors)
+                projectors, config)
         doublet_reads.append({
             "doublet_content": list(doublet_content),
             "carrier_content": carrier_content,
@@ -1919,11 +2024,13 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "sectors": {str(k): v for k, v in sector_reads.items()},
         })
 
+    certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
     recursion = recursion_read(spacetime, config)
-    anchor = anchor_atlas_read(spacetime, alignment)
+    anchor = anchor_atlas_read(spacetime, alignment, certificate_tolerance)
     fingerprint = spectral_fingerprint_read(spacetime, kappa, beta, config)
     quark = quark_conditions(spacetime, alignment, recursion,
-                             averaged_residual, report, anchor, fingerprint)
+                             averaged_residual, report, anchor, fingerprint,
+                             certificate_tolerance)
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -2013,6 +2120,7 @@ def recursion_read(spacetime, config):
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = BASE_EDGES
     declaration.bands = bands
+    declaration.tolerance = declared_tolerance(config, "recursion_tolerance")
     recursion = cob.LevelRecursion.overSpacetime(
         spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
     recursion.advance()
@@ -2325,7 +2433,7 @@ def conjugated_group(group, permutation):
     return out
 
 
-def _bands_of(support, group, tolerance=1e-7):
+def _bands_of(support, group, tolerance=DECLARED_TOLERANCE):
     """The bands of the rotation-averaged edge Laplacian of a support, as
     orthonormal blocks in ascending order of eigenvalue."""
     averaged = np.asarray(support.rotationAveragedEdgeOperator(
@@ -2355,7 +2463,8 @@ def _carrier(host, kappa, beta, config):
     """h_1 of a host under the run's declared action, as a matrix."""
     declaration = action_declaration(
         host, kappa, beta, config["regge_hinges"], holonomy=config["holonomy"],
-        stiffness=config.get("stiffness", DECLARED_STIFFNESS))
+        stiffness=config.get("stiffness", DECLARED_STIFFNESS),
+        villain_tolerance=declared_tolerance(config, "villain_tolerance"))
     return matrix(cob.JointAction(host, declaration).carrier_operator())
 
 
@@ -2365,12 +2474,14 @@ def _fiber_fingerprint(host, support, group, edges, kappa, beta, config):
     rank-two spinorial band of the averaged combinatorial Laplacian, the
     band the aligned frame's reference carrier is) with its energy on the
     averaged h_1 and its weight on every edge."""
-    read = support.spinRead(group)
+    degeneracy_tolerance = declared_tolerance(config, "degeneracy_tolerance")
+    read = support.spinRead(group, degeneracy_tolerance,
+                            declared_tolerance(config, "certificate_tolerance"))
     carrier = _carrier(host, kappa, beta, config)
     block = carrier[:edges, :edges]
     actions = [np.asarray(support.edgeRepresentation(g)) for g in group]
     averaged = rotation_averaged(block, actions)
-    bands = _bands_of(support, group)
+    bands = _bands_of(support, group, degeneracy_tolerance)
     index = int(read.doublet_index)
     doublet = bands[index][1] if index < len(bands) else None
     out = {
@@ -2395,7 +2506,7 @@ def _fiber_fingerprint(host, support, group, edges, kappa, beta, config):
 
 
 def spectral_fingerprint_read(spacetime, kappa, beta, config,
-                              tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+                              tolerance=None,
                               overlap_floor=DECLARED_REFINEMENT_OVERLAP):
     """Quark condition 7 (WP v18 §10) on the relaxed host: the spectral
     fingerprint of the fiber re-read under the declared relabeling and the
@@ -2425,6 +2536,8 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
       preserved, and the refined support must carry a spinor doublet; the
       energy shift is reported beside them."""
     group = rotation_group()
+    if tolerance is None:
+        tolerance = declared_tolerance(config, "certificate_tolerance")
     support, _ = sheet_support(spacetime, 0)
     original = _fiber_fingerprint(spacetime, support, group, BASE_EDGES,
                                   kappa, beta, config)
@@ -2602,7 +2715,8 @@ def fingerprint_text(fingerprint):
 
 
 def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
-                     report, anchor=None, fingerprint=None):
+                     report, anchor=None, fingerprint=None,
+                     tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
@@ -2616,7 +2730,7 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
     isomorphism = sheeting.certifyIsomorphism(
         [np.array(sheet_squared_lengths(spacetime, t)) for t in range(SHEETS)],
         [np.array(sheet_links(spacetime, t)) for t in range(SHEETS)],
-        DECLARED_CERTIFICATE_TOLERANCE)
+        tolerance)
     attachment = obs.SheetAttachment.attachmentMatrix(
         SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)])
     doublet = spin.bands[spin.doublet_index] if spin.half_integer_doublet \
@@ -2634,7 +2748,7 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
          E("successor-overlap", None, "a single level has no successor"),
          E("multi-frame-lifetime", None,
            "a single level spans one cobordism frame"),
-         E("external-leakage", all(n < DECLARED_CERTIFICATE_TOLERANCE
+         E("external-leakage", all(n < tolerance
                                    for n in recursion["transport_norms"]),
            "inter-component transport norms %s"
            % recursion["transport_norms"])],
@@ -2665,7 +2779,7 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
            "det S = %s (sheet-to-sheet attachment)"
            % complex(attachment.determinant)),
          E("base-transport-leakage", all(
-             n < DECLARED_CERTIFICATE_TOLERANCE
+             n < tolerance
              for n in recursion["transport_norms"]),
            "inter-component transport norms %s" % recursion["transport_norms"]),
          E("transport-over-lifetime", None,
@@ -2723,7 +2837,9 @@ def scan_point(kappa, beta, config, alignment, on_content=None):
             "failed_contents": [record["content"] for record in records
                                 if "failed" in record],
             "contents": records,
-            "ratios": ratios(records), "pole_table": pole_table(records)}
+            "ratios": ratios(records,
+                             declared_tolerance(config, "tie_tolerance")),
+            "pole_table": pole_table(records)}
 
 
 # ------------------------------------------------------------- the report
@@ -2742,7 +2858,7 @@ COLUMNS = ("quasi_free", "with_quartic")
 COLUMN_NAMES = {"quasi_free": "quasi-free", "with_quartic": "with quartic"}
 #: Two poles whose real parts agree to this relative tolerance are tied for a
 #: minimum, and every tied pair is named beside the minimum.
-DECLARED_TIE_TOLERANCE = 1e-8
+DECLARED_TIE_TOLERANCE = DECLARED_TOLERANCE
 
 
 def sector_rows(records):
@@ -2754,18 +2870,17 @@ def sector_rows(records):
             yield record["content"], read["doublet_content"], read["sectors"]
 
 
-def _tied(a, b):
+def _tied(a, b, tolerance=DECLARED_TIE_TOLERANCE):
     """Whether two poles tie in the ascending-real-part order."""
-    return abs(a.real - b.real) <= DECLARED_TIE_TOLERANCE * max(
-        1.0, abs(a), abs(b))
+    return abs(a.real - b.real) <= tolerance * max(1.0, abs(a), abs(b))
 
 
-def lowest_of(candidates):
+def lowest_of(candidates, tolerance=DECLARED_TIE_TOLERANCE):
     """The candidate whose ``pole`` has the smallest real part, the library's
     declared `OccupationOrder.AscendingRealPart` (the first such candidate in
     the order given), as a copy that lists under ``tied`` every other
-    candidate whose pole's real part agrees with it to
-    `DECLARED_TIE_TOLERANCE`; None when there is no candidate."""
+    candidate whose pole's real part agrees with it to ``tolerance``, which
+    it records as ``tie_tolerance``; None when there is no candidate."""
     candidates = list(candidates)
     best = None
     for candidate in candidates:
@@ -2774,8 +2889,9 @@ def lowest_of(candidates):
     if best is None:
         return None
     out = dict(best)
-    out["tied"] = [c for c in candidates
-                   if c is not best and _tied(c["pole"], best["pole"])]
+    out["tied"] = [c for c in candidates if c is not best
+                   and _tied(c["pole"], best["pole"], tolerance)]
+    out["tie_tolerance"] = tolerance
     return out
 
 
@@ -2801,20 +2917,20 @@ def pole_candidates(records, name, spins=SPINS, reading=None):
     return out
 
 
-def lowest_poles(record, name):
+def lowest_poles(record, name, tolerance=DECLARED_TIE_TOLERANCE):
     """Per spin, the lowest pole of one content record over its doublet
     contents in the named column ("quasi_free" or "with_quartic"), labelled
     with the doublet content it came from and every tied doublet content
     (`lowest_of`); None for a spin no sector carries."""
-    return {j2: lowest_of(pole_candidates([record], name, (j2,)))
+    return {j2: lowest_of(pole_candidates([record], name, (j2,)), tolerance)
             for j2 in SPINS}
 
 
-def lowest_over_pairs(records, name):
+def lowest_over_pairs(records, name, tolerance=DECLARED_TIE_TOLERANCE):
     """Per spin, the lowest pole over every (content, doublet content) pair of
     the records in the named column, labelled with the pair it came from and
     every tied pair (`lowest_of`); None for a spin no sector carries."""
-    return {j2: lowest_of(pole_candidates(records, name, (j2,)))
+    return {j2: lowest_of(pole_candidates(records, name, (j2,)), tolerance)
             for j2 in SPINS}
 
 
@@ -2898,7 +3014,7 @@ def _pair_labels(candidates):
              "spin_j_j_plus_1": c["spin_j_j_plus_1"]} for c in candidates]
 
 
-def ratios(records):
+def ratios(records, tolerance=DECLARED_TIE_TOLERANCE):
     """The nucleon and Delta poles over every (content, doublet content)
     pair, and their ratios against the target, in two pairings. Each names
     the two pairs it compares, and every pair tied with either pole.
@@ -2919,8 +3035,9 @@ def ratios(records):
     for name in COLUMNS:
         result = {}
         n = lowest_of(pole_candidates(records, name,
-                                      reading="nucleon_reading"))
-        d = lowest_of(pole_candidates(records, name, reading="delta_reading"))
+                                      reading="nucleon_reading"), tolerance)
+        d = lowest_of(pole_candidates(records, name, reading="delta_reading"),
+                      tolerance)
         if n is not None and d is not None:
             result["by_2T_reading"] = _pair(n["pole"], d["pole"], {
                 "nucleon_content": n["content"],
@@ -3112,7 +3229,8 @@ def _lowest_text(best, name_content):
              "doublet content %s" % (best["doublet_content"],))
     text = "%s from %s" % (_complex_text(best["pole"]), label)
     if best.get("tied"):
-        text += " (tied to %g with %s)" % (DECLARED_TIE_TOLERANCE, "; ".join(
+        text += " (tied to %g with %s)" % (
+            best.get("tie_tolerance", DECLARED_TIE_TOLERANCE), "; ".join(
             ("content %s, doublet content %s" % (c["content"],
                                                  c["doublet_content"])
              if name_content else "doublet content %s"
@@ -3222,10 +3340,11 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    mean_field_method=DECLARED_MEAN_FIELD_METHOD,
                    band_selection=DECLARED_BAND_SELECTION,
                    stiffness=DECLARED_STIFFNESS,
-                   fiber_moments=DECLARED_FIBER_MOMENTS):
+                   fiber_moments=DECLARED_FIBER_MOMENTS, tolerances=None):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
-    number of the contents it keeps."""
+    number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
+    by key; the others are recorded at `DECLARED_TOLERANCE`."""
     return {
         "mode": "controlled synthesis",
         "contents": [list(c) for c in (selected_contents or contents())],
@@ -3239,13 +3358,10 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         "holonomy_zero_margin": DECLARED_HOLONOMY_ZERO_MARGIN,
-        "band_tolerance": DECLARED_BAND_TOLERANCE,
         "newton_iterations": 40,
-        "newton_tolerance": 1e-11,
         "jacobian_radius": 1e-4,
-        "rank_tolerance": DECLARED_RANK_TOLERANCE,
         "mean_field_iterations": 40,
-        "mean_field_tolerance": 1e-9,
+        **declared_tolerances(tolerances),
         "mean_field_method": mean_field_method,
         "band_selection": band_selection,
         "stiffness": stiffness,
@@ -3288,7 +3404,10 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
     or without it. With `points_file`, the configuration and the host are
     written as the first line and every scan point's full record is appended
     as one JSON line the moment the point completes."""
-    alignment = aligned_doublet_frame(monopole_support(), rotation_group())
+    alignment = aligned_doublet_frame(
+        monopole_support(), rotation_group(),
+        declared_tolerance(config, "degeneracy_tolerance"),
+        declared_tolerance(config, "certificate_tolerance"))
     frames = []
     host = {
         "monopole": _monopole_record(alignment["spin_read"]),
@@ -4061,8 +4180,36 @@ def build_parser():
                           "`IsospinDoublet`) to every content's record; the "
                           "other outputs are unchanged")
     add_mean_field_arguments(run)
+    add_tolerance_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
+
+
+def _tolerance(text):
+    """A positive number, for the tolerance options."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = 0.0
+    if not value > 0.0:
+        raise argparse.ArgumentTypeError(
+            "a tolerance is a positive number; got %r" % text)
+    return value
+
+
+def add_tolerance_arguments(parser):
+    """One option per tolerance of the stack (`TOLERANCES`), each defaulting
+    to `DECLARED_TOLERANCE`, for both drivers. None changes an equation."""
+    for key, meaning in TOLERANCES:
+        parser.add_argument("--" + key.replace("_", "-"), dest=key,
+                            type=_tolerance, default=DECLARED_TOLERANCE,
+                            help="%s (default %g)" % (meaning,
+                                                      DECLARED_TOLERANCE))
+
+
+def tolerances_from(args):
+    """The parsed tolerance options, by config key (`TOLERANCES`)."""
+    return {key: getattr(args, key) for key, _ in TOLERANCES}
 
 
 def _fiber_moments(text):
@@ -4119,7 +4266,8 @@ def main(argv=None):
                             mean_field_method=args.mean_field_method,
                             band_selection=args.band_selection,
                             stiffness=args.stiffness,
-                            fiber_moments=args.fiber_moments)
+                            fiber_moments=args.fiber_moments,
+                            tolerances=tolerances_from(args))
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None

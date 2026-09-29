@@ -120,6 +120,30 @@ def test_the_declared_defaults():
     assert args.stiffness == "none" and args.fiber_moments == "r"
     assert bp.build_parser().parse_args(
         ["run", "--fiber-moments", "1"]).fiber_moments == "1"
+    # every tolerance of the stack is an option, defaulting to 1e-15
+    assert bp.DECLARED_TOLERANCE == 1e-15
+    assert bp.tolerances_from(args) == {
+        key: 1e-15 for key, _ in bp.TOLERANCES}
+    assert "rank_tolerance" in dict(bp.TOLERANCES)
+    tight = bp.build_parser().parse_args(
+        ["run", "--rank-tolerance", "1e-10", "--villain-tolerance", "1e-18"])
+    assert bp.tolerances_from(tight)["rank_tolerance"] == 1e-10
+    assert bp.tolerances_from(tight)["villain_tolerance"] == 1e-18
+    assert bp.tolerances_from(tight)["newton_tolerance"] == 1e-15
+
+
+def test_the_config_records_every_tolerance():
+    config = bp.default_config([1.0], [1.0])
+    assert all(config[key] == bp.DECLARED_TOLERANCE
+               for key, _ in bp.TOLERANCES)
+    config = bp.default_config([1.0], [1.0],
+                               tolerances={"tie_tolerance": 1e-8})
+    assert config["tie_tolerance"] == 1e-8
+    assert config["rank_tolerance"] == bp.DECLARED_TOLERANCE
+    assert bp.declared_tolerance(config, "tie_tolerance") == 1e-8
+    assert bp.declared_tolerance({}, "tie_tolerance") == 1e-15
+    with pytest.raises(ValueError, match="unknown tolerances"):
+        bp.default_config([1.0], [1.0], tolerances={"tolerance": 1e-8})
 
 
 def test_lists_of_couplings_are_parsed():
@@ -136,6 +160,8 @@ def test_lists_of_couplings_are_parsed():
     (["run", "--stiffness", "quadratic"], "--stiffness"),
     (["run", "--fiber-moments", "-1"], "--fiber-moments"),
     (["run", "--fiber-moments", "all"], "--fiber-moments"),
+    (["run", "--rank-tolerance", "0"], "--rank-tolerance"),
+    (["run", "--tie-tolerance", "tight"], "--tie-tolerance"),
     (["run", "--regge-hinges", "boundary"], "--regge-hinges"),
     (["run", "--kappa", "one"], "--kappa"),
     ([], "command"),
@@ -356,7 +382,8 @@ def test_a_tie_for_a_minimum_names_every_tied_doublet_content():
     assert bp.lowest_poles(record, "quasi_free")[THREE] is None
     text = bp.lowest_lines([record])[0]
     assert ("spin 1/2 quasi-free 5+0.5i from doublet content [0, 2, 1] "
-            "(tied to 1e-08 with doublet content [1, 2, 0])") in text
+            "(tied to 1e-15 with doublet content [1, 2, 0])") in text
+    assert best["tie_tolerance"] == bp.DECLARED_TOLERANCE
     assert "spin 3/2 quasi-free none" in text
     out = bp.ratios([record])["quasi_free"]
     assert out["by_spin_lift"] is None and out["by_2T_reading"] is None
@@ -686,7 +713,8 @@ def test_the_declarations_carry_the_config():
     assert geometry.relax_lengths and geometry.relax_links
     assert not geometry.relax_multipliers
     assert geometry.maximum_iterations == 40
-    assert geometry.tolerance == 1e-11
+    assert geometry.tolerance == bp.DECLARED_TOLERANCE == 1e-15
+    assert geometry.rank_tolerance == bp.DECLARED_TOLERANCE
     assert geometry.holonomy_zero_margin == bp.DECLARED_HOLONOMY_ZERO_MARGIN
     assert geometry.jacobian_mode == \
         cob.HolomorphicJacobianMode.RealAxisDifference

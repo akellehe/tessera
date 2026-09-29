@@ -19,6 +19,8 @@ import pytest
 from tessera import chainhodge as ch
 from tessera.drivers import recursion as R
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 
 @pytest.mark.parametrize("count", [2, 3, 4])
 def test_every_tetrahedron_of_the_fan_carries_a_unit_monopole(count):
@@ -223,7 +225,7 @@ def test_one_tick_on_the_host_holds_its_cut_and_rejects_transient_components(
     resolutions and are rejected by name. That leaves two response vertices,
     no grown 3-simplex, and a stop."""
     monkeypatch.setattr(R, "cell_reads", lambda cells, z, links, config: [])
-    config = R.default_config(tetrahedra=2)
+    config = R.default_config(tetrahedra=2, tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     record, following = R.tick(0, cells, z, links, config)
     assert record["tick"] == 0

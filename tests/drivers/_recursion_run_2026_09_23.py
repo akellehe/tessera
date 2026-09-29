@@ -11,6 +11,27 @@ around the edge (0, 1)) and the two host cells whose per-cell reads failed
 quark condition 2 in 12 of 16 contents.
 """
 
+#: The tolerances the run was made at (the drivers' then-fixed values), by
+#: the config keys of `baryon_poles.TOLERANCES`. A test that reproduces the
+#: run's numbers, its convergence or its certificates declares them; the
+#: drivers' declared default for every one of them is 1e-15.
+TOLERANCES = {
+    "rank_tolerance": 1e-10,
+    "newton_tolerance": 1e-11,
+    "mean_field_tolerance": 1e-9,
+    "band_tolerance": 1e-8,
+    "certificate_tolerance": 1e-8,
+    "allowability_tolerance": 1e-8,
+    "tie_tolerance": 1e-8,
+    "degeneracy_tolerance": 1e-7,
+    "pole_newton_tolerance": 1e-13,
+    "pole_zero_count_tolerance": 1e-3,
+    "pole_rank_tolerance": 1e-10,
+    "fluctuation_tolerance": 1e-8,
+    "recursion_tolerance": 1e-9,
+    "villain_tolerance": 1e-18,
+}
+
 #: The tick-0 base cells.
 LEVEL_ZERO_CELLS = [[0, 1, 2, 3], [0, 1, 3, 4]]
 

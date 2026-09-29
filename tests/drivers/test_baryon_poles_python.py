@@ -20,11 +20,18 @@ from tessera import cobordism as cob
 from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 
 @pytest.fixture(scope="module")
 def alignment():
-    return bp.aligned_doublet_frame(bp.monopole_support(),
-                                    bp.rotation_group())
+    # at the run's tolerances: the declared 1e-15 degeneracy tolerance splits
+    # the degenerate pairs of the averaged operator, whose eigenvalues agree
+    # to rounding (a few 1e-15)
+    return bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"])
 
 
 # ------------------------------------------------------------------ host
@@ -740,7 +747,8 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
     operator = np.diag(rng.uniform(1.0, 2.0, size=len(
         bp.occupation_basis()))).astype(complex)
     entry = bp.sector_entry(bp.SPIN_HALF, triality, sector,
-                            (("quasi_free", operator),), matrices)
+                            (("quasi_free", operator),), matrices,
+                            RUN.TOLERANCES)
     read = entry["quasi_free"]
     poles = read["poles"]
     assert len(poles) >= 2
@@ -755,7 +763,7 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
         assert certificate["colour_casimir_residual"] < 1e-10
     # without projectors the spinor certificate is unmeasured, not false
     bare = bp.sector_entry(bp.SPIN_HALF, triality, sector,
-                           (("quasi_free", operator),))
+                           (("quasi_free", operator),), config=RUN.TOLERANCES)
     assert bare["quasi_free"]["pole_certificates"][0]["sharp_spinor"] is None
     assert bare["quasi_free"]["pole_certificates"][0]["spin_lift_sharp"]
     lowest = poles.index(read["lowest_pole"])
@@ -772,7 +780,8 @@ def test_the_anchor_atlas_of_the_declared_host(alignment):
     every sheet, with the connection-dressed covariance and the transition
     cocycle at machine precision and the invariant coordinates attached; on
     the symmetric host its profile has one modulus on every face."""
-    anchor = bp.anchor_atlas_read(bp.build_host(), alignment)
+    anchor = bp.anchor_atlas_read(bp.build_host(), alignment,
+                                  RUN.TOLERANCES["certificate_tolerance"])
     assert anchor["anchored"] and anchor["anchoring_faces"] == 4
     assert anchor["covariance_residual"] < 1e-12
     assert anchor["transition_cocycle_residual"] < 1e-12
@@ -857,7 +866,7 @@ def test_the_spectral_fingerprint_of_the_declared_host():
     type is carried by a single rank-two band of the refined action whose
     restriction to the shared edges is the original doublet; the energy
     shift under refinement is reported, not gated."""
-    config = bp.default_config([1.0], [1.0])
+    config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
     read = bp.spectral_fingerprint_read(bp.build_host(), 1.0, 1.0, config)
     assert read["doublet_found"] and read["sheet"] == 0
     assert np.allclose(read["doublet_weights"], [1.0 / 3.0] * 6)
@@ -902,7 +911,8 @@ def test_a_read_whose_lengths_ran_off_is_refused_by_name(alignment):
     # the action of the run the investigation studied: the linear stiffness
     # stand-in, no fiber moment pinned
     config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
-                               stiffness="linear-stand-in", fiber_moments=0)
+                               stiffness="linear-stand-in", fiber_moments=0,
+                               tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config, alignment)
@@ -945,7 +955,8 @@ def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
-    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)])
+    config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)],
+                               tolerances=RUN.TOLERANCES)
     assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)

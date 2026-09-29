@@ -427,7 +427,8 @@ def relax_level(spacetime, config, sectors=None, count=None):
     declaration = bp.action_declaration(
         spacetime, config["kappa"], config["beta"], config["regge_hinges"],
         holonomy=config["holonomy"],
-        stiffness=config.get("stiffness", bp.DECLARED_STIFFNESS))
+        stiffness=config.get("stiffness", bp.DECLARED_STIFFNESS),
+        villain_tolerance=bp.declared_tolerance(config, "villain_tolerance"))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
@@ -491,6 +492,7 @@ def recursion_turn(operator, config):
     """One turn of the Section 15 box on the base operator."""
     declaration = cob.LevelRecursionDeclaration()
     declaration.resolutions = list(config["resolutions"])
+    declaration.tolerance = bp.declared_tolerance(config, "recursion_tolerance")
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = config["band_rank"]
@@ -807,8 +809,10 @@ def cell_reads(cells, z, links, config):
     are its bounding cut and are held. A tetrahedron of a grown level is not
     declared, so nothing on it is held (``hold_cell_sectors``)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
+    alignment = bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        bp.declared_tolerance(config, "degeneracy_tolerance"),
+        bp.declared_tolerance(config, "certificate_tolerance"))
     chosen = cells if config["max_cells"] is None else \
         cells[:config["max_cells"]]
     out = []
@@ -825,11 +829,11 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
-        # the mean-field solver the run declared (neither option changes an
-        # equation)
+        # the mean-field solver and the tolerances the run declared (none
+        # changes an equation)
         for key in ("mean_field_method", "band_selection",
                     "length_runaway_ratio", "stiffness", "fiber_moments",
-                    "kappa_role"):
+                    "kappa_role") + tuple(key for key, _ in bp.TOLERANCES):
             if key in config:
                 cell_config[key] = config[key]
         number = monopole_numbers([c], links)[0]
@@ -854,7 +858,7 @@ def _verdict_summary(record):
             "status": {c["name"]: c["status"] for c in quark["conditions"]}}
 
 
-def _content_poles(record):
+def _content_poles(record, config=None):
     """The poles of one content record for the tick's summary: for every
     doublet content, both spins and both columns with every pole, its
     multiplicity and the read's failed certificates; and, separately
@@ -881,7 +885,9 @@ def _content_poles(record):
                       "sectors": sectors})
     return {"per_doublet_content": pairs,
             "lowest_over_doublet_contents": {
-                name: bp.lowest_poles(record, name) for name in bp.COLUMNS}}
+                name: bp.lowest_poles(
+                    record, name, bp.declared_tolerance(config, "tie_tolerance"))
+                for name in bp.COLUMNS}}
 
 
 def _truncation_summary(record):
@@ -1106,7 +1112,7 @@ def tick(index, cells, z, links, config):
                            for cell in record["reads"]],
         "isospin_doublet": [[_doublet_summary(c) for c in cell["contents"]]
                             for cell in record["reads"]],
-        "poles": [[dict(_content_poles(c), content=c["content"],
+        "poles": [[dict(_content_poles(c, config), content=c["content"],
                         quartic_truncation=_truncation_summary(c))
                    for c in cell["contents"]]
                   for cell in record["reads"]],
@@ -1147,13 +1153,15 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    mean_field_method=bp.DECLARED_MEAN_FIELD_METHOD,
                    band_selection=bp.DECLARED_BAND_SELECTION,
                    stiffness=bp.DECLARED_STIFFNESS,
-                   fiber_moments=bp.DECLARED_FIBER_MOMENTS):
+                   fiber_moments=bp.DECLARED_FIBER_MOMENTS, tolerances=None):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
     how many adjacent declared resolutions a component must persist across
     to become a response vertex; by default every declared resolution, the
-    stated range of scales of WP §5."""
+    stated range of scales of WP §5. ``tolerances`` sets any of
+    `baryon_poles.TOLERANCES` by key; every tolerance is carried into every
+    cell's config."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                holonomy=holonomy, elimination=elimination,
@@ -1161,7 +1169,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                mean_field_method=mean_field_method,
                                band_selection=band_selection,
                                stiffness=stiffness,
-                               fiber_moments=fiber_moments)
+                               fiber_moments=fiber_moments,
+                               tolerances=tolerances)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1691,6 +1700,7 @@ def build_parser():
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
     bp.add_mean_field_arguments(run)
+    bp.add_tolerance_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1707,7 +1717,8 @@ def main(argv=None):
         persistence_required=args.persistence_required,
         mean_field_method=args.mean_field_method,
         band_selection=args.band_selection,
-        stiffness=args.stiffness, fiber_moments=args.fiber_moments)
+        stiffness=args.stiffness, fiber_moments=args.fiber_moments,
+        tolerances=bp.tolerances_from(args))
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)
