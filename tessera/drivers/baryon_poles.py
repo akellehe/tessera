@@ -111,10 +111,11 @@ The nucleon pole of the ratio is the lowest spin-1/2 pole over every
 "lowest" meaning smallest real part, which is the library's declared
 `OccupationOrder.AscendingRealPart`; the ratio names the two pairs it
 compares. The poles are complex and are reported as complex; the ratio
-s_N / s_Delta is compared with 0.5800, the mass-squared reading (the pole of a
-Laplace-type operator has the dimension of p^2, and the paper takes no square
-root of it), and the ratio of moduli and the ratio of real parts are reported
-beside it. The one average on the way to a pole is the T-average that defines
+s_N / s_Delta is compared with 0.7616 = m_N / m_Delta, the rest-energy reading
+of WP v18 §13.3 (under the first-order flow of §7 the pole of the spatial
+pencil is the complex frequency of the bound cluster, its energy at rest; the
+theory carries the pole and takes no square root of it), and the ratio of
+moduli and the ratio of real parts are reported beside it. The one average on the way to a pole is the T-average that defines
 h-bar_1 (WP v17 §9), which is the operator the poles are read on, not a way
 of reporting them.
 
@@ -191,10 +192,12 @@ from tessera import cobordism as cob
 from tessera import observables as obs
 
 #: The target: the proton mass over the Delta(1232) Breit-Wigner mass (PDG).
+#: The pole ratio s_N / s_Delta is compared with it directly, because the pole
+#: is the complex rest energy of the bound cluster (WP v18 §13.3), not a mass
+#: squared.
 PROTON_MASS_MEV = 938.272
 DELTA_MASS_MEV = 1232.0
 TARGET_MASS_RATIO = PROTON_MASS_MEV / DELTA_MASS_MEV
-TARGET_MASS_SQUARED_RATIO = TARGET_MASS_RATIO ** 2
 
 #: The declared scan: kappa = 8 pi G (lattice units) and beta. The paper fixes
 #: neither (WP §7); the grid spans its weak-coupling regime, the runaway scale
@@ -2196,7 +2199,6 @@ def _pair(s_n, s_d, extra):
         "pole_ratio": s_n / s_d,
         "modulus_ratio": abs(s_n) / abs(s_d),
         "real_part_ratio": s_n.real / s_d.real,
-        "target_mass_squared_ratio": TARGET_MASS_SQUARED_RATIO,
         "target_mass_ratio": TARGET_MASS_RATIO,
     }
     out.update(extra)
@@ -2480,13 +2482,13 @@ def ratio_lines(point_ratios, prefix=""):
                 head + " s_N=%s (content %s, doublet content %s) s_D=%s "
                 "(content %s, doublet content %s) s_N/s_D=%s "
                 "|s_N|/|s_D|=%.6f Re/Re=%.6f; "
-                "target (m_N/m_Delta)^2=%.4f%s%s%s"
+                "target m_N/m_Delta=%.4f%s%s%s"
                 % (_complex_text(r["nucleon_pole"]), r["nucleon_content"],
                    r["nucleon_doublet_content"],
                    _complex_text(r["delta_pole"]), r["delta_content"],
                    r["delta_doublet_content"],
                    _complex_text(r["pole_ratio"]), r["modulus_ratio"],
-                   r["real_part_ratio"], TARGET_MASS_SQUARED_RATIO, note,
+                   r["real_part_ratio"], TARGET_MASS_RATIO, note,
                    _tie_text(r, "nucleon"), _tie_text(r, "delta")))
     return lines
 
@@ -2556,7 +2558,10 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
             "linear stiffness stand-in (1/2 kappa^-1) ||l - l0||^2"),
         "length_runaway_ratio": DECLARED_LENGTH_RUNAWAY_RATIO,
         "target_mass_ratio": TARGET_MASS_RATIO,
-        "target_mass_squared_ratio": TARGET_MASS_SQUARED_RATIO,
+        "target_reading": "the pole is the complex rest energy of the bound "
+                          "cluster under the first-order flow (WP v18 "
+                          "§13.3); s_N / s_Delta is compared with m_N / "
+                          "m_Delta",
     }
 
 
@@ -3010,11 +3015,10 @@ def draw_ratio_panel(axis, rows, title):
                   markeredgewidth=1.5, color=INK_MUTED,
                   markerfacecolor="none",
                   label="hollow: a pole's solve did not converge")
-    axis.axhline(TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, linewidth=1,
+    axis.axhline(TARGET_MASS_RATIO, color=INK_MUTED, linewidth=1,
                  linestyle="--")
-    axis.text(0, TARGET_MASS_SQUARED_RATIO, " target (m_N/m_D)^2 = %.4f"
-              % TARGET_MASS_SQUARED_RATIO, color=INK_MUTED, va="bottom",
-              fontsize=7)
+    axis.text(0, TARGET_MASS_RATIO, " target m_N/m_D = %.4f"
+              % TARGET_MASS_RATIO, color=INK_MUTED, va="bottom", fontsize=7)
     axis.set_xticks(range(len(places)))
     axis.set_xticklabels([place.replace(" ", "\n") for place in places],
                          fontsize=6, rotation=90 if len(places) > 8 else 0)
@@ -3296,9 +3300,8 @@ def summary(result):
     """Every scan point as text (`point_lines`): one line per (content,
     doublet content) pair with both spins and both columns, the labelled
     minima, and the ratios with the pairs they compare."""
-    lines = ["mode: controlled synthesis; target m_N/m_Delta = %.4f, "
-             "(m_N/m_Delta)^2 = %.4f" % (TARGET_MASS_RATIO,
-                                         TARGET_MASS_SQUARED_RATIO)]
+    lines = ["mode: controlled synthesis; target m_N/m_Delta = %.4f (the "
+             "pole is the rest energy, WP v18 §13.3)" % TARGET_MASS_RATIO]
     for point in result["points"]:
         lines += point_lines(point)
     return "\n".join(lines)
