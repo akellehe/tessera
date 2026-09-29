@@ -252,9 +252,16 @@ struct HolomorphicRelaxationDeclaration {
   /// no effect under the Wilson form, whose potential has no singularity.
   double holonomyZeroMargin = 0.05;
 
-  /// The monopole sectors held as boundary data (controlled synthesis: odd
-  /// sectors are superselection data set by boundary or initial conditions,
-  /// WP §9). For every declared sector the solve keeps (i) the modulus of every
+  /// The monopole sectors held as boundary data (controlled synthesis, WP v18
+  /// Section 11.1). The monopole number through a declared cluster's bounding
+  /// cut is boundary data, held on that cut by this rule; it is not an
+  /// invariant of continuous relaxation, because a face flux is defined
+  /// modulo \f$ 2\pi \f$ and the number changes by \f$ \pm1 \f$ whenever a
+  /// face holonomy on the cut passes through \f$ -1 \f$, so an odd sector
+  /// persists only where it is held or where the dynamics keeps the cut's
+  /// holonomies away from \f$ -1 \f$; in the bulk, and on every grown level,
+  /// it is read and never held. For every declared sector the solve keeps (i)
+  /// the modulus of every
   /// face holonomy on its cut, so a holonomy on the unit circle stays on it,
   /// and (ii) the monopole number, by halving any trial step after which a
   /// sector reads a different number. The arguments of the face holonomies
