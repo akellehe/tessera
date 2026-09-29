@@ -1308,7 +1308,8 @@ def frame_data(frames, index):
     content, doublet content) of the latest tick that read cells
     (`baryon_poles.pole_marks`, one group per host cell and content); and the
     by-spin ratio of every read host cell in both columns with the two pairs
-    it compares (`baryon_poles.ratio_row`)."""
+    it compares and the mean-field solve behind each
+    (`baryon_poles.ratio_row`)."""
     done = frames[:index + 1]
     read = [f for f in done if f.get("reads")]
     latest = read[-1] if read else done[-1]
@@ -1319,10 +1320,11 @@ def frame_data(frames, index):
     rows = []
     for cell in cells:
         where = "cell %s" % bp._digits(cell["cell"])
+        solves = bp.content_solves(cell["contents"])
         for name in bp.COLUMNS:
             rows.append(bp.ratio_row(where, name, ((cell.get("ratios") or {})
                                                    .get(name) or {})
-                                     .get("by_spin")))
+                                     .get("by_spin"), solves))
     return {"tick": latest["tick"], "done": len(done),
             "counts": [{"tick": f["tick"],
                         "response_vertices": f["summary"]["response_vertices"],
