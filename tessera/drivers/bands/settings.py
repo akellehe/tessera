@@ -50,7 +50,13 @@ class Approximations:
     (`momentum_set.uniform_set`); 1 is the zone centre alone. On a set the
     offsets of `zero_momentum_order` surround every transfer of the set
     (`momentum_set.set_nodes`), and the diagrams beyond the first order run
-    over the states of the set nearest the gap (`SetScreening.set_vertex`)."""
+    over the states of the set nearest the gap (`SetScreening.set_vertex`).
+
+    `projector_quadrature`: the Gauss points per direction of the collapsed
+    rule that loads the projector functions of the ions on every tetrahedron
+    (`loads.SimplexQuadrature`); n points integrate polynomials of degree
+    2 n - 1 exactly, 6 x 6 x 6 points per tetrahedron by default. 0 loads the
+    interpolant of the projector with the mass matrix in its place, M beta."""
     self_energy_order: int = 3
     zero_momentum_order: int = 3
     refinement_terms: int = 5
@@ -59,6 +65,7 @@ class Approximations:
     vertex_bands: int = 12
     vertex_poles: int = 12
     momenta: int = 1
+    projector_quadrature: int = 6
 
     def __post_init__(self):
         for name in ("self_energy_order", "zero_momentum_order", "refinement_terms"):
@@ -72,6 +79,8 @@ class Approximations:
             raise ValueError("vertex_bands is at least 2 and vertex_poles at least 1")
         if self.momenta < 1:
             raise ValueError("momenta is at least 1")
+        if self.projector_quadrature < 0:
+            raise ValueError("projector_quadrature is a number of points per direction, or 0 for the interpolant")
 
     def require_implemented(self):
         """Refuse, by name, an order that does not exist yet."""
@@ -142,6 +151,10 @@ class Approximations:
         group.add_argument("--momenta", type=int, default=defaults.momenta,
                            help="momenta per axis of the set on which the covariance is sampled (1 is the zone centre; "
                                 f"on a set the orders implemented are {IMPLEMENTED_ON_A_SET})")
+
+        group.add_argument("--projector-quadrature", type=int, default=defaults.projector_quadrature,
+                           help="Gauss points per direction of the rule that loads the projectors on every "
+                                f"tetrahedron (default {defaults.projector_quadrature}; 0 loads the interpolant)")
 
     @classmethod
     def from_arguments(cls, args):

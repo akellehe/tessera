@@ -147,14 +147,46 @@ potential nor in $1/m$ (`fiber.static_levels`). The lowest decay rate of the tic
 map closes on its lowest level at second order in the mesh spacing (a difference
 of 0.062, 0.029, 0.016, 0.010 on cells of 3 to 6 divisions at $m = 6$), and the
 response to the potential approaches the static one from below (0.74, 0.82,
-0.88, 0.91); neither depends on the tick. The exact limit of the tick map with the potential is read off the slab's own
-blocks (`fiber.tick_limit`): $(S_0 + E S_1 + E^2 S_2)\,u = 0$ with $S_2 = -D$,
-$S_1 = 2DV$ and $S_0 = A + m^2 M - DV^2$, the last two up to a symmetric term that
-vanishes for a constant potential, and the decay rates converge to its levels at
-second order in the tick. What remains at a finite mesh is that term, the
-curvature of the connection: on the vertical triangles the covariant operator
-transports through the base vertex of each cell, which samples the potential one
-mesh step away. The non-relativistic reduction $E \approx m + L/2m + V$ is not
+0.88, 0.91); neither depends on the tick. The exact limit of the tick map with
+the potential is a closed form (`fiber.tick_limit`),
+
+$$ (S_0 + E S_1 + E^2 S_2)\,u = 0 , \qquad S_2 = -D , \quad S_1 = 2DV + C_1 , \quad
+   S_0 = A + m^2 M - DV^2 + C_0 , $$
+
+and the decay rates of the tick map converge to its levels at second order in
+the tick. $C_0$ and $C_1$ are the curvature of the connection on the vertical
+triangles: the covariant operator transports through the base vertex of each
+cell, $b(\sigma) = \min \sigma$, which samples the potential one mesh step away.
+They are sums over the spatial simplices $T$ of $|T|$ times a block on the
+vertices of $T$ (`fiber.staircase_blocks`). With the vertices of $T$ in
+ascending id, $i = 0, \dots, d$ (the order in which the staircase of the slab
+climbs), $\Delta_a = V_a - V_i$ and $N = 4(d+1)(d+2)(d+3)$,
+
+$$ N\,(c_1)_{ii} = 4(2d+3-i) \sum_{a<i} \Delta_a , \qquad
+   N\,(c_1)_{ij} = -2 \Big[ \sum_{a<i} (V_a - V_j) + (d+3-i)(V_i - V_j) \Big] \quad (i<j) , $$
+
+$$ N\,(c_0)_{ii} = -V_i\,N (c_1)_{ii} - (2d+3-2i) \sum_{a<i} \Delta_a^2 - \Big( \sum_{a<i} \Delta_a \Big)^2 , \qquad
+   (c_0)_{ij} = -V_i\,(c_1)_{ij} \quad (i<j) , $$
+
+both symmetric. They are the first and the second order in the tick of the time
+part of the dressed stiffness $\partial_1^U M_1^U (\partial_1^{U^{-1}})^T$ on
+the $d+1$ simplices of a staircase prism. Only the time components of the
+gradients of the barycentric coordinates enter the Whitney mass matrix $M_1$
+there, and they are $\mp 1/\tau$ on the two ends of the one vertical edge of
+each simplex, so the blocks depend on the volume of $T$, on the potential at its
+vertices and on the order of their ids, and on nothing else of the geometry.
+Every entry is a sum of differences of the potential (the electric field through
+the vertical triangles) and vanishes for a constant one. The test suite holds
+the blocks to the expansion of $M_1$ with the transport convention in exact
+rational arithmetic for $d = 1, \dots, 4$, and the assembled limit to the blocks
+of the slab (`fiber.tick_limit_from_blocks`): reversing the tick transposes the
+pencil, so the symmetric parts of the blocks are even in the tick, and one
+Richardson step leaves a difference that falls like $\tau^4$, to $10^{-9}$ at
+$\tau = 0.02$ on cells of 3 to 6 divisions with a potential that is not a pure
+gauge. With the tick gone, the lowest level of the limit closes on the static
+relativistic problem at second order in the mesh (the difference times the
+square of the divisions is 0.56, 0.46, 0.39, 0.37, 0.35, 0.35 on cells of 3, 4,
+5, 6, 8, 10 divisions). The non-relativistic reduction $E \approx m + L/2m + V$ is not
 used anywhere: it needs the mesh to resolve the Compton wavelength, and compared
 with it the same tick map appeared to over-respond by factors of 2 to 7.
 
@@ -209,9 +241,19 @@ anywhere in these drivers are closed forms of the framework's own matrices (the
 Fourier symbols of its stiffness and mass matrices, derivatives of its covariant
 assembly), each held to the framework's numerical route by a test; a continuum
 solution is never substituted for one. The separable nonlocal part is a term
-`P D P^T` of low rank in the left-hand matrix of the pencil, with `P = M beta`
-the load vectors of the projector functions; `SparsePencilSolver` applies it
-through the Woodbury identity and certifies the shift by inertia. Exchange is
+`P D P^T` of low rank in the left-hand matrix of the pencil, with `P` the load
+vectors of the projector functions, $P_v = \int \beta(x)\,\lambda_v(x)\,dx$
+against the vertex function $\lambda_v$. The radial functions are tabulated, so
+the loads have no closed form: they are taken by a collapsed Gauss rule on every
+tetrahedron (`loads.SimplexQuadrature`, exact for polynomials of degree $2n-1$
+with $n$ points per direction, held to the library's mass matrix and triple
+integrals by a test), summed over the images of each ion within the reach of
+its table. At a crystal momentum the load of every image carries the Bloch
+phase of its displacement to the vertex. `M beta`, the mass matrix on the
+vertex values of the projector, is the load of the projector's interpolant and
+remains available (`--projector-quadrature 0`); the local potential is
+interpolated at the vertices, as the plan has it. `SparsePencilSolver` applies
+the term through the Woodbury identity and certifies the shift by inertia. Exchange is
 compressed onto the computed bands and joins the same low-rank term. The
 Coulomb kernel of the grid is inverted exactly by Fourier transform, because the
 stiffness matrix commutes with the grid translations.
@@ -237,7 +279,8 @@ $$ d_{ia} = 1^T (\partial M_0^U[\psi_i])\, z_a
 
 with $\partial$ the derivative with respect to a uniform change of the link
 phases: entrywise for the stiffness, mass and weighted mass matrices
-(`GridMatrix.momentum_derivative`), the product rule on the projector loads, and
+(`GridMatrix.momentum_derivative`), the derivative of the Bloch phases of the
+projector loads (`loads.LocalLoads.derivative`), and
 for exchange the derivative of the dressed weighted mass matrices and of the
 Coulomb kernel, whose symbol has a closed-form gradient
 (`GridCoulombKernel.potential_derivative`). The entry of the kernel at $G = 0$
@@ -283,6 +326,7 @@ cost is a flag (`settings.Approximations`), recorded in the output:
 | `--momenta` | the momentum set on which the covariance is sampled, a uniform grid of that many crystal momenta per axis of the cell through its zone centre (`momentum_set`); Hartree-Fock is solved at one momentum of every orbit of time reversal and of the axis permutations the crystal has, the screened interaction is built at every momentum transfer of the set with the entry at zero transfer in closed form, and the offsets of `--zero-momentum-order` surround every transfer. A cell on a set is the supercell at its zone centre, and the test suite holds every step to that identity | at least 1, default 1 (the zone centre); on a set the diagrams beyond the first order run over the states of the set nearest the gap, a mode of the screened interaction of momentum $q$ entering as two bosons with Hermitian couplings |
 | `--refinement-terms` | terms of the refinement series of the zero-momentum constant | 1 to 5, default 5 |
 | `--lattice-images` | periodic images per axis in the lattice sums | odd, default 5 |
+| `--projector-quadrature` | Gauss points per direction of the rule that loads the projector functions on every tetrahedron; 0 loads the interpolant of the projector with the mass matrix | at least 1 (or 0), default 6 |
 | `--frequency-nodes` | terms of the Chebyshev series along the imaginary frequency axis (`KineticBasisScreening`) | at least 5, default 64 |
 | `--divisions` | meshes; every mesh beyond the first removes one even order of the mesh error | default six meshes, five orders |
 
