@@ -60,7 +60,8 @@ def _config(cell, content, method="joint-newton",
     band selection."""
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)],
-                               stiffness="linear-stand-in", fiber_moments=0)
+                               stiffness="linear-stand-in", fiber_moments=0,
+                               tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     config["mean_field_method"] = method
@@ -391,7 +392,7 @@ def test_an_outer_iteration_that_cannot_move_is_named_and_not_repeated():
                                  {e: 1.0 + 0j for e in edges})
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
-    config = bp.default_config([1.0], [1.0])
+    config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
     config["newton_iterations"] = 0
     config["mean_field_method"] = "alternation"
     declaration = bp.mean_field_declaration((2, 1), config, spacetime)

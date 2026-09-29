@@ -37,6 +37,8 @@ from tessera import observables as obs
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import recursion as R
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 SQRT3 = math.sqrt(3.0)
 
 
@@ -288,7 +290,7 @@ def test_the_ward_identity_on_pure_gauge_directions():
     Cauchy rule along each pure-gauge direction and Pi(0) by
     `DressedFluctuation.paramagnetic`."""
     spacetime = bp.build_host()
-    config = bp.default_config([0.5], [1.0])
+    config = bp.default_config([0.5], [1.0], tolerances=RUN.TOLERANCES)
     bare = cob.JointAction(spacetime, bp.action_declaration(spacetime, 0.5, 1.0))
     declaration = bp.action_declaration(spacetime, 0.5, 1.0)
     declaration.covariance = bare.occupation_projector(3)
@@ -542,7 +544,7 @@ def test_held_monopole_sectors_are_the_same_before_and_after():
     are held during every relaxation, and the monopole numbers before and
     after each relaxation agree. The fan of two unit-monopole tetrahedra on
     three sheets is relaxed with every sector held."""
-    config = R.default_config(tetrahedra=2)
+    config = R.default_config(tetrahedra=2, tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     spacetime, count = R.build_level(cells, z, links)
     before = R.monopole_numbers(cells, links)
