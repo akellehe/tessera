@@ -55,6 +55,24 @@ def real_modes(A, M, vectors):
     return energies[:count], (span @ rotation)[:, :count]
 
 
+def long_range_problem(gaps, coupling, charges, entry):
+    """The random-phase problem of particle-hole pairs with the G = 0 entry of
+    the kernel added to their coupling, entry * conj(charge_ia) charge_jb, a
+    rank-one change: (excitations W~_t, modes (X + Y)^t over the pairs, residues
+    a~_t = 2 entry |sum_ia charge_ia (X + Y)^t_ia|^2). See `RandomPhase.set_head`."""
+    gaps, charges = np.asarray(gaps, dtype=float), np.asarray(charges)
+    root = np.sqrt(gaps)
+    body = np.diag(gaps ** 2) + 4.0 * root[:, None] * np.asarray(coupling) * root[None, :]
+    loaded = root * charges.conj()
+    long_range = body + 4.0 * entry * np.outer(loaded, loaded.conj())
+    squared, Z = np.linalg.eigh(0.5 * (long_range + long_range.conj().T))
+    if squared.min() <= 0.0:
+        raise ValueError("the mean field is unstable in the random-phase approximation")
+    omega = np.sqrt(squared)
+    modes = (root[:, None] * Z) / np.sqrt(omega)[None, :]
+    return omega, modes, entry * 2.0 * np.abs(modes.T @ charges) ** 2
+
+
 class RandomPhase:
     """The direct random-phase approximation of a closed-shell state.
 
@@ -152,15 +170,10 @@ class RandomPhase:
             omega = np.sqrt(squared)
             amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ charges
             static.append(np.sum(2.0 * entry * 2.0 * np.abs(amplitudes) ** 2 / omega))
-            loaded = root * charges.conj()
-            long_range = body + 4.0 * entry * np.outer(loaded, loaded.conj())
-            squared, Z = np.linalg.eigh(0.5 * (long_range + long_range.conj().T))
-            omega = np.sqrt(squared)
-            amplitudes = ((root[:, None] * Z) / np.sqrt(omega)[None, :]).T @ charges
-            residues = entry * 2.0 * np.abs(amplitudes) ** 2
+            omega, modes, residues = long_range_problem(gaps, coupling, charges, entry)
             poles.append(omega)
             if momentum.get("limit", False):           # the pairs of a finite momentum are not those of the integrals
-                long_range_modes.append((omega, (root[:, None] * Z) / np.sqrt(omega)[None, :]))
+                long_range_modes.append((omega, modes))
             weights.append(constant * residues / len(momenta))
             inverse.append(1.0 - np.sum(2.0 * residues / omega))
             independent.append(entry * 4.0 * np.sum(np.abs(charges) ** 2 / gaps))
@@ -175,7 +188,7 @@ class RandomPhase:
     def _solve(self, energies, occupied, coupling):
         self.head, self.long_range_modes, self._long_range_transition = None, [], {}
         self.momentum_terms, self.head_constant = [], None
-        self.vertex_order, self.vertex_bands, self._vertex_engines = 1, [], None
+        self.vertex_order, self.vertex_bands, self._vertex_engines, self.vertex_states = 1, [], None, set()
         self.screening_shifts = self.propagator_shifts = None
         self.propagator = None        # the levels of G when they differ from those W was built from
         self.energies = np.asarray(energies, dtype=float)
@@ -273,22 +286,26 @@ class RandomPhase:
             derivative -= np.sum(transitions[n][m] / (frequency - poles) ** 2)
         return value, derivative
 
-    def set_vertex(self, order, bands, interaction, poles):
+    def set_vertex(self, order, bands, interaction, poles, states=None):
         """Add the skeleton diagrams of the orders 2 .. `order` in the screened
         interaction (`diagrams.SkeletonSelfEnergy`) to `correlation`, for the
         modes in `bands`, which are also the modes on the internal lines.
         `interaction[p, q, r, s]` are the Coulomb integrals (pq|rs) over those
         modes, the instantaneous part of W; the retarded part is the `poles`
         random-phase modes that couple to them most strongly (every set of
-        modes that `correlation` averages over is used, and averaged)."""
+        modes that `correlation` averages over is used, and averaged). `states`
+        limits the modes that receive the diagrams (all of `bands` by default):
+        a self-consistent loop solves every mode at every iteration, and the
+        diagrams are what that costs."""
         self.vertex_order, self.vertex_bands = int(order), [int(b) for b in bands]
+        self.vertex_states = set(self.vertex_bands if states is None else [int(n) for n in states])
         self.vertex_interaction, self.vertex_poles = np.asarray(interaction), int(poles)
         self._vertex_engines = None
 
     def _vertex(self, n, frequency, levels):
         """The diagrams beyond the first order for mode n: (value, derivative)."""
         from tessera.drivers.bands.diagrams import SkeletonSelfEnergy
-        if self.vertex_order < 2 or n not in self.vertex_bands:
+        if self.vertex_order < 2 or n not in self.vertex_bands or n not in self.vertex_states:
             return 0.0, 0.0
         bands = self.vertex_bands
         key = tuple(np.round(levels[bands], 12))

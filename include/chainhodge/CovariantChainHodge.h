@@ -453,6 +453,22 @@ class CovariantChainHodge {
   /// (`WhitneyMass::assembleVertexPotential`) dressed by the connection like
   /// \f$ M_0 \f$ itself, so that \f$ \tilde A_0^U + M_0^U[V] \f$ is the
   /// pencil of the operator with the scalar potential \f$ V \f$ added.
+  /// The derivative of `sparsePencil(0)` along the change of the link phases
+  /// \f$ \varphi_e \to \varphi_e + t\, w_e \f$ with one weight \p edgeWeights per
+  /// edge (canonical edge order, the phase on the orientation of the stored
+  /// link), at \f$ t = 0 \f$: the product rule on
+  /// \f$ \tilde A_0^U = \partial_1^U M_1^U (\partial_1^{U^{-1}})^T \f$, every factor
+  /// differentiated entry by entry as in `dressedPhaseDerivative`, summed over
+  /// the edges in one pass. With the weights \f$ w_e = \hat q \cdot \Delta x_e \f$
+  /// it is the derivative with respect to a crystal momentum along
+  /// \f$ \hat q \f$: the current operator of a uniform connection.
+  /// @throws std::invalid_argument when the weights do not match the edges.
+  [[nodiscard]] SparsePencil sparsePencilPhaseDerivativeAlong(const std::vector<double> &edgeWeights) const;
+
+  /// The same derivative of `dressedVertexPotential(potential)`.
+  [[nodiscard]] SparseMatrix dressedVertexPotentialPhaseDerivativeAlong(
+      const std::vector<Complex> &potential, const std::vector<double> &edgeWeights) const;
+
   [[nodiscard]] SparseMatrix dressedVertexPotential(const std::vector<Complex> &potential) const;
   /// The dense dressed pencil \f$ (\tilde A_k^U, M_k^U) \f$ on images (Whitney)
   /// or \f$ (A_k^U, G_k^U) \f$ on chains (Grassmann).
@@ -633,6 +649,15 @@ class CovariantChainHodge {
   // Minus the entries of a dressed matrix whose base-vertex pair is the edge
   // (x,y) in either order: the second phase derivative with respect to that
   // link, the same for U and for U^{-1} since (+i)^2 = (-i)^2.
+  /// `phaseDerivative` summed over every edge with the weights \p oriented
+  /// (keyed by the ordered vertex pair of the stored link).
+  [[nodiscard]] static SparseMatrix phaseDerivativeAlong(
+      const SparseMatrix &dressedM, const std::vector<std::uint64_t> &baseRow,
+      const std::vector<std::uint64_t> &baseCol,
+      const std::map<std::pair<std::uint64_t, std::uint64_t>, double> &oriented, bool dual);
+  [[nodiscard]] std::map<std::pair<std::uint64_t, std::uint64_t>, double> orientedWeights(
+      const std::vector<double> &edgeWeights) const;
+
   [[nodiscard]] static SparseMatrix phaseSecondDerivative(const SparseMatrix &dressedM,
                                                           const std::vector<std::uint64_t> &baseRow,
                                                           const std::vector<std::uint64_t> &baseCol,

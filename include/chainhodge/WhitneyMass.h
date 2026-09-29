@@ -358,10 +358,80 @@ class WhitneyMass {
   /// density takes \f$ X = \bar Y \f$, passed by the caller.
   /// \f$ \sum_c \rho_c = \mathrm{tr}(X^T M_0 Y) \f$.
   /// @throws std::invalid_argument on a shape mismatch.
+  /// The load vectors \f$ \int \phi_c\, x\, y \f$ of the product of two sections
+  /// that live on different connections: `x` on the connection with the links
+  /// \p linksX and every column of \p Y on the one with \p linksY (both in the
+  /// canonical edge order of `Connection::links`). On a top simplex the three
+  /// factors are carried to its first vertex along the edges, multiplied there
+  /// as piecewise-linear functions, and the load is carried back to the vertex
+  /// it belongs to; the product is a section of the product connection. With a
+  /// trivial \p linksX and the flat connection of a crystal momentum this is
+  /// `CovariantChainHodge::dressedVertexPotential` applied to \p Y; with two
+  /// crystal momenta it is the load of a pair density that carries their
+  /// difference.
+  /// @throws std::invalid_argument on a dimension mismatch.
+  [[nodiscard]] static Eigen::MatrixXcd pairLoads(const cobordism::ChainComplex &K,
+                                                  const SquaredLengths &s,
+                                                  const std::vector<Complex> &linksX,
+                                                  const std::vector<Complex> &linksY,
+                                                  const Eigen::VectorXcd &x,
+                                                  const Eigen::MatrixXcd &Y,
+                                                  Branch branch = Branch::Continuation);
+
   [[nodiscard]] static std::vector<Complex> vertexDensityContraction(
       const cobordism::ChainComplex &K, const SquaredLengths &s,
       const Eigen::MatrixXcd &X, const Eigen::MatrixXcd &Y,
       Branch branch = Branch::Continuation);
+};
+
+/// The pair loads of `WhitneyMass::pairLoads` for many calls on one complex.
+///
+/// The volumes of the top simplices, their vertex indices and the edges that
+/// carry a value to the first vertex of each are found once; a call then costs
+/// one \f$ (d + 1) \times (d + 1) \f$ contraction per top simplex and column
+/// block, spread over the simplices by OpenMP when it is available.
+class PairLoads {
+ public:
+  PairLoads(const cobordism::ChainComplex &K, const SquaredLengths &s,
+            Branch branch = Branch::Continuation);
+
+  /// `WhitneyMass::pairLoads` on the complex this was built from.
+  /// @throws std::invalid_argument on a dimension mismatch.
+  [[nodiscard]] Eigen::MatrixXcd loads(const Eigen::VectorXcd &linksX, const Eigen::VectorXcd &linksY,
+                                       const Eigen::VectorXcd &x, const Eigen::MatrixXcd &Y) const;
+
+  /// The derivative of `loads` at \f$ t = 0 \f$ along the change
+  /// \f$ U^Y_e \to U^Y_e\, e^{i t w_e} \f$ of the links of the connection of
+  /// \p Y, with one weight \f$ w_e \f$ per edge in the canonical edge order.
+  /// The load at the vertex \f$ c \f$ of the term of the vertex \f$ b \f$ of
+  /// \p Y gains the factor \f$ i (\sigma_b - \sigma_c) \f$, \f$ \sigma_a \f$
+  /// the signed weight of the edge from the first vertex of the simplex to
+  /// \f$ a \f$. With the Cartesian displacements of the edges of a crystal as
+  /// weights this is the derivative with respect to the crystal momentum of
+  /// \p Y, the companion of
+  /// `CovariantChainHodge::dressedVertexPotentialPhaseDerivativeAlong`.
+  /// @throws std::invalid_argument on a dimension mismatch.
+  [[nodiscard]] Eigen::MatrixXcd loadsPhaseDerivativeAlong(const Eigen::VectorXcd &linksX,
+                                                           const Eigen::VectorXcd &linksY,
+                                                           const Eigen::VectorXcd &x,
+                                                           const Eigen::MatrixXcd &Y,
+                                                           const Eigen::VectorXd &edgeWeights) const;
+
+  [[nodiscard]] Eigen::Index numVertices() const { return vertices_; }
+  [[nodiscard]] Eigen::Index numEdges() const { return edges_; }
+
+ private:
+  [[nodiscard]] Eigen::MatrixXcd contract(const Eigen::VectorXcd &linksX, const Eigen::VectorXcd &linksY,
+                                          const Eigen::VectorXcd &x, const Eigen::MatrixXcd &Y,
+                                          const Eigen::VectorXd *edgeWeights) const;
+
+  int nv_ = 0;
+  Eigen::Index vertices_ = 0, edges_ = 0;
+  std::vector<int> local_;        // per top simplex, the C_0 index of each of its vertices
+  std::vector<int> edge_;         // per top simplex and vertex a > 0, the edge between the first vertex and a
+  std::vector<char> forward_;     // whether that edge is stored from the first vertex to a
+  std::vector<Complex> volume_;   // per top simplex
+  std::vector<double> weight_;    // the (d + 1)^3 weights of the three-factor integral
 };
 
 }  // namespace tessera::chainhodge

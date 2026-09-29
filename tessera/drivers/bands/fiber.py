@@ -44,6 +44,12 @@ the framework computes. `M` differs from `D` by a term of relative size h^2 L on
 a mode of spatial level L; multiplied by m^2 it changes the kinetic coefficient
 from 1 / 2m to (1 - c m^2 h^2) / 2m, so the reduction to the static Hamiltonian
 needs the mesh to resolve the Compton wavelength, m h << 1, on top of L << m^2.
+
+With a potential the limit is (S0 + E S1 + E^2 S2) u = 0 in closed form
+(`tick_limit`): the static relativistic problem (A + m^2 M) u = D (E - V)^2 u
+plus the curvature of the connection on the vertical triangles, a term per
+spatial simplex that depends on its volume, on the potential at its vertices
+and on the order of their ids, and on nothing else (`staircase_blocks`).
 """
 import numpy as np
 import scipy.linalg
@@ -125,6 +131,128 @@ def static_levels(cell, potential, mass, count):
     constant = A + mass ** 2 * M - np.diag(D * V ** 2)
     left = np.block([[np.zeros((n, n)), np.eye(n)], [-constant, -np.diag(2.0 * D * V)]])
     right = np.block([[np.eye(n), np.zeros((n, n))], [np.zeros((n, n)), -np.diag(D)]])
+    levels = scipy.linalg.eigvals(left, right)
+    levels = levels[np.isfinite(levels)]
+    return np.sort(levels[levels.real > 0.0].real)[:count]
+
+
+def staircase_blocks(potentials):
+    """The curvature of the connection on one staircase prism, in closed form.
+
+    `potentials[..., i]` is the potential on the vertices of a spatial simplex
+    of dimension d in ascending vertex id, i = 0 .. d: the order in which
+    `Spacetime.prismCells` climbs the staircase, and the order that names the
+    base vertex b(sigma) = min(sigma) through which `CovariantChainHodge`
+    transports. Returns (c0, c1), the blocks over those vertices of what the
+    prism adds, per unit volume of the spatial simplex, to S0 and to S1 of
+    `tick_limit` beyond -D V^2 and 2 D V. With the differences
+    D_a = V_a - V_i and N = 4 (d + 1)(d + 2)(d + 3),
+
+        N c1_ii = 4 (2d + 3 - i) sum_{a<i} D_a ,
+        N c1_ij = -2 [ sum_{a<i} (V_a - V_j) + (d + 3 - i)(V_i - V_j) ]             (i < j) ,
+        N c0_ii = -V_i N c1_ii - (2d + 3 - 2i) sum_{a<i} D_a^2 - (sum_{a<i} D_a)^2 ,
+        N c0_ij = -V_i N c1_ij                                                      (i < j) ,
+
+    both symmetric. They are the first and second order in the tick of the
+    time part of the dressed stiffness, sum over the d + 1 simplices of the
+    staircase of
+
+        sum_{q != v, r != w} U_{v b} U_{b b'} U_{b' w} int w_vq . w_wr ,   b = min(v, q), b' = min(w, r) ,
+
+    with w_vq = lambda_q d lambda_v - lambda_v d lambda_q the Whitney forms of
+    degree one, of which only the time components of d lambda enter: they are
+    -1 / tau and 1 / tau on the two ends of the vertical edge of the simplex
+    and zero elsewhere, so nothing of the spatial geometry but the volume
+    appears. Every entry is a sum of differences of the potential, the
+    electric field through the vertical triangles, and vanishes for a constant
+    potential; the arithmetic is integer until the last division, so exact
+    rational potentials give exact blocks (which is how the test suite holds
+    this to the expansion of the Whitney mass matrix)."""
+    W = np.asarray(potentials)
+    d = W.shape[-1] - 1
+    before = np.cumsum(W, axis=-1) - W                           # sum of V_a over a < i
+    squares = np.cumsum(W * W, axis=-1) - W * W
+    c0 = np.zeros(W.shape + (d + 1,), dtype=W.dtype)
+    c1 = np.zeros(W.shape + (d + 1,), dtype=W.dtype)
+    for i in range(d + 1):
+        Vi = W[..., i]
+        linear = before[..., i] - i * Vi                         # sum of D_a
+        quadratic = squares[..., i] - 2 * Vi * before[..., i] + i * Vi * Vi         # sum of D_a^2
+        c1[..., i, i] = 4 * (2 * d + 3 - i) * linear
+        c0[..., i, i] = -Vi * c1[..., i, i] - (2 * d + 3 - 2 * i) * quadratic - linear * linear
+        for j in range(i + 1, d + 1):
+            Vj = W[..., j]
+            c1[..., i, j] = c1[..., j, i] = -2 * ((before[..., i] - i * Vj) + (d + 3 - i) * (Vi - Vj))
+            c0[..., i, j] = c0[..., j, i] = -Vi * c1[..., i, j]
+    scale = 4 * (d + 1) * (d + 2) * (d + 3)
+    return c0 / scale, c1 / scale
+
+
+def tick_curvature(cell, potential):
+    """(C0, C1): `staircase_blocks` assembled over the top simplices of the
+    cell with their volumes, the terms by which the limit of the tick map
+    differs from the static relativistic problem."""
+    V = np.asarray(potential, dtype=float)
+    simplices = np.sort(np.asarray(cell.complex.orientedTopSimplices(), dtype=np.int64), axis=1)
+    volumes = np.asarray(cell.base.certificate().volumes).real
+    rows, columns = simplices[:, :, None], simplices[:, None, :]
+    rows, columns = np.broadcast_arrays(rows, columns)
+    assembled = []
+    for block in staircase_blocks(V[simplices]):
+        matrix = np.zeros((cell.size, cell.size))
+        np.add.at(matrix, (rows, columns), volumes[:, None, None] * block)
+        assembled.append(matrix)
+    return tuple(assembled)
+
+
+def tick_limit(cell, potential, mass):
+    """The exact limit of the tick map of `HistorySlab` as the tick tends to
+    zero, with the potential on the timelike edges, in closed form: with
+    T = exp(-tau E) the quadratic eigenproblem F10 + (F00 + F11) T + F01 T^2 = 0
+    becomes
+
+        (S0 + E S1 + E^2 S2) u = 0 ,
+        S2 = -D ,   S1 = 2 D V + C1 ,   S0 = A + m^2 M - D V^2 + C0 ,
+
+    with A the stiffness matrix, M the Whitney mass matrix, D the lumped one
+    and (C0, C1) the curvature of the connection on the vertical triangles
+    (`tick_curvature`), which is all that separates this limit from
+    `static_levels` at a finite mesh. The spatial part of the dressed stiffness
+    and the mass term reach A and m^2 M with no trace of the potential, because
+    their blocks are already of the order of the tick. Returns (S0, S1, S2)."""
+    A = cell.stiffness.dressed().toarray().real
+    M = cell.mass.dressed().toarray().real
+    D = M.sum(axis=1)
+    V = np.zeros(cell.size) if potential is None else np.asarray(potential, dtype=float)
+    C0, C1 = tick_curvature(cell, V)
+    return A + mass ** 2 * M - np.diag(D * V ** 2) + C0, 2.0 * np.diag(D * V) + C1, -np.diag(D)
+
+
+def tick_limit_from_blocks(cell, potential, mass, tau=1e-2):
+    """`tick_limit` read off the blocks of the slab at a small tick, the check
+    of the closed form against the framework's own assembly:
+
+        S0 = lim (F00 + F01 + F10 + F11) / tau ,  S1 = lim (F10 - F01) ,  S2 = lim tau (F10 + F01) / 2 .
+
+    Reversing the tick inverts every link, which transposes the pencil
+    (property (ii) of `CovariantChainHodge`), so the symmetric parts of the
+    three expressions are even in the tick and the antisymmetric parts odd.
+    The limit is symmetric; the symmetric parts over `tau` and `tau / 2` with
+    one Richardson step leave an error of fourth order in the tick."""
+    def limits(step):
+        F00, F01, F10, F11 = [np.asarray(block) for block in HistorySlab(cell, step, potential, mass).blocks]
+        reads = (F00 + F01 + F10 + F11) / step, F10 - F01, 0.5 * step * (F10 + F01)
+        return [0.5 * (read + read.T).real for read in reads]
+    coarse, fine = limits(tau), limits(0.5 * tau)
+    return tuple((4.0 * y - x) / 3.0 for x, y in zip(coarse, fine))
+
+
+def tick_limit_levels(cell, potential, mass, count):
+    """The lowest positive levels of `tick_limit`."""
+    S0, S1, S2 = tick_limit(cell, potential, mass)
+    n = len(S0)
+    left = np.block([[np.zeros((n, n)), np.eye(n)], [-S0, -S1]])
+    right = np.block([[np.eye(n), np.zeros((n, n))], [np.zeros((n, n)), S2]])
     levels = scipy.linalg.eigvals(left, right)
     levels = levels[np.isfinite(levels)]
     return np.sort(levels[levels.real > 0.0].real)[:count]
