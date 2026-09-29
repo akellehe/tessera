@@ -624,6 +624,46 @@ class TheBackgroundRemovalIsCoherentTest(unittest.TestCase):
                              - matched.crossing_current[index])), 0.0,
                 places=12)
         self.assertLess(removed.divergence_theorem_residual, 1e-10)
+        # the matched read is the reference of the differenced read, and the
+        # quark number is read from the excess (WP v18 Section 13.4)
+        self.assertTrue(removed.reference_declared)
+        self.assertEqual(removed.reference_flux, matched.flux)
+        self.assertEqual(removed.excess_flux, removed.flux)
+
+    def test_the_quark_number_is_the_excess_over_the_declared_reference(self):
+        """The flux counts every occupied mode, the reference state's
+        included; the quark number is the coherent excess over the declared
+        flux of the matched reference (WP v18 Section 13.4). With no reference
+        declared the reference is empty and the excess is the flux."""
+        cut = self.history.cuts[0]
+        bare = cob.WardFlux.flux(self.history.action, self.history.W, cut)
+        self.assertFalse(bare.reference_declared)
+        self.assertEqual(bare.reference_flux, 0j)
+        self.assertEqual(bare.excess_flux, bare.flux)
+        config = cob.WardFluxConfig()
+        self.assertIsNone(config.reference_flux)
+        # a reference two units below the flux: the excess is exactly two
+        config.reference_flux = bare.flux - 2.0
+        read = cob.WardFlux.flux(self.history.action, self.history.W, cut,
+                                 config)
+        self.assertTrue(read.reference_declared)
+        self.assertEqual(read.flux, bare.flux)
+        self.assertAlmostEqual(abs(read.reference_flux - (bare.flux - 2.0)),
+                               0.0, places=12)
+        self.assertAlmostEqual(abs(read.excess_flux - 2.0), 0.0, places=12)
+        self.assertEqual(read.quark_number, 2)
+        self.assertAlmostEqual(read.baryon_number, 2.0 / 3.0, places=12)
+        self.assertLess(read.quark_number_defect, 1e-12)
+        for name in ("nonintegral-flux", "complex-flux"):
+            self.assertNotIn(name, read.failed_certificates)
+        # a complex reference leaves a complex excess, which claims no integer
+        config.reference_flux = bare.flux - (2.0 + 0.5j)
+        complex_excess = cob.WardFlux.flux(self.history.action,
+                                           self.history.W, cut, config)
+        self.assertIsNone(complex_excess.quark_number)
+        self.assertIn("complex-flux", complex_excess.failed_certificates)
+        self.assertAlmostEqual(abs(complex_excess.excess_flux - (2.0 + 0.5j)),
+                               0.0, places=12)
 
     def test_a_difference_between_different_cuts_is_refused(self):
         state = cob.WardFlux.flux(self.history.action, self.history.W,

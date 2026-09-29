@@ -29,15 +29,27 @@ struct WardFluxConfig {
   /// divergence measured at the interior vertices of the cobordism, and
   /// against the flux difference of two homologous cuts.
   double divergenceTolerance = 1e-9;
-  /// \f$ |\varphi_j(\Sigma) - n| \f$ at or below this, for the nearest integer
-  /// \f$ n \f$, lets the flux be reported as the integer quark number
-  /// \f$ N_q \f$. Above it the flux is reported as the complex number it is
-  /// and no integer is claimed.
+  /// \f$ |\varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma) - n| \f$ at or below
+  /// this, for the nearest integer \f$ n \f$, lets the excess of the flux
+  /// over the reference be reported as the integer quark number
+  /// \f$ N_q \f$. Above it the excess is reported as the complex number it
+  /// is and no integer is claimed.
   double integralityTolerance = 1e-6;
-  /// \f$ |\operatorname{Im}\varphi_j(\Sigma)| \f$ must be at or below this for
-  /// the flux to be read as an integer. The flux is a complex number by
-  /// construction and its imaginary part is never discarded silently.
+  /// \f$ |\operatorname{Im}(\varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma))|
+  /// \f$ must be at or below this for the excess to be read as an integer.
+  /// The flux is a complex number by construction and its imaginary part is
+  /// never discarded silently.
   double imaginaryTolerance = 1e-9;
+  /// \f$ \varphi_j^{\rm ref}(\Sigma) \f$: the flux of the matched reference
+  /// state on \f$ \partial_{\rm in}W \f$ through the same cut, read by the
+  /// caller on that state (`WardFlux::flux` over the reference's action, on
+  /// the same cut). The quark number is the coherent excess of the flux over
+  /// it, \f$ N_q(\Sigma)=\varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma) \f$
+  /// (WP v18 \S13.4): the flux counts every occupied mode, the reference
+  /// state's included, and only the excess is quark number. Empty, the
+  /// default, declares the empty reference, whose flux is zero; the excess is
+  /// then the flux itself and the read says that no reference was declared.
+  std::optional<std::complex<double>> referenceFlux{};
   /// \f$ |\varphi_j(\Sigma) - Q_{\rm in}| \f$ at or below this counts as the
   /// flux agreeing with the charge the incoming state places on
   /// \f$ \partial_{\rm in}W \f$. Above it the disagreement is named.
@@ -70,8 +82,22 @@ struct WardFluxRead {
   std::vector<std::complex<double>> crossingCurrent{};
 
   /// \f$ \varphi_j(\Sigma)=\langle j,\Sigma\rangle=\sum_{e}c_e\,j_e \f$ over
-  /// the crossing edges. Complex, and never projected onto a real part.
+  /// the crossing edges. Complex, and never projected onto a real part. It
+  /// is the fermion number enclosed by the cut in the state, every occupied
+  /// mode counted, the modes of the reference state included.
   std::complex<double> flux{0.0, 0.0};
+  /// \f$ \varphi_j^{\rm ref}(\Sigma) \f$, the declared flux of the matched
+  /// reference state through the same cut
+  /// (`WardFluxConfig::referenceFlux`); zero for the empty reference.
+  std::complex<double> referenceFlux{0.0, 0.0};
+  /// Whether a reference flux was declared. False means the empty reference,
+  /// so that `excessFlux` equals `flux`.
+  bool referenceDeclared = false;
+  /// \f$ \varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma) \f$: the coherent
+  /// excess of the flux over the matched reference's, the quark number of
+  /// WP v18 \S13.4 as the complex number it is, formed before any
+  /// probability and never projected. `quarkNumber` is its integer reading.
+  std::complex<double> excessFlux{0.0, 0.0};
 
   /// \f$ \sum_{x:\,u(x)=0}(\partial j)_x \f$, the divergence summed over the
   /// cut's incoming side. The discrete divergence theorem makes it exactly
@@ -122,12 +148,13 @@ struct WardFluxRead {
   double boundaryChargeResidual = std::numeric_limits<double>::quiet_NaN();
 
   /// \f$ N_q \f$: the integer nearest
-  /// \f$ \operatorname{Re}\varphi_j(\Sigma) \f$, present only when the flux is
-  /// integral within `integralityTolerance` and its imaginary part is within
-  /// `imaginaryTolerance`. Empty means unknown, never zero.
+  /// \f$ \operatorname{Re}(\varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma)) \f$,
+  /// present only when the excess is integral within `integralityTolerance`
+  /// and its imaginary part is within `imaginaryTolerance`. Empty means
+  /// unknown, never zero.
   std::optional<long long> quarkNumber{};
-  /// \f$ |\varphi_j(\Sigma)-N_q| \f$ against the nearest integer, reported
-  /// whether or not the integer was accepted.
+  /// \f$ |\varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma)-N_q| \f$ against the
+  /// nearest integer, reported whether or not the integer was accepted.
   double quarkNumberDefect = std::numeric_limits<double>::quiet_NaN();
   /// \f$ B(\Sigma)=N_q/3 \f$. The factor one third is the whitepaper's one
   /// explicit physical calibration and not a topological theorem. Empty
@@ -330,9 +357,23 @@ struct IntrinsicResponseRead {
 ///
 /// The whitepaper states \f$ \partial j=0 \f$ in the bulk on the matter
 /// equations of motion, so \f$ \varphi_j \f$ is unchanged between homologous
-/// cuts, and that the flux is the fermion number \f$ N_q \f$. On \f$ W \f$
-/// this is a relative statement: the incoming side of every separating cut
-/// consists of \f$ \partial_{\rm in}W \f$ and interior vertices, so
+/// cuts, and that the flux is the fermion number enclosed by the cut, every
+/// occupied mode counted. The quark number is the coherent excess of that
+/// flux over the flux of the matched reference state on
+/// \f$ \partial_{\rm in}W \f$ (WP v18 \S13.4),
+/// \f[
+///   N_q(\Sigma)=\varphi_j(\Sigma)-\varphi_j^{\rm ref}(\Sigma),
+/// \f]
+/// formed before any probability; it is three times baryon number, and it
+/// agrees with the lineage count of \S13.2 (`observables::ClusterLineage`)
+/// exactly when every occupied mode in excess of the reference lies on a
+/// certified lineage, which is why both readouts are reported and their
+/// agreement is part of the certificate. The reference flux is declared
+/// (`WardFluxConfig::referenceFlux`), having been read on the reference's own
+/// action over the same cut; with none declared the reference is empty and
+/// the excess is the flux. On \f$ W \f$ the flux is a relative statement:
+/// the incoming side of every separating cut consists of
+/// \f$ \partial_{\rm in}W \f$ and interior vertices, so
 /// \f[
 ///   \varphi_j(\Sigma)=-\sum_{x\in\partial_{\rm in}W}(\partial j)_x
 ///                     -\sum_{x\ {\rm interior},\,u(x)=0}(\partial j)_x ,
@@ -377,7 +418,8 @@ struct IntrinsicResponseRead {
 /// for every current and every response before any boundary probability, so
 /// that complex background and excitation terms may cancel. `difference`
 /// performs that subtraction coherently on two flux reads, and never on their
-/// moduli.
+/// moduli; its quark number is the excess of WP v18 \S13.4 with the matched
+/// read's flux as the reference.
 ///
 /// ## Boundaries
 ///
@@ -417,7 +459,11 @@ class WardFlux {
   /// \f$ \Delta\varphi=\varphi_{\rm state}-\varphi_{\rm matched} \f$ of two
   /// flux reads: the complex difference of the fluxes, of the divergences and
   /// of the boundary charges, with no modulus taken on either side. The
-  /// returned read carries the state read's cut and the differenced numbers.
+  /// returned read carries the state read's cut and the differenced numbers;
+  /// its `referenceFlux` is the matched read's flux, its `excessFlux` is the
+  /// differenced flux, and its quark number is read from that excess, which
+  /// is the definition of WP v18 \S13.4 with the matched state as the
+  /// reference.
   /// @throws std::invalid_argument when the two reads were taken on different
   ///   crossing edges, since a difference between different cuts is not a
   ///   background removal.
