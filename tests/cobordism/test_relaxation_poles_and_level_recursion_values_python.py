@@ -74,14 +74,14 @@ def test_the_holonomy_alone_relaxes_to_a_flat_connection():
     """The holonomy term alone is stationary at a flat connection. From
     phases 0.1 sqrt(k + 1) (-1)^k on a single tetrahedron (face holonomies up
     to 0.62 rad from 1) the solve converges and every face holonomy is 1
-    within 1e-14, with no zero-guard damping."""
+    within 1e-14."""
     spacetime = _tetrahedron()
     for k, edge in enumerate(spacetime.getEdgeList().toVector()):
         edge.setPhase(complex(0.1 * math.sqrt(k + 1) * (-1) ** k))
     action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0))
     relaxation = cob.HolomorphicRelaxation(action, _solve(lengths=False))
     report = relaxation.solve()
-    assert report.converged and report.zero_guard_damped_steps == 0
+    assert report.converged
     faces = np.asarray(relaxation.action.face_holonomies())
     assert np.max(np.abs(faces - 1.0)) < 1e-14
 

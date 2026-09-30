@@ -576,7 +576,7 @@ ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
 }
 
 /// What refused a trial step.
-enum class Refusal { None, ZeroGuard, SectorGuard, DomainGuard, ResidualTest };
+enum class Refusal { None, SectorGuard, DomainGuard, ResidualTest };
 
 }  // namespace
 
@@ -592,9 +592,6 @@ std::string relaxationStopName(RelaxationStop reason) {
       return "no stationary point in the declared monopole sector";
     case RelaxationStop::DomainBoundary:
       return "every damped step left the domain of the action";
-    case RelaxationStop::HolonomyZero:
-      return "every damped step came within the declared margin of a zero "
-             "of the Villain weight";
     case RelaxationStop::HeldFloor:
       return "the residual is at its floor on the held set";
     case RelaxationStop::LengthRunaway:
@@ -619,9 +616,6 @@ HolomorphicRelaxation::HolomorphicRelaxation(
   if (!(declaration_.contourRadius > 0.0))
     throw std::invalid_argument(
         "HolomorphicRelaxation: the contour radius must be positive");
-  if (!(declaration_.holonomyZeroMargin > 0.0))
-    throw std::invalid_argument(
-        "HolomorphicRelaxation: the holonomy zero margin must be positive");
   if (!declaration_.relaxLengths && !declaration_.relaxLinks &&
       !declaration_.relaxMultipliers)
     throw std::invalid_argument(
@@ -1062,7 +1056,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       record.stepNorm = 0.0;
       recordAction(action_, record.action, record.actionAvailable,
                    record.actionUnavailable);
-      record.holonomyZeroDistance = action_.holonomyZeroDistance();
       if (declaration_.recordTerms)
         record.terms = actionTermRecords(action_, declaration_);
       report.steps.push_back(record);
@@ -1079,21 +1072,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     }
     recordAction(action_, record.action, record.actionAvailable,
                  record.actionUnavailable);
-    record.holonomyZeroDistance = action_.holonomyZeroDistance();
-
-    // The link part of the step on every edge, for the holonomy zero guard.
-    std::vector<complexd> linkStep;
-    if (layout.links) {
-      linkStep.assign(classes.edgeCount, complexd{0.0, 0.0});
-      for (std::size_t index = 0; index < layout.edges; ++index)
-        for (const auto &[edge, orientation] : classes.members[index]) {
-          const complexd value =
-              step(static_cast<Eigen::Index>(layout.linkOffset + index));
-          linkStep[edge] = orientation > 0 ? value : -value;
-        }
-    }
-    const bool guarded =
-        layout.links && std::isfinite(record.holonomyZeroDistance);
 
     const StateSnapshot snapshot = takeSnapshot(action_);
     double damping = 1.0;
@@ -1105,20 +1083,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
          ++attempt) {
       ++trials;
       restoreSnapshot(action_, snapshot);
-      if (guarded) {
-        std::vector<complexd> increments(linkStep.size());
-        for (std::size_t edgeIndex = 0; edgeIndex < linkStep.size();
-             ++edgeIndex)
-          increments[edgeIndex] = damping * linkStep[edgeIndex];
-        const double clearance = action_.holonomyZeroClearance(
-            increments, 0.25 * declaration_.holonomyZeroMargin);
-        if (clearance < declaration_.holonomyZeroMargin) {
-          ++record.zeroGuardDampings;
-          lastRefusal = Refusal::ZeroGuard;
-          damping *= 0.5;
-          continue;
-        }
-      }
       // One value per coordinate, written to every edge of its class: the
       // members of a class stay equal exactly.
       if (layout.lengths)
@@ -1201,7 +1165,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       lastRefusal = Refusal::ResidualTest;
       damping *= 0.5;
     }
-    if (record.zeroGuardDampings > 0) ++report.zeroGuardDampedSteps;
     if (record.sectorGuardDampings > 0) ++report.sectorGuardDampedSteps;
     if (!accepted) {
       restoreSnapshot(action_, snapshot);
@@ -1221,8 +1184,8 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
           " (of the " + std::to_string(trials) + " trial steps, the residual "
           "test refused " + std::to_string(record.residualTestDampings) +
           ", the sector guard " + std::to_string(record.sectorGuardDampings) +
-          ", the domain guard " + std::to_string(record.domainGuardDampings) +
-          " and the zero guard " + std::to_string(record.zeroGuardDampings) +
+          " and the domain guard " +
+          std::to_string(record.domainGuardDampings) +
           "; the residual norm is " + threeDigits(residualNorm) +
           " after " + std::to_string(iteration) + " accepted steps)";
       switch (lastRefusal) {
@@ -1241,12 +1204,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
               (lastDomainRefusal.empty() ? std::string{}
                                          : " (" + lastDomainRefusal + ")") +
               counts;
-          break;
-        case Refusal::ZeroGuard:
-          report.stopReason = RelaxationStop::HolonomyZero;
-          report.stopDetail = smallest + " came within the declared margin " +
-                              threeDigits(declaration_.holonomyZeroMargin) +
-                              " of a zero of the Villain weight" + counts;
           break;
         case Refusal::ResidualTest:
         case Refusal::None:

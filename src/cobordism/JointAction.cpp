@@ -384,30 +384,6 @@ double VillainCharacter::realityMargin() noexcept {
   return kVillainRealityMargin;
 }
 
-double VillainCharacter::zeroDistance(complexd holonomy) const {
-  const double modulus = std::abs(holonomy);
-  if (!(modulus > 0.0) || !std::isfinite(modulus))
-    throw std::invalid_argument(
-        "VillainCharacter::zeroDistance: the face holonomy must be a finite "
-        "nonzero complex number");
-  double nearest = std::numeric_limits<double>::infinity();
-  // The zeros are -q^{k} and -q^{-k} for odd k. Past the zero nearest to |F|
-  // on either side the distance only grows, so the loop stops once both
-  // families have passed |F| by a wide margin.
-  for (std::size_t n = 1;; ++n) {
-    const double k = static_cast<double>(2 * n - 1);
-    const double inner = std::pow(q_, k);
-    if (!(inner > 0.0)) break;
-    const double outer = 1.0 / inner;
-    nearest = std::min(nearest, std::abs(holonomy + inner) /
-                                    std::min(inner, modulus));
-    if (std::isfinite(outer))
-      nearest = std::min(nearest, std::abs(holonomy + outer) /
-                                      std::min(outer, modulus));
-    if (inner < 1e-3 * modulus && outer > 1e3 * modulus) break;
-  }
-  return nearest;
-}
 
 complexd VillainCharacter::potential(complexd holonomy) const {
   return -matchedWeight() * logarithm(holonomy);
@@ -1620,69 +1596,7 @@ std::vector<complexd> JointAction::holonomyHessian() const {
   return hessian;
 }
 
-double JointAction::holonomyZeroDistance() const {
-  const FacePotential potential(declaration_);
-  if (!potential.villain()) return std::numeric_limits<double>::infinity();
-  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
-                                  declaration_.metricSource,
-                                  /*wantCarrier=*/false);
-  double nearest = std::numeric_limits<double>::infinity();
-  for (const complexd &holonomy : workspace.holonomies)
-    nearest = std::min(nearest, potential.villain()->zeroDistance(holonomy));
-  return nearest;
-}
 
-double JointAction::holonomyZeroClearance(
-    const std::vector<complexd> &linkIncrements, double spacing) const {
-  if (!(spacing > 0.0))
-    throw std::invalid_argument(
-        "JointAction::holonomyZeroClearance: the node spacing must be "
-        "positive");
-  const FacePotential potential(declaration_);
-  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
-                                  declaration_.metricSource,
-                                  /*wantCarrier=*/false);
-  if (linkIncrements.size() != workspace.edges.size())
-    throw std::invalid_argument(
-        "JointAction::holonomyZeroClearance: one increment per edge is "
-        "required; got " + std::to_string(linkIncrements.size()) + " for " +
-        std::to_string(workspace.edges.size()) + " edges");
-  if (!potential.villain() || workspace.complex.dimension() < 2)
-    return std::numeric_limits<double>::infinity();
-  const VillainCharacter &character = *potential.villain();
-
-  // The increments on the canonical orientations: U_stored = U_canonical^{s}.
-  std::vector<complexd> canonical(workspace.links.size(), complexd{0.0, 0.0});
-  for (std::size_t e = 0; e < workspace.edges.size(); ++e) {
-    const long long c = workspace.canonicalOfEdge[e];
-    if (c < 0 || static_cast<std::size_t>(c) >= canonical.size()) continue;
-    canonical[static_cast<std::size_t>(c)] +=
-        workspace.storedSign[e] * linkIncrements[e];
-  }
-  std::vector<complexd> exponent(workspace.holonomies.size(),
-                                 complexd{0.0, 0.0});
-  for (const auto &entry : workspace.complex.boundaryEntries(2)) {
-    const auto row = static_cast<std::size_t>(entry.row);
-    const auto column = static_cast<std::size_t>(entry.column);
-    if (row >= canonical.size() || column >= exponent.size()) continue;
-    exponent[column] += static_cast<double>(entry.value) * canonical[row];
-  }
-
-  double nearest = std::numeric_limits<double>::infinity();
-  for (std::size_t face = 0; face < exponent.size(); ++face) {
-    const std::size_t intervals = std::max<std::size_t>(
-        1, static_cast<std::size_t>(
-               std::ceil(std::abs(exponent[face]) / spacing)));
-    for (std::size_t node = 0; node <= intervals; ++node) {
-      const double t =
-          static_cast<double>(node) / static_cast<double>(intervals);
-      nearest = std::min(
-          nearest, character.zeroDistance(workspace.holonomies[face] *
-                                          std::exp(t * exponent[face])));
-    }
-  }
-  return nearest;
-}
 
 HolonomyTruncation JointAction::holonomyTruncation() const {
   HolonomyTruncation report;

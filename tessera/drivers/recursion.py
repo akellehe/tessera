@@ -467,7 +467,6 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "initial_residual": float(report.initial_residual_norm),
         "residual": float(report.residual_norm),
         "iterations": len(report.steps),
-        "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
         "sector_guard_damped_steps": int(report.sector_guard_damped_steps),
         "sector_monopole_numbers": list(report.sector_monopole_numbers),
         "held_modulus_drift": float(report.held_modulus_drift),

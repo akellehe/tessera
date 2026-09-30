@@ -4613,11 +4613,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("first_derivative", &VillainCharacter::firstDerivative,
            py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
       .def("second_derivative", &VillainCharacter::secondDerivative,
-           py::arg("holonomy"), "(F d/dF)^2 phi.")
-      .def("zero_distance", &VillainCharacter::zeroDistance,
-           py::arg("holonomy"),
-           "min |F - F0| / min(|F|, |F0|) over the zeros "
-           "F0 = -exp(+-(2n-1)/(2 beta)) of W.");
+           py::arg("holonomy"), "(F d/dF)^2 phi.");
 
   py::class_<HolonomyTruncation>(m, "HolonomyTruncation",
       "The Villain truncation over every face at the current connection: the "
@@ -4839,14 +4835,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "exact contribution to the link block of the Jacobian in the "
            "multiplicative coordinate U -> U e^delta. Minus it is the Hessian "
            "in the real angles.")
-      .def("holonomy_zero_distance", &JointAction::holonomyZeroDistance,
-           "The smallest relative distance of a face holonomy to a zero of "
-           "the Villain weight W; inf when the term has zero weight.")
-      .def("holonomy_zero_clearance", &JointAction::holonomyZeroClearance,
-           py::arg("link_increments"), py::arg("spacing"),
-           "The smallest relative distance to a zero of W any face holonomy "
-           "comes to along U_e -> U_e exp(t delta_e), t in [0, 1], sampled at "
-           "the given Maurer-Cartan spacing.")
       .def("holonomy_truncation", &JointAction::holonomyTruncation,
            "The Villain series truncation over the current face holonomies, "
            "with certified relative tail bounds.")
@@ -4918,9 +4906,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "residual); SectorBoundary (no stationary point in the declared "
       "monopole sector: the smallest damped step changed a held monopole "
       "number, a held face holonomy driven across -1); DomainBoundary (the "
-      "smallest damped step left the domain of the action); HolonomyZero (the "
-      "smallest damped step came within the declared margin of a zero of W); "
-      "HeldFloor (with held sectors, the residual is at its floor on the held "
+      "smallest damped step left the domain of the action); HeldFloor (with "
+      "held sectors, the residual is at its floor on the held "
       "set: the constrained step cannot reduce it by more than the "
       "tolerance); LengthRunaway (a squared length overflowed the double); "
       "Continued (not a stop: a per-iterate trace entry the solve stepped on "
@@ -4930,7 +4917,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("NoDescent", RelaxationStop::NoDescent)
       .value("SectorBoundary", RelaxationStop::SectorBoundary)
       .value("DomainBoundary", RelaxationStop::DomainBoundary)
-      .value("HolonomyZero", RelaxationStop::HolonomyZero)
       .value("HeldFloor", RelaxationStop::HeldFloor)
       .value("LengthRunaway", RelaxationStop::LengthRunaway)
       .value("Continued", RelaxationStop::Continued);
@@ -5014,12 +5000,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "are kept, every other connection degree of freedom "
                      "relaxes. The step is the constrained Newton step, the "
                      "minimum-norm least-squares solution of the linearized "
-                     "equations over the tangent space of the held set.")
-      .def_readwrite("holonomy_zero_margin",
-                     &HolomorphicRelaxationDeclaration::holonomyZeroMargin,
-                     "The relative distance to a zero of the Villain weight W "
-                     "that no face holonomy may come within along a trial "
-                     "step; a step that would is halved. Step control only.");
+                     "equations over the tangent space of the held set.");
 
   py::class_<ActionTermRecord>(
       m, "ActionTermRecord",
@@ -5078,10 +5059,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The smallest retained over the largest discarded "
                      "singular value; inf when none is discarded.")
       .def_readwrite("action", &HolomorphicStep::action)
-      .def_readwrite("zero_guard_dampings",
-                     &HolomorphicStep::zeroGuardDampings,
-                     "The halvings of this step the holonomy zero guard "
-                     "forced.")
       .def_readwrite("sector_guard_dampings",
                      &HolomorphicStep::sectorGuardDampings,
                      "The halvings of this step the held monopole sectors "
@@ -5091,10 +5068,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The halvings of this step forced by trial points at "
                      "which the action refuses to evaluate or its residual "
                      "is not finite.")
-      .def_readwrite("holonomy_zero_distance",
-                     &HolomorphicStep::holonomyZeroDistance,
-                     "The smallest relative distance of a face holonomy to a "
-                     "zero of W where the step started; inf without zeros.")
       .def_readwrite("residual_test_dampings",
                      &HolomorphicStep::residualTestDampings,
                      "The halvings of this step the residual test forced.")
@@ -5138,10 +5111,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("multipliers", &HolomorphicRelaxationReport::multipliers)
       .def_readwrite("moment_residuals",
                      &HolomorphicRelaxationReport::momentResiduals)
-      .def_readwrite("zero_guard_damped_steps",
-                     &HolomorphicRelaxationReport::zeroGuardDampedSteps,
-                     "The iterations whose step the holonomy zero guard "
-                     "damped at least once.")
       .def_readwrite("sector_guard_damped_steps",
                      &HolomorphicRelaxationReport::sectorGuardDampedSteps)
       .def_readwrite("sector_monopole_numbers",
@@ -5429,8 +5398,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldStep::geometryConverged)
       .def_readwrite("geometry_residual_norm",
                      &SelfConsistentMeanFieldStep::geometryResidualNorm)
-      .def_readwrite("geometry_zero_guard_damped_steps",
-                     &SelfConsistentMeanFieldStep::geometryZeroGuardDampedSteps)
       .def_readwrite("geometry_stop_reason",
                      &SelfConsistentMeanFieldStep::geometryStopReason)
       .def_readwrite("geometry_stop_detail",
@@ -5477,10 +5444,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldReport::actionAvailable)
       .def_readwrite("action_unavailable",
                      &SelfConsistentMeanFieldReport::actionUnavailable)
-      .def_readwrite("zero_guard_damped_steps",
-                     &SelfConsistentMeanFieldReport::zeroGuardDampedSteps,
-                     "Newton steps the holonomy zero guard damped, over the "
-                     "whole solve.")
       .def_readwrite("jacobian_size",
                      &SelfConsistentMeanFieldReport::jacobianSize)
       .def_readwrite("jacobian_rank",

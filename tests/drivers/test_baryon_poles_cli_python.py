@@ -720,7 +720,6 @@ def test_the_declarations_carry_the_config():
     assert geometry.maximum_iterations == 40
     assert geometry.tolerance == bp.DECLARED_TOLERANCE == 1e-15
     assert geometry.rank_tolerance == bp.DECLARED_TOLERANCE
-    assert geometry.holonomy_zero_margin == bp.DECLARED_HOLONOMY_ZERO_MARGIN
     assert geometry.jacobian_mode == \
         cob.HolomorphicJacobianMode.RealAxisDifference
     mean_field = bp.mean_field_declaration((2, 1, 0), config)

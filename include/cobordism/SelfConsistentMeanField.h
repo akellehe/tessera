@@ -414,9 +414,6 @@ struct SelfConsistentMeanFieldStep {
   bool geometryConverged = false;
   /// The joint residual norm at this iterate.
   double geometryResidualNorm = 0.0;
-  /// One when the zero guard damped the Newton step taken from this iterate
-  /// and zero otherwise.
-  std::size_t geometryZeroGuardDampedSteps = 0;
   /// `RelaxationStop::Continued` at an iterate the solve stepped on from, and
   /// the reason the joint solve stopped at its last iterate.
   RelaxationStop geometryStopReason = RelaxationStop::Continued;
@@ -483,8 +480,6 @@ struct SelfConsistentMeanFieldReport {
   bool actionAvailable = true;
   /// Why `action` is unavailable, by name; empty when it is available.
   std::string actionUnavailable;
-  /// The Newton steps the holonomy zero guard damped, over the whole solve.
-  std::size_t zeroGuardDampedSteps = 0;
   /// The number of variables of the joint Jacobian.
   std::size_t jacobianSize = 0;
   /// The rank of the joint Jacobian (the Jacobian of the self-consistent

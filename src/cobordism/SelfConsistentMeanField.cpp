@@ -991,8 +991,6 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
       step.newtonIterated = true;
       step.newton = joint.steps[k];
       step.geometryResidualNorm = joint.steps[k].residualNorm;
-      step.geometryZeroGuardDampedSteps =
-          joint.steps[k].zeroGuardDampings > 0 ? 1 : 0;
     } else {
       step.geometryResidualNorm = joint.residualNorm;
     }
@@ -1005,7 +1003,6 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
     }
   }
   report.iterations = steps.size() - 1;
-  report.zeroGuardDampedSteps = joint.zeroGuardDampedSteps;
   const double momentResidual = steps.back().momentResidualNorm;
   finishReport(report, std::move(steps), action_, declaration_, follower,
                startScale);
