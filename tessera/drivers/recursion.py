@@ -467,6 +467,8 @@ def relax_level(spacetime, config, sectors=None, count=None):
     report = relaxation.solve()
     return {
         "converged": bool(report.converged),
+        "stop_reason": cob.relaxation_stop_name(report.stop_reason),
+        "stop_detail": str(report.stop_detail),
         "initial_residual": float(report.initial_residual_norm),
         "residual": float(report.residual_norm),
         "iterations": len(report.steps),
@@ -1675,11 +1677,14 @@ def summary(result):
         level = record["level"]
         lines.append(
             "tick %d: level with %d vertices, %d edges, %d tetrahedra per "
-            "sheet; relaxation converged %s (residual %.3g); bulk monopole "
+            "sheet; relaxation converged %s (residual %.3g%s); bulk monopole "
             "numbers %s before relaxation, %s after"
             % (record["tick"], level["vertices"], level["edges"],
                level["tetrahedra"], record["relaxation"]["converged"],
                record["relaxation"]["residual"],
+               ", stopped: %s (%s)" % (record["relaxation"]["stop_reason"],
+                                       record["relaxation"]["stop_detail"])
+               if "stop_reason" in record["relaxation"] else "",
                level.get("bulk_monopole_numbers_before"),
                level.get("bulk_monopole_numbers_after")))
         lines += bp.term_trace_lines(record["relaxation"], "    ")

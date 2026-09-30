@@ -230,6 +230,11 @@ def test_one_tick_on_the_host_holds_its_cut_and_rejects_transient_components(
     record, following = R.tick(0, cells, z, links, config)
     assert record["tick"] == 0
     assert record["relaxation"]["converged"]
+    # why the level relaxation stopped, by name and in the library's words
+    assert record["relaxation"]["stop_reason"] == "converged"
+    assert "residual" in record["relaxation"]["stop_detail"]
+    assert "stopped: converged (" in R.summary(
+        {"host": {"monopole_numbers": [1, 1]}, "ticks": [record]})
     held = record["level"]["held_cut"]
     assert sorted(tuple(sorted(f)) for f in held["faces"]) == sorted(
         tuple(sorted(f)) for f in R.bounding_cut(cells))
