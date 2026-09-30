@@ -127,8 +127,9 @@ At level l (a complex K_l of three sheets of a base complex):
    its bands chosen at the host and followed by continuation
    (``--mean-field-method``, ``--band-selection``); the solve's method,
    iterations, final force, stop reason and joint-Jacobian rank gap are
-   reported with the content, and a read on a geometry whose lengths ran off
-   or that is not Kontsevich-Segal allowable is refused by name.
+   reported with the content, and a read on a geometry whose squared lengths
+   overflowed the double or that is not Kontsevich-Segal allowable is refused
+   by name.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
 3-simplex, and says so.
@@ -863,9 +864,9 @@ def cell_reads(cells, z, links, config):
         cell_config["isospin_doublet"] = True
         # the mean-field solver and the tolerances the run declared (none
         # changes an equation)
-        for key in ("mean_field_method", "band_selection",
-                    "length_runaway_ratio", "stiffness", "fiber_moments",
-                    "fiber_pinning", "kappa_role", "trace_terms") + tuple(
+        for key in ("mean_field_method", "band_selection", "stiffness",
+                    "fiber_moments", "fiber_pinning", "kappa_role",
+                    "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES):
             if key in config:
                 cell_config[key] = config[key]

@@ -74,9 +74,9 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    of the three sheets. A solve that reaches no fixed point says why, by
    name (for example, the iterations ran out, no damped step reduced the
    residual, no stationary point in the declared monopole sector, or the
-   lengths ran off), and the poles are not read on a geometry whose lengths
-   ran off or that is not Kontsevich-Segal allowable: that read is refused by
-   name, with the margin;
+   squared lengths overflowed the double), and the poles are not read on a
+   geometry whose squared lengths overflowed or that is not Kontsevich-Segal
+   allowable: that read is refused by name, with the margin;
 2. runs one turn of the level recursion (`LevelRecursion`) and reads the fibre
    certificates;
 3. reads the seven v16 quark conditions by name (`QuarkConditions`);
@@ -393,12 +393,6 @@ DECLARED_FIBER_MOMENTS = "r"
 DECLARED_FIBER_PINNING = "eigenvalues"
 FIBER_PINNINGS = {"eigenvalues": cob.FiberConstraintForm.BandEigenvalues,
                   "power-sums": cob.FiberConstraintForm.PowerSums}
-#: The growth of the largest squared length, over its value at the host, at
-#: which a Newton solve stops and reports that the lengths ran off. The linear
-#: stiffness stand-in's force on a squared length saturates at 1/(2 kappa), so
-#: the residual has a plateau at infinite length that the monotone residual
-#: test would otherwise accept (a stop, not a change of the equations).
-DECLARED_LENGTH_RUNAWAY_RATIO = 1e2
 #: The Kontsevich-Segal margin (radians) at or below which a geometry is not
 #: on the allowable side: min over tetrahedra of pi minus the sum of the
 #: moduli of the arguments of the metric's eigenvalues is pi on a Euclidean
@@ -567,8 +561,6 @@ def relaxation_declaration(config):
     geometry.contour_radius = config["jacobian_radius"]
     geometry.rank_tolerance = config["rank_tolerance"]
     geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
-    geometry.length_runaway_ratio = config.get(
-        "length_runaway_ratio", DECLARED_LENGTH_RUNAWAY_RATIO)
     # every recorded iterate carries every term of the action with its value
     # and gradient norm (--trace-terms); changes no step
     geometry.record_terms = bool(config.get("trace_terms", False))
@@ -1509,8 +1501,9 @@ def relax_content(content, kappa, beta, config):
 
 class ReadRefused(ValueError):
     """A content's pole read refused by name on the geometry its mean-field
-    solve reached: ``name`` is the refusal ("the squared lengths ran off",
-    "not Kontsevich-Segal allowable"), the message says why with the numbers
+    solve reached: ``name`` is the refusal ("the squared lengths overflowed
+    the double", "not Kontsevich-Segal allowable"), the message says why with
+    the numbers
     that decided it, and ``relaxation`` is the solve's record
     (`relaxation_record`)."""
 
@@ -1668,16 +1661,17 @@ def relaxation_record(report):
 def read_refusal(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
     """The name and the message of the refusal of a pole read on the geometry
     a mean-field solve reached, or None when the read may proceed. The read is
-    refused when the squared lengths ran off (the low eigenvalues there are
-    h_1 ~ 1/z at infinite length, not a bound state) and when the geometry is
+    refused when the squared lengths overflowed the double (the only bound
+    on a length is the datatype's; the low eigenvalues there are h_1 ~ 1/z
+    at infinite length, not a bound state) and when the geometry is
     not Kontsevich-Segal allowable (bands are read on the allowable side,
     WP v17 line 151; a margin within ``tolerance`` of zero is the
     boundary). A solve that stopped for another reason is read,
     and its record says why it stopped."""
     if report.stop_reason == cob.RelaxationStop.LengthRunaway:
-        return ("the squared lengths ran off",
-                "the pole read is refused: the squared lengths ran off (%s)"
-                % report.stop_detail)
+        return ("the squared lengths overflowed the double",
+                "the pole read is refused: the squared lengths overflowed "
+                "the double (%s)" % report.stop_detail)
     margin = float(report.kontsevich_segal_margin)
     if not margin > tolerance:
         return ("not Kontsevich-Segal allowable",
@@ -3507,7 +3501,6 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
             "fiber" if stiffness == "none" else
             "kappa = 8 pi G enters through the Regge weight 1/kappa and the "
             "linear stiffness stand-in (1/2 kappa^-1) ||l - l0||^2"),
-        "length_runaway_ratio": DECLARED_LENGTH_RUNAWAY_RATIO,
         "target_mass_ratio": TARGET_MASS_RATIO,
         "target_reading": "the pole is the complex rest energy of the bound "
                           "cluster under the first-order flow (WP v18 "
@@ -3662,7 +3655,7 @@ STOP_SHORT = {
     "every damped step came within the declared margin of a zero of the "
     "Villain weight": "Villain zero",
     "the residual is at its floor on the held set": "held floor",
-    "the squared lengths ran off": "lengths ran off",
+    "the squared lengths overflowed the double": "lengths overflowed",
     "an outer iteration made no progress": "no progress",
     "not Kontsevich-Segal allowable": "not KS-allowable",
 }

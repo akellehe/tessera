@@ -5046,12 +5046,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "relaxes. The step is the constrained Newton step, the "
                      "minimum-norm least-squares solution of the linearized "
                      "equations over the tangent space of the held set.")
-      .def_readwrite("length_runaway_ratio",
-                     &HolomorphicRelaxationDeclaration::lengthRunawayRatio,
-                     "When an accepted step takes the largest |z_e| beyond "
-                     "this multiple of its starting value, the solve stops "
-                     "with RelaxationStop.LengthRunaway. Zero or inf disables "
-                     "it. A stop, not a change of the equations.")
       .def_readwrite("holonomy_zero_margin",
                      &HolomorphicRelaxationDeclaration::holonomyZeroMargin,
                      "The relative distance to a zero of the Villain weight W "

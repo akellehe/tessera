@@ -1040,10 +1040,6 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveAlternation() {
   report.bandSelection = declaration_.bandSelection;
   BandFollower follower(declaration_);
   const double startScale = largestSquaredLengthOf(action_);
-  const double runawayRatio = declaration_.geometry.lengthRunawayRatio;
-  const bool runawayDeclared = declaration_.geometry.relaxLengths &&
-                               std::isfinite(runawayRatio) &&
-                               runawayRatio > 0.0 && startScale > 0.0;
 
   // Iterate zero: the bands are chosen at the starting point, and the
   // declared power sums of their fiber are pinned there. The first inner
@@ -1122,16 +1118,15 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveAlternation() {
       stopped = true;
       break;
     }
-    const double ratio =
-        startScale > 0.0 ? largestSquaredLengthOf(action_) / startScale : 1.0;
+    // The only bound on the lengths is the datatype's.
     if (innerReport.stopReason == RelaxationStop::LengthRunaway ||
-        (runawayDeclared && ratio > runawayRatio)) {
+        !std::isfinite(largestSquaredLengthOf(action_))) {
       report.stopReason = RelaxationStop::LengthRunaway;
       report.stopDetail =
-          where + ": the squared lengths ran off: the largest |z| is " +
-          threeDigits(ratio) + " times its value " + threeDigits(startScale) +
-          " at the start of the mean-field solve, beyond the declared ratio " +
-          threeDigits(runawayRatio);
+          where + ": the squared lengths overflowed the double: a squared "
+          "length is beyond the largest finite value " +
+          threeDigits(std::numeric_limits<double>::max()) + " (it was " +
+          threeDigits(startScale) + " at the start of the mean-field solve)";
       stopped = true;
       break;
     }

@@ -897,14 +897,16 @@ def test_the_spectral_fingerprint_of_the_declared_host():
 # ------------------------------------------- refusals after the mean field
 
 
-def test_a_read_whose_lengths_ran_off_is_refused_by_name(alignment):
+def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name(
+        alignment):
     """(0123, 201) of the recursion's tick-0 run: the content occupies the
     host's negative band, whose force contracts the cell, and the joint
-    Newton follows it until the lengths run off. `scan_point` records the
-    content as refused by that name, with the solve's record (the method, the
-    band selection, the iterations, the force, why it stopped, every
-    iterate), and it supplies no pole; the report prints the refusal with
-    the solve on the content's line."""
+    Newton follows it until no damped step lowers the residual, four decades
+    of length beyond the host. `scan_point` records the content as refused
+    on that geometry, which is not Kontsevich-Segal allowable, with the
+    solve's record (the method, the band selection, the iterations, the
+    force, why it stopped, every iterate), and it supplies no pole; the
+    report prints the refusal with the solve on the content's line."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
@@ -918,27 +920,31 @@ def test_a_read_whose_lengths_ran_off_is_refused_by_name(alignment):
     point = bp.scan_point(1.0, 1.0, config, alignment)
     assert point["failed_contents"] == [[2, 0, 1]]
     (record,) = point["contents"]
-    assert record["refusal"] == "the squared lengths ran off"
+    assert record["refusal"] == "not Kontsevich-Segal allowable"
     assert record["failed"].startswith(
-        "the pole read is refused: the squared lengths ran off")
+        "the pole read is refused: the geometry the mean-field solve reached "
+        "is not Kontsevich-Segal allowable")
     assert record["doublet_reads"] == []
     solve = record["relaxation"]
     assert (solve["method"], solve["band_selection"]) == ("joint-newton",
                                                           "continuation")
     assert solve["converged"] is False
-    assert solve["stop_reason"] == "the squared lengths ran off"
+    assert solve["stop_reason"] == "no damped step reduced the residual"
     assert solve["iterations"] == len(solve["trace"]) - 1
-    assert solve["largest_length_ratio"] > bp.DECLARED_LENGTH_RUNAWAY_RATIO
+    assert solve["largest_length_ratio"] > 1e3
     assert all("newton" in entry for entry in solve["trace"][:-1])
     (line,) = bp.content_pair_lines(record, "  ")
     assert line.startswith("  content [2, 0, 1]: refused: the pole read is "
-                           "refused: the squared lengths ran off")
+                           "refused: the geometry the mean-field solve "
+                           "reached is not Kontsevich-Segal allowable")
     assert "mean field converged False" in line
-    assert "method joint-newton, stopped: the squared lengths ran off" in line
+    assert "method joint-newton, stopped: no damped step reduced the " \
+        "residual" in line
     text = R._content_line({"cell": [0, 1, 2, 3]}, record)
-    assert "failed: the pole read is refused: the squared lengths ran off" \
-        in text
-    assert "method joint-newton, stopped: the squared lengths ran off" in text
+    assert "failed: the pole read is refused: the geometry the mean-field " \
+        "solve reached is not Kontsevich-Segal allowable" in text
+    assert "method joint-newton, stopped: no damped step reduced the " \
+        "residual" in text
     assert bp.point_lines(point)[0] == (
         "kappa=1 beta=1: 1 contents, 1 refused; one line per (content, "
         "doublet content) pair, poles s with multiplicity x")

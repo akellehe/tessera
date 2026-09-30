@@ -44,15 +44,11 @@ namespace tessera::cobordism {
 ///   outnumber the real directions the held moduli leave free and the
 ///   linearized equations have no better solution on them. The residual that
 ///   remains is reported.
-/// * `LengthRunaway` — the squared lengths ran off: an accepted step took the
-///   largest \f$ |z_e| \f$ beyond the declared multiple of its value at the
-///   start of the solve
-///   (`HolomorphicRelaxationDeclaration::lengthRunawayRatio`).
-///   The linear stiffness stand-in's force on \f$ z_e \f$,
-///   \f$ (1/2\kappa)(1-\ell_{0,e}/\ell_e) \f$, tends to the constant
-///   \f$ 1/2\kappa \f$ as \f$ |z_e| \f$ grows while a mode's force decays,
-///   so the residual norm has a plateau at infinite length that the monotone
-///   residual test accepts; this is how that runaway is recognised.
+/// * `LengthRunaway` — the squared lengths overflowed the double: an accepted
+///   step left a squared length on the relaxed coordinates that is no longer
+///   finite, beyond the largest value the datatype holds (about 1.8e308).
+///   Nothing short of that stops a solve whose lengths grow; the equations
+///   decide.
 /// * `NoProgress` — an outer iteration of the alternation of
 ///   `SelfConsistentMeanField` made no progress: its inner solve accepted no
 ///   step and re-occupation left the covariance unchanged, so a further
@@ -298,16 +294,6 @@ struct HolomorphicRelaxationDeclaration {
   /// reported.
   std::vector<HeldMonopoleSector> heldSectors;
 
-  /// The declared bound on the growth of the squared lengths: when an
-  /// accepted step takes the largest \f$ |z_e| \f$ (over the length
-  /// coordinates) beyond this multiple of its value at the start of the
-  /// solve, the solve stops and reports `RelaxationStop::LengthRunaway`. The
-  /// linear stiffness stand-in's force on a squared length saturates at
-  /// \f$ 1/2\kappa \f$ as the length grows, so the residual norm has a plateau
-  /// at infinite length that the monotone residual test would otherwise
-  /// accept step after step. This is a stop, not a change of the equations.
-  /// Zero or a non-finite value disables it.
-  double lengthRunawayRatio = 1e2;
 };
 
 /// # ActionTermRecord

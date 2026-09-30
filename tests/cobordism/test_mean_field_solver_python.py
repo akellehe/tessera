@@ -22,7 +22,7 @@ Terms used below:
 
 The investigation's reproducers are (0123, 021), the best-converging read;
 (0123, 300), which froze with a held face holonomy at argument pi; and
-(0134, 111), whose lengths ran off. What is asserted:
+(0134, 111), whose lengths grew without bound. What is asserted:
 
 * Newton's method on the joint system converges (0123, 021) to 1e-9 in a
   handful of steps, and the point it reaches satisfies the equations of the
@@ -32,8 +32,9 @@ The investigation's reproducers are (0123, 021), the best-converging read;
   available by name; the two rules reach the two fixed points the
   investigation found;
 * a read without a stationary point is refused by name (no stationary point
-  in the declared monopole sector, the lengths ran off, not Kontsevich-Segal
-  allowable) instead of freezing or reading poles on a collapsed geometry;
+  in the declared monopole sector, not Kontsevich-Segal allowable; a squared
+  length beyond the largest finite double is the only bound on the lengths)
+  instead of freezing or reading poles on a collapsed geometry;
 * the held-modulus step is the constrained Newton step, which leaves far less
   of the linearized residual than the projection of the unconstrained step
   and keeps every held modulus exactly.
@@ -316,24 +317,26 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     assert report.kontsevich_segal_margin < 0.0
 
 
-def test_lengths_that_run_off_are_detected_and_the_read_refused():
+def test_lengths_that_grow_without_bound_are_left_to_the_equations():
     """(0123, 201): the joint Newton follows the contracting force of the
-    occupied negative band and the lengths run off. The stand-in stiffness'
-    force saturates at 1/(2 kappa) per edge in z, so the residual has a
-    plateau at infinite length that the monotone test would accept; the solve
-    stops as soon as the largest |z| passes the declared multiple (100) of
-    the host's, reports that the lengths ran off, and the read is refused by
-    that name."""
+    occupied negative band and the lengths grow without bound. The stand-in
+    stiffness' force saturates at 1/(2 kappa) per edge in z, so the residual
+    has a plateau at infinite length. Nothing but the datatype's bound stops
+    such a solve: it runs until no damped step lowers the residual, with the
+    largest |z| four decades beyond the host's, and the read is refused on
+    the geometry itself, which is not Kontsevich-Segal allowable. The
+    overflow stop is reserved for a squared length beyond the largest finite
+    double, and the declaration carries no ratio to tune."""
     _, _, report, _ = _relax(FIRST_CELL, (2, 0, 1))
-    assert report.stop_reason == cob.RelaxationStop.LengthRunaway
-    assert cob.relaxation_stop_name(report.stop_reason) == \
-        "the squared lengths ran off"
-    assert report.largest_length_ratio > bp.DECLARED_LENGTH_RUNAWAY_RATIO
-    assert "beyond the declared ratio 100" in report.stop_detail
+    assert report.stop_reason == cob.RelaxationStop.NoDescent
+    assert report.largest_length_ratio > 1e3
+    assert report.kontsevich_segal_margin < 0
     name, message = bp.read_refusal(report)
-    assert name == "the squared lengths ran off"
-    assert message.startswith("the pole read is refused: the squared "
-                              "lengths ran off")
+    assert name == "not Kontsevich-Segal allowable"
+    assert cob.relaxation_stop_name(cob.RelaxationStop.LengthRunaway) == \
+        "the squared lengths overflowed the double"
+    assert not hasattr(cob.HolomorphicRelaxationDeclaration(),
+                       "length_runaway_ratio")
 
 
 def test_the_run_off_read_of_0134_111_is_refused_rather_than_collapsed():
@@ -345,7 +348,6 @@ def test_the_run_off_read_of_0134_111_is_refused_rather_than_collapsed():
     assert not report.converged
     assert report.stop_reason != cob.RelaxationStop.Converged
     assert report.stop_detail
-    assert report.largest_length_ratio < bp.DECLARED_LENGTH_RUNAWAY_RATIO
     name, message = bp.read_refusal(report)
     assert name == "not Kontsevich-Segal allowable"
     assert "margin %.3g" % report.kontsevich_segal_margin in message
@@ -370,13 +372,16 @@ def test_the_frozen_read_of_0123_300_is_refused_by_name():
 @pytest.mark.slow
 def test_the_fallback_alternation_refuses_by_name_too():
     """The alternation, kept as the named fallback, no longer freezes on
-    (0123, 300): its second outer iteration runs the lengths off, the solve
-    says so, and the read is refused by that name."""
+    (0123, 300): its lengths grow without bound until its third outer
+    iteration leaves the declared monopole sector, the solve says so, and
+    the read is refused on the geometry, which is not Kontsevich-Segal
+    allowable."""
     _, _, report, _ = _relax(FIRST_CELL, (3, 0, 0), method="alternation")
     assert report.method == cob.SelfConsistentMethod.Alternation
-    assert report.stop_reason == cob.RelaxationStop.LengthRunaway
-    assert report.iterations == 2
-    assert bp.read_refusal(report)[0] == "the squared lengths ran off"
+    assert report.stop_reason == cob.RelaxationStop.SectorBoundary
+    assert report.iterations == 3
+    assert report.largest_length_ratio > 100
+    assert bp.read_refusal(report)[0] == "not Kontsevich-Segal allowable"
 
 
 def test_an_outer_iteration_that_cannot_move_is_named_and_not_repeated():
