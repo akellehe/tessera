@@ -1128,5 +1128,28 @@ class TestComplexConnectionPhase(unittest.TestCase):
             atol=0.0, rtol=0.0)
 
 
+class TestDegenerateCellsAreRefused(unittest.TestCase):
+    """A cell of zero content has no weight: W_k would be singular, so the
+    diagonal-weight operator refuses it by name instead of weighting it +1."""
+
+    def test_a_degenerate_triangle_is_refused_by_name(self):
+        st = _from_simplices(3, [(0, 1, 2)])
+        for e in st.getEdgeList().toVector():
+            pair = sorted((int(e.getSource().getId()),
+                           int(e.getTarget().getId())))
+            e.setLength(cmath.sqrt(4.0 + 0j) if pair == [0, 1] else 1.0 + 0j)
+            e.setPhase(0.0)
+        with self.assertRaisesRegex(ValueError,
+                                    "zero content.*refused, not weighted"):
+            _hodge(st).laplacian(1)
+
+    def test_a_proper_triangle_is_weighted_by_its_content(self):
+        st = _from_simplices(3, [(0, 1, 2)])
+        _set_uniform(st, 1.0, 0.0)
+        laplacian = np.asarray(_hodge(st).laplacian(1)).reshape(3, 3)
+        self.assertTrue(np.all(np.isfinite(laplacian)))
+        self.assertGreater(np.linalg.norm(laplacian), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

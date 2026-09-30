@@ -84,7 +84,7 @@ std::vector<std::vector<SimplexPtr>> orderedFaces(const Spacetime &K) {
 // per-k-simplex content Simplex::volume() under `convention`, or all ones for
 // k <= 0, for k above the top dimension, and for `metric == false`. Timelike
 // cells carry a negative or imaginary weight, so W_k is indefinite; a degenerate
-// (zero) cell falls back to +1 to stay invertible.
+// (zero) cell has no weight and is refused by name, since W_k would be singular.
 std::vector<std::complex<double>> simplexWeights(
     const std::vector<std::vector<SimplexPtr>> &faces, int k, int count,
     bool metric, HodgeLaplacian::WeightConvention convention) {
@@ -102,7 +102,13 @@ std::vector<std::complex<double>> simplexWeights(
     const cdw wt = (convention == HodgeLaplacian::WeightConvention::SquaredContent)
                        ? vol * vol
                        : vol;
-    w[static_cast<std::size_t>(j)] = (std::abs(wt) > 0.0) ? wt : cdw{1.0, 0.0};
+    if (!(std::abs(wt) > 0.0))
+      throw std::domain_error(
+          "HodgeLaplacian: the " + std::to_string(k) + "-simplex at column " +
+          std::to_string(j) + " has zero content, so its weight is not "
+          "defined and W_" + std::to_string(k) + " is singular; a degenerate "
+          "cell is refused, not weighted");
+    w[static_cast<std::size_t>(j)] = wt;
   }
   return w;
 }
@@ -336,8 +342,7 @@ private:
     return cd{0.0, 0.0};
   }
 
-  // Wdot_j = sum_f v_f dW_j/dz_f, over the simplices `buildWeightData` admitted
-  // (a pinned fallback weight has no derivative and no velocity).
+  // Wdot_j = sum_f v_f dW_j/dz_f, over the simplices `buildWeightData` admitted.
   [[nodiscard]] Eigen::ArrayXcd weightVelocity(
       const WeightData &weights, int degree,
       const std::map<EdgeKey, cd> &direction) const {
@@ -376,7 +381,10 @@ private:
               ? volume * volume
               : volume;
       if (std::abs(weight) <= 0.0)
-        continue;  // pinned to the constant fallback 1, as in buildWeightData
+        throw std::domain_error(
+            "HodgeLaplacian: a " + std::to_string(degree) + "-simplex has "
+            "zero content, so its weight is not defined; a degenerate cell "
+            "is refused, not weighted");
       const auto gradient = simplex->volumeGradient();
       const auto secondGradient =
           simplex->volumeGradientDirectionalDerivative(direction);
@@ -432,7 +440,10 @@ private:
               ? volume * volume
               : volume;
       if (std::abs(weight) <= 0.0)
-        continue; // pinned to the constant fallback 1
+        throw std::domain_error(
+            "HodgeLaplacian: a " + std::to_string(degree) + "-simplex has "
+            "zero content, so its weight is not defined; a degenerate cell "
+            "is refused, not weighted");
       data.weights[index] = weight;
       for (const auto &[edge, volumeDerivative] : simplex->volumeGradient()) {
         const cd weightDerivative =
