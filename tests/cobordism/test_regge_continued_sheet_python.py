@@ -129,6 +129,47 @@ def test_the_continued_and_principal_values_agree_on_real_euclidean_input():
         np.array(principal.length_stationarity()))
 
 
+def test_a_path_through_a_degenerate_face_is_refused_by_name():
+    """The continued sheets follow every angle and content root along the
+    straight path from the Euclidean reference to the current geometry,
+    refining each step until every root turns by at most a quarter turn.
+    With the squared length of the edge (0, 1) moved from 1 to 9 on a
+    regular tetrahedron the faces on that edge pass through a degenerate
+    triangle (l_01 = l_02 + l_12 = 2 at z = 4, three eighths of the way),
+    where the cofactor a root is taken of vanishes and the root's turn is a
+    jump no step is fine across. The walk refuses by name there instead of
+    accepting a step that is not fine; the principal sheet, which follows no
+    path, is unaffected."""
+    edges = list(itertools.combinations(range(4), 2))
+    regular = _complex([[0, 1, 2, 3]], {e: 1.0 + 0j for e in edges})
+
+    def declaration(branch):
+        declared = cob.JointActionDeclaration()
+        declared.carrier_degree = 1
+        declared.gravitational_weight = 1.0
+        declared.regge_form = cob.ReggeForm.Primal
+        declared.regge_hinges = cob.ReggeHinges.All
+        declared.regge_branch = branch
+        declared.holonomy_weight = 0.0
+        declared.matter_weight = 0.0
+        return declared
+
+    continued = cob.JointAction(regular, declaration(cob.ReggeBranch.Continued))
+    principal = cob.JointAction(regular, declaration(cob.ReggeBranch.Principal))
+    assert continued.regge_term() == pytest.approx(principal.regge_term())
+    for edge in regular.getEdgeList().toVector():
+        pair = sorted((int(edge.getSource().getId()),
+                       int(edge.getTarget().getId())))
+        if pair == [0, 1]:
+            edge.setLength(3.0 + 0j)
+    with pytest.raises(ValueError, match="cannot be followed") as refusal:
+        continued.regge_term()
+    assert "makes no fine step" in str(refusal.value)
+    assert "2^-30" in str(refusal.value)
+    # the principal sheet evaluates the geometry as it stands
+    principal.regge_term()
+
+
 def test_regge_and_matter_converge_on_the_continued_sheet():
     """Primal Regge plus w tr(h) on the boundary of the 4-simplex. At the
     regular metric every length equation is the same by symmetry:

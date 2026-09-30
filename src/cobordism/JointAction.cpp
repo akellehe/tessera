@@ -912,8 +912,20 @@ using SquaredLengthField = std::map<EdgeKey, complexd>;
 /// half turn beyond which a continuation cannot tell two paths apart.
 constexpr double kMaximumRootTurn = std::numbers::pi / 4.0;
 constexpr double kMaximumAngleStep = 0.25;
-/// The shortest step a walk refines to before it accepts a step as it is.
+/// The shortest step a walk refines to; a walk that finds no fine step this
+/// short refuses by name rather than accepting a step that is not fine.
 constexpr double kShortestStep = 1.0 / (1u << 30);
+
+/// The vertex ids of a cell as text, for a refusal that names the cell.
+template <typename Ids>
+std::string idList(const Ids &ids) {
+  std::string out = "[";
+  for (std::size_t index = 0; index < ids.size(); ++index) {
+    if (index > 0) out += ", ";
+    out += std::to_string(ids[index]);
+  }
+  return out + "]";
+}
 
 /// A real cosine pinned to the +0 side of the inverse cosine's cuts, as
 /// `Simplex::dihedralAngle` pins it.
@@ -1047,18 +1059,29 @@ std::vector<::tessera::mesh::Simplex *> topCellsAt(
 /// Walk \p state along the straight segment from \p from to \p to, refining
 /// every step until it is fine enough, by bisection down to `kShortestStep`.
 /// \p advance takes the parameter and returns whether the step it made was
-/// fine; \p State is copied so that a refused step is undone.
+/// fine; \p State is copied so that a refused step is undone. A step that is
+/// still not fine at `kShortestStep` is a refusal of the walk: the sheet
+/// cannot be followed along the segment there, and no step is accepted in
+/// its place. \p what names the quantity walked, for the refusal.
+/// @throws std::domain_error when no fine step exists at the shortest step.
 template <typename State, typename Advance>
-void walkSegment(State &state, Advance advance) {
+void walkSegment(State &state, Advance advance, const std::string &what) {
   double t = 0.0;
   double step = 1.0;
   while (t < 1.0) {
     const double next = std::min(1.0, t + step);
     State trial = state;
-    if (advance(trial, next) || step <= kShortestStep) {
+    if (advance(trial, next)) {
       state = std::move(trial);
       t = next;
       step = std::min(1.0, 2.0 * step);
+    } else if (step <= kShortestStep) {
+      throw std::domain_error(
+          "JointAction: the continued Regge sheets cannot be followed: " +
+          what + " makes no fine step from parameter " +
+          std::to_string(t) + " of the segment at the shortest step, 2^-30 "
+          "of it (a fine step turns every root by at most a quarter turn "
+          "and moves every angle by at most 0.25)");
     } else {
       step *= 0.5;
     }
@@ -1133,10 +1156,13 @@ JointAction::ReggeSheets JointAction::reggeSheets() const {
     walk.declare(Simplex::cofactorMatrix(
         cayleyMenger(cellIds, reference, reference, 0.0), n));
     for (const auto &[from, to] : legs)
-      walkSegment(walk, [&, from = from, to = to](CellWalk &trial, double t) {
-        return trial.advance(Simplex::cofactorMatrix(
-            cayleyMenger(cellIds, *from, *to, t), n));
-      });
+      walkSegment(
+          walk,
+          [&, from = from, to = to](CellWalk &trial, double t) {
+            return trial.advance(Simplex::cofactorMatrix(
+                cayleyMenger(cellIds, *from, *to, t), n));
+          },
+          "the dihedral angles of the cell on vertices " + idList(cellIds));
     for (std::size_t index = 0; index < walk.pairs.size(); ++index) {
       const auto [i, j] = walk.pairs[index];
       continued[{cellIds, {i, j}}] = {
@@ -1194,11 +1220,13 @@ JointAction::ReggeSheets JointAction::reggeSheets() const {
     if (hingeIds.size() >= 2) {
       SheetedSqrt content(gramDeterminant(hingeIds, reference, reference, 0.0));
       for (const auto &[from, to] : legs)
-        walkSegment(content, [&, from = from, to = to](SheetedSqrt &trial,
-                                                       double t) {
-          trial.advance(gramDeterminant(hingeIds, *from, *to, t));
-          return std::abs(trial.lastStep()) <= kMaximumRootTurn;
-        });
+        walkSegment(
+            content,
+            [&, from = from, to = to](SheetedSqrt &trial, double t) {
+              trial.advance(gramDeterminant(hingeIds, *from, *to, t));
+              return std::abs(trial.lastStep()) <= kMaximumRootTurn;
+            },
+            "the content root of the hinge on vertices " + idList(hingeIds));
       entry.contentSign =
           (std::conj(content.value()) * hinge->volume()).real() >= 0.0 ? 1
                                                                         : -1;
