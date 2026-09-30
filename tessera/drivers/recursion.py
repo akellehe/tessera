@@ -41,15 +41,12 @@ One tick
 At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
-   primal Regge + the holonomy term (Villain by default, ``--holonomy``), in
-   strict emergence (no carried density in the equations; WP §7). The
-   spectral-moment part of S_0 is the holomorphic spectral constraint of
-   WP v17 §3.4, which belongs to controlled synthesis on an occupied fiber and
-   so enters only the per-cell reads below (stated there as the eigenvalue of
-   each occupied band by default, ``--fiber-pinning``); the linear stand-in
-   (1/kappa)(1/2)||l - l0||^2, with l0 the level's own lengths as the level
-   was built, is available by name (``--stiffness linear-stand-in``) and off
-   by default. The three sheets are relaxed
+   primal Regge + the Villain holonomy term, in strict emergence (no carried
+   density in the equations; WP §7). The spectral-moment part of S_0 is the
+   holomorphic spectral constraint of WP v17 §3.4, which belongs to
+   controlled synthesis on an occupied fiber and so enters only the per-cell
+   reads below (stated there as the eigenvalue of each occupied band by
+   default, ``--fiber-pinning``). The three sheets are relaxed
    as one shared base field (WP v17 §8): the solve's variables are the base
    complex's squared lengths and links, written to every sheet. The Regge term is read on
    Riemann sheets continued from the real projection of the level's starting
@@ -125,11 +122,10 @@ At level l (a complex K_l of three sheets of a base complex):
    doublet content of the T-averaged operator and labelled by it. Each
    content's mean field is solved by Newton's method on the joint system,
    its bands chosen at the host and followed by continuation
-   (``--mean-field-method``, ``--band-selection``); the solve's method,
-   iterations, final force, stop reason and joint-Jacobian rank gap are
-   reported with the content, and a read on a geometry whose squared lengths
-   overflowed the double or that is not Kontsevich-Segal allowable is refused
-   by name.
+   (``--band-selection``); the solve's iterations, final force, stop reason
+   and joint-Jacobian rank gap are reported with the content, and a read on
+   a geometry whose squared lengths overflowed the double or that is not
+   Kontsevich-Segal allowable is refused by name.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
 3-simplex, and says so.
@@ -452,8 +448,6 @@ def relax_level(spacetime, config, sectors=None, count=None):
     identical exactly."""
     declaration = bp.action_declaration(
         spacetime, config["kappa"], config["beta"], config["regge_hinges"],
-        holonomy=config["holonomy"],
-        stiffness=config.get("stiffness", bp.DECLARED_STIFFNESS),
         villain_tolerance=bp.declared_tolerance(config, "villain_tolerance"))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
@@ -857,16 +851,15 @@ def cell_reads(cells, z, links, config):
         }
         cell_config = bp.default_config(
             kappas=[config["kappa"]], betas=[config["beta"]],
-            regge_hinges=config["regge_hinges"], holonomy=config["holonomy"],
+            regge_hinges=config["regge_hinges"],
             elimination=config["elimination"],
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
         # the mean-field solver and the tolerances the run declared (none
         # changes an equation)
-        for key in ("mean_field_method", "band_selection", "stiffness",
-                    "fiber_moments", "fiber_pinning", "kappa_role",
-                    "trace_terms") + tuple(
+        for key in ("band_selection", "fiber_moments", "fiber_pinning",
+                    "kappa_role", "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES):
             if key in config:
                 cell_config[key] = config[key]
@@ -1263,13 +1256,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    resolutions=DECLARED_RESOLUTIONS,
                    band_rank=DECLARED_BAND_RANK,
                    edge_squared=DECLARED_EDGE_SQUARED,
-                   holonomy=bp.DECLARED_HOLONOMY,
                    elimination=bp.DECLARED_ELIMINATION,
                    selected_contents=None, max_cells=None,
                    persistence_required=None,
-                   mean_field_method=bp.DECLARED_MEAN_FIELD_METHOD,
                    band_selection=bp.DECLARED_BAND_SELECTION,
-                   stiffness=bp.DECLARED_STIFFNESS,
                    fiber_moments=bp.DECLARED_FIBER_MOMENTS,
                    fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False,
@@ -1287,11 +1277,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     cell's config."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
-                               holonomy=holonomy, elimination=elimination,
+                               elimination=elimination,
                                selected_contents=selected_contents,
-                               mean_field_method=mean_field_method,
                                band_selection=band_selection,
-                               stiffness=stiffness,
                                fiber_moments=fiber_moments,
                                fiber_pinning=fiber_pinning,
                                tolerances=tolerances, trace_terms=trace_terms)
@@ -1817,8 +1805,6 @@ def build_parser():
                      default=DECLARED_EDGE_SQUARED,
                      help="squared edge length of level 0 (default %g)"
                           % DECLARED_EDGE_SQUARED)
-    run.add_argument("--holonomy", choices=tuple(bp.HOLONOMY_FORMS),
-                     default=bp.DECLARED_HOLONOMY)
     run.add_argument("--eliminate", choices=bp.ELIMINATIONS,
                      default=bp.DECLARED_ELIMINATION)
     run.add_argument("--contents", type=int, nargs=3, action="append",
@@ -1867,13 +1853,12 @@ def main(argv=None):
         ticks=args.ticks, tetrahedra=args.tetrahedra, kappa=args.kappa,
         beta=args.beta, resolutions=args.resolutions,
         band_rank=args.band_rank, edge_squared=args.edge_squared,
-        holonomy=args.holonomy, elimination=args.eliminate,
+        elimination=args.eliminate,
         selected_contents=[tuple(c) for c in args.contents]
         if args.contents else None, max_cells=args.max_cells,
         persistence_required=args.persistence_required,
-        mean_field_method=args.mean_field_method,
         band_selection=args.band_selection,
-        stiffness=args.stiffness, fiber_moments=args.fiber_moments,
+        fiber_moments=args.fiber_moments,
         fiber_pinning=args.fiber_pinning,
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,

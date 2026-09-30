@@ -105,7 +105,6 @@ def test_the_declared_defaults():
     assert args.kappa == 1.0 and args.beta == 1.0
     assert args.resolutions == list(R.DECLARED_RESOLUTIONS)
     assert args.band_rank == 1 and args.edge_squared == 8.0
-    assert args.holonomy == "villain"
     assert args.eliminate == "lengths-and-phases"
     assert args.contents is None and args.max_cells is None
     assert args.json is None and args.out is None
@@ -122,7 +121,7 @@ def test_contents_are_repeatable_triples():
 
 @pytest.mark.parametrize("argv,name", [
     (["run", "--contents", "1", "1"], "--contents"),
-    (["run", "--holonomy", "plaquette"], "--holonomy"),
+    (["run", "--band-selection", "by-hand"], "--band-selection"),
     (["run", "--eliminate", "phases"], "--eliminate"),
     (["run", "--ticks", "two"], "--ticks"),
     ([], "command"),
@@ -236,12 +235,13 @@ def test_main_renders_the_final_frame(two_ticks):
 def test_main_passes_the_declared_options_to_every_tick(stub_reads):
     R.main(["run", "--ticks", "1", "--contents", "1", "1", "1",
             "--max-cells", "1", "--kappa", "0.5", "--beta", "2",
-            "--holonomy", "wilson", "--band-rank", "1", "--quiet"])
+            "--band-selection", "sort-every-iterate", "--band-rank", "1",
+            "--quiet"])
     (config,) = stub_reads
     assert config["contents"] == [[1, 1, 1]]
     assert config["max_cells"] == 1
     assert config["kappa"] == 0.5 and config["beta"] == 2.0
-    assert config["holonomy"] == "wilson"
+    assert config["band_selection"] == "sort-every-iterate"
 
 
 def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):

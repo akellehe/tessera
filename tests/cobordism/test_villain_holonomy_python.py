@@ -11,11 +11,12 @@ character form,
 with beta_V = beta / <m^2>_beta, where <m^2>_beta is the second moment of the
 weights exp(-m^2/(2 beta)). The suite asserts, each as a measured number:
 
-* the matching: at trivial holonomy the second variation is beta L_1^up, the
-  Wilson form's, entry by entry, so the tetrahedron's coexact block is 4 beta;
-* the quarter-turn stiffness: at F = +-i, where the Wilson curvature vanishes,
-  the Villain curvature is beta_V (<m^2>_i - <m>_i^2), evaluated here from its
-  closed form, and the tetrahedron's coexact block is four times it;
+* the matching: beta_V = beta / <m^2>_beta makes the second variation at
+  trivial holonomy beta L_1^up entry by entry, so the tetrahedron's coexact
+  block is 4 beta;
+* the quarter-turn stiffness: at F = +-i the Villain curvature is
+  beta_V (<m^2>_i - <m>_i^2), positive, evaluated here from its closed form,
+  and the tetrahedron's coexact block is four times it;
 * gauge invariance under the complex gauge group, the symmetry F <-> 1/F, and
   stationarity at trivial holonomy;
 * the link stationarity (the Ward current) and the Hessian against finite
@@ -44,14 +45,13 @@ from _joint_action_hosts import sphere3, tetrahedron  # noqa: E402
 cob = T.cobordism
 
 
-def _declaration(form=cob.HolonomyForm.Villain, beta=1.3, **overrides):
-    """A joint action of the holonomy term alone, in the named form."""
+def _declaration(beta=1.3, **overrides):
+    """A joint action of the holonomy term alone."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.gravitational_weight = 0.0
     declaration.regge_form = cob.ReggeForm.Dual
     declaration.holonomy_weight = beta
-    declaration.holonomy_form = form
     declaration.matter_weight = 0.0
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     for name, value in overrides.items():
@@ -151,7 +151,7 @@ def _quarter_turn_tetrahedron():
     return spacetime
 
 
-class TheMatchingToTheWilsonFormTest(unittest.TestCase):
+class TheMatchingAtTrivialHolonomyTest(unittest.TestCase):
     """beta_V = beta / <m^2>_beta makes the trivial-holonomy expansion
     beta L_1^up exactly."""
 
@@ -162,20 +162,19 @@ class TheMatchingToTheWilsonFormTest(unittest.TestCase):
                                    _second_moment(beta), places=13)
             self.assertAlmostEqual(character.matched_weight,
                                    beta / _second_moment(beta), places=13)
-            # the curvature in the real angle at F = 1 is beta, the Wilson one
+            # the curvature in the real angle at F = 1 is beta
             self.assertAlmostEqual(-character.second_derivative(1.0).real,
                                    beta, places=12)
 
-    def test_the_trivial_holonomy_hessian_is_the_wilson_one_entry_by_entry(self):
+    def test_the_trivial_holonomy_hessian_is_beta_times_the_up_laplacian(self):
+        """The Hessian at trivial holonomy is -beta d_2 d_2^T entry by entry:
+        the per-face curvature beta, assembled over the faces by the signed
+        incidences, with the Maurer-Cartan sign."""
         beta = 1.3
         spacetime = tetrahedron()
         villain = np.array(cob.JointAction(
             spacetime, _declaration(beta=beta)).holonomy_hessian()).reshape(6, 6)
-        wilson = np.array(cob.JointAction(
-            spacetime, _declaration(cob.HolonomyForm.Wilson,
-                                    beta=beta)).holonomy_hessian()).reshape(6, 6)
         expected = -beta * _signed_up_laplacian(spacetime)
-        self.assertLess(np.max(np.abs(wilson - expected)), 1e-13)
         self.assertLess(np.max(np.abs(villain - expected)), 1e-12)
         eigenvalues = np.sort(np.linalg.eigvalsh(-villain.real))
         self.assertLess(np.max(np.abs(eigenvalues[:3])), 1e-12)
@@ -200,7 +199,7 @@ class TheMatchingToTheWilsonFormTest(unittest.TestCase):
 
 
 class TheQuarterTurnStiffnessTest(unittest.TestCase):
-    """At F = +-i the Wilson stiffness is zero and the Villain one is not."""
+    """At F = +-i the Villain stiffness is beta_V (<m^2>_i - <m>_i^2) > 0."""
 
     def test_the_per_face_curvature_is_the_closed_form(self):
         for beta in (0.5, 1.0, 1.3, 2.0, 5.0):
@@ -215,17 +214,14 @@ class TheQuarterTurnStiffnessTest(unittest.TestCase):
         self.assertAlmostEqual(_quarter_turn_stiffness(0.5), 0.43091, places=5)
         self.assertAlmostEqual(_quarter_turn_stiffness(1.0), 0.99796, places=5)
 
-    def test_the_monopole_tetrahedron_is_stiff_under_villain_and_not_wilson(self):
+    def test_the_monopole_tetrahedron_is_stiff(self):
+        """With every face at +-i the Hessian is -kappa(i) d_2 d_2^T: the
+        coexact block is 4 kappa(i) and the pure-gauge block zero."""
         beta = 1.0
         spacetime = _quarter_turn_tetrahedron()
         faces = np.array(cob.JointAction(
             spacetime, _declaration(beta=beta)).face_holonomies())
         self.assertLess(np.max(np.abs(faces ** 2 + 1.0)), 1e-12)
-
-        wilson = np.array(cob.JointAction(
-            spacetime, _declaration(cob.HolonomyForm.Wilson,
-                                    beta=beta)).holonomy_hessian())
-        self.assertLess(np.max(np.abs(wilson)), 1e-12)
 
         villain = np.array(cob.JointAction(
             spacetime, _declaration(beta=beta)).holonomy_hessian()).reshape(6, 6)
@@ -453,15 +449,26 @@ class TheLogarithmReadsTheSeriesOwnUncertaintyTest(unittest.TestCase):
         """A tetrahedron one of whose links is -1 has two face holonomies at
         -1, where W at beta = 10 is below its own resolution. The action's
         value is refused there and reported as unavailable, with the reason;
-        a solve of the squared lengths (whose equations do not need log W)
-        runs to its stationary point and reports its action as unavailable by
-        name at every step."""
-        spacetime = tetrahedron(squared=lambda index: 8.0,
-                                phase=lambda index: math.pi if index == 0
-                                else 0.0)
-        reference = [cmath.sqrt(8.5)] * 6
-        action = cob.JointAction(spacetime, _declaration(
-            beta=10.0, stiffness_weight=1.0, reference_lengths=reference))
+        a solve of the squared lengths and the multiplier (whose equations do
+        not need log W), the matter term tr(h) under the constraint
+        p_1(h) = p_1* read at squared length 8.5, runs to its stationary point
+        (the constraint met, xi = -w_M) and reports its action as unavailable
+        by name at every step."""
+        def host(squared):
+            return tetrahedron(squared=lambda index: squared,
+                               phase=lambda index: math.pi if index == 0
+                               else 0.0)
+
+        def constrained(spacetime, target):
+            declaration = _declaration(beta=10.0, matter_weight=1.0)
+            declaration.covariance = list(np.eye(6, dtype=complex).reshape(-1))
+            declaration.moment_constraints = [
+                cob.SpectralMomentConstraint(1, target, 0j)]
+            return cob.JointAction(spacetime, declaration)
+
+        target = constrained(host(8.5), 0j).power_sums()[0]
+        spacetime = host(8.0)
+        action = constrained(spacetime, target)
         faces = np.asarray(action.face_holonomies())
         self.assertEqual(int(np.sum(np.abs(faces + 1.0) < 1e-12)), 2)
         with self.assertRaisesRegex(ValueError, "is not resolved above"):
@@ -474,7 +481,7 @@ class TheLogarithmReadsTheSeriesOwnUncertaintyTest(unittest.TestCase):
         declaration = cob.HolomorphicRelaxationDeclaration()
         declaration.relax_lengths = True
         declaration.relax_links = False
-        declaration.relax_multipliers = False
+        declaration.relax_multipliers = True
         declaration.tolerance = 1e-12
         report = cob.HolomorphicRelaxation(action, declaration).solve()
         self.assertTrue(report.converged)
@@ -484,9 +491,9 @@ class TheLogarithmReadsTheSeriesOwnUncertaintyTest(unittest.TestCase):
         self.assertGreater(len(report.steps), 0)
         for step in report.steps:
             self.assertFalse(step.action_available)
-        for edge in spacetime.getEdgeList().toVector():
-            self.assertAlmostEqual(abs(complex(edge.getLength())
-                                       - cmath.sqrt(8.5)), 0.0, places=10)
+        self.assertLess(abs(report.moment_residuals[0]), 1e-10)
+        self.assertAlmostEqual(abs(report.multipliers[0] + 1.0), 0.0,
+                               places=8)
 
 
 class TheZeroGuardTest(unittest.TestCase):
@@ -560,12 +567,6 @@ class TheZeroGuardTest(unittest.TestCase):
         self.assertEqual(report.zero_guard_damped_steps, 0)
         self.assertGreater(report.steps[0].holonomy_zero_distance, 0.05)
 
-    def test_the_wilson_form_has_no_zero_to_guard(self):
-        spacetime = sphere3(phase=_flux)
-        action = cob.JointAction(spacetime,
-                                 _declaration(cob.HolonomyForm.Wilson))
-        self.assertEqual(action.holonomy_zero_distance(), math.inf)
-
 
 class TheTruncationIsDeclaredAndBoundedTest(unittest.TestCase):
 
@@ -619,15 +620,11 @@ class TheTruncationIsDeclaredAndBoundedTest(unittest.TestCase):
     def test_the_action_reports_its_truncation(self):
         spacetime = sphere3(phase=_flux)
         read = cob.JointAction(spacetime, _declaration()).holonomy_truncation()
-        self.assertEqual(read.form, cob.HolonomyForm.Villain)
         self.assertEqual(read.tolerance, 1e-18)
         self.assertGreaterEqual(read.maximum_term_count,
                                 read.declared_term_count)
         self.assertLess(read.relative_value_tail, 1e-15)
         self.assertLess(read.relative_second_tail, 1e-14)
-        wilson = cob.JointAction(spacetime, _declaration(
-            cob.HolonomyForm.Wilson)).holonomy_truncation()
-        self.assertEqual(wilson.maximum_term_count, 0)
 
     def test_the_series_reports_how_many_terms_it_carried(self):
         """Near the unit circle the series carries the declared terms; far

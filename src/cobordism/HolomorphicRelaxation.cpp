@@ -599,8 +599,6 @@ std::string relaxationStopName(RelaxationStop reason) {
       return "the residual is at its floor on the held set";
     case RelaxationStop::LengthRunaway:
       return "the squared lengths overflowed the double";
-    case RelaxationStop::NoProgress:
-      return "an outer iteration made no progress";
     case RelaxationStop::Continued:
       return "continued";
   }

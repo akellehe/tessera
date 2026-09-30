@@ -933,14 +933,11 @@ SelfConsistentMeanField::SelfConsistentMeanField(
 }
 
 SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
-  return declaration_.method == SelfConsistentMethod::Alternation
-             ? solveAlternation()
-             : solveJointNewton();
+  return solveJointNewton();
 }
 
 SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
   SelfConsistentMeanFieldReport report;
-  report.method = SelfConsistentMethod::JointNewton;
   report.bandSelection = declaration_.bandSelection;
   BandFollower follower(declaration_);
   const double startScale = largestSquaredLengthOf(action_);
@@ -1031,131 +1028,6 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
     report.stopReason = joint.stopReason;
     report.stopDetail = joint.stopDetail;
   }
-  return report;
-}
-
-SelfConsistentMeanFieldReport SelfConsistentMeanField::solveAlternation() {
-  SelfConsistentMeanFieldReport report;
-  report.method = SelfConsistentMethod::Alternation;
-  report.bandSelection = declaration_.bandSelection;
-  BandFollower follower(declaration_);
-  const double startScale = largestSquaredLengthOf(action_);
-
-  // Iterate zero: the bands are chosen at the starting point, and the
-  // declared power sums of their fiber are pinned there. The first inner
-  // solve holds the declared covariance, or, when none is declared, the
-  // rule's density there (the uniform-seeded start).
-  const BandRead start = follower.read(bandOperatorFlat(action_, declaration_));
-  follower.follow(start);
-  if (action_.declaration().covariance.empty())
-    action_.setCovariance(start.covariance);
-  report.fiberRank = installFiberMoments(action_, declaration_, start);
-  report.fiberConstraintForm = declaration_.fiberConstraintForm;
-  const bool fiber = declaration_.fiberMoments > 0;
-  // the pinned moments' multipliers are unknowns of every inner solve
-  HolomorphicRelaxationDeclaration inner = declaration_.geometry;
-  if (fiber) inner.relaxMultipliers = true;
-  std::vector<complexd> previous = action_.declaration().covariance;
-  std::vector<SelfConsistentMeanFieldStep> steps;
-  steps.push_back(measure(0, action_, start, previous, previous,
-                          declaration_.geometry));
-
-  bool stopped = false;
-  for (std::size_t iteration = 1; iteration <= declaration_.maximumIterations;
-       ++iteration) {
-    // (1) The geometry is made stationary against the action at the current
-    // covariance (and fiber). The inner solve advances the multipliers too.
-    HolomorphicRelaxation relaxation(action_, inner);
-    const HolomorphicRelaxationReport innerReport = relaxation.solve();
-    action_ = relaxation.action();
-    report.zeroGuardDampedSteps += innerReport.zeroGuardDampedSteps;
-
-    // (2) The covariance is rebuilt from the carrier operator at the relaxed
-    // geometry, the bands followed from the previous iterate, and the pinned
-    // fiber with them.
-    const BandRead read =
-        follower.read(bandOperatorFlat(action_, declaration_));
-    follower.follow(read);
-    RebuiltCarrierState rebuilt = rebuiltStateOf(read, declaration_);
-    action_.setCovariance(std::move(rebuilt.covariance));
-    if (!rebuilt.momentProjector.empty())
-      action_.setMomentProjector(std::move(rebuilt.momentProjector));
-    if (!rebuilt.bandProjectors.empty())
-      action_.setMomentBandProjectors(std::move(rebuilt.bandProjectors));
-
-    // (3) The fixed-point measurements, taken with the covariance this
-    // iteration produced: a geometry stationary for the previous covariance
-    // is not a fixed point of the pair.
-    SelfConsistentMeanFieldStep step =
-        measure(iteration, action_, read, read.covariance, previous,
-                declaration_.geometry);
-    step.geometryConverged = innerReport.converged;
-    step.geometryResidualNorm = innerReport.residualNorm;
-    step.geometryZeroGuardDampedSteps = innerReport.zeroGuardDampedSteps;
-    step.geometryStopReason = innerReport.stopReason;
-    step.geometryStopDetail = innerReport.stopDetail;
-    steps.push_back(step);
-    report.iterations = iteration;
-
-    const std::string where = "outer iteration " + std::to_string(iteration);
-    if (step.forceNorm <= declaration_.tolerance &&
-        step.covarianceChange <= declaration_.tolerance &&
-        step.momentResidualNorm <= declaration_.tolerance) {
-      report.converged = true;
-      report.stopReason = RelaxationStop::Converged;
-      report.stopDetail = "the force " + threeDigits(step.forceNorm) +
-                          " and the covariance change " +
-                          threeDigits(step.covarianceChange) +
-                          " are at or below the tolerance " +
-                          threeDigits(declaration_.tolerance) + " after " +
-                          where;
-      stopped = true;
-      break;
-    }
-    if (innerReport.stopReason == RelaxationStop::SectorBoundary) {
-      report.stopReason = RelaxationStop::SectorBoundary;
-      report.stopDetail = where + ": " + innerReport.stopDetail;
-      stopped = true;
-      break;
-    }
-    // The only bound on the lengths is the datatype's.
-    if (innerReport.stopReason == RelaxationStop::LengthRunaway ||
-        !std::isfinite(largestSquaredLengthOf(action_))) {
-      report.stopReason = RelaxationStop::LengthRunaway;
-      report.stopDetail =
-          where + ": the squared lengths overflowed the double: a squared "
-          "length is beyond the largest finite value " +
-          threeDigits(std::numeric_limits<double>::max()) + " (it was " +
-          threeDigits(startScale) + " at the start of the mean-field solve)";
-      stopped = true;
-      break;
-    }
-    bool moved = false;
-    for (const auto &innerStep : innerReport.steps)
-      moved = moved || innerStep.accepted;
-    if (!moved && step.covarianceChange <= declaration_.tolerance) {
-      report.stopReason = RelaxationStop::NoProgress;
-      report.stopDetail =
-          where + " made no progress: its inner solve accepted no step (" +
-          relaxationStopName(innerReport.stopReason) + ": " + innerReport.stopDetail +
-          ") and re-occupation changed the covariance by " +
-          threeDigits(step.covarianceChange) +
-          ", so a further iteration would repeat it";
-      stopped = true;
-      break;
-    }
-    previous = read.covariance;
-  }
-  if (!stopped) {
-    report.stopReason = RelaxationStop::IterationBudget;
-    report.stopDetail =
-        "the declared " + std::to_string(declaration_.maximumIterations) +
-        " outer iterations ran out with the force " +
-        threeDigits(steps.back().forceNorm) + " and the covariance change " +
-        threeDigits(steps.back().covarianceChange);
-  }
-  finishReport(report, std::move(steps), action_, declaration_, follower,
-               startScale);
   return report;
 }
 

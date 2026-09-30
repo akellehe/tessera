@@ -4461,13 +4461,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "(j from one, in declaration order).")
       .def_readwrite("label", &ActionTermGradient::label,
                      "The term as it stands in the action: (1/kappa) "
-                     "S_Regge, w_S S_stiff, beta S_hol, w_m tr(Gamma h_1), "
+                     "S_Regge, beta S_hol, w_m tr(Gamma h_1), "
                      "or xi_j (c_j - c_j*) with what c_j is.")
       .def_readwrite("weight", &ActionTermGradient::weight,
-                     "The coefficient in front of the term: 1/kappa, w_S, "
+                     "The coefficient in front of the term: 1/kappa, "
                      "beta, w_m, or the multiplier xi_j.")
       .def_readwrite("bare", &ActionTermGradient::bare,
-                     "What the weight multiplies (S_Regge, S_stiff, "
+                     "What the weight multiplies (S_Regge, "
                      "tr(Gamma h_1), or the constraint residual c_j - c_j* in "
                      "the declared unit), so value == weight * bare when "
                      "factored; the value itself for the holonomy term.")
@@ -4562,16 +4562,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("Continued", ReggeBranch::Continued)
       .value("Principal", ReggeBranch::Principal);
 
-  py::enum_<HolonomyForm>(m, "HolonomyForm",
-      "Which function of the face holonomies the holonomy term of JointAction "
-      "is. Villain (the default) is the heat-kernel action in character form, "
-      "-beta_V sum_tau log W(F_tau) with W(F) = sum_m exp(-m^2/(2 beta)) F^m "
-      "and beta_V = beta / <m^2>_beta; Wilson is the plaquette form "
-      "beta sum_tau (1 - (F + 1/F)/2), the whitepaper's stand-in. Both have "
-      "the second variation beta L_1^up at trivial holonomy.")
-      .value("Villain", HolonomyForm::Villain)
-      .value("Wilson", HolonomyForm::Wilson);
-
   py::class_<VillainSeries>(m, "VillainSeries",
       "The truncated Laurent series W, F W' and (F d/dF)^2 W at one face "
       "holonomy, the largest |m| kept, and certified bounds on the modulus of "
@@ -4632,9 +4622,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
   py::class_<HolonomyTruncation>(m, "HolonomyTruncation",
       "The Villain truncation over every face at the current connection: the "
       "declared tolerance and term count, the largest term count any face "
-      "needed, and the largest certified tail bounds relative to |W|. All "
-      "zero for the Wilson form.")
-      .def_readonly("form", &HolonomyTruncation::form)
+      "needed, and the largest certified tail bounds relative to |W|.")
       .def_readonly("tolerance", &HolonomyTruncation::tolerance)
       .def_readonly("declared_term_count",
                     &HolonomyTruncation::declaredTermCount)
@@ -4678,27 +4666,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "continued from, one squared length per edge in "
                      "getEdgeList() order; empty means the squared lengths "
                      "the mesh holds when the JointAction is constructed.")
-      .def_readwrite("stiffness_weight",
-                     &JointActionDeclaration::stiffnessWeight,
-                     "w_S, the coefficient of the linear length stiffness "
-                     "(1/2) sum_e (l_e - l0_e)^2 that the whitepaper's "
-                     "Section 7 stands in for the spectral-moment part of "
-                     "S_0, with kappa = 8 pi G; a caller sets 1/kappa. Zero "
-                     "leaves the term out.")
-      .def_readwrite("reference_lengths",
-                     &JointActionDeclaration::referenceLengths,
-                     "l0_e, one reference length per edge in getEdgeList() "
-                     "order; required when stiffness_weight is nonzero.")
       .def_readwrite("holonomy_weight",
                      &JointActionDeclaration::holonomyWeight,
-                     "beta, the coupling of the face-holonomy term in the "
-                     "declared holonomy_form: the Wilson coefficient, or the "
-                     "Villain heat-kernel coupling (coefficient beta_V = "
-                     "beta / <m^2>_beta). Both give the bare stiffness "
-                     "beta L_1^up at trivial holonomy. Zero leaves the term "
-                     "out.")
-      .def_readwrite("holonomy_form", &JointActionDeclaration::holonomyForm,
-                     "Villain (default) or Wilson, the whitepaper's stand-in.")
+                     "beta, the heat-kernel coupling of the face-holonomy "
+                     "term, the Villain action in character form, whose "
+                     "coefficient is beta_V = beta / <m^2>_beta; the bare "
+                     "stiffness at trivial holonomy is beta L_1^up. Zero "
+                     "leaves the term out.")
       .def_readwrite("villain_tolerance",
                      &JointActionDeclaration::villainTolerance,
                      "The relative tolerance below which a Villain coefficient "
@@ -4756,10 +4730,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
   py::class_<JointAction>(m, "JointAction",
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
       "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
-      "S = w_R S_Regge(z) + w_S S_stiff(z) + w_H S_hol(U) + w_M tr(Gamma "
-      "h(z, U)) + sum_j xi_j (p_j(h) - p_j*), with S_hol the branch-free sum of "
-      "the declared per-face potential (Villain by default, Wilson as the "
-      "stand-in) over the face holonomies F_tau = prod_e U_e^eps. The stationarity conditions are "
+      "S = w_R S_Regge(z) + S_hol(U) + w_M tr(Gamma "
+      "h(z, U)) + sum_j xi_j (c_j - c_j*), with S_hol the branch-free sum of "
+      "the Villain per-face potential over the face holonomies "
+      "F_tau = prod_e U_e^eps. The stationarity conditions are "
       "the complex equations dS/dz_e = 0, U_e dS/dU_e = 0 and p_j(h) = p_j*, "
       "never the minimization of a selected real projection.\n\n"
       "Every per-edge vector is in getEdgeList() order and every per-cell "
@@ -4813,8 +4787,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "complex stationarity equation in xi_j.")
       .def("regge_term", &JointAction::reggeTerm,
            "w_R S_Regge(z) in the declared form and hinge set.")
-      .def("stiffness_term", &JointAction::stiffnessTerm,
-           "w_S (1/2) sum_e (l_e - l0_e)^2.")
       .def("regge_hinge_count", &JointAction::reggeHingeCount,
            "The number of hinges the primal Regge sum runs over under the "
            "declared hinge rule.")
@@ -4869,7 +4841,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "in the real angles.")
       .def("holonomy_zero_distance", &JointAction::holonomyZeroDistance,
            "The smallest relative distance of a face holonomy to a zero of "
-           "the Villain weight W; inf for the Wilson form.")
+           "the Villain weight W; inf when the term has zero weight.")
       .def("holonomy_zero_clearance", &JointAction::holonomyZeroClearance,
            py::arg("link_increments"), py::arg("spacing"),
            "The smallest relative distance to a zero of W any face holonomy "
@@ -4950,11 +4922,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "smallest damped step came within the declared margin of a zero of W); "
       "HeldFloor (with held sectors, the residual is at its floor on the held "
       "set: the constrained step cannot reduce it by more than the "
-      "tolerance); LengthRunaway (the squared lengths ran off beyond the "
-      "declared ratio); "
-      "NoProgress (an outer iteration of the alternation made no progress and "
-      "would only repeat); Continued (not a stop: a per-iterate trace entry "
-      "the solve stepped on from).")
+      "tolerance); LengthRunaway (a squared length overflowed the double); "
+      "Continued (not a stop: a per-iterate trace entry the solve stepped on "
+      "from).")
       .value("Converged", RelaxationStop::Converged)
       .value("IterationBudget", RelaxationStop::IterationBudget)
       .value("NoDescent", RelaxationStop::NoDescent)
@@ -4963,7 +4933,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("HolonomyZero", RelaxationStop::HolonomyZero)
       .value("HeldFloor", RelaxationStop::HeldFloor)
       .value("LengthRunaway", RelaxationStop::LengthRunaway)
-      .value("NoProgress", RelaxationStop::NoProgress)
       .value("Continued", RelaxationStop::Continued);
 
   m.def("relaxation_stop_name", &relaxationStopName, py::arg("reason"),
@@ -5267,16 +5236,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("Continuation", BandSelection::Continuation)
       .value("SortEveryIterate", BandSelection::SortEveryIterate);
 
-  py::enum_<SelfConsistentMethod>(m, "SelfConsistentMethod",
-      "How the fixed point of the pair (z, U; Gamma) is solved for; both "
-      "solve the same equations. JointNewton (the default): Newton's method on "
-      "F_sc(z, U) = F(z, U, Gamma(z, U)) = 0, the covariance rebuilt exactly "
-      "at every point and the Jacobian that of the self-consistent force. "
-      "Alternation: relax the geometry at fixed Gamma, then rebuild Gamma, and "
-      "repeat; kept as a named fallback.")
-      .value("JointNewton", SelfConsistentMethod::JointNewton)
-      .value("Alternation", SelfConsistentMethod::Alternation);
-
   py::enum_<FiberConstraintForm>(
       m, "FiberConstraintForm",
       "What the fiber constraints of a self-consistent solve pin. PowerSums: "
@@ -5327,9 +5286,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldDeclaration::bandSelection,
                      "Where the occupied bands are chosen: Continuation (the "
                      "default) or SortEveryIterate.")
-      .def_readwrite("method", &SelfConsistentMeanFieldDeclaration::method,
-                     "How the fixed point is solved for: JointNewton (the "
-                     "default) or Alternation.")
       .def_readwrite("fiber_moments",
                      &SelfConsistentMeanFieldDeclaration::fiberMoments,
                      "m_c, the number of power sums p_j(h_C), j = 1..m_c, of "
@@ -5371,9 +5327,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "covariance lags the geometry by one iteration.")
       .def_readwrite("geometry",
                      &SelfConsistentMeanFieldDeclaration::geometry,
-                     "The Newton solve of the geometry: under JointNewton the "
-                     "joint solve's step control (its maximum_iterations is "
-                     "not read), under Alternation the inner relaxation.");
+                     "The Newton solve of the geometry: the joint solve's "
+                     "step control (its maximum_iterations is not read).");
 
   py::class_<OccupiedBand>(m, "OccupiedBand",
       "One occupied band at one point of a solve: where it was chosen, its "
@@ -5488,7 +5443,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "What a self-consistent solve reached, which method and band selection "
       "ran, and why it stopped.")
       .def(py::init<>())
-      .def_readwrite("method", &SelfConsistentMeanFieldReport::method)
       .def_readwrite("band_selection",
                      &SelfConsistentMeanFieldReport::bandSelection)
       .def_readwrite("steps", &SelfConsistentMeanFieldReport::steps)
@@ -5601,9 +5555,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "polaron: Gamma* is the declared rule's density of the modes of h(z*) "
       "and the state's force balances the geometric action edge by edge. It "
       "is a stationary point of a complex action, not a minimum of a real "
-      "one. The declared method (JointNewton by default, Alternation as a "
-      "named fallback) and band selection (Continuation by default) change no "
-      "equation. A solve that finds no fixed point reports why, by name.")
+      "one, solved for by Newton's method on the joint system; the declared "
+      "band selection (Continuation by default) changes no equation. A solve "
+      "that finds no fixed point reports why, by name.")
       .def(py::init<JointAction, SelfConsistentMeanFieldDeclaration>(),
            py::arg("action"), py::arg("declaration"))
       .def("solve", &SelfConsistentMeanField::solve,

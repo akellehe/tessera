@@ -107,11 +107,11 @@ struct SpectralMomentConstraint {
 /// per edge of the complex each. Summed over the terms these are
 /// `JointAction::lengthStationarity` and `JointAction::linkStationarity`.
 struct ActionTermGradient {
-  /// `"regge"`, `"stiffness"`, `"holonomy"`, `"matter"`, or
+  /// `"regge"`, `"holonomy"`, `"matter"`, or
   /// `"constraint j"` with \f$ j \f$ counted from one in declaration order.
   std::string name;
   /// The term as it stands in the action: `"(1/kappa) S_Regge"`,
-  /// `"w_S S_stiff"`, `"beta S_hol"`, `"w_m tr(Gamma h_1)"`, or
+  /// `"beta S_hol"`, `"w_m tr(Gamma h_1)"`, or
   /// `"xi_j (c_j - c_j*)"` followed by what \f$ c_j \f$ is, the band
   /// eigenvalue \f$ \lambda_b/s \f$ or the power sum \f$ p_j(h_C/s) \f$.
   std::string label;
@@ -119,7 +119,7 @@ struct ActionTermGradient {
   /// \f$ w_S \f$, \f$ \beta \f$, \f$ w_m \f$, or the multiplier
   /// \f$ \xi_j \f$.
   std::complex<double> weight{0.0, 0.0};
-  /// What the weight multiplies: \f$ S_{\rm Regge} \f$, \f$ S_{\rm stiff} \f$,
+  /// What the weight multiplies: \f$ S_{\rm Regge} \f$,
   /// \f$ \operatorname{tr}(\Gamma h) \f$, or the constraint's residual
   /// \f$ c_j-c_j^{\star} \f$ in the declared unit, so that
   /// `value == weight * bare` when `factored`. For the holonomy term, whose
@@ -128,7 +128,7 @@ struct ActionTermGradient {
   /// false. Zero when the weight is zero and the term was not formed.
   std::complex<double> bare{0.0, 0.0};
   bool factored = true;
-  /// The term's value: \f$ w_R S_{\rm Regge} \f$, \f$ w_S S_{\rm stiff} \f$,
+  /// The term's value: \f$ w_R S_{\rm Regge} \f$,
   /// \f$ S_{\rm hol} \f$ (quiet NaN where it refuses to evaluate),
   /// \f$ w_m\operatorname{tr}(\Gamma h) \f$, or
   /// \f$ \xi_j\,(c_j-c_j^{\star}) \f$.
@@ -209,25 +209,6 @@ enum class ReggeHinges { Interior, All };
 /// branch of `simulations::ReggeSolver::dualReggeAction`.
 enum class ReggeBranch { Continued, Principal };
 
-/// # HolonomyForm
-///
-/// Which function of the face holonomies the face-holonomy term
-/// \f$ S_{\rm hol}(U) \f$ of the joint action is.
-///
-/// * `Villain` — the Villain (heat-kernel) action in its character form,
-///   \f$ S_{\rm hol}=-\beta_V\sum_\tau\log W_\beta(\mathcal F_\tau) \f$ with
-///   \f$ W_\beta(F)=\sum_{m\in\mathbb Z}e^{-m^2/(2\beta)}F^m \f$ and
-///   \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (see `VillainCharacter`).
-///   It is the holonomy term of the whitepaper's action and the default.
-/// * `Wilson` — the Wilson plaquette form
-///   \f$ S_{\rm hol}=\beta\sum_\tau\bigl(1-\tfrac12(\mathcal F_\tau
-///   +\mathcal F_\tau^{-1})\bigr) \f$, the whitepaper's stand-in for the
-///   holonomy term. The two forms have the same second variation
-///   \f$ \beta L_1^{\rm up} \f$ at trivial holonomy and differ away from it:
-///   at \f$ \mathcal F=e^{\pm i\pi/2} \f$ the Wilson curvature vanishes and
-///   the Villain curvature does not.
-enum class HolonomyForm { Villain, Wilson };
-
 /// # VillainSeries
 ///
 /// The truncated Laurent series of the Villain character sum at one face
@@ -272,7 +253,7 @@ struct VillainSeries {
 /// # VillainCharacter
 ///
 /// The Villain (heat-kernel) weight of one face in its character form, and the
-/// per-face potential the joint action's `HolonomyForm::Villain` term sums.
+/// per-face potential the joint action's holonomy term sums.
 ///
 /// Reference: Villain, "Theory of one- and two-dimensional magnets with an
 /// easy magnetization plane. II", Journal de Physique 36, 581 (1975).
@@ -399,8 +380,7 @@ struct VillainSeries {
 /// returns its bounds; nothing is truncated without them.
 class VillainCharacter {
  public:
-  /// @param beta The coupling \f$ \beta>0 \f$ of the heat kernel, the same
-  ///   \f$ \beta \f$ the Wilson form multiplies.
+  /// @param beta The coupling \f$ \beta>0 \f$ of the heat kernel.
   /// @param tolerance The declared relative tolerance in \f$ (0,1) \f$ below
   ///   which a coefficient \f$ e^{-m^2/(2\beta)} \f$ is left out.
   /// @throws std::invalid_argument when \p beta is not positive or
@@ -476,12 +456,8 @@ class VillainCharacter {
 /// # HolonomyTruncation
 ///
 /// The truncation of the Villain series over every face of the complex at the
-/// current connection, as `JointAction::holonomyTruncation` reports it. For the
-/// Wilson form, which is a finite Laurent polynomial, every count and bound is
-/// zero.
+/// current connection, as `JointAction::holonomyTruncation` reports it.
 struct HolonomyTruncation {
-  /// The declared form.
-  HolonomyForm form = HolonomyForm::Villain;
   /// The declared relative coefficient tolerance.
   double tolerance = 0.0;
   /// \f$ M_0 \f$, the term count the tolerance fixes.
@@ -562,43 +538,15 @@ struct JointActionDeclaration {
   /// starts from. Ignored under `ReggeBranch::Principal`.
   std::vector<std::complex<double>> reggeStartSquaredLengths;
 
-  /// \f$ w_S \f$, the coefficient of the linear length stiffness
-  /// \f$ S_{\rm stiff}(z)=\tfrac12\sum_e(l_e-l_{0,e})^2 \f$, with
-  /// \f$ l_e \f$ the edge length the mesh stores (the root of
-  /// \f$ z_e \f$ on the branch the relaxation continues along) and
-  /// \f$ l_{0,e} \f$ the declared `referenceLengths`.
-  ///
-  /// This is the term the whitepaper's own Section 7 computations use in place
-  /// of the spectral-moment part of \f$ \mathcal S_0 \f$, which the paper
-  /// names but does not write: the energy
-  /// \f$ \lambda_0(l)+\tfrac{1}{2\varkappa}\lVert l-l_0\rVert^2 \f$ with the
-  /// backreaction coupling \f$ \varkappa \f$ identified as \f$ 8\pi G \f$ in
-  /// lattice units. A caller working in terms of \f$ \varkappa \f$ sets this
-  /// to \f$ 1/\varkappa \f$. It is a stand-in, labelled as the paper labels
-  /// it, and zero leaves it out.
-  double stiffnessWeight = 0.0;
-
-  /// \f$ l_{0,e} \f$, one reference length per edge in
-  /// `Spacetime::getEdgeList()` order. Required when `stiffnessWeight` is
-  /// nonzero; ignored otherwise.
-  std::vector<std::complex<double>> referenceLengths;
-
-  /// \f$ \beta \f$, the coupling of the face-holonomy term
-  /// \f$ S_{\rm hol}(U) \f$ in the declared `holonomyForm`: the coefficient of
-  /// the Wilson form, and the heat-kernel coupling of the Villain form, whose
-  /// coefficient is then \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$. Both
-  /// forms have the bare connection stiffness \f$ \beta L_1^{\rm up} \f$ at
-  /// trivial holonomy. Zero leaves the term out; the Villain form requires it
-  /// to be non-negative.
+  /// \f$ \beta \f$, the heat-kernel coupling of the face-holonomy term
+  /// \f$ S_{\rm hol}(U) \f$, whose coefficient is then
+  /// \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (`VillainCharacter`); the
+  /// bare connection stiffness at trivial holonomy is \f$ \beta L_1^{\rm up} \f$.
+  /// Zero leaves the term out; it must be non-negative.
   double holonomyWeight = 0.0;
-
-  /// Which function of the face holonomies the holonomy term is. Villain by
-  /// default.
-  HolonomyForm holonomyForm = HolonomyForm::Villain;
 
   /// The relative tolerance below which a Villain coefficient
   /// \f$ e^{-m^2/(2\beta)} \f$ is left out of the series (`VillainCharacter`).
-  /// Ignored by the Wilson form.
   double villainTolerance = 1e-18;
 
   /// \f$ w_M \f$, the coefficient multiplying the matter term
@@ -705,32 +653,27 @@ struct JointActionDeclaration {
 ///   \f$ \sum_h |\!\star\! h|\,\varepsilon_h \f$
 ///   (`simulations::ReggeSolver::dualReggeAction`). Either is a function of
 ///   the squared lengths alone and independent of \f$ U \f$.
-/// * \f$ S_{\rm stiff}(z)=\tfrac12\sum_e(l_e-l_{0,e})^2 \f$ is the linear
-///   length stiffness the whitepaper's Section 7 stands in for the
-///   spectral-moment part of \f$ \mathcal S_0 \f$.
 /// * \f$ S_{\rm hol}(U)=\sum_\tau\phi(\mathcal F_\tau) \f$ runs over the
 ///   triangles \f$ \tau \f$ of the complex, with the branch-free face holonomy
 ///   \f$ \mathcal F_\tau=\prod_{e\subset\partial\tau}U_e^{\epsilon_{\tau e}} \f$
 ///   and \f$ \epsilon_{\tau e} \f$ the integer incidence of \f$ \partial_2 \f$.
-///   Under the default `HolonomyForm::Villain` the per-face potential is
-///   \f$ \phi(F)=-\beta_V\log W_\beta(F) \f$ with the character sum
-///   \f$ W_\beta(F)=\sum_{m\in\mathbb Z}e^{-m^2/(2\beta)}F^m \f$ and
-///   \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (`VillainCharacter`);
-///   under `HolonomyForm::Wilson`, the whitepaper's stand-in, it is
-///   \f$ \phi(F)=\beta\bigl(1-\tfrac12(F+F^{-1})\bigr) \f$, with
-///   \f$ \beta \f$ the declared `holonomyWeight` in both. Each is a
-///   holomorphic function of \f$ F\in\mathbb C^{*} \f$ (a Laurent series, or
-///   a Laurent polynomial) that is even under \f$ F\leftrightarrow F^{-1} \f$,
-///   and \f$ \mathcal F_\tau \f$ is a Laurent monomial in the links, so the
-///   term is holomorphic on \f$ (\mathbb{C}^{*})^{|E|} \f$ and no argument,
-///   logarithm or modulus of a link is ever taken. Evenness makes trivial
-///   holonomy stationary, and both forms have the same second variation there:
-///   in the real link angles it is \f$ \beta L_1^{\rm up} \f$ with the
-///   up-Laplacian \f$ L_1^{\rm up}=\partial_2\partial_2^{\mathsf T} \f$, which
-///   vanishes on pure-gauge directions and is \f$ 4\beta \f$ on the coexact
-///   block of the regular tetrahedron. They differ away from it: the Wilson
-///   curvature \f$ \beta\cos\Theta \f$ vanishes at a quarter-turn holonomy
-///   \f$ \mathcal F=e^{\pm i\pi/2} \f$ and the Villain curvature does not.
+///   The per-face potential is the Villain (heat-kernel) action in its
+///   character form, \f$ \phi(F)=-\beta_V\log W_\beta(F) \f$ with the
+///   character sum \f$ W_\beta(F)=\sum_{m\in\mathbb Z}e^{-m^2/(2\beta)}F^m \f$
+///   and \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (`VillainCharacter`),
+///   \f$ \beta \f$ the declared `holonomyWeight`: the holonomy term of the
+///   whitepaper's action. It is a holomorphic function of
+///   \f$ F\in\mathbb C^{*} \f$ (a Laurent series) that is even under
+///   \f$ F\leftrightarrow F^{-1} \f$, and \f$ \mathcal F_\tau \f$ is a Laurent
+///   monomial in the links, so the term is holomorphic on
+///   \f$ (\mathbb{C}^{*})^{|E|} \f$ and no argument, logarithm or modulus of a
+///   link is ever taken. Evenness makes trivial holonomy stationary, and the
+///   second variation there in the real link angles is \f$ \beta L_1^{\rm up} \f$
+///   with the up-Laplacian \f$ L_1^{\rm up}=\partial_2\partial_2^{\mathsf T} \f$,
+///   which vanishes on pure-gauge directions and is \f$ 4\beta \f$ on the
+///   coexact block of the regular tetrahedron; at a quarter-turn holonomy the
+///   Villain curvature is \f$ \kappa(\pm i) \f$ of `VillainCharacter`, which
+///   does not vanish.
 /// * \f$ S_{\rm matter}(z,U,\Gamma)=\operatorname{tr}(\Gamma\,h(z,U)) \f$ is the
 ///   carried state's bilinear action density \f$ \tilde\psi^{\mathsf T}h\psi \f$
 ///   reduced on \f$ \Gamma \f$ by Wick's theorem. It is the one channel from the
@@ -792,10 +735,8 @@ class JointAction {
   /// @throws std::invalid_argument when \p spacetime is null, when the carrier
   ///   degree is negative, when a declared moment order is below one, when
   ///   the covariance is present and is not a square matrix over the
-  ///   \f$ k \f$-cells of the complex, when the stiffness weight is nonzero
-  ///   and the reference lengths do not give one length per edge, or when the
-  ///   Villain form is declared with a negative weight or a tolerance outside
-  ///   \f$ (0,1) \f$.
+  ///   \f$ k \f$-cells of the complex, or when the holonomy term is declared
+  ///   with a negative weight or a tolerance outside \f$ (0,1) \f$.
   JointAction(std::shared_ptr<Spacetime> spacetime,
               JointActionDeclaration declaration);
 
@@ -877,10 +818,8 @@ class JointAction {
 
   /// \f$ w_R\,S_{\rm Regge}(z) \f$ in the declared form and hinge set.
   [[nodiscard]] std::complex<double> reggeTerm() const;
-  /// \f$ w_S\,S_{\rm stiff}(z) \f$.
-  [[nodiscard]] std::complex<double> stiffnessTerm() const;
-  /// \f$ S_{\rm hol}(U) \f$ in the declared form, the weight included. For
-  /// the Villain form this is the one quantity that needs \f$ \log W \f$, and
+  /// \f$ S_{\rm hol}(U) \f$, the weight included. This is the one quantity
+  /// that needs \f$ \log W \f$, and
   /// it is evaluated on the branch real on the unit circle
   /// (`VillainCharacter::logarithm`); it throws `std::domain_error` for a face
   /// holonomy at or beyond a zero of \f$ W \f$ on the negative real axis.
@@ -911,8 +850,7 @@ class JointAction {
   /// the primal Regge form the per-hinge product rule
   /// \f$ \sum_h(\partial|h|\,\varepsilon_h+|h|\,\partial\varepsilon_h) \f$ from
   /// `mesh::Simplex::volumeGradient` and `mesh::Simplex::deficitAngleGradient`,
-  /// for the dual form `simulations::ReggeSolver::actionGradientExact`, the
-  /// stiffness gradient \f$ w_S(l_e-l_{0,e})/(2l_e) \f$ in closed form, and the
+  /// for the dual form `simulations::ReggeSolver::actionGradientExact`, and the
   /// operator gradient `HodgeLaplacian::laplacianGradient`. No finite difference
   /// enters it, and no imaginary part is discarded: the returned number is the
   /// full complex derivative of a holomorphic function.
@@ -923,9 +861,8 @@ class JointAction {
   ///
   /// The face-holonomy part is analytic in closed form,
   /// \f$ \sum_\tau \epsilon_{\tau e}\,D\phi(\mathcal F_\tau) \f$ with
-  /// \f$ D=F\,d/dF \f$: \f$ -\beta_V\,DW/W \f$ per face for the Villain form
-  /// and \f$ -\tfrac12\beta(\mathcal F_\tau-\mathcal F_\tau^{-1}) \f$ for the
-  /// Wilson form. The operator part uses the
+  /// \f$ D=F\,d/dF \f$: \f$ -\beta_V\,DW/W \f$ per face. The operator part
+  /// uses the
   /// identity \f$ U_e\,\partial/\partial U_e = -i\,\partial/\partial\varphi_e \f$
   /// for \f$ U_e=e^{i\varphi_e} \f$ together with the exact analytic
   /// `HodgeLaplacian::laplacianPhaseGradient`; that identity is a relation
@@ -933,7 +870,7 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> linkStationarity() const;
 
   /// Every term of the action with its value and its stationarity
-  /// (`ActionTermGradient`), in the order regge, stiffness, holonomy, matter,
+  /// (`ActionTermGradient`), in the order regge, holonomy, matter,
   /// then one entry per declared constraint. A term whose weight is zero is
   /// listed with zero value and zero gradient, so the list has the same shape
   /// at every point. The sums over the terms are `lengthStationarity` and
@@ -951,19 +888,18 @@ class JointAction {
   /// Jacobian of `linkStationarity` in the multiplicative coordinate
   /// \f$ U\mapsto Ue^{\delta} \f$ that `HolomorphicRelaxation` steps in. In
   /// the real angles, \f$ \delta=i\theta \f$, the Hessian is its negative. The
-  /// per-face second derivative is \f$ -\beta_V(D^2W/W-(DW/W)^2) \f$ for the
-  /// Villain form and \f$ -\tfrac12\beta(\mathcal F+\mathcal F^{-1}) \f$ for
-  /// the Wilson form; no logarithm enters either.
+  /// per-face second derivative is \f$ -\beta_V(D^2W/W-(DW/W)^2) \f$; no
+  /// logarithm enters it.
   [[nodiscard]] std::vector<std::complex<double>> holonomyHessian() const;
 
   /// The truncation of the Villain series over the current face holonomies,
-  /// with its certified relative tail bounds. All zero for the Wilson form.
+  /// with its certified relative tail bounds.
   [[nodiscard]] HolonomyTruncation holonomyTruncation() const;
 
   /// The smallest relative distance of any face holonomy
   /// \f$ \mathcal F_\tau \f$ to a zero of \f$ W \f$
-  /// (`VillainCharacter::zeroDistance`). Positive infinity when the declared
-  /// term has no zero: the Wilson form, or a zero weight.
+  /// (`VillainCharacter::zeroDistance`). Positive infinity when the term has
+  /// a zero weight.
   [[nodiscard]] double holonomyZeroDistance() const;
 
   /// The smallest relative distance to a zero of \f$ W \f$ that any face
@@ -1157,8 +1093,8 @@ class JointAction {
   [[nodiscard]] std::vector<std::complex<double>> orderedCarrierEigenvalues(
       bool ascendingRealPart = true) const;
 
-  /// The names of the five declared terms, in the order `value` sums them:
-  /// `"regge"`, `"stiffness"`, `"holonomy"`, `"matter"`, `"spectral"`.
+  /// The names of the four declared terms, in the order `value` sums them:
+  /// `"regge"`, `"holonomy"`, `"matter"`, `"spectral"`.
   [[nodiscard]] static std::vector<std::string> termNames();
 
  private:
@@ -1169,9 +1105,9 @@ class JointAction {
   [[nodiscard]] ReggeSheets reggeSheets() const;
 
   /// Which part of the stationarity `stationarityPart` forms.
-  enum class StationarityPart { All, Regge, Stiffness, Holonomy, Contraction };
+  enum class StationarityPart { All, Regge, Holonomy, Contraction };
   /// The one engine behind `lengthStationarity`, `linkStationarity` and
-  /// `termGradients`: the Regge and stiffness parts on the lengths, the
+  /// `termGradients`: the Regge part on the lengths, the
   /// holonomy part on the links, and the carrier's contraction matrix traced
   /// against the operator's derivatives on both. `All` forms every part with
   /// the declared contraction (the matter and constraint terms together);

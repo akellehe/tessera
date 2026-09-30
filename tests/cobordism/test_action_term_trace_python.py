@@ -4,7 +4,7 @@
 
 Terms used below:
 
-* the *joint action* is S = w_R S_Regge + w_S S_stiff + S_hol + w_m tr(Gamma h)
+* the *joint action* is S = w_R S_Regge + S_hol + w_m tr(Gamma h)
   + sum_j xi_j (c_j - c_j*); a relaxation solves its stationarity, so each
   term's *gradient* is that term's contribution to the stationarity
   equations on the lengths (dS/dz_e) and on the links (U_e dS/dU_e);
@@ -24,24 +24,21 @@ from tessera.drivers import recursion as R
 
 from tests.drivers import _recursion_run_2026_09_23 as RUN
 
-TERMS = ["regge", "stiffness", "holonomy", "matter"]
+TERMS = ["regge", "holonomy", "matter"]
 #: The two sums every record list ends with.
 SUMS = ["constraints", "action"]
 
 
-def _host(content=(1, 1, 1), stiffness="linear-stand-in"):
+def _host(content=(1, 1, 1)):
     config = bp.default_config([1.0], [1.0], selected_contents=[content],
-                               stiffness=stiffness, fiber_moments="r",
-                               fiber_pinning="power-sums",
+                               fiber_moments="r", fiber_pinning="power-sums",
                                tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 3, 4)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     spacetime = bp.build_host(config["edge_squared"], config["host_cell"])
     # every hinge, so the Regge term is not structurally zero on the host,
     # which has no interior hinge
-    declaration = bp.action_declaration(spacetime, 1.0, 1.0, "all",
-                                        holonomy="villain",
-                                        stiffness=stiffness)
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0, "all")
     return config, spacetime, declaration
 
 
@@ -51,9 +48,6 @@ def _with_constraints(spacetime, declaration, mean_field):
     action = cob.JointAction(spacetime, declaration)
     read = cob.BandFollower(mean_field).read(action.carrier_operator())
     declaration.covariance = list(read.covariance)
-    # off the reference lengths, so the stiffness term has a gradient
-    declaration.reference_lengths = [0.9 * l
-                                     for l in declaration.reference_lengths]
     declaration.moment_projector = list(
         sum(np.asarray(b.projector) for b in read.bands))
     declaration.moment_scale = 19.371
@@ -69,8 +63,8 @@ def _with_constraints(spacetime, declaration, mean_field):
 
 
 def test_the_terms_sum_to_the_stationarity_exactly():
-    """Regge, stiffness, holonomy, matter and each pinned constraint: the
-    per-term length and link gradients sum to `length_stationarity` and
+    """Regge, holonomy, matter and each pinned constraint: the per-term
+    length and link gradients sum to `length_stationarity` and
     `link_stationarity`, and the term values to the action's value."""
     config, spacetime, declaration = _host()
     mean_field = bp.mean_field_declaration((1, 1, 1), config, spacetime)
@@ -94,31 +88,33 @@ def test_the_terms_sum_to_the_stationarity_exactly():
     # every term is active on this action
     assert all(np.max(np.abs(np.asarray(t.length_stationarity))) > 0
                for t in terms if t.name != "holonomy")
-    assert np.max(np.abs(np.asarray(terms[2].link_stationarity))) > 0
+    assert np.max(np.abs(np.asarray(terms[1].link_stationarity))) > 0
     assert np.max(np.abs(np.asarray(terms[0].link_stationarity))) == 0
     assert terms[0].value == pytest.approx(complex(action.regge_term()))
-    assert terms[3].value == pytest.approx(complex(action.matter_term()))
+    assert terms[1].value == pytest.approx(complex(action.holonomy_term()))
+    assert terms[2].value == pytest.approx(complex(action.matter_term()))
     # every term as it stands in the action: its weight, its bare factor
     # and their product
-    assert [t.label for t in terms[:4]] == [
-        "(1/kappa) S_Regge", "w_S S_stiff", "beta S_hol", "w_m tr(Gamma h_1)"]
-    assert terms[4].label == "xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s)"
-    assert terms[0].weight == 1.0 and terms[3].weight == 1.0
+    assert [t.label for t in terms[:3]] == [
+        "(1/kappa) S_Regge", "beta S_hol", "w_m tr(Gamma h_1)"]
+    assert terms[3].label == "xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s)"
+    assert terms[0].weight == 1.0 and terms[2].weight == 1.0
     for term in terms:
         if term.factored:
             assert term.value == pytest.approx(term.weight * term.bare,
                                                rel=1e-12, abs=1e-15)
-    assert not terms[2].factored and terms[2].bare == terms[2].value
-    assert terms[4].weight == complex(0.3, -0.1)
-    assert terms[4].bare == pytest.approx(complex(action.moment_residuals()[0]))
+    assert not terms[1].factored and terms[1].bare == terms[1].value
+    assert terms[3].weight == complex(0.3, -0.1)
+    assert terms[3].bare == pytest.approx(complex(action.moment_residuals()[0]))
 
 
 def test_a_term_of_zero_weight_is_listed_with_zeros():
-    _, spacetime, declaration = _host(stiffness="none")
+    _, spacetime, declaration = _host()
+    declaration.gravitational_weight = 0.0
     declaration.matter_weight = 0.0
     terms = cob.JointAction(spacetime, declaration).term_gradients()
     assert [t.name for t in terms] == TERMS
-    for name in ("stiffness", "matter"):
+    for name in ("regge", "matter"):
         term = next(t for t in terms if t.name == name)
         assert term.value == 0 and not np.any(np.asarray(
             term.length_stationarity)) and not np.any(np.asarray(
@@ -218,16 +214,15 @@ def test_the_mean_field_solve_traces_its_terms_and_the_driver_prints_them():
     assert [t["name"] for t in record["trace"][0]["terms"]] == names
     lines = bp.term_trace_lines(record, "  ")
     # one header and one line per term and per sum, per iterate
-    per_iterate = 1 + 4 + 1 + 3
+    per_iterate = 1 + 3 + 1 + 3
     assert len(lines) == per_iterate * len(report.steps)
     assert lines[0].startswith("  iterate 0: S = ")
     assert "stationarity residual" in lines[0]
     assert lines[1].startswith("    (1/kappa) S_Regge = (1+0i) x (")
-    assert lines[2].startswith("    w_S S_stiff = (")
-    assert lines[3].startswith("    beta S_hol = ") and "(beta = 1+0i)" in lines[3]
-    assert lines[4].startswith("    w_m tr(Gamma h_1) = (1+0i) x (")
-    assert lines[5].startswith("    sum_j xi_j (c_j - c_j*) = ")
-    assert lines[6].startswith("      xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s) = (")
+    assert lines[2].startswith("    beta S_hol = ") and "(beta = 1+0i)" in lines[2]
+    assert lines[3].startswith("    w_m tr(Gamma h_1) = (1+0i) x (")
+    assert lines[4].startswith("    sum_j xi_j (c_j - c_j*) = ")
+    assert lines[5].startswith("      xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s) = (")
     assert all("gradient" in line for line in lines[1:per_iterate])
     assert not any("[value" in line for line in lines[:per_iterate])
     if len(report.steps) > 1:

@@ -71,35 +71,17 @@ enum class CovarianceRule { OccupiedProjector, BandFilling };
 ///   one.
 enum class BandSelection { Continuation, SortEveryIterate };
 
-/// # SelfConsistentMethod
+/// # The method
 ///
-/// How the fixed point of the pair \f$ (z,U;\Gamma) \f$ is solved for. Both
-/// methods solve the same equations: the stationarity of the joint action in
-/// the shared squared lengths and links at the carried covariance, with the
-/// covariance the declared rule's density of the carrier operator at the same
-/// point (WP v17 lines 259 and 263: the stationary pair, with
-/// "\f$ \Gamma^{*} \f$ a projector onto modes of \f$ h(z^{*}) \f$" and the
-/// geometry stationary against it). They differ only in the order in which
-/// the equations are solved.
-///
-/// * `JointNewton` (the default) — Newton's method on the joint system,
-///   written as \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$: the covariance
-///   equation is solved exactly at every point the solve evaluates (the
-///   covariance is rebuilt there), and the geometric equations are solved by
-///   damped Newton steps with the Jacobian of \f$ F_{\rm sc} \f$
-///   (`HolomorphicRelaxation` with a `CovarianceRebuild`). By the
-///   Hellmann-Feynman identity \f$ F_{\rm sc} \f$ is the gradient of the
-///   geometric action plus the occupied energy, and its Jacobian is their
-///   Hessian.
-/// * `Alternation` — the fixed-point iteration: with \f$ \Gamma \f$ held, the
-///   geometry is made stationary (`HolomorphicRelaxation`), then \f$ \Gamma \f$
-///   is rebuilt at the new geometry, and so on. It is kept as a named
-///   fallback. It contracts only as fast as the slowest mode of its
-///   linearized map \f$ 1-H_{\rm fixed}^{+}H_{\rm sc} \f$, with
-///   \f$ H_{\rm fixed} \f$ the Jacobian at fixed \f$ \Gamma \f$ and
-///   \f$ H_{\rm sc} \f$ the joint one, and WP v17 line 265 notes that this
-///   iteration "is not a descent".
-enum class SelfConsistentMethod { JointNewton, Alternation };
+/// The fixed point is solved by Newton's method on the joint system,
+/// written as \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$: the covariance
+/// equation is solved exactly at every point the solve evaluates (the
+/// covariance is rebuilt there), and the geometric equations are solved by
+/// damped Newton steps with the Jacobian of \f$ F_{\rm sc} \f$
+/// (`HolomorphicRelaxation` with a `CovarianceRebuild`). By the
+/// Hellmann-Feynman identity \f$ F_{\rm sc} \f$ is the gradient of the
+/// geometric action plus the occupied energy, and its Jacobian is their
+/// Hessian.
 
 /// # FiberConstraintForm
 ///
@@ -165,10 +147,6 @@ struct SelfConsistentMeanFieldDeclaration {
   /// default), or re-selected by sorting at every point.
   BandSelection bandSelection = BandSelection::Continuation;
 
-  /// How the fixed point is solved for: Newton's method on the joint system
-  /// (the default) or the alternation.
-  SelfConsistentMethod method = SelfConsistentMethod::JointNewton;
-
   /// \f$ m_{\rm c} \f$, the number of power sums of the occupied fiber the
   /// solve pins: the holomorphic spectral constraints of WP v17 §3.4, which
   /// controlled synthesis may impose to pin a carrier. The fiber is the
@@ -208,24 +186,18 @@ struct SelfConsistentMeanFieldDeclaration {
   /// eigenvalues \f$ \lambda_b^{\star} \f$, one per pinned band.
   FiberConstraintForm fiberConstraintForm = FiberConstraintForm::PowerSums;
 
-  /// The largest number of iterations of the declared method: Newton steps of
-  /// the joint system, or outer iterations (geometry relaxation followed by
-  /// re-occupation) of the alternation. Zero reads the starting point only.
+  /// The largest number of Newton steps of the joint system. Zero reads the
+  /// starting point only.
   std::size_t maximumIterations = 24;
 
   /// The Euclidean norm of the stationarity force over the relaxed geometric
   /// fields at or below which the pair \f$ (z^{*},\Gamma^{*}) \f$ is declared
   /// self-consistent.
   ///
-  /// Under `JointNewton` the covariance is rebuilt at every point, so the
-  /// covariance half of the fixed point holds exactly at every iterate and
-  /// the force is the one condition; the covariance change between iterates
-  /// is reported, and it measures the last step rather than a residual. Under
-  /// `Alternation` the covariance lags the geometry by one iteration, so the
-  /// Frobenius norm of the change in the covariance must also be at or below
-  /// this: a geometry that is stationary for a covariance that is still
-  /// moving is not a fixed point, and neither is a settled covariance on a
-  /// geometry that still carries a force.
+  /// The covariance is rebuilt at every point, so the covariance half of the
+  /// fixed point holds exactly at every iterate and the force is the one
+  /// condition; the covariance change between iterates is reported, and it
+  /// measures the last step rather than a residual.
   double tolerance = 1e-9;
 
   /// The Newton solve of the geometry.
@@ -238,10 +210,6 @@ struct SelfConsistentMeanFieldDeclaration {
   /// `tolerance` and the mean field's own `tolerance`, within the mean
   /// field's `maximumIterations`; this declaration's `maximumIterations` is
   /// not read.
-  ///
-  /// Under `Alternation` it is the inner relaxation that makes the geometry
-  /// stationary against the current covariance, with its own tolerance and
-  /// iteration count.
   HolomorphicRelaxationDeclaration geometry;
 };
 
@@ -381,8 +349,7 @@ class BandFollower {
 ///
 /// One iterate of a solve, recorded so a run can be read back. Iterate zero is
 /// the point the solve starts from; each later iterate is the point one
-/// Newton step of the joint system, or one outer iteration of the
-/// alternation, reached.
+/// Newton step of the joint system reached.
 struct SelfConsistentMeanFieldStep {
   /// The iterate's index, counting from zero at the starting point.
   std::size_t iteration = 0;
@@ -442,32 +409,24 @@ struct SelfConsistentMeanFieldStep {
   /// s^{-j} \f$, the equations the solve drives to zero); zero when none is
   /// pinned.
   double momentResidualNorm = 0.0;
-  /// Under `Alternation`, whether this iterate's inner geometry solve reached
-  /// its tolerance. Under `JointNewton`, whether the joint residual at this
-  /// iterate is at or below the joint solve's tolerance.
+  /// Whether the joint residual at this iterate is at or below the joint
+  /// solve's tolerance.
   bool geometryConverged = false;
-  /// Under `Alternation`, the inner solve's residual norm when it stopped.
-  /// Under `JointNewton`, the joint residual norm at this iterate.
+  /// The joint residual norm at this iterate.
   double geometryResidualNorm = 0.0;
-  /// Under `Alternation`, the number of inner Newton steps the holonomy zero
-  /// guard damped (`HolomorphicRelaxationReport::zeroGuardDampedSteps`).
-  /// Under `JointNewton`, one when the zero guard damped the Newton step
-  /// taken from this iterate and zero otherwise.
+  /// One when the zero guard damped the Newton step taken from this iterate
+  /// and zero otherwise.
   std::size_t geometryZeroGuardDampedSteps = 0;
-  /// Under `Alternation`, why this iterate's inner solve stopped. Under
-  /// `JointNewton`, `RelaxationStop::Continued` at an iterate the solve
-  /// stepped on from, and the reason the joint solve stopped at its last
-  /// iterate. Iterate zero of the alternation, which runs no inner solve,
-  /// reads `Continued`.
+  /// `RelaxationStop::Continued` at an iterate the solve stepped on from, and
+  /// the reason the joint solve stopped at its last iterate.
   RelaxationStop geometryStopReason = RelaxationStop::Continued;
   /// The stop reason in words, with the numbers that decided it; empty for
   /// `Continued`.
   std::string geometryStopDetail;
-  /// Under `JointNewton`, whether a Newton iteration was taken from this
-  /// iterate (a Jacobian formed and trial steps tried); its record is
-  /// `newton`.
+  /// Whether a Newton iteration was taken from this iterate (a Jacobian
+  /// formed and trial steps tried); its record is `newton`.
   bool newtonIterated = false;
-  /// Under `JointNewton`, the Newton iteration taken from this iterate: the
+  /// The Newton iteration taken from this iterate: the
   /// rank and the rank gap of the joint Jacobian, the damping and the length
   /// of the step, the guards that halved it, and whether a step was accepted.
   HolomorphicStep newton;
@@ -477,14 +436,11 @@ struct SelfConsistentMeanFieldStep {
 ///
 /// What a self-consistent solve reached.
 struct SelfConsistentMeanFieldReport {
-  /// The method that ran.
-  SelfConsistentMethod method = SelfConsistentMethod::JointNewton;
   /// The band selection that ran.
   BandSelection bandSelection = BandSelection::Continuation;
   /// Every iterate, in order, from the starting point.
   std::vector<SelfConsistentMeanFieldStep> steps;
-  /// The number of iterations the method took: accepted Newton steps of the
-  /// joint system, or outer iterations of the alternation.
+  /// The number of accepted Newton steps of the joint system.
   std::size_t iterations = 0;
   /// Whether the fixed-point conditions held at the declared tolerance.
   bool converged = false;
@@ -631,11 +587,9 @@ struct SelfConsistentMeanFieldReport {
 /// \f$ h(z^{*}) \f$, and the state's force balances the geometric action edge
 /// by edge. It is a stationary point of a complex action rather than a
 /// minimum of a real one, and the report carries the residuals that certify
-/// it as such. The declared `SelfConsistentMethod` fixes how it is solved for
-/// (Newton's method on the joint system by default, the alternation as a
-/// named fallback), and the declared `BandSelection` fixes which bands the
-/// covariance fills (chosen once and followed, by default). Neither changes
-/// an equation.
+/// it as such. It is solved for by Newton's method on the joint system, and
+/// the declared `BandSelection` fixes which bands the covariance fills
+/// (chosen once and followed, by default), which changes no equation.
 ///
 /// A solve that finds no fixed point says why, by name
 /// (`SelfConsistentMeanFieldReport::stopReason`): the iterations ran out; no
@@ -643,8 +597,7 @@ struct SelfConsistentMeanFieldReport {
 /// monopole number ("no stationary point in the declared monopole sector");
 /// the smallest damped step left the domain of the action or came too close
 /// to a zero of the Villain weight; the residual reached its floor on the
-/// held set; the squared lengths ran off; or, under the alternation, an
-/// outer iteration made no progress and would only repeat. The report also
+/// held set; or the squared lengths overflowed the double. The report also
 /// carries the Kontsevich-Segal margin of the geometry the solve stopped at,
 /// and the joint Jacobian's rank and rank gap there.
 ///
@@ -658,15 +611,11 @@ class SelfConsistentMeanField {
   /// Build a solve over an action.
   ///
   /// @param action The joint action. The complex it refers to is the object
-  ///   the solve writes. Under `JointNewton` the covariance is rebuilt from the
-  ///   carrier operator at every point, starting from the bands chosen at the
-  ///   initial geometry, so a covariance declared on the action is replaced.
-  ///   Under `Alternation` a declared covariance is the starting
-  ///   \f$ \Gamma \f$ of the first inner solve; when it is empty the solve
-  ///   starts from the declared rule's density at the initial geometry, which
-  ///   is the uniform-seeded start.
-  /// @param declaration The occupation rule, the band selection, the method
-  ///   and the convergence controls.
+  ///   the solve writes. The covariance is rebuilt from the carrier operator
+  ///   at every point, starting from the bands chosen at the initial
+  ///   geometry, so a covariance declared on the action is replaced.
+  /// @param declaration The occupation rule, the band selection and the
+  ///   convergence controls.
   /// @throws std::invalid_argument when no mode is declared occupied (under
   ///   `BandFilling`, when the band occupations are empty, negative, or sum
   ///   to zero), which leaves the matter term identically zero and the
@@ -683,7 +632,6 @@ class SelfConsistentMeanField {
 
  private:
   [[nodiscard]] SelfConsistentMeanFieldReport solveJointNewton();
-  [[nodiscard]] SelfConsistentMeanFieldReport solveAlternation();
 
   JointAction action_;
   SelfConsistentMeanFieldDeclaration declaration_;

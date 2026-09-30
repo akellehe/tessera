@@ -84,7 +84,7 @@ def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
     """A deterministic stand-in for one scan point with both spins present,
     so every pairing of `ratios` has a pole pair."""
     records = [_record([1, 1, 1], kappa, beta)]
-    return {"kappa": kappa, "beta": beta, "holonomy": config["holonomy"],
+    return {"kappa": kappa, "beta": beta,
             "elimination": config["elimination"], "failed_contents": [],
             "contents": records, "ratios": bp.ratios(records),
             "pole_table": bp.pole_table(records)}
@@ -115,9 +115,8 @@ def test_the_declared_defaults():
     assert args.regge_hinges == "interior"
     assert args.json is None and args.out is None
     assert not args.live and not args.quiet and not args.isospin_doublet
-    assert args.mean_field_method == "joint-newton"
     assert args.band_selection == "continuation"
-    assert args.stiffness == "none" and args.fiber_moments == "r"
+    assert args.fiber_moments == "r"
     assert args.fiber_pinning == "eigenvalues"
     assert bp.build_parser().parse_args(
         ["run", "--fiber-moments", "1"]).fiber_moments == "1"
@@ -160,9 +159,9 @@ def test_lists_of_couplings_are_parsed():
 
 
 @pytest.mark.parametrize("argv,name", [
-    (["run", "--holonomy", "plaquette"], "--holonomy"),
     (["run", "--eliminate", "phases"], "--eliminate"),
-    (["run", "--stiffness", "quadratic"], "--stiffness"),
+    (["run", "--band-selection", "by-hand"], "--band-selection"),
+    (["run", "--edge-squared", "eight"], "--edge-squared"),
     (["run", "--fiber-moments", "-1"], "--fiber-moments"),
     (["run", "--fiber-moments", "all"], "--fiber-moments"),
     (["run", "--fiber-pinning", "trace"], "--fiber-pinning"),
@@ -191,7 +190,6 @@ def test_main_writes_the_json_and_the_points_file(cheap, tmp_path):
     document = json.loads(path.read_text())
     assert document["stopped"] is False
     assert document["config"]["kappas"] == [0.5, 1.0]
-    assert document["config"]["holonomy"] == "villain"
     assert document["config"]["target_mass_ratio"] == pytest.approx(
         938.272 / 1232.0)
     assert "target_mass_squared_ratio" not in document["config"]
@@ -214,11 +212,12 @@ def test_main_writes_the_json_and_the_points_file(cheap, tmp_path):
 
 
 def test_main_passes_the_declared_options_to_every_point(cheap):
-    bp.main(["run", "--kappa", "1", "--beta", "1", "--holonomy", "wilson",
+    bp.main(["run", "--kappa", "1", "--beta", "1",
+             "--band-selection", "sort-every-iterate",
              "--eliminate", "lengths", "--edge-squared", "3",
              "--isospin-doublet", "--quiet"])
     (config,) = cheap
-    assert config["holonomy"] == "wilson"
+    assert config["band_selection"] == "sort-every-iterate"
     assert config["elimination"] == "lengths"
     assert config["edge_squared"] == 3.0
     assert config["isospin_doublet"] is True
@@ -737,17 +736,13 @@ def test_the_declarations_carry_the_config():
     assert declaration.gravitational_weight == 0.5
     assert declaration.holonomy_weight == 3.0
     assert declaration.regge_form == cob.ReggeForm.Primal
-    # the declared action has no stiffness stand-in: kappa = 8 pi G enters
-    # through the Regge weight alone, and the record says so
-    assert declaration.stiffness_weight == 0.0
-    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    assert declaration.matter_weight == 1.0
+    assert declaration.villain_tolerance == bp.DECLARED_TOLERANCE
+    # kappa = 8 pi G enters through the Regge weight alone, and the record
+    # says so
+    assert config["fiber_moments"] == "r"
     assert config["kappa_role"].startswith(
         "kappa = 8 pi G enters only through the Regge weight 1/kappa")
-    stand_in = bp.action_declaration(spacetime, 2.0, 3.0,
-                                     stiffness="linear-stand-in")
-    assert stand_in.stiffness_weight == 0.5
-    with pytest.raises(ValueError, match="the length stiffness is one of"):
-        bp.action_declaration(spacetime, 2.0, 3.0, stiffness="quadratic")
 
 
 def test_the_host_built_from_a_cell_carries_its_fields():

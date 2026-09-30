@@ -139,31 +139,22 @@ def test_the_covariant_operator_at_the_monopole_is_not_rotation_symmetric():
     assert worst / np.linalg.norm(h) > 0.1
 
 
-def test_the_holonomy_term_is_declared_villain_by_default():
-    assert bp.build_parser().parse_args(["run"]).holonomy == "villain"
-    assert bp.build_parser().parse_args(
-        ["run", "--holonomy", "wilson"]).holonomy == "wilson"
-    assert bp.default_config()["holonomy"] == "villain"
-    spacetime = bp.build_host()
-    declaration = bp.action_declaration(spacetime, 1.0, 1.0)
-    assert declaration.holonomy_form == cob.HolonomyForm.Villain
-    declaration = bp.action_declaration(spacetime, 1.0, 1.0, holonomy="wilson")
-    assert declaration.holonomy_form == cob.HolonomyForm.Wilson
-
-
-def test_the_host_connection_is_stiff_under_villain_and_not_under_wilson():
-    """Every face of the host carries F = +-i, where the Wilson curvature
-    beta cos(theta) vanishes: all 18 phase directions are flat. The Villain
-    curvature there is beta_V (<m^2>_i - <m>_i^2) per face, so the nine
-    coexact directions have stiffness 4 kappa(i) and the nine pure-gauge ones
+def test_the_host_connection_is_stiff_under_the_villain_term():
+    """Every face of the host carries F = +-i. The Wilson form
+    beta (1 - cos Theta), the reference computed here from the host's own
+    face holonomies, has curvature beta cos Theta = 0 there and would leave
+    all 18 phase directions flat; the Villain curvature there is
+    beta_V (<m^2>_i - <m>_i^2) = kappa(i) per face, so the nine coexact
+    directions have stiffness 4 kappa(i) and the nine pure-gauge ones
     zero."""
     beta = 1.0
     spacetime = bp.build_host()
-    wilson = np.array(cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 1.0, beta, holonomy="wilson")).holonomy_hessian())
+    action = cob.JointAction(spacetime,
+                             bp.action_declaration(spacetime, 1.0, beta))
+    faces = np.asarray(action.face_holonomies())
+    wilson = beta * np.cos(np.angle(faces))
     assert np.max(np.abs(wilson)) < 1e-12
-    villain = np.array(cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 1.0, beta)).holonomy_hessian()).reshape(18, 18)
+    villain = np.array(action.holonomy_hessian()).reshape(18, 18)
     kappa = -cob.VillainCharacter(beta).second_derivative(1j).real
     assert kappa == pytest.approx(0.9979584724666767, abs=1e-12)
     values = np.sort(np.linalg.eigvalsh(-villain.real))
@@ -174,22 +165,17 @@ def test_the_host_connection_is_stiff_under_villain_and_not_under_wilson():
 # --------------------------------------------- the Section 7 elimination
 
 
-def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases",
-                  stiffness="linear-stand-in"):
+def _host_problem(beta, elimination="lengths-and-phases",
+                  regge_hinges="interior"):
     """The unrelaxed host carrying the three lowest modes of h_1, and the
-    elimination of its fluctuations at kappa = 0.5. The elimination is
-    exercised on the linear stiffness stand-in by default, whose length block
-    is nonsingular, so that the zero-stiffness directions are the phases'
-    alone."""
+    elimination of its fluctuations at kappa = 0.5 under the declared
+    action."""
     spacetime = bp.build_host()
-    config = bp.default_config([0.5], [beta], holonomy=holonomy,
-                               elimination=elimination, stiffness=stiffness)
+    config = bp.default_config([0.5], [beta], regge_hinges=regge_hinges,
+                               elimination=elimination)
     bare = cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 0.5, beta, holonomy=holonomy, stiffness=stiffness))
-    config["reference_lengths"] = list(bare.declaration.reference_lengths)
-    declaration = bp.action_declaration(spacetime, 0.5, beta,
-                                        holonomy=holonomy,
-                                        stiffness=stiffness)
+        spacetime, 0.5, beta, regge_hinges))
+    declaration = bp.action_declaration(spacetime, 0.5, beta, regge_hinges)
     declaration.covariance = bare.occupation_projector(3)
     action = cob.JointAction(spacetime, declaration)
     carrier = bp.matrix(action.carrier_operator())
@@ -198,23 +184,27 @@ def _host_problem(beta, holonomy="villain", elimination="lengths-and-phases",
 
 
 @pytest.fixture(scope="module")
-def villain_problem():
+def host_problem():
     return _host_problem(1.0)
 
 
-def test_the_drazin_inverse_projects_out_exactly_the_pure_gauge_phases(
-        villain_problem):
-    """With the Villain term the coexact phase block is nonsingular at the
-    host's F = +-i, so the null space of A is the nine pure-gauge directions
-    (twelve vertices less one per sheet) and nothing else; A^D is the Drazin
-    inverse, and the reduced coordinates rebuild it exactly."""
-    _, _, _, problem = villain_problem
+def test_the_drazin_inverse_integrates_out_exactly_the_coexact_phases(
+        host_problem):
+    """The declared action has no length stiffness on the lone tetrahedron:
+    its Regge term is zero by structure (no interior hinge) and the holonomy
+    term does not see the lengths. With the Villain term the coexact phase
+    block is nonsingular at the host's F = +-i, so the null space of A is the
+    eighteen lengths and the nine pure-gauge phases (twelve vertices less one
+    per sheet), the record says the null space is not pure gauge, A^D is the
+    Drazin inverse on the nine coexact phases, and the reduced coordinates
+    rebuild it exactly."""
+    _, _, _, problem = host_problem
     drazin = problem["record"]["drazin"]
     assert drazin["coordinates"] == 36
-    assert drazin["null_dimension"] == 9
-    assert drazin["eliminated_dimension"] == 27
+    assert drazin["null_dimension"] == 27
+    assert drazin["eliminated_dimension"] == 9
     assert drazin["gauge_dimension"] == 9
-    assert drazin["null_space_is_pure_gauge"]
+    assert not drazin["null_space_is_pure_gauge"]
     assert drazin["gauge_projector_residual"] < 1e-12
     assert drazin["projector_idempotency"] < 1e-12
     assert drazin["drazin_identity_residual"] < 1e-12
@@ -228,22 +218,22 @@ def test_the_drazin_inverse_projects_out_exactly_the_pure_gauge_phases(
 
 
 def test_the_ward_identity_holds_on_every_pure_gauge_direction(
-        villain_problem):
+        host_problem):
     """(D - Pi(0)) g = 0 to rounding on each pure-gauge direction, while
     Pi(0) g alone is of order one: the identity is a genuine cancellation
     between the diamagnetic and the paramagnetic terms."""
-    _, _, _, problem = villain_problem
+    _, _, _, problem = host_problem
     ward = problem["record"]["ward_identity"]
     assert ward["directions"] == 9
     assert ward["residual"] < 1e-12
     assert ward["paramagnetic_alone"] > 1e-2
 
 
-def test_the_elimination_matches_a_dense_reference(villain_problem,
+def test_the_elimination_matches_a_dense_reference(host_problem,
                                                    alignment):
     """-1/2 J^T A^D J on the three-particle space: the library's elimination in
     the reduced coordinates against a dense assembly from A^D itself."""
-    _, _, carrier, problem = villain_problem
+    _, _, carrier, problem = host_problem
     frame = bp._micro_frame([alignment] * bp.SHEETS)
     dual = np.linalg.inv(frame)
     declaration = cob.DressedFluctuationDeclaration()
@@ -267,38 +257,28 @@ def test_the_elimination_matches_a_dense_reference(villain_problem,
     assert np.abs(quartic - reference).max() < 1e-9 * np.abs(reference).max()
 
 
-def test_under_wilson_every_phase_direction_is_null():
-    """At F = +-i the Wilson phase block vanishes, so the Drazin inverse
-    projects out all eighteen phase directions, the nine coexact ones
-    included, and the record says the null space is not pure gauge."""
-    _, _, _, problem = _host_problem(1.0, holonomy="wilson")
-    drazin = problem["record"]["drazin"]
-    assert drazin["null_dimension"] == 18
-    assert not drazin["null_space_is_pure_gauge"]
-
-
 def test_the_lengths_only_elimination_is_the_plain_inverse():
-    _, _, _, problem = _host_problem(1.0, elimination="lengths")
+    """With every hinge of the lone tetrahedron in the Regge sum the length
+    block is nonsingular, so the lengths-only elimination inverts it whole:
+    no null space, no gauge directions, nothing for the Ward identity to
+    check."""
+    _, _, _, problem = _host_problem(1.0, elimination="lengths",
+                                     regge_hinges="all")
     drazin = problem["record"]["drazin"]
     assert drazin["coordinates"] == 18
     assert drazin["null_dimension"] == 0
+    assert drazin["eliminated_dimension"] == 18
     assert problem["record"]["ward_identity"] == {"directions": 0}
 
 
-def test_without_the_stand_in_the_lengths_carry_no_bare_stiffness():
-    """The declared action has no linear stand-in: its geometric part is the
-    Regge term, zero by structure on a lone tetrahedron (no interior hinge),
-    and the holonomy term, which does not see the lengths. So the eighteen
-    length directions join the nine pure-gauge phases in the null space of
-    the quartic's bare stiffness, the Drazin inverse integrates only the
-    coexact phases out, and the record says the null space is not pure
-    gauge."""
-    _, _, _, problem = _host_problem(1.0, stiffness="none")
-    drazin = problem["record"]["drazin"]
-    assert drazin["coordinates"] == 36
-    assert drazin["null_dimension"] == 27
-    assert drazin["eliminated_dimension"] == 9
-    assert not drazin["null_space_is_pure_gauge"]
+def test_a_lengths_only_elimination_without_an_interior_hinge_is_refused():
+    """The length stiffness is the Regge term's alone. With only the
+    interior hinges in the Regge sum the lone tetrahedron has none, the
+    length block is zero by structure, every coordinate lies in the null
+    space, and the lengths-only elimination is refused by name instead of
+    inverting an empty block."""
+    with pytest.raises(ValueError, match="zero by structure"):
+        _host_problem(1.0, elimination="lengths", regge_hinges="interior")
 
 
 def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
@@ -901,20 +881,19 @@ def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name(
         alignment):
     """(0123, 201) of the recursion's tick-0 run: the content occupies the
     host's negative band, whose force contracts the cell, and the joint
-    Newton follows it until no damped step lowers the residual, four decades
-    of length beyond the host. `scan_point` records the content as refused
-    on that geometry, which is not Kontsevich-Segal allowable, with the
-    solve's record (the method, the band selection, the iterations, the
-    force, why it stopped, every iterate), and it supplies no pole; the
+    Newton follows it until the residual is at its floor on the held set,
+    three decades of length beyond the host. `scan_point` records the
+    content as refused on that geometry, which is not Kontsevich-Segal
+    allowable, with the solve's record (the band selection, the iterations,
+    the force, why it stopped, every iterate), and it supplies no pole; the
     report prints the refusal with the solve on the content's line."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
-    # the action of the run the investigation studied: the linear stiffness
-    # stand-in, no fiber moment pinned
+    # no constraint of the occupied fiber pinned, so nothing holds the
+    # lengths against the band's force
     config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
-                               stiffness="linear-stand-in", fiber_moments=0,
-                               tolerances=RUN.TOLERANCES)
+                               fiber_moments=0, tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config, alignment)
@@ -926,10 +905,10 @@ def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name(
         "is not Kontsevich-Segal allowable")
     assert record["doublet_reads"] == []
     solve = record["relaxation"]
-    assert (solve["method"], solve["band_selection"]) == ("joint-newton",
-                                                          "continuation")
+    assert solve["band_selection"] == "continuation"
     assert solve["converged"] is False
-    assert solve["stop_reason"] == "no damped step reduced the residual"
+    floor = "the residual is at its floor on the held set"
+    assert solve["stop_reason"] == floor
     assert solve["iterations"] == len(solve["trace"]) - 1
     assert solve["largest_length_ratio"] > 1e3
     assert all("newton" in entry for entry in solve["trace"][:-1])
@@ -938,37 +917,33 @@ def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name(
                            "refused: the geometry the mean-field solve "
                            "reached is not Kontsevich-Segal allowable")
     assert "mean field converged False" in line
-    assert "method joint-newton, stopped: no damped step reduced the " \
-        "residual" in line
+    assert "; stopped: " + floor + " (" in line
     text = R._content_line({"cell": [0, 1, 2, 3]}, record)
     assert "failed: the pole read is refused: the geometry the mean-field " \
         "solve reached is not Kontsevich-Segal allowable" in text
-    assert "method joint-newton, stopped: no damped step reduced the " \
-        "residual" in text
+    assert "; stopped: " + floor + " (" in text
     assert bp.point_lines(point)[0] == (
         "kappa=1 beta=1: 1 contents, 1 refused; one line per (content, "
         "doublet content) pair, poles s with multiplicity x")
 
 
 def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
-    """The declared action has no stiffness stand-in, and the mean field pins
-    every power sum of the occupied fiber at the host (m_c = r). On
-    (0123, 030) of the recursion's tick-0 run the joint Newton converges with
-    the three pinned moments held, and the record carries the fiber's rank,
-    the multipliers, the residuals, the Hessian along the Hellmann-Feynman
-    force with its sign, and the role of kappa; the content's line prints
-    them."""
+    """The mean field pins every power sum of the occupied fiber at the host
+    (m_c = r). On (0123, 030) of the recursion's tick-0 run the joint Newton
+    converges with the three pinned moments held, and the record carries the
+    fiber's rank, the multipliers, the residuals, the Hessian along the
+    Hellmann-Feynman force with its sign, and the role of kappa; the
+    content's line prints them."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
     config = bp.default_config([1.0], [1.0], selected_contents=[(0, 3, 0)],
                                fiber_pinning="power-sums",
                                tolerances=RUN.TOLERANCES)
-    assert config["stiffness"] == "none" and config["fiber_moments"] == "r"
+    assert config["fiber_moments"] == "r"
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
-    _, action, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
-    assert action.declaration.stiffness_weight == 0.0
+    _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
     solve = bp.relaxation_record(report)
     assert solve["converged"] and solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "power-sums"

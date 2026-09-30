@@ -49,10 +49,6 @@ namespace tessera::cobordism {
 ///   finite, beyond the largest value the datatype holds (about 1.8e308).
 ///   Nothing short of that stops a solve whose lengths grow; the equations
 ///   decide.
-/// * `NoProgress` — an outer iteration of the alternation of
-///   `SelfConsistentMeanField` made no progress: its inner solve accepted no
-///   step and re-occupation left the covariance unchanged, so a further
-///   iteration would repeat it exactly.
 /// * `Continued` — not a stop: in a per-iterate trace, the solve accepted a
 ///   step from this iterate and went on.
 enum class RelaxationStop {
@@ -64,7 +60,6 @@ enum class RelaxationStop {
   HolonomyZero,
   HeldFloor,
   LengthRunaway,
-  NoProgress,
   Continued
 };
 
