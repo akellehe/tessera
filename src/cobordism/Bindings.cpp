@@ -4449,6 +4449,38 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
   // The holomorphic joint action S(z, U, Gamma) and its solves
   // ================================================================
 
+  py::class_<ActionTermGradient>(
+      m, "ActionTermGradient",
+      "One term of the joint action at the action's point: its value and its "
+      "stationarity, dS_term/dz_e on the lengths and U_e dS_term/dU_e on the "
+      "links, one entry per edge each; summed over the terms these are "
+      "length_stationarity and link_stationarity exactly.")
+      .def(py::init<>())
+      .def_readwrite("name", &ActionTermGradient::name,
+                     "regge, stiffness, holonomy, matter, or constraint j "
+                     "(j from one, in declaration order).")
+      .def_readwrite("label", &ActionTermGradient::label,
+                     "The term as it stands in the action: (1/kappa) "
+                     "S_Regge, w_S S_stiff, beta S_hol, w_m tr(Gamma h_1), "
+                     "or xi_j (c_j - c_j*) with what c_j is.")
+      .def_readwrite("weight", &ActionTermGradient::weight,
+                     "The coefficient in front of the term: 1/kappa, w_S, "
+                     "beta, w_m, or the multiplier xi_j.")
+      .def_readwrite("bare", &ActionTermGradient::bare,
+                     "What the weight multiplies (S_Regge, S_stiff, "
+                     "tr(Gamma h_1), or the constraint residual c_j - c_j* in "
+                     "the declared unit), so value == weight * bare when "
+                     "factored; the value itself for the holonomy term.")
+      .def_readwrite("factored", &ActionTermGradient::factored,
+                     "Whether value == weight * bare by construction.")
+      .def_readwrite("value", &ActionTermGradient::value,
+                     "The term's value; NaN for a holonomy term that refuses "
+                     "to evaluate.")
+      .def_readwrite("length_stationarity",
+                     &ActionTermGradient::lengthStationarity)
+      .def_readwrite("link_stationarity",
+                     &ActionTermGradient::linkStationarity);
+
   py::enum_<SpectralConstraintForm>(
       m, "SpectralConstraintForm",
       "What one SpectralMomentConstraint pins. PowerSum: p_j(h) = tr(h^j) of "
@@ -4866,6 +4898,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "The Euclidean norm of stationarity_residual, a convergence "
            "certificate rather than a functional minimized in place of the "
            "equations.")
+      .def("term_gradients", &JointAction::termGradients,
+           "Every term of the action with its value and its stationarity "
+           "(ActionTermGradient): regge, stiffness, holonomy, matter, then one "
+           "per declared constraint; a term of zero weight is listed with "
+           "zeros. For records and traces, not the inner loop of a solve.")
       .def("moment_gradient", &JointAction::momentGradient, py::arg("index"),
            "(dp_j/dz; U dp_j/dU) for one declared constraint, the exact "
            "analytic Jacobian column its multiplier contributes.")
@@ -4982,6 +5019,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The relative threshold below which a singular value of "
                      "the Jacobian, over the largest, counts as zero in the "
                      "minimum-norm solve.")
+      .def_readwrite("record_terms",
+                     &HolomorphicRelaxationDeclaration::recordTerms,
+                     "Whether every recorded step (and the starting point) "
+                     "carries every term of the action with its value and "
+                     "gradient norm (ActionTermRecord). Off by default: it "
+                     "costs a few stationarity evaluations per step.")
       .def_readwrite("edge_classes",
                      &HolomorphicRelaxationDeclaration::edgeClasses,
                      "Coordinates shared by several edges, one class index per "
@@ -5014,6 +5057,33 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "The relative distance to a zero of the Villain weight W "
                      "that no face holonomy may come within along a trial "
                      "step; a step that would is halved. Step control only.");
+
+  py::class_<ActionTermRecord>(
+      m, "ActionTermRecord",
+      "One term of the joint action at a recorded point: its value and the "
+      "Euclidean norm of its stationarity gradient on the coordinates the "
+      "relaxation relaxes, reduced onto the declared edge classes as the "
+      "residual is. The multiplier equations are left out, as they are of "
+      "the force norm.")
+      .def(py::init<>())
+      .def_readwrite("name", &ActionTermRecord::name,
+                     "As ActionTermGradient.name, plus constraints (the sum "
+                     "of the constraint terms) and action (the whole "
+                     "action).")
+      .def_readwrite("label", &ActionTermRecord::label)
+      .def_readwrite("weight", &ActionTermRecord::weight)
+      .def_readwrite("bare", &ActionTermRecord::bare)
+      .def_readwrite("factored", &ActionTermRecord::factored)
+      .def_readwrite("value", &ActionTermRecord::value)
+      .def_readwrite("gradient_norm", &ActionTermRecord::gradientNorm,
+                     "The norm of the term's stationarity on the relaxed "
+                     "coordinates; for action, the force norm the solve "
+                     "reports.");
+
+  m.def("action_term_records", &actionTermRecords, py::arg("action"),
+        py::arg("declaration"),
+        "Every term of the action with its value and gradient norm on the "
+        "coordinates the declaration relaxes (ActionTermRecord).");
 
   py::class_<HolomorphicStep>(m, "HolomorphicStep",
       "One Newton iteration, recorded so a run can be read back rather than "
@@ -5068,6 +5138,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("accepted", &HolomorphicStep::accepted,
                      "Whether a damped step was accepted; when not, damping "
                      "and step_norm are zero and the solve stopped here.")
+      .def_readwrite("terms", &HolomorphicStep::terms,
+                     "Every term of the action at the point the step ended "
+                     "at (ActionTermRecord), when the declaration records "
+                     "terms; empty otherwise.")
       .def_readwrite("linear_residual", &HolomorphicStep::linearResidual,
                      "||F + J d|| / ||F|| for the full Newton step d: what the "
                      "linearized equations leave.")
@@ -5089,6 +5163,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def(py::init<>())
       .def_readwrite("steps", &HolomorphicRelaxationReport::steps)
       .def_readwrite("converged", &HolomorphicRelaxationReport::converged)
+      .def_readwrite("initial_terms",
+                     &HolomorphicRelaxationReport::initialTerms,
+                     "Every term of the action at the starting point "
+                     "(ActionTermRecord), when the declaration records terms.")
       .def_readwrite("initial_residual_norm",
                      &HolomorphicRelaxationReport::initialResidualNorm)
       .def_readwrite("residual_norm",
@@ -5357,6 +5435,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def(py::init<>())
       .def_readwrite("iteration", &SelfConsistentMeanFieldStep::iteration)
       .def_readwrite("force_norm", &SelfConsistentMeanFieldStep::forceNorm)
+      .def_readwrite("terms", &SelfConsistentMeanFieldStep::terms,
+                     "Every term of the action at this iterate "
+                     "(ActionTermRecord), when the geometry declaration "
+                     "records terms; empty otherwise.")
       .def_readwrite("covariance_change",
                      &SelfConsistentMeanFieldStep::covarianceChange)
       .def_readwrite("purity_defect",

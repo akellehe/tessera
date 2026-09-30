@@ -98,6 +98,45 @@ struct SpectralMomentConstraint {
   std::complex<double> multiplier{0.0, 0.0};
 };
 
+/// # ActionTermGradient
+///
+/// One term of the joint action at the action's point: its value and its
+/// contribution to the stationarity equations,
+/// \f$ \partial S_{\rm term}/\partial z_e \f$ on the lengths and
+/// \f$ U_e\,\partial S_{\rm term}/\partial U_e \f$ on the links, one entry
+/// per edge of the complex each. Summed over the terms these are
+/// `JointAction::lengthStationarity` and `JointAction::linkStationarity`.
+struct ActionTermGradient {
+  /// `"regge"`, `"stiffness"`, `"holonomy"`, `"matter"`, or
+  /// `"constraint j"` with \f$ j \f$ counted from one in declaration order.
+  std::string name;
+  /// The term as it stands in the action: `"(1/kappa) S_Regge"`,
+  /// `"w_S S_stiff"`, `"beta S_hol"`, `"w_m tr(Gamma h_1)"`, or
+  /// `"xi_j (c_j - c_j*)"` followed by what \f$ c_j \f$ is, the band
+  /// eigenvalue \f$ \lambda_b/s \f$ or the power sum \f$ p_j(h_C/s) \f$.
+  std::string label;
+  /// The coefficient in front of the term: \f$ w_R=1/\kappa \f$,
+  /// \f$ w_S \f$, \f$ \beta \f$, \f$ w_m \f$, or the multiplier
+  /// \f$ \xi_j \f$.
+  std::complex<double> weight{0.0, 0.0};
+  /// What the weight multiplies: \f$ S_{\rm Regge} \f$, \f$ S_{\rm stiff} \f$,
+  /// \f$ \operatorname{tr}(\Gamma h) \f$, or the constraint's residual
+  /// \f$ c_j-c_j^{\star} \f$ in the declared unit, so that
+  /// `value == weight * bare` when `factored`. For the holonomy term, whose
+  /// weight enters its form (the Villain weight is \f$ \beta \f$ over the
+  /// mean of \f$ m^2 \f$), `bare` is the value itself and `factored` is
+  /// false. Zero when the weight is zero and the term was not formed.
+  std::complex<double> bare{0.0, 0.0};
+  bool factored = true;
+  /// The term's value: \f$ w_R S_{\rm Regge} \f$, \f$ w_S S_{\rm stiff} \f$,
+  /// \f$ S_{\rm hol} \f$ (quiet NaN where it refuses to evaluate),
+  /// \f$ w_m\operatorname{tr}(\Gamma h) \f$, or
+  /// \f$ \xi_j\,(c_j-c_j^{\star}) \f$.
+  std::complex<double> value{0.0, 0.0};
+  std::vector<std::complex<double>> lengthStationarity;
+  std::vector<std::complex<double>> linkStationarity;
+};
+
 /// # ReggeForm
 ///
 /// Which discretization of the Einstein-Hilbert action the Regge term of
@@ -893,6 +932,15 @@ class JointAction {
   /// between derivatives and selects no branch of the logarithm.
   [[nodiscard]] std::vector<std::complex<double>> linkStationarity() const;
 
+  /// Every term of the action with its value and its stationarity
+  /// (`ActionTermGradient`), in the order regge, stiffness, holonomy, matter,
+  /// then one entry per declared constraint. A term whose weight is zero is
+  /// listed with zero value and zero gradient, so the list has the same shape
+  /// at every point. The sums over the terms are `lengthStationarity` and
+  /// `linkStationarity` exactly. Costs a few stationarity evaluations, so it
+  /// is for records and traces rather than for the inner loop of a solve.
+  [[nodiscard]] std::vector<ActionTermGradient> termGradients() const;
+
   /// The Maurer-Cartan Hessian of the face-holonomy term,
   /// \f$ U_e\partial_{U_e}\bigl(U_{e'}\partial_{U_{e'}}w_HS_{\rm hol}\bigr)
   ///   =\sum_\tau\epsilon_{\tau e}\epsilon_{\tau e'}\,D^2\phi(\mathcal F_\tau) \f$,
@@ -1119,6 +1167,20 @@ class JointAction {
   /// relative to the principal one.
   struct ReggeSheets;
   [[nodiscard]] ReggeSheets reggeSheets() const;
+
+  /// Which part of the stationarity `stationarityPart` forms.
+  enum class StationarityPart { All, Regge, Stiffness, Holonomy, Contraction };
+  /// The one engine behind `lengthStationarity`, `linkStationarity` and
+  /// `termGradients`: the Regge and stiffness parts on the lengths, the
+  /// holonomy part on the links, and the carrier's contraction matrix traced
+  /// against the operator's derivatives on both. `All` forms every part with
+  /// the declared contraction (the matter and constraint terms together);
+  /// `Contraction` forms the trace of the given flat matrix alone; the others
+  /// form one geometric part alone. A null output is not formed.
+  void stationarityPart(StationarityPart part,
+                        const std::vector<std::complex<double>> *contraction,
+                        std::vector<std::complex<double>> *lengths,
+                        std::vector<std::complex<double>> *links) const;
 
   std::shared_ptr<Spacetime> spacetime_;
   JointActionDeclaration declaration_;

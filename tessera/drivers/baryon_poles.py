@@ -569,6 +569,9 @@ def relaxation_declaration(config):
     geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
     geometry.length_runaway_ratio = config.get(
         "length_runaway_ratio", DECLARED_LENGTH_RUNAWAY_RATIO)
+    # every recorded iterate carries every term of the action with its value
+    # and gradient norm (--trace-terms); changes no step
+    geometry.record_terms = bool(config.get("trace_terms", False))
     # the monopole sectors a caller holds as boundary data
     # (`tessera.drivers.recursion`); none by default
     geometry.held_sectors = list(config.get("held_sectors") or [])
@@ -1585,6 +1588,7 @@ def relaxation_record(report):
             "moment_residual_norm": float(step.moment_residual_norm),
             "multipliers": [complex(x) for x in step.multipliers],
             "stop_reason": cob.relaxation_stop_name(step.geometry_stop_reason),
+            "terms": term_records(step.terms),
         }
         if step.newton_iterated:
             newton = step.newton
@@ -3177,6 +3181,91 @@ def _band_text(band):
                ", splits a degenerate group" if band.get("ambiguous") else ""))
 
 
+def term_records(terms):
+    """The terms of the action at one recorded point (`ActionTermRecord`) as
+    plain records: name, the term's label as it stands in the action, its
+    weight, the bare factor the weight multiplies, whether the value is
+    their product, the value, and the norm of the term's stationarity
+    gradient on the relaxed coordinates. The list ends with the sum of the
+    constraint terms and the whole action."""
+    return [{"name": str(term.name), "label": str(term.label),
+             "weight": complex(term.weight), "bare": complex(term.bare),
+             "factored": bool(term.factored), "value": complex(term.value),
+             "gradient_norm": float(term.gradient_norm)} for term in terms]
+
+
+def term_trace(relaxation):
+    """The per-iterate terms of a solve record: the level relaxation's
+    ``term_trace`` (the starting point first), or the mean-field iterates'
+    ``terms``; empty when the solve recorded none."""
+    if not relaxation:
+        return []
+    if relaxation.get("term_trace"):
+        return relaxation["term_trace"]
+    return [step.get("terms") or [] for step in relaxation.get("trace") or []]
+
+
+def term_trace_lines(relaxation, prefix):
+    """The trace of the action's terms through a solve (``--trace-terms``),
+    one line per iterate: every term's value and the norm of its stationarity
+    gradient on the relaxed coordinates, and, from the second iterate on, the
+    change of the value and the improvement of the gradient norm (the
+    previous norm less the current one: positive when the term's equations
+    came closer to holding, negative when they moved away) since the
+    previous iterate. Empty when the solve recorded no terms."""
+    trace = [terms for terms in term_trace(relaxation) if terms]
+    lines = []
+    previous = None
+
+    def changes(term, before):
+        if before is None:
+            return ""
+        change = term["value"] - before["value"]
+        return " [value %+.3g%+.3gi, improved %+.3g]" % (
+            change.real, change.imag,
+            before["gradient_norm"] - term["gradient_norm"])
+
+    def line(term, before, indent, head):
+        if term["factored"]:
+            body = "%s = (%s) x (%s) = %s" % (
+                head, _complex_text(term["weight"]),
+                _complex_text(term["bare"]), _complex_text(term["value"]))
+        elif term["name"] == "holonomy":
+            body = "%s = %s (beta = %s)" % (head, _complex_text(term["value"]),
+                                           _complex_text(term["weight"]))
+        else:
+            body = "%s = %s" % (head, _complex_text(term["value"]))
+        return "%s%s%s; gradient %.3g%s" % (
+            prefix, " " * indent, body, term["gradient_norm"],
+            changes(term, before))
+
+    for index, terms in enumerate(trace):
+        by_name = {term["name"]: term for term in terms}
+        earlier = {term["name"]: term for term in previous or []}
+        total = by_name.get("action")
+        if total is not None:
+            lines.append("%siterate %d: S = %s; stationarity residual %.3g%s"
+                         % (prefix, index, _complex_text(total["value"]),
+                            total["gradient_norm"],
+                            changes(total, earlier.get("action"))))
+        else:
+            lines.append("%siterate %d:" % (prefix, index))
+        for name in ("regge", "stiffness", "holonomy", "matter"):
+            if name in by_name:
+                term = by_name[name]
+                lines.append(line(term, earlier.get(name), 2, term["label"]))
+        if "constraints" in by_name:
+            term = by_name["constraints"]
+            lines.append(line(term, earlier.get("constraints"), 2,
+                              term["label"]))
+        for term in terms:
+            if term["name"].startswith("constraint "):
+                lines.append(line(term, earlier.get(term["name"]), 4,
+                                  term["label"]))
+        previous = terms
+    return lines
+
+
 def relaxation_text(relaxation):
     """One content's mean-field solve as text: whether it converged, its
     force and iterations, and, where the record carries them, the method, why
@@ -3366,6 +3455,7 @@ def point_lines(point):
                 if "anchor" in record else "",
                 "; " + fingerprint_text(record["spectral_fingerprint"])
                 if "spectral_fingerprint" in record else ""))
+        lines += term_trace_lines(record.get("relaxation"), "    ")
         lines += content_pair_lines(record, "  ")
     lines += lowest_lines(records, "  ")
     lines += ratio_lines(point.get("ratios"), "  ")
@@ -3381,7 +3471,8 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    band_selection=DECLARED_BAND_SELECTION,
                    stiffness=DECLARED_STIFFNESS,
                    fiber_moments=DECLARED_FIBER_MOMENTS,
-                   fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None):
+                   fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None,
+                   trace_terms=False):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
@@ -3408,6 +3499,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "stiffness": stiffness,
         "fiber_moments": str(fiber_moments),
         "fiber_pinning": fiber_pinning,
+        "trace_terms": bool(trace_terms),
         "kappa_role": (
             "kappa = 8 pi G enters only through the Regge weight 1/kappa; "
             "the length stiffness is the spectral-moment part of S_0, the "
@@ -4309,6 +4401,12 @@ def add_mean_field_arguments(parser):
                              "them; bands, one per occupied band; or a "
                              "count, 0 pinning nothing (default %s)"
                              % DECLARED_FIBER_MOMENTS)
+    parser.add_argument("--trace-terms", action="store_true",
+                        help="record and print, at every iterate of every "
+                             "relaxation, each term of the joint action with "
+                             "its value, the norm of its stationarity "
+                             "gradient on the relaxed coordinates, and the "
+                             "change of both since the previous iterate")
 
 
 def main(argv=None):
@@ -4321,7 +4419,8 @@ def main(argv=None):
                             stiffness=args.stiffness,
                             fiber_moments=args.fiber_moments,
                             fiber_pinning=args.fiber_pinning,
-                            tolerances=tolerances_from(args))
+                            tolerances=tolerances_from(args),
+                            trace_terms=args.trace_terms)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None

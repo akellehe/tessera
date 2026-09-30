@@ -478,6 +478,11 @@ def relax_level(spacetime, config, sectors=None, count=None):
         "rank_tolerance": float(geometry.rank_tolerance),
         "jacobian_ranks": [int(st.jacobian_rank) for st in report.steps],
         "rank_gaps": [float(st.rank_gap) for st in report.steps],
+        # every term of the action at the starting point and at every step
+        # (--trace-terms); empty otherwise
+        "term_trace": ([bp.term_records(report.initial_terms)]
+                       + [bp.term_records(st.terms) for st in report.steps]
+                       if report.initial_terms else []),
         "regge_hinges": config["regge_hinges"],
         "regge_hinge_count": int(report.regge_hinge_count),
         "regge_structurally_zero": bool(report.regge_structurally_zero),
@@ -858,7 +863,7 @@ def cell_reads(cells, z, links, config):
         # changes an equation)
         for key in ("mean_field_method", "band_selection",
                     "length_runaway_ratio", "stiffness", "fiber_moments",
-                    "fiber_pinning", "kappa_role") + tuple(
+                    "fiber_pinning", "kappa_role", "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES):
             if key in config:
                 cell_config[key] = config[key]
@@ -1264,6 +1269,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    stiffness=bp.DECLARED_STIFFNESS,
                    fiber_moments=bp.DECLARED_FIBER_MOMENTS,
                    fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
+                   trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
                    pachner_candidates=DECLARED_PACHNER_CANDIDATES,
                    pachner_depth=DECLARED_PACHNER_DEPTH,
@@ -1285,7 +1291,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                stiffness=stiffness,
                                fiber_moments=fiber_moments,
                                fiber_pinning=fiber_pinning,
-                               tolerances=tolerances)
+                               tolerances=tolerances, trace_terms=trace_terms)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1676,6 +1682,7 @@ def summary(result):
                record["relaxation"]["residual"],
                level.get("bulk_monopole_numbers_before"),
                level.get("bulk_monopole_numbers_after")))
+        lines += bp.term_trace_lines(record["relaxation"], "    ")
         held = level.get("held_cut") or {}
         if held.get("faces"):
             lines.append(
@@ -1762,6 +1769,7 @@ def read_lines(record):
         prefix = "host cell %s " % (cell["cell"],)
         for c in cell["contents"]:
             lines.append("    " + _content_line(cell, c))
+            lines += bp.term_trace_lines(c.get("relaxation"), "        ")
             if "failed" not in c:
                 lines += ["      " + line
                           for line in bp.content_pair_lines(c, prefix)]
@@ -1861,7 +1869,7 @@ def main(argv=None):
         band_selection=args.band_selection,
         stiffness=args.stiffness, fiber_moments=args.fiber_moments,
         fiber_pinning=args.fiber_pinning,
-        tolerances=bp.tolerances_from(args),
+        tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
         pachner_candidates=args.pachner_candidates,
         pachner_depth=args.pachner_depth, pachner_seed=args.pachner_seed)

@@ -425,6 +425,7 @@ SelfConsistentMeanFieldStep measure(
   step.bandCrossing = read.crossing;
   step.multipliers = ownUnitMultipliers(action);
   step.momentResidualNorm = momentResidualNormOf(action);
+  if (geometry.recordTerms) step.terms = actionTermRecords(action, geometry);
   return step;
 }
 

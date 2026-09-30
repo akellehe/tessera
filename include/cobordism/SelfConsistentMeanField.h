@@ -394,6 +394,9 @@ struct SelfConsistentMeanFieldStep {
   /// shared coordinates and the force on each is the sum over the edges that
   /// carry it.
   double forceNorm = 0.0;
+  /// Every term of the action at this iterate (`ActionTermRecord`), when the
+  /// geometry declaration records terms; empty otherwise.
+  std::vector<ActionTermRecord> terms;
   /// \f$ \lVert\Gamma_{n}-\Gamma_{n-1}\rVert_F \f$, the movement of the
   /// covariance from the previous iterate; at iterate zero, from the
   /// covariance the action was declared with (zero when it was declared
