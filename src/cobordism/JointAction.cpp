@@ -1363,92 +1363,8 @@ Eigen::MatrixXcd contractionMatrix(const JointActionDeclaration &declaration,
 }  // namespace
 
 std::vector<complexd> JointAction::lengthStationarity() const {
-  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
-                                  declaration_.metricSource,
-                                  carrierIsNeeded(declaration_));
-  const std::size_t edges = workspace.edges.size();
-  std::vector<complexd> stationarity(edges, complexd{0.0, 0.0});
-
-  if (declaration_.gravitationalWeight != 0.0 &&
-      declaration_.reggeForm == ReggeForm::Dual) {
-    const auto reggeGradient =
-        ReggeSolver(spacetime_, MatterConfiguration()).actionGradientExact();
-    for (std::size_t edgeIndex = 0;
-         edgeIndex < edges && edgeIndex < reggeGradient.size(); ++edgeIndex)
-      stationarity[edgeIndex] +=
-          declaration_.gravitationalWeight * reggeGradient[edgeIndex];
-  }
-
-  if (declaration_.gravitationalWeight != 0.0 &&
-      declaration_.reggeForm == ReggeForm::Primal) {
-    // d(sum_h |h| eps_h)/dz_e = sum_h (d|h|/dz_e eps_h + |h| d eps_h/dz_e),
-    // both factors from the per-hinge analytic gradients. No Schlaefli
-    // identity is invoked, because under the interior-hinge rule the sum over
-    // a cell's hinges is incomplete and that identity does not apply.
-    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfEdge;
-    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
-      const auto *edge = workspace.edges[edgeIndex];
-      if (edge == nullptr || edge->getSource() == nullptr ||
-          edge->getTarget() == nullptr)
-        continue;
-      indexOfEdge[pairKey(edge->getSource()->getId(),
-                          edge->getTarget()->getId())] = edgeIndex;
-    }
-    // Every root and inverse cosine on its declared sheet (ReggeBranch): the
-    // content root through its sign, the angles through their sheets.
-    for (const auto &entry : reggeSheets().hinges) {
-      auto *hinge = entry.hinge;
-      const double sign = static_cast<double>(entry.contentSign);
-      const complexd content = sign * ReggeSolver::hingeContent(hinge);
-      const complexd deficit = hinge->deficitAngle(entry.angles);
-      for (const auto &[key, derivative] : hinge->volumeGradient()) {
-        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
-        if (found != indexOfEdge.end())
-          stationarity[found->second] +=
-              declaration_.gravitationalWeight * sign * derivative * deficit;
-      }
-      for (const auto &[key, derivative] :
-           hinge->deficitAngleGradient(entry.angles)) {
-        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
-        if (found != indexOfEdge.end())
-          stationarity[found->second] +=
-              declaration_.gravitationalWeight * content * derivative;
-      }
-    }
-  }
-
-  if (declaration_.stiffnessWeight != 0.0) {
-    // d/dz [ (l - l0)^2 / 2 ] = (l - l0) dl/dz with dl/dz = 1/(2l) on the
-    // branch the stored length already sits on.
-    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
-      const auto *edge = workspace.edges[edgeIndex];
-      if (edge == nullptr) continue;
-      const complexd length = edge->getLength();
-      stationarity[edgeIndex] +=
-          declaration_.stiffnessWeight *
-          (length - declaration_.referenceLengths[edgeIndex]) /
-          (2.0 * length);
-    }
-  }
-
-  const Eigen::MatrixXcd contraction = contractionMatrix(
-      declaration_, workspace.carrier, workspace.carrierOrder);
-  if (workspace.carrierOrder == 0 || contraction.isZero(0.0))
-    return stationarity;
-
-  for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
-    const auto *edge = workspace.edges[edgeIndex];
-    if (edge == nullptr || edge->getSource() == nullptr ||
-        edge->getTarget() == nullptr)
-      continue;
-    const auto derivative = workspace.hodge.laplacianGradient(
-        declaration_.carrierDegree, edge->getSource()->getId(),
-        edge->getTarget()->getId());
-    if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
-      continue;
-    stationarity[edgeIndex] += traceOfProduct(
-        contraction, toMatrix(derivative, workspace.carrierOrder));
-  }
+  std::vector<complexd> stationarity;
+  stationarityPart(StationarityPart::All, nullptr, &stationarity, nullptr);
   return stationarity;
 }
 
@@ -1484,49 +1400,204 @@ std::vector<complexd> holonomyLinkDerivative(const ActionWorkspace &workspace,
 }  // namespace
 
 std::vector<complexd> JointAction::linkStationarity() const {
-  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
-                                  declaration_.metricSource,
-                                  carrierIsNeeded(declaration_));
-  const std::size_t edges = workspace.edges.size();
-  std::vector<complexd> stationarity(edges, complexd{0.0, 0.0});
+  std::vector<complexd> stationarity;
+  stationarityPart(StationarityPart::All, nullptr, nullptr, &stationarity);
+  return stationarity;
+}
 
-  const auto holonomyPart =
-      holonomyLinkDerivative(workspace, FacePotential(declaration_));
-  for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
-    const long long canonical = workspace.canonicalOfEdge[edgeIndex];
-    if (canonical < 0 ||
-        static_cast<std::size_t>(canonical) >= holonomyPart.size())
-      continue;
-    stationarity[edgeIndex] +=
-        workspace.storedSign[edgeIndex] *
-        holonomyPart[static_cast<std::size_t>(canonical)];
+void JointAction::stationarityPart(StationarityPart part,
+                                   const std::vector<complexd> *contraction,
+                                   std::vector<complexd> *lengths,
+                                   std::vector<complexd> *links) const {
+  const bool wantContraction = part == StationarityPart::All ||
+                               part == StationarityPart::Contraction;
+  const bool wantCarrier =
+      part == StationarityPart::Contraction ||
+      (part == StationarityPart::All && carrierIsNeeded(declaration_));
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource, wantCarrier);
+  const std::size_t edges = workspace.edges.size();
+  if (lengths) lengths->assign(edges, complexd{0.0, 0.0});
+  if (links) links->assign(edges, complexd{0.0, 0.0});
+  const bool regge = lengths != nullptr &&
+                     (part == StationarityPart::All ||
+                      part == StationarityPart::Regge);
+  const bool stiffness = lengths != nullptr &&
+                         (part == StationarityPart::All ||
+                          part == StationarityPart::Stiffness);
+  const bool holonomy = links != nullptr &&
+                        (part == StationarityPart::All ||
+                         part == StationarityPart::Holonomy);
+
+  if (regge && declaration_.gravitationalWeight != 0.0 &&
+      declaration_.reggeForm == ReggeForm::Dual) {
+    const auto reggeGradient =
+        ReggeSolver(spacetime_, MatterConfiguration()).actionGradientExact();
+    for (std::size_t edgeIndex = 0;
+         edgeIndex < edges && edgeIndex < reggeGradient.size(); ++edgeIndex)
+      (*lengths)[edgeIndex] +=
+          declaration_.gravitationalWeight * reggeGradient[edgeIndex];
   }
 
-  const Eigen::MatrixXcd contraction = contractionMatrix(
-      declaration_, workspace.carrier, workspace.carrierOrder);
-  if (workspace.carrierOrder == 0 || contraction.isZero(0.0))
-    return stationarity;
+  if (regge && declaration_.gravitationalWeight != 0.0 &&
+      declaration_.reggeForm == ReggeForm::Primal) {
+    // d(sum_h |h| eps_h)/dz_e = sum_h (d|h|/dz_e eps_h + |h| d eps_h/dz_e),
+    // both factors from the per-hinge analytic gradients. No Schlaefli
+    // identity is invoked, because under the interior-hinge rule the sum over
+    // a cell's hinges is incomplete and that identity does not apply.
+    std::map<std::pair<std::uint64_t, std::uint64_t>, std::size_t> indexOfEdge;
+    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
+      const auto *edge = workspace.edges[edgeIndex];
+      if (edge == nullptr || edge->getSource() == nullptr ||
+          edge->getTarget() == nullptr)
+        continue;
+      indexOfEdge[pairKey(edge->getSource()->getId(),
+                          edge->getTarget()->getId())] = edgeIndex;
+    }
+    // Every root and inverse cosine on its declared sheet (ReggeBranch): the
+    // content root through its sign, the angles through their sheets.
+    for (const auto &entry : reggeSheets().hinges) {
+      auto *hinge = entry.hinge;
+      const double sign = static_cast<double>(entry.contentSign);
+      const complexd content = sign * ReggeSolver::hingeContent(hinge);
+      const complexd deficit = hinge->deficitAngle(entry.angles);
+      for (const auto &[key, derivative] : hinge->volumeGradient()) {
+        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
+        if (found != indexOfEdge.end())
+          (*lengths)[found->second] +=
+              declaration_.gravitationalWeight * sign * derivative * deficit;
+      }
+      for (const auto &[key, derivative] :
+           hinge->deficitAngleGradient(entry.angles)) {
+        const auto found = indexOfEdge.find(pairKey(key.first, key.second));
+        if (found != indexOfEdge.end())
+          (*lengths)[found->second] +=
+              declaration_.gravitationalWeight * content * derivative;
+      }
+    }
+  }
 
+  if (stiffness && declaration_.stiffnessWeight != 0.0) {
+    // d/dz [ (l - l0)^2 / 2 ] = (l - l0) dl/dz with dl/dz = 1/(2l) on the
+    // branch the stored length already sits on.
+    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
+      const auto *edge = workspace.edges[edgeIndex];
+      if (edge == nullptr) continue;
+      const complexd length = edge->getLength();
+      (*lengths)[edgeIndex] +=
+          declaration_.stiffnessWeight *
+          (length - declaration_.referenceLengths[edgeIndex]) /
+          (2.0 * length);
+    }
+  }
+
+  if (holonomy) {
+    const auto holonomyPart =
+        holonomyLinkDerivative(workspace, FacePotential(declaration_));
+    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
+      const long long canonical = workspace.canonicalOfEdge[edgeIndex];
+      if (canonical < 0 ||
+          static_cast<std::size_t>(canonical) >= holonomyPart.size())
+        continue;
+      (*links)[edgeIndex] +=
+          workspace.storedSign[edgeIndex] *
+          holonomyPart[static_cast<std::size_t>(canonical)];
+    }
+  }
+
+  if (!wantContraction || workspace.carrierOrder == 0) return;
+  const Eigen::MatrixXcd matrix =
+      part == StationarityPart::Contraction
+          ? toMatrix(*contraction, workspace.carrierOrder)
+          : contractionMatrix(declaration_, workspace.carrier,
+                              workspace.carrierOrder);
+  if (matrix.isZero(0.0)) return;
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];
     if (edge == nullptr || edge->getSource() == nullptr ||
         edge->getTarget() == nullptr)
       continue;
-    const auto derivative = workspace.hodge.laplacianPhaseGradient(
-        declaration_.carrierDegree, edge->getSource()->getId(),
-        edge->getTarget()->getId());
-    if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
-      continue;
-    // U d/dU = -i d/dphi on the canonical link U = e^{i phi}: a relation
-    // between derivatives, which fixes no branch of the logarithm. The stored
-    // orientation carries the same current up to the sign that relates it to
-    // the canonical one, since j_yx = -j_xy.
-    const complexd canonicalPart =
-        complexd{0.0, -1.0} *
-        traceOfProduct(contraction, toMatrix(derivative, workspace.carrierOrder));
-    stationarity[edgeIndex] += workspace.storedSign[edgeIndex] * canonicalPart;
+    const std::uint64_t source = edge->getSource()->getId();
+    const std::uint64_t target = edge->getTarget()->getId();
+    if (lengths) {
+      const auto derivative = workspace.hodge.laplacianGradient(
+          declaration_.carrierDegree, source, target);
+      if (derivative.size() == workspace.carrierOrder * workspace.carrierOrder)
+        (*lengths)[edgeIndex] += traceOfProduct(
+            matrix, toMatrix(derivative, workspace.carrierOrder));
+    }
+    if (links) {
+      const auto derivative = workspace.hodge.laplacianPhaseGradient(
+          declaration_.carrierDegree, source, target);
+      if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
+        continue;
+      // U d/dU = -i d/dphi on the canonical link U = e^{i phi}: a relation
+      // between derivatives, which fixes no branch of the logarithm. The
+      // stored orientation carries the same current up to the sign that
+      // relates it to the canonical one, since j_yx = -j_xy.
+      const complexd canonicalPart =
+          complexd{0.0, -1.0} *
+          traceOfProduct(matrix, toMatrix(derivative, workspace.carrierOrder));
+      (*links)[edgeIndex] += workspace.storedSign[edgeIndex] * canonicalPart;
+    }
   }
-  return stationarity;
+}
+
+std::vector<ActionTermGradient> JointAction::termGradients() const {
+  const std::size_t edges = edgeCount();
+  std::vector<ActionTermGradient> terms;
+  auto add = [&](const std::string &name, complexd value,
+                 StationarityPart part, const std::vector<complexd> *matrix,
+                 bool wantLengths, bool wantLinks) {
+    ActionTermGradient term;
+    term.name = name;
+    term.value = value;
+    term.lengthStationarity.assign(edges, complexd{0.0, 0.0});
+    term.linkStationarity.assign(edges, complexd{0.0, 0.0});
+    if (wantLengths || wantLinks)
+      stationarityPart(part, matrix,
+                       wantLengths ? &term.lengthStationarity : nullptr,
+                       wantLinks ? &term.linkStationarity : nullptr);
+    terms.push_back(std::move(term));
+  };
+  add("regge", reggeTerm(), StationarityPart::Regge, nullptr,
+      declaration_.gravitationalWeight != 0.0, false);
+  add("stiffness", stiffnessTerm(), StationarityPart::Stiffness, nullptr,
+      declaration_.stiffnessWeight != 0.0, false);
+  complexd holonomy{0.0, 0.0};
+  try {
+    holonomy = holonomyTerm();
+  } catch (const std::domain_error &) {
+    holonomy = complexd{std::numeric_limits<double>::quiet_NaN(),
+                        std::numeric_limits<double>::quiet_NaN()};
+  }
+  add("holonomy", holonomy, StationarityPart::Holonomy, nullptr, false,
+      declaration_.holonomyWeight != 0.0);
+  // The mean-field term: the contraction w_m Gamma alone.
+  std::vector<complexd> weighted = declaration_.covariance;
+  for (complexd &entry : weighted) entry *= declaration_.matterWeight;
+  const bool matter = declaration_.matterWeight != 0.0 && !weighted.empty();
+  add("matter", matterTerm(), StationarityPart::Contraction, &weighted, matter,
+      matter);
+  // Each constraint: xi_j times the analytic gradient of c_j.
+  const std::vector<complexd> residuals = momentResiduals();
+  for (std::size_t index = 0; index < declaration_.momentConstraints.size();
+       ++index) {
+    const complexd multiplier = declaration_.momentConstraints[index].multiplier;
+    ActionTermGradient term;
+    term.name = "constraint " + std::to_string(index + 1);
+    term.value = multiplier * residuals[index];
+    const std::vector<complexd> gradient = momentGradient(index);
+    term.lengthStationarity.assign(edges, complexd{0.0, 0.0});
+    term.linkStationarity.assign(edges, complexd{0.0, 0.0});
+    for (std::size_t edge = 0; edge < edges && edge < gradient.size(); ++edge)
+      term.lengthStationarity[edge] = multiplier * gradient[edge];
+    for (std::size_t edge = 0; edge < edges && edges + edge < gradient.size();
+         ++edge)
+      term.linkStationarity[edge] = multiplier * gradient[edges + edge];
+    terms.push_back(std::move(term));
+  }
+  return terms;
 }
 
 std::vector<complexd> JointAction::holonomyHessian() const {

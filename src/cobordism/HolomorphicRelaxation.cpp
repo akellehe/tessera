@@ -818,6 +818,39 @@ std::vector<complexd> HolomorphicRelaxation::residual() const {
   return reducedResidual(working, layout, classes);
 }
 
+std::vector<ActionTermRecord> actionTermRecords(
+    const JointAction &action,
+    const HolomorphicRelaxationDeclaration &declaration) {
+  const EdgeClasses classes = edgeClassesOf(action.edgeCount(), declaration);
+  std::vector<ActionTermRecord> records;
+  for (const ActionTermGradient &term : action.termGradients()) {
+    double squared = 0.0;
+    if (declaration.relaxLengths)
+      for (const auto &members : classes.members) {
+        complexd sum{0.0, 0.0};
+        for (const auto &[edge, orientation] : members)
+          if (edge < term.lengthStationarity.size())
+            sum += term.lengthStationarity[edge];
+        squared += std::norm(sum);
+      }
+    if (declaration.relaxLinks)
+      for (const auto &members : classes.members) {
+        complexd sum{0.0, 0.0};
+        for (const auto &[edge, orientation] : members)
+          if (edge < term.linkStationarity.size())
+            sum += orientation > 0 ? term.linkStationarity[edge]
+                                   : -term.linkStationarity[edge];
+        squared += std::norm(sum);
+      }
+    ActionTermRecord record;
+    record.name = term.name;
+    record.value = term.value;
+    record.gradientNorm = std::sqrt(squared);
+    records.push_back(std::move(record));
+  }
+  return records;
+}
+
 HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   const EdgeClasses classes =
       edgeClassesOf(action_.edgeCount(), declaration_);
@@ -851,6 +884,8 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   report.reggeHingeCount = action_.reggeHingeCount();
   report.reggeStructurallyZero = action_.reggeStructurallyZero();
   report.initialResidualNorm = euclideanNorm(evaluate(action_));
+  if (declaration_.recordTerms)
+    report.initialTerms = actionTermRecords(action_, declaration_);
   report.residualNorm = report.initialResidualNorm;
   recordAction(action_, report.action, report.actionAvailable,
                report.actionUnavailable);
@@ -987,6 +1022,8 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       recordAction(action_, record.action, record.actionAvailable,
                    record.actionUnavailable);
       record.holonomyZeroDistance = action_.holonomyZeroDistance();
+      if (declaration_.recordTerms)
+        record.terms = actionTermRecords(action_, declaration_);
       report.steps.push_back(record);
       report.stopReason = RelaxationStop::HeldFloor;
       report.stopDetail =
@@ -1129,6 +1166,8 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       restoreSnapshot(action_, snapshot);
       record.damping = 0.0;
       record.stepNorm = 0.0;
+      if (declaration_.recordTerms)
+        record.terms = actionTermRecords(action_, declaration_);
       report.steps.push_back(record);
       report.residualNorm = residualNorm;
       // The smallest trial step says what blocks the Newton direction: an
@@ -1178,6 +1217,8 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       stopped = true;
       break;
     }
+    if (declaration_.recordTerms)
+      record.terms = actionTermRecords(action_, declaration_);
     report.steps.push_back(record);
     if (rebuild_.accepted) rebuild_.accepted(action_);
     if (runawayDeclared) {

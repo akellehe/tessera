@@ -223,6 +223,12 @@ struct HolomorphicRelaxationDeclaration {
   /// whose magnitudes only bracket them.
   double rankTolerance = 1e-12;
 
+  /// Whether every recorded step, and the starting point, carries every
+  /// term of the action with its value and gradient norm
+  /// (`ActionTermRecord`, `actionTermRecords`). Off by default: it costs a
+  /// few stationarity evaluations per step, and changes no step.
+  bool recordTerms = false;
+
   /// Coordinates shared by several edges. Empty (the default) makes every
   /// edge its own coordinate. Otherwise entry \f$ e \f$, one per edge in
   /// `getEdgeList()` order, is the index of the shared coordinate edge
@@ -304,6 +310,20 @@ struct HolomorphicRelaxationDeclaration {
   double lengthRunawayRatio = 1e2;
 };
 
+/// # ActionTermRecord
+///
+/// One term of the joint action at a recorded point of a relaxation
+/// (`JointAction::termGradients`): its value and the Euclidean norm of its
+/// stationarity gradient on the coordinates the relaxation relaxes, reduced
+/// onto the declared edge classes as the residual is. The multiplier
+/// equations are constraints rather than gradients and are left out, as they
+/// are of the force norm.
+struct ActionTermRecord {
+  std::string name;
+  std::complex<double> value{0.0, 0.0};
+  double gradientNorm = 0.0;
+};
+
 /// # HolomorphicStep
 ///
 /// One Newton iteration, recorded so a run can be read back rather than only
@@ -362,6 +382,10 @@ struct HolomorphicStep {
   /// the point this step was taken from, and `damping` and `stepNorm` are
   /// zero.
   bool accepted = false;
+  /// Every term of the action at the point the step ended at, with its value
+  /// and gradient norm (`ActionTermRecord`); filled when the declaration's
+  /// `recordTerms` is set, empty otherwise.
+  std::vector<ActionTermRecord> terms;
   /// \f$ \lVert F+Jd\rVert/\lVert F\rVert \f$ for the full Newton step
   /// \f$ d \f$: how much of the residual the linearized equations leave. It is
   /// at rounding level for an unconstrained step on a Jacobian of full rank
@@ -401,6 +425,9 @@ struct HolomorphicRelaxationReport {
   bool converged = false;
   /// The residual norm at the starting point.
   double initialResidualNorm = 0.0;
+  /// Every term of the action at the starting point (`ActionTermRecord`);
+  /// filled when the declaration's `recordTerms` is set.
+  std::vector<ActionTermRecord> initialTerms;
   /// The residual norm at the point the solve stopped at.
   double residualNorm = 0.0;
   /// The complex action at the point the solve stopped at.
@@ -534,6 +561,14 @@ struct HolomorphicRelaxationReport {
 /// Jacobian \f$ H_{\rm sc} \f$ of the self-consistent force. The equations
 /// are those of the joint action; only the order in which they are solved
 /// differs from holding \f$ \Gamma \f$ fixed.
+/// Every term of \p action with its value and the norm of its stationarity
+/// gradient on the coordinates \p declaration relaxes (`ActionTermRecord`),
+/// the per-edge gradients summed over the declared edge classes as the
+/// relaxation's residual is.
+[[nodiscard]] std::vector<ActionTermRecord> actionTermRecords(
+    const JointAction &action,
+    const HolomorphicRelaxationDeclaration &declaration);
+
 class HolomorphicRelaxation {
  public:
   /// Build a solve over an action.
