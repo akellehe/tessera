@@ -48,6 +48,7 @@ def test_the_host_carries_the_unit_monopole_on_every_sheet():
         spacetime, bp.action_declaration(spacetime, 1.0, 1.0)).face_holonomies()
     # every face holonomy is a primitive fourth root of unity, +-i
     assert np.max(np.abs(np.abs(np.asarray(faces)) - 1.0)) < 1e-14
+    assert np.max(np.abs(np.asarray(faces) ** 2 + 1.0)) < 1e-12
 
 
 def test_the_declared_host_has_the_tetrahedral_rotation_group():
@@ -94,7 +95,6 @@ def test_a_cell_with_one_length_changed_keeps_the_rotations_fixing_that_edge():
                for r in moved)
     assert all(r["compensation_residual"] < 1e-15
                for r in symmetry["rotations"])
-    assert np.max(np.abs(np.asarray(faces) ** 2 + 1.0)) < 1e-12
 
 
 def test_the_sheets_are_isomorphic():

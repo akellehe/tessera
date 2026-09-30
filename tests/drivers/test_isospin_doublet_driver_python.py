@@ -74,9 +74,16 @@ def test_no_isospin_doublet_on_the_host(declared, operator):
 
 @pytest.mark.slow
 def test_the_baryon_driver_adds_the_read_only_when_asked():
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
-    config = bp.default_config([1.0], [1.0], selected_contents=[(1, 1, 1)])
+    """At the tolerances of the 2026-09-23 run the declared host with the
+    content (1, 1, 1) is stationary as built and keeps its tetrahedral group,
+    so the read proceeds; at the declared 1e-15 the joint Newton's one
+    accepted step moves the six squared lengths by 1e-8 in an asymmetric
+    pattern before it finds no descent, the cell keeps only the identity,
+    and the read is refused by name (#1298)."""
+    from tests.drivers import _recursion_run_2026_09_23 as RUN
+
+    config = bp.default_config([1.0], [1.0], selected_contents=[(1, 1, 1)],
+                               tolerances=RUN.TOLERANCES)
     assert "isospin_doublet" not in config
     plain = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config)
     assert "isospin_doublet" not in plain
