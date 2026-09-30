@@ -598,7 +598,7 @@ std::string relaxationStopName(RelaxationStop reason) {
     case RelaxationStop::HeldFloor:
       return "the residual is at its floor on the held set";
     case RelaxationStop::LengthRunaway:
-      return "the squared lengths ran off";
+      return "the squared lengths overflowed the double";
     case RelaxationStop::NoProgress:
       return "an outer iteration made no progress";
     case RelaxationStop::Continued:
@@ -921,9 +921,9 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   };
   const double startScale =
       layout.lengths ? largestSquaredLength(action_, classes) : 0.0;
-  const bool runawayDeclared =
-      layout.lengths && std::isfinite(declaration_.lengthRunawayRatio) &&
-      declaration_.lengthRunawayRatio > 0.0 && startScale > 0.0;
+  // The only bound on the lengths is the datatype's: a squared length that
+  // overflowed the double stops the solve; short of that the equations decide.
+  const bool runawayDeclared = layout.lengths;
   report.reggeHingeCount = action_.reggeHingeCount();
   report.reggeStructurallyZero = action_.reggeStructurallyZero();
   report.initialResidualNorm = euclideanNorm(evaluate(action_));
@@ -1265,17 +1265,18 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     report.steps.push_back(record);
     if (rebuild_.accepted) rebuild_.accepted(action_);
     if (runawayDeclared) {
-      const double ratio = largestSquaredLength(action_, classes) / startScale;
-      if (ratio > declaration_.lengthRunawayRatio) {
+      const double largest = largestSquaredLength(action_, classes);
+      if (!std::isfinite(largest)) {
         report.stopReason = RelaxationStop::LengthRunaway;
         report.stopDetail =
-            "the squared lengths ran off: after " +
+            "the squared lengths overflowed the double: after " +
             std::to_string(iteration + 1) +
-            " accepted steps the largest |z| is " + threeDigits(ratio) +
-            " times its value " + threeDigits(startScale) +
-            " at the start, beyond the declared ratio " +
-            threeDigits(declaration_.lengthRunawayRatio) +
-            "; the residual norm is " + threeDigits(report.residualNorm);
+            " accepted steps a squared length is beyond the largest finite "
+            "value " +
+            threeDigits(std::numeric_limits<double>::max()) +
+            " (it was " + threeDigits(startScale) +
+            " at the start); the residual norm is " +
+            threeDigits(report.residualNorm);
         stopped = true;
         break;
       }
