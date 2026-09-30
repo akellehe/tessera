@@ -36,8 +36,6 @@ namespace tessera::cobordism {
 ///   action refuses to evaluate (a link driven to zero or infinity, a
 ///   singular operator, a face holonomy outside the domain of the holonomy
 ///   term) or its residual is not finite.
-/// * `HolonomyZero` — the smallest trial step came within the declared
-///   margin of a zero of the Villain weight \f$ W \f$.
 /// * `HeldFloor` — with held sectors, the residual is at its floor on the
 ///   held set: the constrained Newton step would reduce the residual norm by
 ///   no more than the declared tolerance, because the complex equations
@@ -57,7 +55,6 @@ enum class RelaxationStop {
   NoDescent,
   SectorBoundary,
   DomainBoundary,
-  HolonomyZero,
   HeldFloor,
   LengthRunaway,
   Continued
@@ -242,17 +239,6 @@ struct HolomorphicRelaxationDeclaration {
   /// when it is its inverse. Empty means \f$ +1 \f$ for every edge.
   std::vector<int> edgeClassOrientations;
 
-  /// The declared clearance of the face holonomies from the zeros of the
-  /// Villain weight \f$ W \f$: a trial step whose multiplicative path brings
-  /// any face holonomy within this relative distance of a zero
-  /// (`JointAction::holonomyZeroClearance`, sampled at a quarter of this
-  /// spacing) is halved, as a step that does not reduce the residual is. The
-  /// potential \f$ -\beta_V\log W \f$ and its derivatives are singular at a
-  /// zero, so a step onto or past one leaves the domain the equations are
-  /// posed on. This is step control only: the equations are unchanged. It has
-  /// no effect under the Wilson form, whose potential has no singularity.
-  double holonomyZeroMargin = 0.05;
-
   /// The monopole sectors held as boundary data (controlled synthesis, WP v18
   /// Section 11.1). The monopole number through a declared cluster's bounding
   /// cut is boundary data, held on that cut by this rule; it is not an
@@ -352,14 +338,6 @@ struct HolomorphicStep {
   /// The complex action \f$ S(z,U,\Gamma) \f$ at the point the step was taken
   /// from.
   std::complex<double> action{0.0, 0.0};
-  /// How many of this iteration's step halvings the holonomy zero guard forced
-  /// (`HolomorphicRelaxationDeclaration::holonomyZeroMargin`), as opposed to
-  /// the residual test.
-  std::size_t zeroGuardDampings = 0;
-  /// The smallest relative distance of a face holonomy to a zero of \f$ W \f$
-  /// at the point the step was taken from; positive infinity when the declared
-  /// holonomy term has no zero.
-  double holonomyZeroDistance = 0.0;
   /// How many of this iteration's step halvings the held monopole sectors
   /// forced (a trial step that changed a declared monopole number).
   std::size_t sectorGuardDampings = 0;
@@ -429,9 +407,6 @@ struct HolomorphicRelaxationReport {
   std::vector<std::complex<double>> multipliers;
   /// \f$ p_j(h)-p_j^{\star} \f$ at the point the solve stopped at.
   std::vector<std::complex<double>> momentResiduals;
-  /// The number of iterations whose step the holonomy zero guard damped at
-  /// least once.
-  std::size_t zeroGuardDampedSteps = 0;
   /// The number of iterations whose step the held monopole sectors damped at
   /// least once.
   std::size_t sectorGuardDampedSteps = 0;
@@ -538,9 +513,9 @@ struct HolomorphicRelaxationReport {
 ///
 /// A full Newton step that does not reduce the residual norm is halved, up to
 /// `maximumDampings` times, and so is a trial step that the declared guards
-/// refuse: one that comes too close to a zero of the Villain weight, one that
-/// changes a held monopole number, and one that reaches a point at which the
-/// action refuses to evaluate. Damping is a globalization and changes no
+/// refuse: one that changes a held monopole number, and one that reaches a
+/// point at which the action refuses to evaluate (a zero of the Villain
+/// weight among them). Damping is a globalization and changes no
 /// equation. When no trial step is accepted the solve stops, and the report
 /// names the reason from the refusal of the smallest trial step
 /// (`RelaxationStop`); a runaway of the squared lengths also stops it by name.

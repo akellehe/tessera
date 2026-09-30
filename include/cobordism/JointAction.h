@@ -435,16 +435,6 @@ class VillainCharacter {
   [[nodiscard]] std::complex<double> secondDerivative(
       std::complex<double> holonomy) const;
 
-  /// The relative distance from \p holonomy to the nearest zero of \f$ W \f$,
-  /// \f$ \min_{n\ge1,\pm}|F-F_{n,\pm}|/\min(|F|,|F_{n,\pm}|) \f$ over the
-  /// zeros \f$ F_{n,\pm}=-e^{\pm(2n-1)/(2\beta)} \f$. It is scale free, as
-  /// the zero set is: the zeros accumulate at \f$ 0 \f$ and \f$ \infty \f$,
-  /// so an absolute distance would say nothing about the ones near either
-  /// end, and dividing by the smaller modulus makes a zero far from \f$ F \f$
-  /// in modulus far in this distance too.
-  /// @throws std::invalid_argument when \p holonomy is zero or not finite.
-  [[nodiscard]] double zeroDistance(std::complex<double> holonomy) const;
-
  private:
   double beta_;
   double tolerance_;
@@ -896,34 +886,6 @@ class JointAction {
   /// with its certified relative tail bounds.
   [[nodiscard]] HolonomyTruncation holonomyTruncation() const;
 
-  /// The smallest relative distance of any face holonomy
-  /// \f$ \mathcal F_\tau \f$ to a zero of \f$ W \f$
-  /// (`VillainCharacter::zeroDistance`). Positive infinity when the term has
-  /// a zero weight.
-  [[nodiscard]] double holonomyZeroDistance() const;
-
-  /// The smallest relative distance to a zero of \f$ W \f$ that any face
-  /// holonomy comes to along the multiplicative path
-  /// \f$ U_e\mapsto U_e\,e^{t\delta_e} \f$, \f$ t\in[0,1] \f$, from the
-  /// current connection.
-  ///
-  /// Along the path each face moves as
-  /// \f$ \mathcal F_\tau(t)=\mathcal F_\tau\,e^{t\Delta_\tau} \f$ with
-  /// \f$ \Delta_\tau=\sum_e\epsilon_{\tau e}\delta_e \f$, formed from the
-  /// increments without any logarithm. The distance is sampled at nodes spaced
-  /// by at most \p spacing in \f$ |t\Delta_\tau| \f$, the Maurer-Cartan
-  /// length of the path, both end points included, so a path that passes a
-  /// zero between nodes still reads a distance of order \p spacing there.
-  ///
-  /// @param linkIncrements \f$ \delta_e \f$ per edge, in `getEdgeList()` order
-  ///   and on the stored orientations, as `HolomorphicRelaxation` steps them.
-  /// @param spacing The largest node spacing, positive.
-  /// @return Positive infinity when the declared term has no zero.
-  /// @throws std::invalid_argument when the increment count is not the edge
-  ///   count or the spacing is not positive.
-  [[nodiscard]] double holonomyZeroClearance(
-      const std::vector<std::complex<double>> &linkIncrements,
-      double spacing) const;
 
   /// The Hellmann-Feynman force \f$ \operatorname{tr}(\Gamma\,\partial h/\partial z_e) \f$
   /// of Section 7, one entry per edge in `getEdgeList()` order.

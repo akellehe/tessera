@@ -248,10 +248,6 @@ DECLARED_GAUGE_RESONANCE_RADIUS = 1e-10
 #: The Cauchy rule for the diamagnetic term along a pure-gauge direction.
 DECLARED_WARD_CONTOUR_RADIUS = 0.1
 DECLARED_WARD_CONTOUR_NODES = 8
-#: The relative distance to a zero of the Villain weight W that no face
-#: holonomy may come within along a Newton step (step control only).
-DECLARED_HOLONOMY_ZERO_MARGIN = 0.05
-
 #: The squared edge length of the regular tetrahedron (the paper's a^2 = 8).
 DECLARED_EDGE_SQUARED = 8.0
 #: The unit Dirac monopole.
@@ -525,7 +521,6 @@ def relaxation_declaration(config):
     geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     geometry.contour_radius = config["jacobian_radius"]
     geometry.rank_tolerance = config["rank_tolerance"]
-    geometry.holonomy_zero_margin = config["holonomy_zero_margin"]
     # every recorded iterate carries every term of the action with its value
     # and gradient norm (--trace-terms); changes no step
     geometry.record_terms = bool(config.get("trace_terms", False))
@@ -1613,7 +1608,6 @@ def relaxation_record(report):
                 "residual_test_dampings": int(newton.residual_test_dampings),
                 "sector_guard_dampings": int(newton.sector_guard_dampings),
                 "domain_guard_dampings": int(newton.domain_guard_dampings),
-                "zero_guard_dampings": int(newton.zero_guard_dampings),
             }
         else:
             entry["geometry_residual_norm"] = float(
@@ -1667,7 +1661,6 @@ def relaxation_record(report):
         "action_available": bool(report.action_available),
         "action_unavailable": report.action_unavailable,
         "occupied_energy": complex(report.occupied_energy),
-        "zero_guard_damped_steps": int(report.zero_guard_damped_steps),
         "trace": trace,
     }
 
@@ -2146,7 +2139,6 @@ def evaluate_content(content, kappa, beta, config):
                 action.link_stationarity())),
             "ward_current_divergence": float(np.max(np.abs(np.asarray(
                 action.ward_current_divergence())))),
-            "holonomy_zero_distance": float(action.holonomy_zero_distance()),
         }),
         "covariant_spectrum": sorted(
             [complex(v) for v in np.linalg.eigvals(carrier)],
@@ -3557,7 +3549,6 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
-        "holonomy_zero_margin": DECLARED_HOLONOMY_ZERO_MARGIN,
         "newton_iterations": 40,
         "jacobian_radius": 1e-4,
         "mean_field_iterations": 40,

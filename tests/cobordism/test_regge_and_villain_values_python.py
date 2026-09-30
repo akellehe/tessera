@@ -220,26 +220,15 @@ def test_the_weight_is_even_under_inversion(holonomy):
 def test_the_zeros_of_the_weight(beta, n, sign):
     """By Jacobi's triple product W vanishes exactly at
     F = -exp(+-(2n - 1) / (2 beta)): the direct sum there is zero to
-    rounding against its terms, `zero_distance` is zero, and the logarithm
-    (hence the potential) is refused as not certified nonzero."""
+    rounding against its terms, and the logarithm (hence the potential) is
+    refused as not certified nonzero."""
     zero = -math.exp(sign * (2 * n - 1) / (2 * beta))
     m = np.arange(-60, 61, dtype=float)
     terms = np.exp(-m ** 2 / (2 * beta)) * zero ** m
     assert abs(terms.sum()) < 1e-14 * np.sum(np.abs(terms))
     character = cob.VillainCharacter(beta, 1e-16)
-    assert character.zero_distance(zero) == pytest.approx(0.0, abs=1e-15)
     with pytest.raises(ValueError):
         character.logarithm(zero)
-
-
-def test_the_zero_distance_is_relative_to_the_nearest_zero():
-    """At beta = 1 the nearest zeros of F = -1 are -e^{+-1/2}: the relative
-    distance min |F - F_0| / min(|F|, |F_0|) is (e^{1/2} - 1) / 1 on the
-    outer side and (1 - e^{-1/2}) / e^{-1/2} = e^{1/2} - 1 on the inner, the
-    same number."""
-    character = cob.VillainCharacter(1.0, 1e-16)
-    assert character.zero_distance(-1.0) == pytest.approx(
-        math.exp(0.5) - 1.0, rel=1e-13)
 
 
 @pytest.mark.parametrize("holonomy", [1.0, 1j, 3.0 + 0.5j])

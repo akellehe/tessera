@@ -513,8 +513,6 @@ class TheStepAndReportFieldsTest(unittest.TestCase):
             self.assertGreater(step.spectral_gap, 0.0)
             self.assertIsInstance(step.geometry_converged, bool)
             self.assertGreaterEqual(step.geometry_residual_norm, 0.0)
-            # no holonomy term, so no zero of the Villain weight to guard
-            self.assertEqual(step.geometry_zero_guard_damped_steps, 0)
         last = report.steps[-1]
         self.assertEqual(report.occupied_energy, last.occupied_energy)
         self.assertEqual(report.spectral_gap, last.spectral_gap)

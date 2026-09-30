@@ -496,64 +496,12 @@ class TheLogarithmReadsTheSeriesOwnUncertaintyTest(unittest.TestCase):
                                places=8)
 
 
-class TheZeroGuardTest(unittest.TestCase):
-    """Newton steps are kept a declared distance away from the zeros of W."""
+class TheSolveAwayFromTheZerosTest(unittest.TestCase):
+    """The equations are posed where W is certified nonzero; a solve that
+    stays there is not damped by anything but the residual test."""
 
-    def test_the_zero_distance_is_relative_to_the_nearest_zero(self):
-        beta = 0.8
-        q = math.exp(-1.0 / (2.0 * beta))
-        character = cob.VillainCharacter(beta)
-        for zero in (-q, -1.0 / q, -q ** 3, -q ** -3):
-            self.assertLess(character.zero_distance(zero), 1e-12)
-            self.assertAlmostEqual(character.zero_distance(zero * 1.01), 0.01,
-                                   places=12)
-        # F = 1 is equally far from -q, (1 + q) / q, and from -1/q, 1 + 1/q
-        self.assertAlmostEqual(character.zero_distance(1.0), 1.0 + 1.0 / q,
-                               places=12)
-
-    def test_the_path_clearance_sees_a_zero_passed_between_the_end_points(self):
-        """A face swept from F to F e^{Delta} through a zero reads a clearance
-        of the order of the node spacing, though both end points are far."""
-        beta = 0.8
-        q = math.exp(-1.0 / (2.0 * beta))
-        spacetime = _quarter_turn_tetrahedron()
-        action = cob.JointAction(spacetime, _declaration(beta=beta))
-        self.assertGreater(action.holonomy_zero_distance(), 0.3)
-        # U on the first edge scaled by exp(t delta) moves each face through
-        # it by exp(+-t delta). With delta = 2 (log(1/q) + i pi/2), halfway
-        # along the path a face F = i with incidence +1 reaches -1/q under
-        # +delta, and one with incidence -1 reaches it under -delta (F = -i
-        # likewise reaches -q), so one of the two signs passes a zero
-        delta = 2.0 * (-math.log(q) + 1j * math.pi / 2)
-        clearance = min(
-            action.holonomy_zero_clearance([sign * delta] + [0j] * 5, 0.01)
-            for sign in (1.0, -1.0))
-        self.assertLess(clearance, 0.02)
-        self.assertGreater(action.holonomy_zero_clearance([0j] * 6, 0.01),
-                           0.3)
-
-    def test_the_guard_damps_every_step_that_would_come_too_close(self):
-        """A margin no face can keep damps every trial step, and the report
-        counts the damped iterations; the equations are untouched."""
-        spacetime = sphere3(phase=_flux)
-        action = cob.JointAction(spacetime, _declaration())
-        before = np.array(action.link_stationarity())
-        relaxation_declaration = cob.HolomorphicRelaxationDeclaration()
-        relaxation_declaration.relax_lengths = False
-        relaxation_declaration.relax_links = True
-        relaxation_declaration.relax_multipliers = False
-        relaxation_declaration.holonomy_zero_margin = 1e6
-        report = cob.HolomorphicRelaxation(
-            action, relaxation_declaration).solve()
-        self.assertFalse(report.converged)
-        self.assertEqual(report.zero_guard_damped_steps, 1)
-        self.assertEqual(report.steps[0].zero_guard_dampings,
-                         relaxation_declaration.maximum_dampings + 1)
-        after = np.array(cob.JointAction(spacetime,
-                                         _declaration()).link_stationarity())
-        self.assertLess(np.max(np.abs(after - before)), 1e-15)
-
-    def test_the_default_margin_leaves_a_clear_solve_alone(self):
+    def test_a_clear_solve_converges_with_no_damping_but_the_residual_test(
+            self):
         spacetime = sphere3(phase=_flux)
         action = cob.JointAction(spacetime, _declaration())
         relaxation_declaration = cob.HolomorphicRelaxationDeclaration()
@@ -564,8 +512,9 @@ class TheZeroGuardTest(unittest.TestCase):
         report = cob.HolomorphicRelaxation(
             action, relaxation_declaration).solve()
         self.assertTrue(report.converged)
-        self.assertEqual(report.zero_guard_damped_steps, 0)
-        self.assertGreater(report.steps[0].holonomy_zero_distance, 0.05)
+        self.assertEqual(report.sector_guard_damped_steps, 0)
+        self.assertEqual(sum(step.domain_guard_dampings
+                             for step in report.steps), 0)
 
 
 class TheTruncationIsDeclaredAndBoundedTest(unittest.TestCase):
