@@ -831,15 +831,13 @@ def grow(cells, pairing, transports):
 def cell_reads(cells, z, links, config):
     """Every base tetrahedron read as a three-sheeted host of its own: the
     quark verdicts, the isospin-doublet reading and the baryon poles of every
-    declared content (`baryon_poles.evaluate_content`). A tetrahedron of the
-    declared level-0 host is a declared host of its own, so its four faces
-    are its bounding cut and are held. A tetrahedron of a grown level is not
-    declared, so nothing on it is held (``hold_cell_sectors``)."""
+    declared content (`baryon_poles.evaluate_content`), each content read
+    against the relaxed cell's own rotation group and refused by name when
+    the cell has none. A tetrahedron of the declared level-0 host is a
+    declared host of its own, so its four faces are its bounding cut and are
+    held. A tetrahedron of a grown level is not declared, so nothing on it is
+    held (``hold_cell_sectors``)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
-    alignment = bp.aligned_doublet_frame(
-        bp.monopole_support(), bp.rotation_group(),
-        bp.declared_tolerance(config, "degeneracy_tolerance"),
-        bp.declared_tolerance(config, "certificate_tolerance"))
     chosen = cells if config["max_cells"] is None else \
         cells[:config["max_cells"]]
     out = []
@@ -867,8 +865,7 @@ def cell_reads(cells, z, links, config):
         cell_config["held_sectors"] = (
             held_sectors([[0, 1, 2, 3]], [number], 4)
             if config.get("hold_cell_sectors", True) else [])
-        point = bp.scan_point(config["kappa"], config["beta"], cell_config,
-                              alignment)
+        point = bp.scan_point(config["kappa"], config["beta"], cell_config)
         out.append({"cell": c, "host_cell": host_cell,
                     "failed_contents": point["failed_contents"],
                     "contents": point["contents"],

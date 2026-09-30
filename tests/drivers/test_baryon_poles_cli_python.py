@@ -80,7 +80,7 @@ def _record(content, kappa=1.0, beta=2.0):
             THREE: [complex(kappa + beta, 0.2)]})]}
 
 
-def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
+def _cheap_scan_point(kappa, beta, config, on_content=None):
     """A deterministic stand-in for one scan point with both spins present,
     so every pairing of `ratios` has a pole pair."""
     records = [_record([1, 1, 1], kappa, beta)]
@@ -95,9 +95,9 @@ def cheap(monkeypatch):
     """Replace the scan point and record the configuration it is given."""
     seen = []
 
-    def scan(kappa, beta, config, alignment, on_content=None):
+    def scan(kappa, beta, config, on_content=None):
         seen.append(dict(config))
-        return _cheap_scan_point(kappa, beta, config, alignment)
+        return _cheap_scan_point(kappa, beta, config)
 
     monkeypatch.setattr(bp, "scan_point", scan)
     return seen
@@ -300,7 +300,7 @@ def test_a_stopped_drive_says_so():
 
 @pytest.fixture
 def point():
-    return _cheap_scan_point(1.0, 2.0, bp.default_config([1.0], [2.0]), None)
+    return _cheap_scan_point(1.0, 2.0, bp.default_config([1.0], [2.0]))
 
 
 def test_the_summary_names_every_pairing(point):
@@ -776,7 +776,8 @@ def declared_verdict():
     alignment = bp.aligned_doublet_frame(bp.monopole_support(),
                                          bp.rotation_group())
     recursion = bp.recursion_read(spacetime, bp.default_config([1.0], [1.0]))
-    return bp.quark_conditions(spacetime, alignment, recursion, 0.0, None)
+    return bp.quark_conditions(spacetime, [alignment] * bp.SHEETS,
+                               recursion, 0.0, None)
 
 
 def test_the_quark_verdict_names_the_seven_conditions(declared_verdict):

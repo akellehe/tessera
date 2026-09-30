@@ -51,6 +51,52 @@ def test_the_host_carries_the_unit_monopole_on_every_sheet():
     assert np.max(np.abs(np.asarray(faces) ** 2 + 1.0)) < 1e-12
 
 
+def test_the_declared_host_has_the_tetrahedral_rotation_group():
+    """`cell_symmetry` on the declared host: every one of the twelve rotations
+    leaves the six equal squared lengths invariant and carries the symmetric
+    monopole connection to a gauge-equivalent one on every sheet, with a
+    compensation residual at rounding, so the cell's group is the whole
+    tetrahedral group at the run's certificate tolerance and at the declared
+    1e-15 alike."""
+    spacetime = bp.build_host()
+    supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
+    for tolerance in (RUN.TOLERANCES["certificate_tolerance"],
+                      bp.DECLARED_TOLERANCE):
+        symmetry = bp.cell_symmetry(spacetime, supports, tolerance)
+        assert symmetry["tetrahedral"] and symmetry["order"] == 12
+        assert symmetry["tolerance"] == tolerance
+        assert symmetry["length_departure"] == 0.0
+        assert symmetry["compensation_residual"] < 1e-15
+        assert [r["rotation"] for r in symmetry["rotations"]] == \
+            [list(g) for g in bp.rotation_group()]
+        assert symmetry["group"][0] == [0, 1, 2, 3]
+
+
+def test_a_cell_with_one_length_changed_keeps_the_rotations_fixing_that_edge():
+    """With the squared length of the edge (0, 2) alone moved from 8 to 8.5
+    on every sheet, the rotations that are still symmetries are the identity
+    and the half turn about the axis through the midpoints of (0, 2) and
+    (1, 3), which exchanges 0 with 2 and 1 with 3; the other ten carry that
+    edge onto an edge of squared length 8, a departure of 0.5 / 8.5 of the
+    largest squared length, and the cell's group is not tetrahedral."""
+    host = bp.build_host()
+    cell = {"squared_lengths": [8.0, 8.5, 8.0, 8.0, 8.0, 8.0],
+            "links": [complex(u) for u in bp.sheet_links(host, 0)]}
+    spacetime = bp.build_host(cell=cell)
+    supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
+    symmetry = bp.cell_symmetry(spacetime, supports,
+                                RUN.TOLERANCES["certificate_tolerance"])
+    assert not symmetry["tetrahedral"] and symmetry["order"] == 2
+    assert symmetry["group"] == [[0, 1, 2, 3], [2, 3, 0, 1]]
+    assert symmetry["length_departure"] == pytest.approx(0.5 / 8.5)
+    moved = [r for r in symmetry["rotations"] if not r["symmetric"]]
+    assert len(moved) == 10
+    assert all(r["length_departure"] == pytest.approx(0.5 / 8.5)
+               for r in moved)
+    assert all(r["compensation_residual"] < 1e-15
+               for r in symmetry["rotations"])
+
+
 def test_the_sheets_are_isomorphic():
     spacetime = bp.build_host()
     read = obs.SheetedSupport(3, 6).certifyIsomorphism(
@@ -282,14 +328,14 @@ def test_a_lengths_only_elimination_without_an_interior_hinge_is_refused():
 
 
 def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
-    def evaluate(content, kappa, beta, config, alignment):
+    def evaluate(content, kappa, beta, config):
         if tuple(content) == (0, 3, 0):
             raise ValueError("band 1 has rank 2")
         return {"content": list(content), "doublet_reads": []}
     monkeypatch.setattr(bp, "evaluate_content", evaluate)
     config = bp.default_config([0.5], [0.5],
                                selected_contents=[(0, 3, 0), (1, 1, 1)])
-    point = bp.scan_point(0.5, 0.5, config, None)
+    point = bp.scan_point(0.5, 0.5, config)
     assert point["failed_contents"] == [[0, 3, 0]]
     assert point["contents"][0]["failed"] == "band 1 has rank 2"
     assert point["contents"][1]["content"] == [1, 1, 1]
@@ -468,7 +514,7 @@ def test_live_refuses_a_non_interactive_or_webagg_backend(monkeypatch,
                                         selected_contents=[(3, 0, 0)]))
 
 
-def _cheap_scan_point(kappa, beta, config, alignment, on_content=None):
+def _cheap_scan_point(kappa, beta, config, on_content=None):
     """A deterministic stand-in for one scan point, so the live path is tested
     without the relaxation's cost; the claim under test is that the live
     worker runs the same `drive` and returns the same result."""
@@ -496,9 +542,9 @@ def test_live_and_headless_outputs_are_identical(monkeypatch):
 
 
 def test_the_window_says_which_scan_point_is_running(monkeypatch):
-    def slow_point(kappa, beta, config, alignment, on_content=None):
+    def slow_point(kappa, beta, config, on_content=None):
         time.sleep(0.05)
-        return _cheap_scan_point(kappa, beta, config, alignment)
+        return _cheap_scan_point(kappa, beta, config)
 
     monkeypatch.setattr(bp, "scan_point", slow_point)
     monkeypatch.setattr(bp, "draw_frame", lambda figure, frames, index: None)
@@ -760,7 +806,7 @@ def test_the_anchor_atlas_of_the_declared_host(alignment):
     every sheet, with the connection-dressed covariance and the transition
     cocycle at machine precision and the invariant coordinates attached; on
     the symmetric host its profile has one modulus on every face."""
-    anchor = bp.anchor_atlas_read(bp.build_host(), alignment,
+    anchor = bp.anchor_atlas_read(bp.build_host(), [alignment] * bp.SHEETS,
                                   RUN.TOLERANCES["certificate_tolerance"])
     assert anchor["anchored"] and anchor["anchoring_faces"] == 4
     assert anchor["covariance_residual"] < 1e-12
@@ -877,8 +923,36 @@ def test_the_spectral_fingerprint_of_the_declared_host():
 # ------------------------------------------- refusals after the mean field
 
 
-def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name(
-        alignment):
+def test_a_relaxed_cell_without_the_tetrahedral_group_is_refused_by_name():
+    """(0123, 201) of the recursion's tick-0 run with the occupied fiber
+    pinned: the joint Newton converges, and the relaxed cell has lost every
+    rotation but the identity (squared lengths that differ by two thirds of
+    the largest, a gauge-compensation residual of order one), so the spin
+    read, which needs the whole tetrahedral group, is refused by name.
+    `scan_point` records the refusal with the solve's record and the
+    symmetry read, and the content supplies no pole."""
+    from tessera.drivers import recursion as R
+
+    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
+                               tolerances=RUN.TOLERANCES)
+    config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
+    config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
+    point = bp.scan_point(1.0, 1.0, config)
+    assert point["failed_contents"] == [[2, 0, 1]]
+    (record,) = point["contents"]
+    assert record["refusal"] == "not tetrahedrally symmetric"
+    assert record["failed"].startswith(
+        "the spin read is refused: the relaxed cell has 1 of the 12 rotations "
+        "of the tetrahedron as symmetries at the certificate tolerance")
+    assert record["relaxation"]["band_selection"] == "continuation"
+    symmetry = record["symmetry"]
+    assert symmetry["order"] == 1 and symmetry["group"] == [[0, 1, 2, 3]]
+    assert symmetry["length_departure"] > 0.5
+    assert symmetry["compensation_residual"] > 1.0
+    assert record["doublet_reads"] == []
+
+
+def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name():
     """(0123, 201) of the recursion's tick-0 run: the content occupies the
     host's negative band, whose force contracts the cell, and the joint
     Newton follows it until the residual is at its floor on the held set,
@@ -896,7 +970,7 @@ def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name(
                                fiber_moments=0, tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
-    point = bp.scan_point(1.0, 1.0, config, alignment)
+    point = bp.scan_point(1.0, 1.0, config)
     assert point["failed_contents"] == [[2, 0, 1]]
     (record,) = point["contents"]
     assert record["refusal"] == "not Kontsevich-Segal allowable"
