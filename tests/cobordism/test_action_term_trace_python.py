@@ -25,6 +25,8 @@ from tessera.drivers import recursion as R
 from tests.drivers import _recursion_run_2026_09_23 as RUN
 
 TERMS = ["regge", "stiffness", "holonomy", "matter"]
+#: The two sums every record list ends with.
+SUMS = ["constraints", "action"]
 
 
 def _host(content=(1, 1, 1), stiffness="linear-stand-in"):
@@ -96,6 +98,19 @@ def test_the_terms_sum_to_the_stationarity_exactly():
     assert np.max(np.abs(np.asarray(terms[0].link_stationarity))) == 0
     assert terms[0].value == pytest.approx(complex(action.regge_term()))
     assert terms[3].value == pytest.approx(complex(action.matter_term()))
+    # every term as it stands in the action: its weight, its bare factor
+    # and their product
+    assert [t.label for t in terms[:4]] == [
+        "(1/kappa) S_Regge", "w_S S_stiff", "beta S_hol", "w_m tr(Gamma h_1)"]
+    assert terms[4].label == "xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s)"
+    assert terms[0].weight == 1.0 and terms[3].weight == 1.0
+    for term in terms:
+        if term.factored:
+            assert term.value == pytest.approx(term.weight * term.bare,
+                                               rel=1e-12, abs=1e-15)
+    assert not terms[2].factored and terms[2].bare == terms[2].value
+    assert terms[4].weight == complex(0.3, -0.1)
+    assert terms[4].bare == pytest.approx(complex(action.moment_residuals()[0]))
 
 
 def test_a_term_of_zero_weight_is_listed_with_zeros():
@@ -123,7 +138,7 @@ def test_the_records_reduce_onto_the_relaxed_coordinates():
     orientations = list(geometry.edge_class_orientations)
     records = cob.action_term_records(action, geometry)
     terms = action.term_gradients()
-    assert [r.name for r in records] == [t.name for t in terms]
+    assert [r.name for r in records] == [t.name for t in terms] + SUMS
     count = max(classes) + 1
     for record, term in zip(records, terms):
         summed = np.zeros(2 * count, dtype=complex)
@@ -133,6 +148,22 @@ def test_the_records_reduce_onto_the_relaxed_coordinates():
         assert record.gradient_norm == pytest.approx(np.linalg.norm(summed),
                                                      rel=1e-12)
         assert record.value == term.value
+        assert (record.label, record.weight, record.bare, record.factored) == \
+            (term.label, term.weight, term.bare, term.factored)
+    # the sums: of the constraint terms, and of the whole action, each with
+    # the norm of its summed gradient, which is the force norm for the whole
+    constraints, whole = records[-2], records[-1]
+    assert constraints.label == "sum_j xi_j (c_j - c_j*)" and whole.label == "S"
+    assert constraints.value == pytest.approx(
+        sum(t.value for t in terms if t.name.startswith("constraint")))
+    assert whole.value == pytest.approx(complex(action.value()), rel=1e-12)
+    summed = np.zeros(2 * count, dtype=complex)
+    for term in terms:
+        for edge, (c, o) in enumerate(zip(classes, orientations)):
+            summed[c] += term.length_stationarity[edge]
+            summed[count + c] += o * term.link_stationarity[edge]
+    assert whole.gradient_norm == pytest.approx(np.linalg.norm(summed),
+                                                rel=1e-12)
     geometry.relax_links = False
     for record, term in zip(cob.action_term_records(action, geometry), terms):
         summed = np.zeros(count, dtype=complex)
@@ -159,10 +190,10 @@ def test_a_relaxation_records_the_terms_only_when_asked():
                                        geometry)
     traced = cob.HolomorphicRelaxation(
         cob.JointAction(spacetime, declaration), geometry).solve()
-    assert [t.name for t in traced.initial_terms] == TERMS
+    assert [t.name for t in traced.initial_terms] == TERMS + SUMS
     assert len(traced.steps) >= 1
     for step in traced.steps:
-        assert [t.name for t in step.terms] == TERMS
+        assert [t.name for t in step.terms] == TERMS + SUMS
     # the same steps either way: recording changes nothing
     assert [s.residual_norm for s in traced.steps] == \
         [s.residual_norm for s in silent.steps]
@@ -181,17 +212,28 @@ def test_the_mean_field_solve_traces_its_terms_and_the_driver_prints_them():
     config["trace_terms"] = True
     config["mean_field_iterations"] = 2
     _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
-    names = TERMS + ["constraint %d" % j for j in (1, 2, 3)]
+    names = TERMS + ["constraint %d" % j for j in (1, 2, 3)] + SUMS
     assert all([t.name for t in step.terms] == names for step in report.steps)
     record = bp.relaxation_record(report)
     assert [t["name"] for t in record["trace"][0]["terms"]] == names
     lines = bp.term_trace_lines(record, "  ")
-    assert len(lines) == len(report.steps)
-    assert lines[0].startswith("  iterate 0: regge ")
-    assert "gradient" in lines[0] and "[value" not in lines[0]
-    if len(lines) > 1:
-        assert "[value" in lines[1] and "improved" in lines[1]
-        assert lines[1].startswith("  iterate 1: ")
+    # one header and one line per term and per sum, per iterate
+    per_iterate = 1 + 4 + 1 + 3
+    assert len(lines) == per_iterate * len(report.steps)
+    assert lines[0].startswith("  iterate 0: S = ")
+    assert "stationarity residual" in lines[0]
+    assert lines[1].startswith("    (1/kappa) S_Regge = (1+0i) x (")
+    assert lines[2].startswith("    w_S S_stiff = (")
+    assert lines[3].startswith("    beta S_hol = ") and "(beta = 1+0i)" in lines[3]
+    assert lines[4].startswith("    w_m tr(Gamma h_1) = (1+0i) x (")
+    assert lines[5].startswith("    sum_j xi_j (c_j - c_j*) = ")
+    assert lines[6].startswith("      xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s) = (")
+    assert all("gradient" in line for line in lines[1:per_iterate])
+    assert not any("[value" in line for line in lines[:per_iterate])
+    if len(report.steps) > 1:
+        second = lines[per_iterate:2 * per_iterate]
+        assert second[0].startswith("  iterate 1: S = ")
+        assert all("[value" in line and "improved" in line for line in second)
     config["trace_terms"] = False
     _, _, quiet = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
     assert all(len(step.terms) == 0 for step in quiet.steps)

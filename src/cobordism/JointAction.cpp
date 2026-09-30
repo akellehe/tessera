@@ -1546,12 +1546,19 @@ void JointAction::stationarityPart(StationarityPart part,
 std::vector<ActionTermGradient> JointAction::termGradients() const {
   const std::size_t edges = edgeCount();
   std::vector<ActionTermGradient> terms;
-  auto add = [&](const std::string &name, complexd value,
+  auto add = [&](const std::string &name, const std::string &label,
+                 complexd weight, complexd value, bool factored,
                  StationarityPart part, const std::vector<complexd> *matrix,
                  bool wantLengths, bool wantLinks) {
     ActionTermGradient term;
     term.name = name;
+    term.label = label;
+    term.weight = weight;
     term.value = value;
+    term.factored = factored;
+    term.bare = !factored ? value
+                : weight != complexd{0.0, 0.0} ? value / weight
+                                               : complexd{0.0, 0.0};
     term.lengthStationarity.assign(edges, complexd{0.0, 0.0});
     term.linkStationarity.assign(edges, complexd{0.0, 0.0});
     if (wantLengths || wantLinks)
@@ -1560,9 +1567,12 @@ std::vector<ActionTermGradient> JointAction::termGradients() const {
                        wantLinks ? &term.linkStationarity : nullptr);
     terms.push_back(std::move(term));
   };
-  add("regge", reggeTerm(), StationarityPart::Regge, nullptr,
+  add("regge", "(1/kappa) S_Regge",
+      complexd{declaration_.gravitationalWeight, 0.0}, reggeTerm(), true,
+      StationarityPart::Regge, nullptr,
       declaration_.gravitationalWeight != 0.0, false);
-  add("stiffness", stiffnessTerm(), StationarityPart::Stiffness, nullptr,
+  add("stiffness", "w_S S_stiff", complexd{declaration_.stiffnessWeight, 0.0},
+      stiffnessTerm(), true, StationarityPart::Stiffness, nullptr,
       declaration_.stiffnessWeight != 0.0, false);
   complexd holonomy{0.0, 0.0};
   try {
@@ -1571,21 +1581,33 @@ std::vector<ActionTermGradient> JointAction::termGradients() const {
     holonomy = complexd{std::numeric_limits<double>::quiet_NaN(),
                         std::numeric_limits<double>::quiet_NaN()};
   }
-  add("holonomy", holonomy, StationarityPart::Holonomy, nullptr, false,
+  add("holonomy", "beta S_hol", complexd{declaration_.holonomyWeight, 0.0},
+      holonomy, false, StationarityPart::Holonomy, nullptr, false,
       declaration_.holonomyWeight != 0.0);
   // The mean-field term: the contraction w_m Gamma alone.
   std::vector<complexd> weighted = declaration_.covariance;
   for (complexd &entry : weighted) entry *= declaration_.matterWeight;
   const bool matter = declaration_.matterWeight != 0.0 && !weighted.empty();
-  add("matter", matterTerm(), StationarityPart::Contraction, &weighted, matter,
+  add("matter", "w_m tr(Gamma h_1)", complexd{declaration_.matterWeight, 0.0},
+      matterTerm(), true, StationarityPart::Contraction, &weighted, matter,
       matter);
   // Each constraint: xi_j times the analytic gradient of c_j.
   const std::vector<complexd> residuals = momentResiduals();
   for (std::size_t index = 0; index < declaration_.momentConstraints.size();
        ++index) {
-    const complexd multiplier = declaration_.momentConstraints[index].multiplier;
+    const auto &constraint = declaration_.momentConstraints[index];
+    const complexd multiplier = constraint.multiplier;
+    const std::string j = std::to_string(index + 1);
     ActionTermGradient term;
-    term.name = "constraint " + std::to_string(index + 1);
+    term.name = "constraint " + j;
+    term.label =
+        "xi_" + j + " (c_" + j + " - c_" + j + "*), c_" + j + " = " +
+        (constraint.form == SpectralConstraintForm::BandMean
+             ? "lambda_" + std::to_string(constraint.band + 1) + " / s"
+             : "p_" + std::to_string(constraint.order) + "(h_C / s)");
+    term.weight = multiplier;
+    term.bare = residuals[index];
+    term.factored = true;
     term.value = multiplier * residuals[index];
     const std::vector<complexd> gradient = momentGradient(index);
     term.lengthStationarity.assign(edges, complexd{0.0, 0.0});

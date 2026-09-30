@@ -3183,9 +3183,14 @@ def _band_text(band):
 
 def term_records(terms):
     """The terms of the action at one recorded point (`ActionTermRecord`) as
-    plain records: name, value and the norm of the term's stationarity
-    gradient on the relaxed coordinates."""
-    return [{"name": str(term.name), "value": complex(term.value),
+    plain records: name, the term's label as it stands in the action, its
+    weight, the bare factor the weight multiplies, whether the value is
+    their product, the value, and the norm of the term's stationarity
+    gradient on the relaxed coordinates. The list ends with the sum of the
+    constraint terms and the whole action."""
+    return [{"name": str(term.name), "label": str(term.label),
+             "weight": complex(term.weight), "bare": complex(term.bare),
+             "factored": bool(term.factored), "value": complex(term.value),
              "gradient_norm": float(term.gradient_norm)} for term in terms]
 
 
@@ -3211,20 +3216,52 @@ def term_trace_lines(relaxation, prefix):
     trace = [terms for terms in term_trace(relaxation) if terms]
     lines = []
     previous = None
+
+    def changes(term, before):
+        if before is None:
+            return ""
+        change = term["value"] - before["value"]
+        return " [value %+.3g%+.3gi, improved %+.3g]" % (
+            change.real, change.imag,
+            before["gradient_norm"] - term["gradient_norm"])
+
+    def line(term, before, indent, head):
+        if term["factored"]:
+            body = "%s = (%s) x (%s) = %s" % (
+                head, _complex_text(term["weight"]),
+                _complex_text(term["bare"]), _complex_text(term["value"]))
+        elif term["name"] == "holonomy":
+            body = "%s = %s (beta = %s)" % (head, _complex_text(term["value"]),
+                                           _complex_text(term["weight"]))
+        else:
+            body = "%s = %s" % (head, _complex_text(term["value"]))
+        return "%s%s%s; gradient %.3g%s" % (
+            prefix, " " * indent, body, term["gradient_norm"],
+            changes(term, before))
+
     for index, terms in enumerate(trace):
-        parts = []
-        for k, term in enumerate(terms):
-            text = "%s %s, gradient %.3g" % (
-                term["name"], _complex_text(term["value"]),
-                term["gradient_norm"])
-            if previous is not None and k < len(previous):
-                before = previous[k]
-                change = term["value"] - before["value"]
-                text += " [value %+.3g%+.3gi, improved %+.3g]" % (
-                    change.real, change.imag,
-                    before["gradient_norm"] - term["gradient_norm"])
-            parts.append(text)
-        lines.append("%siterate %d: %s" % (prefix, index, "; ".join(parts)))
+        by_name = {term["name"]: term for term in terms}
+        earlier = {term["name"]: term for term in previous or []}
+        total = by_name.get("action")
+        if total is not None:
+            lines.append("%siterate %d: S = %s; stationarity residual %.3g%s"
+                         % (prefix, index, _complex_text(total["value"]),
+                            total["gradient_norm"],
+                            changes(total, earlier.get("action"))))
+        else:
+            lines.append("%siterate %d:" % (prefix, index))
+        for name in ("regge", "stiffness", "holonomy", "matter"):
+            if name in by_name:
+                term = by_name[name]
+                lines.append(line(term, earlier.get(name), 2, term["label"]))
+        if "constraints" in by_name:
+            term = by_name["constraints"]
+            lines.append(line(term, earlier.get("constraints"), 2,
+                              term["label"]))
+        for term in terms:
+            if term["name"].startswith("constraint "):
+                lines.append(line(term, earlier.get(term["name"]), 4,
+                                  term["label"]))
         previous = terms
     return lines
 

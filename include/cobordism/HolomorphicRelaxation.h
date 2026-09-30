@@ -319,8 +319,19 @@ struct HolomorphicRelaxationDeclaration {
 /// equations are constraints rather than gradients and are left out, as they
 /// are of the force norm.
 struct ActionTermRecord {
+  /// As `ActionTermGradient::name`, plus `"constraints"` for the sum of the
+  /// constraint terms and `"action"` for the whole action.
   std::string name;
+  /// As `ActionTermGradient::label`: `"sum_j xi_j (c_j - c_j*)"` and `"S"`
+  /// for the two sums.
+  std::string label;
+  std::complex<double> weight{0.0, 0.0};
+  std::complex<double> bare{0.0, 0.0};
+  bool factored = true;
   std::complex<double> value{0.0, 0.0};
+  /// The Euclidean norm of the term's stationarity on the relaxed
+  /// coordinates; for `"action"`, of the whole stationarity, which is the
+  /// force norm the solve reports.
   double gradientNorm = 0.0;
 };
 
@@ -564,7 +575,9 @@ struct HolomorphicRelaxationReport {
 /// Every term of \p action with its value and the norm of its stationarity
 /// gradient on the coordinates \p declaration relaxes (`ActionTermRecord`),
 /// the per-edge gradients summed over the declared edge classes as the
-/// relaxation's residual is.
+/// relaxation's residual is; then the sum of the constraint terms
+/// (`"constraints"`) and the whole action (`"action"`), each with the norm of
+/// its summed gradient.
 [[nodiscard]] std::vector<ActionTermRecord> actionTermRecords(
     const JointAction &action,
     const HolomorphicRelaxationDeclaration &declaration);

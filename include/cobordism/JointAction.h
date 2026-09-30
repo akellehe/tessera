@@ -110,6 +110,24 @@ struct ActionTermGradient {
   /// `"regge"`, `"stiffness"`, `"holonomy"`, `"matter"`, or
   /// `"constraint j"` with \f$ j \f$ counted from one in declaration order.
   std::string name;
+  /// The term as it stands in the action: `"(1/kappa) S_Regge"`,
+  /// `"w_S S_stiff"`, `"beta S_hol"`, `"w_m tr(Gamma h_1)"`, or
+  /// `"xi_j (c_j - c_j*)"` followed by what \f$ c_j \f$ is, the band
+  /// eigenvalue \f$ \lambda_b/s \f$ or the power sum \f$ p_j(h_C/s) \f$.
+  std::string label;
+  /// The coefficient in front of the term: \f$ w_R=1/\kappa \f$,
+  /// \f$ w_S \f$, \f$ \beta \f$, \f$ w_m \f$, or the multiplier
+  /// \f$ \xi_j \f$.
+  std::complex<double> weight{0.0, 0.0};
+  /// What the weight multiplies: \f$ S_{\rm Regge} \f$, \f$ S_{\rm stiff} \f$,
+  /// \f$ \operatorname{tr}(\Gamma h) \f$, or the constraint's residual
+  /// \f$ c_j-c_j^{\star} \f$ in the declared unit, so that
+  /// `value == weight * bare` when `factored`. For the holonomy term, whose
+  /// weight enters its form (the Villain weight is \f$ \beta \f$ over the
+  /// mean of \f$ m^2 \f$), `bare` is the value itself and `factored` is
+  /// false. Zero when the weight is zero and the term was not formed.
+  std::complex<double> bare{0.0, 0.0};
+  bool factored = true;
   /// The term's value: \f$ w_R S_{\rm Regge} \f$, \f$ w_S S_{\rm stiff} \f$,
   /// \f$ S_{\rm hol} \f$ (quiet NaN where it refuses to evaluate),
   /// \f$ w_m\operatorname{tr}(\Gamma h) \f$, or

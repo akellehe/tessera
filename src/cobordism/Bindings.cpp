@@ -4459,6 +4459,20 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("name", &ActionTermGradient::name,
                      "regge, stiffness, holonomy, matter, or constraint j "
                      "(j from one, in declaration order).")
+      .def_readwrite("label", &ActionTermGradient::label,
+                     "The term as it stands in the action: (1/kappa) "
+                     "S_Regge, w_S S_stiff, beta S_hol, w_m tr(Gamma h_1), "
+                     "or xi_j (c_j - c_j*) with what c_j is.")
+      .def_readwrite("weight", &ActionTermGradient::weight,
+                     "The coefficient in front of the term: 1/kappa, w_S, "
+                     "beta, w_m, or the multiplier xi_j.")
+      .def_readwrite("bare", &ActionTermGradient::bare,
+                     "What the weight multiplies (S_Regge, S_stiff, "
+                     "tr(Gamma h_1), or the constraint residual c_j - c_j* in "
+                     "the declared unit), so value == weight * bare when "
+                     "factored; the value itself for the holonomy term.")
+      .def_readwrite("factored", &ActionTermGradient::factored,
+                     "Whether value == weight * bare by construction.")
       .def_readwrite("value", &ActionTermGradient::value,
                      "The term's value; NaN for a holonomy term that refuses "
                      "to evaluate.")
@@ -5052,9 +5066,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "residual is. The multiplier equations are left out, as they are of "
       "the force norm.")
       .def(py::init<>())
-      .def_readwrite("name", &ActionTermRecord::name)
+      .def_readwrite("name", &ActionTermRecord::name,
+                     "As ActionTermGradient.name, plus constraints (the sum "
+                     "of the constraint terms) and action (the whole "
+                     "action).")
+      .def_readwrite("label", &ActionTermRecord::label)
+      .def_readwrite("weight", &ActionTermRecord::weight)
+      .def_readwrite("bare", &ActionTermRecord::bare)
+      .def_readwrite("factored", &ActionTermRecord::factored)
       .def_readwrite("value", &ActionTermRecord::value)
-      .def_readwrite("gradient_norm", &ActionTermRecord::gradientNorm);
+      .def_readwrite("gradient_norm", &ActionTermRecord::gradientNorm,
+                     "The norm of the term's stationarity on the relaxed "
+                     "coordinates; for action, the force norm the solve "
+                     "reports.");
 
   m.def("action_term_records", &actionTermRecords, py::arg("action"),
         py::arg("declaration"),
