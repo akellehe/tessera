@@ -99,6 +99,9 @@ class NeutralReadoutRegressionTest(unittest.TestCase):
         self.assertEqual(frame.candidate_components, components)
 
         frame.states = [None, None]
+        # a single frame with no earlier frames retained, as the constructor
+        # would leave it
+        frame.previous_frames = []
         evidence_type = lambda: SimpleNamespace()  # noqa: E731
         with mock.patch.object(ea.obs, "QuarkCandidateEvidence",
                                evidence_type), \
