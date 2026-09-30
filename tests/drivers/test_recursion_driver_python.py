@@ -19,6 +19,8 @@ import pytest
 from tessera import chainhodge as ch
 from tessera.drivers import recursion as R
 
+from tests.drivers import _recursion_run_2026_09_23 as RUN
+
 
 @pytest.mark.parametrize("count", [2, 3, 4])
 def test_every_tetrahedron_of_the_fan_carries_a_unit_monopole(count):
@@ -223,7 +225,7 @@ def test_one_tick_on_the_host_holds_its_cut_and_rejects_transient_components(
     resolutions and are rejected by name. That leaves two response vertices,
     no grown 3-simplex, and a stop."""
     monkeypatch.setattr(R, "cell_reads", lambda cells, z, links, config: [])
-    config = R.default_config(tetrahedra=2)
+    config = R.default_config(tetrahedra=2, tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     record, following = R.tick(0, cells, z, links, config)
     assert record["tick"] == 0
@@ -267,7 +269,7 @@ def test_a_grown_level_holds_nothing(monkeypatch):
     without one."""
     seen = []
 
-    def refuse(spacetime, config, sectors=None):
+    def refuse(spacetime, config, sectors=None, count=None):
         seen.append(list(sectors or []))
         raise ValueError("stop here")
     monkeypatch.setattr(R, "relax_level", refuse)
@@ -450,14 +452,42 @@ class _Canvas:
         self.callbacks["close_event"](object())
 
 
+class _Text:
+    def __init__(self, message):
+        self.messages = [message]
+
+    def set_text(self, message):
+        self.messages.append(message)
+
+
 class _Figure:
+    """Enough of a figure for the live loop and its status line."""
+
     def __init__(self):
         self.canvas = _Canvas()
+        self.texts = []
+        self.axes = []
+
+    def text(self, x, y, message, **kwargs):
+        made = _Text(message)
+        self.texts.append(made)
+        return made
+
+    def messages(self):
+        return [m for text in self.texts for m in text.messages]
 
 
-def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None):
+def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None,
+                     closes=None):
+    """Stub pyplot for the live loop. `plt.close` fires the figure's close
+    event, as the Qt backend does, and is recorded in `closes`."""
     import matplotlib
     import matplotlib.pyplot as plt
+
+    def close(figure):
+        if closes is not None:
+            closes.append(figure)
+        figure.canvas.close()
 
     def figure(**kwargs):
         made = _Figure()
@@ -469,7 +499,7 @@ def _stub_matplotlib(monkeypatch, backend="qtagg", figures=None):
     monkeypatch.setattr(plt, "isinteractive", lambda: True)
     monkeypatch.setattr(plt, "figure", figure)
     monkeypatch.setattr(plt, "show", lambda **kwargs: None)
-    monkeypatch.setattr(plt, "close", lambda figure: None)
+    monkeypatch.setattr(plt, "close", close)
 
 
 def _cheap_tick(index, cells, z, links, config):
@@ -539,6 +569,85 @@ def test_closing_the_window_switches_the_run_to_headless(monkeypatch,
     assert [json.loads(line)["tick"] for line in lines[1:]] == [0, 1, 2]
 
 
+def test_the_window_says_which_tick_is_running(monkeypatch):
+    """While a tick is computed the window names it and its elapsed time;
+    before, it was an empty figure until the tick completed."""
+    def slow_tick(index, cells, z, links, config):
+        time.sleep(0.05)
+        return _cheap_tick(index, cells, z, links, config)
+
+    monkeypatch.setattr(R, "tick", slow_tick)
+    monkeypatch.setattr(R, "draw_frame", lambda figure, frames, index: None)
+    figures = []
+    _stub_matplotlib(monkeypatch, figures=figures)
+    R.drive_live(R.default_config(ticks=2))
+    messages = figures[0].messages()
+    assert any(m.startswith("tick 0 of 2 is running: 0:00 elapsed")
+               for m in messages)
+    assert any(m.startswith("tick 1 of 2 is running: 0:00 elapsed")
+               for m in messages)
+
+
+def test_the_drivers_own_close_at_the_end_is_not_reported(monkeypatch,
+                                                          capsys):
+    """Closing its own window at the end fires the close event (as Qt does);
+    it must not claim the user closed the window."""
+    monkeypatch.setattr(R, "tick", _cheap_tick)
+    monkeypatch.setattr(R, "draw_frame", lambda figure, frames, index: None)
+    closes = []
+    _stub_matplotlib(monkeypatch, closes=closes)
+    R.drive_live(R.default_config(ticks=1))
+    assert len(closes) == 1
+    assert "was closed" not in capsys.readouterr().out
+
+
+def test_keep_open_leaves_the_final_frame_on_screen(monkeypatch):
+    monkeypatch.setattr(R, "tick", _cheap_tick)
+    drawn = []
+    monkeypatch.setattr(R, "draw_frame",
+                        lambda figure, frames, index: drawn.append(index))
+    figures, closes = [], []
+    _stub_matplotlib(monkeypatch, figures=figures, closes=closes)
+    R.drive_live(R.default_config(ticks=1), keep_open=True)
+    assert drawn == [0] and closes == []
+    assert figures[0].messages()[-1] == \
+        "the run is complete; writing the outputs"
+
+
+def test_the_cli_writes_every_output_before_holding_the_window(
+        monkeypatch, tmp_path):
+    monkeypatch.setattr(R, "tick", _cheap_tick)
+    monkeypatch.setattr(R, "draw_frame", lambda figure, frames, index: None)
+    monkeypatch.setattr(R, "render",
+                        lambda result, path: open(path, "w").close())
+    closes = []
+    _stub_matplotlib(monkeypatch, closes=closes)
+    data, png = tmp_path / "run.json", tmp_path / "run.png"
+    held = []
+    monkeypatch.setattr(
+        R.bp, "hold_live_window",
+        lambda message: held.append((message, data.exists(), png.exists())))
+    R.main(["run", "--ticks", "1", "--live", "--quiet", "--json", str(data),
+            "--out", str(png)])
+    assert held == [("the run is complete and every output is written; "
+                     "close this window to exit", True, True)]
+    assert closes == []
+
+
+def test_render_leaves_open_windows_and_the_backend_alone(tmp_path):
+    import matplotlib
+    import matplotlib.pyplot as plt
+    backend = matplotlib.get_backend()
+    window = plt.figure()
+    try:
+        R.render({"ticks": []}, str(tmp_path / "frame.png"))
+        assert plt.fignum_exists(window.number)
+        assert matplotlib.get_backend() == backend
+        assert (tmp_path / "frame.png").exists()
+    finally:
+        plt.close(window)
+
+
 def test_a_worker_error_reaches_the_main_thread(monkeypatch):
     def exploding(*args, **kwargs):
         raise ValueError("the tick failed")
@@ -559,7 +668,7 @@ def test_the_recursion_stops_at_a_level_with_no_grown_cell(monkeypatch):
 
 
 def test_a_refused_relaxation_stops_the_recursion_with_its_reason(monkeypatch):
-    def refuse(spacetime, config, sectors=None):
+    def refuse(spacetime, config, sectors=None, count=None):
         raise ValueError("VillainCharacter::logarithm: refused")
     monkeypatch.setattr(R, "relax_level", refuse)
     config = R.default_config(tetrahedra=2)

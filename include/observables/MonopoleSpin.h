@@ -23,12 +23,18 @@
 //                       decides its cohomology class, and reads the
 //                       symmetry-protected bands of a rotation-invariant
 //                       operator.
-//   • SharpSpin       — the sharpness read of the total-space spin: the right
-//                       and left eigen-equations (J^2 - j(j+1) I)|Psi_R> = 0
-//                       and <Psi_L|(J^2 - j(j+1) I) = 0 evaluated on a bounded
-//                       superposition of determinants, together with the
-//                       biorthogonal expectation and complex variance that
-//                       the whitepaper calls insufficient on their own.
+//   • SharpSpin       — the sharp spinor certificate of WP v18 (Sections
+//                       11.1 and 14): the isotypic projector P_rho of the
+//                       cluster's symmetry action (its double cover in an
+//                       odd sector) on an n-particle sector, and the
+//                       projector equations (I - P_rho)|Psi_R> = 0 and
+//                       <Psi_L|(I - P_rho) = 0 on a bounded superposition of
+//                       determinants; beside it the spin-lift read, the
+//                       eigen-equations of J^2 under a declared SU(2) action
+//                       on the modes, which a continuum spin claim needs in
+//                       addition, with the biorthogonal expectation and
+//                       complex variance that the whitepaper calls
+//                       insufficient on their own.
 //
 // ## Why a rotation cannot supply the sign
 //
@@ -459,8 +465,12 @@ class MonopoleSupport {
     std::vector<Complex> connection_{};
 };
 
-/// The sharpness read of a total-space spin: two eigen-equations, plus the
-/// moments the whitepaper calls insufficient on their own.
+/// The spin-lift read: the two J^2 eigen-equations under a declared SU(2)
+/// action on the modes, plus the moments the whitepaper calls insufficient
+/// on their own. A finite cluster has no J^2 of its own (WP v18 Section
+/// 11.1): the eigen-equations state the continuum value j that an accepted
+/// spin lift supplies, and the sharp spinor certificate of the cluster is
+/// `IsotypicRead`.
 ///
 /// In a complex bilinear theory <J^2> = 3/4 is only a matrix-element
 /// identity, and even a vanishing complex variance can result from isotropic
@@ -506,22 +516,82 @@ struct SharpSpinRead {
     ::tessera::cobordism::Certificate certificate{};
 };
 
+/// The sharpness read of a spinor readout against one isotypic component of
+/// the cluster's symmetry action: the projector equations of WP v18
+/// (Sections 11.1 and 14) in place of the J^2 eigen-equations, which remain
+/// the spin-lift read.
+///
+/// For an irreducible representation rho of the finite group G-tilde acting
+/// on the modes (the double cover of the rotation group in an odd-monopole
+/// sector) the isotypic projector on the n-particle sector is
+///
+///     P_rho = (dim rho / |G-tilde|) sum_g conj(chi_rho(g)) Lambda^n D(g),
+///
+/// a finite sum of second-quantized one-particle maps. A state is a sharp
+/// spinor of type rho when (I - P_rho)|Psi_R> = 0 and <Psi_L|(I - P_rho) = 0.
+/// In a complex bilinear theory the matrix element <Psi_L|P_rho|Psi_R> = 1
+/// is only a matrix-element identity, so both residual vectors must vanish
+/// algebraically; their norms are reported as numerical certificates.
+struct IsotypicRead {
+    /// The name of the type the read was taken against, as the caller
+    /// declared it (on the tetrahedron: 2, 2' or 2'', or a sum of types).
+    std::string type{};
+    /// tr P rounded to the nearest integer: the dimension of the isotypic
+    /// component of the sector the projector was formed on.
+    std::size_t rank{0};
+    /// ||P (P Psi_R) - P Psi_R|| / ||Psi_R||: the projector's idempotency
+    /// measured along the right state. Zero to rounding when the maps form a
+    /// representation and the characters are those of one of its
+    /// irreducible constituents; a matrix-wide measure is the caller's, on
+    /// the projector itself.
+    double idempotencyResidual{std::numeric_limits<double>::quiet_NaN()};
+    /// ||(I - P)|Psi_R>|| / ||Psi_R|| -- the right residual norm.
+    double rightResidual{std::numeric_limits<double>::quiet_NaN()};
+    /// ||<Psi_L|(I - P)|| / ||Psi_L|| -- the left residual norm.
+    double leftResidual{std::numeric_limits<double>::quiet_NaN()};
+    /// Whether BOTH residuals met the declared tolerance: the sharp spinor
+    /// certificate.
+    bool sharp{false};
+    /// <Psi_L|P|Psi_R> / <Psi_L|Psi_R>, the bilinear weight of the type in
+    /// the pair, formed with the transpose pairing and never with a conjugate
+    /// transpose. NaN when the pairing vanishes. It is reported, never gated
+    /// on.
+    std::complex<double> weight{std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::quiet_NaN()};
+    /// The record grading the read: AlgebraicallyExact and NonNormal, because
+    /// the residuals are exact matrix-vector products of supplied data. The
+    /// graded residual is the larger of the two relative residual norms
+    /// against the declared tolerance.
+    ::tessera::cobordism::Certificate certificate{};
+};
+
 /// # SharpSpin
 ///
-/// The sharp total-space spin readout of the proton certificate.
+/// The sharp spinor readout of the proton certificate (WP v18 Sections 11.1
+/// and 14), and the spin-lift read beside it.
 ///
-/// The two eigen-equations
+/// The certificate is the pair of projector equations
 ///
-///     (J^2 - 3/4 I)|Psi_R> = 0,      <Psi_L|(J^2 - 3/4 I) = 0
+///     (I - P_rho)|Psi_R> = 0,      <Psi_L|(I - P_rho) = 0,
 ///
-/// are essential and are evaluated on the bounded superposition of
-/// determinants selected by the isolating interaction, because by the theorem
-/// of Section 7 no covariance-only state satisfies them together with a
-/// nonzero colour wedge. J^2 is polynomial in the exterior generators, so its
-/// action is applied mode-pair by mode-pair rather than by materializing the
-/// full Fock matrix; `totalSpinSquaredMatrix` materializes it anyway for
-/// fixtures and cross-checks, and refuses mode counts at which that is not
-/// affordable.
+/// with P_rho the isotypic projector of the cluster's finite symmetry group
+/// (its double cover in an odd-monopole sector) on the n-particle sector
+/// (`isotypicProjector`, `isotypicRead`). They are essential and are
+/// evaluated on the bounded superposition of determinants selected by the
+/// isolating interaction, because by the theorem of Section 7 no
+/// covariance-only state satisfies them together with a nonzero colour wedge.
+/// P_rho is a finite sum of second-quantized one-particle maps: each term
+/// transforms the orbitals of a determinant (`exteriorPowerMatrix`, the
+/// minors of the one-particle map), and the pairing with another determinant
+/// is a determinant. The type rho fixes the representation of the double
+/// cover and not the continuum spin value: on the tetrahedron the 2 is the
+/// restriction of j = 1/2 and also of j = 5/2. That value is a claim about
+/// the spin lift, and the J^2 eigen-equations under a declared SU(2) action
+/// on the modes (`read`) are kept as that read. J^2 is polynomial in the
+/// exterior generators, so its action is applied mode-pair by mode-pair
+/// rather than by materializing the full Fock matrix;
+/// `totalSpinSquaredMatrix` materializes it anyway for fixtures and
+/// cross-checks, and refuses mode counts at which that is not affordable.
 class SharpSpin {
   public:
     /// Double-precision complex scalar of every state and operator entry.
@@ -608,6 +678,80 @@ class SharpSpin {
     ///         resulting mode count exceeds `kMaxStateModes`.
     [[nodiscard]] static std::array<Eigen::MatrixXcd, 3> doubletSpinMatrices(
         std::size_t carrierCount);
+
+    // ---- the isotypic read: the sharp spinor certificate of WP v18 --------
+
+    /// Largest number of occupation patterns of an n-particle sector for
+    /// which the dense sector matrices below are formed. Eighteen modes with
+    /// three particles, the three-quark sector of a three-sheeted
+    /// tetrahedron, is 816 patterns.
+    static constexpr std::size_t kMaxSectorPatterns = 8192;
+
+    /// The n-particle occupation patterns of `modeCount` modes: the
+    /// ascending mode tuples in lexicographic order. This is the basis the
+    /// sector matrices and vectors below are written in; pattern k is the
+    /// Fock basis state with exactly those modes occupied, which is also
+    /// `determinant` of the tuple.
+    /// @throws std::invalid_argument when `particles` exceeds the mode count
+    ///         or the pattern count exceeds `kMaxSectorPatterns`.
+    [[nodiscard]] static std::vector<std::vector<std::size_t>> sectorPatterns(
+        std::size_t modeCount, std::size_t particles);
+
+    /// Lambda^n D on the n-particle sector, the second quantization of the
+    /// one-particle map D restricted to n particles: entry (J, I) is the
+    /// minor det D[J, I], the coefficient of the wedge of pattern J in the
+    /// image of the wedge of pattern I, for J and I in the order of
+    /// `sectorPatterns`. It is multiplicative, Lambda^n(AB) =
+    /// Lambda^n(A) Lambda^n(B), and Lambda^M D on M modes is det D.
+    /// @throws std::invalid_argument when D is not square, or as
+    ///         `sectorPatterns`.
+    [[nodiscard]] static Eigen::MatrixXcd exteriorPowerMatrix(
+        const Eigen::MatrixXcd& oneParticle, std::size_t particles);
+
+    /// The n-particle component of a Fock vector (2^M entries) over the
+    /// sector patterns: entry k is the amplitude of the Fock basis state of
+    /// pattern k. The mode count is read from the state dimension.
+    /// @throws std::invalid_argument when the state dimension is not a power
+    ///         of two, or as `sectorPatterns`.
+    [[nodiscard]] static Eigen::VectorXcd sectorComponent(
+        const Eigen::VectorXcd& state, std::size_t particles);
+
+    /// A vector over the sector patterns as a Fock vector of `modeCount`
+    /// modes: the inverse of `sectorComponent` on the n-particle sector.
+    /// @throws std::invalid_argument on a length mismatch, or as
+    ///         `sectorPatterns` and `determinant`.
+    [[nodiscard]] static Eigen::VectorXcd fockVector(
+        const Eigen::VectorXcd& sector, std::size_t modeCount,
+        std::size_t particles);
+
+    /// The isotypic projector P_rho = (dim rho / |G|) sum_g conj(chi_rho(g))
+    /// Lambda^n D(g) on the n-particle sector, from the one-particle
+    /// representation `maps` of every element of the group (both lifts of
+    /// every rotation, for a double cover) and the character `characters`
+    /// of rho on the same elements in the same order; `dimension` is
+    /// dim rho. The maps must form a linear representation for the result to
+    /// be a projector; `isotypicRead` measures that.
+    /// @throws std::invalid_argument on an empty group, a length mismatch, a
+    ///         zero dimension, a map that is not square or not of the first
+    ///         map's size, or as `sectorPatterns`.
+    [[nodiscard]] static Eigen::MatrixXcd isotypicProjector(
+        const std::vector<Eigen::MatrixXcd>& maps,
+        const std::vector<Complex>& characters, std::size_t dimension,
+        std::size_t particles);
+
+    /// The sharpness read of a right and a left state, both over the sector
+    /// patterns, against an isotypic projector (`isotypicProjector`, or a sum
+    /// of them for a reading that names several types): the residuals of
+    /// (I - P)|Psi_R> = 0 and <Psi_L|(I - P) = 0, relative to the norms of
+    /// the states, and the bilinear weight <Psi_L|P|Psi_R> / <Psi_L|Psi_R>.
+    /// `type` names what the projector projects onto and travels on the
+    /// read.
+    /// @throws std::invalid_argument on a dimension mismatch, a zero state,
+    ///         or a non-positive tolerance.
+    [[nodiscard]] static IsotypicRead isotypicRead(
+        const Eigen::MatrixXcd& projector, const Eigen::VectorXcd& rightState,
+        const Eigen::VectorXcd& leftState, const std::string& type,
+        double tolerance = 1e-9);
 };
 
 }  // namespace tessera::observables

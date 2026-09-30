@@ -40,16 +40,17 @@ std::vector<std::uint64_t> vertexIds(const ChainComplex &complex) {
   return ids;
 }
 
-/// The integrality and reality certificates of a flux, written onto \p read.
-/// The flux is a complex number and its imaginary part is never discarded: an
-/// integer quark number is claimed only when the imaginary part is within
-/// tolerance and the real part is within tolerance of an integer.
+/// The integrality and reality certificates of the excess flux, written onto
+/// \p read. The excess is a complex number and its imaginary part is never
+/// discarded: an integer quark number is claimed only when the imaginary part
+/// is within tolerance and the real part is within tolerance of an integer.
 void readIntegerFlux(WardFluxRead &read, const WardFluxConfig &cfg) {
-  const double nearest = std::round(read.flux.real());
-  read.quarkNumberDefect = std::abs(read.flux - complexd{nearest, 0.0});
-  const bool realEnough = std::abs(read.flux.imag()) <= cfg.imaginaryTolerance;
+  const complexd excess = read.excessFlux;
+  const double nearest = std::round(excess.real());
+  read.quarkNumberDefect = std::abs(excess - complexd{nearest, 0.0});
+  const bool realEnough = std::abs(excess.imag()) <= cfg.imaginaryTolerance;
   const bool integral =
-      std::abs(read.flux.real() - nearest) <= cfg.integralityTolerance;
+      std::abs(excess.real() - nearest) <= cfg.integralityTolerance;
   if (!realEnough) nameFailure(read.failedCertificates, "complex-flux");
   if (!integral) nameFailure(read.failedCertificates, "nonintegral-flux");
   if (realEnough && integral) {
@@ -151,6 +152,11 @@ WardFluxRead WardFlux::flux(const JointAction &action,
     flux += static_cast<double>(cut.crossingSigns[index]) * value;
   }
   read.flux = flux;
+  // The quark number is the excess of the flux over the matched reference's
+  // (WP v18 Section 13.4); the reference is declared, or empty.
+  read.referenceDeclared = cfg.referenceFlux.has_value();
+  read.referenceFlux = cfg.referenceFlux.value_or(complexd{0.0, 0.0});
+  read.excessFlux = flux - read.referenceFlux;
 
   // 2. the divergence theorem, the charge the current brings in through the
   //    incoming boundary, and the Ward identity at the interior vertices.
@@ -288,6 +294,10 @@ WardFluxRead WardFlux::difference(const WardFluxRead &state,
 
   WardFluxRead read = state;
   read.flux = state.flux - matched.flux;
+  // The matched read is the reference: the differenced flux is the excess.
+  read.referenceDeclared = true;
+  read.referenceFlux = matched.flux;
+  read.excessFlux = read.flux;
   read.incomingSideDivergence =
       state.incomingSideDivergence - matched.incomingSideDivergence;
   read.divergenceTheoremResidual =

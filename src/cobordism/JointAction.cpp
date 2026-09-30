@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <cmath>
+#include <cstdio>
 #include <numbers>
 #include <numeric>
 #include <optional>
@@ -172,6 +173,28 @@ constexpr std::size_t kVillainTermCeiling = 100000;
 /// indistinguishable from a zero of the infinite series.
 constexpr double kVillainZeroMargin = 1e3;
 
+/// \f$ c_R \f$: the multiple of the series' uncertainty (tail bound plus
+/// machine epsilon times the sum of the moduli of the kept terms) within which
+/// the imaginary part of \f$ W \f$ on the unit circle is rounding. The kept
+/// terms are formed by repeated multiplication, so the \f$ m \f$-th carries a
+/// relative rounding of order \f$ m\varepsilon \f$, and their sum adds one
+/// rounding per term: the imaginary part of the computed sum is bounded by a
+/// small multiple of \f$ M\varepsilon\sum|q^{m^2}F^m| \f$, with \f$ M \f$ the
+/// largest \f$ |m| \f$ kept. \f$ M \f$ stays below a few hundred for every
+/// coupling below \f$ 10^3 \f$ at the declared tolerances, so this margin
+/// leaves room above that bound, and it is the same multiple the nonzero test
+/// uses.
+constexpr double kVillainRealityMargin = 1e3;
+
+/// A number as text with three significant digits (printf's "%.3g"), for the
+/// messages of a refusal: `std::to_string` prints six fixed decimals and would
+/// show a rounding scale of 1e-15 as zero.
+std::string threeDigits(double value) {
+  char buffer[32];
+  std::snprintf(buffer, sizeof buffer, "%.3g", value);
+  return buffer;
+}
+
 /// The largest distance from one of a ratio of consecutive \f$ W \f$ values
 /// that the radial continuation accepts, so the principal logarithm of every
 /// accepted ratio is the increment of the continued logarithm.
@@ -293,14 +316,30 @@ complexd VillainCharacter::logarithm(complexd holonomy) const {
         "nonzero complex number");
   // The start of the radial path, on the unit circle, where W is real and
   // positive: its principal logarithm is the real logarithm of a positive
-  // number, and it is the branch the continuation carries.
+  // number, and it is the branch the continuation carries. The truncated sum
+  // is real there in exact arithmetic (its terms pair into cosines), so its
+  // computed imaginary part is compared with the series' own uncertainty, the
+  // tail bound plus the rounding scale, and not with W itself, which can be
+  // small beside the terms it is summed from.
   const complexd direction = holonomy / modulus;
   const VillainSeries start = series(direction);
-  if (!(start.value.real() > 0.0) ||
-      std::abs(start.value.imag()) > 1e-12 * start.value.real())
+  const double uncertainty =
+      start.valueTail +
+      std::numeric_limits<double>::epsilon() * start.magnitude;
+  if (std::abs(start.value.imag()) > kVillainRealityMargin * uncertainty)
     throw std::logic_error(
-        "VillainCharacter::logarithm: W is not real and positive on the unit "
-        "circle, which contradicts its Poisson form");
+        "VillainCharacter::logarithm: W on the unit circle has imaginary "
+        "part " + threeDigits(start.value.imag()) +
+        ", beyond the declared reality "
+        "margin " + threeDigits(kVillainRealityMargin) +
+        " times the series' uncertainty " + threeDigits(uncertainty) +
+        ", which contradicts its Poisson form");
+  if (!(start.value.real() > kVillainZeroMargin * uncertainty))
+    throw std::domain_error(
+        "VillainCharacter::logarithm: W on the unit circle at this argument, " +
+        threeDigits(start.value.real()) + ", is not resolved above " +
+        threeDigits(kVillainZeroMargin) + " times the series' uncertainty " +
+        threeDigits(uncertainty) + ", so log W has no certified value there");
   complexd accumulated{std::log(start.value.real()), 0.0};
   const double radial = std::log(modulus);
   if (radial == 0.0) return accumulated;
@@ -339,6 +378,10 @@ complexd VillainCharacter::logarithm(complexd holonomy) const {
     step = std::min(2.0 * step, 0.125);
   }
   return accumulated;
+}
+
+double VillainCharacter::realityMargin() noexcept {
+  return kVillainRealityMargin;
 }
 
 double VillainCharacter::zeroDistance(complexd holonomy) const {
@@ -568,12 +611,21 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
         "JointAction: the carrier degree is a simplicial degree and must be "
         "non-negative; got " +
         std::to_string(declaration_.carrierDegree));
-  for (const auto &constraint : declaration_.momentConstraints)
-    if (constraint.order < 1)
+  for (const auto &constraint : declaration_.momentConstraints) {
+    if (constraint.form == SpectralConstraintForm::PowerSum &&
+        constraint.order < 1)
       throw std::invalid_argument(
           "JointAction: a spectral moment order is the power j >= 1 of "
           "p_j(h) = tr(h^j); got " +
           std::to_string(constraint.order));
+    if (constraint.form == SpectralConstraintForm::BandMean &&
+        constraint.band >= declaration_.momentBandProjectors.size())
+      throw std::invalid_argument(
+          "JointAction: a band-mean constraint names band projector " +
+          std::to_string(constraint.band) + ", but " +
+          std::to_string(declaration_.momentBandProjectors.size()) +
+          " band projectors are declared");
+  }
   if (declaration_.stiffnessWeight != 0.0) {
     const std::size_t edges = edgeCount();
     if (declaration_.referenceLengths.size() != edges)
@@ -608,6 +660,38 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           std::to_string(declaration_.carrierDegree) + "; got " +
           std::to_string(declaration_.covariance.size()) + " entries");
   }
+  if (!(declaration_.momentScale > 0.0) ||
+      !std::isfinite(declaration_.momentScale))
+    throw std::invalid_argument(
+        "JointAction: the unit the power sums are measured in must be "
+        "positive and finite; got " + std::to_string(declaration_.momentScale));
+  if (!declaration_.momentProjector.empty()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    if (declaration_.momentProjector.size() != order * order)
+      throw std::invalid_argument(
+          "JointAction: the constraints' fiber projector is a square matrix "
+          "over the " + std::to_string(order) + " cells of degree " +
+          std::to_string(declaration_.carrierDegree) + "; got " +
+          std::to_string(declaration_.momentProjector.size()) + " entries");
+  }
+  if (!declaration_.momentBandProjectors.empty()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    for (const auto &projector : declaration_.momentBandProjectors)
+      if (projector.size() != order * order)
+        throw std::invalid_argument(
+            "JointAction: a band projector of the band-mean constraints is a "
+            "square matrix over the " + std::to_string(order) +
+            " cells of degree " + std::to_string(declaration_.carrierDegree) +
+            "; got " + std::to_string(projector.size()) + " entries");
+  }
   if (declaration_.reggeBranch == ReggeBranch::Continued) {
     const auto edges = spacetime_->getEdgeList()->toVector();
     const auto &declared = declaration_.reggeStartSquaredLengths;
@@ -641,6 +725,62 @@ void JointAction::setMultipliers(const std::vector<complexd> &multipliers) {
     declaration_.momentConstraints[index].multiplier = multipliers[index];
 }
 
+void JointAction::setCovariance(std::vector<complexd> covariance) {
+  if (!covariance.empty() &&
+      covariance.size() != declaration_.covariance.size()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    if (covariance.size() != order * order)
+      throw std::invalid_argument(
+          "JointAction::setCovariance: the covariance is a square matrix over "
+          "the " + std::to_string(order) + " cells of degree " +
+          std::to_string(declaration_.carrierDegree) + "; got " +
+          std::to_string(covariance.size()) + " entries");
+  }
+  declaration_.covariance = std::move(covariance);
+}
+
+void JointAction::setMomentProjector(std::vector<complexd> projector) {
+  if (!projector.empty() &&
+      projector.size() != declaration_.momentProjector.size()) {
+    const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
+    const std::size_t order =
+        declaration_.carrierDegree <= complex.dimension()
+            ? complex.numSimplices(declaration_.carrierDegree)
+            : std::size_t{0};
+    if (projector.size() != order * order)
+      throw std::invalid_argument(
+          "JointAction::setMomentProjector: the fiber projector is a square "
+          "matrix over the " + std::to_string(order) + " cells of degree " +
+          std::to_string(declaration_.carrierDegree) + "; got " +
+          std::to_string(projector.size()) + " entries");
+  }
+  declaration_.momentProjector = std::move(projector);
+}
+
+void JointAction::setMomentBandProjectors(
+    std::vector<std::vector<complexd>> projectors) {
+  if (projectors.size() != declaration_.momentBandProjectors.size())
+    throw std::invalid_argument(
+        "JointAction::setMomentBandProjectors: one projector per declared "
+        "band is required; got " + std::to_string(projectors.size()) +
+        " for " + std::to_string(declaration_.momentBandProjectors.size()) +
+        " declared");
+  for (std::size_t index = 0; index < projectors.size(); ++index)
+    if (projectors[index].size() !=
+        declaration_.momentBandProjectors[index].size())
+      throw std::invalid_argument(
+          "JointAction::setMomentBandProjectors: band projector " +
+          std::to_string(index) + " has " +
+          std::to_string(projectors[index].size()) + " entries; " +
+          std::to_string(declaration_.momentBandProjectors[index].size()) +
+          " are declared");
+  declaration_.momentBandProjectors = std::move(projectors);
+}
+
 std::vector<complexd> JointAction::multipliers() const {
   std::vector<complexd> values;
   values.reserve(declaration_.momentConstraints.size());
@@ -672,23 +812,101 @@ std::vector<complexd> JointAction::faceHolonomies() const {
   return workspace.holonomies;
 }
 
+namespace {
+
+/// The operator the spectral constraints' power sums are taken of: the
+/// carrier \f$ h \f$, or its compression
+/// \f$ P_{\mathcal C}hP_{\mathcal C} \f$ to the declared fiber, whose
+/// nonzero spectrum is that of \f$ h_{\mathcal C} \f$ on
+/// \f$ \operatorname{Ran}P_{\mathcal C} \f$.
+Eigen::MatrixXcd constrainedOperator(const JointActionDeclaration &declaration,
+                                     const Eigen::MatrixXcd &carrier,
+                                     std::size_t order) {
+  const complexd unit{1.0 / declaration.momentScale, 0.0};
+  if (declaration.momentProjector.empty() || order == 0)
+    return unit * carrier;
+  const Eigen::MatrixXcd projector =
+      toMatrix(declaration.momentProjector, order);
+  return unit * (projector * carrier * projector);
+}
+
+/// The matrix the operator derivative is traced against in
+/// \f$ dp_j=\operatorname{tr}(X_j\,dh) \f$ for the power sums in the declared
+/// unit \f$ s \f$: \f$ (j/s)(h/s)^{j-1} \f$ by the cyclic identity, exact for
+/// every matrix including a defective one, or, for the declared fiber at fixed
+/// \f$ P_{\mathcal C} \f$,
+/// \f$ (j/s)P_{\mathcal C}(P_{\mathcal C}hP_{\mathcal C}/s)^{j-1}P_{\mathcal C} \f$.
+Eigen::MatrixXcd powerSumDerivative(const JointActionDeclaration &declaration,
+                                    const Eigen::MatrixXcd &carrier,
+                                    std::size_t order, int power) {
+  const auto size = static_cast<Eigen::Index>(order);
+  const Eigen::MatrixXcd constrained =
+      constrainedOperator(declaration, carrier, order);
+  Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(size, size);
+  for (int step = 1; step < power; ++step) result = result * constrained;
+  if (!declaration.momentProjector.empty()) {
+    const Eigen::MatrixXcd projector =
+        toMatrix(declaration.momentProjector, order);
+    result = projector * result * projector;
+  }
+  return complexd{static_cast<double>(power) / declaration.momentScale, 0.0} *
+         result;
+}
+
+/// The matrix the operator derivative is traced against for one declared
+/// constraint: `powerSumDerivative` for a power sum, or, for a band mean at
+/// fixed \f$ P_b \f$, \f$ P_b/(r_bs) \f$ with \f$ r_b=\operatorname{tr}P_b \f$
+/// (zero when the projector has no trace).
+Eigen::MatrixXcd constraintDerivative(
+    const JointActionDeclaration &declaration, const Eigen::MatrixXcd &carrier,
+    std::size_t order, const SpectralMomentConstraint &constraint) {
+  if (constraint.form == SpectralConstraintForm::PowerSum)
+    return powerSumDerivative(declaration, carrier, order, constraint.order);
+  const Eigen::MatrixXcd projector =
+      toMatrix(declaration.momentBandProjectors.at(constraint.band), order);
+  const complexd rank = projector.trace();
+  if (rank == complexd{0.0, 0.0})
+    return Eigen::MatrixXcd::Zero(projector.rows(), projector.cols());
+  return projector / (rank * declaration.momentScale);
+}
+
+}  // namespace
+
 std::vector<complexd> JointAction::powerSums() const {
+  return constraintValues();
+}
+
+std::vector<complexd> JointAction::constraintValues() const {
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
                                   /*wantCarrier=*/true);
   std::vector<complexd> sums;
   sums.reserve(declaration_.momentConstraints.size());
+  const Eigen::MatrixXcd constrained = constrainedOperator(
+      declaration_, workspace.carrier, workspace.carrierOrder);
   for (const auto &constraint : declaration_.momentConstraints) {
     if (workspace.carrierOrder == 0) {
       sums.emplace_back(0.0, 0.0);
       continue;
     }
+    if (constraint.form == SpectralConstraintForm::BandMean) {
+      // tr(P_b h) / (r_b s): the band's mean eigenvalue in the unit.
+      const Eigen::MatrixXcd projector = toMatrix(
+          declaration_.momentBandProjectors.at(constraint.band),
+          workspace.carrierOrder);
+      const complexd rank = projector.trace();
+      sums.push_back(rank == complexd{0.0, 0.0}
+                         ? complexd{0.0, 0.0}
+                         : traceOfProduct(projector, workspace.carrier) /
+                               (rank * declaration_.momentScale));
+      continue;
+    }
     // Repeated multiplication rather than an eigendecomposition: the power sum
     // is defined for a defective operator, and forming it this way needs no
     // eigenvalue ordering and no similarity to diagonal form.
-    Eigen::MatrixXcd power = workspace.carrier;
+    Eigen::MatrixXcd power = constrained;
     for (int step = 1; step < constraint.order; ++step)
-      power = power * workspace.carrier;
+      power = power * constrained;
     sums.push_back(power.trace());
   }
   return sums;
@@ -1103,10 +1321,25 @@ std::complex<double> JointAction::value() const {
          spectralTerm();
 }
 
+ReportedActionValue JointAction::reportedValue() const {
+  ReportedActionValue reported;
+  try {
+    reported.value = value();
+  } catch (const std::logic_error &refusal) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    reported.available = false;
+    reported.value = complexd{nan, nan};
+    reported.unavailable = refusal.what();
+  }
+  return reported;
+}
+
 namespace {
 
 /// The matrix every operator derivative is contracted against in the
-/// stationarity equations: \f$ A = w_M\Gamma + \sum_j \xi_j\,j\,h^{j-1} \f$.
+/// stationarity equations: \f$ A = w_M\Gamma + \sum_j \xi_j\,X_j \f$, with
+/// \f$ X_j=jh^{j-1} \f$, or its compression to the declared fiber
+/// (`powerSumDerivative`).
 ///
 /// Both the matter term and the spectral term are linear in \f$ h \f$'s
 /// derivative through a trace, so assembling their coefficient once turns the
@@ -1121,13 +1354,8 @@ Eigen::MatrixXcd contractionMatrix(const JointActionDeclaration &declaration,
     matrix += declaration.matterWeight * toMatrix(declaration.covariance, order);
   for (const auto &constraint : declaration.momentConstraints) {
     if (constraint.multiplier == complexd{0.0, 0.0}) continue;
-    // d tr(h^j) = j tr(h^{j-1} dh), the cyclic identity, exact for every
-    // matrix including a defective one.
-    Eigen::MatrixXcd power = Eigen::MatrixXcd::Identity(
-        static_cast<Eigen::Index>(order), static_cast<Eigen::Index>(order));
-    for (int step = 1; step < constraint.order; ++step) power = power * carrier;
     matrix += constraint.multiplier *
-              static_cast<double>(constraint.order) * power;
+              constraintDerivative(declaration, carrier, order, constraint);
   }
   return matrix;
 }
@@ -1552,12 +1780,8 @@ std::vector<complexd> JointAction::momentGradient(std::size_t index) const {
   std::vector<complexd> gradient(2 * edges, complexd{0.0, 0.0});
   if (workspace.carrierOrder == 0) return gradient;
 
-  Eigen::MatrixXcd power = Eigen::MatrixXcd::Identity(
-      static_cast<Eigen::Index>(workspace.carrierOrder),
-      static_cast<Eigen::Index>(workspace.carrierOrder));
-  for (int step = 1; step < constraint.order; ++step)
-    power = power * workspace.carrier;
-  power = complexd{static_cast<double>(constraint.order), 0.0} * power;
+  const Eigen::MatrixXcd power = constraintDerivative(
+      declaration_, workspace.carrier, workspace.carrierOrder, constraint);
 
   for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
     const auto *edge = workspace.edges[edgeIndex];

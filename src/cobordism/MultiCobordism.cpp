@@ -2679,14 +2679,20 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
   // These discrete proposals remain useful for jumping directly between causal
   // sectors. Complex-z stage 2 can also rotate continuously around z=0; neither
   // path prescribes which causal structure the objective should prefer.
-  static const char *baseMoveKinds[] = {kAddMove,  kRemoveMove, kFlipMove,
-                                        kIFlipMove, kConeOut,   kConeIn};
-  static const char *dispositionMoveKinds[] = {
-      kAddMove, kRemoveMove,     kFlipMove,        kIFlipMove,
-      kConeOut, kConeIn,         kConeInTimelike,  kFlipDisposition};
-  const char *const *moveKinds =
-      shouldProposeDispositions_ ? dispositionMoveKinds : baseMoveKinds;
-  const std::size_t nMoveKinds = shouldProposeDispositions_ ? 8u : 6u;
+  // The four Pachner kinds always; the surgical kinds and the disposition
+  // kinds as declared, in this order, so the draw is the same stream for the
+  // same declaration.
+  std::vector<const char *> moveKinds = {kAddMove, kRemoveMove, kFlipMove,
+                                         kIFlipMove};
+  if (shouldProposeSurgery_) {
+    moveKinds.push_back(kConeOut);
+    moveKinds.push_back(kConeIn);
+  }
+  if (shouldProposeDispositions_) {
+    if (shouldProposeSurgery_) moveKinds.push_back(kConeInTimelike);
+    moveKinds.push_back(kFlipDisposition);
+  }
+  const std::size_t nMoveKinds = moveKinds.size();
   // The bridge kind joins the draw only on a node with surface inputs whose
   // bridge phase is incomplete: its candidates are the cells adjacent to the
   // drawing's frontier, split across two surface blocks. Any other node draws
@@ -2744,7 +2750,8 @@ MultiCobordism::MoveSpec MultiCobordism::drawRandomMoveSpecification(
 }
 
 std::vector<MultiCobordism::MoveSpec> MultiCobordism::enumerateMoveSpecifications(
-    const std::shared_ptr<Spacetime> &spacetime, bool withDispositions) {
+    const std::shared_ptr<Spacetime> &spacetime, bool withDispositions,
+    bool withSurgery) {
   std::vector<MoveSpec> specifications;
   if (!spacetime) return specifications;
   // The four Pachner kinds, each site produced by the move class that will act
@@ -2760,11 +2767,14 @@ std::vector<MultiCobordism::MoveSpec> MultiCobordism::enumerateMoveSpecification
     specifications.emplace_back(kIFlipAt, std::move(site));
   // The surgical kinds already name their sites, so they are enumerated in the
   // same encoding the draw uses -- no second spelling of a cone's payload.
-  for (const auto &topSimplex : spacetime->getTopSimplices())
-    if (topSimplex) specifications.emplace_back(kConeOut, topSimplex->topTuple());
-  for (const auto &facet : spacetime->getBoundary()) {
-    specifications.emplace_back(kConeIn, facet);
-    if (withDispositions) specifications.emplace_back(kConeInTimelike, facet);
+  if (withSurgery) {
+    for (const auto &topSimplex : spacetime->getTopSimplices())
+      if (topSimplex)
+        specifications.emplace_back(kConeOut, topSimplex->topTuple());
+    for (const auto &facet : spacetime->getBoundary()) {
+      specifications.emplace_back(kConeIn, facet);
+      if (withDispositions) specifications.emplace_back(kConeInTimelike, facet);
+    }
   }
   if (withDispositions && spacetime->getEdgeList())
     for (const auto *edge : spacetime->getEdgeList()->toVector())
@@ -3036,8 +3046,8 @@ std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
   // Enumerated here, against this level's complex, not against the base one: a
   // move the first move created a site for is a legitimate second move, and a
   // site the first move destroyed is not one.
-  for (const auto &specification :
-       enumerateMoveSpecifications(fromSpacetime, shouldProposeDispositions_)) {
+  for (const auto &specification : enumerateMoveSpecifications(
+           fromSpacetime, shouldProposeDispositions_, shouldProposeSurgery_)) {
     auto candidateSpacetime = build(fromSnapshot);
     if (!applyMoveSpecification(candidateSpacetime, specification)) continue;
     if (remainingMoves == 1) {
@@ -3101,8 +3111,8 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     // the same question, and a caller that asks for none of them means
     // something no drive can do.
     if (nCandidateMoves <= 0) {
-      specifications = enumerateMoveSpecifications(spacetime_,
-                                                   shouldProposeDispositions_);
+      specifications = enumerateMoveSpecifications(
+          spacetime_, shouldProposeDispositions_, shouldProposeSurgery_);
     } else {
       specifications.reserve(static_cast<std::size_t>(nCandidateMoves));
       for (int candidateIndex = 0; candidateIndex < nCandidateMoves;
@@ -3178,8 +3188,8 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     //
     // The cost is the move space raised to the depth, and is paid only when a
     // caller passes the exhaustive sentinel.
-    const auto firstMoves =
-        enumerateMoveSpecifications(spacetime_, shouldProposeDispositions_);
+    const auto firstMoves = enumerateMoveSpecifications(
+        spacetime_, shouldProposeDispositions_, shouldProposeSurgery_);
     const int firstMoveCount = static_cast<int>(firstMoves.size());
     std::vector<double> deltas(static_cast<std::size_t>(firstMoveCount),
                                std::numeric_limits<double>::infinity());

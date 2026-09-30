@@ -163,6 +163,10 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 
 ```{doxygenfile} MonopoleSpin.h
 ```
+```{doxygenfile} IsospinDoublet.h
+```
+```{doxygenfile} QuarkConditions.h
+```
 
 ### Emergent-proton observables
 
@@ -276,6 +280,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```{doxygenfile} DressedAnchor.h
 ```
 ```{doxygenfile} RieszBand.h
+```
+```{doxygenfile} GrownCellRule.h
 ```
 
 ```{doxygenfile} BandDerivative.h

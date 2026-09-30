@@ -467,14 +467,24 @@ class TheKuhnBallCarriesTheSection7SetupTest(unittest.TestCase):
 class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
     """The configuration a caller may not silently get wrong."""
 
-    def test_a_mixing_outside_the_unit_interval_is_refused(self):
-        spacetime = sphere3()
-        action = cob.JointAction(spacetime, _declaration(matter_weight=1.0))
-        for mixing in (0.0, -0.5, 1.5):
-            with self.subTest(mixing=mixing):
-                with self.assertRaises(ValueError):
-                    cob.SelfConsistentMeanField(action,
-                                                _mean_field(mixing=mixing))
+    def test_the_declared_solver_is_named_and_mixes_nothing(self):
+        """The fixed point is solved by Newton's method on the joint system,
+        with the bands chosen once and followed by continuation; the
+        alternation and the re-sort stay available by name. The covariance
+        is never mixed: a mixed Gamma is not a band filling of h, and mixing
+        only slows a contracting alternation."""
+        declaration = cob.SelfConsistentMeanFieldDeclaration()
+        self.assertEqual(declaration.method,
+                         cob.SelfConsistentMethod.JointNewton)
+        self.assertEqual(declaration.band_selection,
+                         cob.BandSelection.Continuation)
+        self.assertEqual(
+            set(cob.SelfConsistentMethod.__members__),
+            {"JointNewton", "Alternation"})
+        self.assertEqual(
+            set(cob.BandSelection.__members__),
+            {"Continuation", "SortEveryIterate"})
+        self.assertFalse(hasattr(declaration, "mixing"))
 
     def test_an_empty_occupation_is_refused(self):
         spacetime = sphere3()

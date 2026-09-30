@@ -41,10 +41,17 @@ One tick
 At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
-   primal Regge + the paper's linear stiffness (1/kappa)(1/2)||l - l0||^2
-   + the holonomy term (Villain by default, ``--holonomy``), in strict
-   emergence (no carried density in the equations; WP §7), with l0 the
-   level's own lengths as the level was built. The Regge term is read on
+   primal Regge + the holonomy term (Villain by default, ``--holonomy``), in
+   strict emergence (no carried density in the equations; WP §7). The
+   spectral-moment part of S_0 is the holomorphic spectral constraint of
+   WP v17 §3.4, which belongs to controlled synthesis on an occupied fiber and
+   so enters only the per-cell reads below (stated there as the eigenvalue of
+   each occupied band by default, ``--fiber-pinning``); the linear stand-in
+   (1/kappa)(1/2)||l - l0||^2, with l0 the level's own lengths as the level
+   was built, is available by name (``--stiffness linear-stand-in``) and off
+   by default. The three sheets are relaxed
+   as one shared base field (WP v17 §8): the solve's variables are the base
+   complex's squared lengths and links, written to every sheet. The Regge term is read on
    Riemann sheets continued from the real projection of the level's starting
    geometry (`ReggeBranch.Continued`). A level with no interior hinge has a
    Regge term that is zero by structure; the record and the progress line
@@ -97,16 +104,48 @@ At level l (a complex K_l of three sheets of a base complex):
    A cell is added only if the complex stays a manifold with boundary
    (`SurgicalCone.validate`); a cell that fails is recorded with the
    violation. An edge shared by several grown cells receives one value from
-   each; the level carries their mean and reports their spread;
+   each; the level carries their mean and reports their spread. The grown
+   base then takes the combinatorial moves of the growth step
+   (`pachner_stage`): a stage-1 search of `MultiCobordism` in unforced
+   emergence under the joint stationarity objective, the four Pachner kinds
+   alone (no cone-out, cone-in or disposition move), run as the emergence
+   driver runs its stage 1 (``--pachner-updates``, ``--pachner-candidates``,
+   ``--pachner-depth``, ``--pachner-seed``; zero updates run none); the
+   next level is built from the base that comes back;
 5. the reads, behind the certificate firewall: every tetrahedron of the base
    of K_l, read as a three-sheeted host of its own (``baryon_poles``), gives
    the v16 quark verdicts (`QuarkConditions`), the isospin-doublet reading
-   (`IsospinDoublet`) and the baryon poles, quasi-free and with the Section 7
-   quartic with the connection's phase fluctuations eliminated, for every
-   declared content.
+   (`IsospinDoublet`), the spin decomposition of the occupied modes on the
+   T-averaged operator, and the baryon poles, quasi-free and with the
+   Section 7 quartic with the connection's phase fluctuations eliminated, for
+   every declared content. A content names occupations of the bands of the
+   covariant operator h_1 in ascending order of real part, which on the
+   monopole host are one simple mode per sheet, not spin doublets
+   (``baryon_poles``, "What a content names"); the poles are read for every
+   doublet content of the T-averaged operator and labelled by it. Each
+   content's mean field is solved by Newton's method on the joint system,
+   its bands chosen at the host and followed by continuation
+   (``--mean-field-method``, ``--band-selection``); the solve's method,
+   iterations, final force, stop reason and joint-Jacobian rank gap are
+   reported with the content, and a read on a geometry whose lengths ran off
+   or that is not Kontsevich-Segal allowable is refused by name.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
 3-simplex, and says so.
+
+The report is per doublet content
+---------------------------------
+Every (host cell, content, doublet content) read is reported on its own, and
+nothing is averaged over doublet contents or over contents
+(``baryon_poles``, "The report is per doublet content"): as each tick
+completes, and again in the final summary, stdout carries one line per
+(content, doublet content) pair of every host cell with both spins and both
+columns, every pole with its multiplicity and its certificates; then, per
+host cell, the labelled "lowest over" minima naming the doublet content (and
+the content) each came from, and the ratios naming the pairs they compare.
+The tick's ``summary.poles`` keeps every pair's poles beside the labelled
+minima, the cell's ``pole_table`` has one row per pole, and the live frame
+draws every pole of every pair as its own mark.
 
 Running it
 ----------
@@ -149,6 +188,23 @@ DECLARED_BETA = 1.0
 DECLARED_RESOLUTIONS = (1.0, 1.5, 2.0, 2.5, 3.0)
 DECLARED_BAND_RANK = 1
 DECLARED_CONTOUR_NODES = 64
+#: The combinatorial moves of the growth step (`pachner_stage`): how many
+#: stage-1 updates of `MultiCobordism` run on each grown level's base, how
+#: many candidate moves each update draws, how many moves deep the search goes
+#: when no single move lowers the objective, and the seed of the draw. They
+#: are the emergence driver's declared stage-1 unit
+#: (`emergence.DECLARED_STAGE1_ITERS`, `DECLARED_CANDIDATE_MOVES`,
+#: `DECLARED_COMBINATORIAL_DEPTH`), so the moves run as that driver runs them.
+#: Zero updates run no move.
+DECLARED_PACHNER_UPDATES = 1
+DECLARED_PACHNER_CANDIDATES = 6
+DECLARED_PACHNER_DEPTH = 1
+DECLARED_PACHNER_SEED = 0
+#: The degrees the joint stationarity objective is declared over on the base:
+#: the register degree and the Hodge degrees, the emergence driver's
+#: (`emergence.DECLARED_REGISTER_DEGREES`, `DECLARED_HODGE_DEGREES`).
+PACHNER_REGISTER_DEGREES = (1,)
+PACHNER_HODGE_DEGREES = (0, 1, 2, 3)
 #: The value of the coordinate pairing det((Z_v^vee)^T Z_v) of a fiber's two
 #: geometric images: the number of edges at a vertex of a 3-simplex, which is
 #: the pairing of the images of the level-0 vertex chains, so that a level-0
@@ -369,19 +425,44 @@ def cut_sectors(faces, number, count, sheets=SHEETS):
     return sectors
 
 
-def relax_level(spacetime, config, sectors=None):
+def level_edge_classes(spacetime, count):
+    """The shared base field of a level built by `build_level` (WP v17 §8):
+    for every edge in `getEdgeList()` order, the index of its ascending base
+    edge among the level's base edges, and the orientation of its stored link
+    relative to the base edge (+1 when stored ascending, -1 otherwise)."""
+    keys, classes, orientations = {}, [], []
+    for edge in spacetime.getEdgeList().toVector():
+        a = int(edge.getSource().getId())
+        b = int(edge.getTarget().getId())
+        sheet = a // count
+        x, y = a - sheet * count, b - sheet * count
+        key = (min(x, y), max(x, y))
+        classes.append(keys.setdefault(key, len(keys)))
+        orientations.append(1 if x < y else -1)
+    return classes, orientations
+
+
+def relax_level(spacetime, config, sectors=None, count=None):
     """Step 1: both edge fields relax to holomorphic stationarity of the joint
     action, strict emergence, with the level's lengths as built as l0, and
-    with the declared monopole sectors held as boundary data."""
-    declaration = bp.action_declaration(spacetime, config["kappa"],
-                                        config["beta"],
-                                        config["regge_hinges"],
-                                        holonomy=config["holonomy"])
+    with the declared monopole sectors held as boundary data. With ``count``,
+    the base vertex count of a level built by `build_level`, the sheets are
+    relaxed as one shared base field (`level_edge_classes`), so they stay
+    identical exactly."""
+    declaration = bp.action_declaration(
+        spacetime, config["kappa"], config["beta"], config["regge_hinges"],
+        holonomy=config["holonomy"],
+        stiffness=config.get("stiffness", bp.DECLARED_STIFFNESS),
+        villain_tolerance=bp.declared_tolerance(config, "villain_tolerance"))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
-    relaxation = cob.HolomorphicRelaxation(action,
-                                           bp.relaxation_declaration(held))
+    geometry = bp.relaxation_declaration(held)
+    if count is not None:
+        classes, orientations = level_edge_classes(spacetime, count)
+        geometry.edge_classes = classes
+        geometry.edge_class_orientations = orientations
+    relaxation = cob.HolomorphicRelaxation(action, geometry)
     started = time.time()
     report = relaxation.solve()
     return {
@@ -393,6 +474,10 @@ def relax_level(spacetime, config, sectors=None):
         "sector_guard_damped_steps": int(report.sector_guard_damped_steps),
         "sector_monopole_numbers": list(report.sector_monopole_numbers),
         "held_modulus_drift": float(report.held_modulus_drift),
+        "shared_sheet_geometry": count is not None,
+        "rank_tolerance": float(geometry.rank_tolerance),
+        "jacobian_ranks": [int(st.jacobian_rank) for st in report.steps],
+        "rank_gaps": [float(st.rank_gap) for st in report.steps],
         "regge_hinges": config["regge_hinges"],
         "regge_hinge_count": int(report.regge_hinge_count),
         "regge_structurally_zero": bool(report.regge_structurally_zero),
@@ -432,6 +517,7 @@ def recursion_turn(operator, config):
     """One turn of the Section 15 box on the base operator."""
     declaration = cob.LevelRecursionDeclaration()
     declaration.resolutions = list(config["resolutions"])
+    declaration.tolerance = bp.declared_tolerance(config, "recursion_tolerance")
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = config["band_rank"]
@@ -748,8 +834,10 @@ def cell_reads(cells, z, links, config):
     are its bounding cut and are held. A tetrahedron of a grown level is not
     declared, so nothing on it is held (``hold_cell_sectors``)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
-    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
-                                         bp.rotation_group())
+    alignment = bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        bp.declared_tolerance(config, "degeneracy_tolerance"),
+        bp.declared_tolerance(config, "certificate_tolerance"))
     chosen = cells if config["max_cells"] is None else \
         cells[:config["max_cells"]]
     out = []
@@ -766,6 +854,14 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
+        # the mean-field solver and the tolerances the run declared (none
+        # changes an equation)
+        for key in ("mean_field_method", "band_selection",
+                    "length_runaway_ratio", "stiffness", "fiber_moments",
+                    "fiber_pinning", "kappa_role") + tuple(
+                        key for key, _ in bp.TOLERANCES):
+            if key in config:
+                cell_config[key] = config[key]
         number = monopole_numbers([c], links)[0]
         cell_config["held_sectors"] = (
             held_sectors([[0, 1, 2, 3]], [number], 4)
@@ -788,12 +884,36 @@ def _verdict_summary(record):
             "status": {c["name"]: c["status"] for c in quark["conditions"]}}
 
 
-def _lowest_poles(record):
-    out = {}
-    for key, entry in record.get("sectors", {}).items():
-        out[key] = {name: entry[name]["lowest_pole"]
-                    for name in ("quasi_free", "with_quartic")}
-    return out
+def _content_poles(record, config=None):
+    """The poles of one content record for the tick's summary: for every
+    doublet content, both spins and both columns with every pole, its
+    multiplicity and the read's failed certificates; and, separately
+    labelled, the lowest pole of each column and spin over the doublet
+    contents with the doublet content it came from and every tied one
+    (`baryon_poles.lowest_poles`)."""
+    pairs = []
+    for read in record.get("doublet_reads") or []:
+        sectors = {}
+        for j2 in bp.SPINS:
+            entry = read["sectors"].get(j2)
+            if not entry:
+                continue
+            sectors[j2] = {}
+            for name in bp.COLUMNS:
+                column = entry.get(name) or {}
+                sectors[j2][name] = {
+                    "poles": list(column.get("poles") or []),
+                    "multiplicity": list(column.get("multiplicity") or []),
+                    "failed_certificates": list(
+                        column.get("failed_certificates") or []),
+                }
+        pairs.append({"doublet_content": list(read["doublet_content"]),
+                      "sectors": sectors})
+    return {"per_doublet_content": pairs,
+            "lowest_over_doublet_contents": {
+                name: bp.lowest_poles(
+                    record, name, bp.declared_tolerance(config, "tie_tolerance"))
+                for name in bp.COLUMNS}}
 
 
 def _truncation_summary(record):
@@ -875,6 +995,78 @@ def persistent_components(level, edges, required):
     return accepted, rejected
 
 
+def pachner_stage(cells, z, links, config):
+    """The combinatorial moves of the growth step, on the next level's base:
+    a stage-1 search of `MultiCobordism` in unforced emergence under
+    `JointStationarityObjective` (the Regge action and the Hodge spectral
+    entropies stationary at one metric), restricted to the four Pachner
+    kinds: no cone-out, cone-in or disposition move, so the base stays the
+    manifold it is, with the boundary it has. It runs as the emergence
+    driver runs its stage 1: ``pachner_updates`` updates, each drawing
+    ``pachner_candidates`` candidate moves and committing the best that
+    lowers the objective, deepening to ``pachner_depth``-move sequences when
+    no single move does. The base is one sheet; the level is rebuilt from it
+    with every sheet identical. Returns the base after the committed moves,
+    its vertices relabeled 0..n-1 (``vertex_relabeling`` in the record), with
+    the stage's record; zero updates return the base as it is."""
+    updates = int(config.get("pachner_updates", 0))
+    candidates = int(config.get("pachner_candidates",
+                                DECLARED_PACHNER_CANDIDATES))
+    depth = int(config.get("pachner_depth", DECLARED_PACHNER_DEPTH))
+    seed = int(config.get("pachner_seed", DECLARED_PACHNER_SEED))
+    record = {
+        "updates": updates, "candidates": candidates, "depth": depth,
+        "seed": seed,
+        "moves": ("the four Pachner kinds; no cone-out, cone-in or "
+                  "disposition move"),
+        "objective": ("joint stationarity: the Regge action and the Hodge "
+                      "spectral entropies of degrees %s stationary at one "
+                      "metric" % (list(PACHNER_HODGE_DEGREES),)),
+        "before": {"vertices": 1 + max(max(c) for c in cells),
+                   "edges": len(z), "cells": len(cells)},
+    }
+    if updates <= 0:
+        record["after"] = dict(record["before"])
+        record["changed"] = False
+        return cells, z, links, record
+    spacetime, _ = build_level(cells, z, links, sheets=1)
+    MC = cob.MultiCobordism
+    node = MC(spacetime, [], [], list(PACHNER_REGISTER_DEGREES), 1.0, seed, 0,
+              False)
+    node.set_objective(cob.JointStationarityObjective())
+    node.set_hodge_degrees(list(PACHNER_HODGE_DEGREES))
+    node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
+                             MC.EmergenceSubmode.STRICT)
+    node.should_propose_surgery = False
+    record["objective_before"] = float(node.objective())
+    record["trace"] = [float(value) for value in node.run_stage1(
+        max_steps=updates, n_candidate_moves=candidates,
+        grow_boundaries=False, max_lookahead=depth, combinatorial_breadth=0)]
+    record["objective_after"] = float(node.objective())
+    moved = node.spacetime()
+    raw = [sorted(int(v.getId()) for v in cell.getVertices())
+           for cell in moved.getTopSimplices() if cell is not None]
+    used = sorted({v for c in raw for v in c})
+    relabel = {v: i for i, v in enumerate(used)}
+    cells_out = sorted([relabel[v] for v in c] for c in raw)
+    z_out, links_out = {}, {}
+    for edge in moved.getEdgeList().toVector():
+        x = relabel[int(edge.getSource().getId())]
+        y = relabel[int(edge.getTarget().getId())]
+        # the inverse of `build_level`'s writing of the fields
+        link = cmath.exp(1j * complex(edge.getPhase()))
+        if x > y:
+            link = 1.0 / link
+        key = (min(x, y), max(x, y))
+        z_out[key] = complex(edge.getLength()) ** 2
+        links_out[key] = link
+    record["vertex_relabeling"] = {str(v): relabel[v] for v in used}
+    record["after"] = {"vertices": len(used), "edges": len(z_out),
+                       "cells": len(cells_out)}
+    record["changed"] = cells_out != sorted(sorted(c) for c in cells)
+    return cells_out, z_out, links_out, record
+
+
 def tick(index, cells, z, links, config):
     """One tick on the level whose base is ``cells`` with fields ``z`` and
     ``links``. Returns the tick's record and the next level's base (or None
@@ -892,7 +1084,8 @@ def tick(index, cells, z, links, config):
     try:
         relaxation = relax_level(
             spacetime, config,
-            cut_sectors(cut, cut_before, count) if declared else [])
+            cut_sectors(cut, cut_before, count) if declared else [],
+            count=count)
     except ValueError as error:
         # a declared refusal of the library (a face holonomy outside the
         # domain of the holonomy term): the level has no stationary point to
@@ -1017,11 +1210,10 @@ def tick(index, cells, z, links, config):
                            for cell in record["reads"]],
         "isospin_doublet": [[_doublet_summary(c) for c in cell["contents"]]
                             for cell in record["reads"]],
-        "lowest_poles": [[{"content": c["content"],
-                           "poles": _lowest_poles(c),
-                           "quartic_truncation": _truncation_summary(c)}
-                          for c in cell["contents"]]
-                         for cell in record["reads"]],
+        "poles": [[dict(_content_poles(c, config), content=c["content"],
+                        quartic_truncation=_truncation_summary(c))
+                   for c in cell["contents"]]
+                  for cell in record["reads"]],
     }
     record["seconds"] = time.time() - started
     if not kept:
@@ -1040,6 +1232,17 @@ def tick(index, cells, z, links, config):
                   for (a, b) in next_z if (a, b) in kept_edges}
     z_out = {e: next_z[src] for e, src in next_edges.items()}
     links_out = {e: next_links[src] for e, src in next_edges.items()}
+    # the combinatorial moves on the grown base, before it is the next level
+    next_cells, z_out, links_out, record["pachner"] = pachner_stage(
+        next_cells, z_out, links_out, config)
+    record["summary"]["pachner"] = {
+        "updates": record["pachner"]["updates"],
+        "changed": record["pachner"]["changed"],
+        "cells": [record["pachner"]["before"]["cells"],
+                  record["pachner"]["after"]["cells"]],
+        "objective": [record["pachner"].get("objective_before"),
+                      record["pachner"].get("objective_after")],
+    }
     return record, (next_cells, z_out, links_out)
 
 
@@ -1055,17 +1258,34 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    holonomy=bp.DECLARED_HOLONOMY,
                    elimination=bp.DECLARED_ELIMINATION,
                    selected_contents=None, max_cells=None,
-                   persistence_required=None):
+                   persistence_required=None,
+                   mean_field_method=bp.DECLARED_MEAN_FIELD_METHOD,
+                   band_selection=bp.DECLARED_BAND_SELECTION,
+                   stiffness=bp.DECLARED_STIFFNESS,
+                   fiber_moments=bp.DECLARED_FIBER_MOMENTS,
+                   fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
+                   pachner_updates=DECLARED_PACHNER_UPDATES,
+                   pachner_candidates=DECLARED_PACHNER_CANDIDATES,
+                   pachner_depth=DECLARED_PACHNER_DEPTH,
+                   pachner_seed=DECLARED_PACHNER_SEED):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
     how many adjacent declared resolutions a component must persist across
     to become a response vertex; by default every declared resolution, the
-    stated range of scales of WP §5."""
+    stated range of scales of WP §5. ``tolerances`` sets any of
+    `baryon_poles.TOLERANCES` by key; every tolerance is carried into every
+    cell's config."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                holonomy=holonomy, elimination=elimination,
-                               selected_contents=selected_contents)
+                               selected_contents=selected_contents,
+                               mean_field_method=mean_field_method,
+                               band_selection=band_selection,
+                               stiffness=stiffness,
+                               fiber_moments=fiber_moments,
+                               fiber_pinning=fiber_pinning,
+                               tolerances=tolerances)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1096,6 +1316,15 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                              "bulk and on every grown level"),
         "gluing": ("grown cells in ascending lexicographic order, each added "
                    "only if the complex stays a manifold with boundary"),
+        "pachner_updates": int(pachner_updates),
+        "pachner_candidates": int(pachner_candidates),
+        "pachner_depth": int(pachner_depth),
+        "pachner_seed": int(pachner_seed),
+        "pachner_moves": ("stage-1 updates of MultiCobordism on each grown "
+                          "level's base (one sheet) under the joint "
+                          "stationarity objective, the four Pachner kinds "
+                          "alone: no cone-out, cone-in or disposition move; "
+                          "zero updates run none"),
         "edge_value": "mean over the grown cells containing the edge",
         "max_cells": max_cells,
     })
@@ -1147,6 +1376,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
                    record["seconds"]))
             for line in _notices(record):
                 sys.stdout.write("  " + line + "\n")
+            for line in read_lines(record):
+                sys.stdout.write(line + "\n")
             sys.stdout.flush()
         if on_frame is not None:
             on_frame(frames, len(frames) - 1)
@@ -1204,71 +1435,102 @@ INK = bp.INK
 INK_MUTED = bp.INK_MUTED
 
 
+def frame_data(frames, index):
+    """What one frame draws, as data: the recursion's counts and the row-sum
+    defects of its grown cells per tick; every pole of every (host cell,
+    content, doublet content) of the latest tick that read cells
+    (`baryon_poles.pole_marks`, one group per host cell and content); and the
+    ratio by 2T reading of every read host cell in both columns with the two
+    pairs it compares and the mean-field solve behind each
+    (`baryon_poles.ratio_row`)."""
+    done = frames[:index + 1]
+    read = [f for f in done if f.get("reads")]
+    latest = read[-1] if read else done[-1]
+    cells = latest.get("reads") or []
+    marks, spans, slots = bp.pole_marks(
+        [("%s\n%s" % (bp._digits(cell["cell"]), bp._digits(record["content"])),
+          record) for cell in cells for record in cell["contents"]])
+    rows = []
+    for cell in cells:
+        where = "cell %s" % bp._digits(cell["cell"])
+        solves = bp.content_solves(cell["contents"])
+        for name in bp.COLUMNS:
+            rows.append(bp.ratio_row(where, name, ((cell.get("ratios") or {})
+                                                   .get(name) or {})
+                                     .get("by_2T_reading"), solves))
+    return {"tick": latest["tick"], "done": len(done),
+            "counts": [{"tick": f["tick"],
+                        "response_vertices": f["summary"]["response_vertices"],
+                        "grown_cells": f["summary"]["grown_cells"],
+                        "row_sum_defects": list(
+                            f["summary"]["row_sum_defects"])} for f in done],
+            "marks": marks, "groups": spans, "slots": slots, "ratios": rows}
+
+
 def draw_frame(figure, frames, index):
-    """One frame: per tick, the counts of the recursion and the row-sum
-    defects of the grown cells; for the latest tick, the lowest quasi-free
-    spin-1/2 and spin-3/2 poles of every read cell and content."""
+    """One frame (`frame_data`): the poles of every (host cell, content,
+    doublet content) of the latest tick that read cells, quasi-free and with
+    the quartic, each pole its own mark; below them the recursion's counts
+    per tick, the row-sum defects of its grown cells, the ratio by 2T reading
+    per host cell against the target, and the listing of the pairs each ratio
+    compares."""
+    data = frame_data(frames, index)
     figure.clear()
     figure.patch.set_facecolor(SURFACE)
-    left = figure.add_subplot(1, 2, 1)
-    right = figure.add_subplot(1, 2, 2)
-    for axis in (left, right):
-        axis.set_facecolor(SURFACE)
-        for spine in ("top", "right"):
-            axis.spines[spine].set_visible(False)
-        axis.tick_params(colors=INK_MUTED)
-    done = frames[:index + 1]
-    x = np.arange(len(done))
+    grid = figure.add_gridspec(3, 4, height_ratios=(1.2, 1.2, 1.1),
+                               width_ratios=(1.0, 1.0, 1.1, 1.6))
+    quasi_free = figure.add_subplot(grid[0, :])
+    quartic = figure.add_subplot(grid[1, :])
+    counts = figure.add_subplot(grid[2, 0])
+    defects = figure.add_subplot(grid[2, 1])
+    ratio = figure.add_subplot(grid[2, 2])
+    pairs = figure.add_subplot(grid[2, 3])
+    for axis, name in ((quasi_free, "quasi_free"), (quartic, "with_quartic")):
+        bp.draw_pole_panel(axis, data, name,
+                           "poles %s at tick %d: every (host cell, content, "
+                           "doublet content)" % (bp.SERIES_LABEL[name],
+                                                 data["tick"]),
+                           "host cell and content (quarks per band of h_1)")
+    for axis in (counts, defects):
+        bp.style_axis(axis)
+    ticks = [row["tick"] for row in data["counts"]]
     for key, colour, label in (("response_vertices", "#2a78d6",
                                 "response vertices"),
                                ("grown_cells", "#eb6834", "grown cells")):
-        left.plot(x, [f["summary"][key] for f in done], marker="o",
-                  linewidth=2, color=colour, label=label)
-    twin = left.twinx()
-    for i, f in enumerate(done):
-        defects = f["summary"]["row_sum_defects"]
-        twin.plot([i] * len(defects), defects, "_", markersize=14,
-                  color="#1baf7a")
-    twin.set_ylabel("row-sum defect ||g 1|| / ||g||", color=INK_MUTED)
-    left.set_xticks(x)
-    left.set_xlabel("tick", color=INK)
-    left.set_ylabel("count", color=INK)
-    left.set_title("the recursion per tick", color=INK, fontsize=10)
-    left.legend(frameon=False, fontsize=8, labelcolor=INK, loc="upper left")
-
-    read = [f for f in done if f.get("reads")]
-    latest = read[-1] if read else done[-1]
-    labels, half, three = [], [], []
-    for cell in latest.get("reads", []):
-        for record in cell["contents"]:
-            labels.append("%s\n%s" % ("".join(map(str, cell["cell"])),
-                                      "".join(map(str, record["content"]))))
-            for store, key in ((half, str(bp.SPIN_HALF)),
-                               (three, str(bp.SPIN_THREE_HALVES))):
-                entry = record.get("sectors", {}).get(key)
-                pole = entry["quasi_free"]["lowest_pole"] if entry else None
-                store.append(pole.real if pole is not None else np.nan)
-    positions = np.arange(len(labels))
-    right.plot(positions, half, "o", markersize=7, color="#1baf7a",
-               label="spin 1/2")
-    right.plot(positions, three, "s", markersize=7, color="#4a3aa7",
-               markerfacecolor="none", markeredgewidth=2, label="spin 3/2")
-    right.set_xticks(positions)
-    right.set_xticklabels(labels, fontsize=6)
-    right.set_xlabel("cell and content", color=INK)
-    right.set_ylabel("Re s (quasi-free)", color=INK)
-    right.set_title("baryon poles at tick %d" % latest["tick"], color=INK,
-                    fontsize=10)
-    right.legend(frameon=False, fontsize=8, labelcolor=INK)
-    figure.suptitle("level recursion with the grown-cell rule (%d ticks "
-                    "done)" % len(done), color=INK)
+        counts.plot(ticks, [row[key] for row in data["counts"]], marker="o",
+                    linewidth=2, color=colour, label=label)
+    counts.set_xticks(ticks)
+    counts.set_xlabel("tick", color=INK, fontsize=8)
+    counts.set_ylabel("count", color=INK, fontsize=8)
+    counts.set_title("the recursion per tick", color=INK, fontsize=9)
+    counts.legend(frameon=False, fontsize=7, labelcolor=INK)
+    for row in data["counts"]:
+        defects.plot([row["tick"]] * len(row["row_sum_defects"]),
+                     row["row_sum_defects"], linestyle="none", marker="_",
+                     markersize=14, color="#1baf7a")
+    defects.set_xticks(ticks)
+    defects.set_xlabel("tick", color=INK, fontsize=8)
+    defects.set_ylabel("||g 1|| / ||g||", color=INK, fontsize=8)
+    defects.set_title("row-sum defect of each grown cell", color=INK,
+                      fontsize=9)
+    bp.draw_ratio_panel(ratio, data["ratios"],
+                        "ratio by 2T reading per host cell, tick %d"
+                        % data["tick"])
+    bp.draw_pairs_panel(pairs, data["ratios"])
+    figure.suptitle("level recursion with the grown-cell rule, reported per "
+                    "doublet content (%d ticks done)" % data["done"],
+                    color=INK)
     figure.tight_layout()
 
 
-def drive_live(config, progress=False, points_file=None):
+def drive_live(config, progress=False, points_file=None, keep_open=False):
     """The same `drive` on a worker thread, drawing each completed tick on the
     main thread; the window is shown once, never raised, and pumped with
-    `canvas.start_event_loop`. Closing it switches the run to headless."""
+    `canvas.start_event_loop`. While a tick is being computed the window says
+    which one and for how long. Closing it switches the run to headless. When
+    the run ends the figure is closed, or, with `keep_open`, left on screen
+    with its final frame for `bp.hold_live_window` once the outputs are
+    written."""
     import queue
     import threading
 
@@ -1292,21 +1554,27 @@ def drive_live(config, progress=False, points_file=None):
     matplotlib.rcParams["figure.raise_window"] = False
     if not plt.isinteractive():
         plt.ion()
-    figure = plt.figure(figsize=(13, 6))
+    figure = plt.figure(figsize=bp.FIGURE_SIZE)
     plt.show(block=False)
     ready = queue.Queue()
     published = {}
     outcome = {}
     stop = threading.Event()
     closed = threading.Event()
+    finished = threading.Event()
 
     def publish(frames, index):
         published["frames"] = frames
         ready.put(index)
 
     def on_close(event):
-        if not closed.is_set():
-            closed.set()
+        # Only a close by the user while the run is in progress is reported;
+        # the driver's own close at the end, and a close after the end, are
+        # not.
+        if closed.is_set():
+            return
+        closed.set()
+        if not finished.is_set():
             sys.stdout.write(
                 "the live window was closed; the run continues headless and "
                 "still writes every output\n")
@@ -1327,17 +1595,32 @@ def drive_live(config, progress=False, points_file=None):
 
     thread = threading.Thread(target=worker, name="level-recursion")
     thread.start()
+    def running(done, seconds):
+        if done >= config["ticks"]:
+            return "the run is finishing: %s" % bp.elapsed_text(seconds)
+        return ("tick %d of %d is running: %s elapsed; its frame is drawn "
+                "when the tick completes"
+                % (done, config["ticks"], bp.elapsed_text(seconds)))
+
     main_error = None
+    done = 0
+    since = time.monotonic()
+    shown = None
     try:
         while not closed.is_set():
             try:
                 index = ready.get_nowait()
             except queue.Empty:
+                now = time.monotonic()
+                if shown is None or now - shown >= bp.LIVE_STATUS_INTERVAL:
+                    bp.draw_status(figure, running(done, now - since))
+                    shown = now
                 figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
                 continue
             if index is None or closed.is_set():
                 break
             draw_frame(figure, published["frames"], index)
+            done, since, shown = index + 1, time.monotonic(), None
             figure.canvas.draw_idle()
             figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
     except BaseException as error:
@@ -1346,7 +1629,13 @@ def drive_live(config, progress=False, points_file=None):
     finally:
         thread.join()
         if not closed.is_set():
-            plt.close(figure)
+            finished.set()
+            if keep_open and main_error is None and "error" not in outcome:
+                bp.draw_status(figure, "the run is complete; writing the "
+                                       "outputs")
+                figure.canvas.start_event_loop(LIVE_POLL_INTERVAL)
+            else:
+                plt.close(figure)
     if main_error is not None:
         raise main_error
     if "error" in outcome:
@@ -1355,15 +1644,15 @@ def drive_live(config, progress=False, points_file=None):
 
 
 def render(result, path):
-    """The final frame as a PNG, on a file backend."""
-    import matplotlib
-    matplotlib.use("Agg", force=False)
-    import matplotlib.pyplot as plt
-    figure = plt.figure(figsize=(13, 6))
+    """The final frame as a PNG, drawn on its own Agg canvas, so an open live
+    window and the session's backend are left as they are."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    figure = Figure(figsize=bp.FIGURE_SIZE)
+    FigureCanvasAgg(figure)
     if result["ticks"]:
         draw_frame(figure, result["ticks"], len(result["ticks"]) - 1)
     figure.savefig(path, dpi=120, facecolor=SURFACE)
-    plt.close(figure)
 
 
 def summary(result):
@@ -1417,22 +1706,68 @@ def summary(result):
                 % (cell["vertices"], cell["row_sum_defect"],
                    cell["asymmetry"],
                    [bp._complex_text(v) for v in cell["squared_lengths"]]))
-        for cell in record["reads"]:
-            for c in cell["contents"]:
-                verdict = _verdict_summary(c)
-                lines.append(
-                    "    host cell %s content %s: %s; quark certified %s; "
-                    "lowest poles %s; quartic truncation %s"
-                    % (cell["cell"], c["content"],
-                       "failed: " + c["failed"] if "failed" in c else "read",
-                       verdict["certified"] if verdict else None,
-                       {k: {n: bp._complex_text(v) if v is not None else None
-                            for n, v in d.items()}
-                        for k, d in _lowest_poles(c).items()},
-                       _truncation_summary(c)))
+        lines += read_lines(record)
         if "stopped" in record:
             lines.append("  stopped: " + record["stopped"])
     return "\n".join(lines)
+
+
+def _conditions_text(record):
+    """The quark conditions of one content by number, name and status."""
+    quark = record.get("quark_conditions") or {}
+    return ", ".join(
+        " ".join(str(part) for part in (c.get("number"), c["name"],
+                                         c["status"]) if part is not None)
+        for c in quark.get("conditions") or [])
+
+
+def _content_line(cell, c):
+    """One content of one host cell: whether it was read (or why its read
+    was refused), its mean-field solve (`baryon_poles.relaxation_text`), its
+    anchor atlas (`baryon_poles.anchor_text`), its spectral fingerprint
+    (`baryon_poles.fingerprint_text`), its quark verdict and every
+    quark condition's status, its quarks per doublet of h-bar_1 and its
+    quartic truncation certificates."""
+    head = "host cell %s content %s (quarks per band of h_1): " % (
+        cell["cell"], c["content"])
+    if "failed" in c:
+        line = head + "failed: " + c["failed"]
+        if c.get("relaxation"):
+            line += "; " + bp.relaxation_text(c["relaxation"])
+        return line
+    verdict = _verdict_summary(c)
+    spin = (c.get("spin_decomposition") or {}).get("occupied_state")
+    return head + ("read; quark certified %s; %s; %squarks per doublet of "
+                   "h-bar_1 %s; quartic truncation %s; quark conditions %s"
+                   % (verdict["certified"] if verdict else None,
+                      bp.relaxation_text(c.get("relaxation")),
+                      (bp.anchor_text(c["anchor"]) + "; "
+                       if "anchor" in c else "")
+                      + (bp.fingerprint_text(c["spectral_fingerprint"])
+                         + "; " if "spectral_fingerprint" in c else ""),
+                      {k: bp._complex_text(v) for k, v in spin.items()}
+                      if spin else None,
+                      _truncation_summary(c), _conditions_text(c)))
+
+
+def read_lines(record):
+    """The per-cell reads of one tick as text. For every host cell: one line
+    per content (`_content_line`), each read content followed by one line per
+    (content, doublet content) pair with both spins and both columns
+    (`baryon_poles.pair_line`); then the cell's labelled "lowest over" minima
+    (`baryon_poles.lowest_lines`) and its ratios with the pairs they compare
+    (`baryon_poles.ratio_lines`)."""
+    lines = []
+    for cell in record.get("reads") or []:
+        prefix = "host cell %s " % (cell["cell"],)
+        for c in cell["contents"]:
+            lines.append("    " + _content_line(cell, c))
+            if "failed" not in c:
+                lines += ["      " + line
+                          for line in bp.content_pair_lines(c, prefix)]
+        lines += bp.lowest_lines(cell["contents"], "    " + prefix)
+        lines += bp.ratio_lines(cell.get("ratios"), "    " + prefix)
+    return lines
 
 
 def build_parser():
@@ -1479,6 +1814,24 @@ def build_parser():
     run.add_argument("--max-cells", type=int, default=None,
                      help="read at most this many tetrahedra per tick as "
                           "hosts (a quick-check limit; default all)")
+    run.add_argument("--pachner-updates", type=int,
+                     default=DECLARED_PACHNER_UPDATES,
+                     help="stage-1 updates of the Pachner-move search on each "
+                          "grown level's base (the four Pachner kinds under "
+                          "the joint stationarity objective; no surgery); 0 "
+                          "runs none (default %d)" % DECLARED_PACHNER_UPDATES)
+    run.add_argument("--pachner-candidates", type=int,
+                     default=DECLARED_PACHNER_CANDIDATES,
+                     help="candidate moves drawn per update (default %d)"
+                          % DECLARED_PACHNER_CANDIDATES)
+    run.add_argument("--pachner-depth", type=int,
+                     default=DECLARED_PACHNER_DEPTH,
+                     help="how many moves deep the search goes when no single "
+                          "move lowers the objective (default %d)"
+                          % DECLARED_PACHNER_DEPTH)
+    run.add_argument("--pachner-seed", type=int, default=DECLARED_PACHNER_SEED,
+                     help="seed of the move draw (default %d)"
+                          % DECLARED_PACHNER_SEED)
     run.add_argument("--json", default=None,
                      help="write every record here at the end; each tick is "
                           "also appended, as it completes, to "
@@ -1488,6 +1841,8 @@ def build_parser():
     run.add_argument("--live", action="store_true",
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
+    bp.add_mean_field_arguments(run)
+    bp.add_tolerance_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1501,10 +1856,19 @@ def main(argv=None):
         holonomy=args.holonomy, elimination=args.eliminate,
         selected_contents=[tuple(c) for c in args.contents]
         if args.contents else None, max_cells=args.max_cells,
-        persistence_required=args.persistence_required)
+        persistence_required=args.persistence_required,
+        mean_field_method=args.mean_field_method,
+        band_selection=args.band_selection,
+        stiffness=args.stiffness, fiber_moments=args.fiber_moments,
+        fiber_pinning=args.fiber_pinning,
+        tolerances=bp.tolerances_from(args),
+        pachner_updates=args.pachner_updates,
+        pachner_candidates=args.pachner_candidates,
+        pachner_depth=args.pachner_depth, pachner_seed=args.pachner_seed)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
-                         points_file=points_file) if args.live
+                         points_file=points_file, keep_open=True)
+              if args.live
               else drive(config, progress=not args.quiet,
                          points_file=points_file))
     if args.json:
@@ -1514,6 +1878,9 @@ def main(argv=None):
         render(result, args.out)
     if not args.quiet:
         sys.stdout.write(summary(result) + "\n")
+    if args.live:
+        bp.hold_live_window("the run is complete and every output is "
+                            "written; close this window to exit")
     return result
 
 
