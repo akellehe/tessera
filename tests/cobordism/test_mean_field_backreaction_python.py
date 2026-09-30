@@ -469,18 +469,14 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
 
     def test_the_declared_solver_is_named_and_mixes_nothing(self):
         """The fixed point is solved by Newton's method on the joint system,
-        with the bands chosen once and followed by continuation; the
-        alternation and the re-sort stay available by name. The covariance
-        is never mixed: a mixed Gamma is not a band filling of h, and mixing
-        only slows a contracting alternation."""
+        the one method, so the declaration names none; the bands are chosen
+        once and followed by continuation, and the re-sort stays available
+        by name. The covariance is never mixed: a mixed Gamma is not a band
+        filling of h."""
         declaration = cob.SelfConsistentMeanFieldDeclaration()
-        self.assertEqual(declaration.method,
-                         cob.SelfConsistentMethod.JointNewton)
+        self.assertFalse(hasattr(declaration, "method"))
         self.assertEqual(declaration.band_selection,
                          cob.BandSelection.Continuation)
-        self.assertEqual(
-            set(cob.SelfConsistentMethod.__members__),
-            {"JointNewton", "Alternation"})
         self.assertEqual(
             set(cob.BandSelection.__members__),
             {"Continuation", "SortEveryIterate"})

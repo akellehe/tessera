@@ -150,9 +150,6 @@ def _regge(spacetime, branch):
     declaration.regge_form = cob.ReggeForm.Primal
     declaration.regge_hinges = cob.ReggeHinges.All
     declaration.regge_branch = branch
-    declaration.stiffness_weight = 0.0
-    declaration.reference_lengths = [
-        complex(e.getLength()) for e in spacetime.getEdgeList().toVector()]
     declaration.holonomy_weight = 0.0
     declaration.matter_weight = 0.0
     declaration.regge_start_squared_lengths = [1.0 + 0j] * 6

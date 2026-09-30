@@ -1,15 +1,15 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
 
-"""The primal Regge form and the linear length stiffness of `JointAction`.
+"""The primal Regge form of `JointAction`.
 
 The primal term is Regge's sum over hinges of the hinge content times the
 deficit angle; in three dimensions sum_e l_e eps_e. Under the default hinge
-rule only interior hinges (those whose link closes) contribute. The stiffness
-is (1/2) sum_e (l_e - l0_e)^2, the whitepaper's Section 7 stand-in for the
-spectral-moment part of S_0. Each is checked against an independent evaluation:
-the value against `ReggeSolver`, and the analytic length gradient against a
-central difference of the value along the real axis.
+rule only interior hinges (those whose link closes) contribute. It is checked
+against an independent evaluation: the value against `ReggeSolver`, and the
+analytic length gradient against a central difference of the value along the
+real axis. The force of a carried state is checked to be the matter term's
+alone, the Regge term standing on the geometric side it balances.
 """
 
 import cmath
@@ -68,12 +68,10 @@ class TestDefaults(unittest.TestCase):
         declaration = cob.JointActionDeclaration()
         self.assertEqual(declaration.regge_form, cob.ReggeForm.Primal)
         self.assertEqual(declaration.regge_hinges, cob.ReggeHinges.Interior)
-        self.assertEqual(declaration.stiffness_weight, 0.0)
 
-    def test_the_term_names_include_the_stiffness(self):
+    def test_the_term_names_are_the_four_terms(self):
         self.assertEqual(cob.JointAction.term_names(),
-                         ["regge", "stiffness", "holonomy", "matter",
-                          "spectral"])
+                         ["regge", "holonomy", "matter", "spectral"])
 
 
 class TestPrimalRegge(unittest.TestCase):
@@ -155,71 +153,29 @@ class TestPrimalRegge(unittest.TestCase):
         self.assertGreater(interior, 0)
 
 
-class TestStiffness(unittest.TestCase):
-    def _action(self, spacetime, weight, reference):
-        return cob.JointAction(spacetime, _declaration(
-            stiffness_weight=weight, reference_lengths=reference))
-
-    def test_value_is_half_the_weighted_squared_stretch(self):
+class TestTheForceOfTheCarriedState(unittest.TestCase):
+    def test_the_hellmann_feynman_force_carries_no_geometric_term(self):
+        """The force of the carried state is the matter term alone; the Regge
+        term (every hinge of a tetrahedron, so that it has a gradient) belongs
+        to the geometric side it is balanced against."""
         spacetime = tetrahedron(squared=lambda i: 8.0 + 0.4 * i)
-        lengths = [complex(e.getLength())
-                   for e in spacetime.getEdgeList().toVector()]
-        reference = [cmath.sqrt(8.0)] * 6
-        action = self._action(spacetime, 0.7, reference)
-        expected = 0.7 * 0.5 * sum((l - r) ** 2
-                                   for l, r in zip(lengths, reference))
-        self.assertLess(abs(action.stiffness_term() - expected), 1e-13)
-        self.assertLess(abs(action.value() - expected), 1e-13)
-
-    def test_gradient_is_exact(self):
-        spacetime = tetrahedron(squared=lambda i: 8.0 + 0.4 * i)
-        reference = [cmath.sqrt(8.0)] * 6
-        action = self._action(spacetime, 0.7, reference)
-        analytic = np.array(action.length_stationarity())
-        lengths = np.array([complex(e.getLength())
-                            for e in spacetime.getEdgeList().toVector()])
-        closed = 0.7 * (lengths - np.array(reference)) / (2 * lengths)
-        self.assertLess(np.max(np.abs(analytic - closed)), 1e-14)
-        numeric = _central_difference(
-            spacetime, lambda: complex(action.stiffness_term()))
-        self.assertLess(np.max(np.abs(analytic - numeric)), 1e-7)
-
-    def test_zero_at_the_reference(self):
-        spacetime = tetrahedron(squared=lambda i: 8.0)
-        reference = [complex(e.getLength())
-                     for e in spacetime.getEdgeList().toVector()]
-        action = self._action(spacetime, 3.0, reference)
-        self.assertEqual(action.stiffness_term(), 0)
-        self.assertLess(np.max(np.abs(action.length_stationarity())), 1e-16)
-
-    def test_the_hellmann_feynman_force_carries_no_stiffness(self):
-        """The force of the carried state is the matter term alone; the
-        stiffness belongs to the geometric side it is balanced against."""
-        spacetime = tetrahedron(squared=lambda i: 8.0 + 0.4 * i)
-        reference = [cmath.sqrt(8.0)] * 6
-        declaration = _declaration(stiffness_weight=0.7,
-                                   reference_lengths=reference,
+        declaration = _declaration(gravitational_weight=0.7,
+                                   regge_hinges=cob.ReggeHinges.All,
                                    matter_weight=1.0)
         declaration.covariance = list((np.eye(6) / 2.0).reshape(-1))
-        with_stiffness = cob.JointAction(spacetime, declaration)
-        declaration.stiffness_weight = 0.0
+        with_regge = cob.JointAction(spacetime, declaration)
+        declaration.gravitational_weight = 0.0
         without = cob.JointAction(spacetime, declaration)
-        force = np.array(with_stiffness.hellmann_feynman_length_force())
+        force = np.array(with_regge.hellmann_feynman_length_force())
         self.assertLess(np.max(np.abs(
             force - np.array(without.length_stationarity()))), 1e-14)
-        stiffness = np.array(cob.JointAction(spacetime, _declaration(
-            stiffness_weight=0.7,
-            reference_lengths=reference)).length_stationarity())
+        regge = np.array(cob.JointAction(spacetime, _declaration(
+            gravitational_weight=0.7,
+            regge_hinges=cob.ReggeHinges.All)).length_stationarity())
+        self.assertGreater(np.max(np.abs(regge)), 1e-2)
         self.assertLess(np.max(np.abs(
-            np.array(with_stiffness.length_stationarity()) - force
-            - stiffness)), 1e-14)
-
-    def test_missing_reference_lengths_are_refused(self):
-        spacetime = tetrahedron()
-        with self.assertRaises(ValueError):
-            self._action(spacetime, 1.0, [])
-        with self.assertRaises(ValueError):
-            self._action(spacetime, 1.0, [1.0] * 5)
+            np.array(with_regge.length_stationarity()) - force - regge)),
+            1e-14)
 
 
 if __name__ == "__main__":

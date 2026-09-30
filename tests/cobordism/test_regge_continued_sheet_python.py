@@ -13,14 +13,16 @@ root to carry a sheet continued from a Euclidean reference, and
 - the continued residual is continuous under infinitesimal imaginary
   perturbations, where the principal one jumps;
 - the continued and principal values agree on real Euclidean input;
-- the continued term is stationary where Regge plus stiffness is stationary
-  on the grown tick-1 geometry of the recursion investigation (2026-09-23),
-  and the lengths-only Newton solve reaches that point;
+- a lengths-only Newton solve of Regge plus the matter term w tr(h), whose
+  stationary point on the regular boundary of the 4-simplex is known in
+  closed form, reaches it on the continued sheet from a start on the cut,
+  where the principal sheet's solve is refused;
 - a complex with no interior hinge reports its Regge term as structurally
   zero.
 """
 import cmath
 import itertools
+import math
 
 import numpy as np
 import pytest
@@ -57,18 +59,21 @@ def _complex(cells, squared):
     return spacetime
 
 
-def _declaration(spacetime, branch, stiffness=0.0):
+def _declaration(spacetime, branch, matter=0.0):
+    """Primal Regge over the interior hinges on the named sheet, and, with a
+    nonzero ``matter`` weight, the matter term at the identity covariance,
+    w tr(h)."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.gravitational_weight = 1.0
     declaration.regge_form = cob.ReggeForm.Primal
     declaration.regge_hinges = cob.ReggeHinges.Interior
     declaration.regge_branch = branch
-    declaration.stiffness_weight = stiffness
-    declaration.reference_lengths = [
-        complex(e.getLength()) for e in spacetime.getEdgeList().toVector()]
     declaration.holonomy_weight = 0.0
-    declaration.matter_weight = 0.0
+    declaration.matter_weight = matter
+    if matter:
+        edges = len(spacetime.getEdgeList().toVector())
+        declaration.covariance = list(np.eye(edges, dtype=complex).reshape(-1))
     return declaration
 
 
@@ -124,12 +129,32 @@ def test_the_continued_and_principal_values_agree_on_real_euclidean_input():
         np.array(principal.length_stationarity()))
 
 
-def test_regge_and_stiffness_converge_on_the_tick_one_geometry():
-    """The length block of tick 1: primal Regge plus the linear stiffness with
-    kappa = 1, the lengths as built as l0. On the continued sheet it is a
-    smooth system and Newton converges; on the principal sheet its first step
-    is refused."""
-    spacetime = _complex(BOUNDARY_OF_FOUR_SIMPLEX, TICK_ONE_SQUARED_LENGTHS)
+def test_regge_and_matter_converge_on_the_continued_sheet():
+    """Primal Regge plus w tr(h) on the boundary of the 4-simplex. At the
+    regular metric every length equation is the same by symmetry:
+    dS_Regge/dz_e = eps_0 / (2 sqrt z) with eps_0 = 2 pi - 3 arccos(1/3)
+    (Schlaefli), and by the degree -1 homogeneity of h (WP v17 line 263)
+    w d tr(h)/dz_e = -w c / (10 z^2) with c = z tr h, so the stationary
+    point is the regular metric at z* = (w c / (5 eps_0))^{2/3}. From 5%
+    away in the real parts, with imaginary parts of 1e-9 that put 14 of the
+    30 dihedral angles on the supplement sheet of the principal branch, the
+    Newton solve on the continued sheet reaches z* (to the tolerance 1e-10
+    on a residual whose derivative in z is of order 1e-4); on the principal
+    sheet it is refused."""
+    edges = list(itertools.combinations(range(5), 2))
+    unit = _complex(BOUNDARY_OF_FOUR_SIMPLEX, {e: 1.0 + 0j for e in edges})
+    c = complex(cob.JointAction(unit, _declaration(
+        unit, cob.ReggeBranch.Continued, matter=1.0)).matter_term()).real
+    eps_0 = 2 * math.pi - 3 * math.acos(1.0 / 3.0)
+    w = 100.0
+    z_star = (w * c / (5 * eps_0)) ** (2.0 / 3.0)
+    regular = _complex(BOUNDARY_OF_FOUR_SIMPLEX,
+                       {e: z_star + 0j for e in edges})
+    assert np.max(np.abs(cob.JointAction(regular, _declaration(
+        regular, cob.ReggeBranch.Continued, matter=w)).length_stationarity())) \
+        < 1e-13
+    start = {e: z_star * (1.0 + 0.05 * ((3 * i) % 4 - 1.5))
+             + 1e-9j * ((7 * i) % 5 - 1.5) for i, e in enumerate(edges)}
     solve = cob.HolomorphicRelaxationDeclaration()
     solve.relax_lengths = True
     solve.relax_links = False
@@ -138,21 +163,23 @@ def test_regge_and_stiffness_converge_on_the_tick_one_geometry():
     solve.tolerance = 1e-10
     solve.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     solve.contour_radius = 1e-6
-    relaxation = cob.HolomorphicRelaxation(
-        cob.JointAction(spacetime, _declaration(
-            spacetime, cob.ReggeBranch.Continued, stiffness=1.0)), solve)
-    report = relaxation.solve()
+    spacetime = _complex(BOUNDARY_OF_FOUR_SIMPLEX, start)
+    action = cob.JointAction(spacetime, _declaration(
+        spacetime, cob.ReggeBranch.Continued, matter=w))
+    assert action.regge_off_principal_angles() == 14
+    report = cob.HolomorphicRelaxation(action, solve).solve()
     assert report.converged
     assert report.residual_norm < 1e-10
-    assert len(report.steps) <= 12
+    assert len(report.steps) <= 6
     assert report.regge_hinge_count == 10
     assert not report.regge_structurally_zero
+    for edge in spacetime.getEdgeList().toVector():
+        assert abs(complex(edge.getLength()) ** 2 - z_star) < 1e-6
 
-    principal_space = _complex(BOUNDARY_OF_FOUR_SIMPLEX,
-                               TICK_ONE_SQUARED_LENGTHS)
+    principal_space = _complex(BOUNDARY_OF_FOUR_SIMPLEX, start)
     principal = cob.HolomorphicRelaxation(
         cob.JointAction(principal_space, _declaration(
-            principal_space, cob.ReggeBranch.Principal, stiffness=1.0)),
+            principal_space, cob.ReggeBranch.Principal, matter=w)),
         solve).solve()
     assert not principal.converged
 

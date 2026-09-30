@@ -10,8 +10,8 @@ and grows the next level; every host cell is then relaxed with band filling
 (`SelfConsistentMeanField`) and its poles read (`BoundStatePole`). Expected
 values come from:
 
-* stationary points known in closed form: l = l0 for the stiffness alone, a
-  flat connection (every face holonomy 1) for the holonomy term alone;
+* a stationary point known in closed form: a flat connection (every face
+  holonomy 1) for the holonomy term alone;
 * WP v17 §3 and §11.1: the held bounding cut keeps its monopole number and
   its unit-modulus face holonomies, the bulk face relaxes freely;
 * WP v17 line 250: the band-filling covariance Gamma = sum_b (n_b / r_b) P_b,
@@ -38,20 +38,14 @@ from tessera.drivers import recursion as R
 from tests.drivers import _recursion_run_2026_09_23 as RUN
 
 
-def _declaration(spacetime, stiffness=0.0, beta=0.0,
-                 form=cob.HolonomyForm.Villain, reference=None):
+def _declaration(spacetime, beta=0.0):
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     declaration.gravitational_weight = 0.0
     declaration.regge_form = cob.ReggeForm.Primal
     declaration.regge_hinges = cob.ReggeHinges.Interior
-    declaration.stiffness_weight = stiffness
-    declaration.reference_lengths = (
-        list(reference) if reference is not None else
-        [complex(e.getLength()) for e in spacetime.getEdgeList().toVector()])
     declaration.holonomy_weight = beta
-    declaration.holonomy_form = form
     declaration.matter_weight = 0.0
     return declaration
 
@@ -76,35 +70,15 @@ def _tetrahedron(squared=8.0):
 # ------------------------------------------------- HolomorphicRelaxation
 
 
-def test_the_stiffness_alone_relaxes_to_the_reference_lengths():
-    """With only (1/2)||l - l0||^2, l0 = sqrt 8 on every edge, the unique
-    stationary point is l = l0: from squared lengths 8 + 0.3 k the Newton
-    solve converges and returns every length to sqrt 8 within 1e-12."""
-    spacetime = _tetrahedron()
-    reference = [cmath.sqrt(8.0)] * 6
-    for k, edge in enumerate(spacetime.getEdgeList().toVector()):
-        edge.setLength(cmath.sqrt(8.0 + 0.3 * (k + 1)))
-    action = cob.JointAction(spacetime, _declaration(spacetime, 1.0,
-                                                     reference=reference))
-    report = cob.HolomorphicRelaxation(action, _solve(links=False)).solve()
-    assert report.converged
-    assert report.residual_norm < 1e-12
-    for edge in spacetime.getEdgeList().toVector():
-        assert abs(complex(edge.getLength()) - cmath.sqrt(8.0)) < 1e-12
-
-
-@pytest.mark.parametrize("form", [cob.HolonomyForm.Villain,
-                                  cob.HolonomyForm.Wilson])
-def test_the_holonomy_alone_relaxes_to_a_flat_connection(form):
+def test_the_holonomy_alone_relaxes_to_a_flat_connection():
     """The holonomy term alone is stationary at a flat connection. From
     phases 0.1 sqrt(k + 1) (-1)^k on a single tetrahedron (face holonomies up
     to 0.62 rad from 1) the solve converges and every face holonomy is 1
-    within 1e-14; the Villain solve needed no zero-guard damping."""
+    within 1e-14, with no zero-guard damping."""
     spacetime = _tetrahedron()
     for k, edge in enumerate(spacetime.getEdgeList().toVector()):
         edge.setPhase(complex(0.1 * math.sqrt(k + 1) * (-1) ** k))
-    action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0,
-                                                     form=form))
+    action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0))
     relaxation = cob.HolomorphicRelaxation(action, _solve(lengths=False))
     report = relaxation.solve()
     assert report.converged and report.zero_guard_damped_steps == 0
@@ -188,7 +162,7 @@ def _band_filling(content, spacetime=None):
                                                               1.0))
     config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
     # zero iterations read the band filling at the starting point, the
-    # regular tetrahedron, under either solve method
+    # regular tetrahedron
     config["newton_iterations"] = 0
     config["mean_field_iterations"] = 0
     return action, cob.SelfConsistentMeanField(

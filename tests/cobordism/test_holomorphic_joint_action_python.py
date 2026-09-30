@@ -22,8 +22,8 @@ non-compact ones that a U(1) reading would not survive.
 ITS SECOND VARIATION IS THE UP-LAPLACIAN. On a tetrahedron with trivial holonomy
 the connection block of the Jacobian is minus beta times ``d_2 d_2^T`` entry by
 entry, whose nonzero eigenvalues are 4 beta on the coexact block and zero on the
-pure-gauge one — the numbers the whitepaper quotes when it takes the bare
-connection stiffness in Wilson-plaquette form. The sign is not a discrepancy:
+pure-gauge one — the numbers the whitepaper quotes for the bare connection
+stiffness beta L_1^up. The sign is not a discrepancy:
 the Maurer-Cartan coordinate is ``delta = i theta`` for a real angle theta, so
 the delta-Hessian is minus the theta-Hessian.
 
@@ -58,9 +58,6 @@ def _declaration(**overrides):
     # now that the primal form is the default.
     declaration.regge_form = cob.ReggeForm.Dual
     declaration.holonomy_weight = 0.0
-    # These suites assert the Wilson plaquette form's values (a zero term at
-    # trivial holonomy, the cosine current), so they declare it.
-    declaration.holonomy_form = cob.HolonomyForm.Wilson
     declaration.matter_weight = 0.0
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     for name, value in overrides.items():
@@ -120,20 +117,18 @@ def _metric(index):
 
 
 class TheActionIsTheSumOfItsDeclaredTermsTest(unittest.TestCase):
-    """``value`` reads nothing but the five terms it names."""
+    """``value`` reads nothing but the four terms it names."""
 
-    def test_the_value_is_the_sum_of_the_five_terms(self):
+    def test_the_value_is_the_sum_of_the_four_terms(self):
         spacetime = sphere3(squared=_metric, phase=_flux)
         declaration = _declaration(gravitational_weight=0.6,
                                    holonomy_weight=1.3)
         action = cob.JointAction(spacetime, declaration)
-        total = (action.regge_term() + action.stiffness_term()
-                 + action.holonomy_term() + action.matter_term()
-                 + action.spectral_term())
+        total = (action.regge_term() + action.holonomy_term()
+                 + action.matter_term() + action.spectral_term())
         self.assertAlmostEqual(abs(action.value() - total), 0.0, places=12)
         self.assertEqual(cob.JointAction.term_names(),
-                         ["regge", "stiffness", "holonomy", "matter",
-                          "spectral"])
+                         ["regge", "holonomy", "matter", "spectral"])
 
     def test_the_action_is_genuinely_complex(self):
         """A complex metric gives a complex action, not a real one.
@@ -205,9 +200,21 @@ class TheFaceHolonomyIsBranchFreeTest(unittest.TestCase):
             self.assertAlmostEqual(abs(got - want), 0.0, places=11)
 
     def test_a_trivial_connection_is_stationary_for_the_holonomy_term(self):
+        """At F = 1 on every face the term is -beta_V |faces| log W(1),
+        with W(1) and beta_V = beta / <m^2>_beta summed directly here, and
+        the link equations vanish."""
+        beta = 2.9
         spacetime = sphere3(squared=_metric)
-        action = cob.JointAction(spacetime, _declaration(holonomy_weight=2.9))
-        self.assertAlmostEqual(abs(action.holonomy_term()), 0.0, places=13)
+        action = cob.JointAction(spacetime, _declaration(holonomy_weight=beta))
+        m = np.arange(-60, 61)
+        weights = np.exp(-m * m / (2.0 * beta))
+        w_at_one = np.sum(weights)
+        beta_v = beta / (np.sum(m * m * weights) / w_at_one)
+        faces = cob.ChainComplex.fromSpacetime(spacetime).numSimplices(2)
+        self.assertEqual(faces, 10)
+        self.assertAlmostEqual(
+            abs(action.holonomy_term() + beta_v * faces * np.log(w_at_one)),
+            0.0, places=12)
         for component in action.link_stationarity():
             self.assertAlmostEqual(abs(component), 0.0, places=12)
 
@@ -552,17 +559,19 @@ class TheRemainingReadsTest(unittest.TestCase):
         """The rank threshold decides which singular values of the Jacobian
         count as zero in the minimum-norm solve, relative to the largest: the
         rank is the number of singular values above threshold times the
-        largest. On this sphere the six nonzero singular values lie between
-        0.70 and 1 of the largest and four are at rounding, so the default
-        keeps six and a threshold of 0.9 keeps three; the step record reports
-        the gap at the decision."""
+        largest. On this sphere at beta = 1/5, where W is dominated by
+        1 + 2 e^{-5/2} cos theta and the face curvature varies with the
+        cosine of the flux, the six nonzero singular values lie between 0.81
+        and 1 of the largest and four are at rounding, so the default keeps
+        six and a threshold of 0.93 keeps three; the step record reports the
+        gap at the decision."""
         self.assertEqual(cob.HolomorphicRelaxationDeclaration().rank_tolerance,
                          1e-12)
         ranks, gaps = [], []
-        for threshold in (1e-12, 0.9):
+        for threshold in (1e-12, 0.93):
             spacetime = sphere3(squared=_metric, phase=_flux)
             action = cob.JointAction(spacetime,
-                                     _declaration(holonomy_weight=1.0))
+                                     _declaration(holonomy_weight=0.2))
             relaxation = cob.HolomorphicRelaxation(
                 action, _relaxation(relax_links=True,
                                     rank_tolerance=threshold))

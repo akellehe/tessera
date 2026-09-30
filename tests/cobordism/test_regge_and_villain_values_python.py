@@ -4,9 +4,9 @@
 forms: the primal Regge term on known meshes and the Villain holonomy term.
 
 `recursion.relax_level` and `baryon_poles.relax_content` both relax the joint
-action S = w_R S_Regge(primal) + w_S (1/2)||l - l0||^2 + S_hol + w_M tr(Gamma
-h) (whitepaper v17 §7, `JointAction`). This file holds the first and the
-third term to values fixed independently of the library:
+action S = w_R S_Regge(primal) + S_hol + w_M tr(Gamma h) (whitepaper v17 §7,
+`JointAction`). This file holds the first and the second term to values fixed
+independently of the library:
 
 * the primal Regge sum sum_h |h| (2 pi - sum theta_h) over the hinges the
   declared rule selects (`ReggeHinges.All`: every hinge, with the library's
@@ -22,8 +22,7 @@ third term to values fixed independently of the library:
   5.0000 at 5, the symmetry W(1/F) = W(F), the zeros
   F = -exp(+-(2n - 1) / (2 beta)) of Jacobi's triple product, and the
   truncation's tail bounds;
-* the Wilson form's zero curvature at a quarter turn, and the gauge
-  invariance of the holonomy term.
+* the gauge invariance of the holonomy term.
 """
 import cmath
 import math
@@ -47,21 +46,14 @@ def _mesh(dimension, cells, squared=1.0):
     return spacetime
 
 
-def _geometric(spacetime, hinges=cob.ReggeHinges.All, regge=1.0,
-               stiffness=0.0, beta=0.0, form=cob.HolonomyForm.Villain,
-               reference=None):
+def _geometric(spacetime, hinges=cob.ReggeHinges.All, regge=1.0, beta=0.0):
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     declaration.gravitational_weight = regge
     declaration.regge_form = cob.ReggeForm.Primal
     declaration.regge_hinges = hinges
-    declaration.stiffness_weight = stiffness
-    declaration.reference_lengths = (
-        list(reference) if reference is not None else
-        [complex(e.getLength()) for e in spacetime.getEdgeList().toVector()])
     declaration.holonomy_weight = beta
-    declaration.holonomy_form = form
     declaration.matter_weight = 0.0
     return cob.JointAction(spacetime, declaration)
 
@@ -194,9 +186,9 @@ def test_the_villain_stiffness_at_a_quarter_turn(beta, stiffness, digits):
 
 @pytest.mark.parametrize("beta", [0.5, 1.0, 2.0])
 def test_the_matched_weight_is_beta_over_the_second_moment(beta):
-    """WP v17 line 171: beta_V = beta / <m^2>_beta, so that the trivial
-    holonomy curvature is beta for the Villain form as for Wilson's; checked
-    against the direct sum and through D^2 phi(1) = -beta."""
+    """WP v17 line 171: beta_V = beta / <m^2>_beta, so that the
+    trivial-holonomy curvature is beta; checked against the direct sum and
+    through D^2 phi(1) = -beta."""
     character = cob.VillainCharacter(beta, 1e-18)
     _, _, _, matched = _direct_moments(beta, 1.0)
     assert character.matched_weight == pytest.approx(matched, rel=1e-13)
@@ -281,28 +273,13 @@ def test_the_villain_declaration_is_validated():
 # ---------------------------------------------- the holonomy term assembled
 
 
-def _phase_hessian(spacetime, beta, holonomy):
-    hessian = np.asarray(cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 1.0, beta, holonomy=holonomy)).holonomy_hessian())
-    return -hessian.reshape(18, 18)
-
-
-def test_the_wilson_curvature_vanishes_at_a_quarter_turn():
-    """The Wilson potential beta (1 - cos theta) has curvature beta cos theta,
-    zero at F = +-i: on the unit-monopole host every face carries +-i
-    (WP v17 line 504), so the Wilson phase Hessian is exactly zero there."""
-    assert np.max(np.abs(_phase_hessian(bp.build_host(), 1.0, "wilson"))) \
-        < 1e-14
-
-
-@pytest.mark.parametrize("form", ["villain", "wilson"])
-def test_the_holonomy_term_is_gauge_invariant(form):
+def test_the_holonomy_term_is_gauge_invariant():
     """A complex vertex gauge transformation g_v = exp(chi_v) multiplies
     U_xy by g_x g_y^-1 and leaves every face holonomy, hence the holonomy
     term, its value and its Hessian, unchanged (to 1e-12)."""
     spacetime = bp.build_host()
     before = cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 1.0, 1.3, holonomy=form))
+        spacetime, 1.0, 1.3))
     value = complex(before.holonomy_term())
     faces = np.asarray(before.face_holonomies())
     chi = {v: 0.2 * v - 0.05j * v * v for v in range(12)}
@@ -311,6 +288,6 @@ def test_the_holonomy_term_is_gauge_invariant(form):
         # U -> U e^{chi_a - chi_b}: phase phi -> phi - i (chi_a - chi_b)
         edge.setPhase(edge.getPhase() - 1j * (chi[a] - chi[b]))
     after = cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 1.0, 1.3, holonomy=form))
+        spacetime, 1.0, 1.3))
     assert np.max(np.abs(np.asarray(after.face_holonomies()) - faces)) < 1e-12
     assert complex(after.holonomy_term()) == pytest.approx(value, abs=1e-12)

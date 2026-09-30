@@ -219,22 +219,20 @@ def _cell_host(links):
                                "links": list(links)})
 
 
-def _phase_stiffness(spacetime, beta, holonomy):
+def _phase_stiffness(spacetime, beta):
     hessian = np.asarray(cob.JointAction(spacetime, bp.action_declaration(
-        spacetime, 1.0, beta, holonomy=holonomy)).holonomy_hessian())
+        spacetime, 1.0, beta)).holonomy_hessian())
     return np.sort(np.linalg.eigvalsh(-hessian.reshape(18, 18).real))
 
 
-@pytest.mark.parametrize("holonomy", ["wilson", "villain"])
 @pytest.mark.parametrize("beta", [0.7, 2.0])
-def test_the_bare_connection_stiffness_is_4_beta_at_trivial_holonomy(
-        holonomy, beta):
+def test_the_bare_connection_stiffness_is_4_beta_at_trivial_holonomy(beta):
     """WP v17 lines 173 and 291: at trivial holonomy the quadratic expansion
-    of the holonomy term is (1/2) beta dphi^T L_1^up dphi for both the Villain
-    and the Wilson form, which is 4 beta on the coexact block of the
-    tetrahedron and zero on the exact (pure-gauge) block. On three sheets
-    there are nine of each."""
-    values = _phase_stiffness(_cell_host([1.0] * 6), beta, holonomy)
+    of the holonomy term is (1/2) beta dphi^T L_1^up dphi (the matching
+    beta_V = beta / <m^2>_beta of the Villain coupling), which is 4 beta on
+    the coexact block of the tetrahedron and zero on the exact (pure-gauge)
+    block. On three sheets there are nine of each."""
+    values = _phase_stiffness(_cell_host([1.0] * 6), beta)
     np.testing.assert_allclose(values[:9], 0.0, atol=1e-10)
     np.testing.assert_allclose(values[9:], 4.0 * beta, rtol=1e-10)
 
@@ -254,18 +252,15 @@ def _villain_quarter_turn_curvature(beta, holonomy=1j, terms=200):
 
 @pytest.mark.parametrize("beta", [0.5, 1.0, 2.0])
 def test_the_villain_stiffness_at_a_quarter_turn(beta):
-    """WP v17 line 173: at a quarter-turn face holonomy F = +-i the Wilson
-    curvature beta cos(theta) vanishes, while the Villain curvature
-    beta_V (<m^2>_F - <m>_F^2) does not. On the unit-monopole host every
-    face carries F = +-i: the Wilson phase stiffness is zero everywhere, and
-    the Villain one is four times that curvature on the nine coexact
-    directions."""
+    """WP v17 line 173: at a quarter-turn face holonomy F = +-i, where a
+    plaquette cosine's curvature beta cos(theta) vanishes, the Villain
+    curvature beta_V (<m^2>_F - <m>_F^2) is positive. On the unit-monopole
+    host every face carries F = +-i, and the phase stiffness is four times
+    that curvature on the nine coexact directions."""
     host = bp.build_host()
-    wilson = _phase_stiffness(host, beta, "wilson")
-    np.testing.assert_allclose(wilson, 0.0, atol=1e-12)
     curvature = _villain_quarter_turn_curvature(beta)
     assert abs(curvature.imag) < 1e-12 and curvature.real > 0.4 * beta
-    villain = _phase_stiffness(host, beta, "villain")
+    villain = _phase_stiffness(host, beta)
     np.testing.assert_allclose(villain[:9], 0.0, atol=1e-10)
     np.testing.assert_allclose(villain[9:], 4.0 * curvature.real, rtol=1e-10)
 

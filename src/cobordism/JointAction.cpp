@@ -553,7 +553,7 @@ ActionWorkspace::ActionWorkspace(const std::shared_ptr<Spacetime> &spacetime,
 
 namespace {
 
-/// The per-face potential of the declared holonomy form and its first two
+/// The per-face potential of the holonomy term and its first two
 /// Maurer-Cartan derivatives, \f$ \phi \f$, \f$ D\phi \f$ and \f$ D^2\phi \f$
 /// with \f$ D=F\,d/dF \f$, the weight included. The Villain character is built
 /// once per query and shared by every face.
@@ -561,29 +561,25 @@ class FacePotential {
  public:
   explicit FacePotential(const JointActionDeclaration &declaration)
       : weight_(declaration.holonomyWeight) {
-    if (declaration.holonomyForm == HolonomyForm::Villain && weight_ > 0.0)
+    if (weight_ > 0.0)
       villain_.emplace(weight_, declaration.villainTolerance);
   }
 
-  [[nodiscard]] bool active() const { return weight_ != 0.0; }
+  [[nodiscard]] bool active() const { return villain_.has_value(); }
 
   [[nodiscard]] complexd value(complexd holonomy) const {
     if (!active()) return complexd{0.0, 0.0};
-    if (villain_) return villain_->potential(holonomy);
-    return weight_ * (complexd{1.0, 0.0} -
-                      0.5 * (holonomy + complexd{1.0, 0.0} / holonomy));
+    return villain_->potential(holonomy);
   }
 
   [[nodiscard]] complexd first(complexd holonomy) const {
     if (!active()) return complexd{0.0, 0.0};
-    if (villain_) return villain_->firstDerivative(holonomy);
-    return -0.5 * weight_ * (holonomy - complexd{1.0, 0.0} / holonomy);
+    return villain_->firstDerivative(holonomy);
   }
 
   [[nodiscard]] complexd second(complexd holonomy) const {
     if (!active()) return complexd{0.0, 0.0};
-    if (villain_) return villain_->secondDerivative(holonomy);
-    return -0.5 * weight_ * (holonomy + complexd{1.0, 0.0} / holonomy);
+    return villain_->secondDerivative(holonomy);
   }
 
   [[nodiscard]] const std::optional<VillainCharacter> &villain() const {
@@ -626,16 +622,7 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           std::to_string(declaration_.momentBandProjectors.size()) +
           " band projectors are declared");
   }
-  if (declaration_.stiffnessWeight != 0.0) {
-    const std::size_t edges = edgeCount();
-    if (declaration_.referenceLengths.size() != edges)
-      throw std::invalid_argument(
-          "JointAction: the length stiffness needs one reference length per "
-          "edge; got " +
-          std::to_string(declaration_.referenceLengths.size()) + " for " +
-          std::to_string(edges) + " edges");
-  }
-  if (declaration_.holonomyForm == HolonomyForm::Villain) {
+  {
     if (declaration_.holonomyWeight < 0.0)
       throw std::invalid_argument(
           "JointAction: the Villain holonomy term's coupling beta is a "
@@ -795,7 +782,7 @@ std::size_t JointAction::edgeCount() const {
 }
 
 std::vector<std::string> JointAction::termNames() {
-  return {"regge", "stiffness", "holonomy", "matter", "spectral"};
+  return {"regge", "holonomy", "matter", "spectral"};
 }
 
 std::vector<complexd> JointAction::carrierOperator() const {
@@ -1272,18 +1259,6 @@ std::size_t JointAction::reggeOffPrincipalAngles() const {
   return reggeSheets().offPrincipal;
 }
 
-std::complex<double> JointAction::stiffnessTerm() const {
-  if (declaration_.stiffnessWeight == 0.0) return complexd{0.0, 0.0};
-  const auto edges = spacetime_->getEdgeList()->toVector();
-  complexd sum{0.0, 0.0};
-  for (std::size_t index = 0; index < edges.size(); ++index) {
-    const complexd stretch =
-        edges[index]->getLength() - declaration_.referenceLengths[index];
-    sum += 0.5 * stretch * stretch;
-  }
-  return declaration_.stiffnessWeight * sum;
-}
-
 std::complex<double> JointAction::holonomyTerm() const {
   const FacePotential potential(declaration_);
   if (!potential.active()) return complexd{0.0, 0.0};
@@ -1317,7 +1292,7 @@ std::complex<double> JointAction::spectralTerm() const {
 }
 
 std::complex<double> JointAction::value() const {
-  return reggeTerm() + stiffnessTerm() + holonomyTerm() + matterTerm() +
+  return reggeTerm() + holonomyTerm() + matterTerm() +
          spectralTerm();
 }
 
@@ -1422,9 +1397,6 @@ void JointAction::stationarityPart(StationarityPart part,
   const bool regge = lengths != nullptr &&
                      (part == StationarityPart::All ||
                       part == StationarityPart::Regge);
-  const bool stiffness = lengths != nullptr &&
-                         (part == StationarityPart::All ||
-                          part == StationarityPart::Stiffness);
   const bool holonomy = links != nullptr &&
                         (part == StationarityPart::All ||
                          part == StationarityPart::Holonomy);
@@ -1474,20 +1446,6 @@ void JointAction::stationarityPart(StationarityPart part,
           (*lengths)[found->second] +=
               declaration_.gravitationalWeight * content * derivative;
       }
-    }
-  }
-
-  if (stiffness && declaration_.stiffnessWeight != 0.0) {
-    // d/dz [ (l - l0)^2 / 2 ] = (l - l0) dl/dz with dl/dz = 1/(2l) on the
-    // branch the stored length already sits on.
-    for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
-      const auto *edge = workspace.edges[edgeIndex];
-      if (edge == nullptr) continue;
-      const complexd length = edge->getLength();
-      (*lengths)[edgeIndex] +=
-          declaration_.stiffnessWeight *
-          (length - declaration_.referenceLengths[edgeIndex]) /
-          (2.0 * length);
     }
   }
 
@@ -1571,9 +1529,6 @@ std::vector<ActionTermGradient> JointAction::termGradients() const {
       complexd{declaration_.gravitationalWeight, 0.0}, reggeTerm(), true,
       StationarityPart::Regge, nullptr,
       declaration_.gravitationalWeight != 0.0, false);
-  add("stiffness", "w_S S_stiff", complexd{declaration_.stiffnessWeight, 0.0},
-      stiffnessTerm(), true, StationarityPart::Stiffness, nullptr,
-      declaration_.stiffnessWeight != 0.0, false);
   complexd holonomy{0.0, 0.0};
   try {
     holonomy = holonomyTerm();
@@ -1731,8 +1686,6 @@ double JointAction::holonomyZeroClearance(
 
 HolonomyTruncation JointAction::holonomyTruncation() const {
   HolonomyTruncation report;
-  report.form = declaration_.holonomyForm;
-  if (declaration_.holonomyForm != HolonomyForm::Villain) return report;
   report.tolerance = declaration_.villainTolerance;
   const FacePotential potential(declaration_);
   if (!potential.villain()) return report;
@@ -1768,7 +1721,6 @@ JointActionDeclaration forceOnlyDeclaration(
   JointActionDeclaration forceOnly = declaration;
   forceOnly.gravitationalWeight = 0.0;
   forceOnly.holonomyWeight = 0.0;
-  forceOnly.stiffnessWeight = 0.0;
   forceOnly.matterWeight = 1.0;
   forceOnly.momentConstraints.clear();
   return forceOnly;

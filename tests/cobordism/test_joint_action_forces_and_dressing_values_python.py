@@ -1,15 +1,14 @@
 # Copyright (c) 2026 Twin Vector Labs LLC.
 # All rights reserved.
-"""The stiffness and matter terms of the recursion driver's joint action, their
-forces, the Ward current, and the dressed fluctuation of whitepaper v17 §7.
+"""The matter term of the recursion driver's joint action, its forces, the
+Ward current, and the dressed fluctuation of whitepaper v17 §7.
 
 The per-cell relaxation of `baryon_poles.relax_content` makes the geometry
-stationary under the linear stiffness stand-in (1/kappa)(1/2)||l - l0||^2 and
-the matter term tr(Gamma h_1(z, U)); the Section 7 quartic
+stationary under the Regge and holonomy terms, the matter term
+tr(Gamma h_1(z, U)) and the fiber constraints; the Section 7 quartic
 (`evaluate_content` -> `DressedFluctuation.effective_action`) eliminates the
 fluctuations with the dressed stiffness A + D - Pi(omega). Expected values:
 
-* the stiffness term and its closed-form gradient w (l - l0) / (2 l) in z;
 * the Hellmann-Feynman forces tr(Gamma dh/dz_e) and tr(Gamma U_e dh/dU_e)
   against central differences of tr(Gamma h) with Gamma held fixed, and the
   Euler identity sum_e z_e tr(Gamma dh/dz_e) = -tr(Gamma h) of the degree -1
@@ -43,20 +42,14 @@ def _tetrahedron(seed=3):
     return spacetime
 
 
-def _declaration(spacetime, stiffness=0.0, beta=0.0, matter=0.0,
-                 covariance=None, reference=None):
+def _declaration(spacetime, beta=0.0, matter=0.0, covariance=None):
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
     declaration.gravitational_weight = 0.0
     declaration.regge_form = cob.ReggeForm.Primal
     declaration.regge_hinges = cob.ReggeHinges.Interior
-    declaration.stiffness_weight = stiffness
-    declaration.reference_lengths = (
-        list(reference) if reference is not None else
-        [complex(e.getLength()) for e in spacetime.getEdgeList().toVector()])
     declaration.holonomy_weight = beta
-    declaration.holonomy_form = cob.HolonomyForm.Villain
     declaration.matter_weight = matter
     if covariance is not None:
         declaration.covariance = list(np.asarray(covariance).reshape(-1))
@@ -67,26 +60,6 @@ def _matrix(flat):
     flat = np.asarray(flat, dtype=complex)
     n = int(round(math.sqrt(flat.size)))
     return flat.reshape(n, n)
-
-
-# ------------------------------------------------------------- stiffness
-
-
-def test_the_linear_stiffness_term_and_its_gradient():
-    """WP v17 §7's stand-in (1/2) w ||l - l0||^2 with w = 1/kappa = 2: the
-    value is half the weighted squared stretch, and dS/dz_e is
-    w (l_e - l0_e) / (2 l_e) per edge, exactly."""
-    spacetime = _tetrahedron()
-    edges = spacetime.getEdgeList().toVector()
-    reference = [cmath.sqrt(8.0)] * 6
-    action = cob.JointAction(spacetime, _declaration(
-        spacetime, stiffness=2.0, reference=reference))
-    lengths = np.array([complex(e.getLength()) for e in edges])
-    assert complex(action.stiffness_term()) == pytest.approx(
-        0.5 * 2.0 * np.sum((lengths - reference[0]) ** 2), rel=1e-14)
-    np.testing.assert_allclose(
-        np.asarray(action.length_stationarity()),
-        2.0 * (lengths - reference[0]) / (2.0 * lengths), rtol=1e-13)
 
 
 # -------------------------------------------------------------- matter
