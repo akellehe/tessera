@@ -768,6 +768,50 @@ def test_the_recursion_read_on_the_declared_host():
         list(range(6)), list(range(6, 12)), list(range(12, 18))]
     assert recursion["band_ranks"] == [6, 6, 6]
     assert all(recursion["bands_accepted"])
+    assert recursion["levels"] == 1 and "refusal" not in recursion
+
+
+def test_a_recursion_that_takes_no_turn_leaves_condition_1_not_evaluable(
+        monkeypatch):
+    """The level recursion either takes its turn or refuses by name; with
+    the dense crossover declared below the host's eighteen edge modes it
+    refuses as it is built. The recursion read records the refusal, with no
+    completed turn and no band, instead of failing the content, and the
+    quark verdict reads every piece of evidence taken from the completed
+    turn (condition 1's four measured pieces and condition 5's
+    base-transport leakage) as not evaluable, with the refusal as the
+    reason; the other conditions are read as before."""
+    declared = cob.LevelRecursionDeclaration
+
+    def crowded():
+        declaration = declared()
+        declaration.dense_crossover = 1
+        return declaration
+
+    monkeypatch.setattr(cob, "LevelRecursionDeclaration", crowded)
+    spacetime = bp.build_host()
+    recursion = bp.recursion_read(spacetime, bp.default_config([1.0], [1.0]))
+    assert recursion["levels"] == 0
+    assert "dense crossover" in recursion["refusal"]
+    assert "bands_accepted" not in recursion
+    alignment = bp.aligned_doublet_frame(bp.monopole_support(),
+                                         bp.rotation_group())
+    verdict = bp.quark_conditions(spacetime, [alignment] * bp.SHEETS,
+                                  recursion, 0.0, None)
+    assert not verdict["certified"]
+    one, two, _, _, five = verdict["conditions"][:5]
+    assert one["status"] == "NotEvaluable"
+    reason = "the recursion took no turn: " + recursion["refusal"]
+    for evidence in one["evidence"]:
+        assert evidence["held"] is None
+    assert [e["detail"] for e in one["evidence"]
+            if e["name"] in ("persistent-support", "localized-projector-rank",
+                             "contour-separation", "external-leakage")] == \
+        [reason] * 4
+    leakage = next(e for e in five["evidence"]
+                   if e["name"] == "base-transport-leakage")
+    assert leakage["held"] is None and leakage["detail"] == reason
+    assert two["status"] != "NotEvaluable"
 
 
 @pytest.fixture(scope="module")

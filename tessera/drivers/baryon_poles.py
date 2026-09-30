@@ -2189,19 +2189,34 @@ def evaluate_content(content, kappa, beta, config):
 
 def recursion_read(spacetime, config):
     """One turn of the level recursion on h_1 of the relaxed host (WP §15),
-    keeping every mode of each component as its fibre."""
+    keeping every mode of each component as its fibre.
+
+    The recursion is built over the microscopic pencil and `advance` takes
+    one turn of the box, which is `level(0)`, the first completed turn (the
+    microscopic level itself is `response_pencil(0)`, never a completed
+    turn). Building it or taking the turn refuses by name at or above the
+    declared dense crossover, or when a level is reduced to nothing; a
+    refusal is recorded here as it is, with the number of completed turns
+    and no band, so that quark condition 1 reads "not evaluable"
+    (`quark_conditions`) instead of failing the content."""
     declaration = cob.LevelRecursionDeclaration()
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = BASE_EDGES
     declaration.bands = bands
     declaration.tolerance = declared_tolerance(config, "recursion_tolerance")
-    recursion = cob.LevelRecursion.overSpacetime(
-        spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
-    recursion.advance()
-    level = recursion.level(1) if recursion.level_count() > 1 else \
-        recursion.level(0)
+    recursion = None
+    try:
+        recursion = cob.LevelRecursion.overSpacetime(
+            spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
+        recursion.advance()
+    except ValueError as refusal:
+        return {"levels": int(recursion.level_count())
+                if recursion is not None else 0,
+                "refusal": str(refusal)}
+    level = recursion.level(0)
     return {
+        "levels": int(recursion.level_count()),
         "partition": [list(p) for p in level.partition],
         "band_ranks": [int(b.rank) for b in level.bands],
         "bands_accepted": [bool(b.accepted) for b in level.bands],
@@ -2798,7 +2813,9 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     (`fingerprint_evidence`). The spin reads of the sheets' aligned frames
     (``alignments``, one per sheet) supply the protected base band and its
     sector; every sheet must carry them. Anything that needs several
-    cobordism frames is left unmeasured and so reads "not evaluable"."""
+    cobordism frames is left unmeasured and so reads "not evaluable", and so
+    does every piece of evidence read from the recursion's completed turn
+    when the recursion refused to take one (`recursion_read`)."""
     E = obs.QuarkConditionEvidence
     spins = [a["spin_read"] for a in alignments]
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
@@ -2812,23 +2829,35 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
         SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)])
     doublets = [spin.bands[spin.doublet_index] if spin.half_integer_doublet
                 else None for spin in spins]
-    accepted = all(recursion["bands_accepted"])
+    produced = "refusal" not in recursion
+
+    def from_level(name, held, detail):
+        """Evidence read from the recursion's completed turn, or not
+        evaluable, with the recursion's refusal, when it took none."""
+        if not produced:
+            return E(name, None, "the recursion took no turn: %s"
+                     % recursion["refusal"])
+        return E(name, held(), detail())
+
+    accepted = all(recursion["bands_accepted"]) if produced else None
     evidence = [
-        [E("persistent-support", accepted,
-           "partition %s" % recursion["partition"]),
-         E("localized-projector-rank", accepted,
-           "ranks %s, idempotency %s" % (recursion["band_ranks"],
-                                         recursion["projector_idempotency"])),
-         E("contour-separation", all(g > 0 for g in
-                                     recursion["isolation_gaps"]),
-           "isolation gaps %s" % recursion["isolation_gaps"]),
+        [from_level("persistent-support", lambda: accepted,
+                    lambda: "partition %s" % recursion["partition"]),
+         from_level("localized-projector-rank", lambda: accepted,
+                    lambda: "ranks %s, idempotency %s"
+                    % (recursion["band_ranks"],
+                       recursion["projector_idempotency"])),
+         from_level("contour-separation",
+                    lambda: all(g > 0 for g in recursion["isolation_gaps"]),
+                    lambda: "isolation gaps %s" % recursion["isolation_gaps"]),
          E("successor-overlap", None, "a single level has no successor"),
          E("multi-frame-lifetime", None,
            "a single level spans one cobordism frame"),
-         E("external-leakage", all(n < tolerance
-                                   for n in recursion["transport_norms"]),
-           "inter-component transport norms %s"
-           % recursion["transport_norms"])],
+         from_level("external-leakage",
+                    lambda: all(n < tolerance
+                                for n in recursion["transport_norms"]),
+                    lambda: "inter-component transport norms %s"
+                    % recursion["transport_norms"])],
         [E("three-sheeted-support", True, "%d sheets" % SHEETS),
          E("sheet-isomorphism", bool(isomorphism.isomorphic),
            "length residual %.3g, connection residual %.3g"
@@ -2857,10 +2886,11 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
            bool(attachment.certificate.holds()),
            "det S = %s (sheet-to-sheet attachment)"
            % complex(attachment.determinant)),
-         E("base-transport-leakage", all(
-             n < tolerance
-             for n in recursion["transport_norms"]),
-           "inter-component transport norms %s" % recursion["transport_norms"]),
+         from_level("base-transport-leakage",
+                    lambda: all(n < tolerance
+                                for n in recursion["transport_norms"]),
+                    lambda: "inter-component transport norms %s"
+                    % recursion["transport_norms"]),
          E("transport-over-lifetime", None,
            "a single level has no lifetime")],
         [E("lineage-intersection", None,
