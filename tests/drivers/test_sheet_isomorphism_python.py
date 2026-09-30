@@ -445,8 +445,8 @@ def test_the_shared_field_has_six_lengths_and_six_links():
 def test_the_newton_solve_uses_the_numerical_rank(content):
     """The step of `HolomorphicRelaxation` is the minimum-norm least-squares
     solution with singular values at or below rank_tolerance times the
-    largest counted as zero. The driver declares 1e-10
-    (`baryon_poles.DECLARED_RANK_TOLERANCE`), a factor fifty above the
+    largest counted as zero. The run declared 1e-10 (`RUN.TOLERANCES`; the
+    drivers' declared default is now 1e-15), a factor fifty above the
     rounding floor of its real-axis-difference Jacobian at radius 1e-4. On the
     seeded action of the run's first host cell the 36-coordinate Jacobian has
     exactly three near-null directions below that threshold, so the rank the
@@ -456,7 +456,8 @@ def test_the_newton_solve_uses_the_numerical_rank(content):
     spacetime, action, config = _seeded_action(FIRST_CELL, content)
     declaration = bp.relaxation_declaration(config)
     declaration.maximum_iterations = 1
-    assert declaration.rank_tolerance == bp.DECLARED_RANK_TOLERANCE == 1e-10
+    assert declaration.rank_tolerance == RUN.TOLERANCES["rank_tolerance"] \
+        == 1e-10
     relaxation = cob.HolomorphicRelaxation(action, declaration)
     n = relaxation.variable_count()
     jacobian = np.asarray(relaxation.jacobian()).reshape(n, n)
@@ -489,7 +490,11 @@ def test_the_near_null_directions_are_one_per_sheet():
     jacobian = np.asarray(relaxation.jacobian()).reshape(n, n)
     _, singular, vh = np.linalg.svd(jacobian)
     assert singular[-4] > 1e-6 * singular[0]
-    assert np.all(singular[-3:] < bp.DECLARED_RANK_TOLERANCE * singular[0])
+    # the three near-null singular values sit at the rounding floor of the
+    # Jacobian, about 1e-11 of the largest: below the run's rank tolerance
+    # of 1e-10 and above the drivers' declared default of 1e-15
+    assert np.all(singular[-3:] < RUN.TOLERANCES["rank_tolerance"]
+                  * singular[0])
     records = bp.edge_records(spacetime)
     edges = len(records)
     supports = []
