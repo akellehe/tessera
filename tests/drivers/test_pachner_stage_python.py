@@ -36,24 +36,27 @@ def _base():
 
 
 def test_the_stage_runs_as_the_emergence_driver_runs_its_stage_1():
-    """The declared unit is the emergence driver's: as many updates, as
-    many candidates, as deep, over the same degrees; and the run records
-    it."""
+    """The declared unit is the emergence driver's: as many updates, as deep,
+    over the same degrees, but over every candidate move of the base rather
+    than a drawn sample, so no candidate count and no seed is declared; and
+    the run records it."""
     assert R.DECLARED_PACHNER_UPDATES == em.DECLARED_STAGE1_ITERS == 1
-    assert R.DECLARED_PACHNER_CANDIDATES == em.DECLARED_CANDIDATE_MOVES
     assert R.DECLARED_PACHNER_DEPTH == em.DECLARED_COMBINATORIAL_DEPTH
     assert R.PACHNER_REGISTER_DEGREES == tuple(em.DECLARED_REGISTER_DEGREES)
     assert R.PACHNER_HODGE_DEGREES == tuple(em.DECLARED_HODGE_DEGREES)
+    assert not hasattr(R, "DECLARED_PACHNER_CANDIDATES")
+    assert not hasattr(R, "DECLARED_PACHNER_SEED")
     config = R.default_config()
-    assert config["pachner_updates"] == 1
-    assert config["pachner_candidates"] == R.DECLARED_PACHNER_CANDIDATES
-    assert config["pachner_depth"] == 1 and config["pachner_seed"] == 0
+    assert config["pachner_updates"] == 1 and config["pachner_depth"] == 1
+    assert "pachner_candidates" not in config and "pachner_seed" not in config
     assert "no cone-out, cone-in or disposition move" in config["pachner_moves"]
+    assert "no sample and no seed" in config["pachner_moves"]
     args = R.build_parser().parse_args(
-        ["run", "--pachner-updates", "0", "--pachner-candidates", "3",
-         "--pachner-depth", "2", "--pachner-seed", "7"])
-    assert (args.pachner_updates, args.pachner_candidates, args.pachner_depth,
-            args.pachner_seed) == (0, 3, 2, 7)
+        ["run", "--pachner-updates", "0", "--pachner-depth", "2"])
+    assert (args.pachner_updates, args.pachner_depth) == (0, 2)
+    for option in ("--pachner-candidates", "--pachner-seed"):
+        with pytest.raises(SystemExit):
+            R.build_parser().parse_args(["run", option, "3"])
 
 
 def test_zero_updates_leave_the_base_as_it_is():
