@@ -145,15 +145,25 @@ covariant under a gauge transformation of any sheet.
 
 h_1 is not itself invariant under the projective rotation action D_1(g) at the
 monopole connection: its six eigenvalues per sheet are simple. The whitepaper
-reads the spin content on the T-averaged operator (WP v17 §9 line 506: "The
-action on edge modes is canonical even where the twisted operator is not";
-"the T-averaged twisted edge Laplacian"), h-bar_1 = (1/|T|) sum_g D_1(g)^{-1}
-h_1 D_1(g), with T = A_4 the rotation group of the tetrahedron. The driver
-does the same: the spin decomposition of the occupied modes, the spin
-sectors and every pole are read on h-bar_1 (and, for the Section 7 quartic, on
-the eliminated three-particle operator averaged over the same diagonal
-action). The departure of h_1 itself from the symmetric form is reported
-beside every record as `symmetry_residual`.
+reads the spin content of a symmetric cluster on the T-averaged operator (WP
+v17 §9 line 506: "The action on edge modes is canonical even where the
+twisted operator is not"; "the T-averaged twisted edge Laplacian"),
+h-bar_1 = (1/|T|) sum_g D_1(g)^{-1} h_1 D_1(g), with T = A_4 the rotation
+group of the tetrahedron and D_1(g) = rho_1(u_g) P_g the geometric permutation
+dressed by the compensating gauge transformation of the cluster's own
+connection (WP v18 §11.1). The driver does the same on the relaxed cell
+itself: the rotations of the tetrahedron that leave the cell's squared lengths
+invariant and carry its connection to a gauge-equivalent one, on every sheet
+and at the certificate tolerance, are its rotation group (`cell_symmetry`);
+the spin read needs all twelve, so a cell with fewer is refused by name ("not
+tetrahedrally symmetric") and the rotations it lacks are recorded with their
+departures. On a tetrahedrally symmetric cell the actions D_1(g), the aligned
+doublet frame of every sheet, the isotypic projectors and the anchor atlas are
+built from that cell's own connection, and the spin decomposition of the
+occupied modes, the spin sectors and every pole are read on h-bar_1 (and, for
+the Section 7 quartic, on the eliminated three-particle operator averaged over
+the same diagonal action). The departure of h_1 itself from the symmetric form
+is reported beside every record as `symmetry_residual`.
 
 What a content names
 --------------------
@@ -657,6 +667,66 @@ def sheet_support(spacetime, sheet):
     return support, departure
 
 
+def cell_symmetry(spacetime, supports, tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The rotation group of the relaxed cell itself: the rotations of the
+    tetrahedron (`rotation_group()`) under which, on every sheet, the squared
+    lengths are invariant and the connection is symmetric up to gauge
+    (`MonopoleSupport.gaugeCompensation` on the sheet's support), each within
+    ``tolerance``.
+
+    The whitepaper's spin read is made on a symmetric cluster: "the
+    configuration is symmetric up to gauge, so every rotation g of the cluster
+    is implemented on k-cochains by D_k(g) = rho_k(u_g) P_g" (WP v18 §11.1),
+    and refinement-stable spinor doublets are predicted on tetrahedrally
+    symmetric supports and nowhere else (WP v18 §4). A relaxed cell is
+    therefore read against the group it has, not against the fixture's. The
+    connection enters through the sheet support, that is through its U(1)
+    part; the departure of the links from the unit circle is reported by
+    `sheet_support` and is not part of this decision.
+
+    Per rotation: its vertex permutation, the length departure
+    max_e |z_{g e} - z_e| / max_e |z_e| over the sheets, the largest
+    gauge-compensation residual over the sheets, and whether both are within
+    tolerance. ``group`` lists the symmetric rotations, ``order`` their
+    number, and ``tetrahedral`` says whether every rotation of the tetrahedron
+    is one."""
+    edges = list(itertools.combinations(range(4), 2))
+    index = {edge: k for k, edge in enumerate(edges)}
+    lengths = [np.asarray(sheet_squared_lengths(spacetime, t))
+               for t in range(SHEETS)]
+    scale = max(float(np.max(np.abs(z))) for z in lengths)
+    rotations = []
+    for g in rotation_group():
+        image = [index[tuple(sorted((g[a], g[b])))] for a, b in edges]
+        length_departure = max(float(np.max(np.abs(z[image] - z)))
+                               for z in lengths) / scale
+        reads = [support.gaugeCompensation(g, tolerance)
+                 for support, _ in supports]
+        rotations.append({
+            "rotation": [int(v) for v in g],
+            "length_departure": length_departure,
+            "compensation_residual": max(read.residual for read in reads),
+            "symmetric": bool(length_departure <= tolerance
+                              and all(read.symmetric for read in reads)),
+        })
+    group = [r["rotation"] for r in rotations if r["symmetric"]]
+    return {
+        "rotations": rotations,
+        "group": group,
+        "order": len(group),
+        "tetrahedral": len(group) == len(rotations),
+        "tolerance": float(tolerance),
+        "length_departure": max(r["length_departure"] for r in rotations),
+        "compensation_residual": max(r["compensation_residual"]
+                                     for r in rotations),
+    }
+
+
+class NoSpinorDoublet(RuntimeError):
+    """`aligned_doublet_frame` on a support whose spin read names no j = 1/2
+    doublet, so no reference doublet exists to align the others to."""
+
+
 def aligned_doublet_frame(support, group,
                           degeneracy_tolerance=DECLARED_TOLERANCE,
                           tolerance=DECLARED_CERTIFICATE_TOLERANCE):
@@ -689,8 +759,8 @@ def aligned_doublet_frame(support, group,
                        for g in group]
     reference = int(read.doublet_index)
     if reference >= 3:
-        raise RuntimeError("the support carries no j = 1/2 doublet: %s"
-                           % read.certificate.describe())
+        raise NoSpinorDoublet("the support carries no j = 1/2 doublet: %s"
+                              % read.certificate.describe())
     basis_r = blocks[reference]
     actions = {c: [blocks[c].conj().T @ d @ blocks[c]
                    for d in representations] for c in range(3)}
@@ -896,7 +966,6 @@ def spin_sectors(states):
     return sectors, [complex(v) for v in values]
 
 
-_ISOTYPIC = {}
 
 
 def lifted_rotation_maps(alignment, actions, frame, dual):
@@ -933,26 +1002,22 @@ def isotypic_projectors(alignment, actions, frame, dual):
     tetrahedral group on the three-particle sector of the 18 microscopic-frame
     modes, over the occupation basis (`occupation_basis`):
     P_rho = (2 / 24) sum over 2T of conj(chi_rho) Lambda^3 D
-    (`SharpSpin.isotypicProjector`, WP v18 §11.1). They depend on the declared
-    host and the aligned frame only, so they are formed once per alignment;
-    the record of each carries its rank and its idempotency residual."""
-    key = (id(alignment), tuple(alignment["trialities"]))
-    if key not in _ISOTYPIC:
-        maps, characters = lifted_rotation_maps(alignment, actions, frame,
-                                                dual)
-        projectors, record = {}, {}
-        for name, chi in characters.items():
-            projector = np.asarray(obs.SharpSpin.isotypicProjector(
-                maps, chi, 2, 3))
-            projectors[name] = projector
-            record[name] = {
-                "rank": int(round(np.trace(projector).real)),
-                "idempotency_residual": float(
-                    np.linalg.norm(projector @ projector - projector)
-                    / max(1.0, np.linalg.norm(projector))),
-            }
-        _ISOTYPIC[key] = (projectors, record)
-    return _ISOTYPIC[key]
+    (`SharpSpin.isotypicProjector`, WP v18 §11.1). They are formed from the
+    relaxed cell's own actions and aligned frame; the record of each carries
+    its rank and its idempotency residual."""
+    maps, characters = lifted_rotation_maps(alignment, actions, frame, dual)
+    projectors, record = {}, {}
+    for name, chi in characters.items():
+        projector = np.asarray(obs.SharpSpin.isotypicProjector(
+            maps, chi, 2, 3))
+        projectors[name] = projector
+        record[name] = {
+            "rank": int(round(np.trace(projector).real)),
+            "idempotency_residual": float(
+                np.linalg.norm(projector @ projector - projector)
+                / max(1.0, np.linalg.norm(projector))),
+        }
+    return projectors, record
 
 
 # -------------------------------------------------------------- the solve
@@ -1455,14 +1520,16 @@ class ReadRefused(ValueError):
     """A content's pole read refused by name on the geometry its mean-field
     solve reached: ``name`` is the refusal ("the squared lengths overflowed
     the double", "not Kontsevich-Segal allowable"), the message says why with
-    the numbers
-    that decided it, and ``relaxation`` is the solve's record
-    (`relaxation_record`)."""
+    the numbers that decided it, ``relaxation`` is the solve's record
+    (`relaxation_record`), and ``records`` holds any further read that
+    decided the refusal, keyed as the content record would key it (the
+    cell's `cell_symmetry` under "symmetry")."""
 
-    def __init__(self, name, message, relaxation):
+    def __init__(self, name, message, relaxation, **records):
         super().__init__(message)
         self.name = name
         self.relaxation = relaxation
+        self.records = records
 
 
 def _band_selection_name(selection):
@@ -1900,11 +1967,10 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
     return entry
 
 
-def evaluate_content(content, kappa, beta, config, alignment):
+def evaluate_content(content, kappa, beta, config):
     """One content at one scan point: relaxation, recursion, quark conditions,
     states, spin, operators and poles."""
     started = time.time()
-    declared_actions = rotation_action([monopole_support()] * SHEETS)
     spacetime, action, report = relax_content(content, kappa, beta, config)
     solve = relaxation_record(report)
     refusal = read_refusal(report,
@@ -1912,18 +1978,45 @@ def evaluate_content(content, kappa, beta, config, alignment):
     if refusal is not None:
         raise ReadRefused(refusal[0], refusal[1], solve)
     carrier = matrix(action.carrier_operator())
+    certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
 
-    # The spin is read with the canonical projective action D_1(g) of the
-    # declared host (the symmetric monopole configuration): the relaxation
-    # under h_1, which is not itself rotation-covariant, moves the fields off
-    # the symmetric configuration, and how far is reported below as the
-    # gauge-compensation residual of each rotation at the relaxed connection.
+    # The spin is read with the projective action D_1(g) of the relaxed cell
+    # itself, whose rotation group is measured (`cell_symmetry`): the
+    # relaxation under h_1, which is not itself rotation-covariant, moves the
+    # fields off the symmetric configuration, and a cell that is not
+    # tetrahedrally symmetric at the certificate tolerance has no such read.
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
-    compensation = max(
-        support.gaugeCompensation(g).residual
-        for support, _ in supports for g in rotation_group())
-    actions = declared_actions
-    alignments = [alignment] * SHEETS
+    symmetry = cell_symmetry(spacetime, supports, certificate_tolerance)
+    if not symmetry["tetrahedral"]:
+        raise ReadRefused(
+            "not tetrahedrally symmetric",
+            "the spin read is refused: the relaxed cell has %d of the %d "
+            "rotations of the tetrahedron as symmetries at the certificate "
+            "tolerance %.3g (largest length departure %.3g, largest "
+            "gauge-compensation residual %.3g)"
+            % (symmetry["order"], len(symmetry["rotations"]),
+               certificate_tolerance, symmetry["length_departure"],
+               symmetry["compensation_residual"]),
+            solve, symmetry=symmetry)
+    group = rotation_group()
+    actions = rotation_action([support for support, _ in supports])
+    try:
+        alignments = [aligned_doublet_frame(
+            support, group, declared_tolerance(config, "degeneracy_tolerance"),
+            certificate_tolerance) for support, _ in supports]
+    except NoSpinorDoublet as missing:
+        raise ReadRefused("no j = 1/2 doublet",
+                          "the spin read is refused: %s" % missing, solve,
+                          symmetry=symmetry)
+    labels = {(tuple(a["trialities"]), int(a["reference_carrier"]))
+              for a in alignments}
+    if len(labels) > 1:
+        raise ReadRefused(
+            "the sheets' doublet labels disagree",
+            "the spin read is refused: the aligned frames of the sheets carry "
+            "the doublet labels (trialities, reference carrier) %s"
+            % [(a["trialities"], a["reference_carrier"]) for a in alignments],
+            solve, symmetry=symmetry)
     frame = _micro_frame(alignments)
     dual = np.linalg.inv(frame)
     averaged = rotation_averaged(carrier, actions)
@@ -1935,8 +2028,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
                               config["band_tolerance"])
     # the isotypic projectors of the double cover on the three-particle
     # sector, the spinor certificate's projectors (WP v18 §11.1, §14)
-    projectors, isotypic = isotypic_projectors(alignment, declared_actions,
-                                               frame, dual)
+    projectors, isotypic = isotypic_projectors(alignments[0], actions, frame,
+                                               dual)
 
     # the quartic's ingredients, on h_1 itself: the retained fluctuations
     # (the squared lengths, and the link phases unless only the lengths are
@@ -2001,11 +2094,10 @@ def evaluate_content(content, kappa, beta, config, alignment):
             "sectors": {str(k): v for k, v in sector_reads.items()},
         })
 
-    certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
     recursion = recursion_read(spacetime, config)
-    anchor = anchor_atlas_read(spacetime, alignment, certificate_tolerance)
+    anchor = anchor_atlas_read(spacetime, alignments, certificate_tolerance)
     fingerprint = spectral_fingerprint_read(spacetime, kappa, beta, config)
-    quark = quark_conditions(spacetime, alignment, recursion,
+    quark = quark_conditions(spacetime, alignments, recursion,
                              averaged_residual, report, anchor, fingerprint,
                              certificate_tolerance)
     truncation_read = action.holonomy_truncation()
@@ -2039,7 +2131,15 @@ def evaluate_content(content, kappa, beta, config, alignment):
                     truncation_read.relative_second_tail),
             },
             "unit_circle_departure": max(dep for _, dep in supports),
-            "symmetry_departure": float(compensation),
+            "symmetry_departure": symmetry["compensation_residual"],
+            "length_departure": symmetry["length_departure"],
+            "symmetry": symmetry,
+            "frames": [{
+                "trialities": a["trialities"],
+                "reference_carrier": a["reference_carrier"],
+                "averaged_eigenvalues": a["averaged_eigenvalues"],
+                "intertwining_residual": a["intertwining_residual"],
+            } for a in alignments],
             "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
                                  for sp, _ in supports],
             "link_force_norm": float(np.linalg.norm(
@@ -2080,8 +2180,8 @@ def evaluate_content(content, kappa, beta, config, alignment):
         # The isospin-doublet observation (WP §10) on h_1 and its T-average,
         # added only when requested so that the default record is unchanged.
         from tessera.drivers import isospin_doublet
-        spinorial = bool(monopole_support().cocycle(rotation_group())
-                         .nontrivial)
+        spinorial = all(bool(a["spin_read"].cocycle.nontrivial)
+                        for a in alignments)
         record["isospin_doublet"] = isospin_doublet.observe_host(
             carrier, actions, spinorial)
     return record
@@ -2128,14 +2228,15 @@ def recursion_read(spacetime, config):
 ANCHOR_BASE_POINT = 0
 
 
-def anchor_atlas_read(spacetime, alignment,
+def anchor_atlas_read(spacetime, alignments,
                       tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The anchor atlas of the quark fiber's base band on the relaxed host,
     quark condition 3 (WP v18 §10): the dressed anchor
-    (`chainhodge.DressedAnchor`) of the reference doublet of the aligned
-    frame, the j = 1/2 doublet of the odd-monopole support (rank 2), on every
-    sheet's relaxed connection over the atlas of the cell's four faces, with
-    the breadth-first path rule from `ANCHOR_BASE_POINT`.
+    (`chainhodge.DressedAnchor`) of the reference doublet of each sheet's
+    aligned frame (``alignments``, one per sheet), the j = 1/2 doublet of the
+    odd-monopole support (rank 2), on that sheet's relaxed connection over
+    the atlas of the cell's four faces, with the breadth-first path rule from
+    `ANCHOR_BASE_POINT`.
 
     Per sheet: the Lambda^2 coordinates of every face (the three maximal
     minors of the restricted frame), the number of anchoring faces, the
@@ -2155,12 +2256,12 @@ def anchor_atlas_read(spacetime, alignment,
     order = [fixture_edges.index(e) for e in canonical]
     faces = list(range(complex_.numSimplices(2)))
     paths = ch.DeclaredPaths.breadthFirst(complex_, ANCHOR_BASE_POINT)
-    reference = int(alignment["reference_carrier"])
-    frame = np.asarray(alignment["frame"])[:, 2 * reference:
-                                           2 * reference + 2]
-    phi = frame[order, :]
     sheets = []
     for t in range(SHEETS):
+        reference = int(alignments[t]["reference_carrier"])
+        frame = np.asarray(alignments[t]["frame"])[:, 2 * reference:
+                                                   2 * reference + 2]
+        phi = frame[order, :]
         links = [complex(u) for u in sheet_links(spacetime, t)]
         squared = [complex(z) for z in sheet_squared_lengths(spacetime, t)]
         connection = ch.Connection(complex_, [links[k] for k in order])
@@ -2688,16 +2789,18 @@ def fingerprint_text(fingerprint):
         relabeling, refinement)
 
 
-def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
+def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                      report, anchor=None, fingerprint=None,
                      tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
-    (`fingerprint_evidence`). Anything that needs several cobordism frames
-    is left unmeasured and so reads "not evaluable"."""
+    (`fingerprint_evidence`). The spin reads of the sheets' aligned frames
+    (``alignments``, one per sheet) supply the protected base band and its
+    sector; every sheet must carry them. Anything that needs several
+    cobordism frames is left unmeasured and so reads "not evaluable"."""
     E = obs.QuarkConditionEvidence
-    spin = alignment["spin_read"]
+    spins = [a["spin_read"] for a in alignments]
     supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
     monopoles = [s.monopoleNumber() for s, _ in supports]
     sheeting = obs.SheetedSupport(SHEETS, BASE_EDGES)
@@ -2707,8 +2810,8 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
         tolerance)
     attachment = obs.SheetAttachment.attachmentMatrix(
         SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)])
-    doublet = spin.bands[spin.doublet_index] if spin.half_integer_doublet \
-        else None
+    doublets = [spin.bands[spin.doublet_index] if spin.half_integer_doublet
+                else None for spin in spins]
     accepted = all(recursion["bands_accepted"])
     evidence = [
         [E("persistent-support", accepted,
@@ -2732,15 +2835,17 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
            % (isomorphism.squared_length_residual,
               isomorphism.connection_residual)),
          E("protected-base-band",
-           bool(doublet is not None and doublet.spinor_doublet
+           bool(all(d is not None and d.spinor_doublet for d in doublets)
                 and all(m.odd for m in monopoles)
-                and spin.cocycle.nontrivial),
-           "monopole numbers %s, cocycle nontrivial %s, commutator phase %s"
+                and all(spin.cocycle.nontrivial for spin in spins)),
+           "monopole numbers %s, cocycle nontrivial %s, commutator phases %s"
            % ([m.monopole_number for m in monopoles],
-              spin.cocycle.nontrivial, spin.cocycle.commutator_phase)),
-         E("base-band-sector", bool(doublet is not None and doublet.coexact),
-           "coexact residual %s" % (doublet.coexact_residual
-                                    if doublet is not None else None)),
+              [spin.cocycle.nontrivial for spin in spins],
+              [spin.cocycle.commutator_phase for spin in spins])),
+         E("base-band-sector",
+           bool(all(d is not None and d.coexact for d in doublets)),
+           "coexact residuals %s" % [d.coexact_residual if d is not None
+                                     else None for d in doublets]),
          E("fibre-lift", symmetry_residual < 1e-6,
            "the T-averaged h_1 (WP line 497) in the aligned frame is "
            "block-scalar on each doublet times the sheets to relative "
@@ -2778,21 +2883,22 @@ def quark_conditions(spacetime, alignment, recursion, symmetry_residual,
 # --------------------------------------------------------------- the scan
 
 
-def scan_point(kappa, beta, config, alignment, on_content=None):
+def scan_point(kappa, beta, config, on_content=None):
     """Every content at one (kappa, beta), and the ratios."""
     records = []
     for content in config.get("contents") or contents():
         try:
-            record = evaluate_content(content, kappa, beta, config,
-                                      alignment)
+            record = evaluate_content(content, kappa, beta, config)
         except ReadRefused as refusal:
             # the pole read refused by name on the geometry the mean-field
-            # solve reached: recorded with its reason and the solve's record,
-            # and the content supplies no pole
-            record = {"content": list(content),
-                      "elimination": config["elimination"],
-                      "failed": str(refusal), "refusal": refusal.name,
-                      "relaxation": refusal.relaxation, "doublet_reads": []}
+            # solve reached, or on its symmetry: recorded with its reason,
+            # the solve's record and the reads that decided it, and the
+            # content supplies no pole
+            record = dict({"content": list(content),
+                           "elimination": config["elimination"],
+                           "failed": str(refusal), "refusal": refusal.name,
+                           "relaxation": refusal.relaxation,
+                           "doublet_reads": []}, **refusal.records)
         except ValueError as error:
             # a declared refusal of the library at this content (a band that
             # cannot hold the occupation, a face holonomy outside the domain
@@ -3464,16 +3570,18 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
     or without it. With `points_file`, the configuration and the host are
     written as the first line and every scan point's full record is appended
     as one JSON line the moment the point completes."""
-    alignment = aligned_doublet_frame(
+    # the declared host's own read, recorded once; every relaxed cell is read
+    # against its own rotation group in `evaluate_content`
+    declared = aligned_doublet_frame(
         monopole_support(), rotation_group(),
         declared_tolerance(config, "degeneracy_tolerance"),
         declared_tolerance(config, "certificate_tolerance"))
     frames = []
     host = {
-        "monopole": _monopole_record(alignment["spin_read"]),
-        "averaged_eigenvalues": alignment["averaged_eigenvalues"],
-        "reference_carrier": alignment["reference_carrier"],
-        "intertwining_residual": alignment["intertwining_residual"],
+        "monopole": _monopole_record(declared["spin_read"]),
+        "averaged_eigenvalues": declared["averaged_eigenvalues"],
+        "reference_carrier": declared["reference_carrier"],
+        "intertwining_residual": declared["intertwining_residual"],
     }
     if points_file is not None:
         with open(points_file, "w"):
@@ -3484,7 +3592,7 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
             if stop_requested is not None and stop_requested():
                 return {"config": _jsonable(config), "host": host,
                         "points": frames, "stopped": True}
-            point = scan_point(kappa, beta, config, alignment)
+            point = scan_point(kappa, beta, config)
             frames.append(point)
             if points_file is not None:
                 _append_line(points_file, point)

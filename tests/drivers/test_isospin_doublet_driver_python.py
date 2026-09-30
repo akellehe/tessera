@@ -78,10 +78,10 @@ def test_the_baryon_driver_adds_the_read_only_when_asked():
                                          bp.rotation_group())
     config = bp.default_config([1.0], [1.0], selected_contents=[(1, 1, 1)])
     assert "isospin_doublet" not in config
-    plain = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config, alignment)
+    plain = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config)
     assert "isospin_doublet" not in plain
     config["isospin_doublet"] = True
-    extended = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config, alignment)
+    extended = bp.evaluate_content((1, 1, 1), 1.0, 1.0, config)
     read = extended["isospin_doublet"]
     assert set(read) == {"covariant", "t_averaged"}
     assert read["t_averaged"]["candidates"] == []
