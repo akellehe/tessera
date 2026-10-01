@@ -208,92 +208,124 @@ def test_band_filling_refusals_are_named():
 # ------------------------------------------------------- BoundStatePole
 
 
-def _poles(a, m, interface, centre, radius):
+def _poles(a, m, interface):
     return cob.BoundStatePole.poles(np.asarray(a, dtype=complex),
                                     np.asarray(m, dtype=complex), interface,
-                                    centre, radius, cob.BoundStatePoleConfig())
+                                    cob.BoundStatePoleConfig())
 
 
-def test_a_simple_pole():
-    """diag(1, 3, 5) inside the circle of radius 1/2 about 1: one simple pole
-    at 1, residue rank 1, no failed certificate."""
-    read = _poles(np.diag([1, 3, 5]), np.eye(3), [0, 1, 2], 1.0, 0.5)
-    assert len(read.poles) == 1
-    assert complex(read.poles[0]) == pytest.approx(1.0, abs=1e-14)
-    assert list(read.multiplicity) == [1] and list(read.simple) == [True]
+def _reals(values, imaginary=1e-13):
+    """The real parts of complex values whose imaginary parts are at most
+    ``imaginary`` in size."""
+    values = [complex(v) for v in values]
+    assert all(abs(v.imag) <= imaginary for v in values)
+    return [v.real for v in values]
+
+
+def test_the_simple_poles_of_a_diagonal_block():
+    """diag(1, 3, 5) with the whole block on the interface: the three simple
+    poles 1, 3, 5, ascending, each of residue rank 1, with no failed
+    certificate. The block is diagonal, so its Schur diagonal is the block's
+    own diagonal and every pole is exact."""
+    read = _poles(np.diag([1, 3, 5]), np.eye(3), [0, 1, 2])
+    assert _reals(read.poles) == pytest.approx([1.0, 3.0, 5.0], abs=1e-15)
+    assert list(read.multiplicity) == [1, 1, 1]
+    assert list(read.simple) == [True, True, True]
+    assert list(read.residue_rank) == [1, 1, 1]
+    assert list(read.separation) == pytest.approx([2.0, 2.0, 2.0], abs=1e-15)
     assert list(read.failed_certificates) == []
 
 
-@pytest.mark.parametrize("a", [np.diag([2, 2, 5]),
-                               [[2, 1, 0], [0, 2, 0], [0, 0, 5]]])
-def test_a_double_pole_with_its_multiplicity(a):
+@pytest.mark.parametrize("a, blocks", [
+    (np.diag([2, 2, 5]), [1, 1]),
+    ([[2, 1, 0], [0, 2, 0], [0, 0, 5]], [2])])
+def test_a_double_pole_with_its_multiplicity(a, blocks):
     """A double eigenvalue 2, semisimple (diag(2, 2, 5)) or a Jordan block:
-    one pole at 2 of multiplicity 2, not simple, residue rank 2 (the rank of
-    the Riesz projector)."""
-    read = _poles(a, np.eye(3), [0, 1, 2], 2.0, 1.0)
-    assert len(read.poles) == 1
-    assert complex(read.poles[0]) == pytest.approx(2.0, abs=1e-12)
-    assert list(read.multiplicity) == [2]
-    assert list(read.simple) == [False]
-    assert list(read.residue_rank) == [2]
+    the poles are 2 and 5, the first of multiplicity 2, not simple, with
+    residue rank 2 (the rank of the spectral projector onto its
+    two-dimensional generalized eigenspace) and with the Jordan blocks
+    [1, 1] in the semisimple case and [2] for the Jordan block, read from the
+    ranks of the powers of the nilpotent part. Both blocks are upper
+    triangular, so their Schur diagonals are exact and the repeated
+    eigenvalue is exactly repeated."""
+    read = _poles(a, np.eye(3), [0, 1, 2])
+    assert _reals(read.poles) == pytest.approx([2.0, 5.0], abs=1e-15)
+    assert list(read.multiplicity) == [2, 1]
+    assert list(read.simple) == [False, True]
+    assert list(read.residue_rank) == [2, 1]
+    assert [list(b) for b in read.jordan_blocks] == [blocks, [1]]
+    assert list(read.failed_certificates) == []
 
 
 def test_a_generalized_pencil_and_a_feshbach_response():
     """The pencil (diag(2, 6), diag(1, 2)) has det(A - s M) = 0 at s = 2 and
-    3; the response of [[1, 1], [1, 3]] onto coordinate 0,
-    F(s) = 1 - s - 1 / (3 - s), vanishes at the eigenvalues 2 -+ sqrt 2, of
-    which the circle of radius 1/2 about 1/2 encloses 2 - sqrt 2 and not the
-    interior pole at 3."""
-    read = _poles(np.diag([2, 6]), np.diag([1, 2]), [0, 1], 2.5, 1.0)
-    np.testing.assert_allclose(sorted(complex(p).real for p in read.poles),
-                               [2.0, 3.0], atol=1e-13)
-    read = _poles([[1, 1], [1, 3]], np.eye(2), [0], 0.5, 0.5)
-    assert len(read.poles) == 1
-    assert complex(read.poles[0]) == pytest.approx(2 - math.sqrt(2),
-                                                   abs=1e-13)
+    3, the eigenvalues of M^-1 A = diag(2, 3), both reported. The response of
+    [[1, 1], [1, 3]] onto coordinate 0, F(s) = 1 - s - 1 / (3 - s), vanishes
+    at the eigenvalues 2 -+ sqrt 2 of the whole block, both reported, and has
+    its pole at the interior eigenvalue 3, which is listed as the interior
+    pole and is no zero."""
+    read = _poles(np.diag([2, 6]), np.diag([1, 2]), [0, 1])
+    assert _reals(read.poles) == pytest.approx([2.0, 3.0], abs=1e-13)
+    read = _poles([[1, 1], [1, 3]], np.eye(2), [0])
+    assert _reals(read.poles) == pytest.approx(
+        [2 - math.sqrt(2), 2 + math.sqrt(2)], abs=1e-13)
+    assert _reals(read.interior_poles) == [3.0]
+    assert list(read.interior_multiplicity) == [1]
     assert list(read.failed_certificates) == []
 
 
-def test_an_enclosed_interior_pole_is_refused_by_name():
-    """The response of [[1, 1], [1, 1]] onto coordinate 0 has a pole at the
-    interior eigenvalue 1; a contour enclosing it cannot count zeros, and the
-    read names 'interior-pole-enclosed' and returns no pole."""
-    read = _poles([[1, 1], [1, 1]], np.eye(2), [0], 1.0, 1.5)
-    assert "interior-pole-enclosed" in list(read.failed_certificates)
+def test_an_interior_pole_is_no_zero_and_an_eigenvalue_on_it_is_named():
+    """The response of [[1, 1], [1, 1]] onto coordinate 0,
+    F(s) = 1 - s - 1 / (1 - s), has the zeros 0 and 2 (the eigenvalues of the
+    block) and a pole at the interior eigenvalue 1, which is listed as the
+    interior pole and is no zero. The response of diag(1, 1) onto coordinate
+    0 is 1 - s, whose zero sits at the interior eigenvalue 1, outside the
+    domain the response is continued on: the read names
+    'eigenvalue-at-interior-pole' and reports no pole."""
+    read = _poles([[1, 1], [1, 1]], np.eye(2), [0])
+    assert _reals(read.poles) == pytest.approx([0.0, 2.0], abs=1e-14)
+    assert _reals(read.interior_poles) == [1.0]
+    assert list(read.failed_certificates) == []
+    read = _poles(np.diag([1, 1]), np.eye(2), [0])
+    assert list(read.failed_certificates) == ["eigenvalue-at-interior-pole"]
     assert list(read.poles) == []
+    assert _reals(read.interior_poles) == [1.0]
 
 
 @pytest.mark.parametrize("separation", [
-    1e-2, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-10])
-def test_a_near_degenerate_pair_is_read_inside_its_contour(separation):
-    """diag(2, 2 + s, 5) inside the circle of radius 1 about 2 encloses
-    exactly the two zeros 2 and 2 + s. Whatever the reader resolves, every
-    pole it reports must lie inside its own contour, and the reported poles,
-    counted with multiplicity, must have the zeros' mean 2 + s / 2 (the
-    first moment of the argument principle) to 1e-6."""
-    read = _poles(np.diag([2, 2 + separation, 5]), np.eye(3), [0, 1, 2],
-                  2.0, 1.0)
-    poles = [complex(p) for p in read.poles]
-    assert all(abs(p - 2.0) < 1.0 for p in poles)
-    total = sum(m * p for m, p in zip(read.multiplicity, poles))
-    assert sum(read.multiplicity) == 2
-    assert total / 2 == pytest.approx(2 + separation / 2, abs=1e-6)
+    1e-2, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8])
+def test_a_pair_above_the_clustering_distance_is_two_poles(separation):
+    """diag(2, 2 + s, 5): the clustering distance is the declared rank
+    tolerance 1e-10 times the block's largest singular value 5, that is
+    5e-10, and every s here exceeds it, so the read reports the two simple
+    poles 2 and 2 + s exactly (the block is diagonal, so its Schur diagonal is
+    exact), separated by s to the rounding of 2 + s."""
+    read = _poles(np.diag([2, 2 + separation, 5]), np.eye(3), [0, 1, 2])
+    assert _reals(read.poles) == pytest.approx([2.0, 2.0 + separation, 5.0],
+                                               abs=1e-15)
+    assert list(read.multiplicity) == [1, 1, 1]
+    assert read.separation[0] == pytest.approx(separation, rel=1e-6)
+    assert read.separation[1] == pytest.approx(separation, rel=1e-6)
     assert list(read.failed_certificates) == []
 
 
-@pytest.mark.parametrize("separation", [1e-5, 1e-6, 1e-7])
-def test_an_unresolved_pair_is_read_as_its_local_mean(separation):
-    """A pair split below the Hankel pencil's resolution is one moment-method
-    root; its small contour counts two zeros, and the reader reports one pole
-    of multiplicity 2 at the mean of the pair, 2 + s / 2, to 1e-12, read as
-    the first moment over the count on that contour, and runs no Newton step
-    on it (NaN)."""
-    read = _poles(np.diag([2, 2 + separation, 5]), np.eye(3), [0, 1, 2],
-                  2.0, 1.0)
-    assert list(read.multiplicity) == [2]
-    assert complex(read.poles[0]) == pytest.approx(2 + separation / 2,
-                                                   abs=1e-12)
-    assert math.isnan(read.newton_step[0])
+@pytest.mark.parametrize("separation", [4e-10, 1e-10, 1e-12, 0.0])
+def test_a_pair_within_the_clustering_distance_is_one_pole(separation):
+    """diag(2, 2 + s, 5) with s at or below the clustering distance 5e-10
+    (the declared rank tolerance 1e-10 times the largest singular value 5):
+    the two eigenvalues form one pole of multiplicity 2 at the trace of the
+    cluster's Schur block over its size, 2 + s / 2, with the cluster's spread
+    s, not simple, of residue rank 2 and with two Jordan blocks of size one,
+    beside the simple pole 5."""
+    read = _poles(np.diag([2, 2 + separation, 5]), np.eye(3), [0, 1, 2])
+    assert _reals(read.poles) == pytest.approx([2.0 + separation / 2, 5.0],
+                                               abs=1e-15)
+    assert list(read.multiplicity) == [2, 1]
+    assert list(read.simple) == [False, True]
+    assert read.cluster_spread[0] == pytest.approx(separation, abs=1e-15)
+    assert list(read.residue_rank) == [2, 1]
+    assert [list(b) for b in read.jordan_blocks] == [[1, 1], [1]]
+    assert list(read.failed_certificates) == []
 
 
 # ---------------------------------------------- the run's tick-0 recursion

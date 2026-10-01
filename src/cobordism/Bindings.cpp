@@ -5750,76 +5750,85 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
   // ── Section 13.3: mass is a complex bound-state pole ───────────────────
 
   py::class_<BoundStatePoleConfig>(m, "BoundStatePoleConfig",
-      "Every declared parameter of the pole search.")
+      "Every declared parameter of the pole read.")
       .def(py::init<>())
-      .def_readwrite("contour_nodes", &BoundStatePoleConfig::contourNodes)
-      .def_readwrite("refinement_nodes", &BoundStatePoleConfig::refinementNodes,
-                     "The second quadrature the refinement continuation is "
-                     "read at.")
-      .def_readwrite("max_zeros", &BoundStatePoleConfig::maxZeros)
-      .def_readwrite("max_newton_steps", &BoundStatePoleConfig::maxNewtonSteps)
-      .def_readwrite("newton_tolerance", &BoundStatePoleConfig::newtonTolerance)
-      .def_readwrite("zero_count_tolerance",
-                     &BoundStatePoleConfig::zeroCountTolerance)
-      .def_readwrite("local_radius_fraction",
-                     &BoundStatePoleConfig::localRadiusFraction)
-      .def_readwrite("rank_tolerance", &BoundStatePoleConfig::rankTolerance)
+      .def_readwrite("rank_tolerance", &BoundStatePoleConfig::rankTolerance,
+                     "The relative tolerance of every decision of the read: "
+                     "the rank of each residue, the ranks of the powers of "
+                     "each cluster's nilpotent part, the invertibility of "
+                     "the metric, and the distance, as a fraction of the "
+                     "block's largest singular value, at or below which two "
+                     "eigenvalues form one pole.")
       .def_readwrite("free_threshold", &BoundStatePoleConfig::freeThreshold,
                      "The complex spectral value the binding shift is measured "
                      "against. None leaves the binding shift unreported.");
 
   py::class_<BoundStatePoleRead>(m, "BoundStatePoleRead",
-      "The zeros of D_C(s) = det F_C(s) inside one declared contour, with the "
-      "certificates Section 13.3 attaches to a bound-state pole.")
-      .def_readonly("centre", &BoundStatePoleRead::centre)
-      .def_readonly("radius", &BoundStatePoleRead::radius)
-      .def_readonly("nodes", &BoundStatePoleRead::nodes)
-      .def_readonly("zero_count", &BoundStatePoleRead::zeroCount,
-                    "The argument-principle count before it is rounded.")
-      .def_readonly("zeros", &BoundStatePoleRead::zeros,
-                    "The total algebraic multiplicity enclosed.")
-      .def_readonly("zero_count_defect", &BoundStatePoleRead::zeroCountDefect)
-      .def_readonly("interior_pole_count",
-                    &BoundStatePoleRead::interiorPoleCount,
-                    "The unretained interior poles the contour encloses, as "
-                    "the argument principle on det P_II produced them.")
-      .def_readonly("interior_poles_enclosed",
-                    &BoundStatePoleRead::interiorPolesEnclosed)
+      "The zeros of D_C(s) = det F_C(s), read exactly from the spectrum of "
+      "the pencil, with the certificates Section 13.3 attaches to a "
+      "bound-state pole. Every per-pole vector is parallel to `poles`.")
+      .def_readonly("scale", &BoundStatePoleRead::scale,
+                    "The largest singular value of the block T = M^-1 A, the "
+                    "reference of every rank decision and of the clustering.")
       .def_readonly("poles", &BoundStatePoleRead::poles,
-                    "The distinct zeros s_C found inside the contour.")
-      .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity)
-      .def_readonly("determinant_at_pole",
-                    &BoundStatePoleRead::determinantAtPole, "D_C(s_C).")
-      .def_readonly("derivative_at_pole",
-                    &BoundStatePoleRead::derivativeAtPole, "D_C'(s_C).")
+                    "The distinct zeros s_C of D_C: the clusters of "
+                    "eigenvalues of the pencil the interior block does not "
+                    "carry, ascending by (real part, imaginary part).")
+      .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity,
+                    "The algebraic multiplicity of each pole: the size of its "
+                    "cluster, the dimension of its generalized eigenspace.")
+      .def_readonly("geometric_multiplicity",
+                    &BoundStatePoleRead::geometricMultiplicity,
+                    "The number of Jordan blocks of each pole.")
+      .def_readonly("jordan_blocks", &BoundStatePoleRead::jordanBlocks,
+                    "The sizes of the Jordan blocks of each pole, descending, "
+                    "read from the ranks of the powers of the cluster's "
+                    "nilpotent part at the rank tolerance.")
+      .def_readonly("cluster_spread", &BoundStatePoleRead::clusterSpread,
+                    "The largest distance between two eigenvalues of each "
+                    "pole's cluster; zero for an exactly repeated eigenvalue.")
       .def_readonly("simple", &BoundStatePoleRead::simple,
-                    "Whether the zero met the simple-isolated specification.")
-      .def_readonly("newton_step", &BoundStatePoleRead::newtonStep)
-      .def_readonly("separation", &BoundStatePoleRead::separation)
+                    "Whether the pole met the simple-isolated specification: "
+                    "algebraic multiplicity one.")
+      .def_readonly("separation", &BoundStatePoleRead::separation,
+                    "The distance from each pole to the nearest other "
+                    "reported pole; infinite when it is the only one.")
+      .def_readonly("subspace_residual",
+                    &BoundStatePoleRead::subspaceResidual,
+                    "The Frobenius norm of T V - V U_11 for each pole, with V "
+                    "the orthonormal Schur basis of its generalized "
+                    "eigenspace and U_11 the block of T on it.")
       .def_readonly("residue", &BoundStatePoleRead::residue,
-                    "The residue of the supported resolvent at each zero, flat "
-                    "row-major over the interface coordinates.")
+                    "The residue of the supported resolvent F_C^-1 at each "
+                    "pole, flat row-major over the interface coordinates: "
+                    "minus the interface block of Pi M^-1, with Pi the "
+                    "spectral projector onto the pole's generalized "
+                    "eigenspace.")
       .def_readonly("residue_norm", &BoundStatePoleRead::residueNorm)
-      .def_readonly("residue_rank", &BoundStatePoleRead::residueRank)
-      .def_readonly("continued_pole", &BoundStatePoleRead::continuedPole,
-                    "Each zero recomputed at the refinement quadrature.")
-      .def_readonly("continuation_movement",
-                    &BoundStatePoleRead::continuationMovement)
+      .def_readonly("residue_rank", &BoundStatePoleRead::residueRank,
+                    "The rank of each residue at the rank tolerance.")
       .def_readonly("binding_shift", &BoundStatePoleRead::bindingShift,
                     "s_C minus the declared free threshold.")
-      .def_readonly("interior_resonance",
-                    &BoundStatePoleRead::interiorResonance,
-                    "Whether an unretained interior pole sits on the contour, "
-                    "which is the domain Section 13.3 continues F_C on being "
-                    "left.")
+      .def_readonly("interior_poles", &BoundStatePoleRead::interiorPoles,
+                    "The distinct eigenvalues of the interior pencil, the "
+                    "poles of F_C, which the domain of the read excludes.")
+      .def_readonly("interior_multiplicity",
+                    &BoundStatePoleRead::interiorMultiplicity,
+                    "The algebraic multiplicity of each interior pole.")
       .def_readonly("failed_certificates",
-                    &BoundStatePoleRead::failedCertificates);
+                    &BoundStatePoleRead::failedCertificates,
+                    "Named failures: 'empty-interface', "
+                    "'eigenvalue-at-interior-pole' and "
+                    "'jordan-structure-unresolved'.");
 
   py::class_<BoundStatePole>(m, "BoundStatePole",
       "Mass as the complex bound-state pole of Section 13.3: the zeros of "
       "D_C(s) = det F_C(s), with F_C the exact meromorphic Feshbach response "
       "pencil of a persistent bound cluster, continued in the complex "
-      "spectral parameter s.\n\n"
+      "spectral parameter s. The zeros are read exactly from the spectrum of "
+      "the pencil: the eigenvalues of M^-1 A the interior block does not "
+      "carry, clustered at the declared rank tolerance, each with the "
+      "spectral projector onto its generalized eigenspace as its residue.\n\n"
       "Mass is not defined here by an incoherent sum of moduli, and nothing "
       "here converts s_C into a mass: the theory carries s_C and takes no "
       "square root of it.")
@@ -5835,19 +5844,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   py::arg("A"), py::arg("M"), py::arg("interface"),
                   py::arg("s"),
                   "F_C'(s), the exact analytic derivative of the response.")
-      .def_static("logarithmic_derivative",
-                  &BoundStatePole::logarithmicDerivative, py::arg("A"),
-                  py::arg("M"), py::arg("interface"), py::arg("s"),
-                  "D_C'(s) / D_C(s) = tr(F_C^-1 F_C').")
       .def_static("poles", &BoundStatePole::poles, py::arg("A"), py::arg("M"),
-                  py::arg("interface"), py::arg("centre"), py::arg("radius"),
+                  py::arg("interface"),
                   py::arg("cfg") = BoundStatePoleConfig{},
-                  "The zeros of D_C inside the declared contour.")
+                  "The zeros of D_C with their multiplicities, Jordan "
+                  "structure, residues, separations and subspace residuals, "
+                  "read exactly from the spectrum of the pencil.")
       .def_static("cluster_poles", &BoundStatePole::clusterPoles,
                   py::arg("assembled"), py::arg("k"), py::arg("cluster_cells"),
-                  py::arg("centre"), py::arg("radius"),
                   py::arg("cfg") = BoundStatePoleConfig{},
-                  "The same search on an assembled pencil's degree-k block.");
+                  "The same read on an assembled pencil's degree-k block.");
 
   py::class_<DressedFluctuationDeclaration>(m, "DressedFluctuationDeclaration",
       "Everything that fixes which fluctuation problem a DressedFluctuation "

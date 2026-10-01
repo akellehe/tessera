@@ -14,7 +14,7 @@
 #include <string>
 #include <utility>
 
-#include "chainhodge/PencilSchur.h"
+#include "chainhodge/RieszProjector.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "spacetime/Spacetime.h"
 
@@ -404,8 +404,8 @@ RecursionBandRead LevelRecursion::readBand(
         "defined");
 
   // The exact projector and its frames, from the reordered Schur form.
-  const chainhodge::SchurRieszProjector riesz =
-      chainhodge::PencilSchur::rieszProjector(schur, selected);
+  const chainhodge::RieszProjectorRead riesz =
+      chainhodge::rieszProjector(schur, selected);
   const Eigen::MatrixXcd &projector = riesz.projector;
   const Eigen::MatrixXcd &right = riesz.right;
   const Eigen::MatrixXcd left = riesz.left.transpose();

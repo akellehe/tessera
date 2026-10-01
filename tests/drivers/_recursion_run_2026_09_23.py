@@ -24,8 +24,6 @@ TOLERANCES = {
     "allowability_tolerance": 1e-8,
     "tie_tolerance": 1e-8,
     "degeneracy_tolerance": 1e-7,
-    "pole_newton_tolerance": 1e-13,
-    "pole_zero_count_tolerance": 1e-3,
     "pole_rank_tolerance": 1e-10,
     "fluctuation_tolerance": 1e-8,
     "recursion_tolerance": 1e-9,
