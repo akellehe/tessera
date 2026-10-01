@@ -3919,7 +3919,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("isolationGap",
                     &RecursiveQuotient::MultiplicityRead::isolationGap,
                     "The distance from the circle to the nearest eigenvalue of "
-                    "L or of L_II, inside or outside.")
+                    "L or of L_II, inside or outside. A gap at or below the "
+                    "rank tolerance times the larger of the radius and that "
+                    "eigenvalue's distance from the centre says that the "
+                    "circle passes through an eigenvalue at the rank "
+                    "tolerance.")
       .def_readonly("decompositionResidual",
                     &RecursiveQuotient::MultiplicityRead::decompositionResidual,
                     "The largest relative backward error of the Schur "
@@ -4296,9 +4300,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "about lam: the eigenvalues of L in the disc, counted with "
            "multiplicity from the Schur form of L, with the interior block's "
            "count reported separately; the geometric multiplicity is "
-           "dim ker F_B(lam). Whether an eigenvalue is inside is decided at the "
-           "rank tolerance, and a circle through an eigenvalue is refused by "
-           "name.")
+           "dim ker F_B(lam). An eigenvalue is inside exactly when its "
+           "distance from lam is below the radius; the count is made wherever "
+           "the circle passes, and isolationGap reports how close it comes to "
+           "an eigenvalue.")
       .def("craigBampton",
            py::overload_cast<double, double, double, double>(
                &RecursiveQuotient::craigBampton, py::const_),
@@ -5833,9 +5838,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "The largest singular value of the block T = M^-1 A, the "
                     "reference of every rank decision and of the clustering.")
       .def_readonly("poles", &BoundStatePoleRead::poles,
-                    "The distinct zeros s_C of D_C: the clusters of "
-                    "eigenvalues of the pencil the interior block does not "
-                    "carry, ascending by (real part, imaginary part).")
+                    "The clusters of eigenvalues of the pencil, ascending by "
+                    "(real part, imaginary part). A cluster no interior "
+                    "eigenvalue meets is a zero s_C of D_C; a cluster an "
+                    "interior eigenvalue meets is reported with the others "
+                    "and flagged in at_interior_pole.")
+      .def_readonly("at_interior_pole", &BoundStatePoleRead::atInteriorPole,
+                    "Whether an eigenvalue of the interior pencil lies within "
+                    "the rank tolerance times the scale of a member of each "
+                    "pole's cluster. Such a point lies outside the domain the "
+                    "response is continued on, so the read does not establish "
+                    "what order D_C has there; 'eigenvalue-at-interior-pole' "
+                    "is named in failed_certificates.")
       .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity,
                     "The algebraic multiplicity of each pole: the size of its "
                     "cluster, the dimension of its generalized eigenspace.")
@@ -5873,7 +5887,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "s_C minus the declared free threshold.")
       .def_readonly("interior_poles", &BoundStatePoleRead::interiorPoles,
                     "The distinct eigenvalues of the interior pencil, the "
-                    "poles of F_C, which the domain of the read excludes.")
+                    "poles of F_C, which the domain the response is continued "
+                    "on excludes.")
       .def_readonly("interior_multiplicity",
                     &BoundStatePoleRead::interiorMultiplicity,
                     "The algebraic multiplicity of each interior pole.")
@@ -5888,9 +5903,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "D_C(s) = det F_C(s), with F_C the exact meromorphic Feshbach response "
       "pencil of a persistent bound cluster, continued in the complex "
       "spectral parameter s. The zeros are read exactly from the spectrum of "
-      "the pencil: the eigenvalues of M^-1 A the interior block does not "
-      "carry, clustered at the declared rank tolerance, each with the "
-      "spectral projector onto its generalized eigenspace as its residue.\n\n"
+      "the pencil: the eigenvalues of M^-1 A, clustered at the declared rank "
+      "tolerance, each with the spectral projector onto its generalized "
+      "eigenspace as its residue. A cluster the interior block does not carry "
+      "is a zero of D_C; a cluster at an eigenvalue of the interior block is "
+      "reported with the others and flagged.\n\n"
       "Mass is not defined here by an incoherent sum of moduli, and nothing "
       "here converts s_C into a mass: the theory carries s_C and takes no "
       "square root of it.")
@@ -6279,8 +6296,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("isolation_gap", &RecursionBandRead::isolationGap,
                      "The smallest distance between a selected and an excluded "
                      "eigenvalue of the block; infinite when nothing is "
-                     "excluded. A selection separating two eigenvalues equal "
-                     "at the declared tolerance is refused by name.")
+                     "excluded or nothing is selected. A gap at or below the "
+                     "declared tolerance times the block's Frobenius norm says "
+                     "that the selection separates two eigenvalues equal at "
+                     "that tolerance; the fiber is read all the same and is "
+                     "not accepted.")
+      .def_readwrite("contour_gap", &RecursionBandRead::contourGap,
+                     "The smallest distance between the declared circle and an "
+                     "eigenvalue of the block under DeclaredContours, "
+                     "min_i ||lambda_i - c| - r|; infinite under LowestModes. "
+                     "An eigenvalue on the circle at the declared tolerance "
+                     "belongs to the band by the strict comparison "
+                     "|lambda - c| < r all the same, and the fiber is not "
+                     "accepted.")
       .def_readwrite("projector_idempotency",
                      &RecursionBandRead::projectorIdempotency,
                      "||P_v^2 - P_v||_F / ||P_v||_F, the rounding residual of "
@@ -6296,8 +6324,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "Phi_v over the level's coordinates, flat row-major.")
       .def_readwrite("left_frame", &RecursionBandRead::leftFrame,
                      "PhiTilde_v^T, flat row-major.")
-      .def_readwrite("accepted", &RecursionBandRead::accepted)
-      .def_readwrite("certificate", &RecursionBandRead::certificate);
+      .def_readwrite("accepted", &RecursionBandRead::accepted,
+                     "Whether the fiber is certified at the declared "
+                     "tolerance: the band has at least one eigenvalue, the "
+                     "selection separates no two eigenvalues equal at the "
+                     "tolerance, no eigenvalue is on a declared circle at the "
+                     "tolerance, and the idempotency, the pairing defect and "
+                     "the invariant-subspace residual are each at or below "
+                     "the tolerance. An unaccepted fiber is still carried and "
+                     "reported.")
+      .def_readwrite("certificate", &RecursionBandRead::certificate,
+                     "The fiber's certificate, which holds exactly when "
+                     "accepted is true.");
 
   py::class_<LevelTransport>(m, "LevelTransport",
       "One block M_vw = PhiTilde_v^T T_vw Phi_w: the level's coupling between "
@@ -6381,9 +6419,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "component, the Riesz projector onto the invariant subspace "
                   "of the selected eigenvalues from the block's complex Schur "
                   "form, its frames over the block's own coordinates, and its "
-                  "certificates. Rank decisions are made at the tolerance, and "
-                  "a selection that names no invariant subspace is refused by "
-                  "name.")
+                  "certificates. The read is made whatever the isolation of "
+                  "the band: a selection that separates two eigenvalues equal "
+                  "at the tolerance, a declared circle through an eigenvalue "
+                  "at the tolerance and a declared circle enclosing no "
+                  "eigenvalue each return their band with accepted false and "
+                  "the measured gap. A selection that takes an eigenvalue in "
+                  "and leaves an eigenvalue exactly equal to it out has no "
+                  "projector, and raises a ValueError that names the "
+                  "eigenvalue.")
       .def_static("overPencil", &LevelRecursion::overPencil, py::arg("pencil"),
                   py::arg("metric"), py::arg("dimension"),
                   py::arg("declaration"),
