@@ -1069,30 +1069,37 @@ double relative(const Eigen::MatrixXcd &a, const Eigen::MatrixXcd &b, double sca
 
 // cond_2 of a sparse matrix from its LU: sigma_max by power iteration on
 // X^H X, sigma_min by inverse iteration on (X^H X)^{-1} = X^{-1} X^{-H}.
+//
+// Each iteration runs to its own end. For a Hermitian positive semidefinite A
+// and a unit vector v, the next iterate v' = A v / ||A v|| has
+// ||A v'|| >= ||A v||, because ||A v||^2 = <v, A^2 v> <= ||A^2 v|| =
+// ||A v|| ||A v'||. The estimate is therefore nondecreasing and bounded by
+// ||A||, and the iteration ends at the first step that does not increase it:
+// its fixed point at the datatype's resolution.
 double conditionEstimate(const SparseMatrix &X, Eigen::SparseLU<SparseMatrix> &lu, std::mt19937_64 &rng) {
   const Eigen::Index n = X.rows();
   if (n == 0) return 1.0;
-  constexpr int kIterations = 60;
+  const double infinity = std::numeric_limits<double>::infinity();
   Eigen::VectorXcd v = randomProbe(n, 1, rng).col(0).normalized();
   double big = 0.0;
-  for (int it = 0; it < kIterations; ++it) {
-    Eigen::VectorXcd w = X.adjoint() * (X * v);
+  for (;;) {
+    const Eigen::VectorXcd w = X.adjoint() * (X * v);
     const double next = std::sqrt(w.norm());
-    if (next == 0.0) return std::numeric_limits<double>::infinity();
-    v = w.normalized();
-    if (std::abs(next - big) <= 1e-6 * next) { big = next; break; }
+    if (next == 0.0 || !std::isfinite(next)) return infinity;
+    if (!(next > big)) break;
     big = next;
+    v = w.normalized();
   }
   v = randomProbe(n, 1, rng).col(0).normalized();
   double inv = 0.0;
-  for (int it = 0; it < kIterations; ++it) {
+  for (;;) {
     const Eigen::VectorXcd y = lu.adjoint().solve(v);
     const Eigen::VectorXcd w = lu.solve(y);
     const double next = std::sqrt(w.norm());
-    if (!std::isfinite(next)) return std::numeric_limits<double>::infinity();
-    v = w.normalized();
-    if (std::abs(next - inv) <= 1e-6 * next) { inv = next; break; }
+    if (!std::isfinite(next)) return infinity;
+    if (!(next > inv)) break;
     inv = next;
+    v = w.normalized();
   }
   return big * inv;
 }

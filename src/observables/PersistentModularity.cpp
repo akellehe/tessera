@@ -573,17 +573,16 @@ void PersistentModularity::ensureCanonical() const {
         std::unique(tmp.begin(), tmp.end()) - tmp.begin());
   };
 
-  // Capped iterated color refinement (weighted one-dimensional
-  // Weisfeiler-Leman).  Including the old color in the new key means classes
-  // never merge, so the distinct count is nondecreasing and stabilization is
-  // detectable.
-  int maxRounds = 3;
-  for (std::size_t t = 1; t < n; t <<= 1) maxRounds += 3;
+  // Iterated color refinement (weighted one-dimensional Weisfeiler-Leman),
+  // run to its fixed point.  Including the old color in the new key means
+  // classes never merge, so the distinct count is nondecreasing; it is bounded
+  // by n, so the rounds end at the first one that does not raise it, which is
+  // the stable coloring.
   auto refine = [&]() {
     std::size_t distinct = countDistinct(color);
     std::vector<std::uint64_t> next(n);
     std::vector<std::pair<std::uint64_t, std::uint64_t>> sig;
-    for (int round = 0; round < maxRounds; ++round) {
+    for (;;) {
       for (std::size_t i = 0; i < n; ++i) {
         sig.clear();
         for (std::int64_t k = indptr_[i]; k < indptr_[i + 1]; ++k) {
@@ -604,8 +603,9 @@ void PersistentModularity::ensureCanonical() const {
       }
       color.swap(next);
       const std::size_t d = countDistinct(color);
-      if (d == distinct) break;
+      const bool raised = d > distinct;
       distinct = d;
+      if (!raised) break;
     }
     return distinct;
   };
@@ -621,10 +621,11 @@ void PersistentModularity::ensureCanonical() const {
   // class is arbitrary but taken by minimum cell id, so the discovery is a
   // pure function of the labeled graph and independent of edge input order.
   // On graphs whose refinement classes are automorphism orbits the resulting
-  // order is canonical up to automorphism under relabeling.
-  const int maxIndividualize = 64;
+  // order is canonical up to automorphism under relabeling.  The loop ends by
+  // itself: every step gives one member of a tied class a color of its own,
+  // and it stops when no class has more than one member.
   std::vector<std::int64_t> dist(n);
-  for (int iter = 0; iter < maxIndividualize && distinct < n; ++iter) {
+  for (std::uint64_t iter = 0; distinct < n; ++iter) {
     // Target class: smallest color value among classes with multiplicity>1
     // (invariant choice); representative: minimum internal index.
     std::unordered_map<std::uint64_t, std::uint32_t> count;
@@ -646,8 +647,7 @@ void PersistentModularity::ensureCanonical() const {
         rep = i;
       }
     }
-    color[rep] = Mix::splitmix64(color[rep] ^ (0xA5A5A5A5A5A5A5A5ULL +
-                                               static_cast<std::uint64_t>(iter)));
+    color[rep] = Mix::splitmix64(color[rep] ^ (0xA5A5A5A5A5A5A5A5ULL + iter));
     // BFS hop distances from the individualized vertex.
     std::fill(dist.begin(), dist.end(), -1);
     std::deque<std::uint32_t> queue;
@@ -673,10 +673,9 @@ void PersistentModularity::ensureCanonical() const {
     distinct = refine();
   }
 
-  // Rank: order by (final color, cell id).  Remaining equal-color ties, from
-  // fully symmetric classes past the individualization cap or exact
-  // automorphic twins, fall back to the cell id: an arbitrary but
-  // input-order-independent representative order.
+  // Rank: order by (final color, cell id).  The individualization leaves no
+  // two cells one color; the cell id completes the comparison into a total
+  // order whatever the colors are.
   std::vector<std::uint32_t> order(n);
   for (std::size_t i = 0; i < n; ++i) order[i] = static_cast<std::uint32_t>(i);
   std::sort(order.begin(), order.end(),

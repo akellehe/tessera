@@ -252,6 +252,21 @@ def test_vertex_pairing_two_dimensions_and_refusals():
         GCR.invertVertexPairing(bad)
 
 
+def test_the_metric_block_is_singular_at_the_declared_rank_tolerance():
+    """The block of the pairing on v_1..v_d is inverted when every pivot is
+    above the declared fraction of the largest: diag(1, 1, 1e-12), whose
+    smallest pivot is 1e-12 of its largest, is inverted at the declared 1e-15
+    and has no inverse at 1e-9."""
+    pairing = np.diag([1.0, 1.0, 1.0, 1e-12]).astype(complex)
+    read = GCR.invertVertexPairing(pairing)
+    assert read.scaleDetermined
+    metric = np.asarray(read.scaledMetric)
+    np.testing.assert_allclose(np.diag(metric), [20.0, 20.0, 20.0e12],
+                               rtol=1e-12)
+    with pytest.raises(ValueError, match="singular"):
+        GCR.invertVertexPairing(pairing, 1e-9)
+
+
 # ------------------------------------- the gauge-invariant pairing (§10 pattern)
 
 

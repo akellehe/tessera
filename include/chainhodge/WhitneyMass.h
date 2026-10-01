@@ -241,8 +241,12 @@ class WhitneyMass {
   ///
   /// `Branch::Continuation` continues along the straight segment
   /// \f$ g(t) = (1-t) g_{\rm from} + t\, g_{\rm to} \f$, tracking the argument of
-  /// the degree-\f$ d \f$ polynomial \f$ \det g(t) \f$ through its roots exactly
-  /// as the reference continuation does. Starting from the geometry an instance
+  /// \f$ \det g(t) = \det g_{\rm from}\prod_i\bigl(1+t(\mu_i-1)\bigr) \f$
+  /// factor by factor, with \f$ \mu_i \f$ the eigenvalues of the pencil
+  /// \f$ (g_{\rm to}, g_{\rm from}) \f$, exactly as the reference continuation
+  /// does: each factor turns by the principal argument of \f$ \mu_i \f$, and a
+  /// root lies on the segment when \f$ \det g_{\rm from}=0 \f$ or when a
+  /// \f$ \mu_i \f$ is real and not positive. Starting from the geometry an instance
   /// actually came from, rather than from the unit Euclidean simplex every time,
   /// is what makes a family of instances one continued state instead of a
   /// sequence of independent principal-value choices: the sheet composes along

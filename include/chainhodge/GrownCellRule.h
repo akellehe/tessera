@@ -139,8 +139,11 @@ class GrownCellRule {
   /// \f$ d \f$-simplex's edge set with \f$ d = 2 \f$ or \f$ d = 3 \f$ (for
   /// \f$ d\ge4 \f$ the scale is a \f$ (d-2) \f$-th root, which the rule does not
   /// supply), and when the block of \f$ C\Gamma \f$ on \f$ v_1,\dots,v_d \f$ is
-  /// singular.
-  [[nodiscard]] static WhitneyLengthInversion invertWhitneyBlock(const Eigen::MatrixXcd &block);
+  /// singular, which has no inverse to read a metric from. \p rankTolerance is
+  /// the fraction of that block's largest pivot at or below which a pivot is
+  /// zero.
+  [[nodiscard]] static WhitneyLengthInversion invertWhitneyBlock(const Eigen::MatrixXcd &block,
+                                                                 double rankTolerance = 1e-15);
 
   /// The grown-cell identification: each response vertex's fiber plays the
   /// role of the barycentric gradient \f$ d\lambda_v \f$, so the inherited
@@ -150,8 +153,11 @@ class GrownCellRule {
   /// \f$ \delta_0 e_v \f$ on one simplex is exactly \f$ |T|\,\Gamma \f$ and the
   /// squared lengths are returned. Throws `std::invalid_argument` unless the
   /// pairing is \f$ 3\times3 \f$ or \f$ 4\times4 \f$, and when the block on
-  /// \f$ v_1,\dots,v_d \f$ is singular.
-  [[nodiscard]] static GrownCellInversion invertVertexPairing(const Eigen::MatrixXcd &pairing);
+  /// \f$ v_1,\dots,v_d \f$ is singular, which has no inverse to read a metric
+  /// from. \p rankTolerance is the fraction of that block's largest pivot at or
+  /// below which a pivot is zero.
+  [[nodiscard]] static GrownCellInversion invertVertexPairing(const Eigen::MatrixXcd &pairing,
+                                                              double rankTolerance = 1e-15);
 
   /// The inherited pairing on the determinant line,
   /// \f$ \mathfrak g_{vw} = \det\bigl(Y_v^{\mathsf T}\,Z_w\bigr) \f$, where

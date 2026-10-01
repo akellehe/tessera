@@ -93,9 +93,13 @@ struct DressedFluctuationDeclaration {
   /// value travels on every read that used it.
   double continuumBroadening = 0.0;
 
-  /// The relative tolerance the certificates of this instance hold against, and
-  /// the threshold below which a candidate collective mode's geometric
-  /// component counts as zero.
+  /// The relative tolerance the certificates of this instance hold against, the
+  /// threshold below which a candidate collective mode's geometric component
+  /// counts as zero and the reciprocal of a pencil eigenvalue, in the unit of
+  /// the pencil's scale, is the zero of an infinite eigenvalue, and the
+  /// fraction of the largest pivot at or below which a pivot of the frame of
+  /// right modes, or of the bare stiffness, is zero in the decision that the
+  /// carrier is defective or the stiffness singular.
   double tolerance = 1e-15;
 };
 

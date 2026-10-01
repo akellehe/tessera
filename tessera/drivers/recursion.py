@@ -248,11 +248,15 @@ def _oriented_face(triangle, face_index):
     return face_index[ascending], sign
 
 
-def monopole_connection(cells, monopole=DECLARED_MONOPOLE):
+def monopole_connection(cells, monopole=DECLARED_MONOPOLE,
+                        rank_tolerance=bp.DECLARED_TOLERANCE):
     """The declared monopole connection of the base (see the module
     docstring): the principal face angles, the Dirac string, the edge phases
     on the ascending orientation, and the consistency residual of
-    d phi = theta - 2 pi n."""
+    d phi = theta - 2 pi n. The edge phases are the minimum-norm solution of
+    that system (`numpy.linalg.lstsq`), a singular value of the face
+    coboundary below ``rank_tolerance`` times the largest counted as zero;
+    the solver reads a threshold of one or more as the machine epsilon."""
     cells = [sorted(c) for c in cells]
     edges = _sorted_simplices(cells, 2)
     faces = _sorted_simplices(cells, 3)
@@ -284,7 +288,7 @@ def monopole_connection(cells, monopole=DECLARED_MONOPOLE):
                 if boundary[t, f] != 0 and f not in shared and string[f] == 0]
         string[free[0]] = turns[t] / boundary[t, free[0]]
     target = theta - 2.0 * math.pi * string
-    phases, *_ = np.linalg.lstsq(coboundary, target, rcond=None)
+    phases, *_ = np.linalg.lstsq(coboundary, target, rcond=rank_tolerance)
     return {
         "edges": edges,
         "faces": faces,
@@ -319,7 +323,9 @@ def build_level(cells, squared_lengths, links, sheets=SHEETS):
 def level_zero(config):
     """The declared level-0 base: cells, squared lengths and links."""
     cells = fan(config["tetrahedra"])
-    connection = monopole_connection(cells, config["monopole"])
+    connection = monopole_connection(
+        cells, config["monopole"],
+        bp.declared_tolerance(config, "rank_tolerance"))
     z = {e: complex(config["edge_squared"]) for e in connection["edges"]}
     links = {e: cmath.exp(1j * p) for e, p in
              zip(connection["edges"], connection["phases"])}
@@ -758,14 +764,15 @@ def inherited_pairing(frames, duals, transports, covariant, images=None):
         duals, images, connection))
 
 
-def level_rule_shift(cells, z, links):
+def level_rule_shift(cells, z, links, rank_tolerance=bp.DECLARED_TOLERANCE):
     """The grown-cell rule applied to a level's own tetrahedra as if they were
     grown cells: on each tetrahedron alone, the vertex fibers are the exact
     chains of the twisted coboundary, their dual-connection partners those of
     the inverse connection, and the transports the edge links. The relative
     shift of the rule's squared lengths from the tetrahedron's own is zero for
     a pure-gauge connection; with face holonomies it is the curvature-induced
-    shift of the rule."""
+    shift of the rule. ``rank_tolerance`` is the rule's own
+    (`GrownCellRule.invertVertexPairing`)."""
     fixture_edges = list(itertools.combinations(range(4), 2))
     single = cob.ChainComplex.fromTopCells([[0, 1, 2, 3]])
     shifts = []
@@ -802,7 +809,7 @@ def level_rule_shift(cells, z, links):
         pairing = np.asarray(ch.GrownCellRule.gaugeInvariantPairing(
             [duals[:, [v]] for v in range(4)],
             [images[:, [v]] for v in range(4)], connection))
-        read = ch.GrownCellRule.invertVertexPairing(pairing)
+        read = ch.GrownCellRule.invertVertexPairing(pairing, rank_tolerance)
         rule = np.array(read.squaredLengths)
         shifts.append({"cell": c,
                        "relative_shift": float(np.max(np.abs(
@@ -820,12 +827,16 @@ def manifold_violation(cells):
     return None if ok else str(reason)
 
 
-def grow(cells, pairing, transports):
+def grow(cells, pairing, transports, rank_tolerance=bp.DECLARED_TOLERANCE):
     """The grown-cell rule on every grown 3-simplex: lengths from the
     inherited pairing, connection from det M. The cells are glued in
     ascending lexicographic order of their vertices, and a cell is added only
     if the complex of the cells added so far stays a manifold with boundary;
     a cell that fails is recorded with the violation under ``"rejected"``.
+    ``rank_tolerance`` is the fraction of the largest pivot of a cell's
+    metric block at or below which a pivot counts as zero
+    (`GrownCellRule.invertVertexPairing`); a cell whose block is singular at
+    it is recorded with the rule's reason under ``"failed"``.
     Returns the per-cell reads and the per-edge fields of the next level
     (response-vertex labels)."""
     reads, per_edge_z, glued = [], {}, []
@@ -834,7 +845,8 @@ def grow(cells, pairing, transports):
         block = pairing[np.ix_(index, index)]
         entry = {"vertices": index, "pairing": block}
         try:
-            read = ch.GrownCellRule.invertVertexPairing(block)
+            read = ch.GrownCellRule.invertVertexPairing(block,
+                                                        rank_tolerance)
         except ValueError as error:
             entry["failed"] = str(error)
             reads.append(entry)
@@ -1008,7 +1020,9 @@ def interaction_stage(base, partition, config):
     grown = grown_cells(len(frames), pairs)
     pairing = inherited_pairing(frames, fibers["duals"], transports,
                                 base["covariant"], images=images)
-    reads, z, links, spread, groupoid = grow(grown, pairing, transports)
+    reads, z, links, spread, groupoid = grow(
+        grown, pairing, transports,
+        bp.declared_tolerance(config, "grown_cell_rank_tolerance"))
     apart = [(v, w) for v, w in itertools.permutations(range(len(frames)), 2)
              if (min(v, w), max(v, w)) not in pairs]
     locality = {
@@ -1214,7 +1228,9 @@ def tick(index, cells, z, links, config):
         "bulk_monopole_numbers_after": monopole_numbers(
             cells, base_links, certificate_tolerance),
         "sheet_isomorphism_residual": float(isomorphism),
-        "rule_shift": level_rule_shift(cells, base_z, base_links),
+        "rule_shift": level_rule_shift(
+            cells, base_z, base_links,
+            bp.declared_tolerance(config, "grown_cell_rank_tolerance")),
     }
     try:
         level = recursion_turn(base["operator"], config)

@@ -199,8 +199,9 @@ class RecursiveQuotient {
       int denseCrossover{512};
       /// The declared labeled-sum Gram treatment for this run.
       FiberEmbeddingPolicy embeddingPolicy{FiberEmbeddingPolicy::CarryGramExactly};
-      /// \f$ \varepsilon \f$ for `CertifiedNearIsometry`.
-      double nearIsometryEpsilon{1e-10};
+      /// \f$ \varepsilon \f$ for `CertifiedNearIsometry`: the bound the Gram
+      /// defect of the labeled fiber sum is certified against.
+      double nearIsometryEpsilon{1e-15};
       /// Interior cells to retain as explicit stalk coordinates instead of
       /// eliminating (matrix path: fine indices).
       std::vector<int> selectedInteriorIndices{};

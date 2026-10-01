@@ -89,6 +89,25 @@ def test_the_euclidean_reference_declares_the_principal_sheet():
     assert volume == pytest.approx(math.sqrt(0.5) / 6.0)
 
 
+def test_a_root_is_on_the_segment_when_a_pencil_eigenvalue_is_real_and_not_positive():
+    """det g(t) along the reference segment is the product of the factors
+    1 + t (mu - 1) over the eigenvalues mu of the pencil (g, g_ref), and a
+    root lies on the segment when a mu is real and not positive, an exact
+    comparison. On one edge the pencil eigenvalue is the squared length
+    itself: the real timelike edge s = -1 has its root on the segment and
+    the continuation is reported as ambiguous, and an edge an imaginary part
+    of 1e-14 off it is continued on the side of that imaginary part, to the
+    root +i above the axis and -i below."""
+    _, ambiguous = WM.volumeOnBranch(np.array([[-1.0 + 0.0j]]),
+                                     ch.Branch.Continuation)
+    assert ambiguous
+    for imaginary, root in ((1e-14, 1j), (-1e-14, -1j)):
+        volume, ambiguous = WM.volumeOnBranch(
+            np.array([[complex(-1.0, imaginary)]]), ch.Branch.Continuation)
+        assert not ambiguous
+        assert volume == pytest.approx(root, abs=1e-13)
+
+
 def test_a_zero_step_continues_nothing():
     """Continuing from a geometry to itself leaves the declared sheet alone,
     whatever sheet that was."""

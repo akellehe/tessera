@@ -634,6 +634,26 @@ def test_the_dirac_string_is_integer_and_the_flux_is_two_pi(count):
     assert len(connection["faces"]) == 1 + 3 * count
 
 
+def test_the_edge_phases_are_solved_at_the_declared_rank_tolerance():
+    """The edge phases are the minimum-norm solution of d phi = theta - 2 pi n,
+    a singular value of the face coboundary below ``rank_tolerance`` times
+    the largest counted as zero. On the fan of two tetrahedra every nonzero
+    singular value of the coboundary is above half the largest and some are
+    below nine tenths of it: at the declared 1e-15 and at 0.5 the system is
+    solved to rounding, and at 0.9 the directions cut away leave a residual
+    of 7.2552."""
+    cells = R.fan(2)
+    declared = R.monopole_connection(cells)
+    assert declared["residual"] < 1e-12
+    half = R.monopole_connection(cells, rank_tolerance=0.5)
+    assert half["residual"] < 1e-12
+    assert np.array_equal(half["phases"], declared["phases"])
+    cut = R.monopole_connection(cells, rank_tolerance=0.9)
+    assert cut["residual"] == pytest.approx(7.255197456936872, rel=1e-9)
+    assert float(np.linalg.norm(cut["phases"] - declared["phases"])) == \
+        pytest.approx(4.1887902047863905, rel=1e-9)
+
+
 # ------------------------------------------------------------ the band helpers
 
 
@@ -748,6 +768,18 @@ def test_the_level_record_is_consistent():
     assert record["resolutions"] == list(R.DECLARED_RESOLUTIONS)
     assert record["selected_resolution"] in record["resolutions"]
     json.dumps(R._jsonable(record))
+
+
+def test_a_grown_cell_is_read_at_the_declared_rank_tolerance():
+    """`grow` hands the grown-cell rule the rank tolerance it is given: a
+    pairing whose metric block has a pivot 1e-12 of its largest has no
+    inverse at 1e-9, and the cell is recorded as failed with the rule's
+    reason."""
+    pairing = np.diag([1.0, 1.0, 1.0, 1e-12]).astype(complex)
+    reads, z, links, spread, groupoid = R.grow([(0, 1, 2, 3)], pairing, {},
+                                               1e-9)
+    assert "singular" in reads[0]["failed"]
+    assert z == {} and links == {} and spread == {} and groupoid == {}
 
 
 def test_a_failed_grown_cell_is_recorded_and_skipped():

@@ -130,12 +130,12 @@ LevelRecursion LevelRecursion::overPencil(
     throw std::invalid_argument(
         "LevelRecursion::overPencil: a band of rank zero encloses no "
         "eigenvalue and is no fiber");
-  if (dimension >= declaration.denseCrossover)
+  if (declaration.denseCrossover && dimension >= *declaration.denseCrossover)
     throw std::length_error(
         "LevelRecursion::overPencil: the microscopic level has " +
         std::to_string(dimension) +
         " coordinates, at or above the declared dense crossover of " +
-        std::to_string(declaration.denseCrossover) +
+        std::to_string(*declaration.denseCrossover) +
         ", and the response pencil is evaluated densely");
   LevelRecursion recursion;
   recursion.pencil_ = pencil;
@@ -169,7 +169,9 @@ RecursiveQuotient::Options LevelRecursion::quotientOptions() const {
   RecursiveQuotient::Options options;
   options.tolerance = declaration_.tolerance;
   options.rankTolerance = declaration_.rankTolerance;
-  options.denseCrossover = declaration_.denseCrossover;
+  // With no declared crossover every interior solve takes the dense path.
+  options.denseCrossover =
+      declaration_.denseCrossover.value_or(std::numeric_limits<int>::max());
   options.embeddingPolicy = FiberEmbeddingPolicy::CarryGramExactly;
   return options;
 }
@@ -485,12 +487,12 @@ void LevelRecursion::advance() {
         "LevelRecursion::advance: level " + std::to_string(level) +
         " has no coordinate left to partition, so the recursion has reduced "
         "the complex to nothing");
-  if (width >= declaration_.denseCrossover)
+  if (declaration_.denseCrossover && width >= *declaration_.denseCrossover)
     throw std::length_error(
         "LevelRecursion::advance: level " + std::to_string(level) + " has " +
         std::to_string(width) +
         " coordinates, at or above the declared dense crossover of " +
-        std::to_string(declaration_.denseCrossover));
+        std::to_string(*declaration_.denseCrossover));
 
   RecursionLevelRead read;
   read.level = level;

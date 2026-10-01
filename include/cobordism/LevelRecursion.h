@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "cobordism/Certificate.h"
@@ -141,10 +142,13 @@ struct LevelRecursionDeclaration {
   /// so the harmonic modes a level retains.
   double rankTolerance = 1e-15;
 
-  /// The dimension at and above which the dense paths of this class refuse. The
-  /// response pencil is evaluated densely, so this is the size of the largest
-  /// level it will build.
-  int denseCrossover = 512;
+  /// A limit the caller may declare on the size of a level: the dimension at
+  /// and above which this class refuses to build or advance a level. The
+  /// response pencil is evaluated densely, so the cost of a level grows as the
+  /// cube of its dimension. No limit is declared by default, and then a level
+  /// of any dimension is built and every interior solve of the quotient takes
+  /// its dense path.
+  std::optional<int> denseCrossover{};
 };
 
 /// # RecursionBandRead
@@ -473,7 +477,7 @@ class LevelRecursion {
   /// @param declaration How the recursion is driven.
   /// @throws std::invalid_argument when the dimension is not positive, when a
   ///   matrix has the wrong size, when the declared resolutions are empty, or
-  ///   when the declared band rank is zero; std::length_error at or above the
+  ///   when the declared band rank is zero; std::length_error at or above a
   ///   declared dense crossover.
   [[nodiscard]] static LevelRecursion overPencil(
       const std::vector<std::complex<double>> &pencil,
@@ -545,7 +549,7 @@ class LevelRecursion {
   /// Take one turn of the box. A fiber whose band read is not accepted is
   /// carried into the level and makes the level's certificate fail to hold; a
   /// band of rank zero contributes no mode and no transport.
-  /// @throws std::length_error when the level to be reduced is at or above the
+  /// @throws std::length_error when the level to be reduced is at or above a
   ///   declared dense crossover, or when a level has been reduced to nothing
   ///   and there is no further response pencil to partition;
   ///   std::domain_error when the band read of a component has no value (see
