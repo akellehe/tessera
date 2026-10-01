@@ -1110,9 +1110,9 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       break;
     }
 
-    // A Jacobian the action cannot form at this point (a refused derivative,
-    // a band that is not isolated) leaves no Newton step to take from it;
-    // the solve stops there and says why.
+    // A Jacobian the action cannot form at this point (a derivative with no
+    // value there) leaves no Newton step to take from it; the solve stops
+    // there and says why.
     std::vector<complexd> flatJacobian;
     std::string jacobianRefusal;
     try {

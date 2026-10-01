@@ -630,9 +630,8 @@ void finishReport(SelfConsistentMeanFieldReport &report,
       HodgeLaplacian::kontsevichSegalMargin(*action.spacetime());
   report.largestLengthRatio =
       startScale > 0.0 ? largestSquaredLengthOf(action) / startScale : 1.0;
-  // A node of the Jacobian's difference rule outside the domain of the action
-  // leaves the joint Jacobian unread; its rank fields and the Hessian along
-  // the force then read zero and NaN.
+  // A point at which the joint Jacobian has no value leaves it unread; its
+  // rank fields and the Hessian along the force then read zero and NaN.
   auto unread = [&report]() {
     report.jacobianRank = 0;
     report.largestSingularValue = kNaN;
