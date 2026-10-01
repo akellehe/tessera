@@ -446,14 +446,145 @@ def test_the_drazin_inverse_integrates_out_exactly_the_coexact_phases(
 
 def test_the_ward_identity_holds_on_every_pure_gauge_direction(
         host_problem):
-    """(D - Pi(0)) g = 0 to rounding on each pure-gauge direction, while
-    Pi(0) g alone is of order one: the identity is a genuine cancellation
-    between the diamagnetic and the paramagnetic terms."""
+    """(D - Pi(0)) g = 0 to rounding on each pure-gauge direction (measured
+    1.1e-15), while Pi(0) g alone is 0.271 of ||Pi(0)|| ||g||: the identity
+    is a genuine cancellation between the diamagnetic and the paramagnetic
+    terms. The diamagnetic term is read with the commutator of each coupling
+    with the direction's generator, and each of the nine directions is the
+    coboundary of its vertex function exactly."""
     _, _, _, problem = host_problem
     ward = problem["record"]["ward_identity"]
+    assert set(ward) == {"directions", "gauge_derivative",
+                         "coboundary_departure", "residual",
+                         "paramagnetic_alone"}
     assert ward["directions"] == 9
-    assert ward["residual"] < 1e-12
-    assert ward["paramagnetic_alone"] > 1e-2
+    assert ward["coboundary_departure"] == 0.0
+    assert ward["residual"] < 1e-14
+    assert ward["paramagnetic_alone"] == pytest.approx(0.271241535260997,
+                                                       abs=1e-12)
+
+
+def _contour_gauge_derivative(spacetime, shift, radius=0.1, nodes=8):
+    """The oracle of `gauge_derivative`: the derivative of every coupling
+    along the phase shift ``shift`` by the Cauchy rule on a circle of radius
+    ``radius`` in the complex gauge parameter, with ``nodes`` nodes. The
+    couplings are entire along a gauge direction, so the rule's error is its
+    rounding, of the order of the couplings' size times 1e-16 / radius."""
+    edges = spacetime.getEdgeList().toVector()
+    saved = [complex(edge.getPhase()) for edge in edges]
+    derivative = None
+    try:
+        for k in range(nodes):
+            root = np.exp(2j * np.pi * k / nodes)
+            for edge, phase, step in zip(edges, saved, shift):
+                edge.setPhase(phase + radius * root * step)
+            here = bp.fluctuation_couplings(spacetime, True)
+            if derivative is None:
+                derivative = [np.zeros_like(o) for o in here]
+            for a, o in enumerate(here):
+                derivative[a] += root.conjugate() / (nodes * radius) * o
+    finally:
+        for edge, phase in zip(edges, saved):
+            edge.setPhase(phase)
+    return derivative
+
+
+def _commutator_departure_from_the_contour(spacetime):
+    """The largest entry of d_g O_a by the commutator minus d_g O_a by the
+    contour rule, over the 36 couplings and the nine pure-gauge directions,
+    and the largest entry of the derivatives themselves."""
+    couplings = bp.fluctuation_couplings(spacetime, True)
+    directions = bp.gauge_directions(spacetime, True)
+    edges = len(bp.edge_records(spacetime))
+    departure, scale = 0.0, 0.0
+    for column in range(directions.shape[1]):
+        shift = directions[edges:, column]
+        generator, off = bp.gauge_generator(spacetime, shift)
+        assert off == 0.0
+        oracle = _contour_gauge_derivative(spacetime, shift)
+        for coupling, expected in zip(couplings, oracle):
+            exact = bp.gauge_derivative(coupling, generator)
+            departure = max(departure, float(np.abs(exact - expected).max()))
+            scale = max(scale, float(np.abs(exact).max()))
+    return departure, scale
+
+
+def test_the_gauge_derivative_is_the_commutator_with_the_generator():
+    """`gauge_derivative`: d_g O_a = i (O_a Lambda_g - Lambda_g O_a) with
+    Lambda_g the vertex function of the direction at the lowest vertex of
+    each degree-one cell (`gauge_generator`), against the Cauchy rule along
+    the direction, for every coupling (18 lengths, 18 phases) and every
+    pure-gauge direction. On the declared host the derivatives are as large
+    as 14.6 and the two agree to 4.1e-13, the contour rule's rounding; on a
+    host whose links are off the unit circle (every stored phase moved by a
+    complex number of standard deviation 0.3 in each part, link moduli up to
+    0.46 from one) they are as large as 29.9 and agree to 7.8e-13; with the
+    lengths complex as well, 42.0 and 1.1e-12."""
+    spacetime = bp.build_host()
+    departure, scale = _commutator_departure_from_the_contour(spacetime)
+    assert scale == pytest.approx(14.555, abs=1e-3)
+    assert departure < 1e-11
+    rng = np.random.default_rng(0)
+    for edge in spacetime.getEdgeList().toVector():
+        edge.setPhase(complex(edge.getPhase())
+                      + complex(rng.normal(0, 0.3), rng.normal(0, 0.3)))
+    departure, scale = _commutator_departure_from_the_contour(spacetime)
+    assert scale == pytest.approx(29.898, abs=1e-3)
+    assert departure < 1e-11
+    for edge in spacetime.getEdgeList().toVector():
+        edge.setLength(complex(edge.getLength())
+                       * complex(1 + rng.normal(0, 0.1), rng.normal(0, 0.1)))
+    departure, scale = _commutator_departure_from_the_contour(spacetime)
+    assert scale == pytest.approx(41.995, abs=1e-3)
+    assert departure < 1e-11
+
+
+def test_the_vertex_function_is_read_along_a_spanning_tree():
+    """`gauge_vertex_function` on the host's stored edges: for the shift
+    chi_y - chi_x of a complex vertex function chi it returns chi up to one
+    constant per sheet (the lowest vertex of each sheet is the root, with
+    value zero), and the shift departs from the coboundary of what it
+    returns by rounding alone (4.5e-16)."""
+    records = bp.edge_records(bp.build_host())
+    rng = np.random.default_rng(3)
+    chi = rng.normal(size=12) + 1j * rng.normal(size=12)
+    shift = [chi[y] - chi[x] for x, y in records]
+    read, departure = bp.gauge_vertex_function(records, shift)
+    assert sorted(read) == list(range(12))
+    for vertex in range(12):
+        root = 4 * (vertex // 4)
+        assert read[root] == 0.0
+        assert abs(read[vertex] - (chi[vertex] - chi[root])) < 1e-15
+    assert departure < 1e-15
+
+
+def test_a_direction_that_is_not_pure_gauge_is_read_with_its_departure(
+        host_problem):
+    """The phase of the first stored edge (0, 1) alone is not a coboundary.
+    The tree gives chi_1 = 1 and zero elsewhere, whose coboundary differs
+    from the shift on the edges (1, 2) and (1, 3) by one each, so the
+    departure is sqrt(2). The read is made all the same: its residual is
+    0.337, the identity failing on a direction that is not a gauge
+    direction, with the departure reported beside it."""
+    spacetime, _, carrier, problem = host_problem
+    records = bp.edge_records(spacetime)
+    assert records[0] == (0, 1)
+    shift = np.zeros(len(records), dtype=complex)
+    shift[0] = 1.0
+    chi, departure = bp.gauge_vertex_function(records, shift)
+    assert {v: x for v, x in chi.items() if x != 0} == {1: 1.0}
+    assert departure == pytest.approx(np.sqrt(2.0), abs=1e-15)
+    direction = np.zeros((2 * len(records), 1), dtype=complex)
+    direction[len(records):, 0] = shift
+    config = bp.default_config([0.5], [1.0])
+    ward = bp.ward_read(spacetime, carrier, problem["couplings"], direction,
+                        config)
+    assert ward["directions"] == 1
+    assert ward["coboundary_departure"] == pytest.approx(np.sqrt(2.0),
+                                                         abs=1e-15)
+    assert ward["residual"] == pytest.approx(0.3372383239704032, abs=1e-12)
+    assert ward["paramagnetic_alone"] == pytest.approx(0.1694293597862595,
+                                                       abs=1e-12)
 
 
 def test_the_elimination_matches_a_dense_reference(host_problem,
