@@ -948,7 +948,16 @@ class JointAction {
   /// `laplacianPhaseHessian` and `laplacianMixedDerivative`, the link
   /// coordinates carrying \f$ U\,\partial/\partial U=-i\,\partial/\partial\varphi \f$
   /// on each edge's stored orientation. Symmetric.
-  [[nodiscard]] std::vector<std::complex<double>> actionHessian() const;
+  ///
+  /// A block whose coordinates are not asked for is left zero and the terms
+  /// that live in it alone are not evaluated: with \p links false the
+  /// holonomy term's Hessian, which needs \f$ W'/W \f$ and \f$ W''/W \f$
+  /// at every face holonomy, is not formed, so a solve of the lengths alone
+  /// does not depend on it.
+  /// @param lengths Whether the squared lengths are coordinates.
+  /// @param links Whether the links are coordinates.
+  [[nodiscard]] std::vector<std::complex<double>> actionHessian(
+      bool lengths = true, bool links = true) const;
 
   /// The first derivatives of the carrier operator in the relaxed coordinates
   /// (`CarrierDerivatives`): `HodgeLaplacian::laplacianGradient` in each

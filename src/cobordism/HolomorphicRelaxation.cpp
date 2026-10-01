@@ -867,7 +867,8 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
   // entry is the double sum over the two classes' members, each link member
   // on its orientation.
   if (layout.lengths || layout.links) {
-    const std::vector<complexd> hessian = working.actionHessian();
+    const std::vector<complexd> hessian =
+        working.actionHessian(layout.lengths, layout.links);
     const std::size_t size = 2 * edges;
     auto entry = [&](std::size_t row, std::size_t column) {
       return hessian[row * size + column];

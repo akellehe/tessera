@@ -408,23 +408,25 @@ def test_a_read_that_leaves_the_allowable_domain_is_refused():
 def test_a_read_that_stops_short_moves_at_every_iterate_and_says_why():
     """(0123, 300) with the pinned fiber: the joint Newton moves at every
     iteration it takes (the covariance changes at every one) and stops with
-    a named reason, no damped step reducing the residual, instead of
-    freezing and repeating; the geometry it reaches is Kontsevich-Segal
-    allowable, so the read proceeds, and the record and its text say why the
-    solve stopped."""
+    a named reason, the residual at its floor on the held set (5.2e-5 after
+    257 steps), instead of freezing and repeating; the geometry it reaches
+    is Kontsevich-Segal allowable, so the read proceeds, and the record and
+    its text say why the solve stopped."""
     _, _, report, config = _relax(FIRST_CELL, (3, 0, 0))
     assert not report.converged
-    assert report.stop_reason == cob.RelaxationStop.NoDescent
+    assert report.stop_reason == cob.RelaxationStop.HeldFloor
     assert report.stop_detail
     assert report.iterations >= 10
+    assert report.force_norm == pytest.approx(5.22e-5, rel=0.05)
     changes = [step.covariance_change for step in report.steps[1:]]
     assert min(changes) > 0.0
     assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-6)
     assert _refusal(report, config) is None
     record = bp.relaxation_record(report)
-    assert record["stop_reason"] == "no damped step reduced the residual"
+    assert record["stop_reason"] == \
+        "the residual is at its floor on the held set"
     text = bp.relaxation_text(record)
-    assert "; stopped: no damped step reduced the residual (" in text
+    assert "; stopped: the residual is at its floor on the held set (" in text
     assert "method" not in text
 
 

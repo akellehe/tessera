@@ -479,12 +479,16 @@ def test_the_newton_solve_uses_the_numerical_rank(content):
 
 
 def test_the_near_null_directions_are_one_per_sheet():
-    """The three near-null right singular vectors of the seeded Jacobian
-    (content (0, 0, 3), first host cell) are each supported on one sheet
-    (weight 1 on it to 1e-6) and lie in the link coordinates (length part
-    below 1e-6): they are per-sheet link directions, which is why a rank
-    decision that treats the sheets differently separates the links and not
-    the lengths."""
+    """The seeded Jacobian (content (0, 0, 3), first host cell) has a null
+    space of dimension three, read at rounding (singular values below 1e-14
+    of the largest, the next one above 1e-4 of it). It lies in the link
+    coordinates (length part below 1e-6) and holds one direction per sheet:
+    restricted to the links of any one sheet, the null space keeps exactly
+    one unit vector (the eigenvalues of N^H P_t N are 1, 0, 0). They are
+    per-sheet link directions, which is why a rank decision that treats the
+    sheets differently separates the links and not the lengths. The three
+    singular vectors themselves are any orthonormal basis of that space, so
+    the statement is made on the space."""
     spacetime, action, config = _seeded_action(FIRST_CELL, (0, 0, 3))
     relaxation = cob.HolomorphicRelaxation(action,
                                            bp.relaxation_declaration(config))
@@ -492,23 +496,18 @@ def test_the_near_null_directions_are_one_per_sheet():
     jacobian = np.asarray(relaxation.jacobian()).reshape(n, n)
     _, singular, vh = np.linalg.svd(jacobian)
     assert singular[-4] > 1e-6 * singular[0]
-    # the three near-null singular values sit at the rounding floor of the
-    # Jacobian, about 1e-11 of the largest: below the run's rank tolerance
-    # of 1e-10 and above the drivers' declared default of 1e-15
-    assert np.all(singular[-3:] < RUN.TOLERANCES["rank_tolerance"]
-                  * singular[0])
+    assert np.all(singular[-3:] < 1e-14 * singular[0])
     records = bp.edge_records(spacetime)
     edges = len(records)
-    supports = []
-    for k in range(3):
-        v = vh[-1 - k].conj()
-        assert np.linalg.norm(v[:edges]) < 1e-6
-        weights = [np.linalg.norm([v[edges + i] for i, r in enumerate(records)
-                                   if r[0] // 4 == t]) for t in range(3)]
-        sheet = int(np.argmax(weights))
-        assert weights[sheet] == pytest.approx(1.0, abs=1e-6)
-        supports.append(sheet)
-    assert sorted(supports) == [0, 1, 2]
+    null = vh[-3:].conj().T
+    assert np.linalg.norm(null[:edges]) < 1e-6
+    for sheet in range(3):
+        on_sheet = np.zeros(n)
+        for i, record in enumerate(records):
+            if record[0] // 4 == sheet:
+                on_sheet[edges + i] = 1.0
+        kept = np.linalg.eigvalsh(null.conj().T @ (on_sheet[:, None] * null))
+        np.testing.assert_allclose(kept, [0.0, 0.0, 1.0], atol=1e-6)
 
 
 def test_three_quarks_in_one_band_survive_the_relaxation():

@@ -1776,7 +1776,8 @@ std::vector<complexd> JointAction::reggeHessian() const {
   return hessian;
 }
 
-std::vector<complexd> JointAction::actionHessian() const {
+std::vector<complexd> JointAction::actionHessian(bool lengths,
+                                                 bool links) const {
   const std::size_t edges = edgeCount();
   const std::size_t size = 2 * edges;
   Eigen::MatrixXcd hessian = Eigen::MatrixXcd::Zero(
@@ -1785,12 +1786,12 @@ std::vector<complexd> JointAction::actionHessian() const {
     return hessian(static_cast<Eigen::Index>(row),
                    static_cast<Eigen::Index>(column));
   };
-  if (declaration_.gravitationalWeight != 0.0) {
+  if (lengths && declaration_.gravitationalWeight != 0.0) {
     const std::vector<complexd> regge = reggeHessian();
     for (std::size_t e = 0; e < edges; ++e)
       for (std::size_t f = 0; f < edges; ++f) at(e, f) += regge[e * edges + f];
   }
-  if (declaration_.holonomyWeight > 0.0) {
+  if (links && declaration_.holonomyWeight > 0.0) {
     const std::vector<complexd> villain = holonomyHessian();
     for (std::size_t e = 0; e < edges; ++e)
       for (std::size_t f = 0; f < edges; ++f)

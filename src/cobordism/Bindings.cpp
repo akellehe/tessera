@@ -4895,6 +4895,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "order on the declared sheets; for the dual form the exact Hessian "
            "of the dual Regge action.")
       .def("action_hessian", &JointAction::actionHessian,
+           py::arg("lengths") = true, py::arg("links") = true,
            "The Hessian of the action in the relaxed coordinates at fixed "
            "carried state: the Jacobian of (length_stationarity, "
            "link_stationarity) with respect to the squared lengths and the "
