@@ -307,9 +307,10 @@ def test_the_matched_villain_weight_at_order_ten():
 def test_the_ward_identity_on_pure_gauge_directions():
     """WP v17 line 289: at omega = 0, D - Pi(0) vanishes identically on a
     pure-gauge direction, while the paramagnetic term alone does not. Read on
-    the unit-monopole host with its three lowest modes of h_1 occupied, D by a
-    Cauchy rule along each pure-gauge direction and Pi(0) by
-    `DressedFluctuation.paramagnetic`."""
+    the unit-monopole host with its three lowest modes of h_1 occupied, D
+    from the commutator of each coupling with the generator of each
+    pure-gauge direction and Pi(0) by `DressedFluctuation.paramagnetic`: the
+    residual is 1.1e-15 and Pi(0) g alone is 0.271."""
     spacetime = bp.build_host()
     config = bp.default_config([0.5], [1.0])
     bare = cob.JointAction(spacetime, bp.action_declaration(spacetime, 0.5, 1.0))
@@ -321,8 +322,10 @@ def test_the_ward_identity_on_pure_gauge_directions():
     ward = bp.ward_read(spacetime, carrier, couplings,
                         bp.gauge_directions(spacetime, True), config)
     assert ward["directions"] == 9
-    assert ward["residual"] < 1e-12
-    assert ward["paramagnetic_alone"] > 1e-2
+    assert ward["coboundary_departure"] == 0.0
+    assert ward["residual"] < 1e-14
+    assert ward["paramagnetic_alone"] == pytest.approx(0.271241535260997,
+                                                       abs=1e-12)
 
 
 # ------------------------------------------ Section 4: Feshbach and Drazin

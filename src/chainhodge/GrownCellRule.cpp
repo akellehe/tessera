@@ -95,7 +95,8 @@ Eigen::MatrixXcd GrownCellRule::whitneyBlock(const Eigen::MatrixXcd &scaledGradi
   return M;
 }
 
-WhitneyLengthInversion GrownCellRule::invertWhitneyBlock(const Eigen::MatrixXcd &block) {
+WhitneyLengthInversion GrownCellRule::invertWhitneyBlock(const Eigen::MatrixXcd &block,
+                                                         double rankTolerance) {
   if (block.rows() != block.cols())
     throw std::invalid_argument("GrownCellRule::invertWhitneyBlock: the block must be square");
   const int d = dimensionOfEdgeCount(block.rows());
@@ -132,6 +133,7 @@ WhitneyLengthInversion GrownCellRule::invertWhitneyBlock(const Eigen::MatrixXcd 
 
   const Eigen::MatrixXcd reduced = out.scaledGradientGram.bottomRightCorner(d, d);
   Eigen::FullPivLU<Eigen::MatrixXcd> lu(reduced);
+  lu.setThreshold(rankTolerance);
   if (!lu.isInvertible())
     throw std::invalid_argument(
         "GrownCellRule::invertWhitneyBlock: the block of C*Gamma on v_1..v_d is singular");
@@ -153,7 +155,8 @@ WhitneyLengthInversion GrownCellRule::invertWhitneyBlock(const Eigen::MatrixXcd 
   return out;
 }
 
-GrownCellInversion GrownCellRule::invertVertexPairing(const Eigen::MatrixXcd &pairing) {
+GrownCellInversion GrownCellRule::invertVertexPairing(const Eigen::MatrixXcd &pairing,
+                                                      double rankTolerance) {
   const Eigen::Index n = pairing.rows();
   if (pairing.cols() != n || (n != 3 && n != 4))
     throw std::invalid_argument(
@@ -179,6 +182,7 @@ GrownCellInversion GrownCellRule::invertVertexPairing(const Eigen::MatrixXcd &pa
 
   const Eigen::MatrixXcd reduced = out.scaledGradientGram.bottomRightCorner(d, d);
   Eigen::FullPivLU<Eigen::MatrixXcd> lu(reduced);
+  lu.setThreshold(rankTolerance);
   if (!lu.isInvertible())
     throw std::invalid_argument(
         "GrownCellRule::invertVertexPairing: the block of C*Gamma on v_1..v_d is singular");

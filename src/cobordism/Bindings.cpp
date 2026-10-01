@@ -3833,7 +3833,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("embeddingPolicy",
                      &RecursiveQuotient::Options::embeddingPolicy)
       .def_readwrite("nearIsometryEpsilon",
-                     &RecursiveQuotient::Options::nearIsometryEpsilon)
+                     &RecursiveQuotient::Options::nearIsometryEpsilon,
+                     "The bound the Gram defect of the labeled fiber sum is "
+                     "certified against under CertifiedNearIsometry. 1e-15 "
+                     "by default.")
       .def_readwrite("selectedInteriorIndices",
                      &RecursiveQuotient::Options::selectedInteriorIndices)
       .def_readwrite("selectedInteriorCells",
@@ -6076,16 +6079,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "square root of it.")
       .def_static("response", &BoundStatePole::response, py::arg("A"),
                   py::arg("M"), py::arg("interface"), py::arg("s"),
-                  py::arg("rank_tolerance") = 1e-12,
+                  py::arg("rank_tolerance") = 1e-15,
                   "F_C(s), as the framework's own Schur complement supplies "
-                  "it.")
+                  "it, its rank decisions at the relative threshold "
+                  "rank_tolerance.")
       .def_static("determinant", &BoundStatePole::determinant, py::arg("A"),
                   py::arg("M"), py::arg("interface"), py::arg("s"),
                   "D_C(s) = det F_C(s).")
       .def_static("response_derivative", &BoundStatePole::responseDerivative,
                   py::arg("A"), py::arg("M"), py::arg("interface"),
-                  py::arg("s"),
-                  "F_C'(s), the exact analytic derivative of the response.")
+                  py::arg("s"), py::arg("rank_tolerance") = 1e-15,
+                  "F_C'(s), the exact analytic derivative of the response; "
+                  "rank_tolerance is the fraction of the largest pivot of the "
+                  "interior block at or below which a pivot is zero.")
       .def_static("poles", &BoundStatePole::poles, py::arg("A"), py::arg("M"),
                   py::arg("interface"),
                   py::arg("cfg") = BoundStatePoleConfig{},
@@ -6429,7 +6435,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "of an interior block at or below this fraction of the "
                      "block's largest counts as zero. 1e-15 by default.")
       .def_readwrite("dense_crossover",
-                     &LevelRecursionDeclaration::denseCrossover);
+                     &LevelRecursionDeclaration::denseCrossover,
+                     "A limit the caller may declare: the dimension at and "
+                     "above which a level is refused. None by default, and "
+                     "then a level of any dimension is built.");
 
   py::class_<RecursionBandRead>(m, "RecursionBandRead",
       "One certified fiber E_v = Ran P_v, the selection that named its band, "

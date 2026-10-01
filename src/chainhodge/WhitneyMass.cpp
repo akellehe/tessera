@@ -463,45 +463,49 @@ std::vector<int> faceIndices(const Cell &T, const std::vector<std::vector<int>> 
   return out;
 }
 
-// Roots of a polynomial with complex coefficients c[0] + c[1] t + ... + c[n] t^n
-// via the companion matrix; trailing (leading-power) coefficients below the
-// relative tolerance drop the degree.
-std::vector<Complex> polynomialRoots(std::vector<Complex> c) {
-  double scale = 0.0;
-  for (const auto &v : c) scale = std::max(scale, std::abs(v));
-  while (c.size() > 1 && std::abs(c.back()) <= 1e-14 * scale) c.pop_back();
-  const int n = static_cast<int>(c.size()) - 1;
-  if (n < 1) return {};
-  Eigen::MatrixXcd C = Eigen::MatrixXcd::Zero(n, n);
-  for (int i = 1; i < n; ++i) C(i, i - 1) = 1.0;
-  for (int i = 0; i < n; ++i) C(i, n - 1) = -c[static_cast<std::size_t>(i)] / c[static_cast<std::size_t>(n)];
-  Eigen::ComplexEigenSolver<Eigen::MatrixXcd> es(C, false);
-  std::vector<Complex> roots;
-  for (int i = 0; i < n; ++i) roots.push_back(es.eigenvalues()(i));
-  return roots;
-}
-
-// Coefficients of the degree-<=d polynomial p(t) = det((1-t) gref + t g) by
-// exact interpolation at the nodes t = 0, 1/d, ..., 1.
-std::vector<Complex> gramSegmentPolynomial(const Eigen::MatrixXcd &gref, const Eigen::MatrixXcd &g) {
-  const int d = static_cast<int>(g.rows());
-  const int n = d + 1;
-  Eigen::MatrixXcd V(n, n);
-  Eigen::VectorXcd y(n);
-  for (int i = 0; i < n; ++i) {
-    const double t = static_cast<double>(i) / static_cast<double>(d);
-    const Eigen::MatrixXcd gt = (1.0 - t) * gref + t * g;
-    y(i) = gt.determinant();
-    Complex tp = 1.0;
-    for (int j = 0; j < n; ++j) {
-      V(i, j) = tp;
-      tp *= t;
+// The eigenvalues mu_i of the pencil (to, from), the roots of
+// det(to - mu from) = 0: with A = from and B = to,
+//   det((1 - t) A + t B) = det(A) prod_i (1 + t (mu_i - 1)),
+// so the determinant along the straight segment is a product of one factor
+// per eigenvalue, each running on the straight segment from 1 to mu_i.
+//
+// Real data is carried in real arithmetic, so that an eigenvalue that is real
+// is real exactly: a symmetric pair with a positive definite A = L L^T has the
+// eigenvalues of the symmetric L^{-1} B L^{-T}, and any other real pair those
+// of the real Schur form of A^{-1} B. Complex data has the eigenvalues of
+// A^{-1} B. A must be nonsingular.
+std::vector<Complex> pencilEigenvalues(const Eigen::MatrixXcd &from, const Eigen::MatrixXcd &to) {
+  const Eigen::Index d = from.rows();
+  std::vector<Complex> out;
+  out.reserve(static_cast<std::size_t>(d));
+  const bool real = (from.imag().array() == 0.0).all() && (to.imag().array() == 0.0).all();
+  if (real) {
+    const Eigen::MatrixXd a = from.real();
+    const Eigen::MatrixXd b = to.real();
+    const bool symmetric = (a.array() == a.transpose().array()).all() &&
+                           (b.array() == b.transpose().array()).all();
+    if (symmetric) {
+      const Eigen::LLT<Eigen::MatrixXd> cholesky(a);
+      if (cholesky.info() == Eigen::Success) {
+        const Eigen::MatrixXd half = cholesky.matrixL().solve(b);        // L^{-1} B
+        const Eigen::MatrixXd halfTransposed = half.transpose();         // B L^{-T}
+        Eigen::MatrixXd c = cholesky.matrixL().solve(halfTransposed);    // L^{-1} B L^{-T}
+        const Eigen::MatrixXd cTransposed = c.transpose();
+        c = 0.5 * (c + cTransposed);
+        const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(c, Eigen::EigenvaluesOnly);
+        for (Eigen::Index i = 0; i < d; ++i) out.emplace_back(solver.eigenvalues()(i), 0.0);
+        return out;
+      }
     }
+    const Eigen::MatrixXd quotient = a.fullPivLu().solve(b);
+    const Eigen::EigenSolver<Eigen::MatrixXd> solver(quotient, false);
+    for (Eigen::Index i = 0; i < d; ++i) out.push_back(solver.eigenvalues()(i));
+    return out;
   }
-  const Eigen::VectorXcd coef = V.fullPivLu().solve(y);
-  std::vector<Complex> c(static_cast<std::size_t>(n));
-  for (int j = 0; j < n; ++j) c[static_cast<std::size_t>(j)] = coef(j);
-  return c;
+  const Eigen::MatrixXcd quotient = from.fullPivLu().solve(to);
+  const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(quotient, false);
+  for (Eigen::Index i = 0; i < d; ++i) out.push_back(solver.eigenvalues()(i));
+  return out;
 }
 
 }  // namespace
@@ -559,12 +563,20 @@ namespace {
 /// segment itself, where there is no continuation to take.
 ///
 /// The label is rounded out of the tracked argument rather than the value being
-/// built from it. The tracked argument carries the error of the polynomial roots
-/// -- a multiple root is only accurate to a fractional power of the rounding
-/// level -- which on real positive data would show up as a spurious imaginary
-/// part of the volume. Rounding to an integer discards that error entirely, and
-/// fails only where the tracked argument is a full half turn out, which is the
-/// condition that would have flipped the sign test it replaces.
+/// built from it. The tracked argument carries the error of the pencil's
+/// eigenvalues -- a multiple eigenvalue is only accurate to a fractional power
+/// of the rounding level -- which on real positive data would show up as a
+/// spurious imaginary part of the volume. Rounding to an integer discards that
+/// error entirely, and fails only where the tracked argument is a full half
+/// turn out, which is the condition that would have flipped the sign test it
+/// replaces.
+///
+/// A root lies on the segment when the segment starts on a zero of det g or
+/// when an eigenvalue of the pencil is real and not positive. Real Gram
+/// matrices are carried in real arithmetic, where a real eigenvalue is real
+/// exactly, so real Lorentzian data is read as a root on the segment by an
+/// exact comparison; complex data is continued on the side the imaginary part
+/// of its eigenvalue selects.
 struct SegmentContinuation {
   /// True when the segment carried an argument that could be tracked. False
   /// both when a root sits on the segment and when the determinant is constant
@@ -577,21 +589,24 @@ struct SegmentContinuation {
 
 SegmentContinuation segmentWinding(const Eigen::MatrixXcd &gramFrom, int windingFrom,
                                    const Eigen::MatrixXcd &gramTo) {
-  const std::vector<Complex> coef = gramSegmentPolynomial(gramFrom, gramTo);
-  const std::vector<Complex> roots = polynomialRoots(coef);
-  if (roots.empty()) {
-    // A degree-0 polynomial: det g(t) is constant along the segment, so it
-    // makes no turn and the declared sheet stands unchanged.
-    return {false, false, windingFrom};
-  }
+  // The same geometry at both ends: det g(t) is constant along the segment,
+  // so it makes no turn and the declared sheet stands unchanged.
+  if (gramFrom == gramTo) return {false, false, windingFrom};
+  // det g(t) = det(gramFrom) prod_i (1 + t (mu_i - 1)) over the eigenvalues
+  // mu_i of the pencil (gramTo, gramFrom). The segment starts on a root when
+  // det(gramFrom) is zero, and the factor of mu_i has its root at
+  // t = 1 / (1 - mu_i), which lies on the segment exactly when mu_i is real
+  // and not positive. Off the roots the factor runs on the straight segment
+  // from 1 to mu_i, which does not meet the cut of the argument, so it turns
+  // by the principal argument of mu_i.
+  const Complex determinantFrom = gramFrom.determinant();
+  if (determinantFrom == Complex(0.0, 0.0)) return {false, true, windingFrom};
   double dtheta = 0.0;
-  for (const auto &r : roots) {
-    const double tol = 1e-12 * (1.0 + std::abs(r));
-    if (std::abs(r.imag()) <= tol && r.real() >= -tol && r.real() <= 1.0 + tol)
-      return {false, true, windingFrom};
-    dtheta += principalArg(Complex(1.0, 0.0) - r) - principalArg(-r);
+  for (const Complex &mu : pencilEigenvalues(gramFrom, gramTo)) {
+    if (mu.imag() == 0.0 && mu.real() <= 0.0) return {false, true, windingFrom};
+    dtheta += principalArg(mu);
   }
-  const double from = principalArg(gramFrom.determinant()) +
+  const double from = principalArg(determinantFrom) +
                       2.0 * kPi * static_cast<double>(windingFrom);
   const double to = principalArg(gramTo.determinant());
   return {true, false,

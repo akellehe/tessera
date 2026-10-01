@@ -212,7 +212,9 @@ struct CovarianceCertificate {
   /// similarity that makes a pure gauge isospectral to \f$ L_k \f$.
   double pureGaugeSimilarityProbe{std::numeric_limits<double>::quiet_NaN()};
   /// \f$ \max_k \mathrm{cond}_2(M_k^U) \f$ (of the dressed sparse object of the
-  /// preset), estimated by power and inverse iteration.
+  /// preset), estimated by power and inverse iteration, each run until its
+  /// estimate stops increasing (the estimate of either iteration is
+  /// nondecreasing and bounded, so the iteration ends at its fixed point).
   double conditionEstimate{std::numeric_limits<double>::quiet_NaN()};
   /// The tolerance policy of the scaling verification plan,
   /// \f$ \tau = \kappa\,n\,\epsilon_m\,\mathrm{cond} \f$ with \f$ \kappa = 10 \f$,

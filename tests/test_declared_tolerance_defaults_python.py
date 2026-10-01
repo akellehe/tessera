@@ -38,7 +38,8 @@ def _argument_defaults(method):
     (cob.BoundStatePoleConfig, ("rank_tolerance",)),
     (cob.DressedFluctuationDeclaration, ("tolerance",)),
     (cob.LevelRecursionDeclaration, ("tolerance", "rank_tolerance")),
-    (cob.RecursiveQuotient.Options, ("tolerance", "rankTolerance")),
+    (cob.RecursiveQuotient.Options,
+     ("tolerance", "rankTolerance", "nearIsometryEpsilon")),
     (obs.IsospinDoubletConfig,
      ("grouping_tolerance", "projector_tolerance", "invariance_tolerance",
       "commutant_tolerance", "isotypic_tolerance", "hermiticity_tolerance",
@@ -66,6 +67,10 @@ def test_every_tolerance_field_defaults_to_1e_15(record, fields):
     (obs.SheetAttachment.attachmentMatrix, ("fullRankTolerance",)),
     (ch.PencilSchur.feshbach, ("rank_tolerance", "resonance_radius")),
     (ch.DressedAnchor.profile, ("tolerance",)),
+    (ch.GrownCellRule.invertWhitneyBlock, ("rank_tolerance",)),
+    (ch.GrownCellRule.invertVertexPairing, ("rank_tolerance",)),
+    (cob.BoundStatePole.response, ("rank_tolerance",)),
+    (cob.BoundStatePole.response_derivative, ("rank_tolerance",)),
 ])
 def test_every_tolerance_argument_defaults_to_1e_15(method, arguments):
     defaults = _argument_defaults(method)
@@ -82,6 +87,17 @@ def test_the_isospin_detector_keeps_its_criteria():
     assert config.track_overlap_threshold == 0.5
     assert config.min_frames == 2
     assert config.condition_number_cap == 1e8
+
+
+def test_the_size_limit_of_a_level_is_not_declared():
+    """The level recursion refuses a level at or above a dense crossover only
+    when the caller declares one; none is declared as built."""
+    declaration = cob.LevelRecursionDeclaration()
+    assert declaration.dense_crossover is None
+    declaration.dense_crossover = 512
+    assert declaration.dense_crossover == 512
+    declaration.dense_crossover = None
+    assert declaration.dense_crossover is None
 
 
 def test_the_move_and_admissibility_tolerances_of_a_node():

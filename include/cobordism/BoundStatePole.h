@@ -226,13 +226,14 @@ class BoundStatePole {
  public:
   /// The Feshbach response \f$ F_C(s) \f$ of the pencil \f$ (A,M) \f$ onto the
   /// \p interface coordinates, as the framework's own Schur complement
-  /// supplies it.
+  /// supplies it. \p rankTolerance is the relative threshold of the rank
+  /// decisions of that Schur complement (`PencilSchur::feshbach`).
   /// @throws std::invalid_argument when \p A and \p M are not square of one
   ///   size, or when an interface index is out of range.
   [[nodiscard]] static chainhodge::FeshbachResult response(
       const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
       const std::vector<int> &interface, std::complex<double> s,
-      double rankTolerance = 1e-12);
+      double rankTolerance = 1e-15);
 
   /// \f$ D_C(s)=\det F_C(s) \f$. NaN when the interior block is singular at
   /// \p s, since the response is then not defined there.
@@ -250,11 +251,15 @@ class BoundStatePole {
   /// which follows from \f$ dP/ds=-M \f$ in closed form. At a simple pole
   /// \f$ s_C \f$ the residue \f$ R \f$ of \f$ F_C^{-1} \f$ satisfies
   /// \f$ \operatorname{tr}(RF_C'(s_C))=1 \f$, the identity a residue is
-  /// certified by.
+  /// certified by. \p rankTolerance is the fraction of the largest pivot of
+  /// the interior block \f$ P_{II} \f$ at or below which a pivot is zero; an
+  /// interior block that is singular at that threshold has no response at
+  /// \p s, and the derivative returned is then the empty matrix.
   /// @throws std::invalid_argument as `response` does.
   [[nodiscard]] static Eigen::MatrixXcd responseDerivative(
       const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
-      const std::vector<int> &interface, std::complex<double> s);
+      const std::vector<int> &interface, std::complex<double> s,
+      double rankTolerance = 1e-15);
 
   /// The zeros of \f$ D_C \f$ with their multiplicities, Jordan structure,
   /// residues, separations and subspace residuals, read exactly from the

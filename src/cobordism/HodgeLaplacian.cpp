@@ -606,13 +606,19 @@ Eigen::MatrixXcd entropyDerivativeVelocity(const SpectralEntropyData &data,
            (i == j ? std::complex<double>{probability[i] * traceVelocity, 0.0}
                    : std::complex<double>{0.0, 0.0})) /
           T;
-      // Divided difference of log; the coincident case is the derivative 1/p.
-      const double gap = probability[i] - probability[j];
+      // Divided difference of log, (log p_i - log p_j) / (p_i - p_j), which is
+      // symmetric in the pair, in the form log1p(x) / (x b) with b the smaller
+      // probability and x = (a - b) / b >= 0 for the larger a: the difference
+      // of two nearby probabilities is exact, and log1p(x) / x carries no
+      // cancellation as x goes to zero, where it is 1 and the divided
+      // difference is the derivative 1 / p.
+      const double smaller = std::min(probability[i], probability[j]);
+      const double larger = std::max(probability[i], probability[j]);
+      const double relativeGap = (larger - smaller) / smaller;
       const double dividedDifference =
-          std::abs(gap) <= std::numeric_limits<double>::epsilon() *
-                               std::max(probability[i], 1.0) * 64.0
-              ? 1.0 / probability[i]
-              : (std::log(probability[i]) - std::log(probability[j])) / gap;
+          relativeGap == 0.0
+              ? 1.0 / smaller
+              : std::log1p(relativeGap) / (relativeGap * smaller);
       logVelocity(i, j) = dividedDifference * rDot;
     }
   }

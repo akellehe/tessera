@@ -258,12 +258,12 @@ complexd BoundStatePole::determinant(const Eigen::MatrixXcd &A,
 
 Eigen::MatrixXcd BoundStatePole::responseDerivative(
     const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
-    const std::vector<int> &interface, complexd s) {
+    const std::vector<int> &interface, complexd s, double rankTolerance) {
   requireSquarePair(A, M, "BoundStatePole::responseDerivative");
   const Partition partition = partitionOf(
       static_cast<int>(A.rows()), interface,
       "BoundStatePole::responseDerivative");
-  return responseAtShift(A, M, partition, s, 1e-12).derivative;
+  return responseAtShift(A, M, partition, s, rankTolerance).derivative;
 }
 
 BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,

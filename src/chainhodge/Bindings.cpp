@@ -813,9 +813,10 @@ Reference: Ericsson & Ruhe, Mathematics of Computation 35, 1980.)doc")
 (C = 14400/det(g/C) in three dimensions, undetermined in two), and the connection
 U_vw = det M_vw of the fiber transport.)doc")
       .def_static("whitneyBlock", &GrownCellRule::whitneyBlock, py::arg("scaled_gradient_gram"))
-      .def_static("invertWhitneyBlock", &GrownCellRule::invertWhitneyBlock, py::arg("block"))
+      .def_static("invertWhitneyBlock", &GrownCellRule::invertWhitneyBlock, py::arg("block"),
+           py::arg("rank_tolerance") = 1e-15)
       .def_static("invertVertexPairing", &GrownCellRule::invertVertexPairing,
-           py::arg("pairing"))
+           py::arg("pairing"), py::arg("rank_tolerance") = 1e-15)
       .def_static("determinantPairing", &GrownCellRule::determinantPairing, py::arg("frames"),
            py::arg("images"))
       .def_static("gaugeInvariantPairing", &GrownCellRule::gaugeInvariantPairing,

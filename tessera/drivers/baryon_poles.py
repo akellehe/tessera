@@ -285,9 +285,6 @@ DECLARED_BETAS = (0.5, 1.0, 2.0, 5.0)
 #: projected out by the Drazin inverse), or the squared lengths alone.
 DECLARED_ELIMINATION = "lengths-and-phases"
 ELIMINATIONS = ("lengths-and-phases", "lengths")
-#: The Cauchy rule for the diamagnetic term along a pure-gauge direction.
-DECLARED_WARD_CONTOUR_RADIUS = 0.1
-DECLARED_WARD_CONTOUR_NODES = 8
 #: The squared edge length of the regular tetrahedron (the paper's a^2 = 8).
 DECLARED_EDGE_SQUARED = 8.0
 #: The unit Dirac monopole.
@@ -322,7 +319,9 @@ TOLERANCES = (
     ("rank_tolerance",
      "tau, the relative singular-value threshold of the step's rank "
      "decision: a singular value of the Jacobian below this fraction of the "
-     "largest counts as zero in the minimum-norm step"),
+     "largest counts as zero in the minimum-norm step; and the same threshold "
+     "on the singular values of the face coboundary in the minimum-norm "
+     "solve for the declared monopole connection's edge phases"),
     ("step_tolerance",
      "the amount by which a trial of the line search must lower the "
      "residual norm of the stationarity equations to be accepted, and the "
@@ -367,7 +366,9 @@ TOLERANCES = (
      "rather than a ratio of traces"),
     ("elimination_tolerance",
      "the relative threshold of the rank decisions of the Drazin "
-     "elimination's Feshbach read of the bare stiffness A"),
+     "elimination's Feshbach read of the bare stiffness A, and the fraction "
+     "of the largest singular value of the pure-gauge directions at or below "
+     "which a singular value counts as zero in their rank"),
     ("pure_gauge_tolerance",
      "the relative residual of the null projector of A on the pure-gauge "
      "directions at or below which the null space of A is read as pure "
@@ -388,7 +389,10 @@ TOLERANCES = (
      "the separation at or below which an eigenvalue of the isotypic "
      "projector of the refined cell is one, and at or below which two "
      "eigenvalues of the averaged operator on that isotypic component form "
-     "one refined band, in the spectral fingerprint's refinement read"),
+     "one refined band, in the spectral fingerprint's refinement read; and "
+     "the fraction of the largest singular value of that isotypic "
+     "component's basis at or below which a singular value counts as zero "
+     "in its pseudo-inverse"),
     ("attachment_rank_tolerance",
      "the smallest singular value at or above which the sheet-to-sheet "
      "attachment matrix of quark condition 5 has full rank"),
@@ -396,6 +400,11 @@ TOLERANCES = (
      "the relative threshold of the rank decisions of the level recursion's "
      "interior solves: a pivot or a singular value of an interior block at "
      "or below this fraction of the block's largest counts as zero"),
+    ("grown_cell_rank_tolerance",
+     "the fraction of the largest pivot of a grown cell's metric block (the "
+     "inherited pairing on the vertices other than the first) at or below "
+     "which a pivot counts as zero, so that the block has no inverse and the "
+     "grown-cell rule reads no lengths from it"),
     ("move_tolerance",
      "the amount by which a Pachner move must lower the residual norm of "
      "the stationarity equations to be committed"),
@@ -1589,7 +1598,9 @@ def drazin_elimination(stiffness, directions, radius,
     the null space compares with the pure-gauge directions.
 
     ``tolerance`` is the relative threshold of the rank decisions of the
-    Feshbach read, and ``pure_gauge_tolerance`` the residual
+    Feshbach read and of the rank of the pure-gauge directions (the number
+    of their singular values above that fraction of the largest), and
+    ``pure_gauge_tolerance`` the residual
     ||Pi_0 G - G|| / ||G|| on the pure-gauge directions G at or below which
     the null space is read as pure gauge.
     """
@@ -1639,7 +1650,9 @@ def drazin_elimination(stiffness, directions, radius,
     if directions is not None:
         # the pure-gauge directions lie in ran(Pi_0), and Pi_0 has no more
         # rank than they span
-        gauge_rank = int(np.linalg.matrix_rank(directions))
+        singular = np.linalg.svd(directions, compute_uv=False)
+        gauge_rank = (int(np.sum(singular > tolerance * singular[0]))
+                      if singular.size and singular[0] > 0.0 else 0)
         record["gauge_dimension"] = gauge_rank
         record["gauge_projector_residual"] = float(
             np.linalg.norm(null @ directions - directions)
@@ -1659,6 +1672,73 @@ def occupied_projector(carrier, occupied):
     return vectors[:, order] @ np.linalg.inv(vectors)[order, :]
 
 
+def gauge_vertex_function(records, phase_shift):
+    """chi, the vertex function of a pure-gauge direction, and the departure
+    of the direction from the coboundary of chi.
+
+    A pure-gauge direction moves the phase of each stored edge (x, y) by
+    chi_y - chi_x (`gauge_directions`). ``records`` are the stored edges
+    (`edge_records`) and ``phase_shift`` the shift of each. chi is read
+    along a spanning tree of each connected component: its lowest vertex is
+    the root and carries chi = 0, the vertices are reached breadth first,
+    the edges of a vertex taken in the order of ``records``, and each tree
+    edge gives chi_y = chi_x + shift or chi_x = chi_y - shift. The constant
+    of a component is the one freedom of chi and moves no link.
+
+    Returns chi as a dictionary over the vertices and the Euclidean norm of
+    shift - (chi_y - chi_x) over all the edges: zero to rounding for a
+    coboundary, and the size of what the tree could not absorb for a shift
+    that is not one."""
+    vertices = sorted({v for pair in records for v in pair})
+    neighbours = {v: [] for v in vertices}
+    for (x, y), shift in zip(records, phase_shift):
+        neighbours[x].append((y, complex(shift)))
+        neighbours[y].append((x, -complex(shift)))
+    chi = {}
+    for root in vertices:
+        if root in chi:
+            continue
+        chi[root] = 0j
+        reached = [root]
+        for vertex in reached:
+            for other, shift in neighbours[vertex]:
+                if other not in chi:
+                    chi[other] = chi[vertex] + shift
+                    reached.append(other)
+    departure = math.sqrt(sum(
+        abs(complex(shift) - (chi[y] - chi[x])) ** 2
+        for (x, y), shift in zip(records, phase_shift)))
+    return chi, departure
+
+
+def gauge_generator(spacetime, phase_shift):
+    """Lambda_g, the generator of a pure-gauge direction on the edge
+    cochains, and the direction's departure from a coboundary.
+
+    The direction is the gauge transformation U_xy -> g_x^{-1} U_xy g_y with
+    g = exp(i chi) (`gauge_vertex_function`). An edge cochain is carried in
+    the frame at the lowest vertex of its cell (`CovariantChainHodge`), so
+    the transformation acts on the cochains by the diagonal matrix
+    D = diag(exp(i chi_{min sigma})) over the degree-one cells sigma in the
+    chain complex's order, the mode order of h_1, and h_1 goes to
+    D^{-1} h_1 D. The generator is Lambda_g = diag(chi_{min sigma})."""
+    chi, departure = gauge_vertex_function(edge_records(spacetime),
+                                           phase_shift)
+    cells = cob.ChainComplex.fromSpacetime(spacetime).kSimplexVertices(1)
+    return (np.diag([chi[min(int(v) for v in cell)] for cell in cells]),
+            departure)
+
+
+def gauge_derivative(coupling, generator):
+    """d_g O_a, the derivative of a coupling along a pure-gauge direction.
+
+    Along the direction h_1 is D(s)^{-1} h_1 D(s) with
+    D(s) = exp(i s Lambda_g) at every geometry, so each coupling
+    O_a = dh_1 / df_a is D(s)^{-1} O_a D(s) and its derivative at s = 0 is
+    the commutator i (O_a Lambda_g - Lambda_g O_a), a closed form."""
+    return 1j * (coupling @ generator - generator @ coupling)
+
+
 def ward_read(spacetime, carrier, couplings, directions, config):
     """The Ward identity of the retained fluctuations: (D - Pi(0)) g = 0 on
     every pure-gauge direction g.
@@ -1666,15 +1746,17 @@ def ward_read(spacetime, carrier, couplings, directions, config):
     Pi(0) is `DressedFluctuation.paramagnetic(0)` of the carrier with the
     declared couplings. D g is the diamagnetic term along g,
     (D g)_a = tr(P_occ d_g O_a), with P_occ the occupied Riesz projector and
-    d_g O_a the derivative of the coupling O_a along the pure-gauge direction,
-    formed by the Cauchy rule on a circle of the declared radius in the
-    complex gauge parameter: the direction is a gauge transformation for
-    every complex value of the parameter, so O_a is entire along it and the
-    rule converges geometrically in the node count. The residual is
+    d_g O_a the derivative of the coupling O_a along the pure-gauge
+    direction, the commutator of O_a with the direction's generator on the
+    edge cochains (`gauge_derivative`, `gauge_generator`). The residual is
     ||(D - Pi(0)) g|| / (||Pi(0)|| ||g||), maximized over the directions, and
     ``paramagnetic_alone`` is the largest same ratio for Pi(0) g by itself,
-    the size the identity cancels. The
-    geometry is restored exactly afterwards."""
+    the size the identity cancels. The generator is read from the phase
+    components of a direction; ``coboundary_departure`` is the largest
+    distance of a direction's phase shift from the coboundary of the vertex
+    function the generator is built on (`gauge_vertex_function`), zero to
+    rounding on a pure-gauge direction, and a direction that is not pure
+    gauge is read all the same with its departure beside the residual."""
     if directions is None:
         return {"directions": 0}
     n = carrier.shape[0]
@@ -1692,38 +1774,27 @@ def ward_read(spacetime, carrier, couplings, directions, config):
         return {"directions": int(directions.shape[1]),
                 "unmeasured": str(error)}
     projector = occupied_projector(carrier, 3)
-    edges = spacetime.getEdgeList().toVector()
-    saved = [complex(edge.getPhase()) for edge in edges]
-    radius = config["ward_contour_radius"]
-    nodes = config["ward_contour_nodes"]
-    residuals, paramagnetic_parts = [], []
-    try:
-        for column in range(directions.shape[1]):
-            g = directions[:, column]
-            shift = g[len(edges):]
-            derivative = [np.zeros((n, n), dtype=complex) for _ in couplings]
-            for k in range(nodes):
-                root = cmath.exp(2j * math.pi * k / nodes)
-                for edge, phase, step in zip(edges, saved, shift):
-                    edge.setPhase(phase + radius * root * step)
-                weight = root.conjugate() / (nodes * radius)
-                for a, o in enumerate(fluctuation_couplings(spacetime, True)):
-                    derivative[a] += weight * o
-            for edge, phase in zip(edges, saved):
-                edge.setPhase(phase)
-            diamagnetic = np.array([np.sum(projector * d.T)
-                                    for d in derivative])
-            polarization = paramagnetic @ g
-            scale = np.linalg.norm(paramagnetic) * np.linalg.norm(g)
-            residuals.append(float(np.linalg.norm(diamagnetic - polarization)
-                                   / scale))
-            paramagnetic_parts.append(float(np.linalg.norm(polarization)
-                                            / scale))
-    finally:
-        for edge, phase in zip(edges, saved):
-            edge.setPhase(phase)
+    edges = len(spacetime.getEdgeList().toVector())
+    residuals, paramagnetic_parts, departures = [], [], []
+    for column in range(directions.shape[1]):
+        g = directions[:, column]
+        generator, departure = gauge_generator(spacetime, g[edges:])
+        departures.append(departure)
+        diamagnetic = np.array([
+            np.sum(projector * gauge_derivative(o, generator).T)
+            for o in couplings])
+        polarization = paramagnetic @ g
+        scale = np.linalg.norm(paramagnetic) * np.linalg.norm(g)
+        residuals.append(float(np.linalg.norm(diamagnetic - polarization)
+                               / scale))
+        paramagnetic_parts.append(float(np.linalg.norm(polarization)
+                                        / scale))
     return {"directions": int(directions.shape[1]),
-            "contour_radius": radius, "contour_nodes": nodes,
+            "gauge_derivative": (
+                "d_g O_a = i (O_a Lambda_g - Lambda_g O_a), the commutator "
+                "with the generator of the gauge direction on the edge "
+                "cochains"),
+            "coboundary_departure": max(departures),
             "residual": max(residuals),
             "paramagnetic_alone": max(paramagnetic_parts)}
 
@@ -2655,7 +2726,8 @@ def evaluate_content(content, kappa, beta, config):
         fibre_lift_tolerance=declared_tolerance(config,
                                                 "fibre_lift_tolerance"),
         attachment_rank_tolerance=declared_tolerance(
-            config, "attachment_rank_tolerance"))
+            config, "attachment_rank_tolerance"),
+        covariance=matrix(action.declaration.covariance))
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
@@ -3271,7 +3343,10 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
         values, vectors = np.linalg.eig(isotypic)
         isotypic_tolerance = declared_tolerance(config, "isotypic_tolerance")
         span = vectors[:, np.abs(values - 1.0) <= isotypic_tolerance]
-        compressed = np.linalg.pinv(span) @ fine["averaged"] @ span
+        # the pseudo-inverse of the span counts a singular value at or below
+        # the declared tolerance times the largest as zero
+        compressed = (np.linalg.pinv(span, rcond=isotypic_tolerance)
+                      @ fine["averaged"] @ span)
         energies, mixing = np.linalg.eig(compressed)
         candidates = span @ mixing
         shared = [k for k, e in enumerate(REFINED_EDGES)
@@ -3369,11 +3444,158 @@ def fingerprint_text(fingerprint):
         relabeling, refinement)
 
 
+def sheets_of(spacetime):
+    """The sheets of a complex as it stands, in the literal case of the sheet
+    convention (WP v18 §8, "Sheet convention (adopted)": k isomorphic copies
+    of a base complex, disjoint, the sheet number a superselection datum of
+    the complex): its connected components.
+
+    ``components`` lists the connected components, each as the ascending ids
+    of its vertices, in ascending order of their smallest vertex, and
+    ``count`` is their number. ``cells`` gives, per component, the number of
+    its cells of every degree from zero to the dimension. ``copies`` says
+    whether every component is a copy of the first under the correspondence
+    that sends the j-th smallest vertex of one to the j-th smallest vertex of
+    the other, the correspondence `build_host` labels the sheets by: the
+    cells of every degree are then the same sets of positions. The squared
+    lengths and the connection on corresponding edges are the separate read
+    of `SheetedSupport.certifyIsomorphism`."""
+    complex_ = cob.ChainComplex.fromSpacetime(spacetime)
+    dimension = int(complex_.dimension())
+    vertices = sorted(int(cell[0]) for cell in complex_.kSimplexVertices(0))
+    parent = {v: v for v in vertices}
+
+    def root(v):
+        while parent[v] != v:
+            parent[v] = parent[parent[v]]
+            v = parent[v]
+        return v
+
+    for a, b in complex_.kSimplexVertices(1):
+        low, high = sorted((root(int(a)), root(int(b))))
+        parent[high] = low
+    members = {}
+    for v in vertices:
+        members.setdefault(root(v), []).append(v)
+    components = [members[r] for r in sorted(members)]
+    sheet = {v: t for t, component in enumerate(components)
+             for v in component}
+    place = {v: j for component in components
+             for j, v in enumerate(component)}
+    shapes = [[set() for _ in range(dimension + 1)] for _ in components]
+    for degree in range(dimension + 1):
+        for cell in complex_.kSimplexVertices(degree):
+            cell = [int(v) for v in cell]
+            shapes[sheet[cell[0]]][degree].add(
+                tuple(sorted(place[v] for v in cell)))
+    return {"count": len(components),
+            "components": components,
+            "cells": [[len(cells) for cells in shape] for shape in shapes],
+            "copies": all(shape == shapes[0] for shape in shapes)}
+
+
+def sheet_occupations(spacetime, covariance, sheets, degree=1):
+    """n_t, the occupation every sheet of ``sheets`` (`sheets_of`) carries:
+    the trace of the covariance Gamma over the carrier's cells on that sheet
+    (WP v18 §7: tr Gamma = N, the number of occupied modes). The carrier's
+    cells are the degree-``degree`` cells of the complex in the chain
+    complex's order, which is the order of the modes of h_degree and so of
+    Gamma. Raises `ValueError` when the covariance is not a matrix over those
+    cells."""
+    cells = cob.ChainComplex.fromSpacetime(spacetime).kSimplexVertices(degree)
+    gamma = np.asarray(covariance, dtype=complex)
+    if gamma.shape != (len(cells), len(cells)):
+        raise ValueError(
+            "the covariance has shape %s and the carrier has %d cells of "
+            "degree %d" % (gamma.shape, len(cells), degree))
+    sheet = {v: t for t, component in enumerate(sheets["components"])
+             for v in component}
+    occupations = [0j] * sheets["count"]
+    for index, cell in enumerate(cells):
+        occupations[sheet[int(cell[0])]] += gamma[index, index]
+    return occupations
+
+
+def sheet_count_evidence(spacetime):
+    """The evidence "three-sheeted-support" of quark condition 2 (WP v18 §10:
+    the colour-spin fibre is on a three-sheeted support), measured on the
+    complex (`sheets_of`): it holds when the complex has `SHEETS` connected
+    components and they are copies of one base complex. The detail carries
+    the measured number of components and the cells of each."""
+    sheets = sheets_of(spacetime)
+    held = sheets["count"] == SHEETS and sheets["copies"]
+    degrees = len(sheets["cells"][0]) - 1
+    if sheets["copies"]:
+        detail = ("sheet number %d: the connected components of the complex, "
+                  "copies of one base complex of %s cells of degrees 0 to %d "
+                  "under the ascending correspondence of their vertices"
+                  % (sheets["count"], sheets["cells"][0], degrees))
+    else:
+        detail = ("%d connected components that are not copies of one base "
+                  "complex under the ascending correspondence of their "
+                  "vertices: cells of degrees 0 to %d per component %s"
+                  % (sheets["count"], degrees, sheets["cells"]))
+    return obs.QuarkConditionEvidence("three-sheeted-support", held, detail)
+
+
+def occupation_parity_evidence(spacetime, covariance,
+                               tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+    """The evidence "odd-occupation-parity" of quark condition 4 (WP v18 §10:
+    a quark is a single occupied mode of its fibre, so its occupation parity
+    is odd; §12: a baryon carried by one three-sheeted cluster has one
+    occupied mode per sheet), measured on the solved state: the occupation
+    of every sheet is the trace of the covariance on that sheet's modes
+    (`sheet_occupations`), and its parity is that of the integer it is
+    within ``tolerance`` of. The evidence holds when every sheet's
+    occupation is an odd integer. The detail carries the occupations, their
+    sum tr Gamma and, for a sheet whose occupation is not an integer at the
+    tolerance, its distance from the nearest one. Without a covariance, or
+    with one that is not over the carrier's cells, the evidence is not
+    evaluable and says why."""
+    name = "odd-occupation-parity"
+    E = obs.QuarkConditionEvidence
+    if covariance is None:
+        return E(name, None, "the covariance of the solved state was not "
+                             "handed to the read")
+    sheets = sheets_of(spacetime)
+    try:
+        occupations = sheet_occupations(spacetime, covariance, sheets)
+    except ValueError as error:
+        return E(name, None, str(error))
+
+    def number(n):
+        return ("%.16g" % n.real if n.imag == 0.0
+                else "%.16g%+.3gi" % (n.real, n.imag))
+
+    held, parities = True, []
+    for n in occupations:
+        if not (math.isfinite(n.real) and math.isfinite(n.imag)):
+            held = False
+            parities.append("%s is not a number" % number(n))
+            continue
+        nearest = int(round(n.real))
+        distance = abs(n - nearest)
+        if distance > tolerance:
+            held = False
+            parities.append("%s is %.3g from the integer %d, above the "
+                            "tolerance %.3g"
+                            % (number(n), distance, nearest, tolerance))
+            continue
+        held = held and nearest % 2 == 1
+        parities.append("(-1)^%d" % nearest)
+    detail = ("occupation per sheet %s (the trace of the covariance on each "
+              "sheet's modes), tr Gamma = %s; parity per sheet %s"
+              % ([number(n) for n in occupations],
+                 number(sum(occupations, 0j)), parities))
+    return E(name, held, detail)
+
+
 def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                      report, anchor=None, fingerprint=None,
                      tolerance=DECLARED_CERTIFICATE_TOLERANCE,
                      fibre_lift_tolerance=DECLARED_TOLERANCE,
-                     attachment_rank_tolerance=DECLARED_TOLERANCE):
+                     attachment_rank_tolerance=DECLARED_TOLERANCE,
+                     covariance=None):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
@@ -3382,7 +3604,12 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     sector; every sheet must carry them. Anything that needs several
     cobordism frames is left unmeasured and so reads "not evaluable", and so
     does every piece of evidence read from the recursion's completed turn
-    when the recursion refused to take one (`recursion_read`). The
+    when the recursion refused to take one (`recursion_read`). The number of
+    sheets of condition 2 is measured on the complex (`sheet_count_evidence`)
+    and the occupation parity of condition 4 on ``covariance``, the
+    covariance of the solved state as a matrix over the carrier's cells
+    (`occupation_parity_evidence`); without it that evidence is not
+    evaluable. The
     certificates are graded at ``tolerance``; the fibre lift holds when
     ``symmetry_residual`` is at or below ``fibre_lift_tolerance``, and the
     sheet-to-sheet attachment has full rank when its smallest singular value
@@ -3430,7 +3657,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                                 for n in recursion["transport_norms"]),
                     lambda: "inter-component transport norms %s"
                     % recursion["transport_norms"])],
-        [E("three-sheeted-support", True, "%d sheets" % SHEETS),
+        [sheet_count_evidence(spacetime),
          E("sheet-isomorphism", bool(isomorphism.isomorphic),
            "length residual %.3g, connection residual %.3g"
            % (isomorphism.squared_length_residual,
@@ -3452,8 +3679,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
            "block-scalar on each doublet times the sheets to relative "
            "residual %.3g" % symmetry_residual)],
         anchor_evidence(anchor),
-        [E("odd-occupation-parity", True,
-           "one occupied mode of the fibre per quark: parity (-1)^1")],
+        [occupation_parity_evidence(spacetime, covariance, tolerance)],
         [E("color-transport-full-rank",
            bool(attachment.certificate.holds()),
            "det S = %s (sheet-to-sheet attachment)"
@@ -4149,8 +4375,6 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "regge_hinges": regge_hinges,
         "villain_order": checked_villain_order(villain_order),
         "elimination": elimination,
-        "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
-        "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         **declared_tolerances(tolerances),
         **declared_limits(limits),
         **declared_solve_options(solve),
