@@ -12,8 +12,10 @@ Exact identities under test, with their domains:
               left-kernel compatibility check in the non-normal regime;
   band        F_B(lam) = L_BB - lam I - L_BI (L_II - lam I)^{-1} L_IB with
               det(L - lam) = det(L_II - lam) det F_B(lam) exactly; algebraic
-              multiplicity = det-winding (response + interior reported
-              separately), geometric = dim ker F_B(lam);
+              multiplicity = the eigenvalues of L inside a declared disc,
+              counted from the Schur forms of L and L_II (the interior count
+              reported separately, the difference being the winding of
+              det F_B), geometric = dim ker F_B(lam);
   surrogate   Craig-Bampton retained-mode basis with declared window,
               discarded-mode gap, and fine-space eigenresiduals;
   next level  abstract labeled sum of retained fibers with embedding J and
@@ -521,12 +523,15 @@ class TestBlockPencilNegativeControl(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# multiplicity: algebraic (det winding) vs geometric (dim ker F_B)
+# multiplicity: algebraic (eigenvalues of L inside the declared disc, counted
+# from the Schur forms of L and L_II) vs geometric (dim ker F_B)
 # --------------------------------------------------------------------------
 class TestMultiplicity(unittest.TestCase):
     def test_semisimple_double_eigenvalue(self):
-        # diag(1, 1, 3) coupled weakly? No -- keep it EXACT: block diag with
-        # a double eigenvalue 1 on the kept block, interior at 3.
+        # Block diagonal with a double eigenvalue 1 on the kept block and the
+        # interior eigenvalue 3: the disc of radius 1/2 about 1 holds two
+        # eigenvalues of L and none of L_II. The isolation gap is the distance
+        # from the circle to the eigenvalue 1 at its centre, 1/2.
         L = np.diag([1.0, 1.0, 3.0])
         q = cob.RecursiveQuotient.overMatrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
@@ -535,10 +540,15 @@ class TestMultiplicity(unittest.TestCase):
         self.assertEqual(read.geometric, 2)
         self.assertTrue(read.semisimple)
         self.assertEqual(read.interiorWinding, 0)
-        self.assertTrue(read.certificate.holds())
+        self.assertEqual(read.responseWinding, 2)
+        self.assertEqual(read.isolationGap, 0.5)
+        self.assertEqual(read.contourRadius, 0.5)
+        self.assertTrue(read.certificate.holds(), read.certificate.describe())
 
     def test_defective_pencil_reports_distinct_multiplicities(self):
-        # Jordan block on the kept coordinates: algebraic 2, geometric 1.
+        # Jordan block on the kept coordinates: algebraic 2, geometric 1. The
+        # count comes from the Schur form, which does not need the (singular)
+        # eigenvector matrix of the block.
         L = np.array([[1.0, 1.0, 0.0],
                       [0.0, 1.0, 1.0],
                       [0.0, 0.0, 2.0]])
@@ -551,12 +561,12 @@ class TestMultiplicity(unittest.TestCase):
         self.assertEqual(read.algebraic, 2)
         self.assertEqual(read.geometric, 1)
         self.assertFalse(read.semisimple)
-        self.assertTrue(read.certificate.holds())
+        self.assertTrue(read.certificate.holds(), read.certificate.describe())
 
     def test_interior_winding_is_reported_separately(self):
         # At lam = 2 (an INTERIOR eigenvalue): det F_B has a pole there, so
-        # the response winding alone would MISCOUNT; the interior winding
-        # restores the exact algebraic multiplicity 1.
+        # the count of L alone is the statement and the interior count is
+        # reported separately; their difference, the winding of det F_B, is 0.
         L = np.array([[1.0, 1.0, 0.5],
                       [0.0, 1.0, 1.0],
                       [0.0, 0.0, 2.0]])
@@ -566,16 +576,32 @@ class TestMultiplicity(unittest.TestCase):
         self.assertEqual(read.interiorWinding, 1)
         self.assertEqual(read.responseWinding, 0)
         self.assertEqual(read.algebraic, 1)
+        self.assertEqual(read.isolationGap, 0.3)
 
     def test_contour_through_spectrum_is_refused(self):
         L = np.diag([1.0, 1.0, 3.0])
         q = cob.RecursiveQuotient.overMatrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
-        # radius 2.0 puts the interior eigenvalue 3 exactly on the contour
-        # of center 1: det(L_II - z) hits 0 -> loud refusal.
-        with self.assertRaises(Exception):
+        # radius 2.0 puts the eigenvalue 3 exactly on the circle about 1, so
+        # whether it is inside is not decided: refused by name.
+        with self.assertRaisesRegex(ValueError, "passes through the eigenvalue"):
             q.multiplicity(1.0 + 0j, 2.0)
 
+    def test_a_non_positive_radius_is_refused(self):
+        q = cob.RecursiveQuotient.overMatrix(
+            _flat(np.diag([1.0, 3.0])), 2, [], [[0, 1], [0]])
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            q.multiplicity(1.0 + 0j, 0.0)
+
+    def test_a_pencil_level_is_refused_by_name(self):
+        # The count is of the eigenvalues of an operator level; a pencil
+        # level's spectrum is the set of generalized eigenvalues of (A, M),
+        # which this read does not form.
+        a = np.diag([1.0, 3.0])
+        m = np.diag([1.0, 2.0])
+        q = cob.RecursiveQuotient.overPencil(_flat(a), _flat(m), 2, [[0, 1]])
+        with self.assertRaisesRegex(ValueError, "pencil"):
+            q.multiplicity(1.0 + 0j, 0.5)
 
 # --------------------------------------------------------------------------
 # resonance and compatibility

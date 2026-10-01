@@ -4,11 +4,11 @@
 """#1191 — the recursion driven level by level, energy dependence kept exact.
 
 Sections 3, 5 and 15 of the whitepaper run one box at every scale: the partition
-of the response network, the Riesz projector of each response vertex over its own
-contour, the exact energy-dependent Feshbach map to the next level, the transport
-blocks read in the fibers, and the labeled sum with its bilinear overlap. Five
-claims carry that here and each is asserted against a dense reference built in
-this file.
+of the response network, the Riesz projector of each response vertex onto the
+band its declared selection names, the exact energy-dependent Feshbach map to the
+next level, the transport blocks read in the fibers, and the labeled sum with its
+bilinear overlap. Five claims carry that here and each is asserted against a
+dense reference built in this file.
 
 THE RECURSION IS DRIVEN LEVEL BY LEVEL. Three levels are built on a fixture
 response network, each from the certified bands and the partition of the level
@@ -30,10 +30,18 @@ Both halves are asserted: the factorization at frequencies of the caller's
 choosing, and the singularity of the third level's pencil at the microscopic
 eigenvalues themselves.
 
-THE FIBERS ARE RIESZ PROJECTORS AND THEIR FRAMES PAIR BY THE TRANSPOSE. Each
-band's projector is the contour integral of the resolvent, its two frames satisfy
-PhiTilde^T Phi = I with no conjugation, and the compression PhiTilde^T h_v Phi has
-exactly the eigenvalues the contour enclosed.
+THE FIBERS ARE EXACT RIESZ PROJECTORS AND THEIR FRAMES PAIR BY THE TRANSPOSE.
+Each band's projector is the spectral projector onto the invariant subspace of
+the eigenvalues its selection encloses, formed from the block's complex Schur
+form with the selected eigenvalues reordered to the leading block and the
+Sylvester equation solved for the invariant subspace. It equals V_B (V^-1)_B
+built from an independent eigendecomposition, it is exact on a
+non-diagonalizable block where no eigenvector matrix can be inverted, its two
+frames satisfy PhiTilde^T Phi = I with no conjugation, and the compression
+PhiTilde^T h_v Phi has exactly the eigenvalues the selection enclosed. A
+selection that names no invariant subspace, one that separates two eigenvalues
+equal at the declared tolerance or a declared contour through an eigenvalue or
+around nothing, is refused by name.
 
 THE LABELED SUM CARRIES ITS OVERLAP RATHER THAN ASSUMING IT AWAY. The Gram is the
 transpose pairing of the two embeddings, the transports are its named blocks, and
@@ -87,7 +95,6 @@ def _declaration(resolutions=(1.0, 1.4, 1.8), band_rank=2, tolerance=1e-6):
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = band_rank
     bands.order = cob.OccupationOrder.AscendingModulus
-    bands.contour_nodes = 128
     declaration.bands = bands
     return declaration
 
@@ -308,8 +315,32 @@ class EachLevelsSpectrumIsReproducedFromTheLevelBelowTest(unittest.TestCase):
         self.assertGreater(singular[-1], 1e-6 * singular[0])
 
 
+def _band_read(block, rank=1, order=cob.OccupationOrder.AscendingRealPart,
+               tolerance=1e-15, selection=None, centre=None, radius=None):
+    """`LevelRecursion.read_band` on one block as a level of one component."""
+    block = np.asarray(block, dtype=complex)
+    bands = cob.RecursionBandDeclaration()
+    if selection is None:
+        bands.selection = cob.RecursionBandSelection.LowestModes
+        bands.band_rank = rank
+        bands.order = order
+    else:
+        bands.selection = selection
+        bands.contour_centres = [complex(centre)]
+        bands.contour_radii = [float(radius)]
+    return cob.LevelRecursion.read_band(
+        [complex(value) for value in block.reshape(-1)], block.shape[0],
+        bands, 0, tolerance)
+
+
+def _frames(read, order):
+    right = np.asarray(read.frame, dtype=complex).reshape(order, read.rank)
+    left = np.asarray(read.left_frame, dtype=complex).reshape(read.rank, order)
+    return right, left
+
+
 class TheFibersAreRieszProjectorsTest(unittest.TestCase):
-    """The contour integral, the transpose pairing, and the compression."""
+    """The exact projector, the transpose pairing, and the compression."""
 
     def test_every_band_is_accepted_and_pairs_by_the_transpose(self):
         _, recursion = _recursion()
@@ -322,8 +353,132 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
                     self.assertTrue(band.accepted, band.certificate.describe())
                     self.assertLess(band.pairing_defect, 1e-6)
                     self.assertLess(band.projector_idempotency, 1e-6)
+                    self.assertLess(band.invariant_subspace_residual, 1e-6)
                     self.assertGreater(band.isolation_gap, 0.0)
-                    self.assertEqual(band.contour_nodes, 128)
+
+    def test_the_projector_is_the_eigenprojector_of_the_selected_eigenvalues(self):
+        """P_v = V_B (V^-1)_B over the selected eigenvalues.
+
+        The reference is built from numpy's eigendecomposition of the block,
+        matching each selected eigenvalue to a column of V; the produced
+        projector is Phi_v PhiTilde_v^T restricted to the block's coordinates.
+        Both are the same exact object, the spectral projector of the band,
+        and differ by rounding alone: each carries about the condition number
+        of V times the unit roundoff, below 1e-13 on these blocks.
+        """
+        _, recursion = _recursion(levels=1)
+        level = recursion.level(0)
+        operator = _square(recursion.response_pencil(0, 0.0), level.dimension)
+        for band, members in zip(level.bands, level.partition):
+            block = operator[np.ix_(members, members)]
+            values, vectors = np.linalg.eig(block)
+            inverse = np.linalg.inv(vectors)
+            columns = []
+            for selected in band.eigenvalues:
+                distances = np.abs(values - selected)
+                column = int(np.argmin(distances))
+                self.assertLess(distances[column], 1e-10)
+                columns.append(column)
+            self.assertEqual(len(set(columns)), band.rank)
+            reference = vectors[:, columns] @ inverse[columns, :]
+            right, left = _frames(band, level.dimension)
+            produced = (right @ left)[np.ix_(members, members)]
+            self.assertLess(np.abs(produced - reference).max(), 1e-13)
+
+    def test_a_non_diagonalizable_block_has_an_exact_projector(self):
+        """The Schur route needs no eigenvector matrix.
+
+        The block [[1, 1, 1/2], [0, 1, 1], [0, 0, 3]] has the eigenvalue 1 with
+        algebraic multiplicity two and geometric multiplicity one, so no
+        eigenvector matrix is invertible. The spectral projector onto the
+        generalized eigenspace of 1 is I minus the projector onto the
+        eigenvector (1/2, 1/2, 1) of 3 along its left eigenvector (0, 0, 1):
+        [[1, 0, -1/2], [0, 1, -1/2], [0, 0, 0]]. Every step of the read on
+        this upper-triangular block is exact in binary arithmetic (the Schur
+        form is the block itself and the Sylvester solve divides by 2), so
+        the projector is reproduced to the declared tolerance.
+        """
+        block = np.array([[1.0, 1.0, 0.5], [0.0, 1.0, 1.0], [0.0, 0.0, 3.0]])
+        read = _band_read(block, rank=2)
+        self.assertEqual(read.rank, 2)
+        np.testing.assert_allclose(sorted(read.eigenvalues, key=abs),
+                                   [1.0, 1.0], atol=1e-15)
+        right, left = _frames(read, 3)
+        expected = np.array([[1.0, 0.0, -0.5], [0.0, 1.0, -0.5],
+                             [0.0, 0.0, 0.0]])
+        self.assertLess(np.abs(right @ left - expected).max(), 1e-15)
+        self.assertLess(read.projector_idempotency, 1e-15)
+        self.assertLess(read.pairing_defect, 1e-15)
+        self.assertLess(read.invariant_subspace_residual, 1e-15)
+        self.assertEqual(read.isolation_gap, 2.0)
+        self.assertTrue(read.accepted, read.certificate.describe())
+
+    def test_a_band_rank_that_splits_a_multiple_eigenvalue_is_refused(self):
+        """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal
+        at the declared tolerance, and a rank-one part of their eigenspace is
+        no invariant subspace of its own."""
+        with self.assertRaisesRegex(ValueError,
+                                    "equal at the declared tolerance"):
+            _band_read(np.diag([1.0, 1.0, 3.0]), rank=1)
+
+    def test_a_declared_contour_through_an_eigenvalue_is_refused(self):
+        """The circle about 1 of radius 2 passes through the eigenvalue 3 of
+        diag(1, 3): whether 3 is in the band is not decided."""
+        with self.assertRaisesRegex(ValueError, "passes through the eigenvalue"):
+            _band_read(np.diag([1.0, 3.0]),
+                       selection=cob.RecursionBandSelection.DeclaredContours,
+                       centre=1.0, radius=2.0)
+
+    def test_a_declared_contour_enclosing_nothing_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "encloses no eigenvalue"):
+            _band_read(np.diag([1.0, 3.0]),
+                       selection=cob.RecursionBandSelection.DeclaredContours,
+                       centre=10.0, radius=1.0)
+
+    def test_a_band_of_the_whole_block_encloses_everything(self):
+        """A band rank at or above the block's order selects every eigenvalue:
+        the projector is the identity, the selection has no excluded
+        eigenvalue to measure to, so its radius and the isolation gap are
+        infinite, and the read says so."""
+        read = _band_read(np.diag([1.0, 3.0]), rank=5)
+        self.assertEqual(read.rank, 2)
+        self.assertTrue(read.encloses_everything)
+        self.assertEqual(read.contour_radius, math.inf)
+        self.assertEqual(read.isolation_gap, math.inf)
+        self.assertEqual(read.contour_centre, 2.0)
+        right, left = _frames(read, 2)
+        self.assertLess(np.abs(right @ left - np.eye(2)).max(), 1e-15)
+
+    def test_the_modulus_order_breaks_ties_by_real_then_imaginary_part(self):
+        """Under AscendingModulus the eigenvalues 1 and -1 of diag(1, -1, 2)
+        tie in modulus; the real part orders -1 first, and a band of rank one
+        is that eigenvalue, isolated from 1 by 2."""
+        read = _band_read(np.diag([1.0, -1.0, 2.0]), rank=1,
+                          order=cob.OccupationOrder.AscendingModulus)
+        self.assertEqual(list(read.eigenvalues), [-1.0])
+        self.assertEqual(read.isolation_gap, 2.0)
+        self.assertEqual(read.contour_radius, 1.0)
+
+    def test_the_selection_is_recorded_as_the_declared_rule_defines_it(self):
+        """Under LowestModes the centre is the mean of the selected
+        eigenvalues and the radius sits halfway between the farthest selected
+        and the nearest excluded eigenvalue, measured from that centre."""
+        _, recursion = _recursion(levels=1)
+        level = recursion.level(0)
+        operator = _square(recursion.response_pencil(0, 0.0), level.dimension)
+        for band, members in zip(level.bands, level.partition):
+            values = np.linalg.eigvals(operator[np.ix_(members, members)])
+            selected = np.asarray(band.eigenvalues, dtype=complex)
+            centre = selected.mean()
+            self.assertLess(abs(band.contour_centre - centre), 1e-12)
+            excluded = [value for value in values
+                        if np.abs(selected - value).min() > 1e-10]
+            self.assertEqual(len(excluded) + band.rank, len(members))
+            inside = np.abs(selected - centre).max()
+            outside = min(abs(value - centre) for value in excluded)
+            self.assertLess(abs(band.contour_radius - 0.5 * (inside + outside)),
+                            1e-12)
+            self.assertFalse(band.encloses_everything)
 
     def test_the_frames_pair_to_the_identity_with_no_conjugation(self):
         """PhiTilde^T Phi = I, taken with the transpose and never an adjoint."""
@@ -338,7 +493,7 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
                 np.abs(left @ right - np.eye(band.rank, dtype=complex)).max(),
                 1e-6)
 
-    def test_the_compression_carries_the_eigenvalues_the_contour_enclosed(self):
+    def test_the_compression_carries_the_eigenvalues_the_selection_enclosed(self):
         """PhiTilde_v^T h_v Phi_v has exactly the band's eigenvalues.
 
         That is what makes the fiber the range of the Riesz projector rather
@@ -371,7 +526,6 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
         declaration = _declaration()
         bands = cob.RecursionBandDeclaration()
         bands.selection = cob.RecursionBandSelection.DeclaredContours
-        bands.contour_nodes = 128
         bands.contour_centres = [complex(0.0, 0.0)] * len(partition.components)
         bands.contour_radii = [20.0] * len(partition.components)
         declaration.bands = bands
@@ -383,6 +537,8 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
         for band, members in zip(level.bands, level.partition):
             self.assertEqual(band.rank, len(members))
             self.assertEqual(band.contour_radius, 20.0)
+            self.assertTrue(band.encloses_everything)
+            self.assertEqual(band.isolation_gap, math.inf)
             for value in band.eigenvalues:
                 self.assertLess(abs(value), 20.0)
 

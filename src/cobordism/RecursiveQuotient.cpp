@@ -37,7 +37,6 @@ namespace {
 using cd = std::complex<double>;
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
 constexpr double kInf = std::numeric_limits<double>::infinity();
-constexpr double kTwoPi = 6.283185307179586476925286766559;
 
 Eigen::MatrixXcd toMatrix(const std::vector<cd> &flat, int rows, int cols,
                           const char *name) {
@@ -1262,102 +1261,91 @@ RecursiveQuotient::FeshbachRead RecursiveQuotient::feshbach(
   return read;
 }
 
-std::vector<cd> RecursiveQuotient::contourDeterminants(
-    cd lambda, double radius, int nodes, std::vector<cd> &interiorDets) const {
-  const int kept = static_cast<int>(interfaceIndices_.size());
-  std::vector<cd> responseDets(static_cast<std::size_t>(nodes));
-  interiorDets.assign(static_cast<std::size_t>(nodes), cd(1.0, 0.0));
-  for (int node = 0; node < nodes; ++node) {
-    const double angle = kTwoPi * node / nodes;
-    const cd z = lambda + radius * cd(std::cos(angle), std::sin(angle));
-    Eigen::MatrixXcd response = Eigen::MatrixXcd::Zero(kept, kept);
-    for (int outer = 0; outer < op_.outerSize(); ++outer)
-      for (Eigen::SparseMatrix<cd>::InnerIterator it(op_, outer); it; ++it) {
-        const int row = interfacePosition_[static_cast<std::size_t>(it.row())];
-        const int col = interfacePosition_[static_cast<std::size_t>(it.col())];
-        if (row >= 0 && col >= 0) response(row, col) += it.value();
-      }
-    for (int position = 0; position < kept; ++position)
-      response(position, position) -= z;
-    cd interiorDet = cd(1.0, 0.0);
-    for (int component = 0; component < componentCount(); ++component) {
-      const auto solve = computeSolve(component, z);
-      if (!solve->detValid || solve->rightKernel.cols() > 0 ||
-          !solve->eliminationCertified)
-        throw std::domain_error(
-            "RecursiveQuotient: contour meets the interior spectrum; choose "
-            "a different radius");
-      interiorDet *= solve->interiorDet;
-      const int a = static_cast<int>(solve->adjacentKept.size());
-      for (int i = 0; i < a; ++i)
-        for (int j = 0; j < a; ++j)
-          response(solve->adjacentKept[static_cast<std::size_t>(i)],
-                   solve->adjacentKept[static_cast<std::size_t>(j)]) -=
-              solve->contribution(i, j);
-    }
-    interiorDets[static_cast<std::size_t>(node)] = interiorDet;
-    responseDets[static_cast<std::size_t>(node)] =
-        kept > 0 ? Eigen::PartialPivLU<Eigen::MatrixXcd>(response).determinant()
-                 : cd(1.0, 0.0);
-    if (responseDets[static_cast<std::size_t>(node)] == cd(0.0, 0.0))
-      throw std::domain_error(
-          "RecursiveQuotient: det F_B vanishes on the contour; choose a "
-          "different radius");
-  }
-  return responseDets;
-}
-
-int RecursiveQuotient::windingFromPhases(const std::vector<cd> &values,
-                                         double *maxStep) {
-  double total = 0.0;
-  double largest = 0.0;
-  const std::size_t count = values.size();
-  for (std::size_t node = 0; node < count; ++node) {
-    const cd ratio = values[(node + 1) % count] / values[node];
-    const double step = std::arg(ratio);
-    largest = std::max(largest, std::abs(step));
-    total += step;
-  }
-  if (maxStep) *maxStep = largest / (kTwoPi / 2.0);
-  return static_cast<int>(std::llround(total / kTwoPi));
-}
-
 RecursiveQuotient::MultiplicityRead RecursiveQuotient::multiplicity(
-    cd lambda, double radius, int nodes) const {
+    cd lambda, double radius) const {
   if (radius <= 0.0)
-    throw std::invalid_argument("RecursiveQuotient: radius must be positive");
-  if (nodes < 8)
-    throw std::invalid_argument("RecursiveQuotient: need at least 8 nodes");
+    throw std::invalid_argument(
+        "RecursiveQuotient::multiplicity: the radius of the counting disc "
+        "must be positive; got " +
+        std::to_string(radius));
+  if (pencil_)
+    throw std::domain_error(
+        "RecursiveQuotient::multiplicity: this level is a pencil (A, M), whose "
+        "spectrum is the set of generalized eigenvalues; the count is formed "
+        "from the eigenvalues of an operator level only");
+  if (dim_ >= options_.denseCrossover)
+    throw std::length_error(
+        "RecursiveQuotient::multiplicity: the level has " +
+        std::to_string(dim_) +
+        " coordinates, at or above the declared dense crossover of " +
+        std::to_string(options_.denseCrossover) +
+        ", and the eigenvalues are formed densely");
 
   MultiplicityRead read;
   read.lambda = lambda;
   read.contourRadius = radius;
 
-  std::vector<cd> interiorCoarse;
-  const std::vector<cd> responseCoarse =
-      contourDeterminants(lambda, radius, nodes, interiorCoarse);
-  double coarseStep = 0.0;
-  double coarseInteriorStep = 0.0;
-  const int coarseResponse = windingFromPhases(responseCoarse, &coarseStep);
-  const int coarseInterior =
-      windingFromPhases(interiorCoarse, &coarseInteriorStep);
+  // The number of eigenvalues of one matrix inside the disc, counted with
+  // multiplicity from its complex Schur form; the read's isolation gap and
+  // decomposition residual are the worst over every matrix counted.
+  const auto countInside = [&](const Eigen::MatrixXcd &matrix,
+                               const std::string &name) {
+    if (matrix.rows() == 0) return 0;
+    const Eigen::ComplexSchur<Eigen::MatrixXcd> schur(matrix, true);
+    if (schur.info() != Eigen::Success)
+      throw std::runtime_error(
+          "RecursiveQuotient::multiplicity: the complex Schur decomposition "
+          "of " +
+          name + " did not converge");
+    const double norm = matrix.norm();
+    if (norm > 0.0)
+      read.decompositionResidual = std::max(
+          read.decompositionResidual,
+          (matrix - schur.matrixU() * schur.matrixT() *
+                        schur.matrixU().adjoint())
+                  .norm() /
+              norm);
+    const Eigen::VectorXcd values = schur.matrixT().diagonal();
+    int inside = 0;
+    for (Eigen::Index index = 0; index < values.size(); ++index) {
+      const double distance = std::abs(values(index) - lambda);
+      const double gap = std::abs(distance - radius);
+      if (gap <= options_.rankTolerance * std::max(distance, radius))
+        throw std::domain_error(
+            "RecursiveQuotient::multiplicity: the counting circle about (" +
+            std::to_string(lambda.real()) + ", " +
+            std::to_string(lambda.imag()) + ") of radius " +
+            std::to_string(radius) + " passes through the eigenvalue (" +
+            std::to_string(values(index).real()) + ", " +
+            std::to_string(values(index).imag()) + ") of " + name +
+            " at the declared rank tolerance " +
+            std::to_string(options_.rankTolerance) +
+            ", so whether that eigenvalue is inside is not decided; choose a "
+            "different radius");
+      read.isolationGap = std::min(read.isolationGap, gap);
+      if (distance < radius) ++inside;
+    }
+    return inside;
+  };
 
-  std::vector<cd> interiorFine;
-  const std::vector<cd> responseFine =
-      contourDeterminants(lambda, radius, 2 * nodes, interiorFine);
-  double fineStep = 0.0;
-  double fineInteriorStep = 0.0;
-  const int fineResponse = windingFromPhases(responseFine, &fineStep);
-  const int fineInterior = windingFromPhases(interiorFine, &fineInteriorStep);
-
-  const bool stable =
-      coarseResponse == fineResponse && coarseInterior == fineInterior;
-  read.nodes = 2 * nodes;
-  read.responseWinding = fineResponse;
-  read.interiorWinding = fineInterior;
-  read.algebraic = fineResponse + fineInterior;
-  read.phaseStepMargin =
-      std::max(std::max(fineStep, fineInteriorStep), 0.0);
+  const Eigen::MatrixXcd full = Eigen::MatrixXcd(op_);
+  const int algebraic = countInside(full, "the operator");
+  int interiorCount = 0;
+  for (int component = 0; component < componentCount(); ++component) {
+    const std::vector<int> &interior =
+        interior_[static_cast<std::size_t>(component)];
+    const auto m = static_cast<Eigen::Index>(interior.size());
+    Eigen::MatrixXcd block(m, m);
+    for (Eigen::Index row = 0; row < m; ++row)
+      for (Eigen::Index column = 0; column < m; ++column)
+        block(row, column) = full(interior[static_cast<std::size_t>(row)],
+                                  interior[static_cast<std::size_t>(column)]);
+    interiorCount += countInside(
+        block, "the interior block of component " + std::to_string(component));
+  }
+  read.algebraic = algebraic;
+  read.interiorWinding = interiorCount;
+  read.responseWinding = algebraic - interiorCount;
 
   // Geometric multiplicity: dim ker F_B(lambda) at the rank tolerance.
   const FeshbachRead pencil = feshbach(lambda, lambda.real(), lambda.real());
@@ -1389,10 +1377,9 @@ RecursiveQuotient::MultiplicityRead RecursiveQuotient::multiplicity(
   }
   read.semisimple = read.algebraic == read.geometric;
 
-  const double residual = stable ? read.phaseStepMargin : kInf;
   read.certificate = Certificate::certifiedNumerical(
-      CertificateDomain::BandWindow, regime_, residual, kNaN,
-      /*tolerance=*/0.5);
+      CertificateDomain::BandWindow, regime_, read.decompositionResidual, kNaN,
+      options_.tolerance);
   return read;
 }
 

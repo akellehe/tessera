@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <Eigen/SparseCore>
 
 #include "chainhodge/ChainHodge.h"
@@ -357,6 +358,24 @@ struct TransferResult {
   Eigen::MatrixXcd dualTransfer{};
 };
 
+/// # SchurRieszProjector
+///
+/// The Riesz projector of a square matrix onto the invariant subspace of a set
+/// of its eigenvalues, read exactly from its complex Schur form
+/// \f$ X = QTQ^H \f$ (`PencilSchur::rieszProjector`). The projector is
+/// \f$ \Pi = N N_L^T \f$ with \f$ N \f$ an orthonormal basis of its range
+/// and \f$ N_L \f$ the dual left basis, \f$ N_L^T N = I \f$.
+struct SchurRieszProjector {
+  /// \f$ \Pi \f$, \f$ n\times n \f$.
+  Eigen::MatrixXcd projector{};
+  /// \f$ N \f$, \f$ n\times q \f$: the leading Schur vectors of the reordered
+  /// form, an orthonormal basis of the invariant subspace.
+  Eigen::MatrixXcd right{};
+  /// \f$ N_L \f$, \f$ n\times q \f$, with \f$ N_L^T N = I_q \f$ and
+  /// \f$ \Pi = N N_L^T \f$.
+  Eigen::MatrixXcd left{};
+};
+
 /// # PencilSchur
 ///
 /// The recursion on the symmetric pencil \f$ \mathcal P(\lambda) = \tilde A -
@@ -384,6 +403,27 @@ struct TransferResult {
 /// (`CovariantChainHodge::regimeCertificate`), never a branch.
 class PencilSchur {
  public:
+  /// The Riesz projector of a square matrix onto the invariant subspace of the
+  /// eigenvalues flagged in \p enclosed, from its complex Schur form
+  /// \f$ X = QTQ^H \f$ in \p schur: the form is reordered by unitary adjacent
+  /// swaps so that the flagged eigenvalues lead,
+  /// \f$ T = \begin{pmatrix} T_{11} & T_{12} \\ 0 & T_{22} \end{pmatrix} \f$,
+  /// the Sylvester equation \f$ T_{11}Y - YT_{22} = T_{12} \f$ is solved by back
+  /// substitution (its two operands are triangular), and
+  /// \f$ \Pi = Q\begin{pmatrix} I & Y \\ 0 & 0 \end{pmatrix}Q^H \f$. No
+  /// eigenvector matrix is inverted, so the projector is exact for a
+  /// non-diagonalizable block as well; for a diagonalizable one it equals
+  /// \f$ V_B (V^{-1})_B \f$ over the flagged eigenvalues, the spectral
+  /// projector being unique. The flagged and the unflagged eigenvalues must be
+  /// disjoint sets: the Sylvester equation is singular exactly when they share
+  /// an eigenvalue, and the caller makes that decision at its declared
+  /// tolerance before calling. \p enclosed has one flag per diagonal position
+  /// of the Schur form, in the form's own order.
+  /// @throws std::invalid_argument when \p enclosed does not have one flag per
+  ///   eigenvalue.
+  [[nodiscard]] static SchurRieszProjector rieszProjector(
+      const Eigen::ComplexSchur<Eigen::MatrixXcd> &schur,
+      const std::vector<bool> &enclosed);
   /// \f$ \log\det A = \log|\det A| + i\arg\det A \f$ from a partial-pivoting LU
   /// (the sum of the logarithms of the pivots and the permutation's sign), the
   /// argument reduced to \f$ (-\pi, \pi] \f$; \f$ -\infty \f$ for a singular
