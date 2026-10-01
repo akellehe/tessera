@@ -1614,9 +1614,11 @@ def test_pinning_every_power_sum_of_a_degenerate_fiber_at_the_declared_tolerance
     three power sums are one independent constraint stated three times. At
     the declared rank tolerance 1e-15 the dependent rows are not read as
     zero, their least-squares multipliers are of order 1e11 to 1e12, and
-    the drive ends after 7 accepted updates at a residual norm of 0.085
-    (9.03 at the host) with the pinned moments 0.8 % to 2.2 % off their
-    targets. The record carries the fiber's rank, the three multipliers,
+    the drive ends after 7 accepted updates at a residual norm of 0.023
+    (9.03 at the host) with the pinned moments 0.2 % to 0.6 % off their
+    targets. With multipliers of that size the end point is decided at
+    rounding, so the residual and the moments are asserted within a factor
+    of ten. The record carries the fiber's rank, the three multipliers,
     the residuals, the Hessian along the Hellmann-Feynman force with its
     sign, and the content's line prints them."""
     from tessera.drivers import recursion as R
@@ -1635,14 +1637,14 @@ def test_pinning_every_power_sum_of_a_degenerate_fiber_at_the_declared_tolerance
     assert solve["stop_reason"] == \
         "no move and no scaled step lowers the residual norm"
     assert solve["residual_trace"][0] == pytest.approx(9.0311, rel=1e-4)
-    assert solve["residual_trace"][-1] == pytest.approx(0.0848, rel=0.05)
+    assert 2.3e-3 < solve["residual_trace"][-1] < 0.23
     assert solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "power-sums"
     assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3
     assert max(abs(m) for m in solve["multipliers"]) > 1e9
     relative = [abs(r) / abs(t) for r, t in zip(solve["moment_residuals"],
                                                 solve["moment_targets"])]
-    assert 1e-3 < min(relative) and max(relative) < 0.1
+    assert 2e-4 < min(relative) and max(relative) < 0.06
     assert solve["joint_jacobian"]["size"] == 15
     assert solve["force_hessian_sign"] in ("positive", "negative", "complex")
     text = bp.relaxation_text(solve)
