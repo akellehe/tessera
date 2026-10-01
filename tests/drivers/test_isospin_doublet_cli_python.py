@@ -43,7 +43,7 @@ def test_every_tolerance_and_limit_is_an_option_of_the_run():
     args = iso.build_parser().parse_args(
         ["run", "--iteration-limit", "7", "--time-limit-seconds", "2.5"])
     assert bp.limits_from(args) == {"iteration_limit": 7,
-                                    "halving_limit": None,
+                                    "update_limit": None,
                                     "time_limit_seconds": 2.5}
 
 
@@ -70,11 +70,11 @@ def test_the_declared_tolerances_reach_the_detector(monkeypatch):
     del configs[:]
     result = iso.main(["run", "--quiet", "--isospin-grouping-tolerance",
                        "1e-8", "--isospin-isotypic-tolerance", "1e-6",
-                       "--halving-limit", "3"])
+                       "--update-limit", "3"])
     assert result["tolerances"]["isospin_grouping_tolerance"] == 1e-8
     assert result["tolerances"]["isospin_isotypic_tolerance"] == 1e-6
     assert result["tolerances"]["isospin_projector_tolerance"] == 1e-15
-    assert result["limits"]["halving_limit"] == 3
+    assert result["limits"]["update_limit"] == 3
     for config in configs:
         assert config.grouping_tolerance == 1e-8
         assert config.isotypic_tolerance == 1e-6

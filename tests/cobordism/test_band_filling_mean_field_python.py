@@ -39,7 +39,7 @@ def _mean_field(occupations):
     geometry.relax_lengths = False
     geometry.relax_links = False
     geometry.relax_multipliers = True
-    geometry.tolerance = RUN.TOLERANCES["newton_tolerance"]
+    geometry.tolerance = RUN.TOLERANCES["step_tolerance"]
     geometry.rank_tolerance = RUN.TOLERANCES["rank_tolerance"]
     declaration.geometry = geometry
     return declaration

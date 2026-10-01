@@ -18,7 +18,7 @@ quark condition 2 in 12 of 16 contents.
 #: them is 1e-15.
 TOLERANCES = {
     "rank_tolerance": 1e-10,
-    "newton_tolerance": 1e-11,
+    "step_tolerance": 1e-11,
     "mean_field_tolerance": 1e-9,
     "band_tolerance": 1e-8,
     "certificate_tolerance": 1e-8,
