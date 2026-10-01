@@ -4579,67 +4579,84 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("Principal", ReggeBranch::Principal);
 
   py::class_<VillainSeries>(m, "VillainSeries",
-      "The truncated Laurent series W, F W' and (F d/dF)^2 W at one face "
-      "holonomy, the largest |m| kept, and certified bounds on the modulus of "
-      "each omitted tail.")
+      "The order-M Villain sums W_M, F W_M' and (F d/dF)^2 W_M at one face "
+      "holonomy, each summed in full; the order; the bound on the rounding "
+      "of W_M; and the reported bound on the distance of each sum from its "
+      "infinite series (the tails), which nothing reads.")
       .def_readonly("value", &VillainSeries::value)
       .def_readonly("first", &VillainSeries::first)
       .def_readonly("second", &VillainSeries::second)
-      .def_readonly("term_count", &VillainSeries::termCount)
+      .def_readonly("order", &VillainSeries::order,
+                    "M, the declared order: the largest |m| in the sums.")
       .def_readonly("value_tail", &VillainSeries::valueTail)
       .def_readonly("first_tail", &VillainSeries::firstTail)
       .def_readonly("second_tail", &VillainSeries::secondTail)
       .def_readonly("magnitude", &VillainSeries::magnitude,
-                    "sum of |q^(m^2) F^m| over the kept terms: the rounding "
-                    "scale of W.");
+                    "A(F), the sum of c_m |F|^m over |m| <= M, every "
+                    "operation rounded upward.")
+      .def_readonly("first_magnitude", &VillainSeries::firstMagnitude,
+                    "The sum of |m| c_m |F|^m over |m| <= M, every operation "
+                    "rounded upward: a bound on |F W_M'(F)|.")
+      .def_readonly("second_magnitude", &VillainSeries::secondMagnitude,
+                    "The sum of m^2 c_m |F|^m over |m| <= M, every operation "
+                    "rounded upward.")
+      .def_readonly("rounding_bound", &VillainSeries::roundingBound,
+                    "The bound gamma_(6M+1) A(F) on the rounding of the "
+                    "computed W_M, gamma_k = k u / (1 - k u), u = 2^-53; "
+                    "infinite when the computed sum is not finite.");
 
   py::class_<VillainCharacter>(m, "VillainCharacter",
-      "The Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of one face and "
-      "its potential phi(F) = -beta_V log W(F), beta_V = beta / <m^2>_beta, "
-      "which matches the Wilson form's curvature beta at trivial holonomy. "
-      "Derivatives use W'/W and W''/W only; the logarithm is the branch real "
-      "on the unit circle, continued radially.")
-      .def(py::init<double, double>(), py::arg("beta"),
-           py::arg("tolerance") = 1e-18)
+      "The Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of one face "
+      "summed to the declared order M, W_M = sum over |m| <= M, and its "
+      "potential phi(F) = -beta_V log W_M(F), beta_V = beta / <m^2>_beta "
+      "with the second moment of the same order-M sums, which matches the "
+      "Wilson form's curvature beta at trivial holonomy. Derivatives use "
+      "W_M'/W_M and W_M''/W_M only; the logarithm is the branch real on the "
+      "unit circle, continued radially by certified steps.")
+      .def(py::init<double, int>(), py::arg("beta"),
+           py::arg("order") = VillainCharacter::maximumOrder)
+      .def_property_readonly_static(
+          "maximum_order",
+          [](const py::object &) { return VillainCharacter::maximumOrder; },
+          "The largest order that can be declared.")
       .def_property_readonly("beta", &VillainCharacter::beta)
-      .def_property_readonly("tolerance", &VillainCharacter::tolerance)
-      .def_property_readonly("declared_term_count",
-                             &VillainCharacter::declaredTermCount,
-                             "M_0: the least m with exp(-m^2/(2 beta)) below "
-                             "the tolerance.")
+      .def_property_readonly("order", &VillainCharacter::order,
+                             "M, the declared order.")
+      .def_property_readonly("coefficients", &VillainCharacter::coefficients,
+                             "c_0 .. c_M, the double-precision values of "
+                             "exp(-m^2/(2 beta)) that define W_M.")
       .def_property_readonly("second_moment", &VillainCharacter::secondMoment,
-                             "<m^2>_beta at trivial holonomy.")
+                             "<m^2>_beta of the order-M sums at trivial "
+                             "holonomy.")
       .def_property_readonly("matched_weight",
                              &VillainCharacter::matchedWeight,
-                             "beta_V = beta / <m^2>_beta.")
+                             "beta_V = beta / <m^2>_beta, with the order-M "
+                             "second moment.")
       .def("series", &VillainCharacter::series, py::arg("holonomy"))
+      .def_static("certified_nonzero", &VillainCharacter::certifiedNonzero,
+                  py::arg("series"),
+                  "Whether W_M is certified nonzero at the point the series "
+                  "was evaluated at: the modulus of the computed sum, rounded "
+                  "downward, exceeds its rounding bound.")
       .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"),
-           "log W(F) on the branch real on the unit circle, continued "
-           "radially from F/|F|. The start on the unit circle is accepted when "
-           "|Im W| <= reality_margin() (tail bound + machine epsilon times the "
-           "sum of the moduli of the kept terms) and Re W exceeds the nonzero "
-           "margin times the same uncertainty; raises ValueError when W is "
-           "not certified nonzero on the path, its start included.")
-      .def_static("reality_margin", &VillainCharacter::realityMargin,
-                  "c_R, the declared multiple of the series' uncertainty (its "
-                  "tail bound plus its rounding scale) within which logarithm "
-                  "reads the imaginary part of W on the unit circle as "
-                  "rounding.")
+           "log W_M(F) on the branch real on the unit circle, continued "
+           "radially from F/|F| by steps each certified by a bound on the "
+           "change of W_M. Raises ValueError when W_M is not above its bound "
+           "at the point of the unit circle on the ray, when the path meets "
+           "a zero of W_M at the resolution of double precision, or when W_M "
+           "is not certified nonzero at F.")
       .def("potential", &VillainCharacter::potential, py::arg("holonomy"))
       .def("first_derivative", &VillainCharacter::firstDerivative,
-           py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
+           py::arg("holonomy"), "F dphi/dF = -beta_V F W_M'/W_M.")
       .def("second_derivative", &VillainCharacter::secondDerivative,
            py::arg("holonomy"), "(F d/dF)^2 phi.");
 
   py::class_<HolonomyTruncation>(m, "HolonomyTruncation",
-      "The Villain truncation over every face at the current connection: the "
-      "declared tolerance and term count, the largest term count any face "
-      "needed, and the largest certified tail bounds relative to |W|.")
-      .def_readonly("tolerance", &HolonomyTruncation::tolerance)
-      .def_readonly("declared_term_count",
-                    &HolonomyTruncation::declaredTermCount)
-      .def_readonly("maximum_term_count",
-                    &HolonomyTruncation::maximumTermCount)
+      "The order of the Villain weight and, over every face at the current "
+      "connection, the largest reported bound on the distance of each "
+      "order-M sum from its infinite series, relative to the sum of the "
+      "moduli of the terms of that order-M sum. A report: nothing reads it.")
+      .def_readonly("order", &HolonomyTruncation::order)
       .def_readonly("relative_value_tail",
                     &HolonomyTruncation::relativeValueTail)
       .def_readonly("relative_first_tail",
@@ -4685,10 +4702,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "coefficient is beta_V = beta / <m^2>_beta; the bare "
                      "stiffness at trivial holonomy is beta L_1^up. Zero "
                      "leaves the term out.")
-      .def_readwrite("villain_tolerance",
-                     &JointActionDeclaration::villainTolerance,
-                     "The relative tolerance below which a Villain coefficient "
-                     "exp(-m^2/(2 beta)) is left out of the series.")
+      .def_readwrite("villain_order",
+                     &JointActionDeclaration::villainOrder,
+                     "M, the order the Villain weight is summed to: the "
+                     "holonomy term is defined by W_M, the sum over "
+                     "|m| <= M. An integer from 1 to 10; 10 by default.")
       .def_readwrite("matter_weight", &JointActionDeclaration::matterWeight,
                      "w_M, the coefficient on tr(Gamma h(z, U)), the carried "
                      "state's bilinear action density. Zero is strict "
@@ -4845,10 +4863,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "continued sheet differs from the principal one at the current "
            "geometry.")
       .def("holonomy_term", &JointAction::holonomyTerm,
-           "S_hol(U) in the declared form, weight included. For the Villain "
-           "form it is the one quantity that needs log W, taken on the branch "
-           "real on the unit circle; it raises for a face holonomy at or "
-           "beyond a zero of W on the negative real axis.")
+           "S_hol(U), weight included: the one quantity that needs log W_M, "
+           "the Villain weight at the declared order, taken on the branch "
+           "real on the unit circle; it raises for a face holonomy on whose "
+           "ray W_M is not positive at the unit circle, or whose radial path "
+           "meets a zero of W_M.")
       .def("matter_term", &JointAction::matterTerm,
            "w_M tr(Gamma h(z, U)).")
       .def("spectral_term", &JointAction::spectralTerm,
@@ -4886,8 +4905,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "multiplicative coordinate U -> U e^delta. Minus it is the Hessian "
            "in the real angles.")
       .def("holonomy_truncation", &JointAction::holonomyTruncation,
-           "The Villain series truncation over the current face holonomies, "
-           "with certified relative tail bounds.")
+           "The order of the Villain weight and, over the current face "
+           "holonomies, the reported distance of its sums from their "
+           "infinite series (HolonomyTruncation).")
       .def("regge_hessian", &JointAction::reggeHessian,
            "The Hessian of w_R S_Regge in the squared lengths, flat |E| x |E| "
            "in getEdgeList() order: for the primal form the per-hinge product "

@@ -48,9 +48,12 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    fiber, by default; bands, one per occupied band; 1 pins the trace alone).
    kappa = 8 pi G enters only
    through the Regge weight. The holonomy term S_hol is the Villain form
-   -beta_V sum_tau log W(F_tau), W(F) = sum_m exp(-m^2/(2 beta)) F^m,
-   beta_V = beta / <m^2>_beta, the paper's holonomy term, with the bare
-   connection stiffness beta L_1^up at trivial holonomy;
+   -beta_V sum_tau log W_M(F_tau), with the Villain weight
+   W(F) = sum_m exp(-m^2/(2 beta)) F^m summed to the declared order M
+   (``--villain-order``, the sum over |m| <= M, ten by default) and
+   beta_V = beta / <m^2>_beta from the same sums: the paper's holonomy term
+   at that order, with the bare connection stiffness beta L_1^up at trivial
+   holonomy;
    with certificates-blind mean-field backreaction to self-consistency
    (`SelfConsistentMeanField`), the carried density being the content's band
    filling of h_1. The fixed point is solved by Newton's method on the joint
@@ -205,6 +208,12 @@ Every tolerance of the stack is an option (``--rank-tolerance`` is tau, the
 Newton solve's rank decision; the others are listed by `TOLERANCES`), each
 defaulting to 1e-15 and each recorded in the configuration. None changes an
 equation.
+
+``--villain-order`` is M, the order the Villain weight of the holonomy term
+is summed to, an integer from 1 to 10 (10 by default), recorded in the
+configuration. It is part of the action: the holonomy term is the function
+the order defines, and every content's record carries the reported distance
+of the order-M sums from their infinite series (``holonomy_truncation``).
 """
 
 import argparse
@@ -318,9 +327,6 @@ TOLERANCES = (
     ("recursion_tolerance",
      "the relative tolerance the level recursion's certificates hold "
      "against"),
-    ("villain_tolerance",
-     "the relative size below which a coefficient of the Villain series is "
-     "left out"),
 )
 
 
@@ -342,6 +348,34 @@ def declared_tolerances(tolerances=None):
     out.update({key: float(value)
                 for key, value in (tolerances or {}).items()})
     return out
+
+
+#: M, the order the Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of the
+#: holonomy term is summed to: the term is defined by the sum over |m| <= M
+#: (`cob.VillainCharacter`). The weight is an infinite series with no closed
+#: elementary form, so its order is declared; ten is the largest order that
+#: can be declared and the default. `add_action_arguments` offers it as
+#: ``--villain-order``, `default_config` records it, and the recursion driver
+#: carries it into every cell's config.
+DECLARED_VILLAIN_ORDER = cob.VillainCharacter.maximum_order
+
+
+def declared_villain_order(config):
+    """The order of the Villain weight (`DECLARED_VILLAIN_ORDER`) of a
+    config, or the declared value when the config leaves it out."""
+    return checked_villain_order((config or {}).get("villain_order",
+                                                   DECLARED_VILLAIN_ORDER))
+
+
+def checked_villain_order(value):
+    """``value`` as an order of the Villain weight: an integer from 1 to
+    `cob.VillainCharacter.maximum_order`. Anything else is an error."""
+    maximum = cob.VillainCharacter.maximum_order
+    if isinstance(value, bool) or int(value) != value \
+            or not 1 <= int(value) <= maximum:
+        raise ValueError("the order of the Villain weight is an integer from "
+                         "1 to %d; got %r" % (maximum, value))
+    return int(value)
 
 
 #: The limits a user may declare on a mean-field solve, by config key: the
@@ -516,12 +550,13 @@ def sheet_squared_lengths(spacetime, sheet):
 
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                        matter_weight=1.0,
-                       villain_tolerance=DECLARED_TOLERANCE):
+                       villain_order=DECLARED_VILLAIN_ORDER):
     """The joint action of the calculation (WP §3, §7): the primal Regge term
-    with weight 1/kappa, the Villain holonomy term with coupling beta, and
-    the mean-field term; kappa enters only through the Regge weight, and the
-    spectral-moment part of S_0 is imposed by the mean-field solve as the
-    constraints of WP v17 §3.4 on the occupied fiber."""
+    with weight 1/kappa, the Villain holonomy term with coupling beta and the
+    Villain weight summed to ``villain_order``, and the mean-field term;
+    kappa enters only through the Regge weight, and the spectral-moment part
+    of S_0 is imposed by the mean-field solve as the constraints of WP v17
+    §3.4 on the occupied fiber."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
@@ -531,7 +566,7 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                                 if regge_hinges == "interior"
                                 else cob.ReggeHinges.All)
     declaration.holonomy_weight = beta
-    declaration.villain_tolerance = villain_tolerance
+    declaration.villain_order = villain_order
     declaration.matter_weight = matter_weight
     return declaration
 
@@ -1052,7 +1087,7 @@ def _geometric_action(spacetime, kappa, beta, config):
         spacetime, action_declaration(
             spacetime, kappa, beta, config["regge_hinges"],
             matter_weight=0.0,
-            villain_tolerance=declared_tolerance(config, "villain_tolerance")))
+            villain_order=declared_villain_order(config)))
 
 
 def fluctuation_couplings(spacetime, phases):
@@ -1514,7 +1549,7 @@ def relax_content(content, kappa, beta, config):
     spacetime = build_host(config["edge_squared"], config.get("host_cell"))
     declaration = action_declaration(
         spacetime, kappa, beta, config["regge_hinges"],
-        villain_tolerance=declared_tolerance(config, "villain_tolerance"))
+        villain_order=declared_villain_order(config))
     action = cob.JointAction(spacetime, declaration)
     mean_field = mean_field_declaration(content, config, spacetime)
     mean_field.fiber_moments = fiber_moment_count(
@@ -2130,10 +2165,7 @@ def evaluate_content(content, kappa, beta, config):
             "face_holonomies": [complex(f) for f in
                                 action.face_holonomies()],
             "holonomy_truncation": {
-                "tolerance": float(truncation_read.tolerance),
-                "declared_term_count": int(
-                    truncation_read.declared_term_count),
-                "maximum_term_count": int(truncation_read.maximum_term_count),
+                "order": int(truncation_read.order),
                 "relative_value_tail": float(
                     truncation_read.relative_value_tail),
                 "relative_first_tail": float(
@@ -2564,7 +2596,7 @@ def _carrier(host, kappa, beta, config):
     """h_1 of a host under the run's declared action, as a matrix."""
     declaration = action_declaration(
         host, kappa, beta, config["regge_hinges"],
-        villain_tolerance=declared_tolerance(config, "villain_tolerance"))
+        villain_order=declared_villain_order(config))
     return matrix(cob.JointAction(host, declaration).carrier_operator())
 
 
@@ -3551,13 +3583,15 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    band_selection=DECLARED_BAND_SELECTION,
                    fiber_moments=DECLARED_FIBER_MOMENTS,
                    fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None,
-                   trace_terms=False, limits=None):
+                   trace_terms=False, limits=None,
+                   villain_order=DECLARED_VILLAIN_ORDER):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
     by key; the others are recorded at `DECLARED_TOLERANCE`. ``limits``
     declares any of `LIMITS` by key; the others are recorded as None, not
-    declared."""
+    declared. ``villain_order`` is the order the Villain weight of the
+    holonomy term is summed to (`DECLARED_VILLAIN_ORDER`)."""
     return {
         "mode": "controlled synthesis",
         "contents": [list(c) for c in (selected_contents or contents())],
@@ -3565,6 +3599,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "betas": list(betas),
         "edge_squared": edge_squared,
         "regge_hinges": regge_hinges,
+        "villain_order": checked_villain_order(villain_order),
         "elimination": elimination,
         "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
@@ -4378,11 +4413,35 @@ def build_parser():
                      help="add the isospin-doublet observation (WP §10, "
                           "`IsospinDoublet`) to every content's record; the "
                           "other outputs are unchanged")
+    add_action_arguments(run)
     add_mean_field_arguments(run)
     add_tolerance_arguments(run)
     add_limit_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
+
+
+def _villain_order(text):
+    """An integer from 1 to the largest order, for --villain-order."""
+    try:
+        return checked_villain_order(int(text))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "--villain-order is an integer from 1 to %d; got %r"
+            % (cob.VillainCharacter.maximum_order, text))
+
+
+def add_action_arguments(parser):
+    """The options of the joint action every driver accepts. Each is part of
+    the action: it changes the equations that are solved."""
+    parser.add_argument("--villain-order", type=_villain_order,
+                        default=DECLARED_VILLAIN_ORDER,
+                        help="M, the order the Villain weight of the "
+                             "holonomy term is summed to: the term is "
+                             "defined by the sum over |m| <= M; an integer "
+                             "from 1 to %d (default %d)"
+                             % (cob.VillainCharacter.maximum_order,
+                                DECLARED_VILLAIN_ORDER))
 
 
 def _tolerance(text):
@@ -4486,7 +4545,8 @@ def main(argv=None):
                             fiber_pinning=args.fiber_pinning,
                             tolerances=tolerances_from(args),
                             trace_terms=args.trace_terms,
-                            limits=limits_from(args))
+                            limits=limits_from(args),
+                            villain_order=args.villain_order)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None

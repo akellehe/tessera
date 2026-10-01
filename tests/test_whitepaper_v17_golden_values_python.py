@@ -265,17 +265,43 @@ def test_the_villain_stiffness_at_a_quarter_turn(beta):
     np.testing.assert_allclose(villain[9:], 4.0 * curvature.real, rtol=1e-10)
 
 
-def test_the_matched_villain_weight_tends_to_one():
+def test_the_matched_villain_weight_at_order_ten():
     """WP v17 lines 171 and 173: beta_V = beta / <m^2>_beta, and by Poisson
-    summation beta_V -> 1 as beta -> infinity."""
-    for beta in (0.5, 2.0):
-        character = cob.VillainCharacter(beta)
-        m = np.arange(-400, 401, dtype=float)
+    summation beta_V -> 1 as beta -> infinity for the infinite series. The
+    library sums the Villain weight to a declared order, ten by default, and
+    takes the second moment of the same sums over |m| <= 10
+    (`VillainCharacter`). At beta = 0.5 and 2 the order-ten weight is that
+    of the 801-term sums to 3e-12 (at beta = 2 the pair m = +-11 carries
+    242 exp(-121 / 4) = 1.8e-11 against a sum of 3.5). At beta = 60 the
+    coefficients exp(-m^2 / 120) of the kept terms run from 1 down to 0.43,
+    the second moment of the order-ten sums is 28.590 where the infinite
+    series has 60, and the matched weight is 2.0986, not one: the limit
+    beta_V -> 1 is that of the infinite series, which the 801-term sums
+    reproduce at beta = 60 to 1e-12."""
+    m = np.arange(-400, 401, dtype=float)
+
+    def infinite(beta):
         weights = np.exp(-m ** 2 / (2.0 * beta))
-        assert character.matched_weight == pytest.approx(
-            beta / (np.sum(m ** 2 * weights) / np.sum(weights)), rel=1e-12)
-    assert cob.VillainCharacter(60.0).matched_weight == pytest.approx(
-        1.0, abs=1e-12)
+        return beta / (np.sum(m ** 2 * weights) / np.sum(weights))
+
+    def order_ten(beta):
+        kept = np.arange(-10, 11, dtype=float)
+        weights = np.exp(-kept ** 2 / (2.0 * beta))
+        return beta / (np.sum(kept ** 2 * weights) / np.sum(weights))
+
+    for beta in (0.5, 2.0, 60.0):
+        character = cob.VillainCharacter(beta)
+        assert character.order == 10
+        assert character.matched_weight == pytest.approx(order_ten(beta),
+                                                         rel=1e-13)
+    for beta in (0.5, 2.0):
+        assert cob.VillainCharacter(beta).matched_weight == pytest.approx(
+            infinite(beta), rel=3e-12)
+    assert infinite(60.0) == pytest.approx(1.0, abs=1e-12)
+    assert math.exp(-100.0 / 120.0) == pytest.approx(0.43, abs=5e-3)
+    sixty = cob.VillainCharacter(60.0)
+    assert sixty.second_moment == pytest.approx(28.590, abs=1e-3)
+    assert sixty.matched_weight == pytest.approx(2.0986, abs=1e-4)
 
 
 def test_the_ward_identity_on_pure_gauge_directions():

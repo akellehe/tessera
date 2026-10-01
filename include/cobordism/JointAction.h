@@ -211,254 +211,446 @@ enum class ReggeBranch { Continued, Principal };
 
 /// # VillainSeries
 ///
-/// The truncated Laurent series of the Villain character sum at one face
-/// holonomy \f$ F \f$, and the certified bounds on what the truncation
-/// leaves out.
+/// The order-\f$ M \f$ Villain sums at one face holonomy \f$ F \f$, the bound
+/// on the rounding of the first of them, and the reported distance of each
+/// from its infinite series.
 ///
-/// With \f$ q=e^{-1/(2\beta)} \f$ and \f$ D=F\,d/dF \f$ the Maurer-Cartan
-/// derivative, the three sums are
-/// \f$ W=\sum_{|m|\le M}q^{m^2}F^m \f$,
-/// \f$ DW=\sum_{|m|\le M}m\,q^{m^2}F^m \f$ and
-/// \f$ D^2W=\sum_{|m|\le M}m^2q^{m^2}F^m \f$.
+/// With \f$ c_m \f$ the coefficients of `VillainCharacter`, the
+/// double-precision values of \f$ q^{m^2} \f$ with \f$ q=e^{-1/(2\beta)} \f$,
+/// and \f$ D=F\,d/dF \f$ the Maurer-Cartan derivative, the three sums are
+/// \f$ W_M=\sum_{|m|\le M}c_mF^m \f$,
+/// \f$ DW_M=\sum_{|m|\le M}m\,c_mF^m \f$ and
+/// \f$ D^2W_M=\sum_{|m|\le M}m^2c_mF^m \f$: a Laurent polynomial and its two
+/// derivatives, each summed in full and exact up to rounding.
 ///
-/// Each tail bound is an upper bound on the modulus of the omitted part of the
-/// corresponding infinite series, \f$ \sum_{|m|>M} \f$. With
-/// \f$ r=\max(|F|,|F|^{-1}) \f$ every omitted term obeys
+/// Each tail is an upper bound on the modulus of the part of the
+/// corresponding infinite series beyond the order, \f$ \sum_{|m|>M} \f$: the
+/// distance between the order-\f$ M \f$ sum and the infinite series. With
+/// \f$ r=\max(|F|,|F|^{-1}) \f$ every pair beyond the order obeys
 /// \f$ |m^k q^{m^2}(F^m+F^{-m})|\le 2t_m \f$ with
-/// \f$ t_m=m^k q^{m^2}r^m \f$, and for \f$ m\ge M+1 \f$ the ratio
-/// \f$ t_{m+1}/t_m=((m+1)/m)^k q^{2m+1}r \f$ decreases in \f$ m \f$, so it is
-/// at most \f$ \rho_k=((M+2)/(M+1))^k q^{2M+3}r \f$ and the tail is at most
-/// \f$ 2t_{M+1}/(1-\rho_k) \f$ whenever \f$ \rho_k<1 \f$.
+/// \f$ t_m=m^k q^{m^2}r^m \f$, and the ratio
+/// \f$ t_{m+1}/t_m=((m+1)/m)^k q^{2m+1}r \f$ decreases in \f$ m \f$, so past
+/// an index \f$ N \f$ it is at most
+/// \f$ \rho_k(N)=((N+2)/(N+1))^k q^{2N+3}r \f$. With \f$ N\ge M \f$ the least
+/// index at which \f$ \rho_k(N)<1 \f$, the tail is at most
+/// \f[
+///   \sum_{m=M+1}^{N}2t_m+\frac{2t_{N+1}}{1-\rho_k(N)} .
+/// \f]
+/// Where \f$ \rho_k(M)<1 \f$, \f$ N=M \f$ and the bound is the geometric one
+/// alone. The tails are a report: no sum, no certificate and no step of a
+/// solve reads them.
 struct VillainSeries {
-  /// \f$ W(F) \f$.
+  /// \f$ W_M(F) \f$.
   std::complex<double> value{1.0, 0.0};
-  /// \f$ F\,W'(F) \f$.
+  /// \f$ F\,W_M'(F) \f$.
   std::complex<double> first{0.0, 0.0};
-  /// \f$ (F\,d/dF)^2W(F) \f$.
+  /// \f$ (F\,d/dF)^2W_M(F) \f$.
   std::complex<double> second{0.0, 0.0};
-  /// \f$ M \f$, the largest \f$ |m| \f$ kept.
-  std::size_t termCount = 0;
-  /// The bound on the omitted part of \f$ W \f$.
+  /// \f$ M \f$, the declared order: the largest \f$ |m| \f$ in the sums.
+  int order = 0;
+  /// The bound on \f$ |W-W_M| \f$, \f$ W \f$ the infinite series.
   double valueTail = 0.0;
-  /// The bound on the omitted part of \f$ DW \f$.
+  /// The bound on \f$ |DW-DW_M| \f$.
   double firstTail = 0.0;
-  /// The bound on the omitted part of \f$ D^2W \f$.
+  /// The bound on \f$ |D^2W-D^2W_M| \f$.
   double secondTail = 0.0;
-  /// \f$ \sum_{|m|\le M}|q^{m^2}F^m| \f$, the scale of the rounding error of
-  /// the summed \f$ W \f$: a computed \f$ |W| \f$ within a small multiple of
-  /// machine epsilon times this is indistinguishable from zero.
+  /// \f$ A(F)=\sum_{|m|\le M}c_m|F|^m \f$, the sum of the moduli of the terms
+  /// of \f$ W_M \f$, evaluated with every operation rounded upward, so that
+  /// it is not below the exact sum.
   double magnitude = 1.0;
+  /// \f$ \sum_{|m|\le M}|m|\,c_m|F|^m \f$, the same for \f$ DW_M \f$: a bound
+  /// on \f$ |DW_M(F)| \f$.
+  double firstMagnitude = 0.0;
+  /// \f$ \sum_{|m|\le M}m^2c_m|F|^m \f$, the same for \f$ D^2W_M \f$.
+  double secondMagnitude = 0.0;
+  /// The bound on the rounding of `value`,
+  /// \f$ |{\rm fl}(W_M)-W_M|\le\gamma_{6M+1}A(F) \f$, derived under
+  /// `VillainCharacter`; infinite when the computed sum is not finite.
+  double roundingBound = 0.0;
 };
 
 /// # VillainCharacter
 ///
-/// The Villain (heat-kernel) weight of one face in its character form, and the
-/// per-face potential the joint action's holonomy term sums.
+/// The Villain (heat-kernel) weight of one face in its character form, summed
+/// to a declared order, and the per-face potential the joint action's holonomy
+/// term sums.
 ///
 /// Reference: Villain, "Theory of one- and two-dimensional magnets with an
 /// easy magnetization plane. II", Journal de Physique 36, 581 (1975).
+/// Reference: Higham, "Accuracy and Stability of Numerical Algorithms", second
+/// edition, SIAM (2002), Lemmas 3.1, 3.3 and 3.5, for the rounding bounds.
 ///
-/// ## The weight
+/// ## The weight and its order
 ///
 /// For a coupling \f$ \beta>0 \f$ the character sum
 /// \f[
 ///   W_\beta(F)=\sum_{m\in\mathbb Z}e^{-m^2/(2\beta)}F^m
 /// \f]
 /// is a Laurent series in the face holonomy \f$ F\in\mathbb C^{*} \f$ that
-/// converges on all of \f$ \mathbb C^{*} \f$, so it is holomorphic there. Its
-/// coefficients are even in \f$ m \f$, so \f$ W(F^{-1})=W(F) \f$. On the unit
-/// circle, \f$ F=e^{i\theta} \f$, it is the heat kernel of the circle,
-/// \f$ W=\sqrt{2\pi\beta}\sum_n e^{-\beta(\theta-2\pi n)^2/2} \f$ by
-/// Poisson summation, which is real and positive. By Jacobi's triple product
+/// converges on all of \f$ \mathbb C^{*} \f$. It is a Jacobi theta function
+/// and has no closed elementary form, so it is summed to a declared order
+/// \f$ M \f$, an integer from one to ten (`maximumOrder`):
+/// \f[
+///   W_M(F)=\sum_{|m|\le M}c_mF^m ,
+/// \f]
+/// with \f$ c_m \f$ the double-precision value of \f$ e^{-m^2/(2\beta)} \f$
+/// (`coefficients`). The holonomy term of the action is defined by this
+/// Laurent polynomial: every value, derivative and certificate below is that
+/// of \f$ W_M \f$, and the infinite series enters only through the reported
+/// tails of `VillainSeries`.
+///
+/// The coefficients are even in \f$ m \f$ and real, so
+/// \f$ W_M(F^{-1})=W_M(F) \f$ and
+/// \f$ W_M(\bar F)=\overline{W_M(F)} \f$. On the unit circle,
+/// \f$ F=e^{i\theta} \f$, \f$ W_M=1+2\sum_{m=1}^{M}c_m\cos m\theta \f$ is
+/// real. \f$ F^MW_M(F) \f$ is a polynomial of degree \f$ 2M \f$, so
+/// \f$ W_M \f$ has \f$ 2M \f$ zeros in \f$ \mathbb C^{*} \f$, a set closed
+/// under inversion and under conjugation.
+///
+/// The infinite series is, on the unit circle, the heat kernel of the circle,
+/// \f$ W=\sqrt{2\pi\beta}\sum_n e^{-\beta(\theta-2\pi n)^2/2} \f$ by Poisson
+/// summation, real and positive, and by Jacobi's triple product
 /// \f$ W=\prod_{n\ge1}(1-q^{2n})(1+q^{2n-1}F)(1+q^{2n-1}F^{-1}) \f$ with
-/// \f$ q=e^{-1/(2\beta)} \f$, so its zeros are exactly the points
-/// \f$ F=-q^{\pm(2n-1)} \f$, \f$ n\ge1 \f$, on the negative real axis
-/// outside the annulus \f$ q<|F|<q^{-1} \f$.
+/// \f$ q=e^{-1/(2\beta)} \f$ its zeros are exactly the points
+/// \f$ F=-q^{\pm(2n-1)} \f$, \f$ n\ge1 \f$. \f$ W_M \f$ has these properties
+/// only to within its tail: on the unit circle it differs from the heat
+/// kernel by at most the tail bound and the rounding of the coefficients, so
+/// it is positive where the heat kernel is larger than that, and where the
+/// heat kernel is smaller it need not be.
 ///
 /// ## The potential and its matching to the Wilson form
 ///
-/// The per-face potential is \f$ \phi(F)=-\beta_V\log W_\beta(F) \f$. In the
+/// The per-face potential is \f$ \phi(F)=-\beta_V\log W_M(F) \f$. In the
 /// Maurer-Cartan derivative \f$ D=F\,d/dF \f$, which on the unit circle is
 /// \f$ -i\,d/d\theta \f$,
 /// \f[
-///   D\phi=-\beta_V\,\frac{DW}{W},\qquad
-///   D^2\phi=-\beta_V\Bigl(\frac{D^2W}{W}-\Bigl(\frac{DW}{W}\Bigr)^2\Bigr).
+///   D\phi=-\beta_V\,\frac{DW_M}{W_M},\qquad
+///   D^2\phi=-\beta_V\Bigl(\frac{D^2W_M}{W_M}
+///                        -\Bigl(\frac{DW_M}{W_M}\Bigr)^2\Bigr).
 /// \f]
-/// Writing \f$ \langle m^k\rangle_F=D^kW/W \f$ for the moments of the complex
-/// weights \f$ e^{-m^2/(2\beta)}F^m/W(F) \f$, the curvature in the real angle,
-/// \f$ \partial_\theta^2\phi=-D^2\phi \f$, is
+/// Writing \f$ \langle m^k\rangle_F=D^kW_M/W_M \f$ for the moments of the
+/// complex weights \f$ c_mF^m/W_M(F) \f$, \f$ |m|\le M \f$, the curvature in
+/// the real angle, \f$ \partial_\theta^2\phi=-D^2\phi \f$, is
 /// \f$ \kappa(F)=\beta_V(\langle m^2\rangle_F-\langle m\rangle_F^2) \f$.
 /// At trivial holonomy \f$ \langle m\rangle_1=0 \f$, so
-/// \f$ \kappa(1)=\beta_V\langle m^2\rangle_\beta \f$ with
+/// \f$ \kappa(1)=\beta_V\langle m^2\rangle_\beta \f$ with the second moment of
+/// the same order-\f$ M \f$ sums,
 /// \f[
-///   \langle m^2\rangle_\beta=\frac{\sum_m m^2e^{-m^2/(2\beta)}}
-///                                  {\sum_m e^{-m^2/(2\beta)}} .
+///   \langle m^2\rangle_\beta=\frac{\sum_{|m|\le M}m^2c_m}
+///                                  {\sum_{|m|\le M}c_m} .
 /// \f]
 /// The Wilson potential \f$ \beta(1-\cos\theta) \f$ has curvature
 /// \f$ \beta \f$ there, and the two quadratic expansions agree exactly when
 /// \f[
 ///   \beta_V=\frac{\beta}{\langle m^2\rangle_\beta},
 /// \f]
-/// which is the matching this class applies. With it the second variation of
-/// \f$ \sum_\tau\phi(\mathcal F_\tau) \f$ in the real link angles at trivial
-/// holonomy is \f$ \beta L_1^{\rm up} \f$, as for the Wilson form. By
-/// Poisson summation
+/// which is the matching this class applies, with the order-\f$ M \f$ moment.
+/// With it the second variation of \f$ \sum_\tau\phi(\mathcal F_\tau) \f$ in
+/// the real link angles at trivial holonomy is \f$ \beta L_1^{\rm up} \f$, as
+/// for the Wilson form, at every order. For the infinite series Poisson
+/// summation gives
 /// \f$ \langle m^2\rangle_\beta=\beta\bigl(1-4\pi^2\beta
 /// \langle n^2\rangle\bigr) \f$ with \f$ n \f$ weighted by
-/// \f$ e^{-2\pi^2\beta n^2} \f$, so \f$ \beta_V\to1 \f$ as
-/// \f$ \beta\to\infty \f$, and \f$ \beta_V-1 \f$ is about \f$ 2\times10^{-3} \f$
-/// at \f$ \beta=\tfrac12 \f$ and \f$ 2\times10^{-7} \f$ at
-/// \f$ \beta=1 \f$.
+/// \f$ e^{-2\pi^2\beta n^2} \f$, so its \f$ \beta_V-1 \f$ is about
+/// \f$ 2\times10^{-3} \f$ at \f$ \beta=\tfrac12 \f$ and
+/// \f$ 2\times10^{-7} \f$ at \f$ \beta=1 \f$, and the order-ten sums reproduce
+/// these to rounding. At a fixed order the coefficients tend to one as
+/// \f$ \beta\to\infty \f$, so \f$ \langle m^2\rangle_\beta \f$ tends to
+/// \f$ M(M+1)/3 \f$ and \f$ \beta_V \f$ grows as \f$ 3\beta/(M(M+1)) \f$; the
+/// reported tail says how far a coupling is from the infinite series.
 ///
 /// At a quarter-turn holonomy, \f$ F=\pm i \f$, the Wilson curvature
 /// \f$ \beta\cos\theta \f$ vanishes while the Villain curvature is
-/// \f[
-///   \kappa(\pm i)=\beta_V\bigl(\langle m^2\rangle_i-\langle m\rangle_i^2\bigr),
-///   \quad
-///   \langle m\rangle_i=\frac{2i\sum_{j\ge0}(-1)^j(2j+1)e^{-(2j+1)^2/(2\beta)}}
-///                             {\sum_k(-1)^ke^{-2k^2/\beta}},
-///   \quad
-///   \langle m^2\rangle_i=\frac{\sum_k(-1)^k4k^2e^{-2k^2/\beta}}
-///                               {\sum_k(-1)^ke^{-2k^2/\beta}},
-/// \f]
-/// which is real and positive: \f$ 0.43091 \f$ at \f$ \beta=\tfrac12 \f$,
-/// \f$ 0.99796 \f$ at \f$ \beta=1 \f$, \f$ 1.99999958 \f$ at
-/// \f$ \beta=2 \f$.
+/// \f$ \kappa(\pm i)=\beta_V\bigl(\langle m^2\rangle_i
+/// -\langle m\rangle_i^2\bigr) \f$, in which only the even \f$ m \f$ enter
+/// \f$ W_M(i) \f$ and \f$ \langle m^2\rangle_i \f$, with the sign
+/// \f$ (-1)^{m/2} \f$, and only the odd \f$ m \f$ enter
+/// \f$ \langle m\rangle_i \f$. It is real and positive: at order ten
+/// \f$ 0.43091 \f$ at \f$ \beta=\tfrac12 \f$, \f$ 0.99796 \f$ at
+/// \f$ \beta=1 \f$ and \f$ 1.99999958 \f$ at \f$ \beta=2 \f$.
 ///
 /// ## What is evaluated, and where no branch is chosen
 ///
-/// \f$ D\phi \f$ and \f$ D^2\phi \f$ use the ratios \f$ DW/W \f$ and
-/// \f$ D^2W/W \f$ only, so the stationarity equations and every derivative are
-/// single-valued meromorphic functions of \f$ F \f$ and no logarithm is taken
-/// in them. The value \f$ \phi \f$ needs \f$ \log W \f$. On the domain
-/// \f$ \Omega=\mathbb C^{*}\setminus\bigl((-\infty,-q^{-1}]\cup[-q,0)\bigr) \f$,
-/// which contains every zero-free ray from the unit circle, \f$ W \f$ has no
-/// zero and has winding number zero around the unit circle (it is real and
-/// positive there), so \f$ \log W \f$ has exactly one holomorphic branch on
-/// \f$ \Omega \f$ that is real on the unit circle. `logarithm` evaluates that
-/// branch by continuation along the radial path
-/// \f$ F(t)=\hat F\,|F|^t \f$, \f$ t\in[0,1] \f$, from
-/// \f$ \hat F=F/|F| \f$, accumulating the principal logarithm of the ratio of
-/// \f$ W \f$ at consecutive nodes of an adaptive subdivision in which every
-/// such ratio, including the one to each interval's midpoint, lies within
-/// \f$ \tfrac14 \f$ of one. It throws when the path meets a point at which
-/// \f$ |W| \f$ is not certified nonzero, that is, does not exceed a fixed
-/// multiple of its tail bound plus its rounding scale, which happens exactly
-/// when \f$ F \f$ is at or beyond a zero on the negative real axis.
+/// \f$ D\phi \f$ and \f$ D^2\phi \f$ use the ratios \f$ DW_M/W_M \f$ and
+/// \f$ D^2W_M/W_M \f$ only, so the stationarity equations and every
+/// derivative are single-valued rational functions of \f$ F \f$ and no
+/// logarithm is taken in them. They are evaluated wherever \f$ W_M \f$ is
+/// certified nonzero. The value \f$ \phi \f$ needs \f$ \log W_M \f$, which
+/// `logarithm` evaluates by a certified continuation.
 ///
-/// The start of the path is tested against the Poisson form, which makes
-/// \f$ W(\hat F) \f$ real and positive. The truncated sum is real there in
-/// exact arithmetic, because its terms pair as
-/// \f$ q^{m^2}(\hat F^m+\hat F^{-m})=2q^{m^2}\cos m\theta \f$, so a computed
-/// imaginary part is rounding. The test is therefore taken relative to the
-/// series' own uncertainty
-/// \f$ u=\text{(tail bound of } W)+\varepsilon\sum_{|m|\le M}|q^{m^2}\hat F^m| \f$,
-/// with \f$ \varepsilon \f$ the machine epsilon: the start is accepted when
-/// \f$ |\operatorname{Im}W|\le c_R\,u \f$, with the declared reality margin
-/// \f$ c_R \f$ (`realityMargin`), and when \f$ \operatorname{Re}W \f$ exceeds
-/// the nonzero margin times \f$ u \f$. A test relative to
-/// \f$ \operatorname{Re}W \f$ instead would refuse a real, positive \f$ W \f$
-/// whenever \f$ W \f$ is small beside the terms it is summed from: at
-/// \f$ \beta=5 \f$ and arguments beyond about \f$ 0.75\pi \f$, \f$ W \f$ is
-/// about \f$ 10^{-6} \f$ while the rounding scale is about \f$ 10^{-15} \f$. A
-/// start whose real part is not resolved above \f$ u \f$ throws
-/// `std::domain_error`, as a zero on the path does; an imaginary part beyond
-/// \f$ c_R\,u \f$ contradicts the Poisson form and throws `std::logic_error`.
+/// ## The rounding bound and the certificate that the weight is nonzero
 ///
-/// ## Truncation
+/// \f$ W_M \f$ is the Laurent polynomial with exactly the coefficients
+/// \f$ c_m \f$, so the coefficients carry no error. `series` evaluates
+/// \f$ W_M(F)=1+\sum_{m=1}^{M}c_m(F^m+G^m) \f$, \f$ G=1/F \f$, in double
+/// precision in the order written: the \f$ n=2M+1 \f$ monomials are added
+/// pair by pair in increasing \f$ m \f$. Let \f$ u=2^{-53} \f$ be the unit
+/// roundoff and \f$ \gamma_k=ku/(1-ku) \f$. A product of \f$ k \f$ factors
+/// \f$ 1+\delta_i \f$ with \f$ |\delta_i|\le u \f$ is \f$ 1+\theta \f$ with
+/// \f$ |\theta|\le\gamma_k \f$, and
+/// \f$ (1+\gamma_j)(1+\gamma_k)\le1+\gamma_{j+k} \f$ (Higham, Lemmas 3.1 and
+/// 3.3). Each computed monomial is the exact one times such a product, whose
+/// factors are counted as follows.
 ///
-/// The series keeps \f$ |m|\le M \f$, where \f$ M_0 \f$ is the least
-/// \f$ m\ge1 \f$ with \f$ e^{-m^2/(2\beta)} \f$ below the declared relative
-/// tolerance (relative to the \f$ m=0 \f$ coefficient, which is one), and
-/// \f$ M\ge M_0 \f$ is raised further, for the holonomy at hand, until the
-/// geometric tail ratios \f$ \rho_k \f$ of `VillainSeries` are at most
-/// \f$ \tfrac12 \f$ and each of the three tail bounds is below the same
-/// tolerance relative to the sum of the moduli of the kept terms of its own
-/// series. On the unit circle this is \f$ M_0 \f$; away from it the terms
-/// \f$ e^{-m^2/(2\beta)}r^m \f$, \f$ r=\max(|F|,|F|^{-1}) \f$, peak near
-/// \f$ m=\beta\log r \f$ and the count grows with them. Every evaluation
-/// returns its bounds; nothing is truncated without them.
+/// * The inverse. \f$ F=s\,2^e \f$ is scaled by an exact power of two to
+///   \f$ \tfrac12\le\max(|{\rm Re}\,s|,|{\rm Im}\,s|)<1 \f$ and
+///   \f$ G=\bar s/|s|^2\cdot2^{-e} \f$: two squares and their sum for
+///   \f$ |s|^2 \f$ and one division for each component, three roundings on
+///   each component, so the computed inverse is \f$ G(1+\theta) \f$ with
+///   \f$ |\theta|\le\gamma_3 \f$.
+/// * The powers. A complex product formed as \f$ (ac-bd,\ ad+bc) \f$ has a
+///   relative error of at most \f$ \sqrt2\,\gamma_2\le\gamma_3 \f$ (Higham,
+///   Lemma 3.5). \f$ F^m \f$ takes \f$ m-1 \f$ products, \f$ 3(m-1) \f$
+///   units; \f$ G^m \f$ takes \f$ m-1 \f$ products and carries the computed
+///   inverse \f$ m \f$ times, \f$ 6m-3 \f$ units.
+/// * The term. The sum \f$ F^m+G^m \f$ and its product with \f$ c_m \f$ are
+///   one unit each.
+/// * The accumulation. The pair of index \f$ m \f$ passes through
+///   \f$ M-m+1 \f$ additions.
+///
+/// The largest count is that of \f$ c_MG^M \f$, \f$ (6M-3)+2+1=6M \f$, so
+/// \f[
+///   |{\rm fl}(W_M)-W_M|\le\gamma_{6M}\,A(F),\qquad
+///   A(F)=\sum_{|m|\le M}c_m|F|^m .
+/// \f]
+/// Gradual underflow adds to a real product or quotient an absolute error of
+/// at most half the least subnormal number \f$ \eta=2^{-1074} \f$. The
+/// evaluation holds \f$ 10M \f$ real products and quotients (eight in the
+/// inverse, its four scalings by a power of two included, \f$ 8(M-1) \f$ in
+/// the powers and \f$ 2M \f$ in the terms); the
+/// error of one reaches at most \f$ M \f$ monomials and adds to each at most
+/// \f$ M\,A(F) \f$ times its size, since the later factors of a monomial,
+/// times its coefficient, are bounded by \f$ A(F) \f$ and a monomial holds
+/// the inverse at most \f$ M \f$ times. Together they add at most
+/// \f$ 5M^3\eta\,A(F) \f$, which is below \f$ u\,A(F) \f$ at every order
+/// because \f$ \eta/u=2^{-1021} \f$. One more unit covers it, and the
+/// rounding bound of `VillainSeries` is
+/// \f[
+///   \gamma_{6M+1}\,A(F),
+/// \f]
+/// with \f$ A(F) \f$ and the product evaluated with every operation rounded
+/// upward (`std::nextafter`), so that the stored bound is not below the exact
+/// one. A sum that overflows has no finite value and its bound is infinite.
+///
+/// \f$ W_M \f$ is certified nonzero at \f$ F \f$ when the modulus of the
+/// computed sum, rounded downward, exceeds this bound: then
+/// \f$ W_M(F)\neq0 \f$. No other factor enters the certificate. Where it does
+/// not hold the computed sum cannot be told from zero, and \f$ DW_M/W_M \f$,
+/// \f$ D^2W_M/W_M \f$ and \f$ \log W_M \f$ have no certified value there
+/// (`std::domain_error`).
+///
+/// ## The logarithm
+///
+/// `logarithm` evaluates \f$ \log W_M(F) \f$ on the branch that is real at
+/// the point \f$ F/|F| \f$ of the unit circle, continued along the radial
+/// path from that point to \f$ F \f$. The branch has a value when
+/// \f$ W_M \f$ is positive at that point of the circle and the path meets no
+/// zero of \f$ W_M \f$.
+///
+/// The nodes of the path are computed as \f$ P(s)={\rm fl}(F\,s) \f$, the two
+/// components each multiplied by a real scale \f$ s \f$ between
+/// \f$ s_0={\rm fl}(1/|F|) \f$ and one, with \f$ P(1)=F \f$ itself. The point
+/// of the ray a node stands for is \f$ Z(s)=F\,s \f$. Each component of a
+/// node is one rounded product, so
+/// \f$ |P(s)-Z(s)|\le u\,|Z(s)|+\eta/\sqrt2 \f$ with \f$ \eta \f$ the least
+/// subnormal number, and \f$ |Z(s)|\ge\min(|F|,|F|s_0) \f$ on the path, so
+/// the relative distance is at most
+/// \f$ \omega=u+\eta/\min(|F|,|F|s_0) \f$ and the Maurer-Cartan distance
+/// \f$ |\log(P/Z)| \f$ is at most \f$ \varepsilon=\omega/(1-\omega) \f$.
+///
+/// A step from the node at scale \f$ s_a \f$ to the node at \f$ s_b \f$ is
+/// certified by a bound on the change of \f$ W_M \f$. Let \f$ \mathcal N \f$
+/// be the set of points within Maurer-Cartan distance \f$ \varepsilon \f$ of
+/// the stretch of the ray between \f$ Z(s_a) \f$ and \f$ Z(s_b) \f$; it
+/// contains both nodes and is convex in the coordinate \f$ \log F \f$. With
+/// \f$ s_- \f$ and \f$ s_+ \f$ the smaller and the larger of the two scales,
+/// the moduli in \f$ \mathcal N \f$ lie between
+/// \f$ \rho_-=|F|s_-e^{-\varepsilon} \f$ and
+/// \f$ \rho_+=|F|s_+e^{\varepsilon} \f$, and the modulus of each monomial is
+/// monotone in \f$ |F| \f$, increasing for \f$ m>0 \f$ and decreasing for
+/// \f$ m<0 \f$, so on \f$ \mathcal N \f$
+/// \f[
+///   |D^2W_M|\le B=\sum_{m=1}^{M}m^2c_m\bigl(\rho_+^{\,m}+\rho_-^{-m}\bigr).
+/// \f]
+/// Every point \f$ G \f$ of \f$ \mathcal N \f$ is joined to \f$ P(s_a) \f$
+/// inside \f$ \mathcal N \f$ by the straight segment in the coordinate
+/// \f$ \log F \f$, of length at most
+/// \f$ L=\log(s_+/s_-)+2\varepsilon\le(s_+-s_-)/s_-+2\varepsilon \f$. Along
+/// it \f$ dW_M=DW_M\,d\log F \f$ and \f$ dDW_M=D^2W_M\,d\log F \f$, so by
+/// Taylor's formula with its remainder
+/// \f[
+///   |W_M(G)-W_M(P(s_a))|\le V=|DW_M(P(s_a))|\,L+\tfrac12BL^2 .
+/// \f]
+/// The first derivative at the node is bounded by the modulus of its computed
+/// sum plus that sum's rounding bound, which is derived as that of
+/// \f$ W_M \f$ with one more unit for the product \f$ m\,c_m \f$:
+/// \f$ \gamma_{6M+2}\sum_{|m|\le M}|m|\,c_m|F|^m \f$. The bound is of second
+/// order, with the first-order term read from the computed derivative,
+/// because where \f$ W_M \f$ is small beside the terms it is summed from,
+/// \f$ DW_M \f$ is small with it while the sum of the moduli of its terms is
+/// not: a bound from that sum alone certifies only steps of length
+/// \f$ |W_M|/\sum|m|\,c_m|F|^m \f$. With \f$ \hat W_a \f$, \f$ \hat W_b \f$
+/// the computed sums at the two nodes and \f$ u_a \f$, \f$ u_b \f$ their
+/// rounding bounds, the step is certified when
+/// \f[
+///   V+u_a+u_b<|\hat W_a| .
+/// \f]
+/// Then \f$ W_M(\mathcal N) \f$, \f$ \hat W_a \f$ and \f$ \hat W_b \f$ all
+/// lie in the open disc of radius \f$ |\hat W_a| \f$ about \f$ \hat W_a \f$.
+/// The disc does not contain zero, so \f$ W_M \f$ has no zero on the stretch,
+/// and it lies in the half-plane
+/// \f$ \{z:\operatorname{Re}(z/\hat W_a)>0\} \f$, on which the principal
+/// logarithm of \f$ z/\hat W_a \f$ is a branch of \f$ \log z \f$: the
+/// increment of the continued logarithm over the step is the principal
+/// logarithm of \f$ \hat W_b/\hat W_a \f$, which cannot wind. The term
+/// \f$ u_b \f$ is there because the increment is formed from the computed sum
+/// at the far node. Consecutive steps share a node, and the half-planes of
+/// both contain the computed sum there and the value of \f$ W_M \f$ at the
+/// node's point of the ray, so the increments add up to the logarithm
+/// continued along the ray, to within the rounding of the sum at \f$ F \f$.
+/// Every quantity of the inequality is evaluated in real arithmetic with each
+/// operation rounded to the side that makes the inequality harder to meet
+/// (`std::nextafter`), so the computed inequality implies the exact one.
+///
+/// The first candidate for \f$ s_b \f$ is one, the whole remaining path. A
+/// candidate that is not certified is replaced by the geometric mean of
+/// \f$ s_a \f$ and \f$ s_b \f$, which halves the Maurer-Cartan length of the
+/// segment, until a step is certified; no count bounds the halvings. When the
+/// geometric mean is not strictly between \f$ s_a \f$ and \f$ s_b \f$ in
+/// double precision the segment cannot be subdivided: the path meets a zero
+/// of \f$ W_M \f$ at the resolution of the datatype, the logarithm has no
+/// value, and `logarithm` throws `std::domain_error`.
+///
+/// The start of the path is certified by the same bound. \f$ Z(s_0) \f$ lies
+/// within \f$ \lambda=\max(|F|s_0-1,\,1/(|F|s_0)-1) \f$ of the unit circle in
+/// the Maurer-Cartan distance, because
+/// \f$ |\log x|\le\max(x-1,\,1/x-1) \f$, with \f$ |F| \f$ bounded below and
+/// above by its modulus evaluated with every operation rounded downward and
+/// upward. The points of that stretch of the ray are within
+/// \f$ L_0=\lambda+\varepsilon \f$ of the first node, so with \f$ B_0 \f$
+/// the sum above at \f$ \rho_+=\max(1,|F|s_0)\,e^{\varepsilon} \f$ and
+/// \f$ \rho_-=\min(1,|F|s_0)\,e^{-\varepsilon} \f$, \f$ W_M \f$ on the
+/// stretch, its point on the circle included, differs from the computed sum
+/// \f$ \hat W_0 \f$ at the first node by at most
+/// \f$ \hat u_0=|DW_M(P(s_0))|\,L_0+\tfrac12B_0L_0^2+u_0 \f$. \f$ W_M \f$
+/// is real on the circle, so
+/// \f$ |\operatorname{Im}\hat W_0|\le\hat u_0 \f$ holds whenever the
+/// evaluation is correct; a larger imaginary part contradicts the reality of
+/// the cosine sum and throws `std::logic_error`. When
+/// \f$ \operatorname{Re}\hat W_0>\hat u_0 \f$, \f$ W_M \f$ is positive at the
+/// point of the circle and the continuation starts from the real logarithm
+/// of \f$ \operatorname{Re}\hat W_0 \f$. Otherwise \f$ W_M \f$ is zero,
+/// negative or below its bound at that point of the circle, the branch real
+/// on the circle has no value on the ray, and `logarithm` throws
+/// `std::domain_error`. At the end of the path \f$ W_M \f$ is required to be
+/// certified nonzero at \f$ F \f$, and a scale \f$ s_0 \f$ that is not a
+/// finite positive double (a holonomy whose modulus or inverse modulus is
+/// beyond the range of the datatype) leaves the path without a first node,
+/// which is a `std::domain_error` as well.
 class VillainCharacter {
  public:
+  /// The largest order that can be declared.
+  static constexpr int maximumOrder = 10;
+
   /// @param beta The coupling \f$ \beta>0 \f$ of the heat kernel.
-  /// @param tolerance The declared relative tolerance in \f$ (0,1) \f$ below
-  ///   which a coefficient \f$ e^{-m^2/(2\beta)} \f$ is left out.
-  /// @throws std::invalid_argument when \p beta is not positive or
-  ///   \p tolerance is not in \f$ (0,1) \f$.
-  VillainCharacter(double beta, double tolerance);
+  /// @param order The order \f$ M \f$: the sums keep \f$ |m|\le M \f$.
+  /// @throws std::invalid_argument when \p beta is not positive and finite
+  ///   or \p order is not an integer from one to `maximumOrder`.
+  VillainCharacter(double beta, int order);
 
   /// \f$ \beta \f$.
   [[nodiscard]] double beta() const noexcept { return beta_; }
-  /// The declared relative tolerance.
-  [[nodiscard]] double tolerance() const noexcept { return tolerance_; }
-  /// \f$ M_0 \f$, the term count the tolerance alone fixes.
-  [[nodiscard]] std::size_t declaredTermCount() const noexcept {
-    return declaredTerms_;
+  /// \f$ M \f$, the declared order.
+  [[nodiscard]] int order() const noexcept { return order_; }
+  /// \f$ c_0,\dots,c_M \f$: the double-precision values of
+  /// \f$ e^{-m^2/(2\beta)} \f$ that define \f$ W_M \f$.
+  [[nodiscard]] const std::vector<double> &coefficients() const noexcept {
+    return coefficients_;
   }
-  /// \f$ \langle m^2\rangle_\beta \f$, the second moment at trivial holonomy.
+  /// \f$ \langle m^2\rangle_\beta=\sum_{|m|\le M}m^2c_m/\sum_{|m|\le M}c_m \f$,
+  /// the second moment of the order-\f$ M \f$ sums at trivial holonomy.
   [[nodiscard]] double secondMoment() const noexcept { return secondMoment_; }
-  /// \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$.
+  /// \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$, with the
+  /// order-\f$ M \f$ second moment.
   [[nodiscard]] double matchedWeight() const noexcept {
     return beta_ / secondMoment_;
   }
 
-  /// The truncated series \f$ W \f$, \f$ DW \f$, \f$ D^2W \f$ at \p holonomy
-  /// with their tail bounds.
-  /// @throws std::invalid_argument when \p holonomy is zero or not finite, or
-  ///   when no term count up to \f$ 10^5 \f$ meets the truncation rule.
+  /// \f$ W_M \f$, \f$ DW_M \f$ and \f$ D^2W_M \f$ at \p holonomy, with the
+  /// rounding bound of \f$ W_M \f$ and the reported tails.
+  /// @throws std::invalid_argument when \p holonomy is zero or not finite.
   [[nodiscard]] VillainSeries series(std::complex<double> holonomy) const;
 
-  /// \f$ \log W(F) \f$ on the branch real on the unit circle, by the radial
-  /// continuation described above.
-  /// @throws std::domain_error when the path meets a point at which \f$ W \f$
-  ///   is not certified nonzero, its start on the unit circle included.
-  /// @throws std::logic_error when the imaginary part of \f$ W \f$ at the
-  ///   start of the path exceeds `realityMargin` times the series'
-  ///   uncertainty there, which contradicts the Poisson form.
+  /// Whether \f$ W_M \f$ is certified nonzero at the holonomy the sums of
+  /// \p point were evaluated at: the modulus of the computed sum, rounded
+  /// downward, exceeds its rounding bound.
+  [[nodiscard]] static bool certifiedNonzero(const VillainSeries &point);
+
+  /// \f$ \log W_M(F) \f$ on the branch real on the unit circle, by the
+  /// certified radial continuation described above.
+  /// @throws std::invalid_argument when \p holonomy is zero or not finite.
+  /// @throws std::domain_error when \f$ W_M \f$ is not above its bound at the
+  ///   point of the unit circle on the ray of \p holonomy, when the path
+  ///   meets a zero of \f$ W_M \f$ at the resolution of double precision, or
+  ///   when \f$ W_M \f$ is not certified nonzero at \p holonomy.
+  /// @throws std::logic_error when the imaginary part of the computed sum at
+  ///   the start of the path exceeds its bound, which contradicts the
+  ///   reality of \f$ W_M \f$ on the unit circle.
   [[nodiscard]] std::complex<double> logarithm(
       std::complex<double> holonomy) const;
 
-  /// \f$ c_R \f$, the declared multiple of the series' uncertainty (its tail
-  /// bound plus its rounding scale) within which `logarithm` reads the
-  /// imaginary part of \f$ W \f$ on the unit circle as rounding.
-  [[nodiscard]] static double realityMargin() noexcept;
-
-  /// \f$ \phi(F)=-\beta_V\log W(F) \f$.
+  /// \f$ \phi(F)=-\beta_V\log W_M(F) \f$.
   [[nodiscard]] std::complex<double> potential(
       std::complex<double> holonomy) const;
-  /// \f$ D\phi=-\beta_V\,DW/W \f$.
-  /// @throws std::domain_error when \f$ W(F) \f$ is not certified nonzero.
+  /// \f$ D\phi=-\beta_V\,DW_M/W_M \f$.
+  /// @throws std::domain_error when \f$ W_M(F) \f$ is not certified nonzero.
   [[nodiscard]] std::complex<double> firstDerivative(
       std::complex<double> holonomy) const;
-  /// \f$ D^2\phi=-\beta_V(D^2W/W-(DW/W)^2) \f$.
-  /// @throws std::domain_error when \f$ W(F) \f$ is not certified nonzero.
+  /// \f$ D^2\phi=-\beta_V(D^2W_M/W_M-(DW_M/W_M)^2) \f$.
+  /// @throws std::domain_error when \f$ W_M(F) \f$ is not certified nonzero.
   [[nodiscard]] std::complex<double> secondDerivative(
       std::complex<double> holonomy) const;
 
  private:
+  /// An upper bound of
+  /// \f$ \sum_{m=1}^{M}m^2c_m(\rho_+^{\,m}+\rho_-^{-m}) \f$, every
+  /// operation rounded upward: the bound \f$ B \f$ on \f$ |D^2W_M| \f$ over
+  /// the moduli between \p lowerModulus and \p upperModulus.
+  [[nodiscard]] double secondDerivativeBound(double upperModulus,
+                                             double lowerModulus) const;
+
+  /// An upper bound of \f$ V=|DW_M|\,L+\tfrac12BL^2 \f$ at the node
+  /// \p node was evaluated at, with \f$ B \f$ = \p secondBound and
+  /// \f$ L \f$ = \p length, every operation rounded upward.
+  [[nodiscard]] double changeBound(const VillainSeries &node,
+                                   double secondBound, double length) const;
+
   double beta_;
-  double tolerance_;
-  double q_;
-  std::size_t declaredTerms_ = 1;
+  int order_;
+  std::vector<double> coefficients_;
   double secondMoment_ = 1.0;
 };
 
 /// # HolonomyTruncation
 ///
-/// The truncation of the Villain series over every face of the complex at the
-/// current connection, as `JointAction::holonomyTruncation` reports it.
+/// The order of the Villain weight and the reported distance of its sums from
+/// their infinite series over every face of the complex at the current
+/// connection, as `JointAction::holonomyTruncation` reports it. Each tail is
+/// the bound of `VillainSeries` divided by the sum of the moduli of the terms
+/// of its own order-\f$ M \f$ sum, and the largest over the faces is kept; a
+/// face at which that sum is zero in double precision has no ratio and is
+/// left out of the maximum. A report: nothing reads it.
 struct HolonomyTruncation {
-  /// The declared relative coefficient tolerance.
-  double tolerance = 0.0;
-  /// \f$ M_0 \f$, the term count the tolerance fixes.
-  std::size_t declaredTermCount = 0;
-  /// The largest \f$ M \f$ any face needed.
-  std::size_t maximumTermCount = 0;
-  /// \f$ \max_\tau \text{(tail of } W)/|W(\mathcal F_\tau)| \f$.
+  /// \f$ M \f$, the declared order.
+  int order = 0;
+  /// \f$ \max_\tau \f$ of the tail of \f$ W \f$ over
+  /// \f$ \sum_{|m|\le M}c_m|\mathcal F_\tau|^m \f$.
   double relativeValueTail = 0.0;
-  /// \f$ \max_\tau \text{(tail of } DW)/|W(\mathcal F_\tau)| \f$.
+  /// \f$ \max_\tau \f$ of the tail of \f$ DW \f$ over
+  /// \f$ \sum_{|m|\le M}|m|\,c_m|\mathcal F_\tau|^m \f$.
   double relativeFirstTail = 0.0;
-  /// \f$ \max_\tau \text{(tail of } D^2W)/|W(\mathcal F_\tau)| \f$.
+  /// \f$ \max_\tau \f$ of the tail of \f$ D^2W \f$ over
+  /// \f$ \sum_{|m|\le M}m^2c_m|\mathcal F_\tau|^m \f$.
   double relativeSecondTail = 0.0;
 };
 
@@ -561,9 +753,12 @@ struct JointActionDeclaration {
   /// Zero leaves the term out; it must be non-negative.
   double holonomyWeight = 0.0;
 
-  /// The relative tolerance below which a Villain coefficient
-  /// \f$ e^{-m^2/(2\beta)} \f$ is left out of the series (`VillainCharacter`).
-  double villainTolerance = 1e-18;
+  /// \f$ M \f$, the order the Villain weight is summed to: the holonomy term
+  /// is defined by the Laurent polynomial
+  /// \f$ W_M(F)=\sum_{|m|\le M}e^{-m^2/(2\beta)}F^m \f$ (`VillainCharacter`).
+  /// An integer from one to `VillainCharacter::maximumOrder`, ten, which is
+  /// the default.
+  int villainOrder = VillainCharacter::maximumOrder;
 
   /// \f$ w_M \f$, the coefficient multiplying the matter term
   /// \f$ S_{\rm matter}=\operatorname{tr}(\Gamma\,h(z,U)) \f$, the carried
@@ -674,12 +869,14 @@ struct JointActionDeclaration {
 ///   \f$ \mathcal F_\tau=\prod_{e\subset\partial\tau}U_e^{\epsilon_{\tau e}} \f$
 ///   and \f$ \epsilon_{\tau e} \f$ the integer incidence of \f$ \partial_2 \f$.
 ///   The per-face potential is the Villain (heat-kernel) action in its
-///   character form, \f$ \phi(F)=-\beta_V\log W_\beta(F) \f$ with the
+///   character form, \f$ \phi(F)=-\beta_V\log W_M(F) \f$ with the
 ///   character sum \f$ W_\beta(F)=\sum_{m\in\mathbb Z}e^{-m^2/(2\beta)}F^m \f$
-///   and \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (`VillainCharacter`),
+///   summed to the declared order, \f$ W_M=\sum_{|m|\le M} \f$ with
+///   \f$ M \f$ the declared `villainOrder`, and
+///   \f$ \beta_V=\beta/\langle m^2\rangle_\beta \f$ (`VillainCharacter`),
 ///   \f$ \beta \f$ the declared `holonomyWeight`: the holonomy term of the
-///   whitepaper's action. It is a holomorphic function of
-///   \f$ F\in\mathbb C^{*} \f$ (a Laurent series) that is even under
+///   whitepaper's action at that order. It is a holomorphic function of
+///   \f$ F\in\mathbb C^{*} \f$ (a Laurent polynomial) that is even under
 ///   \f$ F\leftrightarrow F^{-1} \f$, and \f$ \mathcal F_\tau \f$ is a Laurent
 ///   monomial in the links, so the term is holomorphic on
 ///   \f$ (\mathbb{C}^{*})^{|E|} \f$ and no argument, logarithm or modulus of a
@@ -835,10 +1032,11 @@ class JointAction {
   /// \f$ w_R\,S_{\rm Regge}(z) \f$ in the declared form and hinge set.
   [[nodiscard]] std::complex<double> reggeTerm() const;
   /// \f$ S_{\rm hol}(U) \f$, the weight included. This is the one quantity
-  /// that needs \f$ \log W \f$, and
-  /// it is evaluated on the branch real on the unit circle
-  /// (`VillainCharacter::logarithm`); it throws `std::domain_error` for a face
-  /// holonomy at or beyond a zero of \f$ W \f$ on the negative real axis.
+  /// that needs \f$ \log W_M \f$, and it is evaluated on the branch real on
+  /// the unit circle (`VillainCharacter::logarithm`); it throws
+  /// `std::domain_error` for a face holonomy on whose ray \f$ W_M \f$ is not
+  /// positive at the unit circle, or whose radial path meets a zero of
+  /// \f$ W_M \f$.
   /// `HolomorphicRelaxation` reads the value only to report it: its steps and
   /// their acceptance use the stationarity residual alone.
   [[nodiscard]] std::complex<double> holonomyTerm() const;
@@ -851,13 +1049,13 @@ class JointAction {
 
   /// The whole action as a solver reports it: `value` when it can be
   /// evaluated, and otherwise unavailable, with the reason by name. Only the
-  /// holonomy term needs \f$ \log W \f$, and a solver reads the value only to
-  /// report it (its steps and their acceptance use the stationarity residual
-  /// alone), so a refused logarithm makes this record unavailable instead of
-  /// ending the solve. A refusal is anything `value` throws as
-  /// `std::logic_error` (its `std::domain_error` for a zero of \f$ W \f$ on the
-  /// path of the logarithm, or an unresolved \f$ W \f$ on the unit circle,
-  /// included).
+  /// holonomy term needs \f$ \log W_M \f$, and a solver reads the value only
+  /// to report it (its steps and their acceptance use the stationarity
+  /// residual alone), so a logarithm that has no value makes this record
+  /// unavailable instead of ending the solve. That is anything `value` throws
+  /// as `std::logic_error` (its `std::domain_error` for a zero of
+  /// \f$ W_M \f$ on the path of the logarithm, or a \f$ W_M \f$ that is not
+  /// positive above its bound on the unit circle, included).
   [[nodiscard]] ReportedActionValue reportedValue() const;
 
   /// \f$ \partial S/\partial z_e \f$ for every edge, in `getEdgeList()` order.
@@ -877,7 +1075,7 @@ class JointAction {
   ///
   /// The face-holonomy part is analytic in closed form,
   /// \f$ \sum_\tau \epsilon_{\tau e}\,D\phi(\mathcal F_\tau) \f$ with
-  /// \f$ D=F\,d/dF \f$: \f$ -\beta_V\,DW/W \f$ per face. The operator part
+  /// \f$ D=F\,d/dF \f$: \f$ -\beta_V\,DW_M/W_M \f$ per face. The operator part
   /// uses the
   /// identity \f$ U_e\,\partial/\partial U_e = -i\,\partial/\partial\varphi_e \f$
   /// for \f$ U_e=e^{i\varphi_e} \f$ together with the exact analytic
@@ -904,12 +1102,14 @@ class JointAction {
   /// Jacobian of `linkStationarity` in the multiplicative coordinate
   /// \f$ U\mapsto Ue^{\delta} \f$ that `HolomorphicRelaxation` steps in. In
   /// the real angles, \f$ \delta=i\theta \f$, the Hessian is its negative. The
-  /// per-face second derivative is \f$ -\beta_V(D^2W/W-(DW/W)^2) \f$; no
+  /// per-face second derivative is
+  /// \f$ -\beta_V(D^2W_M/W_M-(DW_M/W_M)^2) \f$; no
   /// logarithm enters it.
   [[nodiscard]] std::vector<std::complex<double>> holonomyHessian() const;
 
-  /// The truncation of the Villain series over the current face holonomies,
-  /// with its certified relative tail bounds.
+  /// The order of the Villain weight and, over the current face holonomies,
+  /// the reported distance of its sums from their infinite series
+  /// (`HolonomyTruncation`).
   [[nodiscard]] HolonomyTruncation holonomyTruncation() const;
 
   /// The Hessian of the Regge term \f$ w_RS_{\rm Regge} \f$ in the squared
@@ -951,9 +1151,9 @@ class JointAction {
   ///
   /// A block whose coordinates are not asked for is left zero and the terms
   /// that live in it alone are not evaluated: with \p links false the
-  /// holonomy term's Hessian, which needs \f$ W'/W \f$ and \f$ W''/W \f$
-  /// at every face holonomy, is not formed, so a solve of the lengths alone
-  /// does not depend on it.
+  /// holonomy term's Hessian, which needs \f$ DW_M/W_M \f$ and
+  /// \f$ D^2W_M/W_M \f$ at every face holonomy, is not formed, so a solve
+  /// of the lengths alone does not depend on it.
   /// @param lengths Whether the squared lengths are coordinates.
   /// @param links Whether the links are coordinates.
   [[nodiscard]] std::vector<std::complex<double>> actionHessian(

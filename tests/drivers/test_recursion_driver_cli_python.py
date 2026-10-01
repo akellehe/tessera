@@ -19,8 +19,10 @@ import math
 import numpy as np
 import pytest
 
+from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import recursion as R
+from tests.drivers import _recursion_run_2026_09_23 as RUN
 
 HALF = str(bp.SPIN_HALF)
 THREE = str(bp.SPIN_THREE_HALVES)
@@ -160,6 +162,115 @@ def test_every_tolerance_is_an_option_of_the_run():
     assert tolerances["certificate_tolerance"] == bp.DECLARED_TOLERANCE
 
 
+def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
+    """M, the order the Villain weight of the holonomy term is summed to, is
+    an option of the run (``--villain-order``, an integer from 1 to 10, 10 by
+    default), recorded in the config under ``villain_order``, declared on
+    every level's action, and carried into the config of every cell's read.
+    The cell read is taken on the recorded tick-0 level
+    (`_recursion_run_2026_09_23`) with the scan point replaced by a recorder
+    of the config it is given. The level relaxation is run at the recorded
+    run's tolerances with one accepted step and one halving declared as its
+    limits, so that the read of the declaration does not wait on a solve."""
+    assert R.build_parser().parse_args(["run"]).villain_order == 10
+    args = R.build_parser().parse_args(["run", "--villain-order", "6"])
+    assert args.villain_order == 6
+    assert R.default_config()["villain_order"] == bp.DECLARED_VILLAIN_ORDER
+    config = R.default_config(
+        villain_order=6, selected_contents=[(1, 1, 1)],
+        tolerances=RUN.TOLERANCES,
+        limits={"iteration_limit": 1, "halving_limit": 1})
+    assert config["villain_order"] == 6
+    with pytest.raises(ValueError, match="integer from 1 to 10"):
+        R.default_config(villain_order=11)
+
+    seen = []
+
+    def scan(kappa, beta, cell_config, on_content=None):
+        seen.append(dict(cell_config))
+        return {"failed_contents": [], "contents": [], "ratios": {},
+                "pole_table": []}
+
+    monkeypatch.setattr(bp, "scan_point", scan)
+    reads = R.cell_reads(RUN.LEVEL_ZERO_CELLS, RUN.LEVEL_ZERO_SQUARED_LENGTHS,
+                         RUN.LEVEL_ZERO_LINKS, config)
+    assert len(reads) == len(seen) == 2
+    assert [cell["villain_order"] for cell in seen] == [6, 6]
+
+    declared = []
+    original = bp.action_declaration
+
+    def declaration(*arguments, **keywords):
+        declared.append(keywords.get("villain_order"))
+        return original(*arguments, **keywords)
+
+    monkeypatch.setattr(bp, "action_declaration", declaration)
+    spacetime, count = R.build_level(RUN.LEVEL_ZERO_CELLS,
+                                     RUN.LEVEL_ZERO_SQUARED_LENGTHS,
+                                     RUN.LEVEL_ZERO_LINKS)
+    cut = R.bounding_cut(RUN.LEVEL_ZERO_CELLS)
+    R.relax_level(spacetime, config, R.cut_sectors(
+        cut, R.cut_monopole_number(cut, RUN.LEVEL_ZERO_LINKS), count),
+        count=count)
+    assert declared == [6]
+
+
+@pytest.mark.parametrize("text", ["0", "11", "1.5", "many"])
+def test_a_villain_order_outside_one_to_ten_is_refused_by_name(text, capsys):
+    with pytest.raises(SystemExit) as stop:
+        R.build_parser().parse_args(["run", "--villain-order", text])
+    assert stop.value.code == 2
+    assert "--villain-order is an integer from 1 to 10" in \
+        capsys.readouterr().err
+
+
+def test_the_recorded_run_is_read_at_order_ten():
+    """The run of 2026-09-23 (`_recursion_run_2026_09_23`) summed the Villain
+    weight at beta = 1 until its coefficient exp(-m^2 / 2) fell below 1e-18.
+    exp(-81 / 2) = 2.6e-18 is not below it and exp(-100 / 2) = 1.9e-22 is, so
+    the run kept |m| <= 10, which is the order ten the drivers declare by
+    default. On the recorded tick-0 level, whose links have unit modulus, the
+    order-ten sums are the run's sums: what the order leaves out of W, DW and
+    D^2W, relative to the sums of the moduli of their terms, is reported as
+    4.2e-27, 6.4e-26 and 5.1e-25 (the first pair beyond the order,
+    2 exp(-121 / 2) = 1.1e-26, times 1, 11 and 121, over sums of 2.507,
+    1.824 and 2.507), each below the run's floor. Order nine drops the pair
+    2 exp(-50) = 3.9e-22 times the same weights, which is below the rounding
+    2^-53 = 1.1e-16 of sums of order one, so the holonomy term of the level
+    at order nine equals the one at order ten to 1e-15."""
+    least = next(m for m in range(1, 100)
+                 if math.exp(-m * m / (2.0 * RUN.BETA))
+                 < RUN.VILLAIN_COEFFICIENT_FLOOR)
+    assert least == RUN.VILLAIN_ORDER == bp.DECLARED_VILLAIN_ORDER == 10
+    assert math.exp(-81 / 2.0) > RUN.VILLAIN_COEFFICIENT_FLOOR \
+        > math.exp(-100 / 2.0)
+    assert R.default_config(tolerances=RUN.TOLERANCES)["villain_order"] == \
+        RUN.VILLAIN_ORDER
+
+    spacetime, _ = R.build_level(RUN.LEVEL_ZERO_CELLS,
+                                 RUN.LEVEL_ZERO_SQUARED_LENGTHS,
+                                 RUN.LEVEL_ZERO_LINKS)
+
+    def action(order):
+        return cob.JointAction(spacetime, bp.action_declaration(
+            spacetime, 1.0, RUN.BETA, villain_order=order))
+
+    ten = action(RUN.VILLAIN_ORDER)
+    faces = np.asarray(ten.face_holonomies())
+    assert np.max(np.abs(np.abs(faces) - 1.0)) < 1e-14
+    read = ten.holonomy_truncation()
+    assert read.order == 10
+    assert read.relative_value_tail == pytest.approx(4.24e-27, rel=1e-2)
+    assert read.relative_first_tail == pytest.approx(6.41e-26, rel=1e-2)
+    assert read.relative_second_tail == pytest.approx(5.13e-25, rel=1e-2)
+    assert read.relative_second_tail < RUN.VILLAIN_COEFFICIENT_FLOOR
+    nine = action(9)
+    assert abs(complex(nine.holonomy_term()) - complex(ten.holonomy_term())) \
+        < 1e-15 * abs(complex(ten.holonomy_term()))
+    assert np.max(np.abs(np.asarray(nine.holonomy_hessian())
+                         - np.asarray(ten.holonomy_hessian()))) < 1e-15
+
+
 # ------------------------------------------------------------ main
 
 
@@ -243,6 +354,7 @@ def test_main_passes_the_declared_options_to_every_tick(stub_reads):
     assert config["max_cells"] == 1
     assert config["kappa"] == 0.5 and config["beta"] == 2.0
     assert config["band_selection"] == "sort-every-iterate"
+    assert config["villain_order"] == bp.DECLARED_VILLAIN_ORDER == 10
 
 
 def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):

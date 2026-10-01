@@ -41,8 +41,10 @@ One tick
 At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
-   primal Regge + the Villain holonomy term, in strict emergence (no carried
-   density in the equations; WP §7). The spectral-moment part of S_0 is the
+   primal Regge + the Villain holonomy term (the Villain weight summed to
+   the declared order, ``--villain-order``, ten by default), in strict
+   emergence (no carried density in the equations; WP §7). The
+   spectral-moment part of S_0 is the
    holomorphic spectral constraint of WP v17 §3.4, which belongs to
    controlled synthesis on an occupied fiber and so enters only the per-cell
    reads below (stated there as the eigenvalue of each occupied band by
@@ -446,7 +448,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
     identical exactly."""
     declaration = bp.action_declaration(
         spacetime, config["kappa"], config["beta"], config["regge_hinges"],
-        villain_tolerance=bp.declared_tolerance(config, "villain_tolerance"))
+        villain_order=bp.declared_villain_order(config))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
@@ -879,10 +881,11 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
-        # the mean-field solver and the tolerances the run declared (none
-        # changes an equation)
-        for key in ("band_selection", "fiber_moments", "fiber_pinning",
-                    "kappa_role", "trace_terms") + tuple(
+        # the order of the Villain weight (part of the action), and the
+        # mean-field solver and the tolerances the run declared (none of
+        # which changes an equation)
+        for key in ("villain_order", "band_selection", "fiber_moments",
+                    "fiber_pinning", "kappa_role", "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES) + tuple(
                             key for key, _, _ in bp.LIMITS):
             if key in config:
@@ -1293,7 +1296,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
-                   pachner_depth=DECLARED_PACHNER_DEPTH, limits=None):
+                   pachner_depth=DECLARED_PACHNER_DEPTH, limits=None,
+                   villain_order=bp.DECLARED_VILLAIN_ORDER):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1303,7 +1307,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     `baryon_poles.TOLERANCES` by key; every tolerance is carried into every
     cell's config. ``limits`` declares any of `baryon_poles.LIMITS` by key
     (none by default: no count and no time ends a solve); every declared
-    limit is carried into every solve of the run."""
+    limit is carried into every solve of the run. ``villain_order`` is the
+    order the Villain weight of the holonomy term is summed to
+    (`baryon_poles.DECLARED_VILLAIN_ORDER`); it is carried into every level's
+    action and every cell's config."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                elimination=elimination,
@@ -1312,7 +1319,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                fiber_moments=fiber_moments,
                                fiber_pinning=fiber_pinning,
                                tolerances=tolerances, trace_terms=trace_terms,
-                               limits=limits)
+                               limits=limits, villain_order=villain_order)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1862,6 +1869,7 @@ def build_parser():
     run.add_argument("--live", action="store_true",
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
+    bp.add_action_arguments(run)
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)
@@ -1884,7 +1892,8 @@ def main(argv=None):
         fiber_pinning=args.fiber_pinning,
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
-        pachner_depth=args.pachner_depth, limits=bp.limits_from(args))
+        pachner_depth=args.pachner_depth, limits=bp.limits_from(args),
+        villain_order=args.villain_order)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)

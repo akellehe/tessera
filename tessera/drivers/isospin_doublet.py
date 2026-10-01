@@ -39,13 +39,16 @@ Running it
 ::
 
     python -m tessera.drivers.isospin_doublet run --json doublet.json \\
-        [--kappa 1 --beta 1 --content 1 1 1]
+        [--kappa 1 --beta 1 --content 1 1 1] [--villain-order 10]
 
 Without ``--kappa`` the declared host is read (its carrier operator does not
 depend on kappa or beta). With it, each (kappa, beta) and each content is first
 relaxed to self-consistency exactly as `baryon_poles` does, and the relaxed
 host is read. The baryon driver's ``--isospin-doublet`` option adds the same
-record to every content of its own scan.
+record to every content of its own scan. ``--villain-order`` is the order the
+Villain weight of the action's holonomy term is summed to
+(`baryon_poles.DECLARED_VILLAIN_ORDER`, ten by default); the result records
+it.
 """
 
 import argparse
@@ -181,13 +184,15 @@ def observe_host(carrier, actions=None, spinorial=None):
     return out
 
 
-def declared_carrier(edge_squared=bp.DECLARED_EDGE_SQUARED):
+def declared_carrier(edge_squared=bp.DECLARED_EDGE_SQUARED,
+                     villain_order=bp.DECLARED_VILLAIN_ORDER):
     """h_1(z, U) of the declared (unrelaxed) host. The carrier operator does
-    not depend on the action's weights, so the declaration's kappa and beta
-    are placeholders."""
+    not depend on the action's weights or on the order of its Villain weight,
+    so the declaration's kappa and beta are placeholders."""
     spacetime = bp.build_host(edge_squared)
-    action = cob.JointAction(spacetime,
-                             bp.action_declaration(spacetime, 1.0, 1.0))
+    action = cob.JointAction(
+        spacetime, bp.action_declaration(spacetime, 1.0, 1.0,
+                                         villain_order=villain_order))
     return bp.matrix(action.carrier_operator())
 
 
@@ -199,19 +204,23 @@ def relaxed_carrier(content, kappa, beta, config):
 
 
 def drive(kappas=None, betas=None, contents=None,
-          edge_squared=bp.DECLARED_EDGE_SQUARED, progress=False):
+          edge_squared=bp.DECLARED_EDGE_SQUARED, progress=False,
+          villain_order=bp.DECLARED_VILLAIN_ORDER):
+    villain_order = bp.checked_villain_order(villain_order)
     actions, spinorial = symmetry()
     result = {
-        "declared_host": observe_host(declared_carrier(edge_squared), actions,
-                                      spinorial),
+        "declared_host": observe_host(
+            declared_carrier(edge_squared, villain_order), actions,
+            spinorial),
         "spinorial": spinorial,
+        "villain_order": villain_order,
         "relaxed": [],
     }
     if progress:
         _print("declared host", result["declared_host"])
     if kappas:
         config = bp.default_config(kappas, betas or list(bp.DECLARED_BETAS),
-                                   edge_squared)
+                                   edge_squared, villain_order=villain_order)
         for kappa in kappas:
             for beta in (betas or list(bp.DECLARED_BETAS)):
                 for content in (contents or config["contents"]):
@@ -258,6 +267,7 @@ def build_parser():
                                         "repeatable; default all ten")
     run.add_argument("--edge-squared", type=float,
                      default=bp.DECLARED_EDGE_SQUARED)
+    bp.add_action_arguments(run)
     run.add_argument("--json", default=None)
     run.add_argument("--quiet", action="store_true")
     return parser
@@ -266,7 +276,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     result = drive(args.kappa, args.beta, args.content, args.edge_squared,
-                   progress=not args.quiet)
+                   progress=not args.quiet, villain_order=args.villain_order)
     if args.json:
         with open(args.json, "w") as handle:
             json.dump(bp._jsonable(result), handle, indent=1)
