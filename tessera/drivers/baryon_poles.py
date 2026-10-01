@@ -279,9 +279,6 @@ DECLARED_BETAS = (0.5, 1.0, 2.0, 5.0)
 #: projected out by the Drazin inverse), or the squared lengths alone.
 DECLARED_ELIMINATION = "lengths-and-phases"
 ELIMINATIONS = ("lengths-and-phases", "lengths")
-#: The Cauchy rule for the diamagnetic term along a pure-gauge direction.
-DECLARED_WARD_CONTOUR_RADIUS = 0.1
-DECLARED_WARD_CONTOUR_NODES = 8
 #: The squared edge length of the regular tetrahedron (the paper's a^2 = 8).
 DECLARED_EDGE_SQUARED = 8.0
 #: The unit Dirac monopole.
@@ -1506,6 +1503,73 @@ def occupied_projector(carrier, occupied):
     return vectors[:, order] @ np.linalg.inv(vectors)[order, :]
 
 
+def gauge_vertex_function(records, phase_shift):
+    """chi, the vertex function of a pure-gauge direction, and the departure
+    of the direction from the coboundary of chi.
+
+    A pure-gauge direction moves the phase of each stored edge (x, y) by
+    chi_y - chi_x (`gauge_directions`). ``records`` are the stored edges
+    (`edge_records`) and ``phase_shift`` the shift of each. chi is read
+    along a spanning tree of each connected component: its lowest vertex is
+    the root and carries chi = 0, the vertices are reached breadth first,
+    the edges of a vertex taken in the order of ``records``, and each tree
+    edge gives chi_y = chi_x + shift or chi_x = chi_y - shift. The constant
+    of a component is the one freedom of chi and moves no link.
+
+    Returns chi as a dictionary over the vertices and the Euclidean norm of
+    shift - (chi_y - chi_x) over all the edges: zero to rounding for a
+    coboundary, and the size of what the tree could not absorb for a shift
+    that is not one."""
+    vertices = sorted({v for pair in records for v in pair})
+    neighbours = {v: [] for v in vertices}
+    for (x, y), shift in zip(records, phase_shift):
+        neighbours[x].append((y, complex(shift)))
+        neighbours[y].append((x, -complex(shift)))
+    chi = {}
+    for root in vertices:
+        if root in chi:
+            continue
+        chi[root] = 0j
+        reached = [root]
+        for vertex in reached:
+            for other, shift in neighbours[vertex]:
+                if other not in chi:
+                    chi[other] = chi[vertex] + shift
+                    reached.append(other)
+    departure = math.sqrt(sum(
+        abs(complex(shift) - (chi[y] - chi[x])) ** 2
+        for (x, y), shift in zip(records, phase_shift)))
+    return chi, departure
+
+
+def gauge_generator(spacetime, phase_shift):
+    """Lambda_g, the generator of a pure-gauge direction on the edge
+    cochains, and the direction's departure from a coboundary.
+
+    The direction is the gauge transformation U_xy -> g_x^{-1} U_xy g_y with
+    g = exp(i chi) (`gauge_vertex_function`). An edge cochain is carried in
+    the frame at the lowest vertex of its cell (`CovariantChainHodge`), so
+    the transformation acts on the cochains by the diagonal matrix
+    D = diag(exp(i chi_{min sigma})) over the degree-one cells sigma in the
+    chain complex's order, the mode order of h_1, and h_1 goes to
+    D^{-1} h_1 D. The generator is Lambda_g = diag(chi_{min sigma})."""
+    chi, departure = gauge_vertex_function(edge_records(spacetime),
+                                           phase_shift)
+    cells = cob.ChainComplex.fromSpacetime(spacetime).kSimplexVertices(1)
+    return (np.diag([chi[min(int(v) for v in cell)] for cell in cells]),
+            departure)
+
+
+def gauge_derivative(coupling, generator):
+    """d_g O_a, the derivative of a coupling along a pure-gauge direction.
+
+    Along the direction h_1 is D(s)^{-1} h_1 D(s) with
+    D(s) = exp(i s Lambda_g) at every geometry, so each coupling
+    O_a = dh_1 / df_a is D(s)^{-1} O_a D(s) and its derivative at s = 0 is
+    the commutator i (O_a Lambda_g - Lambda_g O_a), a closed form."""
+    return 1j * (coupling @ generator - generator @ coupling)
+
+
 def ward_read(spacetime, carrier, couplings, directions, config):
     """The Ward identity of the retained fluctuations: (D - Pi(0)) g = 0 on
     every pure-gauge direction g.
@@ -1513,15 +1577,17 @@ def ward_read(spacetime, carrier, couplings, directions, config):
     Pi(0) is `DressedFluctuation.paramagnetic(0)` of the carrier with the
     declared couplings. D g is the diamagnetic term along g,
     (D g)_a = tr(P_occ d_g O_a), with P_occ the occupied Riesz projector and
-    d_g O_a the derivative of the coupling O_a along the pure-gauge direction,
-    formed by the Cauchy rule on a circle of the declared radius in the
-    complex gauge parameter: the direction is a gauge transformation for
-    every complex value of the parameter, so O_a is entire along it and the
-    rule converges geometrically in the node count. The residual is
+    d_g O_a the derivative of the coupling O_a along the pure-gauge
+    direction, the commutator of O_a with the direction's generator on the
+    edge cochains (`gauge_derivative`, `gauge_generator`). The residual is
     ||(D - Pi(0)) g|| / (||Pi(0)|| ||g||), maximized over the directions, and
     ``paramagnetic_alone`` is the largest same ratio for Pi(0) g by itself,
-    the size the identity cancels. The
-    geometry is restored exactly afterwards."""
+    the size the identity cancels. The generator is read from the phase
+    components of a direction; ``coboundary_departure`` is the largest
+    distance of a direction's phase shift from the coboundary of the vertex
+    function the generator is built on (`gauge_vertex_function`), zero to
+    rounding on a pure-gauge direction, and a direction that is not pure
+    gauge is read all the same with its departure beside the residual."""
     if directions is None:
         return {"directions": 0}
     n = carrier.shape[0]
@@ -1539,38 +1605,27 @@ def ward_read(spacetime, carrier, couplings, directions, config):
         return {"directions": int(directions.shape[1]),
                 "unmeasured": str(error)}
     projector = occupied_projector(carrier, 3)
-    edges = spacetime.getEdgeList().toVector()
-    saved = [complex(edge.getPhase()) for edge in edges]
-    radius = config["ward_contour_radius"]
-    nodes = config["ward_contour_nodes"]
-    residuals, paramagnetic_parts = [], []
-    try:
-        for column in range(directions.shape[1]):
-            g = directions[:, column]
-            shift = g[len(edges):]
-            derivative = [np.zeros((n, n), dtype=complex) for _ in couplings]
-            for k in range(nodes):
-                root = cmath.exp(2j * math.pi * k / nodes)
-                for edge, phase, step in zip(edges, saved, shift):
-                    edge.setPhase(phase + radius * root * step)
-                weight = root.conjugate() / (nodes * radius)
-                for a, o in enumerate(fluctuation_couplings(spacetime, True)):
-                    derivative[a] += weight * o
-            for edge, phase in zip(edges, saved):
-                edge.setPhase(phase)
-            diamagnetic = np.array([np.sum(projector * d.T)
-                                    for d in derivative])
-            polarization = paramagnetic @ g
-            scale = np.linalg.norm(paramagnetic) * np.linalg.norm(g)
-            residuals.append(float(np.linalg.norm(diamagnetic - polarization)
-                                   / scale))
-            paramagnetic_parts.append(float(np.linalg.norm(polarization)
-                                            / scale))
-    finally:
-        for edge, phase in zip(edges, saved):
-            edge.setPhase(phase)
+    edges = len(spacetime.getEdgeList().toVector())
+    residuals, paramagnetic_parts, departures = [], [], []
+    for column in range(directions.shape[1]):
+        g = directions[:, column]
+        generator, departure = gauge_generator(spacetime, g[edges:])
+        departures.append(departure)
+        diamagnetic = np.array([
+            np.sum(projector * gauge_derivative(o, generator).T)
+            for o in couplings])
+        polarization = paramagnetic @ g
+        scale = np.linalg.norm(paramagnetic) * np.linalg.norm(g)
+        residuals.append(float(np.linalg.norm(diamagnetic - polarization)
+                               / scale))
+        paramagnetic_parts.append(float(np.linalg.norm(polarization)
+                                        / scale))
     return {"directions": int(directions.shape[1]),
-            "contour_radius": radius, "contour_nodes": nodes,
+            "gauge_derivative": (
+                "d_g O_a = i (O_a Lambda_g - Lambda_g O_a), the commutator "
+                "with the generator of the gauge direction on the edge "
+                "cochains"),
+            "coboundary_departure": max(departures),
             "residual": max(residuals),
             "paramagnetic_alone": max(paramagnetic_parts)}
 
@@ -3926,8 +3981,6 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "regge_hinges": regge_hinges,
         "villain_order": checked_villain_order(villain_order),
         "elimination": elimination,
-        "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
-        "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         **declared_tolerances(tolerances),
         **declared_limits(limits),
         "band_selection": band_selection,
