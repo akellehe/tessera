@@ -72,12 +72,14 @@ CONTENTS = [
      "quartic": {"truncation": {"induced_displacement_norm": 0.1,
                                 "unrelated": 2.0}}}]
 
-#: A read of one cell, as `cell_reads` returns it: one content the library
-#: refused and the read content above, with the cell's ratios and pole table.
+#: A read of one cell, as `cell_reads` returns it: one content at which the
+#: library names no value and the read content above, with the cell's ratios
+#: and pole table.
 READ = [{
     "cell": [0, 1, 2, 3],
     "host_cell": {},
     "failed_contents": [[0, 3, 0]],
+    "flagged_contents": [],
     "contents": CONTENTS,
     "ratios": bp.ratios(CONTENTS), "pole_table": bp.pole_table(CONTENTS)}]
 
@@ -259,7 +261,7 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     assert "tick 0: level with 5 vertices, 9 edges, 2 tetrahedra per sheet" \
         in out
     assert "host cell [0, 1, 2, 3] content [0, 3, 0] (quarks per band of " \
-        "h_1): failed: band 1 has rank 2" in out
+        "h_1): no value: band 1 has rank 2" in out
     assert "content [3, 0, 0] (quarks per band of h_1): read; quark " \
         "certified False; mean field converged False (force norm 0.25 after " \
         "40 iterations)" in out
@@ -310,13 +312,13 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content():
         (group, (1, 1, 1), THREE, "quasi_free", 5.0 + 0.25j),
         (group, (1, 1, 1), HALF, "with_quartic", -2.0 + 0j),
         (group, (1, 1, 1), THREE, "with_quartic", -1.0 + 0j)}
-    # the refused content keeps a slot of its own, labelled as refused
-    assert data["slots"] == [(0.0, "refused"), (2.0, "021"), (3.0, "111")]
+    # the content with no value keeps a slot of its own, labelled as such
+    assert data["slots"] == [(0.0, "no value"), (2.0, "021"), (3.0, "111")]
     assert [g["label"] for g in data["groups"]] == ["0123\n030", group]
-    # each group carries the solve behind it: the library refused 030, and
-    # the solve of 300 did not converge in its 40 iterations
+    # each group carries the solve behind it: the library names no value at
+    # 030, and the solve of 300 did not converge in its 40 iterations
     assert [g["solve"] for g in data["groups"]] == [
-        {"state": "refused", "reason": None, "iterations": None},
+        {"state": "no value", "reason": None, "iterations": None},
         {"state": "not converged", "reason": None, "iterations": 40}]
     quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
     # by 2T reading: the lowest pole of a sector restricting to a 2 is the
@@ -345,10 +347,10 @@ def test_the_drawn_frame_has_one_mark_per_pole():
                            for y in line.get_ydata())
             assert drawn == expected
         labels = [t.get_text() for t in quasi_free.get_xticklabels(minor=True)]
-        assert labels == ["refused", "021", "111"]
+        assert labels == ["no value", "021", "111"]
         # a callout over each group names its solve
         assert [t.get_text() for t in quasi_free.texts] == [
-            "\u2717 refused", "\u2717 not converged\n40 iterations"]
+            "\u2717 no value", "\u2717 not converged\n40 iterations"]
     finally:
         plt.close(figure)
 
@@ -467,12 +469,34 @@ def test_a_band_of_the_whole_block_has_nothing_excluded():
     assert band["radius"] == math.inf and band["isolation_gap"] == math.inf
 
 
-def test_a_band_that_splits_a_multiple_eigenvalue_is_refused():
-    """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal at
-    the declared tolerance and no rank-one part of their eigenspace is an
-    invariant subspace of its own."""
-    with pytest.raises(ValueError, match="equal at the declared tolerance"):
+def test_a_band_that_splits_an_exactly_multiple_eigenvalue_has_no_value():
+    """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal
+    exactly, so the band would take one and leave the other out. No rank-one
+    part of their eigenspace is an invariant subspace of its own, the
+    Sylvester equation of the projector is singular, and the library says by
+    name that the projector has no value."""
+    with pytest.raises(ValueError, match="leaves an eigenvalue exactly "
+                                         "equal to it out"):
         R.riesz_band(np.diag([1.0, 1.0, 3.0]).astype(complex), 1, 1e-15)
+
+
+def test_a_band_through_a_near_degenerate_pair_is_read_and_not_accepted():
+    """diag(1, 1 + 2^-50, 3) with band rank one at the tolerance 1e-15: the
+    block's Frobenius norm is about 3.317, so eigenvalues at most 3.317e-15
+    apart are equal at the tolerance, and 1 and 1 + 2^-50 are 8.9e-16 apart.
+    The band is read all the same: it is the eigenvalue 1, the first in the
+    order of the exact keys, with the projector diag(1, 0, 0) of the diagonal
+    block and zero residuals. The read reports the isolation gap 2^-50 and
+    ``accepted`` false."""
+    gap = 2.0 ** -50
+    band = R.riesz_band(np.diag([1.0, 1.0 + gap, 3.0]).astype(complex), 1,
+                        1e-15)
+    assert band["eigenvalues"] == [1.0]
+    assert np.array_equal(band["projector"], np.diag([1.0, 0.0, 0.0]))
+    assert band["isolation_gap"] == gap
+    assert band["projector_idempotency"] == 0.0
+    assert band["invariant_subspace_residual"] == 0.0
+    assert not band["accepted"]
 
 
 def test_the_fibers_of_a_partition_are_supported_on_their_images():
