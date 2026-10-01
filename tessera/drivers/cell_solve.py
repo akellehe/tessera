@@ -173,6 +173,38 @@ def sheeted_support(base, sheets):
                    orientations)
 
 
+def sectors_on(sectors, host, support):
+    """Held monopole sectors declared on the vertices of the sheeted
+    ``host`` carried to the vertices of another sheeted support: vertex
+    t * n + k of the host is base vertex ``host.base_vertices[k]`` on sheet
+    t, and it is that base vertex on that sheet in ``support``. A held face
+    one of whose base vertices ``support`` does not have is not a face of
+    it, and the sectors then have no value there."""
+    if (list(host.base_vertices) == list(support.base_vertices)
+            and host.count == support.count):
+        return list(sectors)
+    rank = {v: k for k, v in enumerate(support.base_vertices)}
+    out = []
+    for sector in sectors:
+        faces = []
+        for face in sector.faces:
+            vertices = []
+            for vertex in face:
+                sheet, k = divmod(int(vertex), host.count)
+                base_vertex = host.base_vertices[k]
+                if base_vertex not in rank:
+                    raise ValueError(
+                        "a held face has lost its base vertex %d"
+                        % base_vertex)
+                vertices.append(sheet * support.count + rank[base_vertex])
+            faces.append(vertices)
+        moved = cob.HeldMonopoleSector()
+        moved.faces = faces
+        moved.monopole_number = int(sector.monopole_number)
+        out.append(moved)
+    return out
+
+
 def support_cells(support, degree=1):
     """The carrier cells of a sheeted support in the operator's mode order,
     each named by its sheet and its base vertices, a name that a Pachner

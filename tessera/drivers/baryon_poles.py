@@ -56,22 +56,27 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    holonomy;
    with certificates-blind mean-field backreaction to self-consistency
    (`SelfConsistentMeanField`), the carried density being the content's band
-   filling of h_1. The fixed point is solved by Newton's method on the joint
-   system (WP v17 lines 259 and 263), the covariance rebuilt at every
-   point. The content's bands are chosen at the host in ascending
-   order of real part and followed from there by continuation (WP v17 line
-   151; ``--band-selection sort-every-iterate`` re-sorts at every iterate
-   instead, a rule under which a solve whose steps cross an exchange of the
-   occupation need not end), and every iterate's band overlaps and any
-   crossing are recorded. The three sheets are relaxed as one shared base field (WP v17
-   §8, "Sheet convention (adopted)"): the solve's variables are the base
-   tetrahedron's six squared lengths and six links, written to every sheet,
-   and the force on each is the sum of the forces on the corresponding edges
-   of the three sheets. A solve that reaches no fixed point says why, by
-   name (for example, no damped step reduced the residual, no stationary
-   point in the declared monopole sector, or the
-   squared lengths overflowed the double), and the poles are read on the
-   geometry the solve ended at. A geometry that is not Kontsevich-Segal
+   filling of h_1. The fixed point is found by `MultiCobordism`, whose
+   mechanics are used as they are (`tessera.drivers.cell_solve`): its
+   objective is the residual norm of the joint stationarity system (WP v17
+   lines 259 and 263), the covariance rebuilt at every point; its stage 1
+   scores every Pachner move of the base tetrahedron and commits one when
+   the residual norm falls; its stage 2 searches along the step that solves
+   the equations to the declared order about the point
+   (``--direction-order``, 1 for Newton's step). The content's bands are
+   chosen at the host in ascending order of real part and followed from
+   there by continuation (WP v17 line 151; ``--band-selection
+   sort-every-iterate`` re-sorts at every point instead), and every step
+   proposal's band overlaps and any crossing are recorded. The three sheets
+   are one shared base field (WP v17 §8, "Sheet convention (adopted)"): the
+   drive's coordinates are the base tetrahedron's six squared lengths and
+   six links, written to every sheet, and the equation of each is the sum of
+   the equations of the corresponding edges of the three sheets. A solve
+   that reaches no fixed point says why, by name (no move and no scaled
+   step lowers the residual norm, the step has no value at the point
+   reached, or a declared limit was reached), and the poles are read on the
+   geometry the solve ended at; a cell whose complex a committed move
+   changed is not a tetrahedron and has no pole read. A geometry that is not Kontsevich-Segal
    allowable is read like any other, and the content's record carries the
    flag "not Kontsevich-Segal allowable" with the margin ("Flags" below).
    A geometry whose squared lengths overflowed the double is not finite, so
@@ -258,6 +263,7 @@ import tessera as T
 from tessera import chainhodge as ch
 from tessera import cobordism as cob
 from tessera import observables as obs
+from tessera.drivers import cell_solve
 
 #: The target: the proton mass over the Delta(1232) Breit-Wigner mass (PDG).
 #: The pole ratio s_N / s_Delta is compared with it directly, because the pole
@@ -314,12 +320,12 @@ DECLARED_CERTIFICATE_TOLERANCE = DECLARED_TOLERANCE
 #: every cell's config. None changes an equation.
 TOLERANCES = (
     ("rank_tolerance",
-     "tau, the relative singular-value threshold of the Newton solve's rank "
+     "tau, the relative singular-value threshold of the step's rank "
      "decision: a singular value of the Jacobian below this fraction of the "
      "largest counts as zero in the minimum-norm step"),
-    ("newton_tolerance",
-     "the residual norm at or below which the holomorphic Newton solve of "
-     "the geometry is converged"),
+    ("step_tolerance",
+     "the amount by which a trial of the line search must lower the "
+     "residual norm of the stationarity equations to be accepted"),
     ("mean_field_tolerance",
      "the force norm at or below which the geometry and the covariance are "
      "self-consistent"),
@@ -390,8 +396,8 @@ TOLERANCES = (
      "interior solves: a pivot or a singular value of an interior block at "
      "or below this fraction of the block's largest counts as zero"),
     ("move_tolerance",
-     "the amount by which a Pachner move must lower the objective of the "
-     "recursion's Pachner stage to be committed"),
+     "the amount by which a Pachner move must lower the residual norm of "
+     "the stationarity equations to be committed"),
     ("admissibility_tolerance",
      "the Kontsevich-Segal margin, in radians, down to minus which a "
      "geometry proposed by a Pachner move is admissible"),
@@ -498,21 +504,90 @@ def checked_villain_order(value):
     return int(value)
 
 
-#: The limits a user may declare on a mean-field solve, by config key: the
-#: type of each and what it ends. None is declared by default, and then
-#: nothing ends a solve but its own stops, however long it runs.
+#: The limits a user may declare on a solve, by config key: the type of each
+#: and what it ends. None is declared by default, and then nothing ends a
+#: solve but the end of its drive, however long it runs.
 #: `add_limit_arguments` offers each as ``--<key, with dashes>``,
 #: `default_config` records each, and the recursion driver carries each into
 #: every cell's config. A declared limit that is reached ends the solve by
 #: name ("a declared limit was reached"). None changes an equation.
 LIMITS = (
     ("iteration_limit", int,
-     "the number of accepted Newton steps after which a solve stops"),
-    ("halving_limit", int,
-     "the number of halvings of one Newton step after which a solve stops"),
+     "the number of iterations of the drive, each one update of the Pachner "
+     "moves and a relaxation of the geometry, after which a solve stops"),
+    ("update_limit", int,
+     "the number of relaxation updates after each update of the Pachner "
+     "moves at which the relaxation is left for the next iteration"),
     ("time_limit_seconds", float,
      "the wall-clock time of one solve, in seconds, after which it stops"),
 )
+
+#: The order of the step the drive proposes: the stationarity equations are
+#: solved to this order about the point (``direction_order``). Order 1 is
+#: Newton's step.
+DECLARED_DIRECTION_ORDER = 1
+
+#: The options of a solve's drive, by config key, with the declared value of
+#: each and what it sets. `add_solve_arguments` offers each on the command
+#: line, `default_config` records each, and the recursion driver carries
+#: each into every cell's config.
+SOLVE_OPTIONS = (
+    ("direction_order", DECLARED_DIRECTION_ORDER,
+     "p, the order to which the proposed step solves the stationarity "
+     "equations about a point, an integer from 1 to %d: 1 is Newton's step"
+     % cell_solve.MAXIMUM_DIRECTION_ORDER),
+    ("band_reference", cell_solve.DECLARED_BAND_REFERENCE,
+     "where a content's bands are followed from: the last accepted point of "
+     "the drive (previous) or the host throughout (host)"),
+    ("pachner_moves", True,
+     "whether the drive scores and commits Pachner moves of the base "
+     "complex beside relaxing its geometry"),
+    ("move_lookahead", 1,
+     "the number of Pachner moves in the longest composition the drive "
+     "scores as a whole when no shorter one lowers the residual norm"),
+    ("move_candidates", 0,
+     "the number of Pachner moves drawn per update of the moves; 0 scores "
+     "every move"),
+    ("moment_stiffness_weight", 0.0,
+     "the weight of a spectral-moment stiffness of the degree-1 operator "
+     "about the host, added to the action on every sheet; 0 declares none"),
+    ("moment_stiffness_coefficients", (),
+     "the coefficients of the stiffness's moments of orders 1, 2, ..., "
+     "needed with a nonzero weight"),
+    ("pinned_vertices", (),
+     "base vertices the drive holds: an edge both of whose endpoints are "
+     "pinned keeps its squared length and its link; none by default"),
+)
+
+
+def checked_direction_order(value):
+    """The order of the step as an integer from 1 to the largest order."""
+    if (isinstance(value, bool) or int(value) != value
+            or not 1 <= int(value) <= cell_solve.MAXIMUM_DIRECTION_ORDER):
+        raise ValueError("the order of the step is an integer from 1 to %d; "
+                         "got %r" % (cell_solve.MAXIMUM_DIRECTION_ORDER,
+                                     value))
+    return int(value)
+
+
+def declared_solve_options(options=None):
+    """Every option of `SOLVE_OPTIONS` by key, at its declared value unless
+    ``options`` (a mapping by key) sets it. A key outside `SOLVE_OPTIONS` is
+    an error."""
+    out = {key: (list(value) if isinstance(value, tuple) else value)
+           for key, value, _ in SOLVE_OPTIONS}
+    unknown = sorted(set(options or {}) - set(out))
+    if unknown:
+        raise ValueError("unknown solve options %s; the ones that can be "
+                         "set are %s" % (unknown, sorted(out)))
+    for key, value in (options or {}).items():
+        out[key] = list(value) if isinstance(value, (tuple, list)) else value
+    out["direction_order"] = checked_direction_order(out["direction_order"])
+    if out["band_reference"] not in cell_solve.BAND_REFERENCES:
+        raise ValueError("the band reference is one of %s; got %r"
+                         % (", ".join(cell_solve.BAND_REFERENCES),
+                            out["band_reference"]))
+    return out
 
 
 def declared_limits(limits=None):
@@ -623,6 +698,33 @@ def build_host(edge_squared=DECLARED_EDGE_SQUARED, cell=None):
     return spacetime
 
 
+def build_base(edge_squared=DECLARED_EDGE_SQUARED, cell=None):
+    """The base cell of the three-sheeted host: one tetrahedron on vertices
+    0..3 carrying what every sheet of `build_host` carries, the monopole
+    connection of `MonopoleSupport.tetrahedron(1)` at the squared length
+    ``edge_squared``, or the six squared lengths and links of ``cell``. Its
+    squared lengths and links are the shared base field of the host, whose
+    sheets are copies of it (`cell_solve.sheeted_support`)."""
+    spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
+    support = monopole_support()
+    length = cmath.sqrt(complex(edge_squared))
+    pairs = [tuple(e) for e in support.edges]
+    for edge in spacetime.getEdgeList().toVector():
+        a = int(edge.getSource().getId())
+        b = int(edge.getTarget().getId())
+        if cell is None:
+            edge.setLength(length)
+            edge.setPhase(complex(cmath.phase(support.transport(a, b))))
+            continue
+        m = pairs.index((min(a, b), max(a, b)))
+        link = complex(cell["links"][m])
+        if a > b:
+            link = 1.0 / link
+        edge.setLength(cmath.sqrt(complex(cell["squared_lengths"][m])))
+        edge.setPhase(complex(-1j * cmath.log(link)))
+    return spacetime
+
+
 def edge_records(spacetime):
     """(source, target) vertex ids of every edge in `getEdgeList()` order."""
     return [(int(edge.getSource().getId()), int(edge.getTarget().getId()))
@@ -693,14 +795,14 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
 
 
 def relaxation_declaration(config):
-    """The inner holomorphic Newton solve, over every edge of the complex as
-    its own coordinate. `relax_content` ties the sheets to one shared base
-    field on top of this (`share_sheet_geometry`)."""
+    """The stationarity system over the squared lengths and the links, every
+    edge of the complex its own coordinate. `relax_content` ties the sheets
+    to one shared base field on top of this (`support_geometry`)."""
     geometry = cob.HolomorphicRelaxationDeclaration()
     geometry.relax_lengths = True
     geometry.relax_links = True
     geometry.relax_multipliers = False
-    geometry.tolerance = config["newton_tolerance"]
+    geometry.tolerance = config["step_tolerance"]
     geometry.rank_tolerance = config["rank_tolerance"]
     # every recorded iterate carries every term of the action with its value
     # and gradient norm (--trace-terms); changes no step
@@ -708,11 +810,63 @@ def relaxation_declaration(config):
     # the monopole sectors a caller holds as boundary data
     # (`tessera.drivers.recursion`); none by default
     geometry.held_sectors = list(config.get("held_sectors") or [])
-    # the limits the user declared (`LIMITS`); none by default, and then no
-    # count and no time ends the solve
-    for key, _, _ in LIMITS:
-        setattr(geometry, key, config.get(key))
     return geometry
+
+
+def support_geometry(config, support, host):
+    """`relaxation_declaration` on a sheeted support
+    (`cell_solve.sheeted_support`): one squared length and one link per base
+    edge, written to every sheet, and the config's held sectors, which are
+    declared on the sheeted ``host``, carried to the support's vertices
+    (`cell_solve.sectors_on`)."""
+    geometry = relaxation_declaration(config)
+    geometry.held_sectors = cell_solve.sectors_on(
+        list(config.get("held_sectors") or []), host, support)
+    geometry.edge_classes = list(support.classes)
+    geometry.edge_class_orientations = list(support.orientations)
+    return geometry
+
+
+def node_configuration(config):
+    """What the config declares on the `MultiCobordism` node of a solve
+    before its drive, as the function `cell_solve.solve` calls with the
+    node: the admissibility tolerance of the engine's Kontsevich-Segal gate,
+    and, when declared, a spectral-moment stiffness about the host
+    (``moment_stiffness_weight`` with ``moment_stiffness_coefficients``, the
+    engine's `set_moment_stiffness` on the degree-1 operator) and a pinned
+    region (``pinned_vertices``, base vertices whose edges the engine holds).
+    Neither a stiffness nor a pinned region is declared by default."""
+    def configure(node):
+        node.admissibility_tolerance = declared_tolerance(
+            config, "admissibility_tolerance")
+        weight = float(config.get("moment_stiffness_weight") or 0.0)
+        if weight != 0.0:
+            node.set_moment_stiffness(
+                weight, [1], [float(c) for c in
+                              config.get("moment_stiffness_coefficients")
+                              or []])
+        pinned = [int(v) for v in config.get("pinned_vertices") or []]
+        if pinned:
+            node.declare_pinned_region("pinned", pinned)
+    return configure
+
+
+def solve_arguments(config):
+    """The options of `cell_solve.solve` a config declares: the tolerances,
+    the order of the step, the Pachner moves and the limits."""
+    return {
+        "tolerance": declared_tolerance(config, "step_tolerance"),
+        "move_tolerance": declared_tolerance(config, "move_tolerance"),
+        "direction_order": checked_direction_order(
+            config.get("direction_order", DECLARED_DIRECTION_ORDER)),
+        "moves": bool(config.get("pachner_moves", True)),
+        "move_lookahead": int(config.get("move_lookahead", 1)),
+        "move_candidates": int(config.get("move_candidates", 0)),
+        "iteration_limit": config.get("iteration_limit"),
+        "update_limit": config.get("update_limit"),
+        "time_limit_seconds": config.get("time_limit_seconds"),
+        "configure": node_configuration(config),
+    }
 
 
 def sheet_edge_classes(spacetime):
@@ -772,10 +926,8 @@ def mean_field_declaration(content, config, spacetime=None):
     projector onto modes of h(z*), WP v17 §7 line 262), the bands chosen at
     the host in ascending order of real part
     (`OccupationOrder.AscendingRealPart`) and followed from there by
-    continuation (``band_selection``, WP v17 line 151). The fixed point is
-    solved by Newton's method on the joint system. With ``spacetime``, the
-    solve carries the
-    sheeted host's shared base field (`share_sheet_geometry`). The number of
+    continuation (``band_selection``, WP v17 line 151). With ``spacetime``, the
+    system carries the sheeted host's shared base field (`share_sheet_geometry`). The number of
     the occupied fiber's power sums pinned is set by `relax_content`, which
     has the host to read the fiber's rank on (`fiber_moment_count`)."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
@@ -1807,22 +1959,57 @@ def rotation_averaged_many_body(operator, actions, frame, dual):
 
 
 def relax_content(content, kappa, beta, config):
-    """Step 1 for one content: a fresh host relaxed to self-consistency as one
-    shared base field, the carried density filling the bands of h_1, with the
-    declared number of the occupied fiber's power sums pinned at the host."""
-    spacetime = build_host(config["edge_squared"], config.get("host_cell"))
-    declaration = action_declaration(
-        spacetime, kappa, beta, config["regge_hinges"],
-        villain_order=declared_villain_order(config))
-    action = cob.JointAction(spacetime, declaration)
-    mean_field = mean_field_declaration(content, config, spacetime)
-    mean_field.fiber_moments = fiber_moment_count(
-        mean_field, action,
+    """Step 1 for one content: the host cell driven to self-consistent
+    stationarity by `MultiCobordism` (`cell_solve.solve`), its Pachner moves
+    included, as one shared base field, the carried density filling the
+    bands of h_1, with the declared number of the occupied fiber's
+    constraints pinned at the host.
+
+    The drive runs on the base tetrahedron (`build_base`) and scores the
+    three-sheeted system built from it. Returns the three-sheeted complex of
+    the base the drive ended on, the action there (carrying the covariance,
+    the constraints and their multipliers), the end-point report
+    (`SelfConsistentMeanField.read`) and the drive's record."""
+    base = build_base(config["edge_squared"], config.get("host_cell"))
+    host = cell_solve.sheeted_support(base, SHEETS)
+    villain_order = declared_villain_order(config)
+
+    def declare(spacetime):
+        return action_declaration(spacetime, kappa, beta,
+                                  config["regge_hinges"],
+                                  villain_order=villain_order)
+
+    # the constraints of the occupied fiber: their number, and their targets
+    # and unit read at the host, which every later point is held to
+    probe = mean_field_declaration(content, config)
+    probe.geometry = support_geometry(config, host, host)
+    host_action = cob.JointAction(host.spacetime, declare(host.spacetime))
+    moments = fiber_moment_count(
+        probe, host_action,
         config.get("fiber_moments", DECLARED_FIBER_MOMENTS),
         config.get("fiber_pinning", DECLARED_FIBER_PINNING))
-    solve = cob.SelfConsistentMeanField(action, mean_field)
-    report = solve.solve()
-    return spacetime, solve.action, report
+    probe.fiber_moments = moments
+    start = cob.SelfConsistentMeanField(host_action, probe).read()
+    targets = [complex(x) for x in start.moment_targets]
+    scale = float(start.moment_scale)
+
+    def mean_field_of(support):
+        declaration = mean_field_declaration(content, config)
+        declaration.geometry = support_geometry(config, support, host)
+        declaration.fiber_moments = moments
+        if moments:
+            declaration.fiber_moment_targets = targets
+            declaration.fiber_moment_scale = scale
+        return declaration
+
+    system = cell_solve.ContentSystem(
+        declare, mean_field_of, base, SHEETS,
+        config.get("band_reference", cell_solve.DECLARED_BAND_REFERENCE))
+    start_scale = max(abs(length * length)
+                      for _, _, length, _ in cell_solve.edge_fields(base))
+    drive = cell_solve.solve(base, system, **solve_arguments(config))
+    support, action, report = system.read(drive["spacetime"], start_scale)
+    return support.spacetime, action, report, drive
 
 
 class ReadWithoutValue(ValueError):
@@ -1871,24 +2058,20 @@ def hessian_sign(value, scale, tolerance=DECLARED_TOLERANCE):
     return "positive" if value.real > 0 else "negative"
 
 
-def relaxation_record(report, hessian_reality_tolerance=DECLARED_TOLERANCE):
-    """What a mean-field solve reached and how, as every content record
-    carries it: the method and band selection that ran, whether the fixed
-    point was reached, why the solve stopped (by name, with its detail), the
-    iterations, the final force, the joint Jacobian's rank and rank gap at the
-    end point, the Kontsevich-Segal margin and the growth of the lengths
-    there, the occupied bands followed to the end point, the pinned moments of
-    the occupied fiber (their number, targets, multipliers and residuals, in
-    the operator's own unit), the moment-constrained action's Hessian on the
-    range of the Hellmann-Feynman force with its sign (WP v17 line 265), and a
-    per-iterate trace of the force, the covariance change, the pinned
-    moments' residual and multipliers, every occupied band's overlap and
-    places in the ascending real-part order, any crossing, and the Newton step
-    taken from the iterate."""
-    trace = []
-    for step in report.steps:
-        entry = {
-            "iteration": int(step.iteration),
+def _proposal_record(update):
+    """One step proposal of a drive (`cell_solve.StationarityObjective`):
+    the residual norm and the step's rank decisions where it was formed, the
+    base complex there, and the point's measurements (the force, the
+    covariance change, the bands, the pinned moments)."""
+    entry = {key: update[key] for key in (
+        "residual_norm", "step_norm", "jacobian_rank",
+        "largest_singular_value", "smallest_retained_singular_value",
+        "largest_discarded_singular_value", "rank_gap", "constrained_step",
+        "constrained_rank", "constrained_rank_gap", "linear_residual",
+        "complex")}
+    step = update.get("measured")
+    if step is not None:
+        entry.update({
             "force_norm": float(step.force_norm),
             "covariance_change": float(step.covariance_change),
             "band_overlaps": [complex(b.overlap) for b in step.bands],
@@ -1898,47 +2081,62 @@ def relaxation_record(report, hessian_reality_tolerance=DECLARED_TOLERANCE):
             "band_isolation": float(step.band_isolation),
             "moment_residual_norm": float(step.moment_residual_norm),
             "multipliers": [complex(x) for x in step.multipliers],
-            "stop_reason": cob.relaxation_stop_name(step.geometry_stop_reason),
             "terms": term_records(step.terms),
-        }
-        if step.newton_iterated:
-            newton = step.newton
-            entry["newton"] = {
-                "accepted": bool(newton.accepted),
-                "damping": float(newton.damping),
-                "step_norm": float(newton.step_norm),
-                "jacobian_rank": int(newton.jacobian_rank),
-                "rank_gap": float(newton.rank_gap),
-                "linear_residual": float(newton.linear_residual),
-                "constrained_step": bool(newton.constrained_step),
-                "constrained_rank": int(newton.constrained_rank),
-                "constrained_rank_gap": float(newton.constrained_rank_gap),
-                "residual_test_dampings": int(newton.residual_test_dampings),
-                "sector_guard_dampings": int(newton.sector_guard_dampings),
-                "domain_guard_dampings": int(newton.domain_guard_dampings),
-            }
-        else:
-            entry["geometry_residual_norm"] = float(
-                step.geometry_residual_norm)
-            entry["geometry_converged"] = bool(step.geometry_converged)
-            if step.geometry_stop_detail:
-                entry["stop_detail"] = step.geometry_stop_detail
-        trace.append(entry)
+        })
+    return entry
+
+
+def relaxation_record(report, drive,
+                      hessian_reality_tolerance=DECLARED_TOLERANCE):
+    """What a content's solve reached and how, as every content record
+    carries it. From the drive (`cell_solve.solve`): why it stopped (by
+    name, with its detail), the accepted relaxation updates and committed
+    Pachner moves, the base complex before and after, the trace of the
+    residual norm, and one entry per step proposal (``trace``). From the
+    end-point report (`SelfConsistentMeanField.read`): whether the force and
+    the pinned moments are at the tolerance there (``converged``), the final
+    force, the joint Jacobian's rank and rank gap, the Kontsevich-Segal
+    margin and the growth of the lengths, the occupied bands followed to the
+    end point, the pinned moments of the occupied fiber (their number,
+    targets, multipliers and residuals, in the operator's own unit), and the
+    moment-constrained action's Hessian on the range of the Hellmann-Feynman
+    force with its sign (WP v17 line 265)."""
+    objective = drive["objective"]
+    trace = [_proposal_record(update) for update in objective.updates]
+    measured = [update["measured"] for update in objective.updates
+                if update.get("measured") is not None]
+    overlaps = [abs(complex(band.overlap)) for step in measured
+                for band in step.bands]
+    converged = bool(report.converged)
     return {
+        "method": "MultiCobordism drive of the joint action's stationarity",
+        "direction_order": int(objective.direction_order),
         "band_selection": _band_selection_name(report.band_selection),
-        "converged": bool(report.converged),
-        "stop_reason": cob.relaxation_stop_name(report.stop_reason),
-        "stop_detail": report.stop_detail,
-        "iterations": int(report.iterations),
+        "converged": converged,
+        "stop_reason": "converged" if converged else drive["stop_reason"],
+        "stop_detail": (report.stop_detail + "; the drive ended: "
+                        + drive["stop_detail"] if converged
+                        else drive["stop_detail"]),
+        "drive_stop_reason": drive["stop_reason"],
+        "iterations": int(drive["accepted_updates"]),
+        "moves_committed": int(drive["moves_committed"]),
+        "complex_before": drive["complex_before"],
+        "complex_after": drive["complex_after"],
+        "complex_changed": bool(drive["changed"]),
+        "residual_trace": list(drive["trace"]),
+        "undefined_points": len(objective.undefined),
+        "seconds": float(drive["seconds"]),
         "force_norm": float(report.force_norm),
-        "covariance_change": float(report.covariance_change),
+        "covariance_change": (float(measured[-1].covariance_change)
+                              if measured else 0.0),
         "purity_defect": float(report.purity_defect),
         "spectral_gap": float(report.spectral_gap),
         "band_isolation": float(report.band_isolation),
         "band_ranks": [int(r) for r in report.band_ranks],
         "bands": [_band_record(b) for b in report.bands],
-        "band_crossing_iterates": int(report.band_crossing_iterates),
-        "lowest_band_overlap": float(report.lowest_band_overlap),
+        "band_crossing_iterates": sum(1 for step in measured
+                                      if step.band_crossing),
+        "lowest_band_overlap": min(overlaps) if overlaps else 1.0,
         "joint_jacobian": {
             "size": int(report.jacobian_size),
             "rank": int(report.jacobian_rank),
@@ -1974,18 +2172,38 @@ def relaxation_record(report, hessian_reality_tolerance=DECLARED_TOLERANCE):
     }
 
 
-def geometry_without_value(report):
-    """The name and the message of why the geometry a mean-field solve
-    reached has no pole to read, or None when it has. The one such geometry
-    is the one whose squared lengths overflowed the double: the only bound
-    on a length is the datatype's, and a squared length beyond the largest
-    finite double is not a number, so there is no finite geometry to read
-    an operator on. A solve that stopped for any other reason is read, and
-    its record says why it stopped."""
-    if report.stop_reason == cob.RelaxationStop.LengthRunaway:
-        return ("the squared lengths overflowed the double",
-                "the squared lengths overflowed the double (%s), so there is "
-                "no finite geometry to read a pole on" % report.stop_detail)
+#: Why a solved cell has no pole read, by name.
+NO_VALUE_OVERFLOW = "the squared lengths overflowed the double"
+NO_VALUE_MOVED = "the cell is not a tetrahedron after its Pachner moves"
+
+
+def geometry_without_value(spacetime, drive):
+    """The name and the message of why the complex a content's solve reached
+    has no pole to read, or None when it has. There are two such complexes.
+    One whose squared lengths are not finite: the only bound on a length is
+    the datatype's, and a squared length beyond the largest finite double is
+    not a number, so there is no finite geometry to read an operator on. And
+    one whose cells a committed Pachner move changed: the pole read is
+    defined on the three-sheeted tetrahedron (its eighteen edge modes, its
+    rotation group, its doublets), and has no definition on another complex.
+    A solve that stopped for any other reason is read, and its record says
+    why it stopped."""
+    for index, (_, _, length, _) in enumerate(
+            cell_solve.edge_fields(spacetime)):
+        squared = length * length
+        if not (math.isfinite(squared.real) and math.isfinite(squared.imag)):
+            return (NO_VALUE_OVERFLOW,
+                    "%s (|z| is not finite on edge %d), so there is no "
+                    "finite geometry to read a pole on"
+                    % (NO_VALUE_OVERFLOW, index))
+    if drive["changed"]:
+        after = drive["complex_after"]
+        return (NO_VALUE_MOVED,
+                "%s (%d committed move updates left a base complex of %d "
+                "vertices, %d edges and %d cells), and the pole read is "
+                "defined on the three-sheeted tetrahedron"
+                % (NO_VALUE_MOVED, drive["moves_committed"],
+                   after["vertices"], after["edges"], after["cells"]))
     return None
 
 
@@ -2316,14 +2534,16 @@ def evaluate_content(content, kappa, beta, config):
     tolerance is recorded as a flag under ``flags`` (`geometry_flags` for
     the geometry, `spin_frame` for the spin read of the cell itself), and
     the frame the spin was read in is named under ``relaxation.spin_frame``.
-    A solve whose squared lengths overflowed the double leaves no finite
-    geometry to read, and raises `ReadWithoutValue`
+    A solve that left no finite geometry, or a complex that is not the
+    tetrahedron, has no pole read and raises `ReadWithoutValue`
     (`geometry_without_value`)."""
     started = time.time()
-    spacetime, action, report = relax_content(content, kappa, beta, config)
+    spacetime, action, report, drive = relax_content(content, kappa, beta,
+                                                     config)
     solve = relaxation_record(
-        report, declared_tolerance(config, "hessian_reality_tolerance"))
-    missing = geometry_without_value(report)
+        report, drive,
+        declared_tolerance(config, "hessian_reality_tolerance"))
+    missing = geometry_without_value(spacetime, drive)
     if missing is not None:
         raise ReadWithoutValue(missing[0], missing[1], solve)
     flags = geometry_flags(
@@ -3909,14 +4129,16 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    fiber_moments=DECLARED_FIBER_MOMENTS,
                    fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False, limits=None,
-                   villain_order=DECLARED_VILLAIN_ORDER):
+                   villain_order=DECLARED_VILLAIN_ORDER, solve=None):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
     by key; the others are recorded at `DECLARED_TOLERANCE`. ``limits``
     declares any of `LIMITS` by key; the others are recorded as None, not
     declared. ``villain_order`` is the order the Villain weight of the
-    holonomy term is summed to (`DECLARED_VILLAIN_ORDER`)."""
+    holonomy term is summed to (`DECLARED_VILLAIN_ORDER`). ``solve`` sets
+    any of `SOLVE_OPTIONS` by key; the others are recorded at their declared
+    values."""
     return {
         "mode": "controlled synthesis",
         "contents": [list(c) for c in (selected_contents or contents())],
@@ -3930,6 +4152,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         **declared_tolerances(tolerances),
         **declared_limits(limits),
+        **declared_solve_options(solve),
         "band_selection": band_selection,
         "fiber_moments": str(fiber_moments),
         "fiber_pinning": fiber_pinning,
@@ -4083,17 +4306,15 @@ SOLVE_STYLE = {
     "no value": {"ink": INK_MUTED, "band": "#ecebe6", "sign": "\u2717",
                  "label": "pole read has no value"},
 }
-#: The short names, in a callout, of why a mean-field solve stopped
-#: (`cob.relaxation_stop_name`), which are also the names of why a pole read
-#: has no value (`geometry_without_value`).
+#: The short names, in a callout, of why a content's solve stopped
+#: (`cell_solve.solve`) and of why a pole read has no value
+#: (`geometry_without_value`).
 STOP_SHORT = {
-    "no damped step reduced the residual": "no descent",
-    "every damped step left the domain of the action": "left the domain",
-    "no stationary point in the declared monopole sector":
-        "left the sector",
-    "the residual is at its floor on the held set": "held floor",
-    "the squared lengths overflowed the double": "lengths overflowed",
-    "a declared limit was reached": "declared limit",
+    cell_solve.STOP_STATIONARY: "no descent",
+    cell_solve.STOP_NO_STEP: "no step",
+    cell_solve.STOP_DECLARED_LIMIT: "declared limit",
+    NO_VALUE_OVERFLOW: "lengths overflowed",
+    NO_VALUE_MOVED: "cell moved",
 }
 #: The largest font size of the callouts; they are set smaller, all to one
 #: size, when the narrowest group needs it.
@@ -4743,6 +4964,7 @@ def build_parser():
     add_mean_field_arguments(run)
     add_tolerance_arguments(run)
     add_limit_arguments(run)
+    add_solve_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -4813,6 +5035,54 @@ def limits_from(args):
     return {key: getattr(args, key) for key, _, _ in LIMITS}
 
 
+def _direction_order(text):
+    """An integer from 1 to the largest order, for --direction-order."""
+    try:
+        return checked_direction_order(int(text))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "--direction-order is an integer from 1 to %d; got %r"
+            % (cell_solve.MAXIMUM_DIRECTION_ORDER, text))
+
+
+def add_solve_arguments(parser):
+    """One option per option of a solve's drive (`SOLVE_OPTIONS`), for every
+    driver."""
+    meaning = {key: text for key, _, text in SOLVE_OPTIONS}
+    parser.add_argument("--direction-order", type=_direction_order,
+                        default=DECLARED_DIRECTION_ORDER,
+                        help="%s (default %d)" % (meaning["direction_order"],
+                                                  DECLARED_DIRECTION_ORDER))
+    parser.add_argument("--band-reference",
+                        choices=cell_solve.BAND_REFERENCES,
+                        default=cell_solve.DECLARED_BAND_REFERENCE,
+                        help="%s (default %s)"
+                             % (meaning["band_reference"],
+                                cell_solve.DECLARED_BAND_REFERENCE))
+    parser.add_argument("--no-pachner-moves", dest="pachner_moves",
+                        action="store_false",
+                        help="relax the geometry alone: the drive scores no "
+                             "Pachner move (by default it scores every one)")
+    parser.add_argument("--move-lookahead", type=int, default=1,
+                        help="%s (default 1)" % meaning["move_lookahead"])
+    parser.add_argument("--move-candidates", type=int, default=0,
+                        help="%s (default 0)" % meaning["move_candidates"])
+    parser.add_argument("--moment-stiffness-weight", type=float, default=0.0,
+                        help="%s (default 0)"
+                             % meaning["moment_stiffness_weight"])
+    parser.add_argument("--moment-stiffness-coefficients", type=float,
+                        nargs="+", default=[],
+                        help=meaning["moment_stiffness_coefficients"])
+    parser.add_argument("--pinned-vertices", type=int, nargs="+", default=[],
+                        help=meaning["pinned_vertices"])
+
+
+def solve_options_from(args):
+    """The parsed options of a solve's drive, by config key
+    (`SOLVE_OPTIONS`)."""
+    return {key: getattr(args, key) for key, _, _ in SOLVE_OPTIONS}
+
+
 def _fiber_moments(text):
     """``r``, ``bands`` or a non-negative integer, for --fiber-moments."""
     if text in ("r", "bands"):
@@ -4872,7 +5142,8 @@ def main(argv=None):
                             tolerances=tolerances_from(args),
                             trace_terms=args.trace_terms,
                             limits=limits_from(args),
-                            villain_order=args.villain_order)
+                            villain_order=args.villain_order,
+                            solve=solve_options_from(args))
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None
