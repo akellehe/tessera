@@ -18,66 +18,6 @@
 
 namespace tessera::cobordism {
 
-/// # RelaxationStop
-///
-/// Why a solve stopped. Each reason is reported by name beside the
-/// solve's numbers, so a solve that ended without a stationary point says
-/// why rather than only reporting the residual it reached.
-///
-/// * `Converged` — the residual norm reached the declared tolerance.
-/// * `NoDescent` — no damped Newton step reduced the residual norm: the
-///   solve cannot move from the point it stopped at. The residual test
-///   refused the smallest trial step: the shortest that moves a variable at
-///   the datatype's resolution, or one that moved the variables and left
-///   every component of the residual the number it was. When a guard refused
-///   longer trial steps of the same Newton step, the detail says how far
-///   along the direction it did: a solve that a guard cuts step after step
-///   ends this way, at the boundary the guard keeps, once the steps that
-///   stay inside it no longer reduce the residual.
-/// * `SectorBoundary` — no stationary point in the declared monopole sector
-///   along the Newton direction: the smallest trial step already changed a
-///   held monopole number, so a held face holonomy is driven across
-///   \f$ -1 \f$ (a Dirac string), where the monopole number read from the
-///   principal arguments jumps.
-/// * `DomainBoundary` — the smallest trial step reached a point at which the
-///   action refuses to evaluate (a link driven to zero or infinity, a
-///   singular operator, a face holonomy outside the domain of the holonomy
-///   term) or its residual is not finite.
-/// * `HeldFloor` — with held sectors, the residual is at its floor on the
-///   held set: the constrained Newton step would reduce the residual norm by
-///   no more than the declared tolerance, because the complex equations
-///   outnumber the real directions the held moduli leave free and the
-///   linearized equations have no better solution on them. The residual that
-///   remains is reported.
-/// * `LengthRunaway` — the squared lengths overflowed the double: an accepted
-///   step left a squared length on the relaxed coordinates that is no longer
-///   finite, beyond the largest value the datatype holds (about 1.8e308).
-///   Nothing short of that stops a solve whose lengths grow; the equations
-///   decide.
-/// * `DeclaredLimit` — a limit the user declared was reached: a number of
-///   accepted steps, a number of halvings of one Newton step, or a wall-clock
-///   time (`HolomorphicRelaxationDeclaration::iterationLimit`,
-///   `halvingLimit`, `timeLimitSeconds`). No limit is declared by default,
-///   and without one this stop does not occur; the detail says which limit it
-///   was and what the solve had reached.
-/// * `Continued` — not a stop: in a per-iterate trace, the solve accepted a
-///   step from this iterate and went on.
-enum class RelaxationStop {
-  Converged,
-  NoDescent,
-  SectorBoundary,
-  DomainBoundary,
-  HeldFloor,
-  LengthRunaway,
-  DeclaredLimit,
-  Continued
-};
-
-/// The name of a stop reason as the reports print it, for example
-/// "no stationary point in the declared monopole sector" for
-/// `RelaxationStop::SectorBoundary`.
-[[nodiscard]] std::string relaxationStopName(RelaxationStop reason);
-
 /// # RebuiltBand
 ///
 /// One band of the carrier's spectrum as a `CovarianceRebuild` read it at a
@@ -99,7 +39,7 @@ struct RebuiltBand {
 /// # RebuiltCarrierState
 ///
 /// What a `CovarianceRebuild` sets on the action at one point: the carried
-/// covariance \f$ \Gamma \f$ and, when the solve imposes spectral constraints
+/// covariance \f$ \Gamma \f$ and, when the system imposes spectral constraints
 /// on a fiber, the fiber's Riesz projector
 /// (`JointActionDeclaration::momentProjector`) and the projectors of the
 /// pinned bands, all flat row-major over the carrier's cells; and what the
@@ -112,9 +52,9 @@ struct RebuiltBand {
 /// cannot be formed, and `HolomorphicRelaxation::jacobian` refuses by name.
 struct RebuiltCarrierState {
   std::vector<std::complex<double>> covariance;
-  /// Empty when the solve imposes no constraint on a fiber.
+  /// Empty when the system imposes no constraint on a fiber.
   std::vector<std::complex<double>> momentProjector;
-  /// The band projectors of the solve's band-mean constraints
+  /// The band projectors of the system's band-mean constraints
   /// (`JointActionDeclaration::momentBandProjectors`), in the constraints'
   /// order; empty when it imposes none.
   std::vector<std::vector<std::complex<double>>> bandProjectors;
@@ -170,28 +110,23 @@ struct RebuiltCarrierState {
 
 /// # CovarianceRebuild
 ///
-/// The rule by which a self-consistent solve rebuilds the carried covariance
-/// \f$ \Gamma \f$ (and the constrained fiber's projector, when one is
-/// declared) from the carrier operator at every point it evaluates the
-/// residual at. With it `HolomorphicRelaxation` solves the self-consistent
-/// system \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$ instead of the
-/// stationarity at a fixed \f$ \Gamma \f$: every residual, every Jacobian
-/// column and every trial point reads \f$ \Gamma \f$ rebuilt there. The
-/// equations are the same; only \f$ \Gamma \f$ is no longer held.
+/// The rule by which the self-consistent system rebuilds the carried
+/// covariance \f$ \Gamma \f$ (and the constrained fiber's projector, when
+/// one is declared) from the carrier operator at the point it is evaluated
+/// at. With it `HolomorphicRelaxation` poses the self-consistent system
+/// \f$ F_{\rm sc}(z,U)=F(z,U,\Gamma(z,U))=0 \f$ instead of the stationarity
+/// at a fixed \f$ \Gamma \f$: the residual and every Jacobian column read
+/// \f$ \Gamma \f$ rebuilt at the point. The equations are the same; only
+/// \f$ \Gamma \f$ is no longer held.
 struct CovarianceRebuild {
-  /// The state at the geometry the action currently refers to. Called with
-  /// the geometry moved to each point the solve evaluates, and required to
-  /// leave the geometry as it found it.
+  /// The state at the geometry the action currently refers to, which it
+  /// leaves as it found it.
   std::function<RebuiltCarrierState(const JointAction &)> at;
-  /// Called once after every accepted step, with the action at the accepted
-  /// point and \f$ \Gamma \f$ already rebuilt there, so a rule that follows
-  /// the carrier's bands from point to point can move its reference.
-  std::function<void(const JointAction &)> accepted;
 };
 
 /// # HeldMonopoleSector
 ///
-/// One declared cluster whose monopole sector is boundary data of the solve:
+/// One declared cluster whose monopole sector is boundary data of the system:
 /// the outward-oriented faces of its bounding cut, each given by its three
 /// vertex ids in the order that orients it outward, and the declared monopole
 /// number \f$ \mu \f$, the sum of the principal arguments of the outward face
@@ -203,51 +138,29 @@ struct HeldMonopoleSector {
 
 /// # HolomorphicRelaxationDeclaration
 ///
-/// The configuration of a holomorphic Newton solve. Every field is a numerical
-/// control of the root find; none of them changes which equations are solved.
+/// The declaration of a stationarity system: which fields are its variables,
+/// which coordinates they share, which sectors are held, and the rank
+/// tolerance of its linear solves. None of the fields changes the action.
 struct HolomorphicRelaxationDeclaration {
-  /// Whether the squared lengths \f$ z_e \f$ are variables of the solve. When
+  /// Whether the squared lengths \f$ z_e \f$ are variables of the system. When
   /// false they are held at their current values and the length stationarity
   /// equations are dropped from the system, because requiring an equation of a
   /// frozen variable would make the system overdetermined rather than partially
   /// relaxed.
   bool relaxLengths = true;
 
-  /// Whether the links \f$ U_e \f$ are variables of the solve, under the same
+  /// Whether the links \f$ U_e \f$ are variables of the system, under the same
   /// rule as `relaxLengths`.
   bool relaxLinks = true;
 
-  /// Whether the multipliers \f$ \xi_j \f$ are variables of the solve. When
+  /// Whether the multipliers \f$ \xi_j \f$ are variables of the system. When
   /// false they are held at their declared values and the moment equations are
-  /// dropped, which turns a constrained solve into an unconstrained one at a
+  /// dropped, which turns a constrained system into an unconstrained one at a
   /// fixed external source.
   bool relaxMultipliers = true;
 
-  /// The Euclidean norm of the residual vector at or below which the solve is
-  /// declared converged. This is a convergence certificate on the complex
-  /// equations, not a functional minimized in their place.
-  double tolerance = 1e-15;
-
-  /// The number of accepted Newton steps after which the solve stops, when
-  /// the user declares one. None by default: nothing then ends a solve but
-  /// its own stops, however many steps it takes. A declared count that is
-  /// reached ends the solve with `RelaxationStop::DeclaredLimit`.
-  std::optional<std::size_t> iterationLimit{};
-
-  /// The number of halvings of one Newton step after which the solve stops,
-  /// when the user declares one. None by default: a step is then halved down
-  /// to the datatype's resolution. A declared count that is reached without
-  /// an accepted trial ends the solve with `RelaxationStop::DeclaredLimit`.
-  std::optional<std::size_t> halvingLimit{};
-
-  /// The wall-clock time of the solve, in seconds, after which it stops, when
-  /// the user declares one; read before every Newton step and every trial
-  /// step. None by default. A declared time that is reached ends the solve
-  /// with `RelaxationStop::DeclaredLimit`.
-  std::optional<double> timeLimitSeconds{};
-
   /// The relative threshold below which a singular value of the Jacobian counts
-  /// as zero in the minimum-norm solve of the Newton system: the rank is the
+  /// as zero in the minimum-norm solve of the linearized system: the rank is the
   /// number of singular values \f$ \sigma_i>\tau\,\sigma_{\max} \f$, decided
   /// on the singular values themselves and not on a pivoted-QR diagonal,
   /// whose magnitudes only bracket them. The rank of the held faces'
@@ -268,15 +181,14 @@ struct HolomorphicRelaxationDeclaration {
   /// \f$ e \f$ carries, the indices running over \f$ 0,\dots,K-1 \f$ with
   /// every one used. The edges of one class carry one squared length and
   /// one link (on the orientation `edgeClassOrientations` relates them to),
-  /// the solve's variables are one squared length and one link per class,
+  /// the system's variables are one squared length and one link per class,
   /// and the equation of a class is the sum of its edges' stationarity
   /// equations, which is the derivative of the whole action along the shared
   /// coordinate. This is how a \f$ k \f$-sheeted support is relaxed as one
   /// base field (WP v17 §8, "Sheet convention (adopted)": equal squared
-  /// lengths and equal connection values on corresponding edges): every
-  /// member of a class is written the same value, so identical sheets stay
-  /// identical exactly. The members of a class must carry equal fields when
-  /// the solve starts.
+  /// lengths and equal connection values on corresponding edges). The
+  /// members of a class must carry equal fields at the point the system is
+  /// posed at.
   std::vector<std::size_t> edgeClasses;
 
   /// With `edgeClasses`, the orientation of each edge relative to its class:
@@ -292,13 +204,13 @@ struct HolomorphicRelaxationDeclaration {
   /// face holonomy on the cut passes through \f$ -1 \f$, so an odd sector
   /// persists only where it is held or where the dynamics keeps the cut's
   /// holonomies away from \f$ -1 \f$; in the bulk, and on every grown level,
-  /// it is read and never held. For every declared sector the solve keeps (i)
+  /// it is read and never held. For every declared sector the system keeps (i)
   /// the modulus of every
   /// face holonomy on its cut, so a holonomy on the unit circle stays on it,
-  /// and (ii) the monopole number, by halving any trial step after which a
-  /// sector reads a different number. The arguments of the face holonomies
-  /// and every other connection degree of freedom relax freely. The declared
-  /// numbers must be the ones the starting configuration carries.
+  /// and (ii) the monopole number: a system cannot be posed at a point where
+  /// a sector reads a number other than its declared one, so a drive scores
+  /// such a point as having no value. The arguments of the face holonomies
+  /// and every other connection degree of freedom relax freely.
   ///
   /// The held moduli are kept by the Newton step itself. In the
   /// multiplicative link coordinates \f$ U_e\mapsto U_ee^{\delta_e} \f$ the
@@ -317,8 +229,8 @@ struct HolomorphicRelaxationDeclaration {
   /// Newton (Gauss-Newton) step, and so a descent direction for the residual
   /// norm whenever it is not zero. The complex equations can outnumber the
   /// real directions the held set leaves free, so the step's own linearized
-  /// residual (`HolomorphicStep::linearResidual`) need not vanish; it is
-  /// reported.
+  /// residual (`HolomorphicNewtonStep::linearResidual`) need not vanish; it
+  /// is reported.
   std::vector<HeldMonopoleSector> heldSectors;
 
 };
@@ -344,7 +256,7 @@ struct ActionTermRecord {
   std::complex<double> value{0.0, 0.0};
   /// The Euclidean norm of the term's stationarity on the relaxed
   /// coordinates; for `"action"`, of the whole stationarity, which is the
-  /// force norm the solve reports.
+  /// force norm a read reports.
   double gradientNorm = 0.0;
 };
 
@@ -433,229 +345,58 @@ class HolomorphicLinearization {
   std::shared_ptr<const Implementation> implementation_;
 };
 
-/// # HolomorphicStep
-///
-/// One Newton iteration, recorded so a run can be read back rather than only
-/// its outcome.
-struct HolomorphicStep {
-  /// The iteration index, counting from zero.
-  std::size_t iteration = 0;
-  /// The Euclidean norm of the stationarity residual at the point the step was
-  /// taken from.
-  double residualNorm = 0.0;
-  /// The Euclidean norm of the accepted displacement in the variables.
-  double stepNorm = 0.0;
-  /// The damping factor the accepted step carried: one for a full Newton step,
-  /// and a negative power of two when the full step did not reduce the residual.
-  double damping = 1.0;
-  /// The rank of the Jacobian at this point: the number of its singular
-  /// values above `rankTolerance` times the largest. It is below the variable
-  /// count whenever the connection is relaxed, because the action is gauge
-  /// invariant.
-  std::size_t jacobianRank = 0;
-  /// The relative rank tolerance the rank was decided at.
-  double rankTolerance = 0.0;
-  /// The largest singular value of the Jacobian.
-  double largestSingularValue = 0.0;
-  /// The smallest singular value counted in the rank; NaN when the rank is
-  /// zero.
-  double smallestRetainedSingularValue = 0.0;
-  /// The largest singular value counted as zero; zero when none is.
-  double largestDiscardedSingularValue = 0.0;
-  /// The rank gap: the smallest retained over the largest discarded singular
-  /// value, positive infinity when none is discarded. A gap near one says the
-  /// rank decision is not separated from the spectrum's continuation.
-  double rankGap = 0.0;
-  /// The complex action \f$ S(z,U,\Gamma) \f$ at the point the step was taken
-  /// from.
-  std::complex<double> action{0.0, 0.0};
-  /// How many of this iteration's step halvings the held monopole sectors
-  /// forced (a trial step that changed a declared monopole number).
-  std::size_t sectorGuardDampings = 0;
-  /// How many of this iteration's step halvings a trial point outside the
-  /// action's domain forced: a point at which the action refuses to evaluate
-  /// (a link driven to zero or infinity) or its residual is not finite.
-  std::size_t domainGuardDampings = 0;
-  /// How many of this iteration's step halvings the residual test forced (a
-  /// trial point whose residual norm was not below the current one).
-  std::size_t residualTestDampings = 0;
-  /// Whether a damped step was accepted. When none was, the solve stopped at
-  /// the point this step was taken from, and `damping` and `stepNorm` are
-  /// zero.
-  bool accepted = false;
-  /// Every term of the action at the point the step ended at, with its value
-  /// and gradient norm (`ActionTermRecord`); filled when the declaration's
-  /// `recordTerms` is set, empty otherwise.
-  std::vector<ActionTermRecord> terms;
-  /// \f$ \lVert F+Jd\rVert/\lVert F\rVert \f$ for the full Newton step
-  /// \f$ d \f$: how much of the residual the linearized equations leave. It is
-  /// at rounding level for an unconstrained step on a Jacobian of full rank
-  /// in the physical directions, and it is the constrained step's own floor
-  /// when held sectors restrict the step.
-  double linearResidual = 0.0;
-  /// Whether the step was solved on the tangent space of held sectors
-  /// (`HolomorphicRelaxationDeclaration::heldSectors`) rather than on the
-  /// whole space.
-  bool constrainedStep = false;
-  /// For a constrained step, the rank of the real least-squares system it was
-  /// solved from; zero otherwise. It is the number of that system's singular
-  /// values above the declared rank tolerance times its largest one.
-  std::size_t constrainedRank = 0;
-  /// For a constrained step, that system's smallest retained over its largest
-  /// discarded singular value (positive infinity when none is discarded); NaN
-  /// otherwise.
-  double constrainedRankGap = 0.0;
-  /// Whether `action` could be evaluated (`JointAction::reportedValue`).
-  bool actionAvailable = true;
-  /// Why `action` is unavailable, by name; empty when it is available.
-  std::string actionUnavailable;
-};
-
-/// # HolomorphicRelaxationReport
-///
-/// What a solve reached, and the trace of how it got there.
-struct HolomorphicRelaxationReport {
-  /// Every iteration, in order.
-  std::vector<HolomorphicStep> steps;
-  /// Whether the residual norm reached the declared tolerance.
-  bool converged = false;
-  /// The residual norm at the starting point.
-  double initialResidualNorm = 0.0;
-  /// Every term of the action at the starting point (`ActionTermRecord`);
-  /// filled when the declaration's `recordTerms` is set.
-  std::vector<ActionTermRecord> initialTerms;
-  /// The residual norm at the point the solve stopped at.
-  double residualNorm = 0.0;
-  /// The complex action at the point the solve stopped at.
-  std::complex<double> action{0.0, 0.0};
-  /// The multipliers \f$ \xi_j \f$ at the point the solve stopped at, in the
-  /// declaration order of the constraints.
-  std::vector<std::complex<double>> multipliers;
-  /// \f$ p_j(h)-p_j^{\star} \f$ at the point the solve stopped at.
-  std::vector<std::complex<double>> momentResiduals;
-  /// The number of iterations whose step the held monopole sectors damped at
-  /// least once.
-  std::size_t sectorGuardDampedSteps = 0;
-  /// The monopole number of every declared sector at the point the solve
-  /// stopped, in declaration order.
-  std::vector<int> sectorMonopoleNumbers;
-  /// \f$ \max_f |\log|F_f|_{\rm end} - \log|F_f|_{\rm start}| \f$ over the
-  /// held faces: the drift of the held moduli, zero to rounding.
-  double heldModulusDrift = 0.0;
-  /// The number of hinges the primal Regge sum runs over
-  /// (`JointAction::reggeHingeCount`).
-  std::size_t reggeHingeCount = 0;
-  /// True when a declared primal Regge term has no hinge on this complex under
-  /// the declared hinge rule, so that it and its gradient were identically zero
-  /// throughout the solve (`JointAction::reggeStructurallyZero`). The solve
-  /// then relaxed the lengths without any Regge term.
-  bool reggeStructurallyZero = false;
-  /// The number of dihedral angles of the primal Regge sum whose continued
-  /// sheet differs from the principal one at the point the solve stopped at
-  /// (`JointAction::reggeOffPrincipalAngles`).
-  std::size_t reggeOffPrincipalAngles = 0;
-  /// Why the solve stopped.
-  RelaxationStop stopReason = RelaxationStop::NoDescent;
-  /// The stop reason in words, with the numbers that decided it.
-  std::string stopDetail;
-  /// The largest \f$ |z_e| \f$ over the length coordinates at the point the
-  /// solve stopped at, over its value at the start; one when the lengths are
-  /// not relaxed.
-  double largestLengthRatio = 1.0;
-  /// Whether `action` could be evaluated (`JointAction::reportedValue`).
-  bool actionAvailable = true;
-  /// Why `action` is unavailable, by name; empty when it is available.
-  std::string actionUnavailable;
-};
-
 /// # HolomorphicRelaxation
 ///
-/// A Newton root find on the holomorphic stationarity equations of
-/// `JointAction`,
+/// The holomorphic stationarity system of `JointAction`,
 /// \f[
 ///   \frac{\partial S}{\partial z_e}=0,\qquad
 ///   U_e\frac{\partial S}{\partial U_e}=0,\qquad
-///   p_j(h)-p_j^{\star}=0 .
+///   p_j(h)-p_j^{\star}=0 ,
 /// \f]
+/// at one point: its residual, its closed-form Jacobian and the step that
+/// solves it to first order there (`residual`, `jacobian`, `linearization`,
+/// `newtonStep`). It moves nothing. The search for a stationary point is a
+/// drive of `MultiCobordism` with this system as its objective's scalar and
+/// direction (`tessera.drivers.cell_solve`).
 ///
-/// Reference: Ortega and Rheinboldt, "Iterative Solution of Nonlinear Equations
-/// in Several Variables", SIAM Classics in Applied Mathematics 30, for the
-/// damped Newton method and its convergence.
 /// Reference: Kato, "Perturbation Theory for Linear Operators", Springer,
 /// Chapter II, for the analytic dependence of the Riesz projector of an
 /// isolated group of eigenvalues on the operator, which the Jacobian of the
 /// self-consistent system rests on.
 ///
-/// This solves the equations themselves. It does not minimize the residual
-/// norm, it does not minimize a real part, and it does not select a real
-/// projection of the action: the residual norm appears only as the quantity the
-/// damping compares and as the convergence certificate the report carries. Both
-/// the real and the imaginary part of every equation are driven to zero because
-/// the equation is one complex equation, and a Newton step in the complex
-/// variables solves both at once.
+/// These are the complex equations themselves, not a real projection of
+/// them: both the real and the imaginary part of every equation vanish at a
+/// solution, because each is one complex equation.
 ///
-/// ## The variables and how they are updated
+/// ## The variables
 ///
 /// The variables are the complex squared lengths \f$ z_e=\ell_e^2 \f$, the
-/// Maurer-Cartan increments \f$ \delta_e \f$ of the links on each edge's stored
-/// orientation, and the multipliers \f$ \xi_j \f$.
+/// Maurer-Cartan increments \f$ \delta_e \f$ of the links on each edge's
+/// stored orientation, and the multipliers \f$ \xi_j \f$. A step
+/// \f$ \delta_e \f$ sends \f$ U_e\mapsto U_e\,e^{\delta_e} \f$. The mesh
+/// stores the connection as the phase \f$ \varphi_e \f$ of
+/// \f$ U_e=e^{i\varphi_e} \f$, and the identical update on that storage is
+/// \f$ \varphi_e\mapsto\varphi_e-i\,\delta_e \f$, an exact rewriting of the
+/// multiplicative step that forms no logarithm of a link. With
+/// `HolomorphicRelaxationDeclaration::edgeClasses` the variables are shared
+/// coordinates, each carried by every edge of its class, and each equation
+/// is the sum of the stationarity equations of its class's edges.
 ///
-/// The connection is updated multiplicatively: a step \f$ \delta_e \f$ sends
-/// \f$ U_e \mapsto U_e\,e^{\delta_e} \f$. The mesh stores the connection as the
-/// phase \f$ \varphi_e \f$ of \f$ U_e=e^{i\varphi_e} \f$, and the identical
-/// update on that storage is \f$ \varphi_e \mapsto \varphi_e-i\,\delta_e \f$,
-/// which is an exact rewriting of the multiplicative step and not a choice of
-/// logarithm branch: no logarithm of a link is ever formed, and the increment
-/// is applied to the stored coordinate rather than recovered from the product.
+/// ## Why the linearized system is solved in the minimum-norm sense
 ///
-/// The squared length is written back through `mesh::Edge::setLength`, which
-/// takes \f$ \ell \f$ rather than \f$ \ell^2 \f$. The root is chosen by
-/// continuation from the edge's current length: of the two square roots of the
-/// new \f$ z_e \f$, the solver keeps the one on the same side as the current
-/// \f$ \ell_e \f$, so a relaxation path never jumps between the two sheets of
-/// \f$ \ell\mapsto\ell^2 \f$ between consecutive iterations.
-///
-/// With `HolomorphicRelaxationDeclaration::edgeClasses` the variables are
-/// shared coordinates, each written to every edge of its class, and each
-/// equation is the sum of the stationarity equations of its class's edges.
-///
-/// ## Why the Newton system is solved in the minimum-norm sense
-///
-/// The action is gauge invariant, so its link stationarity vector is orthogonal
-/// to every pure-gauge direction and the connection block of the Jacobian is
-/// singular along all of them — one null direction per vertex, less one per
-/// connected component. That is a property of the theory, not a defect of the
-/// discretization, and a solver that inverted the Jacobian would be inverting a
-/// singular matrix. The step is therefore the minimum-norm least-squares
-/// solution from the singular value decomposition, with the singular values
-/// at or below `rankTolerance` times the largest counted as zero, which is the
-/// unique solution orthogonal to the numerical null space: the connection
-/// moves only in physical directions and the gauge is left where it was. The
-/// rank and the gap at the rank decision are recorded on every step. With
-/// held sectors the same minimum-norm rule is applied to the real
-/// least-squares system over the held set's tangent space
+/// The action is gauge invariant, so its link stationarity vector is
+/// orthogonal to every pure-gauge direction and the connection block of the
+/// Jacobian is singular along all of them, one null direction per vertex
+/// less one per connected component. That is a property of the theory. The
+/// step is therefore the minimum-norm least-squares solution from the
+/// singular value decomposition, with the singular values at or below
+/// `rankTolerance` times the largest counted as zero, which is the solution
+/// orthogonal to the numerical null space: the connection moves only in
+/// physical directions and the gauge is left where it was. The rank and the
+/// gap at the rank decision are reported with the step. With held sectors
+/// the same rule is applied to the real least-squares system over the steps
+/// that keep the held moduli
 /// (`HolomorphicRelaxationDeclaration::heldSectors`).
-///
-/// ## Step control and why a solve stops
-///
-/// A full Newton step that does not reduce the residual norm is halved, and
-/// halved again until a trial step is accepted, until the next halving would
-/// move no variable at the datatype's resolution, or until a trial leaves
-/// every component of the residual the number it was (the step's effect on
-/// the equations falls with the damping, so no shorter step can reduce the
-/// residual); a squared length the damped step does not move keeps its
-/// stored value. What refused the shortest trial is why the solve stops. A
-/// trial step that the declared guards refuse is halved the same way: one that changes a held monopole number, and one
-/// that reaches a point at which the action refuses to evaluate (a zero of
-/// the Villain weight among them). Damping is a globalization and changes no
-/// equation. No number of iterations or of halvings and no time is imposed:
-/// a solve ends only when it converges, when no trial step moves it (the
-/// shortest step the datatype resolves included), or when a squared length
-/// overflows the double, unless the user declares a limit
-/// (`iterationLimit`, `halvingLimit`, `timeLimitSeconds`), which then ends
-/// it by name. When no trial step is accepted the solve stops, and the
-/// report names the reason from the refusal of the smallest trial step
-/// (`RelaxationStop`); a runaway of the squared lengths also stops it by name.
 ///
 /// ## The Jacobian
 ///
@@ -677,12 +418,12 @@ struct HolomorphicRelaxationReport {
 ///
 /// ## The self-consistent system
 ///
-/// Built with a `CovarianceRebuild`, the solve rebuilds \f$ \Gamma \f$ from
-/// the carrier operator at every point it evaluates, so it solves the joint
-/// system \f$ F_{\rm sc}(z,U)=0 \f$ of `SelfConsistentMeanField` with the
-/// Jacobian \f$ H_{\rm sc} \f$ of the self-consistent force. The equations
-/// are those of the joint action; only the order in which they are solved
-/// differs from holding \f$ \Gamma \f$ fixed. The Jacobian then carries, on
+/// Built with a `CovarianceRebuild`, the system rebuilds \f$ \Gamma \f$ from
+/// the carrier operator at the point, so it is the joint system
+/// \f$ F_{\rm sc}(z,U)=0 \f$ of `SelfConsistentMeanField` with the Jacobian
+/// \f$ H_{\rm sc} \f$ of the self-consistent force. The equations are those
+/// of the joint action with \f$ \Gamma \f$ no longer held. The Jacobian then
+/// carries, on
 /// every geometric column, the response of the equations to the state's
 /// variation along that coordinate: with \f$ \delta h \f$ the operator's
 /// derivative along the coordinate, the variation of each band's Riesz
@@ -692,7 +433,7 @@ struct HolomorphicRelaxationReport {
 /// `JointAction::stationarityStateVariation`. The perturbation is exact for
 /// an isolated band; a band close to another eigenvalue is perturbed by the
 /// same formula, whose quotients are then large, and the isolation of every
-/// band is reported by the solve.
+/// band is reported with the bands (`BandRead::bandIsolation`).
 /// Every term of \p action with its value and the norm of its stationarity
 /// gradient on the coordinates \p declaration relaxes (`ActionTermRecord`),
 /// the per-edge gradients summed over the declared edge classes as the
@@ -705,28 +446,25 @@ struct HolomorphicRelaxationReport {
 
 class HolomorphicRelaxation {
  public:
-  /// Build a solve over an action.
+  /// Pose the system of an action at the action's current point.
   ///
-  /// @param action The action whose stationarity equations are solved. The
-  ///   instance is held by value and its multipliers are advanced by the solve;
-  ///   the complex it refers to is the object whose edge lengths and phases the
-  ///   solve writes.
-  /// @param declaration The numerical controls of the root find.
+  /// @param action The action whose stationarity equations are posed. The
+  ///   instance is held by value; the complex it refers to is read and not
+  ///   written.
+  /// @param declaration The variables, their shared coordinates, the held
+  ///   sectors and the rank tolerance.
   /// @param rebuild Empty (the default) to hold the action's covariance fixed;
-  ///   otherwise the rule that rebuilds \f$ \Gamma \f$ at every point the
-  ///   solve evaluates.
-  /// @throws std::invalid_argument when no field is declared relaxable, or
-  ///   when declared edge classes do not cover the edges, skip a class index,
-  ///   carry an orientation other than plus or minus one, or start with
-  ///   unequal fields inside a class.
+  ///   otherwise the rule that rebuilds \f$ \Gamma \f$ at the point.
+  /// @throws std::invalid_argument when no field is declared relaxable, when
+  ///   declared edge classes do not cover the edges, skip a class index,
+  ///   carry an orientation other than plus or minus one, or carry unequal
+  ///   fields inside a class, or when a held sector reads a monopole number
+  ///   other than its declared one at the point.
   HolomorphicRelaxation(JointAction action,
                         HolomorphicRelaxationDeclaration declaration,
                         CovarianceRebuild rebuild = {});
 
-  /// Run the solve, writing the relaxed fields into the complex as it goes.
-  [[nodiscard]] HolomorphicRelaxationReport solve();
-
-  /// The action, carrying the multipliers as the solve left them.
+  /// The action the system is posed on, with its multipliers.
   [[nodiscard]] const JointAction &action() const noexcept { return action_; }
 
   /// The analytic Jacobian of the stationarity system at the current point,
@@ -734,7 +472,7 @@ class HolomorphicRelaxation {
   /// columns in the variable order — the relaxed length coordinates, then the
   /// relaxed link coordinates, then the relaxed multipliers. Under declared
   /// edge classes a length or link coordinate is one class, in class order.
-  /// Exposed so that the derivative the solve steps along can be inspected
+  /// Exposed so that the derivative a step is taken along can be inspected
   /// and checked against an independent evaluation rather than only trusted.
   /// With a `CovarianceRebuild` it is the Jacobian of the self-consistent
   /// force, the state rebuilt at the point and its derivative taken from the

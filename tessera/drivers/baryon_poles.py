@@ -812,7 +812,6 @@ def relaxation_declaration(config):
     geometry.relax_lengths = True
     geometry.relax_links = True
     geometry.relax_multipliers = False
-    geometry.tolerance = config["step_tolerance"]
     geometry.rank_tolerance = config["rank_tolerance"]
     # every recorded iterate carries every term of the action with its value
     # and gradient norm (--trace-terms); changes no step
