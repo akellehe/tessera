@@ -11,15 +11,20 @@ Terms used below:
 * a *term record* is one term at one recorded point: its value and the
   Euclidean norm of its gradient on the coordinates the relaxation relaxes,
   summed over the declared edge classes as the residual is;
-* the *trace* of a solve is the list of the term records at its starting
-  point and at every step, recorded when the geometry declaration asks for
-  it and empty otherwise.
+* a *step proposal* is one point of a drive (`tessera.drivers.cell_solve`)
+  at which a step is formed: the starting point, every point an accepted
+  update reached, and the end point once for each line search that
+  accepted no trial there;
+* the *trace* of a solve is the list of the term records at every step
+  proposal, recorded when the geometry declaration asks for it and empty
+  otherwise.
 """
 import numpy as np
 import pytest
 
 from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
+from tessera.drivers import cell_solve as cs
 from tessera.drivers import recursion as R
 
 from tests.drivers import _recursion_run_2026_09_23 as RUN
@@ -169,51 +174,80 @@ def test_the_records_reduce_onto_the_relaxed_coordinates():
                                                      rel=1e-12)
 
 
-def test_a_relaxation_records_the_terms_only_when_asked():
-    # a relaxation moves its complex, so each run gets a fresh host
+def _level_relaxation(trace_terms):
+    """The level relaxation of the host of (0134) as one shared base field,
+    every hinge in the Regge sum and no sector held, with the term records
+    at its starting point."""
     config, spacetime, declaration = _host((0, 3, 0))
-    geometry = bp.share_sheet_geometry(bp.relaxation_declaration(config),
-                                       spacetime)
-    geometry.held_sectors = []
-    silent = cob.HolomorphicRelaxation(
-        cob.JointAction(spacetime, declaration), geometry).solve()
-    assert len(silent.initial_terms) == 0
-    assert all(len(step.terms) == 0 for step in silent.steps)
-    _, spacetime, declaration = _host((0, 3, 0))
-    geometry.record_terms = True
-    expected = cob.action_term_records(cob.JointAction(spacetime, declaration),
-                                       geometry)
-    traced = cob.HolomorphicRelaxation(
-        cob.JointAction(spacetime, declaration), geometry).solve()
-    assert [t.name for t in traced.initial_terms] == TERMS + SUMS
-    assert len(traced.steps) >= 1
-    for step in traced.steps:
-        assert [t.name for t in step.terms] == TERMS + SUMS
-    # the same steps either way: recording changes nothing
-    assert [s.residual_norm for s in traced.steps] == \
-        [s.residual_norm for s in silent.steps]
-    # the norms are those of the terms at the starting point
-    assert [r.gradient_norm for r in traced.initial_terms] == \
-        [r.gradient_norm for r in expected]
+    level = dict(config, kappa=1.0, beta=1.0, regge_hinges="all",
+                 trace_terms=trace_terms)
+    geometry = bp.share_sheet_geometry(
+        bp.relaxation_declaration(dict(level, held_sectors=[])), spacetime)
+    expected = cob.action_term_records(
+        cob.JointAction(spacetime, declaration), geometry)
+    return R.relax_level(spacetime, level, [], count=4), expected
+
+
+def test_a_relaxation_records_the_terms_only_when_asked():
+    """The geometric action alone has no stationary point near this host:
+    twelve accepted updates each triple the squared lengths and lower the
+    residual norm by the factor 3^(-1/2), from 12.67 to 9.0e-3, and at
+    squared lengths 4.25e6 the Jacobian's rank at the run's rank tolerance
+    falls from nine to three, the step moves no coordinate, and the drive
+    stops. With ``trace_terms`` every one of the fifteen step proposals
+    carries the terms; without it none does, and the drive is the same."""
+    silent, _ = _level_relaxation(False)
+    assert silent["term_trace"] == []
+    traced, expected = _level_relaxation(True)
+    assert len(traced["jacobian_ranks"]) == 15
+    assert len(traced["term_trace"]) == 15
+    for terms in traced["term_trace"]:
+        assert [t["name"] for t in terms] == TERMS + SUMS
+    # the same drive either way: recording changes nothing
+    assert traced["residual_trace"] == silent["residual_trace"]
+    assert traced["iterations"] == silent["iterations"] == 12
+    assert traced["moves_committed"] == 0 and not traced["converged"]
+    assert traced["stop_reason"] == cs.STOP_STATIONARY
+    assert traced["jacobian_ranks"] == [9] * 12 + [3] * 3
+    assert traced["initial_residual"] == pytest.approx(12.669871793382649,
+                                                       rel=1e-12)
+    assert traced["residual"] == pytest.approx(0.009002790053988682,
+                                               rel=1e-9)
+    ratios = np.divide(traced["residual_trace"][2:],
+                       traced["residual_trace"][1:-1])
+    np.testing.assert_allclose(ratios, 3.0 ** -0.5, rtol=1e-3)
+    # the norms of the first proposal are those of the terms at the
+    # starting point, and the whole action's is the residual norm there
+    assert [r["gradient_norm"] for r in traced["term_trace"][0]] == \
+        pytest.approx([r.gradient_norm for r in expected], rel=1e-13)
+    assert traced["term_trace"][0][-1]["gradient_norm"] == pytest.approx(
+        traced["initial_residual"], rel=1e-13)
 
 
 def test_the_mean_field_solve_traces_its_terms_and_the_driver_prints_them():
-    """With ``trace_terms`` in the config every iterate of a content's
+    """With ``trace_terms`` in the config every step proposal of a content's
     solve carries the terms, the record carries them, and the trace lines
     name every term with its value, gradient and the change since the
-    previous iterate; without it the record carries none and prints
-    nothing."""
+    previous proposal; without it the record carries none and prints
+    nothing. The solve of (0134, 030) with every power sum of its fiber
+    pinned accepts seven updates and makes ten step proposals."""
     config, _, _ = _host((0, 3, 0))
     config["trace_terms"] = True
-    _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    _, _, report, drive = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
     names = TERMS + ["constraint %d" % j for j in (1, 2, 3)] + SUMS
-    assert all([t.name for t in step.terms] == names for step in report.steps)
-    record = bp.relaxation_record(report)
-    assert [t["name"] for t in record["trace"][0]["terms"]] == names
+    steps = [update["measured"] for update in drive["objective"].updates]
+    assert drive["accepted_updates"] == 7 and len(steps) == 10
+    assert all([t.name for t in step.terms] == names for step in steps)
+    # the read of the end point carries them as well
+    assert [[t.name for t in step.terms] for step in report.steps] == [names]
+    record = bp.relaxation_record(report, drive)
+    assert len(record["trace"]) == 10
+    assert all([t["name"] for t in entry["terms"]] == names
+               for entry in record["trace"])
     lines = bp.term_trace_lines(record, "  ")
-    # one header and one line per term and per sum, per iterate
+    # one header and one line per term and per sum, per step proposal
     per_iterate = 1 + 3 + 1 + 3
-    assert len(lines) == per_iterate * len(report.steps)
+    assert len(lines) == per_iterate * len(steps)
     assert lines[0].startswith("  iterate 0: S = ")
     assert "stationarity residual" in lines[0]
     assert lines[1].startswith("    (1/kappa) S_Regge = (1+0i) x (")
@@ -223,14 +257,18 @@ def test_the_mean_field_solve_traces_its_terms_and_the_driver_prints_them():
     assert lines[5].startswith("      xi_1 (c_1 - c_1*), c_1 = p_1(h_C / s) = (")
     assert all("gradient" in line for line in lines[1:per_iterate])
     assert not any("[value" in line for line in lines[:per_iterate])
-    if len(report.steps) > 1:
-        second = lines[per_iterate:2 * per_iterate]
-        assert second[0].startswith("  iterate 1: S = ")
-        assert all("[value" in line and "improved" in line for line in second)
+    second = lines[per_iterate:2 * per_iterate]
+    assert second[0].startswith("  iterate 1: S = ")
+    assert all("[value" in line and "improved" in line for line in second)
     config["trace_terms"] = False
-    _, _, quiet = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    _, _, quiet, quiet_drive = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
+    assert all(len(update["measured"].terms) == 0
+               for update in quiet_drive["objective"].updates)
     assert all(len(step.terms) == 0 for step in quiet.steps)
-    assert bp.term_trace_lines(bp.relaxation_record(quiet), "  ") == []
+    # the same drive either way: recording changes nothing
+    assert quiet_drive["trace"] == drive["trace"]
+    assert bp.term_trace_lines(bp.relaxation_record(quiet, quiet_drive),
+                               "  ") == []
 
 
 def test_the_option_reaches_both_drivers_and_every_cell():

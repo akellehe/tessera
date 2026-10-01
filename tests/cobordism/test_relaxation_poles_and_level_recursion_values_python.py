@@ -3,9 +3,10 @@
 """The solvers and readers of the recursion driver's tick, held to known
 stationary points, known roots and the run's own tick-0 record.
 
-`recursion.tick` relaxes the level (`HolomorphicRelaxation`, with the bounding
-cut's monopole sectors held), runs the Section 15 box (`LevelRecursion` over
-the base operator, the partition persisting across the declared resolutions),
+`recursion.tick` relaxes the level (the `MultiCobordism` drive of the
+stationarity system `HolomorphicRelaxation` poses, with the bounding cut's
+monopole sectors held), runs the Section 15 box (`LevelRecursion` over the
+base operator, the partition persisting across the declared resolutions),
 and grows the next level; every host cell is then relaxed with band filling
 (`SelfConsistentMeanField`) and its poles read (`BoundStatePole`). Expected
 values come from:
@@ -33,6 +34,7 @@ import pytest
 import tessera as T
 from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
+from tessera.drivers import cell_solve as cs
 from tessera.drivers import recursion as R
 
 from tests.drivers import _recursion_run_2026_09_23 as RUN
@@ -55,7 +57,6 @@ def _solve(lengths=True, links=True):
     solve.relax_lengths = lengths
     solve.relax_links = links
     solve.relax_multipliers = False
-    solve.tolerance = 1e-12
     return solve
 
 
@@ -72,24 +73,28 @@ def _tetrahedron(squared=8.0):
 def test_the_holonomy_alone_relaxes_to_a_flat_connection():
     """The holonomy term alone is stationary at a flat connection. From
     phases 0.1 sqrt(k + 1) (-1)^k on a single tetrahedron (face holonomies up
-    to 0.62 rad from 1) the solve converges and every face holonomy is 1
-    within 1e-14."""
+    to 0.62 rad from 1) the relaxation accepts two steps (residual norm
+    1.77, 7.4e-6, 3.3e-17) and every face holonomy is 1 within 1e-14."""
     spacetime = _tetrahedron()
     for k, edge in enumerate(spacetime.getEdgeList().toVector()):
         edge.setPhase(complex(0.1 * math.sqrt(k + 1) * (-1) ** k))
-    action = cob.JointAction(spacetime, _declaration(spacetime, beta=1.0))
-    relaxation = cob.HolomorphicRelaxation(action, _solve(lengths=False))
-    report = relaxation.solve()
-    assert report.converged
-    faces = np.asarray(relaxation.action.face_holonomies())
+    record = cs.relax(spacetime, _declaration(spacetime, beta=1.0),
+                      geometry=_solve(lengths=False))
+    assert record["stop_reason"] == cs.STOP_STATIONARY
+    assert record["accepted_updates"] == 2
+    assert record["trace"][0] == pytest.approx(1.771, abs=1e-3)
+    assert record["trace"][-1] < 1e-15
+    faces = np.asarray(record["point"].relaxation.action.face_holonomies())
     assert np.max(np.abs(faces - 1.0)) < 1e-14
 
 
 def test_the_run_level_is_stationary_as_built():
     """The run's tick-0 level (the two-tetrahedron fan, squared length 8,
-    the declared monopole connection) relaxes in zero Newton iterations with
-    the recorded residual 1.18e-14, the Regge term structurally zero and the
-    held cut's monopole number 2 on every sheet (run.log)."""
+    the declared monopole connection) is stationary as built at the run's
+    tolerances: the relaxation accepts no step and commits no move, the
+    residual norm is the rounding of the declared connection (1.08e-14),
+    the Regge term is structurally zero and the held cut's monopole number
+    is 2 on every sheet."""
     config = R.default_config(tolerances=RUN.TOLERANCES)
     cells, z, links, _ = R.level_zero(config)
     spacetime, count = R.build_level(cells, z, links)
@@ -99,7 +104,10 @@ def test_the_run_level_is_stationary_as_built():
                            R.cut_sectors(cut, number, count))
     assert number == RUN.LEVEL_ZERO_CUT_MONOPOLE_NUMBER
     assert record["converged"] and record["iterations"] == 0
-    assert record["residual"] == pytest.approx(1.1801457386692923e-14,
+    assert record["stop_reason"] == "converged"
+    assert record["moves_committed"] == 0 and not record["changed"]
+    assert record["residual"] == record["initial_residual"]
+    assert record["residual"] == pytest.approx(1.076947171753191e-14,
                                                rel=1e-6)
     assert record["sector_monopole_numbers"] == [2, 2, 2]
     assert record["regge_structurally_zero"]
@@ -121,7 +129,11 @@ def test_the_held_cut_is_kept_and_the_bulk_face_relaxes():
     cut = R.bounding_cut(cells)
     record = R.relax_level(spacetime, config,
                            R.cut_sectors(cut, 2, count))
-    assert record["converged"] and record["iterations"] >= 1
+    assert record["converged"] and record["iterations"] == 3
+    assert record["residual_trace"][0] == pytest.approx(0.32304044103498514,
+                                                        rel=1e-9)
+    assert record["residual"] < 1e-14
+    assert record["moves_committed"] == 0 and record["undefined_points"] == 0
     assert record["sector_monopole_numbers"] == [2, 2, 2]
     assert record["held_modulus_drift"] < 1e-15
     fields = R.sheet_fields(spacetime, count)

@@ -52,6 +52,7 @@ from fractions import Fraction
 import numpy as np
 
 import tessera as T
+from tessera.drivers import cell_solve as cs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -873,17 +874,22 @@ class TheLogarithmWhereTheWeightIsSmallTest(unittest.TestCase):
         self.assertAlmostEqual(logarithm.real, math.log(value), places=12)
         self.assertAlmostEqual(logarithm.real, -11.504, places=3)
 
-    def test_a_logarithm_without_a_value_leaves_the_value_unavailable_not_the_solve(
+    def test_a_logarithm_without_a_value_leaves_the_value_unavailable_not_the_system(
             self):
         """A tetrahedron one of whose links has the phase 0.5361 pi has two
         face holonomies of argument +-0.5361 pi, where W_M at beta = 10 and
         order ten is -4.377e-3. The action's value has no logarithm there
-        and is reported as unavailable, with the reason; a solve of the
-        squared lengths and the multiplier (whose equations do not need
-        log W_M), the matter term tr(h) under the constraint p_1(h) = p_1*
-        read at squared length 8.5, runs to its stationary point (the
-        constraint met, xi = -w_M) and reports its action as unavailable by
-        name at every step."""
+        and is reported as unavailable, with the reason. The system of the
+        squared lengths and the multiplier, whose equations do not need
+        log W_M (the matter term tr(h) under the constraint p_1(h) = p_1*
+        read at squared length 8.5), has its values there: at squared length
+        8 its seven equations have the residual norm 16.13 and a Newton step
+        of full rank, which is known in closed form because p_1 is
+        homogeneous of degree -1 in the squared lengths (d z = 8 - 8^2 / 8.5
+        = 0.4706 on every edge and d xi = -1 + 2 (1 - 8 / 8.5) = -0.8824);
+        and at squared length 8.5 with xi = -w_M = -1 every equation
+        vanishes, the stationary point, where the action's value is
+        unavailable by the same name."""
         phase = 0.5361 * math.pi
 
         def host(squared):
@@ -915,39 +921,50 @@ class TheLogarithmWhereTheWeightIsSmallTest(unittest.TestCase):
         declaration.relax_lengths = True
         declaration.relax_links = False
         declaration.relax_multipliers = True
-        declaration.tolerance = 1e-12
-        report = cob.HolomorphicRelaxation(action, declaration).solve()
-        self.assertTrue(report.converged)
-        self.assertEqual(report.stop_reason, cob.RelaxationStop.Converged)
-        self.assertFalse(report.action_available)
-        self.assertIn("does not exceed its bound", report.action_unavailable)
-        self.assertGreater(len(report.steps), 0)
-        for step in report.steps:
-            self.assertFalse(step.action_available)
-        self.assertLess(abs(report.moment_residuals[0]), 1e-10)
-        self.assertAlmostEqual(abs(report.multipliers[0] + 1.0), 0.0,
-                               places=8)
+        system = cob.HolomorphicRelaxation(action, declaration)
+        self.assertEqual(system.variable_count(), 7)
+        self.assertAlmostEqual(np.linalg.norm(system.residual()),
+                               16.13282918591316, places=9)
+        step = system.newton_step()
+        self.assertEqual(step.jacobian_rank, 7)
+        self.assertLess(step.linear_residual, 1e-13)
+        moved = np.asarray(step.step)
+        self.assertLess(np.abs(moved[:6] - (8.0 - 64.0 / 8.5)).max(), 1e-12)
+        self.assertLess(abs(moved[6] - (-1.0 + 2.0 * (1.0 - 8.0 / 8.5))),
+                        1e-12)
+
+        at_rest = constrained(host(8.5), target)
+        at_rest.set_multipliers([-1.0 + 0j])
+        self.assertEqual(np.linalg.norm(cob.HolomorphicRelaxation(
+            at_rest, declaration).residual()), 0.0)
+        self.assertEqual(abs(at_rest.moment_residuals()[0]), 0.0)
+        reported = at_rest.reported_value()
+        self.assertFalse(reported.available)
+        self.assertIn("does not exceed its bound", reported.unavailable)
 
 
-class TheSolveAwayFromTheZerosTest(unittest.TestCase):
-    """The equations are posed where W is certified nonzero; a solve that
-    stays there is not damped by anything but the residual test."""
+class TheRelaxationAwayFromTheZerosTest(unittest.TestCase):
+    """The equations are posed where W is certified nonzero; a relaxation
+    that stays there scores no complex without a residual."""
 
-    def test_a_clear_solve_converges_with_no_damping_but_the_residual_test(
-            self):
+    def test_a_clear_relaxation_meets_no_point_without_a_value(self):
+        """The links of the sphere relax from the flux in two accepted
+        steps (residual norm 4.83, 1.3e-6, 1.5e-15), and every one of the 27
+        complexes the drive scores has a residual."""
         spacetime = sphere3(phase=_flux)
-        action = cob.JointAction(spacetime, _declaration())
         relaxation_declaration = cob.HolomorphicRelaxationDeclaration()
         relaxation_declaration.relax_lengths = False
         relaxation_declaration.relax_links = True
         relaxation_declaration.relax_multipliers = False
-        relaxation_declaration.tolerance = 1e-11
-        report = cob.HolomorphicRelaxation(
-            action, relaxation_declaration).solve()
-        self.assertTrue(report.converged)
-        self.assertEqual(report.sector_guard_damped_steps, 0)
-        self.assertEqual(sum(step.domain_guard_dampings
-                             for step in report.steps), 0)
+        record = cs.relax(spacetime, _declaration(),
+                          geometry=relaxation_declaration)
+        self.assertEqual(record["stop_reason"], cs.STOP_STATIONARY)
+        self.assertEqual(record["accepted_updates"], 2)
+        self.assertLess(record["trace"][-1], 1e-14)
+        self.assertLess(np.linalg.norm(
+            record["point"].relaxation.residual()), 1e-14)
+        self.assertEqual(record["objective"].undefined, [])
+        self.assertEqual(record["objective"].scored, 27)
 
 
 class TheOrderIsDeclaredAndTheTailReportedTest(unittest.TestCase):

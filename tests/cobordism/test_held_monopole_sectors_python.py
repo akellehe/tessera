@@ -2,8 +2,8 @@
 # All rights reserved.
 """Held monopole sectors in `HolomorphicRelaxation`: the declared monopole
 number and the moduli of the cut faces' holonomies are kept, a sector declared
-with the wrong number is refused, and on the symmetric unit-monopole
-tetrahedron (stationary in its sector) the held solve converges."""
+with the wrong number is refused, and the symmetric unit-monopole
+tetrahedron is stationary in its sector as built."""
 import pytest
 
 from tessera import cobordism as cob
@@ -28,10 +28,12 @@ def test_the_symmetric_host_relaxes_inside_its_sector():
     spacetime = bp.build_host()
     config = bp.default_config([1.0], [1.0])
     report = R.relax_level(spacetime, dict(config, kappa=1.0, beta=1.0), _sectors(1))
-    assert report["converged"]
+    assert report["converged"] and report["stop_reason"] == "converged"
+    assert report["initial_residual"] == 0.0 and report["residual"] == 0.0
+    assert report["iterations"] == 0 and report["moves_committed"] == 0
     assert report["sector_monopole_numbers"] == [1, 1, 1]
-    assert report["held_modulus_drift"] < 1e-12
-    assert report["sector_guard_damped_steps"] == 0
+    assert report["held_modulus_drift"] == 0.0
+    assert report["undefined_points"] == 0
 
 
 def test_the_hold_passes_through_the_mean_field_solve():

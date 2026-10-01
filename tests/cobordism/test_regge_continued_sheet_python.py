@@ -13,10 +13,10 @@ root to carry a sheet continued from a Euclidean reference, and
 - the continued residual is continuous under infinitesimal imaginary
   perturbations, where the principal one jumps;
 - the continued and principal values agree on real Euclidean input;
-- a lengths-only Newton solve of Regge plus the matter term w tr(h), whose
+- a lengths-only relaxation of Regge plus the matter term w tr(h), whose
   stationary point on the regular boundary of the 4-simplex is known in
   closed form, reaches it on the continued sheet from a start on the cut,
-  where the principal sheet's solve is refused;
+  where the principal sheet's relaxation ends away from it;
 - a complex with no interior hinge reports its Regge term as structurally
   zero.
 """
@@ -29,6 +29,7 @@ import pytest
 
 import tessera as T
 from tessera import cobordism as cob
+from tessera.drivers import cell_solve as cs
 
 #: The boundary of the 4-simplex, K_1 of the recursion's small case.
 BOUNDARY_OF_FOUR_SIMPLEX = [list(c) for c in itertools.combinations(range(5), 4)]
@@ -180,9 +181,11 @@ def test_regge_and_matter_converge_on_the_continued_sheet():
     point is the regular metric at z* = (w c / (5 eps_0))^{2/3}. From 5%
     away in the real parts, with imaginary parts of 1e-9 that put 14 of the
     30 dihedral angles on the supplement sheet of the principal branch, the
-    Newton solve on the continued sheet reaches z* (to the tolerance 1e-10
-    on a residual whose derivative in z is of order 1e-4); on the principal
-    sheet it is refused."""
+    relaxation on the continued sheet (`cell_solve.relax`) reaches z* in
+    five accepted steps: the residual norm falls from 4.3e-2 to 2.1e-16 and
+    every squared length ends within 1e-12 of z* = 225.99. On the principal
+    sheet the relaxation accepts ten steps and ends at the residual norm
+    0.2485, with squared lengths up to 84.5 from z*."""
     edges = list(itertools.combinations(range(5), 2))
     unit = _complex(BOUNDARY_OF_FOUR_SIMPLEX, {e: 1.0 + 0j for e in edges})
     c = complex(cob.JointAction(unit, _declaration(
@@ -201,26 +204,32 @@ def test_regge_and_matter_converge_on_the_continued_sheet():
     solve.relax_lengths = True
     solve.relax_links = False
     solve.relax_multipliers = False
-    solve.tolerance = 1e-10
     spacetime = _complex(BOUNDARY_OF_FOUR_SIMPLEX, start)
-    action = cob.JointAction(spacetime, _declaration(
-        spacetime, cob.ReggeBranch.Continued, matter=w))
+    declaration = _declaration(spacetime, cob.ReggeBranch.Continued, matter=w)
+    action = cob.JointAction(spacetime, declaration)
     assert action.regge_off_principal_angles() == 14
-    report = cob.HolomorphicRelaxation(action, solve).solve()
-    assert report.converged
-    assert report.residual_norm < 1e-10
-    assert len(report.steps) <= 6
-    assert report.regge_hinge_count == 10
-    assert not report.regge_structurally_zero
+    record = cs.relax(spacetime, declaration, geometry=solve)
+    assert record["stop_reason"] == cs.STOP_STATIONARY
+    assert record["accepted_updates"] == 5
+    assert record["trace"][0] == pytest.approx(4.302e-2, rel=1e-3)
+    assert record["trace"][-1] < 1e-14
+    assert record["objective"].undefined == []
+    reached = record["point"].relaxation.action
+    assert reached.regge_hinge_count() == 10
+    assert not reached.regge_structurally_zero()
     for edge in spacetime.getEdgeList().toVector():
-        assert abs(complex(edge.getLength()) ** 2 - z_star) < 1e-6
+        assert abs(complex(edge.getLength()) ** 2 - z_star) < 1e-12
 
     principal_space = _complex(BOUNDARY_OF_FOUR_SIMPLEX, start)
-    principal = cob.HolomorphicRelaxation(
-        cob.JointAction(principal_space, _declaration(
-            principal_space, cob.ReggeBranch.Principal, matter=w)),
-        solve).solve()
-    assert not principal.converged
+    principal = cs.relax(
+        principal_space, _declaration(principal_space,
+                                      cob.ReggeBranch.Principal, matter=w),
+        geometry=solve)
+    assert principal["stop_reason"] == cs.STOP_STATIONARY
+    assert principal["accepted_updates"] == 10
+    assert principal["trace"][-1] == pytest.approx(0.2485, abs=5e-4)
+    assert max(abs(complex(edge.getLength()) ** 2 - z_star) for edge
+               in principal_space.getEdgeList().toVector()) > 80.0
 
 
 def test_a_complex_with_no_interior_hinge_reports_a_structurally_zero_regge():
