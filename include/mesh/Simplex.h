@@ -480,6 +480,20 @@ class Simplex {
                            std::complex<double>>
     deficitAngleHessian() const;
 
+    /// ``deficitAngleHessian`` with every dihedral angle on its declared sheet
+    /// in \a sheets: the second derivative of the sheeted ``deficitAngle``.
+    /// On the sheet \f$ \theta = 2\pi k + \varepsilon\operatorname{Arccos} r \f$
+    /// with the declared root product, \f$ \cos\theta = r \f$ and
+    /// \f$ \sin\theta = \varepsilon\sqrt{1-r^2} \f$, so
+    /// \f$ d\theta/dr = -1/\sin\theta \f$ and
+    /// \f$ d^2\theta/dr^2 = -r/\sin^3\theta \f$ hold on every sheet with
+    /// \f$ \theta \f$ the declared value, and the cofactor chain is the one
+    /// of the sheeted ``deficitAngleGradient``.
+    [[nodiscard]] std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
+                                     std::pair<std::uint64_t, std::uint64_t>>,
+                           std::complex<double>>
+    deficitAngleHessian(const DihedralSheets &sheets) const;
+
     /// Area of this simplex read as a triangular hinge (3 vertices), from Heron's
     /// formula on the three squared edge lengths. The geometry is fully Lorentzian.
     ///

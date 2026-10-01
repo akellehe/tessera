@@ -1275,6 +1275,150 @@ std::vector<std::complex<double>> HodgeLaplacian::laplacianPhaseGradient(
   return out;
 }
 
+namespace {
+
+std::vector<std::complex<double>> flatOf(const Eigen::MatrixXcd &matrix) {
+  const auto rows = static_cast<std::size_t>(matrix.rows());
+  const auto columns = static_cast<std::size_t>(matrix.cols());
+  std::vector<std::complex<double>> out(rows * columns, std::complex<double>{0.0, 0.0});
+  for (std::size_t i = 0; i < rows; ++i)
+    for (std::size_t j = 0; j < columns; ++j)
+      out[i * columns + j] = matrix(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+  return out;
+}
+
+}  // namespace
+
+std::vector<std::vector<std::complex<double>>>
+HodgeLaplacian::laplacianGradientDirectionalDerivative(
+    int k, const std::vector<std::complex<double>> &direction) const {
+  requireNonNegativeDegree(k);
+  const auto edges = st_ && st_->getEdgeList()
+                         ? st_->getEdgeList()->toVector()
+                         : std::vector<EdgePtr>{};
+  if (direction.size() != edges.size())
+    throw std::runtime_error(
+        "HodgeLaplacian::laplacianGradientDirectionalDerivative: direction "
+        "has " + std::to_string(direction.size()) + " entries, expected " +
+        std::to_string(edges.size()));
+  std::vector<std::vector<std::complex<double>>> out(edges.size());
+  if (!st_) return out;
+  // The direction, keyed the way the simplices key their own gradients.
+  std::map<std::pair<std::uint64_t, std::uint64_t>, cd> keyedDirection;
+  for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
+    const auto *edge = edges[edgeIndex];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    const std::uint64_t a = edge->getSource()->getId();
+    const std::uint64_t b = edge->getTarget()->getId();
+    keyedDirection[{std::min(a, b), std::max(a, b)}] += direction[edgeIndex];
+  }
+  DerivativeSource derivatives(*this, k);
+  const Eigen::Index n = derivatives.laplacian().rows();
+  if (n == 0) return out;
+  derivatives.setDirection(keyedDirection);
+  for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); ++edgeIndex) {
+    const auto *edge = edges[edgeIndex];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr) {
+      out[edgeIndex].assign(static_cast<std::size_t>(n) * static_cast<std::size_t>(n),
+                            cd{0.0, 0.0});
+      continue;
+    }
+    Eigen::MatrixXcd first;
+    const Eigen::MatrixXcd second = derivatives.gradientVelocity(
+        edge->getSource()->getId(), edge->getTarget()->getId(), first);
+    out[edgeIndex] = flatOf(second);
+  }
+  return out;
+}
+
+std::vector<std::complex<double>> HodgeLaplacian::laplacianPhaseHessian(
+    int k, std::uint64_t a1, std::uint64_t a2, std::uint64_t b1,
+    std::uint64_t b2) const {
+  requireNonNegativeDegree(k);
+  if (!st_) return {};
+  if (metricSource_ != MetricSource::WhitneyPencil) {
+    const ChainComplex cc = ChainComplex::fromSpacetime(*st_);
+    const int nk = (k <= cc.dimension()) ? static_cast<int>(cc.numSimplices(k)) : 0;
+    return std::vector<std::complex<double>>(static_cast<std::size_t>(nk) * nk,
+                                             std::complex<double>{0.0, 0.0});
+  }
+  const WhitneyState &w = whitneyState();
+  const int nk = (k <= w.complex.dimension()) ? static_cast<int>(w.complex.numSimplices(k)) : 0;
+  std::vector<std::complex<double>> out(static_cast<std::size_t>(nk) * nk,
+                                        std::complex<double>{0.0, 0.0});
+  const auto ia = w.edgeIndex.find(edgeKeyOf(a1, a2));
+  const auto ib = w.edgeIndex.find(edgeKeyOf(b1, b2));
+  if (ia == w.edgeIndex.end() || ib == w.edgeIndex.end() || nk == 0) return out;
+  const chainhodge::CovariantChainHodge &op = *w.op;
+  const Eigen::MatrixXcd h = op.covariantOperator(k);
+  const chainhodge::SparseMatrix &M = op.dressed(k);
+  const Eigen::MatrixXcd Lz = op.applyG(k, Eigen::MatrixXcd(h * M));
+  // The first derivatives on each edge, of the pencil's operator, of its
+  // metric and of L_z itself.
+  const chainhodge::SparseMatrix Ma = op.dressedPhaseDerivative(k, ia->second);
+  const chainhodge::SparseMatrix Mb = op.dressedPhaseDerivative(k, ib->second);
+  const Eigen::MatrixXcd ha = op.covariantOperatorPhaseDerivative(k, ia->second);
+  const Eigen::MatrixXcd hb = op.covariantOperatorPhaseDerivative(k, ib->second);
+  const Eigen::MatrixXcd La =
+      op.applyG(k, -Eigen::MatrixXcd(Ma * Lz) + Eigen::MatrixXcd(ha * M) + Eigen::MatrixXcd(h * Ma));
+  const Eigen::MatrixXcd Lb =
+      op.applyG(k, -Eigen::MatrixXcd(Mb * Lz) + Eigen::MatrixXcd(hb * M) + Eigen::MatrixXcd(h * Mb));
+  // The second derivatives of the operator and of the metric.
+  const chainhodge::SparseMatrix Mab = op.dressedPhaseHessian(k, ia->second, ib->second);
+  const Eigen::MatrixXcd hab = op.covariantOperatorPhaseHessian(k, ia->second, ib->second);
+  // M d_a d_b L_z = d_ab h M + d_a h d_b M + d_b h d_a M + h d_ab M
+  //                 - d_ab M L_z - d_a M d_b L_z - d_b M d_a L_z.
+  const Eigen::MatrixXcd inner = Eigen::MatrixXcd(hab * M) + Eigen::MatrixXcd(ha * Mb) +
+                                 Eigen::MatrixXcd(hb * Ma) + Eigen::MatrixXcd(h * Mab) -
+                                 Eigen::MatrixXcd(Mab * Lz) - Eigen::MatrixXcd(Ma * Lb) -
+                                 Eigen::MatrixXcd(Mb * La);
+  return flatOf(w.toStored(k, op.applyG(k, inner)));
+}
+
+std::vector<std::complex<double>> HodgeLaplacian::laplacianMixedDerivative(
+    int k, std::uint64_t e1, std::uint64_t e2, std::uint64_t f1,
+    std::uint64_t f2) const {
+  requireNonNegativeDegree(k);
+  if (!st_) return {};
+  if (metricSource_ != MetricSource::WhitneyPencil) {
+    const ChainComplex cc = ChainComplex::fromSpacetime(*st_);
+    const int nk = (k <= cc.dimension()) ? static_cast<int>(cc.numSimplices(k)) : 0;
+    return std::vector<std::complex<double>>(static_cast<std::size_t>(nk) * nk,
+                                             std::complex<double>{0.0, 0.0});
+  }
+  const WhitneyState &w = whitneyState();
+  const int nk = (k <= w.complex.dimension()) ? static_cast<int>(w.complex.numSimplices(k)) : 0;
+  std::vector<std::complex<double>> out(static_cast<std::size_t>(nk) * nk,
+                                        std::complex<double>{0.0, 0.0});
+  const auto ie = w.edgeIndex.find(edgeKeyOf(e1, e2));
+  const auto jf = w.edgeIndex.find(edgeKeyOf(f1, f2));
+  if (ie == w.edgeIndex.end() || jf == w.edgeIndex.end() || nk == 0) return out;
+  const chainhodge::CovariantChainHodge &op = *w.op;
+  const Eigen::MatrixXcd h = op.covariantOperator(k);
+  const chainhodge::SparseMatrix &M = op.dressed(k);
+  const Eigen::MatrixXcd Lz = op.applyG(k, Eigen::MatrixXcd(h * M));
+  const chainhodge::SparseMatrix Me = op.dressedDerivative(k, ie->second);
+  const chainhodge::SparseMatrix Mf = op.dressedPhaseDerivative(k, jf->second);
+  const Eigen::MatrixXcd he = op.covariantOperatorDerivative(k, ie->second);
+  const Eigen::MatrixXcd hf = op.covariantOperatorPhaseDerivative(k, jf->second);
+  const Eigen::MatrixXcd Le =
+      op.applyG(k, -Eigen::MatrixXcd(Me * Lz) + Eigen::MatrixXcd(he * M) + Eigen::MatrixXcd(h * Me));
+  const Eigen::MatrixXcd Lf =
+      op.applyG(k, -Eigen::MatrixXcd(Mf * Lz) + Eigen::MatrixXcd(hf * M) + Eigen::MatrixXcd(h * Mf));
+  const chainhodge::SparseMatrix Mef = op.dressedMixedDerivative(k, ie->second, jf->second);
+  const Eigen::MatrixXcd hef = op.covariantOperatorMixedDerivative(k, ie->second, jf->second);
+  // M d_e d_f L_z = d_ef h M + d_e h d_f M + d_f h d_e M + h d_ef M
+  //                 - d_ef M L_z - d_e M d_f L_z - d_f M d_e L_z.
+  const Eigen::MatrixXcd inner = Eigen::MatrixXcd(hef * M) + Eigen::MatrixXcd(he * Mf) +
+                                 Eigen::MatrixXcd(hf * Me) + Eigen::MatrixXcd(h * Mef) -
+                                 Eigen::MatrixXcd(Mef * Lz) - Eigen::MatrixXcd(Me * Lf) -
+                                 Eigen::MatrixXcd(Mf * Le);
+  return flatOf(w.toStored(k, op.applyG(k, inner)));
+}
+
 HodgeLaplacian::MetricPencil HodgeLaplacian::pencil(int k) const {
   requireNonNegativeDegree(k);
   if (metricSource_ != MetricSource::WhitneyPencil)

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -204,12 +205,33 @@ RebuiltCarrierState rebuiltStateOf(
     const SelfConsistentMeanFieldDeclaration &declaration) {
   RebuiltCarrierState state;
   state.covariance = read.covariance;
-  if (declaration.fiberMoments == 0) return state;
+  // What the analytic Jacobian differentiates the state with: the
+  // eigendecomposition the bands were read from, each band's modes and its
+  // weight in the covariance, the tolerance the bands were grouped at, and
+  // the symmetry the operator was averaged under.
+  state.eigenvalues = read.eigenvalues;
+  state.eigenvectors = read.eigenvectors;
+  state.leftEigenvectors = read.leftEigenvectors;
+  state.bandTolerance = declaration.bandTolerance;
+  if (declaration.covarianceRule == CovarianceRule::BandFilling)
+    state.bandSymmetry = declaration.bandSymmetry;
+  const bool fiber = declaration.fiberMoments > 0;
+  for (const auto &band : read.bands) {
+    RebuiltBand entry;
+    entry.modes = band.modes;
+    entry.covarianceWeight =
+        band.rank > 0 ? band.occupation / static_cast<double>(band.rank) : 0.0;
+    entry.inFiber = fiber;
+    state.bands.push_back(std::move(entry));
+  }
+  if (!fiber) return state;
   state.momentProjector = fiberProjectorOf(read);
   if (declaration.fiberConstraintForm == FiberConstraintForm::BandEigenvalues)
     for (std::size_t band = 0;
-         band < read.bands.size() && band < declaration.fiberMoments; ++band)
+         band < read.bands.size() && band < declaration.fiberMoments; ++band) {
       state.bandProjectors.push_back(read.bands[band].projector);
+      state.bandProjectorBands.push_back(band);
+    }
   return state;
 }
 
@@ -783,6 +805,9 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
           "BandFollower: the operator is defective, so no band projector is "
           "available from its eigenbasis");
     inverse = lu.inverse();
+    out.eigenvalues.assign(values.data(), values.data() + n);
+    out.eigenvectors = toFlat(vectors);
+    out.leftEigenvectors = toFlat(inverse);
   }
 
   if (!choose) {
@@ -829,6 +854,7 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
           complexd{band.occupation / static_cast<double>(rank), 0.0};
       occupied[static_cast<std::size_t>(mode)] = true;
       record.positions.push_back(placeOf[static_cast<std::size_t>(mode)]);
+      record.modes.push_back(static_cast<std::size_t>(mode));
     }
     std::sort(record.positions.begin(), record.positions.end());
     for (const std::size_t place : record.positions)
@@ -934,6 +960,25 @@ SelfConsistentMeanField::SelfConsistentMeanField(
 
 SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
   return solveJointNewton();
+}
+
+HolomorphicRelaxation SelfConsistentMeanField::jointSystem() const {
+  auto follower = std::make_shared<BandFollower>(declaration_);
+  JointAction action = action_;
+  const BandRead start = follower->read(bandOperatorFlat(action, declaration_));
+  follower->follow(start);
+  action.setCovariance(start.covariance);
+  (void)installFiberMoments(action, declaration_, start);
+  HolomorphicRelaxationDeclaration newton = declaration_.geometry;
+  newton.tolerance = std::min(declaration_.geometry.tolerance,
+                              declaration_.tolerance);
+  if (declaration_.fiberMoments > 0) newton.relaxMultipliers = true;
+  CovarianceRebuild rebuild;
+  rebuild.at = [follower, declaration = declaration_](const JointAction &point) {
+    return rebuiltStateOf(
+        follower->read(bandOperatorFlat(point, declaration)), declaration);
+  };
+  return HolomorphicRelaxation(action, newton, rebuild);
 }
 
 SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {

@@ -264,14 +264,13 @@ DECLARED_TOLERANCE = 1e-15
 #: Relative separation at or below which ordered eigenvalues form one band.
 DECLARED_BAND_TOLERANCE = DECLARED_TOLERANCE
 #: tau, the relative singular-value threshold of the Newton solve's rank
-#: decision. The Jacobian is a two-node real-axis difference at relative
-#: radius 1e-4 (``jacobian_radius``), whose rounding error is of order
-#: epsilon / radius, about 2e-12, relative to its entries, so a singular value
-#: below about 1e-11 of the largest cannot be told from zero. The declared
-#: threshold sits below that floor: a singular value counts as zero only
-#: when it is below the rounding of the Jacobian itself, and a null direction
-#: of the Jacobian (a gauge direction, or a redundant constraint row) is
-#: inverted at its rounding size rather than left out of the step.
+#: decision. The Jacobian is assembled analytically, so its entries carry a
+#: rounding error of order epsilon relative to their scale, and a singular
+#: value below that of the largest cannot be told from zero. The declared
+#: threshold sits at that floor: a singular value counts as zero only when it
+#: is below the rounding of the Jacobian itself, and a null direction of the
+#: Jacobian (a gauge direction, or a redundant constraint row) is inverted at
+#: its rounding size rather than left out of the step.
 DECLARED_RANK_TOLERANCE = DECLARED_TOLERANCE
 #: Tolerances of the certificates this driver grades.
 DECLARED_CERTIFICATE_TOLERANCE = DECLARED_TOLERANCE
@@ -515,8 +514,6 @@ def relaxation_declaration(config):
     geometry.relax_links = True
     geometry.relax_multipliers = False
     geometry.tolerance = config["newton_tolerance"]
-    geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
-    geometry.contour_radius = config["jacobian_radius"]
     geometry.rank_tolerance = config["rank_tolerance"]
     # every recorded iterate carries every term of the action with its value
     # and gradient norm (--trace-terms); changes no step
@@ -3535,7 +3532,6 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
-        "jacobian_radius": 1e-4,
         **declared_tolerances(tolerances),
         "band_selection": band_selection,
         "fiber_moments": str(fiber_moments),

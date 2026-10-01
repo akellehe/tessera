@@ -25,8 +25,31 @@ using complexd = std::complex<double>;
 
 namespace {
 
-/// \f$ 2\pi \f$, the full turn the contour nodes are spread over.
+/// \f$ 2\pi \f$, the full turn a monopole number is read in units of.
 constexpr double kTwoPi = 6.28318530717958647692528676655900577;
+
+/// A flat row-major matrix lifted into Eigen.
+Eigen::MatrixXcd toMatrix(const std::vector<complexd> &flat, std::size_t order) {
+  Eigen::MatrixXcd matrix(static_cast<Eigen::Index>(order),
+                          static_cast<Eigen::Index>(order));
+  for (std::size_t i = 0; i < order; ++i)
+    for (std::size_t j = 0; j < order; ++j)
+      matrix(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) =
+          flat[i * order + j];
+  return matrix;
+}
+
+/// An Eigen matrix flattened back to the row-major layout.
+std::vector<complexd> toFlat(const Eigen::MatrixXcd &matrix) {
+  const auto rows = static_cast<std::size_t>(matrix.rows());
+  const auto columns = static_cast<std::size_t>(matrix.cols());
+  std::vector<complexd> flat(rows * columns, complexd{0.0, 0.0});
+  for (std::size_t i = 0; i < rows; ++i)
+    for (std::size_t j = 0; j < columns; ++j)
+      flat[i * columns + j] = matrix(static_cast<Eigen::Index>(i),
+                                     static_cast<Eigen::Index>(j));
+  return flat;
+}
 
 /// A number as text with three significant digits (printf's "%.3g"), for the
 /// stop details.
@@ -130,8 +153,8 @@ EdgeClasses edgeClassesOf(std::size_t edgeCount,
   return classes;
 }
 
-/// The state of every variable of the system, taken so that a perturbation for
-/// one Jacobian column can be undone exactly rather than recomputed.
+/// The state of every variable of the system, taken so that a refused trial
+/// step can be undone exactly rather than recomputed.
 struct StateSnapshot {
   std::vector<complexd> lengths;
   std::vector<complexd> phases;
@@ -162,24 +185,6 @@ StateSnapshot takeSnapshot(const JointAction &action) {
   return snapshot;
 }
 
-/// Put one edge's two fields back to the values the snapshot holds.
-///
-/// A Jacobian column moves exactly one coordinate, so only that coordinate has
-/// to be undone. Writing every edge back instead would bump every edge's
-/// revision counter and discard the operator caches keyed on them, which costs
-/// a full reassembly per contour node rather than per column.
-void restoreEdge(const JointAction &action, const StateSnapshot &snapshot,
-                 std::size_t edgeIndex) {
-  const auto &spacetime = action.spacetime();
-  if (!spacetime || !spacetime->getEdgeList()) return;
-  const auto edges = spacetime->getEdgeList()->toVector();
-  if (edgeIndex >= edges.size() || edges[edgeIndex] == nullptr) return;
-  if (edgeIndex < snapshot.lengths.size())
-    edges[edgeIndex]->setLength(snapshot.lengths[edgeIndex]);
-  if (edgeIndex < snapshot.phases.size())
-    edges[edgeIndex]->setPhase(snapshot.phases[edgeIndex]);
-}
-
 void restoreSnapshot(JointAction &action, const StateSnapshot &snapshot) {
   const auto &spacetime = action.spacetime();
   if (spacetime && spacetime->getEdgeList()) {
@@ -201,17 +206,21 @@ void restoreSnapshot(JointAction &action, const StateSnapshot &snapshot) {
     action.setMomentBandProjectors(snapshot.momentBandProjectors);
 }
 
-/// Set on \p target the state a declared rebuild gives at its current point:
-/// the covariance and, when the rebuild constrains a fiber, its projector
-/// and the projectors of the bands whose means are pinned.
+/// Set on \p target the rebuilt \p state: the covariance and, when the
+/// rebuild constrains a fiber, its projector and the projectors of the bands
+/// whose means are pinned.
+void applyState(const RebuiltCarrierState &state, JointAction &target) {
+  target.setCovariance(state.covariance);
+  if (!state.momentProjector.empty())
+    target.setMomentProjector(state.momentProjector);
+  if (!state.bandProjectors.empty())
+    target.setMomentBandProjectors(state.bandProjectors);
+}
+
+/// Set on \p target the state a declared rebuild gives at its current point.
 void applyRebuild(const CovarianceRebuild &rebuild, JointAction &target) {
   if (!rebuild.at) return;
-  RebuiltCarrierState state = rebuild.at(target);
-  target.setCovariance(std::move(state.covariance));
-  if (!state.momentProjector.empty())
-    target.setMomentProjector(std::move(state.momentProjector));
-  if (!state.bandProjectors.empty())
-    target.setMomentBandProjectors(std::move(state.bandProjectors));
+  applyState(rebuild.at(target), target);
 }
 
 /// The square root of a new squared length taken by continuation from the
@@ -296,37 +305,6 @@ void multiplyLink(const JointAction &action, std::size_t edgeIndex,
   if (edgeIndex >= edges.size() || edges[edgeIndex] == nullptr) return;
   edges[edgeIndex]->setPhase(edges[edgeIndex]->getPhase() -
                              complexd{0.0, 1.0} * increment);
-}
-
-/// The contour nodes \f$ \rho\,\omega^{n} \f$ and the weights
-/// \f$ \omega^{-n}/(m\rho) \f$ of the Cauchy derivative rule at radius
-/// \p radius, or the two-node central difference when that mode is declared.
-std::vector<std::pair<complexd, complexd>> derivativeRule(
-    const HolomorphicRelaxationDeclaration &declaration, double radius) {
-  std::vector<std::pair<complexd, complexd>> rule;
-  if (declaration.jacobianMode == HolomorphicJacobianMode::RealAxisDifference) {
-    // Both nodes as exact real numbers. Writing them as rho * exp(i pi n)
-    // instead would give the second one an imaginary part of about
-    // 1e-16 * rho, which is enough to land it on the far side of a cut that
-    // runs along the real axis and to read a different branch there.
-    rule.emplace_back(complexd{radius, 0.0},
-                      complexd{1.0 / (2.0 * radius), 0.0});
-    rule.emplace_back(complexd{-radius, 0.0},
-                      complexd{-1.0 / (2.0 * radius), 0.0});
-    return rule;
-  }
-  const std::size_t nodes = declaration.contourNodes;
-  rule.reserve(nodes);
-  for (std::size_t node = 0; node < nodes; ++node) {
-    const double angle =
-        kTwoPi * static_cast<double>(node) / static_cast<double>(nodes);
-    const complexd root{std::cos(angle), std::sin(angle)};
-    const complexd offset = radius * root;
-    const complexd weight =
-        std::conj(root) / (static_cast<double>(nodes) * radius);
-    rule.emplace_back(offset, weight);
-  }
-  return rule;
 }
 
 /// The held monopole sectors, resolved against the mesh: for every held face
@@ -446,12 +424,6 @@ std::vector<double> heldLogModuli(const JointAction &action,
   return moduli;
 }
 
-/// The edges of a class put back to the values the snapshot holds.
-void restoreClass(const JointAction &action, const StateSnapshot &snapshot,
-                  const std::vector<std::pair<std::size_t, int>> &members) {
-  for (const auto &member : members) restoreEdge(action, snapshot, member.first);
-}
-
 /// The largest \f$ |z_e| \f$ over the length coordinates, each read on the
 /// first edge of its class.
 double largestSquaredLength(const JointAction &action,
@@ -498,13 +470,11 @@ struct ConstrainedStep {
 /// Jacobian's numerical null space, and there are at most twice its nullity
 /// of them. The gauge directions are such directions: they change no face
 /// holonomy, so they lie in the held set, and the Jacobian is singular along
-/// them. A difference-rule Jacobian's null vector sits off the exact gauge
-/// direction by its truncation error, so along the exact direction in the
-/// held set the real system reads a singular value of that size, about
-/// \f$ 10^{-9} \f$ of the largest at the declared radius, above the relative
-/// rank tolerance but far below the Jacobian's physical spectrum. Cutting at
-/// the Jacobian's rank boundary counts it as zero, as the Jacobian's own
-/// rank decision does.
+/// them. The Jacobian's null vector along a gauge direction is exact to
+/// rounding, so along that direction in the held set the real system reads a
+/// singular value at rounding level, far below the Jacobian's physical
+/// spectrum. Cutting at the Jacobian's rank boundary counts it as zero, as
+/// the Jacobian's own rank decision does.
 ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
                                 const Eigen::VectorXcd &target,
                                 const Layout &layout,
@@ -606,14 +576,6 @@ HolomorphicRelaxation::HolomorphicRelaxation(
     : action_(std::move(action)),
       declaration_(std::move(declaration)),
       rebuild_(std::move(rebuild)) {
-  if (declaration_.contourNodes < 5)
-    throw std::invalid_argument(
-        "HolomorphicRelaxation: the contour rule keeps at least five nodes; "
-        "got " +
-        std::to_string(declaration_.contourNodes));
-  if (!(declaration_.contourRadius > 0.0))
-    throw std::invalid_argument(
-        "HolomorphicRelaxation: the contour radius must be positive");
   if (!declaration_.relaxLengths && !declaration_.relaxLinks &&
       !declaration_.relaxMultipliers)
     throw std::invalid_argument(
@@ -671,92 +633,318 @@ std::size_t HolomorphicRelaxation::variableCount() const {
   return equationCount();
 }
 
+namespace {
+
+/// The group average \f$ |G|^{-1}\sum_gD(g)^{-1}XD(g) \f$ of a flat matrix
+/// under the declared band symmetry.
+std::vector<complexd> symmetryAverage(
+    const std::vector<complexd> &flat, std::size_t order,
+    const std::vector<std::vector<complexd>> &symmetry) {
+  const Eigen::MatrixXcd matrix = toMatrix(flat, order);
+  Eigen::MatrixXcd average = Eigen::MatrixXcd::Zero(matrix.rows(), matrix.cols());
+  for (const auto &operatorFlat : symmetry) {
+    if (operatorFlat.size() != order * order)
+      throw std::invalid_argument(
+          "HolomorphicRelaxation::jacobian: a band symmetry operator must be "
+          "square over the carrier's cells");
+    const Eigen::MatrixXcd operatorOfG = toMatrix(operatorFlat, order);
+    const Eigen::FullPivLU<Eigen::MatrixXcd> lu(operatorOfG);
+    if (!lu.isInvertible())
+      throw std::invalid_argument(
+          "HolomorphicRelaxation::jacobian: a band symmetry operator is "
+          "singular");
+    average += lu.inverse() * matrix * operatorOfG;
+  }
+  return toFlat(average / static_cast<double>(symmetry.size()));
+}
+
+/// Refuse by name a rebuilt band that is not isolated at the declared
+/// tolerance: an eigenvalue outside it within the tolerance, relative to
+/// \f$ \max(1,|\lambda_k|) \f$, of one of its eigenvalues.
+void requireIsolated(const RebuiltCarrierState &state) {
+  const std::size_t n = state.eigenvalues.size();
+  for (std::size_t index = 0; index < state.bands.size(); ++index) {
+    const auto &band = state.bands[index];
+    std::vector<bool> inside(n, false);
+    for (const std::size_t mode : band.modes) {
+      if (mode >= n)
+        throw std::invalid_argument(
+            "HolomorphicRelaxation::jacobian: band " + std::to_string(index) +
+            " names mode " + std::to_string(mode) + " of an operator with " +
+            std::to_string(n) + " modes");
+      inside[mode] = true;
+    }
+    for (const std::size_t k : band.modes)
+      for (std::size_t j = 0; j < n; ++j) {
+        if (inside[j]) continue;
+        const double distance =
+            std::abs(state.eigenvalues[k] - state.eigenvalues[j]);
+        const double scale = std::max(1.0, std::abs(state.eigenvalues[k]));
+        if (distance <= state.bandTolerance * scale)
+          throw std::invalid_argument(
+              "HolomorphicRelaxation::jacobian: band " + std::to_string(index) +
+              " is not isolated at the declared band tolerance " +
+              threeDigits(state.bandTolerance) + ": its eigenvalue " +
+              threeDigits(state.eigenvalues[k].real()) + " + " +
+              threeDigits(state.eigenvalues[k].imag()) +
+              "i and the eigenvalue " +
+              threeDigits(state.eigenvalues[j].real()) + " + " +
+              threeDigits(state.eigenvalues[j].imag()) +
+              "i outside it are " + threeDigits(distance) +
+              " apart, so the first-order perturbation of its Riesz "
+              "projector, which divides by their difference, is not defined");
+      }
+  }
+}
+
+/// Add to \p matrix the columns' self-consistent part: for every geometric
+/// coordinate, the response of the equations to the variation of the
+/// rebuilt state along it. The operator's derivative along a class
+/// coordinate is the sum over the class's edges (each link member on its
+/// orientation), the variation of every band's Riesz projector follows from
+/// it by first-order perturbation, the covariance's variation is the bands'
+/// weighted sum and the pinned fiber's the sum over its bands, and the
+/// equations' response is `JointAction::stationarityStateVariation`,
+/// reduced onto the classes as the residual is.
+void addSelfConsistentColumns(const JointAction &working,
+                              const RebuiltCarrierState &state,
+                              const Layout &layout,
+                              const EdgeClasses &classes,
+                              Eigen::MatrixXcd &matrix) {
+  const auto &declaration = working.declaration();
+  const bool matter =
+      declaration.matterWeight != 0.0 && !declaration.covariance.empty();
+  bool constrained = false;
+  for (const auto &constraint : declaration.momentConstraints)
+    if (constraint.multiplier != complexd{0.0, 0.0}) constrained = true;
+  // The state enters no equation in scope.
+  if (!matter && !constrained) return;
+  const std::size_t n = state.eigenvalues.size();
+  if (n == 0 || state.bands.empty())
+    throw std::invalid_argument(
+        "HolomorphicRelaxation::jacobian: the declared rebuild supplies no "
+        "band data (no eigendecomposition and no bands), so the derivative "
+        "of the rebuilt covariance along the coordinates cannot be formed");
+  const std::size_t cells = n * n;
+  if (state.eigenvectors.size() != cells ||
+      state.leftEigenvectors.size() != cells)
+    throw std::invalid_argument(
+        "HolomorphicRelaxation::jacobian: the rebuild's eigenvectors are "
+        "square matrices over the " + std::to_string(n) + " modes; got " +
+        std::to_string(state.eigenvectors.size()) + " and " +
+        std::to_string(state.leftEigenvectors.size()) + " entries");
+  for (const std::size_t band : state.bandProjectorBands)
+    if (band >= state.bands.size())
+      throw std::invalid_argument(
+          "HolomorphicRelaxation::jacobian: a band projector refers to band " +
+          std::to_string(band) + " of " + std::to_string(state.bands.size()));
+  requireIsolated(state);
+
+  const CarrierDerivatives derivatives = working.carrierDerivatives();
+  const std::size_t edges = classes.edgeCount;
+  auto column = [&](std::size_t index, bool link) {
+    // The operator's derivative along the class coordinate.
+    std::vector<complexd> dh(cells, complexd{0.0, 0.0});
+    for (const auto &[edge, orientation] : classes.members[index]) {
+      if (edge >= edges) continue;
+      const auto &part = link ? derivatives.links[edge]
+                              : derivatives.lengths[edge];
+      if (part.size() != cells)
+        throw std::invalid_argument(
+            "HolomorphicRelaxation::jacobian: the carrier's derivative on "
+            "edge " + std::to_string(edge) + " has " +
+            std::to_string(part.size()) + " entries, but the rebuild read " +
+            std::to_string(n) + " modes");
+      const double sign = link ? static_cast<double>(orientation) : 1.0;
+      for (std::size_t i = 0; i < cells; ++i) dh[i] += sign * part[i];
+    }
+    if (!state.bandSymmetry.empty())
+      dh = symmetryAverage(dh, n, state.bandSymmetry);
+    // The variation of every band's projector, and of the state from them.
+    CarriedStateVariation variation;
+    variation.covariance.assign(cells, complexd{0.0, 0.0});
+    if (!state.momentProjector.empty())
+      variation.momentProjector.assign(cells, complexd{0.0, 0.0});
+    variation.bandProjectors.resize(declaration.momentBandProjectors.size());
+    std::vector<std::vector<complexd>> projectorVariations;
+    projectorVariations.reserve(state.bands.size());
+    for (const auto &band : state.bands) {
+      projectorVariations.push_back(rieszProjectorDerivative(
+          state.eigenvalues, state.eigenvectors, state.leftEigenvectors,
+          band.modes, dh));
+      const auto &dP = projectorVariations.back();
+      for (std::size_t i = 0; i < cells; ++i) {
+        variation.covariance[i] += band.covarianceWeight * dP[i];
+        if (band.inFiber && !variation.momentProjector.empty())
+          variation.momentProjector[i] += dP[i];
+      }
+    }
+    for (std::size_t i = 0; i < state.bandProjectorBands.size() &&
+                            i < variation.bandProjectors.size();
+         ++i)
+      variation.bandProjectors[i] =
+          projectorVariations[state.bandProjectorBands[i]];
+    const std::vector<complexd> response =
+        working.stationarityStateVariation(variation);
+    const auto col = static_cast<Eigen::Index>(
+        link ? layout.linkOffset + index : layout.lengthOffset + index);
+    for (std::size_t row = 0; row < classes.count(); ++row) {
+      complexd lengthSum{0.0, 0.0};
+      complexd linkSum{0.0, 0.0};
+      for (const auto &[edge, orientation] : classes.members[row]) {
+        if (edge >= edges) continue;
+        lengthSum += response[edge];
+        linkSum += static_cast<double>(orientation) * response[edges + edge];
+      }
+      if (layout.lengths)
+        matrix(static_cast<Eigen::Index>(layout.lengthOffset + row), col) +=
+            lengthSum;
+      if (layout.links)
+        matrix(static_cast<Eigen::Index>(layout.linkOffset + row), col) +=
+            linkSum;
+    }
+  };
+  for (std::size_t index = 0; index < classes.count(); ++index) {
+    if (layout.lengths) column(index, false);
+    if (layout.links) column(index, true);
+  }
+}
+
+}  // namespace
+
+std::vector<complexd> rieszProjectorDerivative(
+    const std::vector<complexd> &eigenvalues,
+    const std::vector<complexd> &eigenvectors,
+    const std::vector<complexd> &leftEigenvectors,
+    const std::vector<std::size_t> &modes,
+    const std::vector<complexd> &operatorVariation) {
+  const std::size_t n = eigenvalues.size();
+  const std::size_t cells = n * n;
+  if (eigenvectors.size() != cells || leftEigenvectors.size() != cells ||
+      operatorVariation.size() != cells)
+    throw std::invalid_argument(
+        "rieszProjectorDerivative: the eigenvectors, their inverse and the "
+        "operator's variation are square matrices over the " +
+        std::to_string(n) + " modes; got " +
+        std::to_string(eigenvectors.size()) + ", " +
+        std::to_string(leftEigenvectors.size()) + " and " +
+        std::to_string(operatorVariation.size()) + " entries");
+  std::vector<bool> inside(n, false);
+  for (const std::size_t mode : modes) {
+    if (mode >= n)
+      throw std::invalid_argument(
+          "rieszProjectorDerivative: mode " + std::to_string(mode) +
+          " is out of range for " + std::to_string(n) + " modes");
+    inside[mode] = true;
+  }
+  const Eigen::MatrixXcd right = toMatrix(eigenvectors, n);
+  const Eigen::MatrixXcd left = toMatrix(leftEigenvectors, n);
+  // In the eigenbasis the variation is G = W dh V, and the projector's
+  // variation has the entries G_kj / (lambda_k - lambda_j) between the band
+  // and its complement, in both orders, and nothing elsewhere.
+  const Eigen::MatrixXcd inBasis = left * toMatrix(operatorVariation, n) * right;
+  Eigen::MatrixXcd variation = Eigen::MatrixXcd::Zero(
+      static_cast<Eigen::Index>(n), static_cast<Eigen::Index>(n));
+  for (const std::size_t k : modes)
+    for (std::size_t j = 0; j < n; ++j) {
+      if (inside[j]) continue;
+      const complexd gap = eigenvalues[k] - eigenvalues[j];
+      if (gap == complexd{0.0, 0.0})
+        throw std::invalid_argument(
+            "rieszProjectorDerivative: the band is not isolated: mode " +
+            std::to_string(k) + " inside it and mode " + std::to_string(j) +
+            " outside it carry the same eigenvalue, so the quotient by "
+            "their difference is not defined");
+      const auto kk = static_cast<Eigen::Index>(k);
+      const auto jj = static_cast<Eigen::Index>(j);
+      variation(kk, jj) = inBasis(kk, jj) / gap;
+      variation(jj, kk) = inBasis(jj, kk) / gap;
+    }
+  return toFlat(right * variation * left);
+}
+
 std::vector<complexd> HolomorphicRelaxation::jacobian() const {
   const EdgeClasses classes =
       edgeClassesOf(action_.edgeCount(), declaration_);
   const Layout layout(classes.count(), action_.constraintCount(),
                       declaration_);
-  // The solve writes the geometry, so the Jacobian is assembled on a mutable
-  // copy of the action; the complex itself is restored exactly afterwards.
+  // The Jacobian is assembled on a copy of the action carrying the state a
+  // declared rebuild gives at the point; the complex itself is read and not
+  // written.
   JointAction working = action_;
-  const StateSnapshot snapshot = takeSnapshot(working);
+  RebuiltCarrierState state;
+  if (rebuild_.at) {
+    state = rebuild_.at(working);
+    applyState(state, working);
+  }
+  const std::size_t edges = classes.edgeCount;
   Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Zero(
       static_cast<Eigen::Index>(layout.count),
       static_cast<Eigen::Index>(layout.count));
 
-  const auto &spacetime = working.spacetime();
-  const auto edges = spacetime && spacetime->getEdgeList()
-                         ? spacetime->getEdgeList()->toVector()
-                         : std::vector<::tessera::mesh::Edge *>{};
-  // The residual at a node: with a declared rebuild, Gamma is rebuilt from
-  // the carrier operator at the node first, so the column is the derivative
-  // of the self-consistent force.
-  auto evaluate = [&](JointAction &target) {
-    applyRebuild(rebuild_, target);
-    return reducedResidual(target, layout, classes);
-  };
-
-  // One column per relaxed coordinate. Each node of the contour moves that one
-  // coordinate (every edge of its class), evaluates the whole reduced
-  // residual, and is weighted back into the column; the geometry is restored
-  // exactly after every node, so the columns are independent of the order
-  // they are taken in.
-  if (layout.lengths) {
-    for (std::size_t index = 0; index < layout.edges; ++index) {
-      const auto &members = classes.members[index];
-      const std::size_t first = members.front().first;
-      if (first >= edges.size() || edges[first] == nullptr) continue;
-      const complexd length = snapshot.lengths[first];
-      const complexd squared = length * length;
-      const double radius =
-          declaration_.contourRadius * std::max(1.0, std::abs(squared));
-      const auto column = static_cast<Eigen::Index>(layout.lengthOffset + index);
-      for (const auto &node : derivativeRule(declaration_, radius)) {
-        for (const auto &member : members)
-          writeSquaredLength(working, member.first, squared + node.first);
-        const auto residual = evaluate(working);
-        for (std::size_t row = 0; row < residual.size(); ++row)
-          matrix(static_cast<Eigen::Index>(row), column) +=
-              node.second * residual[row];
-        restoreClass(working, snapshot, members);
+  // The geometric blocks: the Hessian of the action at fixed carried state,
+  // reduced onto the classes. The equation of a class is the sum of its
+  // edges' equations and its coordinate moves every edge of the class, so an
+  // entry is the double sum over the two classes' members, each link member
+  // on its orientation.
+  if (layout.lengths || layout.links) {
+    const std::vector<complexd> hessian = working.actionHessian();
+    const std::size_t size = 2 * edges;
+    auto entry = [&](std::size_t row, std::size_t column) {
+      return hessian[row * size + column];
+    };
+    for (std::size_t row = 0; row < classes.count(); ++row)
+      for (std::size_t column = 0; column < classes.count(); ++column) {
+        complexd lengthLength{0.0, 0.0};
+        complexd lengthLink{0.0, 0.0};
+        complexd linkLength{0.0, 0.0};
+        complexd linkLink{0.0, 0.0};
+        for (const auto &[e, oe] : classes.members[row])
+          for (const auto &[f, of] : classes.members[column]) {
+            if (e >= edges || f >= edges) continue;
+            const double se = static_cast<double>(oe);
+            const double sf = static_cast<double>(of);
+            lengthLength += entry(e, f);
+            lengthLink += sf * entry(e, edges + f);
+            linkLength += se * entry(edges + e, f);
+            linkLink += se * sf * entry(edges + e, edges + f);
+          }
+        if (layout.lengths) {
+          matrix(static_cast<Eigen::Index>(layout.lengthOffset + row),
+                 static_cast<Eigen::Index>(layout.lengthOffset + column)) =
+              lengthLength;
+          if (layout.links)
+            matrix(static_cast<Eigen::Index>(layout.lengthOffset + row),
+                   static_cast<Eigen::Index>(layout.linkOffset + column)) =
+                lengthLink;
+        }
+        if (layout.links) {
+          if (layout.lengths)
+            matrix(static_cast<Eigen::Index>(layout.linkOffset + row),
+                   static_cast<Eigen::Index>(layout.lengthOffset + column)) =
+                linkLength;
+          matrix(static_cast<Eigen::Index>(layout.linkOffset + row),
+                 static_cast<Eigen::Index>(layout.linkOffset + column)) =
+              linkLink;
+        }
       }
-    }
+    // The self-consistent part of every geometric column.
+    if (rebuild_.at)
+      addSelfConsistentColumns(working, state, layout, classes, matrix);
   }
 
-  if (layout.links) {
-    for (std::size_t index = 0; index < layout.edges; ++index) {
-      const auto &members = classes.members[index];
-      const std::size_t first = members.front().first;
-      if (first >= edges.size() || edges[first] == nullptr) continue;
-      const auto column = static_cast<Eigen::Index>(layout.linkOffset + index);
-      for (const auto &node :
-           derivativeRule(declaration_, declaration_.contourRadius)) {
-        for (const auto &[edge, orientation] : members)
-          multiplyLink(working, edge,
-                       orientation > 0 ? node.first : -node.first);
-        const auto residual = evaluate(working);
-        for (std::size_t row = 0; row < residual.size(); ++row)
-          matrix(static_cast<Eigen::Index>(row), column) +=
-              node.second * residual[row];
-        restoreClass(working, snapshot, members);
-      }
-    }
-  }
-
-  // The multiplier columns are exact and analytic: the action is linear in
-  // every xi_j, so the column is the moment's own gradient, summed over each
-  // class, and the moment rows of it are zero. The moment rows' length and
-  // link entries are the derivatives of p_j, the same gradient, so they are
-  // taken from it too rather than from the difference quotients above: exact
-  // to rounding, they keep a pinned power sum that depends on others (as on
-  // a sheeted fiber, whose degenerate eigenvalues leave only as many
-  // independent power sums as distinct eigenvalues) exactly dependent, which
-  // the rank decision reads. Both are read at the point itself, with the
-  // covariance and the fiber the point carries rather than those a rebuild
-  // left at the last node.
-  restoreSnapshot(working, snapshot);
+  // The multiplier columns are the constraints' gradients: the action is
+  // linear in every xi_j, so the column is the moment's own gradient, summed
+  // over each class, and the moment rows of it are zero. The constraint rows'
+  // length and link entries are the derivatives of the constraints' values,
+  // the same gradients: at a spectral projector the projector's own variation
+  // is off-diagonal between its range and its kernel and contributes no
+  // trace, so the gradient at fixed projector is the whole derivative. Taken
+  // from one evaluation, the rows keep a pinned power sum that depends on
+  // others (as on a sheeted fiber, whose degenerate eigenvalues leave only
+  // as many independent power sums as distinct eigenvalues) exactly
+  // dependent, which the rank decision reads.
   if (layout.multipliers) {
-    const std::size_t edgeCount = classes.edgeCount;
     for (std::size_t constraint = 0; constraint < layout.constraints;
          ++constraint) {
       const auto gradient = working.momentGradient(constraint);
@@ -767,8 +955,8 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
         complexd linkPart{0.0, 0.0};
         for (const auto &[edge, orientation] : classes.members[index]) {
           lengthPart += gradient[edge];
-          linkPart += orientation > 0 ? gradient[edgeCount + edge]
-                                      : -gradient[edgeCount + edge];
+          linkPart += orientation > 0 ? gradient[edges + edge]
+                                      : -gradient[edges + edge];
         }
         const auto row = column;
         if (layout.lengths) {
@@ -786,8 +974,6 @@ std::vector<complexd> HolomorphicRelaxation::jacobian() const {
       }
     }
   }
-
-  restoreSnapshot(working, snapshot);
 
   std::vector<complexd> flat(layout.count * layout.count, complexd{0.0, 0.0});
   for (std::size_t row = 0; row < layout.count; ++row)
@@ -948,8 +1134,9 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       break;
     }
 
-    // A Jacobian node the action refuses to evaluate leaves no Newton step to
-    // take from this point; the solve stops there and says why.
+    // A Jacobian the action cannot form at this point (a refused derivative,
+    // a band that is not isolated) leaves no Newton step to take from it;
+    // the solve stops there and says why.
     std::vector<complexd> flatJacobian;
     std::string jacobianRefusal;
     try {
@@ -966,8 +1153,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       report.stopDetail =
           "the Jacobian could not be formed at the point reached after " +
           std::to_string(iteration) + " accepted steps (residual norm " +
-          threeDigits(residualNorm) + "): a node of its difference rule is "
-          "outside the domain of the action (" + jacobianRefusal + ")";
+          threeDigits(residualNorm) + "): " + jacobianRefusal;
       stopped = true;
       break;
     }

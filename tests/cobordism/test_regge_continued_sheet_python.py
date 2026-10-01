@@ -201,8 +201,6 @@ def test_regge_and_matter_converge_on_the_continued_sheet():
     solve.relax_links = False
     solve.relax_multipliers = False
     solve.tolerance = 1e-10
-    solve.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
-    solve.contour_radius = 1e-6
     spacetime = _complex(BOUNDARY_OF_FOUR_SIMPLEX, start)
     action = cob.JointAction(spacetime, _declaration(
         spacetime, cob.ReggeBranch.Continued, matter=w))

@@ -69,13 +69,38 @@ enum class RelaxationStop {
 /// `RelaxationStop::SectorBoundary`.
 [[nodiscard]] std::string relaxationStopName(RelaxationStop reason);
 
+/// # RebuiltBand
+///
+/// One band of the carrier's spectrum as a `CovarianceRebuild` read it at a
+/// point: which modes of the eigendecomposition it holds, and how the rebuilt
+/// state is composed of its Riesz projector
+/// \f$ P_b=\sum_{k\in b}v_kw_k^{\mathsf T} \f$.
+struct RebuiltBand {
+  /// The indices of the band's modes: columns of
+  /// `RebuiltCarrierState::eigenvectors` and rows of `leftEigenvectors`.
+  std::vector<std::size_t> modes;
+  /// \f$ n_b/r_b \f$, the weight of \f$ P_b \f$ in the covariance
+  /// \f$ \Gamma=\sum_b(n_b/r_b)P_b \f$.
+  double covarianceWeight = 0.0;
+  /// Whether \f$ P_b \f$ is a summand of the constrained fiber's projector
+  /// (`RebuiltCarrierState::momentProjector`).
+  bool inFiber = false;
+};
+
 /// # RebuiltCarrierState
 ///
 /// What a `CovarianceRebuild` sets on the action at one point: the carried
 /// covariance \f$ \Gamma \f$ and, when the solve imposes spectral constraints
 /// on a fiber, the fiber's Riesz projector
-/// (`JointActionDeclaration::momentProjector`), both flat row-major over the
-/// carrier's cells.
+/// (`JointActionDeclaration::momentProjector`) and the projectors of the
+/// pinned bands, all flat row-major over the carrier's cells; and what the
+/// analytic Jacobian of the self-consistent system needs beside them. The
+/// derivative of the rebuilt state along a coordinate is the first-order
+/// perturbation of each band's Riesz projector
+/// (`rieszProjectorDerivative`), which is formed from the eigendecomposition
+/// of the operator the bands were read on and from the bands' composition. A
+/// rebuild that leaves `bands` empty supplies a state whose derivative
+/// cannot be formed, and `HolomorphicRelaxation::jacobian` refuses by name.
 struct RebuiltCarrierState {
   std::vector<std::complex<double>> covariance;
   /// Empty when the solve imposes no constraint on a fiber.
@@ -84,7 +109,60 @@ struct RebuiltCarrierState {
   /// (`JointActionDeclaration::momentBandProjectors`), in the constraints'
   /// order; empty when it imposes none.
   std::vector<std::vector<std::complex<double>>> bandProjectors;
+  /// The eigenvalues of the operator the bands were read on, in the
+  /// eigensolver's order.
+  std::vector<std::complex<double>> eigenvalues;
+  /// \f$ V \f$, the right eigenvectors as columns, flat row-major.
+  std::vector<std::complex<double>> eigenvectors;
+  /// \f$ W=V^{-1} \f$, whose rows are the left eigenvectors, flat row-major.
+  std::vector<std::complex<double>> leftEigenvectors;
+  /// The bands the covariance fills.
+  std::vector<RebuiltBand> bands;
+  /// For each entry of `bandProjectors`, the index in `bands` of the band it
+  /// is the projector of.
+  std::vector<std::size_t> bandProjectorBands;
+  /// The tolerance at which a band counts as isolated, the grouping rule the
+  /// bands were read with: the Jacobian refuses when an eigenvalue outside a
+  /// band is within this fraction of \f$ \max(1,|\lambda_k|) \f$ of an
+  /// eigenvalue \f$ \lambda_k \f$ of the band.
+  double bandTolerance = 0.0;
+  /// The operators \f$ D(g) \f$ of a declared band symmetry, each flat
+  /// row-major, when the bands were read on the group average
+  /// \f$ |G|^{-1}\sum_gD(g)^{-1}hD(g) \f$ of the carrier rather than on the
+  /// carrier itself; empty otherwise. The variation of the averaged operator
+  /// is the same average of the carrier's variation.
+  std::vector<std::vector<std::complex<double>>> bandSymmetry;
 };
+
+/// The first-order variation of the Riesz projector of an isolated band under
+/// a variation \f$ \delta h \f$ of the operator, from the eigendecomposition
+/// \f$ h=V\Lambda V^{-1} \f$ at the point: with \f$ v_k \f$ the columns of
+/// \f$ V \f$ and \f$ w_k^{\mathsf T} \f$ the rows of \f$ W=V^{-1} \f$,
+/// \f[
+///   \delta P=\sum_{k\in b}\sum_{j\notin b}
+///     \frac{v_kw_k^{\mathsf T}\,\delta h\,v_jw_j^{\mathsf T}
+///          +v_jw_j^{\mathsf T}\,\delta h\,v_kw_k^{\mathsf T}}{\lambda_k-\lambda_j},
+/// \f]
+/// the residue of \f$ (\zeta-h)^{-1}\,\delta h\,(\zeta-h)^{-1} \f$ on a
+/// contour around the band's eigenvalues. It is exact for a band whose
+/// eigenvalues are separated from the rest of the spectrum, whatever their
+/// degeneracy inside the band: the pairs inside the band contribute no
+/// residue. Every matrix is flat row-major.
+/// @param eigenvalues \f$ \lambda \f$, one per mode.
+/// @param eigenvectors \f$ V \f$.
+/// @param leftEigenvectors \f$ W \f$.
+/// @param modes The band's modes, as indices.
+/// @param operatorVariation \f$ \delta h \f$.
+/// @throws std::invalid_argument when the sizes disagree, when a mode index
+///   is out of range, or when an eigenvalue outside the band equals one
+///   inside it, so that the band is not isolated and the quotient is not
+///   defined.
+[[nodiscard]] std::vector<std::complex<double>> rieszProjectorDerivative(
+    const std::vector<std::complex<double>> &eigenvalues,
+    const std::vector<std::complex<double>> &eigenvectors,
+    const std::vector<std::complex<double>> &leftEigenvectors,
+    const std::vector<std::size_t> &modes,
+    const std::vector<std::complex<double>> &operatorVariation);
 
 /// # CovarianceRebuild
 ///
@@ -106,44 +184,6 @@ struct CovarianceRebuild {
   /// the carrier's bands from point to point can move its reference.
   std::function<void(const JointAction &)> accepted;
 };
-
-/// # HolomorphicJacobianMode
-///
-/// How the Jacobian of the stationarity system is formed. The residual is an
-/// exact analytic function of the variables in either case; this selects only
-/// how its derivative is obtained.
-///
-/// * `ContourDerivative` — the Cauchy derivative on a small circle,
-///   \f$ \partial F/\partial v \approx \frac{1}{m\rho}\sum_{n=0}^{m-1}
-///       F(v+\rho\,\omega^{n})\,\omega^{-n} \f$ with \f$ \omega=e^{2\pi i/m} \f$.
-///   Because the residual is holomorphic, the trapezoidal rule on the circle
-///   converges geometrically in the node count: the first term it misses is of
-///   order \f$ \rho^{m} \f$ times the \f$ (m{+}1) \f$-st Taylor coefficient, so
-///   the default eight nodes at a relative radius of \f$ 10^{-2} \f$ leave a
-///   truncation of order \f$ 10^{-16} \f$ and the derivative is exact to
-///   rounding. This is the default, and it is the mode that makes holomorphy
-///   pay.
-///   The rule reads one branch of the residual over the whole circle, so it is
-///   the right rule exactly when the residual is analytic on the whole disc.
-/// * `RealAxisDifference` — the two-node rule
-///   \f$ (F(v+\rho)-F(v-\rho))/(2\rho) \f$ with both nodes placed exactly on
-///   the real axis. For a residual that is analytic on the disc this is the
-///   \f$ m=2 \f$ case of the same contour and carries an
-///   \f$ O(\rho^{2}) \f$ truncation, so a caller declaring it usually declares
-///   a smaller radius with it.
-///
-///   Its purpose is a residual that is analytic on each side of a cut along the
-///   real axis but not across it. The dual Lorentzian Regge action's exact
-///   gradient is such a residual: the deficit angle is taken on the principal
-///   branch with no Riemann-sheet label carried, so an arbitrarily small
-///   positive imaginary part in a squared length shifts a hinge's deficit by
-///   \f$ 2\pi \f$ and its contribution to the gradient by \f$ 2\pi \f$ times
-///   the hinge's dual volume. A contour around a real configuration crosses
-///   that cut and reads two sheets; two nodes on the axis stay on one. Both
-///   nodes are constructed as exact real numbers rather than as
-///   \f$ \rho\,e^{i\pi n} \f$, whose sine is not exactly zero in binary
-///   floating point and would put one node on the far side of the cut.
-enum class HolomorphicJacobianMode { ContourDerivative, RealAxisDifference };
 
 /// # HeldMonopoleSector
 ///
@@ -183,21 +223,6 @@ struct HolomorphicRelaxationDeclaration {
   /// declared converged. This is a convergence certificate on the complex
   /// equations, not a functional minimized in their place.
   double tolerance = 1e-10;
-
-  /// The number of nodes \f$ m \f$ on the contour, for `ContourDerivative`.
-  /// Must be at least five, so that no Jacobian in this solver rests on a
-  /// truncation shorter than the repository's floor for a series.
-  std::size_t contourNodes = 8;
-
-  /// The radius \f$ \rho \f$ of the contour, relative to the magnitude of the
-  /// coordinate being differentiated and floored at one, so that a coordinate
-  /// of very different scale is still differentiated on a circle inside its own
-  /// domain of analyticity.
-  double contourRadius = 1e-2;
-
-  /// How the Jacobian is formed.
-  HolomorphicJacobianMode jacobianMode =
-      HolomorphicJacobianMode::ContourDerivative;
 
   /// The relative threshold below which a singular value of the Jacobian counts
   /// as zero in the minimum-norm solve of the Newton system: the rank is the
@@ -450,9 +475,10 @@ struct HolomorphicRelaxationReport {
 /// Reference: Ortega and Rheinboldt, "Iterative Solution of Nonlinear Equations
 /// in Several Variables", SIAM Classics in Applied Mathematics 30, for the
 /// damped Newton method and its convergence.
-/// Reference: Lyness and Moler, "Numerical differentiation of analytic
-/// functions", SIAM Journal on Numerical Analysis 4, 202 (1967), for the
-/// contour rule the Jacobian is formed by.
+/// Reference: Kato, "Perturbation Theory for Linear Operators", Springer,
+/// Chapter II, for the analytic dependence of the Riesz projector of an
+/// isolated group of eigenvalues on the operator, which the Jacobian of the
+/// self-consistent system rests on.
 ///
 /// This solves the equations themselves. It does not minimize the residual
 /// norm, it does not minimize a real part, and it does not select a real
@@ -523,6 +549,24 @@ struct HolomorphicRelaxationReport {
 /// report names the reason from the refusal of the smallest trial step
 /// (`RelaxationStop`); a runaway of the squared lengths also stops it by name.
 ///
+/// ## The Jacobian
+///
+/// The Jacobian of the stationarity system is assembled analytically
+/// (`jacobian`). Its geometric blocks are the Hessian of the action at fixed
+/// carried state, `JointAction::actionHessian`: the Regge Hessian on the
+/// declared sheets, the Villain Hessian in the Maurer-Cartan increments, and
+/// the contraction of the covariant operator's second derivatives against
+/// \f$ w_M\Gamma+\sum_j\xi_jX_j \f$ together with the variation of the
+/// power sums' matrices \f$ X_j \f$ through the operator. The multiplier
+/// columns are the constraints' gradients `JointAction::momentGradient`, and
+/// the constraint rows are the same gradients: the derivative of a
+/// constraint's value at a spectral projector, whose own variation is
+/// off-diagonal between its range and its kernel and contributes no trace.
+/// Under declared edge classes every entry is the double sum over the two
+/// classes' members, each link member on its orientation, since the equation
+/// of a class is the sum of its edges' equations and its coordinate moves
+/// every edge of the class.
+///
 /// ## The self-consistent system
 ///
 /// Built with a `CovarianceRebuild`, the solve rebuilds \f$ \Gamma \f$ from
@@ -530,7 +574,16 @@ struct HolomorphicRelaxationReport {
 /// system \f$ F_{\rm sc}(z,U)=0 \f$ of `SelfConsistentMeanField` with the
 /// Jacobian \f$ H_{\rm sc} \f$ of the self-consistent force. The equations
 /// are those of the joint action; only the order in which they are solved
-/// differs from holding \f$ \Gamma \f$ fixed.
+/// differs from holding \f$ \Gamma \f$ fixed. The Jacobian then carries, on
+/// every geometric column, the response of the equations to the state's
+/// variation along that coordinate: with \f$ \delta h \f$ the operator's
+/// derivative along the coordinate, the variation of each band's Riesz
+/// projector is `rieszProjectorDerivative`, that of the covariance
+/// \f$ \sum_b(n_b/r_b)\,\delta P_b \f$ and that of the pinned fiber's
+/// projector the sum over its bands, and the response is
+/// `JointAction::stationarityStateVariation`. The perturbation is exact for
+/// bands isolated at the declared tolerance; a band that is not isolated is
+/// refused by name.
 /// Every term of \p action with its value and the norm of its stationarity
 /// gradient on the coordinates \p declaration relaxes (`ActionTermRecord`),
 /// the per-edge gradients summed over the declared edge classes as the
@@ -553,11 +606,10 @@ class HolomorphicRelaxation {
   /// @param rebuild Empty (the default) to hold the action's covariance fixed;
   ///   otherwise the rule that rebuilds \f$ \Gamma \f$ at every point the
   ///   solve evaluates.
-  /// @throws std::invalid_argument when the declared contour node count is
-  ///   below five, when the contour radius is not positive, when no field is
-  ///   declared relaxable, or when declared edge classes do not cover the
-  ///   edges, skip a class index, carry an orientation other than plus or
-  ///   minus one, or start with unequal fields inside a class.
+  /// @throws std::invalid_argument when no field is declared relaxable, or
+  ///   when declared edge classes do not cover the edges, skip a class index,
+  ///   carry an orientation other than plus or minus one, or start with
+  ///   unequal fields inside a class.
   HolomorphicRelaxation(JointAction action,
                         HolomorphicRelaxationDeclaration declaration,
                         CovarianceRebuild rebuild = {});
@@ -568,19 +620,19 @@ class HolomorphicRelaxation {
   /// The action, carrying the multipliers as the solve left them.
   [[nodiscard]] const JointAction &action() const noexcept { return action_; }
 
-  /// The Jacobian of the stationarity system at the current point, flat
-  /// row-major, with the rows in the residual's block order and the columns in
-  /// the variable order — the relaxed length coordinates, then the relaxed link
-  /// coordinates, then the relaxed multipliers. Under declared edge classes a
-  /// length or link coordinate is one class, in class order. Exposed so that the derivative
-  /// the solve steps along can be inspected and checked against an independent
-  /// evaluation rather than only trusted. With a `CovarianceRebuild` it is
-  /// the Jacobian of the self-consistent force, \f$ \Gamma \f$ rebuilt at
-  /// every node.
-  ///
-  /// Forming it moves each coordinate around its own contour in turn and
-  /// restores the complex exactly after every evaluation, so the geometry is
-  /// the same before and after the call.
+  /// The analytic Jacobian of the stationarity system at the current point,
+  /// flat row-major, with the rows in the residual's block order and the
+  /// columns in the variable order — the relaxed length coordinates, then the
+  /// relaxed link coordinates, then the relaxed multipliers. Under declared
+  /// edge classes a length or link coordinate is one class, in class order.
+  /// Exposed so that the derivative the solve steps along can be inspected
+  /// and checked against an independent evaluation rather than only trusted.
+  /// With a `CovarianceRebuild` it is the Jacobian of the self-consistent
+  /// force, the state rebuilt at the point and its derivative taken from the
+  /// perturbation of the bands' Riesz projectors. The geometry is read and
+  /// not written.
+  /// @throws std::invalid_argument when a rebuild supplies no band data, or
+  ///   when a rebuilt band is not isolated at the declared band tolerance.
   [[nodiscard]] std::vector<std::complex<double>> jacobian() const;
 
   /// The residual of the equations in scope at the current point, in the

@@ -248,6 +248,9 @@ struct OccupiedBand {
   /// eigenvectors and the matching rows of the inverse eigenvector matrix,
   /// flat row-major.
   std::vector<std::complex<double>> projector;
+  /// The band's modes: indices into `BandRead::eigenvalues`, columns of
+  /// `BandRead::eigenvectors` and rows of `BandRead::leftEigenvectors`.
+  std::vector<std::size_t> modes;
 };
 
 /// # BandRead
@@ -283,6 +286,13 @@ struct BandRead {
   bool crossing = false;
   /// The smallest \f$ |\text{overlap}| \f$ over the occupied bands.
   double lowestOverlap = 1.0;
+  /// The eigenvalues of the operator in the eigensolver's order, the order
+  /// `eigenvectors` and every band's `OccupiedBand::modes` refer to.
+  std::vector<std::complex<double>> eigenvalues;
+  /// \f$ V \f$, the right eigenvectors as columns, flat row-major.
+  std::vector<std::complex<double>> eigenvectors;
+  /// \f$ V^{-1} \f$, whose rows are the left eigenvectors, flat row-major.
+  std::vector<std::complex<double>> leftEigenvectors;
 };
 
 /// # BandFollower
@@ -620,6 +630,20 @@ class SelfConsistentMeanField {
   /// The action, carrying the covariance and the multipliers as the solve left
   /// them.
   [[nodiscard]] const JointAction &action() const noexcept { return action_; }
+
+  /// The joint Newton system at the action's current point, as `solve`
+  /// builds it there: the bands chosen at the point by the declared rule and
+  /// followed from it, the covariance their density, the pinned fiber
+  /// constraints installed with their targets and the multipliers' starting
+  /// estimate, and the covariance and the fiber rebuilt at every point the
+  /// system is evaluated at. Its `HolomorphicRelaxation::residual` is the
+  /// self-consistent residual \f$ F_{\rm sc} \f$ and its
+  /// `HolomorphicRelaxation::jacobian` the analytic Jacobian of it. The
+  /// system refers to the complex the action does, so the geometry may be
+  /// moved between reads, with the reference bands and the constraints held,
+  /// for an independent check of the Jacobian against the residual.
+  /// @throws std::invalid_argument as `solve` does at its starting point.
+  [[nodiscard]] HolomorphicRelaxation jointSystem() const;
 
  private:
   [[nodiscard]] SelfConsistentMeanFieldReport solveJointNewton();
