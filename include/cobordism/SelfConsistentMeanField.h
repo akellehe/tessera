@@ -295,6 +295,25 @@ struct BandRead {
   std::vector<std::complex<double>> leftEigenvectors;
 };
 
+/// # BandReference
+///
+/// One occupied band as the reference a `BandFollower` follows: the band's
+/// occupation, its rank, where it sat in the declared order when it was
+/// chosen, and its Riesz projector over the operator's modes. At a later
+/// point the band takes the eigenvectors of largest weight in this projector.
+struct BandReference {
+  /// \f$ n_b \f$, the number of particles the band carries.
+  double occupation = 0.0;
+  /// \f$ r_b \f$, the number of modes of the band.
+  std::size_t rank = 0;
+  /// The band's index in the declared order where it was chosen.
+  std::size_t declaredIndex = 0;
+  /// The places in the declared order its modes held where it was chosen.
+  std::vector<std::size_t> declaredPositions;
+  /// \f$ P_b \f$, flat row-major over the operator's modes.
+  std::vector<std::complex<double>> projector;
+};
+
 /// # BandFollower
 ///
 /// The declared covariance rule together with its band selection. It builds
@@ -334,14 +353,21 @@ class BandFollower {
   /// Whether a reference is set.
   [[nodiscard]] bool following() const noexcept { return !reference_.empty(); }
 
+  /// The reference the next `read` follows, one entry per occupied band;
+  /// empty when none is set.
+  [[nodiscard]] const std::vector<BandReference> &reference() const noexcept {
+    return reference_;
+  }
+
+  /// Set the reference from stored bands, so that a read is followed from
+  /// bands chosen elsewhere (at a host, on the modes that host shares with
+  /// the operator read) and not from the declared order at the point.
+  void setReference(std::vector<BandReference> reference) {
+    reference_ = std::move(reference);
+  }
+
  private:
-  struct Reference {
-    double occupation = 0.0;
-    std::size_t rank = 0;
-    std::size_t declaredIndex = 0;
-    std::vector<std::size_t> declaredPositions;
-    std::vector<std::complex<double>> projector;
-  };
+  using Reference = BandReference;
 
   CovarianceRule rule_;
   std::size_t occupiedModes_;
@@ -642,8 +668,14 @@ class SelfConsistentMeanField {
   /// system refers to the complex the action does, so the geometry may be
   /// moved between reads, with the reference bands and the constraints held,
   /// for an independent check of the Jacobian against the residual.
-  /// @throws std::invalid_argument as `solve` does at its starting point.
-  [[nodiscard]] HolomorphicRelaxation jointSystem() const;
+  /// With a \p reference, the bands are followed from it at the point and at
+  /// every point the system is evaluated at, and are not chosen by the
+  /// declared order: the system of a complex is then the one whose bands
+  /// continue the reference's.
+  /// @throws std::invalid_argument as `solve` does at its starting point, and
+  ///   when a reference projector is not over the operator's modes.
+  [[nodiscard]] HolomorphicRelaxation jointSystem(
+      const std::vector<BandReference> &reference = {}) const;
 
  private:
   [[nodiscard]] SelfConsistentMeanFieldReport solveJointNewton();

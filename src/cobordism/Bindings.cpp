@@ -2338,8 +2338,9 @@ assertion. Every pairing is the transpose.)doc")
                   "walks it: ascending 1..max_lookahead by default, or "
                   "descending combinatorial_breadth..1 when a breadth is "
                   "named.")
-      .def("run_stage1", &MultiCobordism::runStage1, py::arg("max_steps") = 200,
-           py::arg("n_candidate_moves") = 12, py::arg("grow_boundaries") = false,
+      .def("run_stage1", &MultiCobordism::runStage1,
+           py::arg("max_steps") = std::optional<int>(),
+           py::arg("n_candidate_moves") = 0, py::arg("grow_boundaries") = false,
            py::arg("max_lookahead") = 1,
            py::arg("combinatorial_breadth") = 0,
            py::call_guard<py::gil_scoped_release>(),
@@ -2358,8 +2359,8 @@ assertion. Every pairing is the transpose.)doc")
            "space raised to the breadth."
            )
       .def("run_stage2", &MultiCobordism::runStage2, py::arg("beta") = 1.0,
-           py::arg("max_iters") = 200, py::arg("alpha0") = 0.05,
-           py::arg("tolerance") = 1e-12,
+           py::arg("max_iters") = std::optional<int>(),
+           py::arg("alpha0") = 0.05, py::arg("tolerance") = 1e-15,
            py::call_guard<py::gil_scoped_release>(),
            "Stage 2 (geometric): relax the full complex squared edge coordinates "
            "z=l^2 under the selected objective. Derivatives are subtracted from "
@@ -2368,12 +2369,13 @@ assertion. Every pairing is the transpose.)doc")
            "backtracking scale accepts only exact objective decreases of at least "
            "the absolute tolerance. Read last_stage2_stationary to distinguish "
            "line-search stationarity from the max_iters budget. Returns F trace.")
-      .def("run", &MultiCobordism::run, py::arg("max_iters") = 200,
-           py::arg("n_candidate_moves") = 12,
+      .def("run", &MultiCobordism::run,
+           py::arg("max_iters") = std::optional<int>(),
+           py::arg("n_candidate_moves") = 0,
            py::arg("grow_boundaries") = false, py::arg("beta") = 1.0,
-           py::arg("alpha0") = 0.05, py::arg("tolerance") = 10e-9,
+           py::arg("alpha0") = 0.05, py::arg("tolerance") = 1e-15,
            py::arg("max_lookahead") = 1,
-           py::arg("relax_budget_per_move") = 10,
+           py::arg("relax_budget_per_move") = std::optional<int>(),
            py::arg("combinatorial_breadth") = 0,
            py::call_guard<py::gil_scoped_release>(),
            "The combined drive: each iteration takes ONE combinatorial stage-1 "
@@ -2613,7 +2615,15 @@ Right -- re-read after each drive call:
       .def_readwrite("carried_state_energy",
                      &MultiCobordism::ObjectiveTerms::carriedStateEnergy)
       .def_readwrite("moment_stiffness",
-                     &MultiCobordism::ObjectiveTerms::momentStiffness);
+                     &MultiCobordism::ObjectiveTerms::momentStiffness)
+      .def_readwrite("joint_action_stationarity",
+                     &MultiCobordism::ObjectiveTerms::jointActionStationarity,
+                     "The squared norm of the stationarity residual of the "
+                     "joint action (Regge, face holonomy, matter with the "
+                     "covariance rebuilt at the point) over the squared "
+                     "lengths and the links; zero exactly at its stationary "
+                     "points, and 0.0 for an objective that does not score "
+                     "the joint action.");
 
   py::class_<MultiCobordism::ObjectiveContribution>(multiCobordismClass,
       "ObjectiveContribution",
@@ -2705,7 +2715,9 @@ Right -- re-read after each drive call:
       .def_readonly_static("CARRIED_STATE_ENERGY",
                            &ObjectiveTermName::kCarriedStateEnergy)
       .def_readonly_static("MOMENT_STIFFNESS",
-                           &ObjectiveTermName::kMomentStiffness);
+                           &ObjectiveTermName::kMomentStiffness)
+      .def_readonly_static("JOINT_ACTION_STATIONARITY",
+                           &ObjectiveTermName::kJointActionStationarity);
 
   py::class_<ObjectiveContext>(m, "ObjectiveContext",
       "The COMPLETE set of inputs an objective may read -- the no-feedback "
@@ -2805,7 +2817,12 @@ Right -- re-read after each drive call:
       .def_readwrite("baseline_computed", &ObjectiveDirection::baselineComputed,
                      "Whether `baseline` is meaningful. False makes the engine "
                      "evaluate the scalar itself rather than trust an "
-                     "accumulated trace.");
+                     "accumulated trace.")
+      .def_readwrite("is_step", &ObjectiveDirection::isStep,
+                     "Whether the direction is a step that solves the "
+                     "objective's equations to its declared order about the "
+                     "point: stage 2 then tries it at scale one first at "
+                     "every update. False for a gradient.");
 
   py::class_<ObjectiveDirectionContext>(m, "ObjectiveDirectionContext",
       "ObjectiveContext plus the extra data a stage-2 direction needs. Plain "
@@ -5403,6 +5420,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "V^-1, whose rows are the left eigenvectors, flat "
                     "row-major.");
 
+  py::class_<BandReference>(m, "BandReference",
+      "One occupied band as the reference a BandFollower follows: its "
+      "occupation, its rank, where it sat in the declared order when it was "
+      "chosen, and its Riesz projector over the operator's modes (flat "
+      "row-major).")
+      .def(py::init<>())
+      .def_readwrite("occupation", &BandReference::occupation)
+      .def_readwrite("rank", &BandReference::rank)
+      .def_readwrite("declared_index", &BandReference::declaredIndex)
+      .def_readwrite("declared_positions", &BandReference::declaredPositions)
+      .def_readwrite("projector", &BandReference::projector);
+
   py::class_<BandFollower>(m, "BandFollower",
       "The declared covariance rule with its band selection: read(h) builds "
       "Gamma from an operator, choosing the occupied bands by the declared "
@@ -5415,7 +5444,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "The band read of a flat row-major operator.")
       .def("follow", &BandFollower::follow, py::arg("read"),
            "Make the read's bands the reference the next read follows.")
-      .def_property_readonly("following", &BandFollower::following);
+      .def_property_readonly("following", &BandFollower::following)
+      .def_property_readonly("reference", &BandFollower::reference,
+                             "The reference the next read follows, one "
+                             "BandReference per occupied band; empty when "
+                             "none is set.")
+      .def("set_reference", &BandFollower::setReference, py::arg("reference"),
+           "Set the reference from stored bands, so that a read is followed "
+           "from bands chosen elsewhere and not from the declared order at "
+           "the point.");
 
   py::class_<SelfConsistentMeanFieldStep>(m, "SelfConsistentMeanFieldStep",
       "One iterate of a self-consistent solve; iterate zero is the starting "
@@ -5601,6 +5638,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                              "The action, carrying the covariance and the "
                              "multipliers as the solve left them.")
       .def("joint_system", &SelfConsistentMeanField::jointSystem,
+           py::arg("reference") = std::vector<BandReference>(),
            "The joint Newton system at the action's current point, as solve "
            "builds it there: the bands chosen at the point and followed from "
            "it, the pinned fiber constraints installed with their targets and "

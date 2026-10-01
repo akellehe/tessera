@@ -56,6 +56,13 @@ struct ObjectiveTerms {
   /// (`HodgeLaplacian::spectralMomentStiffness`), exactly 0.0 when its weight is
   /// zero, the default.
   double momentStiffness = 0.0;
+  /// \f$ \lVert R\rVert^2 \f$, the squared Euclidean norm of the stationarity
+  /// residual \f$ R \f$ of the joint action (`cobordism::JointAction`: the
+  /// Regge term, the face-holonomy term and the matter term with the
+  /// covariance rebuilt at the point) over the squared lengths and the links.
+  /// It vanishes exactly at the stationary points of that complex action.
+  /// Exactly 0.0 for an objective that does not score the joint action.
+  double jointActionStationarity = 0.0;
 };
 
 /// # ObjectiveContext
@@ -230,6 +237,12 @@ struct ObjectiveDirection {
   double baseline = 0.0;
   /// Whether `baseline` is meaningful.
   bool baselineComputed = false;
+  /// Whether the direction is a step: a displacement that solves the
+  /// objective's equations to its declared order about the point, so that the
+  /// first trial is the displacement itself, at scale one, at every update.
+  /// False for a gradient, whose scale carries no meaning and is searched from
+  /// the caller's step scale.
+  bool isStep = false;
 };
 
 /// # ObjectiveDirectionContext
@@ -338,6 +351,8 @@ class ObjectiveTermName {
   static constexpr const char *kActionMagnitude = "action_magnitude";
   static constexpr const char *kCarriedStateEnergy = "carried_state_energy";
   static constexpr const char *kMomentStiffness = "moment_stiffness";
+  static constexpr const char *kJointActionStationarity =
+      "joint_action_stationarity";
 };
 
 /// # CobordismObjective

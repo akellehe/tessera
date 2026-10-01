@@ -174,7 +174,8 @@ class ObjectiveFirewallStructureTest(unittest.TestCase):
             MC.objective_term_names(),
             ["regge_stationarity", "hodge_stationarity",
              "connection_stationarity", "register_residual",
-             "action_magnitude", "carried_state_energy", "moment_stiffness"])
+             "action_magnitude", "carried_state_energy", "moment_stiffness",
+             "joint_action_stationarity"])
 
     def test_no_objective_term_names_a_derived_observable(self):
         for name in MC.objective_term_names():

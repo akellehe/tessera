@@ -813,6 +813,13 @@ BandRead BandFollower::read(const std::vector<complexd> &operatorMatrix) const {
     // of largest weight in its previous projector that no earlier band took.
     std::vector<bool> taken(static_cast<std::size_t>(n), false);
     for (const Reference &reference : reference_) {
+      if (reference.projector.size() !=
+          static_cast<std::size_t>(n) * static_cast<std::size_t>(n))
+        throw std::invalid_argument(
+            "BandFollower: a reference projector has " +
+            std::to_string(reference.projector.size()) +
+            " entries, but the operator read has " + std::to_string(n) +
+            " modes");
       const Eigen::MatrixXcd previous = toMatrix(reference.projector);
       const Eigen::MatrixXcd weight = inverse * previous * vectors;
       std::vector<Eigen::Index> candidates;
@@ -960,11 +967,13 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solve() {
   return solveJointNewton();
 }
 
-HolomorphicRelaxation SelfConsistentMeanField::jointSystem() const {
+HolomorphicRelaxation SelfConsistentMeanField::jointSystem(
+    const std::vector<BandReference> &reference) const {
   auto follower = std::make_shared<BandFollower>(declaration_);
   JointAction action = action_;
+  if (!reference.empty()) follower->setReference(reference);
   const BandRead start = follower->read(bandOperatorFlat(action, declaration_));
-  follower->follow(start);
+  if (reference.empty()) follower->follow(start);
   action.setCovariance(start.covariance);
   (void)installFiberMoments(action, declaration_, start);
   HolomorphicRelaxationDeclaration newton = declaration_.geometry;
