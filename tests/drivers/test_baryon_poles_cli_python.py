@@ -166,7 +166,7 @@ def test_the_registry_lists_every_tolerance():
     once, each with a one-phrase meaning, and each the detector's tolerance
     it names where it is one of `ISOSPIN_TOLERANCES`."""
     assert [key for key, _ in bp.TOLERANCES] == TOLERANCE_KEYS
-    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 32
+    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 31
     assert all(isinstance(meaning, str) and meaning
                for _, meaning in bp.TOLERANCES)
     assert [key for key, _ in bp.ISOSPIN_TOLERANCES] == [
