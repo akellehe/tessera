@@ -123,10 +123,11 @@ At level l (a complex K_l of three sheets of a base complex):
    monopole host are one simple mode per sheet, not spin doublets
    (``baryon_poles``, "What a content names"); the poles are read for every
    doublet content of the T-averaged operator and labelled by it. Each
-   content's mean field is solved by Newton's method on the joint system,
-   its bands chosen at the host and followed by continuation
-   (``--band-selection``); the solve's iterations, final force, stop reason
-   and joint-Jacobian rank gap are reported with the content. A read whose
+   content's mean field is solved by the `MultiCobordism` drive of the joint
+   system (`cell_solve`), its bands chosen at the host and followed by
+   continuation (``--band-selection``); the solve's accepted updates,
+   committed moves, final force, stop reason and joint-Jacobian rank gap
+   are reported with the content. A read whose
    precondition does not hold at its declared tolerance is made and flagged:
    a geometry that is not Kontsevich-Segal allowable is read with that flag
    and its margin, and a relaxed cell that does not meet the preconditions

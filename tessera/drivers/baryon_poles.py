@@ -237,7 +237,7 @@ main thread servicing the GUI event loop; the outputs are identical with or
 without it. A non-interactive backend, and WebAgg, are refused by name.
 
 Every tolerance of the stack is an option (``--rank-tolerance`` is tau, the
-Newton solve's rank decision; the others are listed by `TOLERANCES`), each
+step's rank decision; the others are listed by `TOLERANCES`), each
 defaulting to 1e-15 and each recorded in the configuration. None changes an
 equation.
 
@@ -302,7 +302,7 @@ BASE_EDGES = 6
 DECLARED_TOLERANCE = 1e-15
 #: Relative separation at or below which ordered eigenvalues form one band.
 DECLARED_BAND_TOLERANCE = DECLARED_TOLERANCE
-#: tau, the relative singular-value threshold of the Newton solve's rank
+#: tau, the relative singular-value threshold of the step's rank
 #: decision. The Jacobian is assembled analytically, so its entries carry a
 #: rounding error of order epsilon relative to their scale, and a singular
 #: value below that of the largest cannot be told from zero. The declared
