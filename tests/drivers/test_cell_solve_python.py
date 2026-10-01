@@ -288,11 +288,22 @@ def test_the_order_of_the_step_is_declared_between_one_and_ten():
     for order in (0, 11):
         with pytest.raises(ValueError, match="integer from 1 to 10"):
             cs.StationarityObjective(system, order)
-    with pytest.raises(ValueError, match="reversion"):
-        cs.StationarityObjective(system, 3)
-    assert cs.StationarityObjective(
-        system, 3, series=lambda point, linearization, order: []
-    ).direction_order == 3
+    assert cs.StationarityObjective(system, 3).direction_order == 3
+
+
+def test_the_step_of_order_one_from_the_series_is_the_newton_step():
+    """`series_step` at order one reverts the residual's series to first
+    order against the point's linearization, which is the Newton step; at
+    order two it differs from it by the second-order term."""
+    base, _, system = _content_system()
+    point = system.point(base)
+    linearization = point.relaxation.linearization()
+    newton = np.asarray(linearization.newton_step.step)
+    first = cs.series_step(point, linearization, 1)
+    assert np.abs(first - newton).max() < 1e-9 * max(1.0, np.abs(newton).max())
+    second = cs.series_step(point, linearization, 2)
+    assert second.shape == newton.shape
+    assert np.abs(second - newton).max() > 0.0
 
 
 # ------------------------------------------------------------------ the drive

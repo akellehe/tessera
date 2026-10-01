@@ -90,9 +90,12 @@ class DeclaredLimitReached(Exception):
 #: One point of a system: the `HolomorphicRelaxation` posed on the sheeted
 #: support of a base complex, the number of base edges (its squared-length
 #: coordinates and its link coordinates, in the base complex's
-#: `getEdgeList()` order), which fields are relaxed, and the sheeted support
-#: itself.
-Point = namedtuple("Point", "relaxation count lengths links support")
+#: `getEdgeList()` order), which fields are relaxed, the sheeted support
+#: itself, the geometry declaration the system was posed with, and, for a
+#: self-consistent system, the mean-field declaration and the reference
+#: bands the point's bands are followed from (None otherwise).
+Point = namedtuple("Point", "relaxation count lengths links support "
+                            "geometry mean_field reference")
 
 #: The sheeted support of a base complex (`sheeted_support`): the complex,
 #: the number of base vertices, the base vertices in ascending order (base
@@ -290,10 +293,30 @@ def covariance_of(bands):
 # ------------------------------------------------------------- the systems
 
 
-def _point(relaxation, geometry, base, support):
+def _point(relaxation, geometry, base, support, mean_field=None,
+           reference=None):
     return Point(relaxation, len(edge_fields(base)),
                  bool(geometry.relax_lengths), bool(geometry.relax_links),
-                 support)
+                 support, geometry, mean_field, reference)
+
+
+def series_step(point, linearization, order):
+    """The step of order ``order`` at a point: the reversion, to that order,
+    of the power series of the stationarity residual along the step
+    (`series_stationarity.SeriesStationarity`), every order solved against
+    the point's one linearization, so that the rank decisions and the held
+    moduli are those of the Newton step. Order one is the Newton step."""
+    from tessera.drivers.series_stationarity import SeriesStationarity
+    follower = None
+    if point.mean_field is not None:
+        follower = cob.BandFollower(point.mean_field)
+        follower.set_reference(point.reference)
+    series = SeriesStationarity(point.relaxation.action, point.geometry,
+                                mean_field=point.mean_field,
+                                follower=follower)
+    return series.step(order, lambda right_hand_side: np.asarray(
+        linearization.solve(list(np.asarray(right_hand_side,
+                                            dtype=complex)))))
 
 
 class GeometricSystem:
@@ -409,7 +432,7 @@ class ContentSystem:
         field = cob.SelfConsistentMeanField(action, declaration)
         reference, _ = self._reference(support, action)
         return _point(field.joint_system(reference), declaration.geometry,
-                      base, support)
+                      base, support, declaration, reference)
 
     def iterate(self, base):
         """The measurements of a point (`SelfConsistentMeanField.iterate`),
@@ -454,21 +477,16 @@ class StationarityObjective(cob.CobordismObjective):
     The scalar is the residual norm there, and the stage-2 direction is the
     step of order ``direction_order`` (one to `MAXIMUM_DIRECTION_ORDER`) in
     the base edges' coordinates. ``series(point, linearization, order)``
-    returns the step of an order above one in the system's variables; order
-    one needs none."""
+    returns the step of an order above one in the system's variables
+    (`series_step`)."""
 
-    def __init__(self, system, direction_order=1, series=None):
+    def __init__(self, system, direction_order=1, series=series_step):
         super().__init__()
         direction_order = int(direction_order)
         if not 1 <= direction_order <= MAXIMUM_DIRECTION_ORDER:
             raise ValueError(
                 "the order of the step is an integer from 1 to %d; got %d"
                 % (MAXIMUM_DIRECTION_ORDER, direction_order))
-        if direction_order > 1 and series is None:
-            raise ValueError(
-                "the step of order %d is the reversion of the residual's "
-                "power series, which the caller supplies (series)"
-                % direction_order)
         self._system = system
         self._series = series
         self.direction_order = direction_order
@@ -555,6 +573,11 @@ class StationarityObjective(cob.CobordismObjective):
         newton = linearization.newton_step
         if self.direction_order == 1:
             step = np.asarray(newton.step, dtype=complex)
+        elif len(added_residual):
+            raise ValueError(
+                "the step of order %d has no value with a declared moment "
+                "stiffness: the stiffness is not a term of the residual's "
+                "power series" % self.direction_order)
         else:
             step = np.asarray(self._series(point, linearization,
                                            self.direction_order),
@@ -653,7 +676,7 @@ def cell_node(spacetime, objective, register_degrees=(1,)):
 
 
 def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
-          direction_order=1, series=None, moves=True, move_lookahead=1,
+          direction_order=1, series=series_step, moves=True, move_lookahead=1,
           move_candidates=0, iteration_limit=None, update_limit=None,
           time_limit_seconds=None, configure=None):
     """Drive the base complex ``spacetime`` to a stationary point of
