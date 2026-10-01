@@ -5,12 +5,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <utility>
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
+
+#include "chainhodge/RieszProjector.h"
 
 namespace tessera::cobordism {
 
@@ -19,7 +23,6 @@ using complexd = std::complex<double>;
 namespace {
 
 constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
-constexpr double kTwoPi = 6.283185307179586476925286766559;
 
 void nameFailure(std::vector<std::string> &failures, const std::string &name) {
   if (std::find(failures.begin(), failures.end(), name) == failures.end())
@@ -50,19 +53,6 @@ Partition partitionOf(int order, const std::vector<int> &interface,
   return partition;
 }
 
-/// One shift's worth of the response and its derivative, formed from a single
-/// factorization of the interior block.
-struct ResponseAtShift {
-  Eigen::MatrixXcd response{};
-  Eigen::MatrixXcd derivative{};
-  /// \f$ \frac{d}{ds}\log\det P_{II}(s)
-  ///     =-\operatorname{tr}(P_{II}^{-1}M_{II}) \f$,
-  /// whose contour integral counts the unretained interior poles of
-  /// \f$ F_C \f$ inside the contour. Zero when there is no interior.
-  complexd interiorLogDerivative{0.0, 0.0};
-  bool interiorSingular{false};
-};
-
 /// A submatrix of \p source on the row set \p rows and the column set
 /// \p columns.
 Eigen::MatrixXcd block(const Eigen::MatrixXcd &source,
@@ -77,10 +67,139 @@ Eigen::MatrixXcd block(const Eigen::MatrixXcd &source,
   return out;
 }
 
-/// \f$ F_C(s) \f$ and \f$ F_C'(s) \f$ together.
-///
-/// The derivative is the closed form the header states, which follows from
-/// \f$ dP/ds = -M \f$ alone; no finite difference and no step size enters it.
+void requireSquarePair(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
+                       const char *who) {
+  if (A.cols() != A.rows() || M.rows() != A.rows() || M.cols() != A.rows())
+    throw std::invalid_argument(std::string(who) +
+                                ": A and M must be square of the same size");
+}
+
+/// The number of singular values of \p X above \p threshold.
+std::size_t rankAbove(const Eigen::MatrixXcd &X, double threshold) {
+  if (X.rows() == 0 || X.cols() == 0) return 0;
+  const Eigen::VectorXd values = Eigen::JacobiSVD<Eigen::MatrixXcd>(X)
+                                     .singularValues();
+  std::size_t rank = 0;
+  for (Eigen::Index index = 0; index < values.size(); ++index)
+    if (values(index) > threshold) ++rank;
+  return rank;
+}
+
+/// The largest singular value of \p X, zero for an empty matrix.
+double largestSingularValue(const Eigen::MatrixXcd &X) {
+  if (X.rows() == 0 || X.cols() == 0) return 0.0;
+  return Eigen::JacobiSVD<Eigen::MatrixXcd>(X).singularValues()(0);
+}
+
+/// \f$ M^{-1}A \f$ with \f$ M \f$ required invertible at the declared
+/// relative tolerance of its pivots; the read refuses by name otherwise,
+/// because the spectrum of a pencil with a singular metric is not the
+/// spectrum of a matrix.
+struct MetricInverse {
+  Eigen::MatrixXcd inverse{};
+  Eigen::MatrixXcd product{};
+};
+
+MetricInverse metricInverse(const Eigen::MatrixXcd &A,
+                            const Eigen::MatrixXcd &M, double rankTolerance,
+                            const char *what) {
+  MetricInverse out;
+  if (M.rows() == 0) {
+    out.inverse = Eigen::MatrixXcd(0, 0);
+    out.product = Eigen::MatrixXcd(0, 0);
+    return out;
+  }
+  Eigen::FullPivLU<Eigen::MatrixXcd> lu(M);
+  lu.setThreshold(rankTolerance);
+  if (!lu.isInvertible())
+    throw std::invalid_argument(
+        std::string("BoundStatePole::poles: ") + what +
+        " is singular at the declared rank tolerance, so the pencil's "
+        "spectrum is not the spectrum of a matrix and its poles are not "
+        "read");
+  out.inverse = lu.inverse();
+  out.product = lu.solve(A);
+  return out;
+}
+
+/// The eigenvalues of \p X, as the diagonal of its complex Schur form, and the
+/// clusters they form at the distance \p threshold: a cluster is the
+/// transitive closure of "at distance at or below the threshold", so two
+/// eigenvalues in different clusters are farther apart than the threshold.
+struct ClusteredSpectrum {
+  Eigen::ComplexSchur<Eigen::MatrixXcd> schur{};
+  std::vector<complexd> eigenvalues{};
+  std::vector<std::vector<std::size_t>> clusters{};
+};
+
+ClusteredSpectrum clusteredSpectrum(const Eigen::MatrixXcd &X,
+                                    double threshold, bool withVectors,
+                                    const char *what) {
+  ClusteredSpectrum out;
+  if (X.rows() == 0) return out;
+  out.schur.compute(X, withVectors);
+  if (out.schur.info() != Eigen::Success)
+    throw std::runtime_error(std::string("BoundStatePole::poles: the complex "
+                                         "Schur form of ") +
+                             what + " did not converge");
+  const Eigen::Index order = X.rows();
+  out.eigenvalues.reserve(static_cast<std::size_t>(order));
+  for (Eigen::Index index = 0; index < order; ++index)
+    out.eigenvalues.push_back(out.schur.matrixT()(index, index));
+  std::vector<bool> grouped(out.eigenvalues.size(), false);
+  for (std::size_t index = 0; index < out.eigenvalues.size(); ++index) {
+    if (grouped[index]) continue;
+    std::vector<std::size_t> cluster{index};
+    grouped[index] = true;
+    for (std::size_t scan = 0; scan < cluster.size(); ++scan)
+      for (std::size_t other = 0; other < out.eigenvalues.size(); ++other) {
+        if (grouped[other]) continue;
+        if (std::abs(out.eigenvalues[cluster[scan]] -
+                     out.eigenvalues[other]) > threshold)
+          continue;
+        grouped[other] = true;
+        cluster.push_back(other);
+      }
+    out.clusters.push_back(std::move(cluster));
+  }
+  return out;
+}
+
+/// The mean of the eigenvalues of one cluster, which is the trace of the
+/// cluster's Schur block over its size.
+complexd clusterValue(const ClusteredSpectrum &spectrum,
+                      const std::vector<std::size_t> &cluster) {
+  complexd total{0.0, 0.0};
+  for (const std::size_t index : cluster) total += spectrum.eigenvalues[index];
+  return total / static_cast<double>(cluster.size());
+}
+
+/// The diameter of one cluster: the largest distance between two of its
+/// eigenvalues.
+double clusterDiameter(const ClusteredSpectrum &spectrum,
+                       const std::vector<std::size_t> &cluster) {
+  double diameter = 0.0;
+  for (const std::size_t left : cluster)
+    for (const std::size_t right : cluster)
+      diameter = std::max(diameter, std::abs(spectrum.eigenvalues[left] -
+                                             spectrum.eigenvalues[right]));
+  return diameter;
+}
+
+bool ascendingByParts(complexd left, complexd right) {
+  if (left.real() != right.real()) return left.real() < right.real();
+  return left.imag() < right.imag();
+}
+
+/// \f$ F_C(s) \f$ and \f$ F_C'(s) \f$ together, from one factorization of the
+/// interior block. The derivative is the closed form the header states, which
+/// follows from \f$ dP/ds = -M \f$ alone.
+struct ResponseAtShift {
+  Eigen::MatrixXcd response{};
+  Eigen::MatrixXcd derivative{};
+  bool interiorSingular{false};
+};
+
 ResponseAtShift responseAtShift(const Eigen::MatrixXcd &A,
                                 const Eigen::MatrixXcd &M,
                                 const Partition &partition, complexd s,
@@ -116,139 +235,7 @@ ResponseAtShift responseAtShift(const Eigen::MatrixXcd &A,
       transposed.solve(PBI.transpose()).transpose();   // P_BI P_II^{-1}
   out.response = PBB - PBI * X;
   out.derivative = -MBB + MBI * X + Z * MIB - Z * MII * X;
-  out.interiorLogDerivative = -lu.solve(MII).trace();
   return out;
-}
-
-/// \f$ \operatorname{tr}(F^{-1}F') \f$, formed by solving rather than by
-/// inverting.
-complexd logarithmicDerivativeOf(const ResponseAtShift &shift) {
-  if (shift.interiorSingular || shift.response.rows() == 0)
-    return complexd{kNaN, kNaN};
-  Eigen::FullPivLU<Eigen::MatrixXcd> lu(shift.response);
-  if (!lu.isInvertible()) return complexd{kNaN, kNaN};
-  const Eigen::MatrixXcd solved = lu.solve(shift.derivative);
-  return solved.trace();
-}
-
-/// The quadrature nodes of a circle and the factor each contributes: with
-/// \f$ s=c+re^{i\theta} \f$ and \f$ ds=i(s-c)\,d\theta \f$, the contour
-/// average \f$ (2\pi i)^{-1}\oint f\,ds \f$ is the mean of
-/// \f$ f(s)\,(s-c) \f$ over equally spaced nodes.
-struct ContourNode {
-  complexd point{0.0, 0.0};
-  complexd offset{0.0, 0.0};
-};
-
-std::vector<ContourNode> circle(complexd centre, double radius, int nodes) {
-  std::vector<ContourNode> out;
-  out.reserve(static_cast<std::size_t>(std::max(nodes, 0)));
-  for (int node = 0; node < nodes; ++node) {
-    const double angle =
-        kTwoPi * (static_cast<double>(node) + 0.5) / static_cast<double>(nodes);
-    ContourNode entry;
-    entry.offset = radius * complexd{std::cos(angle), std::sin(angle)};
-    entry.point = centre + entry.offset;
-    out.push_back(entry);
-  }
-  return out;
-}
-
-/// The moments of the logarithmic derivative on one circle, for
-/// \f$ p = 0 \dots \f$ \p count, together with whether any node met a singular
-/// interior block.
-///
-/// The moments are taken in the scaled shifted variable
-/// \f$ u=(s-c)/r \f$, so \f$ m_p=\sum_i u_i^{\,p} \f$ with every
-/// \f$ |u_i|<1 \f$ inside the contour. That keeps every power bounded however
-/// far the contour sits from the origin, and the zeros are mapped back by
-/// \f$ s_i=c+r\,u_i \f$. \f$ m_0 \f$ is unchanged by the scaling and is the
-/// enclosed count.
-struct MomentRead {
-  std::vector<complexd> moments{};
-  /// The unretained interior poles the contour encloses, as the argument
-  /// principle on \f$ \det P_{II} \f$ produced it.
-  complexd interiorPoles{0.0, 0.0};
-  bool interiorSingular{false};
-  bool usable{true};
-};
-
-MomentRead momentsOn(const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
-                     const Partition &partition, complexd centre, double radius,
-                     int nodes, std::size_t count, double rankTolerance) {
-  MomentRead read;
-  read.moments.assign(count + 1, complexd{0.0, 0.0});
-  const auto contour = circle(centre, radius, nodes);
-  for (const ContourNode &node : contour) {
-    const ResponseAtShift shift =
-        responseAtShift(A, M, partition, node.point, rankTolerance);
-    if (shift.interiorSingular) {
-      read.interiorSingular = true;
-      read.usable = false;
-      return read;
-    }
-    const complexd value = logarithmicDerivativeOf(shift);
-    if (!std::isfinite(value.real()) || !std::isfinite(value.imag())) {
-      read.usable = false;
-      return read;
-    }
-    const complexd scaled = node.offset / radius;
-    complexd power{1.0, 0.0};
-    for (std::size_t p = 0; p <= count; ++p) {
-      read.moments[p] += power * value * node.offset;
-      power *= scaled;
-    }
-    read.interiorPoles += shift.interiorLogDerivative * node.offset;
-  }
-  for (complexd &moment : read.moments)
-    moment /= static_cast<double>(nodes);
-  read.interiorPoles /= static_cast<double>(nodes);
-  return read;
-}
-
-/// The distinct zeros carried by the moments \f$ m_0\dots m_{2N-1} \f$ of
-/// \f$ N \f$ enclosed zeros, through the Hankel pencil. The values returned
-/// are in the scaled shifted variable \f$ u \f$ the moments were taken in.
-/// Empty when the pencil is not solvable at the declared rank tolerance.
-std::vector<complexd> zerosFromMoments(const std::vector<complexd> &moments,
-                                       std::size_t enclosed,
-                                       double rankTolerance) {
-  if (enclosed == 0 || moments.size() < 2 * enclosed) return {};
-  const auto n = static_cast<Eigen::Index>(enclosed);
-  Eigen::MatrixXcd hankel(n, n);
-  Eigen::MatrixXcd shifted(n, n);
-  for (Eigen::Index row = 0; row < n; ++row)
-    for (Eigen::Index column = 0; column < n; ++column) {
-      hankel(row, column) =
-          moments[static_cast<std::size_t>(row + column)];
-      shifted(row, column) =
-          moments[static_cast<std::size_t>(row + column + 1)];
-    }
-
-  // The rank of the Hankel matrix is the number of distinct zeros; a repeated
-  // zero contributes one independent power-sum direction, not two.
-  Eigen::JacobiSVD<Eigen::MatrixXcd> svd(hankel);
-  const Eigen::VectorXd values = svd.singularValues();
-  if (values.size() == 0 || values(0) <= 0.0) return {};
-  Eigen::Index rank = 0;
-  while (rank < values.size() && values(rank) > rankTolerance * values(0))
-    ++rank;
-  if (rank == 0) return {};
-
-  const Eigen::MatrixXcd leading = hankel.topLeftCorner(rank, rank);
-  const Eigen::MatrixXcd leadingShifted = shifted.topLeftCorner(rank, rank);
-  Eigen::FullPivLU<Eigen::MatrixXcd> lu(leading);
-  lu.setThreshold(rankTolerance);
-  if (!lu.isInvertible()) return {};
-  const Eigen::MatrixXcd companion = lu.solve(leadingShifted);
-  Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(
-      companion, /*computeEigenvectors=*/false);
-  if (solver.info() != Eigen::Success) return {};
-  std::vector<complexd> roots;
-  roots.reserve(static_cast<std::size_t>(rank));
-  for (Eigen::Index index = 0; index < rank; ++index)
-    roots.push_back(solver.eigenvalues()(index));
-  return roots;
 }
 
 }  // namespace
@@ -272,366 +259,187 @@ complexd BoundStatePole::determinant(const Eigen::MatrixXcd &A,
 Eigen::MatrixXcd BoundStatePole::responseDerivative(
     const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
     const std::vector<int> &interface, complexd s) {
-  const auto order = static_cast<int>(A.rows());
-  if (A.cols() != A.rows() || M.rows() != A.rows() || M.cols() != A.rows())
-    throw std::invalid_argument(
-        "BoundStatePole::responseDerivative: A and M must be square of the "
-        "same size");
-  const Partition partition =
-      partitionOf(order, interface, "BoundStatePole::responseDerivative");
+  requireSquarePair(A, M, "BoundStatePole::responseDerivative");
+  const Partition partition = partitionOf(
+      static_cast<int>(A.rows()), interface,
+      "BoundStatePole::responseDerivative");
   return responseAtShift(A, M, partition, s, 1e-12).derivative;
-}
-
-complexd BoundStatePole::logarithmicDerivative(
-    const Eigen::MatrixXcd &A, const Eigen::MatrixXcd &M,
-    const std::vector<int> &interface, complexd s) {
-  const auto order = static_cast<int>(A.rows());
-  if (A.cols() != A.rows() || M.rows() != A.rows() || M.cols() != A.rows())
-    throw std::invalid_argument(
-        "BoundStatePole::logarithmicDerivative: A and M must be square of the "
-        "same size");
-  const Partition partition =
-      partitionOf(order, interface, "BoundStatePole::logarithmicDerivative");
-  return logarithmicDerivativeOf(
-      responseAtShift(A, M, partition, s, 1e-12));
 }
 
 BoundStatePoleRead BoundStatePole::poles(const Eigen::MatrixXcd &A,
                                          const Eigen::MatrixXcd &M,
                                          const std::vector<int> &interface,
-                                         complexd centre, double radius,
                                          const BoundStatePoleConfig &cfg) {
-  if (A.cols() != A.rows() || M.rows() != A.rows() || M.cols() != A.rows())
-    throw std::invalid_argument(
-        "BoundStatePole::poles: A and M must be square of the same size");
-  if (!(radius > 0.0))
-    throw std::invalid_argument(
-        "BoundStatePole::poles: the contour radius must be positive");
+  requireSquarePair(A, M, "BoundStatePole::poles");
   const auto order = static_cast<int>(A.rows());
   const Partition partition =
       partitionOf(order, interface, "BoundStatePole::poles");
 
   BoundStatePoleRead read;
-  read.centre = centre;
-  read.radius = radius;
-  read.nodes = cfg.contourNodes;
   if (partition.interface.empty()) {
     nameFailure(read.failedCertificates, "empty-interface");
     return read;
   }
 
-  // 1. the argument principle on the declared contour. The zero count is read
-  //    before any root is claimed, so a contour that does not separate its
-  //    zeros refuses instead of answering.
-  const std::size_t momentCount = 2 * cfg.maxZeros + 1;
-  MomentRead counted =
-      momentsOn(A, M, partition, centre, radius, cfg.contourNodes, momentCount,
-                cfg.rankTolerance);
-  read.interiorResonance = counted.interiorSingular;
-  if (counted.interiorSingular)
-    nameFailure(read.failedCertificates, "interior-resonance");
-  if (!counted.usable) {
-    read.zeroCount = complexd{kNaN, kNaN};
-    read.zeroCountDefect = kNaN;
-    return read;
-  }
-  // The argument principle on a meromorphic function counts zeros minus
-  // poles, and D_C carries a pole at every interior eigenvalue. Section 13.3
-  // continues F_C on a domain that excludes unretained interior poles, so a
-  // contour that encloses one has left that domain and is refused rather than
-  // answered with a count the two contributions have already mixed.
-  read.interiorPoleCount = counted.interiorPoles;
-  const double interiorRounded = std::round(counted.interiorPoles.real());
-  read.interiorPolesEnclosed =
-      interiorRounded > 0.0 ? static_cast<std::size_t>(interiorRounded) : 0;
-  if (read.interiorPolesEnclosed > 0) {
-    nameFailure(read.failedCertificates, "interior-pole-enclosed");
-    return read;
-  }
+  // 1. The block whose spectrum is the spectrum of the pencil, T = M^{-1} A,
+  //    and the scale every decision of the read is measured against.
+  const MetricInverse metric =
+      metricInverse(A, M, cfg.rankTolerance, "the metric block");
+  const Eigen::MatrixXcd &T = metric.product;
+  read.scale = largestSingularValue(T);
+  const double threshold = cfg.rankTolerance * read.scale;
 
-  read.zeroCount = counted.moments[0];
-  const double rounded = std::round(read.zeroCount.real());
-  read.zeroCountDefect =
-      std::abs(read.zeroCount - complexd{rounded, 0.0});
-  if (read.zeroCountDefect > cfg.zeroCountTolerance) {
-    nameFailure(read.failedCertificates, "nonintegral-zero-count");
-    return read;
-  }
-  if (rounded <= 0.0) {
-    read.zeros = 0;
-    nameFailure(read.failedCertificates, "no-zero-enclosed");
-    return read;
-  }
-  if (rounded > static_cast<double>(cfg.maxZeros)) {
-    nameFailure(read.failedCertificates, "too-many-zeros");
-    return read;
-  }
-  read.zeros = static_cast<std::size_t>(rounded);
-
-  // 2. the distinct zeros from the moments, mapped back out of the scaled
-  //    shifted variable the moments were taken in.
-  std::vector<complexd> roots =
-      zerosFromMoments(counted.moments, read.zeros, cfg.rankTolerance);
-  if (roots.empty()) {
-    nameFailure(read.failedCertificates, "roots-not-separated");
-    return read;
-  }
-  for (complexd &root : roots) root = centre + radius * root;
-
-  // 3. each root's multiplicity, on a small contour that encloses it alone.
-  auto localRadiusFor = [&](std::size_t index) {
-    double nearest = std::numeric_limits<double>::infinity();
-    for (std::size_t other = 0; other < roots.size(); ++other)
-      if (other != index)
-        nearest = std::min(nearest, std::abs(roots[other] - roots[index]));
-    const double reference = std::isfinite(nearest) ? nearest : radius;
-    return cfg.localRadiusFraction * reference;
-  };
-
-  // 3. each root's multiplicity and local mean, on a small contour that
-  //    encloses it alone: the argument principle there gives the number of
-  //    zeros m_0 the disc holds and the first moment m_1, so m_1 / m_0 is the
-  //    mean of those zeros. Both are well-conditioned contour integrals, so
-  //    the local read does not inherit the ill-conditioning of the Hankel
-  //    pencil on a tight cluster.
-  std::vector<double> localRadius(roots.size(), 0.0);
-  for (std::size_t index = 0; index < roots.size(); ++index)
-    localRadius[index] = localRadiusFor(index);
-  std::vector<std::size_t> multiplicity(roots.size(), 0);
-  std::vector<complexd> localMean = roots;
-  for (std::size_t index = 0; index < roots.size(); ++index) {
-    const double local = localRadius[index];
-    if (!(local > 0.0)) continue;
-    const MomentRead around = momentsOn(A, M, partition, roots[index], local,
-                                        cfg.contourNodes, 1, cfg.rankTolerance);
-    if (!around.usable) continue;
-    const double count = std::round(around.moments[0].real());
-    if (count < 1.0 ||
-        std::abs(around.moments[0] - complexd{count, 0.0}) >
-            cfg.zeroCountTolerance)
-      continue;
-    multiplicity[index] = static_cast<std::size_t>(count);
-    localMean[index] = roots[index] + local * around.moments[1] / count;
-  }
-
-  // 4. the refinement. A zero of multiplicity one is refined by Newton on
-  //    D_C through the logarithmic derivative, started at its local mean and
-  //    confined to its local disc: an iterate that leaves the disc has left
-  //    the region the argument principle certified to hold exactly one zero,
-  //    so the refinement is refused by name and the local mean is kept. A
-  //    zero of higher multiplicity is reported as the local mean of its
-  //    cluster, which is the zero itself when it is exactly multiple and the
-  //    centroid of the enclosed zeros when it is a cluster the quadrature
-  //    does not resolve; Newton is not run on it, because Newton with a
-  //    multiplicity-scaled step overshoots a split cluster.
-  std::vector<double> lastStep(roots.size(), kNaN);
-  for (std::size_t index = 0; index < roots.size(); ++index) {
-    if (multiplicity[index] == 0) continue;
-    const complexd start = localMean[index];
-    roots[index] = start;
-    if (multiplicity[index] > 1) continue;
-    complexd point = start;
-    bool left = false;
-    for (int step = 0; step < cfg.maxNewtonSteps; ++step) {
-      const ResponseAtShift shift =
-          responseAtShift(A, M, partition, point, cfg.rankTolerance);
-      const complexd slope = logarithmicDerivativeOf(shift);
-      if (!std::isfinite(slope.real()) || !std::isfinite(slope.imag())) {
-        // D_C'/D_C is not finite at a zero of D_C: the point is the zero to
-        // rounding, and the Newton step there is zero.
-        if (!shift.interiorSingular) lastStep[index] = 0.0;
-        break;
-      }
-      if (std::abs(slope) == 0.0) break;
-      const complexd correction = 1.0 / slope;
-      const complexd next = point - correction;
-      if (std::abs(next - start) >= localRadius[index]) {
-        left = true;
-        break;
-      }
-      point = next;
-      lastStep[index] = std::abs(correction);
-      if (lastStep[index] <= cfg.newtonTolerance * radius) break;
-    }
-    if (left) {
-      nameFailure(read.failedCertificates, "newton-left-local-contour");
-      lastStep[index] = kNaN;
-      continue;
-    }
-    roots[index] = point;
-  }
-
-  // The three reads must agree: every moment-method root must hold a zero on
-  // its own small contour, the local counts must add up to the
-  // argument-principle count on the declared contour, and every reported
-  // zero must lie inside that contour. A root that fails the first or the
-  // last is not reported; each disagreement is named.
+  // 2. The eigenvalues of the pencil, clustered at the declared tolerance, and
+  //    those of the interior pencil, which are the poles of the response and
+  //    the points its domain excludes.
+  const ClusteredSpectrum full =
+      clusteredSpectrum(T, threshold, true, "the block");
+  const Eigen::MatrixXcd AII = block(A, partition.interior, partition.interior);
+  const Eigen::MatrixXcd MII = block(M, partition.interior, partition.interior);
+  const MetricInverse interiorMetric = metricInverse(
+      AII, MII, cfg.rankTolerance, "the interior block of the metric");
+  const ClusteredSpectrum interior = clusteredSpectrum(
+      interiorMetric.product, threshold, false, "the interior block");
   {
-    std::vector<complexd> keptRoots;
-    std::vector<std::size_t> keptMultiplicity;
-    std::vector<double> keptStep;
-    std::vector<double> keptRadius;
-    std::size_t total = 0;
-    for (std::size_t index = 0; index < roots.size(); ++index) {
-      if (multiplicity[index] == 0) {
-        nameFailure(read.failedCertificates, "moment-root-without-zero");
-        continue;
-      }
-      total += multiplicity[index];
-      if (!(std::abs(roots[index] - centre) < radius)) {
-        nameFailure(read.failedCertificates, "pole-outside-contour");
-        continue;
-      }
-      keptRoots.push_back(roots[index]);
-      keptMultiplicity.push_back(multiplicity[index]);
-      keptStep.push_back(lastStep[index]);
-      keptRadius.push_back(localRadius[index]);
+    std::vector<std::pair<complexd, std::size_t>> listed;
+    for (const auto &cluster : interior.clusters)
+      listed.emplace_back(clusterValue(interior, cluster), cluster.size());
+    std::sort(listed.begin(), listed.end(), [](const auto &a, const auto &b) {
+      return ascendingByParts(a.first, b.first);
+    });
+    for (const auto &[value, count] : listed) {
+      read.interiorPoles.push_back(value);
+      read.interiorMultiplicity.push_back(count);
     }
-    if (total != read.zeros)
-      nameFailure(read.failedCertificates, "multiplicity-count-mismatch");
-    roots = std::move(keptRoots);
-    multiplicity = std::move(keptMultiplicity);
-    lastStep = std::move(keptStep);
-    localRadius = std::move(keptRadius);
   }
 
-  // 5. the reported quantities at each refined root, read on one small
-  //    contour that encloses the root alone.
-  //
-  //    D_C and its derivative at the root are taken as Taylor coefficients of
-  //    the contour rather than as values at the point:
-  //    D_C(s_C) = (2 pi i)^-1 * contour integral of D_C(s)/(s - s_C) ds and
-  //    D_C'(s_C) = (2 pi i)^-1 * contour integral of D_C(s)/(s - s_C)^2 ds.
-  //    Both are exact identities for a function holomorphic on the disc, and
-  //    both are well conditioned, whereas D_C' evaluated as (D_C'/D_C) * D_C
-  //    at the root is the product of a pole and a zero and loses every digit.
-  //
-  //    The residue of the supported resolvent is the contour average of
-  //    F_C(s)^-1 on the same circle. A multiple root keeps its whole residue
-  //    matrix; nothing is reduced to a single number.
-  read.poles = roots;
-  read.multiplicity = multiplicity;
-  read.newtonStep = lastStep;
+  // 3. The clusters that are zeros of D_C: those no interior eigenvalue meets.
+  //    A cluster an interior eigenvalue meets lies outside the domain the
+  //    response is continued on and is named rather than reported.
+  struct Cluster {
+    complexd value{0.0, 0.0};
+    std::vector<std::size_t> members{};
+  };
+  std::vector<Cluster> reported;
+  for (const auto &members : full.clusters) {
+    bool meetsInterior = false;
+    for (const std::size_t member : members)
+      for (const complexd &pole : interior.eigenvalues)
+        if (std::abs(full.eigenvalues[member] - pole) <= threshold)
+          meetsInterior = true;
+    if (meetsInterior) {
+      nameFailure(read.failedCertificates, "eigenvalue-at-interior-pole");
+      continue;
+    }
+    reported.push_back(Cluster{clusterValue(full, members), members});
+  }
+  std::sort(reported.begin(), reported.end(),
+            [](const Cluster &a, const Cluster &b) {
+              return ascendingByParts(a.value, b.value);
+            });
+
+  // 4. Each pole: its spectral projector from the reordered Schur form, the
+  //    Jordan structure of its Schur block, the residual of its invariant
+  //    subspace and the residue of the supported resolvent.
   const auto interfaceOrder =
       static_cast<Eigen::Index>(partition.interface.size());
-  for (std::size_t index = 0; index < roots.size(); ++index) {
-    const double local = localRadius[index];
-    Eigen::MatrixXcd accumulated =
-        Eigen::MatrixXcd::Zero(interfaceOrder, interfaceOrder);
-    complexd valueAtRoot{0.0, 0.0};
-    complexd derivativeAtRoot{0.0, 0.0};
-    bool usable = local > 0.0;
-    if (usable) {
-      const auto contour = circle(roots[index], local, cfg.contourNodes);
-      for (const ContourNode &node : contour) {
-        const ResponseAtShift shift =
-            responseAtShift(A, M, partition, node.point, cfg.rankTolerance);
-        if (shift.interiorSingular) {
-          usable = false;
-          break;
-        }
-        Eigen::FullPivLU<Eigen::MatrixXcd> lu(shift.response);
-        lu.setThreshold(cfg.rankTolerance);
-        if (!lu.isInvertible()) {
-          usable = false;
-          break;
-        }
-        const complexd determinantHere = lu.determinant();
-        valueAtRoot += determinantHere;
-        derivativeAtRoot += determinantHere / node.offset;
-        accumulated += lu.solve(Eigen::MatrixXcd::Identity(
-                            interfaceOrder, interfaceOrder)) *
-                       node.offset;
+  for (const Cluster &cluster : reported) {
+    const auto size = static_cast<Eigen::Index>(cluster.members.size());
+    std::vector<bool> flagged(full.eigenvalues.size(), false);
+    for (const std::size_t member : cluster.members) flagged[member] = true;
+    const chainhodge::RieszProjectorRead riesz =
+        chainhodge::rieszProjector(full.schur, flagged);
+    const Eigen::MatrixXcd &V = riesz.right;
+    const Eigen::MatrixXcd U11 = V.adjoint() * T * V;
+
+    read.poles.push_back(cluster.value);
+    read.multiplicity.push_back(cluster.members.size());
+    read.clusterSpread.push_back(clusterDiameter(full, cluster.members));
+    read.simple.push_back(cluster.members.size() == 1);
+    read.subspaceResidual.push_back((T * V - V * U11).norm());
+
+    // The nilpotent part N = U11 - mu I, scaled by the block's largest
+    // singular value so that its powers are compared with the declared
+    // tolerance on one footing; a zero block has a zero nilpotent part and
+    // nothing to scale. With r_j the rank of N^j at the tolerance (r_0 the
+    // size of the cluster), the number of Jordan blocks of size at least j
+    // is r_{j-1} - r_j, so the number of blocks of size exactly j is
+    // (r_{j-1} - r_j) - (r_j - r_{j+1}). The ranks of the powers of a
+    // nilpotent matrix reach zero within its size and their differences do
+    // not increase; a rank sequence read at the tolerance that fails either
+    // is not the rank sequence of a nilpotent matrix, and the block sizes are
+    // then unmeasured and named rather than reported as a list that does not
+    // sum to the multiplicity.
+    Eigen::MatrixXcd nilpotent =
+        U11 - cluster.value * Eigen::MatrixXcd::Identity(size, size);
+    if (read.scale > 0.0) nilpotent /= read.scale;
+    std::vector<std::size_t> ranks{static_cast<std::size_t>(size)};
+    Eigen::MatrixXcd power = Eigen::MatrixXcd::Identity(size, size);
+    for (Eigen::Index exponent = 1; exponent <= size; ++exponent) {
+      power = (power * nilpotent).eval();
+      ranks.push_back(rankAbove(power, cfg.rankTolerance));
+      if (ranks.back() == 0) break;
+    }
+    bool nilpotentSequence = ranks.back() == 0;
+    for (std::size_t j = 1; j + 1 < ranks.size(); ++j)
+      if (ranks[j] > ranks[j - 1] ||
+          ranks[j - 1] - ranks[j] < ranks[j] - ranks[j + 1])
+        nilpotentSequence = false;
+    std::vector<std::size_t> blocks;
+    if (nilpotentSequence) {
+      for (std::size_t j = 1; j < ranks.size(); ++j) {
+        const std::size_t atLeastJ = ranks[j - 1] - ranks[j];
+        const std::size_t atLeastNext =
+            j + 1 < ranks.size() ? ranks[j] - ranks[j + 1] : 0;
+        for (std::size_t count = atLeastNext; count < atLeastJ; ++count)
+          blocks.push_back(j);
       }
-    }
-
-    std::vector<complexd> flat;
-    if (usable) {
-      const auto nodes = static_cast<double>(cfg.contourNodes);
-      valueAtRoot /= nodes;
-      derivativeAtRoot /= nodes;
-      accumulated /= nodes;
-      read.determinantAtPole.push_back(valueAtRoot);
-      read.derivativeAtPole.push_back(derivativeAtRoot);
-      flat.reserve(static_cast<std::size_t>(interfaceOrder * interfaceOrder));
-      for (Eigen::Index row = 0; row < interfaceOrder; ++row)
-        for (Eigen::Index column = 0; column < interfaceOrder; ++column)
-          flat.push_back(accumulated(row, column));
-      read.residueNorm.push_back(accumulated.norm());
-      Eigen::JacobiSVD<Eigen::MatrixXcd> svd(accumulated);
-      const Eigen::VectorXd values = svd.singularValues();
-      std::size_t rank = 0;
-      if (values.size() > 0 && values(0) > 0.0)
-        while (rank < static_cast<std::size_t>(values.size()) &&
-               values(static_cast<Eigen::Index>(rank)) >
-                   cfg.rankTolerance * values(0))
-          ++rank;
-      read.residueRank.push_back(rank);
+      std::sort(blocks.begin(), blocks.end(), std::greater<>());
     } else {
-      read.determinantAtPole.push_back(complexd{kNaN, kNaN});
-      read.derivativeAtPole.push_back(complexd{kNaN, kNaN});
-      read.residueNorm.push_back(kNaN);
-      read.residueRank.push_back(0);
+      nameFailure(read.failedCertificates, "jordan-structure-unresolved");
     }
+    read.geometricMultiplicity.push_back(ranks[0] - ranks[1]);
+    read.jordanBlocks.push_back(std::move(blocks));
+
+    // The residue of F_C^{-1}: minus the interface block of Pi M^{-1}.
+    const Eigen::MatrixXcd product = riesz.projector * metric.inverse;
+    Eigen::MatrixXcd residue(interfaceOrder, interfaceOrder);
+    for (Eigen::Index row = 0; row < interfaceOrder; ++row)
+      for (Eigen::Index column = 0; column < interfaceOrder; ++column)
+        residue(row, column) =
+            -product(partition.interface[static_cast<std::size_t>(row)],
+                     partition.interface[static_cast<std::size_t>(column)]);
+    std::vector<complexd> flat;
+    flat.reserve(static_cast<std::size_t>(interfaceOrder * interfaceOrder));
+    for (Eigen::Index row = 0; row < interfaceOrder; ++row)
+      for (Eigen::Index column = 0; column < interfaceOrder; ++column)
+        flat.push_back(residue(row, column));
     read.residue.push_back(std::move(flat));
-
-    // The simple isolated zero of Section 13.3 is "D_C(s_C) = 0 and
-    // D_C'(s_C) != 0", which for a zero of a holomorphic function is exactly
-    // the statement that its algebraic multiplicity is one. The multiplicity
-    // is read by the argument principle, which needs no determinant evaluated
-    // where the determinant vanishes, and the Taylor derivative is reported
-    // beside it.
-    const complexd derivative = read.derivativeAtPole.back();
-    read.simple.push_back(multiplicity[index] == 1 &&
-                          std::isfinite(derivative.real()) &&
-                          std::isfinite(derivative.imag()) &&
-                          std::abs(derivative) > 0.0);
-
-    double nearest = std::numeric_limits<double>::infinity();
-    for (std::size_t other = 0; other < roots.size(); ++other)
-      if (other != index)
-        nearest = std::min(nearest, std::abs(roots[other] - roots[index]));
-    read.separation.push_back(nearest);
+    read.residueNorm.push_back(residue.norm());
+    read.residueRank.push_back(
+        rankAbove(residue, cfg.rankTolerance * largestSingularValue(residue)));
 
     if (cfg.freeThreshold.has_value())
-      read.bindingShift.push_back(roots[index] - *cfg.freeThreshold);
+      read.bindingShift.push_back(cluster.value - *cfg.freeThreshold);
   }
 
-  // 7. the refinement continuation: the same search at a second node count,
-  //    with each root matched to its nearest partner.
-  if (cfg.refinementNodes > 0 && cfg.refinementNodes != cfg.contourNodes) {
-    const MomentRead refined =
-        momentsOn(A, M, partition, centre, radius, cfg.refinementNodes,
-                  momentCount, cfg.rankTolerance);
-    std::vector<complexd> refinedRoots;
-    if (refined.usable)
-      refinedRoots =
-          zerosFromMoments(refined.moments, read.zeros, cfg.rankTolerance);
-    for (complexd &root : refinedRoots) root = centre + radius * root;
-    for (std::size_t index = 0; index < roots.size(); ++index) {
-      complexd best{kNaN, kNaN};
-      double bestDistance = std::numeric_limits<double>::infinity();
-      for (const complexd &candidate : refinedRoots) {
-        const double distance = std::abs(candidate - roots[index]);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = candidate;
-        }
-      }
-      read.continuedPole.push_back(best);
-      read.continuationMovement.push_back(
-          std::isfinite(bestDistance) ? bestDistance : kNaN);
-    }
+  // 5. The separation of each pole from the nearest other reported pole.
+  for (std::size_t index = 0; index < read.poles.size(); ++index) {
+    double nearest = std::numeric_limits<double>::infinity();
+    for (std::size_t other = 0; other < read.poles.size(); ++other)
+      if (other != index)
+        nearest = std::min(nearest,
+                           std::abs(read.poles[other] - read.poles[index]));
+    read.separation.push_back(nearest);
   }
   return read;
 }
 
 BoundStatePoleRead BoundStatePole::clusterPoles(
     const AssembledPencil &assembled, int k,
-    const std::vector<int> &clusterCells, complexd centre, double radius,
-    const BoundStatePoleConfig &cfg) {
+    const std::vector<int> &clusterCells, const BoundStatePoleConfig &cfg) {
   const chainhodge::Pencil pencil = PencilLayer::pencil(assembled, k);
-  return poles(pencil.A, pencil.B, clusterCells, centre, radius, cfg);
+  return poles(pencil.A, pencil.B, clusterCells, cfg);
 }
 
 }  // namespace tessera::cobordism
