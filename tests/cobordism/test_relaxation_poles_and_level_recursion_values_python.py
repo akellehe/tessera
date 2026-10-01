@@ -347,17 +347,27 @@ def test_the_tick_zero_partition_is_the_recorded_one(tick_zero):
     """The Section 15 box on the run's level reproduces the record: the
     partition of the nine edges into [2, 5, 7], [0, 1, 4], [3], [6], [8] at
     resolution 1, persistence [5, 5, 1, 1, 1] over the five resolutions,
-    isolation gaps 6.562976567802366 and 3.4753767999083234 and 1, 1, 1,
-    five accepted rank-1 bands and a zero determinant residual."""
+    five accepted rank-1 bands and a zero determinant residual.
+
+    The isolation gap of a band is the distance between its selected
+    eigenvalue and the nearest excluded eigenvalue of the component's block:
+    13.125953135604732 and 6.950753599816647 for the two three-edge
+    components (the recorded selection circle of each sits halfway between
+    the two, at radius 6.562976567802366 and 3.4753767999083234, so the gap
+    is twice that radius). The three single-edge components select their
+    only eigenvalue and exclude nothing, so their gaps are infinite and the
+    record says so."""
     config, _, _, _, base = tick_zero
     level = R.recursion_turn(base["operator"], config)
     record = R.level_record(level)
     assert record["partition"] == [[2, 5, 7], [0, 1, 4], [3], [6], [8]]
     assert record["selected_resolution"] == 1.0
     assert record["component_persistence"] == [5.0, 5.0, 1.0, 1.0, 1.0]
-    np.testing.assert_allclose(record["isolation_gaps"],
-                               [6.562976567802366, 3.4753767999083234,
-                                1.0, 1.0, 1.0], rtol=1e-12)
+    np.testing.assert_allclose(record["isolation_gaps"][:2],
+                               [13.125953135604732, 6.950753599816647],
+                               rtol=1e-12)
+    assert record["isolation_gaps"][2:] == [math.inf] * 3
+    assert record["encloses_everything"] == [False, False, True, True, True]
     assert record["band_ranks"] == [1] * 5
     assert record["bands_accepted"] == [True] * 5
     assert record["determinant_residual"] == 0.0

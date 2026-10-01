@@ -3783,8 +3783,10 @@ are RETAINED as explicit stalk coordinates, never regularized away). Band:
 the exact Feshbach-Schur pencil F_B(lambda) = L_BB - lambda I -
 L_BI (L_II - lambda I)^{-1} L_IB over caller-supplied windows with the exact
 determinant factorization det(L - lambda) = det(L_II - lambda) det F_B(lambda),
-honest algebraic (det winding) vs geometric (dim ker F_B) multiplicities, and
-a certified Craig-Bampton/AMLS linear surrogate. The next level is the
+algebraic (the eigenvalues of L inside a declared disc, counted from the
+Schur forms of L and L_II, the interior count reported separately) vs
+geometric (dim ker F_B) multiplicities, and a certified Craig-Bampton/AMLS
+linear surrogate. The next level is the
 abstract labeled sum of retained fibers with embedding J and Gram G = J^dag W J
 (one declared policy per run), an operator-valued response network, and a
 cellular-sheaf realization emitted ONLY when restriction maps reproduce the
@@ -3895,13 +3897,17 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
 
   py::class_<RecursiveQuotient::MultiplicityRead>(recursiveQuotient,
       "MultiplicityRead",
-      "Honest multiplicity report: algebraic = winding of det F_B plus the "
-      "separately-reported interior winding; geometric = dim ker F_B(lambda). "
-      "They agree only in the self-adjoint/semisimple setting.")
+      "Multiplicity report at a candidate eigenvalue: algebraic = the number "
+      "of eigenvalues of L inside the declared counting disc, counted with "
+      "multiplicity from the complex Schur form of L; interiorWinding = the "
+      "number of eigenvalues of the interior block L_II inside it, reported "
+      "separately; responseWinding = their difference, the winding number of "
+      "det F_B about the circle; geometric = dim ker F_B(lambda). Algebraic "
+      "and geometric agree only in the self-adjoint/semisimple setting.")
       .def_readonly("lam", &RecursiveQuotient::MultiplicityRead::lambda)
       .def_readonly("contourRadius",
-                    &RecursiveQuotient::MultiplicityRead::contourRadius)
-      .def_readonly("nodes", &RecursiveQuotient::MultiplicityRead::nodes)
+                    &RecursiveQuotient::MultiplicityRead::contourRadius,
+                    "The radius of the counting disc, the declared selection.")
       .def_readonly("responseWinding",
                     &RecursiveQuotient::MultiplicityRead::responseWinding)
       .def_readonly("interiorWinding",
@@ -3910,8 +3916,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("geometric", &RecursiveQuotient::MultiplicityRead::geometric)
       .def_readonly("semisimple",
                     &RecursiveQuotient::MultiplicityRead::semisimple)
-      .def_readonly("phaseStepMargin",
-                    &RecursiveQuotient::MultiplicityRead::phaseStepMargin)
+      .def_readonly("isolationGap",
+                    &RecursiveQuotient::MultiplicityRead::isolationGap,
+                    "The distance from the circle to the nearest eigenvalue of "
+                    "L or of L_II, inside or outside.")
+      .def_readonly("decompositionResidual",
+                    &RecursiveQuotient::MultiplicityRead::decompositionResidual,
+                    "The largest relative backward error of the Schur "
+                    "decompositions the counts were read from.")
       .def_readonly("certificate",
                     &RecursiveQuotient::MultiplicityRead::certificate);
 
@@ -4279,10 +4291,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "window, with resonance retention + compatibility checks and the "
            "determinant-factorization residual below the dense crossover.")
       .def("multiplicity", &RecursiveQuotient::multiplicity, py::arg("lam"),
-           py::arg("radius"), py::arg("nodes") = 64,
-           "Algebraic multiplicity from the unwrapped det-phase windings "
-           "(response + interior, reported separately), geometric from "
-           "dim ker F_B(lambda); node count doubles until stable.")
+           py::arg("radius"),
+           "The algebraic multiplicity inside the disc of the given radius "
+           "about lam: the eigenvalues of L in the disc, counted with "
+           "multiplicity from the Schur form of L, with the interior block's "
+           "count reported separately; the geometric multiplicity is "
+           "dim ker F_B(lam). Whether an eigenvalue is inside is decided at the "
+           "rank tolerance, and a circle through an eigenvalue is refused by "
+           "name.")
       .def("craigBampton",
            py::overload_cast<double, double, double, double>(
                &RecursiveQuotient::craigBampton, py::const_),
@@ -6111,11 +6127,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "The cylinder, its two ends and the boundary checks.");
 
   py::enum_<RecursionBandSelection>(m, "RecursionBandSelection",
-      "How the closed contour of a response vertex is fixed. LowestModes "
-      "derives it from a declared band rank and the declared occupation "
-      "order, which is a rule for writing a contour down and never a "
-      "substitute for one; DeclaredContours takes a centre and a radius per "
-      "component and sorts nothing at all.")
+      "How the band of a response vertex, the set of eigenvalues of its block "
+      "whose invariant subspace is the fiber, is selected. The contour is "
+      "recorded as the selection, as a centre and a radius, and the projector "
+      "onto the band is formed exactly from the block's Schur form. "
+      "LowestModes derives the selection from a declared band rank and the "
+      "declared occupation order; DeclaredContours takes a centre and a radius "
+      "per component and sorts nothing at all.")
       .value("LowestModes", RecursionBandSelection::LowestModes)
       .value("DeclaredContours", RecursionBandSelection::DeclaredContours);
 
@@ -6126,11 +6144,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("band_rank", &RecursionBandDeclaration::bandRank,
                      "r_v, the number of eigenvalues each contour encloses "
                      "under LowestModes.")
-      .def_readwrite("order", &RecursionBandDeclaration::order)
-      .def_readwrite("contour_nodes", &RecursionBandDeclaration::contourNodes,
-                     "The quadrature nodes on each contour. The projector is "
-                     "the contour integral of the resolvent, evaluated by the "
-                     "trapezoidal rule on the circle.")
+      .def_readwrite("order", &RecursionBandDeclaration::order,
+                     "Which eigenvalues the band rank counts under "
+                     "LowestModes: ascending real part (then imaginary part) "
+                     "or ascending modulus (then real, then imaginary part), "
+                     "every key compared at the declared tolerance.")
       .def_readwrite("contour_centres",
                      &RecursionBandDeclaration::contourCentres)
       .def_readwrite("contour_radii", &RecursionBandDeclaration::contourRadii);
@@ -6157,29 +6175,61 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "re-derives the whole chain at whatever lambda it is "
                      "asked for.")
       .def_readwrite("bands", &LevelRecursionDeclaration::bands)
-      .def_readwrite("tolerance", &LevelRecursionDeclaration::tolerance)
+      .def_readwrite("tolerance", &LevelRecursionDeclaration::tolerance,
+                     "The relative tolerance the certificates of every level "
+                     "hold against and the rank decisions of the band reads "
+                     "are made at.")
       .def_readwrite("dense_crossover",
                      &LevelRecursionDeclaration::denseCrossover);
 
   py::class_<RecursionBandRead>(m, "RecursionBandRead",
-      "One certified fiber E_v = Ran P_v and the contour that produced it.")
+      "One certified fiber E_v = Ran P_v, the selection that named its band, "
+      "and the certificates of the exact projector. P_v is the spectral "
+      "projector onto the invariant subspace of the selected eigenvalues, "
+      "formed from the complex Schur form of the component's block: the "
+      "selected eigenvalues are reordered to the leading block, the Sylvester "
+      "equation for the invariant subspace is solved, and P_v = Phi_v "
+      "PhiTilde_v^T with Phi_v the leading Schur vectors. For a diagonalizable "
+      "block this is V_B (V^-1)_B over the selected eigenvalues. A selection "
+      "that encloses every eigenvalue has the identity as its projector and "
+      "the canonical basis as both frames, exactly.")
       .def(py::init<>())
       .def_readwrite("component", &RecursionBandRead::component)
-      .def_readwrite("rank", &RecursionBandRead::rank)
-      .def_readwrite("contour_centre", &RecursionBandRead::contourCentre)
-      .def_readwrite("contour_radius", &RecursionBandRead::contourRadius)
-      .def_readwrite("contour_nodes", &RecursionBandRead::contourNodes)
+      .def_readwrite("rank", &RecursionBandRead::rank,
+                     "r_v, the number of selected eigenvalues counted with "
+                     "multiplicity, and the rank of the projector.")
+      .def_readwrite("contour_centre", &RecursionBandRead::contourCentre,
+                     "The centre of the recorded selection: the mean of the "
+                     "selected eigenvalues under LowestModes, the declared "
+                     "centre under DeclaredContours.")
+      .def_readwrite("contour_radius", &RecursionBandRead::contourRadius,
+                     "The radius of the recorded selection: halfway between "
+                     "the farthest selected and the nearest excluded "
+                     "eigenvalue under LowestModes, infinite when nothing is "
+                     "excluded; the declared radius under DeclaredContours.")
+      .def_readwrite("encloses_everything",
+                     &RecursionBandRead::enclosesEverything,
+                     "Whether the selection excludes no eigenvalue of the "
+                     "block, so that the fiber is the whole of the component.")
       .def_readwrite("eigenvalues", &RecursionBandRead::eigenvalues,
-                     "The eigenvalues of the component's block the contour "
+                     "The eigenvalues of the component's block the selection "
                      "encloses.")
       .def_readwrite("isolation_gap", &RecursionBandRead::isolationGap,
-                     "The distance from the contour to the nearest eigenvalue "
-                     "of the block, inside or outside.")
+                     "The smallest distance between a selected and an excluded "
+                     "eigenvalue of the block; infinite when nothing is "
+                     "excluded. A selection separating two eigenvalues equal "
+                     "at the declared tolerance is refused by name.")
       .def_readwrite("projector_idempotency",
-                     &RecursionBandRead::projectorIdempotency)
+                     &RecursionBandRead::projectorIdempotency,
+                     "||P_v^2 - P_v||_F / ||P_v||_F, the rounding residual of "
+                     "the exact projector's idempotency.")
       .def_readwrite("pairing_defect", &RecursionBandRead::pairingDefect,
                      "||PhiTilde^T Phi - I||, the bilinear pairing of the two "
                      "frames.")
+      .def_readwrite("invariant_subspace_residual",
+                     &RecursionBandRead::invariantSubspaceResidual,
+                     "||h_v Phi_v - Phi_v (PhiTilde_v^T h_v Phi_v)||_F / "
+                     "||h_v||_F, the residual of the invariant subspace.")
       .def_readwrite("frame", &RecursionBandRead::frame,
                      "Phi_v over the level's coordinates, flat row-major.")
       .def_readwrite("left_frame", &RecursionBandRead::leftFrame,
@@ -6248,10 +6298,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "with the energy dependence kept exact.\n\n"
       "Every scale runs the whitepaper's box: the partition is discovered over "
       "a declared sweep of modularity resolutions, each component's fiber is "
-      "the range of the Riesz projector of its own block over its own contour, "
-      "the next level's response pencil is the exact Feshbach map of the one "
-      "below, and the fibers are summed into the labeled sum with its bilinear "
-      "overlap carried exactly.\n\n"
+      "the range of the exact Riesz projector of its own block onto the band "
+      "its declared selection names, the next level's response pencil is the "
+      "exact Feshbach map of the one below, and the fibers are summed into "
+      "the labeled sum with its bilinear overlap carried exactly.\n\n"
       "R_l is a function of lambda and never a matrix frozen at one value of "
       "it: response_pencil re-derives the whole chain from the microscopic "
       "pencil A - lambda M, applying each level's declared partition in turn "
@@ -6259,8 +6309,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "the spectral parameter is already inside the matrix being eliminated. "
       "The step is exact by the determinant factorization det R_l = det(R_l)_II "
       "det R_{l+1}, so every level's spectrum is reproduced from the level "
-      "below it. Nothing is linearized, and no square root, polar projection "
-      "or eigenvalue ordering enters the recursion.")
+      "below it. Nothing is linearized, and no square root or polar "
+      "projection enters the recursion.")
+      .def_static("read_band", &LevelRecursion::readBand, py::arg("block"),
+                  py::arg("order"), py::arg("bands"), py::arg("component"),
+                  py::arg("tolerance"),
+                  "The exact band read of one block, flat row-major of the "
+                  "given order: the selection the declaration names for the "
+                  "component, the Riesz projector onto the invariant subspace "
+                  "of the selected eigenvalues from the block's complex Schur "
+                  "form, its frames over the block's own coordinates, and its "
+                  "certificates. Rank decisions are made at the tolerance, and "
+                  "a selection that names no invariant subspace is refused by "
+                  "name.")
       .def_static("overPencil", &LevelRecursion::overPencil, py::arg("pencil"),
                   py::arg("metric"), py::arg("dimension"),
                   py::arg("declaration"),

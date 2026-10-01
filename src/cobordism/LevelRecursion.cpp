@@ -4,6 +4,7 @@
 #include "cobordism/LevelRecursion.h"
 
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,7 @@
 #include <string>
 #include <utility>
 
-#include "chainhodge/RieszBand.h"
+#include "chainhodge/RieszProjector.h"
 #include "cobordism/HodgeLaplacian.h"
 #include "spacetime/Spacetime.h"
 
@@ -45,6 +46,56 @@ std::vector<complexd> toFlat(const Eigen::MatrixXcd &matrix) {
 bool ascendingSpectrum(const complexd &a, const complexd &b) {
   if (a.real() != b.real()) return a.real() < b.real();
   return a.imag() < b.imag();
+}
+
+std::string describe(const complexd &value) {
+  return "(" + std::to_string(value.real()) + ", " +
+         std::to_string(value.imag()) + ")";
+}
+
+// The keys of the declared occupation order, in the order they are compared:
+// real then imaginary part, or modulus then real then imaginary part.
+double orderKey(const complexd &value, OccupationOrder order,
+                std::size_t level) {
+  if (order == OccupationOrder::AscendingRealPart)
+    return level == 0 ? value.real() : value.imag();
+  if (level == 0) return std::abs(value);
+  return level == 1 ? value.real() : value.imag();
+}
+
+// The declared order of a spectrum with every key compared at the resolution:
+// the indices are sorted by the key of this level, split into runs whose
+// consecutive keys differ by at most the resolution, and each run is ordered
+// by the next key. A run at the last key is one eigenvalue with multiplicity
+// and keeps the order the exact keys give it.
+void orderAtResolution(const Eigen::VectorXcd &values, OccupationOrder order,
+                       double resolution, std::vector<int> indices,
+                       std::size_t level, std::vector<int> &ordered) {
+  const std::size_t keyCount =
+      order == OccupationOrder::AscendingRealPart ? 2 : 3;
+  if (level == keyCount || indices.size() <= 1) {
+    ordered.insert(ordered.end(), indices.begin(), indices.end());
+    return;
+  }
+  std::stable_sort(indices.begin(), indices.end(), [&](int a, int b) {
+    return orderKey(values(a), order, level) < orderKey(values(b), order, level);
+  });
+  std::size_t start = 0;
+  for (std::size_t index = 1; index <= indices.size(); ++index) {
+    const bool runEnds =
+        index == indices.size() ||
+        orderKey(values(indices[index]), order, level) -
+                orderKey(values(indices[index - 1]), order, level) >
+            resolution;
+    if (!runEnds) continue;
+    orderAtResolution(values, order, resolution,
+                      std::vector<int>(indices.begin() +
+                                           static_cast<std::ptrdiff_t>(start),
+                                       indices.begin() +
+                                           static_cast<std::ptrdiff_t>(index)),
+                      level + 1, ordered);
+    start = index;
+  }
 }
 
 }  // namespace
@@ -79,11 +130,6 @@ LevelRecursion LevelRecursion::overPencil(
     throw std::invalid_argument(
         "LevelRecursion::overPencil: a band of rank zero encloses no "
         "eigenvalue and is no fiber");
-  if (declaration.bands.contourNodes < 3)
-    throw std::invalid_argument(
-        "LevelRecursion::overPencil: a contour needs at least three quadrature "
-        "nodes; got " +
-        std::to_string(declaration.bands.contourNodes));
   if (dimension >= declaration.denseCrossover)
     throw std::length_error(
         "LevelRecursion::overPencil: the microscopic level has " +
@@ -225,6 +271,178 @@ double LevelRecursion::determinantFactorizationResidual(
   return std::abs(whole - factored) / scale;
 }
 
+RecursionBandRead LevelRecursion::readBand(
+    const std::vector<complexd> &block, int order,
+    const RecursionBandDeclaration &bands, std::size_t component,
+    double tolerance) {
+  if (order <= 0)
+    throw std::invalid_argument(
+        "LevelRecursion::readBand: the block of component " +
+        std::to_string(component) + " must have at least one coordinate; got " +
+        std::to_string(order));
+  const auto n = static_cast<std::size_t>(order);
+  if (block.size() != n * n)
+    throw std::invalid_argument(
+        "LevelRecursion::readBand: the block of component " +
+        std::to_string(component) + " must be a square matrix over its " +
+        std::to_string(order) + " coordinates; got " +
+        std::to_string(block.size()) + " entries");
+  if (bands.bandRank == 0)
+    throw std::invalid_argument(
+        "LevelRecursion::readBand: a band of rank zero encloses no eigenvalue "
+        "and is no fiber");
+  const bool declared =
+      bands.selection == RecursionBandSelection::DeclaredContours;
+  if (declared && (component >= bands.contourCentres.size() ||
+                   component >= bands.contourRadii.size()))
+    throw std::invalid_argument(
+        "LevelRecursion::readBand: the declared contours name " +
+        std::to_string(bands.contourCentres.size()) + " centres and " +
+        std::to_string(bands.contourRadii.size()) +
+        " radii, none of them for component " + std::to_string(component));
+
+  const Eigen::MatrixXcd matrix = toMatrix(block, n, n);
+  const Eigen::ComplexSchur<Eigen::MatrixXcd> schur(matrix, true);
+  if (schur.info() != Eigen::Success)
+    throw std::runtime_error(
+        "LevelRecursion::readBand: the complex Schur decomposition of the "
+        "block of component " +
+        std::to_string(component) + " did not converge");
+  const Eigen::VectorXcd values = schur.matrixT().diagonal();
+  // Two eigenvalues, or two order keys, at most this far apart are equal at
+  // the declared tolerance: the rounding of the decomposition is relative to
+  // the block's norm, not to the eigenvalues' own magnitudes.
+  const double scale = matrix.norm();
+  const double resolution = tolerance * scale;
+
+  RecursionBandRead band;
+  band.component = static_cast<int>(component);
+  std::vector<bool> selected(n, false);
+  if (!declared) {
+    std::vector<int> initial(n);
+    std::iota(initial.begin(), initial.end(), 0);
+    std::vector<int> ordered;
+    orderAtResolution(values, bands.order, resolution, initial, 0, ordered);
+    const std::size_t rank = std::min(bands.bandRank, n);
+    complexd centre{0.0, 0.0};
+    for (std::size_t index = 0; index < rank; ++index) {
+      selected[static_cast<std::size_t>(ordered[index])] = true;
+      band.eigenvalues.push_back(values(ordered[index]));
+      centre += values(ordered[index]);
+    }
+    centre /= static_cast<double>(rank);
+    double inside = 0.0;
+    for (std::size_t index = 0; index < rank; ++index)
+      inside = std::max(inside, std::abs(values(ordered[index]) - centre));
+    double outside = std::numeric_limits<double>::infinity();
+    for (std::size_t index = rank; index < n; ++index)
+      outside = std::min(outside, std::abs(values(ordered[index]) - centre));
+    band.contourCentre = centre;
+    band.enclosesEverything = rank == n;
+    band.contourRadius = band.enclosesEverything
+                             ? std::numeric_limits<double>::infinity()
+                             : 0.5 * (inside + outside);
+  } else {
+    const complexd centre = bands.contourCentres[component];
+    const double radius = bands.contourRadii[component];
+    for (std::size_t index = 0; index < n; ++index) {
+      const double distance = std::abs(values(index) - centre);
+      if (std::abs(distance - radius) <= tolerance * std::max(distance, radius))
+        throw std::invalid_argument(
+            "LevelRecursion::readBand: the declared contour of component " +
+            std::to_string(component) + ", centre " + describe(centre) +
+            " and radius " + std::to_string(radius) +
+            ", passes through the eigenvalue " + describe(values(index)) +
+            " at the declared tolerance " + std::to_string(tolerance) +
+            ", so whether that eigenvalue is in the band is not decided");
+      selected[index] = distance < radius;
+    }
+    for (std::size_t index = 0; index < n; ++index)
+      if (selected[index]) band.eigenvalues.push_back(values(index));
+    if (band.eigenvalues.empty())
+      throw std::invalid_argument(
+          "LevelRecursion::readBand: the declared contour of component " +
+          std::to_string(component) + ", centre " + describe(centre) +
+          " and radius " + std::to_string(radius) +
+          ", encloses no eigenvalue of its block, so it selects no fiber");
+    std::stable_sort(band.eigenvalues.begin(), band.eigenvalues.end(),
+                     ascendingSpectrum);
+    band.contourCentre = centre;
+    band.contourRadius = radius;
+    band.enclosesEverything = band.eigenvalues.size() == n;
+  }
+  band.rank = band.eigenvalues.size();
+
+  // The isolation of the band: the closest a selected eigenvalue comes to an
+  // excluded one. A selection that separates two eigenvalues equal at the
+  // declared tolerance names no invariant subspace and is refused.
+  band.isolationGap = std::numeric_limits<double>::infinity();
+  complexd closestSelected{0.0, 0.0};
+  complexd closestExcluded{0.0, 0.0};
+  for (std::size_t inside = 0; inside < n; ++inside) {
+    if (!selected[inside]) continue;
+    for (std::size_t outside = 0; outside < n; ++outside) {
+      if (selected[outside]) continue;
+      const double distance = std::abs(values(inside) - values(outside));
+      if (distance < band.isolationGap) {
+        band.isolationGap = distance;
+        closestSelected = values(inside);
+        closestExcluded = values(outside);
+      }
+    }
+  }
+  if (band.isolationGap <= resolution)
+    throw std::invalid_argument(
+        "LevelRecursion::readBand: the selection of component " +
+        std::to_string(component) + " separates the eigenvalues " +
+        describe(closestSelected) + " and " + describe(closestExcluded) +
+        ", at distance " + std::to_string(band.isolationGap) +
+        ", which are equal at the declared tolerance " +
+        std::to_string(tolerance) + " relative to the block's norm " +
+        std::to_string(scale) +
+        "; the invariant subspace of a part of a multiple eigenvalue is not "
+        "defined");
+
+  // The exact projector and its frames. A selection that encloses every
+  // eigenvalue has the whole coordinate space as its invariant subspace: the
+  // projector is the identity and the canonical basis is its frame, with
+  // nothing to reorder and no Sylvester equation to solve. Every other
+  // selection is read from the reordered Schur form.
+  const auto columns = static_cast<Eigen::Index>(band.rank);
+  Eigen::MatrixXcd projector;
+  Eigen::MatrixXcd right;
+  Eigen::MatrixXcd left;
+  if (band.enclosesEverything) {
+    projector = Eigen::MatrixXcd::Identity(columns, columns);
+    right = projector;
+    left = projector;
+  } else {
+    const chainhodge::RieszProjectorRead riesz =
+        chainhodge::rieszProjector(schur, selected);
+    projector = riesz.projector;
+    right = riesz.right;
+    left = riesz.left.transpose();
+  }
+  band.projectorIdempotency =
+      (projector * projector - projector).norm() / projector.norm();
+  band.pairingDefect =
+      (left * right - Eigen::MatrixXcd::Identity(columns, columns)).norm();
+  const Eigen::MatrixXcd reduced = left * matrix * right;
+  band.invariantSubspaceResidual =
+      scale > 0.0 ? (matrix * right - right * reduced).norm() / scale : 0.0;
+  band.frame = toFlat(right);
+  band.leftFrame = toFlat(left);
+
+  const double residual =
+      std::max({band.projectorIdempotency, band.pairingDefect,
+                band.invariantSubspaceResidual});
+  band.accepted = residual <= tolerance;
+  band.certificate = Certificate::certifiedNumerical(
+      CertificateDomain::BandWindow, CertificateRegime::NonNormal, residual,
+      Certificate::kUnmeasured, tolerance);
+  return band;
+}
+
 void LevelRecursion::advanceTo(std::size_t levels) {
   while (levels_.size() < levels) advance();
 }
@@ -276,8 +494,9 @@ void LevelRecursion::advance() {
         " radii, but the partition of this level has " +
         std::to_string(read.partition.size()) + " components");
 
-  // The certified fiber of every response vertex: the range of the Riesz
-  // projector of its own block over its own contour.
+  // The certified fiber of every response vertex: the range of the exact
+  // Riesz projector of its own block onto the band the declaration selects,
+  // read over the block's coordinates and embedded into the level's.
   double worstFiberResidual = 0.0;
   bool everyFiberAccepted = true;
   for (std::size_t component = 0; component < read.partition.size();
@@ -291,111 +510,14 @@ void LevelRecursion::advance() {
             operatorMatrix(coordinates[static_cast<std::size_t>(row)],
                            coordinates[static_cast<std::size_t>(column)]);
 
-    RecursionBandRead band;
-    band.component = static_cast<int>(component);
-    band.contourNodes = declaration_.bands.contourNodes;
-
-    const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(block);
-    std::vector<complexd> values;
-    if (solver.info() == Eigen::Success)
-      for (Eigen::Index index = 0; index < solver.eigenvalues().size(); ++index)
-        values.push_back(solver.eigenvalues()(index));
-
-    std::size_t rank = 0;
-    if (declaration_.bands.selection == RecursionBandSelection::LowestModes) {
-      std::vector<complexd> ordered = values;
-      const bool byRealPart =
-          declaration_.bands.order == OccupationOrder::AscendingRealPart;
-      std::stable_sort(ordered.begin(), ordered.end(),
-                       [byRealPart](const complexd &a, const complexd &b) {
-                         if (byRealPart) return ascendingSpectrum(a, b);
-                         return std::abs(a) < std::abs(b);
-                       });
-      rank = std::min(declaration_.bands.bandRank, ordered.size());
-      complexd centre{0.0, 0.0};
-      for (std::size_t index = 0; index < rank; ++index)
-        centre += ordered[index];
-      if (rank > 0) centre /= static_cast<double>(rank);
-      double inside = 0.0;
-      for (std::size_t index = 0; index < rank; ++index)
-        inside = std::max(inside, std::abs(ordered[index] - centre));
-      double outside = std::numeric_limits<double>::infinity();
-      for (std::size_t index = rank; index < ordered.size(); ++index)
-        outside = std::min(outside, std::abs(ordered[index] - centre));
-      band.contourCentre = centre;
-      band.contourRadius = std::isfinite(outside)
-                               ? 0.5 * (inside + outside)
-                               : inside + std::max(1.0, inside);
-      band.eigenvalues.assign(ordered.begin(),
-                              ordered.begin() +
-                                  static_cast<std::ptrdiff_t>(rank));
-    } else {
-      band.contourCentre = declaration_.bands.contourCentres[component];
-      band.contourRadius = declaration_.bands.contourRadii[component];
-      for (const complexd &value : values)
-        if (std::abs(value - band.contourCentre) < band.contourRadius)
-          band.eigenvalues.push_back(value);
-      std::stable_sort(band.eigenvalues.begin(), band.eigenvalues.end(),
-                       ascendingSpectrum);
-      rank = band.eigenvalues.size();
-    }
-
-    band.isolationGap = values.empty()
-                            ? std::numeric_limits<double>::quiet_NaN()
-                            : std::numeric_limits<double>::infinity();
-    for (const complexd &value : values)
-      band.isolationGap = std::min(
-          band.isolationGap,
-          std::abs(std::abs(value - band.contourCentre) - band.contourRadius));
-
-    const chainhodge::Contour contour = chainhodge::Contour::circle(
-        band.contourCentre, band.contourRadius, band.contourNodes);
-    Eigen::MatrixXcd projector = Eigen::MatrixXcd::Zero(blockOrder, blockOrder);
-    const Eigen::MatrixXcd identity =
-        Eigen::MatrixXcd::Identity(blockOrder, blockOrder);
-    bool resolventFailed = false;
-    for (std::size_t node = 0; node < contour.nodeCount(); ++node) {
-      const Eigen::FullPivLU<Eigen::MatrixXcd> factor(
-          contour.nodes[node] * identity - block);
-      if (!factor.isInvertible()) {
-        resolventFailed = true;
-        break;
-      }
-      projector += contour.weights[node] * factor.solve(identity);
-    }
-
-    band.rank = rank;
-    if (resolventFailed || rank == 0) {
-      band.projectorIdempotency = std::numeric_limits<double>::infinity();
-      band.pairingDefect = std::numeric_limits<double>::infinity();
-      band.accepted = false;
-      band.certificate = Certificate::certifiedNumerical(
-          CertificateDomain::BandWindow, CertificateRegime::NonNormal,
-          std::numeric_limits<double>::infinity(),
-          Certificate::kUnmeasured, declaration_.tolerance);
-      everyFiberAccepted = false;
-      read.bands.push_back(std::move(band));
-      continue;
-    }
-
-    band.projectorIdempotency =
-        (projector * projector - projector).norm() /
-        std::max(1.0, projector.norm());
-
-    const Eigen::JacobiSVD<Eigen::MatrixXcd> decomposition(
-        projector, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    const auto columns = std::min<Eigen::Index>(
-        static_cast<Eigen::Index>(rank), decomposition.matrixU().cols());
-    const Eigen::MatrixXcd right = decomposition.matrixU().leftCols(columns);
-    // The left frame is the one that pairs with the right frame by the
-    // transpose to the identity and reproduces the projector; the
-    // least-squares solve that computes a basis of the range is a means, and
-    // the bilinear identity it is held to is the statement.
-    const Eigen::MatrixXcd left =
-        (right.adjoint() * right).ldlt().solve(right.adjoint() * projector);
-    band.pairingDefect =
-        (left * right - Eigen::MatrixXcd::Identity(columns, columns)).norm();
-
+    RecursionBandRead band =
+        readBand(toFlat(block), static_cast<int>(blockOrder),
+                 declaration_.bands, component, declaration_.tolerance);
+    const auto columns = static_cast<Eigen::Index>(band.rank);
+    const Eigen::MatrixXcd right =
+        toMatrix(band.frame, static_cast<std::size_t>(blockOrder), band.rank);
+    const Eigen::MatrixXcd left = toMatrix(
+        band.leftFrame, band.rank, static_cast<std::size_t>(blockOrder));
     Eigen::MatrixXcd embedded =
         Eigen::MatrixXcd::Zero(static_cast<Eigen::Index>(width), columns);
     Eigen::MatrixXcd dualEmbedded =
@@ -408,17 +530,9 @@ void LevelRecursion::advance() {
     }
     band.frame = toFlat(embedded);
     band.leftFrame = toFlat(dualEmbedded);
-    band.rank = static_cast<std::size_t>(columns);
 
-    const double residual =
-        std::max(band.projectorIdempotency, band.pairingDefect);
-    band.accepted = residual <= declaration_.tolerance &&
-                    band.isolationGap > 0.0 &&
-                    static_cast<std::size_t>(columns) == rank;
-    band.certificate = Certificate::certifiedNumerical(
-        CertificateDomain::BandWindow, CertificateRegime::NonNormal, residual,
-        Certificate::kUnmeasured, declaration_.tolerance);
-    worstFiberResidual = std::max(worstFiberResidual, residual);
+    worstFiberResidual =
+        std::max(worstFiberResidual, band.certificate.residual());
     if (!band.accepted) everyFiberAccepted = false;
     read.bands.push_back(std::move(band));
   }

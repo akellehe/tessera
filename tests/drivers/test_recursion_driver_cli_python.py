@@ -14,6 +14,7 @@ read carries two doublet contents with different poles, so that the text, the
 tick's summary and the frame can be checked to report both.
 """
 import json
+import math
 
 import numpy as np
 import pytest
@@ -140,7 +141,7 @@ def test_the_declared_config():
     assert config["contents"] == [[1, 1, 1]]
     assert config["kappas"] == [1.0] and config["betas"] == [1.0]
     assert config["sheets"] == R.SHEETS == 3
-    assert config["contour_nodes"] == R.DECLARED_CONTOUR_NODES
+    assert "contour_nodes" not in config
     assert config["max_cells"] == 1
     assert R.points_path("a/run.json") == "a/run.points.jsonl"
     assert all(config[key] == bp.DECLARED_TOLERANCE == 1e-15
@@ -433,27 +434,45 @@ def test_the_dirac_string_is_integer_and_the_flux_is_two_pi(count):
 
 
 def test_the_riesz_band_selects_the_lowest_modes():
-    """The two lowest eigenvalues are enclosed by the circle about their mean
-    whose radius is halfway to the nearest excluded one; the trapezoidal
-    projector converges geometrically, as (radius / distance)^nodes, which is
-    about 5e-12 for the excluded eigenvalue 3 at 64 nodes."""
+    """The two lowest eigenvalues, 1 and 2, are the band; the selection is
+    recorded as the circle about their mean 1.5 whose radius 1 is halfway
+    between the farthest selected (distance 0.5) and the nearest excluded
+    eigenvalue 3 (distance 1.5); the isolation gap is the distance 1 between
+    2 and 3. The projector is exact: the block is diagonal, so its Schur form
+    is the block itself, the reordering is a permutation, and the projector
+    is diag(0, 1, 1, 0) to the declared tolerance 1e-15."""
     block = np.diag([3.0, 1.0, 2.0, 9.0]).astype(complex)
-    band = R.riesz_band(block, 2, 64)
-    np.testing.assert_allclose(sorted(v.real for v in band["eigenvalues"]),
-                               [1.0, 2.0])
-    np.testing.assert_allclose(band["projector"],
-                               np.diag([0, 1, 1, 0]).astype(complex),
-                               atol=1e-10)
-    np.testing.assert_allclose(band["left"] @ band["frame"], np.eye(2),
-                               atol=1e-12)
-    assert band["radius"] == pytest.approx(1.0)
-    assert band["centre"] == pytest.approx(1.5)
+    band = R.riesz_band(block, 2, 1e-15)
+    assert [v.real for v in band["eigenvalues"]] == [1.0, 2.0]
+    assert np.abs(band["projector"]
+                  - np.diag([0, 1, 1, 0]).astype(complex)).max() < 1e-15
+    assert np.abs(band["left"] @ band["frame"] - np.eye(2)).max() < 1e-15
+    assert band["radius"] == 1.0
+    assert band["centre"] == 1.5
+    assert band["isolation_gap"] == 1.0
+    assert not band["encloses_everything"]
+    assert band["projector_idempotency"] < 1e-15
+    assert band["invariant_subspace_residual"] < 1e-15
+    assert band["accepted"]
 
 
 def test_a_band_of_the_whole_block_has_nothing_excluded():
-    band = R.riesz_band(np.diag([1.0, 3.0]).astype(complex), 5, 64)
+    """A band rank above the block's order selects every eigenvalue: the
+    projector is the identity, and with no excluded eigenvalue to measure to
+    the recorded radius and the isolation gap are infinite."""
+    band = R.riesz_band(np.diag([1.0, 3.0]).astype(complex), 5, 1e-15)
     assert band["frame"].shape == (2, 2)
-    np.testing.assert_allclose(band["projector"], np.eye(2), atol=1e-12)
+    assert np.abs(band["projector"] - np.eye(2)).max() < 1e-15
+    assert band["encloses_everything"]
+    assert band["radius"] == math.inf and band["isolation_gap"] == math.inf
+
+
+def test_a_band_that_splits_a_multiple_eigenvalue_is_refused():
+    """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal at
+    the declared tolerance and no rank-one part of their eigenspace is an
+    invariant subspace of its own."""
+    with pytest.raises(ValueError, match="equal at the declared tolerance"):
+        R.riesz_band(np.diag([1.0, 1.0, 3.0]).astype(complex), 1, 1e-15)
 
 
 def test_the_fibers_of_a_partition_are_supported_on_their_images():
@@ -465,7 +484,9 @@ def test_the_fibers_of_a_partition_are_supported_on_their_images():
     base = R.base_operator(cells, z, links)
     partition = [list(p) for p in R.recursion_turn(base["operator"],
                                                    config).partition]
-    fibers = R.fibers_for_partition(base, partition, 1, 64)
+    fibers = R.fibers_for_partition(
+        base, partition, 1,
+        bp.declared_tolerance(config, "recursion_tolerance"))
     assert len(fibers["frames"]) == len(partition) == len(fibers["reads"])
     for image, dual_image, frame, left, part in zip(
             fibers["images"], fibers["dual_images"], fibers["frames"],
