@@ -343,6 +343,37 @@ def declared_tolerances(tolerances=None):
                 for key, value in (tolerances or {}).items()})
     return out
 
+
+#: The limits a user may declare on a mean-field solve, by config key: the
+#: type of each and what it ends. None is declared by default, and then
+#: nothing ends a solve but its own stops, however long it runs.
+#: `add_limit_arguments` offers each as ``--<key, with dashes>``,
+#: `default_config` records each, and the recursion driver carries each into
+#: every cell's config. A declared limit that is reached ends the solve by
+#: name ("a declared limit was reached"). None changes an equation.
+LIMITS = (
+    ("iteration_limit", int,
+     "the number of accepted Newton steps after which a solve stops"),
+    ("halving_limit", int,
+     "the number of halvings of one Newton step after which a solve stops"),
+    ("time_limit_seconds", float,
+     "the wall-clock time of one solve, in seconds, after which it stops"),
+)
+
+
+def declared_limits(limits=None):
+    """Every limit of `LIMITS` by key: None (not declared) unless ``limits``
+    (a mapping by key) declares it. A key outside `LIMITS` is an error."""
+    out = {key: None for key, _, _ in LIMITS}
+    unknown = sorted(set(limits or {}) - set(out))
+    if unknown:
+        raise ValueError("unknown limits %s; the ones that can be declared "
+                         "are %s" % (unknown, [key for key, _, _ in LIMITS]))
+    kinds = {key: kind for key, kind, _ in LIMITS}
+    out.update({key: None if value is None else kinds[key](value)
+                for key, value in (limits or {}).items()})
+    return out
+
 #: Where a content's bands are chosen: once, at the declared host, by the
 #: ascending real part, and then followed by continuation (WP v17 line 151: a
 #: band is selected by a contour, not by sorting real parts); or re-selected
@@ -521,6 +552,10 @@ def relaxation_declaration(config):
     # the monopole sectors a caller holds as boundary data
     # (`tessera.drivers.recursion`); none by default
     geometry.held_sectors = list(config.get("held_sectors") or [])
+    # the limits the user declared (`LIMITS`); none by default, and then no
+    # count and no time ends the solve
+    for key, _, _ in LIMITS:
+        setattr(geometry, key, config.get(key))
     return geometry
 
 
@@ -3516,11 +3551,13 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    band_selection=DECLARED_BAND_SELECTION,
                    fiber_moments=DECLARED_FIBER_MOMENTS,
                    fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None,
-                   trace_terms=False):
+                   trace_terms=False, limits=None):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
-    by key; the others are recorded at `DECLARED_TOLERANCE`."""
+    by key; the others are recorded at `DECLARED_TOLERANCE`. ``limits``
+    declares any of `LIMITS` by key; the others are recorded as None, not
+    declared."""
     return {
         "mode": "controlled synthesis",
         "contents": [list(c) for c in (selected_contents or contents())],
@@ -3533,6 +3570,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         **declared_tolerances(tolerances),
+        **declared_limits(limits),
         "band_selection": band_selection,
         "fiber_moments": str(fiber_moments),
         "fiber_pinning": fiber_pinning,
@@ -3693,11 +3731,9 @@ STOP_SHORT = {
     "every damped step left the domain of the action": "left the domain",
     "no stationary point in the declared monopole sector":
         "left the sector",
-    "every damped step came within the declared margin of a zero of the "
-    "Villain weight": "Villain zero",
     "the residual is at its floor on the held set": "held floor",
     "the squared lengths overflowed the double": "lengths overflowed",
-    "an outer iteration made no progress": "no progress",
+    "a declared limit was reached": "declared limit",
     "not Kontsevich-Segal allowable": "not KS-allowable",
 }
 #: The largest font size of the callouts; they are set smaller, all to one
@@ -4344,6 +4380,7 @@ def build_parser():
                           "other outputs are unchanged")
     add_mean_field_arguments(run)
     add_tolerance_arguments(run)
+    add_limit_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -4373,6 +4410,22 @@ def add_tolerance_arguments(parser):
 def tolerances_from(args):
     """The parsed tolerance options, by config key (`TOLERANCES`)."""
     return {key: getattr(args, key) for key, _ in TOLERANCES}
+
+
+def add_limit_arguments(parser):
+    """One option per limit a user may declare on a solve (`LIMITS`), for
+    both drivers. None is declared unless the option is given."""
+    for key, kind, meaning in LIMITS:
+        parser.add_argument("--" + key.replace("_", "-"), dest=key,
+                            type=kind, default=None,
+                            help="%s (not declared by default: no count and "
+                                 "no time ends a solve)" % meaning)
+
+
+def limits_from(args):
+    """The parsed limit options, by config key (`LIMITS`); None where the
+    option was not given."""
+    return {key: getattr(args, key) for key, _, _ in LIMITS}
 
 
 def _fiber_moments(text):
@@ -4432,7 +4485,8 @@ def main(argv=None):
                             fiber_moments=args.fiber_moments,
                             fiber_pinning=args.fiber_pinning,
                             tolerances=tolerances_from(args),
-                            trace_terms=args.trace_terms)
+                            trace_terms=args.trace_terms,
+                            limits=limits_from(args))
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None

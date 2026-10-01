@@ -4972,6 +4972,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "held sectors, the residual is at its floor on the held "
       "set: the constrained step cannot reduce it by more than the "
       "tolerance); LengthRunaway (a squared length overflowed the double); "
+      "DeclaredLimit (a limit the user declared was reached: iteration_limit, "
+      "halving_limit or time_limit_seconds; none is declared by default); "
       "Continued (not a stop: a per-iterate trace entry the solve stepped on "
       "from).")
       .value("Converged", RelaxationStop::Converged)
@@ -4980,6 +4982,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("DomainBoundary", RelaxationStop::DomainBoundary)
       .value("HeldFloor", RelaxationStop::HeldFloor)
       .value("LengthRunaway", RelaxationStop::LengthRunaway)
+      .value("DeclaredLimit", RelaxationStop::DeclaredLimit)
       .value("Continued", RelaxationStop::Continued);
 
   m.def("relaxation_stop_name", &relaxationStopName, py::arg("reason"),
@@ -5015,6 +5018,22 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
                      "The residual norm at or below which the solve is "
                      "declared converged.")
+      .def_readwrite("iteration_limit",
+                     &HolomorphicRelaxationDeclaration::iterationLimit,
+                     "The number of accepted Newton steps after which the "
+                     "solve stops, when the user declares one; None by "
+                     "default, and then no count ends a solve.")
+      .def_readwrite("halving_limit",
+                     &HolomorphicRelaxationDeclaration::halvingLimit,
+                     "The number of halvings of one Newton step after which "
+                     "the solve stops, when the user declares one; None by "
+                     "default, and then a step is halved down to the "
+                     "datatype's resolution.")
+      .def_readwrite("time_limit_seconds",
+                     &HolomorphicRelaxationDeclaration::timeLimitSeconds,
+                     "The wall-clock time of the solve, in seconds, after "
+                     "which it stops, when the user declares one; None by "
+                     "default.")
       .def_readwrite("rank_tolerance",
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "

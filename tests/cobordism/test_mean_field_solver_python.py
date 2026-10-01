@@ -61,16 +61,17 @@ FIRST_CELL = (0, 1, 2, 3)
 
 
 def _config(cell, content, selection="continuation",
-            fiber_moments=bp.DECLARED_FIBER_MOMENTS):
+            fiber_moments=bp.DECLARED_FIBER_MOMENTS, limits=None):
     """The configuration `recursion.cell_reads` hands `baryon_poles` for one
     tick-0 host cell (kappa = beta = 1, the Villain term, the cell's four
     faces held, the eigenvalue of every occupied band pinned at the host),
     at the run's declared tolerances, with the declared band selection;
-    ``fiber_moments=0`` pins nothing."""
+    ``fiber_moments=0`` pins nothing, and ``limits`` declares any of
+    `baryon_poles.LIMITS` (none by default)."""
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)],
                                fiber_moments=fiber_moments,
-                               tolerances=RUN.TOLERANCES)
+                               tolerances=RUN.TOLERANCES, limits=limits)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     config["band_selection"] = selection
@@ -426,6 +427,67 @@ def test_a_read_that_stops_short_moves_at_every_iterate_and_says_why():
     text = bp.relaxation_text(record)
     assert "; stopped: no damped step reduced the residual (" in text
     assert "method" not in text
+
+
+# ------------------------------------------- limits the user declares
+
+
+def test_no_limit_is_declared_unless_the_user_declares_one():
+    """A solve carries no number of steps, no number of halvings and no
+    time after which it stops: the three limits of the declaration are None,
+    and the name of the stop a declared one gives exists for that case
+    alone."""
+    declaration = cob.HolomorphicRelaxationDeclaration()
+    assert declaration.iteration_limit is None
+    assert declaration.halving_limit is None
+    assert declaration.time_limit_seconds is None
+    assert cob.relaxation_stop_name(cob.RelaxationStop.DeclaredLimit) == \
+        "a declared limit was reached"
+
+
+def test_a_declared_number_of_steps_ends_the_solve_by_name():
+    """(0123, 003), which converges in six steps, with two steps declared:
+    the solve takes the two and stops, and says that the limit was the
+    user's."""
+    _, _, report, _ = _relax(FIRST_CELL, (0, 0, 3),
+                             limits={"iteration_limit": 2})
+    assert not report.converged
+    assert report.stop_reason == cob.RelaxationStop.DeclaredLimit
+    assert report.iterations == 2
+    assert report.stop_detail.startswith(
+        "the declared limit of 2 accepted steps was reached; the residual "
+        "norm is ")
+    assert bp.relaxation_record(report)["stop_reason"] == \
+        "a declared limit was reached"
+
+
+def test_a_declared_number_of_halvings_ends_the_solve_by_name():
+    """(0123, 300) with no fiber moment pinned and no halving allowed: the
+    first Newton step that is not accepted at full length ends the solve,
+    and the detail says what refused that step."""
+    _, _, report, _ = _relax(FIRST_CELL, (3, 0, 0), fiber_moments=0,
+                             limits={"halving_limit": 0})
+    assert not report.converged
+    assert report.stop_reason == cob.RelaxationStop.DeclaredLimit
+    assert report.stop_detail.startswith(
+        "the declared limit of 0 halvings of a Newton step was reached: the "
+        "smallest trial step, 2^-0 of the Newton step")
+    last = report.steps[-1].newton
+    assert not last.accepted
+    assert (last.residual_test_dampings + last.sector_guard_dampings
+            + last.domain_guard_dampings) == 1
+
+
+def test_a_declared_time_ends_the_solve_by_name():
+    """A time limit of zero seconds is reached before the first step."""
+    _, _, report, _ = _relax(FIRST_CELL, (0, 0, 3),
+                             limits={"time_limit_seconds": 0.0})
+    assert not report.converged
+    assert report.stop_reason == cob.RelaxationStop.DeclaredLimit
+    assert report.iterations == 0
+    assert report.stop_detail.startswith(
+        "the declared time limit of 0 seconds was reached after 0 accepted "
+        "steps")
 
 
 # ------------------------------------------------ the constrained step

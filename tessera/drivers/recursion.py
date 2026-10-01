@@ -883,7 +883,8 @@ def cell_reads(cells, z, links, config):
         # changes an equation)
         for key in ("band_selection", "fiber_moments", "fiber_pinning",
                     "kappa_role", "trace_terms") + tuple(
-                        key for key, _ in bp.TOLERANCES):
+                        key for key, _ in bp.TOLERANCES) + tuple(
+                            key for key, _, _ in bp.LIMITS):
             if key in config:
                 cell_config[key] = config[key]
         number = monopole_numbers([c], links)[0]
@@ -1292,7 +1293,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
-                   pachner_depth=DECLARED_PACHNER_DEPTH):
+                   pachner_depth=DECLARED_PACHNER_DEPTH, limits=None):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1300,7 +1301,9 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     to become a response vertex; by default every declared resolution, the
     stated range of scales of WP §5. ``tolerances`` sets any of
     `baryon_poles.TOLERANCES` by key; every tolerance is carried into every
-    cell's config."""
+    cell's config. ``limits`` declares any of `baryon_poles.LIMITS` by key
+    (none by default: no count and no time ends a solve); every declared
+    limit is carried into every solve of the run."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                elimination=elimination,
@@ -1308,7 +1311,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                band_selection=band_selection,
                                fiber_moments=fiber_moments,
                                fiber_pinning=fiber_pinning,
-                               tolerances=tolerances, trace_terms=trace_terms)
+                               tolerances=tolerances, trace_terms=trace_terms,
+                               limits=limits)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1860,6 +1864,7 @@ def build_parser():
                           "the outputs are identical")
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
+    bp.add_limit_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -1879,7 +1884,7 @@ def main(argv=None):
         fiber_pinning=args.fiber_pinning,
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
-        pachner_depth=args.pachner_depth)
+        pachner_depth=args.pachner_depth, limits=bp.limits_from(args))
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)

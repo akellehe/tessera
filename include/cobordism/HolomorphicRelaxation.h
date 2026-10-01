@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,12 @@ namespace tessera::cobordism {
 ///   finite, beyond the largest value the datatype holds (about 1.8e308).
 ///   Nothing short of that stops a solve whose lengths grow; the equations
 ///   decide.
+/// * `DeclaredLimit` — a limit the user declared was reached: a number of
+///   accepted steps, a number of halvings of one Newton step, or a wall-clock
+///   time (`HolomorphicRelaxationDeclaration::iterationLimit`,
+///   `halvingLimit`, `timeLimitSeconds`). No limit is declared by default,
+///   and without one this stop does not occur; the detail says which limit it
+///   was and what the solve had reached.
 /// * `Continued` — not a stop: in a per-iterate trace, the solve accepted a
 ///   step from this iterate and went on.
 enum class RelaxationStop {
@@ -61,6 +68,7 @@ enum class RelaxationStop {
   DomainBoundary,
   HeldFloor,
   LengthRunaway,
+  DeclaredLimit,
   Continued
 };
 
@@ -218,6 +226,24 @@ struct HolomorphicRelaxationDeclaration {
   /// declared converged. This is a convergence certificate on the complex
   /// equations, not a functional minimized in their place.
   double tolerance = 1e-10;
+
+  /// The number of accepted Newton steps after which the solve stops, when
+  /// the user declares one. None by default: nothing then ends a solve but
+  /// its own stops, however many steps it takes. A declared count that is
+  /// reached ends the solve with `RelaxationStop::DeclaredLimit`.
+  std::optional<std::size_t> iterationLimit{};
+
+  /// The number of halvings of one Newton step after which the solve stops,
+  /// when the user declares one. None by default: a step is then halved down
+  /// to the datatype's resolution. A declared count that is reached without
+  /// an accepted trial ends the solve with `RelaxationStop::DeclaredLimit`.
+  std::optional<std::size_t> halvingLimit{};
+
+  /// The wall-clock time of the solve, in seconds, after which it stops, when
+  /// the user declares one; read before every Newton step and every trial
+  /// step. None by default. A declared time that is reached ends the solve
+  /// with `RelaxationStop::DeclaredLimit`.
+  std::optional<double> timeLimitSeconds{};
 
   /// The relative threshold below which a singular value of the Jacobian counts
   /// as zero in the minimum-norm solve of the Newton system: the rank is the
@@ -537,10 +563,12 @@ struct HolomorphicRelaxationReport {
 /// trial step that the declared guards refuse is halved the same way: one that changes a held monopole number, and one
 /// that reaches a point at which the action refuses to evaluate (a zero of
 /// the Villain weight among them). Damping is a globalization and changes no
-/// equation. No number of iterations or of halvings is declared: a solve
-/// ends only when it converges, when no trial step moves it (the shortest
-/// step the datatype resolves included), or when a squared length overflows
-/// the double. When no trial step is accepted the solve stops, and the
+/// equation. No number of iterations or of halvings and no time is imposed:
+/// a solve ends only when it converges, when no trial step moves it (the
+/// shortest step the datatype resolves included), or when a squared length
+/// overflows the double, unless the user declares a limit
+/// (`iterationLimit`, `halvingLimit`, `timeLimitSeconds`), which then ends
+/// it by name. When no trial step is accepted the solve stops, and the
 /// report names the reason from the refusal of the smallest trial step
 /// (`RelaxationStop`); a runaway of the squared lengths also stops it by name.
 ///

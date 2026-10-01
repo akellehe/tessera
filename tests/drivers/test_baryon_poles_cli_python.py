@@ -703,6 +703,33 @@ def test_the_pure_gauge_directions_leave_every_face_holonomy_unchanged():
     np.testing.assert_allclose(after, before, atol=1e-12)
 
 
+def test_a_limit_is_carried_only_when_the_user_declares_it():
+    """The limits a user may declare on a solve (`LIMITS`: a number of
+    accepted steps, a number of halvings of one step, a wall-clock time) are
+    options of the command line that default to None, are recorded in the
+    config, and reach the solve's declaration only when given."""
+    assert [key for key, _, _ in bp.LIMITS] == [
+        "iteration_limit", "halving_limit", "time_limit_seconds"]
+    args = bp.build_parser().parse_args(["run"])
+    assert bp.limits_from(args) == {
+        "iteration_limit": None, "halving_limit": None,
+        "time_limit_seconds": None}
+    args = bp.build_parser().parse_args(
+        ["run", "--iteration-limit", "40", "--halving-limit", "16",
+         "--time-limit-seconds", "2.5"])
+    limits = bp.limits_from(args)
+    assert limits == {"iteration_limit": 40, "halving_limit": 16,
+                      "time_limit_seconds": 2.5}
+    config = bp.default_config([1.0], [1.0], limits=limits)
+    config["held_sectors"] = []
+    geometry = bp.relaxation_declaration(config)
+    assert geometry.iteration_limit == 40
+    assert geometry.halving_limit == 16
+    assert geometry.time_limit_seconds == 2.5
+    with pytest.raises(ValueError, match="unknown limits"):
+        bp.default_config([1.0], [1.0], limits={"newton_iterations": 3})
+
+
 def test_the_fluctuation_couplings_count_and_shape():
     spacetime = bp.build_host()
     lengths = bp.fluctuation_couplings(spacetime, False)
@@ -717,9 +744,11 @@ def test_the_declarations_carry_the_config():
     geometry = bp.relaxation_declaration(config)
     assert geometry.relax_lengths and geometry.relax_links
     assert not geometry.relax_multipliers
-    # a solve ends when it converges or stops by name
+    # a solve ends when it converges or stops by name; no limit is declared
     assert "newton_iterations" not in config
     assert "mean_field_iterations" not in config
+    for key, _, _ in bp.LIMITS:
+        assert config[key] is None and getattr(geometry, key) is None
     assert geometry.tolerance == bp.DECLARED_TOLERANCE == 1e-15
     assert geometry.rank_tolerance == bp.DECLARED_TOLERANCE
     assert "jacobian_radius" not in config

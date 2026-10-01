@@ -4,6 +4,7 @@
 #include "cobordism/HolomorphicRelaxation.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -564,6 +565,8 @@ std::string relaxationStopName(RelaxationStop reason) {
       return "the residual is at its floor on the held set";
     case RelaxationStop::LengthRunaway:
       return "the squared lengths overflowed the double";
+    case RelaxationStop::DeclaredLimit:
+      return "a declared limit was reached";
     case RelaxationStop::Continued:
       return "continued";
   }
@@ -1098,15 +1101,47 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   }
 
   bool stopped = false;
+  // The limits the user declared, if any. The time is measured from here.
+  const auto started = std::chrono::steady_clock::now();
+  const auto timeIsUp = [&]() {
+    return declaration_.timeLimitSeconds &&
+           std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                         started)
+                   .count() >= *declaration_.timeLimitSeconds;
+  };
+  const auto timeLimitText = [&]() {
+    return "the declared time limit of " +
+           threeDigits(*declaration_.timeLimitSeconds) + " seconds";
+  };
   // The loop ends when the residual is at the tolerance, when no trial step
-  // moves the solve, or when a squared length overflows; every exit is a
-  // named stop.
+  // moves the solve, when a squared length overflows, or at a limit the user
+  // declared; every exit is a named stop.
   for (std::size_t iteration = 0;; ++iteration) {
     const auto residual = evaluate(action_);
     const double residualNorm = euclideanNorm(residual);
     report.residualNorm = residualNorm;
     if (residualNorm <= declaration_.tolerance) {
       report.converged = true;
+      break;
+    }
+    if (declaration_.iterationLimit &&
+        iteration >= *declaration_.iterationLimit) {
+      report.stopReason = RelaxationStop::DeclaredLimit;
+      report.stopDetail =
+          "the declared limit of " +
+          std::to_string(*declaration_.iterationLimit) +
+          " accepted steps was reached; the residual norm is " +
+          threeDigits(residualNorm);
+      stopped = true;
+      break;
+    }
+    if (timeIsUp()) {
+      report.stopReason = RelaxationStop::DeclaredLimit;
+      report.stopDetail = timeLimitText() + " was reached after " +
+                          std::to_string(iteration) +
+                          " accepted steps; the residual norm is " +
+                          threeDigits(residualNorm);
+      stopped = true;
       break;
     }
 
@@ -1243,6 +1278,9 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     std::string lastDomainRefusal;
     bool belowResolution = false;
     bool residualUnmoved = false;
+    // Which declared limit ended the halving, if one did.
+    bool halvingLimitReached = false;
+    bool timeLimitReached = false;
     // The last trial each guard refused, counted from one; zero when it
     // refused none.
     std::size_t lastSectorTrial = 0;
@@ -1252,6 +1290,14 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     // variables and leaves every component of the residual the number it was:
     // the shortest step the variables, or the equations, resolve.
     for (;;) {
+      if (declaration_.halvingLimit && trials > *declaration_.halvingLimit) {
+        halvingLimitReached = true;
+        break;
+      }
+      if (trials > 0 && timeIsUp()) {
+        timeLimitReached = true;
+        break;
+      }
       ++trials;
       restoreSnapshot(action_, snapshot);
       // The damped step in the coordinates themselves: the squared length
@@ -1438,6 +1484,34 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
                ? "; the trial steps down to " + reach(lastDomainTrial) +
                      " left the domain of the action"
                : "");
+      if (halvingLimitReached || timeLimitReached) {
+        // A limit the user declared ended the halving before the step's own
+        // end: the stop is the limit's, and the detail says what refused the
+        // last trial that was made.
+        std::string last;
+        switch (lastRefusal) {
+          case Refusal::SectorGuard:
+            last = " changed a held monopole number";
+            break;
+          case Refusal::DomainGuard:
+            last = " left the domain of the action";
+            break;
+          case Refusal::ResidualTest:
+          case Refusal::None:
+            last = " did not reduce the residual norm";
+            break;
+        }
+        report.stopReason = RelaxationStop::DeclaredLimit;
+        report.stopDetail =
+            (halvingLimitReached
+                 ? "the declared limit of " +
+                       std::to_string(*declaration_.halvingLimit) +
+                       " halvings of a Newton step"
+                 : timeLimitText()) +
+            " was reached: " + smallest + last + guards + counts;
+        stopped = true;
+        break;
+      }
       switch (lastRefusal) {
         case Refusal::SectorGuard:
           report.stopReason = RelaxationStop::SectorBoundary;
