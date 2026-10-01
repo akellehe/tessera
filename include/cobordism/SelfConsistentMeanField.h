@@ -677,6 +677,36 @@ class SelfConsistentMeanField {
   [[nodiscard]] HolomorphicRelaxation jointSystem(
       const std::vector<BandReference> &reference = {}) const;
 
+  /// The measurements of one point, the action's current one, with nothing
+  /// moved: the bands read there (followed from \p reference when one is
+  /// given, chosen by the declared order otherwise), the covariance their
+  /// density, the pinned fiber constraints installed with their targets and
+  /// their least-squares multipliers, and the self-consistent force, the
+  /// occupied energy, the bands, the multipliers and the constraints'
+  /// residual there (`SelfConsistentMeanFieldStep`, iteration zero, with no
+  /// Newton record). \p previous is the covariance the change of the
+  /// covariance is measured from; empty leaves the change zero.
+  /// @throws std::invalid_argument as `jointSystem` does.
+  [[nodiscard]] SelfConsistentMeanFieldStep iterate(
+      const std::vector<BandReference> &reference = {},
+      const std::vector<std::complex<double>> &previous = {}) const;
+
+  /// The report of the action's current point, with nothing moved: what
+  /// `iterate` measures there as its one iterate, and the measurements a
+  /// report takes once at its end point (the joint Jacobian's rank decision,
+  /// the Hessian along the Hellmann-Feynman force, the Kontsevich-Segal
+  /// margin, the pinned constraints in the operator's own unit). `converged`
+  /// says whether the force and the constraints' residual are at or below
+  /// the declared tolerance there; the stop is `RelaxationStop::Converged`
+  /// when they are and `RelaxationStop::Continued` when they are not, since
+  /// a read ends no solve. \p startScale is the largest squared-length
+  /// modulus `largestLengthRatio` is taken against; zero takes the point's
+  /// own, so the ratio is one.
+  /// @throws std::invalid_argument as `jointSystem` does.
+  [[nodiscard]] SelfConsistentMeanFieldReport read(
+      const std::vector<BandReference> &reference = {},
+      double startScale = 0.0) const;
+
  private:
   [[nodiscard]] SelfConsistentMeanFieldReport solveJointNewton();
 

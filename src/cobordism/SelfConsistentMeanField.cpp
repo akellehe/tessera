@@ -988,6 +988,54 @@ HolomorphicRelaxation SelfConsistentMeanField::jointSystem(
   return HolomorphicRelaxation(action, newton, rebuild);
 }
 
+SelfConsistentMeanFieldStep SelfConsistentMeanField::iterate(
+    const std::vector<BandReference> &reference,
+    const std::vector<complexd> &previous) const {
+  BandFollower follower(declaration_);
+  JointAction action = action_;
+  if (!reference.empty()) follower.setReference(reference);
+  const BandRead point = follower.read(bandOperatorFlat(action, declaration_));
+  action.setCovariance(point.covariance);
+  (void)installFiberMoments(action, declaration_, point);
+  return measure(0, action, point, point.covariance, previous,
+                 declaration_.geometry);
+}
+
+SelfConsistentMeanFieldReport SelfConsistentMeanField::read(
+    const std::vector<BandReference> &reference, double startScale) const {
+  SelfConsistentMeanFieldReport report;
+  report.bandSelection = declaration_.bandSelection;
+  BandFollower follower(declaration_);
+  JointAction action = action_;
+  if (!reference.empty()) follower.setReference(reference);
+  const BandRead point = follower.read(bandOperatorFlat(action, declaration_));
+  if (reference.empty()) follower.follow(point);
+  action.setCovariance(point.covariance);
+  report.fiberRank = installFiberMoments(action, declaration_, point);
+  report.fiberConstraintForm = declaration_.fiberConstraintForm;
+  std::vector<SelfConsistentMeanFieldStep> steps;
+  steps.push_back(measure(0, action, point, point.covariance, {},
+                          declaration_.geometry));
+  const double momentResidual = steps.back().momentResidualNorm;
+  finishReport(report, std::move(steps), action, declaration_, follower,
+               startScale > 0.0 ? startScale : largestSquaredLengthOf(action));
+  report.iterations = 0;
+  report.converged = report.forceNorm <= declaration_.tolerance &&
+                     momentResidual <= declaration_.tolerance;
+  const bool fiber = declaration_.fiberMoments > 0;
+  report.stopReason = report.converged ? RelaxationStop::Converged
+                                       : RelaxationStop::Continued;
+  report.stopDetail =
+      "the self-consistent force " + threeDigits(report.forceNorm) +
+      (fiber ? " and the pinned moments' residual " +
+                   threeDigits(momentResidual) + " are"
+             : std::string{" is"}) +
+      (report.converged ? " at or below" : " not at or below") +
+      " the tolerance " + threeDigits(declaration_.tolerance) +
+      " at the point read";
+  return report;
+}
+
 SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
   SelfConsistentMeanFieldReport report;
   report.bandSelection = declaration_.bandSelection;

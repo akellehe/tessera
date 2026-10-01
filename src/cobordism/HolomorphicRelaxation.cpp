@@ -415,8 +415,8 @@ std::vector<int> sectorNumbers(const JointAction &action,
   return numbers;
 }
 
-std::vector<double> heldLogModuli(const JointAction &action,
-                                  const SectorGeometry &geometry) {
+std::vector<double> logModuliOf(const JointAction &action,
+                                const SectorGeometry &geometry) {
   std::vector<double> moduli;
   if (geometry.empty) return moduli;
   const auto edges = action.spacetime()->getEdgeList()->toVector();
@@ -451,38 +451,14 @@ struct ConstrainedStep {
   double gap = std::numeric_limits<double>::infinity();
 };
 
-/// The minimum-norm least-squares solution of \f$ Jd=\text{target} \f$ over
-/// the steps that keep the held moduli.
-///
-/// A step \f$ d \f$ keeps them exactly when the real part of its link block
-/// lies in the kernel of the held faces' coboundary, so it is parametrized by
-/// real unknowns: the real and imaginary parts of every length and multiplier
-/// step, the imaginary part (the phase) of every link step, and the
-/// coefficients of the link step's real part on the orthonormal basis
-/// \f$ K \f$ of that kernel. The map from the unknowns to \f$ d \f$ is an
-/// isometry of the real inner product, so the minimum-norm unknowns give the
-/// minimum-norm step. The complex equations are split into their real and
-/// imaginary parts, and the real system is solved from its singular value
-/// decomposition in the minimum-norm sense.
-///
-/// Its rank is decided at the Jacobian's own rank boundary \p cut. For a
-/// unit \f$ y \f$, \f$ \lVert JBy\rVert\ge\sigma_{\min}(J) \f$, so every
-/// singular value of the real system below the Jacobian's smallest retained
-/// singular value comes from a direction of the held set that lies in the
-/// Jacobian's numerical null space, and there are at most twice its nullity
-/// of them. The gauge directions are such directions: they change no face
-/// holonomy, so they lie in the held set, and the Jacobian is singular along
-/// them. The Jacobian's null vector along a gauge direction is exact to
-/// rounding, so along that direction in the held set the real system reads a
-/// singular value at rounding level, far below the Jacobian's physical
-/// spectrum. Cutting at the Jacobian's rank boundary counts it as zero, as
-/// the Jacobian's own rank decision does.
-ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
-                                const Eigen::VectorXcd &target,
-                                const Layout &layout,
-                                const Eigen::MatrixXd &freeModuli,
-                                double cut) {
-  const Eigen::Index n = jacobian.rows();
+/// The map from the real unknowns that parametrize the steps keeping the held
+/// moduli to a step, one column per unknown: the real and imaginary parts of
+/// every length and multiplier step, the imaginary part of every link step,
+/// and the coefficients of the link step's real part on the columns of
+/// \p freeModuli. Its columns are orthonormal in the real inner product.
+Eigen::MatrixXcd heldParametrization(const Layout &layout,
+                                     const Eigen::MatrixXd &freeModuli,
+                                     Eigen::Index n) {
   const complexd one{1.0, 0.0};
   const complexd imaginary{0.0, 1.0};
   std::vector<Eigen::VectorXcd> basis;
@@ -517,6 +493,37 @@ ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
   Eigen::MatrixXcd parametrization(n, unknowns);
   for (Eigen::Index k = 0; k < unknowns; ++k)
     parametrization.col(k) = basis[static_cast<std::size_t>(k)];
+  return parametrization;
+}
+
+/// The minimum-norm least-squares solution of \f$ Jd=\text{target} \f$ over
+/// the steps that keep the held moduli.
+///
+/// A step \f$ d \f$ keeps them exactly when the real part of its link block
+/// lies in the kernel of the held faces' coboundary, so it is parametrized by
+/// real unknowns: the real and imaginary parts of every length and multiplier
+/// step, the imaginary part (the phase) of every link step, and the
+/// coefficients of the link step's real part on the orthonormal basis
+/// \f$ K \f$ of that kernel. The map from the unknowns to \f$ d \f$ is an
+/// isometry of the real inner product, so the minimum-norm unknowns give the
+/// minimum-norm step. The complex equations are split into their real and
+/// imaginary parts, and the real system is solved from its singular value
+/// decomposition in the minimum-norm sense.
+///
+/// Its rank is the number of its singular values above \p rankTolerance
+/// times its largest one, the rule the Jacobian's own rank is decided by. The
+/// gauge directions change no face holonomy, so they lie in the held set, and
+/// the Jacobian is singular along them: the real system has a singular value
+/// at rounding level along each.
+ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
+                                const Eigen::VectorXcd &target,
+                                const Layout &layout,
+                                const Eigen::MatrixXd &freeModuli,
+                                double rankTolerance) {
+  const Eigen::Index n = jacobian.rows();
+  const Eigen::MatrixXcd parametrization =
+      heldParametrization(layout, freeModuli, n);
+  const auto unknowns = parametrization.cols();
   const Eigen::MatrixXcd image = jacobian * parametrization;
   Eigen::MatrixXd system(2 * n, unknowns);
   system.topRows(n) = image.real();
@@ -528,6 +535,8 @@ ConstrainedStep constrainedStep(const Eigen::MatrixXcd &jacobian,
   const Eigen::JacobiSVD<Eigen::MatrixXd> svd(
       system, Eigen::ComputeThinU | Eigen::ComputeThinV);
   const Eigen::VectorXd &singular = svd.singularValues();
+  const double cut =
+      singular.size() > 0 ? rankTolerance * singular(0) : 0.0;
   Eigen::Index rank = 0;
   while (rank < singular.size() && singular(rank) > cut) ++rank;
   Eigen::VectorXd unknown = Eigen::VectorXd::Zero(unknowns);
@@ -976,6 +985,217 @@ std::vector<complexd> HolomorphicRelaxation::residual() const {
   return reducedResidual(working, layout, classes);
 }
 
+/// What a linearization keeps: the Jacobian, its singular value
+/// decomposition, the parametrization of the held set and the decomposition
+/// of the real system over it, and the Newton step's record.
+struct HolomorphicLinearization::Implementation {
+  std::vector<complexd> residual;
+  Eigen::MatrixXcd jacobian;
+  Eigen::MatrixXcd left;
+  Eigen::MatrixXcd right;
+  Eigen::VectorXd singular;
+  Eigen::Index rank = 0;
+  bool constrained = false;
+  /// The map from the real unknowns of the held set to a step.
+  Eigen::MatrixXcd parametrization;
+  Eigen::MatrixXd constrainedLeft;
+  Eigen::MatrixXd constrainedRight;
+  Eigen::VectorXd constrainedSingular;
+  Eigen::Index constrainedRank = 0;
+  HolomorphicNewtonStep newton;
+
+  [[nodiscard]] Eigen::VectorXcd solve(const Eigen::VectorXcd &target) const {
+    const Eigen::Index size = jacobian.cols();
+    if (!constrained) {
+      Eigen::VectorXcd step = Eigen::VectorXcd::Zero(size);
+      if (rank > 0) {
+        Eigen::VectorXcd coefficients = left.leftCols(rank).adjoint() * target;
+        for (Eigen::Index k = 0; k < rank; ++k) coefficients(k) /= singular(k);
+        step = right.leftCols(rank) * coefficients;
+      }
+      return step;
+    }
+    const Eigen::Index n = jacobian.rows();
+    Eigen::VectorXd stacked(2 * n);
+    stacked.head(n) = target.real();
+    stacked.tail(n) = target.imag();
+    Eigen::VectorXd unknown = Eigen::VectorXd::Zero(parametrization.cols());
+    if (constrainedRank > 0) {
+      Eigen::VectorXd coefficients =
+          constrainedLeft.leftCols(constrainedRank).transpose() * stacked;
+      for (Eigen::Index k = 0; k < constrainedRank; ++k)
+        coefficients(k) /= constrainedSingular(k);
+      unknown = constrainedRight.leftCols(constrainedRank) * coefficients;
+    }
+    return parametrization * unknown.cast<complexd>();
+  }
+};
+
+HolomorphicLinearization::HolomorphicLinearization(
+    std::shared_ptr<const Implementation> implementation)
+    : implementation_(std::move(implementation)) {}
+
+std::vector<complexd> HolomorphicLinearization::solve(
+    const std::vector<complexd> &rightHandSide) const {
+  const Eigen::Index rows = implementation_->jacobian.rows();
+  if (static_cast<Eigen::Index>(rightHandSide.size()) != rows)
+    throw std::invalid_argument(
+        "HolomorphicLinearization::solve: the right-hand side has " +
+        std::to_string(rightHandSide.size()) + " entries for " +
+        std::to_string(rows) + " equations");
+  Eigen::VectorXcd target(rows);
+  for (Eigen::Index row = 0; row < rows; ++row)
+    target(row) = rightHandSide[static_cast<std::size_t>(row)];
+  const Eigen::VectorXcd step = implementation_->solve(target);
+  std::vector<complexd> out(static_cast<std::size_t>(step.size()));
+  for (Eigen::Index index = 0; index < step.size(); ++index)
+    out[static_cast<std::size_t>(index)] = step(index);
+  return out;
+}
+
+const HolomorphicNewtonStep &HolomorphicLinearization::newtonStep()
+    const noexcept {
+  return implementation_->newton;
+}
+
+const std::vector<complexd> &HolomorphicLinearization::residual()
+    const noexcept {
+  return implementation_->residual;
+}
+
+HolomorphicLinearization HolomorphicRelaxation::linearization(
+    const std::vector<complexd> &addedResidual,
+    const std::vector<complexd> &addedJacobian) const {
+  const EdgeClasses classes =
+      edgeClassesOf(action_.edgeCount(), declaration_);
+  const Layout layout(classes.count(), action_.constraintCount(),
+                      declaration_);
+  if (!addedResidual.empty() && addedResidual.size() != layout.count)
+    throw std::invalid_argument(
+        "HolomorphicRelaxation::linearization: the added residual has " +
+        std::to_string(addedResidual.size()) + " entries for " +
+        std::to_string(layout.count) + " equations");
+  if (!addedJacobian.empty() &&
+      addedJacobian.size() != layout.count * layout.count)
+    throw std::invalid_argument(
+        "HolomorphicRelaxation::linearization: the added Jacobian has " +
+        std::to_string(addedJacobian.size()) + " entries for a system of " +
+        std::to_string(layout.count) + " equations");
+  auto kept = std::make_shared<HolomorphicLinearization::Implementation>();
+  HolomorphicNewtonStep &out = kept->newton;
+  out.rankTolerance = declaration_.rankTolerance;
+  kept->residual = this->residual();
+  for (std::size_t row = 0; row < addedResidual.size(); ++row)
+    kept->residual[row] += addedResidual[row];
+  out.residualNorm = euclideanNorm(kept->residual);
+  out.step.assign(layout.count, complexd{0.0, 0.0});
+  out.smallestRetainedSingularValue =
+      std::numeric_limits<double>::quiet_NaN();
+  out.rankGap = std::numeric_limits<double>::quiet_NaN();
+  out.constrainedRankGap = std::numeric_limits<double>::quiet_NaN();
+  const auto size = static_cast<Eigen::Index>(layout.count);
+  kept->jacobian = Eigen::MatrixXcd::Zero(size, size);
+  if (layout.count == 0) return HolomorphicLinearization(kept);
+
+  const std::vector<complexd> flat = jacobian();
+  for (Eigen::Index row = 0; row < size; ++row)
+    for (Eigen::Index column = 0; column < size; ++column) {
+      const std::size_t entry = static_cast<std::size_t>(row) * layout.count +
+                                static_cast<std::size_t>(column);
+      kept->jacobian(row, column) =
+          flat[entry] +
+          (addedJacobian.empty() ? complexd{0.0, 0.0} : addedJacobian[entry]);
+    }
+  Eigen::VectorXcd target(size);
+  for (Eigen::Index row = 0; row < size; ++row)
+    target(row) = -kept->residual[static_cast<std::size_t>(row)];
+
+  // Two-sided Jacobi: every singular value accurate to rounding relative to
+  // the largest, which the rank decision reads.
+  const Eigen::JacobiSVD<Eigen::MatrixXcd> svd(
+      kept->jacobian, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  kept->left = svd.matrixU();
+  kept->right = svd.matrixV();
+  kept->singular = svd.singularValues();
+  const Eigen::VectorXd &singular = kept->singular;
+  const double largest = singular.size() > 0 ? singular(0) : 0.0;
+  const double cut = declaration_.rankTolerance * largest;
+  Eigen::Index rank = 0;
+  while (rank < singular.size() && singular(rank) > cut) ++rank;
+  kept->rank = rank;
+  out.jacobianRank = static_cast<std::size_t>(rank);
+  out.largestSingularValue = largest;
+  if (rank > 0) out.smallestRetainedSingularValue = singular(rank - 1);
+  out.largestDiscardedSingularValue =
+      rank < singular.size() ? singular(rank) : 0.0;
+  if (rank > 0)
+    out.rankGap = rank < singular.size()
+                      ? singular(rank - 1) / singular(rank)
+                      : std::numeric_limits<double>::infinity();
+
+  if (layout.links && !declaration_.heldSectors.empty()) {
+    // The steps that keep the held moduli, parametrized by real unknowns
+    // (`constrainedStep`), and the real system over them.
+    const SectorGeometry sectors =
+        resolveSectors(action_, declaration_.heldSectors, classes,
+                       declaration_.rankTolerance);
+    kept->parametrization =
+        heldParametrization(layout, sectors.freeModuli, size);
+    const Eigen::MatrixXcd image = kept->jacobian * kept->parametrization;
+    Eigen::MatrixXd system(2 * size, image.cols());
+    system.topRows(size) = image.real();
+    system.bottomRows(size) = image.imag();
+    const Eigen::JacobiSVD<Eigen::MatrixXd> held(
+        system, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    kept->constrainedLeft = held.matrixU();
+    kept->constrainedRight = held.matrixV();
+    kept->constrainedSingular = held.singularValues();
+    const Eigen::VectorXd &values = kept->constrainedSingular;
+    const double heldCut =
+        values.size() > 0 ? declaration_.rankTolerance * values(0) : 0.0;
+    Eigen::Index heldRank = 0;
+    while (heldRank < values.size() && values(heldRank) > heldCut) ++heldRank;
+    kept->constrainedRank = heldRank;
+    kept->constrained = true;
+    out.constrained = true;
+    out.constrainedRank = static_cast<std::size_t>(heldRank);
+    if (heldRank > 0)
+      out.constrainedRankGap =
+          heldRank < values.size()
+              ? values(heldRank - 1) / values(heldRank)
+              : std::numeric_limits<double>::infinity();
+  }
+  const Eigen::VectorXcd step = kept->solve(target);
+  const double scale = target.norm();
+  out.linearResidual =
+      scale > 0.0 ? (kept->jacobian * step - target).norm() / scale : 0.0;
+  for (Eigen::Index index = 0; index < size; ++index)
+    out.step[static_cast<std::size_t>(index)] = step(index);
+  return HolomorphicLinearization(kept);
+}
+
+HolomorphicNewtonStep HolomorphicRelaxation::newtonStep() const {
+  return linearization().newtonStep();
+}
+
+std::vector<int> HolomorphicRelaxation::sectorMonopoleNumbers() const {
+  if (declaration_.heldSectors.empty()) return {};
+  const EdgeClasses classes =
+      edgeClassesOf(action_.edgeCount(), declaration_);
+  return sectorNumbers(
+      action_, resolveSectors(action_, declaration_.heldSectors, classes,
+                              declaration_.rankTolerance));
+}
+
+std::vector<double> HolomorphicRelaxation::heldLogModuli() const {
+  if (declaration_.heldSectors.empty()) return {};
+  const EdgeClasses classes =
+      edgeClassesOf(action_.edgeCount(), declaration_);
+  return logModuliOf(
+      action_, resolveSectors(action_, declaration_.heldSectors, classes,
+                              declaration_.rankTolerance));
+}
+
 std::vector<ActionTermRecord> actionTermRecords(
     const JointAction &action,
     const HolomorphicRelaxationDeclaration &declaration) {
@@ -1061,7 +1281,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   const SectorGeometry sectors =
       resolveSectors(action_, declaration_.heldSectors, classes,
                      declaration_.rankTolerance);
-  const std::vector<double> startModuli = heldLogModuli(action_, sectors);
+  const std::vector<double> startModuli = logModuliOf(action_, sectors);
   std::vector<int> declaredNumbers;
   for (const auto &sector : declaration_.heldSectors)
     declaredNumbers.push_back(sector.monopoleNumber);
@@ -1229,15 +1449,9 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     // least-squares solution of the linearized equations over the tangent
     // space of the held set, so it keeps every held modulus exactly.
     if (layout.links && !sectors.empty) {
-      // The Jacobian's rank boundary: the geometric mean of its smallest
-      // retained singular value and the larger of its largest discarded one
-      // and its cut, the midpoint of the gap its rank decision reads.
-      const double below =
-          std::max(rank < singular.size() ? singular(rank) : 0.0, cut);
-      const double boundary =
-          rank > 0 ? std::sqrt(singular(rank - 1) * below) : cut;
       const ConstrainedStep held = constrainedStep(
-          matrix, target, layout, sectors.freeModuli, boundary);
+          matrix, target, layout, sectors.freeModuli,
+          declaration_.rankTolerance);
       step = held.step;
       record.constrainedStep = true;
       record.constrainedRank = held.rank;
@@ -1590,7 +1804,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     report.largestLengthRatio =
         largestSquaredLength(action_, classes) / startScale;
   report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
-  const std::vector<double> endModuli = heldLogModuli(action_, sectors);
+  const std::vector<double> endModuli = logModuliOf(action_, sectors);
   for (std::size_t index = 0; index < endModuli.size(); ++index)
     report.heldModulusDrift = std::max(
         report.heldModulusDrift, std::abs(endModuli[index] - startModuli[index]));

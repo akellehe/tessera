@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -310,8 +311,9 @@ struct HolomorphicRelaxationDeclaration {
   /// \f$ J d=-F \f$ over that subspace: a real least-squares problem in the
   /// real and imaginary parts of the length and multiplier steps, the link
   /// phases \f$ \operatorname{Im}\delta \f$, and the link moduli along the
-  /// kernel of \f$ C \f$, with its rank decided at the Jacobian's own rank
-  /// boundary (`HolomorphicStep::constrainedRank`). It is the constrained
+  /// kernel of \f$ C \f$, with its rank decided at the declared rank
+  /// tolerance times that system's largest singular value
+  /// (`HolomorphicNewtonStep::constrainedRank`). It is the constrained
   /// Newton (Gauss-Newton) step, and so a descent direction for the residual
   /// norm whenever it is not zero. The complex equations can outnumber the
   /// real directions the held set leaves free, so the step's own linearized
@@ -344,6 +346,91 @@ struct ActionTermRecord {
   /// coordinates; for `"action"`, of the whole stationarity, which is the
   /// force norm the solve reports.
   double gradientNorm = 0.0;
+};
+
+/// # HolomorphicNewtonStep
+///
+/// The step that solves the stationarity system to first order about a
+/// point, \f$ Jd=-R \f$ with \f$ R \f$ the residual and \f$ J \f$ its
+/// closed-form Jacobian there (`HolomorphicRelaxation::newtonStep`), with the
+/// rank decisions it was solved at.
+struct HolomorphicNewtonStep {
+  /// \f$ d \f$, one entry per variable in the order of
+  /// `HolomorphicRelaxation::jacobian`'s columns: the step of each relaxed
+  /// squared length, the Maurer-Cartan increment \f$ \delta \f$ of each
+  /// relaxed link (\f$ U\mapsto Ue^{\delta} \f$ on the coordinate's
+  /// orientation), and the step of each relaxed multiplier.
+  std::vector<std::complex<double>> step;
+  /// \f$ \lVert R\rVert_2 \f$ at the point.
+  double residualNorm = 0.0;
+  /// The numerical rank of \f$ J \f$: the number of its singular values above
+  /// `rankTolerance` times the largest.
+  std::size_t jacobianRank = 0;
+  /// The declared relative threshold of the rank decisions
+  /// (`HolomorphicRelaxationDeclaration::rankTolerance`).
+  double rankTolerance = 0.0;
+  double largestSingularValue = 0.0;
+  /// The smallest singular value counted as nonzero; not a number at rank
+  /// zero.
+  double smallestRetainedSingularValue = 0.0;
+  /// The largest singular value counted as zero; zero at full rank.
+  double largestDiscardedSingularValue = 0.0;
+  /// The ratio of the two, infinite at full rank.
+  double rankGap = 0.0;
+  /// Whether the step was solved over the steps that keep the held sectors'
+  /// face-holonomy moduli (`HolomorphicRelaxationDeclaration::heldSectors`).
+  bool constrained = false;
+  /// With `constrained`, the rank of the real system the step was solved
+  /// from: the number of its singular values above `rankTolerance` times its
+  /// own largest singular value.
+  std::size_t constrainedRank = 0;
+  /// With `constrained`, the ratio of the smallest singular value counted as
+  /// nonzero to the largest counted as zero in that system; infinite at full
+  /// rank; not a number otherwise.
+  double constrainedRankGap = 0.0;
+  /// \f$ \lVert Jd+R\rVert_2/\lVert R\rVert_2 \f$: what the step leaves of
+  /// the linearized equations. It is at rounding for the minimum-norm step
+  /// when \f$ R \f$ lies in the range of \f$ J \f$, and need not vanish for
+  /// a constrained step, whose real unknowns can be fewer than the equations.
+  double linearResidual = 0.0;
+};
+
+/// # HolomorphicLinearization
+///
+/// The stationarity system linearized at one point
+/// (`HolomorphicRelaxation::linearization`): the singular value decomposition
+/// of its closed-form Jacobian \f$ J \f$ there and, with held sectors, that
+/// of the real system over the steps that keep the held moduli. It is kept
+/// so that \f$ Jd=b \f$ is solved in the same sense for every right-hand
+/// side: the Newton step is the solution for \f$ b=-R \f$, and the step of a
+/// higher order solves one such system per order with the one Jacobian.
+class HolomorphicLinearization {
+ public:
+  struct Implementation;
+  explicit HolomorphicLinearization(
+      std::shared_ptr<const Implementation> implementation);
+
+  /// The minimum-norm least-squares solution \f$ d \f$ of \f$ Jd=b \f$, the
+  /// singular values at or below the declared rank tolerance times the
+  /// largest counted as zero; with held sectors, the minimum-norm
+  /// least-squares solution over the steps that keep every held
+  /// face-holonomy modulus, its rank decided the same way on that system's
+  /// own singular values. \p rightHandSide has one entry per equation, in
+  /// the residual's block order.
+  /// @throws std::invalid_argument when \p rightHandSide has another size.
+  [[nodiscard]] std::vector<std::complex<double>> solve(
+      const std::vector<std::complex<double>> &rightHandSide) const;
+
+  /// The solution for \f$ b=-R \f$ with the rank decisions of the
+  /// linearization.
+  [[nodiscard]] const HolomorphicNewtonStep &newtonStep() const noexcept;
+
+  /// \f$ R \f$ at the point, any added residual included.
+  [[nodiscard]] const std::vector<std::complex<double>> &residual()
+      const noexcept;
+
+ private:
+  std::shared_ptr<const Implementation> implementation_;
 };
 
 /// # HolomorphicStep
@@ -411,13 +498,8 @@ struct HolomorphicStep {
   /// whole space.
   bool constrainedStep = false;
   /// For a constrained step, the rank of the real least-squares system it was
-  /// solved from; zero otherwise. It is decided at the Jacobian's rank
-  /// boundary, the geometric mean of the Jacobian's smallest retained
-  /// singular value and the larger of its largest discarded one and its cut:
-  /// a singular value of the constrained system below it comes from a
-  /// direction of the held set in the Jacobian's numerical null space (a
-  /// gauge direction), since the constrained system's singular values are
-  /// bounded below by the Jacobian's smallest one.
+  /// solved from; zero otherwise. It is the number of that system's singular
+  /// values above the declared rank tolerance times its largest one.
   std::size_t constrainedRank = 0;
   /// For a constrained step, that system's smallest retained over its largest
   /// discarded singular value (positive infinity when none is discarded); NaN
@@ -675,6 +757,46 @@ class HolomorphicRelaxation {
   /// The number of columns of `jacobian`, which is the number of variables in
   /// scope.
   [[nodiscard]] std::size_t variableCount() const;
+
+  /// The step that solves the system to first order about the current point:
+  /// the minimum-norm least-squares solution \f$ d \f$ of \f$ Jd=-R \f$ from
+  /// the singular value decomposition of the closed-form Jacobian, the
+  /// singular values at or below the declared rank tolerance times the
+  /// largest counted as zero. The Jacobian is singular along every pure-gauge
+  /// direction, because the action is gauge invariant, and the minimum-norm
+  /// solution is the one orthogonal to that null space. With held sectors the
+  /// step is the minimum-norm least-squares solution over the steps that keep
+  /// every held face-holonomy modulus (the real part of the link block in the
+  /// kernel of the held faces' coboundary), from the singular value
+  /// decomposition of the real system in the real unknowns that parametrize
+  /// those steps, its rank decided at the declared rank tolerance times that
+  /// system's own largest singular value. The geometry is read and not
+  /// written.
+  /// @throws std::invalid_argument, std::domain_error or std::runtime_error
+  ///   when the residual or the Jacobian has no value at the point.
+  [[nodiscard]] HolomorphicNewtonStep newtonStep() const;
+
+  /// The system linearized at the current point, for solves against several
+  /// right-hand sides (`HolomorphicLinearization`). \p addedResidual and
+  /// \p addedJacobian, each empty or of the system's size (the Jacobian flat
+  /// row-major), are added to \f$ R \f$ and to \f$ J \f$ first: the gradient
+  /// and the Hessian, on the system's variables, of a term the caller adds to
+  /// the action.
+  /// @throws std::invalid_argument when an added block has another size, and
+  ///   as `newtonStep` does.
+  [[nodiscard]] HolomorphicLinearization linearization(
+      const std::vector<std::complex<double>> &addedResidual = {},
+      const std::vector<std::complex<double>> &addedJacobian = {}) const;
+
+  /// The monopole number of every held sector at the current point, in the
+  /// declaration's order: the sum of the principal arguments of the sector's
+  /// outward face holonomies over \f$ 2\pi \f$. Empty when no sector is held.
+  [[nodiscard]] std::vector<int> sectorMonopoleNumbers() const;
+
+  /// The logarithm of the modulus of every held face holonomy at the current
+  /// point, sector by sector in the declaration's order. Empty when no
+  /// sector is held.
+  [[nodiscard]] std::vector<double> heldLogModuli() const;
 
  private:
   JointAction action_;

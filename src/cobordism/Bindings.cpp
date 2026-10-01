@@ -2377,18 +2377,22 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("max_lookahead") = 1,
            py::arg("relax_budget_per_move") = std::optional<int>(),
            py::arg("combinatorial_breadth") = 0,
+           py::arg("exit_tolerance") = 1e-15,
            py::call_guard<py::gil_scoped_release>(),
            "The combined drive: each iteration takes ONE combinatorial stage-1 "
            "update (a best-dF move, deepening to max_lookahead-move sequences "
            "on a stall) then relaxes the geometry FULLY -- stage-2 updates "
            "repeat until the absolute-improvement test at tolerance (default "
-           "10e-9) reports diminishing returns -- so every move is proposed "
+           "1e-15) reports diminishing returns -- so every move is proposed "
            "from, and leaves behind, relaxed geometry. Exit: once the register "
-           "is carried + stationary, or the moves have had no effect for a few "
-           "consecutive iterations, the LAST relaxation re-runs at the tight "
-           "1e-12; if it still finds descent the exit was premature and the "
-           "loop continues -- only a state stationary at 1e-12 exits. max_iters "
-           "is the hard budget cap. n_candidate_moves/grow_boundaries/"
+           "is carried + stationary, or the moves have had no effect (one "
+           "iteration when every move is scored, three consecutive ones for a "
+           "sampled batch), the LAST relaxation re-runs at the smaller of "
+           "tolerance and exit_tolerance; if it still finds descent the "
+           "loop continues. max_iters is the number of iterations after which "
+           "the drive returns when the caller declares one; none by default. "
+           "last_drive_stop says why the drive returned. "
+           "n_candidate_moves/grow_boundaries/"
            "max_lookahead parameterize the combinatorial half exactly as in "
            "run_stage1; beta/alpha0/tolerance the geometric half exactly as in "
            "run_stage2. beta is stored before either half, so the F trace is "
@@ -2409,6 +2413,24 @@ assertion. Every pairing is the transpose.)doc")
            "search at every breadth is exhaustive, which costs the move "
            "space raised to the breadth."
            )
+      .def_property("line_search_halving_limit",
+                    &MultiCobordism::lineSearchHalvingLimit,
+                    &MultiCobordism::setLineSearchHalvingLimit,
+                    "The number of halvings of one stage-2 line search after "
+                    "which a drive returns (DriveStop.HALVING_LIMIT), when "
+                    "declared; None by default, and a scale is then halved "
+                    "down to the datatype's resolution.")
+      .def_property("time_limit_seconds", &MultiCobordism::timeLimitSeconds,
+                    &MultiCobordism::setTimeLimitSeconds,
+                    "The wall-clock time of a drive, in seconds, after which "
+                    "it returns (DriveStop.TIME_LIMIT), when declared; None "
+                    "by default.")
+      .def_property_readonly("last_drive_stop", &MultiCobordism::lastDriveStop,
+                             "Why the last run, run_stage1 or run_stage2 "
+                             "returned (DriveStop).")
+      .def_static("drive_stop_name", &MultiCobordism::driveStopName,
+                  py::arg("stop"),
+                  "The name of a drive stop as a report prints it.")
       .def_property("move_tolerance", &MultiCobordism::moveTolerance,
                     &MultiCobordism::setMoveTolerance,
                     "The move tolerance of stage 1: a move, or a composition "
@@ -2583,6 +2605,20 @@ Right -- re-read after each drive call:
            "contains both endpoints. An edge spanning two distinct regions is bulk.");
 
   // === modes, the enumerable objective, refinement, and the overlay ===
+  py::enum_<MultiCobordism::DriveStop>(multiCobordismClass, "DriveStop",
+      "Why a drive (run, run_stage1, run_stage2) returned.")
+      .value("NONE", MultiCobordism::DriveStop::None, "No drive has run.")
+      .value("EXHAUSTED", MultiCobordism::DriveStop::Exhausted,
+             "No move, and no sequence of moves to the declared depth, lowers "
+             "the objective by the move tolerance, and no scaled step along "
+             "the objective's direction lowers it by the tolerance.")
+      .value("ITERATION_LIMIT", MultiCobordism::DriveStop::IterationLimit,
+             "The declared number of iterations was reached.")
+      .value("HALVING_LIMIT", MultiCobordism::DriveStop::HalvingLimit,
+             "A line search reached the declared number of halvings without "
+             "an accepted trial.")
+      .value("TIME_LIMIT", MultiCobordism::DriveStop::TimeLimit,
+             "The declared time was reached.");
   py::enum_<MultiCobordism::SimulationMode>(multiCobordismClass, "SimulationMode",
       "The three top-level simulation modes.")
       .value("EMERGENCE", MultiCobordism::SimulationMode::Emergence,
@@ -5270,6 +5306,56 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("action_unavailable",
                      &HolomorphicRelaxationReport::actionUnavailable);
 
+  py::class_<HolomorphicNewtonStep>(m, "HolomorphicNewtonStep",
+      "The step that solves the stationarity system to first order about a "
+      "point, J d = -R with the closed-form Jacobian, and the rank decisions "
+      "it was solved at (HolomorphicRelaxation.newton_step).")
+      .def(py::init<>())
+      .def_readwrite("step", &HolomorphicNewtonStep::step,
+                     "d, one entry per variable in the order of the "
+                     "Jacobian's columns: squared lengths, Maurer-Cartan "
+                     "increments of the links, multipliers.")
+      .def_readwrite("residual_norm", &HolomorphicNewtonStep::residualNorm)
+      .def_readwrite("jacobian_rank", &HolomorphicNewtonStep::jacobianRank)
+      .def_readwrite("rank_tolerance", &HolomorphicNewtonStep::rankTolerance)
+      .def_readwrite("largest_singular_value",
+                     &HolomorphicNewtonStep::largestSingularValue)
+      .def_readwrite("smallest_retained_singular_value",
+                     &HolomorphicNewtonStep::smallestRetainedSingularValue)
+      .def_readwrite("largest_discarded_singular_value",
+                     &HolomorphicNewtonStep::largestDiscardedSingularValue)
+      .def_readwrite("rank_gap", &HolomorphicNewtonStep::rankGap)
+      .def_readwrite("constrained", &HolomorphicNewtonStep::constrained,
+                     "Whether the step was solved over the steps that keep "
+                     "the held sectors' face-holonomy moduli.")
+      .def_readwrite("constrained_rank",
+                     &HolomorphicNewtonStep::constrainedRank)
+      .def_readwrite("constrained_rank_gap",
+                     &HolomorphicNewtonStep::constrainedRankGap)
+      .def_readwrite("linear_residual",
+                     &HolomorphicNewtonStep::linearResidual,
+                     "||J d + R|| / ||R||: what the step leaves of the "
+                     "linearized equations.");
+
+  py::class_<HolomorphicLinearization>(m, "HolomorphicLinearization",
+      "The stationarity system linearized at one point "
+      "(HolomorphicRelaxation.linearization): the singular value "
+      "decomposition of its closed-form Jacobian and, with held sectors, of "
+      "the real system over the steps that keep the held moduli, kept so "
+      "that J d = b is solved in the same minimum-norm sense for every "
+      "right-hand side.")
+      .def("solve", &HolomorphicLinearization::solve,
+           py::arg("right_hand_side"),
+           "The minimum-norm least-squares solution d of J d = b at the "
+           "declared rank tolerance, over the steps that keep the held "
+           "moduli when sectors are held.")
+      .def_property_readonly("newton_step",
+                             &HolomorphicLinearization::newtonStep,
+                             "The solution for b = -R with the rank "
+                             "decisions (HolomorphicNewtonStep).")
+      .def_property_readonly("residual", &HolomorphicLinearization::residual,
+                             "R at the point, any added residual included.");
+
   py::class_<HolomorphicRelaxation>(m, "HolomorphicRelaxation",
       "A Newton root find on the holomorphic stationarity equations of a "
       "JointAction: dS/dz = 0, U dS/dU = 0 and p_j(h) = p_j*.\n\n"
@@ -5299,7 +5385,29 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "The residual of the equations in scope at the current point, in "
            "the block order of the Jacobian's rows.")
       .def("equation_count", &HolomorphicRelaxation::equationCount)
-      .def("variable_count", &HolomorphicRelaxation::variableCount);
+      .def("variable_count", &HolomorphicRelaxation::variableCount)
+      .def("newton_step", &HolomorphicRelaxation::newtonStep,
+           "The step that solves the system to first order about the current "
+           "point (HolomorphicNewtonStep): the minimum-norm least-squares "
+           "solution of J d = -R at the declared rank tolerance, over the "
+           "steps that keep the held moduli when sectors are held. The "
+           "geometry is read and not written.")
+      .def("linearization", &HolomorphicRelaxation::linearization,
+           py::arg("added_residual") = std::vector<std::complex<double>>(),
+           py::arg("added_jacobian") = std::vector<std::complex<double>>(),
+           "The system linearized at the current point "
+           "(HolomorphicLinearization), for solves against several "
+           "right-hand sides. added_residual and added_jacobian (flat "
+           "row-major), each empty or of the system's size, are added to R "
+           "and to J first: the gradient and Hessian of a term the caller "
+           "adds to the action.")
+      .def("sector_monopole_numbers",
+           &HolomorphicRelaxation::sectorMonopoleNumbers,
+           "The monopole number of every held sector at the current point, "
+           "in the declaration's order; empty when none is held.")
+      .def("held_log_moduli", &HolomorphicRelaxation::heldLogModuli,
+           "The logarithm of the modulus of every held face holonomy at the "
+           "current point; empty when no sector is held.");
 
   py::enum_<OccupationOrder>(m, "OccupationOrder",
       "Which modes of the carrier operator the covariance projects onto. The "
@@ -5691,7 +5799,25 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "rebuilt at every point the system is evaluated at. Its residual "
            "is the self-consistent residual and its jacobian the analytic "
            "Jacobian of it; the geometry may be moved between reads for an "
-           "independent check of the one against the other.");
+           "independent check of the one against the other.")
+      .def("iterate", &SelfConsistentMeanField::iterate,
+           py::arg("reference") = std::vector<BandReference>(),
+           py::arg("previous") = std::vector<std::complex<double>>(),
+           "The measurements of the action's current point, with nothing "
+           "moved (SelfConsistentMeanFieldStep): the bands read there, "
+           "followed from the reference when one is given, the force, the "
+           "pinned constraints' multipliers and residual; previous is the "
+           "covariance the covariance change is measured from.")
+      .def("read", &SelfConsistentMeanField::read,
+           py::arg("reference") = std::vector<BandReference>(),
+           py::arg("start_scale") = 0.0,
+           "The report of the action's current point, with nothing moved: "
+           "what iterate measures there and the end-point measurements of a "
+           "report (the joint Jacobian's rank decision, the Hessian along "
+           "the Hellmann-Feynman force, the Kontsevich-Segal margin, the "
+           "pinned constraints in the operator's own unit). start_scale is "
+           "the largest squared-length modulus largest_length_ratio is taken "
+           "against; zero takes the point's own.");
 
   // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
 

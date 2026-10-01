@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <functional>
@@ -3065,6 +3067,9 @@ std::pair<double, MultiCobordism::Snapshot> MultiCobordism::bestComposition(
   // site the first move destroyed is not one.
   for (const auto &specification : enumerateMoveSpecifications(
            fromSpacetime, shouldProposeDispositions_, shouldProposeSurgery_)) {
+    // A declared time that is reached ends the walk; the caller drops what
+    // an unfinished walk found.
+    if (timeIsUp()) break;
     auto candidateSpacetime = build(fromSnapshot);
     if (!applyMoveSpecification(candidateSpacetime, specification)) continue;
     if (remainingMoves == 1) {
@@ -3159,10 +3164,15 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
                                std::numeric_limits<double>::infinity());
     std::vector<Snapshot> snapshots(static_cast<std::size_t>(distinctCount));
     std::exception_ptr pending = nullptr;
+    std::atomic<bool> timedOut{false};
 #pragma omp parallel for schedule(dynamic)
     for (int candidateIndex = 0; candidateIndex < distinctCount;
          ++candidateIndex) {
       try {
+        if (timeIsUp()) {
+          timedOut = true;
+          continue;
+        }
         auto candidateSpacetime = build(currentSnapshot);
         if (!applyMoveSpecification(
                 candidateSpacetime,
@@ -3183,6 +3193,11 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
       }
     }
     if (pending) std::rethrow_exception(pending);
+    if (timedOut) {
+      // The batch was not scored in full, so nothing is committed from it.
+      lastDriveStop_ = DriveStop::TimeLimit;
+      return 0.0;
+    }
     for (int candidateIndex = 0; candidateIndex < distinctCount;
          ++candidateIndex) {
       const double objectiveDelta =
@@ -3212,10 +3227,15 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
                                std::numeric_limits<double>::infinity());
     std::vector<Snapshot> snapshots(static_cast<std::size_t>(firstMoveCount));
     std::exception_ptr pending = nullptr;
+    std::atomic<bool> timedOut{false};
 #pragma omp parallel for schedule(dynamic)
     for (int candidateIndex = 0; candidateIndex < firstMoveCount;
          ++candidateIndex) {
       try {
+        if (timeIsUp()) {
+          timedOut = true;
+          continue;
+        }
         auto candidateSpacetime = build(currentSnapshot);
         if (!applyMoveSpecification(
                 candidateSpacetime,
@@ -3224,6 +3244,10 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
         auto reached =
             bestComposition(snapshotOf(*candidateSpacetime), lookaheadDepth - 1,
                             baseObjective, baseResidualU, baseCellSet);
+        if (timeIsUp()) {
+          timedOut = true;
+          continue;
+        }
         deltas[static_cast<std::size_t>(candidateIndex)] = reached.first;
         if (reached.first < -convergenceTolerance_)
           snapshots[static_cast<std::size_t>(candidateIndex)] =
@@ -3237,6 +3261,11 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
       }
     }
     if (pending) std::rethrow_exception(pending);
+    if (timedOut) {
+      // The walk was not finished, so nothing is committed from it.
+      lastDriveStop_ = DriveStop::TimeLimit;
+      return 0.0;
+    }
     for (int candidateIndex = 0; candidateIndex < firstMoveCount;
          ++candidateIndex) {
       const double objectiveDelta =
@@ -3256,6 +3285,10 @@ double MultiCobordism::step(int nCandidateMoves, int lookaheadDepth,
     // move alone raises F is still a descent step. This deepened path
     // stays serial: each draw is made against the candidate the previous move
     // left, so the sequence cannot be pre-drawn the way a depth-1 batch is.
+    if (timeIsUp()) {
+      lastDriveStop_ = DriveStop::TimeLimit;
+      return 0.0;
+    }
     auto candidateSpacetime = build(currentSnapshot);
     bool wholeSequenceApplied = true;
     for (int moveIndex = 0; moveIndex < lookaheadDepth; ++moveIndex) {
@@ -3407,16 +3440,86 @@ std::vector<int> MultiCobordism::depthSchedule(int maxLookahead,
   return schedule;
 }
 
+namespace {
+/// Marks a drive in progress for as long as it is in scope, so that the
+/// declared time is measured from the drive's start and nothing outside a
+/// drive is timed.
+struct DriveClock {
+  std::optional<std::chrono::steady_clock::time_point> &started;
+  explicit DriveClock(
+      std::optional<std::chrono::steady_clock::time_point> &target)
+      : started(target) {
+    started = std::chrono::steady_clock::now();
+  }
+  ~DriveClock() { started.reset(); }
+  DriveClock(const DriveClock &) = delete;
+  DriveClock &operator=(const DriveClock &) = delete;
+};
+}  // namespace
+
+bool MultiCobordism::timeIsUp() const {
+  return timeLimitSeconds_ && driveStarted_ &&
+         std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                       *driveStarted_)
+                 .count() >= *timeLimitSeconds_;
+}
+
+std::string MultiCobordism::driveStopName(DriveStop stop) {
+  switch (stop) {
+    case DriveStop::None:
+      return "no drive has run";
+    case DriveStop::Exhausted:
+      return "no move and no scaled step lowers the objective";
+    case DriveStop::IterationLimit:
+      return "the declared number of iterations was reached";
+    case DriveStop::HalvingLimit:
+      return "the declared number of halvings of a line search was reached";
+    case DriveStop::TimeLimit:
+      return "the declared time was reached";
+  }
+  return "unknown";
+}
+
+void MultiCobordism::setLineSearchHalvingLimit(std::optional<int> limit) {
+  if (limit && *limit < 0)
+    throw std::invalid_argument(
+        "MultiCobordism::setLineSearchHalvingLimit: the number of halvings "
+        "must be zero or positive; received " + std::to_string(*limit));
+  lineSearchHalvingLimit_ = limit;
+}
+
+void MultiCobordism::setTimeLimitSeconds(std::optional<double> seconds) {
+  if (seconds && !(*seconds >= 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::setTimeLimitSeconds: the time must be zero or "
+        "positive; received " + std::to_string(*seconds));
+  timeLimitSeconds_ = seconds;
+}
+
 std::vector<double> MultiCobordism::runStage1(std::optional<int> maxSteps,
                                               int nCandidateMoves,
                                               bool growBoundaries,
                                               int maxLookahead,
                                               int combinatorialBreadth) {
+  const DriveClock clock(driveStarted_);
+  lastDriveStop_ = DriveStop::None;
   std::vector<double> objectiveTrace = {objective()};
-  for (int stepIndex = 0; !maxSteps || stepIndex < *maxSteps; ++stepIndex)
-    if (!stage1Update(nCandidateMoves, growBoundaries, objectiveTrace,
-                      maxLookahead, combinatorialBreadth))
+  for (int stepIndex = 0;; ++stepIndex) {
+    if (maxSteps && stepIndex >= *maxSteps) {
+      lastDriveStop_ = DriveStop::IterationLimit;
       break;
+    }
+    if (timeIsUp()) {
+      lastDriveStop_ = DriveStop::TimeLimit;
+      break;
+    }
+    if (!stage1Update(nCandidateMoves, growBoundaries, objectiveTrace,
+                      maxLookahead, combinatorialBreadth)) {
+      if (lastDriveStop_ == DriveStop::None)
+        lastDriveStop_ = DriveStop::Exhausted;
+      break;
+    }
+  }
   return objectiveTrace;
 }
 
@@ -3480,6 +3583,7 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
             ? nCandidateMoves
             : std::max(nCandidateMoves, kDeepLookaheadCandidates);
     double objectiveDelta = step(batchSize, lookaheadDepth, baseObjective);
+    if (lastDriveStop_ == DriveStop::TimeLimit) return false;
     // Final check: the draws found nothing, so the step is about to
     // report that it cannot descend. That claim is about the whole move set,
     // which a sample cannot support -- so price every available move before
@@ -3490,8 +3594,10 @@ bool MultiCobordism::stage1Update(int nCandidateMoves, bool growBoundaries,
     // the whole set on every step would make a long run intractable. This is a
     // rescue from an apparent dead end, not a second optimization pass.
     if (lookaheadDepth == 1 && batchSize > 0 &&
-        objectiveDelta >= -convergenceTolerance_)
+        objectiveDelta >= -convergenceTolerance_) {
       objectiveDelta = step(0, lookaheadDepth, baseObjective);
+      if (lastDriveStop_ == DriveStop::TimeLimit) return false;
+    }
     if (objectiveDelta < -convergenceTolerance_) {
       // An F-lowering surgery sequence: progress.
       objectiveTrace.push_back(objectiveTrace.back() + objectiveDelta);
@@ -3579,13 +3685,27 @@ void MultiCobordism::seedInputs(const std::vector<std::vector<std::uint64_t>> &r
 std::vector<double> MultiCobordism::runStage2(double beta,
                                               std::optional<int> maxIters,
                                               double alpha0, double tolerance) {
+  const DriveClock clock(driveStarted_);
+  lastDriveStop_ = DriveStop::None;
   setReggeWeight(beta);
   std::vector<double> objectiveTrace = {objective()};
   double stepScale = alpha0;
   lastStage2Stationary_ = false;  // for maxIters == 0; each update reports its own
-  for (int iterationIndex = 0; !maxIters || iterationIndex < *maxIters;
-       ++iterationIndex)
-    if (!stage2Update(beta, tolerance, objectiveTrace, stepScale)) break;
+  for (int iterationIndex = 0;; ++iterationIndex) {
+    if (maxIters && iterationIndex >= *maxIters) {
+      lastDriveStop_ = DriveStop::IterationLimit;
+      break;
+    }
+    if (timeIsUp()) {
+      lastDriveStop_ = DriveStop::TimeLimit;
+      break;
+    }
+    if (!stage2Update(beta, tolerance, objectiveTrace, stepScale)) {
+      if (lastDriveStop_ == DriveStop::None)
+        lastDriveStop_ = DriveStop::Exhausted;
+      break;
+    }
+  }
   return objectiveTrace;
 }
 
@@ -3595,7 +3715,10 @@ std::vector<double> MultiCobordism::run(std::optional<int> maxIters,
                                         double alpha0, double tolerance,
                                         int maxLookahead,
                                         std::optional<int> relaxBudgetPerMove,
-                                        int combinatorialBreadth) {
+                                        int combinatorialBreadth,
+                                        double exitTolerance) {
+  const DriveClock clock(driveStarted_);
+  lastDriveStop_ = DriveStop::None;
   setReggeWeight(beta);
   std::vector<double> objectiveTrace = {objective()};
   double stepScale = alpha0;
@@ -3611,8 +3734,15 @@ std::vector<double> MultiCobordism::run(std::optional<int> maxIters,
   const auto withinRelaxBudget = [&](int relaxIndex) {
     return !relaxBudgetPerMove || relaxIndex < *relaxBudgetPerMove;
   };
-  for (int iterationIndex = 0; !maxIters || iterationIndex < *maxIters;
-       ++iterationIndex) {
+  for (int iterationIndex = 0;; ++iterationIndex) {
+    if (maxIters && iterationIndex >= *maxIters) {
+      lastDriveStop_ = DriveStop::IterationLimit;
+      break;
+    }
+    if (timeIsUp()) {
+      lastDriveStop_ = DriveStop::TimeLimit;
+      break;
+    }
     // One combinatorial move (or lookahead sequence), then a full geometric
     // relaxation: stage-2 updates repeat until the absolute-improvement test
     // reports diminishing returns. Every committed move is therefore scored
@@ -3621,6 +3751,7 @@ std::vector<double> MultiCobordism::run(std::optional<int> maxIters,
     const bool stage1WantsAnotherIteration = stage1Update(
         nCandidateMoves, growBoundaries, objectiveTrace, maxLookahead,
         combinatorialBreadth);
+    if (lastDriveStop_ != DriveStop::None) break;
     const bool moveCommitted = lastStage1LookaheadDepth_ > 0;
     // "Full" relaxation still needs a safety budget (as runStage2's maxIters):
     // Near a slow descent tail the line search can accept a near-unbounded
@@ -3632,6 +3763,7 @@ std::vector<double> MultiCobordism::run(std::optional<int> maxIters,
       if (!stage2Update(beta, tolerance, objectiveTrace, stepScale)) break;
       geometryRelaxed = true;
     }
+    if (lastDriveStop_ != DriveStop::None) break;
     // "The combinatorial moves have no effect": nothing committed at any
     // lookahead depth and nothing left to relax — but only after enough
     // consecutive misses to rule out draw noise.
@@ -3643,20 +3775,23 @@ std::vector<double> MultiCobordism::run(std::optional<int> maxIters,
         (!stage1WantsAnotherIteration && !geometryRelaxed) ||
         consecutiveNoEffect >= kConsecutiveNoEffectLimit;
     if (wantsExit) {
-      // The last geometric relaxation before exit runs at a much tighter
-      // tolerance than the in-loop diminishing-returns cut. If the tighter pass
-      // still finds descent the state was not truly stationary — the exit was
-      // premature — so keep looping on the freshly relaxed geometry (which may
-      // also enable new moves). Exit only once stationary at 1e-12 too.
-      constexpr double kExitRelTol = 1e-12;
+      // The last geometric relaxation before exit runs at the exit tolerance
+      // when that is tighter than the in-loop cut. If the tighter pass still
+      // finds descent the state was not stationary, so keep looping on the
+      // freshly relaxed geometry (which may also enable new moves). Exit only
+      // once stationary at the exit tolerance too.
       bool tighterPassFoundDescent = false;
       for (int relaxIndex = 0; withinRelaxBudget(relaxIndex); ++relaxIndex) {
-        if (!stage2Update(beta, std::min(tolerance, kExitRelTol),
+        if (!stage2Update(beta, std::min(tolerance, exitTolerance),
                           objectiveTrace, stepScale))
           break;
         tighterPassFoundDescent = true;
       }
-      if (!tighterPassFoundDescent) break;
+      if (lastDriveStop_ != DriveStop::None) break;
+      if (!tighterPassFoundDescent) {
+        lastDriveStop_ = DriveStop::Exhausted;
+        break;
+      }
       consecutiveNoEffect = 0;  // it moved: not done after all
     }
   }
@@ -3925,8 +4060,23 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
           "MultiCobordism: the objective's stage-2 direction is not finite");
     // The scale is halved until a trial is accepted or until the scaled
     // direction moves no coordinate at the datatype's resolution, the
-    // shortest step there is.
+    // shortest step there is; a declared number of halvings or a declared
+    // time ends the search by name.
+    int halvings = 0;
+    const auto halve = [&]() {
+      if (lineSearchHalvingLimit_ && halvings >= *lineSearchHalvingLimit_) {
+        lastDriveStop_ = DriveStop::HalvingLimit;
+        return false;
+      }
+      ++halvings;
+      trialStepScale *= 0.5;
+      return true;
+    };
     for (;;) {
+      if (timeIsUp()) {
+        lastDriveStop_ = DriveStop::TimeLimit;
+        break;
+      }
       const Eigen::VectorXcd trialSquaredLengths =
           squaredLengths - trialStepScale * descentDirection;
       const Eigen::VectorXcd trialPhases =
@@ -3949,7 +4099,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
         // so it is not scored; the step is shortened exactly as a non-improving
         // trial is.
         CLOG(INFO_LEVEL, "Trial geometry not Kontsevich-Segal admissible; shortening the step.");
-        trialStepScale *= 0.5;
+        if (!halve()) break;
         continue;
       }
       const double trialObjective = fullObjective();
@@ -3974,7 +4124,7 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
       }
       CLOG(INFO_LEVEL, (currentObjective - trialObjective), ">", improvementThreshold);
       CLOG(INFO_LEVEL, "Did not improve.");
-      trialStepScale *= 0.5;
+      if (!halve()) break;
     }
   } catch (...) {
     // The error still propagates; it just does not take the geometry with it.
@@ -3986,7 +4136,10 @@ bool MultiCobordism::stage2Update(double beta, double tolerance,
   }
   if (!objectiveImproved) {
     restoreEdgeLengths();
-    lastStage2Stationary_ = true;
+    // A declared limit that ended the search leaves the point unjudged: it is
+    // stationary only when the search ran to its own end.
+    lastStage2Stationary_ = lastDriveStop_ != DriveStop::HalvingLimit &&
+                            lastDriveStop_ != DriveStop::TimeLimit;
     lastStage2Improvement_ = 0.0;  // stationary means zero solver error
     return false;
   }
