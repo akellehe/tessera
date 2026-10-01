@@ -43,7 +43,10 @@ def _column(poles):
     lowest = min(poles, key=lambda p: (p.real, p.imag))
     column = {"poles": poles, "multiplicity": [2] * len(poles),
               "lowest_pole": lowest, "failed_certificates": [],
-              "zero_count_defect": 0.0, "compression_leakage": 1e-16,
+              "subspace_residual": [0.0] * len(poles),
+              "residue_rank": [2] * len(poles),
+              "separation": [1.0] * len(poles), "scale": 1.0,
+              "compression_leakage": 1e-16,
               "pole_certificates": certificates}
     column.update(certificates[poles.index(lowest)])
     return column
@@ -616,27 +619,24 @@ def test_the_ratio_pair_text():
 # ------------------------------------------------------------ helpers
 
 
-def test_the_contour_encloses_every_eigenvalue():
-    rng = np.random.default_rng(3)
-    for _ in range(5):
-        block = rng.normal(size=(5, 5)) + 1j * rng.normal(size=(5, 5))
-        centre, radius = bp.contour_of(block)
-        assert centre == pytest.approx(np.trace(block) / 5)
-        assert np.all(np.abs(np.linalg.eigvals(block) - centre) < radius)
-    centre, radius = bp.contour_of(np.eye(3) * 2.0)
-    assert centre == 2.0 and radius == pytest.approx(2e-3)
-
-
 def test_sector_poles_of_an_invariant_sector():
     """On an invariant subspace the compression has no leakage and its poles
-    are the operator's eigenvalues on that subspace."""
+    are the operator's eigenvalues on that subspace, read exactly: the
+    compressed block is diagonal, so its Schur diagonal is exact and the
+    poles 1 and 2 are reported to rounding with multiplicity one, residue
+    rank one, a zero subspace residual and the separation 1 between them."""
     operator = np.diag([1.0, 2.0, 5.0, 7.0]).astype(complex)
     sector = np.eye(4, dtype=complex)[:, :2]
     block, leakage, read = bp.sector_poles(operator, sector)
     np.testing.assert_allclose(block, np.diag([1.0, 2.0]), atol=1e-14)
     assert leakage < 1e-14
-    np.testing.assert_allclose(sorted(complex(p).real for p in read.poles),
-                               [1.0, 2.0], atol=1e-8)
+    np.testing.assert_allclose([complex(p) for p in read.poles], [1.0, 2.0],
+                               atol=1e-14)
+    assert list(read.multiplicity) == [1, 1]
+    assert list(read.residue_rank) == [1, 1]
+    assert all(residual < 1e-14 for residual in read.subspace_residual)
+    assert list(read.separation) == pytest.approx([1.0, 1.0], abs=1e-14)
+    assert list(read.failed_certificates) == []
     mixed = np.array([[1, 0], [1, 0], [0, 1], [0, 0]], dtype=complex)
     _, leakage, _ = bp.sector_poles(operator, mixed)
     assert leakage > 0.1

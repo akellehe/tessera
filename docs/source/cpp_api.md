@@ -288,6 +288,8 @@ internal interface as well, edit the Doxyfile and comment out its exclusions.
 ```
 ```{doxygenfile} PencilSchur.h
 ```
+```{doxygenfile} RieszProjector.h
+```
 ```{doxygenfile} SparsePencil.h
 ```
 ```{doxygenfile} SparsePencilSolver.h

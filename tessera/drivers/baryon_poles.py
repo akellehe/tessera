@@ -307,15 +307,12 @@ TOLERANCES = (
     ("degeneracy_tolerance",
      "the separation within which eigenvalues of the rotation-averaged edge "
      "Laplacian form one band in the spin read and in the fingerprint"),
-    ("pole_newton_tolerance",
-     "the Newton step, relative to the contour radius, below which the pole "
-     "read's refinement of a root ends"),
-    ("pole_zero_count_tolerance",
-     "how far the pole read's argument-principle count may sit from an "
-     "integer before the read refuses"),
     ("pole_rank_tolerance",
-     "the fraction of the largest singular value at or below which the pole "
-     "read's Hankel and residue ranks treat one as zero"),
+     "the relative tolerance of every decision of the pole read: the "
+     "fraction of a sector block's largest singular value at or below which "
+     "two eigenvalues form one pole, and the fraction of the largest singular "
+     "value at or below which a singular value counts as zero in the rank of "
+     "a residue and of the powers of a pole's nilpotent part"),
     ("fluctuation_tolerance",
      "the relative tolerance of the dressed fluctuation's certificates, and "
      "the size below which a collective mode's geometric component is zero"),
@@ -1410,39 +1407,26 @@ def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
     }
 
 
-def contour_of(block):
-    """The declared pole contour of a sector: centre tr(H)/dim, radius 1.5 times
-    the Gershgorin radius about that centre plus a floor of 1e-3 times its
-    scale, so every eigenvalue is enclosed by Gershgorin's theorem."""
-    dimension = block.shape[0]
-    centre = np.trace(block) / dimension
-    radius = 0.0
-    for i in range(dimension):
-        off = np.sum(np.abs(block[i])) - abs(block[i, i])
-        radius = max(radius, abs(block[i, i] - centre) + off)
-    radius = 1.5 * radius + 1e-3 * max(1.0, abs(centre))
-    return complex(centre), float(radius)
-
-
 def sector_poles(operator, sector_states, config=None):
-    """The compressed operator of a sector, its leakage, and its poles, read
-    at the config's pole tolerances (`TOLERANCES`)."""
+    """The compressed operator of a sector, its leakage, and its poles: the
+    eigenvalues of the compressed block, read exactly from its complex Schur
+    form by `BoundStatePole` (the block is the whole pencil, with the identity
+    metric and every coordinate on the interface), each pole with its
+    algebraic multiplicity, its residue (minus the spectral projector onto
+    its generalized eigenspace) and the residue's rank, the residual of its
+    invariant subspace and its separation from the other poles. Two
+    eigenvalues within the config's ``pole_rank_tolerance`` (`TOLERANCES`)
+    times the block's largest singular value form one pole."""
     dual = left_inverse(sector_states)
     image = operator @ sector_states
     block = dual @ image
     leakage = np.linalg.norm(image - sector_states @ block) / max(
         np.linalg.norm(image), 1e-300)
-    centre, radius = contour_of(block)
     pole_config = cob.BoundStatePoleConfig()
-    pole_config.newton_tolerance = declared_tolerance(
-        config, "pole_newton_tolerance")
-    pole_config.zero_count_tolerance = declared_tolerance(
-        config, "pole_zero_count_tolerance")
     pole_config.rank_tolerance = declared_tolerance(
         config, "pole_rank_tolerance")
     read = cob.BoundStatePole.poles(block, np.eye(block.shape[0]),
-                                    list(range(block.shape[0])), centre,
-                                    radius, pole_config)
+                                    list(range(block.shape[0])), pole_config)
     return block, float(leakage), read
 
 
@@ -1894,11 +1878,14 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
     the type's projector compressed to the sector over the sector's
     dimension, which is one on the sector's own types and zero on the others
     when the constructed lift agrees with the finite group), and for each
-    named many-body operator the poles of the compressed block, each pole's
-    spinor, spin-lift and colour certificates (``pole_certificates``,
-    parallel to ``poles``), and the lowest pole's certificates repeated
-    beside it. The poles and the certificates are read at the config's
-    tolerances (`TOLERANCES`)."""
+    named many-body operator the poles of the compressed block with their
+    multiplicities and the exact certificates of the read (the residual of
+    each pole's invariant subspace, the rank of each residue, the separation
+    of each pole from the others and the block's scale, `sector_poles`),
+    each pole's spinor, spin-lift and colour certificates
+    (``pole_certificates``, parallel to ``poles``), and the lowest pole's
+    certificates repeated beside it. The poles and the certificates are read
+    at the config's tolerances (`TOLERANCES`)."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     irreps = restriction(j2, triality)
@@ -1948,10 +1935,10 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
             "multiplicity": [int(m) for m in read.multiplicity],
             "lowest_pole": lowest,
             "failed_certificates": list(read.failed_certificates),
-            "zero_count_defect": float(read.zero_count_defect),
-            "continuation_movement": [float(x) for x in
-                                      read.continuation_movement],
-            "contour": [complex(read.centre), float(read.radius)],
+            "subspace_residual": [float(x) for x in read.subspace_residual],
+            "residue_rank": [int(r) for r in read.residue_rank],
+            "separation": [float(x) for x in read.separation],
+            "scale": float(read.scale),
             "compression_leakage": leakage,
             "pole_certificates": certificates,
         }
