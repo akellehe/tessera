@@ -671,6 +671,102 @@ Eigen::MatrixXcd CovariantChainHodge::covariantOperatorPhaseHessian(int k, std::
   return out;
 }
 
+Eigen::MatrixXcd CovariantChainHodge::covariantOperatorMixedDerivative(int k, std::size_t lengthEdge,
+                                                                       std::size_t phaseEdge) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  const DerivativeWorkspace &w = derivativeWorkspace(k);
+  const auto &K = base_->complex();
+  const auto &s = base_->squaredLengths();
+  const Branch branch = base_->branch();
+  const auto edges = K.kSimplexVertices(1);
+  if (lengthEdge >= edges.size() || phaseEdge >= edges.size())
+    throw std::invalid_argument("CovariantChainHodge: edge index out of range");
+  const std::uint64_t x = edges[phaseEdge][0], y = edges[phaseEdge][1];
+
+  // A dressed metric: its length derivative is the dressed derivative of the
+  // bare metric, its phase derivative the entries on the link, and its mixed
+  // derivative the phase derivative of the dressed length derivative.
+  auto metricFactor = [&](int j) {
+    const auto &b = base_vertex_[static_cast<std::size_t>(j)];
+    const SparseMatrix &M = dressed_[static_cast<std::size_t>(j)];
+    const SparseMatrix dM = dress(WhitneyMass::assembleDerivative(K, s, j, lengthEdge, branch), b, b, U_);
+    ProductFactor f;
+    f.value = Eigen::MatrixXcd(M);
+    f.da = Eigen::MatrixXcd(dM);
+    f.db = Eigen::MatrixXcd(phaseDerivative(M, b, b, x, y, false));
+    f.dab = Eigen::MatrixXcd(phaseDerivative(dM, b, b, x, y, false));
+    return f;
+  };
+  // A twisted incidence (or the transpose of a dual-dressed one): no length
+  // derivative, so no mixed derivative either.
+  auto incidenceFactor = [&](const SparseMatrix &X, const std::vector<std::uint64_t> &row,
+                             const std::vector<std::uint64_t> &col, bool dual, bool transposed) {
+    ProductFactor f;
+    const SparseMatrix db = phaseDerivative(X, row, col, x, y, dual);
+    f.value = transposed ? Eigen::MatrixXcd(X.transpose()) : Eigen::MatrixXcd(X);
+    f.db = transposed ? Eigen::MatrixXcd(db.transpose()) : Eigen::MatrixXcd(db);
+    f.da = Eigen::MatrixXcd::Zero(f.value.rows(), f.value.cols());
+    f.dab = Eigen::MatrixXcd::Zero(f.value.rows(), f.value.cols());
+    return f;
+  };
+  auto inverseFactor = [&](const Eigen::MatrixXcd &inv, const ProductFactor &metric) {
+    ProductFactor f;
+    f.value = inv;
+    const Eigen::MatrixXcd ia = inv * metric.da, ib = inv * metric.db;
+    f.da = -ia * inv;
+    f.db = -ib * inv;
+    f.dab = ia * ib * inv + ib * ia * inv - inv * metric.dab * inv;
+    return f;
+  };
+
+  const int n = base_->size(k);
+  Eigen::MatrixXcd out = Eigen::MatrixXcd::Zero(n, n);
+  const auto &bk = base_vertex_[static_cast<std::size_t>(k)];
+  const ProductFactor Mk = metricFactor(k);
+  if (w.hasLower) {
+    // M_k (∂_k^{U^{-1}})^T (M_{k-1}^U)^{-1} ∂_k^U
+    const auto &bkm1 = base_vertex_[static_cast<std::size_t>(k) - 1];
+    const int nm1 = base_->size(k - 1);
+    const ProductFactor Mkm1 = metricFactor(k - 1);
+    const Eigen::MatrixXcd P = solveDressed(k - 1, Eigen::MatrixXcd::Identity(nm1, nm1));
+    out += productHessian({Mk,
+                           incidenceFactor(twistedDual_[static_cast<std::size_t>(k)], bkm1, bk, true, true),
+                           inverseFactor(P, Mkm1),
+                           incidenceFactor(twisted_[static_cast<std::size_t>(k)], bkm1, bk, false, false)});
+  }
+  if (w.hasUpper) {
+    // ∂_{k+1}^U M_{k+1}^U (∂_{k+1}^{U^{-1}})^T (M_k^U)^{-1}
+    const auto &bkp1 = base_vertex_[static_cast<std::size_t>(k) + 1];
+    out += productHessian({incidenceFactor(twisted_[static_cast<std::size_t>(k) + 1], bk, bkp1, false, false),
+                           metricFactor(k + 1),
+                           incidenceFactor(twistedDual_[static_cast<std::size_t>(k) + 1], bk, bkp1, true, true),
+                           inverseFactor(w.Q, Mk)});
+  }
+  return out;
+}
+
+SparseMatrix CovariantChainHodge::dressedPhaseHessian(int k, std::size_t edgeA, std::size_t edgeB) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  const auto edges = base_->complex().kSimplexVertices(1);
+  if (edgeA >= edges.size() || edgeB >= edges.size())
+    throw std::invalid_argument("CovariantChainHodge: edge index out of range");
+  const SparseMatrix &M = dressed_[static_cast<std::size_t>(k)];
+  if (edgeA != edgeB) return SparseMatrix(M.rows(), M.cols());
+  const auto &b = base_vertex_[static_cast<std::size_t>(k)];
+  return phaseSecondDerivative(M, b, b, edges[edgeA][0], edges[edgeA][1]);
+}
+
+SparseMatrix CovariantChainHodge::dressedMixedDerivative(int k, std::size_t lengthEdge,
+                                                         std::size_t phaseEdge) const {
+  if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
+  const auto edges = base_->complex().kSimplexVertices(1);
+  if (lengthEdge >= edges.size() || phaseEdge >= edges.size())
+    throw std::invalid_argument("CovariantChainHodge: edge index out of range");
+  const auto &b = base_vertex_[static_cast<std::size_t>(k)];
+  return phaseDerivative(dressedDerivative(k, lengthEdge), b, b, edges[phaseEdge][0], edges[phaseEdge][1],
+                         false);
+}
+
 SparsePencil CovariantChainHodge::sparsePencil(int k) const {
   if (k < 0 || k > dimension()) throw std::invalid_argument("CovariantChainHodge: degree out of range");
   if (preset() != Preset::L2)

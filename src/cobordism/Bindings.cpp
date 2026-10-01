@@ -4723,6 +4723,40 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "Why the value is unavailable; empty when it is "
                     "available.");
 
+  py::class_<CarrierDerivatives>(m, "CarrierDerivatives",
+      "The first derivatives of the carrier operator h_k(z, U) in the "
+      "coordinates a relaxation moves, one flat row-major matrix per edge in "
+      "getEdgeList() order: dh/dz_e (lengths) and the Maurer-Cartan derivative "
+      "U_e dh/dU_e on the edge's stored orientation (links).")
+      .def(py::init<>())
+      .def_readwrite("lengths", &CarrierDerivatives::lengths)
+      .def_readwrite("links", &CarrierDerivatives::links);
+
+  py::class_<CarriedStateVariation>(m, "CarriedStateVariation",
+      "A first-order variation of the carried state at fixed geometry: of the "
+      "covariance, of the constraints' fiber projector and of each declared "
+      "band projector, each flat row-major over the k-cells; an empty entry "
+      "is a zero variation.")
+      .def(py::init<>())
+      .def_readwrite("covariance", &CarriedStateVariation::covariance)
+      .def_readwrite("moment_projector",
+                     &CarriedStateVariation::momentProjector)
+      .def_readwrite("band_projectors", &CarriedStateVariation::bandProjectors);
+
+  m.def("riesz_projector_derivative", &rieszProjectorDerivative,
+        py::arg("eigenvalues"), py::arg("eigenvectors"),
+        py::arg("left_eigenvectors"), py::arg("modes"),
+        py::arg("operator_variation"),
+        "The first-order variation of the Riesz projector of an isolated band "
+        "under a variation dh of the operator, from the eigendecomposition "
+        "h = V Lambda V^-1 at the point: sum over k in the band and j outside "
+        "it of (v_k w_k^T dh v_j w_j^T + v_j w_j^T dh v_k w_k^T) / "
+        "(lambda_k - lambda_j), with v the columns of V and w^T the rows of "
+        "W = V^-1. Exact for a band whose eigenvalues are separated from the "
+        "rest of the spectrum, whatever their degeneracy inside the band; "
+        "refused by name when an eigenvalue outside the band equals one "
+        "inside it. Every matrix flat row-major.");
+
   py::class_<JointAction>(m, "JointAction",
       "The gauge-invariant joint action S(z, U, Gamma) of Sections 3 and 13 of "
       "the whitepaper, and its exact holomorphic stationarity equations.\n\n"
@@ -4838,6 +4872,35 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def("holonomy_truncation", &JointAction::holonomyTruncation,
            "The Villain series truncation over the current face holonomies, "
            "with certified relative tail bounds.")
+      .def("regge_hessian", &JointAction::reggeHessian,
+           "The Hessian of w_R S_Regge in the squared lengths, flat |E| x |E| "
+           "in getEdgeList() order: for the primal form the per-hinge product "
+           "rule of the hinge content and the deficit angle carried to second "
+           "order on the declared sheets; for the dual form the exact Hessian "
+           "of the dual Regge action.")
+      .def("action_hessian", &JointAction::actionHessian,
+           "The Hessian of the action in the relaxed coordinates at fixed "
+           "carried state: the Jacobian of (length_stationarity, "
+           "link_stationarity) with respect to the squared lengths and the "
+           "Maurer-Cartan increments (U -> U e^delta on the stored "
+           "orientation) at fixed Gamma, fixed projectors and fixed "
+           "multipliers, flat 2|E| x 2|E| in the block order lengths then "
+           "links. The Regge Hessian on the length block, the Villain "
+           "Hessian on the link block, and on every block the contraction of "
+           "the operator's second derivatives against w_M Gamma + sum_j xi_j "
+           "X_j together with the variation of the power sums' X_j through "
+           "the operator. Symmetric.")
+      .def("carrier_derivatives", &JointAction::carrierDerivatives,
+           "The first derivatives of the carrier operator in the relaxed "
+           "coordinates (CarrierDerivatives): dh/dz_e and U_e dh/dU_e on the "
+           "stored orientation, one flat matrix per edge.")
+      .def("stationarity_state_variation",
+           &JointAction::stationarityStateVariation, py::arg("variation"),
+           "The variation of (length_stationarity, link_stationarity) under "
+           "a variation of the carried state at fixed geometry "
+           "(CarriedStateVariation): tr(delta A dh/dx) with delta A = w_M "
+           "delta Gamma + sum_j xi_j delta X_j, the constraints' matrices "
+           "varied through their projectors alone; length 2|E|.")
       .def("hellmann_feynman_length_force",
            &JointAction::hellmannFeynmanLengthForce,
            "tr(Gamma dh/dz_e) per edge, the carried state's whole "
@@ -4882,23 +4945,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "adjoint anywhere, and Hermitian only when h is normal.")
       .def_static("term_names", &JointAction::termNames,
                   "The five declared terms, in the order value sums them.");
-
-  py::enum_<HolomorphicJacobianMode>(m, "HolomorphicJacobianMode",
-      "How the Jacobian of the stationarity system is formed.\n\n"
-      "ContourDerivative is the Cauchy derivative on a small circle, which for "
-      "a residual analytic on the whole disc converges geometrically in the "
-      "node count and is exact to rounding at the default eight nodes.\n\n"
-      "RealAxisDifference is the two-node rule with both nodes placed exactly "
-      "on the real axis. It is the rule for a residual analytic on each side of "
-      "a cut along the real axis but not across it, which is what the dual "
-      "Regge action's exact gradient is: the deficit angle is taken on the "
-      "principal branch with no Riemann-sheet label, so an arbitrarily small "
-      "positive imaginary part in a squared length shifts a hinge's deficit by "
-      "2 pi. Its truncation is O(radius^2), so a caller declaring it usually "
-      "declares a smaller radius with it.")
-      .value("ContourDerivative", HolomorphicJacobianMode::ContourDerivative)
-      .value("RealAxisDifference",
-             HolomorphicJacobianMode::RealAxisDifference);
 
   py::enum_<RelaxationStop>(m, "RelaxationStop",
       "Why a solve stopped, reported by name. Converged; IterationBudget (the "
@@ -4956,19 +5002,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
                      "The residual norm at or below which the solve is "
                      "declared converged.")
-      .def_readwrite("contour_nodes",
-                     &HolomorphicRelaxationDeclaration::contourNodes,
-                     "The number of nodes on the contour. At least five.")
-      .def_readwrite("contour_radius",
-                     &HolomorphicRelaxationDeclaration::contourRadius,
-                     "The contour radius, relative to the magnitude of the "
-                     "coordinate being differentiated and floored at one.")
       .def_readwrite("maximum_dampings",
                      &HolomorphicRelaxationDeclaration::maximumDampings,
                      "The largest number of step halvings tried when a full "
                      "Newton step does not reduce the residual norm.")
-      .def_readwrite("jacobian_mode",
-                     &HolomorphicRelaxationDeclaration::jacobianMode)
       .def_readwrite("rank_tolerance",
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
@@ -5315,7 +5352,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("overlap", &OccupiedBand::overlap)
       .def_readonly("crossed", &OccupiedBand::crossed)
       .def_readonly("ambiguous", &OccupiedBand::ambiguous)
-      .def_readonly("projector", &OccupiedBand::projector);
+      .def_readonly("projector", &OccupiedBand::projector)
+      .def_readonly("modes", &OccupiedBand::modes,
+                    "The band's modes: indices into the read's eigenvalues, "
+                    "columns of its eigenvectors and rows of its left "
+                    "eigenvectors.");
 
   py::class_<BandRead>(m, "BandRead",
       "What BandFollower.read builds from one operator: the covariance, the "
@@ -5331,7 +5372,14 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("spectral_gap", &BandRead::spectralGap)
       .def_readonly("band_isolation", &BandRead::bandIsolation)
       .def_readonly("crossing", &BandRead::crossing)
-      .def_readonly("lowest_overlap", &BandRead::lowestOverlap);
+      .def_readonly("lowest_overlap", &BandRead::lowestOverlap)
+      .def_readonly("eigenvalues", &BandRead::eigenvalues,
+                    "The operator's eigenvalues in the eigensolver's order.")
+      .def_readonly("eigenvectors", &BandRead::eigenvectors,
+                    "V, the right eigenvectors as columns, flat row-major.")
+      .def_readonly("left_eigenvectors", &BandRead::leftEigenvectors,
+                    "V^-1, whose rows are the left eigenvectors, flat "
+                    "row-major.");
 
   py::class_<BandFollower>(m, "BandFollower",
       "The declared covariance rule with its band selection: read(h) builds "
@@ -5530,7 +5578,16 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "other threads (a live display) keep running.")
       .def_property_readonly("action", &SelfConsistentMeanField::action,
                              "The action, carrying the covariance and the "
-                             "multipliers as the solve left them.");
+                             "multipliers as the solve left them.")
+      .def("joint_system", &SelfConsistentMeanField::jointSystem,
+           "The joint Newton system at the action's current point, as solve "
+           "builds it there: the bands chosen at the point and followed from "
+           "it, the pinned fiber constraints installed with their targets and "
+           "the multipliers' starting estimate, the covariance and the fiber "
+           "rebuilt at every point the system is evaluated at. Its residual "
+           "is the self-consistent residual and its jacobian the analytic "
+           "Jacobian of it; the geometry may be moved between reads for an "
+           "independent check of the one against the other.");
 
   // ── Section 13.4/13.5: the Ward flux and the intrinsic response ────────
 

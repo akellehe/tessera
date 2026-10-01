@@ -833,6 +833,79 @@ Eigen::MatrixXcd constraintDerivative(
   return projector / (rank * declaration.momentScale);
 }
 
+/// The variation of \f$ M^p \f$ under \f$ \delta M \f$,
+/// \f$ \sum_{m=0}^{p-1}M^m\,\delta M\,M^{p-1-m} \f$; zero for \f$ p=0 \f$.
+Eigen::MatrixXcd powerVariation(const Eigen::MatrixXcd &matrix,
+                                const Eigen::MatrixXcd &variation, int power) {
+  Eigen::MatrixXcd result =
+      Eigen::MatrixXcd::Zero(matrix.rows(), matrix.cols());
+  if (power <= 0) return result;
+  std::vector<Eigen::MatrixXcd> powers;
+  powers.push_back(Eigen::MatrixXcd::Identity(matrix.rows(), matrix.cols()));
+  for (int m = 1; m < power; ++m) powers.push_back(powers.back() * matrix);
+  for (int m = 0; m < power; ++m)
+    result += powers[static_cast<std::size_t>(m)] * variation *
+              powers[static_cast<std::size_t>(power - 1 - m)];
+  return result;
+}
+
+/// The variation of `constraintDerivative`'s matrix \f$ X_j \f$ under a
+/// variation \p carrierVariation of the carrier at fixed projector and a
+/// variation \p projectorVariation of the projector at fixed carrier (either
+/// null for none), linear in each:
+/// * a power sum of the whole carrier, \f$ X=(j/s)(h/s)^{j-1} \f$:
+///   \f$ \delta X=(j/s)\sum_{m}(h/s)^m(\delta h/s)(h/s)^{j-2-m} \f$;
+/// * a power sum of the declared fiber, \f$ X=(j/s)PM^{j-1}P \f$ with
+///   \f$ M=PhP/s \f$: \f$ \delta M=(\delta P\,hP+P\,\delta h\,P+Ph\,\delta P)/s \f$
+///   and \f$ \delta X=(j/s)(\delta P\,M^{j-1}P+P\,\delta(M^{j-1})P+PM^{j-1}\delta P) \f$;
+/// * a band mean, \f$ X=P_b/(r_bs) \f$: \f$ \delta X=\delta P_b/(r_bs) \f$, the
+///   rank a constant.
+Eigen::MatrixXcd constraintDerivativeVariation(
+    const JointActionDeclaration &declaration, const Eigen::MatrixXcd &carrier,
+    std::size_t order, const SpectralMomentConstraint &constraint,
+    const Eigen::MatrixXcd *carrierVariation,
+    const Eigen::MatrixXcd *projectorVariation) {
+  const auto size = static_cast<Eigen::Index>(order);
+  const Eigen::MatrixXcd zero = Eigen::MatrixXcd::Zero(size, size);
+  const double scale = declaration.momentScale;
+  if (constraint.form == SpectralConstraintForm::BandMean) {
+    if (projectorVariation == nullptr) return zero;
+    const Eigen::MatrixXcd projector =
+        toMatrix(declaration.momentBandProjectors.at(constraint.band), order);
+    const complexd rank = projector.trace();
+    if (rank == complexd{0.0, 0.0}) return zero;
+    return *projectorVariation / (rank * scale);
+  }
+  const int power = constraint.order;
+  const complexd unit{1.0 / scale, 0.0};
+  const complexd weight{static_cast<double>(power) / scale, 0.0};
+  if (declaration.momentProjector.empty()) {
+    if (carrierVariation == nullptr) return zero;
+    return weight * powerVariation(unit * carrier, unit * (*carrierVariation),
+                                   power - 1);
+  }
+  const Eigen::MatrixXcd projector =
+      toMatrix(declaration.momentProjector, order);
+  const Eigen::MatrixXcd compressed = unit * (projector * carrier * projector);
+  Eigen::MatrixXcd compressedVariation = zero;
+  if (carrierVariation != nullptr)
+    compressedVariation += unit * (projector * (*carrierVariation) * projector);
+  if (projectorVariation != nullptr)
+    compressedVariation +=
+        unit * ((*projectorVariation) * carrier * projector +
+                projector * carrier * (*projectorVariation));
+  Eigen::MatrixXcd result =
+      projector * powerVariation(compressed, compressedVariation, power - 1) *
+      projector;
+  if (projectorVariation != nullptr) {
+    Eigen::MatrixXcd powered = Eigen::MatrixXcd::Identity(size, size);
+    for (int step = 1; step < power; ++step) powered = powered * compressed;
+    result += (*projectorVariation) * powered * projector +
+              projector * powered * (*projectorVariation);
+  }
+  return weight * result;
+}
+
 }  // namespace
 
 std::vector<complexd> JointAction::powerSums() const {
@@ -1384,6 +1457,51 @@ std::vector<complexd> JointAction::linkStationarity() const {
   return stationarity;
 }
 
+namespace {
+
+/// Add \f$ \operatorname{tr}(A\,\partial h/\partial z_e) \f$ to \p lengths and
+/// \f$ \operatorname{tr}(A\,U_e\partial h/\partial U_e) \f$ on the stored
+/// orientation to \p links, per edge, for the contraction matrix \p matrix
+/// (a null output is not formed). Nothing is added when the matrix is zero.
+void contractionSweep(const ActionWorkspace &workspace, int carrierDegree,
+                      const Eigen::MatrixXcd &matrix,
+                      std::vector<complexd> *lengths,
+                      std::vector<complexd> *links) {
+  if (workspace.carrierOrder == 0 || matrix.isZero(0.0)) return;
+  const std::size_t edges = workspace.edges.size();
+  for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
+    const auto *edge = workspace.edges[edgeIndex];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    const std::uint64_t source = edge->getSource()->getId();
+    const std::uint64_t target = edge->getTarget()->getId();
+    if (lengths) {
+      const auto derivative =
+          workspace.hodge.laplacianGradient(carrierDegree, source, target);
+      if (derivative.size() == workspace.carrierOrder * workspace.carrierOrder)
+        (*lengths)[edgeIndex] += traceOfProduct(
+            matrix, toMatrix(derivative, workspace.carrierOrder));
+    }
+    if (links) {
+      const auto derivative = workspace.hodge.laplacianPhaseGradient(
+          carrierDegree, source, target);
+      if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
+        continue;
+      // U d/dU = -i d/dphi on the canonical link U = e^{i phi}: a relation
+      // between derivatives, which fixes no branch of the logarithm. The
+      // stored orientation carries the same current up to the sign that
+      // relates it to the canonical one, since j_yx = -j_xy.
+      const complexd canonicalPart =
+          complexd{0.0, -1.0} *
+          traceOfProduct(matrix, toMatrix(derivative, workspace.carrierOrder));
+      (*links)[edgeIndex] += workspace.storedSign[edgeIndex] * canonicalPart;
+    }
+  }
+}
+
+}  // namespace
+
 void JointAction::stationarityPart(StationarityPart part,
                                    const std::vector<complexd> *contraction,
                                    std::vector<complexd> *lengths,
@@ -1473,36 +1591,8 @@ void JointAction::stationarityPart(StationarityPart part,
           ? toMatrix(*contraction, workspace.carrierOrder)
           : contractionMatrix(declaration_, workspace.carrier,
                               workspace.carrierOrder);
-  if (matrix.isZero(0.0)) return;
-  for (std::size_t edgeIndex = 0; edgeIndex < edges; ++edgeIndex) {
-    const auto *edge = workspace.edges[edgeIndex];
-    if (edge == nullptr || edge->getSource() == nullptr ||
-        edge->getTarget() == nullptr)
-      continue;
-    const std::uint64_t source = edge->getSource()->getId();
-    const std::uint64_t target = edge->getTarget()->getId();
-    if (lengths) {
-      const auto derivative = workspace.hodge.laplacianGradient(
-          declaration_.carrierDegree, source, target);
-      if (derivative.size() == workspace.carrierOrder * workspace.carrierOrder)
-        (*lengths)[edgeIndex] += traceOfProduct(
-            matrix, toMatrix(derivative, workspace.carrierOrder));
-    }
-    if (links) {
-      const auto derivative = workspace.hodge.laplacianPhaseGradient(
-          declaration_.carrierDegree, source, target);
-      if (derivative.size() != workspace.carrierOrder * workspace.carrierOrder)
-        continue;
-      // U d/dU = -i d/dphi on the canonical link U = e^{i phi}: a relation
-      // between derivatives, which fixes no branch of the logarithm. The
-      // stored orientation carries the same current up to the sign that
-      // relates it to the canonical one, since j_yx = -j_xy.
-      const complexd canonicalPart =
-          complexd{0.0, -1.0} *
-          traceOfProduct(matrix, toMatrix(derivative, workspace.carrierOrder));
-      (*links)[edgeIndex] += workspace.storedSign[edgeIndex] * canonicalPart;
-    }
-  }
+  contractionSweep(workspace, declaration_.carrierDegree, matrix, lengths,
+                   links);
 }
 
 std::vector<ActionTermGradient> JointAction::termGradients() const {
@@ -1625,6 +1715,298 @@ std::vector<complexd> JointAction::holonomyHessian() const {
 }
 
 
+
+std::vector<complexd> JointAction::reggeHessian() const {
+  const std::size_t edges = edgeCount();
+  std::vector<complexd> hessian(edges * edges, complexd{0.0, 0.0});
+  const double weight = declaration_.gravitationalWeight;
+  if (weight == 0.0 || edges == 0) return hessian;
+  if (declaration_.reggeForm == ReggeForm::Dual) {
+    const auto dense =
+        ReggeSolver(spacetime_, MatterConfiguration()).actionHessianExact();
+    for (std::size_t e = 0; e < edges && e < dense.size(); ++e)
+      for (std::size_t f = 0; f < edges && f < dense[e].size(); ++f)
+        hessian[e * edges + f] = weight * dense[e][f];
+    return hessian;
+  }
+  using EdgeKey = std::pair<std::uint64_t, std::uint64_t>;
+  std::map<EdgeKey, std::size_t> indexOfEdge;
+  const auto meshEdges = spacetime_->getEdgeList()->toVector();
+  for (std::size_t edgeIndex = 0; edgeIndex < edges && edgeIndex < meshEdges.size();
+       ++edgeIndex) {
+    const auto *edge = meshEdges[edgeIndex];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    indexOfEdge[pairKey(edge->getSource()->getId(),
+                        edge->getTarget()->getId())] = edgeIndex;
+  }
+  auto add = [&](const EdgeKey &rowKey, const EdgeKey &columnKey,
+                 complexd value) {
+    const auto row = indexOfEdge.find(pairKey(rowKey.first, rowKey.second));
+    const auto column =
+        indexOfEdge.find(pairKey(columnKey.first, columnKey.second));
+    if (row == indexOfEdge.end() || column == indexOfEdge.end()) return;
+    hessian[row->second * edges + column->second] += value;
+  };
+  // d^2(sum_h |h| eps_h) = sum_h (d^2|h| eps_h + d|h| d eps_h + d eps_h d|h|
+  // + |h| d^2 eps_h), every root and inverse cosine on its declared sheet.
+  for (const auto &entry : reggeSheets().hinges) {
+    auto *hinge = entry.hinge;
+    const double sign = static_cast<double>(entry.contentSign);
+    const complexd content = sign * ReggeSolver::hingeContent(hinge);
+    const complexd deficit = hinge->deficitAngle(entry.angles);
+    const auto contentGradient = hinge->volumeGradient();
+    const auto deficitGradient = hinge->deficitAngleGradient(entry.angles);
+    for (const auto &[keyF, unused] : contentGradient) {
+      (void)unused;
+      const std::map<EdgeKey, complexd> unit{{keyF, complexd{1.0, 0.0}}};
+      for (const auto &[keyE, second] :
+           hinge->volumeGradientDirectionalDerivative(unit))
+        add(keyE, keyF, weight * sign * second * deficit);
+    }
+    for (const auto &[keyE, contentDerivative] : contentGradient)
+      for (const auto &[keyF, deficitDerivative] : deficitGradient) {
+        add(keyE, keyF, weight * sign * contentDerivative * deficitDerivative);
+        add(keyF, keyE, weight * sign * contentDerivative * deficitDerivative);
+      }
+    for (const auto &[keys, second] : hinge->deficitAngleHessian(entry.angles))
+      add(keys.first, keys.second, weight * content * second);
+  }
+  return hessian;
+}
+
+std::vector<complexd> JointAction::actionHessian() const {
+  const std::size_t edges = edgeCount();
+  const std::size_t size = 2 * edges;
+  Eigen::MatrixXcd hessian = Eigen::MatrixXcd::Zero(
+      static_cast<Eigen::Index>(size), static_cast<Eigen::Index>(size));
+  auto at = [&](std::size_t row, std::size_t column) -> complexd & {
+    return hessian(static_cast<Eigen::Index>(row),
+                   static_cast<Eigen::Index>(column));
+  };
+  if (declaration_.gravitationalWeight != 0.0) {
+    const std::vector<complexd> regge = reggeHessian();
+    for (std::size_t e = 0; e < edges; ++e)
+      for (std::size_t f = 0; f < edges; ++f) at(e, f) += regge[e * edges + f];
+  }
+  if (declaration_.holonomyWeight > 0.0) {
+    const std::vector<complexd> villain = holonomyHessian();
+    for (std::size_t e = 0; e < edges; ++e)
+      for (std::size_t f = 0; f < edges; ++f)
+        at(edges + e, edges + f) += villain[e * edges + f];
+  }
+  if (!carrierIsNeeded(declaration_)) return toFlat(hessian);
+
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource,
+                                  /*wantCarrier=*/true);
+  const std::size_t order = workspace.carrierOrder;
+  if (order == 0) return toFlat(hessian);
+  const int degree = declaration_.carrierDegree;
+  const std::size_t cells = order * order;
+  const Eigen::MatrixXcd matrix =
+      contractionMatrix(declaration_, workspace.carrier, order);
+
+  // The first derivatives of h in the relaxed coordinates: in z_e, and in the
+  // Maurer-Cartan increment on the stored orientation, U d/dU = -i s d/dphi
+  // with s the stored sign.
+  std::vector<bool> carried(edges, false);
+  std::vector<std::uint64_t> sources(edges, 0);
+  std::vector<std::uint64_t> targets(edges, 0);
+  std::vector<Eigen::MatrixXcd> lengthDerivative(edges);
+  std::vector<Eigen::MatrixXcd> linkDerivative(edges);
+  for (std::size_t e = 0; e < edges; ++e) {
+    const auto *edge = workspace.edges[e];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    sources[e] = edge->getSource()->getId();
+    targets[e] = edge->getTarget()->getId();
+    const auto dz = workspace.hodge.laplacianGradient(degree, sources[e],
+                                                      targets[e]);
+    const auto dphi = workspace.hodge.laplacianPhaseGradient(
+        degree, sources[e], targets[e]);
+    if (dz.size() != cells || dphi.size() != cells) continue;
+    carried[e] = true;
+    lengthDerivative[e] = toMatrix(dz, order);
+    linkDerivative[e] = complexd{0.0, -workspace.storedSign[e]} *
+                        toMatrix(dphi, order);
+  }
+  const bool contracted = !matrix.isZero(0.0);
+
+  // tr(A d^2 h): the length block from the directional derivatives of the
+  // gradient, one direction per edge; the link block and the mixed block from
+  // the phase Hessian and the mixed derivative, with -1 = (-i)^2 and -i on
+  // the stored signs.
+  if (contracted) {
+    for (std::size_t f = 0; f < edges; ++f) {
+      if (!carried[f]) continue;
+      std::vector<complexd> direction(edges, complexd{0.0, 0.0});
+      direction[f] = complexd{1.0, 0.0};
+      const auto second =
+          workspace.hodge.laplacianGradientDirectionalDerivative(degree,
+                                                                 direction);
+      for (std::size_t e = 0; e < edges; ++e) {
+        if (!carried[e] || second[e].size() != cells) continue;
+        at(e, f) += traceOfProduct(matrix, toMatrix(second[e], order));
+      }
+    }
+    for (std::size_t e = 0; e < edges; ++e) {
+      if (!carried[e]) continue;
+      for (std::size_t f = 0; f < edges; ++f) {
+        if (!carried[f]) continue;
+        const auto phase = workspace.hodge.laplacianPhaseHessian(
+            degree, sources[e], targets[e], sources[f], targets[f]);
+        if (phase.size() == cells)
+          at(edges + e, edges + f) +=
+              -workspace.storedSign[e] * workspace.storedSign[f] *
+              traceOfProduct(matrix, toMatrix(phase, order));
+        const auto mixed = workspace.hodge.laplacianMixedDerivative(
+            degree, sources[e], targets[e], sources[f], targets[f]);
+        if (mixed.size() == cells) {
+          const complexd value = complexd{0.0, -workspace.storedSign[f]} *
+                                 traceOfProduct(matrix, toMatrix(mixed, order));
+          at(e, edges + f) += value;
+          at(edges + f, e) += value;
+        }
+      }
+    }
+  }
+
+  // sum_j xi_j tr(d_y X_j d_x h), the variation of the power sums' matrices
+  // through h at fixed projector, one column y at a time.
+  bool constrained = false;
+  for (const auto &constraint : declaration_.momentConstraints)
+    if (constraint.multiplier != complexd{0.0, 0.0} &&
+        constraint.form == SpectralConstraintForm::PowerSum)
+      constrained = true;
+  if (constrained) {
+    for (std::size_t y = 0; y < size; ++y) {
+      const std::size_t f = y < edges ? y : y - edges;
+      if (!carried[f]) continue;
+      const Eigen::MatrixXcd &dh =
+          y < edges ? lengthDerivative[f] : linkDerivative[f];
+      Eigen::MatrixXcd variation = Eigen::MatrixXcd::Zero(
+          static_cast<Eigen::Index>(order), static_cast<Eigen::Index>(order));
+      for (const auto &constraint : declaration_.momentConstraints) {
+        if (constraint.multiplier == complexd{0.0, 0.0} ||
+            constraint.form != SpectralConstraintForm::PowerSum)
+          continue;
+        variation += constraint.multiplier *
+                     constraintDerivativeVariation(declaration_,
+                                                   workspace.carrier, order,
+                                                   constraint, &dh, nullptr);
+      }
+      if (variation.isZero(0.0)) continue;
+      for (std::size_t x = 0; x < size; ++x) {
+        const std::size_t e = x < edges ? x : x - edges;
+        if (!carried[e]) continue;
+        at(x, y) += traceOfProduct(
+            variation, x < edges ? lengthDerivative[e] : linkDerivative[e]);
+      }
+    }
+  }
+  return toFlat(hessian);
+}
+
+CarrierDerivatives JointAction::carrierDerivatives() const {
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource,
+                                  /*wantCarrier=*/true);
+  const std::size_t edges = workspace.edges.size();
+  const std::size_t order = workspace.carrierOrder;
+  const std::size_t cells = order * order;
+  CarrierDerivatives out;
+  out.lengths.assign(edges, std::vector<complexd>(cells, complexd{0.0, 0.0}));
+  out.links.assign(edges, std::vector<complexd>(cells, complexd{0.0, 0.0}));
+  if (order == 0) return out;
+  for (std::size_t e = 0; e < edges; ++e) {
+    const auto *edge = workspace.edges[e];
+    if (edge == nullptr || edge->getSource() == nullptr ||
+        edge->getTarget() == nullptr)
+      continue;
+    const std::uint64_t source = edge->getSource()->getId();
+    const std::uint64_t target = edge->getTarget()->getId();
+    auto dz = workspace.hodge.laplacianGradient(declaration_.carrierDegree,
+                                                source, target);
+    if (dz.size() == cells) out.lengths[e] = std::move(dz);
+    auto dphi = workspace.hodge.laplacianPhaseGradient(
+        declaration_.carrierDegree, source, target);
+    if (dphi.size() != cells) continue;
+    // U d/dU = -i d/dphi on the canonical link, times the stored sign.
+    const complexd factor{0.0, -workspace.storedSign[e]};
+    for (complexd &entry : dphi) entry *= factor;
+    out.links[e] = std::move(dphi);
+  }
+  return out;
+}
+
+std::vector<complexd> JointAction::stationarityStateVariation(
+    const CarriedStateVariation &variation) const {
+  const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
+                                  declaration_.metricSource,
+                                  /*wantCarrier=*/true);
+  const std::size_t edges = workspace.edges.size();
+  const std::size_t order = workspace.carrierOrder;
+  std::vector<complexd> out(2 * edges, complexd{0.0, 0.0});
+  if (order == 0) return out;
+  const std::size_t cells = order * order;
+  auto check = [&](const std::vector<complexd> &entry, const std::string &what) {
+    if (!entry.empty() && entry.size() != cells)
+      throw std::invalid_argument(
+          "JointAction::stationarityStateVariation: the variation of " + what +
+          " is a square matrix over the " + std::to_string(order) +
+          " cells of degree " + std::to_string(declaration_.carrierDegree) +
+          "; got " + std::to_string(entry.size()) + " entries");
+  };
+  check(variation.covariance, "the covariance");
+  check(variation.momentProjector, "the fiber projector");
+  if (!variation.bandProjectors.empty() &&
+      variation.bandProjectors.size() !=
+          declaration_.momentBandProjectors.size())
+    throw std::invalid_argument(
+        "JointAction::stationarityStateVariation: " +
+        std::to_string(variation.bandProjectors.size()) +
+        " band projector variations were given for " +
+        std::to_string(declaration_.momentBandProjectors.size()) +
+        " declared band projectors");
+  for (const auto &entry : variation.bandProjectors)
+    check(entry, "a band projector");
+
+  // delta A = w_M delta Gamma + sum_j xi_j delta X_j, the latter through the
+  // projectors alone.
+  Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Zero(
+      static_cast<Eigen::Index>(order), static_cast<Eigen::Index>(order));
+  if (declaration_.matterWeight != 0.0 && !declaration_.covariance.empty() &&
+      !variation.covariance.empty())
+    matrix += declaration_.matterWeight * toMatrix(variation.covariance, order);
+  for (const auto &constraint : declaration_.momentConstraints) {
+    if (constraint.multiplier == complexd{0.0, 0.0}) continue;
+    const std::vector<complexd> *flat = nullptr;
+    if (constraint.form == SpectralConstraintForm::BandMean) {
+      if (variation.bandProjectors.empty()) continue;
+      flat = &variation.bandProjectors.at(constraint.band);
+    } else {
+      if (declaration_.momentProjector.empty()) continue;
+      flat = &variation.momentProjector;
+    }
+    if (flat->empty()) continue;
+    const Eigen::MatrixXcd projectorVariation = toMatrix(*flat, order);
+    matrix += constraint.multiplier *
+              constraintDerivativeVariation(declaration_, workspace.carrier,
+                                            order, constraint, nullptr,
+                                            &projectorVariation);
+  }
+  std::vector<complexd> lengths(edges, complexd{0.0, 0.0});
+  std::vector<complexd> links(edges, complexd{0.0, 0.0});
+  contractionSweep(workspace, declaration_.carrierDegree, matrix, &lengths,
+                   &links);
+  std::copy(lengths.begin(), lengths.end(), out.begin());
+  std::copy(links.begin(), links.end(),
+            out.begin() + static_cast<std::ptrdiff_t>(edges));
+  return out;
+}
 
 HolonomyTruncation JointAction::holonomyTruncation() const {
   HolonomyTruncation report;

@@ -434,12 +434,33 @@ class CovariantChainHodge {
   /// independent of the lengths. Thread-safe once `warmDerivatives(k)` has run.
   [[nodiscard]] Eigen::MatrixXcd covariantOperatorSecondDerivative(const LengthDirection &v,
                                                                    std::size_t edgeIndex) const;
+  /// \f$ \partial^2 h_k(s,U)/\partial s_e\,\partial\varphi_f \f$ for the squared
+  /// length of the edge at canonical index \p lengthEdge and the multiplicative
+  /// variation \f$ U_f = e^{i\varphi_f} \f$ of the link at canonical index
+  /// \p phaseEdge, dense: the mixed second-order product rule over the factors
+  /// of \f$ h_k \f$. The twisted incidences carry no length derivative; a
+  /// dressed metric's mixed derivative is the phase derivative of its dressed
+  /// length derivative, since the dressing is independent of \f$ s \f$; an
+  /// inverse metric contributes
+  /// \f$ \partial_e\partial_f M^{-1} = M^{-1}\partial_e M M^{-1}\partial_f M M^{-1}
+  /// + M^{-1}\partial_f M M^{-1}\partial_e M M^{-1}
+  /// - M^{-1}\partial_e\partial_f M\, M^{-1} \f$. Below the crossover.
+  [[nodiscard]] Eigen::MatrixXcd covariantOperatorMixedDerivative(int k, std::size_t lengthEdge,
+                                                                  std::size_t phaseEdge) const;
   /// \f$ \partial M_k^U/\partial s_e \f$: the dressed sparse metric derivative
   /// (the dressing is independent of \f$ s \f$).
   [[nodiscard]] SparseMatrix dressedDerivative(int k, std::size_t edgeIndex) const;
   /// \f$ \partial M_k^U/\partial\varphi_e \f$ for \f$ U_e = e^{i\varphi_e} \f$: every
   /// dressed entry whose base-vertex pair is that edge times \f$ \pm i \f$.
   [[nodiscard]] SparseMatrix dressedPhaseDerivative(int k, std::size_t edgeIndex) const;
+  /// \f$ \partial^2 M_k^U/\partial\varphi_a\partial\varphi_b \f$: minus the entries
+  /// on the link when the two edges are one, zero otherwise, since every
+  /// dressed entry depends on a single link.
+  [[nodiscard]] SparseMatrix dressedPhaseHessian(int k, std::size_t edgeA, std::size_t edgeB) const;
+  /// \f$ \partial^2 M_k^U/\partial s_e\partial\varphi_f \f$: the phase derivative of
+  /// the dressed length derivative.
+  [[nodiscard]] SparseMatrix dressedMixedDerivative(int k, std::size_t lengthEdge,
+                                                    std::size_t phaseEdge) const;
   /// The sparse dressed pencil at degree zero,
   /// \f$ \tilde A_0^U = \partial_1^U M_1^U (\partial_1^{U^{-1}})^T \f$ and
   /// \f$ M_0^U \f$, available at any size: degree zero has no lower term, so

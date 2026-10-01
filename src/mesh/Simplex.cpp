@@ -1143,23 +1143,23 @@ std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
                    std::pair<std::uint64_t, std::uint64_t>>,
          std::complex<double>>
 Simplex::deficitAngleHessian() const {
+    return deficitAngleHessian(DihedralSheets{});
+}
+
+std::map<std::pair<std::pair<std::uint64_t, std::uint64_t>,
+                   std::pair<std::uint64_t, std::uint64_t>>,
+         std::complex<double>>
+Simplex::deficitAngleHessian(const DihedralSheets &sheets) const {
     using cd = std::complex<double>;
     using EK = std::pair<std::uint64_t, std::uint64_t>;
     std::map<std::pair<EK, EK>, cd> hess;
     if (!spacetime || vertices.empty()) return hess;
-    const int topSize =
-        spacetime->getMetric()->getSignature()->getDimensions() + 1;
 
     // d^2(eps)/dl^2_e dl^2_f = -sum_tau d^2(theta_tau). Same top-cell set and
-    // cofactor machinery as deficitAngleGradient, carried one more
-    // derivative: d^2 theta = (d2theta/dr^2) dr_e dr_f + (dtheta/dr) d2r.
-    for (const auto &tau : vertices[0]->getSimplices()) {
-        if (static_cast<int>(tau->size()) != topSize) continue;
-        bool containsAll = true;
-        for (std::size_t i = 1; i < vertices.size(); ++i)
-            if (!tau->hasVertex(vertices[i])) { containsAll = false; break; }
-        if (!containsAll) continue;
-
+    // cofactor machinery as deficitAngleGradient, each angle on its declared
+    // sheet, carried one more derivative:
+    // d^2 theta = (d2theta/dr^2) dr_e dr_f + (dtheta/dr) d2r.
+    for (auto *tau : incidentTopCells()) {
         const auto &tv = tau->getVertices();
         const int m = static_cast<int>(tv.size());
         std::vector<int> opp;
@@ -1178,12 +1178,15 @@ Simplex::deficitAngleHessian() const {
         const std::complex<double> detB = tc.cmDet;
         if (std::abs(detB) < 1e-300) continue;
         const std::vector<std::complex<double>> &C = tc.cmCof;
-        const DihedralCosine dihedral = dihedralCosine(C, n, bi, bj);
+        const auto declared = sheets.find(tau->topTuple());
+        const DihedralCosine dihedral = dihedralCosine(
+            C, n, bi, bj,
+            declared == sheets.end() ? DihedralSheet{} : declared->second);
         if (!dihedral.ok) continue;
         const std::vector<std::complex<double>> Binv =
             inverseFromCofactors(C, n, detB);
-        // theta = acos(r) gives dtheta/dr = -1/sin(theta) and
-        // d2theta/dr2 = -r/sin^3(theta).
+        // On every sheet cos(theta) = r and the declared theta gives
+        // dtheta/dr = -1/sin(theta) and d2theta/dr2 = -r/sin^3(theta).
         const cd r = dihedral.r;
         const cd theta = dihedral.theta;
         const cd Cij = dihedral.Cij;

@@ -178,6 +178,34 @@ class HodgeLaplacian {
     [[nodiscard]] std::vector<std::complex<double>> laplacianPhaseGradient(
         int k, std::uint64_t ea, std::uint64_t eb) const;
 
+    /// Whitney pencil only: the analytic
+    /// \f$ \partial^2 L_k/\partial\varphi_a\partial\varphi_b \f$ for the
+    /// multiplicative variations of the links on the edges \f$ (a_1,a_2) \f$
+    /// and \f$ (b_1,b_2) \f$, flat row-major \f$ |C_k|^2 \f$: the second-order
+    /// product rule on \f$ L_z=(M^U)^{-1}hM^U \f$,
+    /// \f$ M\,\partial_a\partial_bL_z=\partial_a\partial_bh\,M+\partial_ah\,\partial_bM
+    /// +\partial_bh\,\partial_aM+h\,\partial_a\partial_bM-\partial_a\partial_bM\,L_z
+    /// -\partial_aM\,\partial_bL_z-\partial_bM\,\partial_aL_z \f$, with the
+    /// pencil's `chainhodge::CovariantChainHodge::covariantOperatorPhaseHessian`.
+    /// Identically zero under `DiagonalWeights`; all-zero for an edge the
+    /// complex does not carry. Symmetric in the two edges.
+    [[nodiscard]] std::vector<std::complex<double>> laplacianPhaseHessian(
+        int k, std::uint64_t a1, std::uint64_t a2, std::uint64_t b1,
+        std::uint64_t b2) const;
+
+    /// Whitney pencil only: the analytic
+    /// \f$ \partial^2 L_k/\partial z_e\partial\varphi_f \f$ for the squared
+    /// length of the edge \f$ (e_1,e_2) \f$ and the multiplicative variation
+    /// of the link on the edge \f$ (f_1,f_2) \f$, flat row-major
+    /// \f$ |C_k|^2 \f$: the same product rule with one length and one phase
+    /// derivative, the pencil's
+    /// `chainhodge::CovariantChainHodge::covariantOperatorMixedDerivative`
+    /// supplying \f$ \partial_e\partial_fh \f$. Identically zero under
+    /// `DiagonalWeights`; all-zero for an edge the complex does not carry.
+    [[nodiscard]] std::vector<std::complex<double>> laplacianMixedDerivative(
+        int k, std::uint64_t e1, std::uint64_t e2, std::uint64_t f1,
+        std::uint64_t f2) const;
+
     /// A Hodge operator paired with the metric of the same source, as flat
     /// row-major \f$ |C_k|\times|C_k| \f$ arrays in the canonical cell order.
     struct MetricPencil {
@@ -280,6 +308,24 @@ class HodgeLaplacian {
     /// \f$ k < 0 \f$ or \f$ k \f$ above the top dimension.
     [[nodiscard]] std::vector<std::complex<double>> laplacianGradient(
         int k, std::uint64_t edgeA, std::uint64_t edgeB) const;
+
+    /// The directional derivative of `laplacianGradient` along the
+    /// squared-length direction \p direction (one entry per edge in `EdgeList`
+    /// order): \f$ \sum_f v_f\,\partial^2 L_k/\partial z_e\partial z_f \f$
+    /// for every edge \f$ e \f$ in the same order, each flat row-major
+    /// \f$ |C_k|^2 \f$ (all-zero for an edge the complex does not carry;
+    /// every entry empty above the top dimension). Under `WhitneyPencil` the
+    /// second derivative of \f$ L_z \f$ comes from
+    /// `chainhodge::CovariantChainHodge::lengthDirection` and
+    /// `covariantOperatorSecondDerivative`; under `DiagonalWeights` from the
+    /// second derivatives of the signed contents
+    /// (`Simplex::volumeGradientDirectionalDerivative`). One column of the
+    /// Hessian of \f$ L_k \f$ in the squared lengths, with the direction a
+    /// unit vector.
+    /// @throws std::runtime_error if `direction.size()` is not the edge count.
+    [[nodiscard]] std::vector<std::vector<std::complex<double>>>
+    laplacianGradientDirectionalDerivative(
+        int k, const std::vector<std::complex<double>> &direction) const;
 
     /// Von Neumann entropy of the normalized positive Hodge operator
     /// \f[ A_k=M_k^\dagger M_k,\qquad

@@ -477,6 +477,33 @@ struct ReportedActionValue {
   std::string unavailable;
 };
 
+/// # CarrierDerivatives
+///
+/// The first derivatives of the carrier operator \f$ h_k(z,U) \f$ in the
+/// coordinates a relaxation moves, one flat row-major matrix per edge in
+/// `getEdgeList()` order: \f$ \partial h/\partial z_e \f$ in the squared
+/// length, and the Maurer-Cartan derivative \f$ U_e\,\partial h/\partial U_e \f$
+/// on the edge's stored orientation. All-zero for an edge the complex does not
+/// carry; every entry empty when the complex carries no cell of the carrier
+/// degree.
+struct CarrierDerivatives {
+  std::vector<std::vector<std::complex<double>>> lengths;
+  std::vector<std::vector<std::complex<double>>> links;
+};
+
+/// # CarriedStateVariation
+///
+/// A first-order variation of the carried state at fixed geometry: of the
+/// covariance \f$ \Gamma \f$, of the constraints' fiber projector
+/// \f$ P_{\mathcal C} \f$ and of each declared band projector \f$ P_b \f$
+/// (one entry per `JointActionDeclaration::momentBandProjectors`), each flat
+/// row-major over the \f$ k \f$-cells. An empty entry is a zero variation.
+struct CarriedStateVariation {
+  std::vector<std::complex<double>> covariance;
+  std::vector<std::complex<double>> momentProjector;
+  std::vector<std::vector<std::complex<double>>> bandProjectors;
+};
+
 /// # JointActionDeclaration
 ///
 /// Everything that fixes which action \f$ S(z,U,\Gamma) \f$ a `JointAction`
@@ -501,15 +528,14 @@ struct JointActionDeclaration {
   /// state's bilinear density is measured are the caller's to fix.
   ///
   /// A nonzero weight carries one constraint into any solve of the stationarity
-  /// equations. The dual Regge action's exact gradient is analytic on each side
-  /// of the real axis in the squared lengths and not across it: the deficit
-  /// angle is taken on the principal branch and carries no Riemann-sheet label,
-  /// so an arbitrarily small positive imaginary part in \f$ z_e \f$ shifts a
-  /// hinge's deficit by \f$ 2\pi \f$ and its contribution to the gradient by
-  /// \f$ 2\pi \f$ times the hinge's dual volume. A Jacobian taken on a contour
-  /// around a real configuration therefore reads two sheets, and
-  /// `HolomorphicJacobianMode::RealAxisDifference` is the rule to declare with
-  /// this term.
+  /// equations. The dual Regge action's exact gradient and Hessian are
+  /// analytic on each side of the real axis in the squared lengths and not
+  /// across it: the deficit angle is taken on the principal branch and
+  /// carries no Riemann-sheet label, so an arbitrarily small positive
+  /// imaginary part in \f$ z_e \f$ shifts a hinge's deficit by \f$ 2\pi \f$
+  /// and its contribution to the gradient by \f$ 2\pi \f$ times the hinge's
+  /// dual volume. The Jacobian of a solve is assembled from the analytic
+  /// derivatives on the side of the axis the point lies on (`reggeHessian`).
   double gravitationalWeight = 1.0;
 
   /// Which Regge discretization \f$ S_{\rm Regge} \f$ is. Primal by default.
@@ -885,6 +911,71 @@ class JointAction {
   /// The truncation of the Villain series over the current face holonomies,
   /// with its certified relative tail bounds.
   [[nodiscard]] HolonomyTruncation holonomyTruncation() const;
+
+  /// The Hessian of the Regge term \f$ w_RS_{\rm Regge} \f$ in the squared
+  /// lengths, flat row-major \f$ |E|\times|E| \f$ in `getEdgeList()` order.
+  /// For the primal form it is the per-hinge product rule
+  /// \f$ \sum_h\bigl(\partial_e\partial_f|h|\,\varepsilon_h
+  /// +\partial_e|h|\,\partial_f\varepsilon_h+\partial_f|h|\,\partial_e\varepsilon_h
+  /// +|h|\,\partial_e\partial_f\varepsilon_h\bigr) \f$ on the declared sheets
+  /// (`ReggeBranch`), from `mesh::Simplex::volumeGradient`,
+  /// `volumeGradientDirectionalDerivative`, the sheeted
+  /// `deficitAngleGradient` and the sheeted `deficitAngleHessian`, the
+  /// content root through its continued sign; for the dual form it is
+  /// `simulations::ReggeSolver::actionHessianExact`. Zero when the weight is
+  /// zero. Symmetric.
+  [[nodiscard]] std::vector<std::complex<double>> reggeHessian() const;
+
+  /// The Hessian of the action in the relaxed coordinates at fixed carried
+  /// state: the Jacobian of (`lengthStationarity`, `linkStationarity`) with
+  /// respect to the squared lengths \f$ z_e \f$ and the Maurer-Cartan
+  /// increments \f$ \delta_e \f$ (\f$ U_e\mapsto U_ee^{\delta_e} \f$ on the
+  /// stored orientation) at fixed \f$ \Gamma \f$, fixed projectors and fixed
+  /// multipliers, flat row-major \f$ 2|E|\times2|E| \f$ in the block order
+  /// lengths then links, each block in `getEdgeList()` order.
+  ///
+  /// It is `reggeHessian` on the length block, `holonomyHessian` on the link
+  /// block, and on every block the contraction
+  /// \f$ \operatorname{tr}(A\,\partial_x\partial_yh)
+  /// +\sum_j\xi_j\operatorname{tr}(\partial_yX_j\,\partial_xh) \f$, with
+  /// \f$ A=w_M\Gamma+\sum_j\xi_jX_j \f$ the matrix `lengthStationarity`
+  /// contracts the operator's derivatives against and \f$ \partial_yX_j \f$
+  /// the variation, through \f$ h \f$ at fixed projector, of a power sum's
+  /// \f$ X_j=(j/s)(h/s)^{j-1} \f$ or of its compression to the declared
+  /// fiber (zero for a band mean, whose \f$ X_j \f$ is its projector). The
+  /// second derivatives of \f$ h \f$ are
+  /// `HodgeLaplacian::laplacianGradientDirectionalDerivative`,
+  /// `laplacianPhaseHessian` and `laplacianMixedDerivative`, the link
+  /// coordinates carrying \f$ U\,\partial/\partial U=-i\,\partial/\partial\varphi \f$
+  /// on each edge's stored orientation. Symmetric.
+  [[nodiscard]] std::vector<std::complex<double>> actionHessian() const;
+
+  /// The first derivatives of the carrier operator in the relaxed coordinates
+  /// (`CarrierDerivatives`): `HodgeLaplacian::laplacianGradient` in each
+  /// squared length and, on each edge's stored orientation,
+  /// \f$ -i \f$ times `laplacianPhaseGradient` of the canonical link.
+  [[nodiscard]] CarrierDerivatives carrierDerivatives() const;
+
+  /// The variation of (`lengthStationarity`, `linkStationarity`) under a
+  /// variation of the carried state at fixed geometry
+  /// (`CarriedStateVariation`), concatenated in the block order of
+  /// `stationarityResidual`'s first two blocks (length \f$ 2|E| \f$):
+  /// \f$ \operatorname{tr}(\delta A\,\partial_xh) \f$ with
+  /// \f$ \delta A=w_M\,\delta\Gamma+\sum_j\xi_j\,\delta X_j \f$, where
+  /// \f$ \delta X_j \f$ is the variation of the constraint's matrix through
+  /// its projector alone: \f$ \delta P_b/(r_bs) \f$ for a band mean, and for
+  /// the power sums of a declared fiber the product rule in
+  /// \f$ P_{\mathcal C} \f$ on
+  /// \f$ (j/s)P_{\mathcal C}(P_{\mathcal C}hP_{\mathcal C}/s)^{j-1}P_{\mathcal C} \f$;
+  /// zero for the power sums of the whole carrier, which no projector enters.
+  /// This is the part of the Jacobian of a self-consistent solve that the
+  /// rebuilt state contributes, once the state's variation along a coordinate
+  /// is known (`HolomorphicRelaxation::jacobian`).
+  /// @throws std::invalid_argument when a variation is neither empty nor a
+  ///   square matrix over the \f$ k \f$-cells, or when the band projector
+  ///   variations are neither absent nor one per declared band projector.
+  [[nodiscard]] std::vector<std::complex<double>> stationarityStateVariation(
+      const CarriedStateVariation &variation) const;
 
 
   /// The Hellmann-Feynman force \f$ \operatorname{tr}(\Gamma\,\partial h/\partial z_e) \f$

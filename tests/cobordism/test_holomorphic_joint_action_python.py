@@ -116,6 +116,47 @@ def _metric(index):
     return complex(1.0 + 0.037 * (index % 5), 0.021 * (1 + index % 4))
 
 
+def _difference_columns(spacetime, evaluate, lengths, links, step):
+    """A central-difference oracle for the Jacobian of ``evaluate()``: one
+    column per relaxed coordinate in the relaxation's order (every edge its
+    own coordinate), each ``(F(x + h) - F(x - h)) / (2 h)`` at the real step
+    ``h``: a squared length moved to ``z + h`` through the root on the edge's
+    side, a link moved to ``U e^{h}`` through the stored phase
+    ``phi -> phi - i h``. The geometry is restored exactly from a snapshot
+    after every evaluation. A test device, not a library mode: its truncation
+    is ``h^2/6`` times the third derivative of ``F`` and its rounding
+    ``eps |F| / h``."""
+    edges = spacetime.getEdgeList().toVector()
+    snapshot = [(complex(e.getLength()), complex(e.getPhase())) for e in edges]
+
+    def restore():
+        for edge, (length, phase) in zip(edges, snapshot):
+            edge.setLength(length)
+            edge.setPhase(phase)
+
+    def displaced(index, link, sign):
+        restore()
+        edge = edges[index]
+        if link:
+            edge.setPhase(complex(edge.getPhase()) - 1j * sign * step)
+        else:
+            length = complex(edge.getLength())
+            root = cmath.sqrt(length * length + sign * step)
+            if (root.conjugate() * length).real < 0.0:
+                root = -root
+            edge.setLength(root)
+        value = np.asarray(evaluate(), dtype=complex)
+        restore()
+        return value
+
+    columns = []
+    for link in ((False,) if lengths else ()) + ((True,) if links else ()):
+        for index in range(len(edges)):
+            columns.append((displaced(index, link, 1.0)
+                            - displaced(index, link, -1.0)) / (2.0 * step))
+    return np.array(columns).T
+
+
 class TheActionIsTheSumOfItsDeclaredTermsTest(unittest.TestCase):
     """``value`` reads nothing but the four terms it names."""
 
@@ -413,15 +454,17 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
         self.assertLess(abs(report.moment_residuals[0]), 1e-10)
         self.assertAlmostEqual(abs(report.multipliers[0] + 1.0), 0.0, places=8)
 
-    def test_the_moment_gradient_matches_the_contour_derivative(self):
-        """The analytic column and the contour row agree, as they must.
+    def test_the_moment_row_and_column_are_the_analytic_gradient(self):
+        """The multiplier's column and the moment equation's row are one
+        number.
 
         The action is ``... + xi_j (p_j(h) - p_j*)``, so the multiplier's
-        Jacobian column is ``d p_j/d z`` analytically, while the moment
-        equation's Jacobian row is the same derivative taken by the contour
-        rule. Second derivatives commute, so the two are one number reached two
-        ways, and their agreement certifies the contour rule at the precision
-        the solve relies on.
+        Jacobian column is ``d p_j/d z`` and the moment equation's Jacobian
+        row is the same derivative; second derivatives commute. Both are the
+        analytic ``moment_gradient``, entry for entry, and the row agrees
+        with a central difference of the moment residual at the step 1e-6
+        (truncation ``h^2/6`` times the third derivative of ``p_1``, about
+        1e-12 of the gradient's scale) to 1e-8 of that scale.
         """
         spacetime = sphere3(squared=_metric)
         action = self._constrained(spacetime, 0j)
@@ -429,27 +472,29 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
             action, _relaxation(relax_lengths=True, relax_multipliers=True))
         order = relaxation.variable_count()
         jacobian = np.array(relaxation.jacobian()).reshape(order, order)
-        analytic = action.moment_gradient(0)
+        analytic = np.asarray(action.moment_gradient(0))
         edges = action.edge_count()
-        for index in range(edges):
-            self.assertAlmostEqual(
-                abs(jacobian[edges, index] - analytic[index]), 0.0,
-                delta=1e-7 * (1.0 + abs(analytic[index])))
-            self.assertAlmostEqual(
-                abs(jacobian[index, edges] - analytic[index]), 0.0,
-                delta=1e-12 * (1.0 + abs(analytic[index])))
+        np.testing.assert_array_equal(jacobian[edges, :edges],
+                                      analytic[:edges])
+        np.testing.assert_array_equal(jacobian[:edges, edges],
+                                      analytic[:edges])
+        oracle = _difference_columns(
+            spacetime, lambda: action.moment_residuals(), True, False, 1e-6)
+        scale = np.max(np.abs(analytic[:edges]))
+        self.assertLess(np.max(np.abs(oracle[0] - analytic[:edges])),
+                        1e-8 * scale)
 
 
 class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
     """The configuration a caller may not silently get wrong."""
 
-    def test_a_short_contour_is_refused(self):
-        spacetime = sphere3()
-        action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
-        declaration = _relaxation(relax_links=True)
-        declaration.contour_nodes = 4
-        with self.assertRaises(ValueError):
-            cob.HolomorphicRelaxation(action, declaration)
+    def test_the_declaration_carries_no_derivative_rule(self):
+        """The Jacobian is analytic, so the declaration has no node count, no
+        radius and no mode of a difference rule to get wrong."""
+        declaration = cob.HolomorphicRelaxationDeclaration()
+        for name in ("contour_nodes", "contour_radius", "jacobian_mode"):
+            self.assertFalse(hasattr(declaration, name), name)
+        self.assertFalse(hasattr(cob, "HolomorphicJacobianMode"))
 
     def test_a_negative_carrier_degree_is_refused(self):
         spacetime = sphere3()
@@ -481,8 +526,8 @@ class TheDeclaredControlsAreCheckedTest(unittest.TestCase):
 class TheRemainingReadsTest(unittest.TestCase):
     """The reads of the action and of the solve that the tests above do not
     assert: the constraint count and the multipliers, the residual norm, the
-    carrier eigenvalues, the two Jacobian rules, the rank threshold and the
-    per-step record."""
+    carrier eigenvalues, the analytic Jacobian against a difference of the
+    residual, the rank threshold and the per-step record."""
 
     def test_the_multipliers_are_variables_of_the_action(self):
         spacetime = sphere3(squared=_metric)
@@ -518,27 +563,28 @@ class TheRemainingReadsTest(unittest.TestCase):
             np.sort_complex(np.array(action.carrier_eigenvalues())), expected,
             atol=1e-10)
 
-    def test_the_contour_and_real_axis_jacobians_agree(self):
-        """The link block is analytic in the phases, so the Cauchy-contour
-        derivative (the default rule) and the real-axis difference read the
-        same Jacobian, up to the difference rule's own error."""
+    def test_the_link_block_matches_a_central_difference_of_the_residual(
+            self):
+        """The analytic link block of the holonomy term on the sphere with a
+        complex flux is the Villain Hessian, and it agrees with a central
+        difference of the residual at the step 1e-4 in the Maurer-Cartan
+        increment (truncation ``h^2/6`` times the third derivative of the
+        residual, about 1e-9 of the block's scale) to 1e-7 of that scale."""
         spacetime = sphere3(squared=_metric, phase=_flux)
         action = cob.JointAction(spacetime, _declaration(holonomy_weight=1.0))
-        self.assertEqual(cob.HolomorphicRelaxationDeclaration().jacobian_mode,
-                         cob.HolomorphicJacobianMode.ContourDerivative)
-        jacobians = []
-        for mode in (cob.HolomorphicJacobianMode.ContourDerivative,
-                     cob.HolomorphicJacobianMode.RealAxisDifference):
-            relaxation = cob.HolomorphicRelaxation(
-                action, _relaxation(relax_links=True, jacobian_mode=mode))
-            self.assertEqual(relaxation.equation_count(),
-                             relaxation.variable_count())
-            order = relaxation.variable_count()
-            jacobians.append(np.array(relaxation.jacobian()).reshape(order,
-                                                                     order))
-        scale = np.abs(jacobians[0]).max()
-        self.assertLess(np.abs(jacobians[0] - jacobians[1]).max(),
-                        1e-4 * scale)
+        relaxation = cob.HolomorphicRelaxation(
+            action, _relaxation(relax_links=True))
+        self.assertEqual(relaxation.equation_count(),
+                         relaxation.variable_count())
+        order = relaxation.variable_count()
+        jacobian = np.array(relaxation.jacobian()).reshape(order, order)
+        np.testing.assert_array_equal(
+            jacobian, np.array(action.holonomy_hessian()).reshape(order,
+                                                                  order))
+        oracle = _difference_columns(
+            spacetime, lambda: relaxation.residual(), False, True, 1e-4)
+        scale = np.abs(jacobian).max()
+        self.assertLess(np.abs(jacobian - oracle).max(), 1e-7 * scale)
 
     def test_every_step_records_its_norm_and_its_dampings(self):
         spacetime = sphere3(squared=_metric, phase=_flux)

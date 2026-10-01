@@ -542,7 +542,7 @@ dualVolume().)doc")
            "dihedral with the boost-safe sin(theta) branch; matches finite "
            "differences to machine precision.")
       .def("deficitAngleHessian",
-           &Simplex::deficitAngleHessian,
+           py::overload_cast<>(&Simplex::deficitAngleHessian, py::const_),
            "Exact analytic d^2(deficit)/d(l^2_e)d(l^2_f), as a dict "
            "{((v0,v1),(v2,v3)): complex}. One derivative beyond the gradient "
            "(cofactor second derivative + d^2theta/dr^2); symmetric.");
