@@ -623,7 +623,9 @@ class TheRoundingBoundCertifiesTheWeightTest(unittest.TestCase):
         computed sum is not finite, its rounding bound is reported as
         infinite, and the weight is not certified nonzero there."""
         series = cob.VillainCharacter(1.0).series(1e40 + 0j)
-        self.assertFalse(math.isfinite(abs(series.value)))
+        value = complex(series.value)
+        self.assertFalse(math.isfinite(value.real)
+                         and math.isfinite(value.imag))
         self.assertEqual(series.rounding_bound, math.inf)
         self.assertFalse(cob.VillainCharacter.certified_nonzero(series))
 

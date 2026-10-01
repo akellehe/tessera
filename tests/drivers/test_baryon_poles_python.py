@@ -30,6 +30,25 @@ def alignment():
                                     bp.rotation_group())
 
 
+@pytest.fixture(scope="module")
+def run_alignment():
+    """The aligned frame of the declared host at the recorded run's
+    tolerances, the ones the spin frames below are read at."""
+    return bp.aligned_doublet_frame(
+        bp.monopole_support(), bp.rotation_group(),
+        RUN.TOLERANCES["degeneracy_tolerance"],
+        RUN.TOLERANCES["certificate_tolerance"],
+        RUN.TOLERANCES["character_tolerance"])
+
+
+def _run_spin_frame(supports, symmetry):
+    """`spin_frame` at the recorded run's tolerances."""
+    return bp.spin_frame(supports, symmetry,
+                         RUN.TOLERANCES["degeneracy_tolerance"],
+                         RUN.TOLERANCES["certificate_tolerance"],
+                         RUN.TOLERANCES["character_tolerance"])
+
+
 # ------------------------------------------------------------------ host
 
 
@@ -100,7 +119,9 @@ def _one_length_changed():
                        for t in range(bp.SHEETS)]
 
 
-def test_the_spin_of_a_symmetric_cell_is_read_in_its_own_frame(alignment):
+def test_the_spin_of_a_symmetric_cell_is_read_in_its_own_frame(
+        run_alignment):
+    alignment = run_alignment
     """`spin_frame` on the declared host at the run's tolerances. The cell
     has all twelve rotations, the spin read of every sheet names the
     j = 1/2 doublet, and the three sheets, which carry the same tetrahedron,
@@ -113,8 +134,7 @@ def test_the_spin_of_a_symmetric_cell_is_read_in_its_own_frame(alignment):
     supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
     tolerance = RUN.TOLERANCES["certificate_tolerance"]
     symmetry = bp.cell_symmetry(spacetime, supports, tolerance)
-    frame = bp.spin_frame(supports, symmetry,
-                          RUN.TOLERANCES["degeneracy_tolerance"], tolerance)
+    frame = _run_spin_frame(supports, symmetry)
     assert frame["name"] == bp.SPIN_FRAME_OF_THE_CELL == \
         "the relaxed cell's own rotation group"
     assert frame["flags"] == []
@@ -131,7 +151,8 @@ def test_the_spin_of_a_symmetric_cell_is_read_in_its_own_frame(alignment):
 
 
 def test_the_spin_of_a_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
-        alignment):
+        run_alignment):
+    alignment = run_alignment
     """`spin_frame` on the cell with one squared length moved from 8 to 8.5.
     The cell keeps two of the twelve rotations (the test above), so the first
     precondition of its own spin read does not hold. The read is made in the
@@ -145,8 +166,7 @@ def test_the_spin_of_a_cell_without_the_tetrahedral_group_is_read_in_the_host_fr
     spacetime, supports = _one_length_changed()
     tolerance = RUN.TOLERANCES["certificate_tolerance"]
     symmetry = bp.cell_symmetry(spacetime, supports, tolerance)
-    frame = bp.spin_frame(supports, symmetry,
-                          RUN.TOLERANCES["degeneracy_tolerance"], tolerance)
+    frame = _run_spin_frame(supports, symmetry)
     assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST == \
         "the declared symmetric host"
     (flag,) = frame["flags"]
@@ -178,26 +198,27 @@ def _symmetric_cell():
 
 
 def test_a_cell_whose_spin_read_names_no_doublet_is_read_in_the_host_frame(
-        monkeypatch, alignment):
+        monkeypatch, run_alignment):
     """The second precondition of the cell's own spin read: every sheet's
     spin read names a j = 1/2 doublet. With the read of the cell's own
     supports replaced by one that names none (`NoSpinorDoublet`), on a cell
     that has the whole tetrahedral group, the frame is the declared
     symmetric host's and the one flag is "no j = 1/2 doublet", with the
     read's own words and the two tolerances it was made at."""
+    alignment = run_alignment
     supports, symmetry = _symmetric_cell()
     own = [support for support, _ in supports]
     real = bp.aligned_doublet_frame
 
-    def read(support, group, degeneracy_tolerance, tolerance):
+    def read(support, group, degeneracy_tolerance, tolerance,
+             character_tolerance):
         if any(support is sheet for sheet in own):
             raise bp.NoSpinorDoublet("the support carries no j = 1/2 "
                                      "doublet: no band of rank two")
-        return real(support, group, degeneracy_tolerance, tolerance)
+        return real(support, group, degeneracy_tolerance, tolerance,
+                    character_tolerance)
     monkeypatch.setattr(bp, "aligned_doublet_frame", read)
-    frame = bp.spin_frame(supports, symmetry,
-                          RUN.TOLERANCES["degeneracy_tolerance"],
-                          RUN.TOLERANCES["certificate_tolerance"])
+    frame = _run_spin_frame(supports, symmetry)
     assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST
     assert frame["flags"] == [{
         "name": "no j = 1/2 doublet",
@@ -211,26 +232,26 @@ def test_a_cell_whose_spin_read_names_no_doublet_is_read_in_the_host_frame(
 
 
 def test_a_cell_whose_sheets_disagree_on_the_labels_is_read_in_the_host_frame(
-        monkeypatch, alignment):
+        monkeypatch, run_alignment):
     """The third precondition of the cell's own spin read: the aligned
     frames of the sheets carry the same doublet labels. With the read of the
     third sheet replaced by one whose reference carrier is 0 while the first
     two keep the host's 1, on a cell that has the whole tetrahedral group,
     the frame is the declared symmetric host's and the one flag is "the
     sheets' doublet labels disagree", with the labels of the three sheets."""
+    alignment = run_alignment
     supports, symmetry = _symmetric_cell()
     third = supports[2][0]
     real = bp.aligned_doublet_frame
 
-    def read(support, group, degeneracy_tolerance, tolerance):
+    def read(support, group, degeneracy_tolerance, tolerance,
+             character_tolerance):
         out = real(support, group, degeneracy_tolerance, tolerance)
         if support is third:
             out = dict(out, reference_carrier=0)
         return out
     monkeypatch.setattr(bp, "aligned_doublet_frame", read)
-    frame = bp.spin_frame(supports, symmetry,
-                          RUN.TOLERANCES["degeneracy_tolerance"],
-                          RUN.TOLERANCES["certificate_tolerance"])
+    frame = _run_spin_frame(supports, symmetry)
     assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST
     (flag,) = frame["flags"]
     assert flag["name"] == "the sheets' doublet labels disagree"
@@ -607,7 +628,8 @@ def test_a_solve_that_overflowed_the_double_has_no_value(monkeypatch):
     monkeypatch.setattr(bp, "relax_content",
                         lambda content, kappa, beta, config:
                         (None, None, report))
-    monkeypatch.setattr(bp, "relaxation_record", lambda report: dict(solve))
+    monkeypatch.setattr(bp, "relaxation_record",
+                        lambda report, hessian_reality_tolerance: dict(solve))
     name = "the squared lengths overflowed the double"
     message = (name + " (|z| is not finite on edge 3), so there is no "
                "finite geometry to read a pole on")

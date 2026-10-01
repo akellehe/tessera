@@ -182,7 +182,8 @@ def test_every_tolerance_and_limit_is_carried_into_every_cell(monkeypatch):
 
     def scan(kappa, beta, config, on_content=None):
         seen.append(dict(config))
-        return {"failed_contents": [], "contents": [], "ratios": {},
+        return {"failed_contents": [], "flagged_contents": [],
+                "contents": [], "ratios": {},
                 "pole_table": {}}
 
     monkeypatch.setattr(bp, "scan_point", scan)
@@ -278,7 +279,8 @@ def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
 
     def scan(kappa, beta, cell_config, on_content=None):
         seen.append(dict(cell_config))
-        return {"failed_contents": [], "contents": [], "ratios": {},
+        return {"failed_contents": [], "flagged_contents": [],
+                "contents": [], "ratios": {},
                 "pole_table": []}
 
     monkeypatch.setattr(bp, "scan_point", scan)
