@@ -584,11 +584,10 @@ struct SelfConsistentMeanFieldReport {
 /// (chosen once and followed, by default), which changes no equation.
 ///
 /// A solve that finds no fixed point says why, by name
-/// (`SelfConsistentMeanFieldReport::stopReason`): the iterations ran out; no
-/// damped step reduced the residual; the smallest damped step changed a held
-/// monopole number ("no stationary point in the declared monopole sector");
-/// the smallest damped step left the domain of the action or came too close
-/// to a zero of the Villain weight; the residual reached its floor on the
+/// (`SelfConsistentMeanFieldReport::stopReason`): no damped step reduced the
+/// residual; the smallest damped step changed a held monopole number ("no
+/// stationary point in the declared monopole sector"); the smallest damped
+/// step left the domain of the action; the residual reached its floor on the
 /// held set; or the squared lengths overflowed the double. The report also
 /// carries the Kontsevich-Segal margin of the geometry the solve stopped at,
 /// and the joint Jacobian's rank and rank gap there.

@@ -5278,13 +5278,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("tolerance",
                      &SelfConsistentMeanFieldDeclaration::tolerance,
                      "The force norm at or below which the pair is "
-                     "self-consistent. Under the alternation the covariance "
-                     "change must also sit at or below it, since there the "
-                     "covariance lags the geometry by one iteration.")
+                     "self-consistent. The covariance is rebuilt at every "
+                     "point, so the force is the one condition.")
       .def_readwrite("geometry",
                      &SelfConsistentMeanFieldDeclaration::geometry,
                      "The Newton solve of the geometry: the joint solve's "
-                     "step control (its maximum_iterations is not read).");
+                     "step control.");
 
   py::class_<OccupiedBand>(m, "OccupiedBand",
       "One occupied band at one point of a solve: where it was chosen, its "
@@ -5401,8 +5400,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldReport::bandSelection)
       .def_readwrite("steps", &SelfConsistentMeanFieldReport::steps)
       .def_readwrite("iterations", &SelfConsistentMeanFieldReport::iterations,
-                     "Accepted Newton steps of the joint system, or outer "
-                     "iterations of the alternation.")
+                     "Accepted Newton steps of the joint system.")
       .def_readwrite("converged", &SelfConsistentMeanFieldReport::converged)
       .def_readwrite("stop_reason", &SelfConsistentMeanFieldReport::stopReason)
       .def_readwrite("stop_detail", &SelfConsistentMeanFieldReport::stopDetail)
