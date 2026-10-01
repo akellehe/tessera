@@ -143,11 +143,15 @@ def sheeted_support(base, sheets):
     """The sheeted support of a base complex: ``sheets`` disjoint copies of
     it, every copy carrying the base complex's squared lengths and links on
     corresponding edges (`Sheeted`). With n base vertices, the k-th in
-    ascending order is vertex t * n + k of sheet t."""
+    ascending order is vertex t * n + k of sheet t. The support of one sheet
+    is the base complex itself, with its own vertices."""
     fields = edge_fields(base)
     cells = top_cells(base)
     vertices = sorted({v for a, b, _, _ in fields for v in (a, b)}
                       | {v for cell in cells for v in cell})
+    if int(sheets) == 1:
+        return Sheeted(base, len(vertices), vertices, 1,
+                       list(range(len(fields))), [1] * len(fields))
     rank = {v: k for k, v in enumerate(vertices)}
     count = len(vertices)
     spacetime = T.Spacetime.fromVertexTuples(
@@ -190,13 +194,18 @@ def sectors_on(sectors, host, support):
         for face in sector.faces:
             vertices = []
             for vertex in face:
-                sheet, k = divmod(int(vertex), host.count)
-                base_vertex = host.base_vertices[k]
+                # one sheet is the base complex with its own vertices
+                sheet, base_vertex = (
+                    (0, int(vertex)) if host.sheets == 1 else
+                    (int(vertex) // host.count,
+                     host.base_vertices[int(vertex) % host.count]))
                 if base_vertex not in rank:
                     raise ValueError(
                         "a held face has lost its base vertex %d"
                         % base_vertex)
-                vertices.append(sheet * support.count + rank[base_vertex])
+                vertices.append(base_vertex if support.sheets == 1
+                                else sheet * support.count
+                                + rank[base_vertex])
             faces.append(vertices)
         moved = cob.HeldMonopoleSector()
         moved.faces = faces
@@ -209,6 +218,9 @@ def support_cells(support, degree=1):
     """The carrier cells of a sheeted support in the operator's mode order,
     each named by its sheet and its base vertices, a name that a Pachner
     move elsewhere on the base complex leaves as it is."""
+    if support.sheets == 1:
+        return [(0, cell) for cell in carrier_cells(support.spacetime,
+                                                    degree)]
     return [(cell[0] // support.count,
              tuple(support.base_vertices[v % support.count] for v in cell))
             for cell in carrier_cells(support.spacetime, degree)]
@@ -330,12 +342,13 @@ class ContentSystem:
     ``declare(spacetime)`` returns the `JointActionDeclaration` of a sheeted
     support's complex; ``mean_field_of(support)`` returns a new
     `SelfConsistentMeanFieldDeclaration` for a `Sheeted` support (the
-    occupations, the geometry declaration with the support's edge classes,
-    orientations and held sectors, and the pinned fiber's declared targets
-    and unit, which are numbers of the host and the same on every complex).
-    ``host`` is the base complex the bands are chosen on by the declared
-    order. ``band_reference`` says where they are followed from afterwards
-    (`BAND_REFERENCES`)."""
+    occupations, the number of pinned constraints of the fiber, and the
+    geometry declaration with the support's edge classes, orientations and
+    held sectors). ``host`` is the base complex the bands are chosen on by
+    the declared order, and where the pinned fiber's targets and unit are
+    read when the declaration gives none: they are numbers of the host, the
+    same on every complex afterwards. ``band_reference`` says where the
+    bands are followed from afterwards (`BAND_REFERENCES`)."""
 
     def __init__(self, declare, mean_field_of, host, sheets,
                  band_reference=DECLARED_BAND_REFERENCE):
@@ -346,19 +359,40 @@ class ContentSystem:
         self._mean_field_of = mean_field_of
         self.sheets = int(sheets)
         self.band_reference = band_reference
+        self._targets = None
+        self._scale = 0.0
         field, action, support = self._field(host)
         start = field.iterate()
+        declared = self._mean_field_of(support)
+        if declared.fiber_moments and not len(declared.fiber_moment_targets):
+            pinned = field.joint_system().action.declaration
+            self._scale = float(pinned.moment_scale)
+            # the targets in the operator's own unit, as they are declared
+            self._targets = [
+                complex(constraint.target) * self._scale ** (
+                    constraint.order if constraint.form
+                    == cob.SpectralConstraintForm.PowerSum else 1)
+                for constraint in pinned.moment_constraints]
         self.reference_cells = support_cells(
             support, action.declaration.carrier_degree)
         self.reference = references_of(start.bands)
         self._covariance = covariance_of(start.bands)
+
+    def _declaration(self, support):
+        """The mean-field declaration of a support, the fiber pinned at the
+        host's targets in the host's unit."""
+        declaration = self._mean_field_of(support)
+        if self._targets is not None:
+            declaration.fiber_moment_targets = list(self._targets)
+            declaration.fiber_moment_scale = self._scale
+        return declaration
 
     def _field(self, base):
         support = sheeted_support(base, self.sheets)
         action = cob.JointAction(support.spacetime,
                                  self._declare(support.spacetime))
         return (cob.SelfConsistentMeanField(
-            action, self._mean_field_of(support)), action, support)
+            action, self._declaration(support)), action, support)
 
     def _reference(self, support, action):
         """The reference bands read on a support's carrier cells, with the
@@ -369,7 +403,7 @@ class ContentSystem:
 
     def point(self, base):
         support = sheeted_support(base, self.sheets)
-        declaration = self._mean_field_of(support)
+        declaration = self._declaration(support)
         action = cob.JointAction(support.spacetime,
                                  self._declare(support.spacetime))
         field = cob.SelfConsistentMeanField(action, declaration)
@@ -740,3 +774,41 @@ def solve(spacetime, system, tolerance=1e-15, move_tolerance=1e-15,
         "changed": sorted(top_cells(final)) != cells_before,
         "seconds": seconds,
     }
+
+
+def relax(spacetime, declaration, geometry=None, mean_field=None,
+          **options):
+    """The drive of one complex as it stands, for one declared action: one
+    sheet, the coordinates the geometry declaration names, and no Pachner
+    move unless ``moves`` is given.
+
+    ``declaration`` is the `JointActionDeclaration` of the complex. With
+    ``geometry`` (a `HolomorphicRelaxationDeclaration`) the system is the
+    stationarity at the carried state the action declares; with
+    ``mean_field`` (a `SelfConsistentMeanFieldDeclaration`) it is the
+    self-consistent system of the declared content, its fiber pinned at the
+    starting point. The other arguments are those of `solve`.
+
+    Returns the record of `solve` with the system (``system``) and the
+    `Point` at the complex the drive ended on (``point``), and, for a mean
+    field, the action and the report there (``action``, ``report``)."""
+    if (geometry is None) == (mean_field is None):
+        raise ValueError("declare the geometry of the system or the mean "
+                         "field of its content, one of the two")
+    options.setdefault("moves", False)
+    if mean_field is None:
+        system = GeometricSystem(lambda complex_: declaration,
+                                 lambda support: geometry, 1)
+    else:
+        system = ContentSystem(lambda complex_: declaration,
+                               lambda support: mean_field, spacetime, 1)
+    start_scale = max((abs(length * length)
+                       for _, _, length, _ in edge_fields(spacetime)),
+                      default=0.0)
+    record = solve(spacetime, system, **options)
+    record["system"] = system
+    record["point"] = system.point(record["spacetime"])
+    if mean_field is not None:
+        _, record["action"], record["report"] = system.read(
+            record["spacetime"], start_scale)
+    return record

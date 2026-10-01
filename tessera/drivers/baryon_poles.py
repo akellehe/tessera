@@ -2051,27 +2051,18 @@ def relax_content(content, kappa, beta, config):
                                   config["regge_hinges"],
                                   villain_order=villain_order)
 
-    # the constraints of the occupied fiber: their number, and their targets
-    # and unit read at the host, which every later point is held to
-    probe = mean_field_declaration(content, config)
-    probe.geometry = support_geometry(config, host, host)
-    host_action = cob.JointAction(host.spacetime, declare(host.spacetime))
+    # the number of constraints of the occupied fiber, read at the host;
+    # their targets and unit are the host's (`cell_solve.ContentSystem`)
     moments = fiber_moment_count(
-        probe, host_action,
+        mean_field_declaration(content, config),
+        cob.JointAction(host.spacetime, declare(host.spacetime)),
         config.get("fiber_moments", DECLARED_FIBER_MOMENTS),
         config.get("fiber_pinning", DECLARED_FIBER_PINNING))
-    probe.fiber_moments = moments
-    start = cob.SelfConsistentMeanField(host_action, probe).read()
-    targets = [complex(x) for x in start.moment_targets]
-    scale = float(start.moment_scale)
 
     def mean_field_of(support):
         declaration = mean_field_declaration(content, config)
         declaration.geometry = support_geometry(config, support, host)
         declaration.fiber_moments = moments
-        if moments:
-            declaration.fiber_moment_targets = targets
-            declaration.fiber_moment_scale = scale
         return declaration
 
     system = cell_solve.ContentSystem(

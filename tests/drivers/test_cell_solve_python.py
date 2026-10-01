@@ -46,7 +46,7 @@ def _unit(angle):
 def _content_system(content=CONTENT, sectors=()):
     """The base, the declared configuration and the content's system as
     `baryon_poles.relax_content` builds it: the fiber's constraints pinned
-    at the host's values."""
+    at the host's values by the system."""
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)])
     config["held_sectors"] = list(sectors)
@@ -57,21 +57,15 @@ def _content_system(content=CONTENT, sectors=()):
         return bp.action_declaration(spacetime, 1.0, 1.0,
                                      config["regge_hinges"])
 
-    probe = bp.mean_field_declaration(content, config)
-    probe.geometry = bp.support_geometry(config, host, host)
-    action = cob.JointAction(host.spacetime, declare(host.spacetime))
-    count = bp.fiber_moment_count(probe, action, config["fiber_moments"],
-                                  config["fiber_pinning"])
-    probe.fiber_moments = count
-    start = cob.SelfConsistentMeanField(action, probe).read()
+    count = bp.fiber_moment_count(
+        bp.mean_field_declaration(content, config),
+        cob.JointAction(host.spacetime, declare(host.spacetime)),
+        config["fiber_moments"], config["fiber_pinning"])
 
     def mean_field_of(support):
         declaration = bp.mean_field_declaration(content, config)
         declaration.geometry = bp.support_geometry(config, support, host)
         declaration.fiber_moments = count
-        if count:
-            declaration.fiber_moment_targets = list(start.moment_targets)
-            declaration.fiber_moment_scale = float(start.moment_scale)
         return declaration
 
     system = cs.ContentSystem(declare, mean_field_of, base, bp.SHEETS)
