@@ -2377,22 +2377,18 @@ assertion. Every pairing is the transpose.)doc")
            py::arg("max_lookahead") = 1,
            py::arg("relax_budget_per_move") = std::optional<int>(),
            py::arg("combinatorial_breadth") = 0,
-           py::arg("exit_tolerance") = 1e-15,
            py::call_guard<py::gil_scoped_release>(),
            "The combined drive: each iteration takes ONE combinatorial stage-1 "
            "update (a best-dF move, deepening to max_lookahead-move sequences "
            "on a stall) then relaxes the geometry FULLY -- stage-2 updates "
            "repeat until the absolute-improvement test at tolerance (default "
-           "1e-15) reports diminishing returns -- so every move is proposed "
+           "10e-9) reports diminishing returns -- so every move is proposed "
            "from, and leaves behind, relaxed geometry. Exit: once the register "
-           "is carried + stationary, or the moves have had no effect (one "
-           "iteration when every move is scored, three consecutive ones for a "
-           "sampled batch), the LAST relaxation re-runs at the smaller of "
-           "tolerance and exit_tolerance; if it still finds descent the "
-           "loop continues. max_iters is the number of iterations after which "
-           "the drive returns when the caller declares one; none by default. "
-           "last_drive_stop says why the drive returned. "
-           "n_candidate_moves/grow_boundaries/"
+           "is carried + stationary, or the moves have had no effect for a few "
+           "consecutive iterations, the LAST relaxation re-runs at the tight "
+           "1e-12; if it still finds descent the exit was premature and the "
+           "loop continues -- only a state stationary at 1e-12 exits. max_iters "
+           "is the hard budget cap. n_candidate_moves/grow_boundaries/"
            "max_lookahead parameterize the combinatorial half exactly as in "
            "run_stage1; beta/alpha0/tolerance the geometric half exactly as in "
            "run_stage2. beta is stored before either half, so the F trace is "
@@ -2413,24 +2409,6 @@ assertion. Every pairing is the transpose.)doc")
            "search at every breadth is exhaustive, which costs the move "
            "space raised to the breadth."
            )
-      .def_property("line_search_halving_limit",
-                    &MultiCobordism::lineSearchHalvingLimit,
-                    &MultiCobordism::setLineSearchHalvingLimit,
-                    "The number of halvings of one stage-2 line search after "
-                    "which a drive returns (DriveStop.HALVING_LIMIT), when "
-                    "declared; None by default, and a scale is then halved "
-                    "down to the datatype's resolution.")
-      .def_property("time_limit_seconds", &MultiCobordism::timeLimitSeconds,
-                    &MultiCobordism::setTimeLimitSeconds,
-                    "The wall-clock time of a drive, in seconds, after which "
-                    "it returns (DriveStop.TIME_LIMIT), when declared; None "
-                    "by default.")
-      .def_property_readonly("last_drive_stop", &MultiCobordism::lastDriveStop,
-                             "Why the last run, run_stage1 or run_stage2 "
-                             "returned (DriveStop).")
-      .def_static("drive_stop_name", &MultiCobordism::driveStopName,
-                  py::arg("stop"),
-                  "The name of a drive stop as a report prints it.")
       .def_property("move_tolerance", &MultiCobordism::moveTolerance,
                     &MultiCobordism::setMoveTolerance,
                     "The move tolerance of stage 1: a move, or a composition "
@@ -2605,20 +2583,6 @@ Right -- re-read after each drive call:
            "contains both endpoints. An edge spanning two distinct regions is bulk.");
 
   // === modes, the enumerable objective, refinement, and the overlay ===
-  py::enum_<MultiCobordism::DriveStop>(multiCobordismClass, "DriveStop",
-      "Why a drive (run, run_stage1, run_stage2) returned.")
-      .value("NONE", MultiCobordism::DriveStop::None, "No drive has run.")
-      .value("EXHAUSTED", MultiCobordism::DriveStop::Exhausted,
-             "No move, and no sequence of moves to the declared depth, lowers "
-             "the objective by the move tolerance, and no scaled step along "
-             "the objective's direction lowers it by the tolerance.")
-      .value("ITERATION_LIMIT", MultiCobordism::DriveStop::IterationLimit,
-             "The declared number of iterations was reached.")
-      .value("HALVING_LIMIT", MultiCobordism::DriveStop::HalvingLimit,
-             "A line search reached the declared number of halvings without "
-             "an accepted trial.")
-      .value("TIME_LIMIT", MultiCobordism::DriveStop::TimeLimit,
-             "The declared time was reached.");
   py::enum_<MultiCobordism::SimulationMode>(multiCobordismClass, "SimulationMode",
       "The three top-level simulation modes.")
       .value("EMERGENCE", MultiCobordism::SimulationMode::Emergence,
@@ -2666,7 +2630,7 @@ Right -- re-read after each drive call:
                      &MultiCobordism::ObjectiveTerms::momentStiffness)
       .def_readwrite("joint_action_stationarity",
                      &MultiCobordism::ObjectiveTerms::jointActionStationarity,
-                     "The squared norm of the stationarity residual of the "
+                     "The Euclidean norm of the stationarity residual of the "
                      "joint action (Regge, face holonomy, matter with the "
                      "covariance rebuilt at the point) over the squared "
                      "lengths and the links; zero exactly at its stationary "
@@ -2865,12 +2829,7 @@ Right -- re-read after each drive call:
       .def_readwrite("baseline_computed", &ObjectiveDirection::baselineComputed,
                      "Whether `baseline` is meaningful. False makes the engine "
                      "evaluate the scalar itself rather than trust an "
-                     "accumulated trace.")
-      .def_readwrite("is_step", &ObjectiveDirection::isStep,
-                     "Whether the direction is a step that solves the "
-                     "objective's equations to its declared order about the "
-                     "point: stage 2 then tries it at scale one first at "
-                     "every update. False for a gradient.");
+                     "accumulated trace.");
 
   py::class_<ObjectiveDirectionContext>(m, "ObjectiveDirectionContext",
       "ObjectiveContext plus the extra data a stage-2 direction needs. Plain "

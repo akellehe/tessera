@@ -4,7 +4,6 @@
 #ifndef TESSERA_COBORDISM_MULTICOBORDISM_H
 #define TESSERA_COBORDISM_MULTICOBORDISM_H
 
-#include <chrono>
 #include <complex>
 
 #include <Eigen/Core>
@@ -2080,11 +2079,7 @@ class MultiCobordism {
   ///
   /// \p maxIters is the number of updates after which the call returns, when
   /// the caller declares one; none by default, and the updates then run until
-  /// one finds no trial that lowers the objective by the tolerance. A trial's
-  /// scale is halved until it is accepted or until the scaled direction moves
-  /// no coordinate at the datatype's resolution. A direction the objective
-  /// declares to be a step (`ObjectiveDirection::isStep`) is tried at scale
-  /// one first at every update; \p alpha0 is the first scale of a gradient.
+  /// one finds no trial that lowers the objective by the tolerance.
   std::vector<double> runStage2(double beta = 1.0,
                                 std::optional<int> maxIters = std::nullopt,
                                 double alpha0 = 0.05, double tolerance = 1e-15);
@@ -2098,9 +2093,9 @@ class MultiCobordism {
   /// geometry stationary. Every mode can also exit once combinatorial moves
   /// have had no effect — nothing committed at any lookahead depth and nothing
   /// left to relax — for a few consecutive iterations. The last geometric
-  /// relaxation before exit runs at the smaller of \p tolerance and
-  /// \p exitTolerance; if it still finds descent the loop continues on the
-  /// freshly relaxed geometry.
+  /// relaxation before exit runs at a 1e-12 tolerance; if it still finds
+  /// descent the loop continues on the freshly relaxed geometry.
+  /// \p maxIters is the hard budget cap.
   ///
   /// \p nCandidateMoves, \p growBoundaries and \p maxLookahead parameterize the
   /// combinatorial half as in `runStage1`; \p beta, \p alpha0 and \p tolerance
@@ -2115,9 +2110,7 @@ class MultiCobordism {
   /// only when the caller declares them, and are none by default, so the
   /// drive runs until no move improves the objective and the geometry is
   /// stationary at the tolerance. With \p nCandidateMoves zero, the default,
-  /// every available move is scored, and one iteration without effect is
-  /// conclusive; with a sampled batch, three consecutive ones are. Why the
-  /// drive returned is `lastDriveStop()`.
+  /// every available move is scored.
   ///
   /// \returns the combined \f$ F \f$ trace.
   std::vector<double> run(std::optional<int> maxIters = std::nullopt,
@@ -2126,58 +2119,7 @@ class MultiCobordism {
                           double beta = 1.0, double alpha0 = 0.05,
                           double tolerance = 1e-15, int maxLookahead = 1,
                           std::optional<int> relaxBudgetPerMove = std::nullopt,
-                          int combinatorialBreadth = 0,
-                          double exitTolerance = 1e-15);
-
-  /// Why a drive (`run`, `runStage1`, `runStage2`) returned.
-  enum class DriveStop {
-    /// No drive has run on this node.
-    None,
-    /// The drive ended by itself: no move, and no sequence of moves to the
-    /// declared depth, lowers the objective by the move tolerance, and no
-    /// scaled step along the objective's direction lowers it by the
-    /// tolerance, down to the scale at which the step moves no coordinate at
-    /// the datatype's resolution.
-    Exhausted,
-    /// The number of iterations the caller declared (`maxIters`, `maxSteps`)
-    /// was reached.
-    IterationLimit,
-    /// A line search reached the declared number of halvings
-    /// (`setLineSearchHalvingLimit`) without an accepted trial.
-    HalvingLimit,
-    /// The declared wall-clock time (`setTimeLimitSeconds`) was reached.
-    TimeLimit
-  };
-  /// The name of a drive stop as a report prints it.
-  [[nodiscard]] static std::string driveStopName(DriveStop stop);
-  /// Why the last drive on this node returned.
-  [[nodiscard]] DriveStop lastDriveStop() const noexcept {
-    return lastDriveStop_;
-  }
-
-  /// The number of halvings of one stage-2 line search after which the drive
-  /// returns, when the caller declares one. None by default: a scale is then
-  /// halved until a trial is accepted or the scaled direction moves no
-  /// coordinate at the datatype's resolution. A declared count that is
-  /// reached without an accepted trial ends the drive with
-  /// `DriveStop::HalvingLimit`, the geometry as the last accepted update
-  /// left it.
-  void setLineSearchHalvingLimit(std::optional<int> limit);
-  [[nodiscard]] std::optional<int> lineSearchHalvingLimit() const noexcept {
-    return lineSearchHalvingLimit_;
-  }
-
-  /// The wall-clock time of a drive, in seconds, after which it returns, when
-  /// the caller declares one; read before every iteration, every candidate
-  /// move and every line-search trial. None by default. A declared time that
-  /// is reached ends the drive with `DriveStop::TimeLimit`: the candidates of
-  /// an unfinished stage-1 update are dropped and none is committed, and an
-  /// unfinished line search leaves the geometry as the last accepted update
-  /// left it.
-  void setTimeLimitSeconds(std::optional<double> seconds);
-  [[nodiscard]] std::optional<double> timeLimitSeconds() const noexcept {
-    return timeLimitSeconds_;
-  }
+                          int combinatorialBreadth = 0);
 
   /// One solve action on this node: the unit a search policy composes, so that
   /// the solve is driven through the engine rather than re-implemented by each
@@ -3313,17 +3255,6 @@ class MultiCobordism {
   /// Set by `stage1Update`: the committed sequence's lookahead depth. 0 means
   /// the update committed nothing.
   int lastStage1LookaheadDepth_ = 0;
-  /// The declared limits of a drive (`setLineSearchHalvingLimit`,
-  /// `setTimeLimitSeconds`); none by default.
-  std::optional<int> lineSearchHalvingLimit_;
-  std::optional<double> timeLimitSeconds_;
-  /// Why the last drive returned (`lastDriveStop`).
-  DriveStop lastDriveStop_ = DriveStop::None;
-  /// When the drive in progress started; empty outside a drive, so that a
-  /// stage called on its own is not timed.
-  std::optional<std::chrono::steady_clock::time_point> driveStarted_;
-  /// Whether a drive is in progress and its declared time is reached.
-  [[nodiscard]] bool timeIsUp() const;
   std::vector<BoundaryBlock> inputBlocks_;
   WholePairing wholePairing_{WholePairing::Periods};
   std::vector<BoundaryBlock> outputBlocks_;
