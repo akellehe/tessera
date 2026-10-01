@@ -325,7 +325,8 @@ TOLERANCES = (
      "largest counts as zero in the minimum-norm step"),
     ("step_tolerance",
      "the amount by which a trial of the line search must lower the "
-     "residual norm of the stationarity equations to be accepted"),
+     "residual norm of the stationarity equations to be accepted, and the "
+     "residual norm at or below which a level's geometry is stationary"),
     ("mean_field_tolerance",
      "the force norm at or below which the geometry and the covariance are "
      "self-consistent"),

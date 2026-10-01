@@ -308,8 +308,16 @@ class GeometricSystem:
                       base, support)
 
     def accept(self, base):
-        """Nothing is carried from one accepted point to the next."""
-        return None
+        """An accepted point. Nothing is carried from one to the next; when
+        the geometry declaration records terms, every term of the action
+        there is returned (`cobordism.action_term_records`)."""
+        support = sheeted_support(base, self.sheets)
+        geometry = self._geometry_of(support)
+        if not geometry.record_terms:
+            return None
+        action = cob.JointAction(support.spacetime,
+                                 self._declare(support.spacetime))
+        return cob.action_term_records(action, geometry)
 
 
 class ContentSystem:
