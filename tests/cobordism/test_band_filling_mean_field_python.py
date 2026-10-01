@@ -21,16 +21,17 @@ from tessera.drivers import baryon_poles as bp
 cob = T.cobordism
 
 
-def _mean_field(occupations, iterations=1):
+def _mean_field(occupations):
+    """The band-filling declaration over a geometry solve that relaxes the
+    multipliers alone: the lengths and links are held, so h_1 and its band
+    filling are the host's at every iterate of the solve."""
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.covariance_rule = cob.CovarianceRule.BandFilling
     declaration.band_occupations = list(occupations)
-    declaration.maximum_iterations = iterations
     geometry = cob.HolomorphicRelaxationDeclaration()
     geometry.relax_lengths = False
     geometry.relax_links = False
     geometry.relax_multipliers = True
-    geometry.maximum_iterations = 1
     declaration.geometry = geometry
     return declaration
 

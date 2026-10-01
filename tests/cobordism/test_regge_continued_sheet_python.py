@@ -200,7 +200,6 @@ def test_regge_and_matter_converge_on_the_continued_sheet():
     solve.relax_lengths = True
     solve.relax_links = False
     solve.relax_multipliers = False
-    solve.maximum_iterations = 60
     solve.tolerance = 1e-10
     solve.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     solve.contour_radius = 1e-6

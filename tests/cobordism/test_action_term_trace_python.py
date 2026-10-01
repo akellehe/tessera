@@ -174,7 +174,6 @@ def test_a_relaxation_records_the_terms_only_when_asked():
     config, spacetime, declaration = _host((0, 3, 0))
     geometry = bp.share_sheet_geometry(bp.relaxation_declaration(config),
                                        spacetime)
-    geometry.maximum_iterations = 2
     geometry.held_sectors = []
     silent = cob.HolomorphicRelaxation(
         cob.JointAction(spacetime, declaration), geometry).solve()
@@ -206,7 +205,6 @@ def test_the_mean_field_solve_traces_its_terms_and_the_driver_prints_them():
     nothing."""
     config, _, _ = _host((0, 3, 0))
     config["trace_terms"] = True
-    config["mean_field_iterations"] = 2
     _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
     names = TERMS + ["constraint %d" % j for j in (1, 2, 3)] + SUMS
     assert all([t.name for t in step.terms] == names for step in report.steps)

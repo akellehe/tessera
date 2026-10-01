@@ -962,7 +962,6 @@ SelfConsistentMeanFieldReport SelfConsistentMeanField::solveJointNewton() {
   // from the last accepted iterate, and every accepted iterate moves the
   // reference to its own bands.
   HolomorphicRelaxationDeclaration newton = declaration_.geometry;
-  newton.maximumIterations = declaration_.maximumIterations;
   newton.tolerance = std::min(declaration_.geometry.tolerance,
                               declaration_.tolerance);
   // the pinned moments' multipliers are unknowns beside the geometry

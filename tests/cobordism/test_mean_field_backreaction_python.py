@@ -74,7 +74,6 @@ def _mean_field(**overrides):
     geometry.relax_lengths = True
     geometry.relax_links = False
     geometry.relax_multipliers = False
-    geometry.maximum_iterations = overrides.pop("geometry_iterations", 12)
     geometry.tolerance = 1e-12
     # The geometric term of these solves is the dual Regge action, whose exact
     # gradient is analytic on each side of the real axis in the squared lengths
@@ -86,7 +85,6 @@ def _mean_field(**overrides):
     geometry.contour_radius = 1e-5
     declaration = cob.SelfConsistentMeanFieldDeclaration()
     declaration.occupied_modes = 1
-    declaration.maximum_iterations = 12
     declaration.tolerance = 1e-9
     declaration.geometry = geometry
     for name, value in overrides.items():
@@ -316,8 +314,7 @@ class TheSelfConsistentPairTest(unittest.TestCase):
             spacetime, _declaration(gravitational_weight=90.0,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2, maximum_iterations=3,
-                                geometry_iterations=3))
+            action, _mean_field(occupied_modes=2))
         report = solver.solve()
         self.assertGreater(len(report.steps), 0)
         for step in report.steps:
@@ -327,10 +324,14 @@ class TheSelfConsistentPairTest(unittest.TestCase):
     def test_the_covariance_is_re_occupied_at_every_step(self):
         """The half of the fixed point a transported covariance never takes.
 
-        After the solve the covariance is the spectral projector of the
+        After the solve the covariance is a spectral projector of the
         operator at the geometry the solve left behind, not of the operator it
         started from. The two differ, and the difference is what re-occupation
-        does.
+        does. The solve follows the pair of modes it occupied at the start by
+        continuation, and on this sphere that pair crosses other modes on the
+        way, so the projector fills two eigenmodes of the operator at the end
+        point that are not the lowest two; a sort there would fill another
+        pair.
         """
         spacetime = sphere3(squared=lambda index: 1.0 + 0.02 * (index % 4))
         start = cob.JointAction(spacetime, _declaration())
@@ -340,15 +341,34 @@ class TheSelfConsistentPairTest(unittest.TestCase):
             spacetime, _declaration(gravitational_weight=90.0,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2, maximum_iterations=2,
-                                geometry_iterations=3))
+            action, _mean_field(occupied_modes=2))
         report = solver.solve()
 
         final = np.array(report.covariance, dtype=complex)
         self.assertGreater(np.max(np.abs(final - initial)), 1e-9)
+        order = int(round(np.sqrt(final.size)))
+        gamma = final.reshape(order, order)
+        operator = np.array(solver.action.carrier_operator(),
+                            dtype=complex).reshape(order, order)
+        scale = np.max(np.abs(operator))
+        self.assertLess(np.max(np.abs(gamma @ gamma - gamma)), 1e-9)
+        self.assertLess(np.max(np.abs(gamma @ operator - operator @ gamma)),
+                        1e-9 * scale)
+        self.assertAlmostEqual(np.trace(gamma).real, 2.0, places=9)
+        # the two modes it fills are eigenmodes of the operator at the end
+        # point: the nonzero eigenvalues of Gamma h are eigenvalues of h
+        filled = sorted(np.linalg.eigvals(gamma @ operator),
+                        key=abs)[-2:]
+        spectrum = np.linalg.eigvals(operator)
+        for value in filled:
+            self.assertLess(np.min(np.abs(spectrum - value)),
+                            1e-8 * abs(value))
+        # the followed pair crossed other modes, so a sort at the end point
+        # fills another pair
+        self.assertGreater(report.band_crossing_iterates, 0)
         reread = np.array(
             solver.action.occupation_projector(2, True), dtype=complex)
-        self.assertLess(np.max(np.abs(final - reread)), 1e-9)
+        self.assertGreater(np.max(np.abs(final - reread)), 1e-3)
 
 
 class TheSection7TetrahedronSplitTest(unittest.TestCase):
@@ -501,15 +521,25 @@ class TheStepAndReportFieldsTest(unittest.TestCase):
             spacetime, _declaration(gravitational_weight=90.0,
                                     matter_weight=1.0))
         solver = cob.SelfConsistentMeanField(
-            action, _mean_field(occupied_modes=2, maximum_iterations=3,
-                                geometry_iterations=3))
+            action, _mean_field(occupied_modes=2))
         report = solver.solve()
         self.assertEqual([step.iteration for step in report.steps],
                          list(range(len(report.steps))))
         for step in report.steps:
+            # the occupied energy is the sum over the eigenvalues of the
+            # bands the covariance fills, the followed ones; the occupied
+            # span of a sort (`occupied_eigenvalues`) is the same set until
+            # a followed band crosses another mode
+            followed = sum((band.occupation / band.rank)
+                           * sum(band.eigenvalues) for band in step.bands)
             self.assertAlmostEqual(
-                abs(step.occupied_energy - sum(step.occupied_eigenvalues)),
+                abs(step.occupied_energy - followed),
                 0.0, delta=1e-10 * abs(step.occupied_energy))
+            if not any(band.crossed for band in step.bands):
+                self.assertAlmostEqual(
+                    abs(step.occupied_energy
+                        - sum(step.occupied_eigenvalues)),
+                    0.0, delta=1e-10 * abs(step.occupied_energy))
             self.assertGreater(step.spectral_gap, 0.0)
             self.assertIsInstance(step.geometry_converged, bool)
             self.assertGreaterEqual(step.geometry_residual_norm, 0.0)

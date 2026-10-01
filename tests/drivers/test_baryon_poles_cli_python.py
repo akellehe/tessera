@@ -484,9 +484,9 @@ def test_solve_state_reads_the_solve_or_the_refusal_of_each_record():
                                   stop_reason="converged")) == {
         "state": "converged", "reason": None, "iterations": 6}
     assert bp.solve_state(_solved(
-        record, converged=False, iterations=40,
-        stop_reason="the declared iterations ran out")) == {
-        "state": "not converged", "reason": "ran out", "iterations": 40}
+        record, converged=False, iterations=12,
+        stop_reason="no damped step reduced the residual")) == {
+        "state": "not converged", "reason": "no descent", "iterations": 12}
     # every stop reason the library names has a short name
     for reason in dir(cob.RelaxationStop):
         if reason[0].isupper() and reason not in ("Converged", "Continued"):
@@ -512,9 +512,9 @@ def test_callout_lines():
     assert bp.callout_lines({"state": "converged", "reason": None,
                              "iterations": 1}) == ["\u2713 converged",
                                                    "1 iteration"]
-    assert bp.callout_lines({"state": "not converged", "reason": "ran out",
-                             "iterations": 40}) == [
-        "\u2717 not converged", "ran out", "40 iterations"]
+    assert bp.callout_lines({"state": "not converged", "reason": "no descent",
+                             "iterations": 12}) == [
+        "\u2717 not converged", "no descent", "12 iterations"]
     assert bp.callout_lines({"state": "refused", "reason": None,
                              "iterations": None}) == ["\u2717 refused"]
 
@@ -552,11 +552,11 @@ def test_the_drawn_frame_marks_each_content_by_its_solve(point):
     import matplotlib.pyplot as plt
     point = dict(point)
     point["contents"] = [_solved(
-        point["contents"][0], converged=False, iterations=40,
-        stop_reason="the declared iterations ran out")]
+        point["contents"][0], converged=False, iterations=12,
+        stop_reason="no damped step reduced the residual")]
     data = bp.frame_data([point], 0)
     assert data["groups"][0]["solve"] == {
-        "state": "not converged", "reason": "ran out", "iterations": 40}
+        "state": "not converged", "reason": "no descent", "iterations": 12}
     figure = plt.figure(figsize=bp.FIGURE_SIZE)
     try:
         bp.draw_frame(figure, [point], 0)
@@ -566,7 +566,7 @@ def test_the_drawn_frame_marks_each_content_by_its_solve(point):
             callouts = [t for t in axis.texts
                         if t.get_text().startswith("\u2717")]
             assert [t.get_text() for t in callouts] == [
-                "\u2717 not converged\nran out\n40 iterations"]
+                "\u2717 not converged\nno descent\n12 iterations"]
             assert matplotlib.colors.same_color(callouts[0].get_color(),
                                                 style["ink"])
             bands = [p for p in axis.patches
@@ -717,7 +717,9 @@ def test_the_declarations_carry_the_config():
     geometry = bp.relaxation_declaration(config)
     assert geometry.relax_lengths and geometry.relax_links
     assert not geometry.relax_multipliers
-    assert geometry.maximum_iterations == 40
+    # a solve ends when it converges or stops by name
+    assert "newton_iterations" not in config
+    assert "mean_field_iterations" not in config
     assert geometry.tolerance == bp.DECLARED_TOLERANCE == 1e-15
     assert geometry.rank_tolerance == bp.DECLARED_TOLERANCE
     assert geometry.jacobian_mode == \

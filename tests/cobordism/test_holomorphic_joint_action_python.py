@@ -71,7 +71,6 @@ def _relaxation(**overrides):
     declaration.relax_lengths = False
     declaration.relax_links = False
     declaration.relax_multipliers = False
-    declaration.maximum_iterations = 40
     declaration.tolerance = 1e-11
     for name, value in overrides.items():
         setattr(declaration, name, value)
@@ -407,7 +406,7 @@ class TheMultipliersImposeTheMomentEquationTest(unittest.TestCase):
 
         relaxation = cob.HolomorphicRelaxation(
             action, _relaxation(relax_lengths=True, relax_multipliers=True,
-                                maximum_iterations=60, tolerance=1e-11))
+                                tolerance=1e-11))
         report = relaxation.solve()
         self.assertTrue(report.converged, report.residual_norm)
         self.assertLess(abs(report.moment_residuals[0]), 1e-10)

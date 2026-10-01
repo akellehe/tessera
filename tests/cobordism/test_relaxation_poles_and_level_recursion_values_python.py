@@ -50,12 +50,11 @@ def _declaration(spacetime, beta=0.0):
     return declaration
 
 
-def _solve(lengths=True, links=True, iterations=30):
+def _solve(lengths=True, links=True):
     solve = cob.HolomorphicRelaxationDeclaration()
     solve.relax_lengths = lengths
     solve.relax_links = links
     solve.relax_multipliers = False
-    solve.maximum_iterations = iterations
     solve.tolerance = 1e-12
     return solve
 
@@ -157,16 +156,15 @@ def test_the_relaxation_refusals_are_named():
 
 
 def _band_filling(content, spacetime=None):
+    """The action at the starting point, the regular tetrahedron, and the
+    driver's band-filling rule for ``content`` as `BandFollower`, whose read
+    of the carrier operator is the band filling a mean-field solve starts
+    from."""
     spacetime = spacetime or _tetrahedron()
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
     config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
-    # zero iterations read the band filling at the starting point, the
-    # regular tetrahedron
-    config["newton_iterations"] = 0
-    config["mean_field_iterations"] = 0
-    return action, cob.SelfConsistentMeanField(
-        action, bp.mean_field_declaration(content, config))
+    return action, cob.BandFollower(bp.mean_field_declaration(content, config))
 
 
 def test_band_filling_is_the_weighted_sum_of_band_projectors():
@@ -174,15 +172,15 @@ def test_band_filling_is_the_weighted_sum_of_band_projectors():
     tetrahedron (squared length 8) the Whitney edge operator has the bands 5
     and 10, rank 3 each (WP v17 line 263); occupations (2, 1) give
     Gamma = (2/3) P_5 + (1/3) P_10, trace 3, to 1e-15."""
-    action, solve = _band_filling((2, 1))
-    report = solve.solve()
-    assert list(report.band_ranks) == [3, 3]
+    action, follower = _band_filling((2, 1))
+    read = follower.read(action.carrier_operator())
+    assert list(read.ranks) == [3, 3]
     h = bp.matrix(action.carrier_operator())
     values, vectors = np.linalg.eigh(h)
     np.testing.assert_allclose(values, [5, 5, 5, 10, 10, 10], atol=1e-12)
     p5 = vectors[:, :3] @ vectors[:, :3].conj().T
     p10 = vectors[:, 3:] @ vectors[:, 3:].conj().T
-    gamma = np.asarray(report.covariance).reshape(6, 6)
+    gamma = np.asarray(read.covariance).reshape(6, 6)
     assert np.max(np.abs(gamma - (2 / 3) * p5 - (1 / 3) * p10)) < 1e-15
     assert np.trace(gamma) == pytest.approx(3.0, abs=1e-14)
 
@@ -190,19 +188,19 @@ def test_band_filling_is_the_weighted_sum_of_band_projectors():
 def test_band_filling_refusals_are_named():
     """A band of rank 3 cannot hold 4; occupations must be non-negative and
     not all zero; more occupations than bands are refused."""
-    _, solve = _band_filling((4,))
+    action, follower = _band_filling((4,))
     with pytest.raises(ValueError, match="band 0 has rank 3 and cannot hold "
                                          "the declared occupation 4"):
-        solve.solve()
+        follower.read(action.carrier_operator())
     with pytest.raises(ValueError, match="cannot be negative"):
         _band_filling((1, -1))
     with pytest.raises(ValueError, match="sum to zero"):
         _band_filling((0, 0))
-    _, solve = _band_filling((1, 1, 1))
+    action, follower = _band_filling((1, 1, 1))
     with pytest.raises(ValueError, match="3 band occupations were declared "
                                          "but the spectrum groups into only 2 "
                                          "bands"):
-        solve.solve()
+        follower.read(action.carrier_operator())
 
 
 # ------------------------------------------------------- BoundStatePole

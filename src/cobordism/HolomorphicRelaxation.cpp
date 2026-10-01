@@ -584,8 +584,6 @@ std::string relaxationStopName(RelaxationStop reason) {
   switch (reason) {
     case RelaxationStop::Converged:
       return "converged";
-    case RelaxationStop::IterationBudget:
-      return "the declared iterations ran out";
     case RelaxationStop::NoDescent:
       return "no damped step reduced the residual";
     case RelaxationStop::SectorBoundary:
@@ -930,7 +928,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   if (layout.count == 0) {
     report.converged = report.residualNorm <= declaration_.tolerance;
     report.stopReason = report.converged ? RelaxationStop::Converged
-                                         : RelaxationStop::IterationBudget;
+                                         : RelaxationStop::NoDescent;
     report.stopDetail = "the solve has no variables; the residual norm is " +
                         threeDigits(report.residualNorm);
     report.sectorMonopoleNumbers = sectorNumbers(action_, sectors);
@@ -938,8 +936,10 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
   }
 
   bool stopped = false;
-  for (std::size_t iteration = 0; iteration < declaration_.maximumIterations;
-       ++iteration) {
+  // The loop ends when the residual is at the tolerance, when no trial step
+  // moves the solve, or when a squared length overflows; every exit is a
+  // named stop.
+  for (std::size_t iteration = 0;; ++iteration) {
     const auto residual = evaluate(action_);
     const double residualNorm = euclideanNorm(residual);
     report.residualNorm = residualNorm;
@@ -1079,20 +1079,73 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
     std::size_t trials = 0;
     Refusal lastRefusal = Refusal::None;
     std::string lastDomainRefusal;
-    for (std::size_t attempt = 0; attempt <= declaration_.maximumDampings;
-         ++attempt) {
+    bool belowResolution = false;
+    bool residualUnmoved = false;
+    // The last trial each guard refused, counted from one; zero when it
+    // refused none.
+    std::size_t lastSectorTrial = 0;
+    std::size_t lastDomainTrial = 0;
+    // The step is halved until a trial is accepted, until the halved step
+    // moves no variable at the datatype's resolution, or until it moves the
+    // variables and leaves every component of the residual the number it was:
+    // the shortest step the variables, or the equations, resolve.
+    for (;;) {
       ++trials;
       restoreSnapshot(action_, snapshot);
+      // The damped step in the coordinates themselves: the squared length
+      // z + d s, the stored phase phi - i d s of the link and the multiplier
+      // xi + d s. A step that leaves every one of them the number it was is
+      // below the datatype's resolution and is not tried: the trial before it
+      // was the shortest step there is, and what refused that one is why the
+      // solve stops. The test is made on the coordinates and not on the mesh,
+      // whose stored length is a root of the coordinate and need not return
+      // bit for bit.
+      bool moved = false;
+      if (layout.lengths)
+        for (std::size_t index = 0; index < layout.edges && !moved; ++index) {
+          const complexd length =
+              snapshot.lengths[classes.members[index].front().first];
+          const complexd squared = length * length;
+          moved = squared + damping * step(static_cast<Eigen::Index>(
+                                        layout.lengthOffset + index)) !=
+                  squared;
+        }
+      if (layout.links)
+        for (std::size_t index = 0; index < layout.edges && !moved; ++index) {
+          const complexd phase =
+              snapshot.phases[classes.members[index].front().first];
+          moved = phase - complexd{0.0, 1.0} * damping *
+                              step(static_cast<Eigen::Index>(
+                                  layout.linkOffset + index)) !=
+                  phase;
+        }
+      if (layout.multipliers)
+        for (std::size_t index = 0; index < layout.constraints && !moved;
+             ++index)
+          moved = snapshot.multipliers[index] +
+                      damping * step(static_cast<Eigen::Index>(
+                                    layout.multiplierOffset + index)) !=
+                  snapshot.multipliers[index];
+      if (!moved) {
+        --trials;
+        belowResolution = true;
+        break;
+      }
       // One value per coordinate, written to every edge of its class: the
-      // members of a class stay equal exactly.
+      // members of a class stay equal exactly. A squared length the damped
+      // step leaves the number it was is not written: the mesh stores its
+      // root, which need not return bit for bit, and a coordinate the step
+      // does not move keeps the value it has.
       if (layout.lengths)
         for (std::size_t index = 0; index < layout.edges; ++index) {
           const auto &members = classes.members[index];
           const complexd length = snapshot.lengths[members.front().first];
+          const complexd current = length * length;
           const complexd squared =
-              length * length +
+              current +
               damping * step(static_cast<Eigen::Index>(layout.lengthOffset +
                                                        index));
+          if (squared == current) continue;
           for (const auto &member : members)
             writeSquaredLength(action_, member.first, squared);
         }
@@ -1116,6 +1169,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       if (!sectors.empty && sectorNumbers(action_, sectors) != declaredNumbers) {
         ++record.sectorGuardDampings;
         lastRefusal = Refusal::SectorGuard;
+        lastSectorTrial = trials;
         damping *= 0.5;
         continue;
       }
@@ -1126,23 +1180,29 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       // equations are posed on; it is halved like a step that does not reduce
       // the residual. The equations are unchanged.
       double trialNorm = 0.0;
+      bool unresolved = false;
       try {
-        trialNorm = euclideanNorm(evaluate(action_));
+        const auto trial = evaluate(action_);
+        trialNorm = euclideanNorm(trial);
+        unresolved = trial == residual;
       } catch (const std::invalid_argument &refusal) {
         ++record.domainGuardDampings;
         lastRefusal = Refusal::DomainGuard;
+        lastDomainTrial = trials;
         lastDomainRefusal = refusal.what();
         damping *= 0.5;
         continue;
       } catch (const std::domain_error &refusal) {
         ++record.domainGuardDampings;
         lastRefusal = Refusal::DomainGuard;
+        lastDomainTrial = trials;
         lastDomainRefusal = refusal.what();
         damping *= 0.5;
         continue;
       } catch (const std::runtime_error &refusal) {
         ++record.domainGuardDampings;
         lastRefusal = Refusal::DomainGuard;
+        lastDomainTrial = trials;
         lastDomainRefusal = refusal.what();
         damping *= 0.5;
         continue;
@@ -1150,6 +1210,7 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
       if (!std::isfinite(trialNorm)) {
         ++record.domainGuardDampings;
         lastRefusal = Refusal::DomainGuard;
+        lastDomainTrial = trials;
         damping *= 0.5;
         continue;
       }
@@ -1162,7 +1223,15 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
         break;
       }
       ++record.residualTestDampings;
+      // A trial whose residual is the current residual, component for
+      // component, is below the resolution of the equations: the step's
+      // effect on them falls with the damping, so no shorter step can reduce
+      // the residual, and the solve stops here by name.
       lastRefusal = Refusal::ResidualTest;
+      if (unresolved) {
+        residualUnmoved = true;
+        break;
+      }
       damping *= 0.5;
     }
     if (record.sectorGuardDampings > 0) ++report.sectorGuardDampedSteps;
@@ -1174,12 +1243,16 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
         record.terms = actionTermRecords(action_, declaration_);
       report.steps.push_back(record);
       report.residualNorm = residualNorm;
-      // The smallest trial step says what blocks the Newton direction: an
-      // arbitrarily short step along it is refused for that reason.
+      // The smallest trial step says what blocks the Newton direction: the
+      // shortest step along it that the datatype resolves is refused for
+      // that reason.
       const std::string smallest =
           "the smallest trial step, 2^-" +
           std::to_string(trials > 0 ? trials - 1 : 0) +
-          " of the Newton step";
+          " of the Newton step" +
+          (belowResolution ? ", the shortest that moves a variable at the "
+                             "datatype's resolution,"
+                           : "");
       const std::string counts =
           " (of the " + std::to_string(trials) + " trial steps, the residual "
           "test refused " + std::to_string(record.residualTestDampings) +
@@ -1188,6 +1261,21 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
           std::to_string(record.domainGuardDampings) +
           "; the residual norm is " + threeDigits(residualNorm) +
           " after " + std::to_string(iteration) + " accepted steps)";
+      // What the guards refused before the residual test refused the shortest
+      // trial: how far along the Newton direction each one reaches.
+      const auto reach = [](std::size_t trial) {
+        return "2^-" + std::to_string(trial - 1) + " of the Newton step";
+      };
+      const std::string guards =
+          std::string{} +
+          (lastSectorTrial > 0
+               ? "; the trial steps down to " + reach(lastSectorTrial) +
+                     " changed a held monopole number"
+               : "") +
+          (lastDomainTrial > 0
+               ? "; the trial steps down to " + reach(lastDomainTrial) +
+                     " left the domain of the action"
+               : "");
       switch (lastRefusal) {
         case Refusal::SectorGuard:
           report.stopReason = RelaxationStop::SectorBoundary;
@@ -1206,10 +1294,20 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
               counts;
           break;
         case Refusal::ResidualTest:
+          report.stopReason = RelaxationStop::NoDescent;
+          report.stopDetail =
+              "no damped step reduced the residual norm: " + smallest +
+              (residualUnmoved
+                   ? " left every component of the residual the number it "
+                     "was, so no shorter step can reduce it"
+                   : " did not reduce it") +
+              guards + counts;
+          break;
         case Refusal::None:
           report.stopReason = RelaxationStop::NoDescent;
-          report.stopDetail = "no damped step reduced the residual norm: " +
-                              smallest + " did not reduce it" + counts;
+          report.stopDetail =
+              "no damped step reduced the residual norm: the Newton step "
+              "moves no variable at the datatype's resolution" + counts;
           break;
       }
       stopped = true;
@@ -1247,12 +1345,6 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
                         threeDigits(declaration_.tolerance) + " after " +
                         std::to_string(report.steps.size()) +
                         " accepted steps";
-  } else if (!stopped) {
-    report.stopReason = RelaxationStop::IterationBudget;
-    report.stopDetail = "the declared " +
-                        std::to_string(declaration_.maximumIterations) +
-                        " iterations ran out at residual norm " +
-                        threeDigits(report.residualNorm);
   }
   if (layout.lengths && startScale > 0.0)
     report.largestLengthRatio =

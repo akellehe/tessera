@@ -68,7 +68,10 @@ enum class CovarianceRule { OccupiedProjector, BandFilling };
 ///   declared order, so a band that crosses another in the declared order
 ///   exchanges its occupation with it. The overlaps with the previous point's
 ///   bands are still reported, and an exchange shows as an overlap far below
-///   one.
+///   one. The residual is discontinuous across an exchange, and a solve whose
+///   Newton steps cross one need not end: the residual test cuts each step
+///   short of the exchange, the cut step lowers the residual a little, and
+///   the next step is cut the same way.
 enum class BandSelection { Continuation, SortEveryIterate };
 
 /// # The method
@@ -186,10 +189,6 @@ struct SelfConsistentMeanFieldDeclaration {
   /// eigenvalues \f$ \lambda_b^{\star} \f$, one per pinned band.
   FiberConstraintForm fiberConstraintForm = FiberConstraintForm::PowerSums;
 
-  /// The largest number of Newton steps of the joint system. Zero reads the
-  /// starting point only.
-  std::size_t maximumIterations = 24;
-
   /// The Euclidean norm of the stationarity force over the relaxed geometric
   /// fields at or below which the pair \f$ (z^{*},\Gamma^{*}) \f$ is declared
   /// self-consistent.
@@ -205,11 +204,9 @@ struct SelfConsistentMeanFieldDeclaration {
   /// Under `JointNewton` it declares the joint solve's step control: the
   /// Jacobian rule, the rank tolerance, the dampings, the guards (the zeros of
   /// \f$ W \f$, the held monopole sectors, the domain of the action), the
-  /// shared coordinates and the length runaway ratio. The joint solve steps
-  /// until its residual is at or below the smaller of this declaration's
-  /// `tolerance` and the mean field's own `tolerance`, within the mean
-  /// field's `maximumIterations`; this declaration's `maximumIterations` is
-  /// not read.
+  /// shared coordinates. The joint solve steps until its residual is at or
+  /// below the smaller of this declaration's `tolerance` and the mean
+  /// field's own `tolerance`, or until it stops by name.
   HolomorphicRelaxationDeclaration geometry;
 };
 
@@ -442,7 +439,7 @@ struct SelfConsistentMeanFieldReport {
   /// Whether the fixed-point conditions held at the declared tolerance.
   bool converged = false;
   /// Why the solve stopped (`relaxationStopName` gives its name).
-  RelaxationStop stopReason = RelaxationStop::IterationBudget;
+  RelaxationStop stopReason = RelaxationStop::NoDescent;
   /// The stop reason in words, with the numbers that decided it.
   std::string stopDetail;
   /// The stationarity force norm at the point the solve stopped at.

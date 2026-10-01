@@ -23,10 +23,15 @@ namespace tessera::cobordism {
 /// why rather than only reporting the residual it reached.
 ///
 /// * `Converged` — the residual norm reached the declared tolerance.
-/// * `IterationBudget` — the declared number of iterations ran out first.
 /// * `NoDescent` — no damped Newton step reduced the residual norm: the
-///   solve cannot move from the point it stopped at. The smallest trial step
-///   was refused by the residual test.
+///   solve cannot move from the point it stopped at. The residual test
+///   refused the smallest trial step: the shortest that moves a variable at
+///   the datatype's resolution, or one that moved the variables and left
+///   every component of the residual the number it was. When a guard refused
+///   longer trial steps of the same Newton step, the detail says how far
+///   along the direction it did: a solve that a guard cuts step after step
+///   ends this way, at the boundary the guard keeps, once the steps that
+///   stay inside it no longer reduce the residual.
 /// * `SectorBoundary` — no stationary point in the declared monopole sector
 ///   along the Newton direction: the smallest trial step already changed a
 ///   held monopole number, so a held face holonomy is driven across
@@ -51,7 +56,6 @@ namespace tessera::cobordism {
 ///   step from this iterate and went on.
 enum class RelaxationStop {
   Converged,
-  IterationBudget,
   NoDescent,
   SectorBoundary,
   DomainBoundary,
@@ -175,10 +179,6 @@ struct HolomorphicRelaxationDeclaration {
   /// fixed external source.
   bool relaxMultipliers = true;
 
-  /// The largest number of Newton iterations taken before the solve reports
-  /// what it reached.
-  std::size_t maximumIterations = 24;
-
   /// The Euclidean norm of the residual vector at or below which the solve is
   /// declared converged. This is a convergence certificate on the complex
   /// equations, not a functional minimized in their place.
@@ -194,11 +194,6 @@ struct HolomorphicRelaxationDeclaration {
   /// of very different scale is still differentiated on a circle inside its own
   /// domain of analyticity.
   double contourRadius = 1e-2;
-
-  /// The largest number of step halvings tried when a full Newton step does not
-  /// reduce the residual norm. Damping is a globalization of the root find and
-  /// leaves the equations being solved unchanged.
-  std::size_t maximumDampings = 16;
 
   /// How the Jacobian is formed.
   HolomorphicJacobianMode jacobianMode =
@@ -429,7 +424,7 @@ struct HolomorphicRelaxationReport {
   /// (`JointAction::reggeOffPrincipalAngles`).
   std::size_t reggeOffPrincipalAngles = 0;
   /// Why the solve stopped.
-  RelaxationStop stopReason = RelaxationStop::IterationBudget;
+  RelaxationStop stopReason = RelaxationStop::NoDescent;
   /// The stop reason in words, with the numbers that decided it.
   std::string stopDetail;
   /// The largest \f$ |z_e| \f$ over the length coordinates at the point the
@@ -511,13 +506,21 @@ struct HolomorphicRelaxationReport {
 ///
 /// ## Step control and why a solve stops
 ///
-/// A full Newton step that does not reduce the residual norm is halved, up to
-/// `maximumDampings` times, and so is a trial step that the declared guards
-/// refuse: one that changes a held monopole number, and one that reaches a
-/// point at which the action refuses to evaluate (a zero of the Villain
-/// weight among them). Damping is a globalization and changes no
-/// equation. When no trial step is accepted the solve stops, and the report
-/// names the reason from the refusal of the smallest trial step
+/// A full Newton step that does not reduce the residual norm is halved, and
+/// halved again until a trial step is accepted, until the next halving would
+/// move no variable at the datatype's resolution, or until a trial leaves
+/// every component of the residual the number it was (the step's effect on
+/// the equations falls with the damping, so no shorter step can reduce the
+/// residual); a squared length the damped step does not move keeps its
+/// stored value. What refused the shortest trial is why the solve stops. A
+/// trial step that the declared guards refuse is halved the same way: one that changes a held monopole number, and one
+/// that reaches a point at which the action refuses to evaluate (a zero of
+/// the Villain weight among them). Damping is a globalization and changes no
+/// equation. No number of iterations or of halvings is declared: a solve
+/// ends only when it converges, when no trial step moves it (the shortest
+/// step the datatype resolves included), or when a squared length overflows
+/// the double. When no trial step is accepted the solve stops, and the
+/// report names the reason from the refusal of the smallest trial step
 /// (`RelaxationStop`); a runaway of the squared lengths also stops it by name.
 ///
 /// ## The self-consistent system

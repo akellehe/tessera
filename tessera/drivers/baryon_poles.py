@@ -58,14 +58,15 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    point. The content's bands are chosen at the host in ascending
    order of real part and followed from there by continuation (WP v17 line
    151; ``--band-selection sort-every-iterate`` re-sorts at every iterate
-   instead), and every iterate's band overlaps and any crossing are
-   recorded. The three sheets are relaxed as one shared base field (WP v17
+   instead, a rule under which a solve whose steps cross an exchange of the
+   occupation need not end), and every iterate's band overlaps and any
+   crossing are recorded. The three sheets are relaxed as one shared base field (WP v17
    §8, "Sheet convention (adopted)"): the solve's variables are the base
    tetrahedron's six squared lengths and six links, written to every sheet,
    and the force on each is the sum of the forces on the corresponding edges
    of the three sheets. A solve that reaches no fixed point says why, by
-   name (for example, the iterations ran out, no damped step reduced the
-   residual, no stationary point in the declared monopole sector, or the
+   name (for example, no damped step reduced the residual, no stationary
+   point in the declared monopole sector, or the
    squared lengths overflowed the double), and the poles are not read on a
    geometry whose squared lengths overflowed or that is not Kontsevich-Segal
    allowable: that read is refused by name, with the margin;
@@ -516,7 +517,6 @@ def relaxation_declaration(config):
     geometry.relax_lengths = True
     geometry.relax_links = True
     geometry.relax_multipliers = False
-    geometry.maximum_iterations = config["newton_iterations"]
     geometry.tolerance = config["newton_tolerance"]
     geometry.jacobian_mode = cob.HolomorphicJacobianMode.RealAxisDifference
     geometry.contour_radius = config["jacobian_radius"]
@@ -600,7 +600,6 @@ def mean_field_declaration(content, config, spacetime=None):
     declaration.occupation_order = cob.OccupationOrder.AscendingRealPart
     declaration.band_selection = BAND_SELECTIONS[
         config.get("band_selection", DECLARED_BAND_SELECTION)]
-    declaration.maximum_iterations = config["mean_field_iterations"]
     declaration.tolerance = config["mean_field_tolerance"]
     declaration.fiber_constraint_form = FIBER_PINNINGS[
         config.get("fiber_pinning", DECLARED_FIBER_PINNING)]
@@ -3549,9 +3548,7 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
-        "newton_iterations": 40,
         "jacobian_radius": 1e-4,
-        "mean_field_iterations": 40,
         **declared_tolerances(tolerances),
         "band_selection": band_selection,
         "fiber_moments": str(fiber_moments),
@@ -3709,7 +3706,6 @@ SOLVE_STYLE = {
 #: (`cob.relaxation_stop_name`) and of the refusals of a pole read
 #: (`read_refusal`).
 STOP_SHORT = {
-    "the declared iterations ran out": "ran out",
     "no damped step reduced the residual": "no descent",
     "every damped step left the domain of the action": "left the domain",
     "no stationary point in the declared monopole sector":

@@ -63,17 +63,14 @@ SECOND_CELL = (0, 1, 3, 4)
 # ------------------------------------------------------------------ helpers
 
 
-def _cell_config(cell, content, newton, mean_field):
+def _cell_config(cell, content):
     """The configuration `recursion.cell_reads` hands `baryon_poles` for one
-    host cell of the tick-0 level, with the iteration budgets reduced to the
-    stated values (every other entry as in the run)."""
+    host cell of the tick-0 level (every entry as in the run)."""
     config = bp.default_config(kappas=[1.0], betas=[1.0],
                                selected_contents=[tuple(content)],
                                tolerances=RUN.TOLERANCES)
     config["host_cell"] = RUN.HOST_CELLS[cell]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
-    config["newton_iterations"] = newton
-    config["mean_field_iterations"] = mean_field
     return config
 
 
@@ -135,18 +132,32 @@ def _gauge_one_sheet(spacetime, vertex, angle):
             edge.setPhase(edge.getPhase() - angle)
 
 
+def _host_band_read(action, content, config):
+    """The band rule of `relax_content` read at the action's point without
+    solving: the bands of h_1 chosen by the declared order and their density
+    (`BandFollower.read`), which is what `SelfConsistentMeanField.solve`
+    seeds at iterate zero."""
+    return cob.BandFollower(bp.mean_field_declaration(content, config)).read(
+        action.carrier_operator())
+
+
+def _occupied_energy(read, action):
+    """tr(Gamma h_1) of a band read at the action's point, the occupied energy
+    the solve records at an iterate."""
+    gamma = np.asarray(read.covariance).reshape(18, 18)
+    return complex(np.trace(gamma @ bp.matrix(action.carrier_operator())))
+
+
 def _seeded_action(cell, content):
     """The joint action of `relax_content` with the band-filling covariance
     seeded on the unrelaxed host, as `SelfConsistentMeanField.solve` seeds it
-    before its first iteration."""
-    config = _cell_config(cell, content, newton=40, mean_field=0)
+    at iterate zero, without solving."""
+    config = _cell_config(cell, content)
     spacetime = bp.build_host(config["edge_squared"], config["host_cell"])
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
-    solve = cob.SelfConsistentMeanField(
-        action, bp.mean_field_declaration(content, config))
-    solve.solve()
-    return spacetime, solve.action, config
+    action.set_covariance(_host_band_read(action, content, config).covariance)
+    return spacetime, action, config
 
 
 # ---------------------------------------------- the certificate (C++ core)
@@ -355,7 +366,7 @@ def test_the_geometric_jacobian_is_exactly_sheet_symmetric():
     the three-sheeted first host cell commutes with the sheet relabeling
     t -> t + 1 exactly (every entry of P J P^T - J is zero): the geometric
     part of the relaxation cannot separate the sheets."""
-    config = _cell_config(FIRST_CELL, (2, 1, 0), newton=40, mean_field=0)
+    config = _cell_config(FIRST_CELL, (2, 1, 0))
     spacetime = bp.build_host(8.0, config["host_cell"])
     action = cob.JointAction(spacetime, bp.action_declaration(
         spacetime, 1.0, 1.0, matter_weight=0.0))
@@ -375,12 +386,15 @@ def test_the_seeded_covariance_fills_rank_three_bands_of_h(content):
     (WP v17 §8: every band E-bar of the base becomes E-bar (x) C^3). Every
     declared content fits, the band-filling covariance is a function of h_1
     and commutes with it to rounding, it commutes with the sheet relabeling
-    to rounding (1e-14), and its trace is the three quarks. Zero mean-field
-    iterations read the covariance seeded at the host."""
-    config = _cell_config(FIRST_CELL, content, newton=0, mean_field=0)
-    spacetime, action, report = bp.relax_content(content, 1.0, 1.0, config)
-    assert list(report.band_ranks) == [3] * 6
-    gamma = np.asarray(report.covariance).reshape(18, 18)
+    to rounding (1e-14), and its trace is the three quarks. The band rule is
+    read at the host itself (`_host_band_read`), which is the covariance
+    `SelfConsistentMeanField.solve` seeds at iterate zero."""
+    spacetime, action, config = _seeded_action(FIRST_CELL, content)
+    read = _host_band_read(action, content, config)
+    assert list(read.ranks) == [3] * 6
+    gamma = np.asarray(read.covariance).reshape(18, 18)
+    assert np.array_equal(
+        gamma, np.asarray(action.declaration.covariance).reshape(18, 18))
     h = bp.matrix(action.carrier_operator())
     assert np.linalg.norm(gamma @ h - h @ gamma) < 1e-12 * np.linalg.norm(h)
     # the covariance is over the 18 edge cells in `getEdgeList()` order
@@ -389,29 +403,17 @@ def test_the_seeded_covariance_fills_rank_three_bands_of_h(content):
     assert np.trace(gamma).real == pytest.approx(3.0, abs=1e-12)
 
 
-@pytest.mark.parametrize("content", [(2, 1, 0), (0, 0, 3)])
-def test_one_newton_step_keeps_the_sheets_identical(content):
-    """WP v17 line 355: the shared geometry is a stationary sector of the
-    sheet-permuting group and the sheet number is conserved under relaxation.
-    From the run's first host cell, exactly isomorphic as built, one
-    mean-field iteration with one Newton step leaves the three sheets
-    identical to the bit."""
-    config = _cell_config(FIRST_CELL, content, newton=1, mean_field=1)
-    spacetime, _, _ = bp.relax_content(content, 1.0, 1.0, config)
-    lengths, links = _sheets(spacetime)
-    assert _largest_gap(lengths) == 0.0
-    assert _largest_gap(links) == 0.0
-
-
 @pytest.mark.parametrize("cell", [FIRST_CELL, SECOND_CELL])
 @pytest.mark.parametrize("content", bp.contents())
 def test_the_relaxed_sheets_are_bit_identical_for_every_content(cell,
                                                                 content):
-    """Three Newton steps in each of two mean-field iterations, on both host
-    cells of the run and every content: the shared base field is written to
+    """WP v17 line 355: the shared geometry is a stationary sector of the
+    sheet-permuting group and the sheet number is conserved under relaxation.
+    From the host cells of the run, exactly isomorphic as built, the full
+    mean-field solve of every content: the shared base field is written to
     every sheet, so the squared lengths and links of the three sheets agree
     to the bit and the certificate reports both residuals exactly zero."""
-    config = _cell_config(cell, content, newton=3, mean_field=2)
+    config = _cell_config(cell, content)
     spacetime, _, _ = bp.relax_content(content, 1.0, 1.0, config)
     lengths, links = _sheets(spacetime)
     assert _largest_gap(lengths) == 0.0
@@ -425,7 +427,7 @@ def test_the_shared_field_has_six_lengths_and_six_links():
     """`baryon_poles.share_sheet_geometry` declares one class per base edge:
     the relaxation has 12 variables, and every class holds one edge of each
     sheet on the same orientation."""
-    config = _cell_config(FIRST_CELL, (2, 1, 0), newton=1, mean_field=0)
+    config = _cell_config(FIRST_CELL, (2, 1, 0))
     spacetime = bp.build_host(8.0, config["host_cell"])
     classes, orientations = bp.sheet_edge_classes(spacetime)
     records = bp.edge_records(spacetime)
@@ -450,12 +452,12 @@ def test_the_newton_solve_uses_the_numerical_rank(content):
     rounding floor of its real-axis-difference Jacobian at radius 1e-4. On the
     seeded action of the run's first host cell the 36-coordinate Jacobian has
     exactly three near-null directions below that threshold, so the rank the
-    solve uses is the numerical rank 33 for both contents, and the step
-    record reports it with a gap of more than six decades between the
-    smallest retained and the largest discarded singular value."""
+    solve uses is the numerical rank 33 for both contents, and the record
+    of the first iterate of the full solve (`steps[0]`) reports it with a
+    gap of more than six decades between the smallest retained and the
+    largest discarded singular value."""
     spacetime, action, config = _seeded_action(FIRST_CELL, content)
     declaration = bp.relaxation_declaration(config)
-    declaration.maximum_iterations = 1
     assert declaration.rank_tolerance == RUN.TOLERANCES["rank_tolerance"] \
         == 1e-10
     relaxation = cob.HolomorphicRelaxation(action, declaration)
@@ -512,27 +514,27 @@ def test_the_near_null_directions_are_one_per_sheet():
 def test_three_quarks_in_one_band_survive_the_relaxation():
     """A band of h_1 on the sheeted host has rank 3 (one simple mode per sheet
     times three sheets), so three quarks in the third band fit and stay
-    fitting while the sheets stay identical; two Newton steps of one
-    mean-field iteration on the run's first host cell complete with the band
-    ranks [3, 3, 3, 3, 3, 3]. (With the bands read on the T-averaged operator
-    and the sheets relaxed separately, this was the run's refusal "band 2 has
-    rank 2 and cannot hold the declared occupation 3".)"""
-    config = _cell_config(FIRST_CELL, (0, 0, 3), newton=2, mean_field=1)
+    fitting while the sheets stay identical: the full mean-field solve on the
+    run's first host cell reads the band ranks [3, 3, 3, 3, 3, 3] at every
+    iterate and at its end point. (With the bands read on the T-averaged
+    operator and the sheets relaxed separately, this was the run's refusal
+    "band 2 has rank 2 and cannot hold the declared occupation 3".)"""
+    config = _cell_config(FIRST_CELL, (0, 0, 3))
     _, _, report = bp.relax_content((0, 0, 3), 1.0, 1.0, config)
     assert list(report.band_ranks) == [3] * 6
+    assert [list(step.band_ranks) for step in report.steps] \
+        == [[3] * 6] * len(report.steps)
 
 
 def _seeded_band_read(gauge_angle):
-    # zero mean-field iterations read the band rule at the host itself
-    config = _cell_config(FIRST_CELL, (2, 1, 0), newton=0, mean_field=0)
+    # the band rule read at the host itself, as the solve seeds it
+    config = _cell_config(FIRST_CELL, (2, 1, 0))
     spacetime = bp.build_host(8.0, config["host_cell"])
     if gauge_angle:
         _gauge_one_sheet(spacetime, 6, gauge_angle)
     action = cob.JointAction(spacetime, bp.action_declaration(spacetime, 1.0,
                                                               1.0))
-    solve = cob.SelfConsistentMeanField(
-        action, bp.mean_field_declaration((2, 1, 0), config))
-    return spacetime, solve.solve()
+    return spacetime, action, _host_band_read(action, (2, 1, 0), config)
 
 
 def test_the_bands_survive_a_gauge_transformation_of_one_sheet():
@@ -542,18 +544,18 @@ def test_the_bands_survive_a_gauge_transformation_of_one_sheet():
     which the transformation conjugates, so the band ranks [3] * 6, the
     occupied eigenvalues and the occupied energy tr(Gamma h_1) are unchanged
     (to 1e-12)."""
-    spacetime, report = _seeded_band_read(0.3)
+    spacetime, action, read = _seeded_band_read(0.3)
     lengths, links = _sheets(spacetime)
     assert _largest_gap(lengths) == 0.0
     holonomies = [_face_holonomies(u) for u in links]
     assert _largest_gap(holonomies) < 1e-15
-    _, reference = _seeded_band_read(0.0)
-    assert list(report.band_ranks) == list(reference.band_ranks) == [3] * 6
-    np.testing.assert_allclose(np.asarray(report.occupied_eigenvalues),
+    _, reference_action, reference = _seeded_band_read(0.0)
+    assert list(read.ranks) == list(reference.ranks) == [3] * 6
+    np.testing.assert_allclose(np.asarray(read.occupied_eigenvalues),
                                np.asarray(reference.occupied_eigenvalues),
                                atol=1e-12)
-    assert complex(report.occupied_energy) == pytest.approx(
-        complex(reference.occupied_energy), abs=1e-12)
+    assert _occupied_energy(read, action) == pytest.approx(
+        _occupied_energy(reference, reference_action), abs=1e-12)
 
 
 # ------------------------------------------------------------ fibre lift

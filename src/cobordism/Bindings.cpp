@@ -4901,9 +4901,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
              HolomorphicJacobianMode::RealAxisDifference);
 
   py::enum_<RelaxationStop>(m, "RelaxationStop",
-      "Why a solve stopped, reported by name. Converged; IterationBudget (the "
-      "declared iterations ran out); NoDescent (no damped step reduced the "
-      "residual); SectorBoundary (no stationary point in the declared "
+      "Why a solve stopped, reported by name. Converged; NoDescent (no damped "
+      "step reduced the residual, the shortest step the datatype resolves "
+      "included); SectorBoundary (no stationary point in the declared "
       "monopole sector: the smallest damped step changed a held monopole "
       "number, a held face holonomy driven across -1); DomainBoundary (the "
       "smallest damped step left the domain of the action); HeldFloor (with "
@@ -4913,7 +4913,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "Continued (not a stop: a per-iterate trace entry the solve stepped on "
       "from).")
       .value("Converged", RelaxationStop::Converged)
-      .value("IterationBudget", RelaxationStop::IterationBudget)
       .value("NoDescent", RelaxationStop::NoDescent)
       .value("SectorBoundary", RelaxationStop::SectorBoundary)
       .value("DomainBoundary", RelaxationStop::DomainBoundary)
@@ -4951,8 +4950,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicRelaxationDeclaration::relaxMultipliers,
                      "Whether the multipliers are variables, under the same "
                      "rule.")
-      .def_readwrite("maximum_iterations",
-                     &HolomorphicRelaxationDeclaration::maximumIterations)
       .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
                      "The residual norm at or below which the solve is "
                      "declared converged.")
@@ -4963,10 +4960,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicRelaxationDeclaration::contourRadius,
                      "The contour radius, relative to the magnitude of the "
                      "coordinate being differentiated and floored at one.")
-      .def_readwrite("maximum_dampings",
-                     &HolomorphicRelaxationDeclaration::maximumDampings,
-                     "The largest number of step halvings tried when a full "
-                     "Newton step does not reduce the residual norm.")
       .def_readwrite("jacobian_mode",
                      &HolomorphicRelaxationDeclaration::jacobianMode)
       .def_readwrite("rank_tolerance",
@@ -5282,12 +5275,6 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "(the default) or its bands' eigenvalues, under which "
                      "fiber_moments is the number of occupied bands pinned "
                      "and fiber_moment_targets are their eigenvalues.")
-      .def_readwrite("maximum_iterations",
-                     &SelfConsistentMeanFieldDeclaration::maximumIterations,
-                     "The largest number of iterations of the declared "
-                     "method: Newton steps of the joint system, or outer "
-                     "iterations of the alternation. Zero reads the starting "
-                     "point only.")
       .def_readwrite("tolerance",
                      &SelfConsistentMeanFieldDeclaration::tolerance,
                      "The force norm at or below which the pair is "
