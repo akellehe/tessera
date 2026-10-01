@@ -2924,8 +2924,24 @@ bool MultiCobordism::applyMoveSpecification(
 bool MultiCobordism::geometryAdmissible(const std::shared_ptr<Spacetime> &spacetime) const {
   if (metricSource_ != HodgeLaplacian::MetricSource::WhitneyPencil) return true;
   if (!spacetime) return false;
-  constexpr double kBoundaryTolerance = 1e-12;
-  return HodgeLaplacian::kontsevichSegalMargin(*spacetime) >= -kBoundaryTolerance;
+  return HodgeLaplacian::kontsevichSegalMargin(*spacetime) >= -admissibilityTolerance_;
+}
+
+void MultiCobordism::setMoveTolerance(double moveTolerance) {
+  if (!(moveTolerance >= 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::setMoveTolerance: the move tolerance must be zero or "
+        "positive; received " + std::to_string(moveTolerance));
+  convergenceTolerance_ = moveTolerance;
+}
+
+void MultiCobordism::setAdmissibilityTolerance(double admissibilityTolerance) {
+  if (!(admissibilityTolerance >= 0.0))
+    throw std::invalid_argument(
+        "MultiCobordism::setAdmissibilityTolerance: the admissibility "
+        "tolerance must be zero or positive; received " +
+        std::to_string(admissibilityTolerance));
+  admissibilityTolerance_ = admissibilityTolerance;
 }
 
 double MultiCobordism::deltaF(

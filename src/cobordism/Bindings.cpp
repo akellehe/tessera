@@ -2409,6 +2409,18 @@ assertion. Every pairing is the transpose.)doc")
            "search at every breadth is exhaustive, which costs the move "
            "space raised to the breadth."
            )
+      .def_property("move_tolerance", &MultiCobordism::moveTolerance,
+                    &MultiCobordism::setMoveTolerance,
+                    "The move tolerance of stage 1: a move, or a composition "
+                    "of moves, is committed only when it lowers the objective "
+                    "by more than this amount. 1e-15 by default.")
+      .def_property("admissibility_tolerance",
+                    &MultiCobordism::admissibilityTolerance,
+                    &MultiCobordism::setAdmissibilityTolerance,
+                    "The admissibility tolerance of the Whitney-pencil "
+                    "configuration space: a geometry is a member when its "
+                    "Kontsevich-Segal margin is at least minus this amount, "
+                    "in radians. 1e-15 by default.")
       .def_property("should_propose_surgery",
                     &MultiCobordism::shouldProposeSurgery,
                     &MultiCobordism::setShouldProposeSurgery,
@@ -3816,8 +3828,12 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "dense crossover, the declared FiberEmbeddingPolicy (+ epsilon), and "
       "caller-selected interior cells to retain.")
       .def(py::init<>())
-      .def_readwrite("tolerance", &RecursiveQuotient::Options::tolerance)
-      .def_readwrite("rankTolerance", &RecursiveQuotient::Options::rankTolerance)
+      .def_readwrite("tolerance", &RecursiveQuotient::Options::tolerance,
+                     "The relative tolerance the produced certificates hold "
+                     "against. 1e-15 by default.")
+      .def_readwrite("rankTolerance", &RecursiveQuotient::Options::rankTolerance,
+                     "The relative rank-revealing threshold of the kernel and "
+                     "rank decisions. 1e-15 by default.")
       .def_readwrite("denseCrossover", &RecursiveQuotient::Options::denseCrossover)
       .def_readwrite("embeddingPolicy",
                      &RecursiveQuotient::Options::embeddingPolicy)
@@ -3936,7 +3952,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readonly("isolationGap",
                     &RecursiveQuotient::MultiplicityRead::isolationGap,
                     "The distance from the circle to the nearest eigenvalue of "
-                    "L or of L_II, inside or outside.")
+                    "L or of L_II, inside or outside. A gap at or below the "
+                    "rank tolerance times the larger of the radius and that "
+                    "eigenvalue's distance from the centre says that the "
+                    "circle passes through an eigenvalue at the rank "
+                    "tolerance.")
       .def_readonly("decompositionResidual",
                     &RecursiveQuotient::MultiplicityRead::decompositionResidual,
                     "The largest relative backward error of the Schur "
@@ -4313,9 +4333,10 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "about lam: the eigenvalues of L in the disc, counted with "
            "multiplicity from the Schur form of L, with the interior block's "
            "count reported separately; the geometric multiplicity is "
-           "dim ker F_B(lam). Whether an eigenvalue is inside is decided at the "
-           "rank tolerance, and a circle through an eigenvalue is refused by "
-           "name.")
+           "dim ker F_B(lam). An eigenvalue is inside exactly when its "
+           "distance from lam is below the radius; the count is made wherever "
+           "the circle passes, and isolationGap reports how close it comes to "
+           "an eigenvalue.")
       .def("craigBampton",
            py::overload_cast<double, double, double, double>(
                &RecursiveQuotient::craigBampton, py::const_),
@@ -4596,67 +4617,84 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .value("Principal", ReggeBranch::Principal);
 
   py::class_<VillainSeries>(m, "VillainSeries",
-      "The truncated Laurent series W, F W' and (F d/dF)^2 W at one face "
-      "holonomy, the largest |m| kept, and certified bounds on the modulus of "
-      "each omitted tail.")
+      "The order-M Villain sums W_M, F W_M' and (F d/dF)^2 W_M at one face "
+      "holonomy, each summed in full; the order; the bound on the rounding "
+      "of W_M; and the reported bound on the distance of each sum from its "
+      "infinite series (the tails), which nothing reads.")
       .def_readonly("value", &VillainSeries::value)
       .def_readonly("first", &VillainSeries::first)
       .def_readonly("second", &VillainSeries::second)
-      .def_readonly("term_count", &VillainSeries::termCount)
+      .def_readonly("order", &VillainSeries::order,
+                    "M, the declared order: the largest |m| in the sums.")
       .def_readonly("value_tail", &VillainSeries::valueTail)
       .def_readonly("first_tail", &VillainSeries::firstTail)
       .def_readonly("second_tail", &VillainSeries::secondTail)
       .def_readonly("magnitude", &VillainSeries::magnitude,
-                    "sum of |q^(m^2) F^m| over the kept terms: the rounding "
-                    "scale of W.");
+                    "A(F), the sum of c_m |F|^m over |m| <= M, every "
+                    "operation rounded upward.")
+      .def_readonly("first_magnitude", &VillainSeries::firstMagnitude,
+                    "The sum of |m| c_m |F|^m over |m| <= M, every operation "
+                    "rounded upward: a bound on |F W_M'(F)|.")
+      .def_readonly("second_magnitude", &VillainSeries::secondMagnitude,
+                    "The sum of m^2 c_m |F|^m over |m| <= M, every operation "
+                    "rounded upward.")
+      .def_readonly("rounding_bound", &VillainSeries::roundingBound,
+                    "The bound gamma_(6M+1) A(F) on the rounding of the "
+                    "computed W_M, gamma_k = k u / (1 - k u), u = 2^-53; "
+                    "infinite when the computed sum is not finite.");
 
   py::class_<VillainCharacter>(m, "VillainCharacter",
-      "The Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of one face and "
-      "its potential phi(F) = -beta_V log W(F), beta_V = beta / <m^2>_beta, "
-      "which matches the Wilson form's curvature beta at trivial holonomy. "
-      "Derivatives use W'/W and W''/W only; the logarithm is the branch real "
-      "on the unit circle, continued radially.")
-      .def(py::init<double, double>(), py::arg("beta"),
-           py::arg("tolerance") = 1e-18)
+      "The Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of one face "
+      "summed to the declared order M, W_M = sum over |m| <= M, and its "
+      "potential phi(F) = -beta_V log W_M(F), beta_V = beta / <m^2>_beta "
+      "with the second moment of the same order-M sums, which matches the "
+      "Wilson form's curvature beta at trivial holonomy. Derivatives use "
+      "W_M'/W_M and W_M''/W_M only; the logarithm is the branch real on the "
+      "unit circle, continued radially by certified steps.")
+      .def(py::init<double, int>(), py::arg("beta"),
+           py::arg("order") = VillainCharacter::maximumOrder)
+      .def_property_readonly_static(
+          "maximum_order",
+          [](const py::object &) { return VillainCharacter::maximumOrder; },
+          "The largest order that can be declared.")
       .def_property_readonly("beta", &VillainCharacter::beta)
-      .def_property_readonly("tolerance", &VillainCharacter::tolerance)
-      .def_property_readonly("declared_term_count",
-                             &VillainCharacter::declaredTermCount,
-                             "M_0: the least m with exp(-m^2/(2 beta)) below "
-                             "the tolerance.")
+      .def_property_readonly("order", &VillainCharacter::order,
+                             "M, the declared order.")
+      .def_property_readonly("coefficients", &VillainCharacter::coefficients,
+                             "c_0 .. c_M, the double-precision values of "
+                             "exp(-m^2/(2 beta)) that define W_M.")
       .def_property_readonly("second_moment", &VillainCharacter::secondMoment,
-                             "<m^2>_beta at trivial holonomy.")
+                             "<m^2>_beta of the order-M sums at trivial "
+                             "holonomy.")
       .def_property_readonly("matched_weight",
                              &VillainCharacter::matchedWeight,
-                             "beta_V = beta / <m^2>_beta.")
+                             "beta_V = beta / <m^2>_beta, with the order-M "
+                             "second moment.")
       .def("series", &VillainCharacter::series, py::arg("holonomy"))
+      .def_static("certified_nonzero", &VillainCharacter::certifiedNonzero,
+                  py::arg("series"),
+                  "Whether W_M is certified nonzero at the point the series "
+                  "was evaluated at: the modulus of the computed sum, rounded "
+                  "downward, exceeds its rounding bound.")
       .def("logarithm", &VillainCharacter::logarithm, py::arg("holonomy"),
-           "log W(F) on the branch real on the unit circle, continued "
-           "radially from F/|F|. The start on the unit circle is accepted when "
-           "|Im W| <= reality_margin() (tail bound + machine epsilon times the "
-           "sum of the moduli of the kept terms) and Re W exceeds the nonzero "
-           "margin times the same uncertainty; raises ValueError when W is "
-           "not certified nonzero on the path, its start included.")
-      .def_static("reality_margin", &VillainCharacter::realityMargin,
-                  "c_R, the declared multiple of the series' uncertainty (its "
-                  "tail bound plus its rounding scale) within which logarithm "
-                  "reads the imaginary part of W on the unit circle as "
-                  "rounding.")
+           "log W_M(F) on the branch real on the unit circle, continued "
+           "radially from F/|F| by steps each certified by a bound on the "
+           "change of W_M. Raises ValueError when W_M is not above its bound "
+           "at the point of the unit circle on the ray, when the path meets "
+           "a zero of W_M at the resolution of double precision, or when W_M "
+           "is not certified nonzero at F.")
       .def("potential", &VillainCharacter::potential, py::arg("holonomy"))
       .def("first_derivative", &VillainCharacter::firstDerivative,
-           py::arg("holonomy"), "F dphi/dF = -beta_V F W'/W.")
+           py::arg("holonomy"), "F dphi/dF = -beta_V F W_M'/W_M.")
       .def("second_derivative", &VillainCharacter::secondDerivative,
            py::arg("holonomy"), "(F d/dF)^2 phi.");
 
   py::class_<HolonomyTruncation>(m, "HolonomyTruncation",
-      "The Villain truncation over every face at the current connection: the "
-      "declared tolerance and term count, the largest term count any face "
-      "needed, and the largest certified tail bounds relative to |W|.")
-      .def_readonly("tolerance", &HolonomyTruncation::tolerance)
-      .def_readonly("declared_term_count",
-                    &HolonomyTruncation::declaredTermCount)
-      .def_readonly("maximum_term_count",
-                    &HolonomyTruncation::maximumTermCount)
+      "The order of the Villain weight and, over every face at the current "
+      "connection, the largest reported bound on the distance of each "
+      "order-M sum from its infinite series, relative to the sum of the "
+      "moduli of the terms of that order-M sum. A report: nothing reads it.")
+      .def_readonly("order", &HolonomyTruncation::order)
       .def_readonly("relative_value_tail",
                     &HolonomyTruncation::relativeValueTail)
       .def_readonly("relative_first_tail",
@@ -4702,10 +4740,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "coefficient is beta_V = beta / <m^2>_beta; the bare "
                      "stiffness at trivial holonomy is beta L_1^up. Zero "
                      "leaves the term out.")
-      .def_readwrite("villain_tolerance",
-                     &JointActionDeclaration::villainTolerance,
-                     "The relative tolerance below which a Villain coefficient "
-                     "exp(-m^2/(2 beta)) is left out of the series.")
+      .def_readwrite("villain_order",
+                     &JointActionDeclaration::villainOrder,
+                     "M, the order the Villain weight is summed to: the "
+                     "holonomy term is defined by W_M, the sum over "
+                     "|m| <= M. An integer from 1 to 10; 10 by default.")
       .def_readwrite("matter_weight", &JointActionDeclaration::matterWeight,
                      "w_M, the coefficient on tr(Gamma h(z, U)), the carried "
                      "state's bilinear action density. Zero is strict "
@@ -4862,10 +4901,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "continued sheet differs from the principal one at the current "
            "geometry.")
       .def("holonomy_term", &JointAction::holonomyTerm,
-           "S_hol(U) in the declared form, weight included. For the Villain "
-           "form it is the one quantity that needs log W, taken on the branch "
-           "real on the unit circle; it raises for a face holonomy at or "
-           "beyond a zero of W on the negative real axis.")
+           "S_hol(U), weight included: the one quantity that needs log W_M, "
+           "the Villain weight at the declared order, taken on the branch "
+           "real on the unit circle; it raises for a face holonomy on whose "
+           "ray W_M is not positive at the unit circle, or whose radial path "
+           "meets a zero of W_M.")
       .def("matter_term", &JointAction::matterTerm,
            "w_M tr(Gamma h(z, U)).")
       .def("spectral_term", &JointAction::spectralTerm,
@@ -4903,8 +4943,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
            "multiplicative coordinate U -> U e^delta. Minus it is the Hessian "
            "in the real angles.")
       .def("holonomy_truncation", &JointAction::holonomyTruncation,
-           "The Villain series truncation over the current face holonomies, "
-           "with certified relative tail bounds.")
+           "The order of the Villain weight and, over the current face "
+           "holonomies, the reported distance of its sums from their "
+           "infinite series (HolonomyTruncation).")
       .def("regge_hessian", &JointAction::reggeHessian,
            "The Hessian of w_R S_Regge in the squared lengths, flat |E| x |E| "
            "in getEdgeList() order: for the primal form the per-hinge product "
@@ -5035,7 +5076,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "rule.")
       .def_readwrite("tolerance", &HolomorphicRelaxationDeclaration::tolerance,
                      "The residual norm at or below which the solve is "
-                     "declared converged.")
+                     "declared converged. 1e-15 by default.")
       .def_readwrite("iteration_limit",
                      &HolomorphicRelaxationDeclaration::iterationLimit,
                      "The number of accepted Newton steps after which the "
@@ -5056,7 +5097,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &HolomorphicRelaxationDeclaration::rankTolerance,
                      "The relative threshold below which a singular value of "
                      "the Jacobian, over the largest, counts as zero in the "
-                     "minimum-norm solve.")
+                     "minimum-norm solve, and a singular value of the held "
+                     "faces' coboundary, over its largest, counts as zero. "
+                     "1e-15 by default.")
       .def_readwrite("record_terms",
                      &HolomorphicRelaxationDeclaration::recordTerms,
                      "Whether every recorded step (and the starting point) "
@@ -5324,7 +5367,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("band_tolerance",
                      &SelfConsistentMeanFieldDeclaration::bandTolerance,
                      "The relative separation at or below which consecutive "
-                     "ordered eigenvalues belong to one band.")
+                     "ordered eigenvalues belong to one band. 1e-15 by "
+                     "default.")
       .def_readwrite("band_symmetry",
                      &SelfConsistentMeanFieldDeclaration::bandSymmetry,
                      "The operators D(g) of a declared finite symmetry, each "
@@ -5369,7 +5413,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      &SelfConsistentMeanFieldDeclaration::tolerance,
                      "The force norm at or below which the pair is "
                      "self-consistent. The covariance is rebuilt at every "
-                     "point, so the force is the one condition.")
+                     "point, so the force is the one condition. 1e-15 by "
+                     "default.")
       .def_readwrite("geometry",
                      &SelfConsistentMeanFieldDeclaration::geometry,
                      "The Newton solve of the geometry: the joint solve's "
@@ -5858,7 +5903,7 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "each cluster's nilpotent part, the invertibility of "
                      "the metric, and the distance, as a fraction of the "
                      "block's largest singular value, at or below which two "
-                     "eigenvalues form one pole.")
+                     "eigenvalues form one pole. 1e-15 by default.")
       .def_readwrite("free_threshold", &BoundStatePoleConfig::freeThreshold,
                      "The complex spectral value the binding shift is measured "
                      "against. None leaves the binding shift unreported.");
@@ -5871,9 +5916,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "The largest singular value of the block T = M^-1 A, the "
                     "reference of every rank decision and of the clustering.")
       .def_readonly("poles", &BoundStatePoleRead::poles,
-                    "The distinct zeros s_C of D_C: the clusters of "
-                    "eigenvalues of the pencil the interior block does not "
-                    "carry, ascending by (real part, imaginary part).")
+                    "The clusters of eigenvalues of the pencil, ascending by "
+                    "(real part, imaginary part). A cluster no interior "
+                    "eigenvalue meets is a zero s_C of D_C; a cluster an "
+                    "interior eigenvalue meets is reported with the others "
+                    "and flagged in at_interior_pole.")
+      .def_readonly("at_interior_pole", &BoundStatePoleRead::atInteriorPole,
+                    "Whether an eigenvalue of the interior pencil lies within "
+                    "the rank tolerance times the scale of a member of each "
+                    "pole's cluster. Such a point lies outside the domain the "
+                    "response is continued on, so the read does not establish "
+                    "what order D_C has there; 'eigenvalue-at-interior-pole' "
+                    "is named in failed_certificates.")
       .def_readonly("multiplicity", &BoundStatePoleRead::multiplicity,
                     "The algebraic multiplicity of each pole: the size of its "
                     "cluster, the dimension of its generalized eigenspace.")
@@ -5911,7 +5965,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                     "s_C minus the declared free threshold.")
       .def_readonly("interior_poles", &BoundStatePoleRead::interiorPoles,
                     "The distinct eigenvalues of the interior pencil, the "
-                    "poles of F_C, which the domain of the read excludes.")
+                    "poles of F_C, which the domain the response is continued "
+                    "on excludes.")
       .def_readonly("interior_multiplicity",
                     &BoundStatePoleRead::interiorMultiplicity,
                     "The algebraic multiplicity of each interior pole.")
@@ -5926,9 +5981,11 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "D_C(s) = det F_C(s), with F_C the exact meromorphic Feshbach response "
       "pencil of a persistent bound cluster, continued in the complex "
       "spectral parameter s. The zeros are read exactly from the spectrum of "
-      "the pencil: the eigenvalues of M^-1 A the interior block does not "
-      "carry, clustered at the declared rank tolerance, each with the "
-      "spectral projector onto its generalized eigenspace as its residue.\n\n"
+      "the pencil: the eigenvalues of M^-1 A, clustered at the declared rank "
+      "tolerance, each with the spectral projector onto its generalized "
+      "eigenspace as its residue. A cluster the interior block does not carry "
+      "is a zero of D_C; a cluster at an eigenvalue of the interior block is "
+      "reported with the others and flagged.\n\n"
       "Mass is not defined here by an incoherent sum of moduli, and nothing "
       "here converts s_C into a mass: the theory carries s_C and takes no "
       "square root of it.")
@@ -5997,7 +6054,8 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "approximation of this class and is never applied unless "
                      "asked for.")
       .def_readwrite("tolerance", &DressedFluctuationDeclaration::tolerance,
-                     "The relative tolerance the certificates hold against.");
+                     "The relative tolerance the certificates hold against. "
+                     "1e-15 by default.");
 
   py::class_<CollectiveMode>(m, "CollectiveMode",
       "One pole of the dressed fluctuation propagator A_eff(w)^-1: a frequency "
@@ -6278,7 +6336,13 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("tolerance", &LevelRecursionDeclaration::tolerance,
                      "The relative tolerance the certificates of every level "
                      "hold against and the rank decisions of the band reads "
-                     "are made at.")
+                     "are made at. 1e-15 by default.")
+      .def_readwrite("rank_tolerance",
+                     &LevelRecursionDeclaration::rankTolerance,
+                     "The relative threshold of the rank decisions of the "
+                     "quotient's interior solves: a pivot or a singular value "
+                     "of an interior block at or below this fraction of the "
+                     "block's largest counts as zero. 1e-15 by default.")
       .def_readwrite("dense_crossover",
                      &LevelRecursionDeclaration::denseCrossover);
 
@@ -6317,8 +6381,19 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       .def_readwrite("isolation_gap", &RecursionBandRead::isolationGap,
                      "The smallest distance between a selected and an excluded "
                      "eigenvalue of the block; infinite when nothing is "
-                     "excluded. A selection separating two eigenvalues equal "
-                     "at the declared tolerance is refused by name.")
+                     "excluded or nothing is selected. A gap at or below the "
+                     "declared tolerance times the block's Frobenius norm says "
+                     "that the selection separates two eigenvalues equal at "
+                     "that tolerance; the fiber is read all the same and is "
+                     "not accepted.")
+      .def_readwrite("contour_gap", &RecursionBandRead::contourGap,
+                     "The smallest distance between the declared circle and an "
+                     "eigenvalue of the block under DeclaredContours, "
+                     "min_i ||lambda_i - c| - r|; infinite under LowestModes. "
+                     "An eigenvalue on the circle at the declared tolerance "
+                     "belongs to the band by the strict comparison "
+                     "|lambda - c| < r all the same, and the fiber is not "
+                     "accepted.")
       .def_readwrite("projector_idempotency",
                      &RecursionBandRead::projectorIdempotency,
                      "||P_v^2 - P_v||_F / ||P_v||_F, the rounding residual of "
@@ -6334,8 +6409,18 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                      "Phi_v over the level's coordinates, flat row-major.")
       .def_readwrite("left_frame", &RecursionBandRead::leftFrame,
                      "PhiTilde_v^T, flat row-major.")
-      .def_readwrite("accepted", &RecursionBandRead::accepted)
-      .def_readwrite("certificate", &RecursionBandRead::certificate);
+      .def_readwrite("accepted", &RecursionBandRead::accepted,
+                     "Whether the fiber is certified at the declared "
+                     "tolerance: the band has at least one eigenvalue, the "
+                     "selection separates no two eigenvalues equal at the "
+                     "tolerance, no eigenvalue is on a declared circle at the "
+                     "tolerance, and the idempotency, the pairing defect and "
+                     "the invariant-subspace residual are each at or below "
+                     "the tolerance. An unaccepted fiber is still carried and "
+                     "reported.")
+      .def_readwrite("certificate", &RecursionBandRead::certificate,
+                     "The fiber's certificate, which holds exactly when "
+                     "accepted is true.");
 
   py::class_<LevelTransport>(m, "LevelTransport",
       "One block M_vw = PhiTilde_v^T T_vw Phi_w: the level's coupling between "
@@ -6419,9 +6504,15 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
                   "component, the Riesz projector onto the invariant subspace "
                   "of the selected eigenvalues from the block's complex Schur "
                   "form, its frames over the block's own coordinates, and its "
-                  "certificates. Rank decisions are made at the tolerance, and "
-                  "a selection that names no invariant subspace is refused by "
-                  "name.")
+                  "certificates. The read is made whatever the isolation of "
+                  "the band: a selection that separates two eigenvalues equal "
+                  "at the tolerance, a declared circle through an eigenvalue "
+                  "at the tolerance and a declared circle enclosing no "
+                  "eigenvalue each return their band with accepted false and "
+                  "the measured gap. A selection that takes an eigenvalue in "
+                  "and leaves an eigenvalue exactly equal to it out has no "
+                  "projector, and raises a ValueError that names the "
+                  "eigenvalue.")
       .def_static("overPencil", &LevelRecursion::overPencil, py::arg("pencil"),
                   py::arg("metric"), py::arg("dimension"),
                   py::arg("declaration"),

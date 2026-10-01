@@ -39,13 +39,23 @@ Running it
 ::
 
     python -m tessera.drivers.isospin_doublet run --json doublet.json \\
-        [--kappa 1 --beta 1 --content 1 1 1]
+        [--kappa 1 --beta 1 --content 1 1 1] [--villain-order 10]
 
 Without ``--kappa`` the declared host is read (its carrier operator does not
 depend on kappa or beta). With it, each (kappa, beta) and each content is first
 relaxed to self-consistency exactly as `baryon_poles` does, and the relaxed
 host is read. The baryon driver's ``--isospin-doublet`` option adds the same
-record to every content of its own scan.
+record to every content of its own scan. ``--villain-order`` is the order the
+Villain weight of the action's holonomy term is summed to
+(`baryon_poles.DECLARED_VILLAIN_ORDER`, ten by default); the result records
+it.
+
+Every tolerance of the stack (`baryon_poles.TOLERANCES`) and every limit a
+user may declare on a solve (`baryon_poles.LIMITS`) is an option here as it is
+of the baryon driver: each tolerance defaults to 1e-15, no limit is declared
+by default, and the values the run was made at are recorded in its result.
+The detector's own tolerances are the ``--isospin-...`` options
+(`baryon_poles.ISOSPIN_TOLERANCES`).
 """
 
 import argparse
@@ -68,13 +78,13 @@ def sheet_layout():
     return cells, sheet_of, base_of
 
 
-def symmetry():
+def symmetry(tolerance=bp.DECLARED_CERTIFICATE_TOLERANCE):
     """D_1(g) on the 18 cells for the twelve rotations, and whether the
-    projective class is nontrivial."""
+    projective class is nontrivial, the cocycle read at ``tolerance``."""
     support = bp.monopole_support()
     group = bp.rotation_group()
     actions = bp.rotation_action([support] * bp.SHEETS)
-    return actions, bool(support.cocycle(group).nontrivial)
+    return actions, bool(support.cocycle(group, 1, tolerance).nontrivial)
 
 
 def declaration(operator, name, actions, spinorial):
@@ -164,30 +174,36 @@ def record(read):
     }
 
 
-def observe_host(carrier, actions=None, spinorial=None):
+def observe_host(carrier, actions=None, spinorial=None, config=None):
     """The detector on the covariant carrier operator h_1(z, U) of the host and
-    on its T-average."""
+    on its T-average, at the tolerances of ``config``
+    (`baryon_poles.isospin_doublet_config`; the declared values when there is
+    no config)."""
     if actions is None:
-        actions, spinorial = symmetry()
+        actions, spinorial = symmetry(
+            bp.declared_tolerance(config, "certificate_tolerance"))
     carrier = np.asarray(carrier)
     averaged = bp.rotation_averaged(carrier, actions)
+    detector = bp.isospin_doublet_config(config)
     out = {}
     for key, name, operator in (
             ("covariant", "covariant h_1(z, U)", carrier),
             ("t_averaged", "T-averaged h_1(z, U) (WP line 497)", averaged)):
         read = obs.IsospinDoublet.observe(
-            declaration(operator, name, actions, spinorial))
+            declaration(operator, name, actions, spinorial), detector)
         out[key] = record(read)
     return out
 
 
-def declared_carrier(edge_squared=bp.DECLARED_EDGE_SQUARED):
+def declared_carrier(edge_squared=bp.DECLARED_EDGE_SQUARED,
+                     villain_order=bp.DECLARED_VILLAIN_ORDER):
     """h_1(z, U) of the declared (unrelaxed) host. The carrier operator does
-    not depend on the action's weights, so the declaration's kappa and beta
-    are placeholders."""
+    not depend on the action's weights or on the order of its Villain weight,
+    so the declaration's kappa and beta are placeholders."""
     spacetime = bp.build_host(edge_squared)
-    action = cob.JointAction(spacetime,
-                             bp.action_declaration(spacetime, 1.0, 1.0))
+    action = cob.JointAction(
+        spacetime, bp.action_declaration(spacetime, 1.0, 1.0,
+                                         villain_order=villain_order))
     return bp.matrix(action.carrier_operator())
 
 
@@ -199,19 +215,34 @@ def relaxed_carrier(content, kappa, beta, config):
 
 
 def drive(kappas=None, betas=None, contents=None,
-          edge_squared=bp.DECLARED_EDGE_SQUARED, progress=False):
-    actions, spinorial = symmetry()
+          edge_squared=bp.DECLARED_EDGE_SQUARED, progress=False,
+          villain_order=bp.DECLARED_VILLAIN_ORDER, tolerances=None,
+          limits=None):
+    """The declared host's read and, with ``kappas``, the read of every
+    relaxed host. ``villain_order`` is the order the Villain weight is summed
+    to; ``tolerances`` sets any of `baryon_poles.TOLERANCES` by key and
+    ``limits`` declares any of `baryon_poles.LIMITS` by key; the values of
+    every one are recorded in the result."""
+    villain_order = bp.checked_villain_order(villain_order)
+    config = bp.default_config(kappas or list(bp.DECLARED_KAPPAS),
+                               betas or list(bp.DECLARED_BETAS),
+                               edge_squared, tolerances=tolerances,
+                               limits=limits, villain_order=villain_order)
+    actions, spinorial = symmetry(
+        bp.declared_tolerance(config, "certificate_tolerance"))
     result = {
-        "declared_host": observe_host(declared_carrier(edge_squared), actions,
-                                      spinorial),
+        "declared_host": observe_host(
+            declared_carrier(edge_squared, villain_order), actions,
+            spinorial, config),
         "spinorial": spinorial,
+        "villain_order": villain_order,
         "relaxed": [],
+        "tolerances": {key: config[key] for key, _ in bp.TOLERANCES},
+        "limits": {key: config[key] for key, _, _ in bp.LIMITS},
     }
     if progress:
         _print("declared host", result["declared_host"])
     if kappas:
-        config = bp.default_config(kappas, betas or list(bp.DECLARED_BETAS),
-                                   edge_squared)
         for kappa in kappas:
             for beta in (betas or list(bp.DECLARED_BETAS)):
                 for content in (contents or config["contents"]):
@@ -221,7 +252,7 @@ def drive(kappas=None, betas=None, contents=None,
                              "content": list(content),
                              "relaxation_converged": bool(report.converged),
                              "reads": observe_host(carrier, actions,
-                                                   spinorial)}
+                                                   spinorial, config)}
                     result["relaxed"].append(entry)
                     if progress:
                         _print("kappa=%g beta=%g content=%s"
@@ -258,7 +289,10 @@ def build_parser():
                                         "repeatable; default all ten")
     run.add_argument("--edge-squared", type=float,
                      default=bp.DECLARED_EDGE_SQUARED)
+    bp.add_action_arguments(run)
     run.add_argument("--json", default=None)
+    bp.add_tolerance_arguments(run)
+    bp.add_limit_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
 
@@ -266,7 +300,9 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     result = drive(args.kappa, args.beta, args.content, args.edge_squared,
-                   progress=not args.quiet)
+                   progress=not args.quiet, villain_order=args.villain_order,
+                   tolerances=bp.tolerances_from(args),
+                   limits=bp.limits_from(args))
     if args.json:
         with open(args.json, "w") as handle:
             json.dump(bp._jsonable(result), handle, indent=1)

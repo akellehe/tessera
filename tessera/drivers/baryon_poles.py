@@ -48,9 +48,12 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    fiber, by default; bands, one per occupied band; 1 pins the trace alone).
    kappa = 8 pi G enters only
    through the Regge weight. The holonomy term S_hol is the Villain form
-   -beta_V sum_tau log W(F_tau), W(F) = sum_m exp(-m^2/(2 beta)) F^m,
-   beta_V = beta / <m^2>_beta, the paper's holonomy term, with the bare
-   connection stiffness beta L_1^up at trivial holonomy;
+   -beta_V sum_tau log W_M(F_tau), with the Villain weight
+   W(F) = sum_m exp(-m^2/(2 beta)) F^m summed to the declared order M
+   (``--villain-order``, the sum over |m| <= M, ten by default) and
+   beta_V = beta / <m^2>_beta from the same sums: the paper's holonomy term
+   at that order, with the bare connection stiffness beta L_1^up at trivial
+   holonomy;
    with certificates-blind mean-field backreaction to self-consistency
    (`SelfConsistentMeanField`), the carried density being the content's band
    filling of h_1. The fixed point is solved by Newton's method on the joint
@@ -67,9 +70,12 @@ quarks in each of the three lowest bands of the covariant operator h_1, see
    of the three sheets. A solve that reaches no fixed point says why, by
    name (for example, no damped step reduced the residual, no stationary
    point in the declared monopole sector, or the
-   squared lengths overflowed the double), and the poles are not read on a
-   geometry whose squared lengths overflowed or that is not Kontsevich-Segal
-   allowable: that read is refused by name, with the margin;
+   squared lengths overflowed the double), and the poles are read on the
+   geometry the solve ended at. A geometry that is not Kontsevich-Segal
+   allowable is read like any other, and the content's record carries the
+   flag "not Kontsevich-Segal allowable" with the margin ("Flags" below).
+   A geometry whose squared lengths overflowed the double is not finite, so
+   it has no pole to read, and the content's record says so by name;
 2. runs one turn of the level recursion (`LevelRecursion`) and reads the fibre
    certificates;
 3. reads the seven v16 quark conditions by name (`QuarkConditions`);
@@ -155,16 +161,40 @@ dressed by the compensating gauge transformation of the cluster's own
 connection (WP v18 §11.1). The driver does the same on the relaxed cell
 itself: the rotations of the tetrahedron that leave the cell's squared lengths
 invariant and carry its connection to a gauge-equivalent one, on every sheet
-and at the certificate tolerance, are its rotation group (`cell_symmetry`);
-the spin read needs all twelve, so a cell with fewer is refused by name ("not
-tetrahedrally symmetric") and the rotations it lacks are recorded with their
-departures. On a tetrahedrally symmetric cell the actions D_1(g), the aligned
-doublet frame of every sheet, the isotypic projectors and the anchor atlas are
-built from that cell's own connection, and the spin decomposition of the
-occupied modes, the spin sectors and every pole are read on h-bar_1 (and, for
-the Section 7 quartic, on the eliminated three-particle operator averaged over
-the same diagonal action). The departure of h_1 itself from the symmetric form
-is reported beside every record as `symmetry_residual`.
+and at the certificate tolerance, are its rotation group (`cell_symmetry`).
+The spin read of the cell itself has three preconditions, each decided at the
+certificate tolerance: the cell has all twelve rotations, the spin read of
+every sheet names its j = 1/2 doublet, and the sheets' doublet labels agree.
+When the three hold, the actions D_1(g), the aligned doublet frame of every
+sheet, the isotypic projectors and the anchor atlas are built from that cell's
+own connection. When one does not hold, the spin is read in the frame of the
+declared symmetric host instead, with the actions D_1(g) and the aligned
+doublet frame of `monopole_support()`, and the content's record carries a
+flag that names the precondition and gives the numbers that decided it
+("Flags" below); the rotations the cell lacks are recorded with their
+departures. The record names the frame that was used
+(``relaxation.spin_frame``, `spin_frame`). In either frame the spin
+decomposition of the occupied modes, the spin sectors and every pole are read
+on h-bar_1 (and, for the Section 7 quartic, on the eliminated three-particle
+operator averaged over the same diagonal action). The departure of h_1 itself
+from the symmetric form is reported beside every record as
+`symmetry_residual`.
+
+Flags
+-----
+A flag is the record of a precondition of a read that does not hold at its
+declared tolerance. The read is made all the same, and the flag is carried
+beside its result: a dict with the precondition's ``name``, a ``detail``
+sentence and the numbers that decided it. A content's record lists its flags
+under ``flags``, an empty list when every precondition holds. The names are
+"not Kontsevich-Segal allowable" (the geometry the mean-field solve reached,
+`geometry_flags`), and "not tetrahedrally symmetric", "no j = 1/2 doublet" and
+"the sheets' doublet labels disagree" (the three preconditions of the spin
+read of the cell itself, `spin_frame`). A read with no value at all is a
+different thing: a content whose solve overflowed the double, or at which the
+library names no value (a band that cannot hold the occupation, a face
+holonomy outside the domain of the holonomy term), has a record with
+``failed`` and no pole.
 
 What a content names
 --------------------
@@ -205,6 +235,12 @@ Every tolerance of the stack is an option (``--rank-tolerance`` is tau, the
 Newton solve's rank decision; the others are listed by `TOLERANCES`), each
 defaulting to 1e-15 and each recorded in the configuration. None changes an
 equation.
+
+``--villain-order`` is M, the order the Villain weight of the holonomy term
+is summed to, an integer from 1 to 10 (10 by default), recorded in the
+configuration. It is part of the action: the holonomy term is the function
+the order defines, and every content's record carries the reported distance
+of the order-M sums from their infinite series (``holonomy_truncation``).
 """
 
 import argparse
@@ -243,9 +279,6 @@ DECLARED_BETAS = (0.5, 1.0, 2.0, 5.0)
 #: projected out by the Drazin inverse), or the squared lengths alone.
 DECLARED_ELIMINATION = "lengths-and-phases"
 ELIMINATIONS = ("lengths-and-phases", "lengths")
-#: The resonance disc of the Drazin inverse, relative to the spectral radius of
-#: A: an eigenvalue of A inside it is a zero-stiffness direction.
-DECLARED_GAUGE_RESONANCE_RADIUS = 1e-10
 #: The Cauchy rule for the diamagnetic term along a pure-gauge direction.
 DECLARED_WARD_CONTOUR_RADIUS = 0.1
 DECLARED_WARD_CONTOUR_NODES = 8
@@ -299,7 +332,7 @@ TOLERANCES = (
      "the anchor atlas and the spectral fingerprint"),
     ("allowability_tolerance",
      "the Kontsevich-Segal margin at or below which a relaxed geometry is "
-     "read as the boundary of allowability and its pole read refused"),
+     "read as the boundary of allowability and its pole read is flagged"),
     ("tie_tolerance",
      "the relative separation of real parts within which two poles tie in "
      "the ascending-real-part order"),
@@ -318,9 +351,91 @@ TOLERANCES = (
     ("recursion_tolerance",
      "the relative tolerance the level recursion's certificates hold "
      "against"),
-    ("villain_tolerance",
-     "the relative size below which a coefficient of the Villain series is "
-     "left out"),
+    ("spin_sector_tolerance",
+     "the separation at or below which an eigenvalue of J^2 on a "
+     "colour-singlet block is read as a sector's j(j + 1)"),
+    ("character_tolerance",
+     "the modulus at or below which the trace of a rotation on the reference "
+     "doublet is zero, so that a doublet's character on that rotation is one "
+     "rather than a ratio of traces"),
+    ("elimination_tolerance",
+     "the relative threshold of the rank decisions of the Drazin "
+     "elimination's Feshbach read of the bare stiffness A"),
+    ("pure_gauge_tolerance",
+     "the relative residual of the null projector of A on the pure-gauge "
+     "directions at or below which the null space of A is read as pure "
+     "gauge"),
+    ("gauge_resonance_radius",
+     "the radius of the resonance disc about zero, relative to the spectral "
+     "radius of the bare stiffness A, inside which an eigenvalue of A is a "
+     "zero-stiffness direction of the Drazin inverse"),
+    ("hessian_reality_tolerance",
+     "the imaginary part of the moment-constrained Hessian's quotient along "
+     "the Hellmann-Feynman force, relative to the Hessian's scale, at or "
+     "below which the quotient is read as real"),
+    ("fibre_lift_tolerance",
+     "the relative residual of the T-averaged h_1 from a block-scalar "
+     "operator on each doublet times the sheets at or below which the "
+     "fibre lift of quark condition 2 holds"),
+    ("isotypic_tolerance",
+     "the separation at or below which an eigenvalue of the isotypic "
+     "projector of the refined cell is one, and at or below which two "
+     "eigenvalues of the averaged operator on that isotypic component form "
+     "one refined band, in the spectral fingerprint's refinement read"),
+    ("attachment_rank_tolerance",
+     "the smallest singular value at or above which the sheet-to-sheet "
+     "attachment matrix of quark condition 5 has full rank"),
+    ("quotient_rank_tolerance",
+     "the relative threshold of the rank decisions of the level recursion's "
+     "interior solves: a pivot or a singular value of an interior block at "
+     "or below this fraction of the block's largest counts as zero"),
+    ("move_tolerance",
+     "the amount by which a Pachner move must lower the objective of the "
+     "recursion's Pachner stage to be committed"),
+    ("admissibility_tolerance",
+     "the Kontsevich-Segal margin, in radians, down to minus which a "
+     "geometry proposed by a Pachner move is admissible"),
+    ("isospin_grouping_tolerance",
+     "the relative width within which eigenvalues form one band of the "
+     "isospin-doublet detector"),
+    ("isospin_projector_tolerance",
+     "the relative idempotency defect at or below which a band's Riesz "
+     "projector is certified by the isospin-doublet detector"),
+    ("isospin_invariance_tolerance",
+     "the relative commutator at or below which a band of the "
+     "isospin-doublet detector is invariant under a symmetry element or a "
+     "sheet matrix unit"),
+    ("isospin_commutant_tolerance",
+     "the relative eigenvalue cut of the null space of the commutator map "
+     "and of the centre of the commutant in the isospin-doublet detector"),
+    ("isospin_isotypic_tolerance",
+     "the relative width within which eigenvalues of the commutant's generic "
+     "central element form one isotypic component, and the relative "
+     "singular-value cut of the rank of each isotypic block, in the "
+     "isospin-doublet detector"),
+    ("isospin_hermiticity_tolerance",
+     "the relative departure of an operator from its adjoint at or below "
+     "which the isospin-doublet detector reads it in the Hermitian regime"),
+    ("isospin_transport_leakage_tolerance",
+     "the relative leakage of a frame-to-frame transport at or below which "
+     "the isospin-doublet detector certifies the transport"),
+    ("isospin_intertwining_tolerance",
+     "the relative intertwining residual of a transport against the "
+     "rotation and colour actions at or below which the isospin-doublet "
+     "detector certifies it"),
+)
+
+#: The tolerances of the isospin-doublet detector, by config key, with the
+#: field of `observables.IsospinDoubletConfig` each one sets.
+ISOSPIN_TOLERANCES = (
+    ("isospin_grouping_tolerance", "grouping_tolerance"),
+    ("isospin_projector_tolerance", "projector_tolerance"),
+    ("isospin_invariance_tolerance", "invariance_tolerance"),
+    ("isospin_commutant_tolerance", "commutant_tolerance"),
+    ("isospin_isotypic_tolerance", "isotypic_tolerance"),
+    ("isospin_hermiticity_tolerance", "hermiticity_tolerance"),
+    ("isospin_transport_leakage_tolerance", "transport_leakage_tolerance"),
+    ("isospin_intertwining_tolerance", "intertwining_tolerance"),
 )
 
 
@@ -328,6 +443,17 @@ def declared_tolerance(config, key):
     """The tolerance ``key`` (`TOLERANCES`) of a config, or the declared
     value when the config leaves it out."""
     return float((config or {}).get(key, DECLARED_TOLERANCE))
+
+
+def isospin_doublet_config(config=None):
+    """The `observables.IsospinDoubletConfig` of a config: every tolerance of
+    the detector (`ISOSPIN_TOLERANCES`) at the config's value, or at the
+    declared value when the config leaves it out. The detector's other
+    thresholds stay at the library's values."""
+    out = obs.IsospinDoubletConfig()
+    for key, field in ISOSPIN_TOLERANCES:
+        setattr(out, field, declared_tolerance(config, key))
+    return out
 
 
 def declared_tolerances(tolerances=None):
@@ -342,6 +468,34 @@ def declared_tolerances(tolerances=None):
     out.update({key: float(value)
                 for key, value in (tolerances or {}).items()})
     return out
+
+
+#: M, the order the Villain weight W(F) = sum_m exp(-m^2/(2 beta)) F^m of the
+#: holonomy term is summed to: the term is defined by the sum over |m| <= M
+#: (`cob.VillainCharacter`). The weight is an infinite series with no closed
+#: elementary form, so its order is declared; ten is the largest order that
+#: can be declared and the default. `add_action_arguments` offers it as
+#: ``--villain-order``, `default_config` records it, and the recursion driver
+#: carries it into every cell's config.
+DECLARED_VILLAIN_ORDER = cob.VillainCharacter.maximum_order
+
+
+def declared_villain_order(config):
+    """The order of the Villain weight (`DECLARED_VILLAIN_ORDER`) of a
+    config, or the declared value when the config leaves it out."""
+    return checked_villain_order((config or {}).get("villain_order",
+                                                   DECLARED_VILLAIN_ORDER))
+
+
+def checked_villain_order(value):
+    """``value`` as an order of the Villain weight: an integer from 1 to
+    `cob.VillainCharacter.maximum_order`. Anything else is an error."""
+    maximum = cob.VillainCharacter.maximum_order
+    if isinstance(value, bool) or int(value) != value \
+            or not 1 <= int(value) <= maximum:
+        raise ValueError("the order of the Villain weight is an integer from "
+                         "1 to %d; got %r" % (maximum, value))
+    return int(value)
 
 
 #: The limits a user may declare on a mean-field solve, by config key: the
@@ -403,7 +557,8 @@ FIBER_PINNINGS = {"eigenvalues": cob.FiberConstraintForm.BandEigenvalues,
 #: cell, zero on a real Lorentzian one and negative beyond. A margin within
 #: this of zero is the boundary to within the rounding of the arguments, where
 #: WP v17 line 151 reads a band only as the limit of an allowable family and
-#: never alone, so no pole is read there.
+#: never alone, so a pole read there carries the flag "not Kontsevich-Segal
+#: allowable" (`geometry_flags`).
 DECLARED_ALLOWABILITY_TOLERANCE = DECLARED_TOLERANCE
 
 #: How often the --live main thread services the GUI event loop.
@@ -516,12 +671,13 @@ def sheet_squared_lengths(spacetime, sheet):
 
 def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                        matter_weight=1.0,
-                       villain_tolerance=DECLARED_TOLERANCE):
+                       villain_order=DECLARED_VILLAIN_ORDER):
     """The joint action of the calculation (WP §3, §7): the primal Regge term
-    with weight 1/kappa, the Villain holonomy term with coupling beta, and
-    the mean-field term; kappa enters only through the Regge weight, and the
-    spectral-moment part of S_0 is imposed by the mean-field solve as the
-    constraints of WP v17 §3.4 on the occupied fiber."""
+    with weight 1/kappa, the Villain holonomy term with coupling beta and the
+    Villain weight summed to ``villain_order``, and the mean-field term;
+    kappa enters only through the Regge weight, and the spectral-moment part
+    of S_0 is imposed by the mean-field solve as the constraints of WP v17
+    §3.4 on the occupied fiber."""
     declaration = cob.JointActionDeclaration()
     declaration.carrier_degree = 1
     declaration.metric_source = cob.HodgeMetricSource.WhitneyPencil
@@ -531,7 +687,7 @@ def action_declaration(spacetime, kappa, beta, regge_hinges="interior",
                                 if regge_hinges == "interior"
                                 else cob.ReggeHinges.All)
     declaration.holonomy_weight = beta
-    declaration.villain_tolerance = villain_tolerance
+    declaration.villain_order = villain_order
     declaration.matter_weight = matter_weight
     return declaration
 
@@ -677,16 +833,19 @@ def rotation_averaged(operator, actions):
     return sum(np.linalg.solve(d, operator @ d) for d in actions) / len(actions)
 
 
-def sheet_support(spacetime, sheet):
+def sheet_support(spacetime, sheet,
+                  tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The `MonopoleSupport` of one sheet of the relaxed host, with its faces
     in the outward orientation of the library fixture. `MonopoleSupport`
-    refuses a connection off the unit circle; the U(1) part is taken
-    explicitly (`MonopoleSupport.u1Part`) and the departure is reported."""
+    refuses a connection whose moduli depart from one by more than
+    ``tolerance``; the U(1) part is taken explicitly
+    (`MonopoleSupport.u1Part`) and the departure is reported."""
     fixture = monopole_support()
     links = sheet_links(spacetime, sheet)
     departure = max(abs(abs(u) - 1.0) for u in links)
     support = obs.MonopoleSupport(4, fixture.edges, fixture.faces,
-                                  obs.MonopoleSupport.u1Part(links))
+                                  obs.MonopoleSupport.u1Part(links),
+                                  tolerance)
     return support, departure
 
 
@@ -702,7 +861,9 @@ def cell_symmetry(spacetime, supports, tolerance=DECLARED_CERTIFICATE_TOLERANCE)
     is implemented on k-cochains by D_k(g) = rho_k(u_g) P_g" (WP v18 §11.1),
     and refinement-stable spinor doublets are predicted on tetrahedrally
     symmetric supports and nowhere else (WP v18 §4). A relaxed cell is
-    therefore read against the group it has, not against the fixture's. The
+    therefore read against the group it has when that is the whole
+    tetrahedral group, and in the frame of the declared symmetric host, with
+    a flag, when it is not (`spin_frame`). The
     connection enters through the sheet support, that is through its U(1)
     part; the departure of the links from the unit circle is reported by
     `sheet_support` and is not part of this decision.
@@ -752,7 +913,8 @@ class NoSpinorDoublet(RuntimeError):
 
 def aligned_doublet_frame(support, group,
                           degeneracy_tolerance=DECLARED_TOLERANCE,
-                          tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+                          tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+                          character_tolerance=DECLARED_TOLERANCE):
     """The edge basis in which the three doublets 2, 2', 2'' carry one common
     SU(2) action, each up to its own Z_3 character.
 
@@ -762,8 +924,9 @@ def aligned_doublet_frame(support, group,
     projective action D_1(g) and do not depend on the operator averaged. With
     R(g) the action on the reference doublet (the coexact j = 1/2 doublet
     `spinRead` names) and M_d(g) the action on doublet d, the character is
-    chi_d(g) = tr M_d(g) / tr R(g) where tr R(g) != 0 and one otherwise (the
-    Klein four-group, which is the kernel of the Z_3 character), and the
+    chi_d(g) = tr M_d(g) / tr R(g) where |tr R(g)| is above
+    ``character_tolerance`` and one otherwise (the Klein four-group, on which
+    tr R(g) = 0 and which is the kernel of the Z_3 character), and the
     intertwiner T_d = sum_g chi_d(g)^{-1} M_d(g) X R(g)^{-1} carries R to
     chi_d^{-1} M_d (Schur averaging from a fixed seed X). Columns 2 c + s of
     the returned frame are spin state s of carrier c, the order
@@ -799,7 +962,7 @@ def aligned_doublet_frame(support, group,
             for m, r in zip(actions[c], actions[reference]):
                 tr_r = np.trace(r)
                 characters.append(np.trace(m) / tr_r
-                                  if abs(tr_r) > 1e-9 else 1.0)
+                                  if abs(tr_r) > character_tolerance else 1.0)
             intertwiner = sum(
                 (1.0 / chi) * m @ seed @ np.linalg.inv(r)
                 for chi, m, r in zip(characters, actions[c],
@@ -833,6 +996,104 @@ def aligned_doublet_frame(support, group,
         "intertwining_residual": float(residual),
         "spin_read": read,
     }
+
+
+#: The two frames a content's spin is read in (`spin_frame`), as the record
+#: names them under ``relaxation.spin_frame``.
+SPIN_FRAME_OF_THE_CELL = "the relaxed cell's own rotation group"
+SPIN_FRAME_OF_THE_HOST = "the declared symmetric host"
+
+
+def spin_frame(supports, symmetry, degeneracy_tolerance=DECLARED_TOLERANCE,
+               tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+               character_tolerance=DECLARED_TOLERANCE):
+    """The frame the spin of a relaxed cell is read in: the projective
+    rotation action D_1(g) on the 18 microscopic edge cells
+    (`rotation_action`) and the aligned doublet frame of every sheet
+    (`aligned_doublet_frame`), with the flags of the read.
+
+    ``supports`` are the sheets' (`MonopoleSupport`, departure) pairs
+    (`sheet_support`) and ``symmetry`` is the cell's `cell_symmetry` at
+    ``tolerance``. The spin read of the cell itself has three preconditions,
+    each defined on the one before it:
+
+    1. the cell is tetrahedrally symmetric: all twelve rotations of the
+       tetrahedron leave its squared lengths invariant and carry its
+       connection to a gauge-equivalent one, at ``tolerance``;
+    2. the spin read of every sheet's own support names a j = 1/2 doublet, so
+       that every sheet has an aligned frame;
+    3. the aligned frames of the sheets carry the same doublet labels (the
+       Z_3 labels of the three carriers and the reference carrier).
+
+    When the three hold, the frame is the cell's own: the actions and the
+    aligned frames are built from the sheets' supports. When one does not
+    hold, the frame is that of the declared symmetric host: the actions and
+    the aligned frame of `monopole_support()`, the same on every sheet, and
+    the first precondition that does not hold is recorded as a flag, a dict
+    with its ``name`` ("not tetrahedrally symmetric", "no j = 1/2 doublet",
+    "the sheets' doublet labels disagree"), a ``detail`` sentence and the
+    numbers that decided it. The read proceeds in either frame.
+
+    Returns a dict with ``name`` (`SPIN_FRAME_OF_THE_CELL` or
+    `SPIN_FRAME_OF_THE_HOST`), ``actions``, ``alignments`` (one per sheet)
+    and ``flags``."""
+    group = rotation_group()
+    flags, own = [], None
+    if not symmetry["tetrahedral"]:
+        flags.append({
+            "name": "not tetrahedrally symmetric",
+            "detail": (
+                "the relaxed cell has %d of the %d rotations of the "
+                "tetrahedron as symmetries at the certificate tolerance %.3g "
+                "(largest length departure %.3g, largest gauge-compensation "
+                "residual %.3g)"
+                % (symmetry["order"], len(symmetry["rotations"]), tolerance,
+                   symmetry["length_departure"],
+                   symmetry["compensation_residual"])),
+            "order": int(symmetry["order"]),
+            "rotations": len(symmetry["rotations"]),
+            "tolerance": float(tolerance),
+            "length_departure": float(symmetry["length_departure"]),
+            "compensation_residual": float(
+                symmetry["compensation_residual"]),
+        })
+    else:
+        try:
+            own = [aligned_doublet_frame(support, group, degeneracy_tolerance,
+                                         tolerance, character_tolerance)
+                   for support, _ in supports]
+        except NoSpinorDoublet as missing:
+            flags.append({
+                "name": "no j = 1/2 doublet",
+                "detail": "the spin read of the relaxed cell names no "
+                          "reference doublet: %s" % missing,
+                "degeneracy_tolerance": float(degeneracy_tolerance),
+                "tolerance": float(tolerance),
+            })
+        else:
+            labels = [[list(a["trialities"]), int(a["reference_carrier"])]
+                      for a in own]
+            if any(label != labels[0] for label in labels):
+                flags.append({
+                    "name": "the sheets' doublet labels disagree",
+                    "detail": "the aligned frames of the sheets carry the "
+                              "doublet labels (trialities, reference "
+                              "carrier) %s" % labels,
+                    "labels": labels,
+                })
+                own = None
+    if own is not None:
+        return {"name": SPIN_FRAME_OF_THE_CELL,
+                "actions": rotation_action([support
+                                            for support, _ in supports]),
+                "alignments": own, "flags": flags}
+    host = monopole_support()
+    return {"name": SPIN_FRAME_OF_THE_HOST,
+            "actions": rotation_action([host] * SHEETS),
+            "alignments": [aligned_doublet_frame(
+                host, group, degeneracy_tolerance, tolerance,
+                character_tolerance)] * SHEETS,
+            "flags": flags}
 
 
 def edge_spin_matrices():
@@ -962,10 +1223,11 @@ def left_inverse(columns):
     return np.linalg.solve(columns.T @ columns, columns.T)
 
 
-def spin_sectors(states):
+def spin_sectors(states, tolerance=DECLARED_TOLERANCE):
     """Split a colour-singlet space by total spin: J^2 applied to each basis
     state with `SharpSpin.applyTotalSpinSquared`, the block in the basis, and
-    its eigenvectors grouped by eigenvalue (3/4 or 15/4)."""
+    its eigenvectors grouped by eigenvalue (3/4 or 15/4), an eigenvalue
+    within ``tolerance`` of a sector's j(j + 1) belonging to that sector."""
     basis = occupation_basis()
     spins = edge_spin_matrices()
     images = []
@@ -983,7 +1245,7 @@ def spin_sectors(states):
     sectors = {}
     for j2 in (SPIN_HALF, SPIN_THREE_HALVES):
         picked = [k for k in range(len(values))
-                  if abs(values[k] - j2) < 1e-6]
+                  if abs(values[k] - j2) <= tolerance]
         if picked:
             sectors[j2] = states @ vectors[:, picked]
     return sectors, [complex(v) for v in values]
@@ -1052,7 +1314,7 @@ def _geometric_action(spacetime, kappa, beta, config):
         spacetime, action_declaration(
             spacetime, kappa, beta, config["regge_hinges"],
             matter_weight=0.0,
-            villain_tolerance=declared_tolerance(config, "villain_tolerance")))
+            villain_order=declared_villain_order(config)))
 
 
 def fluctuation_couplings(spacetime, phases):
@@ -1133,7 +1395,9 @@ def bare_stiffness(spacetime, kappa, beta, config, phases):
     }
 
 
-def drazin_elimination(stiffness, directions, radius):
+def drazin_elimination(stiffness, directions, radius,
+                       tolerance=DECLARED_TOLERANCE,
+                       pure_gauge_tolerance=DECLARED_TOLERANCE):
     """The generalized inverse the elimination uses: the Drazin inverse A^D of
     A at zero, with the Riesz projector Pi_0 onto the generalized null space
     (`chainhodge.PencilSchur.feshbach` with every coordinate interior and the
@@ -1147,10 +1411,38 @@ def drazin_elimination(stiffness, directions, radius):
     A^D = R (R^T A R)^{-1} R^T exactly: the fluctuation is carried in the
     reduced coordinates f = R g, whose stiffness R^T A R is nonsingular, and
     `DressedFluctuation` eliminates g. The identity is measured, not assumed.
+
+    A stiffness that is zero by structure is eliminated like any other. The
+    length stiffness is the Regge term's, which is zero on a complex without
+    an interior hinge, so the lengths-only elimination there has A = 0. The
+    Drazin inverse of the zero matrix is the zero matrix: every coordinate
+    lies in the null space, Pi_0 is the identity, ran(I - Pi_0) is the zero
+    subspace, R has no column and the reduced stiffness is the 0 x 0 matrix.
+    The elimination then integrates out no fluctuation and contributes
+    nothing, and the record says so: ``zero_by_structure`` is whether A is
+    the zero matrix exactly, ``eliminated_dimension`` is zero, the two
+    residuals are zero exactly (A A^D A - A and R (R^T A R)^{-1} R^T - A^D
+    are both the zero matrix) and ``reduced_conditioning`` is None, because
+    a 0 x 0 matrix has no condition number. The same holds whenever every
+    eigenvalue of A is zero, where A^D is also the zero matrix; for such an
+    A other than zero, A A^D A - A = -A and the first residual is one.
+
+    Returns A^D, R, R^T A R and the record: the number of coordinates, the
+    resonance disc with its enclosure and separation, whether A is zero by
+    structure, the dimensions of the null space and of the eliminated space,
+    the idempotency residual of Pi_0, the residual of A A^D A = A relative
+    to A, the residual of the reduced form against A^D relative to A^D, the
+    condition number of the reduced stiffness and, with ``directions``, how
+    the null space compares with the pure-gauge directions.
+
+    ``tolerance`` is the relative threshold of the rank decisions of the
+    Feshbach read, and ``pure_gauge_tolerance`` the residual
+    ||Pi_0 G - G|| / ||G|| on the pure-gauge directions G at or below which
+    the null space is read as pure gauge.
     """
     size = stiffness.shape[0]
     read = T.chainhodge.PencilSchur.feshbach(
-        stiffness, np.zeros_like(stiffness), 0j, [], 1e-12, radius)
+        stiffness, np.zeros_like(stiffness), 0j, [], tolerance, radius)
     record = {"coordinates": int(size),
               "resonance_radius": float(read.resonanceRadius),
               "resonance_enclosure": float(read.resonanceEnclosure),
@@ -1164,28 +1456,32 @@ def drazin_elimination(stiffness, directions, radius):
         null = np.asarray(read.nullProjector)
         left, _, _ = np.linalg.svd(np.asarray(read.rangeProjector))
         basis = left[:, :int(read.interiorRank)]
-    if basis.shape[1] == 0:
-        raise ValueError(
-            "drazin_elimination: the bare stiffness of the retained "
-            "coordinates is zero by structure, so every coordinate lies in "
-            "the null space of A and there is no fluctuation to integrate "
-            "out; the length stiffness is the Regge term's, which is zero on "
-            "a complex without an interior hinge, so a lengths-only "
-            "elimination there has no coordinate")
+    record["zero_by_structure"] = bool(not stiffness.any())
     reduced = basis.T @ stiffness @ basis
-    rebuilt = basis @ np.linalg.solve(reduced, basis.T)
+    if basis.shape[1] == 0:
+        # every coordinate lies in the generalized null space: A^D is the
+        # zero matrix, which the empty reduced form rebuilds exactly
+        drazin = np.zeros_like(stiffness)
+        scale = float(np.linalg.norm(stiffness))
+        identity_residual = 1.0 if scale > 0.0 else 0.0
+        reduction_residual, conditioning = 0.0, None
+    else:
+        rebuilt = basis @ np.linalg.solve(reduced, basis.T)
+        identity_residual = float(
+            np.linalg.norm(stiffness @ drazin @ stiffness - stiffness)
+            / np.linalg.norm(stiffness))
+        reduction_residual = float(np.linalg.norm(rebuilt - drazin)
+                                   / np.linalg.norm(drazin))
+        conditioning = float(np.linalg.cond(reduced))
     record.update({
         "null_dimension": int(size - basis.shape[1]),
         "eliminated_dimension": int(basis.shape[1]),
         "projector_idempotency": float(
             np.linalg.norm(null @ null - null) / np.linalg.norm(null))
         if null.any() else 0.0,
-        "drazin_identity_residual": float(
-            np.linalg.norm(stiffness @ drazin @ stiffness - stiffness)
-            / np.linalg.norm(stiffness)),
-        "reduction_residual": float(np.linalg.norm(rebuilt - drazin)
-                                    / np.linalg.norm(drazin)),
-        "reduced_conditioning": float(np.linalg.cond(reduced)),
+        "drazin_identity_residual": identity_residual,
+        "reduction_residual": reduction_residual,
+        "reduced_conditioning": conditioning,
     })
     if directions is not None:
         # the pure-gauge directions lie in ran(Pi_0), and Pi_0 has no more
@@ -1197,7 +1493,7 @@ def drazin_elimination(stiffness, directions, radius):
             / np.linalg.norm(directions))
         record["null_space_is_pure_gauge"] = bool(
             record["null_dimension"] == gauge_rank
-            and record["gauge_projector_residual"] < 1e-8)
+            and record["gauge_projector_residual"] <= pure_gauge_tolerance)
     return drazin, basis, reduced, record
 
 
@@ -1395,7 +1691,10 @@ def eliminate_fluctuations(spacetime, action, carrier, kappa, beta, config):
                                                  config, phases)
     directions = gauge_directions(spacetime, phases)
     drazin, basis, reduced, drazin_record = drazin_elimination(
-        stiffness, directions, config["gauge_resonance_radius"])
+        stiffness, directions,
+        declared_tolerance(config, "gauge_resonance_radius"),
+        declared_tolerance(config, "elimination_tolerance"),
+        declared_tolerance(config, "pure_gauge_tolerance"))
     covariance = matrix(action.declaration.covariance)
     expectation = np.array([np.sum(covariance * o.T) for o in couplings])
     n = len(spacetime.getEdgeList().toVector())
@@ -1479,7 +1778,7 @@ def restriction(j2, triality):
     2'' (x) chi^tau, the j = 3/2 quartet being 2' + 2'' on the tetrahedron
     (WP §11.1 line 499). A tetrahedral support therefore cannot tell spin 1/2
     with triality from half of spin 3/2."""
-    if abs(j2 - SPIN_HALF) < 1e-9:
+    if j2 == SPIN_HALF:
         return [IRREP_NAMES[triality % 3]]
     return [IRREP_NAMES[(1 + triality) % 3], IRREP_NAMES[(2 + triality) % 3]]
 
@@ -1514,7 +1813,7 @@ def relax_content(content, kappa, beta, config):
     spacetime = build_host(config["edge_squared"], config.get("host_cell"))
     declaration = action_declaration(
         spacetime, kappa, beta, config["regge_hinges"],
-        villain_tolerance=declared_tolerance(config, "villain_tolerance"))
+        villain_order=declared_villain_order(config))
     action = cob.JointAction(spacetime, declaration)
     mean_field = mean_field_declaration(content, config, spacetime)
     mean_field.fiber_moments = fiber_moment_count(
@@ -1526,14 +1825,15 @@ def relax_content(content, kappa, beta, config):
     return spacetime, solve.action, report
 
 
-class ReadRefused(ValueError):
-    """A content's pole read refused by name on the geometry its mean-field
-    solve reached: ``name`` is the refusal ("the squared lengths overflowed
-    the double", "not Kontsevich-Segal allowable"), the message says why with
-    the numbers that decided it, ``relaxation`` is the solve's record
-    (`relaxation_record`), and ``records`` holds any further read that
-    decided the refusal, keyed as the content record would key it (the
-    cell's `cell_symmetry` under "symmetry")."""
+class ReadWithoutValue(ValueError):
+    """A content's pole read that has no value on what its mean-field solve
+    reached: ``name`` is the reason by name ("the squared lengths overflowed
+    the double"), the message says why with the numbers that decided it,
+    ``relaxation`` is the solve's record (`relaxation_record`), and
+    ``records`` holds any further read made before the value was found
+    missing, keyed as the content record would key it. A read whose
+    precondition does not hold is not this: it is made and flagged
+    (`geometry_flags`, `spin_frame`)."""
 
     def __init__(self, name, message, relaxation, **records):
         super().__init__(message)
@@ -1558,27 +1858,20 @@ def _band_record(band):
             "ambiguous": bool(band.ambiguous)}
 
 
-#: The imaginary part of the moment-constrained Hessian's quotient along the
-#: Hellmann-Feynman force, relative to the Hessian's own scale, below which
-#: the quotient is read as real: the difference-rule Jacobian at radius 1e-4
-#: is accurate to about 1e-8 of its entries.
-DECLARED_HESSIAN_REALITY = 1e-6
-
-
-def hessian_sign(value, scale):
+def hessian_sign(value, scale, tolerance=DECLARED_TOLERANCE):
     """The sign of the moment-constrained Hessian along the Hellmann-Feynman
     force as a word: "positive" or "negative" when the quotient is real to
-    ``DECLARED_HESSIAN_REALITY`` times the Hessian's scale (the real slice),
-    "complex" when it is not, and "unread" when it is not a number."""
+    ``tolerance`` times the Hessian's scale (the real slice), "complex" when
+    it is not, and "unread" when it is not a number."""
     value = complex(value)
     if not (math.isfinite(value.real) and math.isfinite(value.imag)):
         return "unread"
-    if abs(value.imag) > DECLARED_HESSIAN_REALITY * scale:
+    if abs(value.imag) > tolerance * scale:
         return "complex"
     return "positive" if value.real > 0 else "negative"
 
 
-def relaxation_record(report):
+def relaxation_record(report, hessian_reality_tolerance=DECLARED_TOLERANCE):
     """What a mean-field solve reached and how, as every content record
     carries it: the method and band selection that ran, whether the fixed
     point was reached, why the solve stopped (by name, with its detail), the
@@ -1671,7 +1964,8 @@ def relaxation_record(report):
         "force_hessian": complex(report.force_hessian),
         "force_hessian_scale": float(report.force_hessian_scale),
         "force_hessian_sign": hessian_sign(report.force_hessian,
-                                           report.force_hessian_scale),
+                                           report.force_hessian_scale,
+                                           hessian_reality_tolerance),
         "action": complex(report.action),
         "action_available": bool(report.action_available),
         "action_unavailable": report.action_unavailable,
@@ -1680,29 +1974,62 @@ def relaxation_record(report):
     }
 
 
-def read_refusal(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
-    """The name and the message of the refusal of a pole read on the geometry
-    a mean-field solve reached, or None when the read may proceed. The read is
-    refused when the squared lengths overflowed the double (the only bound
-    on a length is the datatype's; the low eigenvalues there are h_1 ~ 1/z
-    at infinite length, not a bound state) and when the geometry is
-    not Kontsevich-Segal allowable (bands are read on the allowable side,
-    WP v17 line 151; a margin within ``tolerance`` of zero is the
-    boundary). A solve that stopped for another reason is read,
-    and its record says why it stopped."""
+def geometry_without_value(report):
+    """The name and the message of why the geometry a mean-field solve
+    reached has no pole to read, or None when it has. The one such geometry
+    is the one whose squared lengths overflowed the double: the only bound
+    on a length is the datatype's, and a squared length beyond the largest
+    finite double is not a number, so there is no finite geometry to read
+    an operator on. A solve that stopped for any other reason is read, and
+    its record says why it stopped."""
     if report.stop_reason == cob.RelaxationStop.LengthRunaway:
         return ("the squared lengths overflowed the double",
-                "the pole read is refused: the squared lengths overflowed "
-                "the double (%s)" % report.stop_detail)
-    margin = float(report.kontsevich_segal_margin)
-    if not margin > tolerance:
-        return ("not Kontsevich-Segal allowable",
-                "the pole read is refused: the geometry the mean-field "
-                "solve reached is not Kontsevich-Segal allowable (margin "
-                "%.3g, at or below the declared tolerance %.0e), and bands "
-                "are read on the allowable side (WP v17 line 151)"
-                % (margin, tolerance))
+                "the squared lengths overflowed the double (%s), so there is "
+                "no finite geometry to read a pole on" % report.stop_detail)
     return None
+
+
+def geometry_flags(report, tolerance=DECLARED_ALLOWABILITY_TOLERANCE):
+    """The flags of the geometry a mean-field solve reached: the
+    preconditions of the pole read that the geometry does not meet, each a
+    dict with its ``name``, a ``detail`` sentence and the numbers that
+    decided it. The poles are read on a flagged geometry, and the flags are
+    carried beside them.
+
+    The one precondition on the geometry is that it is Kontsevich-Segal
+    allowable: bands are read on the allowable side (WP v17 line 151), and a
+    margin within ``tolerance`` of zero is the boundary. A geometry whose
+    margin is not above ``tolerance`` carries the flag "not Kontsevich-Segal
+    allowable" with the margin and the tolerance. An empty list says the
+    geometry is allowable."""
+    margin = float(report.kontsevich_segal_margin)
+    if margin > tolerance:
+        return []
+    return [{
+        "name": "not Kontsevich-Segal allowable",
+        "detail": ("the geometry the mean-field solve reached is not "
+                   "Kontsevich-Segal allowable (margin %.3g, at or below "
+                   "the declared tolerance %.0e), and bands are read on the "
+                   "allowable side (WP v17 line 151)" % (margin, tolerance)),
+        "kontsevich_segal_margin": margin,
+        "tolerance": float(tolerance),
+    }]
+
+
+def flags_text(record):
+    """The flags of one content record as text (`geometry_flags`,
+    `spin_frame`): each flag's name with its detail, and the frame the spin
+    was read in when the record names it. Empty when the record carries no
+    flag."""
+    flags = record.get("flags") or []
+    if not flags:
+        return ""
+    text = "flagged: " + "; ".join("%s (%s)" % (flag["name"], flag["detail"])
+                                   for flag in flags)
+    frame = (record.get("relaxation") or {}).get("spin_frame")
+    if frame:
+        text += "; spin read in the frame of %s" % frame
+    return text
 
 
 def _term(action, name):
@@ -1828,11 +2155,13 @@ def spin_decomposition(carrier, covariance, content, frame, dual, trialities,
 _DOUBLET_SECTORS = {}
 
 
-def doublet_sectors(doublet_content, trialities):
+def doublet_sectors(doublet_content, trialities,
+                    tolerance=DECLARED_TOLERANCE):
     """The colour-singlet, one-quark-per-sheet spin sectors of a doublet
     content (n_2, n_2', n_2''): the carrier content in the aligned frame's
-    carrier order, the total triality, and the sectors by total spin. They
-    depend on the declared frame only, so they are formed once."""
+    carrier order, the total triality, and the sectors by total spin
+    (`spin_sectors` at ``tolerance``). They depend on the declared frame and
+    the tolerance only, so they are formed once for each."""
     carrier_of = {IRREP_NAMES[t]: c for c, t in enumerate(trialities)}
     if sorted(carrier_of.values()) != [0, 1, 2]:
         raise RuntimeError("the aligned frame's trialities %s are not the "
@@ -1840,10 +2169,10 @@ def doublet_sectors(doublet_content, trialities):
     carrier_content = [0, 0, 0]
     for name, n in zip(IRREP_NAMES, doublet_content):
         carrier_content[carrier_of[name]] = int(n)
-    key = tuple(carrier_content)
+    key = (tuple(carrier_content), float(tolerance))
     if key not in _DOUBLET_SECTORS:
         states, _ = singlet_states(carrier_content)
-        _DOUBLET_SECTORS[key] = spin_sectors(states)[0]
+        _DOUBLET_SECTORS[key] = spin_sectors(states, tolerance)[0]
     triality = sum(n * t for n, t in zip(carrier_content, trialities)) % 3
     return carrier_content, triality, _DOUBLET_SECTORS[key]
 
@@ -1980,54 +2309,44 @@ def sector_entry(j2, triality, sector, operators, projectors=None,
 
 def evaluate_content(content, kappa, beta, config):
     """One content at one scan point: relaxation, recursion, quark conditions,
-    states, spin, operators and poles."""
+    states, spin, operators and poles.
+
+    The poles are read on the geometry the mean-field solve reached, whatever
+    it is. A precondition of the read that does not hold at its declared
+    tolerance is recorded as a flag under ``flags`` (`geometry_flags` for
+    the geometry, `spin_frame` for the spin read of the cell itself), and
+    the frame the spin was read in is named under ``relaxation.spin_frame``.
+    A solve whose squared lengths overflowed the double leaves no finite
+    geometry to read, and raises `ReadWithoutValue`
+    (`geometry_without_value`)."""
     started = time.time()
     spacetime, action, report = relax_content(content, kappa, beta, config)
-    solve = relaxation_record(report)
-    refusal = read_refusal(report,
-                           declared_tolerance(config, "allowability_tolerance"))
-    if refusal is not None:
-        raise ReadRefused(refusal[0], refusal[1], solve)
+    solve = relaxation_record(
+        report, declared_tolerance(config, "hessian_reality_tolerance"))
+    missing = geometry_without_value(report)
+    if missing is not None:
+        raise ReadWithoutValue(missing[0], missing[1], solve)
+    flags = geometry_flags(
+        report, declared_tolerance(config, "allowability_tolerance"))
     carrier = matrix(action.carrier_operator())
     certificate_tolerance = declared_tolerance(config, "certificate_tolerance")
 
-    # The spin is read with the projective action D_1(g) of the relaxed cell
-    # itself, whose rotation group is measured (`cell_symmetry`): the
-    # relaxation under h_1, which is not itself rotation-covariant, moves the
-    # fields off the symmetric configuration, and a cell that is not
-    # tetrahedrally symmetric at the certificate tolerance has no such read.
-    supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
+    # The relaxation under h_1, which is not itself rotation-covariant, moves
+    # the fields off the symmetric configuration. The rotation group of the
+    # relaxed cell is measured (`cell_symmetry`), and the spin is read with
+    # the projective action D_1(g) of the cell itself when the cell meets
+    # the preconditions of that read, and with that of the declared symmetric
+    # host, flagged, when it does not (`spin_frame`).
+    supports = [sheet_support(spacetime, t, certificate_tolerance)
+                for t in range(SHEETS)]
     symmetry = cell_symmetry(spacetime, supports, certificate_tolerance)
-    if not symmetry["tetrahedral"]:
-        raise ReadRefused(
-            "not tetrahedrally symmetric",
-            "the spin read is refused: the relaxed cell has %d of the %d "
-            "rotations of the tetrahedron as symmetries at the certificate "
-            "tolerance %.3g (largest length departure %.3g, largest "
-            "gauge-compensation residual %.3g)"
-            % (symmetry["order"], len(symmetry["rotations"]),
-               certificate_tolerance, symmetry["length_departure"],
-               symmetry["compensation_residual"]),
-            solve, symmetry=symmetry)
-    group = rotation_group()
-    actions = rotation_action([support for support, _ in supports])
-    try:
-        alignments = [aligned_doublet_frame(
-            support, group, declared_tolerance(config, "degeneracy_tolerance"),
-            certificate_tolerance) for support, _ in supports]
-    except NoSpinorDoublet as missing:
-        raise ReadRefused("no j = 1/2 doublet",
-                          "the spin read is refused: %s" % missing, solve,
-                          symmetry=symmetry)
-    labels = {(tuple(a["trialities"]), int(a["reference_carrier"]))
-              for a in alignments}
-    if len(labels) > 1:
-        raise ReadRefused(
-            "the sheets' doublet labels disagree",
-            "the spin read is refused: the aligned frames of the sheets carry "
-            "the doublet labels (trialities, reference carrier) %s"
-            % [(a["trialities"], a["reference_carrier"]) for a in alignments],
-            solve, symmetry=symmetry)
+    spin_read_frame = spin_frame(
+        supports, symmetry, declared_tolerance(config, "degeneracy_tolerance"),
+        certificate_tolerance,
+        declared_tolerance(config, "character_tolerance"))
+    flags = flags + spin_read_frame["flags"]
+    actions = spin_read_frame["actions"]
+    alignments = spin_read_frame["alignments"]
     frame = _micro_frame(alignments)
     dual = np.linalg.inv(frame)
     averaged = rotation_averaged(carrier, actions)
@@ -2092,8 +2411,9 @@ def evaluate_content(content, kappa, beta, config):
     doublet_reads = []
     for doublet_content in contents():
         sector_reads = {}
-        carrier_content, triality, sectors = doublet_sectors(doublet_content,
-                                                             trialities)
+        carrier_content, triality, sectors = doublet_sectors(
+            doublet_content, trialities,
+            declared_tolerance(config, "spin_sector_tolerance"))
         for j2, sector in sectors.items():
             sector_reads[j2] = sector_entry(j2, triality, sector, (
                 ("quasi_free", quasi_free), ("with_quartic", with_quartic)),
@@ -2108,15 +2428,20 @@ def evaluate_content(content, kappa, beta, config):
     recursion = recursion_read(spacetime, config)
     anchor = anchor_atlas_read(spacetime, alignments, certificate_tolerance)
     fingerprint = spectral_fingerprint_read(spacetime, kappa, beta, config)
-    quark = quark_conditions(spacetime, alignments, recursion,
-                             averaged_residual, report, anchor, fingerprint,
-                             certificate_tolerance)
+    quark = quark_conditions(
+        spacetime, alignments, recursion, averaged_residual, report, anchor,
+        fingerprint, certificate_tolerance,
+        fibre_lift_tolerance=declared_tolerance(config,
+                                                "fibre_lift_tolerance"),
+        attachment_rank_tolerance=declared_tolerance(
+            config, "attachment_rank_tolerance"))
     truncation_read = action.holonomy_truncation()
     record = {
         "content": list(content),
         "content_meaning": CONTENT_MEANING,
         "elimination": config["elimination"],
         "seconds": time.time() - started,
+        "flags": flags,
         "relaxation": dict(solve, **{
             "band_operator": "h_1 (the covariant operator itself)",
             "shared_sheet_geometry": True,
@@ -2130,10 +2455,7 @@ def evaluate_content(content, kappa, beta, config):
             "face_holonomies": [complex(f) for f in
                                 action.face_holonomies()],
             "holonomy_truncation": {
-                "tolerance": float(truncation_read.tolerance),
-                "declared_term_count": int(
-                    truncation_read.declared_term_count),
-                "maximum_term_count": int(truncation_read.maximum_term_count),
+                "order": int(truncation_read.order),
                 "relative_value_tail": float(
                     truncation_read.relative_value_tail),
                 "relative_first_tail": float(
@@ -2145,14 +2467,16 @@ def evaluate_content(content, kappa, beta, config):
             "symmetry_departure": symmetry["compensation_residual"],
             "length_departure": symmetry["length_departure"],
             "symmetry": symmetry,
+            "spin_frame": spin_read_frame["name"],
             "frames": [{
                 "trialities": a["trialities"],
                 "reference_carrier": a["reference_carrier"],
                 "averaged_eigenvalues": a["averaged_eigenvalues"],
                 "intertwining_residual": a["intertwining_residual"],
             } for a in alignments],
-            "monopole_numbers": [int(sp.monopoleNumber().monopole_number)
-                                 for sp, _ in supports],
+            "monopole_numbers": [
+                int(sp.monopoleNumber(certificate_tolerance).monopole_number)
+                for sp, _ in supports],
             "link_force_norm": float(np.linalg.norm(
                 action.link_stationarity())),
             "ward_current_divergence": float(np.max(np.abs(np.asarray(
@@ -2193,7 +2517,7 @@ def evaluate_content(content, kappa, beta, config):
         spinorial = all(bool(a["spin_read"].cocycle.nontrivial)
                         for a in alignments)
         record["isospin_doublet"] = isospin_doublet.observe_host(
-            carrier, actions, spinorial)
+            carrier, actions, spinorial, config)
     return record
 
 
@@ -2215,6 +2539,8 @@ def recursion_read(spacetime, config):
     bands.band_rank = BASE_EDGES
     declaration.bands = bands
     declaration.tolerance = declared_tolerance(config, "recursion_tolerance")
+    declaration.rank_tolerance = declared_tolerance(
+        config, "quotient_rank_tolerance")
     recursion = None
     try:
         recursion = cob.LevelRecursion.overSpacetime(
@@ -2475,15 +2801,17 @@ def refined_host(spacetime):
     return refined, data
 
 
-def refined_support(sheet_data):
+def refined_support(sheet_data, tolerance=DECLARED_CERTIFICATE_TOLERANCE):
     """The `MonopoleSupport` of one refined sheet: five vertices, the ten
     edges of `REFINED_EDGES`, the four boundary faces of the fixture in their
     outward orientation (the bounding cut, which the subdivision leaves as it
-    was), and the U(1) part of the sheet's links."""
+    was), and the U(1) part of the sheet's links, whose moduli the support
+    holds to one within ``tolerance``."""
     fixture = monopole_support()
     return obs.MonopoleSupport(
         5, [list(e) for e in REFINED_EDGES], [list(f) for f in fixture.faces],
-        obs.MonopoleSupport.u1Part([complex(u) for u in sheet_data["links"]]))
+        obs.MonopoleSupport.u1Part([complex(u) for u in sheet_data["links"]]),
+        tolerance)
 
 
 def refined_rotation_group():
@@ -2564,7 +2892,7 @@ def _carrier(host, kappa, beta, config):
     """h_1 of a host under the run's declared action, as a matrix."""
     declaration = action_declaration(
         host, kappa, beta, config["regge_hinges"],
-        villain_tolerance=declared_tolerance(config, "villain_tolerance"))
+        villain_order=declared_villain_order(config))
     return matrix(cob.JointAction(host, declaration).carrier_operator())
 
 
@@ -2632,13 +2960,17 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
       operator, inside the isotypic component of that type in the refined
       action (`SharpSpin.isotypicProjector`), whose column span overlaps the
       original doublet most on the six shared edges, the refinement
-      continuation. The overlap must reach ``overlap_floor`` with the rank
-      preserved, and the refined support must carry a spinor doublet; the
-      energy shift is reported beside them."""
+      continuation. The isotypic component is the span of the projector's
+      eigenvectors whose eigenvalues are within the config's
+      ``isotypic_tolerance`` of one, and two eigenvalues of the averaged
+      operator on it within that tolerance form one band. The overlap must
+      reach ``overlap_floor`` with the rank preserved, and the refined
+      support must carry a spinor doublet; the energy shift is reported
+      beside them."""
     group = rotation_group()
     if tolerance is None:
         tolerance = declared_tolerance(config, "certificate_tolerance")
-    support, _ = sheet_support(spacetime, 0)
+    support, _ = sheet_support(spacetime, 0, tolerance)
     original = _fiber_fingerprint(spacetime, support, group, BASE_EDGES,
                                   kappa, beta, config)
     result = {"sheet": 0, "spectrum": original["spectrum"],
@@ -2654,7 +2986,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
     # --- relabeling
     permutation = list(FINGERPRINT_RELABELING)
     moved_host = relabeled_host(spacetime, permutation)
-    moved_support, _ = sheet_support(moved_host, 0)
+    moved_support, _ = sheet_support(moved_host, 0, tolerance)
     moved = _fiber_fingerprint(moved_host, moved_support,
                                conjugated_group(group, permutation),
                                BASE_EDGES, kappa, beta, config)
@@ -2690,7 +3022,7 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
     result["relabeling"] = relabeling
     # --- refinement
     refined, sheet_data = refined_host(spacetime)
-    support_r = refined_support(sheet_data[0])
+    support_r = refined_support(sheet_data[0], tolerance)
     group_r = refined_rotation_group()
     edges = len(REFINED_EDGES)
     fine = _fiber_fingerprint(refined, support_r, group_r, edges, kappa, beta,
@@ -2716,7 +3048,8 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
         isotypic = np.asarray(obs.SharpSpin.isotypicProjector(
             maps, characters, 2, 1))
         values, vectors = np.linalg.eig(isotypic)
-        span = vectors[:, np.abs(values - 1.0) < 1e-6]
+        isotypic_tolerance = declared_tolerance(config, "isotypic_tolerance")
+        span = vectors[:, np.abs(values - 1.0) <= isotypic_tolerance]
         compressed = np.linalg.pinv(span) @ fine["averaged"] @ span
         energies, mixing = np.linalg.eig(compressed)
         candidates = span @ mixing
@@ -2727,11 +3060,12 @@ def spectral_fingerprint_read(spacetime, kappa, beta, config,
             original_frame[k, :] = original["doublet_frame"][m, :]
         distinct = []
         for e in energies:
-            if not any(abs(e - f) < 1e-6 for f in distinct):
+            if not any(abs(e - f) <= isotypic_tolerance for f in distinct):
                 distinct.append(complex(e))
         best = None
         for energy in sorted(distinct, key=lambda v: (v.real, v.imag)):
-            picked = candidates[:, np.abs(energies - energy) < 1e-6]
+            picked = candidates[:, np.abs(energies - energy)
+                                <= isotypic_tolerance]
             overlap = _subspace_overlap(original_frame[shared, :],
                                         picked[shared, :])
             if best is None or overlap > best["overlap"]:
@@ -2816,7 +3150,9 @@ def fingerprint_text(fingerprint):
 
 def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
                      report, anchor=None, fingerprint=None,
-                     tolerance=DECLARED_CERTIFICATE_TOLERANCE):
+                     tolerance=DECLARED_CERTIFICATE_TOLERANCE,
+                     fibre_lift_tolerance=DECLARED_TOLERANCE,
+                     attachment_rank_tolerance=DECLARED_TOLERANCE):
     """The seven v16 quark conditions by name (`QuarkConditions`), from what a
     single-level synthesis measures: condition 3 from the anchor atlas read
     (`anchor_evidence`) and condition 7 from the spectral fingerprint read
@@ -2825,18 +3161,23 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
     sector; every sheet must carry them. Anything that needs several
     cobordism frames is left unmeasured and so reads "not evaluable", and so
     does every piece of evidence read from the recursion's completed turn
-    when the recursion refused to take one (`recursion_read`)."""
+    when the recursion refused to take one (`recursion_read`). The
+    certificates are graded at ``tolerance``; the fibre lift holds when
+    ``symmetry_residual`` is at or below ``fibre_lift_tolerance``, and the
+    sheet-to-sheet attachment has full rank when its smallest singular value
+    reaches ``attachment_rank_tolerance``."""
     E = obs.QuarkConditionEvidence
     spins = [a["spin_read"] for a in alignments]
-    supports = [sheet_support(spacetime, t) for t in range(SHEETS)]
-    monopoles = [s.monopoleNumber() for s, _ in supports]
+    supports = [sheet_support(spacetime, t, tolerance) for t in range(SHEETS)]
+    monopoles = [s.monopoleNumber(tolerance) for s, _ in supports]
     sheeting = obs.SheetedSupport(SHEETS, BASE_EDGES)
     isomorphism = sheeting.certifyIsomorphism(
         [np.array(sheet_squared_lengths(spacetime, t)) for t in range(SHEETS)],
         [np.array(sheet_links(spacetime, t)) for t in range(SHEETS)],
         tolerance)
     attachment = obs.SheetAttachment.attachmentMatrix(
-        SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)])
+        SHEETS, [obs.ConnectingSimplex(t, t, 1.0) for t in range(SHEETS)],
+        attachment_rank_tolerance)
     doublets = [spin.bands[spin.doublet_index] if spin.half_integer_doublet
                 else None for spin in spins]
     produced = "refusal" not in recursion
@@ -2885,7 +3226,7 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
            bool(all(d is not None and d.coexact for d in doublets)),
            "coexact residuals %s" % [d.coexact_residual if d is not None
                                      else None for d in doublets]),
-         E("fibre-lift", symmetry_residual < 1e-6,
+         E("fibre-lift", symmetry_residual <= fibre_lift_tolerance,
            "the T-averaged h_1 (WP line 497) in the aligned frame is "
            "block-scalar on each doublet times the sheets to relative "
            "residual %.3g" % symmetry_residual)],
@@ -2924,26 +3265,33 @@ def quark_conditions(spacetime, alignments, recursion, symmetry_residual,
 
 
 def scan_point(kappa, beta, config, on_content=None):
-    """Every content at one (kappa, beta), and the ratios."""
+    """Every content at one (kappa, beta), and the ratios.
+
+    A content whose read is flagged is a content like any other: its record
+    carries its poles and lists its flags (``flags``), and
+    ``flagged_contents`` names it. A content with no value has a record with
+    ``failed`` (the message) and no pole, and ``failed_contents`` names it:
+    one whose solve left no finite geometry (`ReadWithoutValue`, with
+    ``reason`` the reason by name and the solve's record), and one at which
+    the library names no value."""
     records = []
     for content in config.get("contents") or contents():
         try:
             record = evaluate_content(content, kappa, beta, config)
-        except ReadRefused as refusal:
-            # the pole read refused by name on the geometry the mean-field
-            # solve reached, or on its symmetry: recorded with its reason,
-            # the solve's record and the reads that decided it, and the
-            # content supplies no pole
+        except ReadWithoutValue as missing:
+            # the mean-field solve left no finite geometry to read: recorded
+            # with the reason by name and the solve's record, and the content
+            # supplies no pole
             record = dict({"content": list(content),
                            "elimination": config["elimination"],
-                           "failed": str(refusal), "refusal": refusal.name,
-                           "relaxation": refusal.relaxation,
-                           "doublet_reads": []}, **refusal.records)
+                           "failed": str(missing), "reason": missing.name,
+                           "relaxation": missing.relaxation,
+                           "doublet_reads": []}, **missing.records)
         except ValueError as error:
-            # a declared refusal of the library at this content (a band that
-            # cannot hold the occupation, a face holonomy outside the domain
-            # of the holonomy term): recorded with its reason, and the content
-            # supplies no pole
+            # the library names no value at this content (a band that cannot
+            # hold the occupation, a face holonomy outside the domain of the
+            # holonomy term): recorded with the library's message, and the
+            # content supplies no pole
             record = {"content": list(content),
                       "elimination": config["elimination"],
                       "failed": str(error), "doublet_reads": []}
@@ -2954,6 +3302,8 @@ def scan_point(kappa, beta, config, on_content=None):
             "elimination": config["elimination"],
             "failed_contents": [record["content"] for record in records
                                 if "failed" in record],
+            "flagged_contents": [record["content"] for record in records
+                                 if record.get("flags")],
             "contents": records,
             "ratios": ratios(records,
                              declared_tolerance(config, "tie_tolerance")),
@@ -3416,11 +3766,11 @@ def relaxation_text(relaxation):
 
 def content_pair_lines(record, prefix=""):
     """Every (content, doublet content) pair of one content record, one line
-    each (`pair_line`); a refused content is one line with its reason and,
-    for a read refused after the mean-field solve, the solve's record."""
+    each (`pair_line`); a content with no value is one line with the reason
+    and, where the mean-field solve was made, the solve's record."""
     if "failed" in record:
-        line = "%scontent %s: refused: %s" % (prefix, list(record["content"]),
-                                              record["failed"])
+        line = "%scontent %s: no value: %s" % (prefix, list(record["content"]),
+                                               record["failed"])
         if record.get("relaxation"):
             line += "; " + relaxation_text(record["relaxation"])
         return [line]
@@ -3520,23 +3870,30 @@ def ratio_lines(point_ratios, prefix=""):
 
 
 def point_lines(point):
-    """One scan point as text: every (content, doublet content) pair on its
-    own line, then the labelled minima, then the ratios with the pairs they
+    """One scan point as text: how many contents were read, how many of them
+    have no value and how many are flagged; every content's line, with its
+    mean-field solve, its anchor atlas, its spectral fingerprint and its
+    flags (`flags_text`); every (content, doublet content) pair on its own
+    line; then the labelled minima, then the ratios with the pairs they
     compare."""
     records = point["contents"]
-    lines = ["kappa=%g beta=%g: %d contents, %d refused; one line per "
-             "(content, doublet content) pair, poles s with multiplicity x"
+    lines = ["kappa=%g beta=%g: %d contents, %d without a value, %d flagged; "
+             "one line per (content, doublet content) pair, poles s with "
+             "multiplicity x"
              % (point["kappa"], point["beta"], len(records),
-                sum(1 for record in records if "failed" in record))]
+                sum(1 for record in records if "failed" in record),
+                sum(1 for record in records if record.get("flags")))]
     for record in records:
         if "failed" not in record:
-            lines.append("  content %s %s%s%s" % (
+            flagged = flags_text(record)
+            lines.append("  content %s %s%s%s%s" % (
                 list(record["content"]),
                 relaxation_text(record.get("relaxation")),
                 "; " + anchor_text(record["anchor"])
                 if "anchor" in record else "",
                 "; " + fingerprint_text(record["spectral_fingerprint"])
-                if "spectral_fingerprint" in record else ""))
+                if "spectral_fingerprint" in record else "",
+                "; " + flagged if flagged else ""))
         lines += term_trace_lines(record.get("relaxation"), "    ")
         lines += content_pair_lines(record, "  ")
     lines += lowest_lines(records, "  ")
@@ -3551,13 +3908,15 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
                    band_selection=DECLARED_BAND_SELECTION,
                    fiber_moments=DECLARED_FIBER_MOMENTS,
                    fiber_pinning=DECLARED_FIBER_PINNING, tolerances=None,
-                   trace_terms=False, limits=None):
+                   trace_terms=False, limits=None,
+                   villain_order=DECLARED_VILLAIN_ORDER):
     """The declared configuration, recorded with every run. The contents
     default to all ten; a subset is for tests and quick checks and changes no
     number of the contents it keeps. ``tolerances`` sets any of `TOLERANCES`
     by key; the others are recorded at `DECLARED_TOLERANCE`. ``limits``
     declares any of `LIMITS` by key; the others are recorded as None, not
-    declared."""
+    declared. ``villain_order`` is the order the Villain weight of the
+    holonomy term is summed to (`DECLARED_VILLAIN_ORDER`)."""
     return {
         "mode": "controlled synthesis",
         "contents": [list(c) for c in (selected_contents or contents())],
@@ -3565,8 +3924,8 @@ def default_config(kappas=DECLARED_KAPPAS, betas=DECLARED_BETAS,
         "betas": list(betas),
         "edge_squared": edge_squared,
         "regge_hinges": regge_hinges,
+        "villain_order": checked_villain_order(villain_order),
         "elimination": elimination,
-        "gauge_resonance_radius": DECLARED_GAUGE_RESONANCE_RADIUS,
         "ward_contour_radius": DECLARED_WARD_CONTOUR_RADIUS,
         "ward_contour_nodes": DECLARED_WARD_CONTOUR_NODES,
         **declared_tolerances(tolerances),
@@ -3614,7 +3973,8 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
     declared = aligned_doublet_frame(
         monopole_support(), rotation_group(),
         declared_tolerance(config, "degeneracy_tolerance"),
-        declared_tolerance(config, "certificate_tolerance"))
+        declared_tolerance(config, "certificate_tolerance"),
+        declared_tolerance(config, "character_tolerance"))
     frames = []
     host = {
         "monopole": _monopole_record(declared["spin_read"]),
@@ -3720,12 +4080,12 @@ SOLVE_STYLE = {
                   "label": "mean-field solve converged"},
     "not converged": {"ink": "#b3261e", "band": "#fbe6e3", "sign": "\u2717",
                       "label": "mean-field solve not converged"},
-    "refused": {"ink": INK_MUTED, "band": "#ecebe6", "sign": "\u2717",
-                "label": "pole read refused"},
+    "no value": {"ink": INK_MUTED, "band": "#ecebe6", "sign": "\u2717",
+                 "label": "pole read has no value"},
 }
 #: The short names, in a callout, of why a mean-field solve stopped
-#: (`cob.relaxation_stop_name`) and of the refusals of a pole read
-#: (`read_refusal`).
+#: (`cob.relaxation_stop_name`), which are also the names of why a pole read
+#: has no value (`geometry_without_value`).
 STOP_SHORT = {
     "no damped step reduced the residual": "no descent",
     "every damped step left the domain of the action": "left the domain",
@@ -3734,7 +4094,6 @@ STOP_SHORT = {
     "the residual is at its floor on the held set": "held floor",
     "the squared lengths overflowed the double": "lengths overflowed",
     "a declared limit was reached": "declared limit",
-    "not Kontsevich-Segal allowable": "not KS-allowable",
 }
 #: The largest font size of the callouts; they are set smaller, all to one
 #: size, when the narrowest group needs it.
@@ -3748,18 +4107,19 @@ def _digits(values):
 
 def solve_state(record):
     """The mean-field solve behind one content record, as the plots mark it:
-    ``state`` is "refused" when the content's pole read was refused (it reads
-    no pole) and otherwise "converged" or "not converged" as the solve's
-    record says; ``reason`` is the short name (`STOP_SHORT`) of why an
-    unconverged solve stopped or why the read was refused, None when there is
-    none; ``iterations`` is the solve's iteration count, None when
-    unrecorded. None when the record carries neither a refusal nor a
+    ``state`` is "no value" when the content's pole read has none (its
+    record carries ``failed`` and no pole) and otherwise "converged" or "not
+    converged" as the solve's record says, whether or not the read is
+    flagged; ``reason`` is the short name (`STOP_SHORT`) of why an
+    unconverged solve stopped or of why the read has no value, None when the
+    record names none; ``iterations`` is the solve's iteration count, None
+    when unrecorded. None when the record carries neither ``failed`` nor a
     solve."""
     relaxation = record.get("relaxation") or {}
     iterations = relaxation.get("iterations")
     if "failed" in record:
-        name = record.get("refusal")
-        return {"state": "refused", "reason": STOP_SHORT.get(name, name),
+        name = record.get("reason")
+        return {"state": "no value", "reason": STOP_SHORT.get(name, name),
                 "iterations": iterations}
     if "converged" not in relaxation:
         return None
@@ -3773,7 +4133,7 @@ def solve_state(record):
 
 def callout_lines(solve):
     """The lines of one group's callout (`solve_state`): the sign and the
-    state, then why the solve stopped or the read was refused, then the
+    state, then why the solve stopped or the read has no value, then the
     solve's iterations, each where known."""
     lines = ["%s %s" % (SOLVE_STYLE[solve["state"]]["sign"], solve["state"])]
     if solve["reason"]:
@@ -3790,8 +4150,9 @@ def pole_marks(groups):
 
     ``groups`` is a list of (label, content record). A group occupies one
     slot per doublet content its record read, in the record's order, and
-    groups are separated by `GROUP_GAP` empty slots; a refused content, which
-    reads no doublet content, occupies one slot labelled "refused". Returns
+    groups are separated by `GROUP_GAP` empty slots; a content with no value,
+    which reads no doublet content, occupies one slot labelled "no value".
+    Returns
     the marks (each with its position ``x``, its pair's slot offset by its
     spin, the group label, the content, the doublet content, the spin, the
     column, the pole and its multiplicity), the groups (label, first and
@@ -3803,7 +4164,7 @@ def pole_marks(groups):
         start = x
         reads = record.get("doublet_reads") or []
         if not reads:
-            slots.append((x, "refused" if "failed" in record else "none"))
+            slots.append((x, "no value" if "failed" in record else "none"))
             x += 1.0
         for read in reads:
             slots.append((x, _digits(read["doublet_content"])))
@@ -3936,10 +4297,10 @@ def draw_pole_panel(axis, data, name, title, group_label):
     symmetric logarithmic scale of Re s (the poles span several decades).
     Below each slot is its doublet content (quarks in 2, 2', 2'' of
     h-bar_1), and below each group its label (``group_label`` says what it
-    names). Each group whose record carries a mean-field solve or a refusal
-    (`solve_state`) has a band behind its pairs and a callout above them in
-    its state's colour (`SOLVE_STYLE`): whether the solve converged, why it
-    stopped or the read was refused, and its iterations
+    names). Each group whose record carries a mean-field solve or has no
+    value (`solve_state`) has a band behind its pairs and a callout above
+    them in its state's colour (`SOLVE_STYLE`): whether the solve converged,
+    why it stopped or the read has no value, and its iterations
     (`callout_lines`)."""
     style_axis(axis)
     named = set()
@@ -4378,11 +4739,35 @@ def build_parser():
                      help="add the isospin-doublet observation (WP §10, "
                           "`IsospinDoublet`) to every content's record; the "
                           "other outputs are unchanged")
+    add_action_arguments(run)
     add_mean_field_arguments(run)
     add_tolerance_arguments(run)
     add_limit_arguments(run)
     run.add_argument("--quiet", action="store_true")
     return parser
+
+
+def _villain_order(text):
+    """An integer from 1 to the largest order, for --villain-order."""
+    try:
+        return checked_villain_order(int(text))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "--villain-order is an integer from 1 to %d; got %r"
+            % (cob.VillainCharacter.maximum_order, text))
+
+
+def add_action_arguments(parser):
+    """The options of the joint action every driver accepts. Each is part of
+    the action: it changes the equations that are solved."""
+    parser.add_argument("--villain-order", type=_villain_order,
+                        default=DECLARED_VILLAIN_ORDER,
+                        help="M, the order the Villain weight of the "
+                             "holonomy term is summed to: the term is "
+                             "defined by the sum over |m| <= M; an integer "
+                             "from 1 to %d (default %d)"
+                             % (cob.VillainCharacter.maximum_order,
+                                DECLARED_VILLAIN_ORDER))
 
 
 def _tolerance(text):
@@ -4486,7 +4871,8 @@ def main(argv=None):
                             fiber_pinning=args.fiber_pinning,
                             tolerances=tolerances_from(args),
                             trace_terms=args.trace_terms,
-                            limits=limits_from(args))
+                            limits=limits_from(args),
+                            villain_order=args.villain_order)
     if args.isospin_doublet:
         config["isospin_doublet"] = True
     points_file = points_path(args.json) if args.json else None

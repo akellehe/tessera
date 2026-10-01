@@ -685,3 +685,75 @@ def test_a_refused_relaxation_stops_the_recursion_with_its_reason(monkeypatch):
     json.dumps(R._jsonable(record))
     assert "refused" in R.summary({"host": {"monopole_numbers": []},
                                    "ticks": [record]})
+
+
+@pytest.mark.parametrize("error", [ValueError, RuntimeError])
+def test_a_turn_without_a_value_stops_the_recursion_with_its_reason(
+        monkeypatch, error):
+    """A real tick on the declared fan of two whose turn of the Section 15
+    box raises: a ValueError is how the library says a band read has no value
+    (a selection that separates two eigenvalues equal exactly) or that the
+    level is at the dense crossover, and a RuntimeError how it says a Schur
+    decomposition did not converge. The tick records the stop with the
+    library's message and returns no next level. The level and its
+    relaxation are kept as they were read: the fan of two has five vertices,
+    nine edges and two tetrahedra per sheet, its relaxation converged, its
+    held cut carries the monopole number two before and after, and its bulk
+    monopole numbers are one per tetrahedron. There is no partition, so
+    there is no response vertex and no grown cell, and no cell is read."""
+    message = "LevelRecursion::readBand: the projector has no value"
+
+    def no_turn(operator, config):
+        raise error(message)
+    monkeypatch.setattr(R, "recursion_turn", no_turn)
+    monkeypatch.setattr(R, "cell_reads", lambda cells, z, links, config: [])
+    config = R.default_config(tetrahedra=2, tolerances=RUN.TOLERANCES)
+    cells, z, links, _ = R.level_zero(config)
+    record, following = R.tick(0, cells, z, links, config)
+    assert following is None
+    assert record["stopped"] == \
+        "the recursion's turn has no value: " + message
+    assert record["partition"] == {"failed": message}
+    assert record["relaxation"]["converged"]
+    assert record["relaxation"]["stop_reason"] == "converged"
+    level = record["level"]
+    assert (level["vertices"], level["edges"], level["tetrahedra"]) == \
+        (5, 9, 2)
+    assert level["held_cut"]["monopole_number_before"] == \
+        level["held_cut"]["monopole_number_after"] == 2
+    assert level["bulk_monopole_numbers_before"] == [1, 1]
+    assert level["bulk_monopole_numbers_after"] == [1, 1]
+    assert level["sheet_isomorphism_residual"] < 1e-10
+    assert len(level["rule_shift"]) == 2
+    summary = record["summary"]
+    assert summary["response_vertices"] == 0
+    assert summary["interactions"] == 0 and summary["grown_cells"] == 0
+    assert summary["row_sum_defects"] == []
+    assert summary["held_cut_monopole_numbers"] == [2, 2]
+    assert record["reads"] == []
+    json.dumps(R._jsonable(record))
+    text = R.summary({"host": {"monopole_numbers": [1, 1]},
+                      "ticks": [record]})
+    assert "tick 0: level with 5 vertices, 9 edges, 2 tetrahedra per " \
+        "sheet; relaxation converged True" in text
+    assert text.endswith("  stopped: the recursion's turn has no value: "
+                         + message)
+    # the frame of a stopped tick draws its counts
+    assert R.frame_data([record], 0)["counts"] == [
+        {"tick": 0, "response_vertices": 0, "grown_cells": 0,
+         "row_sum_defects": []}]
+
+
+def test_the_drive_ends_at_a_tick_whose_turn_has_no_value(monkeypatch):
+    """`drive` asked for three ticks stops after the first when its turn has
+    no value: the tick returns no next level, and the one record carries the
+    stop."""
+    def no_turn(operator, config):
+        raise ValueError("no value")
+    monkeypatch.setattr(R, "recursion_turn", no_turn)
+    monkeypatch.setattr(R, "cell_reads", lambda cells, z, links, config: [])
+    result = R.drive(R.default_config(ticks=3, tetrahedra=2,
+                                      tolerances=RUN.TOLERANCES))
+    assert len(result["ticks"]) == 1
+    assert result["ticks"][0]["stopped"] == \
+        "the recursion's turn has no value: no value"

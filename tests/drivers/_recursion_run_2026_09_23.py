@@ -11,10 +11,11 @@ around the edge (0, 1)) and the two host cells whose per-cell reads failed
 quark condition 2 in 12 of 16 contents.
 """
 
-#: The tolerances the run was made at (the drivers' then-fixed values), by
-#: the config keys of `baryon_poles.TOLERANCES`. A test that reproduces the
-#: run's numbers, its convergence or its certificates declares them; the
-#: drivers' declared default for every one of them is 1e-15.
+#: The tolerances the run was made at (the values the drivers and the library
+#: fixed at that commit), by the config keys of `baryon_poles.TOLERANCES`. A
+#: test that reproduces the run's numbers, its convergence or its
+#: certificates declares them; the drivers' declared default for every one of
+#: them is 1e-15.
 TOLERANCES = {
     "rank_tolerance": 1e-10,
     "newton_tolerance": 1e-11,
@@ -27,8 +28,40 @@ TOLERANCES = {
     "pole_rank_tolerance": 1e-10,
     "fluctuation_tolerance": 1e-8,
     "recursion_tolerance": 1e-9,
-    "villain_tolerance": 1e-18,
+    # the driver's own thresholds
+    "spin_sector_tolerance": 1e-6,
+    "character_tolerance": 1e-9,
+    "elimination_tolerance": 1e-12,
+    "pure_gauge_tolerance": 1e-8,
+    "gauge_resonance_radius": 1e-10,
+    "hessian_reality_tolerance": 1e-6,
+    "fibre_lift_tolerance": 1e-6,
+    "isotypic_tolerance": 1e-6,
+    # the library's values where the drivers passed none
+    "attachment_rank_tolerance": 1e-12,
+    "quotient_rank_tolerance": 1e-9,
+    "move_tolerance": 1e-9,
+    "admissibility_tolerance": 1e-12,
+    # the isospin-doublet detector's values (`IsospinDoubletConfig`)
+    "isospin_grouping_tolerance": 1e-8,
+    "isospin_projector_tolerance": 1e-9,
+    "isospin_invariance_tolerance": 1e-8,
+    "isospin_commutant_tolerance": 1e-9,
+    "isospin_isotypic_tolerance": 1e-6,
+    "isospin_hermiticity_tolerance": 1e-12,
+    "isospin_transport_leakage_tolerance": 1e-1,
+    "isospin_intertwining_tolerance": 1e-6,
 }
+
+#: The run's coupling of the holonomy term, and the relative size below which
+#: the run left a coefficient exp(-m^2 / (2 beta)) of the Villain weight out
+#: of its sum.
+BETA = 1.0
+VILLAIN_COEFFICIENT_FLOOR = 1e-18
+#: The order of the Villain weight (`baryon_poles.DECLARED_VILLAIN_ORDER`,
+#: ``--villain-order``) at which the run's numbers are read: the least m with
+#: exp(-m^2 / (2 beta)) below the floor at the run's beta.
+VILLAIN_ORDER = 10
 
 #: The tick-0 base cells.
 LEVEL_ZERO_CELLS = [[0, 1, 2, 3], [0, 1, 3, 4]]

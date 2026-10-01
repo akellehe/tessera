@@ -241,12 +241,14 @@ class TheFaceHolonomyIsBranchFreeTest(unittest.TestCase):
 
     def test_a_trivial_connection_is_stationary_for_the_holonomy_term(self):
         """At F = 1 on every face the term is -beta_V |faces| log W(1),
-        with W(1) and beta_V = beta / <m^2>_beta summed directly here, and
+        with W(1) and beta_V = beta / <m^2>_beta the sums over |m| <= 10,
+        the declared order of the Villain weight, summed directly here, and
         the link equations vanish."""
         beta = 2.9
         spacetime = sphere3(squared=_metric)
         action = cob.JointAction(spacetime, _declaration(holonomy_weight=beta))
-        m = np.arange(-60, 61)
+        self.assertEqual(action.declaration.villain_order, 10)
+        m = np.arange(-10, 11)
         weights = np.exp(-m * m / (2.0 * beta))
         w_at_one = np.sum(weights)
         beta_v = beta / (np.sum(m * m * weights) / w_at_one)
@@ -607,11 +609,12 @@ class TheRemainingReadsTest(unittest.TestCase):
         largest. On this sphere at beta = 1/5, where W is dominated by
         1 + 2 e^{-5/2} cos theta and the face curvature varies with the
         cosine of the flux, the six nonzero singular values lie between 0.81
-        and 1 of the largest and four are at rounding, so the default keeps
-        six and a threshold of 0.93 keeps three; the step record reports the
-        gap at the decision."""
+        and 1 of the largest and four are at rounding, so a threshold of
+        1e-12 keeps six and a threshold of 0.93 keeps three; the step record
+        reports the gap at the decision. The declared default of the
+        threshold is 1e-15."""
         self.assertEqual(cob.HolomorphicRelaxationDeclaration().rank_tolerance,
-                         1e-12)
+                         1e-15)
         ranks, gaps = [], []
         for threshold in (1e-12, 0.93):
             spacetime = sphere3(squared=_metric, phase=_flux)

@@ -89,6 +89,7 @@ def _cheap_scan_point(kappa, beta, config, on_content=None):
     records = [_record([1, 1, 1], kappa, beta)]
     return {"kappa": kappa, "beta": beta,
             "elimination": config["elimination"], "failed_contents": [],
+            "flagged_contents": [],
             "contents": records, "ratios": bp.ratios(records),
             "pole_table": bp.pole_table(records)}
 
@@ -133,16 +134,81 @@ def test_the_declared_defaults():
         key: 1e-15 for key, _ in bp.TOLERANCES}
     assert "rank_tolerance" in dict(bp.TOLERANCES)
     tight = bp.build_parser().parse_args(
-        ["run", "--rank-tolerance", "1e-10", "--villain-tolerance", "1e-18"])
+        ["run", "--rank-tolerance", "1e-10", "--tie-tolerance", "1e-8"])
     assert bp.tolerances_from(tight)["rank_tolerance"] == 1e-10
-    assert bp.tolerances_from(tight)["villain_tolerance"] == 1e-18
+    assert bp.tolerances_from(tight)["tie_tolerance"] == 1e-8
     assert bp.tolerances_from(tight)["newton_tolerance"] == 1e-15
+    # the Villain weight is governed by an order, not by a tolerance
+    assert "villain_tolerance" not in dict(bp.TOLERANCES)
+    assert args.villain_order == bp.DECLARED_VILLAIN_ORDER == 10
+
+
+#: Every tolerance of the stack, in the registry's order.
+TOLERANCE_KEYS = [
+    "rank_tolerance", "newton_tolerance", "mean_field_tolerance",
+    "band_tolerance", "certificate_tolerance", "allowability_tolerance",
+    "tie_tolerance", "degeneracy_tolerance", "pole_rank_tolerance",
+    "fluctuation_tolerance", "recursion_tolerance",
+    "spin_sector_tolerance", "character_tolerance", "elimination_tolerance",
+    "pure_gauge_tolerance", "gauge_resonance_radius",
+    "hessian_reality_tolerance", "fibre_lift_tolerance", "isotypic_tolerance",
+    "attachment_rank_tolerance", "quotient_rank_tolerance", "move_tolerance",
+    "admissibility_tolerance", "isospin_grouping_tolerance",
+    "isospin_projector_tolerance", "isospin_invariance_tolerance",
+    "isospin_commutant_tolerance", "isospin_isotypic_tolerance",
+    "isospin_hermiticity_tolerance", "isospin_transport_leakage_tolerance",
+    "isospin_intertwining_tolerance",
+]
+
+
+def test_the_registry_lists_every_tolerance():
+    """The registry is the complete list of the stack's tolerances: each key
+    once, each with a one-phrase meaning, and each the detector's tolerance
+    it names where it is one of `ISOSPIN_TOLERANCES`."""
+    assert [key for key, _ in bp.TOLERANCES] == TOLERANCE_KEYS
+    assert len(set(TOLERANCE_KEYS)) == len(TOLERANCE_KEYS) == 31
+    assert all(isinstance(meaning, str) and meaning
+               for _, meaning in bp.TOLERANCES)
+    assert [key for key, _ in bp.ISOSPIN_TOLERANCES] == [
+        key for key in TOLERANCE_KEYS if key.startswith("isospin_")]
+    detector = bp.isospin_doublet_config()
+    assert all(getattr(detector, field) == 1e-15
+               for _, field in bp.ISOSPIN_TOLERANCES)
+    detector = bp.isospin_doublet_config(
+        {"isospin_grouping_tolerance": 1e-8})
+    assert detector.grouping_tolerance == 1e-8
+    assert detector.projector_tolerance == 1e-15
+    # the detector's thresholds that are not tolerances stay the library's
+    library = obs.IsospinDoubletConfig()
+    for field in ("min_relative_gap", "contour_nodes",
+                  "track_overlap_threshold", "min_frames",
+                  "condition_number_cap"):
+        assert getattr(detector, field) == getattr(library, field)
+
+
+@pytest.mark.parametrize("key", TOLERANCE_KEYS)
+def test_every_tolerance_is_an_option_defaulting_to_1e_15(key):
+    """``--<key, with dashes>`` sets the tolerance ``key`` alone; without it
+    the tolerance is 1e-15; and a value that is not positive is refused by
+    the option's name."""
+    option = "--" + key.replace("_", "-")
+    declared = bp.tolerances_from(bp.build_parser().parse_args(["run"]))
+    assert declared[key] == 1e-15
+    set_ = bp.tolerances_from(
+        bp.build_parser().parse_args(["run", option, "1e-7"]))
+    assert set_[key] == 1e-7
+    assert all(value == 1e-15 for other, value in set_.items()
+               if other != key)
+    with pytest.raises(SystemExit):
+        bp.build_parser().parse_args(["run", option, "0"])
 
 
 def test_the_config_records_every_tolerance():
     config = bp.default_config([1.0], [1.0])
     assert all(config[key] == bp.DECLARED_TOLERANCE
                for key, _ in bp.TOLERANCES)
+    assert {key: config[key] for key in TOLERANCE_KEYS} == {
+        key: 1e-15 for key in TOLERANCE_KEYS}
     config = bp.default_config([1.0], [1.0],
                                tolerances={"tie_tolerance": 1e-8})
     assert config["tie_tolerance"] == 1e-8
@@ -251,7 +317,8 @@ def test_progress_and_summary_are_printed_unless_quiet(cheap, capsys):
     (content, doublet content) pair, the labelled minima and the ratios."""
     bp.main(["run", "--kappa", "1", "--beta", "2"])
     out = capsys.readouterr().out
-    assert out.count("kappa=1 beta=2: 1 contents, 0 refused") == 2
+    assert out.count("kappa=1 beta=2: 1 contents, 0 without a value, "
+                     "0 flagged") == 2
     for pair in ("[0, 2, 1] (triality 1)", "[1, 1, 1] (triality 0)"):
         assert out.count("\n  content [1, 1, 1], doublet content %s | spin"
                          % pair) == 2
@@ -480,7 +547,7 @@ def _solved(record, **relaxation):
     return solved
 
 
-def test_solve_state_reads_the_solve_or_the_refusal_of_each_record():
+def test_solve_state_reads_the_solve_or_the_missing_value_of_each_record():
     record = {"content": [1, 1, 1], "doublet_reads": []}
     assert bp.solve_state(record) is None
     assert bp.solve_state(_solved(record, converged=True, iterations=6,
@@ -500,15 +567,23 @@ def test_solve_state_reads_the_solve_or_the_refusal_of_each_record():
     assert bp.solve_state(_solved(record, converged=False, iterations=2,
                                   stop_reason="new reason"))["reason"] == \
         "new reason"
-    # a refused read is marked refused whatever its solve reached
-    refused = _solved(record, converged=True, iterations=5)
-    refused.update(failed="the pole read is refused: ...",
-                   refusal="not Kontsevich-Segal allowable")
-    assert bp.solve_state(refused) == {
-        "state": "refused", "reason": "not KS-allowable", "iterations": 5}
+    # a read with no value is marked so whatever its solve reached, with the
+    # short name of the reason its record names
+    missing = _solved(record, converged=False, iterations=5)
+    missing.update(failed="the squared lengths overflowed the double (...), "
+                          "so there is no finite geometry to read a pole on",
+                   reason="the squared lengths overflowed the double")
+    assert bp.solve_state(missing) == {
+        "state": "no value", "reason": "lengths overflowed", "iterations": 5}
     assert bp.solve_state({"content": [0, 3, 0], "failed": "band 1 has "
                            "rank 2", "doublet_reads": []}) == {
-        "state": "refused", "reason": None, "iterations": None}
+        "state": "no value", "reason": None, "iterations": None}
+    # a flagged read is a read: it is marked by its solve, as any other
+    flagged = _solved(record, converged=True, iterations=5)
+    flagged["flags"] = [{"name": "not Kontsevich-Segal allowable",
+                         "detail": "margin -0.613"}]
+    assert bp.solve_state(flagged) == {
+        "state": "converged", "reason": None, "iterations": 5}
 
 
 def test_callout_lines():
@@ -518,8 +593,8 @@ def test_callout_lines():
     assert bp.callout_lines({"state": "not converged", "reason": "no descent",
                              "iterations": 12}) == [
         "\u2717 not converged", "no descent", "12 iterations"]
-    assert bp.callout_lines({"state": "refused", "reason": None,
-                             "iterations": None}) == ["\u2717 refused"]
+    assert bp.callout_lines({"state": "no value", "reason": None,
+                             "iterations": None}) == ["\u2717 no value"]
 
 
 def test_a_ratio_row_carries_the_solve_behind_each_pole():
@@ -730,6 +805,83 @@ def test_a_limit_is_carried_only_when_the_user_declares_it():
         bp.default_config([1.0], [1.0], limits={"newton_iterations": 3})
 
 
+def test_the_villain_order_is_an_option_recorded_in_the_config():
+    """M, the order the Villain weight of the holonomy term is summed to
+    (`DECLARED_VILLAIN_ORDER`): an option of the command line, an integer
+    from 1 to `cob.VillainCharacter.maximum_order` = 10 that defaults to 10,
+    recorded in the config under ``villain_order`` and carried into the
+    action's declaration. The config and the declaration refuse an order
+    outside the range by name."""
+    assert cob.VillainCharacter.maximum_order == 10
+    assert bp.DECLARED_VILLAIN_ORDER == 10
+    assert bp.build_parser().parse_args(["run"]).villain_order == 10
+    args = bp.build_parser().parse_args(["run", "--villain-order", "4"])
+    assert args.villain_order == 4 and isinstance(args.villain_order, int)
+    assert bp.default_config([1.0], [1.0])["villain_order"] == 10
+    config = bp.default_config([1.0], [1.0], villain_order=args.villain_order)
+    assert config["villain_order"] == 4
+    assert bp.declared_villain_order(config) == 4
+    assert bp.declared_villain_order({}) == 10
+    assert bp.declared_villain_order(None) == 10
+    for order in (0, 11, -1, 2.5, True):
+        with pytest.raises(ValueError, match="the order of the Villain "
+                                             "weight is an integer from 1 "
+                                             "to 10"):
+            bp.default_config([1.0], [1.0], villain_order=order)
+    spacetime = bp.build_host()
+    assert bp.action_declaration(spacetime, 1.0, 1.0).villain_order == 10
+    declaration = bp.action_declaration(spacetime, 1.0, 1.0, villain_order=4)
+    assert declaration.villain_order == 4
+    assert cob.JointAction(spacetime, declaration).holonomy_truncation() \
+        .order == 4
+    declaration.villain_order = 11
+    with pytest.raises(ValueError, match="the order of the Villain weight "
+                                         "is an integer from 1 to 10; got 11"):
+        cob.JointAction(spacetime, declaration)
+    # the geometric action of the fluctuation elimination and the carrier of
+    # the fingerprint read are built at the config's order
+    assert bp._geometric_action(spacetime, 1.0, 1.0, config) \
+        .holonomy_truncation().order == 4
+
+
+@pytest.mark.parametrize("text", ["0", "11", "-3", "2.5", "ten"])
+def test_a_villain_order_outside_one_to_ten_is_refused_by_name(text, capsys):
+    with pytest.raises(SystemExit) as stop:
+        bp.build_parser().parse_args(["run", "--villain-order", text])
+    assert stop.value.code == 2
+    error = capsys.readouterr().err
+    assert "--villain-order is an integer from 1 to 10" in error
+
+
+def test_main_passes_the_villain_order_to_every_point(cheap):
+    bp.main(["run", "--kappa", "1", "--beta", "1", "--villain-order", "7",
+             "--quiet"])
+    (config,) = cheap
+    assert config["villain_order"] == 7
+
+
+def test_the_isospin_doublet_driver_takes_the_villain_order():
+    """`tessera.drivers.isospin_doublet` offers the same option, an integer
+    from 1 to 10 that defaults to 10, and declares it on the action it reads
+    the host's carrier from. The carrier operator h_1(z, U) does not depend
+    on the holonomy term, so the declared host's carrier at order three is
+    the one at order ten entry for entry."""
+    from tessera.drivers import isospin_doublet
+
+    parser = isospin_doublet.build_parser()
+    assert parser.parse_args(["run"]).villain_order == 10
+    assert parser.parse_args(["run", "--villain-order", "3"]) \
+        .villain_order == 3
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--villain-order", "11"])
+    ten = isospin_doublet.declared_carrier()
+    three = isospin_doublet.declared_carrier(villain_order=3)
+    assert ten.shape == (18, 18)
+    assert np.array_equal(three, ten)
+    with pytest.raises(ValueError, match="integer from 1 to 10"):
+        isospin_doublet.drive(villain_order=0)
+
+
 def test_the_fluctuation_couplings_count_and_shape():
     spacetime = bp.build_host()
     lengths = bp.fluctuation_couplings(spacetime, False)
@@ -766,7 +918,7 @@ def test_the_declarations_carry_the_config():
     assert declaration.holonomy_weight == 3.0
     assert declaration.regge_form == cob.ReggeForm.Primal
     assert declaration.matter_weight == 1.0
-    assert declaration.villain_tolerance == bp.DECLARED_TOLERANCE
+    assert declaration.villain_order == bp.DECLARED_VILLAIN_ORDER == 10
     # kappa = 8 pi G enters through the Regge weight alone, and the record
     # says so
     assert config["fiber_moments"] == "r"

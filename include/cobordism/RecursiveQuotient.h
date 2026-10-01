@@ -190,9 +190,9 @@ class RecursiveQuotient {
       Options();  // out-of-line so Options() can be an in-class default arg
 
       /// Certificate tolerance for `holds()` on the produced certificates.
-      double tolerance{1e-10};
+      double tolerance{1e-15};
       /// Relative rank-revealing threshold for kernel/rank decisions.
-      double rankTolerance{1e-9};
+      double rankTolerance{1e-15};
       /// Dimension at and above which dense kernels refuse. Per-component
       /// interior blocks below it may use dense rank-revealing (complete
       /// orthogonal) solves; at or above it only the sparse paths run.
@@ -449,10 +449,13 @@ class RecursiveQuotient {
       bool semisimple{false};
       /// The distance from the circle to the nearest eigenvalue of \f$ L \f$
       /// or of \f$ L_{II} \f$, inside or outside: the isolation the count
-      /// rests on. A circle passing through an eigenvalue at `rankTolerance`,
-      /// relative to the larger of the radius and that eigenvalue's distance
-      /// from the centre, is refused, so the gap exceeds that whenever the read
-      /// returns. Infinite when neither spectrum has an eigenvalue.
+      /// rests on. An eigenvalue is counted exactly when its distance from the
+      /// centre is below the radius, so a gap at or below `rankTolerance`
+      /// times the larger of the radius and that eigenvalue's distance from
+      /// the centre says that the circle passes through an eigenvalue at the
+      /// rank tolerance and that the count of that eigenvalue rests on a
+      /// comparison inside its rounding. Infinite when neither spectrum has an
+      /// eigenvalue.
       double isolationGap{std::numeric_limits<double>::infinity()};
       /// The largest relative backward error
       /// \f$ \lVert A-QTQ^H\rVert_F/\lVert A\rVert_F \f$ of the Schur
@@ -826,12 +829,13 @@ class RecursiveQuotient {
     /// \f$ L \f$, with the interior block's count \f$ L_{II} \f$ reported
     /// separately and the difference being the winding number of
     /// \f$ \det F_B \f$ about the circle; the geometric multiplicity is
-    /// \f$ \dim\ker F_B(\lambda) \f$. Whether an eigenvalue is inside is
-    /// decided at `Options::rankTolerance`.
+    /// \f$ \dim\ker F_B(\lambda) \f$. An eigenvalue is inside exactly when
+    /// its distance from `lambda` is below `radius`; the count is made
+    /// wherever the circle passes, and `MultiplicityRead::isolationGap`
+    /// reports how close it comes to an eigenvalue.
     /// @throws std::invalid_argument on a non-positive radius;
     ///   std::domain_error on a pencil level, whose spectrum is the set of
-    ///   generalized eigenvalues and is not formed here, and when the circle
-    ///   passes through an eigenvalue at the rank tolerance;
+    ///   generalized eigenvalues and is not formed here;
     ///   std::length_error at or above the dense crossover, where the
     ///   eigenvalues are not formed densely; std::runtime_error when a Schur
     ///   decomposition does not converge.

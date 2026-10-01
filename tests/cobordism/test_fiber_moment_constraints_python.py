@@ -246,8 +246,9 @@ def test_a_full_band_pins_its_trace_with_a_multiplier_of_minus_one():
         3 * band.eigenvalues[0], rel=1e-10)
     # Euclidean to the solve's tolerance
     assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-6)
-    assert bp.hessian_sign(report.force_hessian,
-                           report.force_hessian_scale) == "positive"
+    assert bp.hessian_sign(
+        report.force_hessian, report.force_hessian_scale,
+        RUN.TOLERANCES["hessian_reality_tolerance"]) == "positive"
 
 
 def test_every_pinned_moment_holds_the_host_of_0134_111():
@@ -267,9 +268,10 @@ def test_every_pinned_moment_holds_the_host_of_0134_111():
     assert max(abs(r) for r in report.moment_residuals) == 0.0
     assert (report.jacobian_size, report.jacobian_rank) == (21, 12)
     assert report.moment_scale == pytest.approx(19.371, abs=1e-3)
-    assert bp.hessian_sign(report.force_hessian,
-                           report.force_hessian_scale) in ("positive",
-                                                           "negative")
+    assert bp.hessian_sign(
+        report.force_hessian, report.force_hessian_scale,
+        RUN.TOLERANCES["hessian_reality_tolerance"]) in ("positive",
+                                                         "negative")
 
 
 def test_the_unit_of_the_power_sums_changes_no_solution():

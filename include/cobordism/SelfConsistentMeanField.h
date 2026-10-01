@@ -131,7 +131,7 @@ struct SelfConsistentMeanFieldDeclaration {
   /// The relative separation at or below which two consecutive ordered
   /// eigenvalues belong to one band under `CovarianceRule::BandFilling`:
   /// \f$ |\lambda_{i+1}-\lambda_i|\le\tau\max(1,|\lambda_i|) \f$.
-  double bandTolerance = 1e-8;
+  double bandTolerance = 1e-15;
 
   /// The declared symmetry the band rule reads its bands under, if any: the
   /// operators \f$ D(g) \f$ of a finite group acting on the carrier's cells,
@@ -197,7 +197,7 @@ struct SelfConsistentMeanFieldDeclaration {
   /// fixed point holds exactly at every iterate and the force is the one
   /// condition; the covariance change between iterates is reported, and it
   /// measures the last step rather than a residual.
-  double tolerance = 1e-9;
+  double tolerance = 1e-15;
 
   /// The Newton solve of the geometry.
   ///

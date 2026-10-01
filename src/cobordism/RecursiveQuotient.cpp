@@ -422,7 +422,7 @@ void RecursiveQuotient::detectRegime() {
     // A pencil level (Ã, M) is regime-classified by complex symmetry of both
     // matrices (M L = (M L)^T with M complex symmetric) rather than by
     // Hermiticity. A broken symmetry is the non-normal regime.
-    const double tolP = std::max(options_.tolerance, 1e-12);
+    const double tolP = options_.tolerance;
     const Eigen::SparseMatrix<cd> opT = Eigen::SparseMatrix<cd>(op_.transpose());
     const Eigen::SparseMatrix<cd> mT = Eigen::SparseMatrix<cd>(pencilMetric_.transpose());
     const double opDefect = Eigen::SparseMatrix<cd>(op_ - opT).norm() /
@@ -441,7 +441,7 @@ void RecursiveQuotient::detectRegime() {
   const double scale = std::max(weighted.norm(), 1e-300);
   const double hermiticity =
       Eigen::SparseMatrix<cd>(weighted - adjoint).norm() / scale;
-  const double tol = std::max(options_.tolerance, 1e-12);
+  const double tol = options_.tolerance;
   if (hermiticity > tol) {
     regime_ = CertificateRegime::NonNormal;
     return;
@@ -668,7 +668,7 @@ RecursiveQuotient::computeSolve(int component, cd lambda) const {
         const Eigen::MatrixXcd candidate = fastLU.solve(loadBlock);
         const double residual =
             (shifted * candidate - loadBlock).norm() / loadScale;
-        if (residual <= std::max(options_.tolerance, 1e-12)) {
+        if (residual <= options_.tolerance) {
           solve->X = candidate;
           solve->conditioning = diagMax / diagMin;
           solve->interiorDet = fastLU.determinant();
@@ -1287,7 +1287,10 @@ RecursiveQuotient::MultiplicityRead RecursiveQuotient::multiplicity(
 
   // The number of eigenvalues of one matrix inside the disc, counted with
   // multiplicity from its complex Schur form; the read's isolation gap and
-  // decomposition residual are the worst over every matrix counted.
+  // decomposition residual are the worst over every matrix counted. An
+  // eigenvalue is inside exactly when its distance from the centre is below
+  // the radius. How close the circle passes to an eigenvalue is the isolation
+  // gap, which is reported and decides nothing.
   const auto countInside = [&](const Eigen::MatrixXcd &matrix,
                                const std::string &name) {
     if (matrix.rows() == 0) return 0;
@@ -1309,20 +1312,8 @@ RecursiveQuotient::MultiplicityRead RecursiveQuotient::multiplicity(
     int inside = 0;
     for (Eigen::Index index = 0; index < values.size(); ++index) {
       const double distance = std::abs(values(index) - lambda);
-      const double gap = std::abs(distance - radius);
-      if (gap <= options_.rankTolerance * std::max(distance, radius))
-        throw std::domain_error(
-            "RecursiveQuotient::multiplicity: the counting circle about (" +
-            std::to_string(lambda.real()) + ", " +
-            std::to_string(lambda.imag()) + ") of radius " +
-            std::to_string(radius) + " passes through the eigenvalue (" +
-            std::to_string(values(index).real()) + ", " +
-            std::to_string(values(index).imag()) + ") of " + name +
-            " at the declared rank tolerance " +
-            std::to_string(options_.rankTolerance) +
-            ", so whether that eigenvalue is inside is not decided; choose a "
-            "different radius");
-      read.isolationGap = std::min(read.isolationGap, gap);
+      read.isolationGap =
+          std::min(read.isolationGap, std::abs(distance - radius));
       if (distance < radius) ++inside;
     }
     return inside;

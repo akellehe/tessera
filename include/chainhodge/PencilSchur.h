@@ -410,8 +410,8 @@ class PencilSchur {
   [[nodiscard]] static FeshbachResult feshbach(const Eigen::MatrixXcd &A,
                                                const Eigen::MatrixXcd &M, Complex lambda,
                                                const std::vector<int> &interface,
-                                               double rankTolerance = 1e-12,
-                                               double resonanceRadius = 1e-12);
+                                               double rankTolerance = 1e-15,
+                                               double resonanceRadius = 1e-15);
   /// The same Feshbach complement on the sparse production path: \f$ A \f$ and
   /// \f$ M \f$ are sparse, the interior block is factorized by sparse LU, and
   /// the only dense object formed is the \f$ n \times |B| \f$ block of

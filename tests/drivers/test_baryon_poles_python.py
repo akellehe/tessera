@@ -25,13 +25,28 @@ from tests.drivers import _recursion_run_2026_09_23 as RUN
 
 @pytest.fixture(scope="module")
 def alignment():
-    # at the run's tolerances: the declared 1e-15 degeneracy tolerance splits
-    # the degenerate pairs of the averaged operator, whose eigenvalues agree
-    # to rounding (a few 1e-15)
+    """The aligned frame of the declared host at the declared tolerances."""
+    return bp.aligned_doublet_frame(bp.monopole_support(),
+                                    bp.rotation_group())
+
+
+@pytest.fixture(scope="module")
+def run_alignment():
+    """The aligned frame of the declared host at the recorded run's
+    tolerances, the ones the spin frames below are read at."""
     return bp.aligned_doublet_frame(
         bp.monopole_support(), bp.rotation_group(),
         RUN.TOLERANCES["degeneracy_tolerance"],
-        RUN.TOLERANCES["certificate_tolerance"])
+        RUN.TOLERANCES["certificate_tolerance"],
+        RUN.TOLERANCES["character_tolerance"])
+
+
+def _run_spin_frame(supports, symmetry):
+    """`spin_frame` at the recorded run's tolerances."""
+    return bp.spin_frame(supports, symmetry,
+                         RUN.TOLERANCES["degeneracy_tolerance"],
+                         RUN.TOLERANCES["certificate_tolerance"],
+                         RUN.TOLERANCES["character_tolerance"])
 
 
 # ------------------------------------------------------------------ host
@@ -56,20 +71,17 @@ def test_the_declared_host_has_the_tetrahedral_rotation_group():
     leaves the six equal squared lengths invariant and carries the symmetric
     monopole connection to a gauge-equivalent one on every sheet, with a
     compensation residual at rounding, so the cell's group is the whole
-    tetrahedral group at the run's certificate tolerance and at the declared
-    1e-15 alike."""
+    tetrahedral group at the declared tolerance 1e-15."""
     spacetime = bp.build_host()
     supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
-    for tolerance in (RUN.TOLERANCES["certificate_tolerance"],
-                      bp.DECLARED_TOLERANCE):
-        symmetry = bp.cell_symmetry(spacetime, supports, tolerance)
-        assert symmetry["tetrahedral"] and symmetry["order"] == 12
-        assert symmetry["tolerance"] == tolerance
-        assert symmetry["length_departure"] == 0.0
-        assert symmetry["compensation_residual"] < 1e-15
-        assert [r["rotation"] for r in symmetry["rotations"]] == \
-            [list(g) for g in bp.rotation_group()]
-        assert symmetry["group"][0] == [0, 1, 2, 3]
+    symmetry = bp.cell_symmetry(spacetime, supports)
+    assert symmetry["tetrahedral"] and symmetry["order"] == 12
+    assert symmetry["tolerance"] == bp.DECLARED_TOLERANCE
+    assert symmetry["length_departure"] == 0.0
+    assert symmetry["compensation_residual"] < 1e-15
+    assert [r["rotation"] for r in symmetry["rotations"]] == \
+        [list(g) for g in bp.rotation_group()]
+    assert symmetry["group"][0] == [0, 1, 2, 3]
 
 
 def test_a_cell_with_one_length_changed_keeps_the_rotations_fixing_that_edge():
@@ -84,8 +96,7 @@ def test_a_cell_with_one_length_changed_keeps_the_rotations_fixing_that_edge():
             "links": [complex(u) for u in bp.sheet_links(host, 0)]}
     spacetime = bp.build_host(cell=cell)
     supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
-    symmetry = bp.cell_symmetry(spacetime, supports,
-                                RUN.TOLERANCES["certificate_tolerance"])
+    symmetry = bp.cell_symmetry(spacetime, supports)
     assert not symmetry["tetrahedral"] and symmetry["order"] == 2
     assert symmetry["group"] == [[0, 1, 2, 3], [2, 3, 0, 1]]
     assert symmetry["length_departure"] == pytest.approx(0.5 / 8.5)
@@ -97,11 +108,166 @@ def test_a_cell_with_one_length_changed_keeps_the_rotations_fixing_that_edge():
                for r in symmetry["rotations"])
 
 
+def _one_length_changed():
+    """The declared host with the squared length of the edge (0, 2) alone
+    moved from 8 to 8.5 on every sheet, and its sheets' supports."""
+    host = bp.build_host()
+    cell = {"squared_lengths": [8.0, 8.5, 8.0, 8.0, 8.0, 8.0],
+            "links": [complex(u) for u in bp.sheet_links(host, 0)]}
+    spacetime = bp.build_host(cell=cell)
+    return spacetime, [bp.sheet_support(spacetime, t)
+                       for t in range(bp.SHEETS)]
+
+
+def test_the_spin_of_a_symmetric_cell_is_read_in_its_own_frame(
+        run_alignment):
+    alignment = run_alignment
+    """`spin_frame` on the declared host at the run's tolerances. The cell
+    has all twelve rotations, the spin read of every sheet names the
+    j = 1/2 doublet, and the three sheets, which carry the same tetrahedron,
+    carry the same doublet labels: the three preconditions of the cell's own
+    spin read hold, so the frame is the cell's own and no flag is raised.
+    The sheets carry the fixture's connection, so the twelve actions and the
+    aligned frame of every sheet are those of the declared symmetric host,
+    with the reference doublet the middle carrier (the eigenvalue 4)."""
+    spacetime = bp.build_host()
+    supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
+    tolerance = RUN.TOLERANCES["certificate_tolerance"]
+    symmetry = bp.cell_symmetry(spacetime, supports, tolerance)
+    frame = _run_spin_frame(supports, symmetry)
+    assert frame["name"] == bp.SPIN_FRAME_OF_THE_CELL == \
+        "the relaxed cell's own rotation group"
+    assert frame["flags"] == []
+    assert len(frame["actions"]) == 12 and len(frame["alignments"]) == 3
+    declared = bp.rotation_action([bp.monopole_support()] * bp.SHEETS)
+    for own, host in zip(frame["actions"], declared):
+        assert np.abs(own - host).max() < 1e-14
+    for sheet in frame["alignments"]:
+        assert sheet["reference_carrier"] == 1
+        assert sheet["trialities"] == alignment["trialities"]
+        assert np.allclose(sheet["averaged_eigenvalues"],
+                           alignment["averaged_eigenvalues"], atol=1e-12)
+        assert sheet["intertwining_residual"] < 1e-10
+
+
+def test_the_spin_of_a_cell_without_the_tetrahedral_group_is_read_in_the_host_frame(
+        run_alignment):
+    alignment = run_alignment
+    """`spin_frame` on the cell with one squared length moved from 8 to 8.5.
+    The cell keeps two of the twelve rotations (the test above), so the first
+    precondition of its own spin read does not hold. The read is made in the
+    frame of the declared symmetric host: the actions of the fixture on
+    every sheet and the fixture's aligned frame, the same on the three
+    sheets. The one flag names the precondition and carries the numbers
+    that decided it: two of twelve rotations, the length departure
+    0.5 / 8.5 of the ten rotations that move the changed edge, and a
+    gauge-compensation residual at rounding, because the connection is the
+    symmetric one."""
+    spacetime, supports = _one_length_changed()
+    tolerance = RUN.TOLERANCES["certificate_tolerance"]
+    symmetry = bp.cell_symmetry(spacetime, supports, tolerance)
+    frame = _run_spin_frame(supports, symmetry)
+    assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST == \
+        "the declared symmetric host"
+    (flag,) = frame["flags"]
+    assert flag["name"] == "not tetrahedrally symmetric"
+    assert flag["order"] == 2 and flag["rotations"] == 12
+    assert flag["tolerance"] == tolerance
+    assert flag["length_departure"] == pytest.approx(0.5 / 8.5)
+    assert flag["compensation_residual"] < 1e-15
+    assert flag["detail"].startswith(
+        "the relaxed cell has 2 of the 12 rotations of the tetrahedron as "
+        "symmetries at the certificate tolerance 1e-08 (largest length "
+        "departure 0.0588, ")
+    declared = bp.rotation_action([bp.monopole_support()] * bp.SHEETS)
+    assert len(frame["actions"]) == 12
+    for used, host in zip(frame["actions"], declared):
+        assert np.array_equal(used, host)
+    assert len(frame["alignments"]) == 3
+    for sheet in frame["alignments"]:
+        assert sheet["reference_carrier"] == alignment["reference_carrier"]
+        assert sheet["trialities"] == alignment["trialities"]
+        assert np.array_equal(sheet["frame"], alignment["frame"])
+
+
+def _symmetric_cell():
+    spacetime = bp.build_host()
+    supports = [bp.sheet_support(spacetime, t) for t in range(bp.SHEETS)]
+    tolerance = RUN.TOLERANCES["certificate_tolerance"]
+    return supports, bp.cell_symmetry(spacetime, supports, tolerance)
+
+
+def test_a_cell_whose_spin_read_names_no_doublet_is_read_in_the_host_frame(
+        monkeypatch, run_alignment):
+    """The second precondition of the cell's own spin read: every sheet's
+    spin read names a j = 1/2 doublet. With the read of the cell's own
+    supports replaced by one that names none (`NoSpinorDoublet`), on a cell
+    that has the whole tetrahedral group, the frame is the declared
+    symmetric host's and the one flag is "no j = 1/2 doublet", with the
+    read's own words and the two tolerances it was made at."""
+    alignment = run_alignment
+    supports, symmetry = _symmetric_cell()
+    own = [support for support, _ in supports]
+    real = bp.aligned_doublet_frame
+
+    def read(support, group, degeneracy_tolerance, tolerance,
+             character_tolerance):
+        if any(support is sheet for sheet in own):
+            raise bp.NoSpinorDoublet("the support carries no j = 1/2 "
+                                     "doublet: no band of rank two")
+        return real(support, group, degeneracy_tolerance, tolerance,
+                    character_tolerance)
+    monkeypatch.setattr(bp, "aligned_doublet_frame", read)
+    frame = _run_spin_frame(supports, symmetry)
+    assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST
+    assert frame["flags"] == [{
+        "name": "no j = 1/2 doublet",
+        "detail": "the spin read of the relaxed cell names no reference "
+                  "doublet: the support carries no j = 1/2 doublet: no band "
+                  "of rank two",
+        "degeneracy_tolerance": RUN.TOLERANCES["degeneracy_tolerance"],
+        "tolerance": RUN.TOLERANCES["certificate_tolerance"]}]
+    for sheet in frame["alignments"]:
+        assert np.array_equal(sheet["frame"], alignment["frame"])
+
+
+def test_a_cell_whose_sheets_disagree_on_the_labels_is_read_in_the_host_frame(
+        monkeypatch, run_alignment):
+    """The third precondition of the cell's own spin read: the aligned
+    frames of the sheets carry the same doublet labels. With the read of the
+    third sheet replaced by one whose reference carrier is 0 while the first
+    two keep the host's 1, on a cell that has the whole tetrahedral group,
+    the frame is the declared symmetric host's and the one flag is "the
+    sheets' doublet labels disagree", with the labels of the three sheets."""
+    alignment = run_alignment
+    supports, symmetry = _symmetric_cell()
+    third = supports[2][0]
+    real = bp.aligned_doublet_frame
+
+    def read(support, group, degeneracy_tolerance, tolerance,
+             character_tolerance):
+        out = real(support, group, degeneracy_tolerance, tolerance)
+        if support is third:
+            out = dict(out, reference_carrier=0)
+        return out
+    monkeypatch.setattr(bp, "aligned_doublet_frame", read)
+    frame = _run_spin_frame(supports, symmetry)
+    assert frame["name"] == bp.SPIN_FRAME_OF_THE_HOST
+    (flag,) = frame["flags"]
+    assert flag["name"] == "the sheets' doublet labels disagree"
+    labels = [list(alignment["trialities"]), 1]
+    assert flag["labels"] == [labels, labels,
+                              [list(alignment["trialities"]), 0]]
+    assert str(flag["labels"]) in flag["detail"]
+    assert [sheet["reference_carrier"] for sheet in frame["alignments"]] == \
+        [1, 1, 1]
+
+
 def test_the_sheets_are_isomorphic():
     spacetime = bp.build_host()
     read = obs.SheetedSupport(3, 6).certifyIsomorphism(
         [np.array(bp.sheet_squared_lengths(spacetime, t)) for t in range(3)],
-        [np.array(bp.sheet_links(spacetime, t)) for t in range(3)], 1e-12)
+        [np.array(bp.sheet_links(spacetime, t)) for t in range(3)])
     assert read.isomorphic
 
 
@@ -114,16 +280,25 @@ def test_the_primal_regge_term_is_empty_on_the_host():
 
 
 def test_the_monopole_spin_read(alignment):
+    """The spin read of the declared host at the declared tolerances. The
+    genuine j = 1/2 doublet is the pair at 4, the second of the three
+    carriers. The read finds it as its third band, because the two
+    eigenvalues at 4 - 2/sqrt(3) are computed 3e-15 apart, above the
+    degeneracy tolerance 1e-15, and are read as two bands of rank one. The
+    aligned frame takes the read's band index, 2, as its reference carrier,
+    which is the pair at 4 + 2/sqrt(3)."""
     read = alignment["spin_read"]
     assert read.monopole.monopole_number == 1
     assert read.cocycle.nontrivial
     assert abs(read.cocycle.commutator_phase + 1.0) < 1e-12
     assert read.half_integer_doublet
+    assert [band.dimension for band in read.bands] == [1, 1, 2, 2]
+    assert read.doublet_index == 2
+    assert read.bands[2].coexact and not read.bands[3].coexact
     values = alignment["averaged_eigenvalues"]
     expected = [4 - 2 / np.sqrt(3)] * 2 + [4.0] * 2 + [4 + 2 / np.sqrt(3)] * 2
     assert np.allclose(values, expected, atol=1e-12)
-    # the genuine j = 1/2 doublet is the one at 4
-    assert alignment["reference_carrier"] == 1
+    assert alignment["reference_carrier"] == 2
 
 
 def test_the_doublets_are_aligned_to_one_su2_action(alignment):
@@ -140,7 +315,12 @@ def test_the_one_per_doublet_sector_is_two_halves_and_a_three_halves():
 
 
 def test_contents_carry_the_spins_they_can():
-    for content, half, three in (((3, 0, 0), 0, 4), ((2, 1, 0), 2, 4),
+    """The colour-singlet states of a content split by total spin at the
+    declared spin-sector tolerance 1e-15. (3, 0, 0) has four states of spin
+    3/2 and (1, 1, 1) four of each spin. (2, 1, 0) has two of spin 1/2 and
+    four of spin 3/2, of which three are read: one eigenvalue of J^2 is
+    computed 1.8e-15 from 15/4 and is assigned to neither sector."""
+    for content, half, three in (((3, 0, 0), 0, 4), ((2, 1, 0), 2, 3),
                                  ((1, 1, 1), 4, 4)):
         states, _ = bp.singlet_states(content)
         sectors, _ = bp.spin_sectors(states)
@@ -247,6 +427,7 @@ def test_the_drazin_inverse_integrates_out_exactly_the_coexact_phases(
     _, _, _, problem = host_problem
     drazin = problem["record"]["drazin"]
     assert drazin["coordinates"] == 36
+    assert drazin["zero_by_structure"] is False
     assert drazin["null_dimension"] == 27
     assert drazin["eliminated_dimension"] == 9
     assert drazin["gauge_dimension"] == 9
@@ -312,33 +493,166 @@ def test_the_lengths_only_elimination_is_the_plain_inverse():
                                      regge_hinges="all")
     drazin = problem["record"]["drazin"]
     assert drazin["coordinates"] == 18
+    assert drazin["zero_by_structure"] is False
     assert drazin["null_dimension"] == 0
     assert drazin["eliminated_dimension"] == 18
     assert problem["record"]["ward_identity"] == {"directions": 0}
 
 
-def test_a_lengths_only_elimination_without_an_interior_hinge_is_refused():
+def test_a_lengths_only_elimination_without_an_interior_hinge_eliminates_nothing():
     """The length stiffness is the Regge term's alone. With only the
-    interior hinges in the Regge sum the lone tetrahedron has none, the
-    length block is zero by structure, every coordinate lies in the null
-    space, and the lengths-only elimination is refused by name instead of
-    inverting an empty block."""
-    with pytest.raises(ValueError, match="zero by structure"):
-        _host_problem(1.0, elimination="lengths", regge_hinges="interior")
+    interior hinges in the Regge sum the lone tetrahedron has none, so the
+    18 x 18 length block A is the zero matrix by structure. The Drazin
+    inverse of the zero matrix is the zero matrix: every one of the eighteen
+    coordinates lies in the null space, the reduced coordinates are none (R
+    has no column and R^T A R is the 0 x 0 matrix), and the elimination
+    proceeds with that. No reduced coupling is carried, the induced
+    displacement -A^D <J> is zero, and so are the one-body shift
+    sum_a (A^D <J>)_a O_a and the constant -1/2 <J>^T A^D <J>. The record
+    says the block is zero by structure; its two residuals are zero exactly
+    (A A^D A - A and the rebuilt inverse less A^D are both the zero matrix),
+    the empty reduced stiffness has no condition number, and the projector
+    onto the null space is the identity, idempotent to rounding. With no
+    induced displacement the operator's linear change is zero, so its
+    relative remainder has no value and is recorded as None."""
+    _, _, _, problem = _host_problem(1.0, elimination="lengths",
+                                     regge_hinges="interior")
+    assert problem["stiffness"].shape == (18, 18)
+    assert not problem["stiffness"].any()
+    drazin = problem["record"]["drazin"]
+    assert drazin["zero_by_structure"] is True
+    assert drazin["coordinates"] == 18
+    assert drazin["null_dimension"] == 18
+    assert drazin["eliminated_dimension"] == 0
+    assert drazin["drazin_identity_residual"] == 0.0
+    assert drazin["reduction_residual"] == 0.0
+    assert drazin["reduced_conditioning"] is None
+    assert drazin["projector_idempotency"] < 1e-15
+    assert "gauge_dimension" not in drazin
+    assert problem["drazin"].shape == (18, 18)
+    assert not problem["drazin"].any()
+    assert problem["reduced_stiffness"].shape == (0, 0)
+    assert problem["reduced_couplings"] == []
+    assert len(problem["couplings"]) == 18
+    assert problem["induced"].shape == (18,) and not problem["induced"].any()
+    assert not problem["shift"].any()
+    assert problem["constant"] == 0
+    assert problem["record"]["ward_identity"] == {"directions": 0}
+    truncation = problem["truncation"]
+    assert truncation["induced_displacement_norm"] == 0.0
+    assert truncation["action_quadratic_term"] == 0
+    assert truncation["operator_relative_remainder"] is None
 
 
-def test_a_refused_content_is_recorded_and_the_scan_continues(monkeypatch):
+def test_the_drazin_inverse_of_the_zero_matrix_is_the_zero_matrix():
+    """`drazin_elimination` on the 4 x 4 zero matrix with two pure-gauge
+    directions, e_3 and e_4: A^D is the zero matrix, the basis of the
+    eliminated space has no column, the reduced stiffness is 0 x 0, the
+    null space is all four coordinates and the eliminated space none. The
+    projector onto the null space is the identity, so it reproduces the two
+    gauge directions exactly; the null space is larger than the span of the
+    gauge directions (four against two), so it is recorded as not pure
+    gauge. A nonzero matrix is recorded as not zero by structure:
+    diag(2, 4) has the plain inverse diag(1/2, 1/4)."""
+    stiffness = np.zeros((4, 4), dtype=complex)
+    directions = np.zeros((4, 2), dtype=complex)
+    directions[2, 0] = directions[3, 1] = 1.0
+    drazin, basis, reduced, record = bp.drazin_elimination(
+        stiffness, directions, bp.DECLARED_TOLERANCE)
+    assert drazin.shape == (4, 4) and not drazin.any()
+    assert basis.shape == (4, 0) and reduced.shape == (0, 0)
+    assert record["zero_by_structure"] is True
+    assert record["coordinates"] == 4
+    assert record["null_dimension"] == 4
+    assert record["eliminated_dimension"] == 0
+    assert record["drazin_identity_residual"] == 0.0
+    assert record["reduction_residual"] == 0.0
+    assert record["reduced_conditioning"] is None
+    assert record["gauge_dimension"] == 2
+    assert record["gauge_projector_residual"] < 1e-15
+    assert record["null_space_is_pure_gauge"] is False
+    drazin, basis, reduced, record = bp.drazin_elimination(
+        np.diag([2.0, 4.0]).astype(complex), None,
+        bp.DECLARED_TOLERANCE)
+    assert record["zero_by_structure"] is False
+    assert record["eliminated_dimension"] == 2
+    assert np.allclose(drazin, np.diag([0.5, 0.25]), atol=1e-15)
+
+
+def test_a_content_without_a_value_is_recorded_and_the_scan_continues(
+        monkeypatch):
+    """A content at which the library names no value (here a band that
+    cannot hold the occupation) is recorded with the library's message and
+    no pole, and the scan goes on to the next content. A content whose read
+    is flagged is a content like any other and is named among the flagged
+    ones."""
     def evaluate(content, kappa, beta, config):
         if tuple(content) == (0, 3, 0):
             raise ValueError("band 1 has rank 2")
-        return {"content": list(content), "doublet_reads": []}
+        flags = ([{"name": "not Kontsevich-Segal allowable", "detail": "d"}]
+                 if tuple(content) == (0, 2, 1) else [])
+        return {"content": list(content), "doublet_reads": [],
+                "flags": flags}
     monkeypatch.setattr(bp, "evaluate_content", evaluate)
-    config = bp.default_config([0.5], [0.5],
-                               selected_contents=[(0, 3, 0), (1, 1, 1)])
+    config = bp.default_config(
+        [0.5], [0.5], selected_contents=[(0, 3, 0), (1, 1, 1), (0, 2, 1)])
     point = bp.scan_point(0.5, 0.5, config)
     assert point["failed_contents"] == [[0, 3, 0]]
+    assert point["flagged_contents"] == [[0, 2, 1]]
     assert point["contents"][0]["failed"] == "band 1 has rank 2"
+    assert point["contents"][0]["doublet_reads"] == []
+    assert "reason" not in point["contents"][0]
     assert point["contents"][1]["content"] == [1, 1, 1]
+    assert bp.point_lines(point)[0] == (
+        "kappa=0.5 beta=0.5: 3 contents, 1 without a value, 1 flagged; one "
+        "line per (content, doublet content) pair, poles s with "
+        "multiplicity x")
+    (line,) = bp.content_pair_lines(point["contents"][0], "  ")
+    assert line == "  content [0, 3, 0]: no value: band 1 has rank 2"
+
+
+def test_a_solve_that_overflowed_the_double_has_no_value(monkeypatch):
+    """A mean-field solve that stopped because a squared length passed the
+    largest finite double leaves no finite geometry, so there is no operator
+    to read a pole on. `evaluate_content` raises `ReadWithoutValue` with the
+    reason by name, and `scan_point` records the content with that reason,
+    the message, the solve's record and no pole; the report says "no value"
+    and the plots mark the content so, with the short name of the reason.
+    The solve is replaced by its report, since no declared host overflows."""
+    import types
+
+    report = types.SimpleNamespace(
+        stop_reason=cob.RelaxationStop.LengthRunaway,
+        stop_detail="|z| is not finite on edge 3")
+    solve = {"converged": False, "force_norm": 1.0, "iterations": 7}
+    monkeypatch.setattr(bp, "relax_content",
+                        lambda content, kappa, beta, config:
+                        (None, None, report))
+    monkeypatch.setattr(bp, "relaxation_record",
+                        lambda report, hessian_reality_tolerance: dict(solve))
+    name = "the squared lengths overflowed the double"
+    message = (name + " (|z| is not finite on edge 3), so there is no "
+               "finite geometry to read a pole on")
+    assert bp.geometry_without_value(report) == (name, message)
+    config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)])
+    with pytest.raises(bp.ReadWithoutValue, match="no finite geometry"):
+        bp.evaluate_content((2, 0, 1), 1.0, 1.0, config)
+    point = bp.scan_point(1.0, 1.0, config)
+    assert point["failed_contents"] == [[2, 0, 1]]
+    assert point["flagged_contents"] == []
+    (record,) = point["contents"]
+    assert record["failed"] == message and record["reason"] == name
+    assert record["relaxation"] == solve
+    assert record["doublet_reads"] == []
+    (line,) = bp.content_pair_lines(record, "  ")
+    assert line == ("  content [2, 0, 1]: no value: " + message + "; mean "
+                    "field converged False (force norm 1 after 7 iterations)")
+    assert bp.point_lines(point)[0].startswith(
+        "kappa=1 beta=1: 1 contents, 1 without a value, 0 flagged; ")
+    assert bp.solve_state(record) == {
+        "state": "no value", "reason": "lengths overflowed", "iterations": 7}
+    _, _, slots = bp.pole_marks([("201", record)])
+    assert slots == [(0.0, "no value")]
 
 
 def test_the_elimination_rule_is_declared_and_recorded():
@@ -763,7 +1077,12 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
     (1, 1, 1) into distinct poles. Each pole is read with its own spinor,
     spin-lift and colour certificates, and the lowest pole's are repeated
     beside it. Every vector of the sector is a colour singlet of type 2 and
-    of sharp spin 1/2 under the lift, so every certificate holds."""
+    of spin 1/2 under the lift. At the declared certificate tolerance 1e-15
+    the colour certificate holds exactly and the spinor certificate fails on
+    every pole: the residuals of the isotypic projector equations are
+    1.3e-15 to 1.5e-15, the rounding of the projector. The spin-lift
+    residuals are 1.3e-16 to 1.0e-15, and the certificate holds on three of
+    the four poles."""
     matrices, _ = projectors
     _, triality, sectors = bp.doublet_sectors([1, 1, 1],
                                               alignment["trialities"])
@@ -773,23 +1092,26 @@ def test_every_pole_of_a_sector_carries_its_own_certificates(alignment,
     operator = np.diag(rng.uniform(1.0, 2.0, size=len(
         bp.occupation_basis()))).astype(complex)
     entry = bp.sector_entry(bp.SPIN_HALF, triality, sector,
-                            (("quasi_free", operator),), matrices,
-                            RUN.TOLERANCES)
+                            (("quasi_free", operator),), matrices)
     read = entry["quasi_free"]
     poles = read["poles"]
     assert len(poles) >= 2
     assert len(read["pole_certificates"]) == len(poles)
+    assert len(poles) == 4
     for certificate in read["pole_certificates"]:
-        assert certificate["sharp_spinor"]
+        assert not certificate["sharp_spinor"]
         assert certificate["spinor_type"] == "2"
-        assert certificate["spinor_right_residual"] < 1e-9
-        assert certificate["spinor_left_residual"] < 1e-9
+        assert 1e-15 < certificate["spinor_right_residual"] < 1e-14
+        assert 1e-15 < certificate["spinor_left_residual"] < 1e-14
         assert abs(certificate["spinor_weight"] - 1.0) < 1e-9
-        assert certificate["spin_lift_sharp"]
-        assert certificate["colour_casimir_residual"] < 1e-10
+        assert certificate["spin_lift_right_residual"] < 2e-15
+        assert certificate["spin_lift_left_residual"] < 2e-15
+        assert certificate["colour_casimir_residual"] == 0.0
+    assert [c["spin_lift_sharp"] for c in read["pole_certificates"]] == [
+        True, True, False, True]
     # without projectors the spinor certificate is unmeasured, not false
     bare = bp.sector_entry(bp.SPIN_HALF, triality, sector,
-                           (("quasi_free", operator),), config=RUN.TOLERANCES)
+                           (("quasi_free", operator),))
     assert bare["quasi_free"]["pole_certificates"][0]["sharp_spinor"] is None
     assert bare["quasi_free"]["pole_certificates"][0]["spin_lift_sharp"]
     lowest = poles.index(read["lowest_pole"])
@@ -806,8 +1128,7 @@ def test_the_anchor_atlas_of_the_declared_host(alignment):
     every sheet, with the connection-dressed covariance and the transition
     cocycle at machine precision and the invariant coordinates attached; on
     the symmetric host its profile has one modulus on every face."""
-    anchor = bp.anchor_atlas_read(bp.build_host(), [alignment] * bp.SHEETS,
-                                  RUN.TOLERANCES["certificate_tolerance"])
+    anchor = bp.anchor_atlas_read(bp.build_host(), [alignment] * bp.SHEETS)
     assert anchor["anchored"] and anchor["anchoring_faces"] == 4
     assert anchor["covariance_residual"] < 1e-12
     assert anchor["transition_cocycle_residual"] < 1e-12
@@ -866,7 +1187,12 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
     """The stellar subdivision of the declared host: fifteen vertices, thirty
     edges and twelve tetrahedra; each sheet's boundary faces, their
     holonomies and the unit monopole through them are unchanged, and the new
-    edges carry the centroid's lengths and the trivial link."""
+    edges carry the centroid's lengths and the trivial link. The refined
+    support's projective class is nontrivial. Its spin read at the declared
+    tolerances (1e-15) finds no j = 1/2 doublet: of the five doubly
+    degenerate eigenvalues of its averaged edge Laplacian only the lowest
+    pair is read as one band of rank two, which is not coexact, and the
+    other four pairs are read as bands of rank one."""
     refined, data = bp.refined_host(bp.build_host())
     assert len(refined.getVertexList().toVector()) == 15
     assert len(refined.getEdgeList().toVector()) == 30
@@ -882,55 +1208,73 @@ def test_the_refined_host_keeps_the_boundary_and_its_monopole():
         read = support.monopoleNumber()
         assert read.monopole_number == 1 and read.odd
         spin = support.spinRead(bp.refined_rotation_group())
-        assert spin.cocycle.nontrivial and spin.half_integer_doublet
+        assert spin.cocycle.nontrivial and not spin.half_integer_doublet
+        assert [band.dimension for band in spin.bands] == [2] + [1] * 8
+        assert spin.doublet_index == len(spin.bands) == 9
+        assert not any(band.coexact for band in spin.bands)
 
 
 def test_the_spectral_fingerprint_of_the_declared_host():
-    """Quark condition 7 on the declared host: under the declared odd
-    relabeling every spectrum, the doublet's energy and its edge weights are
-    unchanged to rounding, and under the declared refinement the doublet's
-    type is carried by a single rank-two band of the refined action whose
-    restriction to the shared edges is the original doublet; the energy
-    shift under refinement is reported, not gated."""
-    config = bp.default_config([1.0], [1.0], tolerances=RUN.TOLERANCES)
+    """Quark condition 7 on the declared host at the declared tolerances
+    (1e-15). The reference doublet is found on the host, with weight 1/3 on
+    every edge. Under the declared odd relabeling the spectrum of h_1 moves
+    by 2.1e-15 of its scale, above the certificate tolerance, and that of
+    its T-average by 7.3e-16; the relabeled support's spin read names no
+    doublet, so the relabeling does not hold. The refined support's spin
+    read names no doublet either, so the refinement does not hold and its
+    overlap is not read. Both pieces of evidence are measured and fail."""
+    config = bp.default_config([1.0], [1.0])
     read = bp.spectral_fingerprint_read(bp.build_host(), 1.0, 1.0, config)
     assert read["doublet_found"] and read["sheet"] == 0
+    assert read["tolerance"] == 1e-15
     assert np.allclose(read["doublet_weights"], [1.0 / 3.0] * 6)
     relabeling = read["relabeling"]
     assert relabeling["permutation"] == [1, 0, 2, 3]
-    assert relabeling["held"]
     assert relabeling["monopole_number"] == -1  # the orientation flips
-    for key in ("spectrum_shift", "averaged_spectrum_shift",
-                "doublet_weight_shift", "doublet_energy_shift"):
-        assert relabeling[key] < 1e-12
+    assert not relabeling["doublet_found"] and not relabeling["held"]
+    assert 1e-15 < relabeling["spectrum_shift"] < 1e-14
+    assert relabeling["averaged_spectrum_shift"] < 1e-14
+    assert "doublet_energy_shift" not in relabeling
     refinement = read["refinement"]
-    assert refinement["doublet_found"] and refinement["held"]
+    assert not refinement["doublet_found"] and not refinement["held"]
     assert refinement["monopole_number"] == 1
-    assert refinement["isotypic_dimension"] == 2
-    assert refinement["refined_rank"] == 2
-    assert refinement["overlap"] > 1.0 - 1e-9
-    assert refinement["energy_shift"] > 0.0
+    assert refinement["overlap_floor"] == bp.DECLARED_REFINEMENT_OVERLAP
+    assert "overlap" not in refinement
     evidence = bp.fingerprint_evidence(read)
     assert [e.name for e in evidence] == ["refinement-stability",
                                           "relabeling-stability"]
-    assert [e.held for e in evidence] == [True, True]
+    assert [e.held for e in evidence] == [False, False]
     assert bp.fingerprint_text(read).startswith(
-        "spectral fingerprint: relabeling stable")
+        "spectral fingerprint: relabeling unstable; refinement unstable (no "
+        "spinor doublet on the refined support)")
     assert [e.held for e in bp.fingerprint_evidence(None)] == [None, None]
     assert bp.fingerprint_text(None) == "spectral fingerprint unread"
 
 
-# ------------------------------------------- refusals after the mean field
+# --------------------------------------------- flags after the mean field
 
 
-def test_a_relaxed_cell_without_the_tetrahedral_group_is_refused_by_name():
+def _poles_of(record):
+    """Every pole of a content record, over its doublet contents, spins and
+    columns."""
+    return [pole for read in record["doublet_reads"]
+            for entry in read["sectors"].values()
+            for name in bp.COLUMNS for pole in entry[name]["poles"]]
+
+
+def test_a_relaxed_cell_without_the_tetrahedral_group_is_read_in_the_host_frame():
     """(0123, 201) of the recursion's tick-0 run with the occupied fiber
     pinned: the joint Newton converges, and the relaxed cell has lost every
     rotation but the identity (squared lengths that differ by two thirds of
-    the largest, a gauge-compensation residual of order one), so the spin
-    read, which needs the whole tetrahedral group, is refused by name.
-    `scan_point` records the refusal with the solve's record and the
-    symmetry read, and the content supplies no pole."""
+    the largest, a gauge-compensation residual of order one). The first
+    precondition of the cell's own spin read does not hold, so the spin is
+    read in the frame of the declared symmetric host and the content is
+    flagged "not tetrahedrally symmetric" with the numbers of the symmetry
+    read. The geometry is Kontsevich-Segal allowable, so that is the one
+    flag. The content is read like any other: it is not among the contents
+    with no value, it has the ten doublet contents (the triples of
+    occupations of 2, 2', 2'' that sum to three), each with its sectors and
+    their poles, and its line in the report lists the flag and the frame."""
     from tessera.drivers import recursion as R
 
     config = bp.default_config([1.0], [1.0], selected_contents=[(2, 0, 1)],
@@ -938,29 +1282,61 @@ def test_a_relaxed_cell_without_the_tetrahedral_group_is_refused_by_name():
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config)
-    assert point["failed_contents"] == [[2, 0, 1]]
+    assert point["failed_contents"] == []
+    assert point["flagged_contents"] == [[2, 0, 1]]
     (record,) = point["contents"]
-    assert record["refusal"] == "not tetrahedrally symmetric"
-    assert record["failed"].startswith(
-        "the spin read is refused: the relaxed cell has 1 of the 12 rotations "
-        "of the tetrahedron as symmetries at the certificate tolerance")
-    assert record["relaxation"]["band_selection"] == "continuation"
-    symmetry = record["symmetry"]
+    assert "failed" not in record and "reason" not in record
+    (flag,) = record["flags"]
+    assert flag["name"] == "not tetrahedrally symmetric"
+    assert flag["detail"].startswith(
+        "the relaxed cell has 1 of the 12 rotations of the tetrahedron as "
+        "symmetries at the certificate tolerance")
+    assert flag["order"] == 1 and flag["rotations"] == 12
+    assert flag["tolerance"] == RUN.TOLERANCES["certificate_tolerance"]
+    assert flag["length_departure"] > 0.5
+    assert flag["compensation_residual"] > 1.0
+    relaxation = record["relaxation"]
+    assert relaxation["band_selection"] == "continuation"
+    assert relaxation["converged"]
+    assert relaxation["spin_frame"] == bp.SPIN_FRAME_OF_THE_HOST == \
+        "the declared symmetric host"
+    symmetry = relaxation["symmetry"]
     assert symmetry["order"] == 1 and symmetry["group"] == [[0, 1, 2, 3]]
-    assert symmetry["length_departure"] > 0.5
-    assert symmetry["compensation_residual"] > 1.0
-    assert record["doublet_reads"] == []
+    assert symmetry["length_departure"] == flag["length_departure"]
+    assert symmetry["compensation_residual"] == flag["compensation_residual"]
+    # the frames recorded are the declared host's, the same on every sheet,
+    # with the reference doublet the middle carrier
+    assert [f["reference_carrier"] for f in relaxation["frames"]] == [1] * 3
+    assert len({tuple(f["trialities"]) for f in relaxation["frames"]}) == 1
+    # the poles are read: ten doublet contents, each with its sectors
+    assert [read["doublet_content"] for read in record["doublet_reads"]] == \
+        [list(c) for c in bp.contents()]
+    assert all(read["sectors"] for read in record["doublet_reads"])
+    assert len(_poles_of(record)) > 0
+    lines = bp.point_lines(point)
+    assert lines[0].startswith(
+        "kappa=1 beta=1: 1 contents, 0 without a value, 1 flagged; ")
+    assert "; flagged: not tetrahedrally symmetric (the relaxed cell has 1 " \
+        "of the 12 rotations" in lines[1]
+    assert lines[1].endswith(
+        "; spin read in the frame of the declared symmetric host")
+    text = R._content_line({"cell": [0, 1, 2, 3]}, record)
+    assert "): read, flagged: not tetrahedrally symmetric (" in text
+    # the plots mark a flagged content by its solve, as any other
+    assert bp.solve_state(record)["state"] == "converged"
 
 
-def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name():
+def test_a_read_on_lengths_that_grew_without_bound_is_flagged_by_name():
     """(0123, 201) of the recursion's tick-0 run: the content occupies the
     host's negative band, whose force contracts the cell, and the joint
     Newton follows it until the residual is at its floor on the held set,
-    three decades of length beyond the host. `scan_point` records the
-    content as refused on that geometry, which is not Kontsevich-Segal
-    allowable, with the solve's record (the band selection, the iterations,
-    the force, why it stopped, every iterate), and it supplies no pole; the
-    report prints the refusal with the solve on the content's line."""
+    three decades of length beyond the host. That geometry is finite, so it
+    is read, and it is not Kontsevich-Segal allowable, so the content is
+    flagged with that name, the margin and the tolerance the margin was
+    compared with; the flags of the geometry come first in the record. The
+    record carries the solve (the band selection, the iterations, the force,
+    why it stopped, every iterate) and the ten doublet contents, and the
+    report prints the flag on the content's line."""
     from tessera.drivers import recursion as R
     from tests.drivers import _recursion_run_2026_09_23 as RUN
 
@@ -971,14 +1347,27 @@ def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name():
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     point = bp.scan_point(1.0, 1.0, config)
-    assert point["failed_contents"] == [[2, 0, 1]]
+    assert point["failed_contents"] == []
+    assert point["flagged_contents"] == [[2, 0, 1]]
     (record,) = point["contents"]
-    assert record["refusal"] == "not Kontsevich-Segal allowable"
-    assert record["failed"].startswith(
-        "the pole read is refused: the geometry the mean-field solve reached "
-        "is not Kontsevich-Segal allowable")
-    assert record["doublet_reads"] == []
+    assert "failed" not in record
+    flag = record["flags"][0]
+    assert flag["name"] == "not Kontsevich-Segal allowable"
+    assert flag["detail"].startswith(
+        "the geometry the mean-field solve reached is not Kontsevich-Segal "
+        "allowable (margin ")
     solve = record["relaxation"]
+    assert flag["kontsevich_segal_margin"] == \
+        solve["kontsevich_segal_margin"] < 0
+    assert flag["tolerance"] == RUN.TOLERANCES["allowability_tolerance"]
+    # every further flag is one of the spin read's
+    assert {f["name"] for f in record["flags"][1:]} <= {
+        "not tetrahedrally symmetric", "no j = 1/2 doublet",
+        "the sheets' doublet labels disagree"}
+    assert solve["spin_frame"] in (bp.SPIN_FRAME_OF_THE_CELL,
+                                   bp.SPIN_FRAME_OF_THE_HOST)
+    assert (solve["spin_frame"] == bp.SPIN_FRAME_OF_THE_HOST) == \
+        (len(record["flags"]) == 2)
     assert solve["band_selection"] == "continuation"
     assert solve["converged"] is False
     floor = "the residual is at its floor on the held set"
@@ -986,19 +1375,23 @@ def test_a_read_on_lengths_that_grew_without_bound_is_refused_by_name():
     assert solve["iterations"] == len(solve["trace"]) - 1
     assert solve["largest_length_ratio"] > 1e3
     assert all("newton" in entry for entry in solve["trace"][:-1])
-    (line,) = bp.content_pair_lines(record, "  ")
-    assert line.startswith("  content [2, 0, 1]: refused: the pole read is "
-                           "refused: the geometry the mean-field solve "
-                           "reached is not Kontsevich-Segal allowable")
-    assert "mean field converged False" in line
-    assert "; stopped: " + floor + " (" in line
+    assert [read["doublet_content"] for read in record["doublet_reads"]] == \
+        [list(c) for c in bp.contents()]
+    lines = bp.point_lines(point)
+    assert lines[0].startswith(
+        "kappa=1 beta=1: 1 contents, 0 without a value, 1 flagged; ")
+    assert lines[1].startswith("  content [2, 0, 1] mean field converged "
+                               "False")
+    assert "; stopped: " + floor + " (" in lines[1]
+    assert "; flagged: not Kontsevich-Segal allowable (the geometry the " \
+        "mean-field solve reached is not Kontsevich-Segal allowable" \
+        in lines[1]
     text = R._content_line({"cell": [0, 1, 2, 3]}, record)
-    assert "failed: the pole read is refused: the geometry the mean-field " \
-        "solve reached is not Kontsevich-Segal allowable" in text
+    assert "): read, flagged: not Kontsevich-Segal allowable (" in text
     assert "; stopped: " + floor + " (" in text
-    assert bp.point_lines(point)[0] == (
-        "kappa=1 beta=1: 1 contents, 1 refused; one line per (content, "
-        "doublet content) pair, poles s with multiplicity x")
+    assert bp.solve_state(record) == {
+        "state": "not converged", "reason": "held floor",
+        "iterations": solve["iterations"]}
 
 
 def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
@@ -1018,7 +1411,8 @@ def test_the_declared_read_pins_every_moment_of_the_occupied_fiber():
     config["host_cell"] = RUN.HOST_CELLS[(0, 1, 2, 3)]
     config["held_sectors"] = R.held_sectors([[0, 1, 2, 3]], [1], 4)
     _, _, report = bp.relax_content((0, 3, 0), 1.0, 1.0, config)
-    solve = bp.relaxation_record(report)
+    solve = bp.relaxation_record(
+        report, RUN.TOLERANCES["hessian_reality_tolerance"])
     assert solve["converged"] and solve["fiber_rank"] == 3
     assert solve["fiber_pinning"] == "power-sums"
     assert solve["fiber_moments"] == 3 and len(solve["multipliers"]) == 3

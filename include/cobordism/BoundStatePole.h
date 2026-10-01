@@ -31,7 +31,7 @@ struct BoundStatePoleConfig {
   /// invertibility of the metric), and two eigenvalues whose distance is at or
   /// below this fraction of that scale belong to one cluster and form one
   /// pole. No decision is made at any other tolerance.
-  double rankTolerance = 1e-10;
+  double rankTolerance = 1e-15;
   /// The free threshold the binding shift is measured against: the complex
   /// spectral value at which the cluster's content is unbound. Empty leaves
   /// the binding shift unreported, since no threshold is derivable from the
@@ -52,14 +52,26 @@ struct BoundStatePoleRead {
   /// times this form one pole.
   double scale = std::numeric_limits<double>::quiet_NaN();
 
-  /// The distinct zeros \f$ s_C \f$ of \f$ D_C \f$: the clusters of
-  /// eigenvalues of the pencil \f$ (A,M) \f$ that the interior block does not
-  /// carry, ascending by (real part, imaginary part). A cluster is a set of
-  /// eigenvalues connected by distances at or below `rankTolerance` times
-  /// `scale`; its value is the trace of its Schur block over its size, which
-  /// is exactly the repeated eigenvalue when the cluster is one and lies
-  /// within `clusterSpread` of every member otherwise.
+  /// The clusters of eigenvalues of the pencil \f$ (A,M) \f$, ascending by
+  /// (real part, imaginary part). A cluster that no eigenvalue of the
+  /// interior block meets is a zero \f$ s_C \f$ of \f$ D_C \f$. A cluster
+  /// that an interior eigenvalue meets is reported with the others and
+  /// flagged in `atInteriorPole`. A cluster is a set of eigenvalues connected
+  /// by distances at or below `rankTolerance` times `scale`; its value is the
+  /// trace of its Schur block over its size, which is exactly the repeated
+  /// eigenvalue when the cluster is one and lies within `clusterSpread` of
+  /// every member otherwise.
   std::vector<std::complex<double>> poles{};
+  /// Whether an eigenvalue of the interior pencil \f$ (A_{II},M_{II}) \f$
+  /// lies within `rankTolerance` times `scale` of a member of each pole's
+  /// cluster. Such a point is a pole of \f$ F_C \f$ and lies outside the
+  /// domain Section 13.3 continues \f$ F_C \f$ on, so the read does not
+  /// establish what order \f$ D_C \f$ has there: the cluster's value, its
+  /// multiplicity in the pencil, its Jordan structure and its residue matrix
+  /// are those of the pencil's eigenvalue and are reported as such, and
+  /// "eigenvalue-at-interior-pole" is named in `failedCertificates`. Parallel
+  /// to `poles`.
+  std::vector<bool> atInteriorPole{};
   /// The algebraic multiplicity of each pole: the size of its cluster, which
   /// is the dimension of the generalized eigenspace the pole's spectral
   /// projector projects onto. Parallel to `poles`.
@@ -103,7 +115,9 @@ struct BoundStatePoleRead {
   /// interior it is minus the spectral projector itself. This is the pole
   /// residue the whitepaper reports beside the pole, and it is a matrix
   /// rather than a number so that a multiple pole's local data is retained
-  /// rather than summarized.
+  /// rather than summarized. For a pole flagged in `atInteriorPole` it is the
+  /// same matrix, the interface block of the residue of the full resolvent
+  /// \f$ (A-sM)^{-1} \f$ at the pencil's eigenvalue.
   std::vector<std::vector<std::complex<double>>> residue{};
   /// The Frobenius norm of each residue. Parallel to `poles`.
   std::vector<double> residueNorm{};
@@ -132,8 +146,9 @@ struct BoundStatePoleRead {
   /// no response to read); "eigenvalue-at-interior-pole" (an eigenvalue of
   /// the pencil within `rankTolerance` times `scale` of an eigenvalue of the
   /// interior block: the point lies outside the domain Section 13.3 continues
-  /// \f$ F_C \f$ on, so whatever order \f$ D_C \f$ has there is not a pole of
-  /// the read and it is not reported); and "jordan-structure-unresolved" (the
+  /// \f$ F_C \f$ on, so the read does not establish what order \f$ D_C \f$
+  /// has there; the cluster is reported among `poles` with its entry of
+  /// `atInteriorPole` true); and "jordan-structure-unresolved" (the
   /// ranks of the powers of a cluster's nilpotent part at `rankTolerance` are
   /// not the rank sequence of a nilpotent matrix, so that cluster's Jordan
   /// block sizes are unmeasured and its `jordanBlocks` entry is empty, while
@@ -181,10 +196,12 @@ struct BoundStatePoleRead {
 /// singular value of \f$ T \f$ are one pole, and a cluster is the transitive
 /// closure of that relation. The eigenvalues of the interior pencil
 /// \f$ (A_{II},M_{II}) \f$ are read the same way; a cluster of \f$ T \f$ that
-/// meets one of them lies outside the domain the response is continued on and
-/// is named rather than reported.
+/// meets one of them lies outside the domain the response is continued on. It
+/// is reported like every other cluster, with its entry of
+/// `BoundStatePoleRead::atInteriorPole` true and the failure
+/// "eigenvalue-at-interior-pole" named.
 ///
-/// For each remaining cluster the Schur form is reordered so that the cluster
+/// For each cluster the Schur form is reordered so that the cluster
 /// leads and its spectral projector \f$ \Pi \f$ follows from one Sylvester
 /// solve (`chainhodge::rieszProjector`); the projector's rank is the algebraic
 /// multiplicity, and the residue of \f$ F_C^{-1} \f$ is its interface block

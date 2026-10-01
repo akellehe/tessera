@@ -578,14 +578,41 @@ class TestMultiplicity(unittest.TestCase):
         self.assertEqual(read.algebraic, 1)
         self.assertEqual(read.isolationGap, 0.3)
 
-    def test_contour_through_spectrum_is_refused(self):
+    def test_a_contour_through_the_spectrum_is_counted_and_reported(self):
+        """The count of diag(1, 1, 3) inside the circle of radius 2 about 1,
+        which passes exactly through the eigenvalue 3 (kept coordinates 0
+        and 1, interior coordinate 2 with the eigenvalue 3).
+
+        An eigenvalue is inside exactly when its distance from the centre is
+        below the radius. The two eigenvalues 1 are at distance 0 and are
+        counted; the eigenvalue 3 is at distance 2.0, which is not below the
+        radius 2.0, so it is counted neither in L nor in the interior block:
+        algebraic 2, interior winding 0, response winding 2. The isolation
+        gap is the distance from the circle to the nearest eigenvalue,
+        |2.0 - 2.0| = 0 exactly (every number here is a binary fraction), and
+        that zero is the report that the circle passes through an
+        eigenvalue. The Schur form of a diagonal matrix is the matrix, so
+        the decomposition residual is zero and the count's certificate
+        holds."""
         L = np.diag([1.0, 1.0, 3.0])
         q = cob.RecursiveQuotient.overMatrix(
             _flat(L), 3, [], [[0, 1, 2], [0], [1]])
-        # radius 2.0 puts the eigenvalue 3 exactly on the circle about 1, so
-        # whether it is inside is not decided: refused by name.
-        with self.assertRaisesRegex(ValueError, "passes through the eigenvalue"):
-            q.multiplicity(1.0 + 0j, 2.0)
+        read = q.multiplicity(1.0 + 0j, 2.0)
+        self.assertEqual(read.algebraic, 2)
+        self.assertEqual(read.interiorWinding, 0)
+        self.assertEqual(read.responseWinding, 2)
+        self.assertEqual(read.isolationGap, 0.0)
+        self.assertEqual(read.contourRadius, 2.0)
+        self.assertEqual(read.decompositionResidual, 0.0)
+        self.assertTrue(read.certificate.holds(), read.certificate.describe())
+        # a radius one unit in the last place above 2 has the eigenvalue 3
+        # inside, in L and in the interior block alike: the count changes
+        # with the comparison, and the gap is the 4.4e-16 between them
+        read = q.multiplicity(1.0 + 0j, float(np.nextafter(2.0, 3.0)))
+        self.assertEqual(read.algebraic, 3)
+        self.assertEqual(read.interiorWinding, 1)
+        self.assertEqual(read.responseWinding, 2)
+        self.assertEqual(read.isolationGap, np.nextafter(2.0, 3.0) - 2.0)
 
     def test_a_non_positive_radius_is_refused(self):
         q = cob.RecursiveQuotient.overMatrix(

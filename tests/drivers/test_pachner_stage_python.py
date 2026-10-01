@@ -23,14 +23,12 @@ from tessera import cobordism as cob
 from tessera.drivers import emergence as em
 from tessera.drivers import recursion as R
 
-from tests.drivers import _recursion_run_2026_09_23 as RUN
-
 MC = cob.MultiCobordism
 PACHNER_KINDS = {"add_at", "remove_at", "flip_at", "iflip_at"}
 
 
 def _base():
-    config = R.default_config(tolerances=RUN.TOLERANCES)
+    config = R.default_config()
     cells, z, links, _ = R.level_zero(config)
     return config, cells, z, links
 

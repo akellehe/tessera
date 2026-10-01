@@ -16,13 +16,13 @@ factorization ``det P = det P_II det F_C``, the zeros of ``D_C`` on a finite
 complex are exactly the eigenvalues of the full pencil that are not eigenvalues
 of the interior block, with matching multiplicities. The read is that statement
 computed: the eigenvalues of ``M^-1 A`` from its complex Schur form, clustered
-at the declared rank tolerance, less those the interior pencil carries. Both
-halves are checked against an independent eigendecomposition: every full
-eigenvalue the interior does not carry is a reported pole at which ``D_C``
-vanishes, the interior eigenvalues are listed as the poles of ``F_C`` and none
-of them is reported as a zero, and an eigenvalue the interior carries is named
-rather than reported, because the domain the response is continued on excludes
-it.
+at the declared rank tolerance, each cluster saying whether the interior pencil
+carries it. Both halves are checked against an independent eigendecomposition:
+every full eigenvalue the interior does not carry is a reported pole at which
+``D_C`` vanishes, the interior eigenvalues are listed as the poles of ``F_C``,
+and an eigenvalue of the pencil that the interior carries is reported with its
+flag ``at_interior_pole`` and the named failure, because the domain the
+response is continued on excludes it.
 
 THE DERIVATIVE IS ANALYTIC. ``F_C'(s)`` is the closed form that ``dP/ds = -M``
 forces; it carries no finite difference and no step size, and it is checked
@@ -190,6 +190,7 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
             self.assertLess(abs(BSP.determinant(
                 self.operator, self.metric, self.interface, pole)), 1e-10)
         self.assertEqual(list(read.multiplicity), [1, 1, 1, 1])
+        self.assertEqual(list(read.at_interior_pole), [False] * 4)
         self.assertEqual(list(read.simple), [True] * 4)
         self.assertEqual(list(read.geometric_multiplicity), [1, 1, 1, 1])
         self.assertEqual([list(b) for b in read.jordan_blocks], [[1]] * 4)
@@ -211,18 +212,56 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
             for interior in read.interior_poles:
                 self.assertGreater(abs(pole - interior), 0.2)
 
-    def test_an_eigenvalue_the_interior_carries_is_named_not_reported(self):
+    def test_an_eigenvalue_the_interior_carries_is_reported_with_its_flag(self):
         """``diag(1, 1)`` onto coordinate 0 has the response ``1 - s``,
         whose zero sits at the interior eigenvalue 1, outside the domain the
-        response is continued on: the read names it and reports no pole,
-        while the interior pole is listed."""
+        response is continued on. The read reports that eigenvalue as a pole
+        with its flag and names the failure, and the interior pole is listed.
+
+        The pencil's two eigenvalues 1 are equal exactly, so they are one
+        cluster: the pole is 1 with multiplicity two in the pencil (the
+        response's own zero and the interior's eigenvalue), cluster spread
+        zero, and two Jordan blocks of size one because the block is
+        diagonal. The cluster is the whole spectrum, so its spectral
+        projector is the identity and the residue, minus the interface block
+        of the projector for the identity metric, is -1 on the one interface
+        coordinate, of rank one. It is the only pole, so its separation is
+        infinite."""
         read = BSP.poles(np.diag([1.0, 1.0]).astype(complex),
                          np.eye(2, dtype=complex), [0], _config())
         self.assertEqual(read.failed_certificates,
                          ["eigenvalue-at-interior-pole"])
-        self.assertEqual(read.poles, [])
+        self.assertEqual(list(read.poles), [1.0])
+        self.assertEqual(list(read.at_interior_pole), [True])
+        self.assertEqual(list(read.multiplicity), [2])
+        self.assertEqual(list(read.simple), [False])
+        self.assertEqual(list(read.geometric_multiplicity), [2])
+        self.assertEqual([list(b) for b in read.jordan_blocks], [[1, 1]])
+        self.assertEqual(list(read.cluster_spread), [0.0])
+        self.assertEqual([list(r) for r in read.residue], [[-1.0]])
+        self.assertEqual(list(read.residue_rank), [1])
+        self.assertEqual(list(read.subspace_residual), [0.0])
+        self.assertEqual(list(read.separation), [math.inf])
         self.assertEqual(list(read.interior_poles), [1.0])
         self.assertEqual(list(read.interior_multiplicity), [1])
+
+    def test_a_pole_at_an_interior_eigenvalue_is_flagged_beside_the_others(self):
+        """``diag(1, 2, 2)`` onto coordinates 0 and 1, with the interior
+        coordinate 2: the pencil's eigenvalues are 1 and the double 2, and
+        the interior block's is 2. The pole 1 is a zero of ``D_C`` that the
+        interior does not carry, so its flag is false; the pole 2 has
+        multiplicity two in the pencil and sits at the interior eigenvalue,
+        so its flag is true. Both are reported, ascending, and the failure
+        is named once."""
+        read = BSP.poles(np.diag([1.0, 2.0, 2.0]).astype(complex),
+                         np.eye(3, dtype=complex), [0, 1], _config())
+        self.assertEqual(list(read.poles), [1.0, 2.0])
+        self.assertEqual(list(read.at_interior_pole), [False, True])
+        self.assertEqual(list(read.multiplicity), [1, 2])
+        self.assertEqual(list(read.separation), [1.0, 1.0])
+        self.assertEqual(read.failed_certificates,
+                         ["eigenvalue-at-interior-pole"])
+        self.assertEqual(list(read.interior_poles), [2.0])
 
     def test_the_bound_state_below_the_threshold_is_certified(self):
         """The lowest pole is the declared bound state -2.5 to rounding; its
@@ -274,7 +313,7 @@ class TheZerosAreThePencilEigenvaluesTest(unittest.TestCase):
         """The read has exactly two declared parameters: the rank tolerance
         and the optional free threshold."""
         config = cob.BoundStatePoleConfig()
-        self.assertEqual(config.rank_tolerance, 1e-10)
+        self.assertEqual(config.rank_tolerance, 1e-15)
         self.assertIsNone(config.free_threshold)
         self.assertEqual(
             sorted(name for name in dir(config) if not name.startswith("_")),
@@ -370,16 +409,24 @@ class AMultiplePoleIsRetainedTest(unittest.TestCase):
         self.assertEqual([list(b) for b in read.jordan_blocks], [[2, 1], [1]])
         self.assertEqual(list(read.residue_rank), [3, 1])
 
-    def test_a_coupling_below_the_tolerance_is_no_jordan_block(self):
+    def test_a_coupling_above_the_tolerance_is_a_jordan_block(self):
         """``[[2, 1e-12], [0, 2]]`` has the largest singular value 2 to one
         part in 1e-24, so its nilpotent part scaled by that value has the one
-        singular value 5e-13, at or below the rank tolerance 1e-10: at the
-        declared tolerance the block is semisimple, with two Jordan blocks of
-        size one."""
+        singular value 5e-13, above the declared rank tolerance 1e-15: at
+        the declared tolerance the pole 2 has algebraic multiplicity two and
+        geometric multiplicity one, one Jordan block of size two. A coupling
+        of 1e-16, whose scaled singular value 5e-17 is below the tolerance,
+        leaves the block semisimple, with two Jordan blocks of size one."""
         operator = np.array([[2.0, 1e-12], [0.0, 2.0]], dtype=complex)
         read = BSP.poles(operator, np.eye(2, dtype=complex), [0, 1],
                          _config())
         self.assertEqual(read.failed_certificates, [])
+        self.assertEqual(list(read.multiplicity), [2])
+        self.assertEqual(list(read.geometric_multiplicity), [1])
+        self.assertEqual([list(b) for b in read.jordan_blocks], [[2]])
+        operator = np.array([[2.0, 1e-16], [0.0, 2.0]], dtype=complex)
+        read = BSP.poles(operator, np.eye(2, dtype=complex), [0, 1],
+                         _config())
         self.assertEqual(list(read.multiplicity), [2])
         self.assertEqual(list(read.geometric_multiplicity), [2])
         self.assertEqual([list(b) for b in read.jordan_blocks], [[1, 1]])

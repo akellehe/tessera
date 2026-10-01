@@ -165,225 +165,379 @@ std::vector<::tessera::mesh::Simplex *> primalHinges(
 
 namespace {
 
-/// The largest term count the tail certification may raise \f$ M \f$ to.
-constexpr std::size_t kVillainTermCeiling = 100000;
+/// \f$ u=2^{-53} \f$, the unit roundoff of double precision: half the machine
+/// epsilon, the largest relative error of one correctly rounded operation.
+constexpr double kUnitRoundoff = 0.5 * std::numeric_limits<double>::epsilon();
 
-/// How far below the truncation bound \f$ |W| \f$ may fall before it is no
-/// longer certified nonzero: a value within this many tail bounds of zero is
-/// indistinguishable from a zero of the infinite series.
-constexpr double kVillainZeroMargin = 1e3;
+/// The next double above \p value: an upper bound of the exact result of the
+/// one rounded operation that produced \p value, since that result lies
+/// within half a unit in the last place of it. Underflow is covered, because
+/// the next double above zero is the least subnormal number.
+double roundedUp(double value) {
+  return std::nextafter(value, std::numeric_limits<double>::infinity());
+}
 
-/// \f$ c_R \f$: the multiple of the series' uncertainty (tail bound plus
-/// machine epsilon times the sum of the moduli of the kept terms) within which
-/// the imaginary part of \f$ W \f$ on the unit circle is rounding. The kept
-/// terms are formed by repeated multiplication, so the \f$ m \f$-th carries a
-/// relative rounding of order \f$ m\varepsilon \f$, and their sum adds one
-/// rounding per term: the imaginary part of the computed sum is bounded by a
-/// small multiple of \f$ M\varepsilon\sum|q^{m^2}F^m| \f$, with \f$ M \f$ the
-/// largest \f$ |m| \f$ kept. \f$ M \f$ stays below a few hundred for every
-/// coupling below \f$ 10^3 \f$ at the declared tolerances, so this margin
-/// leaves room above that bound, and it is the same multiple the nonzero test
-/// uses.
-constexpr double kVillainRealityMargin = 1e3;
+/// The next double toward zero below a non-negative \p value: a lower bound
+/// of the exact non-negative result of the one rounded operation that
+/// produced \p value.
+double roundedDown(double value) { return std::nextafter(value, 0.0); }
+
+/// An upper bound of \f$ \gamma_k=ku/(1-ku) \f$. The product \f$ ku \f$ and
+/// the difference \f$ 1-ku \f$ are exact in double precision for every count
+/// below \f$ 2^{52} \f$, so the quotient is the one rounded operation.
+double gammaBound(int count) {
+  const double scaled = static_cast<double>(count) * kUnitRoundoff;
+  return roundedUp(scaled / (1.0 - scaled));
+}
+
+/// A finite nonzero complex number as \f$ (x+iy)\,2^{e} \f$ with
+/// \f$ \tfrac12\le\max(|x|,|y|)<1 \f$. The scaling is by a power of two and
+/// is exact unless the smaller component underflows.
+struct ScaledComplex {
+  double real = 0.0;
+  double imaginary = 0.0;
+  int exponent = 0;
+};
+
+ScaledComplex scaledComplex(complexd value) {
+  ScaledComplex scaled;
+  std::frexp(std::max(std::abs(value.real()), std::abs(value.imag())),
+             &scaled.exponent);
+  scaled.real = std::scalbn(value.real(), -scaled.exponent);
+  scaled.imaginary = std::scalbn(value.imag(), -scaled.exponent);
+  return scaled;
+}
+
+/// A lower and an upper bound of the modulus of a complex number with finite
+/// components, from the scaled squares, their sum, its root and the scaling
+/// back, each rounded downward for the one and upward for the other.
+struct ModulusBounds {
+  double lower = 0.0;
+  double upper = 0.0;
+};
+
+ModulusBounds modulusBounds(complexd value) {
+  const ScaledComplex scaled = scaledComplex(value);
+  const double realSquare = scaled.real * scaled.real;
+  const double imaginarySquare = scaled.imaginary * scaled.imaginary;
+  ModulusBounds bounds;
+  bounds.lower = roundedDown(std::scalbn(
+      roundedDown(std::sqrt(roundedDown(roundedDown(realSquare) +
+                                        roundedDown(imaginarySquare)))),
+      scaled.exponent));
+  bounds.upper = roundedUp(std::scalbn(
+      roundedUp(std::sqrt(roundedUp(roundedUp(realSquare) +
+                                    roundedUp(imaginarySquare)))),
+      scaled.exponent));
+  return bounds;
+}
+
+/// \f$ 1/F=\bar s/|s|^2\cdot2^{-e} \f$ from the scaled \f$ F=s\,2^{e} \f$:
+/// two squares, their sum and one division per component, so each component
+/// carries three roundings (`VillainCharacter`, the rounding bound).
+complexd complexReciprocal(complexd value) {
+  const ScaledComplex scaled = scaledComplex(value);
+  const double square = scaled.real * scaled.real +
+                        scaled.imaginary * scaled.imaginary;
+  return complexd{std::scalbn(scaled.real / square, -scaled.exponent),
+                  std::scalbn(-scaled.imaginary / square, -scaled.exponent)};
+}
+
+/// The complex product formed as \f$ (ac-bd,\ ad+bc) \f$, whose relative
+/// error is at most \f$ \sqrt2\,\gamma_2 \f$ (Higham, Lemma 3.5).
+complexd complexProduct(complexd left, complexd right) {
+  return complexd{left.real() * right.real() - left.imag() * right.imag(),
+                  left.real() * right.imag() + left.imag() * right.real()};
+}
+
+/// Whether both components of a complex number are finite.
+bool finiteComplex(complexd value) {
+  return std::isfinite(value.real()) && std::isfinite(value.imag());
+}
 
 /// A number as text with three significant digits (printf's "%.3g"), for the
 /// messages of a refusal: `std::to_string` prints six fixed decimals and would
-/// show a rounding scale of 1e-15 as zero.
+/// show a rounding bound of 1e-15 as zero.
 std::string threeDigits(double value) {
   char buffer[32];
   std::snprintf(buffer, sizeof buffer, "%.3g", value);
   return buffer;
 }
 
-/// The largest distance from one of a ratio of consecutive \f$ W \f$ values
-/// that the radial continuation accepts, so the principal logarithm of every
-/// accepted ratio is the increment of the continued logarithm.
-constexpr double kVillainRatioBound = 0.25;
+/// A complex number as text with every digit of its two doubles (printf's
+/// "%.17g"), so that a refusal names the point it refuses.
+std::string pointText(complexd value) {
+  char buffer[80];
+  std::snprintf(buffer, sizeof buffer, "(%.17g, %.17g)", value.real(),
+                value.imag());
+  return buffer;
+}
 
-/// The smallest step of the radial continuation, as a fraction of the path.
-constexpr double kVillainMinimumStep = 1e-12;
+void requireHolonomy(complexd holonomy, const char *caller) {
+  if (!finiteComplex(holonomy) || holonomy == complexd{0.0, 0.0})
+    throw std::invalid_argument(
+        std::string("VillainCharacter::") + caller +
+        ": the face holonomy must be a finite nonzero complex number");
+}
 
 }  // namespace
 
-VillainCharacter::VillainCharacter(double beta, double tolerance)
-    : beta_(beta), tolerance_(tolerance) {
+VillainCharacter::VillainCharacter(double beta, int order)
+    : beta_(beta), order_(order) {
   if (!(beta > 0.0) || !std::isfinite(beta))
     throw std::invalid_argument(
         "VillainCharacter: the heat-kernel coupling beta must be positive and "
         "finite; got " + std::to_string(beta));
-  if (!(tolerance > 0.0) || !(tolerance < 1.0))
+  if (order < 1 || order > maximumOrder)
     throw std::invalid_argument(
-        "VillainCharacter: the relative coefficient tolerance must lie in "
-        "(0, 1); got " + std::to_string(tolerance));
-  q_ = std::exp(-1.0 / (2.0 * beta_));
-  // M_0: the least m >= 1 with exp(-m^2/(2 beta)) < tolerance.
-  declaredTerms_ = 1;
-  while (std::exp(-static_cast<double>(declaredTerms_ * declaredTerms_) /
-                  (2.0 * beta_)) >= tolerance_)
-    ++declaredTerms_;
+        "VillainCharacter: the order of the Villain weight is an integer "
+        "from 1 to " + std::to_string(maximumOrder) + "; got " +
+        std::to_string(order));
+  coefficients_.reserve(static_cast<std::size_t>(order_) + 1);
+  for (int m = 0; m <= order_; ++m) {
+    const double md = static_cast<double>(m);
+    coefficients_.push_back(std::exp(-md * md / (2.0 * beta_)));
+  }
   const VillainSeries trivial = series(complexd{1.0, 0.0});
   secondMoment_ = trivial.second.real() / trivial.value.real();
 }
 
 VillainSeries VillainCharacter::series(complexd holonomy) const {
-  const double modulus = std::abs(holonomy);
-  if (!(modulus > 0.0) || !std::isfinite(modulus))
-    throw std::invalid_argument(
-        "VillainCharacter::series: the face holonomy must be a finite nonzero "
-        "complex number");
-  const double r = std::max(modulus, 1.0 / modulus);
-  const double logR = std::log(r);
-
-  // rho_k(M), the bound on every tail ratio past M (see VillainSeries).
-  auto ratio = [&](std::size_t m, int k) {
-    const double grow = std::pow(static_cast<double>(m + 2) /
-                                     static_cast<double>(m + 1),
-                                 k);
-    return grow * std::exp(-static_cast<double>(2 * m + 3) / (2.0 * beta_) +
-                           logR);
-  };
-  // 2 t_{M+1} with t_m = m^k q^{m^2} r^m, the first omitted pair's bound.
-  auto leading = [&](std::size_t m, int k) {
-    const double next = static_cast<double>(m + 1);
-    return 2.0 * std::pow(next, k) *
-           std::exp(-next * next / (2.0 * beta_) + next * logR);
-  };
+  requireHolonomy(holonomy, "series");
+  const complexd inverse = complexReciprocal(holonomy);
+  const ModulusBounds modulus = modulusBounds(holonomy);
+  const double inverseModulus = roundedUp(1.0 / modulus.lower);
 
   VillainSeries out;
+  out.order = order_;
   out.value = complexd{1.0, 0.0};
-  double firstMagnitude = 0.0;
-  double secondMagnitude = 0.0;
-  const complexd inverse = complexd{1.0, 0.0} / holonomy;
+  out.magnitude = 1.0;
   complexd up{1.0, 0.0};
   complexd down{1.0, 0.0};
-  // Terms are added until M reaches M_0 and, for the holonomy at hand, the
-  // geometric tail ratios are at most 1/2 and every tail bound is below the
-  // declared tolerance relative to the sum of the moduli of the kept terms of
-  // its series. Away from the unit circle the terms q^{m^2} r^m peak near
-  // m = beta log r rather than at m = 0, so M_0 alone does not bound them.
-  for (std::size_t m = 1;; ++m) {
-    if (m > kVillainTermCeiling)
-      throw std::invalid_argument(
-          "VillainCharacter::series: no term count up to " +
-          std::to_string(kVillainTermCeiling) +
-          " certifies the tail at this holonomy");
-    up *= holonomy;
-    down *= inverse;
+  double upModulus = 1.0;
+  double downModulus = 1.0;
+  for (int m = 1; m <= order_; ++m) {
+    up = complexProduct(up, holonomy);
+    down = complexProduct(down, inverse);
     const double md = static_cast<double>(m);
-    const double coefficient = std::exp(-md * md / (2.0 * beta_));
-    const double size = coefficient * (std::abs(up) + std::abs(down));
-    out.value += coefficient * (up + down);
-    out.magnitude += size;
-    out.first += coefficient * md * (up - down);
-    firstMagnitude += md * size;
-    out.second += coefficient * md * md * (up + down);
-    secondMagnitude += md * md * size;
-    if (m < declaredTerms_ || ratio(m, 2) > 0.5) continue;
-    const double valueTail = leading(m, 0) / (1.0 - ratio(m, 0));
-    const double firstTail = leading(m, 1) / (1.0 - ratio(m, 1));
-    const double secondTail = leading(m, 2) / (1.0 - ratio(m, 2));
-    if (valueTail > tolerance_ * out.magnitude ||
-        firstTail > tolerance_ * std::max(firstMagnitude, out.magnitude) ||
-        secondTail > tolerance_ * std::max(secondMagnitude, out.magnitude))
-      continue;
-    out.termCount = m;
-    out.valueTail = valueTail;
-    out.firstTail = firstTail;
-    out.secondTail = secondTail;
-    return out;
+    const double coefficient = coefficients_[static_cast<std::size_t>(m)];
+    const double firstCoefficient = coefficient * md;
+    const double secondCoefficient = firstCoefficient * md;
+    const complexd sum{up.real() + down.real(), up.imag() + down.imag()};
+    const complexd difference{up.real() - down.real(),
+                              up.imag() - down.imag()};
+    out.value = complexd{out.value.real() + coefficient * sum.real(),
+                         out.value.imag() + coefficient * sum.imag()};
+    out.first =
+        complexd{out.first.real() + firstCoefficient * difference.real(),
+                 out.first.imag() + firstCoefficient * difference.imag()};
+    out.second = complexd{out.second.real() + secondCoefficient * sum.real(),
+                          out.second.imag() + secondCoefficient * sum.imag()};
+    // The sums of the moduli of the terms, |F|^m and |F|^-m from the bounds
+    // of |F|, every operation rounded upward.
+    upModulus = roundedUp(upModulus * modulus.upper);
+    downModulus = roundedUp(downModulus * inverseModulus);
+    const double size = roundedUp(upModulus + downModulus);
+    out.magnitude = roundedUp(out.magnitude + roundedUp(coefficient * size));
+    const double firstWeight = roundedUp(coefficient * md);
+    const double secondWeight = roundedUp(firstWeight * md);
+    out.firstMagnitude =
+        roundedUp(out.firstMagnitude + roundedUp(firstWeight * size));
+    out.secondMagnitude =
+        roundedUp(out.secondMagnitude + roundedUp(secondWeight * size));
   }
+  out.roundingBound =
+      finiteComplex(out.value)
+          ? roundedUp(gammaBound(6 * order_ + 1) * out.magnitude)
+          : std::numeric_limits<double>::infinity();
+
+  // The reported tails (see VillainSeries). log|F| is read from the scaled
+  // modulus, so it is finite for every finite nonzero holonomy.
+  const ScaledComplex scaled = scaledComplex(holonomy);
+  const double logR = std::abs(
+      std::log(std::sqrt(scaled.real * scaled.real +
+                         scaled.imaginary * scaled.imaginary)) +
+      static_cast<double>(scaled.exponent) * std::numbers::ln2);
+  // t_m = m^k q^{m^2} r^m, with the index as a double.
+  auto term = [&](double m, int k) {
+    return std::pow(m, k) * std::exp(-m * m / (2.0 * beta_) + m * logR);
+  };
+  // rho_k(N), the bound on every ratio t_{m+1}/t_m past N.
+  auto ratio = [&](double index, int k) {
+    return std::pow((index + 2.0) / (index + 1.0), k) *
+           std::exp(-(2.0 * index + 3.0) / (2.0 * beta_) + logR);
+  };
+  auto tail = [&](int k) {
+    double listed = 0.0;
+    double index = static_cast<double>(order_);
+    // The ratio bound decreases to zero in the index, so the loop ends at the
+    // least index at which the geometric bound exists.
+    while (!(ratio(index, k) < 1.0)) {
+      index += 1.0;
+      listed += 2.0 * term(index, k);
+    }
+    return listed + 2.0 * term(index + 1.0, k) / (1.0 - ratio(index, k));
+  };
+  out.valueTail = tail(0);
+  out.firstTail = tail(1);
+  out.secondTail = tail(2);
+  return out;
 }
 
-namespace {
-
-/// Whether a truncated value of \f$ W \f$ is certified nonzero: it exceeds, by
-/// the declared margin, its tail bound plus the rounding scale of the sum
-/// (machine epsilon times the sum of the moduli of the kept terms).
-bool certifiedNonzero(const VillainSeries &series) {
-  const double uncertainty =
-      series.valueTail +
-      std::numeric_limits<double>::epsilon() * series.magnitude;
-  return std::abs(series.value) > kVillainZeroMargin * uncertainty;
+bool VillainCharacter::certifiedNonzero(const VillainSeries &point) {
+  // A sum that is not finite carries an infinite bound, which nothing exceeds.
+  return modulusBounds(point.value).lower > point.roundingBound;
 }
 
-}  // namespace
+double VillainCharacter::secondDerivativeBound(double upperModulus,
+                                               double lowerModulus) const {
+  const double inverseModulus = roundedUp(1.0 / lowerModulus);
+  double upPower = 1.0;
+  double downPower = 1.0;
+  double bound = 0.0;
+  for (int m = 1; m <= order_; ++m) {
+    const double md = static_cast<double>(m);
+    upPower = roundedUp(upPower * upperModulus);
+    downPower = roundedUp(downPower * inverseModulus);
+    const double weight = roundedUp(
+        roundedUp(coefficients_[static_cast<std::size_t>(m)] * md) * md);
+    bound = roundedUp(bound +
+                      roundedUp(weight * roundedUp(upPower + downPower)));
+  }
+  return bound;
+}
+
+double VillainCharacter::changeBound(const VillainSeries &node,
+                                     double secondBound, double length) const {
+  // |DW_M| at the node: the modulus of the computed sum plus its rounding
+  // bound gamma_{6M+2} sum |m| c_m |F|^m.
+  const double slope = roundedUp(
+      modulusBounds(node.first).upper +
+      roundedUp(gammaBound(6 * order_ + 2) * node.firstMagnitude));
+  const double linear = roundedUp(slope * length);
+  const double quadratic =
+      roundedUp(0.5 * roundedUp(roundedUp(secondBound * length) * length));
+  return roundedUp(linear + quadratic);
+}
 
 complexd VillainCharacter::logarithm(complexd holonomy) const {
-  const double modulus = std::abs(holonomy);
-  if (!(modulus > 0.0) || !std::isfinite(modulus))
-    throw std::invalid_argument(
-        "VillainCharacter::logarithm: the face holonomy must be a finite "
-        "nonzero complex number");
-  // The start of the radial path, on the unit circle, where W is real and
-  // positive: its principal logarithm is the real logarithm of a positive
-  // number, and it is the branch the continuation carries. The truncated sum
-  // is real there in exact arithmetic (its terms pair into cosines), so its
-  // computed imaginary part is compared with the series' own uncertainty, the
-  // tail bound plus the rounding scale, and not with W itself, which can be
-  // small beside the terms it is summed from.
-  const complexd direction = holonomy / modulus;
-  const VillainSeries start = series(direction);
-  const double uncertainty =
-      start.valueTail +
-      std::numeric_limits<double>::epsilon() * start.magnitude;
-  if (std::abs(start.value.imag()) > kVillainRealityMargin * uncertainty)
-    throw std::logic_error(
-        "VillainCharacter::logarithm: W on the unit circle has imaginary "
-        "part " + threeDigits(start.value.imag()) +
-        ", beyond the declared reality "
-        "margin " + threeDigits(kVillainRealityMargin) +
-        " times the series' uncertainty " + threeDigits(uncertainty) +
-        ", which contradicts its Poisson form");
-  if (!(start.value.real() > kVillainZeroMargin * uncertainty))
+  requireHolonomy(holonomy, "logarithm");
+  const ModulusBounds modulus = modulusBounds(holonomy);
+  const ScaledComplex scaled = scaledComplex(holonomy);
+  // s_0 = fl(1/|F|), the scale of the first node.
+  const double startScale =
+      1.0 / std::scalbn(std::sqrt(scaled.real * scaled.real +
+                                  scaled.imaginary * scaled.imaginary),
+                        scaled.exponent);
+  if (!(startScale > 0.0) || !std::isfinite(startScale))
     throw std::domain_error(
-        "VillainCharacter::logarithm: W on the unit circle at this argument, " +
-        threeDigits(start.value.real()) + ", is not resolved above " +
-        threeDigits(kVillainZeroMargin) + " times the series' uncertainty " +
-        threeDigits(uncertainty) + ", so log W has no certified value there");
-  complexd accumulated{std::log(start.value.real()), 0.0};
-  const double radial = std::log(modulus);
-  if (radial == 0.0) return accumulated;
+        "VillainCharacter::logarithm: the scale 1/|F| that carries the "
+        "holonomy " + pointText(holonomy) +
+        " to the unit circle is not a finite positive double, so the radial "
+        "path has no first node and log W_M has no certified value there");
 
-  auto at = [&](double t) {
-    const VillainSeries point = series(direction * std::exp(t * radial));
-    if (!certifiedNonzero(point))
-      throw std::domain_error(
-          "VillainCharacter::logarithm: W has a zero on the radial path to "
-          "this holonomy, so log W has no value on the branch real on the "
-          "unit circle there");
-    return point.value;
+  // |F| s_0, the modulus of the ray's point at the first node, bounded above
+  // and below.
+  const double startUpper = roundedUp(modulus.upper * startScale);
+  const double startLower = roundedDown(modulus.lower * startScale);
+  // omega = u + eta / min(|F|, |F| s_0) and epsilon = omega / (1 - omega):
+  // the distance of a computed node from the point of the ray it stands for.
+  const double relativeDistance = roundedUp(
+      kUnitRoundoff +
+      roundedUp(std::numeric_limits<double>::denorm_min() /
+                std::min(modulus.lower, startLower)));
+  const double epsilon =
+      roundedUp(relativeDistance / roundedDown(1.0 - relativeDistance));
+  // e^{epsilon} <= 1/(1 - epsilon) and e^{-epsilon} >= 1 - epsilon.
+  const double widen = roundedUp(1.0 / roundedDown(1.0 - epsilon));
+  const double narrow = roundedDown(1.0 - epsilon);
+
+  auto node = [&](double scale) {
+    return scale == 1.0 ? holonomy
+                        : complexd{holonomy.real() * scale,
+                                   holonomy.imag() * scale};
   };
 
-  double t = 0.0;
-  double step = 0.125;
-  complexd previous = start.value;
-  while (t < 1.0) {
-    step = std::min(step, 1.0 - t);
-    const complexd middle = at(t + 0.5 * step);
-    const complexd end = at(t + step);
-    const complexd firstHalf = middle / previous;
-    const complexd secondHalf = end / middle;
-    if (std::abs(firstHalf - 1.0) > kVillainRatioBound ||
-        std::abs(secondHalf - 1.0) > kVillainRatioBound) {
-      step *= 0.5;
-      if (step < kVillainMinimumStep)
+  // The start: the stretch of the ray between the unit circle and the first
+  // node, of Maurer-Cartan length at most lambda, plus epsilon to the node.
+  VillainSeries current = series(node(startScale));
+  const double lambda =
+      std::max({roundedUp(startUpper - 1.0),
+                roundedUp(roundedUp(1.0 / startLower) - 1.0), 0.0});
+  const double startBound = roundedUp(
+      changeBound(current,
+                  secondDerivativeBound(
+                      roundedUp(std::max(1.0, startUpper) * widen),
+                      roundedDown(std::min(1.0, startLower) * narrow)),
+                  roundedUp(lambda + epsilon)) +
+      current.roundingBound);
+  if (std::abs(current.value.imag()) > startBound)
+    throw std::logic_error(
+        "VillainCharacter::logarithm: the computed W_M at the start of the "
+        "radial path to the holonomy " + pointText(holonomy) +
+        " has imaginary part " + threeDigits(current.value.imag()) +
+        ", beyond its bound " + threeDigits(startBound) +
+        ", which contradicts the reality of W_M on the unit circle");
+  if (!(current.value.real() > startBound))
+    throw std::domain_error(
+        "VillainCharacter::logarithm: W_M at the point of the unit circle on "
+        "the ray of the holonomy " + pointText(holonomy) + ", " +
+        threeDigits(current.value.real()) + ", does not exceed its bound " +
+        threeDigits(startBound) +
+        ": W_M is zero, negative or below its rounding there, so log W_M has "
+        "no value real on the unit circle on this ray");
+  complexd accumulated{std::log(current.value.real()), 0.0};
+
+  double currentScale = startScale;
+  std::optional<VillainSeries> end;
+  while (currentScale != 1.0) {
+    // The first candidate is the whole remaining path; a candidate that is
+    // not certified is replaced by the geometric mean of the two scales.
+    if (!end) end = series(holonomy);
+    double candidateScale = 1.0;
+    VillainSeries candidate = *end;
+    for (;;) {
+      const double larger = std::max(currentScale, candidateScale);
+      const double smaller = std::min(currentScale, candidateScale);
+      const double secondBound = secondDerivativeBound(
+          roundedUp(roundedUp(modulus.upper * larger) * widen),
+          roundedDown(roundedDown(modulus.lower * smaller) * narrow));
+      // L = (s_+ - s_-)/s_- + 2 epsilon >= log(s_+/s_-) + 2 epsilon.
+      const double length =
+          roundedUp(roundedUp(roundedUp(larger - smaller) / smaller) +
+                    roundedUp(2.0 * epsilon));
+      const double required =
+          roundedUp(roundedUp(changeBound(current, secondBound, length) +
+                              current.roundingBound) +
+                    candidate.roundingBound);
+      if (required < modulusBounds(current.value).lower) break;
+      const double middle =
+          std::sqrt(currentScale) * std::sqrt(candidateScale);
+      if (!(smaller < middle && middle < larger))
         throw std::domain_error(
-            "VillainCharacter::logarithm: the radial continuation cannot "
-            "resolve W on the path to this holonomy");
-      continue;
+            "VillainCharacter::logarithm: the radial path to the holonomy " +
+            pointText(holonomy) + " meets a zero of W_M at the resolution of "
+            "double precision near " + pointText(node(currentScale)) +
+            ", where |W_M| = " + threeDigits(std::abs(current.value)) +
+            ": no step from there is certified, so log W_M has no value on "
+            "the branch real on the unit circle");
+      candidateScale = middle;
+      candidate = series(node(candidateScale));
     }
-    accumulated += std::log(firstHalf) + std::log(secondHalf);
-    t += step;
-    previous = end;
-    step = std::min(2.0 * step, 0.125);
+    accumulated += std::log(candidate.value / current.value);
+    currentScale = candidateScale;
+    current = candidate;
   }
+  if (!certifiedNonzero(current))
+    throw std::domain_error(
+        "VillainCharacter::logarithm: W_M is not certified nonzero at the "
+        "holonomy " + pointText(holonomy) + ": |W_M| = " +
+        threeDigits(std::abs(current.value)) +
+        " does not exceed its rounding bound " +
+        threeDigits(current.roundingBound) +
+        ", so log W_M has no certified value there");
   return accumulated;
 }
-
-double VillainCharacter::realityMargin() noexcept {
-  return kVillainRealityMargin;
-}
-
 
 complexd VillainCharacter::potential(complexd holonomy) const {
   return -matchedWeight() * logarithm(holonomy);
@@ -394,10 +548,15 @@ namespace {
 VillainSeries certifiedSeries(const VillainCharacter &character,
                               complexd holonomy) {
   VillainSeries point = character.series(holonomy);
-  if (!certifiedNonzero(point))
+  if (!VillainCharacter::certifiedNonzero(point))
     throw std::domain_error(
-        "VillainCharacter: W is not certified nonzero at this holonomy, so the "
-        "potential's derivatives W'/W and W''/W are not defined there");
+        "VillainCharacter: W_M is not certified nonzero at the holonomy " +
+        pointText(holonomy) + ": |W_M| = " +
+        threeDigits(std::abs(point.value)) +
+        " does not exceed its rounding bound " +
+        threeDigits(point.roundingBound) +
+        ", so the potential's derivatives DW_M/W_M and D^2W_M/W_M have no "
+        "certified value there");
   return point;
 }
 
@@ -538,7 +697,7 @@ class FacePotential {
   explicit FacePotential(const JointActionDeclaration &declaration)
       : weight_(declaration.holonomyWeight) {
     if (weight_ > 0.0)
-      villain_.emplace(weight_, declaration.villainTolerance);
+      villain_.emplace(weight_, declaration.villainOrder);
   }
 
   [[nodiscard]] bool active() const { return villain_.has_value(); }
@@ -604,11 +763,12 @@ JointAction::JointAction(std::shared_ptr<Spacetime> spacetime,
           "JointAction: the Villain holonomy term's coupling beta is a "
           "heat-kernel time and must be non-negative; got " +
           std::to_string(declaration_.holonomyWeight));
-    if (!(declaration_.villainTolerance > 0.0) ||
-        !(declaration_.villainTolerance < 1.0))
+    if (declaration_.villainOrder < 1 ||
+        declaration_.villainOrder > VillainCharacter::maximumOrder)
       throw std::invalid_argument(
-          "JointAction: the Villain coefficient tolerance must lie in (0, 1); "
-          "got " + std::to_string(declaration_.villainTolerance));
+          "JointAction: the order of the Villain weight is an integer from 1 "
+          "to " + std::to_string(VillainCharacter::maximumOrder) + "; got " +
+          std::to_string(declaration_.villainOrder));
   }
   if (!declaration_.covariance.empty()) {
     const ChainComplex complex = ChainComplex::fromSpacetime(*spacetime_);
@@ -2011,25 +2171,24 @@ std::vector<complexd> JointAction::stationarityStateVariation(
 
 HolonomyTruncation JointAction::holonomyTruncation() const {
   HolonomyTruncation report;
-  report.tolerance = declaration_.villainTolerance;
+  report.order = declaration_.villainOrder;
   const FacePotential potential(declaration_);
   if (!potential.villain()) return report;
   const VillainCharacter &character = *potential.villain();
-  report.declaredTermCount = character.declaredTermCount();
   const ActionWorkspace workspace(spacetime_, declaration_.carrierDegree,
                                   declaration_.metricSource,
                                   /*wantCarrier=*/false);
+  // std::max keeps its first argument when the comparison with the second is
+  // false, so a face whose ratio is not a number (a sum of moduli that is
+  // zero in double precision) leaves the maximum as it is.
   for (const complexd &holonomy : workspace.holonomies) {
     const VillainSeries point = character.series(holonomy);
-    const double scale = std::abs(point.value);
-    report.maximumTermCount = std::max(report.maximumTermCount,
-                                       point.termCount);
-    report.relativeValueTail =
-        std::max(report.relativeValueTail, point.valueTail / scale);
-    report.relativeFirstTail =
-        std::max(report.relativeFirstTail, point.firstTail / scale);
-    report.relativeSecondTail =
-        std::max(report.relativeSecondTail, point.secondTail / scale);
+    report.relativeValueTail = std::max(report.relativeValueTail,
+                                        point.valueTail / point.magnitude);
+    report.relativeFirstTail = std::max(
+        report.relativeFirstTail, point.firstTail / point.firstMagnitude);
+    report.relativeSecondTail = std::max(
+        report.relativeSecondTail, point.secondTail / point.secondMagnitude);
   }
   return report;
 }

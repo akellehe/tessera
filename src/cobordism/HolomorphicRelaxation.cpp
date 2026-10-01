@@ -325,7 +325,8 @@ struct SectorGeometry {
 
 SectorGeometry resolveSectors(const JointAction &action,
                               const std::vector<HeldMonopoleSector> &sectors,
-                              const EdgeClasses &classes) {
+                              const EdgeClasses &classes,
+                              double rankTolerance) {
   SectorGeometry geometry;
   if (sectors.empty()) return geometry;
   const auto &spacetime = action.spacetime();
@@ -379,7 +380,7 @@ SectorGeometry resolveSectors(const JointAction &action,
   coboundary = coboundary * expansion;
   const Eigen::JacobiSVD<Eigen::MatrixXd> svd(coboundary, Eigen::ComputeFullV);
   const auto &values = svd.singularValues();
-  const double cut = values.size() > 0 ? 1e-10 * values(0) : 0.0;
+  const double cut = values.size() > 0 ? rankTolerance * values(0) : 0.0;
   Eigen::Index rank = 0;
   while (rank < values.size() && values(rank) > cut) ++rank;
   geometry.freeModuli =
@@ -613,7 +614,8 @@ HolomorphicRelaxation::HolomorphicRelaxation(
   }
   if (!declaration_.heldSectors.empty()) {
     const SectorGeometry geometry =
-        resolveSectors(action_, declaration_.heldSectors, classes);
+        resolveSectors(action_, declaration_.heldSectors, classes,
+                       declaration_.rankTolerance);
     const auto numbers = sectorNumbers(action_, geometry);
     for (std::size_t index = 0; index < numbers.size(); ++index)
       if (numbers[index] != declaration_.heldSectors[index].monopoleNumber)
@@ -1057,7 +1059,8 @@ HolomorphicRelaxationReport HolomorphicRelaxation::solve() {
                       declaration_);
   HolomorphicRelaxationReport report;
   const SectorGeometry sectors =
-      resolveSectors(action_, declaration_.heldSectors, classes);
+      resolveSectors(action_, declaration_.heldSectors, classes,
+                     declaration_.rankTolerance);
   const std::vector<double> startModuli = heldLogModuli(action_, sectors);
   std::vector<int> declaredNumbers;
   for (const auto &sector : declaration_.heldSectors)

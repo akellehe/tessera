@@ -168,6 +168,7 @@ LevelRecursion LevelRecursion::overSpacetime(
 RecursiveQuotient::Options LevelRecursion::quotientOptions() const {
   RecursiveQuotient::Options options;
   options.tolerance = declaration_.tolerance;
+  options.rankTolerance = declaration_.rankTolerance;
   options.denseCrossover = declaration_.denseCrossover;
   options.embeddingPolicy = FiberEmbeddingPolicy::CarryGramExactly;
   return options;
@@ -317,7 +318,11 @@ RecursionBandRead LevelRecursion::readBand(
 
   RecursionBandRead band;
   band.component = static_cast<int>(component);
+  band.contourGap = std::numeric_limits<double>::infinity();
   std::vector<bool> selected(n, false);
+  // Whether the membership of every eigenvalue in a declared circle is
+  // decided at the declared tolerance; a derived circle decides none.
+  bool membershipDecided = true;
   if (!declared) {
     std::vector<int> initial(n);
     std::iota(initial.begin(), initial.end(), 0);
@@ -345,26 +350,21 @@ RecursionBandRead LevelRecursion::readBand(
   } else {
     const complexd centre = bands.contourCentres[component];
     const double radius = bands.contourRadii[component];
+    // Membership is the strict comparison of an eigenvalue's distance from
+    // the centre with the radius. How close the circle passes to an
+    // eigenvalue is measured beside it: an eigenvalue on the circle at the
+    // declared tolerance leaves its membership undecided at that tolerance,
+    // which the read reports and does not act on.
     for (std::size_t index = 0; index < n; ++index) {
       const double distance = std::abs(values(index) - centre);
-      if (std::abs(distance - radius) <= tolerance * std::max(distance, radius))
-        throw std::invalid_argument(
-            "LevelRecursion::readBand: the declared contour of component " +
-            std::to_string(component) + ", centre " + describe(centre) +
-            " and radius " + std::to_string(radius) +
-            ", passes through the eigenvalue " + describe(values(index)) +
-            " at the declared tolerance " + std::to_string(tolerance) +
-            ", so whether that eigenvalue is in the band is not decided");
+      const double gap = std::abs(distance - radius);
+      band.contourGap = std::min(band.contourGap, gap);
+      if (gap <= tolerance * std::max(distance, radius))
+        membershipDecided = false;
       selected[index] = distance < radius;
     }
     for (std::size_t index = 0; index < n; ++index)
       if (selected[index]) band.eigenvalues.push_back(values(index));
-    if (band.eigenvalues.empty())
-      throw std::invalid_argument(
-          "LevelRecursion::readBand: the declared contour of component " +
-          std::to_string(component) + ", centre " + describe(centre) +
-          " and radius " + std::to_string(radius) +
-          ", encloses no eigenvalue of its block, so it selects no fiber");
     std::stable_sort(band.eigenvalues.begin(), band.eigenvalues.end(),
                      ascendingSpectrum);
     band.contourCentre = centre;
@@ -374,11 +374,11 @@ RecursionBandRead LevelRecursion::readBand(
   band.rank = band.eigenvalues.size();
 
   // The isolation of the band: the closest a selected eigenvalue comes to an
-  // excluded one. A selection that separates two eigenvalues equal at the
-  // declared tolerance names no invariant subspace and is refused.
+  // excluded one. The band is read whatever its isolation, and the gap is
+  // reported; a selection that separates two eigenvalues equal at the
+  // declared tolerance is not accepted.
   band.isolationGap = std::numeric_limits<double>::infinity();
   complexd closestSelected{0.0, 0.0};
-  complexd closestExcluded{0.0, 0.0};
   for (std::size_t inside = 0; inside < n; ++inside) {
     if (!selected[inside]) continue;
     for (std::size_t outside = 0; outside < n; ++outside) {
@@ -387,32 +387,41 @@ RecursionBandRead LevelRecursion::readBand(
       if (distance < band.isolationGap) {
         band.isolationGap = distance;
         closestSelected = values(inside);
-        closestExcluded = values(outside);
       }
     }
   }
-  if (band.isolationGap <= resolution)
-    throw std::invalid_argument(
+  // The eigenvalues of the Sylvester operator Y -> T_11 Y - Y T_22 are the
+  // differences of a selected and an excluded eigenvalue. When a selected and
+  // an excluded eigenvalue are equal exactly, one of them is zero: the
+  // equation is singular, and the projector onto a part of that eigenvalue's
+  // invariant subspace has no value.
+  if (band.isolationGap == 0.0)
+    throw std::domain_error(
         "LevelRecursion::readBand: the selection of component " +
-        std::to_string(component) + " separates the eigenvalues " +
-        describe(closestSelected) + " and " + describe(closestExcluded) +
-        ", at distance " + std::to_string(band.isolationGap) +
-        ", which are equal at the declared tolerance " +
-        std::to_string(tolerance) + " relative to the block's norm " +
-        std::to_string(scale) +
-        "; the invariant subspace of a part of a multiple eigenvalue is not "
-        "defined");
+        std::to_string(component) + " takes the eigenvalue " +
+        describe(closestSelected) +
+        " of its block into the band and leaves an eigenvalue exactly equal "
+        "to it out, so the Sylvester equation of the band's projector is "
+        "singular and the projector onto a part of that eigenvalue's "
+        "invariant subspace has no value");
 
   // The exact projector and its frames. A selection that encloses every
   // eigenvalue has the whole coordinate space as its invariant subspace: the
   // projector is the identity and the canonical basis is its frame, with
-  // nothing to reorder and no Sylvester equation to solve. Every other
+  // nothing to reorder and no Sylvester equation to solve. A selection that
+  // encloses no eigenvalue has the zero subspace as its invariant subspace:
+  // the projector is zero and the frames have no column. Every other
   // selection is read from the reordered Schur form.
+  const auto blockOrder = static_cast<Eigen::Index>(n);
   const auto columns = static_cast<Eigen::Index>(band.rank);
   Eigen::MatrixXcd projector;
   Eigen::MatrixXcd right;
   Eigen::MatrixXcd left;
-  if (band.enclosesEverything) {
+  if (band.rank == 0) {
+    projector = Eigen::MatrixXcd::Zero(blockOrder, blockOrder);
+    right = Eigen::MatrixXcd(blockOrder, 0);
+    left = Eigen::MatrixXcd(0, blockOrder);
+  } else if (band.enclosesEverything) {
     projector = Eigen::MatrixXcd::Identity(columns, columns);
     right = projector;
     left = projector;
@@ -423,19 +432,40 @@ RecursionBandRead LevelRecursion::readBand(
     right = riesz.right;
     left = riesz.left.transpose();
   }
-  band.projectorIdempotency =
-      (projector * projector - projector).norm() / projector.norm();
-  band.pairingDefect =
-      (left * right - Eigen::MatrixXcd::Identity(columns, columns)).norm();
-  const Eigen::MatrixXcd reduced = left * matrix * right;
-  band.invariantSubspaceResidual =
-      scale > 0.0 ? (matrix * right - right * reduced).norm() / scale : 0.0;
+  if (band.rank == 0) {
+    // The zero projector is idempotent exactly, and its empty frames pair to
+    // the 0 x 0 identity and span the zero subspace, which is invariant.
+    band.projectorIdempotency = 0.0;
+    band.pairingDefect = 0.0;
+    band.invariantSubspaceResidual = 0.0;
+  } else {
+    band.projectorIdempotency =
+        (projector * projector - projector).norm() / projector.norm();
+    band.pairingDefect =
+        (left * right - Eigen::MatrixXcd::Identity(columns, columns)).norm();
+    const Eigen::MatrixXcd reduced = left * matrix * right;
+    band.invariantSubspaceResidual =
+        scale > 0.0 ? (matrix * right - right * reduced).norm() / scale : 0.0;
+  }
   band.frame = toFlat(right);
   band.leftFrame = toFlat(left);
 
+  // What the read reports of itself. The preconditions of a certified fiber
+  // are that the band has an eigenvalue, that its selection separates no two
+  // eigenvalues equal at the declared tolerance, and that the membership of
+  // every eigenvalue in a declared circle is decided at that tolerance; the
+  // residuals are those of the projector that was formed. A residual that is
+  // not a finite number is a residual that does not hold.
+  const bool measured = std::isfinite(band.projectorIdempotency) &&
+                        std::isfinite(band.pairingDefect) &&
+                        std::isfinite(band.invariantSubspaceResidual);
+  const bool preconditions = band.rank > 0 &&
+                             band.isolationGap > resolution &&
+                             membershipDecided && measured;
   const double residual =
-      std::max({band.projectorIdempotency, band.pairingDefect,
-                band.invariantSubspaceResidual});
+      preconditions ? std::max({band.projectorIdempotency, band.pairingDefect,
+                                band.invariantSubspaceResidual})
+                    : std::numeric_limits<double>::infinity();
   band.accepted = residual <= tolerance;
   band.certificate = Certificate::certifiedNumerical(
       CertificateDomain::BandWindow, CertificateRegime::NonNormal, residual,

@@ -986,7 +986,7 @@ is the transpose.)doc")
       .def_static("logDeterminant", &PencilSchur::logDeterminant, py::arg("A"),
            "log det A = log|det A| + i arg det A from a partial-pivoting LU, arg in (-pi, pi].")
       .def_static("feshbach", &PencilSchur::feshbach, py::arg("A"), py::arg("M"), py::arg("lambda_"),
-           py::arg("interface"), py::arg("rank_tolerance") = 1e-12, py::arg("resonance_radius") = 1e-12,
+           py::arg("interface"), py::arg("rank_tolerance") = 1e-15, py::arg("resonance_radius") = 1e-15,
            "The Feshbach complement at lambda with the interior block's Riesz projectors and, at an "
            "interior resonance -- an eigenvalue of P_II inside the disc about zero of radius "
            "resonance_radius times its spectral radius -- the Drazin inverse, the compatibility and "
@@ -1133,7 +1133,7 @@ profile, which is what an exact band at flat connection produces.)doc")
            py::arg("paths"), "The triangles every one of whose edge base vertices the rule reaches.")
       .def_static("profile", &DressedAnchor::profile, py::arg("complex"), py::arg("connection"),
            py::arg("paths"), py::arg("face_indices"), py::arg("Phi"),
-           py::arg("tolerance") = 1e-9, py::arg("gauge_seed") = 7,
+           py::arg("tolerance") = 1e-15, py::arg("gauge_seed") = 7,
            "The anchor certificate of the band on the atlas.")
       .def_static("withInvariantCoordinates", &DressedAnchor::withInvariantCoordinates,
            py::arg("read"), py::arg("covariant"), py::arg("Z_dual"), py::arg("Z"),

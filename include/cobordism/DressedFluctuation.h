@@ -96,7 +96,7 @@ struct DressedFluctuationDeclaration {
   /// The relative tolerance the certificates of this instance hold against, and
   /// the threshold below which a candidate collective mode's geometric
   /// component counts as zero.
-  double tolerance = 1e-8;
+  double tolerance = 1e-15;
 };
 
 /// # CollectiveMode
@@ -461,9 +461,10 @@ class DressedFluctuation {
   /// \f$ (\operatorname{Re}\omega,\operatorname{Im}\omega) \f$. A candidate
   /// whose geometric component is smaller than the declared tolerance is an
   /// uncoupled particle-hole excitation rather than a pole of the propagator
-  /// and is not reported; so is a candidate whose measured null-vector residual
-  /// exceeds the declared tolerance, which is the reading of an eigenvalue the
-  /// linearization produced but the dressed stiffness does not confirm.
+  /// and is not reported. Every other candidate is reported with its measured
+  /// null-vector residual (`CollectiveMode::residual`) and its certificate,
+  /// which says whether the dressed stiffness confirms the eigenvalue the
+  /// linearization produced at the declared tolerance.
   [[nodiscard]] std::vector<CollectiveMode> collectiveModes() const;
 
   /// The effective action of the exact elimination on the \p particles-particle

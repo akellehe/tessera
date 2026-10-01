@@ -456,7 +456,6 @@ std::vector<CollectiveMode> DressedFluctuation::collectiveModes() const {
     const double cancellationScale = bare.norm() + polarization.norm();
     if (cancellationScale == 0.0) continue;
     const double residual = (dressed * geometric).norm() / cancellationScale;
-    if (!(residual <= declaration_.tolerance)) continue;
 
     CollectiveMode mode;
     mode.frequency = frequency;

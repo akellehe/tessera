@@ -41,8 +41,10 @@ One tick
 At level l (a complex K_l of three sheets of a base complex):
 
 1. both edge fields relax to holomorphic stationarity of the joint action,
-   primal Regge + the Villain holonomy term, in strict emergence (no carried
-   density in the equations; WP §7). The spectral-moment part of S_0 is the
+   primal Regge + the Villain holonomy term (the Villain weight summed to
+   the declared order, ``--villain-order``, ten by default), in strict
+   emergence (no carried density in the equations; WP §7). The
+   spectral-moment part of S_0 is the
    holomorphic spectral constraint of WP v17 §3.4, which belongs to
    controlled synthesis on an occupied fiber and so enters only the per-cell
    reads below (stated there as the eigenvalue of each occupied band by
@@ -124,12 +126,19 @@ At level l (a complex K_l of three sheets of a base complex):
    content's mean field is solved by Newton's method on the joint system,
    its bands chosen at the host and followed by continuation
    (``--band-selection``); the solve's iterations, final force, stop reason
-   and joint-Jacobian rank gap are reported with the content, and a read on
-   a geometry whose squared lengths overflowed the double or that is not
-   Kontsevich-Segal allowable is refused by name.
+   and joint-Jacobian rank gap are reported with the content. A read whose
+   precondition does not hold at its declared tolerance is made and flagged:
+   a geometry that is not Kontsevich-Segal allowable is read with that flag
+   and its margin, and a relaxed cell that does not meet the preconditions
+   of its own spin read is read in the frame of the declared symmetric host
+   with the flag that names the precondition (``baryon_poles``, "Flags").
+   A solve whose squared lengths overflowed the double leaves no finite
+   geometry, and its content is recorded as having no value, by name.
 
 The next tick runs on K_{l+1}. The recursion stops at a level with no grown
-3-simplex, and says so.
+3-simplex, at a level whose relaxation the library refuses and at a level
+whose turn of the Section 15 box has no value, and the tick's record says
+which and why (``stopped``).
 
 The report is per doublet content
 ---------------------------------
@@ -334,17 +343,21 @@ def sheet_fields(spacetime, count, sheets=SHEETS):
     return fields
 
 
-def monopole_numbers(cells, links):
+def monopole_numbers(cells, links,
+                     tolerance=bp.DECLARED_CERTIFICATE_TOLERANCE):
     """The monopole number of every base tetrahedron, read with
-    `MonopoleSupport` on its ascending vertices."""
+    `MonopoleSupport` on its ascending vertices at ``tolerance`` (the
+    support's unit-modulus tolerance and the tolerance of the monopole
+    read)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
     numbers = []
     for cell in cells:
         c = sorted(cell)
         values = [links[(c[i], c[j])] for i, j in fixture.edges]
         support = obs.MonopoleSupport(4, fixture.edges, fixture.faces,
-                                      obs.MonopoleSupport.u1Part(values))
-        numbers.append(int(support.monopoleNumber().monopole_number))
+                                      obs.MonopoleSupport.u1Part(values),
+                                      tolerance)
+        numbers.append(int(support.monopoleNumber(tolerance).monopole_number))
     return numbers
 
 
@@ -446,7 +459,7 @@ def relax_level(spacetime, config, sectors=None, count=None):
     identical exactly."""
     declaration = bp.action_declaration(
         spacetime, config["kappa"], config["beta"], config["regge_hinges"],
-        villain_tolerance=bp.declared_tolerance(config, "villain_tolerance"))
+        villain_order=bp.declared_villain_order(config))
     action = cob.JointAction(spacetime, declaration)
     held = dict(config)
     held["held_sectors"] = list(sectors or [])
@@ -517,6 +530,8 @@ def recursion_turn(operator, config):
     declaration = cob.LevelRecursionDeclaration()
     declaration.resolutions = list(config["resolutions"])
     declaration.tolerance = bp.declared_tolerance(config, "recursion_tolerance")
+    declaration.rank_tolerance = bp.declared_tolerance(
+        config, "quotient_rank_tolerance")
     bands = cob.RecursionBandDeclaration()
     bands.selection = cob.RecursionBandSelection.LowestModes
     bands.band_rank = config["band_rank"]
@@ -543,12 +558,16 @@ def riesz_band(block, rank, tolerance):
     algebraic dual, PhiTilde^T Phi = I, from the Sylvester equation of the
     reordered form. For a diagonalizable block P = V_B (V^-1)_B over the
     selected eigenvalues. A band of the whole block has the identity as its
-    projector and the canonical basis as both frames, exactly. A selection
-    that separates two eigenvalues equal at
-    ``tolerance`` is refused by name. The read carries the projector's
-    certificates: its idempotency residual, the pairing defect of the frames,
-    the residual of the invariant subspace and the isolation gap of the band,
-    each against ``tolerance``."""
+    projector and the canonical basis as both frames, exactly. The read
+    carries the projector's certificates: its idempotency residual, the
+    pairing defect of the frames, the residual of the invariant subspace and
+    the isolation gap of the band, with ``accepted`` saying whether all of
+    them hold at ``tolerance``. A selection that separates two eigenvalues
+    equal at ``tolerance`` is read like any other and comes back with
+    ``accepted`` false and the isolation gap that says why. A selection
+    that separates two eigenvalues that are equal exactly has no projector
+    (the Sylvester equation is singular), and the library raises a
+    ValueError that names the eigenvalue."""
     block = np.asarray(block, dtype=complex)
     n = block.shape[0]
     bands = cob.RecursionBandDeclaration()
@@ -856,12 +875,15 @@ def grow(cells, pairing, transports):
 def cell_reads(cells, z, links, config):
     """Every base tetrahedron read as a three-sheeted host of its own: the
     quark verdicts, the isospin-doublet reading and the baryon poles of every
-    declared content (`baryon_poles.evaluate_content`), each content read
-    against the relaxed cell's own rotation group and refused by name when
-    the cell has none. A tetrahedron of the declared level-0 host is a
-    declared host of its own, so its four faces are its bounding cut and are
-    held. A tetrahedron of a grown level is not declared, so nothing on it is
-    held (``hold_cell_sectors``)."""
+    declared content (`baryon_poles.evaluate_content`), each content's spin
+    read in the relaxed cell's own frame when the cell meets the
+    preconditions of that read and in the frame of the declared symmetric
+    host, flagged, when it does not (`baryon_poles.spin_frame`). Every cell's
+    read names its contents with no value (``failed_contents``) and its
+    flagged contents (``flagged_contents``). A tetrahedron of the declared
+    level-0 host is a declared host of its own, so its four faces are its
+    bounding cut and are held. A tetrahedron of a grown level is not
+    declared, so nothing on it is held (``hold_cell_sectors``)."""
     fixture = obs.MonopoleSupport.tetrahedron(1)
     chosen = cells if config["max_cells"] is None else \
         cells[:config["max_cells"]]
@@ -879,21 +901,25 @@ def cell_reads(cells, z, links, config):
             selected_contents=[tuple(x) for x in config["contents"]])
         cell_config["host_cell"] = host_cell
         cell_config["isospin_doublet"] = True
-        # the mean-field solver and the tolerances the run declared (none
-        # changes an equation)
-        for key in ("band_selection", "fiber_moments", "fiber_pinning",
-                    "kappa_role", "trace_terms") + tuple(
+        # the order of the Villain weight (part of the action), and the
+        # mean-field solver and the tolerances the run declared (none of
+        # which changes an equation)
+        for key in ("villain_order", "band_selection", "fiber_moments",
+                    "fiber_pinning", "kappa_role", "trace_terms") + tuple(
                         key for key, _ in bp.TOLERANCES) + tuple(
                             key for key, _, _ in bp.LIMITS):
             if key in config:
                 cell_config[key] = config[key]
-        number = monopole_numbers([c], links)[0]
+        number = monopole_numbers(
+            [c], links,
+            bp.declared_tolerance(config, "certificate_tolerance"))[0]
         cell_config["held_sectors"] = (
             held_sectors([[0, 1, 2, 3]], [number], 4)
             if config.get("hold_cell_sectors", True) else [])
         point = bp.scan_point(config["kappa"], config["beta"], cell_config)
         out.append({"cell": c, "host_cell": host_cell,
                     "failed_contents": point["failed_contents"],
+                    "flagged_contents": point["flagged_contents"],
                     "contents": point["contents"],
                     "ratios": point["ratios"],
                     "pole_table": point["pole_table"]})
@@ -1029,8 +1055,11 @@ def pachner_stage(cells, z, links, config):
     manifold it is, with the boundary it has. It runs as the emergence
     driver runs its stage 1, over every candidate move of the base rather
     than a drawn sample: ``pachner_updates`` updates, each scoring every
-    move and committing the best that lowers the objective, deepening to
-    ``pachner_depth``-move sequences when no single move does. The walk is
+    move and committing the best that lowers the objective by more than the
+    config's ``move_tolerance``, deepening to ``pachner_depth``-move
+    sequences when no single move does. A proposed geometry is admissible
+    when its Kontsevich-Segal margin is at least minus the config's
+    ``admissibility_tolerance``. The walk is
     complete and reproducible, so there is no seed. The base is one sheet;
     the level is rebuilt from it
     with every sheet identical. Returns the base after the committed moves,
@@ -1062,6 +1091,9 @@ def pachner_stage(cells, z, links, config):
     node.set_simulation_mode(MC.SimulationMode.EMERGENCE,
                              MC.EmergenceSubmode.STRICT)
     node.should_propose_surgery = False
+    node.move_tolerance = bp.declared_tolerance(config, "move_tolerance")
+    node.admissibility_tolerance = bp.declared_tolerance(
+        config, "admissibility_tolerance")
     record["objective_before"] = float(node.objective())
     record["trace"] = [float(value) for value in node.run_stage1(
         max_steps=updates, n_candidate_moves=0,
@@ -1096,11 +1128,21 @@ def tick(index, cells, z, links, config):
     ``links``. Returns the tick's record and the next level's base (or None
     when no 3-simplex grows). Tick 0 is level 0, the declared host, whose
     bounding cut is held; every later level is grown, and nothing on it is
-    held."""
+    held.
+
+    A tick that cannot be completed is recorded with what it reached and why
+    it stopped (``stopped``), and returns no next level: a relaxation the
+    library refuses (``relaxation.failed``), and a turn of the Section 15 box
+    that has no value (``partition.failed``; for example a band whose
+    selection separates two eigenvalues that are equal exactly, or a level at
+    the dense crossover), whose record keeps the level and its
+    relaxation."""
     started = time.time()
     spacetime, count = build_level(cells, z, links)
     declared = index == 0
-    bulk_before = monopole_numbers(cells, links)
+    certificate_tolerance = bp.declared_tolerance(config,
+                                                  "certificate_tolerance")
+    bulk_before = monopole_numbers(cells, links, certificate_tolerance)
     cut = bounding_cut(cells) if declared else []
     cut_before = cut_monopole_number(cut, links) if declared else None
     held = {"faces": [list(f) for f in cut],
@@ -1160,7 +1202,52 @@ def tick(index, cells, z, links, config):
                 / abs(holonomy(base_links, f)) for f in triangles))
         for t in range(1, SHEETS))
     base = base_operator(cells, base_z, base_links)
-    level = recursion_turn(base["operator"], config)
+    level_fields = {
+        "vertices": 1 + max(max(c) for c in cells),
+        "edges": len(base["edges"]),
+        "tetrahedra": len(base["tops"]),
+        "cells": [sorted(c) for c in cells],
+        "squared_lengths": {"%d-%d" % e: v for e, v in base_z.items()},
+        "links": {"%d-%d" % e: v for e, v in base_links.items()},
+        "held_cut": held,
+        "bulk_monopole_numbers_before": bulk_before,
+        "bulk_monopole_numbers_after": monopole_numbers(
+            cells, base_links, certificate_tolerance),
+        "sheet_isomorphism_residual": float(isomorphism),
+        "rule_shift": level_rule_shift(cells, base_z, base_links),
+    }
+    try:
+        level = recursion_turn(base["operator"], config)
+    except (ValueError, RuntimeError) as error:
+        # the turn of the Section 15 box has no value on this level (the
+        # library names why): there is no partition, no fiber and no grown
+        # cell to carry on, so the recursion stops here and says why, with
+        # the level and its relaxation kept
+        record = {
+            "tick": index,
+            "level": level_fields,
+            "relaxation": relaxation,
+            "partition": {"failed": str(error)},
+            "summary": {
+                "held_cut_monopole_numbers": (
+                    [cut_before, held["monopole_number_after"]] if declared
+                    else None),
+                "bulk_monopole_numbers_before": bulk_before,
+                "bulk_monopole_numbers_after": level_fields[
+                    "bulk_monopole_numbers_after"],
+                "regge_structurally_zero": relaxation[
+                    "regge_structurally_zero"],
+                "rule_shift_on_level": max(
+                    (r["relative_shift"] for r in level_fields["rule_shift"]),
+                    default=None),
+                "response_vertices": 0, "interactions": 0,
+                "grown_cells": 0, "failed_cells": 0,
+                "rejected_cells": 0, "row_sum_defects": []},
+            "reads": [],
+            "stopped": "the recursion's turn has no value: %s" % error,
+            "seconds": time.time() - started,
+        }
+        return record, None
     partition, rejected = persistent_components(
         level, base["edges"], config["persistence_required"])
     stage = interaction_stage(base, partition, config)
@@ -1172,20 +1259,7 @@ def tick(index, cells, z, links, config):
     gated = [r for r in reads if "rejected" in r]
     record = {
         "tick": index,
-        "level": {
-            "vertices": 1 + max(max(c) for c in cells),
-            "edges": len(base["edges"]),
-            "tetrahedra": len(base["tops"]),
-            "cells": [sorted(c) for c in cells],
-            "squared_lengths": {"%d-%d" % e: v for e, v in base_z.items()},
-            "links": {"%d-%d" % e: v for e, v in base_links.items()},
-            "held_cut": held,
-            "bulk_monopole_numbers_before": bulk_before,
-            "bulk_monopole_numbers_after": monopole_numbers(cells,
-                                                            base_links),
-            "sheet_isomorphism_residual": float(isomorphism),
-            "rule_shift": level_rule_shift(cells, base_z, base_links),
-        },
+        "level": level_fields,
         "relaxation": relaxation,
         "partition": level_record(level),
         "response_components": partition,
@@ -1293,7 +1367,8 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                    fiber_pinning=bp.DECLARED_FIBER_PINNING, tolerances=None,
                    trace_terms=False,
                    pachner_updates=DECLARED_PACHNER_UPDATES,
-                   pachner_depth=DECLARED_PACHNER_DEPTH, limits=None):
+                   pachner_depth=DECLARED_PACHNER_DEPTH, limits=None,
+                   villain_order=bp.DECLARED_VILLAIN_ORDER):
     """The declared configuration, recorded with every run. ``max_cells``
     limits how many tetrahedra per tick are read as hosts, for quick checks;
     it changes no number of the cells it keeps. ``persistence_required`` is
@@ -1303,7 +1378,10 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
     `baryon_poles.TOLERANCES` by key; every tolerance is carried into every
     cell's config. ``limits`` declares any of `baryon_poles.LIMITS` by key
     (none by default: no count and no time ends a solve); every declared
-    limit is carried into every solve of the run."""
+    limit is carried into every solve of the run. ``villain_order`` is the
+    order the Villain weight of the holonomy term is summed to
+    (`baryon_poles.DECLARED_VILLAIN_ORDER`); it is carried into every level's
+    action and every cell's config."""
     config = bp.default_config(kappas=[kappa], betas=[beta],
                                edge_squared=edge_squared,
                                elimination=elimination,
@@ -1312,7 +1390,7 @@ def default_config(ticks=DECLARED_TICKS, tetrahedra=DECLARED_TETRAHEDRA,
                                fiber_moments=fiber_moments,
                                fiber_pinning=fiber_pinning,
                                tolerances=tolerances, trace_terms=trace_terms,
-                               limits=limits)
+                               limits=limits, villain_order=villain_order)
     config.update({
         "mode": "controlled synthesis",
         "ticks": ticks,
@@ -1373,7 +1451,9 @@ def drive(config, progress=False, on_frame=None, stop_requested=None,
                                 for a in connection["face_angles"]],
         "dirac_string": [int(n) for n in connection["dirac_string"]],
         "connection_residual": connection["residual"],
-        "monopole_numbers": monopole_numbers(cells, links),
+        "monopole_numbers": monopole_numbers(
+            cells, links,
+            bp.declared_tolerance(config, "certificate_tolerance")),
     }
     if points_file is not None:
         with open(points_file, "w"):
@@ -1681,7 +1761,9 @@ def render(result, path):
 
 
 def summary(result):
-    """Every tick as text."""
+    """Every tick as text. A tick that stopped says why: a relaxation the
+    library refused is one line, and a tick whose turn of the Section 15 box
+    has no value is reported up to its relaxation, then its stop."""
     lines = ["mode: controlled synthesis; host monopole numbers %s"
              % result["host"]["monopole_numbers"]]
     for record in result["ticks"]:
@@ -1690,7 +1772,6 @@ def summary(result):
                          % (record["tick"], record["relaxation"]["failed"]))
             continue
         s = record["summary"]
-        p = record["partition"]
         level = record["level"]
         lines.append(
             "tick %d: level with %d vertices, %d edges, %d tetrahedra per "
@@ -1713,6 +1794,10 @@ def summary(result):
                    held.get("monopole_number_after")))
         for line in _notices(record):
             lines.append("  " + line)
+        p = record["partition"]
+        if "failed" in p:
+            lines.append("  stopped: " + record["stopped"])
+            continue
         lines.append(
             "  partition %s at resolution %g; fibers accepted %s; isolation "
             "gaps %s; determinant residual %.3g"
@@ -1752,23 +1837,26 @@ def _conditions_text(record):
 
 def _content_line(cell, c):
     """One content of one host cell: whether it was read (or why its read
-    was refused), its mean-field solve (`baryon_poles.relaxation_text`), its
+    has no value), its mean-field solve (`baryon_poles.relaxation_text`), its
     anchor atlas (`baryon_poles.anchor_text`), its spectral fingerprint
     (`baryon_poles.fingerprint_text`), its quark verdict and every
-    quark condition's status, its quarks per doublet of h-bar_1 and its
-    quartic truncation certificates."""
+    quark condition's status, its quarks per doublet of h-bar_1, its
+    quartic truncation certificates and, when the read is flagged, its flags
+    (`baryon_poles.flags_text`)."""
     head = "host cell %s content %s (quarks per band of h_1): " % (
         cell["cell"], c["content"])
     if "failed" in c:
-        line = head + "failed: " + c["failed"]
+        line = head + "no value: " + c["failed"]
         if c.get("relaxation"):
             line += "; " + bp.relaxation_text(c["relaxation"])
         return line
     verdict = _verdict_summary(c)
     spin = (c.get("spin_decomposition") or {}).get("occupied_state")
-    return head + ("read; quark certified %s; %s; %squarks per doublet of "
+    flagged = bp.flags_text(c)
+    return head + ("read%s; quark certified %s; %s; %squarks per doublet of "
                    "h-bar_1 %s; quartic truncation %s; quark conditions %s"
-                   % (verdict["certified"] if verdict else None,
+                   % (", " + flagged if flagged else "",
+                      verdict["certified"] if verdict else None,
                       bp.relaxation_text(c.get("relaxation")),
                       (bp.anchor_text(c["anchor"]) + "; "
                        if "anchor" in c else "")
@@ -1862,6 +1950,7 @@ def build_parser():
     run.add_argument("--live", action="store_true",
                      help="draw each completed tick while the run proceeds; "
                           "the outputs are identical")
+    bp.add_action_arguments(run)
     bp.add_mean_field_arguments(run)
     bp.add_tolerance_arguments(run)
     bp.add_limit_arguments(run)
@@ -1884,7 +1973,8 @@ def main(argv=None):
         fiber_pinning=args.fiber_pinning,
         tolerances=bp.tolerances_from(args), trace_terms=args.trace_terms,
         pachner_updates=args.pachner_updates,
-        pachner_depth=args.pachner_depth, limits=bp.limits_from(args))
+        pachner_depth=args.pachner_depth, limits=bp.limits_from(args),
+        villain_order=args.villain_order)
     points_file = points_path(args.json) if args.json else None
     result = (drive_live(config, progress=not args.quiet,
                          points_file=points_file, keep_open=True)

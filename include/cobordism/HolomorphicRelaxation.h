@@ -225,7 +225,7 @@ struct HolomorphicRelaxationDeclaration {
   /// The Euclidean norm of the residual vector at or below which the solve is
   /// declared converged. This is a convergence certificate on the complex
   /// equations, not a functional minimized in their place.
-  double tolerance = 1e-10;
+  double tolerance = 1e-15;
 
   /// The number of accepted Newton steps after which the solve stops, when
   /// the user declares one. None by default: nothing then ends a solve but
@@ -249,8 +249,11 @@ struct HolomorphicRelaxationDeclaration {
   /// as zero in the minimum-norm solve of the Newton system: the rank is the
   /// number of singular values \f$ \sigma_i>\tau\,\sigma_{\max} \f$, decided
   /// on the singular values themselves and not on a pivoted-QR diagonal,
-  /// whose magnitudes only bracket them.
-  double rankTolerance = 1e-12;
+  /// whose magnitudes only bracket them. The rank of the held faces'
+  /// coboundary, whose kernel is the link-modulus directions the held
+  /// sectors leave free, is decided at the same threshold relative to that
+  /// matrix's largest singular value.
+  double rankTolerance = 1e-15;
 
   /// Whether every recorded step, and the starting point, carries every
   /// term of the action with its value and gradient norm

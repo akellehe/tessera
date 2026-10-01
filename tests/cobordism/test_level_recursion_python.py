@@ -38,10 +38,13 @@ Sylvester equation solved for the invariant subspace. It equals V_B (V^-1)_B
 built from an independent eigendecomposition, it is exact on a
 non-diagonalizable block where no eigenvector matrix can be inverted, its two
 frames satisfy PhiTilde^T Phi = I with no conjugation, and the compression
-PhiTilde^T h_v Phi has exactly the eigenvalues the selection enclosed. A
-selection that names no invariant subspace, one that separates two eigenvalues
-equal at the declared tolerance or a declared contour through an eigenvalue or
-around nothing, is refused by name.
+PhiTilde^T h_v Phi has exactly the eigenvalues the selection enclosed. A band
+is read whatever its isolation: a selection that separates two eigenvalues
+equal at the declared tolerance, a declared contour through an eigenvalue and
+a declared contour around nothing each return their band, with ``accepted``
+false and the measured gap beside it. One selection has no projector, the one
+that takes an eigenvalue in and leaves an eigenvalue exactly equal to it out,
+and the read says so by name.
 
 THE LABELED SUM CARRIES ITS OVERLAP RATHER THAN ASSUMING IT AWAY. The Gram is the
 transpose pairing of the two embeddings, the transports are its named blocks, and
@@ -413,27 +416,121 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
         self.assertEqual(read.isolation_gap, 2.0)
         self.assertTrue(read.accepted, read.certificate.describe())
 
-    def test_a_band_rank_that_splits_a_multiple_eigenvalue_is_refused(self):
+    def test_a_band_rank_that_splits_an_exactly_multiple_eigenvalue_has_no_value(
+            self):
         """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal
-        at the declared tolerance, and a rank-one part of their eigenspace is
-        no invariant subspace of its own."""
-        with self.assertRaisesRegex(ValueError,
-                                    "equal at the declared tolerance"):
+        exactly, so the band would take one of them and leave the other out.
+        The Sylvester operator of the projector, Y -> T_11 Y - Y T_22, has the
+        difference 1 - 1 = 0 among its eigenvalues and is singular: a
+        rank-one part of that eigenspace is no invariant subspace of its own,
+        the projector has no value, and the read says so by name, with the
+        eigenvalue."""
+        with self.assertRaisesRegex(
+                ValueError, r"takes the eigenvalue \(1\.000000, 0\.000000\) "
+                "of its block into the band and leaves an eigenvalue exactly "
+                "equal to it out"):
             _band_read(np.diag([1.0, 1.0, 3.0]), rank=1)
 
-    def test_a_declared_contour_through_an_eigenvalue_is_refused(self):
-        """The circle about 1 of radius 2 passes through the eigenvalue 3 of
-        diag(1, 3): whether 3 is in the band is not decided."""
-        with self.assertRaisesRegex(ValueError, "passes through the eigenvalue"):
-            _band_read(np.diag([1.0, 3.0]),
-                       selection=cob.RecursionBandSelection.DeclaredContours,
-                       centre=1.0, radius=2.0)
+    def test_a_band_rank_through_a_near_degenerate_pair_is_read_and_not_accepted(
+            self):
+        """diag(1, 1 + 2^-50, 3) with band rank one at the tolerance 1e-15.
 
-    def test_a_declared_contour_enclosing_nothing_is_refused(self):
-        with self.assertRaisesRegex(ValueError, "encloses no eigenvalue"):
-            _band_read(np.diag([1.0, 3.0]),
-                       selection=cob.RecursionBandSelection.DeclaredContours,
-                       centre=10.0, radius=1.0)
+        The block's Frobenius norm is sqrt(1 + (1 + 2^-50)^2 + 9), about
+        3.317, so two eigenvalues at most 3.317e-15 apart are equal at the
+        tolerance; 1 and 1 + 2^-50 are 2^-50 = 8.9e-16 apart, so the band of
+        rank one separates two eigenvalues equal at the tolerance. The read
+        is made all the same. The order of the two is the order of their
+        exact keys, so the band is the eigenvalue 1; the block is diagonal,
+        so its Schur form is the block itself, the coupling T_12 of the
+        Sylvester equation is zero, and the projector is diag(1, 0, 0) with
+        every residual zero exactly. What the read reports is the isolation
+        gap, 2^-50 exactly, and a fiber that is not accepted, with a
+        certificate that does not hold; the recorded circle is centred on 1
+        with the radius halfway to the excluded neighbour, 2^-51."""
+        gap = 2.0 ** -50
+        read = _band_read(np.diag([1.0, 1.0 + gap, 3.0]), rank=1)
+        self.assertEqual(read.rank, 1)
+        self.assertEqual(list(read.eigenvalues), [1.0])
+        self.assertEqual(read.isolation_gap, gap)
+        self.assertLess(read.isolation_gap, 1e-15 * math.sqrt(11.0))
+        self.assertEqual(read.contour_centre, 1.0)
+        self.assertEqual(read.contour_radius, gap / 2.0)
+        self.assertEqual(read.contour_gap, math.inf)
+        right, left = _frames(read, 3)
+        self.assertTrue(np.array_equal(right @ left, np.diag([1.0, 0.0, 0.0])))
+        self.assertEqual(read.projector_idempotency, 0.0)
+        self.assertEqual(read.pairing_defect, 0.0)
+        self.assertEqual(read.invariant_subspace_residual, 0.0)
+        self.assertFalse(read.accepted)
+        self.assertFalse(read.certificate.holds())
+        self.assertEqual(read.certificate.residual, math.inf)
+        # the same block with the pair 2^-40 = 9.1e-13 apart, far above the
+        # 3.3e-15 resolution, is the same projector, accepted
+        apart = _band_read(np.diag([1.0, 1.0 + 2.0 ** -40, 3.0]), rank=1)
+        self.assertEqual(apart.isolation_gap, 2.0 ** -40)
+        self.assertTrue(apart.accepted, apart.certificate.describe())
+
+    def test_a_declared_contour_through_an_eigenvalue_is_read_and_not_accepted(
+            self):
+        """The circle about 1 of radius 2 passes through the eigenvalue 3 of
+        diag(1, 3). Membership is the strict comparison of the distance from
+        the centre with the radius: 1 is at distance 0 and is in the band, 3
+        is at distance 2.0, which is not below 2.0, and is out. The band is
+        therefore the eigenvalue 1, with the projector diag(1, 0) exactly
+        (the block is diagonal) and the isolation gap 3 - 1 = 2. The
+        distance from the circle to the nearest eigenvalue is
+        |2.0 - 2.0| = 0, which is the report that an eigenvalue is on the
+        circle, and the fiber is not accepted."""
+        read = _band_read(np.diag([1.0, 3.0]),
+                          selection=cob.RecursionBandSelection.DeclaredContours,
+                          centre=1.0, radius=2.0)
+        self.assertEqual(read.rank, 1)
+        self.assertEqual(list(read.eigenvalues), [1.0])
+        self.assertFalse(read.encloses_everything)
+        self.assertEqual(read.isolation_gap, 2.0)
+        self.assertEqual(read.contour_gap, 0.0)
+        right, left = _frames(read, 2)
+        self.assertTrue(np.array_equal(right @ left, np.diag([1.0, 0.0])))
+        self.assertEqual(read.projector_idempotency, 0.0)
+        self.assertFalse(read.accepted)
+        self.assertFalse(read.certificate.holds())
+        # the circle of radius 1.5 passes through no eigenvalue: its nearest
+        # is 3, at |2 - 1.5| = 0.5 from the circle, and the same band is
+        # accepted
+        clear = _band_read(np.diag([1.0, 3.0]),
+                           selection=cob.RecursionBandSelection.DeclaredContours,
+                           centre=1.0, radius=1.5)
+        self.assertEqual(list(clear.eigenvalues), [1.0])
+        self.assertEqual(clear.contour_gap, 0.5)
+        self.assertTrue(clear.accepted, clear.certificate.describe())
+
+    def test_a_declared_contour_enclosing_nothing_is_the_band_of_rank_zero(self):
+        """The circle about 10 of radius 1 encloses neither eigenvalue of
+        diag(1, 3) (distances 9 and 7). The band has rank zero: no
+        eigenvalue, the zero projector, frames with no column, and residuals
+        that are zero exactly, because the zero projector is idempotent, the
+        empty frames pair to the 0 x 0 identity and the zero subspace is
+        invariant. Nothing is selected, so there is no selected eigenvalue to
+        measure an isolation from and the gap is infinite; the circle's
+        nearest eigenvalue is 3, at |7 - 1| = 6 from it. A band of rank zero
+        is not a fiber, so it is not accepted."""
+        read = _band_read(np.diag([1.0, 3.0]),
+                          selection=cob.RecursionBandSelection.DeclaredContours,
+                          centre=10.0, radius=1.0)
+        self.assertEqual(read.rank, 0)
+        self.assertEqual(list(read.eigenvalues), [])
+        self.assertEqual(list(read.frame), [])
+        self.assertEqual(list(read.left_frame), [])
+        self.assertFalse(read.encloses_everything)
+        self.assertEqual(read.isolation_gap, math.inf)
+        self.assertEqual(read.contour_gap, 6.0)
+        self.assertEqual(read.contour_centre, 10.0)
+        self.assertEqual(read.contour_radius, 1.0)
+        self.assertEqual(read.projector_idempotency, 0.0)
+        self.assertEqual(read.pairing_defect, 0.0)
+        self.assertEqual(read.invariant_subspace_residual, 0.0)
+        self.assertFalse(read.accepted)
+        self.assertFalse(read.certificate.holds())
 
     def test_a_band_of_the_whole_block_encloses_everything(self):
         """A band rank at or above the block's order selects every eigenvalue:
@@ -687,17 +784,115 @@ class TheRemainingReadsTest(unittest.TestCase):
             self.assertEqual(band.rank, len(members))
             self.assertTrue(band.encloses_everything)
 
-    def test_a_band_rank_through_a_multiple_eigenvalue_of_a_level_is_refused(self):
+    def test_a_band_rank_through_a_multiple_eigenvalue_of_a_level_is_reported(
+            self):
         """The edge operator of the regular tetrahedron has multiple
         eigenvalues by symmetry, and the block of its first component carries
-        one of them. A band of rank one would be a part of that eigenvalue's
-        eigenspace, which is no invariant subspace of its own, so the turn is
-        refused by name instead of carrying a fiber nothing defines."""
+        one of them. A band of rank one is a part of that eigenvalue's
+        eigenspace, which is no invariant subspace of its own. What the turn
+        does with it depends on how the Schur form returns the multiple
+        eigenvalue, and both outcomes say what happened.
+
+        When the computed copies differ by rounding, the selection separates
+        two eigenvalues equal at the declared tolerance 1e-6: the turn is
+        taken, the band is read from the order of the exact keys, its
+        isolation gap is at or below the tolerance times the block's
+        Frobenius norm, it is not accepted, and the level's certificate does
+        not hold. When the computed copies are equal exactly, the Sylvester
+        equation of the projector is singular: the turn has no value, the
+        read says so by name, and no level is recorded."""
         recursion = self._regular_tetrahedron(band_rank=1)
-        with self.assertRaisesRegex(ValueError,
-                                    "equal at the declared tolerance"):
+        try:
             recursion.advance()
-        self.assertEqual(recursion.level_count(), 0)
+        except ValueError as error:
+            self.assertIn("leaves an eigenvalue exactly equal to it out",
+                          str(error))
+            self.assertEqual(recursion.level_count(), 0)
+            return
+        self.assertEqual(recursion.level_count(), 1)
+        level = recursion.level(0)
+        operator = _square(recursion.response_pencil(0, 0.0), level.dimension)
+        split = [
+            band for band, members in zip(level.bands, level.partition)
+            if band.isolation_gap <= 1e-6 * np.linalg.norm(
+                operator[np.ix_(members, members)])]
+        self.assertGreaterEqual(len(split), 1)
+        for band in split:
+            self.assertEqual(band.rank, 1)
+            self.assertGreater(band.isolation_gap, 0.0)
+            self.assertFalse(band.accepted)
+            self.assertFalse(band.certificate.holds())
+        self.assertFalse(level.certificate.holds())
+
+    def test_a_level_carries_a_band_of_rank_zero(self):
+        """One turn over two blocks, [[1, 1/2], [1/2, 1]] on coordinates 0
+        and 1 and the same plus 4 on coordinates 2 and 3, coupled by 0.01
+        between coordinates 1 and 2, with a declared circle per component.
+
+        The partition is read first under `LowestModes`; whatever it is, the
+        component that holds coordinate 0 is given the circle about 0 of
+        radius 100, which encloses every eigenvalue of any block of this
+        operator (they lie between 0.4 and 5.6), and every other component
+        the circle about 1000 of radius 1, which encloses none. The first
+        band is then its whole block and the others have rank zero.
+
+        The turn is taken. A band of rank zero contributes no mode and no
+        transport: the level's modes are those of the first band, the Gram
+        is the identity of that order because the band of a whole block has
+        the canonical basis as both frames, and the only transport is the
+        first band's own block. The bands of rank zero are not accepted, so
+        the level's certificate does not hold."""
+        block = np.array([[1.0, 0.5], [0.5, 1.0]])
+        matrix = np.zeros((4, 4), dtype=complex)
+        matrix[:2, :2] = block
+        matrix[2:, 2:] = block + 4.0 * np.eye(2)
+        matrix[1, 2] = matrix[2, 1] = 0.01
+        flat = [complex(value) for value in matrix.reshape(-1)]
+        lowest = cob.LevelRecursion.overPencil(
+            flat, [], 4, _declaration(resolutions=(1.0,), band_rank=1))
+        lowest.advance()
+        partition = [list(part) for part in lowest.level(0).partition]
+        # the two blocks are separate components, so that a component other
+        # than the first exists to carry the band of rank zero
+        self.assertGreaterEqual(len(partition), 2, partition)
+        first = next(index for index, part in enumerate(partition)
+                     if 0 in part)
+        declaration = _declaration(resolutions=(1.0,))
+        bands = cob.RecursionBandDeclaration()
+        bands.selection = cob.RecursionBandSelection.DeclaredContours
+        bands.contour_centres = [0.0 if index == first else 1000.0
+                                 for index in range(len(partition))]
+        bands.contour_radii = [100.0 if index == first else 1.0
+                               for index in range(len(partition))]
+        declaration.bands = bands
+        recursion = cob.LevelRecursion.overPencil(flat, [], 4, declaration)
+        recursion.advance()
+        self.assertEqual(recursion.level_count(), 1)
+        level = recursion.level(0)
+        self.assertEqual([list(part) for part in level.partition], partition)
+        order = len(partition[first])
+        for index, band in enumerate(level.bands):
+            with self.subTest(component=index):
+                if index == first:
+                    self.assertEqual(band.rank, order)
+                    self.assertTrue(band.encloses_everything)
+                    self.assertTrue(band.accepted,
+                                    band.certificate.describe())
+                else:
+                    self.assertEqual(band.rank, 0)
+                    self.assertEqual(list(band.eigenvalues), [])
+                    self.assertEqual(list(band.frame), [])
+                    self.assertEqual(list(band.left_frame), [])
+                    self.assertFalse(band.accepted)
+        self.assertEqual(level.modes, order)
+        np.testing.assert_array_equal(_square(level.gram, order),
+                                      np.eye(order))
+        self.assertEqual(level.gram_defect, 0.0)
+        self.assertEqual([(t.to_component, t.from_component)
+                          for t in level.transports], [(first, first)])
+        self.assertEqual(len(level.fiber_spectrum), order)
+        self.assertEqual(level.fock_stage_dimension, 2.0 ** order)
+        self.assertFalse(level.certificate.holds())
 
 
 class TheDeclarationIsCheckedTest(unittest.TestCase):

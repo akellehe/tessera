@@ -19,8 +19,10 @@ import math
 import numpy as np
 import pytest
 
+from tessera import cobordism as cob
 from tessera.drivers import baryon_poles as bp
 from tessera.drivers import recursion as R
+from tests.drivers import _recursion_run_2026_09_23 as RUN
 
 HALF = str(bp.SPIN_HALF)
 THREE = str(bp.SPIN_THREE_HALVES)
@@ -72,12 +74,14 @@ CONTENTS = [
      "quartic": {"truncation": {"induced_displacement_norm": 0.1,
                                 "unrelated": 2.0}}}]
 
-#: A read of one cell, as `cell_reads` returns it: one content the library
-#: refused and the read content above, with the cell's ratios and pole table.
+#: A read of one cell, as `cell_reads` returns it: one content at which the
+#: library names no value and the read content above, with the cell's ratios
+#: and pole table.
 READ = [{
     "cell": [0, 1, 2, 3],
     "host_cell": {},
     "failed_contents": [[0, 3, 0]],
+    "flagged_contents": [],
     "contents": CONTENTS,
     "ratios": bp.ratios(CONTENTS), "pole_table": bp.pole_table(CONTENTS)}]
 
@@ -158,6 +162,205 @@ def test_every_tolerance_is_an_option_of_the_run():
     assert tolerances["rank_tolerance"] == 1e-12
     assert tolerances["recursion_tolerance"] == 1e-9
     assert tolerances["certificate_tolerance"] == bp.DECLARED_TOLERANCE
+    # every key of the registry, each its own option, each 1e-15 by default
+    declared = bp.tolerances_from(R.build_parser().parse_args(["run"]))
+    assert declared == {key: 1e-15 for key, _ in bp.TOLERANCES}
+    for key, _ in bp.TOLERANCES:
+        option = "--" + key.replace("_", "-")
+        set_ = bp.tolerances_from(
+            R.build_parser().parse_args(["run", option, "1e-7"]))
+        assert set_[key] == 1e-7
+        assert all(value == 1e-15 for other, value in set_.items()
+                   if other != key)
+
+
+def test_every_tolerance_and_limit_is_carried_into_every_cell(monkeypatch):
+    """`cell_reads` hands every cell's read a config that carries every
+    tolerance of the registry and every declared limit at the run's values,
+    whether the run left them at the declared 1e-15 or set them."""
+    seen = []
+
+    def scan(kappa, beta, config, on_content=None):
+        seen.append(dict(config))
+        return {"failed_contents": [], "flagged_contents": [],
+                "contents": [], "ratios": {},
+                "pole_table": {}}
+
+    monkeypatch.setattr(bp, "scan_point", scan)
+    declared = R.default_config(tetrahedra=2)
+    cells, z, links, _ = R.level_zero(declared)
+    R.cell_reads(cells, z, links, declared)
+    chosen = {key: 10.0 ** -(3 + k) for k, (key, _) in
+              enumerate(bp.TOLERANCES)}
+    limits = {"iteration_limit": 7, "halving_limit": 5,
+              "time_limit_seconds": 2.5}
+    run = R.default_config(tetrahedra=2, tolerances=chosen, limits=limits)
+    R.cell_reads(cells, z, links, run)
+    assert len(seen) == 2 * len(cells)
+    for config in seen[:len(cells)]:
+        assert {key: config[key] for key, _ in bp.TOLERANCES} == {
+            key: 1e-15 for key, _ in bp.TOLERANCES}
+        assert all(config[key] is None for key, _, _ in bp.LIMITS)
+    for config in seen[len(cells):]:
+        assert {key: config[key] for key, _ in bp.TOLERANCES} == chosen
+        assert {key: config[key] for key, _, _ in bp.LIMITS} == limits
+
+
+def test_the_recursion_turn_and_the_pachner_stage_read_the_registry(
+        monkeypatch):
+    """The level recursion's declaration carries the config's recursion
+    tolerance and quotient rank tolerance, and the Pachner stage's node the
+    config's move tolerance and admissibility tolerance; each is 1e-15 when
+    the run declares nothing. The turn and the stage's search are replaced
+    by stand-ins that record what they are handed."""
+    seen = {}
+
+    class Turn:
+        def advance(self):
+            pass
+
+        def level(self, index):
+            return index
+
+    def over_pencil(operator, metric, n, declaration):
+        seen["recursion"] = (declaration.tolerance, declaration.rank_tolerance)
+        return Turn()
+
+    monkeypatch.setattr(cob.LevelRecursion, "overPencil",
+                        staticmethod(over_pencil))
+    operator = np.diag([1.0, 2.0, 3.0, 4.0]).astype(complex)
+    R.recursion_turn(operator, R.default_config())
+    assert seen["recursion"] == (1e-15, 1e-15)
+    R.recursion_turn(operator, R.default_config(
+        tolerances={"recursion_tolerance": 1e-9,
+                    "quotient_rank_tolerance": 1e-7}))
+    assert seen["recursion"] == (1e-9, 1e-7)
+    library = cob.LevelRecursionDeclaration()
+    assert library.tolerance == library.rank_tolerance == 1e-15
+
+    def run_stage1(node, *args, **kwargs):
+        seen["stage"] = (node.move_tolerance, node.admissibility_tolerance)
+        return []
+
+    monkeypatch.setattr(cob.MultiCobordism, "run_stage1", run_stage1)
+    for tolerances, expected in (
+            (None, (1e-15, 1e-15)),
+            ({"move_tolerance": 1e-9, "admissibility_tolerance": 1e-12},
+             (1e-9, 1e-12))):
+        config = R.default_config(tolerances=tolerances)
+        cells, z, links, _ = R.level_zero(config)
+        R.pachner_stage(cells, z, links, config)
+        assert seen["stage"] == expected
+
+
+def test_the_villain_order_is_an_option_carried_into_every_cell(monkeypatch):
+    """M, the order the Villain weight of the holonomy term is summed to, is
+    an option of the run (``--villain-order``, an integer from 1 to 10, 10 by
+    default), recorded in the config under ``villain_order``, declared on
+    every level's action, and carried into the config of every cell's read.
+    The cell read is taken on the recorded tick-0 level
+    (`_recursion_run_2026_09_23`) with the scan point replaced by a recorder
+    of the config it is given. The level relaxation is run at the recorded
+    run's tolerances with one accepted step and one halving declared as its
+    limits, so that the read of the declaration does not wait on a solve."""
+    assert R.build_parser().parse_args(["run"]).villain_order == 10
+    args = R.build_parser().parse_args(["run", "--villain-order", "6"])
+    assert args.villain_order == 6
+    assert R.default_config()["villain_order"] == bp.DECLARED_VILLAIN_ORDER
+    config = R.default_config(
+        villain_order=6, selected_contents=[(1, 1, 1)],
+        tolerances=RUN.TOLERANCES,
+        limits={"iteration_limit": 1, "halving_limit": 1})
+    assert config["villain_order"] == 6
+    with pytest.raises(ValueError, match="integer from 1 to 10"):
+        R.default_config(villain_order=11)
+
+    seen = []
+
+    def scan(kappa, beta, cell_config, on_content=None):
+        seen.append(dict(cell_config))
+        return {"failed_contents": [], "flagged_contents": [],
+                "contents": [], "ratios": {},
+                "pole_table": []}
+
+    monkeypatch.setattr(bp, "scan_point", scan)
+    reads = R.cell_reads(RUN.LEVEL_ZERO_CELLS, RUN.LEVEL_ZERO_SQUARED_LENGTHS,
+                         RUN.LEVEL_ZERO_LINKS, config)
+    assert len(reads) == len(seen) == 2
+    assert [cell["villain_order"] for cell in seen] == [6, 6]
+
+    declared = []
+    original = bp.action_declaration
+
+    def declaration(*arguments, **keywords):
+        declared.append(keywords.get("villain_order"))
+        return original(*arguments, **keywords)
+
+    monkeypatch.setattr(bp, "action_declaration", declaration)
+    spacetime, count = R.build_level(RUN.LEVEL_ZERO_CELLS,
+                                     RUN.LEVEL_ZERO_SQUARED_LENGTHS,
+                                     RUN.LEVEL_ZERO_LINKS)
+    cut = R.bounding_cut(RUN.LEVEL_ZERO_CELLS)
+    R.relax_level(spacetime, config, R.cut_sectors(
+        cut, R.cut_monopole_number(cut, RUN.LEVEL_ZERO_LINKS), count),
+        count=count)
+    assert declared == [6]
+
+
+@pytest.mark.parametrize("text", ["0", "11", "1.5", "many"])
+def test_a_villain_order_outside_one_to_ten_is_refused_by_name(text, capsys):
+    with pytest.raises(SystemExit) as stop:
+        R.build_parser().parse_args(["run", "--villain-order", text])
+    assert stop.value.code == 2
+    assert "--villain-order is an integer from 1 to 10" in \
+        capsys.readouterr().err
+
+
+def test_the_recorded_run_is_read_at_order_ten():
+    """The run of 2026-09-23 (`_recursion_run_2026_09_23`) summed the Villain
+    weight at beta = 1 until its coefficient exp(-m^2 / 2) fell below 1e-18.
+    exp(-81 / 2) = 2.6e-18 is not below it and exp(-100 / 2) = 1.9e-22 is, so
+    the run kept |m| <= 10, which is the order ten the drivers declare by
+    default. On the recorded tick-0 level, whose links have unit modulus, the
+    order-ten sums are the run's sums: what the order leaves out of W, DW and
+    D^2W, relative to the sums of the moduli of their terms, is reported as
+    4.2e-27, 6.4e-26 and 5.1e-25 (the first pair beyond the order,
+    2 exp(-121 / 2) = 1.1e-26, times 1, 11 and 121, over sums of 2.507,
+    1.824 and 2.507), each below the run's floor. Order nine drops the pair
+    2 exp(-50) = 3.9e-22 times the same weights, which is below the rounding
+    2^-53 = 1.1e-16 of sums of order one, so the holonomy term of the level
+    at order nine equals the one at order ten to 1e-15."""
+    least = next(m for m in range(1, 100)
+                 if math.exp(-m * m / (2.0 * RUN.BETA))
+                 < RUN.VILLAIN_COEFFICIENT_FLOOR)
+    assert least == RUN.VILLAIN_ORDER == bp.DECLARED_VILLAIN_ORDER == 10
+    assert math.exp(-81 / 2.0) > RUN.VILLAIN_COEFFICIENT_FLOOR \
+        > math.exp(-100 / 2.0)
+    assert R.default_config(tolerances=RUN.TOLERANCES)["villain_order"] == \
+        RUN.VILLAIN_ORDER
+
+    spacetime, _ = R.build_level(RUN.LEVEL_ZERO_CELLS,
+                                 RUN.LEVEL_ZERO_SQUARED_LENGTHS,
+                                 RUN.LEVEL_ZERO_LINKS)
+
+    def action(order):
+        return cob.JointAction(spacetime, bp.action_declaration(
+            spacetime, 1.0, RUN.BETA, villain_order=order))
+
+    ten = action(RUN.VILLAIN_ORDER)
+    faces = np.asarray(ten.face_holonomies())
+    assert np.max(np.abs(np.abs(faces) - 1.0)) < 1e-14
+    read = ten.holonomy_truncation()
+    assert read.order == 10
+    assert read.relative_value_tail == pytest.approx(4.24e-27, rel=1e-2)
+    assert read.relative_first_tail == pytest.approx(6.41e-26, rel=1e-2)
+    assert read.relative_second_tail == pytest.approx(5.13e-25, rel=1e-2)
+    assert read.relative_second_tail < RUN.VILLAIN_COEFFICIENT_FLOOR
+    nine = action(9)
+    assert abs(complex(nine.holonomy_term()) - complex(ten.holonomy_term())) \
+        < 1e-15 * abs(complex(ten.holonomy_term()))
+    assert np.max(np.abs(np.asarray(nine.holonomy_hessian())
+                         - np.asarray(ten.holonomy_hessian()))) < 1e-15
 
 
 # ------------------------------------------------------------ main
@@ -243,6 +446,7 @@ def test_main_passes_the_declared_options_to_every_tick(stub_reads):
     assert config["max_cells"] == 1
     assert config["kappa"] == 0.5 and config["beta"] == 2.0
     assert config["band_selection"] == "sort-every-iterate"
+    assert config["villain_order"] == bp.DECLARED_VILLAIN_ORDER == 10
 
 
 def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
@@ -259,7 +463,7 @@ def test_progress_and_summary_are_printed_unless_quiet(stub_reads, capsys):
     assert "tick 0: level with 5 vertices, 9 edges, 2 tetrahedra per sheet" \
         in out
     assert "host cell [0, 1, 2, 3] content [0, 3, 0] (quarks per band of " \
-        "h_1): failed: band 1 has rank 2" in out
+        "h_1): no value: band 1 has rank 2" in out
     assert "content [3, 0, 0] (quarks per band of h_1): read; quark " \
         "certified False; mean field converged False (force norm 0.25 after " \
         "40 iterations)" in out
@@ -310,13 +514,13 @@ def test_the_frame_data_carries_every_pole_of_every_doublet_content():
         (group, (1, 1, 1), THREE, "quasi_free", 5.0 + 0.25j),
         (group, (1, 1, 1), HALF, "with_quartic", -2.0 + 0j),
         (group, (1, 1, 1), THREE, "with_quartic", -1.0 + 0j)}
-    # the refused content keeps a slot of its own, labelled as refused
-    assert data["slots"] == [(0.0, "refused"), (2.0, "021"), (3.0, "111")]
+    # the content with no value keeps a slot of its own, labelled as such
+    assert data["slots"] == [(0.0, "no value"), (2.0, "021"), (3.0, "111")]
     assert [g["label"] for g in data["groups"]] == ["0123\n030", group]
-    # each group carries the solve behind it: the library refused 030, and
-    # the solve of 300 did not converge in its 40 iterations
+    # each group carries the solve behind it: the library names no value at
+    # 030, and the solve of 300 did not converge in its 40 iterations
     assert [g["solve"] for g in data["groups"]] == [
-        {"state": "refused", "reason": None, "iterations": None},
+        {"state": "no value", "reason": None, "iterations": None},
         {"state": "not converged", "reason": None, "iterations": 40}]
     quasi_free = [r for r in data["ratios"] if r["column"] == "quasi_free"]
     # by 2T reading: the lowest pole of a sector restricting to a 2 is the
@@ -345,10 +549,10 @@ def test_the_drawn_frame_has_one_mark_per_pole():
                            for y in line.get_ydata())
             assert drawn == expected
         labels = [t.get_text() for t in quasi_free.get_xticklabels(minor=True)]
-        assert labels == ["refused", "021", "111"]
+        assert labels == ["no value", "021", "111"]
         # a callout over each group names its solve
         assert [t.get_text() for t in quasi_free.texts] == [
-            "\u2717 refused", "\u2717 not converged\n40 iterations"]
+            "\u2717 no value", "\u2717 not converged\n40 iterations"]
     finally:
         plt.close(figure)
 
@@ -467,12 +671,34 @@ def test_a_band_of_the_whole_block_has_nothing_excluded():
     assert band["radius"] == math.inf and band["isolation_gap"] == math.inf
 
 
-def test_a_band_that_splits_a_multiple_eigenvalue_is_refused():
-    """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal at
-    the declared tolerance and no rank-one part of their eigenspace is an
-    invariant subspace of its own."""
-    with pytest.raises(ValueError, match="equal at the declared tolerance"):
+def test_a_band_that_splits_an_exactly_multiple_eigenvalue_has_no_value():
+    """diag(1, 1, 3) with band rank one: the two eigenvalues 1 are equal
+    exactly, so the band would take one and leave the other out. No rank-one
+    part of their eigenspace is an invariant subspace of its own, the
+    Sylvester equation of the projector is singular, and the library says by
+    name that the projector has no value."""
+    with pytest.raises(ValueError, match="leaves an eigenvalue exactly "
+                                         "equal to it out"):
         R.riesz_band(np.diag([1.0, 1.0, 3.0]).astype(complex), 1, 1e-15)
+
+
+def test_a_band_through_a_near_degenerate_pair_is_read_and_not_accepted():
+    """diag(1, 1 + 2^-50, 3) with band rank one at the tolerance 1e-15: the
+    block's Frobenius norm is about 3.317, so eigenvalues at most 3.317e-15
+    apart are equal at the tolerance, and 1 and 1 + 2^-50 are 8.9e-16 apart.
+    The band is read all the same: it is the eigenvalue 1, the first in the
+    order of the exact keys, with the projector diag(1, 0, 0) of the diagonal
+    block and zero residuals. The read reports the isolation gap 2^-50 and
+    ``accepted`` false."""
+    gap = 2.0 ** -50
+    band = R.riesz_band(np.diag([1.0, 1.0 + gap, 3.0]).astype(complex), 1,
+                        1e-15)
+    assert band["eigenvalues"] == [1.0]
+    assert np.array_equal(band["projector"], np.diag([1.0, 0.0, 0.0]))
+    assert band["isolation_gap"] == gap
+    assert band["projector_idempotency"] == 0.0
+    assert band["invariant_subspace_residual"] == 0.0
+    assert not band["accepted"]
 
 
 def test_the_fibers_of_a_partition_are_supported_on_their_images():

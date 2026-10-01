@@ -54,6 +54,7 @@ void register_isospin_doublet(py::module_ m);
 void register_simulations(py::module_ m);
 void register_cobordism(py::module_ m);
 void register_chainhodge(py::module_ m);
+void register_numerics(py::module_ m);
 
 PYBIND11_MODULE(_tessera, m) {
   m.doc() = R"doc(
@@ -105,6 +106,9 @@ References:
   auto m_chainhodge  = m.def_submodule("chainhodge",
       "Chain-level Whitney Hodge pencil: sparse inverse chain metrics, "
       "branches, and instance certificates.");
+  auto m_numerics    = m.def_submodule("numerics",
+      "Truncated power-series arithmetic: exact Taylor coefficients to order "
+      "ten of scalars, matrices, spectral projectors and reversions.");
 
   // --- Per-subsystem bindings (one file per subsystem) ---
   register_mesh(m_mesh);
@@ -114,6 +118,7 @@ References:
   register_simulations(m_simulations);
   register_cobordism(m_cobordism);
   register_chainhodge(m_chainhodge);
+  register_numerics(m_numerics);
 
   // ========================================
   // MatterConfiguration

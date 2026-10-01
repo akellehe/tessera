@@ -7,6 +7,7 @@ organised into submodules whose names match their C++ namespaces:
 * ``tessera.spacetime``    — Spacetime, Metric, Signature, topologies, Pachner moves
 * ``tessera.observables``  — SparseGraph, ModularityOptimizer, WilsonLoop, ...
 * ``tessera.simulations``  — CDT, ReggeSolver, Simulation base
+* ``tessera.numerics``     — TruncatedSeries, TruncatedSeriesMatrix, series reversion
 * ``tessera.quantum``      — Schwinger model, DMRG, TDVP, holography, InteractionSimulation
 
 For backward compatibility every public class is also re-exported at the
@@ -27,6 +28,7 @@ from tessera._tessera import (                              # noqa: F401
     simulations,
     cobordism,
     chainhodge,
+    numerics,
 )
 
 # Register them under their `tessera.*` names as well.
@@ -48,7 +50,7 @@ from tessera._tessera import (                              # noqa: F401
 import sys as _sys                                          # noqa: E402
 
 for _submodule in (mesh, spacetime, observables, simulations, cobordism,
-                   chainhodge):
+                   chainhodge, numerics):
     _sys.modules[f"tessera.{_submodule.__name__.rsplit('.', 1)[-1]}"] = _submodule
 del _submodule
 

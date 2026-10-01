@@ -356,14 +356,19 @@ def test_the_driver_verdict_fails_condition_two_on_a_separated_sheet():
     assert two["failing"] == ["sheet-isomorphism"]
 
 
-def test_the_driver_verdict_fails_the_fibre_lift_above_its_threshold():
-    """A fibre-lift residual of 0.818 (the run's content (0, 2, 1) on the
-    first cell) is above the driver's 1e-6 and fails condition 2 on the
-    fibre lift; a residual of 2.49e-11 (content (0, 1, 2)) passes."""
-    failing = _driver_verdict(bp.build_host(), symmetry_residual=0.818)
-    assert failing["conditions"][1]["failing"] == ["fibre-lift"]
-    passing = _driver_verdict(bp.build_host(), symmetry_residual=2.49e-11)
-    assert passing["conditions"][1]["status"] == "Passed"
+def test_the_driver_verdict_fails_the_fibre_lift_above_its_tolerance():
+    """The fibre lift of condition 2 holds when the residual is at or below
+    the declared fibre-lift tolerance, 1e-15. A residual of 0.818 (the run's
+    content (0, 2, 1) on the first cell) fails condition 2 on the fibre
+    lift, and so does a residual of 2.49e-11 (content (0, 1, 2)); a residual
+    of 1e-15 or of zero passes."""
+    for residual in (0.818, 2.49e-11):
+        failing = _driver_verdict(bp.build_host(), symmetry_residual=residual)
+        assert failing["conditions"][1]["status"] == "Failed"
+        assert failing["conditions"][1]["failing"] == ["fibre-lift"]
+    for residual in (1e-15, 0.0):
+        passing = _driver_verdict(bp.build_host(), symmetry_residual=residual)
+        assert passing["conditions"][1]["status"] == "Passed"
 
 
 def test_the_driver_verdict_fails_conditions_one_and_five_on_leakage():

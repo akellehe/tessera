@@ -23,18 +23,6 @@ using cd = std::complex<double>;
 constexpr double kPi = 3.1415926535897932384626433832795;
 constexpr double kTwoPi = 2.0 * kPi;
 
-/// How close a face flux may sit to the ends of the principal interval before
-/// it counts as sitting on the branch cut. It is a rounding allowance, not a
-/// physical threshold: a face holonomy on the negative real axis carries
-/// exactly +pi, and this is how wide the floating-point neighbourhood of that
-/// value is taken to be.
-constexpr double kBranchTolerance = 1e-9;
-
-/// How far a stored connection value may depart from unit modulus before the
-/// support refuses it. The kernel reads the U(1) part of the connection, so
-/// this is a domain check, not a physical threshold.
-constexpr double kUnitModulusTolerance = 1e-9;
-
 void requirePositive(double tolerance, const char* what) {
   if (!(tolerance > 0.0)) {
     std::ostringstream message;
@@ -70,11 +58,14 @@ double maxAbs(const Eigen::MatrixXcd& m) {
 MonopoleSupport::MonopoleSupport(std::size_t vertexCount,
                                  std::vector<std::array<std::size_t, 2>> edges,
                                  std::vector<std::array<std::size_t, 3>> faces,
-                                 std::vector<Complex> connection)
+                                 std::vector<Complex> connection,
+                                 double unitModulusTolerance)
     : vertexCount_(vertexCount),
       edges_(std::move(edges)),
       faces_(std::move(faces)),
       connection_(std::move(connection)) {
+  requirePositive(unitModulusTolerance,
+                  "MonopoleSupport unit-modulus tolerance");
   if (vertexCount_ == 0) {
     throw std::invalid_argument(
         "MonopoleSupport: a support needs at least one vertex.");
@@ -126,7 +117,7 @@ MonopoleSupport::MonopoleSupport(std::size_t vertexCount,
     // conversion, which is the caller's declared choice; it is never applied
     // silently here.
     const double modulusDefect = std::abs(std::abs(connection_[e]) - 1.0);
-    if (modulusDefect > kUnitModulusTolerance) {
+    if (modulusDefect > unitModulusTolerance) {
       std::ostringstream message;
       message << "MonopoleSupport: the connection value on edge " << e
               << " has modulus " << std::abs(connection_[e])
@@ -272,12 +263,12 @@ MonopoleNumberRead MonopoleSupport::monopoleNumber(double tolerance) const {
     // a signed-zero artifact of the floating-point product and not the
     // mathematical principal value; the two are reconciled here so that the
     // read does not depend on how the product happened to round.
-    if (std::abs(kPi + flux) <= kBranchTolerance) flux = kPi;
+    if (std::abs(kPi + flux) <= tolerance) flux = kPi;
     read.faceFluxes.push_back(flux);
     read.totalFlux += flux;
     read.branchMargin = std::min(read.branchMargin, kPi - std::abs(flux));
   }
-  read.onBranchCut = read.branchMargin <= kBranchTolerance;
+  read.onBranchCut = read.branchMargin <= tolerance;
   const double turns = read.totalFlux / kTwoPi;
   read.monopoleNumber = static_cast<int>(std::lround(turns));
   read.integralityResidual =

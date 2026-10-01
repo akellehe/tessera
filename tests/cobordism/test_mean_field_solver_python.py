@@ -40,10 +40,10 @@ What is asserted:
 * a read without a stationary point ends by itself and by name (no damped
   step reduced the residual, its detail giving how far along the Newton
   direction the sector guard refused; the residual at its floor on the held
-  set) instead of freezing or repeating, and a read is refused when the
+  set) instead of freezing or repeating, and a read is flagged when the
   geometry it ended at is not Kontsevich-Segal allowable, whether or not it
   converged there; a squared length beyond the largest finite double is the
-  only bound on the lengths;
+  only bound on the lengths, and the only geometry with no value to read;
 * the held-modulus step is the constrained Newton step, which leaves far less
   of the linearized residual than the projection of the unconstrained step
   and keeps every held modulus exactly.
@@ -84,10 +84,10 @@ def _relax(cell, content, **options):
     return spacetime, action, report, config
 
 
-def _refusal(report, config):
-    """The read's refusal at the run's declared allowability tolerance, as
-    the driver decides it."""
-    return bp.read_refusal(report, bp.declared_tolerance(
+def _flags(report, config):
+    """The flags of the geometry the solve reached, at the run's declared
+    allowability tolerance, as the driver reads them."""
+    return bp.geometry_flags(report, bp.declared_tolerance(
         config, "allowability_tolerance"))
 
 
@@ -310,7 +310,7 @@ def test_continuation_and_re_sorting_part_at_a_crossing():
     np.testing.assert_allclose(spectrum[6:9], 3.9248, atol=5e-4)
 
 
-# ------------------------------------------------------ refusals by name
+# ------------------------------------------------ stops and flags by name
 
 
 def test_a_held_holonomy_driven_across_minus_one_is_named():
@@ -324,8 +324,9 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     "no damped step reduced the residual", its detail saying how far along
     the Newton direction the sector guard refused. It ends by itself,
     without freezing or repeating; the geometry it stopped at is
-    Kontsevich-Segal allowable, so the read proceeds and its record says why
-    the solve stopped."""
+    Kontsevich-Segal allowable (margin pi, a Euclidean cell), so the read
+    carries no flag of the geometry, and its record says why the solve
+    stopped."""
     _, _, report, config = _relax(FIRST_CELL, (3, 0, 0), fiber_moments=0)
     assert not report.converged
     assert report.stop_reason == cob.RelaxationStop.NoDescent
@@ -346,7 +347,7 @@ def test_a_held_holonomy_driven_across_minus_one_is_named():
     # no iterate repeats another: every accepted step moved the geometry
     assert all(step.step_norm > 0.0 for step in accepted)
     assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-5)
-    assert _refusal(report, config) is None
+    assert _flags(report, config) == []
     record = bp.relaxation_record(report)
     assert record["stop_reason"] == "no damped step reduced the residual"
     assert "method" not in record
@@ -359,10 +360,12 @@ def test_lengths_that_grow_without_bound_are_left_to_the_equations():
     eigenvalues go to zero with h_1 ~ 1/z. Nothing but the datatype's bound
     stops such a solve: it runs until the residual is at its floor on the
     held set, with the largest |z| about a thousand times the host's and
-    the joint Jacobian down to rank four, and the read is refused
-    on the geometry itself, which is not Kontsevich-Segal allowable. The
-    overflow stop is reserved for a squared length beyond the largest finite
-    double, and the declaration carries no ratio to tune."""
+    the joint Jacobian down to rank four, and the read is flagged
+    on the geometry itself, which is not Kontsevich-Segal allowable: the flag
+    carries the margin and the tolerance it was compared with. The geometry
+    is finite, so it has a value to read. The overflow stop is reserved for a
+    squared length beyond the largest finite double, and the declaration
+    carries no ratio to tune."""
     _, _, report, config = _relax(FIRST_CELL, (2, 0, 1), fiber_moments=0)
     assert not report.converged
     assert report.stop_reason == cob.RelaxationStop.HeldFloor
@@ -370,24 +373,26 @@ def test_lengths_that_grow_without_bound_are_left_to_the_equations():
     assert report.jacobian_rank == 4
     assert max(abs(v) for v in report.occupied_eigenvalues) < 0.1
     assert report.kontsevich_segal_margin < 0
-    name, message = _refusal(report, config)
-    assert name == "not Kontsevich-Segal allowable"
-    assert "margin %.3g" % report.kontsevich_segal_margin in message
+    (flag,) = _flags(report, config)
+    assert flag["name"] == "not Kontsevich-Segal allowable"
+    assert flag["kontsevich_segal_margin"] == report.kontsevich_segal_margin
+    assert flag["tolerance"] == RUN.TOLERANCES["allowability_tolerance"]
+    assert "margin %.3g" % report.kontsevich_segal_margin in flag["detail"]
+    assert bp.geometry_without_value(report) is None
     assert cob.relaxation_stop_name(cob.RelaxationStop.LengthRunaway) == \
         "the squared lengths overflowed the double"
     assert not hasattr(cob.HolomorphicRelaxationDeclaration(),
                        "length_runaway_ratio")
 
 
-def test_a_read_that_leaves_the_allowable_domain_is_refused():
+def test_a_read_that_leaves_the_allowable_domain_is_flagged():
     """(0123, 021): the joint Newton drives one shared squared length
     negative and goes on, in twelve steps, to a fixed point off the real
     slice, z = (51.335 + 12.665i, 14.516 + 7.762i, 18.667 + 4.838i,
     14.725 + 7.452i, 18.886 + 3.635i, -5.062 - 0.497i), with both occupied
     bands at their pinned eigenvalues 0.708 and 2.898. The solve converges
     there, at a geometry that is not Kontsevich-Segal allowable (margin
-    -0.613), and the read is refused with the margin, so no pole is read on
-    it."""
+    -0.613), and the read is flagged with the margin."""
     spacetime, _, report, config = _relax(FIRST_CELL, (0, 2, 1))
     assert report.converged
     assert report.stop_reason == cob.RelaxationStop.Converged
@@ -399,9 +404,11 @@ def test_a_read_that_leaves_the_allowable_domain_is_refused():
     assert sorted(band.eigenvalues[0].real for band in report.bands) == \
         pytest.approx([0.7080, 2.8977], abs=5e-4)
     assert report.kontsevich_segal_margin == pytest.approx(-0.6125, abs=5e-4)
-    name, message = _refusal(report, config)
-    assert name == "not Kontsevich-Segal allowable"
-    assert "margin %.3g" % report.kontsevich_segal_margin in message
+    (flag,) = _flags(report, config)
+    assert flag["name"] == "not Kontsevich-Segal allowable"
+    assert flag["kontsevich_segal_margin"] == report.kontsevich_segal_margin
+    assert "margin %.3g" % report.kontsevich_segal_margin in flag["detail"]
+    assert bp.geometry_without_value(report) is None
 
 
 @pytest.mark.slow
@@ -410,8 +417,8 @@ def test_a_read_that_stops_short_moves_at_every_iterate_and_says_why():
     iteration it takes (the covariance changes at every one) and stops with
     a named reason, the residual at its floor on the held set (5.2e-5 after
     257 steps), instead of freezing and repeating; the geometry it reaches
-    is Kontsevich-Segal allowable, so the read proceeds, and the record and
-    its text say why the solve stopped."""
+    is Kontsevich-Segal allowable (margin pi), so the read carries no flag of
+    the geometry, and the record and its text say why the solve stopped."""
     _, _, report, config = _relax(FIRST_CELL, (3, 0, 0))
     assert not report.converged
     assert report.stop_reason == cob.RelaxationStop.HeldFloor
@@ -421,7 +428,7 @@ def test_a_read_that_stops_short_moves_at_every_iterate_and_says_why():
     changes = [step.covariance_change for step in report.steps[1:]]
     assert min(changes) > 0.0
     assert report.kontsevich_segal_margin == pytest.approx(np.pi, abs=1e-6)
-    assert _refusal(report, config) is None
+    assert _flags(report, config) == []
     record = bp.relaxation_record(report)
     assert record["stop_reason"] == \
         "the residual is at its floor on the held set"
