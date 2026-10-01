@@ -30,8 +30,8 @@ except Exception:  # pragma: no cover
 pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tessera not built")
 
 #: The namespaces that mirror a C++ namespace of the same name.
-_NAMESPACES = ("chainhodge", "cobordism", "mesh", "observables", "simulations",
-               "spacetime", "quantum")
+_NAMESPACES = ("chainhodge", "cobordism", "mesh", "numerics", "observables",
+               "simulations", "spacetime", "quantum")
 
 #: One representative class per namespace, to prove `from ... import` resolves
 #: a real binding rather than an empty module.
@@ -39,6 +39,7 @@ _REPRESENTATIVES = {
     "chainhodge": "ChainHodge",
     "cobordism": "HodgeLaplacian",
     "mesh": "Vertex",
+    "numerics": "TruncatedSeries",
     "observables": "WilsonLoop",
     "simulations": "ReggeSolver",
     "spacetime": "Spacetime",
