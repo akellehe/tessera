@@ -331,6 +331,43 @@ class TestIncrementalEqualsCold(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# the sweeps end by themselves
+# ---------------------------------------------------------------------------
+
+
+class TestSweepsRunToAFixedPoint(unittest.TestCase):
+    """The local-move sweeps of a level end at a pass that moves no node, or
+    at a partition an earlier pass of the level ended in (the gains around
+    such a cycle sum to zero exactly, so each was rounding); the slice reports
+    how many levels of the winning run ended the second way."""
+
+    def test_the_configuration_carries_no_sweep_count(self):
+        self.assertFalse(hasattr(tessera.PersistentModularityConfig(),
+                                 "maxSweepsPerLevel"))
+
+    def test_the_fixtures_reach_a_pass_without_a_move(self):
+        fixtures = [_two_disconnected_k6(), _planted_modular_two_k8(),
+                    _fb_ring(), _ring()]
+        for src, tgt in fixtures:
+            g = PM.fromWeightedEdges(src, tgt, [1.0] * len(src))
+            for gamma in (0.25, 1.0, 4.0):
+                s = g.discover(gamma, _cfg())
+                self.assertEqual(s.sweepRecurrences, 0)
+
+    def test_a_graph_of_exact_ties_in_inexact_weights_ends(self):
+        # the complete graph on twelve nodes with every weight one third:
+        # every node is tied between every community, and the weight has no
+        # exact double, so the gains of the tied moves are decided in rounding
+        src, tgt = [], []
+        _clique_edges(list(range(12)), src, tgt)
+        g = PM.fromWeightedEdges(src, tgt, [1.0 / 3.0] * len(src))
+        for gamma in (0.5, 1.0, 2.0):
+            s = g.discover(gamma, _cfg())
+            self.assertLessEqual(abs(s.q - s.qIncremental), 1e-14)
+            self.assertLessEqual(s.sweepRecurrences, s.levels)
+
+
+# ---------------------------------------------------------------------------
 # relabeling / ordering / orientation
 # ---------------------------------------------------------------------------
 
