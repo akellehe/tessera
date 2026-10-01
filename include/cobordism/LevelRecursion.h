@@ -142,7 +142,11 @@ struct LevelRecursionDeclaration {
 /// \f$ \tilde\Phi_v^{\mathsf T}=(I\;\;Y)\,Q^H \f$. For a diagonalizable block
 /// this is \f$ V_B(V^{-1})_B \f$ over the selected eigenvalues; for a
 /// non-diagonalizable one it is the same spectral projector, formed without
-/// inverting an eigenvector matrix.
+/// inverting an eigenvector matrix. A selection that encloses every eigenvalue
+/// of the block has the whole coordinate space as its invariant subspace:
+/// its projector is the identity and its two frames are the canonical basis,
+/// with nothing to reorder and no equation to solve, so its certificates are
+/// zero exactly.
 struct RecursionBandRead {
   /// The component of the level's partition this fiber belongs to: the response
   /// vertex it becomes at the next level.

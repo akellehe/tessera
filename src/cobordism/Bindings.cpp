@@ -6190,7 +6190,9 @@ ancestry. Read-only: nothing here enters the emergence objective.)doc");
       "selected eigenvalues are reordered to the leading block, the Sylvester "
       "equation for the invariant subspace is solved, and P_v = Phi_v "
       "PhiTilde_v^T with Phi_v the leading Schur vectors. For a diagonalizable "
-      "block this is V_B (V^-1)_B over the selected eigenvalues.")
+      "block this is V_B (V^-1)_B over the selected eigenvalues. A selection "
+      "that encloses every eigenvalue has the identity as its projector and "
+      "the canonical basis as both frames, exactly.")
       .def(py::init<>())
       .def_readwrite("component", &RecursionBandRead::component)
       .def_readwrite("rank", &RecursionBandRead::rank,

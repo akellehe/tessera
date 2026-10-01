@@ -542,7 +542,9 @@ def riesz_band(block, rank, tolerance):
     are reordered to the front, and the left frame PhiTilde^T is its
     algebraic dual, PhiTilde^T Phi = I, from the Sylvester equation of the
     reordered form. For a diagonalizable block P = V_B (V^-1)_B over the
-    selected eigenvalues. A selection that separates two eigenvalues equal at
+    selected eigenvalues. A band of the whole block has the identity as its
+    projector and the canonical basis as both frames, exactly. A selection
+    that separates two eigenvalues equal at
     ``tolerance`` is refused by name. The read carries the projector's
     certificates: its idempotency residual, the pairing defect of the frames,
     the residual of the invariant subspace and the isolation gap of the band,

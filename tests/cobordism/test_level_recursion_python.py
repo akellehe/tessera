@@ -437,17 +437,32 @@ class TheFibersAreRieszProjectorsTest(unittest.TestCase):
 
     def test_a_band_of_the_whole_block_encloses_everything(self):
         """A band rank at or above the block's order selects every eigenvalue:
-        the projector is the identity, the selection has no excluded
-        eigenvalue to measure to, so its radius and the isolation gap are
-        infinite, and the read says so."""
-        read = _band_read(np.diag([1.0, 3.0]), rank=5)
-        self.assertEqual(read.rank, 2)
+        the selection has no excluded eigenvalue to measure to, so its radius
+        and the isolation gap are infinite, and the read says so. The
+        invariant subspace is the whole coordinate space, so the projector is
+        the identity and both frames are the canonical basis exactly, on a
+        block that is neither diagonal nor normal as on any other, and the
+        three residual certificates are zero exactly. The recorded centre is
+        the mean of the eigenvalues, the trace 6 over the order 3."""
+        block = np.array([[1.0, 2.0 + 1.0j, 0.5], [0.0, 3.0, -1.0j],
+                          [0.25, 0.0, 2.0]])
+        read = _band_read(block, rank=5)
+        self.assertEqual(read.rank, 3)
         self.assertTrue(read.encloses_everything)
         self.assertEqual(read.contour_radius, math.inf)
         self.assertEqual(read.isolation_gap, math.inf)
-        self.assertEqual(read.contour_centre, 2.0)
-        right, left = _frames(read, 2)
-        self.assertLess(np.abs(right @ left - np.eye(2)).max(), 1e-15)
+        self.assertLess(abs(read.contour_centre - 2.0), 1e-14)
+        np.testing.assert_allclose(
+            sorted(read.eigenvalues, key=lambda v: (v.real, v.imag)),
+            sorted(np.linalg.eigvals(block), key=lambda v: (v.real, v.imag)),
+            atol=1e-13)
+        right, left = _frames(read, 3)
+        self.assertTrue(np.array_equal(right, np.eye(3)))
+        self.assertTrue(np.array_equal(left, np.eye(3)))
+        self.assertEqual(read.projector_idempotency, 0.0)
+        self.assertEqual(read.pairing_defect, 0.0)
+        self.assertEqual(read.invariant_subspace_residual, 0.0)
+        self.assertTrue(read.accepted, read.certificate.describe())
 
     def test_the_modulus_order_breaks_ties_by_real_then_imaginary_part(self):
         """Under AscendingModulus the eigenvalues 1 and -1 of diag(1, -1, 2)
@@ -649,20 +664,40 @@ class TheRemainingReadsTest(unittest.TestCase):
                           key=lambda value: (value.real, value.imag))
         np.testing.assert_allclose(level.fiber_spectrum, expected, atol=1e-9)
 
-    def test_the_recursion_over_a_spacetime_reads_its_edge_operator(self):
-        """Over a spacetime the base is the degree-one operator of the
-        declared metric source: one coordinate per edge."""
+    def _regular_tetrahedron(self, band_rank):
         spacetime = T.Spacetime.fromVertexTuples(3, [[0, 1, 2, 3]], 1.0, 0.0)
         for edge in spacetime.getEdgeList().toVector():
             edge.setLength(math.sqrt(8.0))
-        declaration = _declaration(resolutions=(1.0,), band_rank=1)
-        recursion = cob.LevelRecursion.overSpacetime(
+        declaration = _declaration(resolutions=(1.0,), band_rank=band_rank)
+        return cob.LevelRecursion.overSpacetime(
             spacetime, 1, cob.HodgeMetricSource.WhitneyPencil, declaration)
+
+    def test_the_recursion_over_a_spacetime_reads_its_edge_operator(self):
+        """Over a spacetime the base is the degree-one operator of the
+        declared metric source: one coordinate per edge. The band rank is the
+        number of edges, so every component's band is its whole block, which
+        is a spectral set whatever the partition is."""
+        recursion = self._regular_tetrahedron(band_rank=6)
         self.assertEqual(recursion.base_dimension(), 6)
         recursion.advance()
         level = recursion.level(0)
         self.assertEqual(sorted(i for part in level.partition for i in part),
                          list(range(6)))
+        for band, members in zip(level.bands, level.partition):
+            self.assertEqual(band.rank, len(members))
+            self.assertTrue(band.encloses_everything)
+
+    def test_a_band_rank_through_a_multiple_eigenvalue_of_a_level_is_refused(self):
+        """The edge operator of the regular tetrahedron has multiple
+        eigenvalues by symmetry, and the block of its first component carries
+        one of them. A band of rank one would be a part of that eigenvalue's
+        eigenspace, which is no invariant subspace of its own, so the turn is
+        refused by name instead of carrying a fiber nothing defines."""
+        recursion = self._regular_tetrahedron(band_rank=1)
+        with self.assertRaisesRegex(ValueError,
+                                    "equal at the declared tolerance"):
+            recursion.advance()
+        self.assertEqual(recursion.level_count(), 0)
 
 
 class TheDeclarationIsCheckedTest(unittest.TestCase):

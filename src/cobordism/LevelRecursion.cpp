@@ -403,13 +403,26 @@ RecursionBandRead LevelRecursion::readBand(
         "; the invariant subspace of a part of a multiple eigenvalue is not "
         "defined");
 
-  // The exact projector and its frames, from the reordered Schur form.
-  const chainhodge::RieszProjectorRead riesz =
-      chainhodge::rieszProjector(schur, selected);
-  const Eigen::MatrixXcd &projector = riesz.projector;
-  const Eigen::MatrixXcd &right = riesz.right;
-  const Eigen::MatrixXcd left = riesz.left.transpose();
+  // The exact projector and its frames. A selection that encloses every
+  // eigenvalue has the whole coordinate space as its invariant subspace: the
+  // projector is the identity and the canonical basis is its frame, with
+  // nothing to reorder and no Sylvester equation to solve. Every other
+  // selection is read from the reordered Schur form.
   const auto columns = static_cast<Eigen::Index>(band.rank);
+  Eigen::MatrixXcd projector;
+  Eigen::MatrixXcd right;
+  Eigen::MatrixXcd left;
+  if (band.enclosesEverything) {
+    projector = Eigen::MatrixXcd::Identity(columns, columns);
+    right = projector;
+    left = projector;
+  } else {
+    const chainhodge::RieszProjectorRead riesz =
+        chainhodge::rieszProjector(schur, selected);
+    projector = riesz.projector;
+    right = riesz.right;
+    left = riesz.left.transpose();
+  }
   band.projectorIdempotency =
       (projector * projector - projector).norm() / projector.norm();
   band.pairingDefect =
